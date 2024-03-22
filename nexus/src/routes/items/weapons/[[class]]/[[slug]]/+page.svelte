@@ -66,7 +66,7 @@
     const cost = getCost(item);
     const effectiveDamage = getEffectiveDamage(item);
 
-    return cost != null
+    return effectiveDamage > 0 && cost != null
       ? effectiveDamage / cost
       : null;
   }
@@ -217,7 +217,7 @@
 
   let viewInfoSection = {
     columns: ['Name', 'Category', 'Type', 'DPS', 'Damage', 'Range', 'Reload', 'Efficiency', 'DPP', 'Max. TT', 'Cost', 'SiB', 'Min', 'Max'],
-    columnWidths: ['1fr', '105px', '70px', '70px', '80px', '65px', '70px', '85px', '70px', '100px', '95px', '50px', '50px', '50px'],
+    columnWidths: ['1fr', '105px', '85px', '70px', '80px', '65px', '70px', '85px', '70px', '100px', '95px', '50px', '50px', '50px'],
     rowValuesFunction: (item) => [
       item.Name,
       item.Properties?.Category ?? 'N/A',
