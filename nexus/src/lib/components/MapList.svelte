@@ -42,7 +42,7 @@
     Toulan: [{ Name: 'Toulan', _type: 'toulan' }],
     Monria: [
       { Name: 'Monria', _type: 'monria' },
-      { Name: 'DSEC-9', _type: 'dsec9' },
+      { Name: 'DSEC9', _type: 'dsec9' },
     ],
     Space: [
       { Name: 'Space', _type: 'space' },

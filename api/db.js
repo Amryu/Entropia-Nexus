@@ -42,10 +42,10 @@ const idOffsets = {
 
 const queries = {
   // Maps & Locations
-  Areas: 'SELECT "Areas".*, "Planets"."Name" AS "Planet" FROM "Areas" INNER JOIN "Planets" ON "Areas"."PlanetId" = "Planets"."Id"',
-  Locations: 'SELECT "Locations".*, "Planets"."Name" AS "Planet" FROM "Locations" INNER JOIN "Planets" ON "Locations"."PlanetId" = "Planets"."Id"',
+  Areas: 'SELECT "Areas".*, "Planets"."Name" AS "Planet", "Planets"."TechnicalName" FROM "Areas" INNER JOIN "Planets" ON "Areas"."PlanetId" = "Planets"."Id"',
+  Locations: 'SELECT "Locations".*, "Planets"."Name" AS "Planet", "Planets"."TechnicalName" FROM "Locations" INNER JOIN "Planets" ON "Locations"."PlanetId" = "Planets"."Id"',
   Planets: 'SELECT * FROM "Planets"',
-  Teleporters: 'SELECT "Teleporters".*, "Planets"."Name" AS "Planet" FROM "Teleporters" INNER JOIN "Planets" ON "Teleporters"."PlanetId" = "Planets"."Id"',
+  Teleporters: 'SELECT "Teleporters".*, "Planets"."Name" AS "Planet", "Planets"."TechnicalName" FROM "Teleporters" INNER JOIN "Planets" ON "Teleporters"."PlanetId" = "Planets"."Id"',
 
   // Items
   Items: 'SELECT * FROM "Items"',
@@ -265,6 +265,9 @@ function formatArea(x) {
     },
     Planet: {
       Name: x.Planet,
+      Properties: {
+        TechnicalName: x.TechnicalName,
+      },
       Links: {
         "$Url": `/planets/${x.PlanetId}`
       }
@@ -304,6 +307,9 @@ function formatLocation(x) {
     },
     Planet: {
       Name: x.Planet,
+      Properties: {
+        TechnicalName: x.TechnicalName,
+      },
       Links: {
         "$Url": `/planets/${x.PlanetId}`
       }
@@ -364,6 +370,9 @@ function formatTeleporter(x) {
     },
     Planet: {
       Name: x.Planet,
+      Properties: {
+        TechnicalName: x.TechnicalName,
+      },
       Links: {
         "$Url": `/planets/${x.PlanetId}`
       }

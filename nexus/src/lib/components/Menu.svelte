@@ -41,7 +41,7 @@
       { label: 'Arkadia Underground', url: 'arkadiaunderground' },
       { label: 'Arkadia Moon', url: 'arkadiamoon' },
       { label: 'Monria', url: 'monria' },
-      { label: 'DSEC-9', url: 'dsec9' },
+      { label: 'DSEC9', url: 'dsec9' },
       { label: 'Toulan', url: 'toulan' },
       { label: 'Rocktropia', url: 'rocktropia' },
       { label: 'HELL', url: 'hell' },

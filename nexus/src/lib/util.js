@@ -126,7 +126,7 @@ export function getPlanetName(planetName) {
     return 'Monria';
   }
   else if (planetName === 'dsec9') {
-    return 'DSEC-9';
+    return 'DSEC9';
   }
   else if (planetName === 'cyrene') {
     return 'Cyrene';
@@ -157,7 +157,7 @@ export function getMainPlanetName(planetName) {
     return 'ROCKtropia';
   } else if (planetName === 'Ancient Greece') {
     return 'Next Island';
-  } else if (planetName === 'DSEC-9') {
+  } else if (planetName === 'DSEC9') {
     return 'Monria';
   } else {
     return planetName;
