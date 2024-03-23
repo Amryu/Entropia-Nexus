@@ -75,6 +75,6 @@
   {#each menu as item}
     <!-- svelte-ignore a11y-click-events-have-key-events -->
     <!-- svelte-ignore a11y-no-static-element-interactions -->
-    <button on:click={() => { visible = false; item.action(payload); }}>{item.label}</button>
+    <button on:click={() => { visible = false; item.action(payload, contextMenuPos); }}>{item.label}</button>
   {/each}
 </div>

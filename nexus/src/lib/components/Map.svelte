@@ -9,12 +9,14 @@
   import ContextMenu from './ContextMenu.svelte';
   import { contextmenu } from './ContextMenu';
 
+  import { pathDataToPolys }  from 'svg-path-to-polygons'
+  import Properties from './Properties.svelte';
+
   export let mapName = '';
   export let planet = null;
   export let locations = [];
   export let selected;
   export let hovered;
-  export let highlighted = '';
 
   const mapLoadedStore = writable(false);
 
@@ -25,10 +27,6 @@
   $: if ($mapLoadedStore === false) {
     initPromise();
   }
-
-  let mapContextMenu = [
-    { label: 'Copy', action: (payload) => copyLocation(payload)},
-  ];
 
   let imageTileSize;
   let imageToEntropiaRatio;
@@ -58,7 +56,131 @@
   let tooltipText;
   let wasPositionCopied = false;
 
-  let contextMenuElement;
+  let editMode = false;
+  let editType = null;
+  let editLocation = null;
+
+  let editDrag = false;
+
+  function initShapeData(e, editLocation) {
+    if (e.target.value === 'Circle') {
+      editLocation.Properties.Data = {
+        x: editLocation.Properties.Coordinates.Longitude ?? 0,
+        y: editLocation.Properties.Coordinates.Latitude ?? 0,
+        radius: editLocation.Properties.Data.radius ?? 0
+      };
+    } else if (e.target.value === 'Rectangle') {
+      editLocation.Properties.Data = {
+        x: editLocation.Properties.Coordinates.Longitude ?? 0,
+        y: editLocation.Properties.Coordinates.Latitude ?? 0,
+        width: editLocation.Properties.Data.width ?? 500,
+        height: editLocation.Properties.Data.height ?? 500
+      };
+    } else if (e.target.value === 'Polygon') {
+      editLocation.Properties._vertices = editLocation.Properties._vertices ?? [];
+      editLocation.Properties.Data = { vertices: [] };
+    }
+  }
+
+  $: if (editLocation?.Properties?.Shape === 'Circle') {
+    editLocation.Properties.Coordinates.Longitude = editLocation.Properties.Data.x;
+    editLocation.Properties.Coordinates.Latitude = editLocation.Properties.Data.y;
+  }
+
+  $: if (editLocation?.Properties?.Shape === 'Polygon') {
+    if (!editLocation.Properties._vertices) {
+      editLocation.Properties._vertices = [];
+    }
+
+    editLocation.Properties.Data.vertices = editLocation.Properties._vertices.flatMap(vertex => {
+      return [Math.round(vertex[0] + editLocation.Properties.Coordinates.Longitude), Math.round(vertex[1] + editLocation.Properties.Coordinates.Latitude)];
+    });
+  }
+
+  $: if (editLocation) {
+    if (!locations.find(x => x === editLocation)) {
+      locations.push(editLocation);
+    }
+
+    locations = locations;
+    
+
+    console.log('editLocation:', editLocation)
+  }
+
+  let svgContextMenu = [
+    { label: 'Copy Waypoint', action: (payload) => copyLocation(payload)},
+  ];
+  let svgContextMenuElement;
+  
+  let mapContextMenu = [
+    { label: 'Add Location', action: (_, position) => {
+      if (editLocation !== null) {
+        locations = locations.filter(x => x !== editLocation);
+      }
+      
+      let canvasCoords = windowToCanvasCoords(position.x, position.y);
+      let entropiaCoords = canvasCoordsToEntropiaCoords(canvasCoords.x, canvasCoords.y);
+      
+      editLocation = {
+        _isCustom: true,
+        Name: 'New Location',
+        Planet: planet,
+        Properties: {
+          Type: 'Teleporter',
+          Coordinates: {
+            Longitude: Math.round(entropiaCoords.x),
+            Latitude: Math.round(entropiaCoords.y),
+            Altitude: 100
+          },
+        }
+      };
+
+      editMode = true;
+      editType = 'Location';
+    }},
+    { label: 'Add Area', action: (_, position) => {
+      if (editLocation !== null) {
+        locations = locations.filter(x => x !== editLocation);
+      }
+
+      let canvasCoords = windowToCanvasCoords(position.x, position.y);
+      let entropiaCoords = canvasCoordsToEntropiaCoords(canvasCoords.x, canvasCoords.y);
+      
+      editLocation = {
+        _isCustom: true,
+        Name: 'New Area',
+        Planet: planet,
+        Properties: {
+          Type: 'LandArea',
+          Shape: 'Circle',
+          Data: {
+            x: Math.round(entropiaCoords.x),
+            y: Math.round(entropiaCoords.y),
+            radius: 500
+          },
+          Coordinates: {
+            Longitude: Math.round(entropiaCoords.x),
+            Latitude: Math.round(entropiaCoords.y),
+            Altitude: 100
+          }
+        }
+      };
+
+      editMode = true;
+      editType = 'Area';
+    }},
+    { 
+      label: 'Copy Waypoint',
+      action: (_, position) => {
+        let canvasCoords = windowToCanvasCoords(position.x, position.y);
+        let entropiaCoords = canvasCoordsToEntropiaCoords(canvasCoords.x, canvasCoords.y);
+        
+        navigator.clipboard.writeText(`/wp ${getWaypoint(planet.Properties.TechnicalName ?? planet.Name, entropiaCoords.x.toFixed(0), entropiaCoords.y.toFixed(0), 100, 'Waypoint')}`)
+      }
+    },
+  ];
+  let mapContextMenuElement;
 
   $: if (selected) {
     focusOnLocation(selected);
@@ -198,7 +320,7 @@
     zoomTo(targetZoom);
   }
 
-  function animateZoom(timestamp, animationDuration = 50) {
+  function animateZoom(timestamp, animationDuration = 150) {
     if (zoomTransitionStart === -1) {
       zoomTransitionStart = timestamp;
     }
@@ -248,7 +370,7 @@
   let target = null;
   let moveTransitionStart = null;
 
-  function moveTo(position, animationDuration = 50) {
+  function moveTo(position, animationDuration = 150) {
     target = position;
 
     moveTransitionStart = -1;
@@ -386,21 +508,106 @@
     return imageCoordsToEntropiaCoords(imageCoords.x, imageCoords.y);
   }
 
+  function windowToCanvasCoords(windowX, windowY) {
+    if (typeof window === 'undefined') {
+      return { x: 0, y: 0 };
+    }
+
+    const rect = canvasElement.getBoundingClientRect();
+    return {
+      x: (windowX - rect.left) * window.devicePixelRatio,
+      y: (windowY - rect.top) * window.devicePixelRatio,
+    };
+  }
+
+  function canvasToWindowCoords(canvasX, canvasY) {
+    if (typeof window === 'undefined') {
+      return { x: 0, y: 0 };
+    }
+
+    const rect = canvasElement.getBoundingClientRect();
+    return {
+      x: canvasX / window.devicePixelRatio + rect.left,
+      y: canvasY / window.devicePixelRatio + rect.top,
+    };
+  }
+
   function getAreas(locations) {
     return locations.filter(x => x.Properties.Type.endsWith('Area'));
   }
 
   function getTooltipText(object) {
-    return `${object.Name} - <span style="color: gray;">(${wasPositionCopied ? 'Copied!' : 'Right-click to copy'})</span><br />${getLocationString(object)}`;
+    return `${object.Name} - <span style="color: gray;">(${wasPositionCopied ? 'Copied!' : 'Right-click to copy'})</span><br />${getWaypointFromLocation(object)}`;
   }
 
   function copyLocation(object) {
-    navigator.clipboard.writeText(`/wp ${getLocationString(object)}`);
+    navigator.clipboard.writeText(`/wp ${getWaypointFromLocation(object)}`);
   }
 
-  function getLocationString(object) {
-    return `[${object.Planet.Properties.TechnicalName ?? object.Planet.Name}, ${object.Properties.Coordinates.Longitude}, ${object.Properties.Coordinates.Latitude}, ${object.Properties.Coordinates.Altitude}, ${object.Name}]`;
+  function getWaypointFromLocation(location) {
+    return `/wp ${getWaypoint(location.Planet.Properties.TechnicalName ?? location.Planet.Name, location.Properties.Coordinates.Longitude, location.Properties.Coordinates.Latitude, location.Properties.Coordinates.Altitude, location.Name)}`;
   }
+
+  function getWaypoint(planet, x, y, z, name) {
+    return `[${planet}, ${x}, ${y}, ${z}, ${name}]`;
+  }
+
+  function getColorByType(type) {
+    switch (type) {
+      case 'Teleporter':
+        return { color: 'aqua', pattern: null };
+      case 'LandArea':
+        return { color: 'green', pattern: null };
+      case 'ZoneArea':
+        return { color: 'blue', pattern: null };
+      case 'PvpLootArea':
+        return { color: 'red', pattern: null };
+      case 'PvpArea':
+        return { color: 'orange', pattern: null };
+      case 'Creature':
+        return { color: 'yellow', pattern: null };
+      case 'EventArea':
+        return { color: 'white', pattern: null };
+      case 'WaveEventArea':
+        return { color: 'purple', pattern: null };
+      case 'MobArea':
+        return { color: 'yellow', pattern: null };
+      default:
+        return 'white';
+    }
+  }
+
+  function handleSvgImport(event) {
+    const file = event.target.files[0];
+    const reader = new FileReader();
+
+    reader.onload = function(e) {
+      const svg = e.target.result;
+      const parser = new DOMParser();
+      const doc = parser.parseFromString(svg, 'image/svg+xml');
+      const svgElement = doc.querySelector('svg');
+      const paths = svgElement.querySelectorAll('path');
+
+      if (paths.length !== 1) {
+        throw new Error('Expected exactly one path in the SVG');
+      }
+
+      // Convert svg path to absolute coordinates
+      const path = paths[0];
+
+      const pathData = path.getAttribute('d');
+
+      let vertices = pathDataToPolys(pathData, { decimals: 0 })[0];
+
+      editLocation.Properties._vertices = vertices;
+    };
+
+    reader.readAsText(file);
+  }
+
+  let mapContextMenuObject = { contextMenu: null, payload: null }
+
+  $: mapContextMenuObject = { contextMenu: mapContextMenuElement, payload: null }
 </script>
 
 <style>
@@ -458,6 +665,19 @@
   .location-selected {
     fill: yellow;
   }
+
+  .edit-window {
+    z-index: 100;
+    position: absolute;
+    bottom: 10px;
+    right: 10px;
+    background-color: var(--secondary-color);
+    padding: 6px;
+    border: 1px solid var(--text-color);
+    display: none;
+    width: 200px;
+    grid-template-columns: repeat(max-content 1fr);
+  }
 </style>
 
 <Tooltip
@@ -469,19 +689,109 @@
     if (e.detail.button === 0) {
       navigate(`/maps/${planet.Name.replace(/[^0-9a-zA-Z]/, '').toLowerCase()}/${e.detail.payload.Name}`);
     }
-    else if (e.detail.button === 2) {
-      copyTooltipText(e.detail.payload);
-      tooltipText = getTooltipText(e.detail.payload);
-      selected = e.detail.payload;
-    }
   }} />
 <ContextMenu
-  bind:this={contextMenuElement}
+  bind:this={svgContextMenuElement}
+  menu={svgContextMenu} />
+<ContextMenu
+  bind:this={mapContextMenuElement}
   menu={mapContextMenu} />
 <div class="map-container">
-  <canvas bind:this={canvasElement} on:mousedown={onMouseDown} on:mousemove={onMouseMove} on:mouseup={onMouseUp} on:mouseleave={onMouseUp} on:wheel={onWheel}>
+  <canvas use:contextmenu={mapContextMenuObject} bind:this={canvasElement} on:mousedown={onMouseDown} on:mousemove={onMouseMove} on:mouseup={onMouseUp} on:mouseleave={onMouseUp} on:wheel={onWheel}>
   </canvas>
+  <!-- EDITOR START -->
+  {#if editMode && editLocation}
+  <div class="edit-window" style="display: {editMode ? 'grid' : 'none'};">
+    <input style="grid-column: span 2;" type="text" bind:value={editLocation.Name} />
+    {#if editType === 'Location'}
+      Type:
+      <select bind:value={editLocation.Properties.Type}>
+        <option>Teleporter</option>
+        <option>Outpost</option>
+        <option value="Npc">NPC</option>
+        <option value="Objective">Mission Objective</option>
+        <option>Vendor</option>
+        <option>Other</option>
+      </select>
+      Longitude:
+      <input size="1" type="text" bind:value={editLocation.Properties.Coordinates.Longitude} />
+      Latitude
+      <input size="1" type="text" bind:value={editLocation.Properties.Coordinates.Latitude} />
+      Altitude
+      <input size="1" type="text" bind:value={editLocation.Properties.Coordinates.Altitude} />
+    {:else if editType === 'Area'}
+      Type:
+      <select bind:value={editLocation.Properties.Type}>
+        <option value="LandArea">Land Area</option>
+        <option value="ZoneArea">Zone</option>
+        <option value="PvpLootArea">Lootable PvP</option>
+        <option value="PvpArea">PvP</option>
+        <option value="EventArea">Event Area</option>
+        <option value="WaveEventArea">Wave Event</option>
+        <option value="MobArea">Mob Spawn</option>
+      </select>
+      Shape:
+      <select on:change={(e) => initShapeData(e, editLocation)} bind:value={editLocation.Properties.Shape}>
+        <option>Circle</option>
+        <option>Rectangle</option>
+        <option>Polygon</option>
+      </select>
+      {#if editLocation.Properties.Shape === 'Circle'}
+      Longitude:
+      <input type="number" style="width: 70%;" bind:value={editLocation.Properties.Data.x} />
+      Latitude:
+      <input type="number" style="width: 70%;" bind:value={editLocation.Properties.Data.y} />
+      Radius:
+      <input type="number" style="width: 70%;" bind:value={editLocation.Properties.Data.radius} />
+      {:else if editLocation.Properties.Shape === 'Rectangle'}
+      Longitude:
+      <input type="number" style="width: 70%;" bind:value={editLocation.Properties.Data.x} />
+      Latitude:
+      <input type="number" style="width: 70%;" bind:value={editLocation.Properties.Data.y} />
+      Width:
+      <input type="number" style="width: 70%;" bind:value={editLocation.Properties.Data.width} />
+      Height:
+      <input type="number" style="width: 70%;" bind:value={editLocation.Properties.Data.height} />
+      {:else if editLocation.Properties.Shape === 'Polygon'}
+      Longitude:
+      <input type="number" style="width: 70%;" bind:value={editLocation.Properties.Coordinates.Longitude} />
+      Latitude:
+      <input type="number" style="width: 70%;" bind:value={editLocation.Properties.Coordinates.Latitude} />
+      Vertices:
+      <textarea bind:value={editLocation.Properties._vertices} />
+      Import: <input type="file" accept=".svg" on:change={handleSvgImport} />
+      {/if}
+      Altitude:
+      <input type="number" style="width: 70%;" bind:value={editLocation.Properties.Coordinates.Altitude} />
+    {/if}
+
+    <button style="grid-column: span 2;" on:click={() => alert('This tool is intended to help adding new map elements. When you hit "Save" you will copy a JSON object, which can be submitted to the Entropia Nexus Discord. I greatly appreciate the help!')}>Help</button>
+    <button style="grid-column: span 2;" on:click={() => { locations = locations.filter(location => location !== editLocation); editLocation = null; editMode = false; }}>Cancel and Delete</button>
+    <button style="grid-column: span 2;" on:click={() => { navigator.clipboard.writeText(JSON.stringify(editLocation)); locations = locations.filter(location => location !== editLocation); editLocation = null; editMode = false; }}>Save to Clipboard</button>
+  </div>
+  {/if}
+  <!-- EDITOR END -->
   <svg class="map-overlay {dragging ? 'dragging' : ''}" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <pattern id="stripe-lightblue" patternUnits="userSpaceOnUse" width="4" height="4">
+        <path d="M-1,1 l2,-2 M0,4 l4,-4 M3,5 l2,-2" style="stroke: lightblue; stroke-width: 3;" />
+      </pattern>
+      <pattern id="stripe-green" patternUnits="userSpaceOnUse" width="4" height="4">
+        <path d="M-1,1 l2,-2 M0,4 l4,-4 M3,5 l2,-2" style="stroke: green; stroke-width: 3;" />
+      </pattern>
+      <pattern id="stripe-yellow" patternUnits="userSpaceOnUse" width="4" height="4">
+        <path d="M-1,1 l2,-2 M0,4 l4,-4 M3,5 l2,-2" style="stroke: yellow; stroke-width: 3;" />
+      </pattern>
+      <pattern id="stripe-purple" patternUnits="userSpaceOnUse" width="4" height="4">
+        <path d="M-1,1 l2,-2 M0,4 l4,-4 M3,5 l2,-2" style="stroke: purple; stroke-width: 3;" />
+      </pattern>
+      <pattern id="stripe-black" patternUnits="userSpaceOnUse" width="4" height="4">
+        <path d="M-1,1 l2,-2 M0,4 l4,-4 M3,5 l2,-2" style="stroke: black; stroke-width: 3;" />
+      </pattern>
+      <pattern id="wave" patternUnits="userSpaceOnUse" width="10" height="10">
+        <path d="M 0 10 C 2.5 0, 7.5 0, 10 10" style="stroke: purple; stroke-width: 3;" />
+      </pattern>
+    </defs>
     {#if canvasBounds != null && imageTileSize && imgLoaded}
       {#each (getAreas(locations) ?? [])
         .filter(x => x.Properties.Shape === 'Circle')
@@ -496,16 +806,36 @@
             object: x
           };
         }).filter(x => !isNaN(x.x) && !isNaN(x.y)) as circle (circle.object.Name+','+circle.x+','+circle.y)}
+        <!-- svelte-ignore a11y-no-static-element-interactions -->
+        <!-- svelte-ignore a11y-mouse-events-have-key-events -->
         <circle
           use:tooltip={{ tooltip: tooltipElement, payload: circle.object }}
-          use:contextmenu={{ contextMenu: contextMenuElement, payload: circle.object }}
+          use:contextmenu={{ contextMenu: svgContextMenuElement, payload: circle.object }}
           on:mousewheel={onWheel}
+          on:mousedown={(e) => {
+            editDrag = circle.object === editLocation;
+            
+            mousePos.x = e.clientX;
+            mousePos.y = e.clientY;
+          }}
+          on:mousemove={(e) => {
+            if (!editDrag || !editLocation) {
+              return;
+            }
+            
+            let canvasCoords = windowToCanvasCoords(e.clientX, e.clientY);
+            let entropiaCoords = canvasCoordsToEntropiaCoords(canvasCoords.x, canvasCoords.y);
+  
+            editLocation.Properties.Data.x = Math.round(entropiaCoords.x);
+            editLocation.Properties.Data.y = Math.round(entropiaCoords.y);
+          }}
+          on:mouseup={() => editDrag = false}
           cx={circle.x}
           cy={circle.y}
           r={circle.radius}
-          fill="blue"
+          fill={getColorByType(circle.object.Properties.Type).color}
           fill-opacity="0.3"
-          stroke="blue"
+          stroke={getColorByType(circle.object.Properties.Type).color}
           stroke-width="1" />
       {/each}
 
@@ -525,17 +855,48 @@
             object: x
           };
         }).filter(x => !isNaN(x.x) && !isNaN(x.y)) as rect (rect.object.Name+','+rect.x+','+rect.y)}
+        <!-- svelte-ignore a11y-no-static-element-interactions -->
+        <!-- svelte-ignore a11y-mouse-events-have-key-events -->
         <rect
         use:tooltip={{ tooltip: tooltipElement, payload: rect.object }}
-        use:contextmenu={{ contextMenu: contextMenuElement, payload: rect.object }}
+        use:contextmenu={{ contextMenu: svgContextMenuElement, payload: rect.object }}
         on:mousewheel={onWheel}
+        on:mousedown={(e) => {
+          editDrag = rect.object === editLocation;
+          
+          mousePos.x = e.clientX;
+          mousePos.y = e.clientY;
+        }}
+        on:mousemove={(e) => {
+          if (!editDrag || !editLocation) {
+            return;
+          }
+
+          let dx = e.clientX - mousePos.x;
+          let dy = e.clientY - mousePos.y;
+          mousePos.x = e.clientX;
+          mousePos.y = e.clientY;
+
+          let canvasCoords = entropiaCoordsToCanvasCoords(editLocation.Properties.Data.x, editLocation.Properties.Data.y)
+          let windowCoords = canvasToWindowCoords(canvasCoords.x, canvasCoords.y);
+
+          windowCoords.x += dx;
+          windowCoords.y += dy;
+
+          canvasCoords = windowToCanvasCoords(windowCoords.x, windowCoords.y);
+          let entropiaCoords = canvasCoordsToEntropiaCoords(canvasCoords.x, canvasCoords.y);
+
+          editLocation.Properties.Data.x = Math.round(entropiaCoords.x);
+          editLocation.Properties.Data.y = Math.round(entropiaCoords.y);
+        }}
+        on:mouseup={() => editDrag = false}
         x={rect.x}
         y={rect.y}
         width={rect.width}
         height={rect.height}
-        fill="green"
+        fill={getColorByType(rect.object.Properties.Type).color}
         fill-opacity="0.3"
-        stroke="green"
+        stroke={getColorByType(rect.object.Properties.Type).color}
         stroke-width="1" />
       {/each}
       
@@ -544,21 +905,52 @@
         .map(x => {
           return {
             object: x,
-            vertices: x.Properties.Data.vertices.reduce((result, value, index, array) => {
+            vertices: (x.Properties.Data.vertices ?? []).reduce((result, value, index, array) => {
               if (index % 2 === 0)
                   result.push([value, array[index + 1]]);
               return result;
             }, []).map(vertex => entropiaCoordsToCanvasCoords(vertex[0], vertex[1]))
           };
-        }) as polygon (polygon.object.Name+','+polygon.x+','+polygon.y)}
+        }) as polygon (polygon.object.Name+','+polygon.object.Properties.Coordinates.Longitude+','+polygon.object.Properties.Coordinates.Latitude)}
+        <!-- svelte-ignore a11y-no-static-element-interactions -->
+        <!-- svelte-ignore a11y-mouse-events-have-key-events -->
         <polygon
           use:tooltip={{ tooltip: tooltipElement, payload: polygon.object }}
-          use:contextmenu={{ contextMenu: contextMenuElement, payload: polygon.object }}
+          use:contextmenu={{ contextMenu: svgContextMenuElement, payload: polygon.object }}
           on:mousewheel={onWheel}
+          on:mousedown={(e) => {
+            editDrag = polygon.object === editLocation;
+            
+            mousePos.x = e.clientX;
+            mousePos.y = e.clientY;
+          }}
+          on:mousemove={(e) => {
+            if (!editDrag || !editLocation) {
+              return;
+            }
+
+            let dx = e.clientX - mousePos.x;
+            let dy = e.clientY - mousePos.y;
+            mousePos.x = e.clientX;
+            mousePos.y = e.clientY;
+
+            let canvasCoords = entropiaCoordsToCanvasCoords(editLocation.Properties.Coordinates.Longitude, editLocation.Properties.Coordinates.Latitude)
+            let windowCoords = canvasToWindowCoords(canvasCoords.x, canvasCoords.y);
+
+            windowCoords.x += dx;
+            windowCoords.y += dy;
+
+            canvasCoords = windowToCanvasCoords(windowCoords.x, windowCoords.y);
+            let entropiaCoords = canvasCoordsToEntropiaCoords(canvasCoords.x, canvasCoords.y);
+
+            editLocation.Properties.Coordinates.Longitude = Math.round(entropiaCoords.x);
+            editLocation.Properties.Coordinates.Latitude = Math.round(entropiaCoords.y);
+          }}
+          on:mouseup={() => editDrag = false}
           points={polygon.vertices.map(vertex => `${vertex.x},${vertex.y}`).join(' ')}
-          fill="red"
+          fill={getColorByType(polygon.object.Properties.Type).color}
           fill-opacity="0.3"
-          stroke="red"
+          stroke={getColorByType(polygon.object.Properties.Type).color}
           stroke-width="1" />
       {/each}
       
@@ -572,20 +964,38 @@
         }).filter(x => !isNaN(x.x) && !isNaN(x.y)) as location}
         <!-- svelte-ignore a11y-no-static-element-interactions -->
         <!-- svelte-ignore a11y-mouse-events-have-key-events -->
-        <circle
-          use:tooltip={{ tooltip: tooltipElement, payload: location.object }}
-          use:contextmenu={{ contextMenu: contextMenuElement, payload: location.object }}
-          on:mousewheel={onWheel}
-          on:mouseover={() => hovered = location.object}
-          on:mouseout={() => hovered = null}
-          class:location-hovered={hovered?.Name === location.object.Name && hovered !== selected}
-          class:location-selected={selected?.Name === location.object.Name}
-          cx={location.x}
-          cy={location.y}
-          r={selected?.Name === location.object.Name || hovered?.Name === location.object.Name ? 6 : 4}
-          fill="aqua"
-          stroke="red"
-          stroke-width=1 />
+        {#if location.object.Properties.Type === 'Teleporter'}
+          <circle
+            use:tooltip={{ tooltip: tooltipElement, payload: location.object }}
+            use:contextmenu={{ contextMenu: svgContextMenuElement, payload: location.object }}
+            on:mousewheel={onWheel}
+            on:mouseover={() => hovered = location.object}
+            on:mouseout={() => hovered = null}
+            class:location-hovered={hovered?.Name === location.object.Name && hovered !== selected}
+            class:location-selected={selected?.Name === location.object.Name}
+            cx={location.x}
+            cy={location.y}
+            r={selected?.Name === location.object.Name || hovered?.Name === location.object.Name ? 6 : 4}
+            fill="aqua"
+            stroke="red"
+            stroke-width=1 />
+        {:else}
+          <rect
+            use:tooltip={{ tooltip: tooltipElement, payload: location.object }}
+            use:contextmenu={{ contextMenu: svgContextMenuElement, payload: location.object }}
+            on:mousewheel={onWheel}
+            on:mouseover={() => hovered = location.object}
+            on:mouseout={() => hovered = null}
+            class:location-hovered={hovered?.Name === location.object.Name && hovered !== selected}
+            class:location-selected={selected?.Name === location.object.Name}
+            x={location.x - 5}
+            y={location.y - 5}
+            width={10}
+            height={10}
+            fill="white"
+            stroke="black"
+            stroke-width=1 />
+        {/if}
       {/each}
     {/if}
   </svg>

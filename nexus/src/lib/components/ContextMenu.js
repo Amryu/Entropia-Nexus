@@ -8,7 +8,8 @@ export function contextmenu(node, { contextMenu, payload }) {
   return {
     destroy() {
       node.removeEventListener('contextmenu', contextMenuFunc);
-    }
+    },
+    update(newValue) { ({ contextMenu, payload } = newValue); }
   };
 }
 
