@@ -10,13 +10,15 @@
   import { contextmenu } from './ContextMenu';
 
   import { pathDataToPolys }  from 'svg-path-to-polygons'
-  import Properties from './Properties.svelte';
 
   export let mapName = '';
   export let planet = null;
   export let locations = [];
   export let selected;
   export let hovered;
+  export let mapSettings;
+
+  let filteredLocations = [];
 
   const mapLoadedStore = writable(false);
 
@@ -182,8 +184,43 @@
   ];
   let mapContextMenuElement;
 
+  $: if (canvasBounds && mapCenterPos != null && zoom) {
+    locations = locations;
+  }
+
+  $: if (mapName) reloadImage(mapName);
+
   $: if (selected) {
     focusOnLocation(selected);
+  }
+
+  $: if (mapSettings) {
+    filteredLocations = locations.filter(x => {
+      if (mapSettings.locations.enabled && !x.Properties.Type.endsWith('Area')) {
+        if (mapSettings.locations.teleporters && x.Properties.Type === 'Teleporter') return true;
+        if (mapSettings.locations.outposts && x.Properties.Type === 'Outpost') return true;
+        if (mapSettings.locations.missions && (x.Properties.Type === 'Mission' || x.Properties.Type === 'Objective')) return true;
+      }
+
+      if (mapSettings.areas.enabled && x.Properties.Type.endsWith('Area')) {
+        if (mapSettings.areas.landAreas && x.Properties.Type === 'LandArea') return true;
+        if (mapSettings.areas.zoneAreas && x.Properties.Type === 'ZoneArea') return true;
+        if (mapSettings.areas.pvpAreas && (x.Properties.Type === 'PvpArea' || x.Properties.Type === 'PvpLootArea')) return true;
+        if (mapSettings.areas.eventAreas && x.Properties.Type === 'EventArea') return true;
+        if (mapSettings.areas.waveEvents && item.Properties?.Type === 'WaveEventArea') return true;
+      }
+
+      if (mapSettings.mobs.enabled && x.Properties.Type === 'MobArea') {
+        return true;
+        if (mapSettings.mobs.rookie && false) return true;
+        if (mapSettings.mobs.adept && false) return true;
+        if (mapSettings.mobs.intermediate && false) return true;
+        if (mapSettings.mobs.expert && false) return true;
+        if (mapSettings.mobs.uber && false) return true;
+      }
+
+      return false;
+    });
   }
 
   async function focusOnLocation(location) {
@@ -197,12 +234,6 @@
       
     moveAndZoomTo(entropiaCoordsToImageCoords(location.Properties.Coordinates.Longitude, location.Properties.Coordinates.Latitude), 1/(planet.Properties.Map.Width*0.5));
   }
-
-  $: if (canvasBounds && mapCenterPos != null && zoom) {
-    locations = locations;
-  }
-
-  $: if (mapName) reloadImage(mapName);
 
   let resizeObserver;
 
@@ -443,7 +474,43 @@
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(img, srcX, srcY, visibleWidth, visibleHeight, destX, destY, destWidth, destHeight);
 
+    if (mapSettings.settings.showGrid) drawGrid(ctx);
+
     drawAnimationId = requestAnimationFrame(draw);
+  }
+
+  function drawGrid(ctx) {
+    const visibleHeight = imageTileSize / zoom;
+    const visibleWidth = (canvasBounds.width / canvasBounds.height) * visibleHeight;
+
+    const srcX = mapCenterPos.x - visibleWidth / 2;
+    const srcY = mapCenterPos.y - visibleHeight / 2;
+
+    const gridStep = imageTileSize;
+    const gridColor = 'rgba(255, 255, 255, 0.3)';
+    const gridWidth = 1;
+
+    ctx.strokeStyle = gridColor;
+    ctx.lineWidth = gridWidth;
+
+    const gridStartX = Math.floor(srcX / gridStep) * gridStep;
+    const gridStartY = Math.floor(srcY / gridStep) * gridStep;
+
+    for (let x = gridStartX; x < srcX + visibleWidth; x += gridStep) {
+      const canvasX = (x - srcX) * (canvasBounds.width / visibleWidth);
+      ctx.beginPath();
+      ctx.moveTo(canvasX, 0);
+      ctx.lineTo(canvasX, canvasBounds.height);
+      ctx.stroke();
+    }
+
+    for (let y = gridStartY; y < srcY + visibleHeight; y += gridStep) {
+      const canvasY = (y - srcY) * (canvasBounds.height / visibleHeight);
+      ctx.beginPath();
+      ctx.moveTo(0, canvasY);
+      ctx.lineTo(canvasBounds.width, canvasY);
+      ctx.stroke();
+    }
   }
 
   function entropiaCoordsToImageCoords(entropiaX, entropiaY) {
@@ -793,7 +860,7 @@
       </pattern>
     </defs>
     {#if canvasBounds != null && imageTileSize && imgLoaded}
-      {#each (getAreas(locations) ?? [])
+      {#each (getAreas(filteredLocations) ?? [])
         .filter(x => x.Properties.Shape === 'Circle')
         .map(x => { 
           let centerPoint = entropiaCoordsToCanvasCoords(x.Properties.Data.x, x.Properties.Data.y);
@@ -839,7 +906,7 @@
           stroke-width="1" />
       {/each}
 
-      {#each (getAreas(locations) ?? [])
+      {#each (getAreas(filteredLocations) ?? [])
         .filter(x => x.Properties.Shape === 'Rectangle')
         .map(x => {
           let startCoords = entropiaCoordsToCanvasCoords(x.Properties.Data.x, x.Properties.Data.y);
@@ -900,7 +967,7 @@
         stroke-width="1" />
       {/each}
       
-      {#each (getAreas(locations) ?? [])
+      {#each (getAreas(filteredLocations) ?? [])
         .filter(x => x.Properties.Shape === 'Polygon')
         .map(x => {
           return {
@@ -954,8 +1021,8 @@
           stroke-width="1" />
       {/each}
       
-      {#each (locations ?? [])
-        .filter(x => !getAreas(locations).find(y => x.Name === y.Name && x.Properties.Type === y.Properties.Type))
+      {#each (filteredLocations ?? [])
+        .filter(x => !getAreas(filteredLocations).find(y => x.Name === y.Name && x.Properties.Type === y.Properties.Type))
         .map(x =>  {
           return {
             ...entropiaCoordsToCanvasCoords(x.Properties.Coordinates.Longitude, x.Properties.Coordinates.Latitude),

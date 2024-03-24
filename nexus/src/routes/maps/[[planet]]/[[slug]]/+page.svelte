@@ -63,7 +63,6 @@
   <div class="map-list centered">
     <MapList
       planet={currentPlanet}
-      planets={items}
       locations={locations}
       bind:selected={selectedLocation}
       bind:hovered={hoveredLocation}
@@ -81,6 +80,7 @@
         mapName={mapName}
         planet={currentPlanet}
         locations={locations}
+        mapSettings={mapSettings}
         bind:selected={selectedLocation}
         bind:hovered={hoveredLocation} />
     {:else}
