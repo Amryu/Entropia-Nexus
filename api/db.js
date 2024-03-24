@@ -676,7 +676,7 @@ function formatBlueprint(x, ingredients) {
       Skill: {
         LearningIntervalStart: x.MinLvl !== null ? Number(x.MinLvl) : null,
         LearningIntervalEnd:x.MaxLvl !== null ? Number(x.MaxLvl) : null,
-        SiB: x.IsSib,
+        IsSiB: x.IsSib,
       }
     },
     Profession: {
