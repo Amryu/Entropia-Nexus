@@ -68,12 +68,12 @@
       { label: 'Crystal Palace', url: 'crystalpalace' },
       { label: 'Asteroid F.O.M.A', url: 'asteroidfoma' }
     ],
-    /*
     'Tools': [
-      { label: 'Loadout Manager', url: 'loadoutmanager' },
+      { label: 'Loadout Manager', url: 'loadouts' },
+      { label: 'API', url: 'api' },
+    /*
       { label: 'Skill Manager', url: 'skillmanager' },
-      { label: 'API', url: 'api' }
-    ]*/
+  */]
   };
 
   const userMenuItems: string[] = ['Profile', 'Settings', 'Dashboard'];
@@ -251,7 +251,11 @@
           {#if dropdownOpen === menu}
           <div class="dropdown-content">
               {#each menuItems[menu] as item (item)}
-              <a use:loading href="/{menu.toLowerCase()}/{item.url.toLowerCase()}"><div class="menu-dropdown-item">{item.label}</div></a>
+                {#if item.url === 'api'}
+                  <a href="{import.meta.env.VITE_API_URL}/docs"><div class="menu-dropdown-item">{item.label}</div></a>
+                {:else}
+                  <a use:loading href="/{menu.toLowerCase()}/{item.url.toLowerCase()}"><div class="menu-dropdown-item">{item.label}</div></a>
+                {/if}
               {/each}
           </div>
           {/if}

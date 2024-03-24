@@ -105,9 +105,6 @@
     }
 
     locations = locations;
-    
-
-    console.log('editLocation:', editLocation)
   }
 
   let svgContextMenu = [
@@ -227,8 +224,6 @@
     if (typeof window === 'undefined') {
       return;
     }
-
-    console.log('moving to location:', location);
 
     await mapLoaded;
       

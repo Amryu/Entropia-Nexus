@@ -2,6 +2,7 @@
   --primary-color: #ffffff;
   --secondary-color: #f0f0f0;
   --hover-color: #e0e0e0;
+  --disabled-color: #aaaaaa;
   --text-color: black;
   --table-header-color: #aaaaaa;
   --table-row-color: #d8d8d8;
@@ -12,6 +13,7 @@
   --primary-color: #222222 !important;
   --secondary-color: #333333 !important;
   --hover-color: #444444 !important;
+  --disabled-color: #555555 !important;
   --text-color: white !important;
   --table-header-color: #222222 !important;
   --table-row-color: #444444 !important;
@@ -164,4 +166,12 @@ a {
 button {
   background-color: var(--primary-color);
   color: var(--text-color);
+  border: 1px solid var(--text-color);
+  cursor: pointer;
+}
+button:disabled {
+  background-color: var(--disabled-color);
+  color: var(--text-color);
+  border: 1px solid var(--text-color);
+  cursor: not-allowed;
 }

@@ -175,6 +175,10 @@
         } : null,
       },
       Economy: {
+        Efficiency: additional.type === 'weaponamplifiers' || additional.type ==='weaponvisionattachments' || additional.type === 'absorbers' ? {
+          Label: 'Efficiency',
+          Value: object.Properties?.Economy.Efficiency != null ? `${object.Properties?.Economy.Efficiency.toFixed(1)}%` : 'N/A',
+        } : null,
         MaxTT: {
           Label: 'Max. TT',
           Value: object.Properties?.Economy.MaxTT != null ? `${clampDecimals(object.Properties?.Economy.MaxTT, 2, 8) ?? 'N/A'} PED` : 'N/A',

@@ -35,8 +35,6 @@
   }
 
   $: if (selectedLocation) {
-    console.log('page', selectedLocation);
-
     propertiesData = {
       General: {
         Name: selectedLocation.Name,
