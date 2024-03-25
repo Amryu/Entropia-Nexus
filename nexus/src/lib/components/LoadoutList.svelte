@@ -99,6 +99,36 @@
       Skill: {
         Hit: 100,
         Dmg: 100,
+      },
+      Markup: {
+        Weapon: 100,
+        Ammo: 100,
+        Amplifier: 100,
+        Absorber: 100,
+        Scope: 100,
+        Sight: 100,
+        ScopeSight: 100,
+        Implant: 100,
+        ArmorSet: 100,
+        PlateSet: 100,
+        Armors: {
+          Head: 100,
+          Torso: 100,
+          Arms: 100,
+          Hands: 100,
+          Legs: 100,
+          Shins: 100,
+          Feet: 100,
+        },
+        Plates: {
+          Head: 100,
+          Torso: 100,
+          Arms: 100,
+          Hands: 100,
+          Legs: 100,
+          Shins: 100,
+          Feet: 100,
+        },
       }
     };
 

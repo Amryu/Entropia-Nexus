@@ -119,6 +119,43 @@
 
   $: if (loadout) setEnhancers(loadout);
 
+  $: if (loadout && loadout.Markup == null) {
+    resetMarkup();
+  }
+
+  function resetMarkup() {
+    loadout.Markup = {
+      Weapon: 100,
+      Ammo: 100,
+      Amplifier: 100,
+      Absorber: 100,
+      Scope: 100,
+      Sight: 100,
+      ScopeSight: 100,
+      Implant: 100,
+      ArmorSet: 100,
+      PlateSet: 100,
+      Armors: {
+        Head: 100,
+        Torso: 100,
+        Arms: 100,
+        Hands: 100,
+        Legs: 100,
+        Shins: 100,
+        Feet: 100,
+      },
+      Plates: {
+        Head: 100,
+        Torso: 100,
+        Arms: 100,
+        Hands: 100,
+        Legs: 100,
+        Shins: 100,
+        Feet: 100,
+      },
+    };
+  }
+
   function updateWeaponEnhancersDamage(value) {
     if (loadout == null) return;
 
@@ -271,20 +308,6 @@
       ? getTotalDefense(item) * ((item.Properties?.Economy.MaxTT - (item.Properties?.Economy.MinTT ?? 0)) / (getMaxArmorDecay(item) / 100))
       : null;
   }
-
-  let propertiesDataFunction = (weapon, additional) => {
-    let cost = getCost(weapon);
-    let totalDamage = getTotalDamage(weapon);
-    let effectiveDamage = getEffectiveDamage(weapon);
-    let reload = getReload(weapon);
-
-    let totalUses = getTotalUses(weapon);
-    let cyclePerRepair = totalUses * (cost / 100);
-    let cyclePerHour = (3600 / reload) * (cost / 100);
-
-    return {
-    }
-  };
 
   function getWeapon(name) {
     return weapons.find(x => x.Name === name);
@@ -537,36 +560,55 @@
 
     if (weapon == null) return null;
 
-    let decay = weapon.Properties.Economy.Decay * (1 + weaponEnhancersDamage * 0.1) / (1 + weaponEnhancersEconomy * 0.0108);
+    let weaponDecay = weapon.Properties.Economy.Decay * (1 + weaponEnhancersDamage * 0.1) / (1 + weaponEnhancersEconomy * 0.0108);
+
+    // Is this the correct order? Not sure what order absorber and implant get applied in
+    if (loadout.Gear.Weapon.Absorber?.Name != null) {
+      let absorber = getAbsorber(loadout.Gear.Weapon.Absorber.Name);
+
+      let absorberDecay = weaponDecay * absorber.Properties.Economy.Absorption;
+      decay += absorberDecay * (loadout.Markup.Implant ?? 100) / 100;
+      weaponDecay -= absorberDecay;
+    }
+
+    if (loadout.Gear.Weapon.Implant?.Name != null) {
+      let implant = getImplant(loadout.Gear.Weapon.Implant.Name);
+
+      let implantDecay = weaponDecay * implant.Properties.Economy.Absorption;
+      decay += implantDecay * (loadout.Markup.Implant ?? 100) / 100;
+      weaponDecay -= implantDecay;
+    }
+
+    let decay = weaponDecay * (loadout.Markup.Weapon ?? 100) / 100;
 
     if (loadout.Gear.Weapon.Amplifier?.Name != null) {
       let amp = getAmplifier(loadout.Gear.Weapon.Amplifier.Name);
       
-      decay += amp.Properties.Economy.Decay;
+      decay += amp.Properties.Economy.Decay * (loadout.Markup.Amplifier ?? 100) / 100;
     }
 
     if (loadout.Gear.Weapon.Scope?.Name != null) {
       let scope = getScope(loadout.Gear.Weapon.Scope.Name);
 
-      decay += scope.Properties.Economy.Decay;
+      decay += scope.Properties.Economy.Decay * (loadout.Markup.Scope ?? 100) / 100;
     }
 
     if (loadout.Gear.Weapon.Scope?.Sight?.Name != null) {
       let scopeSight = getSight(loadout.Gear.Weapon.Scope.Sight.Name);
 
-      decay += scopeSight.Properties.Economy.Decay;
+      decay += scopeSight.Properties.Economy.Decay * (loadout.Markup.ScopeSight ?? 100) / 100;
     }
 
     if (loadout.Gear.Weapon.Sight?.Name != null) {
       let sight = getSight(loadout.Gear.Weapon.Sight.Name);
 
-      decay += sight.Properties.Economy.Decay;
+      decay += sight.Properties.Economy.Decay * (loadout.Markup.Sight ?? 100) / 100;
     }
 
     if (loadout.Gear.Weapon.Matrix?.Name != null) {
       let matrix = getMatrix(loadout.Gear.Weapon.Matrix.Name);
 
-      decay += matrix.Properties.Economy.Decay;
+      decay += matrix.Properties.Economy.Decay * (loadout.Markup.Matrix ?? 100) / 100;
     }
 
     return decay;
@@ -589,7 +631,7 @@
   }
 
   function calcCost(loadout) {
-    return calcDecay(loadout) + calcAmmo(loadout) / 100;
+    return calcDecay(loadout) + (calcAmmo(loadout) / 100) * (loadout.Markup.Ammo ?? 100) / 100;
   }
 
   function calcDpp(loadout) {
@@ -917,6 +959,8 @@
     height: 100%;
     width: 100%;
     align-self: stretch;
+    overflow-x: auto;
+    overflow-y: hidden;
   }
 
   .select {
@@ -950,14 +994,18 @@
   }
 
   .weapon-select {
-    grid-template-columns: 0.2fr 0.2fr 0.2fr 0.2fr 0.2fr 100px 300px;
+    grid-template-columns: 0.2fr 0.2fr 0.2fr 0.2fr 0.2fr 100px 300px 80px;
     gap: 1px;
     background-color: var(--text-color);
     border: 1px solid var(--text-color);
   }
 
+  .weapon-markup {
+    background-color: var(--secondary-color);
+  }
+
   .armor-select {
-    grid-template-columns: 0.2fr 0.2fr 0.2fr 0.2fr 0.2fr 100px 300px;
+    grid-template-columns: 0.2fr 0.2fr 0.2fr 0.2fr 0.2fr 100px 300px 80px;
     gap: 1px;
     background-color: var(--text-color);
     border: 1px solid var(--text-color);
@@ -968,7 +1016,7 @@
     justify-content: center;
     align-items: center;
     background-color: var(--secondary-color);
-    grid-column: span 5;
+    grid-column: span 4;
   }
 
   .armor-slot {
@@ -976,11 +1024,11 @@
     justify-content: center;
     align-items: center;
     background-color: var(--secondary-color);
-    grid-column: span 5;
+    grid-column: span 4;
   }
 
   .empty-slot {
-    grid-column: span 2;
+    grid-column: span 3;
     background-color: var(--primary-color);
   }
 
@@ -992,7 +1040,7 @@
   }
 
   .select-compare {
-    grid-column: span 2;
+    grid-column: span 3;
     background-color: var(--primary-color);
     font-size: 18px;
     text-align: center;
@@ -1020,7 +1068,7 @@
   }
 
   .slot, .empty-slot {
-    min-height: 30px;
+    min-height: 31px;
   }
 
   .empty-slot {
@@ -1070,8 +1118,6 @@
   .stat-viewer input {
     width: calc(100% - 8px);
   }
-
-  
 </style>
 
 <svelte:head>
@@ -1157,6 +1203,13 @@
                   <span style="color: gray;">Click here to select a weapon...</span>
                 {/if}
               </button>
+              <div class="weapon-markup" style="grid-row: span 5; grid-template-rows: repeat(4, 0.25fr) 34px; gap: 1px; text-align: center; padding: 0;">
+                Weapon Markup
+                <input type="text" size="1" bind:value={loadout.Markup.Weapon} style="margin-left: 5px; margin-right: 5px;" />
+                Ammo Markup
+                <input type="text" size="1" bind:value={loadout.Markup.Ammo} style="margin-left: 5px; margin-right: 5px;" />
+                <button class="slot" on:click={resetMarkup} style="border-top: 1px solid var(--text-color); height: 30px; text-align: center;">Reset ALL Markup</button>
+              </div>
               <div class="even-color">Amplifier:</div>
               <button class="slot amplifier-slot" disabled={loadout?.Gear.Weapon.Name == null} on:contextmenu={e => clearSlot(e, "amplifier")} on:click={() => picking = picking === 'amplifier' ? null : 'amplifier'}>
                 {#if loadout?.Gear.Weapon.Name != null}
@@ -1169,8 +1222,9 @@
                   <span style="color: lightgray;">Choose a weapon first!</span>
                 {/if}
               </button>
+              <div class="even-color"><input type="text" size="1" bind:value={loadout.Markup.Amplifier} /></div>
               <div class="odd-color">Absorber:</div>
-              <button class="slot sight-slot" disabled={loadout?.Gear.Weapon.Name == null} on:contextmenu={e => clearSlot(e, "absorber")} on:click={() => picking = picking === 'absorber' ? null : 'absorber'}>
+              <button class="slot absorber-slot" disabled={loadout?.Gear.Weapon.Name == null} on:contextmenu={e => clearSlot(e, "absorber")} on:click={() => picking = picking === 'absorber' ? null : 'absorber'}>
                 {#if loadout?.Gear.Weapon.Name != null}
                   {#if loadout?.Gear.Weapon.Absorber?.Name != null}
                     {loadout.Gear.Weapon.Absorber.Name}
@@ -1181,6 +1235,7 @@
                   <span style="color: lightgray;">Choose a weapon first!</span>
                 {/if}
               </button>
+              <div class="odd-color"><input type="text" size="1" bind:value={loadout.Markup.Absorber} /></div>
               {#if getWeapon(loadout.Gear.Weapon.Name)?.Properties?.Class === 'Ranged'}
                 <div class="even-color">Scope:</div>
                 <button class="slot scope-slot" disabled={loadout?.Gear.Weapon.Name == null} on:contextmenu={e => clearSlot(e, "scope")} on:click={() => picking = picking === 'scope' ? null : 'scope'}>
@@ -1190,6 +1245,7 @@
                   <span style="color: gray;">Click here to select a scope...</span>
                   {/if}
                 </button>
+                <div class="even-color"><input type="text" size="1" bind:value={loadout.Markup.Scope} /></div>
                 <div class="odd-color" style="padding-left: 5px;"><span><span style="font-size: 13px">&#x21B3;</span> Sight:</span></div>
                 <button class="slot scope-sight-slot" disabled={loadout?.Gear.Weapon.Scope == null} on:contextmenu={e => clearSlot(e, "scope-sight")} on:click={() => picking = picking === 'scope-sight' ? null : 'scope-sight'}>
                   {#if loadout.Gear.Weapon.Scope != null}
@@ -1202,6 +1258,7 @@
                     <span style="color: lightgray;">Add a scope first!</span>
                   {/if}
                 </button>
+                <div class="odd-color"><input type="text" size="1" bind:value={loadout.Markup.ScopeSight} /></div>
                 <div class="even-color">Sight:</div>
                 <button class="slot sight-slot" disabled={loadout?.Gear.Weapon.Name == null} on:contextmenu={e => clearSlot(e, "sight")} on:click={() => picking = picking === 'sight' ? null : 'sight'}>
                   {#if loadout?.Gear.Weapon.Sight?.Name != null}
@@ -1210,6 +1267,7 @@
                     <span style="color: gray;">Click here to select a Sight...</span>
                   {/if}
                 </button>
+                <div class="even-color"><input type="text" size="1" bind:value={loadout.Markup.Sight} /></div>
               {:else if getWeapon(loadout.Gear.Weapon.Name)?.Properties?.Class === 'Melee'}
                 <div class="even-color">Matrix:</div>
                 <button class="slot matrix-slot" disabled={getWeapon(loadout.Gear.Weapon.Name)?.Properties?.Class !== 'Melee'} on:contextmenu={e => clearSlot(e, "matrix")} on:click={() => picking = picking === 'matrix' ? null : 'matrix'}>
@@ -1221,6 +1279,7 @@
                 </button>
                 <div class="empty-slot"></div>
                 <div class="empty-slot"></div>
+                <div class="even-color"><input type="text" size="1" bind:value={loadout.Markup.Matrix} /></div>
               {:else if getWeapon(loadout.Gear.Weapon.Name)?.Properties?.Class === 'Mindforce'}
                 <div class="even-color">Implant:</div>
                 <button class="slot implant-slot" disabled={getWeapon(loadout.Gear.Weapon.Name)?.Properties?.Class !== 'Mindforce'} on:contextmenu={e => clearSlot(e, "weapon")} on:click={() => picking = picking === 'implant' ? null : 'implant'}>
@@ -1234,6 +1293,7 @@
                   <span style="color: lightgray;">Choose a Mindforce weapon!</span>
                   {/if}
                 </button>
+                <div class="even-color"><input type="text" size="1" bind:value={loadout.Markup.Implant} /></div>
                 <div class="empty-slot"></div>
                 <div class="empty-slot"></div>
               {:else}
@@ -1423,6 +1483,7 @@
                       <span style="color: gray;">Click here to select a piece of armor...</span>
                     {/if}
                   </button>
+                  <div class={index % 2 === 0 ? 'even-color' : 'odd-color'}><input type="text" size="1" bind:value={loadout.Markup.Armor[slot]} /></div>
                   <div class={index % 2 === 0 ? 'even-color' : 'odd-color'}>Plate:</div>
                   <button class='slot plate-slot' disabled={loadout?.Gear.Armor[slot].Name == null} on:contextmenu={e => clearSlot(e, `armorplating-${slot}`)} on:click={() => picking = picking === `armorplating-${slot}` ? null : `armorplating-${slot}`}>
                     {#if loadout?.Gear.Armor[slot].Name != null}
@@ -1435,6 +1496,7 @@
                       <span style="color: lightgray;">Select an armor piece first!</span>
                     {/if}
                   </button>
+                  <div class={index % 2 === 0 ? 'even-color' : 'odd-color'}><input type="text" size="1" bind:value={loadout.Markup.Plate[slot]} /></div>
                 {/each}
               {:else}
                 <button class="slot armor-slot" on:contextmenu={e => clearSlot(e, "armorset")} on:click={() => picking = picking === 'armorset' ? null : 'armorset'}>
@@ -1444,6 +1506,7 @@
                     <span style="color: gray;">Click here to select an armor set...</span>
                   {/if}
                 </button>
+                <div class="even-color"><input type="text" size="1" bind:value={loadout.Markup.ArmorSet} /></div>
                 <div class="even-color">Plate:</div>
                 <button class='slot plate-slot' disabled={loadout?.Gear.Armor.SetName == null} on:contextmenu={e => clearSlot(e, "armorplating")} on:click={() => picking = picking === 'armorplating' ? null : 'armorplating'}>
                   {#if loadout?.Gear.Armor.SetName != null}
@@ -1456,6 +1519,7 @@
                     <span style="color: lightgray;">Select an armor set first!</span>
                   {/if}
                 </button>
+                <div class="even-color"><input type="text" size="1" bind:value={loadout.Markup.PlateSet} /></div>
               {/if}
               <div class="even-color">Defense<input type="number" min="0" max="10" bind:value={armorEnhancersDefense}></div>
               <div class="odd-color">Durability<input type="number" min="0" max="10" bind:value={armorEnhancersDurability}></div>
