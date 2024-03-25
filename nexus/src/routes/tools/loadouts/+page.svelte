@@ -7,6 +7,7 @@
   import ItemPicker from '$lib/components/ItemPicker.svelte';
   import LoadoutList from '$lib/components/LoadoutList.svelte';
   import { loading } from '../../../stores.js';
+  import Table from '$lib/components/Table.svelte';
 
   export let data;
 
@@ -31,6 +32,13 @@
   let pets;
   let consumables;
 
+  let loadout = null;
+  let loadouts = null;
+
+  let picking = null;
+
+  let compareMode = false;
+
   function alphabeticalSort(a, b) {
     if (a?.Name === null) return 1;
     if (b?.Name === null) return -1;
@@ -54,11 +62,6 @@
     pets = data.additional.pets.sort(alphabeticalSort);
     consumables = data.additional.consumables.sort(alphabeticalSort);
   }
-
-  let loadout = null;
-  let loadouts = null;
-
-  let picking = null;
 
   onMount(() => {
     if (typeof localStorage === 'undefined') return;
@@ -397,6 +400,9 @@
   }
 
   function getLerpProgress(start, end, current) {
+    // Just a hack to avoid making fully maxed weapons unusable just because we don't know the max value
+    if (start == null || end == null) return 1;
+
     return clamp((current - start) / (end - start), 0, 1);
   }
 
@@ -441,7 +447,7 @@
 
     let totalDamage = calcTotalDamage(loadout);
 
-    if (weapon.Properties.Skill.IsSib) {
+    if (weapon.Properties.Skill.IsSiB) {
       let progress = getLerpProgress(weapon.Properties.Skill.Dmg.LearningIntervalStart, weapon.Properties.Skill.Dmg.LearningIntervalEnd, loadout.Skill.Dmg);
 
       return { 
@@ -462,17 +468,17 @@
 
     if (weapon == null) return null;
 
-    if (weapon.Properties.Skill.IsSib) {
+    if (weapon.Properties.Skill.IsSiB) {
       if (loadout.Skill.Hit < weapon.Properties.Skill.Hit.LearningIntervalStart) {
         return 0;
       }
 
       let progress = getLerpProgress(weapon.Properties.Skill.Hit.LearningIntervalStart, weapon.Properties.Skill.Hit.LearningIntervalEnd, loadout.Skill.Hit);
 
-      return 3 + 7 * progress;
+      return clamp(3 + 7 * progress, 0, 10);
     }
     else {
-      return 4 + 6 * (loadout.Skill.Hit / 100);
+      return clamp(4 + 6 * (loadout.Skill.Hit / 100), 0, 10);
     }
   }
 
@@ -487,13 +493,13 @@
 
     if (weapon == null) return null;
 
-    if (weapon.Properties.Skill.IsSib) {
+    if (weapon.Properties.Skill.IsSiB) {
       let progress = getLerpProgress(weapon.Properties.Skill.Hit.LearningIntervalStart, weapon.Properties.Skill.Hit.LearningIntervalEnd, loadout.Skill.Hit);
 
-      return Math.sqrt(progress * 100);
+      return clamp(Math.sqrt(progress * 100), 0, 10);
     }
     else {
-      return Math.min(10, Math.sqrt(loadout.Skill.Hit));
+      return clamp(Math.min(10, Math.sqrt(loadout.Skill.Hit)), 0, 10);
     }
   }
 
@@ -506,21 +512,23 @@
 
     if (weapon == null) return null;
 
+    let rangeEnhancerFactor = 1 + weaponEnhancersRange * 0.05;
+
     if (weapon.Properties.Class === 'Melee') {
-      return weapon.Properties.Range;
+      return weapon.Properties.Range * rangeEnhancerFactor;
     }
 
     if (loadout.Skill.Hit < weapon.Properties.Skill.Hit.LearningIntervalStart) {
-      return weapon.Properties.Range * 10/11;
+      return weapon.Properties.Range * 10/11 * rangeEnhancerFactor;
     }
 
-    if (weapon.Properties.Skill.IsSib) {
+    if (weapon.Properties.Skill.IsSiB) {
       let progress = getLerpProgress(weapon.Properties.Skill.Hit.LearningIntervalStart, weapon.Properties.Skill.Hit.LearningIntervalEnd, loadout.Skill.Hit);
 
-      return weapon.Properties.Range * (0.935 + 0.065 * progress);
+      return weapon.Properties.Range * (0.935 + 0.065 * progress) * rangeEnhancerFactor;
     }
     else {
-      return weapon.Properties.Range * (0.945 + 0.055 * (loadout.Skill.Hit / 100));
+      return weapon.Properties.Range * (0.945 + 0.055 * (loadout.Skill.Hit / 100)) * rangeEnhancerFactor;
     }
   }
 
@@ -600,7 +608,7 @@
 
     if (weapon == null) return null;
 
-    if (!weapon.Properties.Skill.IsSib) {
+    if (!weapon.Properties.Skill.IsSiB) {
       return (60 / weapon.Properties.UsesPerMinute) * bonusFactor;
     }
 
@@ -613,7 +621,7 @@
 
       let progress = getLerpProgress(weapon.Properties.Skill.Hit.LearningIntervalStart, weapon.Properties.Skill.Hit.LearningIntervalEnd + scalingRange, loadout.Skill.Hit);
 
-      return (weapon.Properties.UsesPerMinute * 0.8 + weapon.Properties.UsesPerMinute * 0.2 * progress) * bonusFactor;
+      return (60 / (weapon.Properties.UsesPerMinute * 0.8 + weapon.Properties.UsesPerMinute * 0.2 * progress)) * bonusFactor;
     }
   }
 
@@ -916,6 +924,10 @@
     margin-bottom: 10px;
   }
 
+  .select:last-child {
+    margin-bottom: 0;
+  }
+
   .select div {
     display: grid;
     align-items: center;
@@ -928,6 +940,13 @@
     padding: 10px;
     display: grid;
     grid-template-rows: min-content min-content min-content min-content min-content 1fr;
+  }
+
+  .compare-select {
+    grid-template-columns: 0.2fr 0.2fr 0.2fr 0.2fr 0.2fr 100px 300px;
+    gap: 1px;
+    background-color: var(--text-color);
+    border: 1px solid var(--text-color);
   }
 
   .weapon-select {
@@ -966,10 +985,22 @@
   }
 
   .select-title {
-    grid-column: span 7;
+    grid-column: span 5;
     background-color: var(--primary-color);
     font-size: 24px;
-    padding-left: 5px;
+    padding-left: 8px;
+  }
+
+  .select-compare {
+    grid-column: span 2;
+    background-color: var(--primary-color);
+    font-size: 18px;
+    text-align: center;
+  }
+
+  .select-compare:hover {
+    cursor: pointer;
+    background-color: var(--hover-color);
   }
 
   .header-color {
@@ -1061,432 +1092,490 @@
     {#if data != null && data?.error == null && loadout != null}
       <div class="loadout-manager">
         <div class="gear-select">
-          <div class="select weapon-select">
-            <div class="select-title">Weapon</div>
-            <button class="slot weapon-slot" style="grid-row: span 5;" on:contextmenu={e => clearSlot(e, "weapon")} on:click={() => picking = picking === 'weapon' ? null : 'weapon'}>
-              {#if loadout?.Gear.Weapon.Name != null}
-                {loadout.Gear.Weapon.Name}
-              {:else}
-                <span style="color: gray;">Click here to select a weapon...</span>
-              {/if}
-            </button>
-            <div class="even-color">Amplifier:</div>
-            <button class="slot amplifier-slot" disabled={loadout?.Gear.Weapon.Name == null} on:contextmenu={e => clearSlot(e, "amplifier")} on:click={() => picking = picking === 'amplifier' ? null : 'amplifier'}>
-              {#if loadout?.Gear.Weapon.Name != null}
-                {#if loadout?.Gear.Weapon.Amplifier?.Name != null}
-                  {loadout.Gear.Weapon.Amplifier.Name}
+          {#if compareMode}
+          <div class="select compare-select">
+            <div class="select-title">Comparing</div>
+            <div class="select-compare" on:click={() => compareMode = false}>Stop Comparing</div>
+            <div style="grid-column: span 7; background-color: var(--primary-color);">
+              <Table
+                style="height: calc(100vh - 152px); white-space: nowrap; text-overflow: ellipsis; overflow-x: auto;"
+                header={{ 
+                  values: [
+                    'Name',
+                    'DPS',
+                    'Total Dmg',
+                    'Effective Dmg',
+                    'Reload',
+                    'Range',
+                    'Efficiency',
+                    'Decay',
+                    'Ammo',
+                    'Cost',
+                    'DPP',
+                    'Skill Mod',
+                    'Skill Bonus',
+                    'Block',
+                    'Tot. Defense',
+                  ],
+                  widths: ['1fr', 'max-content', 'max-content', 'max-content', 'max-content', 'max-content', 'max-content', 'max-content', 'max-content', 'max-content', 'max-content', 'max-content', 'max-content', 'max-content', 'max-content']
+                }}
+                data={
+                  loadouts.map(x => ({
+                    values: [
+                      x.Name,
+                      calcDps(x) != null ? calcDps(x).toFixed(4) : null,
+                      calcTotalDamage(x) != null ? calcTotalDamage(x).toFixed(2) : null,
+                      calcEffectiveDamage(x) != null ? calcEffectiveDamage(x).toFixed(2) : null,
+                      calcReload(x) != null ? `${calcReload(x).toFixed(2)}s` : null,
+                      calcRange(x) != null ? `${calcRange(x).toFixed(2)}m` : null,
+                      calcEfficiency(x) != null ? `${calcEfficiency(x).toFixed(1)}%` : null,
+                      calcDecay(x) != null ? `${calcDecay(x).toFixed(2)} PEC` : null,
+                      calcAmmo(x) != null ? calcAmmo(x).toFixed(2) : null,
+                      calcCost(x) != null ? `${calcCost(x).toFixed(2)} PEC` : null,
+                      calcDpp(x) != null ? calcDpp(x).toFixed(4) : null,
+                      calcSkillModification(x) != null ? `${calcSkillModification(x).toFixed(1)}%` : null,
+                      calcSkillBonus(x) != null ? `${calcSkillBonus(x).toFixed(1)}%` : null,
+                      calcBlockChance(x) != null ? `${calcBlockChance(x).toFixed(1)}%` : null,
+                      calcTotalDefense(x) != null ? calcTotalDefense(x).toFixed(0) : null,
+                    ]
+                  }))
+                }
+                options={{
+                  searchable: true,
+                  virtual: true
+                }} />
+            </div>
+          </div>
+          {:else}
+            <div class="select weapon-select">
+              <div class="select-title">Weapon</div>
+              <div class="select-compare" on:click={() => compareMode = true}>Compare Loadouts...</div>
+              <button class="slot weapon-slot" style="grid-row: span 5;" on:contextmenu={e => clearSlot(e, "weapon")} on:click={() => picking = picking === 'weapon' ? null : 'weapon'}>
+                {#if loadout?.Gear.Weapon.Name != null}
+                  {loadout.Gear.Weapon.Name}
                 {:else}
-                  <span style="color: gray;">Click here to select an amplifier...</span>
-                {/if}
-              {:else}
-                <span style="color: lightgray;">Choose a weapon first!</span>
-              {/if}
-            </button>
-            <div class="odd-color">Absorber:</div>
-            <button class="slot sight-slot" disabled={loadout?.Gear.Weapon.Name == null} on:contextmenu={e => clearSlot(e, "absorber")} on:click={() => picking = picking === 'absorber' ? null : 'absorber'}>
-              {#if loadout?.Gear.Weapon.Name != null}
-                {#if loadout?.Gear.Weapon.Absorber?.Name != null}
-                  {loadout.Gear.Weapon.Absorber.Name}
-                {:else}
-                  <span style="color: gray;">Click here to select an absorber...</span>
-                {/if}
-              {:else}
-                <span style="color: lightgray;">Choose a weapon first!</span>
-              {/if}
-            </button>
-            {#if getWeapon(loadout.Gear.Weapon.Name)?.Properties?.Class === 'Ranged'}
-              <div class="even-color">Scope:</div>
-              <button class="slot scope-slot" disabled={loadout?.Gear.Weapon.Name == null} on:contextmenu={e => clearSlot(e, "scope")} on:click={() => picking = picking === 'scope' ? null : 'scope'}>
-                {#if loadout?.Gear.Weapon.Scope?.Name != null}
-                  {loadout.Gear.Weapon.Scope.Name}
-                {:else}
-                <span style="color: gray;">Click here to select a scope...</span>
+                  <span style="color: gray;">Click here to select a weapon...</span>
                 {/if}
               </button>
-              <div class="odd-color" style="padding-left: 5px;"><span><span style="font-size: 13px">&#x21B3;</span> Sight:</span></div>
-              <button class="slot scope-sight-slot" disabled={loadout?.Gear.Weapon.Scope == null} on:contextmenu={e => clearSlot(e, "scope-sight")} on:click={() => picking = picking === 'scope-sight' ? null : 'scope-sight'}>
-                {#if loadout.Gear.Weapon.Scope != null}
-                  {#if loadout?.Gear.Weapon.Scope?.Sight?.Name != null}
-                    {loadout.Gear.Weapon.Scope.Sight.Name}
+              <div class="even-color">Amplifier:</div>
+              <button class="slot amplifier-slot" disabled={loadout?.Gear.Weapon.Name == null} on:contextmenu={e => clearSlot(e, "amplifier")} on:click={() => picking = picking === 'amplifier' ? null : 'amplifier'}>
+                {#if loadout?.Gear.Weapon.Name != null}
+                  {#if loadout?.Gear.Weapon.Amplifier?.Name != null}
+                    {loadout.Gear.Weapon.Amplifier.Name}
+                  {:else}
+                    <span style="color: gray;">Click here to select an amplifier...</span>
+                  {/if}
+                {:else}
+                  <span style="color: lightgray;">Choose a weapon first!</span>
+                {/if}
+              </button>
+              <div class="odd-color">Absorber:</div>
+              <button class="slot sight-slot" disabled={loadout?.Gear.Weapon.Name == null} on:contextmenu={e => clearSlot(e, "absorber")} on:click={() => picking = picking === 'absorber' ? null : 'absorber'}>
+                {#if loadout?.Gear.Weapon.Name != null}
+                  {#if loadout?.Gear.Weapon.Absorber?.Name != null}
+                    {loadout.Gear.Weapon.Absorber.Name}
+                  {:else}
+                    <span style="color: gray;">Click here to select an absorber...</span>
+                  {/if}
+                {:else}
+                  <span style="color: lightgray;">Choose a weapon first!</span>
+                {/if}
+              </button>
+              {#if getWeapon(loadout.Gear.Weapon.Name)?.Properties?.Class === 'Ranged'}
+                <div class="even-color">Scope:</div>
+                <button class="slot scope-slot" disabled={loadout?.Gear.Weapon.Name == null} on:contextmenu={e => clearSlot(e, "scope")} on:click={() => picking = picking === 'scope' ? null : 'scope'}>
+                  {#if loadout?.Gear.Weapon.Scope?.Name != null}
+                    {loadout.Gear.Weapon.Scope.Name}
+                  {:else}
+                  <span style="color: gray;">Click here to select a scope...</span>
+                  {/if}
+                </button>
+                <div class="odd-color" style="padding-left: 5px;"><span><span style="font-size: 13px">&#x21B3;</span> Sight:</span></div>
+                <button class="slot scope-sight-slot" disabled={loadout?.Gear.Weapon.Scope == null} on:contextmenu={e => clearSlot(e, "scope-sight")} on:click={() => picking = picking === 'scope-sight' ? null : 'scope-sight'}>
+                  {#if loadout.Gear.Weapon.Scope != null}
+                    {#if loadout?.Gear.Weapon.Scope?.Sight?.Name != null}
+                      {loadout.Gear.Weapon.Scope.Sight.Name}
+                    {:else}
+                      <span style="color: gray;">Click here to select a Sight...</span>
+                    {/if}
+                  {:else}
+                    <span style="color: lightgray;">Add a scope first!</span>
+                  {/if}
+                </button>
+                <div class="even-color">Sight:</div>
+                <button class="slot sight-slot" disabled={loadout?.Gear.Weapon.Name == null} on:contextmenu={e => clearSlot(e, "sight")} on:click={() => picking = picking === 'sight' ? null : 'sight'}>
+                  {#if loadout?.Gear.Weapon.Sight?.Name != null}
+                    {loadout.Gear.Weapon.Sight.Name}
                   {:else}
                     <span style="color: gray;">Click here to select a Sight...</span>
                   {/if}
-                {:else}
-                  <span style="color: lightgray;">Add a scope first!</span>
-                {/if}
-              </button>
-              <div class="even-color">Sight:</div>
-              <button class="slot sight-slot" disabled={loadout?.Gear.Weapon.Name == null} on:contextmenu={e => clearSlot(e, "sight")} on:click={() => picking = picking === 'sight' ? null : 'sight'}>
-                {#if loadout?.Gear.Weapon.Sight?.Name != null}
-                  {loadout.Gear.Weapon.Sight.Name}
-                {:else}
-                  <span style="color: gray;">Click here to select a Sight...</span>
-                {/if}
-              </button>
-            {:else if getWeapon(loadout.Gear.Weapon.Name)?.Properties?.Class === 'Melee'}
-              <div class="even-color">Matrix:</div>
-              <button class="slot matrix-slot" disabled={getWeapon(loadout.Gear.Weapon.Name)?.Properties?.Class !== 'Melee'} on:contextmenu={e => clearSlot(e, "matrix")} on:click={() => picking = picking === 'matrix' ? null : 'matrix'}>
-                {#if loadout?.Gear.Weapon.Matrix?.Name != null}
-                  {loadout.Gear.Weapon.Matrix.Name}
-                {:else}
-                  <span style="color: gray;">Click here to select a matrix...</span>
-                {/if}
-              </button>
-              <div class="empty-slot"></div>
-              <div class="empty-slot"></div>
-            {:else if getWeapon(loadout.Gear.Weapon.Name)?.Properties?.Class === 'Mindforce'}
-              <div class="even-color">Implant:</div>
-              <button class="slot implant-slot" disabled={getWeapon(loadout.Gear.Weapon.Name)?.Properties?.Class !== 'Mindforce'} on:contextmenu={e => clearSlot(e, "weapon")} on:click={() => picking = picking === 'implant' ? null : 'implant'}>
-                {#if getWeapon(loadout.Gear.Weapon.Name)?.Properties?.Class === 'Mindforce'}
-                  {#if loadout?.Gear.Weapon.Implant?.Name != null}
-                    {loadout.Gear.Weapon.Implant.Name}
+                </button>
+              {:else if getWeapon(loadout.Gear.Weapon.Name)?.Properties?.Class === 'Melee'}
+                <div class="even-color">Matrix:</div>
+                <button class="slot matrix-slot" disabled={getWeapon(loadout.Gear.Weapon.Name)?.Properties?.Class !== 'Melee'} on:contextmenu={e => clearSlot(e, "matrix")} on:click={() => picking = picking === 'matrix' ? null : 'matrix'}>
+                  {#if loadout?.Gear.Weapon.Matrix?.Name != null}
+                    {loadout.Gear.Weapon.Matrix.Name}
                   {:else}
-                    <span style="color: gray;">Click here to select an implant...</span>
-                  {/if}
-                {:else}
-                <span style="color: lightgray;">Choose a Mindforce weapon!</span>
-                {/if}
-              </button>
-              <div class="empty-slot"></div>
-              <div class="empty-slot"></div>
-            {:else}
-              <div class="empty-slot"></div>
-              <div class="empty-slot"></div>
-              <div class="empty-slot"></div>
-            {/if}
-            <div class="even-color">Damage<input type="number" min="0" max="10" bind:value={weaponEnhancersDamage}></div>
-            <div class="odd-color">Accuracy<input type="number" min="0" max="10" bind:value={weaponEnhancersAccuracy}></div>
-            <div class="even-color">Range<input type="number" min="0" max="10" bind:value={weaponEnhancersRange}></div>
-            <div class="odd-color">Economy<input type="number" min="0" max="10" bind:value={weaponEnhancersEconomy}></div>
-            <div class="even-color">Skill Mod<input type="number" min="0" max="10" bind:value={weaponEnhancersSkillMod}></div>
-            <div class="empty-slot">
-              <span style="text-decoration: underline dotted;" title="If enabled, will only show amplifiers that overcap by 10% max">
-                <input type="checkbox" bind:checked={settings.onlyShowReasonableAmplifiers} /> Only show reasonable amplifiers
-              </span>
-            </div>
-          </div>
-          {#if picking === 'weapon' || picking === 'amplifier' || picking === 'absorber' || picking === 'scope' || picking === 'scope-sight' || picking === 'sight' || picking === 'matrix' || picking === 'implant'}
-            <div class="picker">
-              {#if picking === 'weapon'}
-                <ItemPicker 
-                  items={weapons}
-                  columns={['Class', 'Type', 'Efficiency', 'DPS', 'DPP', 'Min', 'Max', 'Cost']}
-                  columnWidths={['80px', '80px', '80px', '60px', '60px', '60px', '60px', '75px']}
-                  columnFunctions={[
-                    x => x.Properties.Class,
-                    x => x.Properties.Type,
-                    x => x.Properties.Economy.Efficiency != null ? `${x.Properties.Economy.Efficiency.toFixed(1)}%` : 'N/A',
-                    x => getDps(x) != null ? getDps(x).toFixed(2) : 'N/A',
-                    x => getDpp(x) != null ? getDpp(x).toFixed(2) : 'N/A',
-                    x => x.Properties?.Skill?.Hit?.LearningIntervalStart != null ? x.Properties?.Skill?.Hit?.LearningIntervalStart.toFixed(1) : 'N/A',
-                    x => x.Properties?.Skill?.Hit?.LearningIntervalEnd != null ? x.Properties?.Skill?.Hit?.LearningIntervalEnd.toFixed(1) : 'N/A',
-                    x => getCost(x) != null ? `${getCost(x).toFixed(2)} PEC` : 'N/A'
-                  ]}
-                  on:rowClick={e => {
-                    loadout.Gear.Weapon.Name = e.detail.values[0];
-
-                    loadout.Gear.Weapon.Amplifier = null;
-                    loadout.Gear.Weapon.Scope = null;
-                    loadout.Gear.Weapon.Sight = null;
-                    loadout.Gear.Weapon.Absorber = null;
-                    loadout.Gear.Weapon.Matrix = null;
-                    loadout.Gear.Weapon.Implant = null;
-
-                    loadouts = loadouts;
-                    picking = null;
-                  }} />
-              {:else if picking ==='amplifier'}
-                <ItemPicker 
-                  items={amplifiers.filter(x => {
-                    let weapon = getWeapon(loadout.Gear.Weapon.Name);
-                    
-                    let ampDamage = getTotalDamage(x);
-                    let weaponDamage = getTotalDamage(weapon);
-
-                    if (!ampDamage) {
-                      return false;
-                    }
-
-                    if (2 * ampDamage > 1.1 * weaponDamage && settings.onlyShowReasonableAmplifiers) {
-                      return false;
-                    }
-
-                    if (weapon.Properties.Class === 'Ranged') {
-                      if (weapon.Properties.Type === 'BLP') {
-                        return x.Properties.Type === 'BLP';
-                      } else {
-                        return x.Properties.Type === 'Energy';
-                      }
-                    } else if (weapon.Properties.Class === 'Melee') {
-                      return x.Properties.Type === 'Melee';
-                    } else if (weapon.Properties.Class === 'Mindforce') {
-                      return x.Properties.Type === 'Mindforce';
-                    }
-
-                    return false
-                  })}
-                  columns={['Damage', 'Efficiency', 'DPP', 'Cost']}
-                  columnWidths={['75px', '80px', '60px', '75px']}
-                  columnFunctions={[
-                    x => getTotalDamage(x) != null ? getTotalDamage(x) : 'N/A',
-                    x => x.Properties.Economy.Efficiency != null ? `${x.Properties.Economy.Efficiency.toFixed(1)}%` : 'N/A',
-                    x => getDpp(x) != null ? getDpp(x).toFixed(2) : 'N/A',
-                    x => getCost(x) != null ? `${getCost(x).toFixed(2)} PEC` : 'N/A'
-                  ]}
-                  on:rowClick={e => {
-                    loadout.Gear.Weapon.Amplifier = { Name: e.detail.values[0] };
-                    loadouts = loadouts;
-                    picking = null;
-                  }} />
-              {:else if picking === 'absorber'}
-                <ItemPicker
-                  items={absorbers}
-                  columns={['Efficiency', 'Absorption']}
-                  columnWidths={['80px', '80px']}
-                  columnFunctions={[
-                    x => x.Properties.Economy.Efficiency != null ? `${x.Properties.Economy.Efficiency.toFixed(1)}%` : 'N/A',
-                    x => x.Properties.Economy.Absorption != null ? `${(x.Properties.Economy.Absorption * 100).toFixed(1)}%` : 'N/A'
-                  ]}
-                  on:rowClick={e => {
-                    loadout.Gear.Weapon.Absorber = { Name: e.detail.values[0] };
-                    loadouts = loadouts;
-                    picking = null;
-                  }} />
-              {:else if picking === 'scope'}
-                <ItemPicker
-                  items={scopes}
-                  columns={['Efficiency', 'Skill Mod.', 'Skill Bonus', 'Zoom', 'Cost']}
-                  columnWidths={['85px', '85px', '85px', '60px', '75px']}
-                  columnFunctions={[
-                    x => x.Properties.Economy.Efficiency != null ? `${x.Properties.Economy.Efficiency.toFixed(1)}%` : 'N/A',
-                    x => x.Properties.SkillModification != null ? `${x.Properties.SkillModification.toFixed(1)}%` : 'N/A',
-                    x => x.Properties.SkillBonus != null ? x.Properties.SkillBonus.toFixed(1) : 'N/A',
-                    x => x.Properties.Zoom != null ? `${x.Properties.Zoom}x` : 'N/A',
-                    x => getCost(x) != null ? `${getCost(x).toFixed(2)} PEC` : 'N/A'
-                  ]}
-                  on:rowClick={e => {
-                    loadout.Gear.Weapon.Scope = { Name: e.detail.values[0] };
-                    loadouts = loadouts;
-                    picking = null;
-                  }} />
-              {:else if picking === 'scope-sight' || picking === 'sight'}
-                <ItemPicker
-                  items={sights}
-                  columns={['Efficiency', 'Skill Mod.', 'Skill Bonus', 'Cost']}
-                  columnWidths={['85px', '85px', '85px', '75px']}
-                  columnFunctions={[
-                    x => x.Properties.Economy.Efficiency != null ? `${x.Properties.Economy.Efficiency.toFixed(1)}%` : 'N/A',
-                    x => x.Properties.SkillModification != null ? `${x.Properties.SkillModification.toFixed(1)}%` : 'N/A',
-                    x => x.Properties.SkillBonus != null ? x.Properties.SkillBonus.toFixed(1) : 'N/A',
-                    x => getCost(x) != null ? `${getCost(x).toFixed(2)} PEC` : 'N/A'
-                  ]}
-                  on:rowClick={e => {
-                    if (picking === 'scope-sight') {
-                      loadout.Gear.Weapon.Scope.Sight = { Name: e.detail.values[0] };
-                    } else {
-                      loadout.Gear.Weapon.Sight = { Name: e.detail.values[0] };
-                    }
-
-                    loadouts = loadouts;
-                    picking = null;
-                  }} />
-              {:else if picking === 'matrix'}
-                <ItemPicker
-                  items={matrices}
-                  columns={['Efficiency', 'Cost']}
-                  columnWidths={['80px', '75px']}
-                  columnFunctions={[
-                    x => x.Properties.Economy.Efficiency != null ? `${x.Properties.Economy.Efficiency.toFixed(1)}%` : 'N/A',
-                    x => getCost(x) != null ? `${getCost(x).toFixed(2)} PEC` : 'N/A'
-                  ]}
-                  on:rowClick={e => {
-                    loadout.Gear.Weapon.Matrix = { Name: e.detail.values[0] };
-                    loadouts = loadouts;
-                    picking = null;
-                  }} />
-              {:else if picking === 'implant'}
-                <ItemPicker
-                  items={implants.filter(x =>
-                    getWeapon(loadout.Gear.Weapon.Name)?.Properties?.Skill?.Hit?.LearningIntervalStart <= x.Properties.MaxProfessionLevel
-                    && getWeapon(loadout.Gear.Weapon.Name)?.Properties?.Skill?.Dmg?.LearningIntervalStart <= x.Properties.MaxProfessionLevel)}
-                  columns={['Efficiency', 'Max. Level', 'Absorption']}
-                  columnWidths={['80px', '80px', '80px']}
-                  columnFunctions={[
-                    x => x.Properties.Economy.Efficiency != null ? `${x.Properties.Economy.Efficiency.toFixed(1)}%` : 'N/A',
-                    x => x.Properties.MaxProfessionLevel != null ? x.Properties.MaxProfessionLevel : 'N/A',
-                    x => x.Properties.Economy.Absorption != null ? `${(x.Properties.Economy.Absorption * 100).toFixed(1)}%` : 'N/A'
-                  ]}
-                  on:rowClick={e => {
-                    loadout.Gear.Weapon.Implant = { Name: e.detail.values[0] };
-                    loadouts = loadouts;
-                    picking = null;
-                  }} />
-              {/if}
-            </div>
-          {/if}
-          <div class="select armor-select">
-            <div class="select-title">Armor</div>
-            {#if loadout.Gear.Armor.ManageIndividual}
-              {#each armorSlots as slot, index}
-                <button class="slot armor-slot" on:contextmenu={e => clearSlot(e, `armor-${slot}`)} on:click={() => picking = picking === `armor-${slot}` ? null : `armor-${slot}`}>
-                  {#if loadout?.Gear.Armor[slot].Name != null}
-                    {loadout.Gear.Armor[slot].Name}
-                  {:else}
-                    <span style="color: gray;">Click here to select a piece of armor...</span>
+                    <span style="color: gray;">Click here to select a matrix...</span>
                   {/if}
                 </button>
-                <div class={index % 2 === 0 ? 'even-color' : 'odd-color'}>Plate:</div>
-                <button class='slot plate-slot' disabled={loadout?.Gear.Armor[slot].Name == null} on:contextmenu={e => clearSlot(e, `armorplating-${slot}`)} on:click={() => picking = picking === `armorplating-${slot}` ? null : `armorplating-${slot}`}>
-                  {#if loadout?.Gear.Armor[slot].Name != null}
-                    {#if loadout?.Gear.Armor[slot].Plate?.Name != null}
-                      {loadout.Gear.Armor[slot].Plate.Name}
+                <div class="empty-slot"></div>
+                <div class="empty-slot"></div>
+              {:else if getWeapon(loadout.Gear.Weapon.Name)?.Properties?.Class === 'Mindforce'}
+                <div class="even-color">Implant:</div>
+                <button class="slot implant-slot" disabled={getWeapon(loadout.Gear.Weapon.Name)?.Properties?.Class !== 'Mindforce'} on:contextmenu={e => clearSlot(e, "weapon")} on:click={() => picking = picking === 'implant' ? null : 'implant'}>
+                  {#if getWeapon(loadout.Gear.Weapon.Name)?.Properties?.Class === 'Mindforce'}
+                    {#if loadout?.Gear.Weapon.Implant?.Name != null}
+                      {loadout.Gear.Weapon.Implant.Name}
                     {:else}
-                      <span style="color: gray;">Click here to select a plate...</span>
+                      <span style="color: gray;">Click here to select an implant...</span>
                     {/if}
                   {:else}
-                    <span style="color: lightgray;">Select an armor piece first!</span>
+                  <span style="color: lightgray;">Choose a Mindforce weapon!</span>
                   {/if}
                 </button>
-              {/each}
-            {:else}
-              <button class="slot armor-slot" on:contextmenu={e => clearSlot(e, "armorset")} on:click={() => picking = picking === 'armorset' ? null : 'armorset'}>
-                {#if loadout?.Gear.Armor.SetName != null}
-                  {loadout.Gear.Armor.SetName}
-                {:else}
-                  <span style="color: gray;">Click here to select an armor set...</span>
-                {/if}
-              </button>
-              <div class="even-color">Plate:</div>
-              <button class='slot plate-slot' disabled={loadout?.Gear.Armor.SetName == null} on:contextmenu={e => clearSlot(e, "armorplating")} on:click={() => picking = picking === 'armorplating' ? null : 'armorplating'}>
-                {#if loadout?.Gear.Armor.SetName != null}
-                  {#if loadout?.Gear.Armor.PlateName != null}
-                    {loadout.Gear.Armor.PlateName}
-                  {:else}
-                    <span style="color: gray;">Click here to select a plate set...</span>
-                  {/if}
-                {:else}
-                  <span style="color: lightgray;">Select an armor set first!</span>
-                {/if}
-              </button>
-            {/if}
-            <div class="even-color">Defense<input type="number" min="0" max="10" bind:value={armorEnhancersDefense}></div>
-            <div class="odd-color">Durability<input type="number" min="0" max="10" bind:value={armorEnhancersDurability}></div>
-            <div class="primary-color"></div>
-            <div class="primary-color"></div>
-            <div class="primary-color"></div>
-            <div class="empty-slot">
-              <span style="text-decoration: underline dotted;" title="If enabled, you can use incomplete/mixed sets of both armor and plates.">
-                <input type="checkbox" bind:checked={loadout.Gear.Armor.ManageIndividual} /> Manage armor pieces individually
-              </span>
+                <div class="empty-slot"></div>
+                <div class="empty-slot"></div>
+              {:else}
+                <div class="empty-slot"></div>
+                <div class="empty-slot"></div>
+                <div class="empty-slot"></div>
+              {/if}
+              <div class="even-color">Damage<input type="number" min="0" max="10" bind:value={weaponEnhancersDamage}></div>
+              <div class="odd-color">Accuracy<input type="number" min="0" max="10" bind:value={weaponEnhancersAccuracy}></div>
+              <div class="even-color">Range<input type="number" min="0" max="10" bind:value={weaponEnhancersRange}></div>
+              <div class="odd-color">Economy<input type="number" min="0" max="10" bind:value={weaponEnhancersEconomy}></div>
+              <div class="even-color">Skill Mod<input type="number" min="0" max="10" bind:value={weaponEnhancersSkillMod}></div>
+              <div class="empty-slot">
+                <span style="text-decoration: underline dotted;" title="If enabled, will only show amplifiers that overcap by 10% max">
+                  <input type="checkbox" bind:checked={settings.onlyShowReasonableAmplifiers} /> Only show reasonable amplifiers
+                </span>
+              </div>
             </div>
-          </div>
-          {#if picking != null && picking.startsWith('armor')}
-            <div class="picker">
-              {#if picking === 'armorset'}
-                <ItemPicker
-                  items={armorsets}
-                  columns={['Stb', 'Cut', 'Imp', 'Pen', 'Shr', 'Brn', 'Cld', 'Acd', 'Ele', 'Total', 'Durability']}
-                  columnWidths={['50px', '50px', '50px', '50px', '50px', '50px', '50px', '50px', '50px', '60px', '90px']}
-                  columnFunctions={[
-                    x => x.Properties.Defense.Stab ?? 'N/A',
-                    x => x.Properties.Defense.Cut ?? 'N/A',
-                    x => x.Properties.Defense.Impact ?? 'N/A',
-                    x => x.Properties.Defense.Penetration ?? 'N/A',
-                    x => x.Properties.Defense.Shrapnel ?? 'N/A',
-                    x => x.Properties.Defense.Burn ?? 'N/A',
-                    x => x.Properties.Defense.Cold ?? 'N/A',
-                    x => x.Properties.Defense.Acid ?? 'N/A',
-                    x => x.Properties.Defense.Electric ?? 'N/A',
-                    x => getTotalDefense(x) ?? 'N/A',
-                    x => x.Properties.Economy.Durability ?? 'N/A'
-                  ]}
-                  on:rowClick={e => {
-                    let armorSet = armorsets.find(x => x.Name === e.detail.values[0]);
+            {#if picking === 'weapon' || picking === 'amplifier' || picking === 'absorber' || picking === 'scope' || picking === 'scope-sight' || picking === 'sight' || picking === 'matrix' || picking === 'implant'}
+              <div class="picker">
+                {#if picking === 'weapon'}
+                  <ItemPicker 
+                    items={weapons}
+                    columns={['Class', 'Type', 'Efficiency', 'DPS', 'DPP', 'Min', 'Max', 'Cost']}
+                    columnWidths={['80px', '80px', '80px', '60px', '60px', '60px', '60px', '75px']}
+                    columnFunctions={[
+                      x => x.Properties.Class,
+                      x => x.Properties.Type,
+                      x => x.Properties.Economy.Efficiency != null ? `${x.Properties.Economy.Efficiency.toFixed(1)}%` : 'N/A',
+                      x => getDps(x) != null ? getDps(x).toFixed(2) : 'N/A',
+                      x => getDpp(x) != null ? getDpp(x).toFixed(2) : 'N/A',
+                      x => x.Properties?.Skill?.Hit?.LearningIntervalStart != null ? x.Properties?.Skill?.Hit?.LearningIntervalStart.toFixed(1) : 'N/A',
+                      x => x.Properties?.Skill?.Hit?.LearningIntervalEnd != null ? x.Properties?.Skill?.Hit?.LearningIntervalEnd.toFixed(1) : 'N/A',
+                      x => getCost(x) != null ? `${getCost(x).toFixed(2)} PEC` : 'N/A'
+                    ]}
+                    on:rowClick={e => {
+                      loadout.Gear.Weapon.Name = e.detail.values[0];
 
-                    loadout.Gear.Armor.SetName = armorSet.Name;
+                      loadout.Gear.Weapon.Amplifier = null;
+                      loadout.Gear.Weapon.Scope = null;
+                      loadout.Gear.Weapon.Sight = null;
+                      loadout.Gear.Weapon.Absorber = null;
+                      loadout.Gear.Weapon.Matrix = null;
+                      loadout.Gear.Weapon.Implant = null;
 
-                    armorSlots.forEach(slot => {
-                      loadout.Gear.Armor[slot] = { Name: armorSet.Armors.find(x => slot == x.Properties.Slot)?.Name, Plate: loadout.Gear.Armor[slot].Plate };
-                    });
+                      loadouts = loadouts;
+                      picking = null;
+                    }} />
+                {:else if picking ==='amplifier'}
+                  <ItemPicker 
+                    items={amplifiers.filter(x => {
+                      let weapon = getWeapon(loadout.Gear.Weapon.Name);
+                      
+                      let ampDamage = getTotalDamage(x);
+                      let weaponDamage = getTotalDamage(weapon);
 
-                    loadouts = loadouts;
-                    picking = null;
-                  }} />
-              {:else if picking.startsWith('armor-')}
-                <ItemPicker
-                  items={armors}
-                  columns={['Stb', 'Cut', 'Imp', 'Pen', 'Shr', 'Brn', 'Cld', 'Acd', 'Ele', 'Total', 'Durability']}
-                  columnWidths={['50px', '50px', '50px', '50px', '50px', '50px', '50px', '50px', '50px', '60px', '90px']}
-                  columnFunctions={[
-                    x => x.Properties.Defense.Stab ?? 'N/A',
-                    x => x.Properties.Defense.Cut ?? 'N/A',
-                    x => x.Properties.Defense.Impact ?? 'N/A',
-                    x => x.Properties.Defense.Penetration ?? 'N/A',
-                    x => x.Properties.Defense.Shrapnel ?? 'N/A',
-                    x => x.Properties.Defense.Burn ?? 'N/A',
-                    x => x.Properties.Defense.Cold ?? 'N/A',
-                    x => x.Properties.Defense.Acid ?? 'N/A',
-                    x => x.Properties.Defense.Electric ?? 'N/A',
-                    x => getTotalDefense(x) ?? 'N/A',
-                    x => x.Properties.Economy.Durability ?? 'N/A'
-                  ]}
-                  on:rowClick={e => {
-                    loadout.Gear.Armor[picking.split('-')[1]] = { Name: e.detail.values[0], Plate: loadout.Gear.Armor[picking.split('-')[1]].Plate };
-                    loadouts = loadouts;
-                    picking = null;
-                  }} />
-              {:else if picking.startsWith('armorplating')}
-                <ItemPicker
-                  items={armorplatings}
-                  columns={['Stb', 'Cut', 'Imp', 'Pen', 'Shr', 'Brn', 'Cld', 'Acd', 'Ele', 'Total', 'Durability']}
-                  columnWidths={['50px', '50px', '50px', '50px', '50px', '50px', '50px', '50px', '50px', '60px', '90px']}
-                  columnFunctions={[
-                    x => x.Properties.Defense.Stab ?? 'N/A',
-                    x => x.Properties.Defense.Cut ?? 'N/A',
-                    x => x.Properties.Defense.Impact ?? 'N/A',
-                    x => x.Properties.Defense.Penetration ?? 'N/A',
-                    x => x.Properties.Defense.Shrapnel ?? 'N/A',
-                    x => x.Properties.Defense.Burn ?? 'N/A',
-                    x => x.Properties.Defense.Cold ?? 'N/A',
-                    x => x.Properties.Defense.Acid ?? 'N/A',
-                    x => x.Properties.Defense.Electric ?? 'N/A',
-                    x => getTotalDefense(x) ?? 'N/A',
-                    x => x.Properties.Economy.Durability ?? 'N/A'
-                  ]}
-                  on:rowClick={e => {
-                    if (loadout.Gear.Armor.ManageIndividual) {
-                      if (loadout.Gear.Armor[picking.split('-')[1]].Name === null) {
-                        return;
+                      if (!ampDamage) {
+                        return false;
                       }
-                        
-                      loadout.Gear.Armor[picking.split('-')[1]].Plate = { Name: e.detail.values[0] };
-                    } else {
-                      loadout.Gear.Armor.PlateName = e.detail.values[0];
+
+                      if (2 * ampDamage > 1.1 * weaponDamage && settings.onlyShowReasonableAmplifiers) {
+                        return false;
+                      }
+
+                      if (weapon.Properties.Class === 'Ranged') {
+                        if (weapon.Properties.Type === 'BLP') {
+                          return x.Properties.Type === 'BLP';
+                        } else {
+                          return x.Properties.Type === 'Energy';
+                        }
+                      } else if (weapon.Properties.Class === 'Melee') {
+                        return x.Properties.Type === 'Melee';
+                      } else if (weapon.Properties.Class === 'Mindforce') {
+                        return x.Properties.Type === 'Mindforce';
+                      }
+
+                      return false
+                    })}
+                    columns={['Damage', 'Efficiency', 'DPP', 'Cost']}
+                    columnWidths={['75px', '80px', '60px', '75px']}
+                    columnFunctions={[
+                      x => getTotalDamage(x) != null ? getTotalDamage(x) : 'N/A',
+                      x => x.Properties.Economy.Efficiency != null ? `${x.Properties.Economy.Efficiency.toFixed(1)}%` : 'N/A',
+                      x => getDpp(x) != null ? getDpp(x).toFixed(2) : 'N/A',
+                      x => getCost(x) != null ? `${getCost(x).toFixed(2)} PEC` : 'N/A'
+                    ]}
+                    on:rowClick={e => {
+                      loadout.Gear.Weapon.Amplifier = { Name: e.detail.values[0] };
+                      loadouts = loadouts;
+                      picking = null;
+                    }} />
+                {:else if picking === 'absorber'}
+                  <ItemPicker
+                    items={absorbers}
+                    columns={['Efficiency', 'Absorption']}
+                    columnWidths={['80px', '80px']}
+                    columnFunctions={[
+                      x => x.Properties.Economy.Efficiency != null ? `${x.Properties.Economy.Efficiency.toFixed(1)}%` : 'N/A',
+                      x => x.Properties.Economy.Absorption != null ? `${(x.Properties.Economy.Absorption * 100).toFixed(1)}%` : 'N/A'
+                    ]}
+                    on:rowClick={e => {
+                      loadout.Gear.Weapon.Absorber = { Name: e.detail.values[0] };
+                      loadouts = loadouts;
+                      picking = null;
+                    }} />
+                {:else if picking === 'scope'}
+                  <ItemPicker
+                    items={scopes}
+                    columns={['Efficiency', 'Skill Mod.', 'Skill Bonus', 'Zoom', 'Cost']}
+                    columnWidths={['85px', '85px', '85px', '60px', '75px']}
+                    columnFunctions={[
+                      x => x.Properties.Economy.Efficiency != null ? `${x.Properties.Economy.Efficiency.toFixed(1)}%` : 'N/A',
+                      x => x.Properties.SkillModification != null ? `${x.Properties.SkillModification.toFixed(1)}%` : 'N/A',
+                      x => x.Properties.SkillBonus != null ? x.Properties.SkillBonus.toFixed(1) : 'N/A',
+                      x => x.Properties.Zoom != null ? `${x.Properties.Zoom}x` : 'N/A',
+                      x => getCost(x) != null ? `${getCost(x).toFixed(2)} PEC` : 'N/A'
+                    ]}
+                    on:rowClick={e => {
+                      loadout.Gear.Weapon.Scope = { Name: e.detail.values[0] };
+                      loadouts = loadouts;
+                      picking = null;
+                    }} />
+                {:else if picking === 'scope-sight' || picking === 'sight'}
+                  <ItemPicker
+                    items={sights}
+                    columns={['Efficiency', 'Skill Mod.', 'Skill Bonus', 'Cost']}
+                    columnWidths={['85px', '85px', '85px', '75px']}
+                    columnFunctions={[
+                      x => x.Properties.Economy.Efficiency != null ? `${x.Properties.Economy.Efficiency.toFixed(1)}%` : 'N/A',
+                      x => x.Properties.SkillModification != null ? `${x.Properties.SkillModification.toFixed(1)}%` : 'N/A',
+                      x => x.Properties.SkillBonus != null ? x.Properties.SkillBonus.toFixed(1) : 'N/A',
+                      x => getCost(x) != null ? `${getCost(x).toFixed(2)} PEC` : 'N/A'
+                    ]}
+                    on:rowClick={e => {
+                      if (picking === 'scope-sight') {
+                        loadout.Gear.Weapon.Scope.Sight = { Name: e.detail.values[0] };
+                      } else {
+                        loadout.Gear.Weapon.Sight = { Name: e.detail.values[0] };
+                      }
+
+                      loadouts = loadouts;
+                      picking = null;
+                    }} />
+                {:else if picking === 'matrix'}
+                  <ItemPicker
+                    items={matrices}
+                    columns={['Efficiency', 'Cost']}
+                    columnWidths={['80px', '75px']}
+                    columnFunctions={[
+                      x => x.Properties.Economy.Efficiency != null ? `${x.Properties.Economy.Efficiency.toFixed(1)}%` : 'N/A',
+                      x => getCost(x) != null ? `${getCost(x).toFixed(2)} PEC` : 'N/A'
+                    ]}
+                    on:rowClick={e => {
+                      loadout.Gear.Weapon.Matrix = { Name: e.detail.values[0] };
+                      loadouts = loadouts;
+                      picking = null;
+                    }} />
+                {:else if picking === 'implant'}
+                  <ItemPicker
+                    items={implants.filter(x =>
+                      getWeapon(loadout.Gear.Weapon.Name)?.Properties?.Skill?.Hit?.LearningIntervalStart <= x.Properties.MaxProfessionLevel
+                      && getWeapon(loadout.Gear.Weapon.Name)?.Properties?.Skill?.Dmg?.LearningIntervalStart <= x.Properties.MaxProfessionLevel)}
+                    columns={['Efficiency', 'Max. Level', 'Absorption']}
+                    columnWidths={['80px', '80px', '80px']}
+                    columnFunctions={[
+                      x => x.Properties.Economy.Efficiency != null ? `${x.Properties.Economy.Efficiency.toFixed(1)}%` : 'N/A',
+                      x => x.Properties.MaxProfessionLevel != null ? x.Properties.MaxProfessionLevel : 'N/A',
+                      x => x.Properties.Economy.Absorption != null ? `${(x.Properties.Economy.Absorption * 100).toFixed(1)}%` : 'N/A'
+                    ]}
+                    on:rowClick={e => {
+                      loadout.Gear.Weapon.Implant = { Name: e.detail.values[0] };
+                      loadouts = loadouts;
+                      picking = null;
+                    }} />
+                {/if}
+              </div>
+            {/if}
+            <div class="select armor-select">
+              <div class="select-title">Armor</div>
+              <div class="select-compare" on:click={() => compareMode = true}>Compare Loadouts...</div>
+              {#if loadout.Gear.Armor.ManageIndividual}
+                {#each armorSlots as slot, index}
+                  <button class="slot armor-slot" on:contextmenu={e => clearSlot(e, `armor-${slot}`)} on:click={() => picking = picking === `armor-${slot}` ? null : `armor-${slot}`}>
+                    {#if loadout?.Gear.Armor[slot].Name != null}
+                      {loadout.Gear.Armor[slot].Name}
+                    {:else}
+                      <span style="color: gray;">Click here to select a piece of armor...</span>
+                    {/if}
+                  </button>
+                  <div class={index % 2 === 0 ? 'even-color' : 'odd-color'}>Plate:</div>
+                  <button class='slot plate-slot' disabled={loadout?.Gear.Armor[slot].Name == null} on:contextmenu={e => clearSlot(e, `armorplating-${slot}`)} on:click={() => picking = picking === `armorplating-${slot}` ? null : `armorplating-${slot}`}>
+                    {#if loadout?.Gear.Armor[slot].Name != null}
+                      {#if loadout?.Gear.Armor[slot].Plate?.Name != null}
+                        {loadout.Gear.Armor[slot].Plate.Name}
+                      {:else}
+                        <span style="color: gray;">Click here to select a plate...</span>
+                      {/if}
+                    {:else}
+                      <span style="color: lightgray;">Select an armor piece first!</span>
+                    {/if}
+                  </button>
+                {/each}
+              {:else}
+                <button class="slot armor-slot" on:contextmenu={e => clearSlot(e, "armorset")} on:click={() => picking = picking === 'armorset' ? null : 'armorset'}>
+                  {#if loadout?.Gear.Armor.SetName != null}
+                    {loadout.Gear.Armor.SetName}
+                  {:else}
+                    <span style="color: gray;">Click here to select an armor set...</span>
+                  {/if}
+                </button>
+                <div class="even-color">Plate:</div>
+                <button class='slot plate-slot' disabled={loadout?.Gear.Armor.SetName == null} on:contextmenu={e => clearSlot(e, "armorplating")} on:click={() => picking = picking === 'armorplating' ? null : 'armorplating'}>
+                  {#if loadout?.Gear.Armor.SetName != null}
+                    {#if loadout?.Gear.Armor.PlateName != null}
+                      {loadout.Gear.Armor.PlateName}
+                    {:else}
+                      <span style="color: gray;">Click here to select a plate set...</span>
+                    {/if}
+                  {:else}
+                    <span style="color: lightgray;">Select an armor set first!</span>
+                  {/if}
+                </button>
+              {/if}
+              <div class="even-color">Defense<input type="number" min="0" max="10" bind:value={armorEnhancersDefense}></div>
+              <div class="odd-color">Durability<input type="number" min="0" max="10" bind:value={armorEnhancersDurability}></div>
+              <div class="primary-color"></div>
+              <div class="primary-color"></div>
+              <div class="primary-color"></div>
+              <div class="empty-slot">
+                <span style="text-decoration: underline dotted;" title="If enabled, you can use incomplete/mixed sets of both armor and plates.">
+                  <input type="checkbox" bind:checked={loadout.Gear.Armor.ManageIndividual} /> Manage armor pieces individually
+                </span>
+              </div>
+            </div>
+            {#if picking != null && picking.startsWith('armor')}
+              <div class="picker">
+                {#if picking === 'armorset'}
+                  <ItemPicker
+                    items={armorsets}
+                    columns={['Stb', 'Cut', 'Imp', 'Pen', 'Shr', 'Brn', 'Cld', 'Acd', 'Ele', 'Total', 'Durability']}
+                    columnWidths={['50px', '50px', '50px', '50px', '50px', '50px', '50px', '50px', '50px', '60px', '90px']}
+                    columnFunctions={[
+                      x => x.Properties.Defense.Stab ?? 'N/A',
+                      x => x.Properties.Defense.Cut ?? 'N/A',
+                      x => x.Properties.Defense.Impact ?? 'N/A',
+                      x => x.Properties.Defense.Penetration ?? 'N/A',
+                      x => x.Properties.Defense.Shrapnel ?? 'N/A',
+                      x => x.Properties.Defense.Burn ?? 'N/A',
+                      x => x.Properties.Defense.Cold ?? 'N/A',
+                      x => x.Properties.Defense.Acid ?? 'N/A',
+                      x => x.Properties.Defense.Electric ?? 'N/A',
+                      x => getTotalDefense(x) ?? 'N/A',
+                      x => x.Properties.Economy.Durability ?? 'N/A'
+                    ]}
+                    on:rowClick={e => {
+                      let armorSet = armorsets.find(x => x.Name === e.detail.values[0]);
+
+                      loadout.Gear.Armor.SetName = armorSet.Name;
 
                       armorSlots.forEach(slot => {
-                        if (loadout.Gear.Armor[slot].Name === null) {
+                        loadout.Gear.Armor[slot] = { Name: armorSet.Armors.find(x => slot == x.Properties.Slot)?.Name, Plate: loadout.Gear.Armor[slot].Plate };
+                      });
+
+                      loadouts = loadouts;
+                      picking = null;
+                    }} />
+                {:else if picking.startsWith('armor-')}
+                  <ItemPicker
+                    items={armors}
+                    columns={['Stb', 'Cut', 'Imp', 'Pen', 'Shr', 'Brn', 'Cld', 'Acd', 'Ele', 'Total', 'Durability']}
+                    columnWidths={['50px', '50px', '50px', '50px', '50px', '50px', '50px', '50px', '50px', '60px', '90px']}
+                    columnFunctions={[
+                      x => x.Properties.Defense.Stab ?? 'N/A',
+                      x => x.Properties.Defense.Cut ?? 'N/A',
+                      x => x.Properties.Defense.Impact ?? 'N/A',
+                      x => x.Properties.Defense.Penetration ?? 'N/A',
+                      x => x.Properties.Defense.Shrapnel ?? 'N/A',
+                      x => x.Properties.Defense.Burn ?? 'N/A',
+                      x => x.Properties.Defense.Cold ?? 'N/A',
+                      x => x.Properties.Defense.Acid ?? 'N/A',
+                      x => x.Properties.Defense.Electric ?? 'N/A',
+                      x => getTotalDefense(x) ?? 'N/A',
+                      x => x.Properties.Economy.Durability ?? 'N/A'
+                    ]}
+                    on:rowClick={e => {
+                      loadout.Gear.Armor[picking.split('-')[1]] = { Name: e.detail.values[0], Plate: loadout.Gear.Armor[picking.split('-')[1]].Plate };
+                      loadouts = loadouts;
+                      picking = null;
+                    }} />
+                {:else if picking.startsWith('armorplating')}
+                  <ItemPicker
+                    items={armorplatings}
+                    columns={['Stb', 'Cut', 'Imp', 'Pen', 'Shr', 'Brn', 'Cld', 'Acd', 'Ele', 'Total', 'Durability']}
+                    columnWidths={['50px', '50px', '50px', '50px', '50px', '50px', '50px', '50px', '50px', '60px', '90px']}
+                    columnFunctions={[
+                      x => x.Properties.Defense.Stab ?? 'N/A',
+                      x => x.Properties.Defense.Cut ?? 'N/A',
+                      x => x.Properties.Defense.Impact ?? 'N/A',
+                      x => x.Properties.Defense.Penetration ?? 'N/A',
+                      x => x.Properties.Defense.Shrapnel ?? 'N/A',
+                      x => x.Properties.Defense.Burn ?? 'N/A',
+                      x => x.Properties.Defense.Cold ?? 'N/A',
+                      x => x.Properties.Defense.Acid ?? 'N/A',
+                      x => x.Properties.Defense.Electric ?? 'N/A',
+                      x => getTotalDefense(x) ?? 'N/A',
+                      x => x.Properties.Economy.Durability ?? 'N/A'
+                    ]}
+                    on:rowClick={e => {
+                      if (loadout.Gear.Armor.ManageIndividual) {
+                        if (loadout.Gear.Armor[picking.split('-')[1]].Name === null) {
                           return;
                         }
+                          
+                        loadout.Gear.Armor[picking.split('-')[1]].Plate = { Name: e.detail.values[0] };
+                      } else {
+                        loadout.Gear.Armor.PlateName = e.detail.values[0];
 
-                        loadout.Gear.Armor[slot].Plate = { Name: e.detail.values[0] };
-                      });
-                    }
+                        armorSlots.forEach(slot => {
+                          if (loadout.Gear.Armor[slot].Name === null) {
+                            return;
+                          }
 
-                    loadouts = loadouts;
-                    picking = null;
-                  }} />
-              {/if}
+                          loadout.Gear.Armor[slot].Plate = { Name: e.detail.values[0] };
+                        });
+                      }
+
+                      loadouts = loadouts;
+                      picking = null;
+                    }} />
+                {/if}
+              </div>
+            {/if}
+            <div class="select clothing-select">
+              
+            </div>
+            <div class="select pet-select">
+              
+            </div>
+            <div class="select consumable-select">
+              
             </div>
           {/if}
-          <div class="select clothing-select">
-            
-          </div>
-          <div class="select pet-select">
-            
-          </div>
-          <div class="select consumable-select">
-            
-          </div>
         </div>
         <div class="stat-viewer">
           {#if loadout}
@@ -1518,7 +1607,7 @@
           <div class="row-color-alt">Crit Ability</div><div class="row-color-alt">{calcCritAbility(loadout) != null ? `${calcCritAbility(loadout).toFixed(1)}/10.0` : 'N/A'}</div>
           <div class="row-color">Skill Modification</div><div class="row-color">{calcSkillModification(loadout) != null ? `${calcSkillModification(loadout).toFixed(1)}%` : 'N/A'}</div>
           <div class="row-color-alt">Skill Bonus</div><div class="row-color-alt">{calcSkillBonus(loadout) != null ? `${calcSkillBonus(loadout).toFixed(1)}%` : 'N/A'}</div>
-          <div style="grid-column: span 2; text-align: center; font-size: 24px; padding: 5px;" class="header-color">Properties</div>
+          <div style="grid-column: span 2; text-align: center; font-size: 24px; padding: 5px;" class="header-color">Settings</div>
           <div class="row-color">Name</div><div class="row-color"><input type="text" bind:value={loadout.Name} /></div>
           <div class="row-color-alt">Hit Profession</div><div class="row-color-alt"><input type="number" bind:value={loadout.Skill.Hit} /></div>
           <div class="row-color">Dmg Profession</div><div class="row-color"><input type="number" bind:value={loadout.Skill.Dmg} /></div>
