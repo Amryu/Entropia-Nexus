@@ -59,5 +59,4 @@
 </style>
 
 <Menu />
-<svelte:body class="dark-mode" />
 <slot></slot>

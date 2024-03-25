@@ -659,7 +659,7 @@
     }
     else {
       let intervalSize = weapon.Properties.Skill.Hit.LearningIntervalEnd - weapon.Properties.Skill.Hit.LearningIntervalStart;
-      let scalingRange = intervalSize * 1.25;
+      let scalingRange = intervalSize * 0.25;
 
       let progress = getLerpProgress(weapon.Properties.Skill.Hit.LearningIntervalStart, weapon.Properties.Skill.Hit.LearningIntervalEnd + scalingRange, loadout.Skill.Hit);
 
