@@ -465,13 +465,14 @@
 
   function calcDamageInterval(loadout) {
     let weapon = getWeapon(loadout.Gear.Weapon.Name);
+    let dmgSkill = loadout.Skill.Dmg + (weaponEnhancersSkillMod ?? 0) * 0.5
 
     if (weapon == null) return null;
 
     let totalDamage = calcTotalDamage(loadout);
 
     if (weapon.Properties.Skill.IsSiB) {
-      let progress = getLerpProgress(weapon.Properties.Skill.Dmg.LearningIntervalStart, weapon.Properties.Skill.Dmg.LearningIntervalEnd, loadout.Skill.Dmg);
+      let progress = getLerpProgress(weapon.Properties.Skill.Dmg.LearningIntervalStart, weapon.Properties.Skill.Dmg.LearningIntervalEnd, dmgSkill);
 
       return { 
         min: totalDamage * 0.25 * (1 + progress),
@@ -480,7 +481,7 @@
     }
     else {
       return { 
-        min: totalDamage * 0.25 + (totalDamage * 0.25 * Math.min(loadout.Skill.Dmg / 100, 1)),
+        min: totalDamage * 0.25 + (totalDamage * 0.25 * Math.min(dmgSkill / 100, 1)),
         max: totalDamage
       };
     }
@@ -488,20 +489,21 @@
 
   function calcHitAbility(loadout) {
     let weapon = getWeapon(loadout.Gear.Weapon.Name);
+    let hitSkill = loadout.Skill.Hit + (weaponEnhancersSkillMod ?? 0) * 0.5
 
     if (weapon == null) return null;
 
     if (weapon.Properties.Skill.IsSiB) {
-      if (loadout.Skill.Hit < weapon.Properties.Skill.Hit.LearningIntervalStart) {
+      if (hitSkill < weapon.Properties.Skill.Hit.LearningIntervalStart) {
         return 0;
       }
 
-      let progress = getLerpProgress(weapon.Properties.Skill.Hit.LearningIntervalStart, weapon.Properties.Skill.Hit.LearningIntervalEnd, loadout.Skill.Hit);
+      let progress = getLerpProgress(weapon.Properties.Skill.Hit.LearningIntervalStart, weapon.Properties.Skill.Hit.LearningIntervalEnd, hitSkill);
 
       return clamp(3 + 7 * progress, 0, 10);
     }
     else {
-      return clamp(4 + 6 * (loadout.Skill.Hit / 100), 0, 10);
+      return clamp(4 + 6 * (hitSkill / 100), 0, 10);
     }
   }
 
@@ -513,16 +515,17 @@
 
   function calcCritAbility(loadout) {
     let weapon = getWeapon(loadout.Gear.Weapon.Name);
+    let hitSkill = loadout.Skill.Hit + (weaponEnhancersSkillMod ?? 0) * 0.5
 
     if (weapon == null) return null;
 
     if (weapon.Properties.Skill.IsSiB) {
-      let progress = getLerpProgress(weapon.Properties.Skill.Hit.LearningIntervalStart, weapon.Properties.Skill.Hit.LearningIntervalEnd, loadout.Skill.Hit);
+      let progress = getLerpProgress(weapon.Properties.Skill.Hit.LearningIntervalStart, weapon.Properties.Skill.Hit.LearningIntervalEnd, hitSkill);
 
       return clamp(Math.sqrt(progress * 100), 0, 10);
     }
     else {
-      return clamp(Math.min(10, Math.sqrt(loadout.Skill.Hit)), 0, 10);
+      return clamp(Math.min(10, Math.sqrt(hitSkill)), 0, 10);
     }
   }
 
@@ -532,6 +535,7 @@
 
   function calcRange(loadout) {
     let weapon = getWeapon(loadout.Gear.Weapon.Name);
+    let hitSkill = loadout.Skill.Hit + (weaponEnhancersSkillMod ?? 0) * 0.5
 
     if (weapon == null) return null;
 
@@ -541,17 +545,17 @@
       return weapon.Properties.Range * rangeEnhancerFactor;
     }
 
-    if (loadout.Skill.Hit < weapon.Properties.Skill.Hit.LearningIntervalStart) {
+    if (hitSkill < weapon.Properties.Skill.Hit.LearningIntervalStart) {
       return weapon.Properties.Range * 10/11 * rangeEnhancerFactor;
     }
 
     if (weapon.Properties.Skill.IsSiB) {
-      let progress = getLerpProgress(weapon.Properties.Skill.Hit.LearningIntervalStart, weapon.Properties.Skill.Hit.LearningIntervalEnd, loadout.Skill.Hit);
+      let progress = getLerpProgress(weapon.Properties.Skill.Hit.LearningIntervalStart, weapon.Properties.Skill.Hit.LearningIntervalEnd, hitSkill);
 
       return weapon.Properties.Range * (0.935 + 0.065 * progress) * rangeEnhancerFactor;
     }
     else {
-      return weapon.Properties.Range * (0.945 + 0.055 * (loadout.Skill.Hit / 100)) * rangeEnhancerFactor;
+      return weapon.Properties.Range * (0.945 + 0.055 * (hitSkill / 100)) * rangeEnhancerFactor;
     }
   }
 
@@ -645,6 +649,7 @@
 
   function calcReload(loadout) {
     let weapon = getWeapon(loadout.Gear.Weapon.Name);
+    let hitSkill = loadout.Skill.Hit + (weaponEnhancersSkillMod ?? 0) * 0.5
 
     let bonusFactor = 1/(1 + (loadout?.Properties?.BonusReload ?? 0) / 100);
 
@@ -654,14 +659,14 @@
       return (60 / weapon.Properties.UsesPerMinute) * bonusFactor;
     }
 
-    if (loadout.Skill.Hit < weapon.Properties.Skill.Hit.LearningIntervalStart) {
+    if (hitSkill < weapon.Properties.Skill.Hit.LearningIntervalStart) {
       return (60 / (weapon.Properties.UsesPerMinute * 0.45)) * bonusFactor;
     }
     else {
       let intervalSize = weapon.Properties.Skill.Hit.LearningIntervalEnd - weapon.Properties.Skill.Hit.LearningIntervalStart;
       let scalingRange = intervalSize * 0.25;
 
-      let progress = getLerpProgress(weapon.Properties.Skill.Hit.LearningIntervalStart, weapon.Properties.Skill.Hit.LearningIntervalEnd + scalingRange, loadout.Skill.Hit);
+      let progress = getLerpProgress(weapon.Properties.Skill.Hit.LearningIntervalStart, weapon.Properties.Skill.Hit.LearningIntervalEnd + scalingRange, hitSkill);
 
       return (60 / (weapon.Properties.UsesPerMinute * 0.8 + weapon.Properties.UsesPerMinute * 0.2 * progress)) * bonusFactor;
     }
