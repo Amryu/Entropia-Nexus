@@ -1,9 +1,20 @@
 // @ts-nocheck
 let items;
 
-import { apiCall, getAcquisitionInfo, pageResponse } from '$lib/util';
+import {  handlePageLoad } from '$lib/util';
 
 export async function load({ fetch, params }) {
+  const config = {
+    items: 'armorsets',
+    types: { tierable: true }
+  }
+
+  let response;
+
+  ({ items, response } = await handlePageLoad(fetch, items, config, params.slug, null, true, true));
+
+  return response;
+
   if (!items) {
     items = await apiCall(fetch, '/armorsets');
   }

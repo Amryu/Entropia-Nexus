@@ -1,28 +1,17 @@
 // @ts-nocheck
 let items;
 
-import { apiCall, getAcquisitionInfo, pageResponse } from '$lib/util';
+import { handlePageLoad } from '$lib/util';
 
 export async function load({ fetch, params }) {
-  if (!items) {
-    items = await apiCall(fetch, '/vehicles');
+  const config = {
+    items: 'vehicles',
+    types: { tierable: false }
   }
 
-  if (!params.slug) {
-    return pageResponse(items);
-  }
+  let response;
 
-  let vehicle = await apiCall(fetch, `/vehicles/${encodeURIComponent(params.slug)}`);
+  ({ items, response } = await handlePageLoad(fetch, items, config, params.slug, params.type));
 
-  if (vehicle === null) {
-    return pageResponse(items, null, null, 404);
-  }
-
-  return pageResponse(
-    items,
-    vehicle, 
-    { 
-      acquisition: await getAcquisitionInfo(fetch, vehicle?.Name)
-    }
-  );
+  return response;
 }

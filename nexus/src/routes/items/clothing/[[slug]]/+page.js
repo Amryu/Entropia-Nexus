@@ -1,28 +1,17 @@
 // @ts-nocheck
 let items;
 
-import { apiCall, getAcquisitionInfo, pageResponse } from '$lib/util';
+import { handlePageLoad } from '$lib/util';
 
 export async function load({ fetch, params }) {
-  if (!items) {
-    items = await apiCall(fetch, '/clothes');
+  const config = {
+    items: 'clothes',
+    types: { tierable: false }
   }
 
-  if (!params.slug) {
-    return pageResponse(items);
-  }
+  let response;
 
-  let clothing = await apiCall(fetch, `/clothes/${encodeURIComponent(params.slug)}`);
+  ({ items, response } = await handlePageLoad(fetch, items, config, params.slug, params.type));
 
-  if (clothing === null) {
-    return pageResponse(items, null, null, 404);
-  }
-
-  return pageResponse(
-    items,
-    clothing,
-    {
-      acquisition: await getAcquisitionInfo(fetch, clothing?.Name)
-    }
-  );
+  return response;
 }

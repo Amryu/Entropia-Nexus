@@ -1,7 +1,7 @@
+// @ts-nocheck
 import { loading } from "../stores";
 import { goto } from "$app/navigation";
 
-// @ts-nocheck
 export function addItemTag(currentName, tag) {
   // Extract the base name and the existing tags
   const match = currentName.match(/^(.*) \((.*)\)$/);
@@ -153,7 +153,7 @@ export function getMainPlanetName(planetName) {
     return 'Calypso';
   } else if (planetName === 'Arkadia Moon' || planetName === 'Arkadia Underground') {
     return 'Arkadia';
-  } else if (planetName === 'HELL' || planetName === 'Secret Island') {
+  } else if (planetName === 'HELL' || planetName === 'Secret Island' || planetName === 'Hunt The THING') {
     return 'ROCKtropia';
   } else if (planetName === 'Ancient Greece') {
     return 'Next Island';
@@ -230,6 +230,10 @@ export function getTypeLink(name, type, subType = null) {
       return `/items/attachments/mindforceimplants/${encodeURIComponent(name)}`;
     case 'Mob':
       return `/creatures/mobs/${getMainPlanetName(subType).toLowerCase()}/${encodeURIComponent(name)}`;
+    case 'Location':
+      return `/maps/${getMainPlanetName(subType).replace(/[^0-9a-zA-Z]/, '').toLowerCase()}/${encodeURIComponent(name)}`;
+    case 'Area':
+      return `/maps/${getMainPlanetName(subType).replace(/[^0-9a-zA-Z]/, '').toLowerCase()}/${encodeURIComponent(name)}`;
     default:
       return null;
   }
@@ -355,4 +359,60 @@ export function getErrorMessage(error) {
   } else {
     return 'An error occurred while fetching the requested item.';
   }
+}
+
+export async function handlePageLoad(fetch, items, config, slug, type = null, isItem = true, isArmorSet = false) {
+  let isMultiType = Array.isArray(config.items);
+
+  if (!items) {
+    if (isMultiType) {
+      await Promise
+        .all(config.items.map(x => apiCall(fetch, `/${x}`)))
+        .then((x) => {
+          items = Object.fromEntries(config.types.map((key, i) => [key.type, x[i]]));
+        });
+      }
+    else {
+      items = await apiCall(fetch, `/${config.items}`);
+    }
+  }
+
+  if ((!type && isMultiType) || !slug) {
+    return { items: items, response: pageResponse(items) };
+  }
+
+  if ((isMultiType ? items[type] : items).find(x => x.Name === slug) === undefined) {
+    return { items: items, response: pageResponse(items, null, null, 404) };
+  }
+
+  let endpoint, tierable, itemId;
+
+  if (!isMultiType) {
+    endpoint = config.items;
+    tierable = config.types.tierable;
+    itemId = isArmorSet
+    ? items.find(x => x.Name === slug)?.Id
+    : items.find(x => x.Name === slug)?.ItemId;
+  }
+  else {
+    endpoint = config.items[config.types.findIndex(x => x.type === type)];
+    tierable = config.types.find(x => x.type === type).tierable;
+    itemId = items[type].find(x => x.Name === slug)?.ItemId;
+  }
+
+  const [object, tierInfo, acquisition] = await Promise.all([
+    apiCall(fetch, `/${endpoint}/${encodeURIComponent(slug)}`),
+    tierable
+      ? apiCall(fetch, `/tiers?ItemId=${itemId}&IsArmorSet=${isArmorSet ? 1 : 0}`)
+      : Promise.resolve(null),
+    isItem
+      ? getAcquisitionInfo(fetch, slug)
+      : Promise.resolve(null)
+  ]);
+
+  if (object === null) {
+    return { items: items, response: pageResponse(items, null, null, 404) };
+  }
+
+  return { items: items, response: pageResponse(items, object, { type: type, tierInfo, acquisition }) };
 }

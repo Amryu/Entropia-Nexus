@@ -2,7 +2,7 @@
   // @ts-nocheck
   import '$lib/style.css';
 
-  import { hasItemTag, clampDecimals } from "$lib/util";
+  import { hasItemTag, clampDecimals, getTimeString } from "$lib/util";
 
   import EntityViewer from "$lib/components/EntityViewer.svelte";
   import Tiering from "$lib/components/Tiering.svelte";
@@ -73,6 +73,22 @@
     let cyclePerRepair = totalUses * (cost / 100);
     let cyclePerHour = (3600 / reload) * (cost / 100);
 
+    let onEquip = {};
+
+    if (object.EffectsOnEquip != null && object.EffectsOnEquip.length > 0) {
+      object.EffectsOnEquip
+        .sort((a,b) => a.Name.localeCompare(b.Name))
+        .forEach(effect => onEquip[effect.Name] = `${effect.Values.Strength}${effect.Values.Unit}`);
+    }
+
+    let onUse = {};
+
+    if (object.EffectsOnUse != null && object.EffectsOnUse.length > 0) {
+      object.EffectsOnUse
+        .sort((a,b) => a.Name.localeCompare(b.Name))
+        .forEach(effect => onUse[effect.Name] = `${effect.Values.Strength}${effect.Values.Unit} for ${getTimeString(effect.Values.DurationSeconds)}`);
+    }
+
     return {
       General: {
         Weight: object.Properties?.Weight != null ? `${clampDecimals(object.Properties?.Weight, 1, 6)}kg` : 'N/A',
@@ -110,14 +126,6 @@
         MinHeal: {
           Label: 'Min. Heal',
           Value: object.Properties?.MinHeal != null ? `${object.Properties?.MinHeal.toFixed(2)} HP` : 'N/A',
-        },
-        OnUse: {
-          Label: 'On Use',
-          Value: object.EffectsOnUse?.map(effect => `${effect.Values.Strength}${effect.Values.Unit ?? ''} ${effect.Name} for ${effect.Values.DurationSeconds}s`) ?? null,
-        },
-        OnEquip: {
-          Label: 'On Equip',
-          Value: object.EffectsOnEquip?.map(effect => `${effect.Values.Strength}${effect.Values.Unit ?? ''} ${effect.Name}`) ?? null,
         }
       },
       Skill: {
@@ -132,6 +140,8 @@
             `${object.Properties?.Skill.LearningIntervalStart?.toFixed(1) ?? 'N/A'} - ${object.Properties?.Skill.LearningIntervalEnd?.toFixed(1) ?? 'N/A'}`],
         }
       },
+      "Equip Effects": object.EffectsOnEquip?.length > 0 ? onEquip : null,
+      "Use Effects": object.EffectsOnUse?.length > 0 ? onUse : null,
       Misc: {
         TotalUses: {
           Label: 'Total Uses',

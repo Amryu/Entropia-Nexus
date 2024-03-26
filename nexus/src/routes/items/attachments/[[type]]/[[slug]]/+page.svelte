@@ -145,6 +145,14 @@
     let totalAbsorption = getTotalAbsorption(object);
     let enhancerEffect = getEnhancerEffect(object);
 
+    let onEquip = {};
+
+    if (object.EffectsOnEquip != null && object.EffectsOnEquip.length > 0) {
+      object.EffectsOnEquip
+        .sort((a,b) => a.Name.localeCompare(b.Name))
+        .forEach(effect => onEquip[effect.Name] = `${effect.Values.Strength}${effect.Values.Unit}`);
+    }
+
     return {
       General: {
         AttachmentType: {
@@ -266,6 +274,7 @@
             `${object.Properties?.Skill?.LearningIntervalStart?.toFixed(1) ?? 'N/A'} - ${object.Properties?.Skill?.LearningIntervalEnd?.toFixed(1) ?? 'N/A'}`],
         } : null,
       } : null,
+      "Equip Effects": object.EffectsOnEquip?.length > 0 ? onEquip : null,
       Misc: additional.type !== 'absorbers' && additional.type !== 'mindforceimplants' ? {
         TotalUses: {
           Label: 'Total Uses',

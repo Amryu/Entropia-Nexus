@@ -2,7 +2,7 @@
   // @ts-nocheck
   import '$lib/style.css';
 
-  import { hasItemTag, clampDecimals } from "$lib/util";
+  import { hasItemTag, clampDecimals, groupBy } from "$lib/util";
 
   import EntityViewer from "$lib/components/EntityViewer.svelte";
   
@@ -29,6 +29,14 @@
   }
 
   let propertiesDataFunction = (armorSet) => {
+    let onSetEquip = {};
+
+    if (armorSet.EffectsOnSetEquip != null && armorSet.EffectsOnSetEquip.length > 0) {
+      Object.entries(groupBy(armorSet.EffectsOnSetEquip, x => x.Values.MinSetPieces))
+        .sort(([a],[b]) => Number(a) - Number(b))
+        .forEach(([key, effects]) => onSetEquip[key + ' Pieces'] = { Value: effects.map(effect => `${effect.Values.Strength}${effect.Values.Unit} ${effect.Name}`) });
+    }
+
     return {
       General: {
         Weight: armorSet.Properties?.Weight != null ? `${clampDecimals(armorSet.Properties?.Weight, 1, 6)}kg` : 'N/A',
@@ -65,6 +73,7 @@
           Bold: true,
         },
       },
+      "Set Effects": armorSet.EffectsOnSetEquip?.length > 0 ? onSetEquip : null,
       Misc: {
         TotalAbsorption: {
           Label: 'Total Absorption',

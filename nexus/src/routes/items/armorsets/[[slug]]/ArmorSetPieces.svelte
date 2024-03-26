@@ -46,32 +46,3 @@
       }
     })
   }/>
-{#if armorSet?.EffectsOnSetEquip?.length > 0}
-<div style="font-size: 32px">Set Effects</div>
-<Table
-  header={
-    {
-      values: ['Piece Count', 'Effect', 'Value'],
-      widths: ['max-content', 'max-content', 'max-content']
-    }
-  }
-  data={
-    Object.entries(groupBy(armorSet.EffectsOnSetEquip, x => x.Values.MinSetPieces)).flatMap(([pieceCount, effects]) => {
-      return effects.map(effect => {
-        return {
-          values: [
-            effect.Values.MinSetPieces,
-            effect.Name,
-            effect.Values.Strength
-          ],
-          spans: [effects.length, null]
-        }
-      })
-    })
-  }
-  options={
-    {
-      sortable: false
-    }
-  }/>
-{/if}

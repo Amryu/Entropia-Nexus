@@ -1,28 +1,17 @@
 // @ts-nocheck
 let items;
 
-import { apiCall, getAcquisitionInfo, pageResponse } from '$lib/util';
+import { handlePageLoad } from '$lib/util';
 
 export async function load({ fetch, params }) {
-  if (!items) {
-    items = await apiCall(fetch, '/blueprints');
+  const config = {
+    items: 'blueprints',
+    types: { tierable: false }
   }
 
-  if (!params.slug) {
-    return pageResponse(items);
-  }
+  let response;
 
-  let blueprint = await apiCall(fetch, `/blueprints/${encodeURIComponent(params.slug)}`);
+  ({ items, response } = await handlePageLoad(fetch, items, config, params.slug, params.type));
 
-  if (blueprint === null) {
-    return pageResponse(items, null, null, 404);
-  }
-
-  return pageResponse(
-    items,
-    blueprint, 
-    { 
-      acquisition: await getAcquisitionInfo(fetch, blueprint?.Name)
-    }
-  );
+  return response;
 }

@@ -37,7 +37,9 @@ const idOffsets = {
   Signs:                    9400000,
   Consumables:              10000000,
   Capsules:                 10100000,
-  Pets:                     11000000
+  Pets:                     11000000,
+
+  equipSet:                 100000,
 }
 
 const queries = {
@@ -62,6 +64,7 @@ const queries = {
   EffectChips: 'SELECT "EffectChips".*, "Professions"."Name" AS "Profession", "Materials"."Name" AS "Ammo" FROM "EffectChips" INNER JOIN "Professions" ON "EffectChips"."ProfessionId" = "Professions"."Id" INNER JOIN "Materials" ON "EffectChips"."AmmoId" = "Materials"."Id"',
   Effects: 'SELECT * FROM "Effects"',
   Enhancers: 'SELECT "Enhancers".*, "EnhancerType"."Name" AS "Type", "EnhancerType"."Tool" AS "Tool" FROM "Enhancers" INNER JOIN "EnhancerType" ON "Enhancers"."TypeId" = "EnhancerType"."Id"',
+  EquipSets: 'SELECT * FROM "EquipSets"',
   Excavators: 'SELECT * FROM "Excavators"',
   FinderAmplifiers: 'SELECT * FROM "FinderAmplifiers"',
   Finders: 'SELECT * FROM "Finders"',
@@ -144,20 +147,21 @@ async function _getEffectsOnEquip(ids) {
   return _groupBy(rows, 'ItemId');
 }
 
-async function _getEffectsOnSetEquip(ids) {
-  ids.map(x => x - idOffsets.Armors);
-
+async function _getEffectsOnArmorSetEquipFromArmor(ids) {
   let { rows } = await pool.query(`SELECT "Effects"."Id", "Effects"."Name", "Effects"."Unit", "EffectsOnSetEquip"."Strength", "EffectsOnSetEquip"."MinSetPieces", "Armors"."Id" AS "ItemId" FROM "EffectsOnSetEquip" INNER JOIN "Armors" ON "EffectsOnSetEquip"."SetId" = "Armors"."SetId" INNER JOIN "Effects" ON "EffectsOnSetEquip"."EffectId" = "Effects"."Id" WHERE "Armors"."Id" IN (${ids.join(',')})`);
 
   return _groupBy(rows, 'ItemId');
 }
 
-async function _getEffectsAll(ids) {
-  return {
-    OnUse: await _getEffectsOnUse(ids),
-    OnEquip: await _getEffectsOnEquip(ids),
-    OnSetEquip: await _getEffectsOnSetEquip(ids)
-  }
+async function _getEffectsOnEquipSetEquipFromEquipSet(ids) {
+  let { rows } = await pool.query(`
+    SELECT "Effects"."Id", "Effects"."Name", "Effects"."Unit", "EffectsOnSetEquip"."Strength", "EffectsOnSetEquip"."MinSetPieces", "EquipSetItems"."ItemId"
+      FROM "EffectsOnSetEquip"
+    INNER JOIN "EquipSetItems" ON "EffectsOnSetEquip"."SetId" = "EquipSetItems"."EquipSetId" + ${idOffsets.equipSet}
+    INNER JOIN "Effects" ON "EffectsOnSetEquip"."EffectId" = "Effects"."Id"
+      WHERE "EquipSetItems"."ItemId" IN (${ids.join(',')})`);
+
+  return _groupBy(rows, 'ItemId');
 }
 
 function _formatEffectOnUse(x) {
@@ -727,15 +731,26 @@ function _formatBlueprintMaterial(x) {
 
 // Clothes
 async function getClothes(idOrName = null) {
+  const dataFunc = async (ids) => {
+    const [effectsOnEquip, effectsOnSetEquip] = await Promise.all([
+      _getEffectsOnEquip(ids),
+      _getEffectsOnEquipSetEquipFromEquipSet(ids)
+    ]);
+
+    return { effectsOnEquip, effectsOnSetEquip };
+  };
+
   if (idOrName !== null) {
-    return _getObject(idOrName, queries.Clothes, 'Clothes', formatClothes);
+    return _getObject(idOrName, queries.Clothes, 'Clothes', formatClothes, dataFunc, idOffsets.Clothes);
   }
   else {
-    return _getObjects(queries.Clothes, formatClothes);
+    return _getObjects(queries.Clothes, formatClothes, dataFunc, idOffsets.Clothes);
   }
 }
 
-function formatClothes(x) {
+function formatClothes(x, data) {
+  const { effectsOnEquip, effectsOnSetEquip } = data;
+
   return {
     Id: x.Id,
     ItemId: x.Id + idOffsets.Clothes,
@@ -750,6 +765,8 @@ function formatClothes(x) {
         MinTT: x.MinTT !== null ? Number(x.MinTT) : null
       }
     },
+    EffectsOnEquip: (effectsOnEquip[x.Id + idOffsets.Clothes] ?? []).map(_formatEffectOnEquip),
+    EffectsOnSetEquip: (effectsOnSetEquip[x.Id + idOffsets.Clothes] ?? []).map(_formatEffectOnSetEquip),
     Links: {
       "$Url": `/clothes/${x.Id}`
     }
@@ -922,7 +939,7 @@ async function formatEffectChip(x, data) {
         "$Url": `/professions/${x.ProfessionId}`
       }
     },
-    Effects: effects,
+    EffectsOnUse: effects,
     Links: {
       "$Url": `/effectchips/${x.Id}`,
     }
@@ -981,6 +998,42 @@ function formatEnhancer(x) {
   }
 }
 
+// EquipSets
+async function getEquipSets() {
+  return _getObjects(queries.EquipSets, formatEquipSet, _getSetItemsAndEffects);
+}
+
+async function getEquipSet(idOrName) {
+  return _getObject(idOrName, queries.EquipSets, 'EquipSets', formatEquipSet, _getSetItemsAndEffects);
+}
+
+async function _getSetItemsAndEffects(ids) {
+  const [items, effects] = await Promise.all([
+    ppol.query(`SELECT "EquipSet"."Id" AS "EquipSetId", "Items".* FROM "EquipSetsItems" INNER JOIN "EquipSets" ON "EquipSetsItems"."EquipSetId" = "EquipSets"."Id" INNER JOIN "Items" ON "EquipSetsItems"."ItemId" = "Items"."Id" WHERE "EquipSetId" IN (${ids.join(',')})`).then(x => x.rows),
+    _getEffectsOnArmorSetEquipFromArmor(ids)
+  ]);
+
+  return {
+    items: _groupBy(items, 'EquipSetId'),
+    effects: effects
+  }
+}
+
+function formatEquipSet(x, data) {
+  let effects = (data[x.Id] ?? []).map(_formatEffectOnSetEquip);
+  let items = (data.items ?? []).map(formatItem);
+
+  return {
+    Id: x.Id,
+    Name: x.Name,
+    Items: items,
+    EffectsOnSetEquip: effects,
+    Links: {
+      "$Url": `/equipsets/${x.Id}`
+    }
+  }
+}
+
 // Excavators
 async function getExcavators() {
   return _getObjects(queries.Excavators, formatExcavator);
@@ -1018,14 +1071,16 @@ function formatExcavator(x) {
 
 // FinderAmplifiers
 async function getFinderAmplifiers() {
-  return _getObjects(queries.FinderAmplifiers, formatFinderAmplifier);
+  return _getObjects(queries.FinderAmplifiers, formatFinderAmplifier, _getEffectsOnEquip, idOffsets.FinderAmplifiers);
 }
 
 async function getFinderAmplifier(idOrName) {
-  return _getObject(idOrName, queries.FinderAmplifiers, 'FinderAmplifiers', formatFinderAmplifier);
+  return _getObject(idOrName, queries.FinderAmplifiers, 'FinderAmplifiers', formatFinderAmplifier, _getEffectsOnEquip, idOffsets.FinderAmplifiers);
 }
 
-function formatFinderAmplifier(x) {
+function formatFinderAmplifier(x, data) {
+  let effects = (data[x.Id + idOffsets.FinderAmplifiers] ?? []).map(_formatEffectOnEquip);
+
   return {
     Id: x.Id,
     ItemId: x.Id + idOffsets.FinderAmplifiers,
@@ -1044,6 +1099,7 @@ function formatFinderAmplifier(x) {
         IsSiB: false
       }
     },
+    EffectsOnEquip: effects,
     Links: {
       "$Url": `/finderamplifiers/${x.Id}`
     }
@@ -1052,14 +1108,16 @@ function formatFinderAmplifier(x) {
 
 // Finders
 async function getFinders() {
-  return _getObjects(queries.Finders, formatFinder);
+  return _getObjects(queries.Finders, formatFinder, _getEffectsOnEquip, idOffsets.Finders);
 }
 
 async function getFinder(idOrName) {
-  return _getObject(idOrName, queries.Finders, 'Finders', formatFinder);
+  return _getObject(idOrName, queries.Finders, 'Finders', formatFinder, _getEffectsOnEquip, idOffsets.Finders);
 }
 
-function formatFinder(x) {
+function formatFinder(x, data) {
+  let effects = (data[x.Id + idOffsets.Finders] ?? []).map(_formatEffectOnEquip);
+
   return {
     Id: x.Id,
     ItemId: x.Id + idOffsets.Finders,
@@ -1081,6 +1139,7 @@ function formatFinder(x) {
         IsSiB: true
       }
     },
+    EffectsOnEquip: effects,
     Links: {
       "$Url": `/finders/${x.Id}`
     }
@@ -1201,17 +1260,34 @@ function formatMedicalChip(x, data) {
 
 // MedicalTools
 async function getMedicalTools() {
-  return _getObjects(queries.MedicalTools, formatMedicalTool, _getEffectsAll, idOffsets.MedicalTools);
+  let datafunc = async (ids) => {
+    const [effectsOnUse, effectsOnEquip] = await Promise.all([
+      _getEffectsOnUse(ids),
+      _getEffectsOnEquip(ids)
+    ]);
+
+    return { OnUse: effectsOnUse, OnEquip: effectsOnEquip };
+  };
+
+  return _getObjects(queries.MedicalTools, formatMedicalTool, datafunc, idOffsets.MedicalTools);
 }
 
 async function getMedicalTool(idOrName) {
-  return _getObject(idOrName, queries.MedicalTools, 'MedicalTools', formatMedicalTool, _getEffectsAll, idOffsets.MedicalTools);
+  let datafunc = async (ids) => {
+    const [effectsOnUse, effectsOnEquip] = await Promise.all([
+      _getEffectsOnUse(ids),
+      _getEffectsOnEquip(ids)
+    ]);
+
+    return { OnUse: effectsOnUse, OnEquip: effectsOnEquip };
+  };
+
+  return _getObject(idOrName, queries.MedicalTools, 'MedicalTools', formatMedicalTool, datafunc, idOffsets.MedicalTools);
 }
 
 function formatMedicalTool(x, data) {
   let effectsOnUse = (data.OnUse[x.Id + idOffsets.MedicalTools] ?? []).map(_formatEffectOnUse);
   let effectsOnEquip = (data.OnEquip[x.Id + idOffsets.MedicalTools] ?? []).map(_formatEffectOnEquip);
-  let effectsOnSetEquip = (data.OnSetEquip[x.Id + idOffsets.MedicalTools] ?? []).map(_formatEffectOnSetEquip);
 
   return {
     Id: x.Id,
@@ -1235,7 +1311,6 @@ function formatMedicalTool(x, data) {
     },
     EffectsOnUse: effectsOnUse,
     EffectsOnEquip: effectsOnEquip,
-    EffectsOnSetEquip: effectsOnSetEquip,
     Links: {
       "$Url": `/medicaltools/${x.Id}`
     }
@@ -2313,14 +2388,16 @@ function formatVendorOffer(x, data) {
 
 // WeaponAmplifiers
 async function getWeaponAmplifiers() {
-  return _getObjects(queries.WeaponAmplifiers, formatWeaponAmplifier);
+  return _getObjects(queries.WeaponAmplifiers, formatWeaponAmplifier, _getEffectsOnEquip, idOffsets.WeaponAmplifiers);
 }
 
 async function getWeaponAmplifier(idOrName) {
-  return _getObject(idOrName, queries.WeaponAmplifiers, 'WeaponAmplifiers', formatWeaponAmplifier);
+  return _getObject(idOrName, queries.WeaponAmplifiers, 'WeaponAmplifiers', formatWeaponAmplifier, _getEffectsOnEquip, idOffsets.WeaponAmplifiers);
 }
 
-function formatWeaponAmplifier(x) {
+function formatWeaponAmplifier(x, data) {
+  let effects = (data[x.Id + idOffsets.WeaponAmplifiers] ?? []).map(_formatEffectOnEquip);
+
   return {
     Id: x.Id,
     ItemId: x.Id + idOffsets.WeaponAmplifiers,
@@ -2347,6 +2424,7 @@ function formatWeaponAmplifier(x) {
         Electric: x.Electric !== null ? Number(x.Electric) : null,
       }
     },
+    EffectsOnEquip: effects,
     Links: {
       "$Url": `/weaponamplifiers/${x.Id}`
     }
@@ -2355,14 +2433,16 @@ function formatWeaponAmplifier(x) {
 
 // WeaponVisionAttachments
 async function getWeaponVisionAttachments() {
-  return _getObjects(queries.WeaponVisionAttachments, formatWeaponVisionAttachment);
+  return _getObjects(queries.WeaponVisionAttachments, formatWeaponVisionAttachment, _getEffectsOnEquip, idOffsets.WeaponVisionAttachments);
 }
 
 async function getWeaponVisionAttachment(idOrName) {
-  return _getObject(idOrName, queries.WeaponVisionAttachments, 'WeaponVisionAttachments', formatWeaponVisionAttachment);
+  return _getObject(idOrName, queries.WeaponVisionAttachments, 'WeaponVisionAttachments', formatWeaponVisionAttachment, _getEffectsOnEquip, idOffsets.WeaponVisionAttachments);
 }
 
-function formatWeaponVisionAttachment(x) {
+function formatWeaponVisionAttachment(x, data) {
+  let effects = (data[x.Id + idOffsets.WeaponVisionAttachments] ?? []).map(_formatEffectOnEquip);
+
   return {
     Id: x.Id,
     ItemId: x.Id + idOffsets.WeaponVisionAttachments,
@@ -2379,8 +2459,8 @@ function formatWeaponVisionAttachment(x) {
         MinTT: x.MinTT !== null ? Number(x.MinTT) : null,
         Decay: x.Decay !== null ? Number(x.Decay) : null,
       },
-
     },
+    EffectsOnEquip: effects,
     Links: {
       "$Url": `/weaponvisionattachments/${x.Id}`
     }
@@ -2389,14 +2469,16 @@ function formatWeaponVisionAttachment(x) {
 
 // Weapons
 async function getWeapons() {
-  return _getObjects(queries.Weapons, formatWeapon);
+  return _getObjects(queries.Weapons, formatWeapon, _getEffectsOnEquip, idOffsets.Weapons);
 }
 
 async function getWeapon(idOrName) {
-  return _getObject(idOrName, queries.Weapons, 'Weapons', formatWeapon);
+  return _getObject(idOrName, queries.Weapons, 'Weapons', formatWeapon, _getEffectsOnEquip, idOffsets.Weapons);
 }
 
-function formatWeapon(x) {
+function formatWeapon(x, data) {
+  let effects = (data[x.Id + idOffsets.Weapons] ?? []).map(_formatEffectOnEquip);
+
   return {
     Id: x.Id,
     ItemId: x.Id + idOffsets.Weapons,
@@ -2469,6 +2551,7 @@ function formatWeapon(x) {
         "$Url": x.AttachmentTypeId !== null ? `/weaponattachmenttypes/${x.AttachmentTypeId}` : null
       }
     },
+    EffectsOnEquip: effects,
     Links: {
       "$Url": `/weapons/${x.Id}`
     }
@@ -2498,6 +2581,7 @@ module.exports = { pool,
   getEffectChip, getEffectChips,
   getEffect, getEffects,
   getEnhancer, getEnhancers,
+  getEquipSet, getEquipSets,
   getExcavator, getExcavators,
   getFinderAmplifier, getFinderAmplifiers,
   getFinder, getFinders,

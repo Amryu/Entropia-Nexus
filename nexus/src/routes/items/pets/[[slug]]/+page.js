@@ -1,25 +1,17 @@
 // @ts-nocheck
-import { apiCall, pageResponse } from '$lib/util.js';
-
 let items;
 
+import { handlePageLoad } from '$lib/util.js';
+
 export async function load({ fetch, params }) {
-  if (!items) {
-    items = await apiCall(fetch, '/pets');
+  const config = {
+    items: 'pets',
+    types: { tierable: false }
   }
 
-  if (!params.slug) {
-    return pageResponse(items);
-  }
+  let response;
 
-  let pet = await apiCall(fetch, `/pets/${encodeURIComponent(params.slug)}`);
+  ({ items, response } = await handlePageLoad(fetch, items, config, params.slug, params.type));
 
-  if (pet === null) {
-    return pageResponse(items, null, null, 404);
-  }
-
-  return pageResponse(
-    items,
-    pet,
-  );
+  return response;
 }

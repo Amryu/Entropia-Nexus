@@ -86,6 +86,14 @@
 
     let type = getTypeName(additional.type);
 
+    let onEquip = {};
+
+    if (object.EffectsOnEquip != null && object.EffectsOnEquip.length > 0) {
+      object.EffectsOnEquip
+        .sort((a,b) => a.Name.localeCompare(b.Name))
+        .forEach(effect => onEquip[effect.Name] = `${effect.Values.Strength}${effect.Values.Unit}`);
+    }
+
     return {
       General: {
         Type: type,
@@ -181,6 +189,7 @@
           Value: object.Profession?.Name ?? 'N/A',
         } : null,
       } : null,
+      "Equip Effects": object.EffectsOnEquip?.length > 0 ? onEquip : null,
       Misc: {
         TotalUses: {
           Label: 'Total Uses',

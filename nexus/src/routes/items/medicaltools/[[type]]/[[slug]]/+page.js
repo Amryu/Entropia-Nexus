@@ -1,42 +1,20 @@
 // @ts-nocheck
 let items;
 
-import { apiCall, getAcquisitionInfo, pageResponse } from '$lib/util';
+import { handlePageLoad } from '$lib/util';
 
 export async function load({ fetch, params }) {
-  if (!items) {
-    items = {
-      tools: await apiCall(fetch, '/medicaltools'),
-      chips: await apiCall(fetch, '/medicalchips'),
-    }
+  const config = {
+    items: ['medicaltools', 'medicalchips'],
+    types: [
+      { type: 'tools', tierable: true },
+      { type: 'chips', tierable: false }
+    ]
   }
 
-  if (!params.type || !params.slug) {
-    return pageResponse(items);
-  }
+  let response;
 
-  let object = null;
-  let tierInfo = null;
+  ({ items, response } = await handlePageLoad(fetch, items, config, params.slug, params.type));
 
-  if (params.type === 'tools') {
-    object = await apiCall(fetch, `/medicaltools/${encodeURIComponent(params.slug)}`);
-    tierInfo = await apiCall(fetch, `/tiers?ItemId=${object.ItemId}&IsArmorSet=0`);
-  }
-  else if (params.type === 'chips'){
-    object = await apiCall(fetch, `/medicalchips/${encodeURIComponent(params.slug)}`);
-  }
-
-  if (object === null) {
-    return pageResponse(items, null, null, 404);
-  }
-
-  return pageResponse(
-    items,
-    object,
-    {
-      type: params.type,
-      tierInfo,
-      acquisition: await getAcquisitionInfo(fetch, object?.Name)
-    }
-  );
+  return response;
 }

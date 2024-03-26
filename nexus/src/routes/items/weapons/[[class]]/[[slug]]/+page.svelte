@@ -103,6 +103,14 @@
     let cyclePerRepair = totalUses * (cost / 100);
     let cyclePerHour = (3600 / reload) * (cost / 100);
 
+    let onEquip = {};
+
+    if (weapon.EffectsOnEquip != null && weapon.EffectsOnEquip.length > 0) {
+      weapon.EffectsOnEquip
+        .sort((a,b) => a.Name.localeCompare(b.Name))
+        .forEach(effect => onEquip[effect.Name] = `${effect.Values.Strength}${effect.Values.Unit}`);
+    }
+
     return {
       General: {
         Weight: weapon.Properties?.Weight != null ? `${clampDecimals(weapon.Properties?.Weight, 1, 6)}kg` : 'N/A',
@@ -191,6 +199,7 @@
           Value: [weapon.ProfessionDmg?.Name ?? 'N/A', `${weapon.Properties?.Skill.Dmg.LearningIntervalStart ?? 'N/A'} - ${weapon.Properties?.Skill.Dmg.LearningIntervalEnd ?? 'N/A'}`],
         },
       },
+      "Equip Effects": weapon.EffectsOnEquip?.length > 0 ? onEquip : null,
       Misc: {
         TotalUses: {
           Label: 'Total Uses',

@@ -36,6 +36,14 @@
   let propertiesDataFunction = (consumable, additional) => {
     let category = getCategory(additional.type);
 
+    let onConsume = {};
+
+    if (consumable.EffectsOnConsume != null && consumable.EffectsOnConsume.length > 0) {
+      consumable.EffectsOnConsume
+        .sort((a,b) => a.Name.localeCompare(b.Name))
+        .forEach(effect => onConsume[effect.Name] = `${effect.Values.Strength}${effect.Values.Unit} ${effect.Values.DurationSeconds > 0 ? `for ${getTimeString(effect.Values.DurationSeconds)}` : ''}`);
+    }
+
     return {
       General: {
         Weight: consumable.Properties?.Weight != null ? `${clampDecimals(consumable.Properties?.Weight, 1, 6)}kg` : 'N/A',
@@ -47,12 +55,7 @@
       Economy: {
         Value: consumable.Properties?.Economy?.MaxTT != null ? `${clampDecimals(consumable.Properties?.Economy?.MaxTT, 2, 8)} PED` : 'N/A',
       },
-      Consumable: additional.type === 'consumables' ? {
-        Effects: {
-          Label: 'Effects',
-          Value: consumable.EffectsOnConsume?.map(x => `${x.Values.Strength ?? ''}${x.Values.Unit ?? ''} ${x.Name} ${x.Values.DurationSeconds > 0 ? `for ${getTimeString(x.Values.DurationSeconds)}` : ''}`.trim()) ?? null,
-        }
-      } : null,
+      "Consume Effects": additional.type === 'consumables' && consumable.EffectsOnConsume != null && consumable.EffectsOnConsume.length > 0 ? onConsume : null,
       Creature: additional.type === 'creaturecontrolcapsules' ? {
         Mob: {
           Label: 'Mob',

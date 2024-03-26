@@ -859,12 +859,12 @@ app.get('/effects/:effect', async (req, res) => {
 
 /**
  * @swagger
- * /emotes:
+ * /enhancers:
  *  get:
- *    description: Get all emotes
+ *    description: Get all enhancers
  *    responses:
  *      '200':
- *        description: A list of emotes
+ *        description: A list of enhancers
  */
 app.get('/enhancers', async (req, res) => { 
   res.json(await db.getEnhancers());
@@ -890,6 +890,48 @@ app.get('/enhancers', async (req, res) => {
  */
 app.get('/enhancers/:enhancer', async (req, res) => {
   let result = await db.getEnhancer(req.params.enhancer);
+
+  if (result) {
+    res.json(result);
+  }
+  else {
+    res.status(404).send();
+  }
+});
+
+/**
+ * @swagger
+ * /equipsets:
+ *  get:
+ *    description: Get all equip sets
+ *    responses:
+ *      '200':
+ *        description: A list of equip sets
+ */
+app.get('/equipsets', async (req, res) => {
+  res.json(await db.getEquipSets());
+});
+
+/**
+ * @swagger
+ * /equipsets/{equipSet}:
+ *  get:
+ *    description: Get an equip set by name or id
+ *    parameters:
+ *      - in: path
+ *        name: equipSet
+ *        schema:
+ *          type: string
+ *        required: true
+ *        description: The name or id of the equip set
+ *    responses:
+ *      '200':
+ *        description: The equip set
+ *      '404':
+ *        description: Equip set not found
+ */
+app.get('/equipsets/:equipSet', async (req, res) => {
+  let result = await db.getEquipSet(req.params.equipSet);
 
   if (result) {
     res.json(result);
