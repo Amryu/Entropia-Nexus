@@ -29,7 +29,7 @@ const idOffsets = {
   MindforceImplants:        5700000,
   Blueprints:               6000000,
   Vehicles:                 7000000,
-  Clothes:                  8000000,
+  Clothings:                8000000,
   Furnishings:              9000000,
   Furniture:                9100000,
   Decorations:              9200000,
@@ -44,60 +44,60 @@ const idOffsets = {
 
 const queries = {
   // Maps & Locations
-  Areas: 'SELECT "Areas".*, "Planets"."Name" AS "Planet", "Planets"."TechnicalName" FROM "Areas" INNER JOIN "Planets" ON "Areas"."PlanetId" = "Planets"."Id"',
-  Locations: 'SELECT "Locations".*, "Planets"."Name" AS "Planet", "Planets"."TechnicalName" FROM "Locations" INNER JOIN "Planets" ON "Locations"."PlanetId" = "Planets"."Id"',
-  Planets: 'SELECT * FROM "Planets"',
-  Teleporters: 'SELECT "Teleporters".*, "Planets"."Name" AS "Planet", "Planets"."TechnicalName" FROM "Teleporters" INNER JOIN "Planets" ON "Teleporters"."PlanetId" = "Planets"."Id"',
+  Areas: 'SELECT "Areas".*, "Planets"."Name" AS "Planet", "Planets"."TechnicalName" FROM ONLY "Areas" LEFT JOIN ONLY "Planets" ON "Areas"."PlanetId" = "Planets"."Id"',
+  Locations: 'SELECT "Locations".*, "Planets"."Name" AS "Planet", "Planets"."TechnicalName" FROM ONLY "Locations" LEFT JOIN ONLY "Planets" ON "Locations"."PlanetId" = "Planets"."Id"',
+  Planets: 'SELECT * FROM ONLY "Planets"',
+  Teleporters: 'SELECT "Teleporters".*, "Planets"."Name" AS "Planet", "Planets"."TechnicalName" FROM ONLY "Teleporters" LEFT JOIN ONLY "Planets" ON "Teleporters"."PlanetId" = "Planets"."Id"',
+  MobSpawns: 'SELECT "MobSpawns".*, "Areas"."Name", "Areas"."Type", "Areas"."Shape", "Areas"."Data", "Areas"."Longitude", "Areas"."Latitude", "Areas"."Altitude", "Areas"."PlanetId", "Planets"."Name" AS "Planet", "Planets"."TechnicalName" FROM ONLY "MobSpawns" INNER JOIN ONLY "Areas" ON "MobSpawns"."AreaId" = "Areas"."Id" INNER JOIN ONLY "Planets" ON "Areas"."PlanetId" = "Planets"."Id"',
 
   // Items
-  Items: 'SELECT * FROM "Items"',
-  Absorbers: 'SELECT * FROM "Absorbers"',
-  ArmorPlatings: 'SELECT * FROM "ArmorPlatings"',
-  ArmorSets: 'SELECT "ArmorSets"."Id", "ArmorSets"."Name", "Durability", "Stab", "Cut", "Impact", "Penetration", "Shrapnel", "Burn", "Cold", "Acid", "Electric" FROM "ArmorSets"',
-  Armors: 'SELECT "Armors"."Id", "Armors"."Name", "ArmorSets"."Name" AS "Set", "Gender", "Slot", "SetId", "Weight", "MaxTT", "MinTT", "Durability", "Stab", "Cut", "Impact", "Penetration", "Shrapnel", "Burn", "Cold", "Acid", "Electric" FROM "Armors" INNER JOIN "ArmorSets" ON "Armors"."SetId" = "ArmorSets"."Id"',
-  BlueprintBooks: 'SELECT "BlueprintBooks"."Id", "BlueprintBooks"."Name", "PlanetId", "Planets"."Name" AS "Planet", "Weight", "Value" FROM "BlueprintBooks" INNER JOIN "Planets" ON "BlueprintBooks"."PlanetId" = "Planets"."Id"',
-  Blueprints: 'SELECT "Blueprints".*, "BlueprintBooks"."Name" AS "Book", "BlueprintTypes"."Name" AS "Type", "Professions"."Name" AS "Profession", "Items"."Type" AS "ItemType", "Items"."Name" AS "Item" FROM "Blueprints" INNER JOIN "BlueprintBooks" ON "Blueprints"."BookId" = "BlueprintBooks"."Id" INNER JOIN "BlueprintTypes" ON "Blueprints"."TypeId" = "BlueprintTypes"."Id" INNER JOIN "Items" ON "Blueprints"."ItemId" = "Items"."Id" LEFT JOIN "Professions" ON "Professions"."Id" = "Blueprints"."ProfessionId"',
-  Clothes: 'SELECT * FROM "Clothes"',
-  Consumables: 'SELECT * FROM "Consumables"',
-  CreatureControlCapsules: 'SELECT "CreatureControlCapsules".*, "Mobs"."Name" AS "Mob", "Professions"."Name" AS "Profession" FROM "CreatureControlCapsules" INNER JOIN "Mobs" ON "CreatureControlCapsules"."MobId" = "Mobs"."Id" INNER JOIN "Professions" ON "CreatureControlCapsules"."ScanningProfessionId" = "Professions"."Id"',
-  Decorations: 'SELECT * FROM "Decorations"',
-  EffectChips: 'SELECT "EffectChips".*, "Professions"."Name" AS "Profession", "Materials"."Name" AS "Ammo" FROM "EffectChips" INNER JOIN "Professions" ON "EffectChips"."ProfessionId" = "Professions"."Id" INNER JOIN "Materials" ON "EffectChips"."AmmoId" = "Materials"."Id"',
-  Effects: 'SELECT * FROM "Effects"',
-  Enhancers: 'SELECT "Enhancers".*, "EnhancerType"."Name" AS "Type", "EnhancerType"."Tool" AS "Tool" FROM "Enhancers" INNER JOIN "EnhancerType" ON "Enhancers"."TypeId" = "EnhancerType"."Id"',
-  EquipSets: 'SELECT * FROM "EquipSets"',
-  Excavators: 'SELECT * FROM "Excavators"',
-  FinderAmplifiers: 'SELECT * FROM "FinderAmplifiers"',
-  Finders: 'SELECT * FROM "Finders"',
-  Furniture: 'SELECT "Furniture".*, "Planets"."Name" AS "Planet" FROM "Furniture" INNER JOIN "Planets" ON "Furniture"."PlanetId" = "Planets"."Id"',
-  Materials: 'SELECT * FROM "Materials"',
-  MedicalChips: 'SELECT "MedicalChips".*, "Materials"."Name" AS "Ammo" FROM "MedicalChips" INNER JOIN "Materials" ON "MedicalChips"."AmmoId" = "Materials"."Id"',
-  MedicalTools: 'SELECT * FROM "MedicalTools"',
-  MindforceImplants: 'SELECT * FROM "MindforceImplants"',
-  MiscTools: 'SELECT "MiscTools".*, "Professions"."Name" AS "Profession" FROM "MiscTools" LEFT JOIN "Professions" ON "MiscTools"."ProfessionId" = "Professions"."Id"',
-  MobLoots: 'SELECT "MobLoots".*, "Mobs"."Name" AS "Mob", "Mobs"."PlanetId", "MobMaturities"."Name" AS "Maturity", "Items"."Name" AS "Item", "Items"."Type" AS "ItemType", "Planets"."Name" AS "Planet" FROM "MobLoots" INNER JOIN "Mobs" ON "MobLoots"."MobId" = "Mobs"."Id" INNER JOIN "Items" ON "MobLoots"."ItemId" = "Items"."Id" LEFT JOIN "MobMaturities" ON "MobLoots"."MaturityId" = "MobMaturities"."Id" LEFT JOIN "Planets" ON "Mobs"."PlanetId" = "Planets"."Id"',
-  MobMaturities: 'SELECT "MobMaturities".*, "Mobs"."Name" AS "Mob" FROM "MobMaturities" INNER JOIN "Mobs" ON "MobMaturities"."MobId" = "Mobs"."Id"',
-  MobSpawns: 'SELECT "MobSpawns".*, "Mobs"."Name" AS "Mob", "Locations"."Longitude" AS "Longitude", "Locations"."Latitude" AS "Latitude", "Locations"."Altitude" AS "Altitude" FROM "MobSpawns" INNER JOIN "Mobs" ON "MobSpawns"."MobId" = "Mobs"."Id" INNER JOIN "Locations" ON "MobSpawns"."LocationId" = "Locations"."Id"',
-  MobSpecies: 'SELECT * FROM "MobSpecies"',
-  Mobs: 'SELECT "Mobs".*, "MobSpecies"."Name" AS "Species", "Planets"."Name" AS "Planet", d."Name" AS "DefensiveProfession", s."Name" AS "ScanningProfession" FROM "Mobs" INNER JOIN "Planets" ON "Mobs"."PlanetId" = "Planets"."Id" LEFT JOIN "MobSpecies" ON "Mobs"."SpeciesId" = "MobSpecies"."Id" LEFT JOIN "Professions" d ON "Mobs"."DefensiveProfessionId" = d."Id" LEFT JOIN "Professions" s ON "Mobs"."ScanningProfessionId" = s."Id"',
-  Pets: 'SELECT "Pets".*, "Planets"."Name" AS "Planet" FROM "Pets" INNER JOIN "Planets" ON "Pets"."PlanetId" = "Planets"."Id"',
-  ProfessionCategories: 'SELECT * FROM "ProfessionCategories"',
-  Professions: 'SELECT "Professions".*, "ProfessionCategories"."Name" AS "Category" FROM "Professions" INNER JOIN "ProfessionCategories" ON "Professions"."CategoryId" = "ProfessionCategories"."Id"',
-  Refiners: 'SELECT * FROM "Refiners"',
-  RefiningRecipes: 'SELECT "RefiningRecipes".*, "Items"."Name" AS "Product", "Items"."Type" AS "ProductType", "Items"."Value" AS "ProductValue" FROM "RefiningRecipes" INNER JOIN "Items" ON "RefiningRecipes"."ProductId" = "Items"."Id"',
-  Scanners: 'SELECT * FROM "Scanners"',
-  Signs: 'SELECT * FROM "Signs"',
-  SkillCategories: 'SELECT * FROM "SkillCategories"',
-  Skills: 'SELECT "Skills".*, "SkillCategories"."Name" AS "Category" FROM "Skills" INNER JOIN "SkillCategories" ON "Skills"."CategoryId" = "SkillCategories"."Id"',
-  StorageContainers: 'SELECT "StorageContainers".*, "Planets"."Name" AS "Planet" FROM "StorageContainers" INNER JOIN "Planets" ON "StorageContainers"."PlanetId" = "Planets"."Id"',
-  TeleportationChips: 'SELECT "TeleportationChips".*, "Professions"."Name" AS "Profession", "Materials"."Name" AS "Ammo" FROM "TeleportationChips" INNER JOIN "Professions" ON "TeleportationChips"."ProfessionId" = "Professions"."Id" INNER JOIN "Materials" ON "TeleportationChips"."AmmoId" = "Materials"."Id"',
-  Tiers: 'SELECT * FROM (SELECT "Tiers".*, "Items"."Name" || \' Tier \' || "Tiers"."Tier" AS "Name", "Items"."Name" AS "Item" FROM "Tiers" INNER JOIN "Items" ON "Tiers"."ItemId" = "Items"."Id" WHERE "IsArmorSet" = 0 UNION ALL SELECT "Tiers".*, "ArmorSets"."Name" || \' Tier \' || "Tiers"."Tier" AS "Name", "ArmorSets"."Name" AS "Item" FROM "Tiers" INNER JOIN "ArmorSets" ON "Tiers"."ItemId" = "ArmorSets"."Id" WHERE "IsArmorSet" = 1)',
-  VehicleAttachmentTypes: 'SELECT * FROM "VehicleAttachmentTypes"',
-  Vehicles: 'SELECT "Vehicles".*, "Materials"."Name" AS "Fuel" FROM "Vehicles" INNER JOIN "Materials" ON "Vehicles"."FuelMaterialId" = "Materials"."Id"',
-  Vendors: 'SELECT "Vendors".*, "Planets"."Name" AS "Planet" FROM "Vendors" INNER JOIN "Planets" ON "Vendors"."PlanetId" = "Planets"."Id"',
-  VendorOffers: 'SELECT "VendorOffers".*, "Items"."Name" AS "Item", "Items"."Value" AS "ItemValue", "Items"."Type" AS "ItemType", "Vendors"."Name" AS "Vendor", "Vendors"."PlanetId" AS "PlanetId", "Planets"."Name" AS "Planet" FROM "VendorOffers" INNER JOIN "Items" ON "VendorOffers"."ItemId" = "Items"."Id" INNER JOIN "Vendors" ON "VendorOffers"."VendorId" = "Vendors"."Id" INNER JOIN "Planets" ON "Vendors"."PlanetId" = "Planets"."Id"',
-  WeaponAmplifiers: 'SELECT * FROM "WeaponAmplifiers"',
-  WeaponVisionAttachments: 'SELECT * FROM "WeaponVisionAttachments"',
-  Weapons: 'SELECT "Weapons".*, "VehicleAttachmentTypes"."Name" AS "AttachmentType", "Materials"."Name" AS "Ammo", hit."Name" AS "ProfessionHit", dmg."Name" AS "ProfessionDmg" FROM "Weapons" LEFT JOIN "VehicleAttachmentTypes" ON "Weapons"."AttachmentTypeId" = "VehicleAttachmentTypes"."Id" LEFT JOIN "Materials" ON "Weapons"."AmmoId" = "Materials"."Id" LEFT JOIN "Professions" hit ON "Weapons"."ProfessionHitId" = hit."Id" LEFT JOIN "Professions" dmg ON "Weapons"."ProfessionDmgId" = dmg."Id"',
+  Items: 'SELECT * FROM ONLY "Items"',
+  Absorbers: 'SELECT * FROM ONLY "Absorbers"',
+  ArmorPlatings: 'SELECT * FROM ONLY "ArmorPlatings"',
+  ArmorSets: 'SELECT "ArmorSets"."Id", "ArmorSets"."Name", "Durability", "Stab", "Cut", "Impact", "Penetration", "Shrapnel", "Burn", "Cold", "Acid", "Electric" FROM ONLY "ArmorSets"',
+  Armors: 'SELECT "Armors"."Id", "Armors"."Name", "ArmorSets"."Name" AS "Set", "Gender", "Slot", "SetId", "Weight", "MaxTT", "MinTT", "Durability", "Stab", "Cut", "Impact", "Penetration", "Shrapnel", "Burn", "Cold", "Acid", "Electric" FROM ONLY "Armors" LEFT JOIN ONLY "ArmorSets" ON "Armors"."SetId" = "ArmorSets"."Id"',
+  BlueprintBooks: 'SELECT "BlueprintBooks"."Id", "BlueprintBooks"."Name", "PlanetId", "Planets"."Name" AS "Planet", "Weight", "Value" FROM ONLY "BlueprintBooks" LEFT JOIN ONLY "Planets" ON "BlueprintBooks"."PlanetId" = "Planets"."Id"',
+  Blueprints: 'SELECT "Blueprints".*, "BlueprintBooks"."Name" AS "Book", "Professions"."Name" AS "Profession", "Items"."Type" AS "ItemType", "Items"."Name" AS "Item" FROM ONLY "Blueprints" LEFT JOIN ONLY "BlueprintBooks" ON "Blueprints"."BookId" = "BlueprintBooks"."Id" LEFT JOIN ONLY "Items" ON "Blueprints"."ItemId" = "Items"."Id" LEFT JOIN ONLY "Professions" ON "Professions"."Id" = "Blueprints"."ProfessionId"',
+  Clothings: 'SELECT * FROM ONLY "Clothes"',
+  Consumables: 'SELECT * FROM ONLY "Consumables"',
+  CreatureControlCapsules: 'SELECT "CreatureControlCapsules".*, "Mobs"."Name" AS "Mob", "Professions"."Name" AS "Profession" FROM ONLY "CreatureControlCapsules" LEFT JOIN ONLY "Mobs" ON "CreatureControlCapsules"."MobId" = "Mobs"."Id" LEFT JOIN ONLY "Professions" ON "CreatureControlCapsules"."ScanningProfessionId" = "Professions"."Id"',
+  Decorations: 'SELECT * FROM ONLY "Decorations"',
+  EffectChips: 'SELECT "EffectChips".*, "Professions"."Name" AS "Profession", "Materials"."Name" AS "Ammo" FROM ONLY "EffectChips" LEFT JOIN ONLY "Professions" ON "EffectChips"."ProfessionId" = "Professions"."Id" LEFT JOIN ONLY "Materials" ON "EffectChips"."AmmoId" = "Materials"."Id"',
+  Effects: 'SELECT * FROM ONLY "Effects"',
+  Enhancers: 'SELECT "Enhancers".*, "EnhancerType"."Name" AS "Type", "EnhancerType"."Tool" AS "Tool" FROM ONLY "Enhancers" LEFT JOIN ONLY "EnhancerType" ON "Enhancers"."TypeId" = "EnhancerType"."Id"',
+  EquipSets: 'SELECT * FROM ONLY "EquipSets"',
+  Excavators: 'SELECT * FROM ONLY "Excavators"',
+  FinderAmplifiers: 'SELECT * FROM ONLY "FinderAmplifiers"',
+  Finders: 'SELECT * FROM ONLY "Finders"',
+  Furniture: 'SELECT "Furniture".*, "Planets"."Name" AS "Planet" FROM ONLY "Furniture" LEFT JOIN ONLY "Planets" ON "Furniture"."PlanetId" = "Planets"."Id"',
+  Materials: 'SELECT * FROM ONLY "Materials"',
+  MedicalChips: 'SELECT "MedicalChips".*, "Materials"."Name" AS "Ammo" FROM ONLY "MedicalChips" LEFT JOIN ONLY "Materials" ON "MedicalChips"."AmmoId" = "Materials"."Id"',
+  MedicalTools: 'SELECT * FROM ONLY "MedicalTools"',
+  MindforceImplants: 'SELECT * FROM ONLY "MindforceImplants"',
+  MiscTools: 'SELECT "MiscTools".*, "Professions"."Name" AS "Profession" FROM ONLY "MiscTools" LEFT JOIN ONLY "Professions" ON "MiscTools"."ProfessionId" = "Professions"."Id"',
+  MobLoots: 'SELECT "MobLoots".*, "Mobs"."Name" AS "Mob", "Mobs"."PlanetId", "MobMaturities"."Name" AS "Maturity", "Items"."Name" AS "Item", "Items"."Type" AS "ItemType", "Planets"."Name" AS "Planet" FROM ONLY "MobLoots" INNER JOIN ONLY "Mobs" ON "MobLoots"."MobId" = "Mobs"."Id" INNER JOIN ONLY "Items" ON "MobLoots"."ItemId" = "Items"."Id" LEFT JOIN ONLY "MobMaturities" ON "MobLoots"."MaturityId" = "MobMaturities"."Id" LEFT JOIN ONLY "Planets" ON "Mobs"."PlanetId" = "Planets"."Id"',
+  MobMaturities: 'SELECT "MobMaturities".*, "Mobs"."Name" AS "Mob" FROM ONLY "MobMaturities" INNER JOIN ONLY "Mobs" ON "MobMaturities"."MobId" = "Mobs"."Id"',
+  MobSpecies: 'SELECT * FROM ONLY "MobSpecies"',
+  Mobs: 'SELECT "Mobs".*, "MobSpecies"."Name" AS "Species", "Planets"."Name" AS "Planet", d."Name" AS "DefensiveProfession", s."Name" AS "ScanningProfession" FROM ONLY "Mobs" LEFT JOIN ONLY "Planets" ON "Mobs"."PlanetId" = "Planets"."Id" LEFT JOIN ONLY "MobSpecies" ON "Mobs"."SpeciesId" = "MobSpecies"."Id" LEFT JOIN ONLY "Professions" d ON "Mobs"."DefensiveProfessionId" = d."Id" LEFT JOIN ONLY "Professions" s ON "Mobs"."ScanningProfessionId" = s."Id"',
+  Pets: 'SELECT "Pets".*, "Planets"."Name" AS "Planet" FROM ONLY "Pets" LEFT JOIN ONLY "Planets" ON "Pets"."PlanetId" = "Planets"."Id"',
+  ProfessionCategories: 'SELECT * FROM ONLY "ProfessionCategories"',
+  Professions: 'SELECT "Professions".*, "ProfessionCategories"."Name" AS "Category" FROM ONLY "Professions" INNER JOIN ONLY "ProfessionCategories" ON "Professions"."CategoryId" = "ProfessionCategories"."Id"',
+  Refiners: 'SELECT * FROM ONLY "Refiners"',
+  RefiningRecipes: 'SELECT "RefiningRecipes".*, "Items"."Name" AS "Product", "Items"."Type" AS "ProductType", "Items"."Value" AS "ProductValue" FROM ONLY "RefiningRecipes" INNER JOIN ONLY "Items" ON "RefiningRecipes"."ProductId" = "Items"."Id"',
+  Scanners: 'SELECT * FROM ONLY "Scanners"',
+  Signs: 'SELECT * FROM ONLY "Signs"',
+  SkillCategories: 'SELECT * FROM ONLY "SkillCategories"',
+  Skills: 'SELECT "Skills".*, "SkillCategories"."Name" AS "Category" FROM ONLY "Skills" INNER JOIN ONLY "SkillCategories" ON "Skills"."CategoryId" = "SkillCategories"."Id"',
+  StorageContainers: 'SELECT "StorageContainers".*, "Planets"."Name" AS "Planet" FROM ONLY "StorageContainers" LEFT JOIN ONLY "Planets" ON "StorageContainers"."PlanetId" = "Planets"."Id"',
+  TeleportationChips: 'SELECT "TeleportationChips".*, "Professions"."Name" AS "Profession", "Materials"."Name" AS "Ammo" FROM ONLY "TeleportationChips" LEFT JOIN ONLY "Professions" ON "TeleportationChips"."ProfessionId" = "Professions"."Id" LEFT JOIN ONLY "Materials" ON "TeleportationChips"."AmmoId" = "Materials"."Id"',
+  Tiers: 'SELECT * FROM (SELECT "Tiers".*, "Items"."Name" || \' Tier \' || "Tiers"."Tier" AS "Name", "Items"."Name" AS "Item" FROM ONLY "Tiers" INNER JOIN ONLY "Items" ON "Tiers"."ItemId" = "Items"."Id" WHERE "IsArmorSet" = 0 UNION ALL SELECT "Tiers".*, "ArmorSets"."Name" || \' Tier \' || "Tiers"."Tier" AS "Name", "ArmorSets"."Name" AS "Item" FROM ONLY "Tiers" INNER JOIN ONLY "ArmorSets" ON "Tiers"."ItemId" = "ArmorSets"."Id" WHERE "IsArmorSet" = 1)',
+  VehicleAttachmentTypes: 'SELECT * FROM ONLY "VehicleAttachmentTypes"',
+  Vehicles: 'SELECT "Vehicles".*, "Materials"."Name" AS "Fuel" FROM ONLY "Vehicles" LEFT JOIN ONLY "Materials" ON "Vehicles"."FuelMaterialId" = "Materials"."Id"',
+  Vendors: 'SELECT "Vendors".*, "Planets"."Name" AS "Planet", "Planets"."TechnicalName" AS "PlanetTechnicalName" FROM ONLY "Vendors" LEFT JOIN ONLY "Planets" ON "Vendors"."PlanetId" = "Planets"."Id"',
+  VendorOffers: 'SELECT "VendorOffers".*, "Items"."Name" AS "Item", "Items"."Value" AS "ItemValue", "Items"."Type" AS "ItemType", "Vendors"."Name" AS "Vendor", "Vendors"."PlanetId" AS "PlanetId", "Planets"."Name" AS "Planet" FROM ONLY "VendorOffers" LEFT JOIN ONLY "Items" ON "VendorOffers"."ItemId" = "Items"."Id" LEFT JOIN ONLY "Vendors" ON "VendorOffers"."VendorId" = "Vendors"."Id" LEFT JOIN ONLY "Planets" ON "Vendors"."PlanetId" = "Planets"."Id"',
+  WeaponAmplifiers: 'SELECT * FROM ONLY "WeaponAmplifiers"',
+  WeaponVisionAttachments: 'SELECT * FROM ONLY "WeaponVisionAttachments"',
+  Weapons: 'SELECT "Weapons".*, "VehicleAttachmentTypes"."Name" AS "AttachmentType", "Materials"."Name" AS "Ammo", hit."Name" AS "ProfessionHit", dmg."Name" AS "ProfessionDmg" FROM ONLY "Weapons" LEFT JOIN ONLY "VehicleAttachmentTypes" ON "Weapons"."AttachmentTypeId" = "VehicleAttachmentTypes"."Id" LEFT JOIN ONLY "Materials" ON "Weapons"."AmmoId" = "Materials"."Id" LEFT JOIN ONLY "Professions" hit ON "Weapons"."ProfessionHitId" = hit."Id" LEFT JOIN ONLY "Professions" dmg ON "Weapons"."ProfessionDmgId" = dmg."Id"',
 }
 
 async function _getObject(idOrName, query, tableName, formatFunction, additionalDataFunction = null, idOffset = 0) {
@@ -105,7 +105,7 @@ async function _getObject(idOrName, query, tableName, formatFunction, additional
     ? await pool.query(`${query} WHERE ${tableName ? `"${tableName}".` : ''}"Id" = $1`, [idOrName])
     : await pool.query(`${query} WHERE ${tableName ? `"${tableName}".` : ''}"Name" = $1`, [idOrName]);
 
-  return rows.length === 1
+  return rows.length === 1 
     ? additionalDataFunction !== null 
     ? Promise.resolve(formatFunction(rows[0], await additionalDataFunction([rows[0].Id + idOffset]))) 
     : Promise.resolve(formatFunction(rows[0]))
@@ -135,30 +135,96 @@ function _groupBy(arr, key) {
   }, {});
 }
 
+function _groupByProperty(arr, keyFunc) {
+  return arr.reduce((acc, obj) => {
+    let keyVal = keyFunc(obj);
+    if (!acc[keyVal]) {
+      acc[keyVal] = [];
+    }
+    acc[keyVal].push(obj);
+    return acc;
+  }, {});
+}
+
+async function _getTiers(ids, isArmorSet = false) {
+  if (ids.length === 0) {
+    return {};
+  }
+
+  let tiers;
+
+  if (isArmorSet) {
+    tiers = (await pool.query(`
+    SELECT "Tiers"."Tier", "Tiers"."ItemId", "Tiers"."IsArmorSet", "ArmorSets"."Name" AS "ItemName", "TierMaterials".*, "Materials"."Name" AS "MaterialName", "Materials"."Value" AS "Value", "Materials"."Weight" AS "Weight", "Materials"."Type" AS "Type"
+    FROM ONLY "Tiers"
+    INNER JOIN ONLY "TierMaterials" ON "Tiers"."Id" = "TierMaterials"."TierId"
+    INNER JOIN ONLY "Materials" ON "TierMaterials"."MaterialId" = "Materials"."Id"
+    INNER JOIN ONLY "ArmorSets" ON "Tiers"."ItemId" = "ArmorSets"."Id"
+    WHERE "Tiers"."ItemId" IN (${ids.join(',')}) AND "IsArmorSet" = 1`)).rows;
+  }
+  else {
+    tiers = (await pool.query(`
+    SELECT "Tiers"."Tier", "Tiers"."ItemId", "Tiers"."IsArmorSet", "Items"."Name" AS "ItemName", "TierMaterials".*, "Materials"."Name" AS "MaterialName", "Materials"."Value" AS "Value", "Materials"."Weight" AS "Weight", "Materials"."Type" AS "Type"
+    FROM ONLY "Tiers"
+    INNER JOIN ONLY "TierMaterials" ON "Tiers"."Id" = "TierMaterials"."TierId"
+    INNER JOIN ONLY "Materials" ON "TierMaterials"."MaterialId" = "Materials"."Id"
+    INNER JOIN ONLY "Items" ON "Tiers"."ItemId" = "Items"."Id"
+    WHERE "Tiers"."ItemId" IN (${ids.join(',')}) AND "IsArmorSet" = 0`)).rows;
+  }
+
+  return tiers.reduce((acc, tier) => {
+    if (!acc[tier.ItemId]) {
+      acc[tier.ItemId] = {};
+    }
+    if (!acc[tier.ItemId][tier.Tier]) {
+      acc[tier.ItemId][tier.Tier] = [];
+    }
+    acc[tier.ItemId][tier.Tier].push(tier);
+    return acc;
+  }, {})
+}
+
 async function _getEffectsOnUse(ids) {
-  let { rows } = await pool.query(`SELECT "Effects"."Id", "Effects"."Name", "Effects"."Unit", "EffectsOnUse"."DurationSeconds", "EffectsOnUse"."Strength", "EffectsOnUse"."ItemId" FROM "EffectsOnUse" INNER JOIN "Effects" ON "EffectsOnUse"."EffectId" = "Effects"."Id" WHERE "EffectsOnUse"."ItemId" IN (${ids.join(',')})`);
+  if (ids.length === 0) {
+    return {};
+  }
+
+  let { rows } = await pool.query(`SELECT "Effects"."Id", "Effects"."Name", "Effects"."Unit", "Effects"."Notes", "EffectsOnUse"."DurationSeconds", "EffectsOnUse"."Strength", "EffectsOnUse"."ItemId" FROM ONLY "EffectsOnUse" INNER JOIN ONLY "Effects" ON "EffectsOnUse"."EffectId" = "Effects"."Id" WHERE "EffectsOnUse"."ItemId" IN (${ids.join(',')})`);
 
   return _groupBy(rows, 'ItemId');
 }
 
 async function _getEffectsOnEquip(ids) {
-  let { rows } = await pool.query(`SELECT "Effects"."Id", "Effects"."Name", "Effects"."Unit", "EffectsOnEquip"."Strength", "EffectsOnEquip"."ItemId" FROM "EffectsOnEquip" INNER JOIN "Effects" ON "EffectsOnEquip"."EffectId" = "Effects"."Id" WHERE "EffectsOnEquip"."ItemId" IN (${ids.join(',')})`);
+  if (ids.length === 0) {
+    return {};
+  }
+
+  let { rows } = await pool.query(`SELECT "Effects"."Id", "Effects"."Name", "Effects"."Unit", "Effects"."Notes", "EffectsOnEquip"."Strength", "EffectsOnEquip"."ItemId" FROM ONLY "EffectsOnEquip" INNER JOIN ONLY "Effects" ON "EffectsOnEquip"."EffectId" = "Effects"."Id" WHERE "EffectsOnEquip"."ItemId" IN (${ids.join(',')})`);
 
   return _groupBy(rows, 'ItemId');
 }
 
 async function _getEffectsOnArmorSetEquipFromArmor(ids) {
-  let { rows } = await pool.query(`SELECT "Effects"."Id", "Effects"."Name", "Effects"."Unit", "EffectsOnSetEquip"."Strength", "EffectsOnSetEquip"."MinSetPieces", "Armors"."Id" AS "ItemId" FROM "EffectsOnSetEquip" INNER JOIN "Armors" ON "EffectsOnSetEquip"."SetId" = "Armors"."SetId" INNER JOIN "Effects" ON "EffectsOnSetEquip"."EffectId" = "Effects"."Id" WHERE "Armors"."Id" IN (${ids.join(',')})`);
+  if (ids.length === 0) {
+    return {};
+  }
+
+  let { rows } = await pool.query(`SELECT "Effects"."Id", "Effects"."Name", "Effects"."Unit", "Effects"."Notes", "EffectsOnSetEquip"."Strength", "EffectsOnSetEquip"."MinSetPieces", "Armors"."Id" AS "ItemId" FROM ONLY "EffectsOnSetEquip" INNER JOIN ONLY "Armors" ON "EffectsOnSetEquip"."SetId" = "Armors"."SetId" INNER JOIN ONLY "Effects" ON "EffectsOnSetEquip"."EffectId" = "Effects"."Id" WHERE "Armors"."Id" IN (${ids.join(',')})`);
 
   return _groupBy(rows, 'ItemId');
 }
 
 async function _getEffectsOnEquipSetEquipFromEquipSet(ids) {
+  if (ids.length === 0) {
+    return {};
+  }
+
   let { rows } = await pool.query(`
-    SELECT "Effects"."Id", "Effects"."Name", "Effects"."Unit", "EffectsOnSetEquip"."Strength", "EffectsOnSetEquip"."MinSetPieces", "EquipSetItems"."ItemId"
-      FROM "EffectsOnSetEquip"
-    INNER JOIN "EquipSetItems" ON "EffectsOnSetEquip"."SetId" = "EquipSetItems"."EquipSetId" + ${idOffsets.equipSet}
-    INNER JOIN "Effects" ON "EffectsOnSetEquip"."EffectId" = "Effects"."Id"
+    SELECT "Effects"."Id", "Effects"."Name", "Effects"."Unit", "Effects"."Notes", "EffectsOnSetEquip"."Strength", "EffectsOnSetEquip"."MinSetPieces", "EquipSetItems"."ItemId", "EquipSets"."Name" AS "SetName", "EquipSets"."Id" AS "SetId"
+      FROM ONLY "EffectsOnSetEquip"
+    INNER JOIN ONLY "EquipSetItems" ON "EffectsOnSetEquip"."SetId" = "EquipSetItems"."EquipSetId" + ${idOffsets.equipSet}
+    INNER JOIN ONLY "EquipSets" ON "EffectsOnSetEquip"."SetId" = "EquipSets"."Id" + ${idOffsets.equipSet}
+    INNER JOIN ONLY "Effects" ON "EffectsOnSetEquip"."EffectId" = "Effects"."Id"
       WHERE "EquipSetItems"."ItemId" IN (${ids.join(',')})`);
 
   return _groupBy(rows, 'ItemId');
@@ -170,7 +236,8 @@ function _formatEffectOnUse(x) {
     Values: {
       DurationSeconds: x.DurationSeconds !== null ? Number(x.DurationSeconds) : null,
       Strength: x.Strength !== null ? Number(x.Strength) : null,
-      Unit: x.Unit
+      Unit: x.Unit,
+      Notes: x.Notes
     },
     Links: {
       "$Url": `/effects/${x.Id}`
@@ -183,7 +250,8 @@ function _formatEffectOnEquip(x) {
     Name: x.Name,
     Values: {
       Strength: x.Strength !== null ? Number(x.Strength) : null,
-      Unit: x.Unit
+      Unit: x.Unit,
+      Notes: x.Notes
     },
     Links: {
       "$Url": `/effects/${x.Id}`
@@ -197,7 +265,8 @@ function _formatEffectOnSetEquip(x) {
     Values: {
       Strength: x.Strength !== null ? Number(x.Strength) : null,
       MinSetPieces: x.MinSetPieces !== null ? Number(x.MinSetPieces) : null,
-      Unit: x.Unit
+      Unit: x.Unit,
+      Notes: x.Notes
     },
     Links: {
       "$Url": `/effects/${x.Id}`
@@ -215,10 +284,20 @@ async function search(search) {
             WHEN "Items"."Type" = 'Weapon' THEN "Weapons"."Class"
             ELSE NULL
           END AS "SubType"
-        FROM "Items"
-        LEFT JOIN "Weapons" ON "Items"."Id" - ${idOffsets.Weapons} = "Weapons"."Id"
+        FROM ONLY "Items"
+        LEFT JOIN ONLY "Weapons" ON "Items"."Id" - ${idOffsets.Weapons} = "Weapons"."Id"
+        WHERE "Items"."Type" != 'Armor'
         UNION ALL
-        SELECT "Mobs"."Id" + 1000000000 AS "Id", "Mobs"."Name" AS "Name", 'Mob' AS "Type", "Planets"."Name" AS "SubType" FROM "Mobs" INNER JOIN "Planets" ON "Mobs"."PlanetId" = "Planets"."Id")
+        SELECT "ArmorSets"."Id" + 1000000000 AS "Id", "ArmorSets"."Name" AS "Name", 'Armor' AS "Type", NULL AS "SubType" FROM ONLY "ArmorSets"
+        UNION ALL
+        SELECT "Mobs"."Id" + 2000000000 AS "Id", "Mobs"."Name" AS "Name", 'Mob' AS "Type", "Planets"."Name" AS "SubType" FROM ONLY "Mobs" INNER JOIN ONLY "Planets" ON "Mobs"."PlanetId" = "Planets"."Id"
+        UNION ALL
+        SELECT "Skills"."Id" + 3000000000 AS "Id", "Skills"."Name" AS "Name", 'Skill' AS "Type", NULL AS "SubType" FROM ONLY "Skills"
+        UNION ALL
+        SELECT "Professions"."Id" + 4000000000 AS "Id", "Professions"."Name" AS "Name", 'Profession' AS "Type", NULL AS "SubType" FROM ONLY "Professions"
+        UNION ALL
+        SELECT "Vendors"."Id" + 5000000000 AS "Id", "Vendors"."Name" AS "Name", 'Vendor' AS "Type", NULL AS "SubType" FROM ONLY "Vendors"
+      )
       WHERE "Name" ILIKE $1
     ) x
     WHERE rn <= 5
@@ -226,6 +305,30 @@ async function search(search) {
   `;
 
   let { rows } = await pool.query(query, [`%${search}%`]);
+
+  return rows.map(formatSearchResult);
+}
+
+async function searchItems(search) {
+  let { rows } = await pool.query(`
+    SELECT * FROM (
+      SELECT *, ROW_NUMBER() OVER (PARTITION BY "Type" ORDER BY "Id") as rn
+      FROM (
+        SELECT "Items"."Id" AS "Id", "Items"."Name" AS "Name", "Items"."Type" AS "Type",
+          CASE
+            WHEN "Items"."Type" = 'Weapon' THEN "Weapons"."Class"
+            ELSE NULL
+          END AS "SubType" 
+        FROM ONLY "Items"
+        LEFT JOIN ONLY "Weapons" ON "Items"."Id" - ${idOffsets.Weapons} = "Weapons"."Id"
+        WHERE "Items"."Type" != 'Armor' AND "Items"."Name" ILIKE $1
+        UNION ALL
+        SELECT "ArmorSets"."Id" + 1000000000 AS "Id", "ArmorSets"."Name" AS "Name", 'Armor' AS "Type", NULL AS "SubType" FROM ONLY "ArmorSets"
+        )
+      WHERE "Name" ILIKE $1
+    ) x
+    WHERE rn <= 5
+    LIMIT 20`, [`%${search}%`]);
 
   return rows.map(formatSearchResult);
 }
@@ -246,11 +349,11 @@ async function getAreas(planets = null) {
     whereClause = pgp.as.format('WHERE "Planets"."Name" IN ($1:csv)', [planets]);
   }
 
-  return _getObjects(queries.Areas + whereClause, formatArea);
+  return await _getObjects(queries.Areas + whereClause, formatArea);
 }
 
 async function getArea(idOrName) {
-  return _getObject(idOrName, queries.Areas, 'Areas', formatArea);
+  return await _getObject(idOrName, queries.Areas, 'Areas', formatArea);
 }
 
 function formatArea(x) {
@@ -290,11 +393,11 @@ async function getLocations(planets = null) {
     whereClause = pgp.as.format('WHERE "Planets"."Name" IN ($1:csv)', [planets]);
   }
 
-  return _getObjects(queries.Locations + whereClause, formatLocation);
+  return await _getObjects(queries.Locations + whereClause, formatLocation);
 }
 
 async function getLocation(idOrName) {
-  return _getObject(idOrName, queries.Locations, 'Locations', formatLocation);
+  return await _getObject(idOrName, queries.Locations, 'Locations', formatLocation);
 }
 
 function formatLocation(x) {
@@ -326,11 +429,11 @@ function formatLocation(x) {
 
 // Planets
 async function getPlanets() {
-  return _getObjects(queries.Planets, formatPlanet);
+  return await _getObjects(queries.Planets, formatPlanet);
 }
 
 async function getPlanet(idOrName) {
-  return _getObject(idOrName, queries.Planets, 'Planets', formatPlanet);
+  return await _getObject(idOrName, queries.Planets, 'Planets', formatPlanet);
 }
 
 function formatPlanet(x) {
@@ -354,11 +457,11 @@ function formatPlanet(x) {
 
 // Teleporters
 async function getTeleporters() {
-  return _getObjects(queries.Teleporters, formatTeleporter);
+  return await _getObjects(queries.Teleporters, formatTeleporter);
 }
 
 async function getTeleporter(idOrName) {
-  return _getObject(idOrName, queries.Teleporters, 'Teleporters', formatTeleporter);
+  return await _getObject(idOrName, queries.Teleporters, 'Teleporters', formatTeleporter);
 }
 
 function formatTeleporter(x) {
@@ -387,6 +490,74 @@ function formatTeleporter(x) {
   }
 }
 
+// MobSpawns
+async function getMobSpawns(mobs = null) {
+  let whereClause = '';
+
+  if (mobs != null && mobs.length > 0) {
+    whereClause = pgp.as.format(' WHERE (SELECT COUNT(*) FROM "MobSpawnMaturities" WHERE "SpawnId" = "MobSpawns"."Id" AND "MaturityId" IN (SELECT DISTINCT "MobMaturities"."Id" FROM "MobMaturities" INNER JOIN "Mobs" ON "MobMaturities"."MobId" = "Mobs"."Id" WHERE "Mobs"."Name" IN ($1:csv))) > 0', [mobs]);
+  }
+
+  return await _getObjects(queries.MobSpawns + whereClause, formatMobSpawn, _getMobSpawnMaturities);
+}
+
+async function getMobSpawn(idOrName) {
+  return await _getObject(idOrName, queries.MobSpawns, 'MobSpawns', _getMobSpawnMaturities);
+}
+
+async function _getMobSpawnMaturities(spawnIds) {
+  if (spawnIds.length === 0) {
+    return {};
+  }
+
+  let { rows } = await pool.query(`SELECT "MobSpawnMaturities".*, "MobMaturities".*, "Mobs"."Name" AS "Mob", "Mobs"."PlanetId", "Planets"."Name" AS "Planet", "Planets"."TechnicalName" AS "TechnicalName" FROM ONLY "MobSpawnMaturities" INNER JOIN ONLY "MobMaturities" ON "MobSpawnMaturities"."MaturityId" = "MobMaturities"."Id" INNER JOIN ONLY "Mobs" ON "MobMaturities"."MobId" = "Mobs"."Id" INNER JOIN ONLY "Planets" ON "Mobs"."PlanetId" = "Planets"."Id" WHERE "SpawnId" IN (${spawnIds.join(',')})`);
+
+  return _groupBy(rows, 'SpawnId');
+}
+
+function formatMobSpawn(x, data) {
+  let maturities = (data[x.Id] ?? []).map(_formatMobSpawnMaturity);
+
+  return {
+    Id: x.Id,
+    Name: x.Name,
+    Properties: {
+      Density: x.Density,
+      IsShared: x.IsShared === 1,
+      IsEvent: x.IsEvent === 1,
+      Notes: x.Notes,
+      Type: x.Type,
+      Shape: x.Shape,
+      Data: x.Data,
+      Coordinates: {
+        Longitude: x.Longitude,
+        Latitude: x.Latitude,
+        Altitude: x.Altitude
+      }
+    },
+    Planet: {
+      Name: x.Planet,
+      Properties: {
+        TechnicalName: x.TechnicalName,
+      },
+      Links: {
+        "$Url": `/planets/${x.PlanetId}`
+      }
+    },
+    Maturities: maturities,
+    Links: {
+      "$Url": `/mobspawns/${x.Id}`
+    }
+  }
+}
+
+function _formatMobSpawnMaturity(x) {
+  return {
+    IsRare: x.IsRare,
+    Maturity: formatMobMaturity(x, []),
+  }
+}
+
 // Items
 async function getItems() {
   let { rows } = await pool.query(queries.Items);
@@ -395,7 +566,7 @@ async function getItems() {
 }
 
 async function getItem(idOrName) {
-  return _getObject(idOrName, queries.Items, 'Items', formatItem);
+  return await _getObject(idOrName, queries.Items, 'Items', formatItem);
 }
 
 function formatItem(x) {
@@ -406,7 +577,7 @@ function formatItem(x) {
       Type: x.Type,
       Weight: x.Weight !== null ? Number(x.Weight) : null,
       Economy: {
-        Value: x.MaxTT !== null ? Number(x.MaxTT) : null,
+        Value: x.Value !== null ? Number(x.Value) : null,
       }
     },
     Links: {
@@ -423,7 +594,7 @@ async function getAbsorbers() {
 }
 
 async function getAbsorber(idOrName) {
-  return _getObject(idOrName, queries.Absorbers, 'Absorbers', formatAbsorber);
+  return await _getObject(idOrName, queries.Absorbers, 'Absorbers', formatAbsorber);
 }
 
 function formatAbsorber(x) {
@@ -448,11 +619,11 @@ function formatAbsorber(x) {
 
 // ArmorPlatings
 async function getArmorPlatings() {
-  return _getObjects(queries.ArmorPlatings, formatArmorPlating);
+  return await _getObjects(queries.ArmorPlatings, formatArmorPlating);
 }
 
 async function getArmorPlating(idOrName) {
-  return _getObject(idOrName, queries.ArmorPlatings, 'ArmorPlatings', formatArmorPlating);
+  return await _getObject(idOrName, queries.ArmorPlatings, 'ArmorPlatings', formatArmorPlating);
 }
 
 function formatArmorPlating(x) {
@@ -488,38 +659,44 @@ function formatArmorPlating(x) {
 
 // ArmorSets
 async function getArmorSets() {
-  return _getObjects(queries.ArmorSets, formatArmorSet, _getArmorSetPiecesAndEffects);
+  return await _getObjects(queries.ArmorSets, formatArmorSet, _getArmorSetPiecesAndEffects);
 }
 
 async function getArmorSet(idOrName) {
-  return _getObject(idOrName, queries.ArmorSets, 'ArmorSets', formatArmorSet, _getArmorSetPiecesAndEffects);
+  return await _getObject(idOrName, queries.ArmorSets, 'ArmorSets', formatArmorSet, _getArmorSetPiecesAndEffects);
 }
  
 async function _getArmorSetPiecesAndEffects(setIds) {
-  let { rows: armors } = await pool.query(`SELECT * FROM "Armors" WHERE "SetId" IN (${setIds.join(',')})`);
-  let { rows: effects } = await pool.query(`SELECT "Effects"."Id", "Effects"."Name", "Effects"."Unit", "EffectsOnSetEquip"."Strength", "EffectsOnSetEquip"."MinSetPieces", "EffectsOnSetEquip"."SetId" FROM "EffectsOnSetEquip" INNER JOIN "Effects" ON "EffectsOnSetEquip"."EffectId" = "Effects"."Id" WHERE "EffectsOnSetEquip"."SetId" IN (${setIds.join(',')})`);
+  let { rows: armors } = await pool.query(`SELECT * FROM ONLY "Armors" WHERE "SetId" IN (${setIds.join(',')})`);
+  let { rows: setEffects } = await pool.query(`SELECT "Effects"."Id", "Effects"."Name", "Effects"."Unit", "EffectsOnSetEquip"."Strength", "EffectsOnSetEquip"."MinSetPieces", "EffectsOnSetEquip"."SetId" FROM ONLY "EffectsOnSetEquip" INNER JOIN ONLY "Effects" ON "EffectsOnSetEquip"."EffectId" = "Effects"."Id" WHERE "EffectsOnSetEquip"."SetId" IN (${setIds.join(',')})`);
 
   return {
     Armors: _groupBy(armors, 'SetId'),
-    Effects: _groupBy(effects, 'SetId'),
+    Effects: await _getEffectsOnEquip(armors.map(x => x.Id + idOffsets.Armors)),
+    SetEffects: _groupBy(setEffects, 'SetId'),
+    Tiers: await _getTiers(setIds, true)
   }
 }
 
 async function formatArmorSet(x, data) {
-  let armorPieces = (data.Armors[x.Id] ?? []).map(_formatArmorSmall);
-
+  let armorPieces = (data.Armors[x.Id] ?? [])
+    .map(y => {
+      let armor = _formatArmor(y);
+      armor.EffectsOnEquip = data.Effects[y.Id + idOffsets.Armors]?.map(_formatEffectOnEquip) ?? []
+      return armor;
+    });
   let maleSet = armorPieces.filter(y => y.Properties.Gender === 'Male' || y.Properties.Gender === 'Both');
-
-  let effects = (data.Effects[x.Id] ?? []).map(_formatEffectOnSetEquip);
+  let setEffects = (data.SetEffects[x.Id] ?? []).map(_formatEffectOnSetEquip);
+  let tiers = Object.values((data.Tiers[x.Id] ?? [])).map(_formatTier);
 
   return {
     Id: x.Id,
     Name: x.Name,
     Properties: {
-      Weight: maleSet.map(y => y.Properties.Weight).reduce((a, b) => a + Number(b), 0) ?? null,
+      Weight: Number(maleSet.map(y => y.Properties.Weight).reduce((a, b) => a + Number(b), 0).toFixed(8)) ?? null,
       Economy: {
-        MaxTT: maleSet.map(y => y.Properties.Economy.MaxTT).reduce((a, b) => a + Number(b), 0) ?? null,
-        MinTT: maleSet.map(y => y.Properties.Economy.MinTT).reduce((a, b) => a + Number(b), 0) ?? null,
+        MaxTT: Number(maleSet.map(y => y.Properties.Economy.MaxTT).reduce((a, b) => a + Number(b), 0).toFixed(8)) ?? null,
+        MinTT: Number(maleSet.map(y => y.Properties.Economy.MinTT).reduce((a, b) => a + Number(b), 0).toFixed(8)) ?? null,
         Durability: x.Durability !== null ? Number(x.Durability) : null,
       },
       Defense: {
@@ -534,15 +711,16 @@ async function formatArmorSet(x, data) {
         Electric: x.Electric !== null ? Number(x.Electric) : null,
       }
     },
-    EffectsOnSetEquip: effects,
-    Armors: armorPieces,
+    EffectsOnSetEquip: setEffects,
+    Armors: Object.values(_groupByProperty(armorPieces, x => x.Properties.Slot)),
+    Tiers: tiers,
     Links: {
       "$Url": `/armorsets/${x.Id}`
     }
   }
 }
 
-function _formatArmorSmall(x) {
+function _formatArmor(x) {
   return {
     Name: x.Name,
     Properties: {
@@ -554,6 +732,7 @@ function _formatArmorSmall(x) {
         MinTT: x.MinTT !== null ? Number(x.MinTT) : null,
       }
     },
+    EffectsOnEquip: x.Effects,
     Links: {
       "$Url": `/armors/${x.Id}`
     }
@@ -562,11 +741,11 @@ function _formatArmorSmall(x) {
 
 // Armors
 async function getArmors() {
-  return _getObjects(queries.Armors, formatArmor);
+  return await _getObjects(queries.Armors, formatArmor);
 }
 
 async function getArmor(idOrName) {
-  return _getObject(idOrName, queries.Armors, 'Armors', formatArmor);
+  return await _getObject(idOrName, queries.Armors, 'Armors', formatArmor);
 }
 
 function formatArmor(x) {
@@ -609,11 +788,11 @@ function formatArmor(x) {
 
 // BlueprintBooks
 async function getBlueprintBooks() {
-  return _getObjects(queries.BlueprintBooks, formatBlueprintBook);
+  return await _getObjects(queries.BlueprintBooks, formatBlueprintBook);
 }
 
 async function getBlueprintBook(idOrName) {
-  return _getObject(idOrName, queries.BlueprintBooks, 'BlueprintBooks', formatBlueprintBook);
+  return await _getObject(idOrName, queries.BlueprintBooks, 'BlueprintBooks', formatBlueprintBook);
 }
 
 function formatBlueprintBook(x) {
@@ -640,18 +819,21 @@ function formatBlueprintBook(x) {
 }
 
 // Blueprints
-async function getBlueprints(products = null) {
+async function getBlueprints(products = null, materials = null) {
   let whereClause = '';
 
   if (products !== null) {
     whereClause = pgp.as.format(' WHERE "Items"."Name" IN ($1:csv)', [products.map(x => `${x}`)]);
   }
+  else if (materials !== null) {
+    whereClause = pgp.as.format(' WHERE "Blueprints"."Id" IN (SELECT DISTINCT "BlueprintId" FROM ONLY "BlueprintMaterials" INNER JOIN ONLY "Items" ON "Items"."Id" = "BlueprintMaterials"."ItemId" WHERE "Items"."Name" IN ($1:csv))', [materials.map(x => `${x}`)]);
+  }
 
-  return _getObjects(queries.Blueprints + whereClause, formatBlueprint, getBlueprintIngredients);
+  return await _getObjects(queries.Blueprints + whereClause, formatBlueprint, getBlueprintIngredients);
 }
 
 async function getBlueprint(idOrName) {
-  return _getObject(idOrName, queries.Blueprints, 'Blueprints', formatBlueprint, getBlueprintIngredients);
+  return await _getObject(idOrName, queries.Blueprints, 'Blueprints', formatBlueprint, getBlueprintIngredients);
 }
 
 async function getBlueprintIngredients(ids) {
@@ -659,7 +841,7 @@ async function getBlueprintIngredients(ids) {
     return {};
   }
 
-  let { rows } = await pool.query(`SELECT "BlueprintId", "Name", "Amount", "ItemId", "Type", "Items"."Value" AS "Value", "Items"."Type" AS "ItemType" FROM "BlueprintMaterials" INNER JOIN "Items" ON "Items"."Id" = "BlueprintMaterials"."ItemId" WHERE "BlueprintId" IN (${ids.join(',')})`);
+  let { rows } = await pool.query(`SELECT "BlueprintId", "Name", "Amount", "ItemId", "Type", "Items"."Value" AS "Value", "Items"."Type" AS "ItemType" FROM ONLY "BlueprintMaterials" INNER JOIN ONLY "Items" ON "Items"."Id" = "BlueprintMaterials"."ItemId" WHERE "BlueprintId" IN (${ids.join(',')})`);
 
   return _groupBy(rows, 'BlueprintId');
 }
@@ -680,7 +862,7 @@ function formatBlueprint(x, ingredients) {
       Skill: {
         LearningIntervalStart: x.MinLvl !== null ? Number(x.MinLvl) : null,
         LearningIntervalEnd:x.MaxLvl !== null ? Number(x.MaxLvl) : null,
-        IsSiB: x.IsSib,
+        IsSiB: x.IsSib === 1,
       }
     },
     Profession: {
@@ -695,12 +877,15 @@ function formatBlueprint(x, ingredients) {
         "$Url": `/blueprintbooks/${x.BookId}`
       }
     },
-    Product: {
+    Product: x.Item != null ? {
       Name: x.Item,
+      Properties: {
+        Type: x.ItemType,
+      },
       Links: {
         "$Url": `/${x.ItemType.toLowerCase()}s/${x.ItemId % 100000}`
       }
-    },
+    } : null,
     Materials: materials,
     Links: {
       "$Url": `/blueprints/${x.Id}`,
@@ -722,38 +907,34 @@ function _formatBlueprintMaterial(x) {
       Links: {
         "$Url": `/${x.Type.toLowerCase()}s/${x.ItemId % 100000}`
       }
-    },
-    Links: {
-      "$Url": `/${x.Type.toLowerCase()}s/${x.ItemId % 100000}`
     }
   }
 }
 
-// Clothes
-async function getClothes(idOrName = null) {
-  const dataFunc = async (ids) => {
-    const [effectsOnEquip, effectsOnSetEquip] = await Promise.all([
-      _getEffectsOnEquip(ids),
-      _getEffectsOnEquipSetEquipFromEquipSet(ids)
-    ]);
-
-    return { effectsOnEquip, effectsOnSetEquip };
-  };
-
-  if (idOrName !== null) {
-    return _getObject(idOrName, queries.Clothes, 'Clothes', formatClothes, dataFunc, idOffsets.Clothes);
-  }
-  else {
-    return _getObjects(queries.Clothes, formatClothes, dataFunc, idOffsets.Clothes);
-  }
+// Clothings
+async function getClothings() {
+  return await _getObjects(queries.Clothings, formatClothings, _getClothingData, idOffsets.Clothings);
 }
 
-function formatClothes(x, data) {
+async function getClothing(idOrName) {
+  return await _getObject(idOrName, queries.Clothings, 'Clothes', formatClothings, _getClothingData, idOffsets.Clothings);
+}
+
+async function _getClothingData(ids) {
+  const [effectsOnEquip, effectsOnSetEquip] = await Promise.all([
+    _getEffectsOnEquip(ids),
+    _getEffectsOnEquipSetEquipFromEquipSet(ids)
+  ]);
+
+  return { effectsOnEquip, effectsOnSetEquip };
+}
+
+function formatClothings(x, data) {
   const { effectsOnEquip, effectsOnSetEquip } = data;
 
   return {
     Id: x.Id,
-    ItemId: x.Id + idOffsets.Clothes,
+    ItemId: x.Id + idOffsets.Clothings,
     Name: x.Name,
     Properties: {
       Weight: x.Weight !== null ? Number(x.Weight) : null,
@@ -765,25 +946,31 @@ function formatClothes(x, data) {
         MinTT: x.MinTT !== null ? Number(x.MinTT) : null
       }
     },
-    EffectsOnEquip: (effectsOnEquip[x.Id + idOffsets.Clothes] ?? []).map(_formatEffectOnEquip),
-    EffectsOnSetEquip: (effectsOnSetEquip[x.Id + idOffsets.Clothes] ?? []).map(_formatEffectOnSetEquip),
+    Set: effectsOnSetEquip[x.Id + idOffsets.Clothings]?.length > 0 ? {
+      Name: effectsOnSetEquip[x.Id + idOffsets.Clothings][0].SetName,
+      EffectsOnSetEquip: (effectsOnSetEquip[x.Id + idOffsets.Clothings] ?? []).map(_formatEffectOnSetEquip),
+      Links: {
+        "$Url": `/equipsets/${effectsOnSetEquip[x.Id + idOffsets.Clothings][0].SetId}`
+      }
+    } : null,
+    EffectsOnEquip: (effectsOnEquip[x.Id + idOffsets.Clothings] ?? []).map(_formatEffectOnEquip),
     Links: {
-      "$Url": `/clothes/${x.Id}`
+      "$Url": `/clothings/${x.Id}`
     }
   }
 }
 
 // Consumables
 async function getConsumables() {
-  return _getObjects(queries.Consumables, formatConsumable, _getConsumableEffects);
+  return await _getObjects(queries.Consumables, formatConsumable, _getConsumableEffects);
 }
 
 async function getConsumable(idOrName) {
-  return _getObject(idOrName, queries.Consumables, 'Consumables', formatConsumable, _getConsumableEffects);
+  return await _getObject(idOrName, queries.Consumables, 'Consumables', formatConsumable, _getConsumableEffects);
 }
 
 async function _getConsumableEffects(ids) {
-  let { rows } = await pool.query(`SELECT "Id", "Effects"."Name", "Effects"."Unit", "EffectsOnConsume"."DurationSeconds", "EffectsOnConsume"."Strength", "EffectsOnConsume"."ConsumableId", "Effects"."IsPositive" FROM "EffectsOnConsume" INNER JOIN "Effects" ON "EffectsOnConsume"."EffectId" = "Effects"."Id" WHERE "EffectsOnConsume"."ConsumableId" IN (${ids.join(',')})`);
+  let { rows } = await pool.query(`SELECT "Id", "Effects"."Name", "Effects"."Unit", "EffectsOnConsume"."DurationSeconds", "EffectsOnConsume"."Strength", "EffectsOnConsume"."ConsumableId", "Effects"."IsPositive" FROM ONLY "EffectsOnConsume" INNER JOIN ONLY "Effects" ON "EffectsOnConsume"."EffectId" = "Effects"."Id" WHERE "EffectsOnConsume"."ConsumableId" IN (${ids.join(',')})`);
 
   return _groupBy(rows, 'ConsumableId');
 }
@@ -804,7 +991,7 @@ async function formatConsumable(x, effects) {
     },
     EffectsOnConsume: formattedEffects,
     Links: {
-      "$Url": `/consumables/${x.Id}`
+      "$Url": `/stimulants/${x.Id}`
     }
   }
 }
@@ -826,11 +1013,11 @@ function _formatEffectOnConsume(x) {
 
 // CreatureControlCapsules
 async function getCreatureControlCapsules() {
-  return _getObjects(queries.CreatureControlCapsules, formatCreatureControlCapsule);
+  return await _getObjects(queries.CreatureControlCapsules, formatCreatureControlCapsule);
 }
 
 async function getCreatureControlCapsule(idOrName) {
-  return _getObject(idOrName, queries.CreatureControlCapsules, 'CreatureControlCapsules', formatCreatureControlCapsule);
+  return await _getObject(idOrName, queries.CreatureControlCapsules, 'CreatureControlCapsules', formatCreatureControlCapsule);
 }
 
 function formatCreatureControlCapsule(x) {
@@ -840,6 +1027,7 @@ function formatCreatureControlCapsule(x) {
     Name: x.Name,
     Properties: {
       Weight: x.Weight !== null ? Number(x.Weight) : null,
+      MinProfessionLevel: x.ProfessionLevel !== null ? Number(x.ProfessionLevel) : null,
       Economy: {
         MaxTT: x.MaxTT !== null ? Number(x.MaxTT) : null,
       }
@@ -857,18 +1045,18 @@ function formatCreatureControlCapsule(x) {
       }
     },
     Links: {
-      "$Url": `/creaturecontrolcapsules/${x.Id}`,
+      "$Url": `/capsules/${x.Id}`,
     }
   }
 }
 
 // Decorations
 async function getDecorations() {
-  return _getObjects(queries.Decorations, formatDecoration);
+  return await _getObjects(queries.Decorations, formatDecoration);
 }
 
 async function getDecoration(idOrName) {
-  return _getObject(idOrName, queries.Decorations, 'Decorations', formatDecoration);
+  return await _getObject(idOrName, queries.Decorations, 'Decorations', formatDecoration);
 }
 
 function formatDecoration(x) {
@@ -890,11 +1078,11 @@ function formatDecoration(x) {
 
 // EffectChips
 async function getEffectChips() {
-  return _getObjects(queries.EffectChips, formatEffectChip, _getEffectsOnUse);
+  return await _getObjects(queries.EffectChips, formatEffectChip, _getEffectsOnUse);
 }
 
 async function getEffectChip(idOrName) {
-  return _getObject(idOrName, queries.EffectChips, 'EffectChips', formatEffectChip, _getEffectsOnUse);
+  return await _getObject(idOrName, queries.EffectChips, 'EffectChips', formatEffectChip, _getEffectsOnUse);
 }
 
 async function formatEffectChip(x, data) {
@@ -908,7 +1096,7 @@ async function formatEffectChip(x, data) {
       Weight: x.Weight !== null ? Number(x.Weight) : null,
       Type: x.Type,
       Range: x.Range !== null ? Number(x.Range) : null,
-      Uses: x.Uses !== null ? Number(x.Uses) : null,
+      UsesPerMinute: x.Uses !== null ? Number(x.Uses) : null,
       Mindforce: {
         Level: x.Level !== null ? Number(x.Level) : null,
         Concentration: x.Concentration !== null ? Number(x.Concentration) : null,
@@ -924,7 +1112,7 @@ async function formatEffectChip(x, data) {
       Skill: {
         LearningIntervalStart: x.MinLevel !== null ? Number(x.MinLevel) : null,
         LearningIntervalEnd: x.MaxLevel !== null ? Number(x.MaxLevel) : null,
-        IsSiB: true,
+        IsSiB: x.IsSib === 1,
       }
     },
     Ammo: {
@@ -948,11 +1136,11 @@ async function formatEffectChip(x, data) {
 
 // Effects
 async function getEffects() {
-  return _getObjects(queries.Effects, formatEffect);
+  return await _getObjects(queries.Effects, formatEffect);
 }
 
 async function getEffect(idOrName) {
-  return _getObject(idOrName, queries.Effects, 'Effects', formatEffect);
+  return await _getObject(idOrName, queries.Effects, 'Effects', formatEffect);
 }
 
 function formatEffect(x) {
@@ -971,11 +1159,11 @@ function formatEffect(x) {
 
 // Enhancers
 async function getEnhancers() {
-  return _getObjects(queries.Enhancers, formatEnhancer);
+  return await _getObjects(queries.Enhancers, formatEnhancer);
 }
 
 async function getEnhancer(idOrName) {
-  return _getObject(idOrName, queries.Enhancers, 'Enhancers', formatEnhancer);
+  return await _getObject(idOrName, queries.Enhancers, 'Enhancers', formatEnhancer);
 }
 
 function formatEnhancer(x) {
@@ -1000,28 +1188,28 @@ function formatEnhancer(x) {
 
 // EquipSets
 async function getEquipSets() {
-  return _getObjects(queries.EquipSets, formatEquipSet, _getSetItemsAndEffects);
+  return await _getObjects(queries.EquipSets, formatEquipSet, _getSetItemsAndEffects);
 }
 
 async function getEquipSet(idOrName) {
-  return _getObject(idOrName, queries.EquipSets, 'EquipSets', formatEquipSet, _getSetItemsAndEffects);
+  return await _getObject(idOrName, queries.EquipSets, 'EquipSets', formatEquipSet, _getSetItemsAndEffects);
 }
 
 async function _getSetItemsAndEffects(ids) {
   const [items, effects] = await Promise.all([
-    ppol.query(`SELECT "EquipSet"."Id" AS "EquipSetId", "Items".* FROM "EquipSetsItems" INNER JOIN "EquipSets" ON "EquipSetsItems"."EquipSetId" = "EquipSets"."Id" INNER JOIN "Items" ON "EquipSetsItems"."ItemId" = "Items"."Id" WHERE "EquipSetId" IN (${ids.join(',')})`).then(x => x.rows),
-    _getEffectsOnArmorSetEquipFromArmor(ids)
+    pool.query(`SELECT "EquipSets"."Id" AS "EquipSetId", "Items".* FROM ONLY "EquipSetItems" INNER JOIN ONLY "EquipSets" ON "EquipSetItems"."EquipSetId" = "EquipSets"."Id" INNER JOIN ONLY "Items" ON "EquipSetItems"."ItemId" = "Items"."Id" WHERE "EquipSetId" IN (${ids.join(',')})`).then(x => x.rows),
+    pool.query(`SELECT "EffectsOnSetEquip"."SetId", "Effects"."Id", "Effects"."Name", "Effects"."Unit", "EffectsOnSetEquip"."Strength", "EffectsOnSetEquip"."MinSetPieces" FROM ONLY "EffectsOnSetEquip" INNER JOIN ONLY "Effects" ON "EffectsOnSetEquip"."EffectId" = "Effects"."Id" WHERE "SetId" IN (${ids.map(x => x + idOffsets.equipSet).join(',')})`).then(x => x.rows)
   ]);
 
   return {
     items: _groupBy(items, 'EquipSetId'),
-    effects: effects
+    effects: _groupBy(effects, 'SetId')
   }
 }
 
 function formatEquipSet(x, data) {
-  let effects = (data[x.Id] ?? []).map(_formatEffectOnSetEquip);
-  let items = (data.items ?? []).map(formatItem);
+  let effects = (data.effects[x.Id + idOffsets.equipSet] ?? []).map(_formatEffectOnSetEquip);
+  let items = (data.items[x.Id] ?? []).map(formatItem);
 
   return {
     Id: x.Id,
@@ -1036,14 +1224,29 @@ function formatEquipSet(x, data) {
 
 // Excavators
 async function getExcavators() {
-  return _getObjects(queries.Excavators, formatExcavator);
+  return await _getObjects(queries.Excavators, formatExcavator, _getExcavatorData, idOffsets.Excavators);
 }
 
 async function getExcavator(idOrName) {
-  return _getObject(idOrName, queries.Excavators, 'Excavators', formatExcavator);
+  return await _getObject(idOrName, queries.Excavators, 'Excavators', formatExcavator, _getExcavatorData, idOffsets.Excavators);
 }
 
-function formatExcavator(x) {
+async function _getExcavatorData(ids) {
+  const [EffectsOnEquip, Tiers] = await Promise.all([
+    _getEffectsOnEquip(ids),
+    _getTiers(ids)
+  ]);
+
+  return {
+    EffectsOnEquip,
+    Tiers
+  }
+}
+
+function formatExcavator(x, data) {
+  let effects = (data.EffectsOnEquip[x.Id + idOffsets.Excavators] ?? []).map(_formatEffectOnEquip);
+  let tiers = Object.values((data.Tiers[x.Id + idOffsets.Excavators] ?? [])).map(_formatTier);
+
   return {
     Id: x.Id,
     ItemId: x.Id + idOffsets.Excavators,
@@ -1063,6 +1266,8 @@ function formatExcavator(x) {
         IsSiB: true,
       }
     },
+    EffectsOnEquip: effects,
+    Tiers: tiers,
     Links: {
       "$Url": `/excavators/${x.Id}`,
     }
@@ -1071,11 +1276,11 @@ function formatExcavator(x) {
 
 // FinderAmplifiers
 async function getFinderAmplifiers() {
-  return _getObjects(queries.FinderAmplifiers, formatFinderAmplifier, _getEffectsOnEquip, idOffsets.FinderAmplifiers);
+  return await _getObjects(queries.FinderAmplifiers, formatFinderAmplifier, _getEffectsOnEquip, idOffsets.FinderAmplifiers);
 }
 
 async function getFinderAmplifier(idOrName) {
-  return _getObject(idOrName, queries.FinderAmplifiers, 'FinderAmplifiers', formatFinderAmplifier, _getEffectsOnEquip, idOffsets.FinderAmplifiers);
+  return await _getObject(idOrName, queries.FinderAmplifiers, 'FinderAmplifiers', formatFinderAmplifier, _getEffectsOnEquip, idOffsets.FinderAmplifiers);
 }
 
 function formatFinderAmplifier(x, data) {
@@ -1087,16 +1292,12 @@ function formatFinderAmplifier(x, data) {
     Name: x.Name,
     Properties: {
       Weight: x.Weight !== null ? Number(x.Weight) : null,
+      Efficiency: x.Efficiency !== null ? Number(x.Efficiency) : null,
+      MinProfessionLevel: x.ProfessionMinimum !== null ? Number(x.ProfessionMinimum) : null,
       Economy: {
-        Efficiency: x.Efficiency !== null ? Number(x.Efficiency) : null,
         MaxTT: x.MaxTT !== null ? Number(x.MaxTT) : null,
         MinTT: x.MinTT !== null ? Number(x.MinTT) : null,
         Decay: x.Decay !== null ? Number(x.Decay) : null,
-      },
-      Skill: {
-        LearningIntervalStart: x.ProfessionMinimum !== null ? Number(x.ProfessionMinimum) : null,
-        LearningIntervalEnd: x.ProfessionMinimum !== null ? Number(x.ProfessionMinimum) : null,
-        IsSiB: false
       }
     },
     EffectsOnEquip: effects,
@@ -1108,15 +1309,28 @@ function formatFinderAmplifier(x, data) {
 
 // Finders
 async function getFinders() {
-  return _getObjects(queries.Finders, formatFinder, _getEffectsOnEquip, idOffsets.Finders);
+  return await _getObjects(queries.Finders, formatFinder, _getFinderData, idOffsets.Finders);
 }
 
 async function getFinder(idOrName) {
-  return _getObject(idOrName, queries.Finders, 'Finders', formatFinder, _getEffectsOnEquip, idOffsets.Finders);
+  return await _getObject(idOrName, queries.Finders, 'Finders', formatFinder, _getFinderData, idOffsets.Finders);
+}
+
+async function _getFinderData(ids) {
+  const [EffectsOnEquip, Tiers] = await Promise.all([
+    _getEffectsOnEquip(ids),
+    _getTiers(ids)
+  ]);
+
+  return {
+    EffectsOnEquip,
+    Tiers
+  }
 }
 
 function formatFinder(x, data) {
-  let effects = (data[x.Id + idOffsets.Finders] ?? []).map(_formatEffectOnEquip);
+  let effects = (data.EffectsOnEquip[x.Id + idOffsets.Finders] ?? []).map(_formatEffectOnEquip);
+  let tiers = Object.values((data.Tiers[x.Id + idOffsets.Finders] ?? [])).map(_formatTier);
 
   return {
     Id: x.Id,
@@ -1140,6 +1354,7 @@ function formatFinder(x, data) {
       }
     },
     EffectsOnEquip: effects,
+    Tiers: tiers,
     Links: {
       "$Url": `/finders/${x.Id}`
     }
@@ -1149,10 +1364,10 @@ function formatFinder(x, data) {
 // Furniture
 async function getFurniture(idOrName = null) {
   if (idOrName !== null) {
-    return _getObject(idOrName, queries.Furniture, 'Furniture', formatFurniture);
+    return await _getObject(idOrName, queries.Furniture, 'Furniture', formatFurniture);
   }
   else {
-    return _getObjects(queries.Furniture, formatFurniture);
+    return await _getObjects(queries.Furniture, formatFurniture);
   }
 }
 
@@ -1182,19 +1397,19 @@ function formatFurniture(x) {
 
 // Materials
 async function getMaterials() {
-  return _getObjects(queries.Materials, formatMaterial);
+  return await _getObjects(queries.Materials, formatMaterial);
 }
 
 async function getMaterial(idOrName) {
-  return _getObject(idOrName, queries.Materials, 'Materials', formatMaterial);
+  return await _getObject(idOrName, queries.Materials, 'Materials', formatMaterial);
 }
 
 function formatMaterial(x) {
   return {
     Id: x.Id,
     Name: x.Name,
-    Type: x.Type,
     Properties: {
+      Type: x.Type,
       Weight: x.Weight !== null ? Number(x.Weight) : null,
       Economy: {
         MaxTT: x.Value !== null ? Number(x.Value) : null,
@@ -1208,31 +1423,35 @@ function formatMaterial(x) {
 
 // MedicalChips
 async function getMedicalChips() {
-  return _getObjects(queries.MedicalChips, formatMedicalChip, _getEffectsOnUse, idOffsets.MedicalChips);
+  return await _getObjects(queries.MedicalChips, formatMedicalChip, _getMedicalChipData, idOffsets.MedicalChips);
 }
 
 async function getMedicalChip(idOrName) {
-  return _getObject(idOrName, queries.MedicalChips, 'MedicalChips', formatMedicalChip, _getEffectsOnUse, idOffsets.MedicalChips);
+  return await _getObject(idOrName, queries.MedicalChips, 'MedicalChips', formatMedicalChip, _getMedicalChipData, idOffsets.MedicalChips);
 }
 
+async function _getMedicalChipData(ids) {
+  return {
+    effectsOnEquip: await _getEffectsOnEquip(ids),
+    effectsOnUse: await _getEffectsOnUse(ids)
+  }
+}
+  
+
 function formatMedicalChip(x, data) {
-  let effects = (data[x.Id + idOffsets.MedicalChips] ?? []).map(_formatEffectOnUse);
+  let effectsOnEquip = (data.effectsOnEquip[x.Id + idOffsets.MedicalChips] ?? []).map(_formatEffectOnEquip);
+  let effectsOnUse = (data.effectsOnUse[x.Id + idOffsets.MedicalChips] ?? []).map(_formatEffectOnUse);
   
   return {
     Id: x.Id,
     ItemId: x.Id + idOffsets.MedicalChips,
     Name: x.Name,
     Properties: {
-      Level: x.Level !== null ? Number(x.Level) : null,
       Range: x.Range !== null ? Number(x.Range) : null,
       Weight: x.Weight !== null ? Number(x.Weight) : null,
       MaxHeal: x.Heal !== null ? Number(x.Heal) : null,
       MinHeal: x.StartInterval !== null ? Number(x.StartInterval) : null,
       UsesPerMinute: x.Uses !== null ? Number(x.Uses) : null,
-      Concentration: x.Concentration !== null ? Number(x.Concentration) : null,
-      Cooldown: x.Cooldown !== null ? Number(x.Cooldown) : null,
-      CooldownGroup: x.CooldownGroup !== null ? Number(x.CooldownGroup) : null,
-      Type: x.Type,
       Economy: {
         MaxTT: x.MaxTT !== null ? Number(x.MaxTT) : null,
         MinTT: x.MinTT !== null ? Number(x.MinTT) : null,
@@ -1244,8 +1463,15 @@ function formatMedicalChip(x, data) {
         LearningIntervalEnd: x.MaxLvl !== null ? Number(x.MaxLvl) : null,
         IsSiB: x.SiB === 1
       },
+      Mindforce: {
+        Level: x.Level !== null ? Number(x.Level) : null,
+        Concentration: x.Concentration !== null ? Number(x.Concentration) : null,
+        Cooldown: x.Cooldown !== null ? Number(x.Cooldown) : null,
+        CooldownGroup: x.CooldownGroup !== null ? Number(x.CooldownGroup) : null,
+      }
     },
-    EffectsOnUse: effects,
+    EffectsOnEquip: effectsOnEquip,
+    EffectsOnUse: effectsOnUse,
     Ammo: {
       Name: x.Ammo,
       Links: {
@@ -1260,34 +1486,31 @@ function formatMedicalChip(x, data) {
 
 // MedicalTools
 async function getMedicalTools() {
-  let datafunc = async (ids) => {
-    const [effectsOnUse, effectsOnEquip] = await Promise.all([
-      _getEffectsOnUse(ids),
-      _getEffectsOnEquip(ids)
-    ]);
-
-    return { OnUse: effectsOnUse, OnEquip: effectsOnEquip };
-  };
-
-  return _getObjects(queries.MedicalTools, formatMedicalTool, datafunc, idOffsets.MedicalTools);
+  return await _getObjects(queries.MedicalTools, formatMedicalTool, _getMedicalToolData, idOffsets.MedicalTools);
 }
 
 async function getMedicalTool(idOrName) {
-  let datafunc = async (ids) => {
-    const [effectsOnUse, effectsOnEquip] = await Promise.all([
-      _getEffectsOnUse(ids),
-      _getEffectsOnEquip(ids)
-    ]);
+  return await _getObject(idOrName, queries.MedicalTools, 'MedicalTools', formatMedicalTool, _getMedicalToolData, idOffsets.MedicalTools);
+}
 
-    return { OnUse: effectsOnUse, OnEquip: effectsOnEquip };
+async function _getMedicalToolData(ids) {
+  const [effectsOnUse, effectsOnEquip, tiers] = await Promise.all([
+    _getEffectsOnUse(ids),
+    _getEffectsOnEquip(ids),
+    _getTiers(ids)
+  ]);
+
+  return { 
+    EffectsOnUse: effectsOnUse,
+    EffectsOnEquip: effectsOnEquip,
+    Tiers: tiers
   };
-
-  return _getObject(idOrName, queries.MedicalTools, 'MedicalTools', formatMedicalTool, datafunc, idOffsets.MedicalTools);
 }
 
 function formatMedicalTool(x, data) {
-  let effectsOnUse = (data.OnUse[x.Id + idOffsets.MedicalTools] ?? []).map(_formatEffectOnUse);
-  let effectsOnEquip = (data.OnEquip[x.Id + idOffsets.MedicalTools] ?? []).map(_formatEffectOnEquip);
+  let effectsOnUse = (data.EffectsOnUse[x.Id + idOffsets.MedicalTools] ?? []).map(_formatEffectOnUse);
+  let effectsOnEquip = (data.EffectsOnEquip[x.Id + idOffsets.MedicalTools] ?? []).map(_formatEffectOnEquip);
+  let tiers = Object.values(data.Tiers[x.Id + idOffsets.MedicalTools] ?? []).map(_formatTier);
 
   return {
     Id: x.Id,
@@ -1311,6 +1534,7 @@ function formatMedicalTool(x, data) {
     },
     EffectsOnUse: effectsOnUse,
     EffectsOnEquip: effectsOnEquip,
+    Tiers: tiers,
     Links: {
       "$Url": `/medicaltools/${x.Id}`
     }
@@ -1319,11 +1543,11 @@ function formatMedicalTool(x, data) {
 
 // MindforceImplants
 async function getMindforceImplants() {
-  return _getObjects(queries.MindforceImplants, formatMindforceImplant);
+  return await _getObjects(queries.MindforceImplants, formatMindforceImplant);
 }
 
 async function getMindforceImplant(idOrName) {
-  return _getObject(idOrName, queries.MindforceImplants, 'MindforceImplants', formatMindforceImplant);
+  return await _getObject(idOrName, queries.MindforceImplants, 'MindforceImplants', formatMindforceImplant);
 }
 
 function formatMindforceImplant(x) {
@@ -1348,11 +1572,11 @@ function formatMindforceImplant(x) {
 
 // MiscTools
 async function getMiscTools() {
-  return _getObjects(queries.MiscTools, formatMiscTool);
+  return await _getObjects(queries.MiscTools, formatMiscTool);
 }
 
 async function getMiscTool(idOrName) {
-  return _getObject(idOrName, queries.MiscTools, 'MiscTools', formatMiscTool);
+  return await _getObject(idOrName, queries.MiscTools, 'MiscTools', formatMiscTool);
 }
 
 function formatMiscTool(x) {
@@ -1367,6 +1591,11 @@ function formatMiscTool(x) {
         MaxTT: x.MaxTT !== null ? Number(x.MaxTT) : null,
         MinTT: x.MinTT !== null ? Number(x.MinTT) : null,
         Decay: x.Decay !== null ? Number(x.Decay) : null,
+      },
+      Skill: {
+        LearningIntervalStart: x.MinLevel !== null ? Number(x.MinLevel) : null,
+        LearningIntervalEnd: x.MaxLevel !== null ? Number(x.MaxLevel) : null,
+        IsSiB: x.IsSib === 1
       }
     },
     Profession: {
@@ -1394,7 +1623,7 @@ async function getMobLoots(items = null, mobs = null) {
     whereClause += pgp.as.format(' "Mobs"."Name" IN ($1:csv)', [mobs.map(x => `${x}`)]);
   }
 
-  return _getObjects(queries.MobLoots + whereClause, formatMobLoot);
+  return await _getObjects(queries.MobLoots + whereClause, formatMobLoot);
 }
 
 function formatMobLoot(x) {
@@ -1441,11 +1670,11 @@ async function getMobMaturities(mob = null) {
     whereClause = pgp.as.format(' WHERE "Mobs"."Name" = $1', mob);
   }
 
-  return _getObjects(queries.MobMaturities + whereClause, formatMobMaturity, _getMobAttacks);
+  return await _getObjects(queries.MobMaturities + whereClause, formatMobMaturity, _getMobAttacks);
 }
 
 async function getMobMaturity(idOrName) {
-  return _getObject(idOrName, queries.MobMaturities, 'MobMaturities', formatMobMaturity, _getMobAttacks);
+  return await _getObject(idOrName, queries.MobMaturities, 'MobMaturities', formatMobMaturity, _getMobAttacks);
 }
 
 async function _getMobAttacks(ids) {
@@ -1453,13 +1682,13 @@ async function _getMobAttacks(ids) {
     return {};
   }
 
-  let { rows } = await pool.query(`SELECT * FROM "MobAttacks" WHERE "MaturityId" IN (${ids.join(',')})`);
+  let { rows } = await pool.query(`SELECT * FROM ONLY "MobAttacks" WHERE "MaturityId" IN (${ids.join(',')})`);
 
   return _groupBy(rows, 'MaturityId');
 }
 
 function formatMobMaturity(x, data) {
-  let attacks = (data[x.Id] ?? []).map(_formatMobAttack);
+  let attacks = (data[x.Id] ?? (Array.isArray(data) ? data : [])).map(_formatMobAttack);
 
   return {
     Id: x.Id,
@@ -1470,7 +1699,7 @@ function formatMobMaturity(x, data) {
       Level: x.DangerLevel !== null ? Number(x.DangerLevel) : null,
       RegenerationInterval: x.RegenerationInterval !== null ? Number(x.RegenerationInterval) : null,
       RegenerationAmount: x.RegenerationAmount !== null ? Number(x.RegenerationAmount) : null,
-      CriticalChance: x.CriticalChance !== null ? Number(x.CriticalChance) : null,
+      MissChance: x.MissChance !== null ? Number(x.MissChance) : null,
       Taming: {
         IsTameable: x.TamingLevel !== null,
         TamingLevel: x.TamingLevel !== null ? Number(x.TamingLevel) : null,
@@ -1482,7 +1711,7 @@ function formatMobMaturity(x, data) {
         Psyche: x.Psyche !== null ? Number(x.Psyche) : null,
         Stamina: x.Stamina !== null ? Number(x.Stamina) : null,
       },
-      Defenses: {
+      Defense: {
         Stab: x.ResistanceStab !== null ? Number(x.ResistanceStab) : null,
         Cut: x.ResistanceCut !== null ? Number(x.ResistanceCut) : null,
         Impact: x.ResistanceImpact !== null ? Number(x.ResistanceImpact) : null,
@@ -1510,62 +1739,26 @@ function formatMobMaturity(x, data) {
 function _formatMobAttack(x) {
   return {
     Name: x.Name,
-    Stab: x.Stab !== null ? Number(x.Stab) : null,
-    Cut: x.Cut !== null ? Number(x.Cut) : null,
-    Impact: x.Impact !== null ? Number(x.Impact) : null,
-    Penetration: x.Penetration !== null ? Number(x.Penetration) : null,
-    Shrapnel: x.Shrapnel !== null ? Number(x.Shrapnel) : null,
-    Burn: x.Burn !== null ? Number(x.Burn) : null,
-    Cold: x.Cold !== null ? Number(x.Cold) : null,
-    Acid: x.Acid !== null ? Number(x.Acid) : null,
-    Electric: x.Electric !== null ? Number(x.Electric) : null,
+    Damage: {
+      Stab: x.Stab !== null ? Number(x.Stab) : null,
+      Cut: x.Cut !== null ? Number(x.Cut) : null,
+      Impact: x.Impact !== null ? Number(x.Impact) : null,
+      Penetration: x.Penetration !== null ? Number(x.Penetration) : null,
+      Shrapnel: x.Shrapnel !== null ? Number(x.Shrapnel) : null,
+      Burn: x.Burn !== null ? Number(x.Burn) : null,
+      Cold: x.Cold !== null ? Number(x.Cold) : null,
+      Acid: x.Acid !== null ? Number(x.Acid) : null,
+      Electric: x.Electric !== null ? Number(x.Electric) : null,
+    },
     IsAoE: x.IsAoE === 1,
-  }
-}
-
-// MobSpawns
-async function getMobSpawns() {
-  return _getObjects(queries.MobSpawns, formatMobSpawn);
-}
-
-function formatMobSpawn(x) {
-  return {
-    Id: x.Id,
-    Description: x.Notes,
-    Mob: {
-      Name: x.Mob,
-      Links: {
-        "$Url": `/mobs/${x.MobId}`
-      }
-    },
-    Location: {
-      Longitude: x.Longitude !== null ? Number(x.Longitude) : null,
-      Latitude: x.Latitude !== null ? Number(x.Latitude) : null,
-      Altitude: x.Altitude !== null ? Number(x.Altitude) : null,
-      Links: {
-        "$Url": `/locations/${x.LocationId}`
-      }
-    },
-    Maturity: {
-      Name: x.Maturity,
-      Links: {
-        "$Url": `/mobmaturities/${x.MaturityId}`
-      }
-    },
-    Density: x.Density,
-    IsShared: x.IsShared === 1, 
-    IsEvent: x.IsEvent === 1,
-    Links: {
-      "$Url": `/mobspawns/${x.Id}`
-    }
   }
 }
 
 // MobSpecies
 async function getMobSpecies(idOrName = null) {
   return idOrName !== null
-    ? _getObject(idOrName, queries.MobSpecies, 'MobSpecies', formatMobSpecies)
-    : _getObjects(queries.MobSpecies, formatMobSpecies);
+    ? await _getObject(idOrName, queries.MobSpecies, 'MobSpecies', formatMobSpecies)
+    : await _getObjects(queries.MobSpecies, formatMobSpecies);
 }
 
 function formatMobSpecies(x) {
@@ -1584,20 +1777,39 @@ function formatMobSpecies(x) {
 
 // Mobs
 async function getMobs() {
-  return _getObjects(queries.Mobs, formatMob);
+  return await _getObjects(queries.Mobs, formatMob, _getMobData);
 }
 
 async function getMob(idOrName) {
-  return _getObject(idOrName, queries.Mobs, 'Mobs', formatMob);
+  return await _getObject(idOrName, queries.Mobs, 'Mobs', formatMob, _getMobData);
 }
 
-function formatMob(x) {
+async function _getMobData(ids) {
+  const [mobMaturities, mobLoots] = await Promise.all([
+    pool.query(queries.MobMaturities + ` WHERE "MobMaturities"."MobId" IN (${ids.join(',')})`)
+      .then(async x => {
+        let attacks = await _getMobAttacks(x.rows.map(y => (y.Id)));
+
+        return x.rows.map(y => ({ ...y, Attacks: attacks[y.Id] ?? [] }));
+      }),
+    pool.query(queries.MobLoots + ` WHERE "MobLoots"."MobId" IN (${ids.join(',')})`).then(x => x.rows)
+  ]);
+
+  return {
+    Maturities: _groupBy(mobMaturities, 'MobId'),
+    Loots: _groupBy(mobLoots, 'MobId')
+  }
+}
+
+function formatMob(x, data) {
+  let maturities = (data.Maturities[x.Id] ?? []).map(x => formatMobMaturity(x, x.Attacks));
+  let loots = (data.Loots[x.Id] ?? []).map(formatMobLoot)
+
   return {
     Id: x.Id,
     Name: x.Name,
     Properties: {
-      AttacksPerMinute: x.AttackSpeed !== null ? Number(x.AttackSpeed) : null,
-      AttackRange: x.Range !== null ? Number(x.Range) : null,
+      AttackRange: x.AttackRange !== null ? Number(x.AttackRange) : null,
       AggressionRange: x.AggressionRange,
       IsSweatable: x.Sweatable === 1,
     },
@@ -1625,6 +1837,8 @@ function formatMob(x) {
         "$Url": `/mobspecies/${x.SpeciesId}`
       }
     },
+    Maturities: maturities,
+    Loots: loots,
     Links: {
       "$Url": `/mobs/${x.Id}`
     }
@@ -1633,15 +1847,15 @@ function formatMob(x) {
 
 // Pets
 async function getPets() {
-  return _getObjects(queries.Pets, formatPet, _getPetEffects);
+  return await _getObjects(queries.Pets, formatPet, _getPetEffects);
 }
 
 async function getPet(idOrName) {
-  return _getObject(idOrName, queries.Pets, 'Pets', formatPet, _getPetEffects);
+  return await _getObject(idOrName, queries.Pets, 'Pets', formatPet, _getPetEffects);
 }
 
 async function _getPetEffects(ids) {
-  let { rows } = await pool.query(`SELECT "PetEffects".*, "Effects"."Id" AS "EffectId", "Effects"."Name" AS "EffectName", "Effects"."Unit" AS "Unit" FROM "PetEffects" INNER JOIN "Effects" ON "PetEffects"."EffectId" = "Effects"."Id" WHERE "PetEffects"."PetId" IN (${ids.join(',')})`);
+  let { rows } = await pool.query(`SELECT "PetEffects".*, "Effects"."Id" AS "EffectId", "Effects"."Name" AS "EffectName", "Effects"."Unit" AS "Unit", "Effects"."Notes" AS "Notes" FROM ONLY "PetEffects" INNER JOIN ONLY "Effects" ON "PetEffects"."EffectId" = "Effects"."Id" WHERE "PetEffects"."PetId" IN (${ids.join(',')})`);
 
   return _groupBy(rows, 'PetId');
 }
@@ -1682,6 +1896,7 @@ function _formatPetEffect(x) {
     Properties: {
       Strength: x.Strength !== null ? Number(x.Strength) : null,
       Unit: x.Unit,
+      Notes: x.Notes,
       NutrioConsumptionPerHour: x.Consumption !== null ? Number(x.Consumption) : null,
       Unlock: {
         Level: x.UnlockLevel !== null ? Number(x.UnlockLevel) : null,
@@ -1700,11 +1915,11 @@ function _formatPetEffect(x) {
 
 // ProfessionCategories
 async function getProfessionCategories() {
-  return _getObjects(queries.ProfessionCategories, formatProfessionCategory);
+  return await _getObjects(queries.ProfessionCategories, formatProfessionCategory);
 }
 
 async function getProfessionCategory(idOrName) {
-  return _getObject(idOrName, queries.ProfessionCategories, 'ProfessionCategories', formatProfessionCategory);
+  return await _getObject(idOrName, queries.ProfessionCategories, 'ProfessionCategories', formatProfessionCategory);
 }
 
 function formatProfessionCategory(x) {
@@ -1719,16 +1934,16 @@ function formatProfessionCategory(x) {
 
 // Professions
 async function getProfessions() {
-  return _getObjects(queries.Professions, formatProfession, _getProfessionSkillsAndUnlocks);
+  return await _getObjects(queries.Professions, formatProfession, _getProfessionSkillsAndUnlocks);
 }
 
 async function getProfession(idOrName) {
-  return _getObject(idOrName, queries.Professions, 'Professions', formatProfession, _getProfessionSkillsAndUnlocks);
+  return await _getObject(idOrName, queries.Professions, 'Professions', formatProfession, _getProfessionSkillsAndUnlocks);
 }
 
 async function _getProfessionSkillsAndUnlocks(ids) {
-  let { rows: professionSkills } = await pool.query(`SELECT "ProfessionSkills"."Weight", "Skills"."Id" AS "SkillId", "Skills"."Name" AS "SkillName", "ProfessionId" FROM "ProfessionSkills" INNER JOIN "Skills" ON "ProfessionSkills"."SkillId" = "Skills"."Id" WHERE "ProfessionId" IN (${ids.join(',')})`);
-  let { rows: skillUnlocks } = await pool.query(`SELECT "SkillUnlocks".*, "Skills"."Name" AS "Skill", "SkillUnlocks"."ProfessionId" FROM "SkillUnlocks" INNER JOIN "Skills" ON "SkillUnlocks"."SkillId" = "Skills"."Id" WHERE "SkillUnlocks"."ProfessionId" IN (${ids.join(',')})`);
+  let { rows: professionSkills } = await pool.query(`SELECT "ProfessionSkills"."Weight", "Skills"."Id" AS "SkillId", "Skills"."Name" AS "SkillName", "Skills"."HPIncrease" AS "HPIncrease", "Skills"."Hidden" AS "Hidden", "ProfessionId" FROM ONLY "ProfessionSkills" INNER JOIN ONLY "Skills" ON "ProfessionSkills"."SkillId" = "Skills"."Id" WHERE "ProfessionId" IN (${ids.join(',')})`);
+  let { rows: skillUnlocks } = await pool.query(`SELECT "SkillUnlocks".*, "Skills"."Name" AS "Skill", "Skills"."HPIncrease" AS "HPIncrease", "Skills"."Hidden" AS "Hidden", "SkillUnlocks"."ProfessionId" FROM ONLY "SkillUnlocks" INNER JOIN ONLY "Skills" ON "SkillUnlocks"."SkillId" = "Skills"."Id" WHERE "SkillUnlocks"."ProfessionId" IN (${ids.join(',')})`);
 
   return {
     ProfessionSkills: _groupBy(professionSkills, 'ProfessionId'),
@@ -1759,9 +1974,16 @@ function formatProfession(x, data) {
 
 function _formatProfessionSkill(x) {
   return {
-    Name: x.SkillName,
-    Links: {
-      "$Url": `/skills/${x.SkillId}`
+    Weight: x.Weight !== null ? Number(x.Weight) : null,
+    Skill: {
+      Name: x.SkillName,
+      Properties: {
+        HpIncrease: x.HPIncrease !== null ? Number(x.HPIncrease) : null,
+        IsHidden: x.Hidden === 1
+      },
+      Links: {
+        "$Url": `/skills/${x.SkillId}`
+      }
     }
   }
 }
@@ -1771,6 +1993,10 @@ function _formatProfessionSkillUnlock(x) {
     Level: x.Level !== null ? Number(x.Level) : null,
     Skill: {
       Name: x.Skill,
+      Properties: {
+        HpIncrease: x.HPIncrease !== null ? Number(x.HPIncrease) : null,
+        IsHidden: x.Hidden === 1
+      },
       Links: {
         "$Url": `/skills/${x.SkillId}`
       }
@@ -1780,11 +2006,11 @@ function _formatProfessionSkillUnlock(x) {
 
 // Refiners
 async function getRefiners() {
-  return _getObjects(queries.Refiners, formatRefiner);
+  return await _getObjects(queries.Refiners, formatRefiner);
 }
 
 async function getRefiner(idOrName) {
-  return _getObject(idOrName, queries.Refiners, 'Refiners', formatRefiner);
+  return await _getObject(idOrName, queries.Refiners, 'Refiners', formatRefiner);
 }
 
 function formatRefiner(x) {
@@ -1814,12 +2040,15 @@ async function getRefiningRecipes(products = null, ingredients = null) {
   if (products !== null) {
     whereClause = pgp.as.format(' WHERE "Items"."Name" IN ($1:csv)', [products.map(x => `${x}`)]);
   }
+  else if (ingredients !== null) {
+    whereClause = pgp.as.format(' WHERE "RefiningRecipes"."Id" IN (SELECT DISTINCT "RecipeId" FROM ONLY "RefiningIngredients" INNER JOIN ONLY "Items" ON "RefiningIngredients"."ItemId" = "Items"."Id" WHERE "Items"."Name" IN ($1:csv))', [ingredients.map(x => `${x}`)]);
+  }
 
-  return _getObjects(queries.RefiningRecipes + whereClause, formatRefiningRecipe, _getRefiningRecipeIngredients);
+  return await _getObjects(queries.RefiningRecipes + whereClause, formatRefiningRecipe, _getRefiningRecipeIngredients);
 }
 
 async function getRefiningRecipe(idOrName) {
-  return _getObject(idOrName, queries.RefiningRecipes, 'RefiningRecipes', formatRefiningRecipe, _getRefiningRecipeIngredients);
+  return await _getObject(idOrName, queries.RefiningRecipes, 'RefiningRecipes', formatRefiningRecipe, _getRefiningRecipeIngredients);
 }
 
 async function _getRefiningRecipeIngredients(ids) {
@@ -1827,7 +2056,7 @@ async function _getRefiningRecipeIngredients(ids) {
     return {};
   }
 
-  let { rows } = await pool.query(`SELECT "RefiningIngredients"."RecipeId", "RefiningIngredients"."Amount", "Items"."Id" AS "ItemId", "Items"."Name" AS "ItemName", "Items"."Type" AS "ItemType", "Items"."Value" AS "ItemValue" FROM "RefiningIngredients" INNER JOIN "Items" ON "RefiningIngredients"."ItemId" = "Items"."Id" WHERE "RefiningIngredients"."RecipeId" IN (${ids.join(',')})`);
+  let { rows } = await pool.query(`SELECT "RefiningIngredients"."RecipeId", "RefiningIngredients"."Amount", "Items"."Id" AS "ItemId", "Items"."Name" AS "ItemName", "Items"."Type" AS "ItemType", "Items"."Value" AS "ItemValue" FROM ONLY "RefiningIngredients" INNER JOIN ONLY "Items" ON "RefiningIngredients"."ItemId" = "Items"."Id" WHERE "RefiningIngredients"."RecipeId" IN (${ids.join(',')})`);
 
   return _groupBy(rows, 'RecipeId');
 }
@@ -1838,7 +2067,7 @@ function formatRefiningRecipe(x, data) {
   return {
     Id: x.Id,
     Ingredients: ingredients,
-    ProductAmount: x.Amount !== null ? Number(x.Amount) : null,
+    Amount: x.Amount !== null ? Number(x.Amount) : null,
     Product: {
       Name: x.Product,
       Properties: {
@@ -1877,11 +2106,11 @@ function formatRefiningIngredient(x) {
 
 // Scanners
 async function getScanners() {
-  return _getObjects(queries.Scanners, formatScanner);
+  return await _getObjects(queries.Scanners, formatScanner);
 }
 
 async function getScanner(idOrName) {
-  return _getObject(idOrName, queries.Scanners, 'Scanners', formatScanner);
+  return await _getObject(idOrName, queries.Scanners, 'Scanners', formatScanner);
 }
 
 function formatScanner(x) {
@@ -1907,11 +2136,11 @@ function formatScanner(x) {
 
 // Signs
 async function getSigns() {
-  return _getObjects(queries.Signs, formatSign);
+  return await _getObjects(queries.Signs, formatSign);
 }
 
 async function getSign(idOrName) {
-  return _getObject(idOrName, queries.Signs, 'Signs', formatSign);
+  return await _getObject(idOrName, queries.Signs, 'Signs', formatSign);
 }
 
 function formatSign(x) {
@@ -1943,11 +2172,11 @@ function formatSign(x) {
 
 // SkillCategories
 async function getSkillCategories() {
-  return _getObjects(queries.SkillCategories, formatSkillCategory);
+  return await _getObjects(queries.SkillCategories, formatSkillCategory);
 }
 
 async function getSkillCategory(idOrName) {
-  return _getObject(idOrName, queries.SkillCategories, 'SkillCategories', formatSkillCategory);
+  return await _getObject(idOrName, queries.SkillCategories, 'SkillCategories', formatSkillCategory);
 }
 
 function formatSkillCategory(x) {
@@ -1962,28 +2191,47 @@ function formatSkillCategory(x) {
 
 // Skills
 async function getSkills() {
-  return _getObjects(queries.Skills, formatSkill, _getSkillUnlocks);
+  return await _getObjects(queries.Skills, formatSkill, _getSkillUnlocks);
 }
 
 async function getSkill(idOrName) {
-  return _getObject(idOrName, queries.Skills, 'Skills', formatSkill, _getSkillUnlocks);
+  return await _getObject(idOrName, queries.Skills, 'Skills', formatSkill, _getSkillUnlocks);
 }
 
 async function _getSkillUnlocks(ids) {
-  let { rows } = await pool.query(`SELECT "SkillUnlocks".*, "Professions"."Name" AS "ProfessionName", "Skills"."Name" AS "SkillName" FROM "SkillUnlocks" INNER JOIN "Professions" ON "SkillUnlocks"."ProfessionId" = "Professions"."Id" INNER JOIN "Skills" ON "SkillUnlocks"."SkillId" = "Skills"."Id" WHERE "SkillUnlocks"."SkillId" IN (${ids.join(',')})`);
+  let { rows: skillProfessions } = await pool.query(`
+    SELECT "ProfessionSkills".*, "Professions"."Name" AS "ProfessionName", "ProfessionCategories"."Name" AS "Category"
+    FROM ONLY "ProfessionSkills"
+    INNER JOIN ONLY "Professions" ON "ProfessionSkills"."ProfessionId" = "Professions"."Id"
+    INNER JOIN ONLY "ProfessionCategories" ON "Professions"."CategoryId" = "ProfessionCategories"."Id"
+    WHERE "ProfessionSkills"."SkillId" IN (${ids.join(',')})`);
 
-  return _groupBy(rows, 'SkillId');
+  let { rows: skillUnlocks } = await pool.query(`
+    SELECT "SkillUnlocks".*, "Professions"."Name" AS "ProfessionName", "ProfessionCategories"."Name" AS "Category"
+    FROM ONLY "SkillUnlocks"
+    INNER JOIN ONLY "Professions" ON "SkillUnlocks"."ProfessionId" = "Professions"."Id"
+    INNER JOIN ONLY "ProfessionCategories" ON "Professions"."CategoryId" = "ProfessionCategories"."Id"
+    WHERE "SkillUnlocks"."SkillId" IN (${ids.join(',')})`);
+
+  return {
+    SkillProfessions: _groupBy(skillProfessions, 'SkillId'), 
+    SkillUnlocks: _groupBy(skillUnlocks, 'SkillId'),
+  };
 }
 
 function formatSkill(x, data) {
-  let unlocks = (data[x.Id] ?? []).map(_formatSkillUnlock);
+  let professionSkills = (data.SkillProfessions[x.Id] ?? []).map(_formatSkillProfession);
+  let unlocks = (data.SkillUnlocks[x.Id] ?? []).map(_formatSkillUnlock);
 
   return {
     Id: x.Id,
     Name: x.Name,
-    HpIncrease: x.HPIncrease !== null ? Number(x.HPIncrease) : null,
-    Hidden: unlocks !== null && unlocks.length > 0,
-    Unlock: unlocks.length > 0 ? unlocks : null,
+    Properties: {
+      HpIncrease: x.HPIncrease !== null ? Number(x.HPIncrease) : null,
+      IsHidden: unlocks !== null && unlocks.length > 0,
+    },
+    Professions: professionSkills,
+    Unlocks: unlocks.length > 0 ? unlocks : null,
     Category: {
       Name: x.Category,
       Links: {
@@ -1992,6 +2240,21 @@ function formatSkill(x, data) {
     },
     Links: {
       "$Url": `/skills/${x.Id}`
+    }
+  }
+}
+
+function _formatSkillProfession(x) {
+  return {
+    Weight: x.Weight !== null ? Number(x.Weight) : null,
+    Profession: {
+      Name: x.ProfessionName,
+      Properties: {
+        Category: x.Category
+      },
+      Links: {
+        "$Url": `/professions/${x.ProfessionId}`
+      }
     }
   }
 }
@@ -2010,11 +2273,11 @@ function _formatSkillUnlock(x) {
 
 // StorageContainers
 async function getStorageContainers() {
-  return _getObjects(queries.StorageContainers, formatStorageContainer);
+  return await _getObjects(queries.StorageContainers, formatStorageContainer);
 }
 
 async function getStorageContainer(idOrName) {
-  return _getObject(idOrName, queries.StorageContainers, 'StorageContainers', formatStorageContainer);
+  return await _getObject(idOrName, queries.StorageContainers, 'StorageContainers', formatStorageContainer);
 }
 
 function formatStorageContainer(x) {
@@ -2044,11 +2307,11 @@ function formatStorageContainer(x) {
 
 // TeleportationChips
 async function getTeleportationChips() {
-  return _getObjects(queries.TeleportationChips, formatTeleportationChip);
+  return await _getObjects(queries.TeleportationChips, formatTeleportationChip);
 }
 
 async function getTeleportationChip(idOrName) {
-  return _getObject(idOrName, queries.TeleportationChips, 'TeleportationChips', formatTeleportationChip);
+  return await _getObject(idOrName, queries.TeleportationChips, 'TeleportationChips', formatTeleportationChip);
 }
 
 function formatTeleportationChip(x) {
@@ -2096,7 +2359,7 @@ function formatTeleportationChip(x) {
 }
 
 // Tiers
-async function getTiers(itemId = null, isArmorSet = null) {
+async function getTiers(itemId = null, isArmorSet = null, tier = null) {
   let whereClause = '';
 
   if (itemId != null) {
@@ -2107,11 +2370,15 @@ async function getTiers(itemId = null, isArmorSet = null) {
     whereClause = pgp.as.format(whereClause.length > 0 ? `${whereClause} AND "IsArmorSet" = $1` : `WHERE "IsArmorSet" = $1`, isArmorSet);
   }
 
-  return _getObjects(`${queries.Tiers} ${whereClause}`, formatTier, _getTierMaterials);
+  if (tier != null) {
+    whereClause = pgp.as.format(whereClause.length > 0 ? `${whereClause} AND "Tier" = $1` : `WHERE "Tier" = $1`, tier);
+  }
+
+  return await _getObjects(`${queries.Tiers} ${whereClause}`, formatTier, _getTierMaterials);
 }
 
 async function getTier(idOrName) {
-  return _getObject(idOrName, queries.Tiers, null, formatTier, _getTierMaterials);
+  return await _getObject(idOrName, queries.Tiers, null, formatTier, _getTierMaterials);
 }
 
 async function _getTierMaterials(ids) {
@@ -2119,7 +2386,7 @@ async function _getTierMaterials(ids) {
     return {};
   }
 
-  let { rows } = await pool.query(`SELECT "TierMaterials".*, "Materials"."Name" AS "MaterialName", "Materials"."Value" AS "Value", "Materials"."Weight" AS "Weight", "Materials"."Type" AS "Type" FROM "TierMaterials" INNER JOIN "Materials" ON "TierMaterials"."MaterialId" = "Materials"."Id" WHERE "TierMaterials"."TierId" IN (${ids.join(',')})`);
+  let { rows } = await pool.query(`SELECT "TierMaterials".*, "Materials"."Name" AS "MaterialName", "Materials"."Value" AS "Value", "Materials"."Weight" AS "Weight", "Materials"."Type" AS "Type" FROM ONLY "TierMaterials" INNER JOIN ONLY "Materials" ON "TierMaterials"."MaterialId" = "Materials"."Id" WHERE "TierMaterials"."TierId" IN (${ids.join(',')})`);
 
   return _groupBy(rows, 'TierId');
 }
@@ -2162,11 +2429,11 @@ function _formatTierMaterial(x) {
 
 // VehicleAttachmentTypes
 async function getVehicleAttachmentTypes() {
-  return _getObjects(queries.VehicleAttachmentTypes, formatVehicleAttachmentType);
+  return await _getObjects(queries.VehicleAttachmentTypes, formatVehicleAttachmentType);
 }
 
 async function getVehicleAttachmentType(idOrName) {
-  return _getObject(idOrName, queries.VehicleAttachmentTypes, 'VehicleAttachmentTypes', formatVehicleAttachmentType);
+  return await _getObject(idOrName, queries.VehicleAttachmentTypes, 'VehicleAttachmentTypes', formatVehicleAttachmentType);
 }
 
 function formatVehicleAttachmentType(x) {
@@ -2181,15 +2448,15 @@ function formatVehicleAttachmentType(x) {
 
 // Vehicles
 async function getVehicles() {
-  return _getObjects(queries.Vehicles, formatVehicle, _getAttachmentSlots);
+  return await _getObjects(queries.Vehicles, formatVehicle, _getAttachmentSlots);
 }
 
 async function getVehicle(idOrName) {
-  return _getObject(idOrName, queries.Vehicles, 'Vehicles', formatVehicle, _getAttachmentSlots);
+  return await _getObject(idOrName, queries.Vehicles, 'Vehicles', formatVehicle, _getAttachmentSlots);
 }
 
 async function _getAttachmentSlots(ids) {
-  let { rows } = await pool.query(`SELECT "VehicleAttachmentSlots".*, "VehicleAttachmentTypes"."Name" AS "Type" FROM "VehicleAttachmentSlots" INNER JOIN "VehicleAttachmentTypes" ON "VehicleAttachmentTypes"."Id" = "VehicleAttachmentSlots"."AttachmentId" WHERE "VehicleId" IN (${ids.join(',')})`);
+  let { rows } = await pool.query(`SELECT "VehicleAttachmentSlots".*, "VehicleAttachmentTypes"."Name" AS "Type" FROM ONLY "VehicleAttachmentSlots" INNER JOIN ONLY "VehicleAttachmentTypes" ON "VehicleAttachmentTypes"."Id" = "VehicleAttachmentSlots"."AttachmentId" WHERE "VehicleId" IN (${ids.join(',')})`);
 
   return _groupBy(rows, 'VehicleId');
 }
@@ -2205,8 +2472,6 @@ function formatVehicle(x, data) {
       Weight: x.Weight !== null ? Number(x.Weight) : null,
       SpawnedWeight: x.SpawnedWeight !== null ? Number(x.SpawnedWeight) : null,
       PassengerCount: x.Passengers !== null ? Number(x.Passengers) : null,
-      IsTexturable: x.CustomTextures === 1,
-      IsColourable: x.CustomColors === 1,
       ItemCapacity: x.StorageCapacity !== null ? Number(x.StorageCapacity) : null,
       WeightCapacity: x.WeightCapacity !== null ? Number(x.WeightCapacity) : null,
       WheelGrip: x.WheelGrip !== null ? Number(x.WheelGrip) : null,
@@ -2216,7 +2481,6 @@ function formatVehicle(x, data) {
       Economy: {
         MaxTT: x.MaxTT !== null ? Number(x.MaxTT) : null,
         MinTT: x.MinTT !== null ? Number(x.MinTT) : null,
-        Decay: x.Decay !== null ? Number(x.Decay) : null,
         Durability: x.Durability !== null ? Number(x.Durability) : null,
         FuelConsumptionActive: x.FuelActive !== null ? Number(x.FuelActive) : null,
         FuelConsumptionPassive: x.FuelPassive !== null ? Number(x.FuelPassive) : null,
@@ -2256,12 +2520,18 @@ function _formatAttachmentSlot(x) {
 }
 
 // Vendors
-async function getVendors() {
-  return _getObjects(queries.Vendors, formatVendor, _getVendorOffers);
+async function getVendors(offerItems = null) {
+  let whereClause = '';
+
+  if (offerItems !== null) {
+    whereClause = pgp.as.format(' WHERE "Vendors"."Id" IN (SELECT DISTINCT "VendorId" FROM ONLY "VendorOffers" INNER JOIN ONLY "Items" ON "VendorOffers"."ItemId" = "Items"."Id" WHERE "Items"."Name" IN ($1:csv))', [offerItems.map(x => `${x}`)]);
+  }
+
+  return await _getObjects(queries.Vendors + whereClause, formatVendor, _getVendorOffers);
 }
 
 async function getVendor(idOrName) {
-  return _getObject(idOrName, queries.Vendors, 'Vendors', formatVendor, _getVendorOffers);
+  return await _getObject(idOrName, queries.Vendors, 'Vendors', formatVendor, _getVendorOffers);
 }
 
 async function _getVendorOffers(ids) {
@@ -2272,11 +2542,18 @@ async function _getVendorOffers(ids) {
     };
   }
 
-  let { rows: offers } = await pool.query(`SELECT "VendorOffers".*, "Items"."Name" AS "Item", "Items"."Type" AS "ItemType", "Items"."Value" AS "Value" FROM "VendorOffers" INNER JOIN "Items" ON "VendorOffers"."ItemId" = "Items"."Id" WHERE "VendorId" IN (${ids.join(',')})`);
+  let { rows: offers } = await pool.query(`SELECT "VendorOffers".*, "Items"."Name" AS "Item", "Items"."Type" AS "ItemType", "Items"."Value" AS "Value" FROM ONLY "VendorOffers" INNER JOIN ONLY "Items" ON "VendorOffers"."ItemId" = "Items"."Id" WHERE "VendorId" IN (${ids.join(',')})`);
 
   let offerIds = offers.map(x => x.Id);
 
-  let { rows: prices } = await pool.query(`SELECT "VendorOfferPrices".*, "Items"."Name" AS "Item" FROM "VendorOfferPrices" INNER JOIN "Items" ON "VendorOfferPrices"."ItemId" = "Items"."Id" WHERE "OfferId" IN (${offerIds.join(',')})`);
+  if (offerIds.length === 0) {
+    return {
+      Offers: {},
+      Prices: {}
+    };
+  }
+
+  let { rows: prices } = await pool.query(`SELECT "VendorOfferPrices".*, "Items"."Name" AS "Item", "Items"."Type" AS "ItemType", "Items"."Value" AS "Value" FROM ONLY "VendorOfferPrices" INNER JOIN ONLY "Items" ON "VendorOfferPrices"."ItemId" = "Items"."Id" WHERE "OfferId" IN (${offerIds.join(',')})`);
 
   return {
     Offers: _groupBy(offers, 'VendorId'),
@@ -2285,14 +2562,25 @@ async function _getVendorOffers(ids) {
 }
 
 function formatVendor(x, data) {
-  let offers = (data.Offers[x.Id] ?? []).map(_formatVendorOffer);
-  offers.forEach(x => x.Prices = (data.Prices[x.Id] ?? []).map(_formatVendorOfferPrice));
+  let offers = data.Offers[x.Id] ?? [];
+  offers.forEach(offer => offer.Prices = (data.Prices[offer.Id] ?? []).map(_formatVendorOfferPrice));
+  offers = offers.map(_formatVendorOffer);
 
   return {
     Id: x.Id,
     Name: x.Name,
+    Properties: {
+      Coordinates: {
+        Longitude: x.Longitude !== null ? Number(x.Longitude) : null,
+        Latitude: x.Latitude !== null ? Number(x.Latitude) : null,
+        Altitude: x.Altitude !== null ? Number(x.Altitude) : null,
+      }
+    },
     Planet: {
       Name: x.Planet,
+      Properties: {
+        TechnicalName: x.PlanetTechnicalName
+      },
       Links: {
         "$Url": `/planets/${x.PlanetId}`
       }
@@ -2306,14 +2594,20 @@ function formatVendor(x, data) {
 
 function _formatVendorOffer(x) {
   return {
-    IsLimited: x.IsLimited === 1,
+    IsLimited: x.IsLimited,
     Item: {
       Name: x.Item,
-      Value: x.Value !== null ? Number(x.Value) : null,
+      Properties: {
+        Type: x.ItemType,
+        Economy: {
+          Value: x.Value !== null ? Number(x.Value) : null,
+        },
+      },
       Links: {
         "$Url": `/${x.ItemType.toLowerCase()}s/${x.ItemId % 100000}`
       }
-    }
+    },
+    Prices: x.Prices ?? []
   }
 }
 
@@ -2322,6 +2616,12 @@ function _formatVendorOfferPrice(x) {
     Amount: x.Amount !== null ? Number(x.Amount) : null,
     Item: {
       Name: x.Item,
+      Properties: {
+        Type: x.ItemType,
+        Economy: {
+          Value: x.Value !== null ? Number(x.Value) : null,
+        },
+      }, 
       Links: {
         "$Url": `/${x.ItemType.toLowerCase()}s/${x.ItemId % 100000}`
       }
@@ -2330,18 +2630,24 @@ function _formatVendorOfferPrice(x) {
 }
 
 // VendorOffers
-async function getVendorOffers(items) {
+async function getVendorOffers(items, prices = null) {
   let whereClause = '';
 
   if (items !== null) {
     whereClause += pgp.as.format(' WHERE "Items"."Name" IN ($1:csv)', [items.map(x => `${x}`)]);
   }
 
-  return _getObjects(queries.VendorOffers + whereClause, formatVendorOffer, _getVendorOfferPrices);
+  let objects = await _getObjects(queries.VendorOffers + whereClause, formatVendorOffer, _getVendorOfferPrices);
+
+  if (prices !== null) {
+    objects = objects.filter(x => (x.Prices ?? []).some(y => prices.includes(y.Item.Name)));
+  }
+
+  return objects;
 }
 
 async function getVendorOffer(idOrName) {
-  return _getObject(idOrName, queries.VendorOffers, 'VendorOffers', formatVendorOffer, _getVendorOfferPrices);
+  return await _getObject(idOrName, queries.VendorOffers, 'VendorOffers', formatVendorOffer, _getVendorOfferPrices);
 }
 
 async function _getVendorOfferPrices(ids) {
@@ -2349,7 +2655,7 @@ async function _getVendorOfferPrices(ids) {
     return {};
   }
 
-  let { rows } = await pool.query(`SELECT "VendorOfferPrices".*, "Items"."Name" AS "Item" FROM "VendorOfferPrices" INNER JOIN "Items" ON "VendorOfferPrices"."ItemId" = "Items"."Id" WHERE "OfferId" IN (${ids.join(',')})`);
+  let { rows } = await pool.query(`SELECT "VendorOfferPrices".*, "Items"."Name" AS "Item", "Items"."Type" AS "ItemType", "Items"."Value" FROM ONLY "VendorOfferPrices" INNER JOIN ONLY "Items" ON "VendorOfferPrices"."ItemId" = "Items"."Id" WHERE "OfferId" IN (${ids.join(',')})`);
 
   return _groupBy(rows, 'OfferId');
 }
@@ -2359,10 +2665,15 @@ function formatVendorOffer(x, data) {
 
   return {
     Id: x.Id,
-    IsLimited: x.IsLimited === 1,
+    IsLimited: x.IsLimited,
     Item: {
       Name: x.Item,
-      Value: x.Value !== null ? Number(x.ItemValue) : null,
+      Properties: {
+        Type: x.ItemType,
+        Economy: {
+          Value: x.Value !== null ? Number(x.ItemValue) : null,
+        }
+      },
       Links: {
         "$Url": `/${x.ItemType.toLowerCase()}s/${x.ItemId % 100000}`
       }
@@ -2388,11 +2699,11 @@ function formatVendorOffer(x, data) {
 
 // WeaponAmplifiers
 async function getWeaponAmplifiers() {
-  return _getObjects(queries.WeaponAmplifiers, formatWeaponAmplifier, _getEffectsOnEquip, idOffsets.WeaponAmplifiers);
+  return await _getObjects(queries.WeaponAmplifiers, formatWeaponAmplifier, _getEffectsOnEquip, idOffsets.WeaponAmplifiers);
 }
 
 async function getWeaponAmplifier(idOrName) {
-  return _getObject(idOrName, queries.WeaponAmplifiers, 'WeaponAmplifiers', formatWeaponAmplifier, _getEffectsOnEquip, idOffsets.WeaponAmplifiers);
+  return await _getObject(idOrName, queries.WeaponAmplifiers, 'WeaponAmplifiers', formatWeaponAmplifier, _getEffectsOnEquip, idOffsets.WeaponAmplifiers);
 }
 
 function formatWeaponAmplifier(x, data) {
@@ -2433,11 +2744,11 @@ function formatWeaponAmplifier(x, data) {
 
 // WeaponVisionAttachments
 async function getWeaponVisionAttachments() {
-  return _getObjects(queries.WeaponVisionAttachments, formatWeaponVisionAttachment, _getEffectsOnEquip, idOffsets.WeaponVisionAttachments);
+  return await _getObjects(queries.WeaponVisionAttachments, formatWeaponVisionAttachment, _getEffectsOnEquip, idOffsets.WeaponVisionAttachments);
 }
 
 async function getWeaponVisionAttachment(idOrName) {
-  return _getObject(idOrName, queries.WeaponVisionAttachments, 'WeaponVisionAttachments', formatWeaponVisionAttachment, _getEffectsOnEquip, idOffsets.WeaponVisionAttachments);
+  return await _getObject(idOrName, queries.WeaponVisionAttachments, 'WeaponVisionAttachments', formatWeaponVisionAttachment, _getEffectsOnEquip, idOffsets.WeaponVisionAttachments);
 }
 
 function formatWeaponVisionAttachment(x, data) {
@@ -2469,15 +2780,29 @@ function formatWeaponVisionAttachment(x, data) {
 
 // Weapons
 async function getWeapons() {
-  return _getObjects(queries.Weapons, formatWeapon, _getEffectsOnEquip, idOffsets.Weapons);
+  return await _getObjects(queries.Weapons, formatWeapon, _getWeaponData, idOffsets.Weapons);
 }
 
 async function getWeapon(idOrName) {
-  return _getObject(idOrName, queries.Weapons, 'Weapons', formatWeapon, _getEffectsOnEquip, idOffsets.Weapons);
+  return await _getObject(idOrName, queries.Weapons, 'Weapons', formatWeapon, _getWeaponData, idOffsets.Weapons);
+}
+
+async function _getWeaponData(ids) {
+  if (ids.length === 0) {
+    return {};
+  }
+
+  return {
+    EffectsOnEquip: await _getEffectsOnEquip(ids),
+    EffectsOnUse: await _getEffectsOnUse(ids),
+    Tiers: await _getTiers(ids),
+  };
 }
 
 function formatWeapon(x, data) {
-  let effects = (data[x.Id + idOffsets.Weapons] ?? []).map(_formatEffectOnEquip);
+  let effectsOnEquip = (data.EffectsOnEquip[x.Id + idOffsets.Weapons] ?? []).map(_formatEffectOnEquip);
+  let effectsOnUse = (data.EffectsOnUse[x.Id + idOffsets.Weapons] ?? []).map(_formatEffectOnUse);
+  let tiers = Object.values((data.Tiers[x.Id + idOffsets.Weapons] ?? [])).map(_formatTier);
 
   return {
     Id: x.Id,
@@ -2551,9 +2876,27 @@ function formatWeapon(x, data) {
         "$Url": x.AttachmentTypeId !== null ? `/weaponattachmenttypes/${x.AttachmentTypeId}` : null
       }
     },
-    EffectsOnEquip: effects,
+    EffectsOnEquip: effectsOnEquip,
+    EffectsOnUse: effectsOnUse,
+    Tiers: tiers,
     Links: {
       "$Url": `/weapons/${x.Id}`
+    }
+  }
+}
+
+function _formatTier(x) {
+  let tier = x[0];
+
+  return {
+    Name: `${tier.ItemName} Tier ${tier.Tier}`,
+    Properties: {
+      Tier: tier.Tier,
+      IsArmorSet: tier.IsArmorSet === 1,
+    },
+    Materials: x.map(_formatTierMaterial),
+    Links: {
+      "$Url": `/tiers?ItemId=${tier.ItemId}&IsArmorSet=${tier.IsArmorSet}&Tier=${tier.Tier}`
     }
   }
 }
@@ -2561,6 +2904,7 @@ function formatWeapon(x, data) {
 
 module.exports = { pool,
   search,
+  searchItems,
 
   getAreas, getArea,
   getLocations, getLocation,
@@ -2574,7 +2918,7 @@ module.exports = { pool,
   getArmorSet, getArmorSets,
   getBlueprintBook, getBlueprintBooks,
   getBlueprint, getBlueprints,
-  getClothes,
+  getClothing, getClothings,
   getConsumable, getConsumables,
   getCreatureControlCapsule, getCreatureControlCapsules,
   getDecoration, getDecorations,
@@ -2593,7 +2937,7 @@ module.exports = { pool,
   getMiscTool, getMiscTools,
   getMobLoots,
   getMobMaturity, getMobMaturities,
-  getMobSpawns,
+  getMobSpawn, getMobSpawns,
   getMobSpecies,
   getMob, getMobs,
   getPet, getPets,

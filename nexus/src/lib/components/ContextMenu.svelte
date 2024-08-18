@@ -54,14 +54,14 @@
     font: inherit; /* Inherit font from parent */
     color: inherit; /* Inherit text color from parent */
     cursor: pointer;
-    background-color: #f0f0f0;
+    background-color: var(--table-row-color-alt);
     width: 100%;
-    color: black;
+    color: var(--text-color);
     text-align: left;
   }
 
   .context-menu button:hover {
-    background-color: #888888;
+    background-color: var(--hover-color) !important;
   }
 
   .show {

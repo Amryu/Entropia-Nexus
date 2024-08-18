@@ -113,6 +113,151 @@
     };
   };
 
+  const editConfig = {
+    furniture: {
+      constructor: () => ({
+        Name: '',
+        Properties: {
+          Type: null,
+          Weight: null,
+          Economy: {
+            MaxTT: null,
+          }
+        }
+      }),
+      controls: [
+        {
+          label: 'General',
+          type: 'group',
+          controls: [
+            { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
+            { label: 'Type', type: 'text', '_get': x => x.Properties.Type, '_set': (x, v) => x.Properties.Type = v },
+            { label: 'Weight', type: 'number', '_get': x => x.Properties.Weight, '_set': (x, v) => x.Properties.Weight = v },
+          ]
+        },
+        {
+          label: 'Economy',
+          type: 'group',
+          controls: [
+            { label: 'Max. TT', type: 'number', '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v }
+          ]
+        }
+      ]
+    },
+    decorations: {
+      constructor: () => ({
+        Name: '',
+        Properties: {
+          Weight: null,
+          Economy: {
+            MaxTT: null,
+          }
+        }
+      }),
+      controls: [
+        {
+          label: 'General',
+          type: 'group',
+          controls: [
+            { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
+            { label: 'Weight', type: 'number', '_get': x => x.Properties.Weight, '_set': (x, v) => x.Properties.Weight = v },
+          ]
+        },
+        {
+          label: 'Economy',
+          type: 'group',
+          controls: [
+            { label: 'Max. TT', type: 'number', '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v }
+          ]
+        }
+      ],
+    },
+    storagecontainers: {
+      constructor: () => ({
+        Name: '',
+        Properties: {
+          Weight: null,
+          ItemCapacity: null,
+          WeightCapacity: null,
+          Economy: {
+            MaxTT: null,
+          }
+        }
+      }),
+      controls: [
+        {
+          label: 'General',
+          type: 'group',
+          controls: [
+            { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
+            { label: 'Weight', type: 'number', '_get': x => x.Properties.Weight, '_set': (x, v) => x.Properties.Weight = v },
+            { label: 'Item Capacity', type: 'number', '_get': x => x.Properties.ItemCapacity, '_set': (x, v) => x.Properties.ItemCapacity = v },
+            { label: 'Weight Capacity', type: 'number', '_get': x => x.Properties.WeightCapacity, '_set': (x, v) => x.Properties.WeightCapacity = v },
+          ]
+        },
+        {
+          label: 'Economy',
+          type: 'group',
+          controls: [
+            { label: 'Max. TT', type: 'number', '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v }
+          ]
+        }
+      ],
+    },
+    signs: {
+      constructor: () => ({
+        Name: '',
+        Properties: {
+          Weight: null,
+          ItemPoints: null,
+          Display: {
+            AspectRatio: null,
+            CanShowLocalContent: false,
+            CanShowImagesAndText: false,
+            CanShowEffects: false,
+            CanShowMultimedia: false,
+            CanShowParticipantContent: false,
+          },
+          Economy: {
+            Cost: null,
+            MaxTT: null,
+          }
+        }
+      }),
+      controls: [
+        {
+          label: 'General',
+          type: 'group',
+          controls: [
+            { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
+            { label: 'Weight', type: 'number', '_get': x => x.Properties.Weight, '_set': (x, v) => x.Properties.Weight = v },
+            { label: 'Item Points', type: 'number', '_get': x => x.Properties.ItemPoints, '_set': (x, v) => x.Properties.ItemPoints = v },
+          ]
+        },
+        {
+          label: 'Display',
+          type: 'group',
+          controls: [
+            { label: 'Aspect Ratio', type: 'range', step: 1, min: 1, max: 100, '_get': x => x.Properties.Display.AspectRatio ? x.Properties.Display.AspectRatio.split(':') : [null, null], '_set': (x, v) => x.Properties.Display.AspectRatio = v.join(':') },
+            { label: 'Local Content', type: 'checkbox', '_get': x => x.Properties.Display.CanShowLocalContent, '_set': (x, v) => x.Properties.Display.CanShowLocalContent = v },
+            { label: 'Images & Text', type: 'checkbox', '_get': x => x.Properties.Display.CanShowImagesAndText, '_set': (x, v) => x.Properties.Display.CanShowImagesAndText = v },
+            { label: 'Effects', type: 'checkbox', '_get': x => x.Properties.Display.CanShowEffects, '_set': (x, v) => x.Properties.Display.CanShowEffects = v },
+            { label: 'Multimedia', type: 'checkbox', '_get': x => x.Properties.Display.CanShowMultimedia, '_set': (x, v) => x.Properties.Display.CanShowMultimedia = v },
+            { label: 'Particip. Content', type: 'checkbox', '_get': x => x.Properties.Display.CanShowParticipantContent, '_set': (x, v) => x.Properties.Display.CanShowParticipantContent = v },
+          ]
+        },
+        {
+          label: 'Economy',
+          type: 'group',
+          controls: [
+            { label: 'Cost', type: 'number', '_get': x => x.Properties.Economy.Cost, '_set': (x, v) => x.Properties.Economy.Cost = v },
+            { label: 'Max. TT', type: 'number', '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v }
+          ]
+        }
+      ],
+    }
+  }
+
   let tableViewInfo = {
     all: {
       columns: ['Name', 'Category', 'Max. TT'],
@@ -181,16 +326,22 @@
 
 <EntityViewer
   data={data}
+  user={data.session.user}
   tableViewInfo={tableViewInfo}
   navButtonInfo={navButtonInfo}
+  editConfig={editConfig}
   propertiesDataFunction={propertiesDataFunction}
   title='Furnishings'
+  type={data?.additional?.type === 'furniture'
+    ? 'Furniture'
+    : data?.additional?.type === 'decorations'
+    ? 'Decoration'
+    : data?.additional?.type === 'storagecontainers'
+    ? 'StorageContainer'
+    : 'Sign'}
   basePath='/items/furnishings'
   let:object
   let:additional>
-  <div class="flex-item-double">
-    <div class="big-title">{object.Name}</div>
-  </div>
   <!-- Acquisition -->
   <div class="flex-item long-content">
     <Acquisition acquisition={additional.acquisition} />

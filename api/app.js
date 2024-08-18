@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const swaggerJsDoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
+const compression = require('compression');
 
 const db = require('./db');
 const app = express();
@@ -22,10 +23,13 @@ const swaggerOptions = {
 
 const swaggerDocs = swaggerJsDoc(swaggerOptions);
 
-app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs, { explorer: true, customCss: '.swagger-ui .topbar { display: none }', customSiteTitle: 'Entropia Nexus API', apisSorter: 'alpha', operationsSorter: 'alpha' }));
+app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs, { explorer: true, customCss: '.swagger-ui .topbar { display: none }', customSiteTitle: 'Entropia Nexus API', apisSorter: 'alpha', operationsSorter: 'alpha'  }));
 
+app.use(compression());
 app.use(cors());
 app.use(express.json());
+
+app.disable('x-powered-by');
 
 app.listen(port, () => {
   console.log(`App running on port ${port}.`);
@@ -58,6 +62,130 @@ app.get('/search', async (req, res) => {
   if (!req.query.query || req.query.query.trim().length === 0) return res.status(400).send('Query cannot be empty');
 
   res.json(await db.search(req.query.query));
+});
+
+/**
+ * @swagger
+ * /search/items:
+ *  get:
+ *    description: Search for items by name. Returns up to 20 results.
+ *    parameters:
+ *      - in: query
+ *        name: query
+ *        schema:
+ *          type: string
+ *        required: true
+ *        description: The search query
+ *    responses:
+ *      '200':
+ *        description: A list of items matching the search query
+ *      '400':
+ *        description: Query cannot be empty
+ */
+app.get('/search/items', async (req, res) => {
+  if (!req.query.query || req.query.query.trim().length === 0) return res.status(400).send('Query cannot be empty');
+
+  res.json(await db.searchItems(req.query.query));
+});
+
+/**
+ * @swagger
+ * /acquisition/{item}:
+ *  get:
+ *    description: Get all acquisition methods for an item
+ *    parameters:
+ *      - in: path
+ *        name: item
+ *        schema:
+ *          type: string
+ *        required: true
+ *        description: The name or id of the item
+ *    responses:
+ *      '200':
+ *        description: Acquisition methods for the item
+ *      '404':
+ *        description: Item not found
+ */
+app.get('/acquisition/:item', async (req, res) => {
+  if (!req.params.item || req.params.item.trim().length === 0) return res.status(400).send('Item cannot be empty');
+
+  let itemName = req.params.item
+
+  if (Number.isInteger(parseInt(req.params.item))) {
+    itemName = (await db.getItem(req.params.item))?.Name;
+  }
+
+  if (itemName == null) {
+    return res.status(404).send();
+  }
+
+  const [blueprints, mobloots, vendoroffers, refiningrecipes] = await Promise.all([
+    db.getBlueprints([itemName]),
+    db.getMobLoots([itemName]),
+    db.getVendorOffers([itemName]),
+    db.getRefiningRecipes([itemName]),
+  ]);
+
+  let result = {
+    Blueprints: blueprints,
+    Loots: mobloots,
+    VendorOffers: vendoroffers,
+    RefiningRecipes: refiningrecipes,
+  }
+
+  if (result) {
+    res.json(result);
+  }
+  else {
+    res.status(404).send();
+  }
+});
+
+/**
+ * @swagger
+ * /usage/{item}:
+ *  get:
+ *    description: Get all usage methods for an item
+ *    parameters:
+ *      - in: path
+ *        name: item
+ *        schema:
+ *          type: string
+ *        required: true
+ *        description: The name or id of the item
+ *    responses:
+ *      '200':
+ *        description: Usage methods for the item
+ *      '404':
+ *        description: Item not found
+ */
+app.get('/usage/:item', async (req, res) => {
+  if (!req.params.item || req.params.item.trim().length === 0) return res.status(400).send('Item cannot be empty');
+
+  let itemName = req.params.item
+
+  if (Number.isInteger(parseInt(req.params.item))) {
+    itemName = await db.getItem(req.params.item);
+  }
+
+  const [blueprints, refiningrecipes, vendoroffers] = await Promise.all([
+    db.getBlueprints(null, [itemName]),
+    db.getRefiningRecipes(null, [itemName]),
+    db.getVendorOffers(null, [itemName]),
+  ]);
+
+  let result = {
+    Blueprints: blueprints,
+    RefiningRecipes: refiningrecipes,
+    VendorOffers: vendoroffers,
+  }
+
+  if (result) {
+    res.json(result);
+  }
+  else {
+    res.status(404).send();
+  }
 });
 
 // Maps & Locations
@@ -163,10 +291,10 @@ app.get('/locations', async (req, res) => {
     if (planets.length === 0) return res.status(400).send('Planets cannot be empty');
 
     res.json(await db.getLocations(planets));
-    }
-    else {
-      res.json(await db.getLocations());
-    }
+  }
+  else {
+    res.json(await db.getLocations());
+  }
 });
 
 /**
@@ -189,6 +317,61 @@ app.get('/locations', async (req, res) => {
  */
 app.get('/locations/:location', async (req, res) => {
   let result = await db.getLocation(req.params.location);
+
+  if (result) {
+    res.json(result);
+  }
+  else {
+    res.status(404).send();
+  }
+});
+
+/**
+ * @swagger
+ * /mobspawns:
+ *  get:
+ *    description: Get all mob spawns
+ *    responses:
+ *      '200':
+ *        description: A list of mob spawns
+ */
+app.get('/mobspawns', async (req, res) => {
+  if (req.query.Mob && req.query.Mobs) return res.status(400).send('Cannot specify both Mob and Mobs');
+
+  if (req.query.Mob || req.query.Mobs) {
+    let mobs = req.query.Mobs
+      ? parseItemList(req.query.Mobs)
+      : [req.query.Mob];
+
+    if (mobs.length === 0) return res.status(400).send('Mobs cannot be empty');
+
+    res.json(await db.getMobSpawns(mobs));
+  }
+  else {
+    res.json(await db.getMobSpawns());
+  }
+});
+
+/**
+ * @swagger
+ * /mobspawns/{mobSpawn}:
+ *  get:
+ *    description: Get a mob spawn by name or id
+ *    parameters:
+ *      - in: path
+ *        name: mobSpawn
+ *        schema:
+ *          type: string
+ *        required: true
+ *        description: The name or id of the mob spawn
+ *    responses:
+ *      '200':
+ *        description: The mob spawn
+ *      '404':
+ *        description: Mob spawn not found
+ */
+app.get('/mobspawns/:mobSpawn', async (req, res) => {
+  let result = await db.getMobSpawn(req.params.mobSpawn);
 
   if (result) {
     res.json(result);
@@ -328,12 +511,12 @@ app.get('/items/:item', async (req, res) => {
 
 /**
  * @swagger
- * /weapons:
+ * /absorbers:
  *  get:
- *    description: Get all weapons
+ *    description: Get all absorbers
  *    responses:
  *      '200':
- *        description: A list of weapons
+ *        description: A list of absorbers
  */
 app.get('/absorbers', async (req, res) => {
   res.json(await db.getAbsorbers());
@@ -454,12 +637,12 @@ app.get('/armorsets/:armorset', async (req, res) => {
 
 /**
  * @swagger
- * /weapons:
+ * /armors:
  *  get:
- *    description: Get all weapons
+ *    description: Get all armors
  *    responses:
  *      '200':
- *        description: A list of weapons
+ *        description: A list of armors
  */
 app.get('/armors', async (req, res) => {
   res.json(await db.getArmors());
@@ -607,20 +790,20 @@ app.get('/blueprints/:blueprint', async (req, res) => {
 
 /**
  * @swagger
- * /books:
+ * /clothings:
  *  get:
- *    description: Get all books
+ *    description: Get all clothings
  *    responses:
  *      '200':
- *        description: A list of books
+ *        description: A list of clothings
  */
-app.get('/clothes', async (req, res) => {
-  res.json(await db.getClothes());
+app.get('/clothings', async (req, res) => {
+  res.json(await db.getClothings());
 });
 
 /**
  * @swagger
- * /clothes/{clothing}:
+ * /clothings/{clothing}:
  *  get:
  *    description: Get a clothing by name or id
  *    parameters:
@@ -636,8 +819,8 @@ app.get('/clothes', async (req, res) => {
  *      '404':
  *        description: Clothing not found
  */
-app.get('/clothes/:clothing', async (req, res) => {
-  let result = await db.getClothes(req.params.clothing);
+app.get('/clothings/:clothing', async (req, res) => {
+  let result = await db.getClothing(req.params.clothing);
 
   if (result) {
     res.json(result);
@@ -649,37 +832,37 @@ app.get('/clothes/:clothing', async (req, res) => {
 
 /**
  * @swagger
- * /components:
+ * /stimulants:
  *  get:
- *    description: Get all components
+ *    description: Get all stimulants
  *    responses:
  *      '200':
- *        description: A list of components
+ *        description: A list of stimulants
  */
-app.get('/consumables', async (req, res) => {
+app.get('/stimulants', async (req, res) => {
   res.json(await db.getConsumables());
 });
 
 /**
  * @swagger
- * /consumables/{consumable}:
+ * /stimulants/{stimulant}:
  *  get:
- *    description: Get a consumable by name or id
+ *    description: Get a stimulant by name or id
  *    parameters:
  *      - in: path
- *        name: consumable
+ *        name: stimulant
  *        schema:
  *          type: string
  *        required: true
- *        description: The name or id of the consumable
+ *        description: The name or id of the stimulant
  *    responses:
  *      '200':
- *        description: The consumable
+ *        description: The stimulant
  *      '404':
- *        description: Consumable not found
+ *        description: Stimulant not found
  */
-app.get('/consumables/:consumable', async (req, res) => {
-  let result = await db.getConsumable(req.params.consumable);
+app.get('/stimulants/:stimulant', async (req, res) => {
+  let result = await db.getConsumable(req.params.stimulant);
 
   if (result) {
     res.json(result);
@@ -691,20 +874,20 @@ app.get('/consumables/:consumable', async (req, res) => {
 
 /**
  * @swagger
- * /containers:
+ * /capsules:
  *  get:
- *    description: Get all containers
+ *    description: Get all creature control capsules
  *    responses:
  *      '200':
- *        description: A list of containers
+ *        description: A list of creature control capsules
  */
-app.get('/creaturecontrolcapsules', async (req, res) => {
+app.get('/capsules', async (req, res) => {
   res.json(await db.getCreatureControlCapsules());
 });
 
 /**
  * @swagger
- * /creaturecontrolcapsules/{capsule}:
+ * /capsules/{capsule}:
  *  get:
  *    description: Get a creature control capsule by name or id
  *    parameters:
@@ -720,7 +903,7 @@ app.get('/creaturecontrolcapsules', async (req, res) => {
  *      '404':
  *        description: Creature control capsule not found
  */
-app.get('/creaturecontrolcapsules/:capsule', async (req, res) => {
+app.get('/capsules/:capsule', async (req, res) => {
   let result = await db.getCreatureControlCapsule(req.params.capsule);
 
   if (result) {
@@ -733,12 +916,12 @@ app.get('/creaturecontrolcapsules/:capsule', async (req, res) => {
 
 /**
  * @swagger
- * /creaturecontroldevices:
+ * /decorations:
  *  get:
- *    description: Get all creature control devices
+ *    description: Get all decorations
  *    responses:
  *      '200':
- *        description: A list of creature control devices
+ *        description: A list of decorations
  */
 app.get('/decorations', async (req, res) => {
   res.json(await db.getDecorations());
@@ -2099,6 +2282,11 @@ app.get('/teleportationchips/:teleportationChip', async (req, res) => {
  *        schema:
  *          type: integer
  *        description: Whether the item is an armor set
+ *      - in: query
+ *        name: Tier
+ *        schema:
+ *          type: integer
+ *        description: The tier to get. Leave empty to get all tiers
  *    responses:
  *      '200':
  *        description: A list of tiers
@@ -2110,36 +2298,9 @@ app.get('/tiers', async (req, res) => {
 
   if (!Number.isInteger(Number(req.query.ItemId))) return res.status(400).send('ItemId must be an integer');
 
-  res.json(await db.getTiers(req.query.ItemId ?? null, req.query.IsArmorSet ?? null));
-});
+  if (req.query.Tier != null && (!Number.isInteger(Number(req.query.Tier)) || req.query.Tier < 0 || req.query.Tier > 10)) return res.status(400).send('Tier must be an integer between 1 and 10');
 
-/**
- * @swagger
- * /tiers/{tier}:
- *  get:
- *    description: Get a tier by name or id
- *    parameters:
- *      - in: path
- *        name: tier
- *        schema:
- *          type: string
- *        required: true
- *        description: The name or id of the tier
- *    responses:
- *      '200':
- *        description: The tier
- *      '404':
- *        description: Tier not found
- */
-app.get('/tiers/:tier', async (req, res) => {
-  let result = await db.getTier(req.params.tier);
-
-  if (result) {
-    res.json(result);
-  }
-  else {
-    res.status(404).send();
-  }
+  res.json(await db.getTiers(req.query.ItemId ?? null, req.query.IsArmorSet ?? null, req.query.Tier ?? null));
 });
 
 /**
@@ -2450,4 +2611,9 @@ app.get('/weapons/:weapon', async (req, res) => {
   else {
     res.status(404).send();
   }
+});
+
+app.use(function(err, req, res, next) {
+  console.error(err.stack); // log error stack trace to console
+  res.status(500).send('Something broke!'); // send error message to client
 });

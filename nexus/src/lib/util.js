@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { loading } from "../stores";
-import { goto } from "$app/navigation";
+import { goto, invalidateAll } from "$app/navigation";
 
 export function addItemTag(currentName, tag) {
   // Extract the base name and the existing tags
@@ -42,6 +42,8 @@ export function removeItemTag(currentName, tag) {
 }
 
 export function hasItemTag(currentName, tag) {
+  if (!currentName) return false;
+
   // Extract the existing tags
   const match = currentName.match(/^(.*) \((.*)\)$/);
   const existingTags = match ? match[2].split(',') : [];
@@ -76,19 +78,40 @@ export async function getAcquisitionInfo(fetch, itemName) {
     };
   }
 
-  const [blueprints, mobloots, vendoroffers, refiningrecipes] = await Promise.all([
-    apiCall(fetch, `/blueprints?Product=${encodeURIComponent(itemName)}`),
-    apiCall(fetch, `/mobloots?Item=${encodeURIComponent(itemName)}`),
-    apiCall(fetch, `/vendoroffers?Item=${encodeURIComponent(itemName)}`),
-    apiCall(fetch, `/refiningrecipes?Product=${encodeURIComponent(itemName)}`)
-  ]);
+  if (Array.isArray(itemName)) {
+    let result = await Promise.all(itemName.map(x => getAcquisitionInfo(fetch, x)));
 
-  return {
-    Blueprints: blueprints,
-    Loots: mobloots,
-    VendorOffers: vendoroffers,
-    RefiningRecipes: refiningrecipes
-  };
+    return {
+      Blueprints: result.flatMap(x => x.Blueprints),
+      Loots: result.flatMap(x => x.Loots),
+      VendorOffers: result.flatMap(x => x.VendorOffers),
+      RefiningRecipes: result.flatMap(x => x.RefiningRecipes)
+    };
+  }
+
+  return await apiCall(fetch, `/acquisition/${encodeURIComponent(itemName)}`);
+}
+
+export async function getUsageInfo(fetch, itemName) {
+  if (!itemName || itemName.length === 0) {
+    return {
+      Blueprints: [],
+      VendorOffers: [],
+      RefiningRecipes: []
+    };
+  }
+
+  if (Array.isArray(itemName)) {
+    let result = await Promise.all(itemName.map(x => getUsageInfo(fetch, x)));
+
+    return {
+      Blueprints: result.flatMap(x => x.Blueprints),
+      VendorOffers: result.flatMap(x => x.VendorOffers),
+      RefiningRecipes: result.flatMap(x => x.RefiningRecipes)
+    };
+  }
+
+  return await apiCall(fetch, `/usage/${encodeURIComponent(itemName)}`);
 }
 
 export function getPlanetName(planetName) {
@@ -149,7 +172,7 @@ export function getPlanetName(planetName) {
 }
 
 export function getMainPlanetName(planetName) {
-  if (planetName === 'Asteroid F.O.M.A.' || planetName === 'Crystal Palace') {
+  if (planetName === 'Asteroid F.O.M.A.' || planetName === 'Crystal Palace' || planetName === 'Space') {
     return 'Calypso';
   } else if (planetName === 'Arkadia Moon' || planetName === 'Arkadia Underground') {
     return 'Arkadia';
@@ -165,75 +188,89 @@ export function getMainPlanetName(planetName) {
 }
 
 export function getItemLink(item, subtype = null) {
+  if (item.Links?.$ItemUrl != null) {
+    return item.Links.$ItemUrl;
+  }
+
+  if (typeof window === 'undefined') {
+    return null;
+  }
+
   return getTypeLink(item.Name, item.Properties.Type, subtype);
 }
 
 export function getTypeLink(name, type, subType = null) {
   switch (type) {
     case 'Weapon':
-      return subType != null
-      ? `/items/weapons/${encodeURIComponent(subType).toLowerCase()}/${encodeURIComponent(name)}`
-      : `/items/weapons/${encodeURIComponent(name)}`;
+      return `/items/weapons/${encodeURIComponentSafe(name)}`;
     case 'Armor':
-      return `/items/armors/${encodeURIComponent(name)}`;
+      return `/items/armorsets/${encodeURIComponentSafe(name)}`;
     case 'MedicalTool':
-      return `/items/medicaltools/tools/${encodeURIComponent(name)}`;
+      return `/items/medicaltools/tools/${encodeURIComponentSafe(name)}`;
     case 'MedicalChip':
-      return `/items/medicaltools/chips/${encodeURIComponent(name)}`;
+      return `/items/medicaltools/chips/${encodeURIComponentSafe(name)}`;
     case 'Refiner':
-      return `/items/tools/refiners/${encodeURIComponent(name)}`;
+      return `/items/tools/refiners/${encodeURIComponentSafe(name)}`;
     case 'Scanner':
-      return `/items/tools/scanners/${encodeURIComponent(name)}`;
+      return `/items/tools/scanners/${encodeURIComponentSafe(name)}`;
     case 'Finder':
-      return `/items/tools/finders/${encodeURIComponent(name)}`;
+      return `/items/tools/finders/${encodeURIComponentSafe(name)}`;
     case 'Excavator':
-      return `/items/tools/excavators/${encodeURIComponent(name)}`;
+      return `/items/tools/excavators/${encodeURIComponentSafe(name)}`;
     case 'TeleportationChip':
-      return `/items/tools/teleportationchips/${encodeURIComponent(name)}`;
+      return `/items/tools/teleportationchips/${encodeURIComponentSafe(name)}`;
     case 'EffectChip':
-      return `/items/tools/effectchips/${encodeURIComponent(name)}`;
+      return `/items/tools/effectchips/${encodeURIComponentSafe(name)}`;
     case 'MiscTool':
-      return `/items/tools/misctools/${encodeURIComponent(name)}`;
+      return `/items/tools/misctools/${encodeURIComponentSafe(name)}`;
     case 'Blueprint':
-      return `/items/blueprints/${encodeURIComponent(name)}`;
+      return `/items/blueprints/${encodeURIComponentSafe(name)}`;
     case 'Material':
-      return `/items/materials/${encodeURIComponent(name)}`;
+      return `/items/materials/${encodeURIComponentSafe(name)}`;
     case 'Vehicle':
-      return `/items/vehicles/${encodeURIComponent(name)}`;
+      return `/items/vehicles/${encodeURIComponentSafe(name)}`;
     case 'Pet':
-      return `/items/pets/${encodeURIComponent(name)}`;
+      return `/items/pets/${encodeURIComponentSafe(name)}`;
     case 'Consumable':
-      return `/items/consumables/consumables/${encodeURIComponent(name)}`;
+      return `/items/consumables/stimulants/${encodeURIComponentSafe(name)}`;
     case 'CreatureControlCapsule':
-      return `/items/consumables/creaturecontrolcapsules/${encodeURIComponent(name)}`;
+      return `/items/consumables/capsules/${encodeURIComponentSafe(name)}`;
     case 'Furniture':
-      return `/items/furnishings/furniture/${encodeURIComponent(name)}`;
+      return `/items/furnishings/furniture/${encodeURIComponentSafe(name)}`;
     case 'Decoration':
-      return `/items/furnishings/decoration/${encodeURIComponent(name)}`;
+      return `/items/furnishings/decorations/${encodeURIComponentSafe(name)}`;
     case 'StorageContainer':
-      return `/items/furnishings/storagecontainers/${encodeURIComponent(name)}`;
+      return `/items/furnishings/storagecontainers/${encodeURIComponentSafe(name)}`;
     case 'Sign':
-      return `/items/furnishings/signs/${encodeURIComponent(name)}`;
+      return `/items/furnishings/signs/${encodeURIComponentSafe(name)}`;
+    case 'Clothing':
+      return `/items/clothing/${encodeURIComponentSafe(name)}`;
     case 'WeaponAmplifier':
-      return `/items/attachments/weaponamplifiers/${encodeURIComponent(name)}`;
+      return `/items/attachments/weaponamplifiers/${encodeURIComponentSafe(name)}`;
     case 'WeaponVisionAttachment':
-      return `/items/attachments/weaponvisionattachments/${encodeURIComponent(name)}`;
+      return `/items/attachments/weaponvisionattachments/${encodeURIComponentSafe(name)}`;
     case 'Absorber':
-      return `/items/attachments/absorbers/${encodeURIComponent(name)}`;
+      return `/items/attachments/absorbers/${encodeURIComponentSafe(name)}`;
     case 'ArmorPlating':
-      return `/items/attachments/armorplatings/${encodeURIComponent(name)}`;
+      return `/items/attachments/armorplatings/${encodeURIComponentSafe(name)}`;
     case 'FinderAmplifier':
-      return `/items/attachments/finderamplifiers/${encodeURIComponent(name)}`;
+      return `/items/attachments/finderamplifiers/${encodeURIComponentSafe(name)}`;
     case 'Enhancer':
-      return `/items/attachments/enhancers/${encodeURIComponent(name)}`;
+      return `/items/attachments/enhancers/${encodeURIComponentSafe(name)}`;
     case 'MindforceImplant':
-      return `/items/attachments/mindforceimplants/${encodeURIComponent(name)}`;
+      return `/items/attachments/mindforceimplants/${encodeURIComponentSafe(name)}`;
     case 'Mob':
-      return `/creatures/mobs/${getMainPlanetName(subType).toLowerCase()}/${encodeURIComponent(name)}`;
+      return `/information/mobs/${encodeURIComponentSafe(name)}`;
     case 'Location':
-      return `/maps/${getMainPlanetName(subType).replace(/[^0-9a-zA-Z]/, '').toLowerCase()}/${encodeURIComponent(name)}`;
+      return `/maps/${getMainPlanetName(subType).replace(/[^0-9a-zA-Z]/g, '').toLowerCase()}/${encodeURIComponentSafe(name)}`;
     case 'Area':
-      return `/maps/${getMainPlanetName(subType).replace(/[^0-9a-zA-Z]/, '').toLowerCase()}/${encodeURIComponent(name)}`;
+      return `/maps/${getMainPlanetName(subType).replace(/[^0-9a-zA-Z]/g, '').toLowerCase()}/${encodeURIComponentSafe(name)}`;
+    case 'Skill':
+      return `/information/skills/${encodeURIComponentSafe(name)}`;
+    case 'Profession':
+      return `/information/professions/${encodeURIComponentSafe(name)}`;
+    case 'Vendor':
+      return `/information/vendors/${encodeURIComponentSafe(name)}`;
     default:
       return null;
   }
@@ -245,6 +282,8 @@ export function getTypeName(type) {
       return 'Weapon';
     case 'Armor':
       return 'Armor';
+    case 'ArmorSet':
+      return 'Armor Set';
     case 'MedicalTool':
       return 'Medical Tool';
     case 'MedicalChip':
@@ -272,7 +311,7 @@ export function getTypeName(type) {
     case 'Pet':
       return 'Pet';
     case 'Consumable':
-      return 'Consumable';
+      return 'Stimulant';
     case 'CreatureControlCapsule':
       return 'Creature Control Capsule';
     case 'Furniture':
@@ -283,6 +322,8 @@ export function getTypeName(type) {
       return 'Storage Container';
     case 'Sign':
       return 'Sign';
+    case 'Clothing':
+      return 'Clothing';
     case 'WeaponAmplifier':
       return 'Weapon Amplifier';
     case 'WeaponVisionAttachment':
@@ -299,6 +340,16 @@ export function getTypeName(type) {
       return 'Mindforce Implant';
     case 'Mob':
       return 'Mob';
+    case 'Location':
+      return 'Location';
+    case 'Area':
+      return 'Area';
+    case 'Skill':
+      return 'Skill';
+    case 'Profession':
+      return 'Profession';
+    case 'Vendor':
+      return 'Vendor';
     default:
       return 'N/A';
   }
@@ -330,18 +381,47 @@ export async function navigate(url) {
   loading.set(true);
 
   await goto(url);
+  await invalidateAll();
 
   loading.set(false);
 }
 
-export async function apiCall(fetch, url) {
-  let response = await fetch(import.meta.env.VITE_API_URL + url);
+export async function apiCall(fetch, url, apiUrl = import.meta.env.VITE_API_URL) {
+  let response = await fetch(apiUrl + url);
 
   if (!response.ok) {
     return null;
   }
 
   return await response.json();
+}
+
+export async function apiPost(fetch, url, body, apiUrl = import.meta.env.VITE_API_URL) {
+  let response = await fetch(apiUrl + url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(body)
+  });
+
+  return await response.json();
+}
+
+export async function apiPut(fetch, url, body, apiUrl = import.meta.env.VITE_API_URL) {
+  await fetch(apiUrl + url, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(body)
+  });
+}
+
+export async function apiDelete(fetch, url, apiUrl = import.meta.env.VITE_API_URL) {
+  await fetch(apiUrl + url, {
+    method: 'DELETE'
+  });
 }
 
 export function pageResponse(items, object = null, additional = null, error = null) {
@@ -361,8 +441,10 @@ export function getErrorMessage(error) {
   }
 }
 
-export async function handlePageLoad(fetch, items, config, slug, type = null, isItem = true, isArmorSet = false) {
+export async function handlePageLoad(fetch, items, config) {
   let isMultiType = Array.isArray(config.items);
+  config.isItem ||= true;
+  config.isArmorSet ||= false;
 
   if (!items) {
     if (isMultiType) {
@@ -377,12 +459,12 @@ export async function handlePageLoad(fetch, items, config, slug, type = null, is
     }
   }
 
-  if ((!type && isMultiType) || !slug) {
-    return { items: items, response: pageResponse(items) };
+  if ((!config.type && isMultiType) || !config.name) {
+    return { items: items, response: pageResponse(items, null, { type: config.type }) };
   }
 
-  if ((isMultiType ? items[type] : items).find(x => x.Name === slug) === undefined) {
-    return { items: items, response: pageResponse(items, null, null, 404) };
+  if ((isMultiType ? items[config.type] : items).find(x => x.Name === config.name) === undefined) {
+    return { items: items, response: pageResponse(items, null, { type: config.type }, 404) };
   }
 
   let endpoint, tierable, itemId;
@@ -390,29 +472,82 @@ export async function handlePageLoad(fetch, items, config, slug, type = null, is
   if (!isMultiType) {
     endpoint = config.items;
     tierable = config.types.tierable;
-    itemId = isArmorSet
-    ? items.find(x => x.Name === slug)?.Id
-    : items.find(x => x.Name === slug)?.ItemId;
+    itemId = config.isArmorSet
+    ? items.find(x => x.Name === config.name)?.Id
+    : items.find(x => x.Name === config.name)?.ItemId;
   }
   else {
-    endpoint = config.items[config.types.findIndex(x => x.type === type)];
-    tierable = config.types.find(x => x.type === type).tierable;
-    itemId = items[type].find(x => x.Name === slug)?.ItemId;
+    endpoint = config.items[config.types.findIndex(x => x.type === config.type)];
+    tierable = config.types.find(x => x.type === config.type).tierable;
+    itemId = items[config.type].find(x => x.Name === config.name)?.ItemId;
   }
 
-  const [object, tierInfo, acquisition] = await Promise.all([
-    apiCall(fetch, `/${endpoint}/${encodeURIComponent(slug)}`),
+  let [object, tierInfo, acquisition, usage] = await Promise.all([
+    apiCall(fetch, `/${endpoint}/${encodeURIComponent(config.name)}`),
     tierable
-      ? apiCall(fetch, `/tiers?ItemId=${itemId}&IsArmorSet=${isArmorSet ? 1 : 0}`)
+      ? apiCall(fetch, `/tiers?ItemId=${itemId}&IsArmorSet=${config.isArmorSet ? 1 : 0}`)
       : Promise.resolve(null),
-    isItem
-      ? getAcquisitionInfo(fetch, slug)
+    config.isItem && !config.isArmorSet
+      ? getAcquisitionInfo(fetch, config.name)
+      : Promise.resolve(null),
+    config.isItem
+      ? getUsageInfo(fetch, config.name)
       : Promise.resolve(null)
   ]);
 
-  if (object === null) {
-    return { items: items, response: pageResponse(items, null, null, 404) };
+  if (config.isArmorSet) {
+    let armorNames = object.Armors.flatMap(x => x.map(y => y.Name));
+
+    acquisition = await getAcquisitionInfo(fetch, armorNames);
+    usage = await getUsageInfo(fetch, armorNames);
   }
 
-  return { items: items, response: pageResponse(items, object, { type: type, tierInfo, acquisition }) };
+  if (object === null) {
+    return { items: items, response: pageResponse(items, null, { type: config.type }, 404) };
+  }
+
+  return { items: items, response: pageResponse(items, object, { type: config.type, tierInfo, acquisition, usage }) };
+}
+
+export function encodeURIComponentSafe(str) {
+  return encodeURIComponent(str?.replace(/ /g, '~'));
+}
+
+export function decodeURIComponentSafe(str) {
+  return str?.replace(/~/g, ' ');
+}
+
+export function getParams(page) {
+  return Object.fromEntries(
+    Object.entries(page.params).map(([key, value]) => [
+      key,
+      value != null ? decodeURIComponentSafe(value) : null
+    ])
+  );
+}
+
+export async function resolveItemLink(fetch, item) {
+  if (item == null) {
+    return null;
+  }
+
+  let subtype = null;
+
+  if (item.Properties.Type === 'Armor') {
+    if (!item.Set) {
+      let armor = await apiCall(fetch, item.Links.$Url);
+  
+      if (armor != null) {
+        item.Set = armor.Set;
+      }
+    }
+
+    return getTypeLink(item.Set?.Name, 'Armor', null);
+  }
+
+  return getTypeLink(item.Name, item.Properties.Type, subtype);
+}
+
+export function getResponse(response, status) {
+  return new Response(JSON.stringify(response), { status });
 }

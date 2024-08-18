@@ -3,11 +3,12 @@
 	"version": "0.0.1",
 	"private": true,
 	"scripts": {
-		"dev": "cross-env NODE_ENV=development npx dotenv-cli -e .env.development -- vite dev",
+		"dev": "cross-env NODE_ENV=development npx dotenv-cli -e .env.development -- vite dev --host 127.0.0.1",
 		"build": "cross-env NODE_ENV=production npx dotenv-cli -e .env.production -- vite build",
 		"preview": "cross-env NODE_ENV=production npx dotenv-cli -e .env.production -- vite preview",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
-		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"
+		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
+		"debug": "cross-env NODE_ENV=development npx dotenv-cli -e .env.development -- node --inspect-brk node_modules/vite/bin/vite.js dev --host 127.0.0.1"
 	},
 	"devDependencies": {
 		"@sveltejs/adapter-auto": "^3.0.0",
@@ -25,6 +26,9 @@
 	},
 	"type": "module",
 	"dependencies": {
-		"svg-path-to-polygons": "^0.1.0"
+		"ajv": "^8.12.0",
+		"pg": "^8.11.5",
+		"svg-path-to-polygons": "^0.1.0",
+		"uuid": "^9.0.1"
 	}
 }

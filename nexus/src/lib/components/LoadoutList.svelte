@@ -34,8 +34,13 @@
       const contents = e.target.result;
       const data = JSON.parse(contents);
 
+      if (loadouts === null) {
+        loadouts = [];
+      }
+
       if (data) {
-        loadouts = data;
+        loadouts.push(data);
+        currentLoadout = data;
       }
     };
 
@@ -97,8 +102,8 @@
         }
       },
       Skill: {
-        Hit: 100,
-        Dmg: 100,
+        Hit: 200,
+        Dmg: 200,
       },
       Markup: {
         Weapon: 100,
@@ -108,6 +113,7 @@
         Scope: 100,
         Sight: 100,
         ScopeSight: 100,
+        Matrix: 100,
         Implant: 100,
         ArmorSet: 100,
         PlateSet: 100,
@@ -138,7 +144,10 @@
   }
 
   function deleteCurrentLoadout() {
-    const index = loadouts.findIndex((x) => x.Name === currentLoadout);
+    const index = loadouts.findIndex((x) => x.Id === currentLoadout.Id);
+
+    if (index < 0) return;
+
     loadouts.splice(index, 1);
     loadouts = loadouts;
     currentLoadout = null;
@@ -161,10 +170,6 @@
 </script>
 
 <style>
-  .title {
-    font-size: 32px;
-  }
-  
   .width100 {
     width: calc(100% - 8px);
   }
@@ -207,7 +212,7 @@
 </style>
 
 <div class="list-wrapper">
-  <div class="title">Loadouts</div>
+  <h2>Loadouts</h2>
   <br />
 
   <div class="info-container">
@@ -243,6 +248,7 @@
             return {
               values: [item.Name],
               trStyle: item.Id === currentLoadout?.Id ? `font-weight: bold;` : '',
+              id: item.Id
             };
           })
         }
@@ -253,7 +259,7 @@
           }
         }
         on:rowClick={(evt) => {
-          currentLoadout = loadouts.find(x => x.Name === evt.detail.data.values[0]);
+          currentLoadout = loadouts.find(x => x.Id === evt.detail.data.id);
         }} />
     {/if}
   </div>

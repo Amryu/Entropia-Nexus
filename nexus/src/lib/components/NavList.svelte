@@ -6,7 +6,9 @@
   import { createEventDispatcher } from 'svelte';
 
   import Table from './Table.svelte';
-  import { navigate } from '$lib/util';
+  import { encodeURIComponentSafe, navigate } from '$lib/util';
+  import ContextMenu from './ContextMenu.svelte';
+  import { contextmenu } from './ContextMenu';
 
   export let items = [];
   export let filterButtonInfo = [];
@@ -14,6 +16,10 @@
   export let title = '';
   export let basePath = '';
   export let tableViewInfo = {};
+  export let user;
+  export let editable = false;
+
+  let contextMenuElement;
 
   let currentCategorySelected = null;
 
@@ -25,6 +31,7 @@
 
   let start;
   let end;
+  let count;
 
   $: {
     isMultiType = typeof items === 'object' && !Array.isArray(items)
@@ -57,16 +64,44 @@
     dispatch('expand', { expanded });
   }
 
+  function createItem(type = null) {
+    let filterInfo = filterButtonInfo.find(x => x.Type === type);
+
+    let useAsRoute = filterInfo?.IsRoute ?? true;
+    let route = filterInfo?.Type ?? type ?? null;
+
+    window.location.href = `${basePath}${route != null && useAsRoute ? `/${route}` : ''}?mode=create`;
+  }
+
   function getTableViewInfo(currentCategorySelected) {
     return isMultiType ? tableViewInfo[currentCategorySelected ?? 'all'] : tableViewInfo;
+  }
+
+  function handleClick(event) {
+    const contextMenuEvent = new MouseEvent('contextmenu', {
+      bubbles: true,
+      cancelable: false,
+      view: window,
+      button: 2,
+      buttons: 0,
+      clientX: event.clientX,
+      clientY: event.clientY
+    });
+
+    event.target.dispatchEvent(contextMenuEvent);
+  }
+
+  function getItemLink(item) {
+    let filterInfo = filterButtonInfo.find(x => x.Type === item._type);
+
+    let useAsRoute = filterInfo?.IsRoute ?? true;
+    let route = filterInfo?.Type ?? item._type ?? null;
+
+    return `${basePath}${route && useAsRoute ? `/${route}` : ''}/${encodeURIComponentSafe(item.Name)}`;
   }
 </script>
 
 <style>
-  .title {
-    font-size: 32px;
-  }
-  
   .width100 {
     width: calc(100% - 8px);
   }
@@ -107,10 +142,21 @@
     cursor: pointer;
     border: 1px solid var(--text-color);
     background-color: var(--primary-color);
+    width: 32px;
+    height: 32px;
   }
-
-  .expand-button:hover {
-    background-color: var(--hover-color);
+  
+  .create-button {
+    position: absolute;
+    top: 0;
+    left: 0;
+    font-size: 16px;
+    padding: 5px;
+    cursor: pointer;
+    border: 1px solid var(--text-color);
+    background-color: var(--primary-color);
+    width: 32px;
+    height: 32px;
   }
 
   .expanded {
@@ -129,10 +175,23 @@
   }
 </style>
 
+<ContextMenu
+  bind:this={contextMenuElement}
+  menu={filterButtonInfo.map(x => ({
+    label: x.Title,
+    action: () => createItem(x.Type)
+  }))} />
 <div class="list-wrapper {expanded ? 'expanded' : ''}">
-  <button class="expand-button" on:click={expand}>{expanded ? 'Close' : 'Expand'}</button>
+  {#if user && user.verified && editable}
+    {#if !isMultiType || filterButtonInfo.every(x => x.IsRoute === false)}
+      <button class="create-button" on:click={_ => createItem()} title="Create new item">+</button>
+    {:else}
+      <button use:contextmenu={{ contextMenu: contextMenuElement, payload: null }} class="create-button" on:click={handleClick} title="Create new item">+</button>
+    {/if}
+  {/if}
+  <button class="expand-button" on:click={expand} title={expanded ? 'Close' : 'Expand'}>{expanded ? '<<' : '>>'}</button>
 
-  <div class="title">{title}</div>
+  <h2>{title}</h2>
   <br />
 
   <div class="info-container">
@@ -146,7 +205,7 @@
     {/if} 
     {#if expanded}
     <div class="data-info">
-      Showing element {start + 1} to {end} of {filteredElements.length} elements
+      Showing element {start + 1} to {end} of {count} elements
     </div>
     {/if}
   </div>
@@ -181,10 +240,11 @@
         }
         bind:start
         bind:end
+        bind:count
         on:rowClick={(evt) => {
           currentSelection = evt.detail.data.values[0];
 
-          navigate(`${basePath}${filteredElements.find(x => x.Name === currentSelection)._type ? `/${filteredElements.find(x => x.Name === currentSelection)._type}` : ''}/${encodeURIComponent(currentSelection)}`);
+          navigate(getItemLink(filteredElements.find(x => x.Name === currentSelection)));
         }} />
       </div>
   {:else}
@@ -202,7 +262,7 @@
           header={
             { 
               values: ['Name'],
-              widths: ['1fr']
+              widths: ['1fr'],
             }
           }
           data={
@@ -210,6 +270,7 @@
               return {
                 values: [item.Name],
                 trStyle: item.Name === currentSelection ? `font-weight: bold;` : '',
+                links: [getItemLink(item)]
               };
             })
           }
@@ -221,8 +282,8 @@
           }
           on:rowClick={(evt) => {
             currentSelection = evt.detail.data.values[0];
-
-            navigate(`${basePath}${filteredElements.find(x => x.Name === currentSelection)._type ? `/${filteredElements.find(x => x.Name === currentSelection)._type}` : ''}/${encodeURIComponent(currentSelection)}`);
+            
+            navigate(getItemLink(filteredElements.find(x => x.Name === currentSelection)));
           }} />
       {/if}
     </div>

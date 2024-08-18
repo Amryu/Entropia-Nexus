@@ -10,6 +10,7 @@
   import { contextmenu } from './ContextMenu';
 
   import { pathDataToPolys }  from 'svg-path-to-polygons'
+  import { copyLocation, getTooltipText, locationFilter } from '$lib/mapUtil';
 
   export let mapName = '';
   export let planet = null;
@@ -192,32 +193,7 @@
   }
 
   $: if (mapSettings) {
-    filteredLocations = locations.filter(x => {
-      if (mapSettings.locations.enabled && !x.Properties.Type.endsWith('Area')) {
-        if (mapSettings.locations.teleporters && x.Properties.Type === 'Teleporter') return true;
-        if (mapSettings.locations.outposts && x.Properties.Type === 'Outpost') return true;
-        if (mapSettings.locations.missions && (x.Properties.Type === 'Mission' || x.Properties.Type === 'Objective')) return true;
-      }
-
-      if (mapSettings.areas.enabled && x.Properties.Type.endsWith('Area')) {
-        if (mapSettings.areas.landAreas && x.Properties.Type === 'LandArea') return true;
-        if (mapSettings.areas.zoneAreas && x.Properties.Type === 'ZoneArea') return true;
-        if (mapSettings.areas.pvpAreas && (x.Properties.Type === 'PvpArea' || x.Properties.Type === 'PvpLootArea')) return true;
-        if (mapSettings.areas.eventAreas && x.Properties.Type === 'EventArea') return true;
-        if (mapSettings.areas.waveEvents && item.Properties?.Type === 'WaveEventArea') return true;
-      }
-
-      if (mapSettings.mobs.enabled && x.Properties.Type === 'MobArea') {
-        return true;
-        if (mapSettings.mobs.rookie && false) return true;
-        if (mapSettings.mobs.adept && false) return true;
-        if (mapSettings.mobs.intermediate && false) return true;
-        if (mapSettings.mobs.expert && false) return true;
-        if (mapSettings.mobs.uber && false) return true;
-      }
-
-      return false;
-    });
+    filteredLocations = locations.filter(x => locationFilter(x, mapSettings));
   }
 
   async function focusOnLocation(location) {
@@ -582,7 +558,7 @@
     };
   }
 
-  function canvasToWindowCoords(canvasX, canvasY) {
+  export function canvasToWindowCoords(canvasX, canvasY) {
     if (typeof window === 'undefined') {
       return { x: 0, y: 0 };
     }
@@ -596,22 +572,6 @@
 
   function getAreas(locations) {
     return locations.filter(x => x.Properties.Type.endsWith('Area'));
-  }
-
-  function getTooltipText(object) {
-    return `${object.Name} - <span style="color: gray;">(${wasPositionCopied ? 'Copied!' : 'Right-click to copy'})</span><br />${getWaypointFromLocation(object)}`;
-  }
-
-  function copyLocation(object) {
-    navigator.clipboard.writeText(`/wp ${getWaypointFromLocation(object)}`);
-  }
-
-  function getWaypointFromLocation(location) {
-    return `/wp ${getWaypoint(location.Planet.Properties.TechnicalName ?? location.Planet.Name, location.Properties.Coordinates.Longitude, location.Properties.Coordinates.Latitude, location.Properties.Coordinates.Altitude, location.Name)}`;
-  }
-
-  function getWaypoint(planet, x, y, z, name) {
-    return `[${planet}, ${x}, ${y}, ${z}, ${name}]`;
   }
 
   function getColorByType(type) {
@@ -711,10 +671,6 @@
     50% { opacity: 0; }
   }
 
-  .blinking-drop-shadow {
-    animation: blink 1s infinite;
-  }
-
   @keyframes -global-pulse {
     0%, 100% { transform: 1; }
     50% { transform: 1.5; }
@@ -749,7 +705,7 @@
   on:hide={() => wasPositionCopied = false}
   on:elementClick={(e) => {
     if (e.detail.button === 0) {
-      navigate(`/maps/${planet.Name.replace(/[^0-9a-zA-Z]/, '').toLowerCase()}/${e.detail.payload.Name}`);
+      navigate(`/maps/${planet.Name.replace(/[^0-9a-zA-Z]/g, '').toLowerCase()}/${e.detail.payload.Id}`);
     }
   }} />
 <ContextMenu
@@ -867,7 +823,7 @@
             radius: adjustedRadius,
             object: x
           };
-        }).filter(x => !isNaN(x.x) && !isNaN(x.y)) as circle (circle.object.Name+','+circle.x+','+circle.y)}
+        }).filter(x => !isNaN(x.x) && !isNaN(x.y)) as circle (circle.object.Name+','+circle.object.Properties.Coordinates.Longitude+','+circle.object.Properties.Coordinates.Latitude)}
         <!-- svelte-ignore a11y-no-static-element-interactions -->
         <!-- svelte-ignore a11y-mouse-events-have-key-events -->
         <circle
@@ -916,7 +872,7 @@
             height: height,
             object: x
           };
-        }).filter(x => !isNaN(x.x) && !isNaN(x.y)) as rect (rect.object.Name+','+rect.x+','+rect.y)}
+        }).filter(x => !isNaN(x.x) && !isNaN(x.y)) as rect (rect.object.Name+','+rect.object.Properties.Coordinates.Longitude+','+rect.object.Properties.Coordinates.Latitude)}
         <!-- svelte-ignore a11y-no-static-element-interactions -->
         <!-- svelte-ignore a11y-mouse-events-have-key-events -->
         <rect
@@ -1023,7 +979,7 @@
             ...entropiaCoordsToCanvasCoords(x.Properties.Coordinates.Longitude, x.Properties.Coordinates.Latitude),
             object: x
           };
-        }).filter(x => !isNaN(x.x) && !isNaN(x.y)) as location}
+        }).filter(x => !isNaN(x.x) && !isNaN(x.y)) as location (location.object.Name+','+location.object.Properties.Coordinates.Longitude+','+location.object.Properties.Coordinates.Latitude)}
         <!-- svelte-ignore a11y-no-static-element-interactions -->
         <!-- svelte-ignore a11y-mouse-events-have-key-events -->
         {#if location.object.Properties.Type === 'Teleporter'}

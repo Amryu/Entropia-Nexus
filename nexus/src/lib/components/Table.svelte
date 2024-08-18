@@ -14,6 +14,7 @@
 
   export let start = 0;
   export let end = 0;
+  export let count = 0;
 
   const rowHeight = 19;
 
@@ -50,11 +51,44 @@
       spanMap[i] = [0];
       for (let j = 1; j < filteredData.length; j++) {
         if ((filteredData[j].spans == null || filteredData[j].spans[i] == null)
-          ||(filteredData[j].spans[i] != null && filteredData[j].spans[i] >= 1 && filteredData[j].values[i] !== filteredData[j - 1].values[i])) {
+          ||(filteredData[j].spans[i] != null && filteredData[j].spans[i] >= 1 && !spanDataMatches(filteredData[j].spans, filteredData[j], filteredData[j - 1]))) {
           spanMap[i].push(j);
         }
       }
     }
+  }
+
+  function search(value, searchString) {
+    if (searchString.trimStart().startsWith('=')) {
+      return value == searchString.trimStart().substring(1);
+    }
+
+    if (!searchString.trimStart().startsWith('~')) {
+      value = value?.toString().toLowerCase() ?? '';
+      searchString = searchString?.toLowerCase() ?? '';
+    }
+    else {
+      value ??= '';
+      searchString = searchString.trimStart().substring(1);
+    }
+
+    if (searchString.trimStart().startsWith('!')) {
+      return !value.includes(searchString.trimStart().substring(1));
+    }
+    if (searchString.trimStart().startsWith('>=')) {
+      return value >= Number(searchString.trimStart().substring(2).trim());
+    }
+    if (searchString.trimStart().startsWith('<=')) {
+      return value <= Number(searchString.trimStart().substring(2).trim());
+    }
+    if (searchString.trimStart().startsWith('>')) {
+      return value > Number(searchString.trimStart().substring(1).trim());
+    }
+    if (searchString.trimStart().startsWith('<')) {
+      return value < Number(searchString.trimStart().substring(1).trim());
+    }
+
+    return value.includes(searchString);
   }
 
   $: if (data != null && data.length > 0) {
@@ -67,7 +101,7 @@
 
       filteredData = filteredData.filter((row) => {
         for (let i = 0; i < searchValues.length; i++) {
-          if (searchValues[i].trim().length !== 0 && !(row.values[i]?.toString().toLowerCase() ?? '').includes(searchValues[i].toLowerCase())) {
+          if (searchValues[i].trim().length !== 0 && !search(row.values[i]?.toString().toLowerCase() ?? '', searchValues[i].toLowerCase())) {
             return false;
           }
         }
@@ -81,16 +115,29 @@
           let index = sortDirections[i].index;
 
           if (!header?.options?.sortFunctions || header.options.sortFunctions[index] == null) {
-            if (a.values[index] == null) {
+            let isANull = (a.values[index] == null || a.values[index] === 'N/A');
+            let isBNull = (b.values[index] == null || b.values[index] === 'N/A');
+
+            if (isANull && b.values[index] != null) {
               return 1;
             }
-            if (b.values[index] == null) {
+            if (isBNull && a.values[index] != null) {
               return -1;
             }
+            if (isANull && isBNull) {
+              continue;
+            }
 
-            let value = typeof a.values[index] === 'number'
+            if (typeof a.values[index] !== 'number' && typeof b.values[index] === 'number') {
+              return sortDirections[i].asc ? 1 : -1;
+            }
+            if (typeof a.values[index] === 'number' && typeof b.values[index] !== 'number') {
+              return sortDirections[i].asc ? -1 : 1;
+            }
+
+            let value = typeof a.values[index] === 'number' && typeof b.values[index] !== 'number'
               ? a.values[index] - b.values[index]
-              : a.values[index].localeCompare(b.values[index], undefined, { numeric: true });
+              : a.values[index].toString().localeCompare(b.values[index].toString(), undefined, { numeric: true });
             
             if (value !== 0) {
               return sortDirections[i].asc ? value : -value;
@@ -109,6 +156,8 @@
         return 0;
       });
     }
+
+    count = filteredData.length;
   }
 
   function sortColumn(evt, index) {
@@ -185,6 +234,20 @@
     rows += ' 1fr;';
 
     return `${cols} ${rows}`;
+  }
+
+  function spanDataMatches(spans, row, prevRow) {
+    if (spans == null || prevRow == null) {
+      return false;
+    }
+
+    for (let i = 0; i < spans.length; i++) {
+      if (row.spans[i] > 0 && row.values[i] !== prevRow.values[i]) {
+        return false;
+      }
+    }
+
+    return true;
   }
 </script>
 
@@ -297,13 +360,19 @@
   tdgroup:hover .clickable:not(:hover) {
     background-color: var(--table-row-hover-color);
   }
+
+  h3 {
+    margin-top: 0;
+    margin-bottom: 0;
+    font-size: inherit;
+  }
 </style>
 <table style={`${getTableGridStyle(options.virtual, header)} ${style}`}>
   {#if title || header.values?.length > 0}
     <thead>
       {#if title}
         <tr>
-          <th style="text-align: center; grid-column: span {getColumnCount(header, filteredData)};">{title}</th>
+          <th style="text-align: center; grid-column: span {getColumnCount(header, filteredData)};"><h3>{title}</h3></th>
         </tr>
       {/if}
       {#if header.values?.length > 0}
@@ -370,8 +439,8 @@
           <!-- svelte-ignore a11y-mouse-events-have-key-events -->
           <tr on:click={() => rowClick(item)} on:mouseover={() => rowHover(item)} on:mouseout={() => rowHover(null)} style={item?.trStyle ?? ''} class="{options.highlightOnHover ? 'hover' : ''}">
             {#each item.values as value, valueIndex}
-              {#if (item?.spans == null || item?.spans[valueIndex] == null) || (item?.spans != null && item?.spans[valueIndex] > 0 && filteredData[index - 1]?.values[valueIndex] != value)}
-                <td class={(item?.spans != null && item?.spans[valueIndex] > 0 ? spanMap[valueIndex].indexOf(index) : index) % 2 === 0 ? 'row-color' : 'row-color-alt'} style={`${item?.spans != null && item?.spans[valueIndex] > 0 && filteredData[index - 1]?.values[valueIndex] != value ? `grid-row: span ${item?.spans[valueIndex]};` : ''}${item?.tdStyles && item?.tdStyles[valueIndex] != null ? item?.tdStyles[valueIndex] : ''}`}>
+              {#if (item?.spans == null || item?.spans[valueIndex] == null) || (item?.spans != null && item?.spans[valueIndex] > 0 && !spanDataMatches(item?.spans, item, filteredData[index - 1]))}
+                <td class={(item?.spans != null && item?.spans[valueIndex] > 0 ? spanMap[valueIndex].indexOf(index) : index) % 2 === 0 ? 'row-color' : 'row-color-alt'} style={`${item?.spans != null && item?.spans[valueIndex] > 0 && !spanDataMatches(item?.spans, item, filteredData[index - 1]) ? `grid-row: span ${item?.spans[valueIndex]};` : ''}${item?.tdStyles && item?.tdStyles[valueIndex] != null ? item?.tdStyles[valueIndex] : ''}`}>
                   <span style={shouldShowTooltip(item, valueIndex) ? 'text-decoration: underline; text-decoration-style: dashed; text-decoration-thickness: 1px;' : ''} title={shouldShowTooltip(item, valueIndex) ? item?.tooltips[valueIndex] : null}>
                     {#if item?.links != null && item?.links[valueIndex] != null}
                       <a href={item?.links[valueIndex]}>{@html value ?? ''}</a>

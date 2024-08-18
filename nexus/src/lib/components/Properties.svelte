@@ -6,6 +6,7 @@
 
   export let imageUrl;
 
+  export let title;
   export let data = {};
 </script>
 
@@ -17,8 +18,10 @@
   }
 
   .image {
-    width: 128px;
-    height: 128px;
+    min-width: 128px;
+    min-height: 128px;
+    max-width: 128px;
+    max-height: 128px;
     background-image: url();
     background-size: cover;
     background-position: center;
@@ -26,11 +29,17 @@
     margin-top: 8px;
     margin-bottom: 20px;
   }
+
+  h2 {
+    margin-top: 0;
+    margin-bottom: 0;
+    font-size: inherit;
+  }
 </style>
 
 <div class="container">
   {#if data}
-  <div class="image"></div>
+  <h2><img class="image" alt={title} title={title} /></h2>
   <div class="flex">
     {#each Object.entries(data) as [key, value]}
       {#if value !== null}
@@ -53,12 +62,13 @@
                 }
                 else if (value !== null && typeof value === 'object') {
                   if (Array.isArray(value.Value) && value.Value.length > 0) {
-                    return value.Value.map((item) => {
+                    return value.Value.map((item, index) => {
                       return {
                         values: [value.Label ?? label, item],
                         spans: [value.Value.length, null],
                         tooltips: [value.Tooltip ?? null, null],
-                        trStyle: value.Bold ? 'font-weight: bold;' : ''
+                        trStyle: value.Bold ? 'font-weight: bold;' : '',
+                        links: [value.LinkKey ?? null, value.LinkValue ? value.LinkValue[index] : null]
                       }
                     });
                   }
@@ -66,7 +76,8 @@
                     return [{
                       values: [value.Label ?? label, value.Value],
                       tooltips: [value.Tooltip ?? null, null],
-                      trStyle: value.Bold ? 'font-weight: bold;' : ''
+                      trStyle: value.Bold ? 'font-weight: bold;' : '',
+                      links: [value.LinkKey ?? null, value.LinkValue ?? null]
                     }];
                   }
                 }
@@ -74,7 +85,8 @@
                   return [{
                     values: [label, value.Value],
                     tooltips: [value.Tooltip ?? null, null],
-                    trStyle: value.Bold ? 'font-weight: bold;' : ''
+                    trStyle: value.Bold ? 'font-weight: bold;' : '',
+                    links: [value.LinkKey ?? null, value.LinkValue ?? null]
                   }];
                 }
               }).flat().filter(x => x != null)

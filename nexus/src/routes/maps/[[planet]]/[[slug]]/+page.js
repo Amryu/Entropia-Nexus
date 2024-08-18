@@ -18,16 +18,28 @@ export async function load({ fetch, params }) {
     return pageResponse(items, null, null, 404);
   }
 
-  let locations = await apiCall(fetch, '/locations?Planet=' + planet.Name);
-  let areas = await apiCall(fetch, '/areas?Planet=' + planet.Name);
+  let [locations, areas, mobSpawns] = await Promise.all([
+    apiCall(fetch, '/locations?Planet=' + planet.Name),
+    apiCall(fetch, '/areas?Planet=' + planet.Name),
+    apiCall(fetch, '/mobspawns?Planet=' + planet.Name)
+  ]);
+
+  areas = areas.map(area => {
+    const matchingMobSpawn = mobSpawns.find(mobSpawn => mobSpawn.Id === area.Id);
+
+    return matchingMobSpawn || area;
+  });
 
   locations = locations.map(location => {
     const matchingArea = areas.find(area => 
       area.Name === location.Name && 
-      area.Properties.Type === location.Properties.Type && 
-      area.Properties.Type.endsWith("Area")
+      area.Properties.Type.endsWith("Area") &&
+      area.Properties.Coordinates.Longitude === location.Properties.Coordinates.Longitude &&
+      area.Properties.Coordinates.Latitude === location.Properties.Coordinates.Latitude &&
+      area.Properties.Coordinates.Altitude === location.Properties.Coordinates.Altitude &&
+      area.Properties.Type === location.Properties.Type
     );
-    
+
     return matchingArea || location;
   });
 
@@ -43,8 +55,8 @@ export async function load({ fetch, params }) {
     );
   }
 
-  let location = areas.find((area) => area.Name === params.slug)
-    ?? locations.find((location) => location.Name === params.slug);
+  let location = areas.find((area) => area.Id == params.slug)
+    ?? locations.find((location) => location.Id == params.slug);
 
   if (location === null) {
     return pageResponse(
@@ -52,7 +64,6 @@ export async function load({ fetch, params }) {
       null,
       {
         locations,
-        areas,
         planet
       },
       404);

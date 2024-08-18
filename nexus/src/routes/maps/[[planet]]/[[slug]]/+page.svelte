@@ -4,7 +4,7 @@
 
   import { page } from '$app/stores';
   import { loading } from '../../../../stores';
-  import { getErrorMessage, getPlanetName } from '$lib/util';
+  import { getErrorMessage, getParams, getPlanetName } from '$lib/util';
 
   import MapList from '$lib/components/MapList.svelte';
   import Properties from '$lib/components/Properties.svelte';
@@ -12,7 +12,9 @@
 
   export let data;
 
-  let items, location, locations, areas, error;
+  let params = getParams($page);
+
+  let items, location, locations, error;
   let currentPlanet;
   let mapName;
 
@@ -26,7 +28,6 @@
     items = data.items;
     location = data.object;
     locations = data?.additional?.locations;
-    areas = data?.additional?.areas;
     error = data.error;
     currentPlanet = data?.additional?.planet;
 
@@ -55,7 +56,10 @@
 </style>
 
 <svelte:head>
-  <title>Entropia Nexus - {$page.params.planet ? getPlanetName($page.params.planet) : 'No'} Map</title>
+  <title>Entropia Nexus - {params.planet ? getPlanetName(params.planet) : 'No'} Map</title>
+  <meta name="description" content="An interactive map of {params.planet ? getPlanetName(params.planet) : 'Unknown'}.">
+  <meta name="keywords" content="{getPlanetName(params.planet)}, Planet, Interactive Map, Interactive, Entropia Universe, Entropia, Entropia Nexus, EU, PE, Items, Mobs, Maps, Tools, MindArk, Wiki">
+  <link rel="canonical" href="https://entropianexus.com/maps/{params.planet}" />
 </svelte:head>
 <div class="flex-container">
   <div class="map-list centered">
@@ -74,6 +78,7 @@
           <div class="spinner"></div>
         </div>
       {/if}
+      <h1 style="display: none;">Interactive {mapName} Teleporter, Mob and Locations Map</h1>
       <Map
         mapName={mapName}
         planet={currentPlanet}
@@ -86,6 +91,6 @@
     {/if}
   </div>
   <div class="prop-list centered">
-    <Properties imageUrl='' data={propertiesData} />
+    <Properties imageUrl='' title={selectedLocation != null ? selectedLocation.Name : ''} data={propertiesData} />
   </div>
 </div>

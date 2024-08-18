@@ -1,6 +1,6 @@
 <script>
   // @ts-nocheck
-
+  import { locationFilter } from '$lib/mapUtil';
   import { navigate } from '$lib/util';
 
   import Table from './Table.svelte';
@@ -128,37 +128,7 @@
   let filteredElements = [];
 
   $: if (locations) {
-    filteredElements = locations.filter((item) => {
-      if (mapSettings.locations.enabled) {
-        if (mapSettings.locations.teleporters && item.Properties?.Type === 'Teleporter') return true;
-        if (mapSettings.locations.outposts && item.Properties?.Type === 'Outpost') return true;
-        if (mapSettings.locations.missions && (x.Properties.Type === 'Mission' || x.Properties.Type === 'Objective')) return true;
-      }
-
-      if (mapSettings.areas.enabled) {
-        if (mapSettings.areas.landAreas && item.Properties?.Type === 'LandArea') return true;
-        if (mapSettings.areas.zoneAreas && item.Properties?.Type === 'ZoneArea') return true;
-        if (mapSettings.areas.pvpAreas && (item.Properties?.Type === 'PvpArea' || item.Properties?.Type === 'PvpLootArea')) return true;
-        if (mapSettings.areas.eventAreas && item.Properties?.Type === 'EventArea') return true;
-        if (mapSettings.areas.waveEvents && item.Properties?.Type === 'WaveEventArea') return true;
-      }
-
-      if (mapSettings.mobs.enabled && item.Properties?.Type === 'MobArea') {
-        return true;
-        if (mapSettings.mobs.rookie && item.Properties?.Type === 'Rookie') return true;
-        if (mapSettings.mobs.adept && item.Properties?.Type === 'Adept') return true;
-        if (mapSettings.mobs.intermediate && item.Properties?.Type === 'Intermediate') return true;
-        if (mapSettings.mobs.expert && item.Properties?.Type === 'Expert') return true;
-        if (mapSettings.mobs.uber && item.Properties?.Type === 'Uber') return true;
-      }
-
-      return false;
-    });
-
-    const searchTerm = mapSettings.filters.search ? mapSettings.filters.search?.toLowerCase() : '';
-    filteredElements = !mapSettings.filters.search.trim() ? filteredElements : filteredElements.filter((item) => {
-      return item.Name.toLowerCase().includes(searchTerm);
-    });
+    filteredElements = locations.filter((item) => locationFilter(item, mapSettings));
   }
 
   function getSymbolByLocation(location) {
@@ -200,6 +170,14 @@
       x: '0px',
       y: e.target.offsetTop + e.target.offsetHeight + 5 + 'px'
     };
+  }
+
+  function locationEquals(a, b) {
+    return a.Name === b.Name
+      && a.Properties.Type === b.Properties.Type
+      && a.Properties.Coordinates.Longitude === b.Properties.Coordinates.Longitude
+      && a.Properties.Coordinates.Latitude === b.Properties.Coordinates.Latitude
+      && a.Properties.Coordinates.Altitude === b.Properties.Coordinates.Altitude;
   }
 
   $: if (!settingsDialogVisible) settingsDialogType = null;
@@ -346,6 +324,7 @@
             return {
               values: [getSymbolByLocation(item), item.Name],
               trStyle: item === selected ? `font-weight: bold;` : '',
+              payload: item
             };
           })
         }
@@ -356,13 +335,11 @@
           }
         }
         on:rowClick={(evt) => {
-          let selectedName = evt.detail.data.values[1];
-          
-          selected = filteredElements.find(x => x.Name === selectedName);
+          selected = filteredElements.find(x => locationEquals(x, evt.detail.data.payload));
           
           filteredElements = filteredElements;
 
-          navigate(`/maps/${planetSimpleName}/${encodeURIComponent(selectedName)}`);
+          navigate(`/maps/${planetSimpleName}/${selected.Id}`);
         }}
         on:rowHover={(evt) => {
           if (evt.detail === null) {
@@ -370,9 +347,7 @@
             return;
           }
 
-          let hoveredName = evt.detail.data.values[1];
-
-          hovered = filteredElements.find(x => x.Name === hoveredName);
+          hovered = filteredElements.find(x => locationEquals(x, evt.detail.data.payload));
         }} />
     {/if}
   </div>

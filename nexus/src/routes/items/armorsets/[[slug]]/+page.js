@@ -1,44 +1,22 @@
 // @ts-nocheck
 let items;
 
-import {  handlePageLoad } from '$lib/util';
+import { decodeURIComponentSafe, handlePageLoad } from '$lib/util';
 
-export async function load({ fetch, params }) {
+export async function load({ fetch, params, url }) {
   const config = {
     items: 'armorsets',
-    types: { tierable: true }
+    types: { tierable: true },
+    name: decodeURIComponentSafe(params.slug),
+    type: null,
+    mode: url.searchParams.get('mode') || 'view',
+    searchParams: url.searchParams,
+    isArmorSet: true
   }
 
   let response;
 
-  ({ items, response } = await handlePageLoad(fetch, items, config, params.slug, null, true, true));
+  ({ items, response } = await handlePageLoad(fetch, items, config));
 
   return response;
-
-  if (!items) {
-    items = await apiCall(fetch, '/armorsets');
-  }
-
-  if (!params.slug) {
-    return pageResponse(items);
-  }
-
-  let armorSet = await apiCall(fetch, `/armorsets/${encodeURIComponent(params.slug)}`);
-
-  if (armorSet == null) {
-    return pageResponse(items, null, null, 404);
-  }
-
-  let tierInfo = await apiCall(fetch, `/tiers?ItemId=${armorSet.Id}&IsArmorSet=1`);
-
-  let armorPieceNameList = armorSet.Armors.map(armor => armor.Name.includes(',') ? `"${armor.Name}"` : armor.Name).join(',');
-
-  return pageResponse(
-    items,
-    armorSet,
-    {
-      tierInfo,
-      acquisition: await getAcquisitionInfo(fetch, armorPieceNameList)
-    }
-  );
 }

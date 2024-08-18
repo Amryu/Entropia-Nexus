@@ -2,10 +2,11 @@
   // @ts-nocheck
   import '$lib/style.css';
 
-  import { clampDecimals } from '$lib/util.js';
+  import { clampDecimals, getTypeLink } from '$lib/util.js';
 
   import EntityViewer from "$lib/components/EntityViewer.svelte";
   import Acquisition from "$lib/components/Acquisition.svelte";
+  import { editConfigEffectsOnEquip } from '$lib/editConfigUtil.js';
 
   export let data;
 
@@ -84,12 +85,20 @@
     return (item.Properties?.Damage?.Impact ?? 0) + (item.Properties?.Damage?.Cut ?? 0) + (item.Properties?.Damage?.Stab ?? 0) + (item.Properties?.Damage?.Penetration ?? 0) + (item.Properties?.Damage?.Shrapnel ?? 0) + (item.Properties?.Damage?.Burn ?? 0) + (item.Properties?.Damage?.Cold ?? 0) + (item.Properties?.Damage?.Acid ?? 0) + (item.Properties?.Damage?.Electric ?? 0);
   }
 
+  function getEffectiveDamage(item) {
+    const totalDamage = getTotalDamage(item);
+
+    return totalDamage != null
+      ? totalDamage * (0.88*0.75 + 0.02*1.75)
+      : null;
+  }
+
   function getTotalDefense(item) {
     return (item.Properties?.Defense?.Impact ?? 0) + (item.Properties?.Defense?.Cut ?? 0) + (item.Properties?.Defense?.Stab ?? 0) + (item.Properties?.Defense?.Penetration ?? 0) + (item.Properties?.Defense?.Shrapnel ?? 0) + (item.Properties?.Defense?.Burn ?? 0) + (item.Properties?.Defense?.Cold ?? 0) + (item.Properties?.Defense?.Acid ?? 0) + (item.Properties?.Defense?.Electric ?? 0);
   }
 
   function getMaxArmorDecay(item) {
-    return item.Properties?.Economy.Durability && getTotalDefense(item)
+    return item.Properties?.Economy.Durability && getTotalDefense(item) 
       ? getTotalDefense(item) * ((100000 - item.Properties?.Economy.Durability) / 100000) * 0.05
       : null;
   }
@@ -140,6 +149,7 @@
     let cost = getCost(object, type);
     let totalUses = getTotalUses(object);
     let totalDamage =  getTotalDamage(object);
+    let effectiveDamage = getEffectiveDamage(object);
     let totalDefense = getTotalDefense(object);
     let maxArmorDecay = getMaxArmorDecay(object);
     let totalAbsorption = getTotalAbsorption(object);
@@ -181,11 +191,27 @@
           Label: 'Max. Profession Level',
           Value: object.Properties?.MaxProfessionLevel ?? 'N/A',
         } : null,
+        MiningEfficiency: additional.type === 'finderamplifiers' ? {
+          Label: 'Efficiency',
+          Tooltip: 'The efficiency of the finder amplifier. This is just an indirect measure of how much decay is lost per probe drop.',
+          Value: object.Properties?.Efficiency != null ? `${object.Properties?.Efficiency.toFixed(1)}` : 'N/A',
+        } : null,
+        MinProfessionLevel: additional.type === 'finderamplifiers' ? {
+          Label: 'Min. Profession Level',
+          Value: object.Properties?.MinProfessionLevel ?? 'N/A',
+        } : null,
       },
       Economy: {
         Efficiency: additional.type === 'weaponamplifiers' || additional.type ==='weaponvisionattachments' || additional.type === 'absorbers' ? {
           Label: 'Efficiency',
           Value: object.Properties?.Economy.Efficiency != null ? `${object.Properties?.Economy.Efficiency.toFixed(1)}%` : 'N/A',
+          Bold: true
+        } : null,
+        DPP: additional.type === 'weaponamplifiers' ? {
+          Label: 'DPP',
+          Tooltip: 'Damage per PEC',
+          Value: cost !== null && effectiveDamage != null ? (effectiveDamage / cost).toFixed(4) : 'N/A',
+          Bold: true
         } : null,
         MaxTT: {
           Label: 'Max. TT',
@@ -203,11 +229,6 @@
         Decay: additional.type === 'weaponamplifiers' || additional.type === 'weaponvisionattachments' || additional.type === 'finderamplifiers'
           ? object.Properties?.Economy.Decay != null ? `${object.Properties?.Economy.Decay.toFixed(4) ?? 'N/A'} PEC` : 'N/A'
           : null,
-        MiningEfficiency: additional.type === 'finderamplifiers' ? {
-          Label: 'Efficiency',
-          Tooltip: 'The efficiency of the finder amplifier. This is just an indirect measure of how much decay is lost per probe drop.',
-          Value: object.Properties?.Economy.Efficiency != null ? `${object.Properties?.Economy.Efficiency.toFixed(1)}` : 'N/A',
-        } : null,
         MaxDecay: additional.type === 'armorplatings' ? {
           Label: 'Maximum Decay',
           Tooltip: 'The maximum amount of decay the armor can take at once, if it uses its full protection.',
@@ -269,9 +290,10 @@
         } : null,
         ProfessionsMining: additional.type === 'finderamplifiers' ? {
           Label: 'Professions',
-          Value: [
-            ...(additional.type === 'finders' ? ['Prospector', 'Surveyor', 'Treasure Hunter'] : ['Driller', 'Miner', 'Archaelogist']),
-            `${object.Properties?.Skill?.LearningIntervalStart?.toFixed(1) ?? 'N/A'} - ${object.Properties?.Skill?.LearningIntervalEnd?.toFixed(1) ?? 'N/A'}`],
+          Value: additional.type === 'finderamplifiers' ? ['Prospector', 'Surveyor', 'Treasure Hunter'] : ['Driller', 'Miner', 'Archaelogist'],
+          LinkValue: additional.type === 'finderamplifiers'
+            ? [getTypeLink('Prospector', 'Profession'), getTypeLink('Surveyor', 'Profession'), getTypeLink('Treasure Hunter', 'Profession')]
+            : [getTypeLink('Driller', 'Profession'), getTypeLink('Miner', 'Profession'), getTypeLink('Archaelogist', 'Profession')],
         } : null,
       } : null,
       "Equip Effects": object.EffectsOnEquip?.length > 0 ? onEquip : null,
@@ -293,6 +315,290 @@
       } : null,
     };
   };
+
+  const editConfig = {
+    weaponamplifiers: {
+      constructor: () => ({
+        Name: null,
+        Properties: {
+          Type: null,
+          Weight: null,
+          Economy: {
+            Efficiency: null,
+            MaxTT: null,
+            MinTT: null,
+            Decay: null,
+            AmmoBurn: null,
+          },
+          Damage: {
+            Impact: null,
+            Cut: null,
+            Stab: null,
+            Penetration: null,
+            Shrapnel: null,
+            Burn: null,
+            Cold: null,
+            Acid: null,
+            Electric: null,
+          }
+        },
+        EffectsOnEquip: [],
+      }),
+      controls: [
+        {
+          label: 'General',
+          type: 'group',
+          controls: [
+            { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
+            { label: 'Weight', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Weight, '_set': (x, v) => x.Properties.Weight = v },
+            { label: 'Type', type: 'select', options: _ => ['Energy', 'BLP', 'Melee', 'Matrix', 'Mindforce'], '_get': x => x.Properties.Type, '_set': (x, v) => x.Properties.Type = v },
+          ]
+        },
+        {
+          label: 'Economy',
+          type: 'group',
+          controls: [
+            { label: 'Efficiency', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Economy.Efficiency, '_set': (x, v) => x.Properties.Economy.Efficiency = v },
+            { label: 'Max. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v },
+            { label: 'Min. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v },
+            { label: 'Decay', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Economy.Decay, '_set': (x, v) => x.Properties.Economy.Decay = v },
+            { label: 'Ammo Burn', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Economy.AmmoBurn, '_set': (x, v) => x.Properties.Economy.AmmoBurn = v },
+          ]
+        },
+        {
+          label: 'Damage',
+          type: 'group',
+          controls: [
+            { label: 'Impact', type: 'number', step: '0.1', min: '0', '_get': x => x.Properties?.Damage?.Impact, '_set': (x, v) => x.Properties.Damage.Impact = v},
+            { label: 'Cut', type: 'number', step: '0.1', min: '0', '_get': x => x.Properties?.Damage?.Cut, '_set': (x, v) => x.Properties.Damage.Cut = v},
+            { label: 'Stab', type: 'number', step: '0.1', min: '0', '_get': x => x.Properties?.Damage?.Stab, '_set': (x, v) => x.Properties.Damage.Stab = v},
+            { label: 'Penetration', type: 'number', step: '0.1', min: '0', '_get': x => x.Properties?.Damage?.Penetration, '_set': (x, v) => x.Properties.Damage.Penetration = v},
+            { label: 'Shrapnel', type: 'number', step: '0.1', min: '0', '_get': x => x.Properties?.Damage?.Shrapnel, '_set': (x, v) => x.Properties.Damage.Shrapnel = v},
+            { label: 'Burn', type: 'number', step: '0.1', min: '0', '_get': x => x.Properties?.Damage?.Burn, '_set': (x, v) => x.Properties.Damage.Burn = v},
+            { label: 'Cold', type: 'number', step: '0.1', min: '0', '_get': x => x.Properties?.Damage?.Cold, '_set': (x, v) => x.Properties.Damage.Cold = v},
+            { label: 'Acid', type: 'number', step: '0.1', min: '0', '_get': x => x.Properties?.Damage?.Acid, '_set': (x, v) => x.Properties.Damage.Acid = v},
+            { label: 'Electric', type: 'number', step: '0.1', min: '0', '_get': x => x.Properties?.Damage?.Electric, '_set': (x, v) => x.Properties.Damage.Electric = v},
+          ]
+        },
+        { label: 'Effects on Equip', type: 'list', config: editConfigEffectsOnEquip, '_get': x => x.EffectsOnEquip, '_set': (x, v) => x.EffectsOnEquip = v },
+      ]
+    },
+    weaponvisionattachments: {
+      constructor: () => ({
+        Name: null,
+        Properties: {
+          Type: null,
+          Weight: null,
+          Zoom: null,
+          SkillModification: null,
+          SkillBonus: null,
+          Economy: {
+            Efficiency: null,
+            MaxTT: null,
+            MinTT: null,
+            Decay: null,
+          }
+        },
+        EffectsOnEquip: [],
+      }),
+      controls: [
+        {
+          label: 'General',
+          type: 'group',
+          controls: [
+            { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
+            { label: 'Weight', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Weight, '_set': (x, v) => x.Properties.Weight = v },
+            { label: 'Type', type: 'select', options: _ => ['Scope', 'Sight'], '_get': x => x.Properties.Type, '_set': (x, v) => x.Properties.Type = v },
+            { label: 'Zoom', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Zoom, '_set': (x, v) => x.Properties.Zoom = v },
+            { label: 'Skill Modification', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.SkillModification, '_set': (x, v) => x.Properties.SkillModification = v },
+            { label: 'Skill Bonus', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.SkillBonus, '_set': (x, v) => x.Properties.SkillBonus = v },
+          ]
+        },
+        {
+          label: 'Economy',
+          type: 'group',
+          controls: [
+            { label: 'Efficiency', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Economy.Efficiency, '_set': (x, v) => x.Properties.Economy.Efficiency = v },
+            { label: 'Max. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v },
+            { label: 'Min. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v },
+            { label: 'Decay', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Economy.Decay, '_set': (x, v) => x.Properties.Economy.Decay = v },
+          ]
+        },
+        { label: 'Effects on Equip', type: 'list', config: editConfigEffectsOnEquip, '_get': x => x.EffectsOnEquip, '_set': (x, v) => x.EffectsOnEquip = v },
+      ]
+    },
+    absorbers: {
+      constructor: () => ({
+        Name: null,
+        Properties: {
+          Weight: null,
+          Economy: {
+            Efficiency: null,
+            MaxTT: null,
+            MinTT: null,
+            Absorption: null,
+          }
+        },
+        EffectsOnEquip: [],
+      }),
+      controls: [
+        {
+          label: 'General',
+          type: 'group',
+          controls: [
+            { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
+            { label: 'Weight', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Weight, '_set': (x, v) => x.Properties.Weight = v }
+          ]
+        },
+        {
+          label: 'Economy',
+          type: 'group',
+          controls: [
+            { label: 'Efficiency', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Economy.Efficiency, '_set': (x, v) => x.Properties.Economy.Efficiency = v },
+            { label: 'Max. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v },
+            { label: 'Min. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v },
+            { label: 'Absorption', type: 'number', step: 0.01, min: 0, max: 1, '_get': x => x.Properties.Economy.Absorption, '_set': (x, v) => x.Properties.Economy.Absorption = v },
+          ]
+        }
+      ]
+    },
+    finderamplifiers: {
+      constructor: () => ({
+        Name: null,
+        Properties: {
+          Weight: null,
+          Efficiency: null,
+          Economy: {
+            MaxTT: null,
+            MinTT: null,
+            Decay: null,
+          },
+          Skill: {
+            LearningIntervalStart: null,
+            LearningIntervalEnd: null,
+          }
+        },
+        EffectsOnEquip: [],
+      }),
+      controls: [
+        {
+          label: 'General',
+          type: 'group',
+          controls: [
+            { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
+            { label: 'Weight', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Weight, '_set': (x, v) => x.Properties.Weight = v },
+            { label: 'Efficiency', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Efficiency, '_set': (x, v) => x.Properties.Efficiency = v },
+            { label: 'Min. Prof. Level', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.MinProfessionLevel, '_set': (x, v) => x.Properties.MinProfessionLevel = v },
+          ]
+        },
+        {
+          label: 'Economy',
+          type: 'group',
+          controls: [
+            { label: 'Max. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v },
+            { label: 'Min. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v },
+            { label: 'Decay', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Economy.Decay, '_set': (x, v) => x.Properties.Economy.Decay = v },
+          ]
+        },
+        { label: 'Effects on Equip', type: 'list', config: editConfigEffectsOnEquip, '_get': x => x.EffectsOnEquip, '_set': (x, v) => x.EffectsOnEquip = v },
+      ]
+    },
+    armorplatings: {
+      constructor: () => ({
+        Name: null,
+        Properties: {
+          Weight: null,
+          Economy: {
+            Durability: null,
+            MaxTT: null,
+            MinTT: null,
+            Decay: null,
+          },
+          Defense: {
+            Block: null,
+            Impact: null,
+            Cut: null,
+            Stab: null,
+            Penetration: null,
+            Shrapnel: null,
+            Burn: null,
+            Cold: null,
+            Acid: null,
+            Electric: null,
+          }
+        }
+      }),
+      controls: [
+        {
+          label: 'General',
+          type: 'group',
+          controls: [
+            { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
+            { label: 'Weight', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Weight, '_set': (x, v) => x.Properties.Weight = v }
+          ]
+        },
+        {
+          label: 'Economy',
+          type: 'group',
+          controls: [
+            { label: 'Durability', type: 'number', step: 1, min: 0, '_get': x => x.Properties.Economy.Durability, '_set': (x, v) => x.Properties.Economy.Durability = v },
+            { label: 'Max. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v },
+            { label: 'Min. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v },
+          ]
+        },
+        {
+          label: 'Defense',
+          type: 'group',
+          controls: [
+            { label: 'Block', type: 'number', step: 0.1, min: 0, max: 100, '_get': x => x.Properties.Defense.Block, '_set': (x, v) => x.Properties.Defense.Block = v },
+            { label: 'Impact', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Defense.Impact, '_set': (x, v) => x.Properties.Defense.Impact = v },
+            { label: 'Cut', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Defense.Cut, '_set': (x, v) => x.Properties.Defense.Cut = v },
+            { label: 'Stab', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Defense.Stab, '_set': (x, v) => x.Properties.Defense.Stab = v },
+            { label: 'Penetration', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Defense.Penetration, '_set': (x, v) => x.Properties.Defense.Penetration = v },
+            { label: 'Shrapnel', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Defense.Shrapnel, '_set': (x, v) => x.Properties.Defense.Shrapnel = v },
+            { label: 'Burn', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Defense.Burn, '_set': (x, v) => x.Properties.Defense.Burn = v },
+            { label: 'Cold', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Defense.Cold, '_set': (x, v) => x.Properties.Defense.Cold = v },
+            { label: 'Acid', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Defense.Acid, '_set': (x, v) => x.Properties.Defense.Acid = v },
+            { label: 'Electric', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Defense.Electric, '_set': (x, v) => x.Properties.Defense.Electric = v },
+          ]
+        }
+      ]
+    },
+    mindforceimplants: {
+      constructor: () => ({
+        Name: null,
+        Properties: {
+          Weight: null,
+          MaxProfessionLevel: null,
+          Economy: {
+            MaxTT: null,
+            MinTT: null,
+            Absorption: null,
+          }
+        }
+      }),
+      controls: [
+        {
+          label: 'General',
+          type: 'group',
+          controls: [
+            { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
+            { label: 'Weight', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Weight, '_set': (x, v) => x.Properties.Weight = v },
+            { label: 'Max. Prof. Level', type: 'number', step: 1, min: 0, '_get': x => x.Properties.MaxProfessionLevel, '_set': (x, v) => x.Properties.MaxProfessionLevel = v },
+          ]
+        },
+        {
+          label: 'Economy',
+          type: 'group',
+          controls: [
+            { label: 'Max. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v },
+            { label: 'Min. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v },
+            { label: 'Absorption', type: 'number', step: 0.01, min: 0, max: 1, '_get': x => x.Properties.Economy.Absorption, '_set': (x, v) => x.Properties.Economy.Absorption = v },
+          ]
+        }
+      ]
+    }
+  }
 
   let tableViewInfo = {
     all: {
@@ -342,7 +648,7 @@
         item.Properties?.Type ?? 'N/A',
         item.Properties?.Weight != null ? `${item.Properties?.Weight.toFixed(1)}kg` : 'N/A',
         item.Properties?.Economy.MaxTT != null ? `${item.Properties?.Economy.MaxTT.toFixed(2)} PED` : 'N/A',
-        item.Properties?.Economy.Absorption != null ? `${clampDecimals(object.Properties?.Economy.Absorption * 100, 0, 2)}%` : 'N/A',
+        item.Properties?.Economy.Absorption != null ? `${clampDecimals(item.Properties?.Economy.Absorption * 100, 0, 2)}%` : 'N/A',
       ],
     },
     finderamplifiers: {
@@ -397,7 +703,7 @@
         item.Name,
         item.Properties?.Weight != null ? `${clampDecimals(item.Properties?.Weight, 1, 6)}kg` : 'N/A',
         item.Properties?.Economy.MaxTT != null ? `${item.Properties?.Economy.MaxTT.toFixed(2)} PED` : 'N/A',
-        item.Properties?.Economy.Absorption != null ? `${clampDecimals(object.Properties?.Economy.Absorption * 100, 0, 2)}%` : 'N/A',
+        item.Properties?.Economy.Absorption != null ? `${clampDecimals(item.Properties?.Economy.Absorption * 100, 0, 2)}%` : 'N/A',
         item.Properties?.MaxProfessionLevel ?? 'N/A',
       ],
     },
@@ -406,16 +712,31 @@
 
 <EntityViewer
   data={data}
+  user={data.session.user}
   tableViewInfo={tableViewInfo}
   navButtonInfo={navButtonInfo}
+  editConfig={editConfig}
   propertiesDataFunction={propertiesDataFunction}
   title='Attachments'
+  type={data?.additional?.type === 'weaponamplifiers'
+    ? 'WeaponAmplifier'
+    : data?.additional?.type === 'weaponvisionattachments'
+    ? 'WeaponVisionAttachment'
+    : data?.additional?.type === 'absorbers'
+    ? 'Absorber'
+    : data?.additional?.type === 'finderamplifiers'
+    ? 'FinderAmplifier'
+    : data?.additional?.type === 'armorplatings'
+    ? 'ArmorPlating'
+    : data?.additional?.type === 'enhancers'
+    ? 'Enhancer'
+    : data?.additional?.type === 'mindforceimplants'
+    ? 'MindforceImplant'
+    : null
+  }
   basePath='/items/attachments'
   let:object
   let:additional>
-  <div class="flex-item-double">
-    <div class="big-title">{object.Name}</div>
-  </div>
   <!-- Acquisition -->
   <div class="flex-item long-content">
     <Acquisition acquisition={additional.acquisition} />

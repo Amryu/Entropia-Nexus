@@ -1,4 +1,5 @@
 <script>
+	//@ts-nocheck
 	import { onMount, onDestroy, tick, createEventDispatcher } from 'svelte';
 
   import '$lib/style.css';
@@ -106,9 +107,17 @@
   }
 </style>
 
-{#each visible as row, rowIndex (row.index)}
-<!-- svelte-ignore a11y-mouse-events-have-key-events -->
-<tr on:click={() => dispatch('rowClick', row)} on:mouseover={() => dispatch('rowHover', row)} on:mouseout={() => dispatch('rowHover', null)} style={row.data.trStyle ?? ''}>
-	<slot item={row.data} index={rowIndex + start}>Missing template</slot>
-</tr>
-{/each}
+{#if typeof window !== 'undefined'}
+	{#each visible as row, rowIndex (row.index)}
+	<!-- svelte-ignore a11y-mouse-events-have-key-events -->
+	<tr on:click={() => dispatch('rowClick', row)} on:mouseover={() => dispatch('rowHover', row)} on:mouseout={() => dispatch('rowHover', null)} style={row.data.trStyle ?? ''}>
+		<slot item={row.data} index={rowIndex + start}>Missing template</slot>
+	</tr>
+	{/each}
+{:else}
+	{#each items as item, i}
+	<tr>
+		<slot item={item} index={i}>Missing template</slot>
+	</tr>
+	{/each}
+{/if}

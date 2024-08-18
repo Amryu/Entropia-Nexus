@@ -1,9 +1,9 @@
 // @ts-nocheck
-import { apiCall } from '$lib/util.js';
+import { apiCall, decodeURIComponentSafe } from '$lib/util.js';
 import { redirect } from '@sveltejs/kit';
 
 export async function load({ fetch, params }) {
-  let armor = await apiCall(fetch, `/armors/${encodeURIComponent(params.slug)}`);
+  let armor = await apiCall(fetch, `/armors/${encodeURIComponent(decodeURIComponentSafe(params.slug))}`);
   
   if (!armor.Name) {
     redirect(301, `/items/armorsets`);

@@ -5,7 +5,7 @@
   export let pet;
 </script>
 
-<div class="title">Pet Skills</div>
+<h2>Pet Skills</h2>
 {#if pet.Effects && pet.Effects.length > 0}
 <table>
   <thead>

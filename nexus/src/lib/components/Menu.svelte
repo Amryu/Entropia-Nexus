@@ -7,9 +7,9 @@
 
   import { getTypeLink, getTypeName } from "$lib/util";
   import { loading } from "../../actions/loading";
+  
+  export let user;
 
-  let isLoggedIn = true; // Change to false to see the login/sign-up buttons
-  let userName = 'User Name';
   let dropdownOpen: string | null = null;
 
   interface MenuItems {
@@ -30,9 +30,11 @@
       { label: 'Furnishings', url: 'furnishings' },
       { label: 'Clothing', url: 'clothing' }
     ],
-    'Creatures': [
+    'Information': [
       { label: 'Mobs', url: 'mobs' },
-      // { label: 'NPCs', url: 'npcs' },
+      { label: 'Professions', url: 'professions' },
+      { label: 'Skills', url: 'skills' },
+      { label: 'Vendors', url: 'vendors' },
     ],
     /*'Missions': [
       { label: 'Calypso', url: 'calypso' },
@@ -73,10 +75,12 @@
       { label: 'API', url: 'api' },
     /*
       { label: 'Skill Manager', url: 'skillmanager' },
-  */]
+  */],
+    'External': [
+      { label: 'NI Helper', url: 'nihelper' },
+      { label: 'Cyrenedream', url: 'cyrenedream' },
+    ]
   };
-
-  const userMenuItems: string[] = ['Profile', 'Settings', 'Dashboard'];
 
   let timeout;
   let searchQuery = '';
@@ -142,6 +146,7 @@
 
   .website-icon {
     margin-right: auto;
+    padding-top: 5px;
     padding-right: 20px;
     font-weight: bold;
     font-size: 24px;
@@ -165,6 +170,11 @@
     background-color: var(--secondary-color);
     box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.2);
     z-index: 1;
+  }
+
+  .dropdown-content.right {
+    left: auto;
+    right: 0;
   }
 
   .menu-item:hover .dropdown-content {
@@ -239,26 +249,54 @@
     color: inherit;
     cursor: pointer;
   }
+
+  .discord-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: #7289DA;
+    color: white;
+    border: none;
+    padding: 10px;
+    padding: 4px 10px;
+    border-radius: 5px;
+    cursor: pointer;
+    margin-left: 20px;
+  }
+
+  .discord-button:hover {
+    background-color: #677bc4;
+  }
+
+  .user {
+    margin-left: 20px;
+  }
+
+  .user-image {
+    border-radius: 50%;
+  }
 </style>
 
 <nav>
   <div class="menu-container">
-    <span class="website-icon">Entropia Nexus</span>
+    <a href="/"><img class="website-icon" src="/favicon.png" alt="Entropia Nexus" title="Entropia Nexus" width="48px" height="48px" /></a>
     {#each Object.keys(menuItems) as menu (menu)}
       <!-- svelte-ignore a11y-no-static-element-interactions -->
       <div class="menu-item" on:mouseenter={() => dropdownOpen = menu} on:mouseleave={() => dropdownOpen = null}>
           {menu}
-          {#if dropdownOpen === menu}
-          <div class="dropdown-content">
+          <div class="dropdown-content" style="visiblity: {dropdownOpen === menu ? 'visible' : 'hidden'}">
               {#each menuItems[menu] as item (item)}
                 {#if item.url === 'api'}
-                  <a href="{import.meta.env.VITE_API_URL}/docs"><div class="menu-dropdown-item">{item.label}</div></a>
+                  <a href="{import.meta.env.VITE_API_URL}/docs/"><div class="menu-dropdown-item">{item.label}</div></a>
+                {:else if item.url === 'nihelper'}
+                  <a href="https://www.nihelper.com"><div class="menu-dropdown-item">{item.label}</div></a>
+                {:else if item.url === 'cyrenedream'}
+                  <a href="https://www.cyrenedream.org"><div class="menu-dropdown-item">{item.label}</div></a>
                 {:else}
                   <a use:loading href="/{menu.toLowerCase()}/{item.url.toLowerCase()}"><div class="menu-dropdown-item">{item.label}</div></a>
                 {/if}
               {/each}
           </div>
-          {/if}
       </div>
     {/each}
   </div>
@@ -281,31 +319,29 @@
         </div>
       {/if}
     </div>
+    {#if user == null}
+      <a href="/discord/login">
+        <button class="discord-button">
+          <img src="/discord.svg" alt="Discord Login" width="24px" height="24px" style="margin-right: 8px" /> Login with Discord
+        </button>
+      </a>
+    {:else}
+      <!-- svelte-ignore a11y-no-static-element-interactions -->
+      <div class="menu-item user" on:mouseenter={() => dropdownOpen = 'user'} on:mouseleave={() => dropdownOpen = null}>
+        <img src="https://cdn.discordapp.com/avatars/{user.id}/{user.avatar}.png" class="user-image" width="48px" height="48px" alt="Discord Avatar" />
+        <div class="dropdown-content right" style="visiblity: {dropdownOpen === 'user' ? 'visible' : 'hidden'}">
+          <div class="menu-dropdown-item">Logged in as {user.discriminator == 0 ? user.global_name : `${user.username}#${user.discriminator}`}</div>
+          <a use:loading href="/discord/logout"><div class="menu-dropdown-item">Logout</div></a>
+        </div>
+      </div>
+    {/if}
     <div class="dark-light-toggle">
       {#if $darkMode === null || $darkMode === false}
-        <button class="dark-light-button" on:click={() => setDarkModePreference(true)} title="Enable Dark Mode"><img width="32px" height="32px" src={'/dark.png'} /></button>
+        <button class="dark-light-button" on:click={() => setDarkModePreference(true)}><img width="32px" height="32px" src={'/dark.png'} alt="Dark mode button" title="Enable Dark Mode" /></button>
       {:else}
-        <button class="dark-light-button" on:click={() => setDarkModePreference(false)} title="Disable Dark Mode"><img width="32px" height="32px" src={'/light.png'} /></button>
+        <button class="dark-light-button" on:click={() => setDarkModePreference(false)}><img width="32px" height="32px" src={'/light.png'} alt="Light mode button" title="Disable Dark Mode" /></button>
       {/if}
     </div>
-    <!--
-    {#if isLoggedIn}
-      <div class="user-name" on:mouseenter={() => dropdownOpen = 'userMenu'} on:mouseleave={() => dropdownOpen = null}>
-        {userName}
-        {#if dropdownOpen === 'userMenu'}
-          <div class="dropdown-content">
-            {#each userMenuItems as item}
-              <div class="menu-dropdown-item">{item}</div>
-            {/each}
-          </div>
-        {/if}
-      </div>
-      <button class="logout-button">Logout</button>
-    {:else}
-      <button class="auth-button">Login</button>
-      <button class="auth-button">Sign-Up</button>
-    {/if}
-    -->
   </div>
 </nav>
   

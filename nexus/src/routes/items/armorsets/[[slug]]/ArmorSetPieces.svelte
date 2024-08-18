@@ -14,14 +14,22 @@
   let femalePieces = [];
 
   $: {
-    malePieces = (armorSet?.Armors ?? []).reduce((acc, piece) => {
-      acc[piece.Properties.Slot] = piece;
-      return acc;
-    }, {});
-    femalePieces = (armorSet?.Armors ?? []).reduce((acc, piece) => {
-      acc[piece.Properties.Slot] = piece;
-      return acc;
-    }, {});
+    malePieces = {};
+    armorSet?.Armors.forEach(x => {
+      let armor = x.find(y => ['Both', 'Male'].includes(y.Properties.Gender));
+      
+      if (armor) {
+        malePieces[armor.Properties.Slot] = armor;
+      }
+    });
+    femalePieces
+    armorSet?.Armors.forEach(x => {
+      let armor = x.find(y => ['Both', 'Female'].includes(y.Properties.Gender));
+
+      if (armor) {
+        femalePieces[armor.Properties.Slot] = armor;
+      }
+    });
   }
 </script>
 

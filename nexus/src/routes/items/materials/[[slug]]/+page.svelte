@@ -6,6 +6,7 @@
 
   import EntityViewer from "$lib/components/EntityViewer.svelte";
   import Acquisition from "$lib/components/Acquisition.svelte";
+  import Usage from '$lib/components/Usage.svelte';
 
   export let data;
 
@@ -18,6 +19,35 @@
         Value: material.Properties?.Economy?.MaxTT != null ? `${clampDecimals(material.Properties?.Economy?.MaxTT, 2, 8)} PED` : 'N/A',
       }
     };
+  };
+
+  const editConfig = {
+    constructor: () => ({
+      Name: '',
+      Properties: {
+        Weight: null,
+        Economy: {
+          MaxTT: null
+        }
+      }
+    }),
+    controls: [
+      {
+        label: 'General',
+        type: 'group',
+        controls: [
+          { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
+          { label: 'Weight', type: 'number', '_get': x => x.Properties.Weight, '_set': (x, v) => x.Properties.Weight = v }
+        ]
+      },
+      {
+        label: 'Economy',
+        type: 'group',
+        controls: [
+          { label: 'Value', type: 'number', '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v }
+        ]
+      }
+    ]
   };
 
   let tableViewInfo = {
@@ -35,17 +65,20 @@
 
 <EntityViewer
   data={data}
+  user={data.session.user}
   tableViewInfo={tableViewInfo}
+  editConfig={editConfig}
   propertiesDataFunction={propertiesDataFunction}
   title='Materials'
+  type='Material'
   basePath='/items/materials'
   let:object
   let:additional>
-  <div class="flex-item-double">
-    <div class="big-title">{object.Name}</div>
-  </div>
   <!-- Acquisition -->
   <div class="flex-item long-content">
     <Acquisition acquisition={additional.acquisition} />
+  </div>
+  <div class="flex-item long-content">
+    <Usage item={object} usage={additional.usage} />
   </div>
 </EntityViewer>

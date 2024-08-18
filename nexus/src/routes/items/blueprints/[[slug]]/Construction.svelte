@@ -8,14 +8,16 @@
 
   let markup;
 
-  $: if (blueprint) resetMarkup();
+  $: if (blueprint) {
+    resetMarkup();
+  }
 
   function resetMarkup() {
     markup = new Array(blueprint.Materials?.length ?? 0).fill(100);
   }
 </script>
 
-<div class="title">Construction</div>
+<h2>Construction</h2>
 <table>
   <thead>
     <tr>
@@ -42,3 +44,5 @@
     </tr>
   </tbody>
 </table>
+<br />
+Product: {@html blueprint.Product != null ? `<a style="text-decoration: underline;" href="${getItemLink(blueprint.Product)}">${blueprint.Product.Name}</a>` : 'N/A'}

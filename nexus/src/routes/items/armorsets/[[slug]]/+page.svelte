@@ -9,6 +9,7 @@
   import Tiering from "$lib/components/Tiering.svelte";
   import Acquisition from "$lib/components/Acquisition.svelte";
   import ArmorSetPieces from "./ArmorSetPieces.svelte";
+  import { editConfigEffectsOnEquip, editConfigEffectsOnSetEquip, getEditConfigTier } from '$lib/editConfigUtil';
 
   export let data;
 
@@ -34,7 +35,7 @@
     if (armorSet.EffectsOnSetEquip != null && armorSet.EffectsOnSetEquip.length > 0) {
       Object.entries(groupBy(armorSet.EffectsOnSetEquip, x => x.Values.MinSetPieces))
         .sort(([a],[b]) => Number(a) - Number(b))
-        .forEach(([key, effects]) => onSetEquip[key + ' Pieces'] = { Value: effects.map(effect => `${effect.Values.Strength}${effect.Values.Unit} ${effect.Name}`) });
+        .forEach(([key, effects]) => onSetEquip[key + ' Pieces'] = { Value: effects.map(effect => `${effect.Values.Strength}${effect.Values.Unit ?? '<Unit>'} ${effect.Name}`) });
     }
 
     return {
@@ -84,6 +85,153 @@
     };
   };
 
+  let slots = ['Head', 'Torso', 'Arms', 'Hands', 'Legs', 'Shins', 'Feet'];
+
+  function getGenderedPiece(gender) {
+    let getArmor = x => x.find(x => x.Properties.Gender === gender);
+    let getSlot = x => x.length > 0 ? x[0].Properties.Slot : null;
+
+    return {
+      '_if': y => gender === 'Both'
+        ? y.some(z => z.Properties.Slot === getSlot(y) && z.Properties.Gender === 'Both')
+        : y.every(z => z.Properties.Slot === getSlot(y) && z.Properties.Gender !== 'Both'),
+      label: gender === 'Both' ? 'Piece' : gender,
+      type: 'group',
+      controls: [
+        { 
+          label: 'Name',
+          type: 'text',
+          '_get': y => getArmor(y)?.Name,
+          '_set': (y, v) => getArmor(y).Name = v
+        },
+        { label: 'Weight', type: 'number', step: '0.1', min: '0', '_get': y => getArmor(y).Properties.Weight, '_set': (y, v) => getArmor(y).Properties.Weight = v },
+        { label: 'Max. TT', type: 'number', step: '0.00001', min: '0', '_get': y => getArmor(y).Properties.Economy.MaxTT, '_set': (y, v) => getArmor(y).Properties.Economy.MaxTT = v },
+        { label: 'Min. TT', type: 'number', step: '0.00001', min: '0', '_get': y => getArmor(y).Properties.Economy.MinTT, '_set': (y, v) => getArmor(y).Properties.Economy.MinTT = v },
+        { label: 'Effects', type: 'list', config: editConfigEffectsOnEquip, label: 'Effects on Equip', '_get': y => getArmor(y).EffectsOnEquip, '_set': (y, v) => getArmor(y).EffectsOnEquip = v },
+      ],
+      '_get': y => y.find(z => z.Properties.Gender === gender),
+      '_set': (y, v) => {
+        let index = y.findIndex(z => z.Properties.Gender === gender);
+        y[index] = v;
+      }
+    }
+  }
+
+  function newArmorPiece(slot, gender) {
+    return {
+      Name: `${slot} Piece${gender !== 'Both' ? ` (${gender.substring(0, 1)})` : ``}`,
+      Properties: {
+        Slot: slot,
+        Gender: gender,
+        Economy: {
+          MaxTT: null,
+          MinTT: null,
+          Durability: null
+        },
+      },
+      EffectsOnEquip: [],
+    };
+  }
+
+  function getArmorSlotConfig() {
+    return {
+      constructor: i => [newArmorPiece(slots[i], 'Both')],
+      controls: [
+        {
+          label: 'Unisex',
+          type: 'checkbox',
+          '_get': y => y.length === 1 && y[0].Properties.Gender === 'Both',
+          '_set': (y, v) => {
+            let slot = y[0].Properties.Slot;
+            y.length = 0;
+            if (v) {
+              y.push(newArmorPiece(slot, 'Both'));
+            }
+            else {
+              y.push(newArmorPiece(slot, 'Male'));
+              y.push(newArmorPiece(slot, 'Female'));
+            }
+          }
+        },
+        getGenderedPiece('Both'),
+        getGenderedPiece('Male'),
+        getGenderedPiece('Female')
+      ]
+    };
+  }
+
+  const editConfig = {
+    constructor: () => ({
+      Name: 'New Armor Set',
+      Properties: {
+        Weight: undefined,
+        Economy: {
+          MaxTT: undefined,
+          MinTT: undefined,
+          Durability: undefined,
+        },
+        Defense: {
+          Impact: undefined,
+          Cut: undefined,
+          Stab: undefined,
+          Penetration: undefined,
+          Shrapnel: undefined,
+          Burn: undefined,
+          Cold: undefined,
+          Acid: undefined,
+          Electric: undefined,
+        },
+      },
+      Armors: [],
+      EffectsOnSetEquip: [],
+      Tiers: [],
+    }),
+    dependencies: ['effects'],
+    controls: [
+      {
+        label: 'General',
+        type: 'group',
+        controls: [
+          { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v},
+        ]
+      },
+      {
+        label: 'Economy',
+        type: 'group',
+        controls: [
+          { label: 'Durability', type: 'number', step: '1', min: '0', '_get': x => x.Properties?.Economy?.Durability, '_set': (x, v) => x.Properties.Economy.Durability = v},
+        ]
+      },
+      {
+        label: 'Defense',
+        type: 'group',
+        controls: [
+          { label: 'Impact', type: 'number', step: '0.1', min: '0', '_get': x => x.Properties?.Defense?.Impact, '_set': (x, v) => x.Properties.Defense.Impact = v},
+          { label: 'Cut', type: 'number', step: '0.1', min: '0', '_get': x => x.Properties?.Defense?.Cut, '_set': (x, v) => x.Properties.Defense.Cut = v},
+          { label: 'Stab', type: 'number', step: '0.1', min: '0', '_get': x => x.Properties?.Defense?.Stab, '_set': (x, v) => x.Properties.Defense.Stab = v},
+          { label: 'Penetration', type: 'number', step: '0.1', min: '0', '_get': x => x.Properties?.Defense?.Penetration, '_set': (x, v) => x.Properties.Defense.Penetration = v},
+          { label: 'Shrapnel', type: 'number', step: '0.1', min: '0', '_get': x => x.Properties?.Defense?.Shrapnel, '_set': (x, v) => x.Properties.Defense.Shrapnel = v},
+          { label: 'Burn', type: 'number', step: '0.1', min: '0', '_get': x => x.Properties?.Defense?.Burn, '_set': (x, v) => x.Properties.Defense.Burn = v},
+          { label: 'Cold', type: 'number', step: '0.1', min: '0', '_get': x => x.Properties?.Defense?.Cold, '_set': (x, v) => x.Properties.Defense.Cold = v},
+          { label: 'Acid', type: 'number', step: '0.1', min: '0', '_get': x => x.Properties?.Defense?.Acid, '_set': (x, v) => x.Properties.Defense.Acid = v},
+          { label: 'Electric', type: 'number', step: '0.1', min: '0', '_get': x => x.Properties?.Defense?.Electric, '_set': (x, v) => x.Properties.Defense.Electric = v},
+        ]
+      },
+      {
+        label: 'Armors',
+        type: 'array',
+        size: 7,
+        config: getArmorSlotConfig(),
+        indexFunc: (x, i) => x.length > 0 && x[0].Properties.Slot === slots[i],
+        itemNameFunc: (i) => slots[i],
+        '_get': x => x.Armors,
+        '_set': (x, v) => x.Armors = v,
+      },
+      { label: 'Set Effects', type: 'list', config: editConfigEffectsOnSetEquip, label: 'Set Effects on Equip', '_get': x => x.EffectsOnSetEquip, '_set': (x, v) => x.EffectsOnSetEquip = v},
+      { '_if': x => !hasItemTag(x.Name, 'L'), label: 'Tiering', type: 'array', size: 10, config: getEditConfigTier('ArmorSet'), indexFunc: (x, i) => x?.Properties?.Tier === i + 1, itemNameFunc: (i) => `Tier ${i + 1}`, '_get': x => x.Tiers ?? [], '_set': (x, v) => x.Tiers = v},
+    ]
+  };
+
   let tableViewInfo = {
     columns: ['Name', 'Weight', 'Max. TT', 'Durability', 'Total Absorption', 'Imp', 'Cut', 'Stab', 'Pen', 'Shrap', 'Burn', 'Cold', 'Acid', 'Elec', 'Total'],
     columnWidths: ['1fr', '80px', '100px', '90px', '130px', '70px', '70px', '70px', '70px', '70px', '70px', '70px', '70px', '70px', '70px'],
@@ -111,15 +259,15 @@
 
 <EntityViewer
   data={data}
+  user={data.session.user}
   tableViewInfo={tableViewInfo}
+  editConfig={editConfig}
   propertiesDataFunction={propertiesDataFunction}
   title='Armor Sets'
+  type='ArmorSet'
   basePath='/items/armorsets'
   let:object
   let:additional>
-  <div class="flex-item-double">
-    <div class="big-title">{object.Name} Armor</div>
-  </div>
   <!-- Set Pieces -->
   <div class="flex-item long-content">
     <ArmorSetPieces armorSet={object} />
@@ -127,7 +275,7 @@
   {#if !hasItemTag(object.Name, 'L')}
   <!-- Tiering -->
   <div class="flex-item long-content">
-    <Tiering tieringInfo={additional.tierInfo} setPieceCount={object?.Armors?.filter(x => x.Properties.Gender === 'Both' || x.Properties.Gender === 'Male').length ?? 0} />
+    <Tiering tieringInfo={additional.tierInfo} setPieceCount={object?.Armors?.flat().filter(x => x?.Properties?.Gender === 'Both' || x?.Properties?.Gender === 'Male').length ?? 0} />
   </div>
   {/if}
   <!-- Acquisition -->

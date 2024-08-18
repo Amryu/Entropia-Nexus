@@ -69,6 +69,10 @@
           Tooltip: 'Maximum SI (Structural Integrity) of the vehicle. This is the maximum damage the vehicle can take before it is destroyed and must be repaired.',
           Value: vehicle.Properties?.MaxStructuralIntegrity != null ? vehicle.Properties?.MaxStructuralIntegrity : 'N/A',
         },
+        AttachmentSlots: {
+          Label: 'Attachment Slots',
+          Value: vehicle.AttachmentSlots?.length > 0 ? vehicle.AttachmentSlots.map(x => x.Name).join(', ') : 'N/A',
+        }
       },
       Defense: {
         Stab: vehicle.Properties?.Defense?.Stab != null ? vehicle.Properties?.Defense?.Stab.toFixed(1) : 'N/A',
@@ -87,6 +91,106 @@
       }
     };
   };
+
+  const editConfig = {
+    constructor: () => ({
+      Name: '',
+      Properties: {
+        Weight: null,
+        SpawnedWeight: null,
+        PassengerCount: null,
+        ItemCapacity: null,
+        WeightCapacity: null,
+        WheelGrip: null,
+        EnginePower: null,
+        MaxSpeed: null,
+        MaxStructuralIntegrity: null,
+        Economy: {
+          MaxTT: null,
+          MinTT: null,
+          Durability: null,
+          FuelConsumptionActive: null,
+          FuelConsumptionPassive: null,
+        },
+        Defense: {
+          Stab: null,
+          Cut: null,
+          Impact: null,
+          Penetration: null,
+          Shrapnel: null,
+          Burn: null,
+          Cold: null,
+          Acid: null,
+          Electric: null,
+        }
+      },
+      Fuel: {
+        Name: null,
+      },
+      AttachmentSlots: []
+    }),
+    dependencies: ['materials'],
+    controls: [
+      {
+        label: 'General',
+        type: 'group',
+        controls: [
+          { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
+          { label: 'Weight', type: 'number', '_get': x => x.Properties.Weight, '_set': (x, v) => x.Properties.Weight = v },
+        ]
+      },
+      {
+        label: 'Economy',
+        type: 'group',
+        controls: [
+          { label: 'Max. TT', type: 'number', '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v },
+          { label: 'Min. TT', type: 'number', '_get': x => x.Properties.Economy.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v },
+          { label: 'Durability', type: 'number', '_get': x => x.Properties.Economy.Durability, '_set': (x, v) => x.Properties.Economy.Durability = v },
+          { label: 'Fuel', type: 'select', options: (_, d) => d.materials.filter(x => x.Properties.Type === 'Refined Enmatter').map(x => x.Name), '_get': x => x.Fuel?.Name, '_set': (x, v) => x.Fuel.Name = v },
+          { label: 'Fuel/km (Active)', type: 'number', '_get': x => x.Properties.Economy.FuelConsumptionActive, '_set': (x, v) => x.Properties.Economy.FuelConsumptionActive = v },
+          { label: 'Fuel/min (Passive)', type: 'number', '_get': x => x.Properties.Economy.FuelConsumptionPassive, '_set': (x, v) => x.Properties.Economy.FuelConsumptionPassive = v },
+        ]
+      },
+      {
+        label: 'Vehicle Details',
+        type: 'group',
+        controls: [
+          { label: 'Spawned Weight', type: 'number', '_get': x => x.Properties.SpawnedWeight, '_set': (x, v) => x.Properties.SpawnedWeight = v },
+          { label: 'Passenger Count', type: 'number', '_get': x => x.Properties.PassengerCount, '_set': (x, v) => x.Properties.PassengerCount = v },
+          { label: 'Item Capacity', type: 'number', '_get': x => x.Properties.ItemCapacity, '_set': (x, v) => x.Properties.ItemCapacity = v },
+          { label: 'Weight Capacity', type: 'number', '_get': x => x.Properties.WeightCapacity, '_set': (x, v) => x.Properties.WeightCapacity = v },
+          { label: 'Wheel Grip', type: 'number', '_get': x => x.Properties.WheelGrip, '_set': (x, v) => x.Properties.WheelGrip = v },
+          { label: 'Engine Power', type: 'number', '_get': x => x.Properties.EnginePower, '_set': (x, v) => x.Properties.EnginePower = v },
+          { label: 'Max. Speed', type: 'number', '_get': x => x.Properties.MaxSpeed, '_set': (x, v) => x.Properties.MaxSpeed = v },
+          { label: 'Max. SI', type: 'number', '_get': x => x.Properties.MaxStructuralIntegrity, '_set': (x, v) => x.Properties.MaxStructuralIntegrity = v },
+        ]
+      },
+      { label: 'Attachment Slots', type: 'list', config: {
+        constructor: () => ({
+          Name: null,
+        }),
+        dependencies: ['vehicleattachmenttypes'],
+        controls: [
+          { label: 'Type', type: 'select', options: (_, d) => d.vehicleattachmenttypes.map(x => x.Name), '_get': x => x.Name, '_set': (x, v) => x.Name = v },
+        ]
+      }, '_get': x => x.AttachmentSlots, '_set': (x, v) => x.AttachmentSlots = v },
+      {
+        label: 'Defense',
+        type: 'group',
+        controls: [
+          { label: 'Stab', type: 'number', '_get': x => x.Properties.Defense.Stab, '_set': (x, v) => x.Properties.Defense.Stab = v },
+          { label: 'Cut', type: 'number', '_get': x => x.Properties.Defense.Cut, '_set': (x, v) => x.Properties.Defense.Cut = v },
+          { label: 'Impact', type: 'number', '_get': x => x.Properties.Defense.Impact, '_set': (x, v) => x.Properties.Defense.Impact = v },
+          { label: 'Penetration', type: 'number', '_get': x => x.Properties.Defense.Penetration, '_set': (x, v) => x.Properties.Defense.Penetration = v },
+          { label: 'Shrapnel', type: 'number', '_get': x => x.Properties.Defense.Shrapnel, '_set': (x, v) => x.Properties.Defense.Shrapnel = v },
+          { label: 'Burn', type: 'number', '_get': x => x.Properties.Defense.Burn, '_set': (x, v) => x.Properties.Defense.Burn = v },
+          { label: 'Cold', type: 'number', '_get': x => x.Properties.Defense.Cold, '_set': (x, v) => x.Properties.Defense.Cold = v },
+          { label: 'Acid', type: 'number', '_get': x => x.Properties.Defense.Acid, '_set': (x, v) => x.Properties.Defense.Acid = v },
+          { label: 'Electric', type: 'number', '_get': x => x.Properties.Defense.Electric, '_set': (x, v) => x.Properties.Defense.Electric = v },
+        ]
+      }
+    ]
+  }
   
   let tableViewInfo = {
     columns: ['Name', 'Weight', 'Max. TT', 'Durability', 'Fuel', 'Usage (A)', 'Usage (P)', 'Seats', 'Item Cap.', 'Weight Cap.', 'Max. Speed', 'Max. SI'],
@@ -112,15 +216,15 @@
 
 <EntityViewer
   data={data}
+  user={data.session.user}
   tableViewInfo={tableViewInfo}
+  editConfig={editConfig}
   propertiesDataFunction={propertiesDataFunction}
   title='Vehicles'
+  type='Vehicle'
   basePath='/items/vehicles'
   let:object
   let:additional>
-  <div class="flex-item-double">
-    <div class="big-title">{object.Name}</div>
-  </div>
   <!-- Acquisition -->
   <div class="flex-item long-content">
     <Acquisition acquisition={additional.acquisition} />

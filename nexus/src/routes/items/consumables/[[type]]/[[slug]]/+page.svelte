@@ -2,7 +2,7 @@
   // @ts-nocheck
   import '$lib/style.css';
 
-  import { getTimeString, clampDecimals, groupBy } from '$lib/util.js';
+  import { getTimeString, clampDecimals, groupBy, getTypeLink } from '$lib/util.js';
 
   import EntityViewer from "$lib/components/EntityViewer.svelte";
   import Acquisition from "$lib/components/Acquisition.svelte";
@@ -11,22 +11,22 @@
 
   const navButtonInfo = [
     {
-      Label: 'Cns',
-      Title: 'Consumables',
-      Type: 'consumables',
+      Label: 'Stim',
+      Title: 'Stimulants',
+      Type: 'stimulants',
     },
     {
-      Label: 'CCC',
+      Label: 'Cap',
       Title: 'Creature Control Capsules',
-      Type: 'creaturecontrolcapsules',
+      Type: 'capsules',
     },
   ];
 
   function getCategory(type) {
     switch (type) {
-      case 'consumables':
-        return 'Buff Consumable';
-      case 'creaturecontrolcapsules':
+      case 'stimulants':
+        return 'Stimulants';
+      case 'capsules':
         return 'Creature Control Capsule';
       default:
         return 'Other';
@@ -48,15 +48,19 @@
       General: {
         Weight: consumable.Properties?.Weight != null ? `${clampDecimals(consumable.Properties?.Weight, 1, 6)}kg` : 'N/A',
         Category: category,
-        Type: additional.type === 'consumables'
+        Type: additional.type === 'stimulants'
           ? consumable.Properties?.Type ?? 'N/A'
           : null,
+        MinProfessionLevel: additional.type === 'capsules' ? {
+          Label: 'Min. Profession Level',
+          Value: consumable.Properties?.MinProfessionLevel != null ? consumable.Properties?.MinProfessionLevel : 'N/A',
+        } : null,
       },
       Economy: {
         Value: consumable.Properties?.Economy?.MaxTT != null ? `${clampDecimals(consumable.Properties?.Economy?.MaxTT, 2, 8)} PED` : 'N/A',
       },
-      "Consume Effects": additional.type === 'consumables' && consumable.EffectsOnConsume != null && consumable.EffectsOnConsume.length > 0 ? onConsume : null,
-      Creature: additional.type === 'creaturecontrolcapsules' ? {
+      "Consume Effects": additional.type === 'stimulants' && consumable.EffectsOnConsume != null && consumable.EffectsOnConsume.length > 0 ? onConsume : null,
+      Creature: additional.type === 'capsules' ? {
         Mob: {
           Label: 'Mob',
           Value: consumable.Mob?.Name != null ? consumable.Mob?.Name : 'N/A',
@@ -64,11 +68,109 @@
         Profession: {
           Label: 'Profession',
           Tooltip: 'The profession and the required level to use the item',
+          LinkValue: [consumable.Profession?.Name != null ? getTypeLink(consumable.Profession.Name, 'Profession') : null, null],
           Value: [consumable.Profession?.Name != null ? consumable.Profession?.Name : 'N/A', consumable.Properties?.Level != null ? consumable.Properties?.Level : 'N/A'],
         },
       } : null,
     };
   };
+
+  const editConfig = {
+    stimulants: {
+      constructor: () => ({
+        Name: '',
+        Properties: {
+          Weight: null,
+          Type: null,
+          Economy: {
+            MaxTT: null
+          }
+        },
+        EffectsOnConsume: []
+      }),
+      controls: [
+        {
+          label: 'General',
+          type: 'group',
+          controls: [
+            { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
+            { label: 'Weight', type: 'number', '_get': x => x.Properties.Weight, '_set': (x, v) => x.Properties.Weight = v },
+            { label: 'Type', type: 'select', options: _ => ['Pill', 'Nanobots', 'Chip'], '_get': x => x.Properties.Type, '_set': (x, v) => x.Properties.Type = v }
+          ]
+        },
+        {
+          label: 'Economy',
+          type: 'group',
+          controls: [
+            { label: 'Value', type: 'number', '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v }
+          ]
+        },
+        {
+          label: 'Effects on Consume',
+          type: 'list',
+          config: {
+            constructor: () => ({
+              Name: '',
+              Values: {
+                Strength: null,
+                DurationSeconds: null,
+              }
+            }),
+            dependencies: ['effects'],
+            controls: [
+              { label: 'Name', type: 'select', options: (_, d) => d.effects.map(x => x.Name), '_get': x => x.Name, '_set': (x, v) => x.Name = v },
+              { label: 'Strength', type: 'number', '_get': x => x.Values.Strength, '_set': (x, v) => x.Values.Strength = v },
+              { label: 'Duration (s)', type: 'number', '_get': x => x.Values.DurationSeconds, '_set': (x, v) => x.Values.DurationSeconds = v }
+            ]
+          },
+          '_get': x => x.EffectsOnConsume,
+          '_set': (x, v) => x.EffectsOnConsume = v
+        }
+      ]
+    },
+    capsules: {
+      constructor: () => ({
+        Name: '',
+        Properties: {
+          Economy: {
+            MaxTT: null
+          }
+        },
+        Mob: {
+          Name: null
+        },
+        Profession: {
+          Name: null
+        }
+      }),
+      dependencies: ['mobs', 'professions'],
+      controls: [
+        {
+          label: 'General',
+          type: 'group',
+          controls: [
+            { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
+            { label: 'Mob', type: 'select', options: (_, d) => d.mobs.map(x => x.Name), '_get': x => x.Mob.Name, '_set': (x, v) => x.Mob.Name = v },
+          ]
+        },
+        {
+          label: 'Economy',
+          type: 'group',
+          controls: [
+            { label: 'Value', type: 'number', '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v }
+          ]
+        },
+        {
+          label: 'Skill',
+          type: 'group',
+          controls: [
+            { label: 'Profession', type: 'select', options: (_, d) => d.professions.map(x => x.Name), '_get': x => x.Profession.Name, '_set': (x, v) => x.Profession.Name = v },
+            { label: 'Min. Prof. Level', type: 'number', '_get': x => x.Properties.MinProfessionLevel, '_set': (x, v) => x.Properties.MinProfessionLevel = v }
+          ]
+        }
+      ]
+    }
+  }
 
   let tableViewInfo = {
     all: {
@@ -85,7 +187,7 @@
         ];
       }
     },
-    consumables: {
+    stimulants: {
       columns: ['Name', 'Category', 'Type', 'Max. TT', 'Effects'],
       columnWidths: ['230px', '80px', '80px', '90px', '1fr'],
       rowValuesFunction: (item) => {
@@ -109,7 +211,7 @@
         ];
       }
     },
-    creaturecontrolcapsules: {
+    capsules: {
       columns: ['Name', 'Mob', 'Profession', 'Max. TT'],
       columnWidths: ['1fr', '200px', '150px', '100px'],
       rowValuesFunction: (item) => {
@@ -126,16 +228,16 @@
 
 <EntityViewer
   data={data}
+  user={data.session.user}
   tableViewInfo={tableViewInfo}
   navButtonInfo={navButtonInfo}
+  editConfig={editConfig}
   propertiesDataFunction={propertiesDataFunction}
   title='Consumables'
+  type={data?.additional?.type === 'stimulants' ? 'Consumable' : 'Capsule'}
   basePath='/items/consumables'
   let:object
   let:additional>
-  <div class="flex-item-double">
-    <div class="big-title">{object.Name}</div>
-  </div>
   <!-- Acquisition -->
   <div class="flex-item long-content">
     <Acquisition acquisition={additional.acquisition} />

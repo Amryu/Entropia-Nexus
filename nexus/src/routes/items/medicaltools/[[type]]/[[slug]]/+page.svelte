@@ -2,11 +2,12 @@
   // @ts-nocheck
   import '$lib/style.css';
 
-  import { hasItemTag, clampDecimals, getTimeString } from "$lib/util";
+  import { hasItemTag, clampDecimals, getTimeString, getTypeLink } from "$lib/util";
 
   import EntityViewer from "$lib/components/EntityViewer.svelte";
   import Tiering from "$lib/components/Tiering.svelte";
   import Acquisition from "$lib/components/Acquisition.svelte";
+  import { editConfigEffectsOnEquip, editConfigEffectsOnUse, getEditConfigTier } from '$lib/editConfigUtil.js';
 
   export let data;
 
@@ -93,6 +94,10 @@
       General: {
         Weight: object.Properties?.Weight != null ? `${clampDecimals(object.Properties?.Weight, 1, 6)}kg` : 'N/A',
         Reload: reload ? `${reload.toFixed(2)}s` : 'N/A',
+        UsesPerMinute: {
+          Label: 'Uses/min',
+          Value: reload ? `${clampDecimals(60 / reload, 0, 2)}` : 'N/A',
+        }
       },
       Economy: {
         HPP: {
@@ -110,6 +115,14 @@
           Value: object.Properties?.Economy.MinTT != null ? `${clampDecimals(object.Properties?.Economy.MinTT, 2, 8)} PED` : 'N/A',
         },
         Decay: object.Properties?.Economy.Decay != null ? `${object.Properties?.Economy.Decay.toFixed(4)} PEC` : 'N/A',
+        Ammo: additional.type === 'chips' ? {
+          Label: 'Ammo',
+          Value: `${object.Ammo?.Name ?? 'N/A'}`,
+        } : null,
+        AmmoBurn: additional.type === 'chips' ?  {
+          Label: 'Ammo Burn',
+          Value: `${object.Properties?.Economy.AmmoBurn ?? 'N/A'}`,
+        } : null,
         Cost: cost ? `${cost.toFixed(4)} PEC` : 'N/A',
       },
       Healing: {
@@ -128,6 +141,15 @@
           Value: object.Properties?.MinHeal != null ? `${object.Properties?.MinHeal.toFixed(2)} HP` : 'N/A',
         }
       },
+      Mindforce: additional.type === 'chips' ? {
+        Level: object.Properties?.Mindforce?.Level ?? 'N/A',
+        Concentration: object.Properties?.Mindforce?.Concentration ? `${object.Properties?.Mindforce?.Concentration}s` : 'N/A',
+        Cooldown: object.Properties?.Mindforce?.Cooldown ? `${object.Properties?.Mindforce?.Cooldown}s` : 'N/A',
+        CooldownGroup: {
+          Label: 'Cooldown Group',
+          Value: object.Properties?.Mindforce?.CooldownGroup ?? 'N/A',
+        }
+      } : null,
       Skill: {
         SkillIncreaseBonus: {
           Label: 'SiB',
@@ -135,6 +157,7 @@
           Value: `${object.Properties?.Skill.IsSiB ? 'Yes' : 'No'}`,
         },
         Profession: {
+          LinkValue: [getTypeLink(additional.type === 'chips' ? 'Biotropic' : 'Paramedic', 'Profession'), null],
           Value: [
             additional.type === 'chips' ? 'Biotropic' : 'Paramedic',
             `${object.Properties?.Skill.LearningIntervalStart?.toFixed(1) ?? 'N/A'} - ${object.Properties?.Skill.LearningIntervalEnd?.toFixed(1) ?? 'N/A'}`],
@@ -160,16 +183,158 @@
         TimeToBreak: {
           Label: 'Time to break',
           Tooltip: 'Time until the weapon is broken from full condition',
-          Value: cyclePerHour != null ? `${(cyclePerRepair / cyclePerHour).toFixed(2)}h` : 'N/A',
+          Value: cyclePerHour > 0 ? `${(cyclePerRepair / cyclePerHour).toFixed(2)}h` : 'N/A',
         },
       }
     };
   };
 
+  let editConfig = {
+    tools: {
+      constructor: () => ({
+        Name: 'New Medical Tool',
+        Properties: {
+          Weight: null,
+          MaxHeal: null,
+          MinHeal: null,
+          UsesPerMinute: null,
+          Economy: {
+            MaxTT: null,
+            MinTT: null,
+            Decay: null,
+            AmmoBurn: null
+          },
+          Skill: {
+            IsSiB: false,
+            LearningIntervalStart: null,
+            LearningIntervalEnd: null
+          }
+        },
+        EffectsOnEquip: [],
+        EffectsOnUse: [],
+        Tiers: []
+      }),
+      dependencies: ['effects'],
+      controls: [
+        {
+          label: 'General',
+          type: 'group',
+          controls: [
+            { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
+            { label: 'Weight', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Weight, '_set': (x, v) => x.Properties.Weight = v },
+            { label: 'Max. Heal', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.MaxHeal, '_set': (x, v) => x.Properties.MaxHeal = v },
+            { label: 'Min. Heal', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.MinHeal, '_set': (x, v) => x.Properties.MinHeal = v },
+            { label: 'Uses/min', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.UsesPerMinute, '_set': (x, v) => x.Properties.UsesPerMinute = v },
+          ]
+        },
+        {
+          label: 'Economy',
+          type: 'group',
+          controls: [
+            { label: 'Max. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v },
+            { label: 'Min. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v },
+            { label: 'Decay', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Economy.Decay, '_set': (x, v) => x.Properties.Economy.Decay = v },
+          ]
+        },
+        {
+          label: 'Skill',
+          type: 'group',
+          controls: [
+            { label: 'SiB', type: 'checkbox', '_get': x => x.Properties.Skill.IsSiB, '_set': (x, v) => x.Properties.Skill.IsSiB = v },
+            { label: 'Learning Interval', type: 'range', min: 0, step: 0.1, '_get': x => [x.Properties.Skill.LearningIntervalStart, x.Properties.Skill.LearningIntervalEnd], '_set': (x, v) => { x.Properties.Skill.LearningIntervalStart = v[0]; x.Properties.Skill.LearningIntervalEnd = v[1]; } },
+          ]
+        },
+        { label: 'Effects on Equip', type: 'list', config: editConfigEffectsOnEquip, '_get': x => x.EffectsOnEquip, '_set': (x, v) => x.EffectsOnEquip = v },
+        { label: 'Effects on Use', type: 'list', config: editConfigEffectsOnUse, '_get': x => x.EffectsOnUse, '_set': (x, v) => x.EffectsOnUse = v },
+        { '_if': x => !hasItemTag(x.Name, 'L'), label: 'Tiering', type: 'array', size: 10, config: getEditConfigTier('MedicalTool'), indexFunc: (x, i) => x?.Properties?.Tier === i + 1, itemNameFunc: (i) => `Tier ${i + 1}`, '_get': x => x.Tiers, '_set': (x, v) => x.Tiers = v },
+      ]
+    },
+    chips: {
+      constructor: () => ({
+        Name: 'New Medical Chip',
+        Properties: {
+          Weight: null,
+          MaxHeal: null,
+          MinHeal: null,
+          UsesPerMinute: null,
+          Range: null,
+          Economy: {
+            MaxTT: null,
+            MinTT: null,
+            Decay: null,
+            AmmoBurn: null
+          },
+          Skill: {
+            IsSiB: null,
+            LearningIntervalStart: null,
+            LearningIntervalEnd: null
+          },
+          Mindforce: {
+            Level: null,
+            Concentration: null,
+            Cooldown: null,
+            CooldownGroup: null
+          }
+        },
+        Ammo: {
+          Name: null,
+        },
+        EffectsOnEquip: [],
+        EffectsOnUse: []
+      }),
+      dependencies: ['effects'],
+      controls: [
+        {
+          label: 'General',
+          type: 'group',
+          controls: [
+            { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
+            { label: 'Weight', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Weight, '_set': (x, v) => x.Properties.Weight = v },
+            { label: 'Max. Heal', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.MaxHeal, '_set': (x, v) => x.Properties.MaxHeal = v },
+            { label: 'Min. Heal', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.MinHeal, '_set': (x, v) => x.Properties.MinHeal = v },
+            { label: 'Uses/min', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.UsesPerMinute, '_set': (x, v) => x.Properties.UsesPerMinute = v },
+            { label: 'Range', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Range, '_set': (x, v) => x.Properties.Range = v },
+          ]
+        },
+        {
+          label: 'Economy',
+          type: 'group',
+          controls: [
+            { label: 'Max. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v },
+            { label: 'Min. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v },
+            { label: 'Decay', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Economy.Decay, '_set': (x, v) => x.Properties.Economy.Decay = v },
+            { label: 'Ammo Type', type: 'select', options: _ => ['Synthetic Mind Essence', 'Mind Essence', 'Light Mind Essence'], '_get': x => x.Ammo.Name, '_set': (x, v) => x.Ammo.Name = v },
+            { label: 'Ammo Burn', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Economy.AmmoBurn, '_set': (x, v) => x.Properties.Economy.AmmoBurn = v },
+          ]
+        },
+        {
+          label: 'Skill',
+          type: 'group',
+          controls: [
+            { label: 'SiB', type: 'checkbox', '_get': x => x.Properties.Skill.IsSiB, '_set': (x, v) => x.Properties.Skill.IsSiB = v },
+            { label: 'Learning Interval', type: 'range', min: 0, step: 0.1, '_get': x => [x.Properties.Skill.LearningIntervalStart, x.Properties.Skill.LearningIntervalEnd], '_set': (x, v) => { x.Properties.Skill.LearningIntervalStart = v[0]; x.Properties.Skill.LearningIntervalEnd = v[1]; } },
+          ]
+        },
+        {
+          label: 'Mindforce',
+          type: 'group',
+          controls: [
+            { label: 'Level', type: 'number', step: 1, min: 0, '_get': x => x.Properties.Mindforce.Level, '_set': (x, v) => x.Properties.Mindforce.Level = v },
+            { label: 'Concentration', type: 'number', step: 1, min: 0, '_get': x => x.Properties.Mindforce.Concentration, '_set': (x, v) => x.Properties.Mindforce.Concentration = v },
+            { label: 'Cooldown', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Mindforce.Cooldown, '_set': (x, v) => x.Properties.Mindforce.Cooldown = v },
+            { label: 'Cooldown Group', type: 'number', step: 1, min: 0, '_get': x => x.Properties.Mindforce.CooldownGroup, '_set': (x, v) => x.Properties.Mindforce.CooldownGroup = v },
+          ]
+        },
+        { label: 'Effects on Equip', type: 'list', config: editConfigEffectsOnEquip, '_get': x => x.EffectsOnEquip, '_set': (x, v) => x.EffectsOnEquip = v },
+        { label: 'Effects on Use', type: 'list', config: editConfigEffectsOnUse, '_get': x => x.EffectsOnUse, '_set': (x, v) => x.EffectsOnUse = v }
+      ]
+    }
+  };
+
   let tableViewInfo = {
     all: {
-      columns: ['Name', 'Type', 'Weight', 'HPS', 'Max. Heal', 'Min. Heal', 'Reload', 'HPP', 'Max. TT', 'Cost', 'SiB', 'Min', 'Max', 'Total Uses'],
-      columnWidths: ['1fr', '100px', '90px', '60px', '90px', '90px', '70px', '80px', '100px', '100px', '60px', '60px', '60px', '100px'],
+      columns: ['Name', 'Type', 'Weight', 'HPS', 'Max. Heal', 'Min. Heal', 'Reload', 'Uses/min', 'HPP', 'Max. TT', 'Cost', 'SiB', 'Min', 'Max', 'Total Uses'],
+      columnWidths: ['1fr', '100px', '90px', '60px', '90px', '90px', '70px', '80px', '80px', '100px', '100px', '60px', '60px', '60px', '100px'],
       rowValuesFunction: (item) => {
         return [
           item.Name,
@@ -179,6 +344,7 @@
           item.Properties?.MaxHeal != null ? `${item.Properties?.MaxHeal.toFixed(2)} HP` : 'N/A',
           item.Properties?.MinHeal != null ? `${item.Properties?.MinHeal.toFixed(2)} HP` : 'N/A',
           getReload(item) != null ? `${getReload(item).toFixed(2)}s` : 'N/A',
+          getReload(item) != null ? `${clampDecimals(60 / getReload(item), 0, 2)}` : 'N/A',
           getHpp(item) != null ? getHpp(item) : 'N/A',
           item.Properties?.Economy.MaxTT != null ? `${clampDecimals(item.Properties?.Economy.MaxTT, 2, 8)} PED` : 'N/A',
           getCost(item) != null ? `${getCost(item).toFixed(4)} PEC` : 'N/A',
@@ -190,8 +356,8 @@
       }
     },
     tools: {
-      columns: ['Name', 'Weight', 'HPS', 'Max. Heal', 'Min. Heal', 'Reload', 'HPP', 'Max. TT', 'Cost', 'SiB', 'Min', 'Max', 'Total Uses'],
-      columnWidths: ['1fr', '90px', '60px', '90px', '90px', '70px', '80px', '100px', '100px', '60px', '60px', '60px', '100px'],
+      columns: ['Name', 'Weight', 'HPS', 'Max. Heal', 'Min. Heal', 'Reload', 'Uses/min', 'HPP', 'Max. TT', 'Cost', 'SiB', 'Min', 'Max', 'Total Uses'],
+      columnWidths: ['1fr', '90px', '60px', '90px', '90px', '70px', '80px', '80px', '100px', '100px', '60px', '60px', '60px', '100px'],
       rowValuesFunction: (item) => {
         return [
           item.Name,
@@ -200,6 +366,7 @@
           item.Properties?.MaxHeal != null ? `${item.Properties?.MaxHeal.toFixed(2)} HP` : 'N/A',
           item.Properties?.MinHeal != null ? `${item.Properties?.MinHeal.toFixed(2)} HP` : 'N/A',
           getReload(item) != null ? `${getReload(item).toFixed(2)}s` : 'N/A',
+          getReload(item) != null ? `${clampDecimals(60 / getReload(item), 0, 2)}` : 'N/A',
           getHpp(item) != null ? getHpp(item) : 'N/A',
           item.Properties?.Economy.MaxTT != null ? `${clampDecimals(item.Properties?.Economy.MaxTT, 2, 8)} PED` : 'N/A',
           getCost(item) != null ? `${getCost(item).toFixed(4)} PEC` : 'N/A',
@@ -211,8 +378,8 @@
       }
     },
     chips: {
-      columns: ['Name', 'Weight', 'HPS', 'Max. Heal', 'Min. Heal', 'Reload', 'HPP', 'Max. TT', 'Cost', 'SiB', 'Min', 'Max', 'Total Uses'],
-      columnWidths: ['1fr', '90px', '60px', '90px', '90px', '70px', '80px', '100px', '100px', '60px', '60px', '60px', '100px'],
+      columns: ['Name', 'Weight', 'HPS', 'Max. Heal', 'Min. Heal', 'Reload', 'Uses/min', 'HPP', 'Max. TT', 'Cost', 'SiB', 'Min', 'Max', 'Total Uses'],
+      columnWidths: ['1fr', '90px', '60px', '90px', '90px', '70px', '80px', '80px', '100px', '100px', '60px', '60px', '60px', '100px'],
       rowValuesFunction: (item) => {
         return [
           item.Name,
@@ -221,6 +388,7 @@
           item.Properties?.MaxHeal != null ? `${item.Properties?.MaxHeal.toFixed(2)} HP` : 'N/A',
           item.Properties?.MinHeal != null ? `${item.Properties?.MinHeal.toFixed(2)} HP` : 'N/A',
           getReload(item) != null ? `${getReload(item).toFixed(2)}s` : 'N/A',
+          getReload(item) != null ? `${clampDecimals(60 / getReload(item), 0, 2)}` : 'N/A',
           getHpp(item) != null ? getHpp(item) : 'N/A',
           item.Properties?.Economy.MaxTT != null ? `${clampDecimals(item.Properties?.Economy.MaxTT, 2, 8)} PED` : 'N/A',
           getCost(item) != null ? `${getCost(item).toFixed(4)} PEC` : 'N/A',
@@ -236,16 +404,16 @@
 
 <EntityViewer
   data={data}
+  user={data.session.user}
   tableViewInfo={tableViewInfo}
   navButtonInfo={navButtonInfo}
+  editConfig={editConfig}
   propertiesDataFunction={propertiesDataFunction}
   title='Medical Tools'
+  type={data?.additional?.type ? (data.additional.type === 'tools' ? 'MedicalTool' : 'MedicalChip') : null}
   basePath='/items/medicaltools'
   let:object
   let:additional>
-  <div class="flex-item-double">
-    <div class="big-title">{object.Name}</div>
-  </div>
   {#if object && !hasItemTag(object.Name, 'L') && additional.type == 'tools'}
     <!-- Tiering -->
     <div class="flex-item long-content">

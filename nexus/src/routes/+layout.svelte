@@ -1,13 +1,32 @@
 <script>
+  //@ts-nocheck
+
   import '$lib/style.css';
 
-  import { darkMode } from '../stores.js';
+  import { darkMode, pageParams } from '../stores.js';
 
   import Menu from "$lib/components/Menu.svelte";
   import { onMount, onDestroy } from 'svelte';
+  import { page } from '$app/stores';
+  import { decodeURIComponentSafe } from '$lib/util.js';
 
-  let darkModeValue;
+  export let data;
 
+  let darkModeValue = true;
+  $page;
+
+  // Whenever the page store updates, decode the parameters
+  $: {
+    pageParams.set(
+      Object.fromEntries(
+        Object.entries($page.params).map(([key, value]) => [
+          key,
+          decodeURIComponentSafe(value)
+        ])
+      )
+    );
+  }
+  
   const unsubscribe = darkMode.subscribe(value => {
     darkModeValue = value;
     updateDarkMode();
@@ -25,9 +44,9 @@
     if (typeof window === 'undefined') return;
 
     if (darkModeValue === true) {
-      document.body.classList.add('dark-mode');
+      document.body.classList.remove('light-mode');
     } else {
-      document.body.classList.remove('dark-mode');
+      document.body.classList.add('light-mode');
     }
   }
 
@@ -58,5 +77,11 @@
 }
 </style>
 
-<Menu />
+<svelte:head>
+  <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+  <link rel="manifest" href="/site.webmanifest">
+</svelte:head>
+<Menu user={data?.session?.user} />
 <slot></slot>

@@ -1,2 +1,8 @@
 
 api/node_modules/
+client/node_modules/
+nexus-bot/node_modules/
+nexus-bot/.env
+client/
+sql/
+.vscode/

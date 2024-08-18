@@ -6,15 +6,17 @@
 
   import ItemPicker from '$lib/components/ItemPicker.svelte';
   import LoadoutList from '$lib/components/LoadoutList.svelte';
-  import { loading } from '../../../stores.js';
+  import { darkMode, loading } from '../../../stores.js';
   import Table from '$lib/components/Table.svelte';
+  import { clampDecimals } from '$lib/util.js';
 
   export let data;
 
   const armorSlots = ['Head', 'Torso', 'Arms', 'Hands', 'Legs', 'Shins', 'Feet'];
 
   let settings = {
-    onlyShowReasonableAmplifiers: true
+    onlyShowReasonableAmplifiers: true,
+    overampCap: 10,
   }
 
   let weapons;
@@ -30,7 +32,7 @@
   let enhancers;
   let clothing;
   let pets;
-  let consumables;
+  let stimulants;
 
   let loadout = null;
   let loadouts = null;
@@ -60,7 +62,7 @@
     enhancers = data.additional.enhancers.sort(alphabeticalSort);
     clothing = data.additional.clothing.sort(alphabeticalSort);
     pets = data.additional.pets.sort(alphabeticalSort);
-    consumables = data.additional.consumables.sort(alphabeticalSort);
+    stimulants = data.additional.stimulants.sort(alphabeticalSort);
   }
 
   onMount(() => {
@@ -69,55 +71,18 @@
     loadouts = localStorage.getItem('loadouts') ? JSON.parse(localStorage.getItem('loadouts')) : [];
   });
 
-  function getTotalWeaponEnhancersCount() {
-    return weaponEnhancersDamage + weaponEnhancersAccuracy + weaponEnhancersRange + weaponEnhancersEconomy + weaponEnhancersSkillMod;
+  $: if(loadout?.Gear.Weapon.Enhancers) {
+    loadout.Gear.Weapon.Enhancers.Damage = clamp(loadout.Gear.Weapon.Enhancers.Damage, 0, 10);
+    loadout.Gear.Weapon.Enhancers.Accuracy = clamp(loadout.Gear.Weapon.Enhancers.Accuracy, 0, 10);
+    loadout.Gear.Weapon.Enhancers.Range = clamp(loadout.Gear.Weapon.Enhancers.Range, 0, 10);
+    loadout.Gear.Weapon.Enhancers.Economy = clamp(loadout.Gear.Weapon.Enhancers.Economy, 0, 10);
+    loadout.Gear.Weapon.Enhancers.SkillMod = clamp(loadout.Gear.Weapon.Enhancers.SkillMod, 0, 10);
   }
 
-  function getTotalArmorEnhancersCount() {
-    return armorEnhancersDefense + armorEnhancersDurability;
+  $: if(loadout?.Gear.Armor.Enhancers) {
+    loadout.Gear.Armor.Enhancers.Defense = clamp(loadout.Gear.Armor.Enhancers.Defense, 0, 10);
+    loadout.Gear.Armor.Enhancers.Durability = clamp(loadout.Gear.Armor.Enhancers.Durability, 0, 10);
   }
-
-  function clampWeaponEnhancers(value) {
-    let total = getTotalWeaponEnhancersCount();
-
-    if (total > 10) {
-      return 10 - (total - value);
-    }
-
-    return value;
-  }
-
-  function clampArmorEnhancers(value) {
-    let total = getTotalArmorEnhancersCount();
-
-    if (total > 10) {
-      return 10 - (total - value);
-    }
-
-    return value;
-  }
-
-  let weaponEnhancersDamage = 0;
-  let weaponEnhancersAccuracy = 0;
-  let weaponEnhancersRange = 0;
-  let weaponEnhancersEconomy = 0;
-  let weaponEnhancersSkillMod = 0;
-
-  let armorEnhancersDefense = 0;
-  let armorEnhancersDurability = 0;
-
-  function setEnhancers(loadout) {
-    weaponEnhancersDamage = loadout.Gear.Weapon?.Enhancers.Damage;
-    weaponEnhancersAccuracy = loadout.Gear.Weapon?.Enhancers.Accuracy;
-    weaponEnhancersRange = loadout.Gear.Weapon?.Enhancers.Range;
-    weaponEnhancersEconomy = loadout.Gear.Weapon?.Enhancers.Economy;
-    weaponEnhancersSkillMod = loadout.Gear.Weapon?.Enhancers.SkillMod;
-
-    armorEnhancersDefense = loadout.Gear.Armor?.Enhancers.Defense;
-    armorEnhancersDurability = loadout.Gear.Armor?.Enhancers.Durability;
-  }
-
-  $: if (loadout) setEnhancers(loadout);
 
   $: if (loadout && loadout.Markup == null) {
     resetMarkup();
@@ -132,6 +97,7 @@
       Scope: 100,
       Sight: 100,
       ScopeSight: 100,
+      Matrix: 100,
       Implant: 100,
       ArmorSet: 100,
       PlateSet: 100,
@@ -155,71 +121,6 @@
       },
     };
   }
-
-  function updateWeaponEnhancersDamage(value) {
-    if (loadout == null) return;
-
-    weaponEnhancersDamage = clampWeaponEnhancers(value);
-    loadout.Gear.Weapon.Enhancers.Damage = weaponEnhancersDamage;
-
-    loadouts = loadouts;
-  }
-  $: updateWeaponEnhancersDamage(weaponEnhancersDamage);
-  function updateWeaponEnhancersAccuracy(value) {
-    if (loadout == null) return;
-
-    weaponEnhancersAccuracy = clampWeaponEnhancers(value);
-    loadout.Gear.Weapon.Enhancers.Damage = weaponEnhancersAccuracy;
-
-    loadouts = loadouts;
-  }
-  $: updateWeaponEnhancersAccuracy(weaponEnhancersAccuracy);
-  function updateWeaponEnhancersRange(value) {
-    if (loadout == null) return;
-
-    weaponEnhancersRange = clampWeaponEnhancers(value);
-    loadout.Gear.Weapon.Enhancers.Damage = weaponEnhancersRange;
-
-    loadouts = loadouts;
-  }
-  $: updateWeaponEnhancersRange(weaponEnhancersRange);
-  function updateWeaponEnhancersEconomy(value) {
-    if (loadout == null) return;
-
-    weaponEnhancersEconomy = clampWeaponEnhancers(value);
-    loadout.Gear.Weapon.Enhancers.Damage = weaponEnhancersEconomy;
-
-    loadouts = loadouts;
-  }
-  $: updateWeaponEnhancersEconomy(weaponEnhancersEconomy);
-  function updateWeaponEnhancersSkillMod(value) {
-    if (loadout == null) return;
-
-    weaponEnhancersSkillMod = clampWeaponEnhancers(value);
-    loadout.Gear.Weapon.Enhancers.Damage = weaponEnhancersSkillMod;
-
-    loadouts = loadouts;
-  }
-  $: updateWeaponEnhancersSkillMod(weaponEnhancersSkillMod);
-
-  function updateArmorEnhancersDefense(value) {
-    if (loadout == null) return;
-
-    armorEnhancersDefense = clampArmorEnhancers(value);
-    loadout.Gear.Armor.Enhancers.Defense = armorEnhancersDefense;
-
-    loadouts = loadouts;
-  }
-  $: updateArmorEnhancersDefense(armorEnhancersDefense);
-  function updateArmorEnhancersDurability(value) {
-    if (loadout == null) return;
-
-    armorEnhancersDurability = clampArmorEnhancers(value);
-    loadout.Gear.Armor.Enhancers.Durability = armorEnhancersDurability;
-
-    loadouts = loadouts;
-  }
-  $: updateArmorEnhancersDurability(armorEnhancersDurability);
 
   $: if (loadout?.Gear?.Armor?.ManageIndividual === false && loadout?.Gear?.Armor?.SetName === null) {
     resetArmor();
@@ -283,15 +184,26 @@
   }
 
   function getTotalUses(item) {
-    let maxTT = item.Properties?.Economy?.MaxTT ?? null;
+    let maxTT = item.Properties?.Economy?.MaxTT || null;
     let minTT = item.Properties?.Economy?.MinTT ?? 0;
-    let decay = item.Properties?.Economy?.Decay ?? null;
+    let decay = item.Properties?.Economy?.Decay || null;
 
     return maxTT != null && decay != null
       ? Math.floor((maxTT - minTT) / (decay / 100))
       : null;
   }
   
+  function getTotalAbsorberUses(absorber, weapon) {
+    let maxTT = absorber.Properties?.Economy?.MaxTT || null;
+    let minTT = absorber.Properties?.Economy?.MinTT ?? 0;
+    let decay = absorber.Properties?.Economy?.Absorption != null 
+      ? weapon.Properties?.Economy?.Decay * absorber.Properties?.Economy?.Absorption
+      : null;
+
+    return maxTT != null && decay != null
+      ? Math.floor((maxTT - minTT) / (decay / 100))
+      : null;
+  }
 
   function getTotalDefense(item) {
     return (item.Properties?.Defense?.Impact ?? 0) + (item.Properties?.Defense?.Cut ?? 0) + (item.Properties?.Defense?.Stab ?? 0) + (item.Properties?.Defense?.Penetration ?? 0) + (item.Properties?.Defense?.Shrapnel ?? 0) + (item.Properties?.Defense?.Burn ?? 0) + (item.Properties?.Defense?.Cold ?? 0) + (item.Properties?.Defense?.Acid ?? 0) + (item.Properties?.Defense?.Electric ?? 0);
@@ -438,7 +350,7 @@
 
     let totalDamage = baseDamage;
 
-    totalDamage *= 1 + (weaponEnhancersDamage * 0.1);
+    totalDamage *= 1 + (loadout.Gear.Weapon.Enhancers.Damage * 0.1);
 
     let amplifier = getAmplifier(loadout.Gear.Weapon.Amplifier?.Name);
 
@@ -456,6 +368,8 @@
     let critDamage = calcCritDamage(loadout);
     let hitAbility = calcHitAbility(loadout);
     let damageInterval = calcDamageInterval(loadout);
+
+    if (critChance == null || critDamage == null || hitAbility == null || damageInterval == null) return null;
     
     let averageDamage = (damageInterval.min + damageInterval.max) / 2;
     let hitChance = 0.8 + (hitAbility / 100);
@@ -465,11 +379,14 @@
 
   function calcDamageInterval(loadout) {
     let weapon = getWeapon(loadout.Gear.Weapon.Name);
-    let dmgSkill = loadout.Skill.Dmg + (weaponEnhancersSkillMod ?? 0) * 0.5
 
     if (weapon == null) return null;
+    
+    let dmgSkill = loadout.Skill.Dmg + (loadout.Gear.Weapon.Enhancers.SkillMod ?? 0) * 0.5
 
     let totalDamage = calcTotalDamage(loadout);
+
+    if (totalDamage == null) return null;
 
     if (weapon.Properties.Skill.IsSiB) {
       let progress = getLerpProgress(weapon.Properties.Skill.Dmg.LearningIntervalStart, weapon.Properties.Skill.Dmg.LearningIntervalEnd, dmgSkill);
@@ -489,9 +406,10 @@
 
   function calcHitAbility(loadout) {
     let weapon = getWeapon(loadout.Gear.Weapon.Name);
-    let hitSkill = loadout.Skill.Hit + (weaponEnhancersSkillMod ?? 0) * 0.5
 
     if (weapon == null) return null;
+    
+    let hitSkill = loadout.Skill.Hit + (loadout.Gear.Weapon.Enhancers.SkillMod ?? 0) * 0.5
 
     if (weapon.Properties.Skill.IsSiB) {
       if (hitSkill < weapon.Properties.Skill.Hit.LearningIntervalStart) {
@@ -510,14 +428,15 @@
   function calcCritChance(loadout) {
     let critAbility = calcCritAbility(loadout);
     
-    return 0.01 + (critAbility / 1000) + weaponEnhancersAccuracy * 0.002 + ((loadout?.Properties?.BonusCritChance ?? 0) / 100);
+    return clamp(0.01 + (critAbility / 1000) + loadout.Gear.Weapon.Enhancers.Accuracy * 0.002 + ((loadout?.Properties?.BonusCritChance ?? 0) / 100), 0.01, 1);
   }
 
   function calcCritAbility(loadout) {
     let weapon = getWeapon(loadout.Gear.Weapon.Name);
-    let hitSkill = loadout.Skill.Hit + (weaponEnhancersSkillMod ?? 0) * 0.5
 
     if (weapon == null) return null;
+    
+    let hitSkill = loadout.Skill.Hit + (loadout.Gear.Weapon.Enhancers.SkillMod ?? 0) * 0.5
 
     if (weapon.Properties.Skill.IsSiB) {
       let progress = getLerpProgress(weapon.Properties.Skill.Hit.LearningIntervalStart, weapon.Properties.Skill.Hit.LearningIntervalEnd, hitSkill);
@@ -535,11 +454,12 @@
 
   function calcRange(loadout) {
     let weapon = getWeapon(loadout.Gear.Weapon.Name);
-    let hitSkill = loadout.Skill.Hit + (weaponEnhancersSkillMod ?? 0) * 0.5
 
     if (weapon == null) return null;
 
-    let rangeEnhancerFactor = 1 + weaponEnhancersRange * 0.05;
+    let hitSkill = loadout.Skill.Hit + (loadout.Gear.Weapon.Enhancers.SkillMod ?? 0) * 0.5
+
+    let rangeEnhancerFactor = 1 + loadout.Gear.Weapon.Enhancers.Range * 0.05;
 
     if (weapon.Properties.Class === 'Melee') {
       return weapon.Properties.Range * rangeEnhancerFactor;
@@ -562,13 +482,16 @@
   function calcDecay(loadout) {
     let weapon = getWeapon(loadout.Gear.Weapon.Name);
 
-    if (weapon == null) return null;
+    if (weapon == null || weapon.Properties.Economy.Decay == null) return null;
 
-    let weaponDecay = weapon.Properties.Economy.Decay * (1 + weaponEnhancersDamage * 0.1) / (1 + weaponEnhancersEconomy * 0.0108);
+    let weaponDecay = weapon.Properties.Economy.Decay * (1 + loadout.Gear.Weapon.Enhancers.Damage * 0.1) * (1 - loadout.Gear.Weapon.Enhancers.Economy * 0.01111);
 
-    // Is this the correct order? Not sure what order absorber and implant get applied in
+    let decay = 0;
+
     if (loadout.Gear.Weapon.Absorber?.Name != null) {
       let absorber = getAbsorber(loadout.Gear.Weapon.Absorber.Name);
+
+      if (absorber?.Properties?.Economy?.Absorption == null) return null;
 
       let absorberDecay = weaponDecay * absorber.Properties.Economy.Absorption;
       decay += absorberDecay * (loadout.Markup.Implant ?? 100) / 100;
@@ -578,15 +501,19 @@
     if (loadout.Gear.Weapon.Implant?.Name != null) {
       let implant = getImplant(loadout.Gear.Weapon.Implant.Name);
 
+      if (implant?.Properties?.Economy?.Absorption == null) return null;
+
       let implantDecay = weaponDecay * implant.Properties.Economy.Absorption;
       decay += implantDecay * (loadout.Markup.Implant ?? 100) / 100;
       weaponDecay -= implantDecay;
     }
 
-    let decay = weaponDecay * (loadout.Markup.Weapon ?? 100) / 100;
+    decay += weaponDecay * (loadout.Markup.Weapon ?? 100) / 100;
 
     if (loadout.Gear.Weapon.Amplifier?.Name != null) {
       let amp = getAmplifier(loadout.Gear.Weapon.Amplifier.Name);
+
+      if (amp?.Properties?.Economy?.Decay == null) return null;
       
       decay += amp.Properties.Economy.Decay * (loadout.Markup.Amplifier ?? 100) / 100;
     }
@@ -594,11 +521,15 @@
     if (loadout.Gear.Weapon.Scope?.Name != null) {
       let scope = getScope(loadout.Gear.Weapon.Scope.Name);
 
+      if (scope?.Properties?.Economy?.Decay == null) return null;
+
       decay += scope.Properties.Economy.Decay * (loadout.Markup.Scope ?? 100) / 100;
     }
 
     if (loadout.Gear.Weapon.Scope?.Sight?.Name != null) {
       let scopeSight = getSight(loadout.Gear.Weapon.Scope.Sight.Name);
+
+      if (scopeSight?.Properties?.Economy?.Decay == null) return null;
 
       decay += scopeSight.Properties.Economy.Decay * (loadout.Markup.ScopeSight ?? 100) / 100;
     }
@@ -606,11 +537,15 @@
     if (loadout.Gear.Weapon.Sight?.Name != null) {
       let sight = getSight(loadout.Gear.Weapon.Sight.Name);
 
+      if (sight?.Properties?.Economy?.Decay == null) return null;
+
       decay += sight.Properties.Economy.Decay * (loadout.Markup.Sight ?? 100) / 100;
     }
 
     if (loadout.Gear.Weapon.Matrix?.Name != null) {
       let matrix = getMatrix(loadout.Gear.Weapon.Matrix.Name);
+
+      if (matrix?.Properties?.Economy?.Decay == null) return null;
 
       decay += matrix.Properties.Economy.Decay * (loadout.Markup.Matrix ?? 100) / 100;
     }
@@ -621,12 +556,14 @@
   function calcAmmo(loadout) {
     let weapon = getWeapon(loadout.Gear.Weapon.Name);
 
-    if (weapon == null) return null;
+    if (weapon == null || weapon.Properties.Economy.AmmoBurn === null) return null;
 
-    let ammoBurn = weapon.Properties.Economy.AmmoBurn * (1 + weaponEnhancersDamage * 0.1) / (1 + weaponEnhancersEconomy * 0.0108);
+    let ammoBurn = weapon.Properties.Economy.AmmoBurn * (1 + loadout.Gear.Weapon.Enhancers.Damage * 0.1) * (1 - loadout.Gear.Weapon.Enhancers.Economy * 0.01111);
 
     if (loadout.Gear.Weapon.Amplifier?.Name != null) {
       let amp = getAmplifier(loadout.Gear.Weapon.Amplifier.Name);
+
+      if (amp?.Properties?.Economy?.AmmoBurn === null) return null;
       
       ammoBurn += amp.Properties.Economy.AmmoBurn;
     }
@@ -635,6 +572,11 @@
   }
 
   function calcCost(loadout) {
+    let decay = calcDecay(loadout);
+    let ammo = calcAmmo(loadout);
+
+    if (decay === null || ammo === null) return null;
+
     return calcDecay(loadout) + (calcAmmo(loadout) / 100) * (loadout.Markup.Ammo ?? 100) / 100;
   }
 
@@ -649,11 +591,12 @@
 
   function calcReload(loadout) {
     let weapon = getWeapon(loadout.Gear.Weapon.Name);
-    let hitSkill = loadout.Skill.Hit + (weaponEnhancersSkillMod ?? 0) * 0.5
+    
+    if (weapon == null) return null;
+
+    let hitSkill = loadout.Skill.Hit + (loadout.Gear.Weapon.Enhancers.SkillMod ?? 0) * 0.5
 
     let bonusFactor = 1/(1 + (loadout?.Properties?.BonusReload ?? 0) / 100);
-
-    if (weapon == null) return null;
 
     if (!weapon.Properties.Skill.IsSiB) {
       return (60 / weapon.Properties.UsesPerMinute) * bonusFactor;
@@ -666,7 +609,10 @@
       let intervalSize = weapon.Properties.Skill.Hit.LearningIntervalEnd - weapon.Properties.Skill.Hit.LearningIntervalStart;
       let scalingRange = intervalSize * 0.25;
 
-      let progress = getLerpProgress(weapon.Properties.Skill.Hit.LearningIntervalStart, weapon.Properties.Skill.Hit.LearningIntervalEnd + scalingRange, hitSkill);
+      let progress = getLerpProgress(
+        weapon.Properties.Skill.Hit.LearningIntervalStart,
+        weapon.Properties.Skill.Hit.LearningIntervalEnd != null ? weapon.Properties.Skill.Hit.LearningIntervalEnd + scalingRange : null,
+        hitSkill);
 
       return (60 / (weapon.Properties.UsesPerMinute * 0.8 + weapon.Properties.UsesPerMinute * 0.2 * progress)) * bonusFactor;
     }
@@ -688,7 +634,9 @@
 
     let cost = getCost(weapon);
 
-    cost *= (1 + weaponEnhancersDamage * 0.1) / (1 + weaponEnhancersEconomy * 0.0108);
+    if (cost == null) return null;
+
+    cost *= (1 + loadout.Gear.Weapon.Enhancers.Damage * 0.1) * (1 - loadout.Gear.Weapon.Enhancers.Economy * 0.01111);
 
     return cost;
   }
@@ -696,7 +644,7 @@
   function calcEfficiency(loadout) {
     let weapon = getWeapon(loadout.Gear.Weapon.Name);
 
-    if (weapon == null) return null;
+    if (weapon == null || weapon.Properties.Economy.Efficiency === null) return null;
 
     let cost = calcWeaponCost(loadout);
     let efficiency = weapon.Properties.Economy.Efficiency;
@@ -704,6 +652,8 @@
     if (loadout.Gear.Weapon.Absorber?.Name != null) {
       let absorber = getAbsorber(loadout.Gear.Weapon.Absorber.Name);
 
+      if (absorber?.Properties?.Economy?.Absorption == null || absorber?.Properties?.Economy?.Efficiency == null) return null;
+      
       let absorberCost = cost * absorber.Properties.Economy.Absorption;
       cost -= absorberCost;
       efficiency = weightedAverage(cost, efficiency, absorberCost, absorber.Properties.Economy.Efficiency);
@@ -711,19 +661,14 @@
       cost += absorberCost;
     }
 
-    if (loadout.Gear.Weapon.Implant?.Name != null) {
-      let implant = getImplant(loadout.Gear.Weapon.Implant.Name);
-
-      let implantCost = cost * implant.Properties.Economy.Absorption;
-      cost -= implantCost;
-      efficiency = weightedAverage(cost, efficiency, implantCost, implant.Properties.Economy.Efficiency);
-
-      cost += implantCost;
-    }
-
     if (loadout.Gear.Weapon.Amplifier?.Name != null) {
       let amp = getAmplifier(loadout.Gear.Weapon.Amplifier.Name);
+
+      if (amp?.Properties.Economy.Efficiency == null) return null;
+
       let ampCost = getCost(amp);
+
+      if (ampCost === null) return null;
 
       efficiency = weightedAverage(cost, efficiency, ampCost, amp.Properties.Economy.Efficiency);
       cost += ampCost;
@@ -731,7 +676,12 @@
 
     if (loadout.Gear.Weapon.Scope?.Name != null) {
       let scope = getScope(loadout.Gear.Weapon.Scope.Name);
+
+      if (scope?.Properties.Economy.Efficiency == null) return null;
+
       let scopeCost = getCost(scope);
+
+      if (scopeCost === null) return null;
 
       efficiency = weightedAverage(cost, efficiency, scopeCost, scope.Properties.Economy.Efficiency);
       cost += scopeCost;
@@ -739,7 +689,12 @@
 
     if (loadout.Gear.Weapon.Scope?.Sight?.Name != null) {
       let scopeSight = getSight(loadout.Gear.Weapon.Scope.Sight.Name);
+
+      if (scopeSight?.Properties.Economy.Efficiency == null) return null;
+
       let scopeSightCost = getCost(scopeSight);
+
+      if (scopeSightCost === null) return null;
 
       efficiency = weightedAverage(cost, efficiency, scopeSightCost, scopeSight.Properties.Economy.Efficiency);
       cost += scopeSightCost;
@@ -747,7 +702,12 @@
 
     if (loadout.Gear.Weapon.Sight?.Name != null) {
       let sight = getSight(loadout.Gear.Weapon.Sight.Name);
+
+      if (sight?.Properties.Economy.Efficiency == null) return null;
+
       let sightCost = getCost(sight);
+
+      if (sightCost === null) return null;
 
       efficiency = weightedAverage(cost, efficiency, sightCost, sight.Properties.Economy.Efficiency);
       cost += sightCost;
@@ -755,7 +715,12 @@
 
     if (loadout.Gear.Weapon.Matrix?.Name != null) {
       let matrix = getMatrix(loadout.Gear.Weapon.Matrix.Name);
+
+      if (matrix?.Properties.Economy.Efficiency == null) return null;
+
       let matrixCost = getCost(matrix);
+
+      if (matrixCost === null) return null;
 
       efficiency = weightedAverage(cost, efficiency, matrixCost, matrix.Properties.Economy.Efficiency);
       cost += matrixCost;
@@ -781,7 +746,7 @@
         : (totalDefense + getTotalDefense(armor)) / 2;
     });
 
-    totalDefense *= 1 + (armorEnhancersDefense * 0.05);
+    totalDefense *= 1 + (loadout.Gear.Armor.Enhancers.Defense * 0.05);
 
     return totalDefense;
   }
@@ -819,7 +784,7 @@
         : (totalDurability + armor.Properties.Economy.Durability) / 2;
     });
 
-    totalDurability *= 1 + (armorEnhancersDurability * 0.05);
+    totalDurability *= 1 + (loadout.Gear.Armor.Enhancers.Durability * 0.05);
 
     return totalDurability || null;
   }
@@ -848,8 +813,8 @@
 
       if (armor == null) return;
 
-      let totalDefense = (getTotalDefense(armor)) * (1 + armorEnhancersDefense * 0.05);
-      let durability = armor.Properties?.Economy.Durability * (1 + armorEnhancersDurability * 0.1);
+      let totalDefense = (getTotalDefense(armor)) * (1 + loadout.Gear.Armor.Enhancers.Defense * 0.05);
+      let durability = armor.Properties?.Economy.Durability * (1 + loadout.Gear.Armor.Enhancers.Durability * 0.1);
 
       let maxDecay = totalDefense * ((100000 - durability) / 100000) * 0.05
       totalAbsorption += totalDefense * ((armor.Properties?.Economy.MaxTT - (armor.Properties?.Economy.MinTT ?? 0)) / (maxDecay / 100));
@@ -891,17 +856,23 @@
     if (loadout.Gear.Weapon?.Scope?.Name != null) {
       let scope = getScope(loadout.Gear.Weapon.Scope.Name);
 
+      if (scope?.Properties?.SkillModification === null) return null;
+
       skillMod += scope.Properties.SkillModification;
     }
 
     if (loadout.Gear.Weapon?.Scope?.Sight?.Name != null) {
       let scopeSight = getSight(loadout.Gear.Weapon.Scope.Sight.Name);
 
+      if (scopeSight?.Properties?.SkillModification === null) return null;
+
       skillMod += scopeSight.Properties.SkillModification;
     }
 
     if (loadout.Gear.Weapon?.Sight?.Name != null) {
       let sight = getSight(loadout.Gear.Weapon.Sight.Name);
+
+      if (sight?.Properties?.SkillModification === null) return null;
 
       skillMod += sight.Properties.SkillModification;
     }
@@ -915,11 +886,15 @@
     if (loadout.Gear.Weapon?.Scope?.Name != null) {
       let scope = getScope(loadout.Gear.Weapon.Scope.Name);
 
+      if (scope?.Properties?.SkillBonus === null) return null;
+
       skillBonus += scope.Properties.SkillBonus;
     }
 
     if (loadout.Gear.Weapon?.Scope?.Sight?.Name != null) {
       let scopeSight = getSight(loadout.Gear.Weapon.Scope.Sight.Name);
+
+      if (scopeSight?.Properties?.SkillBonus === null) return null;
 
       skillBonus += scopeSight.Properties.SkillBonus;
     }
@@ -927,10 +902,213 @@
     if (loadout.Gear.Weapon?.Sight?.Name != null) {
       let sight = getSight(loadout.Gear.Weapon.Sight.Name);
 
+      if (sight?.Properties?.SkillBonus === null) return null;
+
       skillBonus += sight.Properties.SkillBonus;
     }
 
     return skillBonus;
+  }
+
+  function calcLowestTotalUses(loadout) {
+    // Total uses until weapon or attachment breaks
+    let totalUses = 0;
+
+    let weapon = getWeapon(loadout.Gear.Weapon.Name);
+    if (weapon == null) return null;
+
+    let absorber = getAbsorber(loadout.Gear.Weapon.Absorber?.Name);
+    let implant = getImplant(loadout.Gear.Weapon.Implant?.Name);
+
+    let decayFactor = (absorber != null ? 1 - absorber.Properties.Economy.Absorption : 1) * (implant != null ? 1 - implant.Properties.Economy.Absorption : 1);
+
+    totalUses = getTotalUses({
+      Properties: {
+        Economy: {
+          MaxTT: weapon.Properties?.Economy?.MaxTT ?? null,
+          MinTT: weapon.Properties?.Economy?.MinTT ?? 0,
+          Decay: (weapon.Properties?.Economy?.Decay * (1 + loadout.Gear.Weapon.Enhancers.Damage * 0.1) * (1 - loadout.Gear.Weapon.Enhancers.Economy * 0.01111)) * decayFactor
+        }
+      }
+    });
+
+    if (loadout.Gear.Weapon.Amplifier?.Name != null) {
+      let amp = getAmplifier(loadout.Gear.Weapon.Amplifier.Name);
+      totalUses = Math.min(totalUses, getTotalUses(amp));
+    }
+
+    if (loadout.Gear.Weapon.Scope?.Name != null) {
+      let scope = getScope(loadout.Gear.Weapon.Scope.Name);
+      totalUses = Math.min(totalUses, getTotalUses(scope));
+    }
+
+    if (loadout.Gear.Weapon.Scope?.Sight?.Name != null) {
+      let scopeSight = getSight(loadout.Gear.Weapon.Scope.Sight.Name);
+      totalUses = Math.min(totalUses, getTotalUses(scopeSight));
+    }
+
+    if (loadout.Gear.Weapon.Sight?.Name != null) {
+      let sight = getSight(loadout.Gear.Weapon.Sight.Name);
+      totalUses = Math.min(totalUses, getTotalUses(sight));
+    }
+
+    if (loadout.Gear.Weapon.Matrix?.Name != null) {
+      let matrix = getMatrix(loadout.Gear.Weapon.Matrix.Name);
+      totalUses = Math.min(totalUses, getTotalUses(matrix));
+    }
+
+    if (loadout.Gear.Weapon.Implant?.Name != null) {
+      let implant = getImplant(loadout.Gear.Weapon.Implant.Name);
+      totalUses = Math.min(totalUses, getTotalAbsorberUses(implant, weapon));
+    }
+
+    if (loadout.Gear.Weapon.Absorber?.Name != null) {
+      let absorber = getAbsorber(loadout.Gear.Weapon.Absorber.Name);
+      totalUses = Math.min(totalUses, getTotalAbsorberUses(absorber, weapon));
+    }
+
+    return totalUses || null;
+  }
+
+  function compareValue(loadout, getter, setter, newObject, valueFunction) {
+    let loadoutCopy = JSON.parse(JSON.stringify(loadout));
+
+    console.log(loadoutCopy);
+
+    let currentValue = valueFunction(loadoutCopy);
+
+    console.log('curr: ' + currentValue);
+
+    if (currentValue == null) return null;
+
+    let currentObject = getter(loadoutCopy);
+
+    console.log(currentObject);
+
+    setter(loadoutCopy, newObject);
+
+    console.log(newObject);
+    console.log(getter(loadoutCopy));
+
+    let newValue = valueFunction(loadoutCopy);
+
+    console.log('new: ' + newValue);
+
+    if (newValue == null) return null;
+
+    setter(loadoutCopy, currentObject);
+    
+    console.log(getter(loadoutCopy));
+
+    let difference = newValue - currentValue;
+
+    console.log('diff: ' + difference);
+
+    return difference > 0
+      ? `<span style='color: ${$darkMode ? 'lightgreen' : 'darkgreen'};'>+${difference.toFixed(2)}</span>`
+      : difference < 0
+      ? `<span style='color: ${$darkMode ? '#FF5555' : 'darkred'};'>${difference.toFixed(2)}</span>`
+      : difference.toFixed(2);
+  }
+
+  function compareEfficiency(loadout, getter, setter, object) {
+    return compareValue(loadout, getter, setter, object, calcEfficiency);
+  }
+
+  function compareDpp(loadout, getter, setter, object) {
+    return compareValue(loadout, getter, setter, object, calcDpp);
+  }
+
+  function compareDps(loadout, getter, setter, object) {
+    return compareValue(loadout, getter, setter, object, calcDps);
+  }
+
+  // Gets the set effects of all equipped armors
+  function getArmorSetEffects(loadout) {
+    if (!loadout.Gear.Armor.ManageIndividual && loadout.Gear.Armor.SetName) {
+      let armorSet = getArmorSet(loadout.Gear.Armor.SetName);
+
+      if (armorSet == null) return [];
+
+      return armorSet.EffectsOnSetEquip;
+    }
+    else if (loadout.Gear.Armor.ManageIndividual) {
+      let sets = [];
+
+      armorSlots.forEach(slot => {
+        let armor = getArmor(loadout.Gear.Armor[slot].Name);
+
+        if (armor == null || armor.Set == null) return;
+
+        sets.push(armor.Set);
+      });
+
+      return sets.filter((value, index, self) => self.indexOf(value) === index).flatMap(set => getArmorSet(set.Name).EffectsOnSetEquip);
+    }
+  }
+
+  // Gets the amount of pieces equipped of a specific set
+  function getArmorSetPieceCount(setName) {
+    return armorSlots.reduce((acc, slot) => acc + (getArmor(loadout.Gear.Armor[slot].Name)?.Set.Name === setName ? 1 : 0), 0);
+  }
+
+  // Gets the active set effects of a specific set
+  function getActiveArmorSetEffects(setName) {
+    let set = getArmorSet(setName);
+    let setPieceCount = getArmorSetPieceCount(setName);
+
+    // Get unique effects with the highest piece count that is less than or equal to the current piece count
+    return set.EffectsOnSetEquip
+      .filter(effect => effect.MinSetPieces <= setPieceCount)
+      .sort((a, b) => b.MinSetPieces - a.MinSetPieces)
+      .filter((value, index, self) => self.findIndex(effect => effect.Name === value.Name) === index);
+  }
+
+  function getWeaponUseEffects(loadout) {
+    let weapon = getWeapon(loadout.Gear.Weapon.Name);
+
+    if (weapon == null) return [];
+
+    return [
+      ...weapon.EffectsOnUse,
+      ...(loadout.Gear.Weapon.Amplifier?.Name != null ? getAmplifier(loadout.Gear.Weapon.Amplifier.Name).EffectsOnUse ?? [] : []),
+      ...(loadout.Gear.Weapon.Scope?.Name != null ? getScope(loadout.Gear.Weapon.Scope.Name).EffectsOnUse ?? [] : []),
+      ...(loadout.Gear.Weapon.Scope?.Sight?.Name != null ? getSight(loadout.Gear.Weapon.Scope.Sight.Name).EffectsOnUse ?? [] : []),
+      ...(loadout.Gear.Weapon.Sight?.Name != null ? getSight(loadout.Gear.Weapon.Sight.Name).EffectsOnUse ?? [] : []),
+      ...(loadout.Gear.Weapon.Matrix?.Name != null ? getMatrix(loadout.Gear.Weapon.Matrix.Name).EffectsOnUse ?? [] : []),
+      ...(loadout.Gear.Weapon.Implant?.Name != null ? getImplant(loadout.Gear.Weapon.Implant.Name).EffectsOnUse ?? [] : []),
+      ...(loadout.Gear.Weapon.Absorber?.Name != null ? getAbsorber(loadout.Gear.Weapon.Absorber.Name).EffectsOnUse ?? [] : [])
+    ];
+  }
+
+  function getWeaponEquipEffects(loadout) {
+    let weapon = getWeapon(loadout.Gear.Weapon.Name);
+
+    if (weapon == null) return [];
+
+    return [
+      ...(weapon.EffectsOnEquip ?? []),
+      ...(loadout.Gear.Weapon.Amplifier?.Name != null ? getAmplifier(loadout.Gear.Weapon.Amplifier.Name).EffectsOnEquip ?? [] : []),
+      ...(loadout.Gear.Weapon.Scope?.Name != null ? getScope(loadout.Gear.Weapon.Scope.Name).EffectsOnEquip ?? [] : []),
+      ...(loadout.Gear.Weapon.Scope?.Sight?.Name != null ? getSight(loadout.Gear.Weapon.Scope.Sight.Name).EffectsOnEquip ?? [] : []),
+      ...(loadout.Gear.Weapon.Sight?.Name != null ? getSight(loadout.Gear.Weapon.Sight.Name).EffectsOnEquip ?? [] : []),
+      ...(loadout.Gear.Weapon.Matrix?.Name != null ? getMatrix(loadout.Gear.Weapon.Matrix.Name).EffectsOnEquip ?? [] : []),
+      ...(loadout.Gear.Weapon.Implant?.Name != null ? getImplant(loadout.Gear.Weapon.Implant.Name).EffectsOnEquip ?? [] : []),
+      ...(loadout.Gear.Weapon.Absorber?.Name != null ? getAbsorber(loadout.Gear.Weapon.Absorber.Name).EffectsOnEquip ?? [] : [])
+    ];
+  }
+
+  function getArmorEquipEffects(loadout) {
+    return armorSlots.flatMap(slot => {
+      let armor = getArmor(loadout.Gear.Armor[slot].Name);
+
+      if (armor == null) return [];
+
+      return [
+        ...(armor.EffectsOnEquip ?? []),
+        ...(loadout.Gear.Armor[slot].Plate?.Name != null ? getArmorPlating(loadout.Gear.Armor[slot].Plate.Name).EffectsOnEquip ?? [] : [])
+      ];
+    });
   }
 </script>
 
@@ -971,9 +1149,13 @@
   .select {
     display: grid;
     margin-bottom: 10px;
+    grid-template-columns: 0.2fr 0.2fr 0.2fr 0.2fr 0.2fr 100px 300px 80px;
+    gap: 1px;
+    background-color: var(--text-color);
+    border: 1px solid var(--text-color);
   }
 
-  .select:last-child {
+  .select:last-child, .picker:last-child {
     margin-bottom: 0;
   }
 
@@ -989,31 +1171,11 @@
     padding: 10px;
     display: grid;
     grid-template-rows: min-content min-content min-content min-content min-content 1fr;
-  }
-
-  .compare-select {
-    grid-template-columns: 0.2fr 0.2fr 0.2fr 0.2fr 0.2fr 100px 300px;
-    gap: 1px;
-    background-color: var(--text-color);
-    border: 1px solid var(--text-color);
-  }
-
-  .weapon-select {
-    grid-template-columns: 0.2fr 0.2fr 0.2fr 0.2fr 0.2fr 100px 300px 80px;
-    gap: 1px;
-    background-color: var(--text-color);
-    border: 1px solid var(--text-color);
+    overflow-y: auto;
   }
 
   .weapon-markup {
     background-color: var(--secondary-color);
-  }
-
-  .armor-select {
-    grid-template-columns: 0.2fr 0.2fr 0.2fr 0.2fr 0.2fr 100px 300px 80px;
-    gap: 1px;
-    background-color: var(--text-color);
-    border: 1px solid var(--text-color);
   }
 
   .weapon-slot {
@@ -1127,6 +1289,9 @@
 
 <svelte:head>
   <title>Entropia Nexus - Loadout Manager</title>
+  <meta name="description" content="Tool for managing and comparing different combinations of weapons, armor, clothing, pets and pills and comparing them to each other.">
+  <meta name="keywords" content="Weapon Compare, Weapon, Compare, Calculator, Loadouts, Manager, Loadout Manager, Entropia Universe, Entropia, Entropia Nexus, EU, PE, Items, Mobs, Maps, Tools, MindArk, Wiki">
+  <link rel="canonical" href="https://entropianexus.com/tools/loadouts" />
 </svelte:head>
 <div class="flex-container">
   <div class="loadout-list centered">
@@ -1146,8 +1311,10 @@
           {#if compareMode}
           <div class="select compare-select">
             <div class="select-title">Comparing</div>
+            <!-- svelte-ignore a11y-no-static-element-interactions -->
+            <!-- svelte-ignore a11y-click-events-have-key-events -->
             <div class="select-compare" on:click={() => compareMode = false}>Stop Comparing</div>
-            <div style="grid-column: span 7; background-color: var(--primary-color);">
+            <div style="grid-column: span 8; background-color: var(--primary-color);">
               <Table
                 style="height: calc(100vh - 152px); white-space: nowrap; text-overflow: ellipsis; overflow-x: auto;"
                 header={{ 
@@ -1200,6 +1367,8 @@
           {:else}
             <div class="select weapon-select">
               <div class="select-title">Weapon</div>
+              <!-- svelte-ignore a11y-no-static-element-interactions -->
+              <!-- svelte-ignore a11y-click-events-have-key-events -->
               <div class="select-compare" on:click={() => compareMode = true}>Compare Loadouts...</div>
               <button class="slot weapon-slot" style="grid-row: span 5;" on:contextmenu={e => clearSlot(e, "weapon")} on:click={() => picking = picking === 'weapon' ? null : 'weapon'}>
                 {#if loadout?.Gear.Weapon.Name != null}
@@ -1257,7 +1426,7 @@
                     {#if loadout?.Gear.Weapon.Scope?.Sight?.Name != null}
                       {loadout.Gear.Weapon.Scope.Sight.Name}
                     {:else}
-                      <span style="color: gray;">Click here to select a Sight...</span>
+                      <span style="color: gray;">Click here to select a sight...</span>
                     {/if}
                   {:else}
                     <span style="color: lightgray;">Add a scope first!</span>
@@ -1269,7 +1438,7 @@
                   {#if loadout?.Gear.Weapon.Sight?.Name != null}
                     {loadout.Gear.Weapon.Sight.Name}
                   {:else}
-                    <span style="color: gray;">Click here to select a Sight...</span>
+                    <span style="color: gray;">Click here to select a sight...</span>
                   {/if}
                 </button>
                 <div class="even-color"><input type="text" size="1" bind:value={loadout.Markup.Sight} /></div>
@@ -1282,9 +1451,9 @@
                     <span style="color: gray;">Click here to select a matrix...</span>
                   {/if}
                 </button>
-                <div class="empty-slot"></div>
-                <div class="empty-slot"></div>
                 <div class="even-color"><input type="text" size="1" bind:value={loadout.Markup.Matrix} /></div>
+                <div class="empty-slot"></div>
+                <div class="empty-slot"></div>
               {:else if getWeapon(loadout.Gear.Weapon.Name)?.Properties?.Class === 'Mindforce'}
                 <div class="even-color">Implant:</div>
                 <button class="slot implant-slot" disabled={getWeapon(loadout.Gear.Weapon.Name)?.Properties?.Class !== 'Mindforce'} on:contextmenu={e => clearSlot(e, "weapon")} on:click={() => picking = picking === 'implant' ? null : 'implant'}>
@@ -1306,14 +1475,14 @@
                 <div class="empty-slot"></div>
                 <div class="empty-slot"></div>
               {/if}
-              <div class="even-color">Damage<input type="number" min="0" max="10" bind:value={weaponEnhancersDamage}></div>
-              <div class="odd-color">Accuracy<input type="number" min="0" max="10" bind:value={weaponEnhancersAccuracy}></div>
-              <div class="even-color">Range<input type="number" min="0" max="10" bind:value={weaponEnhancersRange}></div>
-              <div class="odd-color">Economy<input type="number" min="0" max="10" bind:value={weaponEnhancersEconomy}></div>
-              <div class="even-color">Skill Mod<input type="number" min="0" max="10" bind:value={weaponEnhancersSkillMod}></div>
+              <div class="even-color">Damage<input type="number" min="0" max="10" bind:value={loadout.Gear.Weapon.Enhancers.Damage}></div>
+              <div class="odd-color">Accuracy<input type="number" min="0" max="10" bind:value={loadout.Gear.Weapon.Enhancers.Accuracy}></div>
+              <div class="even-color">Range<input type="number" min="0" max="10" bind:value={loadout.Gear.Weapon.Enhancers.Range}></div>
+              <div class="odd-color">Economy<input type="number" min="0" max="10" bind:value={loadout.Gear.Weapon.Enhancers.Economy}></div>
+              <div class="even-color">Skill Mod<input type="number" min="0" max="10" bind:value={loadout.Gear.Weapon.Enhancers.SkillMod}></div>
               <div class="empty-slot">
-                <span style="text-decoration: underline dotted;" title="If enabled, will only show amplifiers that overcap by 10% max">
-                  <input type="checkbox" bind:checked={settings.onlyShowReasonableAmplifiers} /> Only show reasonable amplifiers
+                <span>
+                  <input type="checkbox" bind:checked={settings.onlyShowReasonableAmplifiers} /> Include overcapped amplifiers up to <input type="number" min="0" max="100" bind:value={settings.overampCap} />%
                 </span>
               </div>
             </div>
@@ -1322,8 +1491,8 @@
                 {#if picking === 'weapon'}
                   <ItemPicker 
                     items={weapons}
-                    columns={['Class', 'Type', 'Efficiency', 'DPS', 'DPP', 'Min', 'Max', 'Cost']}
-                    columnWidths={['80px', '80px', '80px', '60px', '60px', '60px', '60px', '75px']}
+                    columns={['Class', 'Type', 'Efficiency', 'DPS', 'DPP', 'Min', 'Max', 'Cost', 'Total Uses']}
+                    columnWidths={['80px', '80px', '80px', '60px', '60px', '60px', '60px', '75px', '90px']}
                     columnFunctions={[
                       x => x.Properties.Class,
                       x => x.Properties.Type,
@@ -1332,7 +1501,8 @@
                       x => getDpp(x) != null ? getDpp(x).toFixed(2) : 'N/A',
                       x => x.Properties?.Skill?.Hit?.LearningIntervalStart != null ? x.Properties?.Skill?.Hit?.LearningIntervalStart.toFixed(1) : 'N/A',
                       x => x.Properties?.Skill?.Hit?.LearningIntervalEnd != null ? x.Properties?.Skill?.Hit?.LearningIntervalEnd.toFixed(1) : 'N/A',
-                      x => getCost(x) != null ? `${getCost(x).toFixed(2)} PEC` : 'N/A'
+                      x => getCost(x) != null ? `${getCost(x).toFixed(2)} PEC` : 'N/A',
+                      x => getTotalUses(x) ?? 'N/A'
                     ]}
                     on:rowClick={e => {
                       loadout.Gear.Weapon.Name = e.detail.values[0];
@@ -1359,7 +1529,7 @@
                         return false;
                       }
 
-                      if (2 * ampDamage > 1.1 * weaponDamage && settings.onlyShowReasonableAmplifiers) {
+                      if (2 * ampDamage > (1 + ((settings.overampCap ?? 0) / 100)) * weaponDamage && settings.onlyShowReasonableAmplifiers) {
                         return false;
                       }
 
@@ -1375,15 +1545,19 @@
                         return x.Properties.Type === 'Mindforce';
                       }
 
-                      return false
+                      return false;
                     })}
-                    columns={['Damage', 'Efficiency', 'DPP', 'Cost']}
-                    columnWidths={['75px', '80px', '60px', '75px']}
+                    columns={['Damage', '~DPS', 'Efficiency', '~Eff', 'DPP', '~DPP', 'Cost', 'Total Uses']}
+                    columnWidths={['75px', '70px', '80px', '70px', '60px', '70px', '75px', '90px']}
                     columnFunctions={[
                       x => getTotalDamage(x) != null ? getTotalDamage(x) : 'N/A',
+                      x => compareDps(loadout, x => x.Gear.Weapon.Amplifier, (x, v) => x.Gear.Weapon.Amplifier = v, x) ?? 'N/A',
                       x => x.Properties.Economy.Efficiency != null ? `${x.Properties.Economy.Efficiency.toFixed(1)}%` : 'N/A',
+                      x => compareEfficiency(loadout, x => x.Gear.Weapon.Amplifier, (x, v) => x.Gear.Weapon.Amplifier = v, x) ?? 'N/A',
                       x => getDpp(x) != null ? getDpp(x).toFixed(2) : 'N/A',
-                      x => getCost(x) != null ? `${getCost(x).toFixed(2)} PEC` : 'N/A'
+                      x => compareDpp(loadout, x => x.Gear.Weapon.Amplifier, (x, v) => x.Gear.Weapon.Amplifier = v, x) ?? 'N/A',
+                      x => getCost(x) != null ? `${getCost(x).toFixed(2)} PEC` : 'N/A',
+                      x => getTotalUses(x) ?? 'N/A'
                     ]}
                     on:rowClick={e => {
                       loadout.Gear.Weapon.Amplifier = { Name: e.detail.values[0] };
@@ -1393,11 +1567,14 @@
                 {:else if picking === 'absorber'}
                   <ItemPicker
                     items={absorbers}
-                    columns={['Efficiency', 'Absorption']}
-                    columnWidths={['80px', '80px']}
+                    columns={['Efficiency', '~Eff', 'Absorption', 'Absorbed Decay', 'Total Uses']}
+                    columnWidths={['90px', '70px', '100px', '120px', '90px']}
                     columnFunctions={[
                       x => x.Properties.Economy.Efficiency != null ? `${x.Properties.Economy.Efficiency.toFixed(1)}%` : 'N/A',
-                      x => x.Properties.Economy.Absorption != null ? `${(x.Properties.Economy.Absorption * 100).toFixed(1)}%` : 'N/A'
+                      x => compareEfficiency(loadout, x => x.Gear.Weapon.Absorber, (x, v) => x.Gear.Weapon.Absorber = v, x) ?? 'N/A',
+                      x => x.Properties.Economy.Absorption != null ? `${(x.Properties.Economy.Absorption * 100).toFixed(1)}%` : 'N/A',
+                      x => x.Properties.Economy.Absorption != null ? `${(getWeapon(loadout.Gear.Weapon.Name).Properties.Economy.Decay * x.Properties.Economy.Absorption).toFixed(4)} PEC` : 'N/A',
+                      x => getTotalAbsorberUses(x, getWeapon(loadout.Gear.Weapon.Name)) ?? 'N/A'
                     ]}
                     on:rowClick={e => {
                       loadout.Gear.Weapon.Absorber = { Name: e.detail.values[0] };
@@ -1407,14 +1584,17 @@
                 {:else if picking === 'scope'}
                   <ItemPicker
                     items={scopes}
-                    columns={['Efficiency', 'Skill Mod.', 'Skill Bonus', 'Zoom', 'Cost']}
-                    columnWidths={['85px', '85px', '85px', '60px', '75px']}
+                    columns={['Efficiency', '~Eff', '~DPP', 'Skill Mod.', 'Skill Bonus', 'Zoom', 'Cost', 'Total Uses']}
+                    columnWidths={['85px', '70px', '70px', '85px', '85px', '60px', '75px', '90px']}
                     columnFunctions={[
                       x => x.Properties.Economy.Efficiency != null ? `${x.Properties.Economy.Efficiency.toFixed(1)}%` : 'N/A',
+                      x => compareEfficiency(loadout, x => x.Gear.Weapon.Scope, (x, v) => x.Gear.Weapon.Scope = v, x) ?? 'N/A',
+                      x => compareDpp(loadout, x => x.Gear.Weapon.Scope, (x, v) => x.Gear.Weapon.Scope = v, x) ?? 'N/A',
                       x => x.Properties.SkillModification != null ? `${x.Properties.SkillModification.toFixed(1)}%` : 'N/A',
                       x => x.Properties.SkillBonus != null ? x.Properties.SkillBonus.toFixed(1) : 'N/A',
                       x => x.Properties.Zoom != null ? `${x.Properties.Zoom}x` : 'N/A',
-                      x => getCost(x) != null ? `${getCost(x).toFixed(2)} PEC` : 'N/A'
+                      x => getCost(x) != null ? `${getCost(x).toFixed(2)} PEC` : 'N/A',
+                      x => getTotalUses(x) ?? 'N/A'
                     ]}
                     on:rowClick={e => {
                       loadout.Gear.Weapon.Scope = { Name: e.detail.values[0] };
@@ -1424,13 +1604,16 @@
                 {:else if picking === 'scope-sight' || picking === 'sight'}
                   <ItemPicker
                     items={sights}
-                    columns={['Efficiency', 'Skill Mod.', 'Skill Bonus', 'Cost']}
-                    columnWidths={['85px', '85px', '85px', '75px']}
+                    columns={['Efficiency', '~Eff', '~DPP', 'Skill Mod.', 'Skill Bonus', 'Cost', 'Total Uses']}
+                    columnWidths={['85px', '70px', '70px', '85px', '85px', '75px', '90px']}
                     columnFunctions={[
                       x => x.Properties.Economy.Efficiency != null ? `${x.Properties.Economy.Efficiency.toFixed(1)}%` : 'N/A',
+                      x => compareEfficiency(loadout, x => x.Gear.Weapon.Scope, (x, v) => x.Gear.Weapon.Scope = v, x) ?? 'N/A',
+                      x => compareDpp(loadout, x => x.Gear.Weapon.Scope, (x, v) => x.Gear.Weapon.Scope = v, x) ?? 'N/A',
                       x => x.Properties.SkillModification != null ? `${x.Properties.SkillModification.toFixed(1)}%` : 'N/A',
                       x => x.Properties.SkillBonus != null ? x.Properties.SkillBonus.toFixed(1) : 'N/A',
-                      x => getCost(x) != null ? `${getCost(x).toFixed(2)} PEC` : 'N/A'
+                      x => getCost(x) != null ? `${getCost(x).toFixed(2)} PEC` : 'N/A',
+                      x => getTotalUses(x) ?? 'N/A'
                     ]}
                     on:rowClick={e => {
                       if (picking === 'scope-sight') {
@@ -1445,11 +1628,16 @@
                 {:else if picking === 'matrix'}
                   <ItemPicker
                     items={matrices}
-                    columns={['Efficiency', 'Cost']}
-                    columnWidths={['80px', '75px']}
+                    columns={['Damage', '~DPS', 'Efficiency', '~Eff', '~DPP', 'Cost', 'Total Uses']}
+                    columnWidths={['75px', '70px', '85px', '70px', '70px', '75px', '90px']}
                     columnFunctions={[
+                      x => getTotalDamage(x) != null ? getTotalDamage(x) : 'N/A',
+                      x => compareDps(loadout, x => x.Gear.Weapon.Matrix, (x, v) => x.Gear.Weapon.Matrix = v, x) ?? 'N/A',
                       x => x.Properties.Economy.Efficiency != null ? `${x.Properties.Economy.Efficiency.toFixed(1)}%` : 'N/A',
-                      x => getCost(x) != null ? `${getCost(x).toFixed(2)} PEC` : 'N/A'
+                      x => compareEfficiency(loadout, x => x.Gear.Weapon.Matrix, (x, v) => x.Gear.Weapon.Matrix = v, x) ?? 'N/A',
+                      x => compareDpp(loadout, x => x.Gear.Weapon.Matrix, (x, v) => x.Gear.Weapon.Matrix = v, x) ?? 'N/A',
+                      x => getCost(x) != null ? `${getCost(x).toFixed(2)} PEC` : 'N/A',
+                      x => getTotalUses(x) ?? 'N/A'
                     ]}
                     on:rowClick={e => {
                       loadout.Gear.Weapon.Matrix = { Name: e.detail.values[0] };
@@ -1461,12 +1649,15 @@
                     items={implants.filter(x =>
                       getWeapon(loadout.Gear.Weapon.Name)?.Properties?.Skill?.Hit?.LearningIntervalStart <= x.Properties.MaxProfessionLevel
                       && getWeapon(loadout.Gear.Weapon.Name)?.Properties?.Skill?.Dmg?.LearningIntervalStart <= x.Properties.MaxProfessionLevel)}
-                    columns={['Efficiency', 'Max. Level', 'Absorption']}
-                    columnWidths={['80px', '80px', '80px']}
+                    columns={['Efficiency', '~Eff', 'Max. Level', 'Absorption', 'Absorbed Decay', 'Total Uses']}
+                    columnWidths={['80px', '70px', '85px', '90px', '120px', '90px']}
                     columnFunctions={[
                       x => x.Properties.Economy.Efficiency != null ? `${x.Properties.Economy.Efficiency.toFixed(1)}%` : 'N/A',
+                      x => compareEfficiency(loadout, x => x.Gear.Weapon.Implant, (x, v) => x.Gear.Weapon.Implant = v, x) ?? 'N/A',
                       x => x.Properties.MaxProfessionLevel != null ? x.Properties.MaxProfessionLevel : 'N/A',
-                      x => x.Properties.Economy.Absorption != null ? `${(x.Properties.Economy.Absorption * 100).toFixed(1)}%` : 'N/A'
+                      x => x.Properties.Economy.Absorption != null ? `${(x.Properties.Economy.Absorption * 100).toFixed(1)}%` : 'N/A',
+                      x => x.Properties.Economy.Absorption != null ? `${(getWeapon(loadout.Gear.Weapon.Name).Properties.Economy.Decay * x.Properties.Economy.Absorption).toFixed(4)} PEC` : 'N/A',
+                      x => getTotalAbsorberUses(x, getWeapon(loadout.Gear.Weapon.Name)) ?? 'N/A'
                     ]}
                     on:rowClick={e => {
                       loadout.Gear.Weapon.Implant = { Name: e.detail.values[0] };
@@ -1478,6 +1669,8 @@
             {/if}
             <div class="select armor-select">
               <div class="select-title">Armor</div>
+              <!-- svelte-ignore a11y-click-events-have-key-events -->
+              <!-- svelte-ignore a11y-no-static-element-interactions -->
               <div class="select-compare" on:click={() => compareMode = true}>Compare Loadouts...</div>
               {#if loadout.Gear.Armor.ManageIndividual}
                 {#each armorSlots as slot, index}
@@ -1488,7 +1681,7 @@
                       <span style="color: gray;">Click here to select a piece of armor...</span>
                     {/if}
                   </button>
-                  <div class={index % 2 === 0 ? 'even-color' : 'odd-color'}><input type="text" size="1" bind:value={loadout.Markup.Armor[slot]} /></div>
+                  <div class={index % 2 === 0 ? 'even-color' : 'odd-color'}><input type="text" size="1" bind:value={loadout.Markup.Armors[slot]} /></div>
                   <div class={index % 2 === 0 ? 'even-color' : 'odd-color'}>Plate:</div>
                   <button class='slot plate-slot' disabled={loadout?.Gear.Armor[slot].Name == null} on:contextmenu={e => clearSlot(e, `armorplating-${slot}`)} on:click={() => picking = picking === `armorplating-${slot}` ? null : `armorplating-${slot}`}>
                     {#if loadout?.Gear.Armor[slot].Name != null}
@@ -1501,7 +1694,7 @@
                       <span style="color: lightgray;">Select an armor piece first!</span>
                     {/if}
                   </button>
-                  <div class={index % 2 === 0 ? 'even-color' : 'odd-color'}><input type="text" size="1" bind:value={loadout.Markup.Plate[slot]} /></div>
+                  <div class={index % 2 === 0 ? 'even-color' : 'odd-color'}><input type="text" size="1" bind:value={loadout.Markup.Plates[slot]} /></div>
                 {/each}
               {:else}
                 <button class="slot armor-slot" on:contextmenu={e => clearSlot(e, "armorset")} on:click={() => picking = picking === 'armorset' ? null : 'armorset'}>
@@ -1526,8 +1719,8 @@
                 </button>
                 <div class="even-color"><input type="text" size="1" bind:value={loadout.Markup.PlateSet} /></div>
               {/if}
-              <div class="even-color">Defense<input type="number" min="0" max="10" bind:value={armorEnhancersDefense}></div>
-              <div class="odd-color">Durability<input type="number" min="0" max="10" bind:value={armorEnhancersDurability}></div>
+              <div class="even-color">Defense<input type="number" min="0" max="10" bind:value={loadout.Gear.Armor.Enhancers.Defense}></div>
+              <div class="odd-color">Durability<input type="number" min="0" max="10" bind:value={loadout.Gear.Armor.Enhancers.Durability}></div>
               <div class="primary-color"></div>
               <div class="primary-color"></div>
               <div class="primary-color"></div>
@@ -1571,7 +1764,7 @@
                     }} />
                 {:else if picking.startsWith('armor-')}
                   <ItemPicker
-                    items={armors}
+                    items={armors.filter(x => x.Properties.Slot === picking.split('-')[1])}
                     columns={['Stb', 'Cut', 'Imp', 'Pen', 'Shr', 'Brn', 'Cld', 'Acd', 'Ele', 'Total', 'Durability']}
                     columnWidths={['50px', '50px', '50px', '50px', '50px', '50px', '50px', '50px', '50px', '60px', '90px']}
                     columnFunctions={[
@@ -1635,15 +1828,12 @@
                 {/if}
               </div>
             {/if}
-            <div class="select clothing-select">
-              
+            <!--
+            <div class="select effect-select">
+              <div class="select-title">Effects</div>
+              <div class="select-compare" on:click={() => compareMode = true}>Compare Loadouts...</div>
             </div>
-            <div class="select pet-select">
-              
-            </div>
-            <div class="select consumable-select">
-              
-            </div>
+            -->
           {/if}
         </div>
         <div class="stat-viewer">
@@ -1655,13 +1845,15 @@
           <div class="row-color-alt">Critical Damage</div><div class="row-color-alt">{calcCritDamage(loadout) != null ? `${(calcCritDamage(loadout)*100).toFixed(0)}%` : 'N/A'}</div>
           <div class="row-color">Effective Damage</div><div class="row-color">{calcEffectiveDamage(loadout) != null ? `${calcEffectiveDamage(loadout).toFixed(2)}` : 'N/A'}</div>
           <div class="row-color-alt">Reload</div><div class="row-color-alt">{calcReload(loadout) != null ? `${calcReload(loadout).toFixed(2)}s` : 'N/A'}</div>
-          <div class="row-color">DPS</div><div class="row-color">{calcDps(loadout) != null ? `${calcDps(loadout).toFixed(4)}` : 'N/A'}</div>
+          <div class="row-color">Uses/min</div><div class="row-color">{calcReload(loadout) != null ? `${clampDecimals(60 / calcReload(loadout), 0, 2)}` : 'N/A'}</div>
+          <div class="row-color-alt">DPS</div><div class="row-color-alt">{calcDps(loadout) != null ? `${calcDps(loadout).toFixed(4)}` : 'N/A'}</div>
           <div style="grid-column: span 2; text-align: center; font-size: 16px; padding: 3px;" class="header-color">Economy</div>
           <div class="row-color">Efficiency</div><div class="row-color">{calcEfficiency(loadout) != null ? `${calcEfficiency(loadout).toFixed(1)}%` : 'N/A'}</div>
           <div class="row-color-alt">Decay</div><div class="row-color-alt">{calcDecay(loadout) != null ? `${calcDecay(loadout).toFixed(4)} PEC` : 'N/A'}</div>
           <div class="row-color">Ammo</div><div class="row-color">{calcAmmo(loadout) != null ? Math.round(calcAmmo(loadout)) : 'N/A'}</div>
           <div class="row-color-alt">Cost</div><div class="row-color-alt">{calcCost(loadout) != null ? `${calcCost(loadout).toFixed(4)} PEC` : 'N/A'}</div>
           <div class="row-color">DPP</div><div class="row-color">{calcDpp(loadout) != null ? `${calcDpp(loadout).toFixed(4)}` : 'N/A'}</div>
+          <div class="row-color-alt">Total Uses</div><div class="row-color-alt">{calcLowestTotalUses(loadout) != null ? calcLowestTotalUses(loadout) : 'N/A'}</div>
           <div style="grid-column: span 2; text-align: center; font-size: 24px; padding: 5px;" class="header-color">Defense</div>
           <div class="row-color">Armor Defense</div><div class="row-color">{calcArmorDefense(loadout) != null ? calcArmorDefense(loadout).toFixed(2) : 'N/A'}</div>
           <div class="row-color-alt">Plate Defense</div><div class="row-color-alt">{calcPlateDefense(loadout) != null ? calcPlateDefense(loadout).toFixed(2) : 'N/A'}</div>
@@ -1690,7 +1882,23 @@
     {:else if data?.error != null}
       <div class="info error"><h2>{data?.error?.status}</h2><br />{data?.error?.message}</div>
     {:else}
-      <div class="info">Create or select an existing loadout on the left!</div>
+      <div class="info">
+        <h1>Loadout Manager</h1>
+        <br />
+        <p>Create or select an existing loadout on the left!</p>
+        <br />
+        <p style="text-align: left; margin-left: 100px; margin-right: 100px; width: 100%;">
+          Instructions:<br />
+          <br />
+          - <b>Click "Add"</b> to get started.<br />
+          - <b>Left-click</b> to select gear.<br />
+          - <b>Right-click</b> to clear the slot.<br />
+          - <b>Bottom-right</b> are settings for name and simulating profession levels and buffs.<br />
+          - <b>Compare</b> by clicking the button at the top right.<br />
+          <br />
+          Your loadouts will persist until you clear your browser cache. If you want to avoid losing them, you can export them to a file and import them later.
+        </p>
+      </div>
     {/if}
   </div>
 </div>
