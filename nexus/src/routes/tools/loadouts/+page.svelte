@@ -1756,7 +1756,7 @@
                       loadout.Gear.Armor.SetName = armorSet.Name;
 
                       armorSlots.forEach(slot => {
-                        loadout.Gear.Armor[slot] = { Name: armorSet.Armors.find(x => slot == x.Properties.Slot)?.Name, Plate: loadout.Gear.Armor[slot].Plate };
+                        loadout.Gear.Armor[slot] = { Name: armorSet.Armors.flat().find(x => slot == x.Properties.Slot)?.Name, Plate: loadout.Gear.Armor[slot].Plate };
                       });
 
                       loadouts = loadouts;
