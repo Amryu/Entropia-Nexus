@@ -755,12 +755,12 @@
     let totalDefense = 0;
 
     armorSlots.forEach(slot => {
-      let plate = getArmorPlating(loadout.Gear.Armor[slot].Plate);
+      let plate = getArmorPlating(loadout.Gear.Armor[slot].Plate.Name);
 
       if (plate == null) return;
 
       totalDefense = totalDefense === 0
-        ? getTotalDefense(armor)
+        ? getTotalDefense(plate)
         : (totalDefense + getTotalDefense(plate)) / 2;
     });
 
@@ -1756,7 +1756,7 @@
                       loadout.Gear.Armor.SetName = armorSet.Name;
 
                       armorSlots.forEach(slot => {
-                        loadout.Gear.Armor[slot] = { Name: armorSet.Armors.find(x => slot == x.Properties.Slot)?.Name, Plate: loadout.Gear.Armor[slot].Plate };
+                        loadout.Gear.Armor[slot] = { Name: armorSet.Armors.flat().find(x => slot == x.Properties.Slot)?.Name, Plate: loadout.Gear.Armor[slot].Plate };
                       });
 
                       loadouts = loadouts;
