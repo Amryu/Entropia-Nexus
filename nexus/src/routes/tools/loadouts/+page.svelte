@@ -755,12 +755,12 @@
     let totalDefense = 0;
 
     armorSlots.forEach(slot => {
-      let plate = getArmorPlating(loadout.Gear.Armor[slot].Plate);
+      let plate = getArmorPlating(loadout.Gear.Armor[slot].Plate.Name);
 
       if (plate == null) return;
 
       totalDefense = totalDefense === 0
-        ? getTotalDefense(armor)
+        ? getTotalDefense(plate)
         : (totalDefense + getTotalDefense(plate)) / 2;
     });
 
