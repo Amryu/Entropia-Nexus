@@ -79,6 +79,7 @@
     'External': [
       { label: 'NI Helper', url: 'nihelper' },
       { label: 'Cyrenedream', url: 'cyrenedream' },
+      { label: 'Lootius.io (Ad)', url: 'lootiusio' },
     ]
   };
 
@@ -289,9 +290,11 @@
                 {#if item.url === 'api'}
                   <a href="{import.meta.env.VITE_API_URL}/docs/"><div class="menu-dropdown-item">{item.label}</div></a>
                 {:else if item.url === 'nihelper'}
-                  <a href="https://www.nihelper.com"><div class="menu-dropdown-item">{item.label}</div></a>
+                  <a href="https://www.nihelper.com" target="_blank"><div class="menu-dropdown-item">{item.label}</div></a>
                 {:else if item.url === 'cyrenedream'}
-                  <a href="https://www.cyrenedream.org"><div class="menu-dropdown-item">{item.label}</div></a>
+                  <a href="https://www.cyrenedream.org" target="_blank"><div class="menu-dropdown-item">{item.label}</div></a>
+                {:else if item.url === 'lootiusio'}
+                  <a href="https://www.lootius.io/User/Register/1456" title="Earn PED by completing offers or playing minigames!" target="_blank"><div class="menu-dropdown-item">{item.label}</div></a>
                 {:else}
                   <a use:loading href="/{menu.toLowerCase()}/{item.url.toLowerCase()}"><div class="menu-dropdown-item">{item.label}</div></a>
                 {/if}

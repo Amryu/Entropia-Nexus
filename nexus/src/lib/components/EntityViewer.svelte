@@ -163,7 +163,14 @@
         <div class="info"><h1>{title}</h1><br />Select any item from the list on the left to show information!</div>
       {/if}
     </div>
-    <div class="prop-list centered">
-      <Properties imageUrl='' title={getCurrentData(change?.data, data.object)?.Name ?? '<No Name>'} data={getCurrentData(change?.data, data.object) != null ? propertiesDataFunction(getCurrentData(change?.data, data.object), data.additional) : {}} />
+    <div class="right-sidebar">
+      <div class="prop-list centered">
+        <Properties imageUrl='' title={getCurrentData(change?.data, data.object)?.Name ?? '<No Name>'} data={getCurrentData(change?.data, data.object) != null ? propertiesDataFunction(getCurrentData(change?.data, data.object), data.additional) : {}} />
+      </div>
+      <div class="ad-wrapper">
+        <a href="https://www.lootius.io/User/Register/1456" title="Earn PED by completing offers or playing minigames!" target="_blank">
+          <img src="https://www.lootius.io/Content/Images/logos/lootius/BANNER.png" alt="Lootius Banner" width="300px" height="80px" />
+        </a>
+      </div>
     </div>
 </div>
