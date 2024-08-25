@@ -755,7 +755,7 @@
     let totalDefense = 0;
 
     armorSlots.forEach(slot => {
-      let plate = getArmorPlating(loadout.Gear.Armor[slot].Plate.Name);
+      let plate = getArmorPlating(loadout.Gear.Armor[slot].Plate?.Name);
 
       if (plate == null) return;
 
