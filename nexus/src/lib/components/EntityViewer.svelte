@@ -169,7 +169,7 @@
       </div>
       <div class="ad-wrapper">
         <a href="https://www.lootius.io/User/Register/1456" title="Earn PED by completing offers or playing minigames!" target="_blank">
-          <img src="https://www.lootius.io/Content/Images/logos/lootius/BANNER.png" alt="Lootius Banner" width="300px" height="80px" />
+          <img src="/lootius.png" alt="Lootius Banner" width="300px" height="80px" />
         </a>
       </div>
     </div>
