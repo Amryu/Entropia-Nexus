@@ -58,7 +58,7 @@
           });
       }
 
-        return;
+      return;
     }
 
     if (data.object == null) {
@@ -134,7 +134,7 @@
       {#if mode === 'create' || ($pageParams.slug != null && data != null && data?.error == null && data.object != null)}
         {#if mode == null || mode === 'view' || mode === 'preview'}
           <div class="flex-item flex-span-2">
-            <EntityTitleBar title={getCurrentData(change?.data, data.object).Name} mode={mode} user={data.session.user} change={change} editable={editConfig != null} />
+            <EntityTitleBar title={getCurrentData(change?.data, data.object).Name} description={getCurrentData(change?.data, data.object)?.Properties?.Description} mode={mode} user={data.session.user} change={change} editable={editConfig != null} />
           </div>
           <slot object={getCurrentData(change?.data, data.object)} change={change} mode={mode} additional={data.additional} {user}></slot>
         {:else if mode === 'edit' || mode === 'create'}

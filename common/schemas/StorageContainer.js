@@ -13,6 +13,10 @@ export const StorageContainer = {
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "Description": {
+          "type": ["string", "null"],
+          "default": null
+        },
         "Weight": {
           "type": ["number", "null"],
           "default": null
@@ -40,6 +44,7 @@ export const StorageContainer = {
         }
       },
       "required": [
+        "Description",
         "Weight",
         "ItemCapacity",
         "WeightCapacity",

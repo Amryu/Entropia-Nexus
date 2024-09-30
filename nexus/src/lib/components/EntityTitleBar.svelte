@@ -5,6 +5,7 @@
   export let mode;
   export let user;
   export let title;
+  export let description;
   export let change;
   export let editable = true;
 
@@ -56,3 +57,7 @@
     {/if}
   </div>
 </div>
+{#if description}
+  <br />
+  <p>{description}</p>
+{/if}

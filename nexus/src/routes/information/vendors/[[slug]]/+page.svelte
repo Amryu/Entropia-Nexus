@@ -69,6 +69,7 @@
     constructor: () => ({
       Name: '',
       Properties: {
+        Description: null,
         Coordinates: {
           Longitude: null,
           Latitude: null,
@@ -87,6 +88,7 @@
         type: 'group',
         controls: [
           { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
+          { label: 'Description', type: 'textarea', '_get': x => x.Properties.Description, '_set': (x, v) => x.Properties.Description = v },
           { label: 'Planet', type: 'select', options: (_, d) => d.planets.filter(x => x.Id > 0).map(x => x.Name), '_get': x => x.Planet.Name, '_set': (x, v) => x.Planet.Name = v },
           { label: 'Location', type: 'multi', fields: ['Longitude', 'Latitude', 'Altitude'], '_get': x => [x.Properties.Coordinates.Longitude, x.Properties.Coordinates.Latitude, x.Properties.Coordinates.Altitude], '_set': (x, v) => { x.Properties.Coordinates.Longitude = v[0]; x.Properties.Coordinates.Latitude = v[1]; x.Properties.Coordinates.Altitude = v[2]; } }
         ]

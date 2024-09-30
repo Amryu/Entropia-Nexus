@@ -12,6 +12,10 @@ export const Capsule = {
     "Properties": {
       "type": "object",
       "properties": {
+        "Description": {
+          "type": ["string", "null"],
+          "default": null
+        },
         "Weight": {
           "type": ["number", "null"],
           "default": null
@@ -35,6 +39,7 @@ export const Capsule = {
         }
       },
       "required": [
+        "Description",
         "Weight",
         "MinProfessionLevel",
         "Economy"

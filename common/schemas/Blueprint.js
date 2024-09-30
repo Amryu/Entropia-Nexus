@@ -12,6 +12,10 @@ export const Blueprint = {
     "Properties": {
       "type": "object",
       "properties": {
+        "Description": {
+          "type": ["string", "null"],
+          "default": null
+        },
         "Type": {
           "type": "string",
           "enum": ["Weapon", "Textile", "Vehicle", "Enhancer", "Furniture", "Tool", "Armor", "Attachment", "Metal Component", "Electrical Component", "Mechanical Component"]
@@ -57,6 +61,7 @@ export const Blueprint = {
         }
       },
       "required": [
+        "Description",
         "Type",
         "Level",
         "IsBoosted",

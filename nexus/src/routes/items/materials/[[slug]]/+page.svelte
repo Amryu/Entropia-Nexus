@@ -25,6 +25,7 @@
     constructor: () => ({
       Name: '',
       Properties: {
+        Description: null,
         Weight: null,
         Economy: {
           MaxTT: null
@@ -37,6 +38,7 @@
         type: 'group',
         controls: [
           { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
+          { label: 'Description', type: 'textarea', '_get': x => x.Properties.Description, '_set': (x, v) => x.Properties.Description = v },
           { label: 'Weight', type: 'number', '_get': x => x.Properties.Weight, '_set': (x, v) => x.Properties.Weight = v }
         ]
       },

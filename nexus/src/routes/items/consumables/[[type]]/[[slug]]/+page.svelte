@@ -80,6 +80,7 @@
       constructor: () => ({
         Name: '',
         Properties: {
+          Description: null,
           Weight: null,
           Type: null,
           Economy: {
@@ -94,6 +95,7 @@
           type: 'group',
           controls: [
             { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
+            { label: 'Description', type: 'textarea', '_get': x => x.Properties.Description, '_set': (x, v) => x.Properties.Description = v },
             { label: 'Weight', type: 'number', '_get': x => x.Properties.Weight, '_set': (x, v) => x.Properties.Weight = v },
             { label: 'Type', type: 'select', options: _ => ['Pill', 'Nanobots', 'Chip'], '_get': x => x.Properties.Type, '_set': (x, v) => x.Properties.Type = v }
           ]

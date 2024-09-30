@@ -194,6 +194,7 @@
       constructor: () => ({
         Name: 'New Medical Tool',
         Properties: {
+          Description: null,
           Weight: null,
           MaxHeal: null,
           MinHeal: null,
@@ -221,6 +222,7 @@
           type: 'group',
           controls: [
             { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
+            { label: 'Description', type: 'textarea', '_get': x => x.Properties.Description, '_set': (x, v) => x.Properties.Description = v },
             { label: 'Weight', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Weight, '_set': (x, v) => x.Properties.Weight = v },
             { label: 'Max. Heal', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.MaxHeal, '_set': (x, v) => x.Properties.MaxHeal = v },
             { label: 'Min. Heal', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.MinHeal, '_set': (x, v) => x.Properties.MinHeal = v },
@@ -253,6 +255,7 @@
       constructor: () => ({
         Name: 'New Medical Chip',
         Properties: {
+          Description: null,
           Weight: null,
           MaxHeal: null,
           MinHeal: null,
@@ -289,6 +292,7 @@
           type: 'group',
           controls: [
             { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
+            { label: 'Description', type: 'textarea', '_get': x => x.Properties.Description, '_set': (x, v) => x.Properties.Description = v },
             { label: 'Weight', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Weight, '_set': (x, v) => x.Properties.Weight = v },
             { label: 'Max. Heal', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.MaxHeal, '_set': (x, v) => x.Properties.MaxHeal = v },
             { label: 'Min. Heal', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.MinHeal, '_set': (x, v) => x.Properties.MinHeal = v },

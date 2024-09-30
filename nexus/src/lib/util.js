@@ -79,14 +79,7 @@ export async function getAcquisitionInfo(fetch, itemName) {
   }
 
   if (Array.isArray(itemName)) {
-    let result = await Promise.all(itemName.map(x => getAcquisitionInfo(fetch, x)));
-
-    return {
-      Blueprints: result.flatMap(x => x.Blueprints),
-      Loots: result.flatMap(x => x.Loots),
-      VendorOffers: result.flatMap(x => x.VendorOffers),
-      RefiningRecipes: result.flatMap(x => x.RefiningRecipes)
-    };
+    return await apiCall(fetch, `/acquisition?items=${itemName.map(x => encodeURIComponent(x)).join(',')}`);
   }
 
   return await apiCall(fetch, `/acquisition/${encodeURIComponent(itemName)}`);
@@ -102,13 +95,7 @@ export async function getUsageInfo(fetch, itemName) {
   }
 
   if (Array.isArray(itemName)) {
-    let result = await Promise.all(itemName.map(x => getUsageInfo(fetch, x)));
-
-    return {
-      Blueprints: result.flatMap(x => x.Blueprints),
-      VendorOffers: result.flatMap(x => x.VendorOffers),
-      RefiningRecipes: result.flatMap(x => x.RefiningRecipes)
-    };
+    return await apiCall(fetch, `/usage?items=${itemName.map(x => encodeURIComponent(x)).join(',')}`);
   }
 
   return await apiCall(fetch, `/usage/${encodeURIComponent(itemName)}`);
@@ -381,7 +368,7 @@ export async function navigate(url) {
   loading.set(true);
 
   await goto(url);
-  await invalidateAll();
+  //await invalidateAll();
 
   loading.set(false);
 }
@@ -490,7 +477,7 @@ export async function handlePageLoad(fetch, items, config) {
     config.isItem && !config.isArmorSet
       ? getAcquisitionInfo(fetch, config.name)
       : Promise.resolve(null),
-    config.isItem
+    config.isItem && !config.isArmorSet
       ? getUsageInfo(fetch, config.name)
       : Promise.resolve(null)
   ]);

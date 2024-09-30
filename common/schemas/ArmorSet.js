@@ -12,6 +12,10 @@ export const ArmorSet = {
     "Properties": {
       "type": "object",
       "properties": {
+        "Description": {
+          "type": ["string", "null"],
+          "default": null
+        },
         "Economy": {
           "type": "object",
           "additionalProperties": false,
@@ -80,6 +84,7 @@ export const ArmorSet = {
         }
       },
       "required": [
+        "Description",
         "Economy",
         "Defense"
       ]

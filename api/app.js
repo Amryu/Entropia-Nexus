@@ -16,6 +16,12 @@ const swaggerOptions = {
       version: '1.0.0',
       description: 'Serves all entities from the Entropia Nexus database.',
     },
+    servers: [
+      {
+        url: 'https://api.entropianexus.com',
+        description: 'Production server'
+      }
+    ]
   },
   // Path to the API docs
   apis: ['./app.js'],
@@ -38,6 +44,11 @@ app.listen(port, () => {
 function parseItemList(list) {
   return list.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g).map(item => item.trim().replace(/^"(.*)"$/, '$1').replace(/""/g, '"'));
 }
+
+app.get('/schema.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.send(swaggerDocs);
+});
 
 // Utility
 /**
@@ -106,46 +117,139 @@ app.get('/search/items', async (req, res) => {
  *      '404':
  *        description: Item not found
  */
-app.get('/acquisition/:item', async (req, res) => {
-  if (!req.params.item || req.params.item.trim().length === 0) return res.status(400).send('Item cannot be empty');
+app.get('/acquisition/:item', (req, res) => {
+  const item = req.params.item;
+  if (!item || item.trim().length === 0) {
+    return res.status(400).send('Item cannot be empty');
+  }
+  res.redirect(`/acquisition?items=${encodeURIComponent(item)}`);
+});
 
-  let itemName = req.params.item
-
-  if (Number.isInteger(parseInt(req.params.item))) {
-    itemName = (await db.getItem(req.params.item))?.Name;
+/**
+ * @swagger
+ * /acquisition:
+ *  get:
+ *    description: Get all acquisition methods for multiple items
+ *    parameters:
+ *      - in: query
+ *        name: items
+ *        schema:
+ *          type: string
+ *        required: true
+ *        description: Comma-separated list of item names or ids
+ *    responses:
+ *      '200':
+ *        description: Acquisition methods for the items
+ *      '400':
+ *        description: Invalid input
+ *      '404':
+ *        description: One or more items not found
+ */
+app.get('/acquisition', async (req, res) => {
+  const itemsParam = req.query.items;
+  if (!itemsParam || itemsParam.trim().length === 0) {
+    return res.status(400).send('Items cannot be empty');
   }
 
-  if (itemName == null) {
-    return res.status(404).send();
+  const itemNames = itemsParam.split(',').map(item => item.trim()).filter(item => item.length > 0);
+
+  if (itemNames.length === 0) {
+    return res.status(400).send('Items cannot be empty');
+  }
+
+  const itemNamesResolved = await Promise.all(itemNames.map(async item => {
+    if (Number.isInteger(parseInt(item))) {
+      const dbItem = await db.getItem(item);
+      return dbItem ? dbItem.Name : null;
+    }
+    return item;
+  }));
+
+  if (itemNamesResolved.includes(null)) {
+    return res.status(404).send('One or more items not found');
   }
 
   const [blueprints, mobloots, vendoroffers, refiningrecipes] = await Promise.all([
-    db.getBlueprints([itemName]),
-    db.getMobLoots([itemName]),
-    db.getVendorOffers([itemName]),
-    db.getRefiningRecipes([itemName]),
+    db.getBlueprints(itemNamesResolved),
+    db.getMobLoots(itemNamesResolved),
+    db.getVendorOffers(itemNamesResolved),
+    db.getRefiningRecipes(itemNamesResolved),
   ]);
 
-  let result = {
+  const result = {
     Blueprints: blueprints,
     Loots: mobloots,
     VendorOffers: vendoroffers,
-    RefiningRecipes: refiningrecipes,
+    RefiningRecipes: refiningrecipes
+  };
+
+  res.status(200).json(result);
+});
+
+/**
+ * @swagger
+ * /usage:
+ *  get:
+ *    description: Get all usage methods for one or multiple items
+ *    parameters:
+ *      - in: query
+ *        name: items
+ *        schema:
+ *          type: string
+ *        required: true
+ *        description: Comma-separated list of item names or ids
+ *    responses:
+ *      '200':
+ *        description: Usage methods for the items
+ *      '400':
+ *        description: Invalid input
+ *      '404':
+ *        description: One or more items not found
+ */
+app.get('/usage', async (req, res) => {
+  const itemsParam = req.query.items || req.params.item;
+  if (!itemsParam || itemsParam.trim().length === 0) {
+    return res.status(400).send('Items cannot be empty');
   }
 
-  if (result) {
-    res.json(result);
+  const itemNames = itemsParam.split(',').map(item => item.trim()).filter(item => item.length > 0);
+
+  if (itemNames.length === 0) {
+    return res.status(400).send('Items cannot be empty');
   }
-  else {
-    res.status(404).send();
+
+  const itemNamesResolved = await Promise.all(itemNames.map(async item => {
+    if (Number.isInteger(parseInt(item))) {
+      const dbItem = await db.getItem(item);
+      return dbItem ? dbItem.Name : null;
+    }
+    return item;
+  }));
+
+  if (itemNamesResolved.includes(null)) {
+    return res.status(404).send('One or more items not found');
   }
+
+  const [blueprints, refiningrecipes, vendoroffers] = await Promise.all([
+    db.getBlueprints(null, itemNamesResolved),
+    db.getRefiningRecipes(null, itemNamesResolved),
+    db.getVendorOffers(null, itemNamesResolved),
+  ]);
+
+  const result = {
+    Blueprints: blueprints,
+    RefiningRecipes: refiningrecipes,
+    VendorOffers: vendoroffers,
+  };
+
+  res.status(200).json(result);
 });
 
 /**
  * @swagger
  * /usage/{item}:
  *  get:
- *    description: Get all usage methods for an item
+ *    description: Get all usage methods for a single item
  *    parameters:
  *      - in: path
  *        name: item
@@ -159,33 +263,12 @@ app.get('/acquisition/:item', async (req, res) => {
  *      '404':
  *        description: Item not found
  */
-app.get('/usage/:item', async (req, res) => {
-  if (!req.params.item || req.params.item.trim().length === 0) return res.status(400).send('Item cannot be empty');
-
-  let itemName = req.params.item
-
-  if (Number.isInteger(parseInt(req.params.item))) {
-    itemName = await db.getItem(req.params.item);
+app.get('/usage/:item', (req, res) => {
+  const item = req.params.item;
+  if (!item || item.trim().length === 0) {
+    return res.status(400).send('Item cannot be empty');
   }
-
-  const [blueprints, refiningrecipes, vendoroffers] = await Promise.all([
-    db.getBlueprints(null, [itemName]),
-    db.getRefiningRecipes(null, [itemName]),
-    db.getVendorOffers(null, [itemName]),
-  ]);
-
-  let result = {
-    Blueprints: blueprints,
-    RefiningRecipes: refiningrecipes,
-    VendorOffers: vendoroffers,
-  }
-
-  if (result) {
-    res.json(result);
-  }
-  else {
-    res.status(404).send();
-  }
+  res.redirect(`/usage?items=${encodeURIComponent(item)}`);
 });
 
 // Maps & Locations

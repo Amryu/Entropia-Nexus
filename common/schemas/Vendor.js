@@ -13,6 +13,10 @@ export const Vendor = {
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "Description": {
+          "type": ["string", "null"],
+          "default": null
+        },
         "Coordinates": {
           "type": "object",
           "additionalProperties": false,
@@ -38,6 +42,7 @@ export const Vendor = {
         },
       },
       "required": [
+        "Description",
         "Coordinates"
       ]
     },

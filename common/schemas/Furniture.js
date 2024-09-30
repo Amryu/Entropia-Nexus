@@ -13,6 +13,10 @@ export const Furniture = {
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "Description": {
+          "type": ["string", "null"],
+          "default": null
+        },
         "Weight": {
           "type": ["number", "null"],
           "default": null
@@ -36,6 +40,7 @@ export const Furniture = {
         }
       },
       "required": [
+        "Description",
         "Weight",
         "Type",
         "Economy"

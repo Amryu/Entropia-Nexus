@@ -248,6 +248,7 @@
     constructor: () => ({
       Name: 'New Weapon',
       Properties: {
+        Description: null,
         Weight: null,
         Class: null,
         Category: null,
@@ -314,6 +315,7 @@
         type: 'group',
         controls: [
           { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v},
+          { label: 'Description', type: 'textarea', '_get': x => x.Properties.Description, '_set': (x, v) => x.Properties.Description = v },
           { label: 'Weight', type: 'number', step: '0.1', min: '0', '_get': x => x.Properties?.Weight, '_set': (x, v) => x.Properties.Weight = v},
           { label: 'Class', type: 'select', options: _ => ['Ranged', 'Melee', 'Mindforce', 'Attached', 'Stationary'], '_get': x => x.Properties?.Class, '_set': (x, v) => x.Properties.Class = v},
           { label: 'Category', type: 'select', options: x => x.Properties.Class === 'Ranged'

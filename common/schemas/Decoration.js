@@ -13,6 +13,10 @@ export const Decoration = {
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "Description": {
+          "type": ["string", "null"],
+          "default": null
+        },
         "Weight": {
           "type": ["number", "null"],
           "default": null
@@ -32,6 +36,7 @@ export const Decoration = {
         }
       },
       "required": [
+        "Description",
         "Weight",
         "Economy"
       ]

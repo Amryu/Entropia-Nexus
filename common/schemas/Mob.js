@@ -13,6 +13,10 @@ export const Mob = {
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "Description": {
+          "type": ["string", "null"],
+          "default": null
+        },
         "AttackRange": {
           "type": ["number", "null"],
           "default": null
@@ -27,6 +31,7 @@ export const Mob = {
         }
       },
       "required": [
+        "Description",
         "AttackRange",
         "AggressionRange",
         "IsSweatable"
@@ -45,6 +50,10 @@ export const Mob = {
             "type": "object",
             "additionalProperties": false,
             "properties": {
+              "Description": {
+                "type": ["string", "null"],
+                "default": null
+              },
               "Health": {
                 "type": ["number", "null"],
                 "default": null
@@ -170,6 +179,7 @@ export const Mob = {
               }
             },
             "required": [
+              "Description",
               "Health",
               "AttacksPerMinute",
               "Level",
@@ -194,6 +204,10 @@ export const Mob = {
                   "type": "object",
                   "additionalProperties": false,
                   "properties": {
+                    "Damage": {
+                      "type": ["number", "null"],
+                      "default": null
+                    },
                     "Stab": {
                       "type": ["number", "null"],
                       "default": null
@@ -232,6 +246,7 @@ export const Mob = {
                     }
                   },
                   "required": [
+                    "Damage",
                     "Stab",
                     "Cut",
                     "Impact",

@@ -73,7 +73,7 @@
           links: [getTypeLink(vendorOffer.Vendor.Name, 'Vendor'), null, null, null, null]
         }))
       }
-      options={{searchable: "true"}} />
+      options={{searchable: true}} />
     {/if}
     {#if acquisition.Loots && acquisition.Loots.length > 0}
     <Table 
@@ -96,7 +96,7 @@
           ],
           links: [getTypeLink(loot.Mob.Name, 'Mob', loot.Mob.Planet.Name), null, null, null, null]
         }))}
-      options={{searchable: "true"}} />
+      options={{searchable: true}} />
     {/if}
     {#if acquisition.RefiningRecipes && acquisition.RefiningRecipes.length > 0}
     <Table

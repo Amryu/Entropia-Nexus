@@ -12,6 +12,10 @@ export const WeaponVisionAttachment = {
     "Properties": {
       "type": "object",
       "properties": {
+        "Description": {
+          "type": ["string", "null"],
+          "default": null
+        },
         "Weight": {
           "type": ["number", "null"],
           "default": null
@@ -62,6 +66,7 @@ export const WeaponVisionAttachment = {
         }
       },
       "required": [
+        "Description",
         "Weight",
         "Type",
         "Zoom",

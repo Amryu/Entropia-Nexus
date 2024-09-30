@@ -214,6 +214,7 @@
       constructor: () => ({
         Name: 'New Refiner',
         Properties: {
+          Description: null,
           Weight: undefined,
           Economy: {
             MaxTT: undefined,
@@ -228,6 +229,7 @@
           type: 'group',
           controls: [
             { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
+            { label: 'Description', type: 'textarea', '_get': x => x.Properties.Description, '_set': (x, v) => x.Properties.Description = v },
             { label: 'Weight', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Weight, '_set': (x, v) => x.Properties.Weight = v },
           ]
         },
@@ -246,6 +248,7 @@
       constructor: () => ({
         Name: 'New Scanner',
         Properties: {
+          Description: null,
           Weight: undefined,
           UsesPerMinute: undefined,
           Range: undefined,
@@ -262,6 +265,7 @@
           type: 'group',
           controls: [
             { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
+            { label: 'Description', type: 'textarea', '_get': x => x.Properties.Description, '_set': (x, v) => x.Properties.Description = v },
             { label: 'Weight', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Weight, '_set': (x, v) => x.Properties.Weight = v },
             { label: 'Uses/min', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.UsesPerMinute, '_set': (x, v) => x.Properties.UsesPerMinute = v },
             { label: 'Range', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Range, '_set': (x, v) => x.Properties.Range = v },
@@ -282,6 +286,7 @@
       constructor: () => ({
         Name: 'New Finder',
         Properties: {
+          Description: null,
           Weight: undefined,
           Depth: undefined,
           Range: undefined,
@@ -307,6 +312,7 @@
           type: 'group',
           controls: [
             { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
+            { label: 'Description', type: 'textarea', '_get': x => x.Properties.Description, '_set': (x, v) => x.Properties.Description = v },
             { label: 'Weight', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Weight, '_set': (x, v) => x.Properties.Weight = v },
             { label: 'Uses/min', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.UsesPerMinute, '_set': (x, v) => x.Properties.UsesPerMinute = v },
           ]
@@ -345,6 +351,7 @@
       constructor: () => ({
         Name: 'New Excavator',
         Properties: {
+          Description: null,
           Weight: undefined,
           UsesPerMinute: undefined,
           Efficiency: undefined,
@@ -368,6 +375,7 @@
           type: 'group',
           controls: [
             { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
+            { label: 'Description', type: 'textarea', '_get': x => x.Properties.Description, '_set': (x, v) => x.Properties.Description = v },
             { label: 'Weight', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Weight, '_set': (x, v) => x.Properties.Weight = v },
             { label: 'Uses/min', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.UsesPerMinute, '_set': (x, v) => x.Properties.UsesPerMinute = v },
           ]
@@ -404,6 +412,7 @@
       constructor: () => ({
         Name: 'New Teleportation Chip',
         Properties: {
+          Description: null,
           Weight: undefined,
           UsesPerMinute: undefined,
           Range: undefined,
@@ -434,6 +443,7 @@
           type: 'group',
           controls: [
             { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
+            { label: 'Description', type: 'textarea', '_get': x => x.Properties.Description, '_set': (x, v) => x.Properties.Description = v },
             { label: 'Weight', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Weight, '_set': (x, v) => x.Properties.Weight = v },
             { label: 'Uses/min', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.UsesPerMinute, '_set': (x, v) => x.Properties.UsesPerMinute = v },
             { label: 'Range', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Range, '_set': (x, v) => x.Properties.Range = v },
@@ -473,6 +483,7 @@
       constructor: () => ({
         Name: 'New Effect Chip',
         Properties: {
+          Description: null,
           Weight: undefined,
           UsesPerMinute: undefined,
           Range: undefined,
@@ -506,6 +517,7 @@
           type: 'group',
           controls: [
             { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
+            { label: 'Description', type: 'textarea', '_get': x => x.Properties.Description, '_set': (x, v) => x.Properties.Description = v },
             { label: 'Weight', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Weight, '_set': (x, v) => x.Properties.Weight = v },
             { label: 'Uses/min', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.UsesPerMinute, '_set': (x, v) => x.Properties.UsesPerMinute = v },
             { label: 'Range', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Range, '_set': (x, v) => x.Properties.Range = v },
@@ -547,6 +559,7 @@
       constructor: () => ({
         Name: 'New Misc. Tool',
         Properties: {
+          Description: null,
           Weight: undefined,
           Type: undefined,
           Economy: {
@@ -571,6 +584,7 @@
           type: 'group',
           controls: [
             { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
+            { label: 'Description', type: 'textarea', '_get': x => x.Properties.Description, '_set': (x, v) => x.Properties.Description = v },
             { label: 'Weight', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Weight, '_set': (x, v) => x.Properties.Weight = v },
             { label: 'Type', type: 'input-select', options: (_, d) => d.misctools.map(x => x.Properties.Type).filter((v, i, a) => v != null && a.indexOf(v) === i).sort((a,b) => a.localeCompare(b)), '_get': x => x.Properties.Type, '_set': (x, v) => x.Properties.Type = v },
           ]

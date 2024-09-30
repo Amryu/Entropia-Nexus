@@ -175,6 +175,7 @@
     constructor: () => ({
       Name: '',
       Properties: {
+        Description: null,
         AttacksPerMinute: null,
         AttackRange: null,
         AggressionRange: null,
@@ -202,6 +203,7 @@
         type: 'group',
         controls: [
           { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
+          { label: 'Description', type: 'textarea', '_get': x => x.Properties.Description, '_set': (x, v) => x.Properties.Description = v },
           { label: 'Species', type: 'select', options: (_, d) => ['', ...d.mobspecies.map(x => x.Name)], '_get': x => x.Species?.Name, '_set': (x, v) => x.Species.Name = v },
           { label: 'Planet', type: 'select', options: (_, d) => d.planets.filter(x => x.Id > 0).map(x => x.Name), '_get': x => x.Planet?.Name, '_set': (x, v) => x.Planet.Name = v },
           { label: 'Defensive Prof.', type: 'select', options: _ => ['Evader', 'Dodger', 'Jammer'], '_get': x => x.DefensiveProfession?.Name, '_set': (x, v) => x.DefensiveProfession.Name = v },
@@ -341,9 +343,38 @@
     ]
   }
 
+  function getLowestHpPerLevel(mob) {
+    if (mob.Maturities.length === 0) return null;
+  
+    let lowest = mob.Maturities.reduce((a, b) => {
+      // Check if a or b have null or undefined Health or Level
+      const aValid = a.Properties.Health != null && a.Properties.Level != null;
+      const bValid = b.Properties.Health != null && b.Properties.Level != null;
+  
+      // If both are valid, compare their Health/Level ratios
+      if (aValid && bValid) {
+        return a.Properties.Health / a.Properties.Level < b.Properties.Health / b.Properties.Level ? a : b;
+      }
+  
+      // If only a is valid, return a
+      if (aValid) return a;
+  
+      // If only b is valid, return b
+      if (bValid) return b;
+  
+      // If neither are valid, return a (or you could return b, it doesn't matter)
+      return a;
+    });
+  
+    // Check if the lowest found has valid Health and Level
+    if (!lowest.Properties.Level || !lowest.Properties.Health) return null;
+  
+    return lowest.Properties.Health / lowest.Properties.Level;
+  }
+
   let viewInfoSection = {
-    columns: ['Name', 'Species', 'Type', 'Planet'],
-    columnWidths: ['1fr', '100px', '100px', '150px'],
+    columns: ['Name', 'Species', 'Type', 'Planet', 'Lowest HP/Lvl', 'Cat 4 Codex'],
+    columnWidths: ['1fr', '100px', '100px', '150px', '120px', '100px'],
     rowValuesFunction: (item) => {
       return [
         item.Name,
@@ -355,7 +386,9 @@
           : item.ScanningProfession?.Name === 'Robot Investigator'
           ? 'Robot'
           : 'N/A',
-        item.Planet?.Name ?? 'N/A'
+        item.Planet?.Name ?? 'N/A',
+        getLowestHpPerLevel(item)?.toFixed(2) ?? 'N/A',
+        item.Species?.Properties?.IsCat4Codex ? 'Yes' : 'No',
       ];
     }
   };

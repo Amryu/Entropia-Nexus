@@ -118,6 +118,7 @@
       constructor: () => ({
         Name: '',
         Properties: {
+          Description: null,
           Type: null,
           Weight: null,
           Economy: {
@@ -131,6 +132,7 @@
           type: 'group',
           controls: [
             { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
+            { label: 'Description', type: 'textarea', '_get': x => x.Properties.Description, '_set': (x, v) => x.Properties.Description = v },
             { label: 'Type', type: 'text', '_get': x => x.Properties.Type, '_set': (x, v) => x.Properties.Type = v },
             { label: 'Weight', type: 'number', '_get': x => x.Properties.Weight, '_set': (x, v) => x.Properties.Weight = v },
           ]
@@ -148,6 +150,7 @@
       constructor: () => ({
         Name: '',
         Properties: {
+          Description: null,
           Weight: null,
           Economy: {
             MaxTT: null,
@@ -160,6 +163,7 @@
           type: 'group',
           controls: [
             { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
+            { label: 'Description', type: 'textarea', '_get': x => x.Properties.Description, '_set': (x, v) => x.Properties.Description = v },
             { label: 'Weight', type: 'number', '_get': x => x.Properties.Weight, '_set': (x, v) => x.Properties.Weight = v },
           ]
         },
@@ -176,6 +180,7 @@
       constructor: () => ({
         Name: '',
         Properties: {
+          Description: null,
           Weight: null,
           ItemCapacity: null,
           WeightCapacity: null,
@@ -190,6 +195,7 @@
           type: 'group',
           controls: [
             { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
+            { label: 'Description', type: 'textarea', '_get': x => x.Properties.Description, '_set': (x, v) => x.Properties.Description = v },
             { label: 'Weight', type: 'number', '_get': x => x.Properties.Weight, '_set': (x, v) => x.Properties.Weight = v },
             { label: 'Item Capacity', type: 'number', '_get': x => x.Properties.ItemCapacity, '_set': (x, v) => x.Properties.ItemCapacity = v },
             { label: 'Weight Capacity', type: 'number', '_get': x => x.Properties.WeightCapacity, '_set': (x, v) => x.Properties.WeightCapacity = v },
@@ -208,6 +214,7 @@
       constructor: () => ({
         Name: '',
         Properties: {
+          Name: '',
           Weight: null,
           ItemPoints: null,
           Display: {
@@ -230,6 +237,7 @@
           type: 'group',
           controls: [
             { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
+            { label: 'Description', type: 'textarea', '_get': x => x.Properties.Description, '_set': (x, v) => x.Properties.Description = v },
             { label: 'Weight', type: 'number', '_get': x => x.Properties.Weight, '_set': (x, v) => x.Properties.Weight = v },
             { label: 'Item Points', type: 'number', '_get': x => x.Properties.ItemPoints, '_set': (x, v) => x.Properties.ItemPoints = v },
           ]

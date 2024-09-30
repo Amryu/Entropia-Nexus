@@ -107,6 +107,8 @@
       <input type="text" id={control.key} bind:value={stores[i].value} disabled={disabled} />
     {:else if control.type === 'number'}
       <input type="number" id={control.key} step={control.step} min={control.min} max={control.max} bind:value={stores[i].value} disabled={disabled} />
+    {:else if control.type === 'date'}
+      <input type="date" id={control.key} bind:value={stores[i].value} disabled={disabled} />
     {:else if control.type === 'multi'}
       <div style="display: grid; grid-template-columns: repeat({control.fields.length}, 1fr); text-align: center;">
         {#each control.fields as field}

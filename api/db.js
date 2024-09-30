@@ -38,6 +38,7 @@ const idOffsets = {
   Consumables:              10000000,
   Capsules:                 10100000,
   Pets:                     11000000,
+  Strongboxes:              12000000,
 
   equipSet:                 100000,
 }
@@ -48,15 +49,15 @@ const queries = {
   Locations: 'SELECT "Locations".*, "Planets"."Name" AS "Planet", "Planets"."TechnicalName" FROM ONLY "Locations" LEFT JOIN ONLY "Planets" ON "Locations"."PlanetId" = "Planets"."Id"',
   Planets: 'SELECT * FROM ONLY "Planets"',
   Teleporters: 'SELECT "Teleporters".*, "Planets"."Name" AS "Planet", "Planets"."TechnicalName" FROM ONLY "Teleporters" LEFT JOIN ONLY "Planets" ON "Teleporters"."PlanetId" = "Planets"."Id"',
-  MobSpawns: 'SELECT "MobSpawns".*, "Areas"."Name", "Areas"."Type", "Areas"."Shape", "Areas"."Data", "Areas"."Longitude", "Areas"."Latitude", "Areas"."Altitude", "Areas"."PlanetId", "Planets"."Name" AS "Planet", "Planets"."TechnicalName" FROM ONLY "MobSpawns" INNER JOIN ONLY "Areas" ON "MobSpawns"."AreaId" = "Areas"."Id" INNER JOIN ONLY "Planets" ON "Areas"."PlanetId" = "Planets"."Id"',
+  MobSpawns: 'SELECT "MobSpawns".*, "MobMaturities"."MobId", "Areas"."Name", "Areas"."Type", "Areas"."Shape", "Areas"."Data", "Areas"."Longitude", "Areas"."Latitude", "Areas"."Altitude", "Areas"."PlanetId", "Planets"."Name" AS "Planet", "Planets"."TechnicalName" FROM ONLY "MobSpawns" INNER JOIN ONLY "Areas" ON "MobSpawns"."AreaId" = "Areas"."Id" INNER JOIN ONLY "Planets" ON "Areas"."PlanetId" = "Planets"."Id" INNER JOIN ONLY "MobSpawnMaturities" ON "MobSpawns"."Id" = "MobSpawnMaturities"."SpawnId" INNER JOIN ONLY "MobMaturities" ON "MobSpawnMaturities"."MaturityId" = "MobMaturities"."Id"',
 
   // Items
   Items: 'SELECT * FROM ONLY "Items"',
   Absorbers: 'SELECT * FROM ONLY "Absorbers"',
   ArmorPlatings: 'SELECT * FROM ONLY "ArmorPlatings"',
-  ArmorSets: 'SELECT "ArmorSets"."Id", "ArmorSets"."Name", "Durability", "Stab", "Cut", "Impact", "Penetration", "Shrapnel", "Burn", "Cold", "Acid", "Electric" FROM ONLY "ArmorSets"',
-  Armors: 'SELECT "Armors"."Id", "Armors"."Name", "ArmorSets"."Name" AS "Set", "Gender", "Slot", "SetId", "Weight", "MaxTT", "MinTT", "Durability", "Stab", "Cut", "Impact", "Penetration", "Shrapnel", "Burn", "Cold", "Acid", "Electric" FROM ONLY "Armors" LEFT JOIN ONLY "ArmorSets" ON "Armors"."SetId" = "ArmorSets"."Id"',
-  BlueprintBooks: 'SELECT "BlueprintBooks"."Id", "BlueprintBooks"."Name", "PlanetId", "Planets"."Name" AS "Planet", "Weight", "Value" FROM ONLY "BlueprintBooks" LEFT JOIN ONLY "Planets" ON "BlueprintBooks"."PlanetId" = "Planets"."Id"',
+  ArmorSets: 'SELECT "ArmorSets"."Id", "ArmorSets"."Name", "ArmorSets"."Description", "Durability", "Stab", "Cut", "Impact", "Penetration", "Shrapnel", "Burn", "Cold", "Acid", "Electric" FROM ONLY "ArmorSets"',
+  Armors: 'SELECT "Armors"."Id", "Armors"."Name", "Armors"."Description", "ArmorSets"."Name" AS "Set", "Gender", "Slot", "SetId", "Weight", "MaxTT", "MinTT", "Durability", "Stab", "Cut", "Impact", "Penetration", "Shrapnel", "Burn", "Cold", "Acid", "Electric" FROM ONLY "Armors" LEFT JOIN ONLY "ArmorSets" ON "Armors"."SetId" = "ArmorSets"."Id"',
+  BlueprintBooks: 'SELECT "BlueprintBooks"."Id", "BlueprintBooks"."Name", "BlueprintBooks"."Description", "PlanetId", "Planets"."Name" AS "Planet", "Weight", "Value" FROM ONLY "BlueprintBooks" LEFT JOIN ONLY "Planets" ON "BlueprintBooks"."PlanetId" = "Planets"."Id"',
   Blueprints: 'SELECT "Blueprints".*, "BlueprintBooks"."Name" AS "Book", "Professions"."Name" AS "Profession", "Items"."Type" AS "ItemType", "Items"."Name" AS "Item" FROM ONLY "Blueprints" LEFT JOIN ONLY "BlueprintBooks" ON "Blueprints"."BookId" = "BlueprintBooks"."Id" LEFT JOIN ONLY "Items" ON "Blueprints"."ItemId" = "Items"."Id" LEFT JOIN ONLY "Professions" ON "Professions"."Id" = "Blueprints"."ProfessionId"',
   Clothings: 'SELECT * FROM ONLY "Clothes"',
   Consumables: 'SELECT * FROM ONLY "Consumables"',
@@ -78,7 +79,7 @@ const queries = {
   MobLoots: 'SELECT "MobLoots".*, "Mobs"."Name" AS "Mob", "Mobs"."PlanetId", "MobMaturities"."Name" AS "Maturity", "Items"."Name" AS "Item", "Items"."Type" AS "ItemType", "Planets"."Name" AS "Planet" FROM ONLY "MobLoots" INNER JOIN ONLY "Mobs" ON "MobLoots"."MobId" = "Mobs"."Id" INNER JOIN ONLY "Items" ON "MobLoots"."ItemId" = "Items"."Id" LEFT JOIN ONLY "MobMaturities" ON "MobLoots"."MaturityId" = "MobMaturities"."Id" LEFT JOIN ONLY "Planets" ON "Mobs"."PlanetId" = "Planets"."Id"',
   MobMaturities: 'SELECT "MobMaturities".*, "Mobs"."Name" AS "Mob" FROM ONLY "MobMaturities" INNER JOIN ONLY "Mobs" ON "MobMaturities"."MobId" = "Mobs"."Id"',
   MobSpecies: 'SELECT * FROM ONLY "MobSpecies"',
-  Mobs: 'SELECT "Mobs".*, "MobSpecies"."Name" AS "Species", "Planets"."Name" AS "Planet", d."Name" AS "DefensiveProfession", s."Name" AS "ScanningProfession" FROM ONLY "Mobs" LEFT JOIN ONLY "Planets" ON "Mobs"."PlanetId" = "Planets"."Id" LEFT JOIN ONLY "MobSpecies" ON "Mobs"."SpeciesId" = "MobSpecies"."Id" LEFT JOIN ONLY "Professions" d ON "Mobs"."DefensiveProfessionId" = d."Id" LEFT JOIN ONLY "Professions" s ON "Mobs"."ScanningProfessionId" = s."Id"',
+  Mobs: 'SELECT "Mobs".*, "MobSpecies"."Name" AS "Species", "MobSpecies"."CodexBaseCost" AS "CodexBaseCost", "MobSpecies"."IsCat4Codex" AS "IsCat4Codex", "Planets"."Name" AS "Planet", d."Name" AS "DefensiveProfession", s."Name" AS "ScanningProfession" FROM ONLY "Mobs" LEFT JOIN ONLY "Planets" ON "Mobs"."PlanetId" = "Planets"."Id" LEFT JOIN ONLY "MobSpecies" ON "Mobs"."SpeciesId" = "MobSpecies"."Id" LEFT JOIN ONLY "Professions" d ON "Mobs"."DefensiveProfessionId" = d."Id" LEFT JOIN ONLY "Professions" s ON "Mobs"."ScanningProfessionId" = s."Id"',
   Pets: 'SELECT "Pets".*, "Planets"."Name" AS "Planet" FROM ONLY "Pets" LEFT JOIN ONLY "Planets" ON "Pets"."PlanetId" = "Planets"."Id"',
   ProfessionCategories: 'SELECT * FROM ONLY "ProfessionCategories"',
   Professions: 'SELECT "Professions".*, "ProfessionCategories"."Name" AS "Category" FROM ONLY "Professions" INNER JOIN ONLY "ProfessionCategories" ON "Professions"."CategoryId" = "ProfessionCategories"."Id"',
@@ -88,6 +89,7 @@ const queries = {
   Signs: 'SELECT * FROM ONLY "Signs"',
   SkillCategories: 'SELECT * FROM ONLY "SkillCategories"',
   Skills: 'SELECT "Skills".*, "SkillCategories"."Name" AS "Category" FROM ONLY "Skills" INNER JOIN ONLY "SkillCategories" ON "Skills"."CategoryId" = "SkillCategories"."Id"',
+  Strongboxes: 'SELECT * FROM ONLY "Strongboxes"',
   StorageContainers: 'SELECT "StorageContainers".*, "Planets"."Name" AS "Planet" FROM ONLY "StorageContainers" LEFT JOIN ONLY "Planets" ON "StorageContainers"."PlanetId" = "Planets"."Id"',
   TeleportationChips: 'SELECT "TeleportationChips".*, "Professions"."Name" AS "Profession", "Materials"."Name" AS "Ammo" FROM ONLY "TeleportationChips" LEFT JOIN ONLY "Professions" ON "TeleportationChips"."ProfessionId" = "Professions"."Id" LEFT JOIN ONLY "Materials" ON "TeleportationChips"."AmmoId" = "Materials"."Id"',
   Tiers: 'SELECT * FROM (SELECT "Tiers".*, "Items"."Name" || \' Tier \' || "Tiers"."Tier" AS "Name", "Items"."Name" AS "Item" FROM ONLY "Tiers" INNER JOIN ONLY "Items" ON "Tiers"."ItemId" = "Items"."Id" WHERE "IsArmorSet" = 0 UNION ALL SELECT "Tiers".*, "ArmorSets"."Name" || \' Tier \' || "Tiers"."Tier" AS "Name", "ArmorSets"."Name" AS "Item" FROM ONLY "Tiers" INNER JOIN ONLY "ArmorSets" ON "Tiers"."ItemId" = "ArmorSets"."Id" WHERE "IsArmorSet" = 1)',
@@ -189,7 +191,7 @@ async function _getEffectsOnUse(ids) {
     return {};
   }
 
-  let { rows } = await pool.query(`SELECT "Effects"."Id", "Effects"."Name", "Effects"."Unit", "Effects"."Notes", "EffectsOnUse"."DurationSeconds", "EffectsOnUse"."Strength", "EffectsOnUse"."ItemId" FROM ONLY "EffectsOnUse" INNER JOIN ONLY "Effects" ON "EffectsOnUse"."EffectId" = "Effects"."Id" WHERE "EffectsOnUse"."ItemId" IN (${ids.join(',')})`);
+  let { rows } = await pool.query(`SELECT "Effects"."Id", "Effects"."Name", "Effects"."Unit", "Effects"."Description", "EffectsOnUse"."DurationSeconds", "EffectsOnUse"."Strength", "EffectsOnUse"."ItemId" FROM ONLY "EffectsOnUse" INNER JOIN ONLY "Effects" ON "EffectsOnUse"."EffectId" = "Effects"."Id" WHERE "EffectsOnUse"."ItemId" IN (${ids.join(',')})`);
 
   return _groupBy(rows, 'ItemId');
 }
@@ -199,7 +201,7 @@ async function _getEffectsOnEquip(ids) {
     return {};
   }
 
-  let { rows } = await pool.query(`SELECT "Effects"."Id", "Effects"."Name", "Effects"."Unit", "Effects"."Notes", "EffectsOnEquip"."Strength", "EffectsOnEquip"."ItemId" FROM ONLY "EffectsOnEquip" INNER JOIN ONLY "Effects" ON "EffectsOnEquip"."EffectId" = "Effects"."Id" WHERE "EffectsOnEquip"."ItemId" IN (${ids.join(',')})`);
+  let { rows } = await pool.query(`SELECT "Effects"."Id", "Effects"."Name", "Effects"."Unit", "Effects"."Description", "EffectsOnEquip"."Strength", "EffectsOnEquip"."ItemId" FROM ONLY "EffectsOnEquip" INNER JOIN ONLY "Effects" ON "EffectsOnEquip"."EffectId" = "Effects"."Id" WHERE "EffectsOnEquip"."ItemId" IN (${ids.join(',')})`);
 
   return _groupBy(rows, 'ItemId');
 }
@@ -209,7 +211,7 @@ async function _getEffectsOnArmorSetEquipFromArmor(ids) {
     return {};
   }
 
-  let { rows } = await pool.query(`SELECT "Effects"."Id", "Effects"."Name", "Effects"."Unit", "Effects"."Notes", "EffectsOnSetEquip"."Strength", "EffectsOnSetEquip"."MinSetPieces", "Armors"."Id" AS "ItemId" FROM ONLY "EffectsOnSetEquip" INNER JOIN ONLY "Armors" ON "EffectsOnSetEquip"."SetId" = "Armors"."SetId" INNER JOIN ONLY "Effects" ON "EffectsOnSetEquip"."EffectId" = "Effects"."Id" WHERE "Armors"."Id" IN (${ids.join(',')})`);
+  let { rows } = await pool.query(`SELECT "Effects"."Id", "Effects"."Name", "Effects"."Unit", "Effects"."Description", "EffectsOnSetEquip"."Strength", "EffectsOnSetEquip"."MinSetPieces", "Armors"."Id" AS "ItemId" FROM ONLY "EffectsOnSetEquip" INNER JOIN ONLY "Armors" ON "EffectsOnSetEquip"."SetId" = "Armors"."SetId" INNER JOIN ONLY "Effects" ON "EffectsOnSetEquip"."EffectId" = "Effects"."Id" WHERE "Armors"."Id" IN (${ids.join(',')})`);
 
   return _groupBy(rows, 'ItemId');
 }
@@ -220,7 +222,7 @@ async function _getEffectsOnEquipSetEquipFromEquipSet(ids) {
   }
 
   let { rows } = await pool.query(`
-    SELECT "Effects"."Id", "Effects"."Name", "Effects"."Unit", "Effects"."Notes", "EffectsOnSetEquip"."Strength", "EffectsOnSetEquip"."MinSetPieces", "EquipSetItems"."ItemId", "EquipSets"."Name" AS "SetName", "EquipSets"."Id" AS "SetId"
+    SELECT "Effects"."Id", "Effects"."Name", "Effects"."Unit", "Effects"."Description", "EffectsOnSetEquip"."Strength", "EffectsOnSetEquip"."MinSetPieces", "EquipSetItems"."ItemId", "EquipSets"."Name" AS "SetName", "EquipSets"."Id" AS "SetId"
       FROM ONLY "EffectsOnSetEquip"
     INNER JOIN ONLY "EquipSetItems" ON "EffectsOnSetEquip"."SetId" = "EquipSetItems"."EquipSetId" + ${idOffsets.equipSet}
     INNER JOIN ONLY "EquipSets" ON "EffectsOnSetEquip"."SetId" = "EquipSets"."Id" + ${idOffsets.equipSet}
@@ -237,7 +239,7 @@ function _formatEffectOnUse(x) {
       DurationSeconds: x.DurationSeconds !== null ? Number(x.DurationSeconds) : null,
       Strength: x.Strength !== null ? Number(x.Strength) : null,
       Unit: x.Unit,
-      Notes: x.Notes
+      Description: x.Description
     },
     Links: {
       "$Url": `/effects/${x.Id}`
@@ -251,7 +253,7 @@ function _formatEffectOnEquip(x) {
     Values: {
       Strength: x.Strength !== null ? Number(x.Strength) : null,
       Unit: x.Unit,
-      Notes: x.Notes
+      Description: x.Description
     },
     Links: {
       "$Url": `/effects/${x.Id}`
@@ -266,7 +268,7 @@ function _formatEffectOnSetEquip(x) {
       Strength: x.Strength !== null ? Number(x.Strength) : null,
       MinSetPieces: x.MinSetPieces !== null ? Number(x.MinSetPieces) : null,
       Unit: x.Unit,
-      Notes: x.Notes
+      Description: x.Description
     },
     Links: {
       "$Url": `/effects/${x.Id}`
@@ -361,6 +363,7 @@ function formatArea(x) {
     Id: x.Id,
     Name: x.Name,
     Properties: {
+      Description: x.Description,
       Type: x.Type,
       Shape: x.Shape,
       Data: x.Data,
@@ -405,6 +408,7 @@ function formatLocation(x) {
     Id: x.Id,
     Name: x.Name,
     Properties: {
+      Description: x.Description,
       Type: x.Type,
       Coordinates: {
         Longitude: x.Longitude,
@@ -441,6 +445,7 @@ function formatPlanet(x) {
     Id: x.Id,
     Name: x.Name,
     Properties: {
+      Description: x.Description,
       TechnicalName: x.TechnicalName,
       Map: {
         X: x.X,
@@ -469,6 +474,7 @@ function formatTeleporter(x) {
     Id: x.Id,
     Name: x.Name,
     Properties: {
+      Description: x.Description,
       Coordinates: {
         Longitude: x.Longitude,
         Latitude: x.Latitude,
@@ -495,7 +501,13 @@ async function getMobSpawns(mobs = null) {
   let whereClause = '';
 
   if (mobs != null && mobs.length > 0) {
-    whereClause = pgp.as.format(' WHERE (SELECT COUNT(*) FROM "MobSpawnMaturities" WHERE "SpawnId" = "MobSpawns"."Id" AND "MaturityId" IN (SELECT DISTINCT "MobMaturities"."Id" FROM "MobMaturities" INNER JOIN "Mobs" ON "MobMaturities"."MobId" = "Mobs"."Id" WHERE "Mobs"."Name" IN ($1:csv))) > 0', [mobs]);
+    if (mobs.every(mob => typeof mob === 'number')) {
+      whereClause = pgp.as.format(' WHERE (SELECT COUNT(*) FROM "MobSpawnMaturities" WHERE "SpawnId" = "MobSpawns"."Id" AND "MaturityId" IN (SELECT DISTINCT "MobMaturities"."Id" FROM "MobMaturities" WHERE "MobMaturities"."MobId" IN ($1:csv))) > 0', [mobs]);
+    } else if (mobs.every(mob => typeof mob === 'string')) {
+      whereClause = pgp.as.format(' WHERE (SELECT COUNT(*) FROM "MobSpawnMaturities" WHERE "SpawnId" = "MobSpawns"."Id" AND "MaturityId" IN (SELECT DISTINCT "MobMaturities"."Id" FROM "MobMaturities" INNER JOIN "Mobs" ON "MobMaturities"."MobId" = "Mobs"."Id" WHERE "Mobs"."Name" IN ($1:csv))) > 0', [mobs]);
+    } else {
+      throw new Error('Invalid mobs array: must be an array of either integers or strings');
+    }
   }
 
   return await _getObjects(queries.MobSpawns + whereClause, formatMobSpawn, _getMobSpawnMaturities);
@@ -516,12 +528,13 @@ async function _getMobSpawnMaturities(spawnIds) {
 }
 
 function formatMobSpawn(x, data) {
-  let maturities = (data[x.Id] ?? []).map(_formatMobSpawnMaturity);
+  let maturities = (data[x.Id] ?? (Array.isArray(data) ? data : [])).map(_formatMobSpawnMaturity);
 
   return {
     Id: x.Id,
     Name: x.Name,
     Properties: {
+      Description: x.Description,
       Density: x.Density,
       IsShared: x.IsShared === 1,
       IsEvent: x.IsEvent === 1,
@@ -603,6 +616,7 @@ function formatAbsorber(x) {
     ItemId: x.Id + idOffsets.Absorbers,
     Name: x.Name,
     Properties: {
+      Description: x.Description,
       Weight: x.Weight !== null ? Number(x.Weight) : null,
       Economy: {
         Efficiency: x.Efficiency !== null ? Number(x.Efficiency) : null,
@@ -632,6 +646,7 @@ function formatArmorPlating(x) {
     ItemId: x.Id + idOffsets.ArmorPlatings,
     Name: x.Name,
     Properties: {
+      Description: x.Description,
       Weight: x.Weight !== null ? Number(x.Weight) : null,
       Economy: {
         MaxTT: x.MaxTT !== null ? Number(x.MaxTT) : null,
@@ -693,6 +708,7 @@ async function formatArmorSet(x, data) {
     Id: x.Id,
     Name: x.Name,
     Properties: {
+      Description: x.Description,
       Weight: Number(maleSet.map(y => y.Properties.Weight).reduce((a, b) => a + Number(b), 0).toFixed(8)) ?? null,
       Economy: {
         MaxTT: Number(maleSet.map(y => y.Properties.Economy.MaxTT).reduce((a, b) => a + Number(b), 0).toFixed(8)) ?? null,
@@ -724,6 +740,7 @@ function _formatArmor(x) {
   return {
     Name: x.Name,
     Properties: {
+      Description: x.Description,
       Weight: x.Weight !== null ? Number(x.Weight) : null,
       Gender: x.Gender,
       Slot: x.Slot,
@@ -754,6 +771,7 @@ function formatArmor(x) {
     ItemId: x.Id + idOffsets.Armors,
     Name: x.Name,
     Properties: {
+      Description: x.Description,
       Weight: x.Weight !== null ? Number(x.Weight) : null,
       Gender: x.Gender,
       Slot: x.Slot,
@@ -801,6 +819,7 @@ function formatBlueprintBook(x) {
     ItemId: x.Id + idOffsets.BlueprintBooks,
     Name: x.Name,
     Properties: {
+      Description: x.Description,
       Weight: x.Weight !== null ? Number(x.Weight) : null,
       Economy: {
         Value: x.Value !== null ? Number(x.Value) : null,
@@ -854,6 +873,7 @@ function formatBlueprint(x, ingredients) {
     ItemId: x.Id + idOffsets.Blueprints,
     Name: x.Name,
     Properties: {
+      Description: x.Description,
       Type: x.Type,
       Level: x.Level !== null ? Number(x.Level) : null,
       IsBoosted: x.IsBoosted == 1,
@@ -937,6 +957,7 @@ function formatClothings(x, data) {
     ItemId: x.Id + idOffsets.Clothings,
     Name: x.Name,
     Properties: {
+      Description: x.Description,
       Weight: x.Weight !== null ? Number(x.Weight) : null,
       Gender: x.Gender,
       Type: x.Type,
@@ -983,6 +1004,7 @@ async function formatConsumable(x, effects) {
     ItemId: x.Id + idOffsets.Consumables,
     Name: x.Name,
     Properties: {
+      Description: x.Description,
       Weight: x.Weight !== null ? Number(x.Weight) : null,
       Type: x.Type,
       Economy: {
@@ -1026,6 +1048,7 @@ function formatCreatureControlCapsule(x) {
     ItemId: x.Id + idOffsets.Capsules,
     Name: x.Name,
     Properties: {
+      Description: x.Description,
       Weight: x.Weight !== null ? Number(x.Weight) : null,
       MinProfessionLevel: x.ProfessionLevel !== null ? Number(x.ProfessionLevel) : null,
       Economy: {
@@ -1065,6 +1088,7 @@ function formatDecoration(x) {
     ItemId: x.Id + idOffsets.Decorations,
     Name: x.Name,
     Properties: {
+      Description: x.Description,
       Weight: x.Weight !== null ? Number(x.Weight) : null,
       Economy: {
         MaxTT: x.MaxTT !== null ? Number(x.MaxTT) : null,
@@ -1093,6 +1117,7 @@ async function formatEffectChip(x, data) {
     ItemId: x.Id + idOffsets.EffectChips,
     Name: x.Name,
     Properties: {
+      Description: x.Description,
       Weight: x.Weight !== null ? Number(x.Weight) : null,
       Type: x.Type,
       Range: x.Range !== null ? Number(x.Range) : null,
@@ -1252,6 +1277,7 @@ function formatExcavator(x, data) {
     ItemId: x.Id + idOffsets.Excavators,
     Name: x.Name,
     Properties: {
+      Description: x.Description,
       Weight: x.Weight !== null ? Number(x.Weight) : null,
       UsesPerMinute: x.Uses !== null ? Number(x.Uses) : null,
       Efficiency: x.Efficiency !== null ? Number(x.Efficiency) : null,
@@ -1291,6 +1317,7 @@ function formatFinderAmplifier(x, data) {
     ItemId: x.Id + idOffsets.FinderAmplifiers,
     Name: x.Name,
     Properties: {
+      Description: x.Description,
       Weight: x.Weight !== null ? Number(x.Weight) : null,
       Efficiency: x.Efficiency !== null ? Number(x.Efficiency) : null,
       MinProfessionLevel: x.ProfessionMinimum !== null ? Number(x.ProfessionMinimum) : null,
@@ -1337,6 +1364,7 @@ function formatFinder(x, data) {
     ItemId: x.Id + idOffsets.Finders,
     Name: x.Name,
     Properties: {
+      Description: x.Description,
       Weight: x.Weight !== null ? Number(x.Weight) : null,
       UsesPerMinute: x.Uses !== null ? Number(x.Uses) : null,
       Depth: x.Depth !== null ? Number(x.Depth) : null,
@@ -1377,6 +1405,7 @@ function formatFurniture(x) {
     ItemId: x.Id + idOffsets.Furniture,
     Name: x.Name,
     Properties: {
+      Description: x.Description,
       Weight: x.Weight !== null ? Number(x.Weight) : null,
       Type: x.Type,
       Economy: {
@@ -1409,6 +1438,7 @@ function formatMaterial(x) {
     Id: x.Id,
     Name: x.Name,
     Properties: {
+      Description: x.Description,
       Type: x.Type,
       Weight: x.Weight !== null ? Number(x.Weight) : null,
       Economy: {
@@ -1447,6 +1477,7 @@ function formatMedicalChip(x, data) {
     ItemId: x.Id + idOffsets.MedicalChips,
     Name: x.Name,
     Properties: {
+      Description: x.Description,
       Range: x.Range !== null ? Number(x.Range) : null,
       Weight: x.Weight !== null ? Number(x.Weight) : null,
       MaxHeal: x.Heal !== null ? Number(x.Heal) : null,
@@ -1517,6 +1548,7 @@ function formatMedicalTool(x, data) {
     ItemId: x.Id + idOffsets.MedicalTools,
     Name: x.Name,
     Properties: {
+      Description: x.Description,
       Weight: x.Weight !== null ? Number(x.Weight) : null,
       MaxHeal: x.Heal !== null ? Number(x.Heal) : null,
       MinHeal: x.StartInterval !== null ? Number(x.StartInterval) : null,
@@ -1556,6 +1588,7 @@ function formatMindforceImplant(x) {
     ItemId: x.Id + idOffsets.MindforceImplants,
     Name: x.Name,
     Properties: {
+      Description: x.Description,
       Weight: x.Weight !== null ? Number(x.Weight) : null,
       MaxProfessionLevel: x.MaxLvl !== null ? Number(x.MaxLvl) : null,
       Economy: {
@@ -1585,6 +1618,7 @@ function formatMiscTool(x) {
     ItemId: x.Id + idOffsets.MiscTools,
     Name: x.Name,
     Properties: {
+      Description: x.Description,
       Weight: x.Weight !== null ? Number(x.Weight) : null,
       Type: x.Type,
       Economy: {
@@ -1694,6 +1728,7 @@ function formatMobMaturity(x, data) {
     Id: x.Id,
     Name: x.Name,
     Properties: {
+      Description: x.Description,
       Health: x.Health !== null ? Number(x.Health) : null,
       AttacksPerMinute: x.AttackSpeed !== null ? Number(x.AttackSpeed) : null,
       Level: x.DangerLevel !== null ? Number(x.DangerLevel) : null,
@@ -1750,6 +1785,7 @@ function _formatMobAttack(x) {
       Acid: x.Acid !== null ? Number(x.Acid) : null,
       Electric: x.Electric !== null ? Number(x.Electric) : null,
     },
+    TotalDamage: x.Damage !== null ? Number(x.Damage) : null,
     IsAoE: x.IsAoE === 1,
   }
 }
@@ -1766,8 +1802,9 @@ function formatMobSpecies(x) {
     Id: x.Id,
     Name: x.Name,
     Properties: {
-        CodexBaseCost: x.CodexBaseCost !== null ? Number(x.CodexBaseCost) : null,
-        IsCat4Codex: x.IsCat4Codex === 1,
+      Description: x.Description,
+      CodexBaseCost: x.CodexBaseCost !== null ? Number(x.CodexBaseCost) : null,
+      IsCat4Codex: x.IsCat4Codex === 1,
     },
     Links: {
       "$Url": `/mobspecies/${x.Id}`
@@ -1785,30 +1822,40 @@ async function getMob(idOrName) {
 }
 
 async function _getMobData(ids) {
-  const [mobMaturities, mobLoots] = await Promise.all([
+  const [mobMaturities, mobLoots, mobSpawns] = await Promise.all([
     pool.query(queries.MobMaturities + ` WHERE "MobMaturities"."MobId" IN (${ids.join(',')})`)
       .then(async x => {
         let attacks = await _getMobAttacks(x.rows.map(y => (y.Id)));
 
         return x.rows.map(y => ({ ...y, Attacks: attacks[y.Id] ?? [] }));
       }),
-    pool.query(queries.MobLoots + ` WHERE "MobLoots"."MobId" IN (${ids.join(',')})`).then(x => x.rows)
+    pool.query(queries.MobLoots + ` WHERE "MobLoots"."MobId" IN (${ids.join(',')})`).then(x => x.rows),
+    pool.query(queries.MobSpawns + ` WHERE (SELECT COUNT(*) FROM "MobSpawnMaturities" WHERE "SpawnId" = "MobSpawns"."Id" AND "MaturityId" IN (SELECT DISTINCT "MobMaturities"."Id" FROM "MobMaturities" WHERE "MobMaturities"."MobId" IN (${ids.join(',')}))) > 0`)
+      .then(async x => {
+
+        let maturities = await _getMobSpawnMaturities(x.rows.map(y => (y.Id)));
+
+        return x.rows.map(y => ({ ...y, Maturities: maturities[y.Id] ?? [] }));
+      }),
   ]);
 
   return {
     Maturities: _groupBy(mobMaturities, 'MobId'),
-    Loots: _groupBy(mobLoots, 'MobId')
+    Loots: _groupBy(mobLoots, 'MobId'),
+    MobSpawns: _groupBy(mobSpawns, 'MobId')
   }
 }
 
 function formatMob(x, data) {
   let maturities = (data.Maturities[x.Id] ?? []).map(x => formatMobMaturity(x, x.Attacks));
-  let loots = (data.Loots[x.Id] ?? []).map(formatMobLoot)
+  let loots = (data.Loots[x.Id] ?? []).map(formatMobLoot);
+  let spawns = (data.MobSpawns[x.Id] ?? []).map(x => formatMobSpawn(x, x.Maturities));
 
   return {
     Id: x.Id,
     Name: x.Name,
     Properties: {
+      Description: x.Description,
       AttackRange: x.AttackRange !== null ? Number(x.AttackRange) : null,
       AggressionRange: x.AggressionRange,
       IsSweatable: x.Sweatable === 1,
@@ -1833,11 +1880,16 @@ function formatMob(x, data) {
     },
     Species: {
       Name: x.Species,
+      Properties: {
+        CodexBaseCost: x.CodexBaseCost !== null ? Number(x.CodexBaseCost) : null,
+        IsCat4Codex: x.IsCat4Codex === 1,
+      },
       Links: {
         "$Url": `/mobspecies/${x.SpeciesId}`
       }
     },
     Maturities: maturities,
+    Spawns: spawns,
     Loots: loots,
     Links: {
       "$Url": `/mobs/${x.Id}`
@@ -1855,7 +1907,7 @@ async function getPet(idOrName) {
 }
 
 async function _getPetEffects(ids) {
-  let { rows } = await pool.query(`SELECT "PetEffects".*, "Effects"."Id" AS "EffectId", "Effects"."Name" AS "EffectName", "Effects"."Unit" AS "Unit", "Effects"."Notes" AS "Notes" FROM ONLY "PetEffects" INNER JOIN ONLY "Effects" ON "PetEffects"."EffectId" = "Effects"."Id" WHERE "PetEffects"."PetId" IN (${ids.join(',')})`);
+  let { rows } = await pool.query(`SELECT "PetEffects".*, "Effects"."Id" AS "EffectId", "Effects"."Name" AS "EffectName", "Effects"."Unit" AS "Unit", "Effects"."Description" AS "Description" FROM ONLY "PetEffects" INNER JOIN ONLY "Effects" ON "PetEffects"."EffectId" = "Effects"."Id" WHERE "PetEffects"."PetId" IN (${ids.join(',')})`);
 
   return _groupBy(rows, 'PetId');
 }
@@ -1868,6 +1920,7 @@ function formatPet(x, data) {
     ItemId: x.Id + idOffsets.Pets,
     Name: x.Name,
     Properties: {
+      Description: x.Description,
       Rarity: x.Rarity,
       TrainingDifficulty: x.Training,
       NutrioCapacity: x.NutrioCapacity !== null ? Number(x.NutrioCapacity) : null,
@@ -1896,7 +1949,7 @@ function _formatPetEffect(x) {
     Properties: {
       Strength: x.Strength !== null ? Number(x.Strength) : null,
       Unit: x.Unit,
-      Notes: x.Notes,
+      Description: x.Description,
       NutrioConsumptionPerHour: x.Consumption !== null ? Number(x.Consumption) : null,
       Unlock: {
         Level: x.UnlockLevel !== null ? Number(x.UnlockLevel) : null,
@@ -2019,6 +2072,7 @@ function formatRefiner(x) {
     ItemId: x.Id + idOffsets.Refiners,
     Name: x.Name,
     Properties: {
+      Description: x.Description,
       Weight: x.Weight !== null ? Number(x.Weight) : null,
       UsesPerMinute: x.Uses !== null ? Number(x.Uses) : null,
       Economy: {
@@ -2119,6 +2173,7 @@ function formatScanner(x) {
     ItemId: x.Id + idOffsets.Scanners,
     Name: x.Name,
     Properties: {
+      Description: x.Description,
       Weight: x.Weight !== null ? Number(x.Weight) : null,
       UsesPerMinute: x.Uses !== null ? Number(x.Uses) : null,
       Range: x.Range !== null ? Number(x.Range) : null,
@@ -2149,6 +2204,7 @@ function formatSign(x) {
     ItemId: x.Id + idOffsets.Signs,
     Name: x.Name,
     Properties: {
+      Description: x.Description,
       Weight: x.Weight !== null ? Number(x.Weight) : null,
       ItemPoints: x.ItemPoints !== null ? Number(x.ItemPoints) : null,
       Display: {
@@ -2227,6 +2283,7 @@ function formatSkill(x, data) {
     Id: x.Id,
     Name: x.Name,
     Properties: {
+      Description: x.Description,
       HpIncrease: x.HPIncrease !== null ? Number(x.HPIncrease) : null,
       IsHidden: unlocks !== null && unlocks.length > 0,
     },
@@ -2271,6 +2328,58 @@ function _formatSkillUnlock(x) {
   }
 }
 
+// Strongboxes
+async function getStrongboxes() {
+  return await _getObjects(queries.Strongboxes, formatStrongbox, _getLoots);
+}
+
+async function getStrongbox(idOrName) {
+  return await _getObject(idOrName, queries.Strongboxes, 'Strongboxes', formatStrongbox, _getLoots);
+}
+
+async function _getLoots(ids) {
+  let { rows: loots } = await pool.query(`
+    SELECT "StrongboxLoots".*, "Items"."Name" AS "Name", "Items"."Type" AS "Type", "Items"."Value" AS "Value"`);
+
+  return {
+    Loots: _groupBy(loots, 'StrongboxId'),
+  };
+}
+
+function formatStrongbox(x, data) {
+  let loots = (data.Loots[x.Id] ?? []).map(_formatLoot);
+
+  return {
+    Id: x.Id,
+    ItemId: x.Id + idOffsets.Strongboxes,
+    Name: x.Name,
+    Properties: {
+      Description: x.Description,
+    },
+    Loots: loots,
+  }
+}
+
+function _formatLoot(x) {
+  return {
+    Rarity: x.Rarity,
+    AvailableFrom: x.AvailableFrom,
+    AvailableUntil: x.AvailableUntil,
+    Item: {
+      Name: x.Name,
+      Properties: {
+        Type: x.Type,
+        Economy: {
+          MaxTT: x.Value !== null ? Number(x.Value) : null,
+        }
+      },
+      Links: {
+        "$Url": `/${x.Type.toLowerCase()}s/${x.ItemId % 100000}`
+      }
+    }
+  }
+}
+
 // StorageContainers
 async function getStorageContainers() {
   return await _getObjects(queries.StorageContainers, formatStorageContainer);
@@ -2286,6 +2395,7 @@ function formatStorageContainer(x) {
     ItemId: x.Id + idOffsets.StorageContainers,
     Name: x.Name,
     Properties: {
+      Description: x.Description,
       Weight: x.Weight !== null ? Number(x.Weight) : null,
       ItemCapacity: x.Capacity !== null ? Number(x.Capacity) : null,
       WeightCapacity: x.MaxWeight !== null ? Number(x.MaxWeight) : null,
@@ -2320,6 +2430,7 @@ function formatTeleportationChip(x) {
     ItemId: x.Id + idOffsets.TeleportationChips,
     Name: x.Name,
     Properties: {
+      Description: x.Description,
       Weight: x.Weight !== null ? Number(x.Weight) : null,
       UsesPerMinute: x.UsesPerMinute !== null ? Number(x.UsesPerMinute) : null,
       Range: x.Range !== null ? Number(x.Range) : null,
@@ -2469,6 +2580,7 @@ function formatVehicle(x, data) {
     ItemId: x.Id + idOffsets.Vehicles,
     Name: x.Name,
     Properties: {
+      Description: x.Description,
       Weight: x.Weight !== null ? Number(x.Weight) : null,
       SpawnedWeight: x.SpawnedWeight !== null ? Number(x.SpawnedWeight) : null,
       PassengerCount: x.Passengers !== null ? Number(x.Passengers) : null,
@@ -2570,6 +2682,7 @@ function formatVendor(x, data) {
     Id: x.Id,
     Name: x.Name,
     Properties: {
+      Description: x.Description,
       Coordinates: {
         Longitude: x.Longitude !== null ? Number(x.Longitude) : null,
         Latitude: x.Latitude !== null ? Number(x.Latitude) : null,
@@ -2714,6 +2827,7 @@ function formatWeaponAmplifier(x, data) {
     ItemId: x.Id + idOffsets.WeaponAmplifiers,
     Name: x.Name,
     Properties: {
+      Description: x.Description,
       Weight: x.Weight !== null ? Number(x.Weight) : null,
       Type: x.Type,
       Economy: {
@@ -2759,6 +2873,7 @@ function formatWeaponVisionAttachment(x, data) {
     ItemId: x.Id + idOffsets.WeaponVisionAttachments,
     Name: x.Name,
     Properties: {
+      Description: x.Description,
       Type: x.Type,
       Weight: x.Weight !== null ? Number(x.Weight) : null,
       SkillModification: x.SkillMod !== null ? Number(x.SkillMod) : null,
@@ -2809,6 +2924,7 @@ function formatWeapon(x, data) {
     ItemId: x.Id + idOffsets.Weapons,
     Name: x.Name,
     Properties: {
+      Description: x.Description,
       Weight: x.Weight !== null ? Number(x.Weight) : null,
       Type: x.Type,
       Category: x.Category,
@@ -2949,6 +3065,7 @@ module.exports = { pool,
   getSign, getSigns,
   getSkillCategory, getSkillCategories,
   getSkill, getSkills,
+  getStrongbox, getStrongboxes,
   getStorageContainer, getStorageContainers,
   getTeleportationChip, getTeleportationChips,
   getTier, getTiers,

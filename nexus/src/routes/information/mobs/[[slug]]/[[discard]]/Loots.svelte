@@ -21,10 +21,10 @@
 
   function sortByFrequency(a, b) {
     if (frequencyOrder[a] === undefined && frequencyOrder[b] !== undefined) {
-      return 8 - frequencyOrder[b];
+      return frequencyOrder.length - frequencyOrder[b];
     }
     if (frequencyOrder[a] !== undefined && frequencyOrder[b] === undefined) {
-      return frequencyOrder[a] - 8;
+      return frequencyOrder[a] - frequencyOrder.length;
     }
 
     return frequencyOrder[a] - frequencyOrder[b];

@@ -164,6 +164,7 @@
     constructor: () => ({
       Name: 'New Armor Set',
       Properties: {
+        Description: undefined,
         Weight: undefined,
         Economy: {
           MaxTT: undefined,
@@ -193,6 +194,7 @@
         type: 'group',
         controls: [
           { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v},
+          { label: 'Description', type: 'textarea', '_get': x => x.Properties?.Economy?.Description, '_set': (x, v) => x.Properties.Economy.Description = v},
         ]
       },
       {

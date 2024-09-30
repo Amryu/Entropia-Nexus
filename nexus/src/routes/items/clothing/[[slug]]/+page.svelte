@@ -56,6 +56,7 @@
     constructor: () => ({
       Name: '',
       Properties: {
+        Description: null,
         Weight: null,
         Type: null,
         Slot: null,
@@ -78,9 +79,10 @@
         type: 'group',
         controls: [
           { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
+          { label: 'Description', type: 'textarea', '_get': x => x.Properties.Description, '_set': (x, v) => x.Properties.Description = v },
           { label: 'Weight', type: 'number', '_get': x => x.Properties.Weight, '_set': (x, v) => x.Properties.Weight = v },
           { label: 'Type', type: 'text', '_get': x => x.Properties.Type, '_set': (x, v) => x.Properties.Type = v },
-          // { label: 'Slot', type: 'text', '_get': x => x.Properties.Slot, '_set': (x, v) => x.Properties.Slot = v },
+          { label: 'Slot', type: 'text', '_get': x => x.Properties.Slot, '_set': (x, v) => x.Properties.Slot = v },
           { label: 'Gender', type: 'select', options: _ => ['Both', 'Male', 'Female'], '_get': x => x.Properties.Gender, '_set': (x, v) => x.Properties.Gender = v },
         ]
       },

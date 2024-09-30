@@ -12,6 +12,10 @@ export const FinderAmplifier = {
     "Properties": {
       "type": "object",
       "properties": {
+        "Description": {
+          "type": ["string", "null"],
+          "default": null
+        },
         "Weight": {
           "type": ["number", "null"],
           "default": null
@@ -49,6 +53,7 @@ export const FinderAmplifier = {
         }
       },
       "required": [
+        "Description",
         "Weight",
         "Efficiency",
         "MinProfessionLevel",

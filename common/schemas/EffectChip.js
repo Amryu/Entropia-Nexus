@@ -12,6 +12,10 @@ export const EffectChip = {
     "Properties": {
       "type": "object",
       "properties": {
+        "Description": {
+          "type": ["string", "null"],
+          "default": null
+        },
         "Weight": {
           "type": ["number", "null"],
           "default": null
@@ -104,6 +108,7 @@ export const EffectChip = {
         }
       },
       "required": [
+        "Description",
         "Weight",
         "UsesPerMinute",
         "Range",

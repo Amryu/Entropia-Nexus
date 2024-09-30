@@ -11,6 +11,10 @@ export const Weapon = {
     "Properties": {
       "type": "object",
       "properties": {
+        "Description": {
+          "type": ["string", "null"],
+          "default": null
+        },
         "Weight": {
           "type": ["number", "null"],
           "default": null
@@ -200,6 +204,7 @@ export const Weapon = {
         }
       },
       "required": [
+        "Description",
         "Weight",
         "Type",
         "Category",

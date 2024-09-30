@@ -46,6 +46,7 @@
     constructor: () => ({
       Name: '',
       Properties: {
+        Description: null,
         Rarity: null,
         TrainingDifficulty: null,
         ExportableLevel: null,
@@ -65,6 +66,7 @@
         type: 'group',
         controls: [
           { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
+          { label: 'Description', type: 'textarea', '_get': x => x.Properties.Description, '_set': (x, v) => x.Properties.Description = v },
           { label: 'Rarity', type: 'select', options: _ => ['Common', 'Uncommon', 'Rare', 'Epic', 'Legendary', 'Mythic', 'Unique'], '_get': x => x.Properties.Rarity, '_set': (x, v) => x.Properties.Rarity = v },
           { label: 'Training Difficulty', type: 'select', options: _ => ['Easy', 'Average', 'Hard'], '_get': x => x.Properties.TrainingDifficulty, '_set': (x, v) => x.Properties.TrainingDifficulty = v },
           { label: 'Planet', type: 'select', options: (_, d) => d.planets.filter(x => x.Id > 0).map(x => x.Name), '_get': x => x.Planet.Name, '_set': (x, v) => x.Planet.Name = v },

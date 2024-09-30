@@ -713,12 +713,14 @@ async function applyArmorChanges(client, setId, armors) {
 async function applyBlueprintMaterialsChanges(client, blueprintId, materialEntries) {
   let newMaterials = await Promise.all(materialEntries.map(materialEntry => client.query(`SELECT "Id" FROM ONLY "Materials" WHERE "Name" = $1`, [materialEntry.Item.Name]).then(res => ({ id: res.rows[0].Id, name: materialEntry.Item.Name, amount: materialEntry.Amount }))));
 
-  let newMaterialArrayId = newMaterials.map(material => material.id);
+  const materialIdOffset = 1000000;
+
+  let newMaterialArrayId = newMaterials.map(material => material.id + materialIdOffset);
 
   await Promise.all([
     // Since the primary key is a composite of BlueprintId and MaterialId, we need to delete all rows that don't match the new materials
     client.query(`DELETE FROM ONLY "BlueprintMaterials" WHERE "BlueprintId" = $1 AND "ItemId" NOT IN (SELECT * FROM unnest($2::int[]))`, [blueprintId, newMaterialArrayId]),
-    ...newMaterials.map(material => client.query(`INSERT INTO "BlueprintMaterials" ("BlueprintId", "ItemId", "Amount") VALUES ($1, $2, $3) ON CONFLICT ("BlueprintId", "ItemId") DO UPDATE SET "Amount" = $3`, [blueprintId, material.id, material.amount]))
+    ...newMaterials.map(material => client.query(`INSERT INTO "BlueprintMaterials" ("BlueprintId", "ItemId", "Amount") VALUES ($1, $2, $3) ON CONFLICT ("BlueprintId", "ItemId") DO UPDATE SET "Amount" = $3`, [blueprintId, material.id + materialIdOffset, material.amount]))
   ]);
 }
 
@@ -780,7 +782,7 @@ async function applyPetEffectChanges(client, petId, effects) {
         ("PetId", "EffectId", "Strength", "Consumption", "UnlockLevel", "UnlockPED", "UnlockEssence", "UnlockRareEssence", "UnlockCriteria", "UnlockCriteriaValue")
         VALUES
         ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-      ON CONFLICT ("PetId", "EffectId") DO UPDATE SET
+      ON CONFLICT ("PetId", "EffectId", "Strength") DO UPDATE SET
         "Strength" = $3, "Consumption" = $4, "UnlockLevel" = $5, "UnlockPED" = $6, "UnlockEssence" = $7, "UnlockRareEssence" = $8, "UnlockCriteria" = $9, "UnlockCriteriaValue" = $10`,
         [
           petId,

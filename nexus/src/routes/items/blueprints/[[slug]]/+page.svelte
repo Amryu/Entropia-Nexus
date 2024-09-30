@@ -66,6 +66,7 @@
     constructor: () => ({
       Name: null,
       Properties: {
+        Description: null,
         Type: null,
         Level: null,
         IsBoosted: false,
@@ -95,6 +96,7 @@
         type: 'group',
         controls: [
           { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v},
+          { label: 'Description', type: 'textarea', '_get': x => x.Properties.Description, '_set': (x, v) => x.Properties.Description = v },
           { label: 'Type', type: 'select', options: _ => [
             'Weapon',
             'Textile',

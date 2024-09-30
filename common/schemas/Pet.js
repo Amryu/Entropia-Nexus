@@ -13,6 +13,10 @@ export const Pet = {
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "Description": {
+          "type": ["string", "null"],
+          "default": null
+        },
         "Rarity": {
           "type": "string",
           "enum": ["Common", "Uncommon", "Rare", "Epic", "Legendary", "Mythic", "Unique"]
@@ -39,6 +43,7 @@ export const Pet = {
         }
       },
       "required": [
+        "Description",
         "Rarity",
         "TrainingDifficulty",
         "NutrioCapacity",
