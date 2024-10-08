@@ -35,4 +35,10 @@
   If you'd like to contribute to the site, feel free to send me the information
   directly, or reach out to me on Discord to discuss how you can help.
 </p>
+<br />
+<br />
+<p style="text-align: center;">
+  Check out the Entropia LAN:<br />
+  <a href="https://entropialan.eu" target="_blank" style="width: 100%;"><img src="/lanlogo.jpg" alt="Entropia LAN" style="width: 100%; height: auto; margin: auto; display: block;" /></a>
+</p>
 <a href="/sitemap" style="visibility: hidden;">Sitemap</a>
