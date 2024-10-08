@@ -37,10 +37,11 @@
 
   function getDamageText(attack) {
     let composition = Object.entries(attack.Damage)
+      .filter(([key, value]) => value != null && value > 0)
       .map(([key, value]) => `${key}: ${value}%`)
       .join(', ');
 
-    return `<span style="text-decoration: underline; text-decoration-style: dotted;" title="${composition}">${attack.TotalDamage}</span>`
+    return `<span style="text-decoration: underline; text-decoration-style: dotted;" title="${composition}">${attack.TotalDamage ?? 'N/A'}</span>`
   }
 </script>
 
