@@ -50,6 +50,17 @@ app.get('/schema.json', (req, res) => {
   res.send(swaggerDocs);
 });
 
+function getListParam(req, paramName) {
+  const rawQuery = req.originalUrl.split('?')[1];
+  const rawItemsParam = rawQuery.split('&').find(param => param.startsWith(paramName + '=')).split('=')[1];
+  
+  if (!rawItemsParam || rawItemsParam.trim().length === 0) {
+    return null;
+  }
+
+  return rawItemsParam.split(',').map(item => decodeURIComponent(item).trim()).filter(item => item.length > 0);
+}
+
 // Utility
 /**
  * @swagger
@@ -146,12 +157,7 @@ app.get('/acquisition/:item', (req, res) => {
  *        description: One or more items not found
  */
 app.get('/acquisition', async (req, res) => {
-  const itemsParam = req.query.items;
-  if (!itemsParam || itemsParam.trim().length === 0) {
-    return res.status(400).send('Items cannot be empty');
-  }
-
-  const itemNames = itemsParam.split(',').map(item => item.trim()).filter(item => item.length > 0);
+  const itemNames = getListParam(req, 'items');
 
   if (itemNames.length === 0) {
     return res.status(400).send('Items cannot be empty');
@@ -207,12 +213,7 @@ app.get('/acquisition', async (req, res) => {
  *        description: One or more items not found
  */
 app.get('/usage', async (req, res) => {
-  const itemsParam = req.query.items || req.params.item;
-  if (!itemsParam || itemsParam.trim().length === 0) {
-    return res.status(400).send('Items cannot be empty');
-  }
-
-  const itemNames = itemsParam.split(',').map(item => item.trim()).filter(item => item.length > 0);
+  const itemNames = getListParam(req, 'items');
 
   if (itemNames.length === 0) {
     return res.status(400).send('Items cannot be empty');
