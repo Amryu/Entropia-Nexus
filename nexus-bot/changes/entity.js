@@ -741,8 +741,8 @@ async function applyEffectsOnConsumeChanges(client, id, effects) {
   let newEffectsArrayId = newEffects.map(effect => effect.Id);
 
   await Promise.all([
-    client.query(`DELETE FROM ONLY "EffectsOnConsume" WHERE "ItemId" = $1 AND "EffectId" NOT IN (SELECT * FROM unnest($2::int[]))`, [id, newEffectsArrayId]),
-    ...newEffects.map(effect => client.query(`INSERT INTO "EffectsOnConsume" ("ItemId", "EffectId", "Strength", "DurationSeconds") VALUES ($1, $2, $3, $4) ON CONFLICT ("ItemId", "EffectId") DO UPDATE SET "Strength" = $3, "DurationSeconds" = $4`, [id, effect.Id, effect.Values.Strength, effect.Values.DurationSeconds]))
+    client.query(`DELETE FROM ONLY "EffectsOnConsume" WHERE "ConsumableId" = $1 AND "EffectId" NOT IN (SELECT * FROM unnest($2::int[]))`, [id, newEffectsArrayId]),
+    ...newEffects.map(effect => client.query(`INSERT INTO "EffectsOnConsume" ("ConsumableId", "EffectId", "Strength", "DurationSeconds") VALUES ($1, $2, $3, $4) ON CONFLICT ("ConsumableId", "EffectId") DO UPDATE SET "Strength" = $3, "DurationSeconds" = $4`, [id, effect.Id, effect.Values.Strength, effect.Values.DurationSeconds]))
   ]);
 }
 
