@@ -2310,6 +2310,48 @@ app.get('/storagecontainers/:storageContainer', async (req, res) => {
 
 /**
  * @swagger
+ * /strongboxes:
+ *  get:
+ *    description: Get all strongboxes
+ *  responses:
+ *    '200':
+ *      description: A list of strongboxes
+ */
+app.get('/strongboxes', async (req, res) => {
+  res.json(await db.getStrongboxes());
+});
+
+/**
+ * @swagger
+ * /strongboxes/{strongbox}:
+ *  get:
+ *    description: Get a strongbox by name or id
+ *    parameters:
+ *      - in: path
+ *        name: strongbox
+ *        schema:
+ *          type: string
+ *        required: true
+ *        description: The name or id of the strongbox
+ *    responses:
+ *     '200':
+ *      description: The strongbox
+ *    '404':
+ *       description: Strongbox not found
+ */
+app.get('/strongboxes/:strongbox', async (req, res) => {
+  let result = await db.getStrongbox(req.params.strongbox);
+
+  if (result) {
+    res.json(result);
+  }
+  else {
+    res.status(404).send();
+  }
+});
+
+/**
+ * @swagger
  * /teleportationchips:
  *  get:
  *    description: Get all teleportation chips

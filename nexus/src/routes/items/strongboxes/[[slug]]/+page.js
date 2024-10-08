@@ -5,7 +5,7 @@ import { decodeURIComponentSafe, handlePageLoad } from '$lib/util';
 
 export async function load({ fetch, params, url }) {
   const config = {
-    items: 'materials',
+    items: 'strongboxes',
     types: { tierable: false },
     name: decodeURIComponentSafe(params.slug),
     type: null,

@@ -20,7 +20,7 @@
   }
 
   function getTotalDamage(attack) {
-    return attack.Damage.Impact + attack.Damage.Cut + attack.Damage.Stab + attack.Damage.Penetration + attack.Damage.Shrapnel + attack.Damage.Burn + attack.Damage.Cold + attack.Damage.Acid + attack.Damage.Electric;
+    return attack.TotalDamage;
   }
 
   function getTotalDefense(maturity) {
@@ -34,16 +34,19 @@
       + maturity.Properties.Defense.Acid
       + maturity.Properties.Defense.Electric;
   }
+
+  function getDamageText(attack) {
+    let composition = Object.entries(attack.Damage)
+      .map(([key, value]) => `${key}: ${value}%`)
+      .join(', ');
+
+    return `<span style="text-decoration: underline; text-decoration-style: dotted;" title="${composition}">${attack.TotalDamage}</span>`
+  }
 </script>
 
 <style>
   .container {
     display: flex;
-  }
-
-  .damage-table {
-    margin-left: 20px;
-    text-align: center;
   }
 </style>
   
@@ -57,7 +60,7 @@
     <Table
       header = { 
         {
-          values: ['Name', 'Level', 'HP', 'HP/Lv', 'Regen', 'Damage', 'Miss Chance', 'Defense', 'Tameable']
+          values: ['Name', 'Level', 'HP', 'HP/Lv', 'Regen', 'Primary', 'Secondary', 'Tertiary', 'Defense', 'Tameable']
         }
       }
       data = {
@@ -68,8 +71,9 @@
             maturity.Properties?.Health ?? 'N/A',
             maturity.Properties?.Health != null && maturity.Properties?.Level != null ? (maturity.Properties.Health / Math.max(maturity.Properties.Level, 1)).toFixed(2) : 'N/A',
             maturity.Properties?.RegenerationAmount != null ? `${maturity.Properties?.RegenerationAmount}/s` : 'N/A',
-            maturity.Attacks.length === 1 ? getTotalDamage(maturity.Attacks[0]) : maturity.Attacks.map(x => `${x.Name}: ${getTotalDamage(x)}`).join('<br />'),
-            maturity.Properties?.MissChance != null ? `${maturity.Properties?.MissChance}%` : 'N/A',
+            maturity.Attacks.length === 1 ? getDamageText(maturity.Attacks[0]) : 'N/A',
+            maturity.Attacks.length > 1 ? getDamageText(maturity.Attacks[1]) : 'N/A',
+            maturity.Attacks.length > 2 ? getDamageText(maturity.Attacks[2]) : 'N/A',
             getTotalDefense(maturity),
             maturity.Properties?.TamingLevel > 0 ? `Level ${maturity.Properties.TamingLevel}` : 'No',
           ]
@@ -77,32 +81,5 @@
       }
       options={{searchable: "true"}} />
   </div>
-  <div class="damage-table">
-  <select bind:value={selectedMaturity}>
-    <option value={-1}>Select maturity</option>
-    {#each maturities as maturity, index}
-      <option value={index}>{maturity.Name}</option>
-    {/each}
-  </select>
-  <br />
-  <br />
-  {#if selectedMaturity >= 0}
-    {#if maturities[selectedMaturity].Attacks.length === 0}
-      <div>No attacks available.</div>
-    {:else}
-      <Table
-        header = { 
-          {
-            values: ['Type', ...maturities[selectedMaturity].Attacks.map(x => x.Name)]
-          }
-        }
-        data = { 
-          ['Stab', 'Cut', 'Impact', 'Penetration', 'Shrapnel', 'Burn', 'Cold', 'Acid', 'Electric'].map(x =>
-            ({ values: [x, ...(maturities[selectedMaturity].Attacks.map(y => y.Damage[x] ?? 0))] }),
-          )
-        } />
-    {/if}
-  {/if}
-</div>
 </div>
 {/if}

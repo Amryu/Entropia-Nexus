@@ -2,6 +2,7 @@ export const UpsertConfigs = {
   Weapon: {
     columns: [
       { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Properties.Description },
       { name: "Weight", value: x => x.Properties.Weight },
       { name: "Class", value: x => x.Properties.Class },
       { name: "Type", value: x => x.Properties.Type },
@@ -48,6 +49,7 @@ export const UpsertConfigs = {
   ArmorSet: {
     columns: [
       { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Properties.Description },
       { name: "Durability", value: x => x.Properties.Economy.Durability },
       { name: "Stab", value: x => x.Properties.Defense.Stab },
       { name: "Cut", value: x => x.Properties.Defense.Cut },
@@ -69,6 +71,7 @@ export const UpsertConfigs = {
   MedicalTool: {
     columns: [
       { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Properties.Description },
       { name: "Weight", value: x => x.Properties.Weight },
       { name: "Heal", value: x => x.Properties.MaxHeal },
       { name: "StartInterval", value: x => x.Properties.MinHeal },
@@ -91,6 +94,7 @@ export const UpsertConfigs = {
   MedicalChip: {
     columns: [
       { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Properties.Description },
       { name: "Level", value: x => x.Properties.Mindforce.Level },
       { name: "Range", value: x => x.Properties.Range },
       { name: "Weight", value: x => x.Properties.Weight },
@@ -119,6 +123,7 @@ export const UpsertConfigs = {
   Refiner: {
     columns: [
       { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Properties.Description },
       { name: "Weight", value: x => x.Properties.Weight },
       { name: "Uses", value: x => x.Properties.UsesPerMinute },
       { name: "MaxTT", value: x => x.Properties.Economy.MaxTT },
@@ -130,6 +135,7 @@ export const UpsertConfigs = {
   Scanner: {
     columns: [
       { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Properties.Description },
       { name: "Weight", value: x => x.Properties.Weight },
       { name: "Range", value: x => x.Properties.Range },
       { name: "Uses", value: x => x.Properties.UsesPerMinute },
@@ -142,6 +148,7 @@ export const UpsertConfigs = {
   Finder: {
     columns: [
       { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Properties.Description },
       { name: "Weight", value: x => x.Properties.Weight },
       { name: "Range", value: x => x.Properties.Range },
       { name: "Depth", value: x => x.Properties.Depth },
@@ -163,6 +170,7 @@ export const UpsertConfigs = {
   Excavator: {
     columns: [
       { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Properties.Description },
       { name: "Weight", value: x => x.Properties.Weight },
       { name: "Efficiency", value: x => x.Properties.Efficiency },
       { name: "Uses", value: x => x.Properties.UsesPerMinute },
@@ -182,6 +190,7 @@ export const UpsertConfigs = {
   TeleportationChip: {
     columns: [
       { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Properties.Description },
       { name: "Level", value: x => x.Properties.Mindforce.Level },
       { name: "Weight", value: x => x.Properties.Weight },
       { name: "Range", value: x => x.Properties.Range },
@@ -203,6 +212,7 @@ export const UpsertConfigs = {
   EffectChip: {
     columns: [
       { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Properties.Description },
       { name: "Level", value: x => x.Properties.Mindforce.Level },
       { name: "Weight", value: x => x.Properties.Weight },
       { name: "Range", value: x => x.Properties.Range },
@@ -226,6 +236,7 @@ export const UpsertConfigs = {
   MiscTool: {
     columns: [
       { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Properties.Description },
       { name: "Weight", value: x => x.Properties.Weight },
       { name: "MaxTT", value: x => x.Properties.Economy.MaxTT },
       { name: "MinTT", value: x => x.Properties.Economy.MinTT },
@@ -241,6 +252,7 @@ export const UpsertConfigs = {
   WeaponAmplifier: {
     columns: [
       { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Properties.Description },
       { name: "Type", value: x => x.Properties.Type},
       { name: "Weight", value: x => x.Properties.Weight },
       { name: "MaxTT", value: x => x.Properties.Economy.MaxTT },
@@ -265,6 +277,7 @@ export const UpsertConfigs = {
   WeaponVisionAttachment: {
     columns: [
       { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Properties.Description },
       { name: "Type", value: x => x.Properties.Type},
       { name: "Weight", value: x => x.Properties.Weight },
       { name: "Zoom", value: x => x.Properties.Zoom },
@@ -282,6 +295,7 @@ export const UpsertConfigs = {
   Absorber: {
     columns: [
       { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Properties.Description },
       { name: "Weight", value: x => x.Properties.Weight },
       { name: "Efficiency", value: x => x.Properties.Economy.Efficiency },
       { name: "MaxTT", value: x => x.Properties.Economy.MaxTT },
@@ -294,6 +308,7 @@ export const UpsertConfigs = {
   FinderAmplifier: {
     columns: [
       { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Properties.Description },
       { name: "Weight", value: x => x.Properties.Weight },
       { name: "Efficiency", value: x => x.Properties.Efficiency },
       { name: "ProfessionMinimum", value: x => x.Properties.MinProfessionLevel },
@@ -308,6 +323,7 @@ export const UpsertConfigs = {
   ArmorPlating: {
     columns: [
       { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Properties.Description },
       { name: "Weight", value: x => x.Properties.Weight },
       { name: "Durability", value: x => x.Properties.Economy.Durability },
       { name: "MaxTT", value: x => x.Properties.Economy.MaxTT },
@@ -329,6 +345,7 @@ export const UpsertConfigs = {
   MindforceImplant: {
     columns: [
       { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Properties.Description },
       { name: "Weight", value: x => x.Properties.Weight },
       { name: "MaxLvl", value: x => x.Properties.MaxProfessionLevel },
       { name: "MaxTT", value: x => x.Properties.Economy.MaxTT },
@@ -341,6 +358,7 @@ export const UpsertConfigs = {
   Blueprint: {
     columns: [
       { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Properties.Description },
       { name: "Type", value: x => x.Properties.Type },
       { name: "Level", value: x => x.Properties.Level },
       { name: "ItemId", value: async (x, c) => await c.query(`SELECT "Id" FROM ONLY "Items" WHERE "Name" = $1`, [x.Product.Name]).then(res => res.rows[0]?.Id) },
@@ -360,6 +378,7 @@ export const UpsertConfigs = {
   Material: {
     columns: [
       { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Properties.Description },
       { name: "Weight", value: x => x.Properties.Weight },
       { name: "Value", value: x => x.Properties.Economy.MaxTT }
     ],
@@ -369,6 +388,7 @@ export const UpsertConfigs = {
   Pet: {
     columns: [
       { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Properties.Description },
       { name: "Rarity", value: x => x.Properties.Rarity },
       { name: "Training", value: x => x.Properties.TrainingDifficulty },
       { name: "NutrioCapacity", value: x => x.Properties.NutrioCapacity },
@@ -384,6 +404,7 @@ export const UpsertConfigs = {
   Consumable: {
     columns: [
       { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Properties.Description },
       { name: "Weight", value: x => x.Properties.Weight },
       { name: "Type", value: x => x.Properties.Type },
       { name: "Value", value: x => x.Properties.Economy.MaxTT }
@@ -395,6 +416,7 @@ export const UpsertConfigs = {
   Capsule: {
     columns: [
       { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Properties.Description },
       { name: "Weight", value: x => x.Properties.Weight },
       { name: "ProfessionLevel", value: x => x.Properties.MinProfessionLevel },
       { name: "MaxTT", value: x => x.Properties.Economy.MaxTT },
@@ -407,6 +429,7 @@ export const UpsertConfigs = {
   Vehicle: {
     columns: [
       { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Properties.Description },
       { name: "Passengers", value: x => x.Properties.PassengerCount },
       { name: "Weight", value: x => x.Properties.Weight },
       { name: "SpawnedWeight", value: x => x.Properties.SpawnedWeight },
@@ -439,6 +462,7 @@ export const UpsertConfigs = {
   Furniture: {
     columns: [
       { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Properties.Description },
       { name: "Weight", value: x => x.Properties.Weight },
       { name: "Type", value: x => x.Properties.Type },
       { name: "MaxTT", value: x => x.Properties.Economy.MaxTT },
@@ -449,6 +473,7 @@ export const UpsertConfigs = {
   Decoration: {
     columns: [
       { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Properties.Description },
       { name: "Weight", value: x => x.Properties.Weight },
       { name: "MaxTT", value: x => x.Properties.Economy.MaxTT },
     ],
@@ -458,6 +483,7 @@ export const UpsertConfigs = {
   StorageContainer: {
     columns: [
       { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Properties.Description },
       { name: "Weight", value: x => x.Properties.Weight },
       { name: "Capacity", value: x => x.Properties.ItemCapacity },
       { name: "MaxWeight", value: x => x.Properties.WeightCapacity },
@@ -466,9 +492,19 @@ export const UpsertConfigs = {
     offset: 9300000,
     table: "StorageContainers"
   },
+  Strongbox: {
+    columns: [
+      { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Properties.Description },
+    ],
+    offset: 12000000,
+    table: "Strongboxes",
+    relationChangeFunc: async (client, id, x) => await applyStrongboxLootsChanges(client, id - 12000000, x.Loots)
+  },
   Sign: {
     columns: [
       { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Properties.Description },
       { name: "Weight", value: x => x.Properties.Weight },
       { name: "ItemPoints", value: x => x.Properties.ItemPoints },
       { name: "AspectRatio", value: x => x.Properties.Display.AspectRatio },
@@ -486,6 +522,7 @@ export const UpsertConfigs = {
   Clothing: {
     columns: [
       { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Properties.Description },
       { name: "Weight", value: x => x.Properties.Weight },
       { name: "Type", value: x => x.Properties.Type },
       { name: "Gender", value: x => x.Properties.Gender },
@@ -548,6 +585,7 @@ export const UpsertConfigs = {
   Vendor: {
     columns: [
       { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Properties.Description },
       { name: "PlanetId", value: async (x, c) => await c.query(`SELECT "Id" FROM ONLY "Planets" WHERE "Name" = $1`, [x.Planet.Name]).then(res => res.rows[0]?.Id) },
       { name: "Longitude", value: x => x.Properties.Coordinates.Longitude },
       { name: "Latitude", value: x => x.Properties.Coordinates.Latitude },
@@ -559,6 +597,7 @@ export const UpsertConfigs = {
   Mob: {
     columns: [
       { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Properties.Description },
       { name: "SpeciesId", value: async (x, c) => await c.query(`SELECT "Id" FROM ONLY "MobSpecies" WHERE "Name" = $1`, [x.Species.Name]).then(res => res.rows[0]?.Id) },
       { name: "PlanetId", value: async (x, c) => await c.query(`SELECT "Id" FROM ONLY "Planets" WHERE "Name" = $1`, [x.Planet.Name]).then(res => res.rows[0]?.Id) },
       { name: "AttackRange", value: x => x.Properties.AttackRange },
@@ -619,11 +658,11 @@ async function applyMobAttackChanges(client, maturityId, attacks) {
     client.query(`DELETE FROM ONLY "MobAttacks" WHERE "MaturityId" = $1 AND "Name" NOT IN (SELECT * FROM unnest($2::text[]))`, [maturityId, attacks.map(x => x.Name)]),
     ...attacks.map(attack => client.query(`
       INSERT INTO "MobAttacks"
-      ("MaturityId", "Name", "Stab", "Cut", "Impact", "Penetration", "Shrapnel", "Burn", "Cold", "Acid", "Electric", "IsAoE")
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      ("MaturityId", "Name", "Stab", "Cut", "Impact", "Penetration", "Shrapnel", "Burn", "Cold", "Acid", "Electric", "IsAoE", "Damage")
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
       ON CONFLICT ("MaturityId", "Name") DO UPDATE SET
-      "Stab" = $3, "Cut" = $4, "Impact" = $5, "Penetration" = $6, "Shrapnel" = $7, "Burn" = $8, "Cold" = $9, "Acid" = $10, "Electric" = $11, "IsAoE" = $12`,
-      [maturityId, attack.Name, attack.Damage.Stab, attack.Damage.Cut, attack.Damage.Impact, attack.Damage.Penetration, attack.Damage.Shrapnel, attack.Damage.Burn, attack.Damage.Cold, attack.Damage.Acid, attack.Damage.Electric, attack.IsAoE ? 1 : 0])
+      "Stab" = $3, "Cut" = $4, "Impact" = $5, "Penetration" = $6, "Shrapnel" = $7, "Burn" = $8, "Cold" = $9, "Acid" = $10, "Electric" = $11, "IsAoE" = $12, "Damage" = $13`,
+      [maturityId, attack.Name, attack.Damage.Stab, attack.Damage.Cut, attack.Damage.Impact, attack.Damage.Penetration, attack.Damage.Shrapnel, attack.Damage.Burn, attack.Damage.Cold, attack.Damage.Acid, attack.Damage.Electric, attack.IsAoE ? 1 : 0, attack.TotalDamage])
     )
   ]);
 }
@@ -834,5 +873,17 @@ async function applyAttachmentSlotChanges(client, vehicleId, attachmentSlots) {
     // Since the primary key is a composite of VehicleId and SlotName, we need to delete all rows that don't match the new attachment slots
     ...attachmentSlotsToAdd.map(slot => client.query(`INSERT INTO "VehicleAttachmentSlots" ("VehicleId", "AttachmentId") VALUES ($1, $2)`, [vehicleId, attachmentSlotIds.find(x => x.name === slot).id])),
     ...attachmentSlotsToRemove.map(slot => client.query(`DELETE FROM ONLY "VehicleAttachmentSlots" WHERE "VehicleId" = $1 AND "AttachmentId" = $2`, [vehicleId, attachmentSlotIds.find(x => x.name === slot).id]))
+  ]);
+}
+
+async function applyStrongboxLootsChanges(client, strongboxId, loots) {
+  let newLoots = await Promise.all(loots.map(loot => client.query(`SELECT "Id" FROM ONLY "Items" WHERE "Name" = $1`, [loot.Item.Name]).then(res => ({ id: res.rows[0].Id, ...loot }))));
+
+  let newLootArrayId = newLoots.map(loot => loot.id);
+
+  await Promise.all([
+    // Since the primary key is a composite of StrongboxId and ItemId, we need to delete all rows that don't match the new loots
+    client.query(`DELETE FROM ONLY "StrongboxLoots" WHERE "StrongboxId" = $1 AND "ItemId" NOT IN (SELECT * FROM unnest($2::int[]))`, [strongboxId, newLootArrayId]),
+    ...newLoots.map(loot => client.query(`INSERT INTO "StrongboxLoots" ("StrongboxId", "ItemId", "Rarity", "AvailableFrom", "AvailableUntil") VALUES ($1, $2, $3, $4, $5) ON CONFLICT ("StrongboxId", "ItemId") DO UPDATE SET "Rarity" = $3, "AvailableFrom" = $4, "AvailableUntil" = $5`, [strongboxId, loot.id, loot.Rarity, loot.AvailableFrom, loot.AvailableUntil]))
   ]);
 }

@@ -172,7 +172,7 @@
   }
 
   function getCost(item) {
-    return item.Properties?.Economy?.Decay != null && item.Properties?.Economy?.AmmoBurn >= 0
+    return item.Properties?.Economy?.Decay != null && (item.Properties?.Economy?.AmmoBurn == undefined || item.Properties?.Economy?.AmmoBurn >= 0)
       ? (item.Properties?.Economy?.Decay + (item.Properties?.Economy?.AmmoBurn ?? 0) / 100)
       : null;
   }

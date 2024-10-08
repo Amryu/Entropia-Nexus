@@ -44,24 +44,9 @@ export async function load({ fetch, params, url }) {
   response.items = itemsGrouped;
   
   if (response.object) {
-    let slug = decodeURIComponentSafe(params.slug);
-
-    let [species, maturities, loots, mobSpawns] = await Promise.all([
-      response.object?.Species != null && response.object?.Species.Name != null ? apiCall(fetch, response.object.Species.Links.$Url) : Promise.resolve({ Name: null }),
-      apiCall(fetch, `/mobmaturities?Mob=${encodeURIComponent(slug)}`),
-      apiCall(fetch, `/mobloots?Mob=${encodeURIComponent(slug)}`),
-      apiCall(fetch, `/mobspawns?Mob=${encodeURIComponent(slug)}`)
-    ]);
-
-    await Promise.all(loots.map(async (x) => {
+    await Promise.all(response.object.Loots.map(async (x) => {
       x.Item.Links.$ItemUrl = await resolveItemLink(fetch, x.Item);
     }));
-
-    response.object.Species = species;
-    response.object.Maturities = maturities;
-  
-    response.additional.loots = loots;
-    response.additional.mobSpawns = mobSpawns;
   }
 
   return response;

@@ -28,7 +28,8 @@
       { label: 'Consumables', url: 'consumables' },
       { label: 'Vehicles', url: 'vehicles' },
       { label: 'Furnishings', url: 'furnishings' },
-      { label: 'Clothing', url: 'clothing' }
+      { label: 'Clothing', url: 'clothing' },
+      { label: 'Strongboxes', url: 'strongboxes' } 
     ],
     'Information': [
       { label: 'Mobs', url: 'mobs' },

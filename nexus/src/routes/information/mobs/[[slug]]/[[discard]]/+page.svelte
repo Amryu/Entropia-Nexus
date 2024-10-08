@@ -57,22 +57,18 @@
 
   function getDamageSpread(mob, name) {
     let attackSpreads = mob.Maturities.map(x => {
-      let attack = x.Attacks.find(y => y.Name === name)
-
+      let attack = x.Attacks.find(y => y.Name === name);
       if (attack == null) return null;
-
-      let total = attack.Damage.Stab + attack.Damage.Cut + attack.Damage.Impact + attack.Damage.Penetration + attack.Damage.Shrapnel + attack.Damage.Burn + attack.Damage.Cold + attack.Damage.Acid + attack.Damage.Electric;
-
       return {
-        Impact: attack.Damage.Impact / total,
-        Cut: attack.Damage.Cut / total,
-        Stab: attack.Damage.Stab / total,
-        Penetration: attack.Damage.Penetration / total,
-        Shrapnel: attack.Damage.Shrapnel / total,
-        Burn: attack.Damage.Burn / total,
-        Cold: attack.Damage.Cold / total,
-        Acid: attack.Damage.Acid / total,
-        Electric: attack.Damage.Electric / total,
+        Impact: attack.Damage.Impact,
+        Cut: attack.Damage.Cut,
+        Stab: attack.Damage.Stab,
+        Penetration: attack.Damage.Penetration,
+        Shrapnel: attack.Damage.Shrapnel,
+        Burn: attack.Damage.Burn,
+        Cold: attack.Damage.Cold,
+        Acid: attack.Damage.Acid,
+        Electric: attack.Damage.Electric,
       }
     }).filter(x => x != null).flat();
 
@@ -134,18 +130,17 @@
       Damage: {
         Primary: {
           Label: 'Primary',
-          // Find all damage spreads that aren't 0
           Value: primaryDamageSpread != null
-            ? Object.entries(primaryDamageSpread).filter(x => x[1] > 0).map(x => `${x[0]}: ${(x[1] * 100).toFixed(1)}%`)
+            ? Object.entries(primaryDamageSpread).filter(x => x[1] > 0).map(x => `${x[0]}: ${x[1].toFixed(1)}%`)
             : 'N/A',
         },
         Secondary: secondaryDamageSpread != null ? {
           Label: 'Secondary',
-          Value: Object.entries(secondaryDamageSpread).filter(x => x[1] > 0).map(x => `${x[0]}: ${(x[1] * 100).toFixed(1)}%`),
+          Value: Object.entries(secondaryDamageSpread).filter(x => x[1] > 0).map(x => `${x[0]}: ${x[1].toFixed(1)}%`)
         } : null,
         Tertiary: tertiaryDamageSpread != null ? {
           Label: 'Tertiary',
-          Value: Object.entries(tertiaryDamageSpread).filter(x => x[1] > 0).map(x => `${x[0]}: ${(x[1] * 100).toFixed(1)}%`),
+          Value: Object.entries(tertiaryDamageSpread).filter(x => x[1] > 0).map(x => `${x[0]}: ${x[1].toFixed(1)}%`)
         } : null,
       },
       Skill: {
@@ -302,12 +297,14 @@
                     Acid: null,
                     Electric: null
                   },
+                  TotalDamage: null,
                   IsAoE: false
                 }),
                 controls: [
                   { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
+                  { label: 'Damage', type: 'number', '_get': x => x.TotalDamage, '_set': (x, v) => x.TotalDamage = v },
                   {
-                    label: 'Damage',
+                    label: 'Composition',
                     type: 'multi',
                     fields: ['Stab', 'Cut', 'Impact', 'Penetration', 'Shrapnel', 'Burn', 'Cold', 'Acid', 'Electric'],
                     '_get': x => [x.Damage.Stab, x.Damage.Cut, x.Damage.Impact, x.Damage.Penetration, x.Damage.Shrapnel, x.Damage.Burn, x.Damage.Cold, x.Damage.Acid, x.Damage.Electric],
@@ -421,10 +418,10 @@
     <Maturities maturities={object.Maturities} />
   </div>
   <div class="flex-item">
-    <Locations mobName={object.Name} mobSpawns={additional.mobSpawns} />
+    <Locations mobName={object.Name} mobSpawns={object.Spawns} />
   </div>
   <div class="flex-item">
-    <Loots loots={additional.loots} />
+    <Loots loots={object.Loots} />
   </div>
   <div class="flex-item">
     <Codex baseCost={object.Species?.Properties?.CodexBaseCost} isCat4={object.Species?.Properties?.IsCat4Codex ?? false} />

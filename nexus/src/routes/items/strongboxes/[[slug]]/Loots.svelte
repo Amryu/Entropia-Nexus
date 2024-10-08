@@ -42,7 +42,7 @@
       options: { sortFunctions: [null, null, null, sortByRarity] }
     }
   }
-  data = {loots.map(loot => ({
+  data = {loots.sort(sortByRarity).map(loot => ({
     values: [
       loot.Item.Name,
       loot.Rarity,

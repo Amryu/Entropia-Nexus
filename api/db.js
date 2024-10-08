@@ -2338,8 +2338,14 @@ async function getStrongbox(idOrName) {
 }
 
 async function _getLoots(ids) {
+  if (ids.length === 0) {
+    return {
+      Loots: {}
+    };
+  }
+
   let { rows: loots } = await pool.query(`
-    SELECT "StrongboxLoots".*, "Items"."Name" AS "Name", "Items"."Type" AS "Type", "Items"."Value" AS "Value"`);
+    SELECT "StrongboxLoots".*, "Items"."Name" AS "Name", "Items"."Type" AS "Type", "Items"."Value" AS "Value" FROM "StrongboxLoots" INNER JOIN ONLY "Items" ON "StrongboxLoots"."ItemId" = "Items"."Id" WHERE "StrongboxLoots"."StrongboxId" IN (${ids.join(',')})`);
 
   return {
     Loots: _groupBy(loots, 'StrongboxId'),
