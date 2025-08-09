@@ -51,16 +51,17 @@ export function locationFilter(location, mapSettings) {
     if (mapSettings.areas.zoneAreas && location.Properties.Type === 'ZoneArea') return true;
     if (mapSettings.areas.pvpAreas && (location.Properties.Type === 'PvpArea' || location.Properties.Type === 'PvpLootArea')) return true;
     if (mapSettings.areas.eventAreas && location.Properties.Type === 'EventArea') return true;
-    if (mapSettings.areas.waveEvents && item.Properties?.Type === 'WaveEventArea') return true;
+    if (mapSettings.areas.waveEvents && location.Properties?.Type === 'WaveEventArea') return true;
   }
 
   if (mapSettings.mobs.enabled && location.Properties.Type === 'MobArea') {
     return true;
-    if (mapSettings.mobs.rookie && false) return true;
-    if (mapSettings.mobs.adept && false) return true;
-    if (mapSettings.mobs.intermediate && false) return true;
-    if (mapSettings.mobs.expert && false) return true;
-    if (mapSettings.mobs.uber && false) return true;
+    // TODO: Add proper mob difficulty filtering
+    // if (mapSettings.mobs.rookie && location.isRookie) return true;
+    // if (mapSettings.mobs.adept && location.isAdept) return true;
+    // if (mapSettings.mobs.intermediate && location.isIntermediate) return true;
+    // if (mapSettings.mobs.expert && location.isExpert) return true;
+    // if (mapSettings.mobs.uber && location.isUber) return true;
   }
 
   return false;

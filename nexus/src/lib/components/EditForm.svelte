@@ -178,8 +178,8 @@
     <br />
     <div style="text-align: right;">
       <button type="button" on:click={cancel} disabled={disabled}>Cancel</button>
-      <button type="button" on:click={save} disabled={disabled}>Save</button>
-      <button type="button" on:click={submit} disabled={disabled || (change && change?.state !== 'Draft')} title={change && change?.state !== 'Draft' ? 'This change was already submitted. Use the Save button to make further changes!' : null}>Submit</button>
+      <button type="button" on:click={save} disabled={disabled}>{change && change?.state !== 'Draft' ? 'Save Changes' : 'Save as Draft'}</button>
+      <button type="button" on:click={submit} disabled={disabled || (change && change?.state !== 'Draft')} title={change && change?.state !== 'Draft' ? 'This change was already submitted. Use the Save button to make further changes!' : null}>Ready for Review</button>
     </div>
   </form>
 {/if}

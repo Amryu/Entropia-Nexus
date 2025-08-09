@@ -5,8 +5,40 @@ const swaggerUi = require('swagger-ui-express');
 const compression = require('compression');
 
 const db = require('./db');
+// Register split endpoint modules (DB + routes colocated) while keeping a single DB pool
+const endpoints = require('./endpoints');
 const app = express();
 const port = 3000;
+
+// --- Automatic async error forwarding ---
+// Wrap async route handlers so thrown/rejected errors reach the global error middleware immediately
+['get','post','put','delete','patch'].forEach(method => {
+  const orig = app[method].bind(app);
+  app[method] = (path, ...handlers) => {
+    const wrapped = handlers.map(h => {
+      if (typeof h === 'function' && h.constructor && h.constructor.name === 'AsyncFunction') {
+        return function wrappedAsyncHandler(req, res, next) {
+          Promise.resolve(h(req, res, next)).catch(next);
+        };
+      }
+      return h;
+    });
+    return orig(path, ...wrapped);
+  };
+});
+
+// --- Request timeout safeguard ---
+// Ensures a hung handler (e.g., unresolved promise) returns a 503 instead of stalling indefinitely
+const ROUTE_TIMEOUT_MS = process.env.ROUTE_TIMEOUT_MS ? parseInt(process.env.ROUTE_TIMEOUT_MS) : 30000;
+app.use((req, res, next) => {
+  res.setTimeout(ROUTE_TIMEOUT_MS, () => {
+    if (!res.headersSent) {
+      console.error('Request timed out:', req.method, req.originalUrl);
+      res.status(503).json({ error: 'Timeout', message: 'Request exceeded time limit' });
+    }
+  });
+  next();
+});
 
 const swaggerOptions = {
   definition: {
@@ -23,8 +55,8 @@ const swaggerOptions = {
       }
     ]
   },
-  // Path to the API docs
-  apis: ['./app.js'],
+  // Path to the API docs (include split endpoint modules too)
+  apis: ['./app.js', './endpoints/*.js'],
 };
 
 const swaggerDocs = swaggerJsDoc(swaggerOptions);
@@ -41,6 +73,9 @@ app.listen(port, () => {
   console.log(`App running on port ${port}.`);
 });
 
+// Attach modular endpoints (idempotent alongside legacy handlers)
+try { endpoints.registerAll(app); } catch (e) { console.warn('Endpoints registration failed:', e?.message); }
+
 function parseItemList(list) {
   return list.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g).map(item => item.trim().replace(/^"(.*)"$/, '$1').replace(/""/g, '"'));
 }
@@ -51,14 +86,24 @@ app.get('/schema.json', (req, res) => {
 });
 
 function getListParam(req, paramName) {
-  const rawQuery = req.originalUrl.split('?')[1];
-  const rawItemsParam = rawQuery.split('&').find(param => param.startsWith(paramName + '=')).split('=')[1];
-  
-  if (!rawItemsParam || rawItemsParam.trim().length === 0) {
-    return null;
-  }
+  try {
+    const rawQuery = req.originalUrl.split('?')[1];
+    if (!rawQuery) return [];
+    
+    const param = rawQuery.split('&').find(param => param.startsWith(paramName + '='));
+    if (!param) return [];
+    
+    const rawItemsParam = param.split('=')[1];
+    
+    if (!rawItemsParam || rawItemsParam.trim().length === 0) {
+      return [];
+    }
 
-  return rawItemsParam.split(',').map(item => decodeURIComponent(item).trim()).filter(item => item.length > 0);
+    return rawItemsParam.split(',').map(item => decodeURIComponent(item).trim()).filter(item => item.length > 0);
+  } catch (error) {
+    console.error('Error parsing list parameter:', error);
+    return [];
+  }
 }
 
 // Utility
@@ -159,7 +204,7 @@ app.get('/acquisition/:item', (req, res) => {
 app.get('/acquisition', async (req, res) => {
   const itemNames = getListParam(req, 'items');
 
-  if (itemNames.length === 0) {
+  if (!itemNames || itemNames.length === 0) {
     return res.status(400).send('Items cannot be empty');
   }
 
@@ -215,7 +260,7 @@ app.get('/acquisition', async (req, res) => {
 app.get('/usage', async (req, res) => {
   const itemNames = getListParam(req, 'items');
 
-  if (itemNames.length === 0) {
+  if (!itemNames || itemNames.length === 0) {
     return res.status(400).send('Items cannot be empty');
   }
 
@@ -337,7 +382,7 @@ app.get('/areas/:area', async (req, res) => {
     res.json(result);
   }
   else {
-    res.status(404).send();
+    res.status(404).send('Area not found');
   }
 });
 
@@ -419,20 +464,24 @@ app.get('/locations/:location', async (req, res) => {
  *      '200':
  *        description: A list of mob spawns
  */
-app.get('/mobspawns', async (req, res) => {
-  if (req.query.Mob && req.query.Mobs) return res.status(400).send('Cannot specify both Mob and Mobs');
+app.get('/mobspawns', async (req, res, next) => {
+  try {
+    if (req.query.Mob && req.query.Mobs) return res.status(400).send('Cannot specify both Mob and Mobs');
 
-  if (req.query.Mob || req.query.Mobs) {
-    let mobs = req.query.Mobs
-      ? parseItemList(req.query.Mobs)
-      : [req.query.Mob];
+    if (req.query.Mob || req.query.Mobs) {
+      let mobs = req.query.Mobs
+        ? parseItemList(req.query.Mobs)
+        : [req.query.Mob];
 
-    if (mobs.length === 0) return res.status(400).send('Mobs cannot be empty');
+      if (mobs.length === 0) return res.status(400).send('Mobs cannot be empty');
 
-    res.json(await db.getMobSpawns(mobs));
-  }
-  else {
-    res.json(await db.getMobSpawns());
+      res.json(await db.getMobSpawns(mobs));
+    }
+    else {
+      res.json(await db.getMobSpawns());
+    }
+  } catch (error) {
+    next(error);
   }
 });
 
@@ -464,8 +513,6 @@ app.get('/mobspawns/:mobSpawn', async (req, res) => {
     res.status(404).send();
   }
 });
-
-// Planets
 
 /**
  * @swagger
@@ -553,6 +600,48 @@ app.get('/teleporters/:teleporter', async (req, res) => {
 
 /**
  * @swagger
+ * /shops:
+ *  get:
+ *    description: Get all shops
+ *    responses:
+ *      '200':
+ *        description: A list of shops
+ */
+app.get('/shops', async (req, res) => {
+  res.json(await db.getShops());
+});
+
+/**
+ * @swagger
+ * /shops/{shop}:
+ *  get:
+ *    description: Get a shop by name or id
+ *    parameters:
+ *      - in: path
+ *        name: shop
+ *        schema:
+ *          type: string
+ *        required: true
+ *        description: The name or id of the shop
+ *    responses:
+ *      '200':
+ *        description: The shop
+ *      '404':
+ *        description: Shop not found
+ */
+app.get('/shops/:shop', async (req, res) => {
+  let result = await db.getShop(req.params.shop);
+
+  if (result) {
+    res.json(result);
+  }
+  else {
+    res.status(404).send();
+  }
+});
+
+/**
+ * @swagger
  * /items:
  *  get:
  *    description: Get all items
@@ -589,7 +678,7 @@ app.get('/items/:item', async (req, res) => {
     res.json(result);
   }
   else {
-    res.status(404).send();
+    res.status(404).send('Item not found');
   }
 });
 
@@ -826,20 +915,24 @@ app.get('/blueprintbooks/:blueprintBook', async (req, res) => {
  *      '400':
  *        description: Cannot specify both Product and Products
  */
-app.get('/blueprints', async (req, res) => {
-  if (req.query.Product && req.query.Products) return res.status(400).send('Cannot specify both Product and Products');
+app.get('/blueprints', async (req, res, next) => {
+  try {
+    if (req.query.Product && req.query.Products) return res.status(400).send('Cannot specify both Product and Products');
 
-  if (req.query.Product || req.query.Products) {
-    let products = req.query.Products
-      ? parseItemList(req.query.Products)
-      : [req.query.Product];
+    if (req.query.Product || req.query.Products) {
+      let products = req.query.Products
+        ? parseItemList(req.query.Products)
+        : [req.query.Product];
 
-    if (products.length === 0) return res.status(400).send('Products cannot be empty');
+      if (products.length === 0) return res.status(400).send('Products cannot be empty');
 
-    res.json(await db.getBlueprints(products));
-  }
-  else {
-    res.json(await db.getBlueprints());
+      res.json(await db.getBlueprints(products));
+    }
+    else {
+      res.json(await db.getBlueprints());
+    }
+  } catch (error) {
+    next(error);
   }
 });
 
@@ -868,7 +961,7 @@ app.get('/blueprints/:blueprint', async (req, res) => {
     res.json(result);
   }
   else {
-    res.status(404).send();
+    res.status(404).send('Blueprint not found');
   }
 });
 
@@ -1661,31 +1754,35 @@ app.get('/misctools/:miscTool', async (req, res) => {
  *      '400':
  *        description: Cannot specify both Item and Items or Mob and Mobs
  */
-app.get('/mobloots', async (req, res) => {
-  let items = null;
-  let mobs = null;
+app.get('/mobloots', async (req, res, next) => {
+  try {
+    let items = null;
+    let mobs = null;
 
-  if (req.query.Item && req.query.Items) return res.status(400).send('Cannot specify both Item and Items');
+    if (req.query.Item && req.query.Items) return res.status(400).send('Cannot specify both Item and Items');
 
-  if (req.query.Item || req.query.Items) {
-    items = req.query.Items
-      ? parseItemList(req.query.Items)
-      : [req.query.Item];
+    if (req.query.Item || req.query.Items) {
+      items = req.query.Items
+        ? parseItemList(req.query.Items)
+        : [req.query.Item];
 
-    if (items.length === 0) return res.status(400).send('Items cannot be empty');
+      if (items.length === 0) return res.status(400).send('Items cannot be empty');
+    }
+
+    if (req.query.Mob && req.query.Mobs) return res.status(400).send('Cannot specify both Mob and Mobs');
+
+    if (req.query.Mob || req.query.Mobs) {
+      mobs = req.query.Mobs
+        ? parseItemList(req.query.Mobs)
+        : [req.query.Mob];
+
+      if (mobs.length === 0) return res.status(400).send('Mobs cannot be empty');
+    }
+
+    res.json(await db.getMobLoots(items, mobs));
+  } catch (error) {
+    next(error);
   }
-
-  if (req.query.Mob && req.query.Mobs) return res.status(400).send('Cannot specify both Mob and Mobs');
-
-  if (req.query.Mob || req.query.Mobs) {
-    mobs = req.query.Mobs
-      ? parseItemList(req.query.Mobs)
-      : [req.query.Mob];
-
-    if (mobs.length === 0) return res.status(400).send('Mobs cannot be empty');
-  }
-
-  res.json(await db.getMobLoots(items, mobs));
 });
 
 /**
@@ -1858,7 +1955,7 @@ app.get('/mobs/:mob', async (req, res) => {
     res.json(result);
   }
   else {
-    res.status(404).send();
+    res.status(404).send('Mob not found');
   }
 });
 
@@ -2052,20 +2149,24 @@ app.get('/refiners/:refiner', async (req, res) => {
  *      '400':
  *        description: Cannot specify both Product and Products
  */
-app.get('/refiningrecipes', async (req, res) => {
-  if (req.query.Product && req.query.Products) return res.status(400).send('Cannot specify both Product and Products');
+app.get('/refiningrecipes', async (req, res, next) => {
+  try {
+    if (req.query.Product && req.query.Products) return res.status(400).send('Cannot specify both Product and Products');
 
-  if (req.query.Product || req.query.Products) {
-    let products = req.query.Products
-      ? parseItemList(req.query.Products)
-      : [req.query.Product];
+    if (req.query.Product || req.query.Products) {
+      let products = req.query.Products
+        ? parseItemList(req.query.Products)
+        : [req.query.Product];
 
-    if (products.length === 0) return res.status(400).send('Products cannot be empty');
+      if (products.length === 0) return res.status(400).send('Products cannot be empty');
 
-    res.json(await db.getRefiningRecipes(products));
-  }
-  else {
-    res.json(await db.getRefiningRecipes());
+      res.json(await db.getRefiningRecipes(products));
+    }
+    else {
+      res.json(await db.getRefiningRecipes());
+    }
+  } catch (error) {
+    next(error);
   }
 });
 
@@ -2087,14 +2188,20 @@ app.get('/refiningrecipes', async (req, res) => {
  *      '404':
  *        description: Refining recipe not found
  */
-app.get('/refiningrecipes/:refiningRecipe', async (req, res) => {
-  let result = await db.getRefiningRecipe(req.params.refiningRecipe);
+app.get('/refiningrecipes/:refiningRecipe', async (req, res, next) => {
+  try {
+    if (!/^\d+$/.test(req.params.refiningRecipe)) return res.status(400).send('Refining recipe must be a number');
 
-  if (result) {
-    res.json(result);
-  }
-  else {
-    res.status(404).send();
+    let result = await db.getRefiningRecipe(req.params.refiningRecipe);
+
+    if (result) {
+      res.json(result);
+    }
+    else {
+      res.status(404).send('Refining recipe not found');
+    }
+  } catch (error) {
+    next(error);
   }
 });
 
@@ -2419,14 +2526,18 @@ app.get('/teleportationchips/:teleportationChip', async (req, res) => {
  *      '400':
  *        description: IsArmorSet must be 0 or 1
  */
-app.get('/tiers', async (req, res) => {
-  if (req.query.IsArmorSet == null || (req.query.IsArmorSet != 0 && req.query.IsArmorSet != 1)) return res.status(400).send('IsArmorSet must be 0 or 1');
+app.get('/tiers', async (req, res, next) => {
+  try {
+    if (req.query.IsArmorSet == null || (req.query.IsArmorSet != 0 && req.query.IsArmorSet != 1)) return res.status(400).send('IsArmorSet must be 0 or 1');
 
-  if (!Number.isInteger(Number(req.query.ItemId))) return res.status(400).send('ItemId must be an integer');
+    if (!Number.isInteger(Number(req.query.ItemId))) return res.status(400).send('ItemId must be an integer');
 
-  if (req.query.Tier != null && (!Number.isInteger(Number(req.query.Tier)) || req.query.Tier < 0 || req.query.Tier > 10)) return res.status(400).send('Tier must be an integer between 1 and 10');
+    if (req.query.Tier != null && (!Number.isInteger(Number(req.query.Tier)) || req.query.Tier < 0 || req.query.Tier > 10)) return res.status(400).send('Tier must be an integer between 1 and 10');
 
-  res.json(await db.getTiers(req.query.ItemId ?? null, req.query.IsArmorSet ?? null, req.query.Tier ?? null));
+    res.json(await db.getTiers(req.query.ItemId ?? null, req.query.IsArmorSet ?? null, req.query.Tier ?? null));
+  } catch (error) {
+    next(error);
+  }
 });
 
 /**
@@ -2577,20 +2688,24 @@ app.get('/vendors/:vendor', async (req, res) => {
  *      '400':
  *        description: Cannot specify both Item and Items
  */
-app.get('/vendoroffers', async (req, res) => {
-  let items = null;
+app.get('/vendoroffers', async (req, res, next) => {
+  try {
+    let items = null;
 
-  if (req.query.Item && req.query.Items) return res.status(400).send('Cannot specify both Item and Items');
+    if (req.query.Item && req.query.Items) return res.status(400).send('Cannot specify both Item and Items');
 
-  if (req.query.Item || req.query.Items) {
-    items = req.query.Items
-      ? parseItemList(req.query.Items)
-      : [req.query.Item];
+    if (req.query.Item || req.query.Items) {
+      items = req.query.Items
+        ? parseItemList(req.query.Items)
+        : [req.query.Item];
 
-    if (items.length === 0) return res.status(400).send('Items cannot be empty');
+      if (items.length === 0) return res.status(400).send('Items cannot be empty');
+    }
+
+    res.json(await db.getVendorOffers(items));
+  } catch (error) {
+    next(error);
   }
-
-  res.json(await db.getVendorOffers(items));
 });
 
 /**
@@ -2739,7 +2854,37 @@ app.get('/weapons/:weapon', async (req, res) => {
   }
 });
 
-app.use(function(err, req, res, next) {
-  console.error(err.stack); // log error stack trace to console
-  res.status(500).send('Something broke!'); // send error message to client
+// Global error handling middleware
+app.use((err, req, res, next) => {
+  console.error('API Error:', err);
+  console.error('URL:', req.originalUrl);
+  console.error('Method:', req.method);
+  
+  // Send a generic error response to prevent crashes
+  if (!res.headersSent) {
+    res.status(500).json({
+      error: 'Internal server error',
+      message: process.env.NODE_ENV === 'production' ? 'Something went wrong' : err.message
+    });
+  }
+});
+
+// Handle 404 errors
+app.use((req, res) => {
+  res.status(404).json({
+    error: 'Not found',
+    message: `Route ${req.originalUrl} not found`
+  });
+});
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Promise Rejection:', reason);
+});
+
+// Handle uncaught exceptions  
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  console.error('Shutting down gracefully...');
+  process.exit(1);
 });

@@ -163,8 +163,8 @@ export async function POST({ request, params, locals, url }) {
   }
 
   return await createChange(user.id, type, state, entity, body)
-    .then(x => getResponse(x), 201)
-    .catch((error) => getResponse({ error: error.message }), 500);
+    .then(x => getResponse(x, 201))
+    .catch((error) => getResponse({ error: error.message }, 500));
 }
 
 // DELETE
@@ -237,6 +237,9 @@ function getEntityCategory(entity) {
   }
   else if (entity === 'ArmorSet') {
     return 'armorsets';
+  }
+  else if (entity === 'Shop') {
+    return 'shops';
   }
   else {
     return 'items';

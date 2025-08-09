@@ -98,7 +98,7 @@
         label: 'Set',
         type: 'group',
         controls: [
-          { label: 'Name', type: 'input-select', options: (_, d) => d.equipsets.map(x => x.Name), '_get': x => x.Set?.Name, '_set': (x, v, d) => { x.Set ||= {}; x.Set.Name = v && v.length > 0 ? v : null; x.Set.EffectsOnSetEquip = d.equipsets.find(y => y.Name === v)?.EffectsOnSetEquip ?? [] }},
+          { label: 'Name', type: 'input-select', options: (_, d) => d.equipsets.map(x => x.Name).sort((a,b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })), '_get': x => x.Set?.Name, '_set': (x, v, d) => { x.Set ||= {}; x.Set.Name = v && v.length > 0 ? v : null; x.Set.EffectsOnSetEquip = d.equipsets.find(y => y.Name === v)?.EffectsOnSetEquip ?? [] }},
           { '_if': x => x.Set?.Name != null && x.Set.Name.trim().length > 0, label: 'Set Effects', type: 'list', config: editConfigEffectsOnSetEquip, '_get': x => x.Set.EffectsOnSetEquip, '_set': (x, v) => x.Set.EffectsOnSetEquip = v},
         ]
       },

@@ -248,7 +248,7 @@
       entropiaTileSize = imageTileSize * imageToEntropiaRatio;
 
       zoomTransitionStart = null;
-      zoom = imageTileSize / img.width;
+      zoom = imageTileSize / Math.max(img.width, img.height);
       targetZoom = zoom;
 
       $mapLoadedStore = true;
@@ -317,7 +317,7 @@
     }
 
     // Clamp the zoom level to a minimum and maximum value
-    targetZoom = Math.max(imageTileSize / img.width, Math.min(2, targetZoom));
+    targetZoom = Math.max(imageTileSize / Math.max(img.width, img.height), Math.min(4, targetZoom));
 
     zoomTo(targetZoom);
   }

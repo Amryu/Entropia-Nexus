@@ -1,0 +1,106 @@
+// Compose all endpoint registrars here
+const areas = require('./areas');
+const locations = require('./locations');
+const planets = require('./planets');
+const shops = require('./shops');
+const items = require('./items');
+const teleporters = require('./teleporters');
+const search = require('./search');
+const blueprints = require('./blueprints');
+const refining = require('./refining');
+const vendors = require('./vendors');
+const materials = require('./materials');
+const medical = require('./medical');
+const mindforce = require('./mindforce');
+const effects = require('./effects');
+const enhancers = require('./enhancers');
+const effectchips = require('./effectchips');
+const finders = require('./finders');
+const finderamplifiers = require('./finderamplifiers');
+const scanners = require('./scanners');
+const excavators = require('./excavators');
+const equipsets = require('./equipsets');
+const clothings = require('./clothings');
+const consumables = require('./consumables');
+const capsules = require('./capsules');
+const decorations = require('./decorations');
+const furniture = require('./furniture');
+const armor = require('./armor');
+const weaponamplifiers = require('./weaponamplifiers');
+const teleportationchips = require('./teleportationchips');
+const professions = require('./professions');
+const skills = require('./skills');
+const refiners = require('./refiners');
+// Newly added (migration phase 3)
+let absorbers, misctools, signs, strongboxes, storagecontainers, vehicleattachmenttypes, vehicles, weaponvisionattachments, weapons, tiers, pets, mobloots, mobmaturities, mobspawns, mobspecies, mobs;
+try { absorbers = require('./absorbers'); } catch {}
+try { misctools = require('./misctools'); } catch {}
+try { signs = require('./signs'); } catch {}
+try { strongboxes = require('./strongboxes'); } catch {}
+try { storagecontainers = require('./storagecontainers'); } catch {}
+try { vehicleattachmenttypes = require('./vehicleattachmenttypes'); } catch {}
+try { vehicles = require('./vehicles'); } catch {}
+try { weaponvisionattachments = require('./weaponvisionattachments'); } catch {}
+try { weapons = require('./weapons'); } catch {}
+try { tiers = require('./tiers'); } catch {}
+try { pets = require('./pets'); } catch {}
+try { mobloots = require('./mobloots'); } catch {}
+try { mobmaturities = require('./mobmaturities'); } catch {}
+try { mobspawns = require('./mobspawns'); } catch {}
+try { mobspecies = require('./mobspecies'); } catch {}
+try { mobs = require('./mobs'); } catch {}
+
+function registerAll(app){
+  // Order can matter for overlapping paths; keep generic last
+  areas.register(app);
+  locations.register(app);
+  planets.register(app);
+  shops.register(app);
+  teleporters.register(app);
+  search.register(app);
+  items.register(app);
+  blueprints.register(app);
+  refining.register(app);
+  vendors.register(app);
+  materials.register(app);
+  medical.register(app);
+  mindforce.register(app);
+  effects.register(app);
+  enhancers.register(app);
+  effectchips.register(app);
+  finders.register(app);
+  finderamplifiers.register(app);
+  scanners.register(app);
+  excavators.register(app);
+  equipsets.register(app);
+  clothings.register(app);
+  consumables.register(app);
+  capsules.register(app);
+  decorations.register(app);
+  furniture.register(app);
+  armor.register(app);
+  weaponamplifiers.register(app);
+  teleportationchips.register(app);
+  professions.register(app);
+  skills.register(app);
+  refiners.register(app);
+  // Conditionally register new modules if present
+  absorbers?.register(app);
+  misctools?.register(app);
+  signs?.register(app);
+  strongboxes?.register(app);
+  storagecontainers?.register(app);
+  vehicleattachmenttypes?.register(app);
+  vehicles?.register(app);
+  weaponvisionattachments?.register(app);
+  weapons?.register(app);
+  tiers?.register(app);
+  pets?.register(app);
+  mobloots?.register(app);
+  mobmaturities?.register(app);
+  mobspawns?.register(app);
+  mobspecies?.register(app);
+  mobs?.register(app);
+}
+
+module.exports = { registerAll };

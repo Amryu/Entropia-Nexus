@@ -360,10 +360,10 @@
           label: 'Economy',
           type: 'group',
           controls: [
-            { label: 'Efficiency', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Economy.Efficiency, '_set': (x, v) => x.Properties.Economy.Efficiency = v },
-            { label: 'Max. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v },
-            { label: 'Min. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v },
-            { label: 'Decay', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Economy.Decay, '_set': (x, v) => x.Properties.Economy.Decay = v },
+            { label: 'Efficiency (%)', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Economy.Efficiency, '_set': (x, v) => x.Properties.Economy.Efficiency = v },
+            { label: 'Max. TT (PED)', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v },
+            { label: 'Min. TT (PED)', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v },
+            { label: 'Decay (PEC)', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Economy.Decay, '_set': (x, v) => x.Properties.Economy.Decay = v },
             { label: 'Ammo Burn', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Economy.AmmoBurn, '_set': (x, v) => x.Properties.Economy.AmmoBurn = v },
           ]
         },
@@ -420,10 +420,10 @@
           label: 'Economy',
           type: 'group',
           controls: [
-            { label: 'Efficiency', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Economy.Efficiency, '_set': (x, v) => x.Properties.Economy.Efficiency = v },
-            { label: 'Max. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v },
-            { label: 'Min. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v },
-            { label: 'Decay', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Economy.Decay, '_set': (x, v) => x.Properties.Economy.Decay = v },
+            { label: 'Efficiency (%)', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Economy.Efficiency, '_set': (x, v) => x.Properties.Economy.Efficiency = v },
+            { label: 'Max. TT (PED)', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v },
+            { label: 'Min. TT (PED)', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v },
+            { label: 'Decay (PEC)', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Economy.Decay, '_set': (x, v) => x.Properties.Economy.Decay = v },
           ]
         },
         { label: 'Effects on Equip', type: 'list', config: editConfigEffectsOnEquip, '_get': x => x.EffectsOnEquip, '_set': (x, v) => x.EffectsOnEquip = v },
@@ -497,9 +497,9 @@
           label: 'Economy',
           type: 'group',
           controls: [
-            { label: 'Max. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v },
-            { label: 'Min. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v },
-            { label: 'Decay', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Economy.Decay, '_set': (x, v) => x.Properties.Economy.Decay = v },
+            { label: 'Max. TT (PED)', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v },
+            { label: 'Min. TT (PED)', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v },
+            { label: 'Decay (PEC)', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Economy.Decay, '_set': (x, v) => x.Properties.Economy.Decay = v },
           ]
         },
         { label: 'Effects on Equip', type: 'list', config: editConfigEffectsOnEquip, '_get': x => x.EffectsOnEquip, '_set': (x, v) => x.EffectsOnEquip = v },

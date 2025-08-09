@@ -1,0 +1,89 @@
+const pgp = require('pg-promise')();
+const { pool } = require('./dbClient');
+const { getObjectByIdOrName } = require('./utils');
+
+const ID_OFFSET = 5400000;
+
+const queries = {
+  FinderAmplifiers: 'SELECT * FROM ONLY "FinderAmplifiers"',
+  EffectsOnEquip: `SELECT e."Id", e."Name", e."Unit", e."Description", eo."Strength", eo."ItemId"
+                   FROM ONLY "EffectsOnEquip" eo
+                   INNER JOIN ONLY "Effects" e ON eo."EffectId" = e."Id"
+                   WHERE eo."ItemId" IN ($1:csv)`,
+};
+
+function formatEffectOnEquip(x){
+  return { Name: x.Name, Values: { Strength: x.Strength !== null ? Number(x.Strength) : null, Unit: x.Unit, Description: x.Description }, Links: { "$Url": `/effects/${x.Id}` } };
+}
+
+function formatFinderAmplifier(x, effectsMap){
+  const itemId = x.Id + ID_OFFSET;
+  const effects = (effectsMap[itemId] ?? []).map(formatEffectOnEquip);
+  return {
+    Id: x.Id,
+    ItemId: itemId,
+    Name: x.Name,
+    Properties: {
+      Description: x.Description,
+      Weight: x.Weight !== null ? Number(x.Weight) : null,
+      Efficiency: x.Efficiency !== null ? Number(x.Efficiency) : null,
+      MinProfessionLevel: x.ProfessionMinimum !== null ? Number(x.ProfessionMinimum) : null,
+      Economy: { MaxTT: x.MaxTT !== null ? Number(x.MaxTT) : null, MinTT: x.MinTT !== null ? Number(x.MinTT) : null, Decay: x.Decay !== null ? Number(x.Decay) : null }
+    },
+    EffectsOnEquip: effects,
+    Links: { "$Url": `/finderamplifiers/${x.Id}` }
+  };
+}
+
+async function _getEffectsOnEquip(ids){
+  if (!ids.length) return {};
+  const { rows } = await pool.query(pgp.as.format(queries.EffectsOnEquip, [ids.map(id => id + ID_OFFSET)]));
+  return rows.reduce((acc,r)=>{ (acc[r.ItemId] ||= []).push(r); return acc; },{});
+}
+
+async function getFinderAmplifiers(){
+  const { rows } = await pool.query(queries.FinderAmplifiers);
+  const effects = await _getEffectsOnEquip(rows.map(r=>r.Id));
+  return rows.map(r => formatFinderAmplifier(r, effects));
+}
+
+async function getFinderAmplifier(idOrName){
+  const row = await getObjectByIdOrName(queries.FinderAmplifiers, 'FinderAmplifiers', idOrName);
+  if (!row) return null;
+  const effects = await _getEffectsOnEquip([row.Id]);
+  return formatFinderAmplifier(row, effects);
+}
+
+function register(app){
+  /**
+   * @swagger
+   * /finderamplifiers:
+   *  get:
+   *    description: Get all finders
+   *    responses:
+   *      '200':
+   *        description: A list of finders
+   */
+  app.get('/finderamplifiers', async (req,res) => { res.json(await getFinderAmplifiers()); });
+  /**
+   * @swagger
+   * /finderamplifiers/{finderAmplifier}:
+   *  get:
+   *    description: Get a finder amplifier by name or id
+   *    parameters:
+   *      - in: path
+   *        name: finderAmplifier
+   *        schema:
+   *          type: string
+   *        required: true
+   *        description: The name or id of the finder amplifier
+   *    responses:
+   *      '200':
+   *        description: The finder amplifier
+   *      '404':
+   *        description: Finder amplifier not found
+   */
+  app.get('/finderamplifiers/:finderAmplifier', async (req,res) => { const r = await getFinderAmplifier(req.params.finderAmplifier); if (r) res.json(r); else res.status(404).send(); });
+}
+
+module.exports = { register, getFinderAmplifiers, getFinderAmplifier };

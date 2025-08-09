@@ -125,7 +125,7 @@
     {:else if control.type === 'textarea'}
       <textarea id={control.key} bind:value={stores[i].value} disabled={disabled}></textarea>
     {:else if control.type === 'select'}
-      <select id={control.key} bind:value={stores[i].value} disabled={disabled}>
+      <select id={control.key} bind:value={stores[i].value} disabled={disabled} on:change={() => dispatch('change')}>
         {#each control.options(object, dependencies, root) as option}
           <option value={option ?? ''}>{option ?? 'None'}</option>
         {/each}
@@ -142,6 +142,167 @@
       </div>
     {:else if control.type === 'input-validator'}
       <input type="text" class={stores[i].value && control.validator(stores[i].value, dependencies, root) ? '' : 'invalid'} id={control.key} bind:value={stores[i].value} disabled={disabled} />
+    {:else if control.type === 'waypoint'}
+      <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px;">
+        <input type="number" placeholder="Longitude" step="0.0001"
+          value={Array.isArray(stores[i].value) ? stores[i].value[0] || '' : ''}
+          on:paste={(event) => {
+            event.preventDefault();
+            let paste = (event.clipboardData || window.clipboardData).getData('text');
+            try {
+              let parsed = JSON.parse(paste);
+              if (Array.isArray(parsed) && parsed.length >= 4) {
+                let coords = [parsed[1], parsed[2], parsed[3]]; // Skip planet name, take coords
+                stores[i].value = coords.map(v => parseFloat(v) || 0);
+                return;
+              }
+            } catch (e) {
+              // Try comma-separated format
+              let parts = paste.split(',').map(s => s.trim());
+              if (parts.length >= 3) {
+                let coords = parts.slice(1, 4); // Skip first item (planet), take next 3
+                if (coords.every(v => !isNaN(parseFloat(v)))) {
+                  stores[i].value = coords.map(v => parseFloat(v) || 0);
+                  return;
+                }
+              }
+            }
+          }}
+          on:input={(event) => {
+            let input = event.target.value.trim();
+            // Check if it looks like a waypoint paste
+            if (input.includes('[') || input.includes(',')) {
+              try {
+                let parsed = JSON.parse(input);
+                if (Array.isArray(parsed) && parsed.length >= 3) {
+                  let coords = parsed.length >= 5 ? [parsed[1], parsed[2], parsed[3]] : parsed.slice(0, 3);
+                  stores[i].value = coords.map(v => parseFloat(v) || 0);
+                  return;
+                }
+              } catch (e) {
+                let parts = input.split(',').map(s => s.trim());
+                if (parts.length >= 3) {
+                  let coords = parts.slice(0, 3).map(v => parseFloat(v) || 0);
+                  if (coords.some(v => !isNaN(v))) {
+                    stores[i].value = coords;
+                    return;
+                  }
+                }
+              }
+            }
+            // Single value update
+            let newValue = [...(stores[i].value || [0, 0, 0])];
+            newValue[0] = parseFloat(event.target.value) || 0;
+            stores[i].value = newValue;
+          }} 
+          disabled={disabled} />
+        <input type="number" placeholder="Latitude" step="0.0001"
+          value={Array.isArray(stores[i].value) ? stores[i].value[1] || '' : ''}
+          on:paste={(event) => {
+            event.preventDefault();
+            let paste = (event.clipboardData || window.clipboardData).getData('text');
+            // Handle waypoint paste format: [ARIS, 34498, 21428, 194, Waypoint]
+            try {
+              let parsed = JSON.parse(paste);
+              if (Array.isArray(parsed) && parsed.length >= 4) {
+                let coords = [parsed[1], parsed[2], parsed[3]]; // Skip planet name, take coords
+                stores[i].value = coords.map(v => parseFloat(v) || 0);
+                return;
+              }
+            } catch (e) {
+              // Try comma-separated format
+              let parts = paste.split(',').map(s => s.trim());
+              if (parts.length >= 3) {
+                let coords = parts.slice(1, 4); // Skip first item (planet), take next 3
+                if (coords.every(v => !isNaN(parseFloat(v)))) {
+                  stores[i].value = coords.map(v => parseFloat(v) || 0);
+                  return;
+                }
+              }
+            }
+          }}
+          on:input={(event) => {
+            let input = event.target.value.trim();
+            // Check if it looks like a waypoint paste
+            if (input.includes('[') || input.includes(',')) {
+              try {
+                let parsed = JSON.parse(input);
+                if (Array.isArray(parsed) && parsed.length >= 3) {
+                  let coords = parsed.length >= 5 ? [parsed[1], parsed[2], parsed[3]] : parsed.slice(0, 3);
+                  stores[i].value = coords.map(v => parseFloat(v) || 0);
+                  return;
+                }
+              } catch (e) {
+                let parts = input.split(',').map(s => s.trim());
+                if (parts.length >= 3) {
+                  let coords = parts.slice(0, 3).map(v => parseFloat(v) || 0);
+                  if (coords.some(v => !isNaN(v))) {
+                    stores[i].value = coords;
+                    return;
+                  }
+                }
+              }
+            }
+            // Single value update
+            let newValue = [...(stores[i].value || [0, 0, 0])];
+            newValue[1] = parseFloat(event.target.value) || 0;
+            stores[i].value = newValue;
+          }} 
+          disabled={disabled} />
+        <input type="number" placeholder="Altitude" step="0.01"
+          value={Array.isArray(stores[i].value) ? stores[i].value[2] || '' : ''}
+          on:paste={(event) => {
+            event.preventDefault();
+            let paste = (event.clipboardData || window.clipboardData).getData('text');
+            // Handle waypoint paste format: [ARIS, 34498, 21428, 194, Waypoint]
+            try {
+              let parsed = JSON.parse(paste);
+              if (Array.isArray(parsed) && parsed.length >= 4) {
+                let coords = [parsed[1], parsed[2], parsed[3]]; // Skip planet name, take coords
+                stores[i].value = coords.map(v => parseFloat(v) || 0);
+                return;
+              }
+            } catch (e) {
+              // Try comma-separated format
+              let parts = paste.split(',').map(s => s.trim());
+              if (parts.length >= 3) {
+                let coords = parts.slice(1, 4); // Skip first item (planet), take next 3
+                if (coords.every(v => !isNaN(parseFloat(v)))) {
+                  stores[i].value = coords.map(v => parseFloat(v) || 0);
+                  return;
+                }
+              }
+            }
+          }}
+          on:input={(event) => {
+            let input = event.target.value.trim();
+            // Check if it looks like a waypoint paste
+            if (input.includes('[') || input.includes(',')) {
+              try {
+                let parsed = JSON.parse(input);
+                if (Array.isArray(parsed) && parsed.length >= 3) {
+                  let coords = parsed.length >= 5 ? [parsed[1], parsed[2], parsed[3]] : parsed.slice(0, 3);
+                  stores[i].value = coords.map(v => parseFloat(v) || 0);
+                  return;
+                }
+              } catch (e) {
+                let parts = input.split(',').map(s => s.trim());
+                if (parts.length >= 3) {
+                  let coords = parts.slice(0, 3).map(v => parseFloat(v) || 0);
+                  if (coords.some(v => !isNaN(v))) {
+                    stores[i].value = coords;
+                    return;
+                  }
+                }
+              }
+            }
+            // Single value update
+            let newValue = [...(stores[i].value || [0, 0, 0])];
+            newValue[2] = parseFloat(event.target.value) || 0;
+            stores[i].value = newValue;
+          }} 
+          disabled={disabled} />
+      </div>
     {:else if control.type === 'range'}
       <span>
         <input type="number" id={control.key} value={stores[i].value[0]} step={control.step} min={control.min} max={control.max} on:input={(event) => stores[i].value = [Number(event.target.value), stores[i].value[1]]} disabled={disabled} />
@@ -155,13 +316,34 @@
         <span>
           {control.itemNameFunc ? control.itemNameFunc(j) : `#${j + 1}`} &nbsp; 
           <input type="button" value="Remove" on:click={() => { stores[i].value = stores[i].value.filter((_, k) => k !== j); dispatch('change'); }} disabled={disabled} />
+          {#if control.allowInsert !== false}
+            <input type="button" value="Insert" on:click={() => { 
+              let newItem = control.config.constructor(); 
+              if (control.config.initialize) {
+                const currentIndex = j;
+                const parentArray = stores[i].value || [];
+                control.config.initialize(newItem, dependencies, root, currentIndex, parentArray, object);
+              }
+              stores[i].value = [...stores[i].value.slice(0, j), newItem, ...stores[i].value.slice(j)]; 
+              dispatch('change'); 
+            }} disabled={disabled} />
+          {/if}
         </span>
         <svelte:self root={root} bind:object={item} controls={control.config.controls} dependencies={dependencies} disabled={disabled} on:change={() => dispatch('change')} />
       {/each}
       {control.itemNameFunc ? control.itemNameFunc(stores[i].value?.length) : `#${(stores[i].value?.length ?? 0) + 1}`}
-      <input type="button" value="Add" on:click={() => { stores[i].value = [...stores[i].value, control.config.constructor()]; dispatch('change'); }} disabled={disabled} />
+      <input type="button" value="Add" on:click={() => { 
+        let newItem = control.config.constructor(); 
+        if (control.config.initialize) {
+          const currentIndex = stores[i].value?.length || 0;
+          const parentArray = stores[i].value || [];
+          control.config.initialize(newItem, dependencies, root, currentIndex, parentArray, object);
+        }
+        stores[i].value = [...stores[i].value, newItem]; 
+        dispatch('change'); 
+      }} disabled={disabled} />
     {:else if control.type === 'array'}
-      {#each Array.from({ length: control.size }, (_, k) => stores[i].value?.find(x => control.indexFunc(x, k)) ?? undefined) as value, j}
+      {#each Array.from({ length: typeof control.size === 'function' ? control.size(object, dependencies, root) : control.size }, (_, k) => stores[i].value?.find(x => control.indexFunc(x, k)) ?? undefined) as value, j}
         <span>
           {control.itemNameFunc(j)} &nbsp; 
           {#if value !== undefined}
@@ -171,7 +353,16 @@
         {#if value !== undefined}
           <svelte:self root={root} bind:object={value} controls={control.config.controls} dependencies={dependencies} disabled={disabled} on:change={() => dispatch('change')} />
         {:else}
-          <input type="button" value="Add" on:click={() => { stores[i].value.push(control.config.constructor(j)); dispatch('change'); }} disabled={disabled} />
+          <input type="button" value="Add" on:click={() => { 
+            const newItem = control.config.constructor(j);
+            if (control.config.initialize) {
+              const currentIndex = j;
+              const parentArray = stores[i].value || [];
+              control.config.initialize(newItem, dependencies, root, currentIndex, parentArray, object);
+            }
+            stores[i].value.push(newItem); 
+            dispatch('change'); 
+          }} disabled={disabled} />
         {/if}
       {/each}
     {/if}

@@ -18,6 +18,10 @@ export function validate(type, data) {
   let validator = getValidator(type);
 
   let success = validator(data);
+  
+  if (!success) {
+    console.log(`Validation failed for ${type}:`, validator.errors);
+  }
 
   removeEmpty(data);
 
@@ -35,6 +39,74 @@ function removeEmpty(obj) {
   }
 }
 
+function formatDataValue(value, maxLength = 30) {
+  let str;
+  if (typeof value === 'string') {
+    str = value;
+  } else {
+    str = JSON.stringify(value);
+  }
+  
+  if (str.length > maxLength) {
+    return str.substring(0, maxLength - 3) + '...';
+  }
+  return str;
+}
+
+function printTreeView(obj, indent = 0, maxListItems = 3) {
+  const spaces = '  '.repeat(indent);
+  let result = [];
+  
+  if (obj === null) return ['null'];
+  if (obj === undefined) return ['undefined'];
+  if (typeof obj !== 'object') return [String(obj)];
+  
+  if (Array.isArray(obj)) {
+    result.push(`[${obj.length} items]`);
+    for (let i = 0; i < Math.min(obj.length, maxListItems); i++) {
+      const itemLines = printTreeView(obj[i], indent + 1, maxListItems);
+      result.push(`${spaces}  [${i}] ${itemLines[0]}`);
+      for (let j = 1; j < itemLines.length; j++) {
+        result.push(`${spaces}      ${itemLines[j]}`);
+      }
+    }
+    if (obj.length > maxListItems) {
+      result.push(`${spaces}  ... ${obj.length - maxListItems} more items`);
+    }
+  } else {
+    result.push('{');
+    const keys = Object.keys(obj).sort(); // Sort keys alphabetically
+    for (const key of keys) {
+      const valueLines = printTreeView(obj[key], indent + 1, maxListItems);
+      result.push(`${spaces}  ${key}: ${valueLines[0]}`);
+      for (let j = 1; j < valueLines.length; j++) {
+        result.push(`${spaces}      ${valueLines[j]}`);
+      }
+    }
+    result.push(`${spaces}}`);
+  }
+  
+  return result;
+}
+
+export function printSideBySide(oldObj, newObj, title = 'Comparison') {
+  const oldLines = printTreeView(oldObj);
+  const newLines = printTreeView(newObj);
+  const maxLines = Math.max(oldLines.length, newLines.length);
+  const maxWidth = Math.max(...oldLines.map(line => line.length), 40);
+  
+  console.log(`\n=== ${title} ===`);
+  console.log(`${'OLD'.padEnd(maxWidth)} | NEW`);
+  console.log(`${'-'.repeat(maxWidth)} | ${'-'.repeat(maxWidth)}`);
+  
+  for (let i = 0; i < maxLines; i++) {
+    const oldLine = (oldLines[i] || '').padEnd(maxWidth);
+    const newLine = newLines[i] || '';
+    console.log(`${oldLine} | ${newLine}`);
+  }
+  console.log('');
+}
+
 export function compareJson(oldJson, newJson) {
   let anyChanges = false;
 
@@ -48,28 +120,58 @@ export function compareJson(oldJson, newJson) {
     x => Array.isArray(x) && x.length > 0 ? x[0]?.Name : null,
     x => Array.isArray(x) && x.length > 1 ? x[1]?.Name : null,
     x => x?.Properties?.Tier,
-    x => x?.Material?.Name];
+    x => x?.Material?.Name,
+    // For mob spawns - match by Shape, Data and Altitude
+    x => x?.Properties?.Shape && x?.Properties?.Data && x?.Properties?.Coordinates?.Altitude !== undefined 
+      ? `${x.Properties.Shape}_${JSON.stringify(x.Properties.Data)}_${x.Properties.Coordinates.Altitude}` 
+      : null];
   const objectIdentifiers = ['Name', 'Tier'];
 
   let keys = new Set([...Object.keys(newJson), ...Object.keys(oldJson)]);
 
   for (const key of keys) {
     if (Array.isArray(oldJson[key]) && Array.isArray(newJson[key])) {
-      for (let i = 0; i < Math.max(newJson[key].length, oldJson[key].length); i++) {
+      console.log(`Comparing array field: ${key}, oldLength: ${oldJson[key].length}, newLength: ${newJson[key].length}`);
+      
+      // Create a copy of oldJson[key] to avoid modifying during iteration
+      const oldItems = [...oldJson[key]];
+      
+      for (let i = 0; i < newJson[key].length; i++) {
         let match;
 
-        for (let j = 0; j < Math.max(newJson[key].length, oldJson[key].length); j++) {
-          let subResult = compareJson(oldJson[key][j], newJson[key][i]);
-
-          if (arrayIdentifiers.some(x => x(newJson[key][i]) != null && x(newJson[key][i]) === x(oldJson[key][j])) || !subResult) {
-            oldJson[key].splice(j, 1);
+        // Find matching item in old array - prioritize ID matching over position
+        for (let j = 0; j < oldItems.length; j++) {
+          // First, try to match by identifier
+          const hasMatchingId = arrayIdentifiers.some(x => x(newJson[key][i]) != null && x(newJson[key][i]) === x(oldItems[j]));
+          
+          if (hasMatchingId) {
+            // Found exact match by identifier
+            let subResult = compareJson(oldItems[j], newJson[key][i]);
+            oldItems.splice(j, 1);
             match = subResult;
             break;
+          }
+        }
+        
+        // If no ID match found, try position-based matching as fallback
+        if (match === undefined) {
+          for (let j = 0; j < oldItems.length; j++) {
+            let subResult = compareJson(oldItems[j], newJson[key][i]);
+            
+            if (!subResult) {
+              // Items are identical, treat as match
+              oldItems.splice(j, 1);
+              match = subResult;
+              break;
+            }
           }
         }
 
         if (match === undefined) {
           match = compareJson(null, newJson[key][i]);
+          if (key === 'Spawns') {
+            console.log(`No match found for spawn ${i}, treating as new`);
+          }
         }
         
         if (match) {
@@ -79,19 +181,25 @@ export function compareJson(oldJson, newJson) {
         }
       }
 
-      // Check for any remaining items in oldJson that were not matched and removed
-      for (let i = 0; i < oldJson[key].length; i++) {
-        let match = compareJson(oldJson[key][i], null);
+      // Check for any remaining items in oldItems that were not matched
+      for (let i = 0; i < oldItems.length; i++) {
+        let match = compareJson(oldItems[i], null);
       
         if (match) {
           anyChanges = true;
           result[key] = result[key] || [];
           result[key].push(match);
+          if (key === 'Spawns') {
+            console.log(`Remaining old spawn ${i} marked as removed`);
+          }
         }
       }
 
       if (Array.isArray(result[key])) {
         result[key] = result[key].filter(x => x != null);
+        if (key === 'Spawns') {
+          console.log(`Final spawns result length: ${result[key].length}`);
+        }
       }
     }
     else if ((typeof newJson[key] === 'object' && newJson[key] !== null) || (typeof oldJson[key] === 'object' && oldJson[key] !== null)) {
@@ -118,10 +226,19 @@ export function compareJson(oldJson, newJson) {
 
       anyChanges = true;
 
+      // Special formatting for Data fields to save space
+      let oldValue = oldJson[key];
+      let newValue = newJson[key];
+      
+      if (key === 'Data') {
+        oldValue = oldValue != null ? formatDataValue(oldValue) : oldValue;
+        newValue = newValue != null ? formatDataValue(newValue) : newValue;
+      }
+
       if (Array.isArray(result)) {
-        result.push(`${oldJson[key] ?? '<empty>'} -> ${newJson[key] ?? '<empty>'}`);
+        result.push(`${oldValue ?? '<empty>'} -> ${newValue ?? '<empty>'}`);
       } else {
-        result[key] = `${oldJson[key] ?? '<empty>'} -> ${newJson[key] ?? '<empty>'}`;
+        result[key] = `${oldValue ?? '<empty>'} -> ${newValue ?? '<empty>'}`;
       }
     }
   }

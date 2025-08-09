@@ -36,7 +36,10 @@
   $: {
     isMultiType = typeof items === 'object' && !Array.isArray(items)
     elements = isMultiType ? Object.keys(items).map(x => items[x].map(y => { y._type = x; return y })).flat() : items;
-    elements = elements.sort((a, b) => a.Name.localeCompare(b.Name));
+    elements = elements.sort((a, b) => {
+      // Natural sort that handles numbers properly
+      return a.Name.localeCompare(b.Name, undefined, { numeric: true, sensitivity: 'base' });
+    });
   }
   
   let filteredElements;
@@ -112,8 +115,8 @@
   }
 
   .square-button {
-    width: 32px;
-    height: 32px;
+    width: 30px;
+    height: 30px;
     border: none;
     margin-right: 5px;
     font-size: 12px;

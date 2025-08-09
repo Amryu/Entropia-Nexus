@@ -20,6 +20,7 @@ export async function load({ fetch, params, url }) {
 
   itemsGrouped = {
     calypso: [],
+    aris: [],
     arkadia: [],
     cyrene: [],
     rocktropia: [],

@@ -246,7 +246,7 @@
         data={
           filteredLoadouts.map((item) => {
             return {
-              values: [item.Name],
+              values: [item.Name == 'New Loadout' ? item.Gear.Weapon.Name + (item.Gear.Armor.Amplifier ? ` (${item.Gear.Armor.Amplifier})` : '') : item.Name],
               trStyle: item.Id === currentLoadout?.Id ? `font-weight: bold;` : '',
               id: item.Id
             };

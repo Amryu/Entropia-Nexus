@@ -231,7 +231,8 @@ export const UpsertConfigs = {
       { name: "AmmoId", value: async (x, c) => await c.query(`SELECT "Id" FROM ONLY "Materials" WHERE "Name" = $1`, [x.Ammo.Name]).then(res => res.rows[0]?.Id) },
     ],
     offset: 4820000,
-    table: "EffectChips"
+    table: "EffectChips",
+    relationChangeFunc: async (client, id, x) => await applyEffectsOnUseChanges(client, id, x.EffectsOnUse)
   },
   MiscTool: {
     columns: [
@@ -383,7 +384,12 @@ export const UpsertConfigs = {
       { name: "Value", value: x => x.Properties.Economy.MaxTT }
     ],
     offset: 1000000,
-    table: "Materials"
+    table: "Materials",
+    relationChangeFunc: async (client, id, x) => {
+      if (x.RefiningRecipes) {
+        await applyRefiningRecipesChanges(client, id - 1000000, x.RefiningRecipes);
+      }
+    }
   },
   Pet: {
     columns: [
@@ -610,6 +616,9 @@ export const UpsertConfigs = {
     relationChangeFunc: async (client, id, x) => {
       await applyMobMaturityChanges(client, id, x.Maturities);
       await applyMobLootChanges(client, id, x.Loots);
+      if (x.Spawns) {
+        await applyMobSpawnChanges(client, id, x.Spawns);
+      }
     }
   }
 }
@@ -886,4 +895,366 @@ async function applyStrongboxLootsChanges(client, strongboxId, loots) {
     client.query(`DELETE FROM ONLY "StrongboxLoots" WHERE "StrongboxId" = $1 AND "ItemId" NOT IN (SELECT * FROM unnest($2::int[]))`, [strongboxId, newLootArrayId]),
     ...newLoots.map(loot => client.query(`INSERT INTO "StrongboxLoots" ("StrongboxId", "ItemId", "Rarity", "AvailableFrom", "AvailableUntil") VALUES ($1, $2, $3, $4, $5) ON CONFLICT ("StrongboxId", "ItemId") DO UPDATE SET "Rarity" = $3, "AvailableFrom" = $4, "AvailableUntil" = $5`, [strongboxId, loot.id, loot.Rarity, loot.AvailableFrom, loot.AvailableUntil]))
   ]);
+}
+
+async function applyMobSpawnChanges(client, mobId, spawns) {
+  // Get planet ID for this mob
+  const planetResult = await client.query(`SELECT "PlanetId" FROM "Mobs" WHERE "Id" = $1`, [mobId]);
+  const planetId = planetResult.rows[0]?.PlanetId;
+
+  // Get existing spawns and areas for this mob
+  const existingSpawns = await client.query(`
+    SELECT DISTINCT "MobSpawns"."Id" AS "SpawnId", "MobSpawns"."AreaId", "Areas"."Shape", "Areas"."Data", "Areas"."Altitude"
+    FROM "MobSpawns" 
+    INNER JOIN "Areas" ON "MobSpawns"."AreaId" = "Areas"."Id"
+    INNER JOIN "MobSpawnMaturities" ON "MobSpawns"."Id" = "MobSpawnMaturities"."SpawnId"
+    INNER JOIN "MobMaturities" ON "MobSpawnMaturities"."MaturityId" = "MobMaturities"."Id"
+    WHERE "MobMaturities"."MobId" = $1
+  `, [mobId]);
+
+  // Process spawns and match with existing areas
+  const processedSpawns = await Promise.all(spawns.map(async (spawn, index) => {
+    try {
+      if (!spawn.Properties.Shape || !spawn.Properties.Data) {
+        console.warn(`Skipping spawn ${index}: missing Shape or Data`, spawn.Properties);
+        return null;
+      }
+
+      const shape = spawn.Properties.Shape == 'Point' ? 'Circle' : spawn.Properties.Shape;
+      const data = typeof spawn.Properties.Data === 'string' ? spawn.Properties.Data : JSON.stringify(spawn.Properties.Data);
+      const altitude = spawn.Properties.Coordinates?.Altitude || 0;
+
+      // Check if there's an existing area with matching Shape, Data, and Altitude
+      const matchingArea = existingSpawns.rows.find(existing => 
+        existing.Shape === shape && 
+        existing.Data === data && 
+        Number(existing.Altitude) === altitude
+      );
+
+      let areaId, spawnId;
+
+      if (matchingArea) {
+        // Use existing area and spawn
+        areaId = matchingArea.AreaId;
+        spawnId = matchingArea.SpawnId;
+        
+        // Update the spawn properties that might have changed
+        await client.query(`
+          UPDATE "MobSpawns" 
+          SET "Density" = $1, "IsShared" = $2, "IsEvent" = $3, "Name" = $4, "Description" = $5 
+          WHERE "Id" = $6
+        `, [
+          spawn.Properties.Density || 2,
+          spawn.Properties.IsShared ? 1 : 0,
+          spawn.Properties.IsEvent ? 1 : 0,
+          spawn.Properties.Name || null,
+          spawn.Properties.Description || null,
+          spawnId
+        ]);
+      } else {
+        // Generate area name based on mobs and maturities
+        let areaName = spawn.Properties.Name;
+        if (!areaName && spawn.Maturities && spawn.Maturities.length > 0) {
+          // Group maturities by mob
+          const mobGroups = {};
+          spawn.Maturities.forEach(maturity => {
+            const mobName = maturity.Maturity?.Mob?.Name;
+            if (mobName) {
+              if (!mobGroups[mobName]) {
+                mobGroups[mobName] = [];
+              }
+              if (maturity.Maturity?.Name) {
+                mobGroups[mobName].push(maturity.Maturity.Name);
+              }
+            }
+          });
+
+          // Create name: "Mob1 - Maturity1/Maturity2, Mob2 - Maturity3"
+          const mobParts = Object.entries(mobGroups).map(([mobName, maturities]) => {
+            if (maturities.length > 0) {
+              return `${mobName} - ${maturities.join('/')}`;
+            }
+            return mobName;
+          });
+          
+          areaName = mobParts.join(', ') || `Spawn Area ${index + 1}`;
+        }
+        
+        if (!areaName) {
+          areaName = `Spawn Area ${index + 1}`;
+        }
+
+        // Create new Area
+        const areaResult = await client.query(`
+          INSERT INTO "Areas" ("Name", "Type", "Shape", "Data", "Altitude", "PlanetId") 
+          VALUES ($1, $2, $3, $4, $5, $6)
+          RETURNING "Id"
+        `, [
+          areaName,
+          'MobArea',
+          shape,
+          data,
+          altitude,
+          planetId
+        ]);
+
+        areaId = areaResult.rows[0].Id;
+
+        // Create new MobSpawn
+        const spawnResult = await client.query(`
+          INSERT INTO "MobSpawns" ("AreaId", "Density", "IsShared", "IsEvent", "Name", "Description") 
+          VALUES ($1, $2, $3, $4, $5, $6)
+          RETURNING "Id"
+        `, [
+          areaId,
+          spawn.Properties.Density || 2,
+          spawn.Properties.IsShared ? 1 : 0,
+          spawn.Properties.IsEvent ? 1 : 0,
+          spawn.Properties.Name || null,
+          spawn.Properties.Description || null
+        ]);
+
+        spawnId = spawnResult.rows[0].Id;
+      }
+
+      return { ...spawn, Id: spawnId, AreaId: areaId };
+    } catch (error) {
+      console.error(`Error processing spawn ${index}:`, error, spawn);
+      return null;
+    }
+  }));
+
+  const validSpawns = processedSpawns.filter(s => s !== null);
+
+  // Delete spawns and areas that are no longer in the new data
+  const usedAreaIds = validSpawns.map(s => s.AreaId);
+  const areasToDelete = existingSpawns.rows.filter(existing => 
+    !usedAreaIds.includes(existing.AreaId)
+  );
+
+  for (const areaToDelete of areasToDelete) {
+    // Only delete areas - cascading will handle MobSpawns and MobSpawnMaturities
+    await client.query(`DELETE FROM "Areas" WHERE "Id" = $1`, [areaToDelete.AreaId]);
+  }
+
+  // Handle spawn maturities for each spawn
+  await Promise.all(validSpawns.map(async (spawn) => {
+    if (!spawn.Maturities || spawn.Maturities.length === 0) return;
+
+    // Get maturity IDs
+    const maturitiesWithIds = await Promise.all(spawn.Maturities.map(async (maturity) => {
+      if (!maturity.Maturity?.Mob?.Name || !maturity.Maturity?.Name) {
+        console.warn('Skipping maturity with missing data:', maturity);
+        return null;
+      }
+      
+      const result = await client.query(`
+        SELECT "MobMaturities"."Id" 
+        FROM "MobMaturities" 
+        INNER JOIN "Mobs" ON "MobMaturities"."MobId" = "Mobs"."Id"
+        WHERE "Mobs"."Name" = $1 AND "MobMaturities"."Name" = $2
+      `, [maturity.Maturity.Mob.Name, maturity.Maturity.Name]);
+
+      return result.rows[0] ? { ...maturity, MaturityId: result.rows[0].Id } : null;
+    }));
+
+    const validMaturities = maturitiesWithIds.filter(m => m !== null);
+
+    // Delete old maturities and insert new ones
+    await Promise.all([
+      client.query(`DELETE FROM "MobSpawnMaturities" WHERE "SpawnId" = $1 AND "MaturityId" NOT IN (SELECT * FROM unnest($2::int[]))`, 
+        [spawn.Id, validMaturities.map(m => m.MaturityId)]),
+      ...validMaturities.map(maturity => 
+        client.query(`
+          INSERT INTO "MobSpawnMaturities" ("SpawnId", "MaturityId", "IsRare")
+          VALUES ($1, $2, $3)
+          ON CONFLICT ("SpawnId", "MaturityId") DO UPDATE SET "IsRare" = $3
+        `, [spawn.Id, maturity.MaturityId, maturity.IsRare ? 1 : 0])
+      )
+    ]);
+  }));
+}
+
+// OLD VERSION OF applyMobSpawnChanges (kept as backup in case of issues):
+// async function applyMobSpawnChanges(client, mobId, spawns) {
+//   // Get planet ID for this mob
+//   const planetResult = await client.query(`SELECT "PlanetId" FROM "Mobs" WHERE "Id" = $1`, [mobId]);
+//   const planetId = planetResult.rows[0]?.PlanetId;
+// 
+//   // First, clean up ALL existing spawns and areas for this mob
+//   const existingSpawns = await client.query(`
+//     SELECT DISTINCT "MobSpawns"."Id", "AreaId"
+//     FROM "MobSpawns" 
+//     INNER JOIN "MobSpawnMaturities" ON "MobSpawns"."Id" = "MobSpawnMaturities"."SpawnId"
+//     INNER JOIN "MobMaturities" ON "MobSpawnMaturities"."MaturityId" = "MobMaturities"."Id"
+//     WHERE "MobMaturities"."MobId" = $1
+//   `, [mobId]);
+// 
+//   for (const spawn of existingSpawns.rows) {
+//     await client.query(`DELETE FROM "MobSpawnMaturities" WHERE "SpawnId" = $1`, [spawn.Id]);
+//     await client.query(`DELETE FROM "MobSpawns" WHERE "Id" = $1`, [spawn.Id]);
+//     await client.query(`DELETE FROM "Areas" WHERE "Id" = $1`, [spawn.AreaId]);
+//   }
+// 
+//   // Process spawns with area creation and get spawn IDs
+//   const processedSpawns = await Promise.all(spawns.map(async (spawn, index) => {
+//     try {
+//       if (!spawn.Properties.Shape || !spawn.Properties.Data) {
+//         console.warn(`Skipping spawn ${index}: missing Shape or Data`, spawn.Properties);
+//         return null;
+//       }
+// 
+//       // Generate area name based on mobs and maturities
+//     let areaName = spawn.Properties.Name;
+//     if (!areaName && spawn.Maturities && spawn.Maturities.length > 0) {
+//       // Group maturities by mob
+//       const mobGroups = {};
+//       spawn.Maturities.forEach(maturity => {
+//         const mobName = maturity.Maturity?.Mob?.Name;
+//         if (mobName) {
+//           if (!mobGroups[mobName]) {
+//             mobGroups[mobName] = [];
+//           }
+//           if (maturity.Maturity?.Name) {
+//             mobGroups[mobName].push(maturity.Maturity.Name);
+//           }
+//         }
+//       });
+// 
+//       // Create name: "Mob1 - Maturity1/Maturity2, Mob2 - Maturity3"
+//       const mobParts = Object.entries(mobGroups).map(([mobName, maturities]) => {
+//         if (maturities.length > 0) {
+//           return `${mobName} - ${maturities.join('/')}`;
+//         }
+//         return mobName;
+//       });
+//       
+//       areaName = mobParts.join(', ') || `Spawn Area ${index + 1}`;
+//     }
+//     
+//     if (!areaName) {
+//       areaName = `Spawn Area ${index + 1}`;
+//     }
+// 
+//     // Create Area
+//     const areaResult = await client.query(`
+//       INSERT INTO "Areas" ("Name", "Type", "Shape", "Data", "Altitude", "PlanetId") 
+//       VALUES ($1, $2, $3, $4, $5, $6)
+//       RETURNING "Id"
+//     `, [
+//       areaName,
+//       'MobArea',
+//       spawn.Properties.Shape == 'Point' ? 'Circle' : spawn.Properties.Shape,
+//       typeof spawn.Properties.Data === 'string' ? spawn.Properties.Data : JSON.stringify(spawn.Properties.Data),
+//       spawn.Properties.Coordinates?.Altitude || 0,
+//       planetId
+//     ]);
+// 
+//     // Create MobSpawn
+//     const spawnResult = await client.query(`
+//       INSERT INTO "MobSpawns" ("AreaId", "Density", "IsShared", "IsEvent", "Name", "Description") 
+//       VALUES ($1, $2, $3, $4, $5, $6)
+//       RETURNING "Id"
+//     `, [
+//       areaResult.rows[0].Id,
+//       spawn.Properties.Density || 2,
+//       spawn.Properties.IsShared ? 1 : 0,
+//       spawn.Properties.IsEvent ? 1 : 0,
+//       spawn.Properties.Name || null,
+//       spawn.Properties.Description || null
+//     ]);
+// 
+//     return { ...spawn, Id: spawnResult.rows[0].Id };
+//     } catch (error) {
+//       console.error(`Error processing spawn ${index}:`, error, spawn);
+//       return null;
+//     }
+//   }));
+// 
+//   const validSpawns = processedSpawns.filter(s => s !== null);
+// 
+//   // Handle spawn maturities for each spawn
+//   await Promise.all(validSpawns.map(async (spawn) => {
+//     if (!spawn.Maturities || spawn.Maturities.length === 0) return;
+// 
+//     // Get maturity IDs
+//     const maturitiesWithIds = await Promise.all(spawn.Maturities.map(async (maturity) => {
+//       if (!maturity.Maturity?.Mob?.Name || !maturity.Maturity?.Name) {
+//         console.warn('Skipping maturity with missing data:', maturity);
+//         return null;
+//       }
+//       
+//       const result = await client.query(`
+//         SELECT "MobMaturities"."Id" 
+//         FROM "MobMaturities" 
+//         INNER JOIN "Mobs" ON "MobMaturities"."MobId" = "Mobs"."Id"
+//         WHERE "Mobs"."Name" = $1 AND "MobMaturities"."Name" = $2
+//       `, [maturity.Maturity.Mob.Name, maturity.Maturity.Name]);
+// 
+//       return result.rows[0] ? { ...maturity, MaturityId: result.rows[0].Id } : null;
+//     }));
+// 
+//     const validMaturities = maturitiesWithIds.filter(m => m !== null);
+// 
+//     // Delete old maturities and insert new ones
+//     await Promise.all([
+//       client.query(`DELETE FROM "MobSpawnMaturities" WHERE "SpawnId" = $1 AND "MaturityId" NOT IN (SELECT * FROM unnest($2::int[]))`, 
+//         [spawn.Id, validMaturities.map(m => m.MaturityId)]),
+//       ...validMaturities.map(maturity => 
+//         client.query(`
+//           INSERT INTO "MobSpawnMaturities" ("SpawnId", "MaturityId", "IsRare")
+//           VALUES ($1, $2, $3)
+//           ON CONFLICT ("SpawnId", "MaturityId") DO UPDATE SET "IsRare" = $3
+//         `, [spawn.Id, maturity.MaturityId, maturity.IsRare ? 1 : 0])
+//       )
+//     ]);
+//   }));
+// }
+
+async function applyRefiningRecipesChanges(client, materialId, recipes) {
+  // Get recipe IDs with amounts for this material
+  const newRecipes = recipes.map((recipe, index) => ({
+    id: null, // Will be set after insert/update
+    amount: recipe.Amount,
+    ingredients: recipe.Ingredients,
+    index: index
+  }));
+
+  // Delete all existing recipes for this material (by ProductId)
+  await client.query(`DELETE FROM "RefiningRecipes" WHERE "ProductId" = $1`, [materialId + 1000000]);
+
+  // Insert new recipes and get their IDs
+  const insertedRecipes = await Promise.all(newRecipes.map(async (recipe) => {
+    const result = await client.query(`
+      INSERT INTO "RefiningRecipes" ("ProductId", "Amount") 
+      VALUES ($1, $2) 
+      RETURNING "Id"
+    `, [materialId + 1000000, recipe.amount]);
+    
+    return {
+      ...recipe,
+      id: result.rows[0].Id
+    };
+  }));
+
+  // Insert ingredients for each recipe
+  await Promise.all(insertedRecipes.map(async (recipe) => {
+    await Promise.all(recipe.ingredients.map(async (ingredient) => {
+      // Resolve item name to ID
+      const itemResult = await client.query(`
+        SELECT "Id" FROM "Items" WHERE "Name" = $1
+      `, [ingredient.Item.Name]);
+      
+      if (itemResult.rows.length === 0) {
+        throw new Error(`Item not found: ${ingredient.Item.Name}`);
+      }
+      
+      const itemId = itemResult.rows[0].Id;
+      
+      await client.query(`
+        INSERT INTO "RefiningIngredients" ("RecipeId", "ItemId", "Amount") 
+        VALUES ($1, $2, $3)
+      `, [recipe.id, itemId, ingredient.Amount]);
+    }));
+  }));
 }

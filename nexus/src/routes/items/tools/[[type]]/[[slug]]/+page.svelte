@@ -2,12 +2,12 @@
   // @ts-nocheck
   import '$lib/style.css';
 
-  import { hasItemTag, clampDecimals, getTypeLink } from "$lib/util";
+  import { hasItemTag, clampDecimals, getTypeLink, getTimeString } from "$lib/util";
 
   import EntityViewer from '$lib/components/EntityViewer.svelte';
   import Tiering from "$lib/components/Tiering.svelte";
   import Acquisition from "$lib/components/Acquisition.svelte";
-  import { editConfigEffectsOnEquip, getEditConfigTier } from '$lib/editConfigUtil.js';
+  import { editConfigEffectsOnEquip, editConfigEffectsOnUse, getEditConfigTier } from '$lib/editConfigUtil.js';
 
   export let data;
 
@@ -95,6 +95,14 @@
         .forEach(effect => onEquip[effect.Name] = `${effect.Values.Strength}${effect.Values.Unit}`);
     }
 
+    let onUse = {};
+
+    if (object.EffectsOnUse != null && object.EffectsOnUse.length > 0) {
+      object.EffectsOnUse
+        .sort((a,b) => a.Name.localeCompare(b.Name))
+        .forEach(effect => onUse[effect.Name] = `${effect.Values.Strength}${effect.Values.Unit} for ${getTimeString(effect.Values.DurationSeconds)}`);
+    }
+
     return {
       General: {
         Type: type,
@@ -110,14 +118,17 @@
       },
       Economy: {
         MaxTT: {
-          Label: 'Max. TT',
+          Label: 'Max. TT (PED)',
           Value: object.Properties?.Economy.MaxTT != null ? `${clampDecimals(object.Properties?.Economy.MaxTT, 2, 8)} PED` : 'N/A',
         },
         MinTT: {
-          Label: 'Min. TT',
+          Label: 'Min. TT (PED)',
           Value: object.Properties?.Economy.MinTT != null ? `${clampDecimals(object.Properties?.Economy.MinTT, 2, 8)} PED` : 'N/A',
         },
-        Decay: object.Properties?.Economy.Decay != null ? `${object.Properties?.Economy.Decay.toFixed(4) ?? 'N/A'} PEC` : 'N/A',
+        Decay: {
+          Label: 'Decay (PEC)',
+          Value: object.Properties?.Economy.Decay != null ? `${object.Properties?.Economy.Decay.toFixed(4) ?? 'N/A'} PEC` : 'N/A',
+        },
         Ammo: additional.type === 'finders'
         ? 'Survey Probe'
         : additional.type === 'teleportationchips' || additional.type === 'effectchips'
@@ -155,7 +166,7 @@
           Value: `${object.Properties?.Range ?? 'N/A'}m`,
         } : null,
         ExcavationEfficiency: additional.type === 'excavators' ? {
-          Label: 'Efficiency',
+          Label: 'Efficiency (%)',
           Tooltip: 'Affects how much this extractor will gather per operation. Higher efficiency means more resources per operation.',
           Value: `${object.Properties?.Efficiency ?? 'N/A'}`,
         } : null,
@@ -200,6 +211,7 @@
         } : null,
       } : null,
       "Equip Effects": object.EffectsOnEquip?.length > 0 ? onEquip : null,
+      "Use Effects": additional.type === 'effectchips' && object.EffectsOnUse?.length > 0 ? onUse : null,
       Misc: {
         TotalUses: {
           Label: 'Total Uses',
@@ -237,9 +249,9 @@
           label: 'Economy',
           type: 'group',
           controls: [
-            { label: 'Max. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v },
-            { label: 'Min. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v },
-            { label: 'Decay', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Economy.Decay, '_set': (x, v) => x.Properties.Economy.Decay = v },
+            { label: 'Max. TT (PED)', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v },
+            { label: 'Min. TT (PED)', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v },
+            { label: 'Decay (PEC)', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Economy.Decay, '_set': (x, v) => x.Properties.Economy.Decay = v },
           ]
         }
       ]
@@ -275,9 +287,9 @@
           label: 'Economy',
           type: 'group',
           controls: [
-            { label: 'Max. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v },
-            { label: 'Min. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v },
-            { label: 'Decay', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Economy.Decay, '_set': (x, v) => x.Properties.Economy.Decay = v },
+            { label: 'Max. TT (PED)', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v },
+            { label: 'Min. TT (PED)', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v },
+            { label: 'Decay (PEC)', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Economy.Decay, '_set': (x, v) => x.Properties.Economy.Decay = v },
           ]
         }
       ]
@@ -298,7 +310,7 @@
             AmmoBurn: undefined
           },
           Skill: {
-            IsSiB: false,
+            IsSiB: true,
             LearningIntervalStart: undefined,
             LearningIntervalEnd: undefined
           }
@@ -321,9 +333,9 @@
           label: 'Economy',
           type: 'group',
           controls: [
-            { label: 'Max. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v },
-            { label: 'Min. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v },
-            { label: 'Decay', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Economy.Decay, '_set': (x, v) => x.Properties.Economy.Decay = v },
+            { label: 'Max. TT (PED)', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v },
+            { label: 'Min. TT (PED)', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v },
+            { label: 'Decay (PEC)', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Economy.Decay, '_set': (x, v) => x.Properties.Economy.Decay = v },
             { label: 'Ammo Burn', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.AmmoBurn, '_set': (x, v) => x.Properties.Economy.AmmoBurn = v },
           ]
         },
@@ -361,7 +373,7 @@
             Decay: undefined
           },
           Skill: {
-            IsSiB: false,
+            IsSiB: true,
             LearningIntervalStart: undefined,
             LearningIntervalEnd: undefined
           }
@@ -384,9 +396,9 @@
           label: 'Economy',
           type: 'group',
           controls: [
-            { label: 'Max. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v },
-            { label: 'Min. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v },
-            { label: 'Decay', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Economy.Decay, '_set': (x, v) => x.Properties.Economy.Decay = v },
+            { label: 'Max. TT (PED)', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v },
+            { label: 'Min. TT (PED)', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v },
+            { label: 'Decay (PEC)', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Economy.Decay, '_set': (x, v) => x.Properties.Economy.Decay = v },
           ]
         },
         {
@@ -509,8 +521,10 @@
         },
         Profession: {
           Name: undefined
-        }
+        },
+        EffectsOnUse: []
       }),
+      dependencies: ['effects'],
       controls: [
         {
           label: 'General',
@@ -527,9 +541,9 @@
           label: 'Economy',
           type: 'group',
           controls: [
-            { label: 'Max. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v },
-            { label: 'Min. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v },
-            { label: 'Decay', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Economy.Decay, '_set': (x, v) => x.Properties.Economy.Decay = v },
+            { label: 'Max. TT (PED)', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v },
+            { label: 'Min. TT (PED)', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v },
+            { label: 'Decay (PEC)', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Economy.Decay, '_set': (x, v) => x.Properties.Economy.Decay = v },
             { label: 'Ammo Type', type: 'select', options: _ => ['Synthetic Mind Essence', 'Mind Essence', 'Light Mind Essence'], '_get': x => x.Ammo.Name, '_set': (x, v) => x.Ammo.Name = v },
             { label: 'Ammo Burn', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.AmmoBurn, '_set': (x, v) => x.Properties.Economy.AmmoBurn = v },
           ]
@@ -541,7 +555,7 @@
             { label: 'Level', type: 'number', step: 1, min: 0, '_get': x => x.Properties.Mindforce.Level, '_set': (x, v) => x.Properties.Mindforce.Level = v },
             { label: 'Concentration', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Mindforce.Concentration, '_set': (x, v) => x.Properties.Mindforce.Concentration = v },
             { label: 'Cooldown', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Mindforce.Cooldown, '_set': (x, v) => x.Properties.Mindforce.Cooldown = v },
-            { label: 'Cooldown Group', type: 'text', '_get': x => x.Properties.Mindforce.CooldownGroup, '_set': (x, v) => x.Properties.Mindforce.CooldownGroup = v },
+            { label: 'Cooldown Group', type: 'number', step: 1, min: 0, '_get': x => x.Properties.Mindforce.CooldownGroup, '_set': (x, v) => x.Properties.Mindforce.CooldownGroup = v },
           ]
         },
         {
@@ -552,7 +566,8 @@
             { label: 'SiB', type: 'checkbox', '_get': x => x.Properties.Skill.IsSiB, '_set': (x, v) => x.Properties.Skill.IsSiB = v },
             { '_if': x => x.Properties.Skill.IsSiB, label: 'Learning Interval', type: 'range', step: 0.1, min: 0, '_get': x => [x.Properties.Skill.LearningIntervalStart, x.Properties.Skill.LearningIntervalEnd], '_set': (x, v) => { x.Properties.Skill.LearningIntervalStart = v[0]; x.Properties.Skill.LearningIntervalEnd = v[1]; } },
           ]
-        }
+        },
+        { label: 'Effects on Use', type: 'list', config: editConfigEffectsOnUse, '_get': x => x.EffectsOnUse, '_set': (x, v) => x.EffectsOnUse = v }
       ]
     },
     misctools: {
@@ -570,7 +585,7 @@
           Skill: {
             LearningIntervalStart: undefined,
             LearningIntervalEnd: undefined,
-            IsSiB: false
+            IsSiB: true
           }
         },
         Profession: {
@@ -593,9 +608,9 @@
           label: 'Economy',
           type: 'group',
           controls: [
-            { label: 'Max. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v },
-            { label: 'Min. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v },
-            { label: 'Decay', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Economy.Decay, '_set': (x, v) => x.Properties.Economy.Decay = v },
+            { label: 'Max. TT (PED)', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v },
+            { label: 'Min. TT (PED)', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v },
+            { label: 'Decay (PEC)', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Economy.Decay, '_set': (x, v) => x.Properties.Economy.Decay = v },
           ]
         },
         {

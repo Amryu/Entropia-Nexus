@@ -83,19 +83,32 @@ export async function execute(interaction) {
   let userModerator = await getUserById(interaction.member.id);
   let code = Math.floor(10000000 + Math.random() * 90000000);
 
-  interaction.channel.send(`<@${userVerify.id}> - Please message "${userModerator.eu_name}" with the code ${code} in Entropia Universe via PM or Mail to finish verification.`);
+  try {
+    interaction.channel.send(`<@${userVerify.id}> - Please message "${userModerator.eu_name}" with the code ${code} in Entropia Universe via PM or Mail to finish verification.`);
+  } catch (e) {
+    console.error(`Failed to send verification message to thread ${interaction.channel.id} for user ${userVerify.username}: ${e.message}`);
+    return interaction.reply({ content: 'Failed to send verification message. The thread may be archived.', ephemeral: true });
+  }
 
   await promptModeratorForConfirmation(interaction, userVerify, code, async () => {
     let verifiedRole = guild.roles.cache.get(getConfigValue('verifiedRoleId'));
     if (!verifiedRole) {
-      await interaction.channel.send('The verified role has not been set. Please contact an administrator.');
+      try {
+        await interaction.channel.send('The verified role has not been set. Please contact an administrator.');
+      } catch (e) {
+        console.error(`Failed to send error message to thread ${interaction.channel.id}: ${e.message}`);
+      }
       return;
     }
 
     await discordUserVerify.roles.add(verifiedRole);
     await setUserVerified(userVerify.id, true);
-    await interaction.channel.send(`${userVerify.global_name} has been successfully verified with the Entropia name "${userVerify.eu_name}"!`);
-    await interaction.channel.setArchived(true);
+    try {
+      await interaction.channel.send(`${userVerify.global_name} has been successfully verified with the Entropia name "${userVerify.eu_name}"!`);
+      await interaction.channel.setArchived(true);
+    } catch (e) {
+      console.error(`Failed to send success message or archive thread ${interaction.channel.id}: ${e.message}`);
+    }
   });
 }
 

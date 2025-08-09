@@ -58,11 +58,11 @@
           values: ['Name', 'Weight', 'Points/HP', 'Hidden'],
           widths: ['1fr', 'max-content', 'max-content', 'max-content'],
         }}
-        data={object.Skills.sort((a,b) => a.Skill.Name.localeCompare(b.Skill.Name)).map(skill => ({
+        data={object.Skills.sort((a,b) => b.Weight - a.Weight).map(skill => ({
           values: [
             skill.Skill.Name,
             skill.Weight,
-            skill.Skill.Properties.HpIncrease,
+            skill.Skill.Properties.HpIncrease ?? 'N/A',
             skill.Skill.Properties.IsHidden ? 'Yes' : 'No'
           ],
           links: [`/information/skills/${encodeURIComponentSafe(skill.Skill.Name)}`, null, null, null]
@@ -74,7 +74,7 @@
           values: ['Name', 'Level'],
           widths: ['1fr', 'max-content']
         }}
-        data={object.Unlocks.sort((a,b) => a.Skill.Name.localeCompare(b.Skill.Name)).map(skill => ({
+        data={object.Unlocks.sort((a,b) => a.Level - b.Level).map(skill => ({
           values: [
             skill.Skill.Name,
             skill.Level

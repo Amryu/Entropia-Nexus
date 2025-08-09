@@ -30,8 +30,10 @@
         Economy: {
           MaxTT: null
         }
-      }
+      },
+      RefiningRecipes: []
     }),
+    dependencies: ['materials'],
     controls: [
       {
         label: 'General',
@@ -48,6 +50,40 @@
         controls: [
           { label: 'Value', type: 'number', '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v }
         ]
+      },
+      {
+        label: 'Refining Recipes',
+        type: 'list',
+        config: {
+          constructor: () => ({
+            Amount: 1,
+            Ingredients: []
+          }),
+          dependencies: ['items'],
+          controls: [
+            { label: 'Product Amount', type: 'number', step: '1', min: '1', '_get': x => x.Amount, '_set': (x, v) => x.Amount = v },
+            { 
+              label: 'Ingredients', 
+              type: 'list', 
+              config: {
+                constructor: () => ({
+                  Item: {
+                    Name: null
+                  },
+                  Amount: 1
+                }),
+                controls: [
+                  { label: 'Item', type: 'input-validator', validator: (v, d) => d.items.find(y => y.Name === v), '_get': (x, d) => x.Item?.Name ?? '', '_set': (x, v, d) => x.Item.Name = v },
+                  { label: 'Ingredient Amount', type: 'number', step: '1', min: '1', '_get': x => x.Amount, '_set': (x, v) => x.Amount = v }
+                ]
+              },
+              '_get': x => x.Ingredients, 
+              '_set': (x, v) => x.Ingredients = v 
+            }
+          ]
+        },
+        '_get': x => x.RefiningRecipes || [],
+        '_set': (x, v) => x.RefiningRecipes = v
       }
     ]
   };

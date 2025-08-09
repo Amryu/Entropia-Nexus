@@ -105,6 +105,9 @@ export function getPlanetName(planetName) {
   if (planetName === 'calypso') {
     return 'Calypso';
   }
+  else if (planetName === 'aris') {
+    return 'ARIS';
+  }
   else if (planetName === 'arkadia') {
     return 'Arkadia';
   }
@@ -337,6 +340,8 @@ export function getTypeName(type) {
       return 'Profession';
     case 'Vendor':
       return 'Vendor';
+    case 'Shop':
+      return 'Shop';
     default:
       return 'N/A';
   }
@@ -373,6 +378,7 @@ export async function navigate(url) {
   loading.set(false);
 }
 
+// Removed GET response caching to prevent stale data issues during edits/auth changes
 export async function apiCall(fetch, url, apiUrl = import.meta.env.VITE_API_URL) {
   let response = await fetch(apiUrl + url);
 
@@ -430,8 +436,8 @@ export function getErrorMessage(error) {
 
 export async function handlePageLoad(fetch, items, config) {
   let isMultiType = Array.isArray(config.items);
-  config.isItem ||= true;
-  config.isArmorSet ||= false;
+  config.isItem ??= true;
+  config.isArmorSet ??= false;
 
   if (!items) {
     if (isMultiType) {
@@ -474,19 +480,20 @@ export async function handlePageLoad(fetch, items, config) {
     tierable
       ? apiCall(fetch, `/tiers?ItemId=${itemId}&IsArmorSet=${config.isArmorSet ? 1 : 0}`)
       : Promise.resolve(null),
-    config.isItem && !config.isArmorSet
+    (config.isItem && !config.isArmorSet)
       ? getAcquisitionInfo(fetch, config.name)
       : Promise.resolve(null),
-    config.isItem && !config.isArmorSet
+    (config.isItem && !config.isArmorSet)
       ? getUsageInfo(fetch, config.name)
       : Promise.resolve(null)
   ]);
 
-  if (config.isArmorSet) {
+  if (config.isArmorSet && object && Array.isArray(object.Armors)) {
     let armorNames = object.Armors.flatMap(x => x.map(y => y.Name));
-
-    acquisition = await getAcquisitionInfo(fetch, armorNames);
-    usage = await getUsageInfo(fetch, armorNames);
+    if (armorNames.length > 0) {
+      acquisition = await getAcquisitionInfo(fetch, armorNames);
+      usage = await getUsageInfo(fetch, armorNames);
+    }
   }
 
   if (object === null) {
@@ -513,9 +520,18 @@ export function getParams(page) {
   );
 }
 
+// Cache for resolved item links
+const itemLinkCache = new Map();
+
 export async function resolveItemLink(fetch, item) {
   if (item == null) {
     return null;
+  }
+
+  // Check cache first
+  const cacheKey = `${item.Properties.Type}-${item.Name}`;
+  if (itemLinkCache.has(cacheKey)) {
+    return itemLinkCache.get(cacheKey);
   }
 
   let subtype = null;
@@ -529,10 +545,14 @@ export async function resolveItemLink(fetch, item) {
       }
     }
 
-    return getTypeLink(item.Set?.Name, 'Armor', null);
+    const result = getTypeLink(item.Set?.Name, 'Armor', null);
+    itemLinkCache.set(cacheKey, result);
+    return result;
   }
 
-  return getTypeLink(item.Name, item.Properties.Type, subtype);
+  const result = getTypeLink(item.Name, item.Properties.Type, subtype);
+  itemLinkCache.set(cacheKey, result);
+  return result;
 }
 
 export function getResponse(response, status) {

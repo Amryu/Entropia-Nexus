@@ -15,7 +15,7 @@
   interface MenuItems {
     [key: string]: { label: string; url: string }[];
   }
-  const menuItems: MenuItems = {
+  const menuItemsWiki: MenuItems = {
     'Items': [
       { label: 'Weapons', url: 'weapons' },
       { label: 'Armor Sets', url: 'armorsets' },
@@ -54,6 +54,7 @@
     */
     'Maps': [
       { label: 'Calypso', url: 'calypso' },
+      { label: 'ARIS', url: 'aris' },
       { label: 'Cyrene', url: 'cyrene' },
       { label: 'Arkadia', url: 'arkadia' },
       { label: 'Arkadia Underground', url: 'arkadiaunderground' },
@@ -77,11 +78,18 @@
     /*
       { label: 'Skill Manager', url: 'skillmanager' },
   */],
+    'Market': [
+      { label: 'Auction', url: 'auction' },
+      { label: 'Exchange', url: 'exchange' },
+      { label: 'Rental', url: 'rental' },
+      { label: 'Services', url: 'services' },
+      { label: 'Shops', url: 'shops' },
+    ],
     'External': [
       { label: 'NI Helper', url: 'nihelper' },
       { label: 'Cyrenedream', url: 'cyrenedream' },
       { label: 'Lootius.io (Ad)', url: 'lootiusio' },
-    ]
+    ],
   };
 
   let timeout;
@@ -282,12 +290,13 @@
 <nav>
   <div class="menu-container">
     <a href="/"><img class="website-icon" src="/favicon.png" alt="Entropia Nexus" title="Entropia Nexus" width="48px" height="48px" /></a>
-    {#each Object.keys(menuItems) as menu (menu)}
+    {#each Object.keys(menuItemsWiki) as menu (menu)}
+      {#if !(menu === 'Market' && !(user && user.administrator))}
       <!-- svelte-ignore a11y-no-static-element-interactions -->
       <div class="menu-item" on:mouseenter={() => dropdownOpen = menu} on:mouseleave={() => dropdownOpen = null}>
           {menu}
           <div class="dropdown-content" style="visiblity: {dropdownOpen === menu ? 'visible' : 'hidden'}">
-              {#each menuItems[menu] as item (item)}
+              {#each menuItemsWiki[menu] as item (item)}
                 {#if item.url === 'api'}
                   <a href="{import.meta.env.VITE_API_URL}/docs/"><div class="menu-dropdown-item">{item.label}</div></a>
                 {:else if item.url === 'nihelper'}
@@ -302,6 +311,7 @@
               {/each}
           </div>
       </div>
+    {/if}
     {/each}
   </div>
 

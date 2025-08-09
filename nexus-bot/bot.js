@@ -5,7 +5,9 @@ import { dump } from 'js-yaml';
 import { Client, GatewayIntentBits, Collection, Events, ChannelType } from 'discord.js';
 import { getUsers, getOpenChanges, setChangeThreadId, getDeletedChanges, deleteChange } from './db.js';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { compareJson, validate } from './change.js';
+import { compareJson, validate, printSideBySide } from './change.js';
+
+const adminUserId = '178245652633878528';
 
 dotenv.config();
 const config = JSON.parse(readFileSync('config.json', 'utf8'));
@@ -23,7 +25,8 @@ export function getConfigValue(key) {
 const client = new Client({ intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.GuildMessageReactions
+    GatewayIntentBits.GuildMessageReactions,
+    GatewayIntentBits.GuildMembers
   ]
 });
 
@@ -56,10 +59,31 @@ client.on(Events.InteractionCreate, async interaction => {
 async function checkUnverifiedUsers() {
   const channel = client.channels.cache.find(channel => channel.id === config.verifiedChannelId);
   if (!channel) throw new Error('Verification channel not found');
+  
+  try {
+    await channel.guild.members.fetch();
+  } catch (e) {
+    console.error('Error fetching members, using old list instead.', e);
+  }
 
   const unverifiedUsers = (await getUsers()).filter(x => !x.verified);
 
   for (const user of unverifiedUsers) {
+    const guildMember = channel.guild.members.cache.get(user.id);
+
+    if (!guildMember) {
+      const existingThread = channel.threads.cache.find(thread => thread.name === `${user.username}-verification`);
+      if (existingThread && !existingThread.archived) {
+        try {
+          await existingThread.setArchived(true);
+          console.log(`Archived thread for user ${user.username} as they are no longer on the server.`);
+        } catch (e) {
+          console.error('Error archiving thread for user no longer on the server.', e);
+        }
+      }
+      continue;
+    }
+
     const existingThread = channel.threads.cache.find(thread => thread.name === `${user.username}-verification`);
 
     if (existingThread) {
@@ -95,7 +119,11 @@ async function checkUnverifiedUsers() {
       ],
     });
 
-    await thread.send(`Hello <@${user.id}>, please set your full Entropia Universe username using /seteuname and wait for a moderator to validate it in-game. You can't change your username after verification has been completed!`);
+    try {
+      await thread.send(`Hello <@${user.id}>, please set your full Entropia Universe username using /seteuname and wait for a moderator to validate it in-game. You can't change your username after verification has been completed!`);
+    } catch (e) {
+      console.error(`Failed to send welcome message to verification thread for ${user.username}: ${e.message}`);
+    }
   }
 }
 
@@ -112,13 +140,39 @@ async function checkChanges() {
       ? await channel.threads.fetch(change.thread_id).catch(_ => null)
       : null;
 
-    let entity = await fetch(`${process.env.API_URL}/${change.entity.toLowerCase()}s/${change.data.Id}`)
+    const fetchUrl = `${process.env.API_URL}/${change.entity.toLowerCase()}s/${change.data.Id}`;
+    console.log(`Fetching old object from: ${fetchUrl}`);
+    
+    let entity = await fetch(fetchUrl)
       .then(res => res.status === 404 ? Promise.resolve({}) : res.json())
       .catch(_ => null);
 
+    // Fetch refining recipes for materials
+    if (change.entity === 'Material' && entity && entity.Id) {
+      const refiningUrl = `${process.env.API_URL}/refiningrecipes?Product=${entity.Id}`;
+      console.log(`Fetching refining recipes from: ${refiningUrl}`);
+      
+      try {
+        const refiningRecipes = await fetch(refiningUrl)
+          .then(res => res.json())
+          .catch(_ => []);
+        entity.RefiningRecipes = refiningRecipes;
+      } catch (error) {
+        console.error(`Failed to fetch refining recipes for material ${entity.Id}:`, error);
+        entity.RefiningRecipes = [];
+      }
+    }
+
+    // Print side-by-side comparison for debugging
+    printSideBySide(entity, change.data, 'Entity vs Change Data');
+
     validate(change.entity, entity);
 
+    // Print side-by-side comparison for debugging
+    printSideBySide(entity, change.data, 'Entity vs Change Data');
+
     let compareObject = compareJson(entity, change.data);
+    console.log(`Comparison result for ${change.data.Name}:`, compareObject ? 'Changes detected' : 'No changes detected');
 
     if (!thread) {
       thread = await channel.threads.create({
@@ -138,23 +192,61 @@ async function checkChanges() {
       const formatted = formatJsonForDiscord(compareObject);
       
       for (const message of formatted) {
-        await thread.send(message);
+        try {
+          await thread.send(message);
+        } catch (e) {
+          console.error(`Failed to send message to thread ${thread.id} (${change.data.Name}): ${e.message}`);
+          if (e.code === 50083) { // Thread is archived
+            console.log(`Thread ${thread.id} is archived, skipping message.`);
+            break;
+          }
+        }
       }
-      await thread.send(`A new change has been submitted by <@${change.author_id}>. Please post proof to validate your changes and await approval.`);
+      try {
+        await thread.send(`A new change has been submitted by <@${change.author_id}>. Please post proof to validate your changes and await approval.`);
+      } catch (e) {
+        console.error(`Failed to send submission message to thread ${thread.id} (${change.data.Name}): ${e.message}`);
+      }
     }
     else {
-      await thread.setName(`[${change.state}] ${change.type}: ${change.data.Name.substring(0, 80)}`);
+      try {
+        await thread.setName(`[${change.state}] ${change.type}: ${change.data.Name.substring(0, 80)}`);
+      } catch (e) {
+        console.error(`Failed to update thread name ${thread.id} (${change.data.Name}): ${e.message}`);
+      }
 
       const formatted = formatJsonForDiscord(compareObject);
       
       for (const message of formatted) {
-        await thread.send(message);
+        try {
+          await thread.send(message);
+        } catch (e) {
+          console.error(`Failed to send update message to thread ${thread.id} (${change.data.Name}): ${e.message}`);
+          if (e.code === 50083) { // Thread is archived
+            console.log(`Thread ${thread.id} is archived, skipping remaining messages.`);
+            break;
+          }
+        }
       }
-      await thread.send(`This change has been updated by <@${change.author_id}>.`);
+      try {
+        await thread.send(`This change has been updated by <@${change.author_id}>.`);
+      } catch (e) {
+        console.error(`Failed to send update notification to thread ${thread.id} (${change.data.Name}): ${e.message}`);
+      }
 
       let newCheckTime = new Date(change.last_update);
       newCheckTime.setMilliseconds(newCheckTime.getMilliseconds() + 1);
       setConfigValue('lastChangeCheck', newCheckTime.toISOString());
+    }
+
+    // Add static user to the thread
+    if (change.state == 'Pending' && !thread.members.cache.has(adminUserId)) {
+      try {
+        await thread.members.add(adminUserId);
+      }
+      catch (e) {
+        console.error(`Error adding admin to change thread (${thread.id}, ${change.data.Name}): ${e.message}`);
+      }
     }
   }
 
@@ -172,17 +264,30 @@ async function checkChanges() {
       await thread.setName(`[${change.state}] ${change.type}: ${change.data.Name.substring(0, 80)}`);
     }
     catch (e) {
-      console.error(e);
+      console.error(`Failed to update deleted change thread name ${thread.id} (${change.data.Name}): ${e.message}`);
     }
 
-    await thread.send('This change has been deleted and the thread will be archived.');
-    await thread.setArchived(true);
+    try {
+      await thread.send('This change has been deleted and the thread will be archived.');
+    } catch (e) {
+      console.error(`Failed to send deletion message to thread ${thread.id} (${change.data.Name}): ${e.message}`);
+    }
+    
+    try {
+      await thread.setArchived(true);
+    } catch (e) {
+      console.error(`Failed to archive thread ${thread.id} (${change.data.Name}): ${e.message}`);
+    }
 
     await deleteChange(change.id);
   }
 }
 
 function formatJsonForDiscord(json) {
+  if (json === null) {
+    return ['```yaml\nNo changes detected\n```'];
+  }
+  
   let formatted = dump(json, { indent: 2 }).replace(/^( +)/g, '\t');
 
   // Split the formatted string into chunks at line breaks

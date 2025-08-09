@@ -5,7 +5,6 @@
   import Table from "$lib/components/Table.svelte";
 
   export let imageUrl;
-
   export let title;
   export let data = {};
 </script>
@@ -39,7 +38,7 @@
 
 <div class="container">
   {#if data}
-  <h2><img class="image" alt={title} title={title} /></h2>
+  <h2><img class="image" alt={title} title={title} style={imageUrl ? `background-image: url(${imageUrl});` : ''} /></h2>
   <div class="flex">
     {#each Object.entries(data) as [key, value]}
       {#if value !== null}

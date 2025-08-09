@@ -206,7 +206,7 @@
             AmmoBurn: null
           },
           Skill: {
-            IsSiB: false,
+            IsSiB: true,
             LearningIntervalStart: null,
             LearningIntervalEnd: null
           }
@@ -233,9 +233,9 @@
           label: 'Economy',
           type: 'group',
           controls: [
-            { label: 'Max. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v },
-            { label: 'Min. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v },
-            { label: 'Decay', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Economy.Decay, '_set': (x, v) => x.Properties.Economy.Decay = v },
+            { label: 'Max. TT (PED)', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v },
+            { label: 'Min. TT (PED)', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v },
+            { label: 'Decay (PEC)', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Economy.Decay, '_set': (x, v) => x.Properties.Economy.Decay = v },
           ]
         },
         {
@@ -304,9 +304,9 @@
           label: 'Economy',
           type: 'group',
           controls: [
-            { label: 'Max. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v },
-            { label: 'Min. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v },
-            { label: 'Decay', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Economy.Decay, '_set': (x, v) => x.Properties.Economy.Decay = v },
+            { label: 'Max. TT (PED)', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v },
+            { label: 'Min. TT (PED)', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v },
+            { label: 'Decay (PEC)', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Economy.Decay, '_set': (x, v) => x.Properties.Economy.Decay = v },
             { label: 'Ammo Type', type: 'select', options: _ => ['Synthetic Mind Essence', 'Mind Essence', 'Light Mind Essence'], '_get': x => x.Ammo.Name, '_set': (x, v) => x.Ammo.Name = v },
             { label: 'Ammo Burn', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Economy.AmmoBurn, '_set': (x, v) => x.Properties.Economy.AmmoBurn = v },
           ]

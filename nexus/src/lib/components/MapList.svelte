@@ -21,7 +21,8 @@
 
   const planetList = {
     Calypso: [
-      { Name: 'Calypso', _type: 'calypso' }
+      { Name: 'Calypso', _type: 'calypso' },
+      { Name: 'ARIS', _type: 'aris' }
     ],
     Arkadia: [
       { Name: 'Arkadia', _type: 'arkadia' },

@@ -200,14 +200,14 @@ export const Mob = {
                   "type": "string",
                   "default": "Primary"
                 },
+                "TotalDamage": {
+                  "type": ["number", "null"],
+                  "default": null
+                },
                 "Damage": {
                   "type": "object",
                   "additionalProperties": false,
                   "properties": {
-                    "Damage": {
-                      "type": ["number", "null"],
-                      "default": null
-                    },
                     "Stab": {
                       "type": ["number", "null"],
                       "default": null
@@ -246,7 +246,6 @@ export const Mob = {
                     }
                   },
                   "required": [
-                    "Damage",
                     "Stab",
                     "Cut",
                     "Impact",
@@ -265,6 +264,7 @@ export const Mob = {
               },
               "required": [
                 "Name",
+                "TotalDamage",
                 "Damage",
                 "IsAoE"
               ]
@@ -276,6 +276,81 @@ export const Mob = {
           "Properties",
           "Attacks"
         ]
+      }
+    },
+    "Spawns": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "Properties": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "Density": { 
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 3
+              },
+              "IsShared": { "type": "boolean" },
+              "IsEvent": { "type": "boolean" },
+              "Shape": { 
+                "type": "string",
+                "enum": ["Point", "Circle", "Rectangle", "Polygon"]
+              },
+              "Data": {
+                "anyOf": [
+                  { "type": "null" },
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "x": { "type": "number" },
+                      "y": { "type": "number" },
+                      "width": { "type": "number" },
+                      "height": { "type": "number" },
+                      "radius": { "type": "number" },
+                      "vertices": {
+                        "type": "array",
+                        "items": { "type": "number" },
+                        "minItems": 6
+                      }
+                    }
+                  }
+                ]
+              },
+              "Coordinates": {
+                "type": "object",
+                "properties": {
+                  "Altitude": { "type": ["number", "null"] }
+                },
+                "required": ["Altitude"]
+              }
+            },
+            "required": ["Density", "IsShared", "IsEvent", "Shape", "Data", "Coordinates"]
+          },
+          "Maturities": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "IsRare": { "type": "boolean" },
+                "Maturity": {
+                  "type": "object",
+                  "properties": {
+                    "Name": { "type": ["string", "null"] },
+                    "Mob": { "$ref": "https://entropianexus.com/schemas/NamedEntity.json" }
+                  },
+                  "required": ["Name", "Mob"]
+                }
+              },
+              "required": ["IsRare", "Maturity"]
+            }
+          }
+        },
+        "required": ["Properties", "Maturities"]
       }
     },
     "Loots": {

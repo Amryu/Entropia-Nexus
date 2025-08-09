@@ -1,0 +1,54 @@
+const { getObjects, getObjectByIdOrName } = require('./utils');
+
+const queries = {
+  Effects: 'SELECT * FROM ONLY "Effects"',
+};
+
+function formatEffect(x){
+  return {
+    Id: x.Id,
+    Name: x.Name,
+    Properties: {
+      Description: x.Description,
+      IsPositive: x.IsPositive === 1
+    },
+    Links: { "$Url": `/effects/${x.Id}` }
+  };
+}
+
+const getEffects = () => getObjects(queries.Effects, formatEffect);
+const getEffect = async (idOrName) => { const row = await getObjectByIdOrName(queries.Effects, 'Effects', idOrName); return row ? formatEffect(row) : null; };
+
+function register(app){
+  /**
+   * @swagger
+   * /effects:
+   *  get:
+   *    description: Get all effects
+   *    responses:
+   *      '200':
+   *        description: A list of effects
+   */
+  app.get('/effects', async (req,res) => { res.json(await getEffects()); });
+  /**
+   * @swagger
+   * /effects/{effect}:
+   *  get:
+   *    description: Get an effect by name or id
+   *    parameters:
+   *      - in: path
+   *        name: effect
+   *        schema:
+   *          type: string
+   *        required: true
+   *        description: The name or id of the effect
+   *    responses:
+   *      '200':
+   *        description: The effect
+   *      '404':
+   *        description: Effect not found
+   */
+  app.get('/effects/:effect', async (req,res) => { const r = await getEffect(req.params.effect); if (r) res.json(r); else res.status(404).send(); });
+}
+
+module.exports = { register, getEffects, getEffect };

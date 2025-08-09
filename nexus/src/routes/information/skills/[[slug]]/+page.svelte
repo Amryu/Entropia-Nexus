@@ -16,7 +16,7 @@
         PointsPerHP: {
           Label: 'Points/HP',
           Tooltip: 'How many skill points are needed per HP increase.',
-          Value: skill.Properties.HpIncrease
+          Value: skill.Properties.HpIncrease ?? 'N/A'
         },
         Hidden: skill.Properties.IsHidden ? 'Yes' : 'No'
       },

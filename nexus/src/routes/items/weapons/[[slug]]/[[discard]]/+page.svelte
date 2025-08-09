@@ -139,7 +139,7 @@
       },
       Economy: {
         Efficiency: {
-          Label: 'Efficiency',
+          Label: 'Efficiency (%)',
           Value: weapon.Properties?.Economy?.Efficiency != null ? `${weapon.Properties.Economy.Efficiency.toFixed(1)}%` : 'N/A',
           Bold: true
         },
@@ -150,14 +150,17 @@
           Bold: true
         },
         MaxTT: {
-          Label: 'Max. TT',
+          Label: 'Max. TT (PED)',
           Value: weapon.Properties?.Economy.MaxTT != null ? `${clampDecimals(weapon.Properties?.Economy.MaxTT, 2, 8)} PED` : 'N/A',
         },
         MinTT: {
-          Label: 'Min. TT',
+          Label: 'Min. TT (PED)',
           Value: weapon.Properties?.Economy.MinTT != null ? `${clampDecimals(weapon.Properties?.Economy.MinTT, 2, 8)} PED` : 'N/A',
         },
-        Decay: weapon.Properties?.Economy.Decay != null ? `${weapon.Properties?.Economy.Decay.toFixed(4)} PEC` : 'N/A',
+        Decay: {
+          Label: 'Decay (PEC)',
+          Value: weapon.Properties?.Economy.Decay != null ? `${weapon.Properties?.Economy.Decay.toFixed(4)} PEC` : 'N/A',
+        },
         Ammo: {
           Label: 'Ammo',
           Value: `${weapon.Ammo?.Name ?? 'N/A'}`,
@@ -264,7 +267,7 @@
           AmmoBurn: null,
         },
         Skill: {
-          IsSiB: null,
+          IsSiB: true,
           Hit: {
             LearningIntervalStart: null,
             LearningIntervalEnd: null,
@@ -348,10 +351,10 @@
         label: 'Economy',
         type: 'group',
         controls: [
-          { label: 'Efficiency', type: 'number', step: '0.1', min: '0', max: '100', '_get': x => x.Properties?.Economy?.Efficiency, '_set': (x, v) => x.Properties.Economy.Efficiency = v},
-          { label: 'Max. TT', type: 'number', step: '0.00001', min: '0', '_get': x => x.Properties?.Economy?.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v},
-          { label: 'Min. TT', type: 'number', step: '0.00001', min: '0', '_get': x => x.Properties?.Economy?.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v},
-          { label: 'Decay', type: 'number', step: '0.00001', min: '0', '_get': x => x.Properties?.Economy?.Decay, '_set': (x, v) => x.Properties.Economy.Decay = v},
+          { label: 'Efficiency (%)', type: 'number', step: '0.1', min: '0', max: '100', '_get': x => x.Properties?.Economy?.Efficiency, '_set': (x, v) => x.Properties.Economy.Efficiency = v},
+          { label: 'Max. TT (PED)', type: 'number', step: '0.00001', min: '0', '_get': x => x.Properties?.Economy?.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v},
+          { label: 'Min. TT (PED)', type: 'number', step: '0.00001', min: '0', '_get': x => x.Properties?.Economy?.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v},
+          { label: 'Decay (PEC)', type: 'number', step: '0.00001', min: '0', '_get': x => x.Properties?.Economy?.Decay, '_set': (x, v) => x.Properties.Economy.Decay = v},
           { label: 'Ammo Type', type: 'select', options: x => x.Properties.Class === 'Ranged' || x.Properties.Class === 'Attached' || x.Properties.Class === 'Stationary'
             ? ['Weapon Cells', 'BLP Pack', 'Explosive Projectiles']
             : x.Properties.Class === 'Melee'

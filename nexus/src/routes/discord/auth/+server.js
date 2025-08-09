@@ -1,5 +1,5 @@
 //@ts-nocheck
-import { createSession, deleteSession, upsertUser } from '$lib/server/db.js';
+import { createSession, deleteSession, upsertUser, getUserFromSession } from '$lib/server/db.js';
 import { getUserInfo, handleCode } from '$lib/server/discord.js';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -56,6 +56,17 @@ export async function GET({ cookies, url, locals }) {
     sameSite: 'Lax',
     domain: import.meta.env.VITE_DOMAIN
   });
+
+  let dbUser = await getUserFromSession(newSessionId);
+
+  if (dbUser?.verified !== true) {
+    return new Response(null, {
+      status: 302,
+      headers: {
+        location: '/account/setup'
+      }
+    });
+  }
 
   const redirect = url.searchParams.get('state').substring(37);
 

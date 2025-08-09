@@ -17,6 +17,12 @@
       IsRoute: false
     },
     {
+      Label: 'Ars',
+      Title: 'ARIS',
+      Type: 'aris',
+      IsRoute: false
+    },
+    {
       Label: 'Cyr',
       Title: 'Cyrene',
       Type: 'cyrene',

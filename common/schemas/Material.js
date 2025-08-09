@@ -40,6 +40,39 @@ export const Material = {
         "Weight",
         "Economy"
       ]
+    },
+    "RefiningRecipes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "Amount": {
+            "type": "number"
+          },
+          "Ingredients": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "Item": { "$ref": "https://entropianexus.com/schemas/NamedEntity.json" },
+                "Amount": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "Item",
+                "Amount"
+              ]
+            }
+          }
+        },
+        "required": [
+          "Amount",
+          "Ingredients"
+        ]
+      }
     }
   },
   "required": [

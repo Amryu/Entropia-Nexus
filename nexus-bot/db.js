@@ -89,3 +89,73 @@ export async function setChangeState(id, state) {
   const values = [id, state];
   await poolUsers.query(query, values);
 }
+
+// Shop functions
+export async function getShopById(id) {
+  const query = 'SELECT s.*, p.name as planet_name FROM shops s LEFT JOIN planets p ON s.planet_id = p.id WHERE s.id = $1';
+  const values = [id];
+  return (await poolNexus.query(query, values)).rows[0];
+}
+
+export async function getShopByName(name) {
+  const query = `
+    SELECT s.*, 
+           p."Name" as planet_name,
+           u."Name" as owner_name
+    FROM shops s
+    LEFT JOIN "Planets" p ON s.planet_id = p."Id"
+    LEFT JOIN users u ON s.owner_id = u.id
+    WHERE s.name ILIKE $1
+  `;
+  const values = [name];
+  const result = await poolNexus.query(query, values);
+  return result.rows[0];
+}
+
+export async function updateShopOwner(shopId, ownerId) {
+  const query = 'UPDATE shops SET owner_id = $2, updated_at = NOW() WHERE id = $1';
+  const values = [shopId, ownerId];
+  await poolNexus.query(query, values);
+}
+
+export async function addShopManager(shopId, userId) {
+  const query = 'INSERT INTO shop_managers (shop_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING';
+  const values = [shopId, userId];
+  await poolNexus.query(query, values);
+}
+
+export async function removeShopManager(shopId, userId) {
+  const query = 'DELETE FROM shop_managers WHERE shop_id = $1 AND user_id = $2';
+  const values = [shopId, userId];
+  await poolNexus.query(query, values);
+}
+
+export async function getShopManagers(shopId) {
+  const query = `
+    SELECT sm.*, u."Name" as username
+    FROM shop_managers sm
+    LEFT JOIN users u ON sm.user_id = u.id
+    WHERE sm.shop_id = $1
+  `;
+  const values = [shopId];
+  const result = await poolNexus.query(query, values);
+  return result.rows;
+}
+
+export async function getUserShops(userId) {
+  const query = `
+    SELECT s.*, p."Name" as planet_name
+    FROM shops s
+    LEFT JOIN "Planets" p ON s.planet_id = p."Id"
+    WHERE s.owner_id = $1 OR s.id IN (
+      SELECT shop_id FROM shop_managers WHERE user_id = $1
+    )
+    ORDER BY s.name
+  `;
+  const values = [userId];
+  const result = await poolNexus.query(query, values);
+  return result.rows;
+}
+export async function getShops() {
+  return (await poolNexus.query('SELECT s.*, p."Name" as planet_name FROM shops s LEFT JOIN "Planets" p ON s.planet_id = p."Id" ORDER BY s.name')).rows;
+}

@@ -1,0 +1,124 @@
+//@ts-nocheck
+import { updateShopManagers, getUserByEntropiaName, getShopManagers } from "$lib/server/db.js";
+import { getResponse, apiCall } from "$lib/util.js";
+
+// GET shop managers
+export async function GET({ params, locals, fetch }) {
+  let user = locals.session?.user;
+
+  if (!user) {
+    return getResponse({ error: 'You must be logged in to view shop managers.' }, 401);
+  }
+  if (!user.verified) {
+    return getResponse({ error: 'You must verify your account.' }, 403);
+  }
+
+  if (!params.shop) {
+    return getResponse({ error: 'Please provide the shop identifier.' }, 400);
+  }
+
+  // Get the current shop from dedicated API to check ownership
+  const currentShop = await apiCall(fetch, `/shops/${encodeURIComponent(params.shop)}`);
+  if (!currentShop) {
+    return getResponse({ error: 'Shop not found.' }, 404);
+  }
+
+  // Check if user is owner
+  const isOwner = currentShop.OwnerId === user.id;
+  
+  if (!isOwner && !user.administrator) {
+    return getResponse({ error: 'You can only view managers for shops you own.' }, 403);
+  }
+
+  // Fetch managers and convert to PascalCase
+  const dbManagers = await getShopManagers(currentShop.Id);
+  const Managers = (dbManagers || []).map(m => ({ UserId: m.user_id, EuName: m.eu_name }));
+  
+  return getResponse({ Managers });
+}
+
+// UPDATE shop managers (PUT)
+export async function PUT({ params, request, locals, fetch }) {
+  let user = locals.session?.user;
+
+  if (!user) {
+    return getResponse({ error: 'You must be logged in to update shop managers.' }, 401);
+  }
+  if (!user.verified) {
+    return getResponse({ error: 'You must verify your account before making changes.' }, 403);
+  }
+
+  if (!params.shop) {
+    return getResponse({ error: 'Please provide the shop identifier.' }, 400);
+  }
+
+  // Get the current shop from dedicated API to check ownership
+  const currentShop = await apiCall(fetch, `/shops/${encodeURIComponent(params.shop)}`);
+  if (!currentShop) {
+    return getResponse({ error: 'Shop not found.' }, 404);
+  }
+
+  // Check if user is owner
+  const isOwner = currentShop.OwnerId === user.id;
+  
+  if (!isOwner && !user.administrator) {
+    return getResponse({ error: 'You can only manage managers for shops you own.' }, 403);
+  }
+
+  let body;
+  try {
+    body = await request.json();
+  } catch (error) {
+    return getResponse({ error: 'Invalid JSON in request body.' }, 400);
+  }
+
+  const { Managers } = body;
+
+  // Validate managers data
+  if (!Array.isArray(Managers)) {
+    return getResponse({ error: 'Managers must be an array.' }, 400);
+  }
+
+  // Validate and convert to user IDs (DB expects snake_case)
+  const validatedManagers = [];
+  const invalidNames = [];
+
+  for (const manager of Managers) {
+    const euName = manager?.EuName ?? manager?.eu_name ?? '';
+    if (!euName || typeof euName !== 'string') {
+      continue;
+    }
+
+    const entropiaName = euName.trim();
+    if (!entropiaName) {
+      continue;
+    }
+
+    const dbUser = await getUserByEntropiaName(entropiaName);
+    if (!dbUser) {
+      invalidNames.push(entropiaName);
+      continue;
+    }
+
+    if (!dbUser.verified) {
+      invalidNames.push(`${entropiaName} (not verified)`);
+      continue;
+    }
+
+    validatedManagers.push({ user_id: dbUser.id, eu_name: dbUser.eu_name });
+  }
+
+  if (invalidNames.length > 0) {
+    return getResponse({ 
+      error: `The following Entropia names could not be found or are not verified: ${invalidNames.join(', ')}` 
+    }, 400);
+  }
+
+  const success = await updateShopManagers(currentShop.Id, validatedManagers);
+  
+  if (success) {
+    return getResponse({ success: true, message: 'Managers updated successfully' });
+  } else {
+    return getResponse({ error: 'Failed to update managers' }, 500);
+  }
+}

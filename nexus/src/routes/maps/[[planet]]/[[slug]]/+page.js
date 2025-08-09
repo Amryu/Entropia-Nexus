@@ -26,22 +26,51 @@ export async function load({ fetch, params }) {
 
   areas = areas.map(area => {
     const matchingMobSpawn = mobSpawns.find(mobSpawn => mobSpawn.Id === area.Id);
-
     return matchingMobSpawn || area;
   });
 
-  locations = locations.map(location => {
-    const matchingArea = areas.find(area => 
-      area.Name === location.Name && 
-      area.Properties.Type.endsWith("Area") &&
-      area.Properties.Coordinates.Longitude === location.Properties.Coordinates.Longitude &&
-      area.Properties.Coordinates.Latitude === location.Properties.Coordinates.Latitude &&
-      area.Properties.Coordinates.Altitude === location.Properties.Coordinates.Altitude &&
-      area.Properties.Type === location.Properties.Type
-    );
-
-    return matchingArea || location;
+  // Create a combined dataset: start with all areas (which have Shape/Data), then add locations that don't have corresponding areas
+  let combinedLocations = [...areas];
+  
+  locations.forEach(location => {
+    // Check if this location already exists as an area (using ID offset)
+    const hasMatchingArea = areas.some(area => area.Id + 200000 === location.Id);
+    if (!hasMatchingArea) {
+      combinedLocations.push(location);
+    }
   });
+
+  locations = combinedLocations;
+
+  // Check for duplicate IDs in the final combined dataset
+  const idCounts = {};
+  const duplicateIds = [];
+  
+  locations.forEach(location => {
+    const id = location.Id;
+    idCounts[id] = (idCounts[id] || 0) + 1;
+    if (idCounts[id] === 2) {
+      duplicateIds.push(id);
+    }
+  });
+
+  if (duplicateIds.length > 0) {
+    console.warn('Duplicate IDs found in locations:', duplicateIds);
+    duplicateIds.forEach(duplicateId => {
+      const duplicateItems = locations.filter(loc => loc.Id === duplicateId);
+      console.warn(`ID ${duplicateId} appears ${duplicateItems.length} times:`, duplicateItems.map(item => ({
+        Id: item.Id,
+        Name: item.Name,
+        Type: item.Properties.Type,
+        HasShape: !!item.Properties.Shape,
+        HasData: !!item.Properties.Data,
+        Source: item.Properties.Shape ? 'area' : 'location'
+      })));
+    });
+  }
+
+  console.log(`Final dataset: ${areas.length} areas, ${locations.length - areas.length} locations, ${locations.length} total`);
+  console.log(`Areas with Shape: ${areas.filter(a => a.Properties.Shape).length}, MobAreas: ${areas.filter(a => a.Properties.Type === 'MobArea').length}`);
 
   if (!params.planet && !params.slug) {
     return pageResponse(

@@ -7,6 +7,9 @@
   import Properties from './Properties.svelte';
   import EntityTitleBar from './EntityTitleBar.svelte';
   import EditForm from './EditForm.svelte';
+  import DirectEditForm from './DirectEditForm.svelte';
+  import InventoryEditForm from './InventoryEditForm.svelte';
+  import ManagerEditForm from './ManagerEditForm.svelte';
   import EntityHistory from './EntityHistory.svelte';
 
   export let data;
@@ -17,6 +20,9 @@
   export let title;
   export let type;
   export let basePath;
+  export let ownershipBasedEditing = false; // New parameter for shops
+  export let getOwnershipInfo = null; // Function to check ownership
+  export let inventoryConfig = null; // Configuration for inventory-only editing
 
   export let user;
 
@@ -96,6 +102,7 @@
     else if (params.slug == null || params.slug == '')
       return `https://entropianexus.com${basePath}`;
   } 
+
 </script>
 
 <style>
@@ -134,24 +141,106 @@
       {#if mode === 'create' || ($pageParams.slug != null && data != null && data?.error == null && data.object != null)}
         {#if mode == null || mode === 'view' || mode === 'preview'}
           <div class="flex-item flex-span-2">
-            <EntityTitleBar title={getCurrentData(change?.data, data.object).Name} description={getCurrentData(change?.data, data.object)?.Properties?.Description} mode={mode} user={data.session.user} change={change} editable={editConfig != null} />
+            <EntityTitleBar 
+              title={getCurrentData(change?.data, data.object).Name} 
+              description={getCurrentData(change?.data, data.object)?.Properties?.Description} 
+              mode={mode} 
+              user={data.session.user} 
+              change={change} 
+              editable={editConfig != null}
+              ownershipBasedEditing={ownershipBasedEditing}
+              canEdit={ownershipBasedEditing && getOwnershipInfo ? getOwnershipInfo(data.object, user) : true}
+              entityType={type}
+              object={data.object} />
           </div>
           <slot object={getCurrentData(change?.data, data.object)} change={change} mode={mode} additional={data.additional} {user}></slot>
         {:else if mode === 'edit' || mode === 'create'}
           <div class="flex-item flex-span-2">
-            <EntityTitleBar title={`${mode === 'edit' ? 'Edit' : 'Create'} ${getTypeName(type)}`} mode={mode} user={data.session.user} change={change}  editable={editConfig != null}/>
+            <EntityTitleBar 
+              title={`${mode === 'edit' ? 'Edit' : 'Create'} ${getTypeName(type)}`} 
+              mode={mode} 
+              user={data.session.user} 
+              change={change}  
+              editable={editConfig != null}
+              ownershipBasedEditing={ownershipBasedEditing}
+              canEdit={ownershipBasedEditing && getOwnershipInfo ? getOwnershipInfo(data.object, user) : true}
+              entityType={type}
+              object={data.object} />
           </div>
           <div class="flex-item flex-span-2">
-            <EditForm
-              entity={type}
+            {#if ownershipBasedEditing && mode === 'edit' && data.object}
+              {#if type === 'Shop'}
+                <InventoryEditForm
+                  user={user}
+                  object={getCurrentData(change?.data, data.object)}
+                  config={inventoryConfig || (data?.additional?.type ? editConfig[data.additional.type] : editConfig)}
+                  canEdit={getOwnershipInfo ? getOwnershipInfo(data.object, user) : false} />
+              {:else}
+                <DirectEditForm
+                  entity={type}
+                  user={user}
+                  object={getCurrentData(change?.data, data.object)}
+                  config={data?.additional?.type ? editConfig[data.additional.type] : editConfig}
+                  endpoint={`/api/${basePath.split('/').pop()}/${data.object?.id || data.object?.Id}`}
+                  canEdit={getOwnershipInfo ? getOwnershipInfo(data.object, user) : false} />
+              {/if}
+            {:else}
+              <EditForm
+                entity={type}
+                user={user}
+                object={getCurrentData(change?.data, data.object)}
+                bind:change={change}
+                config={data?.additional?.type ? editConfig[data.additional.type] : editConfig} />
+            {/if}
+          </div>
+        {:else if mode === 'manage-inventory'}
+          <div class="flex-item flex-span-2">
+            <EntityTitleBar 
+              title={`Manage Inventory - ${getCurrentData(change?.data, data.object).Name}`} 
+              mode={mode} 
+              user={data.session.user} 
+              change={change}  
+              editable={editConfig != null}
+              ownershipBasedEditing={ownershipBasedEditing}
+              canEdit={ownershipBasedEditing && getOwnershipInfo ? getOwnershipInfo(data.object, user) : true}
+              entityType={type}
+              object={data.object} />
+          </div>
+          <div class="flex-item flex-span-2">
+            <InventoryEditForm
               user={user}
               object={getCurrentData(change?.data, data.object)}
-              bind:change={change}
-              config={data?.additional?.type ? editConfig[data.additional.type] : editConfig} />
+              canEdit={getOwnershipInfo ? getOwnershipInfo(data.object, user) : false} />
+          </div>
+        {:else if mode === 'manage-managers'}
+          <div class="flex-item flex-span-2">
+            <EntityTitleBar 
+              title={`Manage Managers - ${getCurrentData(change?.data, data.object).Name}`} 
+              mode={mode} 
+              user={data.session.user} 
+              change={change}  
+              editable={editConfig != null}
+              ownershipBasedEditing={ownershipBasedEditing}
+              canEdit={ownershipBasedEditing && getOwnershipInfo ? getOwnershipInfo(data.object, user) : true}
+              entityType={type}
+              object={data.object} />
+          </div>
+          <div class="flex-item flex-span-2">
+            <ManagerEditForm
+              user={user}
+              object={getCurrentData(change?.data, data.object)}
+              canEdit={getOwnershipInfo ? getOwnershipInfo(data.object, user) : false} />
           </div>
         {:else}
           <div class="flex-item flex-span-2">
-            <EntityTitleBar title="History: {getCurrentData(change?.data, data.object).Name}" mode={mode} user={data.session.user} change={change} editable={editConfig != null} />
+            <EntityTitleBar 
+              title="History: {getCurrentData(change?.data, data.object).Name}" 
+              mode={mode} 
+              user={data.session.user} 
+              change={change} 
+              editable={editConfig != null}
+              entityType={type}
+              object={data.object} />
           </div>
           <div class="flex-item flex-span-2">
             <EntityHistory user={user} bind:change={change} versions={data.versions} />
@@ -165,12 +254,11 @@
     </div>
     <div class="right-sidebar">
       <div class="prop-list centered">
-        <Properties imageUrl='' title={getCurrentData(change?.data, data.object)?.Name ?? '<No Name>'} data={getCurrentData(change?.data, data.object) != null ? propertiesDataFunction(getCurrentData(change?.data, data.object), data.additional) : {}} />
-      </div>
-      <div class="ad-wrapper">
-        <a href="https://www.lootius.io/User/Register/1456" title="Earn PED by completing offers or playing minigames!" target="_blank">
-          <img src="/lootius.png" alt="Lootius Banner" width="300px" height="80px" />
-        </a>
+        {#if getCurrentData(change?.data, data.object)}
+          <Properties imageUrl='' title={getCurrentData(change?.data, data.object)?.Name ?? '<No Name>'} data={propertiesDataFunction(getCurrentData(change?.data, data.object), data.additional)} />
+        {:else}
+          <Properties imageUrl='' title={'<No Name>'} data={{}} />
+        {/if}
       </div>
     </div>
 </div>

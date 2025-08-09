@@ -28,6 +28,7 @@ import { Vendor } from "./schemas/Vendor.js";
 import { Weapon } from "./schemas/Weapon.js";
 import { WeaponAmplifier } from "./schemas/WeaponAmplifier.js";
 import { WeaponVisionAttachment } from "./schemas/WeaponVisionAttachment.js";
+import { Shop } from "./schemas/Shop.js";
 
 export const EntitySchemas = {
   Absorber,
@@ -59,5 +60,6 @@ export const EntitySchemas = {
   Vendor,
   Weapon,
   WeaponAmplifier,
-  WeaponVisionAttachment
+  WeaponVisionAttachment,
+  Shop
 }

@@ -654,7 +654,8 @@
 
       if (absorber?.Properties?.Economy?.Absorption == null || absorber?.Properties?.Economy?.Efficiency == null) return null;
       
-      let absorberCost = cost * absorber.Properties.Economy.Absorption;
+      let weaponDecay = weapon.Properties.Economy.Decay * (1 + loadout.Gear.Weapon.Enhancers.Damage * 0.1) * (1 - loadout.Gear.Weapon.Enhancers.Economy * 0.01111);
+      let absorberCost = weaponDecay * absorber.Properties.Economy.Absorption;
       cost -= absorberCost;
       efficiency = weightedAverage(cost, efficiency, absorberCost, absorber.Properties.Economy.Efficiency);
 

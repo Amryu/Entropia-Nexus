@@ -10,11 +10,19 @@
 
   export let data;
 
+  const DEFAULT_SPAWN_RADIUS = 100;
+
   const navButtonInfo = [
     {
       Label: 'Cly',
       Title: 'Calypso',
       Type: 'calypso',
+      IsRoute: false
+    },
+    {
+      Label: 'Ars',
+      Title: 'ARIS',
+      Type: 'aris',
       IsRoute: false
     },
     {
@@ -60,19 +68,37 @@
       let attack = x.Attacks.find(y => y.Name === name);
       if (attack == null) return null;
       return {
-        Impact: attack.Damage.Impact,
-        Cut: attack.Damage.Cut,
-        Stab: attack.Damage.Stab,
-        Penetration: attack.Damage.Penetration,
-        Shrapnel: attack.Damage.Shrapnel,
-        Burn: attack.Damage.Burn,
-        Cold: attack.Damage.Cold,
-        Acid: attack.Damage.Acid,
-        Electric: attack.Damage.Electric,
+        Impact: attack.Damage.Impact || 0,
+        Cut: attack.Damage.Cut || 0,
+        Stab: attack.Damage.Stab || 0,
+        Penetration: attack.Damage.Penetration || 0,
+        Shrapnel: attack.Damage.Shrapnel || 0,
+        Burn: attack.Damage.Burn || 0,
+        Cold: attack.Damage.Cold || 0,
+        Acid: attack.Damage.Acid || 0,
+        Electric: attack.Damage.Electric || 0,
       }
-    }).filter(x => x != null).flat();
+    }).filter(x => x != null);
 
-    if (attackSpreads.length === 0) return null;
+    if (attackSpreads.length === 0) {
+      // Check if the attack exists at all (even without damage values)
+      const hasAttack = mob.Maturities.some(x => x.Attacks?.some(y => y.Name === name));
+      if (hasAttack) {
+        // Return zero spread if attack exists but has no valid damage data
+        return {
+          Impact: 0,
+          Cut: 0,
+          Stab: 0,
+          Penetration: 0,
+          Shrapnel: 0,
+          Burn: 0,
+          Cold: 0,
+          Acid: 0,
+          Electric: 0,
+        };
+      }
+      return null;
+    }
 
     return {
       Impact: attackSpreads.map(x => x.Impact).reduce((a, b) => a + b, 0) / attackSpreads.length,
@@ -249,7 +275,13 @@
               controls: [
                 { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
                 { label: 'Level', type: 'number', '_get': x => x.Properties.Level, '_set': (x, v) => x.Properties.Level = v },
-                { label: 'Health', type: 'number', '_get': x => x.Properties.Health, '_set': (x, v) => x.Properties.Health = v },
+                { label: 'Health', type: 'number', '_get': x => x.Properties.Health, '_set': (x, v) => { 
+                  x.Properties.Health = v;
+                  // Automatically update Stamina to be Health / 10
+                  if (v != null && !isNaN(v)) {
+                    x.Properties.Attributes.Stamina = Math.round(v / 10);
+                  }
+                }},
                 {
                   label: 'Attributes',
                   type: 'multi',
@@ -300,6 +332,53 @@
                   TotalDamage: null,
                   IsAoE: false
                 }),
+                initialize: (newItem, dependencies, root, currentIndex, parentArray, parentObject) => {
+                  // Set default name based on attack position
+                  const attackNames = ['Primary', 'Secondary', 'Tertiary', 'Quaternary', 'Quinary', 'Senary'];
+                  if (currentIndex < attackNames.length) {
+                    newItem.Name = attackNames[currentIndex];
+                  } else {
+                    newItem.Name = `Attack ${currentIndex + 1}`;
+                  }
+                  
+                  // parentObject is the current maturity being edited
+                  // currentIndex is the position of the new attack
+                  // Find the index of the current maturity in the mob's maturities
+                  const currentMaturityIndex = root.Maturities?.findIndex(maturity => maturity === parentObject) ?? -1;
+                  
+                  // Look for previous maturities that have an attack at the same index
+                  for (let i = currentMaturityIndex - 1; i >= 0; i--) {
+                    const previousMaturity = root.Maturities[i];
+                    if (previousMaturity.Attacks && previousMaturity.Attacks[currentIndex]) {
+                      const sourceAttack = previousMaturity.Attacks[currentIndex];
+                      
+                      // Copy properties from the source attack, but keep the default name unless source has a custom name
+                      if (sourceAttack.Name && !attackNames.includes(sourceAttack.Name) && !sourceAttack.Name.startsWith('Attack ')) {
+                        newItem.Name = sourceAttack.Name;
+                      }
+                      newItem.TotalDamage = sourceAttack.TotalDamage;
+                      newItem.IsAoE = sourceAttack.IsAoE || false;
+                      
+                      // Copy damage composition
+                      if (sourceAttack.Damage) {
+                        newItem.Damage = {
+                          Stab: sourceAttack.Damage.Stab,
+                          Cut: sourceAttack.Damage.Cut,
+                          Impact: sourceAttack.Damage.Impact,
+                          Penetration: sourceAttack.Damage.Penetration,
+                          Shrapnel: sourceAttack.Damage.Shrapnel,
+                          Burn: sourceAttack.Damage.Burn,
+                          Cold: sourceAttack.Damage.Cold,
+                          Acid: sourceAttack.Damage.Acid,
+                          Electric: sourceAttack.Damage.Electric
+                        };
+                      }
+                      
+                      // Found a source attack, stop looking
+                      break;
+                    }
+                  }
+                },
                 controls: [
                   { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
                   { label: 'Damage', type: 'number', '_get': x => x.TotalDamage, '_set': (x, v) => x.TotalDamage = v },
@@ -315,7 +394,161 @@
               }, itemNameFunc: j => `Attack ${j + 1}`, '_get': x => x.Attacks, '_set': (x, v) => x.Attacks = v
             }
           ]
-        }, '_get': x => x.Maturities, '_set': (x, v) => x.Maturities = v
+        }, itemNameFunc: j => `Maturity ${j + 1}`, '_get': x => x.Maturities, '_set': (x, v) => x.Maturities = v
+      },
+      { label: 'Spawns', type: 'list', config: {
+          constructor: () => ({
+            Properties: {
+              Density: 2,
+              IsShared: false,
+              IsEvent: false,
+              Shape: 'Point',
+              Data: {
+                x: 0,
+                y: 0,
+                radius: DEFAULT_SPAWN_RADIUS
+              },
+              Coordinates: {
+                Altitude: 0
+              }
+            },
+            Maturities: [],
+          }),
+          dependencies: ['mobs'],
+          controls: [
+            {
+              label: 'General',
+              type: 'group',
+              controls: [
+                { label: 'Shape', type: 'select', options: _ => ['Point', 'Circle', 'Rectangle', 'Polygon'], '_get': x => x.Properties.Shape, '_set': (x, v) => x.Properties.Shape = v },
+                { label: 'Density', type: 'select', options: _ => ['Low', 'Medium', 'High'], '_get': x => {
+                  // Map numeric density (1,2,3) to string labels
+                  if (x.Properties.Density === 1 || x.Properties.Density === '1') return 'Low';
+                  if (x.Properties.Density === 2 || x.Properties.Density === '2') return 'Medium';
+                  if (x.Properties.Density === 3 || x.Properties.Density === '3') return 'High';
+                  return x.Properties.Density; // Return as-is if already a string
+                }, '_set': (x, v) => {
+                  // Map string labels back to numeric values
+                  if (v === 'Low') x.Properties.Density = 1;
+                  else if (v === 'Medium') x.Properties.Density = 2;
+                  else if (v === 'High') x.Properties.Density = 3;
+                  else x.Properties.Density = v;
+                }},
+                { label: 'Is Shared', type: 'checkbox', '_get': x => x.Properties.IsShared, '_set': (x, v) => x.Properties.IsShared = v },
+                { label: 'Is Event', type: 'checkbox', '_get': x => x.Properties.IsEvent, '_set': (x, v) => x.Properties.IsEvent = v },
+              ]
+            },
+            {
+              label: 'Coordinates',
+              type: 'group',
+              controls: [
+                { "_if": x => {
+                  // Auto-convert Circle with default radius to Point first
+                  if (x.Properties.Shape === 'Circle') {
+                    try {
+                      const dataStr = typeof x.Properties.Data === 'string' ? x.Properties.Data : JSON.stringify(x.Properties.Data || {});
+                      const data = JSON.parse(dataStr);
+                      if (data.radius === DEFAULT_SPAWN_RADIUS) {
+                        x.Properties.Shape = 'Point';
+                      }
+                    } catch (e) {
+                      // If data is malformed, keep as Circle
+                    }
+                  }
+                  return x.Properties.Shape === 'Point';
+                }, label: '(Paste Waypoint)', type: 'waypoint', '_get': x => {
+                  try {
+                    // Handle Data as either string or object
+                    const dataStr = typeof x.Properties.Data === 'string' ? x.Properties.Data : JSON.stringify(x.Properties.Data || {});
+                    const data = JSON.parse(dataStr);
+                    
+                    // Use Properties.Coordinates.Altitude for altitude storage
+                    return [data.x || 0, data.y || 0, x.Properties.Coordinates?.Altitude || 0];
+                  } catch (e) {
+                    return [0, 0, x.Properties.Coordinates?.Altitude || 0];
+                  }
+                }, '_set': (x, v) => { 
+                  if (v && v.length >= 3) { 
+                    try {
+                      // Always parse existing data first, handle as string
+                      const dataStr = typeof x.Properties.Data === 'string' ? x.Properties.Data : JSON.stringify(x.Properties.Data || {});
+                      let data = JSON.parse(dataStr);
+                      data.x = parseFloat(v[0]) || 0;
+                      data.y = parseFloat(v[1]) || 0;
+                      if (!data.radius) data.radius = DEFAULT_SPAWN_RADIUS;
+                      x.Properties.Data = JSON.stringify(data);
+                      
+                      // Store altitude in Coordinates object
+                      if (!x.Properties.Coordinates) x.Properties.Coordinates = {};
+                      x.Properties.Coordinates.Altitude = parseFloat(v[2]) || 0;
+                      
+                      // Auto-change shape to Point if radius is exactly the default
+                      if (data.radius === DEFAULT_SPAWN_RADIUS) {
+                        x.Properties.Shape = 'Point';
+                      }
+                    } catch (e) {
+                      x.Properties.Data = JSON.stringify({
+                        x: parseFloat(v[0]) || 0,
+                        y: parseFloat(v[1]) || 0,
+                        radius: DEFAULT_SPAWN_RADIUS
+                      });
+                      if (!x.Properties.Coordinates) x.Properties.Coordinates = {};
+                      x.Properties.Coordinates.Altitude = parseFloat(v[2]) || 0;
+                      x.Properties.Shape = 'Point';
+                    }
+                  } 
+                }},
+                { "_if": x => x.Properties.Shape !== 'Point', label: 'Shape Data', type: 'textarea', '_get': x => {
+                  // Ensure Data is returned as a string for textarea
+                  return typeof x.Properties.Data === 'string' ? x.Properties.Data : JSON.stringify(x.Properties.Data || {});
+                }, '_set': (x, v) => x.Properties.Data = v },
+                { "_if": x => x.Properties.Shape !== 'Point', label: 'Altitude', type: 'number', '_get': x => x.Properties.Coordinates?.Altitude || 0, '_set': (x, v) => { if (!x.Properties.Coordinates) x.Properties.Coordinates = {}; x.Properties.Coordinates.Altitude = parseFloat(v) || 0; } },
+              ]
+            },
+            { label: 'Maturities', type: 'list', config: {
+                constructor: () => ({
+                  IsRare: false,
+                  Maturity: {
+                    Name: null,
+                    Mob: {
+                      Name: '',
+                    }
+                  }
+                }),
+                initialize: (newItem, dependencies, root, currentIndex, parentArray, parentObject) => {
+                  // Set the mob name to the current mob by default
+                  if (root && root.Name) {
+                    newItem.Maturity.Mob.Name = root.Name;
+                  }
+                },
+                dependencies: ['mobs'],
+                controls: [
+                  { label: 'Mob', type: 'select', options: (_, d, r) => ['', r.Name, ...d.mobs.filter(m => m.Name !== r.Name).map(m => m.Name)], '_get': x => {
+                    // Now using the API-matching structure: Maturity.Mob.Name
+                    return x.Maturity?.Mob?.Name;
+                  }, '_set': (x, v) => { 
+                    if (!x.Maturity) x.Maturity = {};
+                    if (!x.Maturity.Mob) x.Maturity.Mob = {};
+                    x.Maturity.Mob.Name = v; 
+                  }, style: (x, _, r) => {
+                    const mobName = x.Maturity?.Mob?.Name;
+                    return mobName && mobName !== r.Name ? 'background-color: #e3f2fd;' : '';
+                  }},
+                  { label: 'Maturity', type: 'select', options: (x, d, r) => {
+                    const selectedMobName = x.Maturity?.Mob?.Name || r.Name;
+                    if (selectedMobName === r.Name) {
+                      return r.Maturities ? r.Maturities.map(y => y.Name) : [];
+                    } else {
+                      const selectedMob = d.mobs.find(m => m.Name === selectedMobName);
+                      return selectedMob && selectedMob.Maturities ? selectedMob.Maturities.map(y => y.Name) : [];
+                    }
+                  }, '_get': x => x.Maturity?.Name, '_set': (x, v) => { if (!x.Maturity) x.Maturity = {}; x.Maturity.Name = v; } },
+                  { label: 'Is Rare', type: 'checkbox', '_get': x => x.IsRare, '_set': (x, v) => x.IsRare = v },
+                ]
+              }, itemNameFunc: j => `Maturity ${j + 1}`, '_get': x => x.Maturities, '_set': (x, v) => x.Maturities = v
+            }
+          ]
+        }, itemNameFunc: j => `Spawn ${j + 1}`, '_get': x => x.Spawns ?? [], '_set': (x, v) => x.Spawns = v
       },
       { label: 'Loots', type: 'list', config: {
           constructor: () => ({
@@ -335,7 +568,7 @@
             { label: 'Frequency', type: 'select', options: _ => ['Always', 'Very often', 'Often', 'Common', 'Uncommon', 'Rare', 'Very rare', 'Extremely rare'], '_get': x => x.Frequency, '_set': (x, v) => x.Frequency = v },
             { label: 'Is Event', type: 'checkbox', '_get': x => x.IsEvent, '_set': (x, v) => x.IsEvent = v },
           ]
-      }, '_get': x => x.Loots, '_set': (x, v) => x.Loots = v 
+        }, itemNameFunc: j => `Loot ${j + 1}`, '_get': x => x.Loots, '_set': (x, v) => x.Loots = v 
       },
     ]
   }
@@ -393,6 +626,7 @@
   let tableViewInfo = {
     all: viewInfoSection,
     calypso: viewInfoSection,
+    aris: viewInfoSection,
     cyrene: viewInfoSection,
     arkadia: viewInfoSection,
     monria: viewInfoSection,

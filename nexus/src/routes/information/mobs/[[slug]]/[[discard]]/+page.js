@@ -26,6 +26,7 @@ export async function load({ fetch, params, url }) {
 
   itemsGrouped = {
     calypso: [],
+    aris: [],
     arkadia: [],
     cyrene: [],
     rocktropia: [],
@@ -44,6 +45,25 @@ export async function load({ fetch, params, url }) {
   response.items = itemsGrouped;
   
   if (response.object) {
+    // Batch resolve item links to reduce API calls
+    const armorItems = response.object.Loots
+      .filter(x => x.Item.Properties.Type === 'Armor' && !x.Item.Set)
+      .map(x => x.Item);
+    
+    // If we have armor items without set info, fetch them in batch
+    if (armorItems.length > 0) {
+      const armorPromises = armorItems.map(async (item) => {
+        const armor = await apiCall(fetch, item.Links.$Url);
+        if (armor != null) {
+          item.Set = armor.Set;
+        }
+        return item;
+      });
+      
+      await Promise.all(armorPromises);
+    }
+    
+    // Now resolve all item links (many will be cached/direct)
     await Promise.all(response.object.Loots.map(async (x) => {
       x.Item.Links.$ItemUrl = await resolveItemLink(fetch, x.Item);
     }));

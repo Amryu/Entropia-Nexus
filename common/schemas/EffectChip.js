@@ -118,12 +118,12 @@ export const EffectChip = {
       ]
     },
     "Ammo": { "$ref": "https://entropianexus.com/schemas/NamedEntity.json" },
-    "Profession": { "$ref": "https://entropianexus.com/schemas/NamedEntity.json" }
+    "Profession": { "$ref": "https://entropianexus.com/schemas/NamedEntity.json" },
+    "EffectsOnUse": { "$ref": "https://entropianexus.com/schemas/EffectsOnUse.json" }
   },
   "required": [
     "Name",
     "Properties",
-    "EffectsOnEquip",
-    "Tiers"
+    "EffectsOnUse"
   ]
 }

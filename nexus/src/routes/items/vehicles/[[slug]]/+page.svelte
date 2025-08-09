@@ -22,11 +22,11 @@
       },
       Economy: {
         MaxTT: {
-          Label: 'Max. TT',
+          Label: 'Max. TT (PED)',
           Value: vehicle.Properties?.Economy?.MaxTT != null ? `${clampDecimals(vehicle.Properties?.Economy?.MaxTT, 2, 8)} PED` : 'N/A',
         },
         MinTT: {
-          Label: 'Min. TT',
+          Label: 'Min. TT (PED)',
           Value: vehicle.Properties?.Economy?.MinTT != null ? `${clampDecimals(vehicle.Properties?.Economy?.MinTT, 2, 8)} PED` : 'N/A',
         },
         Durability: vehicle.Properties?.Economy?.Durability != null ? vehicle.Properties?.Economy?.Durability : 'N/A',
@@ -130,7 +130,7 @@
       },
       AttachmentSlots: []
     }),
-    dependencies: ['materials'],
+    dependencies: ['materials', 'vehicleattachmenttypes'],
     controls: [
       {
         label: 'General',
@@ -145,10 +145,10 @@
         label: 'Economy',
         type: 'group',
         controls: [
-          { label: 'Max. TT', type: 'number', '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v },
-          { label: 'Min. TT', type: 'number', '_get': x => x.Properties.Economy.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v },
-          { label: 'Durability', type: 'number', '_get': x => x.Properties.Economy.Durability, '_set': (x, v) => x.Properties.Economy.Durability = v },
-          { label: 'Fuel', type: 'select', options: (_, d) => d.materials.filter(x => x.Properties.Type === 'Refined Enmatter').map(x => x.Name), '_get': x => x.Fuel?.Name, '_set': (x, v) => x.Fuel.Name = v },
+          { label: 'Max. TT (PED)', type: 'number', '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v },
+          { label: 'Min. TT (PED)', type: 'number', '_get': x => x.Properties.Economy.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v },
+          { label: 'Durability', type: 'number', '_get': x => x.Properties.Economy.Durability, '_set': (x, v) => x.Properties.Economy.Durability = parseInt(v) || null },
+          { label: 'Fuel', type: 'select', options: (_, d) => ['', ...d.materials.filter(x => x.Properties.Type === 'Refined Enmatter').map(x => x.Name)], '_get': x => x.Fuel?.Name, '_set': (x, v) => x.Fuel.Name = v || null },
           { label: 'Fuel/km (Active)', type: 'number', '_get': x => x.Properties.Economy.FuelConsumptionActive, '_set': (x, v) => x.Properties.Economy.FuelConsumptionActive = v },
           { label: 'Fuel/min (Passive)', type: 'number', '_get': x => x.Properties.Economy.FuelConsumptionPassive, '_set': (x, v) => x.Properties.Economy.FuelConsumptionPassive = v },
         ]
@@ -158,8 +158,8 @@
         type: 'group',
         controls: [
           { label: 'Spawned Weight', type: 'number', '_get': x => x.Properties.SpawnedWeight, '_set': (x, v) => x.Properties.SpawnedWeight = v },
-          { label: 'Passenger Count', type: 'number', '_get': x => x.Properties.PassengerCount, '_set': (x, v) => x.Properties.PassengerCount = v },
-          { label: 'Item Capacity', type: 'number', '_get': x => x.Properties.ItemCapacity, '_set': (x, v) => x.Properties.ItemCapacity = v },
+          { label: 'Passenger Count', type: 'number', '_get': x => x.Properties.PassengerCount, '_set': (x, v) => x.Properties.PassengerCount = parseInt(v) || null },
+          { label: 'Item Capacity', type: 'number', '_get': x => x.Properties.ItemCapacity, '_set': (x, v) => x.Properties.ItemCapacity = parseInt(v) || null },
           { label: 'Weight Capacity', type: 'number', '_get': x => x.Properties.WeightCapacity, '_set': (x, v) => x.Properties.WeightCapacity = v },
           { label: 'Wheel Grip', type: 'number', '_get': x => x.Properties.WheelGrip, '_set': (x, v) => x.Properties.WheelGrip = v },
           { label: 'Engine Power', type: 'number', '_get': x => x.Properties.EnginePower, '_set': (x, v) => x.Properties.EnginePower = v },
