@@ -30,10 +30,9 @@ export async function GET({ params, locals, fetch }) {
     return getResponse({ error: 'You can only view managers for shops you own.' }, 403);
   }
 
-  // Fetch managers and convert to PascalCase
+  // Fetch managers and return only Name
   const dbManagers = await getShopManagers(currentShop.Id);
-  const Managers = (dbManagers || []).map(m => ({ UserId: m.user_id, EuName: m.eu_name }));
-  
+  const Managers = (dbManagers || []).map(m => ({ Name: m.user_name }));
   return getResponse({ Managers });
 }
 
@@ -84,12 +83,12 @@ export async function PUT({ params, request, locals, fetch }) {
   const invalidNames = [];
 
   for (const manager of Managers) {
-    const euName = manager?.EuName ?? manager?.eu_name ?? '';
-    if (!euName || typeof euName !== 'string') {
+    const name = manager?.Name ?? '';
+    if (!name || typeof name !== 'string') {
       continue;
     }
 
-    const entropiaName = euName.trim();
+    const entropiaName = name.trim();
     if (!entropiaName) {
       continue;
     }

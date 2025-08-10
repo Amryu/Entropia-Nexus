@@ -10,21 +10,23 @@ function formatMiscTool(x){
     Name: x.Name,
     Properties: {
       Description: x.Description,
-      Weight: x.Weight != null ? Number(x.Weight) : null,
-      UsesPerMinute: x.Uses != null ? Number(x.Uses) : null,
-      Efficiency: x.Efficiency != null ? Number(x.Efficiency) : null,
+      Weight: x.Weight !== null ? Number(x.Weight) : null,
+      Type: x.Type,
       Economy: {
-        MaxTT: x.MaxTT != null ? Number(x.MaxTT) : null,
-        MinTT: x.MinTT != null ? Number(x.MinTT) : null,
-        Decay: x.Decay != null ? Number(x.Decay) : null,
+        MaxTT: x.MaxTT !== null ? Number(x.MaxTT) : null,
+        MinTT: x.MinTT !== null ? Number(x.MinTT) : null,
+        Decay: x.Decay !== null ? Number(x.Decay) : null,
       },
-      LearningInterval: {
-        Start: x.IntervalStart != null ? Number(x.IntervalStart) : null,
-        End: x.IntervalEnd != null ? Number(x.IntervalEnd) : null,
-        IsSiB: x.IntervalStart != null && x.IntervalEnd != null,
-      },
+      Skill: {
+        LearningIntervalStart: x.MinLevel !== null ? Number(x.MinLevel) : null,
+        LearningIntervalEnd: x.MaxLevel !== null ? Number(x.MaxLevel) : null,
+        IsSiB: x.IsSib === 1
+      }
     },
-    Profession: { Name: x.Profession, Links: { "$Url": x.ProfessionId ? `/professions/${x.ProfessionId}` : null } },
+    Profession: {
+      Name: x.Profession,
+      Links: { "$Url": x.ProfessionId !== null ? `/professions/${x.ProfessionId}` : null }
+    },
     Links: { "$Url": `/misctools/${x.Id}` },
   };
 }

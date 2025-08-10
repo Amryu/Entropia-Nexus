@@ -4,6 +4,11 @@ import { UpsertConfigs } from "./entity.js";
 export async function applyChange(change) {
   let config = UpsertConfigs[change.entity];
 
+  if (!config) {
+    console.error(`No upsert config found for entity: ${change.entity}`);
+    return false;
+  }
+
   let object = change.data;
 
   let client = await startNexusTransaction();

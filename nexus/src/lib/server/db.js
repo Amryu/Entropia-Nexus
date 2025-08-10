@@ -320,11 +320,7 @@ export async function getShopManagers(shopId) {
   const values = [shopId];
 
   const { rows } = await pool.query(query, values);
-  return rows.map(row => ({
-    user_id: row.user_id,
-    User: { Name: row.user_name },
-    eu_name: row.user_name
-  }));
+  return rows;
 }
 
 export async function getShopInventory(shopId) {

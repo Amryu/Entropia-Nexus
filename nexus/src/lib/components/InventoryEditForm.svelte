@@ -16,6 +16,30 @@
   let isLoading = true;
   let dependencies = {};
 
+  // Work on a normalized copy so controls match PascalCase fields
+  let formObject = null;
+
+  $: formObject = normalizeObject(object);
+
+  function normalizeObject(src) {
+    if (!src) return null;
+    const clone = JSON.parse(JSON.stringify(src));
+    // Normalize groups
+    clone.InventoryGroups = (clone.InventoryGroups || []).map(g => ({
+      Id: g.Id ?? g.id ?? null,
+      Name: g.Name ?? g.name ?? '',
+      SortOrder: g.SortOrder ?? g.sort_order ?? 0,
+      Items: (g.Items || []).map(it => ({
+        ItemId: it.ItemId ?? it.item_id ?? null,
+        StackSize: it.StackSize ?? it.stack_size ?? 1,
+        Markup: it.Markup ?? it.markup ?? 100,
+        SortOrder: it.SortOrder ?? it.item_sort_order ?? it.sort_order ?? 0,
+        Item: it.Item ?? null
+      }))
+    }));
+    return clone;
+  }
+
   // Inventory configuration
   const inventoryConfig = {
     constructor: () => ({
@@ -117,16 +141,17 @@
     saveMessage = 'Saving inventory...';
 
     try {
-      // Convert InventoryGroups to PascalCase API format
+      // Convert InventoryGroups to PascalCase API format from normalized object
       let payload = {
-        Id: object.Id,
-        InventoryGroups: (object.InventoryGroups || []).map(group => ({
+        Id: formObject.Id,
+        InventoryGroups: (formObject.InventoryGroups || []).map(group => ({
           Name: group.Name,
+          SortOrder: group.SortOrder ?? 0,
           Items: (group.Items || []).map(item => ({
-            ItemId: item.ItemId,
-            StackSize: item.StackSize,
-            Markup: item.Markup,
-            SortOrder: item.SortOrder || 0
+            ItemId: item.ItemId ?? item.item_id ?? null,
+            StackSize: item.StackSize ?? item.stack_size ?? 1,
+            Markup: item.Markup ?? item.markup ?? 100,
+            SortOrder: item.SortOrder ?? item.item_sort_order ?? 0
           }))
         }))
       };
@@ -219,14 +244,13 @@
         <button type="button" on:click={save} disabled={disabled || saving}>
           {saving ? 'Saving...' : 'Save Inventory'}
         </button>
-        <button type="button" on:click={cancel}>Cancel</button>
       </div>
     </div>
 
     <EditFormControlGroup 
       config={inventoryConfig} 
       dependencies={dependencies} 
-      object={object} 
+      object={formObject} 
       disabled={disabled} />
   </div>
 {/if}

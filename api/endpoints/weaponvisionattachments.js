@@ -1,41 +1,51 @@
 const { pool } = require('./dbClient');
 const { idOffsets } = require('./constants');
-const { getObjectByIdOrName, getObjects } = require('./utils');
+const { getObjectByIdOrName } = require('./utils');
+const { loadEffectsOnEquipByItemIds } = require('./effects-utils');
 
 const queries = { WeaponVisionAttachments: 'SELECT * FROM ONLY "WeaponVisionAttachments"' };
 
-async function getEffectsOnEquip(ids){
-  if(ids.length===0) return {};
-  const { rows } = await pool.query(`SELECT "EffectsOnEquip".*, "Effects"."Name", "Effects"."Unit" FROM ONLY "EffectsOnEquip" INNER JOIN ONLY "Effects" ON "EffectsOnEquip"."EffectId" = "Effects"."Id" WHERE "EffectsOnEquip"."ItemId" IN (${ids.map(x=>x+idOffsets.WeaponVisionAttachments).join(',')})`);
-  return rows.reduce((a,r)=>{ (a[r.ItemId] ||= []).push(r); return a; },{});
-}
-function formatEffectOnEquip(x){ return { Effect: { Name: x.Name, Properties: { Unit: x.Unit }, Links: { "$Url": `/effects/${x.EffectId}` } }, Strength: x.Strength != null ? Number(x.Strength) : null }; }
-function formatWeaponVisionAttachment(x,data){
-  const effects = (data[x.Id + idOffsets.WeaponVisionAttachments]||[]).map(formatEffectOnEquip);
+function formatWeaponVisionAttachment(x, effectsMap){
+  const itemId = x.Id + idOffsets.WeaponVisionAttachments;
+  const effects = effectsMap[itemId] ?? [];
   return {
     Id: x.Id,
-    ItemId: x.Id + idOffsets.WeaponVisionAttachments,
+    ItemId: itemId,
     Name: x.Name,
     Properties: {
       Description: x.Description,
       Type: x.Type,
-      Weight: x.Weight != null ? Number(x.Weight) : null,
-      SkillModification: x.SkillMod != null ? Number(x.SkillMod) : null,
-      SkillBonus: x.SkillBonus != null ? Number(x.SkillBonus) : null,
-      Zoom: x.Zoom != null ? Number(x.Zoom) : null,
+      Weight: x.Weight !== null ? Number(x.Weight) : null,
+      SkillModification: x.SkillMod !== null ? Number(x.SkillMod) : null,
+      SkillBonus: x.SkillBonus !== null ? Number(x.SkillBonus) : null,
+      Zoom: x.Zoom !== null ? Number(x.Zoom) : null,
       Economy: {
-        Efficiency: x.Efficiency != null ? Number(x.Efficiency) : null,
-        MaxTT: x.MaxTT != null ? Number(x.MaxTT) : null,
-        MinTT: x.MinTT != null ? Number(x.MinTT) : null,
-        Decay: x.Decay != null ? Number(x.Decay) : null,
+        Efficiency: x.Efficiency !== null ? Number(x.Efficiency) : null,
+        MaxTT: x.MaxTT !== null ? Number(x.MaxTT) : null,
+        MinTT: x.MinTT !== null ? Number(x.MinTT) : null,
+        Decay: x.Decay !== null ? Number(x.Decay) : null,
       }
     },
     EffectsOnEquip: effects,
     Links: { "$Url": `/weaponvisionattachments/${x.Id}` },
   };
 }
-async function getWeaponVisionAttachments(){ const rows = await getObjects(queries.WeaponVisionAttachments,x=>x); const data = await getEffectsOnEquip(rows.map(r=>r.Id)); return rows.map(r=>formatWeaponVisionAttachment(r,data)); }
-async function getWeaponVisionAttachment(idOrName){ const row = await getObjectByIdOrName(queries.WeaponVisionAttachments,'WeaponVisionAttachments',idOrName); if(!row) return null; const data = await getEffectsOnEquip([row.Id]); return formatWeaponVisionAttachment(row,data); }
+
+async function getWeaponVisionAttachments(){
+  const { rows } = await pool.query(queries.WeaponVisionAttachments);
+  const itemIds = rows.map(r => r.Id + idOffsets.WeaponVisionAttachments);
+  const effects = await loadEffectsOnEquipByItemIds(itemIds);
+  return rows.map(r => formatWeaponVisionAttachment(r, effects));
+}
+
+async function getWeaponVisionAttachment(idOrName){
+  const row = await getObjectByIdOrName(queries.WeaponVisionAttachments,'WeaponVisionAttachments',idOrName);
+  if(!row) return null;
+  const itemId = row.Id + idOffsets.WeaponVisionAttachments;
+  const effects = await loadEffectsOnEquipByItemIds([itemId]);
+  return formatWeaponVisionAttachment(row, effects);
+}
+
 function register(app){
   /**
    * @swagger

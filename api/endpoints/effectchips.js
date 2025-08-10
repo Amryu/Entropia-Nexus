@@ -1,6 +1,8 @@
 const { pool } = require('./dbClient');
+const pgp = require('pg-promise')();
 const { idOffsets } = require('./constants');
-const { getObjectByIdOrName, getObjects } = require('./utils');
+const { getObjectByIdOrName } = require('./utils');
+const { loadEffectsOnUseByItemIds } = require('./effects-utils');
 
 const queries = {
   EffectChips:
@@ -10,45 +12,59 @@ const queries = {
        FROM ONLY "EffectChips"\
   LEFT JOIN ONLY "Professions" ON "EffectChips"."ProfessionId" = "Professions"."Id"\
   LEFT JOIN ONLY "Materials"   ON "EffectChips"."AmmoId" = "Materials"."Id"',
-  EffectsOnUse: `SELECT "EffectsOnUse".*, e."Name" AS "Effect", e."IsPositive" AS "IsPositive" FROM ONLY "EffectsOnUse" LEFT JOIN ONLY "Effects" e ON e."Id" = "EffectsOnUse"."EffectId" WHERE "EffectsOnUse"."ItemId" IN ($1:csv)`
+  // EffectsOnUse loaded via shared helper
 };
 
-async function _getEffectsOnUse(ids){
-  if (ids.length === 0) return {};
-  const pgp = require('pg-promise')();
-  const { rows } = await pool.query(pgp.as.format(queries.EffectsOnUse, [ids]));
-  return rows.reduce((acc,r)=>{ (acc[r.ItemId] ||= []).push(r); return acc; },{});
-}
-
-function _formatEffect(x){ return { Name: x.Effect, IsPositive: x.IsPositive === 1, Amount: x.Amount !== null ? Number(x.Amount) : null, Duration: x.Duration !== null ? Number(x.Duration) : null }; }
-
-function formatEffectChip(x, effects){
-  const list = (effects[x.Id] ?? []).map(_formatEffect);
+function formatEffectChip(x, effectsMap){
+  const itemId = x.Id + idOffsets.EffectChips;
+  const effects = effectsMap[itemId] ?? [];
   return {
     Id: x.Id,
-    ItemId: x.Id + idOffsets.EffectChips,
+    ItemId: itemId,
     Name: x.Name,
     Properties: {
       Description: x.Description,
-      Profession: x.Profession,
-      Ammo: x.Ammo,
-      Skill: { LearningIntervalStart: x.MinLvl !== null ? Number(x.MinLvl) : null, LearningIntervalEnd: x.MaxLvl !== null ? Number(x.MaxLvl) : null, IsSiB: x.IsSib === 1 }
+      Weight: x.Weight !== null ? Number(x.Weight) : null,
+      Type: x.Type,
+      Range: x.Range !== null ? Number(x.Range) : null,
+      UsesPerMinute: x.Uses !== null ? Number(x.Uses) : null,
+      Mindforce: {
+        Level: x.Level !== null ? Number(x.Level) : null,
+        Concentration: x.Concentration !== null ? Number(x.Concentration) : null,
+        Cooldown: null,
+        CooldownGroup: x.CooldownGroup !== null ? Number(x.CooldownGroup) : null,
+      },
+      Economy: {
+        MaxTT: x.MaxTT !== null ? Number(x.MaxTT) : null,
+        MinTT: x.MinTT !== null ? Number(x.MinTT) : null,
+        Decay: x.Decay !== null ? Number(x.Decay) : null,
+        AmmoBurn: x.AmmoBurn !== null ? Number(x.AmmoBurn) : null,
+      },
+      Skill: {
+        LearningIntervalStart: (x.MinLevel ?? x.MinLvl) !== null ? Number(x.MinLevel ?? x.MinLvl) : null,
+        LearningIntervalEnd: (x.MaxLevel ?? x.MaxLvl) !== null ? Number(x.MaxLevel ?? x.MaxLvl) : null,
+        IsSiB: (x.IsSib === 1) || (x.SiB === 1)
+      }
     },
-    EffectsOnUse: list,
+    Ammo: x.AmmoId ? { Name: x.Ammo, Links: { "$Url": `/materials/${x.AmmoId}` } } : null,
+    Profession: x.ProfessionId ? { Name: x.Profession, Links: { "$Url": `/professions/${x.ProfessionId}` } } : null,
+    EffectsOnUse: effects,
     Links: { "$Url": `/effectchips/${x.Id}` }
   };
 }
 
 async function getEffectChips(){
   const { rows } = await pool.query(queries.EffectChips);
-  const effects = await _getEffectsOnUse(rows.map(r=>r.Id));
+  const itemIds = rows.map(r => r.Id + idOffsets.EffectChips);
+  const effects = await loadEffectsOnUseByItemIds(itemIds);
   return rows.map(r => formatEffectChip(r, effects));
 }
 
 async function getEffectChip(idOrName){
   const row = await getObjectByIdOrName(queries.EffectChips, 'EffectChips', idOrName);
   if (!row) return null;
-  const effects = await _getEffectsOnUse([row.Id]);
+  const itemIds = [row.Id + idOffsets.EffectChips];
+  const effects = await loadEffectsOnUseByItemIds(itemIds);
   return formatEffectChip(row, effects);
 }
 

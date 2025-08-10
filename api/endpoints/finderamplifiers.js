@@ -1,24 +1,15 @@
-const pgp = require('pg-promise')();
 const { pool } = require('./dbClient');
 const { getObjectByIdOrName } = require('./utils');
-
-const ID_OFFSET = 5400000;
+const { idOffsets } = require('./constants');
+const { loadEffectsOnEquipByItemIds } = require('./effects-utils');
 
 const queries = {
   FinderAmplifiers: 'SELECT * FROM ONLY "FinderAmplifiers"',
-  EffectsOnEquip: `SELECT e."Id", e."Name", e."Unit", e."Description", eo."Strength", eo."ItemId"
-                   FROM ONLY "EffectsOnEquip" eo
-                   INNER JOIN ONLY "Effects" e ON eo."EffectId" = e."Id"
-                   WHERE eo."ItemId" IN ($1:csv)`,
 };
 
-function formatEffectOnEquip(x){
-  return { Name: x.Name, Values: { Strength: x.Strength !== null ? Number(x.Strength) : null, Unit: x.Unit, Description: x.Description }, Links: { "$Url": `/effects/${x.Id}` } };
-}
-
 function formatFinderAmplifier(x, effectsMap){
-  const itemId = x.Id + ID_OFFSET;
-  const effects = (effectsMap[itemId] ?? []).map(formatEffectOnEquip);
+  const itemId = x.Id + idOffsets.FinderAmplifiers;
+  const effects = effectsMap[itemId] ?? [];
   return {
     Id: x.Id,
     ItemId: itemId,
@@ -37,8 +28,8 @@ function formatFinderAmplifier(x, effectsMap){
 
 async function _getEffectsOnEquip(ids){
   if (!ids.length) return {};
-  const { rows } = await pool.query(pgp.as.format(queries.EffectsOnEquip, [ids.map(id => id + ID_OFFSET)]));
-  return rows.reduce((acc,r)=>{ (acc[r.ItemId] ||= []).push(r); return acc; },{});
+  const itemIds = ids.map(id => id + idOffsets.FinderAmplifiers);
+  return await loadEffectsOnEquipByItemIds(itemIds);
 }
 
 async function getFinderAmplifiers(){

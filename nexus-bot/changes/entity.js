@@ -1,4 +1,20 @@
 export const UpsertConfigs = {
+  Shop: {
+    columns: [
+      { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Description },
+      { name: "MaxGuests", value: x => x.MaxGuests ?? null },
+      { name: "Longitude", value: x => x.Coordinates?.Longitude ?? null },
+      { name: "Latitude", value: x => x.Coordinates?.Latitude ?? null },
+      { name: "Altitude", value: x => x.Coordinates?.Altitude ?? null },
+      { name: "PlanetId", value: async (x, c) => await c.query(`SELECT "Id" FROM ONLY "Planets" WHERE "Name" = $1`, [x.Planet?.Name]).then(res => res.rows[0]?.Id ?? null) },
+      // Type is an enum EstateType in DB; use text value 'Shop'
+      { name: "Type", value: _ => 'Shop' },
+      { name: "ItemTradeAvailable", value: _ => true }
+    ],
+    table: "Estates",
+    relationChangeFunc: async (client, id, x) => await applyEstateSectionsChanges(client, id, x.Sections ?? [])
+  },
   Weapon: {
     columns: [
       { name: "Name", value: x => x.Name },
@@ -621,6 +637,23 @@ export const UpsertConfigs = {
       }
     }
   }
+}
+
+async function applyEstateSectionsChanges(client, estateId, sections) {
+  // Map section names and max points
+  const newSectionNames = sections.map(s => s.Name);
+
+  // Remove sections not present anymore
+  await client.query(`DELETE FROM ONLY "EstateSections" WHERE "EstateId" = $1 AND "Name" NOT IN (SELECT * FROM unnest($2::text[]))`, [estateId, newSectionNames.length ? newSectionNames : ['']]);
+
+  // Upsert sections with ItemPoints using a single statement
+  await Promise.all(sections.map(s => client.query(`
+    INSERT INTO "EstateSections" ("EstateId", "Name", "Description", "ItemPoints")
+    VALUES ($1, $2, $3, $4)
+    ON CONFLICT ("EstateId", "Name") DO UPDATE SET
+      "Description" = EXCLUDED."Description",
+      "ItemPoints" = EXCLUDED."ItemPoints"
+  `, [estateId, s.Name, null, s.MaxItemPoints ?? null])));
 }
 
 async function applyMobMaturityChanges(client, mobId, maturities) {

@@ -1,7 +1,6 @@
 const { pool } = require('./dbClient');
 const { getObjectByIdOrName } = require('./utils');
-
-const ID_OFFSET = 10100000;
+const { idOffsets } = require('./constants');
 
 const queries = {
   Capsules: 'SELECT cc.*, p."Name" AS "Profession", m."Name" AS "Mob" FROM ONLY "CreatureControlCapsules" cc LEFT JOIN ONLY "Professions" p ON cc."ScanningProfessionId" = p."Id" LEFT JOIN ONLY "Mobs" m ON cc."MobId" = m."Id"',
@@ -10,7 +9,7 @@ const queries = {
 function formatCapsule(x){
   return {
     Id: x.Id,
-    ItemId: x.Id + ID_OFFSET,
+  ItemId: x.Id + idOffsets.Capsules,
     Name: x.Name,
     Properties: { Description: x.Description, Weight: x.Weight !== null ? Number(x.Weight) : null, MinProfessionLevel: x.ProfessionLevel !== null ? Number(x.ProfessionLevel) : null, Economy: { MaxTT: x.MaxTT !== null ? Number(x.MaxTT) : null } },
     Profession: { Name: x.Profession, Links: { "$Url": `/professions/${x.ScanningProfessionId}` } },

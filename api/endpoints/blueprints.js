@@ -3,24 +3,10 @@ const { idOffsets } = require('./constants');
 const { getObjects, getObjectByIdOrName, parseItemList } = require('./utils');
 
 const queries = {
-  BlueprintBooks: 'SELECT "BlueprintBooks"."Id", "BlueprintBooks"."Name", "BlueprintBooks"."Description", "PlanetId", "Planets"."Name" AS "Planet", "Weight", "Value" FROM ONLY "BlueprintBooks" LEFT JOIN ONLY "Planets" ON "BlueprintBooks"."PlanetId" = "Planets"."Id"',
   Blueprints: 'SELECT "Blueprints".*, "BlueprintBooks"."Name" AS "Book", "Professions"."Name" AS "Profession", "Items"."Type" AS "ItemType", "Items"."Name" AS "Item" FROM ONLY "Blueprints" LEFT JOIN ONLY "BlueprintBooks" ON "Blueprints"."BookId" = "BlueprintBooks"."Id" LEFT JOIN ONLY "Items" ON "Blueprints"."ItemId" = "Items"."Id" LEFT JOIN ONLY "Professions" ON "Professions"."Id" = "Blueprints"."ProfessionId"',
 };
 
-function formatBlueprintBook(x){
-  return {
-    Id: x.Id,
-    ItemId: x.Id + idOffsets.BlueprintBooks,
-    Name: x.Name,
-    Properties: {
-      Description: x.Description,
-      Weight: x.Weight !== null ? Number(x.Weight) : null,
-      Economy: { Value: x.Value !== null ? Number(x.Value) : null },
-    },
-    Planet: { Name: x.Planet, Links: { "$Url": `/planets/${x.PlanetId}` } },
-    Links: { "$Url": `/blueprintbooks/${x.Id}` },
-  };
-}
+// blueprint book endpoints moved to ./blueprintbooks.js
 
 function _formatBlueprintMaterial(x){
   return {
@@ -67,13 +53,29 @@ async function getBlueprintIngredients(ids){
   return rows.reduce((acc,r) => { (acc[r.BlueprintId] ||= []).push(r); return acc; }, {});
 }
 
-// DB methods
-const getBlueprintBooks = () => getObjects(queries.BlueprintBooks, formatBlueprintBook);
-const getBlueprintBook = async (idOrName) => { const row = await getObjectByIdOrName(queries.BlueprintBooks, 'BlueprintBooks', idOrName); return row ? formatBlueprintBook(row) : null; };
+function normalizeProductNames(names){
+  if (!Array.isArray(names)) return [];
+  const TAG_PATTERN = /^(.+?) \(([MFCLP](?:,\s*[MFCLP])*)\)$/; // Only strip known single-letter UI tags
+  const out = new Set();
+  for (const raw of names) {
+    const name = `${raw}`.trim();
+    if (!name) continue;
+    out.add(name);
+    const m = name.match(TAG_PATTERN);
+    if (m) {
+      const base = m[1].trim();
+      if (base) out.add(base);
+    }
+  }
+  return Array.from(out);
+}
 
 async function getBlueprints(products = null, materials = null){
   let where = '';
-  if (products !== null) where = pgp.as.format(' WHERE "Items"."Name" IN ($1:csv)', [products.map(x => `${x}`)]);
+  if (products !== null) {
+    const normalized = normalizeProductNames(products);
+    where = pgp.as.format(' WHERE "Items"."Name" IN ($1:csv)', [normalized]);
+  }
   else if (materials !== null) where = pgp.as.format(' WHERE "Blueprints"."Id" IN (SELECT DISTINCT "BlueprintId" FROM ONLY "BlueprintMaterials" INNER JOIN ONLY "Items" ON "Items"."Id" = "BlueprintMaterials"."ItemId" WHERE "Items"."Name" IN ($1:csv))', [materials.map(x => `${x}`)]);
   const { pool } = require('./dbClient');
   const { rows } = await pool.query(queries.Blueprints + where);
@@ -90,39 +92,6 @@ async function getBlueprint(idOrName){
 
 // Endpoints
 function register(app){
-  /**
-   * @swagger
-   * /blueprintbooks:
-   *  get:
-   *    description: Get all blueprint books
-   *    responses:
-   *      '200':
-   *        description: A list of blueprint books
-   */
-  app.get('/blueprintbooks', async (req,res) => { res.json(await getBlueprintBooks()); });
-  /**
-   * @swagger
-   * /blueprintbooks/{blueprintBook}:
-   *  get:
-   *    description: Get a blueprint book by name or id
-   *    parameters:
-   *      - in: path
-   *        name: blueprintBook
-   *        schema:
-   *          type: string
-   *        required: true
-   *        description: The name or id of the blueprint book
-   *    responses:
-   *      '200':
-   *        description: The blueprint book
-   *      '404':
-   *        description: Blueprint book not found
-   */
-  app.get('/blueprintbooks/:blueprintBook', async (req,res) => {
-    const result = await getBlueprintBook(req.params.blueprintBook);
-    if (result) res.json(result); else res.status(404).send();
-  });
-
   /**
    * @swagger
    * /blueprints:
@@ -182,4 +151,4 @@ function register(app){
   });
 }
 
-module.exports = { register, getBlueprintBooks, getBlueprintBook, getBlueprints, getBlueprint };
+module.exports = { register, getBlueprints, getBlueprint };

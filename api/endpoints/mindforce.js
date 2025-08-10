@@ -1,18 +1,22 @@
 const { getObjects, getObjectByIdOrName } = require('./utils');
 const { idOffsets } = require('./constants');
 
-const queries = {
-  MindforceImplants: 'SELECT * FROM ONLY "MindforceImplants"',
-};
+const queries = { MindforceImplants: 'SELECT * FROM ONLY "MindforceImplants"' };
 
 function formatMindforceImplant(x){
   return {
     Id: x.Id,
-  ItemId: x.Id + idOffsets.MindforceImplants,
+    ItemId: x.Id + idOffsets.MindforceImplants,
     Name: x.Name,
     Properties: {
       Description: x.Description,
-      Tiers: { Tier1: x.Tier1, Tier2: x.Tier2, Tier3: x.Tier3, Tier4: x.Tier4, Tier5: x.Tier5, Tier6: x.Tier6, Tier7: x.Tier7, Tier8: x.Tier8, Tier9: x.Tier9, Tier10: x.Tier10 }
+      Weight: x.Weight !== null ? Number(x.Weight) : null,
+      MaxProfessionLevel: x.MaxLvl !== null ? Number(x.MaxLvl) : null,
+      Economy: {
+        MaxTT: x.MaxTT !== null ? Number(x.MaxTT) : null,
+        MinTT: x.MinTT !== null ? Number(x.MinTT) : null,
+        Absorption: x.Absorption !== null ? Number(x.Absorption) : null,
+      }
     },
     Links: { "$Url": `/mindforceimplants/${x.Id}` }
   };

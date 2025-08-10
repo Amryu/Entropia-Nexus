@@ -1,7 +1,6 @@
 const { pool } = require('./dbClient');
 const { getObjectByIdOrName } = require('./utils');
-
-const ID_OFFSET = 4400000;
+const { idOffsets } = require('./constants');
 
 const queries = {
   Scanners: 'SELECT * FROM ONLY "Scanners"',
@@ -10,7 +9,7 @@ const queries = {
 function formatScanner(x){
   return {
     Id: x.Id,
-    ItemId: x.Id + ID_OFFSET,
+  ItemId: x.Id + idOffsets.Scanners,
     Name: x.Name,
     Properties: {
       Description: x.Description,

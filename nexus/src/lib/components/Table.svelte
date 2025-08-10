@@ -277,6 +277,16 @@
     border-bottom: 1px dotted currentColor;
   }
 
+  .copyable-link {
+    text-decoration: underline;
+    cursor: pointer;
+    background: none;
+    border: none;
+    padding: 0;
+    color: inherit;
+    font: inherit;
+  }
+
   tbody.virtual {
     white-space: nowrap;
     text-overflow: ellipsis;
@@ -420,9 +430,13 @@
             <tdgroup style="display: contents;">
             {#each item.values as value, valueIndex}
               <td class="clickable {(index) % 2 === 0 ? 'row-color' : 'row-color-alt'}" height="17px" style={item?.tdStyles ? item?.tdStyles[valueIndex] : null}>
-                <span class={shouldShowTooltip(item, valueIndex) ? 'dotted-underline' : ''} title={shouldShowTooltip(item, valueIndex) ? item?.tooltips[valueIndex] : null}>
+                <span class={(shouldShowTooltip(item, valueIndex) && !(item?.copyables && item.copyables[valueIndex])) ? 'dotted-underline' : ''} title={shouldShowTooltip(item, valueIndex) ? item?.tooltips[valueIndex] : null}>
                   {#if item?.links != null && item?.links[valueIndex] != null}
                     <a href={item?.links[valueIndex]}>{@html value ?? ''}</a>
+                  {:else if item?.copyables && item.copyables[valueIndex]}
+                    <button type="button" class='copyable-link' title={shouldShowTooltip(item, valueIndex) ? item?.tooltips[valueIndex] : null} on:click={() => item?.onClicks && item.onClicks[valueIndex] ? item.onClicks[valueIndex]() : null}>
+                      {@html value ?? ''}
+                    </button>
                   {:else}
                     {@html value ?? ''}
                   {/if}
@@ -441,9 +455,13 @@
             {#each item.values as value, valueIndex}
               {#if (item?.spans == null || item?.spans[valueIndex] == null) || (item?.spans != null && item?.spans[valueIndex] > 0 && !spanDataMatches(item?.spans, item, filteredData[index - 1]))}
                 <td class={(item?.spans != null && item?.spans[valueIndex] > 0 ? spanMap[valueIndex].indexOf(index) : index) % 2 === 0 ? 'row-color' : 'row-color-alt'} style={`${item?.spans != null && item?.spans[valueIndex] > 0 && !spanDataMatches(item?.spans, item, filteredData[index - 1]) ? `grid-row: span ${item?.spans[valueIndex]};` : ''}${item?.tdStyles && item?.tdStyles[valueIndex] != null ? item?.tdStyles[valueIndex] : ''}`}>
-                  <span style={shouldShowTooltip(item, valueIndex) ? 'text-decoration: underline; text-decoration-style: dashed; text-decoration-thickness: 1px;' : ''} title={shouldShowTooltip(item, valueIndex) ? item?.tooltips[valueIndex] : null}>
+                  <span style={(shouldShowTooltip(item, valueIndex) && !(item?.copyables && item.copyables[valueIndex])) ? 'text-decoration: underline; text-decoration-style: dashed; text-decoration-thickness: 1px;' : ''} title={shouldShowTooltip(item, valueIndex) ? item?.tooltips[valueIndex] : null}>
                     {#if item?.links != null && item?.links[valueIndex] != null}
                       <a href={item?.links[valueIndex]}>{@html value ?? ''}</a>
+                    {:else if item?.copyables && item.copyables[valueIndex]}
+                      <button type="button" class='copyable-link' title={shouldShowTooltip(item, valueIndex) ? item?.tooltips[valueIndex] : null} on:click={() => item?.onClicks && item.onClicks[valueIndex] ? item.onClicks[valueIndex]() : null}>
+                        {@html value ?? ''}
+                      </button>
                     {:else}
                       {@html value ?? ''}
                     {/if}

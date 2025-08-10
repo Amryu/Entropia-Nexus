@@ -571,7 +571,7 @@
   }
 
   function getAreas(locations) {
-    return locations.filter(x => x.Properties.Type.endsWith('Area'));
+    return locations.filter(x => x.Properties?.Type?.endsWith('Area') === true);
   }
 
   function getColorByType(type) {

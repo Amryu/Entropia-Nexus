@@ -17,8 +17,11 @@
   $: isOwner = object && user && (object.OwnerId === user.id);
   $: canManageManagers = isOwner || (user && user.administrator);
 
+
+  import { onMount } from 'svelte';
   let isLoading = true;
   let dependencies = {};
+  let managers = [];
 
   // Manager configuration
   const managerConfig = {
@@ -32,14 +35,14 @@
         type: 'list',
         config: {
           constructor: () => ({
-            EuName: ''
+            Name: ''
           }),
           controls: [
             { 
               label: 'Entropia Name', 
               type: 'text', 
-              '_get': x => x.EuName || x.User?.Name || '', 
-              '_set': (x, v) => x.EuName = v
+              '_get': x => x.Name || x.User?.Name || '', 
+              '_set': (x, v) => x.Name = v
             }
           ]
         }, 
@@ -50,13 +53,17 @@
     ]
   };
 
-  function loadForm() {
-    // No dependencies needed since we're using text input
+  // Fetch managers from API on mount
+  onMount(async () => {
+    isLoading = true;
+    try {
+      const res = await apiCall(fetch, `/api/shops/${object.Id}/managers`);
+      managers = Array.isArray(res?.Managers) ? res.Managers : [];
+    } catch (e) {
+      managers = [];
+    }
     isLoading = false;
-  }
-
-  // Load form when component mounts
-  loadForm();
+  });
 
   async function save() {
     if (disabled || saving || !canManageManagers) return;
@@ -67,9 +74,9 @@
     try {
       // Convert managers to PascalCase expected by the API
       let payload = {
-        Managers: (object.Managers || []).map(manager => ({
-          EuName: manager.EuName || manager.User?.Name || ''
-        })).filter(manager => manager.EuName.trim())
+        Managers: (managers || []).map(manager => ({
+          Name: manager.Name || manager.User?.Name || ''
+        })).filter(manager => manager.Name && manager.Name.trim())
       };
       
       const response = await apiPut(fetch, `/api/shops/${object.Id}/managers`, payload);
@@ -163,15 +170,6 @@
   .save-button:hover:not(:disabled) {
     background-color: var(--color-primary-hover);
   }
-
-  .cancel-button {
-    background-color: var(--color-secondary);
-    color: var(--color-text-primary);
-  }
-
-  .cancel-button:hover {
-    background-color: var(--color-secondary-hover);
-  }
 </style>
 
 {#if !canManageManagers}
@@ -179,11 +177,11 @@
     You don't have permission to manage this shop's managers. Only the shop owner can manage managers.
   </div>
 {:else if isLoading}
-  <div>Loading manager editor...</div>
+  <div>Loading managers...</div>
 {:else}
   <div class="manager-form-container">
     <div class="form-header">
-      <h3>Manage Shop Managers</h3>
+      <h3>Edit Managers</h3>
       <div class="form-actions">
         {#if saveMessage}
           <div class="save-message" class:success={saveMessage.includes('successfully')} class:error={saveMessage.includes('Error')}>
@@ -197,14 +195,15 @@
           disabled={disabled || saving || !canManageManagers}>
           {saving ? 'Saving...' : 'Save Managers'}
         </button>
-        <button class="cancel-button" type="button" on:click={cancel}>Cancel</button>
       </div>
     </div>
 
     <EditFormControlGroup 
-      config={managerConfig} 
+      title="Managers"
+      root={{ Managers: managers }}
+      controls={managerConfig.controls}
       dependencies={dependencies} 
-      object={object} 
+      object={{ Managers: managers }}
       disabled={disabled || !canManageManagers} />
   </div>
 {/if}

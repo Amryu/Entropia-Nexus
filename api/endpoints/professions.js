@@ -2,11 +2,8 @@ const { pool } = require('./dbClient');
 const { getObjectByIdOrName } = require('./utils');
 
 const queries = {
-  ProfessionCategories: 'SELECT * FROM ONLY "ProfessionCategories"',
   Professions: 'SELECT "Professions".*, "ProfessionCategories"."Name" AS "Category" FROM ONLY "Professions" INNER JOIN ONLY "ProfessionCategories" ON "Professions"."CategoryId" = "ProfessionCategories"."Id"',
 };
-
-function formatProfessionCategory(x){ return { Id: x.Id, Name: x.Name, Links: { "$Url": `/professioncategories/${x.Id}` } }; }
 
 function _groupBy(arr, key){ return arr.reduce((acc, r) => { (acc[r[key]] ||= []).push(r); return acc; }, {}); }
 
@@ -30,43 +27,10 @@ function formatProfession(x, data){
   return { Id: x.Id, Name: x.Name, Category: { Name: x.Category, Links: { "$Url": `/professioncategories/${x.CategoryId}` } }, Skills: skills, Unlocks: unlocks, Links: { "$Url": `/professions/${x.Id}` } };
 }
 
-async function getProfessionCategories(){ const { rows } = await pool.query(queries.ProfessionCategories); return rows.map(formatProfessionCategory); }
-async function getProfessionCategory(idOrName){ const row = await getObjectByIdOrName(queries.ProfessionCategories, 'ProfessionCategories', idOrName); return row ? formatProfessionCategory(row) : null; }
-
 async function getProfessions(){ const { rows } = await pool.query(queries.Professions); const data = await _getProfessionSkillsAndUnlocks(rows.map(r=>r.Id)); return rows.map(r => formatProfession(r, data)); }
 async function getProfession(idOrName){ const row = await getObjectByIdOrName(queries.Professions, 'Professions', idOrName); if (!row) return null; const data = await _getProfessionSkillsAndUnlocks([row.Id]); return formatProfession(row, data); }
 
 function register(app){
-  /**
-   * @swagger
-   * /professioncategories:
-   *  get:
-   *    description: Get all profession categories
-   *    responses:
-   *      '200':
-   *        description: A list of profession categories
-   */
-  app.get('/professioncategories', async (req,res) => { res.json(await getProfessionCategories()); });
-  /**
-   * @swagger
-   * /professioncategories/{professionCategory}:
-   *  get:
-   *    description: Get a profession category by name or id
-   *    parameters:
-   *      - in: path
-   *        name: professionCategory
-   *        schema:
-   *          type: string
-   *        required: true
-   *        description: The name or id of the profession category
-   *    responses:
-   *      '200':
-   *        description: The profession category
-   *      '404':
-   *        description: Profession category not found
-   */
-  app.get('/professioncategories/:professionCategory', async (req,res) => { const r = await getProfessionCategory(req.params.professionCategory); if (r) res.json(r); else res.status(404).send(); });
-
   /**
    * @swagger
    * /professions:
@@ -97,5 +61,4 @@ function register(app){
    */
   app.get('/professions/:profession', async (req,res) => { const r = await getProfession(req.params.profession); if (r) res.json(r); else res.status(404).send(); });
 }
-
-module.exports = { register, getProfessionCategories, getProfessionCategory, getProfessions, getProfession };
+module.exports = { register, getProfessions, getProfession };

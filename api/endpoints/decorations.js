@@ -1,14 +1,13 @@
 const { pool } = require('./dbClient');
 const { getObjectByIdOrName } = require('./utils');
-
-const ID_OFFSET = 9200000;
+const { idOffsets } = require('./constants');
 
 const queries = {
   Decorations: 'SELECT * FROM ONLY "Decorations"',
 };
 
 function formatDecoration(x){
-  return { Id: x.Id, ItemId: x.Id + ID_OFFSET, Name: x.Name, Properties: { Description: x.Description, Weight: x.Weight !== null ? Number(x.Weight) : null, Economy: { MaxTT: x.MaxTT !== null ? Number(x.MaxTT) : null } }, Links: { "$Url": `/decorations/${x.Id}` } };
+  return { Id: x.Id, ItemId: x.Id + idOffsets.Decorations, Name: x.Name, Properties: { Description: x.Description, Weight: x.Weight !== null ? Number(x.Weight) : null, Economy: { MaxTT: x.MaxTT !== null ? Number(x.MaxTT) : null } }, Links: { "$Url": `/decorations/${x.Id}` } };
 }
 
 async function getDecorations(){ const { rows } = await pool.query(queries.Decorations); return rows.map(formatDecoration); }

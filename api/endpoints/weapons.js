@@ -1,30 +1,19 @@
 const { pool } = require('./dbClient');
 const { idOffsets } = require('./constants');
 const { getObjectByIdOrName } = require('./utils');
+const { loadEffectsOnEquipByItemIds, loadEffectsOnUseByItemIds } = require('./effects-utils');
+const { getTiersByItemIds } = require('./tiers');
 
 const queries = { Weapons: 'SELECT "Weapons".*, "VehicleAttachmentTypes"."Name" AS "AttachmentType", "Materials"."Name" AS "Ammo", hit."Name" AS "ProfessionHit", dmg."Name" AS "ProfessionDmg" FROM ONLY "Weapons" LEFT JOIN ONLY "VehicleAttachmentTypes" ON "Weapons"."AttachmentTypeId" = "VehicleAttachmentTypes"."Id" LEFT JOIN ONLY "Materials" ON "Weapons"."AmmoId" = "Materials"."Id" LEFT JOIN ONLY "Professions" hit ON "Weapons"."ProfessionHitId" = hit."Id" LEFT JOIN ONLY "Professions" dmg ON "Weapons"."ProfessionDmgId" = dmg."Id"' };
 
-async function getEffectsOnEquip(ids){
-  if(ids.length===0) return {};
-  const { rows } = await pool.query(`SELECT "EffectsOnEquip".*, "Effects"."Name", "Effects"."Unit" FROM ONLY "EffectsOnEquip" INNER JOIN ONLY "Effects" ON "EffectsOnEquip"."EffectId" = "Effects"."Id" WHERE "EffectsOnEquip"."ItemId" IN (${ids.map(x=>x+idOffsets.Weapons).join(',')})`);
-  return rows.reduce((a,r)=>{ (a[r.ItemId] ||= []).push(r); return a; },{});
-}
-async function getEffectsOnUse(ids){
-  if(ids.length===0) return {};
-  const { rows } = await pool.query(`SELECT "EffectsOnUse".*, "Effects"."Name", "Effects"."Unit" FROM ONLY "EffectsOnUse" INNER JOIN ONLY "Effects" ON "EffectsOnUse"."EffectId" = "Effects"."Id" WHERE "EffectsOnUse"."ItemId" IN (${ids.map(x=>x+idOffsets.Weapons).join(',')})`);
-  return rows.reduce((a,r)=>{ (a[r.ItemId] ||= []).push(r); return a; },{});
-}
-async function getTiersMap(ids){ if(ids.length===0) return {}; const { rows } = await pool.query(`SELECT t.*, i."Name" AS "ItemName" FROM ONLY "Tiers" t INNER JOIN ONLY "Items" i ON t."ItemId" = i."Id" WHERE t."ItemId" IN (${ids.join(',')})`); return rows.reduce((a,r)=>{ (a[r.ItemId] ||= []).push(r); return a; },{}); }
-function formatEffectOnEquip(x){ return { Effect: { Name: x.Name, Properties: { Unit: x.Unit }, Links: { "$Url": `/effects/${x.EffectId}` } }, Strength: x.Strength != null ? Number(x.Strength) : null }; }
-function formatEffectOnUse(x){ return { Effect: { Name: x.Name, Properties: { Unit: x.Unit }, Links: { "$Url": `/effects/${x.EffectId}` } }, Strength: x.Strength != null ? Number(x.Strength) : null }; }
-function formatTier(x){ return { Name: `${x.ItemName} Tier ${x.Tier}`, Properties: { Tier: x.Tier, IsArmorSet: x.IsArmorSet === 1 }, Links: { "$Url": `/tiers?ItemId=${x.ItemId}&IsArmorSet=${x.IsArmorSet}&Tier=${x.Tier}` } }; }
 function formatWeapon(x,data){
-  const equip = (data.EffectsOnEquip[x.Id+idOffsets.Weapons]||[]).map(formatEffectOnEquip);
-  const use = (data.EffectsOnUse[x.Id+idOffsets.Weapons]||[]).map(formatEffectOnUse);
-  const tiers = (data.Tiers[x.Id]||[]).map(formatTier);
+  const itemId = x.Id + idOffsets.Weapons;
+  const equip = data.EffectsOnEquip[itemId] || [];
+  const use = data.EffectsOnUse[itemId] || [];
+  const tiers = data.Tiers[itemId] || [];
   return {
     Id: x.Id,
-    ItemId: x.Id + idOffsets.Weapons,
+    ItemId: itemId,
     Name: x.Name,
     Properties: {
       Description: x.Description,
@@ -68,15 +57,35 @@ function formatWeapon(x,data){
     Ammo: x.Ammo ? { Name: x.Ammo, Links: { "$Url": `/materials/${x.AmmoId}` } } : null,
     ProfessionHit: { Name: x.ProfessionHit, Links: { "$Url": `/professions/${x.ProfessionHitId}` } },
     ProfessionDmg: { Name: x.ProfessionDmg, Links: { "$Url": `/professions/${x.ProfessionDmgId}` } },
-    AttachmentType: { Name: x.AttachmentType, Links: { "$Url": x.AttachmentTypeId ? `/weaponattachmenttypes/${x.AttachmentTypeId}` : null } },
+  AttachmentType: { Name: x.AttachmentType, Links: { "$Url": x.AttachmentTypeId ? `/vehicleattachmenttypes/${x.AttachmentTypeId}` : null } },
     EffectsOnEquip: equip,
     EffectsOnUse: use,
     Tiers: tiers,
     Links: { "$Url": `/weapons/${x.Id}` },
   };
 }
-async function getWeapons(){ const { rows } = await pool.query(queries.Weapons); const data = { EffectsOnEquip: await getEffectsOnEquip(rows.map(r=>r.Id)), EffectsOnUse: await getEffectsOnUse(rows.map(r=>r.Id)), Tiers: await getTiersMap(rows.map(r=>r.Id)) }; return rows.map(r=>formatWeapon(r,data)); }
-async function getWeapon(idOrName){ const row = await getObjectByIdOrName(queries.Weapons,'Weapons',idOrName); if(!row) return null; const data = { EffectsOnEquip: await getEffectsOnEquip([row.Id]), EffectsOnUse: await getEffectsOnUse([row.Id]), Tiers: await getTiersMap([row.Id]) }; return formatWeapon(row,data); }
+async function getWeapons(){
+  const { rows } = await pool.query(queries.Weapons);
+  const itemIds = rows.map(r => r.Id + idOffsets.Weapons);
+  const [equip, use, tiers] = await Promise.all([
+    loadEffectsOnEquipByItemIds(itemIds),
+    loadEffectsOnUseByItemIds(itemIds),
+    getTiersByItemIds(itemIds, 0)
+  ]);
+  const data = { EffectsOnEquip: equip, EffectsOnUse: use, Tiers: tiers };
+  return rows.map(r=>formatWeapon(r,data));
+}
+async function getWeapon(idOrName){
+  const row = await getObjectByIdOrName(queries.Weapons,'Weapons',idOrName); if(!row) return null;
+  const itemId = row.Id + idOffsets.Weapons;
+  const [equip, use, tiers] = await Promise.all([
+    loadEffectsOnEquipByItemIds([itemId]),
+    loadEffectsOnUseByItemIds([itemId]),
+    getTiersByItemIds([itemId], 0)
+  ]);
+  const data = { EffectsOnEquip: equip, EffectsOnUse: use, Tiers: tiers };
+  return formatWeapon(row,data);
+}
 function register(app){
   /**
    * @swagger

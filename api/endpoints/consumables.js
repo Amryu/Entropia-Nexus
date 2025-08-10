@@ -1,8 +1,7 @@
 const pgp = require('pg-promise')();
 const { pool } = require('./dbClient');
 const { getObjectByIdOrName } = require('./utils');
-
-const ID_OFFSET = 10000000;
+const { idOffsets } = require('./constants');
 
 const queries = {
   Consumables: 'SELECT * FROM ONLY "Consumables"',
@@ -15,7 +14,7 @@ function formatEffectOnConsume(x){ return { Name: x.Name, Values: { DurationSeco
 function formatConsumable(x, effects){
   return {
     Id: x.Id,
-    ItemId: x.Id + ID_OFFSET,
+  ItemId: x.Id + idOffsets.Consumables,
     Name: x.Name,
     Properties: { Description: x.Description, Weight: x.Weight !== null ? Number(x.Weight) : null, Type: x.Type, Economy: { MaxTT: x.Value !== null ? Number(x.Value) : null } },
     EffectsOnConsume: (effects[x.Id]||[]).map(formatEffectOnConsume),

@@ -1,30 +1,28 @@
 const pgp = require('pg-promise')();
 const { pool } = require('./dbClient');
 const { getObjectByIdOrName } = require('./utils');
-
-const ID_OFFSET = 4600000;
+const { idOffsets } = require('./constants');
+const { loadEffectsOnEquipByItemIds } = require('./effects-utils');
+const { getTiersByItemIds } = require('./tiers');
 
 const queries = {
   Excavators: 'SELECT * FROM ONLY "Excavators"',
-  EffectsOnEquip: `SELECT e."Id", e."Name", e."Unit", e."Description", eo."Strength", eo."ItemId" FROM ONLY "EffectsOnEquip" eo INNER JOIN ONLY "Effects" e ON eo."EffectId" = e."Id" WHERE eo."ItemId" IN ($1:csv)`,
-  Tiers: `SELECT t."Tier", t."ItemId", t."IsArmorSet", i."Name" AS "ItemName", tm.*, m."Name" AS "MaterialName", m."Value" AS "Value", m."Weight" AS "Weight", m."Type" AS "Type"
-          FROM ONLY "Tiers" t
-          INNER JOIN ONLY "TierMaterials" tm ON t."Id" = tm."TierId"
-          INNER JOIN ONLY "Materials" m ON tm."MaterialId" = m."Id"
-          INNER JOIN ONLY "Items" i ON t."ItemId" = i."Id"
-          WHERE t."ItemId" IN ($1:csv) AND t."IsArmorSet" = 0`,
 };
 
-function formatEffectOnEquip(x){ return { Name: x.Name, Values: { Strength: x.Strength !== null ? Number(x.Strength) : null, Unit: x.Unit, Description: x.Description }, Links: { "$Url": `/effects/${x.Id}` } }; }
-function formatTierMaterial(x){ return { Amount: x.Amount !== null ? Number(x.Amount) : null, Material: { Name: x.MaterialName, Properties: { Weight: x.Weight !== null ? Number(x.Weight) : null, Type: x.Type, Economy: { MaxTT: x.Value !== null ? Number(x.Value) : null } }, Links: { "$Url": `/materials/${x.MaterialId}` } } }; }
-function formatTier(group){ const tier = group[0]; return { Name: `${tier.ItemName} Tier ${tier.Tier}`, Properties: { Tier: tier.Tier, IsArmorSet: tier.IsArmorSet === 1 }, Materials: group.map(formatTierMaterial), Links: { "$Url": `/tiers?ItemId=${tier.ItemId}&IsArmorSet=${tier.IsArmorSet}&Tier=${tier.Tier}` } }; }
-
-async function _getEffectsOnEquip(ids){ if (!ids.length) return {}; const { rows } = await pool.query(pgp.as.format(queries.EffectsOnEquip, [ids.map(id => id + ID_OFFSET)])); return rows.reduce((acc,r)=>{ (acc[r.ItemId] ||= []).push(r); return acc; },{}); }
-async function _getTiers(ids){ if (!ids.length) return {}; const itemIds = ids.map(id => id + ID_OFFSET); const { rows } = await pool.query(pgp.as.format(queries.Tiers, [itemIds])); const byItem = rows.reduce((acc,r)=>{ (acc[r.ItemId] ||= []); acc[r.ItemId].push(r); return acc; },{}); const grouped = {}; for (const [itemId, list] of Object.entries(byItem)){ const byTier = list.reduce((a,r)=>{ (a[r.Tier] ||= []); a[r.Tier].push(r); return a; },{}); grouped[itemId] = Object.values(byTier).map(formatTier); } return grouped; }
+async function getEffectsOnEquip(ids) {
+  if (!ids.length) return {};
+  const itemIds = ids.map(id => id + idOffsets.Excavators);
+  return await loadEffectsOnEquipByItemIds(itemIds);
+}
+async function getTiers(ids) {
+  if (!ids.length) return {};
+  const itemIds = ids.map(id => id + idOffsets.Excavators);
+  return await getTiersByItemIds(itemIds, 0);
+}
 
 function formatExcavator(x, effectsMap, tiersMap){
-  const itemId = x.Id + ID_OFFSET;
-  const effects = (effectsMap[itemId] ?? []).map(formatEffectOnEquip);
+  const itemId = x.Id + idOffsets.Excavators;
+  const effects = effectsMap[itemId] ?? [];
   const tiers = tiersMap[itemId] ?? [];
   return {
     Id: x.Id,
@@ -44,8 +42,23 @@ function formatExcavator(x, effectsMap, tiersMap){
   };
 }
 
-async function getExcavators(){ const { rows } = await pool.query(queries.Excavators); const [effects, tiers] = await Promise.all([_getEffectsOnEquip(rows.map(r=>r.Id)), _getTiers(rows.map(r=>r.Id))]); return rows.map(r => formatExcavator(r, effects, tiers)); }
-async function getExcavator(idOrName){ const row = await getObjectByIdOrName(queries.Excavators, 'Excavators', idOrName); if (!row) return null; const [effects, tiers] = await Promise.all([_getEffectsOnEquip([row.Id]), _getTiers([row.Id])]); return formatExcavator(row, effects, tiers); }
+async function getExcavators(){
+  const { rows } = await pool.query(queries.Excavators);
+  const [effects, tiers] = await Promise.all([
+    getEffectsOnEquip(rows.map(r=>r.Id)),
+    getTiers(rows.map(r=>r.Id))
+  ]);
+  return rows.map(r => formatExcavator(r, effects, tiers));
+}
+async function getExcavator(idOrName){
+  const row = await getObjectByIdOrName(queries.Excavators, 'Excavators', idOrName);
+  if (!row) return null;
+  const [effects, tiers] = await Promise.all([
+    getEffectsOnEquip([row.Id]),
+    getTiers([row.Id])
+  ]);
+  return formatExcavator(row, effects, tiers);
+}
 
 function register(app){
   /**

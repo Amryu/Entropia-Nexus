@@ -47,7 +47,7 @@ export async function load({ fetch, params, url }) {
   if (response.object) {
     // Batch resolve item links to reduce API calls
     const armorItems = response.object.Loots
-      .filter(x => x.Item.Properties.Type === 'Armor' && !x.Item.Set)
+      .filter(x => x?.Item?.Properties?.Type === 'Armor' && !x.Item.Set)
       .map(x => x.Item);
     
     // If we have armor items without set info, fetch them in batch

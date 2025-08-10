@@ -21,7 +21,7 @@ function formatTeleportationChip(x){
     Properties: {
       Description: x.Description,
       Weight: x.Weight !== null ? Number(x.Weight) : null,
-      UsesPerMinute: x.UsesPerMinute !== null ? Number(x.UsesPerMinute) : null,
+      UsesPerMinute: x.Uses !== null ? Number(x.Uses) : null,
       Range: x.Range !== null ? Number(x.Range) : null,
       Mindforce: {
         Level: x.Level !== null ? Number(x.Level) : null,
@@ -36,8 +36,8 @@ function formatTeleportationChip(x){
         AmmoBurn: x.AmmoBurn !== null ? Number(x.AmmoBurn) : null,
       },
       Skill: {
-        LearningIntervalStart: x.MinLevel !== null ? Number(x.MinLevel) : null,
-        LearningIntervalEnd: x.MaxLevel !== null ? Number(x.MaxLevel) : null,
+        LearningIntervalStart: (x.MinLvl ?? x.MinLevel) !== null ? Number(x.MinLvl ?? x.MinLevel) : null,
+        LearningIntervalEnd: (x.MaxLvl ?? x.MaxLevel) !== null ? Number(x.MaxLvl ?? x.MaxLevel) : null,
       }
     },
     Ammo: {

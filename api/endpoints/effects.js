@@ -4,22 +4,26 @@ const queries = {
   Effects: 'SELECT * FROM ONLY "Effects"',
 };
 
-function formatEffect(x){
+function formatEffect(x) {
   return {
     Id: x.Id,
     Name: x.Name,
     Properties: {
       Description: x.Description,
-      IsPositive: x.IsPositive === 1
+      IsPositive: x.IsPositive === 1,
     },
-    Links: { "$Url": `/effects/${x.Id}` }
+    Links: { "$Url": `/effects/${x.Id}` },
   };
 }
 
 const getEffects = () => getObjects(queries.Effects, formatEffect);
-const getEffect = async (idOrName) => { const row = await getObjectByIdOrName(queries.Effects, 'Effects', idOrName); return row ? formatEffect(row) : null; };
 
-function register(app){
+async function getEffect(idOrName) {
+  const row = await getObjectByIdOrName(queries.Effects, 'Effects', idOrName);
+  return row ? formatEffect(row) : null;
+}
+
+function register(app) {
   /**
    * @swagger
    * /effects:
@@ -29,7 +33,10 @@ function register(app){
    *      '200':
    *        description: A list of effects
    */
-  app.get('/effects', async (req,res) => { res.json(await getEffects()); });
+  app.get('/effects', async (req, res) => {
+    res.json(await getEffects());
+  });
+
   /**
    * @swagger
    * /effects/{effect}:
@@ -48,7 +55,11 @@ function register(app){
    *      '404':
    *        description: Effect not found
    */
-  app.get('/effects/:effect', async (req,res) => { const r = await getEffect(req.params.effect); if (r) res.json(r); else res.status(404).send(); });
+  app.get('/effects/:effect', async (req, res) => {
+    const r = await getEffect(req.params.effect);
+    if (r) res.json(r);
+    else res.status(404).send();
+  });
 }
 
 module.exports = { register, getEffects, getEffect };

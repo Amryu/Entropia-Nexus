@@ -4,6 +4,7 @@
 
   import EntityViewer from "$lib/components/EntityViewer.svelte";
   import Table from "$lib/components/Table.svelte";
+  import { waypoint } from "$lib/components/Properties.svelte";
 
   export let data;
 
@@ -91,19 +92,12 @@
       General: {
         Owner: shop.Owner?.Name ?? 'No Owner',
         Planet: shop.Planet?.Name ?? 'N/A',
-        Location: (shop.Coordinates?.Longitude) && (shop.Coordinates?.Latitude)
-          ? `[${shop.Planet?.Properties?.TechnicalName ?? shop.Planet?.Name}, ${shop.Coordinates?.Longitude}, ${shop.Coordinates?.Latitude}, ${shop.Coordinates?.Altitude || 100}, ${shop.Name || shop.name}]`
-          : 'N/A'
-      },
-      Inventory: {
-        Groups: {
-          Label: 'Groups',
-          Value: totalGroups.toString()
-        },
-        Items: {
-          Label: 'Total Items',
-          Value: totalItems.toString()
-        }
+        Location: waypoint(
+          'Location',
+          shop.Planet?.Properties?.TechnicalName ?? shop.Planet?.Name,
+          shop.Coordinates,
+          shop.Name
+        )
       }
     };
   };
@@ -272,12 +266,9 @@
   }
 
   let viewInfoSection = {
-    columns: ['Name', 'Owner', 'Planet', 'Coordinates', 'Groups', 'Items'],
-    columnWidths: ['1fr', '150px', '100px', '150px', '80px', '80px'],
+    columns: ['Name', 'Owner', 'Planet', 'Coordinates'],
+    columnWidths: ['1fr', '150px', '100px', '150px'],
     rowValuesFunction: (item) => {
-      const totalGroups = item.InventoryGroups?.length || 0;
-      const totalItems = item.InventoryGroups?.reduce((acc, group) => acc + (group.Items?.length || 0), 0) || 0;
-      
       return [
         item.Name,
         item.Owner?.Name ?? 'No Owner',
@@ -285,8 +276,6 @@
         (item.Coordinates?.Longitude) && (item.Coordinates?.Latitude)
           ? `${item.Coordinates?.Longitude}, ${item.Coordinates?.Latitude}`
           : 'N/A',
-        totalGroups.toString(),
-        totalItems.toString()
       ];
     }
   };
@@ -318,89 +307,36 @@
   getOwnershipInfo={canUserEditShop}
   let:object
   let:additional>
-  
-  <div class="flex-item">
-    <div class="content-block">
-      <h3>Shop Information</h3>
-      <div class="info-grid">
-        <div class="info-item">
-          <strong>Location:</strong> 
-          {#if (object?.Coordinates?.Longitude) && (object?.Coordinates?.Latitude)}
-            <button type="button"
-               on:click={() => {
-                 const waypoint = `[${object.Planet?.Properties?.TechnicalName ?? object.Planet?.Name}, ${object.Coordinates?.Longitude}, ${object.Coordinates?.Latitude}, ${object.Coordinates?.Altitude || 100}, ${object.Name || object.name}]`;
-                 navigator.clipboard.writeText(`/wp ${waypoint}`);
-               }} 
-               title="Click to Copy"
-               class="waypoint-link">
-              /wp [{object.Planet?.Properties?.TechnicalName ?? object.Planet?.Name}, {object.Coordinates?.Longitude}, {object.Coordinates?.Latitude}, {object.Coordinates?.Altitude || 100}, {object.Name || object.name}]
-            </button>
-          {:else}
-            Not set
-          {/if}
-        </div>
-        <div class="info-item">
-          <strong>Owner:</strong> {object?.Owner?.Name ?? 'No Owner'}
-        </div>
-      </div>
-    </div>
-  </div>
 
   {#if object?.InventoryGroups?.length}
     <div class="flex-item">
       <div class="content-block">
         <h3>Inventory</h3>
-        {#each object.InventoryGroups as group}
-          <Table
-            title={group?.name || 'Unnamed Group'}
-            header={{
-              values: ['Item', 'Stack Size', 'Markup %'],
-              widths: ['1fr', '120px', '120px']
-            }}
-            data={group?.Items?.length ? group.Items.map(item => ({
-              values: [
-                item.Item?.Name || 'Unknown Item',
-                item.stack_size?.toString() || '0',
-                (item.markup?.toFixed(2) || '0.00') + '%'
-              ]
-            })) : []}
-            options={{
-              searchable: true,
-              sortable: true
-            }}
-            style="margin-bottom: 1rem;" />
-        {/each}
+        {#key object?.Id}
+          {#each (object?.Sections || []) as section}
+            {#if section}
+              <Table
+                title={`${section.Name} Inventory`}
+                header={{
+                  values: ['Item', 'Stack Size', 'Markup %'],
+                  widths: ['1fr', '120px', '120px']
+                }}
+                data={(object?.InventoryGroups || [])
+                  // naive mapping: groups containing section name in their title
+                  .filter(g => (g?.Name || g?.name || '').toLowerCase().includes(section.Name.toLowerCase()))
+                  .flatMap(group => (group?.Items || []).map(item => ({
+                    values: [
+                      item.Item?.Name || 'Unknown Item',
+                      (item.StackSize ?? item.stack_size ?? 0).toString(),
+                      ((item.Markup ?? item.markup ?? 0).toFixed ? (item.Markup ?? 0).toFixed(2) : Number(item.Markup ?? item.markup ?? 0).toFixed(2)) + '%'
+                    ]
+                  })))}
+                options={{ searchable: true, sortable: true }}
+                style="margin-bottom: 1rem;" />
+            {/if}
+          {/each}
+        {/key}
       </div>
     </div>
   {/if}
 </EntityViewer>
-
-<style>
-  .info-grid {
-    display: grid;
-    gap: 1rem;
-    margin-top: 1rem;
-  }
-
-  .info-item {
-    padding: 0.5rem;
-    background: var(--color-bg-secondary);
-    border-radius: 4px;
-  }
-
-  .waypoint-link {
-    color: var(--color-primary);
-    text-decoration: underline;
-    cursor: pointer;
-    font-family: monospace;
-    font-size: 0.9rem;
-    background: none;
-    border: none;
-    padding: 0;
-    text-align: left;
-  }
-
-  .waypoint-link:hover {
-    color: var(--color-text-primary);
-  }
-</style>

@@ -1,51 +1,59 @@
 const { pool } = require('./dbClient');
 const { idOffsets } = require('./constants');
 const { getObjectByIdOrName } = require('./utils');
+const { loadEffectsOnEquipByItemIds } = require('./effects-utils');
 
 const queries = {
   WeaponAmplifiers: 'SELECT * FROM ONLY "WeaponAmplifiers"',
-  EffectsOnEquip: 'SELECT * FROM ONLY "EffectsOnEquip" WHERE "ItemId" IN ($1:csv)'
 };
 
-function _formatEffectOnEquip(x){
-  return { Property: x.Property, Amount: x.Amount !== null ? Number(x.Amount) : null };
-}
-
-function formatWeaponAmplifier(x, effects){
-  const list = (effects[x.Id + idOffsets.WeaponAmplifiers] ?? []).map(_formatEffectOnEquip);
+function formatWeaponAmplifier(x, effectsMap){
+  const itemId = x.Id + idOffsets.WeaponAmplifiers;
+  const effects = effectsMap[itemId] ?? [];
   return {
     Id: x.Id,
-    ItemId: x.Id + idOffsets.WeaponAmplifiers,
+    ItemId: itemId,
     Name: x.Name,
     Properties: {
       Description: x.Description,
       Weight: x.Weight !== null ? Number(x.Weight) : null,
       Type: x.Type,
-      Economy: { Efficiency: x.Efficiency !== null ? Number(x.Efficiency) : null, MaxTT: x.MaxTT !== null ? Number(x.MaxTT) : null, MinTT: x.MinTT !== null ? Number(x.MinTT) : null, Decay: x.Decay !== null ? Number(x.Decay) : null, AmmoBurn: x.Ammo !== null ? Number(x.Ammo) : null },
-      Damage: { Stab: x.Stab, Cut: x.Cut, Impact: x.Impact, Penetration: x.Penetration, Shrapnel: x.Shrapnel, Burn: x.Burn, Cold: x.Cold, Acid: x.Acid, Electric: x.Electric }
+      Economy: {
+        Efficiency: x.Efficiency !== null ? Number(x.Efficiency) : null,
+        MaxTT: x.MaxTT !== null ? Number(x.MaxTT) : null,
+        MinTT: x.MinTT !== null ? Number(x.MinTT) : null,
+        Decay: x.Decay !== null ? Number(x.Decay) : null,
+        AmmoBurn: x.Ammo !== null ? Number(x.Ammo) : null
+      },
+      Damage: {
+        Stab: x.Stab !== null ? Number(x.Stab) : null,
+        Cut: x.Cut !== null ? Number(x.Cut) : null,
+        Impact: x.Impact !== null ? Number(x.Impact) : null,
+        Penetration: x.Penetration !== null ? Number(x.Penetration) : null,
+        Shrapnel: x.Shrapnel !== null ? Number(x.Shrapnel) : null,
+        Burn: x.Burn !== null ? Number(x.Burn) : null,
+        Cold: x.Cold !== null ? Number(x.Cold) : null,
+        Acid: x.Acid !== null ? Number(x.Acid) : null,
+        Electric: x.Electric !== null ? Number(x.Electric) : null,
+      }
     },
-    EffectsOnEquip: list,
+    EffectsOnEquip: effects,
     Links: { "$Url": `/weaponamplifiers/${x.Id}` }
   };
 }
 
-async function _getEffectsOnEquip(ids){
-  if (ids.length === 0) return {};
-  const pgp = require('pg-promise')();
-  const { rows } = await pool.query(pgp.as.format(queries.EffectsOnEquip, [ids.map(x => x + idOffsets.WeaponAmplifiers)]));
-  return rows.reduce((acc,r)=> { (acc[r.ItemId] ||= []).push(r); return acc; }, {});
-}
-
 async function getWeaponAmplifiers(){
   const { rows } = await pool.query(queries.WeaponAmplifiers);
-  const effects = await _getEffectsOnEquip(rows.map(r=>r.Id));
+  const itemIds = rows.map(r => r.Id + idOffsets.WeaponAmplifiers);
+  const effects = await loadEffectsOnEquipByItemIds(itemIds);
   return rows.map(r => formatWeaponAmplifier(r, effects));
 }
 
 async function getWeaponAmplifier(idOrName){
   const row = await getObjectByIdOrName(queries.WeaponAmplifiers, 'WeaponAmplifiers', idOrName);
   if (!row) return null;
-  const effects = await _getEffectsOnEquip([row.Id]);
+  const itemId = row.Id + idOffsets.WeaponAmplifiers;
+  const effects = await loadEffectsOnEquipByItemIds([itemId]);
   return formatWeaponAmplifier(row, effects);
 }
 

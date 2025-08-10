@@ -16,8 +16,8 @@ async function _fetchShopOwners(ownerIds) {
 async function _fetchEstateSections(estateIds){
   if (!estateIds || estateIds.length===0) return {};
   try {
-    const { rows } = await pool.query('SELECT "EstateId", "Name", "MaxItemPoints" FROM "EstateSections" WHERE "EstateId" = ANY($1) ORDER BY "EstateId", "Name"', [estateIds]);
-    const m = {}; for (const r of rows){ if (!m[r.EstateId]) m[r.EstateId]=[]; m[r.EstateId].push({ Name:r.Name, MaxItemPoints:r.MaxItemPoints }); } return m;
+  const { rows } = await pool.query('SELECT "EstateId", "Name", "ItemPoints" FROM ONLY "EstateSections" WHERE "EstateId" = ANY($1) ORDER BY "EstateId", "Name"', [estateIds]);
+    const m = {}; for (const r of rows){ if (!m[r.EstateId]) m[r.EstateId]=[]; m[r.EstateId].push({ Name:r.Name, MaxItemPoints:r.ItemPoints }); } return m;
   } catch { return {}; }
 }
 
@@ -73,16 +73,29 @@ async function _fetchMultipleShopInventories(estateIds){
   } catch { return {}; }
 }
 
-function formatShop(x, add = {}){
+function formatShop(x, add = {}) {
   const out = {
-    Id: x.Id, Name: x.Name, Description: x.Description, MaxGuests: x.MaxGuests, CreatedAt: x.CreatedAt, UpdatedAt: x.UpdatedAt,
-    Coordinates: { Longitude: x.Longitude, Latitude: x.Latitude, Altitude: x.Altitude },
+    Id: x.Id,
+    Name: x.Name,
+    Description: x.Description,
+    MaxGuests: x.MaxGuests != null ? Number(x.MaxGuests) : null,
+    Coordinates: {
+      Longitude: x.Longitude != null ? Number(x.Longitude) : null,
+      Latitude: x.Latitude != null ? Number(x.Latitude) : null,
+      Altitude: x.Altitude != null ? Number(x.Altitude) : null,
+    },
     Planet: x.Planet ? { Name: x.Planet, Properties: { TechnicalName: x.TechnicalName }, Links: { "$Url": `/planets/${x.PlanetId}` } } : null,
-    Owner: null, InventoryGroups: [], Sections: [], Links: { "$Url": `/shops/${x.Id}` }
+    Owner: null,
+    InventoryGroups: [],
+    Sections: [],
+    Links: { "$Url": `/shops/${x.Id}` }
   };
   if (add.owner) out.Owner = add.owner;
   if (add.inventory) out.InventoryGroups = add.inventory;
-  if (add.sections){ out.Sections = add.sections; out.HasAdditionalArea = add.sections.some(s => s.Name === 'Additional'); }
+  if (add.sections) {
+    out.Sections = add.sections;
+    out.HasAdditionalArea = add.sections.some(s => s.Name === 'Additional');
+  }
   if (add.managers) out.Managers = add.managers;
   return out;
 }

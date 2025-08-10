@@ -380,7 +380,8 @@ export async function navigate(url) {
 
 // Removed GET response caching to prevent stale data issues during edits/auth changes
 export async function apiCall(fetch, url, apiUrl = import.meta.env.VITE_API_URL) {
-  let response = await fetch(apiUrl + url);
+  const target = url.startsWith('/api/') ? url : (apiUrl + url);
+  let response = await fetch(target);
 
   if (!response.ok) {
     return null;
@@ -390,7 +391,8 @@ export async function apiCall(fetch, url, apiUrl = import.meta.env.VITE_API_URL)
 }
 
 export async function apiPost(fetch, url, body, apiUrl = import.meta.env.VITE_API_URL) {
-  let response = await fetch(apiUrl + url, {
+  const target = url.startsWith('/api/') ? url : (apiUrl + url);
+  let response = await fetch(target, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json'
@@ -398,23 +400,39 @@ export async function apiPost(fetch, url, body, apiUrl = import.meta.env.VITE_AP
     body: JSON.stringify(body)
   });
 
-  return await response.json();
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
 }
 
 export async function apiPut(fetch, url, body, apiUrl = import.meta.env.VITE_API_URL) {
-  await fetch(apiUrl + url, {
+  const target = url.startsWith('/api/') ? url : (apiUrl + url);
+  const response = await fetch(target, {
     method: 'PUT',
     headers: {
       'Content-Type': 'application/json'
     },
     body: JSON.stringify(body)
   });
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
 }
 
 export async function apiDelete(fetch, url, apiUrl = import.meta.env.VITE_API_URL) {
-  await fetch(apiUrl + url, {
+  const target = url.startsWith('/api/') ? url : (apiUrl + url);
+  const response = await fetch(target, {
     method: 'DELETE'
   });
+  try {
+    return await response.json();
+  } catch {
+    return null;
+  }
 }
 
 export function pageResponse(items, object = null, additional = null, error = null) {

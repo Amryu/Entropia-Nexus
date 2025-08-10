@@ -41,6 +41,26 @@ export async function getSession(request) {
 
 const ONE_DAY = 60 * 60 * 24;
 
+// Log uncaught errors with route information for easier debugging of 500s
+export function handleError({ error, event }) {
+  // Try to detect an HTTP status; default to 500 when unknown
+  const status = (error && (error.status || error.statusCode)) || 500;
+  if (status >= 500 && status < 600) {
+    try {
+      const routeId = event?.route?.id ?? 'unknown-route';
+      const pathname = event?.url?.pathname ?? 'unknown-path';
+      const href = event?.url?.href ?? event?.request?.url ?? 'unknown-url';
+      console.error(`[${status}] route: ${routeId} path: ${pathname} url: ${href}`, error);
+    } catch (e) {
+      console.error(`[${status}] error while logging route for error`, e, error);
+    }
+  }
+  // Suppress logging for 404 and other non-5xx by default
+  return {
+    message: status >= 500 ? 'Internal Server Error' : undefined
+  };
+}
+
 async function getSessionObject(sessionId) {
   if (!sessionId) {
     return {};

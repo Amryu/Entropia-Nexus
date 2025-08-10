@@ -28,11 +28,49 @@ async function getObjectByIdOrName(query, table, idOrName){
   return rows.length === 1 ? rows[0] : null;
 }
 
-// Parse a CSV-like list supporting quoted items (matches previous app.js behavior)
+// Parse a CSV-like list supporting quoted items and ignoring commas inside parentheses
+// Examples:
+//  - 'Item A, Item B' => ['Item A','Item B']
+//  - 'Vehicle X (C, L)' => ['Vehicle X (C, L)']
+//  - '"Weird, Name" (M), Other' => ['Weird, Name (M)','Other']
 function parseItemList(list){
   if (!list || typeof list !== 'string') return [];
-  const matches = list.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g) || [];
-  return matches.map(item => item.trim().replace(/^"(.*)"$/, '$1').replace(/""/g, '"')).filter(Boolean);
+  const result = [];
+  let buf = '';
+  let inQuotes = false;
+  let parenDepth = 0;
+  for (let i = 0; i < list.length; i++) {
+    const ch = list[i];
+    if (ch === '"') {
+      // Toggle quotes; support doubling inside quotes by looking ahead
+      if (inQuotes && list[i + 1] === '"') {
+        buf += '"';
+        i++; // skip the escaped quote
+        continue;
+      }
+      inQuotes = !inQuotes;
+      buf += ch;
+      continue;
+    }
+    if (!inQuotes) {
+      if (ch === '(') { parenDepth++; }
+      else if (ch === ')' && parenDepth > 0) { parenDepth--; }
+      else if (ch === ',' && parenDepth === 0) {
+        const token = buf.trim();
+        if (token.length) result.push(token);
+        buf = '';
+        continue;
+      }
+    }
+    buf += ch;
+  }
+  const last = buf.trim();
+  if (last.length) result.push(last);
+
+  // Strip surrounding quotes and un-escape doubled quotes
+  return result
+    .map(item => item.replace(/^\"([\s\S]*)\"$/, '$1').replace(/\"\"/g, '"').trim())
+    .filter(Boolean);
 }
 
 module.exports = { isId, getObjects, getObjectByIdOrName, parseItemList };

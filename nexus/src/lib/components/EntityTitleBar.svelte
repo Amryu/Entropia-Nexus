@@ -46,27 +46,29 @@
   <h1 style={mode === 'preview' ? 'color: yellow; text-decoration: underline dashed;' : null} title={mode === 'preview' ? 'Watching preview of change.' : null}>{title}</h1>
   <div class="title-buttons">
     {#if editable}
-      {#if mode !== 'edit' && mode !== 'history' && mode !== 'create' && mode !== 'manage-inventory' && mode !== 'manage-managers'}
+      {#if mode !== 'edit' && mode !== 'history' && mode !== 'create' && mode !== 'edit-inventory' && mode !== 'edit-managers'}
         <button on:click={() => navigate(window.location.pathname + '?mode=history')} title="View History">📄</button>
       {/if}
-      {#if mode !== 'edit' && mode !== 'history' && mode !== 'create' && mode !== 'manage-inventory' && mode !== 'manage-managers'}
+      {#if mode !== 'edit' && mode !== 'history' && mode !== 'create' && mode !== 'edit-inventory' && mode !== 'edit-managers'}
         <button on:click={() => navigate(window.location.pathname + '?mode=edit')} 
                 title={user == null ? "Log in to edit" : !user.verified ? "Verify to edit" : ownershipBasedEditing && !canEdit ? "Only owner/managers can edit" : 'Edit'} 
                 disabled={user == null || !user.verified || (ownershipBasedEditing && !canEdit)}>✏️</button>
       {/if}
       
-      {#if entityType === 'Shop' && mode !== 'edit' && mode !== 'history' && mode !== 'create' && mode !== 'manage-inventory' && mode !== 'manage-managers'}
+      {#if entityType === 'Shop' && mode !== 'edit' && mode !== 'history' && mode !== 'create' && mode !== 'edit-inventory' && mode !== 'edit-managers'}
         {#if object && user && (object.OwnerId === user.id || user.administrator)}
-          <button on:click={() => navigate(window.location.pathname + '?mode=manage-managers')} 
-                  title={user == null ? "Log in to manage" : !user.verified ? "Verify to manage" : "Manage Managers"} 
+          <button on:click={() => navigate(window.location.pathname + '?mode=edit-managers')} 
+                  title={user == null ? "Log in to edit" : !user.verified ? "Verify to edit" : "Edit Managers"} 
                   disabled={user == null || !user.verified}>👥</button>
         {/if}
-        <button on:click={() => navigate(window.location.pathname + '?mode=manage-inventory')} 
-                title={user == null ? "Log in to manage" : !user.verified ? "Verify to manage" : ownershipBasedEditing && !canEdit ? "Only owner/managers can manage" : 'Manage Inventory'} 
+        <button on:click={() => navigate(window.location.pathname + '?mode=edit-inventory')} 
+                title={user == null ? "Log in to edit" : !user.verified ? "Verify to edit" : ownershipBasedEditing && !canEdit ? "Only owner/managers can edit" : 'Edit Inventory'} 
                 disabled={user == null || !user.verified || (ownershipBasedEditing && !canEdit)}>📦</button>
       {/if}
       
-      {#if mode === 'preview' || mode ==='edit' || mode === 'history' || mode === 'create' || mode === 'manage-inventory' || mode === 'manage-managers'}
+      {#if mode === 'edit-inventory' || mode === 'edit-managers'}
+        <button on:click={() => navigate(window.location.pathname)} title="Return">↩</button>
+      {:else if mode === 'preview' || mode === 'edit' || mode === 'history' || mode === 'create'}
         <button on:click={() => navigate(window.location.pathname)} title="Cancel">❌</button>
       {/if}
       {#if (mode === 'edit' || mode === 'create') && change?.id && user != null && user.verified}

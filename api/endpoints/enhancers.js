@@ -8,13 +8,16 @@ const queries = {
 function formatEnhancer(x){
   return {
     Id: x.Id,
-  ItemId: x.Id + idOffsets.Enhancers,
+    ItemId: x.Id + idOffsets.Enhancers,
     Name: x.Name,
     Properties: {
-      Description: x.Description,
-      Durability: x.Durability !== null ? Number(x.Durability) : null,
+      Weight: x.Weight !== null ? Number(x.Weight) : null,
+      Socket: x.Socket !== null ? Number(x.Socket) : null,
+      Tool: x.Tool,
       Type: x.Type,
-      Tool: x.Tool
+      Economy: {
+        MaxTT: x.Value !== null ? Number(x.Value) : null,
+      }
     },
     Links: { "$Url": `/enhancers/${x.Id}` }
   };

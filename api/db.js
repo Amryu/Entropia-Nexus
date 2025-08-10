@@ -1,6 +1,8 @@
+const { Pool } = require('pg');
 const pgp = require('pg-promise')();
-// Use shared pools to ensure a single database connection source across modules
-const { pool, usersPool } = require('./endpoints/dbClient');
+const dbCredentials = require('./credentials');
+
+const pool = new Pool(dbCredentials);
 
 const idOffsets = {
   Materials:                1000000,
@@ -46,9 +48,8 @@ const queries = {
   Areas: 'SELECT "Areas".*, "Planets"."Name" AS "Planet", "Planets"."TechnicalName" FROM ONLY "Areas" LEFT JOIN ONLY "Planets" ON "Areas"."PlanetId" = "Planets"."Id"',
   Locations: 'SELECT "Locations".*, "Planets"."Name" AS "Planet", "Planets"."TechnicalName" FROM ONLY "Locations" LEFT JOIN ONLY "Planets" ON "Locations"."PlanetId" = "Planets"."Id"',
   Planets: 'SELECT * FROM ONLY "Planets"',
-  Shops: 'SELECT "Estates".*, "Planets"."Name" AS "Planet", "Planets"."TechnicalName" FROM ONLY "Estates" LEFT JOIN ONLY "Planets" ON "Estates"."PlanetId" = "Planets"."Id" WHERE "Estates"."Type" = \'Shop\'',
   Teleporters: 'SELECT "Teleporters".*, "Planets"."Name" AS "Planet", "Planets"."TechnicalName" FROM ONLY "Teleporters" LEFT JOIN ONLY "Planets" ON "Teleporters"."PlanetId" = "Planets"."Id"',
-  MobSpawns: 'SELECT DISTINCT "MobSpawns".*, "MobMaturities"."MobId", "Areas"."Name", "Areas"."Type", "Areas"."Shape", "Areas"."Data", "Areas"."Longitude", "Areas"."Latitude", "Areas"."Altitude", "Areas"."PlanetId", "Planets"."Name" AS "Planet", "Planets"."TechnicalName" FROM ONLY "MobSpawns" INNER JOIN ONLY "Areas" ON "MobSpawns"."AreaId" = "Areas"."Id" INNER JOIN ONLY "Planets" ON "Areas"."PlanetId" = "Planets"."Id" INNER JOIN ONLY "MobSpawnMaturities" ON "MobSpawns"."Id" = "MobSpawnMaturities"."SpawnId" INNER JOIN ONLY "MobMaturities" ON "MobSpawnMaturities"."MaturityId" = "MobMaturities"."Id"',
+  MobSpawns: 'SELECT "MobSpawns".*, "MobMaturities"."MobId", "Areas"."Name", "Areas"."Type", "Areas"."Shape", "Areas"."Data", "Areas"."Longitude", "Areas"."Latitude", "Areas"."Altitude", "Areas"."PlanetId", "Planets"."Name" AS "Planet", "Planets"."TechnicalName" FROM ONLY "MobSpawns" INNER JOIN ONLY "Areas" ON "MobSpawns"."AreaId" = "Areas"."Id" INNER JOIN ONLY "Planets" ON "Areas"."PlanetId" = "Planets"."Id" INNER JOIN ONLY "MobSpawnMaturities" ON "MobSpawns"."Id" = "MobSpawnMaturities"."SpawnId" INNER JOIN ONLY "MobMaturities" ON "MobSpawnMaturities"."MaturityId" = "MobMaturities"."Id"',
 
   // Items
   Items: 'SELECT * FROM ONLY "Items"',
@@ -102,15 +103,9 @@ const queries = {
 }
 
 async function _getObject(idOrName, query, tableName, formatFunction, additionalDataFunction = null, idOffset = 0) {
-  let rows = [];
-  try {
-    let result = idOrName.match(/^\d+$/)
-      ? await pool.query(`${query} WHERE ${tableName ? `"${tableName}".` : ''}"Id" = $1`, [idOrName])
-      : await pool.query(`${query} WHERE ${tableName ? `"${tableName}".` : ''}"Name" = $1`, [idOrName]);
-    rows = result.rows;
-  } catch (error) {
-    console.error('Error executing query:', error);
-  }
+  let { rows } = idOrName.match(/^\d+$/)
+    ? await pool.query(`${query} WHERE ${tableName ? `"${tableName}".` : ''}"Id" = $1`, [idOrName])
+    : await pool.query(`${query} WHERE ${tableName ? `"${tableName}".` : ''}"Name" = $1`, [idOrName]);
 
   return rows.length === 1 
     ? additionalDataFunction !== null 
@@ -501,284 +496,6 @@ function formatTeleporter(x) {
   }
 }
 
-// Helper function to fetch shop owners
-async function _fetchShopOwners(ownerIds) {
-  if (!ownerIds || ownerIds.length === 0) return {};
-  
-  try {
-    const query = 'SELECT id, eu_name FROM users WHERE id = ANY($1) AND verified = true';
-    const { rows } = await usersPool.query(query, [ownerIds]);
-    
-    const ownersData = {};
-    rows.forEach(row => {
-      // Return the owner's in-game name under a PascalCase Name property
-      ownersData[row.id] = { Name: row.eu_name };
-    });
-    
-    return ownersData;
-  } catch (error) {
-    console.warn('Failed to fetch shop owners:', error);
-    return {};
-  }
-}
-
-// Helper function to fetch estate sections
-async function _fetchEstateSections(estateIds) {
-  if (!estateIds || estateIds.length === 0) return {};
-  
-  try {
-    const query = 'SELECT "EstateId", "Name", "MaxItemPoints" FROM "EstateSections" WHERE "EstateId" = ANY($1) ORDER BY "EstateId", "Name"';
-    const { rows } = await pool.query(query, [estateIds]);
-    
-    const sectionsData = {};
-    rows.forEach(row => {
-      if (!sectionsData[row.EstateId]) {
-        sectionsData[row.EstateId] = [];
-      }
-      sectionsData[row.EstateId].push({
-        Name: row.Name,
-        MaxItemPoints: row.MaxItemPoints
-      });
-    });
-    
-    return sectionsData;
-  } catch (error) {
-    console.warn('Failed to fetch estate sections:', error);
-    return {};
-  }
-}
-
-// Helper function to fetch multiple item names in bulk
-async function _fetchItemNames(itemIds) {
-  if (!itemIds || itemIds.length === 0) return {};
-  
-  // Filter out null/undefined values and get unique IDs
-  const validItemIds = [...new Set(itemIds.filter(id => id != null))];
-  if (validItemIds.length === 0) return {};
-  
-  try {
-    const itemQuery = 'SELECT "Id", "Name" FROM ONLY "Items" WHERE "Id" = ANY($1)';
-    const itemResult = await pool.query(itemQuery, [validItemIds]);
-    
-    // Create a map of item_id -> item name
-    const itemNamesMap = {};
-    itemResult.rows.forEach(row => {
-      itemNamesMap[row.Id] = row.Name;
-    });
-    
-    return itemNamesMap;
-  } catch (error) {
-    console.warn('Could not fetch item names:', error);
-    return {};
-  }
-}
-
-// Helper function to process inventory rows into grouped structure
-async function _processInventoryRows(inventoryRows) {
-  // Get all unique item IDs from the inventory rows
-  const itemIds = inventoryRows
-    .map(row => row.item_id)
-    .filter(id => id != null);
-  
-  // Fetch all item names in bulk
-  const itemNamesMap = await _fetchItemNames(itemIds);
-  
-  const groupsMap = new Map();
-  
-  for (const row of inventoryRows) {
-    if (!groupsMap.has(row.group_id)) {
-      groupsMap.set(row.group_id, {
-        id: row.group_id,
-        name: row.group_name,
-        sort_order: row.group_sort_order,
-        Items: []
-      });
-    }
-    
-    // Add item if it exists
-    if (row.item_id) {
-      const itemName = itemNamesMap[row.item_id] || `Item ${row.item_id}`;
-      
-      groupsMap.get(row.group_id).Items.push({
-        id: row.item_table_id,
-        item_id: row.item_id,
-        stack_size: row.stack_size,
-        markup: row.markup,
-        sort_order: row.item_sort_order,
-        Item: { Name: itemName }
-      });
-    }
-  }
-  
-  return Array.from(groupsMap.values());
-}
-
-// Helper function to fetch inventory for a single shop
-async function _fetchShopInventory(estateId) {
-  try {
-    const query = `
-      SELECT 
-        g.id as group_id,
-        g.name as group_name,
-        g.sort_order as group_sort_order,
-        i.id as item_table_id,
-        i.item_id,
-        i.stack_size,
-        i.markup,
-        i.sort_order as item_sort_order
-      FROM shop_inventory_groups g
-      LEFT JOIN shop_inventory_items i ON g.id = i.group_id
-      WHERE g.shop_id = $1
-      ORDER BY g.sort_order, i.sort_order
-    `;
-    const { rows } = await usersPool.query(query, [estateId]);
-    
-    return await _processInventoryRows(rows);
-  } catch (error) {
-    console.warn('Failed to load shop inventory:', error);
-    return [];
-  }
-}
-
-// Helper function to fetch inventory for multiple shops
-async function _fetchMultipleShopInventories(estateIds) {
-  if (!estateIds || estateIds.length === 0) return {};
-  
-  try {
-    const inventoryQuery = `
-      SELECT 
-        g.shop_id,
-        g.id as group_id,
-        g.name as group_name,
-        g.sort_order as group_sort_order,
-        i.id as item_table_id,
-        i.item_id,
-        i.stack_size,
-        i.markup,
-        i.sort_order as item_sort_order
-      FROM shop_inventory_groups g
-      LEFT JOIN shop_inventory_items i ON g.id = i.group_id
-      WHERE g.shop_id = ANY($1)
-      ORDER BY g.shop_id, g.sort_order, i.sort_order
-    `;
-    const { rows: inventoryRows } = await usersPool.query(inventoryQuery, [estateIds]);
-    
-    // Group by shop_id (which is actually estate_id)
-    const inventoryByShop = {};
-    for (const row of inventoryRows) {
-      if (!inventoryByShop[row.shop_id]) {
-        inventoryByShop[row.shop_id] = [];
-      }
-      inventoryByShop[row.shop_id].push(row);
-    }
-    
-    // Process each shop's inventory
-    const inventoryData = {};
-    for (const [estateId, rows] of Object.entries(inventoryByShop)) {
-      inventoryData[estateId] = await _processInventoryRows(rows);
-    }
-    
-    return inventoryData;
-  } catch (error) {
-    console.warn('Failed to fetch shop inventories:', error);
-    return {};
-  }
-}
-
-// Shops
-async function getShops() {
-  const { rows } = await pool.query(queries.Shops);
-  
-  // Get all unique owner IDs and estate IDs
-  const ownerIds = [...new Set(rows.map(shop => shop.OwnerId).filter(id => id != null))];
-  const estateIds = rows.map(shop => shop.Id);
-  
-  // Fetch owner, inventory, and sections data in parallel
-  const [ownersData, inventoryData, sectionsData] = await Promise.all([
-    _fetchShopOwners(ownerIds),
-    _fetchMultipleShopInventories(estateIds),
-    _fetchEstateSections(estateIds)
-  ]);
-  
-  // Format shops with owner, inventory, and sections information
-  return Promise.all(rows.map(x => formatShop(x, { 
-    owner: ownersData[x.OwnerId] || null,
-    inventory: inventoryData[x.Id] || [],
-    sections: sectionsData[x.Id] || []
-  })));
-}
-
-async function getShop(idOrName) {
-  const shop = await _getObject(idOrName, queries.Shops, 'Estates', (x) => x);
-  if (!shop) {
-    return null;
-  }
-
-  // Fetch inventory, owner, and sections data in parallel
-  const [inventory, ownersData, sectionsData] = await Promise.all([
-    _fetchShopInventory(shop.Id),
-    shop.OwnerId ? _fetchShopOwners([shop.OwnerId]) : Promise.resolve({}),
-    _fetchEstateSections([shop.Id])
-  ]);
-
-  return await formatShop(shop, {
-    inventory: inventory,
-    owner: ownersData[shop.OwnerId] || null,
-    sections: sectionsData[shop.Id] || []
-  });
-}
-
-async function formatShop(x, additionalData = null) {
-  const shopData = {
-    Id: x.Id,
-    Name: x.Name,
-    Description: x.Description,
-    MaxGuests: x.MaxGuests,
-    CreatedAt: x.CreatedAt,
-    UpdatedAt: x.UpdatedAt,
-    Coordinates: {
-      Longitude: x.Longitude,
-      Latitude: x.Latitude,
-      Altitude: x.Altitude
-    },
-    Planet: x.Planet ? {
-      Name: x.Planet,
-      Properties: {
-        TechnicalName: x.TechnicalName,
-      },
-      Links: {
-        "$Url": `/planets/${x.PlanetId}`
-      }
-    } : null,
-    Owner: null,
-    InventoryGroups: [],
-    Sections: [],
-    Links: {
-      "$Url": `/shops/${x.Id}`
-    }
-  };
-
-  if (additionalData) {
-    if (additionalData.owner) {
-      shopData.Owner = additionalData.owner;
-    }
-    if (additionalData.managers) {
-      shopData.Managers = additionalData.managers;
-    }
-    if (additionalData.inventory) {
-      shopData.InventoryGroups = additionalData.inventory;
-    }
-    if (additionalData.sections) {
-      shopData.Sections = additionalData.sections;
-      shopData.HasAdditionalArea = additionalData.sections.some(s => s.Name === 'Additional');
-    }
-  }
-
-  return shopData;
-}
-
-
-
 // MobSpawns
 async function getMobSpawns(mobs = null) {
   let whereClause = '';
@@ -849,7 +566,7 @@ function formatMobSpawn(x, data) {
 
 function _formatMobSpawnMaturity(x) {
   return {
-    IsRare: x.IsRare === 1,
+    IsRare: x.IsRare,
     Maturity: formatMobMaturity(x, []),
   }
 }
@@ -1164,7 +881,7 @@ function formatBlueprint(x, ingredients) {
       MaximumCraftAmount: x.MaximumCraftAmount !== null ? Number(x.MaximumCraftAmount) : null,
       Skill: {
         LearningIntervalStart: x.MinLvl !== null ? Number(x.MinLvl) : null,
-        LearningIntervalEnd: x.MaxLvl !== null ? Number(x.MaxLvl) : null,
+        LearningIntervalEnd:x.MaxLvl !== null ? Number(x.MaxLvl) : null,
         IsSiB: x.IsSib === 1,
       }
     },
@@ -2105,58 +1822,27 @@ async function getMob(idOrName) {
 }
 
 async function _getMobData(ids) {
-  const [mobMaturities, mobLoots, mobSpawns, mobAttacks, mobSpawnMaturities] = await Promise.all([
-    // Mob Maturities
-    pool.query(queries.MobMaturities + ` WHERE "MobMaturities"."MobId" IN (${ids.join(',')})`).then(x => x.rows),
-    
-    // Mob Loots
+  const [mobMaturities, mobLoots, mobSpawns] = await Promise.all([
+    pool.query(queries.MobMaturities + ` WHERE "MobMaturities"."MobId" IN (${ids.join(',')})`)
+      .then(async x => {
+        let attacks = await _getMobAttacks(x.rows.map(y => (y.Id)));
+
+        return x.rows.map(y => ({ ...y, Attacks: attacks[y.Id] ?? [] }));
+      }),
     pool.query(queries.MobLoots + ` WHERE "MobLoots"."MobId" IN (${ids.join(',')})`).then(x => x.rows),
-    
-    // Mob Spawns
-    pool.query(`
-      SELECT DISTINCT ms.*, mm."MobId", a."Name", a."Type", a."Shape", a."Data", a."Longitude", a."Latitude", a."Altitude", a."PlanetId", p."Name" AS "Planet", p."TechnicalName"
-      FROM ONLY "MobSpawns" ms
-      INNER JOIN ONLY "Areas" a ON ms."AreaId" = a."Id"
-      INNER JOIN ONLY "Planets" p ON a."PlanetId" = p."Id"
-      INNER JOIN ONLY "MobSpawnMaturities" msm ON ms."Id" = msm."SpawnId"
-      INNER JOIN ONLY "MobMaturities" mm ON msm."MaturityId" = mm."Id"
-      WHERE mm."MobId" IN (${ids.join(',')})
-    `).then(x => x.rows),
-    
-    // Mob Attacks (get all maturity IDs first, then fetch attacks)
-    pool.query(`SELECT "Id" FROM ONLY "MobMaturities" WHERE "MobId" IN (${ids.join(',')})`).then(x => x.rows.map(row => row.Id)),
-    
-    // Mob Spawn Maturities (get all spawn IDs first, then fetch spawn maturities)
-    pool.query(`
-      SELECT DISTINCT ms."Id"
-      FROM ONLY "MobSpawns" ms
-      INNER JOIN ONLY "MobSpawnMaturities" msm ON ms."Id" = msm."SpawnId"
-      INNER JOIN ONLY "MobMaturities" mm ON msm."MaturityId" = mm."Id"
-      WHERE mm."MobId" IN (${ids.join(',')})
-    `).then(x => x.rows.map(row => row.Id))
+    pool.query(queries.MobSpawns + ` WHERE (SELECT COUNT(*) FROM "MobSpawnMaturities" WHERE "SpawnId" = "MobSpawns"."Id" AND "MaturityId" IN (SELECT DISTINCT "MobMaturities"."Id" FROM "MobMaturities" WHERE "MobMaturities"."MobId" IN (${ids.join(',')}))) > 0`)
+      .then(async x => {
+
+        let maturities = await _getMobSpawnMaturities(x.rows.map(y => (y.Id)));
+
+        return x.rows.map(y => ({ ...y, Maturities: maturities[y.Id] ?? [] }));
+      }),
   ]);
-
-  // Now fetch the dependent data in parallel
-  const [attacksData, spawnMaturitiesData] = await Promise.all([
-    mobAttacks.length > 0 ? _getMobAttacks(mobAttacks) : Promise.resolve({}),
-    mobSpawnMaturities.length > 0 ? _getMobSpawnMaturities(mobSpawnMaturities) : Promise.resolve({})
-  ]);
-
-  // Combine the data
-  const mobMaturitiesWithAttacks = mobMaturities.map(maturity => ({
-    ...maturity,
-    Attacks: attacksData[maturity.Id] ?? []
-  }));
-
-  const mobSpawnsWithMaturities = mobSpawns.map(spawn => ({
-    ...spawn,
-    Maturities: spawnMaturitiesData[spawn.Id] ?? []
-  }));
 
   return {
-    Maturities: _groupBy(mobMaturitiesWithAttacks, 'MobId'),
+    Maturities: _groupBy(mobMaturities, 'MobId'),
     Loots: _groupBy(mobLoots, 'MobId'),
-    MobSpawns: _groupBy(mobSpawnsWithMaturities, 'MobId')
+    MobSpawns: _groupBy(mobSpawns, 'MobId')
   }
 }
 
@@ -2904,8 +2590,8 @@ function formatVehicle(x, data) {
       Weight: x.Weight !== null ? Number(x.Weight) : null,
       SpawnedWeight: x.SpawnedWeight !== null ? Number(x.SpawnedWeight) : null,
       PassengerCount: x.Passengers !== null ? Number(x.Passengers) : null,
-      ItemCapacity: x.StorageCount !== null ? Number(x.StorageCount) : null,
-      WeightCapacity: x.StorageWeight !== null ? Number(x.StorageWeight) : null,
+      ItemCapacity: x.StorageCapacity !== null ? Number(x.StorageCapacity) : null,
+      WeightCapacity: x.WeightCapacity !== null ? Number(x.WeightCapacity) : null,
       WheelGrip: x.WheelGrip !== null ? Number(x.WheelGrip) : null,
       EnginePower: x.EnginePower !== null ? Number(x.EnginePower) : null,
       MaxSpeed: x.MaxSpeed !== null ? Number(x.MaxSpeed) : null,
@@ -3309,7 +2995,7 @@ function formatWeapon(x, data) {
     AttachmentType: {
       Name: x.AttachmentType,
       Links: {
-        "$Url": x.AttachmentTypeId !== null ? `/weaponattachmenttypes/${x.AttachmentTypeId}` : null
+  "$Url": x.AttachmentTypeId !== null ? `/vehicleattachmenttypes/${x.AttachmentTypeId}` : null
       }
     },
     EffectsOnEquip: effectsOnEquip,
@@ -3345,7 +3031,6 @@ module.exports = { pool,
   getAreas, getArea,
   getLocations, getLocation,
   getPlanet, getPlanets,
-  getShop, getShops,
   getTeleporter, getTeleporters,
 
   getItem, getItems,
