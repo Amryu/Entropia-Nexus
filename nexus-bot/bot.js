@@ -129,7 +129,10 @@ async function checkUnverifiedUsers() {
 
 async function checkChanges() {
   const channel = client.channels.cache.find(channel => channel.id === config.pendingChangesChannelId);
-  if (!channel) throw new Error('Changes channel not found');
+  if (!channel) {
+    console.error('Changes channel not found');
+    return;
+  }
 
   let lastCheck = new Date(getConfigValue('lastChangeCheck'));
 

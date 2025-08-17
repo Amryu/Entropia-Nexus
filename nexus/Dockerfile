@@ -1,5 +1,5 @@
 # Use an official Node LTS base image
-FROM node:18-alpine AS base
+FROM node:24-alpine AS base
 
 # Set working directory
 WORKDIR /app
@@ -9,9 +9,10 @@ COPY package*.json ./
 RUN npm ci --only=production
 
 # Copy project files
-COPY . .
+COPY ./build ./build
+COPY start.js ./start.js
 
-# Expose app port (change if your app uses another port)
+# Expose app port
 EXPOSE 3001
 
 # Start the app

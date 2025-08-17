@@ -1,4 +1,6 @@
-version: "3.9"
+volumes:
+  common_data:
+  nexus-bot-config:
 services:
   api:
     build: ./api
@@ -6,21 +8,42 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
-    env_file:
-      - ${API_ENV_PATH:-./api/.env}
+    volumes:
+      - type: bind
+        source: ${API_ENV_PATH:-./api/.env}
+        target: /app/.env
+        read_only: true
 
   nexus:
     build: ./nexus
     container_name: nexus
     restart: unless-stopped
     ports:
-      - "3001:3000"
-    env_file:
-      - ${NEXUS_ENV_PATH:-./nexus/.env}
+      - "3001:3001"
+    volumes:
+      - type: bind
+        source: ${COMMON_HOST_PATH:-./common}
+        target: /app/src/lib/common
+        read_only: true
+      - type: bind
+        source: ${NEXUS_ENV_PATH:-./nexus/.env}
+        target: /app/.env
+        read_only: true
 
   nexus-bot:
     build: ./nexus-bot
     container_name: nexus-bot
     restart: unless-stopped
-    env_file:
-      - ${BOT_ENV_PATH:-./nexus-bot/.env}
+    volumes:
+      - type: bind
+        source: ${COMMON_HOST_PATH:-./common}
+        target: /app/common
+        read_only: true
+      - type: bind
+        source: ${BOT_ENV_PATH:-./nexus-bot/.env}
+        target: /app/.env
+        read_only: true
+      - type: bind
+        source: ${BOT_CONFIG_PATH:-./nexus-bot/config.json}
+        target: /app/config.json
+        read_only: false

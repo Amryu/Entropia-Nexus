@@ -23,6 +23,8 @@ export async function GET({ request, cookies }) {
 
   let url = `https://discord.com/oauth2/authorize?client_id=1224999497130840105&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}&scope=identify&state=${state}`;
 
+  console.log(import.meta.env.MODE);
+
   cookies.set(import.meta.env.VITE_STATE_COOKIE_NAME, random, {
     maxAge: 60 * 60 * 24 * 7,
     path: '/',

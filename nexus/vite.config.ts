@@ -8,7 +8,7 @@ export default defineConfig(({ mode }) => ({
 		sourcemap: mode === 'development'
 	},
 	preview: {
-		port: 5173
+		port: 3001
 	},
 	resolve: {
 		alias: {
