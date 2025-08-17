@@ -1,0 +1,26 @@
+version: "3.9"
+services:
+  api:
+    build: ./api
+    container_name: api
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - ${API_ENV_PATH:-./api/.env}
+
+  nexus:
+    build: ./nexus
+    container_name: nexus
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    env_file:
+      - ${NEXUS_ENV_PATH:-./nexus/.env}
+
+  nexus-bot:
+    build: ./nexus-bot
+    container_name: nexus-bot
+    restart: unless-stopped
+    env_file:
+      - ${BOT_ENV_PATH:-./nexus-bot/.env}

@@ -13,6 +13,7 @@
 
   let stores = {};
   let dispatch = createEventDispatcher();
+  let tempValues = {};
 
   function createStore(object, _get, _set, dependencies) {
     const { subscribe, set, update } = writable('');
@@ -36,7 +37,22 @@
     stores = {};
     controls.forEach((control, i) => {
       stores[i] = createStore(object, control._get, control._set, dependencies);
+      // Initialize temporary buffer for input-validator so user can type freely
+      if (control.type === 'input-validator' && tempValues[i] === undefined) {
+        try {
+          tempValues[i] = stores[i].value;
+        } catch {}
+      }
     });
+  }
+
+  function commitInputValidator(i, control) {
+    const val = tempValues[i];
+    try {
+      if (val !== undefined && (!control.validator || control.validator(val, dependencies, root))) {
+        stores[i].value = val;
+      }
+    } catch {}
   }
 </script>
 
@@ -90,6 +106,14 @@
   .invalid {
     background-color: #660000 !important;
   }
+
+  /* Visual separation for list/array item content only */
+  .efcg-item {
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    padding: 8px;
+    margin: 6px 0;
+  }
 </style>
 
 {#if title}
@@ -141,7 +165,15 @@
         <input type="text" name="format" bind:value={stores[i].value} disabled={disabled}/>
       </div>
     {:else if control.type === 'input-validator'}
-      <input type="text" class={stores[i].value && control.validator(stores[i].value, dependencies, root) ? '' : 'invalid'} id={control.key} bind:value={stores[i].value} disabled={disabled} />
+      <input
+        type="text"
+        id={control.key}
+        class={(tempValues[i] ?? stores[i].value) && control.validator((tempValues[i] ?? stores[i].value), dependencies, root) ? '' : 'invalid'}
+        bind:value={tempValues[i]}
+        disabled={disabled}
+        on:keydown={(e) => { if (e.key === 'Enter') { commitInputValidator(i, control); e.currentTarget.blur(); } }}
+        on:blur={() => commitInputValidator(i, control)}
+      />
     {:else if control.type === 'waypoint'}
       <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px;">
         <input type="number" placeholder="Longitude" step="0.0001"
@@ -329,7 +361,9 @@
             }} disabled={disabled} />
           {/if}
         </span>
-        <svelte:self root={root} bind:object={item} controls={control.config.controls} dependencies={dependencies} disabled={disabled} on:change={() => dispatch('change')} />
+        <div class="efcg-item">
+          <svelte:self root={root} bind:object={item} controls={control.config.controls} dependencies={dependencies} disabled={disabled} on:change={() => dispatch('change')} />
+        </div>
       {/each}
       {control.itemNameFunc ? control.itemNameFunc(stores[i].value?.length) : `#${(stores[i].value?.length ?? 0) + 1}`}
       <input type="button" value="Add" on:click={() => { 
@@ -351,7 +385,9 @@
           {/if}
         </span>
         {#if value !== undefined}
-          <svelte:self root={root} bind:object={value} controls={control.config.controls} dependencies={dependencies} disabled={disabled} on:change={() => dispatch('change')} />
+          <div class="efcg-item">
+            <svelte:self root={root} bind:object={value} controls={control.config.controls} dependencies={dependencies} disabled={disabled} on:change={() => dispatch('change')} />
+          </div>
         {:else}
           <input type="button" value="Add" on:click={() => { 
             const newItem = control.config.constructor(j);

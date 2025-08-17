@@ -109,6 +109,36 @@
     text-align: center;
     margin-top: 50px;
   }
+
+  /* Support block below Properties, no outer margins to keep a continuous sidebar */
+  .support-wrapper {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;    padding: 12px 0;
+    border-top: 1px solid #ccc;
+    background-color: var(--secondary-color);
+  }
+  .support-inner {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+  }
+  .kofi-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    background: #29abe0;
+    color: #fff;
+    text-decoration: none;
+    font-weight: 600;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+  }
+  .kofi-button:hover { filter: brightness(1.05); }
+  .kofi-logo { height: 18px; width: 18px; }
 </style>
 
 <svelte:head>
@@ -239,6 +269,21 @@
         {:else}
           <Properties imageUrl='' title={'<No Name>'} data={{}} />
         {/if}
+      </div>
+      <!-- Support section directly below Properties, no gap -->
+      <div class="support-wrapper">
+        <div class="support-inner">
+          <a
+            class="kofi-button"
+            href="https://ko-fi.com/C0C21JO3B1"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Support on Ko-fi"
+          >
+            <img class="kofi-logo" alt="Ko-fi" src="https://storage.ko-fi.com/cdn/cup-border.png" />
+            Support on Ko-fi
+          </a>
+        </div>
       </div>
     </div>
 </div>

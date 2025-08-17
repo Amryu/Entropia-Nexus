@@ -32,27 +32,23 @@
         title="Blueprints"
         header={ 
           {
-            values: ['Name', 'Materials', 'Amount'],
-            widths: ['1fr', '1fr', '80px'],
+            values: ['Name', 'Amount'],
+            widths: ['1fr', '80px'],
           }
         }
         data={
-          usage.Blueprints.flatMap(blueprint => {
-            return blueprint.Materials.map(material => {
-              return {
-                values: [
-                  blueprint.Name,
-                  material.Item.Name ?? 'N/A',
-                  material.Amount ?? 'N/A',
-                ],
-                tdStyles: [null, item.Name === material.Item.Name ? 'font-weight: bold;' : null, null],
-                spans: [blueprint.Materials.length, null, null],
-                links: [getTypeLink(blueprint.Name, 'Blueprint'), getItemLink(material.Item), null]
-              };
-            })
+          usage.Blueprints.map(blueprint => {
+            return {
+              values: [
+                blueprint.Name,
+                blueprint.MaterialAmount ?? 'N/A',
+              ],
+              tdStyles: [null, null],
+              links: [getTypeLink(blueprint.Name, 'Blueprint'), null]
+            };
           })
         }
-        options={{sortable: false}}  
+        options={{sortable: true, searchable: true}}  
       />
     {/if}
     {#if usage.RefiningRecipes != null && usage.RefiningRecipes.length > 0}

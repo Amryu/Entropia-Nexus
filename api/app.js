@@ -3,6 +3,7 @@ const cors = require('cors');
 const swaggerJsDoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
 const compression = require('compression');
+const { recordRequest, snapshotAndReset } = require('./metrics');
 
 // Register split endpoint modules (DB + routes colocated) while keeping a single DB pool
 const endpoints = require('./endpoints');
@@ -17,7 +18,13 @@ const port = 3000;
     const wrapped = handlers.map(h => {
       if (typeof h === 'function' && h.constructor && h.constructor.name === 'AsyncFunction') {
         return function wrappedAsyncHandler(req, res, next) {
-          Promise.resolve(h(req, res, next)).catch(next);
+          Promise.resolve(h(req, res, next)).catch(err => {
+            if (!res.headersSent && !res.writableEnded) {
+              return next(err);
+            }
+            // Avoid double-send: just log since response is already on the wire
+            console.error('Handler error after response sent:', req.method, req.originalUrl, err);
+          });
         };
       }
       return h;
@@ -31,11 +38,28 @@ const port = 3000;
 const ROUTE_TIMEOUT_MS = process.env.ROUTE_TIMEOUT_MS ? parseInt(process.env.ROUTE_TIMEOUT_MS) : 30000;
 app.use((req, res, next) => {
   res.setTimeout(ROUTE_TIMEOUT_MS, () => {
-    if (!res.headersSent) {
+    // Mark as timed-out to prevent later handlers from writing again
+    res.locals.timedOut = true;
+    if (!res.headersSent && !res.writableEnded) {
       console.error('Request timed out:', req.method, req.originalUrl);
-      res.status(503).json({ error: 'Timeout', message: 'Request exceeded time limit' });
+      try { res.status(503).json({ error: 'Timeout', message: 'Request exceeded time limit' }); } catch {}
     }
   });
+  next();
+});
+
+// --- Response guard to prevent double-send after timeout or prior writes ---
+app.use((req, res, next) => {
+  const origJson = res.json.bind(res);
+  const origSend = res.send.bind(res);
+  res.json = (body) => {
+    if (res.headersSent || res.writableEnded || res.locals.timedOut) return res; 
+    return origJson(body);
+  };
+  res.send = (body) => {
+    if (res.headersSent || res.writableEnded || res.locals.timedOut) return res;
+    return origSend(body);
+  };
   next();
 });
 
@@ -65,6 +89,35 @@ app.use('/docs', swaggerUi.serve, swaggerUi.setup(swaggerDocs, { explorer: true,
 app.use(compression());
 app.use(cors());
 app.use(express.json());
+
+// Per-request timing (compact): record duration and route
+app.use((req, res, next) => {
+  const start = process.hrtime.bigint();
+  res.on('finish', () => {
+    const durMs = Number(process.hrtime.bigint() - start) / 1e6;
+    const path = (req.route && req.route.path) || req.path || req.originalUrl || 'unknown';
+    recordRequest(req.method, path, durMs);
+  });
+  next();
+});
+
+// Periodic compact performance report (no spam)
+const REPORT_EVERY_MS = parseInt(process.env.METRICS_EVERY_MS || '60000', 10);
+setInterval(() => {
+  const mem = process.memoryUsage();
+  const snap = snapshotAndReset();
+  console.log('[metrics]', {
+    upMs: snap.elapsedMs,
+    req: { count: snap.requests, avgMs: Math.round(snap.avgReqMs), slow: snap.slowRequests },
+    sql: { count: snap.queries, avgMs: Math.round(snap.avgQueryMs), slow: snap.slowQueries },
+    topRoutes: snap.byRoute,
+    mem: {
+      rssMB: Math.round(mem.rss / 1024 / 1024),
+      heapUsedMB: Math.round(mem.heapUsed / 1024 / 1024),
+      extMB: Math.round(mem.external / 1024 / 1024)
+    }
+  });
+}, REPORT_EVERY_MS).unref();
 
 app.disable('x-powered-by');
 

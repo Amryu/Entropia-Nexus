@@ -336,11 +336,13 @@
           }
         }
         on:rowClick={(evt) => {
-          selected = filteredElements.find(x => locationEquals(x, evt.detail.data.payload));
-          
-          filteredElements = filteredElements;
-
-          navigate(`/maps/${planetSimpleName}/${selected.Id}`);
+          // Set selection immediately and update the URL
+          const clicked = evt.detail.data.payload;
+          selected = clicked;
+          locations = locations;
+          if (clicked?.Id) {
+            navigate(`/maps/${planetSimpleName}/${clicked.Id}`);
+          }
         }}
         on:rowHover={(evt) => {
           if (evt.detail === null) {

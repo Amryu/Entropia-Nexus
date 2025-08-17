@@ -7,21 +7,83 @@ const pool = new Pool({
   connectionString: process.env.POSTGRES_CONNECTION_STRING,
 });
 
+// Global error/logging guards to avoid silent process crashes
+if (!globalThis.__dbErrorHooksRegistered) {
+  process.on('unhandledRejection', (reason, p) => {
+    console.error('Unhandled Rejection at:', p, 'reason:', reason);
+  });
+  process.on('uncaughtException', (err) => {
+    console.error('Uncaught Exception:', err);
+  });
+  globalThis.__dbErrorHooksRegistered = true;
+}
+
+// Log pool-level errors from idle clients so they don't crash the process
+pool.on('error', (err) => {
+  console.error('Postgres pool error (idle client):', err);
+});
+
+// Set a sane statement timeout per connection so queries fail fast
+const STATEMENT_TIMEOUT_MS = Number(process.env.PG_STATEMENT_TIMEOUT_MS ?? 5000);
+pool.on('connect', (client) => {
+  // Best-effort; if it fails, we still keep the connection and log
+  client
+    .query(`SET statement_timeout = ${STATEMENT_TIMEOUT_MS}`)
+    .catch((e) => console.error('Failed to set statement_timeout', e));
+});
+
+// Wrap pool.query to ensure consistent logging on failures
+const _poolQuery = pool.query.bind(pool);
+pool.query = async (text, params) => {
+  try {
+    return await _poolQuery(text, params);
+  } catch (err) {
+    console.error('DB query failed:', { text, params, err });
+    throw err;
+  }
+};
+
 export async function startTransaction() {
   const client = await pool.connect();
-  await client.query('BEGIN');
-
-  return client;
+  // Wrap client.query for logging inside transactions
+  const _clientQuery = client.query.bind(client);
+  client.query = async (text, params) => {
+    try {
+      return await _clientQuery(text, params);
+    } catch (err) {
+      console.error('DB tx query failed:', { text, params, err });
+      throw err;
+    }
+  };
+  try {
+    await client.query('BEGIN');
+    return client;
+  } catch (err) {
+    try { client.release(); } catch (_) { /* ignore */ }
+    console.error('BEGIN failed:', err);
+    throw err;
+  }
 }
 
 export async function commitTransaction(client) {
-  await client.query('COMMIT');
-  client.release();
+  try {
+    await client.query('COMMIT');
+  } catch (err) {
+    console.error('COMMIT failed:', err);
+    throw err;
+  } finally {
+    try { client.release(); } catch (e) { console.error('Release after COMMIT failed:', e); }
+  }
 }
 
 export async function rollbackTransaction(client) {
-  await client.query('ROLLBACK');
-  client.release();
+  try {
+    await client.query('ROLLBACK');
+  } catch (err) {
+    console.error('ROLLBACK failed:', err);
+  } finally {
+    try { client.release(); } catch (e) { console.error('Release after ROLLBACK failed:', e); }
+  }
 }
 
 export async function getSession(sessionId) {
@@ -270,8 +332,8 @@ export async function updateShopInventory(shopId, inventoryGroups) {
     await commitTransaction(client);
     return true;
   } catch (error) {
-    await rollbackTransaction(client);
-    console.error('Error updating shop inventory:', error);
+  try { await rollbackTransaction(client); } catch (rbErr) { console.error('Error during rollback:', rbErr); }
+  console.error('Error updating shop inventory:', error);
     return false;
   }
 }
@@ -295,8 +357,8 @@ export async function updateShopManagers(shopId, managers) {
     await commitTransaction(client);
     return true;
   } catch (error) {
-    await rollbackTransaction(client);
-    console.error('Error updating shop managers:', error);
+  try { await rollbackTransaction(client); } catch (rbErr) { console.error('Error during rollback:', rbErr); }
+  console.error('Error updating shop managers:', error);
     return false;
   }
 }
@@ -333,11 +395,9 @@ export async function getShopInventory(shopId) {
       i.item_id,
       i.stack_size,
       i.markup,
-      i.sort_order as item_sort_order,
-      items."Name" as item_name
+      i.sort_order as item_sort_order
     FROM shop_inventory_groups g
     LEFT JOIN shop_inventory_items i ON g.id = i.group_id
-    LEFT JOIN "Items" items ON i.item_id = items."Id"
     WHERE g.shop_id = $1
     ORDER BY g.sort_order, i.sort_order
   `;
@@ -365,8 +425,7 @@ export async function getShopInventory(shopId) {
         item_id: row.item_id,
         stack_size: row.stack_size,
         markup: row.markup,
-        sort_order: row.item_sort_order,
-        Item: { Name: row.item_name }
+        sort_order: row.item_sort_order
       });
     }
   }

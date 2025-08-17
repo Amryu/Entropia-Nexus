@@ -3,6 +3,15 @@ const blueprints = require('./blueprints');
 const refining = require('./refining');
 const vendoroffers = require('./vendoroffers');
 const { getMobLootsForItemsOrMobs } = require('./mobloots');
+const { getShopListings } = require('./shops');
+const { getItemCached } = require('./itemsCache');
+
+async function hydrateShopItems(list) {
+  const uniqueIds = Array.from(new Set(list.map(x => x.ItemId).filter(Boolean)));
+  const idToItem = {};
+  await Promise.all(uniqueIds.map(async (id) => { idToItem[id] = await getItemCached(id); }));
+  return list.map(x => ({ ...x, Item: idToItem[x.ItemId] || { Id: x.ItemId, Name: `Item ${x.ItemId}`, Links: { "$Url": `/items/${x.ItemId}` } } }));
+}
 
 function register(app){
   /**
@@ -30,13 +39,15 @@ function register(app){
       const raw = req.query.items || '';
       const items = parseItemList(raw);
       if (!items || items.length === 0) return res.status(400).send('Items cannot be empty');
-      const [blueprintList, lootList, offersList, recipesList] = await Promise.all([
+      const [blueprintList, lootList, offersList, recipesList, listings] = await Promise.all([
         blueprints.getBlueprints(items),
         getMobLootsForItemsOrMobs(items, null),
-  vendoroffers.getVendorOffers(items),
+        vendoroffers.getVendorOffers(items),
         refining.getRefiningRecipes(items),
+        getShopListings(items),
       ]);
-      res.status(200).json({ Blueprints: blueprintList, Loots: lootList, VendorOffers: offersList, RefiningRecipes: recipesList });
+      const hydrated = await hydrateShopItems(listings);
+      res.status(200).json({ Blueprints: blueprintList, Loots: lootList, VendorOffers: offersList, RefiningRecipes: recipesList, ShopListings: hydrated });
     } catch (e){ next(e); }
   });
 

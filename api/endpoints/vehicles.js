@@ -19,10 +19,11 @@ function formatVehicle(x,data){
     Properties: {
       Description: x.Description,
       Weight: x.Weight != null ? Number(x.Weight) : null,
+      Type: x.Type != null ? x.Type : null,
       SpawnedWeight: x.SpawnedWeight != null ? Number(x.SpawnedWeight) : null,
       PassengerCount: x.Passengers != null ? Number(x.Passengers) : null,
-      ItemCapacity: x.StorageCapacity != null ? Number(x.StorageCapacity) : null,
-      WeightCapacity: x.WeightCapacity != null ? Number(x.WeightCapacity) : null,
+      ItemCapacity: x.StorageCount != null ? Number(x.StorageCount) : null,
+      WeightCapacity: x.StorageWeight != null ? Number(x.StorageWeight) : null,
       WheelGrip: x.WheelGrip != null ? Number(x.WheelGrip) : null,
       EnginePower: x.EnginePower != null ? Number(x.EnginePower) : null,
       MaxSpeed: x.MaxSpeed != null ? Number(x.MaxSpeed) : null,

@@ -80,7 +80,7 @@
   
   .category-header.clickable:hover,
   .category-header.expandable:hover {
-    background-color: #f0f0f0;
+    background-color: var(--hover-color);
     cursor: pointer;
   }
   
@@ -102,7 +102,8 @@
   
   .item-count {
     font-size: 12px;
-    color: #666;
+  color: var(--text-color);
+  opacity: 0.7;
     margin-left: 8px;
   }
   

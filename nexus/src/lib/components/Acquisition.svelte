@@ -3,6 +3,7 @@
   import '$lib/style.css';
 
   import { encodeURIComponentSafe, getItemLink, getTypeLink } from '$lib/util';
+  import { hasCondition } from '$lib/shopUtils';
 
   import Table from './Table.svelte';
 
@@ -29,6 +30,96 @@
 
     return frequencyOrder[a] - frequencyOrder[b];
   }
+
+  // Build rows for Shops section (grouped by Shop+Item) with spans across Shop/Planet/Location
+  $: shopsRows = (() => {
+    try {
+      const list = acquisition?.ShopListings ?? [];
+      if (!Array.isArray(list) || list.length === 0) return [];
+      const groups = new Map();
+      for (const e of list) {
+        // server returns fields with capitalized names: Shop, Group, Item, ItemId, StackSize, Markup
+        const shopId = e?.Shop?.Id ?? e?.ShopId ?? e?.shopId;
+        const itemId = e?.Item?.Id ?? e?.ItemId ?? e?.itemId;
+        if (!shopId || !itemId) continue;
+        const key = `${shopId}|${itemId}`;
+        if (!groups.has(key)) {
+          groups.set(key, { shop: e.Shop, item: e.Item, ItemId: e.ItemId ?? e.Item?.Id ?? itemId, entries: [] });
+        }
+        const g = groups.get(key);
+        const s = Number(e.StackSize ?? e.stack_size ?? 0);
+        const m = Number(e.Markup ?? e.markup ?? 0);
+        if (!Number.isNaN(s) && s > 0 && !Number.isNaN(m) && m > 0) {
+          const muText = hasCondition(g.item) ? `+${m.toFixed(2)}` : `${m.toFixed(2)}%`;
+          g.entries.push({ stack: s, muText });
+        }
+      }
+      const rows = [];
+      for (const g of Array.from(groups.values())) {
+        const planetTech = g.shop?.Planet?.Properties?.TechnicalName ?? g.shop?.Planet?.Name;
+        const coords = g.shop?.Coordinates;
+        const locationText = (coords?.Longitude != null && coords?.Latitude != null)
+          ? `${coords.Longitude}, ${coords.Latitude}`
+          : 'N/A';
+        const wpCopy = (coords?.Longitude != null && coords?.Latitude != null && planetTech)
+          ? `/wp [${planetTech}, ${coords.Longitude}, ${coords.Latitude}, ${coords?.Altitude ?? 100}, ${g.shop?.Name ?? ''}]`
+          : null;
+    const spanLen = Math.max(1, g.entries.length);
+        if (g.entries.length === 0) {
+          // still render one row with N/A stack/MU
+          rows.push({
+            values: [
+              g.shop?.Name ?? 'N/A',
+              g.shop?.Planet?.Name ?? 'N/A',
+              locationText,
+              'N/A',
+              'N/A'
+            ],
+  // Use true as a marker to indicate spanned columns; Table will compute dynamic lengths
+  spans: [true, true, true, null, null],
+            links: [
+              g.shop ? `/market/shops/${encodeURIComponentSafe(g.shop.Name)}` : null,
+              null,
+              null,
+              null,
+              null
+            ],
+            copyables: [false, false, !!wpCopy, false, false],
+            onClicks: [null, null, () => { if (wpCopy) navigator.clipboard.writeText(wpCopy); }, null, null],
+            tooltips: [null, null, wpCopy ? 'Click to copy waypoint' : null, null, null]
+          });
+          continue;
+        }
+    for (let i = 0; i < g.entries.length; i++) {
+          const entry = g.entries[i];
+          rows.push({
+            values: [
+              g.shop?.Name ?? 'N/A',
+              g.shop?.Planet?.Name ?? 'N/A',
+              locationText,
+              entry.stack,
+              entry.muText
+            ],
+  // Use true as a marker to indicate spanned columns; Table will compute dynamic lengths
+  spans: [true, true, true, null, null],
+            links: [
+              g.shop ? `/market/shops/${encodeURIComponentSafe(g.shop.Name)}` : null,
+              null,
+              null,
+              null,
+              null
+            ],
+            copyables: [false, false, !!wpCopy, false, false],
+            onClicks: [null, null, () => { if (wpCopy) navigator.clipboard.writeText(wpCopy); }, null, null],
+            tooltips: [null, null, wpCopy ? 'Click to copy waypoint' : null, null, null]
+          });
+        }
+      }
+      return rows;
+    } catch {
+      return [];
+    }
+  })();
 </script>
 
 <style>
@@ -47,6 +138,7 @@
   && (!acquisition.Loots || acquisition.Loots.length === 0)
   && (!acquisition.RefiningRecipes || acquisition.RefiningRecipes.length === 0)
   && (!acquisition.Blueprints || acquisition.Blueprints.length === 0)
+  && (!acquisition.ShopListings || acquisition.ShopListings.length === 0)
   && (!acquisition.Upgrades || acquisition.Upgrades.length === 0)
   && (!acquisition.Events || acquisition.Events.length === 0)))}
 <div>No data available.</div>
@@ -97,6 +189,16 @@
           links: [getTypeLink(loot.Mob.Name, 'Mob', loot.Mob.Planet.Name), null, null, null, null]
         }))}
       options={{searchable: true}} />
+    {/if}
+    {#if acquisition.ShopListings && acquisition.ShopListings.length > 0}
+    <Table
+      title="Shop Listings"
+      header={{
+        values: ['Shop', 'Planet', 'Location', 'Stack', 'MU'],
+        widths: ['1fr', '120px', '110px', '50px', '90px']
+      }}
+      data={shopsRows}
+      options={{ searchable: true, sortable: false }} />
     {/if}
     {#if acquisition.RefiningRecipes && acquisition.RefiningRecipes.length > 0}
     <Table

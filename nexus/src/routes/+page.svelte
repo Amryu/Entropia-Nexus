@@ -36,4 +36,11 @@
   directly, or reach out to me on Discord to discuss how you can help.
 </p>
 <br />
+<p>
+  Like the site? Consider donating to help keep it updated! Contact "Pugnus Amryu Tonitrus" ingame to do so.
+</p>
+<p>
+  Donations will be used for hosting costs, development, keeping the site up to date, and for future in-game events.
+</p>
+<br />
 <a href="/sitemap" style="visibility: hidden;">Sitemap</a>

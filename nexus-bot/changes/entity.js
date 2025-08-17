@@ -452,6 +452,7 @@ export const UpsertConfigs = {
     columns: [
       { name: "Name", value: x => x.Name },
       { name: "Description", value: x => x.Properties.Description },
+  { name: "Type", value: x => x.Properties.Type },
       { name: "Passengers", value: x => x.Properties.PassengerCount },
       { name: "Weight", value: x => x.Properties.Weight },
       { name: "SpawnedWeight", value: x => x.Properties.SpawnedWeight },
@@ -930,6 +931,60 @@ async function applyStrongboxLootsChanges(client, strongboxId, loots) {
   ]);
 }
 
+// Sanitize and normalize Area shape/data before DB comparison/insertion
+function sanitizeShapeAndData(props) {
+  const shapeIn = props?.Shape;
+  let dataRaw = props?.Data;
+  if (!shapeIn || dataRaw == null) return { shape: null, data: null };
+
+  // Parse data into an object if needed
+  let parsed = null;
+  if (typeof dataRaw === 'string') {
+    try { parsed = JSON.parse(dataRaw); } catch { parsed = null; }
+  } else if (typeof dataRaw === 'object') {
+    parsed = dataRaw;
+  }
+  if (parsed == null) return { shape: null, data: null };
+
+  // Normalize shape naming
+  let shape = shapeIn === 'Point' ? 'Circle' : shapeIn;
+  if (/^polygon?$/i.test(String(shape))) shape = 'Polygon';
+
+  // Keep only required fields and validate
+  if (shape === 'Circle') {
+    const x = Number(parsed.x);
+    const y = Number(parsed.y);
+    const radius = Number(parsed.radius);
+    if (![x, y, radius].every(Number.isFinite)) return { shape: null, data: null };
+    return { shape, data: JSON.stringify({ x, y, radius }) };
+  }
+  if (shape === 'Rectangle') {
+    const x = Number(parsed.x);
+    const y = Number(parsed.y);
+    const width = Number(parsed.width);
+    const height = Number(parsed.height);
+    if (![x, y, width, height].every(Number.isFinite)) return { shape: null, data: null };
+    return { shape, data: JSON.stringify({ x, y, width, height }) };
+  }
+  if (shape === 'Polygon') {
+    let vertices = Array.isArray(parsed.vertices) ? parsed.vertices.map(Number) : null;
+    if (!vertices || vertices.some(v => !Number.isFinite(v))) return { shape: null, data: null };
+    // Ensure even length
+    if (vertices.length % 2 !== 0) vertices = vertices.slice(0, vertices.length - 1);
+    const pointCount = Math.floor(vertices.length / 2);
+    if (pointCount < 3) return { shape: null, data: null };
+    // Ensure closing point present
+    const x1 = vertices[0], y1 = vertices[1];
+    const lastX = vertices[vertices.length - 2], lastY = vertices[vertices.length - 1];
+    if (x1 !== lastX || y1 !== lastY) vertices = [...vertices, x1, y1];
+    if (vertices.length < 8) return { shape: null, data: null }; // 3 points + closing
+    return { shape: 'Polygon', data: JSON.stringify({ vertices }) };
+  }
+
+  // Unknown shape -> invalid
+  return { shape: null, data: null };
+}
+
 async function applyMobSpawnChanges(client, mobId, spawns) {
   // Get planet ID for this mob
   const planetResult = await client.query(`SELECT "PlanetId" FROM "Mobs" WHERE "Id" = $1`, [mobId]);
@@ -937,11 +992,11 @@ async function applyMobSpawnChanges(client, mobId, spawns) {
 
   // Get existing spawns and areas for this mob
   const existingSpawns = await client.query(`
-    SELECT DISTINCT "MobSpawns"."Id" AS "SpawnId", "MobSpawns"."AreaId", "Areas"."Shape", "Areas"."Data", "Areas"."Altitude"
-    FROM "MobSpawns" 
-    INNER JOIN "Areas" ON "MobSpawns"."AreaId" = "Areas"."Id"
-    INNER JOIN "MobSpawnMaturities" ON "MobSpawns"."Id" = "MobSpawnMaturities"."SpawnId"
-    INNER JOIN "MobMaturities" ON "MobSpawnMaturities"."MaturityId" = "MobMaturities"."Id"
+  SELECT DISTINCT "MobSpawns"."AreaId" AS "AreaId", "Areas"."Shape", "Areas"."Data", "Areas"."Altitude"
+  FROM "MobSpawns"
+  INNER JOIN "Areas" ON "MobSpawns"."AreaId" = "Areas"."Id"
+  INNER JOIN "MobSpawnMaturities" ON "MobSpawns"."AreaId" = "MobSpawnMaturities"."AreaId"
+  INNER JOIN "MobMaturities" ON "MobSpawnMaturities"."MaturityId" = "MobMaturities"."Id"
     WHERE "MobMaturities"."MobId" = $1
   `, [mobId]);
 
@@ -950,12 +1005,34 @@ async function applyMobSpawnChanges(client, mobId, spawns) {
     try {
       if (!spawn.Properties.Shape || !spawn.Properties.Data) {
         console.warn(`Skipping spawn ${index}: missing Shape or Data`, spawn.Properties);
-        return null;
+        throw new Error(`Spawn ${index} is missing Shape or Data`);
       }
 
-      const shape = spawn.Properties.Shape == 'Point' ? 'Circle' : spawn.Properties.Shape;
-      const data = typeof spawn.Properties.Data === 'string' ? spawn.Properties.Data : JSON.stringify(spawn.Properties.Data);
+      const { shape, data } = sanitizeShapeAndData(spawn.Properties);
+      if (!shape || !data) {
+        console.warn(`Skipping spawn ${index}: invalid Shape/Data`, spawn.Properties);
+        throw new Error(`Spawn ${index} is invalid Shape/Data`);
+      }
       const altitude = spawn.Properties.Coordinates?.Altitude || 0;
+
+      // Derive a human-friendly name used for Areas and MobSpawns when none is provided
+      let derivedName = spawn.Properties.Name;
+      if (!derivedName && spawn.Maturities && spawn.Maturities.length > 0) {
+        const mobGroups = {};
+        spawn.Maturities.forEach(maturity => {
+          const mobName = maturity?.Maturity?.Mob?.Name;
+          const maturityName = maturity?.Maturity?.Name;
+          if (mobName) {
+            if (!mobGroups[mobName]) mobGroups[mobName] = [];
+            if (maturityName) mobGroups[mobName].push(maturityName);
+          }
+        });
+        const mobParts = Object.entries(mobGroups).map(([mobName, maturities]) =>
+          maturities.length > 0 ? `${mobName} - ${maturities.join('/')}` : mobName
+        );
+        derivedName = mobParts.join(', ');
+      }
+      if (!derivedName) derivedName = `Spawn Area ${index + 1}`;
 
       // Check if there's an existing area with matching Shape, Data, and Altitude
       const matchingArea = existingSpawns.rows.find(existing => 
@@ -964,58 +1041,28 @@ async function applyMobSpawnChanges(client, mobId, spawns) {
         Number(existing.Altitude) === altitude
       );
 
-      let areaId, spawnId;
+      let areaId;
 
       if (matchingArea) {
-        // Use existing area and spawn
+        // Use existing area
         areaId = matchingArea.AreaId;
-        spawnId = matchingArea.SpawnId;
-        
+
         // Update the spawn properties that might have changed
         await client.query(`
-          UPDATE "MobSpawns" 
-          SET "Density" = $1, "IsShared" = $2, "IsEvent" = $3, "Name" = $4, "Description" = $5 
-          WHERE "Id" = $6
+          UPDATE "MobSpawns"
+          SET "Density" = $1, "IsShared" = $2, "IsEvent" = $3, "Name" = $4, "Description" = $5
+          WHERE "AreaId" = $6
         `, [
           spawn.Properties.Density || 2,
           spawn.Properties.IsShared ? 1 : 0,
           spawn.Properties.IsEvent ? 1 : 0,
-          spawn.Properties.Name || null,
+          derivedName || null,
           spawn.Properties.Description || null,
-          spawnId
+          areaId
         ]);
       } else {
-        // Generate area name based on mobs and maturities
-        let areaName = spawn.Properties.Name;
-        if (!areaName && spawn.Maturities && spawn.Maturities.length > 0) {
-          // Group maturities by mob
-          const mobGroups = {};
-          spawn.Maturities.forEach(maturity => {
-            const mobName = maturity.Maturity?.Mob?.Name;
-            if (mobName) {
-              if (!mobGroups[mobName]) {
-                mobGroups[mobName] = [];
-              }
-              if (maturity.Maturity?.Name) {
-                mobGroups[mobName].push(maturity.Maturity.Name);
-              }
-            }
-          });
-
-          // Create name: "Mob1 - Maturity1/Maturity2, Mob2 - Maturity3"
-          const mobParts = Object.entries(mobGroups).map(([mobName, maturities]) => {
-            if (maturities.length > 0) {
-              return `${mobName} - ${maturities.join('/')}`;
-            }
-            return mobName;
-          });
-          
-          areaName = mobParts.join(', ') || `Spawn Area ${index + 1}`;
-        }
-        
-        if (!areaName) {
-          areaName = `Spawn Area ${index + 1}`;
-        }
+        // Use derivedName for Area name when creating a new Area
+        const areaName = derivedName;
 
         // Create new Area
         const areaResult = await client.query(`
@@ -1033,24 +1080,27 @@ async function applyMobSpawnChanges(client, mobId, spawns) {
 
         areaId = areaResult.rows[0].Id;
 
-        // Create new MobSpawn
-        const spawnResult = await client.query(`
-          INSERT INTO "MobSpawns" ("AreaId", "Density", "IsShared", "IsEvent", "Name", "Description") 
+        // Create new MobSpawn (AreaId is the PK and FK to Areas)
+        await client.query(`
+          INSERT INTO "MobSpawns" ("AreaId", "Density", "IsShared", "IsEvent", "Name", "Description")
           VALUES ($1, $2, $3, $4, $5, $6)
-          RETURNING "Id"
+          ON CONFLICT ("AreaId") DO UPDATE SET
+            "Density" = EXCLUDED."Density",
+            "IsShared" = EXCLUDED."IsShared",
+            "IsEvent" = EXCLUDED."IsEvent",
+            "Name" = EXCLUDED."Name",
+            "Description" = EXCLUDED."Description"
         `, [
           areaId,
           spawn.Properties.Density || 2,
           spawn.Properties.IsShared ? 1 : 0,
           spawn.Properties.IsEvent ? 1 : 0,
-          spawn.Properties.Name || null,
+          derivedName || null,
           spawn.Properties.Description || null
         ]);
-
-        spawnId = spawnResult.rows[0].Id;
       }
 
-      return { ...spawn, Id: spawnId, AreaId: areaId };
+      return { ...spawn, AreaId: areaId };
     } catch (error) {
       console.error(`Error processing spawn ${index}:`, error, spawn);
       return null;
@@ -1076,6 +1126,11 @@ async function applyMobSpawnChanges(client, mobId, spawns) {
 
     // Get maturity IDs
     const maturitiesWithIds = await Promise.all(spawn.Maturities.map(async (maturity) => {
+      // Prefer direct Id if present; fallback to lookup by names
+      const maturityIdDirect = maturity?.Maturity?.Id;
+      if (maturityIdDirect) {
+        return { ...maturity, MaturityId: maturityIdDirect };
+      }
       if (!maturity.Maturity?.Mob?.Name || !maturity.Maturity?.Name) {
         console.warn('Skipping maturity with missing data:', maturity);
         return null;
@@ -1094,15 +1149,20 @@ async function applyMobSpawnChanges(client, mobId, spawns) {
     const validMaturities = maturitiesWithIds.filter(m => m !== null);
 
     // Delete old maturities and insert new ones
+    if (validMaturities.length === 0) {
+      // Explicitly clear all maturities if none are valid/mapped
+      await client.query(`DELETE FROM "MobSpawnMaturities" WHERE "AreaId" = $1`, [spawn.AreaId]);
+      return;
+    }
     await Promise.all([
-      client.query(`DELETE FROM "MobSpawnMaturities" WHERE "SpawnId" = $1 AND "MaturityId" NOT IN (SELECT * FROM unnest($2::int[]))`, 
-        [spawn.Id, validMaturities.map(m => m.MaturityId)]),
+      client.query(`DELETE FROM "MobSpawnMaturities" WHERE "AreaId" = $1 AND "MaturityId" NOT IN (SELECT * FROM unnest($2::int[]))`, 
+        [spawn.AreaId, validMaturities.map(m => m.MaturityId)]),
       ...validMaturities.map(maturity => 
         client.query(`
-          INSERT INTO "MobSpawnMaturities" ("SpawnId", "MaturityId", "IsRare")
+          INSERT INTO "MobSpawnMaturities" ("AreaId", "MaturityId", "IsRare")
           VALUES ($1, $2, $3)
-          ON CONFLICT ("SpawnId", "MaturityId") DO UPDATE SET "IsRare" = $3
-        `, [spawn.Id, maturity.MaturityId, maturity.IsRare ? 1 : 0])
+          ON CONFLICT ("AreaId", "MaturityId") DO UPDATE SET "IsRare" = $3
+        `, [spawn.AreaId, maturity.MaturityId, maturity.IsRare ? 1 : 0])
       )
     ]);
   }));

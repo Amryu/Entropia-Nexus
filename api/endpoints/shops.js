@@ -160,3 +160,71 @@ function register(app){
 }
 
 module.exports = { register, getShops, getShop };
+
+// Minimal listings for Acquisition: only fetch what's needed for display
+async function getShopListings(items) {
+  // Resolve input which may be numeric IDs or exact item names
+  const nums = new Set();
+  const names = new Set();
+  for (const v of (items || [])) {
+    const n = Number(v);
+    if (Number.isFinite(n)) nums.add(n);
+    else if (typeof v === 'string' && v.trim().length > 0) names.add(v.trim());
+  }
+
+  let nameIds = [];
+  if (names.size > 0) {
+    const { rows } = await pool.query('SELECT "Id", "Name" FROM ONLY "Items" WHERE "Name" = ANY($1)', [Array.from(names)]);
+    nameIds = rows.map(r => Number(r.Id)).filter(Number.isFinite);
+  }
+
+  const ids = Array.from(new Set([...nums, ...nameIds]));
+  if (ids.length === 0) return [];
+
+  // 1) From users DB: find all (shop_id, group_name, item_id, stack_size, markup)
+  const { rows: invRows } = await usersPool.query(`
+    SELECT g.shop_id, g.name AS group_name, i.item_id, i.stack_size, i.markup
+    FROM shop_inventory_groups g
+    INNER JOIN shop_inventory_items i ON i.group_id = g.id
+    WHERE i.item_id = ANY($1)
+    ORDER BY g.shop_id, g.name
+  `, [ids]);
+  if (!invRows || invRows.length === 0) return [];
+
+  // 2) From main DB: fetch basic shop and planet info
+  const shopIds = Array.from(new Set(invRows.map(r => r.shop_id).filter(Boolean)));
+  const { rows: shopRows } = await pool.query(`
+    SELECT e."Id", e."Name", e."Longitude", e."Latitude", e."Altitude",
+           p."Id" AS "PlanetId", p."Name" AS "Planet", p."TechnicalName"
+    FROM ONLY "Estates" e
+    LEFT JOIN ONLY "Planets" p ON e."PlanetId" = p."Id"
+    WHERE e."Id" = ANY($1) AND e."Type" = 'Shop'
+  `, [shopIds]);
+  const shopMap = new Map(shopRows.map(r => [r.Id, {
+    Id: r.Id,
+    Name: r.Name,
+    Coordinates: {
+      Longitude: r.Longitude != null ? Number(r.Longitude) : null,
+      Latitude: r.Latitude != null ? Number(r.Latitude) : null,
+      Altitude: r.Altitude != null ? Number(r.Altitude) : null,
+    },
+    Planet: r.Planet ? { Name: r.Planet, Properties: { TechnicalName: r.TechnicalName } } : null,
+  }]));
+
+  // 3) Build minimal listing entries
+  const out = [];
+  for (const r of invRows) {
+    const shop = shopMap.get(r.shop_id);
+    if (!shop) continue;
+    out.push({
+      Shop: shop,
+      Group: { Name: r.group_name },
+      ItemId: Number(r.item_id),
+      StackSize: r.stack_size != null ? Number(r.stack_size) : null,
+      Markup: r.markup != null ? Number(r.markup) : null,
+    });
+  }
+  return out;
+}
+
+module.exports.getShopListings = getShopListings;

@@ -1,8 +1,10 @@
 
-api/node_modules/
-client/node_modules/
-nexus-bot/node_modules/
-nexus-bot/.env
-client/
+**/node_modules
+nexus-bot/config.json
 sql/
 .vscode/
+# Ignore all .env files
+*.env
+
+# But not the example file
+!.env.example

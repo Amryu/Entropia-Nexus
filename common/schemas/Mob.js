@@ -169,7 +169,7 @@ export const Mob = {
                 "additionalProperties": false,
                 "properties": {
                   "TamingLevel": {
-                    "type": ["integer", "null"],
+                    "type": ["number", "null"],
                     "default": null
                   }
                 },

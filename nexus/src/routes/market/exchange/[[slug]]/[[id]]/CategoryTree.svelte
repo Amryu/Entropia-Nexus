@@ -3,6 +3,7 @@
   export let categories = {};
   export let onSelectCategory;
   export let category = null; // For recursive component use
+  export let selectedPath = null;
   export let expandedNodes = new Set();
   export let toggleExpanded = null;
   export let getItemCount = null;
@@ -25,7 +26,6 @@
       if (category.items && Array.isArray(category.items)) {
         return category.items.length;
       }
-      
       let count = 0;
       if (category.children) {
         for (const child of category.children) {
@@ -38,9 +38,20 @@
   
   if (!handleCategorySelect) {
     handleCategorySelect = function(category) {
+      // Allow selecting any node; if branch, aggregate all leaf items below
+      let items = [];
       if (category.items && Array.isArray(category.items)) {
-        onSelectCategory(category.path.join(' > '), category.items);
+        items = category.items;
+      } else if (category.children && category.children.length > 0) {
+        const gather = (node) => {
+          if (node.items && Array.isArray(node.items)) items.push(...node.items);
+          if (node.children) node.children.forEach(gather);
+        };
+        category.children.forEach(gather);
       }
+      // Emit display-formatted path to match parent selectedPath & URL logic
+      const displayPath = category.path.map(formatCategoryName).join(' > ');
+      onSelectCategory(displayPath, items);
     };
   }
   
@@ -81,6 +92,7 @@
   }
   
   function formatCategoryName(key) {
+    if (key === 'all') return 'All';
     return key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ');
   }
   
@@ -96,6 +108,7 @@
       {toggleExpanded} 
       {getItemCount}
       {handleCategorySelect}
+      {selectedPath}
     />
   {/each}
 </div>
@@ -104,22 +117,19 @@
 {#if category}
   <div class="category-item" style="margin-left: {category.level * 16}px">
     <div 
-      class="category-header {category.items ? 'clickable' : ''} {category.children.length > 0 ? 'expandable' : ''}"
+      class="category-header clickable {category.children.length > 0 ? 'expandable' : ''} {selectedPath === category.path.map(formatCategoryName).join(' > ') ? 'selected' : ''}"
       on:click={() => {
-        if (category.items && Array.isArray(category.items)) {
-          handleCategorySelect(category);
-        } else if (category.children.length > 0) {
+        // Click selects the node; if it has children, also toggles expansion with a small affordance
+        handleCategorySelect(category);
+        if (category.children.length > 0) {
           toggleExpanded(category.id);
         }
       }}
       on:keydown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          if (category.items && Array.isArray(category.items)) {
-            handleCategorySelect(category);
-          } else if (category.children.length > 0) {
-            toggleExpanded(category.id);
-          }
+          handleCategorySelect(category);
+          if (category.children.length > 0) toggleExpanded(category.id);
         }
       }}
       role="button"
@@ -137,7 +147,7 @@
     </div>
     
     {#if category.children.length > 0 && expandedNodes.has(category.id)}
-      <div class="category-children">
+      <div class="category-children" style="margin-left: -{category.level * 16}px">
         {#each category.children as child}
           <svelte:self 
             category={child} 
@@ -146,6 +156,7 @@
             {toggleExpanded} 
             {getItemCount}
             {handleCategorySelect}
+            {selectedPath}
           />
         {/each}
       </div>
@@ -173,12 +184,16 @@
   
   .category-header.clickable:hover,
   .category-header.expandable:hover {
-    background-color: #f0f0f0;
+  background-color: var(--hover-color);
     cursor: pointer;
   }
   
   .category-header.clickable {
     cursor: pointer;
+  }
+  .category-header.selected {
+    background-color: var(--hover-color);
+    border-left: 3px solid var(--text-color);
   }
   
   .expand-icon {
@@ -195,7 +210,8 @@
   
   .item-count {
     font-size: 12px;
-    color: #666;
+  color: var(--text-color);
+  opacity: 0.7;
     margin-left: 8px;
   }
   

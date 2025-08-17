@@ -322,18 +322,18 @@
           { label: 'Weight', type: 'number', step: '0.1', min: '0', '_get': x => x.Properties?.Weight, '_set': (x, v) => x.Properties.Weight = v},
           { label: 'Class', type: 'select', options: _ => ['Ranged', 'Melee', 'Mindforce', 'Attached', 'Stationary'], '_get': x => x.Properties?.Class, '_set': (x, v) => x.Properties.Class = v},
           { label: 'Category', type: 'select', options: x => x.Properties.Class === 'Ranged'
-            ? ['Rifle', 'Carbine', 'Pistol', 'Cannon', 'Flamethrower', 'Support']
+            ? ['Rifle', 'Carbine', 'Pistol', 'Cannon', 'Flamethrower', 'Support', 'Mounted']
             : x.Properties.Class === 'Melee'
             ? ['Axe', 'Sword', 'Knife', 'Whip', 'Club', 'Power Fist']
             : x.Properties.Class === 'Mindforce'
             ? ['Chip']
             : x.Properties.Class === 'Attached'
-            ? ['Hanging', 'Mounted', 'Turret']
+            ? ['Hanging', 'Turret']
             : ['Turret'],
             '_get': x => x.Properties?.Category, '_set': (x, v) => x.Properties.Category = v
           },
           { label: 'Type', type: 'select', options: x => x.Properties.Class === 'Ranged' || x.Properties.Class === 'Attached' || x.Properties.Class === 'Stationary'
-            ? ['Laser', 'BLP', 'Explosive', 'Gauss', 'Plasma']
+            ? ['Laser', 'BLP', 'Explosive', 'Gauss', 'Plasma', 'Mining Laser (Low)', 'Mining Laser (Medium)', 'Mining Laser (High)']
             : x.Properties.Class === 'Melee'
             ? ['Blades', 'Clubs', 'Fists', 'Whips']
             : x.Properties.Class === 'Mindforce'
@@ -414,6 +414,8 @@
             ? ['Gauss Sniper (Hit)']
             : x.Properties.Type === 'Explosive'
             ? ['Grenadier (Hit)', 'Mounted Grenadier (Hit)']
+            : x.Properties.Type?.startsWith('Mining Laser')
+            ? ['Mining Laser (Hit)']
             : x.Properties.Type === 'Pyrokinetic'
             ? ['Pyro Kinetic (Hit)']
             : x.Properties.Type === 'Cryogenic'
@@ -448,6 +450,8 @@
             ? ['Ranged Gauss (Dmg)']
             : x.Properties.Type === 'Explosive'
             ? ['Grenadier (Dmg)']
+            : x.Properties.Type?.startsWith('Mining Laser')
+            ? ['Mining Laser (Dmg)']
             : x.Properties.Type === 'Pyrokinetic'
             ? ['Pyro Kinetic (Dmg)']
             : x.Properties.Type === 'Cryogenic'

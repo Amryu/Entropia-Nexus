@@ -1,6 +1,96 @@
 <script>
   //@ts-nocheck
 
+
+  // --- No spatial grid or offscreen canvas optimizations ---
+
+  function drawShape(ctx, loc, isHovered, isSelected) {
+    const type = loc.Properties.Shape;
+    ctx.save();
+    let baseColor = getColorByType(loc.Properties.Type)?.color || 'white';
+    // Enhanced highlight for selected
+    if (isSelected) {
+      ctx.shadowColor = 'yellow';
+      ctx.shadowBlur = 18;
+      ctx.lineWidth = 5;
+      ctx.globalAlpha = 0.85;
+      ctx.strokeStyle = lightenColor(baseColor, 0.7);
+      ctx.fillStyle = lightenColor(baseColor, 0.5);
+    } else if (isHovered) {
+      ctx.shadowColor = 'orange';
+      ctx.shadowBlur = 8;
+      ctx.lineWidth = 3;
+      ctx.globalAlpha = 0.6;
+      ctx.strokeStyle = lightenColor(baseColor, 0.4);
+      ctx.fillStyle = lightenColor(baseColor, 0.2);
+    } else {
+      ctx.shadowBlur = 0;
+      ctx.lineWidth = 1;
+      ctx.globalAlpha = 0.3;
+      ctx.strokeStyle = ctx.fillStyle = baseColor;
+    }
+    if (type === 'Circle') {
+      const center = entropiaCoordsToCanvasCoords(loc.Properties.Data.x, loc.Properties.Data.y);
+      const outer = entropiaCoordsToCanvasCoords(loc.Properties.Data.x + loc.Properties.Data.radius, loc.Properties.Data.y);
+      const radius = outer.x - center.x;
+      ctx.beginPath();
+      ctx.arc(center.x, center.y, radius, 0, 2 * Math.PI);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.stroke();
+    } else if (type === 'Rectangle') {
+      const start = entropiaCoordsToCanvasCoords(loc.Properties.Data.x, loc.Properties.Data.y);
+      const end = entropiaCoordsToCanvasCoords(loc.Properties.Data.x + loc.Properties.Data.width, loc.Properties.Data.y + loc.Properties.Data.height);
+      const width = end.x - start.x;
+      const height = start.y - end.y;
+      ctx.beginPath();
+      ctx.rect(start.x, start.y - height, width, height);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.stroke();
+    } else if (type === 'Polygon') {
+      const verts = (loc.Properties.Data.vertices ?? []).reduce((result, value, idx, arr) => {
+        if (idx % 2 === 0) result.push([value, arr[idx + 1]]);
+        return result;
+      }, []).map(v => entropiaCoordsToCanvasCoords(v[0], v[1]));
+      if (verts.length > 1) {
+        ctx.beginPath();
+        ctx.moveTo(verts[0].x, verts[0].y);
+        for (let i = 1; i < verts.length; i++) ctx.lineTo(verts[i].x, verts[i].y);
+        ctx.closePath();
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.stroke();
+      }
+    } else {
+      // Draw as point
+      const pt = entropiaCoordsToCanvasCoords(loc.Properties.Coordinates.Longitude, loc.Properties.Coordinates.Latitude);
+      if (loc.Properties.Type === 'Teleporter') {
+        ctx.beginPath();
+        const showLarge = isHovered || isSelected;
+        ctx.arc(pt.x, pt.y, showLarge ? 8 : 4, 0, 2 * Math.PI);
+        ctx.fillStyle = isSelected ? 'yellow' : isHovered ? 'orange' : 'aqua';
+        ctx.strokeStyle = isSelected ? 'orange' : isHovered ? 'yellow' : 'red';
+        ctx.globalAlpha = isSelected ? 1 : 0.85;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.lineWidth = showLarge ? 4 : 2;
+        ctx.stroke();
+      } else {
+        ctx.beginPath();
+        ctx.rect(pt.x - 7, pt.y - 7, 14, 14);
+        ctx.fillStyle = isSelected ? 'yellow' : isHovered ? 'orange' : 'white';
+        ctx.globalAlpha = isSelected ? 1 : isHovered ? 0.8 : 0.7;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = isSelected ? 'orange' : isHovered ? 'yellow' : 'black';
+        ctx.lineWidth = isSelected ? 4 : isHovered ? 2 : 1;
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
   import { writable } from 'svelte/store';
   import { onMount, onDestroy } from 'svelte';
   import Tooltip from './Tooltip.svelte';
@@ -9,11 +99,11 @@
   import ContextMenu from './ContextMenu.svelte';
   import { contextmenu } from './ContextMenu';
 
-  import { pathDataToPolys }  from 'svg-path-to-polygons'
-  import { copyLocation, getTooltipText, locationFilter } from '$lib/mapUtil';
+  import { copyLocation, getTooltipText, locationFilter, getWaypoint } from '$lib/mapUtil';
 
   export let mapName = '';
   export let planet = null;
+  // No cache invalidation needed
   export let locations = [];
   export let selected;
   export let hovered;
@@ -55,127 +145,22 @@
   let canvasBounds;
   let drawAnimationId;
 
+
   let tooltipElement;
   let tooltipText;
+  let tooltipShow = false;
+  let tooltipPos = { x: 0, y: 0 };
   let wasPositionCopied = false;
 
   let editMode = false;
   let editType = null;
-  let editLocation = null;
-
-  let editDrag = false;
-
-  function initShapeData(e, editLocation) {
-    if (e.target.value === 'Circle') {
-      editLocation.Properties.Data = {
-        x: editLocation.Properties.Coordinates.Longitude ?? 0,
-        y: editLocation.Properties.Coordinates.Latitude ?? 0,
-        radius: editLocation.Properties.Data.radius ?? 0
-      };
-    } else if (e.target.value === 'Rectangle') {
-      editLocation.Properties.Data = {
-        x: editLocation.Properties.Coordinates.Longitude ?? 0,
-        y: editLocation.Properties.Coordinates.Latitude ?? 0,
-        width: editLocation.Properties.Data.width ?? 500,
-        height: editLocation.Properties.Data.height ?? 500
-      };
-    } else if (e.target.value === 'Polygon') {
-      editLocation.Properties._vertices = editLocation.Properties._vertices ?? [];
-      editLocation.Properties.Data = { vertices: [] };
-    }
-  }
-
-  $: if (editLocation?.Properties?.Shape === 'Circle') {
-    editLocation.Properties.Coordinates.Longitude = editLocation.Properties.Data.x;
-    editLocation.Properties.Coordinates.Latitude = editLocation.Properties.Data.y;
-  }
-
-  $: if (editLocation?.Properties?.Shape === 'Polygon') {
-    if (!editLocation.Properties._vertices) {
-      editLocation.Properties._vertices = [];
-    }
-
-    editLocation.Properties.Data.vertices = editLocation.Properties._vertices.flatMap(vertex => {
-      return [Math.round(vertex[0] + editLocation.Properties.Coordinates.Longitude), Math.round(vertex[1] + editLocation.Properties.Coordinates.Latitude)];
-    });
-  }
-
-  $: if (editLocation) {
-    if (!locations.find(x => x === editLocation)) {
-      locations.push(editLocation);
-    }
-
-    locations = locations;
-  }
-
-  let svgContextMenu = [
-    { label: 'Copy Waypoint', action: (payload) => copyLocation(payload)},
-  ];
-  let svgContextMenuElement;
   
   let mapContextMenu = [
-    { label: 'Add Location', action: (_, position) => {
-      if (editLocation !== null) {
-        locations = locations.filter(x => x !== editLocation);
-      }
-      
-      let canvasCoords = windowToCanvasCoords(position.x, position.y);
-      let entropiaCoords = canvasCoordsToEntropiaCoords(canvasCoords.x, canvasCoords.y);
-      
-      editLocation = {
-        _isCustom: true,
-        Name: 'New Location',
-        Planet: planet,
-        Properties: {
-          Type: 'Teleporter',
-          Coordinates: {
-            Longitude: Math.round(entropiaCoords.x),
-            Latitude: Math.round(entropiaCoords.y),
-            Altitude: 100
-          },
-        }
-      };
-
-      editMode = true;
-      editType = 'Location';
-    }},
-    { label: 'Add Area', action: (_, position) => {
-      if (editLocation !== null) {
-        locations = locations.filter(x => x !== editLocation);
-      }
-
-      let canvasCoords = windowToCanvasCoords(position.x, position.y);
-      let entropiaCoords = canvasCoordsToEntropiaCoords(canvasCoords.x, canvasCoords.y);
-      
-      editLocation = {
-        _isCustom: true,
-        Name: 'New Area',
-        Planet: planet,
-        Properties: {
-          Type: 'LandArea',
-          Shape: 'Circle',
-          Data: {
-            x: Math.round(entropiaCoords.x),
-            y: Math.round(entropiaCoords.y),
-            radius: 500
-          },
-          Coordinates: {
-            Longitude: Math.round(entropiaCoords.x),
-            Latitude: Math.round(entropiaCoords.y),
-            Altitude: 100
-          }
-        }
-      };
-
-      editMode = true;
-      editType = 'Area';
-    }},
-    { 
+    {
       label: 'Copy Waypoint',
       action: (_, position) => {
         let canvasCoords = windowToCanvasCoords(position.x, position.y);
         let entropiaCoords = canvasCoordsToEntropiaCoords(canvasCoords.x, canvasCoords.y);
-        
         navigator.clipboard.writeText(`/wp ${getWaypoint(planet.Properties.TechnicalName ?? planet.Name, entropiaCoords.x.toFixed(0), entropiaCoords.y.toFixed(0), 100, 'Waypoint')}`)
       }
     },
@@ -188,37 +173,44 @@
 
   $: if (mapName) reloadImage(mapName);
 
-  $: if (selected) {
-    focusOnLocation(selected);
-  }
+
 
   $: if (mapSettings) {
-    filteredLocations = locations.filter(x => locationFilter(x, mapSettings));
+    const newFiltered = locations.filter(x => locationFilter(x, mapSettings));
+    if (filteredLocations !== newFiltered) {
+      filteredLocations = newFiltered;
+    }
   }
 
+
   async function focusOnLocation(location) {
-    if (typeof window === 'undefined') {
+    if (typeof window === 'undefined' || !location || !location.Properties?.Coordinates) {
       return;
     }
 
     await mapLoaded;
-      
     moveAndZoomTo(entropiaCoordsToImageCoords(location.Properties.Coordinates.Longitude, location.Properties.Coordinates.Latitude), 1/(planet.Properties.Map.Width*0.5));
   }
 
+  // --- React to selection from outside (e.g. MapList) ---
+  // No auto-centering, only visual highlight
+
   let resizeObserver;
+
 
   onMount(async () => {
     resizeObserver = new ResizeObserver((entries) => {
-        for (let entry of entries) {
-          if (entry.target === canvasElement) {
-            initCanvas();
-          }
+      for (let entry of entries) {
+        if (entry.target === canvasElement) {
+          initCanvas();
         }
       }
-    );
-
+    });
     resizeObserver.observe(canvasElement);
+    // Ensure canvas is initialized on mount
+    if (canvasElement) {
+      initCanvas();
+    }
   });
 
   onDestroy(() => {
@@ -252,6 +244,10 @@
       targetZoom = zoom;
 
       $mapLoadedStore = true;
+      // Re-init canvas after image load
+      if (canvasElement) {
+        initCanvas();
+      }
     };
   }
 
@@ -294,10 +290,10 @@
       mousePos.x = event.clientX;
       mousePos.y = event.clientY;
 
-      mapCenterPos.x -= dx;
-      mapCenterPos.y -= dy;
-
-      clampCoordinates();
+  mapCenterPos.x -= dx;
+  mapCenterPos.y -= dy;
+  // removed: offscreenCacheValid = false;
+  clampCoordinates();
     }
   }
 
@@ -319,7 +315,8 @@
     // Clamp the zoom level to a minimum and maximum value
     targetZoom = Math.max(imageTileSize / Math.max(img.width, img.height), Math.min(4, targetZoom));
 
-    zoomTo(targetZoom);
+  // removed: offscreenCacheValid = false;
+  zoomTo(targetZoom);
   }
 
   function animateZoom(timestamp, animationDuration = 150) {
@@ -334,7 +331,8 @@
     }
     
     const progress = Math.min((timestamp - zoomTransitionStart) / animationDuration, 1);
-    zoom = zoom + (targetZoom - zoom) * progress;
+  zoom = zoom + (targetZoom - zoom) * progress;
+  // removed: offscreenCacheValid = false;
 
     if (progress < 1) {
       zoomAnimationId = requestAnimationFrame((timestamp) => animateZoom(timestamp, animationDuration));
@@ -356,8 +354,9 @@
     }
     
     const progress = Math.min((timestamp - moveTransitionStart) / animationDuration, 1);
-    mapCenterPos.x = mapCenterPos.x + (target.x - mapCenterPos.x) * progress;
-    mapCenterPos.y = mapCenterPos.y + (target.y - mapCenterPos.y) * progress;
+  mapCenterPos.x = mapCenterPos.x + (target.x - mapCenterPos.x) * progress;
+  mapCenterPos.y = mapCenterPos.y + (target.y - mapCenterPos.y) * progress;
+  // removed: offscreenCacheValid = false;
 
     clampCoordinates();
 
@@ -403,6 +402,7 @@
     zoomTo(zoom, animationDuration);
   }
 
+
   function initCanvas() {
     canvasBounds = canvasElement.getBoundingClientRect();
 
@@ -416,17 +416,23 @@
       cancelAnimationFrame(drawAnimationId);
       drawAnimationId = null;
     }
-    
     draw();
   }
 
+  // --- Canvas Drawing and Hit Detection ---
+  let lastHover = null;
+  let lastHoverType = null;
+  let lastHoverIndex = null;
+  let lastClick = null;
+  let lastRightClick = null;
+
   function draw() {
+    ctx.clearRect(0, 0, canvasBounds.width, canvasBounds.height);
     ctx.fillStyle = 'black';
     ctx.fillRect(0, 0, canvasBounds.width, canvasBounds.height);
 
     if (!imgLoaded) {
       drawAnimationId = requestAnimationFrame(draw);
-
       return;
     }
 
@@ -447,8 +453,254 @@
 
     if (mapSettings.settings.showGrid) drawGrid(ctx);
 
+    // Draw all shapes (no spatial grid, no offscreen cache)
+    for (const loc of filteredLocations) {
+      const isHovered = !!hovered && !!loc && hovered.Id === loc.Id;
+      const isSelected = !!selected && !!loc && selected.Id === loc.Id;
+      drawShape(ctx, loc, isHovered, isSelected);
+    }
+
     drawAnimationId = requestAnimationFrame(draw);
   }
+
+  // drawShapesAndLocations is now handled by spatial index + offscreen cache
+
+  // Helper to lighten a color (hex or named)
+  function lightenColor(color, percent) {
+    // Only works for hex or rgb(a) colors
+    let r, g, b;
+    if (color.startsWith('#')) {
+      let hex = color.replace('#', '');
+      if (hex.length === 3) hex = hex.split('').map(x => x + x).join('');
+      r = parseInt(hex.substring(0,2), 16);
+      g = parseInt(hex.substring(2,4), 16);
+      b = parseInt(hex.substring(4,6), 16);
+    } else if (color.startsWith('rgb')) {
+      [r, g, b] = color.match(/\d+/g).map(Number);
+    } else {
+      // fallback for named colors
+      return color;
+    }
+    r = Math.min(255, Math.floor(r + (255 - r) * percent));
+    g = Math.min(255, Math.floor(g + (255 - g) * percent));
+    b = Math.min(255, Math.floor(b + (255 - b) * percent));
+    return `rgb(${r},${g},${b})`;
+  }
+
+  // --- Hit Detection ---
+  function getShapeAtCanvasPos(x, y) {
+    // Check all filteredLocations for hit, no duplicate filtering
+    for (let i = filteredLocations.length - 1; i >= 0; i--) {
+      const loc = filteredLocations[i];
+      const type = loc.Properties.Shape;
+      if (type === 'Circle') {
+        const center = entropiaCoordsToCanvasCoords(loc.Properties.Data.x, loc.Properties.Data.y);
+        const outer = entropiaCoordsToCanvasCoords(loc.Properties.Data.x + loc.Properties.Data.radius, loc.Properties.Data.y);
+        const radius = outer.x - center.x;
+        const dx = x - center.x, dy = y - center.y;
+        if (dx * dx + dy * dy <= radius * radius) return { type: 'area', shape: loc, index: i };
+      } else if (type === 'Rectangle') {
+        const start = entropiaCoordsToCanvasCoords(loc.Properties.Data.x, loc.Properties.Data.y);
+        const end = entropiaCoordsToCanvasCoords(loc.Properties.Data.x + loc.Properties.Data.width, loc.Properties.Data.y + loc.Properties.Data.height);
+        const width = end.x - start.x;
+        const height = start.y - end.y;
+        if (x >= start.x && x <= start.x + width && y >= start.y - height && y <= start.y) return { type: 'area', shape: loc, index: i };
+      } else if (type === 'Polygon') {
+        const verts = (loc.Properties.Data.vertices ?? []).reduce((result, value, idx, arr) => {
+          if (idx % 2 === 0) result.push([value, arr[idx + 1]]);
+          return result;
+        }, []).map(v => entropiaCoordsToCanvasCoords(v[0], v[1]));
+        if (pointInPolygon({ x, y }, verts)) return { type: 'area', shape: loc, index: i };
+      } else {
+        const pt = entropiaCoordsToCanvasCoords(loc.Properties.Coordinates.Longitude, loc.Properties.Coordinates.Latitude);
+        if (loc.Properties.Type === 'Teleporter') {
+          const dx = x - pt.x, dy = y - pt.y;
+          if (dx * dx + dy * dy <= 25) return { type: 'location', shape: loc, index: i };
+        } else {
+          if (x >= pt.x - 5 && x <= pt.x + 5 && y >= pt.y - 5 && y <= pt.y + 5) return { type: 'location', shape: loc, index: i };
+        }
+      }
+    }
+    return null;
+  }
+
+  function pointInPolygon(point, vs) {
+    let x = point.x, y = point.y;
+    let inside = false;
+    for (let i = 0, j = vs.length - 1; i < vs.length; j = i++) {
+      let xi = vs[i].x, yi = vs[i].y;
+      let xj = vs[j].x, yj = vs[j].y;
+      let intersect = ((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi + 0.00001) + xi);
+      if (intersect) inside = !inside;
+    }
+    return inside;
+  }
+
+  // --- Mouse Events for Canvas ---
+  let canvasHover = null;
+  let canvasHoverType = null;
+  let canvasHoverIndex = null;
+
+  function handleCanvasMouseMove(event) {
+    const rect = canvasElement.getBoundingClientRect();
+    const x = (event.clientX - rect.left) * window.devicePixelRatio;
+    const y = (event.clientY - rect.top) * window.devicePixelRatio;
+    const hit = getShapeAtCanvasPos(x, y);
+    if (hit) {
+      canvasHover = hit.shape;
+      canvasHoverType = hit.type;
+      canvasHoverIndex = hit.index;
+      hovered = hit.shape;
+      canvasElement.style.cursor = 'pointer';
+      tooltipText = getTooltipText(hit.shape);
+      tooltipShow = true;
+      tooltipPos = { x: event.clientX, y: event.clientY };
+    } else {
+      canvasHover = null;
+      canvasHoverType = null;
+      canvasHoverIndex = null;
+      hovered = null;
+      canvasElement.style.cursor = dragging ? 'grabbing' : 'default';
+      tooltipShow = false;
+    }
+  }
+
+  function getAllShapesAtCanvasPos(x, y) {
+    // Returns all shapes (areas and locations) at the given canvas position, topmost first
+    const found = [];
+    for (let i = filteredLocations.length - 1; i >= 0; i--) {
+      const loc = filteredLocations[i];
+      const type = loc.Properties.Shape;
+      if (type === 'Circle') {
+        const center = entropiaCoordsToCanvasCoords(loc.Properties.Data.x, loc.Properties.Data.y);
+        const outer = entropiaCoordsToCanvasCoords(loc.Properties.Data.x + loc.Properties.Data.radius, loc.Properties.Data.y);
+        const radius = outer.x - center.x;
+        const dx = x - center.x, dy = y - center.y;
+        if (dx * dx + dy * dy <= radius * radius) found.push({ type: 'area', shape: loc });
+      } else if (type === 'Rectangle') {
+        const start = entropiaCoordsToCanvasCoords(loc.Properties.Data.x, loc.Properties.Data.y);
+        const end = entropiaCoordsToCanvasCoords(loc.Properties.Data.x + loc.Properties.Data.width, loc.Properties.Data.y + loc.Properties.Data.height);
+        const width = end.x - start.x;
+        const height = start.y - end.y;
+        if (x >= start.x && x <= start.x + width && y >= start.y - height && y <= start.y) found.push({ type: 'area', shape: loc });
+      } else if (type === 'Polygon') {
+        const verts = (loc.Properties.Data.vertices ?? []).reduce((result, value, idx, arr) => {
+          if (idx % 2 === 0) result.push([value, arr[idx + 1]]);
+          return result;
+        }, []).map(v => entropiaCoordsToCanvasCoords(v[0], v[1]));
+        if (pointInPolygon({ x, y }, verts)) found.push({ type: 'area', shape: loc });
+      } else {
+        const pt = entropiaCoordsToCanvasCoords(loc.Properties.Coordinates.Longitude, loc.Properties.Coordinates.Latitude);
+        if (loc.Properties.Type === 'Teleporter') {
+          const dx = x - pt.x, dy = y - pt.y;
+          if (dx * dx + dy * dy <= 25) found.push({ type: 'location', shape: loc });
+        } else {
+          if (x >= pt.x - 5 && x <= pt.x + 5 && y >= pt.y - 5 && y <= pt.y + 5) found.push({ type: 'location', shape: loc });
+        }
+      }
+    }
+    return found;
+  }
+
+  function truncateName(name) {
+    if (!name) return '';
+    return name.length > 80 ? name.slice(0, 77) + '...' : name;
+  }
+
+  async function handleCanvasClick(event) {
+    const rect = canvasElement.getBoundingClientRect();
+    const x = (event.clientX - rect.left) * window.devicePixelRatio;
+    const y = (event.clientY - rect.top) * window.devicePixelRatio;
+    const hits = getAllShapesAtCanvasPos(x, y);
+    const currentId = selected?.Id;
+    if (hits.length === 1) {
+      const hit = hits[0];
+      selected = hit.shape;
+      if (hit.shape?.Properties?.Coordinates) {
+        if (typeof window !== 'undefined' && planet && hit.shape?.Id) {
+          const planetSimpleName = planet.Name.replace(/[^0-9a-zA-Z]/g, '').toLowerCase();
+          const newUrl = `/maps/${planetSimpleName}/${hit.shape.Id}`;
+          if (hit.shape.Id !== currentId) {
+            await navigate(newUrl);
+          }
+        }
+        // focusOnLocation removed: only visual highlight
+      }
+    } else if (hits.length > 1) {
+      // Only show context menu if at least one hit is a location (not just areas)
+      const hasLocation = hits.some(obj => obj.type === 'location');
+      if (hasLocation) {
+        const menu = hits.map(obj => ({
+          label: truncateName(obj.shape.Name),
+          action: async () => {
+            selected = obj.shape;
+            if (obj.shape?.Properties?.Coordinates) {
+              if (typeof window !== 'undefined' && planet && obj.shape?.Id) {
+                const planetSimpleName = planet.Name.replace(/[^0-9a-zA-Z]/g, '').toLowerCase();
+                const newUrl = `/maps/${planetSimpleName}/${obj.shape.Id}`;
+                if (obj.shape.Id !== currentId) {
+                  await navigate(newUrl);
+                }
+              }
+              // focusOnLocation removed: only visual highlight
+            }
+          }
+        }));
+        if (typeof window !== 'undefined') {
+          // Dispatch a custom event to trigger the contextmenu action
+          const customEvent = new CustomEvent('contextmenu', {
+            detail: {
+              menu,
+              position: { x: event.clientX, y: event.clientY }
+            },
+            bubbles: true,
+            cancelable: true
+          });
+          canvasElement.dispatchEvent(customEvent);
+        }
+      } else {
+        // If only areas, just select the topmost area
+        const hit = hits[0];
+        selected = hit.shape;
+        if (hit.shape?.Properties?.Coordinates) {
+          if (typeof window !== 'undefined' && planet && hit.shape?.Id) {
+            const planetSimpleName = planet.Name.replace(/[^0-9a-zA-Z]/g, '').toLowerCase();
+            const newUrl = `/maps/${planetSimpleName}/${hit.shape.Id}`;
+            if (hit.shape.Id !== currentId) {
+              await navigate(newUrl);
+            }
+          }
+          // focusOnLocation removed: only visual highlight
+        }
+      }
+    }
+  }
+
+  function handleCanvasRightClick(event) {
+    event.preventDefault();
+    const rect = canvasElement.getBoundingClientRect();
+    const x = (event.clientX - rect.left) * window.devicePixelRatio;
+    const y = (event.clientY - rect.top) * window.devicePixelRatio;
+    const hit = getShapeAtCanvasPos(x, y);
+    if (hit) {
+      // Automatically copy waypoint to clipboard
+      copyLocation(hit.shape);
+    }
+  }
+
+  // Attach canvas event listeners
+  onMount(() => {
+    canvasElement.addEventListener('mousemove', handleCanvasMouseMove);
+    canvasElement.addEventListener('click', handleCanvasClick);
+    canvasElement.addEventListener('contextmenu', handleCanvasRightClick);
+  });
+  onDestroy(() => {
+    if (typeof window !== 'undefined' && canvasElement) {
+      canvasElement.removeEventListener('mousemove', handleCanvasMouseMove);
+      canvasElement.removeEventListener('click', handleCanvasClick);
+      canvasElement.removeEventListener('contextmenu', handleCanvasRightClick);
+    }
+  });
 
   function drawGrid(ctx) {
     const visibleHeight = imageTileSize / zoom;
@@ -599,34 +851,6 @@
     }
   }
 
-  function handleSvgImport(event) {
-    const file = event.target.files[0];
-    const reader = new FileReader();
-
-    reader.onload = function(e) {
-      const svg = e.target.result;
-      const parser = new DOMParser();
-      const doc = parser.parseFromString(svg, 'image/svg+xml');
-      const svgElement = doc.querySelector('svg');
-      const paths = svgElement.querySelectorAll('path');
-
-      if (paths.length !== 1) {
-        throw new Error('Expected exactly one path in the SVG');
-      }
-
-      // Convert svg path to absolute coordinates
-      const path = paths[0];
-
-      const pathData = path.getAttribute('d');
-
-      let vertices = pathDataToPolys(pathData, { decimals: 0 })[0];
-
-      editLocation.Properties._vertices = vertices;
-    };
-
-    reader.readAsText(file);
-  }
-
   let mapContextMenuObject = { contextMenu: null, payload: null }
 
   $: mapContextMenuObject = { contextMenu: mapContextMenuElement, payload: null }
@@ -647,25 +871,6 @@
     position: relative;
   }
 
-  .map-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    overflow: hidden;
-    pointer-events: none;
-  }
-
-  .map-overlay > * {
-    pointer-events: auto;
-    cursor: pointer;
-  }
-
-  .map-overlay.dragging > * {
-    pointer-events: none;
-  }
-
   @keyframes blink {
     0%, 100% { opacity: 1; }
     50% { opacity: 0; }
@@ -675,33 +880,13 @@
     0%, 100% { transform: 1; }
     50% { transform: 1.5; }
   }
-
-  .location-hovered {
-    fill: blue;
-  }
-
-  .location-selected {
-    fill: yellow;
-  }
-
-  .edit-window {
-    z-index: 100;
-    position: absolute;
-    bottom: 10px;
-    right: 10px;
-    background-color: var(--secondary-color);
-    padding: 6px;
-    border: 1px solid var(--text-color);
-    display: none;
-    width: 200px;
-    grid-template-columns: repeat(max-content 1fr);
-  }
 </style>
 
 <Tooltip
   bind:this={tooltipElement}
   bind:text={tooltipText}
-  on:show={(e) => tooltipText = getTooltipText(e.detail.payload)}
+  bind:show={tooltipShow}
+  bind:tooltipPos={tooltipPos}
   on:hide={() => wasPositionCopied = false}
   on:elementClick={(e) => {
     if (e.detail.button === 0) {
@@ -709,312 +894,9 @@
     }
   }} />
 <ContextMenu
-  bind:this={svgContextMenuElement}
-  menu={svgContextMenu} />
-<ContextMenu
   bind:this={mapContextMenuElement}
   menu={mapContextMenu} />
 <div class="map-container">
   <canvas use:contextmenu={mapContextMenuObject} bind:this={canvasElement} on:mousedown={onMouseDown} on:mousemove={onMouseMove} on:mouseup={onMouseUp} on:mouseleave={onMouseUp} on:wheel={onWheel}>
   </canvas>
-  <!-- EDITOR START -->
-  {#if editMode && editLocation}
-  <div class="edit-window" style="display: {editMode ? 'grid' : 'none'};">
-    <input style="grid-column: span 2;" type="text" bind:value={editLocation.Name} />
-    {#if editType === 'Location'}
-      Type:
-      <select bind:value={editLocation.Properties.Type}>
-        <option>Teleporter</option>
-        <option>Outpost</option>
-        <option value="Npc">NPC</option>
-        <option value="Objective">Mission Objective</option>
-        <option>Vendor</option>
-        <option>Other</option>
-      </select>
-      Longitude:
-      <input size="1" type="text" bind:value={editLocation.Properties.Coordinates.Longitude} />
-      Latitude
-      <input size="1" type="text" bind:value={editLocation.Properties.Coordinates.Latitude} />
-      Altitude
-      <input size="1" type="text" bind:value={editLocation.Properties.Coordinates.Altitude} />
-    {:else if editType === 'Area'}
-      Type:
-      <select bind:value={editLocation.Properties.Type}>
-        <option value="LandArea">Land Area</option>
-        <option value="ZoneArea">Zone</option>
-        <option value="PvpLootArea">Lootable PvP</option>
-        <option value="PvpArea">PvP</option>
-        <option value="EventArea">Event Area</option>
-        <option value="WaveEventArea">Wave Event</option>
-        <option value="MobArea">Mob Spawn</option>
-      </select>
-      Shape:
-      <select on:change={(e) => initShapeData(e, editLocation)} bind:value={editLocation.Properties.Shape}>
-        <option>Circle</option>
-        <option>Rectangle</option>
-        <option>Polygon</option>
-      </select>
-      {#if editLocation.Properties.Shape === 'Circle'}
-      Longitude:
-      <input type="number" style="width: 70%;" bind:value={editLocation.Properties.Data.x} />
-      Latitude:
-      <input type="number" style="width: 70%;" bind:value={editLocation.Properties.Data.y} />
-      Radius:
-      <input type="number" style="width: 70%;" bind:value={editLocation.Properties.Data.radius} />
-      {:else if editLocation.Properties.Shape === 'Rectangle'}
-      Longitude:
-      <input type="number" style="width: 70%;" bind:value={editLocation.Properties.Data.x} />
-      Latitude:
-      <input type="number" style="width: 70%;" bind:value={editLocation.Properties.Data.y} />
-      Width:
-      <input type="number" style="width: 70%;" bind:value={editLocation.Properties.Data.width} />
-      Height:
-      <input type="number" style="width: 70%;" bind:value={editLocation.Properties.Data.height} />
-      {:else if editLocation.Properties.Shape === 'Polygon'}
-      Longitude:
-      <input type="number" style="width: 70%;" bind:value={editLocation.Properties.Coordinates.Longitude} />
-      Latitude:
-      <input type="number" style="width: 70%;" bind:value={editLocation.Properties.Coordinates.Latitude} />
-      Vertices:
-      <textarea bind:value={editLocation.Properties._vertices} />
-      Import: <input type="file" accept=".svg" on:change={handleSvgImport} />
-      {/if}
-      Altitude:
-      <input type="number" style="width: 70%;" bind:value={editLocation.Properties.Coordinates.Altitude} />
-    {/if}
-
-    <button style="grid-column: span 2;" on:click={() => alert('This tool is intended to help adding new map elements. When you hit "Save" you will copy a JSON object, which can be submitted to the Entropia Nexus Discord. I greatly appreciate the help!')}>Help</button>
-    <button style="grid-column: span 2;" on:click={() => { locations = locations.filter(location => location !== editLocation); editLocation = null; editMode = false; }}>Cancel and Delete</button>
-    <button style="grid-column: span 2;" on:click={() => { navigator.clipboard.writeText(JSON.stringify(editLocation)); locations = locations.filter(location => location !== editLocation); editLocation = null; editMode = false; }}>Save to Clipboard</button>
-  </div>
-  {/if}
-  <!-- EDITOR END -->
-  <svg class="map-overlay {dragging ? 'dragging' : ''}" xmlns="http://www.w3.org/2000/svg">
-    <defs>
-      <pattern id="stripe-lightblue" patternUnits="userSpaceOnUse" width="4" height="4">
-        <path d="M-1,1 l2,-2 M0,4 l4,-4 M3,5 l2,-2" style="stroke: lightblue; stroke-width: 3;" />
-      </pattern>
-      <pattern id="stripe-green" patternUnits="userSpaceOnUse" width="4" height="4">
-        <path d="M-1,1 l2,-2 M0,4 l4,-4 M3,5 l2,-2" style="stroke: green; stroke-width: 3;" />
-      </pattern>
-      <pattern id="stripe-yellow" patternUnits="userSpaceOnUse" width="4" height="4">
-        <path d="M-1,1 l2,-2 M0,4 l4,-4 M3,5 l2,-2" style="stroke: yellow; stroke-width: 3;" />
-      </pattern>
-      <pattern id="stripe-purple" patternUnits="userSpaceOnUse" width="4" height="4">
-        <path d="M-1,1 l2,-2 M0,4 l4,-4 M3,5 l2,-2" style="stroke: purple; stroke-width: 3;" />
-      </pattern>
-      <pattern id="stripe-black" patternUnits="userSpaceOnUse" width="4" height="4">
-        <path d="M-1,1 l2,-2 M0,4 l4,-4 M3,5 l2,-2" style="stroke: black; stroke-width: 3;" />
-      </pattern>
-      <pattern id="wave" patternUnits="userSpaceOnUse" width="10" height="10">
-        <path d="M 0 10 C 2.5 0, 7.5 0, 10 10" style="stroke: purple; stroke-width: 3;" />
-      </pattern>
-    </defs>
-    {#if canvasBounds != null && imageTileSize && imgLoaded}
-      {#each (getAreas(filteredLocations) ?? [])
-        .filter(x => x.Properties.Shape === 'Circle')
-        .map(x => { 
-          let centerPoint = entropiaCoordsToCanvasCoords(x.Properties.Data.x, x.Properties.Data.y);
-          let outerPoint = entropiaCoordsToCanvasCoords(x.Properties.Data.x + x.Properties.Data.radius, x.Properties.Data.y);
-          let adjustedRadius = outerPoint.x - centerPoint.x;
-
-          return { 
-            ...centerPoint,
-            radius: adjustedRadius,
-            object: x
-          };
-        }).filter(x => !isNaN(x.x) && !isNaN(x.y)) as circle (circle.object.Name+','+circle.object.Properties.Coordinates.Longitude+','+circle.object.Properties.Coordinates.Latitude)}
-        <!-- svelte-ignore a11y-no-static-element-interactions -->
-        <!-- svelte-ignore a11y-mouse-events-have-key-events -->
-        <circle
-          use:tooltip={{ tooltip: tooltipElement, payload: circle.object }}
-          use:contextmenu={{ contextMenu: svgContextMenuElement, payload: circle.object }}
-          on:mousewheel={onWheel}
-          on:mousedown={(e) => {
-            editDrag = circle.object === editLocation;
-            
-            mousePos.x = e.clientX;
-            mousePos.y = e.clientY;
-          }}
-          on:mousemove={(e) => {
-            if (!editDrag || !editLocation) {
-              return;
-            }
-            
-            let canvasCoords = windowToCanvasCoords(e.clientX, e.clientY);
-            let entropiaCoords = canvasCoordsToEntropiaCoords(canvasCoords.x, canvasCoords.y);
-  
-            editLocation.Properties.Data.x = Math.round(entropiaCoords.x);
-            editLocation.Properties.Data.y = Math.round(entropiaCoords.y);
-          }}
-          on:mouseup={() => editDrag = false}
-          cx={circle.x}
-          cy={circle.y}
-          r={circle.radius}
-          fill={getColorByType(circle.object.Properties.Type).color}
-          fill-opacity="0.3"
-          stroke={getColorByType(circle.object.Properties.Type).color}
-          stroke-width="1" />
-      {/each}
-
-      {#each (getAreas(filteredLocations) ?? [])
-        .filter(x => x.Properties.Shape === 'Rectangle')
-        .map(x => {
-          let startCoords = entropiaCoordsToCanvasCoords(x.Properties.Data.x, x.Properties.Data.y);
-          let endCoords = entropiaCoordsToCanvasCoords(x.Properties.Data.x + x.Properties.Data.width, x.Properties.Data.y + x.Properties.Data.height);
-          let width = endCoords.x - startCoords.x;
-          let height = startCoords.y - endCoords.y;
-
-          return {
-            x: startCoords.x,
-            y: startCoords.y - height,
-            width: width,
-            height: height,
-            object: x
-          };
-        }).filter(x => !isNaN(x.x) && !isNaN(x.y)) as rect (rect.object.Name+','+rect.object.Properties.Coordinates.Longitude+','+rect.object.Properties.Coordinates.Latitude)}
-        <!-- svelte-ignore a11y-no-static-element-interactions -->
-        <!-- svelte-ignore a11y-mouse-events-have-key-events -->
-        <rect
-        use:tooltip={{ tooltip: tooltipElement, payload: rect.object }}
-        use:contextmenu={{ contextMenu: svgContextMenuElement, payload: rect.object }}
-        on:mousewheel={onWheel}
-        on:mousedown={(e) => {
-          editDrag = rect.object === editLocation;
-          
-          mousePos.x = e.clientX;
-          mousePos.y = e.clientY;
-        }}
-        on:mousemove={(e) => {
-          if (!editDrag || !editLocation) {
-            return;
-          }
-
-          let dx = e.clientX - mousePos.x;
-          let dy = e.clientY - mousePos.y;
-          mousePos.x = e.clientX;
-          mousePos.y = e.clientY;
-
-          let canvasCoords = entropiaCoordsToCanvasCoords(editLocation.Properties.Data.x, editLocation.Properties.Data.y)
-          let windowCoords = canvasToWindowCoords(canvasCoords.x, canvasCoords.y);
-
-          windowCoords.x += dx;
-          windowCoords.y += dy;
-
-          canvasCoords = windowToCanvasCoords(windowCoords.x, windowCoords.y);
-          let entropiaCoords = canvasCoordsToEntropiaCoords(canvasCoords.x, canvasCoords.y);
-
-          editLocation.Properties.Data.x = Math.round(entropiaCoords.x);
-          editLocation.Properties.Data.y = Math.round(entropiaCoords.y);
-        }}
-        on:mouseup={() => editDrag = false}
-        x={rect.x}
-        y={rect.y}
-        width={rect.width}
-        height={rect.height}
-        fill={getColorByType(rect.object.Properties.Type).color}
-        fill-opacity="0.3"
-        stroke={getColorByType(rect.object.Properties.Type).color}
-        stroke-width="1" />
-      {/each}
-      
-      {#each (getAreas(filteredLocations) ?? [])
-        .filter(x => x.Properties.Shape === 'Polygon')
-        .map(x => {
-          return {
-            object: x,
-            vertices: (x.Properties.Data.vertices ?? []).reduce((result, value, index, array) => {
-              if (index % 2 === 0)
-                  result.push([value, array[index + 1]]);
-              return result;
-            }, []).map(vertex => entropiaCoordsToCanvasCoords(vertex[0], vertex[1]))
-          };
-        }) as polygon (polygon.object.Name+','+polygon.object.Properties.Coordinates.Longitude+','+polygon.object.Properties.Coordinates.Latitude)}
-        <!-- svelte-ignore a11y-no-static-element-interactions -->
-        <!-- svelte-ignore a11y-mouse-events-have-key-events -->
-        <polygon
-          use:tooltip={{ tooltip: tooltipElement, payload: polygon.object }}
-          use:contextmenu={{ contextMenu: svgContextMenuElement, payload: polygon.object }}
-          on:mousewheel={onWheel}
-          on:mousedown={(e) => {
-            editDrag = polygon.object === editLocation;
-            
-            mousePos.x = e.clientX;
-            mousePos.y = e.clientY;
-          }}
-          on:mousemove={(e) => {
-            if (!editDrag || !editLocation) {
-              return;
-            }
-
-            let dx = e.clientX - mousePos.x;
-            let dy = e.clientY - mousePos.y;
-            mousePos.x = e.clientX;
-            mousePos.y = e.clientY;
-
-            let canvasCoords = entropiaCoordsToCanvasCoords(editLocation.Properties.Coordinates.Longitude, editLocation.Properties.Coordinates.Latitude)
-            let windowCoords = canvasToWindowCoords(canvasCoords.x, canvasCoords.y);
-
-            windowCoords.x += dx;
-            windowCoords.y += dy;
-
-            canvasCoords = windowToCanvasCoords(windowCoords.x, windowCoords.y);
-            let entropiaCoords = canvasCoordsToEntropiaCoords(canvasCoords.x, canvasCoords.y);
-
-            editLocation.Properties.Coordinates.Longitude = Math.round(entropiaCoords.x);
-            editLocation.Properties.Coordinates.Latitude = Math.round(entropiaCoords.y);
-          }}
-          on:mouseup={() => editDrag = false}
-          points={polygon.vertices.map(vertex => `${vertex.x},${vertex.y}`).join(' ')}
-          fill={getColorByType(polygon.object.Properties.Type).color}
-          fill-opacity="0.3"
-          stroke={getColorByType(polygon.object.Properties.Type).color}
-          stroke-width="1" />
-      {/each}
-      
-      {#each (filteredLocations ?? [])
-        .filter(x => !getAreas(filteredLocations).find(y => x.Name === y.Name && x.Properties.Type === y.Properties.Type))
-        .map(x =>  {
-          return {
-            ...entropiaCoordsToCanvasCoords(x.Properties.Coordinates.Longitude, x.Properties.Coordinates.Latitude),
-            object: x
-          };
-        }).filter(x => !isNaN(x.x) && !isNaN(x.y)) as location (location.object.Name+','+location.object.Properties.Coordinates.Longitude+','+location.object.Properties.Coordinates.Latitude)}
-        <!-- svelte-ignore a11y-no-static-element-interactions -->
-        <!-- svelte-ignore a11y-mouse-events-have-key-events -->
-        {#if location.object.Properties.Type === 'Teleporter'}
-          <circle
-            use:tooltip={{ tooltip: tooltipElement, payload: location.object }}
-            use:contextmenu={{ contextMenu: svgContextMenuElement, payload: location.object }}
-            on:mousewheel={onWheel}
-            on:mouseover={() => hovered = location.object}
-            on:mouseout={() => hovered = null}
-            class:location-hovered={hovered?.Name === location.object.Name && hovered !== selected}
-            class:location-selected={selected?.Name === location.object.Name}
-            cx={location.x}
-            cy={location.y}
-            r={selected?.Name === location.object.Name || hovered?.Name === location.object.Name ? 6 : 4}
-            fill="aqua"
-            stroke="red"
-            stroke-width=1 />
-        {:else}
-          <rect
-            use:tooltip={{ tooltip: tooltipElement, payload: location.object }}
-            use:contextmenu={{ contextMenu: svgContextMenuElement, payload: location.object }}
-            on:mousewheel={onWheel}
-            on:mouseover={() => hovered = location.object}
-            on:mouseout={() => hovered = null}
-            class:location-hovered={hovered?.Name === location.object.Name && hovered !== selected}
-            class:location-selected={selected?.Name === location.object.Name}
-            x={location.x - 5}
-            y={location.y - 5}
-            width={10}
-            height={10}
-            fill="white"
-            stroke="black"
-            stroke-width=1 />
-        {/if}
-      {/each}
-    {/if}
-  </svg>
 </div>

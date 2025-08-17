@@ -18,7 +18,8 @@
         SpawnedWeight: {
           Label: 'Spawned Weight',
           Value: vehicle.Properties?.SpawnedWeight != null ? `${vehicle.Properties?.SpawnedWeight.toFixed(1)}kg` : 'N/A',
-        }
+        },
+        Type: vehicle.Properties?.Type ?? 'N/A',
       },
       Economy: {
         MaxTT: {
@@ -98,6 +99,7 @@
       Properties: {
         Description: null,
         Weight: null,
+        Type: null,
         SpawnedWeight: null,
         PassengerCount: null,
         ItemCapacity: null,
@@ -139,6 +141,7 @@
           { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
           { label: 'Description', type: 'textarea', '_get': x => x.Properties.Description, '_set': (x, v) => x.Properties.Description = v },
           { label: 'Weight', type: 'number', '_get': x => x.Properties.Weight, '_set': (x, v) => x.Properties.Weight = v },
+          { label: 'Type', type: 'select', options: () => ['Land', 'Air', 'Sea', 'Amphibious', 'Space'], '_get': x => x.Properties.Type, '_set': (x, v) => { x.Properties.Type = v; if (['Air','Sea','Space'].includes(v)) { x.Properties.WheelGrip = null; } } },
         ]
       },
       {
@@ -161,7 +164,7 @@
           { label: 'Passenger Count', type: 'number', '_get': x => x.Properties.PassengerCount, '_set': (x, v) => x.Properties.PassengerCount = parseInt(v) || null },
           { label: 'Item Capacity', type: 'number', '_get': x => x.Properties.ItemCapacity, '_set': (x, v) => x.Properties.ItemCapacity = parseInt(v) || null },
           { label: 'Weight Capacity', type: 'number', '_get': x => x.Properties.WeightCapacity, '_set': (x, v) => x.Properties.WeightCapacity = v },
-          { label: 'Wheel Grip', type: 'number', '_get': x => x.Properties.WheelGrip, '_set': (x, v) => x.Properties.WheelGrip = v },
+          { '_if': x => !['Air','Sea','Space'].includes(x.Properties.Type), label: 'Wheel Grip', type: 'number', '_get': x => x.Properties.WheelGrip, '_set': (x, v) => x.Properties.WheelGrip = v },
           { label: 'Engine Power', type: 'number', '_get': x => x.Properties.EnginePower, '_set': (x, v) => x.Properties.EnginePower = v },
           { label: 'Max. Speed', type: 'number', '_get': x => x.Properties.MaxSpeed, '_set': (x, v) => x.Properties.MaxSpeed = v },
           { label: 'Max. SI', type: 'number', '_get': x => x.Properties.MaxStructuralIntegrity, '_set': (x, v) => x.Properties.MaxStructuralIntegrity = v },

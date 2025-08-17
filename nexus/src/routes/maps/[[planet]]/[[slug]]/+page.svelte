@@ -7,7 +7,7 @@
   import { getErrorMessage, getParams, getPlanetName } from '$lib/util';
 
   import MapList from '$lib/components/MapList.svelte';
-  import Properties from '$lib/components/Properties.svelte';
+  import Properties, { waypoint } from '$lib/components/Properties.svelte';
   import Map from '$lib/components/Map.svelte';
 
   export let data;
@@ -23,6 +23,18 @@
 
   let selectedLocation = null;
   let hoveredLocation = null;
+  let currentSlug = null;
+
+  // Helper to find location by Id or slug
+  function findLocationBySlug(slug, locations) {
+    if (!slug || !locations) return null;
+    // Try by Id first
+    let found = locations.find(l => l.Id == slug);
+    if (found) return found;
+    // Fallback: try by name (case-insensitive, spaces/underscores ignored)
+    const norm = s => s?.toString().replace(/[_\s]+/g, '').toLowerCase();
+    return locations.find(l => norm(l.Name) === norm(slug));
+  }
 
   $: if (data) {
     items = data.items;
@@ -32,7 +44,16 @@
     currentPlanet = data?.additional?.planet;
 
     mapName = currentPlanet.Name;
-    selectedLocation = location;
+  }
+
+  // Keep selection in sync with slug, but only when the slug actually changes
+  $: if (locations) {
+    const slug = $page.params.slug;
+    if (slug !== currentSlug) {
+      currentSlug = slug;
+      const found = findLocationBySlug(slug, locations) || location;
+      selectedLocation = found;
+    }
   }
 
   $: if (selectedLocation) {
@@ -40,7 +61,12 @@
       General: {
         Name: selectedLocation.Name,
         Type: selectedLocation.Properties?.Type ?? 'N/A',
-        Waypoint: `[${selectedLocation.Planet.Name}, ${selectedLocation.Properties.Coordinates.Longitude}, ${selectedLocation.Properties.Coordinates.Latitude}, ${selectedLocation.Properties.Coordinates.Altitude}, ${selectedLocation.Name}]`,
+        Waypoint: waypoint(
+          'Location',
+          selectedLocation.Planet?.Properties?.TechnicalName ?? selectedLocation.Planet?.Name,
+          selectedLocation.Properties?.Coordinates,
+          selectedLocation.Name
+        ),
       }
     }
   }

@@ -56,6 +56,10 @@
             SortOrder: 0,
             Items: []
           }),
+          initialize: (group, _d, _root, currentIndex) => {
+            // Preserve order by defaulting SortOrder to index
+            group.SortOrder = currentIndex ?? 0;
+          },
           controls: [
             { 
               label: 'Group Name', 
@@ -66,6 +70,8 @@
             {
               label: 'Items',
               type: 'list',
+              // Keep items ordered by SortOrder
+              sort: (a, b) => (a?.SortOrder ?? 0) - (b?.SortOrder ?? 0),
               config: {
                 constructor: () => ({
                   ItemId: null,
@@ -74,42 +80,57 @@
                   SortOrder: 0
                 }),
                 dependencies: ['items'],
+                initialize: (item, _d, _root, currentIndex) => {
+                  // Initialize default sort/index
+                  item.SortOrder = currentIndex ?? 0;
+                  item.StackSize = item.StackSize ?? 1;
+                  item.Markup = item.Markup ?? 100.0;
+                },
                 controls: [
-                  { 
-                    label: 'Item', 
-                    type: 'select', 
-                    options: (_, d) => d.items.map(x => x.Name).sort((a,b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })), 
-                    '_get': x => x.Item?.Name, 
+                  {
+                    label: 'Item',
+                    type: 'input-validator',
+                    validator: (val, d) => !!val && d.items?.some(i => i.Name === val),
+                    '_get': (x, d) => {
+                      if (x.Item?.Name) return x.Item.Name;
+                      if (x.ItemId) {
+                        const found = d.items?.find(i => i.Id === x.ItemId);
+                        return found?.Name ?? '';
+                      }
+                      return '';
+                    },
                     '_set': (x, v, d) => {
-                      const item = d.items.find(i => i.Name === v);
+                      const item = d.items?.find(i => i.Name === v);
                       x.ItemId = item?.Id || null;
+                      // Keep a light reference for UI friendliness
+                      x.Item = item ? { Id: item.Id, Name: item.Name } : null;
                     }
                   },
-                  { 
-                    label: 'Stack Size', 
-                    type: 'number', 
-                    step: 1, 
-                    min: 1, 
-                    '_get': x => x.StackSize, 
-                    '_set': (x, v) => x.StackSize = Math.max(1, parseInt(v) || 1) 
-                  },
-                  { 
-                    label: 'Markup %', 
-                    type: 'number', 
-                    step: 0.01, 
-                    min: 0, 
-                    '_get': x => x.Markup, 
-                    '_set': (x, v) => x.Markup = Math.max(0, parseFloat(v) || 100) 
+                  {
+                    label: 'Qty | Markup %',
+                    type: 'multi',
+                    fields: ['Stack Size', 'Markup %'],
+                    '_get': x => [x.StackSize ?? 1, x.Markup ?? 100.0],
+                    '_set': (x, v) => {
+                      const [ss, mu] = Array.isArray(v) ? v : [x.StackSize ?? 1, x.Markup ?? 100.0];
+                      // Sanitize values
+                      const stack = Math.max(1, Math.floor(Number(ss) || 1));
+                      const markup = Math.max(0, Number(mu) || 0);
+                      x.StackSize = stack;
+                      x.Markup = Number(markup.toFixed(2));
+                    }
                   }
                 ]
               }, 
-              itemNameFunc: j => `Item ${j + 1}`, 
+              itemNameFunc: j => `#${j + 1}`, 
               '_get': x => x.Items || [], 
               '_set': (x, v) => x.Items = v
             }
           ]
         }, 
         itemNameFunc: j => `Group ${j + 1}`, 
+        // Keep groups ordered by SortOrder
+        sort: (a, b) => (a?.SortOrder ?? 0) - (b?.SortOrder ?? 0),
         '_get': x => x.InventoryGroups || [], 
         '_set': (x, v) => x.InventoryGroups = v
       }
@@ -142,18 +163,23 @@
 
     try {
       // Convert InventoryGroups to PascalCase API format from normalized object
+      const groups = (formObject.InventoryGroups || []).map((group, gi) => {
+        const items = (group.Items || []).map((item, ii) => ({
+          ItemId: item.ItemId ?? item.item_id ?? null,
+          StackSize: Math.max(1, parseInt(item.StackSize ?? item.stack_size ?? 1) || 1),
+          Markup: Math.max(0, parseFloat(item.Markup ?? item.markup ?? 100) || 0),
+          SortOrder: ii
+        }));
+        return {
+          Name: group.Name,
+          SortOrder: gi,
+          Items: items
+        };
+      });
+
       let payload = {
         Id: formObject.Id,
-        InventoryGroups: (formObject.InventoryGroups || []).map(group => ({
-          Name: group.Name,
-          SortOrder: group.SortOrder ?? 0,
-          Items: (group.Items || []).map(item => ({
-            ItemId: item.ItemId ?? item.item_id ?? null,
-            StackSize: item.StackSize ?? item.stack_size ?? 1,
-            Markup: item.Markup ?? item.markup ?? 100,
-            SortOrder: item.SortOrder ?? item.item_sort_order ?? 0
-          }))
-        }))
+        InventoryGroups: groups
       };
       
       const response = await apiPut(fetch, `/api/shops/${object.Id}/inventory`, payload);
@@ -182,9 +208,12 @@
 
 <style>
   .inventory-form-container {
-    max-width: 800px;
-    margin: 0 auto;
-    padding: 1rem;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 1rem;
+  box-sizing: border-box;
+  overflow-x: hidden;
   }
 
   .form-header {
@@ -223,6 +252,29 @@
     font-style: italic;
     margin-top: 1rem;
   }
+
+  /* Match ManagerEditForm button styles */
+  button {
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1rem;
+  }
+
+  button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .save-button {
+    background-color: var(--color-primary);
+    color: white;
+  }
+
+  .save-button:hover:not(:disabled) {
+    background-color: var(--color-primary-hover);
+  }
 </style>
 
 {#if disabled}
@@ -241,14 +293,16 @@
             {saveMessage}
           </div>
         {/if}
-        <button type="button" on:click={save} disabled={disabled || saving}>
+        <button class="save-button" type="button" on:click={save} disabled={disabled || saving}>
           {saving ? 'Saving...' : 'Save Inventory'}
         </button>
       </div>
     </div>
 
     <EditFormControlGroup 
-      config={inventoryConfig} 
+      title="Inventory"
+      root={formObject}
+      controls={inventoryConfig.controls}
       dependencies={dependencies} 
       object={formObject} 
       disabled={disabled} />

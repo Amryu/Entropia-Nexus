@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { loading } from "../stores";
 import { goto, invalidateAll } from "$app/navigation";
+import { browser } from "$app/environment";
 
 export function addItemTag(currentName, tag) {
   // Extract the base name and the existing tags
@@ -379,7 +380,12 @@ export async function navigate(url) {
 }
 
 // Removed GET response caching to prevent stale data issues during edits/auth changes
-export async function apiCall(fetch, url, apiUrl = import.meta.env.VITE_API_URL) {
+// Helper to get API base depending on environment (browser vs SSR)
+function getApiBase() {
+  return browser ? (import.meta.env.VITE_API_URL) : (process.env.INTERNAL_API_URL || "http://localhost:3000");
+}
+
+export async function apiCall(fetch, url, apiUrl = getApiBase()) {
   const target = url.startsWith('/api/') ? url : (apiUrl + url);
   let response = await fetch(target);
 
@@ -390,7 +396,7 @@ export async function apiCall(fetch, url, apiUrl = import.meta.env.VITE_API_URL)
   return await response.json();
 }
 
-export async function apiPost(fetch, url, body, apiUrl = import.meta.env.VITE_API_URL) {
+export async function apiPost(fetch, url, body, apiUrl = getApiBase()) {
   const target = url.startsWith('/api/') ? url : (apiUrl + url);
   let response = await fetch(target, {
     method: 'POST',
@@ -407,7 +413,7 @@ export async function apiPost(fetch, url, body, apiUrl = import.meta.env.VITE_AP
   }
 }
 
-export async function apiPut(fetch, url, body, apiUrl = import.meta.env.VITE_API_URL) {
+export async function apiPut(fetch, url, body, apiUrl = getApiBase()) {
   const target = url.startsWith('/api/') ? url : (apiUrl + url);
   const response = await fetch(target, {
     method: 'PUT',
@@ -423,7 +429,7 @@ export async function apiPut(fetch, url, body, apiUrl = import.meta.env.VITE_API
   }
 }
 
-export async function apiDelete(fetch, url, apiUrl = import.meta.env.VITE_API_URL) {
+export async function apiDelete(fetch, url, apiUrl = getApiBase()) {
   const target = url.startsWith('/api/') ? url : (apiUrl + url);
   const response = await fetch(target, {
     method: 'DELETE'

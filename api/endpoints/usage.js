@@ -32,9 +32,21 @@ function register(app){
       const [blueprintList, recipesList, offersList] = await Promise.all([
         blueprints.getBlueprints(null, items),
         refining.getRefiningRecipes(null, items),
-  vendoroffers.getVendorOffers(null, items),
+        vendoroffers.getVendorOffers(null, items),
       ]);
-      res.status(200).json({ Blueprints: blueprintList, RefiningRecipes: recipesList, VendorOffers: offersList });
+
+      // For the usage endpoint we don't need to send full material objects.
+      // Replace the Materials array with a single MaterialAmount property that
+      // represents the amount of the queried item used by the blueprint. This
+      // reduces payload size for clients that only need the amount for usage.
+      const sanitizedBlueprints = (blueprintList || []).map(bp => {
+        const mats = bp.Materials || [];
+        // find any material that matches one of the requested item names
+        const matched = mats.find(m => m?.Item?.Name && items.includes(m.Item.Name));
+        return Object.assign({}, bp, { Materials: undefined, MaterialAmount: matched ? matched.Amount : null });
+      });
+
+      res.status(200).json({ Blueprints: sanitizedBlueprints, RefiningRecipes: recipesList, VendorOffers: offersList });
     } catch (e){ next(e); }
   });
 

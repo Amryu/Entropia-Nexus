@@ -5,6 +5,7 @@
   import EntityViewer from "$lib/components/EntityViewer.svelte";
   import Table from "$lib/components/Table.svelte";
   import { waypoint } from "$lib/components/Properties.svelte";
+  import { apiCall, getItemLink } from '$lib/util';
 
   export let data;
 
@@ -291,6 +292,21 @@
     toulan: viewInfoSection,
     nextisland: viewInfoSection,
   }
+
+  // Cache of item details by ItemId
+  let itemDetails = {};
+
+  // Prefetch all unique item IDs for the current shop
+  $: prefetchItems = (async () => {
+    const ids = Array.from(new Set((data?.object?.InventoryGroups || [])
+      .flatMap(g => (g?.Items || []).map(i => i.ItemId ?? i.item_id))
+      .filter(Boolean)));
+    if (ids.length === 0) { itemDetails = {}; return; }
+    const results = await Promise.all(ids.map(id => apiCall(fetch, `/items/${id}`)));
+    const map = {};
+    ids.forEach((id, idx) => { if (results[idx]) map[id] = results[idx]; });
+    itemDetails = map;
+  })();
 </script>
 
 <EntityViewer
@@ -308,35 +324,40 @@
   let:object
   let:additional>
 
-  {#if object?.InventoryGroups?.length}
-    <div class="flex-item">
-      <div class="content-block">
-        <h3>Inventory</h3>
-        {#key object?.Id}
-          {#each (object?.Sections || []) as section}
-            {#if section}
+  <div class="flex-item">
+    <div class="content-block">
+      {#key object?.Id}
+        {#if !object?.InventoryGroups || object.InventoryGroups.length === 0 || object.InventoryGroups.every(g => (g?.Items || []).length === 0)}
+          <div style="text-align: center; color: var(--text-muted, #888); margin: 2rem 0; font-size: 1.1rem;">
+            The shop owner has not yet added any items for display. Try again later!
+          </div>
+        {:else}
+          {#each (object?.InventoryGroups || []) as group}
+            {#if group && (group.Items || []).length > 0}
               <Table
-                title={`${section.Name} Inventory`}
+                title={group.Name || group.name}
                 header={{
                   values: ['Item', 'Stack Size', 'Markup %'],
                   widths: ['1fr', '120px', '120px']
                 }}
-                data={(object?.InventoryGroups || [])
-                  // naive mapping: groups containing section name in their title
-                  .filter(g => (g?.Name || g?.name || '').toLowerCase().includes(section.Name.toLowerCase()))
-                  .flatMap(group => (group?.Items || []).map(item => ({
+                data={(group.Items || []).map(item => {
+                  const id = item.ItemId ?? item.item_id;
+                  const it = id ? itemDetails[id] : null;
+                  return {
                     values: [
-                      item.Item?.Name || 'Unknown Item',
+                      it?.Name || it?.name || 'Unknown Item',
                       (item.StackSize ?? item.stack_size ?? 0).toString(),
                       ((item.Markup ?? item.markup ?? 0).toFixed ? (item.Markup ?? 0).toFixed(2) : Number(item.Markup ?? item.markup ?? 0).toFixed(2)) + '%'
-                    ]
-                  })))}
+                    ],
+                    links: [it ? getItemLink(it) : null]
+                  };
+                })}
                 options={{ searchable: true, sortable: true }}
                 style="margin-bottom: 1rem;" />
             {/if}
           {/each}
-        {/key}
-      </div>
+        {/if}
+      {/key}
     </div>
-  {/if}
+  </div>
 </EntityViewer>

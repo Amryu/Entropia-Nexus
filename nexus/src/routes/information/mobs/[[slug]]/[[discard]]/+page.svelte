@@ -443,26 +443,10 @@
               type: 'group',
               controls: [
                 { "_if": x => {
-                  // Auto-convert Circle with default radius to Point first
-                  if (x.Properties.Shape === 'Circle') {
-                    try {
-                      const dataStr = typeof x.Properties.Data === 'string' ? x.Properties.Data : JSON.stringify(x.Properties.Data || {});
-                      const data = JSON.parse(dataStr);
-                      if (data.radius === DEFAULT_SPAWN_RADIUS) {
-                        x.Properties.Shape = 'Point';
-                      }
-                    } catch (e) {
-                      // If data is malformed, keep as Circle
-                    }
-                  }
                   return x.Properties.Shape === 'Point';
                 }, label: '(Paste Waypoint)', type: 'waypoint', '_get': x => {
                   try {
-                    // Handle Data as either string or object
-                    const dataStr = typeof x.Properties.Data === 'string' ? x.Properties.Data : JSON.stringify(x.Properties.Data || {});
-                    const data = JSON.parse(dataStr);
-                    
-                    // Use Properties.Coordinates.Altitude for altitude storage
+                    const data = typeof x.Properties.Data === 'string' ? JSON.parse(x.Properties.Data) : x.Properties.Data;
                     return [data.x || 0, data.y || 0, x.Properties.Coordinates?.Altitude || 0];
                   } catch (e) {
                     return [0, 0, x.Properties.Coordinates?.Altitude || 0];
@@ -471,27 +455,21 @@
                   if (v && v.length >= 3) { 
                     try {
                       // Always parse existing data first, handle as string
-                      const dataStr = typeof x.Properties.Data === 'string' ? x.Properties.Data : JSON.stringify(x.Properties.Data || {});
-                      let data = JSON.parse(dataStr);
+                      const data = typeof x.Properties.Data === 'string' ? JSON.parse(x.Properties.Data) : x.Properties.Data;
                       data.x = parseFloat(v[0]) || 0;
                       data.y = parseFloat(v[1]) || 0;
                       if (!data.radius) data.radius = DEFAULT_SPAWN_RADIUS;
-                      x.Properties.Data = JSON.stringify(data);
+                      x.Properties.Data = data;
                       
                       // Store altitude in Coordinates object
                       if (!x.Properties.Coordinates) x.Properties.Coordinates = {};
                       x.Properties.Coordinates.Altitude = parseFloat(v[2]) || 0;
-                      
-                      // Auto-change shape to Point if radius is exactly the default
-                      if (data.radius === DEFAULT_SPAWN_RADIUS) {
-                        x.Properties.Shape = 'Point';
-                      }
                     } catch (e) {
-                      x.Properties.Data = JSON.stringify({
+                      x.Properties.Data = {
                         x: parseFloat(v[0]) || 0,
                         y: parseFloat(v[1]) || 0,
                         radius: DEFAULT_SPAWN_RADIUS
-                      });
+                      };
                       if (!x.Properties.Coordinates) x.Properties.Coordinates = {};
                       x.Properties.Coordinates.Altitude = parseFloat(v[2]) || 0;
                       x.Properties.Shape = 'Point';
@@ -501,7 +479,13 @@
                 { "_if": x => x.Properties.Shape !== 'Point', label: 'Shape Data', type: 'textarea', '_get': x => {
                   // Ensure Data is returned as a string for textarea
                   return typeof x.Properties.Data === 'string' ? x.Properties.Data : JSON.stringify(x.Properties.Data || {});
-                }, '_set': (x, v) => x.Properties.Data = v },
+                }, '_set': (x, v) => {
+                  try {
+                    x.Properties.Data = JSON.parse(v);
+                  } catch (e) {
+                    x.Properties.Data = v;
+                  }
+                }},
                 { "_if": x => x.Properties.Shape !== 'Point', label: 'Altitude', type: 'number', '_get': x => x.Properties.Coordinates?.Altitude || 0, '_set': (x, v) => { if (!x.Properties.Coordinates) x.Properties.Coordinates = {}; x.Properties.Coordinates.Altitude = parseFloat(v) || 0; } },
               ]
             },

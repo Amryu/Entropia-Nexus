@@ -24,23 +24,30 @@ export async function load({ fetch, params }) {
     apiCall(fetch, '/mobspawns?Planet=' + planet.Name)
   ]);
 
-  areas = areas.map(area => {
-    const matchingMobSpawn = mobSpawns.find(mobSpawn => mobSpawn.Id === area.Id);
-    return matchingMobSpawn || area;
-  });
+  // Build a map of Id to object, preferring MobSpawn > Area > Location
+  const byId = {};
 
-  // Create a combined dataset: start with all areas (which have Shape/Data), then add locations that don't have corresponding areas
-  let combinedLocations = [...areas];
-  
-  locations.forEach(location => {
-    // Check if this location already exists as an area (using ID offset)
-    const hasMatchingArea = areas.some(area => area.Id + 200000 === location.Id);
-    if (!hasMatchingArea) {
-      combinedLocations.push(location);
+  // 1. Add all locations (least specific)
+  for (const loc of locations) {
+    byId[loc.Id] = loc;
+  }
+
+  // 2. Add all areas (replace location if same Id or if area.Id + 200000 === location.Id)
+  for (const area of areas) {
+    byId[area.Id] = area;
+    // Remove any location with area.Id + 200000 === location.Id
+    const offsetId = area.Id + 200000;
+    if (byId[offsetId] && byId[offsetId].Properties && !byId[offsetId].Properties.Shape) {
+      delete byId[offsetId];
     }
-  });
+  }
 
-  locations = combinedLocations;
+  // 3. Add all mobspawns (replace area if same Id)
+  for (const mobSpawn of mobSpawns) {
+    byId[mobSpawn.Id] = mobSpawn;
+  }
+
+  locations = Object.values(byId);
 
   // Check for duplicate IDs in the final combined dataset
   const idCounts = {};
@@ -68,9 +75,6 @@ export async function load({ fetch, params }) {
       })));
     });
   }
-
-  console.log(`Final dataset: ${areas.length} areas, ${locations.length - areas.length} locations, ${locations.length} total`);
-  console.log(`Areas with Shape: ${areas.filter(a => a.Properties.Shape).length}, MobAreas: ${areas.filter(a => a.Properties.Type === 'MobArea').length}`);
 
   if (!params.planet && !params.slug) {
     return pageResponse(

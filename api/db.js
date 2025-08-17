@@ -49,7 +49,31 @@ const queries = {
   Locations: 'SELECT "Locations".*, "Planets"."Name" AS "Planet", "Planets"."TechnicalName" FROM ONLY "Locations" LEFT JOIN ONLY "Planets" ON "Locations"."PlanetId" = "Planets"."Id"',
   Planets: 'SELECT * FROM ONLY "Planets"',
   Teleporters: 'SELECT "Teleporters".*, "Planets"."Name" AS "Planet", "Planets"."TechnicalName" FROM ONLY "Teleporters" LEFT JOIN ONLY "Planets" ON "Teleporters"."PlanetId" = "Planets"."Id"',
-  MobSpawns: 'SELECT "MobSpawns".*, "MobMaturities"."MobId", "Areas"."Name", "Areas"."Type", "Areas"."Shape", "Areas"."Data", "Areas"."Longitude", "Areas"."Latitude", "Areas"."Altitude", "Areas"."PlanetId", "Planets"."Name" AS "Planet", "Planets"."TechnicalName" FROM ONLY "MobSpawns" INNER JOIN ONLY "Areas" ON "MobSpawns"."AreaId" = "Areas"."Id" INNER JOIN ONLY "Planets" ON "Areas"."PlanetId" = "Planets"."Id" INNER JOIN ONLY "MobSpawnMaturities" ON "MobSpawns"."Id" = "MobSpawnMaturities"."SpawnId" INNER JOIN ONLY "MobMaturities" ON "MobSpawnMaturities"."MaturityId" = "MobMaturities"."Id"',
+  MobSpawns: 'SELECT * FROM (\
+    SELECT \
+      "Areas"."Id" AS "Id", \
+      COALESCE("MobSpawns"."Name", "Areas"."Name") AS "Name", \
+      "MobSpawns"."Description", \
+      "MobSpawns"."Density", \
+      "MobSpawns"."IsShared", \
+      "MobSpawns"."IsEvent", \
+      "MobSpawns"."Notes", \
+      "Areas"."Type", \
+      "Areas"."Shape", \
+      "Areas"."Data", \
+      "Areas"."Longitude", \
+      "Areas"."Latitude", \
+      "Areas"."Altitude", \
+      "Areas"."PlanetId", \
+      "Planets"."Name" AS "Planet", \
+      "Planets"."TechnicalName", \
+      "MobMaturities"."MobId" AS "MobId" \
+    FROM ONLY "Areas" \
+    INNER JOIN ONLY "MobSpawns" ON "MobSpawns"."AreaId" = "Areas"."Id" \
+    INNER JOIN ONLY "Planets" ON "Areas"."PlanetId" = "Planets"."Id" \
+    INNER JOIN ONLY "MobSpawnMaturities" ON "Areas"."Id" = "MobSpawnMaturities"."AreaId" \
+    INNER JOIN ONLY "MobMaturities" ON "MobSpawnMaturities"."MaturityId" = "MobMaturities"."Id" \
+  ) AS "MobSpawns"',
 
   // Items
   Items: 'SELECT * FROM ONLY "Items"',
@@ -502,9 +526,9 @@ async function getMobSpawns(mobs = null) {
 
   if (mobs != null && mobs.length > 0) {
     if (mobs.every(mob => typeof mob === 'number')) {
-      whereClause = pgp.as.format(' WHERE (SELECT COUNT(*) FROM "MobSpawnMaturities" WHERE "SpawnId" = "MobSpawns"."Id" AND "MaturityId" IN (SELECT DISTINCT "MobMaturities"."Id" FROM "MobMaturities" WHERE "MobMaturities"."MobId" IN ($1:csv))) > 0', [mobs]);
+  whereClause = pgp.as.format(' WHERE "MobSpawns"."MobId" IN ($1:csv)', [mobs]);
     } else if (mobs.every(mob => typeof mob === 'string')) {
-      whereClause = pgp.as.format(' WHERE (SELECT COUNT(*) FROM "MobSpawnMaturities" WHERE "SpawnId" = "MobSpawns"."Id" AND "MaturityId" IN (SELECT DISTINCT "MobMaturities"."Id" FROM "MobMaturities" INNER JOIN "Mobs" ON "MobMaturities"."MobId" = "Mobs"."Id" WHERE "Mobs"."Name" IN ($1:csv))) > 0', [mobs]);
+  whereClause = pgp.as.format(' WHERE "MobSpawns"."MobId" IN (SELECT "Id" FROM "Mobs" WHERE "Name" IN ($1:csv))', [mobs]);
     } else {
       throw new Error('Invalid mobs array: must be an array of either integers or strings');
     }
@@ -522,9 +546,9 @@ async function _getMobSpawnMaturities(spawnIds) {
     return {};
   }
 
-  let { rows } = await pool.query(`SELECT "MobSpawnMaturities".*, "MobMaturities".*, "Mobs"."Name" AS "Mob", "Mobs"."PlanetId", "Planets"."Name" AS "Planet", "Planets"."TechnicalName" AS "TechnicalName" FROM ONLY "MobSpawnMaturities" INNER JOIN ONLY "MobMaturities" ON "MobSpawnMaturities"."MaturityId" = "MobMaturities"."Id" INNER JOIN ONLY "Mobs" ON "MobMaturities"."MobId" = "Mobs"."Id" INNER JOIN ONLY "Planets" ON "Mobs"."PlanetId" = "Planets"."Id" WHERE "SpawnId" IN (${spawnIds.join(',')})`);
+  let { rows } = await pool.query(`SELECT "MobSpawnMaturities".*, "MobMaturities".*, "Mobs"."Name" AS "Mob", "Mobs"."PlanetId", "Planets"."Name" AS "Planet", "Planets"."TechnicalName" AS "TechnicalName" FROM ONLY "MobSpawnMaturities" INNER JOIN ONLY "MobMaturities" ON "MobSpawnMaturities"."MaturityId" = "MobMaturities"."Id" INNER JOIN ONLY "Mobs" ON "MobMaturities"."MobId" = "Mobs"."Id" INNER JOIN ONLY "Planets" ON "Mobs"."PlanetId" = "Planets"."Id" WHERE "AreaId" IN (${spawnIds.join(',')})`);
 
-  return _groupBy(rows, 'SpawnId');
+  return _groupBy(rows, 'AreaId');
 }
 
 function formatMobSpawn(x, data) {
@@ -1830,11 +1854,9 @@ async function _getMobData(ids) {
         return x.rows.map(y => ({ ...y, Attacks: attacks[y.Id] ?? [] }));
       }),
     pool.query(queries.MobLoots + ` WHERE "MobLoots"."MobId" IN (${ids.join(',')})`).then(x => x.rows),
-    pool.query(queries.MobSpawns + ` WHERE (SELECT COUNT(*) FROM "MobSpawnMaturities" WHERE "SpawnId" = "MobSpawns"."Id" AND "MaturityId" IN (SELECT DISTINCT "MobMaturities"."Id" FROM "MobMaturities" WHERE "MobMaturities"."MobId" IN (${ids.join(',')}))) > 0`)
+    pool.query(queries.MobSpawns + ` WHERE "MobSpawns"."MobId" IN (${ids.join(',')})`)
       .then(async x => {
-
-        let maturities = await _getMobSpawnMaturities(x.rows.map(y => (y.Id)));
-
+        let maturities = await _getMobSpawnMaturities(x.rows.map(y => y.Id));
         return x.rows.map(y => ({ ...y, Maturities: maturities[y.Id] ?? [] }));
       }),
   ]);

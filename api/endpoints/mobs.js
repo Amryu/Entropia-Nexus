@@ -70,7 +70,15 @@ function register(app){
    *      '200':
    *        description: A list of mobs
    */
-  app.get('/mobs', async (req,res)=>{ res.json(await getMobs()); });
+  app.get('/mobs', async (req,res)=>{
+    try {
+      if (res.headersSent || res.writableEnded) return;
+      const data = await getMobs();
+      if (!res.headersSent) res.json(data);
+    } catch (e) {
+      if (!res.headersSent) res.status(500).json({ error: 'Failed to fetch mobs' });
+    }
+  });
   /**
    * @swagger
    * /mobs/{mob}:
@@ -88,6 +96,18 @@ function register(app){
    *      '404':
    *        description: Mob not found
    */
-  app.get('/mobs/:mob', async (req,res)=>{ const r = await getMob(req.params.mob); if(r) res.json(r); else res.status(404).send(); });
+  app.get('/mobs/:mob', async (req,res)=>{
+    try {
+      if (res.headersSent || res.writableEnded) return;
+      const r = await getMob(req.params.mob);
+      if (r) {
+        if (!res.headersSent) res.json(r);
+      } else {
+        if (!res.headersSent) res.status(404).send();
+      }
+    } catch (e) {
+      if (!res.headersSent) res.status(500).json({ error: 'Failed to fetch mob' });
+    }
+  });
 }
 module.exports = { register, getMobs, getMob };
