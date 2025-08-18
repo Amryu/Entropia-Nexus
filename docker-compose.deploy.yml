@@ -1,0 +1,10 @@
+services:
+  api:
+    image: ${REGISTRY}/${IMAGE_OWNER}/entropia-nexus-api:${IMAGE_TAG}
+    build: null
+  nexus:
+    image: ${REGISTRY}/${IMAGE_OWNER}/entropia-nexus-nexus:${IMAGE_TAG}
+    build: null
+  nexus-bot:
+    image: ${REGISTRY}/${IMAGE_OWNER}/entropia-nexus-bot:${IMAGE_TAG}
+    build: null
