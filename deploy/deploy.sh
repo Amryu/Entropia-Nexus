@@ -7,72 +7,105 @@ set -euo pipefail
 #   REGISTRY=ghcr.io IMAGE_OWNER=amryu IMAGE_TAG=latest \
 #   PROJECT_DIR=/opt/entropia-nexus \
 #   COMMON_SRC_DIR=/tmp/common-new \
-#   CLEAN_OLD_IMAGES=true \
-#   ./deploy.sh
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Local deployment script: builds Nexus, syncs common, builds images and starts containers via docker compose.
 #
-# Or provide COMMON_SRC_ARCHIVE=/path/to/common.tar.gz instead of COMMON_SRC_DIR.
+# Optional: provide a config env file path as first argument (defaults to deploy/env if present).
+# The env file can define the following variables:
+#   PROJECT_DIR          - absolute path to the project on the server (default: current directory)
+#   BUILD_MODE           - development | production (default: production)
+#   COMPOSE_ENV_FILE     - path to a compose env file to generate/use (default: deploy/compose.env)
+#   COMMON_HOST_PATH     - destination path on server for the shared 'common' folder (default: $PROJECT_DIR/common)
+#   SYNC_COMMON_FROM_REPO- true/false to copy repo ./common into COMMON_HOST_PATH (default: true)
+#   API_ENV_PATH         - path to API .env file on server (default: $PROJECT_DIR/api/.env)
+#   NEXUS_ENV_PATH       - path to Nexus .env file on server (default: $PROJECT_DIR/nexus/.env)
+#   BOT_ENV_PATH         - path to Bot .env file on server (default: $PROJECT_DIR/nexus-bot/.env)
+#   BOT_CONFIG_PATH      - path to Bot config.json on server (default: $PROJECT_DIR/nexus-bot/config.json)
+#   GIT_PULL             - true/false to git pull before build (default: false)
+#   GIT_REMOTE           - remote name (default: origin)
+#   GIT_BRANCH           - branch to pull (default: current branch)
 
-REGISTRY=${REGISTRY:-ghcr.io}
-IMAGE_OWNER=${IMAGE_OWNER:-amryu}
-IMAGE_TAG=${IMAGE_TAG:-latest}
-PROJECT_DIR=${PROJECT_DIR:-}
-COMMON_SRC_DIR=${COMMON_SRC_DIR:-}
-COMMON_SRC_ARCHIVE=${COMMON_SRC_ARCHIVE:-}
-CLEAN_OLD_IMAGES=${CLEAN_OLD_IMAGES:-false}
-
-if [[ -z "${PROJECT_DIR}" ]]; then
-  echo "[deploy] ERROR: PROJECT_DIR is required" >&2
-  exit 1
+CFG_FILE="${1:-}"
+if [[ -z "${CFG_FILE}" && -f "deploy/env" ]]; then
+  CFG_FILE="deploy/env"
+fi
+if [[ -n "${CFG_FILE}" && -f "${CFG_FILE}" ]]; then
+  echo "[deploy] Loading config from ${CFG_FILE}"
+  # shellcheck disable=SC1090
+  source "${CFG_FILE}"
+else
+  echo "[deploy] No config file provided. Using defaults and environment.";
 fi
 
-if [[ -z "${COMMON_SRC_DIR}" && -z "${COMMON_SRC_ARCHIVE}" ]]; then
-  echo "[deploy] NOTE: No COMMON_SRC_DIR or COMMON_SRC_ARCHIVE provided — common directory will not be updated."
-fi
-
-export REGISTRY IMAGE_OWNER IMAGE_TAG
-
-echo "[deploy] Using registry=${REGISTRY} owner=${IMAGE_OWNER} tag=${IMAGE_TAG}"
+PROJECT_DIR=${PROJECT_DIR:-"$(pwd)"}
+BUILD_MODE=${BUILD_MODE:-production}
+COMPOSE_ENV_FILE=${COMPOSE_ENV_FILE:-"deploy/compose.env"}
+COMMON_HOST_PATH=${COMMON_HOST_PATH:-"${PROJECT_DIR}/common"}
+SYNC_COMMON_FROM_REPO=${SYNC_COMMON_FROM_REPO:-true}
+API_ENV_PATH=${API_ENV_PATH:-"${PROJECT_DIR}/api/.env"}
+NEXUS_ENV_PATH=${NEXUS_ENV_PATH:-"${PROJECT_DIR}/nexus/.env"}
+BOT_ENV_PATH=${BOT_ENV_PATH:-"${PROJECT_DIR}/nexus-bot/.env"}
+BOT_CONFIG_PATH=${BOT_CONFIG_PATH:-"${PROJECT_DIR}/nexus-bot/config.json"}
+GIT_PULL=${GIT_PULL:-false}
+GIT_REMOTE=${GIT_REMOTE:-origin}
+GIT_BRANCH=${GIT_BRANCH:-}
 
 echo "[deploy] Project dir: ${PROJECT_DIR}"
-
 cd "${PROJECT_DIR}"
 
-COMPOSE_FILES=(-f docker-compose.yml -f docker-compose.deploy.yml)
-
-echo "[deploy] Bringing stack down"
- docker compose "${COMPOSE_FILES[@]}" down || true
-
-# Replace common directory if provided
-COMMON_DEST="${PROJECT_DIR}/common"
-if [[ -n "${COMMON_SRC_DIR}" ]]; then
-  echo "[deploy] Replacing common from dir: ${COMMON_SRC_DIR} -> ${COMMON_DEST}"
-  mkdir -p "${COMMON_DEST}"
-  rm -rf "${COMMON_DEST}/"*
-  cp -a "${COMMON_SRC_DIR}/." "${COMMON_DEST}/"
-elif [[ -n "${COMMON_SRC_ARCHIVE}" ]]; then
-  echo "[deploy] Replacing common from archive: ${COMMON_SRC_ARCHIVE} -> ${COMMON_DEST}"
-  mkdir -p "${COMMON_DEST}"
-  rm -rf "${COMMON_DEST}/"*
-  tar -xzf "${COMMON_SRC_ARCHIVE}" -C "${COMMON_DEST}" --strip-components=1 || {
-    echo "[deploy] WARN: Failed to extract with strip-components=1, retrying without";
-    tar -xzf "${COMMON_SRC_ARCHIVE}" -C "${COMMON_DEST}";
-  }
+if [[ "${GIT_PULL}" == "true" ]]; then
+  echo "[deploy] Updating repo from ${GIT_REMOTE} ${GIT_BRANCH:-'(current)'}"
+  git fetch "${GIT_REMOTE}"
+  if [[ -n "${GIT_BRANCH}" ]]; then
+    git checkout "${GIT_BRANCH}"
+  fi
+  git pull --ff-only "${GIT_REMOTE}" ${GIT_BRANCH:-}
 fi
 
-if [[ "${CLEAN_OLD_IMAGES}" == "true" ]]; then
-  echo "[deploy] Removing old images matching entropia-nexus-* (optional clean)"
-  old_images=$(docker images --format '{{.Repository}}:{{.Tag}}' | grep -E "(${REGISTRY}/${IMAGE_OWNER}/entropia-nexus-(api|nexus|bot)):") || true
-  if [[ -n "${old_images}" ]]; then
-    echo "[deploy] Removing:\n${old_images}"
-    echo "${old_images}" | xargs -r docker rmi -f || true
+echo "[deploy] Building Nexus (${BUILD_MODE})"
+pushd nexus >/dev/null
+npm ci
+if [[ "${BUILD_MODE}" == "development" ]]; then
+  npm run build:dev
+else
+  npm run build:prod
+fi
+popd >/dev/null
+
+if [[ "${SYNC_COMMON_FROM_REPO}" == "true" ]]; then
+  echo "[deploy] Syncing common -> ${COMMON_HOST_PATH}"
+  mkdir -p "${COMMON_HOST_PATH}"
+  # copy contents without nesting
+  if command -v rsync >/dev/null 2>&1; then
+    rsync -a --delete common/ "${COMMON_HOST_PATH}/"
+  else
+    rm -rf "${COMMON_HOST_PATH}/"*
+    cp -a common/. "${COMMON_HOST_PATH}/"
   fi
 fi
 
-echo "[deploy] Pulling images"
- docker compose "${COMPOSE_FILES[@]}" pull
+echo "[deploy] Writing compose env file: ${COMPOSE_ENV_FILE}"
+mkdir -p "$(dirname "${COMPOSE_ENV_FILE}")"
+cat > "${COMPOSE_ENV_FILE}" <<EOF
+COMMON_HOST_PATH=${COMMON_HOST_PATH}
+API_ENV_PATH=${API_ENV_PATH}
+NEXUS_ENV_PATH=${NEXUS_ENV_PATH}
+BOT_ENV_PATH=${BOT_ENV_PATH}
+BOT_CONFIG_PATH=${BOT_CONFIG_PATH}
+EOF
+
+COMPOSE_CMD=(docker compose --env-file "${COMPOSE_ENV_FILE}")
+
+echo "[deploy] Bringing stack down"
+"${COMPOSE_CMD[@]}" down || true
+
+echo "[deploy] Building images"
+"${COMPOSE_CMD[@]}" build
 
 echo "[deploy] Starting stack"
- docker compose "${COMPOSE_FILES[@]}" up -d --remove-orphans
+"${COMPOSE_CMD[@]}" up -d --remove-orphans
 
 echo "[deploy] Done. Current services:"
- docker compose "${COMPOSE_FILES[@]}" ps
+"${COMPOSE_CMD[@]}" ps
