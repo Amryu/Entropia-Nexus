@@ -41,10 +41,13 @@ jobs:
           username: ${{ github.repository_owner }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Normalize owner to lowercase
+        run: echo "IMAGE_OWNER_LC=${GITHUB_REPOSITORY_OWNER,,}" >> $GITHUB_ENV
+
       - name: Build and push Docker images (GHCR)
         env:
           REGISTRY: ghcr.io
-          IMAGE_OWNER: ${{ github.repository_owner }}
+          IMAGE_OWNER: ${{ env.IMAGE_OWNER_LC }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
           docker build -t $REGISTRY/$IMAGE_OWNER/entropia-nexus-api:$IMAGE_TAG ./api
