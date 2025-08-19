@@ -70,7 +70,7 @@ fi
 echo "[deploy] Building Nexus (${BUILD_MODE})"
 
 # Stage Nexus .env for build-time Vite variables, unless already present in repo
-STAGED_NEXUS_ENV="nexus/.env"
+STAGED_NEXUS_ENV="${REPO_DIR}/nexus/.env"
 PREEXISTING_NEXUS_ENV=false
 if [[ -f "${STAGED_NEXUS_ENV}" ]]; then
   PREEXISTING_NEXUS_ENV=true
