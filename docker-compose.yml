@@ -13,6 +13,8 @@ services:
         source: ${API_ENV_PATH:-./api/.env}
         target: /app/.env
         read_only: true
+    networks:
+      - backend
 
   nexus:
     build: ./nexus
@@ -29,6 +31,8 @@ services:
         source: ${NEXUS_ENV_PATH:-./nexus/.env}
         target: /app/.env
         read_only: true
+    networks:
+      - backend
 
   nexus-bot:
     build: ./nexus-bot
@@ -47,3 +51,8 @@ services:
         source: ${BOT_CONFIG_PATH:-./nexus-bot/config.json}
         target: /app/config.json
         read_only: false
+    networks:
+      - backend
+
+networks:
+  backend:
