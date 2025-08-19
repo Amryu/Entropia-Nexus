@@ -68,6 +68,32 @@ if [[ "${GIT_PULL}" == "true" ]]; then
 fi
 
 echo "[deploy] Building Nexus (${BUILD_MODE})"
+
+# Stage Nexus .env for build-time Vite variables, unless already present in repo
+STAGED_NEXUS_ENV="nexus/.env"
+PREEXISTING_NEXUS_ENV=false
+if [[ -f "${STAGED_NEXUS_ENV}" ]]; then
+  PREEXISTING_NEXUS_ENV=true
+  echo "[deploy] Using existing Nexus .env in repo: ${STAGED_NEXUS_ENV}"
+else
+  echo "[deploy] Ensuring Nexus env exists: ${NEXUS_ENV_PATH}"
+  if [[ ! -f "${NEXUS_ENV_PATH}" ]]; then
+    echo "[deploy] ERROR: Nexus env file not found at ${NEXUS_ENV_PATH}." >&2
+    echo "[deploy] Please create it (e.g., with VITE_API_URL, VITE_DOMAIN, etc.) or set NEXUS_ENV_PATH correctly. Aborting." >&2
+    exit 1
+  fi
+  echo "[deploy] Staging Nexus .env for client build: ${STAGED_NEXUS_ENV}"
+  cp "${NEXUS_ENV_PATH}" "${STAGED_NEXUS_ENV}"
+fi
+
+# Clean up the staged .env on exit (only if we created it)
+cleanup_env() {
+  if [[ "${PREEXISTING_NEXUS_ENV}" != "true" && -n "${STAGED_NEXUS_ENV}" && -f "${STAGED_NEXUS_ENV}" ]]; then
+    rm -f "${STAGED_NEXUS_ENV}" || true
+  fi
+}
+trap cleanup_env EXIT
+
 pushd nexus >/dev/null
 npm ci
 if [[ "${BUILD_MODE}" == "development" ]]; then
@@ -76,6 +102,11 @@ else
   npm run build:prod
 fi
 popd >/dev/null
+
+# Remove the staged .env immediately after the build when it wasn't preexisting (trap remains as a safety net)
+if [[ "${PREEXISTING_NEXUS_ENV}" != "true" ]]; then
+  cleanup_env
+fi
 
 if [[ "${SYNC_COMMON_FROM_REPO}" == "true" ]]; then
   echo "[deploy] Syncing common (from repo) -> ${COMMON_HOST_PATH}"

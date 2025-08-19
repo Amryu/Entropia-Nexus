@@ -386,7 +386,7 @@ function getApiBase() {
   console.log(import.meta.env.VITE_API_URL);
   console.log(process.env.INTERNAL_API_URL);
 
-  return browser ? (import.meta.env.VITE_API_URL) : (process.env.INTERNAL_API_URL || "http://api:3000");
+  return browser ? (import.meta.env.VITE_API_URL || "https://api.entropianexus.com") : (process.env.INTERNAL_API_URL || "http://api:3000");
 }
 
 export async function apiCall(fetch, url, apiUrl = getApiBase()) {
@@ -446,7 +446,7 @@ export async function apiDelete(fetch, url, apiUrl = getApiBase()) {
   const target = url.startsWith('/api/') ? url : (apiUrl + url);
 
   console.log(`API Call: ${target}`);
-  
+
   const response = await fetch(target, {
     method: 'DELETE'
   });
