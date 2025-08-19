@@ -22,22 +22,29 @@ if (Test-Path $ConfigPath) {
     Write-Info "No config file provided. Using defaults and environment."
 }
 
-$PROJECT_DIR = $env:PROJECT_DIR
-if (-not $PROJECT_DIR) { $PROJECT_DIR = (Get-Location).Path }
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$RepoDir = Resolve-Path (Join-Path $ScriptDir '..')
+
+# Back-compat: PROJECT_DIR -> CONFIG_DIR
+if ($env:PROJECT_DIR -and -not $env:CONFIG_DIR) { $env:CONFIG_DIR = $env:PROJECT_DIR }
+
+$CONFIG_DIR = $env:CONFIG_DIR
+if (-not $CONFIG_DIR) { $CONFIG_DIR = '/opt/entropia-nexus' }
 $BUILD_MODE = $env:BUILD_MODE; if (-not $BUILD_MODE) { $BUILD_MODE = 'production' }
-$COMPOSE_ENV_FILE = $env:COMPOSE_ENV_FILE; if (-not $COMPOSE_ENV_FILE) { $COMPOSE_ENV_FILE = 'deploy/compose.env' }
-$COMMON_HOST_PATH = $env:COMMON_HOST_PATH; if (-not $COMMON_HOST_PATH) { $COMMON_HOST_PATH = Join-Path $PROJECT_DIR 'common' }
+$COMPOSE_ENV_FILE = $env:COMPOSE_ENV_FILE; if (-not $COMPOSE_ENV_FILE) { $COMPOSE_ENV_FILE = (Join-Path $CONFIG_DIR 'compose.env') }
+$COMMON_HOST_PATH = $env:COMMON_HOST_PATH; if (-not $COMMON_HOST_PATH) { $COMMON_HOST_PATH = (Join-Path $CONFIG_DIR 'common') }
 $SYNC_COMMON_FROM_REPO = $env:SYNC_COMMON_FROM_REPO; if (-not $SYNC_COMMON_FROM_REPO) { $SYNC_COMMON_FROM_REPO = 'true' }
-$API_ENV_PATH = $env:API_ENV_PATH; if (-not $API_ENV_PATH) { $API_ENV_PATH = (Join-Path $PROJECT_DIR 'api/.env') }
-$NEXUS_ENV_PATH = $env:NEXUS_ENV_PATH; if (-not $NEXUS_ENV_PATH) { $NEXUS_ENV_PATH = (Join-Path $PROJECT_DIR 'nexus/.env') }
-$BOT_ENV_PATH = $env:BOT_ENV_PATH; if (-not $BOT_ENV_PATH) { $BOT_ENV_PATH = (Join-Path $PROJECT_DIR 'nexus-bot/.env') }
-$BOT_CONFIG_PATH = $env:BOT_CONFIG_PATH; if (-not $BOT_CONFIG_PATH) { $BOT_CONFIG_PATH = (Join-Path $PROJECT_DIR 'nexus-bot/config.json') }
+$API_ENV_PATH = $env:API_ENV_PATH; if (-not $API_ENV_PATH) { $API_ENV_PATH = (Join-Path $CONFIG_DIR 'api/.env') }
+$NEXUS_ENV_PATH = $env:NEXUS_ENV_PATH; if (-not $NEXUS_ENV_PATH) { $NEXUS_ENV_PATH = (Join-Path $CONFIG_DIR 'nexus/.env') }
+$BOT_ENV_PATH = $env:BOT_ENV_PATH; if (-not $BOT_ENV_PATH) { $BOT_ENV_PATH = (Join-Path $CONFIG_DIR 'nexus-bot/.env') }
+$BOT_CONFIG_PATH = $env:BOT_CONFIG_PATH; if (-not $BOT_CONFIG_PATH) { $BOT_CONFIG_PATH = (Join-Path $CONFIG_DIR 'nexus-bot/config.json') }
 $GIT_PULL = $env:GIT_PULL; if (-not $GIT_PULL) { $GIT_PULL = 'false' }
 $GIT_REMOTE = $env:GIT_REMOTE; if (-not $GIT_REMOTE) { $GIT_REMOTE = 'origin' }
 $GIT_BRANCH = $env:GIT_BRANCH
 
-Write-Info "Project dir: $PROJECT_DIR"
-Set-Location $PROJECT_DIR
+Write-Info "Repo dir: $RepoDir"
+Write-Info "Config dir: $CONFIG_DIR"
+Set-Location $RepoDir
 
 if ($GIT_PULL -eq 'true') {
     Write-Info "Updating repo from $GIT_REMOTE $GIT_BRANCH"
@@ -57,7 +64,7 @@ if ($SYNC_COMMON_FROM_REPO -eq 'true') {
     if (-not (Test-Path $COMMON_HOST_PATH)) { New-Item -ItemType Directory -Path $COMMON_HOST_PATH | Out-Null }
     # simple sync: remove and copy
     Get-ChildItem -Path $COMMON_HOST_PATH -Force | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-    Copy-Item -Path (Join-Path $PROJECT_DIR 'common\*') -Destination $COMMON_HOST_PATH -Recurse -Force
+    Copy-Item -Path (Join-Path $RepoDir 'common\*') -Destination $COMMON_HOST_PATH -Recurse -Force
 }
 
 Write-Info "Writing compose env file: $COMPOSE_ENV_FILE"

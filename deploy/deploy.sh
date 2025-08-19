@@ -1,20 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Deploy Entropia Nexus via Docker Compose
-#
-# Usage:
-#   REGISTRY=ghcr.io IMAGE_OWNER=amryu IMAGE_TAG=latest \
-#   PROJECT_DIR=/opt/entropia-nexus \
-#   COMMON_SRC_DIR=/tmp/common-new \
-#!/usr/bin/env bash
-set -euo pipefail
-
 # Local deployment script: builds Nexus, syncs common, builds images and starts containers via docker compose.
 #
 # Optional: provide a config env file path as first argument (defaults to deploy/env if present).
 # The env file can define the following variables:
-#   PROJECT_DIR          - absolute path to the project on the server (default: current directory)
+#   CONFIG_DIR           - absolute path where container config files live on the server (e.g., /opt/entropia-nexus)
 #   BUILD_MODE           - development | production (default: production)
 #   COMPOSE_ENV_FILE     - path to a compose env file to generate/use (default: deploy/compose.env)
 #   COMMON_HOST_PATH     - destination path on server for the shared 'common' folder (default: $PROJECT_DIR/common)
@@ -39,21 +30,31 @@ else
   echo "[deploy] No config file provided. Using defaults and environment.";
 fi
 
-PROJECT_DIR=${PROJECT_DIR:-"$(pwd)"}
+# Determine repository root (where this script resides -> parent dir)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+# Back-compat: support old PROJECT_DIR, prefer CONFIG_DIR
+if [[ -n "${PROJECT_DIR:-}" && -z "${CONFIG_DIR:-}" ]]; then
+  CONFIG_DIR="${PROJECT_DIR}"
+fi
+
+CONFIG_DIR=${CONFIG_DIR:-"/opt/entropia-nexus"}
 BUILD_MODE=${BUILD_MODE:-production}
-COMPOSE_ENV_FILE=${COMPOSE_ENV_FILE:-"deploy/compose.env"}
-COMMON_HOST_PATH=${COMMON_HOST_PATH:-"${PROJECT_DIR}/common"}
+COMPOSE_ENV_FILE=${COMPOSE_ENV_FILE:-"${CONFIG_DIR}/compose.env"}
+COMMON_HOST_PATH=${COMMON_HOST_PATH:-"${CONFIG_DIR}/common"}
 SYNC_COMMON_FROM_REPO=${SYNC_COMMON_FROM_REPO:-true}
-API_ENV_PATH=${API_ENV_PATH:-"${PROJECT_DIR}/api/.env"}
-NEXUS_ENV_PATH=${NEXUS_ENV_PATH:-"${PROJECT_DIR}/nexus/.env"}
-BOT_ENV_PATH=${BOT_ENV_PATH:-"${PROJECT_DIR}/nexus-bot/.env"}
-BOT_CONFIG_PATH=${BOT_CONFIG_PATH:-"${PROJECT_DIR}/nexus-bot/config.json"}
+API_ENV_PATH=${API_ENV_PATH:-"${CONFIG_DIR}/api/.env"}
+NEXUS_ENV_PATH=${NEXUS_ENV_PATH:-"${CONFIG_DIR}/nexus/.env"}
+BOT_ENV_PATH=${BOT_ENV_PATH:-"${CONFIG_DIR}/nexus-bot/.env"}
+BOT_CONFIG_PATH=${BOT_CONFIG_PATH:-"${CONFIG_DIR}/nexus-bot/config.json"}
 GIT_PULL=${GIT_PULL:-false}
 GIT_REMOTE=${GIT_REMOTE:-origin}
 GIT_BRANCH=${GIT_BRANCH:-}
 
-echo "[deploy] Project dir: ${PROJECT_DIR}"
-cd "${PROJECT_DIR}"
+echo "[deploy] Repo dir: ${REPO_DIR}"
+echo "[deploy] Config dir: ${CONFIG_DIR}"
+cd "${REPO_DIR}"
 
 if [[ "${GIT_PULL}" == "true" ]]; then
   echo "[deploy] Updating repo from ${GIT_REMOTE} ${GIT_BRANCH:-'(current)'}"
@@ -75,7 +76,7 @@ fi
 popd >/dev/null
 
 if [[ "${SYNC_COMMON_FROM_REPO}" == "true" ]]; then
-  echo "[deploy] Syncing common -> ${COMMON_HOST_PATH}"
+  echo "[deploy] Syncing common (from repo) -> ${COMMON_HOST_PATH}"
   mkdir -p "${COMMON_HOST_PATH}"
   # copy contents without nesting
   if command -v rsync >/dev/null 2>&1; then
