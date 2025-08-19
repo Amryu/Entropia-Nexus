@@ -57,38 +57,6 @@
     margin-bottom: 0;
     font-size: inherit;
   }
-  .support-wrapper {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    width: 100%;
-    padding: 15px;
-    margin-top: 10px;
-    border-top: 1px solid #ccc;
-    background-color: var(--secondary-color);
-  }
-  .support-inner {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    width: 300px;
-    min-height: 60px;
-  }
-
-  .kofi-button {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 8px 12px;
-    border-radius: 6px;
-    background: #29abe0;
-    color: #fff;
-    text-decoration: none;
-    font-weight: 600;
-    box-shadow: 0 1px 2px rgba(0,0,0,0.2);
-  }
-  .kofi-button:hover { filter: brightness(1.05); }
-  .kofi-logo { height: 18px; width: 18px; }
 </style>
 
 <div class="container">
