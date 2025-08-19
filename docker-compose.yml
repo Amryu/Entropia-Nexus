@@ -15,6 +15,7 @@ services:
         read_only: true
     networks:
       - backend
+      - frontend
 
   nexus:
     build: ./nexus
@@ -33,6 +34,7 @@ services:
         read_only: true
     networks:
       - backend
+      - frontend
 
   nexus-bot:
     build: ./nexus-bot
@@ -56,4 +58,6 @@ services:
 
 networks:
   backend:
+    external: true
+  frontend:
     external: true
