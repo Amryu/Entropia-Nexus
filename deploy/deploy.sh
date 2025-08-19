@@ -18,9 +18,15 @@ set -euo pipefail
 #   GIT_REMOTE           - remote name (default: origin)
 #   GIT_BRANCH           - branch to pull (default: current branch)
 
+
+# Determine repository root (where this script resides -> parent dir)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+# Default env file is 'env' in the script's directory
 CFG_FILE="${1:-}"
-if [[ -z "${CFG_FILE}" && -f "deploy/env" ]]; then
-  CFG_FILE="deploy/env"
+if [[ -z "${CFG_FILE}" && -f "${SCRIPT_DIR}/env" ]]; then
+  CFG_FILE="${SCRIPT_DIR}/env"
 fi
 if [[ -n "${CFG_FILE}" && -f "${CFG_FILE}" ]]; then
   echo "[deploy] Loading config from ${CFG_FILE}"
@@ -29,10 +35,6 @@ if [[ -n "${CFG_FILE}" && -f "${CFG_FILE}" ]]; then
 else
   echo "[deploy] No config file provided. Using defaults and environment.";
 fi
-
-# Determine repository root (where this script resides -> parent dir)
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # Back-compat: support old PROJECT_DIR, prefer CONFIG_DIR
 if [[ -n "${PROJECT_DIR:-}" && -z "${CONFIG_DIR:-}" ]]; then
