@@ -141,5 +141,8 @@ echo "[deploy] Building images"
 echo "[deploy] Starting stack"
 "${COMPOSE_CMD[@]}" up -d --remove-orphans
 
+# Reload nginx so the DNS resolves correctly
+docker exec nginx nginx -s reload
+
 echo "[deploy] Done. Current services:"
 "${COMPOSE_CMD[@]}" ps
