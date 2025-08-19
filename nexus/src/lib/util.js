@@ -382,11 +382,18 @@ export async function navigate(url) {
 // Removed GET response caching to prevent stale data issues during edits/auth changes
 // Helper to get API base depending on environment (browser vs SSR)
 function getApiBase() {
-  return browser ? (import.meta.env.VITE_API_URL) : (process.env.INTERNAL_API_URL || "http://localhost:3000");
+  console.log(browser);
+  console.log(import.meta.env.VITE_API_URL);
+  console.log(process.env.INTERNAL_API_URL);
+
+  return browser ? (import.meta.env.VITE_API_URL) : (process.env.INTERNAL_API_URL || "http://api:3000");
 }
 
 export async function apiCall(fetch, url, apiUrl = getApiBase()) {
   const target = url.startsWith('/api/') ? url : (apiUrl + url);
+
+  console.log(`API Call: ${target}`);
+
   let response = await fetch(target);
 
   if (!response.ok) {
@@ -398,6 +405,9 @@ export async function apiCall(fetch, url, apiUrl = getApiBase()) {
 
 export async function apiPost(fetch, url, body, apiUrl = getApiBase()) {
   const target = url.startsWith('/api/') ? url : (apiUrl + url);
+
+  console.log(`API Call: ${target}`);
+
   let response = await fetch(target, {
     method: 'POST',
     headers: {
@@ -415,6 +425,9 @@ export async function apiPost(fetch, url, body, apiUrl = getApiBase()) {
 
 export async function apiPut(fetch, url, body, apiUrl = getApiBase()) {
   const target = url.startsWith('/api/') ? url : (apiUrl + url);
+
+  console.log(`API Call: ${target}`);
+
   const response = await fetch(target, {
     method: 'PUT',
     headers: {
@@ -431,6 +444,9 @@ export async function apiPut(fetch, url, body, apiUrl = getApiBase()) {
 
 export async function apiDelete(fetch, url, apiUrl = getApiBase()) {
   const target = url.startsWith('/api/') ? url : (apiUrl + url);
+
+  console.log(`API Call: ${target}`);
+  
   const response = await fetch(target, {
     method: 'DELETE'
   });
