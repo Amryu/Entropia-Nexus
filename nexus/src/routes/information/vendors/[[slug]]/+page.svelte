@@ -80,7 +80,7 @@
           Longitude: null,
           Latitude: null,
           Altitude: null,
-        },
+        }
       },
       Planet: {
         Name: null,
@@ -102,6 +102,7 @@
       { label: 'Offers', type: 'list', config: {
         constructor: () => ({
           IsLimited: false,
+          Value: null,
           Item: {
             Name: null
           },
@@ -110,6 +111,7 @@
         dependencies: ['items'],
         controls: [
           { label: 'Item', type: 'input-validator', validator: (v, d) => d.items.some(x => x.Name === v), '_get': x => x.Item.Name, '_set': (x, v) => x.Item.Name = v },
+          { label: 'Value (Optional)', type: 'number', '_get': x => x.Item.Properties.Economy.Value, '_set': (x, v) => x.Item.Properties.Economy.Value = v },
           { label: 'Limited', type: 'checkbox', '_get': x => x.IsLimited, '_set': (x, v) => x.IsLimited = v },
           { label: 'Prices', type: 'list', config: {
             constructor: () => ({

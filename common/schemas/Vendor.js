@@ -57,6 +57,10 @@ export const Vendor = {
             "type": ["boolean", "null"],
             "default": null
           },
+          "Value": {
+            "type": ["number", "null"],
+            "default": null
+          },
           "Item": { "$ref": "https://entropianexus.com/schemas/NamedEntity.json" },
           "Prices": {
             "type": "array",

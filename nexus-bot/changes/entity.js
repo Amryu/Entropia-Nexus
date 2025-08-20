@@ -727,12 +727,12 @@ async function applyMobLootChanges(client, mobId, loots) {
 }
 
 async function applyVendorOfferChanges(client, vendorId, offers) {
-  let newItems = await Promise.all(offers.map(offer => client.query(`SELECT "Id" FROM ONLY "Items" WHERE "Name" = $1`, [offer.Item.Name]).then(res => ({ id: res.rows[0]?.Id, name: offer.Item.Name, limited: offer.IsLimited, prices: offer.Prices }))));
+  let newItems = await Promise.all(offers.map(offer => client.query(`SELECT "Id" FROM ONLY "Items" WHERE "Name" = $1`, [offer.Item.Name]).then(res => ({ id: res.rows[0]?.Id, name: offer.Item.Name, limited: offer.IsLimited, prices: offer.Prices, value: offer.Value }))));
 
   let newOffers = (await Promise.all([
     // Since the primary key is a composite of VendorId and ItemId, we need to delete all rows that don't match the new items
     client.query(`DELETE FROM ONLY "VendorOffers" WHERE "VendorId" = $1 AND "ItemId" NOT IN (SELECT * FROM unnest($2::int[]))`, [vendorId, newItems.map(x => x.id)]),
-    ...newItems.map(item => client.query(`INSERT INTO "VendorOffers" ("VendorId", "ItemId", "IsLimited") VALUES ($1, $2, $3) ON CONFLICT ("VendorId", "ItemId") DO UPDATE SET "IsLimited" = $3 RETURNING "Id"`, [vendorId, item.id, item.limited]).then(res => ({ id: res.rows[0].Id, prices: item.prices })))
+    ...newItems.map(item => client.query(`INSERT INTO "VendorOffers" ("VendorId", "ItemId", "IsLimited", "Value") VALUES ($1, $2, $3, $4) ON CONFLICT ("VendorId", "ItemId") DO UPDATE SET "IsLimited" = $3, "Value" = $4 RETURNING "Id"`, [vendorId, item.id, item.limited, item.value]).then(res => ({ id: res.rows[0].Id, prices: item.prices })))
   ])).slice(1);
 
   await Promise.all(newOffers.map(offer => applyVendorOfferPriceChanges(client, offer.id, offer.prices)));
