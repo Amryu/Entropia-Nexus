@@ -1,15 +1,16 @@
 <script lang="ts">
   // @ts-nocheck
   import { onMount } from "svelte";
+
   import CategoryTree from "./CategoryTree.svelte";
   import Table from "$lib/components/Table.svelte";
+  import OrderDialog from './OrderDialog.svelte';
+
   import { goto } from "$app/navigation";
   import { page } from "$app/stores";
-  import { apiCall, getItemLink } from "$lib/util.js";
-  import { hasItemTag } from "$lib/util.js";
-  import { hasCondition } from "$lib/shopUtils";
+  import { apiCall, getItemLink, hasItemTag } from "$lib/util.js";
+  import { isBlueprint, isItemTierable, isLimited, itemHasCondition, getMaxTT } from '../../orderUtils';
 
-  // (no exported props)
 
   let searchTerm = "";
   let selectedCategory = "All";
@@ -23,19 +24,20 @@
   let loading = false;
   let showOrderDialog = false;
   let orderDialogType = null; // 'buy' | 'sell'
-
-  // Order dialog state
-  let orderPlanet = "Calypso"; // persisted separately for order creation
-  let orderQty = 1;
-  let orderMarkup = 0; // "+PED" for conditioned, or "%" for non-conditioned
-  let orderValue = 0; // current TT value for conditioned items (PED)
-  let blueprintCond = 1; // 1..100 UI for UL blueprints (maps to 0.01..1.00 value)
-  // Tierable inputs
-  let orderTier = 0; // 0.00 - 10.00
-  let orderTiR = 1; // UL 1-200, L 1-4000
+  let orderDialogRef;
   // Title bar filters for tierable items
   let selectedTierFilter = "All"; // UL default
   let selectedTiRRange = "All"; // L default
+  // QR filter dropdown options
+  const qrRangeOptions = [
+    { label: "All", value: "all" },
+    ...Array.from({ length: 10 }, (_, i) => ({
+      label: `${i * 10 + 1}-${i * 10 + 9}`,
+      value: `${i * 10}`
+    })),
+    { label: "100", value: "100" }
+  ];
+  let selectedQRRange = "all";
   const tierOptionLabels = [
     "All",
     ...Array.from({ length: 11 }, (_, i) => String(i)),
@@ -49,10 +51,6 @@
     return arr;
   })();
 
-  // Helpers
-  function getMaxTT(obj) {
-    return obj?.Properties?.Economy?.MaxTT ?? null;
-  }
   // Tierable types list (used by detail view tables)
   const tierableTypes = new Set([
     "Weapon",
@@ -131,22 +129,29 @@
   $: routeSlug = $page?.params?.slug || "all";
   $: selectedItemKey = $page?.params?.id ?? "";
   $: isDetailView = selectedItemKey != null && selectedItemKey !== "";
+
   $: selectedItem = (() => {
-    if (!isDetailView) return null;
-    const key = selectedItemKey;
-    const all = allItems || [];
-    if (!Array.isArray(all) || all.length === 0) return null;
-    if (/^\d+$/.test(String(key))) {
-      const idNum = Number(key);
-      return all.find((it) => it?.i === idNum) || null;
-    }
-    try {
-      const name = decodeURIComponent(key);
-      return all.find((it) => it?.n === name) || null;
-    } catch {
-      return all.find((it) => it?.n === key) || null;
-    }
-  })();
+      if (!isDetailView) return null;
+      const key = selectedItemKey;
+      const all = allItems || [];
+      if (!Array.isArray(all) || all.length === 0) return null;
+      if (/^\d+$/.test(String(key))) {
+        const idNum = Number(key);
+        const found = all.find((it) => it?.i === idNum) || null;
+        console.log('[ExchangeBrowser] selectedItem set by id:', found);
+        return found;
+      }
+      try {
+        const name = decodeURIComponent(key);
+        const found = all.find((it) => it?.n === name) || null;
+        console.log('[ExchangeBrowser] selectedItem set by name:', found);
+        return found;
+      } catch {
+        const found = all.find((it) => it?.n === key) || null;
+        console.log('[ExchangeBrowser] selectedItem set by fallback:', found);
+        return found;
+      }
+    })();
 
   // Build a root "All" node with every item flattened
   $: allItems = flattenItems(categorizedItems);
@@ -168,17 +173,20 @@
 
   // Prefetch full item details for link building and MU rules
   $: (async () => {
-    try {
-      if (!selectedItem || !selectedItem?.i) {
+      try {
+        if (!selectedItem || !selectedItem?.i) {
+          selectedItemDetails = null;
+          console.log('[ExchangeBrowser] selectedItemDetails set to null (no selectedItem or no id)');
+          return;
+        }
+        const it = await apiCall(window.fetch, `/items/${selectedItem.i}`);
+        selectedItemDetails = it || null;
+        console.log('[ExchangeBrowser] selectedItemDetails loaded:', selectedItemDetails);
+      } catch (e) {
         selectedItemDetails = null;
-        return;
+        console.log('[ExchangeBrowser] selectedItemDetails error:', e);
       }
-      const it = await apiCall(window.fetch, `/items/${selectedItem.i}`);
-      selectedItemDetails = it || null;
-    } catch {
-      selectedItemDetails = null;
-    }
-  })();
+    })();
 
   // Filter items based on search, L/UL, and Sex
   $: {
@@ -558,79 +566,20 @@
   // (deduped above)
 
   function openOrderDialog(type) {
+    // Use selectedItemDetails if available, else fallback to selectedItem
+    const item = selectedItemDetails || selectedItem;
+    if (!item) return;
     orderDialogType = type;
-    showOrderDialog = true;
-    // Initialize defaults based on item
-    orderQty = 1;
-    orderMarkup = 0;
-    orderValue = 0;
-    blueprintCond = 1;
-    orderTier = 0;
-    orderTiR = 1;
-    // Prefer detail item maxTT if any
-    const maxTT = getMaxTT(selectedItemDetails);
-    if (!isBlueprint && itemHasCondition && typeof maxTT === "number") {
-      orderValue = maxTT; // default Current TT to max TT
-    }
+    // Wait for dialog to mount, then init
+    setTimeout(() => {
+      orderDialogRef?.initOrder(item, type, 'create');
+      showOrderDialog = true;
+    }, 0);
   }
   function closeOrderDialog() {
     showOrderDialog = false;
     orderDialogType = null;
   }
-
-  // Classification for order dialog logic
-  $: isBlueprint =
-    (selectedItemDetails?.Properties?.Type ?? selectedItem?.t ?? null) ===
-    "Blueprint";
-  $: itemNameForTags = selectedItem?.n ?? selectedItemDetails?.Name ?? "";
-  $: isLimited = hasItemTag(itemNameForTags, "L");
-  $: isItemTierable = tierableTypes.has(
-    selectedItemDetails?.Properties?.Type || selectedItem?.t || null
-  );
-  $: itemHasCondition = (() => {
-    // (L) blueprints do NOT have condition
-    if (isBlueprint && isLimited) return false;
-    // Blueprints have special UI (1..100 => 0.01..1.00 value)
-    if (isBlueprint) return true;
-    // Generic rule via shopUtils
-    return hasCondition(selectedItemDetails);
-  })();
-  $: maxTTForItem = getMaxTT(selectedItemDetails);
-
-  function clamp2(n) {
-    return Math.round((Number(n) || 0) * 100) / 100;
-  }
-
-  // Price computation
-  $: effectiveQty = isItemTierable ? 1 : Math.max(0, Number(orderQty) || 0);
-  $: unitPrice = (() => {
-    // unit price in PED
-    if (!selectedItemDetails) return 0;
-    if (itemHasCondition) {
-      // Markup is +PED added on top of current TT value
-      const v = isBlueprint ? clamp2(blueprintCond / 100) : clamp2(orderValue);
-      return clamp2(v + clamp2(orderMarkup));
-    }
-    // No condition: MU is percent of MaxTT
-    const muPct = Math.max(0, Number(orderMarkup) || 0); // e.g., 120 => 120%
-    const base = Number(maxTTForItem) || 0;
-    return clamp2(base * (muPct / 100));
-  })();
-  $: totalPrice = clamp2(effectiveQty * unitPrice);
-  $: muLabel = (() => {
-    if (itemHasCondition) {
-      return `+${clamp2(orderMarkup).toFixed(2)} PED`; // explicit
-    } else {
-      return `${Math.max(0, Number(orderMarkup) || 0).toFixed(0)}% of Max TT`;
-    }
-  })();
-
-  $: ttValueDisplay = (() => {
-    if (!itemHasCondition) return `Max TT: ${maxTTForItem ?? "N/A"}`;
-    if (isBlueprint)
-      return `QR ${Number(blueprintCond).toFixed(2)} (=${clamp2(blueprintCond / 100).toFixed(2)} PED)`;
-    return `Current TT: ${clamp2(orderValue).toFixed(2)} PED`;
-  })();
 
   function onSubmitOrder() {
     // Placeholder: wire to API when available
@@ -660,6 +609,8 @@
       widths: ["60px", "80px", ...base.widths],
     };
   })();
+
+  $: isBlueprintDetail = selectedItemDetails && isBlueprint(selectedItemDetails);
 </script>
 
 <div class="exchange-browser">
@@ -858,6 +809,21 @@
               </div>
             {/if}
           {/if}
+          {#if isBlueprintDetail}
+            <div class="tier-filter" title="Filter by QR range (Blueprints)">
+              <label for="qrRangeSelect">QR</label>
+              <select
+                id="qrRangeSelect"
+                bind:value={selectedQRRange}
+                class="filter-select tier-select"
+                disabled={selectedLimited === 'L'}
+              >
+                {#each qrRangeOptions as opt}
+                  <option value={opt.value}>{opt.label}</option>
+                {/each}
+              </select>
+            </div>
+          {/if}
           <div class="detail-title-right">
             <div class="metric">
               Median:<br /><span class="metric-value"
@@ -882,15 +848,13 @@
             </div>
             <button
               class="action-btn"
-              disabled={!selectedItemDetails}
+              disabled={!selectedItemDetails && !selectedItem}
               on:click={() => {
-                const link = selectedItemDetails
-                  ? getItemLink(selectedItemDetails)
-                  : null;
+                const item = selectedItemDetails || selectedItem;
+                const link = item ? getItemLink(item) : null;
                 if (link) window.open(link, "_blank");
               }}
-              title="Open item page">Item Page</button
-            >
+              title="Open item page">Item Page</button>
           </div>
         </div>
 
@@ -924,150 +888,12 @@
           {/if}
         </div>
 
-        {#if showOrderDialog}
-          <div
-            class="modal-overlay"
-            role="button"
-            tabindex="0"
-            on:click={(e) => {
-              if (e.target.classList.contains("modal-overlay"))
-                closeOrderDialog();
-            }}
-            on:keydown={(e) => {
-              if (e.key === "Escape" || e.key === "Enter") closeOrderDialog();
-            }}
-          >
-            <div class="modal">
-              <h3 style="margin-top:0;">
-                Create {orderDialogType === "buy" ? "Buy" : "Sell"} Order
-              </h3>
-              <div class="form-row">
-                <div class="form-label">Item</div>
-                <div>{selectedItem?.n}</div>
-              </div>
-              <div class="form-row">
-                <label for="planetSelect">Planet</label>
-                <select
-                  id="planetSelect"
-                  bind:value={orderPlanet}
-                  class="filter-select select-center"
-                  style="height:32px;"
-                >
-                  <option>Calypso</option>
-                  <option>Arkadia</option>
-                  <option>Cyrene</option>
-                  <option>Rocktropia</option>
-                  <option>Next Island</option>
-                  <option>Monria</option>
-                  <option>Toulan</option>
-                  <option>Other</option>
-                </select>
-              </div>
-              {#if !isItemTierable}
-                <div class="form-row">
-                  <label for="qtyInput">Quantity</label>
-                  <input
-                    id="qtyInput"
-                    type="number"
-                    min="1"
-                    bind:value={orderQty}
-                  />
-                </div>
-              {/if}
-              {#if isItemTierable}
-                <div class="form-row">
-                  <label for="tierInput">Tier</label>
-                  <input
-                    id="tierInput"
-                    type="number"
-                    min="0"
-                    max="10"
-                    step="0.01"
-                    bind:value={orderTier}
-                  />
-                </div>
-                <div class="form-row">
-                  <label for="tirInput">TiR</label>
-                  <input
-                    id="tirInput"
-                    type="number"
-                    min={isLimited ? 1 : 1}
-                    max={isLimited ? 4000 : 200}
-                    step="1"
-                    bind:value={orderTiR}
-                  />
-                </div>
-              {/if}
-              {#if itemHasCondition}
-                {#if isBlueprint}
-                  <div class="form-row">
-                    <label for="bpCond">QR</label>
-                    <input
-                      id="bpCond"
-                      type="number"
-                      min="1"
-                      max="100"
-                      step="0.0001"
-                      bind:value={blueprintCond}
-                    />
-                  </div>
-                {:else}
-                  <div class="form-row">
-                    <label for="valueInput">Current TT (PED)</label>
-                    <input
-                      id="valueInput"
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      bind:value={orderValue}
-                    />
-                  </div>
-                {/if}
-                <div class="form-row">
-                  <label for="muPlus">Markup (+PED)</label>
-                  <input
-                    id="muPlus"
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    bind:value={orderMarkup}
-                  />
-                </div>
-              {:else}
-                <div class="form-row">
-                  <label for="muPct">Markup (%)</label>
-                  <input
-                    id="muPct"
-                    type="number"
-                    min="100"
-                    step="1"
-                    bind:value={orderMarkup}
-                  />
-                </div>
-              {/if}
-              <div class="form-row">
-                <div class="form-label">Calculation</div>
-                <div>
-                  {#if itemHasCondition}
-                    {#if isBlueprint}
-                      {`Unit: ${(blueprintCond / 100).toFixed(2)} + MU = ${unitPrice.toFixed(2)} | Total: ${isItemTierable ? 1 : Number(orderQty) || 0}×${unitPrice.toFixed(2)} = ${totalPrice.toFixed(2)} PED`}
-                    {:else}
-                      {`Unit: ${(Number(orderValue) || 0).toFixed(2)} + MU = ${unitPrice.toFixed(2)} | Total: ${isItemTierable ? 1 : Number(orderQty) || 0}×${unitPrice.toFixed(2)} = ${totalPrice.toFixed(2)} PED`}
-                    {/if}
-                  {:else}
-                    {`Unit: ${(Number(maxTTForItem) || 0).toFixed(2)} × ${(Number(orderMarkup) || 0).toFixed(0)}% = ${unitPrice.toFixed(2)} | Total: ${isItemTierable ? 1 : Number(orderQty) || 0}×${unitPrice.toFixed(2)} = ${totalPrice.toFixed(2)} PED`}
-                  {/if}
-                </div>
-              </div>
-              <div class="actions">
-                <button on:click={closeOrderDialog}>Cancel</button>
-                <button on:click={onSubmitOrder} title="Save order"
-                  >Submit</button
-                >
-              </div>
-            </div>
-          </div>
-        {/if}
+        <OrderDialog
+          bind:this={orderDialogRef}
+          show={showOrderDialog}
+          on:close={closeOrderDialog}
+          on:submit={onSubmitOrder}
+        />
       {/if}
     </div>
   </div>
@@ -1121,6 +947,7 @@
     color: var(--text-color);
     text-align: center;
   }
+
   .sidebar-title {
     color: var(--text-color);
     text-align: center;
@@ -1128,6 +955,7 @@
     font-size: 32px;
     line-height: 40px;
   }
+
   .category-scroll {
     flex: 1 1 auto;
     overflow: auto;
@@ -1141,6 +969,7 @@
     display: flex;
     flex-direction: column;
   }
+
   .filters {
     display: flex;
     align-items: center;
@@ -1148,6 +977,7 @@
     margin: 6px 0 6px 6px; /* align with table margins */
     flex-wrap: wrap;
   }
+
   .actions-right {
     margin-left: auto;
     display: flex;
@@ -1155,6 +985,7 @@
     flex: 1 0 auto;
     justify-content: flex-end;
   }
+
   .filter-select {
     padding: 10px;
     border: 1px solid var(--text-color);
@@ -1164,10 +995,7 @@
     font-size: 14px;
     flex: 0 0 200px; /* fixed width so search scales */
   }
-  .select-center {
-    display: inline-flex;
-    align-items: center;
-  }
+  
   .action-btn {
     padding: 10px;
     border: 1px solid var(--text-color);
