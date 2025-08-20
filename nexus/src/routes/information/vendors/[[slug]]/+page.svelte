@@ -177,7 +177,7 @@
         data={object.Offers.sort((a,b) => a.Item.Name.localeCompare(b.Item.Name)).map(item => ({
           values: [
             item.Item.Name,
-            clampDecimals(item.Item.Properties.Economy.Value, 2, 5) + ' PED',
+            clampDecimals(item.Value ?? item.Item.Properties.Economy.Value, 2, 5) + ' PED',
             item.Prices?.length > 0 ? item.Prices.map(price => `${price.Amount} ${price.Item.Name}`).join('<br />') : 'N/A',
             item.Item.Properties.Type != null ? getTypeName(item.Item.Properties.Type) : 'N/A',
             item.IsLimited ? 'Yes' : 'No'
