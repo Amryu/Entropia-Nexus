@@ -111,7 +111,7 @@
         dependencies: ['items'],
         controls: [
           { label: 'Item', type: 'input-validator', validator: (v, d) => d.items.some(x => x.Name === v), '_get': x => x.Item.Name, '_set': (x, v) => x.Item.Name = v },
-          { label: 'Value (Optional)', type: 'number', '_get': x => x.Item.Properties.Economy.Value, '_set': (x, v) => x.Item.Properties.Economy.Value = v },
+          { label: 'Value (Optional)', type: 'number', '_get': x => x.Value, '_set': (x, v) => x.Value = v },
           { label: 'Limited', type: 'checkbox', '_get': x => x.IsLimited, '_set': (x, v) => x.IsLimited = v },
           { label: 'Prices', type: 'list', config: {
             constructor: () => ({
