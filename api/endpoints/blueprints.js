@@ -1,6 +1,6 @@
 const pgp = require('pg-promise')();
 const { idOffsets } = require('./constants');
-const { getObjects, getObjectByIdOrName, parseItemList } = require('./utils');
+const { parseItemList } = require('./utils');
 
 const queries = {
   Blueprints: 'SELECT "Blueprints".*, "BlueprintBooks"."Name" AS "Book", "Professions"."Name" AS "Profession", "Items"."Type" AS "ItemType", "Items"."Name" AS "Item" FROM ONLY "Blueprints" LEFT JOIN ONLY "BlueprintBooks" ON "Blueprints"."BookId" = "BlueprintBooks"."Id" LEFT JOIN ONLY "Items" ON "Blueprints"."ItemId" = "Items"."Id" LEFT JOIN ONLY "Professions" ON "Professions"."Id" = "Blueprints"."ProfessionId"',
@@ -46,11 +46,39 @@ function formatBlueprint(x, materials){
   };
 }
 
-async function getBlueprintIngredients(ids){
-  if (ids.length === 0) return {};
-  const { pool } = require('./dbClient');
-  const { rows } = await pool.query('SELECT "BlueprintId", "Name", "Amount", "ItemId", "Type", "Items"."Value" AS "Value", "Items"."Type" AS "ItemType" FROM ONLY "BlueprintMaterials" INNER JOIN ONLY "Items" ON "Items"."Id" = "BlueprintMaterials"."ItemId" WHERE "BlueprintId" IN ('+ids.join(',')+')');
-  return rows.reduce((acc,r) => { (acc[r.BlueprintId] ||= []).push(r); return acc; }, {});
+// Shared helpers to build and process the combined blueprint + materials query
+function buildCombinedBlueprintQuery(baseSql){
+  return `
+    SELECT bp.*,
+           bm."Amount" AS "MatAmount",
+           "MatItems"."Name" AS "MatName",
+           bm."ItemId" AS "MatItemId",
+           "MatItems"."Value" AS "MatValue",
+           "MatItems"."Type" AS "MatItemType"
+    FROM (${baseSql}) AS bp
+    LEFT JOIN ONLY "BlueprintMaterials" bm ON bp."Id" = bm."BlueprintId"
+    LEFT JOIN ONLY "Items" AS "MatItems" ON "MatItems"."Id" = bm."ItemId"
+  `;
+}
+
+function reduceBlueprintJoinRows(rows){
+  const seen = new Set();
+  const uniqueRows = [];
+  const materialsMap = {};
+  for (const r of rows) {
+    if (!seen.has(r.Id)) { seen.add(r.Id); uniqueRows.push(r); }
+    if (r.MatItemId != null && r.MatItemType && r.MatName) {
+      (materialsMap[r.Id] ||= []).push({
+        Amount: r.MatAmount,
+        Name: r.MatName,
+        ItemId: r.MatItemId,
+        Type: r.MatItemType,
+        Value: r.MatValue,
+        ItemType: r.MatItemType,
+      });
+    }
+  }
+  return { uniqueRows, materialsMap };
 }
 
 function normalizeProductNames(names){
@@ -71,23 +99,42 @@ function normalizeProductNames(names){
 }
 
 async function getBlueprints(products = null, materials = null){
+  // Build the base blueprint query with optional filters, then join materials in one shot
   let where = '';
   if (products !== null) {
     const normalized = normalizeProductNames(products);
     where = pgp.as.format(' WHERE "Items"."Name" IN ($1:csv)', [normalized]);
+  } else if (materials !== null) {
+    where = pgp.as.format(' WHERE "Blueprints"."Id" IN (SELECT DISTINCT "BlueprintId" FROM ONLY "BlueprintMaterials" INNER JOIN ONLY "Items" ON "Items"."Id" = "BlueprintMaterials"."ItemId" WHERE "Items"."Name" IN ($1:csv))', [materials.map(x => `${x}`)]);
   }
-  else if (materials !== null) where = pgp.as.format(' WHERE "Blueprints"."Id" IN (SELECT DISTINCT "BlueprintId" FROM ONLY "BlueprintMaterials" INNER JOIN ONLY "Items" ON "Items"."Id" = "BlueprintMaterials"."ItemId" WHERE "Items"."Name" IN ($1:csv))', [materials.map(x => `${x}`)]);
+
+  const baseSql = queries.Blueprints + where;
+  const combinedSql = buildCombinedBlueprintQuery(baseSql);
+
   const { pool } = require('./dbClient');
-  const { rows } = await pool.query(queries.Blueprints + where);
-  const ingredients = await getBlueprintIngredients(rows.map(r=>r.Id));
-  return rows.map(r => formatBlueprint(r, ingredients));
+  const { rows } = await pool.query(combinedSql);
+  const { uniqueRows, materialsMap } = reduceBlueprintJoinRows(rows);
+  return uniqueRows.map(r => formatBlueprint(r, materialsMap));
 }
 
 async function getBlueprint(idOrName){
-  const row = await getObjectByIdOrName(queries.Blueprints, 'Blueprints', idOrName);
-  if (!row) return null;
-  const ingredients = await getBlueprintIngredients([row.Id]);
-  return formatBlueprint(row, ingredients);
+  // Build a filtered blueprint subquery by id or name, then join materials and reduce
+  let where;
+  const isNumeric = String(idOrName).match(/^\d+$/);
+  if (isNumeric) {
+    where = pgp.as.format(' WHERE "Blueprints"."Id" = $1', [Number(idOrName)]);
+  } else {
+    where = pgp.as.format(' WHERE "Blueprints"."Name" = $1', [String(idOrName)]);
+  }
+
+  const baseSql = queries.Blueprints + where;
+  const combinedSql = buildCombinedBlueprintQuery(baseSql);
+
+  const { pool } = require('./dbClient');
+  const { rows } = await pool.query(combinedSql);
+  if (!rows || rows.length === 0) return null;
+  const { uniqueRows, materialsMap } = reduceBlueprintJoinRows(rows);
+  return formatBlueprint(uniqueRows[0], materialsMap);
 }
 
 // Endpoints
