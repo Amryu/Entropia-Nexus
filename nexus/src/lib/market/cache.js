@@ -7,6 +7,9 @@ let cache = {
   // Categorized tree and annotated payload
   categorized: null,
   annotated: null,
+  // Precomputed summary payload for the exchange endpoint
+  summaryJson: null,
+  summaryEtag: null,
   // Source datasets
   items: null,
   detailed: {},
@@ -101,6 +104,27 @@ function annotateForExchange(categorized) {
   return categorized;
 }
 
+// Build/rebuild lightweight summary JSON and an ETag for fast responses
+function buildSummary() {
+  try {
+    if (!cache.annotated) {
+      cache.summaryJson = null;
+      cache.summaryEtag = null;
+      return;
+    }
+    const slim = slimCategorized(cache.annotated);
+    const json = JSON.stringify(slim);
+    // Simple weak ETag based on length and last full build timestamp
+    const len = Buffer.byteLength(json);
+    const stamp = cache.lastFullBuildAt || Date.now();
+    cache.summaryJson = json;
+    cache.summaryEtag = `W/"${len}-${stamp}"`;
+  } catch {
+    cache.summaryJson = null;
+    cache.summaryEtag = null;
+  }
+}
+
 // Full rebuild (24h): fetch all datasets, categorize, annotate
 export async function rebuildMarketCache(fetch) {
   if (rebuildPromise) return rebuildPromise;
@@ -117,6 +141,8 @@ export async function rebuildMarketCache(fetch) {
     cache.annotated = annotated;
     cache.lastFullBuildAt = Date.now();
     cache.lastItemsCheckAt = Date.now();
+
+  buildSummary();
 
     return cache.annotated;
   })();
@@ -217,6 +243,8 @@ async function itemsDeltaRefresh(fetch) {
     cache.annotated = annotated;
     cache.lastItemsCheckAt = Date.now();
 
+  buildSummary();
+
     return cache.annotated;
   })();
   try {
@@ -309,5 +337,17 @@ function slimCategorized(obj) {
 
 export async function getExchangeCategorizationSummary(fetch) {
   const full = await getExchangeCategorization(fetch);
-  return slimCategorized(full);
+  if (!cache.summaryJson) buildSummary();
+  try {
+    return JSON.parse(cache.summaryJson || '{}');
+  } catch {
+    return slimCategorized(full);
+  }
+}
+
+// Fast path for API route: returns precomputed JSON string and ETag
+export async function getExchangeCategorizationSummaryJson(fetch) {
+  await getExchangeCategorization(fetch);
+  if (!cache.summaryJson) buildSummary();
+  return { json: cache.summaryJson || '{}', etag: cache.summaryEtag || null };
 }

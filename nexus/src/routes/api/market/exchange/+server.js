@@ -1,18 +1,24 @@
 // @ts-nocheck
-import { getExchangeCategorizationSummary } from '$lib/market/cache';
+import { getExchangeCategorizationSummaryJson } from '$lib/market/cache';
 import { brotliCompressSync, gzipSync } from 'node:zlib';
 
 export async function GET({ fetch, request }) {
   try {
-    const data = await getExchangeCategorizationSummary(fetch);
-    const body = JSON.stringify(data);
+    const { json, etag } = await getExchangeCategorizationSummaryJson(fetch);
+    const body = json;
 
     const ae = request.headers.get('accept-encoding') || '';
     const headers = new Headers({
       'Content-Type': 'application/json; charset=utf-8',
       'Cache-Control': 'public, max-age=60',
-      'Vary': 'Accept-Encoding'
+      'Vary': 'Accept-Encoding',
+      ...(etag ? { 'ETag': etag } : {})
     });
+
+    const inm = request.headers.get('if-none-match');
+    if (etag && inm && inm === etag) {
+      return new Response(null, { status: 304, headers });
+    }
 
     if (ae.includes('br')) {
       headers.set('Content-Encoding', 'br');
