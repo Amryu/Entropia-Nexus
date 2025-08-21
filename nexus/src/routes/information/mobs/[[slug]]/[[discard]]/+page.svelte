@@ -385,7 +385,7 @@
                   {
                     label: 'Composition',
                     type: 'multi',
-                    fields: ['Stab', 'Cut', 'Impact', 'Penetration', 'Shrapnel', 'Burn', 'Cold', 'Acid', 'Electric'],
+                    fields: ['Stb', 'Cut', 'Imp', 'Pen', 'Shr', 'Brn', 'Cld', 'Acd', 'Ele'],
                     '_get': x => [x.Damage.Stab, x.Damage.Cut, x.Damage.Impact, x.Damage.Penetration, x.Damage.Shrapnel, x.Damage.Burn, x.Damage.Cold, x.Damage.Acid, x.Damage.Electric],
                     '_set': (x, v) => [x.Damage.Stab, x.Damage.Cut, x.Damage.Impact, x.Damage.Penetration, x.Damage.Shrapnel, x.Damage.Burn, x.Damage.Cold, x.Damage.Acid, x.Damage.Electric] = v
                   },
