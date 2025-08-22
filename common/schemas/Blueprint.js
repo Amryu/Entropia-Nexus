@@ -98,6 +98,18 @@ export const Blueprint = {
         ]
       }
     },
+    "Drops": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "Name": { "type": "string" }
+        },
+        "required": ["Name"]
+      },
+      "default": []
+    },
     "Book": { "$ref": "https://entropianexus.com/schemas/NamedEntity.json" },
     "Product": { "$ref": "https://entropianexus.com/schemas/NamedEntity.json" },
     "Profession": { "$ref": "https://entropianexus.com/schemas/NamedEntity.json" }

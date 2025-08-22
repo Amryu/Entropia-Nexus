@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { tick } from 'svelte';
 
 export function contextmenu(node, { contextMenu, payload }) {

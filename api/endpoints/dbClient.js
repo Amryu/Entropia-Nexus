@@ -1,6 +1,17 @@
-const { Pool } = require('pg');
+const { Pool, types } = require('pg');
 const credentials = require('../credentials');
 const { recordQuery } = require('../metrics');
+
+// Parse common numeric types as JS numbers once to avoid per-field Number() costs
+try {
+	// numeric
+	types.setTypeParser(1700, v => (v === null ? null : parseFloat(v)));
+	// int8
+	types.setTypeParser(20, v => (v === null ? null : parseInt(v, 10)));
+	// float4, float8
+	types.setTypeParser(700, v => (v === null ? null : parseFloat(v)));
+	types.setTypeParser(701, v => (v === null ? null : parseFloat(v)));
+} catch {}
 
 // Single shared pools for the whole API
 const pool = new Pool(credentials.nexus);

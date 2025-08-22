@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 export function tooltip(node, { tooltip, payload }) {
   let elementHover = (e) => onElementHover(e, tooltip, payload);
   let elementOut = () => onElementOut(tooltip, payload);

@@ -1,6 +1,7 @@
 const pgp = require('pg-promise')();
 const { idOffsets } = require('./constants');
 const { parseItemList } = require('./utils');
+const { pool } = require('./dbClient');
 
 const queries = {
   Blueprints: 'SELECT "Blueprints".*, "BlueprintBooks"."Name" AS "Book", "Professions"."Name" AS "Profession", "Items"."Type" AS "ItemType", "Items"."Name" AS "Item" FROM ONLY "Blueprints" LEFT JOIN ONLY "BlueprintBooks" ON "Blueprints"."BookId" = "BlueprintBooks"."Id" LEFT JOIN ONLY "Items" ON "Blueprints"."ItemId" = "Items"."Id" LEFT JOIN ONLY "Professions" ON "Professions"."Id" = "Blueprints"."ProfessionId"',
@@ -19,8 +20,14 @@ function _formatBlueprintMaterial(x){
   };
 }
 
-function formatBlueprint(x, materials){
+function formatBlueprint(x, materials, dropsBySource){
   const mats = (materials[x.Id] ?? []).map(_formatBlueprintMaterial);
+  const drops = (dropsBySource?.[x.Id] ?? []).map(d => ({
+    Id: d.DropId,
+    ItemId: d.DropId + idOffsets.Blueprints,
+    Name: d.DropName,
+    Links: { "$Url": `/blueprints/${d.DropId}` },
+  }));
   return {
     Id: x.Id,
     ItemId: x.Id + idOffsets.Blueprints,
@@ -42,6 +49,7 @@ function formatBlueprint(x, materials){
     Book: { Name: x.Book, Links: { "$Url": `/blueprintbooks/${x.BookId}` } },
     Product: x.Item != null ? { Name: x.Item, Properties: { Type: x.ItemType }, Links: { "$Url": `/${x.ItemType.toLowerCase()}s/${x.ItemId % 100000}` } } : null,
     Materials: mats,
+    Drops: drops,
     Links: { "$Url": `/blueprints/${x.Id}` },
   };
 }
@@ -114,7 +122,8 @@ async function getBlueprints(products = null, materials = null){
   const { pool } = require('./dbClient');
   const { rows } = await pool.query(combinedSql);
   const { uniqueRows, materialsMap } = reduceBlueprintJoinRows(rows);
-  return uniqueRows.map(r => formatBlueprint(r, materialsMap));
+  const dropsBySource = await getDropsForBlueprintIds(uniqueRows.map(r => r.Id));
+  return uniqueRows.map(r => formatBlueprint(r, materialsMap, dropsBySource));
 }
 
 async function getBlueprint(idOrName){
@@ -134,7 +143,22 @@ async function getBlueprint(idOrName){
   const { rows } = await pool.query(combinedSql);
   if (!rows || rows.length === 0) return null;
   const { uniqueRows, materialsMap } = reduceBlueprintJoinRows(rows);
-  return formatBlueprint(uniqueRows[0], materialsMap);
+  const dropsBySource = await getDropsForBlueprintIds([uniqueRows[0].Id]);
+  return formatBlueprint(uniqueRows[0], materialsMap, dropsBySource);
+}
+
+// Fetch drops mapping for a set of blueprint Ids
+async function getDropsForBlueprintIds(ids){
+  const map = {};
+  if (!ids || ids.length === 0) return map;
+  const { rows } = await pool.query(
+    `SELECT bd."SourceId", bd."DropId", d."Name" AS "DropName"
+     FROM ONLY "BlueprintDrops" bd
+     INNER JOIN ONLY "Blueprints" d ON d."Id" = bd."DropId"
+     WHERE bd."SourceId" IN (${ids.join(',')})`
+  );
+  for (const r of rows){ (map[r.SourceId] ||= []).push(r); }
+  return map;
 }
 
 // Endpoints

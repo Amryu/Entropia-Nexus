@@ -17,6 +17,7 @@
   let cachedProfessionOptions = [];
   let cachedBookOptions = [];
   let cachedMaterialOptions = [];
+  let cachedBlueprintOptions = [];
   
   // Dependencies will be populated by EntityViewer when the edit form is shown
   let dependencies = null;
@@ -34,7 +35,8 @@
         ?.map(x => x.Name) || [];
       
       cachedBookOptions = dependencies.blueprintbooks?.map(x => x.Name) || [];
-      cachedMaterialOptions = dependencies.materials?.map(x => x.Name) || [];
+  cachedMaterialOptions = dependencies.materials?.map(x => x.Name) || [];
+  cachedBlueprintOptions = dependencies.blueprints?.map(x => x.Name) || [];
     }
   }
 
@@ -113,9 +115,10 @@
       Product: {
         Name: null
       },
-      Materials: []
+      Materials: [],
+      Drops: []
     }),
-    dependencies: ['items', 'materials', 'blueprintbooks',  'professions'],
+    dependencies: ['items', 'materials', 'blueprintbooks', 'professions', 'blueprints'],
     controls: [
       {
         label: 'General',
@@ -249,6 +252,17 @@
           { label: 'Amount', type: 'number', step: 1, min: 1, '_get': x => x.Amount, '_set': (x, v) => x.Amount = v},
         ]
       }, '_get': x => x.Materials, '_set': (x, v) => x.Materials = v}
+      ,
+      { label: 'Drops', type: 'list', config: {
+        constructor: () => ({ Name: null }),
+        dependencies: ['blueprints'],
+        controls: [
+          { label: 'Blueprint', type: 'select', options: (_, d) => {
+            if (d && !dependencies) { dependencies = d; }
+            return cachedBlueprintOptions.length > 0 ? cachedBlueprintOptions : (d.blueprints?.map(x => x.Name) || []);
+          }, '_get': x => x.Name, '_set': (x, v) => x.Name = v }
+        ]
+      }, '_get': x => x.Drops, '_set': (x, v) => x.Drops = v }
     ]
   }
 

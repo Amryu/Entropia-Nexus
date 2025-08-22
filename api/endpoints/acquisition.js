@@ -5,6 +5,7 @@ const vendoroffers = require('./vendoroffers');
 const { getMobLootsForItemsOrMobs } = require('./mobloots');
 const { getShopListings } = require('./shops');
 const { getItemCached } = require('./itemsCache');
+const { getBlueprintDropRows } = require('./blueprintdrops');
 
 async function hydrateShopItems(list) {
   const uniqueIds = Array.from(new Set(list.map(x => x.ItemId).filter(Boolean)));
@@ -47,7 +48,22 @@ function register(app){
         getShopListings(items),
       ]);
       const hydrated = await hydrateShopItems(listings);
-      res.status(200).json({ Blueprints: blueprintList, Loots: lootList, VendorOffers: offersList, RefiningRecipes: recipesList, ShopListings: hydrated });
+      // If any requested items are blueprint names, also include their drop blueprints (Blueprint Discovery)
+      let blueprintDrops = [];
+      try {
+        const rows = await getBlueprintDropRows({ sources: items });
+        if (rows && rows.length) {
+          // Deduplicate by DropId
+          const seen = new Set();
+          for (const r of rows) {
+            if (seen.has(r.DropId)) continue;
+            seen.add(r.DropId);
+            const level = r.DropLevel != null ? Number(r.DropLevel) : null;
+            blueprintDrops.push({ Name: r.DropName, Properties: { Level: level } });
+          }
+        }
+      } catch {}
+      res.status(200).json({ Blueprints: blueprintList, Loots: lootList, VendorOffers: offersList, RefiningRecipes: recipesList, ShopListings: hydrated, BlueprintDrops: blueprintDrops });
     } catch (e){ next(e); }
   });
 

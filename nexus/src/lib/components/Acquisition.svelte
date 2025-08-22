@@ -242,6 +242,21 @@
         }))
       } />
     {/if}
+    {#if acquisition.BlueprintDrops && acquisition.BlueprintDrops.length > 0}
+    <Table
+      title="Blueprint Discovery"
+      header={{
+        values: ['Name', 'Level'],
+        widths: ['1fr', 'max-content']
+      }}
+      data={
+        acquisition.BlueprintDrops.map(bp => ({
+          values: [bp.Name, bp?.Properties?.Level ?? 'N/A'],
+          links: [getTypeLink(bp.Name, 'Blueprint'), null]
+        }))
+      }
+      options={{ searchable: true }} />
+    {/if}
     {#if acquisition.Upgrades && acquisition.Upgrades.length > 0}
     <Table
       title="Upgraded"

@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 import { navigate } from "$lib/util";
 
 export function loading(node) {

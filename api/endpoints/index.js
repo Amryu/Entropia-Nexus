@@ -11,6 +11,7 @@ const blueprints = require('./blueprints');
 const refining = require('./refining');
 const vendors = require('./vendors');
 const vendoroffers = require('./vendoroffers');
+const blueprintdrops = require('./blueprintdrops');
 const materials = require('./materials');
 const medicalchips = require('./medicalchips');
 const medicaltools = require('./medicaltools');
@@ -73,6 +74,7 @@ function registerAll(app){
   refining.register(app);
   vendors.register(app);
   vendoroffers.register(app);
+  blueprintdrops.register(app);
   materials.register(app);
   medicalchips.register(app);
   medicaltools.register(app);
