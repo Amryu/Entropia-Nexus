@@ -58,7 +58,7 @@
             change = response;
           })
           .catch(error => {
-            console.error(error);
+            console.log('No existing change found, creating a new one.');
           });
       }
 
@@ -74,7 +74,7 @@
         change = response;
       })
       .catch(error => {
-        console.error(error);
+        console.log('No existing change found, creating a new one.');
       });
   }
 
