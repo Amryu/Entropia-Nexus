@@ -138,6 +138,7 @@
   && (!acquisition.Loots || acquisition.Loots.length === 0)
   && (!acquisition.RefiningRecipes || acquisition.RefiningRecipes.length === 0)
   && (!acquisition.Blueprints || acquisition.Blueprints.length === 0)
+  && (!acquisition.BlueprintDrops || acquisition.BlueprintDrops.length === 0)
   && (!acquisition.ShopListings || acquisition.ShopListings.length === 0)
   && (!acquisition.Upgrades || acquisition.Upgrades.length === 0)
   && (!acquisition.Events || acquisition.Events.length === 0)))}
