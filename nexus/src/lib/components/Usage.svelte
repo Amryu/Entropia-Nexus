@@ -116,13 +116,13 @@
             return vendorOffer.Prices.map(price => {
               return {
                 values: [
-                  vendorOffer.Name,
-                  vendorOffer.Location,
+                  vendorOffer?.Vendor?.Name,
+                  vendorOffer?.Vendor?.Planet?.Name,
                   price.Item.Name,
-                  price.Price,
+                  price.Amount,
                 ],
                 spans: [null, null, vendorOffer.Prices.length, vendorOffer.Prices.length],
-                links: [getTypeLink(vendorOffer.Name, 'Vendor'), null, getItemLink(price.Item), null]
+                links: [getTypeLink(vendorOffer?.Vendor?.Name, 'Vendor'), null, getItemLink(price.Item), null]
               }
             })
           })
