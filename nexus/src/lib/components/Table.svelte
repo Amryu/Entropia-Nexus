@@ -56,8 +56,8 @@
     for (let i = 0; i < getColumnCount(header, filteredData); i++) {
       spanMap[i] = [0];
       for (let j = 1; j < filteredData.length; j++) {
-        if ((filteredData[j].spans == null || filteredData[j].spans[i] == null)
-          || (filteredData[j].spans[i] != null && isSpannable(filteredData[j].spans[i]) && !spanDataMatches(filteredData[j].spans, filteredData[j], filteredData[j - 1]))) {
+        // Start a new span group if this column is not spannable, or if the value changes vs previous row
+        if (!spanCellMatches(i, filteredData[j], filteredData[j - 1])) {
           spanMap[i].push(j);
         }
       }
@@ -259,18 +259,13 @@
     return `${cols} ${rows}`;
   }
 
-  function spanDataMatches(spans, row, prevRow) {
-    if (spans == null || prevRow == null) {
-      return false;
-    }
-
-    for (let i = 0; i < spans.length; i++) {
-  if (isSpannable(row.spans[i]) && row.values[i] !== prevRow.values[i]) {
-        return false;
-      }
-    }
-
-    return true;
+  // Returns true if the given column should continue the span from the previous row
+  function spanCellMatches(colIndex, row, prevRow) {
+    if (row == null || prevRow == null) return false;
+    const spans = row.spans;
+    if (spans == null) return false;
+    if (!isSpannable(spans[colIndex])) return false;
+    return row.values[colIndex] === prevRow.values[colIndex];
   }
 </script>
 
@@ -476,8 +471,8 @@
           <!-- svelte-ignore a11y-mouse-events-have-key-events -->
           <tr on:click={() => rowClick({ index, data: item })} on:mouseover={() => rowHover({ index, data: item })} on:mouseout={() => rowHover(null)} style={item?.trStyle ?? ''} class="{options.highlightOnHover ? 'hover' : ''}">
             {#each item.values as value, valueIndex}
-              {#if (item?.spans == null || item?.spans[valueIndex] == null) || (item?.spans != null && item?.spans[valueIndex] > 0 && !spanDataMatches(item?.spans, item, filteredData[index - 1]))}
-                <td class={(item?.spans != null && item?.spans[valueIndex] > 0 ? spanMap[valueIndex].indexOf(index) : index) % 2 === 0 ? 'row-color' : 'row-color-alt'} style={`${item?.spans != null && item?.spans[valueIndex] > 0 && !spanDataMatches(item?.spans, item, filteredData[index - 1]) ? `grid-row: span ${getSpanLength(valueIndex, index)};` : ''}${item?.tdStyles && item?.tdStyles[valueIndex] != null ? item?.tdStyles[valueIndex] : ''}`}>
+              {#if (item?.spans == null || item?.spans[valueIndex] == null) || (isSpannable(item?.spans[valueIndex]) && !spanCellMatches(valueIndex, item, filteredData[index - 1]))}
+                <td class={(item?.spans != null && isSpannable(item?.spans[valueIndex]) ? spanMap[valueIndex].indexOf(index) : index) % 2 === 0 ? 'row-color' : 'row-color-alt'} style={`${item?.spans != null && isSpannable(item?.spans[valueIndex]) && !spanCellMatches(valueIndex, item, filteredData[index - 1]) ? `grid-row: span ${getSpanLength(valueIndex, index)};` : ''}${item?.tdStyles && item?.tdStyles[valueIndex] != null ? item?.tdStyles[valueIndex] : ''}`}>
                   <span style={(shouldShowTooltip(item, valueIndex) && !(item?.copyables && item.copyables[valueIndex])) ? 'text-decoration: underline; text-decoration-style: dashed; text-decoration-thickness: 1px;' : ''} title={shouldShowTooltip(item, valueIndex) ? item?.tooltips[valueIndex] : null}>
                     {#if item?.links != null && item?.links[valueIndex] != null}
                       <a href={item?.links[valueIndex]}>{@html value ?? ''}</a>
