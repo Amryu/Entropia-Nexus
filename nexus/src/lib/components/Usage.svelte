@@ -107,7 +107,7 @@
         title = "Vendor Offers"
         header = { 
           {
-            values: ['Name', 'Location', 'Item', 'Prices'],
+            values: ['Name', 'Location', 'Item', 'Amount'],
             widths: ['1fr', '120px', '1fr', '80px'],
           }
         }
@@ -118,11 +118,11 @@
                 values: [
                   vendorOffer?.Vendor?.Name,
                   vendorOffer?.Vendor?.Planet?.Name,
-                  price.Item.Name,
-                  price.Amount,
+                  vendorOffer?.Item?.Name,
+                  price?.Amount,
                 ],
-                spans: [null, null, vendorOffer.Prices.length, vendorOffer.Prices.length],
-                links: [getTypeLink(vendorOffer?.Vendor?.Name, 'Vendor'), null, getItemLink(price.Item), null]
+                spans: [vendorOffer.Prices.length, vendorOffer.Prices.length, null, null],
+                links: [getTypeLink(vendorOffer?.Vendor?.Name, 'Vendor'), null, getItemLink(vendorOffer?.Item), null]
               }
             })
           })
