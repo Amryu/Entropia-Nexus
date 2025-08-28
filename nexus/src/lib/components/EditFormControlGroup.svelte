@@ -346,28 +346,37 @@
     {:else if control.type === 'list'}
       {#each (stores[i].value ?? [])
         .map((item, idx) => ({ item, idx }))
-        .sort((a, b) => control.sort ? control.sort(a.item, b.item) : 0) as entry, j}
+        .sort((a, b) => control.sort ? control.sort(a.item, b.item) : 0) as entry, j (entry.item)}
         <span>
           {control.itemNameFunc ? control.itemNameFunc(j) : `#${j + 1}`} &nbsp; 
           <input type="button" title="Remove" value="🗑️" on:click={() => { 
-            const origIdx = entry.idx;
-            stores[i].value = stores[i].value.filter((_, k) => k !== origIdx); 
-            dispatch('change'); 
+            const itemRef = entry.item;
+            const arr = stores[i].value || [];
+            const idx = arr.findIndex(x => x === itemRef);
+            if (idx >= 0) {
+              stores[i].value = [
+                ...arr.slice(0, idx),
+                ...arr.slice(idx + 1)
+              ];
+              dispatch('change'); 
+            }
           }} disabled={disabled} />
           {#if control.allowInsert !== false}
             <input type="button" title="Insert" value="➕" on:click={() => { 
               let newItem = control.config.constructor(); 
+              const parentArray = stores[i].value || [];
+              // insert relative to the clicked item in the underlying array
+              const targetIdx = parentArray.findIndex((x) => x === entry.item);
+              const insertIdx = targetIdx >= 0 ? targetIdx : parentArray.length;
               if (control.config.initialize) {
-                const currentIndex = entry.idx;
-                const parentArray = stores[i].value || [];
+                const currentIndex = insertIdx;
                 control.config.initialize(newItem, dependencies, root, currentIndex, parentArray, object);
               }
-              const origIdx = entry.idx;
               stores[i].value = [
-                ...stores[i].value.slice(0, origIdx), 
-                newItem, 
-                ...stores[i].value.slice(origIdx)
-              ]; 
+                ...parentArray.slice(0, insertIdx),
+                newItem,
+                ...parentArray.slice(insertIdx)
+              ];
               dispatch('change'); 
             }} disabled={disabled} />
           {/if}
