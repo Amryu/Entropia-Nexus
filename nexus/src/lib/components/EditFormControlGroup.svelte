@@ -344,25 +344,36 @@
     {:else if control.type === 'group'}
       <svelte:self root={root} bind:object={object} controls={control.controls} dependencies={dependencies} disabled={disabled} on:change={() => dispatch('change')} />
     {:else if control.type === 'list'}
-      {#each (stores[i].value ?? []).sort((a, b) => control.sort ? control.sort(a, b) : 0) as item, j}
+      {#each (stores[i].value ?? [])
+        .map((item, idx) => ({ item, idx }))
+        .sort((a, b) => control.sort ? control.sort(a.item, b.item) : 0) as entry, j}
         <span>
           {control.itemNameFunc ? control.itemNameFunc(j) : `#${j + 1}`} &nbsp; 
-          <input type="button" value="Remove" on:click={() => { stores[i].value = stores[i].value.filter((_, k) => k !== j); dispatch('change'); }} disabled={disabled} />
+          <input type="button" title="Remove" value="🗑️" on:click={() => { 
+            const origIdx = entry.idx;
+            stores[i].value = stores[i].value.filter((_, k) => k !== origIdx); 
+            dispatch('change'); 
+          }} disabled={disabled} />
           {#if control.allowInsert !== false}
-            <input type="button" value="Insert" on:click={() => { 
+            <input type="button" title="Insert" value="➕" on:click={() => { 
               let newItem = control.config.constructor(); 
               if (control.config.initialize) {
-                const currentIndex = j;
+                const currentIndex = entry.idx;
                 const parentArray = stores[i].value || [];
                 control.config.initialize(newItem, dependencies, root, currentIndex, parentArray, object);
               }
-              stores[i].value = [...stores[i].value.slice(0, j), newItem, ...stores[i].value.slice(j)]; 
+              const origIdx = entry.idx;
+              stores[i].value = [
+                ...stores[i].value.slice(0, origIdx), 
+                newItem, 
+                ...stores[i].value.slice(origIdx)
+              ]; 
               dispatch('change'); 
             }} disabled={disabled} />
           {/if}
         </span>
         <div class="efcg-item">
-          <svelte:self root={root} bind:object={item} controls={control.config.controls} dependencies={dependencies} disabled={disabled} on:change={() => dispatch('change')} />
+          <svelte:self root={root} bind:object={entry.item} controls={control.config.controls} dependencies={dependencies} disabled={disabled} on:change={() => dispatch('change')} />
         </div>
       {/each}
       {control.itemNameFunc ? control.itemNameFunc(stores[i].value?.length) : `#${(stores[i].value?.length ?? 0) + 1}`}
@@ -376,12 +387,12 @@
         stores[i].value = [...stores[i].value, newItem]; 
         dispatch('change'); 
       }} disabled={disabled} />
-    {:else if control.type === 'array'}
+  {:else if control.type === 'array'}
       {#each Array.from({ length: typeof control.size === 'function' ? control.size(object, dependencies, root) : control.size }, (_, k) => stores[i].value?.find(x => control.indexFunc(x, k)) ?? undefined) as value, j}
         <span>
           {control.itemNameFunc(j)} &nbsp; 
           {#if value !== undefined}
-            <input type="button" value="Remove" on:click={() => { stores[i].value = stores[i].value.filter(x => !control.indexFunc(x, j)); dispatch('change'); }} disabled={disabled} />
+      <input type="button" title="Remove" value="🗑️" on:click={() => { stores[i].value = stores[i].value.filter(x => !control.indexFunc(x, j)); dispatch('change'); }} disabled={disabled} />
           {/if}
         </span>
         {#if value !== undefined}
@@ -396,7 +407,8 @@
               const parentArray = stores[i].value || [];
               control.config.initialize(newItem, dependencies, root, currentIndex, parentArray, object);
             }
-            stores[i].value.push(newItem); 
+            const arr = stores[i].value || [];
+            stores[i].value = [...arr, newItem]; 
             dispatch('change'); 
           }} disabled={disabled} />
         {/if}
