@@ -717,11 +717,19 @@ async function applyMobAttackChanges(client, maturityId, attacks) {
 }
 
 async function applyMobLootChanges(client, mobId, loots) {
+  // Normalize input
+  loots = Array.isArray(loots) ? loots : [];
+
+  // Resolve Item and Maturity IDs
   await Promise.all(loots.map(loot => client.query(`SELECT "Id" FROM ONLY "Items" WHERE "Name" = $1`, [loot.Item.Name]).then(res => loot.Item.Id = res.rows[0]?.Id)));
   await Promise.all(loots.map(loot => client.query(`SELECT "Id" FROM ONLY "MobMaturities" WHERE "Name" = $1`, [loot.Maturity.Name]).then(res => loot.Maturity.Id = res.rows[0]?.Id)));
 
+  const newItemIds = loots
+    .map(loot => loot?.Item?.Id)
+    .filter(id => Number.isInteger(id));
+
   await Promise.all([
-    client.query(`DELETE FROM ONLY "MobLoots" WHERE "MobId" = $1 AND "ItemId" NOT IN (SELECT * FROM unnest($2::int[]))`, [mobId, loots.map(x => x.ItemId)]),
+    client.query(`DELETE FROM ONLY "MobLoots" WHERE "MobId" = $1 AND "ItemId" NOT IN (SELECT * FROM unnest($2::int[]))`, [mobId, newItemIds]),
     ...loots.map(loot => client.query(`
       INSERT INTO "MobLoots" ("MobId", "ItemId", "MaturityId", "Frequency", "IsEvent")
       VALUES ($1, $2, $3, $4, $5)
