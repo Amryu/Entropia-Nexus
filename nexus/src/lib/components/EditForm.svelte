@@ -172,7 +172,7 @@
     <div class="info" style="text-align: center;">You are not the author of this change. You can only view it.</div>
   {/if}
   <form>
-    {#each config.controls.filter(x => x._if === undefined || x._if(object, dependencies)) as control}
+    {#each config.controls.filter(x => x._if === undefined || x._if(object, dependencies, object)) as control}
       <EditFormControlGroup on:change={() => { config = config; object = object; }} root={object} bind:object={object} controls={control.controls || [control]} dependencies={dependencies} title={control.label} disabled={disabled} />
     {/each}
     <br />

@@ -23,10 +23,10 @@
       set,
       update,
       get value() {
-        return _get(object, dependencies);
+        return _get(object, dependencies, root);
       },
       set value(newValue) {
-        _set(object, newValue, dependencies);
+        _set(object, newValue, dependencies, root);
         set(newValue);
         dispatch('change');
       }
@@ -122,7 +122,7 @@
 
 <div class="grid">
 {#each controls as control, i}
-  {#if control._if === undefined || control._if(object, dependencies)}
+  {#if control._if === undefined || control._if(object, dependencies, root)}
     {#if control.type !== 'list' && control.type !== 'array'}
       <label for={control.key}>{typeof control.label === 'function' ? control.label(object) : control.label}</label>
     {/if}
@@ -396,12 +396,12 @@
         stores[i].value = [...stores[i].value, newItem]; 
         dispatch('change'); 
       }} disabled={disabled} />
-  {:else if control.type === 'array'}
-      {#each Array.from({ length: typeof control.size === 'function' ? control.size(object, dependencies, root) : control.size }, (_, k) => stores[i].value?.find(x => control.indexFunc(x, k)) ?? undefined) as value, j}
+    {:else if control.type === 'array'}
+      {#each Array.from({ length: typeof control.size === 'function' ? control.size(object, dependencies, root) : control.size }, (_, k) => stores[i].value?.find(x => control.indexFunc(x, k, root)) ?? undefined) as value, j}
         <span>
           {control.itemNameFunc(j)} &nbsp; 
           {#if value !== undefined}
-      <input type="button" title="Remove" value="🗑️" on:click={() => { stores[i].value = stores[i].value.filter(x => !control.indexFunc(x, j)); dispatch('change'); }} disabled={disabled} />
+      <input type="button" title="Remove" value="🗑️" on:click={() => { stores[i].value = stores[i].value.filter(x => !control.indexFunc(x, j, root)); dispatch('change'); }} disabled={disabled} />
           {/if}
         </span>
         {#if value !== undefined}
