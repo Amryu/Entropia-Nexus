@@ -157,13 +157,16 @@ export function getPlanetName(planetName) {
   else if (planetName === 'crystalpalace') {
     return 'Crystal Palace';
   }
+  else if (planetName === 'setesh') {
+    return 'Setesh';
+  }
   else {
     return null;
   }
 }
 
 export function getMainPlanetName(planetName) {
-  if (planetName === 'Asteroid F.O.M.A.' || planetName === 'Crystal Palace' || planetName === 'Space') {
+  if (planetName === 'Asteroid F.O.M.A.' || planetName === 'Crystal Palace' || planetName === 'Space' || planetName === 'Setesh') {
     return 'Calypso';
   } else if (planetName === 'Arkadia Moon' || planetName === 'Arkadia Underground') {
     return 'Arkadia';
