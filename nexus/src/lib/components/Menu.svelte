@@ -54,6 +54,7 @@
     */
     'Maps': [
       { label: 'Calypso', url: 'calypso' },
+      { label: 'Setesh', url: 'setesh' },
       { label: 'ARIS', url: 'aris' },
       { label: 'Cyrene', url: 'cyrene' },
       { label: 'Arkadia', url: 'arkadia' },
