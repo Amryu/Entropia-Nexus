@@ -379,7 +379,7 @@ export const Mob = {
       }
     },
     "DefensiveProfession": { "$ref": "https://entropianexus.com/schemas/NamedEntity.json" },
-    "ScanningProfession": { "$ref": "https://entropianexus.com/schemas/NamedEntity.json" },
+    "Type": { "type": ["string", "null"], "enum": ["Animal", "Mutant", "Robot", "Asteroid", null] },
     "Planet": { "$ref": "https://entropianexus.com/schemas/NamedEntity.json" },
     "Species": { "$ref": "https://entropianexus.com/schemas/NamedEntity.json" }
   },

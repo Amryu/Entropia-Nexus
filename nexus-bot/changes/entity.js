@@ -633,10 +633,50 @@ export const UpsertConfigs = {
       { name: "AggressionRange", value: x => x.Properties.Aggression },
       { name: "Sweatable", value: x => x.Properties.IsSweatable ? 1 : 0 },
       { name: "DefensiveProfessionId", value: async (x, c) => await c.query(`SELECT "Id" FROM ONLY "Professions" WHERE "Name" = $1`, [x.DefensiveProfession.Name]).then(res => res.rows[0]?.Id) },
-      { name: "ScanningProfessionId", value: async (x, c) => await c.query(`SELECT "Id" FROM ONLY "Professions" WHERE "Name" = $1`, [x.ScanningProfession.Name]).then(res => res.rows[0]?.Id) },
+      { name: "Type", value: x => {
+        const t = (x.Type || '').toLowerCase();
+        if (t === 'animal' || t === 'mutant' || t === 'robot' || t === 'asteroid') return x.Type;
+        // Back-compat: infer from ScanningProfession if provided by old clients
+        const sp = x.ScanningProfession?.Name;
+        if (sp === 'Animal Investigator') return 'Animal';
+        if (sp === 'Mutant Investigator') return 'Mutant';
+        if (sp === 'Robot Investigator') return 'Robot';
+        return null;
+      } },
     ],
     table: "Mobs",
     relationChangeFunc: async (client, id, x) => {
+      // Update MobSpecies.CodexType based on selection and Mob Type
+      try {
+        if (x.Species?.Name) {
+          const desiredType = x.Type === 'Asteroid'
+            ? 'Asteroid'
+            : ((x.Species?.Properties?.CodexType === 'MobLooter') ? 'MobLooter' : 'Mob');
+          await client.query(`UPDATE ONLY "MobSpecies" SET "CodexType" = $2 WHERE "Name" = $1`, [x.Species.Name, desiredType]);
+        }
+      } catch (err) {
+        console.warn('Failed to set MobSpecies.CodexType during Mob upsert', err);
+      }
+
+      // If Asteroid, ensure attack/aggression cleared and maturities trimmed
+      if (x.Type === 'Asteroid') {
+        await client.query(`UPDATE ONLY "Mobs" SET "AttackRange" = NULL, "AggressionRange" = NULL WHERE "Id" = $1`, [id]);
+        x.Maturities = (x.Maturities || []).map(m => ({
+          ...m,
+          Properties: {
+            Level: m?.Properties?.Level ?? null,
+            Health: m?.Properties?.Health ?? null,
+            RegenerationInterval: null,
+            RegenerationAmount: null,
+            MissChance: null,
+            Taming: { IsTameable: null, TamingLevel: null },
+            Attributes: { Strength: null, Agility: null, Intelligence: null, Psyche: null, Stamina: null },
+            Defense: { Stab: null, Cut: null, Impact: null, Penetration: null, Shrapnel: null, Burn: null, Cold: null, Acid: null, Electric: null }
+          },
+          Attacks: []
+        }));
+      }
+
       await applyMobMaturityChanges(client, id, x.Maturities);
       await applyMobLootChanges(client, id, x.Loots);
       if (x.Spawns) {

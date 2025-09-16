@@ -125,24 +125,26 @@
           Tooltip: 'The Codex entry name for this mob. Mobs with the same species will progress the same codex.'
         },
         Planet: mob.Planet?.Name ?? 'N/A',
-        Type: mob.ScanningProfession?.Name === 'Animal Investigator'
-          ? 'Animal'
-          : mob.ScanningProfession?.Name === 'Mutant Investigator'
-          ? 'Mutant'
-          : mob.ScanningProfession?.Name === 'Robot Investigator'
-          ? 'Robot'
-          : 'N/A',
+        Type: mob.Type ?? (
+          mob.ScanningProfession?.Name === 'Animal Investigator'
+            ? 'Animal'
+            : mob.ScanningProfession?.Name === 'Mutant Investigator'
+            ? 'Mutant'
+            : mob.ScanningProfession?.Name === 'Robot Investigator'
+            ? 'Robot'
+            : null
+        ) ?? 'N/A',
         AttacksSpeed: {
           Label: 'Attack Speed',
-          Value: mob.Properties?.AttacksPerMinute != null ? (60 /mob.Properties?.AttacksPerMinute).toFixed(2) : 'N/A',
+          Value: mob.Type === 'Asteroid' ? 'N/A' : (mob.Properties?.AttacksPerMinute != null ? (60 /mob.Properties?.AttacksPerMinute).toFixed(2) : 'N/A'),
         },
         AttackRange: {
           Label: 'Attack Range',
-          Value: mob.Properties?.AttackRange != null ? `${mob.Properties?.AttackRange}m` : 'N/A',
+          Value: mob.Type === 'Asteroid' ? 'N/A' : (mob.Properties?.AttackRange != null ? `${mob.Properties?.AttackRange}m` : 'N/A'),
         },
         AggressionRange: {
           Label: 'Aggression Range',
-          Value: mob.Properties?.AggressionRange != null ? `${mob.Properties?.AggressionRange}m` : 'N/A',
+          Value: mob.Type === 'Asteroid' ? 'N/A' : (mob.Properties?.AggressionRange != null ? `${mob.Properties?.AggressionRange}m` : 'N/A'),
         },
         VisionRange: {
           Label: 'Vision Range',
@@ -153,7 +155,7 @@
           Value: mob.Properties?.IsSweatable ? 'Yes' : 'No',
         },
       },
-      Damage: {
+      Damage: mob.Type === 'Asteroid' ? null : {
         Primary: {
           Label: 'Primary',
           Value: primaryDamageSpread != null
@@ -176,15 +178,21 @@
         },
         Scanning: {
           Label: 'Scanning',
-          Value: mob.ScanningProfession?.Name ?? 'N/A',
+          Value: mob.Type === 'Animal'
+            ? 'Animal Investigator'
+            : mob.Type === 'Mutant'
+            ? 'Mutant Investigator'
+            : mob.Type === 'Robot'
+            ? 'Robot Investigator'
+            : 'N/A',
         },
         Looting: {
           Label: 'Looting',
-          Value: mob.ScanningProfession?.Name === 'Animal Investigator'
+          Value: mob.Type === 'Animal'
             ? 'Animal Looter'
-            : mob.ScanningProfession?.Name === 'Mutant Investigator'
+            : mob.Type === 'Mutant'
             ? 'Mutant Looter'
-            : mob.ScanningProfession?.Name === 'Robot Investigator'
+            : mob.Type === 'Robot'
             ? 'Robot Looter'
             : 'N/A',
         },
@@ -204,6 +212,7 @@
       },
       Species: {
         Name: null,
+        Properties: { CodexType: null }
       },
       Planet: {
         Name: null,
@@ -211,9 +220,7 @@
       DefensiveProfession: {
         Name: null,
       },
-      ScanningProfession: {
-        Name: null,
-      },
+      Type: null,
       Maturities: [],
       Loots: [],
     }),
@@ -225,16 +232,71 @@
         controls: [
           { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
           { label: 'Description', type: 'textarea', '_get': x => x.Properties.Description, '_set': (x, v) => x.Properties.Description = v },
+          { label: 'Type', type: 'select', options: _ => ['Animal', 'Mutant', 'Robot', 'Asteroid'], '_get': x => x.Type, '_set': (x, v) => {
+            x.Type = v;
+            // Ensure Species structure exists
+            if (!x.Species) x.Species = { Name: null, Properties: { CodexType: null } };
+            if (!x.Species.Properties) x.Species.Properties = {};
+            // Handle CodexType mapping and asteroid-specific resets
+            if (v === 'Asteroid') {
+              x.Species.Properties.CodexType = 'Asteroid';
+              x.Properties.AttackRange = null;
+              x.Properties.AggressionRange = null;
+              x.Planet = { Name: "Space" };
+              x.DefensiveProfession = null;
+              // Null out non-allowed maturity fields and clear attacks
+              if (Array.isArray(x.Maturities)) {
+                x.Maturities.forEach(m => {
+                  if (!m.Properties) m.Properties = {};
+                  // Keep Level and Health; null out others
+                  m.Properties.RegenerationInterval = null;
+                  m.Properties.RegenerationAmount = null;
+                  m.Properties.MissChance = null;
+                  if (!m.Properties.Taming) m.Properties.Taming = {};
+                  m.Properties.Taming.IsTameable = null;
+                  m.Properties.Taming.TamingLevel = null;
+                  if (!m.Properties.Attributes) m.Properties.Attributes = {};
+                  m.Properties.Attributes.Strength = null;
+                  m.Properties.Attributes.Agility = null;
+                  m.Properties.Attributes.Intelligence = null;
+                  m.Properties.Attributes.Psyche = null;
+                  m.Properties.Attributes.Stamina = null;
+                  if (!m.Properties.Defense) m.Properties.Defense = {};
+                  m.Properties.Defense.Stab = null;
+                  m.Properties.Defense.Cut = null;
+                  m.Properties.Defense.Impact = null;
+                  m.Properties.Defense.Penetration = null;
+                  m.Properties.Defense.Shrapnel = null;
+                  m.Properties.Defense.Burn = null;
+                  m.Properties.Defense.Cold = null;
+                  m.Properties.Defense.Acid = null;
+                  m.Properties.Defense.Electric = null;
+                  // Clear attacks array
+                  m.Attacks = [];
+                });
+              }
+            } else {
+              // Default to Mob when not asteroid
+              if (x.Species.Properties.CodexType === 'Asteroid' || x.Species.Properties.CodexType == null) {
+                x.Species.Properties.CodexType = 'Mob';
+              }
+            }
+          } },
           { label: 'Species', type: 'select', options: (_, d) => ['', ...d.mobspecies.map(x => x.Name)], '_get': x => x.Species?.Name, '_set': (x, v) => x.Species ? x.Species.Name = v : x.Species = { Name: v } },
-          { label: 'Planet', type: 'select', options: (_, d) => d.planets.filter(x => x.Id > 0).map(x => x.Name), '_get': x => x.Planet?.Name, '_set': (x, v) => x.Planet ? x.Planet.Name = v : x.Planet = { Name: v } },
-          { label: 'Defensive Prof.', type: 'select', options: _ => ['Evader', 'Dodger', 'Jammer'], '_get': x => x.DefensiveProfession?.Name, '_set': (x, v) => x.DefensiveProfession ? x.DefensiveProfession.Name = v : x.DefensiveProfession = { Name: v } },
-          { label: 'Scanning Prof.', type: 'select', options: _ => ['Animal Investigator', 'Mutant Investigator', 'Robot Investigator'], '_get': x => x.ScanningProfession?.Name, '_set': (x, v) => x.ScanningProfession ? x.ScanningProfession.Name = v : x.ScanningProfession = { Name: v } },
-          { label: 'Attack Range', type: 'number', '_get': x => x.Properties.AttackRange, '_set': (x, v) => x.Properties.AttackRange = v },
-          { label: 'Aggro Range', type: 'number', '_get': x => x.Properties.AggressionRange, '_set': (x, v) => x.Properties.AggressionRange = v },
+          { "_if": x => x.Type !== 'Asteroid', label: 'Planet', type: 'select', options: (_, d) => d.planets.filter(x => x.Id > 0).map(x => x.Name), '_get': x => x.Planet?.Name, '_set': (x, v) => x.Planet ? x.Planet.Name = v : x.Planet = { Name: v } },
+          { "_if": x => x.Type !== 'Asteroid', label: 'Defensive Prof.', type: 'select', options: _ => ['Evader', 'Dodger', 'Jammer'], '_get': x => x.DefensiveProfession?.Name, '_set': (x, v) => x.DefensiveProfession ? x.DefensiveProfession.Name = v : x.DefensiveProfession = { Name: v } },
+          { "_if": x => x.Type !== 'Asteroid', label: 'Attack Range', type: 'number', '_get': x => x.Properties.AttackRange, '_set': (x, v) => x.Properties.AttackRange = v },
+          { "_if": x => x.Type !== 'Asteroid', label: 'Aggro Range', type: 'number', '_get': x => x.Properties.AggressionRange, '_set': (x, v) => x.Properties.AggressionRange = v },
           { label: 'Is Sweatable', type: 'checkbox', '_get': x => x.Properties.IsSweatable, '_set': (x, v) => x.Properties.IsSweatable = v },
+          { "_if": x => x.Type !== 'Asteroid', label: 'Cat 4 Codex', type: 'checkbox', '_get': x => (x.Species?.Properties?.CodexType ?? 'Mob') === 'MobLooter', '_set': (x, v) => {
+            if (!x.Species) x.Species = { Name: null, Properties: { CodexType: null } };
+            if (!x.Species.Properties) x.Species.Properties = {};
+            x.Species.Properties.CodexType = v ? 'MobLooter' : 'Mob';
+          } },
         ]
       },
-      { label: 'Maturities', type: 'list', config: {
+      { label: 'Maturities', type: 'list', config:
+        {
           constructor: () => ({
             Name: '',
             Properties: {
@@ -282,7 +344,7 @@
                     x.Properties.Attributes.Stamina = Math.round(v / 10);
                   }
                 }},
-                {
+                { "_if": (_, __, r) => r.Type !== 'Asteroid',
                   label: 'Attributes',
                   type: 'multi',
                   fields: ['Strength', 'Agility', 'Intelligence', 'Psyche', 'Stamina'],
@@ -292,6 +354,7 @@
               ]
             },
             {
+              "_if": (_, __, r) => r.Type !== 'Asteroid',
               label: 'Combat',
               type: 'group',
               controls: [
@@ -308,6 +371,7 @@
               ]
             },
             {
+              "_if": (_, __, r) => r.Type !== 'Asteroid',
               label: 'Taming',
               type: 'group',
               controls: [
@@ -315,7 +379,8 @@
                 { "_if": x => x.Properties.Taming.IsTameable, label: 'Taming Level', type: 'number', '_get': x => x.Properties.Taming.TamingLevel, '_set': (x, v) => x.Properties.Taming.TamingLevel = v },
               ]
             },
-            { label: 'Attacks', type: 'list', config: {
+            { "_if": (_, __, r) => r.Type !== 'Asteroid', label: 'Attacks', type: 'list', config:
+              {
                 constructor: () => ({
                   Name: '',
                   Damage: {
@@ -587,22 +652,16 @@
   }
 
   let viewInfoSection = {
-    columns: ['Name', 'Species', 'Type', 'Planet', 'Lowest HP/Lvl', 'Cat 4 Codex'],
+  columns: ['Name', 'Species', 'Type', 'Planet', 'Lowest HP/Lvl', 'Codex Type'],
     columnWidths: ['1fr', '100px', '100px', '150px', '120px', '100px'],
     rowValuesFunction: (item) => {
       return [
         item.Name,
         item.Species?.Name ?? 'N/A',
-        item.ScanningProfession?.Name === 'Animal Investigator'
-          ? 'Animal'
-          : item.ScanningProfession?.Name === 'Mutant Investigator'
-          ? 'Mutant'
-          : item.ScanningProfession?.Name === 'Robot Investigator'
-          ? 'Robot'
-          : 'N/A',
+        item.Type ?? 'N/A',
         item.Planet?.Name ?? 'N/A',
         getLowestHpPerLevel(item)?.toFixed(2) ?? 'N/A',
-        item.Species?.Properties?.IsCat4Codex ? 'Yes' : 'No',
+  item.Species?.Properties?.CodexType ?? 'N/A',
       ];
     }
   };
@@ -633,7 +692,7 @@
   let:object
   let:additional>
   <div class="flex-item">
-    <Maturities maturities={object.Maturities} />
+  <Maturities maturities={object.Maturities} type={object.Type} />
   </div>
   <div class="flex-item">
     <Locations mobName={object.Name} mobSpawns={object.Spawns} />
@@ -642,6 +701,6 @@
     <Loots loots={object.Loots} />
   </div>
   <div class="flex-item">
-    <Codex baseCost={object.Species?.Properties?.CodexBaseCost} isCat4={object.Species?.Properties?.IsCat4Codex ?? false} />
+    <Codex baseCost={object.Species?.Properties?.CodexBaseCost} codexType={object.Species?.Properties?.CodexType} />
   </div>
 </EntityViewer>

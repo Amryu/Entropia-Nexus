@@ -15,7 +15,7 @@ function formatMobSpecies(x){
 		Name: x.Name,
 		Properties: {
 			CodexBaseCost: x.CodexBaseCost != null ? Number(x.CodexBaseCost) : null,
-			IsCat4Codex: x.IsCat4Codex === 1
+			CodexType: x.CodexType ?? null
 		},
 		Links: { "$Url": `/mobspecies/${x.Id}` }
 	};

@@ -68,8 +68,19 @@
     'Zoology'
   ]
 
+  const asteroid = [
+    'Mining Laser Technology',
+    'Mining Laser Operator',
+    'Prospecting',
+    'Surveying',
+    'Analysis',
+    'Fragmentating',
+    'Perception',
+    'Geology'
+  ]
+
   export let baseCost = null;
-  export let isCat4 = false;
+  export let codexType = null;
 
   function chooseValueByCat(rank, cat1, cat2, cat3) {
     if (rank % 5 === 1 || rank % 5 === 2) {
@@ -82,6 +93,8 @@
   }
 
   let rankSelected = 0;
+  $: skillsForRank = codexType === 'Asteroid' ? asteroid : chooseValueByCat(rankSelected + 1, cat1, cat2, cat3);
+  $: rewardDivisor = chooseValueByCat(rankSelected + 1, 200, 320, 640);
 </script>
 <style>
   .button {
@@ -170,7 +183,7 @@
     {#each Array(5) as _, index}
       <div class="row">
         {#each codexMultipliers.slice(index * 5, index * 5 + 5) as multiplier, index2}
-          <button class="{isCat4 && index2 === 4 ? 'cat4' : ''} button {rankSelected === index * 5 + index2 ? 'selected' : ''}" on:click={() => rankSelected = index * 5 + index2}>
+          <button class="{codexType === 'MobLooter' && index2 === 4 ? 'cat4' : ''} button {rankSelected === index * 5 + index2 ? 'selected' : ''}" on:click={() => rankSelected = index * 5 + index2}>
             Rank {index * 5 + index2 + 1}<br /><br />{multiplier * baseCost}<br />PED
           </button>
         {/each}
@@ -188,14 +201,14 @@
         }
       }
       data={
-        chooseValueByCat(rankSelected + 1, cat1, cat2, cat3).map(skill => ({
+        skillsForRank.map(skill => ({
           values: [
             skill,
-            (codexMultipliers[rankSelected] * baseCost / chooseValueByCat(rankSelected + 1, 200, 320, 640)).toFixed(4) + ' PED'
+            (codexMultipliers[rankSelected] * baseCost / rewardDivisor).toFixed(4) + ' PED'
           ],
-          spans: [null, chooseValueByCat(rankSelected + 1, cat1, cat2, cat3).length],
+          spans: [null, skillsForRank.length],
         }))
-        .concat(isCat4 && (rankSelected + 1) % 10 === 5 ? cat4.map(skill => ({
+        .concat(codexType === 'MobLooter' && (rankSelected + 1) % 10 === 5 ? cat4.map(skill => ({
           values: [
             skill,
             (codexMultipliers[rankSelected] * baseCost / 1000).toFixed(4) + ' PED',

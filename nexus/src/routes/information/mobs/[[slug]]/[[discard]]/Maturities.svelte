@@ -4,6 +4,7 @@
   import '$lib/style.css';
   
   export let maturities;
+  export let type = null;
 
   let selectedMaturity = -1;
 
@@ -61,23 +62,32 @@
     <Table
       header = { 
         {
-          values: ['Name', 'Level', 'HP', 'HP/Lv', 'Regen', 'Primary', 'Secondary', 'Tertiary', 'Defense', 'Tameable']
+          values: type === 'Asteroid'
+            ? ['Name', 'Level', 'HP', 'HP/Lv']
+            : ['Name', 'Level', 'HP', 'HP/Lv', 'Regen', 'Primary', 'Secondary', 'Tertiary', 'Defense', 'Tameable']
         }
       }
       data = {
         maturities.map((maturity) => ({
-          values: [
-            maturities.length === 1 && (maturity.Name == null || maturity.Name.trim().length === 0) ? 'Single Maturity Mob' : maturity.Name,
-            maturity.Properties?.Level ?? 'N/A',
-            maturity.Properties?.Health ?? 'N/A',
-            maturity.Properties?.Health != null && maturity.Properties?.Level != null ? (maturity.Properties.Health / Math.max(maturity.Properties.Level, 1)).toFixed(2) : 'N/A',
-            maturity.Properties?.RegenerationAmount != null ? `${maturity.Properties?.RegenerationAmount}/s` : 'N/A',
-            maturity.Attacks.length === 1 ? getDamageText(maturity.Attacks[0]) : 'N/A',
-            maturity.Attacks.length > 1 ? getDamageText(maturity.Attacks[1]) : 'N/A',
-            maturity.Attacks.length > 2 ? getDamageText(maturity.Attacks[2]) : 'N/A',
-            getTotalDefense(maturity),
-            maturity.Properties?.TamingLevel > 0 ? `Level ${maturity.Properties.TamingLevel}` : 'No',
-          ]
+          values: type === 'Asteroid'
+            ? [
+                maturities.length === 1 && (maturity.Name == null || maturity.Name.trim().length === 0) ? 'Single Maturity Mob' : maturity.Name,
+                maturity.Properties?.Level ?? 'N/A',
+                maturity.Properties?.Health ?? 'N/A',
+                maturity.Properties?.Health != null && maturity.Properties?.Level != null ? (maturity.Properties.Health / Math.max(maturity.Properties.Level, 1)).toFixed(2) : 'N/A',
+              ]
+            : [
+                maturities.length === 1 && (maturity.Name == null || maturity.Name.trim().length === 0) ? 'Single Maturity Mob' : maturity.Name,
+                maturity.Properties?.Level ?? 'N/A',
+                maturity.Properties?.Health ?? 'N/A',
+                maturity.Properties?.Health != null && maturity.Properties?.Level != null ? (maturity.Properties.Health / Math.max(maturity.Properties.Level, 1)).toFixed(2) : 'N/A',
+                maturity.Properties?.RegenerationAmount != null ? `${maturity.Properties?.RegenerationAmount}/s` : 'N/A',
+                maturity.Attacks.length === 1 ? getDamageText(maturity.Attacks[0]) : 'N/A',
+                maturity.Attacks.length > 1 ? getDamageText(maturity.Attacks[1]) : 'N/A',
+                maturity.Attacks.length > 2 ? getDamageText(maturity.Attacks[2]) : 'N/A',
+                getTotalDefense(maturity),
+                maturity.Properties?.TamingLevel > 0 ? `Level ${maturity.Properties.TamingLevel}` : 'No',
+              ]
         }))
       }
       options={{searchable: "true"}} />

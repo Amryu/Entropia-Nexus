@@ -18,7 +18,7 @@ export function isBlueprint(item: any): boolean {
 }
 
 export function isItemTierable(item: any): boolean {
-  const type = item?.Properties?.Type || item?.t || null;
+  const type = item?.Properties?.Type;
   return tierableTypes.has(type);
 }
 
@@ -35,4 +35,20 @@ export function itemHasCondition(item: any): boolean {
 
 export function getMaxTT(item: any): number | null {
   return item?.Properties?.Economy?.MaxTT ?? null;
+}
+
+export function isItemStackable(item: any): boolean {
+  return item?.Type === 'Material'
+    || item?.Type === 'Consumable'
+    || item?.Type === 'Capsule'
+    || item?.Type === 'Enhancer'
+    || (item?.Type === 'Blueprint' && isLimited(item));
+}
+
+export function isPercentMarkup(item: any): boolean {
+  return isItemStackable(item) || (itemHasCondition(item) && isLimited(item));
+}
+
+export function isAbsoluteMarkup(item: any): boolean {
+  return !isPercentMarkup(item);
 }

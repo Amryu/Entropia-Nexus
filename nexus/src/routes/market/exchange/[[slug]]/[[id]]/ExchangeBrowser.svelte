@@ -171,22 +171,46 @@
     }
   }
 
-  // Prefetch full item details for link building and MU rules
-  $: (async () => {
-      try {
-        if (!selectedItem || !selectedItem?.i) {
-          selectedItemDetails = null;
-          console.log('[ExchangeBrowser] selectedItemDetails set to null (no selectedItem or no id)');
-          return;
-        }
-        const it = await apiCall(window.fetch, `/items/${selectedItem.i}`);
-        selectedItemDetails = it || null;
-        console.log('[ExchangeBrowser] selectedItemDetails loaded:', selectedItemDetails);
-      } catch (e) {
+  // Prefetch full item details for link building and MU rules (only when ID changes)
+  let lastDetailsItemId = null;
+  let detailsAbort = null;
+  $: {
+    const id = selectedItem?.i ?? null;
+    if (!id) {
+      // Clear when no item is selected
+      if (detailsAbort?.abort) detailsAbort.abort();
+      detailsAbort = null;
+      lastDetailsItemId = null;
+      if (selectedItemDetails !== null) {
         selectedItemDetails = null;
-        console.log('[ExchangeBrowser] selectedItemDetails error:', e);
+        console.log('[ExchangeBrowser] selectedItemDetails cleared (no selected item)');
       }
-    })();
+    } else if (id !== lastDetailsItemId) {
+      try {
+        // Cancel any in-flight request
+        if (detailsAbort?.abort) detailsAbort.abort();
+      } catch {}
+      // Fire new request for this ID only
+      lastDetailsItemId = id; // optimistic set to avoid duplicate dispatches
+      const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      detailsAbort = controller;
+      (async () => {
+        try {
+          const it = await apiCall(window.fetch, `/items/${id}`);
+          // Ignore if another fetch superseded this
+          if (controller && controller.signal.aborted) return;
+          selectedItemDetails = it || null;
+          console.log('[ExchangeBrowser] selectedItemDetails loaded:', selectedItemDetails);
+        } catch (e) {
+          if (controller && controller.signal?.aborted) return;
+          selectedItemDetails = null;
+          console.log('[ExchangeBrowser] selectedItemDetails error:', e);
+        } finally {
+          if (detailsAbort === controller) detailsAbort = null;
+        }
+      })();
+    }
+  }
 
   // Filter items based on search, L/UL, and Sex
   $: {
@@ -566,12 +590,13 @@
   // (deduped above)
 
   function openOrderDialog(type) {
-    // Use selectedItemDetails if available, else fallback to selectedItem
-    const item = selectedItemDetails || selectedItem;
+    // Only proceed when a fully populated item is available
+    const item = selectedItemDetails;
     if (!item) return;
     orderDialogType = type;
     // Wait for dialog to mount, then init
     setTimeout(() => {
+      // Pass only the full item details to the dialog
       orderDialogRef?.initOrder(item, type, 'create');
       showOrderDialog = true;
     }, 0);
@@ -755,7 +780,7 @@
             <button
               class="action-btn"
               on:click={() => openOrderDialog("buy")}
-              disabled={hasMyBuyOrder}
+              disabled={!selectedItemDetails || hasMyBuyOrder}
               title={hasMyBuyOrder
                 ? "You already have a buy order for this item"
                 : "Create Buy Order"}>Buy</button
@@ -763,7 +788,7 @@
             <button
               class="action-btn"
               on:click={() => openOrderDialog("sell")}
-              disabled={hasMySellOrder}
+              disabled={!selectedItemDetails || hasMySellOrder}
               title={hasMySellOrder
                 ? "You already have a sell order for this item"
                 : "Create Sell Order"}>Sell</button
