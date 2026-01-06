@@ -646,16 +646,21 @@ export const UpsertConfigs = {
     ],
     table: "Mobs",
     relationChangeFunc: async (client, id, x) => {
-      // Update MobSpecies.CodexType based on selection and Mob Type
+      // Update MobSpecies.CodexType and CodexBaseCost based on selection and Mob Type
       try {
         if (x.Species?.Name) {
           const desiredType = x.Type === 'Asteroid'
             ? 'Asteroid'
             : ((x.Species?.Properties?.CodexType === 'MobLooter') ? 'MobLooter' : 'Mob');
           await client.query(`UPDATE ONLY "MobSpecies" SET "CodexType" = $2 WHERE "Name" = $1`, [x.Species.Name, desiredType]);
+
+          const baseCost = x.Species?.Properties?.CodexBaseCost;
+          if (baseCost != null && !Number.isNaN(Number(baseCost))) {
+            await client.query(`UPDATE ONLY "MobSpecies" SET "CodexBaseCost" = $2 WHERE "Name" = $1`, [x.Species.Name, Number(baseCost)]);
+          }
         }
       } catch (err) {
-        console.warn('Failed to set MobSpecies.CodexType during Mob upsert', err);
+        console.warn('Failed to set MobSpecies codex fields during Mob upsert', err);
       }
 
       // If Asteroid, ensure attack/aggression cleared and maturities trimmed

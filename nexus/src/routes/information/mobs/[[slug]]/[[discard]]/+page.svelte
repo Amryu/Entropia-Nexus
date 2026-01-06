@@ -282,7 +282,7 @@
               }
             }
           } },
-          { label: 'Species', type: 'select', options: (_, d) => ['', ...d.mobspecies.map(x => x.Name)], '_get': x => x.Species?.Name, '_set': (x, v) => x.Species ? x.Species.Name = v : x.Species = { Name: v } },
+          { "_if": x => x.Type !== 'Asteroid', label: 'Species', type: 'select', options: (_, d) => ['', ...d.mobspecies.map(x => x.Name)], '_get': x => x.Species?.Name, '_set': (x, v) => x.Species ? x.Species.Name = v : x.Species = { Name: v } },
           { "_if": x => x.Type !== 'Asteroid', label: 'Planet', type: 'select', options: (_, d) => d.planets.filter(x => x.Id > 0).map(x => x.Name), '_get': x => x.Planet?.Name, '_set': (x, v) => x.Planet ? x.Planet.Name = v : x.Planet = { Name: v } },
           { "_if": x => x.Type !== 'Asteroid', label: 'Defensive Prof.', type: 'select', options: _ => ['Evader', 'Dodger', 'Jammer'], '_get': x => x.DefensiveProfession?.Name, '_set': (x, v) => x.DefensiveProfession ? x.DefensiveProfession.Name = v : x.DefensiveProfession = { Name: v } },
           { "_if": x => x.Type !== 'Asteroid', label: 'Attack Range', type: 'number', '_get': x => x.Properties.AttackRange, '_set': (x, v) => x.Properties.AttackRange = v },

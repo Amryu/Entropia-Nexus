@@ -381,7 +381,22 @@ export const Mob = {
     "DefensiveProfession": { "$ref": "https://entropianexus.com/schemas/NamedEntity.json" },
     "Type": { "type": ["string", "null"], "enum": ["Animal", "Mutant", "Robot", "Asteroid", null] },
     "Planet": { "$ref": "https://entropianexus.com/schemas/NamedEntity.json" },
-    "Species": { "$ref": "https://entropianexus.com/schemas/NamedEntity.json" }
+    "Species": {
+      "type": ["object", "null"],
+      "additionalProperties": true,
+      "properties": {
+        "Name": { "type": ["string", "null"] },
+        "Properties": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "CodexType": { "type": ["string", "null"], "enum": ["Mob", "MobLooter", "Asteroid", null] },
+            "CodexBaseCost": { "type": ["number", "null"] }
+          }
+        },
+        "Links": { "type": "object", "additionalProperties": true }
+      }
+    }
   },
   "required": [
     "Name",
