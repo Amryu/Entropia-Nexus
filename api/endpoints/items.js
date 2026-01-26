@@ -1,4 +1,5 @@
 const { getObjects, getObjectByIdOrName } = require('./utils');
+const { pool } = require('./dbClient');
 
 const queries = { Items: 'SELECT * FROM ONLY "Items"' };
 
@@ -17,17 +18,40 @@ async function _getObject(idOrName, query){ const row = await getObjectByIdOrNam
 const getItems = () => _getObjects(queries.Items, formatItem);
 const getItem = (idOrName) => _getObject(idOrName, queries.Items);
 
+async function getItemsByIds(ids) {
+  if (!Array.isArray(ids) || ids.length === 0) return [];
+  const validIds = ids.filter(id => Number.isInteger(Number(id))).map(Number);
+  if (validIds.length === 0) return [];
+
+  const { rows } = await pool.query('SELECT * FROM ONLY "Items" WHERE "Id" = ANY($1)', [validIds]);
+  return rows.map(formatItem);
+}
+
 function register(app){
   /**
    * @swagger
    * /items:
    *  get:
-   *    description: Get all items
+   *    description: Get all items or batch fetch by IDs
+   *    parameters:
+   *      - in: query
+   *        name: Ids
+   *        schema:
+   *          type: string
+   *        required: false
+   *        description: Comma-separated list of item IDs for batch fetch
    *    responses:
    *      '200':
    *        description: A list of items
    */
-  app.get('/items', async (req,res) => { res.json(await getItems()); });
+  app.get('/items', async (req,res) => {
+    if (req.query.Ids) {
+      const ids = req.query.Ids.split(',').map(s => s.trim()).filter(Boolean);
+      res.json(await getItemsByIds(ids));
+    } else {
+      res.json(await getItems());
+    }
+  });
   app.get('/items/:item', async (req,res) => {
     /**
      * @swagger
@@ -52,4 +76,4 @@ function register(app){
   });
 }
 
-module.exports = { register, getItems, getItem };
+module.exports = { register, getItems, getItem, getItemsByIds };

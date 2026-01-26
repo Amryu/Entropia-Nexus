@@ -1,10 +1,14 @@
 
 **/node_modules
 nexus-bot/config.json
-sql/
 .vscode/
+.claude/
+
 # Ignore all .env files
 *.env
 
 # But not the example file
 !.env.example
+
+# Ignore SQL folder (experimental scripts and database dumps)
+sql/

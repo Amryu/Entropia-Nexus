@@ -21,6 +21,25 @@ async function _fetchEstateSections(estateIds){
   } catch { return {}; }
 }
 
+async function _fetchShopManagers(shopIds){
+  if (!shopIds || shopIds.length===0) return {};
+  try {
+    const { rows } = await usersPool.query(`
+      SELECT sm.shop_id, sm.user_id, u.eu_name
+      FROM shop_managers sm
+      INNER JOIN users u ON sm.user_id = u.id
+      WHERE sm.shop_id = ANY($1) AND u.verified = true
+      ORDER BY sm.shop_id, sm.added_at
+    `, [shopIds]);
+    const m = {};
+    for (const r of rows) {
+      if (!m[r.shop_id]) m[r.shop_id] = [];
+      m[r.shop_id].push({ user_id: r.user_id, User: { Name: r.eu_name } });
+    }
+    return m;
+  } catch { return {}; }
+}
+
 async function _fetchItemNames(itemIds){
   if (!itemIds || itemIds.length===0) return {};
   const valid = [...new Set(itemIds.filter(id=>id!=null))]; if (valid.length===0) return {};
@@ -105,10 +124,10 @@ async function getShops(){
   const { rows } = await pool.query(queries.Shops);
   const ownerIds = [...new Set(rows.map(s => s.OwnerId).filter(id => id!=null))];
   const estateIds = rows.map(s => s.Id);
-  const [owners, inventories, sections] = await Promise.all([
-    _fetchShopOwners(ownerIds), _fetchMultipleShopInventories(estateIds), _fetchEstateSections(estateIds)
+  const [owners, inventories, sections, managers] = await Promise.all([
+    _fetchShopOwners(ownerIds), _fetchMultipleShopInventories(estateIds), _fetchEstateSections(estateIds), _fetchShopManagers(estateIds)
   ]);
-  return rows.map(x => formatShop(x, { owner: owners[x.OwnerId] || null, inventory: inventories[x.Id] || [], sections: sections[x.Id] || [] }));
+  return rows.map(x => formatShop(x, { owner: owners[x.OwnerId] || null, inventory: inventories[x.Id] || [], sections: sections[x.Id] || [], managers: managers[x.Id] || [] }));
 }
 
 async function getShop(idOrName){
@@ -117,10 +136,10 @@ async function getShop(idOrName){
   const { rows } = await pool.query(sql, [idOrName]);
   if (rows.length !== 1) return null;
   const shop = rows[0];
-  const [inventory, owners, sections] = await Promise.all([
-    _fetchShopInventory(shop.Id), shop.OwnerId ? _fetchShopOwners([shop.OwnerId]) : Promise.resolve({}), _fetchEstateSections([shop.Id])
+  const [inventory, owners, sections, managers] = await Promise.all([
+    _fetchShopInventory(shop.Id), shop.OwnerId ? _fetchShopOwners([shop.OwnerId]) : Promise.resolve({}), _fetchEstateSections([shop.Id]), _fetchShopManagers([shop.Id])
   ]);
-  return formatShop(shop, { inventory, owner: owners[shop.OwnerId] || null, sections: sections[shop.Id] || [] });
+  return formatShop(shop, { inventory, owner: owners[shop.OwnerId] || null, sections: sections[shop.Id] || [], managers: managers[shop.Id] || [] });
 }
 
 // Endpoint wiring

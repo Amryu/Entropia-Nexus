@@ -296,15 +296,15 @@
   // Cache of item details by ItemId
   let itemDetails = {};
 
-  // Prefetch all unique item IDs for the current shop
+  // Prefetch all unique item IDs for the current shop using batch endpoint
   $: prefetchItems = (async () => {
     const ids = Array.from(new Set((data?.object?.InventoryGroups || [])
       .flatMap(g => (g?.Items || []).map(i => i.ItemId ?? i.item_id))
       .filter(Boolean)));
     if (ids.length === 0) { itemDetails = {}; return; }
-    const results = await Promise.all(ids.map(id => apiCall(fetch, `/items/${id}`)));
+    const results = await apiCall(fetch, `/items?Ids=${ids.join(',')}`);
     const map = {};
-    ids.forEach((id, idx) => { if (results[idx]) map[id] = results[idx]; });
+    (results || []).forEach(item => { if (item?.Id) map[item.Id] = item; });
     itemDetails = map;
   })();
 </script>
