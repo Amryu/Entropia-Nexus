@@ -144,4 +144,4 @@ function register(app){
     }
   });
 }
-module.exports = { register, getMobs, getMob };
+module.exports = { register, getMobs, getMob, formatMob, loadRelated, ensureInvestigatorCache };

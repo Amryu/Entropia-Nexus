@@ -1,237 +1,577 @@
-<script lang="ts">
+<!--
+  @component Vehicles Wiki Page
+  Wikipedia-style layout with floating infobox on the right side.
+
+  Legacy editConfig preserved in vehicles-legacy/+page.svelte
+-->
+<script>
   // @ts-nocheck
   import '$lib/style.css';
+  import { page } from '$app/stores';
+  import { onMount } from 'svelte';
+  import { clampDecimals, encodeURIComponentSafe, getTypeLink } from '$lib/util';
 
-  import { clampDecimals } from '$lib/util.js';
+  // Wiki components
+  import WikiPage from '$lib/components/wiki/WikiPage.svelte';
+  import WikiSEO from '$lib/components/wiki/WikiSEO.svelte';
+  import DataSection from '$lib/components/wiki/DataSection.svelte';
 
-  import EntityViewer from '$lib/components/EntityViewer.svelte';
-  import Acquisition from "$lib/components/Acquisition.svelte";
+  // Legacy components for data display
+  import Acquisition from '$lib/components/Acquisition.svelte';
 
   export let data;
 
-  let propertiesDataFunction = (vehicle) => {
-    let totalDefense = vehicle.Properties?.Defense?.Stab + vehicle.Properties?.Defense?.Cut + vehicle.Properties?.Defense?.Impact + vehicle.Properties?.Defense?.Penetration + vehicle.Properties?.Defense?.Shrapnel + vehicle.Properties?.Defense?.Burn + vehicle.Properties?.Defense?.Cold + vehicle.Properties?.Defense?.Acid + vehicle.Properties?.Defense?.Electric;
+  $: vehicle = data.object;
+  $: user = data.session?.user;
+  $: additional = data.additional || {};
 
-    return {
-      General: {
-        Weight: vehicle.Properties?.Weight != null ? `${clampDecimals(vehicle.Properties?.Weight, 1, 6)}kg` : 'N/A',
-        SpawnedWeight: {
-          Label: 'Spawned Weight',
-          Value: vehicle.Properties?.SpawnedWeight != null ? `${vehicle.Properties?.SpawnedWeight.toFixed(1)}kg` : 'N/A',
-        },
-        Type: vehicle.Properties?.Type ?? 'N/A',
-      },
-      Economy: {
-        MaxTT: {
-          Label: 'Max. TT (PED)',
-          Value: vehicle.Properties?.Economy?.MaxTT != null ? `${clampDecimals(vehicle.Properties?.Economy?.MaxTT, 2, 8)} PED` : 'N/A',
-        },
-        MinTT: {
-          Label: 'Min. TT (PED)',
-          Value: vehicle.Properties?.Economy?.MinTT != null ? `${clampDecimals(vehicle.Properties?.Economy?.MinTT, 2, 8)} PED` : 'N/A',
-        },
-        Durability: vehicle.Properties?.Economy?.Durability != null ? vehicle.Properties?.Economy?.Durability : 'N/A',
-        Fuel: vehicle.Fuel?.Name ?? 'N/A',
-        ConsumptionActive: {
-          Label: 'Consumption Active',
-          Value: vehicle.Properties?.Economy?.FuelConsumptionActive != null ? `${vehicle.Properties?.Economy?.FuelConsumptionActive.toFixed(2)} PED/km` : 'N/A',
-        },
-        ConsumptionPassive: {
-          Label: 'Consumption Passive',
-          Value: vehicle.Properties?.Economy?.FuelConsumptionPassive != null ? `${vehicle.Properties?.Economy?.FuelConsumptionPassive.toFixed(2)} PED/min` : 'N/A',
-        },
-      },
-      Vehicle: {
-        Passengers: vehicle.Properties?.PassengerCount != null ? vehicle.Properties?.PassengerCount : 'N/A',
-        ItemCapacity: {
-          Label: 'Item Capacity',
-          Tooltip: 'Maximum number of items that can be stored in the vehicle',
-          Value: vehicle.Properties?.ItemCapacity != null ? vehicle.Properties?.ItemCapacity : 'N/A',
-        },
-        WeightCapacity: {
-          Label: 'Weight Capacity',
-          Tooltip: 'Maximum weight that can be stored in the vehicle',
-          Value: vehicle.Properties?.WeightCapacity != null ? `${vehicle.Properties?.WeightCapacity.toFixed(1)}kg` : 'N/A',
-        },
-        WheelGrip: {
-          Label: 'Wheel Grip',
-          Value: vehicle.Properties?.WheelGrip != null ? vehicle.Properties?.WheelGrip : 'N/A',
-        },
-        EnginePower: {
-          Label: 'Engine Power',
-          Value: vehicle.Properties?.EnginePower != null ? vehicle.Properties?.EnginePower : 'N/A',
-        },
-        MaxSpeed: {
-          Label: 'Max. Speed',
-          Value: vehicle.Properties?.MaxSpeed != null ? `${vehicle.Properties?.MaxSpeed.toFixed(2)} km/h` : 'N/A',
-        },
-        MaxSI: {
-          Label: 'Max. SI',
-          Tooltip: 'Maximum SI (Structural Integrity) of the vehicle. This is the maximum damage the vehicle can take before it is destroyed and must be repaired.',
-          Value: vehicle.Properties?.MaxStructuralIntegrity != null ? vehicle.Properties?.MaxStructuralIntegrity : 'N/A',
-        },
-        AttachmentSlots: {
-          Label: 'Attachment Slots',
-          Value: vehicle.AttachmentSlots?.length > 0 ? vehicle.AttachmentSlots.map(x => x.Name).join(', ') : 'N/A',
-        }
-      },
-      Defense: {
-        Stab: vehicle.Properties?.Defense?.Stab != null ? vehicle.Properties?.Defense?.Stab.toFixed(1) : 'N/A',
-        Cut: vehicle.Properties?.Defense?.Cut != null ? vehicle.Properties?.Defense?.Cut.toFixed(1) : 'N/A',
-        Impact: vehicle.Properties?.Defense?.Impact != null ? vehicle.Properties?.Defense?.Impact.toFixed(1) : 'N/A',
-        Penetration: vehicle.Properties?.Defense?.Penetration != null ? vehicle.Properties?.Defense?.Penetration.toFixed(1) : 'N/A',
-        Shrapnel: vehicle.Properties?.Defense?.Shrapnel != null ? vehicle.Properties?.Defense?.Shrapnel.toFixed(1) : 'N/A',
-        Burn: vehicle.Properties?.Defense?.Burn != null ? vehicle.Properties?.Defense?.Burn.toFixed(1) : 'N/A',
-        Cold: vehicle.Properties?.Defense?.Cold != null ? vehicle.Properties?.Defense?.Cold.toFixed(1) : 'N/A',
-        Acid: vehicle.Properties?.Defense?.Acid != null ? vehicle.Properties?.Defense?.Acid.toFixed(1) : 'N/A',
-        Electric: vehicle.Properties?.Defense?.Electric != null ? vehicle.Properties?.Defense?.Electric.toFixed(1) : 'N/A',
-        Total: {
-          Value: totalDefense !== null ? totalDefense.toFixed(1) : 'N/A',
-          Bold: true,
-        }
-      }
-    };
-  };
+  // All vehicles for navigation
+  $: allItems = data.items || [];
 
-  const editConfig = {
-    constructor: () => ({
-      Name: '',
-      Properties: {
-        Description: null,
-        Weight: null,
-        Type: null,
-        SpawnedWeight: null,
-        PassengerCount: null,
-        ItemCapacity: null,
-        WeightCapacity: null,
-        WheelGrip: null,
-        EnginePower: null,
-        MaxSpeed: null,
-        MaxStructuralIntegrity: null,
-        Economy: {
-          MaxTT: null,
-          MinTT: null,
-          Durability: null,
-          FuelConsumptionActive: null,
-          FuelConsumptionPassive: null,
-        },
-        Defense: {
-          Stab: null,
-          Cut: null,
-          Impact: null,
-          Penetration: null,
-          Shrapnel: null,
-          Burn: null,
-          Cold: null,
-          Acid: null,
-          Electric: null,
-        }
-      },
-      Fuel: {
-        Name: null,
-      },
-      AttachmentSlots: []
-    }),
-    dependencies: ['materials', 'vehicleattachmenttypes'],
-    controls: [
-      {
-        label: 'General',
-        type: 'group',
-        controls: [
-          { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
-          { label: 'Description', type: 'textarea', '_get': x => x.Properties.Description, '_set': (x, v) => x.Properties.Description = v },
-          { label: 'Weight', type: 'number', '_get': x => x.Properties.Weight, '_set': (x, v) => x.Properties.Weight = v },
-          { label: 'Type', type: 'select', options: () => ['Land', 'Air', 'Sea', 'Amphibious', 'Space'], '_get': x => x.Properties.Type, '_set': (x, v) => { x.Properties.Type = v; if (['Air','Sea','Space'].includes(v)) { x.Properties.WheelGrip = null; } } },
-        ]
-      },
-      {
-        label: 'Economy',
-        type: 'group',
-        controls: [
-          { label: 'Max. TT (PED)', type: 'number', '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v },
-          { label: 'Min. TT (PED)', type: 'number', '_get': x => x.Properties.Economy.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v },
-          { label: 'Durability', type: 'number', '_get': x => x.Properties.Economy.Durability, '_set': (x, v) => x.Properties.Economy.Durability = parseInt(v) || null },
-          { label: 'Fuel', type: 'select', options: (_, d) => ['', ...d.materials.filter(x => x.Properties.Type === 'Refined Enmatter').map(x => x.Name)], '_get': x => x.Fuel?.Name, '_set': (x, v) => x.Fuel.Name = v || null },
-          { label: 'Fuel/km (Active)', type: 'number', '_get': x => x.Properties.Economy.FuelConsumptionActive, '_set': (x, v) => x.Properties.Economy.FuelConsumptionActive = v },
-          { label: 'Fuel/min (Passive)', type: 'number', '_get': x => x.Properties.Economy.FuelConsumptionPassive, '_set': (x, v) => x.Properties.Economy.FuelConsumptionPassive = v },
-        ]
-      },
-      {
-        label: 'Vehicle Details',
-        type: 'group',
-        controls: [
-          { label: 'Spawned Weight', type: 'number', '_get': x => x.Properties.SpawnedWeight, '_set': (x, v) => x.Properties.SpawnedWeight = v },
-          { label: 'Passenger Count', type: 'number', '_get': x => x.Properties.PassengerCount, '_set': (x, v) => x.Properties.PassengerCount = parseInt(v) || null },
-          { label: 'Item Capacity', type: 'number', '_get': x => x.Properties.ItemCapacity, '_set': (x, v) => x.Properties.ItemCapacity = parseInt(v) || null },
-          { label: 'Weight Capacity', type: 'number', '_get': x => x.Properties.WeightCapacity, '_set': (x, v) => x.Properties.WeightCapacity = v },
-          { '_if': x => !['Air','Sea','Space'].includes(x.Properties.Type), label: 'Wheel Grip', type: 'number', '_get': x => x.Properties.WheelGrip, '_set': (x, v) => x.Properties.WheelGrip = v },
-          { label: 'Engine Power', type: 'number', '_get': x => x.Properties.EnginePower, '_set': (x, v) => x.Properties.EnginePower = v },
-          { label: 'Max. Speed', type: 'number', '_get': x => x.Properties.MaxSpeed, '_set': (x, v) => x.Properties.MaxSpeed = v },
-          { label: 'Max. SI', type: 'number', '_get': x => x.Properties.MaxStructuralIntegrity, '_set': (x, v) => x.Properties.MaxStructuralIntegrity = v },
-        ]
-      },
-      { label: 'Attachment Slots', type: 'list', config: {
-        constructor: () => ({
-          Name: null,
-        }),
-        dependencies: ['vehicleattachmenttypes'],
-        controls: [
-          { label: 'Type', type: 'select', options: (_, d) => d.vehicleattachmenttypes.map(x => x.Name), '_get': x => x.Name, '_set': (x, v) => x.Name = v },
-        ]
-      }, '_get': x => x.AttachmentSlots, '_set': (x, v) => x.AttachmentSlots = v },
-      {
-        label: 'Defense',
-        type: 'group',
-        controls: [
-          { label: 'Stab', type: 'number', '_get': x => x.Properties.Defense.Stab, '_set': (x, v) => x.Properties.Defense.Stab = v },
-          { label: 'Cut', type: 'number', '_get': x => x.Properties.Defense.Cut, '_set': (x, v) => x.Properties.Defense.Cut = v },
-          { label: 'Impact', type: 'number', '_get': x => x.Properties.Defense.Impact, '_set': (x, v) => x.Properties.Defense.Impact = v },
-          { label: 'Penetration', type: 'number', '_get': x => x.Properties.Defense.Penetration, '_set': (x, v) => x.Properties.Defense.Penetration = v },
-          { label: 'Shrapnel', type: 'number', '_get': x => x.Properties.Defense.Shrapnel, '_set': (x, v) => x.Properties.Defense.Shrapnel = v },
-          { label: 'Burn', type: 'number', '_get': x => x.Properties.Defense.Burn, '_set': (x, v) => x.Properties.Defense.Burn = v },
-          { label: 'Cold', type: 'number', '_get': x => x.Properties.Defense.Cold, '_set': (x, v) => x.Properties.Defense.Cold = v },
-          { label: 'Acid', type: 'number', '_get': x => x.Properties.Defense.Acid, '_set': (x, v) => x.Properties.Defense.Acid = v },
-          { label: 'Electric', type: 'number', '_get': x => x.Properties.Defense.Electric, '_set': (x, v) => x.Properties.Defense.Electric = v },
-        ]
-      }
-    ]
+  // Build navigation items
+  $: navItems = allItems;
+
+  // Type filters for sidebar
+  // NOTE: Currently disabled because Type column is NULL for all vehicles in the database.
+  // Re-enable once vehicle type data is populated.
+  $: navFilters = [];
+
+  // Sidebar table columns
+  $: navTableColumns = [
+    { key: 'type', header: 'Type', width: '55px', filterPlaceholder: 'Land', getValue: (item) => item.Properties?.Type, format: (v) => v ? v.slice(0, 4) : '-' },
+    { key: 'speed', header: 'Speed', width: '60px', filterPlaceholder: '>50', getValue: (item) => item.Properties?.MaxSpeed, format: (v) => v != null ? v.toFixed(0) : '-' }
+  ];
+
+  // Breadcrumbs
+  $: breadcrumbs = [
+    { label: 'Items', href: '/items' },
+    { label: 'Vehicles', href: '/items/vehicles' },
+    ...(vehicle ? [{ label: vehicle.Name }] : [])
+  ];
+
+  // SEO
+  $: seoDescription = vehicle?.Properties?.Description ||
+    `${vehicle?.Name || 'Vehicle'} - ${vehicle?.Properties?.Type || ''} vehicle in Entropia Universe.`;
+
+  $: canonicalUrl = vehicle
+    ? `https://entropianexus.com/items/vehicles/${encodeURIComponentSafe(vehicle.Name)}`
+    : 'https://entropianexus.com/items/vehicles';
+
+  // ========== CALCULATION FUNCTIONS ==========
+  function getTotalDefense(item) {
+    if (!item?.Properties?.Defense) return 0;
+    const d = item.Properties.Defense;
+    return (d.Impact ?? 0) + (d.Cut ?? 0) + (d.Stab ?? 0) + (d.Penetration ?? 0) +
+           (d.Shrapnel ?? 0) + (d.Burn ?? 0) + (d.Cold ?? 0) + (d.Acid ?? 0) + (d.Electric ?? 0);
   }
-  
-  let tableViewInfo = {
-    columns: ['Name', 'Weight', 'Max. TT', 'Durability', 'Fuel', 'Usage (A)', 'Usage (P)', 'Seats', 'Item Cap.', 'Weight Cap.', 'Max. Speed', 'Max. SI'],
-    columnWidths: ['1fr', '80px', '100px', '90px', '80px', '110px', '110px', '60px', '80px', '90px', '100px', '80px'],
-    rowValuesFunction: (item) => {
-      return [
-        item.Name,
-        item.Properties?.Weight != null ? `${item.Properties?.Weight.toFixed(1)}kg` : 'N/A',
-        item.Properties?.Economy?.MaxTT != null ? `${item.Properties?.Economy?.MaxTT.toFixed(2)} PED` : 'N/A',
-        item.Properties?.Economy?.Durability != null ? item.Properties?.Economy?.Durability : 'N/A',
-        item.Fuel?.Name ?? 'N/A',
-        item.Properties?.Economy?.FuelConsumptionActive != null ? `${item.Properties?.Economy?.FuelConsumptionActive.toFixed(2)} PED/km` : 'N/A',
-        item.Properties?.Economy?.FuelConsumptionPassive != null ? `${item.Properties?.Economy?.FuelConsumptionPassive.toFixed(2)} PED/min` : 'N/A',
-        item.Properties?.PassengerCount != null ? item.Properties?.PassengerCount : 'N/A',
-        item.Properties?.ItemCapacity != null ? item.Properties?.ItemCapacity : 'N/A',
-        item.Properties?.WeightCapacity != null ? `${item.Properties?.WeightCapacity.toFixed(1)}kg` : 'N/A',
-        item.Properties?.MaxSpeed != null ? `${item.Properties?.MaxSpeed.toFixed(2)} km/h` : 'N/A',
-        item.Properties?.MaxStructuralIntegrity != null ? item.Properties?.MaxStructuralIntegrity : 'N/A',
-      ];
-    }
+
+  // ========== COMPUTED VALUES ==========
+  $: totalDefense = getTotalDefense(vehicle);
+
+  // Defense types for grid display
+  const defenseTypes = ['Impact', 'Cut', 'Stab', 'Penetration', 'Shrapnel', 'Burn', 'Cold', 'Acid', 'Electric'];
+
+  // ========== PANEL STATE PERSISTENCE ==========
+  let panelStates = {
+    defense: true,
+    acquisition: true
   };
+
+  onMount(() => {
+    try {
+      const stored = localStorage.getItem('wiki-vehicle-panels');
+      if (stored) {
+        panelStates = { ...panelStates, ...JSON.parse(stored) };
+      }
+    } catch (e) {}
+  });
+
+  function savePanelStates() {
+    try {
+      localStorage.setItem('wiki-vehicle-panels', JSON.stringify(panelStates));
+    } catch (e) {}
+  }
 </script>
 
-<EntityViewer
-  data={data}
-  user={data.session.user}
-  tableViewInfo={tableViewInfo}
-  editConfig={editConfig}
-  propertiesDataFunction={propertiesDataFunction}
-  title='Vehicles'
-  type='Vehicle'
-  basePath='/items/vehicles'
-  let:object
-  let:additional>
-  <!-- Acquisition -->
-  <div class="flex-item long-content">
-    <Acquisition acquisition={additional.acquisition} />
-  </div>
-</EntityViewer>
+<WikiSEO
+  title={vehicle?.Name || 'Vehicles'}
+  description={seoDescription}
+  entityType="Vehicle"
+  entity={vehicle}
+  {canonicalUrl}
+  breadcrumbs={breadcrumbs.map(b => ({ name: b.label, url: b.href }))}
+/>
+
+<WikiPage
+  title="Vehicles"
+  {breadcrumbs}
+  entity={vehicle}
+  entityType="Vehicle"
+  basePath="/items/vehicles"
+  {navItems}
+  {navFilters}
+  {navTableColumns}
+  {user}
+  editable={true}
+>
+  {#if vehicle}
+    <div class="layout-a">
+      <!-- Wikipedia-style floating infobox (right panel) -->
+      <aside class="wiki-infobox-float">
+        <!-- Entity Header -->
+        <div class="infobox-header">
+          <div class="icon-placeholder">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+              <rect x="3" y="7" width="18" height="10" rx="2" />
+              <circle cx="7" cy="17" r="2" />
+              <circle cx="17" cy="17" r="2" />
+            </svg>
+          </div>
+          <div class="infobox-title">{vehicle.Name}</div>
+          <div class="infobox-subtitle">
+            <span class="type-badge">{vehicle.Properties?.Type || 'Vehicle'}</span>
+          </div>
+        </div>
+
+        <!-- Tier-1 Stats -->
+        <div class="stats-section tier-1">
+          <div class="stat-row primary">
+            <span class="stat-label">Max Speed</span>
+            <span class="stat-value">{vehicle.Properties?.MaxSpeed != null ? `${vehicle.Properties.MaxSpeed.toFixed(2)} km/h` : 'N/A'}</span>
+          </div>
+          <div class="stat-row primary">
+            <span class="stat-label">Passengers</span>
+            <span class="stat-value">{vehicle.Properties?.PassengerCount ?? 'N/A'}</span>
+          </div>
+          <div class="stat-row primary">
+            <span class="stat-label">Max. SI</span>
+            <span class="stat-value">{vehicle.Properties?.MaxStructuralIntegrity ?? 'N/A'}</span>
+          </div>
+        </div>
+
+        <!-- General Stats -->
+        <div class="stats-section">
+          <h4 class="section-title">General</h4>
+          <div class="stat-row">
+            <span class="stat-label">Weight</span>
+            <span class="stat-value">{vehicle.Properties?.Weight != null ? `${clampDecimals(vehicle.Properties.Weight, 1, 6)}kg` : 'N/A'}</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Spawned Weight</span>
+            <span class="stat-value">{vehicle.Properties?.SpawnedWeight != null ? `${vehicle.Properties.SpawnedWeight.toFixed(1)}kg` : 'N/A'}</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Type</span>
+            <span class="stat-value">{vehicle.Properties?.Type ?? 'N/A'}</span>
+          </div>
+        </div>
+
+        <!-- Vehicle Stats -->
+        <div class="stats-section">
+          <h4 class="section-title">Vehicle</h4>
+          <div class="stat-row">
+            <span class="stat-label">Passengers</span>
+            <span class="stat-value">{vehicle.Properties?.PassengerCount ?? 'N/A'}</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Item Capacity</span>
+            <span class="stat-value">{vehicle.Properties?.ItemCapacity ?? 'N/A'}</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Weight Capacity</span>
+            <span class="stat-value">{vehicle.Properties?.WeightCapacity != null ? `${vehicle.Properties.WeightCapacity.toFixed(1)}kg` : 'N/A'}</span>
+          </div>
+          {#if vehicle.Properties?.Type === 'Land' || vehicle.Properties?.Type === 'Amphibious'}
+            <div class="stat-row">
+              <span class="stat-label">Wheel Grip</span>
+              <span class="stat-value">{vehicle.Properties?.WheelGrip ?? 'N/A'}</span>
+            </div>
+          {/if}
+          <div class="stat-row">
+            <span class="stat-label">Engine Power</span>
+            <span class="stat-value">{vehicle.Properties?.EnginePower ?? 'N/A'}</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Max. Speed</span>
+            <span class="stat-value">{vehicle.Properties?.MaxSpeed != null ? `${vehicle.Properties.MaxSpeed.toFixed(2)} km/h` : 'N/A'}</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Max. SI</span>
+            <span class="stat-value">{vehicle.Properties?.MaxStructuralIntegrity ?? 'N/A'}</span>
+          </div>
+          {#if vehicle.AttachmentSlots?.length > 0}
+            <div class="stat-row">
+              <span class="stat-label">Attachment Slots</span>
+              <span class="stat-value">{vehicle.AttachmentSlots.map(x => x.Name).join(', ')}</span>
+            </div>
+          {/if}
+        </div>
+
+        <!-- Economy Stats -->
+        <div class="stats-section">
+          <h4 class="section-title">Economy</h4>
+          <div class="stat-row">
+            <span class="stat-label">Max. TT</span>
+            <span class="stat-value">{vehicle.Properties?.Economy?.MaxTT != null ? `${clampDecimals(vehicle.Properties.Economy.MaxTT, 2, 8)} PED` : 'N/A'}</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Min. TT</span>
+            <span class="stat-value">{vehicle.Properties?.Economy?.MinTT != null ? `${clampDecimals(vehicle.Properties.Economy.MinTT, 2, 8)} PED` : 'N/A'}</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Durability</span>
+            <span class="stat-value">{vehicle.Properties?.Economy?.Durability ?? 'N/A'}</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Fuel</span>
+            <span class="stat-value">{vehicle.Fuel?.Name ?? 'N/A'}</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Consumption (Active)</span>
+            <span class="stat-value">{vehicle.Properties?.Economy?.FuelConsumptionActive != null ? `${vehicle.Properties.Economy.FuelConsumptionActive.toFixed(2)} PED/km` : 'N/A'}</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Consumption (Passive)</span>
+            <span class="stat-value">{vehicle.Properties?.Economy?.FuelConsumptionPassive != null ? `${vehicle.Properties.Economy.FuelConsumptionPassive.toFixed(2)} PED/min` : 'N/A'}</span>
+          </div>
+        </div>
+
+        <!-- Defense Grid in Infobox -->
+        {#if totalDefense > 0}
+          <div class="stats-section">
+            <h4 class="section-title">Defense</h4>
+            <div class="infobox-defense-grid">
+              {#each defenseTypes as dtype}
+                {#if vehicle.Properties?.Defense?.[dtype] > 0}
+                  <div class="mini-defense-item">
+                    <span class="mini-defense-label">{dtype}</span>
+                    <span class="mini-defense-value">{vehicle.Properties.Defense[dtype].toFixed(1)}</span>
+                  </div>
+                {/if}
+              {/each}
+            </div>
+            <!-- Total Defense Full-Width Box -->
+            <div class="defense-total-box">
+              <span class="defense-total-label">Total Defense</span>
+              <span class="defense-total-value">{totalDefense.toFixed(1)}</span>
+            </div>
+          </div>
+        {/if}
+      </aside>
+
+      <!-- Main content (center) -->
+      <article class="wiki-article">
+        <h1 class="article-title">{vehicle.Name}</h1>
+
+        <!-- Description Panel -->
+        <div class="description-panel">
+          {#if vehicle.Properties?.Description}
+            <div class="description-content">{vehicle.Properties.Description}</div>
+          {:else}
+            <div class="description-content placeholder">
+              {vehicle.Name} is a {vehicle.Properties?.Type?.toLowerCase() || ''} vehicle in Entropia Universe.
+            </div>
+          {/if}
+        </div>
+
+        <!-- Acquisition Section -->
+        {#if additional.acquisition}
+          <DataSection
+            title="Acquisition"
+            icon=""
+            bind:expanded={panelStates.acquisition}
+            on:toggle={savePanelStates}
+          >
+            <Acquisition acquisition={additional.acquisition} />
+          </DataSection>
+        {/if}
+      </article>
+    </div>
+  {:else}
+    <div class="no-selection">
+      <h2>Vehicles</h2>
+      <p>Select a vehicle from the list to view details.</p>
+    </div>
+  {/if}
+</WikiPage>
+
+<style>
+  .layout-a {
+    position: relative;
+    width: 100%;
+  }
+
+  .layout-a::after {
+    content: '';
+    display: block;
+    clear: both;
+  }
+
+  /* Floating infobox - Wikipedia style */
+  .wiki-infobox-float {
+    float: right;
+    width: 300px;
+    margin: 0 0 0 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    background-color: var(--secondary-color);
+    border: 1px solid var(--border-color, #555);
+    border-radius: 8px;
+    padding: 16px;
+  }
+
+  .infobox-header {
+    text-align: center;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-color, #555);
+  }
+
+  .icon-placeholder {
+    width: 80px;
+    height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--bg-color, var(--primary-color));
+    border: 2px dashed var(--border-color, #555);
+    border-radius: 8px;
+    color: var(--text-muted, #999);
+    margin: 0 auto 12px;
+  }
+
+  .infobox-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-color);
+  }
+
+  .infobox-subtitle {
+    font-size: 12px;
+    color: var(--text-muted, #999);
+    margin-top: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .type-badge {
+    padding: 2px 8px;
+    font-size: 10px;
+    font-weight: 600;
+    background-color: var(--accent-color, #4a9eff);
+    color: white;
+    border-radius: 4px;
+    text-transform: uppercase;
+  }
+
+  /* Stats sections */
+  .stats-section {
+    padding: 12px;
+    background-color: var(--bg-color, var(--primary-color));
+    border-radius: 6px;
+  }
+
+  .stats-section.tier-1 {
+    background: linear-gradient(135deg, #4a7c59 0%, #3a6349 100%);
+    padding: 14px;
+  }
+
+  .stats-section.tier-1 .stat-row.primary {
+    background-color: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    padding: 8px 12px;
+    margin-bottom: 6px;
+  }
+
+  .stats-section.tier-1 .stat-row.primary:last-child {
+    margin-bottom: 0;
+  }
+
+  .stats-section.tier-1 .stat-label {
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 13px;
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+
+  .stats-section.tier-1 .stat-value {
+    color: #e8f4e8;
+    font-size: 18px;
+    font-weight: 700;
+  }
+
+  .section-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted, #999);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin: 0 0 10px 0;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border-color, #555);
+  }
+
+  .stat-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 4px 0;
+    font-size: 13px;
+  }
+
+  .stat-label {
+    color: var(--text-muted, #999);
+  }
+
+  .stat-value {
+    font-weight: 500;
+    color: var(--text-color);
+    text-align: right;
+    word-break: break-word;
+    max-width: 60%;
+  }
+
+  /* Mini defense grid for infobox */
+  .infobox-defense-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+  }
+
+  .mini-defense-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 6px 4px;
+    background-color: var(--secondary-color);
+    border-radius: 4px;
+    border: 1px solid var(--border-color, #555);
+  }
+
+  .mini-defense-label {
+    font-size: 9px;
+    color: var(--text-muted, #999);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+
+  .mini-defense-value {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-color);
+  }
+
+  /* Total defense full-width box */
+  .defense-total-box {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 8px;
+    padding: 10px 12px;
+    background-color: var(--accent-color, #4a9eff);
+    border-radius: 6px;
+  }
+
+  .defense-total-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.9);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+
+  .defense-total-value {
+    font-size: 18px;
+    font-weight: 700;
+    color: white;
+  }
+
+  .wiki-article {
+    overflow: hidden;
+  }
+
+  .article-title {
+    font-size: 32px;
+    font-weight: 600;
+    margin: 0 0 16px 0;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--accent-color, #4a9eff);
+  }
+
+  .description-panel {
+    background-color: var(--secondary-color);
+    border: 1px solid var(--border-color, #555);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+
+  .description-content {
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--text-color);
+  }
+
+  .description-content.placeholder {
+    color: var(--text-muted, #999);
+    font-style: italic;
+  }
+
+  .no-selection {
+    text-align: center;
+    padding: 60px 20px;
+  }
+
+  .no-selection h2 {
+    font-size: 28px;
+    margin-bottom: 12px;
+  }
+
+  .no-selection p {
+    color: var(--text-muted, #999);
+    margin: 8px 0;
+  }
+
+  /* Tablet adjustments */
+  @media (max-width: 1023px) {
+    .wiki-infobox-float {
+      width: 280px;
+      margin-left: 16px;
+      padding: 14px;
+    }
+  }
+
+  /* Mobile adjustments */
+  @media (max-width: 767px) {
+    .layout-a {
+      max-width: 100%;
+    }
+
+    .wiki-infobox-float {
+      float: none;
+      width: auto;
+      margin: 0 0 16px 0;
+    }
+
+    .article-title {
+      display: none;
+    }
+
+    .infobox-title {
+      font-size: 16px;
+    }
+
+    .icon-placeholder {
+      width: 60px;
+      height: 60px;
+    }
+
+    .icon-placeholder svg {
+      width: 36px;
+      height: 36px;
+    }
+  }
+</style>

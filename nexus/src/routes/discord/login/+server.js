@@ -1,7 +1,7 @@
 //@ts-nocheck
 import { v4 as uuidv4 } from 'uuid';
 
-export async function GET({ request, cookies }) {
+export async function GET({ request, cookies, url: reqUrl }) {
   let referer = request.headers.get('referer');
 
   if (!referer) {
@@ -11,8 +11,7 @@ export async function GET({ request, cookies }) {
   let refererUrl = new URL(referer);
   if (refererUrl.hostname !== import.meta.env.VITE_DOMAIN) {
     return new Response('Invalid referer! Someone may have tried to attack you.', {
-      status: 400,
-      body: 'Invalid referer! Someone may have tried to attack you.'
+      status: 400
     });
   }
 
@@ -20,15 +19,17 @@ export async function GET({ request, cookies }) {
   let state = `${random}-${referer}`;
 
   let redirectUri = process.env.DISCORD_REDIRECT_URI;
+  let clientId = process.env.DISCORD_CLIENT_ID;
 
-  let url = `https://discord.com/oauth2/authorize?client_id=1224999497130840105&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}&scope=identify&state=${state}`;
+  let url = `https://discord.com/oauth2/authorize?client_id=${clientId}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}&scope=identify&state=${state}`;
 
-  console.log(import.meta.env.MODE);
+  // Determine if we should use secure cookies based on protocol
+  const isSecure = reqUrl.protocol === 'https:';
 
   cookies.set(import.meta.env.VITE_STATE_COOKIE_NAME, random, {
     maxAge: 60 * 60 * 24 * 7,
     path: '/',
-    secure: import.meta.env.MODE === 'development' ? false : true,
+    secure: isSecure,
     httpOnly: true,
     sameSite: 'Lax',
     domain: import.meta.env.VITE_DOMAIN

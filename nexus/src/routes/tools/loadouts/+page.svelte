@@ -9,6 +9,8 @@
   import { darkMode, loading } from '../../../stores.js';
   import Table from '$lib/components/Table.svelte';
   import { clampDecimals } from '$lib/util.js';
+  import * as LoadoutCalc from '$lib/utils/loadoutCalculations.js';
+  import { loadLoadoutEntities } from '$lib/utils/entityLoader';
 
   export let data;
 
@@ -19,20 +21,22 @@
     overampCap: 10,
   }
 
-  let weapons;
-  let amplifiers;
-  let scopes;
-  let sights;
-  let absorbers;
-  let matrices;
-  let implants;
-  let armorsets;
-  let armors;
-  let armorplatings;
-  let enhancers;
-  let clothing;
-  let pets;
-  let stimulants;
+  let weapons = [];
+  let amplifiers = [];
+  let scopes = [];
+  let sights = [];
+  let absorbers = [];
+  let matrices = [];
+  let implants = [];
+  let armorsets = [];
+  let armors = [];
+  let armorplatings = [];
+  let enhancers = [];
+  let clothing = [];
+  let pets = [];
+  let stimulants = [];
+
+  let entitiesLoading = true;
 
   let loadout = null;
   let loadouts = null;
@@ -48,27 +52,43 @@
     return a.Name.localeCompare(b.Name, undefined, { numeric: true });
   }
 
-  $: if(data && data.additional) {
-    weapons = data.additional.weapons.filter(x => x.Properties.Class !== 'Attached' && x.Properties.Class !== 'Stationary').sort(alphabeticalSort);
-    amplifiers = data.additional.weaponamplifiers.filter(x => x.Properties.Type !== 'Matrix').sort(alphabeticalSort);
-    scopes = data.additional.weaponvisionattachments.filter(x => x.Properties.Type === 'Scope').sort(alphabeticalSort);
-    sights = data.additional.weaponvisionattachments.filter(x => x.Properties.Type === 'Sight').sort(alphabeticalSort);
-    absorbers = data.additional.absorbers.sort(alphabeticalSort);
-    matrices = data.additional.weaponamplifiers.filter(x => x.Properties.Type === 'Matrix').sort(alphabeticalSort);
-    implants = data.additional.mindforceimplants.sort(alphabeticalSort);
-    armorsets = data.additional.armorsets.sort(alphabeticalSort);
-    armors = data.additional.armors.sort(alphabeticalSort);
-    armorplatings = data.additional.armorplatings.sort(alphabeticalSort);
-    enhancers = data.additional.enhancers.sort(alphabeticalSort);
-    clothing = data.additional.clothing.sort(alphabeticalSort);
-    pets = data.additional.pets.sort(alphabeticalSort);
-    stimulants = data.additional.stimulants.sort(alphabeticalSort);
+  function processEntityData(entities) {
+    const rawWeapons = entities.weapons || [];
+    const rawAmplifiers = entities.weaponAmplifiers || [];
+    const rawVisionAttachments = entities.weaponVisionAttachments || [];
+
+    weapons = rawWeapons.filter(x => x.Properties?.Class !== 'Attached' && x.Properties?.Class !== 'Stationary').sort(alphabeticalSort);
+    amplifiers = rawAmplifiers.filter(x => x.Properties?.Type !== 'Matrix').sort(alphabeticalSort);
+    scopes = rawVisionAttachments.filter(x => x.Properties?.Type === 'Scope').sort(alphabeticalSort);
+    sights = rawVisionAttachments.filter(x => x.Properties?.Type === 'Sight').sort(alphabeticalSort);
+    absorbers = (entities.absorbers || []).sort(alphabeticalSort);
+    matrices = rawAmplifiers.filter(x => x.Properties?.Type === 'Matrix').sort(alphabeticalSort);
+    implants = (entities.mindforceImplants || []).sort(alphabeticalSort);
+    armorsets = (entities.armorSets || []).sort(alphabeticalSort);
+    armors = (entities.armors || []).sort(alphabeticalSort);
+    armorplatings = (entities.armorPlatings || []).sort(alphabeticalSort);
+    enhancers = (entities.enhancers || []).sort(alphabeticalSort);
+    clothing = (entities.clothings || []).sort(alphabeticalSort);
+    pets = (entities.pets || []).sort(alphabeticalSort);
+    stimulants = (entities.consumables || []).sort(alphabeticalSort);
   }
 
-  onMount(() => {
-    if (typeof localStorage === 'undefined') return;
+  onMount(async () => {
+    // Load loadouts from localStorage
+    if (typeof localStorage !== 'undefined') {
+      loadouts = localStorage.getItem('loadouts') ? JSON.parse(localStorage.getItem('loadouts')) : [];
+    }
 
-    loadouts = localStorage.getItem('loadouts') ? JSON.parse(localStorage.getItem('loadouts')) : [];
+    // Lazy load entity data
+    entitiesLoading = true;
+    try {
+      const entities = await loadLoadoutEntities();
+      processEntityData(entities);
+    } catch (error) {
+      console.error('Failed to load entity data:', error);
+    } finally {
+      entitiesLoading = false;
+    }
   });
 
   $: if(loadout?.Gear.Weapon.Enhancers) {
@@ -274,7 +294,7 @@
   }
 
   function clamp(value, min, max) {
-    return Math.min(Math.max(value, min), max);
+    return LoadoutCalc.clamp(value, min, max);
   }
 
   function resetArmor() {
@@ -335,640 +355,287 @@
   }
 
   function getLerpProgress(start, end, current) {
-    // Just a hack to avoid making fully maxed weapons unusable just because we don't know the max value
-    if (start == null || end == null) return 1;
-
-    return clamp((current - start) / (end - start), 0, 1);
+    return LoadoutCalc.getLerpProgress(start, end, current);
   }
 
   function calcTotalDamage(loadout) {
-    let weapon = getWeapon(loadout.Gear.Weapon.Name);
-
-    if (weapon == null) return null;
-
-    let baseDamage = getTotalDamage(weapon);
-
-    let totalDamage = baseDamage;
-
-    totalDamage *= 1 + (loadout.Gear.Weapon.Enhancers.Damage * 0.1);
-
-    let amplifier = getAmplifier(loadout.Gear.Weapon.Amplifier?.Name);
-
-    if (amplifier != null) {
-      totalDamage += Math.min(baseDamage / 2, getTotalDamage(amplifier));
-    }
-
-    return totalDamage * (1 + (loadout?.Properties?.BonusDamage ?? 0) / 100);
+    const weapon = getWeapon(loadout.Gear.Weapon.Name);
+    const amplifier = getAmplifier(loadout.Gear.Weapon.Amplifier?.Name);
+    
+    return LoadoutCalc.calculateTotalDamage(
+      weapon,
+      loadout.Gear.Weapon.Enhancers.Damage,
+      loadout?.Properties?.BonusDamage ?? 0,
+      amplifier
+    );
   }
 
   function calcEffectiveDamage(loadout) {
-    if (loadout.Gear.Weapon.Name == null) return null;
+    const critChance = calcCritChance(loadout);
+    const critDamage = calcCritDamage(loadout);
+    const hitAbility = calcHitAbility(loadout);
+    const damageInterval = calcDamageInterval(loadout);
 
-    let critChance = calcCritChance(loadout);
-    let critDamage = calcCritDamage(loadout);
-    let hitAbility = calcHitAbility(loadout);
-    let damageInterval = calcDamageInterval(loadout);
-
-    if (critChance == null || critDamage == null || hitAbility == null || damageInterval == null) return null;
-    
-    let averageDamage = (damageInterval.min + damageInterval.max) / 2;
-    let hitChance = 0.8 + (hitAbility / 100);
-
-    return averageDamage * (hitChance - critChance) + (averageDamage + critDamage * damageInterval.max) * critChance;
+    return LoadoutCalc.calculateEffectiveDamage(damageInterval, critChance, critDamage, hitAbility);
   }
 
   function calcDamageInterval(loadout) {
-    let weapon = getWeapon(loadout.Gear.Weapon.Name);
-
-    if (weapon == null) return null;
+    const weapon = getWeapon(loadout.Gear.Weapon.Name);
+    const totalDamage = calcTotalDamage(loadout);
     
-    let dmgSkill = loadout.Skill.Dmg + (loadout.Gear.Weapon.Enhancers.SkillMod ?? 0) * 0.5
-
-    let totalDamage = calcTotalDamage(loadout);
-
-    if (totalDamage == null) return null;
-
-    if (weapon.Properties.Skill.IsSiB) {
-      let progress = getLerpProgress(weapon.Properties.Skill.Dmg.LearningIntervalStart, weapon.Properties.Skill.Dmg.LearningIntervalEnd, dmgSkill);
-
-      return { 
-        min: totalDamage * 0.25 * (1 + progress),
-        max: totalDamage * 0.5 * (1 + progress)
-      };
-    }
-    else {
-      return { 
-        min: totalDamage * 0.25 + (totalDamage * 0.25 * Math.min(dmgSkill / 100, 1)),
-        max: totalDamage
-      };
-    }
+    return LoadoutCalc.calculateDamageInterval(
+      weapon,
+      loadout.Skill.Dmg,
+      loadout.Gear.Weapon.Enhancers.SkillMod ?? 0,
+      totalDamage
+    );
   }
 
   function calcHitAbility(loadout) {
-    let weapon = getWeapon(loadout.Gear.Weapon.Name);
-
-    if (weapon == null) return null;
+    const weapon = getWeapon(loadout.Gear.Weapon.Name);
     
-    let hitSkill = loadout.Skill.Hit + (loadout.Gear.Weapon.Enhancers.SkillMod ?? 0) * 0.5
-
-    if (weapon.Properties.Skill.IsSiB) {
-      if (hitSkill < weapon.Properties.Skill.Hit.LearningIntervalStart) {
-        return 0;
-      }
-
-      let progress = getLerpProgress(weapon.Properties.Skill.Hit.LearningIntervalStart, weapon.Properties.Skill.Hit.LearningIntervalEnd, hitSkill);
-
-      return clamp(3 + 7 * progress, 0, 10);
-    }
-    else {
-      return clamp(4 + 6 * (hitSkill / 100), 0, 10);
-    }
+    return LoadoutCalc.calculateHitAbility(
+      weapon,
+      loadout.Skill.Hit,
+      loadout.Gear.Weapon.Enhancers.SkillMod ?? 0
+    );
   }
 
   function calcCritChance(loadout) {
-    let critAbility = calcCritAbility(loadout);
+    const critAbility = calcCritAbility(loadout);
     
-    return clamp(0.01 + (critAbility / 1000) + loadout.Gear.Weapon.Enhancers.Accuracy * 0.002 + ((loadout?.Properties?.BonusCritChance ?? 0) / 100), 0.01, 1);
+    return LoadoutCalc.calculateCritChance(
+      critAbility,
+      loadout.Gear.Weapon.Enhancers.Accuracy,
+      loadout?.Properties?.BonusCritChance ?? 0
+    );
   }
 
   function calcCritAbility(loadout) {
-    let weapon = getWeapon(loadout.Gear.Weapon.Name);
-
-    if (weapon == null) return null;
+    const weapon = getWeapon(loadout.Gear.Weapon.Name);
     
-    let hitSkill = loadout.Skill.Hit + (loadout.Gear.Weapon.Enhancers.SkillMod ?? 0) * 0.5
-
-    if (weapon.Properties.Skill.IsSiB) {
-      let progress = getLerpProgress(weapon.Properties.Skill.Hit.LearningIntervalStart, weapon.Properties.Skill.Hit.LearningIntervalEnd, hitSkill);
-
-      return clamp(Math.sqrt(progress * 100), 0, 10);
-    }
-    else {
-      return clamp(Math.min(10, Math.sqrt(hitSkill)), 0, 10);
-    }
+    return LoadoutCalc.calculateCritAbility(
+      weapon,
+      loadout.Skill.Hit,
+      loadout.Gear.Weapon.Enhancers.SkillMod ?? 0
+    );
   }
 
   function calcCritDamage(loadout) {
-    return 1 + ((loadout?.Properties?.BonusCritDamage ?? 0) / 100);
+    return LoadoutCalc.calculateCritDamage(loadout?.Properties?.BonusCritDamage ?? 0);
   }
 
   function calcRange(loadout) {
-    let weapon = getWeapon(loadout.Gear.Weapon.Name);
-
-    if (weapon == null) return null;
-
-    let hitSkill = loadout.Skill.Hit + (loadout.Gear.Weapon.Enhancers.SkillMod ?? 0) * 0.5
-
-    let rangeEnhancerFactor = 1 + loadout.Gear.Weapon.Enhancers.Range * 0.05;
-
-    if (weapon.Properties.Class === 'Melee') {
-      return weapon.Properties.Range * rangeEnhancerFactor;
-    }
-
-    if (hitSkill < weapon.Properties.Skill.Hit.LearningIntervalStart) {
-      return weapon.Properties.Range * 10/11 * rangeEnhancerFactor;
-    }
-
-    if (weapon.Properties.Skill.IsSiB) {
-      let progress = getLerpProgress(weapon.Properties.Skill.Hit.LearningIntervalStart, weapon.Properties.Skill.Hit.LearningIntervalEnd, hitSkill);
-
-      return weapon.Properties.Range * (0.935 + 0.065 * progress) * rangeEnhancerFactor;
-    }
-    else {
-      return weapon.Properties.Range * (0.945 + 0.055 * (hitSkill / 100)) * rangeEnhancerFactor;
-    }
+    const weapon = getWeapon(loadout.Gear.Weapon.Name);
+    
+    return LoadoutCalc.calculateRange(
+      weapon,
+      loadout.Skill.Hit,
+      loadout.Gear.Weapon.Enhancers.SkillMod ?? 0,
+      loadout.Gear.Weapon.Enhancers.Range
+    );
   }
 
   function calcDecay(loadout) {
-    let weapon = getWeapon(loadout.Gear.Weapon.Name);
-
-    if (weapon == null || weapon.Properties.Economy.Decay == null) return null;
-
-    let weaponDecay = weapon.Properties.Economy.Decay * (1 + loadout.Gear.Weapon.Enhancers.Damage * 0.1) * (1 - loadout.Gear.Weapon.Enhancers.Economy * 0.01111);
-
-    let decay = 0;
-
-    if (loadout.Gear.Weapon.Absorber?.Name != null) {
-      let absorber = getAbsorber(loadout.Gear.Weapon.Absorber.Name);
-
-      if (absorber?.Properties?.Economy?.Absorption == null) return null;
-
-      let absorberDecay = weaponDecay * absorber.Properties.Economy.Absorption;
-      decay += absorberDecay * (loadout.Markup.Implant ?? 100) / 100;
-      weaponDecay -= absorberDecay;
-    }
-
-    if (loadout.Gear.Weapon.Implant?.Name != null) {
-      let implant = getImplant(loadout.Gear.Weapon.Implant.Name);
-
-      if (implant?.Properties?.Economy?.Absorption == null) return null;
-
-      let implantDecay = weaponDecay * implant.Properties.Economy.Absorption;
-      decay += implantDecay * (loadout.Markup.Implant ?? 100) / 100;
-      weaponDecay -= implantDecay;
-    }
-
-    decay += weaponDecay * (loadout.Markup.Weapon ?? 100) / 100;
-
-    if (loadout.Gear.Weapon.Amplifier?.Name != null) {
-      let amp = getAmplifier(loadout.Gear.Weapon.Amplifier.Name);
-
-      if (amp?.Properties?.Economy?.Decay == null) return null;
-      
-      decay += amp.Properties.Economy.Decay * (loadout.Markup.Amplifier ?? 100) / 100;
-    }
-
-    if (loadout.Gear.Weapon.Scope?.Name != null) {
-      let scope = getScope(loadout.Gear.Weapon.Scope.Name);
-
-      if (scope?.Properties?.Economy?.Decay == null) return null;
-
-      decay += scope.Properties.Economy.Decay * (loadout.Markup.Scope ?? 100) / 100;
-    }
-
-    if (loadout.Gear.Weapon.Scope?.Sight?.Name != null) {
-      let scopeSight = getSight(loadout.Gear.Weapon.Scope.Sight.Name);
-
-      if (scopeSight?.Properties?.Economy?.Decay == null) return null;
-
-      decay += scopeSight.Properties.Economy.Decay * (loadout.Markup.ScopeSight ?? 100) / 100;
-    }
-
-    if (loadout.Gear.Weapon.Sight?.Name != null) {
-      let sight = getSight(loadout.Gear.Weapon.Sight.Name);
-
-      if (sight?.Properties?.Economy?.Decay == null) return null;
-
-      decay += sight.Properties.Economy.Decay * (loadout.Markup.Sight ?? 100) / 100;
-    }
-
-    if (loadout.Gear.Weapon.Matrix?.Name != null) {
-      let matrix = getMatrix(loadout.Gear.Weapon.Matrix.Name);
-
-      if (matrix?.Properties?.Economy?.Decay == null) return null;
-
-      decay += matrix.Properties.Economy.Decay * (loadout.Markup.Matrix ?? 100) / 100;
-    }
-
-    return decay;
+    const weapon = getWeapon(loadout.Gear.Weapon.Name);
+    const absorber = getAbsorber(loadout.Gear.Weapon.Absorber?.Name);
+    const implant = getImplant(loadout.Gear.Weapon.Implant?.Name);
+    const amplifier = getAmplifier(loadout.Gear.Weapon.Amplifier?.Name);
+    const scope = getScope(loadout.Gear.Weapon.Scope?.Name);
+    const scopeSight = getSight(loadout.Gear.Weapon.Scope?.Sight?.Name);
+    const sight = getSight(loadout.Gear.Weapon.Sight?.Name);
+    const matrix = getMatrix(loadout.Gear.Weapon.Matrix?.Name);
+    
+    return LoadoutCalc.calculateDecay(
+      weapon,
+      loadout.Gear.Weapon.Enhancers.Damage,
+      loadout.Gear.Weapon.Enhancers.Economy,
+      absorber,
+      implant,
+      amplifier,
+      scope,
+      scopeSight,
+      sight,
+      matrix,
+      loadout.Markup
+    );
   }
 
   function calcAmmo(loadout) {
-    let weapon = getWeapon(loadout.Gear.Weapon.Name);
-
-    if (weapon == null || weapon.Properties.Economy.AmmoBurn === null) return null;
-
-    let ammoBurn = weapon.Properties.Economy.AmmoBurn * (1 + loadout.Gear.Weapon.Enhancers.Damage * 0.1) * (1 - loadout.Gear.Weapon.Enhancers.Economy * 0.01111);
-
-    if (loadout.Gear.Weapon.Amplifier?.Name != null) {
-      let amp = getAmplifier(loadout.Gear.Weapon.Amplifier.Name);
-
-      if (amp?.Properties?.Economy?.AmmoBurn === null) return null;
-      
-      ammoBurn += amp.Properties.Economy.AmmoBurn;
-    }
-
-    return ammoBurn;
+    const weapon = getWeapon(loadout.Gear.Weapon.Name);
+    const amplifier = getAmplifier(loadout.Gear.Weapon.Amplifier?.Name);
+    
+    return LoadoutCalc.calculateAmmoBurn(
+      weapon,
+      loadout.Gear.Weapon.Enhancers.Damage,
+      loadout.Gear.Weapon.Enhancers.Economy,
+      amplifier
+    );
   }
 
   function calcCost(loadout) {
-    let decay = calcDecay(loadout);
-    let ammo = calcAmmo(loadout);
+    const decay = calcDecay(loadout);
+    const ammo = calcAmmo(loadout);
 
-    if (decay === null || ammo === null) return null;
-
-    return calcDecay(loadout) + (calcAmmo(loadout) / 100) * (loadout.Markup.Ammo ?? 100) / 100;
+    return LoadoutCalc.calculateCost(decay, ammo, loadout.Markup.Ammo ?? 100);
   }
 
   function calcDpp(loadout) {
-    let effectiveDamage = calcEffectiveDamage(loadout);
-    let cost = calcCost(loadout);
+    const effectiveDamage = calcEffectiveDamage(loadout);
+    const cost = calcCost(loadout);
 
-    return effectiveDamage && cost
-      ? effectiveDamage / cost
-      : null;
+    return LoadoutCalc.calculateDPP(effectiveDamage, cost);
   }
 
   function calcReload(loadout) {
-    let weapon = getWeapon(loadout.Gear.Weapon.Name);
+    const weapon = getWeapon(loadout.Gear.Weapon.Name);
     
-    if (weapon == null) return null;
-
-    let hitSkill = loadout.Skill.Hit + (loadout.Gear.Weapon.Enhancers.SkillMod ?? 0) * 0.5
-
-    let bonusFactor = 1/(1 + (loadout?.Properties?.BonusReload ?? 0) / 100);
-
-    if (!weapon.Properties.Skill.IsSiB) {
-      return (60 / weapon.Properties.UsesPerMinute) * bonusFactor;
-    }
-
-    if (hitSkill < weapon.Properties.Skill.Hit.LearningIntervalStart) {
-      return (60 / (weapon.Properties.UsesPerMinute * 0.45)) * bonusFactor;
-    }
-    else {
-      let intervalSize = weapon.Properties.Skill.Hit.LearningIntervalEnd - weapon.Properties.Skill.Hit.LearningIntervalStart;
-      let scalingRange = intervalSize * 0.25;
-
-      let progress = getLerpProgress(
-        weapon.Properties.Skill.Hit.LearningIntervalStart,
-        weapon.Properties.Skill.Hit.LearningIntervalEnd != null ? weapon.Properties.Skill.Hit.LearningIntervalEnd + scalingRange : null,
-        hitSkill);
-
-      return (60 / (weapon.Properties.UsesPerMinute * 0.8 + weapon.Properties.UsesPerMinute * 0.2 * progress)) * bonusFactor;
-    }
+    return LoadoutCalc.calculateReload(
+      weapon,
+      loadout.Skill.Hit,
+      loadout.Gear.Weapon.Enhancers.SkillMod ?? 0,
+      loadout?.Properties?.BonusReload ?? 0
+    );
   }
 
   function calcDps(loadout) {
-    let effectiveDamage = calcEffectiveDamage(loadout);
-    let reload = calcReload(loadout);
+    const effectiveDamage = calcEffectiveDamage(loadout);
+    const reload = calcReload(loadout);
 
-    return effectiveDamage && reload
-      ? effectiveDamage / reload
-      : null;
+    return LoadoutCalc.calculateDPS(effectiveDamage, reload);
   }
 
   function calcWeaponCost(loadout) {
-    let weapon = getWeapon(loadout.Gear.Weapon.Name);
+    const weapon = getWeapon(loadout.Gear.Weapon.Name);
 
-    if (weapon == null) return null;
-
-    let cost = getCost(weapon);
-
-    if (cost == null) return null;
-
-    cost *= (1 + loadout.Gear.Weapon.Enhancers.Damage * 0.1) * (1 - loadout.Gear.Weapon.Enhancers.Economy * 0.01111);
-
-    return cost;
+    return LoadoutCalc.calculateWeaponCost(
+      weapon,
+      loadout.Gear.Weapon.Enhancers.Damage,
+      loadout.Gear.Weapon.Enhancers.Economy
+    );
   }
 
   function calcEfficiency(loadout) {
-    let weapon = getWeapon(loadout.Gear.Weapon.Name);
-
-    if (weapon == null || weapon.Properties.Economy.Efficiency === null) return null;
-
-    let cost = calcWeaponCost(loadout);
-    let efficiency = weapon.Properties.Economy.Efficiency;
-
-    if (loadout.Gear.Weapon.Absorber?.Name != null) {
-      let absorber = getAbsorber(loadout.Gear.Weapon.Absorber.Name);
-
-      if (absorber?.Properties?.Economy?.Absorption == null || absorber?.Properties?.Economy?.Efficiency == null) return null;
-      
-      let weaponDecay = weapon.Properties.Economy.Decay * (1 + loadout.Gear.Weapon.Enhancers.Damage * 0.1) * (1 - loadout.Gear.Weapon.Enhancers.Economy * 0.01111);
-      let absorberCost = weaponDecay * absorber.Properties.Economy.Absorption;
-      cost -= absorberCost;
-      efficiency = weightedAverage(cost, efficiency, absorberCost, absorber.Properties.Economy.Efficiency);
-
-      cost += absorberCost;
-    }
-
-    if (loadout.Gear.Weapon.Amplifier?.Name != null) {
-      let amp = getAmplifier(loadout.Gear.Weapon.Amplifier.Name);
-
-      if (amp?.Properties.Economy.Efficiency == null) return null;
-
-      let ampCost = getCost(amp);
-
-      if (ampCost === null) return null;
-
-      efficiency = weightedAverage(cost, efficiency, ampCost, amp.Properties.Economy.Efficiency);
-      cost += ampCost;
-    }
-
-    if (loadout.Gear.Weapon.Scope?.Name != null) {
-      let scope = getScope(loadout.Gear.Weapon.Scope.Name);
-
-      if (scope?.Properties.Economy.Efficiency == null) return null;
-
-      let scopeCost = getCost(scope);
-
-      if (scopeCost === null) return null;
-
-      efficiency = weightedAverage(cost, efficiency, scopeCost, scope.Properties.Economy.Efficiency);
-      cost += scopeCost;
-    }
-
-    if (loadout.Gear.Weapon.Scope?.Sight?.Name != null) {
-      let scopeSight = getSight(loadout.Gear.Weapon.Scope.Sight.Name);
-
-      if (scopeSight?.Properties.Economy.Efficiency == null) return null;
-
-      let scopeSightCost = getCost(scopeSight);
-
-      if (scopeSightCost === null) return null;
-
-      efficiency = weightedAverage(cost, efficiency, scopeSightCost, scopeSight.Properties.Economy.Efficiency);
-      cost += scopeSightCost;
-    }
-
-    if (loadout.Gear.Weapon.Sight?.Name != null) {
-      let sight = getSight(loadout.Gear.Weapon.Sight.Name);
-
-      if (sight?.Properties.Economy.Efficiency == null) return null;
-
-      let sightCost = getCost(sight);
-
-      if (sightCost === null) return null;
-
-      efficiency = weightedAverage(cost, efficiency, sightCost, sight.Properties.Economy.Efficiency);
-      cost += sightCost;
-    }
-
-    if (loadout.Gear.Weapon.Matrix?.Name != null) {
-      let matrix = getMatrix(loadout.Gear.Weapon.Matrix.Name);
-
-      if (matrix?.Properties.Economy.Efficiency == null) return null;
-
-      let matrixCost = getCost(matrix);
-
-      if (matrixCost === null) return null;
-
-      efficiency = weightedAverage(cost, efficiency, matrixCost, matrix.Properties.Economy.Efficiency);
-      cost += matrixCost;
-    }
-
-    return efficiency;
+    const weapon = getWeapon(loadout.Gear.Weapon.Name);
+    const weaponCost = calcWeaponCost(loadout);
+    const absorber = getAbsorber(loadout.Gear.Weapon.Absorber?.Name);
+    const amplifier = getAmplifier(loadout.Gear.Weapon.Amplifier?.Name);
+    const scope = getScope(loadout.Gear.Weapon.Scope?.Name);
+    const scopeSight = getSight(loadout.Gear.Weapon.Scope?.Sight?.Name);
+    const sight = getSight(loadout.Gear.Weapon.Sight?.Name);
+    const matrix = getMatrix(loadout.Gear.Weapon.Matrix?.Name);
+    
+    return LoadoutCalc.calculateEfficiency(
+      weapon,
+      weaponCost,
+      loadout.Gear.Weapon.Enhancers.Damage,
+      loadout.Gear.Weapon.Enhancers.Economy,
+      absorber,
+      amplifier,
+      scope,
+      scopeSight,
+      sight,
+      matrix
+    );
   }
 
   function weightedAverage(weightA, valueA, weightB, valueB) {
-    return (valueA * weightA + valueB * weightB) / (weightA + weightB);
+    return LoadoutCalc.weightedAverage(weightA, valueA, weightB, valueB);
   }
 
   function calcArmorDefense(loadout) {
-    let totalDefense = 0;
-
-    armorSlots.forEach(slot => {
-      let armor = getArmor(loadout.Gear.Armor[slot].Name);
-
-      if (armor == null) return;
-
-      totalDefense = totalDefense === 0
-        ? getTotalDefense(armor)
-        : (totalDefense + getTotalDefense(armor)) / 2;
-    });
-
-    totalDefense *= 1 + (loadout.Gear.Armor.Enhancers.Defense * 0.05);
-
-    return totalDefense;
+    const armorPieces = armorSlots.map(slot => getArmor(loadout.Gear.Armor[slot].Name));
+    
+    return LoadoutCalc.calculateArmorDefense(
+      armorPieces,
+      loadout.Gear.Armor.Enhancers.Defense
+    );
   }
 
   function calcPlateDefense(loadout) {
-    let totalDefense = 0;
-
-    armorSlots.forEach(slot => {
-      let plate = getArmorPlating(loadout.Gear.Armor[slot].Plate?.Name);
-
-      if (plate == null) return;
-
-      totalDefense = totalDefense === 0
-        ? getTotalDefense(plate)
-        : (totalDefense + getTotalDefense(plate)) / 2;
-    });
-
-    return totalDefense;
+    const platePieces = armorSlots.map(slot => getArmorPlating(loadout.Gear.Armor[slot].Plate?.Name));
+    
+    return LoadoutCalc.calculatePlateDefense(platePieces);
   }
 
   function calcTotalDefense(loadout) {
-    return calcArmorDefense(loadout) + calcPlateDefense(loadout);
+    const armorDefense = calcArmorDefense(loadout);
+    const plateDefense = calcPlateDefense(loadout);
+    
+    return LoadoutCalc.calculateTotalDefense(armorDefense, plateDefense);
   }
 
   function calcArmorDurability(loadout) {
-    let totalDurability = 0;
-
-    armorSlots.forEach(slot => {
-      let armor = getArmor(loadout.Gear.Armor[slot].Name);
-
-      if (armor == null) return;
-
-      totalDurability = totalDurability === 0
-        ? armor.Properties.Economy.Durability
-        : (totalDurability + armor.Properties.Economy.Durability) / 2;
-    });
-
-    totalDurability *= 1 + (loadout.Gear.Armor.Enhancers.Durability * 0.05);
-
-    return totalDurability || null;
+    const armorPieces = armorSlots.map(slot => getArmor(loadout.Gear.Armor[slot].Name));
+    
+    return LoadoutCalc.calculateArmorDurability(
+      armorPieces,
+      loadout.Gear.Armor.Enhancers.Durability
+    );
   }
 
   function calcPlateDurability(loadout) {
-    let totalDurability = 0;
-
-    armorSlots.forEach(slot => {
-      let plate = getArmorPlating(loadout.Gear.Armor[slot].Plate?.Name);
-
-      if (plate == null) return;
-
-      totalDurability = totalDurability === 0
-        ? plate.Properties.Economy.Durability
-        : (totalDurability + plate.Properties.Economy.Durability) / 2;
-    });
-
-    return totalDurability || null;
+    const platePieces = armorSlots.map(slot => getArmorPlating(loadout.Gear.Armor[slot].Plate?.Name));
+    
+    return LoadoutCalc.calculatePlateDurability(platePieces);
   }
 
   function calcTotalAbsorption(loadout) {
-    let totalAbsorption = 0;
-
-    armorSlots.forEach(slot => {
-      let armor = getArmor(loadout.Gear.Armor[slot].Name);
-
-      if (armor == null) return;
-
-      let totalDefense = (getTotalDefense(armor)) * (1 + loadout.Gear.Armor.Enhancers.Defense * 0.05);
-      let durability = armor.Properties?.Economy.Durability * (1 + loadout.Gear.Armor.Enhancers.Durability * 0.1);
-
-      let maxDecay = totalDefense * ((100000 - durability) / 100000) * 0.05
-      totalAbsorption += totalDefense * ((armor.Properties?.Economy.MaxTT - (armor.Properties?.Economy.MinTT ?? 0)) / (maxDecay / 100));
-    });
-
-    armorSlots.forEach(slot => {
-      let plate = getArmorPlating(loadout.Gear.Armor[slot].Plate?.Name);
-
-      if (plate == null) return;
-
-      let totalDefense = getTotalDefense(plate);
-
-      let maxDecay = totalDefense * ((100000 - plate.Properties?.Economy.Durability) / 100000) * 0.05
-      totalAbsorption += totalDefense * ((plate.Properties?.Economy.MaxTT - (plate.Properties?.Economy.MinTT ?? 0)) / (maxDecay / 100));
-    });
-
-    return totalAbsorption
+    const armorPieces = armorSlots.map(slot => getArmor(loadout.Gear.Armor[slot].Name));
+    const platePieces = armorSlots.map(slot => getArmorPlating(loadout.Gear.Armor[slot].Plate?.Name));
+    
+    return LoadoutCalc.calculateTotalAbsorption(
+      armorPieces,
+      platePieces,
+      loadout.Gear.Armor.Enhancers.Defense,
+      loadout.Gear.Armor.Enhancers.Durability
+    );
   }
 
   function calcBlockChance(loadout) {
-    let blockChance = 0;
-
-    armorSlots.forEach(slot => {
-      let plate = getArmorPlating(loadout.Gear.Armor[slot].Plate?.Name);
-
-      if (plate == null) return;
-
-      blockChance = blockChance === 0
-        ? plate.Properties.Defense.Block ?? 0
-        : (blockChance + plate.Properties.Defense.Block ?? 0) / 2;
-    });
-
-    return blockChance || null;
+    const platePieces = armorSlots.map(slot => getArmorPlating(loadout.Gear.Armor[slot].Plate?.Name));
+    
+    return LoadoutCalc.calculateBlockChance(platePieces);
   }
 
   function calcSkillModification(loadout) {
-    let skillMod = 0;
-
-    if (loadout.Gear.Weapon?.Scope?.Name != null) {
-      let scope = getScope(loadout.Gear.Weapon.Scope.Name);
-
-      if (scope?.Properties?.SkillModification === null) return null;
-
-      skillMod += scope.Properties.SkillModification;
-    }
-
-    if (loadout.Gear.Weapon?.Scope?.Sight?.Name != null) {
-      let scopeSight = getSight(loadout.Gear.Weapon.Scope.Sight.Name);
-
-      if (scopeSight?.Properties?.SkillModification === null) return null;
-
-      skillMod += scopeSight.Properties.SkillModification;
-    }
-
-    if (loadout.Gear.Weapon?.Sight?.Name != null) {
-      let sight = getSight(loadout.Gear.Weapon.Sight.Name);
-
-      if (sight?.Properties?.SkillModification === null) return null;
-
-      skillMod += sight.Properties.SkillModification;
-    }
-
-    return skillMod;
+    const scope = getScope(loadout.Gear.Weapon?.Scope?.Name);
+    const scopeSight = getSight(loadout.Gear.Weapon?.Scope?.Sight?.Name);
+    const sight = getSight(loadout.Gear.Weapon?.Sight?.Name);
+    
+    return LoadoutCalc.calculateSkillModification(scope, scopeSight, sight);
   }
 
   function calcSkillBonus(loadout) {
-    let skillBonus = 0;
-
-    if (loadout.Gear.Weapon?.Scope?.Name != null) {
-      let scope = getScope(loadout.Gear.Weapon.Scope.Name);
-
-      if (scope?.Properties?.SkillBonus === null) return null;
-
-      skillBonus += scope.Properties.SkillBonus;
-    }
-
-    if (loadout.Gear.Weapon?.Scope?.Sight?.Name != null) {
-      let scopeSight = getSight(loadout.Gear.Weapon.Scope.Sight.Name);
-
-      if (scopeSight?.Properties?.SkillBonus === null) return null;
-
-      skillBonus += scopeSight.Properties.SkillBonus;
-    }
-
-    if (loadout.Gear.Weapon?.Sight?.Name != null) {
-      let sight = getSight(loadout.Gear.Weapon.Sight.Name);
-
-      if (sight?.Properties?.SkillBonus === null) return null;
-
-      skillBonus += sight.Properties.SkillBonus;
-    }
-
-    return skillBonus;
+    const scope = getScope(loadout.Gear.Weapon?.Scope?.Name);
+    const scopeSight = getSight(loadout.Gear.Weapon?.Scope?.Sight?.Name);
+    const sight = getSight(loadout.Gear.Weapon?.Sight?.Name);
+    
+    return LoadoutCalc.calculateSkillBonus(scope, scopeSight, sight);
   }
 
   function calcLowestTotalUses(loadout) {
-    // Total uses until weapon or attachment breaks
-    let totalUses = 0;
-
-    let weapon = getWeapon(loadout.Gear.Weapon.Name);
-    if (weapon == null) return null;
-
-    let absorber = getAbsorber(loadout.Gear.Weapon.Absorber?.Name);
-    let implant = getImplant(loadout.Gear.Weapon.Implant?.Name);
-
-    let decayFactor = (absorber != null ? 1 - absorber.Properties.Economy.Absorption : 1) * (implant != null ? 1 - implant.Properties.Economy.Absorption : 1);
-
-    totalUses = getTotalUses({
-      Properties: {
-        Economy: {
-          MaxTT: weapon.Properties?.Economy?.MaxTT ?? null,
-          MinTT: weapon.Properties?.Economy?.MinTT ?? 0,
-          Decay: (weapon.Properties?.Economy?.Decay * (1 + loadout.Gear.Weapon.Enhancers.Damage * 0.1) * (1 - loadout.Gear.Weapon.Enhancers.Economy * 0.01111)) * decayFactor
-        }
-      }
-    });
-
-    if (loadout.Gear.Weapon.Amplifier?.Name != null) {
-      let amp = getAmplifier(loadout.Gear.Weapon.Amplifier.Name);
-      totalUses = Math.min(totalUses, getTotalUses(amp));
-    }
-
-    if (loadout.Gear.Weapon.Scope?.Name != null) {
-      let scope = getScope(loadout.Gear.Weapon.Scope.Name);
-      totalUses = Math.min(totalUses, getTotalUses(scope));
-    }
-
-    if (loadout.Gear.Weapon.Scope?.Sight?.Name != null) {
-      let scopeSight = getSight(loadout.Gear.Weapon.Scope.Sight.Name);
-      totalUses = Math.min(totalUses, getTotalUses(scopeSight));
-    }
-
-    if (loadout.Gear.Weapon.Sight?.Name != null) {
-      let sight = getSight(loadout.Gear.Weapon.Sight.Name);
-      totalUses = Math.min(totalUses, getTotalUses(sight));
-    }
-
-    if (loadout.Gear.Weapon.Matrix?.Name != null) {
-      let matrix = getMatrix(loadout.Gear.Weapon.Matrix.Name);
-      totalUses = Math.min(totalUses, getTotalUses(matrix));
-    }
-
-    if (loadout.Gear.Weapon.Implant?.Name != null) {
-      let implant = getImplant(loadout.Gear.Weapon.Implant.Name);
-      totalUses = Math.min(totalUses, getTotalAbsorberUses(implant, weapon));
-    }
-
-    if (loadout.Gear.Weapon.Absorber?.Name != null) {
-      let absorber = getAbsorber(loadout.Gear.Weapon.Absorber.Name);
-      totalUses = Math.min(totalUses, getTotalAbsorberUses(absorber, weapon));
-    }
-
-    return totalUses || null;
+    const weapon = getWeapon(loadout.Gear.Weapon.Name);
+    const absorber = getAbsorber(loadout.Gear.Weapon.Absorber?.Name);
+    const implant = getImplant(loadout.Gear.Weapon.Implant?.Name);
+    const amplifier = getAmplifier(loadout.Gear.Weapon.Amplifier?.Name);
+    const scope = getScope(loadout.Gear.Weapon.Scope?.Name);
+    const scopeSight = getSight(loadout.Gear.Weapon.Scope?.Sight?.Name);
+    const sight = getSight(loadout.Gear.Weapon.Sight?.Name);
+    const matrix = getMatrix(loadout.Gear.Weapon.Matrix?.Name);
+    
+    return LoadoutCalc.calculateLowestTotalUses(
+      weapon,
+      loadout.Gear.Weapon.Enhancers.Damage,
+      loadout.Gear.Weapon.Enhancers.Economy,
+      absorber,
+      implant,
+      amplifier,
+      scope,
+      scopeSight,
+      sight,
+      matrix
+    );
   }
 
   function compareValue(loadout, getter, setter, newObject, valueFunction) {
@@ -1137,6 +804,33 @@
     overflow: hidden;
   }
 
+  .loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    gap: 1rem;
+  }
+
+  .loading-text {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+  }
+
+  .spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid var(--border-color);
+    border-top-color: var(--accent-color);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
   .loadout-manager {
     display: grid;
     grid-template-columns: 1fr 350px;
@@ -1301,12 +995,15 @@
       bind:currentLoadout={loadout} />
   </div>
   <div class="flex-content">
-    {#if $loading}
+    {#if $loading || entitiesLoading}
       <div class="loading">
         <div class="spinner"></div>
+        {#if entitiesLoading}
+          <p class="loading-text">Loading game data...</p>
+        {/if}
       </div>
     {/if}
-    {#if data != null && data?.error == null && loadout != null}
+    {#if !entitiesLoading && loadout != null}
       <div class="loadout-manager">
         <div class="gear-select">
           {#if compareMode}

@@ -64,4 +64,4 @@ function register(app){
    */
   app.get('/pets/:pet', async (req,res)=>{ const r = await getPet(req.params.pet); if(r) res.json(r); else res.status(404).send(); });
 }
-module.exports = { register, getPets, getPet };
+module.exports = { register, getPets, getPet, formatPet };

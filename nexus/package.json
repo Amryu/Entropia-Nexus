@@ -9,27 +9,42 @@
 		"preview": "cross-env NODE_ENV=production npx dotenv-cli -e .env -- vite preview",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",
-		"debug": "cross-env NODE_ENV=development npx dotenv-cli -e .env -- node --inspect-brk node_modules/vite/bin/vite.js dev --host 127.0.0.1"
+		"debug": "cross-env NODE_ENV=development npx dotenv-cli -e .env -- node --inspect-brk node_modules/vite/bin/vite.js dev --host 127.0.0.1",
+		"test": "playwright test",
+		"test:ui": "playwright test --ui",
+		"test:headed": "playwright test --headed",
+		"test:report": "playwright show-report",
+		"test:setup-db": "npx tsx tests/global-setup.ts"
 	},
 	"devDependencies": {
+		"@playwright/test": "^1.58.0",
 		"@sveltejs/adapter-auto": "^3.0.0",
 		"@sveltejs/adapter-node": "^5.0.1",
 		"@sveltejs/kit": "^2.0.0",
 		"@sveltejs/vite-plugin-svelte": "^3.0.0",
 		"cross-env": "^7.0.3",
-		
 		"dotenv-cli": "^7.4.1",
 		"svelte": "^4.2.7",
 		"svelte-check": "^3.6.0",
 		"tslib": "^2.4.1",
+		"tsx": "^4.7.0",
 		"typescript": "^5.0.0",
 		"vite": "^5.0.3"
 	},
 	"type": "module",
 	"dependencies": {
-		"dotenv": "^16.4.5",
+		"@tiptap/core": "^3.18.0",
+		"@tiptap/extension-image": "^3.18.0",
+		"@tiptap/extension-link": "^3.18.0",
+		"@tiptap/pm": "^3.18.0",
+		"@tiptap/starter-kit": "^3.18.0",
 		"ajv": "^8.12.0",
+		"chart.js": "^4.5.1",
+		"dotenv": "^16.4.5",
 		"pg": "^8.11.5",
+		"sharp": "^0.34.5",
+		"svelte-chartjs": "^3.1.5",
+		"svelte-easy-crop": "^4.0.1",
 		"svg-path-to-polygons": "^0.1.0",
 		"uuid": "^9.0.1"
 	}

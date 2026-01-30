@@ -17,11 +17,18 @@ export async function GET({ cookies }) {
   let session = await getSession(sessionId);
 
   if (session) {
-    await Promise.all([
-      handleRevoke(session.accessToken),
-      handleRevoke(session.refreshToken),
-      deleteSession(sessionId)
-    ]);
+    // Use try-catch to handle mock tokens from test users gracefully
+    try {
+      await Promise.all([
+        session.access_token ? handleRevoke(session.access_token) : Promise.resolve(),
+        session.refresh_token ? handleRevoke(session.refresh_token) : Promise.resolve(),
+        deleteSession(sessionId)
+      ]);
+    } catch (e) {
+      // Still delete session even if token revocation fails
+      console.error('Error during logout:', e);
+      await deleteSession(sessionId);
+    }
   }
 
   cookies.set(import.meta.env.VITE_SESSION_COOKIE_NAME, '', {

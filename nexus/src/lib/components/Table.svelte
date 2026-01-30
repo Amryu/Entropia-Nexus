@@ -388,6 +388,14 @@
   tdgroup:hover .clickable:not(:hover) {
     background-color: var(--table-row-hover-color);
   }
+  
+  tr.hover {
+    cursor: pointer;
+  }
+  
+  tr.hover:hover td {
+    background-color: var(--table-row-hover-color);
+  }
 
   h3 {
     margin-top: 0;

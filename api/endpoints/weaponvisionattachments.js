@@ -82,4 +82,4 @@ function register(app){
     if(r) res.json(r); else res.status(404).send();
   });
 }
-module.exports = { register, getWeaponVisionAttachments, getWeaponVisionAttachment };
+module.exports = { register, getWeaponVisionAttachments, getWeaponVisionAttachment, formatWeaponVisionAttachment };

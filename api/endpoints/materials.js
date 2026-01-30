@@ -56,4 +56,4 @@ function register(app){
   app.get('/materials/:material', async (req,res) => { const r = await getMaterial(req.params.material); if (r) res.json(r); else res.status(404).send(); });
 }
 
-module.exports = { register, getMaterials, getMaterial };
+module.exports = { register, getMaterials, getMaterial, formatMaterial };

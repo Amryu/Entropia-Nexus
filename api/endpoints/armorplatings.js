@@ -74,4 +74,4 @@ function register(app){
   app.get('/armorplatings/:armorPlating', async (req,res) => { const r = await getArmorPlating(req.params.armorPlating); if (r) res.json(r); else res.status(404).send(); });
 }
 
-module.exports = { register, getArmorPlatings, getArmorPlating };
+module.exports = { register, getArmorPlatings, getArmorPlating, formatArmorPlating };

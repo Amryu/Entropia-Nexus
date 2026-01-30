@@ -100,4 +100,4 @@ function register(app){
   app.get('/medicaltools/:medicalTool', async (req,res) => { const r = await getMedicalTool(req.params.medicalTool); if (r) res.json(r); else res.status(404).send(); });
 }
 
-module.exports = { register, getMedicalTools, getMedicalTool };
+module.exports = { register, getMedicalTools, getMedicalTool, formatMedicalTool };

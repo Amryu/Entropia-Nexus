@@ -1,0 +1,4321 @@
+<script lang="ts">
+  // @ts-nocheck
+  import '$lib/style.css';
+
+  import HealingServicesList from '$lib/components/services/HealingServicesList.svelte';
+  import DPSServicesList from '$lib/components/services/DPSServicesList.svelte';
+  import TransportationServicesList from '$lib/components/services/TransportationServicesList.svelte';
+  import NavList from "$lib/components/NavList.svelte";
+  import AvailabilityCalendar from "$lib/components/services/AvailabilityCalendar.svelte";
+  import TicketOfferCard from '$lib/components/services/TicketOfferCard.svelte';
+  import LocationManager from '$lib/components/services/LocationManager.svelte';
+  import PilotManager from '$lib/components/services/PilotManager.svelte';
+  import { goto } from '$app/navigation';
+  import { page } from '$app/stores';
+  import { onMount, onDestroy } from 'svelte';
+  import { getTypeLink, apiPost } from '$lib/util';
+  import {
+    canRestoreFlight,
+    formatFlightTime,
+    canCheckIn
+  } from '$lib/utils/flightUtils';
+  import {
+    getHealingReloadSpeedBonus,
+    getEstimatedHealingHPS,
+    getMaxHealingDecayPerHour,
+    getHealingCostLabel,
+    getClothingSlot,
+    getLocationDisplay,
+    getHealingEnhancerBonus,
+    getDPSReloadSpeedBonus,
+    getDPSDamageBonus,
+    getDPSCritChanceBonus,
+    getDPSCritDamageBonus,
+    getTotalHP,
+    getProtectionStats,
+    getEstimatedDPS,
+    getMaxCostPerHour
+  } from '$lib/components/services/serviceCalculations';
+  import * as LoadoutCalc from '$lib/utils/loadoutCalculations';
+  import { loadAllServiceEntities, loadServiceTypeEntities } from '$lib/utils/entityLoader';
+
+  export let data;
+
+  $: services = data.services || [];
+  $: servicesByType = data.servicesByType || { healing: [], dps: [], transportation: [], custom: [] };
+  $: planets = data.planets || [];
+  $: selectedService = data.service;
+  $: availability = data.availability || [];
+  $: activeRequest = data.activeRequest;
+  $: user = data.session?.user;
+  $: isOwner = user && selectedService && (user.id === selectedService.user_id || user.administrator);
+  // Check if user can manage flights (owner, pilot, or admin)
+  $: canManageFlights = isOwner || (user && selectedService && pilots.some(p => p.user_id === user.id));
+
+  // Entity data - lazy loaded on client
+  let clothingItems = [];
+  let medicalTools = [];
+  let medicalChips = [];
+  let armorSets = [];
+  let consumables = [];
+  let weapons = [];
+  let pets = [];
+  let armors = [];
+  let armorPlatings = [];
+  let weaponAmplifiers = [];
+  let absorbers = [];
+  let weaponVisionAttachments = [];
+  let mindforceImplants = [];
+  let entitiesLoading = true;
+
+  // Filter to main planets only for transportation services
+  $: mainPlanets = planets.filter(p => p.Id >= 1 && p.Id <= 7);
+
+  // Ticket offers for transportation services
+  let ticketOffers = [];
+  let upcomingFlights = [];
+  let purchasingTicket = false;
+  let mounted = false;
+  $: pilots = data.pilots || [];
+  let showAllFlights = false; // For expandable flight list
+  let flightUpdateInterval = null;
+
+  // Computed: separate running, scheduled, and cancelled flights
+  $: runningFlights = upcomingFlights.filter(f => f.status === 'running');
+  $: scheduledFlights = upcomingFlights.filter(f => (f.status === 'scheduled' || f.status === 'boarding') && f.status !== 'cancelled');
+  $: activeFlights = upcomingFlights.filter(f => f.status !== 'cancelled');
+  $: cancelledFlights = upcomingFlights.filter(f => f.status === 'cancelled');
+  $: nextActiveFlight = activeFlights[0] || null;
+
+  // Load entity data on mount
+  async function loadEntities() {
+    entitiesLoading = true;
+    try {
+      const entities = await loadAllServiceEntities();
+      clothingItems = entities.clothings || [];
+      medicalTools = entities.medicalTools || [];
+      medicalChips = entities.medicalChips || [];
+      armorSets = entities.armorSets || [];
+      consumables = entities.consumables || [];
+      weapons = entities.weapons || [];
+      pets = entities.pets || [];
+      armors = entities.armors || [];
+      armorPlatings = entities.armorPlatings || [];
+      weaponAmplifiers = entities.weaponAmplifiers || [];
+      absorbers = entities.absorbers || [];
+      weaponVisionAttachments = entities.weaponVisionAttachments || [];
+      mindforceImplants = entities.mindforceImplants || [];
+    } catch (error) {
+      console.error('Failed to load entity data:', error);
+    } finally {
+      entitiesLoading = false;
+    }
+  }
+
+  onMount(() => {
+    mounted = true;
+    loadEntities();
+  });
+
+  onDestroy(() => {
+    // Clear flight update interval when component is destroyed
+    if (flightUpdateInterval) {
+      clearInterval(flightUpdateInterval);
+      flightUpdateInterval = null;
+    }
+  });
+
+  // Function to fetch upcoming flights
+  async function fetchUpcomingFlights() {
+    if (!selectedService?.id || selectedService?.type !== 'transportation') {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/services/${selectedService.id}/flights?upcoming=true`);
+      const flights = await response.json();
+      upcomingFlights = Array.isArray(flights) ? flights : [];
+    } catch (e) {
+      // Silently fail for polling updates
+      console.error('Failed to fetch flights:', e);
+    }
+  }
+
+  // Fetch ticket offers when a transportation service is selected (client-side only)
+  $: if (mounted && selectedService?.type === 'transportation' && selectedService?.id) {
+    fetch(`/api/services/${selectedService.id}/ticket-offers`)
+      .then(r => r.json())
+      .then(offers => { ticketOffers = Array.isArray(offers) ? offers : []; })
+      .catch(() => { ticketOffers = []; });
+
+    // Fetch upcoming flights immediately
+    fetchUpcomingFlights();
+
+    // Clear any existing interval
+    if (flightUpdateInterval) {
+      clearInterval(flightUpdateInterval);
+    }
+
+    // Set up polling to update flights every 15 seconds
+    flightUpdateInterval = setInterval(() => {
+      fetchUpcomingFlights();
+    }, 15000);
+  } else {
+    ticketOffers = [];
+    upcomingFlights = [];
+
+    // Clear interval when not viewing transportation service
+    if (flightUpdateInterval) {
+      clearInterval(flightUpdateInterval);
+      flightUpdateInterval = null;
+    }
+  }
+
+
+  // Restore a cancelled flight
+  async function restoreFlight(flightId) {
+    const flight = upcomingFlights.find(f => f.id === flightId);
+    if (!flight) return;
+
+    // Check if can restore (grace period and overlap validation)
+    if (!canRestoreFlight(flight, activeFlights)) {
+      alert('Cannot restore this flight - it overlaps within 15 minutes of another active flight. Please reschedule one of the flights first.');
+      return;
+    }
+
+    if (!confirm('Restore this cancelled flight?')) return;
+
+    try {
+      const response = await fetch(`/api/services/${selectedService.id}/flights/${flightId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'restore' })
+      });
+
+      const result = await response.json();
+      if (result.error) {
+        alert(result.error);
+      } else {
+        alert('Flight restored successfully!');
+        // Refresh flights list immediately
+        await fetchUpcomingFlights();
+      }
+    } catch (e) {
+      alert('Failed to restore flight. Please try again.');
+    }
+  }
+
+  // Check if user already has a ticket for this service
+  async function checkExistingTicket() {
+    try {
+      const response = await fetch(`/api/services/${selectedService.id}/tickets/my`);
+      const result = await response.json();
+      return result && result.ticket ? result.ticket : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  async function handlePurchaseTicket(event) {
+    const offer = event.detail;
+    if (!user) {
+      goto('/discord/login?redirect=/market/services/' + selectedService.id);
+      return;
+    }
+
+    // Check if user already has a ticket for this service
+    const existingTicket = await checkExistingTicket();
+    if (existingTicket && !user.administrator) {
+      alert('You already have a ticket for this service. You can only have one active ticket at a time.');
+      return;
+    }
+
+    // Confirmation dialog
+    let confirmMessage = `Purchase "${offer.name}" for ${parseFloat(offer.price).toFixed(2)} PED?`;
+    if (user.administrator && selectedService.user_id === user.id) {
+      confirmMessage += '\n\nNote: You are purchasing a ticket for your own service as an administrator (for testing purposes).';
+    }
+
+    if (!confirm(confirmMessage)) {
+      return;
+    }
+
+    purchasingTicket = true;
+    try {
+      const result = await apiPost(fetch, `/api/services/${selectedService.id}/tickets/purchase`, {
+        offer_id: offer.id
+      });
+      if (result.error) {
+        alert(result.error);
+      } else {
+        alert('Ticket purchased successfully! It will be activated when the provider accepts your first check-in.');
+      }
+    } catch (e) {
+      alert('Failed to purchase ticket. Please try again.');
+    } finally {
+      purchasingTicket = false;
+    }
+  }
+
+  function handleEditTicketOffer() {
+    goto(`/market/services/${selectedService.id}/ticket-offers`);
+  }
+
+  // Check-in dialog state
+  let showCheckinDialog = false;
+  let checkinFlight = null;
+  let checkinLocation = '';
+  let checkinPlanetId = null;
+  let checkinExitLocation = '';
+  let checkinExitPlanetId = null;
+  let checkinSubmitting = false;
+
+  function openCheckinDialog(flight) {
+    if (!user) {
+      goto('/discord/login?redirect=/market/services/' + selectedService.id);
+      return;
+    }
+    checkinFlight = flight;
+    checkinLocation = '';
+    checkinPlanetId = null;
+    checkinExitLocation = '';
+    checkinExitPlanetId = null;
+    showCheckinDialog = true;
+  }
+
+  function closeCheckinDialog() {
+    showCheckinDialog = false;
+    checkinFlight = null;
+    checkinLocation = '';
+    checkinPlanetId = null;
+    checkinExitLocation = '';
+    checkinExitPlanetId = null;
+    checkinSubmitting = false;
+  }
+
+  // Get current state description for running flight
+  function getFlightCurrentState(flight) {
+    if (!flight || flight.status !== 'running') return '';
+
+    const routeStops = typeof flight.route_stops === 'string'
+      ? JSON.parse(flight.route_stops)
+      : (flight.route_stops || []);
+
+    if (flight.current_state === 'departing') {
+      return 'Departing from start';
+    }
+
+    if (flight.current_state?.startsWith('at_stop_')) {
+      const stopNum = parseInt(flight.current_state.split('_')[2]);
+      const stop = routeStops[stopNum];
+      return `Currently at ${stop?.name || 'Unknown'}`;
+    }
+
+    if (flight.current_state?.startsWith('warp_to_')) {
+      const stopNum = parseInt(flight.current_state.split('_')[2]);
+      const stop = routeStops[stopNum];
+      return `In warp to ${stop?.name || 'Unknown'}`;
+    }
+
+    return 'In transit';
+  }
+
+  async function submitCheckin() {
+    if (!checkinFlight) return;
+
+    // Check if user has a ticket
+    const ticket = await checkExistingTicket();
+    if (!ticket) {
+      alert('You need a ticket to check in. Please purchase a ticket first.');
+      return;
+    }
+
+    checkinSubmitting = true;
+    try {
+      const response = await fetch(`/api/flights/${checkinFlight.id}/checkin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ticket_id: ticket.id,
+          join_location: checkinLocation,
+          join_planet_id: checkinPlanetId,
+          exit_location: checkinExitLocation || null,
+          exit_planet_id: checkinExitPlanetId || null
+        })
+      });
+
+      const result = await response.json();
+      if (result.error) {
+        alert(result.error);
+      } else {
+        alert('Check-in submitted! The provider will review your request.');
+        closeCheckinDialog();
+      }
+    } catch (e) {
+      alert('Failed to submit check-in. Please try again.');
+    } finally {
+      checkinSubmitting = false;
+    }
+  }
+
+  // State for active medical tool and consumable toggles
+  let activeMedicalEquipment = null;
+  let enabledConsumables = {}; // Track each consumable individually by item_name
+  let enabledTierEnhancers = {}; // Track tier enhancer slots for equipment with tiers
+
+  // State for DPS services
+  let activeWeapon = null;
+  let selectedAmplifier = null;
+  let selectedAbsorber = null;
+  let selectedScope = null;
+  let selectedScopeSight = null;
+  let selectedSight = null;
+  let selectedMatrix = null;
+  let selectedImplant = null;
+  let activePet = null; // Only one pet can be active
+  let activePetEffects = {}; // Map of pet names to active state
+  let playerHP = 150; // Player's configured base HP
+
+  // Reset active tool and consumables when service changes
+  $: if (selectedService) {
+    const medicalEquipment = selectedService.equipment?.filter(e => 
+      e.is_primary !== false && (e.item_type === 'medicaltools' || e.item_type === 'medicalchips')
+    ) || [];
+    
+    // Set active to primary or first available
+    const primary = medicalEquipment.find(e => e.is_primary);
+    activeMedicalEquipment = primary || medicalEquipment[0] || null;
+
+    // Initialize consumables state - enhancers ON, others OFF
+    enabledConsumables = {};
+    const allConsumables = selectedService.equipment?.filter(e => e.item_type === 'consumables') || [];
+    for (const consumable of allConsumables) {
+      const consumableData = consumables.find(item => item.Name === consumable.item_name);
+      const isEnhancer = consumableData?.Properties?.Type === 'Enhancer';
+      enabledConsumables[consumable.item_name] = isEnhancer;
+    }
+    
+    // Initialize tier enhancers state - ON by default for all equipment with tier > 0
+    enabledTierEnhancers = {};
+    const allEquipment = selectedService.equipment || [];
+    for (const equip of allEquipment) {
+      if (equip.tier && equip.tier > 0) {
+        enabledTierEnhancers[equip.item_name] = true;
+      }
+    }
+    
+    // Initialize DPS-specific state if DPS service
+    if (selectedService.type === 'dps') {
+      // Find primary weapon equipment entry
+      const weaponEquipment = selectedService.equipment?.filter(e => 
+        e.is_primary !== false && e.item_type === 'weapons'
+      ) || [];
+      const primaryWeaponEquip = weaponEquipment.find(e => e.is_primary) || weaponEquipment[0] || null;
+      
+      // Look up the actual weapon data from the weapons array
+      if (primaryWeaponEquip?.item_name && weapons.length > 0) {
+        const weaponData = weapons.find(w => w.Name === primaryWeaponEquip.item_name);
+        if (weaponData) {
+          activeWeapon = weaponData;
+        } else {
+          activeWeapon = null;
+        }
+      } else {
+        activeWeapon = null;
+      }
+      
+      // Initialize weapon attachments from saved data
+      const attachments = primaryWeaponEquip?.attachments || {};
+      
+      selectedAmplifier = attachments.amplifier_id 
+        ? weaponAmplifiers.find(a => a.ItemId === attachments.amplifier_id) || null
+        : null;
+      
+      selectedAbsorber = attachments.absorber_id
+        ? absorbers.find(a => a.ItemId === attachments.absorber_id) || null
+        : null;
+      
+      selectedScope = attachments.scope_id
+        ? weaponVisionAttachments.find(v => v.ItemId === attachments.scope_id) || null
+        : null;
+      
+      selectedSight = attachments.sight_id
+        ? weaponVisionAttachments.find(v => v.ItemId === attachments.sight_id) || null
+        : null;
+
+      // Load scope sight (nested attachment on scope)
+      selectedScopeSight = attachments.scope_sight_id
+        ? weaponVisionAttachments.find(v => v.ItemId === attachments.scope_sight_id) || null
+        : null;
+
+      // Load matrix (melee weapon amplifier)
+      selectedMatrix = attachments.matrix_id
+        ? weaponAmplifiers.find(a => a.ItemId === attachments.matrix_id && a.Properties?.Type === 'Matrix') || null
+        : null;
+
+      // Load implant (mindforce weapon attachment)
+      selectedImplant = attachments.implant_id
+        ? mindforceImplants.find(i => i.ItemId === attachments.implant_id) || null
+        : null;
+      
+      // Initialize pet state - all OFF by default
+      activePetEffects = {};
+      const allPets = selectedService.equipment?.filter(e => e.item_type === 'pets') || [];
+      for (const pet of allPets) {
+        activePetEffects[pet.item_name] = false;
+      }
+    }
+  }
+
+  // Helper to check if equipment is active in calculations
+  function isEquipmentActive(equip) {
+    if (equip.item_type === 'medicaltools' || equip.item_type === 'medicalchips') {
+      // Medical is active if it's the selected tool
+      const isMedicalActive = activeMedicalEquipment?.item_name === equip.item_name;
+      return isMedicalActive;
+    }
+    if (equip.item_type === 'consumables') {
+      return enabledConsumables[equip.item_name] === true;
+    }
+    // Armor and clothing are active if primary AND tier enhancers enabled (if has tiers)
+    if (equip.is_primary !== false) {
+      if (equip.tier && equip.tier > 0) {
+        return enabledTierEnhancers[equip.item_name] === true;
+      }
+      return true;
+    }
+    return false;
+  }
+
+  // Load last selected service type and planet from localStorage
+  // Check for type query parameter first (for links like "Browse transportation services")
+  let currentType = 'healing';
+  let selectedPlanetId = null;
+
+  // Initialize from URL params or localStorage
+  if (typeof window !== 'undefined') {
+    const urlParams = new URLSearchParams(window.location.search);
+    const typeParam = urlParams.get('type');
+    if (typeParam && ['healing', 'dps', 'transportation', 'custom'].includes(typeParam)) {
+      currentType = typeParam;
+      // Save to localStorage so it persists
+      localStorage.setItem('lastServiceType', typeParam);
+      // Clear the URL param after applying it
+      if (window.history.replaceState) {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('type');
+        window.history.replaceState({}, '', url.toString());
+      }
+    } else if (typeof localStorage !== 'undefined') {
+      const saved = localStorage.getItem('lastServiceType');
+      if (saved && ['healing', 'dps', 'transportation', 'custom'].includes(saved)) {
+        currentType = saved;
+      }
+    }
+
+    const savedPlanet = localStorage.getItem('lastServicePlanet');
+    if (savedPlanet) {
+      selectedPlanetId = savedPlanet === 'all' ? null : parseInt(savedPlanet);
+    }
+  }
+
+  let showRequestModal = false;
+  let requestMessage = '';
+  let selectedDate = '';
+  let selectedTime = '';
+  let requestPlanetId = null;
+  let requestDestinationPlanetId = null;
+  let requestError = '';
+  let requestSubmitting = false;
+  let requestFormTab = 'request'; // 'request' or 'question'
+  let questionMessage = '';
+
+  const serviceTypeOptions = [
+    { value: 'healing', label: 'Healing' },
+    { value: 'dps', label: 'DPS' },
+    { value: 'transportation', label: 'Transportation' },
+    { value: 'custom', label: 'Custom' }
+  ];
+
+  // Save selected service type and planet to localStorage
+  $: if (typeof localStorage !== 'undefined' && currentType) {
+    localStorage.setItem('lastServiceType', currentType);
+  }
+
+  $: if (typeof localStorage !== 'undefined') {
+    localStorage.setItem('lastServicePlanet', selectedPlanetId === null ? 'all' : selectedPlanetId.toString());
+  }
+
+  // Filter services by planet
+  $: currentServices = (() => {
+    let list = servicesByType[currentType] || [];
+    
+    // Apply planet filter
+    if (selectedPlanetId !== null) {
+      list = list.filter(s => 
+        s.planet_id === selectedPlanetId || s.willing_to_travel
+      );
+    }
+    
+    return list;
+  })();
+
+  // Check if user has a ticket or single-use option available
+  let userHasTicket = false;
+  let hasSingleUseOffer = false;
+
+  $: if (selectedService?.type === 'transportation' && ticketOffers) {
+    hasSingleUseOffer = ticketOffers.some(offer => offer.uses_count === 1);
+  }
+
+  async function openRequestModal(tab = 'request') {
+    if (!user) {
+      goto('/login');
+      return;
+    }
+
+    // For transportation services, check if user has a ticket (but don't block opening)
+    if (selectedService?.type === 'transportation' && tab === 'request') {
+      const existingTicket = await checkExistingTicket();
+      userHasTicket = !!existingTicket;
+    } else {
+      userHasTicket = true; // Not transportation or asking question
+    }
+
+    showRequestModal = true;
+    requestMessage = '';
+    selectedDate = '';
+    selectedTime = '';
+    requestPlanetId = selectedService?.planet_id || null;
+    requestError = '';
+    requestFormTab = tab;
+    questionMessage = '';
+  }
+
+  function closeRequestModal() {
+    showRequestModal = false;
+    requestMessage = '';
+    selectedDate = '';
+    requestPlanetId = null;
+    requestDestinationPlanetId = null;
+    requestFormTab = 'request';
+    questionMessage = '';
+    selectedTime = '';
+    requestError = '';
+    requestSubmitting = false;
+  }
+
+  async function submitRequest() {
+    // Only transportation services support request submission now
+    if (selectedService?.type !== 'transportation') {
+      requestError = 'Only transportation services support flight requests. Use "Ask a Question" for other inquiries.';
+      return;
+    }
+
+    // Allow admins to request their own services for testing
+    if (user.id === selectedService.user_id && !user.administrator) {
+      requestError = 'You cannot request your own service. This is a preview of how customers see your service.';
+      return;
+    }
+
+    // Validation for transportation services
+    if (!requestPlanetId || !requestDestinationPlanetId) {
+      requestError = 'Both pickup and destination planets are required for flight requests.';
+      return;
+    }
+    if (requestPlanetId === requestDestinationPlanetId) {
+      requestError = 'Pickup and destination planets must be different.';
+      return;
+    }
+
+    requestError = '';
+    requestSubmitting = true;
+
+    try {
+      const response = await apiPost(fetch, `/api/services/${selectedService.id}/on-demand-request`, {
+        customer_planet_id: requestPlanetId,
+        dropoff_location: requestDestinationPlanetId?.toString(),
+        requested_start: selectedDate && selectedTime ? `${selectedDate}T${selectedTime}:00` : null,
+        message: requestMessage
+      });
+
+      if (response.error) {
+        requestError = response.error;
+        return;
+      }
+
+      closeRequestModal();
+      goto('/market/services/my/requests');
+    } catch (e) {
+      requestError = 'Failed to submit request. Please try again.';
+    } finally {
+      requestSubmitting = false;
+    }
+  }
+
+  async function submitQuestion() {
+    requestError = '';
+    requestSubmitting = true;
+
+    try {
+      const response = await apiPost(fetch, `/api/services/${selectedService.id}/question`, {
+        message: questionMessage
+      });
+
+      if (response.error) {
+        requestError = response.error;
+        return;
+      }
+
+      closeRequestModal();
+      // Redirect to the new request so user can see the Discord thread when it's created
+      goto(`/market/services/my/requests/${response.request.id}`);
+    } catch (e) {
+      requestError = 'Failed to send question. Please try again.';
+    } finally {
+      requestSubmitting = false;
+    }
+  }
+  
+  function getItemTypeLabel(type) {
+    const labels = {
+      medicaltools: 'Medical Tool',
+      medicalchips: 'Medical Chip',
+      clothings: 'Clothing/Accessory',
+      consumables: 'Consumable',
+      weapons: 'Weapon',
+      armors: 'Armor',
+      armorsets: 'Armor Set'
+    };
+    return labels[type] || type;
+  }
+
+  function getServiceTypeLabel(type) {
+    const labels = {
+      healing: 'Healing',
+      dps: 'DPS',
+      transportation: 'Transportation',
+      custom: 'Custom'
+    };
+    return labels[type] || type;
+  }
+  
+  function getItemInternalUrl(itemType, itemName) {
+    if (!itemName) return '#';
+
+    // Remove tier info from name
+    const cleanName = itemName.replace(/\s*Tier\s*\d+/i, '').trim();
+
+    // Map service item types to internal property types
+    const typeMap = {
+      'weapons': 'Weapon',
+      'armorsets': 'Armor',
+      'medicaltools': 'MedicalTool',
+      'medicalchips': 'MedicalChip',
+      'clothings': 'Clothing',
+      'consumables': 'Consumable',
+      'pets': 'Pet'
+    };
+
+    const propertyType = typeMap[itemType];
+    if (!propertyType) return '#';
+
+    return getTypeLink(cleanName, propertyType);
+  }
+
+  // Helper to generate URLs for attachment types
+  function getAttachmentUrl(attachmentType, attachmentName) {
+    if (!attachmentName) return '#';
+    const cleanName = attachmentName.replace(/\s*Tier\s*\d+/i, '').trim();
+
+    const attachmentTypeMap = {
+      'amplifier': 'WeaponAmplifier',
+      'absorber': 'Absorber',
+      'scope': 'WeaponVisionAttachment',
+      'sight': 'WeaponVisionAttachment',
+      'scope_sight': 'WeaponVisionAttachment',
+      'matrix': 'WeaponAmplifier',
+      'implant': 'MindforceImplant',
+      'plate': 'ArmorPlating'
+    };
+
+    const type = attachmentTypeMap[attachmentType];
+    if (!type) return '#';
+
+    return getTypeLink(cleanName, type);
+  }
+
+  // State for attachment details dialog
+  let showAttachmentDialog = false;
+  let attachmentDialogData = null;
+
+  function openAttachmentDialog(equip) {
+    attachmentDialogData = {
+      item: equip,
+      attachments: equip.attachments || {}
+    };
+    showAttachmentDialog = true;
+  }
+
+  function closeAttachmentDialog() {
+    showAttachmentDialog = false;
+    attachmentDialogData = null;
+  }
+
+  // Check if equipment has any attachments worth showing
+  function hasAttachments(equip) {
+    const att = equip.attachments;
+    if (!att) return false;
+
+    // Check for ranged weapon attachments
+    if (att.amplifier_name || att.scope_name || att.sight_name || att.absorber_name || att.scope_sight_name) return true;
+    // Check for melee weapon attachments
+    if (att.matrix_name) return true;
+    // Check for mindforce attachments
+    if (att.implant_name) return true;
+    // Check for armor attachments
+    if (att.plate_name) return true;
+
+    return false;
+  }
+
+  // Count number of attachments on equipment
+  function countAttachments(equip) {
+    const att = equip.attachments;
+    if (!att) return 0;
+
+    let count = 0;
+    if (att.amplifier_name) count++;
+    if (att.scope_name) count++;
+    if (att.scope_sight_name) count++;
+    if (att.sight_name) count++;
+    if (att.absorber_name) count++;
+    if (att.matrix_name) count++;
+    if (att.implant_name) count++;
+    if (att.plate_name) count++;
+
+    return count;
+  }
+  
+  function importAsLoadout(weaponEquipment) {
+    if (typeof localStorage === 'undefined') {
+      alert('Loadout manager requires browser storage.');
+      return;
+    }
+    
+    // Get existing loadouts
+    let loadouts = localStorage.getItem('loadouts') ? JSON.parse(localStorage.getItem('loadouts')) : [];
+    
+    // Helper to create armor object
+    let newArmorObject = () => ({
+      Name: null,
+      Plate: null
+    });
+    
+    // Get primary armor and clothing from service equipment
+    const primaryArmorSet = selectedService.equipment.find(e => e.item_type === 'armorsets' && e.is_primary);
+    const primaryClothing = selectedService.equipment.filter(e => e.item_type === 'clothings' && e.is_primary);
+    
+    // Create new loadout
+    const newLoadout = {
+      Id: Math.random().toString(16).slice(3),
+      Name: `${selectedService.title} - ${weaponEquipment.item_name}`,
+      Properties: {
+        BonusDamage: 0,
+        BonusCritChance: 0,
+        BonusCritDamage: 0,
+        BonusReload: 0
+      },
+      Gear: {
+        Weapon: {
+          Name: weaponEquipment.item_name,
+          Amplifier: null,
+          Scope: null,
+          Sight: null,
+          Absorber: null,
+          Implant: null,
+          Enhancers: {
+            Damage: 0,
+            Accuracy: 0,
+            Range: 0,
+            Economy: 0,
+            SkillMod: 0,
+          }
+        },
+        Armor: {
+          SetName: primaryArmorSet ? primaryArmorSet.item_name : null,
+          PlateName: null,
+          Head: newArmorObject(),
+          Torso: newArmorObject(),
+          Arms: newArmorObject(),
+          Hands: newArmorObject(),
+          Legs: newArmorObject(),
+          Shins: newArmorObject(),
+          Feet: newArmorObject(),
+          Enhancers: {
+            Defense: 0,
+            Durability: 0,
+          },
+          ManageIndividual: false,
+        },
+        Clothing: primaryClothing.map(c => ({
+          Name: c.item_name,
+          Effect: null // Will be populated based on item properties
+        })),
+        Consumables: [],
+        Pet: {
+          Name: null,
+          Effect: null,
+        }
+      },
+      Skill: {
+        Hit: 200,
+        Dmg: 200,
+      },
+      Markup: {
+        Weapon: 100,
+        Ammo: 100,
+        Amplifier: 100,
+        Absorber: 100,
+        Scope: 100,
+        Sight: 100,
+        ScopeSight: 100,
+        Matrix: 100,
+        Implant: 100,
+        ArmorSet: 100,
+        PlateSet: 100,
+        Armors: {
+          Head: 100,
+          Torso: 100,
+          Arms: 100,
+          Hands: 100,
+          Legs: 100,
+          Shins: 100,
+          Feet: 100,
+        },
+        Plates: {
+          Head: 100,
+          Torso: 100,
+          Arms: 100,
+          Hands: 100,
+          Legs: 100,
+          Shins: 100,
+          Feet: 100,
+        },
+      }
+    };
+    
+    // Add to loadouts
+    loadouts.push(newLoadout);
+    localStorage.setItem('loadouts', JSON.stringify(loadouts));
+    
+    // Redirect to loadout manager
+    goto('/tools/loadouts');
+  }
+</script>
+
+<svelte:head>
+  <title>Services | Entropia Nexus</title>
+</svelte:head>
+
+<div class="scroll-container">
+  <div class="page-container">
+    <div class="header-row">
+    <h1>Services</h1>
+    {#if !selectedService && user}
+      <div class="header-buttons">
+        <a href="/market/services/my" class="my-services-button">My Services and Requests</a>
+        {#if user.verified}
+          <a href="/market/services/create" class="create-button">+ Create Service</a>
+        {/if}
+      </div>
+    {/if}
+    {#if selectedService && user}
+      <div class="header-action-buttons">
+        <button class="header-action-btn question-btn" on:click={() => openRequestModal('question')}>Ask a Question</button>
+        {#if selectedService.type === 'transportation' && !(selectedService.transportation_details?.service_mode === 'scheduled')}
+          {#if activeRequest && !isOwner}
+            <a href="/market/services/my/requests/{activeRequest.id}" class="header-action-btn active-request-btn">
+              View Active Request
+            </a>
+          {:else}
+            <button class="header-action-btn request-btn" on:click={() => openRequestModal('request')}>
+              {#if isOwner && user.id === selectedService.user_id}
+                Preview Flight Request
+              {:else}
+                Request Flight
+              {/if}
+            </button>
+          {/if}
+        {/if}
+      </div>
+    {/if}
+  </div>
+
+  {#if !selectedService}
+    <!-- List View -->
+    <div class="filters-bar">
+      <label class="planet-filter">
+        <span>Planet:</span>
+        <select bind:value={selectedPlanetId}>
+          <option value={null}>All Planets</option>
+          {#each planets as planet}
+            <option value={planet.Id}>{planet.Name}</option>
+          {/each}
+        </select>
+      </label>
+    </div>
+
+    <div class="type-selector">
+      <h2>Select Service Type</h2>
+      <div class="type-buttons">
+        {#each serviceTypeOptions as option}
+          <button
+            class="type-btn"
+            class:active={currentType === option.value}
+            on:click={() => currentType = option.value}
+          >
+            {option.label}
+            <span class="service-count">({servicesByType[option.value]?.length || 0})</span>
+          </button>
+        {/each}
+      </div>
+    </div>
+
+    {#if currentType === 'healing'}
+      <HealingServicesList
+        services={currentServices}
+        {medicalTools}
+        {medicalChips}
+        {clothingItems}
+        {armorSets}
+        {consumables}
+        loading={entitiesLoading}
+      />
+    {:else if currentType === 'dps'}
+      <DPSServicesList
+        services={currentServices}
+        {weapons}
+        {pets}
+        {clothingItems}
+        {armorSets}
+        {consumables}
+        {armors}
+        {armorPlatings}
+        loading={entitiesLoading}
+      />
+    {:else if currentType === 'transportation'}
+      <TransportationServicesList services={currentServices} loading={entitiesLoading} />
+    {:else if currentType === 'custom'}
+      <div class="empty-state">
+        <p>Custom services coming soon!</p>
+      </div>
+    {/if}
+  {:else}
+    <!-- Detail View -->
+    <div class="header-row">
+      <a href="/market/services" class="back-link">&larr; Back to Services</a>
+      {#if user && (user.id === selectedService.user_id || user.administrator)}
+        <a href="/market/services/{selectedService.id}/edit" class="edit-link">Edit Service</a>
+      {/if}
+    </div>
+
+    {#if !selectedService.is_active && isOwner}
+      <div class="inactive-banner">
+        <strong>This service is currently deactivated.</strong>
+        <p>Only you can see this page. <a href="/market/services/{selectedService.id}/edit">Edit this service</a> to activate it.</p>
+      </div>
+    {/if}
+
+    {#if activeRequest && !isOwner}
+      <div class="active-request-banner">
+        <div class="banner-content">
+          <span class="banner-title">You have an active request for this service</span>
+          <span class="banner-text">
+            Status: {activeRequest.status}
+            {#if activeRequest.discord_thread_id}
+              - A Discord thread is open for communication with the provider.
+            {/if}
+          </span>
+        </div>
+        <a href="/market/services/my/requests/{activeRequest.id}" class="banner-link">View Request</a>
+      </div>
+    {/if}
+
+    <div class="service-detail">
+      <div class="service-header">
+        <h2>{selectedService.title}</h2>
+        <span class="service-type-badge">{getServiceTypeLabel(selectedService.type)}</span>
+        {#if !selectedService.is_active}
+          <span class="inactive-badge">Inactive</span>
+        {:else if selectedService.is_busy}
+          <span class="busy-badge">Busy</span>
+        {/if}
+      </div>
+
+      <div class="service-info">
+        <div class="info-section">
+          <h3>Provider</h3>
+          <p>
+            <strong>Owner:</strong> {selectedService.owner_name || 'Unknown'}
+          </p>
+          {#if selectedService.type === 'transportation' && pilots.length > 0}
+            <p class="pilots-list">
+              <strong>Pilots:</strong> {pilots.map(p => p.username).join(', ')}
+            </p>
+          {/if}
+        </div>
+
+        {#if selectedService.description}
+          <div class="info-section">
+            <h3>Description</h3>
+            <p>{selectedService.description}</p>
+          </div>
+        {/if}
+
+        <div class="info-section">
+          <h3>Location</h3>
+          <p>
+            {#if canManageFlights && selectedService.type === 'transportation' && selectedService.transportation_details}
+              <LocationManager
+                serviceId={selectedService.id}
+                currentPlanetId={selectedService.transportation_details.current_planet_id}
+                locationDisplay={getLocationDisplay(selectedService, planets)}
+                {planets}
+              />
+            {:else}
+              {getLocationDisplay(selectedService, planets)}
+            {/if}
+          </p>
+        </div>
+
+        {#if selectedService.type === 'healing' && selectedService.healing_details}
+          {@const medicalEquipment = selectedService.equipment?.filter(e => e.is_primary !== false && (e.item_type === 'medicaltools' || e.item_type === 'medicalchips')) || []}
+          {@const hps = getEstimatedHealingHPS(selectedService, medicalTools, medicalChips, clothingItems, armorSets, consumables, activeMedicalEquipment, enabledConsumables, enabledTierEnhancers)}
+          {@const maxDecay = getMaxHealingDecayPerHour(selectedService, medicalTools, medicalChips, clothingItems, armorSets, consumables, activeMedicalEquipment, enabledConsumables, enabledTierEnhancers)}
+          {@const reloadBonus = getHealingReloadSpeedBonus(selectedService, clothingItems, armorSets, consumables, enabledConsumables)}
+          {@const enhancerBonus = getHealingEnhancerBonus(selectedService, consumables, enabledConsumables, enabledTierEnhancers)}
+          {@const costLabel = getHealingCostLabel(selectedService, medicalTools, medicalChips)}
+          {@const activeMedicalItem = activeMedicalEquipment ? [...medicalTools, ...medicalChips].find(item => item.Name === activeMedicalEquipment.item_name) : null}
+          {@const tier = activeMedicalEquipment?.tier || 0}
+          {@const tierEnabled = enabledTierEnhancers[activeMedicalEquipment?.item_name] !== false}
+          {@const avgHeal = activeMedicalItem?.Properties ? ((activeMedicalItem.Properties.MinHeal || 0) + (activeMedicalItem.Properties.MaxHeal || 0)) / 2 : null}
+          {@const effectiveHeal = avgHeal !== null ? avgHeal * (1 + (enhancerBonus || 0) / 100) * (tierEnabled && tier > 0 ? 1 + tier * 0.05 : 1) : null}
+          {@const baseCostPerHeal = activeMedicalItem?.Properties?.Economy?.Decay || null}
+          {@const costPerHeal = baseCostPerHeal !== null ? baseCostPerHeal * (tierEnabled && tier > 0 ? 1 + tier * 0.05 : 1) : null}
+          {@const healingHPP = (effectiveHeal !== null && costPerHeal !== null) ? effectiveHeal / costPerHeal : null}
+          {@const extraCost = (selectedService.equipment || []).filter(e => {
+            if (e.item_type === 'consumables') return enabledConsumables[e.item_name];
+            if (e.item_type === 'medicaltools' || e.item_type === 'medicalchips') return activeMedicalEquipment?.item_name === e.item_name && e.extra_price;
+            if (e.tier && e.tier > 0) return enabledTierEnhancers[e.item_name] && e.extra_price;
+            return e.is_primary !== false && e.extra_price;
+          }).reduce((sum, e) => sum + (parseFloat(e.extra_price) || 0), 0)}
+          {@const healReload = activeMedicalItem?.Properties?.UsesPerMinute ? (60 / activeMedicalItem.Properties.UsesPerMinute) / (1 + reloadBonus.total / 100) : null}
+          <div class="info-section">
+            <h3>Healing Service Details</h3>
+            {#if selectedService.healing_details.paramedic_level}
+              <p>Paramedic Level: {selectedService.healing_details.paramedic_level}</p>
+            {/if}
+            
+            <p>Reload Speed: <strong>{healReload !== null ? healReload.toFixed(2) + ' s/heal' : 'TBD'}</strong>
+              {#if activeMedicalItem?.Properties?.UsesPerMinute}
+                <span class="formula-text">
+                  ({(60 / activeMedicalItem.Properties.UsesPerMinute).toFixed(2)} s base{#if reloadBonus.equipment > 0} × {(1 / (1 + reloadBonus.equipment / 100)).toFixed(3)} equipment{/if}{#if reloadBonus.consumables > 0} × {(1 / (1 + reloadBonus.consumables / 100)).toFixed(3)} consumable{/if})
+                </span>
+              {/if}
+            </p>
+            <p>Maximum HPS: <strong>{hps.base}</strong>
+              {#if activeMedicalItem?.Properties && avgHeal !== null}
+                {@const usesPerMin = activeMedicalItem.Properties.UsesPerMinute || 0}
+                <span class="formula-text">
+                  ({avgHeal.toFixed(1)} avg heal{#if enhancerBonus > 0} × {(1 + enhancerBonus / 100).toFixed(2)} enhancer{/if}{#if tierEnabled && tier > 0} × {(1 + tier * 0.05).toFixed(2)} tier {tier}{/if} × {(usesPerMin / 60).toFixed(2)} uses/s{#if reloadBonus.total > 0} × {(1 + reloadBonus.total / 100).toFixed(2)} reload{/if})
+                </span>
+              {/if}
+            </p>
+            <p>HPP (Heal per PEC): <strong>{healingHPP !== null ? healingHPP.toFixed(2) : 'TBD'}</strong>
+              {#if effectiveHeal !== null && baseCostPerHeal !== null}
+                <span class="formula-text">
+                  ({effectiveHeal.toFixed(2)} eff heal ÷ {baseCostPerHeal.toFixed(4)} PEC/heal{#if tierEnabled && tier > 0} × {(1 + tier * 0.05).toFixed(2)} tier {tier}{/if})
+                </span>
+              {/if}
+            </p>
+            <p>{costLabel}: <strong>{maxDecay.base} PED</strong>
+              {#if activeMedicalItem?.Properties?.Economy?.Decay}
+                {@const decayPerUse = activeMedicalItem.Properties.Economy.Decay}
+                {@const usesPerMin = activeMedicalItem.Properties.UsesPerMinute || 0}
+                <span class="formula-text">
+                  ({decayPerUse} PEC/use × {usesPerMin} uses/min × 60 min/h{#if tierEnabled && tier > 0} × {(1 + tier * 0.05).toFixed(2)} tier {tier}{/if}{#if reloadBonus.total > 0} × {(1 + reloadBonus.total / 100).toFixed(2)} reload{/if} ÷ 100)
+                </span>
+              {/if}
+            </p>
+          </div>
+          
+          <div class="info-section">
+            <h3>Pricing</h3>
+            
+            <p>
+              {#if selectedService.healing_details.accepts_time_billing && selectedService.healing_details.rate_per_hour}
+                {parseFloat(selectedService.healing_details.rate_per_hour).toFixed(2)} PED/h
+              {/if}
+              {#if selectedService.healing_details.accepts_time_billing && selectedService.healing_details.rate_per_hour && selectedService.healing_details.accepts_decay_billing}
+                {' + '}
+              {/if}
+              {#if selectedService.healing_details.accepts_decay_billing}
+                Decay
+              {/if}
+              {#if !selectedService.healing_details.accepts_time_billing && !selectedService.healing_details.accepts_decay_billing}
+                Free
+              {/if}
+              {#if extraCost > 0}
+                {' + '}{extraCost.toFixed(2)} PED/h extras
+              {/if}
+            </p>
+          </div>
+        {/if}
+
+        {#if selectedService.type === 'dps' && selectedService.dps_details}
+          {@const weaponAttachments = {
+            amplifier: selectedAmplifier,
+            absorber: selectedAbsorber,
+            scope: selectedScope,
+            scopeSight: selectedScopeSight,
+            sight: selectedSight,
+            matrix: selectedMatrix,
+            implant: selectedImplant
+          }}
+          {@const activeWeaponEquip = selectedService.equipment?.find(e => 
+            e.is_primary !== false && e.item_type === 'weapons'
+          )}
+          {@const activeWeaponAttachments = activeWeaponEquip?.attachments}
+          {@const tierEnabled = activeWeaponEquip?.tier > 0 && enabledTierEnhancers[activeWeaponEquip?.item_name] !== false}
+          {@const weaponEnhancerType = tierEnabled ? (activeWeaponAttachments?.enhancerType || 'Damage') : ''}
+          {@const weaponEnhancerTiers = tierEnabled && weaponEnhancerType ? Array.from({ length: activeWeaponEquip.tier }, (_, i) => i + 1) : []}
+          {@const dpsValue = getEstimatedDPS(
+            selectedService,
+            activeWeapon,
+            weaponAttachments,
+            weaponEnhancerType,
+            weaponEnhancerTiers,
+            consumables,
+            pets,
+            clothingItems,
+            armorSets,
+            enabledConsumables,
+            activePetEffects
+          )}
+          {@const reloadBonus = getDPSReloadSpeedBonus(
+            selectedService,
+            clothingItems,
+            armorSets,
+            consumables,
+            pets,
+            enabledConsumables,
+            activePetEffects
+          )}
+          {@const damageBonus = getDPSDamageBonus(
+            selectedService,
+            consumables,
+            pets,
+            enabledConsumables,
+            activePetEffects
+          )}
+          {@const critChanceBonus = getDPSCritChanceBonus(
+            selectedService,
+            clothingItems,
+            armorSets,
+            consumables,
+            pets,
+            enabledConsumables,
+            activePetEffects
+          )}
+          {@const critDamageBonus = getDPSCritDamageBonus(
+            selectedService,
+            clothingItems,
+            armorSets,
+            consumables,
+            pets,
+            enabledConsumables,
+            activePetEffects
+          )}
+          {@const hpStats = getTotalHP(
+            playerHP,
+            selectedService,
+            clothingItems,
+            armorSets,
+            consumables,
+            pets,
+            enabledConsumables,
+            activePetEffects
+          )}
+          {@const protectionStats = getProtectionStats(
+            selectedService,
+            armors,
+            armorPlatings,
+            [], // defenseEnhancers
+            [], // durabilityEnhancers
+            {}, // enabledDefenseEnhancers
+            {} // enabledDurabilityEnhancers
+          )}
+          {@const costPerHour = getMaxCostPerHour(
+            selectedService,
+            activeWeapon,
+            weaponAttachments,
+            weaponEnhancerType,
+            weaponEnhancerTiers,
+            consumables,
+            pets,
+            clothingItems,
+            armorSets,
+            enabledConsumables,
+            activePetEffects,
+            { ammo: 100, weapon: 100 } // markups
+          )}
+          {@const damageEnhancers = weaponEnhancerType === 'Damage' ? weaponEnhancerTiers.length : 0}
+          {@const economyEnhancers = weaponEnhancerType === 'Economy' ? weaponEnhancerTiers.length : 0}
+          {@const weaponCost = activeWeapon ? LoadoutCalc.calculateWeaponCost(activeWeapon, damageEnhancers, economyEnhancers) : null}
+          {@const efficiency = activeWeapon ? LoadoutCalc.calculateEfficiency(
+            activeWeapon,
+            weaponCost,
+            damageEnhancers,
+            economyEnhancers,
+            selectedAbsorber,
+            selectedAmplifier,
+            selectedScope,
+            selectedScopeSight,
+            selectedSight,
+            selectedMatrix
+          ) : null}
+          {@const decay = activeWeapon ? LoadoutCalc.calculateDecay(
+            activeWeapon,
+            damageEnhancers,
+            economyEnhancers,
+            selectedAbsorber,
+            selectedImplant,
+            selectedAmplifier,
+            selectedScope,
+            selectedScopeSight,
+            selectedSight,
+            selectedMatrix,
+            { ammo: 100, weapon: 100 }
+          ) : null}
+          {@const ammoBurn = activeWeapon ? LoadoutCalc.calculateAmmoBurn(
+            activeWeapon,
+            damageEnhancers,
+            economyEnhancers,
+            selectedAmplifier
+          ) : null}
+          {@const costPerShot = (decay !== null && ammoBurn !== null) ? LoadoutCalc.calculateCost(decay, ammoBurn, 100) : null}
+          {@const hitSkill = 1000}
+          {@const dmgSkill = 1000}
+          {@const skillModEnhancers = weaponEnhancerType === 'Accuracy' ? weaponEnhancerTiers.length : 0}
+          {@const totalDamage = activeWeapon ? LoadoutCalc.calculateTotalDamage(
+            activeWeapon,
+            damageEnhancers,
+            damageBonus.total,
+            selectedAmplifier
+          ) : null}
+          {@const damageInterval = (activeWeapon && totalDamage) ? LoadoutCalc.calculateDamageInterval(
+            activeWeapon,
+            dmgSkill,
+            skillModEnhancers,
+            totalDamage
+          ) : null}
+          {@const hitAbility = activeWeapon ? LoadoutCalc.calculateHitAbility(activeWeapon, hitSkill, skillModEnhancers) : null}
+          {@const critAbility = activeWeapon ? LoadoutCalc.calculateCritAbility(activeWeapon, hitSkill, skillModEnhancers) : null}
+          {@const accuracyEnhancers = weaponEnhancerType === 'Accuracy' ? weaponEnhancerTiers.length : 0}
+          {@const critChance = (critAbility !== null) ? LoadoutCalc.calculateCritChance(critAbility, accuracyEnhancers, critChanceBonus.total) : null}
+          {@const critDamage = LoadoutCalc.calculateCritDamage(critDamageBonus.total)}
+          {@const effectiveDamage = (damageInterval && critChance !== null && critDamage !== null && hitAbility !== null) ? LoadoutCalc.calculateEffectiveDamage(
+            damageInterval,
+            critChance,
+            critDamage,
+            hitAbility
+          ) : null}
+          {@const dpp = (effectiveDamage !== null && costPerShot !== null) ? LoadoutCalc.calculateDPP(effectiveDamage, costPerShot) : null}
+          {@const rangeEnhancers = weaponEnhancerType === 'Range' ? weaponEnhancerTiers.length : 0}
+          {@const weaponRange = activeWeapon ? LoadoutCalc.calculateRange(activeWeapon, hitSkill, skillModEnhancers, rangeEnhancers) : null}
+          {@const reload = activeWeapon ? LoadoutCalc.calculateReload(activeWeapon, hitSkill, skillModEnhancers, reloadBonus.total) : null}
+          {@const dps = (effectiveDamage !== null && reload !== null) ? LoadoutCalc.calculateDPS(effectiveDamage, reload) : null}
+          {@const baseDamage = activeWeapon ? (
+            (activeWeapon.Properties?.Damage?.Impact || 0) +
+            (activeWeapon.Properties?.Damage?.Cut || 0) +
+            (activeWeapon.Properties?.Damage?.Stab || 0) +
+            (activeWeapon.Properties?.Damage?.Penetration || 0) +
+            (activeWeapon.Properties?.Damage?.Shrapnel || 0) +
+            (activeWeapon.Properties?.Damage?.Burn || 0) +
+            (activeWeapon.Properties?.Damage?.Cold || 0) +
+            (activeWeapon.Properties?.Damage?.Acid || 0) +
+            (activeWeapon.Properties?.Damage?.Electric || 0)
+          ) : null}
+          {@const amplifierDamage = selectedAmplifier ? (
+            (selectedAmplifier.Properties?.Damage?.Impact || 0) +
+            (selectedAmplifier.Properties?.Damage?.Cut || 0) +
+            (selectedAmplifier.Properties?.Damage?.Stab || 0) +
+            (selectedAmplifier.Properties?.Damage?.Penetration || 0) +
+            (selectedAmplifier.Properties?.Damage?.Shrapnel || 0) +
+            (selectedAmplifier.Properties?.Damage?.Burn || 0) +
+            (selectedAmplifier.Properties?.Damage?.Cold || 0) +
+            (selectedAmplifier.Properties?.Damage?.Acid || 0) +
+            (selectedAmplifier.Properties?.Damage?.Electric || 0)
+          ) : null}
+          {@const amplifierBonus = (selectedAmplifier && baseDamage && amplifierDamage) ? Math.min(baseDamage / 2, amplifierDamage) : 0}
+          {@const hitChance = hitAbility !== null ? (0.8 + hitAbility / 100) : null}
+          {@const avgDamageInterval = damageInterval ? (damageInterval.min + damageInterval.max) / 2 : null}
+          {@const extraCost = (selectedService.equipment || []).filter(e => {
+            if (e.item_type === 'consumables') return enabledConsumables[e.item_name];
+            if (e.item_type === 'weapons') return activeWeapon?.Name === e.item_name && e.extra_price;
+            if (e.tier && e.tier > 0) return e.extra_price;
+            return e.is_primary !== false && e.extra_price;
+          }).reduce((sum, e) => sum + (parseFloat(e.extra_price) || 0), 0)}
+          <div class="info-section">
+            <h3>DPS Service Details</h3>
+            {#if selectedService.dps_details.notes}
+              <p class="service-notes">{selectedService.dps_details.notes}</p>
+            {/if}
+            
+            {#if activeWeapon}
+              <p>Active Weapon: <strong>{activeWeapon.Name}</strong>
+                {#if weaponEnhancerType}
+                  <span class="formula-text">({weaponEnhancerType} Enhancers)</span>
+                {/if}
+              </p>
+            {:else}
+              <p>Active Weapon: <strong>None selected</strong></p>
+            {/if}
+            
+            <p>HP: <strong>{hpStats.total}</strong>
+              <span class="formula-text">
+                ({playerHP} base{#if hpStats.equipment > 0} + {hpStats.equipment} equipment{/if}{#if hpStats.consumables > 0} + {hpStats.consumables} consumable{/if}{#if hpStats.pets > 0} + {hpStats.pets} pet{/if})
+              </span>
+            </p>
+            
+            <h4 style="margin-top: 15px;">Combat</h4>
+            
+            
+            <p>Effective DPS: <strong>{dpsValue > 0 ? dpsValue.toFixed(2) : 'TBD'}</strong>
+              {#if activeWeapon && effectiveDamage !== null && reload !== null}
+                <span class="formula-text">
+                  ({effectiveDamage.toFixed(2)} eff dmg ÷ {reload.toFixed(2)} s/shot)
+                </span>
+              {/if}
+            </p>
+
+            <p>Reload Speed: <strong>{reload !== null ? reload.toFixed(2) + ' s/shot' : 'TBD'}</strong>
+              {#if activeWeapon?.Properties?.UsesPerMinute}
+                <span class="formula-text">
+                  ({(60 / activeWeapon.Properties.UsesPerMinute).toFixed(2)} s base{#if reloadBonus.equipment > 0} × {(1 / (1 + reloadBonus.equipment / 100)).toFixed(3)} equipment{/if}{#if reloadBonus.consumables > 0} × {(1 / (1 + reloadBonus.consumables / 100)).toFixed(3)} consumable{/if}{#if reloadBonus.pets > 0} × {(1 / (1 + reloadBonus.pets / 100)).toFixed(3)} pet{/if})
+                </span>
+              {/if}
+            </p>
+            <p>Range: <strong>{weaponRange !== null ? weaponRange.toFixed(2) + ' m' : 'TBD'}</strong>
+              {#if activeWeapon?.Properties?.Range}
+                <span class="formula-text">
+                  ({activeWeapon.Properties.Range} base{#if rangeEnhancers > 0} × {(1 + rangeEnhancers * 0.05).toFixed(2)} range enh{/if})
+                </span>
+              {/if}
+            </p>
+            <p>Critical Chance: <strong>{critChance !== null ? (critChance * 100).toFixed(1) + '%' : 'TBD'}</strong>
+              {#if critChance !== null}
+                <span class="formula-text">
+                  (1% base + {(critChance * 100 - 1).toFixed(1)}% from skill/enhancers/buffs)
+                </span>
+              {/if}
+            </p>
+            <p>Critical Damage: <strong>{critDamage !== null ? (critDamage * 100).toFixed(0) + '%' : 'TBD'}</strong>
+              {#if critDamage !== null}
+                <span class="formula-text">
+                  (100% base + {((critDamage - 1) * 100).toFixed(0)}% from buffs)
+                </span>
+              {/if}
+            </p>
+            
+            <h4 style="margin-top: 15px;">Economy</h4>
+            
+            <p>Efficiency: <strong>{efficiency !== null ? efficiency.toFixed(2) + '%' : 'TBD'}</strong>
+              {#if activeWeapon?.Properties?.Economy?.Efficiency}
+                <span class="formula-text">
+                  (weighted avg of weapon and attachments {activeWeapon.Properties.Economy.Efficiency.toFixed(1)}%{#if selectedAmplifier?.Properties?.Economy?.Efficiency} + amp {selectedAmplifier.Properties.Economy.Efficiency.toFixed(1)}%{/if}{#if selectedAbsorber?.Properties?.Economy?.Efficiency} + abs {selectedAbsorber.Properties.Economy.Efficiency.toFixed(1)}%{/if})
+                </span>
+              {/if}
+            </p>
+            <p>DPP (Damage per PEC): <strong>{dpp !== null ? dpp.toFixed(2) : 'TBD'}</strong>
+              {#if effectiveDamage !== null && costPerShot !== null}
+                <span class="formula-text">
+                  ({effectiveDamage.toFixed(2)} eff dmg ÷ {costPerShot.toFixed(4)} PEC/shot)
+                </span>
+              {/if}
+            </p>
+            <p>Maximum Cost/h: <strong>{costPerHour > 0 ? costPerHour.toFixed(2) : 'TBD'} PED</strong>
+              {#if activeWeapon && decay !== null && ammoBurn !== null && reload !== null}
+                <span class="formula-text">
+                  (({decay.toFixed(4)} decay + {Math.round(ammoBurn)} ammo ÷ 100) × 3600 ÷ {reload.toFixed(2)} s/shot ÷ 100)
+                </span>
+              {/if}
+            </p>
+            
+            {#if protectionStats.blockChance > 0 || Object.values(protectionStats).some(stat => typeof stat === 'object' && stat != null && (stat.defense > 0 || stat.absorption > 0))}
+              <div class="protection-stats">
+                <h4>Protection</h4>
+                {#if protectionStats.blockChance > 0}
+                  <p>Block Chance: <strong>{protectionStats.blockChance.toFixed(1)}%</strong></p>
+                {/if}
+                <div class="damage-type-grid">
+                  {#if protectionStats.burn && (protectionStats.burn.defense > 0 || protectionStats.burn.absorption > 0)}
+                    <div class="damage-type">
+                      <span class="damage-label">Burn:</span>
+                      <span class="damage-values">
+                        {protectionStats.burn.defense.toFixed(1)} def / {protectionStats.burn.absorption.toFixed(1)}% abs
+                      </span>
+                    </div>
+                  {/if}
+                  {#if protectionStats.cold && (protectionStats.cold.defense > 0 || protectionStats.cold.absorption > 0)}
+                    <div class="damage-type">
+                      <span class="damage-label">Cold:</span>
+                      <span class="damage-values">
+                        {protectionStats.cold.defense.toFixed(1)} def / {protectionStats.cold.absorption.toFixed(1)}% abs
+                      </span>
+                    </div>
+                  {/if}
+                  {#if protectionStats.acid && (protectionStats.acid.defense > 0 || protectionStats.acid.absorption > 0)}
+                    <div class="damage-type">
+                      <span class="damage-label">Acid:</span>
+                      <span class="damage-values">
+                        {protectionStats.acid.defense.toFixed(1)} def / {protectionStats.acid.absorption.toFixed(1)}% abs
+                      </span>
+                    </div>
+                  {/if}
+                  {#if protectionStats.electric && (protectionStats.electric.defense > 0 || protectionStats.electric.absorption > 0)}
+                    <div class="damage-type">
+                      <span class="damage-label">Electric:</span>
+                      <span class="damage-values">
+                        {protectionStats.electric.defense.toFixed(1)} def / {protectionStats.electric.absorption.toFixed(1)}% abs
+                      </span>
+                    </div>
+                  {/if}
+                  {#if protectionStats.cut && (protectionStats.cut.defense > 0 || protectionStats.cut.absorption > 0)}
+                    <div class="damage-type">
+                      <span class="damage-label">Cut:</span>
+                      <span class="damage-values">
+                        {protectionStats.cut.defense.toFixed(1)} def / {protectionStats.cut.absorption.toFixed(1)}% abs
+                      </span>
+                    </div>
+                  {/if}
+                  {#if protectionStats.impact && (protectionStats.impact.defense > 0 || protectionStats.impact.absorption > 0)}
+                    <div class="damage-type">
+                      <span class="damage-label">Impact:</span>
+                      <span class="damage-values">
+                        {protectionStats.impact.defense.toFixed(1)} def / {protectionStats.impact.absorption.toFixed(1)}% abs
+                      </span>
+                    </div>
+                  {/if}
+                  {#if protectionStats.penetration && (protectionStats.penetration.defense > 0 || protectionStats.penetration.absorption > 0)}
+                    <div class="damage-type">
+                      <span class="damage-label">Penetration:</span>
+                      <span class="damage-values">
+                        {protectionStats.penetration.defense.toFixed(1)} def / {protectionStats.penetration.absorption.toFixed(1)}% abs
+                      </span>
+                    </div>
+                  {/if}
+                  {#if protectionStats.shrapnel && (protectionStats.shrapnel.defense > 0 || protectionStats.shrapnel.absorption > 0)}
+                    <div class="damage-type">
+                      <span class="damage-label">Shrapnel:</span>
+                      <span class="damage-values">
+                        {protectionStats.shrapnel.defense.toFixed(1)} def / {protectionStats.shrapnel.absorption.toFixed(1)}% abs
+                      </span>
+                    </div>
+                  {/if}
+                  {#if protectionStats.stab && (protectionStats.stab.defense > 0 || protectionStats.stab.absorption > 0)}
+                    <div class="damage-type">
+                      <span class="damage-label">Stab:</span>
+                      <span class="damage-values">
+                        {protectionStats.stab.defense.toFixed(1)} def / {protectionStats.stab.absorption.toFixed(1)}% abs
+                      </span>
+                    </div>
+                  {/if}
+                </div>
+              </div>
+            {/if}
+          </div>
+          
+          <div class="info-section">
+            <h3>Pricing</h3>
+            
+            <p>
+              {#if selectedService.dps_details.accepts_time_billing && selectedService.dps_details.rate_per_hour}
+                {parseFloat(selectedService.dps_details.rate_per_hour).toFixed(2)} PED/h
+              {/if}
+              {#if selectedService.dps_details.accepts_time_billing && selectedService.dps_details.rate_per_hour && selectedService.dps_details.accepts_decay_billing}
+                {' + '}
+              {/if}
+              {#if selectedService.dps_details.accepts_decay_billing}
+                Decay
+              {/if}
+              {#if !selectedService.dps_details.accepts_time_billing && !selectedService.dps_details.accepts_decay_billing}
+                Free
+              {/if}
+              {#if extraCost > 0}
+                {' + '}{extraCost.toFixed(2)} PED/h extras
+              {/if}
+            </p>
+          </div>
+        {/if}
+
+        {#if selectedService.type === 'transportation' && selectedService.transportation_details}
+          {@const td = selectedService.transportation_details}
+          {@const typeLabels = { regular: 'Regular', warp_equus: 'Warp (Equus)', warp_privateer: 'Warp (Privateer/Mothership)' }}
+          {@const modeLabels = { on_demand: 'On Demand', scheduled: 'Scheduled', both: 'On Demand & Scheduled' }}
+          <div class="info-section">
+            <h3>Transportation Details</h3>
+            <p>Transportation Type: <strong>{typeLabels[td.transportation_type] || td.transportation_type || 'Not specified'}</strong></p>
+            {#if td.ship_name}
+              <p>Ship: <strong>{td.ship_name}</strong></p>
+            {/if}
+            <p>Service Type: <strong>{modeLabels[td.service_mode] || 'On Demand'}</strong></p>
+          </div>
+
+          <!-- Service Mode Explanation -->
+          <div class="info-section">
+            <h3>How This Service Works</h3>
+            {#if td.service_mode === 'on_demand' || !td.service_mode}
+              <p class="service-mode-explanation">
+                <strong>On Demand:</strong> This service operates like a VIP Warp in-game. Contact the provider anytime during their available hours to arrange immediate transportation to your destination.
+              </p>
+            {:else}
+              <p class="service-mode-explanation">
+                <strong>Scheduled Flights:</strong> This service offers pre-scheduled flights at specific departure times. Check in for an upcoming flight below, and the provider will transport all checked-in passengers along the route.
+              </p>
+            {/if}
+          </div>
+
+          <div class="info-section">
+            <div class="section-header-with-action">
+              <h3>Ticket Offers</h3>
+              {#if isOwner}
+                <a href="/market/services/{selectedService.id}/ticket-offers" class="manage-btn">Manage Ticket Offers</a>
+              {/if}
+            </div>
+            {#if ticketOffers && ticketOffers.length > 0}
+              {#if !isOwner && user?.administrator}
+                <p class="admin-note">
+                  <em>Note: As an administrator, you can purchase tickets for testing purposes.</em>
+                </p>
+              {/if}
+              <div class="ticket-offers-grid">
+                {#each ticketOffers as offer (offer.id)}
+                  <TicketOfferCard
+                    {offer}
+                    {isOwner}
+                    showAsSingleOption={ticketOffers.length === 1 && !isOwner}
+                    on:purchase={handlePurchaseTicket}
+                    on:requestFlight={() => openRequestModal('request')}
+                  />
+                {/each}
+              </div>
+            {:else if !isOwner}
+              <p class="muted-text">No ticket offers available yet.</p>
+            {:else}
+              <p class="muted-text">No ticket offers configured yet. Use the "Manage Ticket Offers" button above to create them.</p>
+            {/if}
+          </div>
+
+          <!-- Upcoming Flights -->
+          {#if (td.service_mode === 'scheduled' || td.service_mode === 'both')}
+            {#if canManageFlights}
+              <!-- Flight Dashboard link - always visible for owners -->
+              <div class="flight-dashboard-section">
+                <span class="flight-dashboard-label">Flight Management</span>
+                <a href="/market/services/{selectedService.id}/flights" class="manage-btn primary">Open Flight Dashboard</a>
+              </div>
+            {/if}
+
+            {#if nextActiveFlight && !isOwner}
+              {@const routeStops = typeof nextActiveFlight.route_stops === 'string' ? JSON.parse(nextActiveFlight.route_stops) : nextActiveFlight.route_stops}
+              {@const canCheckInNow = canCheckIn(nextActiveFlight)}
+              <!-- Next Flight (for customers) -->
+              <div class="info-section">
+                <h3>Next Scheduled Flight</h3>
+                <div class="flight-card highlighted-flight">
+                  <div class="flight-header">
+                    <span class="flight-status {nextActiveFlight.status}">{nextActiveFlight.status}</span>
+                    <span class="flight-type">{nextActiveFlight.route_type === 'flexible' ? 'Flexible Route' : 'Fixed Route'}</span>
+                  </div>
+                  <div class="flight-time">
+                    <strong>{formatFlightTime(nextActiveFlight.scheduled_departure)}</strong>
+                  </div>
+                  {#if nextActiveFlight.status === 'running'}
+                    <div class="flight-current-state">
+                      {getFlightCurrentState(nextActiveFlight)}
+                    </div>
+                  {/if}
+                  <div class="flight-route">
+                    {#if routeStops && routeStops.length > 0}
+                      <span class="route-label">Route:</span>
+                      {#if nextActiveFlight.status === 'running'}
+                        {@const currentStopIndex = nextActiveFlight.current_stop_index || 0}
+                        {#each routeStops as stop, i}
+                          {@const isInWarpToThisStop = nextActiveFlight.current_state?.startsWith('warp_to_') && parseInt(nextActiveFlight.current_state.split('_')[2]) === i}
+                          {@const isCurrentStop = i === currentStopIndex && !nextActiveFlight.current_state?.startsWith('warp_to_')}
+                          {@const isPastStop = i < currentStopIndex || (i === currentStopIndex && nextActiveFlight.current_state?.startsWith('warp_to_'))}
+                          <span class="route-planet {isPastStop ? 'visited' : ''} {isCurrentStop ? 'current' : ''}">{stop.name || `Planet ${stop.planet_id}`}</span>{#if i < routeStops.length - 1}{@const isArrowInWarp = nextActiveFlight.current_state?.startsWith('warp_to_') && parseInt(nextActiveFlight.current_state.split('_')[2]) === i + 1}{@const isArrowCompleted = i + 1 <= currentStopIndex}<span class="route-arrow {isArrowCompleted ? 'completed' : ''} {isArrowInWarp ? 'in-warp' : ''}">→</span>{/if}
+                        {/each}
+                      {:else}
+                        {#each routeStops as stop, i}
+                          <span class="route-planet">{stop.name || `Planet ${stop.planet_id}`}</span>{#if i < routeStops.length - 1}<span class="route-arrow">→</span>{/if}
+                        {/each}
+                      {/if}
+                    {/if}
+                  </div>
+                  {#if canCheckInNow}
+                    <button on:click={() => openCheckinDialog(nextActiveFlight)} class="check-in-btn">Check In Now</button>
+                  {/if}
+                </div>
+              </div>
+            {/if}
+
+            {#if runningFlights.length > 0}
+              <!-- Running Flights -->
+              <div class="info-section">
+                <h3>Running Flights ({runningFlights.length})</h3>
+
+                <div class="upcoming-flights">
+                  {#each runningFlights as flight (flight.id)}
+                    {@const routeStops = typeof flight.route_stops === 'string' ? JSON.parse(flight.route_stops) : flight.route_stops}
+                    {@const canCheckInNow = canCheckIn(flight)}
+                    <div class="flight-card">
+                      <div class="flight-header">
+                        <span class="flight-status {flight.status}">{flight.status}</span>
+                        <span class="flight-type">{flight.route_type === 'flexible' ? 'Flexible Route' : 'Fixed Route'}</span>
+                      </div>
+                      <div class="flight-time">
+                        <strong>{formatFlightTime(flight.scheduled_departure)}</strong>
+                      </div>
+                      <div class="flight-current-state">
+                        {getFlightCurrentState(flight)}
+                      </div>
+                      <div class="flight-route">
+                        {#if routeStops && routeStops.length > 0}
+                          <span class="route-label">Route:</span>
+                          {@const currentStopIndex = flight.current_stop_index || 0}
+                          {#each routeStops as stop, i}
+                            {@const isInWarpToThisStop = flight.current_state?.startsWith('warp_to_') && parseInt(flight.current_state.split('_')[2]) === i}
+                            {@const isCurrentStop = i === currentStopIndex && !flight.current_state?.startsWith('warp_to_')}
+                            {@const isPastStop = i < currentStopIndex || (i === currentStopIndex && flight.current_state?.startsWith('warp_to_'))}
+                            <span class="route-planet {isPastStop ? 'visited' : ''} {isCurrentStop ? 'current' : ''}">{stop.name || `Planet ${stop.planet_id}`}</span>{#if i < routeStops.length - 1}{@const isArrowInWarp = flight.current_state?.startsWith('warp_to_') && parseInt(flight.current_state.split('_')[2]) === i + 1}{@const isArrowCompleted = i + 1 <= currentStopIndex}<span class="route-arrow {isArrowCompleted ? 'completed' : ''} {isArrowInWarp ? 'in-warp' : ''}">→</span>{/if}
+                          {/each}
+                        {/if}
+                      </div>
+                      {#if canCheckInNow && !isOwner}
+                        <button on:click={() => openCheckinDialog(flight)} class="check-in-btn">Check In Now</button>
+                      {/if}
+                    </div>
+                  {/each}
+                </div>
+              </div>
+            {/if}
+
+            {#if scheduledFlights.length > 0}
+              <!-- Scheduled Flights (expandable for customers, always visible for owners) -->
+              <div class="info-section">
+                {#if !isOwner && scheduledFlights.length > 1}
+                  <button on:click={() => showAllFlights = !showAllFlights} class="expand-flights-btn">
+                    {showAllFlights ? '▼' : '►'} {showAllFlights ? 'Hide' : 'Show'} All Scheduled Flights ({scheduledFlights.length})
+                  </button>
+                {:else}
+                  <h3>Scheduled Flights ({scheduledFlights.length})</h3>
+                {/if}
+
+                {#if showAllFlights || canManageFlights || isOwner}
+                  <div class="upcoming-flights">
+                    {#each scheduledFlights as flight (flight.id)}
+                      {@const routeStops = typeof flight.route_stops === 'string' ? JSON.parse(flight.route_stops) : flight.route_stops}
+                      {@const canCheckInNow = canCheckIn(flight)}
+                      <div class="flight-card">
+                        <div class="flight-header">
+                          <span class="flight-status {flight.status}">{flight.status}</span>
+                          <span class="flight-type">{flight.route_type === 'flexible' ? 'Flexible Route' : 'Fixed Route'}</span>
+                        </div>
+                        <div class="flight-time">
+                          <strong>{formatFlightTime(flight.scheduled_departure)}</strong>
+                        </div>
+                        <div class="flight-route">
+                          {#if routeStops && routeStops.length > 0}
+                            <span class="route-label">Route:</span>
+                            {#each routeStops as stop, i}
+                              <span class="route-planet">{stop.name || `Planet ${stop.planet_id}`}</span>{#if i < routeStops.length - 1}<span class="route-arrow">→</span>{/if}
+                            {/each}
+                          {/if}
+                        </div>
+                        {#if canCheckInNow && !isOwner}
+                          <button on:click={() => openCheckinDialog(flight)} class="check-in-btn">Check In Now</button>
+                        {/if}
+                      </div>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
+            {/if}
+
+            {#if cancelledFlights.length > 0 && isOwner}
+              <!-- Cancelled Flights (owners only) -->
+              <div class="info-section">
+                <h3>Recently Cancelled Flights ({cancelledFlights.length})</h3>
+                <p class="muted-text">Can be restored within 2 hours of scheduled departure.</p>
+                <div class="upcoming-flights">
+                  {#each cancelledFlights as flight (flight.id)}
+                    {@const routeStops = typeof flight.route_stops === 'string' ? JSON.parse(flight.route_stops) : flight.route_stops}
+                    {@const canRestoreNow = canRestoreFlight(flight, activeFlights)}
+                    <div class="flight-card cancelled-flight">
+                      <div class="flight-header">
+                        <span class="flight-status {flight.status}">{flight.status}</span>
+                        <span class="flight-type">{flight.route_type === 'flexible' ? 'Flexible Route' : 'Fixed Route'}</span>
+                      </div>
+                      <div class="flight-time">
+                        <strong>{formatFlightTime(flight.scheduled_departure)}</strong>
+                      </div>
+                      <div class="flight-route">
+                        {#if routeStops && routeStops.length > 0}
+                          <span class="route-label">Route:</span>
+                          {#each routeStops as stop, i}
+                            <span class="route-planet">{stop.name || `Planet ${stop.planet_id}`}</span>{#if i < routeStops.length - 1}<span class="route-arrow">→</span>{/if}
+                          {/each}
+                        {/if}
+                      </div>
+                      {#if canRestoreNow}
+                        <button on:click={() => restoreFlight(flight.id)} class="restore-btn">Restore Flight</button>
+                      {/if}
+                    </div>
+                  {/each}
+                </div>
+              </div>
+            {/if}
+
+            {#if runningFlights.length === 0 && scheduledFlights.length === 0 && cancelledFlights.length === 0 && !canManageFlights}
+              <!-- Only show empty state for non-owners (owners have the Flight Management section above) -->
+              <div class="info-section">
+                <h3>Upcoming Scheduled Flights</h3>
+                <p class="muted-text">No flights scheduled for the next 7 days.</p>
+              </div>
+            {/if}
+          {/if}
+        {/if}
+
+        {#if selectedService.equipment && selectedService.equipment.length > 0}
+          {@const medicalEquipment = selectedService.equipment.filter(e => e.item_type === 'medicaltools' || e.item_type === 'medicalchips').sort((a, b) => {
+            if (a.is_primary && !b.is_primary) return -1;
+            if (!a.is_primary && b.is_primary) return 1;
+            return a.item_name?.localeCompare(b.item_name);
+          })}
+          {@const armorEquipment = selectedService.equipment.filter(e => e.item_type === 'armorsets').sort((a, b) => {
+            if (a.is_primary && !b.is_primary) return -1;
+            if (!a.is_primary && b.is_primary) return 1;
+            return a.item_name?.localeCompare(b.item_name);
+          })}
+          {@const clothingEquipment = selectedService.equipment.filter(e => e.item_type === 'clothings').sort((a, b) => {
+            if (a.is_primary && !b.is_primary) return -1;
+            if (!a.is_primary && b.is_primary) return 1;
+            return a.item_name?.localeCompare(b.item_name);
+          })}
+          {@const consumableEquipment = selectedService.equipment.filter(e => e.item_type === 'consumables').sort((a, b) => a.item_name?.localeCompare(b.item_name))}
+          {@const weaponEquipment = selectedService.equipment.filter(e => e.item_type === 'weapons').sort((a, b) => {
+            if (a.is_primary && !b.is_primary) return -1;
+            if (!a.is_primary && b.is_primary) return 1;
+            return a.item_name?.localeCompare(b.item_name);
+          })}
+          {@const petEquipment = selectedService.equipment.filter(e => e.item_type === 'pets').sort((a, b) => a.item_name?.localeCompare(b.item_name))}
+          {@const activePet = petEquipment.find(p => activePetEffects[p.item_name] && activePetEffects[p.item_name] !== false)}
+          {@const activePetData = activePet ? pets.find(p => p.Name === activePet.item_name) : null}
+          {@const activeAbilityKey = activePet ? activePetEffects[activePet.item_name] : null}
+          {@const activeAbility = activePetData?.Effects?.find((e, i) => {
+            const key = `${e.Id}-${e.Properties?.Strength || 0}-${i}`;
+            return key === activeAbilityKey;
+          })}
+          {@const basePetConsumption = activePetData?.Properties?.NutrioConsumptionPerHour || 0}
+          {@const abilityConsumption = activeAbility?.Properties?.NutrioConsumptionPerHour || 0}
+          {@const totalNutrioConsumption = basePetConsumption + abilityConsumption}
+          
+          <div class="info-section">
+            <h3>Pet</h3>
+            {#if petEquipment.length > 0}
+              <p>Active Pet: <strong>{activePet?.item_name || 'N/A'}</strong></p>
+              <p>Active Ability: <strong>{activeAbility ? activeAbility.Name : 'N/A'}</strong>
+                {#if activeAbility?.Properties?.Strength}
+                  <span class="formula-text">(+{activeAbility.Properties.Strength}{activeAbility.Properties?.Unit || ''})</span>
+                {/if}
+              </p>
+              <p>Nutrio Consumption: <strong>{activeAbility ? `${totalNutrioConsumption.toFixed(1)}/h` : 'N/A'}</strong>
+                {#if activeAbility}
+                  <span class="formula-text">
+                    ({basePetConsumption.toFixed(1)} base{#if abilityConsumption > 0} + {abilityConsumption.toFixed(1)} ability{/if})
+                  </span>
+                {/if}
+              </p>
+            {:else}
+              <p><strong>No Pet Available</strong></p>
+            {/if}
+          </div>
+          
+          <div class="info-section">
+            <h3>Equipment</h3>
+            
+            {#if weaponEquipment.length > 0}
+              <div class="equipment-category">
+                <h4>Weapons</h4>
+                <ul class="equipment-list">
+                  {#each weaponEquipment as equip (equip.item_name)}
+                    {@const weaponData = weapons.find(w => w.Name === equip.item_name)}
+                    <li class:active={activeWeapon?.Name === equip.item_name}>
+                      <div class="equipment-item-header">
+                        <div class="equipment-item-main">
+                          <div class="equipment-item-name-text">
+                            {#if equip.item_name}
+                              <a href={getItemInternalUrl(equip.item_type, equip.item_name)} class="equipment-item-link">
+                                <strong>{equip.item_name}</strong>
+                              </a>
+                            {:else}
+                              <strong class="unnamed-item">Item ID: {equip.item_id}</strong>
+                            {/if}
+                          </div>
+                          <div class="equipment-item-badges">
+                            {#if equip.tier !== null && equip.tier !== undefined}
+                              <span class="tier-badge">T{equip.tier}</span>
+                            {/if}
+                            {#if equip.tier > 0}
+                              {@const validEnhancerType = ['Damage', 'Range', 'Economy', 'Accuracy'].includes(equip.attachments?.enhancerType) ? equip.attachments.enhancerType : 'Damage'}
+                              <span class="enhancer-badge">{validEnhancerType} Enhancers</span>
+                            {/if}
+                            {#if equip.is_primary}
+                              <span class="primary-badge">Primary</span>
+                            {/if}
+                            {#if hasAttachments(equip)}
+                              <button class="attachments-badge" on:click|stopPropagation={() => openAttachmentDialog(equip)} title="View attachments">
+                                {countAttachments(equip)} attachment{countAttachments(equip) > 1 ? 's' : ''}
+                              </button>
+                            {/if}
+                            {#if equip.extra_price}
+                              <span class="extra-price">+{parseFloat(equip.extra_price).toFixed(2)} PED/h</span>
+                            {/if}
+                          </div>
+                          <div class="equipment-item-details">
+                            {getItemTypeLabel(equip.item_type)}
+                          </div>
+                        </div>
+                        <div class="button-group">
+                          {#if equip.tier && equip.tier > 0}
+                            <button 
+                              class="toggle-btn tier-toggle" 
+                              class:active={enabledTierEnhancers[equip.item_name]}
+                              disabled={activeWeapon?.Name !== equip.item_name}
+                              on:click={() => enabledTierEnhancers[equip.item_name] = !enabledTierEnhancers[equip.item_name]}
+                            >
+                              {enabledTierEnhancers[equip.item_name] ? 'Tiers ON' : 'Tiers OFF'}
+                            </button>
+                          {/if}
+                          <button 
+                            class="use-btn" 
+                            class:active={activeWeapon?.Name === equip.item_name}
+                            on:click={() => activeWeapon = weaponData}
+                          >
+                            {activeWeapon?.Name === equip.item_name ? 'Active' : 'Use'}
+                          </button>
+                        </div>
+                      </div>
+                      {#if equip.notes}
+                        <div class="equipment-notes">{equip.notes}</div>
+                      {/if}
+                    </li>
+                  {/each}
+                </ul>
+              </div>
+            {/if}
+            
+            {#if petEquipment.length > 0}
+              <div class="equipment-category">
+                <h4>Pets</h4>
+                <ul class="equipment-list">
+                  {#each petEquipment as equip (equip.item_name)}
+                    {@const petData = pets.find(p => p.Name === equip.item_name)}
+                    {@const activePetAbility = activePetEffects[equip.item_name]}
+                    {@const allEffects = petData?.Effects || []}
+                    {@const enabledAbilityKeys = equip.attachments?.enabledAbilities || allEffects.map((e, i) => `${e.Id}-${e.Properties?.Strength || 0}-${i}`)}
+                    {@const relevantEffects = allEffects.filter((e, i) => {
+                      const key = `${e.Id}-${e.Properties?.Strength || 0}-${i}`;
+                      return enabledAbilityKeys.includes(key);
+                    })}
+                    {@const isPetActive = activePetAbility && activePetAbility !== false}
+                    <li class:active={isPetActive}>
+                      <div class="equipment-item-header">
+                        <div class="equipment-item-main">
+                          <div class="equipment-item-name-text">
+                            {#if equip.item_name}
+                              <a href={getItemInternalUrl(equip.item_type, equip.item_name)} class="equipment-item-link">
+                                <strong>{equip.item_name}</strong>
+                              </a>
+                            {:else}
+                              <strong class="unnamed-item">Item ID: {equip.item_id}</strong>
+                            {/if}
+                          </div>
+                          <div class="equipment-item-badges">
+                            {#if equip.extra_price}
+                              <span class="extra-price">+{parseFloat(equip.extra_price).toFixed(2)} PED/h</span>
+                            {/if}
+                          </div>
+                          <div class="equipment-item-details">
+                            {getItemTypeLabel(equip.item_type)}
+                          </div>
+                        </div>
+                        <div class="button-group">
+                          {#if relevantEffects.length > 0}
+                            {#each relevantEffects as effect, effectIndex}
+                              {@const effectKey = `${effect.Id}-${effect.Properties?.Strength || 0}-${allEffects.findIndex(e => e === effect)}`}
+                              {@const isThisAbilityActive = activePetAbility === effectKey}
+                              {@const effectConsumption = effect.Properties?.NutrioConsumptionPerHour || 0}
+                              {@const tooltipParts = []}
+                              {#if effect.Properties?.Strength}
+                                {@const _ = tooltipParts.push(`${effect.Name}: +${effect.Properties.Strength}${effect.Properties?.Unit || ''}`)}
+                              {:else}
+                                {@const _ = tooltipParts.push(effect.Name)}
+                              {/if}
+                              {#if effectConsumption > 0}
+                                {@const _ = tooltipParts.push(`Consumption: +${effectConsumption.toFixed(1)}/h`)}
+                              {/if}
+                              {@const effectTooltip = tooltipParts.join(' | ')}
+                              {@const skillName = effect.Name.replace('Increased ', '').replace('Added ', '')}
+                              {@const sameSkillCount = relevantEffects.filter(e => e.Name.replace('Increased ', '').replace('Added ', '') === skillName).length}
+                              <button 
+                                class="toggle-btn" 
+                                class:active={isThisAbilityActive}
+                                on:click={() => {
+                                  if (isThisAbilityActive) {
+                                    // Turn off this ability (deactivate pet)
+                                    activePetEffects[equip.item_name] = false;
+                                  } else {
+                                    // Turn off all other pets and activate this ability
+                                    Object.keys(activePetEffects).forEach(key => {
+                                      activePetEffects[key] = false;
+                                    });
+                                    activePetEffects[equip.item_name] = effectKey;
+                                  }
+                                  activePetEffects = {...activePetEffects}; // Trigger reactivity
+                                }}
+                                title={effectTooltip}
+                              >
+                                {#if sameSkillCount === 1 && effect.Properties?.Strength}
+                                  {skillName} {effect.Properties.Strength}{effect.Properties?.Unit || ''}
+                                {:else}
+                                  {skillName}
+                                {/if}
+                              </button>
+                            {/each}
+                          {/if}
+                        </div>
+                      </div>
+                      {#if equip.notes}
+                        <div class="equipment-notes">{equip.notes}</div>
+                      {/if}
+                    </li>
+                  {/each}
+                </ul>
+              </div>
+            {/if}
+            
+            {#if medicalEquipment.length > 0}
+              <div class="equipment-category">
+                <h4>Medical Tools/Chips</h4>
+                <ul class="equipment-list">
+                  {#each medicalEquipment as equip (equip.item_name)}
+                    <li class:active={activeMedicalEquipment?.item_name === equip.item_name}>
+                      <div class="equipment-item-header">
+                        <div class="equipment-item-main">
+                          <div class="equipment-item-name-text">
+                            {#if equip.item_name}
+                              <a href={getItemInternalUrl(equip.item_type, equip.item_name)} class="equipment-item-link">
+                                <strong>{equip.item_name}</strong>
+                              </a>
+                            {:else}
+                              <strong class="unnamed-item">Item ID: {equip.item_id}</strong>
+                            {/if}
+                          </div>
+                          <div class="equipment-item-badges">
+                            {#if equip.tier !== null && equip.tier !== undefined}
+                              <span class="tier-badge">T{equip.tier}</span>
+                            {/if}
+                            {#if equip.is_primary}
+                              <span class="primary-badge">Primary</span>
+                            {/if}
+                            {#if equip.extra_price}
+                              <span class="extra-price">+{parseFloat(equip.extra_price).toFixed(2)} PED/h</span>
+                            {/if}
+                          </div>
+                          <div class="equipment-item-details">
+                            {getItemTypeLabel(equip.item_type)}
+                          </div>
+                        </div>
+                        <div class="button-group">
+                          {#if equip.tier && equip.tier > 0}
+                            <button 
+                              class="toggle-btn tier-toggle" 
+                              class:active={enabledTierEnhancers[equip.item_name]}
+                              disabled={activeMedicalEquipment?.item_name !== equip.item_name}
+                              on:click={() => enabledTierEnhancers[equip.item_name] = !enabledTierEnhancers[equip.item_name]}
+                            >
+                              {enabledTierEnhancers[equip.item_name] ? 'Tiers ON' : 'Tiers OFF'}
+                            </button>
+                          {/if}
+                          <button 
+                            class="use-btn" 
+                            class:active={activeMedicalEquipment?.item_name === equip.item_name}
+                            on:click={() => activeMedicalEquipment = equip}
+                          >
+                            {activeMedicalEquipment?.item_name === equip.item_name ? 'Active' : 'Use'}
+                          </button>
+                        </div>
+                      </div>
+                      {#if equip.notes}
+                        <div class="equipment-notes">{equip.notes}</div>
+                      {/if}
+                    </li>
+                  {/each}
+                </ul>
+              </div>
+            {/if}
+            
+            {#if armorEquipment.length > 0}
+              <div class="equipment-category">
+                <h4>Armor</h4>
+                <ul class="equipment-list">
+                  {#each armorEquipment as equip (equip.item_name)}
+                    <li class:active={equip.tier && equip.tier > 0 ? enabledTierEnhancers[equip.item_name] === true : true}>
+                      <div class="equipment-item-header">
+                        <div class="equipment-item-main">
+                          <div class="equipment-item-name-text">
+                            {#if equip.item_name}
+                              <a href={getItemInternalUrl(equip.item_type, equip.item_name)} class="equipment-item-link">
+                                <strong>{equip.item_name}</strong>
+                              </a>
+                            {:else}
+                              <strong class="unnamed-item">Item ID: {equip.item_id}</strong>
+                            {/if}
+                          </div>
+                          <div class="equipment-item-badges">
+                            {#if equip.tier !== null && equip.tier !== undefined}
+                              <span class="tier-badge">T{equip.tier}</span>
+                            {/if}
+                            {#if equip.is_primary}
+                              <span class="primary-badge">Primary</span>
+                            {/if}
+                            {#if hasAttachments(equip)}
+                              <button class="attachments-badge" on:click|stopPropagation={() => openAttachmentDialog(equip)} title="View attachments">
+                                {countAttachments(equip)} attachment{countAttachments(equip) > 1 ? 's' : ''}
+                              </button>
+                            {/if}
+                            {#if equip.extra_price}
+                              <span class="extra-price">+{parseFloat(equip.extra_price).toFixed(2)} PED/h</span>
+                            {/if}
+                          </div>
+                          <div class="equipment-item-details">
+                            {getItemTypeLabel(equip.item_type)}
+                          </div>
+                        </div>
+                        {#if equip.tier && equip.tier > 0}
+                          <div class="button-group">
+                            <button 
+                              class="toggle-btn tier-toggle" 
+                              class:active={enabledTierEnhancers[equip.item_name]}
+                              on:click={() => enabledTierEnhancers[equip.item_name] = !enabledTierEnhancers[equip.item_name]}
+                            >
+                              {enabledTierEnhancers[equip.item_name] ? 'Tiers ON' : 'Tiers OFF'}
+                            </button>
+                          </div>
+                        {/if}
+                      </div>
+                      {#if equip.notes}
+                        <div class="equipment-notes">{equip.notes}</div>
+                      {/if}
+                    </li>
+                  {/each}
+                </ul>
+              </div>
+            {/if}
+            
+            {#if clothingEquipment.length > 0}
+              <div class="equipment-category">
+                <h4>Clothing/Accessories</h4>
+                <ul class="equipment-list">
+                  {#each clothingEquipment as equip (equip.item_name)}
+                    {@const slot = getClothingSlot(equip.item_name, clothingItems)}
+                    <li class:active={equip.tier && equip.tier > 0 ? enabledTierEnhancers[equip.item_name] === true : true}>
+                      <div class="equipment-item-header">
+                        <div class="equipment-item-main">
+                          <div class="equipment-item-name-text">
+                            {#if equip.item_name}
+                              <a href={getItemInternalUrl(equip.item_type, equip.item_name)} class="equipment-item-link">
+                                <strong>{equip.item_name}</strong>
+                              </a>
+                            {:else}
+                              <strong class="unnamed-item">Item ID: {equip.item_id}</strong>
+                            {/if}
+                          </div>
+                          <div class="equipment-item-badges">
+                            {#if equip.tier !== null && equip.tier !== undefined}
+                              <span class="tier-badge">T{equip.tier}</span>
+                            {/if}
+                            {#if equip.is_primary}
+                              <span class="primary-badge">Primary</span>
+                            {/if}
+                            {#if slot}
+                              <span class="slot-badge">{slot.replace(/_/g, ' ')}</span>
+                            {/if}
+                            {#if equip.extra_price}
+                              <span class="extra-price">+{parseFloat(equip.extra_price).toFixed(2)} PED/h</span>
+                            {/if}
+                          </div>
+                          <div class="equipment-item-details">
+                            {getItemTypeLabel(equip.item_type)}
+                          </div>
+                        </div>
+                        {#if equip.tier && equip.tier > 0}
+                          <div class="button-group">
+                            <button 
+                              class="toggle-btn tier-toggle" 
+                              class:active={enabledTierEnhancers[equip.item_name]}
+                              on:click={() => enabledTierEnhancers[equip.item_name] = !enabledTierEnhancers[equip.item_name]}
+                            >
+                              {enabledTierEnhancers[equip.item_name] ? 'Tiers ON' : 'Tiers OFF'}
+                            </button>
+                          </div>
+                        {/if}
+                      </div>
+                      {#if equip.notes}
+                        <div class="equipment-notes">{equip.notes}</div>
+                      {/if}
+                    </li>
+                  {/each}
+                </ul>
+              </div>
+            {/if}
+            
+            {#if consumableEquipment.length > 0}
+              <div class="equipment-category">
+                <h4>Consumables</h4>
+                <ul class="equipment-list">
+                  {#each consumableEquipment as equip (equip.item_name)}
+                    {@const consumableData = consumables.find(item => item.Name === equip.item_name)}
+                    {@const isEnhancer = consumableData?.Properties?.Type === 'Enhancer'}
+                    <li class:active={enabledConsumables[equip.item_name] === true}>
+                      <div class="equipment-item-header">
+                        <div class="equipment-item-main">
+                          <div class="equipment-item-name-text">
+                            {#if equip.item_name}
+                              <a href={getItemInternalUrl(equip.item_type, equip.item_name)} class="equipment-item-link">
+                                <strong>{equip.item_name}</strong>
+                              </a>
+                            {:else}
+                              <strong class="unnamed-item">Item ID: {equip.item_id}</strong>
+                            {/if}
+                          </div>
+                          <div class="equipment-item-badges">
+                            {#if isEnhancer}
+                              <span class="enhancer-badge">Enhancer</span>
+                            {/if}
+                            {#if equip.extra_price}
+                              <span class="extra-price">+{parseFloat(equip.extra_price).toFixed(2)} PED/h</span>
+                            {/if}
+                          </div>
+                          <div class="equipment-item-details">
+                            {getItemTypeLabel(equip.item_type)}
+                          </div>
+                        </div>
+                        <button 
+                          class="toggle-btn" 
+                          class:active={enabledConsumables[equip.item_name]}
+                          on:click={() => enabledConsumables[equip.item_name] = !enabledConsumables[equip.item_name]}
+                        >
+                          {enabledConsumables[equip.item_name] ? 'Enabled' : 'Disabled'}
+                        </button>
+                      </div>
+                      {#if equip.notes}
+                        <div class="equipment-notes">{equip.notes}</div>
+                      {/if}
+                    </li>
+                  {/each}
+                </ul>
+              </div>
+            {/if}
+          </div>
+        {/if}
+
+        {#if selectedService.review_stats}
+          <div class="info-section">
+            <h3>Reviews</h3>
+            <p>
+              Average: {selectedService.review_stats.average}/10
+              ({selectedService.review_stats.count} reviews)
+            </p>
+          </div>
+        {/if}
+      </div>
+
+      <!-- Availability Section (only for non-scheduled services) -->
+      {#if !(selectedService.type === 'transportation' && selectedService.transportation_details?.service_mode === 'scheduled')}
+        <div class="availability-section">
+          <div class="availability-header">
+            <h3>Availability</h3>
+            {#if isOwner}
+              <a href="/market/services/{selectedService.id}/availability" class="edit-availability-link">Edit Availability</a>
+            {/if}
+          </div>
+          {#if availability.length > 0}
+            <AvailabilityCalendar {availability} readonly={true} />
+          {:else}
+            <p class="no-availability">No availability schedule set.</p>
+          {/if}
+        </div>
+      {/if}
+
+    </div>
+  {/if}
+  </div>
+</div>
+
+{#if showRequestModal}
+  <div class="modal-backdrop" on:click={closeRequestModal}>
+    <div class="modal" on:click|stopPropagation>
+      <div class="modal-header">
+        <h2>{selectedService.title}</h2>
+        <button class="modal-close" on:click={closeRequestModal}>&times;</button>
+      </div>
+
+      {#if selectedService.type === 'transportation'}
+        <div class="modal-tabs">
+          <button
+            class="modal-tab"
+            class:active={requestFormTab === 'request'}
+            on:click={() => requestFormTab = 'request'}
+          >
+            Request Flight
+          </button>
+          <button
+            class="modal-tab"
+            class:active={requestFormTab === 'question'}
+            on:click={() => requestFormTab = 'question'}
+          >
+            Ask a Question
+          </button>
+        </div>
+      {/if}
+
+      <div class="modal-body">
+        {#if user.id === selectedService.user_id && !user.administrator}
+          <div class="owner-preview-notice">
+            <strong>Owner Preview Mode</strong>
+            <p>This is how customers see the request form. You cannot submit requests for your own service.</p>
+          </div>
+        {:else if user.id === selectedService.user_id && user.administrator}
+          <div class="admin-notice">
+            <strong>Admin Mode</strong>
+            <p>As an admin, you can submit requests for your own service for testing purposes.</p>
+          </div>
+        {/if}
+
+        {#if requestFormTab === 'request' && selectedService?.type === 'transportation'}
+          {@const needsTicket = !userHasTicket && !hasSingleUseOffer}
+          {@const formDisabled = needsTicket || (user.id === selectedService.user_id && !user.administrator)}
+
+          {#if needsTicket}
+            <div class="ticket-required-notice">
+              <strong>Ticket Required</strong>
+              <p>You need to purchase a multi-use ticket before requesting a flight. Please visit the "Ticket Offers" section below to purchase a ticket.</p>
+              <p class="muted-text">Note: Single-use tickets are purchased automatically when requesting, but none are currently available.</p>
+            </div>
+          {:else if !userHasTicket && hasSingleUseOffer}
+            <div class="ticket-info-notice">
+              <strong>Automatic Ticket Purchase</strong>
+              <p>A single-use ticket will be automatically purchased when you submit this request.</p>
+            </div>
+          {/if}
+
+          <!-- Transportation: Pickup and Destination (required) -->
+          <div class="form-group">
+            <label for="request-pickup-planet">Pickup Planet *</label>
+            <select id="request-pickup-planet" bind:value={requestPlanetId} disabled={formDisabled}>
+              <option value={null}>-- Select pickup planet --</option>
+              {#each mainPlanets as planet}
+                <option value={planet.Id}>{planet.Name}</option>
+              {/each}
+            </select>
+            <small>The planet where you want to be picked up</small>
+          </div>
+
+          <div class="form-group">
+            <label for="request-destination-planet">Destination Planet *</label>
+            <select id="request-destination-planet" bind:value={requestDestinationPlanetId} disabled={formDisabled}>
+              <option value={null}>-- Select destination planet --</option>
+              {#each mainPlanets as planet}
+                <option value={planet.Id}>{planet.Name}</option>
+              {/each}
+            </select>
+            <small>The planet where you want to be dropped off</small>
+          </div>
+
+          <div class="form-group">
+            <label for="request-message">Message to Provider (optional)</label>
+            <textarea
+              id="request-message"
+              bind:value={requestMessage}
+              placeholder="Any additional notes for the pilot (optional)"
+              rows="3"
+              disabled={formDisabled}
+            ></textarea>
+          </div>
+        {:else}
+          {#if activeRequest && activeRequest.discord_thread_id && !isOwner}
+            <div class="discord-thread-notice">
+              <strong>A Discord thread already exists for your active request.</strong>
+              <p>You can ask questions directly in the thread where the provider can see and respond to them.</p>
+              <a href="/market/services/my/requests/{activeRequest.id}" class="thread-link-btn">View Your Request</a>
+            </div>
+          {:else}
+            <div class="form-group">
+              <label for="question-message">Your Question *</label>
+              <textarea
+                id="question-message"
+                bind:value={questionMessage}
+                placeholder="Ask the provider a question about their service..."
+                rows="5"
+              ></textarea>
+            </div>
+            <p class="form-hint">The provider will receive your question and can respond via Discord or in-game.</p>
+          {/if}
+        {/if}
+
+        {#if requestError}
+          <div class="modal-error">{requestError}</div>
+        {/if}
+      </div>
+
+      <div class="modal-footer">
+        <button class="modal-btn cancel-btn" on:click={closeRequestModal} disabled={requestSubmitting}>
+          Cancel
+        </button>
+        {#if requestFormTab === 'request'}
+          {@const needsTicket = selectedService?.type === 'transportation' && !userHasTicket && !hasSingleUseOffer}
+          {@const missingFlightInfo = selectedService?.type === 'transportation' && (!requestPlanetId || !requestDestinationPlanetId)}
+          <button
+            class="modal-btn submit-btn"
+            on:click={submitRequest}
+            disabled={requestSubmitting || needsTicket || missingFlightInfo || (user.id === selectedService.user_id && !user.administrator)}
+          >
+            {requestSubmitting ? 'Submitting...' : 'Submit Request'}
+          </button>
+        {:else}
+          {#if !(activeRequest && activeRequest.discord_thread_id && !isOwner)}
+            <button
+              class="modal-btn submit-btn"
+              on:click={submitQuestion}
+              disabled={requestSubmitting || !questionMessage.trim()}
+            >
+              {requestSubmitting ? 'Sending...' : 'Send Question'}
+            </button>
+          {/if}
+        {/if}
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Attachment Details Dialog -->
+{#if showAttachmentDialog && attachmentDialogData}
+  {@const att = attachmentDialogData.attachments}
+  {@const item = attachmentDialogData.item}
+  {@const weaponClass = att.weaponClass}
+  <div class="modal-backdrop" on:click={closeAttachmentDialog}>
+    <div class="attachment-dialog" on:click|stopPropagation>
+      <div class="dialog-header">
+        <h3>Attachments for {item.item_name}</h3>
+        <button class="modal-close" on:click={closeAttachmentDialog}>&times;</button>
+      </div>
+      <div class="dialog-body">
+        {#if weaponClass}
+          <div class="weapon-class-indicator">{weaponClass} Weapon</div>
+        {/if}
+
+        <!-- Common attachments for ALL weapon types -->
+        {#if weaponClass && (weaponClass === 'Ranged' || weaponClass === 'Melee' || weaponClass === 'Mindforce')}
+          {#if att.amplifier_name}
+            {@const ampData = weaponAmplifiers.find(a => a.ItemId === att.amplifier_id)}
+            <div class="attachment-item">
+              <div class="attachment-row">
+                <span class="attachment-type">Amplifier</span>
+                <a href={getAttachmentUrl('amplifier', att.amplifier_name)} class="attachment-link">{att.amplifier_name}</a>
+              </div>
+              {#if ampData}
+                <div class="attachment-stats">
+                  {#if ampData.Properties?.Damage}
+                    {@const totalDmg = (ampData.Properties.Damage.Impact || 0) + (ampData.Properties.Damage.Cut || 0) + (ampData.Properties.Damage.Stab || 0) + (ampData.Properties.Damage.Penetration || 0) + (ampData.Properties.Damage.Shrapnel || 0) + (ampData.Properties.Damage.Burn || 0) + (ampData.Properties.Damage.Cold || 0) + (ampData.Properties.Damage.Acid || 0) + (ampData.Properties.Damage.Electric || 0)}
+                    <span class="stat">Damage: +{totalDmg.toFixed(1)}</span>
+                  {/if}
+                  {#if ampData.Properties?.Economy?.Decay}
+                    <span class="stat">Decay: {ampData.Properties.Economy.Decay.toFixed(4)} PEC</span>
+                  {/if}
+                  {#if ampData.Properties?.Economy?.Efficiency}
+                    <span class="stat">Efficiency: {ampData.Properties.Economy.Efficiency.toFixed(1)}%</span>
+                  {/if}
+                </div>
+              {/if}
+            </div>
+          {/if}
+
+          {#if att.absorber_name}
+            {@const absData = absorbers.find(a => a.ItemId === att.absorber_id)}
+            <div class="attachment-item">
+              <div class="attachment-row">
+                <span class="attachment-type">Absorber</span>
+                <a href={getAttachmentUrl('absorber', att.absorber_name)} class="attachment-link">{att.absorber_name}</a>
+              </div>
+              {#if absData}
+                <div class="attachment-stats">
+                  {#if absData.Properties?.Economy?.Absorption}
+                    <span class="stat">Absorption: {(absData.Properties.Economy.Absorption * 100).toFixed(1)}%</span>
+                  {/if}
+                  {#if absData.Properties?.Economy?.Efficiency}
+                    <span class="stat">Efficiency: {absData.Properties.Economy.Efficiency.toFixed(1)}%</span>
+                  {/if}
+                </div>
+              {/if}
+            </div>
+          {/if}
+        {/if}
+
+        <!-- Class-specific attachments -->
+        {#if weaponClass === 'Ranged'}
+          {#if att.scope_name}
+            {@const scopeData = weaponVisionAttachments.find(v => v.ItemId === att.scope_id)}
+            <div class="attachment-item">
+              <div class="attachment-row">
+                <span class="attachment-type">Scope</span>
+                <a href={getAttachmentUrl('scope', att.scope_name)} class="attachment-link">{att.scope_name}</a>
+              </div>
+              {#if scopeData}
+                <div class="attachment-stats">
+                  {#if scopeData.Properties?.SkillModification}
+                    <span class="stat">Skill Mod: +{scopeData.Properties.SkillModification.toFixed(1)}</span>
+                  {/if}
+                  {#if scopeData.Properties?.Economy?.Decay}
+                    <span class="stat">Decay: {scopeData.Properties.Economy.Decay.toFixed(4)} PEC</span>
+                  {/if}
+                </div>
+              {/if}
+            </div>
+
+            {#if att.scope_sight_name}
+              {@const scopeSightData = weaponVisionAttachments.find(v => v.ItemId === att.scope_sight_id)}
+              <div class="attachment-item nested">
+                <div class="attachment-row">
+                  <span class="attachment-type"><span class="nested-arrow">↳</span> Scope Sight</span>
+                  <a href={getAttachmentUrl('sight', att.scope_sight_name)} class="attachment-link">{att.scope_sight_name}</a>
+                </div>
+                {#if scopeSightData}
+                  <div class="attachment-stats">
+                    {#if scopeSightData.Properties?.SkillModification}
+                      <span class="stat">Skill Mod: +{scopeSightData.Properties.SkillModification.toFixed(1)}</span>
+                    {/if}
+                    {#if scopeSightData.Properties?.Economy?.Decay}
+                      <span class="stat">Decay: {scopeSightData.Properties.Economy.Decay.toFixed(4)} PEC</span>
+                    {/if}
+                  </div>
+                {/if}
+              </div>
+            {/if}
+          {/if}
+
+          {#if att.sight_name}
+            {@const sightData = weaponVisionAttachments.find(v => v.ItemId === att.sight_id)}
+            <div class="attachment-item">
+              <div class="attachment-row">
+                <span class="attachment-type">Sight</span>
+                <a href={getAttachmentUrl('sight', att.sight_name)} class="attachment-link">{att.sight_name}</a>
+              </div>
+              {#if sightData}
+                <div class="attachment-stats">
+                  {#if sightData.Properties?.SkillModification}
+                    <span class="stat">Skill Mod: +{sightData.Properties.SkillModification.toFixed(1)}</span>
+                  {/if}
+                  {#if sightData.Properties?.Economy?.Decay}
+                    <span class="stat">Decay: {sightData.Properties.Economy.Decay.toFixed(4)} PEC</span>
+                  {/if}
+                </div>
+              {/if}
+            </div>
+          {/if}
+
+        {:else if weaponClass === 'Melee'}
+          <!-- Melee weapon attachments -->
+          {#if att.matrix_name}
+            {@const matrixData = weaponAmplifiers.find(a => a.ItemId === att.matrix_id)}
+            <div class="attachment-item">
+              <div class="attachment-row">
+                <span class="attachment-type">Matrix</span>
+                <a href={getAttachmentUrl('matrix', att.matrix_name)} class="attachment-link">{att.matrix_name}</a>
+              </div>
+              {#if matrixData}
+                <div class="attachment-stats">
+                  {#if matrixData.Properties?.Damage}
+                    {@const totalDmg = (matrixData.Properties.Damage.Impact || 0) + (matrixData.Properties.Damage.Cut || 0) + (matrixData.Properties.Damage.Stab || 0) + (matrixData.Properties.Damage.Penetration || 0) + (matrixData.Properties.Damage.Shrapnel || 0) + (matrixData.Properties.Damage.Burn || 0) + (matrixData.Properties.Damage.Cold || 0) + (matrixData.Properties.Damage.Acid || 0) + (matrixData.Properties.Damage.Electric || 0)}
+                    <span class="stat">Damage: +{totalDmg.toFixed(1)}</span>
+                  {/if}
+                  {#if matrixData.Properties?.Economy?.Decay}
+                    <span class="stat">Decay: {matrixData.Properties.Economy.Decay.toFixed(4)} PEC</span>
+                  {/if}
+                  {#if matrixData.Properties?.Economy?.Efficiency}
+                    <span class="stat">Efficiency: {matrixData.Properties.Economy.Efficiency.toFixed(1)}%</span>
+                  {/if}
+                </div>
+              {/if}
+            </div>
+          {/if}
+
+        {:else if weaponClass === 'Mindforce'}
+          <!-- Mindforce weapon attachments -->
+          {#if att.implant_name}
+            {@const implantData = mindforceImplants.find(i => i.ItemId === att.implant_id)}
+            <div class="attachment-item">
+              <div class="attachment-row">
+                <span class="attachment-type">Implant</span>
+                <a href={getAttachmentUrl('implant', att.implant_name)} class="attachment-link">{att.implant_name}</a>
+              </div>
+              {#if implantData}
+                <div class="attachment-stats">
+                  {#if implantData.Properties?.Economy?.Absorption}
+                    <span class="stat">Absorption: {(implantData.Properties.Economy.Absorption * 100).toFixed(1)}%</span>
+                  {/if}
+                  {#if implantData.Properties?.Economy?.Efficiency}
+                    <span class="stat">Efficiency: {implantData.Properties.Economy.Efficiency.toFixed(1)}%</span>
+                  {/if}
+                </div>
+              {/if}
+            </div>
+          {/if}
+        {/if}
+
+        <!-- Armor plating (no weapon class) -->
+        {#if att.plate_name}
+          {@const plateData = armorPlatings.find(p => p.Name === att.plate_name)}
+          <div class="attachment-item">
+            <div class="attachment-row">
+              <span class="attachment-type">Plating</span>
+              <a href={getAttachmentUrl('plate', att.plate_name)} class="attachment-link">{att.plate_name}</a>
+            </div>
+            {#if plateData}
+              <div class="attachment-stats">
+                {#if plateData.Properties?.Defense}
+                  {@const totalDef = (plateData.Properties.Defense.Impact || 0) + (plateData.Properties.Defense.Cut || 0) + (plateData.Properties.Defense.Stab || 0) + (plateData.Properties.Defense.Penetration || 0) + (plateData.Properties.Defense.Shrapnel || 0) + (plateData.Properties.Defense.Burn || 0) + (plateData.Properties.Defense.Cold || 0) + (plateData.Properties.Defense.Acid || 0) + (plateData.Properties.Defense.Electric || 0)}
+                  <span class="stat">Defense: +{totalDef.toFixed(1)}</span>
+                {/if}
+                {#if plateData.Properties?.Defense?.Block}
+                  <span class="stat">Block: {plateData.Properties.Defense.Block.toFixed(1)}%</span>
+                {/if}
+                {#if plateData.Properties?.Economy?.Durability}
+                  <span class="stat">Durability: {plateData.Properties.Economy.Durability.toFixed(0)}</span>
+                {/if}
+              </div>
+            {/if}
+          </div>
+        {/if}
+
+        {#if !hasAttachments(item)}
+          <p class="no-attachments">No attachments configured.</p>
+        {/if}
+      </div>
+      <div class="dialog-footer">
+        <button class="btn secondary" on:click={closeAttachmentDialog}>Close</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Check-in Dialog -->
+{#if showCheckinDialog && checkinFlight}
+  <div class="modal-backdrop" on:click={closeCheckinDialog}>
+    <div class="modal" on:click|stopPropagation>
+      <div class="modal-header">
+        <h2>Check In to Flight</h2>
+        <button class="modal-close" on:click={closeCheckinDialog}>&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <p><strong>Scheduled Departure:</strong> {new Date(checkinFlight.scheduled_departure).toLocaleString()}</p>
+
+        {#if checkinFlight.route_type === 'flexible'}
+          <p class="form-hint">This is a flexible route flight. Please specify where you want to be picked up and dropped off.</p>
+
+          <div class="form-group">
+            <label for="checkin-location">Pickup Location *</label>
+            <input
+              type="text"
+              id="checkin-location"
+              bind:value={checkinLocation}
+              placeholder="e.g., Port Atlantis, Twin Peaks"
+              required
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="checkin-planet">Pickup Planet *</label>
+            <select id="checkin-planet" bind:value={checkinPlanetId} required>
+              <option value={null}>-- Select planet --</option>
+              {#each planets as planet}
+                <option value={planet.id}>{planet.Name}</option>
+              {/each}
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="checkin-exit-location">Dropoff Location *</label>
+            <input
+              type="text"
+              id="checkin-exit-location"
+              bind:value={checkinExitLocation}
+              placeholder="e.g., Crystal Palace, Minopolis"
+              required
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="checkin-exit-planet">Dropoff Planet *</label>
+            <select id="checkin-exit-planet" bind:value={checkinExitPlanetId} required>
+              <option value={null}>-- Select planet --</option>
+              {#each planets as planet}
+                <option value={planet.id}>{planet.Name}</option>
+              {/each}
+            </select>
+          </div>
+        {:else}
+          {@const routeStops = typeof checkinFlight.route_stops === 'string' ? JSON.parse(checkinFlight.route_stops) : checkinFlight.route_stops}
+          <div class="form-group">
+            <label>Fixed Route</label>
+            <p class="route-display">
+              {#each routeStops as stop, i}
+                {stop.name || `Planet ${stop.planet_id}`}{#if i < routeStops.length - 1} → {/if}
+              {/each}
+            </p>
+          </div>
+
+          <div class="form-group">
+            <label for="checkin-location">Boarding Location *</label>
+            <input
+              type="text"
+              id="checkin-location"
+              bind:value={checkinLocation}
+              placeholder="e.g., Port Atlantis, Twin Peaks"
+              required
+            />
+          </div>
+
+          <div class="form-group">
+            <label for="checkin-planet">Boarding Planet *</label>
+            <select id="checkin-planet" bind:value={checkinPlanetId} required>
+              <option value={null}>-- Select planet --</option>
+              {#each planets as planet}
+                <option value={planet.id}>{planet.Name}</option>
+              {/each}
+            </select>
+          </div>
+        {/if}
+
+        <p class="form-hint">You can cancel your check-in anytime before the flight enters warp.</p>
+      </div>
+
+      <div class="modal-footer">
+        <button class="modal-btn cancel-btn" on:click={closeCheckinDialog} disabled={checkinSubmitting}>
+          Cancel
+        </button>
+        <button
+          class="modal-btn submit-btn"
+          on:click={submitCheckin}
+          disabled={checkinSubmitting || !checkinLocation.trim() || !checkinPlanetId || (checkinFlight.route_type === 'flexible' && (!checkinExitLocation.trim() || !checkinExitPlanetId))}
+        >
+          {checkinSubmitting ? 'Checking In...' : 'Check In'}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<style>
+  .scroll-container {
+    height: 100%;
+    overflow-y: auto;
+  }
+
+  .page-container {
+    padding: 1rem;
+    padding-bottom: 2rem;
+    max-width: 1200px;
+    margin: 0 auto;
+    box-sizing: border-box;
+  }
+
+  .header-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+
+  h1 {
+    margin: 0;
+  }
+
+  .create-button {
+    background: var(--accent-color, #4a9eff);
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    text-decoration: none;
+    font-weight: 500;
+  }
+
+  .create-button:hover {
+    background: var(--accent-color-hover, #3a8eef);
+  }
+
+  .header-buttons {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+  }
+
+  .my-services-button {
+    background: var(--secondary-color);
+    color: var(--text-color);
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    text-decoration: none;
+    font-weight: 500;
+    border: 1px solid var(--border-color);
+  }
+
+  .my-services-button:hover {
+    background: var(--hover-color);
+  }
+
+  .header-action-buttons {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+  }
+
+  .header-action-btn {
+    padding: 0.5rem 1rem;
+    border: none;
+    border-radius: 4px;
+    font-size: 0.95rem;
+    cursor: pointer;
+    font-weight: 500;
+  }
+
+  .header-action-btn.question-btn {
+    background: var(--secondary-color);
+    color: var(--text-color);
+    border: 1px solid #666;
+  }
+
+  .header-action-btn.question-btn:hover {
+    background: var(--hover-color);
+  }
+
+  .header-action-btn.request-btn {
+    background: #4a9eff;
+    color: white;
+  }
+
+  .header-action-btn.request-btn:hover {
+    background: #3a8eef;
+  }
+
+  .header-action-btn.active-request-btn {
+    background: #10b981;
+    color: white;
+    text-decoration: none;
+  }
+
+  .header-action-btn.active-request-btn:hover {
+    background: #059669;
+  }
+
+  .active-request-banner {
+    background: #d1fae5;
+    border: 1px solid #10b981;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .active-request-banner .banner-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .active-request-banner .banner-title {
+    font-weight: 600;
+    color: #059669;
+  }
+
+  .active-request-banner .banner-text {
+    font-size: 0.9rem;
+    color: var(--text-muted, #666);
+  }
+
+  .active-request-banner .banner-link {
+    background: #10b981;
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    text-decoration: none;
+    font-size: 0.9rem;
+    white-space: nowrap;
+  }
+
+  .active-request-banner .banner-link:hover {
+    background: #059669;
+  }
+
+  .filters-bar {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 1rem;
+  }
+
+  .planet-filter {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.95rem;
+  }
+
+  .planet-filter span {
+    color: var(--text-color);
+    font-weight: 500;
+  }
+
+  .planet-filter select {
+    padding: 0.5rem 0.75rem;
+    border: 1px solid #666;
+    border-radius: 4px;
+    background: var(--secondary-color);
+    color: var(--text-color);
+    font-size: 0.95rem;
+    cursor: pointer;
+    min-width: 150px;
+  }
+
+  .planet-filter select:hover {
+    background: var(--hover-color);
+  }
+
+  .type-selector {
+    margin: 2rem 0;
+  }
+
+  .type-selector h2 {
+    margin: 0 0 1rem 0;
+    font-size: 1.25rem;
+    color: var(--text-color);
+  }
+
+  .type-buttons {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+  }
+
+  .type-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem 1rem;
+    background: var(--secondary-color);
+    border: 2px solid #666;
+    border-radius: 8px;
+    color: var(--text-color);
+    font-size: 1.1rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .type-btn:hover {
+    background: var(--hover-color);
+    border-color: #4a9eff;
+  }
+
+  .type-btn.active {
+    background: linear-gradient(135deg, rgba(74, 158, 255, 0.2), var(--secondary-color));
+    border-color: #4a9eff;
+    box-shadow: 0 0 0 2px rgba(74, 158, 255, 0.3);
+  }
+
+  .service-count {
+    font-size: 0.85rem;
+    font-weight: 400;
+    color: #888;
+    margin-top: 0.25rem;
+  }
+
+  .empty-state {
+    text-align: center;
+    padding: 3rem;
+    color: #888;
+  }
+
+  .empty-state a {
+    color: #4a9eff;
+  }
+
+  .back-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+
+  .back-link, .edit-link {
+    color: #4a9eff;
+    text-decoration: none;
+  }
+
+  .back-link:hover, .edit-link:hover {
+    text-decoration: underline;
+  }
+
+  .service-detail {
+    background-color: var(--secondary-color);
+    border: 1px solid #666;
+    border-radius: 8px;
+    padding: 1.5rem;
+  }
+
+  .service-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+  }
+
+  .service-header h2 {
+    margin: 0;
+  }
+
+  .service-type-badge {
+    background: var(--accent-color, #4a9eff);
+    color: white;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
+  }
+
+  .busy-badge {
+    background: #e74c3c;
+    color: white;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
+  }
+
+  .inactive-badge {
+    background: var(--text-muted, #888);
+    color: white;
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
+  }
+
+  .inactive-banner {
+    background: var(--warning-bg, #fef3c7);
+    border: 1px solid var(--warning-color, #f59e0b);
+    color: var(--warning-color, #92400e);
+    padding: 1rem;
+    border-radius: 8px;
+    margin-bottom: 1.5rem;
+  }
+
+  .inactive-banner strong {
+    display: block;
+    margin-bottom: 0.5rem;
+  }
+
+  .inactive-banner p {
+    margin: 0;
+    font-size: 0.9rem;
+  }
+
+  .inactive-banner a {
+    color: var(--accent-color, #4a9eff);
+  }
+
+  .service-info {
+    display: grid;
+    gap: 1rem;
+  }
+
+  .info-section h3 {
+    margin: 0 0 0.5rem 0;
+    font-size: 0.9rem;
+    color: #888;
+    text-transform: uppercase;
+  }
+
+  .info-section p {
+    margin: 0;
+  }
+
+  .pilots-list {
+    margin-top: 0.5rem;
+    font-size: 0.95rem;
+    color: var(--text-muted, #aaa);
+  }
+
+  .equipment-list {
+    margin: 0;
+    padding-left: 1.5rem;
+  }
+
+  .equipment-list li {
+    margin-bottom: 0.25rem;
+  }
+
+  .availability-section {
+    margin-top: 1.5rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid #666;
+  }
+
+  .availability-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+
+  .availability-header h3 {
+    margin: 0;
+    font-size: 1rem;
+    color: #888;
+    text-transform: uppercase;
+  }
+
+  .edit-availability-link {
+    color: #4a9eff;
+    text-decoration: none;
+    font-size: 0.9rem;
+  }
+
+  .edit-availability-link:hover {
+    text-decoration: underline;
+  }
+
+  .no-availability {
+    color: #888;
+    font-style: italic;
+    margin: 0;
+  }
+
+  @media (max-width: 600px) {
+    .page-container {
+      padding: 0.75rem;
+    }
+
+    .header-row {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.75rem;
+    }
+
+    .filters-row {
+      flex-direction: column;
+    }
+
+    .type-select {
+      width: 100%;
+    }
+
+    .search-input {
+      min-width: 100%;
+    }
+
+    .back-row {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 0.5rem;
+    }
+
+    .service-detail {
+      padding: 1rem;
+    }
+
+    .service-header {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+
+    .header-action-buttons {
+      flex-direction: column;
+      width: 100%;
+    }
+
+    .header-action-btn {
+      width: 100%;
+    }
+  }
+
+  /* Modal Styles */
+  .modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 1rem;
+  }
+
+  .modal {
+    background: var(--secondary-color);
+    border: 1px solid #666;
+    border-radius: 8px;
+    width: 100%;
+    max-width: 600px;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+  }
+
+  .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.5rem;
+    border-bottom: 1px solid #444;
+  }
+
+  .modal-header h2 {
+    margin: 0;
+    font-size: 1.25rem;
+    color: var(--text-color);
+  }
+
+  .modal-tabs {
+    display: flex;
+    border-bottom: 1px solid var(--border-color, #444);
+  }
+
+  .modal-tab {
+    flex: 1;
+    padding: 0.75rem 1rem;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-muted, #888);
+    cursor: pointer;
+    font-size: 0.95rem;
+    transition: all 0.2s ease;
+  }
+
+  .modal-tab:hover {
+    color: var(--text-color);
+  }
+
+  .modal-tab.active {
+    color: var(--accent-color, #4a9eff);
+    border-bottom-color: var(--accent-color, #4a9eff);
+  }
+
+  .admin-notice {
+    background: var(--accent-color-bg, #e0f2fe);
+    border: 1px solid var(--accent-color, #4a9eff);
+    color: var(--accent-color, #0369a1);
+    padding: 1rem;
+    border-radius: 4px;
+    margin-bottom: 1.5rem;
+  }
+
+  .admin-notice strong {
+    display: block;
+    margin-bottom: 0.5rem;
+  }
+
+  .admin-notice p {
+    margin: 0;
+  }
+
+  .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+  }
+
+  @media (max-width: 500px) {
+    .form-row {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  .form-hint {
+    font-size: 0.85rem;
+    color: var(--text-muted, #888);
+    margin: 0;
+  }
+
+  .modal-close {
+    background: none;
+    border: none;
+    color: var(--text-color);
+    font-size: 2rem;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0;
+    width: 2rem;
+    height: 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .modal-close:hover {
+    color: #4a9eff;
+  }
+
+  .modal-body {
+    padding: 1.5rem;
+  }
+
+  .owner-preview-notice {
+    background: #fff3cd;
+    border: 1px solid #ffc107;
+    color: #856404;
+    padding: 1rem;
+    border-radius: 4px;
+    margin-bottom: 1.5rem;
+  }
+
+  .owner-preview-notice strong {
+    display: block;
+    margin-bottom: 0.5rem;
+  }
+
+  .owner-preview-notice p {
+    margin: 0;
+  }
+
+  .ticket-required-notice {
+    background: #5a2a2a;
+    border: 1px solid #ff6b6b;
+    color: #ffcccc;
+    padding: 1rem;
+    border-radius: 4px;
+    margin-bottom: 1.5rem;
+  }
+
+  .ticket-required-notice strong {
+    display: block;
+    margin-bottom: 0.5rem;
+    color: #ff6b6b;
+  }
+
+  .ticket-required-notice p {
+    margin: 0.5rem 0;
+  }
+
+  .ticket-info-notice {
+    background: #2a3a5a;
+    border: 1px solid #4a9eff;
+    color: #cce0ff;
+    padding: 1rem;
+    border-radius: 4px;
+    margin-bottom: 1.5rem;
+  }
+
+  .ticket-info-notice strong {
+    display: block;
+    margin-bottom: 0.5rem;
+    color: #4a9eff;
+  }
+
+  .ticket-info-notice p {
+    margin: 0.5rem 0;
+  }
+
+  .form-group {
+    margin-bottom: 1.5rem;
+  }
+
+  .form-group label {
+    display: block;
+    margin-bottom: 0.75rem;
+    color: var(--text-color);
+    font-weight: 500;
+  }
+
+  .form-group input,
+  .form-group textarea,
+  .form-group select {
+    width: 100%;
+    padding: 0.75rem;
+    background: var(--secondary-color);
+    border: 1px solid #666;
+    border-radius: 4px;
+    color: var(--text-color);
+    font-family: inherit;
+    font-size: 1rem;
+    box-sizing: border-box;
+  }
+
+  .form-group select {
+    cursor: pointer;
+  }
+
+  .form-group select:hover {
+    background: var(--hover-color);
+  }
+
+  .form-group select option {
+    background: var(--secondary-color);
+    color: var(--text-color);
+  }
+
+  .form-group input:focus,
+  .form-group textarea:focus,
+  .form-group select:focus {
+    outline: none;
+    border-color: #4a9eff;
+  }
+
+  .form-group input:disabled,
+  .form-group textarea:disabled,
+  .form-group select:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .form-group textarea {
+    resize: none;
+    min-height: 100px;
+  }
+
+  .form-group small {
+    display: block;
+    margin-top: 0.375rem;
+    font-size: 0.85rem;
+    color: var(--text-muted, #888);
+  }
+
+  .modal-error {
+    background: #fee;
+    border: 1px solid #fcc;
+    color: #c00;
+    padding: 0.75rem;
+    border-radius: 4px;
+    margin-top: 1rem;
+  }
+
+  .discord-thread-notice {
+    background: #d1fae5;
+    border: 1px solid #10b981;
+    border-radius: 8px;
+    padding: 1rem;
+    text-align: center;
+  }
+
+  .discord-thread-notice strong {
+    color: #059669;
+    display: block;
+    margin-bottom: 0.5rem;
+  }
+
+  .discord-thread-notice p {
+    color: var(--text-muted, #666);
+    font-size: 0.9rem;
+    margin: 0 0 1rem 0;
+  }
+
+  .discord-thread-notice .thread-link-btn {
+    display: inline-block;
+    background: #10b981;
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    text-decoration: none;
+    font-size: 0.9rem;
+  }
+
+  .discord-thread-notice .thread-link-btn:hover {
+    background: #059669;
+  }
+
+  .modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 1rem;
+    padding: 1.5rem;
+    border-top: 1px solid #444;
+  }
+
+  .modal-btn {
+    padding: 0.75rem 1.5rem;
+    border: none;
+    border-radius: 4px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background-color 0.2s;
+  }
+
+  .cancel-btn {
+    background: var(--secondary-color);
+    color: var(--text-color);
+    border: 1px solid #666;
+  }
+
+  .cancel-btn:hover:not(:disabled) {
+    background: var(--hover-color);
+  }
+
+  .submit-btn {
+    background: #4a9eff;
+    color: white;
+  }
+
+  .submit-btn:hover:not(:disabled) {
+    background: #3a8eef;
+  }
+
+  .modal-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .equipment-category {
+    margin-bottom: 1.5rem;
+  }
+
+  .equipment-category h4 {
+    color: #4a9eff;
+    margin-bottom: 0.75rem;
+    font-size: 1rem;
+    font-weight: 600;
+  }
+
+  .equipment-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+
+  .equipment-list li {
+    background: #1a1a1a;
+    border: 1px solid #333;
+    padding: 0.75rem 1rem;
+    margin-bottom: 0.5rem;
+    border-radius: 4px;
+  }
+
+  .light-mode .equipment-list li {
+    background: #f8f8f8;
+    border: 1px solid #ddd;
+  }
+
+  .light-mode .equipment-list li strong,
+  .light-mode .equipment-item-link strong {
+    color: #000 !important;
+  }
+
+  .equipment-list li.active {
+    background: linear-gradient(to right, rgba(74, 158, 255, 0.25), rgba(74, 158, 255, 0.12));
+    border-color: #4a9eff;
+    box-shadow: inset 0 0 0 1px rgba(74, 158, 255, 0.3);
+  }
+  
+  .light-mode .equipment-list li.active {
+    box-shadow: inset 0 0 0 1px rgba(74, 158, 255, 0.5);
+  }
+  
+  .equipment-list li.active strong,
+  .equipment-list li.active .equipment-item-link strong {
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  }
+  
+  .light-mode .equipment-list li.active strong,
+  .light-mode .equipment-list li.active .equipment-item-link strong {
+    text-shadow: none;
+  }
+  
+  .equipment-item-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .equipment-item-main {
+    flex: 1;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-rows: auto auto;
+    gap: 0.25rem 0.5rem;
+    min-width: 0;
+  }
+
+  .equipment-item-name-text {
+    font-weight: 500;
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .equipment-item-badges {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    grid-column: 2;
+    grid-row: 1 / 3;
+    align-content: flex-start;
+  }
+
+  .equipment-item-details {
+    font-size: 0.9rem;
+    color: #888;
+    grid-column: 1;
+    grid-row: 2;
+  }
+  
+  .equipment-category:first-child .equipment-list li {
+    border-color: #4a9eff;
+    background: linear-gradient(to right, rgba(74, 158, 255, 0.15), #1a1a1a);
+  }
+
+  .use-btn,
+  .toggle-btn {
+    margin-left: auto;
+    padding: 0.35rem 0.75rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s;
+    border: 1px solid #555;
+  }
+
+  .use-btn {
+    background: #2a2a2a;
+    color: #aaa;
+  }
+
+  .use-btn:hover {
+    background: #3a3a3a;
+    border-color: #4a9eff;
+  }
+
+  .use-btn.active {
+    background: linear-gradient(135deg, #4a9eff 0%, #3a7ecc 100%);
+    color: white;
+    border-color: #4a9eff;
+  }
+
+  .toggle-btn {
+    background: #2a2a2a;
+    color: #aaa;
+  }
+
+  .toggle-btn:hover {
+    background: #3a3a3a;
+    border-color: #66bb6a;
+  }
+
+  .toggle-btn.active {
+    background: linear-gradient(135deg, #66bb6a 0%, #4caf50 100%);
+    color: white;
+    border-color: #66bb6a;
+  }
+
+  .toggle-btn.tier-toggle {
+    margin-left: auto;
+    background: #2a2a2a;
+    color: #aaa;
+  }
+
+  .toggle-btn.tier-toggle:hover {
+    background: #3a3a3a;
+    border-color: #764ba2;
+  }
+
+  .toggle-btn.tier-toggle.active {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border-color: #667eea;
+  }
+
+  .toggle-btn.tier-toggle:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    background: #1a1a1a;
+    color: #555;
+    border-color: #333;
+  }
+
+  .toggle-btn.tier-toggle:disabled:hover {
+    background: #1a1a1a;
+    border-color: #333;
+  }
+
+  .enhancer-badge {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 0.2rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+
+  .equipment-list li strong {
+    color: #fff;
+    margin-right: 0.5rem;
+  }
+  
+  .equipment-item-link {
+    color: #4a9eff;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+  }
+  
+  .equipment-item-link:hover {
+    text-decoration: underline;
+  }
+  
+  .equipment-item-link strong {
+    color: #4a9eff;
+  }
+  
+  .import-loadout-btn {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    border: none;
+    padding: 0.35rem 0.75rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+    margin-left: auto;
+  }
+  
+  .import-loadout-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(102, 126, 234, 0.4);
+  }
+  
+  .import-loadout-btn:active {
+    transform: translateY(0);
+  }
+
+  .tier-badge {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    padding: 0.2rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.75rem;
+    font-weight: 600;
+  }
+
+  .primary-badge {
+    background: linear-gradient(135deg, #ffa500 0%, #ff8c00 100%);
+    color: white;
+    padding: 0.2rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border: 1px solid #4a9eff;
+  }
+
+  .attachments-badge {
+    background: linear-gradient(135deg, #2d9cdb 0%, #56ccf2 100%);
+    color: white;
+    padding: 0.2rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    transition: transform 0.1s, box-shadow 0.1s;
+  }
+
+  .attachments-badge:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 2px 6px rgba(45, 156, 219, 0.4);
+  }
+
+  .button-group {
+    margin-left: auto;
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .slot-badge {
+    background: #2a2a2a;
+    color: #aaa;
+    padding: 0.2rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.75rem;
+    text-transform: capitalize;
+  }
+
+  .item-type-badge {
+    background: #2a2a2a;
+    color: #aaa;
+    padding: 0.2rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.75rem;
+    text-transform: capitalize;
+  }
+
+  .extra-price {
+    color: #4a9eff;
+    font-weight: 600;
+    font-size: 0.85rem;
+  }
+
+  .formula-text {
+    color: #888;
+    font-size: 0.8rem;
+    font-weight: normal;
+    font-style: italic;
+    margin-left: 0.5rem;
+  }
+
+  .equipment-notes {
+    width: 100%;
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid #333;
+    color: #aaa;
+    font-size: 0.85rem;
+    font-style: italic;
+  }
+  
+  .unnamed-item {
+    color: #888;
+    font-style: italic;
+  }
+
+  .protection-stats {
+    margin-top: 1.5rem;
+    padding: 1rem;
+    background: var(--hover-color);
+    border-radius: 4px;
+  }
+
+  .protection-stats h4 {
+    margin: 0 0 1rem 0;
+    color: var(--text-color);
+  }
+
+  .damage-type-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 0.5rem;
+  }
+
+  .damage-type {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.5rem;
+    background: var(--secondary-color);
+    border-radius: 4px;
+    font-size: 0.9rem;
+  }
+
+  .damage-label {
+    font-weight: 600;
+    color: var(--text-color);
+  }
+
+  .damage-values {
+    color: #4a9eff;
+    font-family: monospace;
+  }
+
+  .pet-effects {
+    margin-top: 0.75rem;
+    padding: 0.75rem;
+    background: var(--hover-color);
+    border-radius: 4px;
+    font-size: 0.85rem;
+  }
+
+  .pet-effects strong {
+    color: var(--text-color);
+  }
+
+  .pet-effects ul {
+    margin: 0.5rem 0 0 0;
+    padding-left: 1.5rem;
+  }
+
+  .pet-effects li {
+    color: #4a9eff;
+    margin: 0.25rem 0;
+  }
+
+  @media (max-width: 600px) {
+    .modal-header {
+      padding: 1rem;
+    }
+
+    .modal-body {
+      padding: 1rem;
+    }
+
+    .modal-footer {
+      padding: 1rem;
+      flex-direction: column;
+    }
+
+    .modal-btn {
+      width: 100%;
+    }
+  }
+
+  /* Attachment Dialog Styles */
+  .attachment-dialog {
+    background: var(--secondary-color, #1a1a1a);
+    border: 1px solid var(--border-color, #444);
+    border-radius: 8px;
+    width: 90%;
+    max-width: 500px;
+    max-height: 80vh;
+    overflow-y: auto;
+  }
+
+  .dialog-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem;
+    border-bottom: 1px solid var(--border-color, #444);
+  }
+
+  .dialog-header h3 {
+    margin: 0;
+    font-size: 1.1rem;
+    color: var(--text-color);
+  }
+
+  .dialog-body {
+    padding: 1rem;
+  }
+
+  .dialog-footer {
+    display: flex;
+    justify-content: flex-end;
+    padding: 1rem;
+    border-top: 1px solid var(--border-color, #444);
+  }
+
+  .weapon-class-indicator {
+    background: var(--accent-color, #4a9eff);
+    color: white;
+    padding: 0.25rem 0.75rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    display: inline-block;
+    margin-bottom: 1rem;
+  }
+
+  .attachment-item {
+    background: var(--main-color, #0d0d0d);
+    border: 1px solid var(--border-color, #333);
+    border-radius: 6px;
+    padding: 0.75rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .attachment-item.nested {
+    margin-left: 1.5rem;
+    border-left: 3px solid var(--accent-color, #4a9eff);
+  }
+
+  .attachment-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+  }
+
+  .attachment-type {
+    color: var(--text-muted, #888);
+    font-size: 0.85rem;
+  }
+
+  .attachment-type .nested-arrow {
+    color: var(--accent-color, #4a9eff);
+    margin-right: 0.25rem;
+  }
+
+  .attachment-link {
+    color: var(--accent-color, #4a9eff);
+    text-decoration: none;
+    font-weight: 500;
+  }
+
+  .attachment-link:hover {
+    text-decoration: underline;
+  }
+
+  .attachment-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .attachment-stats .stat {
+    background: var(--secondary-color, #222);
+    color: var(--text-color, #ddd);
+    padding: 0.2rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.8rem;
+  }
+
+  .no-attachments {
+    color: var(--text-muted, #888);
+    font-style: italic;
+    text-align: center;
+    padding: 1rem;
+  }
+
+  .section-header-with-action {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+  }
+
+  .section-header-with-action h3 {
+    margin: 0;
+  }
+
+  .manage-btn {
+    background: #4a9eff;
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 0.875rem;
+  }
+
+  .manage-btn:hover {
+    background: #3a8eef;
+    text-decoration: none;
+  }
+
+  .manage-btn.primary {
+    background: #10b981;
+  }
+
+  .manage-btn.primary:hover {
+    background: #059669;
+  }
+
+  .flight-dashboard-section {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(16, 185, 129, 0.05) 100%);
+    border: 1px solid rgba(16, 185, 129, 0.3);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .flight-dashboard-label {
+    font-weight: 600;
+    color: #10b981;
+  }
+
+  .admin-note {
+    background: #3a3a5a;
+    color: #9f9fff;
+    padding: 0.75rem;
+    border-radius: 4px;
+    margin-bottom: 0.75rem;
+    font-size: 0.875rem;
+  }
+
+  .admin-note em {
+    font-style: normal;
+  }
+
+  .ticket-offers-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 1rem;
+    margin-top: 0.75rem;
+  }
+
+  .muted-text {
+    color: var(--text-muted, #888);
+  }
+
+  .manage-link {
+    display: inline-block;
+    margin-top: 0.5rem;
+    color: #4a9eff;
+    text-decoration: none;
+  }
+
+  .manage-link:hover {
+    text-decoration: underline;
+  }
+
+  .flight-dashboard-link {
+    background: #4a9eff;
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    text-decoration: none;
+    font-weight: 500;
+  }
+
+  .flight-dashboard-link:hover {
+    background: #3a8eef;
+    text-decoration: none;
+  }
+
+  .service-mode-explanation {
+    background: #2a2a2a;
+    padding: 0.75rem;
+    border-radius: 4px;
+    border-left: 3px solid #4a9eff;
+    line-height: 1.5;
+  }
+
+  .upcoming-flights {
+    display: grid;
+    gap: 0.75rem;
+    margin-top: 0.75rem;
+  }
+
+  .flight-card {
+    background: #2a2a2a;
+    padding: 1rem;
+    border-radius: 4px;
+    border: 1px solid #3a3a3a;
+  }
+
+  .flight-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+  }
+
+  .flight-status {
+    padding: 0.25rem 0.5rem;
+    border-radius: 3px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+
+  .flight-status.scheduled {
+    background: #2a5a3a;
+    color: #6fdc8c;
+  }
+
+  .flight-status.boarding {
+    background: #5a4a2a;
+    color: #ffc107;
+  }
+
+  .flight-status.running {
+    background: #2a4a5a;
+    color: #4a9eff;
+  }
+
+  .flight-type {
+    font-size: 0.75rem;
+    color: #888;
+    text-transform: uppercase;
+  }
+
+  .flight-time {
+    font-size: 1rem;
+    margin-bottom: 0.5rem;
+  }
+
+  .flight-current-state {
+    font-size: 0.95rem;
+    color: #4a9eff;
+    font-weight: 600;
+    padding: 0.5rem;
+    background: #4a9eff15;
+    border-radius: 4px;
+    margin-bottom: 0.5rem;
+    border-left: 3px solid #4a9eff;
+  }
+
+  .flight-route {
+    font-size: 0.85rem;
+    color: #bbb;
+    margin-bottom: 0.75rem;
+  }
+
+  .route-label {
+    color: #888;
+    margin-right: 0.5rem;
+  }
+
+  .route-planet {
+    display: inline-block;
+    opacity: 0.6;
+    transition: opacity 0.3s;
+  }
+
+  .route-planet.visited {
+    color: #4caf50;
+    opacity: 1;
+    font-weight: 500;
+  }
+
+  .route-planet.current {
+    color: #4a9eff;
+    opacity: 1;
+    font-weight: 600;
+    animation: pulse 2s infinite;
+  }
+
+  .route-planet.in-warp {
+    color: #4a9eff;
+    opacity: 1;
+    font-weight: 600;
+    animation: warp-pulse 1.5s infinite;
+  }
+
+  .route-arrow {
+    display: inline-block;
+    margin: 0 0.4rem;
+    color: #555;
+    opacity: 0.6;
+  }
+
+  .route-arrow.completed {
+    color: #4caf50;
+    opacity: 1;
+  }
+
+  .route-arrow.in-warp {
+    color: #4a9eff;
+    opacity: 1;
+    animation: warp-pulse 1.5s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+  }
+
+  @keyframes warp-pulse {
+    0%, 100% {
+      opacity: 1;
+      transform: scale(1);
+    }
+    50% {
+      opacity: 0.7;
+      transform: scale(1.05);
+    }
+  }
+
+  .check-in-btn {
+    display: inline-block;
+    background: #4caf50;
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    text-decoration: none;
+    font-weight: 500;
+    font-size: 0.9rem;
+    border: none;
+    cursor: pointer;
+  }
+
+  .check-in-btn:hover {
+    background: #45a049;
+    text-decoration: none;
+  }
+
+  .restore-btn {
+    display: inline-block;
+    background: #ff9800;
+    color: white;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    border: none;
+    font-weight: 500;
+    font-size: 0.9rem;
+    cursor: pointer;
+  }
+
+  .restore-btn:hover {
+    background: #f57c00;
+  }
+
+  .cancelled-flight {
+    opacity: 0.7;
+    border-color: #5a3a3a;
+  }
+
+  .flight-status.cancelled {
+    background: #5a2a2a;
+    color: #ff6b6b;
+  }
+
+  .highlighted-flight {
+    border: 2px solid #4a9eff;
+    box-shadow: 0 0 8px rgba(74, 158, 255, 0.3);
+  }
+
+  .expand-flights-btn {
+    background: none;
+    border: none;
+    color: #4a9eff;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: 600;
+    padding: 0.5rem 0;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .expand-flights-btn:hover {
+    color: #3a8eef;
+  }
+
+  .route-display {
+    background: #1a1a1a;
+    padding: 0.75rem;
+    border-radius: 4px;
+    margin: 0.5rem 0;
+    font-size: 0.9rem;
+  }
+</style>

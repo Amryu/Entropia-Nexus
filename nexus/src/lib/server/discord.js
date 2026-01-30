@@ -1,15 +1,21 @@
 //@ts-nocheck
-const client_id = process.env.DISCORD_CLIENT_ID;
-const client_secret = process.env.DISCORD_CLIENT_SECRET;
-const redirect_uri = process.env.DISCORD_REDIRECT_URI;
+
+// Read environment variables at request time, not module load time
+function getConfig() {
+  return {
+    client_id: process.env.DISCORD_CLIENT_ID,
+    client_secret: process.env.DISCORD_CLIENT_SECRET,
+    redirect_uri: process.env.DISCORD_REDIRECT_URI
+  };
+}
 
 export async function handleCode(code) {
-  const data = new URLSearchParams();
-  data.append('client_id', client_id);
-  data.append('client_secret', client_secret);
-  data.append('grant_type', 'authorization_code');
-  data.append('code', code);
-  data.append('redirect_uri', redirect_uri);
+  const { client_id, client_secret, redirect_uri } = getConfig();
+
+  // Log for debugging
+  console.log('Discord OAuth - redirect_uri:', redirect_uri);
+  console.log('Discord OAuth - client_id exists:', !!client_id);
+  console.log('Discord OAuth - client_secret exists:', !!client_secret);
 
   const response = await fetch('https://discord.com/api/oauth2/token', {
     method: 'POST',
@@ -29,7 +35,8 @@ export async function handleCode(code) {
 }
 
 export async function handleRefresh(token) {
-  // Get Discord token
+  const { client_id, client_secret, redirect_uri } = getConfig();
+
   let response = await fetch('https://discord.com/api/oauth2/token', {
     method: 'POST',
     headers: {
@@ -48,6 +55,8 @@ export async function handleRefresh(token) {
 }
 
 export async function handleRevoke(token) {
+  const { client_id, client_secret } = getConfig();
+
   let response = await fetch('https://discord.com/api/oauth2/token/revoke', {
     method: 'POST',
     headers: {

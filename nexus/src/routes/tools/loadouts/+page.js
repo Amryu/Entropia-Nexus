@@ -1,38 +1,7 @@
 // @ts-nocheck
-import { apiCall, pageResponse } from '$lib/util';
+import { pageResponse } from '$lib/util';
 
-export async function load({ fetch }) {
-  const [weapons, weaponamplifiers, weaponvisionattachments, absorbers, mindforceimplants, armorsets, armors, armorplatings, enhancers, pets, clothing, stimulants] = await Promise.all([
-    apiCall(fetch, `/weapons`),
-    apiCall(fetch, `/weaponamplifiers`),
-    apiCall(fetch, `/weaponvisionattachments`),
-    apiCall(fetch, `/absorbers`),
-    apiCall(fetch, `/mindforceimplants`),
-    apiCall(fetch, `/armorsets`),
-    apiCall(fetch, `/armors`),
-    apiCall(fetch, `/armorplatings`),
-    apiCall(fetch, `/enhancers`),
-    apiCall(fetch, `/pets`),
-    apiCall(fetch, `/clothings`),
-    apiCall(fetch, `/stimulants`)
-  ]);
-
-  return pageResponse(
-    null,
-    null,
-    {
-      weapons,
-      weaponamplifiers,
-      weaponvisionattachments,
-      absorbers,
-      mindforceimplants,
-      armorsets,
-      armors,
-      armorplatings,
-      enhancers,
-      clothing,
-      pets,
-      stimulants
-    }
-  );
+export async function load() {
+  // Entity data will be lazy loaded on client for faster initial page load
+  return pageResponse(null, null, {});
 }

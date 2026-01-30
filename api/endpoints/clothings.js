@@ -91,4 +91,4 @@ function register(app){
   app.get('/clothings/:clothing', async (req,res) => { const r = await getClothing(req.params.clothing); if (r) res.json(r); else res.status(404).send(); });
 }
 
-module.exports = { register, getClothings, getClothing };
+module.exports = { register, getClothings, getClothing, formatClothing };

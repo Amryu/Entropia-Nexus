@@ -58,4 +58,4 @@ function register(app){
   app.get('/absorbers/:absorber', async (req,res)=>{ const r = await getAbsorber(req.params.absorber); if(r) res.json(r); else res.status(404).send(); });
 }
 
-module.exports = { register, getAbsorbers, getAbsorber };
+module.exports = { register, getAbsorbers, getAbsorber, formatAbsorber };

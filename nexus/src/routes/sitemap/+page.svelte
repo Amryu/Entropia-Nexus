@@ -24,7 +24,7 @@
   <meta name="keywords" content="Sitemap, Entropia Universe, Entropia, Entropia Nexus, EU, PE, Items, Mobs, Maps, Tools, MindArk, Wiki">
   <link rel="canonical" href="https://entropianexus.com/sitemap" />
 </svelte:head>
-<div style="widht: 100%; height: calc(100vh - 81px); overflow-y:auto;">
+<div style="width: 100%; height: 100%; overflow-y: auto;">
   <div style="margin-left: 100px; margin-right: 100px; margin-top: 50px;">
     <h1 style="text-align: center;">Sitemap</h1>
     {#if data && data.links}

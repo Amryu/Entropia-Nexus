@@ -1,9 +1,18 @@
 // @ts-nocheck
+/**
+ * Material wiki pages
+ * Uses new WikiPage layout pattern.
+ */
 let items;
 
-import { decodeURIComponentSafe, handlePageLoad, apiCall } from '$lib/util';
+import { redirect } from '@sveltejs/kit';
+import { handlePageLoad, encodeURIComponentSafe, decodeURIComponentSafe } from '$lib/util';
 
 export async function load({ fetch, params, url }) {
+  if (url.searchParams.get('mode') === 'view') {
+    redirect(301, `/items/materials/${encodeURIComponentSafe(params.slug)}`);
+  }
+
   const config = {
     items: 'materials',
     types: { tierable: false },
@@ -21,6 +30,9 @@ export async function load({ fetch, params, url }) {
   if (response.object && config.mode === 'edit' && response.additional?.acquisition?.RefiningRecipes) {
     response.object.RefiningRecipes = response.additional.acquisition.RefiningRecipes;
   }
+
+  // Provide allItems for navigation
+  response.allItems = items;
 
   return response;
 }

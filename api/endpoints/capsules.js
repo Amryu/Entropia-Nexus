@@ -53,4 +53,4 @@ function register(app){
   app.get('/capsules/:capsule', async (req,res) => { const r = await getCapsule(req.params.capsule); if (r) res.json(r); else res.status(404).send(); });
 }
 
-module.exports = { register, getCapsules, getCapsule };
+module.exports = { register, getCapsules, getCapsule, formatCapsule };

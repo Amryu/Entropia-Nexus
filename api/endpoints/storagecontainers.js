@@ -55,4 +55,4 @@ function register(app){
   app.get('/storagecontainers/:storageContainer', async (req,res)=>{ const r = await getStorageContainer(req.params.storageContainer); if(r) res.json(r); else res.status(404).send(); });
 }
 
-module.exports = { register, getStorageContainers, getStorageContainer };
+module.exports = { register, getStorageContainers, getStorageContainer, formatStorageContainer };

@@ -94,4 +94,4 @@ function register(app){
   });
 }
 
-module.exports = { register, getWeaponAmplifiers, getWeaponAmplifier };
+module.exports = { register, getWeaponAmplifiers, getWeaponAmplifier, formatWeaponAmplifier };

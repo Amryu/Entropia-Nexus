@@ -222,4 +222,4 @@ function register(app){
   });
 }
 
-module.exports = { register, getBlueprints, getBlueprint };
+module.exports = { register, getBlueprints, getBlueprint, formatBlueprint };

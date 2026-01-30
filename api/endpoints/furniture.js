@@ -45,4 +45,4 @@ function register(app){
   app.get('/furniture/:furniture', async (req,res) => { const r = await getFurniture(req.params.furniture); if (r) res.json(r); else res.status(404).send(); });
 }
 
-module.exports = { register, getFurnitures, getFurniture };
+module.exports = { register, getFurnitures, getFurniture, formatFurniture };

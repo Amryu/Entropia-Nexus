@@ -59,4 +59,4 @@ function register(app){
   app.get('/mindforceimplants/:mindforceImplant', async (req,res) => { const r = await getMindforceImplant(req.params.mindforceImplant); if (r) res.json(r); else res.status(404).send(); });
 }
 
-module.exports = { register, getMindforceImplants, getMindforceImplant };
+module.exports = { register, getMindforceImplants, getMindforceImplant, formatMindforceImplant };

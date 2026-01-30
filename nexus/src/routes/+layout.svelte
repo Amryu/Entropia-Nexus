@@ -75,6 +75,19 @@
   text-decoration: none;
   color: var(--text-color);
 }
+
+.app-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.app-content {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+}
 </style>
 
 <svelte:head>
@@ -83,5 +96,9 @@
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
   <link rel="manifest" href="/site.webmanifest">
 </svelte:head>
-<Menu user={data?.session?.user} />
-<slot></slot>
+<div class="app-layout">
+  <Menu user={data?.session?.user} realUser={data?.session?.realUser} />
+  <div class="app-content">
+    <slot></slot>
+  </div>
+</div>

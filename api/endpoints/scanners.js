@@ -57,4 +57,4 @@ function register(app){
   app.get('/scanners/:scanner', async (req,res) => { const r = await getScanner(req.params.scanner); if (r) res.json(r); else res.status(404).send(); });
 }
 
-module.exports = { register, getScanners, getScanner };
+module.exports = { register, getScanners, getScanner, formatScanner };

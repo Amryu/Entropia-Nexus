@@ -41,6 +41,8 @@ const skillcategories = require('./skillcategories');
 const refiners = require('./refiners');
 const acquisition = require('./acquisition');
 const usage = require('./usage');
+const audit = require('./audit');
+const entitychanges = require('./entitychanges');
 // Newly added (migration phase 3)
 let absorbers, misctools, signs, strongboxes, storagecontainers, vehicleattachmenttypes, vehicles, weaponvisionattachments, weapons, tiers, pets, mobloots, mobmaturities, mobspawns, mobspecies, mobs;
 try { absorbers = require('./absorbers'); } catch {}
@@ -105,6 +107,8 @@ function registerAll(app){
   refiners.register(app);
   acquisition.register(app);
   usage.register(app);
+  audit.register(app);
+  entitychanges.register(app);
   // Conditionally register new modules if present
   absorbers?.register(app);
   misctools?.register(app);

@@ -4,21 +4,33 @@ import { getUserInfo, handleCode } from '$lib/server/discord.js';
 import { v4 as uuidv4 } from 'uuid';
 
 export async function GET({ cookies, url, locals }) {
-  const state = url.searchParams.get('state').substring(0, 36);
+  // Determine if we should use secure cookies based on protocol
+  const isSecure = url.protocol === 'https:';
+  const stateParam = url.searchParams.get('state');
+  const code = url.searchParams.get('code');
 
-  if (state !== cookies.get(import.meta.env.VITE_STATE_COOKIE_NAME)) {
-    return new Response(null, {
-      status: 400,
-      body: 'Invalid state'
-    });
+  if (!stateParam) {
+    return new Response('Missing state parameter', { status: 400 });
   }
 
-  let response = await handleCode(url.searchParams.get('code'));
+  if (!code) {
+    return new Response('Missing code parameter', { status: 400 });
+  }
+
+  const state = stateParam.substring(0, 36);
+  const stateCookie = cookies.get(import.meta.env.VITE_STATE_COOKIE_NAME);
+
+  if (!stateCookie || state !== stateCookie) {
+    console.error('State mismatch - state:', state, 'cookie:', stateCookie, 'cookie exists:', !!stateCookie);
+    return new Response('Invalid state - please try logging in again. This may happen if cookies are blocked or expired.', { status: 400 });
+  }
+
+  let response = await handleCode(code);
 
   if (response.error) {
-    return new Response(null, {
-      status: 400,
-      body: response.error
+    console.error('Discord OAuth error:', response.error, response.error_description);
+    return new Response(`Discord OAuth error: ${response.error_description || response.error}`, {
+      status: 400
     });
   }
 
@@ -42,7 +54,7 @@ export async function GET({ cookies, url, locals }) {
   cookies.set(import.meta.env.VITE_SESSION_COOKIE_NAME, newSessionId, {
     maxAge: 60 * 60 * 24 * 7,
     path: '/',
-    secure: import.meta.env.MODE === 'development' ? false : true,
+    secure: isSecure,
     httpOnly: true,
     sameSite: 'Lax',
     domain: import.meta.env.VITE_DOMAIN
@@ -51,7 +63,7 @@ export async function GET({ cookies, url, locals }) {
   cookies.set(import.meta.env.VITE_STATE_COOKIE_NAME, '', {
     maxAge: 0,
     path: '/',
-    secure: import.meta.env.MODE === 'development' ? false : true,
+    secure: isSecure,
     httpOnly: true,
     sameSite: 'Lax',
     domain: import.meta.env.VITE_DOMAIN
@@ -68,7 +80,7 @@ export async function GET({ cookies, url, locals }) {
     });
   }
 
-  const redirect = url.searchParams.get('state').substring(37);
+  const redirect = stateParam.substring(37) || '/';
 
   return new Response(null, {
     status: 302,

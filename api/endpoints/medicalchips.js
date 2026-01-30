@@ -101,4 +101,4 @@ function register(app){
   app.get('/medicalchips/:medicalChip', async (req,res) => { const r = await getMedicalChip(req.params.medicalChip); if (r) res.json(r); else res.status(404).send(); });
 }
 
-module.exports = { register, getMedicalChips, getMedicalChip };
+module.exports = { register, getMedicalChips, getMedicalChip, formatMedicalChip };

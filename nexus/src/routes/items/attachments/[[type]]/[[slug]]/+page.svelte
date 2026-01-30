@@ -1,746 +1,1033 @@
-<script lang="ts">
+<!--
+  @component Attachments Wiki Page
+  Wikipedia-style layout with floating infobox on the right side.
+  Handles 7 subtypes: weaponamplifiers, weaponvisionattachments, absorbers,
+  finderamplifiers, armorplatings, enhancers, mindforceimplants
+
+  Legacy editConfig preserved in attachments-legacy/+page.svelte
+-->
+<script>
   // @ts-nocheck
   import '$lib/style.css';
+  import { page } from '$app/stores';
+  import { onMount } from 'svelte';
+  import { clampDecimals, encodeURIComponentSafe, getTypeLink } from '$lib/util';
 
-  import { clampDecimals, getTypeLink } from '$lib/util.js';
+  // Wiki components
+  import WikiPage from '$lib/components/wiki/WikiPage.svelte';
+  import WikiSEO from '$lib/components/wiki/WikiSEO.svelte';
+  import DataSection from '$lib/components/wiki/DataSection.svelte';
 
-  import EntityViewer from "$lib/components/EntityViewer.svelte";
-  import Acquisition from "$lib/components/Acquisition.svelte";
-  import { editConfigEffectsOnEquip } from '$lib/editConfigUtil.js';
+  // Legacy components for data display
+  import Acquisition from '$lib/components/Acquisition.svelte';
 
   export let data;
 
-  const navButtonInfo = [
-    {
-      Label: 'Wp',
-      Title: 'Weapon Amplifiers',
-      Type: 'weaponamplifiers',
-    },
-    {
-      Label: 'S/S',
-      Title: 'Sights/Scopes',
-      Type: 'weaponvisionattachments',
-    },
-    {
-      Label: 'Abs',
-      Title: 'Deterioation Absorbers',
-      Type: 'absorbers',
-    },
-    {
-      Label: 'Fnd',
-      Title: 'Finder Amplifiers',
-      Type: 'finderamplifiers',
-    },
-    {
-      Label: 'Plt',
-      Title: 'Armor Platings',
-      Type: 'armorplatings',
-    },
-    {
-      Label: 'Enh',
-      Title: 'Enhancers',
-      Type: 'enhancers',
-    },
-    {
-      Label: 'Imp',
-      Title: 'Mindforce Implants',
-      Type: 'mindforceimplants',
-    }
-  ]
+  $: attachment = data.object;
+  $: user = data.session?.user;
+  $: additional = data.additional || {};
 
-  function getTypeLabel(type) {
+  // For multi-type pages, data.items is an object keyed by type
+  $: allItems = (() => {
+    if (!data.items) return [];
+    if (additional.type && data.items[additional.type]) {
+      return data.items[additional.type];
+    }
+    // No type selected - combine all items from all types
+    const combined = [];
+    for (const [type, items] of Object.entries(data.items)) {
+      for (const item of items) {
+        combined.push({ ...item, _type: type });
+      }
+    }
+    return combined;
+  })();
+
+  // Type navigation buttons
+  const typeButtons = [
+    { label: 'Amplifiers', title: 'Weapon Amplifiers', type: 'weaponamplifiers' },
+    { label: 'Scopes', title: 'Sights/Scopes', type: 'weaponvisionattachments' },
+    { label: 'Absorbers', title: 'Deterioration Absorbers', type: 'absorbers' },
+    { label: 'Finder Amp', title: 'Finder Amplifiers', type: 'finderamplifiers' },
+    { label: 'Platings', title: 'Armor Platings', type: 'armorplatings' },
+    { label: 'Enhancers', title: 'Enhancers', type: 'enhancers' },
+    { label: 'Implants', title: 'Mindforce Implants', type: 'mindforceimplants' }
+  ];
+
+  // Type name mapping
+  function getTypeName(type) {
     switch (type) {
-      case 'weaponamplifiers':
-        return 'Weapon Amplifier';
-      case 'weaponvisionattachment':
-        return 'Sight/Scope';
-      case 'absorbers':
-        return 'Deterioation Absorber';
-      case 'finderamplifiers':
-        return 'Finder Amplifier';
-      case 'armorplatings':
-        return 'Armor Plates';
-      case 'enhancers':
-        return 'Enhancer';
-      case 'mindforceimplants':
-        return 'Mindforce Implant';
-      default:
-        return 'Other';
+      case 'weaponamplifiers': return 'Weapon Amplifier';
+      case 'weaponvisionattachments': return 'Sight/Scope';
+      case 'absorbers': return 'Deterioration Absorber';
+      case 'finderamplifiers': return 'Finder Amplifier';
+      case 'armorplatings': return 'Armor Plating';
+      case 'enhancers': return 'Enhancer';
+      case 'mindforceimplants': return 'Mindforce Implant';
+      default: return 'Attachment';
     }
   }
 
-  function getCost(item, type) {
-    return item.Properties?.Economy.Decay != null && (item.Properties?.Economy.AmmoBurn != null || type !== 'weaponamplifiers')
-      ? (item.Properties?.Economy.Decay + (item.Properties?.Economy.AmmoBurn ?? 0) / 100)
-      : null;
+  // Entity type for editing
+  function getEntityType(type) {
+    switch (type) {
+      case 'weaponamplifiers': return 'WeaponAmplifier';
+      case 'weaponvisionattachments': return 'WeaponVisionAttachment';
+      case 'absorbers': return 'Absorber';
+      case 'finderamplifiers': return 'FinderAmplifier';
+      case 'armorplatings': return 'ArmorPlating';
+      case 'enhancers': return 'Enhancer';
+      case 'mindforceimplants': return 'MindforceImplant';
+      default: return null;
+    }
+  }
+
+  // Build navigation items
+  $: navItems = allItems;
+
+  // Navigation filters - type buttons with deselection support
+  $: navFilters = typeButtons.map(btn => ({
+    label: btn.label,
+    title: btn.title,
+    type: btn.type,
+    active: additional.type === btn.type,
+    href: additional.type === btn.type ? '/items/attachments' : `/items/attachments/${btn.type}`
+  }));
+
+  // Type-specific sidebar table columns
+  function getNavTableColumns(type) {
+    switch (type) {
+      case 'weaponamplifiers':
+        return [
+          { key: 'type', header: 'Type', width: '55px', filterPlaceholder: 'BLP', getValue: (item) => item.Properties?.Type, format: (v) => v || '-' },
+          { key: 'tt', header: 'TT', width: '55px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? clampDecimals(v, 1, 2) : '-' }
+        ];
+      case 'weaponvisionattachments':
+        return [
+          { key: 'zoom', header: 'Zoom', width: '55px', filterPlaceholder: '>2', getValue: (item) => item.Properties?.Zoom, format: (v) => v != null ? `${v.toFixed(1)}x` : '-' },
+          { key: 'tt', header: 'TT', width: '55px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? clampDecimals(v, 1, 2) : '-' }
+        ];
+      case 'absorbers':
+        return [
+          { key: 'abs', header: 'Abs', width: '55px', filterPlaceholder: '>5', getValue: (item) => item.Properties?.Economy?.Absorption, format: (v) => v != null ? `${(v * 100).toFixed(0)}%` : '-' },
+          { key: 'tt', header: 'TT', width: '55px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? clampDecimals(v, 1, 2) : '-' }
+        ];
+      case 'finderamplifiers':
+        return [
+          { key: 'decay', header: 'Decay', width: '55px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Economy?.Decay, format: (v) => v != null ? v.toFixed(2) : '-' },
+          { key: 'tt', header: 'TT', width: '55px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? clampDecimals(v, 1, 2) : '-' }
+        ];
+      case 'armorplatings':
+        return [
+          { key: 'def', header: 'Def', width: '55px', filterPlaceholder: '>10', getValue: (item) => getTotalDefense(item), format: (v) => v != null ? v.toFixed(1) : '-' },
+          { key: 'tt', header: 'TT', width: '55px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? clampDecimals(v, 1, 2) : '-' }
+        ];
+      case 'enhancers':
+        return [
+          { key: 'tool', header: 'Tool', width: '55px', filterPlaceholder: 'Weapon', getValue: (item) => item.Properties?.Tool, format: (v) => v ? v.slice(0, 6) : '-' },
+          { key: 'type', header: 'Type', width: '55px', filterPlaceholder: 'Damage', getValue: (item) => item.Properties?.Type, format: (v) => v ? v.slice(0, 6) : '-' }
+        ];
+      case 'mindforceimplants':
+        return [
+          { key: 'abs', header: 'Abs', width: '55px', filterPlaceholder: '>5', getValue: (item) => item.Properties?.Economy?.Absorption, format: (v) => v != null ? `${(v * 100).toFixed(0)}%` : '-' },
+          { key: 'tt', header: 'TT', width: '55px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? clampDecimals(v, 1, 2) : '-' }
+        ];
+      default:
+        return [
+          { key: 'cat', header: 'Cat', width: '70px', filterPlaceholder: 'Amp', getValue: (item) => getTypeName(item._type || additional.type).slice(0, 8), format: (v) => v || '-' },
+          { key: 'tt', header: 'TT', width: '55px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? clampDecimals(v, 1, 2) : '-' }
+        ];
+    }
+  }
+
+  $: navTableColumns = getNavTableColumns(additional.type);
+
+  // Custom href generator for items
+  function getItemHref(item, basePath) {
+    const type = item._type || additional.type;
+    if (type) {
+      return `/items/attachments/${type}/${encodeURIComponentSafe(item.Name)}`;
+    }
+    return `${basePath}/${encodeURIComponentSafe(item.Name)}`;
+  }
+
+  // Breadcrumbs
+  $: breadcrumbs = [
+    { label: 'Items', href: '/items' },
+    { label: 'Attachments', href: '/items/attachments' },
+    ...(additional.type ? [{ label: getTypeName(additional.type) + 's', href: `/items/attachments/${additional.type}` }] : []),
+    ...(attachment ? [{ label: attachment.Name }] : [])
+  ];
+
+  // SEO
+  $: seoDescription = attachment?.Properties?.Description ||
+    `${attachment?.Name || 'Attachment'} - ${getTypeName(additional.type)} in Entropia Universe.`;
+
+  $: canonicalUrl = attachment
+    ? `https://entropianexus.com/items/attachments/${additional.type}/${encodeURIComponentSafe(attachment.Name)}`
+    : additional.type
+    ? `https://entropianexus.com/items/attachments/${additional.type}`
+    : 'https://entropianexus.com/items/attachments';
+
+  // ========== CALCULATION FUNCTIONS ==========
+  function getCost(item) {
+    if (!item?.Properties?.Economy) return null;
+    const decay = item.Properties.Economy.Decay ?? 0;
+    const ammoBurn = item.Properties.Economy.AmmoBurn ?? 0;
+    if (additional.type === 'weaponamplifiers') {
+      return decay != null && ammoBurn != null ? decay + ammoBurn / 100 : null;
+    }
+    return decay;
   }
 
   function getTotalUses(item) {
-    return item.Properties?.Economy.MaxTT != null && item.Properties?.Economy.Decay != null
-      ? Math.floor(((item.Properties?.Economy.MaxTT ?? null) - (item.Properties?.Economy.MinTT ?? 0)) / (item.Properties?.Economy.Decay / 100))
-      : null;
+    if (!item?.Properties?.Economy?.MaxTT || !item?.Properties?.Economy?.Decay) return null;
+    const maxTT = item.Properties.Economy.MaxTT;
+    const minTT = item.Properties.Economy.MinTT ?? 0;
+    const decay = item.Properties.Economy.Decay;
+    return Math.floor((maxTT - minTT) / (decay / 100));
   }
 
   function getTotalDamage(item) {
-    return (item.Properties?.Damage?.Impact ?? 0) + (item.Properties?.Damage?.Cut ?? 0) + (item.Properties?.Damage?.Stab ?? 0) + (item.Properties?.Damage?.Penetration ?? 0) + (item.Properties?.Damage?.Shrapnel ?? 0) + (item.Properties?.Damage?.Burn ?? 0) + (item.Properties?.Damage?.Cold ?? 0) + (item.Properties?.Damage?.Acid ?? 0) + (item.Properties?.Damage?.Electric ?? 0);
+    if (!item?.Properties?.Damage) return 0;
+    const d = item.Properties.Damage;
+    return (d.Impact ?? 0) + (d.Cut ?? 0) + (d.Stab ?? 0) + (d.Penetration ?? 0) +
+           (d.Shrapnel ?? 0) + (d.Burn ?? 0) + (d.Cold ?? 0) + (d.Acid ?? 0) + (d.Electric ?? 0);
   }
 
   function getEffectiveDamage(item) {
     const totalDamage = getTotalDamage(item);
+    return totalDamage != null ? totalDamage * (0.88 * 0.75 + 0.02 * 1.75) : null;
+  }
 
-    return totalDamage != null
-      ? totalDamage * (0.88*0.75 + 0.02*1.75)
-      : null;
+  function getDPP(item) {
+    const cost = getCost(item);
+    const effectiveDamage = getEffectiveDamage(item);
+    if (cost && effectiveDamage) return effectiveDamage / cost;
+    return null;
   }
 
   function getTotalDefense(item) {
-    return (item.Properties?.Defense?.Impact ?? 0) + (item.Properties?.Defense?.Cut ?? 0) + (item.Properties?.Defense?.Stab ?? 0) + (item.Properties?.Defense?.Penetration ?? 0) + (item.Properties?.Defense?.Shrapnel ?? 0) + (item.Properties?.Defense?.Burn ?? 0) + (item.Properties?.Defense?.Cold ?? 0) + (item.Properties?.Defense?.Acid ?? 0) + (item.Properties?.Defense?.Electric ?? 0);
+    if (!item?.Properties?.Defense) return 0;
+    const d = item.Properties.Defense;
+    return (d.Impact ?? 0) + (d.Cut ?? 0) + (d.Stab ?? 0) + (d.Penetration ?? 0) +
+           (d.Shrapnel ?? 0) + (d.Burn ?? 0) + (d.Cold ?? 0) + (d.Acid ?? 0) + (d.Electric ?? 0);
   }
 
   function getMaxArmorDecay(item) {
-    return item.Properties?.Economy.Durability && getTotalDefense(item) 
-      ? getTotalDefense(item) * ((100000 - item.Properties?.Economy.Durability) / 100000) * 0.05
-      : null;
+    if (!item?.Properties?.Economy?.Durability || !getTotalDefense(item)) return null;
+    return getTotalDefense(item) * ((100000 - item.Properties.Economy.Durability) / 100000) * 0.05;
   }
 
   function getTotalAbsorption(item) {
-    return item.Properties?.Economy.MaxTT && getMaxArmorDecay(item)
-      ? getTotalDefense(item) * ((item.Properties?.Economy.MaxTT - (item.Properties?.Economy.MinTT ?? 0)) / (getMaxArmorDecay(item) / 100))
-      : null;
+    if (!item?.Properties?.Economy?.MaxTT) return null;
+    const maxArmorDecay = getMaxArmorDecay(item);
+    if (!maxArmorDecay) return null;
+    const minTT = item.Properties.Economy.MinTT ?? 0;
+    return getTotalDefense(item) * ((item.Properties.Economy.MaxTT - minTT) / (maxArmorDecay / 100));
   }
 
   function getEnhancerEffect(item) {
-    switch (`${item.Properties?.Tool} ${item.Properties?.Type}`) {
-      case 'Weapon Damage':
-        return 'Increases damage, decay and ammo burn by 10%';
-      case 'Weapon Range':
-        return 'Increases range by 5%';
-      case 'Weapon Skill Modification':
-        return 'Increases your profession levels for the weapon by 0.5';
-      case 'Weapon Economy':
-        return 'Reduces the decay and ammo burn by approximately 1-1.1%';
-      case 'Weapon Accuracy':
-        return 'Increases the chance for a critical hit by 0.2% (at max skill)';
-      case 'Armor Defense':
-        return 'Increases all protection by 5%';
-      case 'Armor Durability':
-        return 'Increases durability by 10%';
-      case 'Medical Tool Economy':
-        return 'Reduces the decay by 10%';
-      case 'Medical Tool Heal':
-        return 'Increases the decay and the amount healed by 5%';
-      case 'Medical Tool Skill Modification':
-        return 'Increases your profession levels for the tool by 0.5';
-      case 'Mining Excavator Speed':
-        return 'Increases the efficiency by 10%';
-      case 'Mining Finder Depth':
-        return 'Increases the average depth by approximately 7.5%';
-      case 'Mining Finder Range':
-        return 'Increases the range by 1%';
-      case 'Mining Finder Skill Modification':
-        return 'Increases your profession levels for the finder by 0.5';
-      default:
-        return null;
-    }
-  }
-
-  let propertiesDataFunction = (object, additional) => { 
-    let type = getTypeLabel(additional.type);
-    let cost = getCost(object, type);
-    let totalUses = getTotalUses(object);
-    let totalDamage =  getTotalDamage(object);
-    let effectiveDamage = getEffectiveDamage(object);
-    let totalDefense = getTotalDefense(object);
-    let maxArmorDecay = getMaxArmorDecay(object);
-    let totalAbsorption = getTotalAbsorption(object);
-    let enhancerEffect = getEnhancerEffect(object);
-
-    let onEquip = {};
-
-    if (object.EffectsOnEquip != null && object.EffectsOnEquip.length > 0) {
-      object.EffectsOnEquip
-        .sort((a,b) => a.Name.localeCompare(b.Name))
-        .forEach(effect => onEquip[effect.Name] = `${effect.Values.Strength}${effect.Values.Unit}`);
-    }
-
-    return {
-      General: {
-        AttachmentType: {
-          Label: 'Attachment Type',
-          Value: type,
-        },
-        AmplifierType: additional.type === 'weaponamplifiers' ? {
-          Label: 'Amplifier Type',
-          Value: object.Properties?.Type ?? 'N/A',
-        } : null,
-        Weight: object.Properties?.Weight != null ? `${clampDecimals(object.Properties?.Weight, 1, 6)}kg` : 'N/A',
-        Zoom: additional.type === 'weaponvisionattachments' ? {
-          Label: 'Zoom',
-          Value: object.Properties?.Zoom != null ? `${object.Properties?.Zoom.toFixed(1)}x` : 'N/A',
-        } : null,
-        Tool: additional.type === 'enhancers' ? object.Properties?.Tool ?? 'N/A' : null,
-        EnhancerType: additional.type === 'enhancers' ? {
-          Label: 'Enhancer Type',
-          Value: object.Properties?.Type ?? 'N/A',
-        } : null,
-        Socket: additional.type === 'enhancers' ? {
-          Label: 'Socket #',
-          Value: object.Properties?.Socket ?? 'N/A',
-        } : null,
-        ProfessionLevel: additional.type === 'mindforceimplants' ? {
-          Label: 'Max. Profession Level',
-          Value: object.Properties?.MaxProfessionLevel ?? 'N/A',
-        } : null,
-        MiningEfficiency: additional.type === 'finderamplifiers' ? {
-          Label: 'Efficiency',
-          Tooltip: 'The efficiency of the finder amplifier. This is just an indirect measure of how much decay is lost per probe drop.',
-          Value: object.Properties?.Efficiency != null ? `${object.Properties?.Efficiency.toFixed(1)}` : 'N/A',
-        } : null,
-        MinProfessionLevel: additional.type === 'finderamplifiers' ? {
-          Label: 'Min. Profession Level',
-          Value: object.Properties?.MinProfessionLevel ?? 'N/A',
-        } : null,
-      },
-      Economy: {
-        Efficiency: additional.type === 'weaponamplifiers' || additional.type ==='weaponvisionattachments' || additional.type === 'absorbers' ? {
-          Label: 'Efficiency',
-          Value: object.Properties?.Economy.Efficiency != null ? `${object.Properties?.Economy.Efficiency.toFixed(1)}%` : 'N/A',
-          Bold: true
-        } : null,
-        DPP: additional.type === 'weaponamplifiers' ? {
-          Label: 'DPP',
-          Tooltip: 'Damage per PEC',
-          Value: cost !== null && effectiveDamage != null ? (effectiveDamage / cost).toFixed(4) : 'N/A',
-          Bold: true
-        } : null,
-        MaxTT: {
-          Label: 'Max. TT',
-          Value: object.Properties?.Economy.MaxTT != null ? `${clampDecimals(object.Properties?.Economy.MaxTT, 2, 8) ?? 'N/A'} PED` : 'N/A',
-        },
-        MinTT: additional.type !== 'enhancers' ? {
-          Label: 'Min. TT',
-          Value: object.Properties?.Economy.MinTT != null ? `${clampDecimals(object.Properties?.Economy.MinTT, 2, 8) ?? 'N/A'} PED` : 'N/A',
-        } : null,
-        Absorption: additional.type === 'absorbers' || additional.type === 'mindforceimplants' ? {
-          Label: 'Absorption',
-          Tooltip: 'The percentage of decay this item will in place of it\'s tool.',
-          Value: object.Properties?.Economy.Absorption != null ? `${clampDecimals(object.Properties?.Economy.Absorption * 100, 0, 2) ?? 'N/A'} %` : 'N/A',
-        } : null,
-        Decay: additional.type === 'weaponamplifiers' || additional.type === 'weaponvisionattachments' || additional.type === 'finderamplifiers'
-          ? object.Properties?.Economy.Decay != null ? `${object.Properties?.Economy.Decay.toFixed(4) ?? 'N/A'} PEC` : 'N/A'
-          : null,
-        MaxDecay: additional.type === 'armorplatings' ? {
-          Label: 'Maximum Decay',
-          Tooltip: 'The maximum amount of decay the armor can take at once, if it uses its full protection.',
-          Value: maxArmorDecay != null ? `${maxArmorDecay.toFixed(4)} PEC` : 'N/A',
-        } : null,
-        Durability: additional.type === 'armorplatings' ? {
-          Label: 'Durability',
-          Value: `${object.Properties?.Economy.Durability ?? 'N/A'}`,
-        } : null,
-        AmmoBurn: additional.type === 'weaponamplifiers' ? {
-          Label: 'Ammo Burn',
-          Value: `${object.Properties?.Economy?.AmmoBurn ?? 'N/A'}`,
-        } : null,
-        Cost: additional.type === 'weaponamplifiers' ? `${cost?.toFixed(4) ?? 'N/A'} PEC` : null,
-      },
-      Damage: additional.type === 'weaponamplifiers' ? {
-        Impact: object.Properties?.Damage?.Impact > 0 ? `${object.Properties?.Damage?.Impact?.toFixed(1)}` : null,
-        Cut: object.Properties?.Damage?.Cut > 0 ? `${object.Properties?.Damage?.Cut?.toFixed(1)}` : null,
-        Stab: object.Properties?.Damage?.Stab > 0 ? `${object.Properties?.Damage?.Stab?.toFixed(1)}` : null,
-        Penetration: object.Properties?.Damage?.Penetration > 0 ? `${object.Properties?.Damage?.Penetration?.toFixed(1)}` : null,
-        Shrapnel: object.Properties?.Damage?.Shrapnel > 0 ? `${object.Properties?.Damage?.Shrapnel?.toFixed(1)}` : null,
-        Burn: object.Properties?.Damage?.Burn > 0 ? `${object.Properties?.Damage?.Burn?.toFixed(1)}` : null,
-        Cold: object.Properties?.Damage?.Cold > 0 ? `${object.Properties?.Damage?.Cold?.toFixed(1)}` : null,
-        Acid: object.Properties?.Damage?.Acid > 0 ? `${object.Properties?.Damage?.Acid?.toFixed(1)}` : null,
-        Electric: object.Properties?.Damage?.Electric > 0 ? `${object.Properties?.Damage?.Electric?.toFixed(1)}` : null,
-        Total: {
-          Label: 'Total',
-          Value: totalDamage != null ? `${(totalDamage).toFixed(1)}` : 'N/A',
-          Bold: true,
-        },
-      } : null,
-      Defense: additional.type === 'armorplatings' ? {
-        Block: object.Properties?.Defense?.Block > 0 ? `${object.Properties?.Defense?.Block?.toFixed(1)}%` : null,
-        Impact: object.Properties?.Defense?.Impact > 0 ? `${object.Properties?.Defense?.Impact?.toFixed(1)}` : null,
-        Cut: object.Properties?.Defense?.Cut > 0 ? `${object.Properties?.Defense?.Cut?.toFixed(1)}` : null,
-        Stab: object.Properties?.Defense?.Stab > 0 ? `${object.Properties?.Defense?.Stab?.toFixed(1)}` : null,
-        Penetration: object.Properties?.Defense?.Penetration > 0 ? `${object.Properties?.Defense?.Penetration?.toFixed(1)}` : null,
-        Shrapnel: object.Properties?.Defense?.Shrapnel > 0 ? `${object.Properties?.Defense?.Shrapnel?.toFixed(1)}` : null,
-        Burn: object.Properties?.Defense?.Burn > 0 ? `${object.Properties?.Defense?.Burn?.toFixed(1)}` : null,
-        Cold: object.Properties?.Defense?.Cold > 0 ? `${object.Properties?.Defense?.Cold?.toFixed(1)}` : null,
-        Acid: object.Properties?.Defense?.Acid > 0 ? `${object.Properties?.Defense?.Acid?.toFixed(1)}` : null,
-        Electric: object.Properties?.Defense?.Electric > 0 ? `${object.Properties?.Defense?.Electric?.toFixed(1)}` : null,
-        Total: {
-          Label: 'Total',
-          Value: totalDefense != null ? `${(totalDefense).toFixed(1)}` : 'N/A',
-          Bold: true,
-        },
-      } : null,
-      Skill: additional.type === 'weaponvisionattachments' || additional.type === 'finderamplifiers' ? {
-        SkillModification: additional.type === 'weaponvisionattachments' ? {
-          Label: 'Skill Modification Factor',
-          Tooltip: 'This stat will grant a bonus on your Hit skill for hit calculation purposes. Its effectiveness linearly scales with distance to the target, gaining maximum benefit at maximum range.',
-          Value: object.Properties?.SkillModification != null ? `${object.Properties?.SkillModification}%` : 'N/A',
-        } : null,
-        SkillBonus: additional.type === 'weaponvisionattachments' ? {
-          Label: 'Skill Bonus',
-          Tooltip: 'Increases the amount of skill points gained.',
-          Value: object.Properties?.SkillBonus != null ? `${object.Properties?.SkillBonus.toFixed(1)}%` : 'N/A',
-        } : null,
-        ProfessionsMining: additional.type === 'finderamplifiers' ? {
-          Label: 'Professions',
-          Value: additional.type === 'finderamplifiers' ? ['Prospector', 'Surveyor', 'Treasure Hunter'] : ['Driller', 'Miner', 'Archaelogist'],
-          LinkValue: additional.type === 'finderamplifiers'
-            ? [getTypeLink('Prospector', 'Profession'), getTypeLink('Surveyor', 'Profession'), getTypeLink('Treasure Hunter', 'Profession')]
-            : [getTypeLink('Driller', 'Profession'), getTypeLink('Miner', 'Profession'), getTypeLink('Archaelogist', 'Profession')],
-        } : null,
-      } : null,
-      "Equip Effects": object.EffectsOnEquip?.length > 0 ? onEquip : null,
-      Misc: additional.type !== 'absorbers' && additional.type !== 'mindforceimplants' ? {
-        TotalUses: {
-          Label: 'Total Uses',
-          Value: additional.type === 'weaponamplifiers' || additional.type === 'weaponvisionattachments' || additional.type === 'finderamplifiers'
-            ? totalUses ?? 'N/A'
-            : null,
-        },
-        TotalAbsorption: additional.type === 'armorplatings'  ? {
-          Label: 'Total Absorption',
-          Tooltip: 'The total amount of damage the plate can absorb before it breaks. This number does not take block into account.',
-          Value: totalAbsorption != null ? `${totalAbsorption.toFixed(1)} HP` : 'N/A',
-        } : null,
-        Effect: additional.type === 'enhancers' ? {
-          Value: enhancerEffect,
-        } : null,
-      } : null,
+    const key = `${item?.Properties?.Tool} ${item?.Properties?.Type}`;
+    const effects = {
+      'Weapon Damage': 'Increases damage, decay and ammo burn by 10%',
+      'Weapon Range': 'Increases range by 5%',
+      'Weapon Skill Modification': 'Increases your profession levels for the weapon by 0.5',
+      'Weapon Economy': 'Reduces the decay and ammo burn by approximately 1-1.1%',
+      'Weapon Accuracy': 'Increases the chance for a critical hit by 0.2% (at max skill)',
+      'Armor Defense': 'Increases all protection by 5%',
+      'Armor Durability': 'Increases durability by 10%',
+      'Medical Tool Economy': 'Reduces the decay by 10%',
+      'Medical Tool Heal': 'Increases the decay and the amount healed by 5%',
+      'Medical Tool Skill Modification': 'Increases your profession levels for the tool by 0.5',
+      'Mining Excavator Speed': 'Increases the efficiency by 10%',
+      'Mining Finder Depth': 'Increases the average depth by approximately 7.5%',
+      'Mining Finder Range': 'Increases the range by 1%',
+      'Mining Finder Skill Modification': 'Increases your profession levels for the finder by 0.5'
     };
-  };
-
-  const editConfig = {
-    weaponamplifiers: {
-      constructor: () => ({
-        Name: null,
-        Properties: {
-          Description: undefined,
-          Type: null,
-          Weight: null,
-          Economy: {
-            Efficiency: null,
-            MaxTT: null,
-            MinTT: null,
-            Decay: null,
-            AmmoBurn: null,
-          },
-          Damage: {
-            Impact: null,
-            Cut: null,
-            Stab: null,
-            Penetration: null,
-            Shrapnel: null,
-            Burn: null,
-            Cold: null,
-            Acid: null,
-            Electric: null,
-          }
-        },
-        EffectsOnEquip: [],
-      }),
-      controls: [
-        {
-          label: 'General',
-          type: 'group',
-          controls: [
-            { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
-            { label: 'Description', type: 'textarea', '_get': x => x.Properties.Description, '_set': (x, v) => x.Properties.Description = v },
-            { label: 'Weight', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Weight, '_set': (x, v) => x.Properties.Weight = v },
-            { label: 'Type', type: 'select', options: _ => ['Energy', 'BLP', 'Melee', 'Matrix', 'Mindforce'], '_get': x => x.Properties.Type, '_set': (x, v) => x.Properties.Type = v },
-          ]
-        },
-        {
-          label: 'Economy',
-          type: 'group',
-          controls: [
-            { label: 'Efficiency (%)', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Economy.Efficiency, '_set': (x, v) => x.Properties.Economy.Efficiency = v },
-            { label: 'Max. TT (PED)', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v },
-            { label: 'Min. TT (PED)', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v },
-            { label: 'Decay (PEC)', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Economy.Decay, '_set': (x, v) => x.Properties.Economy.Decay = v },
-            { label: 'Ammo Burn', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Economy.AmmoBurn, '_set': (x, v) => x.Properties.Economy.AmmoBurn = v },
-          ]
-        },
-        {
-          label: 'Damage',
-          type: 'group',
-          controls: [
-            { label: 'Impact', type: 'number', step: '0.1', min: '0', '_get': x => x.Properties?.Damage?.Impact, '_set': (x, v) => x.Properties.Damage.Impact = v},
-            { label: 'Cut', type: 'number', step: '0.1', min: '0', '_get': x => x.Properties?.Damage?.Cut, '_set': (x, v) => x.Properties.Damage.Cut = v},
-            { label: 'Stab', type: 'number', step: '0.1', min: '0', '_get': x => x.Properties?.Damage?.Stab, '_set': (x, v) => x.Properties.Damage.Stab = v},
-            { label: 'Penetration', type: 'number', step: '0.1', min: '0', '_get': x => x.Properties?.Damage?.Penetration, '_set': (x, v) => x.Properties.Damage.Penetration = v},
-            { label: 'Shrapnel', type: 'number', step: '0.1', min: '0', '_get': x => x.Properties?.Damage?.Shrapnel, '_set': (x, v) => x.Properties.Damage.Shrapnel = v},
-            { label: 'Burn', type: 'number', step: '0.1', min: '0', '_get': x => x.Properties?.Damage?.Burn, '_set': (x, v) => x.Properties.Damage.Burn = v},
-            { label: 'Cold', type: 'number', step: '0.1', min: '0', '_get': x => x.Properties?.Damage?.Cold, '_set': (x, v) => x.Properties.Damage.Cold = v},
-            { label: 'Acid', type: 'number', step: '0.1', min: '0', '_get': x => x.Properties?.Damage?.Acid, '_set': (x, v) => x.Properties.Damage.Acid = v},
-            { label: 'Electric', type: 'number', step: '0.1', min: '0', '_get': x => x.Properties?.Damage?.Electric, '_set': (x, v) => x.Properties.Damage.Electric = v},
-          ]
-        },
-        { label: 'Effects on Equip', type: 'list', config: editConfigEffectsOnEquip, '_get': x => x.EffectsOnEquip, '_set': (x, v) => x.EffectsOnEquip = v },
-      ]
-    },
-    weaponvisionattachments: {
-      constructor: () => ({
-        Name: null,
-        Properties: {
-          Type: null,
-          Weight: null,
-          Zoom: null,
-          SkillModification: null,
-          SkillBonus: null,
-          Economy: {
-            Efficiency: null,
-            MaxTT: null,
-            MinTT: null,
-            Decay: null,
-          }
-        },
-        EffectsOnEquip: [],
-      }),
-      controls: [
-        {
-          label: 'General',
-          type: 'group',
-          controls: [
-            { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
-            { label: 'Weight', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Weight, '_set': (x, v) => x.Properties.Weight = v },
-            { label: 'Type', type: 'select', options: _ => ['Scope', 'Sight'], '_get': x => x.Properties.Type, '_set': (x, v) => x.Properties.Type = v },
-            { label: 'Zoom', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Zoom, '_set': (x, v) => x.Properties.Zoom = v },
-            { label: 'Skill Modification', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.SkillModification, '_set': (x, v) => x.Properties.SkillModification = v },
-            { label: 'Skill Bonus', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.SkillBonus, '_set': (x, v) => x.Properties.SkillBonus = v },
-          ]
-        },
-        {
-          label: 'Economy',
-          type: 'group',
-          controls: [
-            { label: 'Efficiency (%)', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Economy.Efficiency, '_set': (x, v) => x.Properties.Economy.Efficiency = v },
-            { label: 'Max. TT (PED)', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v },
-            { label: 'Min. TT (PED)', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v },
-            { label: 'Decay (PEC)', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Economy.Decay, '_set': (x, v) => x.Properties.Economy.Decay = v },
-          ]
-        },
-        { label: 'Effects on Equip', type: 'list', config: editConfigEffectsOnEquip, '_get': x => x.EffectsOnEquip, '_set': (x, v) => x.EffectsOnEquip = v },
-      ]
-    },
-    absorbers: {
-      constructor: () => ({
-        Name: null,
-        Properties: {
-          Weight: null,
-          Economy: {
-            Efficiency: null,
-            MaxTT: null,
-            MinTT: null,
-            Absorption: null,
-          }
-        },
-        EffectsOnEquip: [],
-      }),
-      controls: [
-        {
-          label: 'General',
-          type: 'group',
-          controls: [
-            { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
-            { label: 'Weight', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Weight, '_set': (x, v) => x.Properties.Weight = v }
-          ]
-        },
-        {
-          label: 'Economy',
-          type: 'group',
-          controls: [
-            { label: 'Efficiency', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Economy.Efficiency, '_set': (x, v) => x.Properties.Economy.Efficiency = v },
-            { label: 'Max. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v },
-            { label: 'Min. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v },
-            { label: 'Absorption', type: 'number', step: 0.01, min: 0, max: 1, '_get': x => x.Properties.Economy.Absorption, '_set': (x, v) => x.Properties.Economy.Absorption = v },
-          ]
-        }
-      ]
-    },
-    finderamplifiers: {
-      constructor: () => ({
-        Name: null,
-        Properties: {
-          Weight: null,
-          Efficiency: null,
-          Economy: {
-            MaxTT: null,
-            MinTT: null,
-            Decay: null,
-          },
-          Skill: {
-            LearningIntervalStart: null,
-            LearningIntervalEnd: null,
-          }
-        },
-        EffectsOnEquip: [],
-      }),
-      controls: [
-        {
-          label: 'General',
-          type: 'group',
-          controls: [
-            { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
-            { label: 'Weight', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Weight, '_set': (x, v) => x.Properties.Weight = v },
-            { label: 'Efficiency', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Efficiency, '_set': (x, v) => x.Properties.Efficiency = v },
-            { label: 'Min. Prof. Level', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.MinProfessionLevel, '_set': (x, v) => x.Properties.MinProfessionLevel = v },
-          ]
-        },
-        {
-          label: 'Economy',
-          type: 'group',
-          controls: [
-            { label: 'Max. TT (PED)', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v },
-            { label: 'Min. TT (PED)', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v },
-            { label: 'Decay (PEC)', type: 'number', step: 0.0001, min: 0, '_get': x => x.Properties.Economy.Decay, '_set': (x, v) => x.Properties.Economy.Decay = v },
-          ]
-        },
-        { label: 'Effects on Equip', type: 'list', config: editConfigEffectsOnEquip, '_get': x => x.EffectsOnEquip, '_set': (x, v) => x.EffectsOnEquip = v },
-      ]
-    },
-    armorplatings: {
-      constructor: () => ({
-        Name: null,
-        Properties: {
-          Weight: null,
-          Economy: {
-            Durability: null,
-            MaxTT: null,
-            MinTT: null,
-            Decay: null,
-          },
-          Defense: {
-            Block: null,
-            Impact: null,
-            Cut: null,
-            Stab: null,
-            Penetration: null,
-            Shrapnel: null,
-            Burn: null,
-            Cold: null,
-            Acid: null,
-            Electric: null,
-          }
-        }
-      }),
-      controls: [
-        {
-          label: 'General',
-          type: 'group',
-          controls: [
-            { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
-            { label: 'Weight', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Weight, '_set': (x, v) => x.Properties.Weight = v }
-          ]
-        },
-        {
-          label: 'Economy',
-          type: 'group',
-          controls: [
-            { label: 'Durability', type: 'number', step: 1, min: 0, '_get': x => x.Properties.Economy.Durability, '_set': (x, v) => x.Properties.Economy.Durability = v },
-            { label: 'Max. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v },
-            { label: 'Min. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v },
-          ]
-        },
-        {
-          label: 'Defense',
-          type: 'group',
-          controls: [
-            { label: 'Block', type: 'number', step: 0.1, min: 0, max: 100, '_get': x => x.Properties.Defense.Block, '_set': (x, v) => x.Properties.Defense.Block = v },
-            { label: 'Impact', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Defense.Impact, '_set': (x, v) => x.Properties.Defense.Impact = v },
-            { label: 'Cut', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Defense.Cut, '_set': (x, v) => x.Properties.Defense.Cut = v },
-            { label: 'Stab', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Defense.Stab, '_set': (x, v) => x.Properties.Defense.Stab = v },
-            { label: 'Penetration', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Defense.Penetration, '_set': (x, v) => x.Properties.Defense.Penetration = v },
-            { label: 'Shrapnel', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Defense.Shrapnel, '_set': (x, v) => x.Properties.Defense.Shrapnel = v },
-            { label: 'Burn', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Defense.Burn, '_set': (x, v) => x.Properties.Defense.Burn = v },
-            { label: 'Cold', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Defense.Cold, '_set': (x, v) => x.Properties.Defense.Cold = v },
-            { label: 'Acid', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Defense.Acid, '_set': (x, v) => x.Properties.Defense.Acid = v },
-            { label: 'Electric', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Defense.Electric, '_set': (x, v) => x.Properties.Defense.Electric = v },
-          ]
-        }
-      ]
-    },
-    mindforceimplants: {
-      constructor: () => ({
-        Name: null,
-        Properties: {
-          Weight: null,
-          MaxProfessionLevel: null,
-          Economy: {
-            MaxTT: null,
-            MinTT: null,
-            Absorption: null,
-          }
-        }
-      }),
-      controls: [
-        {
-          label: 'General',
-          type: 'group',
-          controls: [
-            { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
-            { label: 'Weight', type: 'number', step: 0.1, min: 0, '_get': x => x.Properties.Weight, '_set': (x, v) => x.Properties.Weight = v },
-            { label: 'Max. Prof. Level', type: 'number', step: 1, min: 0, '_get': x => x.Properties.MaxProfessionLevel, '_set': (x, v) => x.Properties.MaxProfessionLevel = v },
-          ]
-        },
-        {
-          label: 'Economy',
-          type: 'group',
-          controls: [
-            { label: 'Max. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v },
-            { label: 'Min. TT', type: 'number', step: 0.01, min: 0, '_get': x => x.Properties.Economy.MinTT, '_set': (x, v) => x.Properties.Economy.MinTT = v },
-            { label: 'Absorption', type: 'number', step: 0.01, min: 0, max: 1, '_get': x => x.Properties.Economy.Absorption, '_set': (x, v) => x.Properties.Economy.Absorption = v },
-          ]
-        }
-      ]
-    }
+    return effects[key] || null;
   }
 
-  let tableViewInfo = {
-    all: {
-      columns: ['Name', 'Type', 'Weight', 'Max. TT'],
-      columnWidths: ['1fr', '150px', '100px', '100px'],
-      rowValuesFunction: (item) => [
-        item.Name,
-        getTypeLabel(item._type),
-        item.Properties?.Weight != null ? `${clampDecimals(item.Properties?.Weight, 1, 6)}kg` : 'N/A',
-        item.Properties?.Economy.MaxTT != null ? `${item.Properties?.Economy.MaxTT.toFixed(2)} PED` : 'N/A',
-      ],
-    },
-    weaponamplifiers: {
-      columns: ['Name', 'Type', 'Weight', 'Max. TT', 'Decay', 'Ammo Burn', 'Cost', 'Damage', 'Total Uses'],
-      columnWidths: ['1fr', '80px', '80px', '100px', '100px', '100px', '100px', '90px', '100px'],
-      rowValuesFunction: (item) => [
-        item.Name,
-        item.Properties?.Type ?? 'N/A',
-        item.Properties?.Weight != null ? `${clampDecimals(item.Properties?.Weight, 1, 6)}kg` : 'N/A',
-        item.Properties?.Economy.MaxTT != null ? `${item.Properties?.Economy.MaxTT.toFixed(2)} PED` : 'N/A',
-        item.Properties?.Economy.Decay != null ? `${item.Properties?.Economy.Decay.toFixed(4)} PEC` : 'N/A',
-        item.Properties?.Economy.AmmoBurn != null ? `${item.Properties?.Economy.AmmoBurn}` : 'N/A',
-        getCost(item, 'Weapon Amplifier') != null ? `${getCost(item, 'Weapon Amplifier').toFixed(4)} PEC` : 'N/A',
-        getTotalDamage(item) != null ? `${getTotalDamage(item).toFixed(1)}` : 'N/A',
-        getTotalUses(item) != null ? `${getTotalUses(item)}` : 'N/A',
-      ],
-    },
-    weaponvisionattachments: {
-      columns: ['Name', 'Type', 'Weight', 'Max. TT', 'Decay', 'Zoom', 'Skill Modification', 'Skill Bonus'],
-      columnWidths: ['1fr', '80px', '80px', '100px', '100px', '80px', '130px', '100px'],
-      rowValuesFunction: (item) => [
-        item.Name,
-        item.Properties?.Type ?? 'N/A',
-        item.Properties?.Weight != null ? `${clampDecimals(item.Properties?.Weight, 1, 6)}kg` : 'N/A',
-        item.Properties?.Economy.MaxTT != null ? `${item.Properties?.Economy.MaxTT.toFixed(2)} PED` : 'N/A',
-        item.Properties?.Economy.Decay != null ? `${item.Properties?.Economy.Decay.toFixed(4)} PEC` : 'N/A',
-        item.Properties?.Zoom != null ? `${item.Properties?.Zoom.toFixed(1)}x` : 'N/A',
-        item.Properties?.SkillModification != null ? `${item.Properties?.SkillModification}%` : 'N/A',
-        item.Properties?.SkillBonus != null ? `${item.Properties?.SkillBonus.toFixed(1)}%` : 'N/A',
-      ],
-    },
-    absorbers: {
-      columns: ['Name', 'Type', 'Weight', 'Max. TT', 'Absorption'],
-      columnWidths: ['1fr', '80px', '80px', '100px', '100px'],
-      rowValuesFunction: (item) => [
-        item.Name,
-        item.Properties?.Type ?? 'N/A',
-        item.Properties?.Weight != null ? `${item.Properties?.Weight.toFixed(1)}kg` : 'N/A',
-        item.Properties?.Economy.MaxTT != null ? `${item.Properties?.Economy.MaxTT.toFixed(2)} PED` : 'N/A',
-        item.Properties?.Economy.Absorption != null ? `${clampDecimals(item.Properties?.Economy.Absorption * 100, 0, 2)}%` : 'N/A',
-      ],
-    },
-    finderamplifiers: {
-      columns: ['Name', 'Weight', 'Max. TT', 'Decay', 'Total Uses', 'Min. Prof.'],
-      columnWidths: ['1fr', '80px', '100px', '100px', '100px', '100px'],
-      rowValuesFunction: (item) => [
-        item.Name,
-        item.Properties?.Weight != null ? `${clampDecimals(item.Properties?.Weight, 1, 6)}kg` : 'N/A',
-        item.Properties?.Economy.MaxTT != null ? `${item.Properties?.Economy.MaxTT.toFixed(2)} PED` : 'N/A',
-        item.Properties?.Economy.Decay != null ? `${item.Properties?.Economy.Decay.toFixed(4)} PEC` : 'N/A',
-        getTotalUses(item) != null ? `${getTotalUses(item)}` : 'N/A',
-        item.Properties?.Skill?.LearningIntervalStart != null ? item.Properties?.Skill?.LearningIntervalStart.toFixed(1) : 'N/A',
-      ],
-    },
-    armorplatings: {
-      columns: ['Name', 'Weight', 'Max. TT', 'Durability', 'Total Absorption', 'Imp', 'Cut', 'Stab', 'Pen', 'Shrap', 'Burn', 'Cold', 'Acid', 'Elec', 'Total'],
-      columnWidths: ['1fr', '80px', '100px', '90px', '130px', '70px', '70px', '70px', '70px', '70px', '70px', '70px', '70px', '70px', '70px'],
-      rowValuesFunction: (item) => [
-        item.Name,
-        item.Properties?.Weight != null ? `${clampDecimals(item.Properties?.Weight, 1, 6)}kg` : 'N/A',
-        item.Properties?.Economy.MaxTT != null ? `${item.Properties?.Economy.MaxTT.toFixed(2)} PED` : 'N/A',
-        item.Properties?.Economy.Durability ?? 'N/A',
-        getTotalAbsorption(item) != null ? `${getTotalAbsorption(item).toFixed(0)} HP` : 'N/A',
-        item.Properties?.Defense?.Impact?.toFixed(1) ?? 'N/A',
-        item.Properties?.Defense?.Cut?.toFixed(1) ?? 'N/A',
-        item.Properties?.Defense?.Stab?.toFixed(1) ?? 'N/A',
-        item.Properties?.Defense?.Penetration?.toFixed(1) ?? 'N/A',
-        item.Properties?.Defense?.Shrapnel?.toFixed(1) ?? 'N/A',
-        item.Properties?.Defense?.Burn?.toFixed(1) ?? 'N/A',
-        item.Properties?.Defense?.Cold?.toFixed(1) ?? 'N/A',
-        item.Properties?.Defense?.Acid?.toFixed(1) ?? 'N/A',
-        item.Properties?.Defense?.Electric?.toFixed(1) ?? 'N/A',
-        getTotalDefense(item) != null ? `${getTotalDefense(item).toFixed(1)}` : 'N/A',
-      ],
-    },
-    enhancers: {
-      columns: ['Name', 'Weight', 'Max. TT', 'Tool', 'Type', 'Socket #'],
-      columnWidths: ['1fr', '80px', '100px', '130px', '130px', '100px'],
-      rowValuesFunction: (item) => [
-        item.Name,
-        item.Properties?.Weight != null ? `${clampDecimals(item.Properties?.Weight, 1, 6)}kg` : 'N/A',
-        item.Properties?.Economy.MaxTT != null ? `${item.Properties?.Economy.MaxTT.toFixed(2)} PED` : 'N/A',
-        item.Properties?.Tool ?? 'N/A',
-        item.Properties?.Type ?? 'N/A',
-        item.Properties?.Socket ?? 'N/A',
-      ],
-    },
-    mindforceimplants: {
-      columns: ['Name', 'Weight', 'Max. TT', 'Absorption', 'Max. Prof. Level'],
-      columnWidths: ['1fr', '80px', '100px', '100px', '130px'],
-      rowValuesFunction: (item) => [
-        item.Name,
-        item.Properties?.Weight != null ? `${clampDecimals(item.Properties?.Weight, 1, 6)}kg` : 'N/A',
-        item.Properties?.Economy.MaxTT != null ? `${item.Properties?.Economy.MaxTT.toFixed(2)} PED` : 'N/A',
-        item.Properties?.Economy.Absorption != null ? `${clampDecimals(item.Properties?.Economy.Absorption * 100, 0, 2)}%` : 'N/A',
-        item.Properties?.MaxProfessionLevel ?? 'N/A',
-      ],
-    },
+  // ========== COMPUTED VALUES ==========
+  $: cost = getCost(attachment);
+  $: totalUses = getTotalUses(attachment);
+  $: totalDamage = getTotalDamage(attachment);
+  $: dpp = getDPP(attachment);
+  $: totalDefense = getTotalDefense(attachment);
+  $: maxArmorDecay = getMaxArmorDecay(attachment);
+  $: totalAbsorptionVal = getTotalAbsorption(attachment);
+  $: enhancerEffect = getEnhancerEffect(attachment);
+
+  // Check for effects
+  $: hasEquipEffects = attachment?.EffectsOnEquip?.length > 0;
+
+  // Damage types with values for display
+  const damageTypes = ['Impact', 'Cut', 'Stab', 'Penetration', 'Shrapnel', 'Burn', 'Cold', 'Acid', 'Electric'];
+  const defenseTypes = ['Block', 'Impact', 'Cut', 'Stab', 'Penetration', 'Shrapnel', 'Burn', 'Cold', 'Acid', 'Electric'];
+
+  // ========== PANEL STATE PERSISTENCE ==========
+  let panelStates = {
+    damage: true,
+    defense: true,
+    acquisition: true
   };
+
+  onMount(() => {
+    try {
+      const stored = localStorage.getItem('wiki-attachment-panels');
+      if (stored) {
+        panelStates = { ...panelStates, ...JSON.parse(stored) };
+      }
+    } catch (e) {}
+  });
+
+  function savePanelStates() {
+    try {
+      localStorage.setItem('wiki-attachment-panels', JSON.stringify(panelStates));
+    } catch (e) {}
+  }
 </script>
 
-<EntityViewer
-  data={data}
-  user={data.session.user}
-  tableViewInfo={tableViewInfo}
-  navButtonInfo={navButtonInfo}
-  editConfig={editConfig}
-  propertiesDataFunction={propertiesDataFunction}
-  title='Attachments'
-  type={data?.additional?.type === 'weaponamplifiers'
-    ? 'WeaponAmplifier'
-    : data?.additional?.type === 'weaponvisionattachments'
-    ? 'WeaponVisionAttachment'
-    : data?.additional?.type === 'absorbers'
-    ? 'Absorber'
-    : data?.additional?.type === 'finderamplifiers'
-    ? 'FinderAmplifier'
-    : data?.additional?.type === 'armorplatings'
-    ? 'ArmorPlating'
-    : data?.additional?.type === 'enhancers'
-    ? 'Enhancer'
-    : data?.additional?.type === 'mindforceimplants'
-    ? 'MindforceImplant'
-    : null
+<WikiSEO
+  title={attachment?.Name || `${getTypeName(additional.type)}s`}
+  description={seoDescription}
+  entityType={getEntityType(additional.type)}
+  entity={attachment}
+  {canonicalUrl}
+  breadcrumbs={breadcrumbs.map(b => ({ name: b.label, url: b.href }))}
+/>
+
+<WikiPage
+  title="Attachments"
+  {breadcrumbs}
+  entity={attachment}
+  entityType={getEntityType(additional.type)}
+  basePath="/items/attachments/{additional.type || ''}"
+  {navItems}
+  {navFilters}
+  {navTableColumns}
+  navGetItemHref={getItemHref}
+  {user}
+  editable={true}
+>
+  {#if attachment}
+    <div class="layout-a">
+      <!-- Wikipedia-style floating infobox (right panel) -->
+      <aside class="wiki-infobox-float">
+        <!-- Entity Header -->
+        <div class="infobox-header">
+          <div class="icon-placeholder">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+            </svg>
+          </div>
+          <div class="infobox-title">{attachment.Name}</div>
+          <div class="infobox-subtitle">
+            <span class="type-badge">{getTypeName(additional.type)}</span>
+          </div>
+        </div>
+
+        <!-- Tier-1 Stats (type-specific primary stats) -->
+        <div class="stats-section tier-1">
+          <!-- Amplifiers: Efficiency, Total Damage, DPP -->
+          {#if additional.type === 'weaponamplifiers'}
+            <div class="stat-row primary">
+              <span class="stat-label">Efficiency</span>
+              <span class="stat-value">{attachment.Properties?.Economy?.Efficiency != null ? `${attachment.Properties.Economy.Efficiency.toFixed(1)}%` : 'N/A'}</span>
+            </div>
+            <div class="stat-row primary">
+              <span class="stat-label">Total Damage</span>
+              <span class="stat-value">{totalDamage?.toFixed(1) || 'N/A'}</span>
+            </div>
+            <div class="stat-row primary">
+              <span class="stat-label">DPP</span>
+              <span class="stat-value">{dpp != null ? dpp.toFixed(4) : 'N/A'}</span>
+            </div>
+
+          <!-- Scopes/Sights: Efficiency, Zoom -->
+          {:else if additional.type === 'weaponvisionattachments'}
+            <div class="stat-row primary">
+              <span class="stat-label">Efficiency</span>
+              <span class="stat-value">{attachment.Properties?.Economy?.Efficiency != null ? `${attachment.Properties.Economy.Efficiency.toFixed(1)}%` : 'N/A'}</span>
+            </div>
+            <div class="stat-row primary">
+              <span class="stat-label">Zoom</span>
+              <span class="stat-value">{attachment.Properties?.Zoom != null ? `${attachment.Properties.Zoom.toFixed(1)}x` : 'N/A'}</span>
+            </div>
+
+          <!-- Absorbers: Efficiency, Absorption -->
+          {:else if additional.type === 'absorbers'}
+            <div class="stat-row primary">
+              <span class="stat-label">Efficiency</span>
+              <span class="stat-value">{attachment.Properties?.Economy?.Efficiency != null ? `${attachment.Properties.Economy.Efficiency.toFixed(1)}%` : 'N/A'}</span>
+            </div>
+            <div class="stat-row primary">
+              <span class="stat-label">Absorption</span>
+              <span class="stat-value">{attachment.Properties?.Economy?.Absorption != null ? `${clampDecimals(attachment.Properties.Economy.Absorption * 100, 0, 2)}%` : 'N/A'}</span>
+            </div>
+
+          <!-- Mindforce implants: TT, Absorption -->
+          {:else if additional.type === 'mindforceimplants'}
+            <div class="stat-row primary">
+              <span class="stat-label">TT Value</span>
+              <span class="stat-value">{attachment.Properties?.Economy?.MaxTT != null ? `${clampDecimals(attachment.Properties.Economy.MaxTT, 2, 4)} PED` : 'N/A'}</span>
+            </div>
+            <div class="stat-row primary">
+              <span class="stat-label">Absorption</span>
+              <span class="stat-value">{attachment.Properties?.Economy?.Absorption != null ? `${clampDecimals(attachment.Properties.Economy.Absorption * 100, 0, 2)}%` : 'N/A'}</span>
+            </div>
+
+          <!-- Finder amplifiers: Efficiency, Decay -->
+          {:else if additional.type === 'finderamplifiers'}
+            <div class="stat-row primary">
+              <span class="stat-label">Efficiency</span>
+              <span class="stat-value">{attachment.Properties?.Efficiency != null ? attachment.Properties.Efficiency.toFixed(1) : 'N/A'}</span>
+            </div>
+            <div class="stat-row primary">
+              <span class="stat-label">Decay</span>
+              <span class="stat-value">{attachment.Properties?.Economy?.Decay != null ? `${attachment.Properties.Economy.Decay.toFixed(4)} PEC` : 'N/A'}</span>
+            </div>
+
+          <!-- Armor platings: Total Defense, Durability -->
+          {:else if additional.type === 'armorplatings'}
+            <div class="stat-row primary">
+              <span class="stat-label">Total Defense</span>
+              <span class="stat-value">{totalDefense?.toFixed(1) || 'N/A'}</span>
+            </div>
+            <div class="stat-row primary">
+              <span class="stat-label">Durability</span>
+              <span class="stat-value">{attachment.Properties?.Economy?.Durability ?? 'N/A'}</span>
+            </div>
+
+          <!-- Enhancers: Tool, Type -->
+          {:else if additional.type === 'enhancers'}
+            <div class="stat-row primary">
+              <span class="stat-label">Tool</span>
+              <span class="stat-value">{attachment.Properties?.Tool || 'N/A'}</span>
+            </div>
+            <div class="stat-row primary">
+              <span class="stat-label">Type</span>
+              <span class="stat-value">{attachment.Properties?.Type || 'N/A'}</span>
+            </div>
+          {/if}
+        </div>
+
+        <!-- Damage Grid in Infobox (weapon amplifiers only) -->
+        {#if additional.type === 'weaponamplifiers' && totalDamage > 0}
+          <div class="stats-section">
+            <h4 class="section-title">Damage</h4>
+            <div class="infobox-damage-grid">
+              {#each damageTypes as dtype}
+                {#if attachment.Properties?.Damage?.[dtype] > 0}
+                  <div class="mini-damage-item">
+                    <span class="mini-damage-label">{dtype}</span>
+                    <span class="mini-damage-value">{attachment.Properties.Damage[dtype].toFixed(1)}</span>
+                  </div>
+                {/if}
+              {/each}
+            </div>
+          </div>
+        {/if}
+
+        <!-- Defense Grid in Infobox (armor platings only) -->
+        {#if additional.type === 'armorplatings' && totalDefense > 0}
+          <div class="stats-section">
+            <h4 class="section-title">Defense</h4>
+            <div class="infobox-defense-grid">
+              {#if attachment.Properties?.Defense?.Block > 0}
+                <div class="mini-defense-item block">
+                  <span class="mini-defense-label">Block</span>
+                  <span class="mini-defense-value">{attachment.Properties.Defense.Block.toFixed(1)}%</span>
+                </div>
+              {/if}
+              {#each defenseTypes.slice(1) as dtype}
+                {#if attachment.Properties?.Defense?.[dtype] > 0}
+                  <div class="mini-defense-item">
+                    <span class="mini-defense-label">{dtype}</span>
+                    <span class="mini-defense-value">{attachment.Properties.Defense[dtype].toFixed(1)}</span>
+                  </div>
+                {/if}
+              {/each}
+            </div>
+            <!-- Total Defense Full-Width Box -->
+            <div class="defense-total-box">
+              <span class="defense-total-label">Total Defense</span>
+              <span class="defense-total-value">{totalDefense.toFixed(1)}</span>
+            </div>
+          </div>
+        {/if}
+
+        <!-- General Stats -->
+        <div class="stats-section">
+          <h4 class="section-title">General</h4>
+          <div class="stat-row">
+            <span class="stat-label">Weight</span>
+            <span class="stat-value">{attachment.Properties?.Weight != null ? `${clampDecimals(attachment.Properties.Weight, 1, 6)}kg` : 'N/A'}</span>
+          </div>
+
+          {#if additional.type === 'weaponamplifiers'}
+            <div class="stat-row">
+              <span class="stat-label">Amplifier Type</span>
+              <span class="stat-value">{attachment.Properties?.Type || 'N/A'}</span>
+            </div>
+          {:else if additional.type === 'finderamplifiers'}
+            <div class="stat-row">
+              <span class="stat-label">Min. Profession Level</span>
+              <span class="stat-value">{attachment.Properties?.MinProfessionLevel ?? 'N/A'}</span>
+            </div>
+          {:else if additional.type === 'enhancers'}
+            <div class="stat-row">
+              <span class="stat-label">Socket</span>
+              <span class="stat-value">{attachment.Properties?.Socket ?? 'N/A'}</span>
+            </div>
+          {:else if additional.type === 'mindforceimplants'}
+            <div class="stat-row">
+              <span class="stat-label">Max. Profession Level</span>
+              <span class="stat-value">{attachment.Properties?.MaxProfessionLevel ?? 'N/A'}</span>
+            </div>
+          {/if}
+        </div>
+
+        <!-- Economy Stats -->
+        <div class="stats-section">
+          <h4 class="section-title">Economy</h4>
+
+          <div class="stat-row">
+            <span class="stat-label">Max. TT</span>
+            <span class="stat-value">{attachment.Properties?.Economy?.MaxTT != null ? `${clampDecimals(attachment.Properties.Economy.MaxTT, 2, 8)} PED` : 'N/A'}</span>
+          </div>
+
+          {#if additional.type !== 'enhancers'}
+            <div class="stat-row">
+              <span class="stat-label">Min. TT</span>
+              <span class="stat-value">{attachment.Properties?.Economy?.MinTT != null ? `${clampDecimals(attachment.Properties.Economy.MinTT, 2, 8)} PED` : 'N/A'}</span>
+            </div>
+          {/if}
+
+          {#if additional.type === 'weaponamplifiers' || additional.type === 'weaponvisionattachments'}
+            <div class="stat-row">
+              <span class="stat-label">Decay</span>
+              <span class="stat-value">{attachment.Properties?.Economy?.Decay != null ? `${attachment.Properties.Economy.Decay.toFixed(4)} PEC` : 'N/A'}</span>
+            </div>
+          {/if}
+
+          {#if additional.type === 'weaponamplifiers'}
+            <div class="stat-row">
+              <span class="stat-label">Ammo Burn</span>
+              <span class="stat-value">{attachment.Properties?.Economy?.AmmoBurn ?? 'N/A'}</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Cost</span>
+              <span class="stat-value">{cost != null ? `${cost.toFixed(4)} PEC` : 'N/A'}</span>
+            </div>
+          {/if}
+
+          {#if additional.type === 'armorplatings'}
+            <div class="stat-row">
+              <span class="stat-label">Max. Decay</span>
+              <span class="stat-value">{maxArmorDecay != null ? `${maxArmorDecay.toFixed(4)} PEC` : 'N/A'}</span>
+            </div>
+          {/if}
+
+          {#if (additional.type === 'weaponamplifiers' || additional.type === 'weaponvisionattachments' || additional.type === 'finderamplifiers') && totalUses}
+            <div class="stat-row">
+              <span class="stat-label">Total Uses</span>
+              <span class="stat-value">{totalUses}</span>
+            </div>
+          {/if}
+
+          {#if additional.type === 'armorplatings' && totalAbsorptionVal}
+            <div class="stat-row">
+              <span class="stat-label">Total Absorption</span>
+              <span class="stat-value">{totalAbsorptionVal.toFixed(1)} HP</span>
+            </div>
+          {/if}
+        </div>
+
+        <!-- Skill Stats (for scopes and finder amps) -->
+        {#if additional.type === 'weaponvisionattachments'}
+          <div class="stats-section">
+            <h4 class="section-title">Skill</h4>
+            <div class="stat-row">
+              <span class="stat-label">Skill Modification</span>
+              <span class="stat-value">{attachment.Properties?.SkillModification != null ? `${attachment.Properties.SkillModification}%` : 'N/A'}</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Skill Bonus</span>
+              <span class="stat-value">{attachment.Properties?.SkillBonus != null ? `${attachment.Properties.SkillBonus.toFixed(1)}%` : 'N/A'}</span>
+            </div>
+          </div>
+        {:else if additional.type === 'finderamplifiers'}
+          <div class="stats-section">
+            <h4 class="section-title">Skill</h4>
+            <div class="stat-row">
+              <span class="stat-label">Professions</span>
+              <span class="stat-value links">
+                <a href={getTypeLink('Prospector', 'Profession')} class="entity-link">Prospector</a>,
+                <a href={getTypeLink('Surveyor', 'Profession')} class="entity-link">Surveyor</a>,
+                <a href={getTypeLink('Treasure Hunter', 'Profession')} class="entity-link">Treasure Hunter</a>
+              </span>
+            </div>
+          </div>
+        {/if}
+
+        <!-- Enhancer Effect -->
+        {#if additional.type === 'enhancers' && enhancerEffect}
+          <div class="stats-section effect-description">
+            <h4 class="section-title">Effect</h4>
+            <div class="effect-text">{enhancerEffect}</div>
+          </div>
+        {/if}
+
+        <!-- Effects on Equip -->
+        {#if hasEquipEffects}
+          <div class="stats-section effects-section">
+            <h4 class="section-title">Effects on Equip</h4>
+            {#each attachment.EffectsOnEquip.sort((a,b) => a.Name.localeCompare(b.Name)) as effect}
+              <div class="stat-row">
+                <span class="stat-label">{effect.Name}</span>
+                <span class="stat-value effect-value">{effect.Values.Strength}{effect.Values.Unit}</span>
+              </div>
+            {/each}
+          </div>
+        {/if}
+      </aside>
+
+      <!-- Main content (center) -->
+      <article class="wiki-article">
+        <h1 class="article-title">{attachment.Name}</h1>
+
+        <!-- Description Panel -->
+        <div class="description-panel">
+          {#if attachment.Properties?.Description}
+            <div class="description-content">{attachment.Properties.Description}</div>
+          {:else}
+            <div class="description-content placeholder">
+              {attachment.Name} is a {getTypeName(additional.type).toLowerCase()} used in Entropia Universe.
+            </div>
+          {/if}
+        </div>
+
+        <!-- Damage Section (weapon amplifiers only) -->
+        {#if additional.type === 'weaponamplifiers' && totalDamage > 0}
+          <DataSection
+            title="Damage"
+            icon=""
+            bind:expanded={panelStates.damage}
+            on:toggle={savePanelStates}
+          >
+            <div class="damage-grid">
+              {#each damageTypes as dtype}
+                {#if attachment.Properties?.Damage?.[dtype] > 0}
+                  <div class="damage-item">
+                    <span class="damage-label">{dtype}</span>
+                    <span class="damage-value">{attachment.Properties.Damage[dtype].toFixed(1)}</span>
+                  </div>
+                {/if}
+              {/each}
+              <div class="damage-item total">
+                <span class="damage-label">Total</span>
+                <span class="damage-value">{totalDamage.toFixed(1)}</span>
+              </div>
+            </div>
+          </DataSection>
+        {/if}
+
+        <!-- Acquisition Section -->
+        {#if additional.acquisition}
+          <DataSection
+            title="Acquisition"
+            icon=""
+            bind:expanded={panelStates.acquisition}
+            on:toggle={savePanelStates}
+          >
+            <Acquisition acquisition={additional.acquisition} />
+          </DataSection>
+        {/if}
+      </article>
+    </div>
+  {:else}
+    <div class="no-selection">
+      <h2>{additional.type ? getTypeName(additional.type) + 's' : 'Attachments'}</h2>
+      <p>Select an {additional.type ? getTypeName(additional.type).toLowerCase() : 'attachment'} from the list to view details.</p>
+    </div>
+  {/if}
+</WikiPage>
+
+<style>
+  .layout-a {
+    position: relative;
+    width: 100%;
   }
-  basePath='/items/attachments'
-  let:object
-  let:additional>
-  <!-- Acquisition -->
-  <div class="flex-item long-content">
-    <Acquisition acquisition={additional.acquisition} />
-  </div>
-</EntityViewer>
+
+  .layout-a::after {
+    content: '';
+    display: block;
+    clear: both;
+  }
+
+  /* Floating infobox - Wikipedia style */
+  .wiki-infobox-float {
+    float: right;
+    width: 300px;
+    margin: 0 0 0 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    background-color: var(--secondary-color);
+    border: 1px solid var(--border-color, #555);
+    border-radius: 8px;
+    padding: 16px;
+  }
+
+  .infobox-header {
+    text-align: center;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-color, #555);
+  }
+
+  .icon-placeholder {
+    width: 80px;
+    height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--bg-color, var(--primary-color));
+    border: 2px dashed var(--border-color, #555);
+    border-radius: 8px;
+    color: var(--text-muted, #999);
+    margin: 0 auto 12px;
+  }
+
+  .infobox-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-color);
+  }
+
+  .infobox-subtitle {
+    font-size: 12px;
+    color: var(--text-muted, #999);
+    margin-top: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .type-badge {
+    padding: 2px 8px;
+    font-size: 10px;
+    font-weight: 600;
+    background-color: var(--accent-color, #4a9eff);
+    color: white;
+    border-radius: 4px;
+    text-transform: uppercase;
+  }
+
+  /* Stats sections */
+  .stats-section {
+    padding: 12px;
+    background-color: var(--bg-color, var(--primary-color));
+    border-radius: 6px;
+  }
+
+  .stats-section.tier-1 {
+    background: linear-gradient(135deg, #4a7c59 0%, #3a6349 100%);
+    padding: 14px;
+  }
+
+  .stats-section.tier-1 .stat-row.primary {
+    background-color: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    padding: 8px 12px;
+    margin-bottom: 6px;
+  }
+
+  .stats-section.tier-1 .stat-row.primary:last-child {
+    margin-bottom: 0;
+  }
+
+  .stats-section.tier-1 .stat-label {
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 13px;
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+
+  .stats-section.tier-1 .stat-value {
+    color: #e8f4e8;
+    font-size: 18px;
+    font-weight: 700;
+  }
+
+  .section-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted, #999);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin: 0 0 10px 0;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border-color, #555);
+  }
+
+  .stat-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 4px 0;
+    font-size: 13px;
+  }
+
+  .stat-label {
+    color: var(--text-muted, #999);
+  }
+
+  .stat-value {
+    font-weight: 500;
+    color: var(--text-color);
+  }
+
+  .stat-value.highlight {
+    color: #4ade80;
+    font-weight: 600;
+  }
+
+  .stat-value.effect-value {
+    color: var(--accent-color, #4a9eff);
+  }
+
+  .stat-value.links {
+    text-align: right;
+    font-size: 12px;
+  }
+
+  .entity-link {
+    color: var(--accent-color, #4a9eff);
+    text-decoration: none;
+  }
+
+  .entity-link:hover {
+    text-decoration: underline;
+  }
+
+  /* Effect description for enhancers */
+  .effect-description .effect-text {
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text-color);
+  }
+
+  /* Effects styling */
+  .effects-section .stat-row {
+    padding: 3px 0;
+  }
+
+  .wiki-article {
+    overflow: hidden;
+  }
+
+  .article-title {
+    font-size: 32px;
+    font-weight: 600;
+    margin: 0 0 16px 0;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--accent-color, #4a9eff);
+  }
+
+  .description-panel {
+    background-color: var(--secondary-color);
+    border: 1px solid var(--border-color, #555);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+
+  .description-content {
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--text-color);
+  }
+
+  .description-content.placeholder {
+    color: var(--text-muted, #999);
+    font-style: italic;
+  }
+
+  /* Mini damage/defense grids for infobox */
+  .infobox-damage-grid, .infobox-defense-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+  }
+
+  .mini-damage-item, .mini-defense-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 6px 4px;
+    background-color: var(--secondary-color);
+    border-radius: 4px;
+    border: 1px solid var(--border-color, #555);
+  }
+
+  .mini-defense-item.block {
+    background-color: #6366f1;
+    border-color: #6366f1;
+  }
+
+  .mini-defense-item.block .mini-defense-label,
+  .mini-defense-item.block .mini-defense-value {
+    color: white;
+  }
+
+  /* Total defense full-width box */
+  .defense-total-box {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 8px;
+    padding: 10px 12px;
+    background-color: var(--accent-color, #4a9eff);
+    border-radius: 6px;
+  }
+
+  .defense-total-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.9);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+
+  .defense-total-value {
+    font-size: 18px;
+    font-weight: 700;
+    color: white;
+  }
+
+  .mini-damage-label, .mini-defense-label {
+    font-size: 9px;
+    color: var(--text-muted, #999);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+
+  .mini-damage-value, .mini-defense-value {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-color);
+  }
+
+  /* Damage/Defense grids (main article) */
+  .damage-grid, .defense-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 8px;
+  }
+
+  .damage-item, .defense-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 8px;
+    background-color: var(--bg-color, var(--primary-color));
+    border-radius: 4px;
+    border: 1px solid var(--border-color, #555);
+  }
+
+  .damage-item.total, .defense-item.total {
+    background-color: var(--accent-color, #4a9eff);
+    border-color: var(--accent-color, #4a9eff);
+  }
+
+  .damage-item.total .damage-label,
+  .damage-item.total .damage-value,
+  .defense-item.total .defense-label,
+  .defense-item.total .defense-value {
+    color: white;
+  }
+
+  .defense-item.block {
+    background-color: #6366f1;
+    border-color: #6366f1;
+  }
+
+  .defense-item.block .defense-label,
+  .defense-item.block .defense-value {
+    color: white;
+  }
+
+  .damage-label, .defense-label {
+    font-size: 11px;
+    color: var(--text-muted, #999);
+    text-transform: uppercase;
+  }
+
+  .damage-value, .defense-value {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text-color);
+  }
+
+  .no-selection {
+    text-align: center;
+    padding: 60px 20px;
+  }
+
+  .no-selection h2 {
+    font-size: 28px;
+    margin-bottom: 12px;
+  }
+
+  .no-selection p {
+    color: var(--text-muted, #999);
+    margin: 8px 0;
+  }
+
+  /* Tablet adjustments */
+  @media (max-width: 1023px) {
+    .wiki-infobox-float {
+      width: 280px;
+      margin-left: 16px;
+      padding: 14px;
+    }
+  }
+
+  /* Mobile adjustments */
+  @media (max-width: 767px) {
+    .layout-a {
+      max-width: 100%;
+    }
+
+    .wiki-infobox-float {
+      float: none;
+      width: auto;
+      margin: 0 0 16px 0;
+    }
+
+    .article-title {
+      display: none;
+    }
+
+    .infobox-title {
+      font-size: 16px;
+    }
+
+    .icon-placeholder {
+      width: 60px;
+      height: 60px;
+    }
+
+    .icon-placeholder svg {
+      width: 36px;
+      height: 36px;
+    }
+
+    .damage-grid, .defense-grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+</style>

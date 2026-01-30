@@ -59,4 +59,4 @@ function register(app){
   app.get('/stimulants/:stimulant', async (req,res) => { const r = await getConsumable(req.params.stimulant); if (r) res.json(r); else res.status(404).send(); });
 }
 
-module.exports = { register, getConsumables, getConsumable };
+module.exports = { register, getConsumables, getConsumable, formatConsumable };

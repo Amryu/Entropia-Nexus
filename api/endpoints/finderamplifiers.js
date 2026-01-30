@@ -77,4 +77,4 @@ function register(app){
   app.get('/finderamplifiers/:finderAmplifier', async (req,res) => { const r = await getFinderAmplifier(req.params.finderAmplifier); if (r) res.json(r); else res.status(404).send(); });
 }
 
-module.exports = { register, getFinderAmplifiers, getFinderAmplifier };
+module.exports = { register, getFinderAmplifiers, getFinderAmplifier, formatFinderAmplifier };

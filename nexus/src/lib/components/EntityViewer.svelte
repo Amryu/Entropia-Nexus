@@ -1,5 +1,24 @@
+<!--
+  @component EntityViewer
+  @deprecated This component is deprecated and will be replaced by the new WikiPage system.
+  New wiki pages should use components from $lib/components/wiki/ instead.
+
+  Migration guide:
+  - WikiPage.svelte: Main responsive container
+  - WikiHeader.svelte: Breadcrumbs, title, mode toggle
+  - WikiNavigation.svelte: Sidebar navigation with search
+  - DataSection.svelte: Collapsible content sections
+  - InlineEdit.svelte: WYSIWYG inline editing
+  - EntityInfobox.svelte: Icon + key stats display
+  - WikiSEO.svelte: SEO meta tags + JSON-LD
+
+  See plan file for full migration details.
+-->
 <script>
   //@ts-nocheck
+  /**
+   * @deprecated Use WikiPage and related components from $lib/components/wiki/ instead.
+   */
   import { loading, pageParams } from '../../stores';
   import { apiCall, encodeURIComponentSafe, getErrorMessage, getTypeName } from '$lib/util';
 

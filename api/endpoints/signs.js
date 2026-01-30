@@ -61,4 +61,4 @@ function register(app){
   app.get('/signs/:sign', async (req,res)=>{ const r = await getSign(req.params.sign); if(r) res.json(r); else res.status(404).send(); });
 }
 
-module.exports = { register, getSigns, getSign };
+module.exports = { register, getSigns, getSign, formatSign };

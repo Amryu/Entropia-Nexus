@@ -66,4 +66,4 @@ function register(app){
   app.get('/misctools/:miscTool', async (req,res)=>{ const r = await getMiscTool(req.params.miscTool); if(r) res.json(r); else res.status(404).send(); });
 }
 
-module.exports = { register, getMiscTools, getMiscTool };
+module.exports = { register, getMiscTools, getMiscTool, formatMiscTool };

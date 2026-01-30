@@ -99,4 +99,4 @@ function register(app){
   });
 }
 
-module.exports = { register, getTeleportationChips, getTeleportationChip };
+module.exports = { register, getTeleportationChips, getTeleportationChip, formatTeleportationChip };

@@ -1,247 +1,604 @@
-<script lang="ts">
+<!--
+  @component Consumables Wiki Page
+  Wikipedia-style layout with floating infobox on the right side.
+  Handles 2 subtypes: stimulants, capsules
+
+  Legacy editConfig preserved in consumables-legacy/+page.svelte
+  Key structure:
+  - stimulants: Name, Properties (Description, Weight, Type, Economy), EffectsOnConsume[]
+  - capsules: Name, Properties (Economy, MinProfessionLevel), Mob, Profession
+-->
+<script>
   // @ts-nocheck
   import '$lib/style.css';
+  import { page } from '$app/stores';
+  import { onMount } from 'svelte';
+  import { clampDecimals, encodeURIComponentSafe, getTimeString, getTypeLink, groupBy } from '$lib/util';
 
-  import { getTimeString, clampDecimals, groupBy, getTypeLink } from '$lib/util.js';
+  // Wiki components
+  import WikiPage from '$lib/components/wiki/WikiPage.svelte';
+  import WikiSEO from '$lib/components/wiki/WikiSEO.svelte';
+  import DataSection from '$lib/components/wiki/DataSection.svelte';
 
-  import EntityViewer from "$lib/components/EntityViewer.svelte";
-  import Acquisition from "$lib/components/Acquisition.svelte";
+  // Legacy components for data display
+  import Acquisition from '$lib/components/Acquisition.svelte';
 
   export let data;
 
-  const navButtonInfo = [
-    {
-      Label: 'Stim',
-      Title: 'Stimulants',
-      Type: 'stimulants',
-    },
-    {
-      Label: 'Cap',
-      Title: 'Creature Control Capsules',
-      Type: 'capsules',
-    },
+  $: consumable = data.object;
+  $: user = data.session?.user;
+  $: additional = data.additional || {};
+
+  // For multi-type pages, data.items is an object keyed by type
+  // When no type is selected, show all items from all types (with _type added for linking)
+  $: allItems = (() => {
+    if (!data.items) return [];
+    if (additional.type && data.items[additional.type]) {
+      return data.items[additional.type];
+    }
+    // No type selected - combine all items from all types, adding _type for correct linking
+    const combined = [];
+    for (const [type, items] of Object.entries(data.items)) {
+      for (const item of items) {
+        combined.push({ ...item, _type: type });
+      }
+    }
+    return combined;
+  })();
+
+  // Type navigation buttons
+  const typeButtons = [
+    { label: 'Stimulants', title: 'Stimulants', type: 'stimulants' },
+    { label: 'Capsules', title: 'Creature Control Capsules', type: 'capsules' }
   ];
 
-  function getCategory(type) {
+  // Type name mapping
+  function getTypeName(type) {
+    switch (type) {
+      case 'stimulants': return 'Stimulant';
+      case 'capsules': return 'Creature Control Capsule';
+      default: return 'Consumable';
+    }
+  }
+
+  // Entity type for editing
+  function getEntityType(type) {
+    switch (type) {
+      case 'stimulants': return 'Consumable';
+      case 'capsules': return 'Capsule';
+      default: return 'Consumable';
+    }
+  }
+
+  // Build navigation items
+  $: navItems = allItems;
+
+  // Navigation filters - type buttons with deselection support
+  $: navFilters = typeButtons.map(btn => ({
+    label: btn.label,
+    title: btn.title,
+    type: btn.type,
+    active: additional.type === btn.type,
+    href: additional.type === btn.type ? '/items/consumables' : `/items/consumables/${btn.type}`
+  }));
+
+  // Type-specific sidebar table columns
+  function getNavTableColumns(type) {
     switch (type) {
       case 'stimulants':
-        return 'Stimulants';
+        return [
+          { key: 'type', header: 'Type', width: '60px', filterPlaceholder: 'Pill', getValue: (item) => item.Properties?.Type, format: (v) => v || '-' },
+          { key: 'value', header: 'TT', width: '55px', filterPlaceholder: '>0.1', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? clampDecimals(v, 2, 4) : '-' }
+        ];
       case 'capsules':
-        return 'Creature Control Capsule';
+        return [
+          { key: 'mob', header: 'Mob', width: '100px', filterPlaceholder: 'Atrox', getValue: (item) => item.Mob?.Name, format: (v) => v || '-' },
+          { key: 'value', header: 'TT', width: '55px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? clampDecimals(v, 2, 4) : '-' }
+        ];
       default:
-        return 'Other';
+        return [
+          { key: 'category', header: 'Cat', width: '70px', filterPlaceholder: 'Stim', getValue: (item) => item._type === 'stimulants' ? 'Stim' : 'Cap', format: (v) => v || '-' },
+          { key: 'value', header: 'TT', width: '55px', filterPlaceholder: '>0.1', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? clampDecimals(v, 2, 4) : '-' }
+        ];
     }
   }
 
-  let propertiesDataFunction = (consumable, additional) => {
-    let category = getCategory(additional.type);
+  $: navTableColumns = getNavTableColumns(additional.type);
 
-    let onConsume = {};
-
-    if (consumable.EffectsOnConsume != null && consumable.EffectsOnConsume.length > 0) {
-      consumable.EffectsOnConsume
-        .sort((a,b) => a.Name.localeCompare(b.Name))
-        .forEach(effect => onConsume[effect.Name] = `${effect.Values.Strength}${effect.Values.Unit} ${effect.Values.DurationSeconds > 0 ? `for ${getTimeString(effect.Values.DurationSeconds)}` : ''}`);
+  // Custom href generator for items - handles _type property for "all items" view
+  function getItemHref(item, basePath) {
+    const type = item._type || additional.type;
+    if (type) {
+      return `/items/consumables/${type}/${encodeURIComponentSafe(item.Name)}`;
     }
-
-    return {
-      General: {
-        Weight: consumable.Properties?.Weight != null ? `${clampDecimals(consumable.Properties?.Weight, 1, 6)}kg` : 'N/A',
-        Category: category,
-        Type: additional.type === 'stimulants'
-          ? consumable.Properties?.Type ?? 'N/A'
-          : null,
-        MinProfessionLevel: additional.type === 'capsules' ? {
-          Label: 'Min. Profession Level',
-          Value: consumable.Properties?.MinProfessionLevel != null ? consumable.Properties?.MinProfessionLevel : 'N/A',
-        } : null,
-      },
-      Economy: {
-        Value: consumable.Properties?.Economy?.MaxTT != null ? `${clampDecimals(consumable.Properties?.Economy?.MaxTT, 2, 8)} PED` : 'N/A',
-      },
-      "Consume Effects": additional.type === 'stimulants' && consumable.EffectsOnConsume != null && consumable.EffectsOnConsume.length > 0 ? onConsume : null,
-      Creature: additional.type === 'capsules' ? {
-        Mob: {
-          Label: 'Mob',
-          Value: consumable.Mob?.Name != null ? consumable.Mob?.Name : 'N/A',
-        },
-        Profession: {
-          Label: 'Profession',
-          Tooltip: 'The profession and the required level to use the item',
-          LinkValue: [consumable.Profession?.Name != null ? getTypeLink(consumable.Profession.Name, 'Profession') : null, null],
-          Value: [consumable.Profession?.Name != null ? consumable.Profession?.Name : 'N/A', consumable.Properties?.Level != null ? consumable.Properties?.Level : 'N/A'],
-        },
-      } : null,
-    };
-  };
-
-  const editConfig = {
-    stimulants: {
-      constructor: () => ({
-        Name: '',
-        Properties: {
-          Description: null,
-          Weight: null,
-          Type: null,
-          Economy: {
-            MaxTT: null
-          }
-        },
-        EffectsOnConsume: []
-      }),
-      controls: [
-        {
-          label: 'General',
-          type: 'group',
-          controls: [
-            { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
-            { label: 'Description', type: 'textarea', '_get': x => x.Properties.Description, '_set': (x, v) => x.Properties.Description = v },
-            { label: 'Weight', type: 'number', '_get': x => x.Properties.Weight, '_set': (x, v) => x.Properties.Weight = v },
-            { label: 'Type', type: 'select', options: _ => ['Pill', 'Nanobots', 'Chip'], '_get': x => x.Properties.Type, '_set': (x, v) => x.Properties.Type = v }
-          ]
-        },
-        {
-          label: 'Economy',
-          type: 'group',
-          controls: [
-            { label: 'Value', type: 'number', '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v }
-          ]
-        },
-        {
-          label: 'Effects on Consume',
-          type: 'list',
-          config: {
-            constructor: () => ({
-              Name: '',
-              Values: {
-                Strength: null,
-                DurationSeconds: null,
-              }
-            }),
-            dependencies: ['effects'],
-            controls: [
-              { label: 'Name', type: 'select', options: (_, d) => d.effects.map(x => x.Name), '_get': x => x.Name, '_set': (x, v) => x.Name = v },
-              { label: 'Strength', type: 'number', '_get': x => x.Values.Strength, '_set': (x, v) => x.Values.Strength = v },
-              { label: 'Duration (s)', type: 'number', '_get': x => x.Values.DurationSeconds, '_set': (x, v) => x.Values.DurationSeconds = v }
-            ]
-          },
-          '_get': x => x.EffectsOnConsume,
-          '_set': (x, v) => x.EffectsOnConsume = v
-        }
-      ]
-    },
-    capsules: {
-      constructor: () => ({
-        Name: '',
-        Properties: {
-          Economy: {
-            MaxTT: null
-          }
-        },
-        Mob: {
-          Name: null
-        },
-        Profession: {
-          Name: null
-        }
-      }),
-      dependencies: ['mobs', 'professions'],
-      controls: [
-        {
-          label: 'General',
-          type: 'group',
-          controls: [
-            { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v },
-            { label: 'Mob', type: 'select', options: (_, d) => d.mobs.map(x => x.Name), '_get': x => x.Mob.Name, '_set': (x, v) => x.Mob.Name = v },
-          ]
-        },
-        {
-          label: 'Economy',
-          type: 'group',
-          controls: [
-            { label: 'Value', type: 'number', '_get': x => x.Properties.Economy.MaxTT, '_set': (x, v) => x.Properties.Economy.MaxTT = v }
-          ]
-        },
-        {
-          label: 'Skill',
-          type: 'group',
-          controls: [
-            { label: 'Profession', type: 'select', options: (_, d) => d.professions.map(x => x.Name), '_get': x => x.Profession.Name, '_set': (x, v) => x.Profession.Name = v },
-            { label: 'Min. Prof. Level', type: 'number', '_get': x => x.Properties.MinProfessionLevel, '_set': (x, v) => x.Properties.MinProfessionLevel = v }
-          ]
-        }
-      ]
-    }
+    return `${basePath}/${encodeURIComponentSafe(item.Name)}`;
   }
 
-  let tableViewInfo = {
-    all: {
-      columns: ['Name', 'Category', 'Type', 'Max. TT'],
-      columnWidths: ['1fr', '180px', '100px', '100px'],
-      rowValuesFunction: (item) => {
-        let category = getCategory(item._type);
+  // Breadcrumbs
+  $: breadcrumbs = [
+    { label: 'Items', href: '/items' },
+    { label: 'Consumables', href: '/items/consumables' },
+    ...(additional.type ? [{ label: getTypeName(additional.type) + 's', href: `/items/consumables/${additional.type}` }] : []),
+    ...(consumable ? [{ label: consumable.Name }] : [])
+  ];
 
-        return [
-          item.Name,
-          category ?? 'N/A',
-          item.Properties?.Type ?? 'N/A',
-          item.Properties?.Economy?.MaxTT != null ? `${clampDecimals(item.Properties?.Economy?.MaxTT, 2, 8)} PED` : 'N/A',
-        ];
-      }
-    },
-    stimulants: {
-      columns: ['Name', 'Category', 'Type', 'Max. TT', 'Effects'],
-      columnWidths: ['230px', '80px', '80px', '90px', '1fr'],
-      rowValuesFunction: (item) => {
-        let effects = null;
+  // SEO
+  $: seoDescription = consumable?.Properties?.Description ||
+    `${consumable?.Name || 'Consumable'} - ${getTypeName(additional.type)} in Entropia Universe.`;
 
-        if (item.EffectsOnConsume != null && item.EffectsOnConsume.length > 0) {
-          let effectsGroupedByDuration = groupBy(item.EffectsOnConsume, x => x.Values.DurationSeconds)
+  $: canonicalUrl = consumable
+    ? `https://entropianexus.com/items/consumables/${additional.type}/${encodeURIComponentSafe(consumable.Name)}`
+    : additional.type
+    ? `https://entropianexus.com/items/consumables/${additional.type}`
+    : 'https://entropianexus.com/items/consumables';
 
-          effects = Object.keys(effectsGroupedByDuration).map(x => {
-            let effects = effectsGroupedByDuration[x].map(x => `${x.Values.Strength ?? ''}${x.Values.Unit ?? ''} ${x.Name}`).join(' & ');
-            return `${effects} for ${getTimeString(x)}`;
-          });
-        }
+  // Check if item has effects (stimulants only)
+  $: hasConsumeEffects = consumable?.EffectsOnConsume?.length > 0;
 
-        return [
-          item.Name,
-          item.Properties?.Weight != null ? `${clampDecimals(item.Properties?.Weight, 1, 6)}kg` : 'N/A',
-          item.Properties?.Type ?? 'N/A',
-          item.Properties?.Economy?.MaxTT != null ? `${clampDecimals(item.Properties?.Economy?.MaxTT, 2, 8)} PED` : 'N/A',
-          effects != null ? effects.join(', ') : 'N/A',
-        ];
-      }
-    },
-    capsules: {
-      columns: ['Name', 'Mob', 'Profession', 'Max. TT'],
-      columnWidths: ['1fr', '200px', '150px', '100px'],
-      rowValuesFunction: (item) => {
-        return [
-          item.Name,
-          item.Mob?.Name != null ? item.Mob?.Name : 'N/A',
-          item.Profession?.Name != null ? item.Profession?.Name : 'N/A',
-          item.Properties?.Economy?.MaxTT != null ? `${clampDecimals(item.Properties?.Economy?.MaxTT, 2, 8)} PED` : 'N/A',
-        ];
-      }
-    }
+  // Format effects grouped by duration
+  function getFormattedEffects(item) {
+    if (!item?.EffectsOnConsume?.length) return null;
+    const grouped = groupBy(item.EffectsOnConsume, x => x.Values.DurationSeconds);
+    return Object.entries(grouped)
+      .sort(([a], [b]) => Number(a) - Number(b))
+      .map(([duration, effects]) => ({
+        duration: Number(duration),
+        effects: effects.map(e => ({
+          name: e.Name,
+          strength: e.Values.Strength,
+          unit: e.Values.Unit || ''
+        }))
+      }));
+  }
+
+  $: formattedEffects = getFormattedEffects(consumable);
+
+  // ========== PANEL STATE PERSISTENCE ==========
+  let panelStates = {
+    acquisition: true
   };
+
+  onMount(() => {
+    try {
+      const stored = localStorage.getItem('wiki-consumable-panels');
+      if (stored) {
+        panelStates = { ...panelStates, ...JSON.parse(stored) };
+      }
+    } catch (e) {
+      // localStorage not available
+    }
+  });
+
+  function savePanelStates() {
+    try {
+      localStorage.setItem('wiki-consumable-panels', JSON.stringify(panelStates));
+    } catch (e) {
+      // localStorage not available
+    }
+  }
 </script>
 
-<EntityViewer
-  data={data}
-  user={data.session.user}
-  tableViewInfo={tableViewInfo}
-  navButtonInfo={navButtonInfo}
-  editConfig={editConfig}
-  propertiesDataFunction={propertiesDataFunction}
-  title='Consumables'
-  type={data?.additional?.type === 'stimulants' ? 'Consumable' : 'Capsule'}
-  basePath='/items/consumables'
-  let:object
-  let:additional>
-  <!-- Acquisition -->
-  <div class="flex-item long-content">
-    <Acquisition acquisition={additional.acquisition} />
-  </div>
-</EntityViewer>
+<WikiSEO
+  title={consumable?.Name || `${getTypeName(additional.type)}s`}
+  description={seoDescription}
+  entityType={getEntityType(additional.type)}
+  entity={consumable}
+  {canonicalUrl}
+  breadcrumbs={breadcrumbs.map(b => ({ name: b.label, url: b.href }))}
+/>
+
+<WikiPage
+  title="Consumables"
+  {breadcrumbs}
+  entity={consumable}
+  entityType={getEntityType(additional.type)}
+  basePath="/items/consumables/{additional.type || ''}"
+  {navItems}
+  {navFilters}
+  {navTableColumns}
+  navGetItemHref={getItemHref}
+  {user}
+  editable={true}
+>
+  {#if consumable}
+    <div class="layout-a">
+      <!-- Wikipedia-style floating infobox (right panel) -->
+      <aside class="wiki-infobox-float">
+        <!-- Entity Header -->
+        <div class="infobox-header">
+          <div class="icon-placeholder">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+            </svg>
+          </div>
+          <div class="infobox-title">{consumable.Name}</div>
+          <div class="infobox-subtitle">
+            <span class="type-badge">{getTypeName(additional.type)}</span>
+          </div>
+        </div>
+
+        <!-- Tier-1 Stats (type-specific primary stats) -->
+        <div class="stats-section tier-1">
+          <div class="stat-row primary">
+            <span class="stat-label">TT Value</span>
+            <span class="stat-value">{consumable.Properties?.Economy?.MaxTT != null ? `${clampDecimals(consumable.Properties.Economy.MaxTT, 2, 4)} PED` : 'N/A'}</span>
+          </div>
+          {#if additional.type === 'stimulants'}
+            <div class="stat-row primary">
+              <span class="stat-label">Type</span>
+              <span class="stat-value">{consumable.Properties?.Type || 'N/A'}</span>
+            </div>
+          {:else if additional.type === 'capsules'}
+            <div class="stat-row primary">
+              <span class="stat-label">Creature</span>
+              <span class="stat-value">{consumable.Mob?.Name || 'N/A'}</span>
+            </div>
+          {/if}
+        </div>
+
+        <!-- General Stats -->
+        <div class="stats-section">
+          <h4 class="section-title">General</h4>
+          {#if additional.type === 'stimulants'}
+            <div class="stat-row">
+              <span class="stat-label">Weight</span>
+              <span class="stat-value">{consumable.Properties?.Weight != null ? `${clampDecimals(consumable.Properties.Weight, 1, 6)}kg` : 'N/A'}</span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Type</span>
+              <span class="stat-value">{consumable.Properties?.Type || 'N/A'}</span>
+            </div>
+          {:else if additional.type === 'capsules'}
+            <div class="stat-row">
+              <span class="stat-label">Creature</span>
+              <span class="stat-value">
+                {#if consumable.Mob?.Name}
+                  <a href={getTypeLink(consumable.Mob.Name, 'Mob')} class="entity-link">{consumable.Mob.Name}</a>
+                {:else}
+                  N/A
+                {/if}
+              </span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Profession</span>
+              <span class="stat-value">
+                {#if consumable.Profession?.Name}
+                  <a href={getTypeLink(consumable.Profession.Name, 'Profession')} class="entity-link">{consumable.Profession.Name}</a>
+                {:else}
+                  N/A
+                {/if}
+              </span>
+            </div>
+            {#if consumable.Properties?.MinProfessionLevel != null}
+              <div class="stat-row">
+                <span class="stat-label">Min. Level</span>
+                <span class="stat-value">{consumable.Properties.MinProfessionLevel}</span>
+              </div>
+            {/if}
+          {/if}
+        </div>
+
+        <!-- Economy Stats -->
+        <div class="stats-section">
+          <h4 class="section-title">Economy</h4>
+          <div class="stat-row">
+            <span class="stat-label">Value</span>
+            <span class="stat-value">{consumable.Properties?.Economy?.MaxTT != null ? `${clampDecimals(consumable.Properties.Economy.MaxTT, 2, 8)} PED` : 'N/A'}</span>
+          </div>
+        </div>
+
+        <!-- Effects on Consume (stimulants only) - placed after Economy -->
+        {#if additional.type === 'stimulants' && hasConsumeEffects && formattedEffects}
+          <div class="stats-section effects-section">
+            <h4 class="section-title">Effects on Consume</h4>
+            {#each formattedEffects as group}
+              <div class="effect-group">
+                {#if group.duration > 0}
+                  <div class="effect-duration">Duration: {getTimeString(group.duration)}</div>
+                {/if}
+                {#each group.effects as effect}
+                  <div class="stat-row">
+                    <span class="stat-label">{effect.name}</span>
+                    <span class="stat-value effect-value">{effect.strength}{effect.unit}</span>
+                  </div>
+                {/each}
+              </div>
+            {/each}
+          </div>
+        {/if}
+      </aside>
+
+      <!-- Main content (center) -->
+      <article class="wiki-article">
+        <h1 class="article-title">{consumable.Name}</h1>
+
+        <!-- Description Panel -->
+        <div class="description-panel">
+          {#if consumable.Properties?.Description}
+            <div class="description-content">{consumable.Properties.Description}</div>
+          {:else}
+            <div class="description-content placeholder">
+              {consumable.Name} is a {getTypeName(additional.type).toLowerCase()} used in Entropia Universe.
+            </div>
+          {/if}
+        </div>
+
+        <!-- Acquisition Section -->
+        {#if additional.acquisition}
+          <DataSection
+            title="Acquisition"
+            icon=""
+            bind:expanded={panelStates.acquisition}
+            on:toggle={savePanelStates}
+          >
+            <Acquisition acquisition={additional.acquisition} />
+          </DataSection>
+        {/if}
+      </article>
+    </div>
+  {:else}
+    <div class="no-selection">
+      <h2>{additional.type ? getTypeName(additional.type) + 's' : 'Consumables'}</h2>
+      <p>Select a {additional.type ? getTypeName(additional.type).toLowerCase() : 'consumable'} from the list to view details.</p>
+    </div>
+  {/if}
+</WikiPage>
+
+<style>
+  .layout-a {
+    position: relative;
+    width: 100%;
+  }
+
+  /* Clearfix to ensure spacing after floated infobox */
+  .layout-a::after {
+    content: '';
+    display: block;
+    clear: both;
+  }
+
+  /* Floating infobox - Wikipedia style */
+  .wiki-infobox-float {
+    float: right;
+    width: 300px;
+    margin: 0 0 0 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    background-color: var(--secondary-color);
+    border: 1px solid var(--border-color, #555);
+    border-radius: 8px;
+    padding: 16px;
+  }
+
+  .infobox-header {
+    text-align: center;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-color, #555);
+  }
+
+  .icon-placeholder {
+    width: 80px;
+    height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--bg-color, var(--primary-color));
+    border: 2px dashed var(--border-color, #555);
+    border-radius: 8px;
+    color: var(--text-muted, #999);
+    margin: 0 auto 12px;
+  }
+
+  .infobox-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-color);
+  }
+
+  .infobox-subtitle {
+    font-size: 12px;
+    color: var(--text-muted, #999);
+    margin-top: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .type-badge {
+    padding: 2px 8px;
+    font-size: 10px;
+    font-weight: 600;
+    background-color: var(--accent-color, #4a9eff);
+    color: white;
+    border-radius: 4px;
+    text-transform: uppercase;
+  }
+
+  /* Stats sections */
+  .stats-section {
+    padding: 12px;
+    background-color: var(--bg-color, var(--primary-color));
+    border-radius: 6px;
+  }
+
+  .stats-section.tier-1 {
+    background: linear-gradient(135deg, #4a7c59 0%, #3a6349 100%);
+    padding: 14px;
+  }
+
+  .stats-section.tier-1 .stat-row.primary {
+    background-color: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    padding: 8px 12px;
+    margin-bottom: 6px;
+  }
+
+  .stats-section.tier-1 .stat-row.primary:last-child {
+    margin-bottom: 0;
+  }
+
+  .stats-section.tier-1 .stat-label {
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 13px;
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+
+  .stats-section.tier-1 .stat-value {
+    color: #e8f4e8;
+    font-size: 18px;
+    font-weight: 700;
+  }
+
+  .section-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted, #999);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin: 0 0 10px 0;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border-color, #555);
+  }
+
+  .stat-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 4px 0;
+    font-size: 13px;
+  }
+
+  .stat-label {
+    color: var(--text-muted, #999);
+  }
+
+  .stat-value {
+    font-weight: 500;
+    color: var(--text-color);
+  }
+
+  .stat-value.effect-value {
+    color: var(--accent-color, #4a9eff);
+  }
+
+  .entity-link {
+    color: var(--accent-color, #4a9eff);
+    text-decoration: none;
+  }
+
+  .entity-link:hover {
+    text-decoration: underline;
+  }
+
+  /* Effects styling */
+  .effects-section .effect-group {
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px dashed var(--border-color, #555);
+  }
+
+  .effects-section .effect-group:last-child {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    border-bottom: none;
+  }
+
+  .effect-duration {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--accent-color, #4a9eff);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .wiki-article {
+    overflow: hidden; /* Contains floated infobox */
+  }
+
+  .article-title {
+    font-size: 32px;
+    font-weight: 600;
+    margin: 0 0 16px 0;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--accent-color, #4a9eff);
+  }
+
+  .description-panel {
+    background-color: var(--secondary-color);
+    border: 1px solid var(--border-color, #555);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+
+  .description-content {
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--text-color);
+  }
+
+  .description-content.placeholder {
+    color: var(--text-muted, #999);
+    font-style: italic;
+  }
+
+  .no-selection {
+    text-align: center;
+    padding: 60px 20px;
+  }
+
+  .no-selection h2 {
+    font-size: 28px;
+    margin-bottom: 12px;
+  }
+
+  .no-selection p {
+    color: var(--text-muted, #999);
+    margin: 8px 0;
+  }
+
+  /* Tablet adjustments */
+  @media (max-width: 1023px) {
+    .wiki-infobox-float {
+      width: 280px;
+      margin-left: 16px;
+      padding: 14px;
+    }
+  }
+
+  /* Mobile adjustments */
+  @media (max-width: 767px) {
+    .layout-a {
+      max-width: 100%;
+    }
+
+    .wiki-infobox-float {
+      float: none;
+      width: auto;
+      margin: 0 0 16px 0;
+    }
+
+    /* Hide article title on mobile - redundant with infobox */
+    .article-title {
+      display: none;
+    }
+
+    .infobox-title {
+      font-size: 16px;
+    }
+
+    .icon-placeholder {
+      width: 60px;
+      height: 60px;
+    }
+
+    .icon-placeholder svg {
+      width: 36px;
+      height: 36px;
+    }
+  }
+</style>

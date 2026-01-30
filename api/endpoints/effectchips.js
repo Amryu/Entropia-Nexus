@@ -100,4 +100,4 @@ function register(app){
   app.get('/effectchips/:effectChip', async (req,res) => { const r = await getEffectChip(req.params.effectChip); if (r) res.json(r); else res.status(404).send(); });
 }
 
-module.exports = { register, getEffectChips, getEffectChip };
+module.exports = { register, getEffectChips, getEffectChip, formatEffectChip };

@@ -14,5 +14,10 @@ export default defineConfig(({ mode }) => ({
 		alias: {
 			$common: path.resolve('../common'),
 		}
+	},
+	server: {
+		allowedHosts: [
+			'dev.entropianexus.com'
+		]
 	}
 }));

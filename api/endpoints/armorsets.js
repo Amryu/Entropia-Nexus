@@ -278,4 +278,4 @@ function register(app){
   app.get('/armorsets/:armorset', async (req,res) => { const r = await getArmorSet(req.params.armorset); if (r) res.json(r); else res.status(404).send(); });
 }
 
-module.exports = { register, getArmorSets, getArmorSet };
+module.exports = { register, getArmorSets, getArmorSet, formatArmorSetsResponse, queries };

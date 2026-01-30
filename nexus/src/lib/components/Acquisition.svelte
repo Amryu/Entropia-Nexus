@@ -5,7 +5,7 @@
   import { encodeURIComponentSafe, getItemLink, getTypeLink } from '$lib/util';
   import { hasCondition } from '$lib/shopUtils';
 
-  import Table from './Table.svelte';
+  import FancyTable from './FancyTable.svelte';
 
   export let acquisition;
 
@@ -31,108 +31,267 @@
     return frequencyOrder[a] - frequencyOrder[b];
   }
 
-  // Build rows for Shops section (grouped by Shop+Item) with spans across Shop/Planet/Location
-  $: shopsRows = (() => {
-    try {
-      const list = acquisition?.ShopListings ?? [];
-      if (!Array.isArray(list) || list.length === 0) return [];
-      const groups = new Map();
-      for (const e of list) {
-        // server returns fields with capitalized names: Shop, Group, Item, ItemId, StackSize, Markup
-        const shopId = e?.Shop?.Id ?? e?.ShopId ?? e?.shopId;
-        const itemId = e?.Item?.Id ?? e?.ItemId ?? e?.itemId;
-        if (!shopId || !itemId) continue;
-        const key = `${shopId}|${itemId}`;
-        if (!groups.has(key)) {
-          groups.set(key, { shop: e.Shop, item: e.Item, ItemId: e.ItemId ?? e.Item?.Id ?? itemId, entries: [] });
-        }
-        const g = groups.get(key);
-        const s = Number(e.StackSize ?? e.stack_size ?? 0);
-        const m = Number(e.Markup ?? e.markup ?? 0);
-        if (!Number.isNaN(s) && s > 0 && !Number.isNaN(m) && m > 0) {
-          const muText = hasCondition(g.item) ? `+${m.toFixed(2)}` : `${m.toFixed(2)}%`;
-          g.entries.push({ stack: s, muText });
-        }
-      }
-      const rows = [];
-      for (const g of Array.from(groups.values())) {
-        const planetTech = g.shop?.Planet?.Properties?.TechnicalName ?? g.shop?.Planet?.Name;
-        const coords = g.shop?.Coordinates;
-        const locationText = (coords?.Longitude != null && coords?.Latitude != null)
-          ? `${coords.Longitude}, ${coords.Latitude}`
-          : 'N/A';
-        const wpCopy = (coords?.Longitude != null && coords?.Latitude != null && planetTech)
-          ? `/wp [${planetTech}, ${coords.Longitude}, ${coords.Latitude}, ${coords?.Altitude ?? 100}, ${g.shop?.Name ?? ''}]`
-          : null;
-    const spanLen = Math.max(1, g.entries.length);
-        if (g.entries.length === 0) {
-          // still render one row with N/A stack/MU
-          rows.push({
-            values: [
-              g.shop?.Name ?? 'N/A',
-              g.shop?.Planet?.Name ?? 'N/A',
-              locationText,
-              'N/A',
-              'N/A'
-            ],
-  // Use true as a marker to indicate spanned columns; Table will compute dynamic lengths
-  spans: [true, true, true, null, null],
-            links: [
-              g.shop ? `/market/shops/${encodeURIComponentSafe(g.shop.Name)}` : null,
-              null,
-              null,
-              null,
-              null
-            ],
-            copyables: [false, false, !!wpCopy, false, false],
-            onClicks: [null, null, () => { if (wpCopy) navigator.clipboard.writeText(wpCopy); }, null, null],
-            tooltips: [null, null, wpCopy ? 'Click to copy waypoint' : null, null, null]
-          });
-          continue;
-        }
-    for (let i = 0; i < g.entries.length; i++) {
-          const entry = g.entries[i];
-          rows.push({
-            values: [
-              g.shop?.Name ?? 'N/A',
-              g.shop?.Planet?.Name ?? 'N/A',
-              locationText,
-              entry.stack,
-              entry.muText
-            ],
-  // Use true as a marker to indicate spanned columns; Table will compute dynamic lengths
-  spans: [true, true, true, null, null],
-            links: [
-              g.shop ? `/market/shops/${encodeURIComponentSafe(g.shop.Name)}` : null,
-              null,
-              null,
-              null,
-              null
-            ],
-            copyables: [false, false, !!wpCopy, false, false],
-            onClicks: [null, null, () => { if (wpCopy) navigator.clipboard.writeText(wpCopy); }, null, null],
-            tooltips: [null, null, wpCopy ? 'Click to copy waypoint' : null, null, null]
-          });
-        }
-      }
-      return rows;
-    } catch {
-      return [];
-    }
+  // Build vendor data
+  $: vendorData = (() => {
+    if (!acquisition?.VendorOffers?.length) return [];
+    return acquisition.VendorOffers.map(vendorOffer => ({
+      name: vendorOffer.Vendor.Name,
+      nameLink: getTypeLink(vendorOffer.Vendor.Name, 'Vendor'),
+      price: `${vendorOffer.Item.Properties.Economy.Value} PED`,
+      specialPrice: vendorOffer.Prices?.length > 0
+        ? vendorOffer.Prices.map(price => `${price.Amount} ${price.Item.Name}`).join(', ')
+        : 'N/A',
+      planet: vendorOffer.Vendor.Planet.Name,
+      limited: vendorOffer.IsLimited ? 'Yes' : 'No'
+    }));
   })();
+
+  $: vendorColumns = [
+    { key: 'name', header: 'Name', width: '1fr', formatter: (v, row) => row.nameLink ? `<a href="${row.nameLink}">${v}</a>` : v },
+    { key: 'price', header: 'Price', width: '100px' },
+    { key: 'specialPrice', header: 'Special Price', width: '150px', hideOnMobile: true },
+    { key: 'planet', header: 'Planet', width: '100px', hideOnMobile: true },
+    { key: 'limited', header: 'Limited', width: '70px' }
+  ];
+
+  // Build loot data
+  $: lootData = (() => {
+    if (!acquisition?.Loots?.length) return [];
+    return acquisition.Loots.map(loot => ({
+      mob: loot.Mob.Name,
+      mobLink: getTypeLink(loot.Mob.Name, 'Mob', loot.Mob.Planet?.Name),
+      item: loot.Item.Name,
+      itemLink: getItemLink(loot.Item),
+      planet: loot.Mob?.Planet?.Name ?? 'N/A',
+      maturity: loot.Maturity.Name,
+      frequency: loot.Frequency,
+      frequencySort: frequencyOrder[loot.Frequency] ?? 8
+    }));
+  })();
+
+  $: lootColumns = [
+    { key: 'mob', header: 'Mob', width: '1fr', formatter: (v, row) => row.mobLink ? `<a href="${row.mobLink}">${v}</a>` : v },
+    { key: 'item', header: 'Item', width: '180px', formatter: (v, row) => row.itemLink ? `<a href="${row.itemLink}">${v}</a>` : v },
+    { key: 'planet', header: 'Planet', width: '100px', hideOnMobile: true },
+    { key: 'maturity', header: 'Lowest Maturity', width: '110px', hideOnMobile: true },
+    { key: 'frequency', header: 'Frequency', width: '110px' }
+  ];
+
+  // Build shop listing data
+  $: shopData = (() => {
+    if (!acquisition?.ShopListings?.length) return [];
+
+    const groups = new Map();
+    for (const e of acquisition.ShopListings) {
+      const shopId = e?.Shop?.Id ?? e?.ShopId ?? e?.shopId;
+      const itemId = e?.Item?.Id ?? e?.ItemId ?? e?.itemId;
+      if (!shopId || !itemId) continue;
+      const key = `${shopId}|${itemId}`;
+      if (!groups.has(key)) {
+        groups.set(key, { shop: e.Shop, item: e.Item, ItemId: e.ItemId ?? e.Item?.Id ?? itemId, entries: [] });
+      }
+      const g = groups.get(key);
+      const s = Number(e.StackSize ?? e.stack_size ?? 0);
+      const m = Number(e.Markup ?? e.markup ?? 0);
+      if (!Number.isNaN(s) && s > 0 && !Number.isNaN(m) && m > 0) {
+        const muText = hasCondition(g.item) ? `+${m.toFixed(2)}` : `${m.toFixed(2)}%`;
+        g.entries.push({ stack: s, muText });
+      }
+    }
+
+    const rows = [];
+    for (const g of Array.from(groups.values())) {
+      const coords = g.shop?.Coordinates;
+      const locationText = (coords?.Longitude != null && coords?.Latitude != null)
+        ? `${coords.Longitude}, ${coords.Latitude}`
+        : 'N/A';
+      const planetTech = g.shop?.Planet?.Properties?.TechnicalName ?? g.shop?.Planet?.Name;
+      const wpCopy = (coords?.Longitude != null && coords?.Latitude != null && planetTech)
+        ? `/wp [${planetTech}, ${coords.Longitude}, ${coords.Latitude}, ${coords?.Altitude ?? 100}, ${g.shop?.Name ?? ''}]`
+        : null;
+
+      if (g.entries.length === 0) {
+        rows.push({
+          shop: g.shop?.Name ?? 'N/A',
+          shopLink: g.shop ? `/market/shops/${encodeURIComponentSafe(g.shop.Name)}` : null,
+          planet: g.shop?.Planet?.Name ?? 'N/A',
+          location: locationText,
+          waypoint: wpCopy,
+          stack: 'N/A',
+          mu: 'N/A'
+        });
+      } else {
+        for (const entry of g.entries) {
+          rows.push({
+            shop: g.shop?.Name ?? 'N/A',
+            shopLink: g.shop ? `/market/shops/${encodeURIComponentSafe(g.shop.Name)}` : null,
+            planet: g.shop?.Planet?.Name ?? 'N/A',
+            location: locationText,
+            waypoint: wpCopy,
+            stack: entry.stack,
+            mu: entry.muText
+          });
+        }
+      }
+    }
+    return rows;
+  })();
+
+  $: shopColumns = [
+    { key: 'shop', header: 'Shop', width: '1fr', formatter: (v, row) => row.shopLink ? `<a href="${row.shopLink}">${v}</a>` : v },
+    { key: 'planet', header: 'Planet', width: '100px', hideOnMobile: true },
+    { key: 'location', header: 'Location', width: '100px', hideOnMobile: true, formatter: (v, row) => row.waypoint ? `<span class="copyable" title="Click to copy waypoint">${v}</span>` : v },
+    { key: 'stack', header: 'Stack', width: '60px' },
+    { key: 'mu', header: 'MU', width: '80px' }
+  ];
+
+  // Build refining recipe data
+  $: refiningData = (() => {
+    if (!acquisition?.RefiningRecipes?.length) return [];
+    return acquisition.RefiningRecipes.flatMap(recipe =>
+      recipe.Ingredients.map(ingredient => ({
+        product: recipe.Product.Name,
+        productLink: getItemLink(recipe.Product),
+        productAmount: recipe.Amount,
+        ingredient: ingredient.Item.Name,
+        ingredientLink: getItemLink(ingredient.Item),
+        ingredientAmount: ingredient.Amount
+      }))
+    );
+  })();
+
+  $: refiningColumns = [
+    { key: 'product', header: 'Product', width: '1fr', formatter: (v, row) => row.productLink ? `<a href="${row.productLink}">${v}</a>` : v },
+    { key: 'productAmount', header: 'Amt', width: '60px' },
+    { key: 'ingredient', header: 'Ingredient', width: '1fr', formatter: (v, row) => row.ingredientLink ? `<a href="${row.ingredientLink}">${v}</a>` : v },
+    { key: 'ingredientAmount', header: 'Amt', width: '60px' }
+  ];
+
+  // Build blueprint data
+  $: blueprintData = (() => {
+    if (!acquisition?.Blueprints?.length) return [];
+    return acquisition.Blueprints.map(bp => ({
+      name: bp.Name,
+      nameLink: getTypeLink(bp.Name, 'Blueprint'),
+      level: bp.Properties.Level,
+      profession: bp.Profession.Name,
+      professionLink: getTypeLink(bp.Profession.Name, 'Profession')
+    }));
+  })();
+
+  $: blueprintColumns = [
+    { key: 'name', header: 'Blueprint', width: '1fr', formatter: (v, row) => row.nameLink ? `<a href="${row.nameLink}">${v}</a>` : v },
+    { key: 'level', header: 'Level', width: '70px' },
+    { key: 'profession', header: 'Profession', width: '160px', formatter: (v, row) => row.professionLink ? `<a href="${row.professionLink}">${v}</a>` : v }
+  ];
+
+  // Build blueprint drop data
+  $: blueprintDropData = (() => {
+    if (!acquisition?.BlueprintDrops?.length) return [];
+    return acquisition.BlueprintDrops.map(bp => ({
+      name: bp.Name,
+      nameLink: getTypeLink(bp.Name, 'Blueprint'),
+      level: bp?.Properties?.Level ?? 'N/A'
+    }));
+  })();
+
+  $: blueprintDropColumns = [
+    { key: 'name', header: 'Name', width: '1fr', formatter: (v, row) => row.nameLink ? `<a href="${row.nameLink}">${v}</a>` : v },
+    { key: 'level', header: 'Level', width: '80px' }
+  ];
+
+  // Copy waypoint handler
+  function copyWaypoint(waypoint) {
+    if (waypoint) {
+      navigator.clipboard.writeText(waypoint);
+    }
+  }
 </script>
 
 <style>
-  .container {
+  .acquisition-container {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .acquisition-grid {
     display: grid;
-    grid-template-columns: minmax(500px, 1fr) minmax(500px, 1fr);
-    gap: 15px;
+    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    gap: 16px;
     align-items: start;
+  }
+
+  .acquisition-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .section-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted, #999);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin: 0 0 8px 0;
+    padding: 0;
+  }
+
+  .table-wrapper {
+    height: 300px;
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid var(--border-color, #555);
+  }
+
+  .table-wrapper.short {
+    height: 200px;
+  }
+
+  .no-data {
+    padding: 16px;
+    text-align: center;
+    color: var(--text-muted, #999);
+    font-size: 14px;
+    background-color: var(--bg-color, var(--primary-color));
+    border-radius: 6px;
+  }
+
+  :global(.acquisition-container a) {
+    color: var(--accent-color, #4a9eff);
+    text-decoration: none;
+  }
+
+  :global(.acquisition-container a:hover) {
+    text-decoration: underline;
+  }
+
+  :global(.acquisition-container .copyable) {
+    cursor: pointer;
+    color: var(--accent-color, #4a9eff);
+  }
+
+  :global(.acquisition-container .copyable:hover) {
+    text-decoration: underline;
+  }
+
+  /* Override pointer cursor on table rows since they don't link anywhere */
+  :global(.acquisition-container .table-row) {
+    cursor: default;
+  }
+
+  @media (max-width: 767px) {
+    .acquisition-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .table-wrapper {
+      height: 250px;
+    }
   }
 </style>
 
-<h2>Acquisition</h2>
-<br />
 {#if (acquisition == null
   || ((!acquisition.VendorOffers || acquisition.VendorOffers.length === 0)
   && (!acquisition.Loots || acquisition.Loots.length === 0)
@@ -142,144 +301,112 @@
   && (!acquisition.ShopListings || acquisition.ShopListings.length === 0)
   && (!acquisition.Upgrades || acquisition.Upgrades.length === 0)
   && (!acquisition.Events || acquisition.Events.length === 0)))}
-<div>No data available.</div>
+<div class="no-data">No acquisition data available for this item.</div>
 {:else}
-  <div class="container">
-    {#if acquisition != null && acquisition.VendorOffers && acquisition.VendorOffers.length > 0}
-    <Table
-      title = "Vendor"
-      header = { 
-        {
-          values: ['Name', 'Price', 'Special Price', 'Planet', 'Limited'],
-          widths: ['1fr', 'max-content', 'max-content', '1fr', 'max-content']
-        }
-      }
-      data = {
-        acquisition.VendorOffers.map(vendorOffer => ({
-          values: [
-            vendorOffer.Vendor.Name,
-            `${vendorOffer.Item.Properties.Economy.Value} PED`,
-            vendorOffer.Prices?.length > 0 ? vendorOffer.Prices.map(price => `${price.Amount} ${price.Item.Name}`).join('<br />') : 'N/A',
-            vendorOffer.Vendor.Planet.Name,
-            vendorOffer.IsLimited ? 'Yes' : 'No'
-          ],
-          links: [getTypeLink(vendorOffer.Vendor.Name, 'Vendor'), null, null, null, null]
-        }))
-      }
-      options={{searchable: true}} />
-    {/if}
-    {#if acquisition.Loots && acquisition.Loots.length > 0}
-    <Table 
-      title = "Looted"
-      header = {
-        {
-          values: ['Mob', 'Item', 'Planet', 'Lowest Maturity', 'Frequency'],
-          options: { sortFunctions: [null, null, null, null, sortByFrequency] },
-          widths: ['1fr', 'max-content', '1fr', '1fr', 'max-content']
-        }
-      }
-      data = {
-        acquisition.Loots.map(loot => ({
-          values: [
-            loot.Mob.Name,
-            loot.Item.Name,
-            loot.Mob?.Planet?.Name ?? 'N/A',
-            loot.Maturity.Name,
-            loot.Frequency
-          ],
-          links: [getTypeLink(loot.Mob.Name, 'Mob', loot.Mob.Planet.Name), null, null, null, null]
-        }))}
-      options={{searchable: true}} />
-    {/if}
-    {#if acquisition.ShopListings && acquisition.ShopListings.length > 0}
-    <Table
-      title="Shop Listings"
-      header={{
-        values: ['Shop', 'Planet', 'Location', 'Stack', 'MU'],
-        widths: ['1fr', '120px', '110px', '50px', '90px']
-      }}
-      data={shopsRows}
-      options={{ searchable: true, sortable: false }} />
-    {/if}
-    {#if acquisition.RefiningRecipes && acquisition.RefiningRecipes.length > 0}
-    <Table
-      title="Refining Recipes"
-      header={
-        {
-          values: ['Product', 'Product Amount', 'Ingredient', 'Ingredient Amount'],
-          widths: ['1fr', 'max-content', '1fr', 'max-content']
-        }
-      }
-      data = {
-        acquisition.RefiningRecipes.flatMap(recipe => recipe.Ingredients.map((ingredient, index) => ({
-          values: [
-            recipe.Product.Name,
-            recipe.Amount,
-            ingredient.Item.Name,
-            ingredient.Amount
-          ],
-          links: [getItemLink(recipe.Product), null, getItemLink(ingredient.Item), null],
-          spans: [recipe.Ingredients.length, recipe.Ingredients.length, null, null, null]
-        })))
-      } />
-    {/if}
-    {#if acquisition.Blueprints && acquisition.Blueprints.length > 0}
-    <Table
-      title="Crafted"
-      header = {
-        {
-          values: ['Blueprint', 'Blueprint Level', 'Profession'],
-          widths: ['1fr', 'max-content', '1fr']
-        }
-      }
-      data = {
-        acquisition.Blueprints.map(bp => ({
-          values: [
-            bp.Name,
-            bp.Properties.Level,
-            bp.Profession.Name
-          ],
-          links: [getTypeLink(bp.Name, 'Blueprint'), null, null]
-        }))
-      } />
-    {/if}
-    {#if acquisition.BlueprintDrops && acquisition.BlueprintDrops.length > 0}
-    <Table
-      title="Blueprint Discovery"
-      header={{
-        values: ['Name', 'Level'],
-        widths: ['1fr', 'max-content']
-      }}
-      data={
-        acquisition.BlueprintDrops.map(bp => ({
-          values: [bp.Name, bp?.Properties?.Level ?? 'N/A'],
-          links: [getTypeLink(bp.Name, 'Blueprint'), null]
-        }))
-      }
-      options={{ searchable: true }} />
-    {/if}
-    {#if acquisition.Upgrades && acquisition.Upgrades.length > 0}
-    <Table
-      title="Upgraded"
-      header = {
-        {
-          values: ['Mission', 'Planet', 'Location'],
-          widths: ['1fr', '1fr', '1fr']
-        }
-      }
-      data = {
-        acquisition.Upgrades.map(upgrade => ({
-          values: [
-            upgrade.name,
-            upgrade.level,
-            `${upgrade.cost.toFixed(2)} PED`,
-            upgrade.profession
-          ]
-        }))
-      } />
-    {/if}
+  <div class="acquisition-container">
+    <div class="acquisition-grid">
+      {#if acquisition.VendorOffers && acquisition.VendorOffers.length > 0}
+        <div class="acquisition-section">
+          <h4 class="section-title">Vendor</h4>
+          <div class="table-wrapper">
+            <FancyTable
+              columns={vendorColumns}
+              data={vendorData}
+              rowHeight={40}
+              searchable={true}
+              sortable={true}
+              emptyMessage="No vendor offers"
+            />
+          </div>
+        </div>
+      {/if}
+
+      {#if acquisition.Loots && acquisition.Loots.length > 0}
+        <div class="acquisition-section">
+          <h4 class="section-title">Looted</h4>
+          <div class="table-wrapper">
+            <FancyTable
+              columns={lootColumns}
+              data={lootData}
+              rowHeight={40}
+              searchable={true}
+              sortable={true}
+              emptyMessage="No loot data"
+            />
+          </div>
+        </div>
+      {/if}
+
+      {#if acquisition.ShopListings && acquisition.ShopListings.length > 0}
+        <div class="acquisition-section">
+          <h4 class="section-title">Shop Listings</h4>
+          <div class="table-wrapper">
+            <FancyTable
+              columns={shopColumns}
+              data={shopData}
+              rowHeight={40}
+              searchable={true}
+              sortable={true}
+              emptyMessage="No shop listings"
+            />
+          </div>
+        </div>
+      {/if}
+
+      {#if acquisition.RefiningRecipes && acquisition.RefiningRecipes.length > 0}
+        <div class="acquisition-section">
+          <h4 class="section-title">Refining Recipes</h4>
+          <div class="table-wrapper short">
+            <FancyTable
+              columns={refiningColumns}
+              data={refiningData}
+              rowHeight={40}
+              searchable={false}
+              sortable={true}
+              emptyMessage="No refining recipes"
+            />
+          </div>
+        </div>
+      {/if}
+
+      {#if acquisition.Blueprints && acquisition.Blueprints.length > 0}
+        <div class="acquisition-section">
+          <h4 class="section-title">Crafted</h4>
+          <div class="table-wrapper short">
+            <FancyTable
+              columns={blueprintColumns}
+              data={blueprintData}
+              rowHeight={40}
+              searchable={true}
+              sortable={true}
+              emptyMessage="No blueprint data"
+            />
+          </div>
+        </div>
+      {/if}
+
+      {#if acquisition.BlueprintDrops && acquisition.BlueprintDrops.length > 0}
+        <div class="acquisition-section">
+          <h4 class="section-title">Blueprint Discovery</h4>
+          <div class="table-wrapper short">
+            <FancyTable
+              columns={blueprintDropColumns}
+              data={blueprintDropData}
+              rowHeight={40}
+              searchable={true}
+              sortable={true}
+              emptyMessage="No blueprint drops"
+            />
+          </div>
+        </div>
+      {/if}
+    </div>
+
     {#if acquisition.Events && acquisition.Events.length > 0}
-    <h2>Event</h2>
+      <div class="events-section">
+        <h3>Events</h3>
+        <p class="no-data">Event data coming soon.</p>
+      </div>
     {/if}
   </div>
 {/if}

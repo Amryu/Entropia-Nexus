@@ -428,6 +428,16 @@ export async function apiPut(fetch, url, body, apiUrl = getApiBase()) {
     },
     body: JSON.stringify(body)
   });
+  
+  if (!response.ok) {
+    try {
+      const errorData = await response.json();
+      return errorData;
+    } catch {
+      return { error: `HTTP ${response.status}: ${response.statusText}` };
+    }
+  }
+  
   try {
     return await response.json();
   } catch {
@@ -587,5 +597,10 @@ export async function resolveItemLink(fetch, item) {
 }
 
 export function getResponse(response, status) {
-  return new Response(JSON.stringify(response), { status });
+  return new Response(JSON.stringify(response), {
+    status,
+    headers: {
+      'Content-Type': 'application/json'
+    }
+  });
 }

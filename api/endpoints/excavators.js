@@ -92,4 +92,4 @@ function register(app){
   app.get('/excavators/:excavator', async (req,res) => { const r = await getExcavator(req.params.excavator); if (r) res.json(r); else res.status(404).send(); });
 }
 
-module.exports = { register, getExcavators, getExcavator };
+module.exports = { register, getExcavators, getExcavator, formatExcavator };

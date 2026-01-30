@@ -3,6 +3,7 @@
 nexus-bot/config.json
 .vscode/
 .claude/
+.mcp.json
 
 # Ignore all .env files
 *.env
@@ -11,4 +12,9 @@ nexus-bot/config.json
 !.env.example
 
 # Ignore SQL folder (experimental scripts and database dumps)
-sql/
+sql/stuff
+sqp/experimental
+api/.env.test
+CLAUDE.md
+nexus/nul
+nul

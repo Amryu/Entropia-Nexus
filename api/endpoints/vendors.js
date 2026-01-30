@@ -121,4 +121,4 @@ function register(app){
   app.get('/vendors/:vendor', async (req,res) => { const r = await getVendor(req.params.vendor); if (r) res.json(r); else res.status(404).send(); });
 }
 
-module.exports = { register, getVendors, getVendor };
+module.exports = { register, getVendors, getVendor, formatVendor };

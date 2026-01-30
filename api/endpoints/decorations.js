@@ -45,4 +45,4 @@ function register(app){
   app.get('/decorations/:decoration', async (req,res) => { const r = await getDecoration(req.params.decoration); if (r) res.json(r); else res.status(404).send(); });
 }
 
-module.exports = { register, getDecorations, getDecoration };
+module.exports = { register, getDecorations, getDecoration, formatDecoration };

@@ -1,287 +1,588 @@
-<script lang="ts">
+<!--
+  @component Armor Set Wiki Page
+  Wikipedia-style layout with floating infobox on the right side.
+  Infobox: Defense stats (9 types + total), Economy, Set Effects, Total Absorption
+  Article: Description, Set Pieces, Tiering, Acquisition
+
+  Legacy editConfig preserved in armorsets-legacy/+page.svelte
+  Key structure:
+  - constructor: Name, Properties (Description, Weight, Economy, Defense), Armors[], EffectsOnSetEquip[], Tiers[]
+  - dependencies: ['effects']
+  - controls: General, Economy, Defense (9 types), Armors (7 slots with gender support), Set Effects, Tiering
+-->
+<script>
   // @ts-nocheck
   import '$lib/style.css';
+  import { page } from '$app/stores';
+  import { onMount } from 'svelte';
+  import { encodeURIComponentSafe, clampDecimals, hasItemTag, groupBy } from '$lib/util';
 
-  import { hasItemTag, clampDecimals, groupBy } from "$lib/util";
+  // Wiki components
+  import WikiPage from '$lib/components/wiki/WikiPage.svelte';
+  import WikiSEO from '$lib/components/wiki/WikiSEO.svelte';
+  import DataSection from '$lib/components/wiki/DataSection.svelte';
 
-  import EntityViewer from "$lib/components/EntityViewer.svelte";
-  
-  import Tiering from "$lib/components/Tiering.svelte";
-  import Acquisition from "$lib/components/Acquisition.svelte";
-  import ArmorSetPieces from "./ArmorSetPieces.svelte";
-  import { editConfigEffectsOnEquip, editConfigEffectsOnSetEquip, getEditConfigTier } from '$lib/editConfigUtil';
+  // ArmorSet-specific component
+  import ArmorSetPieces from './ArmorSetPieces.svelte';
+
+  // Legacy components for data display
+  import Tiering from '$lib/components/Tiering.svelte';
+  import Acquisition from '$lib/components/Acquisition.svelte';
 
   export let data;
 
+  $: armorSet = data.object;
+  $: user = data.session?.user;
+  $: allItems = data.allItems || [];
+  $: additional = data.additional || {};
+
+  // Build navigation items
+  $: navItems = allItems;
+
+  // Navigation filters - none for armor sets
+  const navFilters = [];
+
+  // Sidebar table columns for armor sets
+  const navTableColumns = [
+    {
+      key: 'defense',
+      header: 'Def',
+      width: '55px',
+      filterPlaceholder: '>50',
+      getValue: (item) => getTotalDefense(item),
+      format: (v) => v != null ? v.toFixed(1) : '-'
+    },
+    {
+      key: 'absorption',
+      header: 'Abs',
+      width: '60px',
+      filterPlaceholder: '>1000',
+      getValue: (item) => getTotalAbsorption(item),
+      format: (v) => v != null ? Math.round(v) : '-'
+    }
+  ];
+
+  // Breadcrumbs
+  $: breadcrumbs = [
+    { label: 'Items', href: '/items' },
+    { label: 'Armor Sets', href: '/items/armorsets' },
+    ...(armorSet ? [{ label: armorSet.Name }] : [])
+  ];
+
+  // SEO
+  $: seoDescription = armorSet?.Properties?.Description ||
+    `${armorSet?.Name || 'Armor Set'} - armor set with ${getTotalDefense(armorSet)?.toFixed(1) || '?'} total defense in Entropia Universe.`;
+
+  $: canonicalUrl = armorSet
+    ? `https://entropianexus.com/items/armorsets/${encodeURIComponentSafe(armorSet.Name)}`
+    : 'https://entropianexus.com/items/armorsets';
+
+  // Check if armor set is tierable
+  $: isTierable = armorSet && !hasItemTag(armorSet.Name, 'L');
+
+  // ========== PANEL STATE PERSISTENCE ==========
+  let panelStates = {
+    pieces: true,
+    tiering: true,
+    acquisition: true
+  };
+
+  onMount(() => {
+    try {
+      const stored = localStorage.getItem('wiki-armorset-panels');
+      if (stored) {
+        panelStates = { ...panelStates, ...JSON.parse(stored) };
+      }
+    } catch (e) {
+      // localStorage not available
+    }
+  });
+
+  function savePanelStates() {
+    try {
+      localStorage.setItem('wiki-armorset-panels', JSON.stringify(panelStates));
+    } catch (e) {
+      // localStorage not available
+    }
+  }
+
+  // ========== CALCULATOR FUNCTIONS ==========
   function getTotalDefense(item) {
-    return (item.Properties?.Defense?.Impact ?? 0) + (item.Properties?.Defense?.Cut ?? 0) + (item.Properties?.Defense?.Stab ?? 0) + (item.Properties?.Defense?.Penetration ?? 0) + (item.Properties?.Defense?.Shrapnel ?? 0) + (item.Properties?.Defense?.Burn ?? 0) + (item.Properties?.Defense?.Cold ?? 0) + (item.Properties?.Defense?.Acid ?? 0) + (item.Properties?.Defense?.Electric ?? 0);
+    if (!item?.Properties?.Defense) return null;
+    const d = item.Properties.Defense;
+    return (d.Impact ?? 0) + (d.Cut ?? 0) + (d.Stab ?? 0) + (d.Penetration ?? 0) +
+           (d.Shrapnel ?? 0) + (d.Burn ?? 0) + (d.Cold ?? 0) + (d.Acid ?? 0) + (d.Electric ?? 0);
   }
 
   function getMaxArmorDecay(item) {
-    return item.Properties?.Economy.Durability && getTotalDefense(item)
-      ? getTotalDefense(item) * ((100000 - item.Properties?.Economy.Durability) / 100000) * 0.05
-      : null;
+    const totalDef = getTotalDefense(item);
+    if (!item?.Properties?.Economy?.Durability || !totalDef) return null;
+    return totalDef * ((100000 - item.Properties.Economy.Durability) / 100000) * 0.05;
   }
 
   function getTotalAbsorption(item) {
-    return item.Properties?.Economy.MaxTT && getMaxArmorDecay(item)
-      ? getTotalDefense(item) * ((item.Properties?.Economy.MaxTT - (item.Properties?.Economy.MinTT ?? 0)) / (getMaxArmorDecay(item) / 100))
-      : null;
+    const maxDecay = getMaxArmorDecay(item);
+    const totalDef = getTotalDefense(item);
+    if (!item?.Properties?.Economy?.MaxTT || !maxDecay) return null;
+    return totalDef * ((item.Properties.Economy.MaxTT - (item.Properties.Economy.MinTT ?? 0)) / (maxDecay / 100));
   }
 
-  let propertiesDataFunction = (armorSet) => {
-    let onSetEquip = {};
-
-    if (armorSet.EffectsOnSetEquip != null && armorSet.EffectsOnSetEquip.length > 0) {
-      Object.entries(groupBy(armorSet.EffectsOnSetEquip, x => x.Values.MinSetPieces))
-        .sort(([a],[b]) => Number(a) - Number(b))
-        .forEach(([key, effects]) => onSetEquip[key + ' Pieces'] = { Value: effects.map(effect => `${effect.Values.Strength}${effect.Values.Unit ?? '<Unit>'} ${effect.Name}`) });
-    }
-
-    return {
-      General: {
-        Weight: armorSet.Properties?.Weight != null ? `${clampDecimals(armorSet.Properties?.Weight, 1, 6)}kg` : 'N/A',
-      },
-      Economy: {
-        MaxTT: {
-          Label: 'Max. TT',
-          Value: armorSet.Properties?.Economy?.MaxTT != null ? `${clampDecimals(armorSet.Properties?.Economy?.MaxTT, 2, 8)} PED` : 'N/A',
-        },
-        MinTT: {
-          Label: 'Min. TT',
-          Value: armorSet.Properties?.Economy?.MinTT != null ? `${clampDecimals(armorSet.Properties?.Economy?.MinTT, 2, 8)} PED` : 'N/A',
-        },
-        MaxDecay: {
-          Label: 'Maximum Decay',
-          Tooltip: 'The maximum amount of decay the armor can take at once, if it uses its full protection.',
-          Value: getMaxArmorDecay(armorSet) != null ? `${getMaxArmorDecay(armorSet).toFixed(4)} PEC` : 'N/A',
-        },
-        Durability: armorSet.Properties?.Economy?.Durability ?? 'N/A',
-      },
-      Defense: {
-        Impact: `${armorSet.Properties?.Defense?.Impact?.toFixed(1) ?? 'N/A'}`,
-        Cut: `${armorSet.Properties?.Defense?.Cut?.toFixed(1) ?? 'N/A'}`,
-        Stab: `${armorSet.Properties?.Defense?.Stab?.toFixed(1) ?? 'N/A'}`,
-        Penetration: `${armorSet.Properties?.Defense?.Penetration?.toFixed(1) ?? 'N/A'}`,
-        Shrapnel: `${armorSet.Properties?.Defense?.Shrapnel?.toFixed(1) ?? 'N/A'}`,
-        Burn: `${armorSet.Properties?.Defense?.Burn?.toFixed(1) ?? 'N/A'}`,
-        Cold: `${armorSet.Properties?.Defense?.Cold?.toFixed(1) ?? 'N/A'}`,
-        Acid: `${armorSet.Properties?.Defense?.Acid?.toFixed(1) ?? 'N/A'}`,
-        Electric: `${armorSet.Properties?.Defense?.Electric?.toFixed(1) ?? 'N/A'}`,
-        Total: {
-          Label: 'Total',
-          Value: getTotalDefense(armorSet) != null ? `${getTotalDefense(armorSet).toFixed(1)}` : 'N/A',
-          Bold: true,
-        },
-      },
-      "Set Effects": armorSet.EffectsOnSetEquip?.length > 0 ? onSetEquip : null,
-      Misc: {
-        TotalAbsorption: {
-          Label: 'Total Absorption',
-          Tooltip: 'The total amount of damage the plate can absorb before it breaks. This number does not take block into account.',
-          Value: getTotalAbsorption(armorSet) != null ? `${getTotalAbsorption(armorSet).toFixed(0)} HP` : 'N/A',
-        }
-      }
-    };
-  };
-
-  let slots = ['Head', 'Torso', 'Arms', 'Hands', 'Legs', 'Shins', 'Feet'];
-
-  function getGenderedPiece(gender) {
-    let getArmor = x => x.find(x => x.Properties.Gender === gender);
-    let getSlot = x => x.length > 0 ? x[0].Properties.Slot : null;
-
-    return {
-      '_if': y => gender === 'Both'
-        ? y.some(z => z.Properties.Slot === getSlot(y) && z.Properties.Gender === 'Both')
-        : y.every(z => z.Properties.Slot === getSlot(y) && z.Properties.Gender !== 'Both'),
-      label: gender === 'Both' ? 'Piece' : gender,
-      type: 'group',
-      controls: [
-        { 
-          label: 'Name',
-          type: 'text',
-          '_get': y => getArmor(y)?.Name,
-          '_set': (y, v) => getArmor(y).Name = v
-        },
-        { label: 'Weight', type: 'number', step: '0.1', min: '0', '_get': y => getArmor(y).Properties.Weight, '_set': (y, v) => getArmor(y).Properties.Weight = v },
-        { label: 'Max. TT', type: 'number', step: '0.00001', min: '0', '_get': y => getArmor(y).Properties.Economy.MaxTT, '_set': (y, v) => getArmor(y).Properties.Economy.MaxTT = v },
-        { label: 'Min. TT', type: 'number', step: '0.00001', min: '0', '_get': y => getArmor(y).Properties.Economy.MinTT, '_set': (y, v) => getArmor(y).Properties.Economy.MinTT = v },
-        { label: 'Effects', type: 'list', config: editConfigEffectsOnEquip, label: 'Effects on Equip', '_get': y => getArmor(y).EffectsOnEquip, '_set': (y, v) => getArmor(y).EffectsOnEquip = v },
-      ],
-      '_get': y => y.find(z => z.Properties.Gender === gender),
-      '_set': (y, v) => {
-        let index = y.findIndex(z => z.Properties.Gender === gender);
-        y[index] = v;
-      }
-    }
+  // Get set effects grouped by piece count
+  function getSetEffects(item) {
+    if (!item?.EffectsOnSetEquip?.length) return null;
+    const grouped = groupBy(item.EffectsOnSetEquip, x => x.Values.MinSetPieces);
+    return Object.entries(grouped)
+      .sort(([a], [b]) => Number(a) - Number(b))
+      .map(([pieces, effects]) => ({
+        pieces: Number(pieces),
+        effects: effects.map(e => ({
+          name: e.Name,
+          strength: e.Values.Strength,
+          unit: e.Values.Unit || ''
+        }))
+      }));
   }
 
-  function newArmorPiece(slot, gender) {
-    return {
-      Name: `${slot} Piece${gender !== 'Both' ? ` (${gender.substring(0, 1)})` : ``}`,
-      Properties: {
-        Slot: slot,
-        Gender: gender,
-        Economy: {
-          MaxTT: null,
-          MinTT: null,
-          Durability: null
-        },
-      },
-      EffectsOnEquip: [],
-    };
-  }
+  // Reactive calculations
+  $: totalDefense = getTotalDefense(armorSet);
+  $: maxDecay = getMaxArmorDecay(armorSet);
+  $: totalAbsorption = getTotalAbsorption(armorSet);
+  $: setEffects = getSetEffects(armorSet);
+  $: pieceCount = armorSet?.Armors?.flat().filter(x => x?.Properties?.Gender === 'Both' || x?.Properties?.Gender === 'Male').length ?? 0;
 
-  function getArmorSlotConfig() {
-    return {
-      constructor: i => [newArmorPiece(slots[i], 'Both')],
-      controls: [
-        {
-          label: 'Unisex',
-          type: 'checkbox',
-          '_get': y => y.length === 1 && y[0].Properties.Gender === 'Both',
-          '_set': (y, v) => {
-            let slot = y[0].Properties.Slot;
-            y.length = 0;
-            if (v) {
-              y.push(newArmorPiece(slot, 'Both'));
-            }
-            else {
-              y.push(newArmorPiece(slot, 'Male'));
-              y.push(newArmorPiece(slot, 'Female'));
-            }
-          }
-        },
-        getGenderedPiece('Both'),
-        getGenderedPiece('Male'),
-        getGenderedPiece('Female')
-      ]
-    };
-  }
-
-  const editConfig = {
-    constructor: () => ({
-      Name: 'New Armor Set',
-      Properties: {
-        Description: undefined,
-        Weight: undefined,
-        Economy: {
-          MaxTT: undefined,
-          MinTT: undefined,
-          Durability: undefined,
-        },
-        Defense: {
-          Impact: undefined,
-          Cut: undefined,
-          Stab: undefined,
-          Penetration: undefined,
-          Shrapnel: undefined,
-          Burn: undefined,
-          Cold: undefined,
-          Acid: undefined,
-          Electric: undefined,
-        },
-      },
-      Armors: [],
-      EffectsOnSetEquip: [],
-      Tiers: [],
-    }),
-    dependencies: ['effects'],
-    controls: [
-      {
-        label: 'General',
-        type: 'group',
-        controls: [
-          { label: 'Name', type: 'text', '_get': x => x.Name, '_set': (x, v) => x.Name = v},
-          { label: 'Description', type: 'textarea', '_get': x => x.Properties?.Economy?.Description, '_set': (x, v) => x.Properties.Economy.Description = v},
-        ]
-      },
-      {
-        label: 'Economy',
-        type: 'group',
-        controls: [
-          { label: 'Durability', type: 'number', step: '1', min: '0', '_get': x => x.Properties?.Economy?.Durability, '_set': (x, v) => x.Properties.Economy.Durability = v},
-        ]
-      },
-      {
-        label: 'Defense',
-        type: 'group',
-        controls: [
-          { label: 'Impact', type: 'number', step: '0.1', min: '0', '_get': x => x.Properties?.Defense?.Impact, '_set': (x, v) => x.Properties.Defense.Impact = v},
-          { label: 'Cut', type: 'number', step: '0.1', min: '0', '_get': x => x.Properties?.Defense?.Cut, '_set': (x, v) => x.Properties.Defense.Cut = v},
-          { label: 'Stab', type: 'number', step: '0.1', min: '0', '_get': x => x.Properties?.Defense?.Stab, '_set': (x, v) => x.Properties.Defense.Stab = v},
-          { label: 'Penetration', type: 'number', step: '0.1', min: '0', '_get': x => x.Properties?.Defense?.Penetration, '_set': (x, v) => x.Properties.Defense.Penetration = v},
-          { label: 'Shrapnel', type: 'number', step: '0.1', min: '0', '_get': x => x.Properties?.Defense?.Shrapnel, '_set': (x, v) => x.Properties.Defense.Shrapnel = v},
-          { label: 'Burn', type: 'number', step: '0.1', min: '0', '_get': x => x.Properties?.Defense?.Burn, '_set': (x, v) => x.Properties.Defense.Burn = v},
-          { label: 'Cold', type: 'number', step: '0.1', min: '0', '_get': x => x.Properties?.Defense?.Cold, '_set': (x, v) => x.Properties.Defense.Cold = v},
-          { label: 'Acid', type: 'number', step: '0.1', min: '0', '_get': x => x.Properties?.Defense?.Acid, '_set': (x, v) => x.Properties.Defense.Acid = v},
-          { label: 'Electric', type: 'number', step: '0.1', min: '0', '_get': x => x.Properties?.Defense?.Electric, '_set': (x, v) => x.Properties.Defense.Electric = v},
-        ]
-      },
-      {
-        label: 'Armors',
-        type: 'array',
-        size: 7,
-        config: getArmorSlotConfig(),
-        indexFunc: (x, i) => x.length > 0 && x[0].Properties.Slot === slots[i],
-        itemNameFunc: (i) => slots[i],
-        '_get': x => x.Armors,
-        '_set': (x, v) => x.Armors = v,
-      },
-      { label: 'Set Effects', type: 'list', config: editConfigEffectsOnSetEquip, label: 'Set Effects on Equip', '_get': x => x.EffectsOnSetEquip, '_set': (x, v) => x.EffectsOnSetEquip = v},
-      { '_if': x => !hasItemTag(x.Name, 'L'), label: 'Tiering', type: 'array', size: 10, config: getEditConfigTier('ArmorSet'), indexFunc: (x, i) => x?.Properties?.Tier === i + 1, itemNameFunc: (i) => `Tier ${i + 1}`, '_get': x => x.Tiers ?? [], '_set': (x, v) => x.Tiers = v},
-    ]
-  };
-
-  let tableViewInfo = {
-    columns: ['Name', 'Weight', 'Max. TT', 'Durability', 'Total Absorption', 'Imp', 'Cut', 'Stab', 'Pen', 'Shrap', 'Burn', 'Cold', 'Acid', 'Elec', 'Total'],
-    columnWidths: ['1fr', '80px', '100px', '90px', '130px', '70px', '70px', '70px', '70px', '70px', '70px', '70px', '70px', '70px', '70px'],
-    rowValuesFunction: (item) => {
-      return [
-        item.Name,
-        item.Properties?.Weight != null ? `${item.Properties?.Weight.toFixed(1)}kg` : 'N/A',
-        item.Properties?.Economy?.MaxTT != null ? `${item.Properties?.Economy?.MaxTT.toFixed(2)} PED` : 'N/A',
-        item.Properties?.Economy?.Durability ?? 'N/A',
-        getTotalAbsorption(item) != null ? `${getTotalAbsorption(item).toFixed(0)} HP` : 'N/A',
-        item.Properties?.Defense?.Impact?.toFixed(1) ?? 'N/A',
-        item.Properties?.Defense?.Cut?.toFixed(1) ?? 'N/A',
-        item.Properties?.Defense?.Stab?.toFixed(1) ?? 'N/A',
-        item.Properties?.Defense?.Penetration?.toFixed(1) ?? 'N/A',
-        item.Properties?.Defense?.Shrapnel?.toFixed(1) ?? 'N/A',
-        item.Properties?.Defense?.Burn?.toFixed(1) ?? 'N/A',
-        item.Properties?.Defense?.Cold?.toFixed(1) ?? 'N/A',
-        item.Properties?.Defense?.Acid?.toFixed(1) ?? 'N/A',
-        item.Properties?.Defense?.Electric?.toFixed(1) ?? 'N/A',
-        getTotalDefense(item) != null ? `${getTotalDefense(item).toFixed(1)}` : 'N/A',
-      ];
-    }
-  };
+  // Damage types for display
+  const damageTypes = ['Impact', 'Cut', 'Stab', 'Penetration', 'Shrapnel', 'Burn', 'Cold', 'Acid', 'Electric'];
 </script>
 
-<EntityViewer
-  data={data}
-  user={data.session.user}
-  tableViewInfo={tableViewInfo}
-  editConfig={editConfig}
-  propertiesDataFunction={propertiesDataFunction}
-  title='Armor Sets'
-  type='ArmorSet'
-  basePath='/items/armorsets'
-  let:object
-  let:additional>
-  <!-- Set Pieces -->
-  <div class="flex-item long-content">
-    <ArmorSetPieces armorSet={object} />
-  </div>
-  {#if !hasItemTag(object.Name, 'L')}
-  <!-- Tiering -->
-  <div class="flex-item long-content">
-    <Tiering tieringInfo={additional.tierInfo} setPieceCount={object?.Armors?.flat().filter(x => x?.Properties?.Gender === 'Both' || x?.Properties?.Gender === 'Male').length ?? 0} />
-  </div>
+<WikiSEO
+  title={armorSet?.Name || 'Armor Sets'}
+  description={seoDescription}
+  entityType="armorset"
+  entity={armorSet}
+  {canonicalUrl}
+  breadcrumbs={breadcrumbs.map(b => ({ name: b.label, url: b.href }))}
+/>
+
+<WikiPage
+  title="Armor Sets"
+  {breadcrumbs}
+  entity={armorSet}
+  entityType="ArmorSet"
+  basePath="/items/armorsets"
+  {navItems}
+  {navFilters}
+  {navTableColumns}
+  {user}
+  editable={true}
+>
+  {#if armorSet}
+    <div class="layout-a">
+      <!-- Wikipedia-style floating infobox (right panel) -->
+      <aside class="wiki-infobox-float">
+        <!-- Entity Header -->
+        <div class="infobox-header">
+          <div class="icon-placeholder">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+            </svg>
+          </div>
+          <div class="infobox-title">{armorSet.Name}</div>
+          <div class="infobox-subtitle">
+            <span class="type-badge">Armor Set</span>
+            <span>{pieceCount} pieces</span>
+          </div>
+        </div>
+
+        <!-- Primary Stats -->
+        <div class="stats-section tier-1">
+          <div class="stat-row primary">
+            <span class="stat-label">Total Defense</span>
+            <span class="stat-value">{totalDefense?.toFixed(1) ?? 'N/A'}</span>
+          </div>
+          <div class="stat-row primary">
+            <span class="stat-label">Absorption</span>
+            <span class="stat-value">{totalAbsorption?.toFixed(0) ?? 'N/A'} HP</span>
+          </div>
+        </div>
+
+        <!-- Defense Breakdown -->
+        <div class="stats-section">
+          <h4 class="section-title">Defense</h4>
+          {#each damageTypes as type}
+            {@const value = armorSet.Properties?.Defense?.[type]}
+            <div class="stat-row">
+              <span class="stat-label">{type}</span>
+              <span class="stat-value">{value?.toFixed(1) ?? 'N/A'}</span>
+            </div>
+          {/each}
+        </div>
+
+        <!-- Economy Stats -->
+        <div class="stats-section">
+          <h4 class="section-title">Economy</h4>
+          <div class="stat-row">
+            <span class="stat-label">Max TT</span>
+            <span class="stat-value">{armorSet.Properties?.Economy?.MaxTT != null ? `${clampDecimals(armorSet.Properties.Economy.MaxTT, 2, 8)} PED` : 'N/A'}</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Min TT</span>
+            <span class="stat-value">{armorSet.Properties?.Economy?.MinTT != null ? `${clampDecimals(armorSet.Properties.Economy.MinTT, 2, 8)} PED` : 'N/A'}</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Durability</span>
+            <span class="stat-value">{armorSet.Properties?.Economy?.Durability ?? 'N/A'}</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Max Decay</span>
+            <span class="stat-value">{maxDecay?.toFixed(4) ?? 'N/A'} PEC</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Weight</span>
+            <span class="stat-value">{armorSet.Properties?.Weight != null ? `${clampDecimals(armorSet.Properties.Weight, 1, 6)}kg` : 'N/A'}</span>
+          </div>
+        </div>
+
+        <!-- Set Effects -->
+        {#if setEffects?.length > 0}
+          <div class="stats-section set-effects">
+            <h4 class="section-title">Set Effects</h4>
+            {#each setEffects as group}
+              <div class="effect-group">
+                <div class="effect-pieces">{group.pieces} Pieces</div>
+                {#each group.effects as effect}
+                  <div class="effect-row">
+                    <span class="effect-value">+{effect.strength}{effect.unit}</span>
+                    <span class="effect-name">{effect.name}</span>
+                  </div>
+                {/each}
+              </div>
+            {/each}
+          </div>
+        {/if}
+      </aside>
+
+      <!-- Main content (center) -->
+      <article class="wiki-article">
+        <h1 class="article-title">{armorSet.Name}</h1>
+
+        <!-- Description Panel -->
+        <div class="description-panel">
+          {#if armorSet.Properties?.Description}
+            <div class="description-content">{armorSet.Properties.Description}</div>
+          {:else}
+            <div class="description-content placeholder">
+              {armorSet.Name} is an armor set providing {totalDefense?.toFixed(1) || '?'} total defense.
+            </div>
+          {/if}
+        </div>
+
+        <!-- Set Pieces Section -->
+        {#if armorSet.Armors?.length > 0}
+          <DataSection
+            title="Set Pieces"
+            icon=""
+            bind:expanded={panelStates.pieces}
+            subtitle="{pieceCount} pieces"
+            on:toggle={savePanelStates}
+          >
+            <ArmorSetPieces {armorSet} />
+          </DataSection>
+        {/if}
+
+        <!-- Tiering Section -->
+        {#if isTierable}
+          <DataSection
+            title="Tiering"
+            icon=""
+            bind:expanded={panelStates.tiering}
+            subtitle="{additional.tierInfo?.length || 0} tiers"
+            on:toggle={savePanelStates}
+          >
+            <Tiering tieringInfo={additional.tierInfo} setPieceCount={pieceCount} />
+          </DataSection>
+        {/if}
+
+        <!-- Acquisition Section -->
+        {#if additional.acquisition}
+          <DataSection
+            title="Acquisition"
+            icon=""
+            bind:expanded={panelStates.acquisition}
+            on:toggle={savePanelStates}
+          >
+            <Acquisition acquisition={additional.acquisition} />
+          </DataSection>
+        {/if}
+      </article>
+    </div>
+  {:else}
+    <div class="no-selection">
+      <h2>Armor Sets</h2>
+      <p>Select an armor set from the list to view details.</p>
+    </div>
   {/if}
-  <!-- Acquisition -->
-  <div class="flex-item long-content">
-    <Acquisition acquisition={additional.acquisition} />
-  </div>
-</EntityViewer>
+</WikiPage>
+
+<style>
+  .layout-a {
+    position: relative;
+    width: 100%;
+  }
+
+  /* Clearfix to ensure spacing after floated infobox */
+  .layout-a::after {
+    content: '';
+    display: block;
+    clear: both;
+  }
+
+  /* Floating infobox - Wikipedia style */
+  .wiki-infobox-float {
+    float: right;
+    width: 300px;
+    margin: 0 0 0 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    background-color: var(--secondary-color);
+    border: 1px solid var(--border-color, #555);
+    border-radius: 8px;
+    padding: 16px;
+  }
+
+  .infobox-header {
+    text-align: center;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-color, #555);
+  }
+
+  .icon-placeholder {
+    width: 80px;
+    height: 80px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--bg-color, var(--primary-color));
+    border: 2px dashed var(--border-color, #555);
+    border-radius: 8px;
+    color: var(--text-muted, #999);
+    margin: 0 auto 12px;
+  }
+
+  .infobox-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-color);
+  }
+
+  .infobox-subtitle {
+    font-size: 12px;
+    color: var(--text-muted, #999);
+    margin-top: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .type-badge {
+    padding: 2px 8px;
+    font-size: 10px;
+    font-weight: 600;
+    background-color: var(--accent-color, #4a9eff);
+    color: white;
+    border-radius: 4px;
+    text-transform: uppercase;
+  }
+
+  /* Stats sections */
+  .stats-section {
+    padding: 12px;
+    background-color: var(--bg-color, var(--primary-color));
+    border-radius: 6px;
+  }
+
+  .stats-section.tier-1 {
+    background: linear-gradient(135deg, #5a4a7c 0%, #493963 100%);
+    padding: 14px;
+  }
+
+  .stats-section.tier-1 .stat-row.primary {
+    background-color: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    padding: 8px 12px;
+    margin-bottom: 6px;
+  }
+
+  .stats-section.tier-1 .stat-row.primary:last-child {
+    margin-bottom: 0;
+  }
+
+  .stats-section.tier-1 .stat-label {
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 13px;
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+
+  .stats-section.tier-1 .stat-value {
+    color: #e8e8f4;
+    font-size: 18px;
+    font-weight: 700;
+  }
+
+  .section-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted, #999);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin: 0 0 10px 0;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border-color, #555);
+  }
+
+  .stat-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 4px 0;
+    font-size: 13px;
+  }
+
+  .stat-label {
+    color: var(--text-muted, #999);
+  }
+
+  .stat-value {
+    font-weight: 500;
+    color: var(--text-color);
+  }
+
+  /* Set Effects Styling */
+  .set-effects {
+    padding: 12px;
+  }
+
+  .effect-group {
+    margin-bottom: 12px;
+  }
+
+  .effect-group:last-child {
+    margin-bottom: 0;
+  }
+
+  .effect-pieces {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--accent-color, #4a9eff);
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+
+  .effect-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 2px 0;
+    font-size: 12px;
+  }
+
+  .effect-value {
+    color: var(--success-color, #4ade80);
+    font-weight: 600;
+    min-width: 50px;
+  }
+
+  .effect-name {
+    color: var(--text-color);
+  }
+
+  .wiki-article {
+    overflow: hidden; /* Contains floated infobox */
+  }
+
+  .article-title {
+    font-size: 32px;
+    font-weight: 600;
+    margin: 0 0 16px 0;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--accent-color, #4a9eff);
+  }
+
+  .description-panel {
+    background-color: var(--secondary-color);
+    border: 1px solid var(--border-color, #555);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+
+  .description-content {
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--text-color);
+  }
+
+  .description-content.placeholder {
+    color: var(--text-muted, #999);
+    font-style: italic;
+  }
+
+  .no-selection {
+    text-align: center;
+    padding: 60px 20px;
+  }
+
+  .no-selection h2 {
+    font-size: 28px;
+    margin-bottom: 12px;
+  }
+
+  .no-selection p {
+    color: var(--text-muted, #999);
+    margin: 8px 0;
+  }
+
+  /* Tablet adjustments */
+  @media (max-width: 1023px) {
+    .wiki-infobox-float {
+      width: 280px;
+      margin-left: 16px;
+      padding: 14px;
+    }
+  }
+
+  /* Mobile adjustments */
+  @media (max-width: 767px) {
+    .layout-a {
+      max-width: 100%;
+    }
+
+    .wiki-infobox-float {
+      float: none;
+      width: auto;
+      margin: 0 0 16px 0;
+    }
+
+    /* Hide article title on mobile - redundant with infobox */
+    .article-title {
+      display: none;
+    }
+
+    .infobox-title {
+      font-size: 16px;
+    }
+
+    .icon-placeholder {
+      width: 60px;
+      height: 60px;
+    }
+
+    .icon-placeholder svg {
+      width: 36px;
+      height: 36px;
+    }
+  }
+</style>

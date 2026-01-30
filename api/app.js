@@ -8,7 +8,7 @@ const { recordRequest, snapshotAndReset } = require('./metrics');
 // Register split endpoint modules (DB + routes colocated) while keeping a single DB pool
 const endpoints = require('./endpoints');
 const app = express();
-const port = 3000;
+const port = parseInt(process.env.API_PORT || '3000', 10);
 
 // --- Automatic async error forwarding ---
 // Wrap async route handlers so thrown/rejected errors reach the global error middleware immediately

@@ -88,4 +88,4 @@ function register(app){
   app.get('/vehicles/:vehicle', async (req,res)=>{ const r = await getVehicle(req.params.vehicle); if(r) res.json(r); else res.status(404).send(); });
 }
 
-module.exports = { register, getVehicles, getVehicle };
+module.exports = { register, getVehicles, getVehicle, formatVehicle };

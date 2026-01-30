@@ -92,4 +92,4 @@ function register(app){
   app.get('/finders/:finder', async (req,res) => { const r = await getFinder(req.params.finder); if (r) res.json(r); else res.status(404).send(); });
 }
 
-module.exports = { register, getFinders, getFinder };
+module.exports = { register, getFinders, getFinder, formatFinder };

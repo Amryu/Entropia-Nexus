@@ -62,4 +62,4 @@ function register(app){
   });
 }
 
-module.exports = { register, getRefiners, getRefiner };
+module.exports = { register, getRefiners, getRefiner, formatRefiner };

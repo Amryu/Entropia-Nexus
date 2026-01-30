@@ -117,4 +117,4 @@ function register(app){
    */
   app.get('/weapons/:weapon', async (req,res)=>{ const r = await getWeapon(req.params.weapon); if(r) res.json(r); else res.status(404).send(); });
 }
-module.exports = { register, getWeapons, getWeapon };
+module.exports = { register, getWeapons, getWeapon, formatWeapon, queries };
