@@ -20,9 +20,28 @@
   --error-bg: #4a2020;
   --error-color: #ff6b6b;
   --success-bg: #1a3a2a;
-  --success-color: #4ade80;
+  --success-color: #16a34a;
   --warning-bg: #3a3020;
   --warning-color: #fbbf24;
+  /* Button hover colors - darker for better contrast with white text */
+  --button-accent-hover: #1e40af;
+  --button-success-hover: #047857;
+  --button-error-hover: #b91c1c;
+  /* Codex category colors */
+  --cat1-bg: rgba(100, 149, 237, 0.35);
+  --cat2-bg: rgba(147, 112, 219, 0.35);
+  --cat3-bg: rgba(60, 179, 113, 0.35);
+  /* Damage/Defense type colors - used in damage grids, defense grids, and related components */
+  --damage-impact: #6b7280;
+  --damage-cut: #ef4444;
+  --damage-stab: #f97316;
+  --damage-penetration: #eab308;
+  --damage-shrapnel: #84cc16;
+  --damage-burn: #f59e0b;
+  --damage-cold: #06b6d4;
+  --damage-acid: #22c55e;
+  --damage-electric: #8b5cf6;
+  --damage-block: #60a5fa;
 }
 .light-mode {
   --primary-color: #ffffff;
@@ -40,14 +59,33 @@
   --text-muted: #666666;
   --border-color: #e5e5e5;
   --border-hover: #cccccc;
-  --accent-color: #4a9eff;
-  --accent-color-hover: #3a8eef;
+  --accent-color: #2563eb;
+  --accent-color-hover: #1d4ed8;
   --error-bg: #fee2e2;
   --error-color: #dc2626;
   --success-bg: #d1fae5;
   --success-color: #059669;
   --warning-bg: #fef3c7;
   --warning-color: #f59e0b;
+  /* Button hover colors - darker for better contrast with white text */
+  --button-accent-hover: #1e3a8a;
+  --button-success-hover: #065f46;
+  --button-error-hover: #991b1b;
+  /* Codex category colors */
+  --cat1-bg: rgba(37, 99, 235, 0.2);
+  --cat2-bg: rgba(124, 58, 237, 0.2);
+  --cat3-bg: rgba(5, 150, 105, 0.2);
+  /* Damage/Defense type colors - same in light mode for visibility */
+  --damage-impact: #6b7280;
+  --damage-cut: #ef4444;
+  --damage-stab: #f97316;
+  --damage-penetration: #eab308;
+  --damage-shrapnel: #84cc16;
+  --damage-burn: #f59e0b;
+  --damage-cold: #06b6d4;
+  --damage-acid: #22c55e;
+  --damage-electric: #8b5cf6;
+  --damage-block: #60a5fa;
 }
 
 /* Form elements - ensure proper theme colors */
@@ -65,6 +103,164 @@ select option {
 button {
   color: var(--text-color);
 }
+
+/* =================================
+   GLOBAL BADGE STYLES
+   ================================= */
+
+/* Base badge style */
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 500;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+
+/* Outlined badge - subtle style for tables */
+.badge-outline {
+  background-color: transparent;
+  border: 1px solid currentColor;
+}
+
+/* Solid badge - filled background */
+.badge-solid {
+  color: white;
+  border: none;
+}
+
+/* Subtle badge - soft background with matching text */
+.badge-subtle {
+  border: none;
+}
+
+/* Status badge colors */
+.badge-success {
+  color: var(--success-color, #4ade80);
+}
+.badge-success.badge-subtle {
+  background-color: var(--success-bg, rgba(74, 222, 128, 0.25));
+}
+.badge-success.badge-solid {
+  background-color: var(--success-color, #4ade80);
+  color: #000;
+}
+
+.badge-warning {
+  color: var(--warning-color, #fbbf24);
+}
+.badge-warning.badge-subtle {
+  background-color: var(--warning-bg, rgba(251, 191, 36, 0.25));
+}
+.badge-warning.badge-solid {
+  background-color: var(--warning-color, #fbbf24);
+  color: #000;
+}
+
+.badge-error {
+  color: var(--error-color, #f87171);
+}
+.badge-error.badge-subtle {
+  background-color: var(--error-bg, rgba(248, 113, 113, 0.25));
+}
+.badge-error.badge-solid {
+  background-color: var(--error-color, #f87171);
+  color: #000;
+}
+
+.badge-info {
+  color: var(--accent-color, #4a9eff);
+}
+.badge-info.badge-subtle {
+  background-color: rgba(74, 158, 255, 0.25);
+}
+.badge-info.badge-solid {
+  background-color: var(--accent-color, #4a9eff);
+  color: white;
+}
+
+.badge-muted {
+  color: var(--text-muted, #999);
+}
+.badge-muted.badge-subtle {
+  background-color: var(--hover-color, rgba(150, 150, 150, 0.25));
+}
+
+/* Frequency-specific badge colors (for loot tables) */
+.badge-freq-always { color: #22c55e; }
+.badge-freq-always.badge-subtle { background-color: rgba(22, 163, 74, 0.25); }
+
+.badge-freq-veryoften { color: #4ade80; }
+.badge-freq-veryoften.badge-subtle { background-color: rgba(34, 197, 94, 0.25); }
+
+.badge-freq-often { color: #84cc16; }
+.badge-freq-often.badge-subtle { background-color: rgba(101, 163, 13, 0.25); }
+
+.badge-freq-common { color: #eab308; }
+.badge-freq-common.badge-subtle { background-color: rgba(202, 138, 4, 0.25); }
+
+.badge-freq-uncommon { color: #f97316; }
+.badge-freq-uncommon.badge-subtle { background-color: rgba(234, 88, 12, 0.25); }
+
+.badge-freq-rare { color: #ef4444; }
+.badge-freq-rare.badge-subtle { background-color: rgba(220, 38, 38, 0.25); }
+
+.badge-freq-veryrare { color: #f43f5e; }
+.badge-freq-veryrare.badge-subtle { background-color: rgba(190, 18, 60, 0.25); }
+
+.badge-freq-extremelyrare { color: #a855f7; }
+.badge-freq-extremelyrare.badge-subtle { background-color: rgba(147, 51, 234, 0.25); }
+
+/* Density-specific badge colors */
+.badge-density-low { color: #eab308; }
+.badge-density-low.badge-subtle { background-color: rgba(202, 138, 4, 0.25); }
+
+.badge-density-medium { color: #22c55e; }
+.badge-density-medium.badge-subtle { background-color: rgba(22, 163, 74, 0.25); }
+
+.badge-density-high { color: #ef4444; }
+.badge-density-high.badge-subtle { background-color: rgba(220, 38, 38, 0.25); }
+
+/* Light mode adjustments for badge visibility */
+.light-mode .badge-outline {
+  border-width: 1.5px;
+}
+
+/* Light mode: darker text colors and stronger backgrounds */
+.light-mode .badge-freq-always { color: #166534; }
+.light-mode .badge-freq-always.badge-subtle { background-color: rgba(22, 163, 74, 0.2); }
+
+.light-mode .badge-freq-veryoften { color: #15803d; }
+.light-mode .badge-freq-veryoften.badge-subtle { background-color: rgba(34, 197, 94, 0.2); }
+
+.light-mode .badge-freq-often { color: #3f6212; }
+.light-mode .badge-freq-often.badge-subtle { background-color: rgba(101, 163, 13, 0.2); }
+
+.light-mode .badge-freq-common { color: #854d0e; }
+.light-mode .badge-freq-common.badge-subtle { background-color: rgba(202, 138, 4, 0.2); }
+
+.light-mode .badge-freq-uncommon { color: #9a3412; }
+.light-mode .badge-freq-uncommon.badge-subtle { background-color: rgba(234, 88, 12, 0.2); }
+
+.light-mode .badge-freq-rare { color: #b91c1c; }
+.light-mode .badge-freq-rare.badge-subtle { background-color: rgba(220, 38, 38, 0.2); }
+
+.light-mode .badge-freq-veryrare { color: #9f1239; }
+.light-mode .badge-freq-veryrare.badge-subtle { background-color: rgba(190, 18, 60, 0.2); }
+
+.light-mode .badge-freq-extremelyrare { color: #7e22ce; }
+.light-mode .badge-freq-extremelyrare.badge-subtle { background-color: rgba(147, 51, 234, 0.2); }
+
+.light-mode .badge-density-low { color: #854d0e; }
+.light-mode .badge-density-low.badge-subtle { background-color: rgba(202, 138, 4, 0.2); }
+
+.light-mode .badge-density-medium { color: #166534; }
+.light-mode .badge-density-medium.badge-subtle { background-color: rgba(22, 163, 74, 0.2); }
+
+.light-mode .badge-density-high { color: #b91c1c; }
+.light-mode .badge-density-high.badge-subtle { background-color: rgba(220, 38, 38, 0.2); }
+
 table {
   border-spacing: 2px;
   font-size: 14px;
@@ -82,6 +278,13 @@ table tr:nth-child(odd), .row-color-alt {
 table thead tr {
   background-color: var(--table-header-color) !important;
 }
+
+/* Table wrapper - provides consistent background for table containers */
+.table-wrapper {
+  background-color: var(--secondary-color);
+  border-radius: 4px;
+}
+
 a {
   text-decoration: underline;
 }
@@ -240,7 +443,8 @@ button {
   border: 1px solid var(--text-color);
   cursor: pointer;
 }
-button:hover {
+/* Exclude buttons with custom styling (action-btn, etc.) from global hover rule */
+button:not(.action-btn):not(.dialog-btn):not(.toolbar-btn):hover {
   background-color: var(--hover-color) !important;
 }
 button:disabled {
@@ -268,13 +472,34 @@ h2 {
 }
 
 /* ===========================================
+   Global Responsive Breakpoints
+   =========================================== */
+
+/*
+ * IMPORTANT: Use these breakpoints consistently across ALL components
+ *
+ * Mobile:  < 900px  (hamburger menu, single column layouts)
+ * Tablet:  900px - 1199px (two column layouts)
+ * Desktop: >= 1200px (full layouts with sidebars)
+ *
+ * The 900px breakpoint is used by the Menu component for switching
+ * to hamburger mode. All content should switch at the same breakpoint.
+ */
+
+/* CSS custom property for breakpoint (for reference in JS if needed) */
+:root {
+  --breakpoint-mobile: 900px;
+  --breakpoint-tablet: 1200px;
+}
+
+/* ===========================================
    Wiki Components - Responsive Styles
    =========================================== */
 
-/* Wiki responsive breakpoints */
-/* Mobile: < 768px */
-/* Tablet: 768px - 1023px */
-/* Desktop: >= 1024px */
+/* Wiki responsive breakpoints - ALIGNED WITH GLOBAL */
+/* Mobile: < 900px */
+/* Tablet: 900px - 1199px */
+/* Desktop: >= 1200px */
 
 /* Wiki utility classes */
 .wiki-hide-mobile {
@@ -285,7 +510,7 @@ h2 {
   display: none;
 }
 
-@media (max-width: 767px) {
+@media (max-width: 899px) {
   .wiki-hide-mobile {
     display: none !important;
   }
@@ -313,14 +538,14 @@ h2 {
   grid-template-columns: repeat(4, 1fr);
 }
 
-@media (max-width: 1023px) {
+@media (max-width: 1199px) {
   .wiki-grid-3,
   .wiki-grid-4 {
     grid-template-columns: repeat(2, 1fr);
   }
 }
 
-@media (max-width: 767px) {
+@media (max-width: 899px) {
   .wiki-grid-2,
   .wiki-grid-3,
   .wiki-grid-4 {
@@ -356,7 +581,7 @@ h2 {
   color: var(--text-color);
 }
 
-@media (max-width: 767px) {
+@media (max-width: 899px) {
   .wiki-card {
     border-radius: 6px;
     padding: 12px;
@@ -405,7 +630,7 @@ h2 {
   color: var(--text-color);
 }
 
-@media (max-width: 767px) {
+@media (max-width: 899px) {
   .wiki-stats-bar {
     padding: 8px 12px;
   }
@@ -450,7 +675,7 @@ h2 {
   border-bottom-color: var(--accent-color, #4a9eff);
 }
 
-@media (max-width: 767px) {
+@media (max-width: 899px) {
   .wiki-tabs {
     margin-bottom: 12px;
   }
@@ -567,7 +792,7 @@ h2 {
   border-bottom: none;
 }
 
-@media (max-width: 767px) {
+@media (max-width: 899px) {
   .wiki-property-table th,
   .wiki-property-table td {
     padding: 6px 8px;
@@ -600,4 +825,167 @@ h2 {
 .wiki-skeleton-box {
   height: 100px;
   margin-bottom: 16px;
+}
+
+/* Wiki link style - for links in tables and data displays */
+.wiki-link {
+  color: var(--accent-color, #4a9eff);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.wiki-link:hover {
+  text-decoration: underline;
+}
+
+/* Normal weight variant */
+.wiki-link-normal {
+  color: var(--accent-color, #4a9eff);
+  text-decoration: none;
+  font-weight: normal;
+}
+
+.wiki-link-normal:hover {
+  text-decoration: underline;
+}
+
+/* ==================================================
+   Wiki Description Rich Text Styles
+   ================================================== */
+
+/* Base description content styles for rich text */
+.description-content {
+  line-height: 1.6;
+  color: var(--text-color);
+}
+
+.description-content.placeholder {
+  color: var(--text-muted, #999);
+  font-style: italic;
+}
+
+/* Headings in rich text descriptions */
+.description-content h1,
+.description-content h2,
+.description-content h3,
+.description-content h4 {
+  margin: 1em 0 0.5em 0;
+  font-weight: 600;
+  color: var(--text-color);
+}
+
+.description-content h1 { font-size: 1.75em; }
+.description-content h2 { font-size: 1.5em; }
+.description-content h3 { font-size: 1.25em; }
+.description-content h4 { font-size: 1.1em; }
+
+/* Paragraphs */
+.description-content p {
+  margin: 0.75em 0;
+}
+
+.description-content p:first-child {
+  margin-top: 0;
+}
+
+.description-content p:last-child {
+  margin-bottom: 0;
+}
+
+/* Lists */
+.description-content ul,
+.description-content ol {
+  margin: 0.75em 0;
+  padding-left: 1.5em;
+}
+
+.description-content li {
+  margin: 0.25em 0;
+}
+
+/* Inline formatting */
+.description-content strong {
+  font-weight: 600;
+}
+
+.description-content em {
+  font-style: italic;
+}
+
+.description-content s {
+  text-decoration: line-through;
+  color: var(--text-muted, #999);
+}
+
+.description-content code {
+  background-color: var(--secondary-color, #333);
+  border-radius: 3px;
+  padding: 2px 6px;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 0.9em;
+}
+
+/* Code blocks */
+.description-content pre {
+  background-color: var(--secondary-color, #333);
+  border: 1px solid var(--border-color, #555);
+  border-radius: 4px;
+  padding: 12px 16px;
+  margin: 0.75em 0;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 0.9em;
+  overflow-x: auto;
+}
+
+.description-content pre code {
+  background: none;
+  padding: 0;
+}
+
+/* Blockquotes */
+.description-content blockquote {
+  border-left: 4px solid var(--accent-color, #4a9eff);
+  padding-left: 16px;
+  margin: 1em 0;
+  color: var(--text-muted, #999);
+  font-style: italic;
+}
+
+/* Horizontal rules */
+.description-content hr {
+  border: none;
+  border-top: 2px solid var(--border-color, #555);
+  margin: 1.5em 0;
+}
+
+/* Links */
+.description-content a {
+  color: var(--accent-color, #4a9eff);
+  text-decoration: none;
+}
+
+.description-content a:hover {
+  text-decoration: underline;
+}
+
+/* Video embeds */
+.description-content .video-embed-wrapper,
+.description-content div[data-video-embed] {
+  position: relative;
+  width: 100%;
+  padding-bottom: 56.25%; /* 16:9 aspect ratio */
+  margin: 1em 0;
+  background-color: var(--secondary-color, #333);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.description-content .video-embed-wrapper iframe,
+.description-content div[data-video-embed] iframe {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border: none;
 }

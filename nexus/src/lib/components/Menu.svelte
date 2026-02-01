@@ -3,16 +3,22 @@
 
   import '$lib/style.css';
   import { onMount, onDestroy } from 'svelte';
-  import { afterNavigate } from '$app/navigation';
+  import { afterNavigate, goto } from '$app/navigation';
+  import { page } from '$app/stores';
 
   import { darkMode } from '../../stores.js';
 
   import { getTypeLink, getTypeName } from "$lib/util";
   import { loading } from "../../actions/loading";
   import FancyTable from '$lib/components/FancyTable.svelte';
+  import SearchInput from '$lib/components/SearchInput.svelte';
 
   export let user;
   export let realUser = null; // The actual admin user when impersonating
+
+  // Login/Logout URLs with redirect back to current page
+  $: loginUrl = `/login?redirect=${encodeURIComponent($page.url.pathname + $page.url.search)}`;
+  $: logoutUrl = `/discord/logout?redirect=${encodeURIComponent($page.url.pathname + $page.url.search)}`;
 
   let dropdownOpen: string | null = null;
   let dropdownCloseTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -20,14 +26,34 @@
   let mobileMenuOpen = false;
   let expandedSections: Set<string> = new Set();
   let mobileSearchMode = false;
+  let mobileUserExpanded = false; // Track mobile user panel expanded state
 
   // Media query for auto-closing mobile menu
   let mediaQuery: MediaQueryList | null = null;
 
+  function handleGlobalKeydown(event: KeyboardEvent) {
+    // Ctrl+F or Cmd+F on Mac
+    if ((event.ctrlKey || event.metaKey) && event.key === 'f') {
+      // Check if desktop search input is currently focused
+      const searchContainer = document.querySelector('.search-container');
+      const isSearchFocused = searchContainer && searchContainer.contains(document.activeElement);
+
+      if (isSearchFocused) {
+        // Let browser's native search work
+        return;
+      }
+
+      // Focus the search input
+      event.preventDefault();
+      desktopSearchRef?.focus?.();
+    }
+  }
+
   onMount(() => {
     if (typeof window !== 'undefined') {
-      mediaQuery = window.matchMedia('(max-width: 900px)');
+      mediaQuery = window.matchMedia('(max-width: 899px)');
       mediaQuery.addEventListener('change', handleMediaChange);
+      document.addEventListener('keydown', handleGlobalKeydown);
     }
   });
 
@@ -35,8 +61,10 @@
     if (mediaQuery) {
       mediaQuery.removeEventListener('change', handleMediaChange);
     }
-    if (timeout) clearTimeout(timeout);
     if (dropdownCloseTimeout) clearTimeout(dropdownCloseTimeout);
+    if (typeof window !== 'undefined') {
+      document.removeEventListener('keydown', handleGlobalKeydown);
+    }
   });
 
   function handleMediaChange(e: MediaQueryListEvent) {
@@ -58,8 +86,8 @@
     mobileMenuOpen = false;
     dropdownOpen = null;
     mobileSearchMode = false;
-    mobileSearchQuery = '';
-    mobileSearchResults = [];
+    mobileSearchValue = '';
+    mobileSearchRef?.clear?.();
   }
 
   function handleDropdownEnter(menu: string) {
@@ -339,225 +367,39 @@
     ],
   };
 
-  // Desktop search state
-  let timeout;
-  let searchQuery = '';
-  let searchResults = [];
-  let showDropdown = false;
-  let isSearching = false;
+  // Desktop search state (now managed by SearchInput component)
+  let desktopSearchValue = '';
+  let desktopSearchRef;
 
-  // Mobile search state
-  let mobileSearchQuery = '';
-  let mobileSearchResults = [];
-  let isMobileSearching = false;
-  let mobileSearchTimeout: ReturnType<typeof setTimeout> | null = null;
+  // Mobile search state (now managed by SearchInput component)
+  let mobileSearchValue = '';
+  let mobileSearchRef;
 
   // Close search dropdowns on navigation
   afterNavigate(() => {
-    showDropdown = false;
-    searchQuery = '';
-    searchResults = [];
+    desktopSearchValue = '';
+    mobileSearchValue = '';
     mobileSearchMode = false;
-    mobileSearchQuery = '';
-    mobileSearchResults = [];
     mobileMenuOpen = false;
+    desktopSearchRef?.clear?.();
+    mobileSearchRef?.clear?.();
   });
-
-  // Categorized search results
-  interface CategorizedResults {
-    [category: string]: Array<{ Name: string; Type: string; SubType?: string }>;
-  }
-
-  $: categorizedResults = categorizeResults(searchResults);
-  $: mobileCategorizedResults = categorizeResults(mobileSearchResults);
-
-  function categorizeResults(results: Array<{ Name: string; Type: string; SubType?: string }>): CategorizedResults {
-    const categories: CategorizedResults = {};
-
-    // Smart limiting: show max 5 per category, but prioritize categories with fewer results
-    const maxPerCategory = 5;
-    const maxTotal = 20;
-
-    for (const result of results) {
-      const category = getTypeName(result.Type) || 'Other';
-      if (!categories[category]) {
-        categories[category] = [];
-      }
-      categories[category].push(result);
-    }
-
-    // Limit results per category smartly
-    let totalShown = 0;
-    const sortedCategories = Object.keys(categories).sort((a, b) => categories[a].length - categories[b].length);
-
-    for (const cat of sortedCategories) {
-      const remaining = maxTotal - totalShown;
-      if (remaining <= 0) {
-        categories[cat] = [];
-      } else {
-        const limit = Math.min(maxPerCategory, remaining);
-        categories[cat] = categories[cat].slice(0, limit);
-        totalShown += categories[cat].length;
-      }
-    }
-
-    // Remove empty categories
-    for (const cat of Object.keys(categories)) {
-      if (categories[cat].length === 0) {
-        delete categories[cat];
-      }
-    }
-
-    return categories;
-  }
-
-  function handleSearch(event) {
-    searchQuery = event.target.value;
-
-    if (searchQuery.length < 2) {
-      showDropdown = false;
-      searchResults = [];
-      return;
-    }
-
-    clearTimeout(timeout);
-    isSearching = true;
-    timeout = setTimeout(fetchSearchResults, 300);
-  }
-
-  // Fuzzy search scoring function - greedy matching
-  function scoreSearchResult(name: string, query: string): number {
-    const nameLower = name.toLowerCase();
-    const queryLower = query.toLowerCase();
-
-    // Exact match
-    if (nameLower === queryLower) return 1000;
-
-    // Starts with query (high score)
-    if (nameLower.startsWith(queryLower)) return 900;
-
-    // Word starts with query (e.g., "Calypso Sword" matches "sword")
-    const words = nameLower.split(/\s+/);
-    for (let i = 0; i < words.length; i++) {
-      if (words[i].startsWith(queryLower)) {
-        return 800 - i * 5; // Less penalty for later words
-      }
-    }
-
-    // Contains exact substring - minimal penalty for position
-    const index = nameLower.indexOf(queryLower);
-    if (index !== -1) {
-      return 700 - Math.min(index, 50);
-    }
-
-    // Fuzzy match: check if all characters appear in sequence
-    let queryIdx = 0;
-    let score = 0;
-    let consecutiveBonus = 0;
-    let matchPositions: number[] = [];
-
-    for (let i = 0; i < nameLower.length && queryIdx < queryLower.length; i++) {
-      if (nameLower[i] === queryLower[queryIdx]) {
-        matchPositions.push(i);
-        queryIdx++;
-        consecutiveBonus += 10;
-        score += consecutiveBonus;
-        // Big bonus for matching at word boundaries
-        if (i === 0 || nameLower[i - 1] === ' ' || nameLower[i - 1] === '-' || nameLower[i - 1] === '_') {
-          score += 30;
-        }
-      } else {
-        consecutiveBonus = 0;
-      }
-    }
-
-    // If all query chars found in sequence, return fuzzy score
-    if (queryIdx === queryLower.length) {
-      const spread = matchPositions.length > 1
-        ? matchPositions[matchPositions.length - 1] - matchPositions[0]
-        : 0;
-      const compactBonus = Math.max(0, 50 - spread);
-      return 300 + score + compactBonus;
-    }
-
-    // Partial match: at least 60% of query characters found in sequence
-    const matchRatio = queryIdx / queryLower.length;
-    if (matchRatio >= 0.6 && queryLower.length >= 3) {
-      return 100 + Math.floor(score * matchRatio);
-    }
-
-    // No match
-    return 0;
-  }
-
-  function rankSearchResults(results: Array<{ Name: string; Type: string; SubType?: string }>, query: string) {
-    return results
-      .map(result => ({
-        ...result,
-        _score: scoreSearchResult(result.Name, query)
-      }))
-      .filter(result => result._score > 0)
-      .sort((a, b) => b._score - a._score)
-      .map(({ _score, ...result }) => result);
-  }
-
-  async function fetchSearchResults() {
-    try {
-      const response = await fetch(import.meta.env.VITE_API_URL + `/search?query=${encodeURIComponent(searchQuery)}&fuzzy=true`);
-      const data = await response.json();
-      searchResults = rankSearchResults(data, searchQuery);
-      showDropdown = searchResults.length > 0;
-    } catch (err) {
-      console.error('Search failed:', err);
-    } finally {
-      isSearching = false;
-    }
-  }
-
-  function hideDropdown() {
-    setTimeout(() => {
-      showDropdown = false;
-    }, 200);
-  }
 
   // Mobile search functions
   function enterMobileSearchMode() {
     mobileSearchMode = true;
-    mobileSearchQuery = '';
-    mobileSearchResults = [];
+    mobileSearchValue = '';
   }
 
   function exitMobileSearchMode() {
     mobileSearchMode = false;
-    mobileSearchQuery = '';
-    mobileSearchResults = [];
+    mobileSearchValue = '';
+    mobileSearchRef?.clear?.();
   }
 
-  function handleMobileSearch(event) {
-    mobileSearchQuery = event.target.value;
-
-    if (mobileSearchQuery.length < 2) {
-      mobileSearchResults = [];
-      return;
-    }
-
-    if (mobileSearchTimeout) clearTimeout(mobileSearchTimeout);
-    isMobileSearching = true;
-
-    mobileSearchTimeout = setTimeout(async () => {
-      try {
-        const response = await fetch(import.meta.env.VITE_API_URL + `/search?query=${encodeURIComponent(mobileSearchQuery)}&fuzzy=true`);
-        const data = await response.json();
-        mobileSearchResults = rankSearchResults(data, mobileSearchQuery);
-      } catch (err) {
-        console.error('Mobile search failed:', err);
-      } finally {
-        isMobileSearching = false;
-      }
-    }, 300);
-  }
-
-  function handleMobileSearchResultClick() {
+  function handleSearchSelect(event) {
+    // Navigate to the selected result
+    goto(event.detail.url);
     closeMobileMenu();
   }
 
@@ -578,6 +420,17 @@
 
   function isExternalLink(item: { label: string; url: string }) {
     return ['api', 'nihelper', 'cyrenedream', 'lootiusio'].includes(item.url);
+  }
+
+  // Menus with overview pages that the header should link to
+  const menuOverviewUrls: Record<string, string> = {
+    'Items': '/items',
+    'Information': '/information',
+    'Tools': '/tools'
+  };
+
+  function getMenuOverviewUrl(menu: string): string | null {
+    return menuOverviewUrls[menu] || null;
   }
 </script>
 
@@ -622,8 +475,29 @@
     border-radius: 4px;
   }
 
+  .menu-item.menu-top {
+    padding: 0;
+  }
+
   .menu-item:hover {
     background-color: var(--hover-color);
+  }
+
+  .menu-header-link {
+    color: var(--text-color);
+    text-decoration: none;
+  }
+
+  .menu-header-link:hover {
+    color: var(--text-color);
+  }
+
+  .menu-header-link-full {
+    display: flex;
+    align-items: center;
+    height: 100%;
+    width: 100%;
+    padding: 0 12px;
   }
 
   .dropdown-content {
@@ -707,83 +581,30 @@
     text-decoration: none;
   }
 
-  .search {
+  .search-container {
+    position: relative;
+    margin-left: 20px;
+    width: 280px;
+  }
+
+  /* Desktop SearchInput component styling */
+  :global(.desktop-search) {
+    width: 100%;
+  }
+
+  :global(.desktop-search .search-input) {
+    width: 100%;
     font-size: 14px;
     padding: 6px 10px;
+    padding-right: 28px;
     border-radius: 4px;
     border: 1px solid var(--border-color);
     background-color: var(--bg-color);
     color: var(--text-color);
-    width: 280px;
   }
 
-  .search-container {
-    position: relative;
-    margin-left: 20px;
-  }
-
-  .dropdown-search {
-    position: absolute;
-    top: 100%;
-    right: 0;
-    z-index: 100;
-    width: 100%;
+  :global(.desktop-search .search-results-container) {
     min-width: 280px;
-    max-height: 400px;
-    overflow-y: auto;
-    box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.3);
-    background-color: var(--secondary-color);
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-  }
-
-  .search-category {
-    padding: 8px 12px;
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    color: var(--text-muted);
-    background-color: var(--hover-color);
-    border-bottom: 1px solid var(--border-color);
-    letter-spacing: 0.5px;
-  }
-
-  .search-result-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 10px 12px;
-    cursor: pointer;
-    border-bottom: 1px solid var(--border-color);
-    transition: background-color 0.15s ease;
-  }
-
-  .search-result-item:last-child {
-    border-bottom: none;
-  }
-
-  .search-result-item:hover {
-    background-color: var(--hover-color);
-  }
-
-  .search-result-name {
-    font-size: 14px;
-    color: var(--text-color);
-  }
-
-  .search-result-type {
-    font-size: 11px;
-    color: var(--text-muted);
-    padding: 2px 6px;
-    background-color: var(--primary-color);
-    border-radius: 3px;
-  }
-
-  .search-loading {
-    padding: 16px;
-    text-align: center;
-    color: var(--text-muted);
-    font-size: 13px;
   }
 
   .menu-item:hover, .menu-dropdown-item:hover {
@@ -970,6 +791,7 @@
 
   .form-group {
     margin-bottom: 16px;
+    position: relative; /* Needed for suggestions-dropdown absolute positioning */
   }
 
   .form-group label {
@@ -1368,17 +1190,37 @@
     padding: 16px;
     background-color: var(--primary-color);
     border-bottom: 1px solid var(--border-color);
+    /* Fixed height to prevent layout shift when cancel button appears */
+    height: 68px;
+    box-sizing: border-box;
   }
 
   .mobile-search-input-wrapper {
     display: flex;
     gap: 8px;
-    align-items: center;
+    align-items: flex-start; /* Prevents input from moving when Cancel button appears */
   }
 
-  .mobile-search-input {
+  .mobile-search-cancel {
+    padding: 8px 16px;
+    background: none;
+    border: none;
+    color: var(--accent-color);
+    font-size: 14px;
+    cursor: pointer;
+    white-space: nowrap;
+    align-self: center; /* Center vertically with input */
+  }
+
+  /* Mobile SearchInput component styling */
+  :global(.mobile-search) {
     flex: 1;
+  }
+
+  :global(.mobile-search .search-input) {
+    width: 100%;
     padding: 12px 16px;
+    padding-right: 40px;
     border: 1px solid var(--border-color);
     border-radius: 8px;
     background-color: var(--secondary-color);
@@ -1386,63 +1228,33 @@
     font-size: 16px;
   }
 
-  .mobile-search-input:focus {
+  :global(.mobile-search .search-input:focus) {
     outline: none;
     border-color: var(--accent-color);
   }
 
-  .mobile-search-cancel {
-    padding: 12px 16px;
-    background: none;
-    border: none;
-    color: var(--accent-color);
-    font-size: 14px;
-    cursor: pointer;
-    white-space: nowrap;
+  :global(.mobile-search .search-results-container) {
+    /* !important needed to override SearchInput's Svelte-scoped styles */
+    position: fixed !important;
+    top: calc(56px + 68px) !important; /* nav height + search section height */
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    max-height: none !important;
+    border-radius: 0 !important;
+    border: none !important;
+    border-top: 1px solid var(--border-color) !important;
+    margin-top: 0 !important;
+    box-shadow: none !important;
   }
 
-  .mobile-search-results {
-    flex: 1;
-    overflow-y: auto;
-    padding: 0;
-  }
-
-  .mobile-search-category {
+  :global(.mobile-search .search-category) {
     padding: 12px 16px;
     font-size: 12px;
-    font-weight: 600;
-    text-transform: uppercase;
-    color: var(--text-muted);
-    background-color: var(--primary-color);
-    letter-spacing: 0.5px;
-    position: sticky;
-    top: 0;
   }
 
-  .mobile-search-result-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
+  :global(.mobile-search .search-result-item) {
     padding: 14px 16px;
-    border-bottom: 1px solid var(--border-color);
-    text-decoration: none;
-    color: var(--text-color);
-  }
-
-  .mobile-search-result-item:active {
-    background-color: var(--hover-color);
-  }
-
-  .mobile-search-empty {
-    padding: 32px 16px;
-    text-align: center;
-    color: var(--text-muted);
-  }
-
-  .mobile-search-loading {
-    padding: 32px 16px;
-    text-align: center;
-    color: var(--text-muted);
   }
 
   /* Collapsible sections */
@@ -1471,6 +1283,19 @@
     font-size: 14px;
     font-weight: 600;
     color: var(--text-color);
+    flex: 1;
+  }
+
+  .mobile-section-title-link {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-color);
+    text-decoration: none;
+    flex: 1;
+  }
+
+  .mobile-section-title-link:hover {
+    color: var(--accent-color);
   }
 
   .mobile-section-chevron {
@@ -1504,24 +1329,26 @@
     background-color: var(--hover-color);
   }
 
-  /* Mobile User Section */
+  /* Mobile User Section - Collapsible */
   .mobile-user-section {
     border-top: 1px solid var(--border-color);
-    padding: 16px;
+    padding: 12px 16px;
     background-color: var(--primary-color);
+    flex-shrink: 0;
   }
 
   .mobile-user-header {
     display: flex;
     align-items: center;
     gap: 12px;
-    margin-bottom: 12px;
+    cursor: pointer;
   }
 
   .mobile-user-avatar {
     width: 40px;
     height: 40px;
     border-radius: 50%;
+    flex-shrink: 0;
   }
 
   .mobile-user-info {
@@ -1531,24 +1358,39 @@
 
   .mobile-user-quick-actions {
     display: flex;
-    gap: 8px;
+    gap: 6px;
     flex-shrink: 0;
+    align-items: center;
   }
 
+  /* Uniform size for all quick action buttons */
   .mobile-quick-btn {
     width: 36px;
     height: 36px;
+    min-width: 36px;
+    min-height: 36px;
     border-radius: 8px;
     border: 1px solid var(--border-color);
     background-color: var(--secondary-color);
     color: var(--text-color);
-    font-size: 18px;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
     transition: background-color 0.15s ease;
     text-decoration: none;
+    padding: 0;
+  }
+
+  .mobile-quick-btn img {
+    width: 18px;
+    height: 18px;
+    object-fit: contain;
+  }
+
+  .mobile-quick-btn svg {
+    width: 18px;
+    height: 18px;
   }
 
   .mobile-quick-btn:active {
@@ -1557,6 +1399,18 @@
 
   a.mobile-quick-btn {
     text-decoration: none;
+  }
+
+  /* Chevron for expand/collapse */
+  .mobile-user-chevron {
+    font-size: 10px;
+    color: var(--text-muted);
+    transition: transform 0.2s ease;
+    margin-left: 4px;
+  }
+
+  .mobile-user-chevron.expanded {
+    transform: rotate(180deg);
   }
 
   .mobile-user-actions-guest {
@@ -1573,17 +1427,39 @@
     font-size: 14px;
     font-weight: 500;
     color: var(--text-color);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .mobile-user-status {
     font-size: 12px;
     color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
+  /* User actions - animated expand/collapse */
   .mobile-user-actions {
     display: flex;
     flex-direction: column;
     gap: 8px;
+    margin-top: 0;
+    padding-top: 0;
+    border-top: none;
+    max-height: 0;
+    opacity: 0;
+    overflow: hidden;
+    transition: max-height 0.25s ease-out, opacity 0.2s ease-out, margin-top 0.25s ease-out, padding-top 0.25s ease-out;
+  }
+
+  .mobile-user-actions.expanded {
+    max-height: 200px; /* Enough for logout + verify/profile buttons */
+    opacity: 1;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border-color);
   }
 
   .mobile-user-action {
@@ -1636,8 +1512,8 @@
     height: 20px;
   }
 
-  /* Mobile responsive breakpoint */
-  @media (max-width: 900px) {
+  /* Mobile responsive breakpoint - aligned with global 899px */
+  @media (max-width: 899px) {
     nav {
       position: relative;
     }
@@ -1701,9 +1577,13 @@
     {#each Object.keys(menuItemsWiki) as menu (menu)}
       {#if !(menu === 'Market' && !(user && user.administrator))}
       <!-- svelte-ignore a11y-no-static-element-interactions -->
-      <div class="menu-item" on:mouseenter={() => handleDropdownEnter(menu)} on:mouseleave={handleDropdownLeave}>
+      <div class="menu-item" class:menu-top={!!getMenuOverviewUrl(menu)} on:mouseenter={() => handleDropdownEnter(menu)} on:mouseleave={handleDropdownLeave}>
+        {#if getMenuOverviewUrl(menu)}
+          <a href={getMenuOverviewUrl(menu)} class="menu-header-link menu-header-link-full" use:loading>{menu}</a>
+        {:else}
           {menu}
-          <div class="dropdown-content" class:open={dropdownOpen === menu}>
+        {/if}
+        <div class="dropdown-content" class:open={dropdownOpen === menu}>
               {#each menuItemsWiki[menu] as item (item)}
                 {#if isExternalLink(item)}
                   <a href={getMenuItemUrl(menu, item)} target="_blank"><div class="menu-dropdown-item">{item.label}</div></a>
@@ -1719,27 +1599,17 @@
 
   <div class="auth-container">
     <div class="search-container">
-      <input type="text" placeholder="Search..." class="search" on:blur={hideDropdown} on:focus={(evt) => { evt.target.select(); handleSearch(evt); }} on:input={handleSearch} />
-      {#if showDropdown || isSearching}
-        <div class="dropdown-search">
-          {#if isSearching}
-            <div class="search-loading">Searching...</div>
-          {:else}
-            {#each Object.keys(categorizedResults) as category}
-              <div class="search-category">{category}</div>
-              {#each categorizedResults[category] as result}
-                <a use:loading href={getTypeLink(result.Name, result.Type, result.SubType)} class="search-result-item">
-                  <span class="search-result-name">{result.Name}</span>
-                  <span class="search-result-type">{getTypeName(result.Type)}</span>
-                </a>
-              {/each}
-            {/each}
-          {/if}
-        </div>
-      {/if}
+      <SearchInput
+        bind:this={desktopSearchRef}
+        bind:value={desktopSearchValue}
+        placeholder="Search..."
+        mode="dropdown"
+        containerClass="desktop-search"
+        on:select={handleSearchSelect}
+      />
     </div>
     {#if user == null}
-      <a href="/login">
+      <a href={loginUrl}>
         <button class="discord-button">
           <img src="/discord.svg" alt="Discord Login" width="24px" height="24px" /> <span>Login with Discord</span>
         </button>
@@ -1787,7 +1657,7 @@
               <span class="menu-item-icon">🎭</span> Impersonate User
             </button>
           {/if}
-          <a use:loading href="/discord/logout"><div class="menu-dropdown-item"><span class="menu-item-icon">→</span> Logout</div></a>
+          <a use:loading href={logoutUrl}><div class="menu-dropdown-item"><span class="menu-item-icon">→</span> Logout</div></a>
         </div>
       </div>
     {/if}
@@ -1811,13 +1681,16 @@
   <!-- Search Section (always at top) -->
   <div class="mobile-search-section">
     <div class="mobile-search-input-wrapper">
-      <input
-        type="text"
-        class="mobile-search-input"
+      <SearchInput
+        bind:this={mobileSearchRef}
+        bind:value={mobileSearchValue}
+        bind:showResults={mobileSearchMode}
         placeholder="Search items, mobs, maps..."
-        bind:value={mobileSearchQuery}
-        on:input={handleMobileSearch}
-        on:focus={enterMobileSearchMode}
+        mode="dropdown"
+        containerClass="mobile-search"
+        showOnFocus={true}
+        on:select={handleSearchSelect}
+        on:close={exitMobileSearchMode}
       />
       {#if mobileSearchMode}
         <button class="mobile-search-cancel" on:click={exitMobileSearchMode}>Cancel</button>
@@ -1825,33 +1698,7 @@
     </div>
   </div>
 
-  {#if mobileSearchMode}
-    <!-- Search Results Mode -->
-    <div class="mobile-search-results">
-      {#if isMobileSearching}
-        <div class="mobile-search-loading">Searching...</div>
-      {:else if mobileSearchQuery.length < 2}
-        <div class="mobile-search-empty">Type at least 2 characters to search</div>
-      {:else if Object.keys(mobileCategorizedResults).length === 0}
-        <div class="mobile-search-empty">No results found for "{mobileSearchQuery}"</div>
-      {:else}
-        {#each Object.keys(mobileCategorizedResults) as category}
-          <div class="mobile-search-category">{category} ({mobileCategorizedResults[category].length})</div>
-          {#each mobileCategorizedResults[category] as result}
-            <a
-              use:loading
-              href={getTypeLink(result.Name, result.Type, result.SubType)}
-              class="mobile-search-result-item"
-              on:click={handleMobileSearchResultClick}
-            >
-              <span class="search-result-name">{result.Name}</span>
-              <span class="search-result-type">{getTypeName(result.Type)}</span>
-            </a>
-          {/each}
-        {/each}
-      {/if}
-    </div>
-  {:else}
+  {#if !mobileSearchMode}
     <!-- Navigation Mode -->
     <div class="mobile-menu-content">
       {#each Object.keys(menuItemsWiki) as menu (menu)}
@@ -1859,6 +1706,8 @@
           <div class="mobile-section">
             <!-- svelte-ignore a11y-click-events-have-key-events -->
             <!-- svelte-ignore a11y-no-static-element-interactions -->
+            <!-- On mobile, clicking header just expands/collapses - no navigation -->
+            <!-- This prevents menu from closing before user can see options -->
             <div class="mobile-section-header" on:click={() => toggleSection(menu)}>
               <span class="mobile-section-title">{menu}</span>
               <span class="mobile-section-chevron" class:expanded={expandedSections.has(menu)}>&#9660;</span>
@@ -1877,10 +1726,12 @@
       {/each}
     </div>
 
-    <!-- User Section (at bottom) -->
-    <div class="mobile-user-section">
+    <!-- User Section (at bottom, collapsible) -->
+    <div class="mobile-user-section" class:expanded={mobileUserExpanded}>
       {#if user}
-        <div class="mobile-user-header">
+        <!-- svelte-ignore a11y-click-events-have-key-events -->
+        <!-- svelte-ignore a11y-no-static-element-interactions -->
+        <div class="mobile-user-header" on:click={() => mobileUserExpanded = !mobileUserExpanded}>
           <img
             src={user.avatar ? `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png` : `https://cdn.discordapp.com/embed/avatars/${Number(user.id) % 5}.png`}
             class="mobile-user-avatar"
@@ -1898,14 +1749,18 @@
               {/if}
             </div>
           </div>
-          <div class="mobile-user-quick-actions">
-            <!-- Dark/Light Mode Toggle (small) -->
+          <div class="mobile-user-quick-actions" on:click|stopPropagation>
+            <!-- Dark/Light Mode Toggle -->
             <button
               class="mobile-quick-btn"
               on:click={() => setDarkModePreference(!$darkMode)}
               title={$darkMode ? 'Light Mode' : 'Dark Mode'}
             >
-              {$darkMode ? '☀' : '☾'}
+              {#if $darkMode}
+                <img src="/light.png" alt="Light mode" width="18" height="18" />
+              {:else}
+                <img src="/dark.png" alt="Dark mode" width="18" height="18" />
+              {/if}
             </button>
             {#if effectiveAdmin && !isCurrentlyImpersonating}
               <a
@@ -1915,20 +1770,27 @@
                 title="Admin Dashboard"
                 use:loading
               >
-                ⚙️
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="3" />
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                </svg>
               </a>
               <button
                 class="mobile-quick-btn"
                 on:click={() => { closeMobileMenu(); showImpersonateDialog = true; }}
                 title="Impersonate User"
               >
-                🎭
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                  <circle cx="12" cy="7" r="4" />
+                </svg>
               </button>
             {/if}
+            <span class="mobile-user-chevron" class:expanded={mobileUserExpanded}>&#9660;</span>
           </div>
         </div>
 
-        <div class="mobile-user-actions">
+        <div class="mobile-user-actions" class:expanded={mobileUserExpanded}>
           {#if isCurrentlyImpersonating}
             <button class="mobile-user-action danger" on:click={stopImpersonation}>
               <span class="mobile-action-icon">✕</span>
@@ -1939,7 +1801,7 @@
               <span class="mobile-action-icon">✓</span>
               <span class="mobile-action-text">Verify Account</span>
             </a>
-            <a use:loading href="/discord/logout" class="mobile-user-action" on:click={closeMobileMenu}>
+            <a use:loading href={logoutUrl} class="mobile-user-action" on:click={closeMobileMenu}>
               <span class="mobile-action-icon">→</span>
               <span class="mobile-action-text">Logout</span>
             </a>
@@ -1948,7 +1810,7 @@
               <span class="mobile-action-icon">⚙</span>
               <span class="mobile-action-text">User Profile</span>
             </a>
-            <a use:loading href="/discord/logout" class="mobile-user-action" on:click={closeMobileMenu}>
+            <a use:loading href={logoutUrl} class="mobile-user-action" on:click={closeMobileMenu}>
               <span class="mobile-action-icon">→</span>
               <span class="mobile-action-text">Logout</span>
             </a>
@@ -1956,15 +1818,19 @@
         </div>
       {:else}
         <div class="mobile-user-actions-guest">
-          <!-- Dark/Light Mode Toggle (small, aligned right) -->
+          <!-- Dark/Light Mode Toggle -->
           <button
             class="mobile-quick-btn"
             on:click={() => setDarkModePreference(!$darkMode)}
             title={$darkMode ? 'Light Mode' : 'Dark Mode'}
           >
-            {$darkMode ? '☀' : '☾'}
+            {#if $darkMode}
+              <img src="/light.png" alt="Light mode" width="18" height="18" />
+            {:else}
+              <img src="/dark.png" alt="Dark mode" width="18" height="18" />
+            {/if}
           </button>
-          <a href="/login" class="mobile-user-action primary" on:click={closeMobileMenu}>
+          <a href={loginUrl} class="mobile-user-action primary" on:click={closeMobileMenu}>
             <img src="/discord.svg" alt="" class="mobile-discord-icon" />
             <span class="mobile-action-text">Login with Discord</span>
           </a>

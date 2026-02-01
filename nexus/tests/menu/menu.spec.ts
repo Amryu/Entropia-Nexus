@@ -1,4 +1,5 @@
 import { test, expect } from '../fixtures/auth';
+import { TIMEOUT_INSTANT } from '../test-constants';
 
 test.describe('Main Navigation Menu', () => {
   test.describe('Desktop Menu', () => {
@@ -44,8 +45,8 @@ test.describe('Main Navigation Menu', () => {
       await page.goto('/');
       await page.waitForLoadState('networkidle');
 
-      // Desktop search input has class "search"
-      const searchInput = page.locator('nav input.search');
+      // Desktop search input has class "search-input"
+      const searchInput = page.locator('nav input.search-input');
       await expect(searchInput).toBeVisible();
     });
 
@@ -53,13 +54,13 @@ test.describe('Main Navigation Menu', () => {
       await page.goto('/');
       await page.waitForLoadState('networkidle');
 
-      const searchInput = page.locator('nav input.search');
+      const searchInput = page.locator('nav input.search-input');
       await searchInput.fill('calypso');
 
       // Wait for search results dropdown
-      await page.waitForTimeout(500);
+      await page.waitForTimeout(TIMEOUT_INSTANT);
 
-      const searchResults = page.locator('.dropdown-search');
+      const searchResults = page.locator('.search-results-container');
       await expect(searchResults).toBeVisible();
     });
 
@@ -80,7 +81,7 @@ test.describe('Main Navigation Menu', () => {
       await toggleBtn.click();
 
       // Wait for theme change
-      await page.waitForTimeout(200);
+      await page.waitForTimeout(TIMEOUT_INSTANT);
 
       // The toggle should still work (button should be visible after click)
       await expect(toggleBtn).toBeVisible();
@@ -115,9 +116,10 @@ test.describe('Main Navigation Menu', () => {
     });
   });
 
-  test.describe('Mobile Menu (≤900px)', () => {
+  test.describe('Mobile Menu (<900px)', () => {
+    // Using 899px to be clearly in mobile mode (< 900px breakpoint)
     test.beforeEach(async ({ page }) => {
-      await page.setViewportSize({ width: 768, height: 1024 });
+      await page.setViewportSize({ width: 899, height: 1024 });
     });
 
     test('burger menu button is visible on mobile', async ({ page }) => {
@@ -165,7 +167,8 @@ test.describe('Main Navigation Menu', () => {
 
       await page.locator('.burger-button').click();
 
-      const searchInput = page.locator('.mobile-search-input');
+      // Mobile search uses SearchInput component with containerClass="mobile-search"
+      const searchInput = page.locator('.mobile-search .search-input');
       await expect(searchInput).toBeVisible();
     });
 
@@ -234,12 +237,11 @@ test.describe('Main Navigation Menu', () => {
 
       await page.locator('.burger-button').click();
 
-      // Should show sun or moon symbol
+      // Should show icon image (light.png or dark.png)
       const modeButton = page.locator('.mobile-quick-btn').first();
-      const buttonText = await modeButton.textContent();
+      const hasImg = await modeButton.locator('img').isVisible();
 
-      // Check for unicode symbol (sun or moon)
-      expect(buttonText).toMatch(/☀|☾/);
+      expect(hasImg).toBeTruthy();
     });
 
     test('clicking mobile menu link closes menu', async ({ page }) => {
@@ -253,14 +255,14 @@ test.describe('Main Navigation Menu', () => {
       // Expand a section and click a link
       const sectionHeader = page.locator('.mobile-section-header').first();
       await sectionHeader.click();
-      await page.waitForTimeout(200);
+      await page.waitForTimeout(TIMEOUT_INSTANT);
 
       const link = page.locator('.mobile-section-items.expanded .mobile-menu-item').first();
       if (await link.isVisible()) {
         await link.click();
 
         // Menu should close after navigation
-        await page.waitForTimeout(500);
+        await page.waitForTimeout(TIMEOUT_INSTANT);
         const mobileMenu = page.locator('.mobile-menu.open');
         await expect(mobileMenu).toBeHidden();
       }
@@ -272,12 +274,12 @@ test.describe('Main Navigation Menu', () => {
 
       await page.locator('.burger-button').click();
 
-      // Focus search input to enter search mode
-      const searchInput = page.locator('.mobile-search-input');
-      await searchInput.focus();
+      // Type in search input to enter search mode (cancel button appears when results show)
+      const searchInput = page.locator('.mobile-search .search-input');
+      await searchInput.fill('calypso');
 
-      // Cancel button should appear
-      await page.waitForTimeout(300);
+      // Cancel button should appear when in search mode (showResults is true)
+      await page.waitForTimeout(TIMEOUT_INSTANT);
       const cancelButton = page.locator('.mobile-search-cancel');
       await expect(cancelButton).toBeVisible();
     });
@@ -288,13 +290,14 @@ test.describe('Main Navigation Menu', () => {
 
       await page.locator('.burger-button').click();
 
-      const searchInput = page.locator('.mobile-search-input');
+      const searchInput = page.locator('.mobile-search .search-input');
       await searchInput.fill('calypso');
 
       // Wait for search results
-      await page.waitForTimeout(500);
+      await page.waitForTimeout(TIMEOUT_INSTANT);
 
-      const searchResults = page.locator('.mobile-search-results');
+      // Mobile search uses SearchInput component - results are in .search-results-container
+      const searchResults = page.locator('.mobile-search .search-results-container');
       await expect(searchResults).toBeVisible();
     });
 
@@ -304,17 +307,19 @@ test.describe('Main Navigation Menu', () => {
 
       await page.locator('.burger-button').click();
 
-      // Enter search mode
-      const searchInput = page.locator('.mobile-search-input');
-      await searchInput.focus();
-      await page.waitForTimeout(200);
+      // Enter search mode by typing (this triggers showResults which shows cancel button)
+      const searchInput = page.locator('.mobile-search .search-input');
+      await searchInput.fill('calypso');
+      await page.waitForTimeout(TIMEOUT_INSTANT);
 
       // Click cancel
       const cancelButton = page.locator('.mobile-search-cancel');
+      await expect(cancelButton).toBeVisible();
       await cancelButton.click();
 
-      // Should exit search mode - cancel button hidden
+      // Should exit search mode - cancel button hidden and navigation sections visible
       await expect(cancelButton).toBeHidden();
+      await expect(page.locator('.mobile-section').first()).toBeVisible();
     });
 
     test('mobile menu shows user info when authenticated', async ({ verifiedUser }) => {
@@ -349,7 +354,7 @@ test.describe('Main Navigation Menu', () => {
 
       // Start at desktop size
       await page.setViewportSize({ width: 1200, height: 800 });
-      await page.waitForTimeout(200);
+      await page.waitForTimeout(TIMEOUT_INSTANT);
       // Desktop menu items should be visible
       const menuItem = page.locator('.menu-container .menu-item:not(.user)').first();
       await expect(menuItem).toBeVisible();
@@ -357,7 +362,7 @@ test.describe('Main Navigation Menu', () => {
 
       // Resize to mobile
       await page.setViewportSize({ width: 768, height: 1024 });
-      await page.waitForTimeout(300);
+      await page.waitForTimeout(TIMEOUT_INSTANT);
       // Desktop menu items should be hidden on mobile
       await expect(menuItem).toBeHidden();
       await expect(page.locator('.burger-button')).toBeVisible();
@@ -375,7 +380,7 @@ test.describe('Main Navigation Menu', () => {
 
       // Resize to desktop
       await page.setViewportSize({ width: 1200, height: 800 });
-      await page.waitForTimeout(300);
+      await page.waitForTimeout(TIMEOUT_INSTANT);
 
       // Mobile menu should auto-close
       await expect(page.locator('.mobile-menu.open')).toBeHidden();

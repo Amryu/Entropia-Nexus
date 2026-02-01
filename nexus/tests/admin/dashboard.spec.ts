@@ -1,4 +1,5 @@
 import { test, expect } from '../fixtures/auth';
+import { TIMEOUT_INSTANT, TIMEOUT_SHORT } from '../test-constants';
 
 test.describe('Admin Dashboard', () => {
   test.describe('Access Control', () => {
@@ -204,7 +205,7 @@ test.describe('Admin Users Page', () => {
       await adminUser.waitForLoadState('networkidle');
 
       // Wait for data to load
-      await adminUser.waitForTimeout(500);
+      await adminUser.waitForTimeout(TIMEOUT_INSTANT);
 
       // FancyTable uses fancy-table-container
       const table = adminUser.locator('.fancy-table-container');
@@ -216,7 +217,7 @@ test.describe('Admin Users Page', () => {
       await adminUser.waitForLoadState('networkidle');
 
       // Wait for data to load
-      await adminUser.waitForTimeout(500);
+      await adminUser.waitForTimeout(TIMEOUT_INSTANT);
 
       // FancyTable uses .table-header
       const header = adminUser.locator('.table-header');
@@ -239,7 +240,7 @@ test.describe('Admin Users Page', () => {
       await adminUser.waitForLoadState('networkidle');
 
       // Wait for table to load with data
-      await adminUser.waitForTimeout(1000);
+      await adminUser.waitForTimeout(TIMEOUT_SHORT);
 
       // FancyTable renders rows
       const rows = adminUser.locator('.table-row');
@@ -259,7 +260,7 @@ test.describe('Admin Users Page', () => {
       await adminUser.waitForLoadState('networkidle');
 
       // Wait for data to load
-      await adminUser.waitForTimeout(1000);
+      await adminUser.waitForTimeout(TIMEOUT_SHORT);
 
       // Click a row (FancyTable uses .table-row)
       const row = adminUser.locator('.table-row').first();

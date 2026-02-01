@@ -52,6 +52,29 @@ Always use CSS variables for colors. Never use hardcoded color values. The theme
 --warning-color     /* Text/border for warning state */
 ```
 
+### Damage/Defense Type Colors
+
+Used in damage grids, defense grids, and related components. These colors represent the 9 damage types plus Block:
+
+```css
+--damage-impact      /* #6b7280 - Gray for physical impact */
+--damage-cut         /* #ef4444 - Red for cutting damage */
+--damage-stab        /* #f97316 - Orange for stabbing damage */
+--damage-penetration /* #eab308 - Yellow for penetration */
+--damage-shrapnel    /* #84cc16 - Lime for shrapnel */
+--damage-burn        /* #f59e0b - Amber for burn damage */
+--damage-cold        /* #06b6d4 - Cyan for cold damage */
+--damage-acid        /* #22c55e - Green for acid damage */
+--damage-electric    /* #8b5cf6 - Purple for electric damage */
+--damage-block       /* #60a5fa - Blue for block percentage */
+```
+
+Use these in damage/defense components:
+```svelte
+<div style="color: var(--damage-burn)">Burn: 10.5</div>
+<div style="border-left-color: var(--damage-electric)">Electric Defense</div>
+```
+
 ## Form Controls
 
 ### Basic Input Styling
@@ -702,6 +725,54 @@ The admin panel uses a collapsible sidebar on mobile (≤ 768px):
 - Overlay backdrop when open
 - Slides in from left
 - Closes on navigation item click
+
+## Rich Text / Description Content
+
+Wiki pages use `.description-content` class for rendering rich text from the TipTap editor.
+
+**Location:** Styles defined in `nexus/src/lib/style.css`
+
+**Usage:**
+```svelte
+<script>
+  import { sanitizeHtml } from '$lib/sanitize';
+</script>
+
+{#if entity.Properties?.Description}
+  <div class="description-content">
+    {@html sanitizeHtml(entity.Properties.Description)}
+  </div>
+{:else}
+  <div class="description-content placeholder">
+    Default placeholder text...
+  </div>
+{/if}
+```
+
+**Supported Elements:**
+
+| Element | Styling |
+|---------|---------|
+| `<p>` | 0.75em vertical margins, line-height: 1.6 |
+| `<h1>-<h4>` | Proper sizing (1.75em down to 1.1em) |
+| `<ul>`, `<ol>` | 1.5em left padding |
+| `<strong>` | font-weight: 600 |
+| `<em>` | font-style: italic |
+| `<s>` | Strikethrough with muted color |
+| `<code>` | Inline code with secondary background |
+| `<pre>` | Code block with border, monospace font |
+| `<blockquote>` | Accent-colored left border, italic |
+| `<hr>` | 2px border-top |
+| `<a>` | Accent color, underline on hover |
+| Video embeds | Responsive 16:9 iframe container |
+
+**Important:** Always sanitize HTML before rendering with `{@html}`:
+```javascript
+import { sanitizeHtml } from '$lib/sanitize';
+{@html sanitizeHtml(htmlContent)}
+```
+
+---
 
 ## Common Patterns Checklist
 

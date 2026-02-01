@@ -5,28 +5,67 @@
   Article: Description → Tiering → Acquisition
 
   Handles 7 tool subtypes: refiners, scanners, finders, excavators, teleportationchips, effectchips, misctools
+  Supports full wiki editing.
 -->
 <script>
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { hasItemTag, encodeURIComponentSafe, clampDecimals, getTypeLink, getTimeString } from '$lib/util';
+  import { sanitizeHtml } from '$lib/sanitize';
 
   // Wiki components
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
+  import PendingChangeBanner from '$lib/components/wiki/PendingChangeBanner.svelte';
   import WikiSEO from '$lib/components/wiki/WikiSEO.svelte';
   import DataSection from '$lib/components/wiki/DataSection.svelte';
+  import InlineEdit from '$lib/components/wiki/InlineEdit.svelte';
+  import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
+  import SearchableSelect from '$lib/components/wiki/SearchableSelect.svelte';
+
+  // Wiki edit state
+  import {
+    editMode,
+    isCreateMode as createModeStore,
+    initEditState,
+    resetEditState,
+    currentEntity,
+    existingPendingChange,
+    viewingPendingChange,
+    setExistingPendingChange,
+    setViewingPendingChange,
+    updateField,
+    changeMetadata
+  } from '$lib/stores/wikiEditState';
 
   // Legacy components for data display
   import Tiering from '$lib/components/Tiering.svelte';
   import Acquisition from '$lib/components/Acquisition.svelte';
+
+  // Wiki edit components
+  import EffectsEditor from '$lib/components/wiki/EffectsEditor.svelte';
+
+  // Image upload
+  import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
 
   export let data;
 
   $: tool = data.object;
   $: user = data.session?.user;
   $: additional = data.additional || {};
+  $: pendingChange = data.pendingChange;
+  $: existingChange = data.existingChange;
+  $: isCreateMode = data.isCreateMode || false;
+  $: canCreateNew = data.canCreateNew ?? true;
+  $: userPendingCreates = data.userPendingCreates || [];
+  $: userPendingUpdates = data.userPendingUpdates || [];
+  $: effects = data.effects || [];
+  $: professions = data.professions || [];
+  $: professionOptions = professions.map(p => ({ value: p.Name, label: p.Name })).sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
+
+  // Permission check - verified users and admins can edit
+  $: canEdit = user?.verified || user?.isAdmin;
 
   // For multi-type pages, data.items is an object keyed by type
   // When no type is selected, show all items from all types (with _type added for linking)
@@ -83,6 +122,100 @@
       default: return 'Tool';
     }
   }
+
+  // Empty entity template for create mode (type-specific)
+  function getEmptyEntity(type) {
+    const base = {
+      Name: '',
+      Properties: {
+        Description: '',
+        Weight: 0,
+        Economy: {
+          MaxTT: 0,
+          MinTT: 0,
+          Decay: 0
+        }
+      }
+    };
+
+    switch (type) {
+      case 'refiners':
+        // Basic tools - just economy
+        break;
+      case 'misctools':
+        base.Properties.Type = '';
+        base.Profession = { Name: '' };
+        break;
+      case 'scanners':
+        base.Properties.Range = 0;
+        base.Properties.UsesPerMinute = 0;
+        break;
+      case 'finders':
+        base.Properties.Depth = 0;
+        base.Properties.Range = 0;
+        base.Properties.Economy.AmmoBurn = 0;
+        base.Properties.Skill = {
+          IsSiB: false,
+          LearningIntervalStart: null,
+          LearningIntervalEnd: null
+        };
+        break;
+      case 'excavators':
+        base.Properties.Efficiency = 0;
+        base.Properties.UsesPerMinute = 0;
+        base.Properties.Skill = {
+          IsSiB: false,
+          LearningIntervalStart: null,
+          LearningIntervalEnd: null
+        };
+        break;
+      case 'teleportationchips':
+      case 'effectchips':
+        base.Properties.Range = 0;
+        base.Properties.UsesPerMinute = 0;
+        base.Properties.Economy.AmmoBurn = 0;
+        base.Ammo = { Name: 'Mind Essence' };
+        base.Properties.Mindforce = {
+          Level: 0,
+          Concentration: 0,
+          Cooldown: 0,
+          CooldownGroup: null
+        };
+        base.Properties.Skill = {
+          IsSiB: false,
+          LearningIntervalStart: null,
+          LearningIntervalEnd: null
+        };
+        break;
+    }
+
+    return base;
+  }
+
+  // ========== WIKI EDIT STATE ==========
+  // Initialize edit state when user/entity changes
+  $: if (user) {
+    const entityType = getEntityType(additional.type);
+    const emptyEntity = getEmptyEntity(additional.type);
+    initEditState(tool || emptyEntity, entityType, isCreateMode, existingChange);
+  }
+
+  // Set pending change when it exists
+  $: if (pendingChange) {
+    setExistingPendingChange(pendingChange);
+  }
+
+  // Active entity: in edit mode use currentEntity, when viewing pending use its data, otherwise use original
+  $: activeEntity = $editMode
+    ? $currentEntity
+    : $viewingPendingChange && $existingPendingChange?.data
+      ? $existingPendingChange.data
+      : tool;
+
+  // Cleanup on destroy
+  onDestroy(() => {
+    resetEditState();
+  });
 
   // Build navigation items
   $: navItems = allItems;
@@ -173,10 +306,13 @@
     ? `https://entropianexus.com/items/tools/${additional.type}`
     : 'https://entropianexus.com/items/tools';
 
+  // Image URL for SEO (use entity type in lowercase format)
+  $: entityImageUrl = tool?.Id && additional.type
+    ? `/api/img/${getEntityType(additional.type).toLowerCase()}/${tool.Id}`
+    : null;
+
   // Check if item is tierable (not Limited)
-  $: isTierable = tool && !hasItemTag(tool.Name, 'L') && ['finders', 'excavators'].includes(additional.type);
-  $: hasEquipEffects = tool?.EffectsOnEquip?.length > 0;
-  $: hasUseEffects = tool?.EffectsOnUse?.length > 0;
+  $: isTierable = activeEntity && !hasItemTag(activeEntity.Name, 'L') && ['finders', 'excavators'].includes(additional.type);
 
   // ========== PANEL STATE PERSISTENCE ==========
   let panelStates = {
@@ -205,6 +341,12 @@
 
   // ========== RELOAD/USES TOGGLE ==========
   let showReload = true;
+  $: showReloadEffective = $editMode ? false : showReload;
+  const mindforceAmmoOptions = [
+    { value: 'Mind Essence', label: 'Mind Essence' },
+    { value: 'Synthetic Mind Essence', label: 'Synthetic Mind Essence' },
+    { value: 'Light Mind Essence', label: 'Light Mind Essence' }
+  ];
 
   onMount(() => {
     try {
@@ -258,12 +400,12 @@
     return eff / reload;
   }
 
-  // Reactive calculations
-  $: totalUses = getTotalUses(tool);
-  $: cost = getCost(tool);
-  $: reload = getReload(tool);
-  $: effPerPed = calcEfficiencyPerPed(tool);
-  $: effPerSec = calcEfficiencyPerSec(tool);
+  // Reactive calculations (use activeEntity for live editing updates)
+  $: totalUses = getTotalUses(activeEntity);
+  $: cost = getCost(activeEntity);
+  $: reload = getReload(activeEntity);
+  $: effPerPed = calcEfficiencyPerPed(activeEntity);
+  $: effPerSec = calcEfficiencyPerSec(activeEntity);
 </script>
 
 <WikiSEO
@@ -271,6 +413,7 @@
   description={seoDescription}
   entityType={getEntityType(additional.type)}
   entity={tool}
+  imageUrl={entityImageUrl}
   {canonicalUrl}
   breadcrumbs={breadcrumbs.map(b => ({ name: b.label, url: b.href }))}
 />
@@ -287,19 +430,41 @@
   navGetItemHref={getItemHref}
   {user}
   editable={true}
+  canEdit={canEdit && !!additional.type}
+  {canCreateNew}
+  {userPendingCreates}
+  {userPendingUpdates}
 >
-  {#if tool}
+  {#if tool || isCreateMode}
+    <!-- Pending Change Banner -->
+    {#if $existingPendingChange && !$editMode}
+      <PendingChangeBanner
+        pendingChange={$existingPendingChange}
+        viewing={$viewingPendingChange}
+        onToggle={() => setViewingPendingChange(!$viewingPendingChange)}
+      />
+    {/if}
     <div class="layout-a">
       <!-- Wikipedia-style floating infobox (right panel) -->
       <aside class="wiki-infobox-float">
         <!-- Entity Header -->
         <div class="infobox-header">
-          <div class="icon-placeholder">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
-              <rect x="3" y="3" width="18" height="18" rx="2" />
-            </svg>
+          <EntityImageUpload
+            entityId={activeEntity?.Id}
+            entityName={activeEntity?.Name}
+            entityType={getEntityType(additional.type).toLowerCase()}
+            {user}
+            isEditMode={$editMode}
+            {isCreateMode}
+          />
+          <div class="infobox-title">
+            <InlineEdit
+              value={activeEntity?.Name}
+              path="Name"
+              type="text"
+              placeholder="Enter name..."
+            />
           </div>
-          <div class="infobox-title">{tool.Name}</div>
           <div class="infobox-subtitle">
             <span class="type-badge">{getTypeName(additional.type)}</span>
           </div>
@@ -310,34 +475,34 @@
           {#if additional.type === 'refiners'}
             <div class="stat-row primary">
               <span class="stat-label">TT Value</span>
-              <span class="stat-value">{tool.Properties?.Economy?.MaxTT != null ? `${clampDecimals(tool.Properties.Economy.MaxTT, 2, 4)} PED` : 'N/A'}</span>
+              <span class="stat-value">{activeEntity?.Properties?.Economy?.MaxTT != null ? `${clampDecimals(activeEntity.Properties.Economy.MaxTT, 2, 4)} PED` : 'N/A'}</span>
             </div>
             <div class="stat-row primary">
               <span class="stat-label">Decay</span>
-              <span class="stat-value">{tool.Properties?.Economy?.Decay != null ? `${tool.Properties.Economy.Decay.toFixed(4)} PEC` : 'N/A'}</span>
+              <span class="stat-value">{activeEntity?.Properties?.Economy?.Decay != null ? `${activeEntity.Properties.Economy.Decay.toFixed(4)} PEC` : 'N/A'}</span>
             </div>
           {:else if additional.type === 'scanners'}
             <div class="stat-row primary">
               <span class="stat-label">Range</span>
-              <span class="stat-value">{tool.Properties?.Range != null ? `${tool.Properties.Range}m` : 'N/A'}</span>
+              <span class="stat-value">{activeEntity?.Properties?.Range != null ? `${activeEntity.Properties.Range}m` : 'N/A'}</span>
             </div>
             <div class="stat-row primary">
               <span class="stat-label">Uses/min</span>
-              <span class="stat-value">{tool.Properties?.UsesPerMinute != null ? clampDecimals(tool.Properties.UsesPerMinute, 0, 2) : 'N/A'}</span>
+              <span class="stat-value">{activeEntity?.Properties?.UsesPerMinute != null ? clampDecimals(activeEntity.Properties.UsesPerMinute, 0, 2) : 'N/A'}</span>
             </div>
           {:else if additional.type === 'finders'}
             <div class="stat-row primary">
               <span class="stat-label">Depth</span>
-              <span class="stat-value">{tool.Properties?.Depth != null ? `${tool.Properties.Depth}m` : 'N/A'}</span>
+              <span class="stat-value">{activeEntity?.Properties?.Depth != null ? `${activeEntity.Properties.Depth}m` : 'N/A'}</span>
             </div>
             <div class="stat-row primary">
               <span class="stat-label">Range</span>
-              <span class="stat-value">{tool.Properties?.Range != null ? `${tool.Properties.Range}m` : 'N/A'}</span>
+              <span class="stat-value">{activeEntity?.Properties?.Range != null ? `${activeEntity.Properties.Range}m` : 'N/A'}</span>
             </div>
           {:else if additional.type === 'excavators'}
             <div class="stat-row primary">
               <span class="stat-label">Efficiency</span>
-              <span class="stat-value">{tool.Properties?.Efficiency ?? 'N/A'}</span>
+              <span class="stat-value">{activeEntity?.Properties?.Efficiency ?? 'N/A'}</span>
             </div>
             <div class="stat-row primary">
               <span class="stat-label">Eff/PED</span>
@@ -346,7 +511,7 @@
           {:else if additional.type === 'teleportationchips'}
             <div class="stat-row primary">
               <span class="stat-label">Range</span>
-              <span class="stat-value">{tool.Properties?.Range != null ? `${tool.Properties.Range}km` : 'N/A'}</span>
+              <span class="stat-value">{activeEntity?.Properties?.Range != null ? `${activeEntity.Properties.Range}km` : 'N/A'}</span>
             </div>
             <div class="stat-row primary">
               <span class="stat-label">Cost/Use</span>
@@ -354,22 +519,22 @@
             </div>
           {:else if additional.type === 'effectchips'}
             <div class="stat-row primary">
-              <span class="stat-label">Level</span>
-              <span class="stat-value">{tool.Properties?.Mindforce?.Level ?? 'N/A'}</span>
+              <span class="stat-label">Range</span>
+              <span class="stat-value">{activeEntity?.Properties?.Range != null ? `${activeEntity.Properties.Range}m` : 'N/A'}</span>
             </div>
             <div class="stat-row primary">
-              <span class="stat-label">Range</span>
-              <span class="stat-value">{tool.Properties?.Range != null ? `${tool.Properties.Range}m` : 'N/A'}</span>
+              <span class="stat-label">Cost/Use</span>
+              <span class="stat-value">{cost != null ? `${cost.toFixed(2)} PEC` : 'N/A'}</span>
             </div>
           {:else}
             <!-- misctools -->
             <div class="stat-row primary">
               <span class="stat-label">TT Value</span>
-              <span class="stat-value">{tool.Properties?.Economy?.MaxTT != null ? `${clampDecimals(tool.Properties.Economy.MaxTT, 2, 4)} PED` : 'N/A'}</span>
+              <span class="stat-value">{activeEntity?.Properties?.Economy?.MaxTT != null ? `${clampDecimals(activeEntity.Properties.Economy.MaxTT, 2, 4)} PED` : 'N/A'}</span>
             </div>
             <div class="stat-row primary">
               <span class="stat-label">Decay</span>
-              <span class="stat-value">{tool.Properties?.Economy?.Decay != null ? `${tool.Properties.Economy.Decay.toFixed(4)} PEC` : 'N/A'}</span>
+              <span class="stat-value">{activeEntity?.Properties?.Economy?.Decay != null ? `${activeEntity.Properties.Economy.Decay.toFixed(4)} PEC` : 'N/A'}</span>
             </div>
           {/if}
         </div>
@@ -379,24 +544,59 @@
           <h4 class="section-title">General</h4>
           <div class="stat-row">
             <span class="stat-label">Weight</span>
-            <span class="stat-value">{tool.Properties?.Weight != null ? `${clampDecimals(tool.Properties.Weight, 1, 6)}kg` : 'N/A'}</span>
+            <span class="stat-value">
+              <InlineEdit
+                value={activeEntity?.Properties?.Weight}
+                path="Properties.Weight"
+                type="number"
+                suffix="kg"
+                step={0.01}
+              />
+            </span>
           </div>
+          {#if additional.type === 'misctools'}
+            <div class="stat-row">
+              <span class="stat-label">Type</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.Type}
+                  path="Properties.Type"
+                  type="text"
+                  placeholder="Enter tool type..."
+                />
+              </span>
+            </div>
+          {/if}
           {#if additional.type === 'teleportationchips' || additional.type === 'effectchips'}
             <div class="stat-row">
               <span class="stat-label">Range</span>
-              <span class="stat-value">{tool.Properties?.Range != null ? `${tool.Properties.Range}${additional.type === 'teleportationchips' ? 'km' : 'm'}` : 'N/A'}</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.Range}
+                  path="Properties.Range"
+                  type="number"
+                  suffix={additional.type === 'teleportationchips' ? 'km' : 'm'}
+                />
+              </span>
             </div>
           {/if}
           {#if additional.type !== 'refiners' && additional.type !== 'misctools'}
             <!-- svelte-ignore a11y-click-events-have-key-events -->
             <!-- svelte-ignore a11y-no-static-element-interactions -->
             <div class="stat-row toggleable" on:click={toggleReloadUses} title="Click to toggle between Reload and Uses/min">
-              {#if showReload}
+              {#if showReloadEffective}
                 <span class="stat-label">Reload <span class="toggle-hint">⇄</span></span>
                 <span class="stat-value">{reload != null ? `${reload.toFixed(2)}s` : 'N/A'}</span>
               {:else}
                 <span class="stat-label">Uses/min <span class="toggle-hint">⇄</span></span>
-                <span class="stat-value">{tool.Properties?.UsesPerMinute != null ? clampDecimals(tool.Properties.UsesPerMinute, 0, 2) : 'N/A'}</span>
+                <span class="stat-value">
+                  <InlineEdit
+                    value={activeEntity?.Properties?.UsesPerMinute}
+                    path="Properties.UsesPerMinute"
+                    type="number"
+                    step={0.1}
+                  />
+                </span>
               {/if}
             </div>
           {/if}
@@ -406,16 +606,17 @@
           </div>
         </div>
 
-        <!-- Effects on Use (effect chips) - placed right after General -->
-        {#if additional.type === 'effectchips' && hasUseEffects}
+        <!-- Effects on Use (effect chips) -->
+        {#if additional.type === 'effectchips' && (activeEntity?.EffectsOnUse?.length > 0 || $editMode)}
           <div class="stats-section effects-section">
-            <h4 class="section-title">Effects on Use</h4>
-            {#each tool.EffectsOnUse.sort((a,b) => a.Name.localeCompare(b.Name)) as effect}
-              <div class="stat-row">
-                <span class="stat-label">{effect.Name}</span>
-                <span class="stat-value effect-value">{effect.Values.Strength}{effect.Values.Unit} for {getTimeString(effect.Values.DurationSeconds)}</span>
-              </div>
-            {/each}
+            <EffectsEditor
+              effects={activeEntity?.EffectsOnUse || []}
+              fieldName="EffectsOnUse"
+              availableEffects={effects}
+              effectType="use"
+              title="Effects on Use"
+              showEmpty={$editMode}
+            />
           </div>
         {/if}
 
@@ -424,15 +625,39 @@
           <h4 class="section-title">Economy</h4>
           <div class="stat-row">
             <span class="stat-label">Max TT</span>
-            <span class="stat-value">{tool.Properties?.Economy?.MaxTT != null ? `${clampDecimals(tool.Properties.Economy.MaxTT, 2, 8)} PED` : 'N/A'}</span>
+            <span class="stat-value">
+              <InlineEdit
+                value={activeEntity?.Properties?.Economy?.MaxTT}
+                path="Properties.Economy.MaxTT"
+                type="number"
+                suffix=" PED"
+                step={0.01}
+              />
+            </span>
           </div>
           <div class="stat-row">
             <span class="stat-label">Min TT</span>
-            <span class="stat-value">{tool.Properties?.Economy?.MinTT != null ? `${clampDecimals(tool.Properties.Economy.MinTT, 2, 8)} PED` : '0.00 PED'}</span>
+            <span class="stat-value">
+              <InlineEdit
+                value={activeEntity?.Properties?.Economy?.MinTT}
+                path="Properties.Economy.MinTT"
+                type="number"
+                suffix=" PED"
+                step={0.01}
+              />
+            </span>
           </div>
           <div class="stat-row">
             <span class="stat-label">Decay</span>
-            <span class="stat-value">{tool.Properties?.Economy?.Decay != null ? `${tool.Properties.Economy.Decay.toFixed(4)} PEC` : 'N/A'}</span>
+            <span class="stat-value">
+              <InlineEdit
+                value={activeEntity?.Properties?.Economy?.Decay}
+                path="Properties.Economy.Decay"
+                type="number"
+                suffix=" PEC"
+                step={0.0001}
+              />
+            </span>
           </div>
           {#if additional.type === 'finders'}
             <div class="stat-row">
@@ -441,25 +666,44 @@
             </div>
             <div class="stat-row">
               <span class="stat-label">Ammo Burn</span>
-              <span class="stat-value">{tool.Properties?.Economy?.AmmoBurn ?? 'N/A'}/{(tool.Properties?.Economy?.AmmoBurn ?? 0) * 2}/{(tool.Properties?.Economy?.AmmoBurn ?? 0) * 3}</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.Economy?.AmmoBurn}
+                  path="Properties.Economy.AmmoBurn"
+                  type="number"
+                />
+              </span>
             </div>
           {:else if additional.type === 'teleportationchips' || additional.type === 'effectchips'}
             <div class="stat-row">
               <span class="stat-label">Ammo</span>
-              <span class="stat-value">{tool.Ammo?.Name ?? 'N/A'}</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Ammo?.Name || 'Mind Essence'}
+                  path="Ammo.Name"
+                  type="select"
+                  options={mindforceAmmoOptions}
+                />
+              </span>
             </div>
             <div class="stat-row">
               <span class="stat-label">Ammo Burn</span>
-              <span class="stat-value">{tool.Properties?.Economy?.AmmoBurn ?? 'N/A'}</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.Economy?.AmmoBurn}
+                  path="Properties.Economy.AmmoBurn"
+                  type="number"
+                />
+              </span>
             </div>
             <div class="stat-row">
               <span class="stat-label">Cost/Use</span>
               <span class="stat-value">{cost != null ? `${cost.toFixed(2)} PEC` : 'N/A'}</span>
             </div>
-            {#if additional.type === 'teleportationchips' && tool.Properties?.Range}
+            {#if additional.type === 'teleportationchips' && activeEntity?.Properties?.Range}
               <div class="stat-row">
                 <span class="stat-label">Cost/km</span>
-                <span class="stat-value">{cost != null ? `${(cost / tool.Properties.Range).toFixed(2)} PEC/km` : 'N/A'}</span>
+                <span class="stat-value">{cost != null ? `${(cost / activeEntity.Properties.Range).toFixed(2)} PEC/km` : 'N/A'}</span>
               </div>
             {/if}
           {/if}
@@ -472,16 +716,36 @@
             {#if additional.type === 'finders'}
               <div class="stat-row">
                 <span class="stat-label">Depth</span>
-                <span class="stat-value">{tool.Properties?.Depth != null ? `${tool.Properties.Depth}m` : 'N/A'}</span>
+                <span class="stat-value">
+                  <InlineEdit
+                    value={activeEntity?.Properties?.Depth}
+                    path="Properties.Depth"
+                    type="number"
+                    suffix="m"
+                  />
+                </span>
               </div>
               <div class="stat-row">
                 <span class="stat-label">Range</span>
-                <span class="stat-value">{tool.Properties?.Range != null ? `${tool.Properties.Range}m` : 'N/A'}</span>
+                <span class="stat-value">
+                  <InlineEdit
+                    value={activeEntity?.Properties?.Range}
+                    path="Properties.Range"
+                    type="number"
+                    suffix="m"
+                  />
+                </span>
               </div>
             {:else}
               <div class="stat-row">
                 <span class="stat-label">Efficiency</span>
-                <span class="stat-value">{tool.Properties?.Efficiency ?? 'N/A'}</span>
+                <span class="stat-value">
+                  <InlineEdit
+                    value={activeEntity?.Properties?.Efficiency}
+                    path="Properties.Efficiency"
+                    type="number"
+                  />
+                </span>
               </div>
               <div class="stat-row">
                 <span class="stat-label">Efficiency/PED</span>
@@ -501,19 +765,47 @@
             <h4 class="section-title">Mindforce</h4>
             <div class="stat-row">
               <span class="stat-label">Level</span>
-              <span class="stat-value">{tool.Properties?.Mindforce?.Level ?? 'N/A'}</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.Mindforce?.Level}
+                  path="Properties.Mindforce.Level"
+                  type="number"
+                />
+              </span>
             </div>
             <div class="stat-row">
               <span class="stat-label">Concentration</span>
-              <span class="stat-value">{tool.Properties?.Mindforce?.Concentration != null ? `${tool.Properties.Mindforce.Concentration}s` : 'N/A'}</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.Mindforce?.Concentration}
+                  path="Properties.Mindforce.Concentration"
+                  type="number"
+                  suffix="s"
+                  step={0.1}
+                />
+              </span>
             </div>
             <div class="stat-row">
               <span class="stat-label">Cooldown</span>
-              <span class="stat-value">{tool.Properties?.Mindforce?.Cooldown != null ? `${tool.Properties.Mindforce.Cooldown}s` : 'N/A'}</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.Mindforce?.Cooldown}
+                  path="Properties.Mindforce.Cooldown"
+                  type="number"
+                  suffix="s"
+                  step={0.1}
+                />
+              </span>
             </div>
             <div class="stat-row">
               <span class="stat-label">Cooldown Group</span>
-              <span class="stat-value">{tool.Properties?.Mindforce?.CooldownGroup ?? 'N/A'}</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.Mindforce?.CooldownGroup}
+                  path="Properties.Mindforce.CooldownGroup"
+                  type="text"
+                />
+              </span>
             </div>
           </div>
         {/if}
@@ -522,49 +814,99 @@
         {#if additional.type !== 'scanners' && additional.type !== 'refiners'}
           <div class="stats-section">
             <h4 class="section-title">Skilling</h4>
-            {#if tool.Properties?.Skill?.IsSiB !== undefined}
-              <div class="stat-row">
-                <span class="stat-label">SiB</span>
-                <span class="stat-value" class:highlight-yes={tool.Properties?.Skill?.IsSiB}>{tool.Properties?.Skill?.IsSiB ? 'Yes' : 'No'}</span>
-              </div>
-            {/if}
+            <div class="stat-row">
+              <span class="stat-label">SiB</span>
+              <span class="stat-value" class:highlight-yes={activeEntity?.Properties?.Skill?.IsSiB}>
+                <InlineEdit
+                  value={activeEntity?.Properties?.Skill?.IsSiB}
+                  path="Properties.Skill.IsSiB"
+                  type="checkbox"
+                />
+              </span>
+            </div>
             {#if additional.type === 'finders'}
               <div class="stat-row">
                 <span class="stat-label">Professions</span>
-                <span class="stat-value">Prospector, Surveyor, Treasure Hunter</span>
+                <span class="stat-value">
+                  <a href={getTypeLink('Prospector', 'Profession')} class="profession-link">Prospector</a>,
+                  <a href={getTypeLink('Surveyor', 'Profession')} class="profession-link">Surveyor</a>,
+                  <a href={getTypeLink('Treasure Hunter', 'Profession')} class="profession-link">Treasure Hunter</a>
+                </span>
               </div>
             {:else if additional.type === 'excavators'}
               <div class="stat-row">
                 <span class="stat-label">Professions</span>
-                <span class="stat-value">Driller, Miner, Archaeologist</span>
+                <span class="stat-value">
+                  <a href={getTypeLink('Driller', 'Profession')} class="profession-link">Driller</a>,
+                  <a href={getTypeLink('Miner', 'Profession')} class="profession-link">Miner</a>,
+                  <a href={getTypeLink('Archaeologist', 'Profession')} class="profession-link">Archaeologist</a>
+                </span>
               </div>
-            {:else if tool.Profession?.Name}
+            {:else if additional.type === 'teleportationchips'}
               <div class="stat-row">
                 <span class="stat-label">Profession</span>
                 <span class="stat-value">
-                  <a href={getTypeLink(tool.Profession.Name, 'Profession')} class="profession-link">{tool.Profession.Name}</a>
+                  <a href={getTypeLink('Translocator', 'Profession')} class="profession-link">Translocator</a>
+                </span>
+              </div>
+            {:else if additional.type === 'misctools'}
+              <div class="stat-row">
+                <span class="stat-label">Profession</span>
+                <span class="stat-value">
+                  {#if $editMode}
+                    <SearchableSelect
+                      value={activeEntity?.Profession?.Name || ''}
+                      options={professionOptions}
+                      placeholder="Select profession..."
+                      on:change={(e) => updateField('Profession.Name', e.detail.value)}
+                    />
+                  {:else if activeEntity?.Profession?.Name}
+                    <a href={getTypeLink(activeEntity.Profession.Name, 'Profession')} class="profession-link">{activeEntity.Profession.Name}</a>
+                  {:else}
+                    N/A
+                  {/if}
+                </span>
+              </div>
+            {:else if activeEntity?.Profession?.Name}
+              <div class="stat-row">
+                <span class="stat-label">Profession</span>
+                <span class="stat-value">
+                  <a href={getTypeLink(activeEntity.Profession.Name, 'Profession')} class="profession-link">{activeEntity.Profession.Name}</a>
                 </span>
               </div>
             {/if}
-            {#if tool.Properties?.Skill?.LearningIntervalStart != null || tool.Properties?.Skill?.LearningIntervalEnd != null}
-              <div class="stat-row">
-                <span class="stat-label">Level Range</span>
-                <span class="stat-value">{tool.Properties?.Skill?.LearningIntervalStart?.toFixed(1) ?? '?'} - {tool.Properties?.Skill?.LearningIntervalEnd?.toFixed(1) ?? '?'}</span>
-              </div>
-            {/if}
+            <div class="stat-row">
+              <span class="stat-label">Level Range</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.Skill?.LearningIntervalStart}
+                  path="Properties.Skill.LearningIntervalStart"
+                  type="number"
+                  step={0.1}
+                />
+                -
+                <InlineEdit
+                  value={activeEntity?.Properties?.Skill?.LearningIntervalEnd}
+                  path="Properties.Skill.LearningIntervalEnd"
+                  type="number"
+                  step={0.1}
+                />
+              </span>
+            </div>
           </div>
         {/if}
 
         <!-- Effects on Equip (finders/excavators) -->
-        {#if hasEquipEffects}
+        {#if (additional.type === 'finders' || additional.type === 'excavators') && (activeEntity?.EffectsOnEquip?.length > 0 || $editMode)}
           <div class="stats-section effects-section">
-            <h4 class="section-title">Effects on Equip</h4>
-            {#each tool.EffectsOnEquip.sort((a,b) => a.Name.localeCompare(b.Name)) as effect}
-              <div class="stat-row">
-                <span class="stat-label">{effect.Name}</span>
-                <span class="stat-value effect-value">{effect.Values.Strength}{effect.Values.Unit}</span>
-              </div>
-            {/each}
+            <EffectsEditor
+              effects={activeEntity?.EffectsOnEquip || []}
+              fieldName="EffectsOnEquip"
+              availableEffects={effects}
+              effectType="equip"
+              title="Effects on Equip"
+              showEmpty={$editMode}
+            />
           </div>
         {/if}
 
@@ -572,15 +914,28 @@
 
       <!-- Main content (center) -->
       <article class="wiki-article">
-        <h1 class="article-title">{tool.Name}</h1>
+        <h1 class="article-title">
+          <InlineEdit
+            value={activeEntity?.Name}
+            path="Name"
+            type="text"
+            placeholder="Enter name..."
+          />
+        </h1>
 
         <!-- Description Panel -->
         <div class="description-panel">
-          {#if tool.Properties?.Description}
-            <div class="description-content">{tool.Properties.Description}</div>
+          {#if $editMode}
+            <RichTextEditor
+              content={activeEntity?.Properties?.Description || ''}
+              on:change={(e) => updateField('Properties.Description', e.detail)}
+              placeholder="Enter a description for this {getTypeName(additional.type).toLowerCase()}..."
+            />
+          {:else if activeEntity?.Properties?.Description}
+            <div class="description-content">{@html sanitizeHtml(activeEntity.Properties.Description)}</div>
           {:else}
             <div class="description-content placeholder">
-              {tool.Name} is a {getTypeName(additional.type).toLowerCase()} used in various activities in Entropia Universe.
+              {activeEntity?.Name || 'This tool'} is a {getTypeName(additional.type).toLowerCase()} used in various activities in Entropia Universe.
             </div>
           {/if}
         </div>
@@ -620,6 +975,48 @@
 </WikiPage>
 
 <style>
+  /* Pending change banner */
+  .pending-change-banner {
+    background: linear-gradient(135deg, #f59e0b20, #f59e0b10);
+    border: 1px solid #f59e0b;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+  }
+
+  .banner-content {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .banner-icon {
+    font-size: 18px;
+  }
+
+  .banner-text {
+    flex: 1;
+    font-size: 14px;
+    color: var(--text-color);
+  }
+
+  .banner-toggle {
+    padding: 6px 12px;
+    font-size: 13px;
+    font-weight: 500;
+    background: var(--accent-color);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+
+  .banner-toggle:hover {
+    opacity: 0.9;
+  }
+
   .layout-a {
     position: relative;
     width: 100%;
@@ -650,19 +1047,6 @@
     text-align: center;
     padding-bottom: 12px;
     border-bottom: 1px solid var(--border-color, #555);
-  }
-
-  .icon-placeholder {
-    width: 80px;
-    height: 80px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: var(--bg-color, var(--primary-color));
-    border: 2px dashed var(--border-color, #555);
-    border-radius: 8px;
-    color: var(--text-muted, #999);
-    margin: 0 auto 12px;
   }
 
   .infobox-title {
@@ -870,16 +1254,6 @@
 
     .infobox-title {
       font-size: 16px;
-    }
-
-    .icon-placeholder {
-      width: 60px;
-      height: 60px;
-    }
-
-    .icon-placeholder svg {
-      width: 36px;
-      height: 36px;
     }
   }
 </style>

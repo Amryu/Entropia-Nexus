@@ -3,6 +3,7 @@
   Wikipedia-style layout with floating infobox on the right side.
   Infobox: All stats including effects
   Article: Description → Acquisition
+  Supports full wiki editing.
 
   Legacy editConfig preserved in clothing-legacy/+page.svelte
   Key structure:
@@ -14,16 +15,40 @@
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { clampDecimals, encodeURIComponentSafe, groupBy } from '$lib/util';
+  import { sanitizeHtml } from '$lib/sanitize';
 
   // Wiki components
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
   import WikiSEO from '$lib/components/wiki/WikiSEO.svelte';
   import DataSection from '$lib/components/wiki/DataSection.svelte';
+  import InlineEdit from '$lib/components/wiki/InlineEdit.svelte';
+  import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
+  import EffectsEditor from '$lib/components/wiki/EffectsEditor.svelte';
+  import SetEffectsEditor from '$lib/components/wiki/SetEffectsEditor.svelte';
+  import LocalSearchInput from '$lib/components/wiki/LocalSearchInput.svelte';
 
   // Legacy components for data display
   import Acquisition from '$lib/components/Acquisition.svelte';
+
+  // Image upload
+  import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
+
+  // Wiki edit state
+  import {
+    editMode,
+    isCreateMode as isCreateModeStore,
+    initEditState,
+    resetEditState,
+    currentEntity,
+    existingPendingChange,
+    viewingPendingChange,
+    setExistingPendingChange,
+    setViewingPendingChange,
+    updateField,
+    changeMetadata
+  } from '$lib/stores/wikiEditState';
 
   export let data;
 
@@ -31,6 +56,107 @@
   $: user = data.session?.user;
   $: additional = data.additional || {};
   $: allItems = data.allItems || [];
+  $: pendingChange = data.pendingChange;
+  $: canCreateNew = data.canCreateNew ?? true;
+  $: userPendingCreates = data.userPendingCreates || [];
+  $: userPendingUpdates = data.userPendingUpdates || [];
+  $: isCreateMode = data.isCreateMode || false;
+  $: effectsList = data.effects || [];
+  $: equipsetsList = data.equipsets || [];
+
+  // Verified users can edit
+  $: canEdit = user?.verified || user?.isAdmin;
+
+  // Type options
+  $: typeOptions = Array.from(new Set(
+    (allItems || [])
+      .map(item => item?.Properties?.Type)
+      .filter(v => v && v.trim().length > 0)
+  )).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+
+  // Slot options
+  $: slotOptions = Array.from(new Set(
+    (allItems || [])
+      .map(item => item?.Properties?.Slot)
+      .filter(v => v && v.trim().length > 0)
+  )).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+
+  // Gender options
+  const genderOptions = [
+    { value: 'Both', label: 'Both' },
+    { value: 'Male', label: 'Male' },
+    { value: 'Female', label: 'Female' }
+  ];
+
+  // Empty clothing template for create mode
+  const emptyClothing = {
+    Id: null,
+    Name: '',
+    Properties: {
+      Description: '',
+      Weight: null,
+      Type: 'Common',
+      Slot: 'Body',
+      Gender: 'Unisex',
+      Economy: {
+        MaxTT: null,
+        MinTT: 0
+      }
+    },
+    EffectsOnEquip: [],
+    Set: null
+  };
+
+  // Initialize edit state when user/clothing changes
+  $: if (user) {
+    const existingChange = data.existingChange || null;
+    const initialEntity = isCreateMode
+      ? (existingChange?.data || emptyClothing)
+      : clothing;
+    initEditState(initialEntity, 'Clothing', isCreateMode, existingChange);
+  }
+
+  // Set pending change in store when it changes
+  $: if (pendingChange) {
+    setExistingPendingChange(pendingChange);
+  }
+
+  // Active clothing: use currentEntity in edit mode, pendingChange data when viewing, otherwise original
+  $: activeClothing = $editMode
+    ? $currentEntity
+    : ($viewingPendingChange && $existingPendingChange?.data)
+      ? $existingPendingChange.data
+      : clothing;
+
+  // Cleanup on destroy
+  onDestroy(() => {
+    resetEditState();
+  });
+
+  function handleSetChange(event) {
+    const value = event?.detail?.value ?? event?.target?.value ?? '';
+    const trimmed = value.trim();
+    if (trimmed) {
+      updateField('Set.Name', trimmed);
+      updateField('Set.EffectsOnSetEquip', []);
+    } else {
+      updateField('Set', null);
+      updateField('Set.EffectsOnSetEquip', []);
+    }
+  }
+
+  function handleSetSelect(event) {
+    const value = event?.detail?.value ?? event?.target?.value ?? '';
+    const trimmed = value.trim();
+    if (trimmed) {
+      const selected = equipsetsList.find(s => s.Name === trimmed);
+      updateField('Set.Name', trimmed);
+      updateField('Set.EffectsOnSetEquip', selected ? (selected.EffectsOnSetEquip || []) : []);
+    } else {
+      updateField('Set', null);
+      updateField('Set.EffectsOnSetEquip', []);
+    }
+  }
 
   // Build navigation items
   $: navItems = allItems;
@@ -62,20 +188,23 @@
   $: breadcrumbs = [
     { label: 'Items', href: '/items' },
     { label: 'Clothing', href: '/items/clothing' },
-    ...(clothing ? [{ label: clothing.Name }] : [])
+    ...(activeClothing?.Name ? [{ label: activeClothing.Name }] : isCreateMode ? [{ label: 'New Clothing' }] : [])
   ];
 
   // SEO
-  $: seoDescription = clothing?.Properties?.Description ||
-    `${clothing?.Name || 'Clothing'} - ${clothing?.Properties?.Type || ''} ${clothing?.Properties?.Slot || ''} clothing in Entropia Universe.`;
+  $: seoDescription = activeClothing?.Properties?.Description ||
+    `${activeClothing?.Name || 'Clothing'} - ${activeClothing?.Properties?.Type || ''} ${activeClothing?.Properties?.Slot || ''} clothing in Entropia Universe.`;
 
-  $: canonicalUrl = clothing
-    ? `https://entropianexus.com/items/clothing/${encodeURIComponentSafe(clothing.Name)}`
+  $: canonicalUrl = activeClothing?.Name
+    ? `https://entropianexus.com/items/clothing/${encodeURIComponentSafe(activeClothing.Name)}`
     : 'https://entropianexus.com/items/clothing';
 
+  // Image URL for SEO
+  $: entityImageUrl = clothing?.Id ? `/api/img/clothing/${clothing.Id}` : null;
+
   // Check if item has effects
-  $: hasEquipEffects = clothing?.EffectsOnEquip?.length > 0;
-  $: hasSetEffects = clothing?.Set?.EffectsOnSetEquip?.length > 0;
+  $: hasEquipEffects = activeClothing?.EffectsOnEquip?.length > 0;
+  $: hasSetEffects = activeClothing?.Set?.EffectsOnSetEquip?.length > 0;
 
   // Get set effects grouped by piece count
   function getSetEffects(item) {
@@ -93,7 +222,7 @@
       }));
   }
 
-  $: setEffects = getSetEffects(clothing);
+  $: setEffects = getSetEffects(activeClothing);
 
   // ========== PANEL STATE PERSISTENCE ==========
   let panelStates = {
@@ -118,13 +247,19 @@
       // localStorage not available
     }
   }
+
+  // ========== EDIT HANDLERS ==========
+  function handleDescriptionChange(event) {
+    updateField('Properties.Description', event.detail);
+  }
 </script>
 
 <WikiSEO
-  title={clothing?.Name || 'Clothing'}
+  title={activeClothing?.Name || 'Clothing'}
   description={seoDescription}
   entityType="Clothing"
-  entity={clothing}
+  entity={activeClothing}
+  imageUrl={entityImageUrl}
   {canonicalUrl}
   breadcrumbs={breadcrumbs.map(b => ({ name: b.label, url: b.href }))}
 />
@@ -132,7 +267,7 @@
 <WikiPage
   title="Clothing"
   {breadcrumbs}
-  entity={clothing}
+  entity={activeClothing}
   entityType="Clothing"
   basePath="/items/clothing"
   {navItems}
@@ -140,24 +275,66 @@
   {navTableColumns}
   {user}
   editable={true}
+  {canEdit}
+  {canCreateNew}
+  {userPendingCreates}
+  {userPendingUpdates}
 >
-  {#if clothing}
+  {#if activeClothing || isCreateMode}
+    <!-- Pending Change Banner -->
+    {#if $existingPendingChange && !$editMode && !isCreateMode}
+      <div class="pending-change-banner">
+        <div class="banner-content">
+          <span class="banner-icon">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <line x1="12" y1="8" x2="12" y2="12"></line>
+              <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+          </span>
+          <span class="banner-text">
+            This clothing has a pending change by <strong>{$existingPendingChange.author_name || 'Unknown'}</strong>
+            ({$existingPendingChange.state})
+          </span>
+        </div>
+        <div class="banner-actions">
+          {#if $viewingPendingChange}
+            <button class="banner-btn" on:click={() => setViewingPendingChange(false)}>
+              View Current
+            </button>
+          {:else}
+            <button class="banner-btn primary" on:click={() => setViewingPendingChange(true)}>
+              View Pending
+            </button>
+          {/if}
+        </div>
+      </div>
+    {/if}
+
     <div class="layout-a">
       <!-- Wikipedia-style floating infobox (right panel) -->
       <aside class="wiki-infobox-float">
         <!-- Entity Header -->
         <div class="infobox-header">
-          <div class="icon-placeholder">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
-              <rect x="3" y="3" width="18" height="18" rx="2" />
-            </svg>
+          <EntityImageUpload
+            entityId={activeClothing?.Id}
+            entityName={activeClothing?.Name}
+            entityType="clothing"
+            {user}
+            isEditMode={$editMode}
+            {isCreateMode}
+          />
+          <div class="infobox-title">
+            <InlineEdit
+              type="text"
+              value={activeClothing?.Name || ''}
+              path="Name"
+              placeholder="Enter clothing name"
+            />
           </div>
-          <div class="infobox-title">{clothing.Name}</div>
           <div class="infobox-subtitle">
-            <span class="type-badge">{clothing.Properties?.Type || 'Clothing'}</span>
-            {#if clothing.Properties?.Slot}
-              <span>{clothing.Properties.Slot}</span>
-            {/if}
+            <span class="type-badge">{activeClothing?.Properties?.Type || 'Clothing'}</span>
+            <span class="type-badge">{activeClothing?.Properties?.Slot || 'Body'}</span>
           </div>
         </div>
 
@@ -165,11 +342,19 @@
         <div class="stats-section tier-1">
           <div class="stat-row primary">
             <span class="stat-label">TT Value</span>
-            <span class="stat-value">{clothing.Properties?.Economy?.MaxTT != null ? `${clampDecimals(clothing.Properties.Economy.MaxTT, 2, 4)} PED` : 'N/A'}</span>
+            <span class="stat-value">
+              {activeClothing?.Properties?.Economy?.MaxTT != null
+                ? `${clampDecimals(activeClothing.Properties.Economy.MaxTT, 2, 8)} PED`
+                : 'N/A'}
+            </span>
           </div>
           <div class="stat-row primary">
             <span class="stat-label">Weight</span>
-            <span class="stat-value">{clothing.Properties?.Weight != null ? `${clampDecimals(clothing.Properties.Weight, 1, 6)}kg` : 'N/A'}</span>
+            <span class="stat-value">
+              {activeClothing?.Properties?.Weight != null
+                ? `${clampDecimals(activeClothing.Properties.Weight, 1, 6)} kg`
+                : 'N/A'}
+            </span>
           </div>
         </div>
 
@@ -178,15 +363,46 @@
           <h4 class="section-title">General</h4>
           <div class="stat-row">
             <span class="stat-label">Type</span>
-            <span class="stat-value">{clothing.Properties?.Type || 'N/A'}</span>
+            <span class="stat-value">
+              {#if $editMode}
+                <LocalSearchInput
+                  value={activeClothing?.Properties?.Type || ''}
+                  placeholder="Search type..."
+                  options={typeOptions}
+                  on:change={(e) => updateField('Properties.Type', e.detail.value || '')}
+                  on:select={(e) => updateField('Properties.Type', e.detail.value || '')}
+                />
+              {:else}
+                {activeClothing?.Properties?.Type || 'N/A'}
+              {/if}
+            </span>
           </div>
           <div class="stat-row">
             <span class="stat-label">Slot</span>
-            <span class="stat-value">{clothing.Properties?.Slot || 'N/A'}</span>
+            <span class="stat-value">
+              {#if $editMode}
+                <LocalSearchInput
+                  value={activeClothing?.Properties?.Slot || ''}
+                  placeholder="Search slot..."
+                  options={slotOptions}
+                  on:change={(e) => updateField('Properties.Slot', e.detail.value || '')}
+                  on:select={(e) => updateField('Properties.Slot', e.detail.value || '')}
+                />
+              {:else}
+                {activeClothing?.Properties?.Slot || 'N/A'}
+              {/if}
+            </span>
           </div>
           <div class="stat-row">
             <span class="stat-label">Gender</span>
-            <span class="stat-value">{clothing.Properties?.Gender || 'N/A'}</span>
+            <span class="stat-value">
+              <InlineEdit
+                type="select"
+                value={activeClothing?.Properties?.Gender || 'Unisex'}
+                path="Properties.Gender"
+                options={genderOptions}
+              />
+            </span>
           </div>
         </div>
 
@@ -195,63 +411,107 @@
           <h4 class="section-title">Economy</h4>
           <div class="stat-row">
             <span class="stat-label">Max TT</span>
-            <span class="stat-value">{clothing.Properties?.Economy?.MaxTT != null ? `${clampDecimals(clothing.Properties.Economy.MaxTT, 2, 8)} PED` : 'N/A'}</span>
+            <span class="stat-value">
+              <InlineEdit
+                type="number"
+                value={activeClothing?.Properties?.Economy?.MaxTT ?? ''}
+                path="Properties.Economy.MaxTT"
+                step={0.01}
+                suffix=" PED"
+              />
+            </span>
           </div>
           <div class="stat-row">
             <span class="stat-label">Min TT</span>
-            <span class="stat-value">{clothing.Properties?.Economy?.MinTT != null ? `${clampDecimals(clothing.Properties.Economy.MinTT, 2, 8)} PED` : '0.00 PED'}</span>
+            <span class="stat-value">
+              <InlineEdit
+                type="number"
+                value={activeClothing?.Properties?.Economy?.MinTT ?? 0}
+                path="Properties.Economy.MinTT"
+                step={0.01}
+                suffix=" PED"
+              />
+            </span>
           </div>
         </div>
 
         <!-- Equip Effects -->
-        {#if hasEquipEffects}
+        {#if hasEquipEffects || $editMode}
           <div class="stats-section effects-section">
-            <h4 class="section-title">Effects on Equip</h4>
-            {#each clothing.EffectsOnEquip.sort((a,b) => a.Name.localeCompare(b.Name)) as effect}
-              <div class="stat-row">
-                <span class="stat-label">{effect.Name}</span>
-                <span class="stat-value effect-value">{effect.Values.Strength}{effect.Values.Unit}</span>
-              </div>
-            {/each}
+            <h4 class="section-title">Effects</h4>
+            <EffectsEditor
+              effects={activeClothing?.EffectsOnEquip || []}
+              fieldName="EffectsOnEquip"
+              availableEffects={effectsList}
+              effectType="equip"
+              title="Effects on Equip"
+            />
           </div>
         {/if}
 
         <!-- Set Effects -->
-        {#if hasSetEffects && setEffects}
+        {#if hasSetEffects || $editMode}
           <div class="stats-section set-effects">
-            <h4 class="section-title">Set: {clothing.Set.Name}</h4>
-            {#each setEffects as group}
-              <div class="effect-group">
-                <div class="effect-pieces">{group.pieces} Pieces</div>
-                {#each group.effects as effect}
-                  <div class="effect-row">
-                    <span class="effect-value">+{effect.strength}{effect.unit}</span>
-                    <span class="effect-name">{effect.name}</span>
-                  </div>
-                {/each}
+            <h4 class="section-title">Equipment Set</h4>
+            {#if $editMode}
+              <div class="stat-row">
+                <span class="stat-label">Equipment Set</span>
+                <span class="stat-value">
+                  <LocalSearchInput
+                    value={activeClothing?.Set?.Name || ''}
+                    placeholder="Search equipment set..."
+                    options={equipsetsList.map(s => s.Name)}
+                    on:change={(e) => handleSetChange(e)}
+                    on:select={(e) => handleSetSelect(e)}
+                    on:blur={(e) => handleSetSelect(e)}
+                  />
+                </span>
               </div>
-            {/each}
+            {/if}
+            {#if !$editMode && activeClothing?.Set?.Name}
+              <div class="set-name">Set: {activeClothing.Set.Name}</div>
+            {/if}
+            <SetEffectsEditor
+              effects={activeClothing?.Set?.EffectsOnSetEquip || []}
+              fieldName="Set.EffectsOnSetEquip"
+              availableEffects={effectsList}
+              maxPieces={7}
+            />
           </div>
         {/if}
       </aside>
 
       <!-- Main content (center) -->
       <article class="wiki-article">
-        <h1 class="article-title">{clothing.Name}</h1>
+        <h1 class="article-title">
+          <InlineEdit
+            type="text"
+            value={activeClothing?.Name || ''}
+            field="Name"
+            label="Name"
+            placeholder="Enter clothing name"
+          />
+        </h1>
 
         <!-- Description Panel -->
         <div class="description-panel">
-          {#if clothing.Properties?.Description}
-            <div class="description-content">{clothing.Properties.Description}</div>
+          {#if $editMode}
+            <RichTextEditor
+              content={activeClothing?.Properties?.Description || ''}
+              on:change={handleDescriptionChange}
+              placeholder="Enter a description for this clothing item..."
+            />
+          {:else if activeClothing?.Properties?.Description}
+            <div class="description-content">{@html sanitizeHtml(activeClothing.Properties.Description)}</div>
           {:else}
             <div class="description-content placeholder">
-              {clothing.Name} is a {clothing.Properties?.Type?.toLowerCase() || ''} clothing item worn on the {clothing.Properties?.Slot?.toLowerCase() || 'body'}.
+              {activeClothing?.Name || 'This item'} is a {activeClothing?.Properties?.Type?.toLowerCase() || ''} clothing item worn on the {activeClothing?.Properties?.Slot?.toLowerCase() || 'body'}.
             </div>
           {/if}
         </div>
 
         <!-- Acquisition Section -->
-        {#if additional.acquisition}
+        {#if additional.acquisition && !isCreateMode}
           <DataSection
             title="Acquisition"
             icon=""
@@ -272,6 +532,67 @@
 </WikiPage>
 
 <style>
+  .pending-change-banner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    background-color: var(--warning-bg, #fef3c7);
+    border: 1px solid var(--warning-border, #f59e0b);
+    border-radius: 8px;
+    margin-bottom: 16px;
+  }
+
+  :global(.dark) .pending-change-banner {
+    background-color: rgba(245, 158, 11, 0.1);
+    border-color: rgba(245, 158, 11, 0.3);
+  }
+
+  .banner-content {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .banner-icon {
+    color: var(--warning-color, #d97706);
+  }
+
+  .banner-text {
+    font-size: 14px;
+    color: var(--text-color);
+  }
+
+  .banner-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .banner-btn {
+    padding: 6px 12px;
+    font-size: 13px;
+    border-radius: 4px;
+    border: 1px solid var(--border-color, #555);
+    background-color: var(--bg-color, var(--primary-color));
+    color: var(--text-color);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .banner-btn:hover {
+    background-color: var(--secondary-color);
+  }
+
+  .banner-btn.primary {
+    background-color: var(--accent-color, #4a9eff);
+    border-color: var(--accent-color, #4a9eff);
+    color: white;
+  }
+
+  .banner-btn.primary:hover {
+    opacity: 0.9;
+  }
+
   .layout-a {
     position: relative;
     width: 100%;
@@ -302,19 +623,6 @@
     text-align: center;
     padding-bottom: 12px;
     border-bottom: 1px solid var(--border-color, #555);
-  }
-
-  .icon-placeholder {
-    width: 80px;
-    height: 80px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: var(--bg-color, var(--primary-color));
-    border: 2px dashed var(--border-color, #555);
-    border-radius: 8px;
-    color: var(--text-muted, #999);
-    margin: 0 auto 12px;
   }
 
   .infobox-title {
@@ -412,7 +720,21 @@
     color: var(--accent-color, #4a9eff);
   }
 
+
   /* Set Effects styling */
+  .set-selector {
+    margin-bottom: 12px;
+  }
+
+  .set-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--accent-color, #4a9eff);
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border-color, #555);
+  }
+
   .set-effects .effect-group {
     margin-bottom: 12px;
     padding-bottom: 8px;
@@ -439,6 +761,7 @@
     gap: 8px;
     padding: 2px 0;
     font-size: 12px;
+    justify-content: space-between;
   }
 
   .effect-row .effect-value {
@@ -449,7 +772,12 @@
 
   .effect-row .effect-name {
     color: var(--text-color);
+    text-align: right;
+    margin-left: auto;
+    flex: 1;
+    min-width: 0;
   }
+
 
   .wiki-article {
     overflow: hidden; /* Contains floated infobox */
@@ -527,14 +855,10 @@
       font-size: 16px;
     }
 
-    .icon-placeholder {
-      width: 60px;
-      height: 60px;
-    }
-
-    .icon-placeholder svg {
-      width: 36px;
-      height: 36px;
+    .pending-change-banner {
+      flex-direction: column;
+      gap: 12px;
+      align-items: flex-start;
     }
   }
 </style>

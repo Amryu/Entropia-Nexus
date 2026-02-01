@@ -2,6 +2,7 @@
   @component Furnishings Wiki Page
   Wikipedia-style layout with floating infobox on the right side.
   Handles 4 subtypes: furniture, decorations, storagecontainers, signs
+  Supports full wiki editing.
 
   Legacy editConfig preserved in furnishings-legacy/+page.svelte
 -->
@@ -9,22 +10,53 @@
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { clampDecimals, encodeURIComponentSafe } from '$lib/util';
+  import { sanitizeHtml } from '$lib/sanitize';
 
   // Wiki components
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
+  import PendingChangeBanner from '$lib/components/wiki/PendingChangeBanner.svelte';
   import WikiSEO from '$lib/components/wiki/WikiSEO.svelte';
   import DataSection from '$lib/components/wiki/DataSection.svelte';
+  import InlineEdit from '$lib/components/wiki/InlineEdit.svelte';
+  import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
 
   // Legacy components for data display
   import Acquisition from '$lib/components/Acquisition.svelte';
+
+  // Image upload
+  import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
+
+  // Wiki edit state
+  import {
+    editMode,
+    isCreateMode as createModeStore,
+    initEditState,
+    resetEditState,
+    currentEntity,
+    existingPendingChange,
+    viewingPendingChange,
+    setExistingPendingChange,
+    setViewingPendingChange,
+    updateField,
+    changeMetadata
+  } from '$lib/stores/wikiEditState.js';
 
   export let data;
 
   $: furnishing = data.object;
   $: user = data.session?.user;
   $: additional = data.additional || {};
+  $: pendingChange = data.pendingChange;
+  $: existingChange = data.existingChange;
+  $: isCreateMode = data.isCreateMode || false;
+  $: canCreateNew = data.canCreateNew ?? true;
+  $: userPendingCreates = data.userPendingCreates || [];
+
+  $: userPendingUpdates = data.userPendingUpdates || [];
+  // Can edit if user is verified or admin
+  $: canEdit = user?.verified || user?.isAdmin;
 
   // For multi-type pages, data.items is an object keyed by type
   $: allItems = (() => {
@@ -71,6 +103,98 @@
       default: return null;
     }
   }
+
+  // Get empty entity template based on type
+  function getEmptyEntity(type) {
+    const base = {
+      Name: '',
+      Properties: {
+        Description: '',
+        Weight: 0,
+        Economy: {
+          MaxTT: 0,
+          MinTT: 0
+        }
+      }
+    };
+
+    switch (type) {
+      case 'furniture':
+      case 'decorations':
+        base.Properties.Type = '';
+        break;
+      case 'storagecontainers':
+        base.Properties.ItemCapacity = 0;
+        base.Properties.WeightCapacity = 0;
+        break;
+      case 'signs':
+        base.Properties.ItemPoints = 0;
+        base.Properties.Economy.Cost = 0;
+        base.Properties.Display = {
+          AspectRatio: '16:9',
+          CanShowLocalContent: false,
+          CanShowImagesAndText: false,
+          CanShowEffects: false,
+          CanShowMultimedia: false,
+          CanShowParticipantContent: false
+        };
+        break;
+    }
+    return base;
+  }
+
+  // Initialize edit state when entity or user changes
+  $: if (user && additional.type) {
+    const entityType = getEntityType(additional.type);
+    const entity = isCreateMode ? (existingChange?.data || getEmptyEntity(additional.type)) : furnishing;
+    if (entity && entityType) {
+      initEditState(entity, entityType, isCreateMode, existingChange);
+    }
+  }
+
+  // Set existing pending change when data loads
+  $: if (pendingChange) {
+    setExistingPendingChange(pendingChange);
+    // Auto-enable viewing pending change for author or admin
+    if (user && (pendingChange.author_id === user.id || user.isAdmin)) {
+      setViewingPendingChange(true);
+    }
+  } else {
+    setExistingPendingChange(null);
+    setViewingPendingChange(false);
+  }
+
+  // Active entity: what we display (edit mode → currentEntity, pending view → pending data, default → furnishing)
+  $: activeEntity = $editMode
+    ? $currentEntity
+    : ($viewingPendingChange && $existingPendingChange?.changes)
+      ? applyChangesToEntity(furnishing, $existingPendingChange.changes)
+      : furnishing;
+
+  // Helper to apply pending changes to entity for display
+  function applyChangesToEntity(entity, changes) {
+    if (!entity || !changes) return entity;
+    const result = JSON.parse(JSON.stringify(entity));
+    for (const [path, value] of Object.entries(changes)) {
+      setNestedValue(result, path, value);
+    }
+    return result;
+  }
+
+  function setNestedValue(obj, path, value) {
+    const keys = path.split('.');
+    let current = obj;
+    for (let i = 0; i < keys.length - 1; i++) {
+      if (!current[keys[i]]) current[keys[i]] = {};
+      current = current[keys[i]];
+    }
+    current[keys[keys.length - 1]] = value;
+  }
+
+  // Cleanup on destroy
+  onDestroy(() => {
+    resetEditState();
+  });
 
   // Build navigation items
   $: navItems = allItems;
@@ -127,18 +251,23 @@
     { label: 'Items', href: '/items' },
     { label: 'Furnishings', href: '/items/furnishings' },
     ...(additional.type ? [{ label: getTypeName(additional.type) + (additional.type !== 'furniture' ? 's' : ''), href: `/items/furnishings/${additional.type}` }] : []),
-    ...(furnishing ? [{ label: furnishing.Name }] : [])
+    ...(activeEntity ? [{ label: activeEntity.Name || 'New ' + getTypeName(additional.type) }] : [])
   ];
 
   // SEO
-  $: seoDescription = furnishing?.Properties?.Description ||
-    `${furnishing?.Name || 'Furnishing'} - ${getTypeName(additional.type)} in Entropia Universe.`;
+  $: seoDescription = activeEntity?.Properties?.Description ||
+    `${activeEntity?.Name || 'Furnishing'} - ${getTypeName(additional.type)} in Entropia Universe.`;
 
   $: canonicalUrl = furnishing
     ? `https://entropianexus.com/items/furnishings/${additional.type}/${encodeURIComponentSafe(furnishing.Name)}`
     : additional.type
     ? `https://entropianexus.com/items/furnishings/${additional.type}`
     : 'https://entropianexus.com/items/furnishings';
+
+  // Image URL for SEO
+  $: entityImageUrl = furnishing?.Id && additional.type
+    ? `/api/img/${getEntityType(additional.type).toLowerCase()}/${furnishing.Id}`
+    : null;
 
   // ========== PANEL STATE PERSISTENCE ==========
   let panelStates = {
@@ -162,10 +291,11 @@
 </script>
 
 <WikiSEO
-  title={furnishing?.Name || `${getTypeName(additional.type)}s`}
+  title={activeEntity?.Name || `${getTypeName(additional.type)}s`}
   description={seoDescription}
   entityType={getEntityType(additional.type)}
-  entity={furnishing}
+  entity={activeEntity}
+  imageUrl={entityImageUrl}
   {canonicalUrl}
   breadcrumbs={breadcrumbs.map(b => ({ name: b.label, url: b.href }))}
 />
@@ -182,22 +312,41 @@
   navGetItemHref={getItemHref}
   {user}
   editable={true}
+  canEdit={canEdit && !!additional.type}
+  {canCreateNew}
+  {userPendingCreates}
+  {userPendingUpdates}
 >
-  {#if furnishing}
+  {#if activeEntity || isCreateMode}
+    <!-- Pending Change Banner -->
+    {#if $existingPendingChange && !$editMode}
+      <PendingChangeBanner
+        pendingChange={$existingPendingChange}
+        viewing={$viewingPendingChange}
+        onToggle={() => setViewingPendingChange(!$viewingPendingChange)}
+      />
+    {/if}
     <div class="layout-a">
       <!-- Wikipedia-style floating infobox (right panel) -->
       <aside class="wiki-infobox-float">
         <!-- Entity Header -->
         <div class="infobox-header">
-          <div class="icon-placeholder">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
-              <rect x="4" y="8" width="16" height="10" rx="1" />
-              <path d="M6 8V6a2 2 0 012-2h8a2 2 0 012 2v2" />
-              <line x1="4" y1="18" x2="4" y2="20" />
-              <line x1="20" y1="18" x2="20" y2="20" />
-            </svg>
+          <EntityImageUpload
+            entityId={activeEntity?.Id}
+            entityName={activeEntity?.Name}
+            entityType={getEntityType(additional.type).toLowerCase()}
+            {user}
+            isEditMode={$editMode}
+            {isCreateMode}
+          />
+          <div class="infobox-title">
+            <InlineEdit
+              value={activeEntity?.Name}
+              path="Name"
+              type="text"
+              placeholder="{getTypeName(additional.type)} Name"
+            />
           </div>
-          <div class="infobox-title">{furnishing.Name}</div>
           <div class="infobox-subtitle">
             <span class="type-badge">{getTypeName(additional.type)}</span>
           </div>
@@ -207,23 +356,25 @@
         <div class="stats-section tier-1">
           <div class="stat-row primary">
             <span class="stat-label">TT Value</span>
-            <span class="stat-value">{furnishing.Properties?.Economy?.MaxTT != null ? `${clampDecimals(furnishing.Properties.Economy.MaxTT, 2, 4)} PED` : 'N/A'}</span>
+            <span class="stat-value">
+              {activeEntity?.Properties?.Economy?.MaxTT != null ? `${activeEntity.Properties.Economy.MaxTT.toFixed(2)} PED` : 'N/A'}
+            </span>
           </div>
 
           {#if additional.type === 'storagecontainers'}
             <div class="stat-row primary">
               <span class="stat-label">Item Capacity</span>
-              <span class="stat-value">{furnishing.Properties?.ItemCapacity ?? 'N/A'}</span>
+              <span class="stat-value">{activeEntity?.Properties?.ItemCapacity ?? 'N/A'}</span>
             </div>
           {:else if additional.type === 'signs'}
             <div class="stat-row primary">
               <span class="stat-label">Aspect Ratio</span>
-              <span class="stat-value">{furnishing.Properties?.Display?.AspectRatio ?? 'N/A'}</span>
+              <span class="stat-value">{activeEntity?.Properties?.Display?.AspectRatio ?? 'N/A'}</span>
             </div>
-          {:else if furnishing.Properties?.Type}
+          {:else if activeEntity?.Properties?.Type || $editMode}
             <div class="stat-row primary">
               <span class="stat-label">Type</span>
-              <span class="stat-value">{furnishing.Properties.Type}</span>
+              <span class="stat-value">{activeEntity?.Properties?.Type ?? 'N/A'}</span>
             </div>
           {/if}
         </div>
@@ -233,32 +384,65 @@
           <h4 class="section-title">General</h4>
           <div class="stat-row">
             <span class="stat-label">Weight</span>
-            <span class="stat-value">{furnishing.Properties?.Weight != null ? `${clampDecimals(furnishing.Properties.Weight, 1, 6)}kg` : 'N/A'}</span>
+            <span class="stat-value">
+              <InlineEdit
+                value={activeEntity?.Properties?.Weight}
+                path="Properties.Weight"
+                type="number"
+                min={0}
+                step={0.1}
+                suffix=" kg"
+              />
+            </span>
           </div>
-          <div class="stat-row">
-            <span class="stat-label">Category</span>
-            <span class="stat-value">{getTypeName(additional.type)}</span>
-          </div>
-          {#if (additional.type === 'furniture' || additional.type === 'decorations') && furnishing.Properties?.Type}
+          {#if (additional.type === 'furniture' || additional.type === 'decorations') && (activeEntity?.Properties?.Type || $editMode)}
             <div class="stat-row">
               <span class="stat-label">Type</span>
-              <span class="stat-value">{furnishing.Properties.Type}</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.Type}
+                  path="Properties.Type"
+                  type="text"
+                />
+              </span>
             </div>
           {/if}
           {#if additional.type === 'signs'}
             <div class="stat-row">
               <span class="stat-label">Item Points</span>
-              <span class="stat-value">{furnishing.Properties?.ItemPoints ?? 'N/A'}</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.ItemPoints}
+                  path="Properties.ItemPoints"
+                  type="number"
+                  min={0}
+                />
+              </span>
             </div>
           {/if}
           {#if additional.type === 'storagecontainers'}
             <div class="stat-row">
               <span class="stat-label">Item Capacity</span>
-              <span class="stat-value">{furnishing.Properties?.ItemCapacity ?? 'N/A'}</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.ItemCapacity}
+                  path="Properties.ItemCapacity"
+                  type="number"
+                  min={0}
+                />
+              </span>
             </div>
             <div class="stat-row">
               <span class="stat-label">Weight Capacity</span>
-              <span class="stat-value">{furnishing.Properties?.WeightCapacity != null ? `${clampDecimals(furnishing.Properties.WeightCapacity, 1, 6)}kg` : 'N/A'}</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.WeightCapacity}
+                  path="Properties.WeightCapacity"
+                  type="number"
+                  min={0}
+                  step={0.1}
+                />
+              </span>
             </div>
           {/if}
         </div>
@@ -268,16 +452,42 @@
           <h4 class="section-title">Economy</h4>
           <div class="stat-row">
             <span class="stat-label">Max. TT</span>
-            <span class="stat-value">{furnishing.Properties?.Economy?.MaxTT != null ? `${clampDecimals(furnishing.Properties.Economy.MaxTT, 2, 8)} PED` : 'N/A'}</span>
+            <span class="stat-value">
+              <InlineEdit
+                value={activeEntity?.Properties?.Economy?.MaxTT}
+                path="Properties.Economy.MaxTT"
+                type="number"
+                min={0}
+                step={0.01}
+                suffix=" PED"
+              />
+            </span>
           </div>
           <div class="stat-row">
             <span class="stat-label">Min. TT</span>
-            <span class="stat-value">{furnishing.Properties?.Economy?.MinTT != null ? `${clampDecimals(furnishing.Properties.Economy.MinTT, 2, 8)} PED` : 'N/A'}</span>
+            <span class="stat-value">
+              <InlineEdit
+                value={activeEntity?.Properties?.Economy?.MinTT}
+                path="Properties.Economy.MinTT"
+                type="number"
+                min={0}
+                step={0.01}
+                suffix=" PED"
+              />
+            </span>
           </div>
           {#if additional.type === 'signs'}
             <div class="stat-row">
               <span class="stat-label">Cost</span>
-              <span class="stat-value">{furnishing.Properties?.Economy?.Cost != null ? `${furnishing.Properties.Economy.Cost.toFixed(2)} PEC` : 'N/A'}</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.Economy?.Cost}
+                  path="Properties.Economy.Cost"
+                  type="number"
+                  min={0}
+                  step={0.01}
+                />
+              </span>
             </div>
           {/if}
         </div>
@@ -288,27 +498,63 @@
             <h4 class="section-title">Display</h4>
             <div class="stat-row">
               <span class="stat-label">Aspect Ratio</span>
-              <span class="stat-value">{furnishing.Properties?.Display?.AspectRatio ?? 'N/A'}</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.Display?.AspectRatio}
+                  path="Properties.Display.AspectRatio"
+                  type="text"
+                />
+              </span>
             </div>
             <div class="stat-row">
               <span class="stat-label">Local Content</span>
-              <span class="stat-value feature-flag" class:yes={furnishing.Properties?.Display?.CanShowLocalContent}>{furnishing.Properties?.Display?.CanShowLocalContent ? 'Yes' : 'No'}</span>
+              <span class="stat-value feature-flag" class:yes={activeEntity?.Properties?.Display?.CanShowLocalContent}>
+                <InlineEdit
+                  value={activeEntity?.Properties?.Display?.CanShowLocalContent}
+                  path="Properties.Display.CanShowLocalContent"
+                  type="checkbox"
+                />
+              </span>
             </div>
             <div class="stat-row">
               <span class="stat-label">Images & Text</span>
-              <span class="stat-value feature-flag" class:yes={furnishing.Properties?.Display?.CanShowImagesAndText}>{furnishing.Properties?.Display?.CanShowImagesAndText ? 'Yes' : 'No'}</span>
+              <span class="stat-value feature-flag" class:yes={activeEntity?.Properties?.Display?.CanShowImagesAndText}>
+                <InlineEdit
+                  value={activeEntity?.Properties?.Display?.CanShowImagesAndText}
+                  path="Properties.Display.CanShowImagesAndText"
+                  type="checkbox"
+                />
+              </span>
             </div>
             <div class="stat-row">
               <span class="stat-label">Effects</span>
-              <span class="stat-value feature-flag" class:yes={furnishing.Properties?.Display?.CanShowEffects}>{furnishing.Properties?.Display?.CanShowEffects ? 'Yes' : 'No'}</span>
+              <span class="stat-value feature-flag" class:yes={activeEntity?.Properties?.Display?.CanShowEffects}>
+                <InlineEdit
+                  value={activeEntity?.Properties?.Display?.CanShowEffects}
+                  path="Properties.Display.CanShowEffects"
+                  type="checkbox"
+                />
+              </span>
             </div>
             <div class="stat-row">
               <span class="stat-label">Multimedia</span>
-              <span class="stat-value feature-flag" class:yes={furnishing.Properties?.Display?.CanShowMultimedia}>{furnishing.Properties?.Display?.CanShowMultimedia ? 'Yes' : 'No'}</span>
+              <span class="stat-value feature-flag" class:yes={activeEntity?.Properties?.Display?.CanShowMultimedia}>
+                <InlineEdit
+                  value={activeEntity?.Properties?.Display?.CanShowMultimedia}
+                  path="Properties.Display.CanShowMultimedia"
+                  type="checkbox"
+                />
+              </span>
             </div>
             <div class="stat-row">
               <span class="stat-label">Participant Content</span>
-              <span class="stat-value feature-flag" class:yes={furnishing.Properties?.Display?.CanShowParticipantContent}>{furnishing.Properties?.Display?.CanShowParticipantContent ? 'Yes' : 'No'}</span>
+              <span class="stat-value feature-flag" class:yes={activeEntity?.Properties?.Display?.CanShowParticipantContent}>
+                <InlineEdit
+                  value={activeEntity?.Properties?.Display?.CanShowParticipantContent}
+                  path="Properties.Display.CanShowParticipantContent"
+                  type="checkbox"
+                />
+              </span>
             </div>
           </div>
         {/if}
@@ -316,15 +562,28 @@
 
       <!-- Main content (center) -->
       <article class="wiki-article">
-        <h1 class="article-title">{furnishing.Name}</h1>
+        <h1 class="article-title">
+          <InlineEdit
+            value={activeEntity?.Name}
+            path="Name"
+            type="text"
+            placeholder="{getTypeName(additional.type)} Name"
+          />
+        </h1>
 
         <!-- Description Panel -->
         <div class="description-panel">
-          {#if furnishing.Properties?.Description}
-            <div class="description-content">{furnishing.Properties.Description}</div>
+          {#if $editMode}
+            <RichTextEditor
+              content={activeEntity?.Properties?.Description || ''}
+              on:change={(e) => updateField('Properties.Description', e.detail)}
+              placeholder="Enter {getTypeName(additional.type).toLowerCase()} description..."
+            />
+          {:else if activeEntity?.Properties?.Description}
+            <div class="description-content">{@html sanitizeHtml(activeEntity.Properties.Description)}</div>
           {:else}
             <div class="description-content placeholder">
-              {furnishing.Name} is a {getTypeName(additional.type).toLowerCase()} in Entropia Universe.
+              {activeEntity?.Name || 'This ' + getTypeName(additional.type).toLowerCase()} is a {getTypeName(additional.type).toLowerCase()} in Entropia Universe.
             </div>
           {/if}
         </div>
@@ -351,6 +610,46 @@
 </WikiPage>
 
 <style>
+  .pending-change-banner {
+    background: linear-gradient(135deg, #f59e0b22 0%, #f59e0b11 100%);
+    border: 1px solid #f59e0b44;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+  }
+
+  .banner-content {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .banner-icon {
+    font-size: 18px;
+  }
+
+  .banner-text {
+    flex: 1;
+    color: var(--text-color);
+    font-size: 14px;
+  }
+
+  .banner-toggle {
+    padding: 6px 12px;
+    font-size: 12px;
+    background: var(--accent-color);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+
+  .banner-toggle:hover {
+    opacity: 0.9;
+  }
+
   .layout-a {
     position: relative;
     width: 100%;
@@ -380,19 +679,6 @@
     text-align: center;
     padding-bottom: 12px;
     border-bottom: 1px solid var(--border-color, #555);
-  }
-
-  .icon-placeholder {
-    width: 80px;
-    height: 80px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: var(--bg-color, var(--primary-color));
-    border: 2px dashed var(--border-color, #555);
-    border-radius: 8px;
-    color: var(--text-muted, #999);
-    margin: 0 auto 12px;
   }
 
   .infobox-title {
@@ -568,16 +854,6 @@
 
     .infobox-title {
       font-size: 16px;
-    }
-
-    .icon-placeholder {
-      width: 60px;
-      height: 60px;
-    }
-
-    .icon-placeholder svg {
-      width: 36px;
-      height: 36px;
     }
   }
 </style>

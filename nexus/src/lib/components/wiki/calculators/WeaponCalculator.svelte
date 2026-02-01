@@ -356,8 +356,8 @@
     padding: 6px 10px;
   }
 
-  /* Mobile adjustments */
-  @media (max-width: 767px) {
+  /* Mobile adjustments - aligned with global 900px breakpoint */
+  @media (max-width: 899px) {
     .stat-group {
       grid-template-columns: repeat(2, 1fr);
     }

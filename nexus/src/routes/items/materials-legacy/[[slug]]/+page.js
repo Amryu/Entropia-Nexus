@@ -17,9 +17,11 @@ export async function load({ fetch, params, url }) {
 
   ({ items, response } = await handlePageLoad(fetch, items, config));
 
-  // Add RefiningRecipes to the material object structure for edit mode
-  if (response.object && config.mode === 'edit' && response.additional?.acquisition?.RefiningRecipes) {
-    response.object.RefiningRecipes = response.additional.acquisition.RefiningRecipes;
+  // Ensure refining recipes are present on the material object (view + edit)
+  if (response.object && response.additional?.acquisition?.RefiningRecipes) {
+    if (!response.object.RefiningRecipes || response.object.RefiningRecipes.length === 0) {
+      response.object.RefiningRecipes = response.additional.acquisition.RefiningRecipes;
+    }
   }
 
   return response;

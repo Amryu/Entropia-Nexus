@@ -1,0 +1,877 @@
+<!--
+  @component MobMaturitiesEdit
+  Array editor for mob maturities with nested attacks.
+  Supports add/edit/remove for maturities and their attacks.
+  Following the editConfig pattern from mobs-legacy.
+-->
+<script>
+  // @ts-nocheck
+  import { editMode, updateField, currentEntity } from '$lib/stores/wikiEditState.js';
+
+  /** @type {Array} Maturities array from the mob */
+  export let maturities = [];
+
+  /** @type {string} Mob type (Animal, Mutant, Robot, Asteroid) */
+  export let type = null;
+
+  /** @type {string} Field path for updateField */
+  export let fieldPath = 'Maturities';
+
+  // Damage types for composition
+  const DAMAGE_TYPES = [
+    { key: 'Stab', label: 'Stb' },
+    { key: 'Cut', label: 'Cut' },
+    { key: 'Impact', label: 'Imp' },
+    { key: 'Penetration', label: 'Pen' },
+    { key: 'Shrapnel', label: 'Shp' },
+    { key: 'Burn', label: 'Brn' },
+    { key: 'Cold', label: 'Cld' },
+    { key: 'Acid', label: 'Acd' },
+    { key: 'Electric', label: 'Ele' }
+  ];
+
+  // Attack name presets
+  const ATTACK_NAMES = ['Primary', 'Secondary', 'Tertiary', 'Quaternary', 'Quinary', 'Senary'];
+
+  $: isAsteroid = type === 'Asteroid';
+
+  // Track which maturity panels are expanded
+  let expandedMaturities = {};
+
+  // === Maturity Constructor ===
+  function createMaturity() {
+    const template = {
+      Name: '',
+      Properties: {
+        Level: null,
+        Health: null,
+        RegenerationInterval: null,
+        RegenerationAmount: null,
+        MissChance: null,
+        Taming: {
+          IsTameable: false,
+          TamingLevel: null
+        },
+        Attributes: {
+          Strength: null,
+          Agility: null,
+          Intelligence: null,
+          Psyche: null,
+          Stamina: null
+        },
+        Defense: {
+          Stab: 0,
+          Cut: 0,
+          Impact: 0,
+          Penetration: 0,
+          Shrapnel: 0,
+          Burn: 0,
+          Cold: 0,
+          Acid: 0,
+          Electric: 0
+        }
+      },
+      Attacks: []
+    };
+
+    // For asteroids, null out combat-specific fields
+    if (isAsteroid) {
+      template.Properties.RegenerationInterval = null;
+      template.Properties.RegenerationAmount = null;
+      template.Properties.MissChance = null;
+      template.Properties.Taming.IsTameable = null;
+      template.Properties.Taming.TamingLevel = null;
+      template.Properties.Attributes = null;
+      template.Properties.Defense = null;
+      template.Attacks = [];
+    }
+
+    return template;
+  }
+
+  // === Attack Constructor ===
+  function createAttack(index, parentMaturities) {
+    const attackName = index < ATTACK_NAMES.length ? ATTACK_NAMES[index] : `Attack ${index + 1}`;
+
+    const attack = {
+      Name: attackName,
+      TotalDamage: null,
+      IsAoE: false,
+      Damage: {
+        Stab: null,
+        Cut: null,
+        Impact: null,
+        Penetration: null,
+        Shrapnel: null,
+        Burn: null,
+        Cold: null,
+        Acid: null,
+        Electric: null
+      }
+    };
+
+    // Try to copy from previous maturity's attack at same index
+    if (parentMaturities && parentMaturities.length > 0) {
+      for (let i = parentMaturities.length - 1; i >= 0; i--) {
+        const prevMat = parentMaturities[i];
+        if (prevMat.Attacks && prevMat.Attacks[index]) {
+          const source = prevMat.Attacks[index];
+          attack.TotalDamage = source.TotalDamage;
+          attack.IsAoE = source.IsAoE || false;
+          if (source.Damage) {
+            attack.Damage = { ...source.Damage };
+          }
+          break;
+        }
+      }
+    }
+
+    return attack;
+  }
+
+  // === CRUD Operations ===
+  function addMaturity() {
+    const newMaturity = createMaturity();
+    const newList = [...maturities, newMaturity];
+    updateField(fieldPath, newList);
+    // Expand the new maturity
+    expandedMaturities[newList.length - 1] = true;
+  }
+
+  function removeMaturity(index) {
+    const newList = maturities.filter((_, i) => i !== index);
+    updateField(fieldPath, newList);
+    // Clean up expanded state
+    delete expandedMaturities[index];
+  }
+
+  function updateMaturityField(matIndex, field, value) {
+    const newList = [...maturities];
+    const parts = field.split('.');
+    let target = newList[matIndex];
+
+    for (let i = 0; i < parts.length - 1; i++) {
+      if (!target[parts[i]]) target[parts[i]] = {};
+      target = target[parts[i]];
+    }
+    target[parts[parts.length - 1]] = value;
+
+    // Auto-update Stamina when Health changes
+    if (field === 'Properties.Health' && value != null && !isNaN(value)) {
+      if (!newList[matIndex].Properties.Attributes) {
+        newList[matIndex].Properties.Attributes = {};
+      }
+      newList[matIndex].Properties.Attributes.Stamina = Math.round(value / 10);
+    }
+
+    updateField(fieldPath, newList);
+  }
+
+  function addAttack(matIndex) {
+    const newList = [...maturities];
+    const attacks = newList[matIndex].Attacks || [];
+    const newAttack = createAttack(attacks.length, maturities.slice(0, matIndex));
+    newList[matIndex].Attacks = [...attacks, newAttack];
+    updateField(fieldPath, newList);
+  }
+
+  function removeAttack(matIndex, attackIndex) {
+    const newList = [...maturities];
+    newList[matIndex].Attacks = newList[matIndex].Attacks.filter((_, i) => i !== attackIndex);
+    updateField(fieldPath, newList);
+  }
+
+  function updateAttackField(matIndex, attackIndex, field, value) {
+    const newList = [...maturities];
+    const attack = newList[matIndex].Attacks[attackIndex];
+
+    if (field.startsWith('Damage.')) {
+      const damageType = field.split('.')[1];
+      if (!attack.Damage) attack.Damage = {};
+      attack.Damage[damageType] = value;
+    } else {
+      attack[field] = value;
+    }
+
+    updateField(fieldPath, newList);
+  }
+
+  function toggleMaturity(index) {
+    expandedMaturities[index] = !expandedMaturities[index];
+    expandedMaturities = expandedMaturities; // Trigger reactivity
+  }
+
+  function moveMaturity(index, direction) {
+    if (direction === 'up' && index > 0) {
+      const newList = [...maturities];
+      [newList[index], newList[index - 1]] = [newList[index - 1], newList[index]];
+      updateField(fieldPath, newList);
+    } else if (direction === 'down' && index < maturities.length - 1) {
+      const newList = [...maturities];
+      [newList[index], newList[index + 1]] = [newList[index + 1], newList[index]];
+      updateField(fieldPath, newList);
+    }
+  }
+
+  // Format maturity name for header
+  function getMaturityLabel(mat, index) {
+    return mat.Name || `Maturity ${index + 1}`;
+  }
+</script>
+
+<div class="maturities-edit">
+  <div class="section-header">
+    <h4 class="section-title">Maturities ({maturities?.length || 0})</h4>
+  </div>
+
+  <div class="maturities-list">
+    {#each maturities as maturity, matIndex}
+      <div class="maturity-item" class:expanded={expandedMaturities[matIndex]}>
+        <button
+          class="maturity-header"
+          on:click={() => toggleMaturity(matIndex)}
+          type="button"
+        >
+          <span class="expand-icon">{expandedMaturities[matIndex] ? '▼' : '▶'}</span>
+          <span class="maturity-name">{getMaturityLabel(maturity, matIndex)}</span>
+          <span class="maturity-summary">
+            {#if maturity.Properties?.Level}Lv.{maturity.Properties.Level}{/if}
+            {#if maturity.Properties?.Health}HP: {maturity.Properties.Health}{/if}
+          </span>
+          <div class="maturity-actions">
+            <button
+              class="btn-icon"
+              on:click|stopPropagation={() => moveMaturity(matIndex, 'up')}
+              disabled={matIndex === 0}
+              title="Move up"
+              type="button"
+            >↑</button>
+            <button
+              class="btn-icon"
+              on:click|stopPropagation={() => moveMaturity(matIndex, 'down')}
+              disabled={matIndex === maturities.length - 1}
+              title="Move down"
+              type="button"
+            >↓</button>
+            <button
+              class="btn-icon danger"
+              on:click|stopPropagation={() => removeMaturity(matIndex)}
+              title="Remove maturity"
+              type="button"
+            >×</button>
+          </div>
+        </button>
+
+        {#if expandedMaturities[matIndex]}
+          <div class="maturity-content">
+            <!-- General Fields -->
+            <div class="field-group">
+              <h5 class="group-title">General</h5>
+              <div class="field-grid">
+                <label class="field">
+                  <span class="field-label">Name</span>
+                  <input
+                    type="text"
+                    value={maturity.Name || ''}
+                    on:input={(e) => updateMaturityField(matIndex, 'Name', e.target.value)}
+                    placeholder="e.g., Young, Mature, Old"
+                  />
+                </label>
+                <label class="field">
+                  <span class="field-label">Level</span>
+                  <input
+                    type="number"
+                    value={maturity.Properties?.Level ?? ''}
+                    on:input={(e) => updateMaturityField(matIndex, 'Properties.Level', e.target.value ? parseInt(e.target.value) : null)}
+                    min="1"
+                  />
+                </label>
+                <label class="field">
+                  <span class="field-label">Health</span>
+                  <input
+                    type="number"
+                    value={maturity.Properties?.Health ?? ''}
+                    on:input={(e) => updateMaturityField(matIndex, 'Properties.Health', e.target.value ? parseInt(e.target.value) : null)}
+                    min="1"
+                  />
+                </label>
+              </div>
+
+              {#if !isAsteroid}
+                <div class="field-grid attributes">
+                  <span class="field-label full">Attributes</span>
+                  {#each ['Strength', 'Agility', 'Intelligence', 'Psyche', 'Stamina'] as attr}
+                    <label class="field compact">
+                      <span class="field-label-mini">{attr.slice(0, 3)}</span>
+                      <input
+                        type="number"
+                        value={maturity.Properties?.Attributes?.[attr] ?? ''}
+                        on:input={(e) => updateMaturityField(matIndex, `Properties.Attributes.${attr}`, e.target.value ? parseInt(e.target.value) : null)}
+                        min="0"
+                      />
+                    </label>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+
+            {#if !isAsteroid}
+              <!-- Combat Fields -->
+              <div class="field-group">
+                <h5 class="group-title">Combat</h5>
+                <div class="field-grid">
+                  <label class="field">
+                    <span class="field-label">Regen Interval</span>
+                    <input
+                      type="number"
+                      value={maturity.Properties?.RegenerationInterval ?? ''}
+                      on:input={(e) => updateMaturityField(matIndex, 'Properties.RegenerationInterval', e.target.value ? parseFloat(e.target.value) : null)}
+                      step="0.1"
+                      min="0"
+                    />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Regen Amount</span>
+                    <input
+                      type="number"
+                      value={maturity.Properties?.RegenerationAmount ?? ''}
+                      on:input={(e) => updateMaturityField(matIndex, 'Properties.RegenerationAmount', e.target.value ? parseFloat(e.target.value) : null)}
+                      step="0.1"
+                      min="0"
+                    />
+                  </label>
+                  <label class="field">
+                    <span class="field-label">Miss Chance</span>
+                    <input
+                      type="number"
+                      value={maturity.Properties?.MissChance ?? ''}
+                      on:input={(e) => updateMaturityField(matIndex, 'Properties.MissChance', e.target.value ? parseFloat(e.target.value) : null)}
+                      step="0.1"
+                      min="0"
+                      max="100"
+                    />
+                  </label>
+                </div>
+
+                <!-- Defense Grid -->
+                <div class="field-grid defense">
+                  <span class="field-label full">Defense</span>
+                  {#each DAMAGE_TYPES as dmgType}
+                    <label class="field compact">
+                      <span class="field-label-mini">{dmgType.label}</span>
+                      <input
+                        type="number"
+                        value={maturity.Properties?.Defense?.[dmgType.key] ?? ''}
+                        on:input={(e) => updateMaturityField(matIndex, `Properties.Defense.${dmgType.key}`, e.target.value ? parseFloat(e.target.value) : 0)}
+                        step="0.1"
+                        min="0"
+                      />
+                    </label>
+                  {/each}
+                </div>
+              </div>
+
+              <!-- Taming -->
+              <div class="field-group">
+                <h5 class="group-title">Taming</h5>
+                <div class="field-grid taming-grid">
+                  <label class="field checkbox-field">
+                    <input
+                      type="checkbox"
+                      checked={maturity.Properties?.Taming?.IsTameable || false}
+                      on:change={(e) => {
+                        updateMaturityField(matIndex, 'Properties.Taming.IsTameable', e.target.checked);
+                        if (e.target.checked) {
+                          updateMaturityField(matIndex, 'Properties.Taming.TamingLevel', 1);
+                        } else {
+                          updateMaturityField(matIndex, 'Properties.Taming.TamingLevel', null);
+                        }
+                      }}
+                    />
+                    <span class="field-label">Is Tameable</span>
+                  </label>
+                  <label class="field" class:disabled={!maturity.Properties?.Taming?.IsTameable}>
+                    <span class="field-label">Taming Level</span>
+                    <input
+                      type="number"
+                      value={maturity.Properties?.Taming?.TamingLevel ?? ''}
+                      on:input={(e) => updateMaturityField(matIndex, 'Properties.Taming.TamingLevel', e.target.value ? parseInt(e.target.value) : null)}
+                      min="1"
+                      disabled={!maturity.Properties?.Taming?.IsTameable}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              <!-- Attacks -->
+              <div class="field-group">
+                <h5 class="group-title">Attacks ({maturity.Attacks?.length || 0})</h5>
+                <div class="attacks-list">
+                  {#each maturity.Attacks || [] as attack, attackIndex}
+                    <div class="attack-item">
+                      <div class="attack-header">
+                        <input
+                          type="text"
+                          class="attack-name-input"
+                          value={attack.Name || ''}
+                          on:input={(e) => updateAttackField(matIndex, attackIndex, 'Name', e.target.value)}
+                          placeholder="Attack name"
+                        />
+                        <button
+                          class="btn-icon danger small"
+                          on:click={() => removeAttack(matIndex, attackIndex)}
+                          title="Remove attack"
+                          type="button"
+                        >×</button>
+                      </div>
+                      <div class="attack-fields">
+                        <label class="field compact">
+                          <span class="field-label-mini">Damage</span>
+                          <input
+                            type="number"
+                            value={attack.TotalDamage ?? ''}
+                            on:input={(e) => updateAttackField(matIndex, attackIndex, 'TotalDamage', e.target.value ? parseFloat(e.target.value) : null)}
+                            step="0.1"
+                            min="0"
+                          />
+                        </label>
+                        <label class="field checkbox-field compact">
+                          <input
+                            type="checkbox"
+                            checked={attack.IsAoE || false}
+                            on:change={(e) => updateAttackField(matIndex, attackIndex, 'IsAoE', e.target.checked)}
+                          />
+                          <span class="field-label-mini">AoE</span>
+                        </label>
+                      </div>
+                      <div class="attack-composition">
+                        <span class="field-label-mini">Composition %</span>
+                        <div class="composition-grid">
+                          {#each DAMAGE_TYPES as dmgType}
+                            <label class="field compact">
+                              <span class="field-label-mini">{dmgType.label}</span>
+                              <input
+                                type="number"
+                                value={attack.Damage?.[dmgType.key] ?? ''}
+                                on:input={(e) => updateAttackField(matIndex, attackIndex, `Damage.${dmgType.key}`, e.target.value ? parseFloat(e.target.value) : null)}
+                                step="0.1"
+                                min="0"
+                                max="100"
+                              />
+                            </label>
+                          {/each}
+                        </div>
+                      </div>
+                    </div>
+                  {/each}
+                  <button class="btn-add" on:click={() => addAttack(matIndex)} type="button">
+                    <span>+</span> Add Attack
+                  </button>
+                </div>
+              </div>
+            {/if}
+          </div>
+        {/if}
+      </div>
+    {/each}
+
+    <button class="btn-add" on:click={addMaturity} type="button">
+      <span>+</span> Add Maturity
+    </button>
+  </div>
+</div>
+
+<style>
+  .maturities-edit {
+    width: 100%;
+  }
+
+  .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+
+  .section-title {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-color);
+  }
+
+  .maturities-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .maturity-item {
+    background-color: var(--bg-color, var(--primary-color));
+    border: 1px solid var(--border-color, #555);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .maturity-item.expanded {
+    border-color: var(--accent-color, #4a9eff);
+  }
+
+  .maturity-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 6px 10px;
+    background: none;
+    border: none;
+    color: var(--text-color);
+    cursor: pointer;
+    text-align: left;
+    font-size: 12px;
+    transition: background-color 0.15s;
+  }
+
+  .maturity-header:hover {
+    background-color: var(--hover-color);
+  }
+
+  .expand-icon {
+    font-size: 9px;
+    color: var(--text-muted, #999);
+    width: 12px;
+    flex-shrink: 0;
+  }
+
+  .maturity-name {
+    font-weight: 600;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .maturity-summary {
+    font-size: 11px;
+    color: var(--text-muted, #999);
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+
+  .maturity-actions {
+    display: flex;
+    gap: 2px;
+    margin-left: 4px;
+    flex-shrink: 0;
+  }
+
+  .maturity-content {
+    padding: 10px;
+    border-top: 1px solid var(--border-color, #555);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .field-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .group-title {
+    margin: 0;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted, #999);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  .field-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    align-items: end;
+  }
+
+  .field-grid.defense,
+  .field-grid.attributes {
+    grid-template-columns: repeat(5, 1fr);
+  }
+
+  .field-grid.taming-grid {
+    grid-template-columns: auto 1fr;
+  }
+
+  .field-label.full {
+    grid-column: 1 / -1;
+    margin-bottom: 2px;
+  }
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+  }
+
+  .field.compact {
+    gap: 2px;
+  }
+
+  .field.disabled {
+    opacity: 0.5;
+  }
+
+  .field-label {
+    font-size: 12px;
+    color: var(--text-muted, #999);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .field-label-mini {
+    font-size: 11px;
+    color: var(--text-muted, #999);
+    text-transform: uppercase;
+  }
+
+  .field input[type="text"],
+  .field input[type="number"] {
+    padding: 4px 6px;
+    font-size: 12px;
+    background-color: var(--input-bg, var(--secondary-color));
+    border: 1px solid var(--border-color, #555);
+    border-radius: 3px;
+    color: var(--text-color);
+    width: 100%;
+    box-sizing: border-box;
+    height: 26px;
+  }
+
+  .field input[type="number"] {
+    -moz-appearance: textfield;
+  }
+
+  .field input[type="number"]::-webkit-outer-spin-button,
+  .field input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  .field input:focus {
+    outline: none;
+    border-color: var(--accent-color, #4a9eff);
+  }
+
+  .checkbox-field {
+    flex-direction: row;
+    align-items: center;
+    gap: 4px;
+    height: 26px;
+    justify-content: flex-start;
+  }
+
+  .checkbox-field input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  /* Attacks */
+  .attacks-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .attack-item {
+    background-color: var(--secondary-color);
+    border: 1px solid var(--border-color, #555);
+    border-radius: 3px;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .attack-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .attack-name-input {
+    flex: 1;
+    padding: 4px 6px;
+    font-size: 12px;
+    font-weight: 500;
+    background-color: var(--input-bg, var(--bg-color));
+    border: 1px solid var(--border-color, #555);
+    border-radius: 3px;
+    color: var(--text-color);
+    height: 26px;
+    box-sizing: border-box;
+  }
+
+  .attack-fields {
+    display: flex;
+    gap: 10px;
+    align-items: flex-end;
+  }
+
+  .attack-fields .field {
+    flex: 0 0 auto;
+    width: 80px;
+  }
+
+  .attack-fields .checkbox-field {
+    flex: 0 0 auto;
+    width: auto;
+    height: 28px;
+    margin-bottom: 0;
+  }
+
+  .attack-composition {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .composition-grid {
+    display: grid;
+    grid-template-columns: repeat(9, 1fr);
+    gap: 3px;
+  }
+
+  .composition-grid .field {
+    min-width: 0;
+  }
+
+  .composition-grid .field input {
+    padding: 2px 3px;
+    font-size: 10px;
+    text-align: center;
+    height: 22px;
+  }
+
+  /* Buttons */
+  .btn-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    background: none;
+    border: 1px solid var(--border-color, #555);
+    border-radius: 3px;
+    color: var(--text-muted, #999);
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1;
+    transition: all 0.15s;
+    flex-shrink: 0;
+  }
+
+  .btn-icon:hover:not(:disabled) {
+    background-color: var(--hover-color);
+    color: var(--text-color);
+    border-color: var(--text-color);
+  }
+
+  .btn-icon:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .btn-icon.danger:hover:not(:disabled) {
+    background-color: var(--error-color, #ff6b6b);
+    color: white;
+    border-color: var(--error-color, #ff6b6b);
+  }
+
+  .btn-icon.small {
+    width: 18px;
+    height: 18px;
+    font-size: 12px;
+  }
+
+  .btn-add {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    padding: 6px 10px;
+    background-color: transparent;
+    border: 1px dashed var(--border-color, #555);
+    border-radius: 3px;
+    color: var(--text-muted, #999);
+    font-size: 11px;
+    line-height: 1;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .btn-add:hover {
+    background-color: var(--hover-color);
+    color: var(--accent-color, #4a9eff);
+    border-color: var(--accent-color, #4a9eff);
+  }
+
+  .btn-add.primary {
+    margin-top: 4px;
+    padding: 8px 12px;
+    font-size: 12px;
+    border-style: solid;
+    background-color: var(--accent-color, #4a9eff);
+    border-color: var(--accent-color, #4a9eff);
+    color: white;
+  }
+
+  .btn-add.primary:hover {
+    opacity: 0.9;
+    background-color: var(--accent-color, #4a9eff);
+    color: white;
+  }
+
+  /* Mobile adjustments */
+  @media (max-width: 899px) {
+    .field-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+
+    .field-grid.defense,
+    .field-grid.attributes {
+      grid-template-columns: repeat(3, 1fr);
+    }
+
+    .composition-grid {
+      grid-template-columns: repeat(5, 1fr);
+    }
+
+    .maturity-summary {
+      display: none;
+    }
+  }
+
+  @media (max-width: 600px) {
+    .field-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .field-grid.defense,
+    .field-grid.attributes {
+      grid-template-columns: repeat(3, 1fr);
+    }
+
+    .composition-grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+</style>

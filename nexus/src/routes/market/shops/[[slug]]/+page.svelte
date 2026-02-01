@@ -1,363 +1,1263 @@
-<script lang="ts">
+<!--
+  @component Shop Wiki Page
+  Wikipedia-style layout with floating infobox on the right side.
+  Infobox: Owner, Planet, location, inventory stats
+  Article: Description → Inventory (by section)
+
+  Special: Shops have two editing models:
+  - Wiki data (Name, Description): Uses standard wiki changes workflow
+  - Owner data (managers, inventory): Uses existing dialogs with direct save
+-->
+<script>
   // @ts-nocheck
   import '$lib/style.css';
+  import { onMount, onDestroy } from 'svelte';
+  import { encodeURIComponentSafe, apiCall } from '$lib/util';
+  import { sanitizeHtml } from '$lib/sanitize';
 
-  import EntityViewer from "$lib/components/EntityViewer.svelte";
-  import Table from "$lib/components/Table.svelte";
-  import { waypoint } from "$lib/components/Properties.svelte";
-  import { apiCall, getItemLink } from '$lib/util';
+  // Wiki components
+  import WikiPage from '$lib/components/wiki/WikiPage.svelte';
+  import PendingChangeBanner from '$lib/components/wiki/PendingChangeBanner.svelte';
+  import WikiSEO from '$lib/components/wiki/WikiSEO.svelte';
+  import DataSection from '$lib/components/wiki/DataSection.svelte';
+  import WaypointCopyButton from '$lib/components/wiki/WaypointCopyButton.svelte';
+  import InlineEdit from '$lib/components/wiki/InlineEdit.svelte';
+  import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
+
+  // Shop-specific components
+  import ShopInventory from '$lib/components/wiki/shops/ShopInventory.svelte';
+  import ShopManagersDialog from '$lib/components/wiki/shops/ShopManagersDialog.svelte';
+  import ShopInventoryDialog from '$lib/components/wiki/shops/ShopInventoryDialog.svelte';
+
+  // Image upload
+  import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
+
+  // Wiki edit state
+  import {
+    editMode,
+    isCreateMode as createModeStore,
+    initEditState,
+    resetEditState,
+    currentEntity,
+    existingPendingChange,
+    viewingPendingChange,
+    setExistingPendingChange,
+    setViewingPendingChange,
+    updateField,
+    changeMetadata
+  } from '$lib/stores/wikiEditState';
 
   export let data;
 
-  // Constants for section names
+  $: shop = data.object;
+  $: user = data.session?.user;
+  $: pendingChange = data.pendingChange;
+  $: isCreateMode = data.isCreateMode || false;
+  $: canCreateNew = data.canCreateNew ?? true;
+  $: userPendingCreates = data.userPendingCreates || [];
+
+  $: userPendingUpdates = data.userPendingUpdates || [];
+  // Constants for section names (matches legacy)
   const SECTION_NAMES = ['Indoor', 'Display', 'Additional'];
 
-  const navButtonInfo = [
-    {
-      Label: 'Cly',
-      Title: 'Calypso',
-      Type: 'calypso',
-      IsRoute: false
+  // Empty entity template for create mode
+  const emptyEntity = {
+    Id: null,
+    Name: '',
+    Description: '',
+    Planet: { Name: 'Calypso' },
+    Coordinates: {
+      Longitude: null,
+      Latitude: null,
+      Altitude: null
     },
-    {
-      Label: 'Ars',
-      Title: 'ARIS',
-      Type: 'aris',
-      IsRoute: false
-    },
-    {
-      Label: 'Cyr',
-      Title: 'Cyrene',
-      Type: 'cyrene',
-      IsRoute: false
-    },
-    {
-      Label: 'Ark',
-      Title: 'Arkadia',
-      Type: 'arkadia',
-      IsRoute: false
-    },
-    {
-      Label: 'Mnr',
-      Title: 'Monria',
-      Type: 'monria',
-      IsRoute: false
-    },
-    {
-      Label: 'Rck',
-      Title: 'ROCKtropia',
-      Type: 'rocktropia',
-      IsRoute: false
-    },
-    {
-      Label: 'Tou',
-      Title: 'Toulan',
-      Type: 'toulan',
-      IsRoute: false
-    },
-    {
-      Label: 'NI',
-      Title: 'Next Island',
-      Type: 'nextisland',
-      IsRoute: false
-    }
-  ]
-
-  let propertiesDataFunction = (shop) => {
-    // Ensure shop is not null and has the expected structure
-    if (!shop) {
-      return {
-        General: {
-          Owner: 'No Owner',
-          Planet: 'N/A',
-          Location: 'N/A'
-        },
-        Inventory: {
-          Groups: {
-            Label: 'Groups',
-            Value: '0'
-          },
-          Items: {
-            Label: 'Total Items',
-            Value: '0'
-          }
-        }
-      };
-    }
-
-    // Calculate total items and groups in inventory
-    const totalGroups = shop.InventoryGroups?.length || 0;
-    const totalItems = shop.InventoryGroups?.reduce((acc, group) => acc + (group.Items?.length || 0), 0) || 0;
-    
-    return {
-      General: {
-        Owner: shop.Owner?.Name ?? 'No Owner',
-        Planet: shop.Planet?.Name ?? 'N/A',
-        Location: waypoint(
-          'Location',
-          shop.Planet?.Properties?.TechnicalName ?? shop.Planet?.Name,
-          shop.Coordinates,
-          shop.Name
-        )
-      }
-    };
+    Owner: null,
+    OwnerId: null,
+    Managers: [],
+    InventoryGroups: [],
+    Sections: [
+      { Name: SECTION_NAMES[0], MaxItemPoints: null },
+      { Name: SECTION_NAMES[1], MaxItemPoints: null }
+    ],
+    MaxGuests: null,
+    HasAdditionalArea: false
   };
 
-  // Custom edit configuration for shops
-  const editConfig = {
-    constructor: () => ({
-      Name: '',
-      Description: null,
-      Planet: {
-        Name: null
-      },
-      Coordinates: {
-        Longitude: null,
-        Latitude: null,
-        Altitude: null
-      },
-      MaxGuests: null,
-      HasAdditionalArea: false,
-      Sections: [
-        { Name: SECTION_NAMES[0], MaxItemPoints: null },
-        { Name: SECTION_NAMES[1], MaxItemPoints: null }
+  // Check if shop has an owner (used to disable certain fields)
+  $: hasOwner = activeEntity?.Owner?.Name != null;
+
+  // Check if shop has Additional area
+  $: hasAdditionalArea = activeEntity?.Sections?.some(s => s.Name === SECTION_NAMES[2]) || activeEntity?.HasAdditionalArea || false;
+
+  // Handle HasAdditionalArea toggle
+  function handleAdditionalAreaChange(event) {
+    const isChecked = event.detail.value;
+    const currentSections = $currentEntity?.Sections || [];
+
+    if (isChecked) {
+      // Add Additional section if not present
+      if (!currentSections.find(s => s.Name === SECTION_NAMES[2])) {
+        updateField('Sections', [...currentSections, { Name: SECTION_NAMES[2], MaxItemPoints: null }]);
+      }
+    } else {
+      // Remove Additional section
+      updateField('Sections', currentSections.filter(s => s.Name !== SECTION_NAMES[2]));
+    }
+    updateField('HasAdditionalArea', isChecked);
+  }
+
+  // Handle MaxItemPoints change for a section
+  function handleSectionPointsChange(sectionName, value) {
+    const currentSections = $currentEntity?.Sections || [];
+    const updatedSections = currentSections.map(s => {
+      if (s.Name === sectionName) {
+        return { ...s, MaxItemPoints: value };
+      }
+      return s;
+    });
+    updateField('Sections', updatedSections);
+  }
+
+  // Get MaxItemPoints for a section
+  function getSectionPoints(entity, sectionName) {
+    return entity?.Sections?.find(s => s.Name === sectionName)?.MaxItemPoints ?? null;
+  }
+
+  // Wiki edit permissions - verified users can edit wiki data
+  $: canEditWiki = user?.verified || user?.administrator;
+
+  // Initialize edit state when user or entity changes
+  $: if (user) {
+    initEditState(
+      isCreateMode ? (data.existingChange?.data || emptyEntity) : shop,
+      'Shop',
+      isCreateMode,
+      data.existingChange || null
+    );
+  }
+
+  // Set pending change when available
+  $: if (pendingChange) {
+    setExistingPendingChange(pendingChange);
+    // Auto-enable viewing pending change for author or admin
+    if (user && (pendingChange.author_id === user.id || user.isAdmin)) {
+      setViewingPendingChange(true);
+    }
+  } else {
+    setExistingPendingChange(null);
+    setViewingPendingChange(false);
+  }
+
+  // Active entity - shows edited data in edit mode, pending change data when viewing, otherwise original
+  $: activeEntity = $editMode
+    ? $currentEntity
+    : $viewingPendingChange && $existingPendingChange?.data
+      ? $existingPendingChange.data
+      : shop;
+
+  // Cleanup on destroy
+  onDestroy(() => {
+    resetEditState();
+  });
+  $: allItems = data.allItems || [];
+
+  // Build navigation items from shops
+  $: navItems = allItems;
+
+  // Navigation filters - filter by planet
+  const navFilters = [
+    {
+      key: 'Planet.Name',
+      label: 'Planet',
+      values: [
+        { value: 'Calypso', label: 'Calypso' },
+        { value: 'ARIS', label: 'ARIS' },
+        { value: 'Arkadia', label: 'Arkadia' },
+        { value: 'Cyrene', label: 'Cyrene' },
+        { value: 'Monria', label: 'Monria' },
+        { value: 'ROCKtropia', label: 'Rocktropia' },
+        { value: 'Toulan', label: 'Toulan' },
+        { value: 'Next Island', label: 'Next Island' },
       ]
-    }),
-    dependencies: ['planets'],
-    controls: [
-      {
-        label: 'General',
-        type: 'group',
-        controls: [
-          { 
-            label: 'Name', 
-            type: 'text', 
-            '_get': x => x.Name, 
-            '_set': (x, v) => x.Name = v 
-          },
-          { 
-            label: 'Description', 
-            type: 'textarea', 
-            '_get': x => x.Description, 
-            '_set': (x, v) => x.Description = v 
-          },
-          { 
-            label: 'Planet', 
-            type: 'select', 
-            options: (_, d) => d.planets.filter(x => x.Id > 0).map(x => x.Name), 
-            '_get': x => x.Planet?.Name, 
-            '_set': (x, v, d) => {
-              if (!x.Planet) x.Planet = { Name: null };
-              x.Planet.Name = v;
-              // Note: PlanetId should be set by backend validation
-            },
-            // Disable planet editing if owner is set
-            '_if': (x) => !x.Owner?.Name
-          },
-          { 
-            label: 'Coordinates', 
-            type: 'waypoint',
-            '_get': x => [
-              x.Coordinates?.Longitude || 0, 
-              x.Coordinates?.Latitude || 0, 
-              x.Coordinates?.Altitude || 0
-            ], 
-            '_set': (x, v) => { 
-              if (!x.Coordinates) x.Coordinates = { Longitude: null, Latitude: null, Altitude: null };
-              if (v && v.length >= 3) { 
-                x.Coordinates.Longitude = parseFloat(v[0]) || null;
-                x.Coordinates.Latitude = parseFloat(v[1]) || null;
-                x.Coordinates.Altitude = parseFloat(v[2]) || null;
-              } 
-            },
-            // Disable coordinates editing if owner is set
-            '_if': (x) => !x.Owner?.Name
-          },
-          { 
-            label: 'Max Guests', 
-            type: 'number', 
-            step: 1, 
-            min: 0, 
-            '_get': x => x.MaxGuests, 
-            '_set': (x, v) => x.MaxGuests = parseInt(v) || null 
-          }
-        ]
-      },
-      {
-        label: 'Estate Areas',
-        type: 'group',
-        controls: [
-          { 
-            label: 'Has Additional Area', 
-            type: 'checkbox', 
-            '_get': x => x.HasAdditionalArea, 
-            '_set': (x, v) => {
-              x.HasAdditionalArea = v;
-              // Add or remove Additional section
-              if (v && !x.Sections.find(s => s.Name === SECTION_NAMES[2])) {
-                x.Sections.push({ Name: SECTION_NAMES[2], MaxItemPoints: null });
-              } else if (!v) {
-                x.Sections = x.Sections.filter(s => s.Name !== SECTION_NAMES[2]);
-              }
-            }
-          }
-        ]
-      },
-      {
-        label: 'Sections',
-        type: 'array',
-        size: (x) => x.HasAdditionalArea ? 3 : 2,
-        config: {
-          constructor: () => ({
-            Name: '',
-            MaxItemPoints: null
-          }),
-          controls: [
-            { 
-              label: 'Max Item Points', 
-              type: 'number', 
-              step: 1, 
-              min: 0, 
-              '_get': x => x.MaxItemPoints, 
-              '_set': (x, v) => x.MaxItemPoints = parseInt(v) || null 
-            }
-          ]
-        },
-        indexFunc: (x, i) => {
-          return x && x.Name === SECTION_NAMES[i];
-        },
-        itemNameFunc: (i) => {
-          return `${SECTION_NAMES[i]} Area`;
-        },
-        '_get': x => {
-          const result = [];
-          
-          // Always include Indoor and Display
-          result[0] = x.Sections?.find(s => s.Name === SECTION_NAMES[0]) || { Name: SECTION_NAMES[0], MaxItemPoints: null };
-          result[1] = x.Sections?.find(s => s.Name === SECTION_NAMES[1]) || { Name: SECTION_NAMES[1], MaxItemPoints: null };
-          
-          // Include Additional only if HasAdditionalArea is true
-          if (x.HasAdditionalArea) {
-            result[2] = x.Sections?.find(s => s.Name === SECTION_NAMES[2]) || { Name: SECTION_NAMES[2], MaxItemPoints: null };
-          }
-          
-          return result;
-        },
-        '_set': (x, v) => {
-          // Filter out null/undefined values and update sections
-          x.Sections = v.filter(section => section != null);
-          
-          // Update HasAdditionalArea based on whether Additional section exists
-          x.HasAdditionalArea = x.Sections.some(s => s.Name === SECTION_NAMES[2]);
-        }
-      }
-    ]
-  }
-
-  // Function to check if user can edit this shop
-  function canUserEditShop(shop, user) {
-    if (!shop || !user?.verified) return false;
-    if (user?.administrator) return true;
-    
-    // Owner check
-    if (shop?.OwnerId === user?.id) return true;
-    
-    // Manager check
-    return shop?.Managers?.some(manager => manager.user_id === user?.id) || false;
-  }
-
-  let viewInfoSection = {
-    columns: ['Name', 'Owner', 'Planet', 'Coordinates'],
-    columnWidths: ['1fr', '150px', '100px', '150px'],
-    rowValuesFunction: (item) => {
-      return [
-        item.Name,
-        item.Owner?.Name ?? 'No Owner',
-        item.Planet?.Name ?? 'N/A',
-        (item.Coordinates?.Longitude) && (item.Coordinates?.Latitude)
-          ? `${item.Coordinates?.Longitude}, ${item.Coordinates?.Latitude}`
-          : 'N/A',
-      ];
     }
+  ];
+
+  // Breadcrumbs
+  $: breadcrumbs = [
+    { label: 'Market', href: '/market' },
+    { label: 'Shops', href: '/market/shops' },
+    ...(activeEntity?.Name ? [{ label: activeEntity.Name }] : [])
+  ];
+
+  // SEO
+  $: seoDescription = activeEntity?.Description ||
+    `${activeEntity?.Name || 'Shop'} - Player shop on ${activeEntity?.Planet?.Name || 'Calypso'} in Entropia Universe.`;
+
+  $: canonicalUrl = activeEntity?.Name
+    ? `https://entropianexus.com/market/shops/${encodeURIComponentSafe(activeEntity.Name)}`
+    : 'https://entropianexus.com/market/shops';
+
+  // ========== PANEL STATE PERSISTENCE ==========
+  let panelStates = {
+    inventory: true
   };
 
-  let tableViewInfo = {
-    all: viewInfoSection,
-    calypso: viewInfoSection,
-    aris: viewInfoSection,
-    cyrene: viewInfoSection,
-    arkadia: viewInfoSection,
-    monria: viewInfoSection,
-    rocktropia: viewInfoSection,
-    toulan: viewInfoSection,
-    nextisland: viewInfoSection,
+  onMount(() => {
+    try {
+      const stored = localStorage.getItem('wiki-shop-panels');
+      if (stored) {
+        panelStates = { ...panelStates, ...JSON.parse(stored) };
+      }
+    } catch (e) {
+      // localStorage not available
+    }
+
+    // Fetch item details for the shop's inventory
+    if (shop?.InventoryGroups) {
+      fetchItemDetails();
+    }
+  });
+
+  function savePanelStates() {
+    try {
+      localStorage.setItem('wiki-shop-panels', JSON.stringify(panelStates));
+    } catch (e) {
+      // localStorage not available
+    }
   }
 
-  // Cache of item details by ItemId
+  // ========== ITEM DETAILS FETCHING ==========
   let itemDetails = {};
+  let itemsLoading = false;
 
-  // Prefetch all unique item IDs for the current shop using batch endpoint
-  $: prefetchItems = (async () => {
-    const ids = Array.from(new Set((data?.object?.InventoryGroups || [])
-      .flatMap(g => (g?.Items || []).map(i => i.ItemId ?? i.item_id))
-      .filter(Boolean)));
-    if (ids.length === 0) { itemDetails = {}; return; }
-    const results = await apiCall(fetch, `/items?Ids=${ids.join(',')}`);
-    const map = {};
-    (results || []).forEach(item => { if (item?.Id) map[item.Id] = item; });
-    itemDetails = map;
-  })();
+  async function fetchItemDetails() {
+    if (!shop?.InventoryGroups) return;
+
+    const ids = Array.from(new Set(
+      shop.InventoryGroups
+        .flatMap(g => (g?.Items || []).map(i => i.ItemId ?? i.item_id))
+        .filter(Boolean)
+    ));
+
+    if (ids.length === 0) {
+      itemDetails = {};
+      return;
+    }
+
+    itemsLoading = true;
+    try {
+      const results = await apiCall(fetch, `/items?Ids=${ids.join(',')}`);
+      const map = {};
+      (results || []).forEach(item => {
+        if (item?.Id) map[item.Id] = item;
+      });
+      itemDetails = map;
+    } catch (e) {
+      console.error('Failed to fetch item details:', e);
+      itemDetails = {};
+    }
+    itemsLoading = false;
+  }
+
+  // Refetch when shop changes
+  $: if (shop?.Id) {
+    fetchItemDetails();
+  }
+
+  // ========== SHOP CALCULATIONS ==========
+  function getTotalItems(s) {
+    if (!s?.InventoryGroups) return 0;
+    return s.InventoryGroups.reduce((acc, g) => acc + (g?.Items?.length || 0), 0);
+  }
+
+  function getTotalGroups(s) {
+    return s?.InventoryGroups?.filter(g => g?.Items?.length > 0).length || 0;
+  }
+
+  function hasCoordinates(s) {
+    const coords = s?.Coordinates;
+    return coords && (coords.Longitude != null || coords.Latitude != null);
+  }
+
+  function formatCoordinates(s) {
+    const coords = s?.Coordinates;
+    if (!coords) return null;
+
+    const planet = s.Planet?.Properties?.TechnicalName || s.Planet?.Name || 'Unknown';
+    const lon = coords.Longitude ?? 0;
+    const lat = coords.Latitude ?? 0;
+    const alt = coords.Altitude ?? 100;
+
+    return `[${planet}, ${lon}, ${lat}, ${alt}, ${s.Name}]`;
+  }
+
+  function getPlanetBadgeClass(planetName) {
+    if (!planetName) return '';
+    const lower = planetName.toLowerCase().replace(/\s+/g, '-');
+    return `planet-${lower}`;
+  }
+
+  function getSectionNames(s) {
+    if (!s?.Sections) return [];
+    return s.Sections.map(sec => sec.Name).filter(Boolean);
+  }
+
+  // Check if user is the shop owner
+  function isShopOwner(s, u) {
+    if (!s || !u?.verified) return false;
+    if (u?.administrator) return true;
+    return s?.OwnerId === u?.id;
+  }
+
+  // Check if user can edit this shop (owner or manager)
+  function canUserEditShop(s, u) {
+    if (!s || !u?.verified) return false;
+    if (u?.administrator) return true;
+
+    // Owner check
+    if (s?.OwnerId === u?.id) return true;
+
+    // Manager check
+    return s?.Managers?.some(manager => manager.user_id === u?.id) || false;
+  }
+
+  // Reactive calculations - use activeEntity for display
+  $: totalItems = getTotalItems(activeEntity);
+  $: totalGroups = getTotalGroups(activeEntity);
+  $: hasLocation = hasCoordinates(activeEntity);
+  $: coordinates = formatCoordinates(activeEntity);
+  $: sectionNames = getSectionNames(activeEntity);
+  // Owner/manager permissions still based on original shop data
+  $: canEdit = canUserEditShop(shop, user);
+  $: isOwner = isShopOwner(shop, user);
+
+  // ========== DIALOG STATE ==========
+  let managersDialogOpen = false;
+  let inventoryDialogOpen = false;
+  let shopManagers = [];
+
+  // Fetch managers when opening dialog
+  async function openManagersDialog() {
+    if (!shop?.Name) return;
+
+    try {
+      const response = await fetch(`/api/shops/${encodeURIComponent(shop.Name)}/managers`);
+      const result = await response.json();
+      if (response.ok) {
+        shopManagers = result.Managers || [];
+      } else {
+        console.error('Failed to fetch managers:', result.error);
+        shopManagers = [];
+      }
+    } catch (e) {
+      console.error('Error fetching managers:', e);
+      shopManagers = [];
+    }
+
+    managersDialogOpen = true;
+  }
+
+  function openInventoryDialog() {
+    inventoryDialogOpen = true;
+  }
+
+  function handleManagersSaved(event) {
+    // Reload the page to get fresh data
+    window.location.reload();
+  }
+
+  function handleInventorySaved(event) {
+    // Reload the page to get fresh data
+    window.location.reload();
+  }
 </script>
 
-<EntityViewer
-  data={data}
-  user={data.session.user}
-  tableViewInfo={tableViewInfo}
-  navButtonInfo={navButtonInfo}
-  editConfig={editConfig}
-  propertiesDataFunction={propertiesDataFunction}
-  title='Shops'
-  type='Shop'
-  basePath='/market/shops'
-  ownershipBasedEditing={true}
-  getOwnershipInfo={canUserEditShop}
-  let:object
-  let:additional>
+<WikiSEO
+  title={activeEntity?.Name || 'Shops'}
+  description={seoDescription}
+  entityType="shop"
+  entity={activeEntity}
+  {canonicalUrl}
+  breadcrumbs={breadcrumbs.map(b => ({ name: b.label, url: b.href }))}
+/>
 
-  <div class="flex-item">
-    <div class="content-block">
-      {#key object?.Id}
-        {#if !object?.InventoryGroups || object.InventoryGroups.length === 0 || object.InventoryGroups.every(g => (g?.Items || []).length === 0)}
-          <div style="text-align: center; color: var(--text-muted, #888); margin: 2rem 0; font-size: 1.1rem;">
-            The shop owner has not yet added any items for display. Try again later!
+<WikiPage
+  title="Shops"
+  {breadcrumbs}
+  entity={activeEntity}
+  entityType="Shop"
+  basePath="/market/shops"
+  {navItems}
+  {navFilters}
+  {user}
+  editable={true}
+  canEdit={canEditWiki}
+  {canCreateNew}
+  {userPendingCreates}
+  {userPendingUpdates}
+>
+  {#if shop}
+    <div class="layout-a">
+      <!-- Wikipedia-style floating infobox (right panel) -->
+      <aside class="wiki-infobox-float">
+        <!-- Entity Header -->
+        <div class="infobox-header">
+          <EntityImageUpload
+            entityId={activeEntity?.Id}
+            entityName={activeEntity?.Name}
+            entityType="shop"
+            {user}
+            isEditMode={$editMode}
+            isCreateMode={isCreateMode}
+          />
+          <div class="infobox-title">
+            <InlineEdit
+              value={activeEntity?.Name || ''}
+              path="Name"
+              type="text"
+              placeholder="Shop Name"
+              required
+            />
           </div>
-        {:else}
-          {#each (object?.InventoryGroups || []) as group}
-            {#if group && (group.Items || []).length > 0}
-              <Table
-                title={group.Name || group.name}
-                header={{
-                  values: ['Item', 'Stack Size', 'Markup %'],
-                  widths: ['1fr', '120px', '120px']
-                }}
-                data={(group.Items || []).map(item => {
-                  const id = item.ItemId ?? item.item_id;
-                  const it = id ? itemDetails[id] : null;
-                  return {
-                    values: [
-                      it?.Name || it?.name || 'Unknown Item',
-                      (item.StackSize ?? item.stack_size ?? 0).toString(),
-                      ((item.Markup ?? item.markup ?? 0).toFixed ? (item.Markup ?? 0).toFixed(2) : Number(item.Markup ?? item.markup ?? 0).toFixed(2)) + '%'
-                    ],
-                    links: [it ? getItemLink(it) : null]
-                  };
-                })}
-                options={{ searchable: true, sortable: true }}
-                style="margin-bottom: 1rem;" />
+          <div class="infobox-subtitle">
+            <span class="planet-badge {getPlanetBadgeClass(activeEntity?.Planet?.Name)}">
+              {activeEntity?.Planet?.Name || 'Unknown'}
+            </span>
+          </div>
+        </div>
+
+        <!-- Key Stats -->
+        <div class="stats-section tier-1">
+          <div class="stat-row primary">
+            <span class="stat-label">Items</span>
+            <span class="stat-value">{totalItems}</span>
+          </div>
+          {#if totalGroups > 0}
+            <div class="stat-row primary">
+              <span class="stat-label">Sections</span>
+              <span class="stat-value">{totalGroups}</span>
+            </div>
+          {/if}
+        </div>
+
+        <!-- Owner Info -->
+        <div class="stats-section">
+          <div class="section-header-row">
+            <h4 class="section-title">Owner</h4>
+            {#if isOwner}
+              <button class="edit-section-btn" on:click={openManagersDialog} title="Manage shop managers">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="9" cy="7" r="4"></circle>
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                </svg>
+              </button>
             {/if}
-          {/each}
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Name</span>
+            <span class="stat-value">{activeEntity?.Owner?.Name || 'No Owner'}</span>
+          </div>
+          {#if activeEntity?.MaxGuests != null || $editMode}
+            <div class="stat-row">
+              <span class="stat-label">Max Guests</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.MaxGuests}
+                  path="MaxGuests"
+                  type="number"
+                  min={0}
+                />
+              </span>
+            </div>
+          {/if}
+          {#if activeEntity?.Managers?.length > 0}
+            <div class="stat-row">
+              <span class="stat-label">Managers</span>
+              <span class="stat-value">{activeEntity.Managers.length}</span>
+            </div>
+          {/if}
+        </div>
+
+        <!-- Location -->
+        <div class="stats-section">
+          <h4 class="section-title">Location</h4>
+          <div class="stat-row">
+            <span class="stat-label">Planet</span>
+            <span class="stat-value">
+              {#if $editMode && !hasOwner}
+                <!-- Planet editable only when no owner exists -->
+                <InlineEdit
+                  value={activeEntity?.Planet?.Name}
+                  path="Planet.Name"
+                  type="select"
+                  options={[
+                    { value: 'Calypso', label: 'Calypso' },
+                    { value: 'ARIS', label: 'ARIS' },
+                    { value: 'Arkadia', label: 'Arkadia' },
+                    { value: 'Cyrene', label: 'Cyrene' },
+                    { value: 'Monria', label: 'Monria' },
+                    { value: 'ROCKtropia', label: 'Rocktropia' },
+                    { value: 'Toulan', label: 'Toulan' },
+                    { value: 'Next Island', label: 'Next Island' }
+                  ]}
+                />
+              {:else}
+                {activeEntity?.Planet?.Name || 'N/A'}
+              {/if}
+            </span>
+          </div>
+          {#if $editMode && !hasOwner}
+            <!-- Coordinates editable only when no owner exists -->
+            <div class="stat-row">
+              <span class="stat-label">Longitude</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Coordinates?.Longitude}
+                  path="Coordinates.Longitude"
+                  type="number"
+                  step={1}
+                />
+              </span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Latitude</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Coordinates?.Latitude}
+                  path="Coordinates.Latitude"
+                  type="number"
+                  step={1}
+                />
+              </span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Altitude</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Coordinates?.Altitude}
+                  path="Coordinates.Altitude"
+                  type="number"
+                  step={1}
+                />
+              </span>
+            </div>
+          {:else if hasLocation}
+            <div class="coordinates-display">
+              <span class="coordinates-label">Waypoint</span>
+              <WaypointCopyButton waypoint={coordinates} />
+            </div>
+          {:else}
+            <div class="stat-row">
+              <span class="stat-label">Coordinates</span>
+              <span class="stat-value muted">Not available</span>
+            </div>
+          {/if}
+        </div>
+
+        <!-- Estate Areas -->
+        {#if $editMode || sectionNames.length > 0}
+          <div class="stats-section">
+            <h4 class="section-title">Estate Areas</h4>
+            {#if $editMode}
+              <!-- Editable sections with MaxItemPoints -->
+              <div class="section-edit-grid">
+                <!-- Indoor (always present) -->
+                <div class="section-edit-row">
+                  <span class="section-name">Indoor</span>
+                  <div class="section-points">
+                    <InlineEdit
+                      value={getSectionPoints(activeEntity, 'Indoor')}
+                      type="number"
+                      min={0}
+                      step={1}
+                      placeholder="Max Points"
+                      on:change={(e) => handleSectionPointsChange('Indoor', e.detail.value)}
+                    />
+                    <span class="points-label">pts</span>
+                  </div>
+                </div>
+                <!-- Display (always present) -->
+                <div class="section-edit-row">
+                  <span class="section-name">Display</span>
+                  <div class="section-points">
+                    <InlineEdit
+                      value={getSectionPoints(activeEntity, 'Display')}
+                      type="number"
+                      min={0}
+                      step={1}
+                      placeholder="Max Points"
+                      on:change={(e) => handleSectionPointsChange('Display', e.detail.value)}
+                    />
+                    <span class="points-label">pts</span>
+                  </div>
+                </div>
+                <!-- Additional Area toggle -->
+                <div class="section-edit-row additional-toggle">
+                  <span class="section-name">
+                    <InlineEdit
+                      value={hasAdditionalArea}
+                      type="checkbox"
+                      on:change={handleAdditionalAreaChange}
+                    />
+                    <span class="toggle-label">Has Additional Area</span>
+                  </span>
+                </div>
+                <!-- Additional (conditional) -->
+                {#if hasAdditionalArea}
+                  <div class="section-edit-row">
+                    <span class="section-name">Additional</span>
+                    <div class="section-points">
+                      <InlineEdit
+                        value={getSectionPoints(activeEntity, 'Additional')}
+                        type="number"
+                        min={0}
+                        step={1}
+                        placeholder="Max Points"
+                        on:change={(e) => handleSectionPointsChange('Additional', e.detail.value)}
+                      />
+                      <span class="points-label">pts</span>
+                    </div>
+                  </div>
+                {/if}
+              </div>
+            {:else}
+              <!-- View mode: show section tags with optional points -->
+              <div class="type-tags">
+                {#each activeEntity?.Sections || [] as section}
+                  <span class="type-tag" title={section.MaxItemPoints != null ? `Max ${section.MaxItemPoints} points` : ''}>
+                    {section.Name}
+                    {#if section.MaxItemPoints != null}
+                      <span class="tag-points">({section.MaxItemPoints})</span>
+                    {/if}
+                  </span>
+                {/each}
+              </div>
+            {/if}
+          </div>
         {/if}
-      {/key}
+
+        <!-- Quick Link to Map -->
+        {#if hasLocation && activeEntity?.Planet?.Name}
+          <a href="/maps/{activeEntity.Planet.Name.toLowerCase().replace(/\s+/g, '')}" class="map-link-btn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon>
+              <line x1="8" y1="2" x2="8" y2="18"></line>
+              <line x1="16" y1="6" x2="16" y2="22"></line>
+            </svg>
+            <span>View on Map</span>
+          </a>
+        {/if}
+      </aside>
+
+      <!-- Main content (center) -->
+      <article class="wiki-article">
+        <!-- Pending Change Banner -->
+        {#if $existingPendingChange && !$editMode}
+          <PendingChangeBanner
+            pendingChange={$existingPendingChange}
+            viewing={$viewingPendingChange}
+            onToggle={() => setViewingPendingChange(!$viewingPendingChange)}
+          />
+        {/if}
+
+        <h1 class="article-title">
+          <InlineEdit
+            value={activeEntity?.Name}
+            type="text"
+            path="Name"
+            placeholder="Shop name"
+          />
+        </h1>
+
+        <!-- Description Panel -->
+        <div class="description-panel">
+          {#if $editMode}
+            <RichTextEditor
+              content={$currentEntity?.Description || ''}
+              on:change={(e) => updateField('Description', e.detail)}
+              placeholder="Describe this shop..."
+            />
+          {:else if activeEntity?.Description}
+            <div class="description-content">{@html sanitizeHtml(activeEntity.Description)}</div>
+          {:else}
+            <div class="description-content placeholder">
+              {activeEntity?.Name || 'This shop'} is a player-owned shop located on {activeEntity?.Planet?.Name || 'Calypso'}.
+              {#if activeEntity?.Owner?.Name}
+                It is owned by {activeEntity.Owner.Name}.
+              {/if}
+              {#if totalItems > 0}
+                Currently stocking {totalItems} item{totalItems !== 1 ? 's' : ''} for sale.
+              {:else}
+                The owner has not yet added any items for display.
+              {/if}
+            </div>
+          {/if}
+        </div>
+
+        <!-- Inventory Section -->
+        <DataSection
+          title="Inventory"
+          icon=""
+          bind:expanded={panelStates.inventory}
+          subtitle="{totalItems} item{totalItems !== 1 ? 's' : ''}"
+          on:toggle={savePanelStates}
+        >
+          <svelte:fragment slot="actions">
+            {#if canEdit}
+              <button class="edit-btn" on:click={openInventoryDialog} title="Edit inventory">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                </svg>
+                <span>Edit</span>
+              </button>
+            {/if}
+          </svelte:fragment>
+          {#if itemsLoading}
+            <div class="loading-indicator">Loading inventory...</div>
+          {:else}
+            <ShopInventory
+              inventoryGroups={activeEntity?.InventoryGroups}
+              {itemDetails}
+            />
+          {/if}
+        </DataSection>
+      </article>
     </div>
-  </div>
-</EntityViewer>
+  {:else}
+    <div class="no-selection">
+      <h2>Shops</h2>
+      <p>Select a shop from the list to view details.</p>
+      <p class="hint">Player-owned shops sell various items at player-set prices.</p>
+    </div>
+  {/if}
+</WikiPage>
+
+<!-- Dialogs -->
+{#if shop}
+  <ShopManagersDialog
+    shopName={shop.Name}
+    bind:open={managersDialogOpen}
+    managers={shopManagers}
+    on:close={() => managersDialogOpen = false}
+    on:saved={handleManagersSaved}
+  />
+
+  <ShopInventoryDialog
+    shopName={shop.Name}
+    bind:open={inventoryDialogOpen}
+    inventoryGroups={shop.InventoryGroups || []}
+    {itemDetails}
+    on:close={() => inventoryDialogOpen = false}
+    on:saved={handleInventorySaved}
+  />
+{/if}
+
+<style>
+  .layout-a {
+    position: relative;
+    width: 100%;
+  }
+
+  /* Clearfix to ensure spacing after floated infobox */
+  .layout-a::after {
+    content: '';
+    display: block;
+    clear: both;
+  }
+
+  /* Floating infobox - Wikipedia style */
+  .wiki-infobox-float {
+    float: right;
+    width: 300px;
+    margin: 0 0 0 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    background-color: var(--secondary-color);
+    border: 1px solid var(--border-color, #555);
+    border-radius: 8px;
+    padding: 16px;
+  }
+
+  .infobox-header {
+    text-align: center;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-color, #555);
+  }
+
+  .entity-icon-wrapper {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 1;
+    margin-bottom: 12px;
+    box-sizing: border-box;
+  }
+
+  .icon-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--bg-color, var(--primary-color));
+    border: 2px dashed var(--border-color, #555);
+    border-radius: 8px;
+    color: var(--text-muted, #999);
+    box-sizing: border-box;
+  }
+
+  .infobox-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text-color);
+  }
+
+  .infobox-subtitle {
+    font-size: 12px;
+    color: var(--text-muted, #999);
+    margin-top: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .planet-badge {
+    padding: 3px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    background-color: var(--accent-color, #4a9eff);
+    color: white;
+    border-radius: 4px;
+    text-transform: uppercase;
+  }
+
+  /* Planet-specific colors */
+  .planet-badge.planet-calypso {
+    background-color: #22c55e;
+  }
+
+  .planet-badge.planet-arkadia {
+    background-color: #3b82f6;
+  }
+
+  .planet-badge.planet-cyrene {
+    background-color: #a855f7;
+  }
+
+  .planet-badge.planet-monria {
+    background-color: #6b7280;
+  }
+
+  .planet-badge.planet-rocktropia {
+    background-color: #ef4444;
+  }
+
+  .planet-badge.planet-toulan {
+    background-color: #f59e0b;
+  }
+
+  .planet-badge.planet-next-island {
+    background-color: #14b8a6;
+  }
+
+  .planet-badge.planet-aris {
+    background-color: #8b5cf6;
+  }
+
+  /* Stats sections */
+  .stats-section {
+    padding: 12px;
+    background-color: var(--bg-color, var(--primary-color));
+    border-radius: 6px;
+  }
+
+  .stats-section.tier-1 {
+    background: linear-gradient(135deg, #3a6d99 0%, #2d5577 100%);
+    padding: 14px;
+  }
+
+  .stats-section.tier-1 .stat-row.primary {
+    background-color: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    padding: 8px 12px;
+    margin-bottom: 6px;
+  }
+
+  .stats-section.tier-1 .stat-row.primary:last-child {
+    margin-bottom: 0;
+  }
+
+  .stats-section.tier-1 .stat-label {
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 13px;
+    text-transform: uppercase;
+    font-weight: 500;
+  }
+
+  .stats-section.tier-1 .stat-value {
+    color: #e8f4ff;
+    font-size: 18px;
+    font-weight: 700;
+  }
+
+  .section-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border-color, #555);
+  }
+
+  .section-header-row .section-title {
+    margin: 0;
+    padding-bottom: 0;
+    border-bottom: none;
+  }
+
+  .section-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted, #999);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin: 0 0 10px 0;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border-color, #555);
+  }
+
+  .edit-section-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    background-color: var(--accent-color, #4a9eff);
+    border: none;
+    border-radius: 4px;
+    color: white;
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  }
+
+  .edit-section-btn:hover {
+    background-color: var(--accent-color-hover, #3a8eef) !important;
+    transform: scale(1.05);
+  }
+
+  .edit-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    font-size: 13px;
+    font-weight: 500;
+    background-color: var(--accent-color, #4a9eff);
+    border: none;
+    border-radius: 4px;
+    color: white;
+    cursor: pointer;
+  }
+
+  .edit-btn:hover {
+    background-color: var(--accent-color-hover, #3a8eef) !important;
+  }
+
+  .edit-btn svg {
+    flex-shrink: 0;
+  }
+
+  .stat-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    padding: 4px 0;
+    font-size: 13px;
+  }
+
+  .stat-label {
+    color: var(--text-muted, #999);
+  }
+
+  .stat-value {
+    font-weight: 500;
+    color: var(--text-color);
+  }
+
+  .stat-value.muted {
+    color: var(--text-muted, #999);
+    font-style: italic;
+  }
+
+  .coordinates-display {
+    margin-top: 8px;
+  }
+
+  .coordinates-label {
+    display: block;
+    font-size: 12px;
+    color: var(--text-muted, #999);
+    margin-bottom: 4px;
+  }
+
+  .type-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .type-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    font-size: 10px;
+    font-weight: 500;
+    background-color: var(--secondary-color);
+    border: 1px solid var(--border-color, #555);
+    border-radius: 4px;
+    color: var(--text-color);
+  }
+
+  .tag-points {
+    font-size: 9px;
+    color: var(--text-muted, #999);
+    font-weight: 400;
+  }
+
+  /* Section editing grid */
+  .section-edit-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .section-edit-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 8px;
+    background-color: var(--bg-color, var(--primary-color));
+    border-radius: 4px;
+    border: 1px solid var(--border-color, #555);
+  }
+
+  .section-edit-row.additional-toggle {
+    background-color: transparent;
+    border: none;
+    padding: 4px 0;
+  }
+
+  .section-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-color);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .toggle-label {
+    font-size: 12px;
+    color: var(--text-muted, #999);
+  }
+
+  .section-points {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .points-label {
+    font-size: 11px;
+    color: var(--text-muted, #999);
+  }
+
+  .map-link-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 16px;
+    background-color: var(--bg-color, var(--primary-color));
+    border: 1px solid var(--border-color, #555);
+    border-radius: 6px;
+    color: var(--text-color);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 500;
+    transition: all 0.15s;
+  }
+
+  .map-link-btn:hover {
+    background-color: var(--accent-color, #4a9eff);
+    border-color: var(--accent-color, #4a9eff);
+    color: white;
+  }
+
+  .map-link-btn svg {
+    flex-shrink: 0;
+  }
+
+  .wiki-article {
+    overflow: hidden; /* Contains floated infobox */
+  }
+
+  /* Pending Change Banner */
+  .pending-change-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 16px;
+    background-color: var(--warning-bg, #fef3c7);
+    border: 1px solid var(--warning-border, #f59e0b);
+    border-radius: 8px;
+    margin-bottom: 16px;
+  }
+
+  .pending-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    color: var(--warning-text, #92400e);
+  }
+
+  .pending-info svg {
+    flex-shrink: 0;
+    stroke: var(--warning-text, #92400e);
+  }
+
+  .toggle-pending-btn {
+    padding: 6px 12px;
+    font-size: 13px;
+    font-weight: 500;
+    background-color: var(--bg-color, white);
+    border: 1px solid var(--warning-border, #f59e0b);
+    border-radius: 4px;
+    color: var(--warning-text, #92400e);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .toggle-pending-btn:hover {
+    background-color: var(--warning-border, #f59e0b);
+    color: white;
+  }
+
+  .toggle-pending-btn.active {
+    background-color: var(--warning-border, #f59e0b);
+    color: white;
+  }
+
+  .article-title {
+    font-size: 32px;
+    font-weight: 600;
+    margin: 0 0 16px 0;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--accent-color, #4a9eff);
+  }
+
+  .description-panel {
+    background-color: var(--secondary-color);
+    border: 1px solid var(--border-color, #555);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+
+  .description-content {
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--text-color);
+  }
+
+  .description-content.placeholder {
+    color: var(--text-muted, #999);
+    font-style: italic;
+  }
+
+  .loading-indicator {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--text-muted, #999);
+    font-style: italic;
+  }
+
+  .no-selection {
+    text-align: center;
+    padding: 60px 20px;
+  }
+
+  .no-selection h2 {
+    font-size: 28px;
+    margin-bottom: 12px;
+  }
+
+  .no-selection p {
+    color: var(--text-muted, #999);
+    margin: 8px 0;
+  }
+
+  .no-selection .hint {
+    font-size: 14px;
+    margin-top: 16px;
+  }
+
+  /* Tablet adjustments */
+  @media (max-width: 1023px) {
+    .wiki-infobox-float {
+      width: 260px;
+      margin-left: 16px;
+      padding: 14px;
+    }
+  }
+
+  /* Mobile adjustments */
+  @media (max-width: 767px) {
+    .layout-a {
+      max-width: 100%;
+    }
+
+    .wiki-infobox-float {
+      float: none;
+      width: auto;
+      margin: 0 0 16px 0;
+    }
+
+    /* Hide article title on mobile - redundant with infobox */
+    .article-title {
+      display: none;
+    }
+
+    .infobox-title {
+      font-size: 16px;
+    }
+
+    .entity-icon-wrapper {
+      max-width: 320px;
+      margin: 0 auto 12px;
+    }
+
+    .edit-btn {
+      padding: 5px 10px;
+      font-size: 12px;
+    }
+
+    .edit-btn span {
+      display: none;
+    }
+
+    .edit-section-btn {
+      width: 26px;
+      height: 26px;
+    }
+  }
+</style>

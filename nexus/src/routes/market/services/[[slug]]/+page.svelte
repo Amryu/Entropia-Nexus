@@ -570,7 +570,7 @@
 
   async function openRequestModal(tab = 'request') {
     if (!user) {
-      goto('/login');
+      goto(`/login?redirect=${encodeURIComponent($page.url.pathname + $page.url.search)}`);
       return;
     }
 

@@ -301,7 +301,8 @@
     color: var(--text-muted, #999);
   }
 
-  @media (max-width: 767px) {
+  /* Mobile - aligned with global 900px breakpoint */
+  @media (max-width: 899px) {
     .panel-header {
       padding: 10px 12px;
     }

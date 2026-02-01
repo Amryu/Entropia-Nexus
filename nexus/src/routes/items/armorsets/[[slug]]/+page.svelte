@@ -1,6 +1,7 @@
 <!--
   @component Armor Set Wiki Page
   Wikipedia-style layout with floating infobox on the right side.
+  Supports full wiki editing.
   Infobox: Defense stats (9 types + total), Economy, Set Effects, Total Absorption
   Article: Description, Set Pieces, Tiering, Acquisition
 
@@ -14,20 +15,44 @@
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { encodeURIComponentSafe, clampDecimals, hasItemTag, groupBy } from '$lib/util';
+  import { sanitizeHtml } from '$lib/sanitize';
 
   // Wiki components
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
+  import PendingChangeBanner from '$lib/components/wiki/PendingChangeBanner.svelte';
   import WikiSEO from '$lib/components/wiki/WikiSEO.svelte';
   import DataSection from '$lib/components/wiki/DataSection.svelte';
+  import InlineEdit from '$lib/components/wiki/InlineEdit.svelte';
+  import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
+  import DefenseGridEdit from '$lib/components/wiki/DefenseGridEdit.svelte';
 
-  // ArmorSet-specific component
+  // ArmorSet-specific components
   import ArmorSetPieces from './ArmorSetPieces.svelte';
+  import TieringEditor from '$lib/components/wiki/TieringEditor.svelte';
+  import SetEffectsEditor from '$lib/components/wiki/SetEffectsEditor.svelte';
 
   // Legacy components for data display
-  import Tiering from '$lib/components/Tiering.svelte';
   import Acquisition from '$lib/components/Acquisition.svelte';
+
+  // Image upload
+  import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
+
+  // Wiki edit state
+  import {
+    editMode,
+    isCreateMode as createModeStore,
+    initEditState,
+    resetEditState,
+    currentEntity,
+    existingPendingChange,
+    viewingPendingChange,
+    setExistingPendingChange,
+    setViewingPendingChange,
+    updateField,
+    changeMetadata
+  } from '$lib/stores/wikiEditState.js';
 
   export let data;
 
@@ -35,12 +60,161 @@
   $: user = data.session?.user;
   $: allItems = data.allItems || [];
   $: additional = data.additional || {};
+  $: pendingChange = data.pendingChange;
+  $: existingChange = data.existingChange;
+  $: isCreateMode = data.isCreateMode || false;
+  $: canCreateNew = data.canCreateNew ?? true;
+  $: userPendingCreates = data.userPendingCreates || [];
+  $: userPendingUpdates = data.userPendingUpdates || [];
+  $: effects = data.effects || [];
+
+  // Can edit if user is verified or admin
+  $: canEdit = user?.verified || user?.isAdmin;
 
   // Build navigation items
   $: navItems = allItems;
 
-  // Navigation filters - none for armor sets
-  const navFilters = [];
+  // Empty entity template for create mode
+  const emptyEntity = {
+    Name: '',
+    Properties: {
+      Description: '',
+      Weight: 0,
+      Economy: {
+        MaxTT: 0,
+        MinTT: 0,
+        Durability: 0
+      },
+      Defense: {
+        Impact: 0,
+        Cut: 0,
+        Stab: 0,
+        Penetration: 0,
+        Shrapnel: 0,
+        Burn: 0,
+        Cold: 0,
+        Acid: 0,
+        Electric: 0
+      }
+    },
+    Armors: [],
+    EffectsOnSetEquip: [],
+    Tiers: []
+  };
+
+  // Initialize edit state when entity or user changes
+  $: if (user) {
+    const entity = isCreateMode ? (existingChange?.data || emptyEntity) : armorSet;
+    if (entity) {
+      initEditState(entity, 'ArmorSet', isCreateMode, existingChange);
+    }
+  }
+
+  // Set existing pending change when data loads
+  $: if (pendingChange) {
+    setExistingPendingChange(pendingChange);
+    // Auto-enable viewing pending change for author or admin
+    if (user && (pendingChange.author_id === user.id || user.isAdmin)) {
+      setViewingPendingChange(true);
+    }
+  } else {
+    setExistingPendingChange(null);
+    setViewingPendingChange(false);
+  }
+
+  // Active entity: what we display (edit mode → currentEntity, pending view → pending data, default → armorSet)
+  $: activeEntity = $editMode
+    ? $currentEntity
+    : ($viewingPendingChange && $existingPendingChange?.changes)
+      ? applyChangesToEntity(armorSet, $existingPendingChange.changes)
+      : armorSet;
+
+  // Helper to apply pending changes to entity for display
+  function applyChangesToEntity(entity, changes) {
+    if (!entity || !changes) return entity;
+    const result = JSON.parse(JSON.stringify(entity));
+    for (const [path, value] of Object.entries(changes)) {
+      setNestedValue(result, path, value);
+    }
+    return result;
+  }
+
+  function setNestedValue(obj, path, value) {
+    const keys = path.split('.');
+    let current = obj;
+    for (let i = 0; i < keys.length - 1; i++) {
+      if (!current[keys[i]]) current[keys[i]] = {};
+      current = current[keys[i]];
+    }
+    current[keys[keys.length - 1]] = value;
+  }
+
+  // Cleanup on destroy
+  onDestroy(() => {
+    resetEditState();
+  });
+
+  // Defense types for filtering
+  const defenseTypes = ['Impact', 'Cut', 'Stab', 'Penetration', 'Shrapnel', 'Burn', 'Cold', 'Acid', 'Electric'];
+
+  // Get required threshold percentage based on number of selected filters
+  // 1 filter: 20%, 2: 35%, 3: 45%, 4+: +10% each
+  function getDefenseThreshold(count) {
+    if (count <= 0) return 0;
+    if (count === 1) return 0.20;
+    if (count === 2) return 0.35;
+    if (count === 3) return 0.45;
+    // 4+: 45% + 10% for each additional
+    return 0.45 + (count - 3) * 0.10;
+  }
+
+  // Custom filter function for defense types
+  // Threshold increases with more filters selected to ensure meaningful results
+  function defenseFilterFn(item, selectedTypes) {
+    if (!selectedTypes || selectedTypes.length === 0) return true;
+
+    const totalDef = getTotalDefense(item);
+    if (!totalDef || totalDef === 0) return false;
+
+    // Sum the defense values for all selected types
+    const selectedDefense = selectedTypes.reduce((sum, type) => {
+      return sum + (item.Properties?.Defense?.[type] ?? 0);
+    }, 0);
+
+    // Get threshold based on number of selected filters
+    const threshold = getDefenseThreshold(selectedTypes.length);
+
+    return (selectedDefense / totalDef) >= threshold;
+  }
+
+  // Help text for defense filter
+  const defenseFilterHelp = [
+    '1 type selected: 20% of total defense',
+    '2 types selected: 35% of total defense',
+    '3 types selected: 45% of total defense',
+    '4+ types: +10% for each additional'
+  ];
+
+  // Sort function for defense filter - returns total flat defense of selected types (higher = better)
+  function defenseSortFn(item, selectedTypes) {
+    if (!selectedTypes || selectedTypes.length === 0) return 0;
+    return selectedTypes.reduce((sum, type) => {
+      return sum + (item.Properties?.Defense?.[type] ?? 0);
+    }, 0);
+  }
+
+  // Navigation filters - defense type buttons (multi-select)
+  const navFilters = [
+    {
+      key: 'defenseType',
+      label: 'Defense Type',
+      multiSelect: true,
+      filterFn: defenseFilterFn,
+      sortFn: defenseSortFn,
+      helpText: defenseFilterHelp,
+      values: defenseTypes.map(type => ({ value: type, label: type.substring(0, 3) }))
+    }
+  ];
 
   // Sidebar table columns for armor sets
   const navTableColumns = [
@@ -66,19 +240,22 @@
   $: breadcrumbs = [
     { label: 'Items', href: '/items' },
     { label: 'Armor Sets', href: '/items/armorsets' },
-    ...(armorSet ? [{ label: armorSet.Name }] : [])
+    ...(activeEntity ? [{ label: activeEntity.Name || 'New Armor Set' }] : [])
   ];
 
   // SEO
-  $: seoDescription = armorSet?.Properties?.Description ||
-    `${armorSet?.Name || 'Armor Set'} - armor set with ${getTotalDefense(armorSet)?.toFixed(1) || '?'} total defense in Entropia Universe.`;
+  $: seoDescription = activeEntity?.Properties?.Description ||
+    `${activeEntity?.Name || 'Armor Set'} - armor set with ${getTotalDefense(activeEntity)?.toFixed(1) || '?'} total defense in Entropia Universe.`;
 
   $: canonicalUrl = armorSet
     ? `https://entropianexus.com/items/armorsets/${encodeURIComponentSafe(armorSet.Name)}`
     : 'https://entropianexus.com/items/armorsets';
 
+  // Image URL for SEO (approved images only)
+  $: entityImageUrl = armorSet?.Id ? `/api/img/armorset/${armorSet.Id}` : null;
+
   // Check if armor set is tierable
-  $: isTierable = armorSet && !hasItemTag(armorSet.Name, 'L');
+  $: isTierable = activeEntity && !hasItemTag(activeEntity.Name, 'L');
 
   // ========== PANEL STATE PERSISTENCE ==========
   let panelStates = {
@@ -144,21 +321,22 @@
   }
 
   // Reactive calculations
-  $: totalDefense = getTotalDefense(armorSet);
-  $: maxDecay = getMaxArmorDecay(armorSet);
-  $: totalAbsorption = getTotalAbsorption(armorSet);
-  $: setEffects = getSetEffects(armorSet);
-  $: pieceCount = armorSet?.Armors?.flat().filter(x => x?.Properties?.Gender === 'Both' || x?.Properties?.Gender === 'Male').length ?? 0;
+  $: totalDefense = getTotalDefense(activeEntity);
+  $: maxDecay = getMaxArmorDecay(activeEntity);
+  $: totalAbsorption = getTotalAbsorption(activeEntity);
+  $: setEffects = getSetEffects(activeEntity);
+  $: pieceCount = activeEntity?.Armors?.flat().filter(x => x?.Properties?.Gender === 'Both' || x?.Properties?.Gender === 'Male').length ?? 0;
 
   // Damage types for display
   const damageTypes = ['Impact', 'Cut', 'Stab', 'Penetration', 'Shrapnel', 'Burn', 'Cold', 'Acid', 'Electric'];
 </script>
 
 <WikiSEO
-  title={armorSet?.Name || 'Armor Sets'}
+  title={activeEntity?.Name || 'Armor Sets'}
   description={seoDescription}
-  entityType="armorset"
-  entity={armorSet}
+  entityType="ArmorSet"
+  entity={activeEntity}
+  imageUrl={entityImageUrl}
   {canonicalUrl}
   breadcrumbs={breadcrumbs.map(b => ({ name: b.label, url: b.href }))}
 />
@@ -174,19 +352,41 @@
   {navTableColumns}
   {user}
   editable={true}
+  {canEdit}
+  {canCreateNew}
+  {userPendingCreates}
+  {userPendingUpdates}
 >
-  {#if armorSet}
+  {#if activeEntity || isCreateMode}
+    <!-- Pending Change Banner -->
+    {#if $existingPendingChange && !$editMode}
+      <PendingChangeBanner
+        pendingChange={$existingPendingChange}
+        viewing={$viewingPendingChange}
+        onToggle={() => setViewingPendingChange(!$viewingPendingChange)}
+      />
+    {/if}
     <div class="layout-a">
       <!-- Wikipedia-style floating infobox (right panel) -->
       <aside class="wiki-infobox-float">
         <!-- Entity Header -->
         <div class="infobox-header">
-          <div class="icon-placeholder">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
-              <rect x="3" y="3" width="18" height="18" rx="2" />
-            </svg>
+          <EntityImageUpload
+            entityId={activeEntity?.Id}
+            entityName={activeEntity?.Name}
+            entityType="armorset"
+            {user}
+            isEditMode={$editMode}
+            {isCreateMode}
+          />
+          <div class="infobox-title">
+            <InlineEdit
+              value={activeEntity?.Name}
+              path="Name"
+              type="text"
+              placeholder="Armor Set Name"
+            />
           </div>
-          <div class="infobox-title">{armorSet.Name}</div>
           <div class="infobox-subtitle">
             <span class="type-badge">Armor Set</span>
             <span>{pieceCount} pieces</span>
@@ -200,21 +400,20 @@
             <span class="stat-value">{totalDefense?.toFixed(1) ?? 'N/A'}</span>
           </div>
           <div class="stat-row primary">
-            <span class="stat-label">Absorption</span>
+            <span class="stat-label">Total Absorption</span>
             <span class="stat-value">{totalAbsorption?.toFixed(0) ?? 'N/A'} HP</span>
           </div>
         </div>
 
         <!-- Defense Breakdown -->
-        <div class="stats-section">
+        <div class="stats-section defense-section">
           <h4 class="section-title">Defense</h4>
-          {#each damageTypes as type}
-            {@const value = armorSet.Properties?.Defense?.[type]}
-            <div class="stat-row">
-              <span class="stat-label">{type}</span>
-              <span class="stat-value">{value?.toFixed(1) ?? 'N/A'}</span>
-            </div>
-          {/each}
+          <DefenseGridEdit
+            defense={activeEntity?.Properties?.Defense}
+            fieldPath="Properties.Defense"
+            title="Total Defense"
+            types={damageTypes}
+          />
         </div>
 
         <!-- Economy Stats -->
@@ -222,15 +421,23 @@
           <h4 class="section-title">Economy</h4>
           <div class="stat-row">
             <span class="stat-label">Max TT</span>
-            <span class="stat-value">{armorSet.Properties?.Economy?.MaxTT != null ? `${clampDecimals(armorSet.Properties.Economy.MaxTT, 2, 8)} PED` : 'N/A'}</span>
+            <span class="stat-value">{activeEntity?.Properties?.Economy?.MaxTT?.toFixed(2) ?? 'N/A'} PED</span>
           </div>
           <div class="stat-row">
             <span class="stat-label">Min TT</span>
-            <span class="stat-value">{armorSet.Properties?.Economy?.MinTT != null ? `${clampDecimals(armorSet.Properties.Economy.MinTT, 2, 8)} PED` : 'N/A'}</span>
+            <span class="stat-value">{activeEntity?.Properties?.Economy?.MinTT?.toFixed(2) ?? 'N/A'} PED</span>
           </div>
           <div class="stat-row">
             <span class="stat-label">Durability</span>
-            <span class="stat-value">{armorSet.Properties?.Economy?.Durability ?? 'N/A'}</span>
+            <span class="stat-value">
+              <InlineEdit
+                value={activeEntity?.Properties?.Economy?.Durability}
+                path="Properties.Economy.Durability"
+                type="number"
+                min={0}
+                max={100000}
+              />
+            </span>
           </div>
           <div class="stat-row">
             <span class="stat-label">Max Decay</span>
@@ -238,46 +445,54 @@
           </div>
           <div class="stat-row">
             <span class="stat-label">Weight</span>
-            <span class="stat-value">{armorSet.Properties?.Weight != null ? `${clampDecimals(armorSet.Properties.Weight, 1, 6)}kg` : 'N/A'}</span>
+            <span class="stat-value">{activeEntity?.Properties?.Weight?.toFixed(1) ?? 'N/A'} kg</span>
           </div>
         </div>
 
         <!-- Set Effects -->
-        {#if setEffects?.length > 0}
+        {#if setEffects?.length > 0 || $editMode}
           <div class="stats-section set-effects">
             <h4 class="section-title">Set Effects</h4>
-            {#each setEffects as group}
-              <div class="effect-group">
-                <div class="effect-pieces">{group.pieces} Pieces</div>
-                {#each group.effects as effect}
-                  <div class="effect-row">
-                    <span class="effect-value">+{effect.strength}{effect.unit}</span>
-                    <span class="effect-name">{effect.name}</span>
-                  </div>
-                {/each}
-              </div>
-            {/each}
+            <SetEffectsEditor
+              effects={activeEntity?.EffectsOnSetEquip || []}
+              fieldName="EffectsOnSetEquip"
+              availableEffects={effects}
+              maxPieces={pieceCount || 7}
+            />
           </div>
         {/if}
       </aside>
 
       <!-- Main content (center) -->
       <article class="wiki-article">
-        <h1 class="article-title">{armorSet.Name}</h1>
+        <h1 class="article-title">
+          <InlineEdit
+            value={activeEntity?.Name}
+            path="Name"
+            type="text"
+            placeholder="Armor Set Name"
+          />
+        </h1>
 
         <!-- Description Panel -->
         <div class="description-panel">
-          {#if armorSet.Properties?.Description}
-            <div class="description-content">{armorSet.Properties.Description}</div>
+          {#if $editMode}
+            <RichTextEditor
+              content={activeEntity?.Properties?.Description || ''}
+              on:change={(e) => updateField('Properties.Description', e.detail)}
+              placeholder="Enter armor set description..."
+            />
+          {:else if activeEntity?.Properties?.Description}
+            <div class="description-content">{@html sanitizeHtml(activeEntity.Properties.Description)}</div>
           {:else}
             <div class="description-content placeholder">
-              {armorSet.Name} is an armor set providing {totalDefense?.toFixed(1) || '?'} total defense.
+              {activeEntity?.Name || 'This armor set'} is an armor set providing {totalDefense?.toFixed(1) || '?'} total defense.
             </div>
           {/if}
         </div>
 
         <!-- Set Pieces Section -->
-        {#if armorSet.Armors?.length > 0}
+        {#if activeEntity?.Armors?.length > 0}
           <DataSection
             title="Set Pieces"
             icon=""
@@ -285,7 +500,9 @@
             subtitle="{pieceCount} pieces"
             on:toggle={savePanelStates}
           >
-            <ArmorSetPieces {armorSet} />
+            {#key activeEntity?.Id || activeEntity?.Name}
+              <ArmorSetPieces armorSet={activeEntity} />
+            {/key}
           </DataSection>
         {/if}
 
@@ -298,7 +515,7 @@
             subtitle="{additional.tierInfo?.length || 0} tiers"
             on:toggle={savePanelStates}
           >
-            <Tiering tieringInfo={additional.tierInfo} setPieceCount={pieceCount} />
+            <TieringEditor entity={activeEntity} entityType="ArmorSet" tierInfo={additional.tierInfo || []} setPieceCount={pieceCount} />
           </DataSection>
         {/if}
 
@@ -324,6 +541,46 @@
 </WikiPage>
 
 <style>
+  .pending-change-banner {
+    background: linear-gradient(135deg, #f59e0b22 0%, #f59e0b11 100%);
+    border: 1px solid #f59e0b44;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+  }
+
+  .banner-content {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .banner-icon {
+    font-size: 18px;
+  }
+
+  .banner-text {
+    flex: 1;
+    color: var(--text-color);
+    font-size: 14px;
+  }
+
+  .banner-toggle {
+    padding: 6px 12px;
+    font-size: 12px;
+    background: var(--accent-color);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+
+  .banner-toggle:hover {
+    opacity: 0.9;
+  }
+
   .layout-a {
     position: relative;
     width: 100%;
@@ -354,19 +611,6 @@
     text-align: center;
     padding-bottom: 12px;
     border-bottom: 1px solid var(--border-color, #555);
-  }
-
-  .icon-placeholder {
-    width: 80px;
-    height: 80px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: var(--bg-color, var(--primary-color));
-    border: 2px dashed var(--border-color, #555);
-    border-radius: 8px;
-    color: var(--text-muted, #999);
-    margin: 0 auto 12px;
   }
 
   .infobox-title {
@@ -573,16 +817,6 @@
 
     .infobox-title {
       font-size: 16px;
-    }
-
-    .icon-placeholder {
-      width: 60px;
-      height: 60px;
-    }
-
-    .icon-placeholder svg {
-      width: 36px;
-      height: 36px;
     }
   }
 </style>

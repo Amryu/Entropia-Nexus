@@ -11,6 +11,7 @@ function formatEffect(x) {
     Properties: {
       Description: x.Description,
       IsPositive: x.IsPositive === 1,
+      Unit: x.Unit,
     },
     Links: { "$Url": `/effects/${x.Id}` },
   };

@@ -142,85 +142,128 @@ GET /vendoroffers      - All vendor offers
 
 ---
 
-## Mobs (`/information/mobs/`)
+## Mobs Wiki (`/information/mobs/`)
 
-Creature information including spawns, loot, and maturities.
+Creature information including spawns, loot, maturities, and codex calculator. Uses Wikipedia-style layout with floating infobox.
 
 ### Route
 ```
-/information/mobs/[[slug]]/[[discard]]
+/information/mobs/[[slug]]
 ```
 
-### Data Structure
+### Layout Structure
 
-```json
-{
-  "Id": 1,
-  "Name": "Atrox",
-  "Species": "Atrox",
-  "Planet": {
-    "Id": 1,
-    "Name": "Calypso"
-  },
-  "Maturities": [
-    {
-      "Id": 101,
-      "Name": "Young",
-      "Level": 10,
-      "Health": 100,
-      "DamageTypes": ["Cut", "Impact"],
-      "Loot": [...]
-    }
-  ],
-  "Spawns": [
-    {
-      "AreaId": 50,
-      "AreaName": "Cape Corinth",
-      "Density": "High"
-    }
-  ]
-}
-```
+Wikipedia-style layout with:
+- **Floating Infobox** (right side): Icon, name, type badges, quick stats, skills, damage breakdown, codex info
+- **Article Content** (main area): Description, collapsible data sections
 
-### Properties
+### Data Sections
 
-| Field | Description |
-|-------|-------------|
-| Name | Creature name |
-| Species | Species classification |
+| Section | Component | Description |
+|---------|-----------|-------------|
+| Maturities | `MobMaturities.svelte` | Table showing all maturity levels with HP, Level, attacks, defense, taming status |
+| Locations | `MobLocations.svelte` | Spawn locations with waypoint copy buttons, density badges, map links |
+| Loots | `MobLoots.svelte` | Drop table with item links, maturity requirements, frequency badges |
+| Codex Calculator | `MobCodex.svelte` | Interactive calculator for 25 codex ranks with skill rewards |
+| Damage Grid | `MobDamageGrid.svelte` | Visual damage type breakdown with colored bars |
+
+### Components
+
+Located in `nexus/src/lib/components/wiki/mobs/`:
+
+#### MobMaturities.svelte
+Displays maturity progression table:
+- Name, Level, HP, HP/Level ratio
+- Primary/Secondary/Tertiary attacks (damage and type)
+- Defense value, Tameable status
+
+#### MobLocations.svelte
+Displays spawn locations:
+- Maturities available at each spawn
+- Other mobs sharing the spawn
+- Waypoint button (click to copy `/wp` command)
+- Density badge (Low/Medium/High with colored backgrounds)
+- Map link to view spawn on interactive map
+
+#### MobLoots.svelte
+Displays loot drops:
+- Item name with link to item page
+- Lowest maturity that drops the item
+- Event indicator (for seasonal drops)
+- Frequency badge (Always → Extremely rare)
+- Sorted by frequency (most common first)
+
+#### MobCodex.svelte
+Interactive codex calculator:
+- 25 rank grid with PED costs
+- Rank selection shows skill rewards
+- Category 1/2/3 skill rotation per rank
+- Category 4 bonus skills on ranks 5, 15, 25 (MobLooter type)
+- Asteroid codex has different skill set
+
+#### MobDamageGrid.svelte
+Damage type visualization:
+- 9 damage types with unique colors
+- Horizontal bars showing percentage
+- Used in infobox for attack/defense breakdown
+
+### Infobox Stats
+
+| Stat | Description |
+|------|-------------|
+| HP/Level | Average HP per level across maturities |
+| Level Range | Min-max level from maturities |
+| HP Range | Min-max HP from maturities |
+| Species | Mob species name |
 | Planet | Native planet |
-| Maturities | Growth stages with stats |
-| Spawns | Spawn locations |
+| Type | Animal, Mutant, Robot, Asteroid |
+| Attack Speed | Attack interval |
+| Attack Range | Attack distance |
+| Aggro Range | Detection range |
+| Sweatable | Whether mob drops vibrant sweat |
 
-### Maturity Data
+### Skills Section
 
-| Field | Description |
-|-------|-------------|
-| Name | Maturity level (Young, Mature, etc.) |
-| Level | Creature level |
-| Health | Hit points |
-| DamageTypes | Attack damage types |
-| Loot | Drop table |
+Links to profession pages for:
+- Defense skill (e.g., Evader)
+- Scanning skill (e.g., Animal Investigator)
+- Looting skill (e.g., Animal Looter)
 
-### Spawn Data
+### Badge Styling
 
-| Field | Description |
-|-------|-------------|
-| AreaId | Location reference |
-| AreaName | Named area |
-| Density | Spawn density |
-| Coordinates | Optional coordinates |
+Frequency badges use `badge-subtle` class for visibility:
+- `badge-freq-always` - Green
+- `badge-freq-veryoften` - Teal
+- `badge-freq-often` - Blue
+- `badge-freq-common` - Light blue
+- `badge-freq-uncommon` - Yellow
+- `badge-freq-rare` - Orange
+- `badge-freq-veryrare` - Red
+- `badge-freq-extremelyrare` - Purple
+
+Density badges:
+- `badge-density-low` - Blue
+- `badge-density-medium` - Yellow
+- `badge-density-high` - Green
 
 ### API Endpoints
 
 ```
-GET /mobs              - All mobs
+GET /mobs              - All mobs with related data
 GET /mobs/:id          - Single mob
 GET /mobmaturities     - All maturities
-GET /mobspawns         - Spawn locations
-GET /mobloots          - Loot tables
+GET /mobspawns         - Spawn locations with maturity mappings
+GET /mobloots          - Loot tables with item data
 GET /mobspecies        - Species list
 ```
+
+### Data Loader
+
+The page loader (`+page.js`) performs:
+1. Fetches all mobs with `Maturities`, `Spawns`, `Loots` expanded
+2. Groups mobs by planet for sidebar navigation
+3. Resolves item links for loot items (weapons, materials, armor, etc.)
+4. Calculates HP/Level stats, level/HP ranges
 
 ---
 

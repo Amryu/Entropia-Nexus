@@ -2,6 +2,7 @@
 import { loading } from "../stores";
 import { goto, invalidateAll } from "$app/navigation";
 import { browser } from "$app/environment";
+import { MAX_PENDING_CREATES } from "$lib/constants";
 
 export function addItemTag(currentName, tag) {
   // Extract the base name and the existing tags
@@ -51,6 +52,43 @@ export function hasItemTag(currentName, tag) {
 
   // Check if the tag exists in the existing tags
   return existingTags.includes(tag);
+}
+
+/**
+ * Copy text to clipboard with fallback for non-secure contexts.
+ * @param {string} text - The text to copy
+ * @returns {Promise<boolean>} - True if copy was successful
+ */
+export async function copyToClipboard(text) {
+  // Try modern clipboard API first
+  if (navigator?.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (err) {
+      // Fall through to fallback
+    }
+  }
+
+  // Fallback for non-secure contexts or older browsers
+  try {
+    const textArea = document.createElement('textarea');
+    textArea.value = text;
+    // Avoid scrolling to bottom
+    textArea.style.top = '0';
+    textArea.style.left = '0';
+    textArea.style.position = 'fixed';
+    textArea.style.opacity = '0';
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    const successful = document.execCommand('copy');
+    document.body.removeChild(textArea);
+    return successful;
+  } catch (err) {
+    console.error('Failed to copy to clipboard:', err);
+    return false;
+  }
 }
 
 export function clampDecimals(num, minDecimals = 0, maxDecimals = 10) {
@@ -380,6 +418,86 @@ export async function navigate(url) {
   //await invalidateAll();
 
   loading.set(false);
+}
+
+export async function loadPendingChangesData(fetch, sessionUser, config) {
+  const result = {
+    pendingChange: null,
+    userPendingCreates: [],
+    userPendingUpdates: [],
+    canCreateNew: true,
+    pendingCreatesCount: 0
+  };
+
+  if (!sessionUser) return result;
+
+  const { entity, entityId, changeId, isAdmin } = config;
+  const userId = sessionUser.id;
+
+  // API returns 200 with null instead of 404 to avoid console spam
+  if (changeId) {
+    try {
+      const changeRes = await fetch(`/api/changes/${changeId}`);
+      if (changeRes.ok) {
+        const change = await changeRes.json();
+        if (change && (change.author_id === userId || isAdmin)) {
+          result.pendingChange = change;
+        }
+      }
+    } catch (err) {
+      // Expected when no change exists - silently ignore
+    }
+  }
+
+  if (entityId && !result.pendingChange) {
+    try {
+      const changeRes = await fetch(
+        `/api/changes?entity=${entity}&entityId=${entityId}&state=Pending,Draft`
+      );
+      if (changeRes.ok) {
+        const changes = await changeRes.json();
+        if (changes && changes.length > 0) {
+          const sorted = changes.sort((a, b) =>
+            new Date(b.created_at) - new Date(a.created_at)
+          );
+          result.pendingChange = sorted[0];
+        }
+      }
+    } catch (err) {
+      // Expected when no pending changes exist - silently ignore
+    }
+  }
+
+  try {
+    const createRes = await fetch(
+      `/api/changes?entity=${entity}&type=Create&authorId=${userId}&state=Pending,Draft`
+    );
+    if (createRes.ok) {
+      const creates = await createRes.json();
+      result.userPendingCreates = creates || [];
+      result.pendingCreatesCount = creates?.length || 0;
+    }
+  } catch (err) {
+    // Expected when no creates exist - silently ignore
+  }
+
+  try {
+    const updateRes = await fetch(
+      `/api/changes?entity=${entity}&type=Update&authorId=${userId}&state=Pending,Draft`
+    );
+    if (updateRes.ok) {
+      const updates = await updateRes.json();
+      result.userPendingUpdates = updates || [];
+    }
+  } catch (err) {
+    // Expected when no updates exist - silently ignore
+  }
+
+  if (!isAdmin && result.pendingCreatesCount >= MAX_PENDING_CREATES) {
+    result.canCreateNew = false;
+  }
+
+  return result;
 }
 
 // Removed GET response caching to prevent stale data issues during edits/auth changes

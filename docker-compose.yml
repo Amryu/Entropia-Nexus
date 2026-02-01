@@ -1,6 +1,7 @@
 volumes:
   common_data:
   nexus-bot-config:
+  nexus-uploads:
 services:
   api:
     build: ./api
@@ -32,6 +33,12 @@ services:
         source: ${NEXUS_ENV_PATH:-./nexus/.env}
         target: /app/.env
         read_only: true
+      # Persistent storage for uploaded images
+      - type: volume
+        source: nexus-uploads
+        target: /app/uploads
+    environment:
+      - UPLOAD_DIR=/app/uploads
     networks:
       - backend
       - frontend

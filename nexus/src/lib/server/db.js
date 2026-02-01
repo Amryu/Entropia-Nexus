@@ -381,6 +381,27 @@ export async function updateShopManagers(shopId, managers) {
   }
 }
 
+export async function updateShopOwner(shopId, newOwnerId) {
+  const client = await startTransaction();
+  try {
+    // Update owner
+    await client.query(
+      'UPDATE shops SET owner_id = $1 WHERE id = $2',
+      [newOwnerId, shopId]
+    );
+
+    // Clear all managers when owner changes
+    await client.query('DELETE FROM shop_managers WHERE shop_id = $1', [shopId]);
+
+    await commitTransaction(client);
+    return true;
+  } catch (error) {
+    try { await rollbackTransaction(client); } catch (rbErr) { console.error('Error during rollback:', rbErr); }
+    console.error('Error updating shop owner:', error);
+    return false;
+  }
+}
+
 export async function getUserByEntropiaName(entropiaName) {
   const query = 'SELECT id, eu_name, verified FROM users WHERE LOWER(eu_name) = LOWER($1)';
   const values = [entropiaName];
@@ -2495,6 +2516,15 @@ export async function getChangesFiltered(filters = {}, page = 1, limit = 20) {
     } else {
       whereConditions.push(`c.entity = $${paramIndex++}`);
       params.push(filters.entity);
+    }
+  }
+  if (filters.type) {
+    if (Array.isArray(filters.type)) {
+      whereConditions.push(`c.type = ANY($${paramIndex++}::change_type[])`);
+      params.push(filters.type);
+    } else {
+      whereConditions.push(`c.type = $${paramIndex++}`);
+      params.push(filters.type);
     }
   }
   if (filters.authorId) {

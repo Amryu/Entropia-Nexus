@@ -1,6 +1,7 @@
 <!--
   @component Blueprint Wiki Page
   Wikipedia-style layout with floating infobox on the right side.
+  Supports full wiki editing.
   Infobox: Level, Type, Book, Cost, Boosted, SiB, Profession, PED/h
   Article: Description, Construction (with markup calculator), Acquisition
 
@@ -27,19 +28,43 @@
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { encodeURIComponentSafe, clampDecimals, getTypeLink, getItemLink } from '$lib/util';
+  import { sanitizeHtml } from '$lib/sanitize';
 
   // Wiki components
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
+  import PendingChangeBanner from '$lib/components/wiki/PendingChangeBanner.svelte';
   import WikiSEO from '$lib/components/wiki/WikiSEO.svelte';
   import DataSection from '$lib/components/wiki/DataSection.svelte';
+  import InlineEdit from '$lib/components/wiki/InlineEdit.svelte';
+  import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
 
   // Blueprint-specific component
-  import Construction from './Construction.svelte';
+  import BlueprintMaterials from '$lib/components/wiki/BlueprintMaterials.svelte';
+  import SearchableSelect from '$lib/components/wiki/SearchableSelect.svelte';
+  import ItemSearchInput from '$lib/components/wiki/ItemSearchInput.svelte';
+
+  // Image upload
+  import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
 
   // Legacy components for data display
   import Acquisition from '$lib/components/Acquisition.svelte';
+
+  // Wiki edit state
+  import {
+    editMode,
+    isCreateMode as createModeStore,
+    initEditState,
+    resetEditState,
+    currentEntity,
+    existingPendingChange,
+    viewingPendingChange,
+    setExistingPendingChange,
+    setViewingPendingChange,
+    updateField,
+    changeMetadata
+  } from '$lib/stores/wikiEditState.js';
 
   export let data;
 
@@ -49,9 +74,106 @@
   $: user = data.session?.user;
   $: allItems = data.allItems || [];
   $: additional = data.additional || {};
+  $: pendingChange = data.pendingChange;
+  $: existingChange = data.existingChange;
+  $: isCreateMode = data.isCreateMode || false;
+  $: canCreateNew = data.canCreateNew ?? true;
+  $: userPendingCreates = data.userPendingCreates || [];
+
+  $: userPendingUpdates = data.userPendingUpdates || [];
+  // Edit mode dropdown data
+  $: blueprintbooks = data.blueprintbooks || [];
+  $: professions = data.professions || [];
+  $: productItems = data.productItems || [];
+  $: materials = data.materials || [];
+
+  // Options for SearchableSelect dropdowns
+  $: bookOptions = blueprintbooks.map(b => ({ value: b.Name, label: b.Name })).sort((a, b) => a.label.localeCompare(b.label));
+  $: professionOptions = professions.map(p => ({ value: p.Name, label: p.Name })).sort((a, b) => a.label.localeCompare(b.label));
+  $: productOptions = productItems.map(i => ({ value: i.Name, label: i.Name })).sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
+  // For Drops, use all blueprints (allItems)
+  $: blueprintDropOptions = allItems.map(b => ({ value: b.Name, label: b.Name })).sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
+
+  // Can edit if user is verified or admin
+  $: canEdit = user?.verified || user?.isAdmin;
 
   // Build navigation items
   $: navItems = allItems;
+
+  // Empty entity template for create mode
+  const emptyEntity = {
+    Name: '',
+    Properties: {
+      Description: '',
+      Type: 'Weapon',
+      Level: 1,
+      IsBoosted: false,
+      MinimumCraftAmount: 1,
+      MaximumCraftAmount: 1,
+      Skill: {
+        IsSiB: true,
+        LearningIntervalStart: 0,
+        LearningIntervalEnd: 100
+      }
+    },
+    Book: null,
+    Profession: null,
+    Product: null,
+    Materials: [],
+    Drops: []
+  };
+
+  // Initialize edit state when entity or user changes
+  $: if (user) {
+    const entity = isCreateMode ? (existingChange?.data || emptyEntity) : blueprint;
+    if (entity) {
+      initEditState(entity, 'Blueprint', isCreateMode, existingChange);
+    }
+  }
+
+  // Set existing pending change when data loads
+  $: if (pendingChange) {
+    setExistingPendingChange(pendingChange);
+    // Auto-enable viewing pending change for author or admin
+    if (user && (pendingChange.author_id === user.id || user.isAdmin)) {
+      setViewingPendingChange(true);
+    }
+  } else {
+    setExistingPendingChange(null);
+    setViewingPendingChange(false);
+  }
+
+  // Active entity: what we display (edit mode → currentEntity, pending view → pending data, default → blueprint)
+  $: activeEntity = $editMode
+    ? $currentEntity
+    : ($viewingPendingChange && $existingPendingChange?.changes)
+      ? applyChangesToEntity(blueprint, $existingPendingChange.changes)
+      : blueprint;
+
+  // Helper to apply pending changes to entity for display
+  function applyChangesToEntity(entity, changes) {
+    if (!entity || !changes) return entity;
+    const result = JSON.parse(JSON.stringify(entity));
+    for (const [path, value] of Object.entries(changes)) {
+      setNestedValue(result, path, value);
+    }
+    return result;
+  }
+
+  function setNestedValue(obj, path, value) {
+    const keys = path.split('.');
+    let current = obj;
+    for (let i = 0; i < keys.length - 1; i++) {
+      if (!current[keys[i]]) current[keys[i]] = {};
+      current = current[keys[i]];
+    }
+    current[keys[keys.length - 1]] = value;
+  }
+
+  // Cleanup on destroy
+  onDestroy(() => {
+    resetEditState();
+  });
 
   // Navigation filters
   const navFilters = [
@@ -69,6 +191,18 @@
         { value: 'Enhancer', label: 'Enhancer' },
       ]
     }
+  ];
+
+  // Blueprint type options for editing
+  const typeOptions = [
+    { value: 'Weapon', label: 'Weapon' },
+    { value: 'Armor', label: 'Armor' },
+    { value: 'Tool', label: 'Tool' },
+    { value: 'Vehicle', label: 'Vehicle' },
+    { value: 'Textile', label: 'Textile' },
+    { value: 'Furniture', label: 'Furniture' },
+    { value: 'Attachment', label: 'Attachment' },
+    { value: 'Enhancer', label: 'Enhancer' }
   ];
 
   // Sidebar table columns for blueprints
@@ -93,21 +227,25 @@
   $: breadcrumbs = [
     { label: 'Items', href: '/items' },
     { label: 'Blueprints', href: '/items/blueprints' },
-    ...(blueprint ? [{ label: blueprint.Name }] : [])
+    ...(activeEntity ? [{ label: activeEntity.Name || 'New Blueprint' }] : [])
   ];
 
   // SEO
-  $: seoDescription = blueprint?.Properties?.Description ||
-    `${blueprint?.Name || 'Blueprint'} - Level ${blueprint?.Properties?.Level || '?'} ${blueprint?.Properties?.Type || ''} blueprint in Entropia Universe.`;
+  $: seoDescription = activeEntity?.Properties?.Description ||
+    `${activeEntity?.Name || 'Blueprint'} - Level ${activeEntity?.Properties?.Level || '?'} ${activeEntity?.Properties?.Type || ''} blueprint in Entropia Universe.`;
 
   $: canonicalUrl = blueprint
     ? `https://entropianexus.com/items/blueprints/${encodeURIComponentSafe(blueprint.Name)}`
     : 'https://entropianexus.com/items/blueprints';
 
+  // Image URL for SEO
+  $: entityImageUrl = blueprint?.Id ? `/api/img/blueprint/${blueprint.Id}` : null;
+
   // ========== PANEL STATE PERSISTENCE ==========
   let panelStates = {
     construction: true,
-    acquisition: true
+    acquisition: true,
+    drops: true
   };
 
   onMount(() => {
@@ -145,15 +283,49 @@
   }
 
   // Reactive calculations
-  $: cost = getCost(blueprint);
-  $: cyclePerHour = getCyclePerHour(blueprint);
+  $: cost = getCost(activeEntity);
+  $: cyclePerHour = getCyclePerHour(activeEntity);
+
+  // ========== EDIT MODE HANDLERS ==========
+  function handleProductInput(e) {
+    updateField('Product.Name', e.detail.value);
+  }
+
+  function handleProductSelect(e) {
+    const selected = e.detail?.item;
+    if (selected) {
+      updateField('Product', selected);
+    } else {
+      updateField('Product.Name', e.detail?.value || '');
+    }
+  }
+
+  // Drops array handlers
+  function addDrop() {
+    const currentDrops = activeEntity?.Drops || [];
+    const newDrop = { Name: blueprintDropOptions[0]?.value || '' };
+    updateField('Drops', [...currentDrops, newDrop]);
+  }
+
+  function updateDrop(index, name) {
+    const currentDrops = [...(activeEntity?.Drops || [])];
+    currentDrops[index] = { Name: name };
+    updateField('Drops', currentDrops);
+  }
+
+  function removeDrop(index) {
+    const currentDrops = [...(activeEntity?.Drops || [])];
+    currentDrops.splice(index, 1);
+    updateField('Drops', currentDrops);
+  }
 </script>
 
 <WikiSEO
-  title={blueprint?.Name || 'Blueprints'}
+  title={activeEntity?.Name || 'Blueprints'}
   description={seoDescription}
-  entityType="blueprint"
-  entity={blueprint}
+  entityType="Blueprint"
+  entity={activeEntity}
+  imageUrl={entityImageUrl}
   {canonicalUrl}
   breadcrumbs={breadcrumbs.map(b => ({ name: b.label, url: b.href }))}
 />
@@ -169,22 +341,44 @@
   {navTableColumns}
   {user}
   editable={true}
+  {canEdit}
+  {canCreateNew}
+  {userPendingCreates}
+  {userPendingUpdates}
 >
-  {#if blueprint}
+  {#if activeEntity || isCreateMode}
+    <!-- Pending Change Banner -->
+    {#if $existingPendingChange && !$editMode}
+      <PendingChangeBanner
+        pendingChange={$existingPendingChange}
+        viewing={$viewingPendingChange}
+        onToggle={() => setViewingPendingChange(!$viewingPendingChange)}
+      />
+    {/if}
     <div class="layout-a">
       <!-- Wikipedia-style floating infobox (right panel) -->
       <aside class="wiki-infobox-float">
         <!-- Entity Header -->
         <div class="infobox-header">
-          <div class="icon-placeholder">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
-              <rect x="3" y="3" width="18" height="18" rx="2" />
-            </svg>
+          <EntityImageUpload
+            entityId={activeEntity?.Id}
+            entityName={activeEntity?.Name}
+            entityType="blueprint"
+            {user}
+            isEditMode={$editMode}
+            {isCreateMode}
+          />
+          <div class="infobox-title">
+            <InlineEdit
+              value={activeEntity?.Name}
+              path="Name"
+              type="text"
+              placeholder="Blueprint Name"
+            />
           </div>
-          <div class="infobox-title">{blueprint.Name}</div>
           <div class="infobox-subtitle">
-            <span class="type-badge">{blueprint.Properties?.Type || 'Blueprint'}</span>
-            <span>Level {blueprint.Properties?.Level ?? '?'}</span>
+            <span class="type-badge">{activeEntity?.Properties?.Type || 'Blueprint'}</span>
+            <span>Level {activeEntity?.Properties?.Level ?? '?'}</span>
           </div>
         </div>
 
@@ -197,8 +391,8 @@
           <div class="stat-row primary">
             <span class="stat-label">Product</span>
             <span class="stat-value">
-              {#if blueprint.Product?.Name}
-                <a href={getItemLink(blueprint.Product)} class="tier1-link">{blueprint.Product.Name}</a>
+              {#if activeEntity?.Product?.Name}
+                <a href={getItemLink(activeEntity.Product)} class="tier1-link">{activeEntity.Product.Name}</a>
               {:else}
                 N/A
               {/if}
@@ -215,21 +409,55 @@
           </div>
           <div class="stat-row">
             <span class="stat-label">Level</span>
-            <span class="stat-value">{blueprint.Properties?.Level ?? 'N/A'}</span>
+            <span class="stat-value">
+              <InlineEdit
+                value={activeEntity?.Properties?.Level}
+                path="Properties.Level"
+                type="number"
+                min={1}
+                max={100}
+              />
+            </span>
           </div>
           <div class="stat-row">
             <span class="stat-label">Type</span>
-            <span class="stat-value">{blueprint.Properties?.Type ?? 'N/A'}</span>
+            <span class="stat-value">
+              <InlineEdit
+                value={activeEntity?.Properties?.Type}
+                path="Properties.Type"
+                type="select"
+                options={typeOptions}
+              />
+            </span>
           </div>
           <div class="stat-row">
             <span class="stat-label">Book</span>
-            <span class="stat-value">{blueprint.Book?.Name ?? 'N/A'}</span>
+            <span class="stat-value">
+              {#if $editMode}
+                <InlineEdit
+                  value={activeEntity?.Book?.Name || ''}
+                  path="Book.Name"
+                  type="select"
+                  placeholder="Select book..."
+                  options={bookOptions}
+                />
+              {:else}
+                {activeEntity?.Book?.Name ?? 'N/A'}
+              {/if}
+            </span>
           </div>
           <div class="stat-row">
             <span class="stat-label">Product</span>
             <span class="stat-value">
-              {#if blueprint.Product?.Name}
-                <a href={getItemLink(blueprint.Product)} class="item-link">{blueprint.Product.Name}</a>
+              {#if $editMode}
+                <ItemSearchInput
+                  value={activeEntity?.Product?.Name || ''}
+                  placeholder="Search product..."
+                  on:change={handleProductInput}
+                  on:select={handleProductSelect}
+                />
+              {:else if activeEntity?.Product?.Name}
+                <a href={getItemLink(activeEntity.Product)} class="item-link">{activeEntity.Product.Name}</a>
               {:else}
                 N/A
               {/if}
@@ -237,11 +465,31 @@
           </div>
           <div class="stat-row">
             <span class="stat-label">Amount</span>
-            <span class="stat-value">{blueprint.Properties?.MinimumCraftAmount ?? '?'} - {blueprint.Properties?.MaximumCraftAmount ?? '?'}</span>
+            <span class="stat-value">
+              <InlineEdit
+                value={activeEntity?.Properties?.MinimumCraftAmount}
+                path="Properties.MinimumCraftAmount"
+                type="number"
+                min={1}
+              />
+              -
+              <InlineEdit
+                value={activeEntity?.Properties?.MaximumCraftAmount}
+                path="Properties.MaximumCraftAmount"
+                type="number"
+                min={1}
+              />
+            </span>
           </div>
           <div class="stat-row">
             <span class="stat-label">Boosted</span>
-            <span class="stat-value" class:highlight-yes={blueprint.Properties?.IsBoosted}>{blueprint.Properties?.IsBoosted ? 'Yes' : 'No'}</span>
+            <span class="stat-value" class:highlight-yes={activeEntity?.Properties?.IsBoosted}>
+              <InlineEdit
+                value={activeEntity?.Properties?.IsBoosted}
+                path="Properties.IsBoosted"
+                type="checkbox"
+              />
+            </span>
           </div>
         </div>
 
@@ -250,18 +498,50 @@
           <h4 class="section-title">Skill</h4>
           <div class="stat-row">
             <span class="stat-label">SiB</span>
-            <span class="stat-value" class:highlight-yes={blueprint.Properties?.Skill?.IsSiB}>{blueprint.Properties?.Skill?.IsSiB ? 'Yes' : 'No'}</span>
+            <span class="stat-value" class:highlight-yes={activeEntity?.Properties?.Skill?.IsSiB}>
+              <InlineEdit
+                value={activeEntity?.Properties?.Skill?.IsSiB}
+                path="Properties.Skill.IsSiB"
+                type="checkbox"
+              />
+            </span>
           </div>
-          {#if blueprint.Profession?.Name}
+          {#if activeEntity?.Profession?.Name || $editMode}
             <div class="stat-row">
               <span class="stat-label">Profession</span>
               <span class="stat-value">
-                <a href={getTypeLink(blueprint.Profession.Name, 'Profession')} class="profession-link">{blueprint.Profession.Name}</a>
+                {#if $editMode}
+                  <InlineEdit
+                    value={activeEntity?.Profession?.Name || ''}
+                    path="Profession.Name"
+                    type="select"
+                    placeholder="Select profession..."
+                    options={professionOptions}
+                  />
+                {:else if activeEntity?.Profession?.Name}
+                  <a href={getTypeLink(activeEntity.Profession.Name, 'Profession')} class="profession-link">{activeEntity.Profession.Name}</a>
+                {:else}
+                  N/A
+                {/if}
               </span>
             </div>
             <div class="stat-row indent">
               <span class="stat-label">Level Range</span>
-              <span class="stat-value">{blueprint.Properties?.Skill?.LearningIntervalStart ?? '?'} - {blueprint.Properties?.Skill?.LearningIntervalEnd ?? '?'}</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.Skill?.LearningIntervalStart}
+                  path="Properties.Skill.LearningIntervalStart"
+                  type="number"
+                  min={0}
+                />
+                -
+                <InlineEdit
+                  value={activeEntity?.Properties?.Skill?.LearningIntervalEnd}
+                  path="Properties.Skill.LearningIntervalEnd"
+                  type="number"
+                  min={0}
+                />
+              </span>
             </div>
           {/if}
         </div>
@@ -269,29 +549,42 @@
 
       <!-- Main content (center) -->
       <article class="wiki-article">
-        <h1 class="article-title">{blueprint.Name}</h1>
+        <h1 class="article-title">
+          <InlineEdit
+            value={activeEntity?.Name}
+            path="Name"
+            type="text"
+            placeholder="Blueprint Name"
+          />
+        </h1>
 
         <!-- Description Panel -->
         <div class="description-panel">
-          {#if blueprint.Properties?.Description}
-            <div class="description-content">{blueprint.Properties.Description}</div>
+          {#if $editMode}
+            <RichTextEditor
+              content={activeEntity?.Properties?.Description || ''}
+              on:change={(e) => updateField('Properties.Description', e.detail)}
+              placeholder="Enter blueprint description..."
+            />
+          {:else if activeEntity?.Properties?.Description}
+            <div class="description-content">{@html sanitizeHtml(activeEntity.Properties.Description)}</div>
           {:else}
             <div class="description-content placeholder">
-              {blueprint.Name} is a level {blueprint.Properties?.Level ?? '?'} {blueprint.Properties?.Type?.toLowerCase() || ''} blueprint.
+              {activeEntity?.Name || 'This blueprint'} is a level {activeEntity?.Properties?.Level ?? '?'} {activeEntity?.Properties?.Type?.toLowerCase() || ''} blueprint.
             </div>
           {/if}
         </div>
 
         <!-- Construction Section -->
-        {#if blueprint.Materials?.length > 0}
+        {#if activeEntity?.Materials?.length > 0 || $editMode}
           <DataSection
             title="Construction"
             icon=""
             bind:expanded={panelStates.construction}
-            subtitle="{blueprint.Materials.length} materials"
+            subtitle="{activeEntity?.Materials?.length || 0} materials"
             on:toggle={savePanelStates}
           >
-            <Construction {blueprint} />
+            <BlueprintMaterials blueprint={activeEntity} availableMaterials={materials} />
           </DataSection>
         {/if}
 
@@ -306,6 +599,53 @@
             <Acquisition acquisition={additional.acquisition} />
           </DataSection>
         {/if}
+
+        <!-- Drops Section (blueprints that can drop from crafting this) -->
+        {#if (activeEntity?.Drops?.length > 0) || $editMode}
+          <DataSection
+            title="Drops"
+            icon=""
+            bind:expanded={panelStates.drops}
+            subtitle="{activeEntity?.Drops?.length || 0} blueprints"
+            on:toggle={savePanelStates}
+          >
+            {#if $editMode}
+              <div class="drops-edit-list">
+                {#each activeEntity?.Drops || [] as drop, i}
+                  <div class="drop-edit-row">
+                    <SearchableSelect
+                      value={drop.Name || ''}
+                      options={blueprintDropOptions}
+                      placeholder="Select blueprint..."
+                      on:change={(e) => updateDrop(i, e.detail.value)}
+                    />
+                    <button class="btn-remove" on:click={() => removeDrop(i)} title="Remove drop">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18" />
+                        <line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                    </button>
+                  </div>
+                {/each}
+                <button class="btn-add" on:click={addDrop}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="12" y1="5" x2="12" y2="19" />
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                  Add Drop
+                </button>
+              </div>
+            {:else}
+              <div class="drops-list">
+                {#each activeEntity?.Drops || [] as drop}
+                  <a href="/items/blueprints/{encodeURIComponentSafe(drop.Name)}" class="drop-link">
+                    {drop.Name}
+                  </a>
+                {/each}
+              </div>
+            {/if}
+          </DataSection>
+        {/if}
       </article>
     </div>
   {:else}
@@ -317,6 +657,46 @@
 </WikiPage>
 
 <style>
+  .pending-change-banner {
+    background: linear-gradient(135deg, #f59e0b22 0%, #f59e0b11 100%);
+    border: 1px solid #f59e0b44;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+  }
+
+  .banner-content {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .banner-icon {
+    font-size: 18px;
+  }
+
+  .banner-text {
+    flex: 1;
+    color: var(--text-color);
+    font-size: 14px;
+  }
+
+  .banner-toggle {
+    padding: 6px 12px;
+    font-size: 12px;
+    background: var(--accent-color);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+
+  .banner-toggle:hover {
+    opacity: 0.9;
+  }
+
   .layout-a {
     position: relative;
     width: 100%;
@@ -347,19 +727,6 @@
     text-align: center;
     padding-bottom: 12px;
     border-bottom: 1px solid var(--border-color, #555);
-  }
-
-  .icon-placeholder {
-    width: 80px;
-    height: 80px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: var(--bg-color, var(--primary-color));
-    border: 2px dashed var(--border-color, #555);
-    border-radius: 8px;
-    color: var(--text-muted, #999);
-    margin: 0 auto 12px;
   }
 
   .infobox-title {
@@ -473,6 +840,10 @@
     text-align: right;
   }
 
+  .stat-value :global(.inline-edit .edit-select) {
+    min-width: 160px;
+  }
+
   .stat-value.highlight-yes {
     color: var(--success-color, #4ade80);
   }
@@ -563,15 +934,90 @@
     .infobox-title {
       font-size: 16px;
     }
+  }
 
-    .icon-placeholder {
-      width: 60px;
-      height: 60px;
-    }
+  /* Drops section styles */
+  .drops-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
 
-    .icon-placeholder svg {
-      width: 36px;
-      height: 36px;
-    }
+  .drop-link {
+    display: block;
+    padding: 10px 14px;
+    background-color: var(--bg-color, var(--primary-color));
+    border-radius: 6px;
+    color: var(--accent-color, #4a9eff);
+    text-decoration: none;
+    font-size: 14px;
+    transition: background-color 0.15s;
+  }
+
+  .drop-link:hover {
+    background-color: var(--hover-color);
+    text-decoration: underline;
+  }
+
+  .drops-edit-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .drop-edit-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    background-color: var(--bg-color, var(--primary-color));
+    border-radius: 6px;
+  }
+
+  .drop-edit-row :global(.searchable-select) {
+    flex: 1;
+  }
+
+  .btn-remove {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    background-color: transparent;
+    border: 1px solid var(--border-color, #555);
+    border-radius: 4px;
+    color: var(--error-color, #ff6b6b);
+    cursor: pointer;
+    transition: all 0.15s;
+    flex-shrink: 0;
+  }
+
+  .btn-remove:hover {
+    background-color: var(--error-color, #ff6b6b);
+    color: white;
+    border-color: var(--error-color, #ff6b6b);
+  }
+
+  .btn-add {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 10px 14px;
+    background-color: transparent;
+    border: 1px dashed var(--border-color, #555);
+    border-radius: 6px;
+    color: var(--text-muted, #999);
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .btn-add:hover {
+    background-color: var(--hover-color);
+    color: var(--accent-color, #4a9eff);
+    border-color: var(--accent-color, #4a9eff);
   }
 </style>

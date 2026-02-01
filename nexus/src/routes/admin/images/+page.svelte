@@ -1,6 +1,7 @@
 <script>
   // @ts-nocheck
   import { enhance } from '$app/forms';
+  import { encodeURIComponentSafe } from '$lib/util';
 
   export let data;
   export let form;
@@ -17,19 +18,30 @@
     return date.toLocaleString();
   }
 
-  function getEntityLink(entityType, entityId) {
-    const typeMap = {
-      'weapon': '/items/weapons',
-      'mob': '/information/mobs',
-      'armorset': '/items/armorsets',
-      'material': '/items/materials',
-      'blueprint': '/items/blueprints',
-      'skill': '/information/skills',
-      'profession': '/information/professions',
-      'vendor': '/information/vendors'
-    };
-    const basePath = typeMap[entityType.toLowerCase()] || `/items/${entityType.toLowerCase()}s`;
-    return `${basePath}/${entityId}`;
+  // Map entity type to URL base path
+  const ENTITY_TYPE_PATHS = {
+    'weapon': '/items/weapons',
+    'mob': '/information/mobs-wiki',
+    'armorset': '/items/armorsets',
+    'material': '/items/materials',
+    'blueprint': '/items/blueprints',
+    'skill': '/information/skills',
+    'profession': '/information/professions',
+    'vendor': '/information/vendors',
+    'clothing': '/items/clothing',
+    'consumable': '/items/consumables',
+    'tool': '/items/tools',
+    'attachment': '/items/attachments',
+    'medicaltool': '/items/medicaltools',
+    'vehicle': '/items/vehicles',
+    'pet': '/items/pets',
+    'furnishing': '/items/furnishings',
+    'strongbox': '/items/strongboxes'
+  };
+
+  function getEntityLink(entityType, entityName) {
+    const basePath = ENTITY_TYPE_PATHS[entityType.toLowerCase()] || `/items/${entityType.toLowerCase()}s`;
+    return `${basePath}/${encodeURIComponentSafe(entityName)}`;
   }
 
   function confirmDelete(event) {
@@ -60,7 +72,7 @@
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <circle cx="12" cy="12" r="10"/>
         <line x1="12" y1="8" x2="12" y2="12"/>
-        <line x1="12" y1="16" x2="12.01" y2="16"/>
+        <circle cx="12" cy="16" r="1" fill="currentColor"/>
       </svg>
       {form.error}
     </div>
@@ -122,14 +134,18 @@
 
             <div class="image-info">
               <div class="info-row">
-                <span class="label">Type:</span>
-                <span class="value">{image.entityType}</span>
+                <span class="label">Entity:</span>
+                <a href={getEntityLink(image.entityType, image.entityName)} class="value link entity-link">
+                  {image.entityName}
+                </a>
               </div>
               <div class="info-row">
-                <span class="label">Entity ID:</span>
-                <a href={getEntityLink(image.entityType, image.entityId)} class="value link">
-                  {image.entityId}
-                </a>
+                <span class="label">Type:</span>
+                <span class="value type-value">{image.entityType}</span>
+              </div>
+              <div class="info-row">
+                <span class="label">Uploaded by:</span>
+                <span class="value">{image.uploaderName}</span>
               </div>
               <div class="info-row">
                 <span class="label">Uploaded:</span>
@@ -189,14 +205,14 @@
 
             <div class="image-info">
               <div class="info-row">
-                <span class="label">Type:</span>
-                <span class="value">{image.entityType}</span>
+                <span class="label">Entity:</span>
+                <a href={getEntityLink(image.entityType, image.entityName)} class="value link entity-link">
+                  {image.entityName}
+                </a>
               </div>
               <div class="info-row">
-                <span class="label">Entity ID:</span>
-                <a href={getEntityLink(image.entityType, image.entityId)} class="value link">
-                  {image.entityId}
-                </a>
+                <span class="label">Type:</span>
+                <span class="value type-value">{image.entityType}</span>
               </div>
               {#if image.approvedAt}
                 <div class="info-row">
@@ -428,6 +444,18 @@
 
   .value.link:hover {
     text-decoration: underline;
+  }
+
+  .value.entity-link {
+    font-weight: 600;
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .value.type-value {
+    text-transform: capitalize;
   }
 
   .image-actions {

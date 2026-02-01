@@ -16,6 +16,44 @@ if (import.meta.env.SSR) {
 }
 
 const IMPERSONATE_COOKIE = 'nexus_impersonate';
+const VIEWPORT_COOKIE = 'nexus_viewport';
+
+// Mobile breakpoint - aligned with global 900px mobile breakpoint (see style.css)
+const MOBILE_BREAKPOINT = 900;
+const DEFAULT_DESKTOP_WIDTH = 1200;
+const DEFAULT_MOBILE_WIDTH = 375;
+
+/**
+ * Detect if User-Agent indicates a mobile device
+ * @param {string} userAgent
+ * @returns {boolean}
+ */
+function isMobileUserAgent(userAgent) {
+  if (!userAgent) return false;
+  // Match common mobile device patterns
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile|mobile|CriOS/i.test(userAgent);
+}
+
+/**
+ * Get initial viewport width based on User-Agent and stored cookie
+ * @param {Request} request
+ * @param {import('@sveltejs/kit').Cookies} cookies
+ * @returns {number}
+ */
+function getInitialViewportWidth(request, cookies) {
+  // First, check if we have a stored viewport width from a previous visit
+  const storedViewport = cookies.get(VIEWPORT_COOKIE);
+  if (storedViewport) {
+    const width = parseInt(storedViewport, 10);
+    if (!isNaN(width) && width > 0 && width < 10000) {
+      return width;
+    }
+  }
+
+  // Fall back to User-Agent detection
+  const userAgent = request.headers.get('user-agent') || '';
+  return isMobileUserAgent(userAgent) ? DEFAULT_MOBILE_WIDTH : DEFAULT_DESKTOP_WIDTH;
+}
 
 // Session cookie duration: 30 days (refresh will keep it alive)
 const SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 30; // 30 days
@@ -30,6 +68,10 @@ export async function handle({ event, resolve }) {
   let sessionId = event.cookies.get(import.meta.env.VITE_SESSION_COOKIE_NAME);
 
   let session = await getSessionObject(sessionId);
+
+  // Detect initial viewport width from User-Agent or stored cookie
+  const initialViewportWidth = getInitialViewportWidth(event.request, event.cookies);
+  const isMobileDevice = initialViewportWidth < MOBILE_BREAKPOINT;
 
   // Check if user is banned
   if (session.user) {
@@ -91,7 +133,9 @@ export async function handle({ event, resolve }) {
     ...event,
     locals: {
       ...event.locals,
-      session
+      session,
+      initialViewportWidth,
+      isMobileDevice
     }
   });
 

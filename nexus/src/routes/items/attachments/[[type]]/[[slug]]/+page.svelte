@@ -3,29 +3,64 @@
   Wikipedia-style layout with floating infobox on the right side.
   Handles 7 subtypes: weaponamplifiers, weaponvisionattachments, absorbers,
   finderamplifiers, armorplatings, enhancers, mindforceimplants
-
-  Legacy editConfig preserved in attachments-legacy/+page.svelte
+  Supports full wiki editing (except enhancers, which are database-generated).
 -->
 <script>
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { clampDecimals, encodeURIComponentSafe, getTypeLink } from '$lib/util';
+  import { sanitizeHtml } from '$lib/sanitize';
 
   // Wiki components
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
+  import PendingChangeBanner from '$lib/components/wiki/PendingChangeBanner.svelte';
   import WikiSEO from '$lib/components/wiki/WikiSEO.svelte';
   import DataSection from '$lib/components/wiki/DataSection.svelte';
+  import InlineEdit from '$lib/components/wiki/InlineEdit.svelte';
+  import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
+  import DamageBreakdownGrid from '$lib/components/wiki/DamageBreakdownGrid.svelte';
+  import DefenseGridEdit from '$lib/components/wiki/DefenseGridEdit.svelte';
+  import EffectsEditor from '$lib/components/wiki/EffectsEditor.svelte';
+
+  // Wiki edit state
+  import {
+    editMode,
+    isCreateMode as createModeStore,
+    initEditState,
+    resetEditState,
+    currentEntity,
+    existingPendingChange,
+    viewingPendingChange,
+    setExistingPendingChange,
+    setViewingPendingChange,
+    updateField,
+    changeMetadata
+  } from '$lib/stores/wikiEditState';
 
   // Legacy components for data display
   import Acquisition from '$lib/components/Acquisition.svelte';
+
+  // Image upload
+  import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
 
   export let data;
 
   $: attachment = data.object;
   $: user = data.session?.user;
   $: additional = data.additional || {};
+  $: pendingChange = data.pendingChange;
+  $: existingChange = data.existingChange;
+  $: isCreateMode = data.isCreateMode || false;
+  $: canCreateNew = data.canCreateNew ?? true;
+  $: userPendingCreates = data.userPendingCreates || [];
+  $: userPendingUpdates = data.userPendingUpdates || [];
+  $: effectsList = data.effects || [];
+
+  // Permission check - verified users and admins can edit
+  // Enhancers are generated in the database and should not be editable
+  $: canEdit = (user?.verified || user?.isAdmin) && additional.type !== 'enhancers';
 
   // For multi-type pages, data.items is an object keyed by type
   $: allItems = (() => {
@@ -81,6 +116,94 @@
       default: return null;
     }
   }
+
+  // Empty entity template for create mode (type-specific)
+  function getEmptyEntity(type) {
+    const base = {
+      Name: '',
+      Properties: {
+        Description: '',
+        Weight: 0,
+        Economy: {
+          MaxTT: 0,
+          MinTT: 0
+        }
+      },
+      EffectsOnEquip: []
+    };
+
+    switch (type) {
+      case 'weaponamplifiers':
+        base.Properties.Type = '';
+        base.Properties.Economy.Decay = 0;
+        base.Properties.Economy.AmmoBurn = 0;
+        base.Properties.Economy.Efficiency = 0;
+        base.Properties.Damage = {
+          Impact: 0, Cut: 0, Stab: 0, Penetration: 0,
+          Shrapnel: 0, Burn: 0, Cold: 0, Acid: 0, Electric: 0
+        };
+        break;
+      case 'weaponvisionattachments':
+        base.Properties.Zoom = 0;
+        base.Properties.Economy.Decay = 0;
+        base.Properties.Economy.Efficiency = 0;
+        base.Properties.SkillModification = 0;
+        base.Properties.SkillBonus = 0;
+        break;
+      case 'absorbers':
+        base.Properties.Economy.Efficiency = 0;
+        base.Properties.Economy.Absorption = 0;
+        break;
+      case 'finderamplifiers':
+        base.Properties.Efficiency = 0;
+        base.Properties.Economy.Decay = 0;
+        base.Properties.MinProfessionLevel = 0;
+        break;
+      case 'armorplatings':
+        base.Properties.Economy.Durability = 0;
+        base.Properties.Defense = {
+          Block: 0, Impact: 0, Cut: 0, Stab: 0, Penetration: 0,
+          Shrapnel: 0, Burn: 0, Cold: 0, Acid: 0, Electric: 0
+        };
+        break;
+      case 'enhancers':
+        base.Properties.Tool = '';
+        base.Properties.Type = '';
+        base.Properties.Socket = 0;
+        break;
+      case 'mindforceimplants':
+        base.Properties.Economy.Absorption = 0;
+        base.Properties.MaxProfessionLevel = 0;
+        break;
+    }
+
+    return base;
+  }
+
+  // ========== WIKI EDIT STATE ==========
+  // Initialize edit state when user/entity changes
+  $: if (user) {
+    const entityType = getEntityType(additional.type);
+    const emptyEntity = getEmptyEntity(additional.type);
+    initEditState(attachment || emptyEntity, entityType, isCreateMode, existingChange);
+  }
+
+  // Set pending change when it exists
+  $: if (pendingChange) {
+    setExistingPendingChange(pendingChange);
+  }
+
+  // Active entity: in edit mode use currentEntity, when viewing pending use its data, otherwise use original
+  $: activeEntity = $editMode
+    ? $currentEntity
+    : $viewingPendingChange && $existingPendingChange?.data
+      ? $existingPendingChange.data
+      : attachment;
+
+  // Cleanup on destroy
+  onDestroy(() => {
+    resetEditState();
+  });
 
   // Build navigation items
   $: navItems = allItems;
@@ -169,6 +292,11 @@
     ? `https://entropianexus.com/items/attachments/${additional.type}`
     : 'https://entropianexus.com/items/attachments';
 
+  // Image URL for SEO
+  $: entityImageUrl = attachment?.Id && additional.type
+    ? `/api/img/${getEntityType(additional.type).toLowerCase()}/${attachment.Id}`
+    : null;
+
   // ========== CALCULATION FUNCTIONS ==========
   function getCost(item) {
     if (!item?.Properties?.Economy) return null;
@@ -248,22 +376,30 @@
     return effects[key] || null;
   }
 
-  // ========== COMPUTED VALUES ==========
-  $: cost = getCost(attachment);
-  $: totalUses = getTotalUses(attachment);
-  $: totalDamage = getTotalDamage(attachment);
-  $: dpp = getDPP(attachment);
-  $: totalDefense = getTotalDefense(attachment);
-  $: maxArmorDecay = getMaxArmorDecay(attachment);
-  $: totalAbsorptionVal = getTotalAbsorption(attachment);
-  $: enhancerEffect = getEnhancerEffect(attachment);
+  // ========== COMPUTED VALUES ========== (use activeEntity for live updates)
+  $: cost = getCost(activeEntity);
+  $: totalUses = getTotalUses(activeEntity);
+  $: totalDamage = getTotalDamage(activeEntity);
+  $: dpp = getDPP(activeEntity);
+  $: totalDefense = getTotalDefense(activeEntity);
+  $: maxArmorDecay = getMaxArmorDecay(activeEntity);
+  $: totalAbsorptionVal = getTotalAbsorption(activeEntity);
+  $: enhancerEffect = getEnhancerEffect(activeEntity);
 
   // Check for effects
-  $: hasEquipEffects = attachment?.EffectsOnEquip?.length > 0;
+  $: hasEquipEffects = activeEntity?.EffectsOnEquip?.length > 0;
 
   // Damage types with values for display
   const damageTypes = ['Impact', 'Cut', 'Stab', 'Penetration', 'Shrapnel', 'Burn', 'Cold', 'Acid', 'Electric'];
   const defenseTypes = ['Block', 'Impact', 'Cut', 'Stab', 'Penetration', 'Shrapnel', 'Burn', 'Cold', 'Acid', 'Electric'];
+  const platingDefenseTypes = ['Impact', 'Cut', 'Stab', 'Penetration', 'Shrapnel', 'Burn', 'Cold', 'Acid', 'Electric'];
+  const amplifierTypeOptions = [
+    { value: 'Energy', label: 'Energy' },
+    { value: 'BLP', label: 'BLP' },
+    { value: 'Melee', label: 'Melee' },
+    { value: 'Matrix', label: 'Matrix' },
+    { value: 'Mindforce', label: 'Mindforce' }
+  ];
 
   // ========== PANEL STATE PERSISTENCE ==========
   let panelStates = {
@@ -293,6 +429,7 @@
   description={seoDescription}
   entityType={getEntityType(additional.type)}
   entity={attachment}
+  imageUrl={entityImageUrl}
   {canonicalUrl}
   breadcrumbs={breadcrumbs.map(b => ({ name: b.label, url: b.href }))}
 />
@@ -309,19 +446,41 @@
   navGetItemHref={getItemHref}
   {user}
   editable={true}
+  canEdit={canEdit && !!additional.type}
+  {canCreateNew}
+  {userPendingCreates}
+  {userPendingUpdates}
 >
-  {#if attachment}
+  {#if attachment || isCreateMode}
+    <!-- Pending Change Banner -->
+    {#if $existingPendingChange && !$editMode}
+      <PendingChangeBanner
+        pendingChange={$existingPendingChange}
+        viewing={$viewingPendingChange}
+        onToggle={() => setViewingPendingChange(!$viewingPendingChange)}
+      />
+    {/if}
     <div class="layout-a">
       <!-- Wikipedia-style floating infobox (right panel) -->
       <aside class="wiki-infobox-float">
         <!-- Entity Header -->
         <div class="infobox-header">
-          <div class="icon-placeholder">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
-              <rect x="3" y="3" width="18" height="18" rx="2" />
-            </svg>
+          <EntityImageUpload
+            entityId={activeEntity?.Id}
+            entityName={activeEntity?.Name}
+            entityType={getEntityType(additional.type)?.toLowerCase()}
+            {user}
+            isEditMode={$editMode}
+            {isCreateMode}
+          />
+          <div class="infobox-title">
+            <InlineEdit
+              value={activeEntity?.Name}
+              path="Name"
+              type="text"
+              placeholder="Enter name..."
+            />
           </div>
-          <div class="infobox-title">{attachment.Name}</div>
           <div class="infobox-subtitle">
             <span class="type-badge">{getTypeName(additional.type)}</span>
           </div>
@@ -333,7 +492,7 @@
           {#if additional.type === 'weaponamplifiers'}
             <div class="stat-row primary">
               <span class="stat-label">Efficiency</span>
-              <span class="stat-value">{attachment.Properties?.Economy?.Efficiency != null ? `${attachment.Properties.Economy.Efficiency.toFixed(1)}%` : 'N/A'}</span>
+              <span class="stat-value">{activeEntity?.Properties?.Economy?.Efficiency != null ? `${activeEntity.Properties.Economy.Efficiency.toFixed(1)}%` : 'N/A'}</span>
             </div>
             <div class="stat-row primary">
               <span class="stat-label">Total Damage</span>
@@ -348,44 +507,44 @@
           {:else if additional.type === 'weaponvisionattachments'}
             <div class="stat-row primary">
               <span class="stat-label">Efficiency</span>
-              <span class="stat-value">{attachment.Properties?.Economy?.Efficiency != null ? `${attachment.Properties.Economy.Efficiency.toFixed(1)}%` : 'N/A'}</span>
+              <span class="stat-value">{activeEntity?.Properties?.Economy?.Efficiency != null ? `${activeEntity.Properties.Economy.Efficiency.toFixed(1)}%` : 'N/A'}</span>
             </div>
             <div class="stat-row primary">
               <span class="stat-label">Zoom</span>
-              <span class="stat-value">{attachment.Properties?.Zoom != null ? `${attachment.Properties.Zoom.toFixed(1)}x` : 'N/A'}</span>
+              <span class="stat-value">{activeEntity?.Properties?.Zoom != null ? `${activeEntity.Properties.Zoom.toFixed(1)}x` : 'N/A'}</span>
             </div>
 
           <!-- Absorbers: Efficiency, Absorption -->
           {:else if additional.type === 'absorbers'}
             <div class="stat-row primary">
               <span class="stat-label">Efficiency</span>
-              <span class="stat-value">{attachment.Properties?.Economy?.Efficiency != null ? `${attachment.Properties.Economy.Efficiency.toFixed(1)}%` : 'N/A'}</span>
+              <span class="stat-value">{activeEntity?.Properties?.Economy?.Efficiency != null ? `${activeEntity.Properties.Economy.Efficiency.toFixed(1)}%` : 'N/A'}</span>
             </div>
             <div class="stat-row primary">
               <span class="stat-label">Absorption</span>
-              <span class="stat-value">{attachment.Properties?.Economy?.Absorption != null ? `${clampDecimals(attachment.Properties.Economy.Absorption * 100, 0, 2)}%` : 'N/A'}</span>
+              <span class="stat-value">{activeEntity?.Properties?.Economy?.Absorption != null ? `${clampDecimals(activeEntity.Properties.Economy.Absorption * 100, 0, 2)}%` : 'N/A'}</span>
             </div>
 
           <!-- Mindforce implants: TT, Absorption -->
           {:else if additional.type === 'mindforceimplants'}
             <div class="stat-row primary">
               <span class="stat-label">TT Value</span>
-              <span class="stat-value">{attachment.Properties?.Economy?.MaxTT != null ? `${clampDecimals(attachment.Properties.Economy.MaxTT, 2, 4)} PED` : 'N/A'}</span>
+              <span class="stat-value">{activeEntity?.Properties?.Economy?.MaxTT != null ? `${clampDecimals(activeEntity.Properties.Economy.MaxTT, 2, 4)} PED` : 'N/A'}</span>
             </div>
             <div class="stat-row primary">
               <span class="stat-label">Absorption</span>
-              <span class="stat-value">{attachment.Properties?.Economy?.Absorption != null ? `${clampDecimals(attachment.Properties.Economy.Absorption * 100, 0, 2)}%` : 'N/A'}</span>
+              <span class="stat-value">{activeEntity?.Properties?.Economy?.Absorption != null ? `${clampDecimals(activeEntity.Properties.Economy.Absorption * 100, 0, 2)}%` : 'N/A'}</span>
             </div>
 
           <!-- Finder amplifiers: Efficiency, Decay -->
           {:else if additional.type === 'finderamplifiers'}
             <div class="stat-row primary">
               <span class="stat-label">Efficiency</span>
-              <span class="stat-value">{attachment.Properties?.Efficiency != null ? attachment.Properties.Efficiency.toFixed(1) : 'N/A'}</span>
+              <span class="stat-value">{activeEntity?.Properties?.Efficiency != null ? activeEntity.Properties.Efficiency.toFixed(1) : 'N/A'}</span>
             </div>
             <div class="stat-row primary">
               <span class="stat-label">Decay</span>
-              <span class="stat-value">{attachment.Properties?.Economy?.Decay != null ? `${attachment.Properties.Economy.Decay.toFixed(4)} PEC` : 'N/A'}</span>
+              <span class="stat-value">{activeEntity?.Properties?.Economy?.Decay != null ? `${activeEntity.Properties.Economy.Decay.toFixed(4)} PEC` : 'N/A'}</span>
             </div>
 
           <!-- Armor platings: Total Defense, Durability -->
@@ -396,125 +555,200 @@
             </div>
             <div class="stat-row primary">
               <span class="stat-label">Durability</span>
-              <span class="stat-value">{attachment.Properties?.Economy?.Durability ?? 'N/A'}</span>
+              <span class="stat-value">{activeEntity?.Properties?.Economy?.Durability ?? 'N/A'}</span>
             </div>
 
           <!-- Enhancers: Tool, Type -->
           {:else if additional.type === 'enhancers'}
             <div class="stat-row primary">
               <span class="stat-label">Tool</span>
-              <span class="stat-value">{attachment.Properties?.Tool || 'N/A'}</span>
+              <span class="stat-value">{activeEntity?.Properties?.Tool || 'N/A'}</span>
             </div>
             <div class="stat-row primary">
               <span class="stat-label">Type</span>
-              <span class="stat-value">{attachment.Properties?.Type || 'N/A'}</span>
+              <span class="stat-value">{activeEntity?.Properties?.Type || 'N/A'}</span>
             </div>
           {/if}
         </div>
-
-        <!-- Damage Grid in Infobox (weapon amplifiers only) -->
-        {#if additional.type === 'weaponamplifiers' && totalDamage > 0}
-          <div class="stats-section">
-            <h4 class="section-title">Damage</h4>
-            <div class="infobox-damage-grid">
-              {#each damageTypes as dtype}
-                {#if attachment.Properties?.Damage?.[dtype] > 0}
-                  <div class="mini-damage-item">
-                    <span class="mini-damage-label">{dtype}</span>
-                    <span class="mini-damage-value">{attachment.Properties.Damage[dtype].toFixed(1)}</span>
-                  </div>
-                {/if}
-              {/each}
-            </div>
-          </div>
-        {/if}
-
-        <!-- Defense Grid in Infobox (armor platings only) -->
-        {#if additional.type === 'armorplatings' && totalDefense > 0}
-          <div class="stats-section">
-            <h4 class="section-title">Defense</h4>
-            <div class="infobox-defense-grid">
-              {#if attachment.Properties?.Defense?.Block > 0}
-                <div class="mini-defense-item block">
-                  <span class="mini-defense-label">Block</span>
-                  <span class="mini-defense-value">{attachment.Properties.Defense.Block.toFixed(1)}%</span>
-                </div>
-              {/if}
-              {#each defenseTypes.slice(1) as dtype}
-                {#if attachment.Properties?.Defense?.[dtype] > 0}
-                  <div class="mini-defense-item">
-                    <span class="mini-defense-label">{dtype}</span>
-                    <span class="mini-defense-value">{attachment.Properties.Defense[dtype].toFixed(1)}</span>
-                  </div>
-                {/if}
-              {/each}
-            </div>
-            <!-- Total Defense Full-Width Box -->
-            <div class="defense-total-box">
-              <span class="defense-total-label">Total Defense</span>
-              <span class="defense-total-value">{totalDefense.toFixed(1)}</span>
-            </div>
-          </div>
-        {/if}
 
         <!-- General Stats -->
         <div class="stats-section">
           <h4 class="section-title">General</h4>
           <div class="stat-row">
             <span class="stat-label">Weight</span>
-            <span class="stat-value">{attachment.Properties?.Weight != null ? `${clampDecimals(attachment.Properties.Weight, 1, 6)}kg` : 'N/A'}</span>
-          </div>
+            <span class="stat-value">
+              <InlineEdit
+                value={activeEntity?.Properties?.Weight}
+                path="Properties.Weight"
+                type="number"
+                suffix="kg"
+                step={0.01}
+              />
+              </span>
+            </div>
 
           {#if additional.type === 'weaponamplifiers'}
             <div class="stat-row">
               <span class="stat-label">Amplifier Type</span>
-              <span class="stat-value">{attachment.Properties?.Type || 'N/A'}</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.Type}
+                  path="Properties.Type"
+                  type="select"
+                  options={amplifierTypeOptions}
+                />
+              </span>
             </div>
-          {:else if additional.type === 'finderamplifiers'}
+          {:else if additional.type === 'absorbers'}
             <div class="stat-row">
-              <span class="stat-label">Min. Profession Level</span>
-              <span class="stat-value">{attachment.Properties?.MinProfessionLevel ?? 'N/A'}</span>
+              <span class="stat-label">Absorption</span>
+              <span class="stat-value">
+                {#if $editMode}
+                  <span class="inline-edit editable">
+                    <span class="edit-wrapper">
+                      <input
+                        type="number"
+                        class="edit-input"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                        value={activeEntity?.Properties?.Economy?.Absorption != null
+                          ? (activeEntity.Properties.Economy.Absorption * 100).toFixed(1)
+                          : ''}
+                        on:input={(e) => {
+                          const value = e.target.value === '' ? null : parseFloat(e.target.value) / 100;
+                          updateField('Properties.Economy.Absorption', value);
+                        }}
+                      />
+                      <span class="suffix">%</span>
+                    </span>
+                  </span>
+                {:else}
+                  {activeEntity?.Properties?.Economy?.Absorption != null
+                    ? `${clampDecimals(activeEntity.Properties.Economy.Absorption * 100, 0, 2)}%`
+                    : 'N/A'}
+                {/if}
+              </span>
             </div>
           {:else if additional.type === 'enhancers'}
             <div class="stat-row">
               <span class="stat-label">Socket</span>
-              <span class="stat-value">{attachment.Properties?.Socket ?? 'N/A'}</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.Socket}
+                  path="Properties.Socket"
+                  type="number"
+                />
+              </span>
             </div>
           {:else if additional.type === 'mindforceimplants'}
             <div class="stat-row">
               <span class="stat-label">Max. Profession Level</span>
-              <span class="stat-value">{attachment.Properties?.MaxProfessionLevel ?? 'N/A'}</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.MaxProfessionLevel}
+                  path="Properties.MaxProfessionLevel"
+                  type="number"
+                />
+              </span>
             </div>
           {/if}
         </div>
+
+        <!-- Damage Grid in Infobox (weapon amplifiers only) -->
+        {#if additional.type === 'weaponamplifiers' && (totalDamage > 0 || $editMode)}
+          <div class="stats-section damage-section">
+            <h4 class="section-title">Damage Breakdown</h4>
+            <DamageBreakdownGrid weapon={activeEntity} />
+          </div>
+        {/if}
+
+        <!-- Defense Grid in Infobox (armor platings only) -->
+        {#if additional.type === 'armorplatings' && (totalDefense > 0 || $editMode)}
+          <div class="stats-section defense-section">
+            <h4 class="section-title">Defense</h4>
+            <DefenseGridEdit
+              defense={activeEntity?.Properties?.Defense || {}}
+              fieldPath="Properties.Defense"
+              title="Total Defense"
+              types={platingDefenseTypes}
+            />
+          </div>
+        {/if}
 
         <!-- Economy Stats -->
         <div class="stats-section">
           <h4 class="section-title">Economy</h4>
 
+          {#if additional.type === 'absorbers'}
+            <div class="stat-row">
+              <span class="stat-label">Efficiency</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.Economy?.Efficiency}
+                  path="Properties.Economy.Efficiency"
+                  type="number"
+                  suffix="%"
+                  min={0}
+                  step={0.1}
+                />
+              </span>
+            </div>
+          {/if}
+
           <div class="stat-row">
             <span class="stat-label">Max. TT</span>
-            <span class="stat-value">{attachment.Properties?.Economy?.MaxTT != null ? `${clampDecimals(attachment.Properties.Economy.MaxTT, 2, 8)} PED` : 'N/A'}</span>
+            <span class="stat-value">
+              <InlineEdit
+                value={activeEntity?.Properties?.Economy?.MaxTT}
+                path="Properties.Economy.MaxTT"
+                type="number"
+                suffix=" PED"
+                step={0.01}
+              />
+            </span>
           </div>
 
           {#if additional.type !== 'enhancers'}
             <div class="stat-row">
               <span class="stat-label">Min. TT</span>
-              <span class="stat-value">{attachment.Properties?.Economy?.MinTT != null ? `${clampDecimals(attachment.Properties.Economy.MinTT, 2, 8)} PED` : 'N/A'}</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.Economy?.MinTT}
+                  path="Properties.Economy.MinTT"
+                  type="number"
+                  suffix=" PED"
+                  step={0.01}
+                />
+              </span>
             </div>
           {/if}
 
           {#if additional.type === 'weaponamplifiers' || additional.type === 'weaponvisionattachments'}
             <div class="stat-row">
               <span class="stat-label">Decay</span>
-              <span class="stat-value">{attachment.Properties?.Economy?.Decay != null ? `${attachment.Properties.Economy.Decay.toFixed(4)} PEC` : 'N/A'}</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.Economy?.Decay}
+                  path="Properties.Economy.Decay"
+                  type="number"
+                  suffix=" PEC"
+                  step={0.0001}
+                />
+              </span>
             </div>
           {/if}
 
           {#if additional.type === 'weaponamplifiers'}
             <div class="stat-row">
               <span class="stat-label">Ammo Burn</span>
-              <span class="stat-value">{attachment.Properties?.Economy?.AmmoBurn ?? 'N/A'}</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.Economy?.AmmoBurn}
+                  path="Properties.Economy.AmmoBurn"
+                  type="number"
+                />
+              </span>
             </div>
             <div class="stat-row">
               <span class="stat-label">Cost</span>
@@ -523,6 +757,18 @@
           {/if}
 
           {#if additional.type === 'armorplatings'}
+            <div class="stat-row">
+              <span class="stat-label">Durability</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.Economy?.Durability}
+                  path="Properties.Economy.Durability"
+                  type="number"
+                  min={0}
+                  step={1}
+                />
+              </span>
+            </div>
             <div class="stat-row">
               <span class="stat-label">Max. Decay</span>
               <span class="stat-value">{maxArmorDecay != null ? `${maxArmorDecay.toFixed(4)} PEC` : 'N/A'}</span>
@@ -550,11 +796,26 @@
             <h4 class="section-title">Skill</h4>
             <div class="stat-row">
               <span class="stat-label">Skill Modification</span>
-              <span class="stat-value">{attachment.Properties?.SkillModification != null ? `${attachment.Properties.SkillModification}%` : 'N/A'}</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.SkillModification}
+                  path="Properties.SkillModification"
+                  type="number"
+                  suffix="%"
+                />
+              </span>
             </div>
             <div class="stat-row">
               <span class="stat-label">Skill Bonus</span>
-              <span class="stat-value">{attachment.Properties?.SkillBonus != null ? `${attachment.Properties.SkillBonus.toFixed(1)}%` : 'N/A'}</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.SkillBonus}
+                  path="Properties.SkillBonus"
+                  type="number"
+                  suffix="%"
+                  step={0.1}
+                />
+              </span>
             </div>
           </div>
         {:else if additional.type === 'finderamplifiers'}
@@ -566,6 +827,16 @@
                 <a href={getTypeLink('Prospector', 'Profession')} class="entity-link">Prospector</a>,
                 <a href={getTypeLink('Surveyor', 'Profession')} class="entity-link">Surveyor</a>,
                 <a href={getTypeLink('Treasure Hunter', 'Profession')} class="entity-link">Treasure Hunter</a>
+              </span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Min. Profession Level</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.MinProfessionLevel}
+                  path="Properties.MinProfessionLevel"
+                  type="number"
+                />
               </span>
             </div>
           </div>
@@ -580,58 +851,54 @@
         {/if}
 
         <!-- Effects on Equip -->
-        {#if hasEquipEffects}
+        {#if hasEquipEffects || $editMode}
           <div class="stats-section effects-section">
             <h4 class="section-title">Effects on Equip</h4>
-            {#each attachment.EffectsOnEquip.sort((a,b) => a.Name.localeCompare(b.Name)) as effect}
-              <div class="stat-row">
-                <span class="stat-label">{effect.Name}</span>
-                <span class="stat-value effect-value">{effect.Values.Strength}{effect.Values.Unit}</span>
-              </div>
-            {/each}
+            {#if $editMode}
+              <EffectsEditor
+                effects={activeEntity?.EffectsOnEquip || []}
+                fieldName="EffectsOnEquip"
+                availableEffects={effectsList}
+              />
+            {:else}
+              {#each activeEntity.EffectsOnEquip.sort((a,b) => a.Name.localeCompare(b.Name)) as effect}
+                <div class="stat-row">
+                  <span class="stat-label">{effect.Name}</span>
+                  <span class="stat-value effect-value">{effect.Values.Strength}{effect.Values.Unit}</span>
+                </div>
+              {/each}
+            {/if}
           </div>
         {/if}
       </aside>
 
       <!-- Main content (center) -->
       <article class="wiki-article">
-        <h1 class="article-title">{attachment.Name}</h1>
+        <h1 class="article-title">
+          <InlineEdit
+            value={activeEntity?.Name}
+            path="Name"
+            type="text"
+            placeholder="Enter name..."
+          />
+        </h1>
 
         <!-- Description Panel -->
         <div class="description-panel">
-          {#if attachment.Properties?.Description}
-            <div class="description-content">{attachment.Properties.Description}</div>
+          {#if $editMode}
+            <RichTextEditor
+              content={activeEntity?.Properties?.Description || ''}
+              on:change={(e) => updateField('Properties.Description', e.detail)}
+              placeholder="Enter a description for this {getTypeName(additional.type).toLowerCase()}..."
+            />
+          {:else if activeEntity?.Properties?.Description}
+            <div class="description-content">{@html sanitizeHtml(activeEntity.Properties.Description)}</div>
           {:else}
             <div class="description-content placeholder">
-              {attachment.Name} is a {getTypeName(additional.type).toLowerCase()} used in Entropia Universe.
+              {activeEntity?.Name || 'This attachment'} is a {getTypeName(additional.type).toLowerCase()} used in Entropia Universe.
             </div>
           {/if}
         </div>
-
-        <!-- Damage Section (weapon amplifiers only) -->
-        {#if additional.type === 'weaponamplifiers' && totalDamage > 0}
-          <DataSection
-            title="Damage"
-            icon=""
-            bind:expanded={panelStates.damage}
-            on:toggle={savePanelStates}
-          >
-            <div class="damage-grid">
-              {#each damageTypes as dtype}
-                {#if attachment.Properties?.Damage?.[dtype] > 0}
-                  <div class="damage-item">
-                    <span class="damage-label">{dtype}</span>
-                    <span class="damage-value">{attachment.Properties.Damage[dtype].toFixed(1)}</span>
-                  </div>
-                {/if}
-              {/each}
-              <div class="damage-item total">
-                <span class="damage-label">Total</span>
-                <span class="damage-value">{totalDamage.toFixed(1)}</span>
-              </div>
-            </div>
-          </DataSection>
-        {/if}
 
         <!-- Acquisition Section -->
         {#if additional.acquisition}
@@ -655,6 +922,48 @@
 </WikiPage>
 
 <style>
+  /* Pending change banner */
+  .pending-change-banner {
+    background: linear-gradient(135deg, #f59e0b20, #f59e0b10);
+    border: 1px solid #f59e0b;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+  }
+
+  .banner-content {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .banner-icon {
+    font-size: 18px;
+  }
+
+  .banner-text {
+    flex: 1;
+    font-size: 14px;
+    color: var(--text-color);
+  }
+
+  .banner-toggle {
+    padding: 6px 12px;
+    font-size: 13px;
+    font-weight: 500;
+    background: var(--accent-color);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+
+  .banner-toggle:hover {
+    opacity: 0.9;
+  }
+
   .layout-a {
     position: relative;
     width: 100%;
@@ -684,19 +993,6 @@
     text-align: center;
     padding-bottom: 12px;
     border-bottom: 1px solid var(--border-color, #555);
-  }
-
-  .icon-placeholder {
-    width: 80px;
-    height: 80px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: var(--bg-color, var(--primary-color));
-    border: 2px dashed var(--border-color, #555);
-    border-radius: 8px;
-    color: var(--text-muted, #999);
-    margin: 0 auto 12px;
   }
 
   .infobox-title {
@@ -987,6 +1283,38 @@
     margin: 8px 0;
   }
 
+  .inline-edit {
+    display: inline-flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .edit-wrapper {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .edit-input {
+    padding: 4px 8px;
+    border: 1px solid var(--border-color, #555);
+    border-radius: 4px;
+    background-color: var(--bg-color, var(--primary-color));
+    color: var(--text-color);
+    font-size: inherit;
+    font-family: inherit;
+    width: 80px;
+  }
+
+  .inline-edit.editable .edit-input {
+    background-color: var(--bg-secondary, var(--secondary-color));
+  }
+
+  .suffix {
+    color: var(--text-muted, #999);
+    font-size: 0.9em;
+  }
+
   /* Tablet adjustments */
   @media (max-width: 1023px) {
     .wiki-infobox-float {
@@ -1016,14 +1344,9 @@
       font-size: 16px;
     }
 
-    .icon-placeholder {
-      width: 60px;
-      height: 60px;
-    }
-
-    .icon-placeholder svg {
-      width: 36px;
-      height: 36px;
+    .entity-icon-wrapper {
+      max-width: 320px;
+      margin: 0 auto 12px;
     }
 
     .damage-grid, .defense-grid {

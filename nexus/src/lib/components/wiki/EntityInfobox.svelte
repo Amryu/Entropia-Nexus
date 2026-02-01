@@ -2,9 +2,16 @@
   @component EntityInfobox
   Compact infobox displaying entity icon and key stats.
   Adapts layout for mobile (horizontal) and desktop (vertical/floating).
+  In edit mode, clicking the icon opens the image upload dialog.
 -->
 <script>
   // @ts-nocheck
+  import { createEventDispatcher, onMount } from 'svelte';
+  import { browser } from '$app/environment';
+  import { editMode, isCreateMode } from '$lib/stores/wikiEditState.js';
+  import ImageUploadDialog from './ImageUploadDialog.svelte';
+
+  const dispatch = createEventDispatcher();
 
   /** @type {object|null} Entity object */
   export let entity = null;
@@ -30,22 +37,157 @@
   /** @type {string} Layout variant: 'default', 'floating', 'card' */
   export let variant = 'default';
 
+  /** @type {string} Entity type for uploads (e.g., 'weapon') */
+  export let entityType = '';
+
+  /** @type {string|number|null} Entity ID for uploads */
+  export let entityId = null;
+
+  /** @type {object|null} Current user session */
+  export let user = null;
+
+  // Image upload dialog state
+  let showUploadDialog = false;
+  let pendingImagePreview = null;
+  let imageLoadFailed = false;
+
+  // User's pending image (fetched from server)
+  let userPendingImage = null;
+  let pendingImageChecked = false;
+  let lastCheckedEntityId = null;
+
   $: displayName = entity?.Name || name;
   $: displayType = entity?.Properties?.Type || type;
   $: displaySubtype = entity?.Properties?.Class || subtype;
+
+  // Can upload only when editing an existing entity (not create mode) and user is verified
+  $: canUpload = $editMode && !$isCreateMode && entityId && user?.verified;
+
+  // Reset image load state when imageUrl changes
+  $: if (imageUrl) {
+    imageLoadFailed = false;
+  }
+
+  // Fetch user's pending image when entity changes (if user is logged in)
+  $: if (browser && user && entityType && entityId && entityId !== lastCheckedEntityId) {
+    lastCheckedEntityId = entityId;
+    pendingImageChecked = false;
+    userPendingImage = null;
+    fetchUserPendingImage();
+  }
+
+  async function fetchUserPendingImage() {
+    if (!browser || !user || !entityType || !entityId) {
+      pendingImageChecked = true;
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/uploads/pending/${entityType}/${entityId}`);
+      if (response.ok) {
+        const data = await response.json();
+        if (data.hasPending) {
+          userPendingImage = data;
+        }
+      }
+    } catch (err) {
+      console.error('Failed to check for pending image:', err);
+    } finally {
+      pendingImageChecked = true;
+    }
+  }
+
+  // Show image priority: just uploaded preview > user's pending image > approved image > placeholder
+  $: displayImageUrl = pendingImagePreview ||
+    (userPendingImage?.previewUrl) ||
+    (!imageLoadFailed ? imageUrl : null);
+
+  // Show pending overlay for just-uploaded preview OR user's existing pending image
+  $: showPendingOverlay = pendingImagePreview || (userPendingImage?.previewUrl && displayImageUrl === userPendingImage.previewUrl);
+
+  function handleIconClick() {
+    if (canUpload) {
+      showUploadDialog = true;
+    }
+  }
+
+  function handleImageUploaded(event) {
+    const { previewUrl } = event.detail;
+    pendingImagePreview = previewUrl;
+    userPendingImage = null; // Clear old pending image since we just uploaded a new one
+    imageLoadFailed = false;
+    dispatch('imageUploaded', event.detail);
+  }
+
+  function handleImageError() {
+    // Image failed to load (404), show placeholder instead
+    imageLoadFailed = true;
+  }
+
+  function handleKeydown(event) {
+    if (canUpload && (event.key === 'Enter' || event.key === ' ')) {
+      event.preventDefault();
+      showUploadDialog = true;
+    }
+  }
 </script>
 
 <div class="entity-infobox" class:compact class:floating={variant === 'floating'} class:card={variant === 'card'}>
-  <div class="infobox-icon">
-    {#if imageUrl}
-      <img src={imageUrl} alt={displayName} class="entity-image" />
+  <!-- svelte-ignore a11y-no-static-element-interactions -->
+  <div
+    class="infobox-icon"
+    class:editable={canUpload}
+    class:create-mode={$isCreateMode && $editMode}
+    on:click={handleIconClick}
+    on:keydown={handleKeydown}
+    role={canUpload ? 'button' : undefined}
+    tabindex={canUpload ? 0 : undefined}
+    title={canUpload ? 'Click to upload image' : ($isCreateMode && $editMode ? 'Image upload available after entity is approved' : '')}
+  >
+    {#if displayImageUrl}
+      <img src={displayImageUrl} alt={displayName} class="entity-image" on:error={handleImageError} />
+      {#if showPendingOverlay}
+        <div class="pending-overlay">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10" />
+            <polyline points="12 6 12 12 16 14" />
+          </svg>
+          <span>Pending Approval</span>
+        </div>
+      {/if}
+      {#if canUpload}
+        <div class="upload-overlay">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+            <polyline points="17 8 12 3 7 8" />
+            <line x1="12" y1="3" x2="12" y2="15" />
+          </svg>
+          <span>Change Image</span>
+        </div>
+      {/if}
     {:else}
       <div class="icon-placeholder">
-        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
-          <rect x="3" y="3" width="18" height="18" rx="2" />
-          <circle cx="8.5" cy="8.5" r="1.5" />
-          <path d="M21 15l-5-5L5 21" />
-        </svg>
+        {#if canUpload}
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+            <polyline points="17 8 12 3 7 8" />
+            <line x1="12" y1="3" x2="12" y2="15" />
+          </svg>
+          <span class="upload-hint">Click to upload</span>
+        {:else if $isCreateMode && $editMode}
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <circle cx="8.5" cy="8.5" r="1.5" />
+            <path d="M21 15l-5-5L5 21" />
+          </svg>
+          <span class="create-mode-hint">Available after approval</span>
+        {:else}
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
+            <rect x="3" y="3" width="18" height="18" rx="2" />
+            <circle cx="8.5" cy="8.5" r="1.5" />
+            <path d="M21 15l-5-5L5 21" />
+          </svg>
+        {/if}
       </div>
     {/if}
   </div>
@@ -80,6 +222,15 @@
     <slot name="extra" />
   </div>
 </div>
+
+<ImageUploadDialog
+  bind:open={showUploadDialog}
+  {entityType}
+  {entityId}
+  entityName={displayName}
+  on:uploaded={handleImageUploaded}
+  on:close={() => showUploadDialog = false}
+/>
 
 <style>
   .entity-infobox {
@@ -135,14 +286,40 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    position: relative;
+  }
+
+  .infobox-icon.editable {
+    cursor: pointer;
+  }
+
+  .infobox-icon.editable:hover .upload-overlay,
+  .infobox-icon.editable:focus .upload-overlay {
+    opacity: 1;
+  }
+
+  .infobox-icon.editable:hover .entity-image,
+  .infobox-icon.editable:focus .entity-image {
+    opacity: 0.7;
+  }
+
+  .infobox-icon.editable:hover .icon-placeholder,
+  .infobox-icon.editable:focus .icon-placeholder {
+    border-color: var(--accent-color);
+    background-color: var(--hover-color);
+  }
+
+  .infobox-icon.create-mode {
+    cursor: not-allowed;
   }
 
   .entity-image {
-    width: 100px;
-    height: 100px;
+    width: 320px;
+    height: 320px;
     object-fit: contain;
     border-radius: 6px;
     background-color: var(--bg-color, var(--primary-color));
+    transition: opacity 0.2s;
   }
 
   .entity-infobox.compact .entity-image {
@@ -151,15 +328,24 @@
   }
 
   .icon-placeholder {
-    width: 100px;
-    height: 100px;
+    width: 320px;
+    height: 320px;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
+    gap: 8px;
     background-color: var(--bg-color, var(--primary-color));
-    border: 2px dashed var(--border-color, #555);
+    border: 2px dashed var(--border-color);
     border-radius: 6px;
-    color: var(--text-muted, #999);
+    color: var(--text-muted);
+    transition: border-color 0.2s, background-color 0.2s;
+  }
+
+  .icon-placeholder .upload-hint,
+  .icon-placeholder .create-mode-hint {
+    font-size: 13px;
+    color: var(--text-muted);
   }
 
   .entity-infobox.compact .icon-placeholder {
@@ -170,6 +356,53 @@
   .entity-infobox.compact .icon-placeholder svg {
     width: 36px;
     height: 36px;
+  }
+
+  .entity-infobox.compact .icon-placeholder .upload-hint,
+  .entity-infobox.compact .icon-placeholder .create-mode-hint {
+    display: none;
+  }
+
+  .upload-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    background-color: rgba(0, 0, 0, 0.6);
+    border-radius: 6px;
+    color: white;
+    opacity: 0;
+    transition: opacity 0.2s;
+    pointer-events: none;
+  }
+
+  .upload-overlay span {
+    font-size: 14px;
+    font-weight: 500;
+  }
+
+  .pending-overlay {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background-color: rgba(255, 165, 0, 0.9);
+    border-radius: 0 0 6px 6px;
+    color: #1a1a1a;
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .pending-overlay svg {
+    flex-shrink: 0;
   }
 
   .infobox-content {
@@ -239,8 +472,8 @@
     margin-left: 2px;
   }
 
-  /* Mobile adjustments */
-  @media (max-width: 767px) {
+  /* Mobile adjustments - aligned with global 900px breakpoint */
+  @media (max-width: 899px) {
     .entity-infobox {
       padding: 12px;
     }
@@ -255,10 +488,21 @@
       font-size: 20px;
     }
 
+    /* Scale down large icon to fit mobile */
     .entity-image,
     .icon-placeholder {
+      width: 100%;
+      max-width: 320px;
+      height: auto;
+      aspect-ratio: 1;
+    }
+
+    .entity-infobox.compact .entity-image,
+    .entity-infobox.compact .icon-placeholder {
       width: 80px;
       height: 80px;
+      max-width: none;
+      aspect-ratio: auto;
     }
   }
 </style>

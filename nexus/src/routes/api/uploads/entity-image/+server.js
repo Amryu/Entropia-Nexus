@@ -48,10 +48,15 @@ export async function POST({ request, locals }) {
     throw error(401, 'Authentication required');
   }
 
+  // 2. Check verified status
+  if (!user.verified) {
+    throw error(403, 'Account verification required to upload images');
+  }
+
   const userId = String(user.Id || user.id);
   const rateLimitKey = `upload:${userId}`;
 
-  // 2. Check rate limit
+  // 3. Check rate limit
   const rateCheck = checkRateLimit(rateLimitKey, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW);
   const rateLimitHeaders = getRateLimitHeaders(RATE_LIMIT_MAX, rateCheck.remaining, rateCheck.resetIn);
 
@@ -69,7 +74,7 @@ export async function POST({ request, locals }) {
     });
   }
 
-  // 3. Check concurrent uploads
+  // 4. Check concurrent uploads
   if (!checkConcurrentUploads(userId, MAX_CONCURRENT)) {
     return new Response(JSON.stringify({
       error: 'Too many concurrent uploads. Please wait for current uploads to complete.'
@@ -82,7 +87,7 @@ export async function POST({ request, locals }) {
     });
   }
 
-  // 4. Check content-length header before reading body
+  // 5. Check content-length header before reading body
   const contentLength = request.headers.get('content-length');
   if (contentLength && parseInt(contentLength) > MAX_REQUEST_SIZE) {
     throw error(413, `Request too large. Maximum size is ${MAX_REQUEST_SIZE / 1024 / 1024}MB`);
@@ -92,7 +97,7 @@ export async function POST({ request, locals }) {
   startUpload(userId);
 
   try {
-    // 5. Parse form data with size check
+    // 6. Parse form data with size check
     let formData;
     try {
       formData = await request.formData();
@@ -108,7 +113,7 @@ export async function POST({ request, locals }) {
     const entityType = formData.get('entityType');
     const entityId = formData.get('entityId');
 
-    // 6. Validate required fields
+    // 7. Validate required fields
     if (!imageFile || !(imageFile instanceof File)) {
       throw error(400, 'Image file is required');
     }
@@ -121,22 +126,22 @@ export async function POST({ request, locals }) {
       throw error(400, 'Entity ID is required');
     }
 
-    // 7. Validate entity type format (alphanumeric only)
+    // 8. Validate entity type format (alphanumeric only)
     if (!/^[a-zA-Z]+$/.test(entityType)) {
       throw error(400, 'Invalid entity type format');
     }
 
-    // 8. Validate file size
+    // 9. Validate file size
     if (imageFile.size > MAX_REQUEST_SIZE) {
       throw error(413, 'Image file too large');
     }
 
-    // 9. Validate MIME type
+    // 10. Validate MIME type
     if (!ALLOWED_MIME_TYPES.includes(imageFile.type)) {
       throw error(400, `Invalid file type. Allowed: ${ALLOWED_MIME_TYPES.join(', ')}`);
     }
 
-    // 10. Get image buffer
+    // 11. Get image buffer
     let buffer;
     try {
       const arrayBuffer = await imageFile.arrayBuffer();
@@ -145,13 +150,13 @@ export async function POST({ request, locals }) {
       throw error(400, 'Failed to read image file');
     }
 
-    // 11. Double-check buffer size
+    // 12. Double-check buffer size
     if (buffer.length > MAX_REQUEST_SIZE) {
       throw error(413, 'Image file too large');
     }
 
-    // 12. Process and save the image (additional validations happen here)
-    const result = await processAndSaveImage(buffer, entityType, entityId);
+    // 13. Process and save the image (additional validations happen here)
+    const result = await processAndSaveImage(buffer, entityType, entityId, userId);
 
     return new Response(JSON.stringify({
       success: true,

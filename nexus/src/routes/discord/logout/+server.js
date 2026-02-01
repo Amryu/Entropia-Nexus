@@ -2,14 +2,21 @@
 import { deleteSession, getSession } from '$lib/server/db.js';
 import { handleRevoke } from '$lib/server/discord.js';
 
-export async function GET({ cookies }) {
+export async function GET({ cookies, url }) {
   let sessionId = cookies.get(import.meta.env.VITE_SESSION_COOKIE_NAME);
+
+  // Get redirect URL from query params, default to home page
+  // Validate that redirect is a relative URL to prevent open redirect
+  let redirectUrl = url.searchParams.get('redirect') || '/';
+  if (!redirectUrl.startsWith('/') || redirectUrl.startsWith('//')) {
+    redirectUrl = '/';
+  }
 
   if (!sessionId) {
     return new Response(null, {
       status: 302,
       headers: {
-        location: '/'
+        location: redirectUrl
       }
     });
   }
@@ -43,7 +50,7 @@ export async function GET({ cookies }) {
   return new Response(null, {
     status: 302,
     headers: {
-      location: '/'
+      location: redirectUrl
     }
   });
 }

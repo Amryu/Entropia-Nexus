@@ -8,7 +8,7 @@ import { join, dirname } from 'path';
 import { randomUUID } from 'crypto';
 
 // Image size configurations
-const ICON_SIZE = 512;
+const ICON_SIZE = 320;
 const THUMB_SIZE = 128;
 
 // Base upload directories (configured via environment)
@@ -92,13 +92,93 @@ function countTempFiles() {
 }
 
 /**
+ * Delete any pending image from a user for a specific entity
+ * This ensures only one pending image per user per entity exists
+ * @param {string} uploaderId - ID of the uploader
+ * @param {string} entityType - Entity type
+ * @param {string|number} entityId - Entity ID
+ * @returns {Promise<void>}
+ */
+async function deleteUserPendingImage(uploaderId, entityType, entityId) {
+  if (!existsSync(TEMP_DIR)) return;
+
+  const fs = await import('fs/promises');
+  const tempDirs = readdirSync(TEMP_DIR);
+
+  for (const tempId of tempDirs) {
+    const metadataPath = join(TEMP_DIR, tempId, 'metadata.json');
+    if (!existsSync(metadataPath)) continue;
+
+    try {
+      const metadata = JSON.parse(await fs.readFile(metadataPath, 'utf-8'));
+      // Delete if same uploader and same entity
+      if (metadata.uploaderId === uploaderId &&
+          metadata.entityType === entityType &&
+          metadata.entityId === String(entityId)) {
+        await fs.rm(join(TEMP_DIR, tempId), { recursive: true, force: true });
+      }
+    } catch {
+      // Ignore errors reading individual metadata files
+    }
+  }
+}
+
+/**
+ * Get pending image for a specific entity uploaded by a specific user
+ * @param {string} uploaderId - ID of the uploader
+ * @param {string} entityType - Entity type
+ * @param {string|number} entityId - Entity ID
+ * @returns {Promise<{tempId: string, previewUrl: string, uploadedAt: string}|null>}
+ */
+export async function getUserPendingImage(uploaderId, entityType, entityId) {
+  if (!existsSync(TEMP_DIR)) {
+    return null;
+  }
+
+  const fs = await import('fs/promises');
+  const tempDirs = readdirSync(TEMP_DIR);
+
+  for (const tempId of tempDirs) {
+    const metadataPath = join(TEMP_DIR, tempId, 'metadata.json');
+    if (!existsSync(metadataPath)) continue;
+
+    try {
+      const metadata = JSON.parse(await fs.readFile(metadataPath, 'utf-8'));
+
+      // Check if entity type and ID match
+      const typeMatches = metadata.entityType === entityType;
+      const idMatches = metadata.entityId === String(entityId);
+
+      if (typeMatches && idMatches) {
+        // Uploader matches, OR this is a legacy image without uploaderId tracking
+        // (backward compatibility for images uploaded before uploaderId was added)
+        const uploaderMatches = metadata.uploaderId === uploaderId || metadata.uploaderId === undefined;
+
+        if (uploaderMatches) {
+          return {
+            tempId,
+            previewUrl: `/api/uploads/preview/${tempId}`,
+            uploadedAt: metadata.uploadedAt
+          };
+        }
+      }
+    } catch {
+      // Ignore errors reading individual metadata files
+    }
+  }
+
+  return null;
+}
+
+/**
  * Process and save an uploaded image
  * @param {Buffer} imageBuffer - The raw image buffer
  * @param {string} entityType - Entity type (e.g., 'weapon', 'mob')
  * @param {string|number} entityId - Entity ID
+ * @param {string} uploaderId - ID of the user uploading the image
  * @returns {Promise<{tempPath: string, previewUrl: string}>}
  */
-export async function processAndSaveImage(imageBuffer, entityType, entityId) {
+export async function processAndSaveImage(imageBuffer, entityType, entityId, uploaderId) {
   // ===== SECURITY VALIDATIONS =====
 
   // 1. Validate entity type (prevent path traversal)
@@ -111,7 +191,12 @@ export async function processAndSaveImage(imageBuffer, entityType, entityId) {
     throw new Error('Invalid entity ID');
   }
 
-  // 3. Validate file size (early check before processing)
+  // 3. Validate uploader ID
+  if (!uploaderId || typeof uploaderId !== 'string') {
+    throw new Error('Invalid uploader ID');
+  }
+
+  // 4. Validate file size (early check before processing)
   if (!imageBuffer || imageBuffer.length === 0) {
     throw new Error('Empty image file');
   }
@@ -120,11 +205,14 @@ export async function processAndSaveImage(imageBuffer, entityType, entityId) {
     throw new Error(`Image must be smaller than ${MAX_FILE_SIZE / 1024 / 1024}MB`);
   }
 
-  // 4. Global temp file limit (prevent disk flooding)
+  // 5. Global temp file limit (prevent disk flooding)
   const tempCount = countTempFiles();
   if (tempCount >= 1000) {
     throw new Error('Server storage limit reached. Please try again later.');
   }
+
+  // 6. Delete any existing pending image from this user for this entity
+  await deleteUserPendingImage(uploaderId, entityType, entityId);
 
   // Generate unique temp ID for this upload
   const tempId = randomUUID();
@@ -132,7 +220,7 @@ export async function processAndSaveImage(imageBuffer, entityType, entityId) {
   ensureDir(tempEntityPath);
 
   try {
-    // 5. Validate actual image content using sharp (magic bytes verification)
+    // 7. Validate actual image content using sharp (magic bytes verification)
     // Sharp will throw if the buffer isn't a valid image
     const image = sharp(imageBuffer, {
       // Limit memory usage during processing
@@ -143,12 +231,12 @@ export async function processAndSaveImage(imageBuffer, entityType, entityId) {
 
     const metadata = await image.metadata();
 
-    // 6. Validate image format (verified by sharp, not just MIME type)
+    // 8. Validate image format (verified by sharp, not just MIME type)
     if (!metadata.format || !ALLOWED_FORMATS.includes(metadata.format)) {
       throw new Error('Invalid image format. Supported: JPEG, PNG, WebP, GIF');
     }
 
-    // 7. Validate image dimensions
+    // 9. Validate image dimensions
     if (!metadata.width || !metadata.height) {
       throw new Error('Cannot determine image dimensions');
     }
@@ -161,7 +249,7 @@ export async function processAndSaveImage(imageBuffer, entityType, entityId) {
       throw new Error(`Image dimensions must be at least ${MIN_IMAGE_DIMENSION}x${MIN_IMAGE_DIMENSION} pixels`);
     }
 
-    // 8. Check for decompression bombs (images that expand massively)
+    // 10. Check for decompression bombs (images that expand massively)
     const pixelCount = metadata.width * metadata.height;
     const expectedMinBytes = pixelCount / 1000; // Very generous ratio
     if (imageBuffer.length < expectedMinBytes && pixelCount > 1000000) {
@@ -194,6 +282,7 @@ export async function processAndSaveImage(imageBuffer, entityType, entityId) {
     await fs.writeFile(metadataPath, JSON.stringify({
       entityType,
       entityId: String(entityId),
+      uploaderId,
       uploadedAt: new Date().toISOString(),
       tempId
     }));
@@ -301,29 +390,52 @@ export async function submitImageForApproval(tempId) {
 
 /**
  * Approve a pending image
+ * Searches both TEMP_DIR (uploaded but not yet submitted) and PENDING_DIR (submitted for approval)
  * @param {string} entityType
  * @param {string|number} entityId
  * @returns {Promise<void>}
  */
 export async function approveImage(entityType, entityId) {
-  const pendingPath = getEntityPath(PENDING_DIR, entityType, entityId);
+  const fs = await import('fs/promises');
+  let sourcePath = null;
 
-  if (!existsSync(pendingPath)) {
+  // First, check PENDING_DIR (submitted images)
+  const pendingPath = getEntityPath(PENDING_DIR, entityType, entityId);
+  if (existsSync(pendingPath)) {
+    sourcePath = pendingPath;
+  } else if (existsSync(TEMP_DIR)) {
+    // Search TEMP_DIR for matching images
+    const tempDirs = readdirSync(TEMP_DIR);
+    for (const tempId of tempDirs) {
+      const metadataPath = join(TEMP_DIR, tempId, 'metadata.json');
+      if (!existsSync(metadataPath)) continue;
+
+      try {
+        const metadata = JSON.parse(await fs.readFile(metadataPath, 'utf-8'));
+        if (metadata.entityType === entityType && metadata.entityId === String(entityId)) {
+          sourcePath = join(TEMP_DIR, tempId);
+          break;
+        }
+      } catch {
+        // Ignore errors reading individual metadata files
+      }
+    }
+  }
+
+  if (!sourcePath) {
     throw new Error('Pending image not found');
   }
 
   const approvedPath = getEntityPath(APPROVED_DIR, entityType, entityId);
   ensureDir(dirname(approvedPath));
 
-  const fs = await import('fs/promises');
-
   // Remove existing approved if any
   if (existsSync(approvedPath)) {
     await fs.rm(approvedPath, { recursive: true, force: true });
   }
 
-  // Move pending to approved
-  await fs.rename(pendingPath, approvedPath);
+  // Move source to approved
+  await fs.rename(sourcePath, approvedPath);
 
   // Update metadata
   const metadataPath = join(approvedPath, 'metadata.json');
@@ -338,19 +450,41 @@ export async function approveImage(entityType, entityId) {
 
 /**
  * Deny/delete a pending image
+ * Searches both TEMP_DIR (uploaded but not yet submitted) and PENDING_DIR (submitted for approval)
  * @param {string} entityType
  * @param {string|number} entityId
  * @returns {Promise<void>}
  */
 export async function denyImage(entityType, entityId) {
-  const pendingPath = getEntityPath(PENDING_DIR, entityType, entityId);
+  const fs = await import('fs/promises');
 
-  if (!existsSync(pendingPath)) {
-    throw new Error('Pending image not found');
+  // First, check PENDING_DIR (submitted images)
+  const pendingPath = getEntityPath(PENDING_DIR, entityType, entityId);
+  if (existsSync(pendingPath)) {
+    await fs.rm(pendingPath, { recursive: true, force: true });
+    return;
   }
 
-  const fs = await import('fs/promises');
-  await fs.rm(pendingPath, { recursive: true, force: true });
+  // Otherwise, search TEMP_DIR for matching images
+  if (existsSync(TEMP_DIR)) {
+    const tempDirs = readdirSync(TEMP_DIR);
+    for (const tempId of tempDirs) {
+      const metadataPath = join(TEMP_DIR, tempId, 'metadata.json');
+      if (!existsSync(metadataPath)) continue;
+
+      try {
+        const metadata = JSON.parse(await fs.readFile(metadataPath, 'utf-8'));
+        if (metadata.entityType === entityType && metadata.entityId === String(entityId)) {
+          await fs.rm(join(TEMP_DIR, tempId), { recursive: true, force: true });
+          return;
+        }
+      } catch {
+        // Ignore errors reading individual metadata files
+      }
+    }
+  }
+
+  throw new Error('Pending image not found');
 }
 
 /**
@@ -462,6 +596,7 @@ export default {
   getPreviewImage,
   getPendingImages,
   getApprovedImages,
+  getUserPendingImage,
   submitImageForApproval,
   approveImage,
   denyImage,

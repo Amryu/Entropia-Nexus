@@ -2,30 +2,62 @@
   @component Medical Tools Wiki Page
   Wikipedia-style layout with floating infobox on the right side.
   Handles 2 subtypes: tools, chips
-
-  Legacy editConfig preserved in medicaltools-legacy/+page.svelte
+  Supports full wiki editing.
 -->
 <script>
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { hasItemTag, clampDecimals, encodeURIComponentSafe, getTimeString, getTypeLink } from '$lib/util';
+  import { sanitizeHtml } from '$lib/sanitize';
 
   // Wiki components
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
+  import PendingChangeBanner from '$lib/components/wiki/PendingChangeBanner.svelte';
   import WikiSEO from '$lib/components/wiki/WikiSEO.svelte';
   import DataSection from '$lib/components/wiki/DataSection.svelte';
+  import InlineEdit from '$lib/components/wiki/InlineEdit.svelte';
+  import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
+  import EffectsEditor from '$lib/components/wiki/EffectsEditor.svelte';
 
-  // Legacy components for data display
-  import Tiering from '$lib/components/Tiering.svelte';
+  // Wiki edit state
+  import {
+    editMode,
+    isCreateMode as createModeStore,
+    initEditState,
+    resetEditState,
+    currentEntity,
+    existingPendingChange,
+    viewingPendingChange,
+    setExistingPendingChange,
+    setViewingPendingChange,
+    updateField,
+    changeMetadata
+  } from '$lib/stores/wikiEditState';
+
+  // Generic wiki components
+  import TieringEditor from '$lib/components/wiki/TieringEditor.svelte';
   import Acquisition from '$lib/components/Acquisition.svelte';
+
+  // Image upload
+  import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
 
   export let data;
 
   $: medtool = data.object;
   $: user = data.session?.user;
   $: additional = data.additional || {};
+  $: pendingChange = data.pendingChange;
+  $: existingChange = data.existingChange;
+  $: isCreateMode = data.isCreateMode || false;
+  $: canCreateNew = data.canCreateNew ?? true;
+  $: userPendingCreates = data.userPendingCreates || [];
+  $: userPendingUpdates = data.userPendingUpdates || [];
+  $: effectsList = data.effects || [];
+
+  // Permission check - verified users and admins can edit
+  $: canEdit = user?.verified || user?.isAdmin;
 
   // For multi-type pages, data.items is an object keyed by type
   $: allItems = (() => {
@@ -65,6 +97,70 @@
       default: return 'MedicalTool';
     }
   }
+
+  // Empty entity template for create mode (type-specific)
+  function getEmptyEntity(type) {
+    const base = {
+      Name: '',
+      Properties: {
+        Description: '',
+        Weight: 0,
+        MaxHeal: 0,
+        MinHeal: 0,
+        UsesPerMinute: 0,
+        Economy: {
+          MaxTT: 0,
+          MinTT: 0,
+          Decay: 0
+        },
+        Skill: {
+          IsSiB: false,
+          LearningIntervalStart: null,
+          LearningIntervalEnd: null
+        }
+      },
+      EffectsOnEquip: [],
+      EffectsOnUse: []
+    };
+
+    if (type === 'chips') {
+      base.Properties.Range = 0;
+      base.Properties.Economy.AmmoBurn = 0;
+      base.Properties.Mindforce = {
+        Level: 0,
+        Concentration: 0,
+        Cooldown: 0,
+        CooldownGroup: null
+      };
+    }
+
+    return base;
+  }
+
+  // ========== WIKI EDIT STATE ==========
+  // Initialize edit state when user/entity changes
+  $: if (user) {
+    const entityType = getEntityType(additional.type);
+    const emptyEntity = getEmptyEntity(additional.type);
+    initEditState(medtool || emptyEntity, entityType, isCreateMode, existingChange);
+  }
+
+  // Set pending change when it exists
+  $: if (pendingChange) {
+    setExistingPendingChange(pendingChange);
+  }
+
+  // Active entity: in edit mode use currentEntity, when viewing pending use its data, otherwise use original
+  $: activeEntity = $editMode
+    ? $currentEntity
+    : $viewingPendingChange && $existingPendingChange?.data
+      ? $existingPendingChange.data
+      : medtool;
+
+  // Cleanup on destroy
+  onDestroy(() => {
+    resetEditState();
+  });
 
   // Build navigation items
   $: navItems = allItems;
@@ -128,6 +224,11 @@
     ? `https://entropianexus.com/items/medicaltools/${additional.type}`
     : 'https://entropianexus.com/items/medicaltools';
 
+  // Image URL for SEO
+  $: entityImageUrl = medtool?.Id && additional.type
+    ? `/api/img/${getEntityType(additional.type).toLowerCase()}/${medtool.Id}`
+    : null;
+
   // ========== CALCULATION FUNCTIONS ==========
   function getCost(item) {
     if (!item?.Properties?.Economy?.Decay) return null;
@@ -166,22 +267,42 @@
     return Math.floor((maxTT - minTT) / (decay / 100));
   }
 
-  // ========== COMPUTED VALUES ==========
-  $: cost = getCost(medtool);
-  $: reload = getReload(medtool);
-  $: hps = getHps(medtool);
-  $: hpp = getHpp(medtool);
-  $: totalUses = getTotalUses(medtool);
+  // ========== COMPUTED VALUES ========== (use activeEntity for live updates)
+  $: cost = getCost(activeEntity);
+  $: reload = getReload(activeEntity);
+  $: hps = getHps(activeEntity);
+  $: hpp = getHpp(activeEntity);
+  $: totalUses = getTotalUses(activeEntity);
   $: cyclePerRepair = totalUses && cost ? totalUses * (cost / 100) : null;
   $: cyclePerHour = reload && cost ? (3600 / reload) * (cost / 100) : null;
   $: timeToBreak = cyclePerHour > 0 && cyclePerRepair ? cyclePerRepair / cyclePerHour : null;
 
-  // Check for effects
-  $: hasEquipEffects = medtool?.EffectsOnEquip?.length > 0;
-  $: hasUseEffects = medtool?.EffectsOnUse?.length > 0;
-
   // Check for tiering (tools only, non-L items)
-  $: hasTiering = additional.type === 'tools' && medtool && !hasItemTag(medtool.Name, 'L');
+  $: hasTiering = additional.type === 'tools' && activeEntity && !hasItemTag(activeEntity.Name, 'L');
+
+  // ========== RELOAD/USES TOGGLE ==========
+  let showReload = true;
+  $: showReloadEffective = $editMode ? false : showReload;
+
+  onMount(() => {
+    try {
+      const stored = localStorage.getItem('wiki-medicaltools-show-reload');
+      if (stored !== null) {
+        showReload = stored === 'true';
+      }
+    } catch (e) {
+      // localStorage not available
+    }
+  });
+
+  function toggleReloadUses() {
+    showReload = !showReload;
+    try {
+      localStorage.setItem('wiki-medicaltools-show-reload', String(showReload));
+    } catch (e) {
+      // localStorage not available
+    }
+  }
 
   // ========== PANEL STATE PERSISTENCE ==========
   let panelStates = {
@@ -210,6 +331,7 @@
   description={seoDescription}
   entityType={getEntityType(additional.type)}
   entity={medtool}
+  imageUrl={entityImageUrl}
   {canonicalUrl}
   breadcrumbs={breadcrumbs.map(b => ({ name: b.label, url: b.href }))}
 />
@@ -226,22 +348,45 @@
   navGetItemHref={getItemHref}
   {user}
   editable={true}
+  canEdit={canEdit && !!additional.type}
+  {canCreateNew}
+  {userPendingCreates}
+  {userPendingUpdates}
 >
-  {#if medtool}
+  {#if medtool || isCreateMode}
+    <!-- Pending Change Banner -->
+    {#if $existingPendingChange && !$editMode}
+      <PendingChangeBanner
+        pendingChange={$existingPendingChange}
+        viewing={$viewingPendingChange}
+        onToggle={() => setViewingPendingChange(!$viewingPendingChange)}
+      />
+    {/if}
+
     <div class="layout-a">
       <!-- Wikipedia-style floating infobox (right panel) -->
       <aside class="wiki-infobox-float">
         <!-- Entity Header -->
         <div class="infobox-header">
-          <div class="icon-placeholder">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
-              <rect x="3" y="3" width="18" height="18" rx="2" />
-            </svg>
+          <EntityImageUpload
+            entityId={activeEntity?.Id}
+            entityName={activeEntity?.Name}
+            entityType={getEntityType(additional.type).toLowerCase()}
+            {user}
+            isEditMode={$editMode}
+            {isCreateMode}
+          />
+          <div class="infobox-title">
+            <InlineEdit
+              value={activeEntity?.Name}
+              path="Name"
+              type="text"
+              placeholder="Enter name..."
+            />
           </div>
-          <div class="infobox-title">{medtool.Name}</div>
           <div class="infobox-subtitle">
             <span class="type-badge">{getTypeName(additional.type)}</span>
-            {#if medtool.Properties?.Skill?.IsSiB}
+            {#if activeEntity?.Properties?.Skill?.IsSiB}
               <span class="sib-badge">SiB</span>
             {/if}
           </div>
@@ -264,20 +409,59 @@
           <h4 class="section-title">General</h4>
           <div class="stat-row">
             <span class="stat-label">Weight</span>
-            <span class="stat-value">{medtool.Properties?.Weight != null ? `${clampDecimals(medtool.Properties.Weight, 1, 6)}kg` : 'N/A'}</span>
+            <span class="stat-value">
+              <InlineEdit
+                value={activeEntity?.Properties?.Weight}
+                path="Properties.Weight"
+                type="number"
+                suffix="kg"
+                step={0.01}
+              />
+            </span>
           </div>
-          <div class="stat-row">
-            <span class="stat-label">Reload</span>
-            <span class="stat-value">{reload != null ? `${reload.toFixed(2)}s` : 'N/A'}</span>
-          </div>
-          <div class="stat-row">
-            <span class="stat-label">Uses/min</span>
-            <span class="stat-value">{reload != null ? clampDecimals(60 / reload, 0, 2) : 'N/A'}</span>
-          </div>
-          {#if additional.type === 'chips' && medtool.Properties?.Range != null}
+          {#if $editMode}
+            <!-- In edit mode, always show Uses/min as editable -->
+            <div class="stat-row">
+              <span class="stat-label">Uses/min</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.UsesPerMinute}
+                  path="Properties.UsesPerMinute"
+                  type="number"
+                  min={0}
+                  step={0.01}
+                />
+              </span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Reload</span>
+              <span class="stat-value">{reload != null ? `${reload.toFixed(2)}s` : 'N/A'}</span>
+            </div>
+          {:else}
+            <!-- In view mode, toggle between Reload and Uses/min -->
+            <!-- svelte-ignore a11y-click-events-have-key-events -->
+            <!-- svelte-ignore a11y-no-static-element-interactions -->
+            <div class="stat-row toggleable" on:click={toggleReloadUses} title="Click to toggle between Reload and Uses/min">
+              {#if showReloadEffective}
+                <span class="stat-label">Reload <span class="toggle-hint">⇄</span></span>
+                <span class="stat-value">{reload != null ? `${reload.toFixed(2)}s` : 'N/A'}</span>
+              {:else}
+                <span class="stat-label">Uses/min <span class="toggle-hint">⇄</span></span>
+                <span class="stat-value">{activeEntity?.Properties?.UsesPerMinute ?? 'N/A'}</span>
+              {/if}
+            </div>
+          {/if}
+          {#if additional.type === 'chips'}
             <div class="stat-row">
               <span class="stat-label">Range</span>
-              <span class="stat-value">{medtool.Properties.Range}m</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.Range}
+                  path="Properties.Range"
+                  type="number"
+                  suffix="m"
+                />
+              </span>
             </div>
           {/if}
         </div>
@@ -291,11 +475,27 @@
           </div>
           <div class="stat-row">
             <span class="stat-label">Max. Heal</span>
-            <span class="stat-value">{medtool.Properties?.MaxHeal != null ? `${medtool.Properties.MaxHeal.toFixed(2)} HP` : 'N/A'}</span>
+            <span class="stat-value">
+              <InlineEdit
+                value={activeEntity?.Properties?.MaxHeal}
+                path="Properties.MaxHeal"
+                type="number"
+                suffix=" HP"
+                step={0.01}
+              />
+            </span>
           </div>
           <div class="stat-row">
             <span class="stat-label">Min. Heal</span>
-            <span class="stat-value">{medtool.Properties?.MinHeal != null ? `${medtool.Properties.MinHeal.toFixed(2)} HP` : 'N/A'}</span>
+            <span class="stat-value">
+              <InlineEdit
+                value={activeEntity?.Properties?.MinHeal}
+                path="Properties.MinHeal"
+                type="number"
+                suffix=" HP"
+                step={0.01}
+              />
+            </span>
           </div>
         </div>
 
@@ -308,24 +508,54 @@
           </div>
           <div class="stat-row">
             <span class="stat-label">Max. TT</span>
-            <span class="stat-value">{medtool.Properties?.Economy?.MaxTT != null ? `${clampDecimals(medtool.Properties.Economy.MaxTT, 2, 8)} PED` : 'N/A'}</span>
+            <span class="stat-value">
+              <InlineEdit
+                value={activeEntity?.Properties?.Economy?.MaxTT}
+                path="Properties.Economy.MaxTT"
+                type="number"
+                suffix=" PED"
+                step={0.01}
+              />
+            </span>
           </div>
           <div class="stat-row">
             <span class="stat-label">Min. TT</span>
-            <span class="stat-value">{medtool.Properties?.Economy?.MinTT != null ? `${clampDecimals(medtool.Properties.Economy.MinTT, 2, 8)} PED` : 'N/A'}</span>
+            <span class="stat-value">
+              <InlineEdit
+                value={activeEntity?.Properties?.Economy?.MinTT}
+                path="Properties.Economy.MinTT"
+                type="number"
+                suffix=" PED"
+                step={0.01}
+              />
+            </span>
           </div>
           <div class="stat-row">
             <span class="stat-label">Decay</span>
-            <span class="stat-value">{medtool.Properties?.Economy?.Decay != null ? `${medtool.Properties.Economy.Decay.toFixed(4)} PEC` : 'N/A'}</span>
+            <span class="stat-value">
+              <InlineEdit
+                value={activeEntity?.Properties?.Economy?.Decay}
+                path="Properties.Economy.Decay"
+                type="number"
+                suffix=" PEC"
+                step={0.0001}
+              />
+            </span>
           </div>
           {#if additional.type === 'chips'}
             <div class="stat-row">
               <span class="stat-label">Ammo</span>
-              <span class="stat-value">{medtool.Ammo?.Name || 'N/A'}</span>
+              <span class="stat-value">{activeEntity?.Ammo?.Name || 'N/A'}</span>
             </div>
             <div class="stat-row">
               <span class="stat-label">Ammo Burn</span>
-              <span class="stat-value">{medtool.Properties?.Economy?.AmmoBurn ?? 'N/A'}</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.Economy?.AmmoBurn}
+                  path="Properties.Economy.AmmoBurn"
+                  type="number"
+                />
+              </span>
             </div>
           {/if}
           <div class="stat-row">
@@ -346,44 +576,102 @@
             <h4 class="section-title">Mindforce</h4>
             <div class="stat-row">
               <span class="stat-label">Level</span>
-              <span class="stat-value">{medtool.Properties?.Mindforce?.Level ?? 'N/A'}</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.Mindforce?.Level}
+                  path="Properties.Mindforce.Level"
+                  type="number"
+                />
+              </span>
             </div>
             <div class="stat-row">
               <span class="stat-label">Concentration</span>
-              <span class="stat-value">{medtool.Properties?.Mindforce?.Concentration != null ? `${medtool.Properties.Mindforce.Concentration}s` : 'N/A'}</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.Mindforce?.Concentration}
+                  path="Properties.Mindforce.Concentration"
+                  type="number"
+                  suffix="s"
+                  step={0.1}
+                />
+              </span>
             </div>
             <div class="stat-row">
               <span class="stat-label">Cooldown</span>
-              <span class="stat-value">{medtool.Properties?.Mindforce?.Cooldown != null ? `${medtool.Properties.Mindforce.Cooldown}s` : 'N/A'}</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.Mindforce?.Cooldown}
+                  path="Properties.Mindforce.Cooldown"
+                  type="number"
+                  suffix="s"
+                  step={0.1}
+                />
+              </span>
             </div>
             <div class="stat-row">
               <span class="stat-label">Cooldown Group</span>
-              <span class="stat-value">{medtool.Properties?.Mindforce?.CooldownGroup ?? 'N/A'}</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.Mindforce?.CooldownGroup}
+                  path="Properties.Mindforce.CooldownGroup"
+                  type="text"
+                />
+              </span>
             </div>
           </div>
         {/if}
 
-        <!-- Skill Stats -->
+        <!-- Skilling Info -->
         <div class="stats-section">
-          <h4 class="section-title">Skill</h4>
+          <h4 class="section-title">Skilling</h4>
           <div class="stat-row">
             <span class="stat-label">SiB</span>
-            <span class="stat-value">{medtool.Properties?.Skill?.IsSiB ? 'Yes' : 'No'}</span>
+            <span class="stat-value" class:highlight-yes={activeEntity?.Properties?.Skill?.IsSiB}>
+              <InlineEdit
+                value={activeEntity?.Properties?.Skill?.IsSiB}
+                path="Properties.Skill.IsSiB"
+                type="checkbox"
+              />
+            </span>
           </div>
           <div class="stat-row">
             <span class="stat-label">Profession</span>
             <span class="stat-value">
-              <a href={getTypeLink(additional.type === 'chips' ? 'Biotropic' : 'Paramedic', 'Profession')} class="entity-link">
+              <a href={getTypeLink(additional.type === 'chips' ? 'Biotropic' : 'Paramedic', 'Profession')} class="profession-link">
                 {additional.type === 'chips' ? 'Biotropic' : 'Paramedic'}
               </a>
             </span>
           </div>
-          <div class="stat-row">
-            <span class="stat-label">Learning Range</span>
-            <span class="stat-value">
-              {medtool.Properties?.Skill?.LearningIntervalStart?.toFixed(1) ?? 'N/A'} - {medtool.Properties?.Skill?.LearningIntervalEnd?.toFixed(1) ?? 'N/A'}
-            </span>
-          </div>
+          {#if activeEntity?.Properties?.Skill?.IsSiB && (activeEntity?.Properties?.Skill?.LearningIntervalStart !== null || activeEntity?.Properties?.Skill?.LearningIntervalEnd !== null || $editMode)}
+            <div class="stat-row indent">
+              <span class="stat-label">Level Range</span>
+              <span class="stat-value">
+                {#if $editMode}
+                  <span class="interval-edit">
+                    <InlineEdit
+                      value={activeEntity?.Properties?.Skill?.LearningIntervalStart}
+                      path="Properties.Skill.LearningIntervalStart"
+                      type="number"
+                      min={0}
+                      step={0.1}
+                      placeholder="Min"
+                    />
+                    <span class="interval-sep">-</span>
+                    <InlineEdit
+                      value={activeEntity?.Properties?.Skill?.LearningIntervalEnd}
+                      path="Properties.Skill.LearningIntervalEnd"
+                      type="number"
+                      min={0}
+                      step={0.1}
+                      placeholder="Max"
+                    />
+                  </span>
+                {:else}
+                  {activeEntity?.Properties?.Skill?.LearningIntervalStart ?? '?'} - {activeEntity?.Properties?.Skill?.LearningIntervalEnd ?? '?'}
+                {/if}
+              </span>
+            </div>
+          {/if}
         </div>
 
         <!-- Misc Stats -->
@@ -411,57 +699,68 @@
           </div>
         {/if}
 
-        <!-- Effects on Equip -->
-        {#if hasEquipEffects}
+        <!-- Effects (if any) -->
+        {#if (activeEntity?.EffectsOnEquip?.length > 0) || (activeEntity?.EffectsOnUse?.length > 0) || $editMode}
           <div class="stats-section effects-section">
-            <h4 class="section-title">Effects on Equip</h4>
-            {#each medtool.EffectsOnEquip.sort((a,b) => a.Name.localeCompare(b.Name)) as effect}
-              <div class="stat-row">
-                <span class="stat-label">{effect.Name}</span>
-                <span class="stat-value effect-value">{effect.Values.Strength}{effect.Values.Unit}</span>
-              </div>
-            {/each}
-          </div>
-        {/if}
-
-        <!-- Effects on Use -->
-        {#if hasUseEffects}
-          <div class="stats-section effects-section">
-            <h4 class="section-title">Effects on Use</h4>
-            {#each medtool.EffectsOnUse.sort((a,b) => a.Name.localeCompare(b.Name)) as effect}
-              <div class="stat-row">
-                <span class="stat-label">{effect.Name}</span>
-                <span class="stat-value effect-value">{effect.Values.Strength}{effect.Values.Unit} for {getTimeString(effect.Values.DurationSeconds)}</span>
-              </div>
-            {/each}
+            <h4 class="section-title">Effects</h4>
+            <div class="effects-combined">
+              <EffectsEditor
+                effects={activeEntity?.EffectsOnEquip || []}
+                fieldName="EffectsOnEquip"
+                availableEffects={effectsList}
+                effectType="equip"
+                showEmpty={$editMode}
+              />
+              <EffectsEditor
+                effects={activeEntity?.EffectsOnUse || []}
+                fieldName="EffectsOnUse"
+                availableEffects={effectsList}
+                effectType="use"
+                showEmpty={$editMode}
+              />
+            </div>
           </div>
         {/if}
       </aside>
 
       <!-- Main content (center) -->
       <article class="wiki-article">
-        <h1 class="article-title">{medtool.Name}</h1>
+        <h1 class="article-title">
+          <InlineEdit
+            value={activeEntity?.Name}
+            path="Name"
+            type="text"
+            placeholder="Enter name..."
+          />
+        </h1>
 
         <!-- Description Panel -->
         <div class="description-panel">
-          {#if medtool.Properties?.Description}
-            <div class="description-content">{medtool.Properties.Description}</div>
+          {#if $editMode}
+            <RichTextEditor
+              content={activeEntity?.Properties?.Description || ''}
+              on:change={(e) => updateField('Properties.Description', e.detail)}
+              placeholder="Enter a description for this {getTypeName(additional.type).toLowerCase()}..."
+            />
+          {:else if activeEntity?.Properties?.Description}
+            <div class="description-content">{@html sanitizeHtml(activeEntity.Properties.Description)}</div>
           {:else}
             <div class="description-content placeholder">
-              {medtool.Name} is a {getTypeName(additional.type).toLowerCase()} used in Entropia Universe.
+              {activeEntity?.Name || 'This medical tool'} is a {getTypeName(additional.type).toLowerCase()} used in Entropia Universe.
             </div>
           {/if}
         </div>
 
         <!-- Tiering Section (tools only, non-L items) -->
-        {#if hasTiering && additional.tierInfo}
+        {#if hasTiering}
           <DataSection
-            title="Tiering"
+            title="Tiers"
             icon=""
             bind:expanded={panelStates.tiering}
+            subtitle="{(additional.tierInfo?.length || activeEntity?.Tiers?.length || 0)} tiers"
             on:toggle={savePanelStates}
           >
-            <Tiering tieringInfo={additional.tierInfo} />
+            <TieringEditor entity={activeEntity} entityType="MedicalTool" tierInfo={additional.tierInfo || []} />
           </DataSection>
         {/if}
 
@@ -487,6 +786,48 @@
 </WikiPage>
 
 <style>
+  /* Pending change banner */
+  .pending-change-banner {
+    background: linear-gradient(135deg, #f59e0b20, #f59e0b10);
+    border: 1px solid #f59e0b;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+  }
+
+  .banner-content {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .banner-icon {
+    font-size: 18px;
+  }
+
+  .banner-text {
+    flex: 1;
+    font-size: 14px;
+    color: var(--text-color);
+  }
+
+  .banner-toggle {
+    padding: 6px 12px;
+    font-size: 13px;
+    font-weight: 500;
+    background: var(--accent-color);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+
+  .banner-toggle:hover {
+    opacity: 0.9;
+  }
+
   .layout-a {
     position: relative;
     width: 100%;
@@ -516,19 +857,6 @@
     text-align: center;
     padding-bottom: 12px;
     border-bottom: 1px solid var(--border-color, #555);
-  }
-
-  .icon-placeholder {
-    width: 80px;
-    height: 80px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: var(--bg-color, var(--primary-color));
-    border: 2px dashed var(--border-color, #555);
-    border-radius: 8px;
-    color: var(--text-muted, #999);
-    margin: 0 auto 12px;
   }
 
   .infobox-title {
@@ -637,8 +965,63 @@
     font-weight: 600;
   }
 
+  .stat-value.highlight-yes {
+    color: var(--success-color, #4ade80);
+  }
+
   .stat-value.effect-value {
     color: var(--accent-color, #4a9eff);
+  }
+
+  .stat-row.toggleable {
+    cursor: pointer;
+    padding: 4px 6px;
+    margin: 0 -6px;
+    border-radius: 4px;
+    transition: background-color 0.15s;
+  }
+
+  .stat-row.toggleable:hover {
+    background-color: var(--hover-color);
+  }
+
+  .toggle-hint {
+    font-size: 10px;
+    color: var(--text-muted, #999);
+    margin-left: 4px;
+    opacity: 0.7;
+  }
+
+  .stat-row.toggleable:hover .toggle-hint {
+    opacity: 1;
+  }
+
+  .stat-row.indent {
+    padding-left: 12px;
+  }
+
+  .stat-row.indent .stat-label {
+    font-size: 11px;
+  }
+
+  .profession-link {
+    color: var(--accent-color, #4a9eff);
+    text-decoration: none;
+  }
+
+  .profession-link:hover {
+    text-decoration: underline;
+  }
+
+  .interval-edit {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .interval-sep {
+    color: var(--text-muted, #999);
+    font-weight: 400;
   }
 
   .entity-link {
@@ -648,6 +1031,23 @@
 
   .entity-link:hover {
     text-decoration: underline;
+  }
+
+  /* Combined effects layout (equip + use side by side) */
+  .effects-combined {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+
+  .effects-combined :global(.effects-editor) {
+    flex: 1;
+    min-width: 200px;
+  }
+
+  .effects-section {
+    padding: 12px;
   }
 
   /* Effects styling */
@@ -711,6 +1111,12 @@
   }
 
   /* Mobile adjustments */
+  @media (max-width: 899px) {
+    .effects-combined {
+      flex-direction: column;
+    }
+  }
+
   @media (max-width: 767px) {
     .layout-a {
       max-width: 100%;
@@ -728,16 +1134,6 @@
 
     .infobox-title {
       font-size: 16px;
-    }
-
-    .icon-placeholder {
-      width: 60px;
-      height: 60px;
-    }
-
-    .icon-placeholder svg {
-      width: 36px;
-      height: 36px;
     }
   }
 </style>

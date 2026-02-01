@@ -9,6 +9,9 @@ import { writable, derived } from 'svelte/store';
 // Edit mode: true when user is editing, false when viewing
 export const editMode = writable(false);
 
+// Create mode: true when creating a new entity (cannot exit edit mode, cancel navigates back)
+export const isCreateMode = writable(false);
+
 // The original entity data (before any edits)
 export const originalEntity = writable(null);
 
@@ -29,6 +32,13 @@ export const changeMetadata = writable({
   entity: null,
   author_id: null
 });
+
+// === Pending Change Viewing ===
+// Stores the pending change object from the API (if any exists)
+export const existingPendingChange = writable(null);
+
+// Whether to view the pending change version vs original
+export const viewingPendingChange = writable(false);
 
 // Derived: Check if there are any unsaved changes
 export const hasChanges = derived(pendingChanges, ($changes) => {
@@ -70,7 +80,8 @@ function setNestedValue(obj, path, value) {
 
   for (let i = 0; i < parts.length - 1; i++) {
     const part = parts[i];
-    if (current[part] === undefined) {
+    // Check for both undefined and null - create object if needed
+    if (current[part] === undefined || current[part] === null) {
       current[part] = {};
     }
     current = current[part];
@@ -101,21 +112,30 @@ export function getNestedValue(obj, path) {
 
 /**
  * Initialize the edit state with an entity
- * @param {object} entity - The entity to edit
- * @param {string} entityType - The type of entity (e.g., 'weapon', 'mob')
- * @param {number} userId - The current user's ID
+ * @param {object} entity - The entity to edit (null for create mode)
+ * @param {string} entityType - The type of entity (e.g., 'Weapon', 'Mob')
+ * @param {boolean} createMode - Whether this is create mode (new entity)
+ * @param {object|null} existingChange - An existing pending change to edit (if any)
  */
-export function initEditState(entity, entityType, userId) {
+export function initEditState(entity, entityType, createMode = false, existingChange = null) {
   originalEntity.set(entity);
   pendingChanges.set({});
   validationErrors.set({});
+  isCreateMode.set(createMode);
+
+  // Set metadata from existing change or create new
   changeMetadata.set({
-    id: null,
-    state: 'Draft',
-    type: entity ? 'Update' : 'Create',
+    id: existingChange?.id || null,
+    state: existingChange?.state || 'Draft',
+    type: createMode ? 'Create' : 'Update',
     entity: entityType,
-    author_id: userId
+    author_id: existingChange?.author_id || null
   });
+
+  // Auto-start edit mode in create mode
+  if (createMode) {
+    editMode.set(true);
+  }
 }
 
 /**
@@ -176,6 +196,7 @@ export function startEdit() {
  */
 export function resetEditState() {
   editMode.set(false);
+  isCreateMode.set(false);
   originalEntity.set(null);
   pendingChanges.set({});
   validationErrors.set({});
@@ -186,6 +207,8 @@ export function resetEditState() {
     entity: null,
     author_id: null
   });
+  existingPendingChange.set(null);
+  viewingPendingChange.set(false);
 }
 
 /**
@@ -209,4 +232,37 @@ export function getChangeForSubmission() {
     data,
     entityId: original?.Id || null
   };
+}
+
+/**
+ * Set the existing pending change (from API)
+ * @param {object|null} change - The pending change object or null
+ */
+export function setExistingPendingChange(change) {
+  existingPendingChange.set(change);
+  // If user is the author or an admin, auto-enable viewing pending change
+  // This is handled in the page component based on user permissions
+}
+
+/**
+ * Toggle between viewing pending change and original
+ */
+export function togglePendingChangeView() {
+  viewingPendingChange.update(v => !v);
+}
+
+/**
+ * Set whether to view the pending change
+ * @param {boolean} viewing - True to view pending change, false for original
+ */
+export function setViewingPendingChange(viewing) {
+  viewingPendingChange.set(viewing);
+}
+
+/**
+ * Reset pending change state
+ */
+export function resetPendingChangeState() {
+  existingPendingChange.set(null);
+  viewingPendingChange.set(false);
 }

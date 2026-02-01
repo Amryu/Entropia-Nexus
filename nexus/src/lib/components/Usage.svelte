@@ -3,137 +3,260 @@
   import '$lib/style.css';
 
   import { getItemLink, getTypeLink } from '$lib/util';
+  import { editMode } from '$lib/stores/wikiEditState.js';
 
-  import Table from './Table.svelte';
+  import FancyTable from './FancyTable.svelte';
+  import RefiningRecipesDisplay from './wiki/RefiningRecipesDisplay.svelte';
 
   export let item;
   export let usage;
+
+  // Build blueprint data
+  $: blueprintData = (() => {
+    if (!usage?.Blueprints?.length) return [];
+    return usage.Blueprints.map(blueprint => ({
+      name: blueprint.Name,
+      nameLink: getTypeLink(blueprint.Name, 'Blueprint'),
+      amount: blueprint.MaterialAmount ?? 'N/A'
+    }));
+  })();
+
+  $: blueprintColumns = [
+    { key: 'name', header: 'Blueprint', width: '1fr', formatter: (v, row) => row.nameLink ? `<a href="${row.nameLink}">${v}</a>` : v },
+    { key: 'amount', header: 'Amount', width: '80px', hideOnMobile: true }
+  ];
+
+  // Build mission data
+  $: missionData = (() => {
+    if (!usage?.Missions?.length) return [];
+    return usage.Missions.map(mission => ({
+      name: mission.Name,
+      nameLink: getTypeLink(mission.Name, 'Mission'),
+      type: mission.Type ?? 'N/A',
+      location: mission.Location ?? 'N/A',
+      handins: mission.HandIns ?? 'N/A'
+    }));
+  })();
+
+  $: missionColumns = [
+    { key: 'name', header: 'Name', width: '1fr', formatter: (v, row) => row.nameLink ? `<a href="${row.nameLink}">${v}</a>` : v },
+    { key: 'type', header: 'Type', width: '80px', hideOnMobile: true },
+    { key: 'location', header: 'Location', width: '120px', hideOnMobile: true },
+    { key: 'handins', header: 'Hand-ins', width: '80px', hideOnMobile: true }
+  ];
+
+  // Build vendor offer data (where this item is used as currency)
+  $: vendorOfferData = (() => {
+    if (!usage?.VendorOffers?.length) return [];
+    return usage.VendorOffers.flatMap(vendorOffer =>
+      vendorOffer.Prices.map(price => ({
+        vendor: vendorOffer?.Vendor?.Name ?? 'N/A',
+        vendorLink: getTypeLink(vendorOffer?.Vendor?.Name, 'Vendor'),
+        planet: vendorOffer?.Vendor?.Planet?.Name ?? 'N/A',
+        item: vendorOffer?.Item?.Name ?? 'N/A',
+        itemLink: getItemLink(vendorOffer?.Item),
+        amount: price?.Amount ?? 'N/A'
+      }))
+    );
+  })();
+
+  $: vendorOfferColumns = [
+    { key: 'vendor', header: 'Vendor', width: '1fr', formatter: (v, row) => row.vendorLink ? `<a href="${row.vendorLink}">${v}</a>` : v },
+    { key: 'planet', header: 'Planet', width: '100px', hideOnMobile: true },
+    { key: 'item', header: 'Item', width: '1fr', formatter: (v, row) => row.itemLink ? `<a href="${row.itemLink}">${v}</a>` : v },
+    { key: 'amount', header: 'Amount', width: '80px', hideOnMobile: true }
+  ];
+
+  // Check if there's any usage data
+  $: hasUsageData = usage != null && (
+    (usage.Blueprints?.length > 0) ||
+    (usage.RefiningRecipes?.length > 0) ||
+    (usage.Missions?.length > 0) ||
+    (usage.VendorOffers?.length > 0 && usage.VendorOffers.some(vo => vo.Prices?.length > 0))
+  );
 </script>
 
 <style>
-  .container {
+  .usage-container {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .usage-grid {
     display: grid;
-    grid-template-columns: minmax(500px, 1fr) minmax(500px, 1fr);
-    gap: 15px;
+    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    gap: 16px;
     align-items: start;
+  }
+
+  .usage-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .section-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted, #999);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin: 0 0 8px 0;
+    padding: 0;
+  }
+
+  .table-wrapper {
+    height: 300px;
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid var(--border-color, #555);
+  }
+
+  .table-wrapper.short {
+    height: 300px;
+  }
+
+  .recipe-wrapper {
+    border-radius: 0;
+    border: none;
+    padding: 0;
+    min-height: 300px;
+  }
+
+  .recipe-wrapper :global(.recipes-display) {
+    width: 100%;
+  }
+
+  .no-data {
+    padding: 16px;
+    text-align: center;
+    color: var(--text-muted, #999);
+    font-size: 14px;
+    background-color: var(--bg-color, var(--primary-color));
+    border-radius: 6px;
+  }
+
+  .no-data.edit-mode-notice {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    background-color: var(--info-bg, #0c1929);
+    border: 1px solid var(--border-color, #555);
+    color: var(--text-color);
+  }
+
+  .no-data.edit-mode-notice svg {
+    flex-shrink: 0;
+    color: var(--accent-color, #4a9eff);
+  }
+
+  :global(.usage-container a) {
+    color: var(--accent-color, #4a9eff);
+    text-decoration: none;
+  }
+
+  :global(.usage-container a:hover) {
+    text-decoration: underline;
+  }
+
+  /* Override pointer cursor on table rows since they don't link anywhere */
+  :global(.usage-container .table-row) {
+    cursor: default;
+  }
+
+  @media (max-width: 767px) {
+    .usage-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .table-wrapper {
+      height: 250px;
+    }
+
+    .recipe-wrapper {
+      min-height: 250px;
+    }
   }
 </style>
 
-<h2>Usage</h2>
-<br />
-{#if usage != null
-  && ((usage.Blueprints != null && usage.Blueprints.length > 0 )
-  || (usage.RefiningRecipes != null && usage.RefiningRecipes.length > 0)
-  || (usage.Missions != null && usage.Missions.length > 0)
-  || (usage.VendorOffers != null && usage.VendorOffers.length > 0 && usage.VendorOffers.some(vendorOffer => vendorOffer.Prices.length > 0)))}
-  <div class="container">
-    {#if usage.Blueprints != null && usage.Blueprints.length > 0}
-      <Table
-        title="Blueprints"
-        header={ 
-          {
-            values: ['Name', 'Amount'],
-            widths: ['1fr', '80px'],
-          }
-        }
-        data={
-          usage.Blueprints.map(blueprint => {
-            return {
-              values: [
-                blueprint.Name,
-                blueprint.MaterialAmount ?? 'N/A',
-              ],
-              tdStyles: [null, null],
-              links: [getTypeLink(blueprint.Name, 'Blueprint'), null]
-            };
-          })
-        }
-        options={{sortable: true, searchable: true}}  
-      />
-    {/if}
-    {#if usage.RefiningRecipes != null && usage.RefiningRecipes.length > 0}
-      <Table
-        title="Refining Recipes"
-        header={ 
-          {
-            values: [ 'Product', 'Amount', 'Ingredients', 'Amount',],
-            widths: ['1fr', '80', '1fr', '80px']
-          }
-        }
-        data={
-          usage.RefiningRecipes.flatMap(recipe => {
-            return recipe.Ingredients.map(ingredient => {
-              return {
-                values: [
-                  recipe.Product.Name,
-                  recipe.Amount,
-                  ingredient.Item.Name,
-                  ingredient.Amount,
-                ],
-                spans: [recipe.Ingredients.length, recipe.Ingredients.length, null, null],
-                links: [getItemLink(recipe.Product), null, getItemLink(ingredient.Item), null]
-              }
-            })
-          })
-        }
-        options={{sortable: false}}  
-      />
-    {/if}
-    {#if usage.Missions != null && usage.Missions.length > 0}
-      <Table
-        title = "Missions"
-        header = { 
-          {
-            values: ['Name', 'Type', 'Location', 'Hand-ins'],
-            widths: ['1fr', '80', '120px', 'max-content'],
-          }
-        }
-        data = {
-          usage.Missions.map(mission => {
-            return {
-              values: [
-                mission.Name,
-                mission.Type,
-                mission.Location,
-              ],
-              links: [getTypeLink(mission.Name, 'Mission'), null, null]
-            }
-          })
-        }
-      />
-    {/if}
-    {#if usage.VendorOffers != null && usage.VendorOffers.length > 0}
-      <Table
-        title = "Vendor Offers"
-        header = { 
-          {
-            values: ['Name', 'Location', 'Item', 'Amount'],
-            widths: ['1fr', '120px', '1fr', '80px'],
-          }
-        }
-        data = {
-          usage.VendorOffers.flatMap(vendorOffer => {
-            return vendorOffer.Prices.map(price => {
-              return {
-                values: [
-                  vendorOffer?.Vendor?.Name,
-                  vendorOffer?.Vendor?.Planet?.Name,
-                  vendorOffer?.Item?.Name,
-                  price?.Amount,
-                ],
-                spans: [vendorOffer.Prices.length, vendorOffer.Prices.length, null, null],
-                links: [getTypeLink(vendorOffer?.Vendor?.Name, 'Vendor'), null, getItemLink(vendorOffer?.Item), null]
-              }
-            })
-          })
-        }
-        options={{sortable: false}}  
-      />
-    {/if}
+{#if $editMode}
+  <div class="no-data edit-mode-notice">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="12" cy="12" r="10"/>
+      <line x1="12" y1="16" x2="12" y2="12"/>
+      <circle cx="12" cy="8" r="1" fill="currentColor" stroke="none"/>
+    </svg>
+    <span>This information is inferred from other sources and cannot be edited directly.</span>
   </div>
+{:else if !hasUsageData}
+  <div class="no-data">No usage data available for this item.</div>
 {:else}
-  <div>
-    No data available.<br />
+  <div class="usage-container">
+    <div class="usage-grid">
+      {#if usage.Blueprints && usage.Blueprints.length > 0}
+        <div class="usage-section">
+          <h4 class="section-title">Blueprints</h4>
+          <div class="table-wrapper">
+            <FancyTable
+              columns={blueprintColumns}
+              data={blueprintData}
+              rowHeight={40}
+              searchable={true}
+              sortable={true}
+              emptyMessage="No blueprint data"
+            />
+          </div>
+        </div>
+      {/if}
+
+      {#if usage.RefiningRecipes && usage.RefiningRecipes.length > 0}
+        <div class="usage-section">
+          <h4 class="section-title">Refining Recipes</h4>
+          <div class="recipe-wrapper">
+            <RefiningRecipesDisplay
+              recipes={usage.RefiningRecipes}
+              layout="list"
+              linkProduct={true}
+              linkIngredients={true}
+              currentEntityName={item?.Name || null}
+            />
+          </div>
+        </div>
+      {/if}
+
+      {#if usage.Missions && usage.Missions.length > 0}
+        <div class="usage-section">
+          <h4 class="section-title">Missions</h4>
+          <div class="table-wrapper">
+            <FancyTable
+              columns={missionColumns}
+              data={missionData}
+              rowHeight={40}
+              searchable={true}
+              sortable={true}
+              emptyMessage="No mission data"
+            />
+          </div>
+        </div>
+      {/if}
+
+      {#if usage.VendorOffers && usage.VendorOffers.length > 0 && usage.VendorOffers.some(vo => vo.Prices?.length > 0)}
+        <div class="usage-section">
+          <h4 class="section-title">Vendor Currency</h4>
+          <div class="table-wrapper">
+            <FancyTable
+              columns={vendorOfferColumns}
+              data={vendorOfferData}
+              rowHeight={40}
+              searchable={true}
+              sortable={true}
+              emptyMessage="No vendor offers"
+            />
+          </div>
+        </div>
+      {/if}
+    </div>
   </div>
 {/if}
-    

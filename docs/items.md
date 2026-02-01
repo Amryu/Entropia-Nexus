@@ -56,14 +56,19 @@ Wearable items:
 
 ### Attachments (`/items/attachments/[type]/`)
 
-Weapon enhancements:
+Equipment enhancements and modifications:
 
-| Type | Description |
-|------|-------------|
-| amplifiers | Damage/range amplifiers |
-| scopes | Zoom attachments |
-| sights | Laser sights |
-| absorbers | Recoil reduction |
+| Type | Description | Editable |
+|------|-------------|----------|
+| weaponamplifiers | Damage/range amplifiers | Yes |
+| weaponvisionattachments | Scopes and sights | Yes |
+| absorbers | Deterioration absorbers | Yes |
+| finderamplifiers | Finder amplifiers | Yes |
+| armorplatings | Armor platings | Yes |
+| enhancers | Tool/weapon/armor enhancers | **No** (database-generated) |
+| mindforceimplants | Mindforce implants | Yes |
+
+**Note**: Enhancers are automatically generated in the database and cannot be manually created or edited through the wiki interface.
 
 ### Medical Tools (`/items/medicaltools/[type]/`)
 

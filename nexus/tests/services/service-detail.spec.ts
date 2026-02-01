@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { TIMEOUT_INSTANT, TIMEOUT_LONG } from '../test-constants';
 
 test.describe('Service Detail View', () => {
   test.describe('List View (No Service Selected)', () => {
@@ -16,7 +17,7 @@ test.describe('Service Detail View', () => {
 
       // Should have type selector buttons (may appear after loading)
       const typeSelector = page.locator('.type-selector, .type-buttons, .type-btn').first();
-      const hasTypeSelector = await typeSelector.isVisible({ timeout: 5000 }).catch(() => false);
+      const hasTypeSelector = await typeSelector.isVisible({ timeout: TIMEOUT_LONG }).catch(() => false);
 
       // Pass if type selector is visible, or if page layout is visible (graceful handling)
       expect(hasTypeSelector || await page.locator('h1').isVisible().catch(() => false)).toBeTruthy();
@@ -82,16 +83,16 @@ test.describe('Service Detail View', () => {
       const transportBtn = page.locator('.type-btn:has-text("Transport")');
 
       // Click healing (Svelte uses class:active directive which adds 'active' to class list)
-      if (await healingBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+      if (await healingBtn.isVisible({ timeout: TIMEOUT_LONG }).catch(() => false)) {
         await healingBtn.click();
         // Check that clicking changes the page state (URL or visual indicator)
-        await page.waitForTimeout(300);
+        await page.waitForTimeout(TIMEOUT_INSTANT);
       }
 
       // Click DPS
       if (await dpsBtn.isVisible().catch(() => false)) {
         await dpsBtn.click();
-        await page.waitForTimeout(300);
+        await page.waitForTimeout(TIMEOUT_INSTANT);
         // Verify URL changed or button is somehow different
         const dpsClasses = await dpsBtn.getAttribute('class');
         expect(dpsClasses).toBeTruthy();
@@ -100,7 +101,7 @@ test.describe('Service Detail View', () => {
       // Click Transport
       if (await transportBtn.isVisible().catch(() => false)) {
         await transportBtn.click();
-        await page.waitForTimeout(300);
+        await page.waitForTimeout(TIMEOUT_INSTANT);
       }
 
       // Test passes if we can click all visible buttons without errors
@@ -265,7 +266,7 @@ test.describe('Service Detail View', () => {
 
       const typeBtn = page.locator('.type-btn').first();
 
-      if (await typeBtn.isVisible({ timeout: 5000 }).catch(() => false)) {
+      if (await typeBtn.isVisible({ timeout: TIMEOUT_LONG }).catch(() => false)) {
         // Check button has some styling (either background or border)
         const bgColor = await typeBtn.evaluate(el =>
           getComputedStyle(el).backgroundColor

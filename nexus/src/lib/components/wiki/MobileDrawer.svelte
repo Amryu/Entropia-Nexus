@@ -38,6 +38,7 @@
 
   function handleTouchStart(event) {
     touchStartX = event.touches[0].clientX;
+    touchCurrentX = event.touches[0].clientX; // Initialize to same position so taps don't trigger swipe
     swiping = true;
   }
 
@@ -74,12 +75,15 @@
       aria-label="Close navigation"
     />
 
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
+    <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
     <aside
       class="drawer drawer-{side}"
       transition:fly={{ x: side === 'left' ? -300 : 300, duration: 250 }}
       on:touchstart={handleTouchStart}
       on:touchmove={handleTouchMove}
       on:touchend={handleTouchEnd}
+      on:click|stopPropagation
       role="dialog"
       aria-modal="true"
       aria-label="Navigation"
@@ -113,10 +117,12 @@
     background-color: rgba(0, 0, 0, 0.5);
     border: none;
     cursor: pointer;
+    z-index: 0;
   }
 
   .drawer {
     position: relative;
+    z-index: 1;
     width: 85%;
     max-width: 320px;
     height: 100%;

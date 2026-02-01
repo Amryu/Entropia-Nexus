@@ -5,7 +5,8 @@
 -->
 <script>
   // @ts-nocheck
-  import { createEventDispatcher, onMount } from 'svelte';
+  import { createEventDispatcher, onMount, afterUpdate, tick } from 'svelte';
+  import { goto } from '$app/navigation';
   import { encodeURIComponentSafe } from '$lib/util';
 
   const dispatch = createEventDispatcher();
@@ -13,7 +14,7 @@
   /** @type {Array} Items to display in the list */
   export let items = [];
 
-  /** @type {Array} Filter options [{key, label, values: [{value, label}]}] */
+  /** @type {Array} Filter options [{key, label, values: [{value, label}], multiSelect?: boolean, filterFn?: Function}] */
   export let filters = [];
 
   /** @type {string} Base path for links */
@@ -24,6 +25,9 @@
 
   /** @type {string|null} Currently selected item slug */
   export let currentSlug = null;
+
+  /** @type {string|null} Currently selected change ID (for pending creates) */
+  export let currentChangeId = null;
 
   /** @type {boolean} Whether sidebar is in expanded table view mode */
   export let expanded = false;
@@ -48,6 +52,18 @@
    */
   export let customGetItemHref = null;
 
+  /**
+   * @type {Array} User's pending create changes to show at top of list
+   * Each item should have: { id, data: { Name, ... }, state: 'Draft'|'Pending' }
+   */
+  export let userPendingCreates = [];
+
+  /**
+   * @type {Array} User's pending update changes to highlight in list
+   * Each item should have: { id, data: { Id|ItemId }, state: 'Draft'|'Pending' }
+   */
+  export let userPendingUpdates = [];
+
   // Search and filter state
   let searchQuery = '';
   let activeFilters = {};
@@ -55,6 +71,12 @@
   let sortColumn = null;
   let sortDirection = 'asc';
   let showFilterHelp = false;
+  let openFilterHelp = null; // Track which filter's help popover is open
+
+  // Keyboard navigation state
+  let highlightedIndex = -1;
+  let hasKeyboardInput = false; // Track if user has interacted with keyboard navigation
+  let lastSearchQueryForHighlight = ''; // Track search query to detect actual typing vs re-renders
 
   // Virtualization state
   let listContainer;
@@ -67,9 +89,24 @@
   $: {
     for (const filter of filters) {
       if (activeFilters[filter.key] === undefined) {
-        activeFilters[filter.key] = null;
+        // Use array for multi-select filters, null for single-select
+        activeFilters[filter.key] = filter.multiSelect ? [] : null;
       }
     }
+  }
+
+  // Helper to find current item index (handles both slugs and changeIds)
+  function findCurrentItemIndex(items) {
+    if (currentChangeId) {
+      // Convert to string for comparison since URL params are strings
+      const changeIdStr = String(currentChangeId);
+      const index = items.findIndex(item => item._isPendingCreate && String(item._changeId) === changeIdStr);
+      if (index !== -1) return index;
+    }
+    if (currentSlug) {
+      return items.findIndex(item => item.Name === currentSlug);
+    }
+    return -1;
   }
 
   // Smart filter function (supports >, <, >=, <=, !, =)
@@ -153,7 +190,7 @@
     return hitMax ?? dmgMax ?? null;
   }
 
-  // Fuzzy search scoring function - greedy matching
+  // Search scoring function - prioritizes exact and substring matches
   function fuzzyScore(name, query) {
     if (!name || !query) return 0;
     const nameLower = name.toLowerCase();
@@ -180,7 +217,14 @@
       return 700 - Math.min(index, 50);
     }
 
+    // For short queries (< 4 chars), only match substrings - no fuzzy matching
+    // This prevents "fox" from matching "Atrox" via fuzzy
+    if (queryLower.length < 4) {
+      return 0;
+    }
+
     // Fuzzy match: check if all characters appear in sequence
+    // Only enable for longer queries and require compact matches
     let queryIdx = 0;
     let score = 0;
     let consecutiveBonus = 0;
@@ -201,20 +245,34 @@
       }
     }
 
-    // If all query chars found in sequence, return fuzzy score
+    // If all query chars found in sequence, check if it's a good match
     if (queryIdx === queryLower.length) {
-      // Bonus for compact matches (characters close together)
+      // Calculate spread (how scattered the match is)
       const spread = matchPositions.length > 1
         ? matchPositions[matchPositions.length - 1] - matchPositions[0]
         : 0;
+
+      // Reject if match is too spread out (more than 2x query length)
+      // This prevents "atrox" from matching "Avatar of Greed Guardian" via a/t/r/o/x scattered
+      if (spread > queryLower.length * 2) {
+        return 0;
+      }
+
       const compactBonus = Math.max(0, 50 - spread);
       return 300 + score + compactBonus;
     }
 
-    // Partial match: at least 60% of query characters found in sequence
+    // Partial match: at least 95% of query characters found in sequence
+    // Only for longer queries (5+ chars)
     const matchRatio = queryIdx / queryLower.length;
-    if (matchRatio >= 0.6 && queryLower.length >= 3) {
-      return 100 + Math.floor(score * matchRatio);
+    if (matchRatio >= 0.95 && queryLower.length >= 5) {
+      // Also check spread for partial matches
+      const spread = matchPositions.length > 1
+        ? matchPositions[matchPositions.length - 1] - matchPositions[0]
+        : 0;
+      if (spread <= queryLower.length * 2) {
+        return 100 + Math.floor(score * matchRatio);
+      }
     }
 
     // No match
@@ -244,10 +302,39 @@
     }
 
     // Apply category filters (button filters)
-    for (const [key, value] of Object.entries(activeFilters)) {
-      if (value !== null && value !== '') {
+    for (const filter of filters) {
+      const value = activeFilters[filter.key];
+
+      // Skip if no filter value
+      if (value === null || value === '' || (Array.isArray(value) && value.length === 0)) {
+        continue;
+      }
+
+      // Use custom filter function if provided
+      if (filter.filterFn) {
+        result = result.filter(item => filter.filterFn(item, value));
+        // Apply custom sort function if provided (sort by match quality)
+        if (filter.sortFn) {
+          result = [...result].sort((a, b) => filter.sortFn(b, value) - filter.sortFn(a, value));
+        }
+        continue;
+      }
+
+      // Default filtering behavior
+      if (Array.isArray(value)) {
+        // Multi-select: item must match any of the selected values
         result = result.filter(item => {
-          const parts = key.split('.');
+          const parts = filter.key.split('.');
+          let itemValue = item;
+          for (const part of parts) {
+            itemValue = itemValue?.[part];
+          }
+          return value.includes(itemValue);
+        });
+      } else {
+        // Single-select
+        result = result.filter(item => {
+          const parts = filter.key.split('.');
           let itemValue = item;
           for (const part of parts) {
             itemValue = itemValue?.[part];
@@ -308,7 +395,47 @@
       });
     }
 
-    return result;
+    const updateMap = {};
+    if (userPendingUpdates && userPendingUpdates.length > 0) {
+      userPendingUpdates.forEach(change => {
+        const changeEntityId = change.data?.Id ?? change.data?.ItemId;
+        if (changeEntityId) {
+          updateMap[String(changeEntityId)] = {
+            _changeId: change.id,
+            _changeState: change.state
+          };
+        }
+      });
+    }
+
+    const itemsWithUpdates = Object.keys(updateMap).length > 0
+      ? result.map(item => {
+        const itemEntityId = item?.Id ?? item?.ItemId;
+        if (itemEntityId && updateMap[String(itemEntityId)]) {
+          return {
+            ...item,
+            _hasPendingUpdate: true,
+            ...updateMap[String(itemEntityId)]
+          };
+        }
+        return item;
+      })
+      : result;
+
+    // Prepend user's pending creates at the top (with special marker)
+    if (userPendingCreates && userPendingCreates.length > 0) {
+      const pendingItems = userPendingCreates.map(change => ({
+        ...change.data,
+        _isPendingCreate: true,
+        _changeId: change.id,
+        _changeState: change.state,
+        // Use temporary name for display if no name set
+        Name: change.data?.Name || '[Unnamed]'
+      }));
+      return [...pendingItems, ...itemsWithUpdates];
+    }
+
+    return itemsWithUpdates;
   })();
 
   // Virtualization calculations
@@ -318,25 +445,42 @@
   $: visibleItems = filteredItems.slice(startIndex, endIndex);
   $: offsetY = startIndex * ITEM_HEIGHT;
 
-  function handleItemClick(item) {
-    dispatch('select', { item });
-  }
 
-  function setFilter(key, value) {
-    activeFilters[key] = value === activeFilters[key] ? null : value;
+  function setFilter(key, value, isMultiSelect = false) {
+    if (isMultiSelect) {
+      // Toggle value in array for multi-select
+      const current = activeFilters[key] || [];
+      const idx = current.indexOf(value);
+      if (idx === -1) {
+        activeFilters[key] = [...current, value];
+      } else {
+        activeFilters[key] = current.filter(v => v !== value);
+      }
+    } else {
+      // Single-select toggle
+      activeFilters[key] = value === activeFilters[key] ? null : value;
+    }
     activeFilters = activeFilters;
   }
 
   function clearFilters() {
     searchQuery = '';
-    for (const key of Object.keys(activeFilters)) {
-      activeFilters[key] = null;
+    highlightedIndex = -1;
+    hasKeyboardInput = false; // Reset keyboard state when clearing filters
+    lastSearchQueryForHighlight = ''; // Reset search tracking
+    for (const filter of filters) {
+      // Reset to array for multi-select, null for single-select
+      activeFilters[filter.key] = filter.multiSelect ? [] : null;
     }
     activeFilters = activeFilters;
     columnFilters = { name: '', class: '', maxLvl: '', dps: '', dpp: '' };
   }
 
   function getItemHref(item) {
+    // Pending create changes link to the create page with change ID
+    if (item._isPendingCreate) {
+      return `${basePath}?mode=create&changeId=${item._changeId}`;
+    }
     if (customGetItemHref) {
       return customGetItemHref(item, basePath);
     }
@@ -346,6 +490,171 @@
   function handleScroll(event) {
     scrollTop = event.target.scrollTop;
   }
+
+  // Shared keyboard navigation logic for both search input and item list
+  function handleKeyboardNavigation(event) {
+    if (filteredItems.length === 0) {
+      if (event.key === 'Escape') {
+        searchQuery = '';
+        highlightedIndex = -1;
+      }
+      return;
+    }
+
+    switch (event.key) {
+      case 'ArrowDown':
+        event.preventDefault();
+        hasKeyboardInput = true;
+        // Start from current item if no highlight yet
+        if (highlightedIndex < 0) {
+          const currentIndex = findCurrentItemIndex(filteredItems);
+          highlightedIndex = currentIndex >= 0 ? currentIndex : 0;
+        } else {
+          highlightedIndex = Math.min(highlightedIndex + 1, filteredItems.length - 1);
+        }
+        scrollToHighlighted();
+        break;
+
+      case 'ArrowUp':
+        event.preventDefault();
+        hasKeyboardInput = true;
+        // Start from current item if no highlight yet
+        if (highlightedIndex < 0) {
+          const currentIndex = findCurrentItemIndex(filteredItems);
+          highlightedIndex = currentIndex >= 0 ? currentIndex : 0;
+        } else {
+          highlightedIndex = Math.max(highlightedIndex - 1, 0);
+        }
+        scrollToHighlighted();
+        break;
+
+      case 'Enter':
+        event.preventDefault();
+        if (highlightedIndex >= 0 && highlightedIndex < filteredItems.length) {
+          const item = filteredItems[highlightedIndex];
+          // Mark that we want to keep focus on the list after navigation
+          shouldFocusListAfterUpdate = true;
+          // Navigate to the item using SvelteKit routing (no full page refresh)
+          goto(getItemHref(item));
+        }
+        break;
+
+      case 'Escape':
+        event.preventDefault();
+        searchQuery = '';
+        highlightedIndex = -1;
+        hasKeyboardInput = false; // Reset keyboard state on escape
+        lastSearchQueryForHighlight = ''; // Reset search tracking
+        break;
+    }
+  }
+
+  // Keyboard navigation for search results
+  function handleSearchKeydown(event) {
+    handleKeyboardNavigation(event);
+  }
+
+  // Keyboard navigation for item list (when focused via click)
+  function handleListKeydown(event) {
+    handleKeyboardNavigation(event);
+  }
+
+  // Track if we should focus the list after navigation/update
+  let shouldFocusListAfterUpdate = false;
+
+  // Handle click on item list container to enable keyboard navigation
+  function handleListClick(event) {
+    // Mark that we want to focus the list (will be done in afterUpdate to ensure DOM is ready)
+    shouldFocusListAfterUpdate = true;
+    // Also try immediate focus for clicks on empty space
+    if (listContainer) {
+      listContainer.focus();
+    }
+  }
+
+  // Scroll highlighted item into view within the virtualized list
+  function scrollToHighlighted() {
+    if (!listContainer || highlightedIndex < 0) return;
+
+    const itemTop = highlightedIndex * ITEM_HEIGHT;
+    const itemBottom = itemTop + ITEM_HEIGHT;
+    const viewTop = scrollTop;
+    const viewBottom = scrollTop + containerHeight;
+
+    if (itemTop < viewTop) {
+      // Scroll up to show item
+      listContainer.scrollTop = itemTop;
+    } else if (itemBottom > viewBottom) {
+      // Scroll down to show item
+      listContainer.scrollTop = itemBottom - containerHeight;
+    }
+  }
+
+  // Set highlighted index based on search state and keyboard interaction
+  // Only show highlight when user has actively started navigating (typing search or pressing arrow keys)
+  $: if (searchQuery !== undefined) {
+    if (filteredItems.length === 0) {
+      highlightedIndex = -1;
+      lastSearchQueryForHighlight = searchQuery;
+    } else if (searchQuery.trim().length > 0) {
+      // Only reset to first result when search query actually changes (user is typing)
+      // Not on re-renders with same query (e.g., after navigation)
+      if (searchQuery !== lastSearchQueryForHighlight) {
+        highlightedIndex = 0;
+        hasKeyboardInput = true; // Searching counts as keyboard interaction
+        lastSearchQueryForHighlight = searchQuery;
+      }
+    } else if (!hasKeyboardInput) {
+      // No search and no keyboard input yet - don't show highlight
+      highlightedIndex = -1;
+      lastSearchQueryForHighlight = searchQuery;
+    }
+    // If hasKeyboardInput is true but no search, keep current highlightedIndex (set by arrow keys)
+  }
+
+  // Scroll to the currently selected item (on page load or when currentSlug/currentChangeId changes)
+  async function scrollToCurrentItem() {
+    if ((!currentSlug && !currentChangeId) || !listContainer || filteredItems.length === 0) return;
+
+    // Find the index of the current item in the filtered list
+    const currentIndex = findCurrentItemIndex(filteredItems);
+    if (currentIndex === -1) return;
+
+    // Wait for DOM to update
+    await tick();
+
+    // Check if container still exists after tick
+    if (!listContainer) return;
+
+    // Scroll to position the current item in view (centered if possible)
+    const itemTop = currentIndex * ITEM_HEIGHT;
+    const targetScroll = Math.max(0, itemTop - containerHeight / 2 + ITEM_HEIGHT / 2);
+    listContainer.scrollTop = targetScroll;
+  }
+
+  // Track if initial scroll has been performed (only scroll to item on initial page load)
+  let initialScrollDone = false;
+
+  // Use afterUpdate to scroll to current item only on initial page load
+  // Also handle deferred focus for keyboard navigation
+  afterUpdate(() => {
+    // Only scroll once on initial load when there's a pre-selected slug or changeId
+    if (!initialScrollDone && (currentSlug || currentChangeId) && filteredItems.length > 0 && listContainer) {
+      initialScrollDone = true;
+      scrollToCurrentItem();
+    }
+
+    // Focus the list if user clicked on it and we're waiting for navigation to complete
+    if (shouldFocusListAfterUpdate && listContainer) {
+      shouldFocusListAfterUpdate = false;
+      // Use requestAnimationFrame to ensure DOM is fully updated
+      requestAnimationFrame(() => {
+        if (listContainer && document.activeElement !== listContainer) {
+          listContainer.focus();
+        }
+      });
+    }
+  });
 
   function handleSort(column) {
     if (sortColumn === column) {
@@ -436,9 +745,9 @@
     return ctx.measureText(String(text)).width;
   }
 
-  // Calculate column widths based on initial data
+  // Calculate column widths based on initial data (only needed for expanded table view)
   function calculateColumnWidths() {
-    if (widthsCalculated || !items || items.length === 0) return;
+    if (widthsCalculated || !expanded || !items || items.length === 0) return;
 
     const headerFont = '11px system-ui, -apple-system, sans-serif';
     const cellFont = '12px system-ui, -apple-system, sans-serif';
@@ -480,6 +789,17 @@
     ? `1fr ${activeColumns.map(c => getColumnWidth(c)).join(' ')}`
     : gridTemplateColumns;
 
+  // Calculate column widths when expanded mode is enabled (run in background to avoid blocking UI)
+  $: if (expanded && !widthsCalculated && items && items.length > 0) {
+    // Use requestIdleCallback to run calculation when browser is idle
+    if (typeof requestIdleCallback !== 'undefined') {
+      requestIdleCallback(() => calculateColumnWidths(), { timeout: 1000 });
+    } else {
+      // Fallback for browsers without requestIdleCallback
+      setTimeout(() => calculateColumnWidths(), 0);
+    }
+  }
+
   onMount(() => {
     // Measure scrollbar width
     const outer = document.createElement('div');
@@ -503,7 +823,7 @@
   <div class="nav-header">
     <h2 class="nav-title">{title}</h2>
     <button
-      class="expand-btn"
+      class="expand-btn hide-on-mobile"
       on:click={handleToggleExpand}
       title={expanded ? 'Collapse sidebar' : 'Expand to table view'}
     >
@@ -527,9 +847,10 @@
       class="search-input"
       placeholder="Search..."
       bind:value={searchQuery}
+      on:keydown={handleSearchKeydown}
     />
     {#if searchQuery}
-      <button class="clear-search" on:click={() => searchQuery = ''} aria-label="Clear search">
+      <button class="clear-search" on:click={() => { searchQuery = ''; highlightedIndex = -1; hasKeyboardInput = false; lastSearchQueryForHighlight = ''; }} aria-label="Clear search">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <path d="M18 6L6 18M6 6l12 12" />
         </svg>
@@ -558,13 +879,38 @@
         <!-- Value-based category filters -->
         {#each filters as filter}
           <div class="filter-group">
-            <span class="filter-label">{filter.label}</span>
+            <div class="filter-label-row">
+              <span class="filter-label">{filter.label}</span>
+              {#if filter.helpText}
+                <button
+                  class="filter-help-btn"
+                  class:active={openFilterHelp === filter.key}
+                  on:click={() => openFilterHelp = openFilterHelp === filter.key ? null : filter.key}
+                  title="Filter info"
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+                    <line x1="12" y1="17" x2="12.01" y2="17" />
+                  </svg>
+                </button>
+              {/if}
+            </div>
+            {#if filter.helpText && openFilterHelp === filter.key}
+              <div class="filter-help-popover">
+                {#each filter.helpText as line}
+                  <div class="help-line">{line}</div>
+                {/each}
+              </div>
+            {/if}
             <div class="filter-options">
               {#each filter.values as option}
                 <button
                   class="filter-btn"
-                  class:active={activeFilters[filter.key] === option.value}
-                  on:click={() => setFilter(filter.key, option.value)}
+                  class:active={filter.multiSelect
+                    ? (activeFilters[filter.key] || []).includes(option.value)
+                    : activeFilters[filter.key] === option.value}
+                  on:click={() => setFilter(filter.key, option.value, filter.multiSelect)}
                 >
                   {option.label}
                 </button>
@@ -573,7 +919,7 @@
           </div>
         {/each}
 
-        {#if Object.values(activeFilters).some(v => v !== null)}
+        {#if Object.values(activeFilters).some(v => v !== null && (Array.isArray(v) ? v.length > 0 : true))}
           <button class="clear-filters" on:click={clearFilters}>
             Clear filters
           </button>
@@ -624,8 +970,27 @@
     class="item-list"
     bind:this={listContainer}
     on:scroll={handleScroll}
+    on:keydown={handleListKeydown}
+    on:click={handleListClick}
+    tabindex="0"
+    role="listbox"
+    aria-label="Item list"
   >
-    {#if filteredItems.length === 0}
+    {#if !items || items.length === 0}
+      {#if items === null || items === undefined}
+        <!-- Loading state -->
+        <div class="loading-skeleton">
+          {#each Array(8) as _, i}
+            <div class="skeleton-item" style="animation-delay: {i * 0.05}s"></div>
+          {/each}
+        </div>
+      {:else}
+        <!-- Empty state (items loaded but empty) -->
+        <div class="no-results">
+          <p>No items available</p>
+        </div>
+      {/if}
+    {:else if filteredItems.length === 0}
       <div class="no-results">
         <p>No items found</p>
         {#if searchQuery || Object.values(activeFilters).some(v => v !== null) || Object.values(columnFilters).some(v => v)}
@@ -637,23 +1002,57 @@
     {:else}
       <div class="virtual-list" style="height: {totalHeight}px;">
         <div class="virtual-items" style="transform: translateY({offsetY}px);">
-          {#each visibleItems as item (item.Name)}
+          {#each visibleItems as item, localIndex (item._isPendingCreate ? `pending-${item._changeId}` : item.Name)}
+            {@const globalIndex = startIndex + localIndex}
             <a
               href={getItemHref(item)}
               class="item-link"
-              class:active={item.Name === currentSlug}
+              class:active={(item._isPendingCreate && currentChangeId && String(item._changeId) === String(currentChangeId)) || (item.Name === currentSlug && !item._isPendingCreate)}
+              class:highlighted={globalIndex === highlightedIndex}
               class:table-row={expanded}
-              on:click={() => handleItemClick(item)}
-              title={item.Name}
+              class:pending-create={item._isPendingCreate}
+              class:pending-draft={item._isPendingCreate && item._changeState === 'Draft'}
+              class:pending-review={item._isPendingCreate && item._changeState === 'Pending'}
+              class:pending-update={item._hasPendingUpdate}
+              class:pending-update-draft={item._hasPendingUpdate && item._changeState === 'Draft'}
+              class:pending-update-review={item._hasPendingUpdate && item._changeState === 'Pending'}
+              on:mouseenter={() => { highlightedIndex = globalIndex; hasKeyboardInput = true; }}
+              title={item._isPendingCreate
+                ? `${item.Name} (${item._changeState})`
+                : item._hasPendingUpdate
+                  ? `${item.Name} (${item._changeState})`
+                  : item.Name}
               style={expanded ? `grid-template-columns: ${dynamicGridTemplateColumns};` : ''}
             >
               {#if expanded}
-                <span class="cell cell-name" title={item.Name}>{item.Name}</span>
+                <span class="cell cell-name" title={item.Name}>
+                  {#if item._isPendingCreate}
+                    <span class="pending-badge" class:draft={item._changeState === 'Draft'} class:review={item._changeState === 'Pending'}>
+                      {item._changeState === 'Draft' ? 'Draft' : 'Review'}
+                    </span>
+                  {:else if item._hasPendingUpdate}
+                    <span class="pending-badge update" class:draft={item._changeState === 'Draft'} class:review={item._changeState === 'Pending'}>
+                      {item._changeState === 'Draft' ? 'Draft' : 'Review'}
+                    </span>
+                  {/if}
+                  {item.Name}
+                </span>
                 {#each activeColumns as column}
                   <span class="cell cell-{column.key}">{formatCell(item, column)}</span>
                 {/each}
               {:else}
-                <span class="item-name" title={item.Name}>{item.Name}</span>
+                <span class="item-name" title={item.Name}>
+                  {#if item._isPendingCreate}
+                    <span class="pending-badge" class:draft={item._changeState === 'Draft'} class:review={item._changeState === 'Pending'}>
+                      {item._changeState === 'Draft' ? 'Draft' : 'Review'}
+                    </span>
+                  {:else if item._hasPendingUpdate}
+                    <span class="pending-badge update" class:draft={item._changeState === 'Draft'} class:review={item._changeState === 'Pending'}>
+                      {item._changeState === 'Draft' ? 'Draft' : 'Review'}
+                    </span>
+                  {/if}
+                  {item.Name}
+                </span>
               {/if}
             </a>
           {/each}
@@ -681,6 +1080,7 @@
     justify-content: space-between;
     align-items: center;
     padding: 8px 12px;
+    min-height: 28px;
     flex-shrink: 0;
     border-bottom: 1px solid var(--border-color, #555);
     background-color: var(--secondary-color);
@@ -778,14 +1178,61 @@
     margin-bottom: 6px;
   }
 
+  .filter-label-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+  }
+
   .filter-label {
-    display: block;
     font-size: 11px;
     font-weight: 500;
     color: var(--text-muted, #999);
-    margin-bottom: 4px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+  }
+
+  .filter-help-btn {
+    padding: 2px;
+    background: transparent;
+    border: 1px solid var(--border-color, #555);
+    border-radius: 50%;
+    color: var(--text-muted, #999);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+  }
+
+  .filter-help-btn:hover,
+  .filter-help-btn.active {
+    background-color: var(--accent-color, #4a9eff);
+    border-color: var(--accent-color, #4a9eff);
+    color: white;
+  }
+
+  .filter-help-popover {
+    background-color: var(--secondary-color);
+    border: 1px solid var(--border-color, #555);
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-bottom: 8px;
+    font-size: 11px;
+  }
+
+  .filter-help-popover .help-line {
+    color: var(--text-color);
+    padding: 2px 0;
+  }
+
+  .filter-help-popover .help-line:first-child {
+    padding-top: 0;
+  }
+
+  .filter-help-popover .help-line:last-child {
+    padding-bottom: 0;
   }
 
   .filter-options {
@@ -998,6 +1445,15 @@
     margin: 0 12px 12px;
   }
 
+  /* Force scrollbar to always be visible in expanded table mode for consistent column alignment */
+  .wiki-nav.expanded .item-list {
+    overflow-y: scroll;
+  }
+
+  .item-list:focus {
+    outline: none;
+  }
+
   .virtual-list {
     position: relative;
   }
@@ -1030,7 +1486,80 @@
     color: white;
   }
 
+  .item-link.active:hover {
+    background-color: var(--accent-color-hover, #3a8eef);
+    color: white;
+  }
+
+  .item-link.highlighted {
+    background-color: var(--hover-color);
+    outline: 2px solid var(--accent-color, #4a9eff);
+    outline-offset: -2px;
+  }
+
+  .item-link.highlighted.active {
+    background-color: var(--accent-color, #4a9eff);
+    color: white;
+    outline: 2px solid var(--text-color, white);
+  }
+
+  /* Pending create items */
+  .item-link.pending-create {
+    border-left: 3px solid var(--success-color, #16a34a);
+    padding-left: 5px;
+  }
+
+  .item-link.pending-update {
+    border-left: 3px solid var(--warning-color, #f59e0b);
+    padding-left: 5px;
+  }
+
+  .pending-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 16px;
+    padding: 0 6px;
+    font-size: 9px;
+    font-weight: 600;
+    text-transform: uppercase;
+    border-radius: 3px;
+    margin-right: 6px;
+    margin-bottom: 1px;
+    flex-shrink: 0;
+    color: #fff;
+    text-align: center;
+    line-height: 1;
+  }
+
+  .pending-badge.draft {
+    background-color: #1e40af;
+    color: #fff;
+  }
+
+  .pending-badge.review {
+    background-color: var(--success-color, #16a34a);
+    color: #fff;
+  }
+
+  .pending-badge.update {
+    background-color: var(--warning-color, #f59e0b);
+    color: white;
+  }
+
+  .pending-badge.update.draft {
+    background-color: #1e40af;
+    color: #fff;
+  }
+
+  .pending-badge.update.review {
+    background-color: var(--warning-color, #f59e0b);
+    color: white;
+  }
+
   .item-name {
+    display: flex;
+    align-items: center;
     font-size: 13px;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1095,8 +1624,40 @@
     font-size: 13px;
   }
 
-  /* Mobile adjustments */
-  @media (max-width: 767px) {
+  /* Loading skeleton */
+  .loading-skeleton {
+    padding: 4px 0;
+  }
+
+  .skeleton-item {
+    height: 28px;
+    margin: 4px 0;
+    background: linear-gradient(
+      90deg,
+      var(--hover-color) 25%,
+      var(--secondary-color) 50%,
+      var(--hover-color) 75%
+    );
+    background-size: 200% 100%;
+    border-radius: 4px;
+    animation: skeleton-pulse 1.5s ease-in-out infinite;
+  }
+
+  @keyframes skeleton-pulse {
+    0% {
+      background-position: 200% 0;
+    }
+    100% {
+      background-position: -200% 0;
+    }
+  }
+
+  /* Mobile adjustments - aligned with global 900px breakpoint */
+  @media (max-width: 899px) {
+    .hide-on-mobile {
+      display: none !important;
+    }
+
     .nav-header {
       padding: 10px 10px 6px 10px;
     }

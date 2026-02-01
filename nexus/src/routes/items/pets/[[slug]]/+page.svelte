@@ -1,6 +1,7 @@
 <!--
   @component Pets Wiki Page
   Wikipedia-style layout with floating infobox on the right side.
+  Supports full wiki editing.
 
   Legacy editConfig preserved in pets-legacy/+page.svelte
 -->
@@ -8,25 +9,127 @@
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { clampDecimals, encodeURIComponentSafe, getTypeLink } from '$lib/util';
+  import { sanitizeHtml } from '$lib/sanitize';
 
   // Wiki components
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
+  import PendingChangeBanner from '$lib/components/wiki/PendingChangeBanner.svelte';
   import WikiSEO from '$lib/components/wiki/WikiSEO.svelte';
   import DataSection from '$lib/components/wiki/DataSection.svelte';
+  import InlineEdit from '$lib/components/wiki/InlineEdit.svelte';
+  import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
+  import PetEffectsEditor from '$lib/components/wiki/PetEffectsEditor.svelte';
+
+  // Wiki edit state
+  import {
+    editMode,
+    isCreateMode as createModeStore,
+    initEditState,
+    resetEditState,
+    currentEntity,
+    existingPendingChange,
+    viewingPendingChange,
+    setExistingPendingChange,
+    setViewingPendingChange,
+    updateField,
+    changeMetadata
+  } from '$lib/stores/wikiEditState.js';
+
+  // Image upload
+  import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
 
   export let data;
 
   $: pet = data.object;
   $: user = data.session?.user;
   $: additional = data.additional || {};
+  $: pendingChange = data.pendingChange;
+  $: existingChange = data.existingChange;
+  $: isCreateMode = data.isCreateMode || false;
+  $: canCreateNew = data.canCreateNew ?? true;
+  $: userPendingCreates = data.userPendingCreates || [];
+  $: userPendingUpdates = data.userPendingUpdates || [];
+  $: planetsList = data.planets || [];
+  $: effectsList = data.effects || [];
+
+  // Can edit if user is verified or admin
+  $: canEdit = user?.verified || user?.isAdmin;
 
   // All pets for navigation
-  $: allItems = data.items || [];
+  $: allItems = data.allItems || [];
 
   // Build navigation items
   $: navItems = allItems;
+
+  // Empty entity template for create mode
+  const emptyEntity = {
+    Name: '',
+    Properties: {
+      Description: '',
+      Rarity: 'Common',
+      TrainingDifficulty: 'Easy',
+      TamingLevel: 1,
+      ExportableLevel: 0,
+      NutrioCapacity: 0,
+      NutrioConsumptionPerHour: 0
+    },
+    Planet: null,
+    Effects: []
+  };
+
+  // Initialize edit state when entity or user changes
+  $: if (user) {
+    const entity = isCreateMode ? (existingChange?.data || emptyEntity) : pet;
+    if (entity) {
+      initEditState(entity, 'Pet', isCreateMode, existingChange);
+    }
+  }
+
+  // Set existing pending change when data loads
+  $: if (pendingChange) {
+    setExistingPendingChange(pendingChange);
+    // Auto-enable viewing pending change for author or admin
+    if (user && (pendingChange.author_id === user.id || user.isAdmin)) {
+      setViewingPendingChange(true);
+    }
+  } else {
+    setExistingPendingChange(null);
+    setViewingPendingChange(false);
+  }
+
+  // Active entity: what we display (edit mode → currentEntity, pending view → pending data, default → pet)
+  $: activeEntity = $editMode
+    ? $currentEntity
+    : ($viewingPendingChange && $existingPendingChange?.changes)
+      ? applyChangesToEntity(pet, $existingPendingChange.changes)
+      : pet;
+
+  // Helper to apply pending changes to entity for display
+  function applyChangesToEntity(entity, changes) {
+    if (!entity || !changes) return entity;
+    const result = JSON.parse(JSON.stringify(entity));
+    for (const [path, value] of Object.entries(changes)) {
+      setNestedValue(result, path, value);
+    }
+    return result;
+  }
+
+  function setNestedValue(obj, path, value) {
+    const keys = path.split('.');
+    let current = obj;
+    for (let i = 0; i < keys.length - 1; i++) {
+      if (!current[keys[i]]) current[keys[i]] = {};
+      current = current[keys[i]];
+    }
+    current[keys[keys.length - 1]] = value;
+  }
+
+  // Cleanup on destroy
+  onDestroy(() => {
+    resetEditState();
+  });
 
   // Rarity filters for sidebar
   $: navFilters = [
@@ -49,19 +152,40 @@
   $: breadcrumbs = [
     { label: 'Items', href: '/items' },
     { label: 'Pets', href: '/items/pets' },
-    ...(pet ? [{ label: pet.Name }] : [])
+    ...(activeEntity ? [{ label: activeEntity.Name || 'New Pet' }] : [])
   ];
 
   // SEO
-  $: seoDescription = pet?.Properties?.Description ||
-    `${pet?.Name || 'Pet'} - ${pet?.Properties?.Rarity || ''} pet in Entropia Universe.`;
+  $: seoDescription = activeEntity?.Properties?.Description ||
+    `${activeEntity?.Name || 'Pet'} - ${activeEntity?.Properties?.Rarity || ''} pet in Entropia Universe.`;
 
   $: canonicalUrl = pet
     ? `https://entropianexus.com/items/pets/${encodeURIComponentSafe(pet.Name)}`
     : 'https://entropianexus.com/items/pets';
 
+  // Image URL for SEO
+  $: entityImageUrl = pet?.Id ? `/api/img/pet/${pet.Id}` : null;
+
   // Check for effects
-  $: hasEffects = pet?.Effects?.length > 0;
+  $: hasEffects = activeEntity?.Effects?.length > 0;
+
+  // Rarity options for editing
+  const rarityOptions = [
+    { value: 'Common', label: 'Common' },
+    { value: 'Uncommon', label: 'Uncommon' },
+    { value: 'Rare', label: 'Rare' },
+    { value: 'Epic', label: 'Epic' },
+    { value: 'Legendary', label: 'Legendary' },
+    { value: 'Mythic', label: 'Mythic' },
+    { value: 'Unique', label: 'Unique' }
+  ];
+
+  // Training difficulty options
+  const trainingOptions = [
+    { value: 'Easy', label: 'Easy' },
+    { value: 'Average', label: 'Average' },
+    { value: 'Hard', label: 'Hard' }
+  ];
 
   // ========== PANEL STATE PERSISTENCE ==========
   let panelStates = {
@@ -99,10 +223,11 @@
 </script>
 
 <WikiSEO
-  title={pet?.Name || 'Pets'}
+  title={activeEntity?.Name || 'Pets'}
   description={seoDescription}
   entityType="Pet"
-  entity={pet}
+  entity={activeEntity}
+  imageUrl={entityImageUrl}
   {canonicalUrl}
   breadcrumbs={breadcrumbs.map(b => ({ name: b.label, url: b.href }))}
 />
@@ -118,24 +243,43 @@
   {navTableColumns}
   {user}
   editable={true}
+  {canEdit}
+  {canCreateNew}
+  {userPendingCreates}
+  {userPendingUpdates}
 >
-  {#if pet}
+  {#if activeEntity || isCreateMode}
+    <!-- Pending Change Banner -->
+    {#if $existingPendingChange && !$editMode}
+      <PendingChangeBanner
+        pendingChange={$existingPendingChange}
+        viewing={$viewingPendingChange}
+        onToggle={() => setViewingPendingChange(!$viewingPendingChange)}
+      />
+    {/if}
     <div class="layout-a">
       <!-- Wikipedia-style floating infobox (right panel) -->
       <aside class="wiki-infobox-float">
         <!-- Entity Header -->
         <div class="infobox-header">
-          <div class="icon-placeholder">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
-              <circle cx="12" cy="10" r="6" />
-              <path d="M12 16v4M8 20h8" />
-              <circle cx="9" cy="9" r="1" fill="currentColor" />
-              <circle cx="15" cy="9" r="1" fill="currentColor" />
-            </svg>
+          <EntityImageUpload
+            entityId={activeEntity?.Id}
+            entityName={activeEntity?.Name}
+            entityType="pet"
+            {user}
+            isEditMode={$editMode}
+            isCreateMode={isCreateMode}
+          />
+          <div class="infobox-title">
+            <InlineEdit
+              value={activeEntity?.Name || ''}
+              path="Name"
+              type="text"
+              placeholder="Pet Name"
+            />
           </div>
-          <div class="infobox-title">{pet.Name}</div>
           <div class="infobox-subtitle">
-            <span class="type-badge" style="background-color: {getRarityColor(pet.Properties?.Rarity)}">{pet.Properties?.Rarity || 'Pet'}</span>
+            <span class="type-badge" style="background-color: {getRarityColor(activeEntity?.Properties?.Rarity)}">{activeEntity?.Properties?.Rarity || 'Pet'}</span>
           </div>
         </div>
 
@@ -143,15 +287,15 @@
         <div class="stats-section tier-1">
           <div class="stat-row primary">
             <span class="stat-label">Rarity</span>
-            <span class="stat-value">{pet.Properties?.Rarity ?? 'N/A'}</span>
+            <span class="stat-value">{activeEntity?.Properties?.Rarity ?? 'N/A'}</span>
           </div>
           <div class="stat-row primary">
             <span class="stat-label">Training</span>
-            <span class="stat-value">{pet.Properties?.TrainingDifficulty ?? 'N/A'}</span>
+            <span class="stat-value">{activeEntity?.Properties?.TrainingDifficulty ?? 'N/A'}</span>
           </div>
           <div class="stat-row primary">
             <span class="stat-label">Taming Level</span>
-            <span class="stat-value">{pet.Properties?.TamingLevel ?? 'N/A'}</span>
+            <span class="stat-value">{activeEntity?.Properties?.TamingLevel ?? 'N/A'}</span>
           </div>
         </div>
 
@@ -160,19 +304,64 @@
           <h4 class="section-title">General</h4>
           <div class="stat-row">
             <span class="stat-label">Rarity</span>
-            <span class="stat-value">{pet.Properties?.Rarity ?? 'N/A'}</span>
+            <span class="stat-value">
+              <InlineEdit
+                value={activeEntity?.Properties?.Rarity ?? ''}
+                path="Properties.Rarity"
+                type="select"
+                options={rarityOptions}
+              />
+            </span>
           </div>
           <div class="stat-row">
             <span class="stat-label">Training Difficulty</span>
-            <span class="stat-value">{pet.Properties?.TrainingDifficulty ?? 'N/A'}</span>
+            <span class="stat-value">
+              <InlineEdit
+                value={activeEntity?.Properties?.TrainingDifficulty ?? ''}
+                path="Properties.TrainingDifficulty"
+                type="select"
+                options={trainingOptions}
+              />
+            </span>
           </div>
           <div class="stat-row">
             <span class="stat-label">Planet</span>
-            <span class="stat-value">{pet.Planet?.Name ?? 'N/A'}</span>
+            <span class="stat-value">
+              {#if $editMode}
+                <select
+                  class="pet-select"
+                  value={activeEntity?.Planet?.Name || ''}
+                  on:change={(e) => {
+                    const value = e.target.value;
+                    if (value) {
+                      updateField('Planet', { Name: value });
+                    } else {
+                      updateField('Planet', null);
+                    }
+                  }}
+                >
+                  <option value="">Select planet...</option>
+                  {#each planetsList as planet}
+                    <option value={planet.Name}>{planet.Name}</option>
+                  {/each}
+                </select>
+              {:else}
+                {activeEntity?.Planet?.Name ?? 'N/A'}
+              {/if}
+            </span>
           </div>
           <div class="stat-row">
             <span class="stat-label">Exportable</span>
-            <span class="stat-value">{pet.Properties?.ExportableLevel > 0 ? `Level ${pet.Properties.ExportableLevel}` : 'No'}</span>
+            <span class="stat-value">
+              <InlineEdit
+                value={activeEntity?.Properties?.ExportableLevel ?? null}
+                path="Properties.ExportableLevel"
+                type="number"
+                min={0}
+                max={100}
+                displayFormat={activeEntity?.Properties?.ExportableLevel > 0 ? 'Level {value}' : 'No'}
+              />
+            </span>
           </div>
         </div>
 
@@ -181,11 +370,37 @@
           <h4 class="section-title">Economy</h4>
           <div class="stat-row">
             <span class="stat-label">Nutrio Capacity</span>
-            <span class="stat-value">{pet.Properties?.NutrioCapacity != null ? `${(pet.Properties.NutrioCapacity / 100).toFixed(2)} PED` : 'N/A'}</span>
+            <span class="stat-value">
+              {#if $editMode}
+                <InlineEdit
+                  value={activeEntity?.Properties?.NutrioCapacity ?? null}
+                  path="Properties.NutrioCapacity"
+                  type="number"
+                  min={0}
+                  step={1}
+                  suffix="PED"
+                />
+              {:else}
+                {activeEntity?.Properties?.NutrioCapacity != null ? `${(activeEntity.Properties.NutrioCapacity / 100).toFixed(2)} PED` : 'N/A'}
+              {/if}
+            </span>
           </div>
           <div class="stat-row">
             <span class="stat-label">Nutrio Consumption</span>
-            <span class="stat-value">{pet.Properties?.NutrioConsumptionPerHour != null ? `${(pet.Properties.NutrioConsumptionPerHour / 100).toFixed(2)} PED/h` : 'N/A'}</span>
+            <span class="stat-value">
+              {#if $editMode}
+                <InlineEdit
+                  value={activeEntity?.Properties?.NutrioConsumptionPerHour ?? null}
+                  path="Properties.NutrioConsumptionPerHour"
+                  type="number"
+                  min={0}
+                  step={1}
+                  suffix="PED/h"
+                />
+              {:else}
+                {activeEntity?.Properties?.NutrioConsumptionPerHour != null ? `${(activeEntity.Properties.NutrioConsumptionPerHour / 100).toFixed(2)} PED/h` : 'N/A'}
+              {/if}
+            </span>
           </div>
         </div>
 
@@ -200,82 +415,60 @@
           </div>
           <div class="stat-row">
             <span class="stat-label">Taming Level</span>
-            <span class="stat-value">{pet.Properties?.TamingLevel ?? 'N/A'}</span>
+            <span class="stat-value">
+              <InlineEdit
+                value={activeEntity?.Properties?.TamingLevel ?? null}
+                path="Properties.TamingLevel"
+                type="number"
+                min={1}
+                max={100}
+              />
+            </span>
           </div>
         </div>
       </aside>
 
       <!-- Main content (center) -->
       <article class="wiki-article">
-        <h1 class="article-title">{pet.Name}</h1>
+        <h1 class="article-title">
+          <InlineEdit
+            value={activeEntity?.Name || ''}
+            path="Name"
+            type="text"
+            placeholder="Pet Name"
+          />
+        </h1>
 
         <!-- Description Panel -->
         <div class="description-panel">
-          {#if pet.Properties?.Description}
-            <div class="description-content">{pet.Properties.Description}</div>
+          {#if $editMode}
+            <RichTextEditor
+              content={activeEntity?.Properties?.Description || ''}
+              on:change={(e) => updateField('Properties.Description', e.detail)}
+              placeholder="Enter pet description..."
+            />
+          {:else if activeEntity?.Properties?.Description}
+            <div class="description-content">{@html sanitizeHtml(activeEntity.Properties.Description)}</div>
           {:else}
             <div class="description-content placeholder">
-              {pet.Name} is a {pet.Properties?.Rarity?.toLowerCase() || ''} pet that can be tamed in Entropia Universe.
+              {activeEntity?.Name || 'This pet'} is a {activeEntity?.Properties?.Rarity?.toLowerCase() || ''} pet that can be tamed in Entropia Universe.
             </div>
           {/if}
         </div>
 
         <!-- Pet Skills/Effects Section -->
-        {#if hasEffects}
+        {#if hasEffects || $editMode}
           <DataSection
             title="Pet Skills"
             icon=""
             bind:expanded={panelStates.skills}
             on:toggle={savePanelStates}
           >
-            <div class="effects-table-wrapper">
-              <table class="effects-table">
-                <thead>
-                  <tr>
-                    <th>Effect</th>
-                    <th>Upkeep</th>
-                    <th>Level</th>
-                    <th>Cost</th>
-                    <th>Criteria</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {#each pet.Effects as effect}
-                    <tr>
-                      <td class="effect-name">
-                        {effect.Properties?.Strength ?? ''}{effect.Properties?.Unit ?? ''} {effect.Name}
-                      </td>
-                      <td>{effect.Properties?.NutrioConsumptionPerHour ?? 'N/A'}/h</td>
-                      <td>{effect.Properties?.Unlock?.Level ?? 'N/A'}</td>
-                      <td class="cost-cell">
-                        {#if effect.Properties?.Unlock?.CostPED != null}
-                          <div>{effect.Properties.Unlock.CostPED} PED</div>
-                        {/if}
-                        {#if effect.Properties?.Unlock?.CostEssence != null}
-                          <div>{effect.Properties.Unlock.CostEssence} Animal Essence</div>
-                        {/if}
-                        {#if effect.Properties?.Unlock?.CostRareEssence != null}
-                          <div>{effect.Properties.Unlock.CostRareEssence} Rare Animal Essence</div>
-                        {/if}
-                        {#if effect.Properties?.Unlock?.CostPED == null && effect.Properties?.Unlock?.CostEssence == null && effect.Properties?.Unlock?.CostRareEssence == null}
-                          N/A
-                        {/if}
-                      </td>
-                      <td class="criteria-cell">
-                        {#if effect.Properties?.Unlock?.Criteria != null}
-                          <div>{effect.Properties.Unlock.Criteria}</div>
-                          {#if effect.Properties?.Unlock?.CriteriaValue != null}
-                            <div class="criteria-value">Amount: {effect.Properties.Unlock.CriteriaValue}</div>
-                          {/if}
-                        {:else}
-                          N/A
-                        {/if}
-                      </td>
-                    </tr>
-                  {/each}
-                </tbody>
-              </table>
-            </div>
+            <PetEffectsEditor
+              effects={activeEntity?.Effects || []}
+              fieldName="Effects"
+              availableEffects={effectsList}
+            />
           </DataSection>
         {/if}
       </article>
@@ -289,6 +482,46 @@
 </WikiPage>
 
 <style>
+  .pending-change-banner {
+    background: linear-gradient(135deg, #f59e0b22 0%, #f59e0b11 100%);
+    border: 1px solid #f59e0b44;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+  }
+
+  .banner-content {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .banner-icon {
+    font-size: 18px;
+  }
+
+  .banner-text {
+    flex: 1;
+    color: var(--text-color);
+    font-size: 14px;
+  }
+
+  .banner-toggle {
+    padding: 6px 12px;
+    font-size: 12px;
+    background: var(--accent-color);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: opacity 0.2s;
+  }
+
+  .banner-toggle:hover {
+    opacity: 0.9;
+  }
+
   .layout-a {
     position: relative;
     width: 100%;
@@ -318,19 +551,6 @@
     text-align: center;
     padding-bottom: 12px;
     border-bottom: 1px solid var(--border-color, #555);
-  }
-
-  .icon-placeholder {
-    width: 80px;
-    height: 80px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: var(--bg-color, var(--primary-color));
-    border: 2px dashed var(--border-color, #555);
-    border-radius: 8px;
-    color: var(--text-muted, #999);
-    margin: 0 auto 12px;
   }
 
   .infobox-title {
@@ -424,6 +644,28 @@
     color: var(--text-color);
   }
 
+  .pet-select {
+    padding: 4px 6px;
+    font-size: 12px;
+    background-color: var(--input-bg, var(--secondary-color));
+    border: 1px solid var(--border-color, #555);
+    border-radius: 3px;
+    color: var(--text-color);
+    width: 100%;
+    box-sizing: border-box;
+    height: 28px;
+  }
+
+  .pet-select:focus {
+    outline: none;
+    border-color: var(--accent-color, #4a9eff);
+  }
+
+  .pet-select option {
+    background-color: var(--bg-color, var(--secondary-color));
+    color: var(--text-color);
+  }
+
   .stat-value.links {
     text-align: right;
     font-size: 12px;
@@ -469,58 +711,6 @@
     font-style: italic;
   }
 
-  /* Effects table */
-  .effects-table-wrapper {
-    overflow-x: auto;
-  }
-
-  .effects-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
-  }
-
-  .effects-table th,
-  .effects-table td {
-    padding: 10px 12px;
-    text-align: left;
-    border-bottom: 1px solid var(--border-color, #555);
-  }
-
-  .effects-table th {
-    font-weight: 600;
-    color: var(--text-muted, #999);
-    text-transform: uppercase;
-    font-size: 11px;
-    letter-spacing: 0.3px;
-    background-color: var(--hover-color);
-  }
-
-  .effects-table td {
-    color: var(--text-color);
-  }
-
-  .effects-table tbody tr:hover {
-    background-color: var(--hover-color);
-  }
-
-  .effect-name {
-    font-weight: 500;
-    color: var(--accent-color, #4a9eff);
-  }
-
-  .cost-cell,
-  .criteria-cell {
-    font-size: 12px;
-    line-height: 1.4;
-  }
-
-  .criteria-value {
-    color: var(--text-muted, #999);
-    font-size: 11px;
-    margin-top: 2px;
-  }
-
   .no-selection {
     text-align: center;
     padding: 60px 20px;
@@ -563,22 +753,6 @@
 
     .infobox-title {
       font-size: 16px;
-    }
-
-    .icon-placeholder {
-      width: 60px;
-      height: 60px;
-    }
-
-    .icon-placeholder svg {
-      width: 36px;
-      height: 36px;
-    }
-
-    .effects-table th,
-    .effects-table td {
-      padding: 8px;
-      font-size: 12px;
     }
   }
 </style>

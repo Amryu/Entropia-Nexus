@@ -4,8 +4,10 @@
 
   import { encodeURIComponentSafe, getItemLink, getTypeLink } from '$lib/util';
   import { hasCondition } from '$lib/shopUtils';
+  import { editMode } from '$lib/stores/wikiEditState.js';
 
   import FancyTable from './FancyTable.svelte';
+  import RefiningRecipesDisplay from './wiki/RefiningRecipesDisplay.svelte';
 
   export let acquisition;
 
@@ -49,9 +51,9 @@
   $: vendorColumns = [
     { key: 'name', header: 'Name', width: '1fr', formatter: (v, row) => row.nameLink ? `<a href="${row.nameLink}">${v}</a>` : v },
     { key: 'price', header: 'Price', width: '100px' },
-    { key: 'specialPrice', header: 'Special Price', width: '150px', hideOnMobile: true },
+    { key: 'specialPrice', header: 'Special Price', width: '150px' },
     { key: 'planet', header: 'Planet', width: '100px', hideOnMobile: true },
-    { key: 'limited', header: 'Limited', width: '70px' }
+    { key: 'limited', header: 'Limited', width: '70px', hideOnMobile: true }
   ];
 
   // Build loot data
@@ -74,7 +76,7 @@
     { key: 'item', header: 'Item', width: '180px', formatter: (v, row) => row.itemLink ? `<a href="${row.itemLink}">${v}</a>` : v },
     { key: 'planet', header: 'Planet', width: '100px', hideOnMobile: true },
     { key: 'maturity', header: 'Lowest Maturity', width: '110px', hideOnMobile: true },
-    { key: 'frequency', header: 'Frequency', width: '110px' }
+    { key: 'frequency', header: 'Frequency', width: '110px', hideOnMobile: true }
   ];
 
   // Build shop listing data
@@ -142,29 +144,7 @@
     { key: 'planet', header: 'Planet', width: '100px', hideOnMobile: true },
     { key: 'location', header: 'Location', width: '100px', hideOnMobile: true, formatter: (v, row) => row.waypoint ? `<span class="copyable" title="Click to copy waypoint">${v}</span>` : v },
     { key: 'stack', header: 'Stack', width: '60px' },
-    { key: 'mu', header: 'MU', width: '80px' }
-  ];
-
-  // Build refining recipe data
-  $: refiningData = (() => {
-    if (!acquisition?.RefiningRecipes?.length) return [];
-    return acquisition.RefiningRecipes.flatMap(recipe =>
-      recipe.Ingredients.map(ingredient => ({
-        product: recipe.Product.Name,
-        productLink: getItemLink(recipe.Product),
-        productAmount: recipe.Amount,
-        ingredient: ingredient.Item.Name,
-        ingredientLink: getItemLink(ingredient.Item),
-        ingredientAmount: ingredient.Amount
-      }))
-    );
-  })();
-
-  $: refiningColumns = [
-    { key: 'product', header: 'Product', width: '1fr', formatter: (v, row) => row.productLink ? `<a href="${row.productLink}">${v}</a>` : v },
-    { key: 'productAmount', header: 'Amt', width: '60px' },
-    { key: 'ingredient', header: 'Ingredient', width: '1fr', formatter: (v, row) => row.ingredientLink ? `<a href="${row.ingredientLink}">${v}</a>` : v },
-    { key: 'ingredientAmount', header: 'Amt', width: '60px' }
+    { key: 'mu', header: 'MU', width: '80px', hideOnMobile: true }
   ];
 
   // Build blueprint data
@@ -181,8 +161,8 @@
 
   $: blueprintColumns = [
     { key: 'name', header: 'Blueprint', width: '1fr', formatter: (v, row) => row.nameLink ? `<a href="${row.nameLink}">${v}</a>` : v },
-    { key: 'level', header: 'Level', width: '70px' },
-    { key: 'profession', header: 'Profession', width: '160px', formatter: (v, row) => row.professionLink ? `<a href="${row.professionLink}">${v}</a>` : v }
+    { key: 'level', header: 'Level', width: '70px', hideOnMobile: true },
+    { key: 'profession', header: 'Profession', width: '160px', hideOnMobile: true, formatter: (v, row) => row.professionLink ? `<a href="${row.professionLink}">${v}</a>` : v }
   ];
 
   // Build blueprint drop data
@@ -197,7 +177,7 @@
 
   $: blueprintDropColumns = [
     { key: 'name', header: 'Name', width: '1fr', formatter: (v, row) => row.nameLink ? `<a href="${row.nameLink}">${v}</a>` : v },
-    { key: 'level', header: 'Level', width: '80px' }
+    { key: 'level', header: 'Level', width: '80px', hideOnMobile: true }
   ];
 
   // Copy waypoint handler
@@ -246,7 +226,18 @@
   }
 
   .table-wrapper.short {
-    height: 200px;
+    height: 300px;
+  }
+
+  .recipe-wrapper {
+    border-radius: 0;
+    border: none;
+    padding: 0;
+    min-height: 300px;
+  }
+
+  .recipe-wrapper :global(.recipes-display) {
+    width: 100%;
   }
 
   .no-data {
@@ -256,6 +247,21 @@
     font-size: 14px;
     background-color: var(--bg-color, var(--primary-color));
     border-radius: 6px;
+  }
+
+  .no-data.edit-mode-notice {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    background-color: var(--info-bg, #0c1929);
+    border: 1px solid var(--border-color, #555);
+    color: var(--text-color);
+  }
+
+  .no-data.edit-mode-notice svg {
+    flex-shrink: 0;
+    color: var(--accent-color, #4a9eff);
   }
 
   :global(.acquisition-container a) {
@@ -289,10 +295,23 @@
     .table-wrapper {
       height: 250px;
     }
+
+    .recipe-wrapper {
+      min-height: 250px;
+    }
   }
 </style>
 
-{#if (acquisition == null
+{#if $editMode}
+  <div class="no-data edit-mode-notice">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <circle cx="12" cy="12" r="10"/>
+      <line x1="12" y1="16" x2="12" y2="12"/>
+      <circle cx="12" cy="8" r="1" fill="currentColor" stroke="none"/>
+    </svg>
+    <span>This information is inferred from other sources and cannot be edited directly.</span>
+  </div>
+{:else if (acquisition == null
   || ((!acquisition.VendorOffers || acquisition.VendorOffers.length === 0)
   && (!acquisition.Loots || acquisition.Loots.length === 0)
   && (!acquisition.RefiningRecipes || acquisition.RefiningRecipes.length === 0)
@@ -356,15 +375,8 @@
       {#if acquisition.RefiningRecipes && acquisition.RefiningRecipes.length > 0}
         <div class="acquisition-section">
           <h4 class="section-title">Refining Recipes</h4>
-          <div class="table-wrapper short">
-            <FancyTable
-              columns={refiningColumns}
-              data={refiningData}
-              rowHeight={40}
-              searchable={false}
-              sortable={true}
-              emptyMessage="No refining recipes"
-            />
+          <div class="recipe-wrapper">
+            <RefiningRecipesDisplay recipes={acquisition.RefiningRecipes} layout="list" />
           </div>
         </div>
       {/if}

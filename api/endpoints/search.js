@@ -1,7 +1,7 @@
 const { pool } = require('./dbClient');
 const { idOffsets } = require('./constants');
 
-function formatSearchResult(x){ return { Name: x.Name, Type: x.Type, SubType: x.SubType }; }
+function formatSearchResult(x){ return { Id: x.Id, Name: x.Name, Type: x.Type, SubType: x.SubType }; }
 
 // Check if pg_trgm extension is available (cached)
 let trgmAvailable = null;

@@ -1,12 +1,61 @@
 //@ts-nocheck
-import { getChangeById, getChangeEntities as dbGetChangeEntities, getChangeTypes as dbGetChangeTypes, updateChange, deleteChange, createChange, executeVector, getChangeByEntityId } from "$lib/server/db.js"
+import { getChangeById, getChangeEntities as dbGetChangeEntities, getChangeTypes as dbGetChangeTypes, updateChange, deleteChange, createChange, executeVector, getChangeByEntityId, getChangesFiltered } from "$lib/server/db.js"
 import { apiCall, getResponse } from "$lib/util.js";
 import Ajv from "ajv";
+import sanitizeHtml from "sanitize-html";
 import { EffectsOnEquip, EffectsOnSetEquip, EffectsOnUse, NamedEntity, Tiers } from "$lib/common/schemas/SharedSchemas.js";
 
 import { EntitySchemas } from "$lib/common/EntitySchemas.js";
 
 const Validators = {}
+
+// HTML sanitization config for TipTap rich text editor output
+const SANITIZE_CONFIG = {
+  allowedTags: [
+    // Basic formatting
+    'p', 'strong', 'em', 's', 'code', 'br',
+    // Headings
+    'h1', 'h2', 'h3', 'h4',
+    // Lists
+    'ul', 'ol', 'li',
+    // Block elements
+    'blockquote', 'pre', 'hr',
+    // Links
+    'a',
+    // Video embeds (custom TipTap extension)
+    'div', 'iframe'
+  ],
+  allowedAttributes: {
+    'a': ['href', 'target', 'rel'],
+    'div': ['data-type', 'data-provider', 'data-src', 'class'],
+    'iframe': ['src', 'width', 'height', 'frameborder', 'allow', 'allowfullscreen']
+  },
+  allowedIframeHostnames: ['www.youtube.com', 'youtube.com', 'player.vimeo.com', 'vimeo.com'],
+  // Force safe link attributes
+  transformTags: {
+    'a': (tagName, attribs) => {
+      return {
+        tagName: 'a',
+        attribs: {
+          href: attribs.href || '',
+          target: '_blank',
+          rel: 'noopener noreferrer'
+        }
+      };
+    }
+  }
+};
+
+/**
+ * Sanitizes the Description field if present in the body.
+ * This prevents XSS attacks from forged requests bypassing the frontend.
+ */
+function sanitizeBody(body) {
+  if (body && typeof body.Description === 'string') {
+    body.Description = sanitizeHtml(body.Description, SANITIZE_CONFIG);
+  }
+  return body;
+}
 
 let change_entities = null;
 let change_types = null;
@@ -38,21 +87,62 @@ async function getChangeTypes() {
 }
 
 export async function GET({ params, url }) {
-  if (!params.slug && !url.searchParams.get('entityId')) {
-    return getResponse({ error: 'Please provide the change id or entity id.' }, 400);
+  // If we have a slug, get single change by ID
+  if (params.slug) {
+    const change = await getChangeById(params.slug);
+    if (!change) {
+      // Return 200 with null instead of 404 to avoid console spam
+      return new Response(JSON.stringify(null), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    return new Response(JSON.stringify(change), { status: 200 });
   }
 
-  let change = url.searchParams.get('entityId')
-    ? await getChangeByEntityId(url.searchParams.get('entityId'))
-    : await getChangeById(params.slug);
-
-  if (!change) {
-    return getResponse({ error: 'Change not found.' }, 404);
+  // If we have entityId, get single change by entity ID
+  if (url.searchParams.get('entityId')) {
+    const change = await getChangeByEntityId(url.searchParams.get('entityId'));
+    if (!change) {
+      // Return 200 with null instead of 404 to avoid console spam
+      return new Response(JSON.stringify(null), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    return new Response(JSON.stringify(change), { status: 200 });
   }
 
-  return new Response(
-    JSON.stringify(change),
-    { status: 200 });
+  // Otherwise, list changes with filters
+  const filters = {};
+
+  // Parse entity filter
+  const entity = url.searchParams.get('entity');
+  if (entity) {
+    filters.entity = entity;
+  }
+
+  // Parse type filter (Create, Update, Delete)
+  const type = url.searchParams.get('type');
+  if (type) {
+    filters.type = type;
+  }
+
+  // Parse authorId filter
+  const authorId = url.searchParams.get('authorId');
+  if (authorId) {
+    filters.authorId = authorId;
+  }
+
+  // Parse state filter (can be comma-separated)
+  const state = url.searchParams.get('state');
+  if (state) {
+    const states = state.split(',').map(s => s.trim());
+    filters.state = states.length === 1 ? states[0] : states;
+  }
+
+  // Parse pagination
+  const page = parseInt(url.searchParams.get('page') || '1', 10);
+  const limit = Math.min(parseInt(url.searchParams.get('limit') || '50', 10), 100);
+
+  const result = await getChangesFiltered(filters, page, limit);
+
+  // Return just the changes array for simpler client usage
+  return new Response(JSON.stringify(result.changes), { status: 200 });
 }
 
 // UPDATE
@@ -84,6 +174,11 @@ export async function PUT({ params, request, locals, url }) {
   }
 
   let entity = change.entity;
+
+  // Enhancers are generated in the database and cannot be edited
+  if (entity === 'Enhancer') {
+    return getResponse({ error: 'Enhancers are generated in the database and cannot be edited.' }, 403);
+  }
   let body = await request.json();
   let state = url.searchParams.get('state') || change.state;
 
@@ -92,6 +187,9 @@ export async function PUT({ params, request, locals, url }) {
   }
 
   if (body) {
+    // Sanitize HTML in Description field to prevent XSS
+    sanitizeBody(body);
+
     let errorResponse = validateChange(body, entity);
     if (errorResponse) {
       return errorResponse;
@@ -138,7 +236,15 @@ export async function POST({ request, params, locals, url }) {
     return getResponse({ error: `Invalid entity. Must be one of the following values: ${(await getChangeEntities()).join(', ')}` }, 400);
   }
 
+  // Enhancers are generated in the database and cannot be edited
+  if (entity === 'Enhancer') {
+    return getResponse({ error: 'Enhancers are generated in the database and cannot be edited.' }, 403);
+  }
+
   let body = await request.json();
+
+  // Sanitize HTML in Description field to prevent XSS
+  sanitizeBody(body);
 
   let errorResponse = validateChange(body, entity);
   if (errorResponse) {

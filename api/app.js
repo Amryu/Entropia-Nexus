@@ -7,6 +7,7 @@ const { recordRequest, snapshotAndReset } = require('./metrics');
 
 // Register split endpoint modules (DB + routes colocated) while keeping a single DB pool
 const endpoints = require('./endpoints');
+const { checkHealth, shutdown: dbShutdown } = require('./endpoints/dbClient');
 const app = express();
 const port = parseInt(process.env.API_PORT || '3000', 10);
 
@@ -49,7 +50,7 @@ app.use((req, res, next) => {
 });
 
 // --- Response guard to prevent double-send after timeout or prior writes ---
-app.use((req, res, next) => {
+app.use((_req, res, next) => {
   const origJson = res.json.bind(res);
   const origSend = res.send.bind(res);
   res.json = (body) => {
@@ -121,20 +122,20 @@ setInterval(() => {
 
 app.disable('x-powered-by');
 
-app.listen(port, () => {
+const server = app.listen(port, () => {
   console.log(`App running on port ${port}.`);
 });
 
 // Attach modular endpoints
 try { endpoints.registerAll(app); } catch (e) { console.warn('Endpoints registration failed:', e?.message); }
 
-app.get('/schema.json', (req, res) => {
+app.get('/schema.json', (_req, res) => {
   res.setHeader('Content-Type', 'application/json');
   res.send(swaggerDocs);
 });
 
 // Global error handling middleware
-app.use((err, req, res, next) => {
+app.use((err, req, res, _next) => {
   console.error('API Error:', err);
   console.error('URL:', req.originalUrl);
   console.error('Method:', req.method);
@@ -148,6 +149,17 @@ app.use((err, req, res, next) => {
   }
 });
 
+// Health check endpoint
+app.get('/health', async (_req, res) => {
+  const dbHealth = await checkHealth();
+  const allHealthy = dbHealth.nexus && dbHealth.users;
+  res.status(allHealthy ? 200 : 503).json({
+    status: allHealthy ? 'healthy' : 'degraded',
+    databases: dbHealth,
+    uptime: process.uptime(),
+  });
+});
+
 // Handle 404 errors
 app.use((req, res) => {
   res.status(404).json({
@@ -157,13 +169,35 @@ app.use((req, res) => {
 });
 
 // Handle unhandled promise rejections
-process.on('unhandledRejection', (reason, promise) => {
+process.on('unhandledRejection', (reason, _promise) => {
   console.error('Unhandled Promise Rejection:', reason);
 });
 
-// Handle uncaught exceptions  
+// Handle uncaught exceptions
 process.on('uncaughtException', (error) => {
   console.error('Uncaught Exception:', error);
-  console.error('Shutting down gracefully...');
-  process.exit(1);
+  gracefulShutdown('uncaughtException');
 });
+
+// Graceful shutdown handler
+let isShuttingDown = false;
+async function gracefulShutdown(signal) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+  console.log(`\n[shutdown] Received ${signal}, shutting down gracefully...`);
+
+  // Stop accepting new connections
+  server.close(() => {
+    console.log('[shutdown] HTTP server closed');
+  });
+
+  // Close database pools
+  await dbShutdown();
+
+  console.log('[shutdown] Cleanup complete, exiting');
+  process.exit(0);
+}
+
+// Handle termination signals
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));

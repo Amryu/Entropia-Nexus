@@ -1,0 +1,115 @@
+// @ts-nocheck
+/**
+ * Mobs Wiki Page Loader
+ * Wikipedia-style layout with floating infobox on the right.
+ */
+let items;
+let itemsGrouped;
+
+import { handlePageLoad, getMainPlanetName, apiCall, resolveItemLink, decodeURIComponentSafe, encodeURIComponentSafe } from '$lib/util';
+import { redirect } from '@sveltejs/kit';
+
+export async function load({ fetch, params, url }) {
+  const config = {
+    items: 'mobs',
+    types: { tierable: false },
+    name: decodeURIComponentSafe(params.slug),
+    type: null,
+    mode: url.searchParams.get('mode') || 'view',
+    searchParams: url.searchParams,
+    isItem: false
+  }
+
+  let response;
+
+  ({ items, response } = await handlePageLoad(fetch, items, config));
+
+  // Group mobs by planet for navigation
+  itemsGrouped = {
+    calypso: [],
+    aris: [],
+    arkadia: [],
+    cyrene: [],
+    rocktropia: [],
+    nextisland: [],
+    toulan: [],
+    monria: [],
+    space: []
+  }
+
+  items.forEach(element => {
+    if (element.Planet == null || element.Planet.Name == null) return;
+
+    let planet = getMainPlanetName(element.Planet.Name).replace(/[^0-9a-zA-Z]/g, '').toLowerCase();
+    if (itemsGrouped[planet]) {
+      itemsGrouped[planet].push(element);
+    }
+  });
+
+  response.items = itemsGrouped;
+  response.allItems = items;
+
+  // Fetch mob species for dropdown
+  try {
+    const speciesData = await apiCall(fetch, '/mobspecies');
+    response.speciesList = speciesData || [];
+  } catch (e) {
+    console.error('Failed to load mob species:', e);
+    response.speciesList = [];
+  }
+
+  // Fetch items list for loot autocomplete (in edit mode)
+  try {
+    const itemsData = await apiCall(fetch, '/items?limit=5000');
+    response.itemsList = itemsData || [];
+  } catch (e) {
+    console.error('Failed to load items list:', e);
+    response.itemsList = [];
+  }
+
+  // Fetch planets list for planet dropdown
+  try {
+    const planetsData = await apiCall(fetch, '/planets');
+    response.planetsList = planetsData || [];
+  } catch (e) {
+    console.error('Failed to load planets list:', e);
+    response.planetsList = [];
+  }
+
+  // Fetch skills data for codex calculator (HP increase, looter contributions)
+  try {
+    const skillsData = await apiCall(fetch, '/skills');
+    response.skillsList = skillsData || [];
+  } catch (e) {
+    console.error('Failed to load skills list:', e);
+    response.skillsList = [];
+  }
+
+  // If we have a specific mob, resolve item links for loots
+  if (response.object) {
+    // Batch resolve item links to reduce API calls
+    const armorItems = response.object.Loots
+      .filter(x => x?.Item?.Properties?.Type === 'Armor' && !x.Item.Set)
+      .map(x => x.Item);
+
+    // If we have armor items without set info, fetch them in batch
+    if (armorItems.length > 0) {
+      const armorPromises = armorItems.map(async (item) => {
+        const armor = await apiCall(fetch, item.Links.$Url);
+        if (armor != null) {
+          item.Set = armor.Set;
+        }
+        return item;
+      });
+
+      await Promise.all(armorPromises);
+    }
+
+    // Now resolve all item links (many will be cached/direct)
+    await Promise.all(response.object.Loots.map(async (x) => {
+      x.Item.Links.$ItemUrl = await resolveItemLink(fetch, x.Item);
+    }));
+  }
+
+  return response;
+}

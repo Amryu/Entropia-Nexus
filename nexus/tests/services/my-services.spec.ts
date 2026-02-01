@@ -1,4 +1,5 @@
 import { test, expect } from '../fixtures/auth';
+import { TIMEOUT_MEDIUM } from '../test-constants';
 
 test.describe('My Services Dashboard - Unauthenticated', () => {
   test('redirects unauthenticated users to login', async ({ page }) => {
@@ -65,7 +66,7 @@ test.describe('My Services Dashboard - Verified User', () => {
     ).or(verifiedUser.getByRole('link', { name: /browse.*services/i }));
 
     // Check if browse link exists (may be in nav or content)
-    await browseLink.first().isVisible({ timeout: 3000 }).catch(() => false);
+    await browseLink.first().isVisible({ timeout: TIMEOUT_MEDIUM }).catch(() => false);
     // Test passes - we just verify the page loads without errors
     expect(true).toBeTruthy();
   });

@@ -59,6 +59,12 @@
       {/if}
     </div>
 
+    <!-- svelte-ignore a11y-click-events-have-key-events -->
+    <!-- svelte-ignore a11y-no-static-element-interactions -->
+    <div class="section-actions" on:click|stopPropagation>
+      <slot name="actions" />
+    </div>
+
     {#if collapsible}
       <span class="expand-icon" class:rotated={expanded}>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -82,6 +88,10 @@
     border-radius: 8px;
     margin-bottom: 16px;
     overflow: hidden;
+  }
+
+  .data-section:last-child {
+    margin-bottom: 0;
   }
 
   .section-header {
@@ -139,6 +149,18 @@
     white-space: nowrap;
   }
 
+  .section-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+    margin-right: 8px;
+  }
+
+  .section-actions:empty {
+    display: none;
+  }
+
   .expand-icon {
     display: flex;
     align-items: center;
@@ -156,8 +178,8 @@
     padding: 16px;
   }
 
-  /* Mobile adjustments */
-  @media (max-width: 767px) {
+  /* Mobile adjustments - aligned with global 900px breakpoint */
+  @media (max-width: 899px) {
     .data-section {
       border-radius: 6px;
       margin-bottom: 12px;

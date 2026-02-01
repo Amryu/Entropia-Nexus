@@ -47,9 +47,6 @@
   <div class="title-buttons">
     {#if editable}
       {#if mode !== 'edit' && mode !== 'history' && mode !== 'create' && mode !== 'edit-inventory' && mode !== 'edit-managers'}
-        <button on:click={() => navigate(window.location.pathname + '?mode=history')} title="View History">📄</button>
-      {/if}
-      {#if mode !== 'edit' && mode !== 'history' && mode !== 'create' && mode !== 'edit-inventory' && mode !== 'edit-managers'}
         <button on:click={() => navigate(window.location.pathname + '?mode=edit')} 
                 title={user == null ? "Log in to edit" : !user.verified ? "Verify to edit" : ownershipBasedEditing && !canEdit ? "Only owner/managers can edit" : 'Edit'} 
                 disabled={user == null || !user.verified || (ownershipBasedEditing && !canEdit)}>✏️</button>

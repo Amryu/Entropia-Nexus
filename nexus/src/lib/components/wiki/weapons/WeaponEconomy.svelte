@@ -226,8 +226,8 @@
     min-width: 150px;
   }
 
-  /* Mobile adjustments */
-  @media (max-width: 767px) {
+  /* Mobile adjustments - aligned with global 900px breakpoint */
+  @media (max-width: 899px) {
     .economy-item {
       min-width: calc(50% - 4px);
       padding: 6px 10px;

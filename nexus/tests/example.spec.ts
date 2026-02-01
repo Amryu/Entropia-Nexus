@@ -12,7 +12,7 @@ test.describe('Basic navigation', () => {
     await page.goto('/');
 
     // Look for a tools link and click it (adjust based on your navigation)
-    const toolsLink = page.getByRole('link', { name: /tools/i });
+    const toolsLink = page.locator('a[href="/tools"]');
     if (await toolsLink.isVisible()) {
       await toolsLink.click();
       await expect(page).toHaveURL(/.*tools.*/);

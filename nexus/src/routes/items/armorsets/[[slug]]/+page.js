@@ -2,23 +2,31 @@
 /**
  * Armor Set wiki pages
  * Uses new WikiPage layout pattern.
+ * Supports full wiki editing.
  */
 let items;
 
 import { redirect } from '@sveltejs/kit';
-import { decodeURIComponentSafe, handlePageLoad, encodeURIComponentSafe } from '$lib/util';
+import { decodeURIComponentSafe, handlePageLoad, encodeURIComponentSafe, apiCall, loadPendingChangesData } from '$lib/util';
 
-export async function load({ fetch, params, url }) {
+export async function load({ fetch, params, url, parent }) {
   if (url.searchParams.get('mode') === 'view') {
     redirect(301, `/items/armorsets/${encodeURIComponentSafe(params.slug)}`);
   }
 
+  // Get session from parent layout
+  const parentData = await parent();
+
+  const mode = url.searchParams.get('mode') || 'view';
+  const isCreateMode = mode === 'create';
+  const changeId = url.searchParams.get('changeId');
+
   const config = {
     items: 'armorsets',
     types: { tierable: true },
-    name: decodeURIComponentSafe(params.slug),
+    name: isCreateMode ? null : decodeURIComponentSafe(params.slug),
     type: null,
-    mode: url.searchParams.get('mode') || 'view',
+    mode: mode,
     searchParams: url.searchParams,
     isArmorSet: true
   }
@@ -29,6 +37,44 @@ export async function load({ fetch, params, url }) {
 
   // Provide allItems for navigation
   response.allItems = items;
+
+  // Set create mode flag
+  response.isCreateMode = isCreateMode;
+
+  // Fetch effects list for edit mode dropdown
+  const effectsList = await apiCall(fetch, '/effects');
+  response.effects = effectsList || [];
+
+  // If a changeId is provided (editing an existing pending create), fetch that change
+  if (changeId && isCreateMode) {
+    try {
+      const changeRes = await fetch(`/api/changes/${changeId}`);
+      if (changeRes.ok) {
+        const change = await changeRes.json();
+        response.existingChange = change;
+        response.pendingChange = change;
+      }
+    } catch (e) {
+      console.warn('Failed to fetch existing change:', e);
+    }
+  }
+
+  // Use session from parent layout data
+  const session = parentData.session;
+  response.session = session;
+
+  const pendingData = await loadPendingChangesData(fetch, session?.user, {
+    entity: 'ArmorSet',
+    entityId: response.object?.Id,
+    changeId,
+    isAdmin: session?.user?.isAdmin || false
+  });
+
+  response.pendingChange = pendingData.pendingChange;
+  response.userPendingCreates = pendingData.userPendingCreates;
+  response.userPendingUpdates = pendingData.userPendingUpdates;
+  response.canCreateNew = pendingData.canCreateNew;
+  response.pendingCreatesCount = pendingData.pendingCreatesCount;
 
   return response;
 }

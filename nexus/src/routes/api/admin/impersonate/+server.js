@@ -73,7 +73,12 @@ export async function DELETE({ cookies, locals }) {
     return json({ error: 'Not authorized' }, { status: 403 });
   }
 
-  cookies.delete(IMPERSONATE_COOKIE, { path: '/', domain: import.meta.env.VITE_DOMAIN });
+  // Must match the same options used when setting the cookie
+  cookies.delete(IMPERSONATE_COOKIE, {
+    path: '/',
+    secure: import.meta.env.MODE !== 'development',
+    domain: import.meta.env.VITE_DOMAIN
+  });
 
   return json({ success: true });
 }

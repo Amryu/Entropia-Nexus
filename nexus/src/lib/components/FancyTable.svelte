@@ -8,8 +8,11 @@
    * Props:
    * - columns: Array of column definitions
    *   { key: string, header: string, sortable?: boolean, searchable?: boolean, width?: string,
-   *     formatter?: (value, row) => string, cellClass?: (value, row) => string,
-   *     hideOnMobile?: boolean, mobileWidth?: string }
+   *     widthBasis?: 'content' | 'header' | 'both', formatter?: (value, row) => string,
+   *     cellClass?: (value, row) => string, hideOnMobile?: boolean, mobileWidth?: string,
+   *     main?: boolean, rawValue?: boolean }
+   *   - main: If true, column grows to fill available space using minmax(width, 1fr)
+   *   - rawValue: If true, renders value as text instead of HTML (allows reactive content)
    * - data: Array of row objects (for non-lazy mode)
    * - fetchData: async (offset, limit, sortBy, sortOrder, filters) => { rows, total } (for lazy loading)
    * - rowHeight: Height of each row in pixels (default: 44)
@@ -19,6 +22,7 @@
    * - stickyHeader: Keep header visible when scrolling (default: true)
    * - emptyMessage: Message to show when no data (default: 'No data available')
    * - loading: External loading state
+   * - defaultWidthBasis: 'content' | 'header' | 'both' (default: 'content')
    *
    * Events:
    * - rowClick: { row, index }
@@ -36,6 +40,7 @@
   export let stickyHeader = true;
   export let emptyMessage = 'No data available';
   export let loading = false;
+  export let defaultWidthBasis = 'content';
 
   /**
    * @type {Array|null} Footer rows for displaying aggregates
@@ -73,6 +78,12 @@
   $: totalCount = isLazyMode ? totalRows : filteredSortedData.length;
   $: totalHeight = totalCount * rowHeight;
   $: headerHeight = (searchable ? 2 : 1) * rowHeight;
+  $: contentHeight = containerHeight > 0
+    ? Math.max(rowHeight, Math.floor(containerHeight / rowHeight) * rowHeight)
+    : 0;
+  $: visibleCapacity = contentHeight > 0 ? Math.floor(contentHeight / rowHeight) : 0;
+  $: fillRowCount = totalCount > 0 ? Math.max(0, visibleCapacity - totalCount) : 0;
+  $: virtualContainerHeight = Math.max(totalHeight, contentHeight || 0);
 
   // Filter and sort data in non-lazy mode
   $: filteredSortedData = (() => {
@@ -280,6 +291,18 @@
     return value ?? '';
   }
 
+  function stripHtml(value) {
+    return String(value ?? '')
+      .replace(/<[^>]*>/g, '')
+      .replace(/&nbsp;/g, ' ');
+  }
+
+  function getCellText(row, column) {
+    if (!row) return '';
+    if (column.component) return String(row[column.key] ?? '');
+    return stripHtml(getCellValue(row, column));
+  }
+
   function getCellClass(row, column) {
     if (column.cellClass) {
       return column.cellClass(row[column.key], row);
@@ -294,13 +317,69 @@
     top: (visibleStart + i) * rowHeight
   }));
 
+  $: columnAutoWidths = columns.reduce((acc, column) => {
+    if (column.width) return acc;
+
+    const basis = column.widthBasis || defaultWidthBasis;
+    const headerText = stripHtml(column.header ?? '');
+    const headerLength = headerText.length;
+    let contentLength = 0;
+
+    if (basis !== 'header') {
+      for (const row of displayData) {
+        if (!row) continue;
+        const cellText = getCellText(row, column);
+        if (cellText) {
+          contentLength = Math.max(contentLength, cellText.length);
+        }
+      }
+    }
+
+    const length = basis === 'header'
+      ? headerLength
+      : basis === 'both'
+      ? Math.max(headerLength, contentLength)
+      : contentLength;
+    const safeLength = Math.max(4, length);
+    acc[column.key] = `calc(${safeLength}ch + 32px)`;
+    return acc;
+  }, {});
+
+  // Track mobile state
+  let isMobile = false;
+
+  function updateMobileState() {
+    isMobile = typeof window !== 'undefined' && window.innerWidth <= 767;
+  }
+
   // Compute grid-template-columns from column widths
-  $: gridTemplateColumns = columns.map(col => col.width || '1fr').join(' ');
+  // - main columns use minmax() to allow growing with available space
+  // - use mobileWidth on mobile for responsive layouts
+  $: gridTemplateColumns = columns
+    .filter(col => !isMobile || !col.hideOnMobile)
+    .map(col => {
+      const width = (isMobile && col.mobileWidth)
+        ? col.mobileWidth
+        : (col.width || columnAutoWidths[col.key] || '1fr');
+      // Main columns should grow to fill available space
+      if (col.main) {
+        if (width.includes('fr')) {
+          return width;
+        }
+        return `minmax(${width}, 1fr)`;
+      }
+      return width;
+    })
+    .join(' ');
 
   // Resize observer
   let resizeObserver;
 
   onMount(() => {
+    // Initialize mobile state
+    updateMobileState();
+    window.addEventListener('resize', updateMobileState);
+
     if (scrollEl) {
       resizeObserver = new ResizeObserver(() => {
         updateVisibleRange();
@@ -310,6 +389,9 @@
   });
 
   onDestroy(() => {
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('resize', updateMobileState);
+    }
     if (resizeObserver) {
       resizeObserver.disconnect();
     }
@@ -358,6 +440,10 @@
     gap: 4px;
     border-right: 1px solid var(--border-color);
     box-sizing: border-box;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .header-cell:last-child {
@@ -461,6 +547,7 @@
     cursor: pointer;
     transition: background-color 0.1s ease;
     border-bottom: 1px solid var(--border-color);
+    box-sizing: border-box;
   }
 
   .table-row:hover {
@@ -477,6 +564,18 @@
 
   .table-row:hover {
     background-color: rgba(59, 130, 246, 0.15);
+  }
+
+  .table-row.last-row {
+    border-bottom: none;
+  }
+
+  .table-row.empty {
+    pointer-events: none;
+  }
+
+  .table-row.empty:hover {
+    background-color: inherit;
   }
 
   .table-cell {
@@ -636,6 +735,55 @@
 
   /* Mobile column hiding */
   @media (max-width: 767px) {
+    .fancy-table-container {
+      font-size: 12px;
+      border-radius: 6px;
+    }
+
+    .table-header {
+      border-bottom-width: 1px;
+    }
+
+    .header-cell {
+      padding: 8px 10px;
+      font-size: 11px;
+      letter-spacing: 0.3px;
+    }
+
+    .filter-cell {
+      padding: 6px;
+    }
+
+    .filter-input {
+      padding: 4px 6px;
+      font-size: 11px;
+      border-radius: 3px;
+    }
+
+    .table-cell {
+      padding: 8px 10px;
+      font-size: 12px;
+      white-space: normal;
+      line-height: 1.2;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .empty-state {
+      padding: 32px 16px;
+    }
+
+    .empty-icon {
+      font-size: 36px;
+      margin-bottom: 10px;
+    }
+
+    .empty-text {
+      font-size: 12px;
+    }
+
     .hide-on-mobile {
       display: none !important;
     }
@@ -698,7 +846,7 @@
         <div class="empty-text">{emptyMessage}</div>
       </div>
     {:else}
-      <div class="virtual-container" style="height: {totalHeight}px;">
+      <div class="virtual-container" style="height: {virtualContainerHeight}px;">
         {#each visibleRows as { row, index, top } (index)}
           <!-- svelte-ignore a11y-click-events-have-key-events -->
           <!-- svelte-ignore a11y-no-static-element-interactions -->
@@ -707,6 +855,7 @@
             class="table-row"
             class:even={index % 2 === 0}
             class:odd={index % 2 === 1}
+            class:last-row={index === totalCount - 1}
             style="top: {top}px; height: {rowHeight}px; grid-template-columns: {gridTemplateColumns};"
             on:click={() => handleRowClick(row, index)}
             on:mouseover={() => handleRowHover(row, index)}
@@ -716,6 +865,8 @@
               <div class="table-cell {getCellClass(row, column)}" class:hide-on-mobile={column.hideOnMobile}>
                 {#if column.component}
                   <svelte:component this={column.component} {row} value={row[column.key]} />
+                {:else if column.rawValue}
+                  {getCellValue(row, column)}
                 {:else}
                   {@html getCellValue(row, column)}
                 {/if}
@@ -723,6 +874,22 @@
             {/each}
           </div>
         {/each}
+
+        {#if fillRowCount > 0}
+          {#each Array(fillRowCount) as _, i}
+            {@const emptyIndex = totalCount + i}
+            <div
+              class="table-row empty"
+              class:even={emptyIndex % 2 === 0}
+              class:odd={emptyIndex % 2 === 1}
+              style="top: {emptyIndex * rowHeight}px; height: {rowHeight}px; grid-template-columns: {gridTemplateColumns};"
+            >
+              {#each columns as column}
+                <div class="table-cell" class:hide-on-mobile={column.hideOnMobile}></div>
+              {/each}
+            </div>
+          {/each}
+        {/if}
       </div>
 
       {#if isLoading && displayData.length > 0}

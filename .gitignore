@@ -18,3 +18,5 @@ api/.env.test
 CLAUDE.md
 nexus/nul
 nul
+.playwright-mcp/
+nexus/uploads/

@@ -358,7 +358,8 @@
     font-size: 13px;
   }
 
-  @media (max-width: 767px) {
+  /* Mobile - aligned with global 900px breakpoint */
+  @media (max-width: 899px) {
     .image-preview {
       width: 100px;
       height: 100px;

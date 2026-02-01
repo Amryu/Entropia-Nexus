@@ -22,8 +22,11 @@
   /** @type {string} Field path for state management (e.g., 'Properties.Weight') */
   export let path = '';
 
-  /** @type {string} Field type: text, number, select, checkbox, textarea, coordinates */
+  /** @type {string} Field type: text, number, select, checkbox, textarea, coordinates, autocomplete */
   export let type = 'text';
+
+  /** @type {string} Unique ID for autocomplete datalist */
+  export let datalistId = '';
 
   /** @type {string} Optional prefix text */
   export let prefix = '';
@@ -211,6 +214,22 @@
             <option value={option.value}>{option.label}</option>
           {/each}
         </select>
+      {:else if type === 'autocomplete'}
+        <input
+          bind:this={inputEl}
+          type="text"
+          value={localValue ?? ''}
+          {placeholder}
+          class="edit-input edit-autocomplete"
+          list={datalistId || `datalist-${path}`}
+          on:input={handleInput}
+          on:blur={handleBlur}
+        />
+        <datalist id={datalistId || `datalist-${path}`}>
+          {#each options as option}
+            <option value={option.value}>{option.label}</option>
+          {/each}
+        </datalist>
       {:else if type === 'checkbox'}
         <input
           bind:this={inputEl}
@@ -371,8 +390,8 @@
     background-color: var(--bg-secondary, var(--secondary-color));
   }
 
-  /* Mobile adjustments */
-  @media (max-width: 767px) {
+  /* Mobile adjustments - aligned with global 900px breakpoint */
+  @media (max-width: 899px) {
     .edit-input,
     .edit-textarea,
     .edit-select {

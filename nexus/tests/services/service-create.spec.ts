@@ -1,4 +1,5 @@
 import { test, expect } from '../fixtures/auth';
+import { TIMEOUT_INSTANT, TIMEOUT_LONG } from '../test-constants';
 
 test.describe('Service Creation Page - Unauthenticated', () => {
   test('redirects unauthenticated users to login', async ({ page }) => {
@@ -210,14 +211,14 @@ test.describe('Pricing Options - Verified User', () => {
     await typeSelect.selectOption('healing');
 
     // Wait for form to update after selection
-    await verifiedUser.waitForTimeout(500);
+    await verifiedUser.waitForTimeout(TIMEOUT_INSTANT);
 
     // Should show time or decay billing options
     const pricingSection = verifiedUser.locator('[class*="pricing"]').or(
       verifiedUser.locator('text=time-based pricing')
     ).or(verifiedUser.locator('text=decay-based pricing'));
 
-    const hasPricing = await pricingSection.first().isVisible({ timeout: 5000 }).catch(() => false);
+    const hasPricing = await pricingSection.first().isVisible({ timeout: TIMEOUT_LONG }).catch(() => false);
     expect(hasPricing).toBeTruthy();
   });
 });
@@ -231,17 +232,17 @@ test.describe('Location Options - Verified User', () => {
     await typeSelect.selectOption('healing');
 
     // Wait for form to update after selection
-    await verifiedUser.waitForTimeout(500);
+    await verifiedUser.waitForTimeout(TIMEOUT_INSTANT);
 
     // Use specific selector for planet select (not checkbox)
     const planetSelect = verifiedUser.locator('select#planet');
-    await expect(planetSelect).toBeVisible({ timeout: 5000 });
+    await expect(planetSelect).toBeVisible({ timeout: TIMEOUT_LONG });
 
     // Check for travel option (checkbox with label containing "travel")
     const travelOption = verifiedUser.locator('text=Willing to travel').or(
       verifiedUser.locator('label:has-text("travel")')
     );
-    const hasTravelOption = await travelOption.first().isVisible({ timeout: 5000 }).catch(() => false);
+    const hasTravelOption = await travelOption.first().isVisible({ timeout: TIMEOUT_LONG }).catch(() => false);
     expect(hasTravelOption).toBeTruthy();
   });
 });

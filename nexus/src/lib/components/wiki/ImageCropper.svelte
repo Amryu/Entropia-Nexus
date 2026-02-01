@@ -255,7 +255,8 @@
     background-color: var(--hover-color, #444);
   }
 
-  @media (max-width: 767px) {
+  /* Mobile - aligned with global 900px breakpoint */
+  @media (max-width: 899px) {
     .cropper-container {
       height: 250px;
     }

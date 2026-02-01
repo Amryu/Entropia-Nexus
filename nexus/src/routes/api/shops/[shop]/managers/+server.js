@@ -81,6 +81,7 @@ export async function PUT({ params, request, locals, fetch }) {
   // Validate and convert to user IDs (DB expects snake_case)
   const validatedManagers = [];
   const invalidNames = [];
+  const seenUserIds = new Set();
 
   for (const manager of Managers) {
     const name = manager?.Name ?? '';
@@ -103,6 +104,12 @@ export async function PUT({ params, request, locals, fetch }) {
       invalidNames.push(`${entropiaName} (not verified)`);
       continue;
     }
+
+    // Skip duplicates (case-insensitive by user ID)
+    if (seenUserIds.has(dbUser.id)) {
+      continue;
+    }
+    seenUserIds.add(dbUser.id);
 
     validatedManagers.push({ user_id: dbUser.id, eu_name: dbUser.eu_name });
   }

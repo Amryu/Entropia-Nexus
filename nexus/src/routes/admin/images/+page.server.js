@@ -1,6 +1,67 @@
 // @ts-nocheck
 import { getPendingImages, getApprovedImages, approveImage, denyImage, deleteApprovedImage } from '$lib/server/imageProcessor.js';
 import { fail } from '@sveltejs/kit';
+import { pool } from '$lib/server/db.js';
+
+// API base URL for fetching entity data
+const API_BASE = process.env.INTERNAL_API_URL || 'http://api:3000';
+
+// Entity type to API endpoint mapping
+const TYPE_ENDPOINT_MAP = {
+  'weapon': '/weapons',
+  'mob': '/mobs',
+  'armorset': '/armorsets',
+  'material': '/materials',
+  'blueprint': '/blueprints',
+  'skill': '/skills',
+  'profession': '/professions',
+  'vendor': '/vendors',
+  'clothing': '/clothing',
+  'consumable': '/consumables',
+  'tool': '/tools',
+  'attachment': '/attachments',
+  'medicaltool': '/medicaltools',
+  'vehicle': '/vehicles',
+  'pet': '/pets',
+  'furnishing': '/furnishings',
+  'strongbox': '/strongboxes'
+};
+
+// Get entity name by type and ID via API call
+async function getEntityName(entityType, entityId) {
+  const endpoint = TYPE_ENDPOINT_MAP[entityType.toLowerCase()];
+  if (!endpoint) {
+    return null;
+  }
+
+  try {
+    const response = await fetch(`${API_BASE}${endpoint}/${entityId}`);
+    if (!response.ok) {
+      return null;
+    }
+    const data = await response.json();
+    return data?.Name || data?.Properties?.Name || null;
+  } catch (err) {
+    console.error(`Failed to get entity name for ${entityType}/${entityId}:`, err);
+    return null;
+  }
+}
+
+// Get uploader username by ID
+async function getUploaderName(uploaderId) {
+  if (!uploaderId) return null;
+
+  try {
+    const result = await pool.query(
+      `SELECT name FROM users WHERE id = $1 LIMIT 1`,
+      [uploaderId]
+    );
+    return result.rows[0]?.name || null;
+  } catch (err) {
+    console.error(`Failed to get uploader name for ${uploaderId}:`, err);
+    return null;
+  }
+}
 
 export async function load() {
   const [pendingImages, approvedImages] = await Promise.all([
@@ -8,9 +69,35 @@ export async function load() {
     getApprovedImages()
   ]);
 
+  // Enrich pending images with entity names and uploader names
+  const enrichedPending = await Promise.all(
+    pendingImages.map(async (image) => {
+      const [entityName, uploaderName] = await Promise.all([
+        getEntityName(image.entityType, image.entityId),
+        getUploaderName(image.uploaderId)
+      ]);
+      return {
+        ...image,
+        entityName: entityName || image.entityId,
+        uploaderName: uploaderName || 'Unknown'
+      };
+    })
+  );
+
+  // Enrich approved images with entity names
+  const enrichedApproved = await Promise.all(
+    approvedImages.map(async (image) => {
+      const entityName = await getEntityName(image.entityType, image.entityId);
+      return {
+        ...image,
+        entityName: entityName || image.entityId
+      };
+    })
+  );
+
   return {
-    pendingImages,
-    approvedImages
+    pendingImages: enrichedPending,
+    approvedImages: enrichedApproved
   };
 }
 

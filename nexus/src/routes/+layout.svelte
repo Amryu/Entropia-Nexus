@@ -3,7 +3,7 @@
 
   import '$lib/style.css';
 
-  import { darkMode, pageParams } from '../stores.js';
+  import { darkMode, pageParams, initialViewportWidth } from '../stores.js';
 
   import Menu from "$lib/components/Menu.svelte";
   import { onMount, onDestroy } from 'svelte';
@@ -11,9 +11,17 @@
   import { decodeURIComponentSafe } from '$lib/util.js';
 
   export let data;
+  // SvelteKit passes params to all layouts/pages - we use $page.params instead
+  // but need to declare this to avoid console warnings
+  export let params = {};
 
   let darkModeValue = true;
   $page;
+
+  // Set initial viewport width from server-side detection
+  $: if (data.initialViewportWidth) {
+    initialViewportWidth.set(data.initialViewportWidth);
+  }
 
   // Whenever the page store updates, decode the parameters
   $: {
@@ -32,11 +40,38 @@
     updateDarkMode();
   });
 
+  // Viewport cookie storage - debounced to avoid excessive cookie writes
+  let viewportDebounceTimer = null;
+  const VIEWPORT_COOKIE_NAME = 'nexus_viewport';
+  const VIEWPORT_DEBOUNCE_MS = 1000;
+
+  function storeViewportWidth(width) {
+    if (typeof document === 'undefined') return;
+    // Store for 30 days
+    const expires = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toUTCString();
+    document.cookie = `${VIEWPORT_COOKIE_NAME}=${width}; path=/; expires=${expires}; SameSite=Lax`;
+  }
+
+  function handleResize() {
+    if (viewportDebounceTimer) {
+      clearTimeout(viewportDebounceTimer);
+    }
+    viewportDebounceTimer = setTimeout(() => {
+      storeViewportWidth(window.innerWidth);
+    }, VIEWPORT_DEBOUNCE_MS);
+  }
+
   onMount(() => {
     updateDarkMode();
-    
+
     if (typeof window !== 'undefined') {
       darkMode.set(localStorage.getItem('darkMode') === 'true');
+
+      // Store initial viewport width
+      storeViewportWidth(window.innerWidth);
+
+      // Listen for resize to update the cookie
+      window.addEventListener('resize', handleResize);
     }
   });
 
@@ -53,6 +88,12 @@
   // Remember to unsubscribe when the component is destroyed
   onDestroy(() => {
     unsubscribe();
+    if (viewportDebounceTimer) {
+      clearTimeout(viewportDebounceTimer);
+    }
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('resize', handleResize);
+    }
   });
 </script>
 <style global>
@@ -67,11 +108,6 @@
 }
 
 :global(a) {
-  text-decoration: none;
-  color: var(--text-color);
-}
-
-:global(a:visited) {
   text-decoration: none;
   color: var(--text-color);
 }

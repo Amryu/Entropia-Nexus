@@ -6,7 +6,6 @@
 <script>
   // @ts-nocheck
   import { createEventDispatcher } from 'svelte';
-  import { goto } from '$app/navigation';
   import { editMode, startEdit, cancelEdit, hasChanges } from '$lib/stores/wikiEditState.js';
   import { encodeURIComponentSafe } from '$lib/util';
 
@@ -51,11 +50,6 @@
     }
   }
 
-  function handleHistoryClick() {
-    if (!entity) return;
-    const currentPath = window.location.pathname;
-    goto(`${currentPath}?mode=history`);
-  }
 
   function toggleNav() {
     dispatch('toggleNav');
@@ -113,19 +107,6 @@
       </button>
     {/if}
 
-    {#if entity && !$editMode}
-      <button
-        class="action-btn"
-        on:click={handleHistoryClick}
-        title="View edit history"
-      >
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="10" />
-          <path d="M12 6v6l4 2" />
-        </svg>
-        <span class="btn-text">History</span>
-      </button>
-    {/if}
   </div>
 </header>
 

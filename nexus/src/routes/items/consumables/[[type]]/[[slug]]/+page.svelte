@@ -2,8 +2,8 @@
   @component Consumables Wiki Page
   Wikipedia-style layout with floating infobox on the right side.
   Handles 2 subtypes: stimulants, capsules
+  Supports full wiki editing.
 
-  Legacy editConfig preserved in consumables-legacy/+page.svelte
   Key structure:
   - stimulants: Name, Properties (Description, Weight, Type, Economy), EffectsOnConsume[]
   - capsules: Name, Properties (Economy, MinProfessionLevel), Mob, Profession
@@ -12,22 +12,58 @@
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import { clampDecimals, encodeURIComponentSafe, getTimeString, getTypeLink, groupBy } from '$lib/util';
+  import { sanitizeHtml } from '$lib/sanitize';
 
   // Wiki components
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
+  import PendingChangeBanner from '$lib/components/wiki/PendingChangeBanner.svelte';
   import WikiSEO from '$lib/components/wiki/WikiSEO.svelte';
   import DataSection from '$lib/components/wiki/DataSection.svelte';
+  import InlineEdit from '$lib/components/wiki/InlineEdit.svelte';
+  import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
+  import EffectsEditor from '$lib/components/wiki/EffectsEditor.svelte';
+  import MobSearchInput from '$lib/components/wiki/MobSearchInput.svelte';
+
+  // Wiki edit state
+  import {
+    editMode,
+    isCreateMode as createModeStore,
+    initEditState,
+    resetEditState,
+    currentEntity,
+    existingPendingChange,
+    viewingPendingChange,
+    setExistingPendingChange,
+    setViewingPendingChange,
+    updateField,
+    changeMetadata
+  } from '$lib/stores/wikiEditState';
 
   // Legacy components for data display
   import Acquisition from '$lib/components/Acquisition.svelte';
+
+  // Image upload
+  import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
 
   export let data;
 
   $: consumable = data.object;
   $: user = data.session?.user;
   $: additional = data.additional || {};
+  $: pendingChange = data.pendingChange;
+  $: existingChange = data.existingChange;
+  $: isCreateMode = data.isCreateMode || false;
+  $: canCreateNew = data.canCreateNew ?? true;
+  $: userPendingCreates = data.userPendingCreates || [];
+  $: userPendingUpdates = data.userPendingUpdates || [];
+  $: effectsList = data.effects || [];
+  $: mobsList = data.mobs || [];
+  $: professionsList = data.professions || [];
+
+  // Permission check - verified users and admins can edit
+  $: canEdit = user?.verified || user?.isAdmin;
 
   // For multi-type pages, data.items is an object keyed by type
   // When no type is selected, show all items from all types (with _type added for linking)
@@ -69,6 +105,67 @@
       default: return 'Consumable';
     }
   }
+
+  // Empty entity template for create mode (type-specific)
+  function getEmptyEntity(type) {
+    const base = {
+      Name: '',
+      Properties: {
+        Economy: {
+          MaxTT: 0
+        }
+      }
+    };
+
+    switch (type) {
+      case 'stimulants':
+        base.Properties.Description = '';
+        base.Properties.Weight = 0;
+        base.Properties.Type = '';
+        base.EffectsOnConsume = [];
+        break;
+      case 'capsules':
+        base.Properties.MinProfessionLevel = 0;
+        base.Mob = null;
+        base.Profession = null;
+        break;
+    }
+
+    return base;
+  }
+
+  // ========== WIKI EDIT STATE ==========
+  // Initialize edit state when user/entity changes
+  $: if (user) {
+    const entityType = getEntityType(additional.type);
+    const emptyEntity = getEmptyEntity(additional.type);
+    const entity = isCreateMode ? (existingChange?.data || emptyEntity) : consumable;
+    initEditState(entity || emptyEntity, entityType, isCreateMode, existingChange);
+  }
+
+  // Set pending change when it exists
+  $: if (pendingChange) {
+    setExistingPendingChange(pendingChange);
+    // Auto-enable viewing pending change for author or admin
+    if (user && (pendingChange.author_id === user.id || user.isAdmin)) {
+      setViewingPendingChange(true);
+    }
+  } else {
+    setExistingPendingChange(null);
+    setViewingPendingChange(false);
+  }
+
+  // Active entity: in edit mode use currentEntity, when viewing pending use its data, otherwise use original
+  $: activeEntity = $editMode
+    ? $currentEntity
+    : $viewingPendingChange && $existingPendingChange?.data
+      ? $existingPendingChange.data
+      : consumable;
+
+  // Cleanup on destroy
+  onDestroy(() => {
+    resetEditState();
+  });
 
   // Build navigation items
   $: navItems = allItems;
@@ -132,10 +229,12 @@
     ? `https://entropianexus.com/items/consumables/${additional.type}`
     : 'https://entropianexus.com/items/consumables';
 
-  // Check if item has effects (stimulants only)
-  $: hasConsumeEffects = consumable?.EffectsOnConsume?.length > 0;
+  // Image URL for SEO
+  $: entityImageUrl = consumable?.Id && additional.type
+    ? `/api/img/${getEntityType(additional.type).toLowerCase()}/${consumable.Id}`
+    : null;
 
-  // Format effects grouped by duration
+  // Format effects grouped by duration (use activeEntity for live updates)
   function getFormattedEffects(item) {
     if (!item?.EffectsOnConsume?.length) return null;
     const grouped = groupBy(item.EffectsOnConsume, x => x.Values.DurationSeconds);
@@ -151,7 +250,7 @@
       }));
   }
 
-  $: formattedEffects = getFormattedEffects(consumable);
+  $: formattedEffects = getFormattedEffects(activeEntity);
 
   // ========== PANEL STATE PERSISTENCE ==========
   let panelStates = {
@@ -183,6 +282,7 @@
   description={seoDescription}
   entityType={getEntityType(additional.type)}
   entity={consumable}
+  imageUrl={entityImageUrl}
   {canonicalUrl}
   breadcrumbs={breadcrumbs.map(b => ({ name: b.label, url: b.href }))}
 />
@@ -199,19 +299,41 @@
   navGetItemHref={getItemHref}
   {user}
   editable={true}
+  canEdit={canEdit && !!additional.type}
+  {canCreateNew}
+  {userPendingCreates}
+  {userPendingUpdates}
 >
-  {#if consumable}
+  {#if consumable || isCreateMode}
+    <!-- Pending Change Banner -->
+    {#if $existingPendingChange && !$editMode}
+      <PendingChangeBanner
+        pendingChange={$existingPendingChange}
+        viewing={$viewingPendingChange}
+        onToggle={() => setViewingPendingChange(!$viewingPendingChange)}
+      />
+    {/if}
     <div class="layout-a">
       <!-- Wikipedia-style floating infobox (right panel) -->
       <aside class="wiki-infobox-float">
         <!-- Entity Header -->
         <div class="infobox-header">
-          <div class="icon-placeholder">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1">
-              <rect x="3" y="3" width="18" height="18" rx="2" />
-            </svg>
+          <EntityImageUpload
+            entityId={activeEntity?.Id}
+            entityName={activeEntity?.Name}
+            entityType={getEntityType(additional.type).toLowerCase()}
+            {user}
+            isEditMode={$editMode}
+            {isCreateMode}
+          />
+          <div class="infobox-title">
+            <InlineEdit
+              value={activeEntity?.Name}
+              path="Name"
+              type="text"
+              placeholder="Enter name..."
+            />
           </div>
-          <div class="infobox-title">{consumable.Name}</div>
           <div class="infobox-subtitle">
             <span class="type-badge">{getTypeName(additional.type)}</span>
           </div>
@@ -221,17 +343,17 @@
         <div class="stats-section tier-1">
           <div class="stat-row primary">
             <span class="stat-label">TT Value</span>
-            <span class="stat-value">{consumable.Properties?.Economy?.MaxTT != null ? `${clampDecimals(consumable.Properties.Economy.MaxTT, 2, 4)} PED` : 'N/A'}</span>
+            <span class="stat-value">{activeEntity?.Properties?.Economy?.MaxTT != null ? `${clampDecimals(activeEntity.Properties.Economy.MaxTT, 2, 4)} PED` : 'N/A'}</span>
           </div>
           {#if additional.type === 'stimulants'}
             <div class="stat-row primary">
               <span class="stat-label">Type</span>
-              <span class="stat-value">{consumable.Properties?.Type || 'N/A'}</span>
+              <span class="stat-value">{activeEntity?.Properties?.Type || 'N/A'}</span>
             </div>
           {:else if additional.type === 'capsules'}
             <div class="stat-row primary">
               <span class="stat-label">Creature</span>
-              <span class="stat-value">{consumable.Mob?.Name || 'N/A'}</span>
+              <span class="stat-value">{activeEntity?.Mob?.Name || 'N/A'}</span>
             </div>
           {/if}
         </div>
@@ -242,18 +364,50 @@
           {#if additional.type === 'stimulants'}
             <div class="stat-row">
               <span class="stat-label">Weight</span>
-              <span class="stat-value">{consumable.Properties?.Weight != null ? `${clampDecimals(consumable.Properties.Weight, 1, 6)}kg` : 'N/A'}</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.Weight}
+                  path="Properties.Weight"
+                  type="number"
+                  suffix="kg"
+                  step={0.01}
+                />
+              </span>
             </div>
             <div class="stat-row">
               <span class="stat-label">Type</span>
-              <span class="stat-value">{consumable.Properties?.Type || 'N/A'}</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.Type}
+                  path="Properties.Type"
+                  type="text"
+                />
+              </span>
             </div>
           {:else if additional.type === 'capsules'}
             <div class="stat-row">
               <span class="stat-label">Creature</span>
               <span class="stat-value">
-                {#if consumable.Mob?.Name}
-                  <a href={getTypeLink(consumable.Mob.Name, 'Mob')} class="entity-link">{consumable.Mob.Name}</a>
+                {#if $editMode}
+                  <MobSearchInput
+                    value={activeEntity?.Mob?.Name || ''}
+                    options={mobsList}
+                    placeholder="Search creature..."
+                    on:change={(e) => {
+                      if (e.detail?.value) {
+                        updateField('Mob', { Name: e.detail.value });
+                      } else {
+                        updateField('Mob', null);
+                      }
+                    }}
+                    on:select={(e) => {
+                      if (e.detail?.value) {
+                        updateField('Mob', { Name: e.detail.value });
+                      }
+                    }}
+                  />
+                {:else if activeEntity?.Mob?.Name}
+                  <a href={getTypeLink(activeEntity.Mob.Name, 'Mob')} class="entity-link">{activeEntity.Mob.Name}</a>
                 {:else}
                   N/A
                 {/if}
@@ -262,19 +416,31 @@
             <div class="stat-row">
               <span class="stat-label">Profession</span>
               <span class="stat-value">
-                {#if consumable.Profession?.Name}
-                  <a href={getTypeLink(consumable.Profession.Name, 'Profession')} class="entity-link">{consumable.Profession.Name}</a>
+                {#if $editMode}
+                  <InlineEdit
+                    value={activeEntity?.Profession?.Name || ''}
+                    path="Profession.Name"
+                    type="select"
+                    placeholder="Select profession..."
+                    options={professionsList.map(p => ({ value: p.Name, label: p.Name }))}
+                  />
+                {:else if activeEntity?.Profession?.Name}
+                  <a href={getTypeLink(activeEntity.Profession.Name, 'Profession')} class="entity-link">{activeEntity.Profession.Name}</a>
                 {:else}
                   N/A
                 {/if}
               </span>
             </div>
-            {#if consumable.Properties?.MinProfessionLevel != null}
-              <div class="stat-row">
-                <span class="stat-label">Min. Level</span>
-                <span class="stat-value">{consumable.Properties.MinProfessionLevel}</span>
-              </div>
-            {/if}
+            <div class="stat-row">
+              <span class="stat-label">Min. Level</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeEntity?.Properties?.MinProfessionLevel}
+                  path="Properties.MinProfessionLevel"
+                  type="number"
+                />
+              </span>
+            </div>
           {/if}
         </div>
 
@@ -283,42 +449,56 @@
           <h4 class="section-title">Economy</h4>
           <div class="stat-row">
             <span class="stat-label">Value</span>
-            <span class="stat-value">{consumable.Properties?.Economy?.MaxTT != null ? `${clampDecimals(consumable.Properties.Economy.MaxTT, 2, 8)} PED` : 'N/A'}</span>
+            <span class="stat-value">
+              <InlineEdit
+                value={activeEntity?.Properties?.Economy?.MaxTT}
+                path="Properties.Economy.MaxTT"
+                type="number"
+                suffix=" PED"
+                step={0.01}
+              />
+            </span>
           </div>
         </div>
 
         <!-- Effects on Consume (stimulants only) - placed after Economy -->
-        {#if additional.type === 'stimulants' && hasConsumeEffects && formattedEffects}
+        {#if additional.type === 'stimulants' && (activeEntity?.EffectsOnConsume?.length > 0 || $editMode)}
           <div class="stats-section effects-section">
-            <h4 class="section-title">Effects on Consume</h4>
-            {#each formattedEffects as group}
-              <div class="effect-group">
-                {#if group.duration > 0}
-                  <div class="effect-duration">Duration: {getTimeString(group.duration)}</div>
-                {/if}
-                {#each group.effects as effect}
-                  <div class="stat-row">
-                    <span class="stat-label">{effect.name}</span>
-                    <span class="stat-value effect-value">{effect.strength}{effect.unit}</span>
-                  </div>
-                {/each}
-              </div>
-            {/each}
+            <EffectsEditor
+              effects={activeEntity?.EffectsOnConsume || []}
+              fieldName="EffectsOnConsume"
+              availableEffects={effectsList}
+              effectType="consume"
+              title="Effects on Consume"
+            />
           </div>
         {/if}
       </aside>
 
       <!-- Main content (center) -->
       <article class="wiki-article">
-        <h1 class="article-title">{consumable.Name}</h1>
+        <h1 class="article-title">
+          <InlineEdit
+            value={activeEntity?.Name}
+            path="Name"
+            type="text"
+            placeholder="Enter name..."
+          />
+        </h1>
 
         <!-- Description Panel -->
         <div class="description-panel">
-          {#if consumable.Properties?.Description}
-            <div class="description-content">{consumable.Properties.Description}</div>
+          {#if $editMode}
+            <RichTextEditor
+              content={activeEntity?.Properties?.Description || ''}
+              on:change={(e) => updateField('Properties.Description', e.detail)}
+              placeholder="Enter a description for this {getTypeName(additional.type).toLowerCase()}..."
+            />
+          {:else if activeEntity?.Properties?.Description}
+            <div class="description-content">{@html sanitizeHtml(activeEntity.Properties.Description)}</div>
           {:else}
             <div class="description-content placeholder">
-              {consumable.Name} is a {getTypeName(additional.type).toLowerCase()} used in Entropia Universe.
+              {activeEntity?.Name || 'This consumable'} is a {getTypeName(additional.type).toLowerCase()} used in Entropia Universe.
             </div>
           {/if}
         </div>
@@ -345,6 +525,48 @@
 </WikiPage>
 
 <style>
+  /* Pending change banner */
+  .pending-change-banner {
+    background: linear-gradient(135deg, #f59e0b20, #f59e0b10);
+    border: 1px solid #f59e0b;
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+  }
+
+  .banner-content {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .banner-icon {
+    font-size: 18px;
+  }
+
+  .banner-text {
+    flex: 1;
+    font-size: 14px;
+    color: var(--text-color);
+  }
+
+  .banner-toggle {
+    padding: 6px 12px;
+    font-size: 13px;
+    font-weight: 500;
+    background: var(--accent-color);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: opacity 0.15s;
+  }
+
+  .banner-toggle:hover {
+    opacity: 0.9;
+  }
+
   .layout-a {
     position: relative;
     width: 100%;
@@ -375,19 +597,6 @@
     text-align: center;
     padding-bottom: 12px;
     border-bottom: 1px solid var(--border-color, #555);
-  }
-
-  .icon-placeholder {
-    width: 80px;
-    height: 80px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: var(--bg-color, var(--primary-color));
-    border: 2px dashed var(--border-color, #555);
-    border-radius: 8px;
-    color: var(--text-muted, #999);
-    margin: 0 auto 12px;
   }
 
   .infobox-title {
@@ -589,16 +798,6 @@
 
     .infobox-title {
       font-size: 16px;
-    }
-
-    .icon-placeholder {
-      width: 60px;
-      height: 60px;
-    }
-
-    .icon-placeholder svg {
-      width: 36px;
-      height: 36px;
     }
   }
 </style>
