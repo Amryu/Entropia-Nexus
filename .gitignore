@@ -13,7 +13,9 @@ nexus-bot/config.json
 
 # Ignore SQL folder (experimental scripts and database dumps)
 sql/stuff
-sqp/experimental
+sql/nexus/dumps
+sql/nexus-users/dumps
+sql/experimental
 api/.env.test
 CLAUDE.md
 nexus/nul
