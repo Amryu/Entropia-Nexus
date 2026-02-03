@@ -12,6 +12,11 @@ function formatEffect(x) {
       Description: x.Description,
       IsPositive: x.IsPositive === 1,
       Unit: x.Unit,
+      Limits: {
+        Item: x.LimitItem,
+        Action: x.LimitAction,
+        Total: x.LimitTotal,
+      }
     },
     Links: { "$Url": `/effects/${x.Id}` },
   };

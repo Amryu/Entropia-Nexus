@@ -71,6 +71,8 @@
   let visibleStart = 0;
   let visibleEnd = 0;
   let containerHeight = 0;
+  let scrollbarWidth = 0;
+  let resizeObserver;
 
   // Computed
   $: isLazyMode = typeof fetchData === 'function';
@@ -155,6 +157,21 @@
 
     if (scrollEl) {
       updateVisibleRange();
+      updateScrollbarWidth();
+      if (typeof ResizeObserver !== 'undefined') {
+        resizeObserver = new ResizeObserver(() => {
+          updateVisibleRange();
+          updateScrollbarWidth();
+        });
+        resizeObserver.observe(scrollEl);
+      }
+    }
+  });
+
+  onDestroy(() => {
+    if (resizeObserver) {
+      resizeObserver.disconnect();
+      resizeObserver = null;
     }
   });
 
@@ -234,6 +251,17 @@
     const buffer = 5;
     visibleStart = Math.max(0, Math.floor(scrollTop / rowHeight) - buffer);
     visibleEnd = Math.min(totalCount, Math.ceil((scrollTop + containerHeight) / rowHeight) + buffer);
+
+    updateScrollbarWidth();
+  }
+
+  function updateScrollbarWidth() {
+    if (!scrollEl || !containerEl) return;
+    const width = scrollEl.offsetWidth - scrollEl.clientWidth;
+    if (width !== scrollbarWidth) {
+      scrollbarWidth = width;
+      containerEl.style.setProperty('--scrollbar-width', `${width}px`);
+    }
   }
 
   function handleSort(column) {
@@ -372,28 +400,17 @@
     })
     .join(' ');
 
-  // Resize observer
-  let resizeObserver;
-
   onMount(() => {
     // Initialize mobile state
     updateMobileState();
     window.addEventListener('resize', updateMobileState);
 
-    if (scrollEl) {
-      resizeObserver = new ResizeObserver(() => {
-        updateVisibleRange();
-      });
-      resizeObserver.observe(scrollEl);
-    }
+    updateScrollbarWidth();
   });
 
   onDestroy(() => {
     if (typeof window !== 'undefined') {
       window.removeEventListener('resize', updateMobileState);
-    }
-    if (resizeObserver) {
-      resizeObserver.disconnect();
     }
     Object.values(filterTimeouts).forEach(clearTimeout);
   });
@@ -426,6 +443,8 @@
   .header-row, .filter-row {
     display: grid;
     align-items: stretch;
+    padding-right: var(--scrollbar-width, 0px);
+    box-sizing: border-box;
   }
 
   .header-cell {
@@ -503,20 +522,14 @@
 
   .table-body {
     flex: 1;
-    overflow-y: scroll;
+    overflow-y: auto;
     overflow-x: hidden;
     position: relative;
   }
 
-  /* Reserve space for scrollbar to prevent layout shift */
-  .table-header,
-  .table-body {
-    scrollbar-gutter: stable;
-  }
-
   /* Ensure header has same scrollbar space as body */
   .table-header {
-    overflow-y: scroll;
+    overflow-y: hidden;
   }
 
   /* Hide scrollbar in header (we just want the space reserved) */
@@ -643,8 +656,7 @@
     flex-shrink: 0;
     background-color: var(--hover-color);
     border-top: 2px solid var(--border-color);
-    overflow-y: scroll;
-    scrollbar-gutter: stable;
+    overflow-y: hidden;
   }
 
   /* Hide scrollbar in footer (we just want the space reserved) */
@@ -665,6 +677,8 @@
     display: grid;
     align-items: stretch;
     border-bottom: 1px solid var(--border-color);
+    padding-right: var(--scrollbar-width, 0px);
+    box-sizing: border-box;
   }
 
   .footer-row:last-child {

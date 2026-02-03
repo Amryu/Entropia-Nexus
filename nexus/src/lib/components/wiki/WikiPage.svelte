@@ -86,12 +86,14 @@
   let isMobile = false;
   let isTablet = false;
   let mounted = false;
+  let hasCustomSidebar = false;
 
   // Mobile: < 900px (aligned with Menu.svelte and global breakpoint)
   // Tablet: 900px - 1199px
   // Desktop: >= 1200px
   $: isMobile = windowWidth < 900;
   $: isTablet = windowWidth >= 900 && windowWidth < 1200;
+  $: hasCustomSidebar = !!$$slots.sidebar;
 
   function toggleDrawer() {
     drawerOpen = !drawerOpen;
@@ -254,24 +256,9 @@
   <!-- Mobile Navigation Drawer -->
   {#if isMobile}
     <MobileDrawer bind:open={drawerOpen} on:close={closeDrawer}>
-      <WikiNavigation
-        items={navItems}
-        filters={navFilters}
-        {basePath}
-        {title}
-        currentSlug={entity?.Name}
-        {currentChangeId}
-        customGetItemHref={navGetItemHref}
-        {userPendingCreates}
-        {userPendingUpdates}
-      />
-    </MobileDrawer>
-  {/if}
-
-  <div class="wiki-layout">
-    <!-- Desktop/Tablet Sidebar -->
-    {#if !isMobile}
-      <aside class="wiki-sidebar">
+      {#if hasCustomSidebar}
+        <slot name="sidebar" {isMobile} />
+      {:else}
         <WikiNavigation
           items={navItems}
           filters={navFilters}
@@ -279,14 +266,37 @@
           {title}
           currentSlug={entity?.Name}
           {currentChangeId}
-          expanded={sidebarExpanded}
-          on:toggleExpand={toggleSidebarExpand}
-          tableColumns={navTableColumns}
-          columnFormatters={navColumnFormatters}
           customGetItemHref={navGetItemHref}
           {userPendingCreates}
           {userPendingUpdates}
         />
+      {/if}
+    </MobileDrawer>
+  {/if}
+
+  <div class="wiki-layout">
+    <!-- Desktop/Tablet Sidebar -->
+    {#if !isMobile}
+      <aside class="wiki-sidebar">
+        {#if hasCustomSidebar}
+          <slot name="sidebar" {isMobile} />
+        {:else}
+          <WikiNavigation
+            items={navItems}
+            filters={navFilters}
+            {basePath}
+            {title}
+            currentSlug={entity?.Name}
+            {currentChangeId}
+            expanded={sidebarExpanded}
+            on:toggleExpand={toggleSidebarExpand}
+            tableColumns={navTableColumns}
+            columnFormatters={navColumnFormatters}
+            customGetItemHref={navGetItemHref}
+            {userPendingCreates}
+            {userPendingUpdates}
+          />
+        {/if}
       </aside>
     {/if}
 
@@ -323,47 +333,49 @@
         </div>
 
         <div class="header-actions">
-          {#if canEdit && !$isCreateMode}
-            <button
-              class="action-btn create"
-              on:click={handleCreate}
-              title={canCreateNew ? 'Create new' : 'You have reached the limit of 50 pending creations'}
-              disabled={!canCreateNew}
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="12" y1="5" x2="12" y2="19" />
-                <line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-              <span>New</span>
-            </button>
-          {/if}
-          {#if entity && canEdit && !$isCreateMode}
-            {#if $editMode}
-              <button class="action-btn cancel" on:click={handleCancelEdit} title="Cancel editing">
+          <slot name="header-actions">
+            {#if canEdit && !$isCreateMode}
+              <button
+                class="action-btn create"
+                on:click={handleCreate}
+                title={canCreateNew ? 'Create new' : 'You have reached the limit of 50 pending creations'}
+                disabled={!canCreateNew}
+              >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <line x1="18" y1="6" x2="6" y2="18" />
-                  <line x1="6" y1="6" x2="18" y2="18" />
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
                 </svg>
-                <span>Cancel</span>
-              </button>
-            {:else}
-              <button class="action-btn" on:click={handleEdit} title="Edit">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
-                  <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
-                </svg>
-                <span>Edit</span>
+                <span>New</span>
               </button>
             {/if}
-          {:else if editable && (needsAuth || needsVerification) && !$isCreateMode}
-            <button class="auth-hint-btn" on:click={openAuthDialog} title="Login required">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-              </svg>
-              <span>{needsAuth ? 'Login to edit' : 'Verify to edit'}</span>
-            </button>
-          {/if}
+            {#if entity && canEdit && !$isCreateMode}
+              {#if $editMode}
+                <button class="action-btn cancel" on:click={handleCancelEdit} title="Cancel editing">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18" />
+                    <line x1="6" y1="6" x2="18" y2="18" />
+                  </svg>
+                  <span>Cancel</span>
+                </button>
+              {:else}
+                <button class="action-btn" on:click={handleEdit} title="Edit">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+                    <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+                  </svg>
+                  <span>Edit</span>
+                </button>
+              {/if}
+            {:else if editable && (needsAuth || needsVerification) && !$isCreateMode}
+              <button class="auth-hint-btn" on:click={openAuthDialog} title="Login required">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                </svg>
+                <span>{needsAuth ? 'Login to edit' : 'Verify to edit'}</span>
+              </button>
+            {/if}
+          </slot>
         </div>
       </div>
 

@@ -2795,3 +2795,59 @@ export async function getTopContributors(limit = 10) {
   const result = await pool.query(query, [limit]);
   return result.rows;
 }
+export async function countUserLoadouts(userId) {
+  const query = 'SELECT COUNT(*)::int AS count FROM loadouts WHERE user_id = $1';
+  const values = [userId];
+  const { rows } = await pool.query(query, values);
+  return rows[0]?.count ?? 0;
+}
+
+export async function getUserLoadouts(userId) {
+  const query = 'SELECT id, name, data, public, share_code, created_at, last_update FROM loadouts WHERE user_id = $1 ORDER BY last_update DESC';
+  const values = [userId];
+  const { rows } = await pool.query(query, values);
+  return rows;
+}
+
+export async function getUserLoadoutById(userId, id) {
+  const query = 'SELECT id, name, data, public, share_code, created_at, last_update FROM loadouts WHERE user_id = $1 AND id = $2';
+  const values = [userId, id];
+  const { rows } = await pool.query(query, values);
+  return rows[0];
+}
+
+export async function createUserLoadout(userId, name, data, isPublic, shareCode) {
+  const query = `INSERT INTO loadouts (user_id, name, data, public, share_code)
+    VALUES ($1, $2, $3, $4, $5)
+    RETURNING id, name, data, public, share_code, created_at, last_update`;
+  const values = [userId, name, data, !!isPublic, shareCode];
+  const { rows } = await pool.query(query, values);
+  return rows[0];
+}
+
+export async function updateUserLoadout(userId, id, name, data, isPublic, shareCode) {
+  const query = `UPDATE loadouts
+    SET name = $3,
+        data = $4,
+        public = $5,
+        share_code = $6,
+        last_update = CURRENT_TIMESTAMP
+    WHERE user_id = $1 AND id = $2
+    RETURNING id, name, data, public, share_code, created_at, last_update`;
+  const values = [userId, id, name, data, !!isPublic, shareCode];
+  const { rows } = await pool.query(query, values);
+  return rows[0];
+}
+
+export async function deleteUserLoadout(userId, id) {
+  const query = 'DELETE FROM loadouts WHERE user_id = $1 AND id = $2';
+  const values = [userId, id];
+  await pool.query(query, values);
+}
+
+export async function getLoadoutByShareCode(shareCode) {
+  const query = 'SELECT id, name, data, public, share_code, created_at, last_update, user_id FROM loadouts WHERE share_code = $1 AND public = true';
+  const values = [shareCode];
+  const { rows } = await pool.query(query, values);
+  return rows[0];
+}

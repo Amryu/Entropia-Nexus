@@ -102,7 +102,7 @@ Select elements must have proper option styling for both themes:
 
 ```css
 select option {
-  background-color: var(--bg-color, var(--secondary-color));
+  background-color: var(--secondary-color);
   color: var(--text-color);
 }
 ```
