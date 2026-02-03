@@ -175,12 +175,33 @@
       format: (v) => v || '-'
     },
     {
-      key: 'value',
-      header: 'TT',
-      width: '60px',
-      filterPlaceholder: '>1',
-      getValue: (item) => item.Properties?.Economy?.MaxTT,
-      format: (v) => v != null ? clampDecimals(v, 2, 4) : '-'
+      key: 'type',
+      header: 'Type',
+      width: '80px',
+      filterPlaceholder: 'Armor',
+      getValue: (item) => item.Properties?.Type,
+      format: (v) => v || '-'
+    },
+    {
+      key: 'effects',
+      header: 'Effects',
+      width: '70px',
+      filterPlaceholder: 'Yes',
+      getValue: (item) => {
+        const equipCount = item?.EffectsOnEquip?.length
+          || item?.Effects?.length
+          || item?.Properties?.Effects?.length
+          || item?.Properties?.EffectsOnEquip?.length
+          || 0;
+        const setCount = item?.Set?.EffectsOnSetEquip?.length
+          || item?.EffectsOnSetEquip?.length
+          || item?.SetEffects?.length
+          || item?.Properties?.SetEffects?.length
+          || item?.Properties?.Set?.EffectsOnSetEquip?.length
+          || 0;
+        return (equipCount + setCount) > 0;
+      },
+      format: (v) => v ? 'Yes' : 'No'
     }
   ];
 

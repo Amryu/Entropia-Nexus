@@ -182,6 +182,25 @@
     }
   ];
 
+  const navTableColumns = [
+    {
+      key: 'location',
+      header: 'Location (Short Format)',
+      width: '150px',
+      filterPlaceholder: 'Calypso',
+      getValue: (item) => getLocationShort(item),
+      format: (v) => v || '-'
+    },
+    {
+      key: 'owner',
+      header: 'Owner',
+      width: '110px',
+      filterPlaceholder: 'Owner',
+      getValue: (item) => item?.Owner?.Name,
+      format: (v) => v || '-'
+    }
+  ];
+
   // Breadcrumbs
   $: breadcrumbs = [
     { label: 'Market', href: '/market' },
@@ -302,6 +321,18 @@
     return s.Sections.map(sec => sec.Name).filter(Boolean);
   }
 
+  function getLocationShort(s) {
+    const planet = s?.Planet?.Name;
+    const coords = s?.Coordinates;
+    const lon = coords?.Longitude;
+    const lat = coords?.Latitude;
+    if (lon != null || lat != null) {
+      const coordPart = [lon, lat].filter(v => v != null).join(', ');
+      return planet ? `${planet} ${coordPart}` : coordPart;
+    }
+    return planet || null;
+  }
+
   // Check if user is the shop owner
   function isShopOwner(s, u) {
     if (!s || !u?.verified) return false;
@@ -389,6 +420,7 @@
   basePath="/market/shops"
   {navItems}
   {navFilters}
+  {navTableColumns}
   {user}
   editable={true}
   canEdit={canEditWiki}

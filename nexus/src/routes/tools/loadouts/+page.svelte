@@ -9,9 +9,10 @@
 
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { loading, darkMode } from '../../../stores.js';
-  import Table from '$lib/components/Table.svelte';
   import { clampDecimals, hasItemTag, encodeURIComponentSafe } from '$lib/util.js';
   import * as LoadoutCalc from '$lib/utils/loadoutCalculations.js';
+  import { buildEffectCaps, getEffectUnit as getEffectUnitFromCatalog } from '$lib/utils/loadoutEffects.js';
+  import { evaluateLoadout } from '$lib/utils/loadoutEvaluator.js';
   import { loadLoadoutEntities } from '$lib/utils/entityLoader';
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
   import DataSection from '$lib/components/wiki/DataSection.svelte';
@@ -26,64 +27,6 @@
   const AUTOSAVE_DELAY_MS = 10000;
 
   const isLimitedName = (name) => !!name && hasItemTag(name, 'L');
-
-  const BUFF_DEFS = {
-    damage: {
-      label: 'Damage',
-      unit: '%',
-      positive: ['Increased Damage'],
-      negative: ['Decreased Damage']
-    },
-    critChance: {
-      label: 'Crit Chance',
-      unit: '%',
-      positive: ['Added Crit Chance', 'Added Critical Chance'],
-      negative: ['Decreased Crit Chance', 'Decreased Critical Chance']
-    },
-    critDamage: {
-      label: 'Crit Damage',
-      unit: '%',
-      positive: ['Increased Crit Damage', 'Increased Critical Damage', 'Added Critical Damage', 'Added Crit Damage'],
-      negative: ['Decreased Crit Damage', 'Decreased Critical Damage']
-    },
-    reload: {
-      label: 'Reload Speed',
-      unit: '%',
-      positive: ['Increased Reload Speed', 'Increased Reload'],
-      negative: ['Decreased Reload Speed', 'Decreased Reload']
-    }
-  };
-
-  const BUFF_ORDER = ['damage', 'critChance', 'critDamage', 'reload'];
-
-  const CAP_EFFECT_NAMES = {
-    damage: 'Increased Damage',
-    critChance: 'Added Critical Chance',
-    critDamage: 'Added Critical Damage',
-    reload: 'Increased Reload Speed'
-  };
-
-  const OFFENSIVE_EFFECTS = [
-    { key: 'reload', type: 'mult', base: 'Reload Speed', name: 'Increased Reload Speed' },
-    { key: 'critChance', type: 'add', base: 'Critical Chance', name: 'Added Critical Chance' },
-    { key: 'critDamage', type: 'add', base: 'Critical Damage', name: 'Added Critical Damage' },
-    { key: 'damage', type: 'mult', base: 'Damage', name: 'Increased Damage' }
-  ];
-
-  const DEFENSIVE_EFFECT_NAMES = new Set([
-    'Added Health',
-    'Added Lifesteal',
-    'Decreased Damage Taken',
-    'Increased Evade Chance',
-    'Increased Dodge Chance',
-    'Increased Jamming Chance',
-    'Decreased Critical Damage Taken'
-  ]);
-
-  const PREFIX_RULES = [
-    { positive: 'Increased', negative: 'Decreased', type: 'mult' },
-    { positive: 'Added', negative: 'Reduced', type: 'add' }
-  ];
 
   function getApiBase() {
     return browser
@@ -135,6 +78,8 @@
   let showShareDialog = false;
   let sharePublic = false;
   let shareLink = '';
+  let shareCopyStatus = '';
+  let shareCopyTimeout = null;
   let showImportDialog = false;
   let showImportSourceDialog = false;
   let importInProgress = false;
@@ -152,7 +97,7 @@
   let suppressDirty = false;
   let clothingReplaceNotice = '';
   let loadoutVersion = 0;
-  let activeBuffSummary = null;
+  let evaluation = null;
   let allEffects = [];
   let offensiveEffects = [];
   let defensiveEffects = [];
@@ -161,8 +106,195 @@
   let expandedEffectKeys = new Set();
 
   let compareMode = false;
+  let compareType = 'weapons'; // 'weapons' | 'armor'
+  let compareDisplay = 'values'; // 'values' | 'delta'
+  let compareNameQuery = '';
+  let compareHiddenLoadoutIds = new Set();
+  let compareHiddenOpen = false;
+  let compareColumnsOpen = false;
+  let compareColumnKeysWeapons = ['name', 'efficiency', 'dps', 'dpp', 'reload', 'cost'];
+  let compareColumnKeysArmor = ['name', 'armorName', 'totalDefense', 'topDefenseTypesShort', 'totalAbsorption', 'blockChance'];
+  let compareAnchorId = null;
+  let compareAnchorEval = null;
+  let compareEffectiveDisplay = 'values';
+  let compareVisibleKeys = [];
+  let compareRows = [];
+  let hiddenCompareRows = [];
+  let compareColumns = [];
 
-  let windowWidth = 0;
+  const COMPARE_COLUMNS_STORAGE_KEYS = {
+    weapons: 'nexus.loadouts.compare.columns.weapons',
+    armor: 'nexus.loadouts.compare.columns.armor'
+  };
+  const COMPARE_HIDDEN_ROWS_STORAGE_KEY = 'nexus.loadouts.compare.hidden.loadoutIds';
+
+  const COMPARE_COLUMN_ORDER = {
+    weapons: [
+      'name',
+      'efficiency',
+      'dps',
+      'dpp',
+      'reload',
+      'totalDamage',
+      'effectiveDamage',
+      'range',
+      'cost',
+      'decay',
+      'ammo',
+      'skillModification',
+      'skillBonus',
+      'lowestTotalUses'
+    ],
+    armor: [
+      'name',
+      'armorName',
+      'totalDefense',
+      'topDefenseTypesShort',
+      'totalAbsorption',
+      'blockChance',
+      'armorMarkupCost',
+      'plateMarkupCost'
+    ]
+  };
+
+  const COMPARE_COLUMN_LABELS = {
+    name: 'Name',
+    efficiency: 'Efficiency',
+    dps: 'DPS',
+    dpp: 'DPP',
+    reload: 'Reload',
+    totalDamage: 'Total Damage',
+    effectiveDamage: 'Effective Damage',
+    range: 'Range',
+    cost: 'Cost',
+    decay: 'Decay',
+    ammo: 'Ammo',
+    skillModification: 'Skill Modification',
+    skillBonus: 'Skill Bonus',
+    lowestTotalUses: 'Lowest Uses',
+    armorName: 'Armor',
+    totalDefense: 'Total Defense',
+    topDefenseTypesShort: 'Defense Types',
+    totalAbsorption: 'Total Absorption',
+    blockChance: 'Block Chance',
+    armorMarkupCost: 'Armor Markup',
+    plateMarkupCost: 'Plate Markup'
+  };
+
+  function getCompareColumnLabel(key) {
+    return COMPARE_COLUMN_LABELS[key] || key;
+  }
+
+  const COMPARE_MOBILE_KEYS = {
+    weapons: ['name', 'efficiency', 'dps', 'dpp'],
+    armor: ['name', 'topDefenseTypesShort']
+  };
+
+  function sortCompareKeys(type, keys) {
+    const order = COMPARE_COLUMN_ORDER[type] || [];
+    const set = new Set(keys);
+    // Always keep name first.
+    const out = ['name'];
+    for (const k of order) {
+      if (k === 'name') continue;
+      if (set.has(k)) out.push(k);
+    }
+    return out;
+  }
+
+  function safeParseJsonArray(raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function loadCompareColumnPrefs() {
+    if (typeof localStorage === 'undefined') return;
+
+    const weapons = safeParseJsonArray(localStorage.getItem(COMPARE_COLUMNS_STORAGE_KEYS.weapons) || '');
+    if (weapons) compareColumnKeysWeapons = sortCompareKeys('weapons', weapons);
+
+    const armor = safeParseJsonArray(localStorage.getItem(COMPARE_COLUMNS_STORAGE_KEYS.armor) || '');
+    if (armor) compareColumnKeysArmor = sortCompareKeys('armor', armor);
+
+    const hidden = safeParseJsonArray(localStorage.getItem(COMPARE_HIDDEN_ROWS_STORAGE_KEY) || '');
+    if (hidden) compareHiddenLoadoutIds = new Set(hidden.filter(Boolean));
+  }
+
+  function persistCompareColumnPrefs(type) {
+    if (typeof localStorage === 'undefined') return;
+    const value = type === 'weapons' ? compareColumnKeysWeapons : compareColumnKeysArmor;
+    localStorage.setItem(COMPARE_COLUMNS_STORAGE_KEYS[type], JSON.stringify(value));
+  }
+
+  function toggleCompareColumn(type, key) {
+    if (key === 'name') return;
+
+    const current = type === 'weapons' ? compareColumnKeysWeapons : compareColumnKeysArmor;
+    const next = new Set(current);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    next.add('name');
+
+    const sorted = sortCompareKeys(type, Array.from(next));
+    if (type === 'weapons') compareColumnKeysWeapons = sorted;
+    else compareColumnKeysArmor = sorted;
+
+    persistCompareColumnPrefs(type);
+  }
+
+  function resetCompareColumns(type) {
+    if (type === 'weapons') compareColumnKeysWeapons = ['name', 'efficiency', 'dps', 'dpp', 'reload', 'cost'];
+    else compareColumnKeysArmor = ['name', 'totalDefense', 'topDefenseTypesShort', 'totalAbsorption', 'blockChance'];
+    persistCompareColumnPrefs(type);
+  }
+
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/\"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function setCompareHidden(id, hidden) {
+    const next = new Set(compareHiddenLoadoutIds);
+    if (hidden) next.add(id);
+    else next.delete(id);
+    compareHiddenLoadoutIds = next;
+
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(COMPARE_HIDDEN_ROWS_STORAGE_KEY, JSON.stringify(Array.from(compareHiddenLoadoutIds)));
+    }
+  }
+
+  function handleCompareWrapperClick(event) {
+    const target = event?.target;
+    const btn = target?.closest?.('button[data-compare-action]');
+    if (!btn) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const action = btn.getAttribute('data-compare-action');
+    const id = btn.getAttribute('data-compare-id');
+    if (!id) return;
+
+    if (action === 'hide') setCompareHidden(id, true);
+    if (action === 'show') setCompareHidden(id, false);
+  }
+
+  function handleCompareGlobalClick() {
+    if (compareHiddenOpen) compareHiddenOpen = false;
+    if (compareColumnsOpen) compareColumnsOpen = false;
+  }
+
+  let windowWidth = browser ? window.innerWidth : 0;
+  let hasMeasuredLayout = false;
   let touchStartX = 0;
   let touchStartY = 0;
   let swipeOffset = 0;
@@ -187,7 +319,7 @@
     expandedEffectKeys = new Set(expandedEffectKeys);
   }
 
-  $: isMobileLayout = windowWidth < 900;
+  $: isMobileLayout = hasMeasuredLayout ? windowWidth < 900 : false;
   $: activeMobilePanelIndex = Math.max(0, mobilePanels.indexOf(activeMobilePanel));
   $: mobilePanelTranslate = isMobileLayout
     ? `translateX(calc(-${activeMobilePanelIndex * 100}% + ${swipeOffset}px))`
@@ -231,71 +363,6 @@
     }
   }
 
-  function parseCapValue(description, label) {
-    if (!description) return null;
-    const regex = new RegExp(`${label}\\s*cap[^0-9]*([0-9]+(?:\\.[0-9]+)?)`, 'i');
-    const match = description.match(regex);
-    return match ? Number(match[1]) : null;
-  }
-
-  function parseCapsFromDescription(description) {
-    if (!description) return null;
-    const equipment = parseCapValue(description, 'equipment');
-    const consumable = parseCapValue(description, 'consumable');
-    const total = parseCapValue(description, 'total');
-    if (equipment == null && consumable == null && total == null) return null;
-    return { equipment, consumable, total };
-  }
-
-  function buildEffectCaps(list) {
-    const caps = {};
-    (list || []).forEach(effect => {
-      const limits = effect?.Properties?.Limits || effect?.Limits;
-      if (limits && (limits.Item != null || limits.Action != null || limits.Total != null)) {
-        const normalize = (value) => {
-          if (value == null) return null;
-          const num = Number(value);
-          return Number.isFinite(num) && num > 0 ? num : null;
-        };
-        caps[effect.Name] = {
-          item: normalize(limits.Item),
-          action: normalize(limits.Action),
-          total: normalize(limits.Total)
-        };
-        return;
-      }
-
-      // Back-compat: parse older description-based caps if present.
-      const description = effect?.Properties?.Description || effect?.Description || '';
-      const parsed = parseCapsFromDescription(description);
-      if (parsed) {
-        const normalize = (value) => {
-          if (value == null) return null;
-          const num = Number(value);
-          return Number.isFinite(num) && num > 0 ? num : null;
-        };
-        caps[effect.Name] = {
-          item: normalize(parsed.equipment),
-          action: normalize(parsed.consumable),
-          total: normalize(parsed.total)
-        };
-      }
-    });
-    return caps;
-  }
-
-  function getCapsForBuffKey(key) {
-    const primary = CAP_EFFECT_NAMES[key];
-    const candidates = [
-      primary,
-      ...(BUFF_DEFS[key]?.positive || [])
-    ].filter(Boolean);
-    for (const name of candidates) {
-      if (effectCaps?.[name]) return effectCaps[name];
-    }
-    return null;
-  }
-
   const isRingSlot = (slot) => /ring|finger/i.test(slot || '');
   const getRingSide = (slot) => {
     const normalized = (slot || '').toLowerCase();
@@ -320,26 +387,466 @@
     effectCaps;
     effectsCatalog;
     entitiesVersion;
-    allEffects = loadout ? getAllEffectsSummary(loadout) : [];
+    evaluation = loadout
+      ? evaluateLoadout(
+          loadout,
+          {
+            armorSlots,
+            weapons,
+            amplifiers,
+            scopes,
+            sights,
+            absorbers,
+            matrices,
+            implants,
+            armors,
+            armorPlatings: armorplatings,
+            armorSets: armorsets,
+            clothing,
+            pets,
+            stimulants
+          },
+          { effectsCatalog, effectCaps, isLimitedName }
+        )
+      : null;
+    allEffects = evaluation?.effects?.all ?? [];
+    offensiveEffects = evaluation?.effects?.offensive ?? [];
+    defensiveEffects = evaluation?.effects?.defensive ?? [];
+    utilityEffects = evaluation?.effects?.utility ?? [];
+    offensiveTotals = evaluation?.offensiveTotals ?? { damage: 0, reload: 0, critChance: 0, critDamage: 0 };
   }
-  $: offensiveEffects = OFFENSIVE_EFFECTS
-    .map(def => allEffects.find(effect => effect?.prefix?.type === def.type && effect?.prefix?.base === def.base) || null)
-    .filter(Boolean)
-    .filter(effect => Math.abs(effect.signedTotal) > 0.0001);
-  $: defensiveEffects = allEffects
-    .filter(effect => DEFENSIVE_EFFECT_NAMES.has(effect.name))
-    .filter(effect => Math.abs(effect.signedTotal) > 0.0001);
-  $: utilityEffects = allEffects
-    .filter(effect => !effect?.prefix || !OFFENSIVE_EFFECTS.some(def => def.type === effect.prefix.type && def.base === effect.prefix.base))
-    .filter(effect => !DEFENSIVE_EFFECT_NAMES.has(effect.name))
-    .filter(effect => Math.abs(effect.signedTotal) > 0.0001);
 
-  $: offensiveTotals = {
-    damage: (allEffects.find(effect => effect?.prefix?.type === 'mult' && effect?.prefix?.base === 'Damage')?.signedTotal) ?? 0,
-    reload: (allEffects.find(effect => effect?.prefix?.type === 'mult' && effect?.prefix?.base === 'Reload Speed')?.signedTotal) ?? 0,
-    critChance: (allEffects.find(effect => effect?.prefix?.type === 'add' && effect?.prefix?.base === 'Critical Chance')?.signedTotal) ?? 0,
-    critDamage: (allEffects.find(effect => effect?.prefix?.type === 'add' && effect?.prefix?.base === 'Critical Damage')?.signedTotal) ?? 0
-  };
+  $: stats = evaluation?.stats || {};
+
+  function getEvalContext() {
+    return {
+      armorSlots,
+      weapons,
+      amplifiers,
+      scopes,
+      sights,
+      absorbers,
+      matrices,
+      implants,
+      armors,
+      armorPlatings: armorplatings,
+      armorSets: armorsets,
+      clothing,
+      pets,
+      stimulants
+    };
+  }
+
+  function evaluateAnyLoadout(loadoutArg) {
+    return loadoutArg
+      ? evaluateLoadout(loadoutArg, getEvalContext(), { effectsCatalog, effectCaps, isLimitedName })
+      : null;
+  }
+
+  let compareEvalCache = new Map();
+
+  $: if (compareMode) {
+    // Build a snapshot cache when entering compare (avoids per-render recomputation).
+    // We intentionally don't depend on loadoutVersion to avoid recomputing on every edit.
+    entitiesVersion;
+    effectsCatalog;
+    effectCaps;
+
+    const ctx = getEvalContext();
+    const next = new Map();
+    for (const lo of loadouts) {
+      if (!lo?.Id) continue;
+      next.set(lo.Id, evaluateLoadout(lo, ctx, { effectsCatalog, effectCaps, isLimitedName }));
+    }
+    compareEvalCache = next;
+  } else {
+    compareEvalCache = new Map();
+  }
+
+  $: compareAnchorId = loadout?.Id ?? null;
+  $: compareAnchorEval = compareAnchorId ? compareEvalCache.get(compareAnchorId) : null;
+  $: compareEffectiveDisplay = compareDisplay === 'delta' && compareAnchorEval ? 'delta' : 'values';
+  $: compareVisibleKeys = isMobileLayout
+    ? COMPARE_MOBILE_KEYS[compareType]
+    : (compareType === 'weapons' ? compareColumnKeysWeapons : compareColumnKeysArmor);
+
+  function compareValue(value, anchorValue) {
+    if (value == null) return null;
+    if (compareEffectiveDisplay !== 'delta') return value;
+    return (anchorValue == null) ? null : (value - anchorValue);
+  }
+
+  function formatNumber(value, digits = 2) {
+    if (value == null || Number.isNaN(value)) return '-';
+    return Number(value).toFixed(digits);
+  }
+
+  function formatDeltaNumber(value, digits = 2) {
+    if (value == null || Number.isNaN(value)) return '-';
+    const sign = value > 0 ? '+' : '';
+    return `${sign}${Number(value).toFixed(digits)}`;
+  }
+
+  function formatDefenseTypesWithValues(defenseByType, max = 3) {
+    const abbr = {
+      Impact: 'Imp',
+      Cut: 'Cut',
+      Stab: 'Stb',
+      Penetration: 'Pen',
+      Shrapnel: 'Shr',
+      Burn: 'Brn',
+      Cold: 'Cld',
+      Acid: 'Acd',
+      Electric: 'Ele'
+    };
+
+    const entries = Object.entries(defenseByType || {})
+      .filter(([, value]) => (value ?? 0) > 0)
+      .sort((a, b) => (b[1] ?? 0) - (a[1] ?? 0))
+      .slice(0, Math.max(0, max));
+
+    if (entries.length === 0) return '-';
+    return entries
+      .map(([key, value]) => `${formatNumber(value, 1)} ${abbr[key] || key.slice(0, 3)}`)
+      .join(' / ');
+  }
+
+  function getDeltaClass(value, higherIsBetter) {
+    if (value == null || Number.isNaN(value) || value === 0) return '';
+    const good = value > 0 ? higherIsBetter : !higherIsBetter;
+    return good ? 'cmp-pos' : 'cmp-neg';
+  }
+
+  function buildCompareRow(loadoutArg) {
+    const id = loadoutArg?.Id;
+    const evalResult = id ? compareEvalCache.get(id) : null;
+    const s = evalResult?.stats || {};
+    const a = compareAnchorEval?.stats || {};
+
+    /** @type {any} */
+    const row = {
+      _id: id,
+      _isAnchor: id != null && id === compareAnchorId,
+      name: loadoutArg?.Name ?? ''
+    };
+
+    if (compareType === 'weapons') {
+      row.efficiency = compareValue(s.efficiency ?? null, a.efficiency ?? null);
+      row.dps = compareValue(s.dps ?? null, a.dps ?? null);
+      row.dpp = compareValue(s.dpp ?? null, a.dpp ?? null);
+      row.reload = compareValue(s.reload ?? null, a.reload ?? null);
+      row.totalDamage = compareValue(s.totalDamage ?? null, a.totalDamage ?? null);
+      row.effectiveDamage = compareValue(s.effectiveDamage ?? null, a.effectiveDamage ?? null);
+      row.range = compareValue(s.range ?? null, a.range ?? null);
+      row.cost = compareValue(s.cost ?? null, a.cost ?? null);
+      row.decay = compareValue(s.decay ?? null, a.decay ?? null);
+      row.ammo = compareValue(s.ammo ?? null, a.ammo ?? null);
+      row.skillModification = compareValue(s.skillModification ?? null, a.skillModification ?? null);
+      row.skillBonus = compareValue(s.skillBonus ?? null, a.skillBonus ?? null);
+      row.lowestTotalUses = compareValue(s.lowestTotalUses ?? null, a.lowestTotalUses ?? null);
+    } else {
+      row.armorName = getArmorSetLabel(loadoutArg);
+      row.totalDefense = compareValue(s.totalDefense ?? null, a.totalDefense ?? null);
+      row.topDefenseTypesShort = formatDefenseTypesWithValues(s.totalDefenseByType, 3);
+      row.totalAbsorption = compareValue(s.totalAbsorption ?? null, a.totalAbsorption ?? null);
+      row.blockChance = compareValue(s.blockChance ?? null, a.blockChance ?? null);
+      row.armorMarkupCost = compareValue(s.armorMarkupCost ?? null, a.armorMarkupCost ?? null);
+      row.plateMarkupCost = compareValue(s.plateMarkupCost ?? null, a.plateMarkupCost ?? null);
+    }
+
+    return row;
+  }
+
+  $: {
+    compareType;
+    compareEffectiveDisplay;
+    compareAnchorId;
+    compareAnchorEval;
+    const allowHidden = isMobileLayout;
+    compareRows = compareMode
+      ? loadouts
+          .filter(lo => lo?.Id && (allowHidden || !compareHiddenLoadoutIds.has(lo.Id)))
+          .filter(lo => !compareNameQuery?.trim() || (lo?.Name || '').toLowerCase().includes(compareNameQuery.trim().toLowerCase()))
+          .map(buildCompareRow)
+      : [];
+  }
+
+  $: hiddenCompareRows = loadouts
+    .filter(lo => lo?.Id && compareHiddenLoadoutIds.has(lo.Id))
+    .map(lo => ({ id: lo.Id, name: lo.Name }));
+
+  $: if (compareHiddenLoadoutIds.size > 0) {
+    const existing = new Set(loadouts.filter(lo => lo?.Id).map(lo => lo.Id));
+    const pruned = new Set(Array.from(compareHiddenLoadoutIds).filter(id => existing.has(id)));
+    if (pruned.size !== compareHiddenLoadoutIds.size) {
+      compareHiddenLoadoutIds = pruned;
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem(COMPARE_HIDDEN_ROWS_STORAGE_KEY, JSON.stringify(Array.from(compareHiddenLoadoutIds)));
+      }
+    }
+  }
+
+  function buildCompareColumns() {
+    const type = compareType;
+    const visible = new Set(compareVisibleKeys);
+
+    const isDelta = compareEffectiveDisplay === 'delta';
+
+    /** @type {Record<string, any>} */
+    const defs = {
+      name: {
+        key: 'name',
+        header: 'Name',
+        width: '190px',
+        main: true,
+        sortable: true,
+        searchable: true,
+        rawValue: false,
+        mobileWidth: '140px',
+        formatter: (value, row) => {
+          const label = escapeHtml(value || '');
+          const cls = row?._isAnchor ? 'cmp-name anchor' : 'cmp-name';
+          return `<span class=\"${cls}\" title=\"${label}\">${label}</span>`;
+        }
+      }
+    };
+
+    if (type === 'weapons') {
+      defs.efficiency = {
+        key: 'efficiency',
+        header: 'Eff',
+        width: '90px',
+        sortable: true,
+        hideOnMobile: false,
+        mobileWidth: '82px',
+        formatter: (value) => {
+          const num = value == null ? null : Number(value);
+          return isDelta ? `${formatDeltaNumber(num, 1)}%` : `${formatNumber(num, 1)}%`;
+        },
+        cellClass: (value) => isDelta ? `cmp-num ${getDeltaClass(value, true)}` : 'cmp-num'
+      };
+      defs.dps = {
+        key: 'dps',
+        header: 'DPS',
+        width: '100px',
+        sortable: true,
+        hideOnMobile: false,
+        mobileWidth: '92px',
+        formatter: (value) => isDelta ? formatDeltaNumber(value, 4) : formatNumber(value, 4),
+        cellClass: (value) => isDelta ? `cmp-num ${getDeltaClass(value, true)}` : 'cmp-num'
+      };
+      defs.dpp = {
+        key: 'dpp',
+        header: 'DPP',
+        width: '100px',
+        sortable: true,
+        hideOnMobile: false,
+        mobileWidth: '92px',
+        formatter: (value) => isDelta ? formatDeltaNumber(value, 4) : formatNumber(value, 4),
+        cellClass: (value) => isDelta ? `cmp-num ${getDeltaClass(value, true)}` : 'cmp-num'
+      };
+      defs.reload = {
+        key: 'reload',
+        header: 'Reload',
+        width: '110px',
+        sortable: true,
+        hideOnMobile: true,
+        formatter: (value) => isDelta ? `${formatDeltaNumber(value, 2)}s` : `${formatNumber(value, 2)}s`,
+        cellClass: (value) => isDelta ? `cmp-num ${getDeltaClass(value, false)}` : 'cmp-num'
+      };
+      defs.totalDamage = {
+        key: 'totalDamage',
+        header: 'Tot Dmg',
+        width: '110px',
+        sortable: true,
+        hideOnMobile: true,
+        formatter: (value) => isDelta ? formatDeltaNumber(value, 2) : formatNumber(value, 2),
+        cellClass: (value) => isDelta ? `cmp-num ${getDeltaClass(value, true)}` : 'cmp-num'
+      };
+      defs.effectiveDamage = {
+        key: 'effectiveDamage',
+        header: 'Eff Dmg',
+        width: '110px',
+        sortable: true,
+        hideOnMobile: true,
+        formatter: (value) => isDelta ? formatDeltaNumber(value, 2) : formatNumber(value, 2),
+        cellClass: (value) => isDelta ? `cmp-num ${getDeltaClass(value, true)}` : 'cmp-num'
+      };
+      defs.range = {
+        key: 'range',
+        header: 'Range',
+        width: '100px',
+        sortable: true,
+        hideOnMobile: true,
+        formatter: (value) => isDelta ? `${formatDeltaNumber(value, 2)}m` : `${formatNumber(value, 2)}m`,
+        cellClass: (value) => isDelta ? `cmp-num ${getDeltaClass(value, true)}` : 'cmp-num'
+      };
+      defs.cost = {
+        key: 'cost',
+        header: 'Cost',
+        width: '110px',
+        sortable: true,
+        hideOnMobile: true,
+        formatter: (value) => isDelta ? `${formatDeltaNumber(value, 2)} PEC` : `${formatNumber(value, 2)} PEC`,
+        cellClass: (value) => isDelta ? `cmp-num ${getDeltaClass(value, false)}` : 'cmp-num'
+      };
+      defs.decay = {
+        key: 'decay',
+        header: 'Decay',
+        width: '110px',
+        sortable: true,
+        hideOnMobile: true,
+        formatter: (value) => isDelta ? `${formatDeltaNumber(value, 2)} PEC` : `${formatNumber(value, 2)} PEC`,
+        cellClass: (value) => isDelta ? `cmp-num ${getDeltaClass(value, false)}` : 'cmp-num'
+      };
+      defs.ammo = {
+        key: 'ammo',
+        header: 'Ammo',
+        width: '100px',
+        sortable: true,
+        hideOnMobile: true,
+        formatter: (value) => isDelta ? formatDeltaNumber(value, 2) : formatNumber(value, 2),
+        cellClass: (value) => isDelta ? `cmp-num ${getDeltaClass(value, false)}` : 'cmp-num'
+      };
+      defs.skillModification = {
+        key: 'skillModification',
+        header: 'Skill Mod',
+        width: '110px',
+        sortable: true,
+        hideOnMobile: true,
+        formatter: (value) => isDelta ? `${formatDeltaNumber(value, 1)}%` : `${formatNumber(value, 1)}%`,
+        cellClass: (value) => isDelta ? `cmp-num ${getDeltaClass(value, true)}` : 'cmp-num'
+      };
+      defs.skillBonus = {
+        key: 'skillBonus',
+        header: 'Skill Bonus',
+        width: '120px',
+        sortable: true,
+        hideOnMobile: true,
+        formatter: (value) => isDelta ? `${formatDeltaNumber(value, 1)}%` : `${formatNumber(value, 1)}%`,
+        cellClass: (value) => isDelta ? `cmp-num ${getDeltaClass(value, true)}` : 'cmp-num'
+      };
+      defs.lowestTotalUses = {
+        key: 'lowestTotalUses',
+        header: 'Uses',
+        width: '100px',
+        sortable: true,
+        hideOnMobile: true,
+        formatter: (value) => isDelta ? formatDeltaNumber(value, 0) : formatNumber(value, 0),
+        cellClass: (value) => isDelta ? `cmp-num ${getDeltaClass(value, true)}` : 'cmp-num'
+      };
+    } else {
+      defs.armorName = {
+        key: 'armorName',
+        header: 'Armor',
+        width: '180px',
+        sortable: true,
+        searchable: true,
+        formatter: (value) => escapeHtml(value || '-')
+      };
+      defs.totalDefense = {
+        key: 'totalDefense',
+        header: 'Tot Def',
+        width: '110px',
+        sortable: true,
+        hideOnMobile: false,
+        mobileWidth: '102px',
+        formatter: (value) => isDelta ? formatDeltaNumber(value, 0) : formatNumber(value, 0),
+        cellClass: (value) => isDelta ? `cmp-num ${getDeltaClass(value, true)}` : 'cmp-num'
+      };
+      defs.topDefenseTypesShort = {
+        key: 'topDefenseTypesShort',
+        header: 'Types',
+        width: '120px',
+        sortable: false,
+        hideOnMobile: false,
+        mobileWidth: '120px',
+        formatter: (value) => `<span class=\"cmp-types\" title=\"${escapeHtml(value || '-')}\">${escapeHtml(value || '-')}</span>`
+      };
+      defs.totalAbsorption = {
+        key: 'totalAbsorption',
+        header: 'Absorb',
+        width: '110px',
+        sortable: true,
+        hideOnMobile: true,
+        formatter: (value) => isDelta ? formatDeltaNumber(value, 0) : formatNumber(value, 0),
+        cellClass: (value) => isDelta ? `cmp-num ${getDeltaClass(value, true)}` : 'cmp-num'
+      };
+      defs.blockChance = {
+        key: 'blockChance',
+        header: 'Block',
+        width: '100px',
+        sortable: true,
+        hideOnMobile: true,
+        formatter: (value) => isDelta ? `${formatDeltaNumber(value, 1)}%` : `${formatNumber(value, 1)}%`,
+        cellClass: (value) => isDelta ? `cmp-num ${getDeltaClass(value, true)}` : 'cmp-num'
+      };
+      defs.armorMarkupCost = {
+        key: 'armorMarkupCost',
+        header: 'Armor MU',
+        width: '120px',
+        sortable: true,
+        hideOnMobile: true,
+        formatter: (value) => isDelta ? `${formatDeltaNumber(value, 2)} PED` : `${formatNumber(value, 2)} PED`,
+        cellClass: (value) => isDelta ? `cmp-num ${getDeltaClass(value, false)}` : 'cmp-num'
+      };
+      defs.plateMarkupCost = {
+        key: 'plateMarkupCost',
+        header: 'Plate MU',
+        sortable: true,
+        hideOnMobile: true,
+        formatter: (value) => isDelta ? `${formatDeltaNumber(value, 2)} PED` : `${formatNumber(value, 2)} PED`,
+        cellClass: (value) => isDelta ? `cmp-num ${getDeltaClass(value, false)}` : 'cmp-num'
+      };
+    }
+
+    for (const key of Object.keys(defs)) {
+      delete defs[key].width;
+      delete defs[key].mobileWidth;
+      defs[key].widthBasis = 'both';
+    }
+
+    if (isMobileLayout) {
+      for (const key of Object.keys(defs)) {
+        defs[key].mobileWidth = null;
+        defs[key].widthBasis = 'both';
+      }
+    }
+
+    const cols = [];
+    if (!isMobileLayout) {
+      cols.push({
+        key: '_vis',
+        header: '',
+        sortable: false,
+        searchable: false,
+        cellClass: () => 'cmp-action-cell',
+        widthBasis: 'both',
+        formatter: (_, row) => {
+          const id = escapeHtml(row?._id);
+          const disabled = row?._isAnchor;
+          const title = disabled ? 'Current loadout' : 'Hide';
+          const disabledAttr = disabled ? ' disabled' : '';
+          return `<button type=\"button\" class=\"compare-row-action\" data-compare-action=\"hide\" data-compare-id=\"${id}\" title=\"${title}\" aria-label=\"${title}\"${disabledAttr}><svg viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><use href=\"#icon-hide\"></use></svg></button>`;
+        }
+      });
+    }
+
+    for (const key of COMPARE_COLUMN_ORDER[type]) {
+      if (!visible.has(key)) continue;
+      if (key === 'name') cols.push(defs.name);
+      else if (defs[key]) cols.push(defs[key]);
+    }
+
+    return cols;
+  }
+
+  $: {
+    compareType;
+    compareVisibleKeys;
+    compareEffectiveDisplay;
+    compareColumns = compareMode ? buildCompareColumns() : [];
+  }
 
   function createEmptyLoadout() {
     const newArmorObject = () => ({
@@ -930,6 +1437,11 @@
     shareLink = record?.share_code && typeof window !== 'undefined'
       ? `${window.location.origin}/tools/loadouts/${record.share_code}`
       : '';
+    shareCopyStatus = '';
+    if (shareCopyTimeout) {
+      clearTimeout(shareCopyTimeout);
+      shareCopyTimeout = null;
+    }
     showShareDialog = true;
   }
 
@@ -941,6 +1453,40 @@
 
   function applyShareSettings() {
     showShareDialog = false;
+    shareCopyStatus = '';
+    if (shareCopyTimeout) {
+      clearTimeout(shareCopyTimeout);
+      shareCopyTimeout = null;
+    }
+  }
+
+  async function handleCopyShareLink() {
+    if (!shareLink) return;
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(shareLink);
+      } else {
+        const input = document.createElement('textarea');
+        input.value = shareLink;
+        input.setAttribute('readonly', 'true');
+        input.style.position = 'absolute';
+        input.style.left = '-9999px';
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand('copy');
+        document.body.removeChild(input);
+      }
+      shareCopyStatus = 'Copied';
+    } catch (err) {
+      console.error('Failed to copy share link', err);
+      shareCopyStatus = 'Copy failed';
+    }
+
+    if (shareCopyTimeout) clearTimeout(shareCopyTimeout);
+    shareCopyTimeout = setTimeout(() => {
+      shareCopyStatus = '';
+      shareCopyTimeout = null;
+    }, 1500);
   }
 
   async function importLocalLoadouts() {
@@ -1013,6 +1559,12 @@
   }
 
   onMount(async () => {
+    if (browser) {
+      windowWidth = window.innerWidth;
+      hasMeasuredLayout = true;
+    }
+    loadCompareColumnPrefs();
+
     localLoadouts = readLocalLoadouts();
     loadouts = localLoadouts;
     if (localLoadouts.length > 0) {
@@ -1052,6 +1604,7 @@
     }
     if (typeof window !== 'undefined') {
       window.addEventListener('beforeunload', handleBeforeUnload);
+      window.addEventListener('click', handleCompareGlobalClick);
     }
   });
 
@@ -1060,6 +1613,7 @@
     clearAutosaveTicker();
     if (typeof window !== 'undefined') {
       window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('click', handleCompareGlobalClick);
     }
   });
 
@@ -1076,13 +1630,6 @@
   $: isPublicLoadout = !!activeRecord?.public;
   $: pickerConfig = activePicker ? (isMobileLayout, getPickerConfig(activePicker)) : null;
   $: pickerRowHeight = isMobileLayout ? 30 : 34;
-  $: {
-    // Back-compat: still used by some compare rows; keep it reactive.
-    loadoutVersion;
-    effectCaps;
-    entitiesVersion;
-    activeBuffSummary = loadout ? getBuffSummary(loadout) : null;
-  }
 
   function getLoadoutListLabel(item) {
     if (!item) return 'Untitled';
@@ -1206,95 +1753,6 @@
   }
 
 
-
-  function getTotalDamage(item) {
-    return (item.Properties?.Damage?.Impact
-      + item.Properties?.Damage?.Cut
-      + item.Properties?.Damage?.Stab
-      + item.Properties?.Damage?.Penetration
-      + item.Properties?.Damage?.Shrapnel
-      + item.Properties?.Damage?.Burn
-      + item.Properties?.Damage?.Cold
-      + item.Properties?.Damage?.Acid
-      + item.Properties?.Damage?.Electric) || null;
-  }
-
-  function getEffectiveDamage(item) {
-    const totalDamage = getTotalDamage(item);
-
-    return totalDamage != null
-      ? totalDamage * (0.88*0.75 + 0.02*1.75)
-      : null;
-  }
-
-  function getDps(item) {
-    const reload = getReload(item);
-    const effectiveDamage = getEffectiveDamage(item);
-
-    return effectiveDamage != null && reload != null
-      ? effectiveDamage / reload
-      : null;
-  }
-
-  function getDpp(item) {
-    const cost = getCost(item);
-    const effectiveDamage = getEffectiveDamage(item);
-
-    return effectiveDamage > 0 && cost != null
-      ? effectiveDamage / cost
-      : null;
-  }
-
-  function getCost(item) {
-    return item.Properties?.Economy?.Decay != null && (item.Properties?.Economy?.AmmoBurn == undefined || item.Properties?.Economy?.AmmoBurn >= 0)
-      ? (item.Properties?.Economy?.Decay + (item.Properties?.Economy?.AmmoBurn ?? 0) / 100)
-      : null;
-  }
-
-  function getReload(item) {
-    return item.Properties?.UsesPerMinute != null
-      ? 60 / item.Properties?.UsesPerMinute
-      : null;
-  }
-
-  function getTotalUses(item) {
-    let maxTT = item.Properties?.Economy?.MaxTT || null;
-    let minTT = item.Properties?.Economy?.MinTT ?? 0;
-    let decay = item.Properties?.Economy?.Decay || null;
-
-    return maxTT != null && decay != null
-      ? Math.floor((maxTT - minTT) / (decay / 100))
-      : null;
-  }
-  
-  function getTotalAbsorberUses(absorber, weapon) {
-    let maxTT = absorber.Properties?.Economy?.MaxTT || null;
-    let minTT = absorber.Properties?.Economy?.MinTT ?? 0;
-    let decay = absorber.Properties?.Economy?.Absorption != null 
-      ? weapon.Properties?.Economy?.Decay * absorber.Properties?.Economy?.Absorption
-      : null;
-
-    return maxTT != null && decay != null
-      ? Math.floor((maxTT - minTT) / (decay / 100))
-      : null;
-  }
-
-  function getTotalDefense(item) {
-    return (item.Properties?.Defense?.Impact ?? 0) + (item.Properties?.Defense?.Cut ?? 0) + (item.Properties?.Defense?.Stab ?? 0) + (item.Properties?.Defense?.Penetration ?? 0) + (item.Properties?.Defense?.Shrapnel ?? 0) + (item.Properties?.Defense?.Burn ?? 0) + (item.Properties?.Defense?.Cold ?? 0) + (item.Properties?.Defense?.Acid ?? 0) + (item.Properties?.Defense?.Electric ?? 0);
-  }
-
-  function getMaxArmorDecay(item) {
-    return item.Properties?.Economy.Durability && getTotalDefense(item)
-      ? getTotalDefense(item) * ((100000 - item.Properties?.Economy.Durability) / 100000) * 0.05
-      : null;
-  }
-
-  function getTotalAbsorption(item) {
-    return item.Properties?.Economy.MaxTT && getMaxArmorDecay(item)
-      ? getTotalDefense(item) * ((item.Properties?.Economy.MaxTT - (item.Properties?.Economy.MinTT ?? 0)) / (getMaxArmorDecay(item) / 100))
-      : null;
-  }
-
   function getWeapon(name) {
     return weapons.find(x => x.Name === name);
   }
@@ -1329,6 +1787,21 @@
 
   function getArmor(name) {
     return armors.find(x => x.Name === name);
+  }
+
+  function getArmorSetLabel(loadoutArg) {
+    if (!loadoutArg?.Gear?.Armor) return '-';
+    const armorGear = loadoutArg.Gear.Armor;
+    const setName = armorGear.SetName || null;
+    const equippedArmors = armorSlots
+      .map(slot => getArmor(armorGear?.[slot]?.Name))
+      .filter(Boolean);
+    const uniqueSetNames = [...new Set(equippedArmors.map(item => item?.Set?.Name).filter(Boolean))];
+
+    if (uniqueSetNames.length > 1) return 'Mixed';
+    if (uniqueSetNames.length === 1) return uniqueSetNames[0];
+    if (setName) return setName;
+    return '-';
   }
 
   function getArmorPlating(name) {
@@ -1468,331 +1941,8 @@
     markDirty();
   }
 
-  function getEffectStrength(effect) {
-    const value = effect?.Values?.Strength
-      ?? effect?.Values?.Value
-      ?? effect?.Properties?.Strength
-      ?? effect?.Properties?.Value
-      ?? 0;
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : 0;
-  }
-
-  function matchesEffect(effect, names) {
-    return names.includes(effect?.Name);
-  }
-
-  function sumEffectValues(effects, def) {
-    return (effects || []).reduce((total, effect) => {
-      if (matchesEffect(effect, def.positive)) {
-        return total + getEffectStrength(effect);
-      }
-      if (matchesEffect(effect, def.negative)) {
-        return total - Math.abs(getEffectStrength(effect));
-      }
-      return total;
-    }, 0);
-  }
-
-  function maxConsumableEffectValue(consumablesList, def) {
-    let bestPositive = { value: 0, source: null };
-    let bestNegative = { value: 0, source: null };
-
-    (consumablesList || []).forEach(entry => {
-      const item = getConsumableItem(entry?.Name);
-      (item?.EffectsOnConsume || []).forEach(effect => {
-        const strength = getEffectStrength(effect);
-        if (matchesEffect(effect, def.positive)) {
-          if (strength > bestPositive.value) {
-            bestPositive = { value: strength, source: item?.Name || null };
-          }
-        } else if (matchesEffect(effect, def.negative)) {
-          const negativeValue = -Math.abs(strength);
-          if (negativeValue < bestNegative.value) {
-            bestNegative = { value: negativeValue, source: item?.Name || null };
-          }
-        }
-      });
-    });
-
-    return {
-      value: bestPositive.value + bestNegative.value,
-      positive: bestPositive,
-      negative: bestNegative
-    };
-  }
-
   function getPetEffectStrength(effect) {
     return effect?.Properties?.Strength ?? effect?.Values?.Strength ?? effect?.Values?.Value ?? 0;
-  }
-
-  function getPetEffectKey(effect) {
-    const name = effect?.Name || '';
-    const strength = getPetEffectStrength(effect);
-    return `${name}::${strength}`;
-  }
-
-  function getActivePetEffect(loadout) {
-    if (!loadout?.Gear?.Pet?.Name || !loadout.Gear.Pet.Effect) return null;
-    const pet = pets.find(p => p.Name === loadout.Gear.Pet.Name);
-    if (!pet?.Effects) return null;
-    const target = loadout.Gear.Pet.Effect;
-    const keyedMatch = pet.Effects.find(effect => getPetEffectKey(effect) === target);
-    if (keyedMatch) return keyedMatch;
-    return pet.Effects.find(effect => effect.Name === target) || null;
-  }
-
-  function getClothingEquipEffects(loadout) {
-    const list = loadout?.Gear?.Clothing || [];
-    return list.flatMap(entry => {
-      const item = getClothingItem(entry?.Name);
-      return item?.EffectsOnEquip ?? [];
-    });
-  }
-
-  function getClothingSetEffects(loadout) {
-    const list = loadout?.Gear?.Clothing || [];
-    const bySet = new Map();
-    list.forEach(entry => {
-      const item = getClothingItem(entry?.Name);
-      if (!item?.Set?.Name || !item?.Set?.EffectsOnSetEquip?.length) return;
-      const setName = item.Set.Name;
-      const existing = bySet.get(setName) || { items: [], effects: item.Set.EffectsOnSetEquip };
-      existing.items.push(item);
-      bySet.set(setName, existing);
-    });
-
-    const effects = [];
-    bySet.forEach(({ items, effects: setEffects }) => {
-      const pieceCount = items.length;
-      const activeEffects = (setEffects || [])
-        .filter(effect => effect?.Values?.MinSetPieces == null || effect.Values.MinSetPieces <= pieceCount)
-        .sort((a, b) => (b?.Values?.MinSetPieces ?? 0) - (a?.Values?.MinSetPieces ?? 0))
-        .filter((value, index, self) => self.findIndex(effect => effect.Name === value.Name) === index);
-      effects.push(...activeEffects);
-    });
-
-    return effects;
-  }
-
-  function getAllEffectsSummary(loadout) {
-    if (!loadout) return [];
-    const weaponEquipEffects = getWeaponEquipEffects(loadout);
-    const weaponUseEffects = getWeaponUseEffects(loadout);
-    const armorEquipEffects = getArmorEquipEffects(loadout);
-    const armorSetEffects = getArmorSetEffects(loadout) || [];
-    const clothingEquipEffects = getClothingEquipEffects(loadout);
-    const clothingSetEffects = getClothingSetEffects(loadout);
-
-    // Bonus stats: count toward Total cap only (ignore Item/Action caps).
-    const bonusEffects = [
-      { Name: 'Increased Damage', Values: { Strength: Number(loadout?.Properties?.BonusDamage ?? 0) || 0 } },
-      { Name: 'Added Critical Chance', Values: { Strength: Number(loadout?.Properties?.BonusCritChance ?? 0) || 0 } },
-      { Name: 'Added Critical Damage', Values: { Strength: Number(loadout?.Properties?.BonusCritDamage ?? 0) || 0 } },
-      { Name: 'Increased Reload Speed', Values: { Strength: Number(loadout?.Properties?.BonusReload ?? 0) || 0 } }
-    ].filter(effect => Math.abs(getEffectStrength(effect)) > 0.0001);
-
-    const itemEffects = [
-      ...weaponEquipEffects,
-      ...weaponUseEffects,
-      ...armorEquipEffects,
-      ...armorSetEffects,
-      ...clothingEquipEffects,
-      ...clothingSetEffects
-    ];
-
-    const getCatalogEffect = (name) => {
-      if (!name || !effectsCatalog?.length) return null;
-      return effectsCatalog.find(effect => effect?.Name === name) || null;
-    };
-
-    const getCatalogPolarity = (name) => {
-      const catalog = getCatalogEffect(name);
-      const isPositive = catalog?.Properties?.IsPositive;
-      if (isPositive === true || isPositive === 1 || isPositive === 'true') return 'positive';
-      if (isPositive === false || isPositive === 0 || isPositive === 'false') return 'negative';
-      return null;
-    };
-
-    const getLimitsForName = (name) => effectCaps?.[name] || null;
-
-    // Consumables: only the strongest instance per effect name counts (positive/negative separated by IsPositive).
-    const consumableList = loadout?.Gear?.Consumables || [];
-    const consumableBest = new Map();
-    consumableList.forEach(entry => {
-      const item = getConsumableItem(entry?.Name);
-      (item?.EffectsOnConsume || []).forEach(effect => {
-        const name = effect?.Name;
-        if (!name) return;
-        const strength = getEffectStrength(effect);
-        const polarity = getCatalogPolarity(name) || 'positive';
-        const current = consumableBest.get(name) || { positive: 0, negative: 0 };
-        if (polarity === 'negative') {
-          if (strength > current.negative) current.negative = strength;
-        } else {
-          if (strength > current.positive) current.positive = strength;
-        }
-        consumableBest.set(name, current);
-      });
-    });
-    const consumableEffects = [];
-    consumableBest.forEach((value, name) => {
-      if (value.positive) consumableEffects.push({ Name: name, Values: { Strength: value.positive } });
-      if (value.negative) consumableEffects.push({ Name: name, Values: { Strength: value.negative } });
-    });
-
-    const petEffect = getActivePetEffect(loadout);
-    const actionEffects = [...consumableEffects];
-    if (petEffect) actionEffects.push(petEffect);
-
-    const parsePrefix = (name) => {
-      if (!name) return null;
-      for (const rule of PREFIX_RULES) {
-        if (name.startsWith(`${rule.positive} `)) {
-          return { type: rule.type, base: name.slice(rule.positive.length).trim(), direction: 1, rule };
-        }
-        if (name.startsWith(`${rule.negative} `)) {
-          return { type: rule.type, base: name.slice(rule.negative.length).trim(), direction: -1, rule };
-        }
-      }
-      return null;
-    };
-
-    const summaryMap = new Map();
-    const prefixMap = new Map();
-
-    const accumulate = (effect, source) => {
-      const name = effect?.Name;
-      if (!name) return;
-      const value = getEffectStrength(effect);
-      if (!Number.isFinite(value)) return;
-      const unit = getEffectUnit(name, effect) || '';
-      const prefix = parsePrefix(name);
-      if (prefix) {
-        const key = `${prefix.type}::${prefix.base}::${unit}`;
-        const current = prefixMap.get(key) || {
-          base: prefix.base,
-          unit,
-          itemPos: 0,
-          itemNeg: 0,
-          actionPos: 0,
-          actionNeg: 0,
-          bonusPos: 0,
-          bonusNeg: 0,
-          rule: prefix.rule
-        };
-        const posKey = source === 'action' ? 'actionPos' : source === 'bonus' ? 'bonusPos' : 'itemPos';
-        const negKey = source === 'action' ? 'actionNeg' : source === 'bonus' ? 'bonusNeg' : 'itemNeg';
-        if (prefix.direction > 0) current[posKey] += value;
-        else current[negKey] += value;
-        prefixMap.set(key, current);
-        return;
-      }
-
-      const key = `${name}::${unit}`;
-      const current = summaryMap.get(key) || { name, unit, item: 0, action: 0, bonus: 0 };
-      if (source === 'action') current.action += value;
-      else if (source === 'bonus') current.bonus += value;
-      else current.item += value;
-      summaryMap.set(key, current);
-    };
-
-    itemEffects.forEach(effect => accumulate(effect, 'item'));
-    actionEffects.forEach(effect => accumulate(effect, 'action'));
-    bonusEffects.forEach(effect => accumulate(effect, 'bonus'));
-
-    prefixMap.forEach(entry => {
-      // Cancel within each source, cap each source, then combine and apply total cap.
-      const rawItem = (entry.itemPos || 0) - (entry.itemNeg || 0);
-      const rawAction = (entry.actionPos || 0) - (entry.actionNeg || 0);
-      const rawBonus = (entry.bonusPos || 0) - (entry.bonusNeg || 0);
-      const basePositiveName = `${entry.rule.positive} ${entry.base}`.trim();
-      const baseNegativeName = `${entry.rule.negative} ${entry.base}`.trim();
-      const limits = getLimitsForName(basePositiveName) || getLimitsForName(baseNegativeName);
-      const cappedItem = limits?.item != null ? clamp(rawItem, -limits.item, limits.item) : rawItem;
-      const cappedAction = limits?.action != null ? clamp(rawAction, -limits.action, limits.action) : rawAction;
-      const combined = cappedItem + cappedAction + rawBonus;
-      const cappedTotal = limits?.total != null ? clamp(combined, -limits.total, limits.total) : combined;
-      if (Math.abs(cappedTotal) <= 0.0001) return;
-      const finalName = cappedTotal >= 0 ? basePositiveName : baseNegativeName;
-      const polarity = getCatalogPolarity(finalName);
-      summaryMap.set(`${finalName}::${entry.unit}`, {
-        name: finalName,
-        unit: entry.unit,
-        prefix: { type: entry.rule.type, base: entry.base },
-        rawItem,
-        rawAction,
-        rawBonus,
-        cappedItem,
-        cappedAction,
-        signedTotal: cappedTotal,
-        polarity,
-        caps: limits || null,
-        capped: {
-          item: limits?.item != null && Math.abs(rawItem - cappedItem) > 0.0001,
-          action: limits?.action != null && Math.abs(rawAction - cappedAction) > 0.0001,
-          total: limits?.total != null && Math.abs((cappedItem + cappedAction + rawBonus) - cappedTotal) > 0.0001
-        }
-      });
-    });
-
-    return [...summaryMap.values()]
-      .map(entry => {
-        if (entry.signedTotal != null) return entry;
-        const limits = getLimitsForName(entry.name);
-        const rawItem = entry.item;
-        const rawAction = entry.action;
-        const rawBonus = entry.bonus || 0;
-        const cappedItem = limits?.item != null ? clamp(rawItem, -limits.item, limits.item) : rawItem;
-        const cappedAction = limits?.action != null ? clamp(rawAction, -limits.action, limits.action) : rawAction;
-        const combined = cappedItem + cappedAction + rawBonus;
-        const cappedTotal = limits?.total != null ? clamp(combined, -limits.total, limits.total) : combined;
-        return {
-          name: entry.name,
-          unit: entry.unit,
-          prefix: parsePrefix(entry.name),
-          rawItem,
-          rawAction,
-          rawBonus,
-          cappedItem,
-          cappedAction,
-          signedTotal: cappedTotal,
-          polarity: getCatalogPolarity(entry.name),
-          caps: limits || null,
-          capped: {
-            item: limits?.item != null && Math.abs(rawItem - cappedItem) > 0.0001,
-            action: limits?.action != null && Math.abs(rawAction - cappedAction) > 0.0001,
-            total: limits?.total != null && Math.abs((cappedItem + cappedAction + rawBonus) - cappedTotal) > 0.0001
-          }
-        };
-      })
-      .map(entry => {
-        const cappedAny = !!(entry?.capped?.item || entry?.capped?.action || entry?.capped?.total);
-        if (!cappedAny || !entry?.caps) {
-          return { ...entry, cappedAny, capMessage: null };
-        }
-
-        const parts = [];
-        if (entry.capped.item && entry.caps.item != null) {
-          parts.push(`Item cap ${entry.caps.item}${entry.unit}: applied ${entry.cappedItem.toFixed(2)}${entry.unit} from ${entry.rawItem.toFixed(2)}${entry.unit}`);
-        }
-        if (entry.capped.action && entry.caps.action != null) {
-          parts.push(`Action cap ${entry.caps.action}${entry.unit}: applied ${entry.cappedAction.toFixed(2)}${entry.unit} from ${entry.rawAction.toFixed(2)}${entry.unit}`);
-        }
-        if (entry.capped.total && entry.caps.total != null) {
-          const rawCombined = entry.cappedItem + entry.cappedAction + (entry.rawBonus || 0);
-          const bonusPart = entry.rawBonus ? ` (includes bonus ${entry.rawBonus.toFixed(2)}${entry.unit})` : '';
-          parts.push(`Total cap ${entry.caps.total}${entry.unit}: applied ${entry.signedTotal.toFixed(2)}${entry.unit} from ${rawCombined.toFixed(2)}${entry.unit}${bonusPart}`);
-        }
-
-        return {
-          ...entry,
-          cappedAny,
-          capMessage: parts.join(' • ')
-        };
-      })
-      .filter(entry => Math.abs(entry.signedTotal) > 0.0001)
-      .sort((a, b) => a.name.localeCompare(b.name));
   }
 
   function formatSigned(value, unit = '%') {
@@ -1820,65 +1970,6 @@
     if (!Number.isFinite(numeric)) return 'N/A';
     const sign = polarity === 'negative' ? '-' : '';
     return `${sign}${Math.abs(numeric).toFixed(2)}${unit}`;
-  }
-
-  function getBuffSummary(loadout) {
-    if (!loadout) return null;
-    const weaponEquipEffects = getWeaponEquipEffects(loadout);
-    const weaponUseEffects = getWeaponUseEffects(loadout);
-    const armorEquipEffects = getArmorEquipEffects(loadout);
-    const armorSetEffects = getArmorSetEffects(loadout) || [];
-    const clothingEquipEffects = getClothingEquipEffects(loadout);
-    const clothingSetEffects = getClothingSetEffects(loadout);
-    const petEffect = getActivePetEffect(loadout);
-    const consumableList = loadout?.Gear?.Consumables || [];
-    const manual = {
-      damage: Number(loadout?.Properties?.BonusDamage ?? 0) || 0,
-      critChance: Number(loadout?.Properties?.BonusCritChance ?? 0) || 0,
-      critDamage: Number(loadout?.Properties?.BonusCritDamage ?? 0) || 0,
-      reload: Number(loadout?.Properties?.BonusReload ?? 0) || 0
-    };
-
-    const summary = {};
-    Object.entries(BUFF_DEFS).forEach(([key, def]) => {
-      const weaponValue = sumEffectValues([...weaponEquipEffects, ...weaponUseEffects], def);
-      const armorValue = sumEffectValues(armorEquipEffects, def);
-      const armorSetValue = sumEffectValues(armorSetEffects, def);
-      const clothingValue = sumEffectValues([...clothingEquipEffects, ...clothingSetEffects], def);
-      const petValue = petEffect ? sumEffectValues([petEffect], def) : 0;
-      const consumableData = maxConsumableEffectValue(consumableList, def);
-      const caps = getCapsForBuffKey(key);
-
-      // Limits: Item (equipable + manual), Action (pets + consumables), Total (both combined).
-      const itemValue = weaponValue + armorValue + armorSetValue + clothingValue + (manual[key] || 0);
-      const actionValue = petValue + (consumableData.value || 0);
-      const cappedItem = caps?.item != null ? clamp(itemValue, -caps.item, caps.item) : itemValue;
-      const cappedAction = caps?.action != null ? clamp(actionValue, -caps.action, caps.action) : actionValue;
-      const combined = cappedItem + cappedAction;
-      const total = caps?.total != null ? clamp(combined, -caps.total, caps.total) : combined;
-
-      summary[key] = {
-        label: def.label,
-        unit: def.unit,
-        item: itemValue,
-        itemCapped: cappedItem,
-        action: actionValue,
-        actionCapped: cappedAction,
-        total,
-        caps,
-        manual: manual[key] || 0,
-        consumableDetail: consumableData,
-        equipmentBreakdown: {
-          weapon: weaponValue,
-          armor: armorValue,
-          armorSet: armorSetValue,
-          clothing: clothingValue,
-          pet: petValue
-        }
-      };
-    });
-
-    return summary;
   }
 
   function togglePetEffect(effectKey) {
@@ -2015,372 +2106,24 @@
     markDirty();
   }
 
-  function getLerpProgress(start, end, current) {
-    return LoadoutCalc.getLerpProgress(start, end, current);
-  }
+  function comparePickerValue(loadout, getter, setter, newObject, selectValue) {
+    const loadoutCopy = JSON.parse(JSON.stringify(loadout));
 
-  function calcTotalDamage(loadout) {
-    const weapon = getWeapon(loadout.Gear.Weapon.Name);
-    const amplifier = getAmplifier(loadout.Gear.Weapon.Amplifier?.Name);
-    const bonusDamagePercent = offensiveTotals?.damage ?? 0;
-    
-    return LoadoutCalc.calculateTotalDamage(
-      weapon,
-      loadout.Gear.Weapon.Enhancers.Damage,
-      bonusDamagePercent,
-      amplifier
-    );
-  }
-
-  function calcEffectiveDamage(loadout) {
-    const critChance = calcCritChance(loadout);
-    const critDamage = calcCritDamage(loadout);
-    const hitAbility = calcHitAbility(loadout);
-    const damageInterval = calcDamageInterval(loadout);
-
-    return LoadoutCalc.calculateEffectiveDamage(damageInterval, critChance, critDamage, hitAbility);
-  }
-
-  function calcDamageInterval(loadout) {
-    const weapon = getWeapon(loadout.Gear.Weapon.Name);
-    const totalDamage = calcTotalDamage(loadout);
-    
-    return LoadoutCalc.calculateDamageInterval(
-      weapon,
-      loadout.Skill.Dmg,
-      loadout.Gear.Weapon.Enhancers.SkillMod ?? 0,
-      totalDamage
-    );
-  }
-
-  function calcHitAbility(loadout) {
-    const weapon = getWeapon(loadout.Gear.Weapon.Name);
-    
-    return LoadoutCalc.calculateHitAbility(
-      weapon,
-      loadout.Skill.Hit,
-      loadout.Gear.Weapon.Enhancers.SkillMod ?? 0
-    );
-  }
-
-  function calcCritChance(loadout) {
-    const critAbility = calcCritAbility(loadout);
-    const bonusCritChancePercent = offensiveTotals?.critChance ?? 0;
-    
-    return LoadoutCalc.calculateCritChance(
-      critAbility,
-      loadout.Gear.Weapon.Enhancers.Accuracy,
-      bonusCritChancePercent
-    );
-  }
-
-  function calcCritAbility(loadout) {
-    const weapon = getWeapon(loadout.Gear.Weapon.Name);
-    
-    return LoadoutCalc.calculateCritAbility(
-      weapon,
-      loadout.Skill.Hit,
-      loadout.Gear.Weapon.Enhancers.SkillMod ?? 0
-    );
-  }
-
-  function calcCritDamage(loadout) {
-    const bonusCritDamagePercent = offensiveTotals?.critDamage ?? 0;
-    return LoadoutCalc.calculateCritDamage(bonusCritDamagePercent);
-  }
-
-  function calcRange(loadout) {
-    const weapon = getWeapon(loadout.Gear.Weapon.Name);
-    
-    return LoadoutCalc.calculateRange(
-      weapon,
-      loadout.Skill.Hit,
-      loadout.Gear.Weapon.Enhancers.SkillMod ?? 0,
-      loadout.Gear.Weapon.Enhancers.Range
-    );
-  }
-
-  function calcDecay(loadout) {
-    const weapon = getWeapon(loadout.Gear.Weapon.Name);
-    const absorber = getAbsorber(loadout.Gear.Weapon.Absorber?.Name);
-    const implant = getImplant(loadout.Gear.Weapon.Implant?.Name);
-    const amplifier = getAmplifier(loadout.Gear.Weapon.Amplifier?.Name);
-    const scope = getScope(loadout.Gear.Weapon.Scope?.Name);
-    const scopeSight = getSight(loadout.Gear.Weapon.Scope?.Sight?.Name);
-    const sight = getSight(loadout.Gear.Weapon.Sight?.Name);
-    const matrix = getMatrix(loadout.Gear.Weapon.Matrix?.Name);
-    
-    return LoadoutCalc.calculateDecay(
-      weapon,
-      loadout.Gear.Weapon.Enhancers.Damage,
-      loadout.Gear.Weapon.Enhancers.Economy,
-      absorber,
-      implant,
-      amplifier,
-      scope,
-      scopeSight,
-      sight,
-      matrix,
-      loadout.Markup
-    );
-  }
-
-  function calcAmmo(loadout) {
-    const weapon = getWeapon(loadout.Gear.Weapon.Name);
-    const amplifier = getAmplifier(loadout.Gear.Weapon.Amplifier?.Name);
-    
-    return LoadoutCalc.calculateAmmoBurn(
-      weapon,
-      loadout.Gear.Weapon.Enhancers.Damage,
-      loadout.Gear.Weapon.Enhancers.Economy,
-      amplifier
-    );
-  }
-
-  function calcCost(loadout) {
-    const decay = calcDecay(loadout);
-    const ammo = calcAmmo(loadout);
-
-    return LoadoutCalc.calculateCost(decay, ammo, loadout.Markup.Ammo ?? 100);
-  }
-
-  function calcDpp(loadout) {
-    const effectiveDamage = calcEffectiveDamage(loadout);
-    const cost = calcCost(loadout);
-
-    return LoadoutCalc.calculateDPP(effectiveDamage, cost);
-  }
-
-  function calcReload(loadout) {
-    const weapon = getWeapon(loadout.Gear.Weapon.Name);
-    const bonusReloadPercent = offensiveTotals?.reload ?? 0;
-    
-    return LoadoutCalc.calculateReload(
-      weapon,
-      loadout.Skill.Hit,
-      loadout.Gear.Weapon.Enhancers.SkillMod ?? 0,
-      bonusReloadPercent
-    );
-  }
-
-  function calcDps(loadout) {
-    const effectiveDamage = calcEffectiveDamage(loadout);
-    const reload = calcReload(loadout);
-
-    return LoadoutCalc.calculateDPS(effectiveDamage, reload);
-  }
-
-  function calcWeaponCost(loadout) {
-    const weapon = getWeapon(loadout.Gear.Weapon.Name);
-
-    return LoadoutCalc.calculateWeaponCost(
-      weapon,
-      loadout.Gear.Weapon.Enhancers.Damage,
-      loadout.Gear.Weapon.Enhancers.Economy
-    );
-  }
-
-  function calcEfficiency(loadout) {
-    const weapon = getWeapon(loadout.Gear.Weapon.Name);
-    const weaponCost = calcWeaponCost(loadout);
-    const absorber = getAbsorber(loadout.Gear.Weapon.Absorber?.Name);
-    const amplifier = getAmplifier(loadout.Gear.Weapon.Amplifier?.Name);
-    const scope = getScope(loadout.Gear.Weapon.Scope?.Name);
-    const scopeSight = getSight(loadout.Gear.Weapon.Scope?.Sight?.Name);
-    const sight = getSight(loadout.Gear.Weapon.Sight?.Name);
-    const matrix = getMatrix(loadout.Gear.Weapon.Matrix?.Name);
-    
-    return LoadoutCalc.calculateEfficiency(
-      weapon,
-      weaponCost,
-      loadout.Gear.Weapon.Enhancers.Damage,
-      loadout.Gear.Weapon.Enhancers.Economy,
-      absorber,
-      amplifier,
-      scope,
-      scopeSight,
-      sight,
-      matrix
-    );
-  }
-
-  function weightedAverage(weightA, valueA, weightB, valueB) {
-    return LoadoutCalc.weightedAverage(weightA, valueA, weightB, valueB);
-  }
-
-  function calcArmorDefense(loadout) {
-    const armorPieces = armorSlots.map(slot => getArmor(loadout.Gear.Armor[slot].Name));
-    
-    return LoadoutCalc.calculateArmorDefense(
-      armorPieces,
-      loadout.Gear.Armor.Enhancers.Defense
-    );
-  }
-
-  function calcPlateDefense(loadout) {
-    const platePieces = armorSlots.map(slot => getArmorPlating(loadout.Gear.Armor[slot].Plate?.Name));
-    
-    return LoadoutCalc.calculatePlateDefense(platePieces);
-  }
-
-  function calcTotalDefense(loadout) {
-    const armorDefense = calcArmorDefense(loadout);
-    const plateDefense = calcPlateDefense(loadout);
-    
-    return LoadoutCalc.calculateTotalDefense(armorDefense, plateDefense);
-  }
-
-  function calcArmorDurability(loadout) {
-    const armorPieces = armorSlots.map(slot => getArmor(loadout.Gear.Armor[slot].Name));
-    
-    return LoadoutCalc.calculateArmorDurability(
-      armorPieces,
-      loadout.Gear.Armor.Enhancers.Durability
-    );
-  }
-
-  function calcPlateDurability(loadout) {
-    const platePieces = armorSlots.map(slot => getArmorPlating(loadout.Gear.Armor[slot].Plate?.Name));
-    
-    return LoadoutCalc.calculatePlateDurability(platePieces);
-  }
-
-  function calcTotalAbsorption(loadout) {
-    const armorPieces = armorSlots.map(slot => getArmor(loadout.Gear.Armor[slot].Name));
-    const platePieces = armorSlots.map(slot => getArmorPlating(loadout.Gear.Armor[slot].Plate?.Name));
-    
-    return LoadoutCalc.calculateTotalAbsorption(
-      armorPieces,
-      platePieces,
-      loadout.Gear.Armor.Enhancers.Defense,
-      loadout.Gear.Armor.Enhancers.Durability
-    );
-  }
-
-  function getMarkupCost(item, markup) {
-    const maxTT = item?.Properties?.Economy?.MaxTT;
-    const minTT = item?.Properties?.Economy?.MinTT ?? 0;
-    if (maxTT == null || maxTT <= minTT) return null;
-    return (maxTT - minTT) * (markup ?? 100) / 100;
-  }
-
-  function calcArmorMarkupCost(loadout) {
-    if (!loadout?.Markup) return null;
-    let total = 0;
-    let hasAny = false;
-    armorSlots.forEach(slot => {
-      const armorName = loadout.Gear.Armor[slot].Name;
-      if (!armorName || !isLimitedName(armorName)) return;
-      const armor = getArmor(armorName);
-      const markup = loadout.Gear.Armor.ManageIndividual
-        ? loadout.Markup.Armors[slot]
-        : loadout.Markup.ArmorSet;
-      const cost = getMarkupCost(armor, markup);
-      if (cost == null) return;
-      total += cost;
-      hasAny = true;
-    });
-    return hasAny ? total : null;
-  }
-
-  function calcPlateMarkupCost(loadout) {
-    if (!loadout?.Markup) return null;
-    let total = 0;
-    let hasAny = false;
-    armorSlots.forEach(slot => {
-      const plateName = loadout.Gear.Armor[slot].Plate?.Name;
-      if (!plateName || !isLimitedName(plateName)) return;
-      const plate = getArmorPlating(plateName);
-      const markup = loadout.Gear.Armor.ManageIndividual
-        ? loadout.Markup.Plates[slot]
-        : loadout.Markup.PlateSet;
-      const cost = getMarkupCost(plate, markup);
-      if (cost == null) return;
-      total += cost;
-      hasAny = true;
-    });
-    return hasAny ? total : null;
-  }
-
-  function calcBlockChance(loadout) {
-    const platePieces = armorSlots.map(slot => getArmorPlating(loadout.Gear.Armor[slot].Plate?.Name));
-    
-    return LoadoutCalc.calculateBlockChance(platePieces);
-  }
-
-  function calcSkillModification(loadout) {
-    const scope = getScope(loadout.Gear.Weapon?.Scope?.Name);
-    const scopeSight = getSight(loadout.Gear.Weapon?.Scope?.Sight?.Name);
-    const sight = getSight(loadout.Gear.Weapon?.Sight?.Name);
-    
-    return LoadoutCalc.calculateSkillModification(scope, scopeSight, sight);
-  }
-
-  function calcSkillBonus(loadout) {
-    const scope = getScope(loadout.Gear.Weapon?.Scope?.Name);
-    const scopeSight = getSight(loadout.Gear.Weapon?.Scope?.Sight?.Name);
-    const sight = getSight(loadout.Gear.Weapon?.Sight?.Name);
-    
-    return LoadoutCalc.calculateSkillBonus(scope, scopeSight, sight);
-  }
-
-  function calcLowestTotalUses(loadout) {
-    const weapon = getWeapon(loadout.Gear.Weapon.Name);
-    const absorber = getAbsorber(loadout.Gear.Weapon.Absorber?.Name);
-    const implant = getImplant(loadout.Gear.Weapon.Implant?.Name);
-    const amplifier = getAmplifier(loadout.Gear.Weapon.Amplifier?.Name);
-    const scope = getScope(loadout.Gear.Weapon.Scope?.Name);
-    const scopeSight = getSight(loadout.Gear.Weapon.Scope?.Sight?.Name);
-    const sight = getSight(loadout.Gear.Weapon.Sight?.Name);
-    const matrix = getMatrix(loadout.Gear.Weapon.Matrix?.Name);
-    
-    return LoadoutCalc.calculateLowestTotalUses(
-      weapon,
-      loadout.Gear.Weapon.Enhancers.Damage,
-      loadout.Gear.Weapon.Enhancers.Economy,
-      absorber,
-      implant,
-      amplifier,
-      scope,
-      scopeSight,
-      sight,
-      matrix
-    );
-  }
-
-  function compareValue(loadout, getter, setter, newObject, valueFunction) {
-    let loadoutCopy = JSON.parse(JSON.stringify(loadout));
-
-    console.log(loadoutCopy);
-
-    let currentValue = valueFunction(loadoutCopy);
-
-    console.log('curr: ' + currentValue);
-
+    const currentEval = evaluateAnyLoadout(loadoutCopy);
+    const currentValue = selectValue?.(currentEval);
     if (currentValue == null) return null;
 
-    let currentObject = getter(loadoutCopy);
-
-    console.log(currentObject);
-
+    const currentObject = getter(loadoutCopy);
     setter(loadoutCopy, newObject);
 
-    console.log(newObject);
-    console.log(getter(loadoutCopy));
-
-    let newValue = valueFunction(loadoutCopy);
-
-    console.log('new: ' + newValue);
-
+    const newEval = evaluateAnyLoadout(loadoutCopy);
+    const newValue = selectValue?.(newEval);
     if (newValue == null) return null;
 
+    // Restore the original object in case callers reuse the clone later.
     setter(loadoutCopy, currentObject);
-    
-    console.log(getter(loadoutCopy));
 
-    let difference = newValue - currentValue;
-
-    console.log('diff: ' + difference);
+    const difference = newValue - currentValue;
 
     return difference > 0
       ? `<span style='color: ${$darkMode ? 'lightgreen' : 'darkgreen'};'>+${difference.toFixed(2)}</span>`
@@ -2390,15 +2133,15 @@
   }
 
   function compareEfficiency(loadout, getter, setter, object) {
-    return compareValue(loadout, getter, setter, object, calcEfficiency);
+    return comparePickerValue(loadout, getter, setter, object, (e) => e?.stats?.efficiency);
   }
 
   function compareDpp(loadout, getter, setter, object) {
-    return compareValue(loadout, getter, setter, object, calcDpp);
+    return comparePickerValue(loadout, getter, setter, object, (e) => e?.stats?.dpp);
   }
 
   function compareDps(loadout, getter, setter, object) {
-    return compareValue(loadout, getter, setter, object, calcDps);
+    return comparePickerValue(loadout, getter, setter, object, (e) => e?.stats?.dps);
   }
 
   function buildPickerRows(items, mapper) {
@@ -2412,8 +2155,8 @@
     const weapon = getWeapon(loadout?.Gear?.Weapon?.Name);
     if (!weapon) return [];
     return amplifiers.filter(x => {
-      const ampDamage = getTotalDamage(x);
-      const weaponDamage = getTotalDamage(weapon);
+      const ampDamage = LoadoutCalc.calculateItemTotalDamage(x);
+      const weaponDamage = LoadoutCalc.calculateItemTotalDamage(weapon);
 
       if (!ampDamage) {
         return false;
@@ -2528,8 +2271,8 @@
           name: item.Name,
           class: item.Properties.Class,
           type: item.Properties.Type,
-          dps: getDps(item) != null ? getDps(item).toFixed(2) : 'N/A',
-          dpp: getDpp(item) != null ? getDpp(item).toFixed(2) : 'N/A',
+          dps: LoadoutCalc.calculateItemDpsPreview(item) != null ? LoadoutCalc.calculateItemDpsPreview(item).toFixed(2) : 'N/A',
+          dpp: LoadoutCalc.calculateItemDppPreview(item) != null ? LoadoutCalc.calculateItemDppPreview(item).toFixed(2) : 'N/A',
           efficiency: item.Properties?.Economy?.Efficiency != null ? `${item.Properties.Economy.Efficiency.toFixed(1)}%` : 'N/A'
         }))
       };
@@ -2569,7 +2312,7 @@
           decay: item.Properties?.Economy?.Absorption != null && weapon?.Properties?.Economy?.Decay != null
             ? `${(weapon.Properties.Economy.Decay * item.Properties.Economy.Absorption).toFixed(4)} PEC`
             : 'N/A',
-          uses: weapon ? (getTotalAbsorberUses(item, weapon) ?? 'N/A') : 'N/A'
+          uses: weapon ? (LoadoutCalc.calculateAbsorberTotalUses(item, weapon) ?? 'N/A') : 'N/A'
         }))
       };
     }
@@ -2656,7 +2399,7 @@
           decay: item.Properties?.Economy?.Absorption != null && weapon?.Properties?.Economy?.Decay != null
             ? `${(weapon.Properties.Economy.Decay * item.Properties.Economy.Absorption).toFixed(4)} PEC`
             : 'N/A',
-          uses: weapon ? (getTotalAbsorberUses(item, weapon) ?? 'N/A') : 'N/A'
+          uses: weapon ? (LoadoutCalc.calculateAbsorberTotalUses(item, weapon) ?? 'N/A') : 'N/A'
         }))
       };
     }
@@ -2671,7 +2414,7 @@
         ]),
         rows: buildPickerRows(armorsets, item => ({
           name: item.Name,
-          total: getTotalDefense(item) ?? 'N/A',
+          total: LoadoutCalc.calculateItemTotalDefense(item) ?? 'N/A',
           durability: item.Properties.Economy.Durability ?? 'N/A'
         }))
       };
@@ -2688,7 +2431,7 @@
         ]),
         rows: buildPickerRows(armors.filter(x => x.Properties.Slot === slot), item => ({
           name: item.Name,
-          total: getTotalDefense(item) ?? 'N/A',
+          total: LoadoutCalc.calculateItemTotalDefense(item) ?? 'N/A',
           durability: item.Properties.Economy.Durability ?? 'N/A'
         }))
       };
@@ -2704,7 +2447,7 @@
         ]),
         rows: buildPickerRows(armorplatings, item => ({
           name: item.Name,
-          total: getTotalDefense(item) ?? 'N/A',
+          total: LoadoutCalc.calculateItemTotalDefense(item) ?? 'N/A',
           durability: item.Properties.Economy.Durability ?? 'N/A'
         }))
       };
@@ -2833,11 +2576,7 @@
   }
 
   function getEffectUnit(effectName, currentEffect = null) {
-    if (effectName && effectsCatalog?.length) {
-      const match = effectsCatalog.find(effect => effect.Name === effectName);
-      if (match?.Properties?.Unit) return match.Properties.Unit;
-    }
-    return currentEffect?.Values?.Unit || currentEffect?.Properties?.Unit || '';
+    return getEffectUnitFromCatalog(effectsCatalog, effectName, currentEffect);
   }
 
   function getItemEffectGroups(item) {
@@ -2900,20 +2639,21 @@
       const rows = [];
       addPreviewRow(rows, 'Class', item.Properties?.Class);
       addPreviewRow(rows, 'Type', item.Properties?.Type);
-      addPreviewRow(rows, 'Total Damage', getTotalDamage(item));
-      addPreviewRow(rows, 'DPS', getDps(item));
-      addPreviewRow(rows, 'DPP', getDpp(item));
+      addPreviewRow(rows, 'Total Damage', LoadoutCalc.calculateItemTotalDamage(item));
+      addPreviewRow(rows, 'DPS', LoadoutCalc.calculateItemDpsPreview(item));
+      addPreviewRow(rows, 'DPP', LoadoutCalc.calculateItemDppPreview(item));
       addPreviewRow(rows, 'Efficiency', item.Properties?.Economy?.Efficiency, '%');
       addPreviewRow(rows, 'Range', item.Properties?.Range, 'm');
-      addPreviewRow(rows, 'Uses', getTotalUses(item));
+      addPreviewRow(rows, 'Uses', LoadoutCalc.calculateItemTotalUses(item));
       sections.push({ title: 'Weapon Stats', rows });
     } else if (kind === 'amplifier' || kind === 'matrix' || kind === 'scope' || kind === 'sight' || kind === 'scope-sight' || kind === 'absorber' || kind === 'implant') {
       const rows = [];
       addPreviewRow(rows, 'Type', item.Properties?.Type);
-      addPreviewRow(rows, 'DPP', row?.dpp && stripHtml(row.dpp) !== 'N/A' ? parseFloat(stripHtml(row.dpp)) : null);
-      addPreviewRow(rows, 'Efficiency', row?.efficiency && stripHtml(row.efficiency) !== 'N/A' ? parseFloat(stripHtml(row.efficiency)) : null, '%');
-      if (row?.decay) addPreviewRow(rows, 'Decay', stripHtml(row.decay));
-      if (row?.uses) addPreviewRow(rows, 'Uses', stripHtml(row.uses));
+      if (row?.dpp) addPreviewTextRow(rows, 'DPP (Δ)', stripHtml(row.dpp));
+      if (row?.efficiency) addPreviewTextRow(rows, 'Efficiency (Δ)', stripHtml(row.efficiency));
+      if (row?.decay) addPreviewTextRow(rows, 'Decay (Δ)', stripHtml(row.decay));
+      if (row?.uses) addPreviewTextRow(rows, 'Uses (Δ)', stripHtml(row.uses));
+      addPreviewTextRow(rows, 'Note', 'Δ values are relative to the base weapon.');
       sections.push({ title: 'Attachment Stats', rows });
     } else if (kind === 'armorset' || kind.startsWith('armor-') || kind.startsWith('armorplating')) {
       const rows = [];
@@ -2921,7 +2661,7 @@
       if (defenseRows.length > 0) {
         sections.push({ title: 'Defense Types', rows: defenseRows });
       }
-      addPreviewRow(rows, 'Total Defense', getTotalDefense(item));
+      addPreviewRow(rows, 'Total Defense', LoadoutCalc.calculateItemTotalDefense(item));
       addPreviewRow(rows, 'Block', item.Properties?.Defense?.Block, '%');
       addPreviewRow(rows, 'Durability', item.Properties?.Economy?.Durability);
       sections.push({ title: 'Armor Stats', rows });
@@ -2993,93 +2733,6 @@
     return sections;
   }
 
-  // Gets the set effects of all equipped armors
-  function getArmorSetEffects(loadout) {
-    if (!loadout.Gear.Armor.ManageIndividual && loadout.Gear.Armor.SetName) {
-      return getActiveArmorSetEffects(loadout.Gear.Armor.SetName) || [];
-    }
-    else if (loadout.Gear.Armor.ManageIndividual) {
-      let sets = [];
-
-      armorSlots.forEach(slot => {
-        let armor = getArmor(loadout.Gear.Armor[slot].Name);
-
-        if (armor == null || armor.Set == null) return;
-
-        sets.push(armor.Set);
-      });
-
-      return sets
-        .filter((value, index, self) => self.indexOf(value) === index)
-        .flatMap(set => getActiveArmorSetEffects(set.Name) || []);
-    }
-  }
-
-  // Gets the amount of pieces equipped of a specific set
-  function getArmorSetPieceCount(setName) {
-    return armorSlots.reduce((acc, slot) => acc + (getArmor(loadout.Gear.Armor[slot].Name)?.Set.Name === setName ? 1 : 0), 0);
-  }
-
-  // Gets the active set effects of a specific set
-  function getActiveArmorSetEffects(setName) {
-    let set = getArmorSet(setName);
-    let setPieceCount = getArmorSetPieceCount(setName);
-
-    if (!set || !set.EffectsOnSetEquip) return [];
-
-    // Get unique effects with the highest piece count that is less than or equal to the current piece count
-    return set.EffectsOnSetEquip
-      .filter(effect => (effect?.MinSetPieces ?? effect?.Values?.MinSetPieces ?? 0) <= setPieceCount)
-      .sort((a, b) => (b?.MinSetPieces ?? b?.Values?.MinSetPieces ?? 0) - (a?.MinSetPieces ?? a?.Values?.MinSetPieces ?? 0))
-      .filter((value, index, self) => self.findIndex(effect => effect.Name === value.Name) === index);
-  }
-
-  function getWeaponUseEffects(loadout) {
-    let weapon = getWeapon(loadout.Gear.Weapon.Name);
-
-    if (weapon == null) return [];
-
-    return [
-      ...weapon.EffectsOnUse,
-      ...(loadout.Gear.Weapon.Amplifier?.Name != null ? getAmplifier(loadout.Gear.Weapon.Amplifier.Name).EffectsOnUse ?? [] : []),
-      ...(loadout.Gear.Weapon.Scope?.Name != null ? getScope(loadout.Gear.Weapon.Scope.Name).EffectsOnUse ?? [] : []),
-      ...(loadout.Gear.Weapon.Scope?.Sight?.Name != null ? getSight(loadout.Gear.Weapon.Scope.Sight.Name).EffectsOnUse ?? [] : []),
-      ...(loadout.Gear.Weapon.Sight?.Name != null ? getSight(loadout.Gear.Weapon.Sight.Name).EffectsOnUse ?? [] : []),
-      ...(loadout.Gear.Weapon.Matrix?.Name != null ? getMatrix(loadout.Gear.Weapon.Matrix.Name).EffectsOnUse ?? [] : []),
-      ...(loadout.Gear.Weapon.Implant?.Name != null ? getImplant(loadout.Gear.Weapon.Implant.Name).EffectsOnUse ?? [] : []),
-      ...(loadout.Gear.Weapon.Absorber?.Name != null ? getAbsorber(loadout.Gear.Weapon.Absorber.Name).EffectsOnUse ?? [] : [])
-    ];
-  }
-
-  function getWeaponEquipEffects(loadout) {
-    let weapon = getWeapon(loadout.Gear.Weapon.Name);
-
-    if (weapon == null) return [];
-
-    return [
-      ...(weapon.EffectsOnEquip ?? []),
-      ...(loadout.Gear.Weapon.Amplifier?.Name != null ? getAmplifier(loadout.Gear.Weapon.Amplifier.Name).EffectsOnEquip ?? [] : []),
-      ...(loadout.Gear.Weapon.Scope?.Name != null ? getScope(loadout.Gear.Weapon.Scope.Name).EffectsOnEquip ?? [] : []),
-      ...(loadout.Gear.Weapon.Scope?.Sight?.Name != null ? getSight(loadout.Gear.Weapon.Scope.Sight.Name).EffectsOnEquip ?? [] : []),
-      ...(loadout.Gear.Weapon.Sight?.Name != null ? getSight(loadout.Gear.Weapon.Sight.Name).EffectsOnEquip ?? [] : []),
-      ...(loadout.Gear.Weapon.Matrix?.Name != null ? getMatrix(loadout.Gear.Weapon.Matrix.Name).EffectsOnEquip ?? [] : []),
-      ...(loadout.Gear.Weapon.Implant?.Name != null ? getImplant(loadout.Gear.Weapon.Implant.Name).EffectsOnEquip ?? [] : []),
-      ...(loadout.Gear.Weapon.Absorber?.Name != null ? getAbsorber(loadout.Gear.Weapon.Absorber.Name).EffectsOnEquip ?? [] : [])
-    ];
-  }
-
-  function getArmorEquipEffects(loadout) {
-    return armorSlots.flatMap(slot => {
-      let armor = getArmor(loadout.Gear.Armor[slot].Name);
-
-      if (armor == null) return [];
-
-      return [
-        ...(armor.EffectsOnEquip ?? []),
-        ...(loadout.Gear.Armor[slot].Plate?.Name != null ? getArmorPlating(loadout.Gear.Armor[slot].Plate.Name).EffectsOnEquip ?? [] : [])
-      ];
-    });
-  }
 </script>
 
 
@@ -3104,6 +2757,12 @@
   <symbol id="icon-cancel" viewBox="0 0 24 24">
     <line x1="18" y1="6" x2="6" y2="18" />
     <line x1="6" y1="6" x2="18" y2="18" />
+  </symbol>
+  <symbol id="icon-hide" viewBox="0 0 24 24">
+    <path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-5 0-9.27-3.11-11-7.5a11.5 11.5 0 0 1 5.18-5.9" />
+    <path d="M10.58 10.58a2 2 0 0 0 2.83 2.83" />
+    <path d="M9.9 4.24A10.94 10.94 0 0 1 12 4c5 0 9.27 3.11 11 7.5a11.5 11.5 0 0 1-4.4 5.3" />
+    <path d="M1 1l22 22" />
   </symbol>
   <symbol id="icon-save" viewBox="0 0 24 24">
     <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
@@ -3206,7 +2865,6 @@
           class="action-btn cancel"
           on:click={() => {
             compareMode = false;
-            activeMobilePanel = 'weapons';
           }}
           aria-label="Stop comparing"
           title="Stop comparing"
@@ -3221,7 +2879,6 @@
           class="action-btn"
           on:click={() => {
             compareMode = true;
-            activeMobilePanel = 'weapons';
           }}
           aria-label="Compare loadouts"
           title="Compare"
@@ -3318,6 +2975,130 @@
     </div>
   </div>
 
+  {#if compareMode}
+    <div class="compare-layout">
+      <DataSection title="Compare" collapsible={false}>
+        <button
+          slot="actions"
+          type="button"
+          class="compare-exit-btn"
+          on:click={() => { compareMode = false; }}
+          aria-label="Stop comparing"
+          title="Stop comparing"
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <use href="#icon-cancel"></use>
+          </svg>
+        </button>
+        <div class="compare-toolbar">
+          <div class="compare-toolbar-left">
+            <div class="compare-segment" on:click|stopPropagation>
+              <button type="button" class:active={compareType === 'weapons'} on:click={() => (compareType = 'weapons')}>Weapons</button>
+              <button type="button" class:active={compareType === 'armor'} on:click={() => (compareType = 'armor')}>Armor</button>
+            </div>
+            <div class="compare-segment" on:click|stopPropagation>
+              <button type="button" class:active={compareDisplay === 'values'} on:click={() => (compareDisplay = 'values')}>Values</button>
+              <button type="button" class:active={compareDisplay === 'delta'} disabled={!compareAnchorEval} on:click={() => (compareDisplay = 'delta')}>Delta</button>
+            </div>
+          </div>
+
+          <div class="compare-toolbar-right">
+            <div class="compare-search" on:click|stopPropagation>
+              <input type="text" placeholder="Search loadouts..." bind:value={compareNameQuery} />
+            </div>
+
+            {#if !isMobileLayout}
+              <div class="compare-menu">
+                <button
+                  type="button"
+                  class="compare-menu-btn"
+                  on:click|stopPropagation={() => {
+                    compareHiddenOpen = !compareHiddenOpen;
+                    compareColumnsOpen = false;
+                  }}
+                >
+                  Hidden{hiddenCompareRows.length ? ` (${hiddenCompareRows.length})` : ''}
+                </button>
+                {#if compareHiddenOpen}
+                  <div class="compare-popover" on:click|stopPropagation>
+                    {#if hiddenCompareRows.length === 0}
+                      <div class="compare-popover-empty">No hidden loadouts.</div>
+                    {:else}
+                      <div class="compare-popover-list">
+                        {#each hiddenCompareRows as item (item.id)}
+                          <button type="button" class="compare-popover-item" on:click={() => setCompareHidden(item.id, false)}>
+                            <span class="compare-popover-name">{item.name}</span>
+                            <span class="compare-popover-action">Show</span>
+                          </button>
+                        {/each}
+                      </div>
+                    {/if}
+                  </div>
+                {/if}
+              </div>
+            {/if}
+
+            {#if !isMobileLayout}
+              <div class="compare-menu">
+                <button
+                  type="button"
+                  class="compare-menu-btn"
+                  on:click|stopPropagation={() => {
+                    compareColumnsOpen = !compareColumnsOpen;
+                    compareHiddenOpen = false;
+                  }}
+                >
+                  Columns
+                </button>
+                {#if compareColumnsOpen}
+                  <div class="compare-popover" on:click|stopPropagation>
+                    <div class="compare-popover-header">
+                      <div class="compare-popover-title">Shown columns</div>
+                      <button type="button" class="compare-popover-reset" on:click={() => resetCompareColumns(compareType)}>Reset</button>
+                    </div>
+                    <div class="compare-columns-grid">
+                      {#each COMPARE_COLUMN_ORDER[compareType] as key (key)}
+                        {#if key !== 'name'}
+                          <label class="compare-col-toggle">
+                            <input
+                              type="checkbox"
+                              checked={compareVisibleKeys.includes(key)}
+                              on:change={() => toggleCompareColumn(compareType, key)}
+                            />
+                            <span>{getCompareColumnLabel(key)}</span>
+                          </label>
+                        {/if}
+                      {/each}
+                    </div>
+                  </div>
+                {/if}
+              </div>
+            {/if}
+          </div>
+        </div>
+
+        <div
+          class="compare-table-wrap"
+          style={`--compare-row-height: ${isMobileLayout ? 34 : 38}px;`}
+          on:click|capture={handleCompareWrapperClick}
+        >
+          <FancyTable
+            columns={compareColumns}
+            data={compareRows}
+            searchable={true}
+            sortable={true}
+            rowHeight={isMobileLayout ? 34 : 38}
+            emptyMessage="No loadouts match your filters."
+            on:rowClick={(e) => {
+              const id = e.detail?.row?._id;
+              const next = loadouts.find(x => x?.Id === id);
+              if (next) setActiveLoadout(next);
+            }}
+          />
+        </div>
+      </DataSection>
+    </div>
+  {:else}
   <div class="layout-a">
     {#if isMobileLayout}
       <div class="mobile-panel-overview">
@@ -3326,9 +3107,7 @@
             <button
               class="mobile-panel-button"
               class:active={activeMobilePanel === panel.key}
-              class:disabled={compareMode && panel.key !== 'weapons'}
               on:click={() => setMobilePanelIndex(index)}
-              disabled={compareMode && panel.key !== 'weapons'}
               aria-label={panel.label}
               title={panel.label}
             >
@@ -3368,15 +3147,15 @@
           <div class="stats-section tier-1">
             <div class="stat-row primary">
               <span class="stat-label">Efficiency</span>
-              <span class="stat-value">{calcEfficiency(loadout) != null ? `${calcEfficiency(loadout).toFixed(1)}%` : 'N/A'}</span>
+              <span class="stat-value">{stats.efficiency != null ? `${stats.efficiency.toFixed(1)}%` : 'N/A'}</span>
             </div>
             <div class="stat-row primary">
               <span class="stat-label">DPS</span>
-              <span class="stat-value">{calcDps(loadout) != null ? `${calcDps(loadout).toFixed(4)}` : 'N/A'}</span>
+              <span class="stat-value">{stats.dps != null ? `${stats.dps.toFixed(4)}` : 'N/A'}</span>
             </div>
             <div class="stat-row primary">
               <span class="stat-label">DPP</span>
-              <span class="stat-value">{calcDpp(loadout) != null ? `${calcDpp(loadout).toFixed(4)}` : 'N/A'}</span>
+              <span class="stat-value">{stats.dpp != null ? `${stats.dpp.toFixed(4)}` : 'N/A'}</span>
             </div>
           </div>
           <div class="stats-section buff-summary">
@@ -3604,40 +3383,40 @@
           </div>
           <div class="stats-section">
             <h4 class="section-title">Offense</h4>
-            <div class="stat-row"><span class="stat-label">Total Damage</span><span class="stat-value">{calcTotalDamage(loadout) != null ? `${calcTotalDamage(loadout).toFixed(2)}` : 'N/A'}</span></div>
-            <div class="stat-row"><span class="stat-label">Range</span><span class="stat-value">{calcRange(loadout) != null ? `${calcRange(loadout).toFixed(1)}m` : 'N/A'}</span></div>
-            <div class="stat-row"><span class="stat-label">Critical Chance</span><span class="stat-value">{calcCritChance(loadout) != null ? `${(calcCritChance(loadout) * 100).toFixed(1)}%` : 'N/A'}</span></div>
-            <div class="stat-row"><span class="stat-label">Critical Damage</span><span class="stat-value">{calcCritDamage(loadout) != null ? `${(calcCritDamage(loadout) * 100).toFixed(0)}%` : 'N/A'}</span></div>
-            <div class="stat-row"><span class="stat-label">Effective Damage</span><span class="stat-value">{calcEffectiveDamage(loadout) != null ? `${calcEffectiveDamage(loadout).toFixed(2)}` : 'N/A'}</span></div>
-            <div class="stat-row"><span class="stat-label">Reload</span><span class="stat-value">{calcReload(loadout) != null ? `${calcReload(loadout).toFixed(2)}s` : 'N/A'}</span></div>
-            <div class="stat-row"><span class="stat-label">Uses/min</span><span class="stat-value">{calcReload(loadout) != null ? `${clampDecimals(60 / calcReload(loadout), 0, 2)}` : 'N/A'}</span></div>
+            <div class="stat-row"><span class="stat-label">Total Damage</span><span class="stat-value">{stats.totalDamage != null ? `${stats.totalDamage.toFixed(2)}` : 'N/A'}</span></div>
+            <div class="stat-row"><span class="stat-label">Range</span><span class="stat-value">{stats.range != null ? `${stats.range.toFixed(1)}m` : 'N/A'}</span></div>
+            <div class="stat-row"><span class="stat-label">Critical Chance</span><span class="stat-value">{stats.critChance != null ? `${(stats.critChance * 100).toFixed(1)}%` : 'N/A'}</span></div>
+            <div class="stat-row"><span class="stat-label">Critical Damage</span><span class="stat-value">{stats.critDamage != null ? `${(stats.critDamage * 100).toFixed(0)}%` : 'N/A'}</span></div>
+            <div class="stat-row"><span class="stat-label">Effective Damage</span><span class="stat-value">{stats.effectiveDamage != null ? `${stats.effectiveDamage.toFixed(2)}` : 'N/A'}</span></div>
+            <div class="stat-row"><span class="stat-label">Reload</span><span class="stat-value">{stats.reload != null ? `${stats.reload.toFixed(2)}s` : 'N/A'}</span></div>
+            <div class="stat-row"><span class="stat-label">Uses/min</span><span class="stat-value">{stats.reload != null ? `${clampDecimals(60 / stats.reload, 0, 2)}` : 'N/A'}</span></div>
           </div>
           <div class="stats-section">
             <h4 class="section-title">Economy</h4>
-            <div class="stat-row"><span class="stat-label">Decay</span><span class="stat-value">{calcDecay(loadout) != null ? `${calcDecay(loadout).toFixed(4)} PEC` : 'N/A'}</span></div>
-            <div class="stat-row"><span class="stat-label">Ammo</span><span class="stat-value">{calcAmmo(loadout) != null ? Math.round(calcAmmo(loadout)) : 'N/A'}</span></div>
-            <div class="stat-row"><span class="stat-label">Cost</span><span class="stat-value">{calcCost(loadout) != null ? `${calcCost(loadout).toFixed(4)} PEC` : 'N/A'}</span></div>
-            <div class="stat-row"><span class="stat-label">Total Uses</span><span class="stat-value">{calcLowestTotalUses(loadout) != null ? calcLowestTotalUses(loadout) : 'N/A'}</span></div>
+            <div class="stat-row"><span class="stat-label">Decay</span><span class="stat-value">{stats.decay != null ? `${stats.decay.toFixed(4)} PEC` : 'N/A'}</span></div>
+            <div class="stat-row"><span class="stat-label">Ammo</span><span class="stat-value">{stats.ammo != null ? Math.round(stats.ammo) : 'N/A'}</span></div>
+            <div class="stat-row"><span class="stat-label">Cost</span><span class="stat-value">{stats.cost != null ? `${stats.cost.toFixed(4)} PEC` : 'N/A'}</span></div>
+            <div class="stat-row"><span class="stat-label">Total Uses</span><span class="stat-value">{stats.lowestTotalUses != null ? stats.lowestTotalUses : 'N/A'}</span></div>
           </div>
           <div class="stats-section">
             <h4 class="section-title">Defense</h4>
-            <div class="stat-row"><span class="stat-label">Armor Defense</span><span class="stat-value">{calcArmorDefense(loadout) != null ? calcArmorDefense(loadout).toFixed(2) : 'N/A'}</span></div>
-            <div class="stat-row"><span class="stat-label">Plate Defense</span><span class="stat-value">{calcPlateDefense(loadout) != null ? calcPlateDefense(loadout).toFixed(2) : 'N/A'}</span></div>
-            <div class="stat-row"><span class="stat-label">Total Defense</span><span class="stat-value">{calcTotalDefense(loadout) != null ? calcTotalDefense(loadout).toFixed(2) : 'N/A'}</span></div>
-            <div class="stat-row"><span class="stat-label">Block</span><span class="stat-value">{calcBlockChance(loadout) != null ? `${calcBlockChance(loadout).toFixed(1)}%` : 'N/A'}</span></div>
+            <div class="stat-row"><span class="stat-label">Armor Defense</span><span class="stat-value">{stats.armorDefense != null ? stats.armorDefense.toFixed(2) : 'N/A'}</span></div>
+            <div class="stat-row"><span class="stat-label">Plate Defense</span><span class="stat-value">{stats.plateDefense != null ? stats.plateDefense.toFixed(2) : 'N/A'}</span></div>
+            <div class="stat-row"><span class="stat-label">Total Defense</span><span class="stat-value">{stats.totalDefense != null ? stats.totalDefense.toFixed(2) : 'N/A'}</span></div>
+            <div class="stat-row"><span class="stat-label">Block</span><span class="stat-value">{stats.blockChance != null ? `${stats.blockChance.toFixed(1)}%` : 'N/A'}</span></div>
           </div>
           <div class="stats-section">
             <h4 class="section-title">Armor Economy</h4>
-            <div class="stat-row"><span class="stat-label">Armor Durability</span><span class="stat-value">{calcArmorDurability(loadout) != null ? calcArmorDurability(loadout) : 'N/A'}</span></div>
-            <div class="stat-row"><span class="stat-label">Plate Durability</span><span class="stat-value">{calcPlateDurability(loadout) != null ? calcPlateDurability(loadout) : 'N/A'}</span></div>
-            <div class="stat-row"><span class="stat-label">Total Absorption</span><span class="stat-value">{calcTotalAbsorption(loadout) != null ? `${calcTotalAbsorption(loadout).toFixed(0)} HP` : 'N/A'}</span></div>
+            <div class="stat-row"><span class="stat-label">Armor Durability</span><span class="stat-value">{stats.armorDurability != null ? stats.armorDurability : 'N/A'}</span></div>
+            <div class="stat-row"><span class="stat-label">Plate Durability</span><span class="stat-value">{stats.plateDurability != null ? stats.plateDurability : 'N/A'}</span></div>
+            <div class="stat-row"><span class="stat-label">Total Absorption</span><span class="stat-value">{stats.totalAbsorption != null ? `${stats.totalAbsorption.toFixed(0)} HP` : 'N/A'}</span></div>
           </div>
           <div class="stats-section">
             <h4 class="section-title">Skill</h4>
-            <div class="stat-row"><span class="stat-label">Hit Ability</span><span class="stat-value">{calcHitAbility(loadout) != null ? `${calcHitAbility(loadout).toFixed(1)}/10.0` : 'N/A'}</span></div>
-            <div class="stat-row"><span class="stat-label">Crit Ability</span><span class="stat-value">{calcCritAbility(loadout) != null ? `${calcCritAbility(loadout).toFixed(1)}/10.0` : 'N/A'}</span></div>
-            <div class="stat-row"><span class="stat-label">Skill Modification</span><span class="stat-value">{calcSkillModification(loadout) != null ? `${calcSkillModification(loadout).toFixed(1)}%` : 'N/A'}</span></div>
-            <div class="stat-row"><span class="stat-label">Skill Bonus</span><span class="stat-value">{calcSkillBonus(loadout) != null ? `${calcSkillBonus(loadout).toFixed(1)}%` : 'N/A'}</span></div>
+            <div class="stat-row"><span class="stat-label">Hit Ability</span><span class="stat-value">{stats.hitAbility != null ? `${stats.hitAbility.toFixed(1)}/10.0` : 'N/A'}</span></div>
+            <div class="stat-row"><span class="stat-label">Crit Ability</span><span class="stat-value">{stats.critAbility != null ? `${stats.critAbility.toFixed(1)}/10.0` : 'N/A'}</span></div>
+            <div class="stat-row"><span class="stat-label">Skill Modification</span><span class="stat-value">{stats.skillModification != null ? `${stats.skillModification.toFixed(1)}%` : 'N/A'}</span></div>
+            <div class="stat-row"><span class="stat-label">Skill Bonus</span><span class="stat-value">{stats.skillBonus != null ? `${stats.skillBonus.toFixed(1)}%` : 'N/A'}</span></div>
           </div>
         {:else}
           <div class="stats-empty">Select a loadout to view stats.</div>
@@ -3693,59 +3472,6 @@
         {/if}
 
         <div class="mobile-panel" class:active={activeMobilePanel === 'weapons'}>
-          {#if compareMode}
-          <DataSection title="Compare Loadouts" collapsible={false}>
-            <div class="compare-table">
-              <Table
-                style="height: 360px; white-space: nowrap; text-overflow: ellipsis; overflow-x: auto;"
-                header={{ 
-                  values: [
-                    'Name',
-                    'DPS',
-                    'Total Dmg',
-                    'Effective Dmg',
-                    'Reload',
-                    'Range',
-                    'Efficiency',
-                    'Decay',
-                    'Ammo',
-                    'Cost',
-                    'DPP',
-                    'Skill Mod',
-                    'Skill Bonus',
-                    'Block',
-                    'Tot. Defense',
-                  ],
-                  widths: ['1fr', 'max-content', 'max-content', 'max-content', 'max-content', 'max-content', 'max-content', 'max-content', 'max-content', 'max-content', 'max-content', 'max-content', 'max-content', 'max-content', 'max-content']
-                }}
-                data={
-                  loadouts.map(x => ({
-                    values: [
-                      x.Name,
-                      calcDps(x) != null ? calcDps(x).toFixed(4) : null,
-                      calcTotalDamage(x) != null ? calcTotalDamage(x).toFixed(2) : null,
-                      calcEffectiveDamage(x) != null ? calcEffectiveDamage(x).toFixed(2) : null,
-                      calcReload(x) != null ? `${calcReload(x).toFixed(2)}s` : null,
-                      calcRange(x) != null ? `${calcRange(x).toFixed(2)}m` : null,
-                      calcEfficiency(x) != null ? `${calcEfficiency(x).toFixed(1)}%` : null,
-                      calcDecay(x) != null ? `${calcDecay(x).toFixed(2)} PEC` : null,
-                      calcAmmo(x) != null ? calcAmmo(x).toFixed(2) : null,
-                      calcCost(x) != null ? `${calcCost(x).toFixed(2)} PEC` : null,
-                      calcDpp(x) != null ? calcDpp(x).toFixed(4) : null,
-                      calcSkillModification(x) != null ? `${calcSkillModification(x).toFixed(1)}%` : null,
-                      calcSkillBonus(x) != null ? `${calcSkillBonus(x).toFixed(1)}%` : null,
-                      calcBlockChance(x) != null ? `${calcBlockChance(x).toFixed(1)}%` : null,
-                      calcTotalDefense(x) != null ? calcTotalDefense(x).toFixed(0) : null,
-                    ]
-                  }))
-                }
-                options={{
-                  searchable: true,
-                  virtual: true
-                }} />
-            </div>
-          </DataSection>
-        {:else}
           <DataSection title="Weapons">
             <div class="panel-grid two-col">
               <div class="panel-block">
@@ -3989,7 +3715,6 @@
               </div>
             </div>
           </DataSection>
-          {/if}
         </div>
         {#if !compareMode}
           <div class="mobile-panel" class:active={activeMobilePanel === 'armor'}>
@@ -4268,7 +3993,7 @@
             - Left-click to select gear.<br />
             - Right-click to clear a slot.<br />
             - Use the Settings panel to adjust skills and bonuses.<br />
-            - Compare loadouts with the Compare button in Weapons.<br />
+            - Compare loadouts with the Compare button in the header.<br />
             <br />
             Local loadouts remain until you clear browser storage. Export them if you want a backup.
           </p>
@@ -4278,6 +4003,7 @@
       </div>
     </div>
   </div>
+  {/if}
 </WikiPage>
 
 {#if showPickerDialog && pickerConfig}
@@ -4303,7 +4029,7 @@
                 <a class="picker-preview-link" href={previewLink} target="_blank" rel="noopener noreferrer">Open item</a>
               {/if}
             </div>
-            <div class="picker-preview-sections">
+            <div class="picker-preview-sections" class:single={previewSections.length === 1}>
               {#each previewSections as section}
                 <div class="picker-preview-section" class:compact={section.compact}>
                   <div class="picker-preview-section-title">{section.title}</div>
@@ -4414,9 +4140,11 @@
             <button
               type="button"
               class="btn-copy"
-              on:click={() => shareLink && navigator.clipboard?.writeText(shareLink)}
+              class:copied={shareCopyStatus === 'Copied'}
+              class:error={shareCopyStatus === 'Copy failed'}
+              on:click={handleCopyShareLink}
               disabled={!shareLink}
-            >Copy</button>
+            >{shareCopyStatus || 'Copy'}</button>
           </div>
         {:else}
           <p class="share-hint">Enable public link to generate a shareable URL.</p>

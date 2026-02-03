@@ -155,6 +155,17 @@
     }
   ];
 
+  const navTableColumns = [
+    {
+      key: 'category',
+      header: 'Category',
+      width: '110px',
+      filterPlaceholder: 'Combat',
+      getValue: (item) => item.Category?.Name,
+      format: (v) => v || '-'
+    }
+  ];
+
   // Breadcrumbs
   $: breadcrumbs = [
     { label: 'Information', href: '/information' },
@@ -231,15 +242,16 @@
   breadcrumbs={breadcrumbs.map(b => ({ name: b.label, url: b.href }))}
 />
 
-<WikiPage
-  title="Skills"
-  {breadcrumbs}
-  entity={data.isCreateMode ? $currentEntity : skill}
-  entityType="Skill"
-  basePath="/information/skills"
-  {navItems}
-  {navFilters}
-  {user}
+  <WikiPage
+    title="Skills"
+    {breadcrumbs}
+    entity={data.isCreateMode ? $currentEntity : skill}
+    entityType="Skill"
+    basePath="/information/skills"
+    {navItems}
+    {navFilters}
+    {navTableColumns}
+    {user}
   editable={true}
   {canEdit}
   {canCreateNew}

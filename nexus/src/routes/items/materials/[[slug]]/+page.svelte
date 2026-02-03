@@ -116,20 +116,12 @@
   // Sidebar table columns for materials
   const navTableColumns = [
     {
-      key: 'value',
-      header: 'Value',
-      width: '70px',
-      filterPlaceholder: '>0.01',
-      getValue: (item) => item.Properties?.Economy?.MaxTT,
-      format: (v) => v != null ? clampDecimals(v, 2, 4) : '-'
-    },
-    {
-      key: 'weight',
-      header: 'Wt',
-      width: '50px',
-      filterPlaceholder: '<1',
-      getValue: (item) => item.Properties?.Weight,
-      format: (v) => v != null ? clampDecimals(v, 1, 3) : '-'
+      key: 'type',
+      header: 'Type',
+      width: '90px',
+      filterPlaceholder: 'Ore',
+      getValue: (item) => item.Properties?.Type,
+      format: (v) => v || '-'
     }
   ];
 

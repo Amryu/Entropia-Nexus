@@ -195,6 +195,49 @@
     }
   ];
 
+  const navTableColumns = [
+    {
+      key: 'class',
+      header: 'Class',
+      width: '70px',
+      filterPlaceholder: 'Ranged',
+      getValue: (item) => item.Properties?.Class,
+      format: (v) => v || '-'
+    },
+    {
+      key: 'type',
+      header: 'Type',
+      width: '70px',
+      filterPlaceholder: 'Laser',
+      getValue: (item) => item.Properties?.Type,
+      format: (v) => v || '-'
+    },
+    {
+      key: 'dps',
+      header: 'DPS',
+      width: '55px',
+      filterPlaceholder: '>10',
+      getValue: (item) => getDps(item),
+      format: (v) => v != null ? v.toFixed(1) : '-'
+    },
+    {
+      key: 'dpp',
+      header: 'DPP',
+      width: '55px',
+      filterPlaceholder: '>2',
+      getValue: (item) => getDpp(item),
+      format: (v) => v != null ? v.toFixed(2) : '-'
+    },
+    {
+      key: 'eff',
+      header: 'Eff',
+      width: '55px',
+      filterPlaceholder: '>50',
+      getValue: (item) => getEfficiency(item),
+      format: (v) => v != null ? v.toFixed(1) : '-'
+    }
+  ];
+
   // Breadcrumbs
   $: breadcrumbs = [
     { label: 'Items', href: '/items' },
@@ -495,15 +538,16 @@
   breadcrumbs={breadcrumbs.map(b => ({ name: b.label, url: b.href }))}
 />
 
-<WikiPage
-  title="Weapons"
-  {breadcrumbs}
-  entity={data.isCreateMode ? ($currentEntity || createSeed) : weapon}
-  entityType="Weapon"
-  basePath="/items/weapons"
-  {navItems}
-  {navFilters}
-  {user}
+  <WikiPage
+    title="Weapons"
+    {breadcrumbs}
+    entity={data.isCreateMode ? ($currentEntity || createSeed) : weapon}
+    entityType="Weapon"
+    basePath="/items/weapons"
+    {navItems}
+    {navFilters}
+    {navTableColumns}
+    {user}
   editable={true}
   canEdit={canEdit}
   {canCreateNew}

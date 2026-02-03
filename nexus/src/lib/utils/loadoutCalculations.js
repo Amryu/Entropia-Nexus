@@ -474,6 +474,105 @@ function getTotalDefenseFromItem(item) {
   return (item.Properties?.Defense?.Impact ?? 0) + (item.Properties?.Defense?.Cut ?? 0) + (item.Properties?.Defense?.Stab ?? 0) + (item.Properties?.Defense?.Penetration ?? 0) + (item.Properties?.Defense?.Shrapnel ?? 0) + (item.Properties?.Defense?.Burn ?? 0) + (item.Properties?.Defense?.Cold ?? 0) + (item.Properties?.Defense?.Acid ?? 0) + (item.Properties?.Defense?.Electric ?? 0);
 }
 
+const DEFENSE_TYPES = [
+  'Impact',
+  'Cut',
+  'Stab',
+  'Penetration',
+  'Shrapnel',
+  'Burn',
+  'Cold',
+  'Acid',
+  'Electric'
+];
+
+function getDefenseByTypeFromItem(item) {
+  /** @type {Record<string, number>} */
+  const out = {};
+  for (const key of DEFENSE_TYPES) {
+    out[key] = item?.Properties?.Defense?.[key] ?? 0;
+  }
+  return out;
+}
+
+function averageDefenseByType(current, next) {
+  /** @type {Record<string, number>} */
+  const out = {};
+  for (const key of DEFENSE_TYPES) {
+    const a = current?.[key] ?? 0;
+    const b = next?.[key] ?? 0;
+    out[key] = a === 0 ? b : (a + b) / 2;
+  }
+  return out;
+}
+
+function scaleDefenseByType(defenseByType, multiplier) {
+  /** @type {Record<string, number>} */
+  const out = {};
+  for (const key of DEFENSE_TYPES) {
+    out[key] = (defenseByType?.[key] ?? 0) * multiplier;
+  }
+  return out;
+}
+
+export function calculateArmorDefenseByType(armorPieces, defenseEnhancers) {
+  /** @type {Record<string, number>} */
+  let defenseByType = Object.fromEntries(DEFENSE_TYPES.map(k => [k, 0]));
+
+  armorPieces.forEach(armor => {
+    if (armor == null) return;
+    defenseByType = averageDefenseByType(defenseByType, getDefenseByTypeFromItem(armor));
+  });
+
+  // Match calculateArmorDefense() scaling.
+  const multiplier = 1 + ((defenseEnhancers ?? 0) * 0.05);
+  return scaleDefenseByType(defenseByType, multiplier);
+}
+
+export function calculatePlateDefenseByType(platePieces) {
+  /** @type {Record<string, number>} */
+  let defenseByType = Object.fromEntries(DEFENSE_TYPES.map(k => [k, 0]));
+
+  platePieces.forEach(plate => {
+    if (plate == null) return;
+    defenseByType = averageDefenseByType(defenseByType, getDefenseByTypeFromItem(plate));
+  });
+
+  return defenseByType;
+}
+
+export function calculateTotalDefenseByType(armorDefenseByType, plateDefenseByType) {
+  /** @type {Record<string, number>} */
+  const out = {};
+  for (const key of DEFENSE_TYPES) {
+    out[key] = (armorDefenseByType?.[key] ?? 0) + (plateDefenseByType?.[key] ?? 0);
+  }
+  return out;
+}
+
+export function formatTopDefenseTypesShort(defenseByType, max = 3) {
+  const abbr = {
+    Impact: 'Imp',
+    Cut: 'Cut',
+    Stab: 'Stb',
+    Penetration: 'Pen',
+    Shrapnel: 'Shr',
+    Burn: 'Brn',
+    Cold: 'Cld',
+    Acid: 'Acd',
+    Electric: 'Ele'
+  };
+
+  const entries = DEFENSE_TYPES
+    .map(k => [k, defenseByType?.[k] ?? 0])
+    .filter(([, v]) => v > 0)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, Math.max(0, max));
+
+  if (entries.length === 0) return '-';
+  return entries.map(([k]) => abbr[k] ?? k.slice(0, 3)).join('/');
+}
+
 export function calculateArmorDefense(armorPieces, defenseEnhancers) {
   let totalDefense = 0;
 
@@ -613,4 +712,119 @@ export function calculateSkillBonus(scope, scopeSight, sight) {
   }
 
   return skillBonus;
+}
+
+// ========== Generic Item Preview Helpers ==========
+// These mirror the simplified "picker preview" calculations used in the loadout manager UI.
+// They intentionally do not account for skills/enhancers unless explicitly passed in.
+
+export function calculateItemTotalDamage(item) {
+  if (!item?.Properties?.Damage) return null;
+
+  return (item.Properties.Damage.Impact
+    + item.Properties.Damage.Cut
+    + item.Properties.Damage.Stab
+    + item.Properties.Damage.Penetration
+    + item.Properties.Damage.Shrapnel
+    + item.Properties.Damage.Burn
+    + item.Properties.Damage.Cold
+    + item.Properties.Damage.Acid
+    + item.Properties.Damage.Electric) || null;
+}
+
+export function calculateItemEffectiveDamagePreview(item) {
+  const totalDamage = calculateItemTotalDamage(item);
+  return totalDamage != null
+    ? totalDamage * (0.88 * 0.75 + 0.02 * 1.75)
+    : null;
+}
+
+export function calculateItemReloadSeconds(item) {
+  return item?.Properties?.UsesPerMinute != null
+    ? 60 / item.Properties.UsesPerMinute
+    : null;
+}
+
+export function calculateItemCostPerUse(item) {
+  const decay = item?.Properties?.Economy?.Decay;
+  const ammoBurn = item?.Properties?.Economy?.AmmoBurn;
+  if (decay == null) return null;
+  if (ammoBurn != null && ammoBurn < 0) return null;
+  return decay + (ammoBurn ?? 0) / 100;
+}
+
+export function calculateItemDpsPreview(item) {
+  const reload = calculateItemReloadSeconds(item);
+  const effectiveDamage = calculateItemEffectiveDamagePreview(item);
+  return effectiveDamage != null && reload != null
+    ? effectiveDamage / reload
+    : null;
+}
+
+export function calculateItemDppPreview(item) {
+  const cost = calculateItemCostPerUse(item);
+  const effectiveDamage = calculateItemEffectiveDamagePreview(item);
+  return effectiveDamage > 0 && cost != null
+    ? effectiveDamage / cost
+    : null;
+}
+
+export function calculateItemTotalUses(item) {
+  const maxTT = item?.Properties?.Economy?.MaxTT ?? null;
+  const minTT = item?.Properties?.Economy?.MinTT ?? 0;
+  const decay = item?.Properties?.Economy?.Decay ?? null;
+  return maxTT != null && decay != null
+    ? Math.floor((maxTT - minTT) / (decay / 100))
+    : null;
+}
+
+export function calculateAbsorberTotalUses(absorber, weapon) {
+  const maxTT = absorber?.Properties?.Economy?.MaxTT ?? null;
+  const minTT = absorber?.Properties?.Economy?.MinTT ?? 0;
+  const absorption = absorber?.Properties?.Economy?.Absorption;
+  const weaponDecay = weapon?.Properties?.Economy?.Decay;
+  const decay = absorption != null && weaponDecay != null
+    ? weaponDecay * absorption
+    : null;
+  return maxTT != null && decay != null
+    ? Math.floor((maxTT - minTT) / (decay / 100))
+    : null;
+}
+
+export function calculateMarkupCost(item, markupPercent) {
+  const maxTT = item?.Properties?.Economy?.MaxTT;
+  const minTT = item?.Properties?.Economy?.MinTT ?? 0;
+  if (maxTT == null || maxTT <= minTT) return null;
+  return (maxTT - minTT) * (markupPercent ?? 100) / 100;
+}
+
+export function calculateItemTotalDefense(item) {
+  if (!item?.Properties?.Defense) return null;
+  return (item.Properties.Defense.Impact ?? 0)
+    + (item.Properties.Defense.Cut ?? 0)
+    + (item.Properties.Defense.Stab ?? 0)
+    + (item.Properties.Defense.Penetration ?? 0)
+    + (item.Properties.Defense.Shrapnel ?? 0)
+    + (item.Properties.Defense.Burn ?? 0)
+    + (item.Properties.Defense.Cold ?? 0)
+    + (item.Properties.Defense.Acid ?? 0)
+    + (item.Properties.Defense.Electric ?? 0);
+}
+
+export function calculateItemMaxDefenseDecay(item) {
+  const durability = item?.Properties?.Economy?.Durability;
+  const totalDefense = calculateItemTotalDefense(item);
+  return durability && totalDefense
+    ? totalDefense * ((100000 - durability) / 100000) * 0.05
+    : null;
+}
+
+export function calculateItemTotalAbsorptionPreview(item) {
+  const maxTT = item?.Properties?.Economy?.MaxTT;
+  const minTT = item?.Properties?.Economy?.MinTT ?? 0;
+  const maxDecay = calculateItemMaxDefenseDecay(item);
+  const totalDefense = calculateItemTotalDefense(item);
+  return maxTT && maxDecay && totalDefense
+    ? totalDefense * ((maxTT - minTT) / (maxDecay / 100))
+    : null;
 }

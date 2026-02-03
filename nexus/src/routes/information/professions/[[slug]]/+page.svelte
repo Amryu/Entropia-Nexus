@@ -136,6 +136,17 @@
     }
   ];
 
+  const navTableColumns = [
+    {
+      key: 'category',
+      header: 'Category',
+      width: '110px',
+      filterPlaceholder: 'Combat',
+      getValue: (item) => item.Category?.Name,
+      format: (v) => v || '-'
+    }
+  ];
+
   // Category options for editing
   const categoryOptions = [
     { value: 'Combat', label: 'Combat' },
@@ -231,15 +242,16 @@
   breadcrumbs={breadcrumbs.map(b => ({ name: b.label, url: b.href }))}
 />
 
-<WikiPage
-  title="Professions"
-  {breadcrumbs}
-  entity={profession}
-  entityType="Profession"
-  basePath="/information/professions"
-  {navItems}
-  {navFilters}
-  {user}
+  <WikiPage
+    title="Professions"
+    {breadcrumbs}
+    entity={profession}
+    entityType="Profession"
+    basePath="/information/professions"
+    {navItems}
+    {navFilters}
+    {navTableColumns}
+    {user}
   editable={true}
   {canEdit}
   {canCreateNew}

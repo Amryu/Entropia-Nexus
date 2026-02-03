@@ -176,22 +176,48 @@
 
   // Type-specific sidebar table columns
   function getNavTableColumns(type) {
+    const typeColumn = {
+      key: 'type',
+      header: 'Type',
+      width: '60px',
+      filterPlaceholder: 'Tool',
+      getValue: (item) => item._type === 'tools' ? 'Tool' : 'Chip',
+      format: (v) => v || '-'
+    };
+
+    const intervalColumn = {
+      key: 'interval',
+      header: 'Heal Interval',
+      width: '90px',
+      filterPlaceholder: '<5',
+      getValue: (item) => getReload(item),
+      format: (v) => v != null ? `${v.toFixed(2)}s` : '-'
+    };
+
+    const usesColumn = {
+      key: 'upm',
+      header: 'Uses/Minute',
+      width: '85px',
+      filterPlaceholder: '>10',
+      getValue: (item) => item.Properties?.UsesPerMinute,
+      format: (v) => v != null ? clampDecimals(v, 0, 1) : '-'
+    };
+
+    const maxLevelColumn = {
+      key: 'maxLvl',
+      header: 'Max Level',
+      width: '80px',
+      filterPlaceholder: '>10',
+      getValue: (item) => item.Properties?.Mindforce?.Level ?? item.Properties?.Level,
+      format: (v) => v != null ? v : '-'
+    };
+
     switch (type) {
       case 'tools':
-        return [
-          { key: 'hps', header: 'HPS', width: '55px', filterPlaceholder: '>10', getValue: (item) => getHps(item), format: (v) => v != null ? v.toFixed(1) : '-' },
-          { key: 'tt', header: 'TT', width: '55px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? clampDecimals(v, 1, 2) : '-' }
-        ];
       case 'chips':
-        return [
-          { key: 'hps', header: 'HPS', width: '55px', filterPlaceholder: '>10', getValue: (item) => getHps(item), format: (v) => v != null ? v.toFixed(1) : '-' },
-          { key: 'tt', header: 'TT', width: '55px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? clampDecimals(v, 1, 2) : '-' }
-        ];
+        return [intervalColumn, usesColumn, maxLevelColumn];
       default:
-        return [
-          { key: 'cat', header: 'Type', width: '55px', filterPlaceholder: 'Tool', getValue: (item) => item._type === 'tools' ? 'Tool' : 'Chip', format: (v) => v || '-' },
-          { key: 'tt', header: 'TT', width: '55px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? clampDecimals(v, 1, 2) : '-' }
-        ];
+        return [typeColumn, intervalColumn, usesColumn, maxLevelColumn];
     }
   }
 

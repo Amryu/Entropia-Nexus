@@ -144,8 +144,8 @@
 
   // Sidebar table columns
   $: navTableColumns = [
-    { key: 'rarity', header: 'Rarity', width: '60px', filterPlaceholder: 'Rare', getValue: (item) => item.Properties?.Rarity, format: (v) => v ? v.slice(0, 4) : '-' },
-    { key: 'planet', header: 'Planet', width: '60px', filterPlaceholder: 'Cal', getValue: (item) => item.Planet?.Name, format: (v) => v ? v.slice(0, 4) : '-' }
+    { key: 'rarity', header: 'Rarity', width: '70px', filterPlaceholder: 'Rare', getValue: (item) => item.Properties?.Rarity, format: (v) => v || '-' },
+    { key: 'effects', header: 'Effect #', width: '75px', filterPlaceholder: '>0', getValue: (item) => item.Effects?.length || 0, format: (v) => v != null ? v : '-' }
   ];
 
   // Breadcrumbs

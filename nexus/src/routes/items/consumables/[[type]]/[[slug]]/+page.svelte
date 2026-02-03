@@ -181,21 +181,51 @@
 
   // Type-specific sidebar table columns
   function getNavTableColumns(type) {
+    const effectColumn = {
+      key: 'effects',
+      header: 'Effect #',
+      width: '80px',
+      filterPlaceholder: '>0',
+      getValue: (item) => item?.EffectsOnConsume?.length || 0,
+      format: (v) => v != null ? v : '-'
+    };
+
+    const typeColumn = {
+      key: 'type',
+      header: 'Type',
+      width: '70px',
+      filterPlaceholder: 'Pill',
+      getValue: (item) => item.Properties?.Type,
+      format: (v) => v || '-'
+    };
+
+    const mobColumn = {
+      key: 'mob',
+      header: 'Mob',
+      width: '100px',
+      filterPlaceholder: 'Atrox',
+      getValue: (item) => item.Mob?.Name,
+      format: (v) => v || '-'
+    };
+
+    const mobTypeColumn = {
+      key: 'mobType',
+      header: 'Mob Type',
+      width: '90px',
+      filterPlaceholder: 'Animal',
+      getValue: (item) => item.Mob?.Type,
+      format: (v) => v || '-'
+    };
+
     switch (type) {
       case 'stimulants':
-        return [
-          { key: 'type', header: 'Type', width: '60px', filterPlaceholder: 'Pill', getValue: (item) => item.Properties?.Type, format: (v) => v || '-' },
-          { key: 'value', header: 'TT', width: '55px', filterPlaceholder: '>0.1', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? clampDecimals(v, 2, 4) : '-' }
-        ];
+        return [typeColumn, effectColumn];
       case 'capsules':
-        return [
-          { key: 'mob', header: 'Mob', width: '100px', filterPlaceholder: 'Atrox', getValue: (item) => item.Mob?.Name, format: (v) => v || '-' },
-          { key: 'value', header: 'TT', width: '55px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? clampDecimals(v, 2, 4) : '-' }
-        ];
+        return [mobColumn, mobTypeColumn];
       default:
         return [
-          { key: 'category', header: 'Cat', width: '70px', filterPlaceholder: 'Stim', getValue: (item) => item._type === 'stimulants' ? 'Stim' : 'Cap', format: (v) => v || '-' },
-          { key: 'value', header: 'TT', width: '55px', filterPlaceholder: '>0.1', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? clampDecimals(v, 2, 4) : '-' }
+          { key: 'category', header: 'Type', width: '90px', filterPlaceholder: 'Stimulant', getValue: (item) => item._type === 'stimulants' ? 'Stimulant' : 'Capsule', format: (v) => v || '-' },
+          { key: 'effectOrMob', header: 'Effect # / Mob Type', width: '130px', filterPlaceholder: '>0', getValue: (item) => item._type === 'stimulants' ? (item?.EffectsOnConsume?.length || 0) : (item.Mob?.Type || item.Mob?.Name), format: (v) => v != null ? v : '-' }
         ];
     }
   }

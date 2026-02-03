@@ -130,6 +130,25 @@
     }
   ];
 
+  const navTableColumns = [
+    {
+      key: 'planet',
+      header: 'Planet',
+      width: '90px',
+      filterPlaceholder: 'Calypso',
+      getValue: (item) => item?.Planet?.Name,
+      format: (v) => v || '-'
+    },
+    {
+      key: 'category',
+      header: 'Category',
+      width: '110px',
+      filterPlaceholder: 'Trade',
+      getValue: (item) => getVendorCategory(item),
+      format: (v) => v || '-'
+    }
+  ];
+
   // Breadcrumbs
   $: breadcrumbs = [
     { label: 'Information', href: '/information' },
@@ -193,6 +212,14 @@
     return Array.from(types).sort();
   }
 
+  function getVendorCategory(v) {
+    const directCategory = v?.Category?.Name || v?.Category || v?.Properties?.Category;
+    if (directCategory) return directCategory;
+    const types = getUniqueTypes(v);
+    if (!types || types.length === 0) return null;
+    return types.length === 1 ? types[0] : 'Mixed';
+  }
+
   function hasCoordinates(v) {
     const coords = v?.Properties?.Coordinates;
     return coords && (coords.Longitude != null || coords.Latitude != null);
@@ -247,6 +274,7 @@
   basePath="/information/vendors"
   {navItems}
   {navFilters}
+  {navTableColumns}
   {user}
   editable={true}
   {canEdit}

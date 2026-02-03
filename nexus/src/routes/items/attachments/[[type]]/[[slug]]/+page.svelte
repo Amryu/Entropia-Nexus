@@ -222,43 +222,44 @@
     switch (type) {
       case 'weaponamplifiers':
         return [
-          { key: 'type', header: 'Type', width: '55px', filterPlaceholder: 'BLP', getValue: (item) => item.Properties?.Type, format: (v) => v || '-' },
-          { key: 'tt', header: 'TT', width: '55px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? clampDecimals(v, 1, 2) : '-' }
+          { key: 'damage', header: 'Damage', width: '70px', filterPlaceholder: '>5', getValue: (item) => getTotalDamage(item), format: (v) => v != null ? v.toFixed(1) : '-' },
+          { key: 'dpp', header: 'DPP', width: '55px', filterPlaceholder: '>2', getValue: (item) => getDPP(item), format: (v) => v != null ? v.toFixed(2) : '-' },
+          { key: 'eff', header: 'Efficiency', width: '80px', filterPlaceholder: '>50', getValue: (item) => item.Properties?.Economy?.Efficiency, format: (v) => v != null ? v.toFixed(1) : '-' }
         ];
       case 'weaponvisionattachments':
         return [
-          { key: 'zoom', header: 'Zoom', width: '55px', filterPlaceholder: '>2', getValue: (item) => item.Properties?.Zoom, format: (v) => v != null ? `${v.toFixed(1)}x` : '-' },
-          { key: 'tt', header: 'TT', width: '55px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? clampDecimals(v, 1, 2) : '-' }
+          { key: 'type', header: 'Type', width: '70px', filterPlaceholder: 'Scope', getValue: (item) => item.Properties?.Type, format: (v) => v || '-' },
+          { key: 'eff', header: 'Efficiency', width: '80px', filterPlaceholder: '>50', getValue: (item) => item.Properties?.Economy?.Efficiency, format: (v) => v != null ? v.toFixed(1) : '-' }
         ];
       case 'absorbers':
         return [
-          { key: 'abs', header: 'Abs', width: '55px', filterPlaceholder: '>5', getValue: (item) => item.Properties?.Economy?.Absorption, format: (v) => v != null ? `${(v * 100).toFixed(0)}%` : '-' },
-          { key: 'tt', header: 'TT', width: '55px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? clampDecimals(v, 1, 2) : '-' }
+          { key: 'abs', header: 'Absorption', width: '85px', filterPlaceholder: '>5', getValue: (item) => item.Properties?.Economy?.Absorption, format: (v) => v != null ? `${(v * 100).toFixed(0)}%` : '-' },
+          { key: 'eff', header: 'Efficiency', width: '80px', filterPlaceholder: '>50', getValue: (item) => item.Properties?.Economy?.Efficiency, format: (v) => v != null ? v.toFixed(1) : '-' }
         ];
       case 'finderamplifiers':
         return [
-          { key: 'decay', header: 'Decay', width: '55px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Economy?.Decay, format: (v) => v != null ? v.toFixed(2) : '-' },
-          { key: 'tt', header: 'TT', width: '55px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? clampDecimals(v, 1, 2) : '-' }
+          { key: 'decay', header: 'Decay', width: '70px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Economy?.Decay, format: (v) => v != null ? v.toFixed(2) : '-' },
+          { key: 'eff', header: 'Efficiency', width: '80px', filterPlaceholder: '>50', getValue: (item) => item.Properties?.Economy?.Efficiency, format: (v) => v != null ? v.toFixed(1) : '-' }
         ];
       case 'armorplatings':
         return [
-          { key: 'def', header: 'Def', width: '55px', filterPlaceholder: '>10', getValue: (item) => getTotalDefense(item), format: (v) => v != null ? v.toFixed(1) : '-' },
-          { key: 'tt', header: 'TT', width: '55px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? clampDecimals(v, 1, 2) : '-' }
+          { key: 'def', header: 'Total Defense', width: '95px', filterPlaceholder: '>10', getValue: (item) => getTotalDefense(item), format: (v) => v != null ? v.toFixed(1) : '-' },
+          { key: 'dur', header: 'Durability', width: '85px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Economy?.Durability, format: (v) => v != null ? v : '-' }
         ];
       case 'enhancers':
         return [
-          { key: 'tool', header: 'Tool', width: '55px', filterPlaceholder: 'Weapon', getValue: (item) => item.Properties?.Tool, format: (v) => v ? v.slice(0, 6) : '-' },
-          { key: 'type', header: 'Type', width: '55px', filterPlaceholder: 'Damage', getValue: (item) => item.Properties?.Type, format: (v) => v ? v.slice(0, 6) : '-' }
+          { key: 'type', header: 'Type', width: '80px', filterPlaceholder: 'Damage', getValue: (item) => item.Properties?.Type, format: (v) => v || '-' },
+          { key: 'tier', header: 'Tier', width: '55px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Tier ?? item.Tier, format: (v) => v != null ? v : '-' }
         ];
       case 'mindforceimplants':
         return [
-          { key: 'abs', header: 'Abs', width: '55px', filterPlaceholder: '>5', getValue: (item) => item.Properties?.Economy?.Absorption, format: (v) => v != null ? `${(v * 100).toFixed(0)}%` : '-' },
-          { key: 'tt', header: 'TT', width: '55px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? clampDecimals(v, 1, 2) : '-' }
+          { key: 'abs', header: 'Absorption', width: '85px', filterPlaceholder: '>5', getValue: (item) => item.Properties?.Economy?.Absorption, format: (v) => v != null ? `${(v * 100).toFixed(0)}%` : '-' },
+          { key: 'lvl', header: 'Level', width: '70px', filterPlaceholder: '>10', getValue: (item) => item.Properties?.Mindforce?.Level ?? item.Properties?.Level, format: (v) => v != null ? v : '-' }
         ];
       default:
         return [
-          { key: 'cat', header: 'Cat', width: '70px', filterPlaceholder: 'Amp', getValue: (item) => getTypeName(item._type || additional.type).slice(0, 8), format: (v) => v || '-' },
-          { key: 'tt', header: 'TT', width: '55px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? clampDecimals(v, 1, 2) : '-' }
+          { key: 'cat', header: 'Type', width: '70px', filterPlaceholder: 'Amp', getValue: (item) => getTypeName(item._type || additional.type), format: (v) => v || '-' },
+          { key: 'eff', header: 'Efficiency', width: '80px', filterPlaceholder: '>50', getValue: (item) => item.Properties?.Economy?.Efficiency, format: (v) => v != null ? v.toFixed(1) : '-' }
         ];
     }
   }

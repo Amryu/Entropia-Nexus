@@ -166,6 +166,51 @@
     }
   ];
 
+  function isCat4Mob(item) {
+    return item?.Species?.Properties?.CodexType === 'MobLooter';
+  }
+
+  const navTableColumns = [
+    {
+      key: 'species',
+      header: 'Species',
+      width: '100px',
+      filterPlaceholder: 'Atrox',
+      getValue: (item) => item.Species?.Name,
+      format: (v) => v || '-'
+    },
+    {
+      key: 'level',
+      header: 'Level Range',
+      width: '90px',
+      filterPlaceholder: '>10',
+      getValue: (item) => getLevelRange(item)?.max ?? null,
+      format: (_v, item) => {
+        const range = getLevelRange(item);
+        return range ? `${range.min}-${range.max}` : '-';
+      }
+    },
+    {
+      key: 'hp',
+      header: 'HP Range',
+      width: '80px',
+      filterPlaceholder: '>100',
+      getValue: (item) => getHealthRange(item)?.max ?? null,
+      format: (_v, item) => {
+        const range = getHealthRange(item);
+        return range ? `${range.min}-${range.max}` : '-';
+      }
+    },
+    {
+      key: 'cat4',
+      header: 'Cat 4',
+      width: '55px',
+      filterPlaceholder: 'Yes',
+      getValue: (item) => isCat4Mob(item) ? 1 : 0,
+      format: (v) => v ? 'Yes' : 'No'
+    }
+  ];
+
   // Breadcrumbs
   $: breadcrumbs = [
     { label: 'Information', href: '/information' },
@@ -344,16 +389,17 @@
   breadcrumbs={breadcrumbs.map(b => ({ name: b.label, url: b.href }))}
 />
 
-<WikiPage
-  title="Mobs"
-  {breadcrumbs}
-  entity={activeMob}
-  entityType="Mob"
-  basePath="/information/mobs"
-  {navItems}
-  {navFilters}
-  {user}
-  editable={true}
+  <WikiPage
+    title="Mobs"
+    {breadcrumbs}
+    entity={activeMob}
+    entityType="Mob"
+    basePath="/information/mobs"
+    {navItems}
+    {navFilters}
+    {navTableColumns}
+    {user}
+    editable={true}
   {canEdit}
   {canCreateNew}
   {userPendingCreates}

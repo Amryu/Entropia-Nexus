@@ -232,48 +232,80 @@
 
   // Type-specific sidebar table columns
   function getNavTableColumns(type) {
+    const usesColumn = {
+      key: 'upm',
+      header: 'Uses/Minute',
+      width: '55px',
+      filterPlaceholder: '>10',
+      getValue: (item) => item.Properties?.UsesPerMinute,
+      format: (v) => v != null ? clampDecimals(v, 0, 1) : '-'
+    };
+
+    const decayColumn = {
+      key: 'decay',
+      header: 'Decay',
+      width: '55px',
+      filterPlaceholder: '<0.5',
+      getValue: (item) => item.Properties?.Economy?.Decay,
+      format: (v) => v != null ? v.toFixed(2) : '-'
+    };
+
+    const typeColumn = {
+      key: 'toolType',
+      header: 'Tool Type',
+      width: '70px',
+      filterPlaceholder: 'Finder',
+      getValue: (item) => getTypeName(item._type || type),
+      format: (v) => v || '-'
+    };
+
+    const rangeColumn = {
+      key: 'range',
+      header: 'Range',
+      width: '55px',
+      filterPlaceholder: '>10',
+      getValue: (item) => item.Properties?.Range,
+      format: (v) => v != null ? v : '-'
+    };
+
+    const depthColumn = {
+      key: 'depth',
+      header: 'Depth',
+      width: '55px',
+      filterPlaceholder: '>100',
+      getValue: (item) => item.Properties?.Depth,
+      format: (v) => v != null ? v : '-'
+    };
+
+    const avgDepthColumn = {
+      ...depthColumn,
+      key: 'avgDepth',
+      header: 'Average Depth'
+    };
+
+    const costColumn = {
+      key: 'cost',
+      header: 'Cost per Use',
+      width: '90px',
+      filterPlaceholder: '<1',
+      getValue: (item) => getCost(item),
+      format: (v) => v != null ? v.toFixed(2) : '-'
+    };
+
     switch (type) {
-      case 'refiners':
-        return [
-          { key: 'tt', header: 'TT', width: '60px', filterPlaceholder: '>10', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? clampDecimals(v, 0, 2) : '-' },
-          { key: 'decay', header: 'Dec', width: '55px', filterPlaceholder: '<0.5', getValue: (item) => item.Properties?.Economy?.Decay, format: (v) => v != null ? v.toFixed(2) : '-' }
-        ];
       case 'scanners':
-        return [
-          { key: 'range', header: 'Rng', width: '50px', filterPlaceholder: '>50', getValue: (item) => item.Properties?.Range, format: (v) => v != null ? v : '-' },
-          { key: 'upm', header: 'U/m', width: '50px', filterPlaceholder: '>10', getValue: (item) => item.Properties?.UsesPerMinute, format: (v) => v != null ? clampDecimals(v, 0, 1) : '-' }
-        ];
+        return [usesColumn, decayColumn, rangeColumn, depthColumn];
       case 'finders':
-        return [
-          { key: 'depth', header: 'Dpt', width: '50px', filterPlaceholder: '>200', getValue: (item) => item.Properties?.Depth, format: (v) => v != null ? v : '-' },
-          { key: 'range', header: 'Rng', width: '50px', filterPlaceholder: '>50', getValue: (item) => item.Properties?.Range, format: (v) => v != null ? v : '-' }
-        ];
       case 'excavators':
-        return [
-          { key: 'eff', header: 'Eff', width: '50px', filterPlaceholder: '>50', getValue: (item) => item.Properties?.Efficiency, format: (v) => v != null ? v : '-' },
-          { key: 'effPed', header: 'E/P', width: '55px', filterPlaceholder: '>100', getValue: (item) => calcEfficiencyPerPed(item), format: (v) => v != null ? v.toFixed(1) : '-' }
-        ];
+        return [usesColumn, decayColumn, avgDepthColumn, rangeColumn];
       case 'teleportationchips':
-        return [
-          { key: 'range', header: 'Rng', width: '55px', filterPlaceholder: '>5', getValue: (item) => item.Properties?.Range, format: (v) => v != null ? `${v}km` : '-' },
-          { key: 'level', header: 'Lvl', width: '45px', filterPlaceholder: '>10', getValue: (item) => item.Properties?.Mindforce?.Level, format: (v) => v != null ? v : '-' }
-        ];
       case 'effectchips':
-        return [
-          { key: 'level', header: 'Lvl', width: '45px', filterPlaceholder: '>10', getValue: (item) => item.Properties?.Mindforce?.Level, format: (v) => v != null ? v : '-' },
-          { key: 'range', header: 'Rng', width: '50px', filterPlaceholder: '>10', getValue: (item) => item.Properties?.Range, format: (v) => v != null ? v : '-' }
-        ];
+        return [usesColumn, decayColumn, costColumn, rangeColumn];
+      case 'refiners':
       case 'misctools':
-        return [
-          { key: 'tt', header: 'TT', width: '60px', filterPlaceholder: '>10', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? clampDecimals(v, 0, 2) : '-' },
-          { key: 'decay', header: 'Dec', width: '55px', filterPlaceholder: '<0.5', getValue: (item) => item.Properties?.Economy?.Decay, format: (v) => v != null ? v.toFixed(2) : '-' }
-        ];
+        return [usesColumn, decayColumn];
       default:
-        // All tools view - show TT and weight as generic columns
-        return [
-          { key: 'tt', header: 'TT', width: '60px', filterPlaceholder: '>10', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? clampDecimals(v, 0, 2) : '-' },
-          { key: 'weight', header: 'Wt', width: '50px', filterPlaceholder: '<5', getValue: (item) => item.Properties?.Weight, format: (v) => v != null ? clampDecimals(v, 1, 2) : '-' }
-        ];
+        return [typeColumn, usesColumn, decayColumn];
     }
   }
 

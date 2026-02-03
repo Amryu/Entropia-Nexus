@@ -132,8 +132,9 @@
 
   // Sidebar table columns
   $: navTableColumns = [
-    { key: 'type', header: 'Type', width: '55px', filterPlaceholder: 'Land', getValue: (item) => item.Properties?.Type, format: (v) => v ? v.slice(0, 4) : '-' },
-    { key: 'speed', header: 'Speed', width: '60px', filterPlaceholder: '>50', getValue: (item) => item.Properties?.MaxSpeed, format: (v) => v != null ? v.toFixed(0) : '-' }
+    { key: 'type', header: 'Type', width: '60px', filterPlaceholder: 'Land', getValue: (item) => item.Properties?.Type, format: (v) => v || '-' },
+    { key: 'speed', header: 'Speed', width: '60px', filterPlaceholder: '>50', getValue: (item) => item.Properties?.MaxSpeed, format: (v) => v != null ? v.toFixed(0) : '-' },
+    { key: 'fuel', header: 'Fuel Usage', width: '80px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Economy?.FuelConsumptionActive ?? item.Properties?.Economy?.FuelConsumptionPassive, format: (v) => v != null ? v.toFixed(2) : '-' }
   ];
 
   // Breadcrumbs

@@ -208,18 +208,28 @@
   // Sidebar table columns for blueprints
   const navTableColumns = [
     {
+      key: 'type',
+      header: 'Type',
+      width: '80px',
+      filterPlaceholder: 'Weapon',
+      getValue: (item) => item.Properties?.Type,
+      format: (v) => v || '-'
+    },
+    {
+      key: 'profession',
+      header: 'Profession',
+      width: '95px',
+      filterPlaceholder: 'Weapons',
+      getValue: (item) => item.Profession?.Name,
+      format: (v) => v || '-'
+    },
+    {
       key: 'level',
-      header: 'Lvl',
-      width: '40px',
+      header: 'Level',
+      width: '65px',
       filterPlaceholder: '>10',
       getValue: (item) => item.Properties?.Level,
       format: (v) => v != null ? v : '-'
-    },
-    {
-      key: 'type',
-      header: 'Type',
-      width: '70px',
-      getValue: (item) => item.Properties?.Type || '-'
     }
   ];
 

@@ -220,19 +220,19 @@
   const navTableColumns = [
     {
       key: 'defense',
-      header: 'Def',
-      width: '55px',
+      header: 'Total Defense',
+      width: '95px',
       filterPlaceholder: '>50',
       getValue: (item) => getTotalDefense(item),
       format: (v) => v != null ? v.toFixed(1) : '-'
     },
     {
-      key: 'absorption',
-      header: 'Abs',
-      width: '60px',
+      key: 'durability',
+      header: 'Durability',
+      width: '85px',
       filterPlaceholder: '>1000',
-      getValue: (item) => getTotalAbsorption(item),
-      format: (v) => v != null ? Math.round(v) : '-'
+      getValue: (item) => item.Properties?.Economy?.Durability,
+      format: (v) => v != null ? v : '-'
     }
   ];
 

@@ -1,181 +1,5 @@
-﻿
-  .loadout-layout {
-    position: relative;
-    width: 100%;
-  }
-
-  .loadout-layout::after {
-    content: '';
-    display: block;
-    clear: both;
-  }
-
-  .wiki-infobox-float.loadout-infobox {
-    float: right;
-    width: 300px;
-    margin: 0 0 0 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    background-color: var(--secondary-color);
-    border: 1px solid var(--border-color, #555);
-    border-radius: 8px;
-    padding: 16px;
-  }
-
-  .infobox-header {
-    text-align: center;
-    padding-bottom: 12px;
-    border-bottom: 1px solid var(--border-color, #555);
-  }
-
-  .infobox-title {
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--text-color);
-  }
-
-  .infobox-subtitle {
-    font-size: 12px;
-    color: var(--text-muted, #999);
-    margin-top: 4px;
-  }
-
-  .stats-section {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-
-  .stats-section .section-title {
-    font-size: 12px;
-    text-transform: uppercase;
-    letter-spacing: 0.4px;
-    color: var(--text-muted, #999);
-    margin: 6px 0 4px 0;
-  }
-
-  .stat-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    gap: 8px;
-    font-size: 12px;
-    color: var(--text-color);
-  }
-
-  .stat-label {
-    color: var(--text-muted, #999);
-  }
-
-  .stat-value {
-    font-weight: 600;
-    text-align: right;
-  }
-
-  .stats-empty {
-    padding: 12px;
-    text-align: center;
-    color: var(--text-muted, #999);
-    font-size: 12px;
-  }
-
   .loadout-article .article-title {
     margin-top: 0;
-  }
-
-  .details-grid,
-  .details-subgrid {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 8px;
-  }
-
-  .details-subgrid {
-    margin-top: 12px;
-  }
-
-  .detail-row {
-    display: flex;
-    justify-content: space-between;
-    gap: 12px;
-    font-size: 13px;
-    border-bottom: 1px solid var(--border-color, #555);
-    padding-bottom: 6px;
-  }
-
-  .detail-label {
-    color: var(--text-muted, #999);
-  }
-
-  .detail-value {
-    color: var(--text-color);
-    text-align: right;
-  }
-
-  .detail-muted {
-    display: block;
-    color: var(--text-muted, #999);
-    font-size: 11px;
-  }
-
-  .share-header-actions .action-btn {
-    background-color: var(--accent-color, #4a9eff);
-    border: none;
-    border-radius: 6px;
-    color: white;
-    font-size: 13px;
-    padding: 6px 12px;
-    cursor: pointer;
-  }
-
-  .share-header-actions .action-btn:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .share-sidebar {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    padding: 12px 8px;
-  }
-
-  .share-sidebar.mobile {
-    padding: 8px 4px;
-  }
-
-  .sidebar-title {
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--text-color);
-  }
-
-  .sidebar-meta {
-    font-size: 12px;
-    color: var(--text-muted, #999);
-  }
-
-  .sidebar-link {
-    display: inline-flex;
-    align-items: center;
-    padding: 6px 8px;
-    border: 1px dashed var(--border-color, #555);
-    border-radius: 6px;
-    font-size: 12px;
-    color: var(--text-color);
-    text-decoration: none;
-  }
-
-  .sidebar-link:hover {
-    border-color: var(--accent-color, #4a9eff);
-    color: var(--accent-color, #4a9eff);
-  }
-
-  .sidebar-hint {
-    font-size: 12px;
-    color: var(--text-muted, #999);
-    margin: 0;
   }
 
   .share-status {
@@ -198,20 +22,91 @@
     color: var(--success-color, #4ade80);
   }
 
-  @media (max-width: 900px) {
-    .wiki-infobox-float.loadout-infobox {
-      float: none;
-      width: 100%;
-      margin: 0 0 12px 0;
-    }
-
-    .detail-row {
-      flex-direction: column;
-      align-items: flex-start;
-    }
-
-    .detail-value {
-      text-align: left;
-    }
+  .sidebar-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
   }
 
+  .sidebar-badge {
+    padding: 2px 8px;
+    border-radius: 999px;
+    background-color: var(--secondary-color);
+    border: 1px solid var(--border-color, #555);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--text-color);
+  }
+
+  .sidebar-badge.readonly {
+    background-color: var(--disabled-color, #333);
+    border-color: var(--border-color, #555);
+  }
+
+  .sidebar-actions.share-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .sidebar-status.strong {
+    color: var(--text-color);
+  }
+
+  .sidebar-status.code {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-color);
+  }
+
+  .loadout-readonly .link-slot {
+    display: inline-block;
+    border: 1px solid var(--border-color, #555);
+    padding: 6px 10px;
+    text-align: left;
+    background-color: var(--bg-color, var(--secondary-color));
+    color: var(--text-color);
+    border-radius: 6px;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+    line-height: normal;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  .loadout-readonly .read-only-slot {
+    display: inline-block;
+    border: 1px solid var(--border-color, #555);
+    padding: 6px 10px;
+    text-align: left;
+    background-color: var(--bg-color, var(--secondary-color));
+    color: var(--text-color);
+    border-radius: 6px;
+    cursor: default;
+    line-height: normal;
+    min-width: 0;
+    box-sizing: border-box;
+  }
+
+  .loadout-readonly .link-slot:hover {
+    background-color: var(--hover-color);
+    border-color: var(--accent-color, #4a9eff);
+  }
+
+  .loadout-readonly .item-link {
+    color: var(--text-color);
+    text-decoration: none;
+  }
+
+  .loadout-readonly .item-link:hover {
+    color: var(--accent-color, #4a9eff);
+    text-decoration: underline;
+  }
+
+  .loadout-readonly input[readonly] {
+    cursor: default;
+  }
+
+  :global(.loadout-readonly .data-section) {
+    margin-bottom: 0;
+  }

@@ -745,6 +745,12 @@
     return ctx.measureText(String(text)).width;
   }
 
+  function parseColumnWidth(width) {
+    if (!width) return null;
+    const match = String(width).trim().match(/^(\d+(?:\.\d+)?)px$/i);
+    return match ? Number(match[1]) : null;
+  }
+
   // Calculate column widths based on initial data (only needed for expanded table view)
   function calculateColumnWidths() {
     if (widthsCalculated || !expanded || !items || items.length === 0) return;
@@ -754,13 +760,15 @@
     const padding = 16; // Extra padding for cell content
     const minWidth = 40; // Minimum column width
     const maxWidth = 120; // Maximum column width
+    const sourceItems = visibleItems?.length ? visibleItems : [];
+    if (sourceItems.length === 0) return;
 
     for (const column of activeColumns) {
       // Start with header width
       let maxTextWidth = measureTextWidth(column.header, headerFont);
 
       // Measure all values in the column
-      for (const item of items) {
+      for (const item of sourceItems) {
         const value = formatCell(item, column);
         const textWidth = measureTextWidth(value, cellFont);
         if (textWidth > maxTextWidth) {
@@ -768,8 +776,11 @@
         }
       }
 
+      const explicitMinWidth = parseColumnWidth(column.width);
+      const effectiveMin = Math.max(minWidth, explicitMinWidth ?? 0);
+      const effectiveMax = Math.max(maxWidth, explicitMinWidth ?? 0);
       // Clamp width between min and max, add padding
-      const finalWidth = Math.max(minWidth, Math.min(maxWidth, Math.ceil(maxTextWidth + padding)));
+      const finalWidth = Math.max(effectiveMin, Math.min(effectiveMax, Math.ceil(maxTextWidth + padding)));
       calculatedColumnWidths[column.key] = `${finalWidth}px`;
     }
 
