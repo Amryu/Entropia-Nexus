@@ -431,6 +431,8 @@
   entityType={getEntityType(additional.type)}
   entity={attachment}
   imageUrl={entityImageUrl}
+  sidebarColumns={navTableColumns}
+  sidebarEntity={attachment}
   {canonicalUrl}
   breadcrumbs={breadcrumbs.map(b => ({ name: b.label, url: b.href }))}
 />

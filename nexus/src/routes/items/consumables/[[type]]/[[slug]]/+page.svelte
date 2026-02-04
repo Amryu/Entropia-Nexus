@@ -313,6 +313,8 @@
   entityType={getEntityType(additional.type)}
   entity={consumable}
   imageUrl={entityImageUrl}
+  sidebarColumns={navTableColumns}
+  sidebarEntity={consumable}
   {canonicalUrl}
   breadcrumbs={breadcrumbs.map(b => ({ name: b.label, url: b.href }))}
 />

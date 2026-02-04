@@ -187,6 +187,8 @@
   entityType="material"
   entity={activeMaterial}
   imageUrl={entityImageUrl}
+  sidebarColumns={navTableColumns}
+  sidebarEntity={activeMaterial}
   {canonicalUrl}
   breadcrumbs={breadcrumbs.map(b => ({ name: b.label, url: b.href }))}
 />

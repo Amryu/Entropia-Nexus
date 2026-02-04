@@ -534,6 +534,8 @@
   description={seoDescription}
   entityType="weapon"
   entity={weapon}
+  sidebarColumns={navTableColumns}
+  sidebarEntity={weapon}
   {canonicalUrl}
   breadcrumbs={breadcrumbs.map(b => ({ name: b.label, url: b.href }))}
 />

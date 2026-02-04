@@ -202,6 +202,8 @@
   entityType="Vehicle"
   entity={activeVehicle}
   imageUrl={entityImageUrl}
+  sidebarColumns={navTableColumns}
+  sidebarEntity={activeVehicle}
   {canonicalUrl}
   breadcrumbs={breadcrumbs.map(b => ({ name: b.label, url: b.href }))}
 />

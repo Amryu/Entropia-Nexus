@@ -33,6 +33,15 @@
   /** @type {string} Twitter handle (without @) */
   export let twitterHandle = '';
 
+  /** @type {Array|null} Sidebar table columns for building social summary */
+  export let sidebarColumns = null;
+
+  /** @type {object|null} Sidebar entity for building social summary */
+  export let sidebarEntity = null;
+
+  /** @type {string} Optional override for Open Graph description */
+  export let ogDescription = '';
+
   // Computed values
   $: pageTitle = title ? `${title} | ${siteName}` : siteName;
 
@@ -41,6 +50,90 @@
     : '';
 
   $: ogImage = imageUrl || '/default-og-image.png';
+
+  const MAX_OG_DESCRIPTION = 200;
+
+  function clampText(text, limit = MAX_OG_DESCRIPTION) {
+    if (!text) return '';
+    const cleaned = `${text}`.replace(/\s+/g, ' ').trim();
+    if (cleaned.length <= limit) return cleaned;
+    return cleaned.substring(0, limit - 1).trimEnd() + '…';
+  }
+
+  function getValueByPath(obj, path) {
+    if (!obj || !path) return undefined;
+    const parts = `${path}`.split('.');
+    let current = obj;
+    for (const part of parts) {
+      if (current == null) return undefined;
+      current = current[part];
+    }
+    return current;
+  }
+
+  function normalizeFactValue(value) {
+    if (value == null) return null;
+    if (typeof value === 'string') {
+      const trimmed = value.replace(/\s+/g, ' ').trim();
+      if (!trimmed || trimmed === '-') return null;
+      return trimmed;
+    }
+    if (Array.isArray(value)) {
+      const items = value.map(v => normalizeFactValue(v)).filter(Boolean);
+      return items.length ? items.join(', ') : null;
+    }
+    if (typeof value === 'number') {
+      if (Number.isNaN(value)) return null;
+      return `${value}`;
+    }
+    if (typeof value === 'boolean') {
+      return value ? 'Yes' : 'No';
+    }
+    return null;
+  }
+
+  function buildSidebarFacts(columns, entity, limit = 4) {
+    if (!columns || !Array.isArray(columns) || !entity) return [];
+    const facts = [];
+    for (const column of columns) {
+      if (!column || !column.header) continue;
+      let rawValue = null;
+      try {
+        if (typeof column.getValue === 'function') {
+          rawValue = column.getValue(entity);
+        } else if (column.key) {
+          rawValue = getValueByPath(entity, column.key);
+        }
+      } catch (err) {
+        rawValue = null;
+      }
+
+      let formatted = rawValue;
+      if (typeof column.format === 'function') {
+        try {
+          formatted = column.format(rawValue);
+        } catch (err) {
+          formatted = rawValue;
+        }
+      }
+
+      const normalized = normalizeFactValue(formatted);
+      if (!normalized) continue;
+      facts.push({ label: column.header, value: normalized });
+      if (facts.length >= limit) break;
+    }
+    return facts;
+  }
+
+  $: sidebarFacts = buildSidebarFacts(sidebarColumns, sidebarEntity || entity);
+  $: sidebarFactsText = sidebarFacts.map(fact => `${fact.label}: ${fact.value}`).join(' · ');
+
+  $: computedOgDescription = clampText(
+    ogDescription ||
+      (sidebarFactsText
+        ? (description ? `${sidebarFactsText} — ${description}` : `${title} — ${sidebarFactsText}`)
+        : truncatedDescription)
+  );
 
   // Generate JSON-LD structured data
   $: jsonLd = generateJsonLd(entity, entityType, breadcrumbs, canonicalUrl);
@@ -172,7 +265,7 @@
   <meta property="og:type" content={entity ? 'article' : 'website'} />
   <meta property="og:url" content={canonicalUrl} />
   <meta property="og:title" content={pageTitle} />
-  <meta property="og:description" content={truncatedDescription} />
+  <meta property="og:description" content={computedOgDescription} />
   <meta property="og:image" content={ogImage} />
   <meta property="og:site_name" content={siteName} />
 
@@ -180,7 +273,7 @@
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:url" content={canonicalUrl} />
   <meta name="twitter:title" content={pageTitle} />
-  <meta name="twitter:description" content={truncatedDescription} />
+  <meta name="twitter:description" content={computedOgDescription} />
   <meta name="twitter:image" content={ogImage} />
   {#if twitterHandle}
     <meta name="twitter:site" content="@{twitterHandle}" />

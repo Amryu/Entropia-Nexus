@@ -385,6 +385,8 @@
   entityType="mob"
   entity={activeMob}
   imageUrl={entityImageUrl}
+  sidebarColumns={navTableColumns}
+  sidebarEntity={activeMob}
   {canonicalUrl}
   breadcrumbs={breadcrumbs.map(b => ({ name: b.label, url: b.href }))}
 />

@@ -358,6 +358,8 @@
   entityType={getEntityType(additional.type)}
   entity={medtool}
   imageUrl={entityImageUrl}
+  sidebarColumns={navTableColumns}
+  sidebarEntity={medtool}
   {canonicalUrl}
   breadcrumbs={breadcrumbs.map(b => ({ name: b.label, url: b.href }))}
 />

@@ -211,6 +211,8 @@
   entityType="Strongbox"
   entity={activeStrongbox}
   imageUrl={entityImageUrl}
+  sidebarColumns={navTableColumns}
+  sidebarEntity={activeStrongbox}
   {canonicalUrl}
   breadcrumbs={breadcrumbs.map(b => ({ name: b.label, url: b.href }))}
 />
