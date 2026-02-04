@@ -220,6 +220,10 @@ export function getMainPlanetName(planetName) {
 }
 
 export function getItemLink(item, subtype = null) {
+  if (!item) {
+    return null;
+  }
+
   if (item.Links?.$ItemUrl != null) {
     return item.Links.$ItemUrl;
   }
@@ -228,7 +232,14 @@ export function getItemLink(item, subtype = null) {
     return null;
   }
 
-  return getTypeLink(item.Name, item.Properties.Type, subtype);
+  const name = item.Name;
+  const type = item.Properties?.Type;
+
+  if (!name || !type) {
+    return null;
+  }
+
+  return getTypeLink(name, type, subtype);
 }
 
 export function getTypeLink(name, type, subType = null) {
