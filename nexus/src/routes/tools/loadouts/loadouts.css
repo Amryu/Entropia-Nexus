@@ -1249,6 +1249,8 @@
 
   .select-button {
     width: 100%;
+    min-width: 0;
+    display: block;
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
@@ -1262,7 +1264,7 @@
   }
 
   .control-row .select-button {
-    flex: 1 1 auto;
+    flex: 1 1 0;
   }
 
   .markup-field {
@@ -2107,6 +2109,14 @@
       width: calc(100% - 12px);
       margin: 0 6px 10px;
       box-sizing: border-box;
+    }
+
+    .mobile-panel .control-row {
+      min-width: 0;
+    }
+
+    .mobile-panel .select-button {
+      min-width: 0;
     }
 
     .compare-toolbar {
