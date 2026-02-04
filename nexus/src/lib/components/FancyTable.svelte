@@ -10,7 +10,7 @@
    *   { key: string, header: string, sortable?: boolean, searchable?: boolean, width?: string,
    *     widthBasis?: 'content' | 'header' | 'both', formatter?: (value, row) => string,
    *     cellClass?: (value, row) => string, hideOnMobile?: boolean, mobileWidth?: string,
-   *     main?: boolean, rawValue?: boolean }
+   *     main?: boolean, rawValue?: boolean, sortValue?: (row) => any, sortFn?: (a, b) => number }
    *   - main: If true, column grows to fill available space using minmax(width, 1fr)
    *   - rawValue: If true, renders value as text instead of HTML (allows reactive content)
    * - data: Array of row objects (for non-lazy mode)
@@ -126,9 +126,15 @@
 
     // Apply sorting
     if (sortColumn) {
+      const columnDef = columns.find(col => col.key === sortColumn);
       result.sort((a, b) => {
-        const aVal = a[sortColumn];
-        const bVal = b[sortColumn];
+        if (columnDef?.sortFn) {
+          const cmp = columnDef.sortFn(a, b);
+          return sortOrder === 'ASC' ? cmp : -cmp;
+        }
+
+        const aVal = columnDef?.sortValue ? columnDef.sortValue(a) : a[sortColumn];
+        const bVal = columnDef?.sortValue ? columnDef.sortValue(b) : b[sortColumn];
 
         // Handle nulls
         if (aVal == null && bVal == null) return 0;

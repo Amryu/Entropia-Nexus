@@ -88,6 +88,7 @@
       header: 'Frequency',
       width: '120px',
       sortable: true,
+      sortValue: (row) => row.frequencyOrder,
       formatter: (value, row) => `<span style="display: inline-block; padding: 2px 8px; font-size: 11px; border-radius: 4px; font-weight: 500; ${row.frequencyStyle}">${value}</span>`
     }
   ];
