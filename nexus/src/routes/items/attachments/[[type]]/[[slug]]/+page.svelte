@@ -10,7 +10,7 @@
   import '$lib/style.css';
   import { page } from '$app/stores';
   import { onMount, onDestroy } from 'svelte';
-  import { clampDecimals, encodeURIComponentSafe, getTypeLink } from '$lib/util';
+  import { clampDecimals, encodeURIComponentSafe, getTypeLink, getLatestPendingUpdate } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
 
   // Wiki components
@@ -57,6 +57,10 @@
   $: userPendingCreates = data.userPendingCreates || [];
   $: userPendingUpdates = data.userPendingUpdates || [];
   $: effectsList = data.effects || [];
+  $: attachmentEntityId = attachment?.Id ?? attachment?.ItemId;
+  $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, attachmentEntityId);
+  $: resolvedPendingChange = userPendingUpdate || pendingChange;
+  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user.isAdmin));
 
   // Permission check - verified users and admins can edit
   // Enhancers are generated in the database and should not be editable
@@ -185,12 +189,19 @@
   $: if (user) {
     const entityType = getEntityType(additional.type);
     const emptyEntity = getEmptyEntity(additional.type);
-    initEditState(attachment || emptyEntity, entityType, isCreateMode, existingChange);
+    const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
+    initEditState(attachment || emptyEntity, entityType, isCreateMode, editChange);
   }
 
   // Set pending change when it exists
-  $: if (pendingChange) {
-    setExistingPendingChange(pendingChange);
+  $: if (resolvedPendingChange) {
+    setExistingPendingChange(resolvedPendingChange);
+    if (user && (resolvedPendingChange.author_id === user.id || user.isAdmin)) {
+      setViewingPendingChange(true);
+    }
+  } else {
+    setExistingPendingChange(null);
+    setViewingPendingChange(false);
   }
 
   // Active entity: in edit mode use currentEntity, when viewing pending use its data, otherwise use original
@@ -429,7 +440,7 @@
   title={attachment?.Name || `${getTypeName(additional.type)}s`}
   description={seoDescription}
   entityType={getEntityType(additional.type)}
-  entity={attachment}
+  entity={activeEntity}
   imageUrl={entityImageUrl}
   sidebarColumns={navTableColumns}
   sidebarEntity={attachment}
@@ -440,7 +451,7 @@
 <WikiPage
   title="Attachments"
   {breadcrumbs}
-  entity={attachment}
+  entity={activeEntity}
   entityType={getEntityType(additional.type)}
   basePath="/items/attachments/{additional.type || ''}"
   {navItems}

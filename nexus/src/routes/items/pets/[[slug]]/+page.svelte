@@ -10,7 +10,7 @@
   import '$lib/style.css';
   import { page } from '$app/stores';
   import { onMount, onDestroy } from 'svelte';
-  import { clampDecimals, encodeURIComponentSafe, getTypeLink } from '$lib/util';
+  import { clampDecimals, encodeURIComponentSafe, getTypeLink, getLatestPendingUpdate } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
 
   // Wiki components
@@ -53,6 +53,10 @@
   $: userPendingUpdates = data.userPendingUpdates || [];
   $: planetsList = data.planets || [];
   $: effectsList = data.effects || [];
+  $: petEntityId = pet?.Id ?? pet?.ItemId;
+  $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, petEntityId);
+  $: resolvedPendingChange = userPendingUpdate || pendingChange;
+  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user.isAdmin));
 
   // Can edit if user is verified or admin
   $: canEdit = user?.verified || user?.isAdmin;
@@ -83,15 +87,16 @@
   $: if (user) {
     const entity = isCreateMode ? (existingChange?.data || emptyEntity) : pet;
     if (entity) {
-      initEditState(entity, 'Pet', isCreateMode, existingChange);
+      const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
+      initEditState(entity, 'Pet', isCreateMode, editChange);
     }
   }
 
   // Set existing pending change when data loads
-  $: if (pendingChange) {
-    setExistingPendingChange(pendingChange);
+  $: if (resolvedPendingChange) {
+    setExistingPendingChange(resolvedPendingChange);
     // Auto-enable viewing pending change for author or admin
-    if (user && (pendingChange.author_id === user.id || user.isAdmin)) {
+    if (user && (resolvedPendingChange.author_id === user.id || user.isAdmin)) {
       setViewingPendingChange(true);
     }
   } else {
@@ -237,7 +242,7 @@
 <WikiPage
   title="Pets"
   {breadcrumbs}
-  entity={pet}
+  entity={activeEntity}
   entityType="Pet"
   basePath="/items/pets"
   {navItems}

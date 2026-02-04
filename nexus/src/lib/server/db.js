@@ -210,6 +210,22 @@ export async function getChangeByEntityId(id) {
   return rows[0];
 }
 
+export async function getOpenChangeByEntityId(entity, id, type = null) {
+  const conditions = [
+    `c.entity = $1`,
+    `c.state IN ('Draft', 'Pending')`,
+    `c.data->>'Id' = $2`
+  ];
+  const values = [entity, String(id)];
+  if (type) {
+    conditions.push(`c.type = $3`);
+    values.push(type);
+  }
+  const query = `SELECT * FROM changes c WHERE ${conditions.join(' AND ')} ORDER BY c.created_at DESC NULLS LAST LIMIT 1`;
+  const { rows } = await pool.query(query, values);
+  return rows[0] || null;
+}
+
 export async function updateChange(id, data, state) {
   const query = 'UPDATE changes SET data = $2, state = $3 WHERE id = $1';
   const values = [id, data, state];

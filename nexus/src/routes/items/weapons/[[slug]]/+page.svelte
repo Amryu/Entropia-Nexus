@@ -9,7 +9,7 @@
   import '$lib/style.css';
   import { page } from '$app/stores';
   import { onMount, onDestroy } from 'svelte';
-  import { encodeURIComponentSafe, hasItemTag, clampDecimals, getTypeLink } from '$lib/util';
+  import { encodeURIComponentSafe, hasItemTag, clampDecimals, getTypeLink, getLatestPendingUpdate } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
 
   // Wiki components
@@ -112,35 +112,39 @@
   };
 
   $: currentChangeId = $page.url.searchParams.get('changeId');
-  $: createSeed = existingChange?.data || pendingChange?.data || emptyWeapon;
+  $: weaponEntityId = weapon?.Id ?? weapon?.ItemId;
+  $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, weaponEntityId);
+  $: resolvedPendingChange = userPendingUpdate || pendingChange;
+  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user.isAdmin));
+  $: createSeed = existingChange?.data || resolvedPendingChange?.data || emptyWeapon;
 
   // ========== EDIT STATE MANAGEMENT ==========
   // Initialize edit state when weapon changes or in create mode
   let lastInitKey = null;
   $: if (user) {
-    const createSeedSource = existingChange?.data ? 'existing' : (pendingChange?.data ? 'pending' : 'empty');
+    const createSeedSource = existingChange?.data ? 'existing' : (resolvedPendingChange?.data ? 'pending' : 'empty');
     const initKey = data.isCreateMode
       ? `create:${currentChangeId || 'new'}:${createSeedSource}`
       : (weapon?.Id ?? weapon?.ItemId)
-        ? `view:${weapon?.Id ?? weapon?.ItemId}`
+        ? `view:${weapon?.Id ?? weapon?.ItemId}:${resolvedPendingChange?.id || 'none'}`
         : null;
 
     if (initKey && initKey !== lastInitKey) {
       if (data.isCreateMode) {
         // If editing an existing pending create, use that data; otherwise use empty template
-        initEditState(createSeed, 'Weapon', true, existingChange || pendingChange || null);
+        initEditState(createSeed, 'Weapon', true, existingChange || resolvedPendingChange || null);
       } else if (weapon) {
-        initEditState(weapon, 'Weapon', false);
+        initEditState(weapon, 'Weapon', false, canUsePendingChange ? resolvedPendingChange : null);
       }
       lastInitKey = initKey;
     }
   }
 
   // Initialize pending change state
-  $: if (pendingChange) {
-    setExistingPendingChange(pendingChange);
+  $: if (resolvedPendingChange) {
+    setExistingPendingChange(resolvedPendingChange);
     // Auto-enable viewing pending change for author or admin
-    if (user && (pendingChange.author_id === user.id || user.isAdmin)) {
+    if (user && (resolvedPendingChange.author_id === user.id || user.isAdmin)) {
       setViewingPendingChange(true);
     }
   } else {
@@ -533,7 +537,7 @@
   title={weapon?.Name || 'Weapons'}
   description={seoDescription}
   entityType="weapon"
-  entity={weapon}
+  entity={activeWeapon}
   sidebarColumns={navTableColumns}
   sidebarEntity={weapon}
   {canonicalUrl}
@@ -543,7 +547,7 @@
   <WikiPage
     title="Weapons"
     {breadcrumbs}
-    entity={data.isCreateMode ? ($currentEntity || createSeed) : weapon}
+    entity={data.isCreateMode ? ($currentEntity || createSeed) : (activeWeapon || weapon)}
     entityType="Weapon"
     basePath="/items/weapons"
     {navItems}

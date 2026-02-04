@@ -6,7 +6,7 @@
   import { goto } from '$app/navigation';
   import { onDestroy, onMount } from 'svelte';
   import { loading } from '../../../../stores';
-  import { apiCall, getErrorMessage, getPlanetName } from '$lib/util';
+  import { apiCall, getErrorMessage, getPlanetName, getLatestPendingUpdate } from '$lib/util';
   import {
     fuzzyScore,
     getMainPlanetNames,
@@ -83,6 +83,10 @@
   $: userPendingCreates = data.userPendingCreates || [];
   $: userPendingUpdates = data.userPendingUpdates || [];
   $: hasPendingChanges = userPendingCreates.length + userPendingUpdates.length > 0;
+  $: locationEntityId = selectedLocation?.Id ?? selectedLocation?.ItemId;
+  $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, locationEntityId);
+  $: resolvedPendingChange = userPendingUpdate || pendingChange;
+  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user.isAdmin || user.administrator));
 
   $: locations = data?.additional?.locations || [];
   $: error = data.error;
@@ -270,9 +274,9 @@
     }
   }
 
-  $: if (pendingChange) {
-    setExistingPendingChange(pendingChange);
-    if (user && (pendingChange.author_id === user.id || user.isAdmin)) {
+  $: if (resolvedPendingChange) {
+    setExistingPendingChange(resolvedPendingChange);
+    if (user && (resolvedPendingChange.author_id === user.id || user.isAdmin || user.administrator)) {
       setViewingPendingChange(true);
     }
   } else {
@@ -356,7 +360,7 @@
     const detailKey = selectedDetails && !$editMode ? 'detail' : 'basic';
     const initKey = isCreateMode
       ? `create-${data.existingChange?.id ?? 'new'}`
-      : `view-${selectedLocation?.Id ?? 'none'}-${selectedEntityType ?? 'none'}-${detailKey}`;
+      : `view-${selectedLocation?.Id ?? 'none'}-${selectedEntityType ?? 'none'}-${detailKey}-${resolvedPendingChange?.id || 'none'}`;
     if (initKey !== lastInitKey) {
       if (effectiveCreateMode) {
         const hasMatchingChange = !changeIdParam || (data.existingChange?.id && String(data.existingChange.id) === String(changeIdParam));
@@ -376,7 +380,7 @@
       } else if (selectedLocation && selectedEntityType) {
         if (selectedEntityType !== 'Apartment' || selectedDetails) {
           const viewEntity = selectedDetails || selectedLocation;
-          initEditState(viewEntity, selectedEntityType, false, null);
+          initEditState(viewEntity, selectedEntityType, false, canUsePendingChange ? resolvedPendingChange : null);
         }
       }
       lastInitKey = initKey;

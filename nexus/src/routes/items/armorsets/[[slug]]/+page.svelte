@@ -16,7 +16,7 @@
   import '$lib/style.css';
   import { page } from '$app/stores';
   import { onMount, onDestroy } from 'svelte';
-  import { encodeURIComponentSafe, clampDecimals, hasItemTag, groupBy } from '$lib/util';
+  import { encodeURIComponentSafe, clampDecimals, hasItemTag, groupBy, getLatestPendingUpdate } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
 
   // Wiki components
@@ -67,6 +67,10 @@
   $: userPendingCreates = data.userPendingCreates || [];
   $: userPendingUpdates = data.userPendingUpdates || [];
   $: effects = data.effects || [];
+  $: armorSetEntityId = armorSet?.Id ?? armorSet?.ItemId;
+  $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, armorSetEntityId);
+  $: resolvedPendingChange = userPendingUpdate || pendingChange;
+  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user.isAdmin));
 
   // Can edit if user is verified or admin
   $: canEdit = user?.verified || user?.isAdmin;
@@ -106,15 +110,16 @@
   $: if (user) {
     const entity = isCreateMode ? (existingChange?.data || emptyEntity) : armorSet;
     if (entity) {
-      initEditState(entity, 'ArmorSet', isCreateMode, existingChange);
+      const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
+      initEditState(entity, 'ArmorSet', isCreateMode, editChange);
     }
   }
 
   // Set existing pending change when data loads
-  $: if (pendingChange) {
-    setExistingPendingChange(pendingChange);
+  $: if (resolvedPendingChange) {
+    setExistingPendingChange(resolvedPendingChange);
     // Auto-enable viewing pending change for author or admin
-    if (user && (pendingChange.author_id === user.id || user.isAdmin)) {
+    if (user && (resolvedPendingChange.author_id === user.id || user.isAdmin)) {
       setViewingPendingChange(true);
     }
   } else {
@@ -346,7 +351,7 @@
 <WikiPage
   title="Armor Sets"
   {breadcrumbs}
-  entity={armorSet}
+  entity={activeEntity}
   entityType="ArmorSet"
   basePath="/items/armorsets"
   {navItems}

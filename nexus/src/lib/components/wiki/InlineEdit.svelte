@@ -81,6 +81,8 @@
     // Type coercion
     if (type === 'number') {
       newValue = newValue === '' ? null : parseFloat(newValue);
+    } else if (type === 'select') {
+      newValue = newValue === '' ? null : newValue;
     } else if (type === 'checkbox') {
       newValue = event.target.checked;
     }

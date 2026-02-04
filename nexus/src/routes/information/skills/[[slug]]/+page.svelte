@@ -10,7 +10,7 @@
   // @ts-nocheck
   import '$lib/style.css';
   import { onMount, onDestroy } from 'svelte';
-  import { encodeURIComponentSafe } from '$lib/util';
+  import { encodeURIComponentSafe, getLatestPendingUpdate } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
 
   // Wiki components
@@ -91,20 +91,25 @@
     { value: 'Social', label: 'Social' }
   ];
 
+  $: skillEntityId = skill?.Id ?? skill?.ItemId;
+  $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, skillEntityId);
+  $: resolvedPendingChange = userPendingUpdate || pendingChange;
+  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user.isAdmin));
+
   // Initialize edit state when entity/user changes
   $: if (user) {
     if (data.isCreateMode) {
       const initialData = existingChange?.data || emptySkill;
       initEditState(initialData, 'Skill', true, existingChange);
     } else if (skill) {
-      initEditState(skill, 'Skill', false);
+      initEditState(skill, 'Skill', false, canUsePendingChange ? resolvedPendingChange : null);
     }
   }
 
   // Handle pending changes from API
-  $: if (pendingChange) {
-    setExistingPendingChange(pendingChange);
-    if (user && (pendingChange.author_id === user.id || user.isAdmin)) {
+  $: if (resolvedPendingChange) {
+    setExistingPendingChange(resolvedPendingChange);
+    if (user && (resolvedPendingChange.author_id === user.id || user.isAdmin)) {
       setViewingPendingChange(true);
     }
   } else {
@@ -313,7 +318,7 @@
   <WikiPage
     title="Skills"
     {breadcrumbs}
-    entity={data.isCreateMode ? $currentEntity : skill}
+    entity={data.isCreateMode ? $currentEntity : (activeSkill || skill)}
     entityType="Skill"
     basePath="/information/skills"
     {navItems}

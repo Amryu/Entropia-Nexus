@@ -10,7 +10,7 @@
   import '$lib/style.css';
   import { page } from '$app/stores';
   import { onMount, onDestroy } from 'svelte';
-  import { clampDecimals, encodeURIComponentSafe, getTypeLink } from '$lib/util';
+  import { clampDecimals, encodeURIComponentSafe, getTypeLink, getLatestPendingUpdate } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
 
   // Wiki components
@@ -56,6 +56,10 @@
   $: isCreateMode = data.isCreateMode || false;
   $: materialsList = data.materials || [];
   $: vehicleAttachmentTypesList = data.vehicleAttachmentTypes || [];
+  $: vehicleEntityId = vehicle?.Id ?? vehicle?.ItemId;
+  $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, vehicleEntityId);
+  $: resolvedPendingChange = userPendingUpdate || pendingChange;
+  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user.isAdmin));
 
   // Verified users can edit
   $: canEdit = user?.verified || user?.isAdmin;
@@ -104,12 +108,19 @@
     const initialEntity = isCreateMode
       ? (existingChange?.data || emptyVehicle)
       : vehicle;
-    initEditState(initialEntity, 'Vehicle', isCreateMode, existingChange);
+    const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
+    initEditState(initialEntity, 'Vehicle', isCreateMode, editChange);
   }
 
   // Set pending change in store when it changes
-  $: if (pendingChange) {
-    setExistingPendingChange(pendingChange);
+  $: if (resolvedPendingChange) {
+    setExistingPendingChange(resolvedPendingChange);
+    if (user && (resolvedPendingChange.author_id === user.id || user.isAdmin)) {
+      setViewingPendingChange(true);
+    }
+  } else {
+    setExistingPendingChange(null);
+    setViewingPendingChange(false);
   }
 
   // Active vehicle: use currentEntity in edit mode, pendingChange data when viewing, otherwise original

@@ -12,7 +12,7 @@
   import '$lib/style.css';
   import { page } from '$app/stores';
   import { onMount, onDestroy } from 'svelte';
-  import { hasItemTag, encodeURIComponentSafe, clampDecimals, getTypeLink, getTimeString } from '$lib/util';
+  import { hasItemTag, encodeURIComponentSafe, clampDecimals, getTypeLink, getTimeString, getLatestPendingUpdate } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
 
   // Wiki components
@@ -63,6 +63,10 @@
   $: effects = data.effects || [];
   $: professions = data.professions || [];
   $: professionOptions = professions.map(p => ({ value: p.Name, label: p.Name })).sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
+  $: toolEntityId = tool?.Id ?? tool?.ItemId;
+  $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, toolEntityId);
+  $: resolvedPendingChange = userPendingUpdate || pendingChange;
+  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user.isAdmin));
 
   // Permission check - verified users and admins can edit
   $: canEdit = user?.verified || user?.isAdmin;
@@ -197,12 +201,19 @@
   $: if (user) {
     const entityType = getEntityType(additional.type);
     const emptyEntity = getEmptyEntity(additional.type);
-    initEditState(tool || emptyEntity, entityType, isCreateMode, existingChange);
+    const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
+    initEditState(tool || emptyEntity, entityType, isCreateMode, editChange);
   }
 
   // Set pending change when it exists
-  $: if (pendingChange) {
-    setExistingPendingChange(pendingChange);
+  $: if (resolvedPendingChange) {
+    setExistingPendingChange(resolvedPendingChange);
+    if (user && (resolvedPendingChange.author_id === user.id || user.isAdmin)) {
+      setViewingPendingChange(true);
+    }
+  } else {
+    setExistingPendingChange(null);
+    setViewingPendingChange(false);
   }
 
   // Active entity: in edit mode use currentEntity, when viewing pending use its data, otherwise use original
@@ -444,7 +455,7 @@
   title={tool?.Name || `${getTypeName(additional.type)}s`}
   description={seoDescription}
   entityType={getEntityType(additional.type)}
-  entity={tool}
+  entity={activeEntity}
   imageUrl={entityImageUrl}
   sidebarColumns={navTableColumns}
   sidebarEntity={tool}
@@ -455,7 +466,7 @@
 <WikiPage
   title="Tools"
   {breadcrumbs}
-  entity={tool}
+  entity={activeEntity}
   entityType={getEntityType(additional.type)}
   basePath="/items/tools/{additional.type || ''}"
   {navItems}

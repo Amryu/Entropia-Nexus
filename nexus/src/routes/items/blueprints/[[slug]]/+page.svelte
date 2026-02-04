@@ -29,7 +29,7 @@
   import '$lib/style.css';
   import { page } from '$app/stores';
   import { onMount, onDestroy } from 'svelte';
-  import { encodeURIComponentSafe, clampDecimals, getTypeLink, getItemLink } from '$lib/util';
+  import { encodeURIComponentSafe, clampDecimals, getTypeLink, getItemLink, getLatestPendingUpdate } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
 
   // Wiki components
@@ -81,6 +81,10 @@
   $: userPendingCreates = data.userPendingCreates || [];
 
   $: userPendingUpdates = data.userPendingUpdates || [];
+  $: blueprintEntityId = blueprint?.Id ?? blueprint?.ItemId;
+  $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, blueprintEntityId);
+  $: resolvedPendingChange = userPendingUpdate || pendingChange;
+  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user.isAdmin));
   // Edit mode dropdown data
   $: blueprintbooks = data.blueprintbooks || [];
   $: professions = data.professions || [];
@@ -127,15 +131,16 @@
   $: if (user) {
     const entity = isCreateMode ? (existingChange?.data || emptyEntity) : blueprint;
     if (entity) {
-      initEditState(entity, 'Blueprint', isCreateMode, existingChange);
+      const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
+      initEditState(entity, 'Blueprint', isCreateMode, editChange);
     }
   }
 
   // Set existing pending change when data loads
-  $: if (pendingChange) {
-    setExistingPendingChange(pendingChange);
+  $: if (resolvedPendingChange) {
+    setExistingPendingChange(resolvedPendingChange);
     // Auto-enable viewing pending change for author or admin
-    if (user && (pendingChange.author_id === user.id || user.isAdmin)) {
+    if (user && (resolvedPendingChange.author_id === user.id || user.isAdmin)) {
       setViewingPendingChange(true);
     }
   } else {
@@ -345,7 +350,7 @@
 <WikiPage
   title="Blueprints"
   {breadcrumbs}
-  entity={blueprint}
+  entity={activeEntity}
   entityType="Blueprint"
   basePath="/items/blueprints"
   {navItems}

@@ -9,7 +9,7 @@
   // @ts-nocheck
   import '$lib/style.css';
   import { onMount, onDestroy } from 'svelte';
-  import { encodeURIComponentSafe } from '$lib/util';
+  import { encodeURIComponentSafe, getLatestPendingUpdate } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
 
   // Wiki components
@@ -54,6 +54,10 @@
   $: userPendingCreates = data.userPendingCreates || [];
 
   $: userPendingUpdates = data.userPendingUpdates || [];
+  $: professionEntityId = profession?.Id ?? profession?.ItemId;
+  $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, professionEntityId);
+  $: resolvedPendingChange = userPendingUpdate || pendingChange;
+  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user.isAdmin));
   // Can edit if user is verified or admin
   $: canEdit = user?.verified || user?.isAdmin;
 
@@ -73,15 +77,16 @@
   $: if (user) {
     const entity = isCreateMode ? (existingChange?.data || emptyEntity) : profession;
     if (entity) {
-      initEditState(entity, 'Profession', isCreateMode, existingChange);
+      const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
+      initEditState(entity, 'Profession', isCreateMode, editChange);
     }
   }
 
   // Set existing pending change when data loads
-  $: if (pendingChange) {
-    setExistingPendingChange(pendingChange);
+  $: if (resolvedPendingChange) {
+    setExistingPendingChange(resolvedPendingChange);
     // Auto-enable viewing pending change for author or admin
-    if (user && (pendingChange.author_id === user.id || user.isAdmin)) {
+    if (user && (resolvedPendingChange.author_id === user.id || user.isAdmin)) {
       setViewingPendingChange(true);
     }
   } else {
@@ -247,7 +252,7 @@
   <WikiPage
     title="Professions"
     {breadcrumbs}
-    entity={profession}
+    entity={activeEntity}
     entityType="Profession"
     basePath="/information/professions"
     {navItems}

@@ -9,7 +9,7 @@
   import '$lib/style.css';
   import { page } from '$app/stores';
   import { onMount, onDestroy } from 'svelte';
-  import { hasItemTag, clampDecimals, encodeURIComponentSafe, getTimeString, getTypeLink } from '$lib/util';
+  import { hasItemTag, clampDecimals, encodeURIComponentSafe, getTimeString, getTypeLink, getLatestPendingUpdate } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
 
   // Wiki components
@@ -55,6 +55,10 @@
   $: userPendingCreates = data.userPendingCreates || [];
   $: userPendingUpdates = data.userPendingUpdates || [];
   $: effectsList = data.effects || [];
+  $: medtoolEntityId = medtool?.Id ?? medtool?.ItemId;
+  $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, medtoolEntityId);
+  $: resolvedPendingChange = userPendingUpdate || pendingChange;
+  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user.isAdmin));
 
   // Permission check - verified users and admins can edit
   $: canEdit = user?.verified || user?.isAdmin;
@@ -142,12 +146,19 @@
   $: if (user) {
     const entityType = getEntityType(additional.type);
     const emptyEntity = getEmptyEntity(additional.type);
-    initEditState(medtool || emptyEntity, entityType, isCreateMode, existingChange);
+    const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
+    initEditState(medtool || emptyEntity, entityType, isCreateMode, editChange);
   }
 
   // Set pending change when it exists
-  $: if (pendingChange) {
-    setExistingPendingChange(pendingChange);
+  $: if (resolvedPendingChange) {
+    setExistingPendingChange(resolvedPendingChange);
+    if (user && (resolvedPendingChange.author_id === user.id || user.isAdmin)) {
+      setViewingPendingChange(true);
+    }
+  } else {
+    setExistingPendingChange(null);
+    setViewingPendingChange(false);
   }
 
   // Active entity: in edit mode use currentEntity, when viewing pending use its data, otherwise use original
@@ -356,7 +367,7 @@
   title={medtool?.Name || `${getTypeName(additional.type)}s`}
   description={seoDescription}
   entityType={getEntityType(additional.type)}
-  entity={medtool}
+  entity={activeEntity}
   imageUrl={entityImageUrl}
   sidebarColumns={navTableColumns}
   sidebarEntity={medtool}
@@ -367,7 +378,7 @@
 <WikiPage
   title="Medical Tools"
   {breadcrumbs}
-  entity={medtool}
+  entity={activeEntity}
   entityType={getEntityType(additional.type)}
   basePath="/items/medicaltools/{additional.type || ''}"
   {navItems}

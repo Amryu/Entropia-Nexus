@@ -500,6 +500,18 @@ export async function loadPendingChangesData(fetch, sessionUser, config) {
   return result;
 }
 
+export function getLatestPendingUpdate(changes, entityId) {
+  if (!changes || !entityId) return null;
+  const matches = changes.filter(change => {
+    const changeEntityId = change?.data?.Id ?? change?.data?.ItemId;
+    return changeEntityId && String(changeEntityId) === String(entityId);
+  });
+  if (matches.length === 0) return null;
+  return matches.sort((a, b) =>
+    new Date(b.last_update || b.created_at) - new Date(a.last_update || a.created_at)
+  )[0];
+}
+
 // Removed GET response caching to prevent stale data issues during edits/auth changes
 // Helper to get API base depending on environment (browser vs SSR)
 function getApiBase() {

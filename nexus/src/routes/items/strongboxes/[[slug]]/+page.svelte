@@ -9,7 +9,7 @@
   import '$lib/style.css';
   import { page } from '$app/stores';
   import { onMount, onDestroy } from 'svelte';
-  import { clampDecimals, encodeURIComponentSafe, getItemLink } from '$lib/util';
+  import { clampDecimals, encodeURIComponentSafe, getItemLink, getLatestPendingUpdate } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
 
   // Wiki components
@@ -52,6 +52,10 @@
   $: userPendingUpdates = data.userPendingUpdates || [];
   $: canCreateNew = data.canCreateNew ?? true;
   $: allItemsList = data.allItems || [];
+  $: strongboxEntityId = strongbox?.Id ?? strongbox?.ItemId;
+  $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, strongboxEntityId);
+  $: resolvedPendingChange = userPendingUpdate || pendingChange;
+  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user.isAdmin));
 
   // Permission check - verified users can edit
   $: canEdit = user?.verified === true;
@@ -74,14 +78,14 @@
       const initialData = existingChange?.data || emptyStrongbox;
       initEditState(initialData, 'Strongbox', true, existingChange);
     } else if (strongbox) {
-      initEditState(strongbox, 'Strongbox', false);
+      initEditState(strongbox, 'Strongbox', false, canUsePendingChange ? resolvedPendingChange : null);
     }
   }
 
   // Handle pending changes from API
-  $: if (pendingChange) {
-    setExistingPendingChange(pendingChange);
-    if (user && (pendingChange.author_id === user.id || user.isAdmin)) {
+  $: if (resolvedPendingChange) {
+    setExistingPendingChange(resolvedPendingChange);
+    if (user && (resolvedPendingChange.author_id === user.id || user.isAdmin)) {
       setViewingPendingChange(true);
     }
   } else {
@@ -220,7 +224,7 @@
 <WikiPage
   title="Strongboxes"
   {breadcrumbs}
-  entity={data.isCreateMode ? $currentEntity : strongbox}
+  entity={data.isCreateMode ? $currentEntity : (activeStrongbox || strongbox)}
   entityType="Strongbox"
   basePath="/items/strongboxes"
   {navItems}

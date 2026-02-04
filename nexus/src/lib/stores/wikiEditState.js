@@ -117,8 +117,24 @@ export function getNestedValue(obj, path) {
  * @param {boolean} createMode - Whether this is create mode (new entity)
  * @param {object|null} existingChange - An existing pending change to edit (if any)
  */
+function buildEntityFromChange(entity, change) {
+  if (!change) return entity;
+  if (change.data) {
+    return change.data;
+  }
+  if (change.changes && entity) {
+    const merged = JSON.parse(JSON.stringify(entity));
+    for (const [path, value] of Object.entries(change.changes)) {
+      setNestedValue(merged, path, value);
+    }
+    return merged;
+  }
+  return entity;
+}
+
 export function initEditState(entity, entityType, createMode = false, existingChange = null) {
-  originalEntity.set(entity);
+  const resolvedEntity = buildEntityFromChange(entity, existingChange);
+  originalEntity.set(resolvedEntity);
   pendingChanges.set({});
   validationErrors.set({});
   isCreateMode.set(createMode);
@@ -182,6 +198,7 @@ export function cancelEdit() {
   editMode.set(false);
   pendingChanges.set({});
   validationErrors.set({});
+  viewingPendingChange.set(false);
 }
 
 /**

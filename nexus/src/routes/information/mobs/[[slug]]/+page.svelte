@@ -9,7 +9,7 @@
   import '$lib/style.css';
   import { page } from '$app/stores';
   import { onMount, onDestroy } from 'svelte';
-  import { encodeURIComponentSafe, clampDecimals, getTypeLink } from '$lib/util';
+  import { encodeURIComponentSafe, clampDecimals, getTypeLink, getLatestPendingUpdate } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
 
   // Wiki components
@@ -64,6 +64,10 @@
   $: userPendingCreates = data.userPendingCreates || [];
   $: userPendingUpdates = data.userPendingUpdates || [];
   $: isCreateMode = data.isCreateMode || false;
+  $: mobEntityId = mob?.Id ?? mob?.ItemId;
+  $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, mobEntityId);
+  $: resolvedPendingChange = userPendingUpdate || pendingChange;
+  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user.isAdmin));
 
   // Build species options for autocomplete
   $: speciesOptions = speciesList.map(s => ({ value: s.Name, label: s.Name }));
@@ -115,12 +119,19 @@
     const initialEntity = isCreateMode
       ? (existingChange?.data || emptyMob)
       : mob;
-    initEditState(initialEntity, 'Mob', isCreateMode, existingChange);
+    const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
+    initEditState(initialEntity, 'Mob', isCreateMode, editChange);
   }
 
   // Set pending change in store when it changes
-  $: if (pendingChange) {
-    setExistingPendingChange(pendingChange);
+  $: if (resolvedPendingChange) {
+    setExistingPendingChange(resolvedPendingChange);
+    if (user && (resolvedPendingChange.author_id === user.id || user.isAdmin)) {
+      setViewingPendingChange(true);
+    }
+  } else {
+    setExistingPendingChange(null);
+    setViewingPendingChange(false);
   }
 
   // Active mob: use currentEntity in edit mode, pendingChange data when viewing, otherwise original

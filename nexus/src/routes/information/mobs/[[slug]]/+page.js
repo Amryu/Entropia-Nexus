@@ -6,14 +6,14 @@
 let items;
 let itemsGrouped;
 
-import { handlePageLoad, getMainPlanetName, apiCall, resolveItemLink, decodeURIComponentSafe, encodeURIComponentSafe } from '$lib/util';
+import { handlePageLoad, getMainPlanetName, apiCall, resolveItemLink, decodeURIComponentSafe, encodeURIComponentSafe, loadPendingChangesData } from '$lib/util';
 import { redirect } from '@sveltejs/kit';
 
-export async function load({ fetch, params, url }) {
+export async function load({ fetch, params, url, parent }) {
   const config = {
     items: 'mobs',
     types: { tierable: false },
-    name: decodeURIComponentSafe(params.slug),
+    name: url.searchParams.get('mode') === 'create' ? null : decodeURIComponentSafe(params.slug),
     type: null,
     mode: url.searchParams.get('mode') || 'view',
     searchParams: url.searchParams,
@@ -48,6 +48,37 @@ export async function load({ fetch, params, url }) {
 
   response.items = itemsGrouped;
   response.allItems = items;
+  response.isCreateMode = config.mode === 'create';
+
+  const changeId = url.searchParams.get('changeId');
+  if (changeId && response.isCreateMode) {
+    try {
+      const changeRes = await fetch(`/api/changes/${changeId}`);
+      if (changeRes.ok) {
+        const change = await changeRes.json();
+        response.existingChange = change;
+        response.pendingChange = change;
+      }
+    } catch (e) {
+      console.warn('Failed to fetch existing change:', e);
+    }
+  }
+
+  const parentData = await parent();
+  response.session = parentData.session;
+
+  const pendingData = await loadPendingChangesData(fetch, parentData.session?.user, {
+    entity: 'Mob',
+    entityId: response.object?.Id,
+    changeId,
+    isAdmin: parentData.session?.user?.isAdmin || false
+  });
+
+  response.pendingChange = pendingData.pendingChange;
+  response.userPendingCreates = pendingData.userPendingCreates;
+  response.userPendingUpdates = pendingData.userPendingUpdates;
+  response.canCreateNew = pendingData.canCreateNew;
+  response.pendingCreatesCount = pendingData.pendingCreatesCount;
 
   // Fetch mob species for dropdown
   try {

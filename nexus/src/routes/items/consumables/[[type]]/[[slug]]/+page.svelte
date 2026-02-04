@@ -13,7 +13,7 @@
   import '$lib/style.css';
   import { page } from '$app/stores';
   import { onMount, onDestroy } from 'svelte';
-  import { clampDecimals, encodeURIComponentSafe, getTimeString, getTypeLink, groupBy } from '$lib/util';
+  import { clampDecimals, encodeURIComponentSafe, getTimeString, getTypeLink, groupBy, getLatestPendingUpdate } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
 
   // Wiki components
@@ -61,6 +61,10 @@
   $: effectsList = data.effects || [];
   $: mobsList = data.mobs || [];
   $: professionsList = data.professions || [];
+  $: consumableEntityId = consumable?.Id ?? consumable?.ItemId;
+  $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, consumableEntityId);
+  $: resolvedPendingChange = userPendingUpdate || pendingChange;
+  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user.isAdmin));
 
   // Permission check - verified users and admins can edit
   $: canEdit = user?.verified || user?.isAdmin;
@@ -140,14 +144,15 @@
     const entityType = getEntityType(additional.type);
     const emptyEntity = getEmptyEntity(additional.type);
     const entity = isCreateMode ? (existingChange?.data || emptyEntity) : consumable;
-    initEditState(entity || emptyEntity, entityType, isCreateMode, existingChange);
+    const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
+    initEditState(entity || emptyEntity, entityType, isCreateMode, editChange);
   }
 
   // Set pending change when it exists
-  $: if (pendingChange) {
-    setExistingPendingChange(pendingChange);
+  $: if (resolvedPendingChange) {
+    setExistingPendingChange(resolvedPendingChange);
     // Auto-enable viewing pending change for author or admin
-    if (user && (pendingChange.author_id === user.id || user.isAdmin)) {
+    if (user && (resolvedPendingChange.author_id === user.id || user.isAdmin)) {
       setViewingPendingChange(true);
     }
   } else {
@@ -311,7 +316,7 @@
   title={consumable?.Name || `${getTypeName(additional.type)}s`}
   description={seoDescription}
   entityType={getEntityType(additional.type)}
-  entity={consumable}
+  entity={activeEntity}
   imageUrl={entityImageUrl}
   sidebarColumns={navTableColumns}
   sidebarEntity={consumable}
@@ -322,7 +327,7 @@
 <WikiPage
   title="Consumables"
   {breadcrumbs}
-  entity={consumable}
+  entity={activeEntity}
   entityType={getEntityType(additional.type)}
   basePath="/items/consumables/{additional.type || ''}"
   {navItems}

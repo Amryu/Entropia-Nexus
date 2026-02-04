@@ -1,5 +1,5 @@
 //@ts-nocheck
-import { getChangeById, getChangeEntities as dbGetChangeEntities, getChangeTypes as dbGetChangeTypes, updateChange, deleteChange, createChange, executeVector, getChangeByEntityId, getChangesFiltered } from "$lib/server/db.js"
+import { getChangeById, getChangeEntities as dbGetChangeEntities, getChangeTypes as dbGetChangeTypes, updateChange, deleteChange, createChange, executeVector, getChangeByEntityId, getOpenChangeByEntityId, getChangesFiltered } from "$lib/server/db.js"
 import { apiCall, getResponse } from "$lib/util.js";
 import Ajv from "ajv";
 import sanitizeHtml from "sanitize-html";
@@ -276,6 +276,22 @@ export async function POST({ request, params, locals, url }) {
       return errorResponse;
     }
   }
+  else if (type === 'Update') {
+    const entityId = body?.Id ?? body?.ItemId;
+    if (!entityId) {
+      return getResponse({ error: 'Update changes require a valid entity Id.' }, 400);
+    }
+    const existingOpenChange = await getOpenChangeByEntityId(entity, entityId, 'Update');
+    if (existingOpenChange) {
+      return getResponse(
+        {
+          error: 'There is already an open update change for this entity.',
+          existingChangeId: existingOpenChange.id
+        },
+        409
+      );
+    }
+  }
 
   let state = url.searchParams.get('state') || 'Draft';
 
@@ -331,7 +347,21 @@ function validateChange(body, entity) {
   let valid = validator(body);
 
   if (!valid) {
-    return getResponse({ error: 'Validation error: ' + validator.errors.map(x => x.message).join(', ') }, 400);
+    const details = (validator.errors || []).map(err => {
+      const instancePath = (err.instancePath || '').replace(/^\//, '').replace(/\//g, '.');
+      const missing = err.params?.missingProperty;
+      const path = missing ? (instancePath ? `${instancePath}.${missing}` : missing) : instancePath;
+      const message = err.message || 'Validation error';
+      return {
+        path,
+        message,
+        keyword: err.keyword
+      };
+    });
+    const summary = details.length
+      ? details.map(d => (d.path ? `${d.path}: ${d.message}` : d.message)).join('; ')
+      : validator.errors.map(x => x.message).join(', ');
+    return getResponse({ error: `Validation error: ${summary}`, details }, 400);
   }
 }
 

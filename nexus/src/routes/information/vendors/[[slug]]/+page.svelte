@@ -9,7 +9,7 @@
   // @ts-nocheck
   import '$lib/style.css';
   import { onMount, onDestroy } from 'svelte';
-  import { encodeURIComponentSafe } from '$lib/util';
+  import { encodeURIComponentSafe, getLatestPendingUpdate } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
 
   // Wiki components
@@ -51,6 +51,10 @@
   $: userPendingCreates = data.userPendingCreates || [];
   $: userPendingUpdates = data.userPendingUpdates || [];
   $: isCreateMode = data.isCreateMode || false;
+  $: vendorEntityId = vendor?.Id ?? vendor?.ItemId;
+  $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, vendorEntityId);
+  $: resolvedPendingChange = userPendingUpdate || pendingChange;
+  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user.isAdmin));
 
   // Verified users can edit
   $: canEdit = user?.verified || user?.isAdmin;
@@ -89,12 +93,19 @@
     const initialEntity = isCreateMode
       ? (existingChange?.data || emptyVendor)
       : vendor;
-    initEditState(initialEntity, 'Vendor', isCreateMode, existingChange);
+    const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
+    initEditState(initialEntity, 'Vendor', isCreateMode, editChange);
   }
 
   // Set pending change in store when it changes
-  $: if (pendingChange) {
-    setExistingPendingChange(pendingChange);
+  $: if (resolvedPendingChange) {
+    setExistingPendingChange(resolvedPendingChange);
+    if (user && (resolvedPendingChange.author_id === user.id || user.isAdmin)) {
+      setViewingPendingChange(true);
+    }
+  } else {
+    setExistingPendingChange(null);
+    setViewingPendingChange(false);
   }
 
   // Active vendor: use currentEntity in edit mode, pendingChange data when viewing, otherwise original

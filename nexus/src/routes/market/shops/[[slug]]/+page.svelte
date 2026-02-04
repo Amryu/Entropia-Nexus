@@ -12,7 +12,7 @@
   // @ts-nocheck
   import '$lib/style.css';
   import { onMount, onDestroy } from 'svelte';
-  import { encodeURIComponentSafe, apiCall } from '$lib/util';
+  import { encodeURIComponentSafe, apiCall, getLatestPendingUpdate } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
 
   // Wiki components
@@ -57,6 +57,10 @@
   $: userPendingCreates = data.userPendingCreates || [];
 
   $: userPendingUpdates = data.userPendingUpdates || [];
+  $: shopEntityId = shop?.Id ?? shop?.ItemId;
+  $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, shopEntityId);
+  $: resolvedPendingChange = userPendingUpdate || pendingChange;
+  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user.isAdmin));
   // Constants for section names (matches legacy)
   const SECTION_NAMES = ['Indoor', 'Display', 'Additional'];
 
@@ -129,19 +133,20 @@
 
   // Initialize edit state when user or entity changes
   $: if (user) {
+    const editChange = isCreateMode ? (data.existingChange || null) : (canUsePendingChange ? resolvedPendingChange : null);
     initEditState(
       isCreateMode ? (data.existingChange?.data || emptyEntity) : shop,
       'Shop',
       isCreateMode,
-      data.existingChange || null
+      editChange
     );
   }
 
   // Set pending change when available
-  $: if (pendingChange) {
-    setExistingPendingChange(pendingChange);
+  $: if (resolvedPendingChange) {
+    setExistingPendingChange(resolvedPendingChange);
     // Auto-enable viewing pending change for author or admin
-    if (user && (pendingChange.author_id === user.id || user.isAdmin)) {
+    if (user && (resolvedPendingChange.author_id === user.id || user.isAdmin)) {
       setViewingPendingChange(true);
     }
   } else {

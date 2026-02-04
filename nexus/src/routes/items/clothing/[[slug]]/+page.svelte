@@ -16,7 +16,7 @@
   import '$lib/style.css';
   import { page } from '$app/stores';
   import { onMount, onDestroy } from 'svelte';
-  import { clampDecimals, encodeURIComponentSafe, groupBy } from '$lib/util';
+  import { clampDecimals, encodeURIComponentSafe, groupBy, getLatestPendingUpdate } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
 
   // Wiki components
@@ -63,6 +63,10 @@
   $: isCreateMode = data.isCreateMode || false;
   $: effectsList = data.effects || [];
   $: equipsetsList = data.equipsets || [];
+  $: clothingEntityId = clothing?.Id ?? clothing?.ItemId;
+  $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, clothingEntityId);
+  $: resolvedPendingChange = userPendingUpdate || pendingChange;
+  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user.isAdmin));
 
   // Verified users can edit
   $: canEdit = user?.verified || user?.isAdmin;
@@ -113,12 +117,19 @@
     const initialEntity = isCreateMode
       ? (existingChange?.data || emptyClothing)
       : clothing;
-    initEditState(initialEntity, 'Clothing', isCreateMode, existingChange);
+    const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
+    initEditState(initialEntity, 'Clothing', isCreateMode, editChange);
   }
 
   // Set pending change in store when it changes
-  $: if (pendingChange) {
-    setExistingPendingChange(pendingChange);
+  $: if (resolvedPendingChange) {
+    setExistingPendingChange(resolvedPendingChange);
+    if (user && (resolvedPendingChange.author_id === user.id || user.isAdmin)) {
+      setViewingPendingChange(true);
+    }
+  } else {
+    setExistingPendingChange(null);
+    setViewingPendingChange(false);
   }
 
   // Active clothing: use currentEntity in edit mode, pendingChange data when viewing, otherwise original

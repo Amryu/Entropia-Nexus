@@ -11,7 +11,7 @@
   import '$lib/style.css';
   import { page } from '$app/stores';
   import { onMount, onDestroy } from 'svelte';
-  import { encodeURIComponentSafe, clampDecimals } from '$lib/util';
+  import { encodeURIComponentSafe, clampDecimals, getLatestPendingUpdate } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
 
   // Wiki components
@@ -58,6 +58,10 @@
   $: userPendingUpdates = data.userPendingUpdates || [];
   $: canCreateNew = data.canCreateNew ?? true;
   $: availableItems = data.availableItems || [];
+  $: materialEntityId = material?.Id ?? material?.ItemId;
+  $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, materialEntityId);
+  $: resolvedPendingChange = userPendingUpdate || pendingChange;
+  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user.isAdmin));
 
   // Permission check - verified users can edit
   $: canEdit = user?.verified === true;
@@ -80,14 +84,14 @@
       const initialData = existingChange?.data || emptyMaterial;
       initEditState(initialData, 'Material', true, existingChange);
     } else if (material) {
-      initEditState(material, 'Material', false, null);
+      initEditState(material, 'Material', false, canUsePendingChange ? resolvedPendingChange : null);
     }
   }
 
   // Handle pending changes from API
-  $: if (pendingChange) {
-    setExistingPendingChange(pendingChange);
-    if (user && (pendingChange.author_id === user.id || user.isAdmin)) {
+  $: if (resolvedPendingChange) {
+    setExistingPendingChange(resolvedPendingChange);
+    if (user && (resolvedPendingChange.author_id === user.id || user.isAdmin)) {
       setViewingPendingChange(true);
     }
   } else {
@@ -196,7 +200,7 @@
 <WikiPage
   title="Materials"
   {breadcrumbs}
-  entity={data.isCreateMode ? $currentEntity : material}
+  entity={data.isCreateMode ? $currentEntity : (activeMaterial || material)}
   entityType="Material"
   basePath="/items/materials"
   {navItems}
