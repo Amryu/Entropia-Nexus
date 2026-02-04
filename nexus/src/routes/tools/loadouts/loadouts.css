@@ -1803,6 +1803,7 @@
     grid-template-columns: 140px minmax(0, 1fr);
     gap: 8px 12px;
     font-size: 12px;
+    grid-auto-flow: row;
   }
 
   .picker-preview-sections {
@@ -2261,7 +2262,7 @@
     }
 
     .picker-preview-grid {
-      grid-template-columns: 1fr;
+      grid-template-columns: 140px minmax(0, 1fr);
     }
 
     .picker-preview-sections {

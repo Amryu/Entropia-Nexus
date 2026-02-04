@@ -7,7 +7,7 @@ export async function load({ locals, url }) {
   // Must be logged in
   if (!locals.session?.user) {
     const returnUrl = encodeURIComponent(url.pathname + url.search);
-    throw redirect(302, `/login?redirect=${returnUrl}`);
+    throw redirect(302, `/discord/login?redirect=${returnUrl}`);
   }
 
   // Must be admin (check realUser for impersonation case)

@@ -1107,7 +1107,7 @@
       {#if data.isCreateMode && !user}
         <h2>Login Required</h2>
         <p>You need to log in and verify your account to create new weapons.</p>
-        <a href="/login?redirect={encodeURIComponent($page.url.pathname + $page.url.search)}" class="login-link-btn">
+        <a href="/discord/login?redirect={encodeURIComponent($page.url.pathname + $page.url.search)}" class="login-link-btn">
           Login with Discord
         </a>
       {:else if data.isCreateMode}

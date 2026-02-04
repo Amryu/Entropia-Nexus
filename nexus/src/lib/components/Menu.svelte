@@ -17,9 +17,9 @@
   export let realUser = null; // The actual admin user when impersonating
 
   // Login/Logout URLs with redirect back to current page
-  $: loginUrl = `/login?redirect=${encodeURIComponent($page.url.pathname + $page.url.search)}`;
+  $: loginUrl = `/discord/login?redirect=${encodeURIComponent($page.url.pathname + $page.url.search)}`;
   $: logoutUrl = `/discord/logout?redirect=${encodeURIComponent($page.url.pathname + $page.url.search)}`;
-  $: profileUrl = user ? `/users/${encodeURIComponentSafe(String(user.eu_name || user.id))}` : '/login';
+  $: profileUrl = user ? `/users/${encodeURIComponentSafe(String(user.eu_name || user.id))}` : '/discord/login';
 
   let dropdownOpen: string | null = null;
   let dropdownCloseTimeout: ReturnType<typeof setTimeout> | null = null;

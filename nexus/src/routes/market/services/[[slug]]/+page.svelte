@@ -575,7 +575,7 @@
 
   async function openRequestModal(tab = 'request') {
     if (!user) {
-      goto(`/login?redirect=${encodeURIComponent($page.url.pathname + $page.url.search)}`);
+      goto(`/discord/login?redirect=${encodeURIComponent($page.url.pathname + $page.url.search)}`);
       return;
     }
 

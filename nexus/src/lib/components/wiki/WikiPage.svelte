@@ -188,7 +188,7 @@
   $: needsVerification = editable && user && !user.verified;
 
   // Login URL with redirect back to current page
-  $: loginUrl = `/login?redirect=${encodeURIComponent($page.url.pathname + $page.url.search)}`;
+  $: loginUrl = `/discord/login?redirect=${encodeURIComponent($page.url.pathname + $page.url.search)}`;
 
   // Get current changeId from URL (for highlighting pending creates in sidebar)
   $: currentChangeId = $page.url.searchParams.get('changeId');

@@ -15,8 +15,8 @@ export function requireLogin(locals, returnUrl = null) {
   const user = locals.session?.user;
   if (!user) {
     const loginUrl = returnUrl
-      ? `/login?redirect=${encodeURIComponent(returnUrl)}`
-      : '/login';
+      ? `/discord/login?redirect=${encodeURIComponent(returnUrl)}`
+      : '/discord/login';
     throw redirect(302, loginUrl);
   }
   return user;

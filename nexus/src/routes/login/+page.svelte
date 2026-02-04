@@ -4,11 +4,18 @@
   import { dev } from '$app/environment';
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
+  import { onMount } from 'svelte';
 
   export let data;
 
   // Get redirect URL from query params
   $: redirectUrl = $page.url.searchParams.get('redirect') || '/';
+  $: allowTestPicker = (dev || data.isTestMode)
+    && (
+      $page.url.searchParams.get('dev') === '1'
+      || $page.url.searchParams.get('picker') === '1'
+      || $page.url.searchParams.get('test') === '1'
+    );
 
   // Test users available in dev/test mode
   const testUsers = [
@@ -53,6 +60,12 @@
     const discordUrl = `/discord/login${redirectUrl !== '/' ? `?redirect=${encodeURIComponent(redirectUrl)}` : ''}`;
     window.location.href = discordUrl;
   }
+
+  onMount(() => {
+    if (!allowTestPicker) {
+      loginWithDiscord();
+    }
+  });
 </script>
 
 <svelte:head>
@@ -78,7 +91,7 @@
       </button>
     </div>
 
-    {#if dev || data.isTestMode}
+    {#if allowTestPicker}
       <div class="divider">
         <span>Development Mode</span>
       </div>

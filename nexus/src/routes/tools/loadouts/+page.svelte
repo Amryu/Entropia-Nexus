@@ -4084,6 +4084,67 @@
   </div>
 {/if}
 
+<style>
+  .picker-dialog {
+    width: min(1100px, 96vw);
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .picker-dialog .dialog-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: auto;
+  }
+
+  .picker-table {
+    min-height: 0;
+  }
+
+  .picker-preview {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .picker-preview-sections {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .picker-preview-sections.single {
+    grid-template-columns: 1fr;
+  }
+
+  .picker-preview-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px 12px;
+    grid-auto-flow: row;
+  }
+
+  .picker-preview-title {
+    word-break: break-word;
+  }
+
+  @media (max-width: 900px) {
+    .picker-dialog {
+      width: 96vw;
+      max-height: 92vh;
+    }
+
+    .picker-preview-sections {
+      grid-template-columns: 1fr;
+    }
+
+    .picker-preview-grid {
+      grid-template-columns: minmax(120px, 1fr) max-content;
+    }
+  }
+</style>
+
 {#if showImportSourceDialog}
   <div class="dialog-backdrop" on:click={() => showImportSourceDialog = false} on:keydown={(e) => e.key === 'Escape' && (showImportSourceDialog = false)}>
     <div class="dialog dialog-compact" on:click|stopPropagation role="dialog" aria-modal="true" aria-labelledby="import-source-title">
