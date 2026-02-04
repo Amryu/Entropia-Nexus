@@ -50,6 +50,102 @@ export const hasErrors = derived(validationErrors, ($errors) => {
   return Object.keys($errors).length > 0;
 });
 
+const NAMED_ENTITY_PATHS = {
+  Apartment: ['Planet'],
+  Area: ['Planet'],
+  Location: ['Planet'],
+  Shop: ['Planet'],
+  Vendor: ['Planet', 'Offers[].Item', 'Offers[].Prices[].Item'],
+  Pet: ['Planet'],
+  Mob: [
+    'Planet',
+    'DefensiveProfession',
+    'Loots[].Maturity',
+    'Loots[].Item',
+    'Spawns[].Maturities[].Maturity.Mob'
+  ],
+  Capsule: ['Profession', 'Mob'],
+  EffectChip: ['Ammo', 'Profession'],
+  MedicalChip: ['Ammo'],
+  TeleportationChip: ['Ammo', 'Profession'],
+  MiscTool: ['Profession'],
+  Weapon: ['Ammo', 'AttachmentType', 'ProfessionHit', 'ProfessionDmg'],
+  Vehicle: ['Fuel', 'AttachmentSlots[]'],
+  Blueprint: ['Book', 'Product', 'Profession'],
+  Material: ['RefiningRecipes[].Ingredients[].Item'],
+  Strongbox: ['Loots[].Item'],
+  Skill: ['Category', 'Professions[].Profession', 'Unlocks[].Profession'],
+  Profession: ['Category', 'Skills[].Skill', 'Unlocks[].Skill']
+};
+
+function normalizeNamedEntity(value) {
+  if (value === null || value === undefined) {
+    return { Name: null };
+  }
+  if (typeof value === 'string') {
+    return { Name: value };
+  }
+  if (typeof value !== 'object') {
+    return { Name: null };
+  }
+  if (!('Name' in value)) {
+    return { ...value, Name: null };
+  }
+  if (value.Name === undefined) {
+    return { ...value, Name: null };
+  }
+  return value;
+}
+
+function applyNamedEntityPath(target, parts) {
+  if (!target || parts.length === 0) return;
+
+  const rawPart = parts[0];
+  const isArray = rawPart.endsWith('[]');
+  const key = isArray ? rawPart.slice(0, -2) : rawPart;
+
+  if (parts.length === 1) {
+    if (isArray) {
+      const arr = target[key];
+      if (Array.isArray(arr)) {
+        for (let i = 0; i < arr.length; i++) {
+          arr[i] = normalizeNamedEntity(arr[i]);
+        }
+      }
+      return;
+    }
+    target[key] = normalizeNamedEntity(target[key]);
+    return;
+  }
+
+  if (isArray) {
+    const arr = target[key];
+    if (Array.isArray(arr)) {
+      for (const item of arr) {
+        applyNamedEntityPath(item, parts.slice(1));
+      }
+    }
+    return;
+  }
+
+  if (target[key] === null || target[key] === undefined || typeof target[key] !== 'object') {
+    target[key] = {};
+  }
+  applyNamedEntityPath(target[key], parts.slice(1));
+}
+
+function normalizeEntityForSchema(entityType, entity) {
+  if (!entity || !entityType) return entity;
+  const paths = NAMED_ENTITY_PATHS[entityType];
+  if (!paths || paths.length === 0) return entity;
+
+  const normalized = JSON.parse(JSON.stringify(entity));
+  for (const path of paths) {
+    applyNamedEntityPath(normalized, path.split('.'));
+  }
+  return normalized;
+}
+
 // Derived: Get the current entity with pending changes applied
 export const currentEntity = derived(
   [originalEntity, pendingChanges],
@@ -133,7 +229,10 @@ function buildEntityFromChange(entity, change) {
 }
 
 export function initEditState(entity, entityType, createMode = false, existingChange = null) {
-  const resolvedEntity = buildEntityFromChange(entity, existingChange);
+  const resolvedEntity = normalizeEntityForSchema(
+    entityType,
+    buildEntityFromChange(entity, existingChange)
+  );
   originalEntity.set(resolvedEntity);
   pendingChanges.set({});
   validationErrors.set({});
@@ -244,9 +343,11 @@ export function getChangeForSubmission() {
     setNestedValue(data, path, value);
   }
 
+  const normalizedData = normalizeEntityForSchema(metadata?.entity, data);
+
   return {
     ...metadata,
-    data,
+    data: normalizedData,
     entityId: original?.Id || null
   };
 }

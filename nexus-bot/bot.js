@@ -61,10 +61,73 @@ const client = new Client({ intents: [
   ]
 });
 
+export async function notifyModerators({ title = 'Bot Error', error = null, context = '', extra = '' } = {}) {
+  try {
+    const guildId = config.guildId;
+    const moderatorRoleId = config.moderatorRoleId;
+    if (!guildId || !moderatorRoleId) {
+      console.error('notifyModerators: Missing guildId or moderatorRoleId in config.');
+      return;
+    }
+
+    const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
+    if (!guild) {
+      console.error('notifyModerators: Guild not found.');
+      return;
+    }
+
+    const role = guild.roles.cache.get(moderatorRoleId) || await guild.roles.fetch(moderatorRoleId).catch(() => null);
+    const members = role ? Array.from(role.members.values()) : [];
+
+    const errorMessage = error?.message || String(error || 'Unknown error');
+    const errorStack = error?.stack ? String(error.stack) : '';
+
+    let message = `**${title}**\n`;
+    if (context) message += `**Context:** ${context}\n`;
+    if (extra) message += `**Details:** ${extra}\n`;
+    message += `**Error:** ${errorMessage}\n`;
+    if (errorStack) message += `**Stack:**\n${errorStack}\n`;
+
+    if (message.length > 1900) {
+      message = message.slice(0, 1900) + '\n…(truncated)';
+    }
+
+    if (members.length === 0) {
+      const fallbackMember = await guild.members.fetch(adminUserId).catch(() => null);
+      if (fallbackMember) {
+        await fallbackMember.send(message).catch(() => {});
+      }
+      return;
+    }
+
+    await Promise.all(
+      members.map(member => member.send(message).catch(() => {}))
+    );
+  } catch (notifyError) {
+    console.error('notifyModerators failed:', notifyError);
+  }
+}
+
 client.on('ready', async () => {
   console.log(`Logged in as ${client.user.tag}!`);
   // Fetch planets from API on startup
   await fetchPlanets();
+});
+
+process.on('unhandledRejection', async (error) => {
+  console.error('Unhandled promise rejection:', error);
+  await notifyModerators({
+    title: 'Unhandled Promise Rejection',
+    error
+  });
+});
+
+process.on('uncaughtException', async (error) => {
+  console.error('Uncaught exception:', error);
+  await notifyModerators({
+    title: 'Uncaught Exception',
+    error
+  });
 });
 
 client.on(Events.InteractionCreate, async interaction => {
@@ -81,10 +144,15 @@ client.on(Events.InteractionCreate, async interaction => {
       await command.execute(interaction);
     } catch (error) {
       console.error(error);
+      await notifyModerators({
+        title: 'Command Execution Error',
+        error,
+        context: `/${interaction.commandName} by ${interaction.user?.tag || interaction.user?.id}`
+      });
       if (interaction.replied || interaction.deferred) {
-        await interaction.followUp({ content: 'There was an error while executing this command!', flags: 64 });
+        await interaction.followUp({ content: 'There was an error while executing this command!', flags: 64 }).catch(() => {});
       } else {
-        await interaction.reply({ content: 'There was an error while executing this command!', flags: 64 });
+        await interaction.reply({ content: 'There was an error while executing this command!', flags: 64 }).catch(() => {});
       }
     }
     return;
@@ -92,13 +160,37 @@ client.on(Events.InteractionCreate, async interaction => {
 
   // Handle button interactions
   if (interaction.isButton()) {
-    await handleServiceButtonInteraction(interaction);
+    try {
+      await handleServiceButtonInteraction(interaction);
+    } catch (error) {
+      console.error(error);
+      await notifyModerators({
+        title: 'Button Interaction Error',
+        error,
+        context: `button=${interaction.customId} user=${interaction.user?.tag || interaction.user?.id}`
+      });
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({ content: 'An error occurred while processing this action.', flags: 64 }).catch(() => {});
+      }
+    }
     return;
   }
 
   // Handle modal submissions
   if (interaction.isModalSubmit()) {
-    await handleServiceModalSubmit(interaction);
+    try {
+      await handleServiceModalSubmit(interaction);
+    } catch (error) {
+      console.error(error);
+      await notifyModerators({
+        title: 'Modal Submission Error',
+        error,
+        context: `modal=${interaction.customId} user=${interaction.user?.tag || interaction.user?.id}`
+      });
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({ content: 'An error occurred while processing this modal.', flags: 64 }).catch(() => {});
+      }
+    }
     return;
   }
 });
@@ -661,10 +753,23 @@ async function checkRescheduleNotifications() {
   }
 }
 
-setInterval(checkUnverifiedUsers, 1 * 60 * 1000);
-setInterval(checkChanges, 1 * 15 * 1000);
-setInterval(checkFlights, 30 * 1000);
-setInterval(checkRescheduleNotifications, 30 * 1000);
+async function runScheduled(label, fn) {
+  try {
+    await fn();
+  } catch (error) {
+    console.error(`Error in scheduled task: ${label}`, error);
+    await notifyModerators({
+      title: 'Scheduled Task Error',
+      error,
+      context: label
+    });
+  }
+}
+
+setInterval(() => runScheduled('checkUnverifiedUsers', checkUnverifiedUsers), 1 * 60 * 1000);
+setInterval(() => runScheduled('checkChanges', checkChanges), 1 * 15 * 1000);
+setInterval(() => runScheduled('checkFlights', checkFlights), 30 * 1000);
+setInterval(() => runScheduled('checkRescheduleNotifications', checkRescheduleNotifications), 30 * 1000);
 
 // =============================================
 // SERVICE REQUEST BUTTON/MODAL HANDLERS
@@ -1659,7 +1764,7 @@ async function checkOnDemandRequests() {
   }
 }
 
-setInterval(checkOnDemandRequests, 30 * 1000);
+setInterval(() => runScheduled('checkOnDemandRequests', checkOnDemandRequests), 30 * 1000);
 
 // Expire tickets once per hour
 async function runTicketExpiration() {
@@ -1672,8 +1777,8 @@ async function runTicketExpiration() {
     console.error('Error expiring tickets:', e);
   }
 }
-setInterval(runTicketExpiration, 60 * 60 * 1000);
-runTicketExpiration(); // Run once on startup
+setInterval(() => runScheduled('runTicketExpiration', runTicketExpiration), 60 * 60 * 1000);
+runScheduled('runTicketExpiration', runTicketExpiration); // Run once on startup
 
 client.login(process.env.CLIENT_TOKEN);
 

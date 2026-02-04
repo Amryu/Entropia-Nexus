@@ -106,6 +106,7 @@ function formatShop(x, add = {}) {
   const out = {
     Id: x.Id,
     Name: x.Name,
+    OwnerId: x.OwnerId ?? null,
     Description: x.Description,
     MaxGuests: x.MaxGuests != null ? Number(x.MaxGuests) : null,
     Coordinates: {
@@ -130,8 +131,10 @@ function formatShop(x, add = {}) {
 }
 
 // DB methods
-async function getShops(){
-  const { rows } = await pool.query(queries.Shops);
+async function getShops(ownerId = null){
+  const sql = ownerId != null ? `${queries.Shops} AND "Estates"."OwnerId" = $1` : queries.Shops;
+  const params = ownerId != null ? [ownerId] : [];
+  const { rows } = await pool.query(sql, params);
   const ownerIds = [...new Set(rows.map(s => s.OwnerId).filter(id => id!=null))];
   const estateIds = rows.map(s => s.Id);
   const [owners, inventories, sections, managers] = await Promise.all([
@@ -163,7 +166,13 @@ function register(app){
    *      '200':
    *        description: A list of shops
    */
-  app.get('/shops', async (req,res) => { res.json(await getShops()); });
+  app.get('/shops', async (req,res) => {
+    const ownerId = req.query.OwnerId != null ? Number(req.query.OwnerId) : null;
+    if (req.query.OwnerId != null && !Number.isFinite(ownerId)) {
+      return res.status(400).json({ error: 'OwnerId must be a number.' });
+    }
+    res.json(await getShops(Number.isFinite(ownerId) ? ownerId : null));
+  });
   app.get('/shops/:shop', async (req,res) => {
     /**
      * @swagger

@@ -22,3 +22,5 @@ nexus/nul
 nul
 .playwright-mcp/
 nexus/uploads/
+sql/nexus_schema.sql
+sql/nexus_users_schema.sql
