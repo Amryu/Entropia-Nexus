@@ -2653,7 +2653,6 @@
       if (row?.efficiency) addPreviewTextRow(rows, 'Efficiency (Δ)', stripHtml(row.efficiency));
       if (row?.decay) addPreviewTextRow(rows, 'Decay (Δ)', stripHtml(row.decay));
       if (row?.uses) addPreviewTextRow(rows, 'Uses (Δ)', stripHtml(row.uses));
-      addPreviewTextRow(rows, 'Note', 'Δ values are relative to the base weapon.');
       sections.push({ title: 'Attachment Stats', rows });
     } else if (kind === 'armorset' || kind.startsWith('armor-') || kind.startsWith('armorplating')) {
       const rows = [];
