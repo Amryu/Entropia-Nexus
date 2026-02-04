@@ -60,6 +60,7 @@ const NAMED_ENTITY_PATHS = {
   Mob: [
     'Planet',
     'DefensiveProfession',
+    'Species',
     'Loots[].Maturity',
     'Loots[].Item',
     'Spawns[].Maturities[].Maturity.Mob'
