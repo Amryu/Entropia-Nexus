@@ -47,16 +47,23 @@ async function getEntityName(entityType, entityId) {
   }
 }
 
-// Get uploader username by ID
-async function getUploaderName(uploaderId) {
+// Get uploader info by ID
+async function getUploaderInfo(uploaderId) {
   if (!uploaderId) return null;
 
   try {
     const result = await pool.query(
-      `SELECT name FROM users WHERE id = $1 LIMIT 1`,
+      `SELECT id, eu_name, global_name, username
+       FROM users
+       WHERE id = $1
+       LIMIT 1`,
       [uploaderId]
     );
-    return result.rows[0]?.name || null;
+    const user = result.rows[0];
+    if (!user) return null;
+    const displayName = user.eu_name || user.global_name || user.username || String(user.id);
+    const profileName = user.eu_name || String(user.id);
+    return { displayName, profileName };
   } catch (err) {
     console.error(`Failed to get uploader name for ${uploaderId}:`, err);
     return null;
@@ -72,14 +79,15 @@ export async function load() {
   // Enrich pending images with entity names and uploader names
   const enrichedPending = await Promise.all(
     pendingImages.map(async (image) => {
-      const [entityName, uploaderName] = await Promise.all([
+      const [entityName, uploaderInfo] = await Promise.all([
         getEntityName(image.entityType, image.entityId),
-        getUploaderName(image.uploaderId)
+        getUploaderInfo(image.uploaderId)
       ]);
       return {
         ...image,
         entityName: entityName || image.entityId,
-        uploaderName: uploaderName || 'Unknown'
+        uploaderName: uploaderInfo?.displayName || 'Unknown',
+        uploaderProfile: uploaderInfo?.profileName || null
       };
     })
   );

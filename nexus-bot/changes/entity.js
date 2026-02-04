@@ -15,6 +15,21 @@ export const UpsertConfigs = {
     table: "Estates",
     relationChangeFunc: async (client, id, x) => await applyEstateSectionsChanges(client, id, x.Sections ?? [])
   },
+  Apartment: {
+    columns: [
+      { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Properties?.Description ?? x.Description ?? null },
+      { name: "MaxGuests", value: x => x.MaxGuests ?? null },
+      { name: "Longitude", value: x => x.Properties?.Coordinates?.Longitude ?? x.Coordinates?.Longitude ?? null },
+      { name: "Latitude", value: x => x.Properties?.Coordinates?.Latitude ?? x.Coordinates?.Latitude ?? null },
+      { name: "Altitude", value: x => x.Properties?.Coordinates?.Altitude ?? x.Coordinates?.Altitude ?? null },
+      { name: "PlanetId", value: async (x, c) => await c.query(`SELECT "Id" FROM ONLY "Planets" WHERE "Name" = $1`, [x.Planet?.Name]).then(res => res.rows[0]?.Id ?? null) },
+      { name: "Type", value: _ => 'Apartment' },
+      { name: "ItemTradeAvailable", value: _ => false }
+    ],
+    table: "Estates",
+    relationChangeFunc: async (client, id, x) => await applyEstateSectionsChanges(client, id, x.Sections ?? [])
+  },
   Weapon: {
     columns: [
       { name: "Name", value: x => x.Name },
@@ -525,6 +540,8 @@ export const UpsertConfigs = {
     columns: [
       { name: "Name", value: x => x.Name },
       { name: "Description", value: x => x.Properties.Description },
+      { name: "Weight", value: x => x.Properties?.Weight ?? null },
+      { name: "MaxTT", value: x => x.Properties?.Economy?.MaxTT ?? null },
     ],
     offset: 12000000,
     table: "Strongboxes",
@@ -623,6 +640,67 @@ export const UpsertConfigs = {
     table: "Vendors",
     relationChangeFunc: async (client, id, x) => await applyVendorOfferChanges(client, id, x.Offers)
   },
+  Profession: {
+    columns: [
+      { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Description },
+      { name: "CategoryId", value: async (x, c) => x.Category?.Name
+        ? await c.query(`SELECT "Id" FROM ONLY "ProfessionCategories" WHERE "Name" = $1`, [x.Category.Name]).then(res => res.rows[0]?.Id ?? null)
+        : null }
+    ],
+    table: "Professions",
+    relationChangeFunc: async (client, id, x) => await Promise.all([
+      applyProfessionSkillsChanges(client, id, x.Skills || []),
+      applyProfessionUnlocksChanges(client, id, x.Unlocks || [])
+    ])
+  },
+  Skill: {
+    columns: [
+      { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Properties?.Description ?? null },
+      { name: "HPIncrease", value: x => x.Properties?.HpIncrease ?? null },
+      { name: "Hidden", value: x => (x.Properties?.IsHidden == null ? null : (x.Properties.IsHidden ? 1 : 0)) },
+      { name: "IsExtractable", value: x => x.Properties?.IsExtractable ?? null },
+      { name: "CategoryId", value: async (x, c) => x.Category?.Name
+        ? await c.query(`SELECT "Id" FROM ONLY "SkillCategories" WHERE "Name" = $1`, [x.Category.Name]).then(res => res.rows[0]?.Id ?? null)
+        : null }
+    ],
+    table: "Skills",
+    relationChangeFunc: async (client, id, x) => await Promise.all([
+      applySkillProfessionsChanges(client, id, x.Professions || []),
+      applySkillUnlocksChanges(client, id, x.Unlocks || [])
+    ])
+  },
+  Location: {
+    columns: [
+      { name: "Name", value: x => x.Name },
+      { name: "Description", value: x => x.Properties?.Description ?? null },
+      { name: "Longitude", value: x => x.Properties?.Coordinates?.Longitude ?? null },
+      { name: "Latitude", value: x => x.Properties?.Coordinates?.Latitude ?? null },
+      { name: "Altitude", value: x => x.Properties?.Coordinates?.Altitude ?? null },
+      { name: "PlanetId", value: async (x, c) => await c.query(`SELECT "Id" FROM ONLY "Planets" WHERE "Name" = $1`, [x.Planet?.Name]).then(res => res.rows[0]?.Id ?? null) }
+    ],
+    table: "Teleporters"
+  },
+  Area: {
+    columns: [
+      { name: "Name", value: x => x.Name },
+      { name: "Type", value: x => x.Properties?.Type ?? null },
+      { name: "Shape", value: x => {
+        const { shape } = sanitizeShapeAndData(x.Properties || {});
+        return shape ?? x.Properties?.Shape ?? null;
+      }},
+      { name: "Data", value: x => {
+        const { data } = sanitizeShapeAndData(x.Properties || {});
+        return data ?? x.Properties?.Data ?? null;
+      }},
+      { name: "Longitude", value: x => x.Properties?.Coordinates?.Longitude ?? null },
+      { name: "Latitude", value: x => x.Properties?.Coordinates?.Latitude ?? null },
+      { name: "Altitude", value: x => x.Properties?.Coordinates?.Altitude ?? null },
+      { name: "PlanetId", value: async (x, c) => await c.query(`SELECT "Id" FROM ONLY "Planets" WHERE "Name" = $1`, [x.Planet?.Name]).then(res => res.rows[0]?.Id ?? null) }
+    ],
+    table: "Areas"
+  },
   Mob: {
     columns: [
       { name: "Name", value: x => x.Name },
@@ -692,20 +770,27 @@ export const UpsertConfigs = {
 }
 
 async function applyEstateSectionsChanges(client, estateId, sections) {
-  // Map section names and max points
-  const newSectionNames = sections.map(s => s.Name);
+  const normalized = (sections || []).map(s => ({
+    Name: s.Name,
+    Description: s.Description ?? null,
+    ItemPoints: s.ItemPoints ?? s.MaxItemPoints ?? null
+  }));
+  const newSectionNames = normalized.map(s => s.Name);
 
   // Remove sections not present anymore
-  await client.query(`DELETE FROM ONLY "EstateSections" WHERE "EstateId" = $1 AND "Name" NOT IN (SELECT * FROM unnest($2::text[]))`, [estateId, newSectionNames.length ? newSectionNames : ['']]);
+  await client.query(
+    `DELETE FROM ONLY "EstateSections" WHERE "EstateId" = $1 AND "Name" NOT IN (SELECT * FROM unnest($2::text[]))`,
+    [estateId, newSectionNames.length ? newSectionNames : ['']]
+  );
 
   // Upsert sections with ItemPoints using a single statement
-  await Promise.all(sections.map(s => client.query(`
+  await Promise.all(normalized.map(s => client.query(`
     INSERT INTO "EstateSections" ("EstateId", "Name", "Description", "ItemPoints")
     VALUES ($1, $2, $3, $4)
     ON CONFLICT ("EstateId", "Name") DO UPDATE SET
       "Description" = EXCLUDED."Description",
       "ItemPoints" = EXCLUDED."ItemPoints"
-  `, [estateId, s.Name, null, s.MaxItemPoints ?? null])));
+  `, [estateId, s.Name, s.Description, s.ItemPoints])));
 }
 
 async function applyMobMaturityChanges(client, mobId, maturities) {
@@ -976,6 +1061,116 @@ async function applyAttachmentSlotChanges(client, vehicleId, attachmentSlots) {
     ...attachmentSlotsToAdd.map(slot => client.query(`INSERT INTO "VehicleAttachmentSlots" ("VehicleId", "AttachmentId") VALUES ($1, $2)`, [vehicleId, attachmentSlotIds.find(x => x.name === slot).id])),
     ...attachmentSlotsToRemove.map(slot => client.query(`DELETE FROM ONLY "VehicleAttachmentSlots" WHERE "VehicleId" = $1 AND "AttachmentId" = $2`, [vehicleId, attachmentSlotIds.find(x => x.name === slot).id]))
   ]);
+}
+
+async function resolveProfessionId(client, profession) {
+  if (profession?.Id) return profession.Id;
+  if (!profession?.Name) return null;
+  const res = await client.query(`SELECT "Id" FROM ONLY "Professions" WHERE "Name" = $1`, [profession.Name]);
+  return res.rows[0]?.Id ?? null;
+}
+
+async function resolveSkillId(client, skill) {
+  if (skill?.Id) return skill.Id;
+  if (!skill?.Name) return null;
+  const res = await client.query(`SELECT "Id" FROM ONLY "Skills" WHERE "Name" = $1`, [skill.Name]);
+  return res.rows[0]?.Id ?? null;
+}
+
+async function applyProfessionSkillsChanges(client, professionId, skills) {
+  const entries = await Promise.all((skills || []).map(async (entry) => {
+    const skillId = await resolveSkillId(client, entry?.Skill);
+    if (!skillId) return null;
+    return { skillId, weight: entry?.Weight ?? null };
+  }));
+  const valid = entries.filter(Boolean);
+  if (valid.length === 0) {
+    await client.query(`DELETE FROM ONLY "ProfessionSkills" WHERE "ProfessionId" = $1`, [professionId]);
+    return;
+  }
+  const skillIds = valid.map(entry => entry.skillId);
+  await client.query(
+    `DELETE FROM ONLY "ProfessionSkills" WHERE "ProfessionId" = $1 AND "SkillId" NOT IN (SELECT * FROM unnest($2::int[]))`,
+    [professionId, skillIds]
+  );
+  await Promise.all(valid.map(entry => client.query(
+    `INSERT INTO "ProfessionSkills" ("ProfessionId", "SkillId", "Weight")
+     VALUES ($1, $2, $3)
+     ON CONFLICT ("ProfessionId", "SkillId") DO UPDATE SET "Weight" = $3`,
+    [professionId, entry.skillId, entry.weight]
+  )));
+}
+
+async function applySkillProfessionsChanges(client, skillId, professions) {
+  const entries = await Promise.all((professions || []).map(async (entry) => {
+    const professionId = await resolveProfessionId(client, entry?.Profession);
+    if (!professionId) return null;
+    return { professionId, weight: entry?.Weight ?? null };
+  }));
+  const valid = entries.filter(Boolean);
+  if (valid.length === 0) {
+    await client.query(`DELETE FROM ONLY "ProfessionSkills" WHERE "SkillId" = $1`, [skillId]);
+    return;
+  }
+  const professionIds = valid.map(entry => entry.professionId);
+  await client.query(
+    `DELETE FROM ONLY "ProfessionSkills" WHERE "SkillId" = $1 AND "ProfessionId" NOT IN (SELECT * FROM unnest($2::int[]))`,
+    [skillId, professionIds]
+  );
+  await Promise.all(valid.map(entry => client.query(
+    `INSERT INTO "ProfessionSkills" ("ProfessionId", "SkillId", "Weight")
+     VALUES ($1, $2, $3)
+     ON CONFLICT ("ProfessionId", "SkillId") DO UPDATE SET "Weight" = $3`,
+    [entry.professionId, skillId, entry.weight]
+  )));
+}
+
+async function applyProfessionUnlocksChanges(client, professionId, unlocks) {
+  const entries = await Promise.all((unlocks || []).map(async (entry) => {
+    const skillId = await resolveSkillId(client, entry?.Skill);
+    if (!skillId) return null;
+    return { skillId, level: entry?.Level ?? null };
+  }));
+  const valid = entries.filter(Boolean);
+  if (valid.length === 0) {
+    await client.query(`DELETE FROM ONLY "SkillUnlocks" WHERE "ProfessionId" = $1`, [professionId]);
+    return;
+  }
+  const skillIds = valid.map(entry => entry.skillId);
+  await client.query(
+    `DELETE FROM ONLY "SkillUnlocks" WHERE "ProfessionId" = $1 AND "SkillId" NOT IN (SELECT * FROM unnest($2::int[]))`,
+    [professionId, skillIds]
+  );
+  await Promise.all(valid.map(entry => client.query(
+    `INSERT INTO "SkillUnlocks" ("SkillId", "ProfessionId", "Level")
+     VALUES ($1, $2, $3)
+     ON CONFLICT ("SkillId", "ProfessionId") DO UPDATE SET "Level" = $3`,
+    [entry.skillId, professionId, entry.level]
+  )));
+}
+
+async function applySkillUnlocksChanges(client, skillId, unlocks) {
+  const entries = await Promise.all((unlocks || []).map(async (entry) => {
+    const professionId = await resolveProfessionId(client, entry?.Profession);
+    if (!professionId) return null;
+    return { professionId, level: entry?.Level ?? null };
+  }));
+  const valid = entries.filter(Boolean);
+  if (valid.length === 0) {
+    await client.query(`DELETE FROM ONLY "SkillUnlocks" WHERE "SkillId" = $1`, [skillId]);
+    return;
+  }
+  const professionIds = valid.map(entry => entry.professionId);
+  await client.query(
+    `DELETE FROM ONLY "SkillUnlocks" WHERE "SkillId" = $1 AND "ProfessionId" NOT IN (SELECT * FROM unnest($2::int[]))`,
+    [skillId, professionIds]
+  );
+  await Promise.all(valid.map(entry => client.query(
+    `INSERT INTO "SkillUnlocks" ("SkillId", "ProfessionId", "Level")
+     VALUES ($1, $2, $3)
+     ON CONFLICT ("SkillId", "ProfessionId") DO UPDATE SET "Level" = $3`,
+    [skillId, entry.professionId, entry.level]
+  )));
 }
 
 async function applyStrongboxLootsChanges(client, strongboxId, loots) {

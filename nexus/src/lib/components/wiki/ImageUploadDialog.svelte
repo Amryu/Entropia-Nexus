@@ -21,6 +21,10 @@
 
   /** @type {string} Entity name for display */
   export let entityName = '';
+  /** @type {boolean} Show delete option (user images) */
+  export let showDelete = false;
+  /** @type {boolean} Whether entity currently has an image */
+  export let hasImage = false;
 
   // Maximum output dimensions
   const MAX_SIZE = 320;
@@ -105,7 +109,11 @@
       formData.append('entityId', String(entityId));
 
       // Upload to server
-      const response = await fetch('/api/uploads/entity-image', {
+      const uploadUrl = entityType === 'user'
+        ? `/api/image/user/${entityId}`
+        : '/api/uploads/entity-image';
+
+      const response = await fetch(uploadUrl, {
         method: 'POST',
         body: formData
       });
@@ -115,11 +123,12 @@
         throw new Error(data.error || `Upload failed: ${response.status}`);
       }
 
-      const result = await response.json();
+      const result = await response.json().catch(() => ({}));
 
       dispatch('uploaded', {
         tempPath: result.tempPath,
-        previewUrl: result.previewUrl
+        previewUrl: result.previewUrl,
+        imageUrl: entityType === 'user' ? `/api/image/user/${entityId}` : null
       });
 
       handleClose();
@@ -199,6 +208,26 @@
   function handleKeydown(event) {
     if (event.key === 'Escape') {
       handleClose();
+    }
+  }
+
+  async function handleDelete() {
+    if (!showDelete) return;
+    if (!hasImage) return;
+    uploading = true;
+    error = '';
+    try {
+      const response = await fetch(`/api/image/user/${entityId}`, { method: 'DELETE' });
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error || `Delete failed: ${response.status}`);
+      }
+      dispatch('deleted');
+      handleClose();
+    } catch (err) {
+      error = err.message || 'Failed to delete image.';
+    } finally {
+      uploading = false;
     }
   }
 </script>
@@ -285,6 +314,11 @@
             Upload
           </button>
         {:else if step === 'select'}
+          {#if showDelete}
+            <button class="btn btn-danger" on:click={handleDelete} disabled={uploading || !hasImage}>
+              Delete Image
+            </button>
+          {/if}
           <button class="btn btn-secondary" on:click={handleClose}>
             Cancel
           </button>
@@ -523,6 +557,16 @@
 
   .btn-primary:hover:not(:disabled) {
     background-color: var(--accent-color-hover, #3a8eef);
+  }
+
+  .btn-danger {
+    background-color: rgba(239, 68, 68, 0.15);
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    color: var(--error-color);
+  }
+
+  .btn-danger:hover:not(:disabled) {
+    background-color: rgba(239, 68, 68, 0.25);
   }
 
   /* Mobile adjustments */

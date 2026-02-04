@@ -117,7 +117,7 @@
     const isCreateView = navMode === 'create';
 
     // Handle drawer state immediately (doesn't depend on data props)
-    if (isMobileAfterNav && !entity) {
+    if (isMobileAfterNav && !entity && !isCreateView) {
       drawerOpen = true;
     } else if (drawerOpen) {
       drawerOpen = false;
@@ -224,7 +224,7 @@
 
     // Auto-open drawer on mobile when no entity is selected
     const isMobileOnMount = window.innerWidth < 900;
-    if (isMobileOnMount && !entity) {
+    if (isMobileOnMount && !entity && !$isCreateMode) {
       drawerOpen = true;
     }
 

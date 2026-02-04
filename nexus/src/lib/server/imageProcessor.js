@@ -29,7 +29,8 @@ const ALLOWED_FORMATS = ['jpeg', 'png', 'webp', 'gif'];
 const VALID_ENTITY_TYPES = [
   'weapon', 'armorset', 'material', 'blueprint', 'clothing',
   'consumable', 'tool', 'attachment', 'medicaltool', 'vehicle',
-  'pet', 'furnishing', 'strongbox', 'mob', 'skill', 'profession', 'vendor'
+  'pet', 'furnishing', 'strongbox', 'mob', 'skill', 'profession', 'vendor',
+  'location', 'area', 'user'
 ];
 
 /**

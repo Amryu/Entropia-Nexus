@@ -3,6 +3,7 @@
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
+  import { encodeURIComponentSafe } from '$lib/util';
 
   let changes = [];
   let total = 0;
@@ -124,6 +125,11 @@
       case 'Delete': return 'type-delete';
       default: return '';
     }
+  }
+
+  function getProfileUrl(id, euName) {
+    if (!id && !euName) return null;
+    return `/admin/users/${encodeURIComponentSafe(String(id))}`;
   }
 
   function formatDate(dateStr) {
@@ -327,6 +333,15 @@
     display: flex;
     align-items: center;
     gap: 8px;
+  }
+
+  .author-link {
+    color: var(--accent-color);
+    text-decoration: none;
+  }
+
+  .author-link:hover {
+    text-decoration: underline;
   }
 
   .author-avatar {
@@ -609,13 +624,33 @@
             </td>
             <td>
               <div class="author-cell">
-                <span>{change.author_name || 'Unknown'}</span>
+                {#if getProfileUrl(change.author_id, change.author_eu_name)}
+                  <a
+                    class="author-link"
+                    href={getProfileUrl(change.author_id, change.author_eu_name)}
+                    on:click|stopPropagation
+                  >
+                    {change.author_name || 'Unknown'}
+                  </a>
+                {:else}
+                  <span>{change.author_name || 'Unknown'}</span>
+                {/if}
               </div>
             </td>
             <td>{formatDate(change.created_at || change.last_update)}</td>
             <td>
               {#if change.reviewed_at}
-                <div>{change.reviewer_name || 'Unknown'}</div>
+                {#if getProfileUrl(change.reviewed_by, null)}
+                  <a
+                    class="author-link"
+                    href={getProfileUrl(change.reviewed_by, null)}
+                    on:click|stopPropagation
+                  >
+                    {change.reviewer_name || 'Unknown'}
+                  </a>
+                {:else}
+                  <div>{change.reviewer_name || 'Unknown'}</div>
+                {/if}
                 <div class="entity-type">{formatDate(change.reviewed_at)}</div>
               {:else}
                 -
@@ -645,7 +680,17 @@
           <div class="mobile-card-meta">
             <div class="mobile-card-meta-item">
               <span class="mobile-card-meta-label">By:</span>
-              <span class="mobile-card-meta-value">{change.author_name || 'Unknown'}</span>
+              {#if getProfileUrl(change.author_id, change.author_eu_name)}
+                <a
+                  class="mobile-card-meta-value author-link"
+                  href={getProfileUrl(change.author_id, change.author_eu_name)}
+                  on:click|stopPropagation
+                >
+                  {change.author_name || 'Unknown'}
+                </a>
+              {:else}
+                <span class="mobile-card-meta-value">{change.author_name || 'Unknown'}</span>
+              {/if}
             </div>
             <div class="mobile-card-meta-item">
               <span class="mobile-card-meta-label">Created:</span>

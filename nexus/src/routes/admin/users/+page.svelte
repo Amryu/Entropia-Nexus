@@ -2,6 +2,7 @@
   // @ts-nocheck
   import { goto } from '$app/navigation';
   import FancyTable from '$lib/components/FancyTable.svelte';
+  import { encodeURIComponentSafe } from '$lib/util';
 
   // Status filter (applied client-side after fetch)
   let statusFilter = '';
@@ -37,6 +38,31 @@
       sortable: true,
       searchable: true,
       formatter: (value) => value || '-'
+    },
+    {
+      key: 'profile_link',
+      header: 'Profile',
+      sortable: false,
+      searchable: false,
+      width: '180px',
+      formatter: (_, row) => {
+        const label = row.eu_name || row.global_name || row.username || row.id || '-';
+        const url = `/admin/users/${encodeURIComponentSafe(String(row.id))}`;
+        return `<a class="profile-link" href="${url}" onclick="event.stopPropagation()">${escapeHtml(label)}</a>`;
+      }
+    },
+    {
+      key: 'society_name',
+      header: 'Society',
+      sortable: false,
+      searchable: false,
+      width: '200px',
+      formatter: (_, row) => {
+        if (!row?.society_name) return '-';
+        const label = escapeHtml(`${row.society_name}${row.society_abbreviation ? ` (${row.society_abbreviation})` : ''}`);
+        const url = `/societies/${encodeURIComponentSafe(row.society_name)}`;
+        return `<a class="society-link" href="${url}">${label}</a>`;
+      }
     },
     {
       key: 'status',
@@ -247,6 +273,24 @@
   :global(.status-unverified) {
     background-color: var(--hover-color);
     color: var(--text-muted);
+  }
+
+  :global(.society-link) {
+    color: var(--accent-color);
+    text-decoration: none;
+  }
+
+  :global(.society-link:hover) {
+    text-decoration: underline;
+  }
+
+  :global(.profile-link) {
+    color: var(--accent-color);
+    text-decoration: none;
+  }
+
+  :global(.profile-link:hover) {
+    text-decoration: underline;
   }
 
   /* Mobile responsive */

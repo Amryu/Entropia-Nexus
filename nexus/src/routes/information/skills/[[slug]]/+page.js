@@ -7,7 +7,7 @@
 let items;
 
 import { redirect } from '@sveltejs/kit';
-import { decodeURIComponentSafe, encodeURIComponentSafe, handlePageLoad, loadPendingChangesData } from '$lib/util';
+import { apiCall, decodeURIComponentSafe, encodeURIComponentSafe, handlePageLoad, loadPendingChangesData } from '$lib/util';
 
 export async function load({ fetch, params, url, parent }) {
   if (url.searchParams.get('mode') === 'view') {
@@ -71,6 +71,8 @@ export async function load({ fetch, params, url, parent }) {
   response.userPendingUpdates = pendingData.userPendingUpdates;
   response.canCreateNew = pendingData.canCreateNew;
   response.pendingCreatesCount = pendingData.pendingCreatesCount;
+
+  response.professions = (await apiCall(fetch, '/professions')) || [];
 
   return response;
 }

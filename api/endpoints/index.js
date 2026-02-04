@@ -2,6 +2,7 @@
 const areas = require('./areas');
 const locations = require('./locations');
 const planets = require('./planets');
+const apartments = require('./apartments');
 const shops = require('./shops');
 const items = require('./items');
 const teleporters = require('./teleporters');
@@ -67,6 +68,7 @@ function registerAll(app){
   areas.register(app);
   locations.register(app);
   planets.register(app);
+  apartments.register(app);
   shops.register(app);
   teleporters.register(app);
   search.register(app);

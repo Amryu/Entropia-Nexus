@@ -2,6 +2,7 @@
   // @ts-nocheck
   import { goto } from '$app/navigation';
   import FancyTable from '$lib/components/FancyTable.svelte';
+  import { encodeURIComponentSafe } from '$lib/util';
   import { getEstimatedDPS, getMaxCostPerHour } from '$lib/components/services/serviceCalculations';
 
   export let services = [];
@@ -138,6 +139,13 @@
     return parts.join(' + ');
   }
 
+  function getProviderLink(service, value) {
+    if (!service?.owner_id) return value || 'Unknown';
+    const identifier = service.owner_name || service.owner_id;
+    const url = `/users/${encodeURIComponentSafe(String(identifier))}`;
+    return `<a class="provider-link" href="${url}" onclick="event.stopPropagation()">${value || 'Unknown'}</a>`;
+  }
+
   // Precompute values for sorting
   $: tableData = services.map(service => ({
     ...service,
@@ -193,7 +201,7 @@
       sortable: true,
       searchable: true,
       width: '1fr',
-      formatter: (value) => value || 'Unknown'
+      formatter: (value, row) => getProviderLink(row, value)
     }
   ];
 
@@ -220,6 +228,15 @@
   .table-wrapper {
     height: 400px;
     min-height: 300px;
+  }
+
+  :global(.provider-link) {
+    color: var(--accent-color);
+    text-decoration: none;
+  }
+
+  :global(.provider-link:hover) {
+    text-decoration: underline;
   }
 
   @media (max-width: 768px) {

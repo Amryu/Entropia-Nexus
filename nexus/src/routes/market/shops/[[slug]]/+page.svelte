@@ -76,8 +76,8 @@
     Managers: [],
     InventoryGroups: [],
     Sections: [
-      { Name: SECTION_NAMES[0], MaxItemPoints: null },
-      { Name: SECTION_NAMES[1], MaxItemPoints: null }
+      { Name: SECTION_NAMES[0], ItemPoints: null, Description: null },
+      { Name: SECTION_NAMES[1], ItemPoints: null, Description: null }
     ],
     MaxGuests: null,
     HasAdditionalArea: false
@@ -97,7 +97,7 @@
     if (isChecked) {
       // Add Additional section if not present
       if (!currentSections.find(s => s.Name === SECTION_NAMES[2])) {
-        updateField('Sections', [...currentSections, { Name: SECTION_NAMES[2], MaxItemPoints: null }]);
+        updateField('Sections', [...currentSections, { Name: SECTION_NAMES[2], ItemPoints: null, MaxItemPoints: null, Description: null }]);
       }
     } else {
       // Remove Additional section
@@ -111,7 +111,7 @@
     const currentSections = $currentEntity?.Sections || [];
     const updatedSections = currentSections.map(s => {
       if (s.Name === sectionName) {
-        return { ...s, MaxItemPoints: value };
+        return { ...s, ItemPoints: value, MaxItemPoints: value };
       }
       return s;
     });
@@ -120,7 +120,8 @@
 
   // Get MaxItemPoints for a section
   function getSectionPoints(entity, sectionName) {
-    return entity?.Sections?.find(s => s.Name === sectionName)?.MaxItemPoints ?? null;
+    const section = entity?.Sections?.find(s => s.Name === sectionName);
+    return section?.ItemPoints ?? section?.MaxItemPoints ?? null;
   }
 
   // Wiki edit permissions - verified users can edit wiki data
@@ -658,10 +659,11 @@
               <!-- View mode: show section tags with optional points -->
               <div class="type-tags">
                 {#each activeEntity?.Sections || [] as section}
-                  <span class="type-tag" title={section.MaxItemPoints != null ? `Max ${section.MaxItemPoints} points` : ''}>
+                  {@const points = section.ItemPoints ?? section.MaxItemPoints}
+                  <span class="type-tag" title={points != null ? `Max ${points} points` : ''}>
                     {section.Name}
-                    {#if section.MaxItemPoints != null}
-                      <span class="tag-points">({section.MaxItemPoints})</span>
+                    {#if points != null}
+                      <span class="tag-points">({points})</span>
                     {/if}
                   </span>
                 {/each}
@@ -1049,7 +1051,7 @@
     align-items: center;
     gap: 4px;
     padding: 3px 8px;
-    font-size: 10px;
+    font-size: 13px;
     font-weight: 500;
     background-color: var(--secondary-color);
     border: 1px solid var(--border-color, #555);
@@ -1058,7 +1060,7 @@
   }
 
   .tag-points {
-    font-size: 9px;
+    font-size: 11px;
     color: var(--text-muted, #999);
     font-weight: 400;
   }
@@ -1078,6 +1080,12 @@
     background-color: var(--bg-color, var(--primary-color));
     border-radius: 4px;
     border: 1px solid var(--border-color, #555);
+  }
+
+  .section-edit-row :global(.edit-input),
+  .section-edit-row :global(.edit-select) {
+    font-size: 13px;
+    padding: 4px 8px;
   }
 
   .section-edit-row.additional-toggle {

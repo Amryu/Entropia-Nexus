@@ -1,6 +1,7 @@
 <script>
   // @ts-nocheck
   import { onMount } from 'svelte';
+  import { encodeURIComponentSafe } from '$lib/util';
 
   let stats = null;
   let isLoading = true;
@@ -16,6 +17,7 @@
     } finally {
       isLoading = false;
     }
+
   });
 
   function getStateColor(state) {
@@ -40,6 +42,11 @@
       if (entities.includes(entity)) return category;
     }
     return 'Other';
+  }
+
+  function getProfileUrl(contributor) {
+    if (!contributor) return '/admin/users';
+    return `/admin/users/${encodeURIComponentSafe(String(contributor.id))}`;
   }
 </script>
 
@@ -151,6 +158,8 @@
     gap: 12px;
     padding: 12px 16px;
     border-bottom: 1px solid var(--border-color);
+    text-decoration: none;
+    color: var(--text-color);
   }
 
   .contributor-item:last-child {
@@ -422,7 +431,7 @@
       <div class="contributors-list">
         {#if stats.topContributors?.length > 0}
           {#each stats.topContributors as contributor, i}
-            <div class="contributor-item">
+            <a class="contributor-item" href={getProfileUrl(contributor)}>
               <span class="contributor-rank" class:top-3={i < 3}>{i + 1}</span>
               <img
                 src={contributor.avatar ? `https://cdn.discordapp.com/avatars/${contributor.id}/${contributor.avatar}.png` : `https://cdn.discordapp.com/embed/avatars/${Number(BigInt(contributor.id) % 5n)}.png`}
@@ -439,7 +448,7 @@
                 <span class="approved">{contributor.approved_count}</span>
                 <small> / {contributor.total_count} changes</small>
               </div>
-            </div>
+            </a>
           {/each}
         {:else}
           <div class="contributor-item">

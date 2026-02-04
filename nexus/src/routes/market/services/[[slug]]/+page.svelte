@@ -13,7 +13,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { onMount, onDestroy } from 'svelte';
-  import { getTypeLink, apiPost } from '$lib/util';
+  import { getTypeLink, apiPost, encodeURIComponentSafe } from '$lib/util';
   import {
     canRestoreFlight,
     formatFlightTime,
@@ -124,6 +124,11 @@
       flightUpdateInterval = null;
     }
   });
+
+  function getProfileUrl(user) {
+    if (!user) return null;
+    return `/users/${encodeURIComponentSafe(String(user.eu_name || user.id))}`;
+  }
 
   // Function to fetch upcoming flights
   async function fetchUpcomingFlights() {
@@ -1057,11 +1062,28 @@
         <div class="info-section">
           <h3>Provider</h3>
           <p>
-            <strong>Owner:</strong> {selectedService.owner_name || 'Unknown'}
+            <strong>Owner:</strong>
+            {#if selectedService?.owner_id}
+              <a class="provider-link" href={getProfileUrl({ id: selectedService.owner_id, eu_name: selectedService.owner_name })}>
+                {selectedService.owner_name || 'Unknown'}
+              </a>
+            {:else}
+              {selectedService.owner_name || 'Unknown'}
+            {/if}
           </p>
           {#if selectedService.type === 'transportation' && pilots.length > 0}
             <p class="pilots-list">
-              <strong>Pilots:</strong> {pilots.map(p => p.username).join(', ')}
+              <strong>Pilots:</strong>
+              {#each pilots as pilot, index}
+                {#if index > 0}, {/if}
+                {#if pilot.user_id}
+                  <a class="provider-link" href={getProfileUrl({ id: pilot.user_id, eu_name: pilot.eu_name })}>
+                    {pilot.username}
+                  </a>
+                {:else}
+                  {pilot.username}
+                {/if}
+              {/each}
             </p>
           {/if}
         </div>
@@ -3079,6 +3101,15 @@
     margin-top: 0.5rem;
     font-size: 0.95rem;
     color: var(--text-muted, #aaa);
+  }
+
+  .provider-link {
+    color: var(--accent-color);
+    text-decoration: none;
+  }
+
+  .provider-link:hover {
+    text-decoration: underline;
   }
 
   .equipment-list {

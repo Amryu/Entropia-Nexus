@@ -35,14 +35,17 @@ export const Shop = {
     },
     "Sections": {
       "type": "array",
+      "default": [],
       "items": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
           "Name": { "type": "string", "enum": ["Indoor", "Display", "Additional"] },
+          "Description": { "type": ["string", "null"], "default": null },
+          "ItemPoints": { "type": ["integer", "null"], "default": null },
           "MaxItemPoints": { "type": ["integer", "null"], "default": null }
         },
-        "required": ["Name", "MaxItemPoints"]
+        "required": ["Name"]
       }
     }
   },

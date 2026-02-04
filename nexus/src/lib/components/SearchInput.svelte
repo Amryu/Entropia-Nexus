@@ -445,6 +445,7 @@
     border: 1px solid var(--border-color);
     background-color: var(--bg-color);
     color: var(--text-color);
+    box-sizing: border-box;
   }
 
   .search-input:focus {

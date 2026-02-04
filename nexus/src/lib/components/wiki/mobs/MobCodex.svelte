@@ -67,8 +67,58 @@
   // The skills API data is used for skill metadata (HP increase, profession weights).
   const SKILLS = SKILLS_FALLBACK;
 
+  const LOOTER_PROFESSIONS = ['Animal Looter', 'Mutant Looter', 'Robot Looter'];
+
   // Defense professions to check
   const DEFENSE_PROFESSIONS = ['Evader', 'Dodger', 'Jammer'];
+
+  function formatWeight(weight) {
+    const num = Number(weight);
+    if (!Number.isFinite(num)) return String(weight);
+    return num.toFixed(3).replace(/\.?0+$/, '');
+  }
+
+  function stripSuffix(value, suffix) {
+    if (typeof value !== 'string') return value;
+    return value.endsWith(suffix) ? value.slice(0, -suffix.length) : value;
+  }
+
+  function formatWeightedLooterProfessions(contributions) {
+    const suffix = ' Looter';
+    const byProfession = new Map((contributions || []).map(c => [c.profession, c]));
+    const ordered = LOOTER_PROFESSIONS.map(p => byProfession.get(p)).filter(Boolean);
+    if (!ordered.length) return '—';
+
+    const parts = ordered.map(({ profession, weight }) => `${formatWeight(weight)} ${stripSuffix(profession, suffix)}`);
+    if (parts.length === 1) return `${parts[0]}${suffix}`;
+    return `${parts.join(' / ')}${suffix}`;
+  }
+
+  function formatWeightedDefenseProfessions(contributions) {
+    const byProfession = new Map((contributions || []).map(c => [c.profession, c]));
+    const ordered = DEFENSE_PROFESSIONS.map(p => byProfession.get(p)).filter(Boolean);
+    if (!ordered.length) return '—';
+    return ordered.map(({ profession, weight }) => `${formatWeight(weight)} ${profession}`).join(' / ');
+  }
+
+  function getBadgeTitle(badge) {
+    if (!badge) return '';
+
+    if (badge.type === 'hp') {
+      const base = `HP per skill: ${badge.value}`;
+      return badge.level === 'ineffective' ? `${base} (less effective)` : base;
+    }
+
+    if (badge.type === 'loot') {
+      return `Looter contribution: ${formatWeightedLooterProfessions(badge.contributions)}`;
+    }
+
+    if (badge.type === 'defense') {
+      return `Defense contribution: ${formatWeightedDefenseProfessions(badge.contributions)}`;
+    }
+
+    return '';
+  }
 
   function getSkillBadges(skillName) {
     const skill = skillLookup[skillName];
@@ -92,31 +142,47 @@
 
     // Check looter profession contribution
     if (skill?.Professions && looterProfession) {
-      const looterContrib = skill.Professions.find(p => p.Profession?.Name === looterProfession);
-      if (looterContrib?.Weight != null) {
-        const weight = looterContrib.Weight;
-        if (weight >= 0.8) badges.push({ label: 'Loot', level: 'high', value: weight, type: 'loot' });
-        else if (weight >= 0.4) badges.push({ label: 'Loot', level: 'medium', value: weight, type: 'loot' });
-        else if (weight > 0) badges.push({ label: 'Loot', level: 'low', value: weight, type: 'loot' });
+      const looterContributions = LOOTER_PROFESSIONS
+        .map(profession => {
+          const contrib = skill.Professions.find(p => p.Profession?.Name === profession);
+          return contrib?.Weight != null ? { profession, weight: contrib.Weight } : null;
+        })
+        .filter(Boolean)
+        .filter(c => c.weight > 0);
+
+      const current = looterContributions.find(c => c.profession === looterProfession);
+      if (current?.weight != null && current.weight > 0) {
+        const weight = current.weight;
+        if (weight >= 0.8) badges.push({ label: 'Loot', level: 'high', value: weight, type: 'loot', contributions: looterContributions });
+        else if (weight >= 0.4) badges.push({ label: 'Loot', level: 'medium', value: weight, type: 'loot', contributions: looterContributions });
+        else badges.push({ label: 'Loot', level: 'low', value: weight, type: 'loot', contributions: looterContributions });
       }
     }
 
     // Check defense profession contribution (Evader/Dodger/Jammer)
     if (skill?.Professions) {
-      let maxDefenseWeight = 0;
-      let defenseProf = null;
-      for (const prof of DEFENSE_PROFESSIONS) {
-        const contrib = skill.Professions.find(p => p.Profession?.Name === prof);
-        if (contrib?.Weight != null && contrib.Weight > maxDefenseWeight) {
-          maxDefenseWeight = contrib.Weight;
-          defenseProf = prof;
+      const defenseContributions = DEFENSE_PROFESSIONS
+        .map(profession => {
+          const contrib = skill.Professions.find(p => p.Profession?.Name === profession);
+          return contrib?.Weight != null ? { profession, weight: contrib.Weight } : null;
+        })
+        .filter(Boolean)
+        .filter(c => c.weight > 0);
+
+      if (defenseContributions.length > 0) {
+        let maxDefenseWeight = 0;
+        let defenseProf = null;
+        for (const { profession, weight } of defenseContributions) {
+          if (weight > maxDefenseWeight) {
+            maxDefenseWeight = weight;
+            defenseProf = profession;
+          }
         }
-      }
-      if (maxDefenseWeight > 0) {
+
         const shortLabel = defenseProf === 'Evader' ? 'Eva' : defenseProf === 'Dodger' ? 'Dod' : 'Jam';
-        if (maxDefenseWeight >= 0.8) badges.push({ label: shortLabel, level: 'high', value: maxDefenseWeight, type: 'defense' });
-        else if (maxDefenseWeight >= 0.4) badges.push({ label: shortLabel, level: 'medium', value: maxDefenseWeight, type: 'defense' });
-        else badges.push({ label: shortLabel, level: 'low', value: maxDefenseWeight, type: 'defense' });
+        if (maxDefenseWeight >= 0.8) badges.push({ label: shortLabel, level: 'high', value: maxDefenseWeight, type: 'defense', contributions: defenseContributions });
+        else if (maxDefenseWeight >= 0.4) badges.push({ label: shortLabel, level: 'medium', value: maxDefenseWeight, type: 'defense', contributions: defenseContributions });
+        else badges.push({ label: shortLabel, level: 'low', value: maxDefenseWeight, type: 'defense', contributions: defenseContributions });
       }
     }
 
@@ -276,7 +342,7 @@
                   {#each badges as badge}
                     <span
                       class="skill-badge {badge.level} {badge.type}"
-                      title="{badge.type === 'hp' ? (badge.level === 'ineffective' ? `HP per skill: ${badge.value} (less effective)` : `HP per skill: ${badge.value}`) : badge.type === 'loot' ? `${looterProfession} contribution: ${badge.value}` : `${badge.label === 'Eva' ? 'Evader' : badge.label === 'Dod' ? 'Dodger' : 'Jammer'} contribution: ${badge.value}`}"
+                      title={getBadgeTitle(badge)}
                     >{badge.label}</span>
                   {/each}
                 </span>
@@ -301,7 +367,7 @@
                     {#each badges as badge}
                       <span
                         class="skill-badge {badge.level} {badge.type}"
-                        title="{badge.type === 'hp' ? (badge.level === 'ineffective' ? `HP per skill: ${badge.value} (less effective)` : `HP per skill: ${badge.value}`) : badge.type === 'loot' ? `${looterProfession} contribution: ${badge.value}` : `${badge.label === 'Eva' ? 'Evader' : badge.label === 'Dod' ? 'Dodger' : 'Jammer'} contribution: ${badge.value}`}"
+                        title={getBadgeTitle(badge)}
                       >{badge.label}</span>
                     {/each}
                   </span>

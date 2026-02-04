@@ -99,7 +99,7 @@
   import ContextMenu from './ContextMenu.svelte';
   import { contextmenu } from './ContextMenu';
 
-  import { copyLocation, getTooltipText, locationFilter, getWaypoint } from '$lib/mapUtil';
+  import { copyLocation, getTooltipText, getWaypoint } from '$lib/mapUtil';
 
   export let mapName = '';
   export let planet = null;
@@ -107,8 +107,6 @@
   export let locations = [];
   export let selected;
   export let hovered;
-  export let mapSettings;
-
   let filteredLocations = [];
 
   const mapLoadedStore = writable(false);
@@ -129,9 +127,25 @@
 
   let mapCenterPos = { x: 0, y: 0 };
   let mousePos = { x: 0, y: 0 };
+  let dragStartPos = { x: 0, y: 0 };
+  let dragMoved = false;
+  let ignoreNextClick = false;
+  const dragSlop = 4;
 
   let dragging = false;
   $: if (typeof window !== 'undefined') document.documentElement.style.setProperty('--cursorStatus', dragging ? 'grabbing' : 'default');
+  let isTouching = false;
+  let lastTouchDistance = null;
+  let lastTouchCenter = null;
+  let touchMoved = false;
+  let touchStartPos = null;
+  let touchSlop = 8;
+  let touchMoveDistance = 0;
+  let lastTouchTime = 0;
+  let lastTapTime = 0;
+  let lastTapPos = null;
+  let inertiaId = null;
+  let velocity = { x: 0, y: 0 };
 
   let zoom = 1;
   let targetZoom = zoom;
@@ -175,21 +189,31 @@
 
 
 
-  $: if (mapSettings) {
-    const newFiltered = locations.filter(x => locationFilter(x, mapSettings));
-    if (filteredLocations !== newFiltered) {
-      filteredLocations = newFiltered;
-    }
+  $: if (locations) {
+    filteredLocations = locations;
   }
 
 
-  async function focusOnLocation(location) {
+  function getMinZoom() {
+    if (!img || !img.width || !img.height || !imageTileSize) return 0.1;
+    return imageTileSize / Math.max(img.width, img.height);
+  }
+
+  function getMaxZoom() {
+    return 5;
+  }
+
+  export async function focusOnLocation(location, focusZoom = null) {
     if (typeof window === 'undefined' || !location || !location.Properties?.Coordinates) {
       return;
     }
 
     await mapLoaded;
-    moveAndZoomTo(entropiaCoordsToImageCoords(location.Properties.Coordinates.Longitude, location.Properties.Coordinates.Latitude), 1/(planet.Properties.Map.Width*0.5));
+    const target = entropiaCoordsToImageCoords(location.Properties.Coordinates.Longitude, location.Properties.Coordinates.Latitude);
+    const baseZoom = 1 / (planet.Properties.Map.Width * 0.35);
+    const requestedZoom = focusZoom ?? baseZoom;
+    const clampedZoom = Math.max(getMinZoom(), Math.min(getMaxZoom(), requestedZoom));
+    moveAndZoomTo(target, clampedZoom, 350);
   }
 
   // --- React to selection from outside (e.g. MapList) ---
@@ -277,28 +301,38 @@
       dragging = true;
       mousePos.x = event.clientX;
       mousePos.y = event.clientY;
+      dragStartPos = { x: event.clientX, y: event.clientY };
+      dragMoved = false;
     }
   }
 
   function onMouseMove(event) {
     if (dragging) {
-      const visibleImageHeight = imageTileSize / zoom;
+      const visibleImageHeight = imageTileSize / (targetZoom || zoom);
       const imagePixelSize = canvasBounds.height / visibleImageHeight;
 
-      const dx = (event.clientX - mousePos.x) * window.devicePixelRatio / imagePixelSize;
-      const dy = (event.clientY - mousePos.y) * window.devicePixelRatio / imagePixelSize;
+      const dx = (event.clientX - mousePos.x) / imagePixelSize;
+      const dy = (event.clientY - mousePos.y) / imagePixelSize;
       mousePos.x = event.clientX;
       mousePos.y = event.clientY;
+      const moveDx = event.clientX - dragStartPos.x;
+      const moveDy = event.clientY - dragStartPos.y;
+      if (!dragMoved && (moveDx * moveDx + moveDy * moveDy) > (dragSlop * dragSlop)) {
+        dragMoved = true;
+      }
 
-  mapCenterPos.x -= dx;
-  mapCenterPos.y -= dy;
-  // removed: offscreenCacheValid = false;
-  clampCoordinates();
+      mapCenterPos.x -= dx;
+      mapCenterPos.y -= dy;
+      // removed: offscreenCacheValid = false;
+      clampCoordinates();
     }
   }
 
   function onMouseUp() {
     dragging = false;
+    if (dragMoved) {
+      ignoreNextClick = true;
+    }
   }
 
   function onWheel(event) {
@@ -313,13 +347,168 @@
     }
 
     // Clamp the zoom level to a minimum and maximum value
-    targetZoom = Math.max(imageTileSize / Math.max(img.width, img.height), Math.min(4, targetZoom));
+    targetZoom = Math.max(getMinZoom(), Math.min(getMaxZoom(), targetZoom));
 
   // removed: offscreenCacheValid = false;
   zoomTo(targetZoom);
   }
 
-  function animateZoom(timestamp, animationDuration = 150) {
+  function getTouchDistance(touches) {
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  function getTouchCenter(touches) {
+    return {
+      x: (touches[0].clientX + touches[1].clientX) / 2,
+      y: (touches[0].clientY + touches[1].clientY) / 2
+    };
+  }
+
+  function onTouchStart(event) {
+    if (!event.touches?.length) return;
+    event.preventDefault();
+    isTouching = true;
+    touchMoved = false;
+    touchMoveDistance = 0;
+    velocity = { x: 0, y: 0 };
+    lastTouchTime = Date.now();
+
+    if (event.touches.length === 1) {
+      dragging = true;
+      mousePos.x = event.touches[0].clientX;
+      mousePos.y = event.touches[0].clientY;
+      touchStartPos = { x: mousePos.x, y: mousePos.y };
+      lastTouchDistance = null;
+      lastTouchCenter = null;
+      if (inertiaId) {
+        cancelAnimationFrame(inertiaId);
+        inertiaId = null;
+      }
+    } else if (event.touches.length === 2) {
+      dragging = false;
+      lastTouchDistance = getTouchDistance(event.touches);
+      lastTouchCenter = getTouchCenter(event.touches);
+    }
+  }
+
+  function onTouchMove(event) {
+    if (!event.touches?.length) return;
+    event.preventDefault();
+    if (touchStartPos && event.touches.length === 1) {
+      const dx = event.touches[0].clientX - touchStartPos.x;
+      const dy = event.touches[0].clientY - touchStartPos.y;
+      touchMoveDistance = Math.sqrt(dx * dx + dy * dy);
+      if (touchMoveDistance > touchSlop) {
+        touchMoved = true;
+      }
+    }
+    const now = Date.now();
+    const dt = Math.max(16, now - lastTouchTime);
+
+    if (event.touches.length === 1 && dragging) {
+      const visibleImageHeight = imageTileSize / (targetZoom || zoom);
+      const imagePixelSize = canvasBounds.height / visibleImageHeight;
+      const dx = (event.touches[0].clientX - mousePos.x) / imagePixelSize;
+      const dy = (event.touches[0].clientY - mousePos.y) / imagePixelSize;
+      mousePos.x = event.touches[0].clientX;
+      mousePos.y = event.touches[0].clientY;
+      if (touchMoveDistance > touchSlop) {
+        mapCenterPos.x -= dx;
+        mapCenterPos.y -= dy;
+        clampCoordinates();
+        velocity = {
+          x: -(dx / dt) * 16,
+          y: -(dy / dt) * 16
+        };
+      }
+    } else if (event.touches.length === 2) {
+      touchMoved = true;
+      const distance = getTouchDistance(event.touches);
+      const center = getTouchCenter(event.touches);
+      if (lastTouchDistance) {
+        const delta = distance / lastTouchDistance;
+        targetZoom = Math.max(getMinZoom(), Math.min(getMaxZoom(), zoom * delta));
+        zoom = targetZoom;
+      }
+      if (lastTouchCenter) {
+        const visibleImageHeight = imageTileSize / (targetZoom || zoom);
+        const imagePixelSize = canvasBounds.height / visibleImageHeight;
+        const dx = (center.x - lastTouchCenter.x) / imagePixelSize;
+        const dy = (center.y - lastTouchCenter.y) / imagePixelSize;
+        mapCenterPos.x -= dx;
+        mapCenterPos.y -= dy;
+        clampCoordinates();
+      }
+      lastTouchDistance = distance;
+      lastTouchCenter = center;
+    }
+    lastTouchTime = now;
+  }
+
+  async function onTouchEnd(event) {
+    event.preventDefault();
+    if (!event.touches?.length) {
+      dragging = false;
+      isTouching = false;
+      if (touchStartPos && !touchMoved) {
+        const endTouch = event.changedTouches && event.changedTouches[0];
+        const tapX = endTouch?.clientX ?? touchStartPos.x;
+        const tapY = endTouch?.clientY ?? touchStartPos.y;
+        const fakeEvent = {
+          clientX: tapX,
+          clientY: tapY
+        };
+        await handleCanvasClick(fakeEvent);
+        const now = Date.now();
+        if (lastTapTime && now - lastTapTime < 280 && lastTapPos) {
+          const dx = tapX - lastTapPos.x;
+          const dy = tapY - lastTapPos.y;
+          if ((dx * dx + dy * dy) < 900) {
+            const zoomFactor = 1.35;
+            const nextZoom = Math.max(getMinZoom(), Math.min(getMaxZoom(), (targetZoom || zoom) * zoomFactor));
+            zoomTo(nextZoom, 220);
+            lastTapTime = 0;
+            lastTapPos = null;
+            return;
+          }
+        }
+        lastTapTime = now;
+        lastTapPos = { x: tapX, y: tapY };
+      }
+      if (touchMoved && (Math.abs(velocity.x) > 0.5 || Math.abs(velocity.y) > 0.5)) {
+        const friction = 0.93;
+        const step = () => {
+          velocity.x *= friction;
+          velocity.y *= friction;
+          mapCenterPos.x += velocity.x;
+          mapCenterPos.y += velocity.y;
+          clampCoordinates();
+          if (Math.abs(velocity.x) < 0.1 && Math.abs(velocity.y) < 0.1) {
+            inertiaId = null;
+            return;
+          }
+          inertiaId = requestAnimationFrame(step);
+        };
+        inertiaId = requestAnimationFrame(step);
+      }
+      touchStartPos = null;
+      lastTouchDistance = null;
+      lastTouchCenter = null;
+      return;
+    }
+
+    if (event.touches.length === 1) {
+      dragging = true;
+      mousePos.x = event.touches[0].clientX;
+      mousePos.y = event.touches[0].clientY;
+      lastTouchDistance = null;
+      lastTouchCenter = null;
+    }
+  }
+
+  function animateZoom(timestamp, animationDuration = 200) {
     if (zoomTransitionStart === -1) {
       zoomTransitionStart = timestamp;
     }
@@ -371,7 +560,7 @@
   let target = null;
   let moveTransitionStart = null;
 
-  function moveTo(position, animationDuration = 150) {
+  function moveTo(position, animationDuration = 220) {
     target = position;
 
     moveTransitionStart = -1;
@@ -384,7 +573,7 @@
     moveAnimationId = requestAnimationFrame((timestamp) => animateMove(timestamp, animationDuration));
   }
 
-  function zoomTo(zoom, animationDuration = 50) {
+  function zoomTo(zoom, animationDuration = 120) {
     targetZoom = zoom;
 
     zoomTransitionStart = -1;
@@ -397,7 +586,7 @@
     zoomAnimationId = requestAnimationFrame((timestamp) => animateZoom(timestamp, animationDuration));
   }
 
-  function moveAndZoomTo(position, zoom, animationDuration = 300) {
+  function moveAndZoomTo(position, zoom, animationDuration = 350) {
     moveTo(position, animationDuration);
     zoomTo(zoom, animationDuration);
   }
@@ -451,7 +640,7 @@
     ctx.imageSmoothingQuality = 'high';
     ctx.drawImage(img, srcX, srcY, visibleWidth, visibleHeight, destX, destY, destWidth, destHeight);
 
-    if (mapSettings.settings.showGrid) drawGrid(ctx);
+    // Grid rendering disabled for maps rework.
 
     // Draw all shapes (no spatial grid, no offscreen cache)
     for (const loc of filteredLocations) {
@@ -488,7 +677,7 @@
   }
 
   // --- Hit Detection ---
-  function getShapeAtCanvasPos(x, y) {
+  function getShapeAtCanvasPos(x, y, buffer = 0) {
     // Check all filteredLocations for hit, no duplicate filtering
     for (let i = filteredLocations.length - 1; i >= 0; i--) {
       const loc = filteredLocations[i];
@@ -496,7 +685,7 @@
       if (type === 'Circle') {
         const center = entropiaCoordsToCanvasCoords(loc.Properties.Data.x, loc.Properties.Data.y);
         const outer = entropiaCoordsToCanvasCoords(loc.Properties.Data.x + loc.Properties.Data.radius, loc.Properties.Data.y);
-        const radius = outer.x - center.x;
+        const radius = outer.x - center.x + buffer;
         const dx = x - center.x, dy = y - center.y;
         if (dx * dx + dy * dy <= radius * radius) return { type: 'area', shape: loc, index: i };
       } else if (type === 'Rectangle') {
@@ -504,7 +693,12 @@
         const end = entropiaCoordsToCanvasCoords(loc.Properties.Data.x + loc.Properties.Data.width, loc.Properties.Data.y + loc.Properties.Data.height);
         const width = end.x - start.x;
         const height = start.y - end.y;
-        if (x >= start.x && x <= start.x + width && y >= start.y - height && y <= start.y) return { type: 'area', shape: loc, index: i };
+        if (
+          x >= start.x - buffer &&
+          x <= start.x + width + buffer &&
+          y >= start.y - height - buffer &&
+          y <= start.y + buffer
+        ) return { type: 'area', shape: loc, index: i };
       } else if (type === 'Polygon') {
         const verts = (loc.Properties.Data.vertices ?? []).reduce((result, value, idx, arr) => {
           if (idx % 2 === 0) result.push([value, arr[idx + 1]]);
@@ -515,9 +709,11 @@
         const pt = entropiaCoordsToCanvasCoords(loc.Properties.Coordinates.Longitude, loc.Properties.Coordinates.Latitude);
         if (loc.Properties.Type === 'Teleporter') {
           const dx = x - pt.x, dy = y - pt.y;
-          if (dx * dx + dy * dy <= 25) return { type: 'location', shape: loc, index: i };
+          const radius = 14 + buffer;
+          if (dx * dx + dy * dy <= radius * radius) return { type: 'location', shape: loc, index: i };
         } else {
-          if (x >= pt.x - 5 && x <= pt.x + 5 && y >= pt.y - 5 && y <= pt.y + 5) return { type: 'location', shape: loc, index: i };
+          const size = 6 + buffer;
+          if (x >= pt.x - size && x <= pt.x + size && y >= pt.y - size && y <= pt.y + size) return { type: 'location', shape: loc, index: i };
         }
       }
     }
@@ -543,8 +739,8 @@
 
   function handleCanvasMouseMove(event) {
     const rect = canvasElement.getBoundingClientRect();
-    const x = (event.clientX - rect.left) * window.devicePixelRatio;
-    const y = (event.clientY - rect.top) * window.devicePixelRatio;
+    const x = (event.clientX - rect.left);
+    const y = (event.clientY - rect.top);
     const hit = getShapeAtCanvasPos(x, y);
     if (hit) {
       canvasHover = hit.shape;
@@ -565,7 +761,7 @@
     }
   }
 
-  function getAllShapesAtCanvasPos(x, y) {
+  function getAllShapesAtCanvasPos(x, y, buffer = 0) {
     // Returns all shapes (areas and locations) at the given canvas position, topmost first
     const found = [];
     for (let i = filteredLocations.length - 1; i >= 0; i--) {
@@ -574,7 +770,7 @@
       if (type === 'Circle') {
         const center = entropiaCoordsToCanvasCoords(loc.Properties.Data.x, loc.Properties.Data.y);
         const outer = entropiaCoordsToCanvasCoords(loc.Properties.Data.x + loc.Properties.Data.radius, loc.Properties.Data.y);
-        const radius = outer.x - center.x;
+        const radius = outer.x - center.x + buffer;
         const dx = x - center.x, dy = y - center.y;
         if (dx * dx + dy * dy <= radius * radius) found.push({ type: 'area', shape: loc });
       } else if (type === 'Rectangle') {
@@ -582,7 +778,12 @@
         const end = entropiaCoordsToCanvasCoords(loc.Properties.Data.x + loc.Properties.Data.width, loc.Properties.Data.y + loc.Properties.Data.height);
         const width = end.x - start.x;
         const height = start.y - end.y;
-        if (x >= start.x && x <= start.x + width && y >= start.y - height && y <= start.y) found.push({ type: 'area', shape: loc });
+        if (
+          x >= start.x - buffer &&
+          x <= start.x + width + buffer &&
+          y >= start.y - height - buffer &&
+          y <= start.y + buffer
+        ) found.push({ type: 'area', shape: loc });
       } else if (type === 'Polygon') {
         const verts = (loc.Properties.Data.vertices ?? []).reduce((result, value, idx, arr) => {
           if (idx % 2 === 0) result.push([value, arr[idx + 1]]);
@@ -593,13 +794,68 @@
         const pt = entropiaCoordsToCanvasCoords(loc.Properties.Coordinates.Longitude, loc.Properties.Coordinates.Latitude);
         if (loc.Properties.Type === 'Teleporter') {
           const dx = x - pt.x, dy = y - pt.y;
-          if (dx * dx + dy * dy <= 25) found.push({ type: 'location', shape: loc });
+          const radius = 14 + buffer;
+          if (dx * dx + dy * dy <= radius * radius) found.push({ type: 'location', shape: loc });
         } else {
-          if (x >= pt.x - 5 && x <= pt.x + 5 && y >= pt.y - 5 && y <= pt.y + 5) found.push({ type: 'location', shape: loc });
+          const size = 6 + buffer;
+          if (x >= pt.x - size && x <= pt.x + size && y >= pt.y - size && y <= pt.y + size) found.push({ type: 'location', shape: loc });
         }
       }
     }
     return found;
+  }
+
+  function getNearestShapesAtCanvasPos(x, y, buffer = 0) {
+    const candidates = [];
+    for (let i = filteredLocations.length - 1; i >= 0; i--) {
+      const loc = filteredLocations[i];
+      const type = loc.Properties.Shape;
+      if (type === 'Circle') {
+        const center = entropiaCoordsToCanvasCoords(loc.Properties.Data.x, loc.Properties.Data.y);
+        const outer = entropiaCoordsToCanvasCoords(loc.Properties.Data.x + loc.Properties.Data.radius, loc.Properties.Data.y);
+        const radius = outer.x - center.x + buffer;
+        const dx = x - center.x, dy = y - center.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist <= radius) candidates.push({ type: 'area', shape: loc, dist, priority: 2 });
+      } else if (type === 'Rectangle') {
+        const start = entropiaCoordsToCanvasCoords(loc.Properties.Data.x, loc.Properties.Data.y);
+        const end = entropiaCoordsToCanvasCoords(loc.Properties.Data.x + loc.Properties.Data.width, loc.Properties.Data.y + loc.Properties.Data.height);
+        const width = end.x - start.x;
+        const height = start.y - end.y;
+        if (
+          x >= start.x - buffer &&
+          x <= start.x + width + buffer &&
+          y >= start.y - height - buffer &&
+          y <= start.y + buffer
+        ) {
+          const cx = start.x + width / 2;
+          const cy = start.y - height / 2;
+          const dx = x - cx, dy = y - cy;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          candidates.push({ type: 'area', shape: loc, dist, priority: 2 });
+        }
+      } else if (type === 'Polygon') {
+        const verts = (loc.Properties.Data.vertices ?? []).reduce((result, value, idx, arr) => {
+          if (idx % 2 === 0) result.push([value, arr[idx + 1]]);
+          return result;
+        }, []).map(v => entropiaCoordsToCanvasCoords(v[0], v[1]));
+        if (pointInPolygon({ x, y }, verts)) {
+          candidates.push({ type: 'area', shape: loc, dist: 0, priority: 2 });
+        }
+      } else {
+        const pt = entropiaCoordsToCanvasCoords(loc.Properties.Coordinates.Longitude, loc.Properties.Coordinates.Latitude);
+        const dx = x - pt.x, dy = y - pt.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const radius = (loc.Properties.Type === 'Teleporter' ? 14 : 6) + buffer;
+        if (dist <= radius) {
+          candidates.push({ type: 'location', shape: loc, dist, priority: 0 });
+        }
+      }
+    }
+    if (candidates.length === 0) return [];
+    return candidates
+      .sort((a, b) => (a.dist - b.dist))
+      .map(({ type, shape }) => ({ type, shape }));
   }
 
   function truncateName(name) {
@@ -608,79 +864,45 @@
   }
 
   async function handleCanvasClick(event) {
+    if (ignoreNextClick) {
+      ignoreNextClick = false;
+      return;
+    }
     const rect = canvasElement.getBoundingClientRect();
-    const x = (event.clientX - rect.left) * window.devicePixelRatio;
-    const y = (event.clientY - rect.top) * window.devicePixelRatio;
-    const hits = getAllShapesAtCanvasPos(x, y);
+    const x = (event.clientX - rect.left);
+    const y = (event.clientY - rect.top);
+    const hitBuffer = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches ? 28 : 0;
+    const hits = getAllShapesAtCanvasPos(x, y, hitBuffer);
     const currentId = selected?.Id;
-    if (hits.length === 1) {
-      const hit = hits[0];
-      selected = hit.shape;
-      if (hit.shape?.Properties?.Coordinates) {
-        if (typeof window !== 'undefined' && planet && hit.shape?.Id) {
-          const planetSimpleName = planet.Name.replace(/[^0-9a-zA-Z]/g, '').toLowerCase();
-          const newUrl = `/maps/${planetSimpleName}/${hit.shape.Id}`;
-          if (hit.shape.Id !== currentId) {
-            await navigate(newUrl);
-          }
-        }
-        // focusOnLocation removed: only visual highlight
+    if (hits.length === 0) {
+      selected = null;
+      hovered = null;
+      if (typeof window !== 'undefined' && planet) {
+        const planetSimpleName = planet.Name.replace(/[^0-9a-zA-Z]/g, '').toLowerCase();
+        await navigate(`/maps/${planetSimpleName}`);
       }
-    } else if (hits.length > 1) {
-      // Only show context menu if at least one hit is a location (not just areas)
-      const hasLocation = hits.some(obj => obj.type === 'location');
-      if (hasLocation) {
-        const menu = hits.map(obj => ({
-          label: truncateName(obj.shape.Name),
-          action: async () => {
-            selected = obj.shape;
-            if (obj.shape?.Properties?.Coordinates) {
-              if (typeof window !== 'undefined' && planet && obj.shape?.Id) {
-                const planetSimpleName = planet.Name.replace(/[^0-9a-zA-Z]/g, '').toLowerCase();
-                const newUrl = `/maps/${planetSimpleName}/${obj.shape.Id}`;
-                if (obj.shape.Id !== currentId) {
-                  await navigate(newUrl);
-                }
-              }
-              // focusOnLocation removed: only visual highlight
-            }
-          }
-        }));
-        if (typeof window !== 'undefined') {
-          // Dispatch a custom event to trigger the contextmenu action
-          const customEvent = new CustomEvent('contextmenu', {
-            detail: {
-              menu,
-              position: { x: event.clientX, y: event.clientY }
-            },
-            bubbles: true,
-            cancelable: true
-          });
-          canvasElement.dispatchEvent(customEvent);
-        }
-      } else {
-        // If only areas, just select the topmost area
-        const hit = hits[0];
-        selected = hit.shape;
-        if (hit.shape?.Properties?.Coordinates) {
-          if (typeof window !== 'undefined' && planet && hit.shape?.Id) {
-            const planetSimpleName = planet.Name.replace(/[^0-9a-zA-Z]/g, '').toLowerCase();
-            const newUrl = `/maps/${planetSimpleName}/${hit.shape.Id}`;
-            if (hit.shape.Id !== currentId) {
-              await navigate(newUrl);
-            }
-          }
-          // focusOnLocation removed: only visual highlight
+      return;
+    }
+    const bestHits = getNearestShapesAtCanvasPos(x, y, hitBuffer);
+    const targetHit = bestHits[0] || hits[0];
+    selected = targetHit.shape;
+    if (targetHit.shape?.Properties?.Coordinates) {
+      if (typeof window !== 'undefined' && planet && targetHit.shape?.Id) {
+        const planetSimpleName = planet.Name.replace(/[^0-9a-zA-Z]/g, '').toLowerCase();
+        const newUrl = `/maps/${planetSimpleName}/${targetHit.shape.Id}`;
+        if (targetHit.shape.Id !== currentId) {
+          await navigate(newUrl);
         }
       }
+      // focusOnLocation removed: only visual highlight
     }
   }
 
   function handleCanvasRightClick(event) {
     event.preventDefault();
     const rect = canvasElement.getBoundingClientRect();
-    const x = (event.clientX - rect.left) * window.devicePixelRatio;
-    const y = (event.clientY - rect.top) * window.devicePixelRatio;
+    const x = (event.clientX - rect.left);
+    const y = (event.clientY - rect.top);
     const hit = getShapeAtCanvasPos(x, y);
     if (hit) {
       // Automatically copy waypoint to clipboard
@@ -693,12 +915,20 @@
     canvasElement.addEventListener('mousemove', handleCanvasMouseMove);
     canvasElement.addEventListener('click', handleCanvasClick);
     canvasElement.addEventListener('contextmenu', handleCanvasRightClick);
+    canvasElement.addEventListener('touchstart', onTouchStart, { passive: false });
+    canvasElement.addEventListener('touchmove', onTouchMove, { passive: false });
+    canvasElement.addEventListener('touchend', onTouchEnd, { passive: false });
+    canvasElement.addEventListener('touchcancel', onTouchEnd, { passive: false });
   });
   onDestroy(() => {
     if (typeof window !== 'undefined' && canvasElement) {
       canvasElement.removeEventListener('mousemove', handleCanvasMouseMove);
       canvasElement.removeEventListener('click', handleCanvasClick);
       canvasElement.removeEventListener('contextmenu', handleCanvasRightClick);
+      canvasElement.removeEventListener('touchstart', onTouchStart);
+      canvasElement.removeEventListener('touchmove', onTouchMove);
+      canvasElement.removeEventListener('touchend', onTouchEnd);
+      canvasElement.removeEventListener('touchcancel', onTouchEnd);
     }
   });
 
@@ -805,8 +1035,8 @@
 
     const rect = canvasElement.getBoundingClientRect();
     return {
-      x: (windowX - rect.left) * window.devicePixelRatio,
-      y: (windowY - rect.top) * window.devicePixelRatio,
+      x: (windowX - rect.left),
+      y: (windowY - rect.top),
     };
   }
 
@@ -817,8 +1047,8 @@
 
     const rect = canvasElement.getBoundingClientRect();
     return {
-      x: canvasX / window.devicePixelRatio + rect.left,
-      y: canvasY / window.devicePixelRatio + rect.top,
+      x: canvasX + rect.left,
+      y: canvasY + rect.top,
     };
   }
 

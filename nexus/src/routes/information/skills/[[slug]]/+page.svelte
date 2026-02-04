@@ -19,6 +19,7 @@
   import DataSection from '$lib/components/wiki/DataSection.svelte';
   import InlineEdit from '$lib/components/wiki/InlineEdit.svelte';
   import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
+  import LocalSearchInput from '$lib/components/wiki/LocalSearchInput.svelte';
 
   // Edit state management
   import {
@@ -31,6 +32,7 @@
     viewingPendingChange,
     setExistingPendingChange,
     setViewingPendingChange,
+    setFieldError,
     updateField,
     changeMetadata
   } from '$lib/stores/wikiEditState.js';
@@ -47,6 +49,7 @@
   $: skill = data.object;
   $: user = data.session?.user;
   $: allItems = data.allItems || [];
+  $: allProfessions = data.professions || [];
   $: pendingChange = data.pendingChange;
   $: existingChange = data.existingChange;
   $: userPendingCreates = data.userPendingCreates || [];
@@ -155,6 +158,10 @@
     }
   ];
 
+  $: professionOptions = (allProfessions || [])
+    .filter((prof) => prof?.Name)
+    .map((prof) => ({ label: prof.Name, value: prof.Name }));
+
   const navTableColumns = [
     {
       key: 'category',
@@ -224,12 +231,71 @@
     return `category-${lower}`;
   }
 
+  function updateProfessionEntry(index, field, value) {
+    const entries = [...(activeSkill?.Professions || [])];
+    const entry = entries[index] || { Profession: { Name: '' }, Weight: null };
+    if (field === 'Profession') {
+      entry.Profession = { Name: value };
+    } else {
+      entry.Weight = value === '' || value === null ? null : Number(value);
+    }
+    entries[index] = entry;
+    updateField('Professions', entries);
+  }
+
+  function addProfessionEntry() {
+    const entries = [...(activeSkill?.Professions || [])];
+    entries.push({ Profession: { Name: '' }, Weight: null });
+    updateField('Professions', entries);
+  }
+
+  function removeProfessionEntry(index) {
+    const entries = (activeSkill?.Professions || []).filter((_, i) => i !== index);
+    updateField('Professions', entries);
+  }
+
+  function updateUnlockEntry(index, field, value) {
+    const entries = [...(activeSkill?.Unlocks || [])];
+    const entry = entries[index] || { Profession: { Name: '' }, Level: null };
+    if (field === 'Profession') {
+      entry.Profession = { Name: value };
+    } else {
+      entry.Level = value === '' || value === null ? null : Number(value);
+    }
+    entries[index] = entry;
+    updateField('Unlocks', entries);
+  }
+
+  function addUnlockEntry() {
+    const entries = [...(activeSkill?.Unlocks || [])];
+    entries.push({ Profession: { Name: '' }, Level: null });
+    updateField('Unlocks', entries);
+  }
+
+  function removeUnlockEntry(index) {
+    const entries = (activeSkill?.Unlocks || []).filter((_, i) => i !== index);
+    updateField('Unlocks', entries);
+  }
+
   // Reactive calculations using activeSkill
   $: professionCount = getProfessionCount(activeSkill);
   $: unlockCount = getUnlockCount(activeSkill);
   $: isHidden = activeSkill?.Properties?.IsHidden ?? false;
   $: isExtractable = activeSkill?.Properties?.IsExtractable ?? false;
+  $: if ($editMode) {
+    const unlockCount = activeSkill?.Unlocks?.length || 0;
+    const shouldBeHidden = unlockCount > 0;
+    if ((activeSkill?.Properties?.IsHidden ?? false) !== shouldBeHidden) {
+      updateField('Properties.IsHidden', shouldBeHidden);
+    }
+  }
   $: hpIncrease = activeSkill?.Properties?.HpIncrease || 0;
+  $: if ($editMode) {
+    const categoryName = (activeSkill?.Category?.Name || '').trim();
+    setFieldError('Category.Name', categoryName ? null : 'Category is required');
+  } else {
+    setFieldError('Category.Name', null);
+  }
 </script>
 
 <WikiSEO
@@ -350,19 +416,10 @@
             </div>
             <div class="stat-row">
               <span class="stat-label">Visibility</span>
-            <span class="stat-value" class:highlight-hidden={isHidden}>
-              {#if $editMode}
-                <InlineEdit
-                  value={activeSkill?.Properties?.IsHidden}
-                  path="Properties.IsHidden"
-                  type="checkbox"
-                />
-                {activeSkill?.Properties?.IsHidden ? 'Hidden' : 'Visible'}
-              {:else}
+              <span class="stat-value" class:highlight-hidden={isHidden}>
                 {isHidden ? 'Hidden' : 'Visible'}
-              {/if}
-            </span>
-          </div>
+              </span>
+            </div>
           <div class="stat-row">
             <span class="stat-label">Extractable</span>
             <span class="stat-value" class:highlight-yes={isExtractable}>
@@ -453,7 +510,7 @@
         </div>
 
         <!-- Affected Professions Section -->
-        {#if !data.isCreateMode}
+        {#if $editMode || (activeSkill?.Professions && activeSkill.Professions.length > 0)}
           <DataSection
             title="Affected Professions"
             icon=""
@@ -461,12 +518,48 @@
             subtitle="{professionCount} profession{professionCount !== 1 ? 's' : ''}"
             on:toggle={savePanelStates}
           >
-            <SkillProfessions professions={activeSkill?.Professions} />
+            {#if $editMode}
+              <div class="skill-edit-list">
+                {#each activeSkill?.Professions || [] as entry, index (index)}
+                  {@const missingProfession = !(entry?.Profession?.Name || '').trim()}
+                  {@const missingWeight = entry?.Weight === null || entry?.Weight === undefined || entry?.Weight === ''}
+                  <div class="skill-edit-row" class:invalid={missingProfession || missingWeight}>
+                    <div class="skill-edit-search" class:invalid={missingProfession}>
+                      <LocalSearchInput
+                        value={entry?.Profession?.Name || ''}
+                        options={professionOptions}
+                        placeholder="Profession"
+                        on:select={(e) => updateProfessionEntry(index, 'Profession', e.detail.value)}
+                        on:change={(e) => updateProfessionEntry(index, 'Profession', e.detail.value)}
+                      />
+                    </div>
+                    <input
+                      class="skill-edit-number"
+                      class:invalid={missingWeight}
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="Weight"
+                      value={entry?.Weight ?? ''}
+                      on:input={(e) => updateProfessionEntry(index, 'Weight', e.target.value)}
+                    />
+                    <button class="skill-edit-remove" on:click={() => removeProfessionEntry(index)} aria-label="Remove profession">
+                      ×
+                    </button>
+                  </div>
+                {/each}
+                <button class="skill-edit-add" on:click={addProfessionEntry}>
+                  + Add profession
+                </button>
+              </div>
+            {:else}
+              <SkillProfessions professions={activeSkill?.Professions} />
+            {/if}
           </DataSection>
         {/if}
 
         <!-- Unlocked By Section -->
-        {#if activeSkill?.Unlocks && activeSkill.Unlocks.length > 0 && !data.isCreateMode}
+        {#if $editMode || (activeSkill?.Unlocks && activeSkill.Unlocks.length > 0)}
           <DataSection
             title="Unlocked By"
             icon=""
@@ -474,7 +567,43 @@
             subtitle="{unlockCount} profession{unlockCount !== 1 ? 's' : ''}"
             on:toggle={savePanelStates}
           >
-            <SkillUnlockedBy unlocks={activeSkill.Unlocks} />
+            {#if $editMode}
+              <div class="skill-edit-list">
+                {#each activeSkill?.Unlocks || [] as entry, index (index)}
+                  {@const missingProfession = !(entry?.Profession?.Name || '').trim()}
+                  {@const missingLevel = entry?.Level === null || entry?.Level === undefined || entry?.Level === ''}
+                  <div class="skill-edit-row" class:invalid={missingProfession || missingLevel}>
+                    <div class="skill-edit-search" class:invalid={missingProfession}>
+                      <LocalSearchInput
+                        value={entry?.Profession?.Name || ''}
+                        options={professionOptions}
+                        placeholder="Profession"
+                        on:select={(e) => updateUnlockEntry(index, 'Profession', e.detail.value)}
+                        on:change={(e) => updateUnlockEntry(index, 'Profession', e.detail.value)}
+                      />
+                    </div>
+                    <input
+                      class="skill-edit-number"
+                      class:invalid={missingLevel}
+                      type="number"
+                      min="0"
+                      step="1"
+                      placeholder="Level"
+                      value={entry?.Level ?? ''}
+                      on:input={(e) => updateUnlockEntry(index, 'Level', e.target.value)}
+                    />
+                    <button class="skill-edit-remove" on:click={() => removeUnlockEntry(index)} aria-label="Remove unlock">
+                      ×
+                    </button>
+                  </div>
+                {/each}
+                <button class="skill-edit-add" on:click={addUnlockEntry}>
+                  + Add unlock
+                </button>
+              </div>
+            {:else}
+              <SkillUnlockedBy unlocks={activeSkill.Unlocks} />
+            {/if}
           </DataSection>
         {/if}
       </article>
@@ -793,6 +922,100 @@
   .no-selection .hint {
     font-size: 14px;
     margin-top: 16px;
+  }
+
+  .skill-edit-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .skill-edit-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    background-color: var(--bg-color, var(--primary-color));
+    border-radius: 4px;
+    border-left: 3px solid var(--accent-color, #4a9eff);
+  }
+
+  .skill-edit-row.invalid {
+    border-left-color: var(--error-color, #ff6b6b);
+  }
+
+  .skill-edit-search {
+    flex: 1;
+    min-width: 140px;
+  }
+
+  .skill-edit-search.invalid :global(.local-search input) {
+    border-color: var(--error-color, #ff6b6b);
+  }
+
+  .skill-edit-number {
+    width: 70px;
+    padding: 5px 6px;
+    font-size: 13px;
+    text-align: left;
+    background-color: var(--input-bg, var(--secondary-color));
+    border: 1px solid var(--border-color, #555);
+    border-radius: 4px;
+    color: var(--text-color);
+  }
+
+  .skill-edit-number:focus {
+    outline: none;
+    border-color: var(--accent-color, #4a9eff);
+  }
+
+  .skill-edit-number.invalid {
+    border-color: var(--error-color, #ff6b6b);
+  }
+
+  .skill-edit-remove {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    margin-left: auto;
+    background-color: transparent;
+    border: 1px solid var(--border-color, #555);
+    border-radius: 4px;
+    color: var(--error-color, #ff6b6b);
+    cursor: pointer;
+    transition: all 0.15s;
+    flex-shrink: 0;
+  }
+
+  .skill-edit-remove:hover {
+    background-color: var(--error-color, #ff6b6b);
+    color: white;
+    border-color: var(--error-color, #ff6b6b);
+  }
+
+  .skill-edit-add {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 8px 12px;
+    background-color: transparent;
+    border: 1px dashed var(--border-color, #555);
+    border-radius: 4px;
+    color: var(--text-muted, #999);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+    width: 100%;
+  }
+
+  .skill-edit-add:hover {
+    background-color: var(--hover-color);
+    color: var(--accent-color, #4a9eff);
+    border-color: var(--accent-color, #4a9eff);
   }
 
   /* Tablet adjustments */

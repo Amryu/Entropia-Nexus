@@ -145,7 +145,13 @@
               </div>
               <div class="info-row">
                 <span class="label">Uploaded by:</span>
-                <span class="value">{image.uploaderName}</span>
+                {#if image.uploaderProfile}
+                  <a class="value link" href={`/admin/users/${encodeURIComponentSafe(image.uploaderProfile)}`}>
+                    {image.uploaderName}
+                  </a>
+                {:else}
+                  <span class="value">{image.uploaderName}</span>
+                {/if}
               </div>
               <div class="info-row">
                 <span class="label">Uploaded:</span>

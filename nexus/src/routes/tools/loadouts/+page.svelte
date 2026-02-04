@@ -1840,7 +1840,7 @@
   }
 
   function formatEffectCount(count) {
-    if (!count) return 'â€”';
+    if (!count) return '-';
     return count === 1 ? '1 effect' : `${count} effects`;
   }
 
@@ -1880,7 +1880,7 @@
 
   function getClothingEffectLabel(item) {
     const count = getClothingEffectCount(item);
-    return count > 0 ? `${count} effects` : 'â€”';
+    return count > 0 ? `${count} effects` : '-';
   }
 
   function addClothingItem(item) {

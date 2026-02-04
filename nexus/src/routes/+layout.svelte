@@ -72,6 +72,7 @@
 
       // Listen for resize to update the cookie
       window.addEventListener('resize', handleResize);
+
     }
   });
 

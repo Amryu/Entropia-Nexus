@@ -190,7 +190,12 @@ async function checkChanges() {
       ? await channel.threads.fetch(change.thread_id).catch(_ => null)
       : null;
 
-    const fetchUrl = `${process.env.API_URL}/${change.entity.toLowerCase()}s/${change.data.Id}`;
+    const rawChangeId = change?.data?.Id;
+    const apartmentId = change.entity === 'Apartment' && Number.isFinite(Number(rawChangeId))
+      ? (Number(rawChangeId) > 300000 ? Number(rawChangeId) - 300000 : Number(rawChangeId))
+      : rawChangeId;
+    const fetchId = change.entity === 'Apartment' ? apartmentId : rawChangeId;
+    const fetchUrl = `${process.env.API_URL}/${change.entity.toLowerCase()}s/${fetchId}`;
     console.log(`Fetching old object from: ${fetchUrl}`);
     
     let entity = await fetch(fetchUrl)

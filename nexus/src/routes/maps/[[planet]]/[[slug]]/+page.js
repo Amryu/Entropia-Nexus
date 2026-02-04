@@ -1,9 +1,10 @@
 // @ts-nocheck
-import { apiCall, pageResponse } from '$lib/util.js';
+import { apiCall, pageResponse, loadPendingChangesData } from '$lib/util.js';
+import { MAX_PENDING_CREATES } from '$lib/constants';
 
 let items;
 
-export async function load({ fetch, params }) {
+export async function load({ fetch, params, url, parent }) {
   if (!items) {
     items = await apiCall(fetch, '/planets');
   }
@@ -17,6 +18,13 @@ export async function load({ fetch, params }) {
   if (planet == null) {
     return pageResponse(items, null, null, 404);
   }
+
+  const parentData = await parent();
+  const session = parentData.session;
+
+  const mode = url.searchParams.get('mode') || 'view';
+  const isCreateMode = mode === 'create' && !!(session?.user?.verified || session?.user?.isAdmin || session?.user?.administrator);
+  const changeId = url.searchParams.get('changeId');
 
   let [locations, areas, mobSpawns] = await Promise.all([
     apiCall(fetch, '/locations?Planet=' + planet.Name),
@@ -102,7 +110,7 @@ export async function load({ fetch, params }) {
       404);
   }
 
-  return pageResponse(
+  const response = pageResponse(
     items,
     location,
     {
@@ -111,4 +119,92 @@ export async function load({ fetch, params }) {
       planet
     }
   );
+
+  response.session = session;
+  response.isCreateMode = isCreateMode;
+
+  // If a changeId is provided (editing an existing pending create), fetch that change
+  if (changeId && isCreateMode) {
+    try {
+      const changeRes = await fetch(`/api/changes/${changeId}`);
+      if (changeRes.ok) {
+        const change = await changeRes.json();
+        response.existingChange = change;
+        response.pendingChange = change;
+      }
+    } catch (e) {
+      console.warn('Failed to fetch existing change:', e);
+    }
+  }
+
+  const getEntityType = (loc) => {
+    if (!loc) return null;
+    if (loc?.Properties?.Type === 'MobArea') return null;
+    if (loc?.Properties?.Type === 'Shop') return null;
+    if (loc?.Properties?.Type === 'Apartment') return 'Apartment';
+    if (loc?.Properties?.Shape || loc?.Properties?.Type?.endsWith('Area')) return 'Area';
+    return 'Location';
+  };
+
+  const entityType = getEntityType(location);
+  const rawEntityId = location?.Id ?? null;
+  const numericEntityId = rawEntityId != null ? Number(rawEntityId) : null;
+  const entityId = entityType === 'Apartment' && Number.isFinite(numericEntityId)
+    ? numericEntityId - 300000
+    : rawEntityId;
+  const pendingData = entityType
+    ? await loadPendingChangesData(fetch, session?.user, {
+      entity: entityType,
+      entityId,
+      changeId,
+      isAdmin: session?.user?.isAdmin || false
+    })
+    : null;
+
+  const [locationPending, areaPending, apartmentPending] = session?.user
+    ? await Promise.all([
+      loadPendingChangesData(fetch, session.user, {
+        entity: 'Location',
+        entityId: null,
+        changeId: null,
+        isAdmin: session.user?.isAdmin || false
+      }),
+      loadPendingChangesData(fetch, session.user, {
+        entity: 'Area',
+        entityId: null,
+        changeId: null,
+        isAdmin: session.user?.isAdmin || false
+      }),
+      loadPendingChangesData(fetch, session.user, {
+        entity: 'Apartment',
+        entityId: null,
+        changeId: null,
+        isAdmin: session.user?.isAdmin || false
+      })
+    ])
+    : [{}, {}, {}];
+
+  const combinedCreates = [
+    ...(locationPending?.userPendingCreates || []),
+    ...(areaPending?.userPendingCreates || []),
+    ...(apartmentPending?.userPendingCreates || [])
+  ];
+  const combinedUpdates = [
+    ...(locationPending?.userPendingUpdates || []),
+    ...(areaPending?.userPendingUpdates || []),
+    ...(apartmentPending?.userPendingUpdates || [])
+  ];
+
+  response.pendingChange = pendingData?.pendingChange || response.pendingChange || null;
+  response.userPendingCreates = combinedCreates;
+  response.userPendingUpdates = combinedUpdates;
+
+  const totalPendingCreates =
+    (locationPending?.pendingCreatesCount || 0) +
+    (areaPending?.pendingCreatesCount || 0) +
+    (apartmentPending?.pendingCreatesCount || 0);
+  response.pendingCreatesCount = totalPendingCreates;
+  response.canCreateNew = session?.user?.isAdmin ? true : totalPendingCreates < MAX_PENDING_CREATES;
+
+  return response;
 }

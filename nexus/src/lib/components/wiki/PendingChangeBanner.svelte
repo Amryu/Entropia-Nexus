@@ -7,9 +7,12 @@
   export let pendingChange = null;
   export let viewing = false;
   export let onToggle = () => {};
+
+  const mapEntities = new Set(['Location', 'Area', 'Apartment']);
+  $: showBanner = pendingChange && mapEntities.has(pendingChange.entity);
 </script>
 
-{#if pendingChange}
+{#if showBanner}
   <div class="pending-change-banner" class:viewing>
     <div class="banner-content">
       <span class="banner-icon">⏳</span>

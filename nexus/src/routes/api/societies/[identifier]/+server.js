@@ -1,0 +1,113 @@
+// @ts-nocheck
+import { getResponse } from '$lib/util.js';
+import {
+  getSocietyById,
+  getSocietyByName,
+  getSocietyMembers,
+  getSocietyJoinRequests,
+  countSocietyJoinRequests,
+  updateSocietyDetails
+} from '$lib/server/db.js';
+import { sanitizeRichText } from '$lib/server/sanitizeRichText.js';
+
+function extractDiscordInviteCode(input) {
+  if (!input) return null;
+  const raw = String(input).trim();
+  if (!raw) return null;
+
+  const match = raw.match(/discord(?:app)?\.com\/invite\/([A-Za-z0-9-]+)/i)
+    || raw.match(/discord\.gg\/([A-Za-z0-9-]+)/i);
+
+  const code = match ? match[1] : raw;
+  return code.trim();
+}
+
+function isValidDiscordCode(code) {
+  return /^[A-Za-z0-9-]{2,32}$/.test(code);
+}
+
+/** @type {import('./$types').RequestHandler} */
+export async function GET({ params, locals }) {
+  const identifier = params.identifier;
+  if (!identifier) {
+    return getResponse({ error: 'Society identifier required.' }, 400);
+  }
+
+  const isNumeric = /^\d+$/.test(identifier);
+  const decodedName = decodeURIComponent(identifier).replace(/~/g, ' ');
+
+  const society = isNumeric
+    ? await getSocietyById(identifier)
+    : await getSocietyByName(decodedName);
+
+  if (!society) {
+    return getResponse({ error: 'Society not found.' }, 404);
+  }
+
+  const members = await getSocietyMembers(society.id);
+  const sessionUser = locals.session?.user;
+  const isLeader = sessionUser && String(sessionUser.Id || sessionUser.id) === String(society.leader_id);
+
+  let pending = [];
+  let pendingCount = 0;
+  if (isLeader) {
+    pending = await getSocietyJoinRequests(society.id, 'Pending', 10, 0);
+    pendingCount = await countSocietyJoinRequests(society.id, 'Pending');
+  }
+
+  return getResponse({
+    society,
+    members,
+    isLeader,
+    pending,
+    pendingCount
+  }, 200);
+}
+
+/** @type {import('./$types').RequestHandler} */
+export async function PATCH({ params, request, locals }) {
+  const user = locals.session?.user;
+  if (!user) {
+    return getResponse({ error: 'Authentication required.' }, 401);
+  }
+
+  const identifier = params.identifier;
+  if (!identifier) {
+    return getResponse({ error: 'Society identifier required.' }, 400);
+  }
+
+  const isNumeric = /^\d+$/.test(identifier);
+  const decodedName = decodeURIComponent(identifier).replace(/~/g, ' ');
+  const society = isNumeric
+    ? await getSocietyById(identifier)
+    : await getSocietyByName(decodedName);
+
+  if (!society) {
+    return getResponse({ error: 'Society not found.' }, 404);
+  }
+
+  const userId = String(user.Id || user.id);
+  if (String(society.leader_id) !== userId) {
+    return getResponse({ error: 'Only the society leader can update this society.' }, 403);
+  }
+
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return getResponse({ error: 'Invalid JSON in request body.' }, 400);
+  }
+
+  const nextDescription = body?.description != null
+    ? sanitizeRichText(String(body.description))
+    : society.description;
+
+  const discordInput = body?.discord != null ? String(body.discord).trim() : society.discord_code || '';
+  const discordCode = extractDiscordInviteCode(discordInput);
+  if (discordCode && !isValidDiscordCode(discordCode)) {
+    return getResponse({ error: 'Invalid Discord invite code.' }, 400);
+  }
+
+  const updated = await updateSocietyDetails(society.id, nextDescription || null, discordCode || null);
+  return getResponse({ success: true, society: updated }, 200);
+}

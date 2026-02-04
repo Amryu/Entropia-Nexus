@@ -13,7 +13,8 @@ import { readFile } from 'fs/promises';
 const VALID_ENTITY_TYPES = [
   'weapon', 'armorset', 'material', 'blueprint', 'clothing',
   'consumable', 'tool', 'attachment', 'medicaltool', 'vehicle',
-  'pet', 'furnishing', 'strongbox', 'mob', 'skill', 'profession', 'vendor'
+  'pet', 'furnishing', 'strongbox', 'mob', 'skill', 'profession', 'vendor',
+  'teleporter', 'apartment', 'area', 'user'
 ];
 
 // Cache duration: 1 day for approved images (they rarely change)

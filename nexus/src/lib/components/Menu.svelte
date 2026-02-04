@@ -8,7 +8,7 @@
 
   import { darkMode } from '../../stores.js';
 
-  import { getTypeLink, getTypeName } from "$lib/util";
+  import { getTypeLink, getTypeName, encodeURIComponentSafe } from "$lib/util";
   import { loading } from "../../actions/loading";
   import FancyTable from '$lib/components/FancyTable.svelte';
   import SearchInput from '$lib/components/SearchInput.svelte';
@@ -19,6 +19,7 @@
   // Login/Logout URLs with redirect back to current page
   $: loginUrl = `/login?redirect=${encodeURIComponent($page.url.pathname + $page.url.search)}`;
   $: logoutUrl = `/discord/logout?redirect=${encodeURIComponent($page.url.pathname + $page.url.search)}`;
+  $: profileUrl = user ? `/users/${encodeURIComponentSafe(String(user.eu_name || user.id))}` : '/login';
 
   let dropdownOpen: string | null = null;
   let dropdownCloseTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -27,6 +28,18 @@
   let expandedSections: Set<string> = new Set();
   let mobileSearchMode = false;
   let mobileUserExpanded = false; // Track mobile user panel expanded state
+
+  // Notifications state
+  let notifications = [];
+  let notificationsLoading = false;
+  let notificationsError = '';
+  let notificationsPage = 1;
+  const notificationsPageSize = 8;
+  let notificationsTotal = 0;
+  let notificationsUnread = 0;
+  let notificationsLastLoaded = 0;
+
+  $: notificationsTotalPages = Math.max(1, Math.ceil(notificationsTotal / notificationsPageSize));
 
   // Media query for auto-closing mobile menu
   let mediaQuery: MediaQueryList | null = null;
@@ -96,6 +109,9 @@
       dropdownCloseTimeout = null;
     }
     dropdownOpen = menu;
+    if (menu === 'notifications' && user) {
+      loadNotifications(1, { force: true });
+    }
   }
 
   function handleDropdownLeave() {
@@ -103,6 +119,72 @@
       dropdownOpen = null;
       dropdownCloseTimeout = null;
     }, 150);
+  }
+
+  function formatNotificationDate(dateStr) {
+    if (!dateStr) return '';
+    return new Date(dateStr).toLocaleString();
+  }
+
+  async function loadNotifications(page = notificationsPage, { force = false } = {}) {
+    if (!user) return;
+    if (notificationsLoading) return;
+    const now = Date.now();
+    if (!force && now - notificationsLastLoaded < 15000 && page === notificationsPage) return;
+
+    notificationsLoading = true;
+    notificationsError = '';
+    try {
+      const response = await fetch(`/api/notifications?page=${page}&pageSize=${notificationsPageSize}`);
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload?.error || 'Failed to load notifications.');
+      }
+      notifications = payload.rows || [];
+      notificationsTotal = payload.total || 0;
+      notificationsUnread = payload.unread || 0;
+      notificationsPage = payload.page || page;
+      notificationsLastLoaded = now;
+    } catch (err) {
+      notificationsError = err.message || 'Failed to load notifications.';
+    } finally {
+      notificationsLoading = false;
+    }
+  }
+
+  async function markNotificationRead(notification) {
+    if (!notification || notification.read) return;
+    try {
+      const response = await fetch(`/api/notifications/${notification.id}`, { method: 'PATCH' });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload?.error || 'Failed to mark notification as read.');
+      }
+      notifications = notifications.map(item => item.id === notification.id ? { ...item, read: true } : item);
+      notificationsUnread = Math.max(0, notificationsUnread - 1);
+    } catch (err) {
+      notificationsError = err.message || 'Failed to mark notification as read.';
+    }
+  }
+
+  async function markAllNotificationsRead() {
+    if (notificationsUnread === 0) return;
+    try {
+      const response = await fetch('/api/notifications/read-all', { method: 'POST' });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload?.error || 'Failed to mark all as read.');
+      }
+      notifications = notifications.map(item => ({ ...item, read: true }));
+      notificationsUnread = 0;
+    } catch (err) {
+      notificationsError = err.message || 'Failed to mark all as read.';
+    }
+  }
+
+  function changeNotificationsPage(nextPage) {
+    if (nextPage < 1 || nextPage > notificationsTotalPages) return;
+    loadNotifications(nextPage, { force: true });
   }
 
   function toggleSection(section: string) {
@@ -330,24 +412,13 @@
     ],
     'Maps': [
       { label: 'Calypso', url: 'calypso' },
-      { label: 'Setesh', url: 'setesh' },
-      { label: 'ARIS', url: 'aris' },
       { label: 'Cyrene', url: 'cyrene' },
       { label: 'Arkadia', url: 'arkadia' },
-      { label: 'Arkadia Underground', url: 'arkadiaunderground' },
-      { label: 'Arkadia Moon', url: 'arkadiamoon' },
       { label: 'Monria', url: 'monria' },
-      { label: 'DSEC9', url: 'dsec9' },
       { label: 'Toulan', url: 'toulan' },
       { label: 'Rocktropia', url: 'rocktropia' },
-      { label: 'HELL', url: 'hell' },
-      { label: 'Secret Island', url: 'secretisland' },
-      { label: 'Hunt the THING', url: 'huntthething' },
       { label: 'Next Island', url: 'nextisland' },
-      { label: 'Ancient Greece', url: 'ancientgreece' },
       { label: 'Space', url: 'space' },
-      { label: 'Crystal Palace', url: 'crystalpalace' },
-      { label: 'Asteroid F.O.M.A', url: 'asteroidfoma' }
     ],
     'Tools': [
       { label: 'Loadout Manager', url: 'loadouts' },
@@ -458,6 +529,7 @@
     gap: 4px;
   }
 
+
   .website-icon {
     width: 36px;
     height: 36px;
@@ -533,6 +605,9 @@
     transition: background-color 0.15s ease;
     margin: 2px 4px;
     border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
   }
 
   .menu-dropdown-item:hover {
@@ -571,10 +646,13 @@
   }
 
   .menu-item-icon {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     width: 20px;
     text-align: center;
     margin-right: 6px;
+    line-height: 0;
   }
 
   a {
@@ -585,6 +663,151 @@
     position: relative;
     margin-left: 20px;
     width: 280px;
+  }
+
+  .notification-menu {
+    padding: 0 12px;
+  }
+
+  .notification-menu:hover {
+    background-color: transparent;
+  }
+
+  .notification-icon {
+    position: relative;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+  }
+
+  .notification-bell {
+    width: 26px;
+    height: 26px;
+    display: block;
+  }
+
+  .notification-badge {
+    position: absolute;
+    top: -2px;
+    right: -2px;
+    background-color: var(--error-color, #ef4444);
+    color: white;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 5px;
+    border-radius: 999px;
+    line-height: 1;
+    border: 1px solid var(--secondary-color);
+  }
+
+  .notification-dropdown {
+    min-width: 320px;
+    max-width: 380px;
+    padding: 0;
+  }
+
+  .notification-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border-color);
+    background-color: var(--hover-color);
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .notification-markall {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 11px;
+    color: var(--text-color);
+    cursor: pointer;
+  }
+
+  .notification-markall:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .notification-state {
+    padding: 14px 12px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .notification-state.error {
+    color: var(--error-color);
+  }
+
+  .notification-list {
+    display: flex;
+    flex-direction: column;
+    max-height: 320px;
+    overflow-y: auto;
+  }
+
+  .notification-item {
+    text-align: left;
+    padding: 10px 12px;
+    border: none;
+    border-bottom: 1px solid var(--border-color);
+    background: none;
+    cursor: pointer;
+    color: var(--text-color);
+  }
+
+  .notification-item:last-child {
+    border-bottom: none;
+  }
+
+  .notification-item.unread {
+    background-color: rgba(59, 130, 246, 0.12);
+  }
+
+  .notification-message {
+    font-size: 13px;
+    line-height: 1.3;
+  }
+
+  .notification-meta {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+
+  .notification-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    border-top: 1px solid var(--border-color);
+    background-color: var(--hover-color);
+    font-size: 11px;
+  }
+
+  .notification-page-btn {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 11px;
+    color: var(--text-color);
+    cursor: pointer;
+  }
+
+  .notification-page-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .notification-page-info {
+    color: var(--text-muted);
   }
 
   /* Desktop SearchInput component styling */
@@ -675,10 +898,6 @@
     width: 18px;
     height: 18px;
     margin-right: 6px;
-  }
-
-  .user {
-    margin-left: 12px;
   }
 
   .user-image {
@@ -1403,14 +1622,25 @@
 
   /* Chevron for expand/collapse */
   .mobile-user-chevron {
-    font-size: 10px;
+    font-size: 24px;
     color: var(--text-muted);
     transition: transform 0.2s ease;
     margin-left: 4px;
   }
 
   .mobile-user-chevron.expanded {
-    transform: rotate(180deg);
+    transform: rotate(90deg);
+  }
+
+  .mobile-user-chevron-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: none;
+    border: none;
+    padding: 4px;
+    cursor: pointer;
+    color: var(--text-muted);
   }
 
   .mobile-user-actions-guest {
@@ -1540,7 +1770,12 @@
       display: none;
     }
 
+
     .auth-container .user {
+      display: none;
+    }
+
+    .auth-container .notification-menu {
       display: none;
     }
 
@@ -1608,6 +1843,75 @@
         on:select={handleSearchSelect}
       />
     </div>
+    {#if user}
+      <!-- svelte-ignore a11y-no-static-element-interactions -->
+      <div class="menu-item notification-menu" on:mouseenter={() => handleDropdownEnter('notifications')} on:mouseleave={handleDropdownLeave}>
+        <div class="notification-icon" title="Notifications">
+          <svg class="notification-bell" viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              fill="currentColor"
+              d="M12 3a6 6 0 0 0-6 6v1.4c0 1-.4 2-1.1 2.7l-1.4 1.4A2.6 2.6 0 0 0 2.8 16H2.5a.5.5 0 0 0 0 1H3v1.5A2.5 2.5 0 0 0 5.5 21h13a2.5 2.5 0 0 0 2.5-2.5V17h.5a.5.5 0 0 0 0-1h-.3a2.6 2.6 0 0 0-.7-1.5l-1.4-1.4A3.8 3.8 0 0 1 18 10.4V9a6 6 0 0 0-6-6Zm0 19a2.75 2.75 0 0 0 2.7-2.2h-5.4A2.75 2.75 0 0 0 12 22Z"
+            />
+            <circle cx="12" cy="18.2" r="1.4" fill="currentColor" />
+          </svg>
+          {#if notificationsUnread > 0}
+            <span class="notification-badge">{notificationsUnread > 99 ? '99+' : notificationsUnread}</span>
+          {/if}
+        </div>
+        <div class="dropdown-content right notification-dropdown" class:open={dropdownOpen === 'notifications'}>
+          <div class="notification-header">
+            <span>Notifications</span>
+            <button
+              class="notification-markall"
+              on:click|stopPropagation={markAllNotificationsRead}
+              disabled={notificationsUnread === 0 || notificationsLoading}
+            >
+              Mark all as read
+            </button>
+          </div>
+
+          {#if notificationsLoading && notifications.length === 0}
+            <div class="notification-state">Loading notifications...</div>
+          {:else if notificationsError}
+            <div class="notification-state error">{notificationsError}</div>
+          {:else if notifications.length === 0}
+            <div class="notification-state">No notifications yet.</div>
+          {:else}
+            <div class="notification-list">
+              {#each notifications as notification}
+                <button
+                  class="notification-item"
+                  class:unread={!notification.read}
+                  on:click={() => markNotificationRead(notification)}
+                >
+                  <div class="notification-message">{notification.message}</div>
+                  <div class="notification-meta">{formatNotificationDate(notification.date)} &bull; {notification.type}</div>
+                </button>
+              {/each}
+            </div>
+            <div class="notification-footer">
+              <button
+                class="notification-page-btn"
+                on:click={() => changeNotificationsPage(notificationsPage - 1)}
+                disabled={notificationsPage <= 1 || notificationsLoading}
+              >
+                Prev
+              </button>
+              <div class="notification-page-info">
+                Page {notificationsPage} of {notificationsTotalPages}
+              </div>
+              <button
+                class="notification-page-btn"
+                on:click={() => changeNotificationsPage(notificationsPage + 1)}
+                disabled={notificationsPage >= notificationsTotalPages || notificationsLoading}
+              >
+                Next
+              </button>
+            </div>
+          {/if}
+        </div>
+      </div>
+    {/if}
     {#if user == null}
       <a href={loginUrl}>
         <button class="discord-button">
@@ -1640,6 +1944,17 @@
             </button>
           {:else}
             <div class="menu-dropdown-item">Logged in as {user.discriminator == 0 ? user.global_name : `${user.username}#${user.discriminator}`}</div>
+            <a use:loading href={profileUrl}>
+              <div class="menu-dropdown-item">
+                <span class="menu-item-icon">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                    <circle cx="12" cy="7" r="4" />
+                  </svg>
+                </span>
+                Profile
+              </div>
+            </a>
             {#if isUnverified}
               <div class="menu-dropdown-item unverified-notice">
                 Account not verified
@@ -1786,8 +2101,14 @@
                 </svg>
               </button>
             {/if}
-            <span class="mobile-user-chevron" class:expanded={mobileUserExpanded}>&#9660;</span>
           </div>
+          <button
+            class="mobile-user-chevron-btn"
+            on:click|stopPropagation={() => (mobileUserExpanded = !mobileUserExpanded)}
+            aria-label={mobileUserExpanded ? 'Collapse user menu' : 'Expand user menu'}
+          >
+            <span class="mobile-user-chevron" class:expanded={mobileUserExpanded}>&#9656;</span>
+          </button>
         </div>
 
         <div class="mobile-user-actions" class:expanded={mobileUserExpanded}>
@@ -1806,8 +2127,13 @@
               <span class="mobile-action-text">Logout</span>
             </a>
           {:else}
-            <a href="/account" class="mobile-user-action" on:click={closeMobileMenu}>
-              <span class="mobile-action-icon">⚙</span>
+            <a href={profileUrl} class="mobile-user-action" on:click={closeMobileMenu}>
+              <span class="mobile-action-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                  <circle cx="12" cy="7" r="4" />
+                </svg>
+              </span>
               <span class="mobile-action-text">User Profile</span>
             </a>
             <a use:loading href={logoutUrl} class="mobile-user-action" on:click={closeMobileMenu}>
@@ -1952,3 +2278,5 @@
     </div>
   </div>
 {/if}
+
+

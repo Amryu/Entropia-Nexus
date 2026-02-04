@@ -54,6 +54,9 @@ function sanitizeBody(body) {
   if (body && typeof body.Description === 'string') {
     body.Description = sanitizeHtml(body.Description, SANITIZE_CONFIG);
   }
+  if (body?.Properties && typeof body.Properties.Description === 'string') {
+    body.Properties.Description = sanitizeHtml(body.Properties.Description, SANITIZE_CONFIG);
+  }
   return body;
 }
 
@@ -113,12 +116,24 @@ export async function GET({ params, url }) {
   // Parse entity filter
   const entity = url.searchParams.get('entity');
   if (entity) {
+    const validEntities = await getChangeEntities();
+    const entityList = entity.split(',').map(e => e.trim()).filter(Boolean);
+    const invalidEntities = entityList.filter(e => !validEntities.includes(e));
+    if (invalidEntities.length > 0) {
+      return getResponse({ error: `Invalid entity. Must be one of: ${validEntities.join(', ')}` }, 400);
+    }
     filters.entity = entity;
   }
 
   // Parse type filter (Create, Update, Delete)
   const type = url.searchParams.get('type');
   if (type) {
+    const validTypes = await getChangeTypes();
+    const typeList = type.split(',').map(t => t.trim()).filter(Boolean);
+    const invalidTypes = typeList.filter(t => !validTypes.includes(t));
+    if (invalidTypes.length > 0) {
+      return getResponse({ error: `Invalid type. Must be one of: ${validTypes.join(', ')}` }, 400);
+    }
     filters.type = type;
   }
 
@@ -341,11 +356,29 @@ function getEntityCategory(entity) {
   else if (entity === 'Vendor') {
     return 'vendors';
   }
+  else if (entity === 'Location') {
+    return 'locations';
+  }
+  else if (entity === 'Area') {
+    return 'areas';
+  }
   else if (entity === 'ArmorSet') {
     return 'armorsets';
   }
   else if (entity === 'Shop') {
     return 'shops';
+  }
+  else if (entity === 'Profession') {
+    return 'professions';
+  }
+  else if (entity === 'Skill') {
+    return 'skills';
+  }
+  else if (entity === 'Strongbox') {
+    return 'strongboxes';
+  }
+  else if (entity === 'Apartment') {
+    return 'locations';
   }
   else {
     return 'items';

@@ -1,4 +1,4 @@
-export const Vendor = {
+export const Strongbox = {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
   "additionalProperties": false,
@@ -16,14 +16,34 @@ export const Vendor = {
         "Description": {
           "type": ["string", "null"],
           "default": null
+        },
+        "Weight": {
+          "type": ["number", "integer", "null"],
+          "default": null
+        },
+        "Economy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "MaxTT": {
+              "type": ["number", "integer", "null"],
+              "default": null
+            }
+          },
+          "required": [
+            "MaxTT"
+          ]
         }
       },
       "required": [
-        "Description"
+        "Description",
+        "Weight",
+        "Economy"
       ]
     },
     "Loots": {
       "type": "array",
+      "default": [],
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -33,11 +53,13 @@ export const Vendor = {
             "enum": ["Common", "Uncommon", "Rare", "Epic", "Supreme", "Legendary", "Mythical"],
           },
           "AvailableFrom": {
-            "type": ["date", "null"],
+            "type": ["string", "null"],
+            "format": "date",
             "default": null
           },
           "AvailableUntil": {
-            "type": ["date", "null"],
+            "type": ["string", "null"],
+            "format": "date",
             "default": null
           },
           "Item": { "$ref": "https://entropianexus.com/schemas/NamedEntity.json" },
@@ -53,6 +75,7 @@ export const Vendor = {
   },
   "required": [
     "Name",
+    "Properties",
     "Loots"
   ]
 }

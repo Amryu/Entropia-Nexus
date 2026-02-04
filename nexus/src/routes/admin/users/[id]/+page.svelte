@@ -2,6 +2,7 @@
   // @ts-nocheck
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
+  import { encodeURIComponentSafe } from '$lib/util';
 
   let user = null;
   let metrics = null;
@@ -114,6 +115,12 @@
       case 'deny_change': return 'Denied change';
       default: return action;
     }
+  }
+
+  function getPublicProfileUrl() {
+    if (!user) return null;
+    const identifier = user.eu_name || user.id;
+    return `/users/${encodeURIComponentSafe(String(identifier))}`;
   }
 </script>
 
@@ -642,6 +649,9 @@
       </div>
 
       <div class="action-buttons">
+        <a class="btn btn-secondary" href={getPublicProfileUrl()}>
+          View Public Profile
+        </a>
         {#if user.banned}
           <button class="btn btn-success" on:click={() => performAction('unban')}>
             Unban User

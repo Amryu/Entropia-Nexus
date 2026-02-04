@@ -142,6 +142,50 @@ export async function getUserById(userId) {
   return rows[0];
 }
 
+export async function getUserProfileById(userId) {
+  const query = `
+    SELECT
+      id,
+      username,
+      global_name,
+      discriminator,
+      avatar,
+      eu_name,
+      verified,
+      administrator,
+      society_id,
+      biography_html,
+      default_profile_tab,
+      showcase_loadout_code
+    FROM users
+    WHERE id = $1
+  `;
+  const { rows } = await pool.query(query, [userId]);
+  return rows[0];
+}
+
+export async function getUserProfileByEntropiaName(entropiaName) {
+  const query = `
+    SELECT
+      id,
+      username,
+      global_name,
+      discriminator,
+      avatar,
+      eu_name,
+      verified,
+      administrator,
+      society_id,
+      biography_html,
+      default_profile_tab,
+      showcase_loadout_code
+    FROM users
+    WHERE LOWER(eu_name) = LOWER($1)
+  `;
+  const { rows } = await pool.query(query, [entropiaName]);
+  return rows[0];
+}
+
 export async function upsertUser(user) {
   const query = 'INSERT INTO users (id, username, global_name, discriminator, avatar) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (id) DO UPDATE SET username = $2, global_name = $3, discriminator = $4, avatar = $5 RETURNING *';
   const values = [user.id, user.username, user.global_name ?? user.username, user.discriminator, user.avatar];
@@ -408,6 +452,371 @@ export async function getUserByEntropiaName(entropiaName) {
 
   const { rows } = await pool.query(query, values);
   return rows[0];
+}
+
+export async function updateUserProfile(userId, updates = {}) {
+  const query = `
+    UPDATE users
+    SET biography_html = $2,
+        default_profile_tab = $3,
+        showcase_loadout_code = $4
+    WHERE id = $1
+    RETURNING
+      id,
+      username,
+      global_name,
+      discriminator,
+      avatar,
+      eu_name,
+      verified,
+      administrator,
+      society_id,
+      biography_html,
+      default_profile_tab,
+      showcase_loadout_code
+  `;
+  const values = [
+    userId,
+    updates.biography_html ?? null,
+    updates.default_profile_tab ?? 'General',
+    updates.showcase_loadout_code ?? null
+  ];
+  const { rows } = await pool.query(query, values);
+  return rows[0];
+}
+
+export async function updateUserSociety(userId, societyId = null) {
+  const query = `
+    UPDATE users
+    SET society_id = $2
+    WHERE id = $1
+    RETURNING id, society_id
+  `;
+  const { rows } = await pool.query(query, [userId, societyId]);
+  return rows[0];
+}
+
+export async function getSocietyById(societyId) {
+  const query = `
+      SELECT id, name, abbreviation, description, discord_code, leader_id
+      FROM societies
+      WHERE id = $1
+    `;
+  const { rows } = await pool.query(query, [societyId]);
+  return rows[0];
+}
+
+export async function getSocietyByName(name) {
+  const query = `
+      SELECT id, name, abbreviation, description, discord_code, leader_id
+      FROM societies
+      WHERE LOWER(name) = LOWER($1)
+    `;
+  const { rows } = await pool.query(query, [name]);
+  return rows[0];
+}
+
+export async function searchSocieties(queryText = '') {
+  const query = `
+      SELECT id, name, abbreviation, description, discord_code, leader_id
+      FROM societies
+      WHERE ($1 = '' OR LOWER(name) LIKE LOWER($2) OR LOWER(abbreviation) LIKE LOWER($2))
+      ORDER BY name
+      LIMIT 50
+    `;
+  const value = String(queryText || '');
+  const { rows } = await pool.query(query, [value, `%${value}%`]);
+  return rows;
+}
+
+export async function createSociety({ name, abbreviation = null, description = null, discordCode = null, leaderId }) {
+  const query = `
+      INSERT INTO societies (name, abbreviation, description, discord_code, leader_id)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING id, name, abbreviation, description, discord_code, leader_id
+    `;
+  const values = [name, abbreviation, description, discordCode, leaderId];
+  const { rows } = await pool.query(query, values);
+  return rows[0];
+}
+
+export async function createSocietyJoinRequest(userId, societyId) {
+  const query = `
+    INSERT INTO society_join_requests (user_id, society_id, status)
+    VALUES ($1, $2, 'Pending')
+    RETURNING id, user_id, society_id, status, created_at, updated_at
+  `;
+  const { rows } = await pool.query(query, [userId, societyId]);
+  return rows[0];
+}
+
+export async function getPendingSocietyJoinRequest(userId) {
+  const query = `
+    SELECT id, user_id, society_id, status, created_at, updated_at
+    FROM society_join_requests
+    WHERE user_id = $1 AND status = 'Pending'
+    ORDER BY created_at DESC
+    LIMIT 1
+  `;
+  const { rows } = await pool.query(query, [userId]);
+  return rows[0];
+}
+
+export async function updateSocietyJoinRequestStatus(requestId, status) {
+  const query = `
+    UPDATE society_join_requests
+    SET status = $2,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE id = $1
+    RETURNING id, user_id, society_id, status
+  `;
+  const { rows } = await pool.query(query, [requestId, status]);
+  return rows[0];
+}
+
+export async function getSocietyJoinRequestById(requestId) {
+  const query = `
+    SELECT id, user_id, society_id, status, created_at, updated_at
+    FROM society_join_requests
+    WHERE id = $1
+  `;
+  const { rows } = await pool.query(query, [requestId]);
+  return rows[0];
+}
+
+export async function getSocietyMembers(societyId) {
+  const query = `
+    SELECT id, eu_name, global_name, username, discriminator
+    FROM users
+    WHERE society_id = $1
+    ORDER BY eu_name NULLS LAST, global_name NULLS LAST
+  `;
+  const { rows } = await pool.query(query, [societyId]);
+  return rows;
+}
+
+export async function getSocietyJoinRequests(societyId, status = 'Pending', limit = 50, offset = 0) {
+  const query = `
+    SELECT
+      r.id,
+      r.user_id,
+      r.status,
+      r.created_at,
+      u.eu_name,
+      u.global_name,
+      u.username,
+      u.discriminator
+    FROM society_join_requests r
+    JOIN users u ON u.id = r.user_id
+    WHERE r.society_id = $1 AND r.status = $2
+    ORDER BY r.created_at DESC
+    LIMIT $3 OFFSET $4
+  `;
+  const { rows } = await pool.query(query, [societyId, status, limit, offset]);
+  return rows;
+}
+
+export async function countSocietyJoinRequests(societyId, status = 'Pending') {
+  const query = `
+      SELECT COUNT(*)::int AS count
+    FROM society_join_requests
+    WHERE society_id = $1 AND status = $2
+  `;
+  const { rows } = await pool.query(query, [societyId, status]);
+  return rows[0]?.count ?? 0;
+}
+
+export async function updateSocietyDetails(societyId, description = null, discordCode = null) {
+  const query = `
+    UPDATE societies
+    SET description = $2,
+        discord_code = $3
+    WHERE id = $1
+    RETURNING id, name, abbreviation, description, discord_code, leader_id
+  `;
+  const { rows } = await pool.query(query, [societyId, description, discordCode]);
+  return rows[0];
+}
+
+export async function getAdminSocieties(limit = 50, offset = 0, queryText = '') {
+  const query = `
+    SELECT
+      s.id,
+      s.name,
+      s.abbreviation,
+      s.leader_id,
+      u.eu_name as leader_eu_name,
+      u.global_name as leader_global_name,
+      u.username as leader_username,
+      COUNT(m.id)::int as member_count
+    FROM societies s
+    LEFT JOIN users u ON u.id = s.leader_id
+    LEFT JOIN users m ON m.society_id = s.id
+    WHERE ($3 = '' OR LOWER(s.name) LIKE LOWER($4) OR LOWER(s.abbreviation) LIKE LOWER($4))
+    GROUP BY s.id, u.eu_name, u.global_name, u.username
+    ORDER BY s.name
+    LIMIT $1 OFFSET $2
+  `;
+  const value = String(queryText || '');
+  const { rows } = await pool.query(query, [limit, offset, value, `%${value}%`]);
+  return rows;
+}
+
+export async function countAdminSocieties(queryText = '') {
+  const query = `
+    SELECT COUNT(*)::int AS count
+    FROM societies s
+    WHERE ($1 = '' OR LOWER(s.name) LIKE LOWER($2) OR LOWER(s.abbreviation) LIKE LOWER($2))
+  `;
+  const value = String(queryText || '');
+  const { rows } = await pool.query(query, [value, `%${value}%`]);
+  return rows[0]?.count ?? 0;
+}
+
+export async function disbandSociety(societyId) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const memberResult = await client.query(
+      'SELECT id FROM users WHERE society_id = $1',
+      [societyId]
+    );
+    const pendingResult = await client.query(
+      "SELECT user_id FROM society_join_requests WHERE society_id = $1 AND status = 'Pending'",
+      [societyId]
+    );
+    await client.query('UPDATE users SET society_id = NULL WHERE society_id = $1', [societyId]);
+    await client.query(
+      "UPDATE society_join_requests SET status = 'Rejected', updated_at = CURRENT_TIMESTAMP WHERE society_id = $1 AND status = 'Pending'",
+      [societyId]
+    );
+    await client.query('DELETE FROM societies WHERE id = $1', [societyId]);
+    await client.query('COMMIT');
+    return {
+      members: memberResult.rows.map(row => row.id),
+      pending: pendingResult.rows.map(row => row.user_id)
+    };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function createNotification(userId, type, message) {
+  const query = `
+    INSERT INTO notifications (user_id, type, message)
+    VALUES ($1, $2, $3)
+    RETURNING *
+  `;
+  const { rows } = await pool.query(query, [userId, type, message]);
+  return rows[0];
+}
+
+export async function getNotifications(userId, limit = 10, offset = 0) {
+  const query = `
+    SELECT id, user_id, type, message, date, read
+    FROM notifications
+    WHERE user_id = $1
+    ORDER BY date DESC
+    LIMIT $2 OFFSET $3
+  `;
+  const { rows } = await pool.query(query, [userId, limit, offset]);
+  return rows;
+}
+
+export async function countNotifications(userId) {
+  const query = `
+    SELECT COUNT(*)::int AS count
+    FROM notifications
+    WHERE user_id = $1
+  `;
+  const { rows } = await pool.query(query, [userId]);
+  return rows[0]?.count ?? 0;
+}
+
+export async function countUnreadNotifications(userId) {
+  const query = `
+    SELECT COUNT(*)::int AS count
+    FROM notifications
+    WHERE user_id = $1 AND read = false
+  `;
+  const { rows } = await pool.query(query, [userId]);
+  return rows[0]?.count ?? 0;
+}
+
+export async function markNotificationRead(userId, notificationId) {
+  const query = `
+    UPDATE notifications
+    SET read = true
+    WHERE id = $1 AND user_id = $2
+    RETURNING id, read
+  `;
+  const { rows } = await pool.query(query, [notificationId, userId]);
+  return rows[0];
+}
+
+export async function markAllNotificationsRead(userId) {
+  const query = `
+    UPDATE notifications
+    SET read = true
+    WHERE user_id = $1 AND read = false
+  `;
+  await pool.query(query, [userId]);
+}
+
+export async function getUserContributionStats(userId) {
+  const totalQuery = `
+    SELECT COUNT(*)::int AS total
+    FROM changes
+    WHERE author_id = $1 AND state = 'Approved'
+  `;
+  const monthlyQuery = `
+    SELECT COUNT(*)::int AS monthly
+    FROM changes
+    WHERE author_id = $1
+      AND state = 'Approved'
+      AND last_update >= date_trunc('month', now())
+      AND last_update < (date_trunc('month', now()) + interval '1 month')
+  `;
+
+  const [totalResult, monthlyResult] = await Promise.all([
+    pool.query(totalQuery, [userId]),
+    pool.query(monthlyQuery, [userId])
+  ]);
+
+  return {
+    total: totalResult.rows[0]?.total ?? 0,
+    monthly: monthlyResult.rows[0]?.monthly ?? 0
+  };
+}
+
+export async function getUserPublicLoadouts(userId) {
+  const query = `
+    SELECT id, name, share_code, last_update
+    FROM loadouts
+    WHERE user_id = $1 AND public = true
+    ORDER BY last_update DESC
+  `;
+  const { rows } = await pool.query(query, [userId]);
+  return rows;
+}
+
+export async function getUserShops(userId) {
+  const query = `
+    SELECT
+      s.id,
+      s.name,
+      s.planet_id,
+      p."Name" as planet_name
+    FROM shops s
+    LEFT JOIN "Planets" p ON s.planet_id = p."Id"
+    WHERE s.owner_id = $1
+    ORDER BY s.name
+  `;
+  const { rows } = await pool.query(query, [userId]);
+  return rows;
 }
 
 export async function getUserByUsernameOrDiscordTag(identifier) {
@@ -2269,21 +2678,23 @@ export async function getUserPilotServices(userId) {
 // Search users by username, global_name, or eu_name
 export async function searchUsers(searchQuery, limit = 10) {
   const query = `
-    SELECT id, username, global_name, eu_name, avatar, verified, administrator
-    FROM users
-    WHERE
-      LOWER(username) LIKE LOWER($1)
-      OR LOWER(global_name) LIKE LOWER($1)
-      OR LOWER(eu_name) LIKE LOWER($1)
-    ORDER BY
-      CASE
-        WHEN LOWER(eu_name) LIKE LOWER($1) THEN 1
-        WHEN LOWER(global_name) LIKE LOWER($1) THEN 2
-        ELSE 3
-      END,
-      global_name ASC
-    LIMIT $2
-  `;
+      SELECT u.id, u.username, u.global_name, u.eu_name, u.avatar, u.verified, u.administrator,
+             u.society_id, s.name AS society_name, s.abbreviation AS society_abbreviation
+      FROM users u
+      LEFT JOIN societies s ON s.id = u.society_id
+      WHERE
+        LOWER(u.username) LIKE LOWER($1)
+        OR LOWER(u.global_name) LIKE LOWER($1)
+        OR LOWER(u.eu_name) LIKE LOWER($1)
+      ORDER BY
+        CASE
+          WHEN LOWER(u.eu_name) LIKE LOWER($1) THEN 1
+          WHEN LOWER(u.global_name) LIKE LOWER($1) THEN 2
+          ELSE 3
+        END,
+        u.global_name ASC
+      LIMIT $2
+    `;
   const searchPattern = `%${searchQuery}%`;
   const result = await pool.query(query, [searchPattern, limit]);
   return result.rows;
@@ -2299,11 +2710,13 @@ export async function listUsers(page = 1, limit = 20, sortBy = 'global_name', so
   const order = sortOrder.toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
 
   const query = `
-    SELECT id, username, global_name, eu_name, avatar, verified, administrator
-    FROM users
-    ORDER BY ${sortColumn} ${order} NULLS LAST
-    LIMIT $1 OFFSET $2
-  `;
+      SELECT u.id, u.username, u.global_name, u.eu_name, u.avatar, u.verified, u.administrator,
+             u.society_id, s.name AS society_name, s.abbreviation AS society_abbreviation
+      FROM users u
+      LEFT JOIN societies s ON s.id = u.society_id
+      ORDER BY u.${sortColumn} ${order} NULLS LAST
+      LIMIT $1 OFFSET $2
+    `;
 
   const countQuery = `SELECT COUNT(*) as total FROM users`;
 

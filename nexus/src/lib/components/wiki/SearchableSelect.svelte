@@ -244,6 +244,7 @@
     border-radius: 4px;
     cursor: pointer;
     min-height: 28px;
+    box-sizing: border-box;
   }
 
   .searchable-select-display:hover {
@@ -283,6 +284,7 @@
     border-radius: 4px;
     color: var(--text-color);
     min-height: 28px;
+    box-sizing: border-box;
   }
 
   .searchable-select-input:focus {

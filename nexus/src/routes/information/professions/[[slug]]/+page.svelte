@@ -337,7 +337,20 @@
           <h4 class="section-title">General</h4>
           <div class="stat-row">
             <span class="stat-label">Category</span>
-            <span class="stat-value">{activeEntity?.Category?.Name || 'N/A'}</span>
+            <span class="stat-value">
+              {#if $editMode}
+                <InlineEdit
+                  value={activeEntity?.Category?.Name || ''}
+                  path="Category.Name"
+                  type="select"
+                  options={categoryOptions}
+                  placeholder="Select category"
+                  required={true}
+                />
+              {:else}
+                {activeEntity?.Category?.Name || 'N/A'}
+              {/if}
+            </span>
           </div>
           <div class="stat-row">
             <span class="stat-label">Hidden Skills</span>

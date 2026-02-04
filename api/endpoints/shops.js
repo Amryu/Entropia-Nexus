@@ -16,8 +16,18 @@ async function _fetchShopOwners(ownerIds) {
 async function _fetchEstateSections(estateIds){
   if (!estateIds || estateIds.length===0) return {};
   try {
-  const { rows } = await pool.query('SELECT "EstateId", "Name", "ItemPoints" FROM ONLY "EstateSections" WHERE "EstateId" = ANY($1) ORDER BY "EstateId", "Name"', [estateIds]);
-    const m = {}; for (const r of rows){ if (!m[r.EstateId]) m[r.EstateId]=[]; m[r.EstateId].push({ Name:r.Name, MaxItemPoints:r.ItemPoints }); } return m;
+  const { rows } = await pool.query('SELECT "EstateId", "Name", "Description", "ItemPoints" FROM ONLY "EstateSections" WHERE "EstateId" = ANY($1) ORDER BY "EstateId", "Name"', [estateIds]);
+    const m = {};
+    for (const r of rows){
+      if (!m[r.EstateId]) m[r.EstateId]=[];
+      m[r.EstateId].push({
+        Name: r.Name,
+        Description: r.Description ?? null,
+        ItemPoints: r.ItemPoints != null ? Number(r.ItemPoints) : null,
+        MaxItemPoints: r.ItemPoints != null ? Number(r.ItemPoints) : null
+      });
+    }
+    return m;
   } catch { return {}; }
 }
 
