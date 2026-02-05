@@ -62,30 +62,22 @@
     {
       key: 'maturities',
       header: 'Maturities',
-      width: '100px',
-      main: true,  // Grow to fill available space
-      mobileWidth: '100px',
+      main: true,
       formatter: (value) => `<span style="font-weight: 500;">${value}</span>`
     },
     {
       key: 'otherMobsHtml',
       header: 'Other Mobs',
-      width: '150px',
-      hideOnMobile: true,
       formatter: (value) => value
     },
     {
       key: 'waypoint',
       header: 'Location',
-      width: '260px',
-      mobileWidth: '160px',
       component: WaypointCopyButton
     },
     {
       key: 'densityLabel',
       header: 'Density',
-      width: '90px',
-      hideOnMobile: true,
       formatter: (value, row) => row.density
         ? `<span style="display: inline-block; padding: 2px 8px; font-size: 11px; border-radius: 4px; font-weight: 500; ${row.densityStyle}">${value}</span>`
         : 'N/A'
@@ -93,8 +85,6 @@
     {
       key: 'mapLink',
       header: 'Map',
-      width: '80px',
-      mobileWidth: '60px',
       component: MapLinkButton
     }
   ];
@@ -118,10 +108,18 @@
 <style>
   .locations-table-container {
     width: 100%;
+    max-width: 100%;
+    overflow: hidden;
   }
 
   .locations-table-container :global(.fancy-table-container) {
-    max-height: 500px;
+    max-height: 596px;
+  }
+
+  @media (max-width: 767px) {
+    .locations-table-container :global(.fancy-table-container) {
+      max-height: 499px;
+    }
   }
 
   .no-data {

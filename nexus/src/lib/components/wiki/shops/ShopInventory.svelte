@@ -45,7 +45,7 @@
     {
       key: 'itemName',
       header: 'Item',
-      width: '1fr',
+      main: true,
       sortable: true,
       formatter: (value, row) => row.itemLink
         ? `<a href="${row.itemLink}" class="wiki-link">${value}</a>`
@@ -54,14 +54,12 @@
     {
       key: 'stackSize',
       header: 'Stack Size',
-      width: '120px',
       sortable: true,
       formatter: (value, row) => `<span style="font-family: monospace;">${row.stackSizeFormatted}</span>`
     },
     {
       key: 'markup',
       header: 'Markup',
-      width: '100px',
       sortable: true,
       formatter: (value, row) => {
         const color = value > 100 ? 'var(--success-color, #22c55e)' : 'var(--text-color)';
@@ -128,7 +126,13 @@
   }
 
   .inventory-group :global(.fancy-table-container) {
-    max-height: 400px;
+    max-height: 596px;
+  }
+
+  @media (max-width: 767px) {
+    .inventory-group :global(.fancy-table-container) {
+      max-height: 499px;
+    }
   }
 
   .no-data {

@@ -32,20 +32,18 @@
     {
       key: 'name',
       header: 'Skill',
-      width: '1fr',
+      main: true,
       formatter: (value, row) => `<a href="${row.nameLink}" class="wiki-link-normal">${value}</a>`
     },
     {
       key: 'weight',
       header: 'Weight',
-      width: '80px',
       sortable: true,
       formatter: (value) => `<span style="font-family: monospace;">${value}</span>`
     },
     {
       key: 'percent',
       header: '%',
-      width: '100px',
       sortable: true,
       formatter: (value) => {
         return `<div style="display: flex; align-items: center; gap: 8px; position: relative; background-color: var(--bg-color, var(--primary-color)); border-radius: 4px; overflow: hidden; height: 20px; padding: 0 6px;">
@@ -57,15 +55,11 @@
     {
       key: 'hpIncrease',
       header: 'Points/HP',
-      width: '90px',
-      hideOnMobile: true,
       formatter: (value) => value != null ? `<span style="font-family: monospace;">${value}</span>` : 'N/A'
     },
     {
       key: 'isHidden',
       header: 'Hidden',
-      width: '80px',
-      hideOnMobile: true,
       formatter: (value) => value
         ? '<span style="display: inline-block; padding: 2px 6px; font-size: 10px; background-color: var(--warning-bg, rgba(251, 191, 36, 0.15)); color: var(--warning-color, #fbbf24); border-radius: 4px; font-weight: 500;">Yes</span>'
         : 'No'
@@ -98,11 +92,19 @@
 <style>
   .skills-table-container {
     width: 100%;
+    max-width: 100%;
     min-height: 200px;
+    overflow: hidden;
   }
 
   .skills-table-container :global(.fancy-table-container) {
-    max-height: 500px;
+    max-height: 596px;
+  }
+
+  @media (max-width: 767px) {
+    .skills-table-container :global(.fancy-table-container) {
+      max-height: 499px;
+    }
   }
 
   .no-data {

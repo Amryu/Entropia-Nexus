@@ -17,13 +17,15 @@
     return usage.Blueprints.map(blueprint => ({
       name: blueprint.Name,
       nameLink: getTypeLink(blueprint.Name, 'Blueprint'),
+      type: blueprint.Properties?.Type ?? 'N/A',
       amount: blueprint.MaterialAmount ?? 'N/A'
     }));
   })();
 
   $: blueprintColumns = [
-    { key: 'name', header: 'Blueprint', width: '1fr', formatter: (v, row) => row.nameLink ? `<a href="${row.nameLink}">${v}</a>` : v },
-    { key: 'amount', header: 'Amount', width: '80px', hideOnMobile: true }
+    { key: 'name', header: 'Blueprint', main: true, formatter: (v, row) => row.nameLink ? `<a href="${row.nameLink}">${v}</a>` : v },
+    { key: 'type', header: 'Type' },
+    { key: 'amount', header: 'Amount' }
   ];
 
   // Build mission data
@@ -39,10 +41,10 @@
   })();
 
   $: missionColumns = [
-    { key: 'name', header: 'Name', width: '1fr', formatter: (v, row) => row.nameLink ? `<a href="${row.nameLink}">${v}</a>` : v },
-    { key: 'type', header: 'Type', width: '80px', hideOnMobile: true },
-    { key: 'location', header: 'Location', width: '120px', hideOnMobile: true },
-    { key: 'handins', header: 'Hand-ins', width: '80px', hideOnMobile: true }
+    { key: 'name', header: 'Name', main: true, formatter: (v, row) => row.nameLink ? `<a href="${row.nameLink}">${v}</a>` : v },
+    { key: 'type', header: 'Type' },
+    { key: 'location', header: 'Location' },
+    { key: 'handins', header: 'Hand-ins' }
   ];
 
   // Build vendor offer data (where this item is used as currency)
@@ -61,10 +63,10 @@
   })();
 
   $: vendorOfferColumns = [
-    { key: 'vendor', header: 'Vendor', width: '1fr', formatter: (v, row) => row.vendorLink ? `<a href="${row.vendorLink}">${v}</a>` : v },
-    { key: 'planet', header: 'Planet', width: '100px', hideOnMobile: true },
-    { key: 'item', header: 'Item', width: '1fr', formatter: (v, row) => row.itemLink ? `<a href="${row.itemLink}">${v}</a>` : v },
-    { key: 'amount', header: 'Amount', width: '80px', hideOnMobile: true }
+    { key: 'vendor', header: 'Vendor', main: true, formatter: (v, row) => row.vendorLink ? `<a href="${row.vendorLink}">${v}</a>` : v },
+    { key: 'planet', header: 'Planet' },
+    { key: 'item', header: 'Item', formatter: (v, row) => row.itemLink ? `<a href="${row.itemLink}">${v}</a>` : v },
+    { key: 'amount', header: 'Amount' }
   ];
 
   // Check if there's any usage data
@@ -81,19 +83,24 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
+    max-width: 100%;
+    overflow: hidden;
   }
 
   .usage-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(400px, 100%), 1fr));
     gap: 16px;
     align-items: start;
+    max-width: 100%;
   }
 
   .usage-section {
     display: flex;
     flex-direction: column;
     gap: 8px;
+    max-width: 100%;
+    overflow: hidden;
   }
 
   .section-title {
@@ -107,14 +114,10 @@
   }
 
   .table-wrapper {
-    height: 300px;
+    height: 596px;
     border-radius: 6px;
     overflow: hidden;
     border: 1px solid var(--border-color, #555);
-  }
-
-  .table-wrapper.short {
-    height: 300px;
   }
 
   .recipe-wrapper {
@@ -172,7 +175,7 @@
     }
 
     .table-wrapper {
-      height: 250px;
+      height: 499px;
     }
 
     .recipe-wrapper {

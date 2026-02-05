@@ -56,11 +56,11 @@
 
   // FancyTable columns: Slot, Name, Weight, MaxTT, MinTT
   const tableColumns = [
-    { key: 'slot', header: 'Slot', width: '70px', sortable: false, searchable: false, hideOnMobile: true },
+    { key: 'slot', header: 'Slot', sortable: false, searchable: false },
     { key: 'name', header: 'Name', main: true, sortable: false, searchable: false },
-    { key: 'weight', header: 'Weight', width: '70px', sortable: false, searchable: false, hideOnMobile: true },
-    { key: 'maxTT', header: 'Max TT', width: '80px', sortable: false, searchable: false },
-    { key: 'minTT', header: 'Min TT', width: '80px', sortable: false, searchable: false, hideOnMobile: true }
+    { key: 'weight', header: 'Weight', sortable: false, searchable: false },
+    { key: 'maxTT', header: 'Max TT', sortable: false, searchable: false },
+    { key: 'minTT', header: 'Min TT', sortable: false, searchable: false }
   ];
 
   // Format TT value for display

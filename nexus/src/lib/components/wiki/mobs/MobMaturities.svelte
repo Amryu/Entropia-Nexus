@@ -104,28 +104,24 @@
     {
       key: 'name',
       header: 'Name',
-      width: '120px',
       main: true,  // Grow to fill available space
       formatter: (value) => `<span style="font-weight: 500;">${value}</span>`
     },
     {
       key: 'level',
       header: 'Level',
-      width: '70px',
       sortable: true,
       formatter: (value) => value ?? 'N/A'
     },
     {
       key: 'hp',
       header: 'HP',
-      width: '80px',
       sortable: true,
       formatter: (value) => value != null ? `<span style="font-family: monospace;">${value}</span>` : 'N/A'
     },
     {
       key: 'hpPerLevel',
       header: 'HP/Lv',
-      width: '80px',
       sortable: true,
       formatter: (value) => value != null ? `<span style="font-family: monospace;">${value}</span>` : 'N/A'
     }
@@ -136,14 +132,11 @@
     {
       key: 'boss',
       header: 'Boss',
-      width: '60px',
-      hideOnMobile: true,
       formatter: (value) => value ? 'Yes' : 'No'
     },
     {
       key: 'primaryDamage',
       header: 'Primary',
-      width: '80px',
       sortable: true,
       formatter: (value, row) => value != null
         ? `<span style="text-decoration: underline; text-decoration-style: dotted; cursor: help;" title="${row.primaryTooltip}">${value}</span>`
@@ -152,8 +145,6 @@
     {
       key: 'secondaryDamage',
       header: 'Secondary',
-      width: '90px',
-      hideOnMobile: true,
       formatter: (value, row) => value != null
         ? `<span style="text-decoration: underline; text-decoration-style: dotted; cursor: help;" title="${row.secondaryTooltip}">${value}</span>`
         : 'N/A'
@@ -161,8 +152,6 @@
     {
       key: 'tertiaryDamage',
       header: 'Tertiary',
-      width: '80px',
-      hideOnMobile: true,
       formatter: (value, row) => value != null
         ? `<span style="text-decoration: underline; text-decoration-style: dotted; cursor: help;" title="${row.tertiaryTooltip}">${value}</span>`
         : 'N/A'
@@ -170,16 +159,12 @@
     {
       key: 'defense',
       header: 'Defense',
-      width: '80px',
       sortable: true,
-      hideOnMobile: true,
       formatter: (value) => `<span style="font-family: monospace;">${value}</span>`
     },
     {
       key: 'tameable',
       header: 'Tameable',
-      width: '90px',
-      hideOnMobile: true,
       formatter: (value, row) => value
         ? `<span style="color: var(--success-color, #4ade80); font-weight: 500;">Lvl ${row.tamingLevel}</span>`
         : 'No'
@@ -208,10 +193,18 @@
 <style>
   .maturities-table-container {
     width: 100%;
+    max-width: 100%;
+    overflow: hidden;
   }
 
   .maturities-table-container :global(.fancy-table-container) {
-    max-height: 500px;
+    max-height: 596px;
+  }
+
+  @media (max-width: 767px) {
+    .maturities-table-container :global(.fancy-table-container) {
+      max-height: 499px;
+    }
   }
 
   /* Boss row styling - subtle red background */

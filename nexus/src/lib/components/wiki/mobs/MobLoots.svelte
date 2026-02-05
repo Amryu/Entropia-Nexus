@@ -62,23 +62,18 @@
     {
       key: 'itemName',
       header: 'Item',
-      width: '150px',
-      main: true,  // Grow to fill available space
+      main: true,
       formatter: (value, row) => row.itemLink
         ? `<a href="${row.itemLink}" class="wiki-link">${value}</a>`
         : `<span style="font-weight: 500;">${value}</span>`
     },
     {
       key: 'maturity',
-      header: 'Lowest Maturity',
-      width: '140px',
-      hideOnMobile: true
+      header: 'Lowest Maturity'
     },
     {
       key: 'isEvent',
       header: 'Event',
-      width: '80px',
-      hideOnMobile: true,
       formatter: (value) => value
         ? '<span style="display: inline-block; padding: 2px 8px; font-size: 11px; background-color: var(--warning-bg, rgba(251, 191, 36, 0.15)); color: var(--warning-color, #fbbf24); border-radius: 4px; font-weight: 500;">Event</span>'
         : '-'
@@ -86,7 +81,6 @@
     {
       key: 'frequency',
       header: 'Frequency',
-      width: '120px',
       sortable: true,
       sortValue: (row) => row.frequencyOrder,
       formatter: (value, row) => `<span style="display: inline-block; padding: 2px 8px; font-size: 11px; border-radius: 4px; font-weight: 500; ${row.frequencyStyle}">${value}</span>`
@@ -112,10 +106,18 @@
 <style>
   .loots-table-container {
     width: 100%;
+    max-width: 100%;
+    overflow: hidden;
   }
 
   .loots-table-container :global(.fancy-table-container) {
-    max-height: 500px;
+    max-height: 596px;
+  }
+
+  @media (max-width: 767px) {
+    .loots-table-container :global(.fancy-table-container) {
+      max-height: 499px;
+    }
   }
 
   .no-data {

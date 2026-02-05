@@ -67,7 +67,7 @@
     {
       key: 'itemName',
       header: 'Item',
-      width: '1fr',
+      main: true,
       sortable: true,
       formatter: (value, row) => row.itemLink
         ? `<a href="${row.itemLink}" class="wiki-link">${value}</a>`
@@ -76,23 +76,18 @@
     {
       key: 'typeName',
       header: 'Type',
-      width: '110px',
       sortable: true,
-      hideOnMobile: true,
       formatter: (value, row) => `<span style="display: inline-block; padding: 2px 8px; font-size: 10px; font-weight: 600; border-radius: 4px; text-transform: uppercase; ${row.typeStyle}">${value}</span>`
     },
     {
       key: 'value',
       header: 'Value',
-      width: '100px',
       sortable: true,
       formatter: (value, row) => `<span style="font-family: monospace;">${row.valueFormatted}</span>`
     },
     {
       key: 'specialCost',
       header: 'Special Cost',
-      width: '180px',
-      hideOnMobile: true,
       formatter: (value) => value
         ? `<span style="color: var(--warning-color, #fbbf24);">${value}</span>`
         : '<span style="color: var(--text-muted);">-</span>'
@@ -100,7 +95,6 @@
     {
       key: 'isLimited',
       header: 'Limited',
-      width: '80px',
       sortable: true,
       formatter: (value) => value
         ? '<span style="display: inline-block; padding: 2px 6px; font-size: 10px; background-color: var(--warning-bg, rgba(251, 191, 36, 0.15)); color: var(--warning-color, #fbbf24); border-radius: 4px; font-weight: 500;">Limited</span>'
@@ -127,11 +121,19 @@
 <style>
   .offers-table-container {
     width: 100%;
+    max-width: 100%;
     min-height: 200px;
+    overflow: hidden;
   }
 
   .offers-table-container :global(.fancy-table-container) {
-    max-height: 600px;
+    max-height: 596px;
+  }
+
+  @media (max-width: 767px) {
+    .offers-table-container :global(.fancy-table-container) {
+      max-height: 499px;
+    }
   }
 
   .no-data {

@@ -69,11 +69,11 @@
   });
 
   $: effectsTableColumns = [
-    { key: 'effect', header: 'Effect', width: '1.4fr' },
-    { key: 'upkeep', header: 'Upkeep', width: '90px' },
-    { key: 'level', header: 'Level', width: '70px' },
-    { key: 'cost', header: 'Cost', width: '1fr' },
-    { key: 'criteria', header: 'Criteria', width: '1.2fr' }
+    { key: 'effect', header: 'Effect', main: true },
+    { key: 'upkeep', header: 'Upkeep' },
+    { key: 'level', header: 'Level' },
+    { key: 'cost', header: 'Cost' },
+    { key: 'criteria', header: 'Criteria' }
   ];
 
   // === Effect CRUD Operations ===

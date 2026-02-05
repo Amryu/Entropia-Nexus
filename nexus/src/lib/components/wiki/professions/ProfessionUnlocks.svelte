@@ -25,14 +25,13 @@
     {
       key: 'level',
       header: 'Level',
-      width: '90px',
       sortable: true,
       formatter: (value) => `<span style="display: inline-block; padding: 4px 10px; font-size: 12px; font-weight: 600; background: linear-gradient(135deg, #3a6d99 0%, #2d5577 100%); color: white; border-radius: 4px;">Lvl ${value}</span>`
     },
     {
       key: 'skillName',
       header: 'Skill Unlocked',
-      width: '1fr',
+      main: true,
       formatter: (value, row) => {
         let html = `<a href="${row.skillLink}" class="wiki-link-normal">${value}</a>`;
         if (row.isHidden) {
@@ -44,8 +43,6 @@
     {
       key: 'hpIncrease',
       header: 'Points/HP',
-      width: '100px',
-      hideOnMobile: true,
       formatter: (value) => value != null ? `<span style="font-family: monospace;">${value}</span>` : 'N/A'
     }
   ];
@@ -69,11 +66,19 @@
 <style>
   .unlocks-table-container {
     width: 100%;
+    max-width: 100%;
     min-height: 150px;
+    overflow: hidden;
   }
 
   .unlocks-table-container :global(.fancy-table-container) {
-    max-height: 400px;
+    max-height: 596px;
+  }
+
+  @media (max-width: 767px) {
+    .unlocks-table-container :global(.fancy-table-container) {
+      max-height: 499px;
+    }
   }
 
   .no-data {

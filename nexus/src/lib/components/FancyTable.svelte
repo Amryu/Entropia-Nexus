@@ -22,7 +22,8 @@
    * - stickyHeader: Keep header visible when scrolling (default: true)
    * - emptyMessage: Message to show when no data (default: 'No data available')
    * - loading: External loading state
-   * - defaultWidthBasis: 'content' | 'header' | 'both' (default: 'content')
+   * - defaultWidthBasis: 'content' | 'header' | 'both' (default: 'both')
+   * - horizontalScroll: Enable horizontal scrolling (default: true)
    *
    * Events:
    * - rowClick: { row, index }
@@ -40,7 +41,8 @@
   export let stickyHeader = true;
   export let emptyMessage = 'No data available';
   export let loading = false;
-  export let defaultWidthBasis = 'content';
+  export let defaultWidthBasis = 'both';
+  export let horizontalScroll = true;
 
   /**
    * @type {(row: object) => string|null} Function to generate extra CSS classes for rows
@@ -66,6 +68,8 @@
   // Internal state
   let containerEl;
   let scrollEl;
+  let headerEl;
+  let footerEl;
   let internalData = [];
   let totalRows = 0;
   let sortColumn = null;
@@ -80,16 +84,25 @@
   let scrollbarWidth = 0;
   let resizeObserver;
 
+  // Track mobile state (must be before computed values that depend on it)
+  let isMobile = false;
+
+  function updateMobileState() {
+    isMobile = typeof window !== 'undefined' && window.innerWidth <= 767;
+  }
+
   // Computed
   $: isLazyMode = typeof fetchData === 'function';
   $: displayData = isLazyMode ? internalData : filteredSortedData;
   $: totalCount = isLazyMode ? totalRows : filteredSortedData.length;
-  $: totalHeight = totalCount * rowHeight;
-  $: headerHeight = (searchable ? 2 : 1) * rowHeight;
+  // Use smaller row height on mobile
+  $: effectiveRowHeight = isMobile ? Math.min(rowHeight, 32) : rowHeight;
+  $: totalHeight = totalCount * effectiveRowHeight;
+  $: headerHeight = (searchable ? 2 : 1) * effectiveRowHeight;
   $: contentHeight = containerHeight > 0
-    ? Math.max(rowHeight, Math.floor(containerHeight / rowHeight) * rowHeight)
+    ? Math.max(effectiveRowHeight, Math.floor(containerHeight / effectiveRowHeight) * effectiveRowHeight)
     : 0;
-  $: visibleCapacity = contentHeight > 0 ? Math.floor(contentHeight / rowHeight) : 0;
+  $: visibleCapacity = contentHeight > 0 ? Math.floor(contentHeight / effectiveRowHeight) : 0;
   $: fillRowCount = totalCount > 0 ? Math.max(0, visibleCapacity - totalCount) : 0;
   $: virtualContainerHeight = Math.max(totalHeight, contentHeight || 0);
 
@@ -163,6 +176,10 @@
 
   // Initialize
   onMount(() => {
+    // Initialize mobile state first
+    updateMobileState();
+    window.addEventListener('resize', updateMobileState);
+
     if (isLazyMode) {
       loadInitialData();
     }
@@ -185,6 +202,10 @@
       resizeObserver.disconnect();
       resizeObserver = null;
     }
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('resize', updateMobileState);
+    }
+    Object.values(filterTimeouts).forEach(clearTimeout);
   });
 
   // Reset when data source changes
@@ -239,6 +260,7 @@
 
   function handleScroll() {
     updateVisibleRange();
+    syncHorizontalScroll();
 
     if (isLazyMode) {
       // Check if we need to load more data
@@ -253,6 +275,13 @@
     }
   }
 
+  function syncHorizontalScroll() {
+    if (!horizontalScroll || !scrollEl) return;
+    const scrollLeft = scrollEl.scrollLeft;
+    if (headerEl) headerEl.scrollLeft = scrollLeft;
+    if (footerEl) footerEl.scrollLeft = scrollLeft;
+  }
+
   function updateVisibleRange() {
     if (!scrollEl) return;
 
@@ -261,8 +290,8 @@
 
     // Calculate visible row range with buffer
     const buffer = 5;
-    visibleStart = Math.max(0, Math.floor(scrollTop / rowHeight) - buffer);
-    visibleEnd = Math.min(totalCount, Math.ceil((scrollTop + containerHeight) / rowHeight) + buffer);
+    visibleStart = Math.max(0, Math.floor(scrollTop / effectiveRowHeight) - buffer);
+    visibleEnd = Math.min(totalCount, Math.ceil((scrollTop + containerHeight) / effectiveRowHeight) + buffer);
 
     updateScrollbarWidth();
   }
@@ -354,9 +383,10 @@
   $: visibleRows = displayData.slice(visibleStart, visibleEnd).map((row, i) => ({
     row,
     index: visibleStart + i,
-    top: (visibleStart + i) * rowHeight
+    top: (visibleStart + i) * effectiveRowHeight
   }));
 
+  // Calculate auto widths for columns without explicit width
   $: columnAutoWidths = columns.reduce((acc, column) => {
     if (column.width) return acc;
 
@@ -380,17 +410,13 @@
       : basis === 'both'
       ? Math.max(headerLength, contentLength)
       : contentLength;
-    const safeLength = Math.max(4, length);
-    acc[column.key] = `calc(${safeLength}ch + 32px)`;
+    // Use smaller minimum and padding on mobile
+    const minLength = isMobile ? 2 : 4;
+    const padding = isMobile ? 20 : 32; // 10px each side mobile, 16px each side desktop
+    const safeLength = Math.max(minLength, length);
+    acc[column.key] = `calc(${safeLength}ch + ${padding}px)`;
     return acc;
   }, {});
-
-  // Track mobile state
-  let isMobile = false;
-
-  function updateMobileState() {
-    isMobile = typeof window !== 'undefined' && window.innerWidth <= 767;
-  }
 
   // Compute grid-template-columns from column widths
   // - main columns use minmax() to allow growing with available space
@@ -411,21 +437,6 @@
       return width;
     })
     .join(' ');
-
-  onMount(() => {
-    // Initialize mobile state
-    updateMobileState();
-    window.addEventListener('resize', updateMobileState);
-
-    updateScrollbarWidth();
-  });
-
-  onDestroy(() => {
-    if (typeof window !== 'undefined') {
-      window.removeEventListener('resize', updateMobileState);
-    }
-    Object.values(filterTimeouts).forEach(clearTimeout);
-  });
 </script>
 
 <style>
@@ -433,15 +444,20 @@
     display: flex;
     flex-direction: column;
     height: 100%;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0; /* Allow flex item to shrink below content size */
     background-color: var(--secondary-color);
     border: 1px solid var(--border-color);
     border-radius: 8px;
     overflow: hidden;
+    box-sizing: border-box;
     font-size: 14px;
   }
 
   .table-header {
     flex-shrink: 0;
+    min-width: 0; /* Allow flex item to shrink below content size */
     background-color: var(--hover-color);
     border-bottom: 1px solid var(--border-color);
   }
@@ -457,6 +473,12 @@
     align-items: stretch;
     padding-right: var(--scrollbar-width, 0px);
     box-sizing: border-box;
+  }
+
+  .horizontal-scroll .header-row,
+  .horizontal-scroll .filter-row {
+    display: inline-grid;
+    min-width: 100%;
   }
 
   .header-cell {
@@ -537,11 +559,28 @@
     overflow-y: auto;
     overflow-x: hidden;
     position: relative;
+    min-width: 0; /* Allow flex item to shrink below content size */
+  }
+
+  .table-body.horizontal-scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   /* Ensure header has same scrollbar space as body */
   .table-header {
     overflow-y: hidden;
+    overflow-x: hidden;
+  }
+
+  .table-header.horizontal-scroll {
+    overflow-x: auto;
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE/Edge */
+  }
+
+  .table-header.horizontal-scroll::-webkit-scrollbar {
+    display: none; /* Chrome/Safari/Opera */
   }
 
   /* Hide scrollbar in header (we just want the space reserved) */
@@ -563,6 +602,11 @@
     width: 100%;
   }
 
+  .horizontal-scroll .virtual-container {
+    display: inline-block;
+    min-width: 100%;
+  }
+
   .table-row {
     display: grid;
     align-items: stretch;
@@ -573,6 +617,11 @@
     transition: background-color 0.1s ease;
     border-bottom: 1px solid var(--border-color);
     box-sizing: border-box;
+  }
+
+  .horizontal-scroll .table-row {
+    right: auto;
+    min-width: 100%;
   }
 
   .table-row:hover {
@@ -666,9 +715,21 @@
 
   .table-footer {
     flex-shrink: 0;
+    min-width: 0; /* Allow flex item to shrink below content size */
     background-color: var(--hover-color);
     border-top: 2px solid var(--border-color);
     overflow-y: hidden;
+    overflow-x: hidden;
+  }
+
+  .table-footer.horizontal-scroll {
+    overflow-x: auto;
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE/Edge */
+  }
+
+  .table-footer.horizontal-scroll::-webkit-scrollbar {
+    display: none; /* Chrome/Safari/Opera */
   }
 
   /* Hide scrollbar in footer (we just want the space reserved) */
@@ -691,6 +752,11 @@
     border-bottom: 1px solid var(--border-color);
     padding-right: var(--scrollbar-width, 0px);
     box-sizing: border-box;
+  }
+
+  .horizontal-scroll .footer-row {
+    display: inline-grid;
+    min-width: 100%;
   }
 
   .footer-row:last-child {
@@ -759,7 +825,7 @@
     color: var(--text-muted);
   }
 
-  /* Mobile column hiding */
+  /* Mobile styles */
   @media (max-width: 767px) {
     .fancy-table-container {
       font-size: 12px;
@@ -771,39 +837,49 @@
     }
 
     .header-cell {
-      padding: 8px 10px;
-      font-size: 11px;
+      padding: 6px 10px;
+      font-size: 10px;
       letter-spacing: 0.3px;
     }
 
     .filter-cell {
-      padding: 6px;
+      padding: 4px 6px;
     }
 
     .filter-input {
-      padding: 4px 6px;
+      padding: 3px 6px;
       font-size: 11px;
       border-radius: 3px;
     }
 
     .table-cell {
-      padding: 8px 10px;
+      padding: 6px 10px;
       font-size: 12px;
-      white-space: normal;
-      line-height: 1.2;
-      display: -webkit-box;
-      -webkit-line-clamp: 2;
-      -webkit-box-orient: vertical;
+      /* Keep flex for vertical centering, allow text wrapping */
+      display: flex;
+      align-items: center;
+      white-space: nowrap;
       overflow: hidden;
+      text-overflow: ellipsis;
+      min-height: 0;
+    }
+
+    .footer-cell {
+      padding: 6px 10px;
+    }
+
+    .results-info {
+      padding: 6px 10px;
+      font-size: 11px;
     }
 
     .empty-state {
-      padding: 32px 16px;
+      padding: 24px 12px;
     }
 
     .empty-icon {
-      font-size: 36px;
-      margin-bottom: 10px;
+      font-size: 32px;
+      margin-bottom: 8px;
     }
 
     .empty-text {
@@ -818,7 +894,7 @@
 
 <div class="fancy-table-container" bind:this={containerEl}>
   <!-- Header -->
-  <div class="table-header" class:sticky={stickyHeader}>
+  <div class="table-header" class:sticky={stickyHeader} class:horizontal-scroll={horizontalScroll} bind:this={headerEl}>
     <div class="header-row" style="grid-template-columns: {gridTemplateColumns};">
       {#each columns as column}
         <!-- svelte-ignore a11y-click-events-have-key-events -->
@@ -859,6 +935,7 @@
   <!-- Body -->
   <div
     class="table-body"
+    class:horizontal-scroll={horizontalScroll}
     bind:this={scrollEl}
     on:scroll={handleScroll}
   >
@@ -882,7 +959,7 @@
             class:even={index % 2 === 0}
             class:odd={index % 2 === 1}
             class:last-row={index === totalCount - 1}
-            style="top: {top}px; height: {rowHeight}px; grid-template-columns: {gridTemplateColumns};"
+            style="top: {top}px; height: {effectiveRowHeight}px; grid-template-columns: {gridTemplateColumns};"
             on:click={() => handleRowClick(row, index)}
             on:mouseover={() => handleRowHover(row, index)}
             on:mouseout={() => handleRowHover(null, null)}
@@ -908,7 +985,7 @@
               class="table-row empty"
               class:even={emptyIndex % 2 === 0}
               class:odd={emptyIndex % 2 === 1}
-              style="top: {emptyIndex * rowHeight}px; height: {rowHeight}px; grid-template-columns: {gridTemplateColumns};"
+              style="top: {emptyIndex * effectiveRowHeight}px; height: {effectiveRowHeight}px; grid-template-columns: {gridTemplateColumns};"
             >
               {#each columns as column}
                 <div class="table-cell" class:hide-on-mobile={column.hideOnMobile}></div>
@@ -928,7 +1005,7 @@
 
   <!-- Custom Footer Rows -->
   {#if footer && footer.length > 0 && displayData.length > 0}
-    <div class="table-footer">
+    <div class="table-footer" class:horizontal-scroll={horizontalScroll} bind:this={footerEl}>
       {#each footer as footerRow}
         <div class="footer-row" style="grid-template-columns: {gridTemplateColumns};">
           {#each columns as column, colIndex}

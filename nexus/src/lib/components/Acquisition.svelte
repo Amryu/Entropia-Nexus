@@ -49,11 +49,11 @@
   })();
 
   $: vendorColumns = [
-    { key: 'name', header: 'Name', width: '1fr', formatter: (v, row) => row.nameLink ? `<a href="${row.nameLink}">${v}</a>` : v },
-    { key: 'price', header: 'Price', width: '100px' },
-    { key: 'specialPrice', header: 'Special Price', width: '150px' },
-    { key: 'planet', header: 'Planet', width: '100px', hideOnMobile: true },
-    { key: 'limited', header: 'Limited', width: '70px', hideOnMobile: true }
+    { key: 'name', header: 'Name', main: true, formatter: (v, row) => row.nameLink ? `<a href="${row.nameLink}">${v}</a>` : v },
+    { key: 'price', header: 'Price' },
+    { key: 'specialPrice', header: 'Special Price' },
+    { key: 'planet', header: 'Planet' },
+    { key: 'limited', header: 'Limited' }
   ];
 
   // Build loot data
@@ -72,11 +72,10 @@
   })();
 
   $: lootColumns = [
-    { key: 'mob', header: 'Mob', width: '1fr', formatter: (v, row) => row.mobLink ? `<a href="${row.mobLink}">${v}</a>` : v },
-    { key: 'item', header: 'Item', width: '180px', formatter: (v, row) => row.itemLink ? `<a href="${row.itemLink}">${v}</a>` : v },
-    { key: 'planet', header: 'Planet', width: '100px', hideOnMobile: true },
-    { key: 'maturity', header: 'Lowest Maturity', width: '110px', hideOnMobile: true },
-    { key: 'frequency', header: 'Frequency', width: '110px', hideOnMobile: true }
+    { key: 'mob', header: 'Mob', main: true, formatter: (v, row) => row.mobLink ? `<a href="${row.mobLink}">${v}</a>` : v },
+    { key: 'planet', header: 'Planet' },
+    { key: 'maturity', header: 'Lowest Maturity' },
+    { key: 'frequency', header: 'Frequency' }
   ];
 
   // Build shop listing data
@@ -140,11 +139,11 @@
   })();
 
   $: shopColumns = [
-    { key: 'shop', header: 'Shop', width: '1fr', formatter: (v, row) => row.shopLink ? `<a href="${row.shopLink}">${v}</a>` : v },
-    { key: 'planet', header: 'Planet', width: '100px', hideOnMobile: true },
-    { key: 'location', header: 'Location', width: '100px', hideOnMobile: true, formatter: (v, row) => row.waypoint ? `<span class="copyable" title="Click to copy waypoint">${v}</span>` : v },
-    { key: 'stack', header: 'Stack', width: '60px' },
-    { key: 'mu', header: 'MU', width: '80px', hideOnMobile: true }
+    { key: 'shop', header: 'Shop', main: true, formatter: (v, row) => row.shopLink ? `<a href="${row.shopLink}">${v}</a>` : v },
+    { key: 'planet', header: 'Planet' },
+    { key: 'location', header: 'Location', formatter: (v, row) => row.waypoint ? `<span class="copyable" title="Click to copy waypoint">${v}</span>` : v },
+    { key: 'stack', header: 'Stack' },
+    { key: 'mu', header: 'MU' }
   ];
 
   // Build blueprint data
@@ -160,9 +159,9 @@
   })();
 
   $: blueprintColumns = [
-    { key: 'name', header: 'Blueprint', width: '1fr', formatter: (v, row) => row.nameLink ? `<a href="${row.nameLink}">${v}</a>` : v },
-    { key: 'level', header: 'Level', width: '70px', hideOnMobile: true },
-    { key: 'profession', header: 'Profession', width: '160px', hideOnMobile: true, formatter: (v, row) => row.professionLink ? `<a href="${row.professionLink}">${v}</a>` : v }
+    { key: 'name', header: 'Blueprint', main: true, formatter: (v, row) => row.nameLink ? `<a href="${row.nameLink}">${v}</a>` : v },
+    { key: 'level', header: 'Level' },
+    { key: 'profession', header: 'Profession', formatter: (v, row) => row.professionLink ? `<a href="${row.professionLink}">${v}</a>` : v }
   ];
 
   // Build blueprint drop data
@@ -176,8 +175,8 @@
   })();
 
   $: blueprintDropColumns = [
-    { key: 'name', header: 'Name', width: '1fr', formatter: (v, row) => row.nameLink ? `<a href="${row.nameLink}">${v}</a>` : v },
-    { key: 'level', header: 'Level', width: '80px', hideOnMobile: true }
+    { key: 'name', header: 'Name', main: true, formatter: (v, row) => row.nameLink ? `<a href="${row.nameLink}">${v}</a>` : v },
+    { key: 'level', header: 'Level' }
   ];
 
   // Copy waypoint handler
@@ -193,19 +192,24 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
+    max-width: 100%;
+    overflow: hidden;
   }
 
   .acquisition-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(400px, 100%), 1fr));
     gap: 16px;
     align-items: start;
+    max-width: 100%;
   }
 
   .acquisition-section {
     display: flex;
     flex-direction: column;
     gap: 8px;
+    max-width: 100%;
+    overflow: hidden;
   }
 
   .section-title {
@@ -219,14 +223,14 @@
   }
 
   .table-wrapper {
-    height: 300px;
+    height: 596px;
     border-radius: 6px;
     overflow: hidden;
     border: 1px solid var(--border-color, #555);
   }
 
   .table-wrapper.short {
-    height: 300px;
+    height: 596px;
   }
 
   .recipe-wrapper {
@@ -293,7 +297,7 @@
     }
 
     .table-wrapper {
-      height: 250px;
+      height: 499px;
     }
 
     .recipe-wrapper {

@@ -23,13 +23,12 @@
     {
       key: 'professionName',
       header: 'Profession',
-      width: '1fr',
+      main: true,
       formatter: (value, row) => `<a href="${row.professionLink}" class="wiki-link-normal">${value}</a>`
     },
     {
       key: 'level',
       header: 'Unlock Level',
-      width: '120px',
       sortable: true,
       formatter: (value) => `<span style="display: inline-block; padding: 4px 12px; font-size: 12px; font-weight: 600; background: linear-gradient(135deg, #3a6d99 0%, #2d5577 100%); color: white; border-radius: 4px;">Level ${value}</span>`
     }
@@ -54,11 +53,19 @@
 <style>
   .unlocks-table-container {
     width: 100%;
+    max-width: 100%;
     min-height: 150px;
+    overflow: hidden;
   }
 
   .unlocks-table-container :global(.fancy-table-container) {
-    max-height: 400px;
+    max-height: 596px;
+  }
+
+  @media (max-width: 767px) {
+    .unlocks-table-container :global(.fancy-table-container) {
+      max-height: 499px;
+    }
   }
 
   .no-data {

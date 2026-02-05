@@ -41,20 +41,17 @@
     {
       key: 'name',
       header: 'Profession',
-      width: '1fr',
+      main: true,
       formatter: (value, row) => `<a href="${row.nameLink}" class="wiki-link-normal">${value}</a>`
     },
     {
       key: 'category',
       header: 'Category',
-      width: '150px',
-      hideOnMobile: true,
       formatter: (value, row) => `<span style="display: inline-block; padding: 3px 8px; font-size: 10px; font-weight: 600; background-color: ${row.categoryColor}; color: white; border-radius: 4px; text-transform: uppercase;">${value}</span>`
     },
     {
       key: 'weight',
       header: 'Weight',
-      width: '80px',
       sortable: true,
       formatter: (value) => `<span style="font-family: monospace; font-weight: 500;">${value}</span>`
     }
@@ -79,11 +76,19 @@
 <style>
   .professions-table-container {
     width: 100%;
+    max-width: 100%;
     min-height: 150px;
+    overflow: hidden;
   }
 
   .professions-table-container :global(.fancy-table-container) {
-    max-height: 400px;
+    max-height: 596px;
+  }
+
+  @media (max-width: 767px) {
+    .professions-table-container :global(.fancy-table-container) {
+      max-height: 499px;
+    }
   }
 
   .no-data {
