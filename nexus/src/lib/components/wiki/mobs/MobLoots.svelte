@@ -112,7 +112,6 @@
 <style>
   .loots-table-container {
     width: 100%;
-    min-height: 200px;
   }
 
   .loots-table-container :global(.fancy-table-container) {

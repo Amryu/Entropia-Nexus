@@ -13,9 +13,10 @@ export async function applyChange(change) {
 
   let client = await startNexusTransaction();
 
-  let columnData = await Promise.all(config.columns.map(async col => ({ name: col.name, value: await col.value(object, client) })));
-
   try {
+    // Compute column values inside try-catch so errors rollback the transaction
+    let columnData = await Promise.all(config.columns.map(async col => ({ name: col.name, value: await col.value(object, client) })));
+
     if (object.Id) {
       await client.query(`UPDATE ONLY "${config.table}"
           SET

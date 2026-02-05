@@ -22,7 +22,7 @@
   import DataSection from '$lib/components/wiki/DataSection.svelte';
   import InlineEdit from '$lib/components/wiki/InlineEdit.svelte';
   import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
-  import SearchableSelect from '$lib/components/wiki/SearchableSelect.svelte';
+  import SearchInput from '$lib/components/wiki/SearchInput.svelte';
 
   // Wiki edit state
   import {
@@ -40,7 +40,7 @@
   } from '$lib/stores/wikiEditState';
 
   // Legacy components for data display
-  import Tiering from '$lib/components/Tiering.svelte';
+  import TieringEditor from '$lib/components/wiki/TieringEditor.svelte';
   import Acquisition from '$lib/components/Acquisition.svelte';
 
   // Wiki edit components
@@ -899,11 +899,11 @@
                 <span class="stat-label">Profession</span>
                 <span class="stat-value">
                   {#if $editMode}
-                    <SearchableSelect
+                    <SearchInput
                       value={activeEntity?.Profession?.Name || ''}
                       options={professionOptions}
                       placeholder="Select profession..."
-                      on:change={(e) => updateField('Profession.Name', e.detail.value)}
+                      on:select={(e) => updateField('Profession.Name', e.detail.value)}
                     />
                   {:else if activeEntity?.Profession?.Name}
                     <a href={getTypeLink(activeEntity.Profession.Name, 'Profession')} class="profession-link">{activeEntity.Profession.Name}</a>
@@ -994,7 +994,7 @@
             subtitle="{additional.tierInfo?.length || 0} tiers"
             on:toggle={savePanelStates}
           >
-            <Tiering tieringInfo={additional.tierInfo} />
+            <TieringEditor entity={activeEntity} entityType={getEntityType(additional.type)} tierInfo={additional.tierInfo} />
           </DataSection>
         {/if}
 

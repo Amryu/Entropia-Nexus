@@ -5,6 +5,7 @@
 <script>
   // @ts-nocheck
   import { createEventDispatcher } from 'svelte';
+  import { browser } from '$app/environment';
   import Cropper from 'svelte-easy-crop';
 
   const dispatch = createEventDispatcher();
@@ -48,6 +49,10 @@
    * @returns {Promise<Blob>}
    */
   async function createCroppedImage(imageSrc, pixelCrop) {
+    if (!browser) {
+      return Promise.reject(new Error('Image cropping only available in browser'));
+    }
+
     const img = await loadImage(imageSrc);
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');

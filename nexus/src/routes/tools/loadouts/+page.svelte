@@ -6,6 +6,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { slide } from 'svelte/transition';
   import { browser } from '$app/environment';
+  import { beforeNavigate } from '$app/navigation';
 
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { loading, darkMode } from '../../../stores.js';
@@ -95,6 +96,7 @@
   let pickerPreviewRow = null;
   let pickerPreviewItem = null;
   let suppressDirty = false;
+  let isNavigationSave = false;
   let clothingReplaceNotice = '';
   let loadoutVersion = 0;
   let evaluation = null;
@@ -977,7 +979,12 @@
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(next || []));
   }
 
-  function setActiveLoadout(nextLoadout) {
+  async function setActiveLoadout(nextLoadout, { skipSave = false } = {}) {
+    // Auto-save current loadout before switching (if dirty and online)
+    if (!skipSave && activeSource === 'online' && isDirty && activeOnlineId && loadout && !isSaving) {
+      await handleSave();
+    }
+
     suppressDirty = true;
     loadout = nextLoadout || null;
     isDirty = false;
@@ -998,12 +1005,12 @@
     }, 0);
   }
 
-  function setActiveSource(nextSource) {
+  async function setActiveSource(nextSource) {
     activeSource = nextSource;
     loadouts = activeSource === 'online'
       ? onlineLoadouts.map(r => r.data)
       : localLoadouts;
-    setActiveLoadout(loadouts[0] || null);
+    await setActiveLoadout(loadouts[0] || null);
   }
 
   async function fetchOnlineLoadouts() {
@@ -1026,7 +1033,7 @@
       }));
       if (activeSource === 'online') {
         loadouts = onlineLoadouts.map(r => r.data);
-        setActiveLoadout(loadouts[0] || null);
+        await setActiveLoadout(loadouts[0] || null);
       }
     } catch (err) {
       console.error('Failed to load online loadouts:', err);
@@ -1145,7 +1152,7 @@
       };
       onlineLoadouts = [record, ...onlineLoadouts];
       loadouts = onlineLoadouts.map(r => r.data);
-      setActiveLoadout(record.data);
+      await setActiveLoadout(record.data);
       isDirty = false;
       autosaveDueAt = null;
       clearAutosaveTicker();
@@ -1155,11 +1162,11 @@
     }
   }
 
-  function createLocalLoadout() {
+  async function createLocalLoadout() {
     const newLoadout = createEmptyLoadout();
     localLoadouts = [newLoadout, ...localLoadouts];
     loadouts = localLoadouts;
-    setActiveLoadout(newLoadout);
+    await setActiveLoadout(newLoadout);
     writeLocalLoadouts(localLoadouts);
   }
 
@@ -1175,7 +1182,7 @@
         }
         onlineLoadouts = onlineLoadouts.filter(r => r.id !== activeOnlineId);
         loadouts = onlineLoadouts.map(r => r.data);
-        setActiveLoadout(loadouts[0] || null);
+        await setActiveLoadout(loadouts[0] || null, { skipSave: true });
       } catch (err) {
         console.error('Delete failed:', err);
         saveError = err.message;
@@ -1186,7 +1193,7 @@
       localLoadouts.splice(index, 1);
       localLoadouts = localLoadouts;
       loadouts = localLoadouts;
-      setActiveLoadout(loadouts[0] || null);
+      await setActiveLoadout(loadouts[0] || null, { skipSave: true });
       writeLocalLoadouts(localLoadouts);
     }
   }
@@ -1541,7 +1548,7 @@
       importSuccess = true;
       await fetchOnlineLoadouts();
       if (activeSource === 'online' && onlineLoadouts.length > 0) {
-        setActiveLoadout(onlineLoadouts[0].data);
+        await setActiveLoadout(onlineLoadouts[0].data);
       }
     } catch (err) {
       console.error('Import failed:', err);
@@ -1552,11 +1559,34 @@
   }
 
   function handleBeforeUnload(event) {
-    if (activeSource === 'online' && isDirty) {
-      event.preventDefault();
-      event.returnValue = '';
+    if (activeSource === 'online' && isDirty && activeOnlineId && loadout) {
+      // Try to save via sendBeacon (fire-and-forget for browser close/refresh)
+      const payload = JSON.stringify({
+        name: loadout.Name || 'New Loadout',
+        data: loadout,
+        public: sharePublic || false
+      });
+      navigator.sendBeacon(`/api/tools/loadout/${activeOnlineId}`, new Blob([payload], { type: 'application/json' }));
     }
   }
+
+  // Auto-save when navigating away within the app
+  beforeNavigate(async ({ to, cancel }) => {
+    if (activeSource === 'online' && isDirty && activeOnlineId && loadout && !isSaving && !isNavigationSave) {
+      // Save immediately before navigation
+      cancel();
+      isNavigationSave = true;
+      try {
+        await handleSave();
+      } finally {
+        // Continue navigation after save completes (whether it succeeded or failed)
+        if (to?.url) {
+          const { goto } = await import('$app/navigation');
+          goto(to.url.pathname + to.url.search + to.url.hash);
+        }
+      }
+    }
+  });
 
   onMount(async () => {
     if (browser) {
@@ -1886,13 +1916,19 @@
   function addClothingItem(item) {
     if (!loadout?.Gear || !item) return;
     const slotName = getClothingItemSlot(item);
-    if (!slotName || slotName === 'Unknown' || isRingSlot(slotName)) return;
+    if (isRingSlot(slotName)) return;
     const list = [...(loadout.Gear.Clothing || [])];
-    const existingIndex = list.findIndex(entry => !isRingSlot(entry?.Slot) && entry?.Slot === slotName);
-    if (existingIndex >= 0) {
-      const replaced = list[existingIndex];
-      list.splice(existingIndex, 1);
-      clothingReplaceNotice = `Replaced ${replaced?.Name || 'item'} in ${slotName}.`;
+    // For items with a defined slot (not Unknown), replace existing items in that slot
+    // For Unknown slot items, allow duplicates (unlimited)
+    if (slotName && slotName !== 'Unknown') {
+      const existingIndex = list.findIndex(entry => !isRingSlot(entry?.Slot) && entry?.Slot === slotName);
+      if (existingIndex >= 0) {
+        const replaced = list[existingIndex];
+        list.splice(existingIndex, 1);
+        clothingReplaceNotice = `Replaced ${replaced?.Name || 'item'} in ${slotName}.`;
+      } else {
+        clothingReplaceNotice = '';
+      }
     } else {
       clothingReplaceNotice = '';
     }
@@ -2472,25 +2508,20 @@
     if (kind === 'clothing') {
       const availableClothing = clothing.filter(item => {
         const slotName = getClothingItemSlot(item);
-        return slotName
-          && slotName !== 'Unknown'
-          && !isRingSlot(slotName)
-          && hasClothingEffects(item);
+        // Show non-ring clothing items that have effects
+        return !isRingSlot(slotName) && hasClothingEffects(item);
       });
       return {
         title: 'Select Clothing',
         columns: finalizePickerColumns(kind, [
           { key: 'name', header: 'Name', main: true },
-          { key: 'slot', header: 'Slot', width: '120px' },
-          { key: 'effects', header: 'Effects', width: '110px' }
+          { key: 'slot', header: 'Slot', width: '120px' }
         ]),
         rows: buildPickerRows(availableClothing, item => {
           const slotName = getClothingItemSlot(item);
-          const effectCount = getClothingEffectCount(item);
           return {
             name: item.Name,
-            slot: slotName,
-            effects: formatEffectCount(effectCount)
+            slot: slotName
           };
         })
       };
@@ -2591,7 +2622,26 @@
     if (equip.length) groups.push({ title: 'Effects on Equip', effects: equip, effectType: 'equip' });
     if (use.length) groups.push({ title: 'Effects on Use', effects: use, effectType: 'use' });
     if (consume.length) groups.push({ title: 'Effects on Consume', effects: consume, effectType: 'consume' });
-    if (setEffects.length) groups.push({ title: 'Set Effects', effects: setEffects, effectType: 'equip' });
+
+    // Group set effects by MinSetPieces (like armor sets display)
+    if (setEffects.length) {
+      const byPieceCount = {};
+      for (const effect of setEffects) {
+        const pieces = effect.Values?.MinSetPieces || 1;
+        if (!byPieceCount[pieces]) byPieceCount[pieces] = [];
+        byPieceCount[pieces].push(effect);
+      }
+      // Sort by piece count and add each group
+      const sortedPieceCounts = Object.keys(byPieceCount).map(Number).sort((a, b) => a - b);
+      for (const pieces of sortedPieceCounts) {
+        groups.push({
+          title: `Set Effects (${pieces} Pieces)`,
+          effects: byPieceCount[pieces],
+          effectType: 'equip'
+        });
+      }
+    }
+
     if (generic.length) groups.push({ title: 'Effects', effects: generic, effectType: 'equip' });
 
     return groups;
@@ -2704,7 +2754,11 @@
       const rows = [];
       addPreviewRow(rows, 'Slot', getClothingItemSlot(item));
       addPreviewRow(rows, 'Type', item.Properties?.Type);
-      addPreviewRow(rows, 'Effects', getClothingEffectCount(item));
+      // Show set name if item belongs to a set
+      const setName = item.Set?.Name;
+      if (setName) {
+        addPreviewRow(rows, 'Set', setName);
+      }
       sections.push({ title: 'Clothing Stats', rows });
     }
 

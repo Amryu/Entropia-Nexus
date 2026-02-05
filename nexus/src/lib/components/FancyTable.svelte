@@ -43,6 +43,12 @@
   export let defaultWidthBasis = 'content';
 
   /**
+   * @type {(row: object) => string|null} Function to generate extra CSS classes for rows
+   * Example: (row) => row.boss ? 'boss-row' : null
+   */
+  export let rowClass = null;
+
+  /**
    * @type {Array|null} Footer rows for displaying aggregates
    * Each row: Array of cell values matching columns, or object with key->value
    * Example: [{ label: 'Total', tt: '10.00', mu: '115%', total: '11.50' }]
@@ -872,7 +878,7 @@
           <!-- svelte-ignore a11y-no-static-element-interactions -->
           <!-- svelte-ignore a11y-mouse-events-have-key-events -->
           <div
-            class="table-row"
+            class="table-row {rowClass ? (rowClass(row) || '') : ''}"
             class:even={index % 2 === 0}
             class:odd={index % 2 === 1}
             class:last-row={index === totalCount - 1}

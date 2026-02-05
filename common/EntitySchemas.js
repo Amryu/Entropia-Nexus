@@ -20,6 +20,7 @@ import { MedicalTool } from "./schemas/MedicalTool.js";
 import { MindforceImplant } from "./schemas/MindforceImplant.js";
 import { MiscTool } from "./schemas/MiscTool.js";
 import { Mob } from "./schemas/Mob.js";
+import { Mission } from "./schemas/Mission.js";
 import { Pet } from "./schemas/Pet.js";
 import { Profession } from "./schemas/Profession.js";
 import { Refiner } from "./schemas/Refiner.js";
@@ -59,6 +60,7 @@ export const EntitySchemas = {
   MindforceImplant,
   MiscTool,
   Mob,
+  Mission,
   Pet,
   Profession,
   Refiner,

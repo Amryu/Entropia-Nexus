@@ -4,9 +4,15 @@
  * @param {any} item
  */
 export function isNonStackable(item) {
-  // Example heuristic: certain attachment/tools could be non-stackable
+  // Items with condition/TT that can be damaged
   const t = item?.Properties?.Type || item?.type || '';
-  return ['Weapon', 'Armor', 'Vehicle', 'WeaponAmplifier', 'WeaponVisionAttachment', 'Finder', 'Excavator', 'Refiner', 'Scanner', 'TeleportationChip', 'EffectChip', 'MiscTool', 'MindforceImplant'].includes(t);
+  return [
+    'Weapon', 'Armor', 'Vehicle',
+    'WeaponAmplifier', 'WeaponVisionAttachment',
+    'Finder', 'FinderAmplifier', 'Excavator', 'Refiner', 'Scanner',
+    'TeleportationChip', 'EffectChip', 'MedicalChip',
+    'MiscTool', 'MedicalTool', 'MindforceImplant', 'Pet'
+  ].includes(t);
 }
 
 // New alias for future condition-based logic. Keep current behavior identical.

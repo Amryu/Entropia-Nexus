@@ -1,8 +1,20 @@
 const pgp = require('pg-promise')();
-const { getObjects, getObjectByIdOrName, parseItemList } = require('./utils');
+const { pool } = require('./dbClient');
+const { parseItemList } = require('./utils');
 
 const queries = {
-  Areas: 'SELECT "Areas".*, "Planets"."Name" AS "Planet", "Planets"."TechnicalName" FROM ONLY "Areas" LEFT JOIN ONLY "Planets" ON "Areas"."PlanetId" = "Planets"."Id"',
+  Areas: `
+    SELECT l.*,
+           p."Name" AS "Planet",
+           p."TechnicalName",
+           a."Type" AS "AreaType",
+           a."Shape",
+           a."Data"
+    FROM ONLY "Locations" l
+    LEFT JOIN ONLY "Planets" p ON l."PlanetId" = p."Id"
+    JOIN ONLY "Areas" a ON l."Id" = a."LocationId"
+    WHERE l."Type" = 'Area'
+  `,
 };
 
 function formatArea(x) {
@@ -11,33 +23,49 @@ function formatArea(x) {
     Name: x.Name,
     Properties: {
       Description: x.Description,
-      Type: x.Type,
+      Type: x.AreaType,
       Shape: x.Shape,
       Data: x.Data,
       Coordinates: { Longitude: x.Longitude, Latitude: x.Latitude, Altitude: x.Altitude }
     },
-    Planet: {
+    Planet: x.Planet ? {
       Name: x.Planet,
       Properties: { TechnicalName: x.TechnicalName },
       Links: { "$Url": `/planets/${x.PlanetId}` }
-    },
+    } : null,
     Links: { "$Url": `/areas/${x.Id}` }
   };
 }
 
-async function _getObjects(query, formatFn) { return getObjects(query, formatFn); }
-async function _getObject(idOrName, query) { const row = await getObjectByIdOrName(query, 'Areas', idOrName); return row ? formatArea(row) : null; }
-
 // DB methods
-async function getAreas(planets = null) {
-  let where = '';
+async function getAreas(planets = null, areaTypes = null) {
+  let where = [];
+  let params = [];
+  let paramIndex = 1;
+
   if (planets && planets.length) {
-    where = pgp.as.format(' WHERE "Planets"."Name" IN ($1:csv)', [planets]);
+    where.push(`p."Name" IN (${planets.map(() => `$${paramIndex++}`).join(', ')})`);
+    params.push(...planets);
   }
-  return _getObjects(queries.Areas + where, formatArea);
+
+  if (areaTypes && areaTypes.length) {
+    where.push(`a."Type"::text IN (${areaTypes.map(() => `$${paramIndex++}`).join(', ')})`);
+    params.push(...areaTypes);
+  }
+
+  const whereClause = where.length > 0 ? ` AND ${where.join(' AND ')}` : '';
+  const sql = queries.Areas + whereClause + ' ORDER BY l."Name"';
+
+  const { rows } = await pool.query(sql, params);
+  return rows.map(formatArea);
 }
 
-async function getArea(idOrName) { return _getObject(idOrName, queries.Areas); }
+async function getArea(idOrName) {
+  const byId = /^(\d+)$/.test(String(idOrName));
+  const whereClause = byId ? ' AND l."Id" = $1' : ' AND l."Name" = $1';
+  const { rows } = await pool.query(queries.Areas + whereClause, [idOrName]);
+  return rows.length === 1 ? formatArea(rows[0]) : null;
+}
 
 // Endpoint wiring
 function register(app) {
@@ -57,6 +85,16 @@ function register(app) {
    *        schema:
    *          type: string
    *        description: A comma-separated list of planets to filter areas by
+   *      - in: query
+   *        name: Type
+   *        schema:
+   *          type: string
+   *        description: Area type to filter by (MobArea, LandArea, etc.)
+   *      - in: query
+   *        name: Types
+   *        schema:
+   *          type: string
+   *        description: Comma-separated list of area types
    *    responses:
    *      '200':
    *        description: A list of areas
@@ -65,15 +103,30 @@ function register(app) {
    */
   app.get('/areas', async (req, res) => {
     try {
-      if (req.query.Planet && req.query.Planets) return res.status(400).send('Cannot specify both Planet and Planets');
-      if (req.query.Planet || req.query.Planets) {
-        const planets = req.query.Planets ? parseItemList(req.query.Planets) : [req.query.Planet];
-        if (planets.length === 0) return res.status(400).send('Planets cannot be empty');
-        res.json(await getAreas(planets));
-      } else {
-        res.json(await getAreas());
+      if (req.query.Planet && req.query.Planets) {
+        return res.status(400).send('Cannot specify both Planet and Planets');
       }
-    } catch (e) { res.status(500).send('Internal server error'); }
+      if (req.query.Type && req.query.Types) {
+        return res.status(400).send('Cannot specify both Type and Types');
+      }
+
+      let planets = null;
+      let areaTypes = null;
+
+      if (req.query.Planet || req.query.Planets) {
+        planets = req.query.Planets ? parseItemList(req.query.Planets) : [req.query.Planet];
+        if (planets.length === 0) return res.status(400).send('Planets cannot be empty');
+      }
+
+      if (req.query.Type || req.query.Types) {
+        areaTypes = req.query.Types ? parseItemList(req.query.Types) : [req.query.Type];
+      }
+
+      res.json(await getAreas(planets, areaTypes));
+    } catch (e) {
+      console.error('Error fetching areas:', e);
+      res.status(500).send('Internal server error');
+    }
   });
 
   /**

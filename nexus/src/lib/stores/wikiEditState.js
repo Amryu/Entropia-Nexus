@@ -53,7 +53,7 @@ export const hasErrors = derived(validationErrors, ($errors) => {
 const NAMED_ENTITY_PATHS = {
   Apartment: ['Planet'],
   Area: ['Planet'],
-  Location: ['Planet'],
+  Location: ['Planet', 'ParentLocation', 'Facilities[]'],
   Shop: ['Planet'],
   Vendor: ['Planet', 'Offers[].Item', 'Offers[].Prices[].Item'],
   Pet: ['Planet'],
@@ -65,6 +65,8 @@ const NAMED_ENTITY_PATHS = {
     'Loots[].Item',
     'Spawns[].Maturities[].Maturity.Mob'
   ],
+  Mission: ['Planet', 'MissionChain'],
+  MissionChain: ['Planet'],
   Capsule: ['Profession', 'Mob'],
   EffectChip: ['Ammo', 'Profession'],
   MedicalChip: ['Ammo'],

@@ -66,6 +66,10 @@ export const Mob = {
                 "type": ["integer", "null"],
                 "default": null
               },
+              "Boss": {
+                "type": ["boolean", "null"],
+                "default": false
+              },
               "RegenerationInterval": {
                 "type": ["number", "null"],
                 "default": null

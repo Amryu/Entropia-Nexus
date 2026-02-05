@@ -68,6 +68,8 @@
   let selectedDetails = null;
   let pendingEditId = null;
   let changeIdParam = null;
+  let searchResultsHovered = false;
+  let panelLoading = false;
 
   const mainPlanets = getMainPlanetNames();
 
@@ -432,6 +434,12 @@
     searchOpen = false;
   }
 
+  // Clear hover state when search closes
+  $: if (!searchOpen && searchResultsHovered) {
+    searchResultsHovered = false;
+    hoveredLocation = null;
+  }
+
   function handleMainPlanetChange() {
     const group = planetGroups[selectedMainPlanet] || [];
     const target = group[0]?._type;
@@ -448,14 +456,27 @@
 
   async function selectLocation(location, options = {}) {
     if (!location) return;
+    const isNewLocation = !selectedLocation || selectedLocation.Id !== location.Id;
+    if (isNewLocation) {
+      panelLoading = true;
+    }
     selectedLocation = location;
+
+    // Start animation immediately (before network call)
+    if (options.focus) {
+      mapRef?.focusOnLocation(location);
+    }
+
+    // Navigate (this triggers data reload but animation already started)
     const targetPlanet = location.Planet?.Name || currentPlanet?.Name;
     const planetSlug = normalizePlanetSlug(targetPlanet);
     if (planetSlug && location.Id) {
       await goto(`/maps/${planetSlug}/${location.Id}`, { noScroll: true });
     }
-    if (options.focus) {
-      mapRef?.focusOnLocation(location);
+
+    // Clear loading state after navigation completes
+    if (isNewLocation) {
+      panelLoading = false;
     }
   }
 
@@ -659,6 +680,8 @@
   function handleSearchBlur() {
     // Allow clicks on results before closing
     setTimeout(() => {
+      // On desktop, keep the list open if mouse is hovering over results
+      if (!isMobile && searchResultsHovered) return;
       searchOpen = false;
     }, 120);
   }
@@ -725,7 +748,7 @@
           bind:this={mapRef}
           mapName={currentPlanet?.Name}
           planet={currentPlanet}
-          locations={filteredLocations}
+          locations={locations}
           bind:selected={selectedLocation}
           bind:hovered={hoveredLocation}
         />
@@ -768,6 +791,7 @@
         bind:value={searchQuery}
         on:focus={() => searchOpen = true}
         on:blur={handleSearchBlur}
+        on:keydown={(e) => { if (e.key === 'Escape') { searchOpen = false; e.target.blur(); } }}
       />
 
       {#if isEditAllowed}
@@ -786,9 +810,18 @@
     </div>
 
     {#if searchOpen && searchResults.length > 0}
-      <div class="search-results">
+      <div
+        class="search-results"
+        on:mouseenter={() => searchResultsHovered = true}
+        on:mouseleave={() => { searchResultsHovered = false; hoveredLocation = null; }}
+      >
         {#each searchResults as result}
-          <button class="search-result" on:click={() => { searchOpen = false; selectLocation(result, { focus: true }); }}>
+          <button
+            class="search-result"
+            on:click={() => { if (isMobile) searchOpen = false; selectLocation(result, { focus: true }); }}
+            on:mouseenter={() => hoveredLocation = result}
+            on:mouseleave={() => {}}
+          >
             <span class="result-name">{result.Name}</span>
             <span class="result-type">{result.Properties?.Type || 'Location'}</span>
           </button>
@@ -808,6 +841,11 @@
       on:touchmove={handlePanelTouchMove}
       on:touchend={handlePanelTouchEnd}
     >
+      {#if panelLoading}
+        <div class="panel-loading-overlay">
+          <div class="loading-spinner"></div>
+        </div>
+      {/if}
       <div class="info-header">
         {#if isMobile}
           <button class="panel-grip" on:click={handlePanelToggle} aria-label="Toggle details">
@@ -1147,10 +1185,18 @@
     gap: 10px;
   }
 
+  .control-row {
+    display: flex;
+    gap: 10px;
+  }
+
   .control-group {
     display: flex;
     flex-direction: column;
     gap: 6px;
+    flex: 1 1 0;
+    min-width: 0;
+    width: 0; /* Forces flex items to respect flex-basis and not grow based on content */
   }
 
   .control-group label {
@@ -1162,6 +1208,10 @@
   }
 
   .control-group select {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
     background-color: var(--bg-color, var(--primary-color));
     border: 1px solid var(--border-color, #555);
     color: var(--text-color);
@@ -1260,6 +1310,34 @@
     padding: 14px;
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
     z-index: 20;
+  }
+
+  .panel-loading-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: color-mix(in srgb, var(--secondary-color) 90%, transparent);
+    backdrop-filter: blur(2px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    border-radius: 12px;
+  }
+
+  .loading-spinner {
+    width: 32px;
+    height: 32px;
+    border: 3px solid var(--border-color, #555);
+    border-top-color: var(--accent-color, #4a9eff);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
   }
 
   .map-info-panel:not(.mobile) :global(.entity-icon-wrapper) {

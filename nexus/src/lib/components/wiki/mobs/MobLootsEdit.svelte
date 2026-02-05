@@ -150,13 +150,17 @@
   }
 
   onMount(() => {
-    window.addEventListener('scroll', handleViewportChange, true);
-    window.addEventListener('resize', handleViewportChange);
+    if (browser) {
+      window.addEventListener('scroll', handleViewportChange, true);
+      window.addEventListener('resize', handleViewportChange);
+    }
   });
 
   onDestroy(() => {
-    window.removeEventListener('scroll', handleViewportChange, true);
-    window.removeEventListener('resize', handleViewportChange);
+    if (browser) {
+      window.removeEventListener('scroll', handleViewportChange, true);
+      window.removeEventListener('resize', handleViewportChange);
+    }
   });
 
   async function performSearch(index, query) {

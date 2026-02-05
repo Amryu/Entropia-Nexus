@@ -68,12 +68,19 @@ Browse game items organized by category:
 
 Game reference data:
 
-| Route | Description |
-|-------|-------------|
-| `/information/professions/[[slug]]` | Profession skill trees |
-| `/information/skills/[[slug]]` | Individual skills |
-| `/information/vendors/[[slug]]` | NPC vendor locations and offers |
-| `/information/mobs/[[slug]]` | Creature information and loot |
+| Route | Description | Documentation |
+|-------|-------------|---------------|
+| `/information/professions/[[slug]]` | Profession skill trees | |
+| `/information/skills/[[slug]]` | Individual skills | |
+| `/information/vendors/[[slug]]` | NPC vendor locations and offers | |
+| `/information/mobs/[[slug]]` | Creature information and loot | |
+| `/information/missions/[[slug]]` | Missions and mission chains | `docs/missions.md` |
+
+**Missions Features** (`?view=chains` toggles chain view):
+- Mission chains with dependency graphs
+- Steps with 6 objective types (Dialog, KillCount, KillCycle, Explore, Interact, HandIn)
+- Rewards (items, skills, unlocks)
+- Chain preview and full graph visualization
 
 ### Maps (`/maps/`)
 

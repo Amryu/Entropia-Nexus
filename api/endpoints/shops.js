@@ -1,8 +1,19 @@
 const { pool, usersPool } = require('./dbClient');
-const { getObjectByIdOrName } = require('./utils');
 
 const queries = {
-  Shops: 'SELECT "Estates".*, "Planets"."Name" AS "Planet", "Planets"."TechnicalName" FROM ONLY "Estates" LEFT JOIN ONLY "Planets" ON "Estates"."PlanetId" = "Planets"."Id" WHERE "Estates"."Type" = \'Shop\'',
+  Shops: `
+    SELECT l.*,
+           p."Name" AS "Planet",
+           p."TechnicalName",
+           e."Type" AS "EstateType",
+           e."OwnerId",
+           e."ItemTradeAvailable",
+           e."MaxGuests"
+    FROM ONLY "Locations" l
+    LEFT JOIN ONLY "Planets" p ON l."PlanetId" = p."Id"
+    JOIN ONLY "Estates" e ON l."Id" = e."LocationId"
+    WHERE l."Type" = 'Estate' AND e."Type" = 'Shop'
+  `,
 };
 
 async function _fetchShopOwners(ownerIds) {
@@ -13,14 +24,14 @@ async function _fetchShopOwners(ownerIds) {
   } catch { return {}; }
 }
 
-async function _fetchEstateSections(estateIds){
-  if (!estateIds || estateIds.length===0) return {};
+async function _fetchEstateSections(locationIds) {
+  if (!locationIds || locationIds.length === 0) return {};
   try {
-  const { rows } = await pool.query('SELECT "EstateId", "Name", "Description", "ItemPoints" FROM ONLY "EstateSections" WHERE "EstateId" = ANY($1) ORDER BY "EstateId", "Name"', [estateIds]);
+    const { rows } = await pool.query('SELECT "LocationId", "Name", "Description", "ItemPoints" FROM ONLY "EstateSections" WHERE "LocationId" = ANY($1) ORDER BY "LocationId", "Name"', [locationIds]);
     const m = {};
-    for (const r of rows){
-      if (!m[r.EstateId]) m[r.EstateId]=[];
-      m[r.EstateId].push({
+    for (const r of rows) {
+      if (!m[r.LocationId]) m[r.LocationId] = [];
+      m[r.LocationId].push({
         Name: r.Name,
         Description: r.Description ?? null,
         ItemPoints: r.ItemPoints != null ? Number(r.ItemPoints) : null,
@@ -31,8 +42,8 @@ async function _fetchEstateSections(estateIds){
   } catch { return {}; }
 }
 
-async function _fetchShopManagers(shopIds){
-  if (!shopIds || shopIds.length===0) return {};
+async function _fetchShopManagers(locationIds) {
+  if (!locationIds || locationIds.length === 0) return {};
   try {
     const { rows } = await usersPool.query(`
       SELECT sm.shop_id, sm.user_id, u.eu_name
@@ -40,7 +51,7 @@ async function _fetchShopManagers(shopIds){
       INNER JOIN users u ON sm.user_id = u.id
       WHERE sm.shop_id = ANY($1) AND u.verified = true
       ORDER BY sm.shop_id, sm.added_at
-    `, [shopIds]);
+    `, [locationIds]);
     const m = {};
     for (const r of rows) {
       if (!m[r.shop_id]) m[r.shop_id] = [];
@@ -50,30 +61,30 @@ async function _fetchShopManagers(shopIds){
   } catch { return {}; }
 }
 
-async function _fetchItemNames(itemIds){
-  if (!itemIds || itemIds.length===0) return {};
-  const valid = [...new Set(itemIds.filter(id=>id!=null))]; if (valid.length===0) return {};
+async function _fetchItemNames(itemIds) {
+  if (!itemIds || itemIds.length === 0) return {};
+  const valid = [...new Set(itemIds.filter(id => id != null))]; if (valid.length === 0) return {};
   try {
     const { rows } = await pool.query('SELECT "Id","Name" FROM ONLY "Items" WHERE "Id" = ANY($1)', [valid]);
     const m = {}; rows.forEach(r => m[r.Id] = r.Name); return m;
   } catch { return {}; }
 }
 
-async function _processInventoryRows(rows){
-  const itemIds = rows.map(r=>r.item_id).filter(id=>id!=null);
+async function _processInventoryRows(rows) {
+  const itemIds = rows.map(r => r.item_id).filter(id => id != null);
   const itemNames = await _fetchItemNames(itemIds);
   const groups = new Map();
-  for (const r of rows){
-    if (!groups.has(r.group_id)) groups.set(r.group_id, { id:r.group_id, name:r.group_name, sort_order:r.group_sort_order, Items: [] });
-    if (r.item_id){
+  for (const r of rows) {
+    if (!groups.has(r.group_id)) groups.set(r.group_id, { id: r.group_id, name: r.group_name, sort_order: r.group_sort_order, Items: [] });
+    if (r.item_id) {
       const name = itemNames[r.item_id] || `Item ${r.item_id}`;
-      groups.get(r.group_id).Items.push({ id:r.item_table_id, item_id:r.item_id, stack_size:r.stack_size, markup:r.markup, sort_order:r.item_sort_order, Item:{ Name:name } });
+      groups.get(r.group_id).Items.push({ id: r.item_table_id, item_id: r.item_id, stack_size: r.stack_size, markup: r.markup, sort_order: r.item_sort_order, Item: { Name: name } });
     }
   }
   return Array.from(groups.values());
 }
 
-async function _fetchShopInventory(estateId){
+async function _fetchShopInventory(locationId) {
   try {
     const { rows } = await usersPool.query(`
       SELECT g.id as group_id, g.name as group_name, g.sort_order as group_sort_order,
@@ -81,13 +92,13 @@ async function _fetchShopInventory(estateId){
       FROM shop_inventory_groups g
       LEFT JOIN shop_inventory_items i ON g.id = i.group_id
       WHERE g.shop_id = $1
-      ORDER BY g.sort_order, i.sort_order`, [estateId]);
+      ORDER BY g.sort_order, i.sort_order`, [locationId]);
     return await _processInventoryRows(rows);
   } catch { return []; }
 }
 
-async function _fetchMultipleShopInventories(estateIds){
-  if (!estateIds || estateIds.length===0) return {};
+async function _fetchMultipleShopInventories(locationIds) {
+  if (!locationIds || locationIds.length === 0) return {};
   try {
     const { rows } = await usersPool.query(`
       SELECT g.shop_id, g.id as group_id, g.name as group_name, g.sort_order as group_sort_order,
@@ -95,8 +106,8 @@ async function _fetchMultipleShopInventories(estateIds){
       FROM shop_inventory_groups g
       LEFT JOIN shop_inventory_items i ON g.id = i.group_id
       WHERE g.shop_id = ANY($1)
-      ORDER BY g.shop_id, g.sort_order, i.sort_order`, [estateIds]);
-    const byShop = {}; for (const r of rows){ if (!byShop[r.shop_id]) byShop[r.shop_id]=[]; byShop[r.shop_id].push(r); }
+      ORDER BY g.shop_id, g.sort_order, i.sort_order`, [locationIds]);
+    const byShop = {}; for (const r of rows) { if (!byShop[r.shop_id]) byShop[r.shop_id] = []; byShop[r.shop_id].push(r); }
     const data = {}; for (const [id, r] of Object.entries(byShop)) data[id] = await _processInventoryRows(r);
     return data;
   } catch { return {}; }
@@ -131,21 +142,21 @@ function formatShop(x, add = {}) {
 }
 
 // DB methods
-async function getShops(ownerId = null){
-  const sql = ownerId != null ? `${queries.Shops} AND "Estates"."OwnerId" = $1` : queries.Shops;
+async function getShops(ownerId = null) {
+  const sql = ownerId != null ? `${queries.Shops} AND e."OwnerId" = $1` : queries.Shops;
   const params = ownerId != null ? [ownerId] : [];
-  const { rows } = await pool.query(sql, params);
-  const ownerIds = [...new Set(rows.map(s => s.OwnerId).filter(id => id!=null))];
-  const estateIds = rows.map(s => s.Id);
+  const { rows } = await pool.query(sql + ' ORDER BY l."Name"', params);
+  const ownerIds = [...new Set(rows.map(s => s.OwnerId).filter(id => id != null))];
+  const locationIds = rows.map(s => s.Id);
   const [owners, inventories, sections, managers] = await Promise.all([
-    _fetchShopOwners(ownerIds), _fetchMultipleShopInventories(estateIds), _fetchEstateSections(estateIds), _fetchShopManagers(estateIds)
+    _fetchShopOwners(ownerIds), _fetchMultipleShopInventories(locationIds), _fetchEstateSections(locationIds), _fetchShopManagers(locationIds)
   ]);
   return rows.map(x => formatShop(x, { owner: owners[x.OwnerId] || null, inventory: inventories[x.Id] || [], sections: sections[x.Id] || [], managers: managers[x.Id] || [] }));
 }
 
-async function getShop(idOrName){
+async function getShop(idOrName) {
   const byId = /^(\d+)$/.test(String(idOrName));
-  const sql = byId ? `${queries.Shops} AND "Estates"."Id" = $1` : `${queries.Shops} AND "Estates"."Name" = $1`;
+  const sql = byId ? `${queries.Shops} AND l."Id" = $1` : `${queries.Shops} AND l."Name" = $1`;
   const { rows } = await pool.query(sql, [idOrName]);
   if (rows.length !== 1) return null;
   const shop = rows[0];
@@ -156,7 +167,7 @@ async function getShop(idOrName){
 }
 
 // Endpoint wiring
-function register(app){
+function register(app) {
   /**
    * @swagger
    * /shops:
@@ -166,14 +177,14 @@ function register(app){
    *      '200':
    *        description: A list of shops
    */
-  app.get('/shops', async (req,res) => {
+  app.get('/shops', async (req, res) => {
     const ownerId = req.query.OwnerId != null ? Number(req.query.OwnerId) : null;
     if (req.query.OwnerId != null && !Number.isFinite(ownerId)) {
       return res.status(400).json({ error: 'OwnerId must be a number.' });
     }
     res.json(await getShops(Number.isFinite(ownerId) ? ownerId : null));
   });
-  app.get('/shops/:shop', async (req,res) => {
+  app.get('/shops/:shop', async (req, res) => {
     /**
      * @swagger
      * /shops/{shop}:
@@ -232,11 +243,12 @@ async function getShopListings(items) {
   // 2) From main DB: fetch basic shop and planet info
   const shopIds = Array.from(new Set(invRows.map(r => r.shop_id).filter(Boolean)));
   const { rows: shopRows } = await pool.query(`
-    SELECT e."Id", e."Name", e."Longitude", e."Latitude", e."Altitude",
+    SELECT l."Id", l."Name", l."Longitude", l."Latitude", l."Altitude",
            p."Id" AS "PlanetId", p."Name" AS "Planet", p."TechnicalName"
-    FROM ONLY "Estates" e
-    LEFT JOIN ONLY "Planets" p ON e."PlanetId" = p."Id"
-    WHERE e."Id" = ANY($1) AND e."Type" = 'Shop'
+    FROM ONLY "Locations" l
+    JOIN ONLY "Estates" e ON l."Id" = e."LocationId"
+    LEFT JOIN ONLY "Planets" p ON l."PlanetId" = p."Id"
+    WHERE l."Id" = ANY($1) AND l."Type" = 'Estate' AND e."Type" = 'Shop'
   `, [shopIds]);
   const shopMap = new Map(shopRows.map(r => [r.Id, {
     Id: r.Id,

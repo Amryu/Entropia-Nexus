@@ -1,6 +1,6 @@
 const { pool } = require('./dbClient');
 const { idOffsets } = require('./constants');
-const { getObjectByIdOrName } = require('./utils');
+const { getObjectByIdOrName, generateGenderAliases } = require('./utils');
 const { loadEffectsOnEquipByItemIds, loadSetEffectsByItemIdsFromEquipSets, formatEffectOnSetEquip } = require('./effects-utils');
 
 const queries = { Clothings: 'SELECT * FROM ONLY "Clothes"' };
@@ -16,11 +16,13 @@ function formatClothing(x, effectsByItemId, setEffectsByItemId){
     EffectsOnSetEquip: onSetRaw.map(formatEffectOnSetEquip),
     Links: { "$Url": `/equipsets/${onSetRaw[0].SetId}` }
   } : null;
+  const aliases = generateGenderAliases(x.Name, x.Gender);
 
   return {
     Id: x.Id,
     ItemId: itemId,
     Name: x.Name,
+    Aliases: aliases.length > 0 ? aliases : undefined,
     Properties: {
       Description: x.Description,
       Weight: toNumberOrNull(x.Weight),

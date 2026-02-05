@@ -7,6 +7,7 @@
   // @ts-nocheck
   import { createEventDispatcher, onMount, afterUpdate, tick } from 'svelte';
   import { goto } from '$app/navigation';
+  import { browser } from '$app/environment';
   import { encodeURIComponentSafe } from '$lib/util';
 
   const dispatch = createEventDispatcher();
@@ -17,6 +18,9 @@
   /** @type {Array} Filter options [{key, label, values: [{value, label}], multiSelect?: boolean, filterFn?: Function}] */
   export let filters = [];
 
+  /** @type {Array} Link-based navigation buttons [{label, href, active, title}] - shown separately from value filters */
+  export let linkFilters = [];
+
   /** @type {string} Base path for links */
   export let basePath = '';
 
@@ -25,6 +29,9 @@
 
   /** @type {string|null} Currently selected item slug */
   export let currentSlug = null;
+
+  /** @type {number|string|null} Currently selected item ID (for disambiguation when multiple items have same name) */
+  export let currentItemId = null;
 
   /** @type {string|null} Currently selected change ID (for pending creates) */
   export let currentChangeId = null;
@@ -97,17 +104,28 @@
 
   // Helper to find current item index (handles both slugs and changeIds)
   function findCurrentItemIndex(items) {
-    if (currentChangeId) {
-      // Convert to string for comparison since URL params are strings
-      const changeIdStr = String(currentChangeId);
-      const index = items.findIndex(item => item._isPendingCreate && String(item._changeId) === changeIdStr);
-      if (index !== -1) return index;
-    }
-    if (currentSlug) {
-      return items.findIndex(item => item.Name === currentSlug);
-    }
-    return -1;
+    if (!currentItemKey) return -1;
+    return items.findIndex(item => getItemKey(item) === currentItemKey);
   }
+
+  // Reactive current item key - forces template re-render when selection changes
+  // This ensures item highlighting updates immediately on navigation
+  $: currentItemKey = currentChangeId
+    ? `change-${currentChangeId}`
+    : (currentItemId != null
+      ? `id-${currentItemId}`
+      : (currentSlug
+        ? `slug-${currentSlug}`
+        : null));
+
+  // Get item key for comparison
+  function getItemKey(item) {
+    if (item._isPendingCreate) return `change-${item._changeId}`;
+    const id = item.Id ?? item.ItemId;
+    if (id != null) return `id-${id}`;
+    return `slug-${item.Name}`;
+  }
+
 
   // Smart filter function (supports >, <, >=, <=, !, =)
   function smartFilter(value, filterStr) {
@@ -739,6 +757,7 @@
 
   // Measure text width using canvas
   function measureTextWidth(text, font = '12px system-ui, -apple-system, sans-serif') {
+    if (!browser) return 0;
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     ctx.font = font;
@@ -801,7 +820,7 @@
     : gridTemplateColumns;
 
   // Calculate column widths when expanded mode is enabled (run in background to avoid blocking UI)
-  $: if (expanded && !widthsCalculated && items && items.length > 0) {
+  $: if (browser && expanded && !widthsCalculated && items && items.length > 0) {
     // Use requestIdleCallback to run calculation when browser is idle
     if (typeof requestIdleCallback !== 'undefined') {
       requestIdleCallback(() => calculateColumnWidths(), { timeout: 1000 });
@@ -848,6 +867,9 @@
     </button>
   </div>
 
+  <!-- Slot for custom content between header and search (e.g., view toggles) -->
+  <slot name="after-header"></slot>
+
   <div class="search-box">
     <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
       <circle cx="11" cy="11" r="8" />
@@ -869,11 +891,27 @@
     {/if}
   </div>
 
-  {#if filters.length > 0}
+  {#if linkFilters.length > 0 || filters.length > 0}
     <div class="filter-section">
-      <!-- Check if filters are link-based (type navigation) or value-based (category filters) -->
-      {#if filters[0]?.href !== undefined}
-        <!-- Link-based type navigation buttons (e.g., tools: Rf, Scn, Fnd, etc.) -->
+      <!-- Link-based type navigation buttons (e.g., type nav for locations) -->
+      {#if linkFilters.length > 0}
+        <div class="type-nav-buttons">
+          {#each linkFilters as btn}
+            <a
+              href={btn.href}
+              class="type-nav-btn"
+              class:active={btn.active}
+              title={btn.title}
+            >
+              {btn.label}
+            </a>
+          {/each}
+        </div>
+      {/if}
+
+      <!-- Check if filters are link-based (legacy) or value-based (category filters) -->
+      {#if filters.length > 0 && filters[0]?.href !== undefined}
+        <!-- Legacy: Link-based type navigation in filters prop -->
         <div class="type-nav-buttons">
           {#each filters as btn}
             <a
@@ -886,7 +924,7 @@
             </a>
           {/each}
         </div>
-      {:else}
+      {:else if filters.length > 0}
         <!-- Value-based category filters -->
         {#each filters as filter}
           <div class="filter-group">
@@ -987,20 +1025,13 @@
     role="listbox"
     aria-label="Item list"
   >
-    {#if !items || items.length === 0}
-      {#if items === null || items === undefined}
-        <!-- Loading state -->
-        <div class="loading-skeleton">
-          {#each Array(8) as _, i}
-            <div class="skeleton-item" style="animation-delay: {i * 0.05}s"></div>
-          {/each}
-        </div>
-      {:else}
-        <!-- Empty state (items loaded but empty) -->
-        <div class="no-results">
-          <p>No items available</p>
-        </div>
-      {/if}
+    {#if items === null || items === undefined}
+      <!-- Loading state -->
+      <div class="loading-skeleton">
+        {#each Array(8) as _, i}
+          <div class="skeleton-item" style="animation-delay: {i * 0.05}s"></div>
+        {/each}
+      </div>
     {:else if filteredItems.length === 0}
       <div class="no-results">
         <p>No items found</p>
@@ -1013,12 +1044,12 @@
     {:else}
       <div class="virtual-list" style="height: {totalHeight}px;">
         <div class="virtual-items" style="transform: translateY({offsetY}px);">
-          {#each visibleItems as item, localIndex (item._isPendingCreate ? `pending-${item._changeId}` : item.Name)}
+          {#each visibleItems as item, localIndex (item._isPendingCreate ? `pending-${item._changeId}` : (item.Id ?? item.Name))}
             {@const globalIndex = startIndex + localIndex}
             <a
               href={getItemHref(item)}
               class="item-link"
-              class:active={(item._isPendingCreate && currentChangeId && String(item._changeId) === String(currentChangeId)) || (item.Name === currentSlug && !item._isPendingCreate)}
+              class:active={currentItemKey && getItemKey(item) === currentItemKey}
               class:highlighted={globalIndex === highlightedIndex}
               class:table-row={expanded}
               class:pending-create={item._isPendingCreate}
@@ -1296,6 +1327,12 @@
     display: flex;
     flex-wrap: wrap;
     gap: 4px;
+    margin-bottom: 10px;
+  }
+
+  /* Remove bottom margin if type-nav-buttons is the last child (no filters following) */
+  .type-nav-buttons:last-child {
+    margin-bottom: 0;
   }
 
   .type-nav-btn {

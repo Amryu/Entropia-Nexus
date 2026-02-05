@@ -8,7 +8,7 @@
   // @ts-nocheck
   import { clampDecimals, getItemLink } from '$lib/util';
   import { editMode, updateField } from '$lib/stores/wikiEditState.js';
-  import ItemSearchInput from '$lib/components/wiki/ItemSearchInput.svelte';
+  import SearchInput from '$lib/components/wiki/SearchInput.svelte';
   import '$lib/style.css';
 
   /** @type {object} Blueprint entity */
@@ -172,13 +172,15 @@
             <tr>
               <td>
                 {#if $editMode}
-                  <ItemSearchInput
+                  <SearchInput
                     value={material.Item?.Name || ''}
                     placeholder="Search material..."
+                    apiEndpoint="/search/items"
+                    displayFn={(item) => item?.Name || ''}
                     allowedTypes={['Material']}
                     allowedNames={materialNames}
                     on:change={(e) => updateMaterial(index, 'Item', e.detail.value)}
-                    on:select={(e) => updateMaterial(index, 'Item', e.detail.item || e.detail.value)}
+                    on:select={(e) => updateMaterial(index, 'Item', e.detail.data || e.detail.value)}
                   />
                 {:else}
                   <a href="{getItemLink(material.Item)}">{material.Item?.Name || 'Unknown'}</a>

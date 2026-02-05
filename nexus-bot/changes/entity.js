@@ -4,6 +4,7 @@ export const UpsertConfigs = {
       { name: "Name", value: x => x.Name },
       { name: "Description", value: x => x.Description },
       { name: "MaxGuests", value: x => x.MaxGuests ?? null },
+      { name: "OwnerId", value: x => x.OwnerId != null ? Number(x.OwnerId) : null },
       { name: "Longitude", value: x => x.Coordinates?.Longitude ?? null },
       { name: "Latitude", value: x => x.Coordinates?.Latitude ?? null },
       { name: "Altitude", value: x => x.Coordinates?.Altitude ?? null },
@@ -766,10 +767,384 @@ export const UpsertConfigs = {
         await applyMobSpawnChanges(client, id, x.Spawns);
       }
     }
+  },
+  Mission: {
+    columns: [
+      { name: "Name", value: x => x.Name },
+      { name: "PlanetId", value: async (x, c) => x.Planet?.Name ? await c.query(`SELECT "Id" FROM ONLY "Planets" WHERE "Name" = $1`, [x.Planet.Name]).then(res => res.rows[0]?.Id ?? null) : null },
+      { name: "MissionChainId", value: async (x, c) => x.MissionChain?.Name ? await upsertMissionChain(c, x.MissionChain) : null },
+      { name: "EventId", value: x => x.Event?.Id ?? null },
+      { name: "Type", value: x => x.Properties?.Type ?? null },
+      { name: "Description", value: x => x.Properties?.Description ?? null },
+      { name: "CooldownDuration", value: x => x.Properties?.CooldownDuration ?? null },
+      { name: "CooldownStartsOn", value: x => x.Properties?.CooldownStartsOn ?? null },
+      { name: "StartLocationId", value: x => x.StartLocationId != null ? Number(x.StartLocationId) : null }
+    ],
+    table: "Missions",
+    relationChangeFunc: async (client, id, x) => {
+      await applyMissionStepsChanges(client, id, x.Steps || []);
+      await applyMissionRewardsChanges(client, id, x.Rewards || null);
+      if (x.Dependencies) {
+        await applyMissionDependenciesChanges(client, id, x.Dependencies);
+      }
+    }
+  },
+  Location: {
+    columns: [
+      { name: "Name", value: x => x.Name },
+      { name: "Type", value: x => x.Properties?.Type ?? null },
+      { name: "Description", value: x => x.Properties?.Description ?? null },
+      { name: "Longitude", value: x => x.Properties?.Coordinates?.Longitude ?? null },
+      { name: "Latitude", value: x => x.Properties?.Coordinates?.Latitude ?? null },
+      { name: "Altitude", value: x => x.Properties?.Coordinates?.Altitude ?? null },
+      { name: "TechnicalId", value: x => x.Properties?.TechnicalId ?? null },
+      { name: "PlanetId", value: async (x, c) => x.Planet?.Name ? await c.query(`SELECT "Id" FROM ONLY "Planets" WHERE "Name" = $1`, [x.Planet.Name]).then(res => res.rows[0]?.Id ?? null) : null },
+      { name: "ParentLocationId", value: async (x, c) => x.ParentLocation?.Name ? await c.query(`SELECT "Id" FROM ONLY "Locations" WHERE "Name" = $1`, [x.ParentLocation.Name]).then(res => res.rows[0]?.Id ?? null) : null }
+    ],
+    table: "Locations",
+    relationChangeFunc: async (client, id, x) => {
+      await applyLocationFacilitiesChanges(client, id, x.Facilities || []);
+      await applyLocationExtensionChanges(client, id, x);
+    }
   }
 }
 
-async function applyEstateSectionsChanges(client, estateId, sections) {
+async function applyMissionStepsChanges(client, missionId, steps) {
+  const normalized = (steps || []).map((step, index) => ({
+    Id: Number.isInteger(step?.Id) ? step.Id : null,
+    Index: Number.isFinite(Number(step?.Index)) ? Number(step.Index) : index + 1,
+    Title: step?.Title ?? null,
+    Description: step?.Description ?? null,
+    Objectives: Array.isArray(step?.Objectives) ? step.Objectives : []
+  }));
+
+  const existing = await client.query(`SELECT "Id" FROM ONLY "MissionSteps" WHERE "MissionId" = $1`, [missionId]);
+  const existingIds = existing.rows.map(r => r.Id);
+  const incomingIds = normalized.map(step => step.Id).filter(id => Number.isInteger(id));
+
+  if (incomingIds.length > 0) {
+    await client.query(
+      `DELETE FROM ONLY "MissionSteps" WHERE "MissionId" = $1 AND "Id" NOT IN (SELECT * FROM unnest($2::int[]))`,
+      [missionId, incomingIds]
+    );
+  } else {
+    await client.query(`DELETE FROM ONLY "MissionSteps" WHERE "MissionId" = $1`, [missionId]);
+  }
+
+  for (const step of normalized) {
+    let stepId = step.Id;
+    if (stepId && existingIds.includes(stepId)) {
+      await client.query(
+        `UPDATE ONLY "MissionSteps"
+         SET "Index" = $2, "Title" = $3, "Description" = $4
+         WHERE "Id" = $1`,
+        [stepId, step.Index, step.Title, step.Description]
+      );
+    } else {
+      const result = await client.query(
+        `INSERT INTO "MissionSteps" ("MissionId", "Index", "Title", "Description")
+         VALUES ($1, $2, $3, $4)
+         RETURNING "Id"`,
+        [missionId, step.Index, step.Title, step.Description]
+      );
+      stepId = result.rows[0]?.Id;
+    }
+
+    if (stepId) {
+      await applyMissionObjectivesChanges(client, stepId, step.Objectives || []);
+    }
+  }
+}
+
+async function applyMissionObjectivesChanges(client, stepId, objectives) {
+  const normalized = (objectives || []).map(obj => ({
+    Id: Number.isInteger(obj?.Id) ? obj.Id : null,
+    Type: obj?.Type ?? 'Dialog',
+    Payload: obj?.Payload ?? {}
+  }));
+
+  const existing = await client.query(`SELECT "Id" FROM ONLY "MissionObjectives" WHERE "StepId" = $1`, [stepId]);
+  const existingIds = existing.rows.map(r => r.Id);
+  const incomingIds = normalized.map(obj => obj.Id).filter(id => Number.isInteger(id));
+
+  if (incomingIds.length > 0) {
+    await client.query(
+      `DELETE FROM ONLY "MissionObjectives" WHERE "StepId" = $1 AND "Id" NOT IN (SELECT * FROM unnest($2::int[]))`,
+      [stepId, incomingIds]
+    );
+  } else {
+    await client.query(`DELETE FROM ONLY "MissionObjectives" WHERE "StepId" = $1`, [stepId]);
+  }
+
+  for (const objective of normalized) {
+    const payloadJson = JSON.stringify(objective.Payload ?? {});
+    if (objective.Id && existingIds.includes(objective.Id)) {
+      await client.query(
+        `UPDATE ONLY "MissionObjectives"
+         SET "Type" = $2, "Payload" = $3::jsonb
+         WHERE "Id" = $1`,
+        [objective.Id, objective.Type, payloadJson]
+      );
+    } else {
+      await client.query(
+        `INSERT INTO "MissionObjectives" ("StepId", "Type", "Payload")
+         VALUES ($1, $2, $3::jsonb)
+         ON CONFLICT ("Id") DO UPDATE SET "Type" = EXCLUDED."Type", "Payload" = EXCLUDED."Payload"`,
+        [stepId, objective.Type, payloadJson]
+      );
+    }
+  }
+}
+
+async function applyMissionRewardsChanges(client, missionId, rewards) {
+  const items = Array.isArray(rewards?.Items) ? rewards.Items : [];
+  const skills = Array.isArray(rewards?.Skills) ? rewards.Skills : [];
+  const unlocks = Array.isArray(rewards?.Unlocks) ? rewards.Unlocks : [];
+
+  await client.query(
+    `INSERT INTO "MissionRewards" ("MissionId", "Items", "Skills", "Unlocks")
+     VALUES ($1, $2::jsonb, $3::jsonb, $4)
+     ON CONFLICT ("MissionId") DO UPDATE SET
+       "Items" = EXCLUDED."Items",
+       "Skills" = EXCLUDED."Skills",
+       "Unlocks" = EXCLUDED."Unlocks"`,
+    [missionId, JSON.stringify(items), JSON.stringify(skills), unlocks]
+  );
+}
+
+async function applyMissionDependenciesChanges(client, missionId, dependencies) {
+  if (!dependencies) return;
+
+  // Handle Prerequisites (missions that must be completed before this one)
+  const prereqs = Array.isArray(dependencies.Prerequisites) ? dependencies.Prerequisites : [];
+  const prereqIds = [];
+
+  for (const entry of prereqs) {
+    if (Number.isInteger(entry?.Id)) {
+      prereqIds.push(entry.Id);
+      continue;
+    }
+    if (entry?.Name) {
+      const result = await client.query(`SELECT "Id" FROM ONLY "Missions" WHERE "Name" = $1`, [entry.Name]);
+      const found = result.rows[0]?.Id;
+      if (Number.isInteger(found)) prereqIds.push(found);
+    }
+  }
+
+  const uniquePrereqIds = Array.from(new Set(prereqIds));
+
+  if (uniquePrereqIds.length > 0) {
+    await client.query(
+      `DELETE FROM ONLY "MissionDependencies"
+       WHERE "MissionId" = $1 AND "PrerequisiteMissionId" NOT IN (SELECT * FROM unnest($2::int[]))`,
+      [missionId, uniquePrereqIds]
+    );
+  } else {
+    await client.query(`DELETE FROM ONLY "MissionDependencies" WHERE "MissionId" = $1`, [missionId]);
+  }
+
+  await Promise.all(uniquePrereqIds.map(id => client.query(
+    `INSERT INTO "MissionDependencies" ("MissionId", "PrerequisiteMissionId")
+     VALUES ($1, $2)
+     ON CONFLICT ("MissionId", "PrerequisiteMissionId") DO NOTHING`,
+    [missionId, id]
+  )));
+
+  // Handle Dependents (missions that this one unlocks)
+  // These are stored as entries where current mission is the PrerequisiteMissionId
+  const dependents = Array.isArray(dependencies.Dependents) ? dependencies.Dependents : [];
+  const dependentIds = [];
+
+  for (const entry of dependents) {
+    if (Number.isInteger(entry?.Id)) {
+      dependentIds.push(entry.Id);
+      continue;
+    }
+    if (entry?.Name) {
+      const result = await client.query(`SELECT "Id" FROM ONLY "Missions" WHERE "Name" = $1`, [entry.Name]);
+      const found = result.rows[0]?.Id;
+      if (Number.isInteger(found)) dependentIds.push(found);
+    }
+  }
+
+  const uniqueDependentIds = Array.from(new Set(dependentIds));
+
+  // Update dependent relationships (where this mission is the prerequisite)
+  if (uniqueDependentIds.length > 0) {
+    await client.query(
+      `DELETE FROM ONLY "MissionDependencies"
+       WHERE "PrerequisiteMissionId" = $1 AND "MissionId" NOT IN (SELECT * FROM unnest($2::int[]))`,
+      [missionId, uniqueDependentIds]
+    );
+  } else {
+    await client.query(`DELETE FROM ONLY "MissionDependencies" WHERE "PrerequisiteMissionId" = $1`, [missionId]);
+  }
+
+  await Promise.all(uniqueDependentIds.map(id => client.query(
+    `INSERT INTO "MissionDependencies" ("MissionId", "PrerequisiteMissionId")
+     VALUES ($1, $2)
+     ON CONFLICT ("MissionId", "PrerequisiteMissionId") DO NOTHING`,
+    [id, missionId]
+  )));
+}
+
+/**
+ * Upsert a MissionChain - insert if not exists, update if exists.
+ * Returns the chain ID.
+ * @param {Object} client - Database client
+ * @param {Object} chainData - Chain data with Name, Planet, Properties
+ *   Supports two formats:
+ *   - Schema format: { Name, Planet: { Name }, Properties: { Type, Description } }
+ *   - API format: { Name, Planet: "string", Description: "string" }
+ */
+async function upsertMissionChain(client, chainData) {
+  if (!chainData?.Name) return null;
+
+  // Normalize planet name - support both { Name: "..." } and "..." formats
+  const planetName = typeof chainData.Planet === 'string'
+    ? chainData.Planet
+    : chainData.Planet?.Name;
+
+  // Normalize description - support both Properties.Description and Description
+  const description = chainData.Properties?.Description ?? chainData.Description ?? null;
+  const type = chainData.Properties?.Type ?? chainData.Type ?? null;
+
+  // Check if chain exists
+  const existing = await client.query(
+    `SELECT "Id" FROM ONLY "MissionChains" WHERE "Name" = $1`,
+    [chainData.Name]
+  );
+
+  // Get planet ID if provided
+  let planetId = null;
+  if (planetName) {
+    const planetResult = await client.query(
+      `SELECT "Id" FROM ONLY "Planets" WHERE "Name" = $1`,
+      [planetName]
+    );
+    planetId = planetResult.rows[0]?.Id ?? null;
+  }
+
+  if (existing.rows.length > 0) {
+    // Chain exists - update it if we have any additional data
+    const chainId = existing.rows[0].Id;
+
+    // Update if any data is provided (not just Properties)
+    if (chainData.Properties || chainData.Description !== undefined || chainData.Planet !== undefined) {
+      await client.query(
+        `UPDATE ONLY "MissionChains"
+         SET "Type" = COALESCE($2, "Type"),
+             "Description" = COALESCE($3, "Description"),
+             "PlanetId" = COALESCE($4, "PlanetId")
+         WHERE "Id" = $1`,
+        [chainId, type, description, planetId]
+      );
+    }
+
+    return chainId;
+  }
+
+  // Chain doesn't exist - create it
+  const result = await client.query(
+    `INSERT INTO "MissionChains" ("Name", "PlanetId", "Type", "Description")
+     VALUES ($1, $2, $3, $4)
+     RETURNING "Id"`,
+    [
+      chainData.Name,
+      planetId,
+      type,
+      description
+    ]
+  );
+
+  return result.rows[0]?.Id ?? null;
+}
+
+/**
+ * Validate that all missions in a chain are connected.
+ * Returns { isConnected: boolean, disconnectedMissions: string[] }
+ * @param {Object} client - Database client
+ * @param {number} chainId - The mission chain ID to validate
+ */
+export async function validateChainConnectivity(client, chainId) {
+  if (!chainId) return { isConnected: true, disconnectedMissions: [] };
+
+  // Get all missions in the chain
+  const missionsResult = await client.query(
+    `SELECT "Id", "Name" FROM ONLY "Missions" WHERE "MissionChainId" = $1`,
+    [chainId]
+  );
+  const missions = missionsResult.rows;
+
+  if (missions.length <= 1) {
+    return { isConnected: true, disconnectedMissions: [] };
+  }
+
+  const missionIds = new Set(missions.map(m => m.Id));
+
+  // Get all dependencies within this chain
+  const depsResult = await client.query(
+    `SELECT "MissionId", "PrerequisiteMissionId"
+     FROM ONLY "MissionDependencies"
+     WHERE "MissionId" = ANY($1) AND "PrerequisiteMissionId" = ANY($1)`,
+    [[...missionIds]]
+  );
+
+  // Build adjacency lists
+  const adjacencyNext = new Map(); // prerequisite -> missions it unlocks
+  const adjacencyPrev = new Map(); // mission -> its prerequisites
+
+  for (const dep of depsResult.rows) {
+    const fromId = dep.PrerequisiteMissionId;
+    const toId = dep.MissionId;
+
+    if (!adjacencyNext.has(fromId)) adjacencyNext.set(fromId, []);
+    adjacencyNext.get(fromId).push(toId);
+
+    if (!adjacencyPrev.has(toId)) adjacencyPrev.set(toId, []);
+    adjacencyPrev.get(toId).push(fromId);
+  }
+
+  // Find root missions (no prerequisites within the chain)
+  const roots = missions.filter(m => {
+    const prereqs = adjacencyPrev.get(m.Id) || [];
+    return prereqs.length === 0;
+  });
+
+  if (roots.length === 0) {
+    // All missions have prerequisites - there's a cycle or all are disconnected
+    return {
+      isConnected: false,
+      disconnectedMissions: missions.map(m => m.Name)
+    };
+  }
+
+  // BFS from all roots to find all reachable missions
+  const visited = new Set();
+  const queue = roots.map(r => r.Id);
+  queue.forEach(id => visited.add(id));
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    const unlocks = adjacencyNext.get(current) || [];
+    for (const unlockId of unlocks) {
+      if (!visited.has(unlockId)) {
+        visited.add(unlockId);
+        queue.push(unlockId);
+      }
+    }
+  }
+
+  // Find disconnected missions
+  const disconnected = missions.filter(m => !visited.has(m.Id));
+
+  return {
+    isConnected: disconnected.length === 0,
+    disconnectedMissions: disconnected.map(m => m.Name)
+  };
+}
+
+async function applyEstateSectionsChanges(client, locationId, sections) {
   const normalized = (sections || []).map(s => ({
     Name: s.Name,
     Description: s.Description ?? null,
@@ -779,18 +1154,138 @@ async function applyEstateSectionsChanges(client, estateId, sections) {
 
   // Remove sections not present anymore
   await client.query(
-    `DELETE FROM ONLY "EstateSections" WHERE "EstateId" = $1 AND "Name" NOT IN (SELECT * FROM unnest($2::text[]))`,
-    [estateId, newSectionNames.length ? newSectionNames : ['']]
+    `DELETE FROM ONLY "EstateSections" WHERE "LocationId" = $1 AND "Name" NOT IN (SELECT * FROM unnest($2::text[]))`,
+    [locationId, newSectionNames.length ? newSectionNames : ['']]
   );
 
   // Upsert sections with ItemPoints using a single statement
   await Promise.all(normalized.map(s => client.query(`
-    INSERT INTO "EstateSections" ("EstateId", "Name", "Description", "ItemPoints")
+    INSERT INTO "EstateSections" ("LocationId", "Name", "Description", "ItemPoints")
     VALUES ($1, $2, $3, $4)
-    ON CONFLICT ("EstateId", "Name") DO UPDATE SET
+    ON CONFLICT ("LocationId", "Name") DO UPDATE SET
       "Description" = EXCLUDED."Description",
       "ItemPoints" = EXCLUDED."ItemPoints"
-  `, [estateId, s.Name, s.Description, s.ItemPoints])));
+  `, [locationId, s.Name, s.Description, s.ItemPoints])));
+}
+
+// Location helper functions
+async function applyLocationFacilitiesChanges(client, locationId, facilities) {
+  const facilityNames = (facilities || [])
+    .map(f => typeof f === 'string' ? f : f?.Name)
+    .filter(Boolean);
+
+  if (facilityNames.length === 0) {
+    await client.query(`DELETE FROM ONLY "LocationFacilities" WHERE "LocationId" = $1`, [locationId]);
+    return;
+  }
+
+  // Get facility IDs by name
+  const { rows: facilityRows } = await client.query(
+    `SELECT "Id", "Name" FROM ONLY "Facilities" WHERE "Name" = ANY($1)`,
+    [facilityNames]
+  );
+  const facilityIds = facilityRows.map(r => r.Id);
+
+  // Delete facilities not in the new list
+  if (facilityIds.length > 0) {
+    await client.query(
+      `DELETE FROM ONLY "LocationFacilities" WHERE "LocationId" = $1 AND "FacilityId" NOT IN (SELECT * FROM unnest($2::int[]))`,
+      [locationId, facilityIds]
+    );
+  } else {
+    await client.query(`DELETE FROM ONLY "LocationFacilities" WHERE "LocationId" = $1`, [locationId]);
+  }
+
+  // Insert new facilities
+  for (const facilityId of facilityIds) {
+    await client.query(
+      `INSERT INTO "LocationFacilities" ("LocationId", "FacilityId") VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      [locationId, facilityId]
+    );
+  }
+}
+
+async function applyLocationExtensionChanges(client, locationId, x) {
+  const locationType = x.Properties?.Type;
+
+  // Handle Areas extension for Area type
+  if (locationType === 'Area' && x.Properties?.AreaType) {
+    const areaType = x.Properties.AreaType;
+    const shape = x.Properties?.Shape ?? 'Point';
+    const data = JSON.stringify(x.Properties?.Data ?? {});
+    await client.query(
+      `INSERT INTO "Areas" ("LocationId", "Type", "Shape", "Data")
+       VALUES ($1, $2::"AreaType", $3::"Shape", $4::jsonb)
+       ON CONFLICT ("LocationId") DO UPDATE SET "Type" = $2::"AreaType", "Shape" = $3::"Shape", "Data" = $4::jsonb`,
+      [locationId, areaType, shape, data]
+    );
+  }
+
+  // Handle Estates extension for Estate type
+  if (locationType === 'Estate' && x.Properties?.EstateType) {
+    const estateType = x.Properties.EstateType;
+    const ownerId = x.Properties?.OwnerId ?? null;
+    const itemTradeAvailable = x.Properties?.ItemTradeAvailable ?? false;
+    const maxGuests = x.Properties?.MaxGuests ?? null;
+    await client.query(
+      `INSERT INTO "Estates" ("LocationId", "Type", "OwnerId", "ItemTradeAvailable", "MaxGuests")
+       VALUES ($1, $2::"EstateType", $3, $4, $5)
+       ON CONFLICT ("LocationId") DO UPDATE SET "Type" = $2::"EstateType", "OwnerId" = $3, "ItemTradeAvailable" = $4, "MaxGuests" = $5`,
+      [locationId, estateType, ownerId, itemTradeAvailable, maxGuests]
+    );
+
+    // Handle EstateSections for estates
+    if (Array.isArray(x.Sections)) {
+      await applyEstateSectionsChanges(client, locationId, x.Sections);
+    }
+  }
+
+  // Handle WaveEventWaves for WaveEvent type
+  if (locationType === 'WaveEvent' && Array.isArray(x.Waves)) {
+    await applyWaveEventWavesChanges(client, locationId, x.Waves);
+  }
+}
+
+async function applyWaveEventWavesChanges(client, locationId, waves) {
+  const normalized = (waves || []).map((wave, index) => ({
+    Id: Number.isInteger(wave?.Id) ? wave.Id : null,
+    WaveIndex: Number.isFinite(Number(wave?.WaveIndex)) ? Number(wave.WaveIndex) : index,
+    TimeToComplete: wave?.TimeToComplete ?? null,
+    MobMaturities: Array.isArray(wave?.MobMaturities) ? wave.MobMaturities : []
+  }));
+
+  const existing = await client.query(`SELECT "Id" FROM ONLY "WaveEventWaves" WHERE "LocationId" = $1`, [locationId]);
+  const existingIds = existing.rows.map(r => r.Id);
+  const incomingIds = normalized.map(w => w.Id).filter(id => Number.isInteger(id));
+
+  // Delete waves not in the new list
+  if (incomingIds.length > 0) {
+    await client.query(
+      `DELETE FROM ONLY "WaveEventWaves" WHERE "LocationId" = $1 AND "Id" NOT IN (SELECT * FROM unnest($2::int[]))`,
+      [locationId, incomingIds]
+    );
+  } else {
+    await client.query(`DELETE FROM ONLY "WaveEventWaves" WHERE "LocationId" = $1`, [locationId]);
+  }
+
+  // Upsert waves
+  for (const wave of normalized) {
+    const mobMaturitiesJson = JSON.stringify(wave.MobMaturities);
+    if (wave.Id && existingIds.includes(wave.Id)) {
+      await client.query(
+        `UPDATE ONLY "WaveEventWaves"
+         SET "WaveIndex" = $2, "TimeToComplete" = $3, "MobMaturities" = $4::jsonb
+         WHERE "Id" = $1`,
+        [wave.Id, wave.WaveIndex, wave.TimeToComplete, mobMaturitiesJson]
+      );
+    } else {
+      await client.query(
+        `INSERT INTO "WaveEventWaves" ("LocationId", "WaveIndex", "TimeToComplete", "MobMaturities")
+         VALUES ($1, $2, $3, $4::jsonb)`,
+        [locationId, wave.WaveIndex, wave.TimeToComplete, mobMaturitiesJson]
+      );
+    }
+  }
 }
 
 async function applyMobMaturityChanges(client, mobId, maturities) {
@@ -798,10 +1293,10 @@ async function applyMobMaturityChanges(client, mobId, maturities) {
     client.query(`DELETE FROM ONLY "MobMaturities" WHERE "MobId" = $1 AND "Name" NOT IN (SELECT * FROM unnest($2::text[]))`, [mobId, maturities.map(x => x.Name)]),
     ...maturities.map(maturity => client.query(`
       INSERT INTO "MobMaturities"
-      ("MobId", "Name", "Health", "RegenerationInterval", "RegenerationAmount", "AttackSpeed", "DangerLevel", "TamingLevel", "Strength", "Agility", "Intelligence", "Psyche", "Stamina", "MissChance", "ResistanceStab", "ResistanceCut", "ResistanceImpact", "ResistancePenetration", "ResistanceShrapnel", "ResistanceBurn", "ResistanceCold", "ResistanceAcid", "ResistanceElectric")
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+      ("MobId", "Name", "Health", "RegenerationInterval", "RegenerationAmount", "AttackSpeed", "DangerLevel", "TamingLevel", "Strength", "Agility", "Intelligence", "Psyche", "Stamina", "MissChance", "ResistanceStab", "ResistanceCut", "ResistanceImpact", "ResistancePenetration", "ResistanceShrapnel", "ResistanceBurn", "ResistanceCold", "ResistanceAcid", "ResistanceElectric", "Boss")
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
       ON CONFLICT ("MobId", "Name") DO UPDATE SET
-      "Health" = $3, "RegenerationInterval" = $4, "RegenerationAmount" = $5, "AttackSpeed" = $6, "DangerLevel" = $7, "TamingLevel" = $8, "Strength" = $9, "Agility" = $10, "Intelligence" = $11, "Psyche" = $12, "Stamina" = $13, "MissChance" = $14, "ResistanceStab" = $15, "ResistanceCut" = $16, "ResistanceImpact" = $17, "ResistancePenetration" = $18, "ResistanceShrapnel" = $19, "ResistanceBurn" = $20, "ResistanceCold" = $21, "ResistanceAcid" = $22, "ResistanceElectric" = $23
+      "Health" = $3, "RegenerationInterval" = $4, "RegenerationAmount" = $5, "AttackSpeed" = $6, "DangerLevel" = $7, "TamingLevel" = $8, "Strength" = $9, "Agility" = $10, "Intelligence" = $11, "Psyche" = $12, "Stamina" = $13, "MissChance" = $14, "ResistanceStab" = $15, "ResistanceCut" = $16, "ResistanceImpact" = $17, "ResistancePenetration" = $18, "ResistanceShrapnel" = $19, "ResistanceBurn" = $20, "ResistanceCold" = $21, "ResistanceAcid" = $22, "ResistanceElectric" = $23, "Boss" = $24
       RETURNING "Id"`,
       [
         mobId,
@@ -826,7 +1321,8 @@ async function applyMobMaturityChanges(client, mobId, maturities) {
         maturity.Properties.Defense.Burn,
         maturity.Properties.Defense.Cold,
         maturity.Properties.Defense.Acid,
-        maturity.Properties.Defense.Electric]).then(res => ({ ...maturity, Id: res.rows[0].Id })))
+        maturity.Properties.Defense.Electric,
+        maturity.Properties.Boss || false]).then(res => ({ ...maturity, Id: res.rows[0].Id })))
   ]).then(res => res.slice(1));
 
   await Promise.all(maturities.map(maturity => applyMobAttackChanges(client, maturity.Id, maturity.Attacks)));

@@ -2,30 +2,31 @@ const { pool } = require('./dbClient');
 const { getObjectByIdOrName } = require('./utils');
 const { formatMobMaturity } = require('./mobmaturities');
 
-// Base query for mob spawns: one row per Area (MobArea), joined to MobSpawns and Planets only
+// Base query for mob spawns: one row per Location (MobArea), joined to MobSpawns and Planets
 const baseQuery = `
-	SELECT 
-		"Areas"."Id" AS "Id",
-		COALESCE("MobSpawns"."Name", "Areas"."Name") AS "Name",
+	SELECT
+		l."Id" AS "Id",
+		COALESCE("MobSpawns"."Name", l."Name") AS "Name",
 		"MobSpawns"."Description",
 		"MobSpawns"."Density",
 		"MobSpawns"."IsShared",
 		"MobSpawns"."IsEvent",
 		"MobSpawns"."Notes",
-		"Areas"."Type" AS "Type",
-		"Areas"."Type" AS "AreaType",
-		"Areas"."Shape",
-		"Areas"."Data",
-		"Areas"."Longitude",
-		"Areas"."Latitude",
-		"Areas"."Altitude",
-		"Areas"."PlanetId",
-		"Planets"."Name" AS "Planet",
-		"Planets"."TechnicalName"
-	FROM ONLY "Areas"
-	INNER JOIN ONLY "MobSpawns" ON "MobSpawns"."AreaId" = "Areas"."Id"
-	INNER JOIN ONLY "Planets" ON "Areas"."PlanetId" = "Planets"."Id"
-	WHERE "Areas"."Type" = 'MobArea'
+		a."Type" AS "Type",
+		a."Type" AS "AreaType",
+		a."Shape",
+		a."Data",
+		l."Longitude",
+		l."Latitude",
+		l."Altitude",
+		l."PlanetId",
+		p."Name" AS "Planet",
+		p."TechnicalName"
+	FROM ONLY "Locations" l
+	INNER JOIN ONLY "Areas" a ON l."Id" = a."LocationId"
+	INNER JOIN ONLY "MobSpawns" ON "MobSpawns"."LocationId" = l."Id"
+	INNER JOIN ONLY "Planets" p ON l."PlanetId" = p."Id"
+	WHERE l."Type" = 'Area' AND a."Type" = 'MobArea'
 `;
 
 function getBaseWrappedQuery() {
@@ -82,18 +83,18 @@ async function getMobSpawns(mobIds, planet) {
 		' WHERE EXISTS (\
 			SELECT 1 FROM ONLY "MobSpawnMaturities" msm\
 			INNER JOIN ONLY "MobMaturities" mm ON msm."MaturityId" = mm."Id"\
-			WHERE msm."AreaId" = base."Id" AND mm."MobId" = ANY($1::int[])\
+			WHERE msm."LocationId" = base."Id" AND mm."MobId" = ANY($1::int[])\
 		)';
 	const params = [mobIds];
 	if (planet) {
-		// Push planet filter on actual columns (Areas/Planets). We have Planet name in base.
+		// Push planet filter on actual columns. We have Planet name in base.
 		sql += ' AND base."Planet" = $2';
 		params.push(planet);
 	}
 	const { rows } = await pool.query(sql, params);
 	if (!rows.length) return {};
 
-	// Deduplicate rows by Area Id (one spawn per area) and seed container
+	// Deduplicate rows by Location Id (one spawn per area) and seed container
 	const spawnsById = {};
 	for (const row of rows) {
 		if (!spawnsById[row.Id]) {
@@ -107,14 +108,14 @@ async function getMobSpawns(mobIds, planet) {
 			INNER JOIN ONLY "MobMaturities" mm ON msm."MaturityId" = mm."Id"
 			INNER JOIN ONLY "Mobs" m ON mm."MobId" = m."Id"
 			INNER JOIN ONLY "Planets" p ON m."PlanetId" = p."Id"
-			WHERE msm."AreaId" = ANY($1::int[])
+			WHERE msm."LocationId" = ANY($1::int[])
 		`;
 			const { rows: smRows } = await pool.query(maturitiesSql, [Ids]);
-			// Group maturities by AreaId so we can attach them to each spawn (Area)
-			const grouped = smRows.reduce((a, r) => { (a[r.AreaId] ||= []).push(r); return a; }, {});
-			// Also collect MobIds per Area to enable grouping by Mob later
+			// Group maturities by LocationId so we can attach them to each spawn
+			const grouped = smRows.reduce((a, r) => { (a[r.LocationId] ||= []).push(r); return a; }, {});
+			// Also collect MobIds per Location to enable grouping by Mob later
 			const mobIdsByArea = smRows.reduce((a, r) => {
-				(a[r.AreaId] ||= new Set()).add(r.MobId);
+				(a[r.LocationId] ||= new Set()).add(r.MobId);
 				return a;
 			}, {});
 	for (const id of Ids) {
@@ -141,14 +142,14 @@ async function listMobSpawns(planet) {
 	let sql = getBaseWrappedQuery();
 	let params = [];
 	if (planet) {
-		// Filter on real column alias from base (Planet name is selected there). Alternatively use PlanetId if available.
+		// Filter on real column alias from base (Planet name is selected there).
 		sql += ' WHERE "Planet" = $1';
 		params = [planet];
 	}
 	const { rows } = await pool.query(sql, params);
 	if (!rows.length) return [];
 
-	// Group all rows by Id (MobSpawn is 1:1 with Area)
+	// Group all rows by Id (MobSpawn is 1:1 with Location of type Area/MobArea)
 	const spawnsById = {};
 	for (const row of rows) {
 		if (!spawnsById[row.Id]) {
@@ -163,17 +164,17 @@ async function listMobSpawns(planet) {
 			FROM ONLY "MobSpawnMaturities" msm
 			INNER JOIN ONLY "MobMaturities" mm ON msm."MaturityId" = mm."Id"
 			INNER JOIN ONLY "Mobs" m ON mm."MobId" = m."Id"
-			WHERE msm."AreaId" = ANY($1::int[])
+			WHERE msm."LocationId" = ANY($1::int[])
 		`;
 		const { rows: smRows } = await pool.query(maturitiesSql, [Ids]);
 	for (const mat of smRows) {
-		const areaId = mat.AreaId;
-		if (spawnsById[areaId]) {
-			spawnsById[areaId].Maturities.push({ IsRare: mat.IsRare === 1 || mat.IsRare === true, Maturity: formatMobMaturity(mat) });
+		const locationId = mat.LocationId;
+		if (spawnsById[locationId]) {
+			spawnsById[locationId].Maturities.push({ IsRare: mat.IsRare === 1 || mat.IsRare === true, Maturity: formatMobMaturity(mat) });
 		}
 	}
 
-	// Return one object per MobSpawn (Area), with all maturities grouped
+	// Return one object per MobSpawn (Location), with all maturities grouped
 	return Object.values(spawnsById).map(formatSpawn);
 }
 
@@ -186,7 +187,7 @@ async function getMobSpawn(idOrName) {
 		FROM ONLY "MobSpawnMaturities" msm
 		INNER JOIN ONLY "MobMaturities" mm ON msm."MaturityId" = mm."Id"
 		INNER JOIN ONLY "Mobs" m ON mm."MobId" = m."Id"
-		WHERE msm."AreaId" = $1
+		WHERE msm."LocationId" = $1
 	`, [row.Id]);
 	row.Maturities = smRows.map(x => ({ IsRare: x.IsRare === 1 || x.IsRare === true, Maturity: formatMobMaturity(x) }));
 	return formatSpawn(row);

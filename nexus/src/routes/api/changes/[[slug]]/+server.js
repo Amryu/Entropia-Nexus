@@ -67,7 +67,9 @@ let shared = [EffectsOnEquip, EffectsOnSetEquip, EffectsOnUse, NamedEntity, Tier
 
 function getValidator(type) {
   if (!Validators[type]) {
-    Validators[type] = new Ajv({ schemas: shared, strict: false, removeAdditional: 'all', useDefaults: true }).compile(EntitySchemas[type]);
+    // Use removeAdditional: true (not 'all') to preserve nested properties when additionalProperties: true
+    // 'all' removes properties even when additionalProperties: true, which breaks Payload fields
+    Validators[type] = new Ajv({ schemas: shared, strict: false, removeAdditional: true, useDefaults: true }).compile(EntitySchemas[type]);
   }
 
   return Validators[type];
@@ -409,6 +411,9 @@ function getEntityCategory(entity) {
   }
   else if (entity === 'Apartment') {
     return 'locations';
+  }
+  else if (entity === 'Mission') {
+    return 'missions';
   }
   else {
     return 'items';

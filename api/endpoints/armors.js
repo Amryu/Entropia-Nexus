@@ -1,4 +1,4 @@
-const { getObjects, getObjectByIdOrName } = require('./utils');
+const { getObjects, getObjectByIdOrName, generateGenderAliases } = require('./utils');
 const { idOffsets } = require('./constants');
 
 const queries = {
@@ -10,10 +10,12 @@ function toNumberOrNull(v) {
 }
 
 function formatArmor(x){
+  const aliases = generateGenderAliases(x.Name, x.Gender);
   return {
     Id: x.Id,
     ItemId: x.Id + idOffsets.Armors,
     Name: x.Name,
+    Aliases: aliases.length > 0 ? aliases : undefined,
     Properties: {
       Description: x.Description,
       Weight: toNumberOrNull(x.Weight),

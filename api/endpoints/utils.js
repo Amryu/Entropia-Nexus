@@ -73,4 +73,42 @@ function parseItemList(list){
     .filter(Boolean);
 }
 
-module.exports = { isId, getObjects, getObjectByIdOrName, parseItemList };
+/**
+ * Generate gender-specific aliases for armor/clothing items.
+ * If an item doesn't have a gender tag (M) or (F) in its name and is marked as "Both" or null gender,
+ * generate aliases with both (M) and (F) variants.
+ * @param {string} name - The item name
+ * @param {string|null} gender - The gender property: "Male", "Female", "Both", or null
+ * @returns {string[]} Array of alias names (empty if no aliases needed)
+ */
+function generateGenderAliases(name, gender) {
+  if (!name) return [];
+
+  // Check if name already has a gender tag
+  const hasGenderTag = /\((M|F)\)/.test(name) || /\(M,/.test(name) || /,\s*M\)/.test(name) || /\(F,/.test(name) || /,\s*F\)/.test(name);
+  if (hasGenderTag) return [];
+
+  // Only generate aliases for items with both genders or unspecified
+  if (gender !== 'Both' && gender !== null) return [];
+
+  // Check if name ends with a tag like (L), (C), etc.
+  const tagMatch = name.match(/^(.+?)(\s*\([^)]+\))$/);
+  if (tagMatch) {
+    // Insert M/F before existing tag: "Bear (L)" -> "Bear (M) (L)", "Bear (F) (L)"
+    // Actually, the convention is typically: "Bear (M, L)" or just "Bear (M)"
+    // Let's use the simpler form: add (M) and (F) before existing tags
+    const baseName = tagMatch[1].trim();
+    const existingTag = tagMatch[2].trim();
+    // Extract content inside parentheses
+    const tagContent = existingTag.slice(1, -1); // Remove ( and )
+    return [
+      `${baseName} (M, ${tagContent})`,
+      `${baseName} (F, ${tagContent})`
+    ];
+  } else {
+    // No existing tag, just add (M) and (F)
+    return [`${name} (M)`, `${name} (F)`];
+  }
+}
+
+module.exports = { isId, getObjects, getObjectByIdOrName, parseItemList, generateGenderAliases };

@@ -118,7 +118,6 @@
 <style>
   .locations-table-container {
     width: 100%;
-    min-height: 200px;
   }
 
   .locations-table-container :global(.fancy-table-container) {

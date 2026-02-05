@@ -1,7 +1,19 @@
 const { pool, usersPool } = require('./dbClient');
 
 const queries = {
-  Apartments: 'SELECT "Estates".*, "Planets"."Name" AS "Planet", "Planets"."TechnicalName" FROM ONLY "Estates" LEFT JOIN ONLY "Planets" ON "Estates"."PlanetId" = "Planets"."Id" WHERE "Estates"."Type" = \'Apartment\'',
+  Apartments: `
+    SELECT l.*,
+           p."Name" AS "Planet",
+           p."TechnicalName",
+           e."Type" AS "EstateType",
+           e."OwnerId",
+           e."ItemTradeAvailable",
+           e."MaxGuests"
+    FROM ONLY "Locations" l
+    LEFT JOIN ONLY "Planets" p ON l."PlanetId" = p."Id"
+    JOIN ONLY "Estates" e ON l."Id" = e."LocationId"
+    WHERE l."Type" = 'Estate' AND e."Type" = 'Apartment'
+  `,
 };
 
 async function _fetchEstateOwners(ownerIds) {
@@ -16,14 +28,14 @@ async function _fetchEstateOwners(ownerIds) {
   }
 }
 
-async function _fetchEstateSections(estateIds){
-  if (!estateIds || estateIds.length === 0) return {};
+async function _fetchEstateSections(locationIds) {
+  if (!locationIds || locationIds.length === 0) return {};
   try {
-    const { rows } = await pool.query('SELECT "EstateId", "Name", "Description", "ItemPoints" FROM ONLY "EstateSections" WHERE "EstateId" = ANY($1) ORDER BY "EstateId", "Name"', [estateIds]);
+    const { rows } = await pool.query('SELECT "LocationId", "Name", "Description", "ItemPoints" FROM ONLY "EstateSections" WHERE "LocationId" = ANY($1) ORDER BY "LocationId", "Name"', [locationIds]);
     const m = {};
     for (const r of rows) {
-      if (!m[r.EstateId]) m[r.EstateId] = [];
-      m[r.EstateId].push({
+      if (!m[r.LocationId]) m[r.LocationId] = [];
+      m[r.LocationId].push({
         Name: r.Name,
         Description: r.Description ?? null,
         ItemPoints: r.ItemPoints != null ? Number(r.ItemPoints) : null,
@@ -42,7 +54,7 @@ function formatApartment(x, add = {}) {
     Name: x.Name,
     Properties: {
       Description: x.Description ?? null,
-      Type: x.Type ?? 'Apartment',
+      Type: x.EstateType ?? 'Apartment',
       Coordinates: {
         Longitude: x.Longitude != null ? Number(x.Longitude) : null,
         Latitude: x.Latitude != null ? Number(x.Latitude) : null,
@@ -59,20 +71,20 @@ function formatApartment(x, add = {}) {
 }
 
 // DB methods
-async function getApartments(){
-  const { rows } = await pool.query(queries.Apartments);
+async function getApartments() {
+  const { rows } = await pool.query(queries.Apartments + ' ORDER BY l."Name"');
   const ownerIds = [...new Set(rows.map(s => s.OwnerId).filter(id => id != null))];
-  const estateIds = rows.map(s => s.Id);
+  const locationIds = rows.map(s => s.Id);
   const [owners, sections] = await Promise.all([
     _fetchEstateOwners(ownerIds),
-    _fetchEstateSections(estateIds)
+    _fetchEstateSections(locationIds)
   ]);
   return rows.map(x => formatApartment(x, { owner: owners[x.OwnerId] || null, sections: sections[x.Id] || [] }));
 }
 
-async function getApartment(idOrName){
+async function getApartment(idOrName) {
   const byId = /^(\d+)$/.test(String(idOrName));
-  const sql = byId ? `${queries.Apartments} AND "Estates"."Id" = $1` : `${queries.Apartments} AND "Estates"."Name" = $1`;
+  const sql = byId ? `${queries.Apartments} AND l."Id" = $1` : `${queries.Apartments} AND l."Name" = $1`;
   const { rows } = await pool.query(sql, [idOrName]);
   if (rows.length !== 1) return null;
   const apartment = rows[0];
@@ -84,7 +96,7 @@ async function getApartment(idOrName){
 }
 
 // Endpoint wiring
-function register(app){
+function register(app) {
   /**
    * @swagger
    * /apartments:

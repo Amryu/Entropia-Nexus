@@ -60,6 +60,11 @@ export function hasItemTag(currentName, tag) {
  * @returns {Promise<boolean>} - True if copy was successful
  */
 export async function copyToClipboard(text) {
+  // Guard against SSR - clipboard operations only work in browser
+  if (!browser) {
+    return false;
+  }
+
   // Try modern clipboard API first
   if (navigator?.clipboard?.writeText) {
     try {
@@ -247,6 +252,7 @@ export function getTypeLink(name, type, subType = null) {
     case 'Weapon':
       return `/items/weapons/${encodeURIComponentSafe(name)}`;
     case 'Armor':
+    case 'ArmorSet':
       return `/items/armorsets/${encodeURIComponentSafe(name)}`;
     case 'MedicalTool':
       return `/items/medicaltools/tools/${encodeURIComponentSafe(name)}`;
@@ -312,12 +318,16 @@ export function getTypeLink(name, type, subType = null) {
       return `/information/skills/${encodeURIComponentSafe(name)}`;
     case 'Profession':
       return `/information/professions/${encodeURIComponentSafe(name)}`;
-    case 'Vendor':
-      return `/information/vendors/${encodeURIComponentSafe(name)}`;
-    default:
-      return null;
+      case 'Vendor':
+        return `/information/vendors/${encodeURIComponentSafe(name)}`;
+      case 'Mission':
+        return `/information/missions/${encodeURIComponentSafe(name)}`;
+      case 'MissionChain':
+        return `/information/missions/${encodeURIComponentSafe(name)}?view=chains`;
+      default:
+        return null;
+    }
   }
-}
 
 export function getTypeName(type) {
   switch (type) {
@@ -391,12 +401,16 @@ export function getTypeName(type) {
       return 'Skill';
     case 'Profession':
       return 'Profession';
-    case 'Vendor':
-      return 'Vendor';
-    case 'Shop':
-      return 'Shop';
-    default:
-      return 'N/A';
+      case 'Vendor':
+        return 'Vendor';
+      case 'Mission':
+        return 'Mission';
+      case 'MissionChain':
+        return 'Mission Chain';
+      case 'Shop':
+        return 'Shop';
+      default:
+        return 'N/A';
   }
 }
 
@@ -686,11 +700,15 @@ export async function handlePageLoad(fetch, items, config) {
 }
 
 export function encodeURIComponentSafe(str) {
-  return encodeURIComponent(str?.replace(/ /g, '~'));
+  if (!str) return str;
+  // Pre-escape literal ~ as %7E, then URL encode (makes it %257E), then use ~ for spaces
+  return encodeURIComponent(str.replace(/~/g, '%7E')).replace(/%20/g, '~');
 }
 
 export function decodeURIComponentSafe(str) {
-  return str?.replace(/~/g, ' ');
+  if (!str) return str;
+  // Restore ~ to %20, URL decode (converts %257E to %7E), then restore %7E to ~
+  return decodeURIComponent(str.replace(/~/g, '%20')).replace(/%7E/g, '~');
 }
 
 export function getParams(page) {

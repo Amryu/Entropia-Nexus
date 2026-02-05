@@ -18,7 +18,7 @@
   import DataSection from '$lib/components/wiki/DataSection.svelte';
   import InlineEdit from '$lib/components/wiki/InlineEdit.svelte';
   import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
-  import ItemSearchInput from '$lib/components/wiki/ItemSearchInput.svelte';
+  import SearchInput from '$lib/components/wiki/SearchInput.svelte';
 
   // Edit state management
   import {
@@ -398,9 +398,11 @@
                   <div class="loot-row">
                     <div class="loot-field item-field">
                       <label>Item</label>
-                      <ItemSearchInput
+                      <SearchInput
                         value={loot.Item?.Name || ''}
                         placeholder="Search for item..."
+                        apiEndpoint="/search/items"
+                        displayFn={(item) => item?.Name || ''}
                         on:change={(e) => {
                           const loots = [...(activeStrongbox?.Loots || [])];
                           const value = e.detail?.value || '';

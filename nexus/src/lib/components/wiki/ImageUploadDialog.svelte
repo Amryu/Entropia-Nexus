@@ -6,6 +6,7 @@
 <script>
   // @ts-nocheck
   import { createEventDispatcher, onMount } from 'svelte';
+  import { browser } from '$app/environment';
   import Cropper from 'svelte-easy-crop';
 
   const dispatch = createEventDispatcher();
@@ -146,6 +147,10 @@
    * Outputs at max 320x320.
    */
   async function getCroppedImage(imageSrc, cropArea) {
+    if (!browser) {
+      return Promise.reject(new Error('Image cropping only available in browser'));
+    }
+
     return new Promise((resolve, reject) => {
       const image = new Image();
       image.crossOrigin = 'anonymous';

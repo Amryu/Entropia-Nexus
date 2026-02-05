@@ -42,8 +42,7 @@
 
   // Blueprint-specific component
   import BlueprintMaterials from '$lib/components/wiki/BlueprintMaterials.svelte';
-  import SearchableSelect from '$lib/components/wiki/SearchableSelect.svelte';
-  import ItemSearchInput from '$lib/components/wiki/ItemSearchInput.svelte';
+  import SearchInput from '$lib/components/wiki/SearchInput.svelte';
 
   // Image upload
   import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
@@ -91,7 +90,7 @@
   $: productItems = data.productItems || [];
   $: materials = data.materials || [];
 
-  // Options for SearchableSelect dropdowns
+  // Options for SearchInput dropdowns
   $: bookOptions = blueprintbooks.map(b => ({ value: b.Name, label: b.Name })).sort((a, b) => a.label.localeCompare(b.label));
   $: professionOptions = professions.map(p => ({ value: p.Name, label: p.Name })).sort((a, b) => a.label.localeCompare(b.label));
   $: productOptions = productItems.map(i => ({ value: i.Name, label: i.Name })).sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
@@ -307,7 +306,7 @@
   }
 
   function handleProductSelect(e) {
-    const selected = e.detail?.item;
+    const selected = e.detail?.data;
     if (selected) {
       updateField('Product', selected);
     } else {
@@ -467,9 +466,11 @@
             <span class="stat-label">Product</span>
             <span class="stat-value">
               {#if $editMode}
-                <ItemSearchInput
+                <SearchInput
                   value={activeEntity?.Product?.Name || ''}
                   placeholder="Search product..."
+                  apiEndpoint="/search/items"
+                  displayFn={(item) => item?.Name || ''}
                   on:change={handleProductInput}
                   on:select={handleProductSelect}
                 />
@@ -630,11 +631,11 @@
               <div class="drops-edit-list">
                 {#each activeEntity?.Drops || [] as drop, i}
                   <div class="drop-edit-row">
-                    <SearchableSelect
+                    <SearchInput
                       value={drop.Name || ''}
                       options={blueprintDropOptions}
                       placeholder="Select blueprint..."
-                      on:change={(e) => updateDrop(i, e.detail.value)}
+                      on:select={(e) => updateDrop(i, e.detail.value)}
                     />
                     <button class="btn-remove" on:click={() => removeDrop(i)} title="Remove drop">
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

@@ -27,6 +27,7 @@ export const WIKI_PAGES = [
   { path: '/information/skills', name: 'Skills' },
   { path: '/information/vendors', name: 'Vendors' },
   { path: '/information/mobs', name: 'Mobs' },
+  { path: '/information/missions', name: 'Missions' },
   { path: '/market/shops', name: 'Shops' },
 ] as const;
 
@@ -83,6 +84,7 @@ export const WIKI_PAGES_WITH_SUBTYPES = [
   { path: '/information/skills', name: 'Skills' },
   { path: '/information/vendors', name: 'Vendors' },
   { path: '/information/mobs', name: 'Mobs' },
+  { path: '/information/missions', name: 'Missions' },
 
   // Market pages
   { path: '/market/shops', name: 'Shops' },

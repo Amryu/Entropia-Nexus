@@ -14,15 +14,25 @@
 
   export let data;
 
-  let profile = data.profileData.profile;
-  let scores = data.profileData.scores;
-  let services = data.profileData.services || [];
-  let shops = data.profileData.shops || [];
-  let offers = data.profileData.offers || [];
-  let avatar = data.profileData.avatar || {};
-  let isOwner = data.profileData.permissions?.isOwner;
-  let society = profile.society || null;
-  let pendingSocietyRequest = profile.pendingSocietyRequest || null;
+  // Track the profile ID to detect when we navigate to a different profile
+  let currentProfileId = null;
+
+  // Make data-derived state reactive so it updates when navigating between profiles
+  $: profile = data.profileData.profile;
+  $: scores = data.profileData.scores;
+  $: services = data.profileData.services || [];
+  $: shops = data.profileData.shops || [];
+  $: offers = data.profileData.offers || [];
+  $: avatar = data.profileData.avatar || {};
+  $: isOwner = data.profileData.permissions?.isOwner;
+  $: society = profile?.society || null;
+  $: pendingSocietyRequest = profile?.pendingSocietyRequest || null;
+
+  // Reset UI state when profile changes
+  $: if (profile?.id && profile.id !== currentProfileId) {
+    currentProfileId = profile.id;
+    resetUIState();
+  }
 
   let isEditing = false;
   let saveError = '';
@@ -84,10 +94,33 @@
   let effectCaps = {};
 
   let form = {
-    biographyHtml: profile.biographyHtml || '',
-    defaultTab: profile.defaultTab || 'General',
-    showcaseLoadoutCode: profile.showcaseLoadoutCode || ''
+    biographyHtml: '',
+    defaultTab: 'General',
+    showcaseLoadoutCode: ''
   };
+
+  // Reset UI state when navigating to a different profile
+  function resetUIState() {
+    isEditing = false;
+    saveError = '';
+    saveStatus = '';
+    tabInitialized = false;
+    imageFailed = false;
+    showImageDialog = false;
+    showSocietyDialog = false;
+    avatarTabsInitialized = false;
+    referenceReady = false;
+    referenceLoading = false;
+    referenceError = '';
+    isHydratingShowcase = false;
+    expandedEffectKeys = new Set();
+    // Reset form to new profile data
+    form = {
+      biographyHtml: profile?.biographyHtml || '',
+      defaultTab: profile?.defaultTab || 'General',
+      showcaseLoadoutCode: profile?.showcaseLoadoutCode || ''
+    };
+  }
 
   $: hasAvatarData = !!(form.showcaseLoadoutCode || avatar?.showcaseLoadout);
   $: hasServices = services.length > 0;

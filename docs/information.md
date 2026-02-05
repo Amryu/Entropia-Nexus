@@ -174,8 +174,11 @@ Located in `nexus/src/lib/components/wiki/mobs/`:
 #### MobMaturities.svelte
 Displays maturity progression table:
 - Name, Level, HP, HP/Level ratio
+- Boss indicator (Yes/No) - boss maturities appear at the bottom with red background
 - Primary/Secondary/Tertiary attacks (damage and type)
 - Defense value, Tameable status
+
+Note: Boss maturities are excluded from tier 1 property calculations (HP range, Level range, HP/Level).
 
 #### MobLocations.svelte
 Displays spawn locations:
@@ -211,9 +214,9 @@ Damage type visualization:
 
 | Stat | Description |
 |------|-------------|
-| HP/Level | Average HP per level across maturities |
-| Level Range | Min-max level from maturities |
-| HP Range | Min-max HP from maturities |
+| HP/Level | Average HP per level across non-boss maturities |
+| Level Range | Min-max level from non-boss maturities |
+| HP Range | Min-max HP from non-boss maturities |
 | Species | Mob species name |
 | Planet | Native planet |
 | Type | Animal, Mutant, Robot, Asteroid |
@@ -333,17 +336,80 @@ Property display component supporting:
 - Waypoint buttons
 - Nested objects
 
+---
+
+## Missions (`/information/missions/`)
+
+Mission information including chains, objectives, rewards, and dependencies. See `docs/missions.md` for full documentation.
+
+### Route
+```
+/information/missions/[[slug]]
+```
+
+Query parameters:
+- `?view=chains` - Toggle mission chains view
+- `?mode=create` - Create new mission/chain
+- `?changeId=<id>` - View pending change
+
+### Layout Structure
+
+Wikipedia-style layout with:
+- **Sidebar** (left): Planet filters, missions/chains toggle, searchable list
+- **Floating Infobox** (right): Type, planet, chain, stats summary
+- **Article Content** (main): Description, steps, rewards, dependencies
+
+### Data Sections
+
+| Section | Description |
+|---------|-------------|
+| Chain Preview | Shows `-2..+2` missions around current in chain |
+| Steps & Objectives | Mission steps with typed objectives |
+| Rewards | Items, skills, and special unlocks |
+| Dependencies | Prerequisites and missions unlocked |
+
+### Objective Types
+
+| Type | Description |
+|------|-------------|
+| Dialog | Talk to NPC with optional dialog text |
+| KillCount | Kill specific number of creatures |
+| KillCycle | Kill creatures to cycle PED value |
+| Explore | Visit specific coordinates |
+| Interact | Interact with location |
+| HandIn | Deliver items to NPC |
+
+### Components
+
+Located in `nexus/src/lib/components/wiki/missions/`:
+
+| Component | Description |
+|-----------|-------------|
+| `MissionStepsEditor.svelte` | Full CRUD for steps and objectives |
+| `MissionRewardsEditor.svelte` | Items, skills, unlocks editing |
+| `ChainEditorDialog.svelte` | Chain creation/editing modal |
+
+### API Endpoints
+
+```
+GET /missions              - All missions
+GET /missions?planetId=<id> - Filter by planet
+GET /missions/:idOrName    - Mission with steps, rewards, dependencies
+GET /missions/:id/graph    - Dependency graph
+
+GET /missionchains         - All chains
+GET /missionchains/:id     - Chain with missions and graph
+GET /missionchains/:id/graph - Chain dependency graph
+```
+
+---
+
 ## Future Content
 
-Planned additions (see `docs/missions.md`):
-
-### Missions
-- Mission chains
-- Objectives
-- Rewards
-- NPCs
+Planned additions:
 
 ### Events
 - Seasonal events
 - Event rewards
+- Event-type missions
 - Historical data

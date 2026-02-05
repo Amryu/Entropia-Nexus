@@ -406,9 +406,11 @@
     ],
     'Information': [
       { label: 'Mobs', url: 'mobs' },
+      { label: 'Missions', url: 'missions' },
       { label: 'Professions', url: 'professions' },
       { label: 'Skills', url: 'skills' },
       { label: 'Vendors', url: 'vendors' },
+      { label: 'Locations', url: 'locations' },
     ],
     'Maps': [
       { label: 'Calypso', url: 'calypso' },

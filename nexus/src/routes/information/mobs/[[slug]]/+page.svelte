@@ -18,7 +18,7 @@
   import DataSection from '$lib/components/wiki/DataSection.svelte';
   import InlineEdit from '$lib/components/wiki/InlineEdit.svelte';
   import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
-  import LocalSearchInput from '$lib/components/wiki/LocalSearchInput.svelte';
+  import SearchInput from '$lib/components/wiki/SearchInput.svelte';
 
   // Mob-specific components
   import MobMaturities from '$lib/components/wiki/mobs/MobMaturities.svelte';
@@ -181,14 +181,37 @@
     return item?.Species?.Properties?.CodexType === 'MobLooter';
   }
 
+  // Get smallest HP/Lvl for sidebar display (non-boss maturities only unless all are bosses)
+  function getSmallestHpPerLevel(mobData) {
+    if (!mobData?.Maturities || mobData.Maturities.length === 0) return null;
+
+    // Try non-boss maturities first
+    let maturities = mobData.Maturities.filter(m => !m.Properties?.Boss);
+    // Fall back to all maturities if only bosses exist
+    if (maturities.length === 0) maturities = mobData.Maturities;
+
+    let smallest = null;
+    for (const m of maturities) {
+      const hp = m.Properties?.Health;
+      const lvl = m.Properties?.Level;
+      if (hp != null && lvl != null && lvl > 0) {
+        const ratio = hp / lvl;
+        if (smallest === null || ratio < smallest) {
+          smallest = ratio;
+        }
+      }
+    }
+    return smallest;
+  }
+
   const navTableColumns = [
     {
-      key: 'species',
-      header: 'Species',
-      width: '100px',
-      filterPlaceholder: 'Atrox',
-      getValue: (item) => item.Species?.Name,
-      format: (v) => v || '-'
+      key: 'hpPerLevel',
+      header: 'HP/Lvl',
+      width: '70px',
+      filterPlaceholder: '>50',
+      getValue: (item) => getSmallestHpPerLevel(item),
+      format: (v) => v != null ? Math.round(v) : '-'
     },
     {
       key: 'level',
@@ -307,7 +330,11 @@
   function getLowestHpPerLevel(mobData) {
     if (!mobData?.Maturities || mobData.Maturities.length === 0) return null;
 
-    let lowest = mobData.Maturities.reduce((a, b) => {
+    // Exclude boss maturities from tier 1 calculations
+    const nonBossMaturities = mobData.Maturities.filter(m => !m.Properties?.Boss);
+    if (nonBossMaturities.length === 0) return null;
+
+    let lowest = nonBossMaturities.reduce((a, b) => {
       const aValid = a.Properties?.Health != null && a.Properties?.Level != null;
       const bValid = b.Properties?.Health != null && b.Properties?.Level != null;
 
@@ -325,7 +352,11 @@
 
   function getHealthRange(mobData) {
     if (!mobData?.Maturities || mobData.Maturities.length === 0) return null;
-    const healths = mobData.Maturities.map(m => m.Properties?.Health).filter(h => h != null);
+    // Exclude boss maturities from tier 1 calculations
+    const healths = mobData.Maturities
+      .filter(m => !m.Properties?.Boss)
+      .map(m => m.Properties?.Health)
+      .filter(h => h != null);
     if (healths.length === 0) return null;
     return {
       min: Math.min(...healths),
@@ -335,7 +366,11 @@
 
   function getLevelRange(mobData) {
     if (!mobData?.Maturities || mobData.Maturities.length === 0) return null;
-    const levels = mobData.Maturities.map(m => m.Properties?.Level).filter(l => l != null);
+    // Exclude boss maturities from tier 1 calculations
+    const levels = mobData.Maturities
+      .filter(m => !m.Properties?.Boss)
+      .map(m => m.Properties?.Level)
+      .filter(l => l != null);
     if (levels.length === 0) return null;
     return {
       min: Math.min(...levels),
@@ -503,7 +538,7 @@
               <span class="stat-label">Species</span>
               <span class="stat-value">
                 {#if $editMode}
-                  <LocalSearchInput
+                  <SearchInput
                     value={activeMob?.Species?.Name || ''}
                     placeholder="Search species..."
                     options={speciesOptions}

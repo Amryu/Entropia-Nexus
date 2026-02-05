@@ -57,6 +57,7 @@ function formatMobMaturity(x){
 			RegenerationInterval: x.RegenerationInterval != null ? Number(x.RegenerationInterval) : null,
 			RegenerationAmount: x.RegenerationAmount != null ? Number(x.RegenerationAmount) : null,
 			MissChance: x.MissChance != null ? Number(x.MissChance) : null,
+			Boss: x.Boss === true,
 			Taming: {
 				IsTameable: x.TamingLevel != null,
 				TamingLevel: x.TamingLevel != null ? Number(x.TamingLevel) : null,

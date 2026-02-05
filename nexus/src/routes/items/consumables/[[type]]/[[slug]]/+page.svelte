@@ -24,7 +24,7 @@
   import InlineEdit from '$lib/components/wiki/InlineEdit.svelte';
   import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
   import EffectsEditor from '$lib/components/wiki/EffectsEditor.svelte';
-  import MobSearchInput from '$lib/components/wiki/MobSearchInput.svelte';
+  import SearchInput from '$lib/components/wiki/SearchInput.svelte';
 
   // Wiki edit state
   import {
@@ -60,6 +60,7 @@
   $: userPendingUpdates = data.userPendingUpdates || [];
   $: effectsList = data.effects || [];
   $: mobsList = data.mobs || [];
+  $: mobOptions = (mobsList || []).map(m => ({ label: m.Name, value: m.Name }));
   $: professionsList = data.professions || [];
   $: consumableEntityId = consumable?.Id ?? consumable?.ItemId;
   $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, consumableEntityId);
@@ -426,9 +427,9 @@
               <span class="stat-label">Creature</span>
               <span class="stat-value">
                 {#if $editMode}
-                  <MobSearchInput
+                  <SearchInput
                     value={activeEntity?.Mob?.Name || ''}
-                    options={mobsList}
+                    options={mobOptions}
                     placeholder="Search creature..."
                     on:change={(e) => {
                       if (e.detail?.value) {

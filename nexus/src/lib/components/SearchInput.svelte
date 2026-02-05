@@ -67,102 +67,20 @@
   let highlightedIndex = -1;
   let searchTimeout;
   let flatResults = []; // Flattened results for keyboard navigation
+  let preventBlurClose = false; // Prevent blur from closing when context menu opens
 
   // Cleanup on destroy
   onDestroy(() => {
     if (searchTimeout) clearTimeout(searchTimeout);
   });
 
-  // Score search results for ranking
-  function scoreSearchResult(name, query) {
-    const nameLower = name.toLowerCase();
-    const queryLower = query.toLowerCase();
-
-    // Exact match (highest priority)
-    if (nameLower === queryLower) return 1000;
-
-    // Starts with query
-    if (nameLower.startsWith(queryLower)) return 900 - nameLower.length; // Shorter names rank higher
-
-    // Word starts with query (e.g., "Calypso Sword" matches "sword")
-    const words = nameLower.split(/\s+/);
-    for (let i = 0; i < words.length; i++) {
-      if (words[i].startsWith(queryLower)) {
-        return 800 - i * 5 - nameLower.length;
-      }
-    }
-
-    // Contains exact substring
-    const index = nameLower.indexOf(queryLower);
-    if (index !== -1) {
-      return 700 - Math.min(index, 50) - nameLower.length;
-    }
-
-    // For short queries (< 4 chars), only match substrings
-    if (queryLower.length < 4) {
-      return 0;
-    }
-
-    // Fuzzy match for longer queries
-    let queryIdx = 0;
-    let score = 0;
-    let consecutiveBonus = 0;
-    let matchPositions = [];
-
-    for (let i = 0; i < nameLower.length && queryIdx < queryLower.length; i++) {
-      if (nameLower[i] === queryLower[queryIdx]) {
-        matchPositions.push(i);
-        queryIdx++;
-        consecutiveBonus += 10;
-        score += consecutiveBonus;
-        if (i === 0 || nameLower[i - 1] === ' ' || nameLower[i - 1] === '-' || nameLower[i - 1] === '_') {
-          score += 30;
-        }
-      } else {
-        consecutiveBonus = 0;
-      }
-    }
-
-    if (queryIdx === queryLower.length) {
-      const spread = matchPositions.length > 1
-        ? matchPositions[matchPositions.length - 1] - matchPositions[0]
-        : 0;
-
-      if (spread > queryLower.length * 2) {
-        return 0;
-      }
-
-      const compactBonus = Math.max(0, 50 - spread);
-      return 300 + score + compactBonus;
-    }
-
-    const matchRatio = queryIdx / queryLower.length;
-    if (matchRatio >= 0.95 && queryLower.length >= 5) {
-      const spread = matchPositions.length > 1
-        ? matchPositions[matchPositions.length - 1] - matchPositions[0]
-        : 0;
-      if (spread <= queryLower.length * 2) {
-        return 100 + Math.floor(score * matchRatio);
-      }
-    }
-
-    return 0;
-  }
-
   function rankSearchResults(results, query) {
-    return results
-      .map(result => ({
-        ...result,
-        _score: scoreSearchResult(result.Name, query)
-      }))
-      .filter(result => result._score > 0)
-      .sort((a, b) => {
-        // Primary sort by score (descending)
-        if (b._score !== a._score) return b._score - a._score;
-        // Secondary sort by name length (shorter first for equal scores)
-        return a.Name.length - b.Name.length;
-      })
-      .map(({ _score, ...result }) => result);
+    // Backend provides Score field - use it directly (already filtered and sorted)
+    // Map Score to _score for internal use
+    return results.map(result => ({
+      ...result,
+      _score: result.Score || 0
+    }));
   }
 
   function categorizeResults(results) {
@@ -177,28 +95,29 @@
       categories[category].push(result);
     }
 
-    // Limit results per category smartly
-    const sortedCategories = Object.keys(categories).sort((a, b) => categories[a].length - categories[b].length);
+    // Sort categories by highest score (first item's score, since results are pre-sorted)
+    const sortedCategories = Object.keys(categories).sort((a, b) => {
+      const scoreA = categories[a][0]?._score || 0;
+      const scoreB = categories[b][0]?._score || 0;
+      return scoreB - scoreA; // Highest score first
+    });
 
+    // Build ordered result with limits
+    const orderedCategories = {};
     for (const cat of sortedCategories) {
       const remaining = maxTotal - totalShown;
       if (remaining <= 0) {
-        categories[cat] = [];
-      } else {
-        const limit = Math.min(maxPerCategory, remaining);
-        categories[cat] = categories[cat].slice(0, limit);
-        totalShown += categories[cat].length;
+        continue; // Skip categories when we've hit the total limit
+      }
+      const limit = Math.min(maxPerCategory, remaining);
+      const items = categories[cat].slice(0, limit);
+      if (items.length > 0) {
+        orderedCategories[cat] = items;
+        totalShown += items.length;
       }
     }
 
-    // Remove empty categories
-    for (const cat of Object.keys(categories)) {
-      if (categories[cat].length === 0) {
-        delete categories[cat];
-      }
-    }
-
-    return categories;
+    return orderedCategories;
   }
 
   // Build flat list for keyboard navigation
@@ -234,7 +153,9 @@
     try {
       const response = await fetch(import.meta.env.VITE_API_URL + `${endpoint}?query=${encodeURIComponent(value)}&fuzzy=true`);
       const data = await response.json();
-      searchResults = rankSearchResults(data, value);
+      // Ensure data is an array before processing
+      const resultsArray = Array.isArray(data) ? data : [];
+      searchResults = rankSearchResults(resultsArray, value);
     } catch (err) {
       console.error('Search failed:', err);
       searchResults = [];
@@ -334,9 +255,10 @@
   function handleBlur() {
     // Delay to allow click on results
     setTimeout(() => {
-      if (mode === 'dropdown') {
+      if (mode === 'dropdown' && !preventBlurClose) {
         closeResults();
       }
+      preventBlurClose = false;
     }, 200);
   }
 
@@ -350,12 +272,24 @@
     dispatch('focus');
   }
 
-  function handleResultClick(result) {
-    selectResult(result);
+  function handleResultClick(event, result) {
+    // Only handle left-click - let middle/right click work naturally as links
+    if (event.button === 0) {
+      event.preventDefault();
+      selectResult(result);
+    }
   }
 
   function handleResultMouseEnter(index) {
     highlightedIndex = index;
+  }
+
+  function handleResultMouseDown(event) {
+    // Prevent blur from closing results when middle-clicking or right-clicking
+    // This keeps results open for opening multiple tabs or using context menu
+    if (event.button === 1 || event.button === 2) {
+      preventBlurClose = true;
+    }
   }
 
   // Expose methods
@@ -406,17 +340,18 @@
           <div class="search-category">{category}</div>
           {#each categorizedResults[category] as result, i}
             {@const globalIndex = flatResults.findIndex(r => r.Name === result.Name && r.Type === result.Type)}
-            <!-- svelte-ignore a11y-click-events-have-key-events -->
-            <!-- svelte-ignore a11y-no-static-element-interactions -->
-            <div
+            {@const resultUrl = getTypeLink(result.Name, result.Type, result.SubType)}
+            <a
+              href={resultUrl}
               class="search-result-item"
               class:highlighted={globalIndex === highlightedIndex}
-              on:click={() => handleResultClick(result)}
+              on:mousedown={handleResultMouseDown}
+              on:click={(e) => handleResultClick(e, result)}
               on:mouseenter={() => handleResultMouseEnter(globalIndex)}
             >
               <span class="search-result-name">{result.Name}</span>
               <span class="search-result-type">{getTypeName(result.Type)}</span>
-            </div>
+            </a>
           {/each}
         {/each}
       {/if}
@@ -522,10 +457,16 @@
     cursor: pointer;
     border-bottom: 1px solid var(--border-color);
     transition: background-color 0.1s ease;
+    text-decoration: none;
+    color: inherit;
   }
 
   .search-result-item:last-child {
     border-bottom: none;
+  }
+
+  .search-result-item:visited {
+    color: inherit;
   }
 
   .search-result-item:hover,

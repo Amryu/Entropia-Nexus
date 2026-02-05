@@ -29,6 +29,10 @@ export const Shop = {
       "type": ["integer", "null"],
       "default": null
     },
+    "OwnerId": {
+      "type": ["integer", "null"],
+      "default": null
+    },
     "HasAdditionalArea": {
       "type": ["boolean", "null"],
       "default": null

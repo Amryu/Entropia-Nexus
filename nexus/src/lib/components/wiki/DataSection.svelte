@@ -25,6 +25,9 @@
   /** @type {string} Optional subtitle/summary text */
   export let subtitle = '';
 
+  /** @type {boolean} Allow content overflow (for dropdowns) */
+  export let allowOverflow = false;
+
   function toggle() {
     if (collapsible) {
       expanded = !expanded;
@@ -40,7 +43,7 @@
   }
 </script>
 
-<section class="data-section" class:expanded class:collapsible>
+<section class="data-section" class:expanded class:collapsible class:allow-overflow={allowOverflow}>
   <header
     class="section-header"
     role={collapsible ? 'button' : undefined}
@@ -88,6 +91,10 @@
     border-radius: 8px;
     margin-bottom: 16px;
     overflow: hidden;
+  }
+
+  .data-section.allow-overflow {
+    overflow: visible;
   }
 
   .data-section:last-child {

@@ -3,21 +3,22 @@ DECLARE
    tbl_name TEXT := 'table_name'; -- Replace with your actual table name
    col_def TEXT := '';
    col_def_temp TEXT;
+   check_constraint TEXT;
    audit_table_exists BOOLEAN;
 BEGIN
    -- Check if the audit table already exists
    SELECT EXISTS (
-      SELECT 1 
-      FROM information_schema.tables 
-      WHERE table_schema = 'public' 
+      SELECT 1
+      FROM information_schema.tables
+      WHERE table_schema = 'public'
       AND table_name = format('%s_audit', tbl_name)
    ) INTO audit_table_exists;
 
    -- Build column definitions for the audit table
    FOR col_def_temp IN (
-      SELECT 
-         '"' || column_name || '" ' || 
-         CASE 
+      SELECT
+         '"' || column_name || '" ' ||
+         CASE
             WHEN data_type = 'numeric' AND numeric_precision IS NOT NULL AND numeric_scale IS NOT NULL THEN
                'numeric(' || numeric_precision || ',' || numeric_scale || ')'
             WHEN data_type = 'character varying' AND character_maximum_length IS NOT NULL THEN
@@ -26,17 +27,20 @@ BEGIN
                'character(' || character_maximum_length || ')'
             WHEN data_type = 'text' THEN
                'text COLLATE pg_catalog."default"'
-            ELSE 
+            WHEN data_type = 'USER-DEFINED' THEN
+               -- For enums and other user-defined types, properly quote the type name
+               '"' || udt_name || '"'
+            ELSE
                COALESCE((SELECT typname FROM pg_type WHERE typname = udt_name), data_type)
          END ||
          (CASE WHEN is_nullable = 'NO' THEN ' NOT NULL' ELSE '' END)
-      FROM information_schema.columns 
-      WHERE table_schema = 'public' AND table_name = tbl_name 
+      FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = tbl_name
       ORDER BY ordinal_position
    ) LOOP
       col_def := col_def || ', ' || col_def_temp;
    END LOOP;
-   
+
    -- Create the audit table
    EXECUTE format('
       CREATE TABLE IF NOT EXISTS "%1$s_audit" (
@@ -46,6 +50,17 @@ BEGIN
          %2$s
       );
    ', tbl_name, col_def);
+
+   -- Copy CHECK constraints from parent table to audit table
+   FOR check_constraint IN (
+      SELECT conname, pg_get_constraintdef(oid) as condef
+      FROM pg_constraint
+      WHERE conrelid = ('public.' || quote_ident(tbl_name))::regclass
+      AND contype = 'c'
+   ) LOOP
+      EXECUTE format('ALTER TABLE "%1$s_audit" ADD CONSTRAINT "%2$s" %3$s',
+                     tbl_name, check_constraint.conname, check_constraint.condef);
+   END LOOP;
 
    -- Add inheritance after table creation
    EXECUTE format('

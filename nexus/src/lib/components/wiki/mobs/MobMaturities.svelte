@@ -10,14 +10,37 @@
   export let maturities = [];
   export let type = null;
 
+  // Sort maturities: non-bosses first, by HP*Level (nulls at end)
   $: sortedMaturities = maturities ? [...maturities].sort((a, b) => {
-    if (a.Properties?.Level !== b.Properties?.Level) {
-      return (a.Properties?.Level || 0) - (b.Properties?.Level || 0);
+    const aIsBoss = a.Properties?.Boss === true;
+    const bIsBoss = b.Properties?.Boss === true;
+
+    // Bosses always at the bottom
+    if (aIsBoss !== bIsBoss) {
+      return aIsBoss ? 1 : -1;
     }
-    if (a.Properties?.Health !== b.Properties?.Health) {
-      return (a.Properties?.Health || 0) - (b.Properties?.Health || 0);
+
+    // Calculate HP * Level, treating null as Infinity (sort to end)
+    const aHp = a.Properties?.Health;
+    const aLvl = a.Properties?.Level;
+    const bHp = b.Properties?.Health;
+    const bLvl = b.Properties?.Level;
+
+    const aHasValue = aHp != null && aLvl != null;
+    const bHasValue = bHp != null && bLvl != null;
+
+    // Items with null values go to the end (within their boss group)
+    if (aHasValue !== bHasValue) {
+      return aHasValue ? -1 : 1;
     }
-    return 0;
+
+    // Both have null values - treat as equal
+    if (!aHasValue && !bHasValue) {
+      return 0;
+    }
+
+    // Both have values - sort by HP * Level ascending
+    return (aHp * aLvl) - (bHp * bLvl);
   }) : [];
 
   function getTotalDamage(attack) {
@@ -58,7 +81,7 @@
       level: maturity.Properties?.Level,
       hp: maturity.Properties?.Health,
       hpPerLevel: hpPerLevel,
-      regen: maturity.Properties?.RegenerationAmount,
+      boss: maturity.Properties?.Boss === true,
       primaryDamage: getTotalDamage(primaryAttack),
       primaryTooltip: getDamageComposition(primaryAttack),
       secondaryDamage: getTotalDamage(secondaryAttack),
@@ -70,6 +93,11 @@
       tamingLevel: maturity.Properties?.Taming?.TamingLevel || maturity.Properties?.TamingLevel
     };
   });
+
+  // Row class function for boss highlighting
+  function getRowClass(row) {
+    return row.boss ? 'boss-row' : null;
+  }
 
   // Base columns for asteroids
   const baseColumns = [
@@ -106,11 +134,11 @@
   // Additional columns for non-asteroids
   const mobColumns = [
     {
-      key: 'regen',
-      header: 'Regen',
-      width: '80px',
+      key: 'boss',
+      header: 'Boss',
+      width: '60px',
       hideOnMobile: true,
-      formatter: (value) => value != null ? `${value}/s` : 'N/A'
+      formatter: (value) => value ? 'Yes' : 'No'
     },
     {
       key: 'primaryDamage',
@@ -171,6 +199,7 @@
       searchable={false}
       sortable={true}
       rowHeight={40}
+      rowClass={getRowClass}
       emptyMessage="No maturity data available."
     />
   {/if}
@@ -179,11 +208,19 @@
 <style>
   .maturities-table-container {
     width: 100%;
-    min-height: 200px;
   }
 
   .maturities-table-container :global(.fancy-table-container) {
     max-height: 500px;
+  }
+
+  /* Boss row styling - subtle red background */
+  .maturities-table-container :global(.table-row.boss-row) {
+    background-color: rgba(220, 38, 38, 0.15);
+  }
+
+  .maturities-table-container :global(.table-row.boss-row:hover) {
+    background-color: rgba(220, 38, 38, 0.25);
   }
 
   .no-data {

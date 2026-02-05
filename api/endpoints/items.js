@@ -1,12 +1,27 @@
-const { getObjects, getObjectByIdOrName } = require('./utils');
+const { getObjects, getObjectByIdOrName, generateGenderAliases } = require('./utils');
 const { pool } = require('./dbClient');
+const { idOffsets } = require('./constants');
 
-const queries = { Items: 'SELECT * FROM ONLY "Items"' };
+const queries = {
+  Items: `SELECT i.*,
+    CASE
+      WHEN i."Type" = 'Armor' THEN a."Gender"
+      WHEN i."Type" = 'Clothing' THEN c."Gender"
+      ELSE NULL
+    END AS "Gender"
+  FROM ONLY "Items" i
+  LEFT JOIN ONLY "Armors" a ON i."Type" = 'Armor' AND i."Id" = a."Id" + ${idOffsets.Armors}
+  LEFT JOIN ONLY "Clothes" c ON i."Type" = 'Clothing' AND i."Id" = c."Id" + ${idOffsets.Clothings}`
+};
 
 function formatItem(x){
+  const aliases = (x.Type === 'Armor' || x.Type === 'Clothing')
+    ? generateGenderAliases(x.Name, x.Gender)
+    : [];
   return {
     Id: x.Id,
     Name: x.Name,
+    Aliases: aliases.length > 0 ? aliases : undefined,
     Properties: { Type: x.Type, Weight: x.Weight !== null ? Number(x.Weight) : null, Economy: { Value: x.Value !== null ? Number(x.Value) : null } },
     Links: { "$Url": `/${x.Type.toLowerCase()}s/${x.Id % 100000}` }
   };
@@ -23,7 +38,17 @@ async function getItemsByIds(ids) {
   const validIds = ids.filter(id => Number.isInteger(Number(id))).map(Number);
   if (validIds.length === 0) return [];
 
-  const { rows } = await pool.query('SELECT * FROM ONLY "Items" WHERE "Id" = ANY($1)', [validIds]);
+  const sql = `SELECT i.*,
+    CASE
+      WHEN i."Type" = 'Armor' THEN a."Gender"
+      WHEN i."Type" = 'Clothing' THEN c."Gender"
+      ELSE NULL
+    END AS "Gender"
+  FROM ONLY "Items" i
+  LEFT JOIN ONLY "Armors" a ON i."Type" = 'Armor' AND i."Id" = a."Id" + ${idOffsets.Armors}
+  LEFT JOIN ONLY "Clothes" c ON i."Type" = 'Clothing' AND i."Id" = c."Id" + ${idOffsets.Clothings}
+  WHERE i."Id" = ANY($1)`;
+  const { rows } = await pool.query(sql, [validIds]);
   return rows.map(formatItem);
 }
 

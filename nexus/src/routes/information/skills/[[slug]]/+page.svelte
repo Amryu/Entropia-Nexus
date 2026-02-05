@@ -19,7 +19,7 @@
   import DataSection from '$lib/components/wiki/DataSection.svelte';
   import InlineEdit from '$lib/components/wiki/InlineEdit.svelte';
   import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
-  import LocalSearchInput from '$lib/components/wiki/LocalSearchInput.svelte';
+  import SearchInput from '$lib/components/wiki/SearchInput.svelte';
 
   // Edit state management
   import {
@@ -532,7 +532,7 @@
                   {@const missingWeight = entry?.Weight === null || entry?.Weight === undefined || entry?.Weight === ''}
                   <div class="skill-edit-row" class:invalid={missingProfession || missingWeight}>
                     <div class="skill-edit-search" class:invalid={missingProfession}>
-                      <LocalSearchInput
+                      <SearchInput
                         value={entry?.Profession?.Name || ''}
                         options={professionOptions}
                         placeholder="Profession"
@@ -581,7 +581,7 @@
                   {@const missingLevel = entry?.Level === null || entry?.Level === undefined || entry?.Level === ''}
                   <div class="skill-edit-row" class:invalid={missingProfession || missingLevel}>
                     <div class="skill-edit-search" class:invalid={missingProfession}>
-                      <LocalSearchInput
+                      <SearchInput
                         value={entry?.Profession?.Name || ''}
                         options={professionOptions}
                         placeholder="Profession"

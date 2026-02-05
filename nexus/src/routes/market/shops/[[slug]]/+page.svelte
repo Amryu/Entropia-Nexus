@@ -93,6 +93,66 @@
   // Check if shop has Additional area
   $: hasAdditionalArea = activeEntity?.Sections?.some(s => s.Name === SECTION_NAMES[2]) || activeEntity?.HasAdditionalArea || false;
 
+  // Owner search state for shop owner picker
+  let ownerSearchQuery = '';
+  let ownerSearchResults = [];
+  let showOwnerSuggestions = false;
+  let isOwnerSearching = false;
+  let ownerSearchTimeout = null;
+  // Local display name for owner during editing (not saved to entity)
+  let selectedOwnerDisplayName = '';
+
+  // Search users as they type (for shop owner)
+  async function handleOwnerSearchInput() {
+    if (ownerSearchQuery.trim().length < 2) {
+      ownerSearchResults = [];
+      showOwnerSuggestions = false;
+      return;
+    }
+
+    if (ownerSearchTimeout) clearTimeout(ownerSearchTimeout);
+
+    ownerSearchTimeout = setTimeout(async () => {
+      isOwnerSearching = true;
+      try {
+        const response = await fetch(`/api/users/search?q=${encodeURIComponent(ownerSearchQuery.trim())}&limit=10`);
+        const data = await response.json();
+
+        if (response.ok) {
+          ownerSearchResults = data.users || [];
+          showOwnerSuggestions = ownerSearchResults.length > 0;
+        }
+      } catch (err) {
+        console.error('Owner search failed:', err);
+      } finally {
+        isOwnerSearching = false;
+      }
+    }, 300);
+  }
+
+  function selectOwner(u) {
+    // Store only the ID in OwnerId (as the schema expects)
+    updateField('OwnerId', u ? Number(u.id) : null);
+    // Keep display name locally for the editing session
+    selectedOwnerDisplayName = u ? (u.eu_name || u.global_name || '') : '';
+    ownerSearchQuery = '';
+    ownerSearchResults = [];
+    showOwnerSuggestions = false;
+  }
+
+  function clearOwner() {
+    updateField('OwnerId', null);
+    selectedOwnerDisplayName = '';
+    ownerSearchQuery = '';
+    ownerSearchResults = [];
+    showOwnerSuggestions = false;
+  }
+
+  // Get owner display name - use local state in edit mode, or entity's Owner object in view mode
+  $: ownerDisplayName = $editMode
+    ? (selectedOwnerDisplayName || (activeEntity?.OwnerId ? `User #${activeEntity.OwnerId}` : ''))
+    : (activeEntity?.Owner?.Name || (activeEntity?.OwnerId ? `User #${activeEntity.OwnerId}` : 'No Owner'));
+
   // Handle HasAdditionalArea toggle
   function handleAdditionalAreaChange(event) {
     const isChecked = event.detail.value;
@@ -495,7 +555,52 @@
           </div>
           <div class="stat-row">
             <span class="stat-label">Name</span>
-            <span class="stat-value">{activeEntity?.Owner?.Name || 'No Owner'}</span>
+            <span class="stat-value">
+              {#if $editMode}
+                <div class="owner-picker">
+                  {#if activeEntity?.OwnerId || selectedOwnerDisplayName}
+                    <div class="selected-owner-chip">
+                      <span class="owner-name">{ownerDisplayName}</span>
+                      <button type="button" class="chip-remove" on:click={clearOwner}>×</button>
+                    </div>
+                  {:else}
+                    <div class="owner-search-wrapper">
+                      <input
+                        type="text"
+                        class="owner-search-input"
+                        bind:value={ownerSearchQuery}
+                        on:input={handleOwnerSearchInput}
+                        on:focus={() => { if (ownerSearchResults.length > 0) showOwnerSuggestions = true; }}
+                        on:blur={() => { setTimeout(() => showOwnerSuggestions = false, 150); }}
+                        placeholder="Search for owner..."
+                        autocomplete="off"
+                      />
+                      {#if isOwnerSearching}
+                        <span class="search-spinner-small"></span>
+                      {/if}
+                    </div>
+                    {#if showOwnerSuggestions && ownerSearchResults.length > 0}
+                      <div class="owner-suggestions">
+                        {#each ownerSearchResults as result}
+                          <button
+                            type="button"
+                            class="owner-suggestion-item"
+                            on:click={() => selectOwner(result)}
+                          >
+                            <span class="suggestion-name">{result.global_name || result.username}</span>
+                            {#if result.eu_name}
+                              <span class="suggestion-eu">EU: {result.eu_name}</span>
+                            {/if}
+                          </button>
+                        {/each}
+                      </div>
+                    {/if}
+                  {/if}
+                </div>
+              {:else}
+                {ownerDisplayName}
+              {/if}
+            </span>
           </div>
           {#if activeEntity?.MaxGuests != null || $editMode}
             <div class="stat-row">
@@ -1254,6 +1359,124 @@
   .no-selection .hint {
     font-size: 14px;
     margin-top: 16px;
+  }
+
+  /* Owner picker styles */
+  .owner-picker {
+    position: relative;
+    width: 100%;
+  }
+
+  .selected-owner-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    background: var(--bg-color, var(--primary-color));
+    border: 1px solid var(--border-color, #555);
+    border-radius: 4px;
+    font-size: 12px;
+  }
+
+  .owner-name {
+    color: var(--text-color);
+  }
+
+  .chip-remove {
+    background: transparent;
+    border: none;
+    color: var(--text-muted, #999);
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: bold;
+    padding: 0;
+    line-height: 1;
+    width: 18px;
+    height: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: all 0.15s;
+  }
+
+  .chip-remove:hover {
+    color: white;
+    background: var(--error-color, #ef4444);
+  }
+
+  .owner-search-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+
+  .owner-search-input {
+    width: 100%;
+    padding: 6px 10px;
+    font-size: 12px;
+    background: var(--input-bg, var(--secondary-color));
+    border: 1px solid var(--border-color, #555);
+    border-radius: 4px;
+    color: var(--text-color);
+  }
+
+  .search-spinner-small {
+    position: absolute;
+    right: 8px;
+    width: 12px;
+    height: 12px;
+    border: 2px solid var(--border-color, #555);
+    border-top-color: var(--accent-color, #4a9eff);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .owner-suggestions {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    margin-top: 4px;
+    background: var(--secondary-color);
+    border: 1px solid var(--border-color, #555);
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    max-height: 200px;
+    overflow-y: auto;
+    z-index: 100;
+  }
+
+  .owner-suggestion-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    width: 100%;
+    padding: 8px 10px;
+    background: transparent;
+    border: none;
+    text-align: left;
+    cursor: pointer;
+    color: var(--text-color);
+    transition: background-color 0.15s;
+  }
+
+  .owner-suggestion-item:hover {
+    background: var(--hover-color);
+  }
+
+  .suggestion-name {
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .suggestion-eu {
+    font-size: 11px;
+    color: var(--text-muted, #999);
   }
 
   /* Tablet adjustments */

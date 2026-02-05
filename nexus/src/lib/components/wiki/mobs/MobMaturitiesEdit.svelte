@@ -35,6 +35,9 @@
 
   $: isAsteroid = type === 'Asteroid';
 
+  // Track open copy menus (by matIndex-attackIndex)
+  let openCopyMenu = null;
+
   // Track which maturity panels are expanded
   let expandedMaturities = {};
 
@@ -45,6 +48,7 @@
       Properties: {
         Level: null,
         Health: null,
+        Boss: false,
         RegenerationInterval: null,
         RegenerationAmount: null,
         MissChance: null,
@@ -84,6 +88,9 @@
       template.Properties.Attributes = null;
       template.Properties.Defense = null;
       template.Attacks = [];
+    } else {
+      // Add one default attack for non-asteroids
+      template.Attacks = [createAttack(0, maturities)];
     }
 
     return template;
@@ -217,7 +224,97 @@
   function getMaturityLabel(mat, index) {
     return mat.Name || `Maturity ${index + 1}`;
   }
+
+  // Get auto-generated attack name
+  function getAttackName(attackIndex) {
+    return attackIndex < ATTACK_NAMES.length ? ATTACK_NAMES[attackIndex] : `Attack ${attackIndex + 1}`;
+  }
+
+  // Check if an attack has any damage composition data
+  function attackHasCompositionData(attack) {
+    if (!attack?.Damage) return false;
+    return DAMAGE_TYPES.some(dt => attack.Damage[dt.key] != null && attack.Damage[dt.key] !== 0);
+  }
+
+  // Get attack at specific index from a maturity
+  function getAttackAt(matIndex, attackIndex) {
+    return maturities[matIndex]?.Attacks?.[attackIndex] || null;
+  }
+
+  // Ensure a maturity has attacks up to the specified index, creating empty ones as needed
+  function ensureAttacksUpToIndex(maturity, targetIndex) {
+    if (!maturity.Attacks) maturity.Attacks = [];
+    while (maturity.Attacks.length <= targetIndex) {
+      const newIndex = maturity.Attacks.length;
+      maturity.Attacks.push({
+        Name: getAttackName(newIndex),
+        TotalDamage: null,
+        IsAoE: false,
+        Damage: {
+          Stab: null,
+          Cut: null,
+          Impact: null,
+          Penetration: null,
+          Shrapnel: null,
+          Burn: null,
+          Cold: null,
+          Acid: null,
+          Electric: null
+        }
+      });
+    }
+  }
+
+  // Copy damage composition from one attack to another
+  function copyComposition(fromMatIndex, fromAttackIndex, toMatIndex, toAttackIndex) {
+    const sourceAttack = getAttackAt(fromMatIndex, fromAttackIndex);
+    if (!sourceAttack?.Damage) return;
+
+    const newList = [...maturities];
+
+    // Ensure target maturity has attacks up to the target index
+    ensureAttacksUpToIndex(newList[toMatIndex], toAttackIndex);
+
+    const targetAttack = newList[toMatIndex].Attacks[toAttackIndex];
+    targetAttack.Damage = { ...sourceAttack.Damage };
+    updateField(fieldPath, newList);
+    openCopyMenu = null;
+  }
+
+  // Copy composition to all maturities at the same attack index
+  function copyToAll(fromMatIndex, attackIndex) {
+    const sourceAttack = getAttackAt(fromMatIndex, attackIndex);
+    if (!sourceAttack?.Damage) return;
+
+    const newList = [...maturities];
+    for (let i = 0; i < newList.length; i++) {
+      if (i === fromMatIndex) continue;
+
+      // Ensure each maturity has attacks up to the target index
+      ensureAttacksUpToIndex(newList[i], attackIndex);
+
+      const targetAttack = newList[i].Attacks[attackIndex];
+      targetAttack.Damage = { ...sourceAttack.Damage };
+    }
+    updateField(fieldPath, newList);
+    openCopyMenu = null;
+  }
+
+  function toggleCopyMenu(matIndex, attackIndex) {
+    const key = `${matIndex}-${attackIndex}`;
+    if (openCopyMenu === key) {
+      openCopyMenu = null;
+    } else {
+      openCopyMenu = key;
+    }
+  }
+
+  function closeCopyMenu() {
+    openCopyMenu = null;
+  }
 </script>
+
+<svelte:window on:click={closeCopyMenu} />
 
 <div class="maturities-edit">
   <div class="section-header">
@@ -295,6 +392,16 @@
                     min="1"
                   />
                 </label>
+                {#if !isAsteroid}
+                  <label class="field checkbox-field">
+                    <input
+                      type="checkbox"
+                      checked={maturity.Properties?.Boss || false}
+                      on:change={(e) => updateMaturityField(matIndex, 'Properties.Boss', e.target.checked)}
+                    />
+                    <span class="field-label">Boss</span>
+                  </label>
+                {/if}
               </div>
 
               {#if !isAsteroid}
@@ -408,15 +515,15 @@
                 <h5 class="group-title">Attacks ({maturity.Attacks?.length || 0})</h5>
                 <div class="attacks-list">
                   {#each maturity.Attacks || [] as attack, attackIndex}
+                    {@const prevAttack = getAttackAt(matIndex - 1, attackIndex)}
+                    {@const nextAttack = getAttackAt(matIndex + 1, attackIndex)}
+                    {@const hasCurrentData = attackHasCompositionData(attack)}
+                    {@const hasPrevData = attackHasCompositionData(prevAttack)}
+                    {@const hasNextData = attackHasCompositionData(nextAttack)}
+                    {@const showCopyMenu = openCopyMenu === `${matIndex}-${attackIndex}`}
                     <div class="attack-item">
                       <div class="attack-header">
-                        <input
-                          type="text"
-                          class="attack-name-input"
-                          value={attack.Name || ''}
-                          on:input={(e) => updateAttackField(matIndex, attackIndex, 'Name', e.target.value)}
-                          placeholder="Attack name"
-                        />
+                        <span class="attack-name-title">{getAttackName(attackIndex)}</span>
                         <button
                           class="btn-icon danger small"
                           on:click={() => removeAttack(matIndex, attackIndex)}
@@ -445,7 +552,52 @@
                         </label>
                       </div>
                       <div class="attack-composition">
-                        <span class="field-label-mini">Composition %</span>
+                        <div class="composition-header">
+                          <span class="field-label-mini">Composition %</span>
+                          {#if matIndex > 0 || matIndex < maturities.length - 1}
+                            <div class="copy-menu-wrapper">
+                              <button
+                                class="btn-copy"
+                                on:click|stopPropagation={() => toggleCopyMenu(matIndex, attackIndex)}
+                                type="button"
+                              >Copy...</button>
+                              {#if showCopyMenu}
+                                <!-- svelte-ignore a11y-click-events-have-key-events -->
+                                <!-- svelte-ignore a11y-no-static-element-interactions -->
+                                <div class="copy-menu" on:click|stopPropagation>
+                                  {#if matIndex > 0 && hasPrevData}
+                                    <button type="button" on:click={() => copyComposition(matIndex - 1, attackIndex, matIndex, attackIndex)}>
+                                      from Previous
+                                    </button>
+                                  {/if}
+                                  {#if matIndex > 0 && hasCurrentData}
+                                    <button type="button" on:click={() => copyComposition(matIndex, attackIndex, matIndex - 1, attackIndex)}>
+                                      to Previous
+                                    </button>
+                                  {/if}
+                                  {#if matIndex < maturities.length - 1 && hasNextData}
+                                    <button type="button" on:click={() => copyComposition(matIndex + 1, attackIndex, matIndex, attackIndex)}>
+                                      from Next
+                                    </button>
+                                  {/if}
+                                  {#if matIndex < maturities.length - 1 && hasCurrentData}
+                                    <button type="button" on:click={() => copyComposition(matIndex, attackIndex, matIndex + 1, attackIndex)}>
+                                      to Next
+                                    </button>
+                                  {/if}
+                                  {#if hasCurrentData && maturities.length > 1}
+                                    <button type="button" on:click={() => copyToAll(matIndex, attackIndex)}>
+                                      to All
+                                    </button>
+                                  {/if}
+                                  {#if !hasPrevData && !hasNextData && !hasCurrentData}
+                                    <span class="copy-menu-empty">No data to copy</span>
+                                  {/if}
+                                </div>
+                              {/if}
+                            </div>
+                          {/if}
+                        </div>
                         <div class="composition-grid">
                           {#each DAMAGE_TYPES as dmgType}
                             <label class="field compact">
@@ -510,7 +662,6 @@
     background-color: var(--bg-color, var(--primary-color));
     border: 1px solid var(--border-color, #555);
     border-radius: 4px;
-    overflow: hidden;
   }
 
   .maturity-item.expanded {
@@ -706,17 +857,11 @@
     gap: 6px;
   }
 
-  .attack-name-input {
+  .attack-name-title {
     flex: 1;
-    padding: 4px 6px;
     font-size: 12px;
-    font-weight: 500;
-    background-color: var(--input-bg, var(--bg-color));
-    border: 1px solid var(--border-color, #555);
-    border-radius: 3px;
+    font-weight: 600;
     color: var(--text-color);
-    height: 26px;
-    box-sizing: border-box;
   }
 
   .attack-fields {
@@ -741,6 +886,72 @@
     display: flex;
     flex-direction: column;
     gap: 3px;
+  }
+
+  .composition-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .copy-menu-wrapper {
+    position: relative;
+  }
+
+  .btn-copy {
+    padding: 2px 6px;
+    font-size: 10px;
+    background: transparent;
+    border: 1px solid var(--border-color, #555);
+    border-radius: 3px;
+    color: var(--text-muted, #999);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .btn-copy:hover {
+    border-color: var(--accent-color, #4a9eff);
+    color: var(--accent-color, #4a9eff);
+  }
+
+  .copy-menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 2px;
+    background: var(--secondary-color);
+    border: 1px solid var(--border-color, #555);
+    border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    z-index: 100;
+    min-width: 120px;
+    overflow: hidden;
+  }
+
+  .copy-menu button {
+    display: block;
+    width: 100%;
+    padding: 6px 10px;
+    font-size: 11px;
+    text-align: left;
+    background: none;
+    border: none;
+    color: var(--text-color);
+    cursor: pointer;
+    transition: background-color 0.15s;
+  }
+
+  .copy-menu button:hover {
+    background-color: var(--hover-color);
+  }
+
+  .copy-menu-empty {
+    display: block;
+    padding: 6px 10px;
+    font-size: 11px;
+    color: var(--text-muted, #999);
+    font-style: italic;
   }
 
   .composition-grid {

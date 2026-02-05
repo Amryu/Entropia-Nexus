@@ -19,7 +19,7 @@
   import DataSection from '$lib/components/wiki/DataSection.svelte';
   import InlineEdit from '$lib/components/wiki/InlineEdit.svelte';
   import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
-  import ItemSearchInput from '$lib/components/wiki/ItemSearchInput.svelte';
+  import SearchInput from '$lib/components/wiki/SearchInput.svelte';
   import DefenseGridEdit from '$lib/components/wiki/DefenseGridEdit.svelte';
 
   // Legacy components for data display
@@ -548,9 +548,11 @@
             <span class="stat-label">Fuel</span>
             <span class="stat-value">
               {#if $editMode}
-                <ItemSearchInput
+                <SearchInput
                   value={activeVehicle?.Fuel?.Name || ''}
                   placeholder="Search fuel..."
+                  apiEndpoint="/search/items"
+                  displayFn={(item) => item?.Name || ''}
                   allowedTypes={['Material']}
                   on:change={(e) => {
                     const value = e.detail?.value || '';

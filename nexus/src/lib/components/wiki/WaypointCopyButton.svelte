@@ -152,6 +152,11 @@
     font-size: 11px;
   }
 
+  /* Hide "Copied!" text in compact mode - just show checkmark */
+  .waypoint-btn.compact .overlay-text {
+    display: none;
+  }
+
   .waypoint-text {
     white-space: nowrap;
     overflow: hidden;

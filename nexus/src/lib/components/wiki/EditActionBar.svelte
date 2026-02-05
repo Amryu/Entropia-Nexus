@@ -6,6 +6,7 @@
 <script>
   // @ts-nocheck
   import { goto, invalidateAll } from '$app/navigation';
+  import { browser } from '$app/environment';
   import {
     editMode,
     isCreateMode,
@@ -102,7 +103,7 @@
 
         if (response?.id) {
           changeMetadata.update(m => ({ ...m, id: response.id }));
-          if ($isCreateMode) {
+          if ($isCreateMode && browser) {
             await invalidateAll();
             await goto(`${window.location.pathname}?mode=create&changeId=${response.id}`, {
               replaceState: true,
@@ -175,7 +176,7 @@
 
         if (response?.id) {
           changeMetadata.update(m => ({ ...m, id: response.id }));
-          if ($isCreateMode) {
+          if ($isCreateMode && browser) {
             await invalidateAll();
             await goto(`${window.location.pathname}?mode=create&changeId=${response.id}`, {
               replaceState: true,

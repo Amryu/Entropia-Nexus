@@ -143,6 +143,7 @@ Collapsible content section with icon and title.
 | `expanded` | `boolean` | `true` | Initial expanded state |
 | `collapsible` | `boolean` | `true` | Whether section can collapse |
 | `subtitle` | `string` | `''` | Secondary text |
+| `allowOverflow` | `boolean` | `false` | Allow content to overflow (for dropdowns) |
 
 **Usage:**
 ```svelte
@@ -151,6 +152,18 @@ Collapsible content section with icon and title.
   <WeaponCalculator {weapon} />
 </DataSection>
 ```
+
+**Dropdown Overflow Pattern:**
+
+When a DataSection contains a dropdown (like SearchableSelect) that needs to overflow the container, use the `allowOverflow` prop. Typically this should only be enabled in edit mode:
+
+```svelte
+<DataSection title="Facilities" allowOverflow={$editMode}>
+  <SearchableSelect ... />
+</DataSection>
+```
+
+This sets `overflow: visible` on the section, allowing dropdowns to display properly without being clipped.
 
 ---
 

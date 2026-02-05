@@ -93,6 +93,7 @@
 
   import { writable } from 'svelte/store';
   import { onMount, onDestroy } from 'svelte';
+  import { browser } from '$app/environment';
   import Tooltip from './Tooltip.svelte';
   import { tooltip } from './Tooltip';
   import { navigate } from '$lib/util';
@@ -108,6 +109,13 @@
   export let selected;
   export let hovered;
   let filteredLocations = [];
+
+  // Layer visibility toggles
+  let showTeleporters = true;
+  let showLandAreas = true;
+  let showMobAreas = false;  // Off by default - there are many mob areas
+  let showPvpAreas = true;
+  let showOtherAreas = true;
 
   const mapLoadedStore = writable(false);
 
@@ -173,6 +181,7 @@
     {
       label: 'Copy Waypoint',
       action: (_, position) => {
+        if (!browser) return;
         let canvasCoords = windowToCanvasCoords(position.x, position.y);
         let entropiaCoords = canvasCoordsToEntropiaCoords(canvasCoords.x, canvasCoords.y);
         navigator.clipboard.writeText(`/wp ${getWaypoint(planet.Properties.TechnicalName ?? planet.Name, entropiaCoords.x.toFixed(0), entropiaCoords.y.toFixed(0), 100, 'Waypoint')}`)
@@ -189,8 +198,33 @@
 
 
 
-  $: if (locations) {
-    filteredLocations = locations;
+  // Filter locations based on layer toggles
+  // Note: explicitly reference toggle vars before filter to ensure Svelte tracks them as dependencies
+  $: {
+    // Touch all toggle variables to establish reactive dependencies
+    const _deps = [showTeleporters, showLandAreas, showMobAreas, showPvpAreas, showOtherAreas, selected];
+    filteredLocations = locations ? locations.filter(loc => {
+      // Always show the selected location regardless of layer toggles
+      if (selected && loc.Id === selected.Id) return true;
+
+      const type = loc.Properties?.Type;
+      const areaType = loc.Properties?.AreaType || type;
+
+      // Teleporters
+      if (type === 'Teleporter') return showTeleporters;
+
+      // Land Areas
+      if (areaType === 'LandArea') return showLandAreas;
+
+      // Mob Areas (creatures)
+      if (areaType === 'MobArea') return showMobAreas;
+
+      // PvP Areas (PvpArea and PvpLootArea)
+      if (areaType === 'PvpArea' || areaType === 'PvpLootArea') return showPvpAreas;
+
+      // Other areas (Zone, Event, City, Estate, etc.)
+      return showOtherAreas;
+    }) : [];
   }
 
 
@@ -203,7 +237,7 @@
     return 5;
   }
 
-  export async function focusOnLocation(location, focusZoom = null) {
+  export async function focusOnLocation(location, focusZoom = null, immediate = false) {
     if (typeof window === 'undefined' || !location || !location.Properties?.Coordinates) {
       return;
     }
@@ -213,7 +247,19 @@
     const baseZoom = 1 / (planet.Properties.Map.Width * 0.35);
     const requestedZoom = focusZoom ?? baseZoom;
     const clampedZoom = Math.max(getMinZoom(), Math.min(getMaxZoom(), requestedZoom));
-    moveAndZoomTo(target, clampedZoom, 350);
+
+    // Only zoom in if currently zoomed out too far, never zoom out
+    const finalZoom = Math.max(zoom, clampedZoom);
+
+    if (immediate) {
+      // Immediate move and zoom (no animation)
+      mapCenterPos = { x: target.x, y: target.y };
+      zoom = finalZoom;
+      targetZoom = finalZoom;
+      clampCoordinates();
+    } else {
+      moveAndZoomTo(target, finalZoom, 350);
+    }
   }
 
   // --- React to selection from outside (e.g. MapList) ---
@@ -338,19 +384,41 @@
   function onWheel(event) {
     event.preventDefault();
 
+    // Get mouse position in canvas coordinates
+    const canvasCoords = windowToCanvasCoords(event.clientX, event.clientY);
+
+    // Get image coordinates under mouse before zoom
+    const imageCoordsBefore = canvasCoordsToImageCoords(canvasCoords.x, canvasCoords.y);
+
     // Calculate the new zoom level
     const delta = Math.sign(event.deltaY);
+    const oldZoom = zoom;
+    let newZoom = oldZoom;
     if (delta < 0) {
-      targetZoom *= 11 / 10; // increase zoom
+      newZoom *= 11 / 10; // increase zoom
     } else {
-      targetZoom *= 10 / 11; // decrease zoom
+      newZoom *= 10 / 11; // decrease zoom
     }
 
     // Clamp the zoom level to a minimum and maximum value
-    targetZoom = Math.max(getMinZoom(), Math.min(getMaxZoom(), targetZoom));
+    newZoom = Math.max(getMinZoom(), Math.min(getMaxZoom(), newZoom));
 
-  // removed: offscreenCacheValid = false;
-  zoomTo(targetZoom);
+    // Calculate position adjustment to keep the image point under mouse stationary
+    const zoomRatio = newZoom / oldZoom;
+
+    // Calculate the offset from center to mouse in image coords
+    const offsetX = imageCoordsBefore.x - mapCenterPos.x;
+    const offsetY = imageCoordsBefore.y - mapCenterPos.y;
+
+    // After zoom, the same canvas point should map to the same image point
+    mapCenterPos.x = imageCoordsBefore.x - offsetX / zoomRatio;
+    mapCenterPos.y = imageCoordsBefore.y - offsetY / zoomRatio;
+
+    // Set zoom directly (no animation) for smooth feel
+    zoom = newZoom;
+    targetZoom = newZoom;
+
+    clampCoordinates();
   }
 
   function getTouchDistance(touches) {
@@ -595,11 +663,12 @@
   function initCanvas() {
     canvasBounds = canvasElement.getBoundingClientRect();
 
-    canvasElement.width = canvasBounds.width * window.devicePixelRatio;
-    canvasElement.height = canvasBounds.height * window.devicePixelRatio;
+    const dpr = typeof window !== 'undefined' ? window.devicePixelRatio : 1;
+    canvasElement.width = canvasBounds.width * dpr;
+    canvasElement.height = canvasBounds.height * dpr;
 
     ctx = canvasElement.getContext('2d');
-    ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+    ctx.scale(dpr, dpr);
 
     if (drawAnimationId != null) {
       cancelAnimationFrame(drawAnimationId);
@@ -643,7 +712,20 @@
     // Grid rendering disabled for maps rework.
 
     // Draw all shapes (no spatial grid, no offscreen cache)
+    // Draw areas first (below), then point locations on top
+    const isAreaType = (loc) => ['Circle', 'Rectangle', 'Polygon'].includes(loc.Properties?.Shape);
+
+    // First pass: draw areas (they go underneath)
     for (const loc of filteredLocations) {
+      if (!isAreaType(loc)) continue;
+      const isHovered = !!hovered && !!loc && hovered.Id === loc.Id;
+      const isSelected = !!selected && !!loc && selected.Id === loc.Id;
+      drawShape(ctx, loc, isHovered, isSelected);
+    }
+
+    // Second pass: draw point locations (they go on top)
+    for (const loc of filteredLocations) {
+      if (isAreaType(loc)) continue;
       const isHovered = !!hovered && !!loc && hovered.Id === loc.Id;
       const isSelected = !!selected && !!loc && selected.Id === loc.Id;
       drawShape(ctx, loc, isHovered, isSelected);
@@ -678,9 +760,10 @@
 
   // --- Hit Detection ---
   function getShapeAtCanvasPos(x, y, buffer = 0) {
-    // Check all filteredLocations for hit, no duplicate filtering
-    for (let i = filteredLocations.length - 1; i >= 0; i--) {
-      const loc = filteredLocations[i];
+    const isAreaType = (loc) => ['Circle', 'Rectangle', 'Polygon'].includes(loc.Properties?.Shape);
+
+    // Helper to check if point hits a location
+    const checkHit = (loc, i) => {
       const type = loc.Properties.Shape;
       if (type === 'Circle') {
         const center = entropiaCoordsToCanvasCoords(loc.Properties.Data.x, loc.Properties.Data.y);
@@ -716,7 +799,25 @@
           if (x >= pt.x - size && x <= pt.x + size && y >= pt.y - size && y <= pt.y + size) return { type: 'location', shape: loc, index: i };
         }
       }
+      return null;
+    };
+
+    // First pass: check point locations (higher click priority - they render on top)
+    for (let i = filteredLocations.length - 1; i >= 0; i--) {
+      const loc = filteredLocations[i];
+      if (isAreaType(loc)) continue;
+      const hit = checkHit(loc, i);
+      if (hit) return hit;
     }
+
+    // Second pass: check areas (lower click priority - they render below)
+    for (let i = filteredLocations.length - 1; i >= 0; i--) {
+      const loc = filteredLocations[i];
+      if (!isAreaType(loc)) continue;
+      const hit = checkHit(loc, i);
+      if (hit) return hit;
+    }
+
     return null;
   }
 
@@ -762,8 +863,11 @@
   }
 
   function getAllShapesAtCanvasPos(x, y, buffer = 0) {
-    // Returns all shapes (areas and locations) at the given canvas position, topmost first
-    const found = [];
+    // Returns all shapes at the given canvas position, with point locations first (topmost), then areas
+    const isAreaType = (loc) => ['Circle', 'Rectangle', 'Polygon'].includes(loc.Properties?.Shape);
+    const foundLocations = [];
+    const foundAreas = [];
+
     for (let i = filteredLocations.length - 1; i >= 0; i--) {
       const loc = filteredLocations[i];
       const type = loc.Properties.Shape;
@@ -772,7 +876,7 @@
         const outer = entropiaCoordsToCanvasCoords(loc.Properties.Data.x + loc.Properties.Data.radius, loc.Properties.Data.y);
         const radius = outer.x - center.x + buffer;
         const dx = x - center.x, dy = y - center.y;
-        if (dx * dx + dy * dy <= radius * radius) found.push({ type: 'area', shape: loc });
+        if (dx * dx + dy * dy <= radius * radius) foundAreas.push({ type: 'area', shape: loc });
       } else if (type === 'Rectangle') {
         const start = entropiaCoordsToCanvasCoords(loc.Properties.Data.x, loc.Properties.Data.y);
         const end = entropiaCoordsToCanvasCoords(loc.Properties.Data.x + loc.Properties.Data.width, loc.Properties.Data.y + loc.Properties.Data.height);
@@ -783,26 +887,27 @@
           x <= start.x + width + buffer &&
           y >= start.y - height - buffer &&
           y <= start.y + buffer
-        ) found.push({ type: 'area', shape: loc });
+        ) foundAreas.push({ type: 'area', shape: loc });
       } else if (type === 'Polygon') {
         const verts = (loc.Properties.Data.vertices ?? []).reduce((result, value, idx, arr) => {
           if (idx % 2 === 0) result.push([value, arr[idx + 1]]);
           return result;
         }, []).map(v => entropiaCoordsToCanvasCoords(v[0], v[1]));
-        if (pointInPolygon({ x, y }, verts)) found.push({ type: 'area', shape: loc });
+        if (pointInPolygon({ x, y }, verts)) foundAreas.push({ type: 'area', shape: loc });
       } else {
         const pt = entropiaCoordsToCanvasCoords(loc.Properties.Coordinates.Longitude, loc.Properties.Coordinates.Latitude);
         if (loc.Properties.Type === 'Teleporter') {
           const dx = x - pt.x, dy = y - pt.y;
           const radius = 14 + buffer;
-          if (dx * dx + dy * dy <= radius * radius) found.push({ type: 'location', shape: loc });
+          if (dx * dx + dy * dy <= radius * radius) foundLocations.push({ type: 'location', shape: loc });
         } else {
           const size = 6 + buffer;
-          if (x >= pt.x - size && x <= pt.x + size && y >= pt.y - size && y <= pt.y + size) found.push({ type: 'location', shape: loc });
+          if (x >= pt.x - size && x <= pt.x + size && y >= pt.y - size && y <= pt.y + size) foundLocations.push({ type: 'location', shape: loc });
         }
       }
     }
-    return found;
+    // Return point locations first (higher priority), then areas
+    return [...foundLocations, ...foundAreas];
   }
 
   function getNearestShapesAtCanvasPos(x, y, buffer = 0) {
@@ -853,8 +958,9 @@
       }
     }
     if (candidates.length === 0) return [];
+    // Sort by priority first (locations = 0 before areas = 2), then by distance
     return candidates
-      .sort((a, b) => (a.dist - b.dist))
+      .sort((a, b) => (a.priority - b.priority) || (a.dist - b.dist))
       .map(({ type, shape }) => ({ type, shape }));
   }
 
@@ -1084,6 +1190,13 @@
   let mapContextMenuObject = { contextMenu: null, payload: null }
 
   $: mapContextMenuObject = { contextMenu: mapContextMenuElement, payload: null }
+
+  // Layer toggle functions
+  function toggleTeleporters() { showTeleporters = !showTeleporters; }
+  function toggleLandAreas() { showLandAreas = !showLandAreas; }
+  function toggleMobAreas() { showMobAreas = !showMobAreas; }
+  function togglePvpAreas() { showPvpAreas = !showPvpAreas; }
+  function toggleOtherAreas() { showOtherAreas = !showOtherAreas; }
 </script>
 
 <style>
@@ -1110,6 +1223,75 @@
     0%, 100% { transform: 1; }
     50% { transform: 1.5; }
   }
+
+  /* Layer toggles (bottom-left, desktop only) */
+  .layer-toggles {
+    position: absolute;
+    bottom: 16px;
+    left: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    z-index: 10;
+  }
+
+  .layer-btn {
+    width: 40px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    background: rgba(0, 0, 0, 0.75);
+    border: 1px solid var(--border-color, #555);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s;
+    opacity: 0.5;
+  }
+
+  .layer-btn.active {
+    opacity: 1;
+    border-color: var(--accent-color, #4a9eff);
+  }
+
+  .layer-btn:hover {
+    opacity: 1;
+    background: rgba(0, 0, 0, 0.9);
+  }
+
+  .layer-icon {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  .tp-icon {
+    color: aqua;
+  }
+
+  .la-icon {
+    color: #4ade80;
+  }
+
+  .ma-icon {
+    color: #facc15;
+  }
+
+  .pvp-icon {
+    color: #ef4444;
+  }
+
+  .other-icon {
+    color: #a78bfa;
+  }
+
+  /* Hide layer toggles on mobile */
+  @media (max-width: 768px) {
+    .layer-toggles {
+      display: none;
+    }
+  }
 </style>
 
 <Tooltip
@@ -1129,4 +1311,48 @@
 <div class="map-container">
   <canvas use:contextmenu={mapContextMenuObject} bind:this={canvasElement} on:mousedown={onMouseDown} on:mousemove={onMouseMove} on:mouseup={onMouseUp} on:mouseleave={onMouseUp} on:wheel={onWheel}>
   </canvas>
+
+  <!-- Layer toggles (bottom-left, desktop only) -->
+  <div class="layer-toggles">
+    <button
+      class="layer-btn"
+      class:active={showTeleporters}
+      on:click={toggleTeleporters}
+      title="Toggle Teleporters"
+    >
+      <span class="layer-icon tp-icon">TP</span>
+    </button>
+    <button
+      class="layer-btn"
+      class:active={showLandAreas}
+      on:click={toggleLandAreas}
+      title="Toggle Land Areas"
+    >
+      <span class="layer-icon la-icon">LA</span>
+    </button>
+    <button
+      class="layer-btn"
+      class:active={showMobAreas}
+      on:click={toggleMobAreas}
+      title="Toggle Mob Areas"
+    >
+      <span class="layer-icon ma-icon">MA</span>
+    </button>
+    <button
+      class="layer-btn"
+      class:active={showPvpAreas}
+      on:click={togglePvpAreas}
+      title="Toggle PvP Areas"
+    >
+      <span class="layer-icon pvp-icon">PVP</span>
+    </button>
+    <button
+      class="layer-btn"
+      class:active={showOtherAreas}
+      on:click={toggleOtherAreas}
+      title="Toggle Other Areas"
+    >
+      <span class="layer-icon other-icon">OTH</span>
+    </button>
+  </div>
 </div>

@@ -104,6 +104,11 @@ export async function PUT({ params, request, locals }) {
   }
 }
 
+// POST handler for sendBeacon save-on-close (sendBeacon only supports POST)
+export async function POST({ params, request, locals }) {
+  return PUT({ params, request, locals });
+}
+
 export async function DELETE({ params, locals }) {
   const user = locals.session?.user;
 

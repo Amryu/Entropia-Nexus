@@ -9,33 +9,45 @@
     {
       name: 'Mobs',
       href: '/information/mobs',
-      icon: '🦎',
+      icon: 'ðŸ¦Ž',
       description: 'Creature database with maturities, spawns, loots, and codex calculator'
+    },
+    {
+      name: 'Missions',
+      href: '/information/missions',
+      icon: 'M',
+      description: 'Mission and mission chain reference data with steps and rewards'
     },
     {
       name: 'Professions',
       href: '/information/professions',
-      icon: '📊',
+      icon: 'ðŸ“Š',
       description: 'Character profession skill trees and level requirements'
     },
     {
       name: 'Skills',
       href: '/information/skills',
-      icon: '📚',
+      icon: 'ðŸ“š',
       description: 'Individual character skills with profession contributions'
     },
     {
       name: 'Vendors',
       href: '/information/vendors',
-      icon: '🏪',
+      icon: 'ðŸª',
       description: 'NPC trade terminal vendors with locations and offers'
+    },
+    {
+      name: 'Locations',
+      href: '/information/locations',
+      icon: 'L',
+      description: 'Teleporters, areas, estates, outposts, and other locations'
     }
   ];
 </script>
 
 <svelte:head>
   <title>Information - Entropia Nexus</title>
-  <meta name="description" content="Browse Entropia Universe reference data: mobs, professions, skills, and vendors." />
+  <meta name="description" content="Browse Entropia Universe reference data: missions, mobs, professions, skills, and vendors." />
   <link rel="canonical" href="https://entropianexus.com/information" />
 </svelte:head>
 
@@ -53,7 +65,7 @@
           <h2 class="category-name">{category.name}</h2>
           <p class="category-description">{category.description}</p>
         </div>
-        <span class="category-arrow">→</span>
+        <span class="category-arrow">â†’</span>
       </a>
     {/each}
   </div>
@@ -187,3 +199,6 @@
     }
   }
 </style>
+
+
+

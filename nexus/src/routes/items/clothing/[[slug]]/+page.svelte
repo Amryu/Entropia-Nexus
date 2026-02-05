@@ -27,7 +27,7 @@
   import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
   import EffectsEditor from '$lib/components/wiki/EffectsEditor.svelte';
   import SetEffectsEditor from '$lib/components/wiki/SetEffectsEditor.svelte';
-  import LocalSearchInput from '$lib/components/wiki/LocalSearchInput.svelte';
+  import SearchInput from '$lib/components/wiki/SearchInput.svelte';
 
   // Legacy components for data display
   import Acquisition from '$lib/components/Acquisition.svelte';
@@ -399,7 +399,7 @@
             <span class="stat-label">Type</span>
             <span class="stat-value">
               {#if $editMode}
-                <LocalSearchInput
+                <SearchInput
                   value={activeClothing?.Properties?.Type || ''}
                   placeholder="Search type..."
                   options={typeOptions}
@@ -415,7 +415,7 @@
             <span class="stat-label">Slot</span>
             <span class="stat-value">
               {#if $editMode}
-                <LocalSearchInput
+                <SearchInput
                   value={activeClothing?.Properties?.Slot || ''}
                   placeholder="Search slot..."
                   options={slotOptions}
@@ -491,7 +491,7 @@
               <div class="stat-row">
                 <span class="stat-label">Equipment Set</span>
                 <span class="stat-value">
-                  <LocalSearchInput
+                  <SearchInput
                     value={activeClothing?.Set?.Name || ''}
                     placeholder="Search equipment set..."
                     options={equipsetsList.map(s => s.Name)}

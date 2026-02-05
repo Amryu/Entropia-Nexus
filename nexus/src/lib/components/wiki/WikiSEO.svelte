@@ -180,7 +180,7 @@
             }
           })
         });
-      } else if (type === 'mob') {
+      } else if (type === 'mob' || type === 'mission' || type === 'mission-chain') {
         // Article schema for informational content
         schemas.push({
           '@context': 'https://schema.org',
