@@ -1742,10 +1742,11 @@ async function applyMobSpawnChanges(client, mobId, spawns) {
 
   // Get existing spawns and areas for this mob
   const existingSpawns = await client.query(`
-  SELECT DISTINCT "MobSpawns"."AreaId" AS "AreaId", "Areas"."Shape", "Areas"."Data", "Areas"."Altitude"
+  SELECT DISTINCT "MobSpawns"."LocationId", "Areas"."Shape", "Areas"."Data", "Locations"."Altitude"
   FROM "MobSpawns"
-  INNER JOIN "Areas" ON "MobSpawns"."AreaId" = "Areas"."Id"
-  INNER JOIN "MobSpawnMaturities" ON "MobSpawns"."AreaId" = "MobSpawnMaturities"."AreaId"
+  INNER JOIN "Locations" ON "MobSpawns"."LocationId" = "Locations"."Id"
+  INNER JOIN "Areas" ON "MobSpawns"."LocationId" = "Areas"."LocationId"
+  INNER JOIN "MobSpawnMaturities" ON "MobSpawns"."LocationId" = "MobSpawnMaturities"."LocationId"
   INNER JOIN "MobMaturities" ON "MobSpawnMaturities"."MaturityId" = "MobMaturities"."Id"
     WHERE "MobMaturities"."MobId" = $1
   `, [mobId]);
@@ -1794,14 +1795,14 @@ async function applyMobSpawnChanges(client, mobId, spawns) {
       let areaId;
 
       if (matchingArea) {
-        // Use existing area
-        areaId = matchingArea.AreaId;
+        // Use existing location
+        areaId = matchingArea.LocationId;
 
         // Update the spawn properties that might have changed
         await client.query(`
           UPDATE "MobSpawns"
           SET "Density" = $1, "IsShared" = $2, "IsEvent" = $3, "Name" = $4, "Description" = $5
-          WHERE "AreaId" = $6
+          WHERE "LocationId" = $6
         `, [
           spawn.Properties.Density || 2,
           spawn.Properties.IsShared ? 1 : 0,
@@ -1811,30 +1812,43 @@ async function applyMobSpawnChanges(client, mobId, spawns) {
           areaId
         ]);
       } else {
-        // Use derivedName for Area name when creating a new Area
+        // Use derivedName for Location name when creating a new Location
         const areaName = derivedName;
 
-        // Create new Area
-        const areaResult = await client.query(`
-          INSERT INTO "Areas" ("Name", "Type", "Shape", "Data", "Altitude", "PlanetId") 
-          VALUES ($1, $2, $3, $4, $5, $6)
+        // Create new Location first
+        const locationResult = await client.query(`
+          INSERT INTO "Locations" ("Name", "Type", "Altitude", "PlanetId")
+          VALUES ($1, $2, $3, $4)
           RETURNING "Id"
         `, [
           areaName,
-          'MobArea',
-          shape,
-          data,
+          'Area',
           altitude,
           planetId
         ]);
 
-        areaId = areaResult.rows[0].Id;
+        areaId = locationResult.rows[0].Id;
 
-        // Create new MobSpawn (AreaId is the PK and FK to Areas)
+        // Create Area extension record
         await client.query(`
-          INSERT INTO "MobSpawns" ("AreaId", "Density", "IsShared", "IsEvent", "Name", "Description")
+          INSERT INTO "Areas" ("LocationId", "Type", "Shape", "Data")
+          VALUES ($1, $2, $3, $4)
+          ON CONFLICT ("LocationId") DO UPDATE SET
+            "Type" = EXCLUDED."Type",
+            "Shape" = EXCLUDED."Shape",
+            "Data" = EXCLUDED."Data"
+        `, [
+          areaId,
+          'MobArea',
+          shape,
+          data
+        ]);
+
+        // Create new MobSpawn (LocationId is the PK and FK to Locations)
+        await client.query(`
+          INSERT INTO "MobSpawns" ("LocationId", "Density", "IsShared", "IsEvent", "Name", "Description")
           VALUES ($1, $2, $3, $4, $5, $6)
-          ON CONFLICT ("AreaId") DO UPDATE SET
+          ON CONFLICT ("LocationId") DO UPDATE SET
             "Density" = EXCLUDED."Density",
             "IsShared" = EXCLUDED."IsShared",
             "IsEvent" = EXCLUDED."IsEvent",
@@ -1850,7 +1864,7 @@ async function applyMobSpawnChanges(client, mobId, spawns) {
         ]);
       }
 
-      return { ...spawn, AreaId: areaId };
+      return { ...spawn, LocationId: areaId };
     } catch (error) {
       console.error(`Error processing spawn ${index}:`, error, spawn);
       return null;
@@ -1859,15 +1873,17 @@ async function applyMobSpawnChanges(client, mobId, spawns) {
 
   const validSpawns = processedSpawns.filter(s => s !== null);
 
-  // Delete spawns and areas that are no longer in the new data
-  const usedAreaIds = validSpawns.map(s => s.AreaId);
-  const areasToDelete = existingSpawns.rows.filter(existing => 
-    !usedAreaIds.includes(existing.AreaId)
+  // Delete spawns and locations that are no longer in the new data
+  const usedLocationIds = validSpawns.map(s => s.LocationId);
+  const locationsToDelete = existingSpawns.rows.filter(existing =>
+    !usedLocationIds.includes(existing.LocationId)
   );
 
-  for (const areaToDelete of areasToDelete) {
-    // Only delete areas - cascading will handle MobSpawns and MobSpawnMaturities
-    await client.query(`DELETE FROM "Areas" WHERE "Id" = $1`, [areaToDelete.AreaId]);
+  for (const locationToDelete of locationsToDelete) {
+    // Delete in order: MobSpawnMaturities, MobSpawns, then Locations (which cascades to Areas)
+    await client.query(`DELETE FROM "MobSpawnMaturities" WHERE "LocationId" = $1`, [locationToDelete.LocationId]);
+    await client.query(`DELETE FROM "MobSpawns" WHERE "LocationId" = $1`, [locationToDelete.LocationId]);
+    await client.query(`DELETE FROM "Locations" WHERE "Id" = $1`, [locationToDelete.LocationId]);
   }
 
   // Handle spawn maturities for each spawn
@@ -1901,18 +1917,18 @@ async function applyMobSpawnChanges(client, mobId, spawns) {
     // Delete old maturities and insert new ones
     if (validMaturities.length === 0) {
       // Explicitly clear all maturities if none are valid/mapped
-      await client.query(`DELETE FROM "MobSpawnMaturities" WHERE "AreaId" = $1`, [spawn.AreaId]);
+      await client.query(`DELETE FROM "MobSpawnMaturities" WHERE "LocationId" = $1`, [spawn.LocationId]);
       return;
     }
     await Promise.all([
-      client.query(`DELETE FROM "MobSpawnMaturities" WHERE "AreaId" = $1 AND "MaturityId" NOT IN (SELECT * FROM unnest($2::int[]))`, 
-        [spawn.AreaId, validMaturities.map(m => m.MaturityId)]),
-      ...validMaturities.map(maturity => 
+      client.query(`DELETE FROM "MobSpawnMaturities" WHERE "LocationId" = $1 AND "MaturityId" NOT IN (SELECT * FROM unnest($2::int[]))`,
+        [spawn.LocationId, validMaturities.map(m => m.MaturityId)]),
+      ...validMaturities.map(maturity =>
         client.query(`
-          INSERT INTO "MobSpawnMaturities" ("AreaId", "MaturityId", "IsRare")
+          INSERT INTO "MobSpawnMaturities" ("LocationId", "MaturityId", "IsRare")
           VALUES ($1, $2, $3)
-          ON CONFLICT ("AreaId", "MaturityId") DO UPDATE SET "IsRare" = $3
-        `, [spawn.AreaId, maturity.MaturityId, maturity.IsRare ? 1 : 0])
+          ON CONFLICT ("LocationId", "MaturityId") DO UPDATE SET "IsRare" = $3
+        `, [spawn.LocationId, maturity.MaturityId, maturity.IsRare ? 1 : 0])
       )
     ]);
   }));
