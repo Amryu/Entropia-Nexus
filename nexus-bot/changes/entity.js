@@ -1816,13 +1816,17 @@ async function applyMobSpawnChanges(client, mobId, spawns) {
         const areaName = derivedName;
 
         // Create new Location first
+        const longitude = spawn.Properties.Coordinates?.Longitude || null;
+        const latitude = spawn.Properties.Coordinates?.Latitude || null;
         const locationResult = await client.query(`
-          INSERT INTO "Locations" ("Name", "Type", "Altitude", "PlanetId")
-          VALUES ($1, $2, $3, $4)
+          INSERT INTO "Locations" ("Name", "Type", "Longitude", "Latitude", "Altitude", "PlanetId")
+          VALUES ($1, $2, $3, $4, $5, $6)
           RETURNING "Id"
         `, [
           areaName,
           'Area',
+          longitude,
+          latitude,
           altitude,
           planetId
         ]);
