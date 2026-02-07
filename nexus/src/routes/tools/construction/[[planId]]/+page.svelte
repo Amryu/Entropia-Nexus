@@ -216,16 +216,22 @@
   }
 
   function getStepTotalCost(step) {
-    if (!step.owned) return { ttCost: 0, muCost: 0 };
-    let ttCost = 0;
-    let muCost = 0;
-    for (const mat of step.materials) {
-      const matTT = (mat.item?.Properties?.Economy?.MaxTT || 0) * mat.totalAmount;
-      const mu = getMarkup(`mat:${mat.item?.Name}`);
-      ttCost += matTT;
-      muCost += matTT * mu / 100;
+    if (step.owned) {
+      let ttCost = 0;
+      let muCost = 0;
+      for (const mat of step.materials) {
+        const matTT = (mat.item?.Properties?.Economy?.MaxTT || 0) * mat.totalAmount;
+        const mu = getMarkup(`mat:${mat.item?.Name}`);
+        ttCost += matTT;
+        muCost += matTT * mu / 100;
+      }
+      return { ttCost, muCost };
+    } else {
+      const product = step.blueprint.Product;
+      const productTT = (product?.Properties?.Economy?.MaxTT || 0) * step.quantityWanted;
+      const mu = getMarkup(`prod:${product?.Name || step.blueprint.Name}`);
+      return { ttCost: productTT, muCost: productTT * mu / 100 };
     }
-    return { ttCost, muCost };
   }
 
   function getCostPerClick(step) {
@@ -296,6 +302,20 @@
   $: limitedBlueprintsForMarkup = craftingSteps
     .filter(s => s.isLimited && s.owned)
     .map(s => s.blueprint);
+
+  // Get products that need to be bought (unowned blueprints)
+  $: productsToBuyForMarkup = (() => {
+    const products = new Map();
+    for (const step of craftingSteps) {
+      if (step.owned) continue;
+      const product = step.blueprint.Product;
+      const name = product?.Name || step.blueprint.Name;
+      if (!products.has(name)) {
+        products.set(name, product || { Name: name });
+      }
+    }
+    return Array.from(products.entries()).map(([name, item]) => ({ name, item }));
+  })();
 
   // Check if any steps require residue
   $: needsResidue = craftingSteps.some(s => s.owned && s.totalResidue > 0);
@@ -1229,10 +1249,10 @@
           </div>
 
           <!-- Markup Section -->
-          {#if allMaterialsForMarkup.length > 0 || limitedBlueprintsForMarkup.length > 0 || needsResidue}
+          {#if allMaterialsForMarkup.length > 0 || limitedBlueprintsForMarkup.length > 0 || productsToBuyForMarkup.length > 0 || needsResidue}
             <div class="markup-section">
               <h3>Markup Settings</h3>
-              <p class="markup-info">Set markup % for materials, residue, and limited blueprints that need to be purchased.</p>
+              <p class="markup-info">Set markup % for materials, residue, products, and limited blueprints that need to be purchased.</p>
 
               {#if allMaterialsForMarkup.length > 0 || needsResidue}
                 <div class="markup-group">
@@ -1287,6 +1307,30 @@
                             class="markup-input"
                             value={getMarkup(`bp:${bp.Id}`)}
                             on:change={(e) => setMarkup(`bp:${bp.Id}`, e.target.value)}
+                            min="0"
+                            step="1"
+                          />
+                          <span class="markup-suffix">%</span>
+                        </div>
+                      </div>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
+
+              {#if productsToBuyForMarkup.length > 0}
+                <div class="markup-group">
+                  <h4>Products to Buy</h4>
+                  <div class="markup-grid">
+                    {#each productsToBuyForMarkup as { name, item }}
+                      <div class="markup-item">
+                        <a href={getItemLink(item)} class="markup-name">{name}</a>
+                        <div class="markup-input-wrapper">
+                          <input
+                            type="number"
+                            class="markup-input"
+                            value={getMarkup(`prod:${name}`)}
+                            on:change={(e) => setMarkup(`prod:${name}`, e.target.value)}
                             min="0"
                             step="1"
                           />
@@ -1395,7 +1439,7 @@
                                     <td class="text-right refund-cell" title="Expected refund: {expectedRefund} units ({clampDecimals(refundPct, 0, 1)}%)">
                                       {expectedRefund > 0 ? `-${expectedRefund}` : '0'} <span class="refund-pct">({clampDecimals(refundPct, 0, 1)}%)</span>
                                     </td>
-                                    <td class="text-right">{isCrafting ? '—' : `${mu}%`}</td>
+                                    <td class="text-right">{#if isCrafting}—{:else}<input type="number" class="markup-input-inline" value={mu} min="0" step="1" on:change={(e) => setMarkup(`mat:${mat.item?.Name}`, e.target.value)} />%{/if}</td>
                                     <td class="text-right">{isCrafting ? '—' : `${clampDecimals(lineCost, 2, 4)} PED`}</td>
                                   </tr>
                                 {/each}
@@ -1409,7 +1453,7 @@
                                     <td class="text-right refund-cell">
                                       {residueRefund > 0 ? `-${clampDecimals(residueRefund, 2)}` : '0'} <span class="refund-pct">({clampDecimals(residueRefundPct, 0, 1)}%)</span>
                                     </td>
-                                    <td class="text-right">{residueMU}%</td>
+                                    <td class="text-right"><input type="number" class="markup-input-inline" value={residueMU} min="0" step="1" on:change={(e) => setMarkup('residue', e.target.value)} />%</td>
                                     <td class="text-right">{clampDecimals(adjustedResidueCost, 2, 4)} PED</td>
                                   </tr>
                                 {/if}
@@ -1430,11 +1474,41 @@
                           </div>
                         {/if}
                       {:else}
+                        {@const product = step.blueprint.Product}
+                        {@const productName = product?.Name || step.blueprint.Name}
+                        {@const productUnitTT = product?.Properties?.Economy?.MaxTT || 0}
+                        {@const productTotalTT = productUnitTT * step.quantityWanted}
+                        {@const productMU = getMarkup(`prod:${productName}`)}
+                        {@const productCost = productTotalTT * productMU / 100}
                         <p class="step-action buy">
                           Buy <strong>{step.quantityWanted}</strong>
-                          <a href={getItemLink(step.blueprint.Product)}>{step.blueprint.Product?.Name || step.blueprint.Name}</a>
+                          <a href={getItemLink(product)}>{productName}</a>
+                          <span class="step-reason-inline">({isOwned(step.blueprint.Id) ? 'Set to buy' : 'Blueprint not owned'})</span>
                         </p>
-                        <p class="step-reason">(Blueprint not owned)</p>
+                        {#if productUnitTT > 0}
+                          <div class="step-materials-table">
+                            <table class="materials-table">
+                              <thead>
+                                <tr>
+                                  <th>Product</th>
+                                  <th class="text-right">Qty</th>
+                                  <th class="text-right">TT</th>
+                                  <th class="text-right">MU%</th>
+                                  <th class="text-right">Cost</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                <tr>
+                                  <td><a href={getItemLink(product)}>{productName}</a></td>
+                                  <td class="text-right">{step.quantityWanted}</td>
+                                  <td class="text-right">{clampDecimals(productTotalTT, 2, 4)} PED</td>
+                                  <td class="text-right"><input type="number" class="markup-input-inline" value={productMU} min="0" step="1" on:change={(e) => setMarkup(`prod:${productName}`, e.target.value)} />%</td>
+                                  <td class="text-right">{clampDecimals(productCost, 2, 4)} PED</td>
+                                </tr>
+                              </tbody>
+                            </table>
+                          </div>
+                        {/if}
                       {/if}
                     </div>
                   {/if}
@@ -1647,8 +1721,13 @@
               const mu = getMarkup(`bp:${item.blueprint.Id}`);
               return sum + ((item.ttValue || 0) * mu / 100);
             }, 0)}
-            {@const grandTotalTT = (shoppingList.adjustedTotalTT || shoppingList.totalTT) + (shoppingList.adjustedTotalResidue || 0) + (shoppingList.limitedBlueprints || []).reduce((sum, item) => sum + (item.ttValue || 0), 0)}
-            {@const grandTotalMU = adjustedMaterialsTotalMU + adjustedResidueCost + limitedBpTotalMU}
+            {@const productsTotalTT = (shoppingList.productsToBuy || []).reduce((sum, item) => sum + (item.ttValue || 0), 0)}
+            {@const productsTotalMU = (shoppingList.productsToBuy || []).reduce((sum, item) => {
+              const mu = getMarkup(`prod:${item.item?.Name}`);
+              return sum + ((item.ttValue || 0) * mu / 100);
+            }, 0)}
+            {@const grandTotalTT = (shoppingList.adjustedTotalTT || shoppingList.totalTT) + (shoppingList.adjustedTotalResidue || 0) + (shoppingList.limitedBlueprints || []).reduce((sum, item) => sum + (item.ttValue || 0), 0) + productsTotalTT}
+            {@const grandTotalMU = adjustedMaterialsTotalMU + adjustedResidueCost + limitedBpTotalMU + productsTotalMU}
             <table class="shopping-table unified">
               <thead>
                 <tr>
@@ -1742,6 +1821,9 @@
                 <!-- Products to Buy (from unowned BPs) -->
                 {#each shoppingList.productsToBuy as item}
                   {@const isChecked = checkedShoppingProducts.has(item.item.Name)}
+                  {@const prodMU = getMarkup(`prod:${item.item?.Name}`)}
+                  {@const prodTT = item.ttValue || 0}
+                  {@const prodCost = prodTT * prodMU / 100}
                   <tr class="product-row" class:checked={isChecked}>
                     <td class="col-check">
                       <input type="checkbox" checked={isChecked} on:change={() => toggleShoppingProduct(item.item.Name)} />
@@ -1751,9 +1833,18 @@
                       {item.totalAmount} x <a href={getItemLink(item.item)}>{item.item.Name}</a>
                       <span class="shopping-note muted">(from {item.blueprintName})</span>
                     </td>
-                    <td class="text-right muted">—</td>
-                    <td class="text-right muted">—</td>
-                    <td class="text-right muted">—</td>
+                    <td class="text-right">{clampDecimals(prodTT, 2, 4)} PED</td>
+                    <td class="text-right">
+                      <input
+                        type="number"
+                        class="markup-input-inline"
+                        value={prodMU}
+                        min="0"
+                        step="1"
+                        on:change={(e) => setMarkup(`prod:${item.item?.Name}`, e.target.value)}
+                      />%
+                    </td>
+                    <td class="text-right">{clampDecimals(prodCost, 2, 4)} PED</td>
                   </tr>
                 {/each}
               </tbody>

@@ -559,9 +559,12 @@
     <div class="profile-info">
       <div class="profile-names">
         <h1>{profile.euName || profile.discordName}</h1>
-        <div class="discord-name"><span class="meta-label inline-label">Discord</span>@{profile.discordName}</div>
       </div>
       <div class="profile-meta">
+        <div class="meta-row">
+          <span class="meta-label">Discord</span>
+          <span class="meta-value">@{profile.discordName}</span>
+        </div>
         <div class="meta-row">
           <span class="meta-label">Society</span>
           {#if profile.societyId === -1 && pendingSocietyRequest}
@@ -1286,18 +1289,6 @@
     font-size: 26px;
   }
 
-  .discord-name {
-    color: var(--text-muted, #999);
-    font-size: 14px;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  .inline-label {
-    min-width: auto;
-    text-align: left;
-  }
 
   .society-link {
     color: var(--accent-color, #4a9eff);

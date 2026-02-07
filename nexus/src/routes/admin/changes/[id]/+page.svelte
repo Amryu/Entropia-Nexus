@@ -3,7 +3,7 @@
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
-  import { apiCall, getTypeLink, encodeURIComponentSafe } from '$lib/util.js';
+  import { getTypeLink, encodeURIComponentSafe } from '$lib/util.js';
   import ChangeDataViewer from '$lib/components/ChangeDataViewer.svelte';
   import JsonCompareDialog from '$lib/components/JsonCompareDialog.svelte';
 
@@ -103,7 +103,8 @@
       // Try to load original version from audit API
       // Only if this is an Update type with an entity ID
       if (change?.type === 'Update' && change?.data?.Id) {
-        const auditData = await apiCall(fetch, `/audit/${change.entity}/${change.data.Id}/original`);
+        const auditResponse = await fetch(`/api/admin/audit/${change.entity}/${change.data.Id}/original`);
+        const auditData = auditResponse.ok ? await auditResponse.json() : null;
         if (auditData?.original) {
           originalVersion = auditData.original;
         }
@@ -222,7 +223,7 @@
   $: comparisonData = (() => {
     if (!showDiff || !selectedVersionType) return null;
     if (selectedVersionType === 'original' && originalVersion) {
-      return normalizeForComparison(originalVersion.Data, change?.entity);
+      return normalizeChangeData(originalVersion.Data, change?.entity);
     }
     if (selectedVersionType.startsWith('history-')) {
       const index = parseInt(selectedVersionType.split('-')[1], 10);
@@ -244,104 +245,61 @@
     return null;
   }
 
-  // Keys to strip from data (API-only fields)
-  const apiOnlyKeys = ['Links', '$Url', 'ItemId'];
-
-  // Reference object fields - these should only compare by Name
-  // (the API may include extra fields like Id, PlanetId, etc.)
-  // Note: Type and Category are simple strings, not reference objects
-  const referenceFields = ['Species', 'Item', 'Maturity', 'Material', 'Effect', 'Ammo',
-    'ProfessionHit', 'ProfessionDmg', 'DefensiveProfession', 'ScanningProfession',
-    'Planet', 'AttachmentType'];
-
   /**
-   * Recursively normalize data for comparison.
-   * - Strips API-only fields (Links, $Url, ItemId)
-   * - Normalizes reference objects to only { Name } (ignoring extra API fields)
-   * - Infers generated fields (IsTaming/IsTameable from TamingLevel)
+   * Infer generated fields for consistent comparison.
+   * - Mobs: infer IsTaming from TamingLevel in Maturities
+   * - Mobs: infer IsTameable from TamingLevel in Taming
+   * Audit data is already schema-validated (extra properties stripped by proxy).
    */
-  function normalizeDeep(obj, parentKey = null) {
+  function inferGeneratedFields(obj, parentKey = null) {
     if (obj === null || obj === undefined) return obj;
     if (typeof obj !== 'object') return obj;
 
     if (Array.isArray(obj)) {
-      return obj.map((item, i) => normalizeDeep(item, parentKey));
+      return obj.map(item => inferGeneratedFields(item, parentKey));
     }
 
     const result = {};
 
     for (const key of Object.keys(obj)) {
-      // Skip API-only fields
-      if (apiOnlyKeys.includes(key)) continue;
-
       const value = obj[key];
 
-      // For reference fields, only keep the Name property
-      if (referenceFields.includes(key) && value && typeof value === 'object' && !Array.isArray(value)) {
-        if (value.Name !== undefined) {
-          result[key] = { Name: value.Name };
-        } else {
-          result[key] = normalizeDeep(value, key);
-        }
-        continue;
-      }
-
-      // For maturity objects (inside Maturities array), infer IsTaming from TamingLevel
+      // Infer IsTaming from TamingLevel in Maturities array items
       if (parentKey === 'Maturities' && key === 'TamingLevel') {
         result[key] = value;
-        // Infer IsTaming if not present
         if (obj.IsTaming === undefined && value !== undefined) {
           result.IsTaming = value > 0;
         }
         continue;
       }
-
-      // Skip IsTaming if we're inferring it
       if (parentKey === 'Maturities' && key === 'IsTaming') {
-        // Only include if we're not inferring (i.e., TamingLevel is not present)
-        if (obj.TamingLevel !== undefined) {
-          result[key] = obj.TamingLevel > 0;
-        } else {
-          result[key] = value;
-        }
+        result[key] = obj.TamingLevel !== undefined ? obj.TamingLevel > 0 : value;
         continue;
       }
 
-      // For Taming objects (inside Properties), infer IsTameable from TamingLevel
+      // Infer IsTameable from TamingLevel in Taming object
       if (parentKey === 'Taming' && key === 'TamingLevel') {
         result[key] = value;
-        // Infer IsTameable if not present
         if (obj.IsTameable === undefined && value !== undefined) {
           result.IsTameable = value > 0;
         }
         continue;
       }
-
-      // Skip IsTameable if we're inferring it
       if (parentKey === 'Taming' && key === 'IsTameable') {
-        if (obj.TamingLevel !== undefined) {
-          result[key] = obj.TamingLevel > 0;
-        } else {
-          result[key] = value;
-        }
+        result[key] = obj.TamingLevel !== undefined ? obj.TamingLevel > 0 : value;
         continue;
       }
 
-      // Recursively normalize nested objects/arrays
-      result[key] = normalizeDeep(value, key);
+      result[key] = inferGeneratedFields(value, key);
     }
 
     return result;
   }
 
-  // Strip API-only fields and normalize data for cleaner comparison
-  // Uses normalizeChangeData to ensure consistent Type inference for Mobs
-  function normalizeForComparison(data, entityType = null) {
-    if (!data) return null;
-    return normalizeChangeData(data, entityType);
-  }
-
-  // Normalize change data to match API format (e.g., infer Type for Mobs)
+  /**
+   * Normalize change/audit data for comparison.
+   * Infers generated fields (Mob Type, IsTaming/IsTameable) for consistent diffs.
+   */
   function normalizeChangeData(data, entityType) {
     if (!data) return data;
     const clone = JSON.parse(JSON.stringify(data));
@@ -351,7 +309,7 @@
       clone.Type = inferMobType(clone.ScanningProfession.Name);
     }
 
-    return normalizeDeep(clone);
+    return inferGeneratedFields(clone);
   }
 
   $: hasComparisonOptions = originalVersion || filteredHistory.length > 0 || relatedChanges.length > 0;

@@ -520,6 +520,13 @@
   font-style: italic;
 }
 
+.step-reason-inline {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-left: 4px;
+}
+
 .step-materials {
   padding: 12px;
   background: var(--bg-color);

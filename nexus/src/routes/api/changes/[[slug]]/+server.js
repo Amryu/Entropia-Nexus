@@ -1,13 +1,8 @@
 //@ts-nocheck
 import { getChangeById, getChangeEntities as dbGetChangeEntities, getChangeTypes as dbGetChangeTypes, updateChange, deleteChange, createChange, executeVector, getChangeByEntityId, getOpenChangeByEntityId, getChangesFiltered } from "$lib/server/db.js"
 import { apiCall, getResponse } from "$lib/util.js";
-import Ajv from "ajv";
 import sanitizeHtml from "sanitize-html";
-import { EffectsOnEquip, EffectsOnSetEquip, EffectsOnUse, NamedEntity, Tiers } from "$lib/common/schemas/SharedSchemas.js";
-
-import { EntitySchemas } from "$lib/common/EntitySchemas.js";
-
-const Validators = {}
+import { getValidator } from "$lib/server/schemaValidator.js";
 
 // HTML sanitization config for TipTap rich text editor output
 const SANITIZE_CONFIG = {
@@ -63,17 +58,6 @@ function sanitizeBody(body) {
 let change_entities = null;
 let change_types = null;
 
-let shared = [EffectsOnEquip, EffectsOnSetEquip, EffectsOnUse, NamedEntity, Tiers];
-
-function getValidator(type) {
-  if (!Validators[type]) {
-    // Use removeAdditional: true (not 'all') to preserve nested properties when additionalProperties: true
-    // 'all' removes properties even when additionalProperties: true, which breaks Payload fields
-    Validators[type] = new Ajv({ schemas: shared, strict: false, removeAdditional: true, useDefaults: true }).compile(EntitySchemas[type]);
-  }
-
-  return Validators[type];
-}
 
 async function getChangeEntities() {
   if (!change_entities) {
@@ -345,7 +329,9 @@ function validateChange(body, entity) {
     return getResponse({ error: 'Body is empty.' }, 400);
   }
 
-  let validator = getValidator(entity);
+  // Use removeAdditional: true (not 'all') to preserve nested properties when additionalProperties: true
+  // 'all' removes properties even when additionalProperties: true, which breaks Payload fields
+  let validator = getValidator(entity, true);
   let valid = validator(body);
 
   if (!valid) {

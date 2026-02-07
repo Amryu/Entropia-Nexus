@@ -12,8 +12,8 @@
 
   export let data;
   // SvelteKit passes params to all layouts/pages - we use $page.params instead
-  // but need to declare this to avoid console warnings
-  export let params = {};
+  // Declared as const to accept prop without Svelte "unused" warning
+  export const params = {};
 
   let darkModeValue = true;
   $page;

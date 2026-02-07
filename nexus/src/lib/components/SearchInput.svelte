@@ -51,9 +51,6 @@
   /** @type {boolean} Show results dropdown */
   export let showResults = false;
 
-  /** @type {boolean} Auto-focus on mount */
-  export let autofocus = false;
-
   /** @type {string} Search API endpoint (default: /search, use /search/items for items-only) */
   export let endpoint = '/search';
 

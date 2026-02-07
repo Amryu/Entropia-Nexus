@@ -38,17 +38,23 @@
         entityName = changesData.entityName || entityId;
       }
 
-      // Try to load audit history (original version)
+      // Try to load audit history (original version) via SvelteKit proxy (applies schema validation)
       // Only if we have a numeric entity ID
       if (/^\d+$/.test(entityId)) {
-        const auditData = await apiCall(fetch, `/audit/${entityType}/${entityId}`);
-        if (auditData?.history) {
-          auditHistory = auditData.history;
+        const auditResponse = await fetch(`/api/admin/audit/${entityType}/${entityId}`);
+        if (auditResponse.ok) {
+          const auditData = await auditResponse.json();
+          if (auditData?.history) {
+            auditHistory = auditData.history;
+          }
         }
 
-        const originalData = await apiCall(fetch, `/audit/${entityType}/${entityId}/original`);
-        if (originalData?.original) {
-          originalVersion = originalData.original;
+        const originalResponse = await fetch(`/api/admin/audit/${entityType}/${entityId}/original`);
+        if (originalResponse.ok) {
+          const originalData = await originalResponse.json();
+          if (originalData?.original) {
+            originalVersion = originalData.original;
+          }
         }
       }
 
@@ -157,20 +163,10 @@
   $: versionOptions = getVersionOptions();
   $: wikiLink = entityName ? getTypeLink(entityName, entityType) : null;
 
-  // Strip fields that only exist in API response but not in change data
-  function normalizeForComparison(data) {
-    if (!data) return null;
-    // Clone to avoid mutation
-    const clone = JSON.parse(JSON.stringify(data));
-    // Remove typical API-only fields
-    delete clone.Links;
-    delete clone.ItemId;
-    delete clone.$Url;
-    return clone;
-  }
-
-  $: normalizedLeft = normalizeForComparison(leftData);
-  $: normalizedRight = normalizeForComparison(rightData);
+  // Audit data is already schema-validated (extra properties stripped by proxy).
+  // Change data from the changes system doesn't have extra API fields.
+  $: normalizedLeft = leftData ? JSON.parse(JSON.stringify(leftData)) : null;
+  $: normalizedRight = rightData ? JSON.parse(JSON.stringify(rightData)) : null;
 </script>
 
 <svelte:head>

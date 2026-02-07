@@ -1093,7 +1093,7 @@ export function generateShoppingList(roots) {
     productsArray.push({
       item,
       totalAmount: quantity,
-      ttValue: 0, // Products have market value, not TT
+      ttValue: (item?.Properties?.Economy?.MaxTT || 0) * quantity,
       reason: 'unowned_bp_product',
       blueprintName: blueprint.Name
     });

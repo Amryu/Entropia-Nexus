@@ -2,8 +2,6 @@
   // @ts-nocheck
   import { page } from '$app/stores';
 
-  export let data;
-
   let sidebarOpen = false;
 
   const navItems = [

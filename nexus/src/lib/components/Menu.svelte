@@ -1263,81 +1263,6 @@
     color: var(--warning-color, #f59e0b);
   }
 
-  .pagination {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 16px;
-    margin-bottom: 16px;
-  }
-
-  .btn-page {
-    padding: 6px 12px;
-    border-radius: 4px;
-    font-size: 13px;
-    cursor: pointer;
-    background-color: var(--hover-color);
-    color: var(--text-color);
-    border: 1px solid var(--border-color);
-    transition: all 0.15s ease;
-  }
-
-  .btn-page:hover:not(:disabled) {
-    background-color: var(--accent-color);
-    color: white;
-    border-color: var(--accent-color);
-  }
-
-  .btn-page:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .page-info {
-    font-size: 13px;
-    color: var(--text-muted);
-  }
-
-  .browse-content {
-    position: relative;
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-
-  .browse-content.loading {
-    pointer-events: none;
-  }
-
-  .loading-overlay {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: rgba(0, 0, 0, 0.3);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 5;
-    border-radius: 4px;
-  }
-
-  .loading-spinner {
-    width: 32px;
-    height: 32px;
-    border: 3px solid var(--border-color);
-    border-top-color: var(--accent-color);
-    border-radius: 50%;
-    animation: spinFull 0.8s linear infinite;
-  }
-
-  @keyframes spinFull {
-    to { transform: rotate(360deg); }
-  }
-
   /* Mobile Menu Styles */
   .burger-button {
     display: none;
@@ -1506,18 +1431,6 @@
     font-weight: 600;
     color: var(--text-color);
     flex: 1;
-  }
-
-  .mobile-section-title-link {
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--text-color);
-    text-decoration: none;
-    flex: 1;
-  }
-
-  .mobile-section-title-link:hover {
-    color: var(--accent-color);
   }
 
   .mobile-section-chevron {
