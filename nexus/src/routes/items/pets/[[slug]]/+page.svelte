@@ -147,11 +147,22 @@
     ]}
   ];
 
+  // Full column definitions for pets
+  const columnDefs = {
+    rarity: { key: 'rarity', header: 'Rarity', width: '70px', filterPlaceholder: 'Rare', getValue: (item) => item.Properties?.Rarity, format: (v) => v || '-' },
+    effects: { key: 'effects', header: 'Effect #', width: '75px', filterPlaceholder: '>0', getValue: (item) => item.Effects?.length || 0, format: (v) => v != null ? v : '-' },
+    planet: { key: 'planet', header: 'Planet', width: '70px', filterPlaceholder: 'Calypso', getValue: (item) => item.Planet?.Name, format: (v) => v || '-' },
+    tamingLevel: { key: 'tamingLevel', header: 'Taming Lvl', width: '70px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.TamingLevel, format: (v) => v != null ? v : '-' },
+    training: { key: 'training', header: 'Training', width: '65px', filterPlaceholder: 'Easy', getValue: (item) => item.Properties?.TrainingDifficulty, format: (v) => v || '-' },
+    exportable: { key: 'exportable', header: 'Exportable', width: '70px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.ExportableLevel, format: (v) => v != null && v > 0 ? `Lvl ${v}` : 'No' },
+    nutrioCapacity: { key: 'nutrioCapacity', header: 'Nutrio Cap.', width: '80px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.NutrioCapacity, format: (v) => v != null ? `${(v / 100).toFixed(2)} PED` : '-' },
+    nutrioConsumption: { key: 'nutrioConsumption', header: 'Nutrio/h', width: '70px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.NutrioConsumptionPerHour, format: (v) => v != null ? `${(v / 100).toFixed(2)}` : '-' }
+  };
+
   // Sidebar table columns
-  $: navTableColumns = [
-    { key: 'rarity', header: 'Rarity', width: '70px', filterPlaceholder: 'Rare', getValue: (item) => item.Properties?.Rarity, format: (v) => v || '-' },
-    { key: 'effects', header: 'Effect #', width: '75px', filterPlaceholder: '>0', getValue: (item) => item.Effects?.length || 0, format: (v) => v != null ? v : '-' }
-  ];
+  $: navTableColumns = [columnDefs.rarity, columnDefs.effects];
+  const navFullWidthColumns = [columnDefs.rarity, columnDefs.effects, columnDefs.planet, columnDefs.tamingLevel, columnDefs.training, columnDefs.exportable, columnDefs.nutrioCapacity];
+  const allAvailableColumns = Object.values(columnDefs);
 
   // Breadcrumbs
   $: breadcrumbs = [
@@ -248,6 +259,9 @@
   {navItems}
   {navFilters}
   {navTableColumns}
+  navAllAvailableColumns={allAvailableColumns}
+  navFullWidthColumns={navFullWidthColumns}
+  navPageTypeId="pets"
   {user}
   editable={true}
   {canEdit}

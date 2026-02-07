@@ -221,25 +221,170 @@
     }
   ];
 
-  // Sidebar table columns for armor sets
-  const navTableColumns = [
-    {
+  // All column definitions for armor sets
+  const columnDefs = {
+    defense: {
       key: 'defense',
-      header: 'Total Defense',
-      width: '95px',
+      header: 'Total Def',
+      width: '75px',
       filterPlaceholder: '>50',
       getValue: (item) => getTotalDefense(item),
       format: (v) => v != null ? v.toFixed(1) : '-'
     },
-    {
+    durability: {
       key: 'durability',
       header: 'Durability',
-      width: '85px',
+      width: '70px',
       filterPlaceholder: '>1000',
       getValue: (item) => item.Properties?.Economy?.Durability,
       format: (v) => v != null ? v : '-'
+    },
+    impact: {
+      key: 'impact',
+      header: 'Impact',
+      width: '50px',
+      filterPlaceholder: '>5',
+      getValue: (item) => item.Properties?.Defense?.Impact ?? null,
+      format: (v) => v != null ? v.toFixed(1) : '-'
+    },
+    cut: {
+      key: 'cut',
+      header: 'Cut',
+      width: '50px',
+      filterPlaceholder: '>5',
+      getValue: (item) => item.Properties?.Defense?.Cut ?? null,
+      format: (v) => v != null ? v.toFixed(1) : '-'
+    },
+    stab: {
+      key: 'stab',
+      header: 'Stab',
+      width: '50px',
+      filterPlaceholder: '>5',
+      getValue: (item) => item.Properties?.Defense?.Stab ?? null,
+      format: (v) => v != null ? v.toFixed(1) : '-'
+    },
+    penetration: {
+      key: 'penetration',
+      header: 'Pen',
+      width: '50px',
+      filterPlaceholder: '>5',
+      getValue: (item) => item.Properties?.Defense?.Penetration ?? null,
+      format: (v) => v != null ? v.toFixed(1) : '-'
+    },
+    shrapnel: {
+      key: 'shrapnel',
+      header: 'Shrap',
+      width: '50px',
+      filterPlaceholder: '>5',
+      getValue: (item) => item.Properties?.Defense?.Shrapnel ?? null,
+      format: (v) => v != null ? v.toFixed(1) : '-'
+    },
+    burn: {
+      key: 'burn',
+      header: 'Burn',
+      width: '50px',
+      filterPlaceholder: '>5',
+      getValue: (item) => item.Properties?.Defense?.Burn ?? null,
+      format: (v) => v != null ? v.toFixed(1) : '-'
+    },
+    cold: {
+      key: 'cold',
+      header: 'Cold',
+      width: '50px',
+      filterPlaceholder: '>5',
+      getValue: (item) => item.Properties?.Defense?.Cold ?? null,
+      format: (v) => v != null ? v.toFixed(1) : '-'
+    },
+    acid: {
+      key: 'acid',
+      header: 'Acid',
+      width: '50px',
+      filterPlaceholder: '>5',
+      getValue: (item) => item.Properties?.Defense?.Acid ?? null,
+      format: (v) => v != null ? v.toFixed(1) : '-'
+    },
+    electric: {
+      key: 'electric',
+      header: 'Elec',
+      width: '50px',
+      filterPlaceholder: '>5',
+      getValue: (item) => item.Properties?.Defense?.Electric ?? null,
+      format: (v) => v != null ? v.toFixed(1) : '-'
+    },
+    absorption: {
+      key: 'absorption',
+      header: 'Absorption',
+      width: '75px',
+      filterPlaceholder: '>100',
+      getValue: (item) => getTotalAbsorption(item),
+      format: (v) => v != null ? v.toFixed(1) : '-'
+    },
+    maxDecay: {
+      key: 'maxDecay',
+      header: 'Max Decay',
+      width: '70px',
+      filterPlaceholder: '>1',
+      getValue: (item) => getMaxArmorDecay(item),
+      format: (v) => v != null ? v.toFixed(2) : '-'
+    },
+    maxtt: {
+      key: 'maxtt',
+      header: 'Max TT',
+      width: '60px',
+      filterPlaceholder: '>10',
+      getValue: (item) => item.Properties?.Economy?.MaxTT,
+      format: (v) => v != null ? v.toFixed(2) : '-'
+    },
+    mintt: {
+      key: 'mintt',
+      header: 'Min TT',
+      width: '55px',
+      filterPlaceholder: '>0',
+      getValue: (item) => item.Properties?.Economy?.MinTT,
+      format: (v) => v != null ? v.toFixed(2) : '-'
+    },
+    weight: {
+      key: 'weight',
+      header: 'Weight',
+      width: '55px',
+      filterPlaceholder: '>1',
+      getValue: (item) => item.Properties?.Weight,
+      format: (v) => v != null ? v.toFixed(1) : '-'
+    },
+    pieces: {
+      key: 'pieces',
+      header: 'Pieces',
+      width: '50px',
+      getValue: (item) => item.Armors?.flat().filter(x => x?.Properties?.Gender === 'Both' || x?.Properties?.Gender === 'Male').length ?? null,
+      format: (v) => v != null ? v : '-'
     }
+  };
+
+  const navTableColumns = [
+    columnDefs.defense,
+    columnDefs.durability,
+    columnDefs.impact,
+    columnDefs.cut,
+    columnDefs.stab
   ];
+
+  const navFullWidthColumns = [
+    columnDefs.defense,
+    columnDefs.durability,
+    columnDefs.impact,
+    columnDefs.cut,
+    columnDefs.stab,
+    columnDefs.penetration,
+    columnDefs.shrapnel,
+    columnDefs.burn,
+    columnDefs.cold,
+    columnDefs.acid,
+    columnDefs.electric,
+    columnDefs.absorption,
+    columnDefs.maxtt
+  ];
+
+  const allAvailableColumns = Object.values(columnDefs);
 
   // Breadcrumbs
   $: breadcrumbs = [
@@ -357,6 +502,9 @@
   {navItems}
   {navFilters}
   {navTableColumns}
+  {navFullWidthColumns}
+  navAllAvailableColumns={allAvailableColumns}
+  navPageTypeId="armorsets"
   {user}
   editable={true}
   {canEdit}

@@ -12,31 +12,31 @@
     {
       name: 'Items Database',
       href: '/items',
-      icon: '📦',
+      icon: 'ITM',
       description: 'Browse weapons, armor, tools, materials, blueprints and more'
     },
     {
       name: 'Information Wiki',
       href: '/information',
-      icon: '📚',
+      icon: 'INF',
       description: 'Professions, skills, mobs, vendors and game mechanics'
     },
     {
       name: 'Interactive Maps',
       href: '/maps',
-      icon: '🗺️',
+      icon: 'MAP',
       description: 'Planet maps with mob spawns, resources and landmarks'
     },
     {
       name: 'Tools & Calculators',
       href: '/tools',
-      icon: '🔧',
+      icon: 'TLS',
       description: 'Loadout calculator, DPS analysis and planning tools'
     },
     {
       name: 'Market & Services',
       href: '/market',
-      icon: '💰',
+      icon: 'MKT',
       description: 'Exchange rates, shops and player services'
     }
   ];
@@ -216,7 +216,8 @@
   }
 
   .feature-icon {
-    font-size: 1.75rem;
+    font-size: 1rem;
+    font-weight: 700;
     flex-shrink: 0;
     width: 48px;
     height: 48px;
@@ -225,6 +226,7 @@
     justify-content: center;
     background-color: var(--primary-color);
     border-radius: 8px;
+    letter-spacing: 0.5px;
   }
 
   .feature-content {
@@ -441,7 +443,6 @@
     }
 
     .feature-icon {
-      font-size: 1.5rem;
       width: 40px;
       height: 40px;
     }

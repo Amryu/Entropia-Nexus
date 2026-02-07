@@ -141,8 +141,8 @@
     }
   ];
 
-  const navTableColumns = [
-    {
+  const vendorColumnDefs = {
+    planet: {
       key: 'planet',
       header: 'Planet',
       width: '90px',
@@ -150,15 +150,44 @@
       getValue: (item) => item?.Planet?.Name,
       format: (v) => v || '-'
     },
-    {
+    category: {
       key: 'category',
       header: 'Category',
       width: '110px',
       filterPlaceholder: 'Trade',
       getValue: (item) => getVendorCategory(item),
       format: (v) => v || '-'
+    },
+    offers: {
+      key: 'offers',
+      header: 'Offers',
+      width: '55px',
+      filterPlaceholder: '>0',
+      getValue: (item) => item?.Offers?.length || 0,
+      format: (v) => v != null ? v : '-'
+    },
+    limited: {
+      key: 'limited',
+      header: 'Limited',
+      width: '60px',
+      filterPlaceholder: '>0',
+      getValue: (item) => item?.Offers?.filter(o => o.IsLimited).length || 0,
+      format: (v) => v > 0 ? v : '-'
     }
+  };
+
+  const navTableColumns = [
+    vendorColumnDefs.planet,
+    vendorColumnDefs.category,
+    vendorColumnDefs.offers
   ];
+
+  const navFullWidthColumns = [
+    ...navTableColumns,
+    vendorColumnDefs.limited
+  ];
+
+  const allAvailableColumns = Object.values(vendorColumnDefs);
 
   // Breadcrumbs
   $: breadcrumbs = [
@@ -288,6 +317,9 @@
   {navItems}
   {navFilters}
   {navTableColumns}
+  {navFullWidthColumns}
+  navAllAvailableColumns={allAvailableColumns}
+  navPageTypeId="vendors"
   {user}
   editable={true}
   {canEdit}

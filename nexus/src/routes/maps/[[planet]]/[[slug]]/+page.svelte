@@ -1891,6 +1891,8 @@
 
     .map-controls .control-row .control-group {
       gap: 4px;
+      width: auto;
+      min-width: 0;
     }
 
     .dialog-backdrop {

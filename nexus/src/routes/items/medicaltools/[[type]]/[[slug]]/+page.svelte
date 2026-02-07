@@ -185,54 +185,207 @@
     href: additional.type === btn.type ? '/items/medicaltools' : `/items/medicaltools/${btn.type}`
   }));
 
-  // Type-specific sidebar table columns
-  function getNavTableColumns(type) {
-    const typeColumn = {
+  // All column definitions for medical tools
+  const columnDefs = {
+    type: {
       key: 'type',
       header: 'Type',
       width: '60px',
       filterPlaceholder: 'Tool',
       getValue: (item) => item._type === 'tools' ? 'Tool' : 'Chip',
       format: (v) => v || '-'
-    };
-
-    const intervalColumn = {
+    },
+    interval: {
       key: 'interval',
-      header: 'Heal Interval',
-      width: '90px',
+      header: 'Interval',
+      width: '60px',
       filterPlaceholder: '<5',
       getValue: (item) => getReload(item),
       format: (v) => v != null ? `${v.toFixed(2)}s` : '-'
-    };
-
-    const usesColumn = {
+    },
+    upm: {
       key: 'upm',
-      header: 'Uses/Minute',
-      width: '85px',
+      header: 'Uses',
+      width: '50px',
       filterPlaceholder: '>10',
       getValue: (item) => item.Properties?.UsesPerMinute,
       format: (v) => v != null ? clampDecimals(v, 0, 1) : '-'
-    };
-
-    const maxLevelColumn = {
-      key: 'maxLvl',
-      header: 'Max Level',
-      width: '80px',
+    },
+    mfLevel: {
+      key: 'mfLevel',
+      header: 'MF Lvl',
+      width: '55px',
       filterPlaceholder: '>10',
       getValue: (item) => item.Properties?.Mindforce?.Level ?? item.Properties?.Level,
       format: (v) => v != null ? v : '-'
-    };
+    },
+    concentration: {
+      key: 'concentration',
+      header: 'Conc.',
+      width: '55px',
+      filterPlaceholder: '>1',
+      getValue: (item) => item.Properties?.Mindforce?.Concentration,
+      format: (v) => v != null ? `${v}s` : '-'
+    },
+    cooldown: {
+      key: 'cooldown',
+      header: 'CD',
+      width: '50px',
+      filterPlaceholder: '>1',
+      getValue: (item) => item.Properties?.Mindforce?.Cooldown,
+      format: (v) => v != null ? `${v}s` : '-'
+    },
+    cooldownGroup: {
+      key: 'cooldownGroup',
+      header: 'CD Grp',
+      width: '55px',
+      filterPlaceholder: '>0',
+      getValue: (item) => item.Properties?.Mindforce?.CooldownGroup,
+      format: (v) => v != null ? v : '-'
+    },
+    hps: {
+      key: 'hps',
+      header: 'HPS',
+      width: '50px',
+      filterPlaceholder: '>10',
+      getValue: (item) => getHps(item),
+      format: (v) => v != null ? v.toFixed(1) : '-'
+    },
+    hpp: {
+      key: 'hpp',
+      header: 'HPP',
+      width: '50px',
+      filterPlaceholder: '>10',
+      getValue: (item) => getHpp(item),
+      format: (v) => v != null ? v.toFixed(1) : '-'
+    },
+    maxHeal: {
+      key: 'maxHeal',
+      header: 'Max Heal',
+      width: '65px',
+      filterPlaceholder: '>10',
+      getValue: (item) => item.Properties?.MaxHeal,
+      format: (v) => v != null ? v.toFixed(1) : '-'
+    },
+    minHeal: {
+      key: 'minHeal',
+      header: 'Min Heal',
+      width: '65px',
+      getValue: (item) => item.Properties?.MinHeal,
+      format: (v) => v != null ? v.toFixed(1) : '-'
+    },
+    cost: {
+      key: 'cost',
+      header: 'Cost',
+      width: '50px',
+      filterPlaceholder: '>0.5',
+      getValue: (item) => getCost(item),
+      format: (v) => v != null ? v.toFixed(4) : '-'
+    },
+    maxtt: {
+      key: 'maxtt',
+      header: 'Max TT',
+      width: '60px',
+      filterPlaceholder: '>10',
+      getValue: (item) => item.Properties?.Economy?.MaxTT,
+      format: (v) => v != null ? v.toFixed(2) : '-'
+    },
+    mintt: {
+      key: 'mintt',
+      header: 'Min TT',
+      width: '55px',
+      getValue: (item) => item.Properties?.Economy?.MinTT,
+      format: (v) => v != null ? v.toFixed(2) : '-'
+    },
+    decay: {
+      key: 'decay',
+      header: 'Decay',
+      width: '50px',
+      filterPlaceholder: '>0.5',
+      getValue: (item) => item.Properties?.Economy?.Decay,
+      format: (v) => v != null ? v.toFixed(2) : '-'
+    },
+    ammo: {
+      key: 'ammo',
+      header: 'Ammo',
+      width: '55px',
+      getValue: (item) => item.Properties?.Economy?.AmmoBurn,
+      format: (v) => v != null ? v : '-'
+    },
+    totalUses: {
+      key: 'totalUses',
+      header: 'Total Uses',
+      width: '70px',
+      filterPlaceholder: '>100',
+      getValue: (item) => getTotalUses(item),
+      format: (v) => v != null ? v : '-'
+    },
+    sib: {
+      key: 'sib',
+      header: 'SiB',
+      width: '40px',
+      getValue: (item) => item.Properties?.Skill?.IsSiB,
+      format: (v) => v === true ? 'Yes' : v === false ? 'No' : '-'
+    },
+    minLevel: {
+      key: 'minLevel',
+      header: 'Min Lvl',
+      width: '60px',
+      filterPlaceholder: '>1',
+      getValue: (item) => item.Properties?.Skill?.LearningIntervalStart ?? null,
+      format: (v) => v != null ? String(v) : '-'
+    },
+    maxLevel: {
+      key: 'maxLevel',
+      header: 'Max Lvl',
+      width: '60px',
+      filterPlaceholder: '>10',
+      getValue: (item) => item.Properties?.Skill?.LearningIntervalEnd ?? null,
+      format: (v) => v != null ? String(v) : '-'
+    },
+    range: {
+      key: 'range',
+      header: 'Range',
+      width: '50px',
+      filterPlaceholder: '>10',
+      getValue: (item) => item.Properties?.Range,
+      format: (v) => v != null ? v : '-'
+    },
+    weight: {
+      key: 'weight',
+      header: 'Weight',
+      width: '55px',
+      filterPlaceholder: '>1',
+      getValue: (item) => item.Properties?.Weight,
+      format: (v) => v != null ? v : '-'
+    }
+  };
 
+  function getNavTableColumns(type) {
     switch (type) {
       case 'tools':
       case 'chips':
-        return [intervalColumn, usesColumn, maxLevelColumn];
+        return [columnDefs.hps, columnDefs.hpp, columnDefs.interval, columnDefs.upm, columnDefs.mfLevel];
       default:
-        return [typeColumn, intervalColumn, usesColumn, maxLevelColumn];
+        return [columnDefs.type, columnDefs.hps, columnDefs.hpp, columnDefs.interval, columnDefs.upm];
+    }
+  }
+
+  function getNavFullWidthColumns(type) {
+    switch (type) {
+      case 'tools':
+        return [columnDefs.hps, columnDefs.hpp, columnDefs.interval, columnDefs.upm, columnDefs.cost, columnDefs.maxtt, columnDefs.maxHeal, columnDefs.decay, columnDefs.sib, columnDefs.minLevel, columnDefs.maxLevel, columnDefs.cooldown, columnDefs.cooldownGroup, columnDefs.weight];
+      case 'chips':
+        return [columnDefs.hps, columnDefs.hpp, columnDefs.interval, columnDefs.upm, columnDefs.cost, columnDefs.maxtt, columnDefs.maxHeal, columnDefs.range, columnDefs.decay, columnDefs.ammo, columnDefs.sib, columnDefs.minLevel, columnDefs.maxLevel, columnDefs.cooldown, columnDefs.cooldownGroup];
+      default:
+        return [columnDefs.type, columnDefs.hps, columnDefs.hpp, columnDefs.interval, columnDefs.upm, columnDefs.cost, columnDefs.maxtt, columnDefs.maxHeal, columnDefs.decay, columnDefs.sib, columnDefs.minLevel, columnDefs.maxLevel, columnDefs.cooldown, columnDefs.cooldownGroup];
     }
   }
 
   $: navTableColumns = getNavTableColumns(additional.type);
+  $: navFullWidthColumns = getNavFullWidthColumns(additional.type);
+  $: allAvailableColumns = Object.values(columnDefs);
+  $: navPageTypeId = `medicaltools-${additional.type || 'all'}`;
 
   // Custom href generator for items
   function getItemHref(item, basePath) {
@@ -384,6 +537,9 @@
   {navItems}
   {navFilters}
   {navTableColumns}
+  {navFullWidthColumns}
+  navAllAvailableColumns={allAvailableColumns}
+  navPageTypeId={navPageTypeId}
   navGetItemHref={getItemHref}
   {user}
   editable={true}

@@ -199,8 +199,9 @@
     }
   ];
 
-  const navTableColumns = [
-    {
+  // All column definitions keyed for lookup
+  const columnDefs = {
+    class: {
       key: 'class',
       header: 'Class',
       width: '70px',
@@ -208,7 +209,7 @@
       getValue: (item) => item.Properties?.Class,
       format: (v) => v || '-'
     },
-    {
+    type: {
       key: 'type',
       header: 'Type',
       width: '70px',
@@ -216,7 +217,7 @@
       getValue: (item) => item.Properties?.Type,
       format: (v) => v || '-'
     },
-    {
+    dps: {
       key: 'dps',
       header: 'DPS',
       width: '55px',
@@ -224,7 +225,7 @@
       getValue: (item) => getDps(item),
       format: (v) => v != null ? v.toFixed(1) : '-'
     },
-    {
+    dpp: {
       key: 'dpp',
       header: 'DPP',
       width: '55px',
@@ -232,15 +233,244 @@
       getValue: (item) => getDpp(item),
       format: (v) => v != null ? v.toFixed(2) : '-'
     },
-    {
+    effectiveDmg: {
+      key: 'effectiveDmg',
+      header: 'Eff Dmg',
+      width: '60px',
+      filterPlaceholder: '>10',
+      getValue: (item) => getEffectiveDamage(item),
+      format: (v) => v != null ? v.toFixed(1) : '-'
+    },
+    eff: {
       key: 'eff',
-      header: 'Eff',
+      header: 'Effic.',
       width: '55px',
       filterPlaceholder: '>50',
       getValue: (item) => getEfficiency(item),
       format: (v) => v != null ? v.toFixed(1) : '-'
+    },
+    damage: {
+      key: 'damage',
+      header: 'Damage',
+      width: '60px',
+      filterPlaceholder: '>20',
+      getValue: (item) => getTotalDamage(item),
+      format: (v) => v != null ? v.toFixed(1) : '-'
+    },
+    range: {
+      key: 'range',
+      header: 'Range',
+      width: '55px',
+      filterPlaceholder: '>10',
+      getValue: (item) => item.Properties?.Range,
+      format: (v) => v != null ? v : '-'
+    },
+    upm: {
+      key: 'upm',
+      header: 'Uses',
+      width: '50px',
+      filterPlaceholder: '>30',
+      getValue: (item) => item.Properties?.UsesPerMinute,
+      format: (v) => v != null ? v : '-'
+    },
+    maxtt: {
+      key: 'maxtt',
+      header: 'Max TT',
+      width: '60px',
+      filterPlaceholder: '>10',
+      getValue: (item) => item.Properties?.Economy?.MaxTT,
+      format: (v) => v != null ? v.toFixed(2) : '-'
+    },
+    decay: {
+      key: 'decay',
+      header: 'Decay',
+      width: '55px',
+      filterPlaceholder: '>0.5',
+      getValue: (item) => item.Properties?.Economy?.Decay,
+      format: (v) => v != null ? v.toFixed(2) : '-'
+    },
+    ammo: {
+      key: 'ammo',
+      header: 'Ammo',
+      width: '55px',
+      filterPlaceholder: '>1',
+      getValue: (item) => item.Properties?.Economy?.AmmoBurn,
+      format: (v) => v != null ? v : '-'
+    },
+    uses: {
+      key: 'uses',
+      header: 'Uses',
+      width: '55px',
+      filterPlaceholder: '>100',
+      getValue: (item) => getTotalUses(item),
+      format: (v) => v != null ? v : '-'
+    },
+    sib: {
+      key: 'sib',
+      header: 'SiB',
+      width: '40px',
+      getValue: (item) => item.Properties?.Skill?.IsSiB,
+      format: (v) => v === true ? 'Yes' : v === false ? 'No' : '-'
+    },
+    minLevel: {
+      key: 'minLevel',
+      header: 'Min Lvl',
+      width: '60px',
+      filterPlaceholder: '>1',
+      getValue: (item) => {
+        const skill = item?.Properties?.Skill;
+        const hitMin = skill?.Hit?.LearningIntervalStart ?? null;
+        const dmgMin = skill?.Dmg?.LearningIntervalStart ?? null;
+        if (hitMin != null && dmgMin != null) return Math.max(hitMin, dmgMin);
+        return hitMin ?? dmgMin ?? null;
+      },
+      format: (v, item) => {
+        const skill = item?.Properties?.Skill;
+        const hitMin = skill?.Hit?.LearningIntervalStart ?? null;
+        const dmgMin = skill?.Dmg?.LearningIntervalStart ?? null;
+        if (hitMin != null && dmgMin != null) {
+          return hitMin === dmgMin ? String(hitMin) : `${hitMin}/${dmgMin}`;
+        }
+        if (hitMin != null) return String(hitMin);
+        if (dmgMin != null) return String(dmgMin);
+        return '-';
+      }
+    },
+    maxLevel: {
+      key: 'maxLevel',
+      header: 'Max Lvl',
+      width: '60px',
+      filterPlaceholder: '>10',
+      getValue: (item) => {
+        const skill = item?.Properties?.Skill;
+        const hitMax = skill?.Hit?.LearningIntervalEnd ?? null;
+        const dmgMax = skill?.Dmg?.LearningIntervalEnd ?? null;
+        if (hitMax != null && dmgMax != null) return Math.max(hitMax, dmgMax);
+        return hitMax ?? dmgMax ?? null;
+      },
+      format: (v, item) => {
+        const skill = item?.Properties?.Skill;
+        const hitMax = skill?.Hit?.LearningIntervalEnd ?? null;
+        const dmgMax = skill?.Dmg?.LearningIntervalEnd ?? null;
+        if (hitMax != null && dmgMax != null) {
+          return hitMax === dmgMax ? String(hitMax) : `${hitMax}/${dmgMax}`;
+        }
+        if (hitMax != null) return String(hitMax);
+        if (dmgMax != null) return String(dmgMax);
+        return '-';
+      }
+    },
+    costPerUse: {
+      key: 'costPerUse',
+      header: 'Cost/Use',
+      width: '65px',
+      filterPlaceholder: '>0.5',
+      getValue: (item) => getCostPerUse(item),
+      format: (v) => v != null ? v.toFixed(4) : '-'
+    },
+    reload: {
+      key: 'reload',
+      header: 'Reload',
+      width: '55px',
+      filterPlaceholder: '>1',
+      getValue: (item) => getReload(item),
+      format: (v) => v != null ? v.toFixed(2) : '-'
+    },
+    weight: {
+      key: 'weight',
+      header: 'Weight',
+      width: '55px',
+      filterPlaceholder: '>1',
+      getValue: (item) => item.Properties?.Weight,
+      format: (v) => v != null ? v : '-'
+    },
+    mintt: {
+      key: 'mintt',
+      header: 'Min TT',
+      width: '55px',
+      filterPlaceholder: '>0',
+      getValue: (item) => item.Properties?.Economy?.MinTT,
+      format: (v) => v != null ? v.toFixed(2) : '-'
+    },
+    category: {
+      key: 'category',
+      header: 'Category',
+      width: '75px',
+      filterPlaceholder: 'Rifle',
+      getValue: (item) => item.Properties?.Category,
+      format: (v) => v || '-'
+    },
+    impactRadius: {
+      key: 'impactRadius',
+      header: 'Radius',
+      width: '55px',
+      filterPlaceholder: '>0',
+      getValue: (item) => item.Properties?.ImpactRadius,
+      format: (v) => v != null ? v : '-'
+    },
+    mfLevel: {
+      key: 'mfLevel',
+      header: 'MF Lvl',
+      width: '55px',
+      filterPlaceholder: '>10',
+      getValue: (item) => item.Properties?.Mindforce?.Level ?? item.Properties?.Level,
+      format: (v) => v != null ? v : '-'
+    },
+    concentration: {
+      key: 'concentration',
+      header: 'Conc.',
+      width: '55px',
+      filterPlaceholder: '>1',
+      getValue: (item) => item.Properties?.Mindforce?.Concentration,
+      format: (v) => v != null ? `${v}s` : '-'
+    },
+    cooldown: {
+      key: 'cooldown',
+      header: 'CD',
+      width: '50px',
+      filterPlaceholder: '>1',
+      getValue: (item) => item.Properties?.Mindforce?.Cooldown,
+      format: (v) => v != null ? `${v}s` : '-'
+    },
+    cooldownGroup: {
+      key: 'cooldownGroup',
+      header: 'CD Grp',
+      width: '55px',
+      filterPlaceholder: '>0',
+      getValue: (item) => item.Properties?.Mindforce?.CooldownGroup,
+      format: (v) => v != null ? v : '-'
     }
+  };
+
+  const navTableColumns = [
+    columnDefs.class,
+    columnDefs.type,
+    columnDefs.dps,
+    columnDefs.dpp,
+    columnDefs.eff
   ];
+
+  // Full-width table columns (superset of navTableColumns with additional stats)
+  const navFullWidthColumns = [
+    columnDefs.class,
+    columnDefs.type,
+    columnDefs.dps,
+    columnDefs.dpp,
+    columnDefs.eff,
+    columnDefs.costPerUse,
+    columnDefs.maxtt,
+    columnDefs.effectiveDmg,
+    columnDefs.range,
+    columnDefs.upm,
+    columnDefs.sib,
+    columnDefs.minLevel,
+    columnDefs.maxLevel,
+    columnDefs.cooldown,
+    columnDefs.cooldownGroup
+  ];
+
+  // All available columns for user configuration
+  const allAvailableColumns = Object.values(columnDefs);
 
   // Breadcrumbs
   $: breadcrumbs = [
@@ -553,6 +783,9 @@
     {navItems}
     {navFilters}
     {navTableColumns}
+    {navFullWidthColumns}
+    navAllAvailableColumns={allAvailableColumns}
+    navPageTypeId="weapons"
     {user}
   editable={true}
   canEdit={canEdit}

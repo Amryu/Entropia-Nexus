@@ -549,6 +549,10 @@
     box-sizing: border-box;
   }
 
+  .filter-input::placeholder {
+    opacity: 0.5;
+  }
+
   .filter-input:focus {
     outline: none;
     border-color: var(--accent-color);

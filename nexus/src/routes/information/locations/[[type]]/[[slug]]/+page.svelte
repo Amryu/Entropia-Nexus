@@ -352,6 +352,72 @@
     { key: 'Planet.Name', header: 'Planet' }
   ];
 
+  // Table columns for expanded/full-width views
+  const locationColumnDefs = {
+    type: {
+      key: 'type',
+      header: 'Type',
+      width: '85px',
+      filterPlaceholder: 'Teleporter',
+      getValue: (item) => item.Properties?.Type,
+      format: (v) => v || '-'
+    },
+    planet: {
+      key: 'planet',
+      header: 'Planet',
+      width: '75px',
+      filterPlaceholder: 'Calypso',
+      getValue: (item) => item.Planet?.Name,
+      format: (v) => v || '-'
+    },
+    coordinates: {
+      key: 'coordinates',
+      header: 'Coordinates',
+      width: '110px',
+      getValue: (item) => {
+        const coords = item.Properties?.Coordinates;
+        if (coords?.Longitude == null && coords?.Latitude == null) return null;
+        return (coords.Longitude ?? 0) + (coords.Latitude ?? 0) * 100000;
+      },
+      format: (v, item) => {
+        const coords = item?.Properties?.Coordinates;
+        if (coords?.Longitude == null && coords?.Latitude == null) return '-';
+        return `${coords.Longitude ?? 0}, ${coords.Latitude ?? 0}`;
+      }
+    },
+    parent: {
+      key: 'parent',
+      header: 'Parent',
+      width: '100px',
+      getValue: (item) => item.ParentLocation?.Name,
+      format: (v) => v || '-'
+    },
+    technicalId: {
+      key: 'technicalId',
+      header: 'Tech ID',
+      width: '65px',
+      getValue: (item) => item.Properties?.TechnicalId,
+      format: (v) => v != null ? v : '-'
+    }
+  };
+
+  const navTableColumns = [
+    locationColumnDefs.type,
+    locationColumnDefs.planet,
+    locationColumnDefs.coordinates
+  ];
+
+  const navFullWidthColumns = [
+    locationColumnDefs.type,
+    locationColumnDefs.planet,
+    locationColumnDefs.coordinates,
+    locationColumnDefs.parent
+  ];
+
+  const allAvailableColumns = Object.values(locationColumnDefs);
+
+  $: navPageTypeId = `locations-${selectedFilter || 'all'}`;
+
   // Facilities management
   function addFacility(facilityName) {
     const current = activeLocation?.Facilities || [];
@@ -695,6 +761,10 @@
       customGetItemHref={getSidebarHref}
       userPendingCreates={filteredPendingCreates}
       {userPendingUpdates}
+      tableColumns={navTableColumns}
+      fullWidthColumns={navFullWidthColumns}
+      allAvailableColumns={allAvailableColumns}
+      pageTypeId={navPageTypeId}
     />
   </svelte:fragment>
 

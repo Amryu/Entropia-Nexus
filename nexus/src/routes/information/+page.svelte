@@ -9,37 +9,37 @@
     {
       name: 'Mobs',
       href: '/information/mobs',
-      icon: 'ðŸ¦Ž',
+      icon: 'MOB',
       description: 'Creature database with maturities, spawns, loots, and codex calculator'
     },
     {
       name: 'Missions',
       href: '/information/missions',
-      icon: 'M',
+      icon: 'MSN',
       description: 'Mission and mission chain reference data with steps and rewards'
     },
     {
       name: 'Professions',
       href: '/information/professions',
-      icon: 'ðŸ“Š',
+      icon: 'PRO',
       description: 'Character profession skill trees and level requirements'
     },
     {
       name: 'Skills',
       href: '/information/skills',
-      icon: 'ðŸ“š',
+      icon: 'SKL',
       description: 'Individual character skills with profession contributions'
     },
     {
       name: 'Vendors',
       href: '/information/vendors',
-      icon: 'ðŸª',
+      icon: 'VND',
       description: 'NPC trade terminal vendors with locations and offers'
     },
     {
       name: 'Locations',
       href: '/information/locations',
-      icon: 'L',
+      icon: 'LOC',
       description: 'Teleporters, areas, estates, outposts, and other locations'
     }
   ];
@@ -65,7 +65,7 @@
           <h2 class="category-name">{category.name}</h2>
           <p class="category-description">{category.description}</p>
         </div>
-        <span class="category-arrow">â†’</span>
+        <span class="category-arrow">&rarr;</span>
       </a>
     {/each}
   </div>
@@ -120,7 +120,8 @@
   }
 
   .category-icon {
-    font-size: 2rem;
+    font-size: 1rem;
+    font-weight: 700;
     flex-shrink: 0;
     width: 48px;
     height: 48px;
@@ -129,6 +130,7 @@
     justify-content: center;
     background-color: var(--primary-color);
     border-radius: 8px;
+    letter-spacing: 0.5px;
   }
 
   .category-content {
@@ -185,7 +187,6 @@
     }
 
     .category-icon {
-      font-size: 1.5rem;
       width: 40px;
       height: 40px;
     }
@@ -199,6 +200,3 @@
     }
   }
 </style>
-
-
-

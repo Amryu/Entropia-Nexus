@@ -167,16 +167,62 @@
     .filter((prof) => prof?.Name)
     .map((prof) => ({ label: prof.Name, value: prof.Name }));
 
-  const navTableColumns = [
-    {
+  const skillColumnDefs = {
+    category: {
       key: 'category',
       header: 'Category',
       width: '110px',
       filterPlaceholder: 'Combat',
       getValue: (item) => item.Category?.Name,
       format: (v) => v || '-'
+    },
+    hpIncrease: {
+      key: 'hpIncrease',
+      header: 'Pts/HP',
+      width: '60px',
+      filterPlaceholder: '>0',
+      getValue: (item) => item.Properties?.HpIncrease || 0,
+      format: (v) => v > 0 ? v : '-'
+    },
+    professions: {
+      key: 'professions',
+      header: 'Profs',
+      width: '55px',
+      filterPlaceholder: '>0',
+      getValue: (item) => item.Professions?.length || 0,
+      format: (v) => v != null ? v : '-'
+    },
+    hidden: {
+      key: 'hidden',
+      header: 'Hidden',
+      width: '60px',
+      filterPlaceholder: 'Yes',
+      getValue: (item) => item.Properties?.IsHidden ? 1 : 0,
+      format: (v) => v ? 'Yes' : 'No'
+    },
+    extractable: {
+      key: 'extractable',
+      header: 'Extract',
+      width: '60px',
+      filterPlaceholder: 'Yes',
+      getValue: (item) => item.Properties?.IsExtractable ? 1 : 0,
+      format: (v) => v ? 'Yes' : 'No'
     }
+  };
+
+  const navTableColumns = [
+    skillColumnDefs.category,
+    skillColumnDefs.hpIncrease,
+    skillColumnDefs.professions
   ];
+
+  const navFullWidthColumns = [
+    ...navTableColumns,
+    skillColumnDefs.hidden,
+    skillColumnDefs.extractable
+  ];
+
+  const allAvailableColumns = Object.values(skillColumnDefs);
 
   // Breadcrumbs
   $: breadcrumbs = [
@@ -324,6 +370,9 @@
     {navItems}
     {navFilters}
     {navTableColumns}
+    {navFullWidthColumns}
+    navAllAvailableColumns={allAvailableColumns}
+    navPageTypeId="skills"
     {user}
   editable={true}
   {canEdit}

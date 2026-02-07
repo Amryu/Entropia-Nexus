@@ -322,6 +322,54 @@
 
   $: navTableColumns = getNavTableColumns(additional.type);
 
+  // Full column definitions for all tool types
+  const columnDefs = {
+    toolType: { key: 'toolType', header: 'Tool Type', width: '70px', filterPlaceholder: 'Finder', getValue: (item) => getTypeName(item._type || additional.type), format: (v) => v || '-' },
+    upm: { key: 'upm', header: 'Uses/Min', width: '55px', filterPlaceholder: '>10', getValue: (item) => item.Properties?.UsesPerMinute, format: (v) => v != null ? clampDecimals(v, 0, 1) : '-' },
+    decay: { key: 'decay', header: 'Decay', width: '55px', filterPlaceholder: '<0.5', getValue: (item) => item.Properties?.Economy?.Decay, format: (v) => v != null ? v.toFixed(2) : '-' },
+    range: { key: 'range', header: 'Range', width: '55px', filterPlaceholder: '>10', getValue: (item) => item.Properties?.Range, format: (v) => v != null ? v : '-' },
+    depth: { key: 'depth', header: 'Depth', width: '55px', filterPlaceholder: '>100', getValue: (item) => item.Properties?.Depth, format: (v) => v != null ? v : '-' },
+    efficiency: { key: 'efficiency', header: 'Effic.', width: '55px', filterPlaceholder: '>50', getValue: (item) => item.Properties?.Efficiency, format: (v) => v != null ? v : '-' },
+    effPerPed: { key: 'effPerPed', header: 'Eff/PED', width: '60px', filterPlaceholder: '>10', getValue: (item) => calcEfficiencyPerPed(item), format: (v) => v != null ? v.toFixed(1) : '-' },
+    cost: { key: 'cost', header: 'Cost/Use', width: '60px', filterPlaceholder: '<1', getValue: (item) => getCost(item), format: (v) => v != null ? v.toFixed(2) : '-' },
+    maxTT: { key: 'maxTT', header: 'Max TT', width: '60px', filterPlaceholder: '>10', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? clampDecimals(v, 2, 4) : '-' },
+    minTT: { key: 'minTT', header: 'Min TT', width: '55px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Economy?.MinTT, format: (v) => v != null ? clampDecimals(v, 2, 4) : '-' },
+    ammoBurn: { key: 'ammoBurn', header: 'Ammo Burn', width: '60px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Economy?.AmmoBurn, format: (v) => v != null ? v : '-' },
+    totalUses: { key: 'totalUses', header: 'Uses', width: '55px', filterPlaceholder: '>100', getValue: (item) => getTotalUses(item), format: (v) => v != null ? v.toLocaleString() : '-' },
+    weight: { key: 'weight', header: 'Weight', width: '55px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Weight, format: (v) => v != null ? clampDecimals(v, 1, 2) : '-' },
+    sib: { key: 'sib', header: 'SiB', width: '40px', filterPlaceholder: 'Yes', getValue: (item) => item.Properties?.Skill?.IsSiB, format: (v) => v ? 'Yes' : 'No' },
+    minLevel: { key: 'minLevel', header: 'Min Lvl', width: '55px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Skill?.LearningIntervalStart, format: (v) => v != null ? v : '-' },
+    maxLevel: { key: 'maxLevel', header: 'Max Lvl', width: '55px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Skill?.LearningIntervalEnd, format: (v) => v != null ? v : '-' },
+    mfLevel: { key: 'mfLevel', header: 'MF Lvl', width: '55px', filterPlaceholder: '>10', getValue: (item) => item.Properties?.Mindforce?.Level ?? item.Properties?.Level, format: (v) => v != null ? v : '-' },
+    concentration: { key: 'concentration', header: 'Conc.', width: '55px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Mindforce?.Concentration, format: (v) => v != null ? `${v}s` : '-' },
+    cooldown: { key: 'cooldown', header: 'CD', width: '50px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Mindforce?.Cooldown, format: (v) => v != null ? `${v}s` : '-' },
+    cooldownGroup: { key: 'cooldownGroup', header: 'CD Grp', width: '55px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Mindforce?.CooldownGroup, format: (v) => v != null ? v : '-' }
+  };
+
+  function getNavFullWidthColumns(type) {
+    switch (type) {
+      case 'scanners':
+        return [columnDefs.upm, columnDefs.decay, columnDefs.range, columnDefs.depth, columnDefs.maxTT, columnDefs.minTT, columnDefs.totalUses, columnDefs.weight];
+      case 'finders':
+        return [columnDefs.upm, columnDefs.decay, columnDefs.depth, columnDefs.range, columnDefs.ammoBurn, columnDefs.cost, columnDefs.maxTT, columnDefs.totalUses, columnDefs.sib, columnDefs.minLevel, columnDefs.maxLevel];
+      case 'excavators':
+        return [columnDefs.upm, columnDefs.decay, columnDefs.efficiency, columnDefs.effPerPed, columnDefs.maxTT, columnDefs.totalUses, columnDefs.sib, columnDefs.minLevel, columnDefs.maxLevel, columnDefs.weight];
+      case 'teleportationchips':
+      case 'effectchips':
+        return [columnDefs.upm, columnDefs.decay, columnDefs.cost, columnDefs.range, columnDefs.ammoBurn, columnDefs.maxTT, columnDefs.sib, columnDefs.minLevel, columnDefs.maxLevel, columnDefs.cooldown, columnDefs.cooldownGroup];
+      case 'refiners':
+        return [columnDefs.upm, columnDefs.decay, columnDefs.maxTT, columnDefs.minTT, columnDefs.totalUses, columnDefs.weight];
+      case 'misctools':
+        return [columnDefs.upm, columnDefs.decay, columnDefs.maxTT, columnDefs.minTT, columnDefs.totalUses, columnDefs.sib, columnDefs.minLevel, columnDefs.maxLevel, columnDefs.weight];
+      default:
+        return [columnDefs.toolType, columnDefs.upm, columnDefs.decay, columnDefs.maxTT, columnDefs.weight];
+    }
+  }
+
+  $: navFullWidthColumns = getNavFullWidthColumns(additional.type);
+  $: allAvailableColumns = Object.values(columnDefs);
+  $: navPageTypeId = `tools-${additional.type || 'all'}`;
+
   // Custom href generator for items - handles _type property for "all items" view
   function getItemHref(item, basePath) {
     const type = item._type || additional.type;
@@ -472,6 +520,9 @@
   {navItems}
   {navFilters}
   {navTableColumns}
+  navAllAvailableColumns={allAvailableColumns}
+  navFullWidthColumns={navFullWidthColumns}
+  navPageTypeId={navPageTypeId}
   navGetItemHref={getItemHref}
   {user}
   editable={true}

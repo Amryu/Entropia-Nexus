@@ -114,11 +114,17 @@
   // No filters for strongboxes
   $: navFilters = [];
 
+  // Full column definitions for strongboxes
+  const columnDefs = {
+    weight: { key: 'weight', header: 'Weight', width: '60px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Weight, format: (v) => v != null ? `${v.toFixed(1)}kg` : '-' },
+    tt: { key: 'tt', header: 'TT', width: '60px', filterPlaceholder: '>10', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? v.toFixed(2) : '-' },
+    loots: { key: 'loots', header: 'Loots', width: '55px', filterPlaceholder: '>0', getValue: (item) => item.Loots?.length || 0, format: (v) => v != null ? v : '-' }
+  };
+
   // Sidebar table columns
-  $: navTableColumns = [
-    { key: 'weight', header: 'Weight', width: '60px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Weight, format: (v) => v != null ? `${v.toFixed(1)}kg` : '-' },
-    { key: 'tt', header: 'TT', width: '60px', filterPlaceholder: '>10', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? v.toFixed(2) : '-' }
-  ];
+  $: navTableColumns = [columnDefs.weight, columnDefs.tt];
+  const navFullWidthColumns = [columnDefs.weight, columnDefs.tt, columnDefs.loots];
+  const allAvailableColumns = Object.values(columnDefs);
 
   // Breadcrumbs
   $: breadcrumbs = [
@@ -230,6 +236,9 @@
   {navItems}
   {navFilters}
   {navTableColumns}
+  navAllAvailableColumns={allAvailableColumns}
+  navFullWidthColumns={navFullWidthColumns}
+  navPageTypeId="strongboxes"
   {user}
   editable={true}
   {canEdit}

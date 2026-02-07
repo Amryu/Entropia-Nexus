@@ -141,12 +141,25 @@
   // Type filters for sidebar
   $: navFilters = [];
 
-  // Sidebar table columns
-  $: navTableColumns = [
-    { key: 'type', header: 'Type', width: '60px', filterPlaceholder: 'Land', getValue: (item) => item.Properties?.Type, format: (v) => v || '-' },
-    { key: 'speed', header: 'Speed', width: '60px', filterPlaceholder: '>50', getValue: (item) => item.Properties?.MaxSpeed, format: (v) => v != null ? v.toFixed(0) : '-' },
-    { key: 'fuel', header: 'Fuel Usage', width: '80px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Economy?.FuelConsumptionActive ?? item.Properties?.Economy?.FuelConsumptionPassive, format: (v) => v != null ? v.toFixed(2) : '-' }
-  ];
+  // Full column definitions for vehicles
+  const columnDefs = {
+    type: { key: 'type', header: 'Type', width: '60px', filterPlaceholder: 'Land', getValue: (item) => item.Properties?.Type, format: (v) => v || '-' },
+    speed: { key: 'speed', header: 'Speed', width: '60px', filterPlaceholder: '>50', getValue: (item) => item.Properties?.MaxSpeed, format: (v) => v != null ? v.toFixed(0) : '-' },
+    fuel: { key: 'fuel', header: 'Fuel Usage', width: '80px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Economy?.FuelConsumptionActive ?? item.Properties?.Economy?.FuelConsumptionPassive, format: (v) => v != null ? v.toFixed(2) : '-' },
+    passengers: { key: 'passengers', header: 'Passengers', width: '60px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.PassengerCount, format: (v) => v != null ? v : '-' },
+    maxSI: { key: 'maxSI', header: 'Max SI', width: '60px', filterPlaceholder: '>100', getValue: (item) => item.Properties?.MaxStructuralIntegrity, format: (v) => v != null ? v : '-' },
+    weight: { key: 'weight', header: 'Weight', width: '55px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Weight, format: (v) => v != null ? clampDecimals(v, 1, 2) : '-' },
+    maxTT: { key: 'maxTT', header: 'Max TT', width: '60px', filterPlaceholder: '>10', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? clampDecimals(v, 2, 4) : '-' },
+    durability: { key: 'durability', header: 'Durability', width: '65px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Economy?.Durability, format: (v) => v != null ? v : '-' },
+    enginePower: { key: 'enginePower', header: 'Engine', width: '55px', filterPlaceholder: '>100', getValue: (item) => item.Properties?.EnginePower, format: (v) => v != null ? v : '-' },
+    itemCapacity: { key: 'itemCapacity', header: 'Items', width: '50px', filterPlaceholder: '>10', getValue: (item) => item.Properties?.ItemCapacity, format: (v) => v != null ? v : '-' },
+    weightCapacity: { key: 'weightCapacity', header: 'Wt. Cap.', width: '60px', filterPlaceholder: '>100', getValue: (item) => item.Properties?.WeightCapacity, format: (v) => v != null ? clampDecimals(v, 0, 1) : '-' },
+    totalDefense: { key: 'totalDefense', header: 'Defense', width: '60px', filterPlaceholder: '>0', getValue: (item) => getTotalDefense(item), format: (v) => v != null && v > 0 ? v.toFixed(1) : '-' }
+  };
+
+  $: navTableColumns = [columnDefs.type, columnDefs.speed, columnDefs.fuel];
+  const navFullWidthColumns = [columnDefs.type, columnDefs.speed, columnDefs.fuel, columnDefs.passengers, columnDefs.maxSI, columnDefs.weight, columnDefs.maxTT, columnDefs.durability];
+  const allAvailableColumns = Object.values(columnDefs);
 
   // Breadcrumbs
   $: breadcrumbs = [
@@ -228,6 +241,9 @@
   {navItems}
   {navFilters}
   {navTableColumns}
+  navAllAvailableColumns={allAvailableColumns}
+  navFullWidthColumns={navFullWidthColumns}
+  navPageTypeId="vehicles"
   {user}
   editable={true}
   {canEdit}

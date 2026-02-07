@@ -57,6 +57,15 @@
   /** @type {Object|null} Custom column formatters for navigation sidebar */
   export let navColumnFormatters = null;
 
+  /** @type {Array|null} Additional table columns for full-width mode (superset of navTableColumns) */
+  export let navFullWidthColumns = null;
+
+  /** @type {Array|null} All possible columns for column configuration */
+  export let navAllAvailableColumns = null;
+
+  /** @type {string} Unique ID for localStorage column preferences key */
+  export let navPageTypeId = '';
+
   /** @type {Function|null} Custom function to generate item href in navigation */
   export let navGetItemHref = null;
 
@@ -74,6 +83,9 @@
 
   // Sidebar expanded state (for table view)
   let sidebarExpanded = false;
+
+  // Sidebar full-width state (takes entire page, hides content)
+  let sidebarFullWidth = false;
 
   // Auth help dialog state
   let showAuthDialog = false;
@@ -164,6 +176,10 @@
 
   function toggleSidebarExpand() {
     sidebarExpanded = !sidebarExpanded;
+  }
+
+  function toggleSidebarFullWidth() {
+    sidebarFullWidth = !sidebarFullWidth;
   }
 
   function handleCreate() {
@@ -260,7 +276,7 @@
 
 <svelte:window bind:innerWidth={windowWidth} bind:innerHeight={windowHeight} />
 
-<div class="wiki-page" class:mobile={isMobile} class:tablet={isTablet} class:sidebar-expanded={sidebarExpanded}>
+<div class="wiki-page" class:mobile={isMobile} class:tablet={isTablet} class:sidebar-expanded={sidebarExpanded} class:sidebar-full-width={sidebarFullWidth}>
   <!-- Mobile Navigation Drawer -->
   {#if isMobile}
     <MobileDrawer bind:open={drawerOpen} on:close={closeDrawer}>
@@ -297,8 +313,13 @@
             currentSlug={entity?.Name}
             {currentChangeId}
             expanded={sidebarExpanded}
+            fullWidth={sidebarFullWidth}
             on:toggleExpand={toggleSidebarExpand}
+            on:toggleFullWidth={toggleSidebarFullWidth}
             tableColumns={navTableColumns}
+            fullWidthColumns={navFullWidthColumns}
+            allAvailableColumns={navAllAvailableColumns}
+            pageTypeId={navPageTypeId}
             columnFormatters={navColumnFormatters}
             customGetItemHref={navGetItemHref}
             {userPendingCreates}
@@ -497,6 +518,7 @@
     height: 100%;
     background-color: var(--primary-color);
     color: var(--text-color);
+    overflow-x: hidden;
   }
 
   .wiki-layout {
@@ -520,6 +542,16 @@
     width: 50%;
     min-width: 280px;
     max-width: 700px;
+  }
+
+  .wiki-page.sidebar-full-width .wiki-sidebar {
+    width: 100%;
+    min-width: 100%;
+    max-width: 100%;
+  }
+
+  .wiki-page.sidebar-full-width:not(.mobile) .wiki-content {
+    display: none;
   }
 
   .wiki-content {

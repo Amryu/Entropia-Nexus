@@ -141,16 +141,53 @@
     }
   ];
 
-  const navTableColumns = [
-    {
+  const profColumnDefs = {
+    category: {
       key: 'category',
       header: 'Category',
       width: '110px',
       filterPlaceholder: 'Combat',
       getValue: (item) => item.Category?.Name,
       format: (v) => v || '-'
+    },
+    skills: {
+      key: 'skills',
+      header: 'Skills',
+      width: '55px',
+      filterPlaceholder: '>5',
+      getValue: (item) => item.Skills?.length || 0,
+      format: (v) => v != null ? v : '-'
+    },
+    totalWeight: {
+      key: 'totalWeight',
+      header: 'Weight',
+      width: '65px',
+      filterPlaceholder: '>100',
+      getValue: (item) => item.Skills?.reduce((sum, s) => sum + (s.Weight || 0), 0) || 0,
+      format: (v) => v != null ? v : '-'
+    },
+    unlocks: {
+      key: 'unlocks',
+      header: 'Unlocks',
+      width: '65px',
+      filterPlaceholder: '>0',
+      getValue: (item) => item.Unlocks?.length || 0,
+      format: (v) => v != null ? v : '-'
     }
+  };
+
+  const navTableColumns = [
+    profColumnDefs.category,
+    profColumnDefs.skills,
+    profColumnDefs.totalWeight
   ];
+
+  const navFullWidthColumns = [
+    ...navTableColumns,
+    profColumnDefs.unlocks
+  ];
+
+  const allAvailableColumns = Object.values(profColumnDefs);
 
   // Category options for editing
   const categoryOptions = [
@@ -258,6 +295,9 @@
     {navItems}
     {navFilters}
     {navTableColumns}
+    {navFullWidthColumns}
+    navAllAvailableColumns={allAvailableColumns}
+    navPageTypeId="professions"
     {user}
   editable={true}
   {canEdit}

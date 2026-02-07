@@ -9,6 +9,7 @@
   import { goto } from '$app/navigation';
   import { browser } from '$app/environment';
   import { encodeURIComponentSafe } from '$lib/util';
+  import ColumnConfigDialog from './ColumnConfigDialog.svelte';
 
   const dispatch = createEventDispatcher();
 
@@ -39,12 +40,32 @@
   /** @type {boolean} Whether sidebar is in expanded table view mode */
   export let expanded = false;
 
+  /** @type {boolean} Whether sidebar is in full-width mode (takes entire page width, content hidden) */
+  export let fullWidth = false;
+
   /**
    * @type {Array|null} Custom table columns for expanded view
    * Default: [{ key: 'class', header: 'Class', width: '70px' }, { key: 'maxLvl', header: 'Lvl', width: '40px' }, ...]
    * Each column: { key: string, header: string, width: string, getValue?: (item) => any, format?: (value, item) => string }
    */
   export let tableColumns = null;
+
+  /**
+   * @type {Array|null} Additional table columns shown only in full-width mode
+   * Falls back to tableColumns if not provided
+   */
+  export let fullWidthColumns = null;
+
+  /**
+   * @type {Array|null} All possible columns for this page type (superset for column configuration)
+   * When provided, enables column configuration UI (Columns.../Reset buttons)
+   */
+  export let allAvailableColumns = null;
+
+  /**
+   * @type {string} Unique ID for localStorage key (e.g. 'weapons', 'tools-scanners')
+   */
+  export let pageTypeId = '';
 
   /**
    * @type {Object|null} Custom column formatters keyed by column key
@@ -74,7 +95,7 @@
   // Search and filter state
   let searchQuery = '';
   let activeFilters = {};
-  let columnFilters = { name: '', class: '', maxLvl: '', dps: '', dpp: '' };
+  let columnFilters = { name: '' };
   let sortColumn = null;
   let sortDirection = 'asc';
   let showFilterHelp = false;
@@ -98,6 +119,15 @@
       if (activeFilters[filter.key] === undefined) {
         // Use array for multi-select filters, null for single-select
         activeFilters[filter.key] = filter.multiSelect ? [] : null;
+      }
+    }
+  }
+
+  // Initialize column filter keys from active columns
+  $: {
+    for (const column of activeColumns) {
+      if (columnFilters[column.key] === undefined) {
+        columnFilters[column.key] = '';
       }
     }
   }
@@ -370,18 +400,18 @@
       }
     }
 
-    // Apply column filters in expanded mode
-    if (expanded) {
+    // Apply column filters in table view mode (expanded or full-width)
+    if (showTableView) {
       if (columnFilters.name) {
         result = result.filter(item => smartFilter(item.Name, columnFilters.name));
       }
-      // Apply filters for each active column
+      // Apply filters for each active column (filter on displayed value so Yes/No etc. work)
       for (const column of activeColumns) {
         const filterValue = columnFilters[column.key];
         if (filterValue) {
           result = result.filter(item => {
-            const value = column.getValue ? column.getValue(item) : item[column.key];
-            return smartFilter(value, filterValue);
+            const displayValue = formatCell(item, column);
+            return smartFilter(displayValue, filterValue);
           });
         }
       }
@@ -499,7 +529,12 @@
       activeFilters[filter.key] = filter.multiSelect ? [] : null;
     }
     activeFilters = activeFilters;
-    columnFilters = { name: '', class: '', maxLvl: '', dps: '', dpp: '' };
+    // Reset all column filters
+    const resetFilters = { name: '' };
+    for (const column of activeColumns) {
+      resetFilters[column.key] = '';
+    }
+    columnFilters = resetFilters;
   }
 
   function getItemHref(item) {
@@ -731,8 +766,199 @@
     { key: 'dpp', header: 'DPP', width: '55px', getValue: calcDpp, format: (v) => v ? v.toFixed(2) : '-' }
   ];
 
-  // Actual columns to use (custom or default)
-  $: activeColumns = tableColumns || defaultTableColumns;
+  // Column configuration state
+  let userColumnSelection = null; // null = defaults, string[] = user's ordered column keys
+  let showColumnDialog = false;
+
+  // localStorage key for column preferences
+  $: storageKey = pageTypeId ? `wiki-nav-columns-${pageTypeId}` : '';
+
+  // Load user column selection from localStorage when pageTypeId changes
+  $: if (browser && storageKey) {
+    try {
+      const stored = localStorage.getItem(storageKey);
+      if (stored) {
+        const keys = JSON.parse(stored);
+        if (Array.isArray(keys) && keys.length > 0 && allAvailableColumns) {
+          // Validate keys against available columns
+          const validKeys = new Set(allAvailableColumns.map(c => c.key));
+          const filtered = keys.filter(k => validKeys.has(k));
+          userColumnSelection = filtered.length > 0 ? filtered : null;
+        } else {
+          userColumnSelection = null;
+        }
+      } else {
+        userColumnSelection = null;
+      }
+    } catch {
+      userColumnSelection = null;
+    }
+  }
+
+  // Save user column selection to localStorage
+  function saveColumnSelection(keys) {
+    if (!browser || !storageKey) return;
+    if (keys && keys.length > 0) {
+      localStorage.setItem(storageKey, JSON.stringify(keys));
+    } else {
+      localStorage.removeItem(storageKey);
+    }
+  }
+
+  // Build column lookup from allAvailableColumns
+  $: availableColumnMap = allAvailableColumns
+    ? Object.fromEntries(allAvailableColumns.map(c => [c.key, c]))
+    : {};
+
+  // Resolve user-configured columns from keys
+  $: userConfiguredColumns = userColumnSelection
+    ? userColumnSelection.map(k => availableColumnMap[k]).filter(Boolean)
+    : null;
+
+  // Actual columns to use: user-configured > full-width/table defaults
+  $: activeColumns = (() => {
+    if (userConfiguredColumns) {
+      return fullWidth ? userConfiguredColumns : userConfiguredColumns.slice(0, 5);
+    }
+    return (fullWidth && fullWidthColumns) ? fullWidthColumns : (tableColumns || defaultTableColumns);
+  })();
+
+  $: hasCustomColumns = userColumnSelection !== null;
+
+  function handleOpenColumnDialog() {
+    showColumnDialog = true;
+  }
+
+  function handleResetColumns() {
+    userColumnSelection = null;
+    saveColumnSelection(null);
+    // Clear sort/filter state for columns that may no longer exist
+    sortColumn = null;
+    sortDirection = 'asc';
+    widthsCalculated = false;
+    calculatedColumnWidths = {};
+  }
+
+  function handleColumnDialogApply(event) {
+    const { columnKeys } = event.detail;
+    userColumnSelection = columnKeys;
+    saveColumnSelection(columnKeys);
+    showColumnDialog = false;
+    // Reset widths and sort for new column set
+    widthsCalculated = false;
+    calculatedColumnWidths = {};
+    // Clear sort if the sorted column was removed
+    if (sortColumn && !columnKeys.includes(sortColumn) && sortColumn !== 'name') {
+      sortColumn = null;
+    }
+    // Clear column filters for removed columns
+    for (const key of Object.keys(columnFilters)) {
+      if (key !== 'name' && !columnKeys.includes(key)) {
+        delete columnFilters[key];
+      }
+    }
+    columnFilters = columnFilters;
+  }
+
+  function handleColumnDialogCancel() {
+    showColumnDialog = false;
+  }
+
+  // Direct column header drag-and-drop (full-width mode only)
+  let headerDragIndex = null;
+  let headerDragOverIndex = null;
+  let headerMouseDownX = 0;
+  let headerMouseDownY = 0;
+  let headerDragStarted = false;
+
+  function handleHeaderMouseDown(e, colIndex) {
+    // Only in full-width mode with configurable columns
+    if (!fullWidth || !allAvailableColumns) return;
+    headerMouseDownX = e.clientX;
+    headerMouseDownY = e.clientY;
+    headerDragIndex = colIndex;
+    headerDragStarted = false;
+
+    const handleMouseMove = (me) => {
+      const dx = me.clientX - headerMouseDownX;
+      const dy = me.clientY - headerMouseDownY;
+      if (!headerDragStarted && Math.sqrt(dx * dx + dy * dy) > 5) {
+        headerDragStarted = true;
+      }
+    };
+
+    const handleMouseUp = (me) => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+
+      if (!headerDragStarted) {
+        // Was a click, not a drag - trigger sort
+        // colIndex is 0-based for activeColumns, but 'name' is handled separately
+        const column = activeColumns[colIndex];
+        if (column) {
+          handleSort(column.key);
+        }
+      } else if (headerDragIndex !== null && headerDragOverIndex !== null && headerDragIndex !== headerDragOverIndex) {
+        // Was a drag - reorder columns
+        reorderColumns(headerDragIndex, headerDragOverIndex);
+      }
+
+      headerDragIndex = null;
+      headerDragOverIndex = null;
+      headerDragStarted = false;
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  }
+
+  function handleHeaderDragOver(e, colIndex) {
+    if (headerDragStarted && headerDragIndex !== null) {
+      e.preventDefault();
+      headerDragOverIndex = colIndex;
+    }
+  }
+
+  function reorderColumns(fromIndex, toIndex) {
+    // Get current column keys (either user-configured or from defaults)
+    let keys = userConfiguredColumns
+      ? userConfiguredColumns.map(c => c.key)
+      : activeColumns.map(c => c.key);
+
+    if (fromIndex < 0 || fromIndex >= keys.length || toIndex < 0 || toIndex >= keys.length) return;
+
+    const updated = [...keys];
+    const [moved] = updated.splice(fromIndex, 1);
+    updated.splice(toIndex, 0, moved);
+
+    // If user didn't have custom columns yet, we need all columns, not just the visible slice
+    if (!userConfiguredColumns && allAvailableColumns) {
+      // In expanded mode we only show first 5, but we should save all
+      const defaultKeys = (fullWidth && fullWidthColumns)
+        ? fullWidthColumns.map(c => c.key)
+        : (tableColumns || defaultTableColumns).map(c => c.key);
+      // If expanded mode (not fullWidth), we reordered the first 5 but need to keep the rest
+      if (!fullWidth) {
+        const remainingKeys = defaultKeys.slice(5);
+        userColumnSelection = [...updated, ...remainingKeys];
+      } else {
+        userColumnSelection = updated;
+      }
+    } else {
+      userColumnSelection = userConfiguredColumns
+        ? (() => {
+            const all = [...userConfiguredColumns.map(c => c.key)];
+            const [m] = all.splice(fromIndex, 1);
+            all.splice(toIndex, 0, m);
+            return all;
+          })()
+        : updated;
+    }
+
+    saveColumnSelection(userColumnSelection);
+    widthsCalculated = false;
+    calculatedColumnWidths = {};
+  }
 
   // Generate grid template from active columns
   $: gridTemplateColumns = `1fr ${activeColumns.map(c => c.width).join(' ')}`;
@@ -752,8 +978,15 @@
     return value ?? '-';
   }
 
+  // Table view is active when either expanded or full-width mode is on
+  $: showTableView = expanded || fullWidth;
+
   function handleToggleExpand() {
     dispatch('toggleExpand');
+  }
+
+  function handleToggleFullWidth() {
+    dispatch('toggleFullWidth');
   }
 
   // Scrollbar width measurement
@@ -764,12 +997,16 @@
   let widthsCalculated = false;
 
   // Measure text width using canvas
-  function measureTextWidth(text, font = '12px system-ui, -apple-system, sans-serif') {
+  let measureCanvas;
+  function measureTextWidth(text, font = '12px system-ui, -apple-system, sans-serif', letterSpacing = 0) {
     if (!browser) return 0;
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
+    if (!measureCanvas) measureCanvas = document.createElement('canvas');
+    const ctx = measureCanvas.getContext('2d');
     ctx.font = font;
-    return ctx.measureText(String(text)).width;
+    const baseWidth = ctx.measureText(String(text)).width;
+    // Account for letter-spacing (applied between each character)
+    const spacingExtra = letterSpacing * Math.max(0, String(text).length - 1);
+    return baseWidth + spacingExtra;
   }
 
   function parseColumnWidth(width) {
@@ -778,36 +1015,41 @@
     return match ? Number(match[1]) : null;
   }
 
-  // Calculate column widths based on initial data (only needed for expanded table view)
+  // Calculate column widths based on initial data (only needed for table view)
   function calculateColumnWidths() {
-    if (widthsCalculated || !expanded || !items || items.length === 0) return;
+    if (widthsCalculated || !showTableView || !items || items.length === 0) return;
 
-    const headerFont = '11px system-ui, -apple-system, sans-serif';
+    // Font specs matching .th CSS: font-weight 600, 11px, uppercase, letter-spacing 0.3px
+    const headerFont = '600 11px system-ui, -apple-system, sans-serif';
+    const headerLetterSpacing = 0.3;
+    const headerPadding = 8; // .th padding: 6px 4px → 8px horizontal
+    // Font specs matching .cell CSS: 12px, padding: 0 2px → 4px horizontal
     const cellFont = '12px system-ui, -apple-system, sans-serif';
-    const padding = 16; // Extra padding for cell content
-    const minWidth = 40; // Minimum column width
-    const maxWidth = 120; // Maximum column width
+    const cellPadding = 8; // 4px CSS padding + 4px extra breathing room
+    const minWidth = 40;
+    const maxWidth = 160;
     const sourceItems = visibleItems?.length ? visibleItems : [];
     if (sourceItems.length === 0) return;
 
     for (const column of activeColumns) {
-      // Start with header width
-      let maxTextWidth = measureTextWidth(column.header, headerFont);
+      // Measure header width (uppercase + sort arrow + letter-spacing)
+      const headerText = (column.header + ' ▲').toUpperCase();
+      const headerWidth = measureTextWidth(headerText, headerFont, headerLetterSpacing) + headerPadding;
 
-      // Measure all values in the column
+      // Measure all cell values in the column
+      let maxCellWidth = 0;
       for (const item of sourceItems) {
         const value = formatCell(item, column);
         const textWidth = measureTextWidth(value, cellFont);
-        if (textWidth > maxTextWidth) {
-          maxTextWidth = textWidth;
+        if (textWidth > maxCellWidth) {
+          maxCellWidth = textWidth;
         }
       }
+      maxCellWidth += cellPadding;
 
-      const explicitMinWidth = parseColumnWidth(column.width);
-      const effectiveMin = Math.max(minWidth, explicitMinWidth ?? 0);
-      const effectiveMax = Math.max(maxWidth, explicitMinWidth ?? 0);
-      // Clamp width between min and max, add padding
-      const finalWidth = Math.max(effectiveMin, Math.min(effectiveMax, Math.ceil(maxTextWidth + padding)));
+      // Use the wider of header vs cell content, plus extra breathing room
+      const contentWidth = Math.max(headerWidth, maxCellWidth) + 20;
+      const finalWidth = Math.max(minWidth, Math.min(maxWidth, Math.ceil(contentWidth)));
       calculatedColumnWidths[column.key] = `${finalWidth}px`;
     }
 
@@ -827,8 +1069,14 @@
     ? `1fr ${activeColumns.map(c => getColumnWidth(c)).join(' ')}`
     : gridTemplateColumns;
 
-  // Calculate column widths when expanded mode is enabled (run in background to avoid blocking UI)
-  $: if (browser && expanded && !widthsCalculated && items && items.length > 0) {
+  // Recalculate column widths when columns change (e.g. switching between expanded and full-width)
+  $: if (activeColumns) {
+    widthsCalculated = false;
+    calculatedColumnWidths = {};
+  }
+
+  // Calculate column widths when table view is enabled (run in background to avoid blocking UI)
+  $: if (browser && showTableView && !widthsCalculated && items && items.length > 0) {
     // Use requestIdleCallback to run calculation when browser is idle
     if (typeof requestIdleCallback !== 'undefined') {
       requestIdleCallback(() => calculateColumnWidths(), { timeout: 1000 });
@@ -857,22 +1105,40 @@
   });
 </script>
 
-<nav class="wiki-nav" class:expanded>
+<nav class="wiki-nav" class:expanded={showTableView} class:full-width={fullWidth}>
   <div class="nav-header">
     <h2 class="nav-title">{title}</h2>
-    <button
-      class="expand-btn hide-on-mobile"
-      on:click={handleToggleExpand}
-      title={expanded ? 'Collapse sidebar' : 'Expand to table view'}
-    >
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        {#if expanded}
-          <path d="M11 19l-7-7 7-7M18 19l-7-7 7-7" />
-        {:else}
-          <path d="M13 5l7 7-7 7M6 5l7 7-7 7" />
-        {/if}
-      </svg>
-    </button>
+    <div class="header-buttons hide-on-mobile">
+      {#if !fullWidth}
+        <button
+          class="expand-btn"
+          on:click={handleToggleExpand}
+          title={expanded ? 'Collapse sidebar' : 'Expand to table view'}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            {#if expanded}
+              <path d="M11 19l-7-7 7-7M18 19l-7-7 7-7" />
+            {:else}
+              <path d="M13 5l7 7-7 7M6 5l7 7-7 7" />
+            {/if}
+          </svg>
+        </button>
+      {/if}
+      <button
+        class="expand-btn"
+        class:active={fullWidth}
+        on:click={handleToggleFullWidth}
+        title={fullWidth ? 'Exit full-width mode' : 'Full-width table view'}
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          {#if fullWidth}
+            <path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7" />
+          {:else}
+            <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+          {/if}
+        </svg>
+      </button>
+    </div>
   </div>
 
   <!-- Slot for custom content between header and search (e.g., view toggles) -->
@@ -899,9 +1165,9 @@
     {/if}
   </div>
 
-  {#if linkFilters.length > 0 || filters.length > 0}
+  {#if linkFilters.length > 0 || filters.length > 0 || (showTableView && allAvailableColumns)}
     <div class="filter-section">
-      <!-- Link-based type navigation buttons (e.g., type nav for locations) -->
+      <!-- Link-based type navigation buttons (with column config inline) -->
       {#if linkFilters.length > 0}
         <div class="type-nav-buttons">
           {#each linkFilters as btn}
@@ -914,11 +1180,16 @@
               {btn.label}
             </a>
           {/each}
+          {#if showTableView && allAvailableColumns}
+            <span class="column-config-inline">
+              <button class="column-config-btn" on:click={handleOpenColumnDialog} title="Configure columns">Columns...</button>
+              {#if hasCustomColumns}
+                <button class="column-config-btn reset" on:click={handleResetColumns} title="Reset to default columns">Reset</button>
+              {/if}
+            </span>
+          {/if}
         </div>
-      {/if}
-
-      <!-- Check if filters are link-based (legacy) or value-based (category filters) -->
-      {#if filters.length > 0 && filters[0]?.href !== undefined}
+      {:else if filters.length > 0 && filters[0]?.href !== undefined}
         <!-- Legacy: Link-based type navigation in filters prop -->
         <div class="type-nav-buttons">
           {#each filters as btn}
@@ -931,10 +1202,27 @@
               {btn.label}
             </a>
           {/each}
+          {#if showTableView && allAvailableColumns}
+            <span class="column-config-inline">
+              <button class="column-config-btn" on:click={handleOpenColumnDialog} title="Configure columns">Columns...</button>
+              {#if hasCustomColumns}
+                <button class="column-config-btn reset" on:click={handleResetColumns} title="Reset to default columns">Reset</button>
+              {/if}
+            </span>
+          {/if}
         </div>
-      {:else if filters.length > 0}
+      {:else if showTableView && allAvailableColumns && filters.length === 0}
+        <!-- Column config only (no filter buttons on this page) -->
+        <div class="column-config-actions">
+          <button class="column-config-btn" on:click={handleOpenColumnDialog} title="Configure columns">Columns...</button>
+          {#if hasCustomColumns}
+            <button class="column-config-btn reset" on:click={handleResetColumns} title="Reset to default columns">Reset</button>
+          {/if}
+        </div>
+      {/if}
+      {#if filters.length > 0 && filters[0]?.href === undefined}
         <!-- Value-based category filters -->
-        {#each filters as filter}
+        {#each filters as filter, filterIdx}
           <div class="filter-group">
             <div class="filter-label-row">
               <span class="filter-label">{filter.label}</span>
@@ -951,6 +1239,14 @@
                     <line x1="12" y1="17" x2="12.01" y2="17" />
                   </svg>
                 </button>
+              {/if}
+              {#if filterIdx === 0 && showTableView && allAvailableColumns && linkFilters.length === 0}
+                <span class="column-config-inline">
+                  <button class="column-config-btn" on:click={handleOpenColumnDialog} title="Configure columns">Columns...</button>
+                  {#if hasCustomColumns}
+                    <button class="column-config-btn reset" on:click={handleResetColumns} title="Reset to default columns">Reset</button>
+                  {/if}
+                </span>
               {/if}
             </div>
             {#if filter.helpText && openFilterHelp === filter.key}
@@ -985,15 +1281,23 @@
     </div>
   {/if}
 
-  <!-- Table header for expanded view -->
-  {#if expanded}
+  <!-- Table header for expanded/full-width view -->
+  {#if showTableView}
     <div class="table-header-bar">
       <div class="table-header" style="grid-template-columns: {dynamicGridTemplateColumns} auto;">
         <button class="th sortable" class:sorted={sortColumn === 'name'} on:click={() => handleSort('name')}>
           Name {sortColumn === 'name' ? (sortDirection === 'asc' ? '▲' : '▼') : ''}
         </button>
-        {#each activeColumns as column}
-          <button class="th sortable" class:sorted={sortColumn === column.key} on:click={() => handleSort(column.key)}>
+        {#each activeColumns as column, colIdx}
+          <button
+            class="th sortable"
+            class:sorted={sortColumn === column.key}
+            class:header-drag-over={headerDragStarted && headerDragOverIndex === colIdx && headerDragIndex !== colIdx}
+            on:click={(e) => { if (!fullWidth || !allAvailableColumns) handleSort(column.key); }}
+            on:mousedown={(e) => handleHeaderMouseDown(e, colIdx)}
+            on:mouseover={(e) => handleHeaderDragOver(e, colIdx)}
+            on:focus={() => {}}
+          >
             {column.header} {sortColumn === column.key ? (sortDirection === 'asc' ? '▲' : '▼') : ''}
           </button>
         {/each}
@@ -1059,7 +1363,8 @@
               class="item-link"
               class:active={isCurrentItem(item)}
               class:highlighted={globalIndex === highlightedIndex}
-              class:table-row={expanded}
+              class:table-row={showTableView}
+              class:alt-row={showTableView && globalIndex % 2 === 1}
               class:pending-create={item._isPendingCreate}
               class:pending-draft={item._isPendingCreate && item._changeState === 'Draft'}
               class:pending-review={item._isPendingCreate && item._changeState === 'Pending'}
@@ -1072,9 +1377,9 @@
                 : item._hasPendingUpdate
                   ? `${item.Name} (${item._changeState})`
                   : item.Name}
-              style={expanded ? `grid-template-columns: ${dynamicGridTemplateColumns};` : ''}
+              style={showTableView ? `grid-template-columns: ${dynamicGridTemplateColumns};` : ''}
             >
-              {#if expanded}
+              {#if showTableView}
                 <span class="cell cell-name" title={item.Name}>
                   {#if item._isPendingCreate}
                     <span class="pending-badge" class:draft={item._changeState === 'Draft'} class:review={item._changeState === 'Pending'}>
@@ -1114,6 +1419,15 @@
   <div class="nav-footer">
     <span class="item-count">{filteredItems.length} items</span>
   </div>
+
+  {#if showColumnDialog && allAvailableColumns}
+    <ColumnConfigDialog
+      visibleColumns={userConfiguredColumns || activeColumns}
+      allColumns={allAvailableColumns}
+      on:apply={handleColumnDialogApply}
+      on:cancel={handleColumnDialogCancel}
+    />
+  {/if}
 </nav>
 
 <style>
@@ -1143,6 +1457,11 @@
     color: var(--text-color);
   }
 
+  .header-buttons {
+    display: flex;
+    gap: 4px;
+  }
+
   .expand-btn {
     padding: 5px;
     background: transparent;
@@ -1159,6 +1478,12 @@
   .expand-btn:hover {
     background-color: var(--hover-color);
     color: var(--text-color);
+  }
+
+  .expand-btn.active {
+    background-color: var(--accent-color, #4a9eff);
+    border-color: var(--accent-color, #4a9eff);
+    color: white;
   }
 
   .search-box {
@@ -1365,6 +1690,45 @@
     color: white;
   }
 
+  /* Column config buttons inline with type nav buttons */
+  .column-config-inline {
+    display: inline-flex;
+    gap: 4px;
+    margin-left: auto;
+  }
+
+  /* Column config buttons standalone (no filter buttons) */
+  .column-config-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-bottom: 6px;
+  }
+
+  .filter-section:has(.column-config-actions:only-child) {
+    padding-bottom: 6px;
+  }
+
+  .column-config-btn {
+    padding: 4px 10px;
+    font-size: 12px;
+    background: transparent;
+    border: 1px solid var(--border-color, #555);
+    border-radius: 4px;
+    color: var(--text-muted, #999);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .column-config-btn:hover {
+    border-color: var(--accent-color, #4a9eff);
+    color: var(--accent-color, #4a9eff);
+  }
+
+  .column-config-btn.reset {
+    border-style: dashed;
+  }
+
   /* Table header bar with help button */
   .table-header-bar {
     display: none;
@@ -1461,6 +1825,10 @@
     color: var(--accent-color, #4a9eff);
   }
 
+  .th.header-drag-over {
+    border-left: 2px solid var(--accent-color, #4a9eff);
+  }
+
   .table-filters {
     display: none;
   }
@@ -1491,6 +1859,7 @@
 
   .col-filter::placeholder {
     color: var(--text-muted, #999);
+    opacity: 0.5;
     font-size: 10px;
   }
 
@@ -1631,6 +2000,10 @@
     padding: 0 4px;
   }
 
+  .item-link.table-row.alt-row {
+    background-color: var(--table-alt-row, rgba(255, 255, 255, 0.02));
+  }
+
   .cell {
     font-size: 12px;
     overflow: hidden;
@@ -1643,6 +2016,8 @@
   }
 
   .cell-name {
+    display: flex;
+    align-items: center;
     text-align: left;
     color: var(--text-color);
   }

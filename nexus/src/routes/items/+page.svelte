@@ -9,79 +9,79 @@
     {
       name: 'Weapons',
       href: '/items/weapons',
-      icon: '⚔️',
+      icon: 'WPN',
       description: 'Combat weapons including melee, ranged, BLP and laser weapons'
     },
     {
       name: 'Armor Sets',
       href: '/items/armorsets',
-      icon: '🛡️',
+      icon: 'ARM',
       description: 'Protective armor sets with piece stats and set bonuses'
     },
     {
       name: 'Clothing',
       href: '/items/clothing',
-      icon: '👕',
+      icon: 'CLO',
       description: 'Wearable items including cosmetics and buff equipment'
     },
     {
       name: 'Attachments',
       href: '/items/attachments',
-      icon: '🔧',
+      icon: 'ATT',
       description: 'Weapon enhancements: amplifiers, scopes, sights, and absorbers'
     },
     {
       name: 'Medical Tools',
       href: '/items/medicaltools',
-      icon: '💊',
+      icon: 'MED',
       description: 'Healing equipment including FAPs and healing chips'
     },
     {
       name: 'Tools',
       href: '/items/tools',
-      icon: '⛏️',
+      icon: 'TLS',
       description: 'Mining and crafting equipment: finders, excavators, refiners'
     },
     {
       name: 'Materials',
       href: '/items/materials',
-      icon: '💎',
+      icon: 'MAT',
       description: 'Crafting resources: ores, enmatter, animal materials'
     },
     {
       name: 'Blueprints',
       href: '/items/blueprints',
-      icon: '📋',
+      icon: 'BP',
       description: 'Crafting recipes with material requirements and QR info'
     },
     {
       name: 'Consumables',
       href: '/items/consumables',
-      icon: '🧪',
+      icon: 'CON',
       description: 'Single-use items: pills, nutrio bars, stimulants'
     },
     {
       name: 'Vehicles',
       href: '/items/vehicles',
-      icon: '🚗',
+      icon: 'VHC',
       description: 'Transportation: ground, air, and water vehicles'
     },
     {
       name: 'Pets',
       href: '/items/pets',
-      icon: '🐾',
+      icon: 'PET',
       description: 'Companion creatures with skills and buff effects'
     },
     {
       name: 'Furnishings',
       href: '/items/furnishings',
-      icon: '🪑',
+      icon: 'FRN',
       description: 'Estate decorations: furniture, decorations, and signs'
     },
     {
       name: 'Strongboxes',
       href: '/items/strongboxes',
-      icon: '📦',
+      icon: 'STR',
       description: 'Strongboxes acquirable from the EU shop and events'
     }
   ];
@@ -162,7 +162,8 @@
   }
 
   .category-icon {
-    font-size: 2rem;
+    font-size: 1rem;
+    font-weight: 700;
     flex-shrink: 0;
     width: 48px;
     height: 48px;
@@ -171,6 +172,7 @@
     justify-content: center;
     background-color: var(--primary-color);
     border-radius: 8px;
+    letter-spacing: 0.5px;
   }
 
   .category-content {
@@ -227,7 +229,6 @@
     }
 
     .category-icon {
-      font-size: 1.5rem;
       width: 40px;
       height: 40px;
     }

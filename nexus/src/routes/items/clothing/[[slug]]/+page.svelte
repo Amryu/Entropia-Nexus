@@ -175,46 +175,29 @@
   // Navigation filters - none for clothing (simple list)
   const navFilters = [];
 
-  // Sidebar table columns for clothing
-  const navTableColumns = [
-    {
-      key: 'slot',
-      header: 'Slot',
-      width: '70px',
-      filterPlaceholder: 'Head',
-      getValue: (item) => item.Properties?.Slot,
-      format: (v) => v || '-'
-    },
-    {
-      key: 'type',
-      header: 'Type',
-      width: '80px',
-      filterPlaceholder: 'Armor',
-      getValue: (item) => item.Properties?.Type,
-      format: (v) => v || '-'
-    },
-    {
-      key: 'effects',
-      header: 'Effects',
-      width: '70px',
-      filterPlaceholder: 'Yes',
+  // Full column definitions for clothing
+  const columnDefs = {
+    slot: { key: 'slot', header: 'Slot', width: '70px', filterPlaceholder: 'Head', getValue: (item) => item.Properties?.Slot, format: (v) => v || '-' },
+    type: { key: 'type', header: 'Type', width: '80px', filterPlaceholder: 'Armor', getValue: (item) => item.Properties?.Type, format: (v) => v || '-' },
+    effects: {
+      key: 'effects', header: 'Effects', width: '70px', filterPlaceholder: 'Yes',
       getValue: (item) => {
-        const equipCount = item?.EffectsOnEquip?.length
-          || item?.Effects?.length
-          || item?.Properties?.Effects?.length
-          || item?.Properties?.EffectsOnEquip?.length
-          || 0;
-        const setCount = item?.Set?.EffectsOnSetEquip?.length
-          || item?.EffectsOnSetEquip?.length
-          || item?.SetEffects?.length
-          || item?.Properties?.SetEffects?.length
-          || item?.Properties?.Set?.EffectsOnSetEquip?.length
-          || 0;
+        const equipCount = item?.EffectsOnEquip?.length || item?.Effects?.length || item?.Properties?.Effects?.length || item?.Properties?.EffectsOnEquip?.length || 0;
+        const setCount = item?.Set?.EffectsOnSetEquip?.length || item?.EffectsOnSetEquip?.length || item?.SetEffects?.length || item?.Properties?.SetEffects?.length || item?.Properties?.Set?.EffectsOnSetEquip?.length || 0;
         return (equipCount + setCount) > 0;
       },
       format: (v) => v ? 'Yes' : 'No'
-    }
-  ];
+    },
+    gender: { key: 'gender', header: 'Gender', width: '60px', filterPlaceholder: 'Male', getValue: (item) => item.Properties?.Gender, format: (v) => v || '-' },
+    weight: { key: 'weight', header: 'Weight', width: '55px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Weight, format: (v) => v != null ? clampDecimals(v, 1, 2) : '-' },
+    maxTT: { key: 'maxTT', header: 'Max TT', width: '60px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? clampDecimals(v, 2, 4) : '-' },
+    minTT: { key: 'minTT', header: 'Min TT', width: '55px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Economy?.MinTT, format: (v) => v != null ? clampDecimals(v, 2, 4) : '-' },
+    set: { key: 'set', header: 'Set', width: '80px', filterPlaceholder: 'Adj', getValue: (item) => item.Set?.Name, format: (v) => v || '-' }
+  };
+
+  const navTableColumns = [columnDefs.slot, columnDefs.type, columnDefs.effects];
+  const navFullWidthColumns = [columnDefs.slot, columnDefs.type, columnDefs.effects, columnDefs.gender, columnDefs.weight, columnDefs.maxTT, columnDefs.set];
+  const allAvailableColumns = Object.values(columnDefs);
 
   // Breadcrumbs
   $: breadcrumbs = [
@@ -307,6 +290,9 @@
   {navItems}
   {navFilters}
   {navTableColumns}
+  navAllAvailableColumns={allAvailableColumns}
+  navFullWidthColumns={navFullWidthColumns}
+  navPageTypeId="clothing"
   {user}
   editable={true}
   {canEdit}

@@ -117,17 +117,17 @@
   // Navigation filters - none for materials (simple list)
   const navFilters = [];
 
+  // Full column definitions for materials
+  const columnDefs = {
+    type: { key: 'type', header: 'Type', width: '90px', filterPlaceholder: 'Ore', getValue: (item) => item.Properties?.Type, format: (v) => v || '-' },
+    weight: { key: 'weight', header: 'Weight', width: '60px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Weight, format: (v) => v != null ? clampDecimals(v, 1, 6) : '-' },
+    value: { key: 'value', header: 'Value', width: '70px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? clampDecimals(v, 2, 8) : '-' }
+  };
+
   // Sidebar table columns for materials
-  const navTableColumns = [
-    {
-      key: 'type',
-      header: 'Type',
-      width: '90px',
-      filterPlaceholder: 'Ore',
-      getValue: (item) => item.Properties?.Type,
-      format: (v) => v || '-'
-    }
-  ];
+  const navTableColumns = [columnDefs.type];
+  const navFullWidthColumns = [columnDefs.type, columnDefs.weight, columnDefs.value];
+  const allAvailableColumns = Object.values(columnDefs);
 
   // Breadcrumbs
   $: breadcrumbs = [
@@ -206,6 +206,9 @@
   {navItems}
   {navFilters}
   {navTableColumns}
+  navAllAvailableColumns={allAvailableColumns}
+  navFullWidthColumns={navFullWidthColumns}
+  navPageTypeId="materials"
   {user}
   editable={true}
   {canEdit}

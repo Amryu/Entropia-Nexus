@@ -248,24 +248,62 @@
     }
   ];
 
-  const navTableColumns = [
-    {
+  const shopColumnDefs = {
+    location: {
       key: 'location',
-      header: 'Location (Short Format)',
+      header: 'Location',
       width: '150px',
       filterPlaceholder: 'Calypso',
       getValue: (item) => getLocationShort(item),
       format: (v) => v || '-'
     },
-    {
+    owner: {
       key: 'owner',
       header: 'Owner',
       width: '110px',
       filterPlaceholder: 'Owner',
       getValue: (item) => item?.Owner?.Name,
       format: (v) => v || '-'
+    },
+    items: {
+      key: 'items',
+      header: 'Items',
+      width: '55px',
+      filterPlaceholder: '>0',
+      getValue: (item) => item?.InventoryGroups?.reduce((acc, g) => acc + (g?.Items?.length || 0), 0) || 0,
+      format: (v) => v != null ? v : '-'
+    },
+    planet: {
+      key: 'planet',
+      header: 'Planet',
+      width: '80px',
+      filterPlaceholder: 'Calypso',
+      getValue: (item) => item?.Planet?.Name,
+      format: (v) => v || '-'
+    },
+    sections: {
+      key: 'sections',
+      header: 'Sections',
+      width: '65px',
+      filterPlaceholder: '>1',
+      getValue: (item) => item?.Sections?.length || 0,
+      format: (v) => v != null ? v : '-'
     }
+  };
+
+  const navTableColumns = [
+    shopColumnDefs.location,
+    shopColumnDefs.owner,
+    shopColumnDefs.items
   ];
+
+  const navFullWidthColumns = [
+    ...navTableColumns,
+    shopColumnDefs.planet,
+    shopColumnDefs.sections
+  ];
+
+  const allAvailableColumns = Object.values(shopColumnDefs);
 
   // Breadcrumbs
   $: breadcrumbs = [
@@ -487,6 +525,9 @@
   {navItems}
   {navFilters}
   {navTableColumns}
+  {navFullWidthColumns}
+  navAllAvailableColumns={allAvailableColumns}
+  navPageTypeId="shops"
   {user}
   editable={true}
   canEdit={canEditWiki}

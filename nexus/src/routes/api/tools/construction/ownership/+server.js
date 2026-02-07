@@ -63,32 +63,14 @@ export async function PUT({ request, locals }) {
   }
 
   try {
-    // Get existing ownership and merge with new data
-    const existing = await getUserBlueprintOwnership(user.id);
-    const incoming = sanitizeOwnershipData(body);
+    // Client sends the full ownership state, so replace rather than merge
+    const sanitized = sanitizeOwnershipData(body);
 
-    // Merge: incoming values override existing
-    // If incoming has a key with value `false`, mark as not owned
-    // If incoming has a key with value `true` or deleted, remove from not-owned list
-    const merged = { ...existing };
-
-    for (const [key, value] of Object.entries(body)) {
-      const blueprintId = parseInt(key, 10);
-      if (isNaN(blueprintId) || blueprintId <= 0) continue;
-
-      if (value === false) {
-        merged[blueprintId] = false;
-      } else {
-        // Value is true or undefined - remove from not-owned list (means owned)
-        delete merged[blueprintId];
-      }
-    }
-
-    if (getPayloadSizeBytes(merged) > MAX_OWNERSHIP_BYTES) {
+    if (getPayloadSizeBytes(sanitized) > MAX_OWNERSHIP_BYTES) {
       return getResponse({ error: 'Ownership data exceeds 100KB limit.' }, 413);
     }
 
-    const record = await updateUserBlueprintOwnership(user.id, merged);
+    const record = await updateUserBlueprintOwnership(user.id, sanitized);
     return getResponse(record.data, 200);
   } catch (error) {
     console.error('Error updating blueprint ownership:', error);

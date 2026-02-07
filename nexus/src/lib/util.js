@@ -707,8 +707,13 @@ export function encodeURIComponentSafe(str) {
 
 export function decodeURIComponentSafe(str) {
   if (!str) return str;
-  // Restore ~ to %20, URL decode (converts %257E to %7E), then restore %7E to ~
-  return decodeURIComponent(str.replace(/~/g, '%20')).replace(/%7E/g, '~');
+  try {
+    // Restore ~ to %20, URL decode (converts %257E to %7E), then restore %7E to ~
+    return decodeURIComponent(str.replace(/~/g, '%20')).replace(/%7E/g, '~');
+  } catch (e) {
+    // Fallback for names containing % which cause invalid percent-encoding sequences
+    return str.replace(/~/g, ' ');
+  }
 }
 
 export function getParams(page) {

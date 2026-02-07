@@ -213,34 +213,53 @@
     href: additional.type === btn.type ? '/items/furnishings' : `/items/furnishings/${btn.type}`
   }));
 
+  // Full column definitions for furnishings
+  const columnDefs = {
+    cat: { key: 'cat', header: 'Cat', width: '60px', filterPlaceholder: 'Furn', getValue: (item) => getTypeName(item._type || additional.type).slice(0, 6), format: (v) => v || '-' },
+    type: { key: 'type', header: 'Type', width: '60px', filterPlaceholder: 'Chair', getValue: (item) => item.Properties?.Type, format: (v) => v ? v.slice(0, 6) : '-' },
+    tt: { key: 'tt', header: 'TT', width: '55px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? clampDecimals(v, 1, 2) : '-' },
+    minTT: { key: 'minTT', header: 'Min TT', width: '55px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Economy?.MinTT, format: (v) => v != null ? clampDecimals(v, 1, 2) : '-' },
+    weight: { key: 'weight', header: 'Weight', width: '55px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Weight, format: (v) => v != null ? clampDecimals(v, 1, 2) : '-' },
+    cap: { key: 'cap', header: 'Items', width: '55px', filterPlaceholder: '>50', getValue: (item) => item.Properties?.ItemCapacity, format: (v) => v ?? '-' },
+    weightCap: { key: 'weightCap', header: 'Wt. Cap.', width: '60px', filterPlaceholder: '>100', getValue: (item) => item.Properties?.WeightCapacity, format: (v) => v != null ? clampDecimals(v, 0, 1) : '-' },
+    ratio: { key: 'ratio', header: 'Ratio', width: '55px', filterPlaceholder: '16:9', getValue: (item) => item.Properties?.Display?.AspectRatio, format: (v) => v || '-' },
+    itemPoints: { key: 'itemPoints', header: 'Points', width: '55px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.ItemPoints, format: (v) => v != null ? v : '-' },
+    cost: { key: 'cost', header: 'Cost', width: '55px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Economy?.Cost, format: (v) => v != null ? clampDecimals(v, 2, 2) : '-' }
+  };
+
   // Type-specific sidebar table columns
   function getNavTableColumns(type) {
     switch (type) {
       case 'furniture':
       case 'decorations':
-        return [
-          { key: 'type', header: 'Type', width: '60px', filterPlaceholder: 'Chair', getValue: (item) => item.Properties?.Type, format: (v) => v ? v.slice(0, 6) : '-' },
-          { key: 'tt', header: 'TT', width: '55px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? clampDecimals(v, 1, 2) : '-' }
-        ];
+        return [columnDefs.type, columnDefs.tt];
       case 'storagecontainers':
-        return [
-          { key: 'cap', header: 'Items', width: '55px', filterPlaceholder: '>50', getValue: (item) => item.Properties?.ItemCapacity, format: (v) => v ?? '-' },
-          { key: 'tt', header: 'TT', width: '55px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? clampDecimals(v, 1, 2) : '-' }
-        ];
+        return [columnDefs.cap, columnDefs.tt];
       case 'signs':
-        return [
-          { key: 'ratio', header: 'Ratio', width: '55px', filterPlaceholder: '16:9', getValue: (item) => item.Properties?.Display?.AspectRatio, format: (v) => v || '-' },
-          { key: 'tt', header: 'TT', width: '55px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? clampDecimals(v, 1, 2) : '-' }
-        ];
+        return [columnDefs.ratio, columnDefs.tt];
       default:
-        return [
-          { key: 'cat', header: 'Cat', width: '60px', filterPlaceholder: 'Furn', getValue: (item) => getTypeName(item._type || additional.type).slice(0, 6), format: (v) => v || '-' },
-          { key: 'tt', header: 'TT', width: '55px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? clampDecimals(v, 1, 2) : '-' }
-        ];
+        return [columnDefs.cat, columnDefs.tt];
+    }
+  }
+
+  function getNavFullWidthColumns(type) {
+    switch (type) {
+      case 'furniture':
+      case 'decorations':
+        return [columnDefs.type, columnDefs.tt, columnDefs.minTT, columnDefs.weight];
+      case 'storagecontainers':
+        return [columnDefs.cap, columnDefs.weightCap, columnDefs.tt, columnDefs.minTT, columnDefs.weight];
+      case 'signs':
+        return [columnDefs.ratio, columnDefs.itemPoints, columnDefs.tt, columnDefs.minTT, columnDefs.cost, columnDefs.weight];
+      default:
+        return [columnDefs.cat, columnDefs.tt, columnDefs.weight];
     }
   }
 
   $: navTableColumns = getNavTableColumns(additional.type);
+  $: navFullWidthColumns = getNavFullWidthColumns(additional.type);
+  const allAvailableColumns = Object.values(columnDefs);
+  $: navPageTypeId = `furnishings-${additional.type || 'all'}`;
 
   // Custom href generator for items
   function getItemHref(item, basePath) {
@@ -316,6 +335,9 @@
   {navItems}
   {navFilters}
   {navTableColumns}
+  navAllAvailableColumns={allAvailableColumns}
+  navFullWidthColumns={navFullWidthColumns}
+  navPageTypeId={navPageTypeId}
   navGetItemHref={getItemHref}
   {user}
   editable={true}

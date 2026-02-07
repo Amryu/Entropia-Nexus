@@ -185,58 +185,47 @@
     href: additional.type === btn.type ? '/items/consumables' : `/items/consumables/${btn.type}`
   }));
 
+  // Full column definitions for consumables
+  const columnDefs = {
+    category: { key: 'category', header: 'Type', width: '90px', filterPlaceholder: 'Stimulant', getValue: (item) => item._type === 'stimulants' ? 'Stimulant' : 'Capsule', format: (v) => v || '-' },
+    type: { key: 'type', header: 'Type', width: '70px', filterPlaceholder: 'Pill', getValue: (item) => item.Properties?.Type, format: (v) => v || '-' },
+    effects: { key: 'effects', header: 'Effect #', width: '80px', filterPlaceholder: '>0', getValue: (item) => item?.EffectsOnConsume?.length || 0, format: (v) => v != null ? v : '-' },
+    mob: { key: 'mob', header: 'Mob', width: '100px', filterPlaceholder: 'Atrox', getValue: (item) => item.Mob?.Name, format: (v) => v || '-' },
+    mobType: { key: 'mobType', header: 'Mob Type', width: '90px', filterPlaceholder: 'Animal', getValue: (item) => item.Mob?.Type, format: (v) => v || '-' },
+    profession: { key: 'profession', header: 'Profession', width: '90px', filterPlaceholder: 'Tamer', getValue: (item) => item.Profession?.Name, format: (v) => v || '-' },
+    minLevel: { key: 'minLevel', header: 'Min Lvl', width: '55px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.MinProfessionLevel, format: (v) => v != null ? v : '-' },
+    maxTT: { key: 'maxTT', header: 'TT Value', width: '65px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? clampDecimals(v, 2, 4) : '-' },
+    weight: { key: 'weight', header: 'Weight', width: '55px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Weight, format: (v) => v != null ? clampDecimals(v, 1, 2) : '-' },
+    effectOrMob: { key: 'effectOrMob', header: 'Effect # / Mob Type', width: '130px', filterPlaceholder: '>0', getValue: (item) => item._type === 'stimulants' ? (item?.EffectsOnConsume?.length || 0) : (item.Mob?.Type || item.Mob?.Name), format: (v) => v != null ? v : '-' }
+  };
+
   // Type-specific sidebar table columns
   function getNavTableColumns(type) {
-    const effectColumn = {
-      key: 'effects',
-      header: 'Effect #',
-      width: '80px',
-      filterPlaceholder: '>0',
-      getValue: (item) => item?.EffectsOnConsume?.length || 0,
-      format: (v) => v != null ? v : '-'
-    };
-
-    const typeColumn = {
-      key: 'type',
-      header: 'Type',
-      width: '70px',
-      filterPlaceholder: 'Pill',
-      getValue: (item) => item.Properties?.Type,
-      format: (v) => v || '-'
-    };
-
-    const mobColumn = {
-      key: 'mob',
-      header: 'Mob',
-      width: '100px',
-      filterPlaceholder: 'Atrox',
-      getValue: (item) => item.Mob?.Name,
-      format: (v) => v || '-'
-    };
-
-    const mobTypeColumn = {
-      key: 'mobType',
-      header: 'Mob Type',
-      width: '90px',
-      filterPlaceholder: 'Animal',
-      getValue: (item) => item.Mob?.Type,
-      format: (v) => v || '-'
-    };
-
     switch (type) {
       case 'stimulants':
-        return [typeColumn, effectColumn];
+        return [columnDefs.type, columnDefs.effects];
       case 'capsules':
-        return [mobColumn, mobTypeColumn];
+        return [columnDefs.mob, columnDefs.mobType];
       default:
-        return [
-          { key: 'category', header: 'Type', width: '90px', filterPlaceholder: 'Stimulant', getValue: (item) => item._type === 'stimulants' ? 'Stimulant' : 'Capsule', format: (v) => v || '-' },
-          { key: 'effectOrMob', header: 'Effect # / Mob Type', width: '130px', filterPlaceholder: '>0', getValue: (item) => item._type === 'stimulants' ? (item?.EffectsOnConsume?.length || 0) : (item.Mob?.Type || item.Mob?.Name), format: (v) => v != null ? v : '-' }
-        ];
+        return [columnDefs.category, columnDefs.effectOrMob];
+    }
+  }
+
+  function getNavFullWidthColumns(type) {
+    switch (type) {
+      case 'stimulants':
+        return [columnDefs.type, columnDefs.effects, columnDefs.weight, columnDefs.maxTT];
+      case 'capsules':
+        return [columnDefs.mob, columnDefs.mobType, columnDefs.profession, columnDefs.minLevel, columnDefs.maxTT];
+      default:
+        return [columnDefs.category, columnDefs.effectOrMob, columnDefs.maxTT, columnDefs.weight];
     }
   }
 
   $: navTableColumns = getNavTableColumns(additional.type);
+  $: navFullWidthColumns = getNavFullWidthColumns(additional.type);
+  const allAvailableColumns = Object.values(columnDefs);
+  $: navPageTypeId = `consumables-${additional.type || 'all'}`;
 
   // Custom href generator for items - handles _type property for "all items" view
   function getItemHref(item, basePath) {
@@ -334,6 +323,9 @@
   {navItems}
   {navFilters}
   {navTableColumns}
+  navAllAvailableColumns={allAvailableColumns}
+  navFullWidthColumns={navFullWidthColumns}
+  navPageTypeId={navPageTypeId}
   navGetItemHref={getItemHref}
   {user}
   editable={true}

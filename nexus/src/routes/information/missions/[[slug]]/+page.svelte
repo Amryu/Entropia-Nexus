@@ -605,6 +605,117 @@
     }
   ];
 
+  // Table columns for mission sidebar (expanded/full-width views)
+  const missionColumnDefs = {
+    type: {
+      key: 'type',
+      header: 'Type',
+      width: '80px',
+      filterPlaceholder: 'Repeatable',
+      getValue: (item) => item.Properties?.Type,
+      format: (v) => v || '-'
+    },
+    planet: {
+      key: 'planet',
+      header: 'Planet',
+      width: '75px',
+      filterPlaceholder: 'Calypso',
+      getValue: (item) => item.Planet?.Name,
+      format: (v) => v || '-'
+    },
+    chain: {
+      key: 'chain',
+      header: 'Chain',
+      width: '100px',
+      getValue: (item) => item.MissionChain?.Name,
+      format: (v) => v || '-'
+    },
+    cooldown: {
+      key: 'cooldown',
+      header: 'Cooldown',
+      width: '75px',
+      getValue: (item) => item.Properties?.CooldownDuration,
+      format: (v) => v ? formatCooldownDisplay(v) : '-'
+    },
+    steps: {
+      key: 'steps',
+      header: 'Steps',
+      width: '50px',
+      filterPlaceholder: '>1',
+      getValue: (item) => item.Steps?.length ?? null,
+      format: (v) => v != null ? v : '-'
+    },
+    event: {
+      key: 'event',
+      header: 'Event',
+      width: '80px',
+      getValue: (item) => item.Event?.Name || (item.EventId ? getEventName(item.EventId) : null),
+      format: (v) => v || '-'
+    }
+  };
+
+  // Chain-specific columns
+  const chainColumnDefs = {
+    type: {
+      key: 'type',
+      header: 'Type',
+      width: '80px',
+      getValue: (item) => item.Properties?.Type,
+      format: (v) => v || '-'
+    },
+    planet: {
+      key: 'planet',
+      header: 'Planet',
+      width: '75px',
+      filterPlaceholder: 'Calypso',
+      getValue: (item) => item.Planet?.Name,
+      format: (v) => v || '-'
+    },
+    missionCount: {
+      key: 'missionCount',
+      header: 'Missions',
+      width: '65px',
+      filterPlaceholder: '>1',
+      getValue: (item) => item.Missions?.length ?? null,
+      format: (v) => v != null ? v : '-'
+    }
+  };
+
+  $: missionNavTableColumns = [
+    missionColumnDefs.type,
+    missionColumnDefs.planet,
+    missionColumnDefs.chain
+  ];
+
+  $: missionNavFullWidthColumns = [
+    missionColumnDefs.type,
+    missionColumnDefs.planet,
+    missionColumnDefs.chain,
+    missionColumnDefs.cooldown,
+    missionColumnDefs.steps
+  ];
+
+  $: missionAllAvailableColumns = Object.values(missionColumnDefs);
+
+  $: chainNavTableColumns = [
+    chainColumnDefs.type,
+    chainColumnDefs.planet,
+    chainColumnDefs.missionCount
+  ];
+
+  $: chainNavFullWidthColumns = [
+    chainColumnDefs.type,
+    chainColumnDefs.planet,
+    chainColumnDefs.missionCount
+  ];
+
+  $: chainAllAvailableColumns = Object.values(chainColumnDefs);
+
+  $: activeNavTableColumns = isChainView ? chainNavTableColumns : missionNavTableColumns;
+  $: activeNavFullWidthColumns = isChainView ? chainNavFullWidthColumns : missionNavFullWidthColumns;
+  $: activeAllAvailableColumns = isChainView ? chainAllAvailableColumns : missionAllAvailableColumns;
+  $: activePageTypeId = isChainView ? 'missions-chains' : 'missions';
+
   let showGraphDialog = false;
   let showChainDialog = false;
   let chainDialogMode = 'edit'; // 'create' or 'edit'
@@ -807,6 +918,10 @@
       customGetItemHref={getSidebarHref}
       {userPendingCreates}
       {userPendingUpdates}
+      tableColumns={activeNavTableColumns}
+      fullWidthColumns={activeNavFullWidthColumns}
+      allAvailableColumns={activeAllAvailableColumns}
+      pageTypeId={activePageTypeId}
     >
       <div slot="after-header" class="sidebar-toggle">
         <button class:active={!isChainView} on:click={() => switchSidebar('missions')}>Missions</button>

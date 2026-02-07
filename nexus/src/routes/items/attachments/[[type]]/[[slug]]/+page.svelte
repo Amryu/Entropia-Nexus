@@ -228,54 +228,82 @@
     href: additional.type === btn.type ? '/items/attachments' : `/items/attachments/${btn.type}`
   }));
 
+  // Full column definitions for attachments
+  const columnDefs = {
+    cat: { key: 'cat', header: 'Type', width: '70px', filterPlaceholder: 'Amp', getValue: (item) => getTypeName(item._type || additional.type), format: (v) => v || '-' },
+    damage: { key: 'damage', header: 'Damage', width: '70px', filterPlaceholder: '>5', getValue: (item) => getTotalDamage(item), format: (v) => v != null ? v.toFixed(1) : '-' },
+    dpp: { key: 'dpp', header: 'DPP', width: '55px', filterPlaceholder: '>2', getValue: (item) => getDPP(item), format: (v) => v != null ? v.toFixed(2) : '-' },
+    eff: { key: 'eff', header: 'Efficiency', width: '80px', filterPlaceholder: '>50', getValue: (item) => item.Properties?.Economy?.Efficiency, format: (v) => v != null ? v.toFixed(1) : '-' },
+    finderEff: { key: 'finderEff', header: 'Efficiency', width: '80px', filterPlaceholder: '>50', getValue: (item) => item.Properties?.Efficiency, format: (v) => v != null ? v.toFixed(1) : '-' },
+    type: { key: 'type', header: 'Type', width: '70px', filterPlaceholder: 'Scope', getValue: (item) => item.Properties?.Type, format: (v) => v || '-' },
+    abs: { key: 'abs', header: 'Absorption', width: '85px', filterPlaceholder: '>5', getValue: (item) => item.Properties?.Economy?.Absorption, format: (v) => v != null ? `${(v * 100).toFixed(0)}%` : '-' },
+    decay: { key: 'decay', header: 'Decay', width: '70px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Economy?.Decay, format: (v) => v != null ? v.toFixed(2) : '-' },
+    ammoBurn: { key: 'ammoBurn', header: 'Ammo Burn', width: '70px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Economy?.AmmoBurn, format: (v) => v != null ? v : '-' },
+    cost: { key: 'cost', header: 'Cost', width: '60px', filterPlaceholder: '>0', getValue: (item) => getCost(item), format: (v) => v != null ? v.toFixed(4) : '-' },
+    def: { key: 'def', header: 'Total Def', width: '70px', filterPlaceholder: '>10', getValue: (item) => getTotalDefense(item), format: (v) => v != null ? v.toFixed(1) : '-' },
+    dur: { key: 'dur', header: 'Durability', width: '70px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Economy?.Durability, format: (v) => v != null ? v : '-' },
+    zoom: { key: 'zoom', header: 'Zoom', width: '55px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Zoom, format: (v) => v != null ? `${v.toFixed(1)}x` : '-' },
+    skillMod: { key: 'skillMod', header: 'Skill Mod', width: '65px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.SkillModification, format: (v) => v != null ? `${v}%` : '-' },
+    skillBonus: { key: 'skillBonus', header: 'Skill Bonus', width: '75px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.SkillBonus, format: (v) => v != null ? `${v}%` : '-' },
+    maxTT: { key: 'maxTT', header: 'Max TT', width: '60px', filterPlaceholder: '>10', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? clampDecimals(v, 2, 4) : '-' },
+    minTT: { key: 'minTT', header: 'Min TT', width: '55px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Economy?.MinTT, format: (v) => v != null ? clampDecimals(v, 2, 4) : '-' },
+    totalUses: { key: 'totalUses', header: 'Uses', width: '55px', filterPlaceholder: '>100', getValue: (item) => getTotalUses(item), format: (v) => v != null ? v : '-' },
+    weight: { key: 'weight', header: 'Weight', width: '55px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Weight, format: (v) => v != null ? clampDecimals(v, 1, 2) : '-' },
+    tool: { key: 'tool', header: 'Tool', width: '70px', filterPlaceholder: 'Weapon', getValue: (item) => item.Properties?.Tool, format: (v) => v || '-' },
+    tier: { key: 'tier', header: 'Tier', width: '55px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Tier ?? item.Tier, format: (v) => v != null ? v : '-' },
+    socket: { key: 'socket', header: 'Socket', width: '55px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Socket, format: (v) => v != null ? v : '-' },
+    minLevel: { key: 'minLevel', header: 'Min Lvl', width: '55px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.MinProfessionLevel, format: (v) => v != null ? v : '-' },
+    maxLevel: { key: 'maxLevel', header: 'Max Lvl', width: '55px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.MaxProfessionLevel, format: (v) => v != null ? v : '-' },
+    lvl: { key: 'lvl', header: 'Level', width: '70px', filterPlaceholder: '>10', getValue: (item) => item.Properties?.Mindforce?.Level ?? item.Properties?.Level, format: (v) => v != null ? v : '-' }
+  };
+
   // Type-specific sidebar table columns
   function getNavTableColumns(type) {
     switch (type) {
       case 'weaponamplifiers':
-        return [
-          { key: 'damage', header: 'Damage', width: '70px', filterPlaceholder: '>5', getValue: (item) => getTotalDamage(item), format: (v) => v != null ? v.toFixed(1) : '-' },
-          { key: 'dpp', header: 'DPP', width: '55px', filterPlaceholder: '>2', getValue: (item) => getDPP(item), format: (v) => v != null ? v.toFixed(2) : '-' },
-          { key: 'eff', header: 'Efficiency', width: '80px', filterPlaceholder: '>50', getValue: (item) => item.Properties?.Economy?.Efficiency, format: (v) => v != null ? v.toFixed(1) : '-' }
-        ];
+        return [columnDefs.damage, columnDefs.dpp, columnDefs.eff];
       case 'weaponvisionattachments':
-        return [
-          { key: 'type', header: 'Type', width: '70px', filterPlaceholder: 'Scope', getValue: (item) => item.Properties?.Type, format: (v) => v || '-' },
-          { key: 'eff', header: 'Efficiency', width: '80px', filterPlaceholder: '>50', getValue: (item) => item.Properties?.Economy?.Efficiency, format: (v) => v != null ? v.toFixed(1) : '-' }
-        ];
+        return [columnDefs.type, columnDefs.eff];
       case 'absorbers':
-        return [
-          { key: 'abs', header: 'Absorption', width: '85px', filterPlaceholder: '>5', getValue: (item) => item.Properties?.Economy?.Absorption, format: (v) => v != null ? `${(v * 100).toFixed(0)}%` : '-' },
-          { key: 'eff', header: 'Efficiency', width: '80px', filterPlaceholder: '>50', getValue: (item) => item.Properties?.Economy?.Efficiency, format: (v) => v != null ? v.toFixed(1) : '-' }
-        ];
+        return [columnDefs.abs, columnDefs.eff];
       case 'finderamplifiers':
-        return [
-          { key: 'decay', header: 'Decay', width: '70px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Economy?.Decay, format: (v) => v != null ? v.toFixed(2) : '-' },
-          { key: 'eff', header: 'Efficiency', width: '80px', filterPlaceholder: '>50', getValue: (item) => item.Properties?.Economy?.Efficiency, format: (v) => v != null ? v.toFixed(1) : '-' }
-        ];
+        return [columnDefs.decay, columnDefs.finderEff];
       case 'armorplatings':
-        return [
-          { key: 'def', header: 'Total Defense', width: '95px', filterPlaceholder: '>10', getValue: (item) => getTotalDefense(item), format: (v) => v != null ? v.toFixed(1) : '-' },
-          { key: 'dur', header: 'Durability', width: '85px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Economy?.Durability, format: (v) => v != null ? v : '-' }
-        ];
+        return [columnDefs.def, columnDefs.dur];
       case 'enhancers':
-        return [
-          { key: 'type', header: 'Type', width: '80px', filterPlaceholder: 'Damage', getValue: (item) => item.Properties?.Type, format: (v) => v || '-' },
-          { key: 'tier', header: 'Tier', width: '55px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Tier ?? item.Tier, format: (v) => v != null ? v : '-' }
-        ];
+        return [columnDefs.type, columnDefs.tier];
       case 'mindforceimplants':
-        return [
-          { key: 'abs', header: 'Absorption', width: '85px', filterPlaceholder: '>5', getValue: (item) => item.Properties?.Economy?.Absorption, format: (v) => v != null ? `${(v * 100).toFixed(0)}%` : '-' },
-          { key: 'lvl', header: 'Level', width: '70px', filterPlaceholder: '>10', getValue: (item) => item.Properties?.Mindforce?.Level ?? item.Properties?.Level, format: (v) => v != null ? v : '-' }
-        ];
+        return [columnDefs.abs, columnDefs.lvl];
       default:
-        return [
-          { key: 'cat', header: 'Type', width: '70px', filterPlaceholder: 'Amp', getValue: (item) => getTypeName(item._type || additional.type), format: (v) => v || '-' },
-          { key: 'eff', header: 'Efficiency', width: '80px', filterPlaceholder: '>50', getValue: (item) => item.Properties?.Economy?.Efficiency, format: (v) => v != null ? v.toFixed(1) : '-' }
-        ];
+        return [columnDefs.cat, columnDefs.eff];
+    }
+  }
+
+  function getNavFullWidthColumns(type) {
+    switch (type) {
+      case 'weaponamplifiers':
+        return [columnDefs.damage, columnDefs.dpp, columnDefs.eff, columnDefs.type, columnDefs.decay, columnDefs.ammoBurn, columnDefs.cost, columnDefs.maxTT, columnDefs.totalUses, columnDefs.weight];
+      case 'weaponvisionattachments':
+        return [columnDefs.type, columnDefs.eff, columnDefs.zoom, columnDefs.decay, columnDefs.skillMod, columnDefs.skillBonus, columnDefs.maxTT, columnDefs.weight];
+      case 'absorbers':
+        return [columnDefs.abs, columnDefs.eff, columnDefs.maxTT, columnDefs.minTT, columnDefs.weight];
+      case 'finderamplifiers':
+        return [columnDefs.decay, columnDefs.finderEff, columnDefs.minLevel, columnDefs.maxTT, columnDefs.minTT, columnDefs.totalUses, columnDefs.weight];
+      case 'armorplatings':
+        return [columnDefs.def, columnDefs.dur, columnDefs.maxTT, columnDefs.minTT, columnDefs.weight];
+      case 'enhancers':
+        return [columnDefs.type, columnDefs.tier, columnDefs.tool, columnDefs.socket, columnDefs.maxTT, columnDefs.weight];
+      case 'mindforceimplants':
+        return [columnDefs.abs, columnDefs.maxLevel, columnDefs.lvl, columnDefs.maxTT, columnDefs.minTT, columnDefs.weight];
+      default:
+        return [columnDefs.cat, columnDefs.eff, columnDefs.maxTT, columnDefs.weight];
     }
   }
 
   $: navTableColumns = getNavTableColumns(additional.type);
+  $: navFullWidthColumns = getNavFullWidthColumns(additional.type);
+  const allAvailableColumns = Object.values(columnDefs);
+  $: navPageTypeId = `attachments-${additional.type || 'all'}`;
 
   // Custom href generator for items
   function getItemHref(item, basePath) {
@@ -457,6 +485,9 @@
   {navItems}
   {navFilters}
   {navTableColumns}
+  navAllAvailableColumns={allAvailableColumns}
+  navFullWidthColumns={navFullWidthColumns}
+  navPageTypeId={navPageTypeId}
   navGetItemHref={getItemHref}
   {user}
   editable={true}

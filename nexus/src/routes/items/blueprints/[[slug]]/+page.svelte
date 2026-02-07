@@ -29,7 +29,7 @@
   import '$lib/style.css';
   import { page } from '$app/stores';
   import { onMount, onDestroy } from 'svelte';
-  import { encodeURIComponentSafe, clampDecimals, getTypeLink, getItemLink, getLatestPendingUpdate } from '$lib/util';
+  import { encodeURIComponentSafe, clampDecimals, getTypeLink, getItemLink, getLatestPendingUpdate, hasItemTag } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
 
   // Wiki components
@@ -210,8 +210,8 @@
   ];
 
   // Sidebar table columns for blueprints
-  const navTableColumns = [
-    {
+  const bpColumnDefs = {
+    type: {
       key: 'type',
       header: 'Type',
       width: '80px',
@@ -219,7 +219,7 @@
       getValue: (item) => item.Properties?.Type,
       format: (v) => v || '-'
     },
-    {
+    profession: {
       key: 'profession',
       header: 'Profession',
       width: '95px',
@@ -227,15 +227,73 @@
       getValue: (item) => item.Profession?.Name,
       format: (v) => v || '-'
     },
-    {
+    level: {
       key: 'level',
       header: 'Level',
       width: '65px',
       filterPlaceholder: '>10',
       getValue: (item) => item.Properties?.Level,
       format: (v) => v != null ? v : '-'
+    },
+    product: {
+      key: 'product',
+      header: 'Product',
+      width: '120px',
+      filterPlaceholder: 'Item name',
+      getValue: (item) => item.Product?.Name,
+      format: (v) => v || '-'
+    },
+    sib: {
+      key: 'sib',
+      header: 'SiB',
+      width: '45px',
+      filterPlaceholder: 'Yes',
+      getValue: (item) => item.Properties?.Skill?.IsSiB ? 1 : 0,
+      format: (v) => v ? 'Yes' : 'No'
+    },
+    limited: {
+      key: 'limited',
+      header: 'Ltd',
+      width: '45px',
+      filterPlaceholder: 'Yes',
+      getValue: (item) => hasItemTag(item.Name, 'L') ? 1 : 0,
+      format: (v) => v ? 'Yes' : 'No'
+    },
+    book: {
+      key: 'book',
+      header: 'Book',
+      width: '100px',
+      filterPlaceholder: 'Book name',
+      getValue: (item) => item.Book?.Name,
+      format: (v) => v || '-'
+    },
+    boosted: {
+      key: 'boosted',
+      header: 'Boost',
+      width: '50px',
+      filterPlaceholder: 'Yes',
+      getValue: (item) => item.Properties?.IsBoosted ? 1 : 0,
+      format: (v) => v ? 'Yes' : 'No'
     }
+  };
+
+  const navTableColumns = [
+    bpColumnDefs.type,
+    bpColumnDefs.profession,
+    bpColumnDefs.level
   ];
+
+  // Full-width table columns (superset of navTableColumns)
+  const navFullWidthColumns = [
+    ...navTableColumns,
+    bpColumnDefs.product,
+    bpColumnDefs.sib,
+    bpColumnDefs.limited,
+    bpColumnDefs.book,
+    bpColumnDefs.boosted
+  ];
+
+  const allAvailableColumns = Object.values(bpColumnDefs);
 
   // Breadcrumbs
   $: breadcrumbs = [
@@ -355,6 +413,9 @@
   {navItems}
   {navFilters}
   {navTableColumns}
+  {navFullWidthColumns}
+  navAllAvailableColumns={allAvailableColumns}
+  navPageTypeId="blueprints"
   {user}
   editable={true}
   {canEdit}

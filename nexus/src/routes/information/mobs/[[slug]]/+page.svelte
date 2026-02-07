@@ -204,8 +204,8 @@
     return smallest;
   }
 
-  const navTableColumns = [
-    {
+  const mobColumnDefs = {
+    hpPerLevel: {
       key: 'hpPerLevel',
       header: 'HP/Lvl',
       width: '70px',
@@ -213,7 +213,7 @@
       getValue: (item) => getSmallestHpPerLevel(item),
       format: (v) => v != null ? Math.round(v) : '-'
     },
-    {
+    level: {
       key: 'level',
       header: 'Level Range',
       width: '90px',
@@ -224,7 +224,7 @@
         return range ? `${range.min}-${range.max}` : '-';
       }
     },
-    {
+    hp: {
       key: 'hp',
       header: 'HP Range',
       width: '80px',
@@ -235,15 +235,82 @@
         return range ? `${range.min}-${range.max}` : '-';
       }
     },
-    {
+    cat4: {
       key: 'cat4',
       header: 'Cat 4',
       width: '55px',
       filterPlaceholder: 'Yes',
       getValue: (item) => isCat4Mob(item) ? 1 : 0,
       format: (v) => v ? 'Yes' : 'No'
+    },
+    type: {
+      key: 'type',
+      header: 'Type',
+      width: '65px',
+      filterPlaceholder: 'Animal',
+      getValue: (item) => item.Type,
+      format: (v) => v || '-'
+    },
+    planet: {
+      key: 'planet',
+      header: 'Planet',
+      width: '80px',
+      filterPlaceholder: 'Calypso',
+      getValue: (item) => item.Planet?.Name,
+      format: (v) => v || '-'
+    },
+    sweatable: {
+      key: 'sweatable',
+      header: 'Sweat',
+      width: '55px',
+      filterPlaceholder: 'Yes',
+      getValue: (item) => item.Properties?.IsSweatable ? 1 : 0,
+      format: (v) => v ? 'Yes' : 'No'
+    },
+    apm: {
+      key: 'apm',
+      header: 'APM',
+      width: '50px',
+      filterPlaceholder: '>20',
+      getValue: (item) => item.Properties?.AttacksPerMinute,
+      format: (v) => v != null ? v : '-'
+    },
+    atkRange: {
+      key: 'atkRange',
+      header: 'Range',
+      width: '55px',
+      filterPlaceholder: '>5',
+      getValue: (item) => item.Properties?.AttackRange,
+      format: (v) => v != null ? v : '-'
+    },
+    aggrRange: {
+      key: 'aggrRange',
+      header: 'Aggr Range',
+      width: '70px',
+      filterPlaceholder: '>10',
+      getValue: (item) => item.Properties?.AggressionRange,
+      format: (v) => v != null ? v : '-'
     }
+  };
+
+  const navTableColumns = [
+    mobColumnDefs.hpPerLevel,
+    mobColumnDefs.level,
+    mobColumnDefs.hp,
+    mobColumnDefs.cat4
   ];
+
+  // Full-width table columns (superset of navTableColumns with additional stats)
+  const navFullWidthColumns = [
+    ...navTableColumns,
+    mobColumnDefs.type,
+    mobColumnDefs.planet,
+    mobColumnDefs.sweatable,
+    mobColumnDefs.apm,
+    mobColumnDefs.atkRange
+  ];
+
+  const allAvailableColumns = Object.values(mobColumnDefs);
 
   // Breadcrumbs
   $: breadcrumbs = [
@@ -446,6 +513,9 @@
     {navItems}
     {navFilters}
     {navTableColumns}
+    {navFullWidthColumns}
+    navAllAvailableColumns={allAvailableColumns}
+    navPageTypeId="mobs"
     {user}
     editable={true}
   {canEdit}
