@@ -102,10 +102,18 @@
     }
   }
 
+  // Check if an item is the currently selected item
+  // Handles all three matching modes: changeId, itemId, and slug (Name)
+  function isCurrentItem(item) {
+    if (currentChangeId && item._isPendingCreate && item._changeId === currentChangeId) return true;
+    if (currentItemId != null && (item.Id ?? item.ItemId) === currentItemId) return true;
+    if (currentSlug && item.Name === currentSlug) return true;
+    return false;
+  }
+
   // Helper to find current item index (handles both slugs and changeIds)
   function findCurrentItemIndex(items) {
-    if (!currentItemKey) return -1;
-    return items.findIndex(item => getItemKey(item) === currentItemKey);
+    return items.findIndex(item => isCurrentItem(item));
   }
 
   // Reactive current item key - forces template re-render when selection changes
@@ -118,7 +126,7 @@
         ? `slug-${currentSlug}`
         : null));
 
-  // Get item key for comparison
+  // Get item key for comparison (used for keyboard navigation and other lookups)
   function getItemKey(item) {
     if (item._isPendingCreate) return `change-${item._changeId}`;
     const id = item.Id ?? item.ItemId;
@@ -630,9 +638,9 @@
     // If hasKeyboardInput is true but no search, keep current highlightedIndex (set by arrow keys)
   }
 
-  // Scroll to the currently selected item (on page load or when currentSlug/currentChangeId changes)
+  // Scroll to the currently selected item (on page load or when currentSlug/currentChangeId/currentItemId changes)
   async function scrollToCurrentItem() {
-    if ((!currentSlug && !currentChangeId) || !listContainer || filteredItems.length === 0) return;
+    if ((!currentSlug && !currentChangeId && currentItemId == null) || !listContainer || filteredItems.length === 0) return;
 
     // Find the index of the current item in the filtered list
     const currentIndex = findCurrentItemIndex(filteredItems);
@@ -656,8 +664,8 @@
   // Use afterUpdate to scroll to current item only on initial page load
   // Also handle deferred focus for keyboard navigation
   afterUpdate(() => {
-    // Only scroll once on initial load when there's a pre-selected slug or changeId
-    if (!initialScrollDone && (currentSlug || currentChangeId) && filteredItems.length > 0 && listContainer) {
+    // Only scroll once on initial load when there's a pre-selected slug, changeId, or itemId
+    if (!initialScrollDone && (currentSlug || currentChangeId || currentItemId != null) && filteredItems.length > 0 && listContainer) {
       initialScrollDone = true;
       scrollToCurrentItem();
     }
@@ -1049,7 +1057,7 @@
             <a
               href={getItemHref(item)}
               class="item-link"
-              class:active={currentItemKey && getItemKey(item) === currentItemKey}
+              class:active={isCurrentItem(item)}
               class:highlighted={globalIndex === highlightedIndex}
               class:table-row={expanded}
               class:pending-create={item._isPendingCreate}

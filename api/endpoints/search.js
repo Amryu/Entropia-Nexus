@@ -282,9 +282,18 @@ async function search(query, fuzzy = false){
     .map(r => formatSearchResult(r, r._score));
 }
 
-async function searchItems(query, fuzzy = false){
+// Valid item types for filtering (prevents SQL injection)
+const VALID_ITEM_TYPES = ['Weapon', 'Armor', 'Clothing', 'Tool', 'Material', 'Blueprint', 'Component', 'Furniture', 'Enhancer', 'Attachment', 'ArmorSet', 'Consumable', 'Mining', 'Amplifier', 'Vehicle'];
+
+async function searchItems(query, fuzzy = false, options = {}){
   query = query.trim(); // Trim whitespace to avoid matching issues
   const useFuzzy = fuzzy && await checkTrgmAvailable();
+  let { type: filterType, limit: resultLimit = 50 } = options;
+
+  // Validate type filter to prevent SQL injection
+  if (filterType && !VALID_ITEM_TYPES.includes(filterType)) {
+    filterType = null;
+  }
 
   // Check if query is searching for a gendered variant
   const genderedQuery = parseGenderedQuery(query);
@@ -316,10 +325,13 @@ async function searchItems(query, fuzzy = false){
     ? `(SELECT "Armors"."Name" FROM ONLY "Armors" WHERE "Armors"."SetId" = "ArmorSets"."Id" AND (similarity("Armors"."Name", $1) >= 0.1 OR "Armors"."Name" ILIKE $2) ORDER BY similarity("Armors"."Name", $1) DESC LIMIT 1)`
     : `(SELECT "Armors"."Name" FROM ONLY "Armors" WHERE "Armors"."SetId" = "ArmorSets"."Id" AND "Armors"."Name" ILIKE $1 LIMIT 1)`;
 
-  const sql = `
-    SELECT * FROM (
-      SELECT *, ROW_NUMBER() OVER (PARTITION BY "Type" ${orderClause}) as rn
-      FROM (
+  // When filtering by a specific type, skip per-category partitioning
+  // and return up to resultLimit results of that type
+  let sql;
+  if (filterType) {
+    // Direct search for a specific type without per-category limiting
+    sql = `
+      SELECT * FROM (
         SELECT "Items"."Id" AS "Id", "Items"."Name" AS "Name", "Items"."Type" AS "Type",
           CASE WHEN "Items"."Type" = 'Weapon' THEN "Weapons"."Class" ELSE NULL END AS "SubType",
           CASE WHEN "Items"."Type" = 'Clothing' THEN "Clothes"."Gender" ELSE NULL END AS "Gender",
@@ -328,19 +340,47 @@ async function searchItems(query, fuzzy = false){
         FROM ONLY "Items"
         LEFT JOIN ONLY "Weapons" ON "Items"."Id" - ${idOffsets.Weapons} = "Weapons"."Id"
         LEFT JOIN ONLY "Clothes" ON "Items"."Type" = 'Clothing' AND "Items"."Id" - ${idOffsets.Clothings} = "Clothes"."Id"
-        WHERE "Items"."Type" != 'Armor'
+        WHERE "Items"."Type" = '${filterType}'
         UNION ALL
         SELECT "ArmorSets"."Id" + 1000000000 AS "Id", "ArmorSets"."Name" AS "Name", 'ArmorSet' AS "Type", NULL AS "SubType", NULL AS "Gender", TRUE AS "_prefiltered",
           ${armorMatchedPieceSubquery} AS "MatchedName"
         FROM ONLY "ArmorSets"
-        WHERE ${useFuzzy ? `similarity("ArmorSets"."Name", $1) >= 0.1 OR "ArmorSets"."Name" ILIKE $2` : `"ArmorSets"."Name" ILIKE $1`}
-           OR EXISTS (SELECT 1 FROM ONLY "Armors" WHERE "Armors"."SetId" = "ArmorSets"."Id" AND (${armorPieceWhereClause}))
+        WHERE 'ArmorSet' = '${filterType}' AND (
+          ${useFuzzy ? `similarity("ArmorSets"."Name", $1) >= 0.1 OR "ArmorSets"."Name" ILIKE $2` : `"ArmorSets"."Name" ILIKE $1`}
+          OR EXISTS (SELECT 1 FROM ONLY "Armors" WHERE "Armors"."SetId" = "ArmorSets"."Id" AND (${armorPieceWhereClause}))
+        )
       )
       ${whereClause}
-    ) x
-    WHERE rn <= 5
-    ORDER BY rn, "Type"
-    LIMIT 50`;
+      ${orderClause}
+      LIMIT ${parseInt(resultLimit) || 50}`;
+  } else {
+    // Original behavior with per-category limiting
+    sql = `
+      SELECT * FROM (
+        SELECT *, ROW_NUMBER() OVER (PARTITION BY "Type" ${orderClause}) as rn
+        FROM (
+          SELECT "Items"."Id" AS "Id", "Items"."Name" AS "Name", "Items"."Type" AS "Type",
+            CASE WHEN "Items"."Type" = 'Weapon' THEN "Weapons"."Class" ELSE NULL END AS "SubType",
+            CASE WHEN "Items"."Type" = 'Clothing' THEN "Clothes"."Gender" ELSE NULL END AS "Gender",
+            FALSE AS "_prefiltered",
+            NULL AS "MatchedName"
+          FROM ONLY "Items"
+          LEFT JOIN ONLY "Weapons" ON "Items"."Id" - ${idOffsets.Weapons} = "Weapons"."Id"
+          LEFT JOIN ONLY "Clothes" ON "Items"."Type" = 'Clothing' AND "Items"."Id" - ${idOffsets.Clothings} = "Clothes"."Id"
+          WHERE "Items"."Type" != 'Armor'
+          UNION ALL
+          SELECT "ArmorSets"."Id" + 1000000000 AS "Id", "ArmorSets"."Name" AS "Name", 'ArmorSet' AS "Type", NULL AS "SubType", NULL AS "Gender", TRUE AS "_prefiltered",
+            ${armorMatchedPieceSubquery} AS "MatchedName"
+          FROM ONLY "ArmorSets"
+          WHERE ${useFuzzy ? `similarity("ArmorSets"."Name", $1) >= 0.1 OR "ArmorSets"."Name" ILIKE $2` : `"ArmorSets"."Name" ILIKE $1`}
+            OR EXISTS (SELECT 1 FROM ONLY "Armors" WHERE "Armors"."SetId" = "ArmorSets"."Id" AND (${armorPieceWhereClause}))
+        )
+        ${whereClause}
+      ) x
+      WHERE rn <= 5
+      ORDER BY rn, "Type"
+      LIMIT ${parseInt(resultLimit) || 50}`;
+  }
 
   // $3 is for prefix match check in ordering (query%)
   const params = useFuzzy ? [searchName, `%${searchName}%`, `${searchName}%`] : [`%${searchName}%`];
@@ -406,7 +446,7 @@ function register(app){
    * @swagger
    * /search/items:
    *  get:
-   *    description: Search for items by name. Returns up to 30 results. Supports fuzzy matching via pg_trgm if available.
+   *    description: Search for items by name. Returns up to 50 results. Supports fuzzy matching via pg_trgm if available.
    *    parameters:
    *      - in: query
    *        name: query
@@ -420,6 +460,18 @@ function register(app){
    *          type: boolean
    *        required: false
    *        description: Enable fuzzy matching (requires pg_trgm extension)
+   *      - in: query
+   *        name: type
+   *        schema:
+   *          type: string
+   *        required: false
+   *        description: Filter to a specific item type (e.g., Blueprint, Weapon). When specified, removes per-category result limit.
+   *      - in: query
+   *        name: limit
+   *        schema:
+   *          type: integer
+   *        required: false
+   *        description: Maximum number of results to return (default 50)
    *    responses:
    *      '200':
    *        description: A list of items matching the search query
@@ -429,7 +481,11 @@ function register(app){
   app.get('/search/items', async (req,res) => {
     if (!req.query.query || req.query.query.trim().length===0) return res.status(400).send('Query cannot be empty');
     const fuzzy = req.query.fuzzy === 'true' || req.query.fuzzy === '1';
-    res.json(await searchItems(req.query.query, fuzzy));
+    const options = {
+      type: req.query.type,
+      limit: parseInt(req.query.limit) || 50
+    };
+    res.json(await searchItems(req.query.query, fuzzy, options));
   });
 }
 

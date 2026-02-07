@@ -85,7 +85,7 @@
 
   .table-container {
     border-radius: 6px;
-    overflow: hidden;
+    overflow-x: auto;
     background-color: var(--secondary-color);
     border: 1px solid var(--border-color, #555);
   }

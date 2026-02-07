@@ -15,8 +15,8 @@
   --text-muted: #aaaaaa;
   --border-color: #555555;
   --border-hover: #666666;
-  --accent-color: #4a9eff;
-  --accent-color-hover: #3a8eef;
+  --accent-color: #60b0ff;
+  --accent-color-hover: #4a9eff;
   --error-bg: #4a2020;
   --error-color: #ff6b6b;
   --success-bg: #1a3a2a;
@@ -988,4 +988,16 @@ h2 {
   width: 100%;
   height: 100%;
   border: none;
+}
+
+/* Hide number input spinner arrows globally */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
 }

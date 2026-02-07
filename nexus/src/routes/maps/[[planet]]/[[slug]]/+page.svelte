@@ -271,8 +271,13 @@
       }
     } else if (slug !== currentSlug && !isCreateMode) {
       currentSlug = slug;
-      const found = findLocationBySlug(slug, locations) || data.object;
-      selectedLocation = found;
+      // Only update selectedLocation if it doesn't already match the slug.
+      // This prevents a race condition where the URL updates before new locations
+      // data arrives, which would clear the selection set by selectLocation().
+      if (!selectedLocation || selectedLocation.Id != slug) {
+        const found = findLocationBySlug(slug, locations) || data.object;
+        selectedLocation = found;
+      }
     }
   }
 
@@ -730,8 +735,8 @@
 </script>
 
 <svelte:head>
-  <title>Entropia Nexus - {currentPlanet ? getPlanetName(currentPlanet.Name) : 'Map'} Map</title>
-  <meta name="description" content="Interactive map for {currentPlanet ? getPlanetName(currentPlanet.Name) : 'Entropia Universe'}." />
+  <title>Entropia Nexus - {currentPlanet?.Name ? getPlanetName(currentPlanet.Name) : 'Map'} Map</title>
+  <meta name="description" content="Interactive map for {currentPlanet?.Name ? getPlanetName(currentPlanet.Name) : 'Entropia Universe'}." />
   <link rel="canonical" href="https://entropianexus.com/maps/{$page.params.planet}" />
 </svelte:head>
 

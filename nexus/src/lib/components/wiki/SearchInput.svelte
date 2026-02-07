@@ -62,6 +62,12 @@
   /** @type {number} Debounce delay in ms (API mode) */
   export let debounceMs = 250;
 
+  /** @type {string|null} Filter to a specific item type (e.g., 'Blueprint'). Removes per-category limit. */
+  export let typeFilter = null;
+
+  /** @type {boolean} Whether to clear the input after selecting an option */
+  export let clearOnSelect = false;
+
   // --- Filtering props ---
   /** @type {Function|null} Custom filter function: (item) => boolean */
   export let filterFn = null;
@@ -224,6 +230,11 @@
         limit: String(limit)
       });
 
+      // Add type filter if specified (removes per-category limit in API)
+      if (typeFilter) {
+        params.set('type', typeFilter);
+      }
+
       const response = await fetch(
         import.meta.env.VITE_API_URL + `${apiEndpoint}?${params}`
       );
@@ -324,8 +335,8 @@
     const displayText = getDisplayText(item);
     const rawData = getRawData(item);
 
-    localValue = displayText;
-    dispatch('change', { value: displayText });
+    localValue = clearOnSelect ? '' : displayText;
+    dispatch('change', { value: clearOnSelect ? '' : displayText });
     dispatch('select', { value: selectedValue, data: rawData });
     closeResults();
   }

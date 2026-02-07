@@ -4,7 +4,7 @@ const { parseItemList } = require('./utils');
 const { pool } = require('./dbClient');
 
 const queries = {
-  Blueprints: 'SELECT "Blueprints".*, "BlueprintBooks"."Name" AS "Book", "Professions"."Name" AS "Profession", "Items"."Type" AS "ItemType", "Items"."Name" AS "Item" FROM ONLY "Blueprints" LEFT JOIN ONLY "BlueprintBooks" ON "Blueprints"."BookId" = "BlueprintBooks"."Id" LEFT JOIN ONLY "Items" ON "Blueprints"."ItemId" = "Items"."Id" LEFT JOIN ONLY "Professions" ON "Professions"."Id" = "Blueprints"."ProfessionId"',
+  Blueprints: 'SELECT "Blueprints".*, "BlueprintBooks"."Name" AS "Book", "Professions"."Name" AS "Profession", "Items"."Type" AS "ItemType", "Items"."Name" AS "Item", "Items"."Value" AS "ProductValue" FROM ONLY "Blueprints" LEFT JOIN ONLY "BlueprintBooks" ON "Blueprints"."BookId" = "BlueprintBooks"."Id" LEFT JOIN ONLY "Items" ON "Blueprints"."ItemId" = "Items"."Id" LEFT JOIN ONLY "Professions" ON "Professions"."Id" = "Blueprints"."ProfessionId"',
 };
 
 // blueprint book endpoints moved to ./blueprintbooks.js
@@ -47,7 +47,7 @@ function formatBlueprint(x, materials, dropsBySource){
     },
     Profession: { Name: x.Profession, Links: { "$Url": `/professions/${x.ProfessionId}` } },
     Book: { Name: x.Book, Links: { "$Url": `/blueprintbooks/${x.BookId}` } },
-    Product: x.Item != null ? { Name: x.Item, Properties: { Type: x.ItemType }, Links: { "$Url": `/${x.ItemType.toLowerCase()}s/${x.ItemId % 100000}` } } : null,
+    Product: x.Item != null ? { Name: x.Item, Properties: { Type: x.ItemType, Economy: { MaxTT: x.ProductValue } }, Links: { "$Url": `/${x.ItemType.toLowerCase()}s/${x.ItemId % 100000}` } } : null,
     Materials: mats,
     Drops: drops,
     Links: { "$Url": `/blueprints/${x.Id}` },

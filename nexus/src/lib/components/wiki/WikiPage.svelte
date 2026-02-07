@@ -69,8 +69,8 @@
   /** @type {Array} User's pending update changes to highlight in sidebar */
   export let userPendingUpdates = [];
 
-  // Mobile drawer state
-  let drawerOpen = false;
+  // Mobile drawer state - can be bound from parent
+  export let drawerOpen = false;
 
   // Sidebar expanded state (for table view)
   let sidebarExpanded = false;
@@ -83,16 +83,20 @@
   // This will be updated immediately on mount with actual window width
   // IMPORTANT: Breakpoints aligned with global 900px mobile breakpoint (see style.css)
   let windowWidth = $initialViewportWidth;
+  let windowHeight = 0;
   let isMobile = false;
   let isTablet = false;
   let mounted = false;
   let hasCustomSidebar = false;
 
-  // Mobile: < 900px (aligned with Menu.svelte and global breakpoint)
-  // Tablet: 900px - 1199px
+  // Portrait orientation check (height > width)
+  $: isPortrait = windowHeight > windowWidth;
+
+  // Mobile: < 900px, OR portrait orientation with width < 1024px (catches portrait tablets)
+  // Tablet: 900px - 1199px (only in landscape)
   // Desktop: >= 1200px
-  $: isMobile = windowWidth < 900;
-  $: isTablet = windowWidth >= 900 && windowWidth < 1200;
+  $: isMobile = windowWidth < 900 || (windowWidth < 1024 && isPortrait);
+  $: isTablet = !isMobile && windowWidth < 1200;
   $: hasCustomSidebar = !!$$slots.sidebar;
 
   function toggleDrawer() {
@@ -101,6 +105,10 @@
 
   function closeDrawer() {
     drawerOpen = false;
+  }
+
+  function openDrawer() {
+    drawerOpen = true;
   }
 
   function handleDrawerItemSelect() {
@@ -250,7 +258,7 @@
   });
 </script>
 
-<svelte:window bind:innerWidth={windowWidth} />
+<svelte:window bind:innerWidth={windowWidth} bind:innerHeight={windowHeight} />
 
 <div class="wiki-page" class:mobile={isMobile} class:tablet={isTablet} class:sidebar-expanded={sidebarExpanded}>
   <!-- Mobile Navigation Drawer -->
@@ -381,7 +389,7 @@
 
       <!-- Main Content Slot -->
       <div class="content-body" class:editing={$editMode}>
-        <slot {entity} {user} />
+        <slot {entity} {user} {isMobile} {openDrawer} />
       </div>
     </main>
   </div>
@@ -684,20 +692,8 @@
   }
 
   /* Tablet adjustments */
-  .wiki-page.tablet .wiki-sidebar {
-    width: 240px;
-    min-width: 240px;
-    max-width: 240px;
-  }
-
   .wiki-page.tablet .content-body {
     padding: 16px;
-  }
-
-  .wiki-page.tablet.sidebar-expanded .wiki-sidebar {
-    width: 45%;
-    min-width: 240px;
-    max-width: 600px;
   }
 
   /* Mobile adjustments */

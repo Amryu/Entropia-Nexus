@@ -15,6 +15,12 @@
       description: 'Plan and save loadouts for weapons, armor, tools, and utilities'
     },
     {
+      name: 'Construction Calculator',
+      href: '/tools/construction',
+      icon: 'CC',
+      description: 'Calculate crafting requirements, materials, and costs for blueprints'
+    },
+    {
       name: 'API',
       href: apiDocsUrl,
       icon: 'API',

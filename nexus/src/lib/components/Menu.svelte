@@ -424,6 +424,7 @@
     ],
     'Tools': [
       { label: 'Loadout Manager', url: 'loadouts' },
+      { label: 'Construction Calculator', url: 'construction' },
       { label: 'API', url: 'api' },
     ],
     'Market': [

@@ -16,6 +16,7 @@ sql/stuff
 sql/nexus/dumps
 sql/nexus-users/dumps
 sql/experimental
+sql-util/
 api/.env.test
 CLAUDE.md
 nexus/nul
@@ -24,3 +25,5 @@ nul
 nexus/uploads/
 sql/nexus_schema.sql
 sql/nexus_users_schema.sql
+/tools/
+nexus-bot/config.json

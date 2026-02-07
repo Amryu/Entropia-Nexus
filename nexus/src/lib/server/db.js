@@ -3280,3 +3280,58 @@ export async function getLoadoutByShareCode(shareCode) {
   const { rows } = await pool.query(query, values);
   return rows[0];
 }
+
+// Crafting Plans
+export async function getUserCraftingPlans(userId) {
+  const query = 'SELECT id, name, data, created_at, last_update FROM crafting_plans WHERE user_id = $1 ORDER BY last_update DESC';
+  const { rows } = await pool.query(query, [userId]);
+  return rows;
+}
+
+export async function getUserCraftingPlanById(userId, id) {
+  const query = 'SELECT id, name, data, created_at, last_update FROM crafting_plans WHERE user_id = $1 AND id = $2';
+  const { rows } = await pool.query(query, [userId, id]);
+  return rows[0];
+}
+
+export async function createUserCraftingPlan(userId, name, data) {
+  const query = `INSERT INTO crafting_plans (user_id, name, data)
+    VALUES ($1, $2, $3)
+    RETURNING id, name, data, created_at, last_update`;
+  const { rows } = await pool.query(query, [userId, name, data]);
+  return rows[0];
+}
+
+export async function updateUserCraftingPlan(userId, id, name, data) {
+  const query = `UPDATE crafting_plans
+    SET name = $3,
+        data = $4,
+        last_update = CURRENT_TIMESTAMP
+    WHERE user_id = $1 AND id = $2
+    RETURNING id, name, data, created_at, last_update`;
+  const { rows } = await pool.query(query, [userId, id, name, data]);
+  return rows[0];
+}
+
+export async function deleteUserCraftingPlan(userId, id) {
+  const query = 'DELETE FROM crafting_plans WHERE user_id = $1 AND id = $2';
+  await pool.query(query, [userId, id]);
+}
+
+// Blueprint Ownership
+export async function getUserBlueprintOwnership(userId) {
+  const query = 'SELECT data, last_update FROM blueprint_ownership WHERE user_id = $1';
+  const { rows } = await pool.query(query, [userId]);
+  return rows[0]?.data || {};
+}
+
+export async function updateUserBlueprintOwnership(userId, data) {
+  const query = `INSERT INTO blueprint_ownership (user_id, data, last_update)
+    VALUES ($1, $2, CURRENT_TIMESTAMP)
+    ON CONFLICT (user_id) DO UPDATE SET
+      data = $2,
+      last_update = CURRENT_TIMESTAMP
+    RETURNING data, last_update`;
+  const { rows } = await pool.query(query, [userId, data]);
+  return rows[0];
+}
