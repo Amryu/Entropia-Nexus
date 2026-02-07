@@ -97,10 +97,10 @@
 
       const savedRole = await roleRes.json();
 
-      // Save grants
+      // Save grants — only send checked (true) entries; unchecked means unset (not denied)
       const grantEntries = Object.entries(formGrants)
-        .filter(([_, granted]) => granted !== undefined && granted !== null)
-        .map(([key, granted]) => ({ key, granted }));
+        .filter(([_, granted]) => granted === true)
+        .map(([key]) => ({ key, granted: true }));
 
       if (grantEntries.length > 0 || dialogMode === 'edit') {
         await fetch(`/api/admin/roles/${savedRole.id}/grants`, {
@@ -542,6 +542,7 @@
     max-width: 90vw;
     max-height: 80vh;
     overflow-y: auto;
+    overflow-x: hidden;
   }
 
   .dialog h2 {
@@ -571,6 +572,7 @@
     border-radius: 4px;
     color: var(--text-color);
     font-size: 0.875rem;
+    box-sizing: border-box;
   }
 
   .grant-checkboxes {

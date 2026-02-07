@@ -59,6 +59,14 @@ export async function setUserVerified(id, verified) {
   const values = [id, verified];
   await poolUsers.query(query, values);
 }
+export async function assignEditorRole(userId) {
+  await poolUsers.query(
+    `INSERT INTO user_roles (user_id, role_id)
+     SELECT $1, r.id FROM roles r WHERE r.name = 'editor'
+     ON CONFLICT DO NOTHING`,
+    [userId]
+  );
+}
 export async function getChanges() {
   return (await poolUsers.query('SELECT * FROM changes')).rows;
 }
