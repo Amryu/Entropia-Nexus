@@ -43,17 +43,17 @@ export const MAX_OUTPUT_MULTIPLIER = 7;
  * - outputRange: [low, high] value multiplier for product output (success only)
  */
 export const HOTSPOTS = [
-  { multiplier: 0.20, weight: 0.08 },
-  { multiplier: 0.50, weight: 0.25 },
-  { multiplier: 0.85, weight: 0.19 },
-  { multiplier: 1.10, weight: 0.41, outputRange: [1.0, 1.21] },
-  { multiplier: 2.50, weight: 0.015, outputRange: [2.25, 2.75] },
-  { multiplier: 5.00, weight: 0.006, outputRange: [3.0, 5.5] },
-  { multiplier: 10.0, weight: 0.003, outputRange: [3.0, 7.0] },
+  { multiplier: 0.20, weight: 0.078 },
+  { multiplier: 0.50, weight: 0.2647 },
+  { multiplier: 0.85, weight: 0.2010 },
+  { multiplier: 1.10, weight: 0.4282, outputRange: [1.0, 1.21] },
+  { multiplier: 2.50, weight: 0.0149, outputRange: [2.25, 2.75] },
+  { multiplier: 5.00, weight: 0.0068, outputRange: [3.0, 5.5] },
+  { multiplier: 10.0, weight: 0.0030, outputRange: [3.0, 7.0] },
 ];
 
 /** Weight for outcomes above the highest defined hotspot */
-export const HIGH_SUCCESS_WEIGHT = 0.02;
+export const HIGH_SUCCESS_WEIGHT = 0.0018;
 
 /** Output range for >10x successes */
 export const HIGH_SUCCESS_OUTPUT_RANGE = [3.0, 7.0];
@@ -350,6 +350,7 @@ function calculateHotspotAvgOutput(blueprint, maxOutput) {
   if (totalSuccessWeight <= 0) return 1;
 
   let weightedOutput = 0;
+  const debugRows = [];
 
   for (const hotspot of success) {
     const [rangeLow, rangeHigh] = hotspot.outputRange;
@@ -363,9 +364,10 @@ function calculateHotspotAvgOutput(blueprint, maxOutput) {
     const clampedLow = Math.max(1, scaledLow);
     const clampedHigh = Math.min(maxOutput + 0.999, scaledHigh);
 
+    let contribution;
     if (clampedHigh <= clampedLow) {
       // Entire range is at or below minimum — output is 1 or maxOutput
-      weightedOutput += normalizedWeight * Math.max(1, Math.min(maxOutput, Math.floor(scaledLow)));
+      contribution = Math.max(1, Math.min(maxOutput, Math.floor(scaledLow)));
     } else {
       // Use weighted integer averaging for the clamped range
       let avgForHotspot = calculateWeightedIntegerAverage(clampedLow, clampedHigh);
@@ -377,9 +379,22 @@ function calculateHotspotAvgOutput(blueprint, maxOutput) {
         avgForHotspot = fractionBelow * avgForHotspot + fractionAbove * maxOutput;
       }
 
-      weightedOutput += normalizedWeight * Math.max(1, avgForHotspot);
+      contribution = Math.max(1, avgForHotspot);
     }
+
+    weightedOutput += normalizedWeight * contribution;
+    debugRows.push({
+      range: `[${rangeLow}x, ${rangeHigh}x]`,
+      units: `[${scaledLow.toFixed(1)}, ${scaledHigh.toFixed(1)}]`,
+      weight: `${(normalizedWeight * 100).toFixed(1)}%`,
+      avgUnits: contribution.toFixed(1),
+      contribution: (normalizedWeight * contribution).toFixed(1),
+    });
   }
+
+  console.log(`[Hotspot AvgOutput] B=${B.toFixed(2)}, maxOutput=${maxOutput}, product=${blueprint.Product?.Name}`);
+  console.table(debugRows);
+  console.log(`[Hotspot AvgOutput] Weighted avg = ${weightedOutput.toFixed(2)}`);
 
   return Math.max(1, weightedOutput);
 }
