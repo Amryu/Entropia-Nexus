@@ -405,13 +405,13 @@
       { label: 'Strongboxes', url: 'strongboxes' }
     ],
     'Information': [
+      { label: 'Guides', url: 'guides', highlighted: true },
       { label: 'Mobs', url: 'mobs' },
       { label: 'Missions', url: 'missions' },
       { label: 'Professions', url: 'professions' },
       { label: 'Skills', url: 'skills' },
       { label: 'Vendors', url: 'vendors' },
       { label: 'Locations', url: 'locations' },
-      { label: 'Guides', url: 'guides' },
     ],
     'Maps': [
       { label: 'Calypso', url: 'calypso' },
@@ -647,6 +647,11 @@
 
   .dropdown-content a:last-child {
     margin-bottom: 0;
+  }
+
+  .menu-dropdown-item.highlighted {
+    color: var(--accent-color);
+    font-weight: 600;
   }
 
   .menu-item-icon {
@@ -1465,6 +1470,11 @@
     background-color: var(--hover-color);
   }
 
+  .mobile-menu-item.highlighted {
+    color: var(--accent-color);
+    font-weight: 600;
+  }
+
   /* Mobile User Section - Collapsible */
   .mobile-user-section {
     border-top: 1px solid var(--border-color);
@@ -1738,9 +1748,9 @@
         <div class="dropdown-content" class:open={dropdownOpen === menu}>
               {#each menuItemsWiki[menu] as item (item)}
                 {#if isExternalLink(item)}
-                  <a href={getMenuItemUrl(menu, item)} target="_blank"><div class="menu-dropdown-item">{item.label}</div></a>
+                  <a href={getMenuItemUrl(menu, item)} target="_blank"><div class="menu-dropdown-item" class:highlighted={item.highlighted}>{item.label}</div></a>
                 {:else}
-                  <a use:loading href={getMenuItemUrl(menu, item)}><div class="menu-dropdown-item">{item.label}</div></a>
+                  <a use:loading href={getMenuItemUrl(menu, item)}><div class="menu-dropdown-item" class:highlighted={item.highlighted}>{item.label}</div></a>
                 {/if}
               {/each}
           </div>
@@ -1947,9 +1957,9 @@
             <div class="mobile-section-items" class:expanded={expandedSections.has(menu)}>
               {#each menuItemsWiki[menu] as item (item)}
                 {#if isExternalLink(item)}
-                  <a href={getMenuItemUrl(menu, item)} target="_blank" class="mobile-menu-item" on:click={closeMobileMenu}>{item.label}</a>
+                  <a href={getMenuItemUrl(menu, item)} target="_blank" class="mobile-menu-item" class:highlighted={item.highlighted} on:click={closeMobileMenu}>{item.label}</a>
                 {:else}
-                  <a use:loading href={getMenuItemUrl(menu, item)} class="mobile-menu-item" on:click={closeMobileMenu}>{item.label}</a>
+                  <a use:loading href={getMenuItemUrl(menu, item)} class="mobile-menu-item" class:highlighted={item.highlighted} on:click={closeMobileMenu}>{item.label}</a>
                 {/if}
               {/each}
             </div>

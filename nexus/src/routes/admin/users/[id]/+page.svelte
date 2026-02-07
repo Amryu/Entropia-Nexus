@@ -29,7 +29,7 @@
   let selectedRoleToAdd = '';
 
   $: userId = $page.params.id;
-  $: availableRoles = allRoles.filter(r => !userRoles.some(ur => ur.role_id === r.id));
+  $: availableRoles = allRoles.filter(r => !userRoles.some(ur => ur.id === r.id));
 
   onMount(() => {
     loadUser();
@@ -158,7 +158,7 @@
   async function addRole() {
     if (!selectedRoleToAdd) return;
     rolesError = '';
-    const updatedRoles = [...userRoles.map(ur => ur.role_id), parseInt(selectedRoleToAdd)];
+    const updatedRoles = [...userRoles.map(ur => ur.id), parseInt(selectedRoleToAdd)];
     try {
       const res = await fetch(`/api/admin/users/${userId}/roles`, {
         method: 'PUT',
@@ -178,7 +178,7 @@
 
   async function removeRole(roleId) {
     rolesError = '';
-    const updatedRoles = userRoles.filter(ur => ur.role_id !== roleId).map(ur => ur.role_id);
+    const updatedRoles = userRoles.filter(ur => ur.id !== roleId).map(ur => ur.id);
     try {
       const res = await fetch(`/api/admin/users/${userId}/roles`, {
         method: 'PUT',
@@ -858,7 +858,7 @@
               <span class="badge badge-locked">Locked</span>
             {/if}
             {#each userRoles as ur}
-              <span class="badge badge-admin">{getRoleName(ur.role_id)}</span>
+              <span class="badge badge-admin">{getRoleName(ur.id)}</span>
             {/each}
             {#if user.verified}
               <span class="badge badge-verified">Verified</span>
@@ -994,7 +994,7 @@
               <span class="info-label">Roles</span>
               <span class="info-value">
                 {#if userRoles.length > 0}
-                  {userRoles.map(ur => getRoleName(ur.role_id)).join(', ')}
+                  {userRoles.map(ur => getRoleName(ur.id)).join(', ')}
                 {:else}
                   None
                 {/if}
@@ -1017,8 +1017,8 @@
                 <div class="role-tags">
                   {#each userRoles as ur}
                     <span class="role-tag">
-                      {getRoleName(ur.role_id)}
-                      <button class="role-remove" on:click={() => removeRole(ur.role_id)} title="Remove role">&times;</button>
+                      {getRoleName(ur.id)}
+                      <button class="role-remove" on:click={() => removeRole(ur.id)} title="Remove role">&times;</button>
                     </span>
                   {/each}
                 </div>
