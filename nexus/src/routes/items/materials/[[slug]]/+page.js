@@ -72,7 +72,7 @@ export async function load({ fetch, params, url, parent }) {
     entity: 'Material',
     entityId: response.object?.Id,
     changeId,
-    isAdmin: session?.user?.isAdmin || false
+    isAdmin: session?.user?.grants?.includes('wiki.approve') || false
   });
 
   response.pendingChange = pendingData.pendingChange;

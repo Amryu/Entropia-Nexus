@@ -46,7 +46,7 @@ export async function POST({ params, request, locals }) {
     }
 
     // Cannot purchase tickets for your own service (unless admin for testing)
-    if (service.user_id === user.id && !user.administrator) {
+    if (service.user_id === user.id && !user?.grants?.includes('admin.panel')) {
       return getResponse({ error: 'You cannot purchase tickets for your own service.' }, 400);
     }
 

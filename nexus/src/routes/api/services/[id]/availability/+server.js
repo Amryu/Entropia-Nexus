@@ -49,7 +49,7 @@ export async function PUT({ params, request, locals }) {
     console.log('[API] Service not found');
     return getResponse({ error: 'Service not found.' }, 404);
   }
-  if (service.user_id !== user.id && !user.administrator) {
+  if (service.user_id !== user.id && !user?.grants?.includes('admin.panel')) {
     console.log('[API] User not authorized');
     return getResponse({ error: 'You can only edit your own services.' }, 403);
   }

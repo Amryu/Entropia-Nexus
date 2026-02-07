@@ -3335,3 +3335,484 @@ export async function updateUserBlueprintOwnership(userId, data) {
   const { rows } = await pool.query(query, [userId, data]);
   return rows[0];
 }
+
+// ============================================
+// ITEM PRICE FUNCTIONS
+// ============================================
+
+export async function getItemPriceHistory(itemId, { from, to, source, limit = 500 }) {
+  const conditions = ['item_id = $1'];
+  const values = [itemId];
+  let idx = 2;
+
+  if (from) {
+    conditions.push(`recorded_at >= $${idx}`);
+    values.push(from);
+    idx++;
+  }
+  if (to) {
+    conditions.push(`recorded_at <= $${idx}`);
+    values.push(to);
+    idx++;
+  }
+  if (source !== undefined) {
+    if (source === null) {
+      conditions.push('source IS NULL');
+    } else {
+      conditions.push(`source = $${idx}`);
+      values.push(source);
+      idx++;
+    }
+  }
+
+  const query = `
+    SELECT price_value, quantity, recorded_at
+    FROM item_prices
+    WHERE ${conditions.join(' AND ')}
+    ORDER BY recorded_at DESC
+    LIMIT $${idx}
+  `;
+  values.push(limit);
+
+  const { rows } = await pool.query(query, values);
+  return rows;
+}
+
+export async function getItemPriceSummaries(itemId, { periodType, from, to, source, limit = 500 }) {
+  const conditions = ['item_id = $1', 'period_type = $2'];
+  const values = [itemId, periodType];
+  let idx = 3;
+
+  if (from) {
+    conditions.push(`period_start >= $${idx}`);
+    values.push(from);
+    idx++;
+  }
+  if (to) {
+    conditions.push(`period_start <= $${idx}`);
+    values.push(to);
+    idx++;
+  }
+  if (source !== undefined) {
+    if (source === null) {
+      conditions.push('source IS NULL');
+    } else {
+      conditions.push(`source = $${idx}`);
+      values.push(source);
+      idx++;
+    }
+  }
+
+  const query = `
+    SELECT period_start, price_min, price_max, price_avg, price_p5, price_median, price_p95, price_wap, volume, sample_count
+    FROM item_price_summaries
+    WHERE ${conditions.join(' AND ')}
+    ORDER BY period_start DESC
+    LIMIT $${idx}
+  `;
+  values.push(limit);
+
+  const { rows } = await pool.query(query, values);
+  return rows;
+}
+
+export async function getLatestItemPrices(itemIds, source) {
+  if (!itemIds.length) return {};
+
+  let query;
+  const values = [itemIds];
+
+  if (source !== undefined) {
+    if (source === null) {
+      query = `
+        SELECT DISTINCT ON (item_id) item_id, price_value, quantity, recorded_at
+        FROM item_prices
+        WHERE item_id = ANY($1) AND source IS NULL
+        ORDER BY item_id, recorded_at DESC
+      `;
+    } else {
+      query = `
+        SELECT DISTINCT ON (item_id) item_id, price_value, quantity, recorded_at
+        FROM item_prices
+        WHERE item_id = ANY($1) AND source = $2
+        ORDER BY item_id, recorded_at DESC
+      `;
+      values.push(source);
+    }
+  } else {
+    query = `
+      SELECT DISTINCT ON (item_id) item_id, price_value, quantity, recorded_at
+      FROM item_prices
+      WHERE item_id = ANY($1)
+      ORDER BY item_id, recorded_at DESC
+    `;
+  }
+
+  const { rows } = await pool.query(query, values);
+
+  const result = {};
+  for (const row of rows) {
+    result[row.item_id] = {
+      price: row.price_value,
+      quantity: row.quantity,
+      recorded_at: row.recorded_at
+    };
+  }
+  return result;
+}
+
+export async function insertItemPrices(prices) {
+  if (!prices.length) return;
+
+  const valueClauses = [];
+  const values = [];
+  let idx = 1;
+
+  for (const p of prices) {
+    valueClauses.push(`($${idx}, $${idx + 1}, $${idx + 2}, $${idx + 3}, $${idx + 4})`);
+    values.push(p.item_id, p.price_value, p.quantity || 1, p.source || null, p.recorded_at || new Date());
+    idx += 5;
+  }
+
+  const query = `
+    INSERT INTO item_prices (item_id, price_value, quantity, source, recorded_at)
+    VALUES ${valueClauses.join(', ')}
+  `;
+
+  await pool.query(query, values);
+}
+
+// =============================================
+// ROLE & GRANT MANAGEMENT
+// =============================================
+
+export async function getAllRoles() {
+  const { rows } = await pool.query(`
+    SELECT r.*, p.name AS parent_name,
+      (SELECT COUNT(*)::int FROM user_roles ur WHERE ur.role_id = r.id) AS user_count,
+      (SELECT COUNT(*)::int FROM role_grants rg WHERE rg.role_id = r.id) AS grant_count
+    FROM roles r
+    LEFT JOIN roles p ON p.id = r.parent_id
+    ORDER BY r.name
+  `);
+  return rows;
+}
+
+export async function getRoleById(id) {
+  const { rows } = await pool.query('SELECT * FROM roles WHERE id = $1', [id]);
+  return rows[0];
+}
+
+export async function createRole({ name, description, parent_id }) {
+  const { rows } = await pool.query(
+    'INSERT INTO roles (name, description, parent_id) VALUES ($1, $2, $3) RETURNING *',
+    [name, description || null, parent_id || null]
+  );
+  return rows[0];
+}
+
+export async function updateRole(id, { name, description, parent_id }) {
+  const { rows } = await pool.query(
+    'UPDATE roles SET name = $2, description = $3, parent_id = $4 WHERE id = $1 RETURNING *',
+    [id, name, description || null, parent_id || null]
+  );
+  return rows[0];
+}
+
+export async function deleteRole(id) {
+  await pool.query('DELETE FROM roles WHERE id = $1', [id]);
+}
+
+export async function getAllGrants() {
+  const { rows } = await pool.query('SELECT * FROM grants ORDER BY key');
+  return rows;
+}
+
+export async function getRoleGrants(roleId) {
+  const { rows } = await pool.query(`
+    SELECT g.id, g.key, g.description, rg.granted
+    FROM role_grants rg
+    JOIN grants g ON g.id = rg.grant_id
+    WHERE rg.role_id = $1
+    ORDER BY g.key
+  `, [roleId]);
+  return rows;
+}
+
+export async function setRoleGrants(roleId, grantEntries) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM role_grants WHERE role_id = $1', [roleId]);
+    for (const entry of grantEntries) {
+      await client.query(
+        'INSERT INTO role_grants (role_id, grant_id, granted) VALUES ($1, (SELECT id FROM grants WHERE key = $2), $3)',
+        [roleId, entry.key, entry.granted !== false]
+      );
+    }
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+export async function getUserRoles(userId) {
+  const { rows } = await pool.query(`
+    SELECT r.id, r.name, r.description, ur.assigned_at
+    FROM user_roles ur
+    JOIN roles r ON r.id = ur.role_id
+    WHERE ur.user_id = $1
+    ORDER BY r.name
+  `, [userId]);
+  return rows;
+}
+
+export async function setUserRoles(userId, roleIds, assignedBy = null) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM user_roles WHERE user_id = $1', [userId]);
+    for (const roleId of roleIds) {
+      await client.query(
+        'INSERT INTO user_roles (user_id, role_id, assigned_by) VALUES ($1, $2, $3)',
+        [userId, roleId, assignedBy]
+      );
+    }
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+export async function getUserGrantOverrides(userId) {
+  const { rows } = await pool.query(`
+    SELECT g.id, g.key, g.description, ug.granted
+    FROM user_grants ug
+    JOIN grants g ON g.id = ug.grant_id
+    WHERE ug.user_id = $1
+    ORDER BY g.key
+  `, [userId]);
+  return rows;
+}
+
+export async function setUserGrantOverrides(userId, grantEntries, assignedBy = null) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    await client.query('DELETE FROM user_grants WHERE user_id = $1', [userId]);
+    for (const entry of grantEntries) {
+      await client.query(
+        'INSERT INTO user_grants (user_id, grant_id, granted, assigned_by) VALUES ($1, (SELECT id FROM grants WHERE key = $2), $3, $4)',
+        [userId, entry.key, entry.granted, assignedBy]
+      );
+    }
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+// =============================================
+// GUIDE CONTENT
+// =============================================
+
+// --- Categories ---
+
+export async function getGuideCategories() {
+  const { rows } = await pool.query('SELECT * FROM guide_categories ORDER BY sort_order, id');
+  return rows;
+}
+
+export async function getGuideCategoryById(id) {
+  const { rows } = await pool.query('SELECT * FROM guide_categories WHERE id = $1', [id]);
+  return rows[0];
+}
+
+export async function createGuideCategory({ title, description, sort_order, created_by }) {
+  const { rows } = await pool.query(
+    `INSERT INTO guide_categories (title, description, sort_order, created_by)
+     VALUES ($1, $2, $3, $4) RETURNING *`,
+    [title, description || null, sort_order || 0, created_by]
+  );
+  return rows[0];
+}
+
+export async function updateGuideCategory(id, { title, description, sort_order }) {
+  const { rows } = await pool.query(
+    `UPDATE guide_categories SET title = $2, description = $3,
+     sort_order = $4, updated_at = now() WHERE id = $1 RETURNING *`,
+    [id, title, description || null, sort_order]
+  );
+  return rows[0];
+}
+
+export async function deleteGuideCategory(id) {
+  await pool.query('DELETE FROM guide_categories WHERE id = $1', [id]);
+}
+
+// --- Chapters ---
+
+export async function getGuideChaptersByCategory(categoryId) {
+  const { rows } = await pool.query(
+    'SELECT * FROM guide_chapters WHERE category_id = $1 ORDER BY sort_order, id',
+    [categoryId]
+  );
+  return rows;
+}
+
+export async function getGuideChapterById(id) {
+  const { rows } = await pool.query('SELECT * FROM guide_chapters WHERE id = $1', [id]);
+  return rows[0];
+}
+
+export async function createGuideChapter({ category_id, title, description, sort_order, created_by }) {
+  const { rows } = await pool.query(
+    `INSERT INTO guide_chapters (category_id, title, description, sort_order, created_by)
+     VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+    [category_id, title, description || null, sort_order || 0, created_by]
+  );
+  return rows[0];
+}
+
+export async function updateGuideChapter(id, { title, description, sort_order }) {
+  const { rows } = await pool.query(
+    `UPDATE guide_chapters SET title = $2, description = $3,
+     sort_order = $4, updated_at = now() WHERE id = $1 RETURNING *`,
+    [id, title, description || null, sort_order]
+  );
+  return rows[0];
+}
+
+export async function deleteGuideChapter(id) {
+  await pool.query('DELETE FROM guide_chapters WHERE id = $1', [id]);
+}
+
+// --- Lessons ---
+
+export async function getGuideLessonsByChapter(chapterId) {
+  const { rows } = await pool.query(
+    'SELECT * FROM guide_lessons WHERE chapter_id = $1 ORDER BY sort_order, id',
+    [chapterId]
+  );
+  return rows;
+}
+
+export async function getGuideLessonBySlug(slug) {
+  const { rows } = await pool.query(
+    `SELECT l.*, c.id AS chapter_id, c.title AS chapter_title, c.category_id,
+            cat.title AS category_title
+     FROM guide_lessons l
+     JOIN guide_chapters c ON c.id = l.chapter_id
+     JOIN guide_categories cat ON cat.id = c.category_id
+     WHERE l.slug = $1`,
+    [slug]
+  );
+  return rows[0];
+}
+
+export async function getGuideLessonById(id) {
+  const { rows } = await pool.query('SELECT * FROM guide_lessons WHERE id = $1', [id]);
+  return rows[0];
+}
+
+export async function createGuideLesson({ chapter_id, title, slug, sort_order, created_by }) {
+  const { rows } = await pool.query(
+    `INSERT INTO guide_lessons (chapter_id, title, slug, sort_order, created_by)
+     VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+    [chapter_id, title, slug, sort_order || 0, created_by]
+  );
+  return rows[0];
+}
+
+export async function updateGuideLesson(id, { title, slug, sort_order }) {
+  const { rows } = await pool.query(
+    `UPDATE guide_lessons SET title = $2, slug = $3,
+     sort_order = $4, updated_at = now() WHERE id = $1 RETURNING *`,
+    [id, title, slug, sort_order]
+  );
+  return rows[0];
+}
+
+export async function deleteGuideLesson(id) {
+  await pool.query('DELETE FROM guide_lessons WHERE id = $1', [id]);
+}
+
+// --- Paragraphs ---
+
+export async function getGuideParagraphsByLesson(lessonId) {
+  const { rows } = await pool.query(
+    'SELECT * FROM guide_paragraphs WHERE lesson_id = $1 ORDER BY sort_order, id',
+    [lessonId]
+  );
+  return rows;
+}
+
+export async function createGuideParagraph({ lesson_id, content_html, sort_order, created_by }) {
+  const { rows } = await pool.query(
+    `INSERT INTO guide_paragraphs (lesson_id, content_html, sort_order, created_by)
+     VALUES ($1, $2, $3, $4) RETURNING *`,
+    [lesson_id, content_html || '', sort_order || 0, created_by]
+  );
+  return rows[0];
+}
+
+export async function updateGuideParagraph(id, { content_html, sort_order }) {
+  const { rows } = await pool.query(
+    `UPDATE guide_paragraphs SET content_html = $2,
+     sort_order = $3, updated_at = now() WHERE id = $1 RETURNING *`,
+    [id, content_html, sort_order]
+  );
+  return rows[0];
+}
+
+export async function deleteGuideParagraph(id) {
+  await pool.query('DELETE FROM guide_paragraphs WHERE id = $1', [id]);
+}
+
+export async function reorderGuideParagraphs(lessonId, orderedIds) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    for (let i = 0; i < orderedIds.length; i++) {
+      await client.query(
+        'UPDATE guide_paragraphs SET sort_order = $1, updated_at = now() WHERE id = $2 AND lesson_id = $3',
+        [i, orderedIds[i], lessonId]
+      );
+    }
+    await client.query('COMMIT');
+  } catch (e) {
+    await client.query('ROLLBACK');
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+// --- Full guide tree ---
+
+export async function getGuideTree() {
+  const [cats, chaps, lessons] = await Promise.all([
+    pool.query('SELECT * FROM guide_categories ORDER BY sort_order, id'),
+    pool.query('SELECT * FROM guide_chapters ORDER BY sort_order, id'),
+    pool.query('SELECT id, chapter_id, title, slug, sort_order FROM guide_lessons ORDER BY sort_order, id')
+  ]);
+
+  return cats.rows.map(cat => ({
+    ...cat,
+    chapters: chaps.rows
+      .filter(ch => ch.category_id === cat.id)
+      .map(ch => ({
+        ...ch,
+        lessons: lessons.rows.filter(l => l.chapter_id === ch.id)
+      }))
+  }));
+}

@@ -22,7 +22,7 @@ export async function GET({ params, url, locals }) {
     return json({ error: 'Not authenticated' }, { status: 401 });
   }
 
-  if (!realUser.administrator) {
+  if (!realUser?.grants?.includes('admin.users')) {
     return json({ error: 'Only administrators can access this endpoint' }, { status: 403 });
   }
 
@@ -75,7 +75,7 @@ export async function PATCH({ params, request, locals }) {
     return json({ error: 'Not authenticated' }, { status: 401 });
   }
 
-  if (!realUser.administrator) {
+  if (!realUser?.grants?.includes('admin.users')) {
     return json({ error: 'Only administrators can access this endpoint' }, { status: 403 });
   }
 

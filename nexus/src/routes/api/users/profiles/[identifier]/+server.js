@@ -224,7 +224,7 @@ export async function PATCH({ params, request, locals }) {
   }
 
   const userId = String(user.Id || user.id);
-  if (String(profileUser.id) !== userId && !user.administrator) {
+  if (String(profileUser.id) !== userId && !user?.grants?.includes('admin.panel')) {
     return getResponse({ error: 'You do not have permission to edit this profile.' }, 403);
   }
 

@@ -79,7 +79,7 @@ export async function PUT({ params, request, locals }) {
     return getResponse({ error: 'Service not found.' }, 404);
   }
 
-  if (existingService.user_id !== user.id && !user.administrator) {
+  if (existingService.user_id !== user.id && !user?.grants?.includes('admin.panel')) {
     return getResponse({ error: 'You can only edit your own services.' }, 403);
   }
 
@@ -199,7 +199,7 @@ export async function DELETE({ params, locals }) {
     return getResponse({ error: 'Service not found.' }, 404);
   }
 
-  if (existingService.user_id !== user.id && !user.administrator) {
+  if (existingService.user_id !== user.id && !user?.grants?.includes('admin.panel')) {
     return getResponse({ error: 'You can only delete your own services.' }, 403);
   }
 

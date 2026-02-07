@@ -57,6 +57,20 @@
     <p class="subtitle">Reference data for Entropia Universe game mechanics</p>
   </header>
 
+  <a href="/information/guides" class="guide-banner">
+    <span class="guide-banner-icon">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+        <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+      </svg>
+    </span>
+    <div class="guide-banner-content">
+      <h2 class="guide-banner-title">Guides</h2>
+      <p class="guide-banner-description">Step-by-step guides and tutorials for Entropia Universe</p>
+    </div>
+    <span class="guide-banner-arrow">&rarr;</span>
+  </a>
+
   <div class="category-grid">
     {#each categories as category}
       <a href={category.href} class="category-card">
@@ -93,6 +107,65 @@
     margin: 0;
     color: var(--text-muted);
     font-size: 1.1rem;
+  }
+
+  .guide-banner {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 20px 24px;
+    margin-bottom: 24px;
+    background-color: var(--secondary-color);
+    border: 2px solid var(--accent-color);
+    border-radius: 8px;
+    text-decoration: none;
+    color: var(--text-color);
+    transition: background-color 0.2s ease;
+  }
+
+  .guide-banner:hover {
+    background-color: var(--hover-color);
+  }
+
+  .guide-banner-icon {
+    flex-shrink: 0;
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--accent-color);
+    border-radius: 8px;
+    color: var(--primary-color);
+  }
+
+  .guide-banner-content {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .guide-banner-title {
+    margin: 0 0 4px 0;
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: var(--text-color);
+  }
+
+  .guide-banner-description {
+    margin: 0;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+  }
+
+  .guide-banner-arrow {
+    font-size: 1.5rem;
+    color: var(--accent-color);
+    flex-shrink: 0;
+    transition: transform 0.2s ease;
+  }
+
+  .guide-banner:hover .guide-banner-arrow {
+    transform: translateX(4px);
   }
 
   .category-grid {

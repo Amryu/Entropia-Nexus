@@ -78,7 +78,7 @@
   const DEFAULT_VISIBLE_AREA_TYPES = new Set(['PvpArea', 'PvpLootArea', 'ZoneArea']);
 
   $: user = data.session?.user;
-  $: canEdit = user?.verified || user?.isAdmin || user?.administrator;
+  $: canEdit = user?.verified || user?.grants?.includes('wiki.edit');
   $: isEditAllowed = canEdit && !isMobile;
   $: canCreateNew = data.canCreateNew ?? true;
   $: pendingChange = data.pendingChange;
@@ -88,7 +88,7 @@
   $: locationEntityId = selectedLocation?.Id ?? selectedLocation?.ItemId;
   $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, locationEntityId);
   $: resolvedPendingChange = userPendingUpdate || pendingChange;
-  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user.isAdmin || user.administrator));
+  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve')));
 
   $: locations = data?.additional?.locations || [];
   $: error = data.error;
@@ -283,7 +283,7 @@
 
   $: if (resolvedPendingChange) {
     setExistingPendingChange(resolvedPendingChange);
-    if (user && (resolvedPendingChange.author_id === user.id || user.isAdmin || user.administrator)) {
+    if (user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve'))) {
       setViewingPendingChange(true);
     }
   } else {

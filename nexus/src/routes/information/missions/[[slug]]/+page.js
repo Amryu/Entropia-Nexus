@@ -53,7 +53,7 @@ export async function load({ fetch, params, url, parent }) {
     entity: entityType,
     entityId: response.object?.Id,
     changeId,
-    isAdmin: parentData.session?.user?.isAdmin || false
+    isAdmin: parentData.session?.user?.grants?.includes('wiki.approve') || false
   });
 
   response.pendingChange = pendingData.pendingChange;

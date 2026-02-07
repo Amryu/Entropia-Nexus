@@ -94,7 +94,7 @@
   $: skillEntityId = skill?.Id ?? skill?.ItemId;
   $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, skillEntityId);
   $: resolvedPendingChange = userPendingUpdate || pendingChange;
-  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user.isAdmin));
+  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve')));
 
   // Initialize edit state when entity/user changes
   $: if (user) {
@@ -109,7 +109,7 @@
   // Handle pending changes from API
   $: if (resolvedPendingChange) {
     setExistingPendingChange(resolvedPendingChange);
-    if (user && (resolvedPendingChange.author_id === user.id || user.isAdmin)) {
+    if (user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve'))) {
       setViewingPendingChange(true);
     }
   } else {

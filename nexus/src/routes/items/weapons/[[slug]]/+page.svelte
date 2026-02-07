@@ -115,7 +115,7 @@
   $: weaponEntityId = weapon?.Id ?? weapon?.ItemId;
   $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, weaponEntityId);
   $: resolvedPendingChange = userPendingUpdate || pendingChange;
-  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user.isAdmin));
+  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve')));
   $: createSeed = existingChange?.data || resolvedPendingChange?.data || emptyWeapon;
 
   // ========== EDIT STATE MANAGEMENT ==========
@@ -144,7 +144,7 @@
   $: if (resolvedPendingChange) {
     setExistingPendingChange(resolvedPendingChange);
     // Auto-enable viewing pending change for author or admin
-    if (user && (resolvedPendingChange.author_id === user.id || user.isAdmin)) {
+    if (user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve'))) {
       setViewingPendingChange(true);
     }
   } else {
@@ -488,8 +488,8 @@
     : 'https://entropianexus.com/items/weapons';
 
   // ========== EDITING PERMISSIONS ==========
-  // Verified users and admins can edit
-  $: canEdit = user?.verified || user?.isAdmin;
+  // Verified users and users with wiki.edit grant can edit
+  $: canEdit = user?.verified || user?.grants?.includes('wiki.edit');
 
   // Check if weapon is tierable
   $: isTierable = activeWeapon && !hasItemTag(activeWeapon.Name, 'L');

@@ -13,7 +13,7 @@ export async function GET({ locals }) {
     return json({ error: 'Not authenticated' }, { status: 401 });
   }
 
-  if (!realUser.administrator) {
+  if (!realUser?.grants?.includes('admin.panel')) {
     return json({ error: 'Only administrators can access this endpoint' }, { status: 403 });
   }
 

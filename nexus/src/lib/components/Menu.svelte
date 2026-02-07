@@ -411,6 +411,7 @@
       { label: 'Skills', url: 'skills' },
       { label: 'Vendors', url: 'vendors' },
       { label: 'Locations', url: 'locations' },
+      { label: 'Guides', url: 'guides' },
     ],
     'Maps': [
       { label: 'Calypso', url: 'calypso' },
@@ -1726,7 +1727,7 @@
   <div class="menu-container">
     <a href="/" class="logo-link"><img class="website-icon" src="/favicon.png" alt="Entropia Nexus" title="Entropia Nexus" width="48px" height="48px" /></a>
     {#each Object.keys(menuItemsWiki) as menu (menu)}
-      {#if !(menu === 'Market' && !(user && user.administrator))}
+      {#if !(menu === 'Market' && !(user && user.grants?.includes('admin.panel')))}
       <!-- svelte-ignore a11y-no-static-element-interactions -->
       <div class="menu-item" class:menu-top={!!getMenuOverviewUrl(menu)} on:mouseenter={() => handleDropdownEnter(menu)} on:mouseleave={handleDropdownLeave}>
         {#if getMenuOverviewUrl(menu)}
@@ -1933,7 +1934,7 @@
     <!-- Navigation Mode -->
     <div class="mobile-menu-content">
       {#each Object.keys(menuItemsWiki) as menu (menu)}
-        {#if !(menu === 'Market' && !(user && user.administrator))}
+        {#if !(menu === 'Market' && !(user && user.grants?.includes('admin.panel')))}
           <div class="mobile-section">
             <!-- svelte-ignore a11y-click-events-have-key-events -->
             <!-- svelte-ignore a11y-no-static-element-interactions -->

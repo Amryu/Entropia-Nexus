@@ -56,10 +56,10 @@
   $: petEntityId = pet?.Id ?? pet?.ItemId;
   $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, petEntityId);
   $: resolvedPendingChange = userPendingUpdate || pendingChange;
-  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user.isAdmin));
+  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve')));
 
   // Can edit if user is verified or admin
-  $: canEdit = user?.verified || user?.isAdmin;
+  $: canEdit = user?.verified || user?.grants?.includes('wiki.edit');
 
   // All pets for navigation
   $: allItems = data.allItems || [];
@@ -96,7 +96,7 @@
   $: if (resolvedPendingChange) {
     setExistingPendingChange(resolvedPendingChange);
     // Auto-enable viewing pending change for author or admin
-    if (user && (resolvedPendingChange.author_id === user.id || user.isAdmin)) {
+    if (user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve'))) {
       setViewingPendingChange(true);
     }
   } else {

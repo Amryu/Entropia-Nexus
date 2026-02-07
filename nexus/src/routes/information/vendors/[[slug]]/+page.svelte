@@ -54,10 +54,10 @@
   $: vendorEntityId = vendor?.Id ?? vendor?.ItemId;
   $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, vendorEntityId);
   $: resolvedPendingChange = userPendingUpdate || pendingChange;
-  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user.isAdmin));
+  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve')));
 
   // Verified users can edit
-  $: canEdit = user?.verified || user?.isAdmin;
+  $: canEdit = user?.verified || user?.grants?.includes('wiki.edit');
 
   // Planet options for dropdown
   const planetOptions = [
@@ -100,7 +100,7 @@
   // Set pending change in store when it changes
   $: if (resolvedPendingChange) {
     setExistingPendingChange(resolvedPendingChange);
-    if (user && (resolvedPendingChange.author_id === user.id || user.isAdmin)) {
+    if (user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve'))) {
       setViewingPendingChange(true);
     }
   } else {

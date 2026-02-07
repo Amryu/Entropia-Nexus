@@ -20,7 +20,7 @@ export async function load({ fetch, params, locals, url }) {
   }
 
   // Check ownership
-  if (service.user_id !== user.id && !user.administrator) {
+  if (service.user_id !== user.id && !user?.grants?.includes('admin.panel')) {
     throw redirect(302, `/market/services/${serviceId}`);
   }
 

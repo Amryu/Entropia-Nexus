@@ -43,7 +43,7 @@ export async function PUT({ params, request, locals }) {
     }
 
     // Verify the user is the provider of this service
-    if (serviceRequest.provider_id !== user.id && !user.administrator) {
+    if (serviceRequest.provider_id !== user.id && !user?.grants?.includes('admin.panel')) {
       return getResponse({ error: 'You can only update requests for your own services.' }, 403);
     }
 

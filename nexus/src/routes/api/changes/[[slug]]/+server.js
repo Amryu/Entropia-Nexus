@@ -166,7 +166,7 @@ export async function PUT({ params, request, locals, url }) {
   if (!change) {
     return getResponse({ error: 'Change not found.' }, 404);
   }
-  if (change.author_id !== user.id && !user.administrator) {
+  if (change.author_id !== user.id && !user?.grants?.includes('admin.panel')) {
     return getResponse({ error: 'You are not the author of this change.' }, 403);
   }
 
@@ -311,7 +311,7 @@ export async function DELETE({ params, locals }) {
     return getResponse({ error: 'Change not found.' }, 404);
   }
 
-  if (change.author_id !== user.id && !user.administrator) {
+  if (change.author_id !== user.id && !user?.grants?.includes('admin.panel')) {
     return getResponse({ error: 'You are not the author of this change.' }, 403);
   }
 

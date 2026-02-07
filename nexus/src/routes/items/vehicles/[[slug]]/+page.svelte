@@ -59,10 +59,10 @@
   $: vehicleEntityId = vehicle?.Id ?? vehicle?.ItemId;
   $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, vehicleEntityId);
   $: resolvedPendingChange = userPendingUpdate || pendingChange;
-  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user.isAdmin));
+  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve')));
 
   // Verified users can edit
-  $: canEdit = user?.verified || user?.isAdmin;
+  $: canEdit = user?.verified || user?.grants?.includes('wiki.edit');
 
   // Type options for vehicles
   const typeOptions = [
@@ -115,7 +115,7 @@
   // Set pending change in store when it changes
   $: if (resolvedPendingChange) {
     setExistingPendingChange(resolvedPendingChange);
-    if (user && (resolvedPendingChange.author_id === user.id || user.isAdmin)) {
+    if (user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve'))) {
       setViewingPendingChange(true);
     }
   } else {

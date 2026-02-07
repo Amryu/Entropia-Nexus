@@ -60,7 +60,7 @@
   $: shopEntityId = shop?.Id ?? shop?.ItemId;
   $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, shopEntityId);
   $: resolvedPendingChange = userPendingUpdate || pendingChange;
-  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user.isAdmin));
+  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user.grants?.includes('wiki.approve')));
   // Constants for section names (matches legacy)
   const SECTION_NAMES = ['Indoor', 'Display', 'Additional'];
 
@@ -206,7 +206,7 @@
   $: if (resolvedPendingChange) {
     setExistingPendingChange(resolvedPendingChange);
     // Auto-enable viewing pending change for author or admin
-    if (user && (resolvedPendingChange.author_id === user.id || user.isAdmin)) {
+    if (user && (resolvedPendingChange.author_id === user.id || user.grants?.includes('wiki.approve'))) {
       setViewingPendingChange(true);
     }
   } else {

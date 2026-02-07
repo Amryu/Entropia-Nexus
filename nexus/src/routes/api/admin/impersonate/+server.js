@@ -17,7 +17,7 @@ export async function POST({ request, cookies, locals }) {
     return json({ error: 'Not authenticated' }, { status: 401 });
   }
 
-  if (!realUser.administrator) {
+  if (!realUser?.grants?.includes('admin.impersonate')) {
     return json({ error: 'Only administrators can impersonate users' }, { status: 403 });
   }
 
@@ -69,7 +69,7 @@ export async function POST({ request, cookies, locals }) {
 export async function DELETE({ cookies, locals }) {
   const realUser = locals.session?.realUser || locals.session?.user;
 
-  if (!realUser || !realUser.administrator) {
+  if (!realUser?.grants?.includes('admin.impersonate')) {
     return json({ error: 'Not authorized' }, { status: 403 });
   }
 

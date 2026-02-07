@@ -83,7 +83,7 @@
   $: blueprintEntityId = blueprint?.Id ?? blueprint?.ItemId;
   $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, blueprintEntityId);
   $: resolvedPendingChange = userPendingUpdate || pendingChange;
-  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user.isAdmin));
+  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve')));
   // Edit mode dropdown data
   $: blueprintbooks = data.blueprintbooks || [];
   $: professions = data.professions || [];
@@ -98,7 +98,7 @@
   $: blueprintDropOptions = allItems.map(b => ({ value: b.Name, label: b.Name })).sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
 
   // Can edit if user is verified or admin
-  $: canEdit = user?.verified || user?.isAdmin;
+  $: canEdit = user?.verified || user?.grants?.includes('wiki.edit');
 
   // Build navigation items
   $: navItems = allItems;
@@ -139,7 +139,7 @@
   $: if (resolvedPendingChange) {
     setExistingPendingChange(resolvedPendingChange);
     // Auto-enable viewing pending change for author or admin
-    if (user && (resolvedPendingChange.author_id === user.id || user.isAdmin)) {
+    if (user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve'))) {
       setViewingPendingChange(true);
     }
   } else {

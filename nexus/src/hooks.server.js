@@ -1,5 +1,5 @@
 //@ts-nocheck
-let dbGetSession, getUserFromSession, updateSession, upsertUser, getUserInfo, handleRefresh, getUserById, getUserFullDetails;
+let dbGetSession, getUserFromSession, updateSession, upsertUser, getUserInfo, handleRefresh, getUserById, getUserFullDetails, resolveUserGrants;
 
 if (import.meta.env.SSR) {
   const db = await import('$lib/server/db');
@@ -9,6 +9,9 @@ if (import.meta.env.SSR) {
   upsertUser = db.upsertUser;
   getUserById = db.getUserById;
   getUserFullDetails = db.getUserFullDetails;
+
+  const grants = await import('$lib/server/grants');
+  resolveUserGrants = grants.resolveUserGrants;
 
   const discord = await import('$lib/server/discord');
   getUserInfo = discord.getUserInfo;
@@ -62,6 +65,10 @@ const SESSION_COOKIE_MAX_AGE = 60 * 60 * 24 * 30; // 30 days
 // Discord tokens typically last 7 days, so this gives us plenty of margin
 const REFRESH_THRESHOLD = 60 * 60 * 24 * 2; // 2 days
 
+// How often to re-resolve grants from DB (in ms).
+// Ensures role/grant changes and verification apply within this window.
+const GRANTS_REFRESH_INTERVAL = 30_000; // 30 seconds
+
 const sessions = new Map();
 
 export async function handle({ event, resolve }) {
@@ -97,10 +104,16 @@ export async function handle({ event, resolve }) {
         }
       }
 
-      // Add lock status to session for easy access
-      if (fullUser?.locked) {
-        session.user.locked = true;
-        session.user.locked_reason = fullUser.locked_reason;
+      // Sync mutable user fields from DB so changes apply without re-login
+      if (fullUser) {
+        session.user.verified = fullUser.verified;
+        if (fullUser.locked) {
+          session.user.locked = true;
+          session.user.locked_reason = fullUser.locked_reason;
+        } else {
+          session.user.locked = false;
+          session.user.locked_reason = null;
+        }
       }
     } catch (e) {
       // If we can't check ban status, continue with session
@@ -108,13 +121,18 @@ export async function handle({ event, resolve }) {
     }
   }
 
-  // Check for admin impersonation
-  if (session.user && session.user.administrator) {
+  // Check for admin impersonation (requires admin.impersonate grant)
+  if (session.user && session.user.grants?.includes('admin.impersonate')) {
     const impersonateUserId = event.cookies.get(IMPERSONATE_COOKIE);
     if (impersonateUserId) {
       try {
         const impersonatedUser = await getUserById(BigInt(impersonateUserId));
         if (impersonatedUser) {
+          // Resolve grants for the impersonated user
+          const impersonatedGrants = await resolveUserGrants(BigInt(impersonatedUser.id));
+          impersonatedUser.grants = [...impersonatedGrants];
+          impersonatedUser.administrator = impersonatedGrants.has('admin.panel');
+
           // Store real user and replace user with impersonated user
           session = {
             ...session,
@@ -189,13 +207,42 @@ async function getSessionObject(sessionId) {
     }
 
     dbSession = session;
+
+    // Resolve role-based grants for the user
+    if (user) {
+      try {
+        const userGrants = await resolveUserGrants(BigInt(user.id));
+        user.grants = [...userGrants];
+        user.administrator = userGrants.has('admin.panel');
+      } catch (e) {
+        console.error('Error resolving user grants:', e);
+        user.grants = [];
+      }
+    }
+
     sessionData = {
       user,
       expires: session.expires,
-      refreshToken: session.refresh_token
+      refreshToken: session.refresh_token,
+      grantsCachedAt: Date.now()
     };
 
     sessions.set(sessionId, sessionData);
+  }
+
+  // Periodically re-resolve grants so role/grant changes apply quickly
+  if (sessionData.user) {
+    const now = Date.now();
+    if (!sessionData.grantsCachedAt || now - sessionData.grantsCachedAt > GRANTS_REFRESH_INTERVAL) {
+      try {
+        const freshGrants = await resolveUserGrants(BigInt(sessionData.user.id));
+        sessionData.user.grants = [...freshGrants];
+        sessionData.user.administrator = freshGrants.has('admin.panel');
+        sessionData.grantsCachedAt = now;
+      } catch (e) {
+        console.error('Error refreshing user grants:', e);
+      }
+    }
   }
 
   const now = Math.floor(Date.now() / 1000);
@@ -236,10 +283,23 @@ async function getSessionObject(sessionId) {
         updateSession(sessionId, response.access_token, response.refresh_token, newExpires)
       ]);
 
+      // Resolve role-based grants after refresh
+      if (user) {
+        try {
+          const userGrants = await resolveUserGrants(BigInt(user.id));
+          user.grants = [...userGrants];
+          user.administrator = userGrants.has('admin.panel');
+        } catch (e) {
+          console.error('Error resolving user grants after refresh:', e);
+          user.grants = [];
+        }
+      }
+
       sessionData = {
         user,
         expires: newExpires,
-        refreshToken: response.refresh_token
+        refreshToken: response.refresh_token,
+        grantsCachedAt: Date.now()
       };
 
       sessions.set(sessionId, sessionData);

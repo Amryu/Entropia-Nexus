@@ -11,7 +11,7 @@ export async function PUT({ params, request, locals, fetch }) {
   }
 
   // Only admins can change shop owners
-  if (!user.administrator) {
+  if (!user?.grants?.includes('admin.panel')) {
     return getResponse({ error: 'Only administrators can change shop owners.' }, 403);
   }
 

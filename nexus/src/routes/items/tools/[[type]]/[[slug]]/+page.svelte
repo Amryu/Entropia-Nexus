@@ -66,10 +66,10 @@
   $: toolEntityId = tool?.Id ?? tool?.ItemId;
   $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, toolEntityId);
   $: resolvedPendingChange = userPendingUpdate || pendingChange;
-  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user.isAdmin));
+  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve')));
 
   // Permission check - verified users and admins can edit
-  $: canEdit = user?.verified || user?.isAdmin;
+  $: canEdit = user?.verified || user?.grants?.includes('wiki.edit');
 
   // For multi-type pages, data.items is an object keyed by type
   // When no type is selected, show all items from all types (with _type added for linking)
@@ -208,7 +208,7 @@
   // Set pending change when it exists
   $: if (resolvedPendingChange) {
     setExistingPendingChange(resolvedPendingChange);
-    if (user && (resolvedPendingChange.author_id === user.id || user.isAdmin)) {
+    if (user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve'))) {
       setViewingPendingChange(true);
     }
   } else {

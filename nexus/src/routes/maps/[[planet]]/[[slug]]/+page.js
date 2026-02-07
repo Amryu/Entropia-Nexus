@@ -23,7 +23,7 @@ export async function load({ fetch, params, url, parent }) {
   const session = parentData.session;
 
   const mode = url.searchParams.get('mode') || 'view';
-  const isCreateMode = mode === 'create' && !!(session?.user?.verified || session?.user?.isAdmin || session?.user?.administrator);
+  const isCreateMode = mode === 'create' && !!(session?.user?.verified || session?.user?.grants?.includes('wiki.approve') || session?.user?.administrator);
   const changeId = url.searchParams.get('changeId');
 
   let [locations, areas, mobSpawns] = await Promise.all([
@@ -157,7 +157,7 @@ export async function load({ fetch, params, url, parent }) {
       entity: entityType,
       entityId,
       changeId,
-      isAdmin: session?.user?.isAdmin || false
+      isAdmin: session?.user?.grants?.includes('wiki.approve') || false
     })
     : null;
 
@@ -167,19 +167,19 @@ export async function load({ fetch, params, url, parent }) {
         entity: 'Location',
         entityId: null,
         changeId: null,
-        isAdmin: session.user?.isAdmin || false
+        isAdmin: session.user?.grants?.includes('wiki.approve') || false
       }),
       loadPendingChangesData(fetch, session.user, {
         entity: 'Area',
         entityId: null,
         changeId: null,
-        isAdmin: session.user?.isAdmin || false
+        isAdmin: session.user?.grants?.includes('wiki.approve') || false
       }),
       loadPendingChangesData(fetch, session.user, {
         entity: 'Apartment',
         entityId: null,
         changeId: null,
-        isAdmin: session.user?.isAdmin || false
+        isAdmin: session.user?.grants?.includes('wiki.approve') || false
       })
     ])
     : [{}, {}, {}];
@@ -204,7 +204,7 @@ export async function load({ fetch, params, url, parent }) {
     (areaPending?.pendingCreatesCount || 0) +
     (apartmentPending?.pendingCreatesCount || 0);
   response.pendingCreatesCount = totalPendingCreates;
-  response.canCreateNew = session?.user?.isAdmin ? true : totalPendingCreates < MAX_PENDING_CREATES;
+  response.canCreateNew = session?.user?.grants?.includes('wiki.approve') ? true : totalPendingCreates < MAX_PENDING_CREATES;
 
   return response;
 }

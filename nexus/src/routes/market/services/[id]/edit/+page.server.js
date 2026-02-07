@@ -38,7 +38,7 @@ export async function load({ fetch, params, locals, url }) {
   }
 
   // Check ownership
-  if (service.user_id !== user.id && !user.administrator) {
+  if (service.user_id !== user.id && !user?.grants?.includes('admin.panel')) {
     throw error(403, 'You can only edit your own services');
   }
 

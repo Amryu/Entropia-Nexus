@@ -56,7 +56,7 @@
   $: entityId = entity?.Id ?? null;
   $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, entityId);
   $: resolvedPendingChange = userPendingUpdate || pendingChange;
-  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user.isAdmin));
+  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve')));
 
   const emptyMission = {
     Id: null,
@@ -103,7 +103,7 @@
 
   $: if (resolvedPendingChange) {
     setExistingPendingChange(resolvedPendingChange);
-    if (user && (resolvedPendingChange.author_id === user.id || user.isAdmin)) {
+    if (user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve'))) {
       setViewingPendingChange(true);
     }
   } else {
@@ -902,7 +902,7 @@
   basePath="/information/missions"
   {user}
   editable={true}
-  canEdit={user?.verified || user?.isAdmin}
+  canEdit={user?.verified || user?.grants?.includes('wiki.edit')}
   {canCreateNew}
   {userPendingCreates}
   {userPendingUpdates}

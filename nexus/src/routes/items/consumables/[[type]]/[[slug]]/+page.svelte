@@ -65,10 +65,10 @@
   $: consumableEntityId = consumable?.Id ?? consumable?.ItemId;
   $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, consumableEntityId);
   $: resolvedPendingChange = userPendingUpdate || pendingChange;
-  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user.isAdmin));
+  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve')));
 
   // Permission check - verified users and admins can edit
-  $: canEdit = user?.verified || user?.isAdmin;
+  $: canEdit = user?.verified || user?.grants?.includes('wiki.edit');
 
   // For multi-type pages, data.items is an object keyed by type
   // When no type is selected, show all items from all types (with _type added for linking)
@@ -153,7 +153,7 @@
   $: if (resolvedPendingChange) {
     setExistingPendingChange(resolvedPendingChange);
     // Auto-enable viewing pending change for author or admin
-    if (user && (resolvedPendingChange.author_id === user.id || user.isAdmin)) {
+    if (user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve'))) {
       setViewingPendingChange(true);
     }
   } else {

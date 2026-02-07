@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { dump } from 'js-yaml';
 import { Client, GatewayIntentBits, Collection, Events, ChannelType } from 'discord.js';
-import { getUsers, getOpenChanges, setChangeThreadId, getDeletedChanges, deleteChange, getFlightsNeedingThread, setFlightThreadId, getCheckinsPendingThreadAdd, markCheckinAddedToThread, getUnnotifiedFlightStateChanges, getFlightsNeedingArchive, clearFlightThreadId, getPendingRescheduleNotifications, markRescheduleNotificationSent, getServicePilots, getFlightAcceptedCheckins, getFlightsReadyForCustomerKick, setFlightCompletedAt, expireTickets } from './db.js';
+import { getUsers, getOpenChanges, setChangeThreadId, getDeletedChanges, deleteChange, getFlightsNeedingThread, setFlightThreadId, getCheckinsPendingThreadAdd, markCheckinAddedToThread, getUnnotifiedFlightStateChanges, getFlightsNeedingArchive, clearFlightThreadId, getPendingRescheduleNotifications, markRescheduleNotificationSent, getServicePilots, getFlightAcceptedCheckins, getFlightsReadyForCustomerKick, setFlightCompletedAt, expireTickets, computeAllPriceSummaries } from './db.js';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { compareJson, validate, printSideBySide } from './change.js';
 
@@ -760,6 +760,20 @@ async function runTicketExpiration() {
 }
 setInterval(() => runScheduled('runTicketExpiration', runTicketExpiration), 60 * 60 * 1000);
 runScheduled('runTicketExpiration', runTicketExpiration); // Run once on startup
+
+// Compute price summaries every 15 minutes
+async function runPriceSummaries() {
+  try {
+    const results = await computeAllPriceSummaries();
+    const totalProcessed = results.reduce((sum, r) => sum + r.processed, 0);
+    if (totalProcessed > 0) {
+      console.log(`Price summaries: ${results.map(r => `${r.period_type}=${r.processed}`).join(', ')}`);
+    }
+  } catch (e) {
+    console.error('Error computing price summaries:', e);
+  }
+}
+setInterval(() => runScheduled('runPriceSummaries', runPriceSummaries), 15 * 60 * 1000);
 
 client.login(process.env.CLIENT_TOKEN);
 

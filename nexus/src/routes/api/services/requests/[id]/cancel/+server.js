@@ -22,7 +22,7 @@ export async function PUT({ params, locals }) {
     }
 
     // Verify the user is the requester
-    if (request.requester_id !== user.id && !user.administrator) {
+    if (request.requester_id !== user.id && !user?.grants?.includes('admin.panel')) {
       return getResponse({ error: 'You can only cancel your own requests.' }, 403);
     }
 

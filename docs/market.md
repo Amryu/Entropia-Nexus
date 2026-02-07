@@ -238,6 +238,89 @@ Available planet filters:
 
 ---
 
+## Price Tracking
+
+Historical item price observations with pre-computed summaries for charting.
+
+### Price Formats
+
+- **Stackable items**: percentage markup (e.g., `123.4567` = 123.4567% of MaxTT)
+- **Condition items** (`hasCondition()` = true): flat absolute markup (e.g., `45.0000` = +45 PED)
+
+The `price_value` column stores the raw number; interpretation depends on item type.
+
+### Database Tables (nexus-users)
+
+#### `item_prices` — Raw observations
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | bigserial | Primary key |
+| item_id | integer | Composite item ID |
+| price_value | numeric(12,4) | Markup value |
+| quantity | integer | Traded quantity (for WAP) |
+| source | text | NULL = aggregate, or specific source |
+| recorded_at | timestamptz | Observation time |
+
+#### `item_price_summaries` — Pre-computed rollups
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | bigserial | Primary key |
+| item_id | integer | Composite item ID |
+| source | text | Source filter |
+| period_type | enum | 'hour', 'day', 'week' |
+| period_start | timestamptz | Start of period |
+| price_min/max/avg | numeric(12,4) | Basic stats |
+| price_p5/median/p95 | numeric(12,4) | Percentiles |
+| price_wap | numeric(12,4) | Volume-weighted average |
+| volume | bigint | Total traded quantity |
+| sample_count | integer | Number of observations |
+
+#### `item_price_summary_watermarks` — Incremental computation tracking
+
+One row per period type, tracks `last_computed_until` for watermark-based processing.
+
+### API Endpoints
+
+```
+GET  /api/market/prices/[itemId]    - Price history (raw or summary)
+GET  /api/market/prices/latest      - Latest prices (batch)
+POST /api/market/prices/ingest      - Insert price data (admin)
+POST /api/market/prices/summarize   - Trigger summary computation (admin)
+```
+
+#### Price History
+
+`GET /api/market/prices/[itemId]?from=&to=&granularity=auto&source=&limit=500`
+
+Granularity options: `raw`, `hour`, `day`, `week`, `auto`
+
+Auto-granularity selects based on time range:
+- ≤ 48h → raw, ≤ 30d → hour, ≤ 365d → day, > 365d → week
+
+#### Latest Prices
+
+`GET /api/market/prices/latest?items=1000124,2000081&source=`
+
+Returns most recent price per item using `DISTINCT ON`.
+
+#### Ingest
+
+`POST /api/market/prices/ingest` (admin-only)
+
+```json
+{ "prices": [{ "item_id": 1000124, "price_value": 123.45, "quantity": 10, "source": "auction" }] }
+```
+
+Max 1000 per request. Bot can also insert directly via `nexus-bot/db.js`.
+
+### Summary Computation
+
+Bot runs `computeAllPriceSummaries()` every 15 minutes. Uses watermark-based incremental processing — only aggregates new raw data since last run. Computes min, max, avg, p5, median, p95, WAP, and volume per item/source/period bucket.
+
+---
+
 ## Integration with Services
 
 The market section works alongside the services marketplace:

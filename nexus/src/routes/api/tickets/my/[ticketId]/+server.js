@@ -26,7 +26,7 @@ export async function GET({ params, locals }) {
     }
 
     // Verify ownership
-    if (ticket.user_id !== user.id && !user.administrator) {
+    if (ticket.user_id !== user.id && !user?.grants?.includes('admin.panel')) {
       return getResponse({ error: 'You can only view your own tickets.' }, 403);
     }
 
@@ -63,7 +63,7 @@ export async function DELETE({ params, locals }) {
     }
 
     // Verify ownership
-    if (ticket.user_id !== user.id && !user.administrator) {
+    if (ticket.user_id !== user.id && !user?.grants?.includes('admin.panel')) {
       return getResponse({ error: 'You can only cancel your own tickets.' }, 403);
     }
 

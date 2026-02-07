@@ -19,10 +19,21 @@
   let isSubmitting = false;
   let actionError = '';
 
+  // Roles & grants state
+  let userRoles = [];
+  let userGrants = [];
+  let allRoles = [];
+  let allGrants = [];
+  let rolesLoading = false;
+  let rolesError = '';
+  let selectedRoleToAdd = '';
+
   $: userId = $page.params.id;
+  $: availableRoles = allRoles.filter(r => !userRoles.some(ur => ur.role_id === r.id));
 
   onMount(() => {
     loadUser();
+    loadRolesAndGrants();
   });
 
   async function loadUser() {
@@ -121,6 +132,111 @@
     if (!user) return null;
     const identifier = user.eu_name || user.id;
     return `/users/${encodeURIComponentSafe(String(identifier))}`;
+  }
+
+  async function loadRolesAndGrants() {
+    rolesLoading = true;
+    rolesError = '';
+    try {
+      const [rolesRes, grantsRes, allRolesRes, allGrantsRes] = await Promise.all([
+        fetch(`/api/admin/users/${userId}/roles`),
+        fetch(`/api/admin/users/${userId}/grants`),
+        fetch('/api/admin/roles'),
+        fetch('/api/admin/grants')
+      ]);
+      if (rolesRes.ok) userRoles = await rolesRes.json();
+      if (grantsRes.ok) userGrants = await grantsRes.json();
+      if (allRolesRes.ok) allRoles = await allRolesRes.json();
+      if (allGrantsRes.ok) allGrants = await allGrantsRes.json();
+    } catch (e) {
+      rolesError = 'Failed to load roles/grants';
+    } finally {
+      rolesLoading = false;
+    }
+  }
+
+  async function addRole() {
+    if (!selectedRoleToAdd) return;
+    rolesError = '';
+    const updatedRoles = [...userRoles.map(ur => ur.role_id), parseInt(selectedRoleToAdd)];
+    try {
+      const res = await fetch(`/api/admin/users/${userId}/roles`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roleIds: updatedRoles })
+      });
+      if (res.ok) {
+        userRoles = await res.json();
+        selectedRoleToAdd = '';
+      } else {
+        rolesError = (await res.json()).error || 'Failed to add role';
+      }
+    } catch (e) {
+      rolesError = 'Network error';
+    }
+  }
+
+  async function removeRole(roleId) {
+    rolesError = '';
+    const updatedRoles = userRoles.filter(ur => ur.role_id !== roleId).map(ur => ur.role_id);
+    try {
+      const res = await fetch(`/api/admin/users/${userId}/roles`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ roleIds: updatedRoles })
+      });
+      if (res.ok) {
+        userRoles = await res.json();
+      } else {
+        rolesError = (await res.json()).error || 'Failed to remove role';
+      }
+    } catch (e) {
+      rolesError = 'Network error';
+    }
+  }
+
+  async function toggleGrantOverride(grantKey, currentState) {
+    rolesError = '';
+    // Cycle: none -> granted -> denied -> none
+    let newGrants = [...userGrants];
+    const existing = newGrants.find(g => g.key === grantKey);
+
+    if (!existing) {
+      // Add as granted
+      newGrants.push({ key: grantKey, granted: true });
+    } else if (existing.granted) {
+      // Change to denied
+      existing.granted = false;
+    } else {
+      // Remove override
+      newGrants = newGrants.filter(g => g.key !== grantKey);
+    }
+
+    try {
+      const res = await fetch(`/api/admin/users/${userId}/grants`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ grants: newGrants.map(g => ({ key: g.key, granted: g.granted })) })
+      });
+      if (res.ok) {
+        userGrants = await res.json();
+      } else {
+        rolesError = (await res.json()).error || 'Failed to update grant';
+      }
+    } catch (e) {
+      rolesError = 'Network error';
+    }
+  }
+
+  function getGrantOverrideState(grantKey) {
+    const override = userGrants.find(g => g.key === grantKey);
+    if (!override) return 'inherit';
+    return override.granted ? 'granted' : 'denied';
+  }
+
+  function getRoleName(roleId) {
+    const role = allRoles.find(r => r.id === roleId);
+    return role?.name || `Role #${roleId}`;
   }
 </script>
 
@@ -516,6 +632,111 @@
     color: var(--error-color);
   }
 
+  /* Roles & Grants */
+  .role-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 10px;
+  }
+
+  .role-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    background-color: rgba(139, 92, 246, 0.15);
+    color: #8b5cf6;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+  }
+
+  .role-remove {
+    background: none;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    padding: 0 2px;
+    font-size: 14px;
+    line-height: 1;
+    opacity: 0.6;
+    transition: opacity 0.15s;
+  }
+
+  .role-remove:hover {
+    opacity: 1;
+  }
+
+  .add-role-row {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+  }
+
+  .role-select {
+    flex: 1;
+    padding: 6px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    font-size: 12px;
+  }
+
+  .grants-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .grant-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 8px;
+    border: none;
+    background: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: background-color 0.1s;
+    text-align: left;
+    width: 100%;
+  }
+
+  .grant-row:hover {
+    background-color: var(--hover-color);
+  }
+
+  .grant-row.grant-granted {
+    background-color: rgba(16, 185, 129, 0.08);
+  }
+
+  .grant-row.grant-denied {
+    background-color: rgba(239, 68, 68, 0.08);
+  }
+
+  .grant-key {
+    color: var(--text-color);
+    font-family: monospace;
+  }
+
+  .grant-state {
+    color: var(--text-muted);
+    font-size: 11px;
+  }
+
+  .grant-state.granted {
+    color: var(--success-color);
+    font-weight: 500;
+  }
+
+  .grant-state.denied {
+    color: var(--error-color);
+    font-weight: 500;
+  }
+
   /* Mobile responsive */
   @media (max-width: 768px) {
     .page-header {
@@ -636,9 +857,9 @@
             {#if user.locked}
               <span class="badge badge-locked">Locked</span>
             {/if}
-            {#if user.administrator}
-              <span class="badge badge-admin">Admin</span>
-            {/if}
+            {#each userRoles as ur}
+              <span class="badge badge-admin">{getRoleName(ur.role_id)}</span>
+            {/each}
             {#if user.verified}
               <span class="badge badge-verified">Verified</span>
             {:else}
@@ -770,9 +991,83 @@
               <span class="info-value">{user.verified ? 'Yes' : 'No'}</span>
             </div>
             <div class="info-row">
-              <span class="info-label">Administrator</span>
-              <span class="info-value">{user.administrator ? 'Yes' : 'No'}</span>
+              <span class="info-label">Roles</span>
+              <span class="info-value">
+                {#if userRoles.length > 0}
+                  {userRoles.map(ur => getRoleName(ur.role_id)).join(', ')}
+                {:else}
+                  None
+                {/if}
+              </span>
             </div>
+          </div>
+        </div>
+
+        <!-- Roles Management -->
+        <div class="card">
+          <div class="card-header">Assigned Roles</div>
+          <div class="card-body">
+            {#if rolesError}
+              <div class="error-message" style="margin-bottom: 12px;">{rolesError}</div>
+            {/if}
+            {#if rolesLoading}
+              <div style="color: var(--text-muted); font-size: 13px;">Loading...</div>
+            {:else}
+              {#if userRoles.length > 0}
+                <div class="role-tags">
+                  {#each userRoles as ur}
+                    <span class="role-tag">
+                      {getRoleName(ur.role_id)}
+                      <button class="role-remove" on:click={() => removeRole(ur.role_id)} title="Remove role">&times;</button>
+                    </span>
+                  {/each}
+                </div>
+              {:else}
+                <div style="color: var(--text-muted); font-size: 13px; margin-bottom: 8px;">No roles assigned</div>
+              {/if}
+              {#if availableRoles.length > 0}
+                <div class="add-role-row">
+                  <select bind:value={selectedRoleToAdd} class="role-select">
+                    <option value="">Add role...</option>
+                    {#each availableRoles as role}
+                      <option value={role.id}>{role.name}</option>
+                    {/each}
+                  </select>
+                  <button class="btn btn-secondary" style="padding: 6px 12px; font-size: 12px;" on:click={addRole} disabled={!selectedRoleToAdd}>Add</button>
+                </div>
+              {/if}
+            {/if}
+          </div>
+        </div>
+
+        <!-- Grant Overrides -->
+        <div class="card">
+          <div class="card-header">Grant Overrides</div>
+          <div class="card-body">
+            <div style="color: var(--text-muted); font-size: 11px; margin-bottom: 10px;">
+              Click to cycle: inherit &rarr; granted &rarr; denied &rarr; inherit
+            </div>
+            {#if allGrants.length > 0}
+              <div class="grants-list">
+                {#each allGrants as grant}
+                  {@const state = getGrantOverrideState(grant.key)}
+                  <button
+                    class="grant-row"
+                    class:grant-granted={state === 'granted'}
+                    class:grant-denied={state === 'denied'}
+                    on:click={() => toggleGrantOverride(grant.key, state)}
+                    title={grant.description || grant.key}
+                  >
+                    <span class="grant-key">{grant.key}</span>
+                    <span class="grant-state" class:granted={state === 'granted'} class:denied={state === 'denied'}>
+                      {state === 'inherit' ? '-' : state === 'granted' ? 'Granted' : 'Denied'}
+                    </span>
+                  </button>
+                {/each}
+              </div>
+            {:else if !rolesLoading}
+              <div style="color: var(--text-muted); font-size: 13px;">No grants defined</div>
+            {/if}
           </div>
         </div>
 

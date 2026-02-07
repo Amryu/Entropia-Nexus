@@ -11,7 +11,7 @@
  
   let disabled = false;
  
-  $: disabled = change != null && user?.id !== change.author_id && !user?.administrator;
+  $: disabled = change != null && user?.id !== change.author_id && !user?.grants?.includes('wiki.approve');
 
   $: if (config) loadForm(config);
   $: if ((object == null || Object.keys(object).length === 0) && change?.data) object = change.data;
@@ -168,7 +168,7 @@
   {#if change?.id && (change.state === 'Pending' || change.state === 'Draft')}
     <div class="info" style="text-align: center;">This entity is currently being edited by someone and in the "{change.state}" state.</div>
   {/if}
-  {#if change?.id && change.author_id !== user?.id && !user?.administrator}
+  {#if change?.id && change.author_id !== user?.id && !user?.grants?.includes('wiki.approve')}
     <div class="info" style="text-align: center;">You are not the author of this change. You can only view it.</div>
   {/if}
   <form>

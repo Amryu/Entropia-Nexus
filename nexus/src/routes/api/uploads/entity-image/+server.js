@@ -13,7 +13,7 @@
  */
 // @ts-nocheck
 import { error } from '@sveltejs/kit';
-import { processAndSaveImage } from '$lib/server/imageProcessor.js';
+import { processAndSaveImage, approveImage, isAutoApproveType } from '$lib/server/imageProcessor.js';
 import {
   checkRateLimit,
   getRateLimitHeaders,
@@ -126,8 +126,8 @@ export async function POST({ request, locals }) {
       throw error(400, 'Entity ID is required');
     }
 
-    // 8. Validate entity type format (alphanumeric only)
-    if (!/^[a-zA-Z]+$/.test(entityType)) {
+    // 8. Validate entity type format (alphanumeric and hyphens)
+    if (!/^[a-zA-Z][a-zA-Z\-]*$/.test(entityType)) {
       throw error(400, 'Invalid entity type format');
     }
 
@@ -157,6 +157,11 @@ export async function POST({ request, locals }) {
 
     // 13. Process and save the image (additional validations happen here)
     const result = await processAndSaveImage(buffer, entityType, entityId, userId);
+
+    // 14. Auto-approve guide images (skip approval workflow)
+    if (isAutoApproveType(entityType)) {
+      await approveImage(entityType, entityId);
+    }
 
     return new Response(JSON.stringify({
       success: true,

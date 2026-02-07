@@ -15,7 +15,7 @@
 
   // Only owners can manage managers, not regular managers
   $: isOwner = object && user && (object.OwnerId === user.id);
-  $: canManageManagers = isOwner || (user && user.administrator);
+  $: canManageManagers = isOwner || (user && user.grants?.includes('admin.panel'));
 
 
   import { onMount } from 'svelte';

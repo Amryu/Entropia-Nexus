@@ -25,7 +25,7 @@ export async function PUT({ params, request, locals }) {
     }
 
     // Verify the user is the requester (customer marks as complete)
-    if (serviceRequest.requester_id !== user.id && !user.administrator) {
+    if (serviceRequest.requester_id !== user.id && !user?.grants?.includes('admin.panel')) {
       return getResponse({ error: 'Only the requester can mark a request as complete.' }, 403);
     }
 

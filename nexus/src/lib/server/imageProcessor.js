@@ -10,6 +10,7 @@ import { randomUUID } from 'crypto';
 // Image size configurations
 const ICON_SIZE = 320;
 const THUMB_SIZE = 128;
+const BANNER_WIDTH = 1200;
 
 // Base upload directories (configured via environment)
 const UPLOAD_BASE = process.env.UPLOAD_DIR || './uploads';
@@ -30,8 +31,11 @@ const VALID_ENTITY_TYPES = [
   'weapon', 'armorset', 'material', 'blueprint', 'clothing',
   'consumable', 'tool', 'attachment', 'medicaltool', 'vehicle',
   'pet', 'furnishing', 'strongbox', 'mob', 'skill', 'profession', 'vendor',
-  'location', 'area', 'user'
+  'location', 'area', 'user', 'guide-category'
 ];
+
+// Entity types that skip the approval workflow and use banner dimensions
+const GUIDE_ENTITY_TYPES = ['guide-category'];
 
 /**
  * Ensure directory exists, creating it if necessary
@@ -257,15 +261,24 @@ export async function processAndSaveImage(imageBuffer, entityType, entityId, upl
       throw new Error('Suspicious image compression ratio detected');
     }
 
-    // Process icon (512x512)
+    const isBanner = GUIDE_ENTITY_TYPES.includes(entityType);
+
+    // Process icon — banner types get wider dimensions, others get square
     const iconPath = join(tempEntityPath, 'icon.webp');
-    await image
-      .resize(ICON_SIZE, ICON_SIZE, {
-        fit: 'cover',
-        position: 'center'
-      })
-      .webp({ quality: 90 })
-      .toFile(iconPath);
+    if (isBanner) {
+      await image
+        .resize({ width: BANNER_WIDTH, withoutEnlargement: true })
+        .webp({ quality: 90 })
+        .toFile(iconPath);
+    } else {
+      await image
+        .resize(ICON_SIZE, ICON_SIZE, {
+          fit: 'cover',
+          position: 'center'
+        })
+        .webp({ quality: 90 })
+        .toFile(iconPath);
+    }
 
     // Process thumbnail (128x128)
     const thumbPath = join(tempEntityPath, 'thumb.webp');
@@ -592,6 +605,15 @@ export async function cleanupTempUploads() {
   return cleaned;
 }
 
+/**
+ * Check if an entity type should skip the approval workflow
+ * @param {string} entityType
+ * @returns {boolean}
+ */
+export function isAutoApproveType(entityType) {
+  return GUIDE_ENTITY_TYPES.includes(entityType);
+}
+
 export default {
   processAndSaveImage,
   getPreviewImage,
@@ -603,5 +625,6 @@ export default {
   denyImage,
   deleteApprovedImage,
   getApprovedImagePath,
+  isAutoApproveType,
   cleanupTempUploads
 };

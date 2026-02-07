@@ -61,7 +61,7 @@
   $: materialEntityId = material?.Id ?? material?.ItemId;
   $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, materialEntityId);
   $: resolvedPendingChange = userPendingUpdate || pendingChange;
-  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user.isAdmin));
+  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve')));
 
   // Permission check - verified users can edit
   $: canEdit = user?.verified === true;
@@ -91,7 +91,7 @@
   // Handle pending changes from API
   $: if (resolvedPendingChange) {
     setExistingPendingChange(resolvedPendingChange);
-    if (user && (resolvedPendingChange.author_id === user.id || user.isAdmin)) {
+    if (user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve'))) {
       setViewingPendingChange(true);
     }
   } else {

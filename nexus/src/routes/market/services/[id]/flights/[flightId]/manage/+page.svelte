@@ -12,7 +12,7 @@
   $: checkins = data.checkins || [];
   $: stateLog = data.stateLog || [];
   $: user = data.session?.user;
-  $: isOwner = user && service && (user.id === service.user_id || user.administrator);
+  $: isOwner = user && service && (user.id === service.user_id || user.grants?.includes('admin.panel'));
 
   let routeStops = [];
   let currentStopIndex = 0;

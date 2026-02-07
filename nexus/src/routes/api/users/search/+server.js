@@ -16,7 +16,7 @@ export async function GET({ url, locals }) {
     return json({ error: 'Not authenticated' }, { status: 401 });
   }
 
-  if (!user.verified && !user.isAdmin) {
+  if (!user.verified && !user?.grants?.includes('admin.panel')) {
     return json({ error: 'Only verified users can search' }, { status: 403 });
   }
 

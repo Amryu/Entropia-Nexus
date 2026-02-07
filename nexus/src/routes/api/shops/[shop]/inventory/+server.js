@@ -32,7 +32,7 @@ export async function GET({ params, locals, fetch }) {
     isManager = managers.some(manager => manager.user_id === user.id);
   }
   
-  if (!isOwner && !isManager && !user.administrator) {
+  if (!isOwner && !isManager && !user?.grants?.includes('admin.panel')) {
     return getResponse({ error: 'You can only view inventory for shops you own or manage.' }, 403);
   }
 
@@ -81,7 +81,7 @@ export async function PUT({ params, request, locals, fetch }) {
     isManager = managers.some(manager => manager.user_id === user.id);
   }
   
-  if (!isOwner && !isManager && !user.administrator) {
+  if (!isOwner && !isManager && !user?.grants?.includes('admin.panel')) {
     return getResponse({ error: 'You can only edit inventory for shops you own or manage.' }, 403);
   }
 

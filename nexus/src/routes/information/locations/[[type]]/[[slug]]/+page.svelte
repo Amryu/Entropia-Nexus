@@ -95,7 +95,7 @@
   $: entityId = entity?.Id ?? null;
   $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, entityId);
   $: resolvedPendingChange = userPendingUpdate || pendingChange;
-  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user.isAdmin));
+  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve')));
 
   // Location type definitions (for editing/display)
   const LOCATION_TYPES = [
@@ -231,7 +231,7 @@
 
   $: if (resolvedPendingChange) {
     setExistingPendingChange(resolvedPendingChange);
-    if (user && (resolvedPendingChange.author_id === user.id || user.isAdmin)) {
+    if (user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve'))) {
       setViewingPendingChange(true);
     }
   } else {
@@ -743,7 +743,7 @@
   basePath={effectiveBasePath}
   {user}
   editable={true}
-  canEdit={user?.verified || user?.isAdmin}
+  canEdit={user?.verified || user?.grants?.includes('wiki.edit')}
   {canCreateNew}
   {userPendingCreates}
   {userPendingUpdates}

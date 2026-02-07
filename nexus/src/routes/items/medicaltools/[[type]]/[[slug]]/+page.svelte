@@ -58,10 +58,10 @@
   $: medtoolEntityId = medtool?.Id ?? medtool?.ItemId;
   $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, medtoolEntityId);
   $: resolvedPendingChange = userPendingUpdate || pendingChange;
-  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user.isAdmin));
+  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve')));
 
   // Permission check - verified users and admins can edit
-  $: canEdit = user?.verified || user?.isAdmin;
+  $: canEdit = user?.verified || user?.grants?.includes('wiki.edit');
 
   // For multi-type pages, data.items is an object keyed by type
   $: allItems = (() => {
@@ -153,7 +153,7 @@
   // Set pending change when it exists
   $: if (resolvedPendingChange) {
     setExistingPendingChange(resolvedPendingChange);
-    if (user && (resolvedPendingChange.author_id === user.id || user.isAdmin)) {
+    if (user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve'))) {
       setViewingPendingChange(true);
     }
   } else {

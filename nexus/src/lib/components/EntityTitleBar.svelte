@@ -53,7 +53,7 @@
       {/if}
       
       {#if entityType === 'Shop' && mode !== 'edit' && mode !== 'history' && mode !== 'create' && mode !== 'edit-inventory' && mode !== 'edit-managers'}
-        {#if object && user && (object.OwnerId === user.id || user.administrator)}
+        {#if object && user && (object.OwnerId === user.id || user.grants?.includes('admin.panel'))}
           <button on:click={() => navigate(window.location.pathname + '?mode=edit-managers')} 
                   title={user == null ? "Log in to edit" : !user.verified ? "Verify to edit" : "Edit Managers"} 
                   disabled={user == null || !user.verified}>👥</button>

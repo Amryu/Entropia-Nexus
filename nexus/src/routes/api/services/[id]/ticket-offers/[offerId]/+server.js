@@ -51,7 +51,7 @@ export async function PUT({ params, request, locals }) {
     return getResponse({ error: 'Service not found.' }, 404);
   }
 
-  if (service.user_id !== user.id && !user.administrator) {
+  if (service.user_id !== user.id && !user?.grants?.includes('admin.panel')) {
     return getResponse({ error: 'You can only update ticket offers for your own services.' }, 403);
   }
 
@@ -141,7 +141,7 @@ export async function DELETE({ params, locals }) {
     return getResponse({ error: 'Service not found.' }, 404);
   }
 
-  if (service.user_id !== user.id && !user.administrator) {
+  if (service.user_id !== user.id && !user?.grants?.includes('admin.panel')) {
     return getResponse({ error: 'You can only delete ticket offers for your own services.' }, 403);
   }
 

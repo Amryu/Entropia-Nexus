@@ -39,7 +39,7 @@ export async function load({ params, locals, url }) {
     const isPilot = pilots.some(p => p.user_id === user.id);
     const isOwner = service.user_id === user.id;
 
-    if (!isOwner && !user.administrator && !isPilot) {
+    if (!isOwner && !user?.grants?.includes('admin.panel') && !isPilot) {
       throw error(403, 'You do not have permission to manage this flight');
     }
 

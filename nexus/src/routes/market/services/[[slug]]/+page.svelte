@@ -48,7 +48,7 @@
   $: availability = data.availability || [];
   $: activeRequest = data.activeRequest;
   $: user = data.session?.user;
-  $: isOwner = user && selectedService && (user.id === selectedService.user_id || user.administrator);
+  $: isOwner = user && selectedService && (user.id === selectedService.user_id || user.grants?.includes('admin.panel'));
   // Check if user can manage flights (owner, pilot, or admin)
   $: canManageFlights = isOwner || (user && selectedService && pilots.some(p => p.user_id === user.id));
 
@@ -230,14 +230,14 @@
 
     // Check if user already has a ticket for this service
     const existingTicket = await checkExistingTicket();
-    if (existingTicket && !user.administrator) {
+    if (existingTicket && !user.grants?.includes('admin.panel')) {
       alert('You already have a ticket for this service. You can only have one active ticket at a time.');
       return;
     }
 
     // Confirmation dialog
     let confirmMessage = `Purchase "${offer.name}" for ${parseFloat(offer.price).toFixed(2)} PED?`;
-    if (user.administrator && selectedService.user_id === user.id) {
+    if (user.grants?.includes('admin.panel') && selectedService.user_id === user.id) {
       confirmMessage += '\n\nNote: You are purchasing a ticket for your own service as an administrator (for testing purposes).';
     }
 
@@ -618,7 +618,7 @@
     }
 
     // Allow admins to request their own services for testing
-    if (user.id === selectedService.user_id && !user.administrator) {
+    if (user.id === selectedService.user_id && !user.grants?.includes('admin.panel')) {
       requestError = 'You cannot request your own service. This is a preview of how customers see your service.';
       return;
     }
@@ -1020,7 +1020,7 @@
     <!-- Detail View -->
     <div class="header-row">
       <a href="/market/services" class="back-link">&larr; Back to Services</a>
-      {#if user && (user.id === selectedService.user_id || user.administrator)}
+      {#if user && (user.id === selectedService.user_id || user.grants?.includes('admin.panel'))}
         <a href="/market/services/{selectedService.id}/edit" class="edit-link">Edit Service</a>
       {/if}
     </div>
@@ -2327,12 +2327,12 @@
       {/if}
 
       <div class="modal-body">
-        {#if user.id === selectedService.user_id && !user.administrator}
+        {#if user.id === selectedService.user_id && !user.grants?.includes('admin.panel')}
           <div class="owner-preview-notice">
             <strong>Owner Preview Mode</strong>
             <p>This is how customers see the request form. You cannot submit requests for your own service.</p>
           </div>
-        {:else if user.id === selectedService.user_id && user.administrator}
+        {:else if user.id === selectedService.user_id && user.grants?.includes('admin.panel')}
           <div class="admin-notice">
             <strong>Admin Mode</strong>
             <p>As an admin, you can submit requests for your own service for testing purposes.</p>
@@ -2341,7 +2341,7 @@
 
         {#if requestFormTab === 'request' && selectedService?.type === 'transportation'}
           {@const needsTicket = !userHasTicket && !hasSingleUseOffer}
-          {@const formDisabled = needsTicket || (user.id === selectedService.user_id && !user.administrator)}
+          {@const formDisabled = needsTicket || (user.id === selectedService.user_id && !user.grants?.includes('admin.panel'))}
 
           {#if needsTicket}
             <div class="ticket-required-notice">
@@ -2425,7 +2425,7 @@
           <button
             class="modal-btn submit-btn"
             on:click={submitRequest}
-            disabled={requestSubmitting || needsTicket || missingFlightInfo || (user.id === selectedService.user_id && !user.administrator)}
+            disabled={requestSubmitting || needsTicket || missingFlightInfo || (user.id === selectedService.user_id && !user.grants?.includes('admin.panel'))}
           >
             {requestSubmitting ? 'Submitting...' : 'Submit Request'}
           </button>

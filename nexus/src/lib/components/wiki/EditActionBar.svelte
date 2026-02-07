@@ -51,7 +51,7 @@
 
   // Check if user can delete the change (author or admin)
   $: canDelete = user && $changeMetadata.id && (
-    ($existingPendingChange && ($existingPendingChange.author_id === user.id || user.isAdmin)) ||
+    ($existingPendingChange && ($existingPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve'))) ||
     (!$existingPendingChange && user.verified)
   );
 

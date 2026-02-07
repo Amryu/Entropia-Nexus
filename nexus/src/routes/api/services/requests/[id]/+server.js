@@ -22,7 +22,7 @@ export async function GET({ params, locals }) {
     }
 
     // Verify the user is either the requester or the provider
-    if (request.requester_id !== user.id && request.provider_id !== user.id && !user.administrator) {
+    if (request.requester_id !== user.id && request.provider_id !== user.id && !user?.grants?.includes('admin.panel')) {
       return getResponse({ error: 'You can only view your own requests.' }, 403);
     }
 

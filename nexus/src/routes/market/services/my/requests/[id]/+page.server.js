@@ -20,7 +20,7 @@ export async function load({ fetch, locals, params, url }) {
   }
 
   // Verify the user is the requester
-  if (request.requester_id !== user.id && !user.administrator) {
+  if (request.requester_id !== user.id && !user?.grants?.includes('admin.panel')) {
     throw error(403, 'You can only view your own requests');
   }
 

@@ -29,7 +29,7 @@ export async function POST({ params, request, locals }) {
     }
 
     // Check if user is the owner (only admins can ask questions on their own services)
-    if (service.user_id === user.id && !user.administrator) {
+    if (service.user_id === user.id && !user?.grants?.includes('admin.panel')) {
       return getResponse({ error: 'You cannot ask questions on your own service.' }, 403);
     }
 

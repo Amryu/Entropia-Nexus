@@ -62,7 +62,7 @@ export async function POST({ params, request, locals }) {
   }
 
   const userId = String(user.Id || user.id);
-  if (String(entityId) !== userId && !user.administrator) {
+  if (String(entityId) !== userId && !user?.grants?.includes('admin.panel')) {
     return getResponse({ error: 'You can only update your own profile image.' }, 403);
   }
 
@@ -109,7 +109,7 @@ export async function DELETE({ params, locals }) {
   }
 
   const userId = String(user.Id || user.id);
-  if (String(entityId) !== userId && !user.administrator) {
+  if (String(entityId) !== userId && !user?.grants?.includes('admin.panel')) {
     return getResponse({ error: 'You can only delete your own profile image.' }, 403);
   }
 

@@ -9,7 +9,7 @@ export async function GET({ locals, url }) {
     return getResponse({ error: 'Authentication required' }, 401);
   }
 
-  if (!user.administrator) {
+  if (!user?.grants?.includes('wiki.approve')) {
     return getResponse({ error: 'Admin access required' }, 403);
   }
 

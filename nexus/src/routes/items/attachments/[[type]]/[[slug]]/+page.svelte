@@ -60,11 +60,11 @@
   $: attachmentEntityId = attachment?.Id ?? attachment?.ItemId;
   $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, attachmentEntityId);
   $: resolvedPendingChange = userPendingUpdate || pendingChange;
-  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user.isAdmin));
+  $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve')));
 
   // Permission check - verified users and admins can edit
   // Enhancers are generated in the database and should not be editable
-  $: canEdit = (user?.verified || user?.isAdmin) && additional.type !== 'enhancers';
+  $: canEdit = (user?.verified || user?.grants?.includes('wiki.edit')) && additional.type !== 'enhancers';
 
   // For multi-type pages, data.items is an object keyed by type
   $: allItems = (() => {
@@ -196,7 +196,7 @@
   // Set pending change when it exists
   $: if (resolvedPendingChange) {
     setExistingPendingChange(resolvedPendingChange);
-    if (user && (resolvedPendingChange.author_id === user.id || user.isAdmin)) {
+    if (user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve'))) {
       setViewingPendingChange(true);
     }
   } else {
