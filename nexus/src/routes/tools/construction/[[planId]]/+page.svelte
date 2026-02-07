@@ -11,6 +11,7 @@
   import WikiSearchInput from '$lib/components/wiki/SearchInput.svelte';
   import { loading } from '../../../../stores.js';
   import { hasItemTag, getItemLink, getTypeLink, clampDecimals } from '$lib/util.js';
+  import { hasCondition } from '$lib/shopUtils.js';
   import {
     buildCraftingTree,
     generateCraftingSteps,
@@ -34,6 +35,10 @@
     SPLIT_NEAR_SUCCESS_FRACTION,
     SUCCESS_THRESHOLD,
     MAX_OUTPUT_MULTIPLIER,
+    CONDITION_MIN,
+    CONDITION_MAX,
+    findOptimalCondition,
+    findOptimalOutputCondition,
   } from '$lib/utils/constructionCalculator.js';
 
   export let data;
@@ -99,6 +104,7 @@
 
   // Hotspot debug dialog
   let showHotspotDialog = false;
+  let showConditionInfoDialog = false;
 
   // Markup state: { materialName: markup%, blueprintId: markup% }
   let markupValues = {};
@@ -119,6 +125,7 @@
   let rollChance = DEFAULT_CONFIG.rollChance; // % chance each material wins refund roll
   let certainty = DEFAULT_CONFIG.certainty; // % confidence level for attempt estimation
   let nonFailChances = {}; // { blueprintId: nonFailChance% }
+  let conditionPercents = {}; // { blueprintId: conditionPercent (0-20) }
   let materialCraftConfig = {}; // { materialName: { craft: bool, preferLimited: bool } }
 
   // Configuration panel
@@ -141,7 +148,7 @@
   })();
 
   // Computed - pass configuration to buildCraftingTree
-  $: craftingConfig = { rollChance, certainty, nonFailChances, materialCraftConfig };
+  $: craftingConfig = { rollChance, certainty, nonFailChances, materialCraftConfig, conditionPercents };
   $: craftingTree = activePlan && blueprintCache.size > 0
     ? buildCraftingTree(activePlan.data?.targets || [], effectiveOwnership, blueprintCache, craftingConfig)
     : [];
@@ -264,6 +271,34 @@
     }
     collapsedSteps = new Set(collapsedSteps); // trigger reactivity
   }
+
+  // Global condition preset helpers
+  function stepSupportsOutputOptimization(step) {
+    if (!step.owned) return false;
+    const product = step.blueprint?.Product;
+    if (product && hasCondition(product)) return false;
+    const maxCraft = step.blueprint?.Properties?.MaximumCraftAmount;
+    if (maxCraft === 1) return false;
+    return true;
+  }
+
+  function applyGlobalCondition(mode) {
+    const newConditions = {};
+    for (const step of craftingSteps) {
+      if (!step.owned) continue;
+      const bpId = step.blueprint.Id;
+      if (mode === 'stability') {
+        newConditions[bpId] = 0;
+      } else if (mode === 'attempts') {
+        newConditions[bpId] = findOptimalCondition(step.blueprint, step.quantityWanted, nonFailChances[bpId], certainty);
+      } else if (mode === 'output') {
+        newConditions[bpId] = findOptimalOutputCondition(step.blueprint, nonFailChances[bpId], certainty);
+      }
+    }
+    conditionPercents = newConditions;
+  }
+
+  $: anyStepSupportsOutput = craftingSteps.some(s => stepSupportsOutputOptimization(s));
 
   // Shopping list toggle helpers
   function toggleShoppingMaterial(materialName) {
@@ -1351,7 +1386,36 @@
         </div>
       {:else if currentView === 'steps'}
         <div class="steps-view">
-          <h2>Step by Step</h2>
+          <div class="steps-header">
+            <h2>Step by Step</h2>
+            {#if craftingSteps.length > 0}
+              <div class="global-condition-controls">
+                <div class="global-condition-presets">
+                  <button
+                    class="global-condition-preset"
+                    on:click={() => applyGlobalCondition('stability')}
+                    title="Set all steps to 0% condition — highest success rate"
+                  >Stability</button>
+                  <button
+                    class="global-condition-preset"
+                    on:click={() => applyGlobalCondition('attempts')}
+                    title="Set each step to its optimal condition for fewest attempts"
+                  >Attempts</button>
+                  <button
+                    class="global-condition-preset"
+                    disabled={!anyStepSupportsOutput}
+                    on:click={() => applyGlobalCondition('output')}
+                    title={anyStepSupportsOutput ? 'Set each step to its optimal condition for best output per attempt' : 'No steps benefit from output optimization (all produce single items)'}
+                  >Output</button>
+                </div>
+                <button
+                  class="condition-info-btn"
+                  on:click={() => showConditionInfoDialog = true}
+                  title="What is condition?"
+                >?</button>
+              </div>
+            {/if}
+          </div>
           {#if craftingSteps.length === 0}
             <p class="empty">No construction steps needed.</p>
           {:else}
@@ -1381,18 +1445,54 @@
                   {#if !isCollapsed}
                     <div class="step-details">
                       {#if step.owned}
-                        {@const rates = calculateSuccessRates(step.nonFailChance)}
                         <p class="step-action">
                           Craft until you have <strong>{step.quantityWanted}</strong>
                           <a href={getItemLink(step.blueprint.Product)}>{step.blueprint.Product?.Name || 'result'}</a>
                           <span class="step-rates-inline">
                             (~{step.estimatedAttempts} attempts @ {certainty}% confidence,
                             <span class="rate-success" title="Success: produces items">{(step.successRate * 100).toFixed(1)}%</span> success,
-                            <span class="rate-near" title="Near-success: refund only">{(rates.nearSuccessRate * 100).toFixed(1)}%</span> near,
-                            <span class="rate-fail" title="Fail: no output">{(rates.failRate * 100).toFixed(1)}%</span> fail,
+                            <span class="rate-near" title="Near-success: refund only">{(step.nearSuccessRate * 100).toFixed(1)}%</span> near,
+                            <span class="rate-fail" title="Fail: no output">{(step.failRate * 100).toFixed(1)}%</span> fail,
                             avg {step.avgOutput.toFixed(1)}/success)
                           </span>
                         </p>
+
+                        {@const optAttempts = findOptimalCondition(step.blueprint, step.quantityWanted, nonFailChances[step.blueprint.Id], certainty)}
+                        {@const optOutput = findOptimalOutputCondition(step.blueprint, nonFailChances[step.blueprint.Id], certainty)}
+                        <div class="condition-slider">
+                          <label class="condition-label">
+                            <span>Condition</span>
+                            <input
+                              type="range"
+                              min={CONDITION_MIN}
+                              max={CONDITION_MAX}
+                              step="1"
+                              value={step.conditionPercent}
+                              on:input={(e) => { conditionPercents = { ...conditionPercents, [step.blueprint.Id]: parseInt(e.target.value) }; }}
+                            />
+                            <span class="condition-value">{step.conditionPercent}%{#if step.conditionPercent > 0} ({step.conditionMultiplier.toFixed(2)}x){/if}</span>
+                          </label>
+                          <div class="condition-presets">
+                            <button
+                              class="condition-preset"
+                              class:active={step.conditionPercent === 0}
+                              on:click={() => { conditionPercents = { ...conditionPercents, [step.blueprint.Id]: 0 }; }}
+                              title="0% condition — highest success rate, lowest output per success"
+                            >Stability</button>
+                            <button
+                              class="condition-preset"
+                              class:active={step.conditionPercent === optAttempts}
+                              on:click={() => { conditionPercents = { ...conditionPercents, [step.blueprint.Id]: optAttempts }; }}
+                              title="{optAttempts}% condition — fewest craft attempts needed"
+                            >Attempts ({optAttempts}%)</button>
+                            <button
+                              class="condition-preset"
+                              class:active={step.conditionPercent === optOutput}
+                              on:click={() => { conditionPercents = { ...conditionPercents, [step.blueprint.Id]: optOutput }; }}
+                              title="{optOutput}% condition — best output per attempt ratio"
+                            >Output ({optOutput}%)</button>
+                          </div>
+                        </div>
 
                         {#if step.materials.length > 0 || step.adjustedResidue > 0}
                           {@const residueMU = getMarkup('residue')}
@@ -1404,7 +1504,12 @@
                             const mu = getMarkup(`mat:${mat.item?.Name}`);
                             return sum + (matTT * (mat.adjustedAmount || mat.totalAmount) * mu / 100);
                           }, 0) + adjustedResidueCost}
-                          {@const costPerClickAdjusted = step.estimatedAttempts > 0 ? adjustedTotalCost / step.estimatedAttempts : 0}
+                          {@const costPerClick = step.materials.reduce((sum, mat) => {
+                            if (isMaterialCraftEnabled(mat.item?.Name)) return sum;
+                            const matTT = mat.item?.Properties?.Economy?.MaxTT || 0;
+                            const mu = getMarkup(`mat:${mat.item?.Name}`);
+                            return sum + (matTT * mat.amountPerAttempt * mu / 100);
+                          }, 0) + (step.residuePerClick || 0) * residueMU / 100}
                           <div class="step-materials-table">
                             <table class="materials-table">
                               <thead>
@@ -1467,7 +1572,7 @@
                                 <tr>
                                   <td colspan="4"><strong>Cost per click</strong></td>
                                   <td class="text-right"></td>
-                                  <td class="text-right"><strong>{clampDecimals(costPerClickAdjusted, 2, 4)} PED</strong></td>
+                                  <td class="text-right"><strong>{clampDecimals(costPerClick, 2, 4)} PED</strong></td>
                                 </tr>
                               </tfoot>
                             </table>
@@ -2134,6 +2239,38 @@
     </div>
     <div class="dialog-footer">
       <button class="dialog-btn secondary" on:click={() => showHotspotDialog = false}>Close</button>
+    </div>
+  </div>
+</div>
+{/if}
+
+{#if showConditionInfoDialog}
+<!-- svelte-ignore a11y-click-events-have-key-events -->
+<!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
+<!-- svelte-ignore a11y-no-static-element-interactions -->
+<div class="dialog-backdrop" on:click={() => showConditionInfoDialog = false} on:keydown={(e) => e.key === 'Escape' && (showConditionInfoDialog = false)}>
+  <div class="dialog condition-info-dialog" on:click|stopPropagation role="dialog" aria-modal="true" aria-labelledby="condition-info-title">
+    <div class="dialog-header">
+      <h3 id="condition-info-title">Condition</h3>
+    </div>
+    <div class="dialog-body">
+      <p>Adding condition to blueprints increases the value multiplier of each craft attempt, which affects output quantity and material refunds but comes at a cost of more failures. The multiplier ranges linearly from 1x (0%) to 7.5x (100%).</p>
+      <h4>What condition affects</h4>
+      <ul class="condition-effects-list">
+        <li><strong>Output per success</strong> — higher condition increases the output range, producing more items per success (up to hard caps)</li>
+        <li><strong>Material refund pool</strong> — near-success refund pools scale with condition, returning more materials</li>
+        <li><strong>Max refund per material</strong> — each material can be refunded up to amount x condition multiplier</li>
+        <li><strong>Non-fail chance</strong> — divided by condition multiplier, meaning more failures</li>
+      </ul>
+      <h4>Presets</h4>
+      <ul class="condition-effects-list">
+        <li><strong>Stability</strong> — 0% condition. Highest success rate, lowest output per success.</li>
+        <li><strong>Attempts</strong> — minimizes total craft attempts needed. Balances output gains against increased fail rate.</li>
+        <li><strong>Output</strong> (default) — maximizes average output per attempt. Best throughput efficiency.</li>
+      </ul>
+    </div>
+    <div class="dialog-footer">
+      <button class="dialog-btn secondary" on:click={() => showConditionInfoDialog = false}>Close</button>
     </div>
   </div>
 </div>

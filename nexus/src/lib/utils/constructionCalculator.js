@@ -24,6 +24,76 @@ export const DEFAULT_CONFIG = {
   certainty: 50, // % confidence level for attempt estimation (50-99)
 };
 
+/** Condition slider range */
+export const CONDITION_MIN = 0;
+export const CONDITION_MAX = 100;
+
+/**
+ * Calculate the condition multiplier from a condition percentage (0-100).
+ * Formula: 1 + (conditionPercent / 100) * 6.5
+ *
+ * This multiplier:
+ * - Divides the non-fail chance (increasing fail rate)
+ * - Raises the success threshold (need conditionMult × blueprint cost for success)
+ * - Does NOT scale product output multipliers (output ranges stay the same)
+ *
+ * @param {number} conditionPercent - Condition percentage (0-100)
+ * @returns {number} - Condition multiplier (1.0 at 0%, 7.5 at 100%)
+ */
+export function getConditionMultiplier(conditionPercent) {
+  const clamped = Math.max(CONDITION_MIN, Math.min(CONDITION_MAX, conditionPercent));
+  return 1 + (clamped / 100) * 6.5;
+}
+
+/**
+ * Find the condition percentage (0-20) that minimizes estimated craft attempts.
+ * Iterates all possible values and picks the one with the fewest attempts.
+ *
+ * @param {object} blueprint - Blueprint object
+ * @param {number} quantityWanted - Desired output quantity
+ * @param {number} [nonFailChance] - Non-fail chance % (0-100), omit for max
+ * @param {number} [certainty] - Confidence level % (50-99)
+ * @returns {number} - Optimal condition percentage (0-20)
+ */
+export function findOptimalCondition(blueprint, quantityWanted, nonFailChance, certainty = DEFAULT_CONFIG.certainty) {
+  let bestCondition = 0;
+  let bestAttempts = Infinity;
+
+  for (let c = CONDITION_MIN; c <= CONDITION_MAX; c++) {
+    const { estimatedAttempts } = calculateCraftAttempts(blueprint, quantityWanted, nonFailChance, certainty, c);
+    if (estimatedAttempts < bestAttempts) {
+      bestAttempts = estimatedAttempts;
+      bestCondition = c;
+    }
+  }
+
+  return bestCondition;
+}
+
+/**
+ * Find the condition percentage (0-100) that maximizes average output per attempt.
+ * This optimizes for throughput efficiency rather than total attempts.
+ *
+ * @param {object} blueprint - Blueprint object
+ * @param {number} [nonFailChance] - Non-fail chance % (0-100), omit for max
+ * @param {number} [certainty] - Confidence level % (50-99)
+ * @returns {number} - Optimal condition percentage (0-100)
+ */
+export function findOptimalOutputCondition(blueprint, nonFailChance, certainty = DEFAULT_CONFIG.certainty) {
+  let bestCondition = 0;
+  let bestOutputPerAttempt = 0;
+
+  for (let c = CONDITION_MIN; c <= CONDITION_MAX; c++) {
+    const { avgOutputPerAttempt } = calculateCraftAttempts(blueprint, 1, nonFailChance, certainty, c);
+    if (avgOutputPerAttempt > bestOutputPerAttempt) {
+      bestOutputPerAttempt = avgOutputPerAttempt;
+      bestCondition = c;
+    }
+  }
+
+  return bestCondition;
+}
+
 // ── Hotspot Model Constants ──────────────────────────────────────────────────
 
 /** Hotspot variance: each hotspot varies ±this fraction, shaped by Beta(2,2) */
@@ -32,21 +102,40 @@ export const HOTSPOT_VARIANCE = 0.10;
 /** Value multiplier threshold: >= this is a success, < this is near-success */
 export const SUCCESS_THRESHOLD = 1.0;
 
-/** Maximum value multiplier for product output */
+/** Maximum value multiplier for product output (caps output range high) */
 export const MAX_OUTPUT_MULTIPLIER = 7;
+
+/** Output range low cap — output range low is min(effectiveMult * 0.9, this) */
+export const OUTPUT_RANGE_LOW_CAP = 3;
+
+/**
+ * Compute the product output range for a given effective value multiplier.
+ * Formula: [min(mult * 0.9, 3), min(mult * 1.1, 7)]
+ * Uniform distribution within the range, floored to integer product units.
+ *
+ * @param {number} effectiveMult - Effective value multiplier (hotspot.multiplier * conditionMult)
+ * @returns {[number, number]} - [low, high] output range
+ */
+export function computeOutputRange(effectiveMult) {
+  return [
+    Math.min(effectiveMult * 0.9, OUTPUT_RANGE_LOW_CAP),
+    Math.min(effectiveMult * 1.1, MAX_OUTPUT_MULTIPLIER)
+  ];
+}
 
 /**
  * Empirical hotspot definitions from KDE lognormal analysis.
  * Each entry: { multiplier, weight, outputRange? }
  * - multiplier: TT value as fraction of blueprint cost
  * - weight: probability of this hotspot (of non-fail outcomes)
- * - outputRange: [low, high] value multiplier for product output (success only)
+ * - outputRange: [low, high] base output range (at conditionMult=1), for display only
+ *   Actual output range is computed at runtime via computeOutputRange(mult * conditionMult)
  */
 export const HOTSPOTS = [
   { multiplier: 0.20, weight: 0.078 },
   { multiplier: 0.50, weight: 0.2647 },
   { multiplier: 0.85, weight: 0.2010 },
-  { multiplier: 1.10, weight: 0.4282, outputRange: [1.0, 1.21] },
+  { multiplier: 1.10, weight: 0.4282, outputRange: [0.99, 1.21] },
   { multiplier: 2.50, weight: 0.0149, outputRange: [2.25, 2.75] },
   { multiplier: 5.00, weight: 0.0068, outputRange: [3.0, 5.5] },
   { multiplier: 10.0, weight: 0.0030, outputRange: [3.0, 7.0] },
@@ -127,6 +216,9 @@ function getZScore(certainty) {
 
 /**
  * Compute the hotspot breakdown into near-success and success categories.
+ * Condition-independent: both hotspot values and success threshold scale equally
+ * with condition, so the relative breakdown stays the same.
+ *
  * Cached since it depends only on constants, not blueprint-specific values.
  *
  * @returns {{ nearSuccess: Array, success: Array, totalNearSuccessWeight: number, totalSuccessWeight: number, totalWeight: number }}
@@ -149,9 +241,6 @@ export function getHotspotBreakdown() {
 
       // Expected pool multiplier for the near-success portion:
       // Truncated Beta(2,2) mean on [0, tMax] where tMax maps threshold to beta space.
-      // E[t | t < tMax] = integral(t * 6t(1-t) dt, 0, tMax) / CDF(tMax)
-      //                  = (3/2 * tMax^3 - 6/5 * tMax^4) / (3*tMax^2 - 2*tMax^3) ... etc.
-      // Then map back: poolMultiplier = lowerBound + E[t|t<tMax] * range
       const range = hotspot.multiplier * 2 * HOTSPOT_VARIANCE;
       const tMax = (SUCCESS_THRESHOLD - lowerBound) / range;
       const cdfMax = 3 * tMax * tMax - 2 * tMax * tMax * tMax;
@@ -161,19 +250,19 @@ export function getHotspotBreakdown() {
       const poolMultiplier = lowerBound + truncatedMean * range;
       nearSuccess.push({ multiplier: hotspot.multiplier, weight: nearSuccessWeight, poolMultiplier });
 
-      // Success portion: uses the defined output range
-      success.push({ weight: successWeight, outputRange: hotspot.outputRange });
+      // Success portion: carries multiplier for dynamic output range computation
+      success.push({ multiplier: hotspot.multiplier, weight: successWeight, outputRange: hotspot.outputRange });
     } else if (hotspot.multiplier < SUCCESS_THRESHOLD) {
       // Pure near-success
       nearSuccess.push({ multiplier: hotspot.multiplier, weight: hotspot.weight, poolMultiplier: hotspot.multiplier });
     } else {
       // Pure success
-      success.push({ weight: hotspot.weight, outputRange: hotspot.outputRange });
+      success.push({ multiplier: hotspot.multiplier, weight: hotspot.weight, outputRange: hotspot.outputRange });
     }
   }
 
-  // Add >10x high success
-  success.push({ weight: HIGH_SUCCESS_WEIGHT, outputRange: HIGH_SUCCESS_OUTPUT_RANGE });
+  // Add >10x high success (multiplier 15 representative; always caps to [3, 7])
+  success.push({ multiplier: 15, weight: HIGH_SUCCESS_WEIGHT, outputRange: HIGH_SUCCESS_OUTPUT_RANGE });
 
   const totalNearSuccessWeight = nearSuccess.reduce((s, h) => s + h.weight, 0);
   const totalSuccessWeight = success.reduce((s, h) => s + h.weight, 0);
@@ -300,6 +389,8 @@ export function getMaxNonFailChance(blueprint) {
 /**
  * Calculate success rates using hotspot-based model.
  * Hotspot weights are normalized to 100% of non-fail outcomes.
+ * The success/near-success split is condition-independent (both hotspot values
+ * and threshold scale equally). Condition only affects the non-fail chance.
  *
  * @param {number} nonFailChance - Non-fail chance % (0-100)
  * @returns {{ successRate: number, nearSuccessRate: number, failRate: number }}
@@ -334,11 +425,17 @@ function calculateBlueprintCost(blueprint) {
  * For each success hotspot, compute expected product units from its output range,
  * then weight by normalized hotspot probability.
  *
+ * Output range is computed dynamically from the effective multiplier:
+ *   effectiveMult = hotspot.multiplier × conditionMult
+ *   outputRange = [min(effectiveMult × 0.9, 3), min(effectiveMult × 1.1, 7)]
+ * Product units = floor(outputRangeMult × B) where B = bpCost / productTT.
+ *
  * @param {object} blueprint - Blueprint with Materials and Product
- * @param {number} maxOutput - Maximum product units per success (from maxCraft or formula)
+ * @param {number} maxOutput - Maximum product units per success
+ * @param {number} [conditionMult=1] - Condition multiplier
  * @returns {number} - Expected average output per success (at least 1)
  */
-function calculateHotspotAvgOutput(blueprint, maxOutput) {
+function calculateHotspotAvgOutput(blueprint, maxOutput, conditionMult = 1) {
   const productTT = blueprint.Product?.Properties?.Economy?.MaxTT;
   if (!productTT || productTT <= 0) return 1;
 
@@ -350,17 +447,17 @@ function calculateHotspotAvgOutput(blueprint, maxOutput) {
   if (totalSuccessWeight <= 0) return 1;
 
   let weightedOutput = 0;
-  const debugRows = [];
 
   for (const hotspot of success) {
-    const [rangeLow, rangeHigh] = hotspot.outputRange;
+    const effectiveMult = hotspot.multiplier * conditionMult;
+    const [rangeLow, rangeHigh] = computeOutputRange(effectiveMult);
     const normalizedWeight = hotspot.weight / totalSuccessWeight;
 
-    // Scale output range by the base ratio B
+    // Convert output range multipliers to product units
     const scaledLow = rangeLow * B;
     const scaledHigh = rangeHigh * B;
 
-    // Clamp to [1, maxOutput] range
+    // maxOutput is the hard cap from blueprint (MaximumCraftAmount or formula max)
     const clampedLow = Math.max(1, scaledLow);
     const clampedHigh = Math.min(maxOutput + 0.999, scaledHigh);
 
@@ -370,6 +467,7 @@ function calculateHotspotAvgOutput(blueprint, maxOutput) {
       contribution = Math.max(1, Math.min(maxOutput, Math.floor(scaledLow)));
     } else {
       // Use weighted integer averaging for the clamped range
+      // This properly handles the floor() at each integer boundary
       let avgForHotspot = calculateWeightedIntegerAverage(clampedLow, clampedHigh);
 
       // If part of the original range extends above maxOutput, that portion contributes maxOutput
@@ -383,18 +481,7 @@ function calculateHotspotAvgOutput(blueprint, maxOutput) {
     }
 
     weightedOutput += normalizedWeight * contribution;
-    debugRows.push({
-      range: `[${rangeLow}x, ${rangeHigh}x]`,
-      units: `[${scaledLow.toFixed(1)}, ${scaledHigh.toFixed(1)}]`,
-      weight: `${(normalizedWeight * 100).toFixed(1)}%`,
-      avgUnits: contribution.toFixed(1),
-      contribution: (normalizedWeight * contribution).toFixed(1),
-    });
   }
-
-  console.log(`[Hotspot AvgOutput] B=${B.toFixed(2)}, maxOutput=${maxOutput}, product=${blueprint.Product?.Name}`);
-  console.table(debugRows);
-  console.log(`[Hotspot AvgOutput] Weighted avg = ${weightedOutput.toFixed(2)}`);
 
   return Math.max(1, weightedOutput);
 }
@@ -444,9 +531,12 @@ function calculateWeightedIntegerAverage(lowRaw, highRaw) {
  * @param {number} quantityWanted - Desired output quantity
  * @param {number} nonFailChance - Non-fail chance % (0-100), defaults to max for blueprint
  * @param {number} certainty - Confidence level % (50-99), defaults to 50 (mean estimate)
- * @returns {{ estimatedAttempts: number, avgOutput: number, avgOutputPerAttempt: number, successRate: number, nonFailChance: number }}
+ * @param {number} conditionPercent - Condition slider value (0-20), defaults to 0
+ * @returns {{ estimatedAttempts: number, avgOutput: number, avgOutputPerAttempt: number, successRate: number, nearSuccessRate: number, failRate: number, nonFailChance: number, effectiveNonFailChance: number, conditionMultiplier: number }}
  */
-export function calculateCraftAttempts(blueprint, quantityWanted, nonFailChance = null, certainty = DEFAULT_CONFIG.certainty) {
+export function calculateCraftAttempts(blueprint, quantityWanted, nonFailChance = null, certainty = DEFAULT_CONFIG.certainty, conditionPercent = 0) {
+  const conditionMult = getConditionMultiplier(conditionPercent);
+
   // Products with condition (e.g., need residue) implicitly have maxOutput = 1
   const productHasCondition = blueprint.Product && hasCondition(blueprint.Product);
 
@@ -458,6 +548,8 @@ export function calculateCraftAttempts(blueprint, quantityWanted, nonFailChance 
   if (productHasCondition) {
     maxOutput = 1;
   } else if (productTT > 0 && bpCost > 0) {
+    // Formula-based max: output range high caps at MAX_OUTPUT_MULTIPLIER (7) regardless of condition
+    // MaximumCraftAmount is the absolute hard cap from the game
     const formulaMax = Math.floor(bpCost * MAX_OUTPUT_MULTIPLIER / productTT);
     const maxCraft = blueprint.Properties?.MaximumCraftAmount;
     maxOutput = maxCraft ? Math.min(formulaMax, maxCraft) : formulaMax;
@@ -467,7 +559,8 @@ export function calculateCraftAttempts(blueprint, quantityWanted, nonFailChance 
   }
 
   // Calculate average output per success using hotspot model
-  const avgOutput = productHasCondition ? 1 : calculateHotspotAvgOutput(blueprint, maxOutput);
+  // Output range is computed dynamically from effectiveMult = hotspot.mult × conditionMult
+  const avgOutput = productHasCondition ? 1 : calculateHotspotAvgOutput(blueprint, maxOutput, conditionMult);
 
   // Use provided non-fail chance or default to maximum for this blueprint
   const maxNonFail = getMaxNonFailChance(blueprint);
@@ -475,7 +568,10 @@ export function calculateCraftAttempts(blueprint, quantityWanted, nonFailChance 
     ? Math.min(nonFailChance, maxNonFail)
     : maxNonFail;
 
-  const { successRate } = calculateSuccessRates(actualNonFail);
+  // Condition divides the non-fail chance, reducing both success and near-success rates
+  // The success/near-success SPLIT doesn't change (hotspot values and threshold scale equally)
+  const effectiveNonFail = conditionMult > 1 ? actualNonFail / conditionMult : actualNonFail;
+  const { successRate, nearSuccessRate, failRate } = calculateSuccessRates(effectiveNonFail);
 
   // Expected output per attempt = success_rate * avg_items_per_success
   const avgOutputPerAttempt = successRate * avgOutput;
@@ -486,7 +582,11 @@ export function calculateCraftAttempts(blueprint, quantityWanted, nonFailChance 
       avgOutput,
       avgOutputPerAttempt: 0,
       successRate,
-      nonFailChance: actualNonFail
+      nearSuccessRate,
+      failRate,
+      nonFailChance: actualNonFail,
+      effectiveNonFailChance: effectiveNonFail,
+      conditionMultiplier: conditionMult
     };
   }
 
@@ -511,7 +611,11 @@ export function calculateCraftAttempts(blueprint, quantityWanted, nonFailChance 
     avgOutput,
     avgOutputPerAttempt,
     successRate,
-    nonFailChance: actualNonFail
+    nearSuccessRate,
+    failRate,
+    nonFailChance: actualNonFail,
+    effectiveNonFailChance: effectiveNonFail,
+    conditionMultiplier: conditionMult
   };
 }
 
@@ -587,9 +691,10 @@ function sampleTruncatedHotspotMultiplier(multiplier, upperBound) {
  * @param {Array<{name: string, amount: number, unitTT: number}>} materials - Materials to simulate
  * @param {number} rollChance - Per-material roll chance (0-100)
  * @param {number} iterations - Number of simulation runs
+ * @param {number} [conditionMult=1] - Condition multiplier: scales refund pool and per-material refund cap
  * @returns {Map<string, number>} - materialName → expected refund fraction (0-1) per near-success
  */
-export function simulateRefundRates(materials, rollChance, iterations = SIMULATION_ITERATIONS) {
+export function simulateRefundRates(materials, rollChance, iterations = SIMULATION_ITERATIONS, conditionMult = 1) {
   // Filter out zero-cost materials (they would cause infinite refunds)
   const validMaterials = materials.filter(m => m.unitTT > 0);
   if (validMaterials.length === 0) {
@@ -608,12 +713,12 @@ export function simulateRefundRates(materials, rollChance, iterations = SIMULATI
   }
 
   // Seed PRNG deterministically from material composition so same blueprint = same results.
-  // Hash: combine material costs and amounts into a single seed value.
+  // Hash: combine material costs, amounts, and condition into a single seed value.
   let seed = validMaterials.length * 7919;
   for (const m of validMaterials) {
     seed = ((seed * 31) + (m.unitTT * 10000) + m.amount) | 0;
   }
-  seed = ((seed * 31) + rollChance) | 0;
+  seed = ((seed * 31) + rollChance + Math.round(conditionMult * 10000)) | 0;
   _rng = createSeededRandom(seed);
 
   // Build cumulative weights for weighted random selection
@@ -638,7 +743,7 @@ export function simulateRefundRates(materials, rollChance, iterations = SIMULATI
     // Sample pool multiplier with Beta(2,2) variance.
     // For split hotspots (multiplier >= threshold), sample from the truncated
     // Beta(2,2) distribution conditioned on falling below the threshold.
-    // This correctly models the narrow range of near-success outcomes.
+    // The breakdown is condition-independent (both values and threshold scale equally).
     let poolMultiplier;
     if (hotspot.multiplier >= SUCCESS_THRESHOLD) {
       poolMultiplier = sampleTruncatedHotspotMultiplier(hotspot.multiplier, SUCCESS_THRESHOLD);
@@ -646,8 +751,9 @@ export function simulateRefundRates(materials, rollChance, iterations = SIMULATI
       poolMultiplier = sampleHotspotMultiplier(hotspot.multiplier);
     }
 
-    // Pool cannot be negative
-    let pool = Math.max(0, poolMultiplier * blueprintCost);
+    // Pool scales with conditionMult — condition multiplies the effective blueprint cost,
+    // so near-success refund pools are proportionally larger
+    let pool = Math.max(0, poolMultiplier * blueprintCost * conditionMult);
 
     // Each material rolls independently
     const winners = validMaterials.filter(() => _rng() < rollProb);
@@ -658,10 +764,12 @@ export function simulateRefundRates(materials, rollChance, iterations = SIMULATI
       [winners[j], winners[k]] = [winners[k], winners[j]];
     }
 
-    // Process winners - each gets floor(pool / unitTT) units, capped at amount
+    // Process winners - each gets floor(pool / unitTT) units
+    // Condition scales the max refund per material (2x multi = up to 2x material refunded)
     for (const mat of winners) {
       const unitsRefundable = Math.floor(pool / mat.unitTT);
-      const unitsRefunded = Math.min(unitsRefundable, mat.amount);
+      const maxRefund = Math.floor(mat.amount * conditionMult);
+      const unitsRefunded = Math.min(unitsRefundable, maxRefund);
       if (unitsRefunded > 0) {
         refundedUnits.set(mat.name, (refundedUnits.get(mat.name) || 0) + unitsRefunded);
         pool -= unitsRefunded * mat.unitTT;
@@ -696,9 +804,10 @@ export function simulateRefundRates(materials, rollChance, iterations = SIMULATI
  * @param {any[]} blueprintMaterials - Blueprint's materials array with Item and Amount properties
  * @param {number} nonFailChance - Non-fail chance % (0-100)
  * @param {number} rollChance - Per-material roll chance % (0-100)
+ * @param {number} [conditionMult=1] - Condition multiplier: scales refund pool and per-material cap
  * @returns {Map<string, {multiplier: number, refundFraction: number}>} - materialName → multiplier data
  */
-export function calculatePerMaterialMultipliers(blueprintMaterials, nonFailChance, rollChance) {
+export function calculatePerMaterialMultipliers(blueprintMaterials, nonFailChance, rollChance, conditionMult = 1) {
   const { nearSuccessRate } = calculateSuccessRates(nonFailChance);
 
   // Prepare materials for simulation
@@ -708,8 +817,8 @@ export function calculatePerMaterialMultipliers(blueprintMaterials, nonFailChanc
     unitTT: mat.Item?.Properties?.Economy?.MaxTT || 0
   }));
 
-  // Run simulation
-  const refundFractions = simulateRefundRates(materialsForSim, rollChance);
+  // Run simulation — condition scales refund pool and per-material cap
+  const refundFractions = simulateRefundRates(materialsForSim, rollChance, SIMULATION_ITERATIONS, conditionMult);
 
   // Convert to multipliers
   const result = new Map();
@@ -763,11 +872,12 @@ export function calculateResiduePerClick(blueprint) {
  * @param {Array<{blueprintId: number, quantity: number}>} targets - Target blueprints with quantities
  * @param {object} ownershipMap - Map of blueprintId -> false (only stores not-owned)
  * @param {Map<number, object>} blueprintCache - Map of blueprintId -> full blueprint object
- * @param {object} config - Configuration options
- * @param {number} config.rollChance - Per-material roll success probability % (0-100)
- * @param {number} config.certainty - Confidence level % (50-99)
- * @param {object} config.nonFailChances - Map of blueprintId -> non-fail chance %
- * @param {object} config.materialCraftConfig - Map of materialName -> { craft: bool, preferLimited: bool }
+ * @param {object} [config] - Configuration options
+ * @param {number} [config.rollChance] - Per-material roll success probability % (0-100)
+ * @param {number} [config.certainty] - Confidence level % (50-99)
+ * @param {object} [config.nonFailChances] - Map of blueprintId -> non-fail chance %
+ * @param {object} [config.materialCraftConfig] - Map of materialName -> { craft: bool, preferLimited: bool }
+ * @param {Record<number, number>} [config.conditionPercents] - Map of blueprintId -> condition % (0-20)
  * @returns {Array<CraftNode>} - Array of root crafting nodes
  */
 export function buildCraftingTree(targets, ownershipMap, blueprintCache, config = {}) {
@@ -776,7 +886,8 @@ export function buildCraftingTree(targets, ownershipMap, blueprintCache, config 
     rollChance = DEFAULT_CONFIG.rollChance,
     certainty = DEFAULT_CONFIG.certainty,
     nonFailChances = {},
-    materialCraftConfig = {}
+    materialCraftConfig = {},
+    conditionPercents = {}
   } = config;
 
   // Build product-to-blueprint map for material crafting lookup
@@ -787,7 +898,7 @@ export function buildCraftingTree(targets, ownershipMap, blueprintCache, config 
     if (!blueprint) continue;
 
     const owned = ownershipMap[target.blueprintId] !== false;
-    const node = buildNode(blueprint, target.quantity, owned, ownershipMap, blueprintCache, 0, new Set(), rollChance, certainty, nonFailChances, productMap, materialCraftConfig);
+    const node = buildNode(blueprint, target.quantity, owned, ownershipMap, blueprintCache, 0, new Set(), rollChance, certainty, nonFailChances, productMap, materialCraftConfig, conditionPercents);
     roots.push(node);
   }
 
@@ -797,8 +908,9 @@ export function buildCraftingTree(targets, ownershipMap, blueprintCache, config 
 /**
  * Build a single crafting node (recursive)
  * @private
+ * @param {Record<number, number>} [conditionPercents] - Map of blueprintId -> condition % (0-20)
  */
-function buildNode(blueprint, quantityWanted, owned, ownershipMap, blueprintCache, depth, visited, rollChance, certainty, nonFailChances, productMap, materialCraftConfig) {
+function buildNode(blueprint, quantityWanted, owned, ownershipMap, blueprintCache, depth, visited, rollChance, certainty, nonFailChances, productMap, materialCraftConfig, conditionPercents) {
   // Prevent infinite recursion (blueprint drops can be circular)
   if (visited.has(blueprint.Id)) {
     return {
@@ -808,6 +920,8 @@ function buildNode(blueprint, quantityWanted, owned, ownershipMap, blueprintCach
       avgOutput: 1,
       avgOutputPerAttempt: 0,
       successRate: 0,
+      nearSuccessRate: 0,
+      failRate: 1,
       isLimited: isLimitedBlueprint(blueprint),
       isSiB: hasSiB(blueprint),
       owned,
@@ -819,24 +933,35 @@ function buildNode(blueprint, quantityWanted, owned, ownershipMap, blueprintCach
       totalResidue: 0,
       adjustedResidue: 0,
       nonFailChance: getMaxNonFailChance(blueprint),
-      materialMultiplier: 1
+      effectiveNonFailChance: getMaxNonFailChance(blueprint),
+      materialMultiplier: 1,
+      conditionPercent: 0,
+      conditionMultiplier: 1
     };
   }
   visited.add(blueprint.Id);
 
-  // Get non-fail chance for this blueprint (from config or default to max)
+  // Get non-fail chance and condition for this blueprint (from config or defaults)
   const configuredNonFail = nonFailChances[blueprint.Id];
-  const { estimatedAttempts, avgOutput, avgOutputPerAttempt, successRate, nonFailChance } =
-    calculateCraftAttempts(blueprint, quantityWanted, configuredNonFail, certainty);
+  const userCondition = conditionPercents ? conditionPercents[blueprint.Id] : undefined;
+  // Auto-compute optimal output condition if the user hasn't explicitly set one
+  const conditionPercent = userCondition !== undefined
+    ? userCondition
+    : findOptimalOutputCondition(blueprint, configuredNonFail, certainty);
+  const { estimatedAttempts, avgOutput, avgOutputPerAttempt, successRate, nearSuccessRate, failRate, nonFailChance, effectiveNonFailChance, conditionMultiplier } =
+    calculateCraftAttempts(blueprint, quantityWanted, configuredNonFail, certainty, conditionPercent);
 
   const isLimited = isLimitedBlueprint(blueprint);
   const isSiB = hasSiB(blueprint);
 
   // Calculate per-material multipliers using pool-based simulation
+  // Use effective non-fail chance (condition-adjusted) since that's the actual near-success rate
+  // Pass conditionMultiplier so simulation uses the correct near-success hotspot set
   const perMaterialData = calculatePerMaterialMultipliers(
     blueprint.Materials || [],
-    nonFailChance,
-    rollChance
+    effectiveNonFailChance,
+    rollChance,
+    conditionMultiplier
   );
 
   // Collect materials with both raw and adjusted amounts
@@ -909,7 +1034,7 @@ function buildNode(blueprint, quantityWanted, owned, ownershipMap, blueprintCach
         // Need adjustedAmount of this material
         const childNode = buildNode(
           matBlueprint, mat.adjustedAmount, matOwned,
-          ownershipMap, blueprintCache, depth + 1, new Set(visited), rollChance, certainty, nonFailChances, productMap, materialCraftConfig
+          ownershipMap, blueprintCache, depth + 1, new Set(visited), rollChance, certainty, nonFailChances, productMap, materialCraftConfig, conditionPercents
         );
         childNode.isMaterialChild = true;
         childNode.parentMaterialName = materialName;
@@ -925,6 +1050,8 @@ function buildNode(blueprint, quantityWanted, owned, ownershipMap, blueprintCach
     avgOutput,
     avgOutputPerAttempt,
     successRate,
+    nearSuccessRate,
+    failRate,
     isLimited,
     isSiB,
     owned,
@@ -935,7 +1062,10 @@ function buildNode(blueprint, quantityWanted, owned, ownershipMap, blueprintCach
     totalResidue,
     adjustedResidue,
     nonFailChance,
-    materialMultiplier
+    effectiveNonFailChance,
+    materialMultiplier,
+    conditionPercent,
+    conditionMultiplier
   };
 }
 
@@ -966,6 +1096,8 @@ export function generateCraftingSteps(roots) {
       avgOutput: node.avgOutput,
       avgOutputPerAttempt: node.avgOutputPerAttempt || 0,
       successRate: node.successRate || 0,
+      nearSuccessRate: node.nearSuccessRate || 0,
+      failRate: node.failRate || 1,
       isLimited: node.isLimited,
       isSiB: node.isSiB,
       owned: node.owned,
@@ -976,7 +1108,10 @@ export function generateCraftingSteps(roots) {
       totalResidue: node.totalResidue || 0,
       adjustedResidue: node.adjustedResidue || 0,
       nonFailChance: node.nonFailChance,
+      effectiveNonFailChance: node.effectiveNonFailChance,
       materialMultiplier: node.materialMultiplier || 1,
+      conditionPercent: node.conditionPercent || 0,
+      conditionMultiplier: node.conditionMultiplier || 1,
       isMaterialChild: node.isMaterialChild || false,
       parentMaterialName: node.parentMaterialName || null
     });
