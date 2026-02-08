@@ -3004,71 +3004,6 @@
 
 <svelte:window bind:innerWidth={windowWidth} />
 
-<svg class="icon-sprite" aria-hidden="true">
-  <symbol id="icon-plus" viewBox="0 0 24 24">
-    <path d="M12 5v14M5 12h14" />
-  </symbol>
-  <symbol id="icon-compare" viewBox="0 0 24 24">
-    <path d="M4 7h11l-3-3M20 17H9l3 3" />
-    <path d="M14 4l-3 3 3 3M10 20l3-3-3-3" />
-  </symbol>
-  <symbol id="icon-cancel" viewBox="0 0 24 24">
-    <line x1="18" y1="6" x2="6" y2="18" />
-    <line x1="6" y1="6" x2="18" y2="18" />
-  </symbol>
-  <symbol id="icon-hide" viewBox="0 0 24 24">
-    <path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-5 0-9.27-3.11-11-7.5a11.5 11.5 0 0 1 5.18-5.9" />
-    <path d="M10.58 10.58a2 2 0 0 0 2.83 2.83" />
-    <path d="M9.9 4.24A10.94 10.94 0 0 1 12 4c5 0 9.27 3.11 11 7.5a11.5 11.5 0 0 1-4.4 5.3" />
-    <path d="M1 1l22 22" />
-  </symbol>
-  <symbol id="icon-save" viewBox="0 0 24 24">
-    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
-    <path d="M17 21V13H7v8" />
-    <path d="M7 3v5h8" />
-  </symbol>
-  <symbol id="icon-share" viewBox="0 0 24 24">
-    <path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7" />
-    <path d="M12 3v12" />
-    <path d="M8 7l4-4 4 4" />
-  </symbol>
-  <symbol id="icon-external" viewBox="0 0 24 24">
-    <path d="M14 3h7v7" />
-    <path d="M10 14L21 3" />
-    <path d="M21 14v7h-7" />
-    <path d="M3 10V3h7" />
-  </symbol>
-  <symbol id="icon-local" viewBox="0 0 24 24">
-    <path d="M4 20h16" />
-    <path d="M7 20V8l5-4 5 4v12" />
-  </symbol>
-  <symbol id="icon-info" viewBox="0 0 24 24">
-    <circle cx="12" cy="12" r="9" />
-    <path d="M12 10v6M12 7h.01" />
-  </symbol>
-  <symbol id="icon-stats" viewBox="0 0 24 24">
-    <path d="M4 20V10" />
-    <path d="M10 20V4" />
-    <path d="M16 20v-6" />
-    <path d="M2 20h20" />
-  </symbol>
-  <symbol id="icon-settings" viewBox="0 0 24 24">
-    <circle cx="12" cy="12" r="3" />
-    <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3 1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8 1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
-  </symbol>
-  <symbol id="icon-weapon" viewBox="0 0 24 24">
-    <path d="M3 21l7-7M7 21l7-7" />
-    <path d="M14 3l7 7M10 7l7 7" />
-  </symbol>
-  <symbol id="icon-armor" viewBox="0 0 24 24">
-    <path d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3z" />
-  </symbol>
-  <symbol id="icon-accessories" viewBox="0 0 24 24">
-    <circle cx="12" cy="12" r="7" />
-    <circle cx="12" cy="12" r="3" />
-  </symbol>
-</svg>
-
 <WikiPage
   title={isSharedMode ? 'Loadout Manager' : 'Loadouts'}
   {breadcrumbs}
@@ -3249,6 +3184,71 @@
       </div>
     {/if}
   </div>
+
+  <svg class="icon-sprite" aria-hidden="true">
+    <symbol id="icon-plus" viewBox="0 0 24 24">
+      <path d="M12 5v14M5 12h14" />
+    </symbol>
+    <symbol id="icon-compare" viewBox="0 0 24 24">
+      <path d="M4 7h11l-3-3M20 17H9l3 3" />
+      <path d="M14 4l-3 3 3 3M10 20l3-3-3-3" />
+    </symbol>
+    <symbol id="icon-cancel" viewBox="0 0 24 24">
+      <line x1="18" y1="6" x2="6" y2="18" />
+      <line x1="6" y1="6" x2="18" y2="18" />
+    </symbol>
+    <symbol id="icon-hide" viewBox="0 0 24 24">
+      <path d="M17.94 17.94A10.94 10.94 0 0 1 12 20c-5 0-9.27-3.11-11-7.5a11.5 11.5 0 0 1 5.18-5.9" />
+      <path d="M10.58 10.58a2 2 0 0 0 2.83 2.83" />
+      <path d="M9.9 4.24A10.94 10.94 0 0 1 12 4c5 0 9.27 3.11 11 7.5a11.5 11.5 0 0 1-4.4 5.3" />
+      <path d="M1 1l22 22" />
+    </symbol>
+    <symbol id="icon-save" viewBox="0 0 24 24">
+      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+      <path d="M17 21V13H7v8" />
+      <path d="M7 3v5h8" />
+    </symbol>
+    <symbol id="icon-share" viewBox="0 0 24 24">
+      <path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7" />
+      <path d="M12 3v12" />
+      <path d="M8 7l4-4 4 4" />
+    </symbol>
+    <symbol id="icon-external" viewBox="0 0 24 24">
+      <path d="M14 3h7v7" />
+      <path d="M10 14L21 3" />
+      <path d="M21 14v7h-7" />
+      <path d="M3 10V3h7" />
+    </symbol>
+    <symbol id="icon-local" viewBox="0 0 24 24">
+      <path d="M4 20h16" />
+      <path d="M7 20V8l5-4 5 4v12" />
+    </symbol>
+    <symbol id="icon-info" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 10v6M12 7h.01" />
+    </symbol>
+    <symbol id="icon-stats" viewBox="0 0 24 24">
+      <path d="M4 20V10" />
+      <path d="M10 20V4" />
+      <path d="M16 20v-6" />
+      <path d="M2 20h20" />
+    </symbol>
+    <symbol id="icon-settings" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3 1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8 1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
+    </symbol>
+    <symbol id="icon-weapon" viewBox="0 0 24 24">
+      <path d="M3 21l7-7M7 21l7-7" />
+      <path d="M14 3l7 7M10 7l7 7" />
+    </symbol>
+    <symbol id="icon-armor" viewBox="0 0 24 24">
+      <path d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3z" />
+    </symbol>
+    <symbol id="icon-accessories" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="7" />
+      <circle cx="12" cy="12" r="3" />
+    </symbol>
+  </svg>
 
   {#if compareMode}
     <div class="compare-layout">
