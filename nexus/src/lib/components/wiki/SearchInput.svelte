@@ -88,6 +88,10 @@
   /** @type {string} Message when no results found */
   export let emptyMessage = 'No matches';
 
+  // --- Validation props ---
+  /** @type {Array<string>|Set<string>|null} Known valid values for validation border (green/red) */
+  export let validValues = null;
+
   const dispatch = createEventDispatcher();
 
   let localValue = value || '';
@@ -102,6 +106,12 @@
   // Determine mode
   $: isLocalMode = options !== null && apiEndpoint === null;
   $: isApiMode = apiEndpoint !== null;
+
+  // Validation: build a Set for O(1) lookups
+  $: validSet = validValues
+    ? (validValues instanceof Set ? validValues : new Set(validValues))
+    : null;
+  $: isValid = validSet && localValue?.trim() ? validSet.has(localValue.trim()) : null;
 
   // Sync external value changes
   $: localValue = value ?? '';
@@ -381,9 +391,16 @@
       autocomplete="off"
       spellcheck="false"
       {disabled}
+      class:valid={isValid === true}
+      class:invalid={isValid === false}
+      class:has-icon={validSet !== null || isSearching}
     />
     {#if isSearching}
       <span class="search-spinner"></span>
+    {:else if isValid === true}
+      <span class="validation-icon valid" title="Valid item">✓</span>
+    {:else if isValid === false}
+      <span class="validation-icon invalid" title="Item not found">⚠</span>
     {/if}
   </div>
 
@@ -435,14 +452,41 @@
     height: 28px;
   }
 
+  .input-wrapper input.has-icon {
+    padding-right: 26px;
+  }
+
   .input-wrapper input:focus {
     outline: none;
     border-color: var(--accent-color, #4a9eff);
   }
 
+  .input-wrapper input.valid {
+    border-color: var(--success-color, #22c55e);
+  }
+
+  .input-wrapper input.invalid {
+    border-color: var(--error-color, #ef4444);
+  }
+
   .input-wrapper input:disabled {
     opacity: 0.6;
     cursor: not-allowed;
+  }
+
+  .validation-icon {
+    position: absolute;
+    right: 6px;
+    font-size: 12px;
+    pointer-events: none;
+  }
+
+  .validation-icon.valid {
+    color: var(--success-color, #22c55e);
+  }
+
+  .validation-icon.invalid {
+    color: var(--error-color, #ef4444);
   }
 
   .search-spinner {

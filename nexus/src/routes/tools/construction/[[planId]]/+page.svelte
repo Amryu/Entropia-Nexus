@@ -9,6 +9,7 @@
 
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
   import WikiSearchInput from '$lib/components/wiki/SearchInput.svelte';
+  import CraftingTreeNode from '$lib/components/tools/CraftingTreeNode.svelte';
   import { loading } from '../../../../stores.js';
   import { hasItemTag, getItemLink, getTypeLink, clampDecimals } from '$lib/util.js';
   import { hasCondition } from '$lib/shopUtils.js';
@@ -24,6 +25,7 @@
     calculateSuccessRates,
     buildProductToBlueprintMap,
     getMaterialCraftInfo,
+    getAllMaterialBlueprints,
     DEFAULT_CONFIG,
     MAX_NON_FAIL_SIB,
     MAX_NON_FAIL_NON_SIB,
@@ -52,6 +54,25 @@
 
   // Blueprint IDs in Items table are offset by 6,000,000 from Blueprints table IDs
   const BLUEPRINT_ID_OFFSET = 6000000;
+
+  const SECONDS_PER_ATTEMPT = 4.25;
+
+  function formatCraftTime(seconds) {
+    if (seconds < 60) return `${Math.round(seconds)}s`;
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
+    const h = Math.floor(seconds / 3600);
+    const m = Math.round((seconds % 3600) / 60);
+    return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  }
+
+  function getNodeTotalTime(node) {
+    if (!node.owned) return 0;
+    let time = (node.estimatedAttempts || 0) * SECONDS_PER_ATTEMPT;
+    for (const child of node.materialChildren || []) {
+      time += getNodeTotalTime(child);
+    }
+    return time;
+  }
 
   // Hotspot model rates at max non-fail for SiB and non-SiB
   const ratesNonSiB = calculateSuccessRates(MAX_NON_FAIL_NON_SIB);
@@ -131,6 +152,29 @@
   // Configuration panel
   let showConfigPanel = false;
 
+  // Blueprint picker popover for steps view
+  let bpPickerMaterial = null; // materialName of the open picker, or null
+  let bpPickerPos = { top: 0, left: 0 }; // fixed position for the popover
+
+  function openBpPicker(materialName, event) {
+    if (bpPickerMaterial === materialName) {
+      closeBpPicker();
+      return;
+    }
+    const rect = event.currentTarget.getBoundingClientRect();
+    bpPickerPos = { top: rect.bottom + 4, left: rect.left };
+    bpPickerMaterial = materialName;
+  }
+
+  function closeBpPicker() {
+    bpPickerMaterial = null;
+  }
+
+  function selectBpFromPicker(materialName, bpId) {
+    selectMaterialBlueprint(materialName, bpId);
+    closeBpPicker();
+  }
+
   // Product to blueprint map (for material crafting)
   $: productToBlueprintMap = blueprintCache.size > 0 ? buildProductToBlueprintMap(blueprintCache) : new Map();
 
@@ -155,6 +199,9 @@
   $: craftingSteps = generateCraftingSteps(craftingTree);
   $: shoppingList = generateShoppingList(craftingTree);
   $: blueprintsInTree = getAllBlueprintsInTree(craftingTree);
+
+  // Set of product names that have their own crafting step (i.e. are being crafted, not bought)
+  $: craftedProductNames = new Set(craftingSteps.filter(s => s.owned).map(s => s.blueprint?.Product?.Name).filter(Boolean));
 
   $: filteredPlans = plans.filter(p =>
     !planSearch || p.name.toLowerCase().includes(planSearch.toLowerCase())
@@ -209,7 +256,7 @@
     }
   }
 
-  function getBlueprintCostPerClick(blueprint) {
+  function getBlueprintCostPerClick(blueprint, _markupValues) {
     if (!blueprint?.Materials) return { ttCost: 0, muCost: 0 };
     let ttCost = 0;
     let muCost = 0;
@@ -325,6 +372,8 @@
     for (const step of craftingSteps) {
       if (!step.owned) continue;
       for (const mat of step.materials) {
+        // Skip materials that are being crafted - they have their own step costs
+        if (craftedProductNames.has(mat.item?.Name)) continue;
         if (!materials.has(mat.item?.Name)) {
           materials.set(mat.item?.Name, mat.item);
         }
@@ -932,12 +981,30 @@
     materialCraftConfig = { ...materialCraftConfig };
   }
 
+  function selectMaterialBlueprint(materialName, blueprintId) {
+    const current = materialCraftConfig[materialName] || {};
+    materialCraftConfig[materialName] = {
+      ...current,
+      craft: true,
+      selectedBlueprintId: blueprintId
+    };
+    materialCraftConfig = { ...materialCraftConfig };
+  }
+
   function isMaterialCraftEnabled(materialName) {
     return materialCraftConfig[materialName]?.craft === true;
   }
 
   function isMaterialLimited(materialName) {
     return materialCraftConfig[materialName]?.preferLimited === true;
+  }
+
+  function getSelectedBlueprintId(materialName) {
+    return materialCraftConfig[materialName]?.selectedBlueprintId ?? null;
+  }
+
+  function getMaterialBlueprintOptions(materialName) {
+    return getAllMaterialBlueprints(materialName, productToBlueprintMap);
   }
 
   function getMaterialCraftOptions(materialName) {
@@ -1030,6 +1097,7 @@
   {breadcrumbs}
   entity={{ Name: 'Construction Calculator' }}
   basePath="/tools/construction"
+  pageClass="tool-construction"
   navItems={[]}
   bind:drawerOpen
   {user}
@@ -1250,7 +1318,9 @@
                 {#each activePlan.data.targets as target}
                   {@const blueprint = blueprintCache.get(target.blueprintId)}
                   {#if blueprint}
-                    {@const costs = getBlueprintCostPerClick(blueprint)}
+                    {@const costs = getBlueprintCostPerClick(blueprint, markupValues)}
+                    {@const treeRoot = craftingTree.find(r => r.blueprint.Id === target.blueprintId)}
+                    {@const totalTime = treeRoot ? getNodeTotalTime(treeRoot) : 0}
                     <div class="target-item-expanded">
                       <div class="target-item-header">
                         <a href={getBlueprintLink(blueprint)} class="target-name" title={blueprint.Name}>
@@ -1275,6 +1345,9 @@
                         <span class="cost-label">Cost/click:</span>
                         <span class="cost-tt">{clampDecimals(costs.ttCost, 2, 4)} TT</span>
                         <span class="cost-mu">{clampDecimals(costs.muCost, 2, 4)} PED</span>
+                        {#if totalTime > 0}
+                          <span class="cost-time">{formatCraftTime(totalTime)}</span>
+                        {/if}
                       </div>
                     </div>
                   {/if}
@@ -1449,7 +1522,7 @@
                           Craft until you have <strong>{step.quantityWanted}</strong>
                           <a href={getItemLink(step.blueprint.Product)}>{step.blueprint.Product?.Name || 'result'}</a>
                           <span class="step-rates-inline">
-                            (~{step.estimatedAttempts} attempts @ {certainty}% confidence,
+                            (~{step.estimatedAttempts} attempts, {formatCraftTime(step.estimatedAttempts * SECONDS_PER_ATTEMPT)} @ {certainty}% confidence,
                             <span class="rate-success" title="Success: produces items">{(step.successRate * 100).toFixed(1)}%</span> success,
                             <span class="rate-near" title="Near-success: refund only">{(step.nearSuccessRate * 100).toFixed(1)}%</span> near,
                             <span class="rate-fail" title="Fail: no output">{(step.failRate * 100).toFixed(1)}%</span> fail,
@@ -1499,13 +1572,13 @@
                           {@const adjustedResidueCost = (step.adjustedResidue || 0) * residueMU / 100}
                           {@const adjustedTotalCost = step.materials.reduce((sum, mat) => {
                             // Skip materials being crafted - they have their own cost
-                            if (isMaterialCraftEnabled(mat.item?.Name)) return sum;
+                            if (craftedProductNames.has(mat.item?.Name)) return sum;
                             const matTT = mat.item?.Properties?.Economy?.MaxTT || 0;
                             const mu = getMarkup(`mat:${mat.item?.Name}`);
                             return sum + (matTT * (mat.adjustedAmount || mat.totalAmount) * mu / 100);
                           }, 0) + adjustedResidueCost}
                           {@const costPerClick = step.materials.reduce((sum, mat) => {
-                            if (isMaterialCraftEnabled(mat.item?.Name)) return sum;
+                            if (craftedProductNames.has(mat.item?.Name)) return sum;
                             const matTT = mat.item?.Properties?.Economy?.MaxTT || 0;
                             const mu = getMarkup(`mat:${mat.item?.Name}`);
                             return sum + (matTT * mat.amountPerAttempt * mu / 100);
@@ -1531,12 +1604,23 @@
                                   {@const lineTT = matTT * adjustedAmount}
                                   {@const mu = getMarkup(`mat:${mat.item?.Name}`)}
                                   {@const lineCost = lineTT * mu / 100}
-                                  {@const isCrafting = isMaterialCraftEnabled(mat.item?.Name)}
+                                  {@const isCrafting = craftedProductNames.has(mat.item?.Name)}
+                                  {@const bpOptions = mat.hasCraftableBlueprint ? getMaterialBlueprintOptions(mat.item?.Name) : null}
+                                  {@const hasMultipleBPs = bpOptions && bpOptions.length > 1}
                                   <tr class:crafting-material={isCrafting}>
                                     <td>
                                       <a href={getItemLink(mat.item)}>{mat.item.Name}</a>
-                                      {#if isCrafting}
-                                        <span class="crafting-badge">Crafting</span>
+                                      {#if hasMultipleBPs}
+                                        {@const selectedId = getSelectedBlueprintId(mat.item?.Name) ?? bpOptions[0]?.Id}
+                                        {@const selectedBp = bpOptions.find(bp => bp.Id === selectedId) || bpOptions[0]}
+                                        <button
+                                          class="mat-bp-badge"
+                                          class:active={bpPickerMaterial === mat.item?.Name}
+                                          title="Using: {selectedBp?.Name} — Click to change"
+                                          on:click|stopPropagation={(e) => openBpPicker(mat.item?.Name, e)}
+                                        >
+                                          {bpOptions.length} BPs
+                                        </button>
                                       {/if}
                                     </td>
                                     <td class="text-right">{mat.amountPerAttempt}</td>
@@ -1630,180 +1714,25 @@
             <p class="empty">No construction tree to display.</p>
           {:else}
             <ul class="tree-root">
-              {#each craftingTree as node}
-                {@const isTarget = isTargetBlueprint(node.blueprint.Id)}
-                {@const maxNonFail = getMaxNonFailChance(node.blueprint)}
-                <li class="tree-node" class:not-owned={!node.owned}>
-                  <div class="node-content">
-                    <a href={getBlueprintLink(node.blueprint)} class="node-name">
-                      {node.blueprint.Name}
-                    </a>
-                    <span class="node-quantity">×{node.quantityWanted}</span>
-                    {#if node.isSiB}<span class="sib-badge small">SiB</span>{/if}
-                    {#if node.owned}
-                      <span class="node-nonfail" title="Non-fail chance (max {maxNonFail}% for {node.isSiB ? 'SiB' : 'non-SiB'})">
-                        {#if !isTarget}
-                          <input
-                            type="number"
-                            class="nonfail-input"
-                            value={getNonFailChance(node.blueprint.Id)}
-                            min="0"
-                            max={maxNonFail}
-                            on:change={(e) => setNonFailChance(node.blueprint.Id, e.target.value)}
-                            on:click|stopPropagation
-                          />%
-                        {:else}
-                          {node.nonFailChance}%
-                        {/if}
-                      </span>
-                    {/if}
-                    {#if !isTarget}
-                      {@const actuallyOwned = isOwned(node.blueprint.Id)}
-                      {#if !node.owned}
-                        <span class="node-status buying">Buying</span>
-                      {/if}
-                      <!-- Buy/Craft toggle (disabled if not owned) -->
-                      <button
-                        class="node-toggle"
-                        class:buying={isBuying(node.blueprint.Id)}
-                        on:click={() => toggleBuyPreference(node.blueprint.Id)}
-                        disabled={!actuallyOwned}
-                        title={!actuallyOwned ? 'Must own to craft' : (isBuying(node.blueprint.Id) ? 'Switch to crafting' : 'Switch to buying')}
-                      >
-                        {isBuying(node.blueprint.Id) ? 'Buy' : 'Craft'}
-                      </button>
-                      <!-- Ownership toggle -->
-                      <button
-                        class="node-toggle ownership-toggle"
-                        class:not-owned={!actuallyOwned}
-                        on:click={() => toggleOwnership(node.blueprint.Id)}
-                        title={actuallyOwned ? 'Mark as not owned' : 'Mark as owned'}
-                      >
-                        {actuallyOwned ? 'Own' : "Don't Own"}
-                      </button>
-                    {:else}
-                      <span class="node-status target">Target</span>
-                    {/if}
-                  </div>
-                  {#if node.materialChildren?.length > 0}
-                    <ul class="tree-children">
-                      {#each node.materialChildren || [] as matChild}
-                        {@const isMatChildTarget = isTargetBlueprint(matChild.blueprint.Id)}
-                        {@const matChildMaxNonFail = getMaxNonFailChance(matChild.blueprint)}
-                        <li class="tree-node material-child" class:not-owned={!matChild.owned}>
-                          <div class="node-content">
-                            <span class="node-type-badge material">Material</span>
-                            <a href={getBlueprintLink(matChild.blueprint)} class="node-name">
-                              {matChild.blueprint.Name}
-                            </a>
-                            <span class="node-quantity">×{matChild.quantityWanted}</span>
-                            {#if matChild.isLimited}<span class="limited-badge">(L)</span>{/if}
-                            {#if matChild.isSiB}<span class="sib-badge small">SiB</span>{/if}
-                            {#if matChild.owned}
-                              <span class="node-nonfail" title="Non-fail chance">
-                                {#if !isMatChildTarget}
-                                  <input
-                                    type="number"
-                                    class="nonfail-input"
-                                    value={getNonFailChance(matChild.blueprint.Id)}
-                                    min="0"
-                                    max={matChildMaxNonFail}
-                                    on:change={(e) => setNonFailChance(matChild.blueprint.Id, e.target.value)}
-                                    on:click|stopPropagation
-                                  />%
-                                {:else}
-                                  {matChild.nonFailChance}%
-                                {/if}
-                              </span>
-                            {/if}
-                            {#if !isMatChildTarget}
-                              {@const matChildActuallyOwned = isOwned(matChild.blueprint.Id)}
-                              {#if !matChild.owned}
-                                <span class="node-status buying">Buying</span>
-                              {/if}
-                              <!-- Buy/Craft toggle (disabled if not owned) -->
-                              <button
-                                class="node-toggle"
-                                class:buying={isBuying(matChild.blueprint.Id)}
-                                on:click={() => toggleBuyPreference(matChild.blueprint.Id)}
-                                disabled={!matChildActuallyOwned}
-                                title={!matChildActuallyOwned ? 'Must own to craft' : (isBuying(matChild.blueprint.Id) ? 'Switch to crafting' : 'Switch to buying')}
-                              >
-                                {isBuying(matChild.blueprint.Id) ? 'Buy' : 'Craft'}
-                              </button>
-                              <!-- Ownership toggle -->
-                              <button
-                                class="node-toggle ownership-toggle"
-                                class:not-owned={!matChildActuallyOwned}
-                                on:click={() => toggleOwnership(matChild.blueprint.Id)}
-                                title={matChildActuallyOwned ? 'Mark as not owned' : 'Mark as owned'}
-                              >
-                                {matChildActuallyOwned ? 'Own' : "Don't Own"}
-                              </button>
-                            {:else}
-                              <span class="node-status target">Target</span>
-                            {/if}
-                          </div>
-                          <!-- Nested material children (recursive) -->
-                          {#if matChild.materialChildren?.length > 0}
-                            <ul class="tree-children">
-                              {#each matChild.materialChildren as nestedChild}
-                                {@const nestedMaxNonFail = getMaxNonFailChance(nestedChild.blueprint)}
-                                {@const nestedActuallyOwned = isOwned(nestedChild.blueprint.Id)}
-                                <li class="tree-node material-child" class:not-owned={!nestedChild.owned}>
-                                  <div class="node-content">
-                                    <span class="node-type-badge material">Material</span>
-                                    <a href={getBlueprintLink(nestedChild.blueprint)} class="node-name">
-                                      {nestedChild.blueprint.Name}
-                                    </a>
-                                    <span class="node-quantity">×{nestedChild.quantityWanted}</span>
-                                    {#if nestedChild.isLimited}<span class="limited-badge">(L)</span>{/if}
-                                    {#if nestedChild.isSiB}<span class="sib-badge small">SiB</span>{/if}
-                                    {#if nestedChild.owned}
-                                      <span class="node-nonfail">
-                                        <input
-                                          type="number"
-                                          class="nonfail-input"
-                                          value={getNonFailChance(nestedChild.blueprint.Id)}
-                                          min="0"
-                                          max={nestedMaxNonFail}
-                                          on:change={(e) => setNonFailChance(nestedChild.blueprint.Id, e.target.value)}
-                                          on:click|stopPropagation
-                                        />%
-                                      </span>
-                                    {/if}
-                                    {#if !nestedChild.owned}
-                                      <span class="node-status buying">Buying</span>
-                                    {/if}
-                                    <!-- Buy/Craft toggle (disabled if not owned) -->
-                                    <button
-                                      class="node-toggle"
-                                      class:buying={isBuying(nestedChild.blueprint.Id)}
-                                      on:click={() => toggleBuyPreference(nestedChild.blueprint.Id)}
-                                      disabled={!nestedActuallyOwned}
-                                      title={!nestedActuallyOwned ? 'Must own to craft' : (isBuying(nestedChild.blueprint.Id) ? 'Switch to crafting' : 'Switch to buying')}
-                                    >
-                                      {isBuying(nestedChild.blueprint.Id) ? 'Buy' : 'Craft'}
-                                    </button>
-                                    <!-- Ownership toggle -->
-                                    <button
-                                      class="node-toggle ownership-toggle"
-                                      class:not-owned={!nestedActuallyOwned}
-                                      on:click={() => toggleOwnership(nestedChild.blueprint.Id)}
-                                      title={nestedActuallyOwned ? 'Mark as not owned' : 'Mark as owned'}
-                                    >
-                                      {nestedActuallyOwned ? 'Own' : "Don't Own"}
-                                    </button>
-                                  </div>
-                                </li>
-                              {/each}
-                            </ul>
-                          {/if}
-                        </li>
-                      {/each}
-                    </ul>
-                  {/if}
-                </li>
+              {#each craftingTree as node (node.blueprint.Id)}
+                <CraftingTreeNode
+                  {node}
+                  depth={0}
+                  isTarget={true}
+                  {getBlueprintLink}
+                  {isTargetBlueprint}
+                  {isOwned}
+                  {isBuying}
+                  {toggleBuyPreference}
+                  {toggleOwnership}
+                  {setNonFailChance}
+                  {getNonFailChance}
+                  {getMaterialBlueprintOptions}
+                  {getSelectedBlueprintId}
+                  {selectMaterialBlueprint}
+                  {getNodeTotalTime}
+                  {formatCraftTime}
+                />
               {/each}
             </ul>
           {/if}
@@ -1972,6 +1901,29 @@
   {/if}
 </WikiPage>
 
+<!-- Modals: wrapped in .tool-construction for CSS scoping -->
+<div class="tool-construction">
+{#if bpPickerMaterial}
+  {@const bpOptions = getMaterialBlueprintOptions(bpPickerMaterial)}
+  {@const selectedId = getSelectedBlueprintId(bpPickerMaterial) ?? bpOptions?.[0]?.Id}
+  <!-- svelte-ignore a11y-click-events-have-key-events -->
+  <!-- svelte-ignore a11y-no-static-element-interactions -->
+  <div class="bp-picker-backdrop" on:click={closeBpPicker}></div>
+  <div class="bp-picker-popover" style="top: {bpPickerPos.top}px; left: {bpPickerPos.left}px;">
+    <div class="bp-picker-header">Select Blueprint</div>
+    {#each bpOptions || [] as bp}
+      <button
+        class="bp-picker-option"
+        class:selected={bp.Id === selectedId}
+        on:click|stopPropagation={() => selectBpFromPicker(bpPickerMaterial, bp.Id)}
+      >
+        <span class="bp-picker-radio">{bp.Id === selectedId ? '●' : '○'}</span>
+        <span class="bp-picker-name">{bp.Name}</span>
+        {#if isLimitedBlueprint(bp)}<span class="limited-badge">(L)</span>{/if}
+      </button>
+    {/each}
+  </div>
+{/if}
 <!-- Ownership Panel Modal -->
 {#if showConfigPanel}
   <div class="ownership-overlay" on:click={() => showConfigPanel = false} on:keydown={(e) => e.key === 'Escape' && (showConfigPanel = false)}>
@@ -2275,3 +2227,4 @@
   </div>
 </div>
 {/if}
+</div>

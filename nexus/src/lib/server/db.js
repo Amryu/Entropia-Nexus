@@ -7,6 +7,11 @@ export const pool = new Pool({
   connectionString: process.env.POSTGRES_CONNECTION_STRING,
 });
 
+// Optional read-only pool for the nexus entity database (used for image cleanup scanning)
+export const nexusPool = process.env.POSTGRES_NEXUS_CONNECTION_STRING
+  ? new Pool({ connectionString: process.env.POSTGRES_NEXUS_CONNECTION_STRING })
+  : null;
+
 // Global error/logging guards to avoid silent process crashes
 if (!globalThis.__dbErrorHooksRegistered) {
   process.on('unhandledRejection', (reason, p) => {

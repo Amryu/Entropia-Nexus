@@ -78,6 +78,9 @@
   /** @type {Array} User's pending update changes to highlight in sidebar */
   export let userPendingUpdates = [];
 
+  /** @type {string} Optional CSS class added to the root .wiki-page element for scoping */
+  export let pageClass = '';
+
   // Mobile drawer state - can be bound from parent
   export let drawerOpen = false;
 
@@ -276,7 +279,7 @@
 
 <svelte:window bind:innerWidth={windowWidth} bind:innerHeight={windowHeight} />
 
-<div class="wiki-page" class:mobile={isMobile} class:tablet={isTablet} class:sidebar-expanded={sidebarExpanded} class:sidebar-full-width={sidebarFullWidth}>
+<div class="wiki-page {pageClass}" class:mobile={isMobile} class:tablet={isTablet} class:sidebar-expanded={sidebarExpanded} class:sidebar-full-width={sidebarFullWidth}>
   <!-- Mobile Navigation Drawer -->
   {#if isMobile}
     <MobileDrawer bind:open={drawerOpen} on:close={closeDrawer}>

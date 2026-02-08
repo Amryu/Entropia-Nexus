@@ -286,15 +286,18 @@ async function checkChanges() {
       }
     }
 
+    // Deep clone both before validation (validate mutates with removeAdditional)
+    let validatedEntity = JSON.parse(JSON.stringify(entity));
+    let validatedChange = JSON.parse(JSON.stringify(change.data));
+
+    // Validate and strip extra properties from both sides
+    validate(change.entity, validatedEntity);
+    validate(change.entity, validatedChange);
+
     // Print side-by-side comparison for debugging
-    printSideBySide(entity, change.data, 'Entity vs Change Data');
+    printSideBySide(validatedEntity, validatedChange, 'Entity vs Change Data (validated)');
 
-    validate(change.entity, entity);
-
-    // Print side-by-side comparison for debugging
-    printSideBySide(entity, change.data, 'Entity vs Change Data');
-
-    let compareObject = compareJson(entity, change.data);
+    let compareObject = compareJson(validatedEntity, validatedChange);
     console.log(`Comparison result for ${change.data.Name}:`, compareObject ? 'Changes detected' : 'No changes detected');
 
     if (!thread) {

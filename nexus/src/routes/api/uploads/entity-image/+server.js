@@ -13,7 +13,7 @@
  */
 // @ts-nocheck
 import { error } from '@sveltejs/kit';
-import { processAndSaveImage, approveImage, isAutoApproveType } from '$lib/server/imageProcessor.js';
+import { processAndSaveImage, approveImage, isAutoApproveType, computeImageHash, getApprovedImagePath } from '$lib/server/imageProcessor.js';
 import {
   checkRateLimit,
   getRateLimitHeaders,
@@ -111,7 +111,8 @@ export async function POST({ request, locals }) {
 
     const imageFile = formData.get('image');
     const entityType = formData.get('entityType');
-    const entityId = formData.get('entityId');
+    let entityId = formData.get('entityId');
+    const autoApprove = formData.get('autoApprove') === 'true';
 
     // 7. Validate required fields
     if (!imageFile || !(imageFile instanceof File)) {
@@ -155,18 +156,49 @@ export async function POST({ request, locals }) {
       throw error(413, 'Image file too large');
     }
 
+    // 12a. For richtext images, use content hash as entity ID for deduplication
+    let imageHash = null;
+    if (entityType === 'richtext') {
+      imageHash = computeImageHash(buffer);
+      entityId = imageHash;
+
+      // Check if an approved image with this hash already exists
+      const existingPath = getApprovedImagePath('richtext', imageHash);
+      if (existingPath) {
+        return new Response(JSON.stringify({
+          success: true,
+          approved: true,
+          hash: imageHash,
+          imageUrl: `/api/img/richtext/${imageHash}`
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json', ...rateLimitHeaders }
+        });
+      }
+    }
+
     // 13. Process and save the image (additional validations happen here)
     const result = await processAndSaveImage(buffer, entityType, entityId, userId);
 
-    // 14. Auto-approve guide images (skip approval workflow)
+    // 14. Auto-approve: type-based (guide-category) or grant-based (richtext with user grant)
+    let approved = false;
     if (isAutoApproveType(entityType)) {
       await approveImage(entityType, entityId);
+      approved = true;
+    } else if (autoApprove && entityType === 'richtext') {
+      const hasApproveGrant = user.grants?.includes('wiki.approve') || user.grants?.includes('guide.edit');
+      if (hasApproveGrant) {
+        await approveImage(entityType, entityId);
+        approved = true;
+      }
     }
 
     return new Response(JSON.stringify({
       success: true,
+      approved,
       tempPath: result.tempPath,
-      previewUrl: result.previewUrl
+      previewUrl: result.previewUrl,
+      ...(imageHash ? { hash: imageHash, imageUrl: `/api/img/richtext/${imageHash}` } : {})
     }), {
       status: 200,
       headers: {

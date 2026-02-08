@@ -7,36 +7,34 @@ import { getValidator } from "$lib/server/schemaValidator.js";
 // HTML sanitization config for TipTap rich text editor output
 const SANITIZE_CONFIG = {
   allowedTags: [
-    // Basic formatting
     'p', 'strong', 'em', 's', 'code', 'br',
-    // Headings
     'h1', 'h2', 'h3', 'h4',
-    // Lists
     'ul', 'ol', 'li',
-    // Block elements
     'blockquote', 'pre', 'hr',
-    // Links
     'a',
-    // Video embeds (custom TipTap extension)
-    'div', 'iframe'
+    'div', 'iframe',
+    'img'
   ],
   allowedAttributes: {
     'a': ['href', 'target', 'rel'],
-    'div': ['data-type', 'data-provider', 'data-src', 'class'],
-    'iframe': ['src', 'width', 'height', 'frameborder', 'allow', 'allowfullscreen']
+    'div': ['data-type', 'data-provider', 'data-src', 'data-width', 'data-pending', 'data-alt', 'class', 'style'],
+    'iframe': ['src', 'width', 'height', 'frameborder', 'allow', 'allowfullscreen'],
+    'img': ['src', 'alt', 'data-width', 'data-pending', 'style']
+  },
+  allowedStyles: {
+    '*': { 'width': [/^\d+px$/], 'max-width': [/^\d+(%|px)$/] }
   },
   allowedIframeHostnames: ['www.youtube.com', 'youtube.com', 'player.vimeo.com', 'vimeo.com'],
-  // Force safe link attributes
   transformTags: {
-    'a': (tagName, attribs) => {
-      return {
-        tagName: 'a',
-        attribs: {
-          href: attribs.href || '',
-          target: '_blank',
-          rel: 'noopener noreferrer'
-        }
-      };
+    'a': (tagName, attribs) => ({
+      tagName: 'a',
+      attribs: { href: attribs.href || '', target: '_blank', rel: 'noopener noreferrer' }
+    }),
+    'img': (tagName, attribs) => {
+      if (!(attribs.src || '').startsWith('/api/img/')) {
+        return { tagName: '', attribs: {} };
+      }
+      return { tagName: 'img', attribs };
     }
   }
 };

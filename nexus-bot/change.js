@@ -18,7 +18,7 @@ export function validate(type, data) {
   let validator = getValidator(type);
 
   let success = validator(data);
-  
+
   if (!success) {
     console.log(`Validation failed for ${type}:`, validator.errors);
   }
@@ -46,7 +46,7 @@ function formatDataValue(value, maxLength = 30) {
   } else {
     str = JSON.stringify(value);
   }
-  
+
   if (str.length > maxLength) {
     return str.substring(0, maxLength - 3) + '...';
   }
@@ -56,11 +56,11 @@ function formatDataValue(value, maxLength = 30) {
 function printTreeView(obj, indent = 0, maxListItems = 3) {
   const spaces = '  '.repeat(indent);
   let result = [];
-  
+
   if (obj === null) return ['null'];
   if (obj === undefined) return ['undefined'];
   if (typeof obj !== 'object') return [String(obj)];
-  
+
   if (Array.isArray(obj)) {
     result.push(`[${obj.length} items]`);
     for (let i = 0; i < Math.min(obj.length, maxListItems); i++) {
@@ -85,7 +85,7 @@ function printTreeView(obj, indent = 0, maxListItems = 3) {
     }
     result.push(`${spaces}}`);
   }
-  
+
   return result;
 }
 
@@ -94,11 +94,11 @@ export function printSideBySide(oldObj, newObj, title = 'Comparison') {
   const newLines = printTreeView(newObj);
   const maxLines = Math.max(oldLines.length, newLines.length);
   const maxWidth = Math.max(...oldLines.map(line => line.length), 40);
-  
+
   console.log(`\n=== ${title} ===`);
   console.log(`${'OLD'.padEnd(maxWidth)} | NEW`);
   console.log(`${'-'.repeat(maxWidth)} | ${'-'.repeat(maxWidth)}`);
-  
+
   for (let i = 0; i < maxLines; i++) {
     const oldLine = (oldLines[i] || '').padEnd(maxWidth);
     const newLine = newLines[i] || '';
@@ -107,103 +107,208 @@ export function printSideBySide(oldObj, newObj, title = 'Comparison') {
   console.log('');
 }
 
-export function compareJson(oldJson, newJson) {
-  let anyChanges = false;
+/**
+ * Array item identifiers - functions to extract identifying values from array items.
+ * Items are matched by these identifiers rather than by array position.
+ * Mirrors the identifiers in nexus/src/lib/utils/compareJson.js
+ */
+const arrayIdentifiers = [
+  x => x?.Name,
+  // For nested arrays (e.g., Armors grouped by slot), check first/second element's Name
+  x => Array.isArray(x) && x.length > 0 ? x[0]?.Name : null,
+  x => Array.isArray(x) && x.length > 1 ? x[1]?.Name : null,
+  x => x?.Properties?.Tier,
+  x => x?.Material?.Name,
+  // For mob spawns - match by Shape, Data and Altitude
+  x => x?.Properties?.Shape && x?.Properties?.Data && x?.Properties?.Coordinates?.Altitude !== undefined
+    ? `${x.Properties.Shape}_${JSON.stringify(x.Properties.Data)}_${x.Properties.Coordinates.Altitude}`
+    : null,
+  // For loots - match by Item.Name and Maturity.Name
+  x => x?.Item?.Name && x?.Maturity?.Name ? `${x.Item.Name}_${x.Maturity.Name}` : null,
+  // For loots without maturity
+  x => x?.Item?.Name ? x.Item.Name : null,
+  // For effects - match by Name
+  x => x?.Effect?.Name,
+  // For maturities - match by Name
+  x => x?.Maturity?.Name,
+];
 
-  oldJson ??= Array.isArray(newJson) ? [] : {};
-  newJson ??= Array.isArray(oldJson) ? [] : {};
+/**
+ * Context keys - preserved in output even when unchanged
+ */
+const contextKeys = ['Name', 'Tier'];
 
-  let result = Array.isArray(oldJson) || Array.isArray(newJson) ? [] : {};
+/**
+ * Keys to ignore during comparison - API-only fields
+ */
+const ignoredKeys = ['Links', '$Url', 'ItemId'];
 
-  const arrayIdentifiers = [
-    x => x?.Name,
-    x => Array.isArray(x) && x.length > 0 ? x[0]?.Name : null,
-    x => Array.isArray(x) && x.length > 1 ? x[1]?.Name : null,
-    x => x?.Properties?.Tier,
-    x => x?.Material?.Name,
-    // For mob spawns - match by Shape, Data and Altitude
-    x => x?.Properties?.Shape && x?.Properties?.Data && x?.Properties?.Coordinates?.Altitude !== undefined 
-      ? `${x.Properties.Shape}_${JSON.stringify(x.Properties.Data)}_${x.Properties.Coordinates.Altitude}` 
-      : null];
-  const objectIdentifiers = ['Name', 'Tier'];
+/**
+ * Deep equality check, ignoring API-only fields.
+ * For objects, only compares keys that exist in BOTH objects.
+ * Uses identifier-based matching for arrays.
+ */
+function deepEqual(a, b) {
+  if (a === b) return true;
+  if (a == null && b == null) return true;
+  if (a == null || b == null) return false;
+  if (typeof a !== typeof b) return false;
 
-  let keys = new Set([...Object.keys(newJson), ...Object.keys(oldJson)]);
+  if (Array.isArray(a) && Array.isArray(b)) {
+    if (a.length !== b.length) return false;
 
-  for (const key of keys) {
-    if (Array.isArray(oldJson[key]) && Array.isArray(newJson[key])) {
-      console.log(`Comparing array field: ${key}, oldLength: ${oldJson[key].length}, newLength: ${newJson[key].length}`);
-      
-      // Create a copy of oldJson[key] to avoid modifying during iteration
-      const oldItems = [...oldJson[key]];
-      
-      for (let i = 0; i < newJson[key].length; i++) {
-        let match;
-
-        // Find matching item in old array - prioritize ID matching over position
-        for (let j = 0; j < oldItems.length; j++) {
-          // First, try to match by identifier
-          const hasMatchingId = arrayIdentifiers.some(x => x(newJson[key][i]) != null && x(newJson[key][i]) === x(oldItems[j]));
-          
-          if (hasMatchingId) {
-            // Found exact match by identifier
-            let subResult = compareJson(oldItems[j], newJson[key][i]);
-            oldItems.splice(j, 1);
-            match = subResult;
-            break;
-          }
-        }
-        
-        // If no ID match found, try position-based matching as fallback
-        if (match === undefined) {
-          for (let j = 0; j < oldItems.length; j++) {
-            let subResult = compareJson(oldItems[j], newJson[key][i]);
-            
-            if (!subResult) {
-              // Items are identical, treat as match
-              oldItems.splice(j, 1);
-              match = subResult;
+    const bItems = [...b];
+    for (const aItem of a) {
+      let matchIndex = -1;
+      for (const identifier of arrayIdentifiers) {
+        const aId = identifier(aItem);
+        if (aId != null) {
+          for (let j = 0; j < bItems.length; j++) {
+            if (identifier(bItems[j]) === aId) {
+              matchIndex = j;
               break;
             }
           }
-        }
-
-        if (match === undefined) {
-          match = compareJson(null, newJson[key][i]);
-          if (key === 'Spawns') {
-            console.log(`No match found for spawn ${i}, treating as new`);
-          }
-        }
-        
-        if (match) {
-          anyChanges = true;
-          result[key] = result[key] || [];
-          result[key].push(match);
+          if (matchIndex >= 0) break;
         }
       }
 
-      // Check for any remaining items in oldItems that were not matched
-      for (let i = 0; i < oldItems.length; i++) {
-        let match = compareJson(oldItems[i], null);
-      
-        if (match) {
-          anyChanges = true;
-          result[key] = result[key] || [];
-          result[key].push(match);
-          if (key === 'Spawns') {
-            console.log(`Remaining old spawn ${i} marked as removed`);
+      if (matchIndex < 0) {
+        for (let j = 0; j < bItems.length; j++) {
+          if (deepEqual(aItem, bItems[j])) {
+            matchIndex = j;
+            break;
           }
         }
       }
 
-      if (Array.isArray(result[key])) {
-        result[key] = result[key].filter(x => x != null);
-        if (key === 'Spawns') {
-          console.log(`Final spawns result length: ${result[key].length}`);
+      if (matchIndex < 0) return false;
+      if (!deepEqual(aItem, bItems[matchIndex])) return false;
+      bItems.splice(matchIndex, 1);
+    }
+    return true;
+  }
+
+  if (typeof a === 'object') {
+    const keysA = Object.keys(a).filter(k => !ignoredKeys.includes(k));
+    const keysB = Object.keys(b).filter(k => !ignoredKeys.includes(k));
+    const sharedKeys = keysA.filter(k => keysB.includes(k));
+
+    if (sharedKeys.length === 0) return true;
+
+    for (const key of sharedKeys) {
+      if (!deepEqual(a[key], b[key])) return false;
+    }
+    return true;
+  }
+
+  return false;
+}
+
+/**
+ * Find a matching item in an array using identifiers
+ */
+function findMatchByIdentifier(item, candidates) {
+  for (const identifier of arrayIdentifiers) {
+    const itemId = identifier(item);
+    if (itemId != null) {
+      for (let i = 0; i < candidates.length; i++) {
+        if (identifier(candidates[i]) === itemId) {
+          return i;
         }
       }
     }
-    else if ((typeof newJson[key] === 'object' && newJson[key] !== null) || (typeof oldJson[key] === 'object' && oldJson[key] !== null)) {
-      let subResult = compareJson(oldJson[key], newJson[key]);
+  }
+  return -1;
+}
+
+/**
+ * Find an identical item in an array using deep equality
+ */
+function findIdenticalItem(item, candidates) {
+  for (let i = 0; i < candidates.length; i++) {
+    if (deepEqual(item, candidates[i])) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+/**
+ * Compare two JSON structures and return a diff result.
+ * Uses the same logic as nexus/src/lib/utils/compareJson.js
+ * but with string output format for Discord readability.
+ */
+export function compareJson(oldJson, newJson) {
+  let anyChanges = false;
+
+  oldJson = oldJson ?? (Array.isArray(newJson) ? [] : {});
+  newJson = newJson ?? (Array.isArray(oldJson) ? [] : {});
+
+  let result = Array.isArray(oldJson) || Array.isArray(newJson) ? [] : {};
+
+  const keys = new Set([...Object.keys(newJson), ...Object.keys(oldJson)]);
+
+  for (const key of keys) {
+    // Skip ignored keys
+    if (ignoredKeys.includes(key)) continue;
+
+    const oldValue = oldJson[key];
+    const newValue = newJson[key];
+
+    // Both are arrays - use smart matching
+    if (Array.isArray(oldValue) && Array.isArray(newValue)) {
+      const oldItems = [...oldValue];
+      const arrayResult = [];
+
+      for (let i = 0; i < newValue.length; i++) {
+        let match;
+        let matchIndex = -1;
+
+        // Try to find by identifier first
+        matchIndex = findMatchByIdentifier(newValue[i], oldItems);
+
+        if (matchIndex >= 0) {
+          match = compareJson(oldItems[matchIndex], newValue[i]);
+          oldItems.splice(matchIndex, 1);
+        } else {
+          // Try to find identical item
+          matchIndex = findIdenticalItem(newValue[i], oldItems);
+
+          if (matchIndex >= 0) {
+            oldItems.splice(matchIndex, 1);
+            match = null;
+          } else {
+            // No match found - this is a new item
+            match = compareJson(null, newValue[i]);
+          }
+        }
+
+        if (match) {
+          anyChanges = true;
+          arrayResult.push({ ...match, _status: matchIndex >= 0 ? 'changed' : 'added' });
+        }
+      }
+
+      // Remaining old items were removed
+      for (const oldItem of oldItems) {
+        const removedDiff = compareJson(oldItem, null);
+        if (removedDiff) {
+          anyChanges = true;
+          arrayResult.push({ ...removedDiff, _status: 'removed' });
+        }
+      }
+
+      if (arrayResult.length > 0) {
+        result[key] = arrayResult;
+      }
+    }
+    // One or both are objects (but not arrays)
+    else if (
+      (typeof newValue === 'object' && newValue !== null) ||
+      (typeof oldValue === 'object' && oldValue !== null)
+    ) {
+      const subResult = compareJson(oldValue, newValue);
 
       if (subResult) {
         anyChanges = true;
@@ -215,30 +320,30 @@ export function compareJson(oldJson, newJson) {
         }
       }
     }
+    // Primitive values
     else {
-      if (oldJson[key] === newJson[key] || (oldJson[key] == null && newJson[key] == null)) {
-        if (!Array.isArray(result) && objectIdentifiers.includes(key)) {
-          result[key] = newJson[key];
+      if (oldValue === newValue || (oldValue == null && newValue == null)) {
+        if (!Array.isArray(result) && contextKeys.includes(key)) {
+          result[key] = newValue;
         }
-
         continue;
       }
 
       anyChanges = true;
 
+      let oldStr = oldValue;
+      let newStr = newValue;
+
       // Special formatting for Data fields to save space
-      let oldValue = oldJson[key];
-      let newValue = newJson[key];
-      
       if (key === 'Data') {
-        oldValue = oldValue != null ? formatDataValue(oldValue) : oldValue;
-        newValue = newValue != null ? formatDataValue(newValue) : newValue;
+        oldStr = oldStr != null ? formatDataValue(oldStr) : oldStr;
+        newStr = newStr != null ? formatDataValue(newStr) : newStr;
       }
 
       if (Array.isArray(result)) {
-        result.push(`${oldValue ?? '<empty>'} -> ${newValue ?? '<empty>'}`);
+        result.push(`${oldStr ?? '<empty>'} -> ${newStr ?? '<empty>'}`);
       } else {
-        result[key] = `${oldValue ?? '<empty>'} -> ${newValue ?? '<empty>'}`;
+        result[key] = `${oldStr ?? '<empty>'} -> ${newStr ?? '<empty>'}`;
       }
     }
   }

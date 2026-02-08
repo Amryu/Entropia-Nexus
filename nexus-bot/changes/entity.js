@@ -572,6 +572,7 @@ export const UpsertConfigs = {
       { name: "Description", value: x => x.Properties.Description },
       { name: "Weight", value: x => x.Properties.Weight },
       { name: "Type", value: x => x.Properties.Type },
+      { name: "Slot", value: x => x.Properties.Slot },
       { name: "Gender", value: x => x.Properties.Gender },
       { name: "MaxTT", value: x => x.Properties.Economy.MaxTT },
       { name: "MinTT", value: x => x.Properties.Economy.MinTT }

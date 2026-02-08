@@ -11,7 +11,8 @@
   - Code blocks
   - Horizontal rules
   - Links
-  - YouTube/Vimeo video embeds
+  - YouTube/Vimeo video embeds (resizable)
+  - Image upload with hash deduplication (resizable)
 -->
 <script>
   // @ts-nocheck
@@ -19,6 +20,7 @@
   import { Editor, Node, mergeAttributes } from '@tiptap/core';
   import StarterKit from '@tiptap/starter-kit';
   import Link from '@tiptap/extension-link';
+  import { page } from '$app/stores';
 
   const dispatch = createEventDispatcher();
 
@@ -52,7 +54,27 @@
   /** @type {string} */
   let videoUrl = '';
 
-  // Custom YouTube/Vimeo video embed extension
+  /** @type {string} */
+  let videoWidth = '';
+
+  /** @type {boolean} */
+  let isUploading = false;
+
+  /** @type {HTMLInputElement} */
+  let fileInput;
+
+  // Resize toolbar state
+  let showResizeToolbar = false;
+  let resizeToolbarPos = { top: 0, left: 0 };
+  let activeResizeNodeType = null;
+  let customWidth = '';
+
+  // User state from session (read internally, no props needed)
+  $: user = $page.data?.session?.user;
+  $: canUploadImages = !!user?.verified;
+  $: canAutoApprove = user?.grants?.includes('wiki.approve') || user?.grants?.includes('guide.edit') || false;
+
+  // Custom YouTube/Vimeo video embed extension with resizable width
   const VideoEmbed = Node.create({
     name: 'videoEmbed',
     group: 'block',
@@ -61,7 +83,8 @@
     addAttributes() {
       return {
         src: { default: null },
-        provider: { default: 'youtube' }
+        provider: { default: 'youtube' },
+        width: { default: null }
       };
     },
 
@@ -71,37 +94,42 @@
           tag: 'div[data-video-embed]',
           getAttrs: dom => ({
             src: dom.getAttribute('data-src'),
-            provider: dom.getAttribute('data-provider') || 'youtube'
+            provider: dom.getAttribute('data-provider') || 'youtube',
+            width: dom.getAttribute('data-width') ? parseInt(dom.getAttribute('data-width')) : null
           })
         }
       ];
     },
 
     renderHTML({ HTMLAttributes }) {
-      const { src, provider } = HTMLAttributes;
+      const { src, provider, width } = HTMLAttributes;
       let embedUrl = src;
 
-      // Convert YouTube URLs to embed format
       if (provider === 'youtube' && src) {
         const videoId = extractYouTubeId(src);
         if (videoId) {
           embedUrl = `https://www.youtube.com/embed/${videoId}`;
         }
-      }
-      // Convert Vimeo URLs to embed format
-      else if (provider === 'vimeo' && src) {
+      } else if (provider === 'vimeo' && src) {
         const videoId = extractVimeoId(src);
         if (videoId) {
           embedUrl = `https://player.vimeo.com/video/${videoId}`;
         }
       }
 
-      return ['div', mergeAttributes({
+      const wrapperAttrs = {
         'data-video-embed': '',
         'data-src': src,
         'data-provider': provider,
         class: 'video-embed-wrapper'
-      }), [
+      };
+
+      if (width) {
+        wrapperAttrs['data-width'] = String(width);
+        wrapperAttrs.style = `width: ${width}px; max-width: 100%;`;
+      }
+
+      return ['div', mergeAttributes(wrapperAttrs), [
         'iframe', {
           src: embedUrl,
           frameborder: '0',
@@ -115,6 +143,82 @@
     addCommands() {
       return {
         setVideoEmbed: (options) => ({ commands }) => {
+          return commands.insertContent({
+            type: this.name,
+            attrs: options
+          });
+        }
+      };
+    }
+  });
+
+  // Custom resizable image node
+  const ResizableImage = Node.create({
+    name: 'resizableImage',
+    group: 'block',
+    atom: true,
+
+    addAttributes() {
+      return {
+        src: { default: null },
+        alt: { default: null },
+        width: { default: null },
+        pending: { default: false }
+      };
+    },
+
+    parseHTML() {
+      return [
+        {
+          tag: 'img[src]',
+          getAttrs: dom => ({
+            src: dom.getAttribute('src'),
+            alt: dom.getAttribute('alt'),
+            width: dom.getAttribute('data-width') ? parseInt(dom.getAttribute('data-width')) : null,
+            pending: dom.getAttribute('data-pending') === 'true'
+          })
+        },
+        {
+          tag: 'div.pending-image-placeholder',
+          getAttrs: dom => ({
+            src: dom.getAttribute('data-src'),
+            alt: dom.getAttribute('data-alt') || null,
+            width: dom.getAttribute('data-width') ? parseInt(dom.getAttribute('data-width')) : null,
+            pending: true
+          })
+        }
+      ];
+    },
+
+    renderHTML({ HTMLAttributes }) {
+      const { src, alt, width, pending } = HTMLAttributes;
+
+      if (pending) {
+        const attrs = {
+          class: 'pending-image-placeholder',
+          'data-src': src,
+          'data-pending': 'true'
+        };
+        if (alt) attrs['data-alt'] = alt;
+        if (width) {
+          attrs['data-width'] = String(width);
+          attrs.style = `width: ${width}px; max-width: 100%;`;
+        }
+        return ['div', mergeAttributes(attrs), 'Image pending approval'];
+      }
+
+      const imgAttrs = { src };
+      if (alt) imgAttrs.alt = alt;
+      if (width) {
+        imgAttrs['data-width'] = String(width);
+        imgAttrs.style = `width: ${width}px; max-width: 100%;`;
+      }
+      return ['img', mergeAttributes(imgAttrs)];
+    },
+
+    addCommands() {
+      return {
+        setResizableImage: (options) => ({ commands }) => {
           return commands.insertContent({
             type: this.name,
             attrs: options
@@ -153,6 +257,72 @@
     return null;
   }
 
+  function updateResizeToolbar() {
+    if (!editor || disabled) {
+      showResizeToolbar = false;
+      return;
+    }
+
+    const isVideo = editor.isActive('videoEmbed');
+    const isImage = editor.isActive('resizableImage');
+
+    if (!isVideo && !isImage) {
+      showResizeToolbar = false;
+      return;
+    }
+
+    activeResizeNodeType = isVideo ? 'videoEmbed' : 'resizableImage';
+
+    // Find the selected DOM node
+    const { node } = editor.state.selection;
+    if (!node) {
+      showResizeToolbar = false;
+      return;
+    }
+
+    // Populate custom width input with current node width
+    customWidth = node.attrs?.width ? String(node.attrs.width) : '';
+
+    // Get the DOM element for the selected node
+    const domPos = editor.view.nodeDOM(editor.state.selection.from);
+    if (!domPos) {
+      showResizeToolbar = false;
+      return;
+    }
+
+    const editorRect = editorElement.getBoundingClientRect();
+    const nodeRect = domPos.getBoundingClientRect();
+
+    resizeToolbarPos = {
+      top: nodeRect.bottom - editorRect.top + editorElement.scrollTop + 4,
+      left: nodeRect.left - editorRect.left
+    };
+
+    showResizeToolbar = true;
+  }
+
+  function setMediaWidth(width) {
+    if (!editor || !activeResizeNodeType) return;
+    editor.chain().focus().updateAttributes(activeResizeNodeType, { width: width || null }).run();
+    customWidth = width ? String(width) : '';
+    // Toolbar stays visible; re-position after DOM update
+    setTimeout(updateResizeToolbar, 50);
+  }
+
+  function applyCustomWidth() {
+    const w = parseInt(customWidth);
+    if (w && w >= 50) {
+      setMediaWidth(w);
+    }
+  }
+
+  function handleWidthKeydown(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      applyCustomWidth();
+    }
+  }
+
   onMount(() => {
     editor = new Editor({
       element: editorElement,
@@ -185,13 +355,17 @@
             class: 'editor-link'
           }
         }),
-        VideoEmbed
+        VideoEmbed,
+        ResizableImage
       ],
       content: content || '',
       editable: !disabled,
       onUpdate: ({ editor }) => {
         const html = editor.getHTML();
         dispatch('change', html);
+      },
+      onSelectionUpdate: () => {
+        updateResizeToolbar();
       },
       editorProps: {
         attributes: {
@@ -270,10 +444,8 @@
       const hasSelection = from !== to;
 
       if (hasSelection) {
-        // If text is selected, just apply the link to it
         editor?.chain().focus().extendMarkRange('link').setLink({ href: linkUrl }).run();
       } else if (linkText) {
-        // If no selection but we have link text, insert new linked text
         editor?.chain().focus()
           .insertContent({
             type: 'text',
@@ -282,7 +454,6 @@
           })
           .run();
       } else {
-        // No selection and no text, just insert the URL as linked text
         editor?.chain().focus()
           .insertContent({
             type: 'text',
@@ -308,13 +479,15 @@
 
   function openVideoModal() {
     videoUrl = '';
+    videoWidth = '';
     isVideoModalOpen = true;
   }
 
   function insertVideo() {
     const provider = detectVideoProvider(videoUrl);
     if (provider) {
-      editor?.chain().focus().setVideoEmbed({ src: videoUrl, provider }).run();
+      const width = videoWidth ? parseInt(videoWidth) : null;
+      editor?.chain().focus().setVideoEmbed({ src: videoUrl, provider, width }).run();
     }
     closeVideoModal();
   }
@@ -322,6 +495,68 @@
   function closeVideoModal() {
     isVideoModalOpen = false;
     videoUrl = '';
+    videoWidth = '';
+  }
+
+  function triggerImageUpload() {
+    fileInput?.click();
+  }
+
+  async function handleImageUpload(event) {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Reset file input so same file can be re-selected
+    event.target.value = '';
+
+    isUploading = true;
+    try {
+      const formData = new FormData();
+      formData.append('image', file);
+      formData.append('entityType', 'richtext');
+      formData.append('entityId', 'pending');
+      if (canAutoApprove) {
+        formData.append('autoApprove', 'true');
+      }
+
+      const res = await fetch('/api/uploads/entity-image', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        console.error('Image upload failed:', data.error || res.statusText);
+        return;
+      }
+
+      const data = await res.json();
+
+      if (data.approved && data.imageUrl) {
+        editor?.chain().focus().setResizableImage({
+          src: data.imageUrl,
+          alt: file.name,
+          pending: false
+        }).run();
+      } else if (data.hash && data.imageUrl) {
+        editor?.chain().focus().setResizableImage({
+          src: data.imageUrl,
+          alt: file.name,
+          pending: true
+        }).run();
+      } else {
+        // No hash returned (shouldn't happen for richtext), use preview
+        editor?.chain().focus().setResizableImage({
+          src: data.previewUrl || '',
+          alt: file.name,
+          pending: true
+        }).run();
+      }
+    } catch (err) {
+      console.error('Image upload error:', err);
+    } finally {
+      isUploading = false;
+    }
   }
 
   function isActive(name, attrs = {}) {
@@ -512,13 +747,62 @@
             <polygon points="10,8 16,12 10,16" fill="currentColor" stroke="none"/>
           </svg>
         </button>
+        {#if canUploadImages}
+          <button
+            type="button"
+            class="toolbar-btn"
+            class:uploading={isUploading}
+            on:click={triggerImageUpload}
+            disabled={isUploading}
+            title="Upload Image"
+          >
+            {#if isUploading}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="spin">
+                <path d="M12 2v4m0 12v4m-7.07-3.93l2.83-2.83m8.49-8.49l2.83-2.83M2 12h4m12 0h4M4.93 4.93l2.83 2.83m8.49 8.49l2.83 2.83"/>
+              </svg>
+            {:else}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                <circle cx="8.5" cy="8.5" r="1.5"/>
+                <path d="M21 15l-5-5L5 21"/>
+              </svg>
+            {/if}
+          </button>
+        {/if}
       </div>
     </div>
   {/if}
 
   <div class="editor-container" class:has-toolbar={!disabled}>
     <div bind:this={editorElement} class="editor-element"></div>
+
+    {#if showResizeToolbar && !disabled}
+      <div class="resize-toolbar" style="top: {resizeToolbarPos.top}px; left: {resizeToolbarPos.left}px;">
+        <button type="button" class="resize-btn" on:click={() => setMediaWidth(null)} title="Reset to full width">Full</button>
+        <div class="resize-width-input">
+          <input
+            type="number"
+            bind:value={customWidth}
+            on:keydown={handleWidthKeydown}
+            on:blur={applyCustomWidth}
+            placeholder="Width"
+            min="50"
+            max="1920"
+          />
+          <span class="resize-unit">px</span>
+        </div>
+      </div>
+    {/if}
   </div>
+
+  <!-- Hidden file input for image upload -->
+  <input
+    bind:this={fileInput}
+    type="file"
+    accept="image/jpeg,image/png,image/webp,image/gif"
+    style="display:none"
+    on:change={handleImageUpload}
+  />
 
   {#if isLinkModalOpen}
     <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
@@ -575,6 +859,18 @@
             placeholder="https://www.youtube.com/watch?v=..."
           />
           <p class="field-hint">Supported: YouTube, Vimeo</p>
+        </div>
+        <div class="link-field">
+          <label for="video-width">Width (px)</label>
+          <input
+            id="video-width"
+            type="number"
+            bind:value={videoWidth}
+            placeholder="Leave empty for full width"
+            min="200"
+            max="1920"
+          />
+          <p class="field-hint">Leave empty for 100% width</p>
         </div>
         <div class="link-actions">
           <button type="button" class="btn-secondary" on:click={closeVideoModal}>Cancel</button>
@@ -656,7 +952,27 @@
     color: white;
   }
 
+  .toolbar-btn.uploading {
+    opacity: 0.6;
+    cursor: wait;
+  }
+
+  .toolbar-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  :global(.spin) {
+    animation: spin 1s linear infinite;
+  }
+
   .editor-container {
+    position: relative;
     min-height: 150px;
     max-height: 400px;
     overflow-y: auto;
@@ -664,6 +980,72 @@
 
   .editor-container.has-toolbar {
     padding: 12px;
+  }
+
+  /* Resize toolbar */
+  .resize-toolbar {
+    position: absolute;
+    display: flex;
+    gap: 4px;
+    padding: 4px 6px;
+    background-color: var(--tertiary-color, #333);
+    border: 1px solid var(--border-color, #555);
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    z-index: 10;
+  }
+
+  .resize-btn {
+    padding: 2px 8px;
+    font-size: 11px;
+    font-weight: 500;
+    border: 1px solid var(--border-color, #555);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-color, #fff);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .resize-btn:hover {
+    background-color: var(--accent-color, #4a9eff);
+    border-color: var(--accent-color, #4a9eff);
+    color: white;
+  }
+
+  .resize-width-input {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .resize-width-input input {
+    width: 60px;
+    padding: 2px 6px;
+    font-size: 11px;
+    border: 1px solid var(--border-color, #555);
+    border-radius: 4px;
+    background: var(--primary-color, #1a1a1a);
+    color: var(--text-color, #fff);
+    text-align: right;
+    appearance: textfield;
+    -moz-appearance: textfield;
+  }
+
+  .resize-width-input input::-webkit-inner-spin-button,
+  .resize-width-input input::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  .resize-width-input input:focus {
+    outline: none;
+    border-color: var(--accent-color, #4a9eff);
+  }
+
+  .resize-unit {
+    font-size: 11px;
+    color: var(--text-muted, #999);
   }
 
   :global(.tiptap-content) {
@@ -776,15 +1158,21 @@
     margin: 1.5em 0;
   }
 
-  /* Video embed styles */
+  /* Video embed styles — resizable */
   :global(.tiptap-content .video-embed-wrapper) {
     position: relative;
     width: 100%;
-    padding-bottom: 56.25%; /* 16:9 aspect ratio */
+    aspect-ratio: 16 / 9;
     margin: 1em 0;
     background-color: var(--tertiary-color, #333);
     border-radius: 8px;
     overflow: hidden;
+    cursor: pointer;
+  }
+
+  :global(.tiptap-content .video-embed-wrapper.ProseMirror-selectednode) {
+    outline: 2px solid var(--accent-color, #4a9eff);
+    outline-offset: 2px;
   }
 
   :global(.tiptap-content .video-embed-iframe) {
@@ -794,6 +1182,44 @@
     width: 100%;
     height: 100%;
     border: none;
+  }
+
+  /* Image styles — resizable */
+  :global(.tiptap-content img) {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    border-radius: 6px;
+    margin: 0.75em 0;
+    cursor: pointer;
+  }
+
+  :global(.tiptap-content img.ProseMirror-selectednode) {
+    outline: 2px solid var(--accent-color, #4a9eff);
+    outline-offset: 2px;
+  }
+
+  /* Pending image placeholder */
+  :global(.tiptap-content .pending-image-placeholder),
+  :global(.pending-image-placeholder) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--tertiary-color, #333);
+    border: 2px dashed var(--border-color, #555);
+    border-radius: 8px;
+    color: var(--text-muted, #999);
+    font-size: 0.875rem;
+    min-height: 120px;
+    max-width: 100%;
+    margin: 0.75em 0;
+    padding: 16px;
+    cursor: pointer;
+  }
+
+  :global(.tiptap-content .pending-image-placeholder.ProseMirror-selectednode) {
+    outline: 2px solid var(--accent-color, #4a9eff);
+    outline-offset: 2px;
   }
 
   /* Link Modal */

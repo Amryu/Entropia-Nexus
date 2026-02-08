@@ -316,6 +316,14 @@ export function getMaterialBlueprint(materialName, productMap, materialCraftConf
   // If crafting is disabled for this material, return null
   if (config.craft === false) return null;
 
+  // If a specific blueprint is selected, use that
+  if (config.selectedBlueprintId != null) {
+    const allBPs = [...entry.unlimited, ...entry.limited];
+    const selected = allBPs.find(bp => bp.Id === config.selectedBlueprintId);
+    if (selected) return selected;
+    // Fall through to default selection if the selected BP isn't found
+  }
+
   // Default to unlimited version (non-L)
   const preferLimited = config.preferLimited === true;
 
@@ -329,6 +337,20 @@ export function getMaterialBlueprint(materialName, productMap, materialCraftConf
   }
 
   return null;
+}
+
+/**
+ * Get all available blueprints for a material, sorted by preference
+ * @param {string} materialName - Name of the material/product to craft
+ * @param {Map<string, { limited: object[], unlimited: object[] }>} productMap - Product to blueprints map
+ * @returns {object[]|null} - Array of blueprints or null if none exist
+ */
+export function getAllMaterialBlueprints(materialName, productMap) {
+  const entry = productMap.get(materialName);
+  if (!entry) return null;
+
+  const all = [...entry.unlimited, ...entry.limited];
+  return all.length > 0 ? all : null;
 }
 
 /**

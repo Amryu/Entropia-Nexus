@@ -5,7 +5,7 @@
 import sharp from 'sharp';
 import { existsSync, mkdirSync, unlinkSync, readdirSync, statSync } from 'fs';
 import { join, dirname } from 'path';
-import { randomUUID } from 'crypto';
+import { randomUUID, createHash } from 'crypto';
 
 // Image size configurations
 const ICON_SIZE = 320;
@@ -31,7 +31,7 @@ const VALID_ENTITY_TYPES = [
   'weapon', 'armorset', 'material', 'blueprint', 'clothing',
   'consumable', 'tool', 'attachment', 'medicaltool', 'vehicle',
   'pet', 'furnishing', 'strongbox', 'mob', 'skill', 'profession', 'vendor',
-  'location', 'area', 'user', 'guide-category'
+  'location', 'area', 'user', 'guide-category', 'richtext'
 ];
 
 // Entity types that skip the approval workflow and use banner dimensions
@@ -45,6 +45,15 @@ function ensureDir(dir) {
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
   }
+}
+
+/**
+ * Compute a SHA-256 hash of an image buffer for deduplication.
+ * @param {Buffer} buffer - The image buffer
+ * @returns {string} Hex-encoded SHA-256 hash
+ */
+export function computeImageHash(buffer) {
+  return createHash('sha256').update(buffer).digest('hex');
 }
 
 /**
@@ -250,7 +259,7 @@ export async function processAndSaveImage(imageBuffer, entityType, entityId, upl
       throw new Error(`Image dimensions must not exceed ${MAX_IMAGE_DIMENSION}x${MAX_IMAGE_DIMENSION} pixels`);
     }
 
-    if (metadata.width < MIN_IMAGE_DIMENSION || metadata.height < MIN_IMAGE_DIMENSION) {
+    if (entityType !== 'richtext' && (metadata.width < MIN_IMAGE_DIMENSION || metadata.height < MIN_IMAGE_DIMENSION)) {
       throw new Error(`Image dimensions must be at least ${MIN_IMAGE_DIMENSION}x${MIN_IMAGE_DIMENSION} pixels`);
     }
 
@@ -262,12 +271,17 @@ export async function processAndSaveImage(imageBuffer, entityType, entityId, upl
     }
 
     const isBanner = GUIDE_ENTITY_TYPES.includes(entityType);
+    const isRichtext = entityType === 'richtext';
 
-    // Process icon — banner types get wider dimensions, others get square
+    // Process icon — banner types get wider dimensions, richtext preserves aspect ratio, others get square
     const iconPath = join(tempEntityPath, 'icon.webp');
     if (isBanner) {
       await image
         .resize({ width: BANNER_WIDTH, withoutEnlargement: true })
+        .webp({ quality: 90 })
+        .toFile(iconPath);
+    } else if (isRichtext) {
+      await image
         .webp({ quality: 90 })
         .toFile(iconPath);
     } else {
@@ -614,6 +628,200 @@ export function isAutoApproveType(entityType) {
   return GUIDE_ENTITY_TYPES.includes(entityType);
 }
 
+/**
+ * Get all richtext image hashes stored on disk (approved and pending).
+ * @returns {{ approved: string[], pending: string[] }}
+ */
+function getRichtextImageHashes() {
+  const approved = [];
+  const pending = [];
+
+  const approvedRichtextDir = join(APPROVED_DIR, 'richtext');
+  if (existsSync(approvedRichtextDir) && statSync(approvedRichtextDir).isDirectory()) {
+    for (const hash of readdirSync(approvedRichtextDir)) {
+      if (statSync(join(approvedRichtextDir, hash)).isDirectory()) {
+        approved.push(hash);
+      }
+    }
+  }
+
+  // Scan pending richtext images (in temp dir, check metadata)
+  if (existsSync(TEMP_DIR)) {
+    const { readFileSync } = require('fs');
+    for (const tempId of readdirSync(TEMP_DIR)) {
+      const metadataPath = join(TEMP_DIR, tempId, 'metadata.json');
+      if (existsSync(metadataPath)) {
+        try {
+          const metadata = JSON.parse(readFileSync(metadataPath, 'utf-8'));
+          if (metadata.entityType === 'richtext') {
+            pending.push(metadata.entityId);
+          }
+        } catch { /* ignore */ }
+      }
+    }
+  }
+
+  return { approved, pending };
+}
+
+const RICHTEXT_IMG_REGEX = /\/api\/img\/richtext\/([a-f0-9]{64})/g;
+
+/**
+ * Extract all richtext image hashes referenced in a string.
+ * @param {string} text
+ * @returns {string[]}
+ */
+function extractRichtextHashes(text) {
+  if (!text) return [];
+  const hashes = [];
+  let match;
+  while ((match = RICHTEXT_IMG_REGEX.exec(text)) !== null) {
+    hashes.push(match[1]);
+  }
+  RICHTEXT_IMG_REGEX.lastIndex = 0;
+  return hashes;
+}
+
+/**
+ * Nexus DB entity tables with Description columns that may contain richtext images.
+ */
+const NEXUS_DESCRIPTION_TABLES = [
+  'Absorbers', 'ArmorPlatings', 'ArmorSets', 'Armors', 'BlueprintBooks', 'Blueprints',
+  'Clothes', 'Consumables', 'CreatureControlCapsules', 'Decorations', 'EffectChips',
+  'Effects', 'EstateSections', 'Events', 'Excavators', 'Facilities', 'FinderAmplifiers',
+  'Finders', 'Furniture', 'Locations', 'Materials', 'MedicalChips', 'MedicalTools',
+  'MindforceImplants', 'MiscTools', 'MissionChains', 'MissionSteps', 'Missions',
+  'MobMaturities', 'MobSpawns', 'MobSpecies', 'Mobs', 'Pets', 'Planets', 'Professions',
+  'Refiners', 'Scanners', 'Signs', 'Skills', 'StorageContainers', 'Strongboxes',
+  'TeleportationChips', 'VehicleAttachmentTypes', 'Vehicles', 'Vendors',
+  'WeaponAmplifiers', 'WeaponVisionAttachments', 'Weapons'
+];
+
+/**
+ * Scan both databases for richtext image references and compare against stored images.
+ *
+ * @param {*} usersPool - The nexus-users database pool (required)
+ * @param {*} [nexusPool] - The nexus entity database pool (optional)
+ * @returns {Promise<{ approved: string[], pending: string[], usedHashes: string[], unusedHashes: string[], scannedSources: string[] }>}
+ */
+export async function scanRichtextImageUsage(usersPool, nexusPool = null) {
+  const { approved, pending } = getRichtextImageHashes();
+  const usedHashes = new Set();
+  const scannedSources = [];
+
+  // --- Scan nexus-users database ---
+
+  // 1. changes.data (JSONB containing Description and Properties.Description)
+  try {
+    const { rows } = await usersPool.query(
+      `SELECT data::text AS txt FROM changes WHERE data::text LIKE '%/api/img/richtext/%'`
+    );
+    for (const row of rows) {
+      for (const hash of extractRichtextHashes(row.txt)) usedHashes.add(hash);
+    }
+    scannedSources.push('changes.data');
+  } catch (/** @type {*} */ err) {
+    console.error('Failed to scan changes:', err?.message);
+  }
+
+  // 2. change_history.data
+  try {
+    const { rows } = await usersPool.query(
+      `SELECT data::text AS txt FROM change_history WHERE data::text LIKE '%/api/img/richtext/%'`
+    );
+    for (const row of rows) {
+      for (const hash of extractRichtextHashes(row.txt)) usedHashes.add(hash);
+    }
+    scannedSources.push('change_history.data');
+  } catch (/** @type {*} */ err) {
+    console.error('Failed to scan change_history:', err?.message);
+  }
+
+  // 3. guide_paragraphs.content_html
+  try {
+    const { rows } = await usersPool.query(
+      `SELECT content_html FROM guide_paragraphs WHERE content_html LIKE '%/api/img/richtext/%'`
+    );
+    for (const row of rows) {
+      for (const hash of extractRichtextHashes(row.content_html)) usedHashes.add(hash);
+    }
+    scannedSources.push('guide_paragraphs.content_html');
+  } catch (/** @type {*} */ err) {
+    console.error('Failed to scan guide_paragraphs:', err?.message);
+  }
+
+  // 4. users.biography_html
+  try {
+    const { rows } = await usersPool.query(
+      `SELECT biography_html FROM users WHERE biography_html LIKE '%/api/img/richtext/%'`
+    );
+    for (const row of rows) {
+      for (const hash of extractRichtextHashes(row.biography_html)) usedHashes.add(hash);
+    }
+    scannedSources.push('users.biography_html');
+  } catch (/** @type {*} */ err) {
+    console.error('Failed to scan users.biography_html:', err?.message);
+  }
+
+  // 5. services.description
+  try {
+    const { rows } = await usersPool.query(
+      `SELECT description FROM services WHERE description LIKE '%/api/img/richtext/%'`
+    );
+    for (const row of rows) {
+      for (const hash of extractRichtextHashes(row.description)) usedHashes.add(hash);
+    }
+    scannedSources.push('services.description');
+  } catch (/** @type {*} */ err) {
+    console.error('Failed to scan services.description:', err?.message);
+  }
+
+  // 6. societies.description
+  try {
+    const { rows } = await usersPool.query(
+      `SELECT description FROM societies WHERE description LIKE '%/api/img/richtext/%'`
+    );
+    for (const row of rows) {
+      for (const hash of extractRichtextHashes(row.description)) usedHashes.add(hash);
+    }
+    scannedSources.push('societies.description');
+  } catch (/** @type {*} */ err) {
+    console.error('Failed to scan societies.description:', err?.message);
+  }
+
+  // --- Scan nexus entity database (if pool provided) ---
+  if (nexusPool) {
+    const unionParts = NEXUS_DESCRIPTION_TABLES.map(
+      table => `SELECT "Description" AS txt FROM "${table}" WHERE "Description" LIKE '%/api/img/richtext/%'`
+    );
+    // Also scan MobSpawns.Notes
+    unionParts.push(
+      `SELECT "Notes" AS txt FROM "MobSpawns" WHERE "Notes" LIKE '%/api/img/richtext/%'`
+    );
+
+    try {
+      const { rows } = await nexusPool.query(unionParts.join(' UNION ALL '));
+      for (const row of rows) {
+        for (const hash of extractRichtextHashes(row.txt)) usedHashes.add(hash);
+      }
+      scannedSources.push(`nexus entity tables (${NEXUS_DESCRIPTION_TABLES.length} tables + MobSpawns.Notes)`);
+    } catch (/** @type {*} */ err) {
+      console.error('Failed to scan nexus entity tables:', err?.message);
+    }
+  }
+
+  const usedArray = [...usedHashes];
+  const unusedHashes = approved.filter(hash => !usedHashes.has(hash));
+
+  return {
+    approved,
+    pending,
+    usedHashes: usedArray,
+    unusedHashes,
+    scannedSources
+  };
+}
+
 export default {
   processAndSaveImage,
   getPreviewImage,
@@ -626,5 +834,7 @@ export default {
   deleteApprovedImage,
   getApprovedImagePath,
   isAutoApproveType,
-  cleanupTempUploads
+  cleanupTempUploads,
+  computeImageHash,
+  scanRichtextImageUsage
 };

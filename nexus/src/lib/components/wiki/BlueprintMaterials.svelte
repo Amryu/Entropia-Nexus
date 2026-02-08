@@ -114,10 +114,9 @@
   }
 
   function addMaterial() {
-    const defaultMaterial = availableMaterials[0] || { Id: null, Name: '', Properties: {} };
     const newMaterial = {
-      Item: defaultMaterial,
-      ItemId: defaultMaterial.Id,
+      Item: { Name: '' },
+      ItemId: null,
       Amount: 1
     };
 
@@ -179,6 +178,7 @@
                     displayFn={(item) => item?.Name || ''}
                     allowedTypes={['Material']}
                     allowedNames={materialNames}
+                    validValues={materialNames}
                     on:change={(e) => updateMaterial(index, 'Item', e.detail.value)}
                     on:select={(e) => updateMaterial(index, 'Item', e.detail.data || e.detail.value)}
                   />

@@ -359,6 +359,14 @@
   $: cyclePerHour = getCyclePerHour(activeEntity);
 
   // ========== EDIT MODE HANDLERS ==========
+  function handleBookChange(e) {
+    updateField('Book.Name', e.detail.value);
+  }
+
+  function handleBookSelect(e) {
+    updateField('Book.Name', e.detail.value || '');
+  }
+
   function handleProductInput(e) {
     updateField('Product.Name', e.detail.value);
   }
@@ -511,12 +519,13 @@
             <span class="stat-label">Book</span>
             <span class="stat-value">
               {#if $editMode}
-                <InlineEdit
+                <SearchInput
                   value={activeEntity?.Book?.Name || ''}
-                  path="Book.Name"
-                  type="select"
-                  placeholder="Select book..."
+                  placeholder="Search book..."
                   options={bookOptions}
+                  validValues={blueprintbooks.map(b => b.Name)}
+                  on:change={handleBookChange}
+                  on:select={handleBookSelect}
                 />
               {:else}
                 {activeEntity?.Book?.Name ?? 'N/A'}
@@ -530,8 +539,8 @@
                 <SearchInput
                   value={activeEntity?.Product?.Name || ''}
                   placeholder="Search product..."
-                  apiEndpoint="/search/items"
-                  displayFn={(item) => item?.Name || ''}
+                  options={productOptions}
+                  validValues={productItems.map(i => i.Name)}
                   on:change={handleProductInput}
                   on:select={handleProductSelect}
                 />

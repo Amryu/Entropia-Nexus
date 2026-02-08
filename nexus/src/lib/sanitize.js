@@ -24,7 +24,9 @@ const ALLOWED_TAGS = [
   // Links
   'a',
   // Video embeds (custom TipTap extension)
-  'div', 'iframe'
+  'div', 'iframe',
+  // Images (resizable, uploaded via entity-image endpoint)
+  'img'
 ];
 
 /**
@@ -34,7 +36,9 @@ const ALLOWED_TAGS = [
 const ALLOWED_ATTR = [
   'href', 'target', 'rel',                    // Links
   'data-type', 'data-provider', 'data-src', 'class',  // Video embed wrapper
-  'src', 'width', 'height', 'frameborder', 'allow', 'allowfullscreen'  // Iframe
+  'data-width', 'data-pending', 'data-alt', 'style',  // Resizable media
+  'src', 'width', 'height', 'frameborder', 'allow', 'allowfullscreen',  // Iframe
+  'alt'  // Images
 ];
 
 /**
@@ -53,6 +57,14 @@ function configureDOMPurify() {
     if (node.tagName === 'A') {
       node.setAttribute('target', '_blank');
       node.setAttribute('rel', 'noopener noreferrer');
+    }
+
+    // Validate img sources (only allow our own image endpoint)
+    if (node.tagName === 'IMG') {
+      const src = node.getAttribute('src') || '';
+      if (!src.startsWith('/api/img/')) {
+        node.remove();
+      }
     }
 
     // Validate iframe sources (only allow YouTube and Vimeo)

@@ -2,13 +2,12 @@
   @component MobLootsEdit
   Array editor for mob loot drops.
   Supports item search autocomplete, maturity selection, and frequency dropdown.
-  Following the editConfig pattern from mobs-legacy.
+  Uses SearchInput for item name search with validation.
 -->
 <script>
   // @ts-nocheck
   import { editMode, updateField } from '$lib/stores/wikiEditState.js';
-  import { browser } from '$app/environment';
-  import { tick, onMount, onDestroy } from 'svelte';
+  import SearchInput from '$lib/components/wiki/SearchInput.svelte';
 
   /** @type {Array} Loots array from the mob */
   export let loots = [];
@@ -49,12 +48,6 @@
   // Item name lookup set for validation
   $: itemNamesSet = new Set((allItems || []).map(i => i.Name));
 
-  // Search state per loot item
-  let searchStates = {};
-  let searchTimeouts = {};
-  let inputRefs = {};
-  let dropdownStyles = {};
-
   // === Loot Constructor ===
   function createLoot() {
     return {
@@ -77,10 +70,6 @@
 
   function removeLoot(index) {
     updateField(fieldPath, loots.filter((_, i) => i !== index));
-    // Clean up search state
-    delete searchStates[index];
-    if (searchTimeouts[index]) clearTimeout(searchTimeouts[index]);
-    delete searchTimeouts[index];
   }
 
   function updateLootField(index, field, value) {
@@ -110,204 +99,6 @@
     const style = FREQUENCY_COLORS[frequency] || { bg: 'var(--hover-color)', color: 'var(--text-muted)' };
     return `background-color: ${style.bg}; color: ${style.color};`;
   }
-
-  // === Search Functions ===
-  function getSearchState(index) {
-    if (!searchStates[index]) {
-      searchStates[index] = {
-        query: '',
-        results: [],
-        isSearching: false,
-        showResults: false,
-        highlightedIndex: -1
-      };
-    }
-    return searchStates[index];
-  }
-
-  function updateDropdownPosition(index) {
-    const input = inputRefs[index];
-    if (!input) return;
-    const rect = input.getBoundingClientRect();
-    const top = Math.round(rect.bottom + 2);
-    const left = Math.round(rect.left);
-    const width = Math.round(rect.width);
-    dropdownStyles[index] = `position: fixed; top: ${top}px; left: ${left}px; width: ${width}px;`;
-    dropdownStyles = dropdownStyles;
-  }
-
-  function updateOpenDropdowns() {
-    Object.keys(searchStates).forEach((key) => {
-      const idx = Number(key);
-      if (searchStates[idx]?.showResults) {
-        updateDropdownPosition(idx);
-      }
-    });
-  }
-
-  function handleViewportChange() {
-    updateOpenDropdowns();
-  }
-
-  onMount(() => {
-    if (browser) {
-      window.addEventListener('scroll', handleViewportChange, true);
-      window.addEventListener('resize', handleViewportChange);
-    }
-  });
-
-  onDestroy(() => {
-    if (browser) {
-      window.removeEventListener('scroll', handleViewportChange, true);
-      window.removeEventListener('resize', handleViewportChange);
-    }
-  });
-
-  async function performSearch(index, query) {
-    if (!browser || query.length < 2) {
-      searchStates[index] = {
-        ...getSearchState(index),
-        results: [],
-        isSearching: false,
-        showResults: query.length >= 2
-      };
-      searchStates = searchStates;
-      return;
-    }
-
-    searchStates[index] = {
-      ...getSearchState(index),
-      isSearching: true,
-      showResults: true
-    };
-    searchStates = searchStates;
-
-    try {
-      const response = await fetch(
-        import.meta.env.VITE_API_URL + `/search/items?query=${encodeURIComponent(query)}&fuzzy=true&limit=10`
-      );
-      const data = await response.json();
-
-      searchStates[index] = {
-        ...getSearchState(index),
-        results: data || [],
-        isSearching: false,
-        highlightedIndex: data?.length > 0 ? 0 : -1
-      };
-      searchStates = searchStates;
-      tick().then(() => updateDropdownPosition(index));
-    } catch (err) {
-      console.error('Item search failed:', err);
-      searchStates[index] = {
-        ...getSearchState(index),
-        results: [],
-        isSearching: false
-      };
-      searchStates = searchStates;
-    }
-  }
-
-  function handleSearchInput(index, event) {
-    const query = event.target.value;
-    updateLootField(index, 'Item.Name', query);
-
-    // Clear previous timeout
-    if (searchTimeouts[index]) clearTimeout(searchTimeouts[index]);
-
-    // Debounce search
-    searchTimeouts[index] = setTimeout(() => {
-      performSearch(index, query);
-    }, 250);
-  }
-
-  function handleSearchKeydown(index, event) {
-    const state = getSearchState(index);
-    if (!state.showResults || state.results.length === 0) {
-      if (event.key === 'Escape') {
-        closeSearch(index);
-      }
-      return;
-    }
-
-    switch (event.key) {
-      case 'ArrowDown':
-        event.preventDefault();
-        searchStates[index] = {
-          ...state,
-          highlightedIndex: Math.min(state.highlightedIndex + 1, state.results.length - 1)
-        };
-        searchStates = searchStates;
-        break;
-
-      case 'ArrowUp':
-        event.preventDefault();
-        searchStates[index] = {
-          ...state,
-          highlightedIndex: Math.max(state.highlightedIndex - 1, 0)
-        };
-        searchStates = searchStates;
-        break;
-
-      case 'Enter':
-        event.preventDefault();
-        if (state.highlightedIndex >= 0 && state.highlightedIndex < state.results.length) {
-          selectSearchResult(index, state.results[state.highlightedIndex]);
-        }
-        break;
-
-      case 'Escape':
-        event.preventDefault();
-        closeSearch(index);
-        break;
-
-      case 'Tab':
-        closeSearch(index);
-        break;
-    }
-  }
-
-  function selectSearchResult(index, result) {
-    updateLootField(index, 'Item.Name', result.Name);
-    closeSearch(index);
-  }
-
-  function closeSearch(index) {
-    searchStates[index] = {
-      ...getSearchState(index),
-      showResults: false,
-      highlightedIndex: -1
-    };
-    searchStates = searchStates;
-  }
-
-  function handleSearchBlur(index) {
-    // Delay to allow click on results
-    setTimeout(() => {
-      closeSearch(index);
-    }, 200);
-  }
-
-  function handleSearchFocus(index) {
-    const state = getSearchState(index);
-    const currentValue = loots[index]?.Item?.Name || '';
-    if (currentValue.length >= 2 && state.results.length > 0) {
-      searchStates[index] = { ...state, showResults: true };
-      searchStates = searchStates;
-      tick().then(() => updateDropdownPosition(index));
-    }
-  }
-
-  function handleResultClick(index, result) {
-    selectSearchResult(index, result);
-  }
-
-  function handleResultMouseEnter(index, resultIndex) {
-    searchStates[index] = {
-      ...getSearchState(index),
-      highlightedIndex: resultIndex
-    };
-    searchStates = searchStates;
-  }
 </script>
 
 <div class="loots-edit">
@@ -321,53 +112,15 @@
         <div class="loot-fields">
           <div class="field item-field">
             <span class="field-label">Item Name</span>
-            <div class="search-wrapper">
-              <div class="input-with-validation">
-                <input
-                  bind:this={inputRefs[index]}
-                  type="text"
-                  value={loot.Item?.Name || ''}
-                  on:input={(e) => handleSearchInput(index, e)}
-                  on:keydown={(e) => handleSearchKeydown(index, e)}
-                  on:blur={() => handleSearchBlur(index)}
-                  on:focus={() => handleSearchFocus(index)}
-                  placeholder="Search item..."
-                  class:invalid={loot.Item?.Name && !isValidItem(loot.Item.Name)}
-                  autocomplete="off"
-                  spellcheck="false"
-                />
-                {#if searchStates[index]?.isSearching}
-                  <span class="search-spinner"></span>
-                {:else if loot.Item?.Name && !isValidItem(loot.Item.Name)}
-                  <span class="validation-icon" title="Item not found in database">⚠</span>
-                {:else if loot.Item?.Name && isValidItem(loot.Item.Name)}
-                  <span class="validation-icon valid" title="Valid item">✓</span>
-                {/if}
-              </div>
-
-              {#if searchStates[index]?.showResults}
-                <div class="search-dropdown" style={dropdownStyles[index]}>
-                  {#if searchStates[index]?.isSearching}
-                    <div class="search-status">Searching...</div>
-                  {:else if !searchStates[index]?.results?.length}
-                    <div class="search-status">No items found</div>
-                  {:else}
-                    {#each searchStates[index].results as result, resultIndex}
-                      <!-- svelte-ignore a11y-click-events-have-key-events -->
-                      <!-- svelte-ignore a11y-no-static-element-interactions -->
-                      <div
-                        class="search-result"
-                        class:highlighted={resultIndex === searchStates[index]?.highlightedIndex}
-                        on:click={() => handleResultClick(index, result)}
-                        on:mouseenter={() => handleResultMouseEnter(index, resultIndex)}
-                      >
-                        <span class="result-name">{result.Name}</span>
-                      </div>
-                    {/each}
-                  {/if}
-                </div>
-              {/if}
-            </div>
+            <SearchInput
+              value={loot.Item?.Name || ''}
+              placeholder="Search item..."
+              apiEndpoint="/search/items"
+              displayFn={(item) => item?.Name || ''}
+              validValues={itemNamesSet}
+              on:change={(e) => updateLootField(index, 'Item.Name', e.detail.value)}
+              on:select={(e) => updateLootField(index, 'Item.Name', e.detail.data?.Name || e.detail.value)}
+            />
           </div>
 
           <label class="field">
@@ -457,8 +210,8 @@
   }
 
   .loot-item.invalid-item {
-    border-color: var(--warning-color, #fbbf24);
-    background-color: rgba(251, 191, 36, 0.05);
+    border-color: var(--error-color, #ef4444);
+    background-color: rgba(239, 68, 68, 0.05);
   }
 
   .loot-fields {
@@ -496,7 +249,6 @@
     text-overflow: ellipsis;
   }
 
-  .field input[type="text"],
   .field select {
     padding: 4px 6px;
     font-size: 12px;
@@ -514,14 +266,9 @@
     color: var(--text-color);
   }
 
-  .field input:focus,
   .field select:focus {
     outline: none;
     border-color: var(--accent-color, #4a9eff);
-  }
-
-  .field input.invalid {
-    border-color: var(--warning-color, #fbbf24);
   }
 
   .checkbox-field {
@@ -543,95 +290,6 @@
     height: 14px;
     cursor: pointer;
     flex-shrink: 0;
-  }
-
-  /* Search wrapper and dropdown */
-  .search-wrapper {
-    position: relative;
-    width: 100%;
-  }
-
-  .input-with-validation {
-    position: relative;
-    display: flex;
-    align-items: center;
-  }
-
-  .input-with-validation input {
-    padding-right: 26px;
-  }
-
-  .search-spinner {
-    position: absolute;
-    right: 6px;
-    width: 12px;
-    height: 12px;
-    border: 2px solid var(--border-color);
-    border-top-color: var(--accent-color);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
-
-  .validation-icon {
-    position: absolute;
-    right: 6px;
-    font-size: 12px;
-    color: var(--warning-color, #fbbf24);
-  }
-
-  .validation-icon.valid {
-    color: var(--success-color, #22c55e);
-  }
-
-  .search-dropdown {
-    position: fixed;
-    z-index: 1000;
-    max-height: 200px;
-    overflow-y: auto;
-    background-color: var(--secondary-color);
-    border: 1px solid var(--border-color, #555);
-    border-radius: 3px;
-    box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.3);
-  }
-
-  .search-status {
-    padding: 10px 12px;
-    text-align: center;
-    color: var(--text-muted, #999);
-    font-size: 12px;
-  }
-
-  .search-result {
-    padding: 8px 10px;
-    font-size: 12px;
-    color: var(--text-color);
-    cursor: pointer;
-    border-bottom: 1px solid var(--border-color, #555);
-  }
-
-  .search-result:last-child {
-    border-bottom: none;
-  }
-
-  .search-result:hover,
-  .search-result.highlighted {
-    background-color: var(--hover-color);
-  }
-
-  .search-result.highlighted {
-    outline: 2px solid var(--accent-color, #4a9eff);
-    outline-offset: -2px;
-  }
-
-  .result-name {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    display: block;
   }
 
   /* Buttons */

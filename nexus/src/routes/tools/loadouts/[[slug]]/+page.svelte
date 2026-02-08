@@ -3074,6 +3074,7 @@
   {breadcrumbs}
   entity={isSharedMode ? (sharedLoadoutData || { Name: sharedDisplayName }) : (loadout || { Name: 'Loadouts' })}
   basePath="/tools/loadouts"
+  pageClass="tool-loadouts"
   navItems={[]}
   bind:drawerOpen
   {user}

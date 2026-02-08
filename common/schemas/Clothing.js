@@ -25,6 +25,10 @@ export const Clothing = {
           "type": ["string", "null"],
           "default": null
         },
+        "Slot": {
+          "type": ["string", "null"],
+          "default": null
+        },
         "Gender": {
           "type": "string",
           "enum": ["Both", "Male", "Female"]
@@ -52,6 +56,7 @@ export const Clothing = {
         "Description",
         "Weight",
         "Type",
+        "Slot",
         "Gender",
         "Economy"
       ]
