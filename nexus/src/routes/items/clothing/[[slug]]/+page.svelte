@@ -108,7 +108,7 @@
       }
     },
     EffectsOnEquip: [],
-    Set: null
+    Set: { Name: null, EffectsOnSetEquip: [] }
   };
 
   // Initialize edit state when user/clothing changes
@@ -151,8 +151,7 @@
       updateField('Set.Name', trimmed);
       updateField('Set.EffectsOnSetEquip', []);
     } else {
-      updateField('Set', null);
-      updateField('Set.EffectsOnSetEquip', []);
+      updateField('Set', { Name: null, EffectsOnSetEquip: [] });
     }
   }
 
@@ -164,8 +163,7 @@
       updateField('Set.Name', trimmed);
       updateField('Set.EffectsOnSetEquip', selected ? (selected.EffectsOnSetEquip || []) : []);
     } else {
-      updateField('Set', null);
-      updateField('Set.EffectsOnSetEquip', []);
+      updateField('Set', { Name: null, EffectsOnSetEquip: [] });
     }
   }
 

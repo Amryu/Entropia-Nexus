@@ -50,6 +50,11 @@ function sanitizeBody(body) {
   if (body?.Properties && typeof body.Properties.Description === 'string') {
     body.Properties.Description = sanitizeHtml(body.Properties.Description, SANITIZE_CONFIG);
   }
+  // Ensure Set is a valid object for entities that require it (e.g. Clothing)
+  if (body && 'Set' in body && !body.Set) {
+    body.Set = { Name: null, EffectsOnSetEquip: [] };
+  }
+
   return body;
 }
 
