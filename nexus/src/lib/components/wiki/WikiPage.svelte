@@ -7,7 +7,7 @@
 <script>
   // @ts-nocheck
   import { onMount, onDestroy, tick } from 'svelte';
-  import { page } from '$app/stores';
+  import { page, navigating } from '$app/stores';
   import { goto, afterNavigate } from '$app/navigation';
   import { editMode, isCreateMode, resetEditState, startEdit, cancelEdit } from '$lib/stores/wikiEditState.js';
   import { initialViewportWidth } from '../../../stores.js';
@@ -292,7 +292,7 @@
           {basePath}
           {title}
           currentSlug={entity?.Name}
-          {currentChangeId}
+          currentChangeId={currentChangeId}
           customGetItemHref={navGetItemHref}
           {userPendingCreates}
           {userPendingUpdates}
@@ -314,7 +314,7 @@
             {basePath}
             {title}
             currentSlug={entity?.Name}
-            {currentChangeId}
+            currentChangeId={currentChangeId}
             expanded={sidebarExpanded}
             fullWidth={sidebarFullWidth}
             on:toggleExpand={toggleSidebarExpand}
@@ -333,7 +333,7 @@
     {/if}
 
     <!-- Main Content Area -->
-    <main class="wiki-content">
+    <main class="wiki-content" class:navigating={!!$navigating}>
       <!-- Inline Content Header -->
       <div class="content-header">
         <div class="header-left">
@@ -719,6 +719,13 @@
     flex: 1;
     overflow-y: auto;
     padding: 20px;
+    transition: opacity 0.15s ease;
+  }
+
+  /* Fade content while navigating to show loading state */
+  .wiki-content.navigating .content-body {
+    opacity: 0.4;
+    pointer-events: none;
   }
 
   /* Add bottom padding when edit action bar is visible */

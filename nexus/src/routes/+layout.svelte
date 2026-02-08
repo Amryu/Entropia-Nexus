@@ -7,7 +7,7 @@
 
   import Menu from "$lib/components/Menu.svelte";
   import { onMount, onDestroy } from 'svelte';
-  import { page } from '$app/stores';
+  import { page, navigating } from '$app/stores';
   import { decodeURIComponentSafe } from '$lib/util.js';
 
   export let data;
@@ -125,6 +125,22 @@
   overflow: auto;
   min-height: 0;
 }
+
+.nav-progress-bar {
+  height: 2px;
+  flex-shrink: 0;
+  margin-bottom: -2px;
+  position: relative;
+  z-index: 100;
+  background: linear-gradient(90deg, transparent, var(--accent-color, #4a9eff), transparent);
+  background-size: 200% 100%;
+  animation: nav-progress-slide 1.2s linear infinite;
+}
+
+@keyframes nav-progress-slide {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
 </style>
 
 <svelte:head>
@@ -135,6 +151,9 @@
 </svelte:head>
 <div class="app-layout">
   <Menu user={data?.session?.user} realUser={data?.session?.realUser} />
+  {#if $navigating}
+    <div class="nav-progress-bar"></div>
+  {/if}
   <div class="app-content">
     <slot></slot>
   </div>

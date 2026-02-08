@@ -164,6 +164,16 @@
     return `slug-${item.Name}`;
   }
 
+  // Optimistic click highlighting - immediately highlights clicked item
+  // before navigation data loads and props update
+  let clickedItemKey = null;
+
+  function handleItemClick(item) {
+    clickedItemKey = getItemKey(item);
+  }
+
+  // F5 reload: track whether initial scroll position has been set
+  let initialPositionDone = false;
 
   // Smart filter function (supports >, <, >=, <=, !, =)
   function smartFilter(value, filterStr) {
@@ -673,36 +683,61 @@
     // If hasKeyboardInput is true but no search, keep current highlightedIndex (set by arrow keys)
   }
 
-  // Scroll to the currently selected item (on page load or when currentSlug/currentChangeId/currentItemId changes)
+  // Scroll to the currently selected item if it's outside the visible viewport
   async function scrollToCurrentItem() {
-    if ((!currentSlug && !currentChangeId && currentItemId == null) || !listContainer || filteredItems.length === 0) return;
+    if ((!currentSlug && !currentChangeId && currentItemId == null) || !listContainer || filteredItems.length === 0) {
+      initialPositionDone = true;
+      return;
+    }
 
     // Find the index of the current item in the filtered list
     const currentIndex = findCurrentItemIndex(filteredItems);
-    if (currentIndex === -1) return;
+    if (currentIndex === -1) {
+      initialPositionDone = true;
+      return;
+    }
 
     // Wait for DOM to update
     await tick();
 
     // Check if container still exists after tick
-    if (!listContainer) return;
+    if (!listContainer) {
+      initialPositionDone = true;
+      return;
+    }
+
+    const itemTop = currentIndex * ITEM_HEIGHT;
+    const itemBottom = itemTop + ITEM_HEIGHT;
+    const viewTop = listContainer.scrollTop;
+    const viewBottom = viewTop + containerHeight;
+
+    // Only scroll if the item is not fully visible in the viewport
+    if (itemTop >= viewTop && itemBottom <= viewBottom) {
+      initialPositionDone = true;
+      return;
+    }
 
     // Scroll to position the current item in view (centered if possible)
-    const itemTop = currentIndex * ITEM_HEIGHT;
     const targetScroll = Math.max(0, itemTop - containerHeight / 2 + ITEM_HEIGHT / 2);
     listContainer.scrollTop = targetScroll;
+    initialPositionDone = true;
   }
 
-  // Track if initial scroll has been performed (only scroll to item on initial page load)
-  let initialScrollDone = false;
+  // Track last scrolled-to item key to avoid redundant scroll attempts
+  let lastScrolledKey = null;
 
-  // Use afterUpdate to scroll to current item only on initial page load
+  // Scroll to current item on selection change (initial load or navigation)
   // Also handle deferred focus for keyboard navigation
   afterUpdate(() => {
-    // Only scroll once on initial load when there's a pre-selected slug, changeId, or itemId
-    if (!initialScrollDone && (currentSlug || currentChangeId || currentItemId != null) && filteredItems.length > 0 && listContainer) {
-      initialScrollDone = true;
+    if (currentItemKey && currentItemKey !== lastScrolledKey && filteredItems.length > 0 && listContainer) {
+      lastScrolledKey = currentItemKey;
+      clickedItemKey = null;
       scrollToCurrentItem();
+    } else if (!currentItemKey) {
+      lastScrolledKey = null;
+      if (!initialPositionDone && items != null) {
+        initialPositionDone = true;
+      }
     }
 
     // Focus the list if user clicked on it and we're waiting for navigation to complete
@@ -1340,7 +1375,7 @@
     {#if items === null || items === undefined}
       <!-- Loading state -->
       <div class="loading-skeleton">
-        {#each Array(8) as _, i}
+        {#each Array(20) as _, i}
           <div class="skeleton-item" style="animation-delay: {i * 0.05}s"></div>
         {/each}
       </div>
@@ -1361,7 +1396,7 @@
             <a
               href={getItemHref(item)}
               class="item-link"
-              class:active={isCurrentItem(item)}
+              class:active={clickedItemKey ? clickedItemKey === getItemKey(item) : (currentItemKey && isCurrentItem(item))}
               class:highlighted={globalIndex === highlightedIndex}
               class:table-row={showTableView}
               class:alt-row={showTableView && globalIndex % 2 === 1}
@@ -1371,6 +1406,7 @@
               class:pending-update={item._hasPendingUpdate}
               class:pending-update-draft={item._hasPendingUpdate && item._changeState === 'Draft'}
               class:pending-update-review={item._hasPendingUpdate && item._changeState === 'Pending'}
+              on:click={() => handleItemClick(item)}
               on:mouseenter={() => { highlightedIndex = globalIndex; hasKeyboardInput = true; }}
               title={item._isPendingCreate
                 ? `${item.Name} (${item._changeState})`
@@ -1412,6 +1448,13 @@
             </a>
           {/each}
         </div>
+      </div>
+    {/if}
+    {#if !initialPositionDone && items != null && items.length > 0}
+      <div class="loading-overlay">
+        {#each Array(20) as _, i}
+          <div class="skeleton-item" style="animation-delay: {i * 0.05}s"></div>
+        {/each}
       </div>
     {/if}
   </div>
@@ -1868,6 +1911,7 @@
     overflow-y: auto;
     min-height: 0;
     margin: 0 12px 12px;
+    position: relative;
   }
 
   /* Force scrollbar to always be visible in expanded table mode for consistent column alignment */
@@ -2081,6 +2125,17 @@
     100% {
       background-position: -200% 0;
     }
+  }
+
+  .loading-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: var(--secondary-color);
+    z-index: 1;
+    padding: 4px 0;
   }
 
   /* Mobile adjustments - aligned with global 900px breakpoint */
