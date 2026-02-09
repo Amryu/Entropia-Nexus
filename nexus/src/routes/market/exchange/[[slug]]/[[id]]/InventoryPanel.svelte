@@ -104,12 +104,6 @@
       emptyMessage="No items in your inventory. Use Import to add items."
     />
   </div>
-
-  {#if $inventory.length > 0}
-    <div class="info-bar">
-      <p class="item-count">{$inventory.length} item{$inventory.length !== 1 ? 's' : ''}</p>
-    </div>
-  {/if}
 {/if}
 
 <style>
