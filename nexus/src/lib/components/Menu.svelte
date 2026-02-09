@@ -386,7 +386,7 @@
   }
 
   interface MenuItems {
-    [key: string]: { label: string; url: string }[];
+    [key: string]: { label: string; url: string; disabled?: boolean; highlighted?: boolean }[];
   }
   const menuItemsWiki: MenuItems = {
     'Items': [
@@ -429,9 +429,9 @@
       { label: 'API', url: 'api' },
     ],
     'Market': [
-      { label: 'Auction', url: 'auction' },
+      { label: 'Auction', url: 'auction', disabled: true },
       { label: 'Exchange', url: 'exchange' },
-      { label: 'Rental', url: 'rental' },
+      { label: 'Rental', url: 'rental', disabled: true },
       { label: 'Services', url: 'services' },
       { label: 'Shops', url: 'shops' },
     ],
@@ -652,6 +652,18 @@
   .menu-dropdown-item.highlighted {
     color: var(--accent-color);
     font-weight: 600;
+  }
+
+  .menu-dropdown-item.disabled {
+    opacity: 0.4;
+    cursor: default;
+    pointer-events: none;
+  }
+
+  .coming-soon {
+    font-size: 10px;
+    font-style: italic;
+    opacity: 0.7;
   }
 
   .menu-item-icon {
@@ -1475,6 +1487,11 @@
     font-weight: 600;
   }
 
+  .mobile-menu-item.disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+
   /* Mobile User Section - Collapsible */
   .mobile-user-section {
     border-top: 1px solid var(--border-color);
@@ -1737,7 +1754,6 @@
   <div class="menu-container">
     <a href="/" class="logo-link"><img class="website-icon" src="/favicon.png" alt="Entropia Nexus" title="Entropia Nexus" width="48px" height="48px" /></a>
     {#each Object.keys(menuItemsWiki) as menu (menu)}
-      {#if !(menu === 'Market' && !(user && user.grants?.includes('admin.panel')))}
       <!-- svelte-ignore a11y-no-static-element-interactions -->
       <div class="menu-item" class:menu-top={!!getMenuOverviewUrl(menu)} on:mouseenter={() => handleDropdownEnter(menu)} on:mouseleave={handleDropdownLeave}>
         {#if getMenuOverviewUrl(menu)}
@@ -1747,7 +1763,9 @@
         {/if}
         <div class="dropdown-content" class:open={dropdownOpen === menu}>
               {#each menuItemsWiki[menu] as item (item)}
-                {#if isExternalLink(item)}
+                {#if item.disabled}
+                  <div class="menu-dropdown-item disabled">{item.label} <span class="coming-soon">coming soon</span></div>
+                {:else if isExternalLink(item)}
                   <a href={getMenuItemUrl(menu, item)} target="_blank"><div class="menu-dropdown-item" class:highlighted={item.highlighted}>{item.label}</div></a>
                 {:else}
                   <a use:loading href={getMenuItemUrl(menu, item)}><div class="menu-dropdown-item" class:highlighted={item.highlighted}>{item.label}</div></a>
@@ -1755,7 +1773,6 @@
               {/each}
           </div>
       </div>
-    {/if}
     {/each}
   </div>
 
@@ -1944,7 +1961,6 @@
     <!-- Navigation Mode -->
     <div class="mobile-menu-content">
       {#each Object.keys(menuItemsWiki) as menu (menu)}
-        {#if !(menu === 'Market' && !(user && user.grants?.includes('admin.panel')))}
           <div class="mobile-section">
             <!-- svelte-ignore a11y-click-events-have-key-events -->
             <!-- svelte-ignore a11y-no-static-element-interactions -->
@@ -1956,7 +1972,9 @@
             </div>
             <div class="mobile-section-items" class:expanded={expandedSections.has(menu)}>
               {#each menuItemsWiki[menu] as item (item)}
-                {#if isExternalLink(item)}
+                {#if item.disabled}
+                  <span class="mobile-menu-item disabled">{item.label} <span class="coming-soon">coming soon</span></span>
+                {:else if isExternalLink(item)}
                   <a href={getMenuItemUrl(menu, item)} target="_blank" class="mobile-menu-item" class:highlighted={item.highlighted} on:click={closeMobileMenu}>{item.label}</a>
                 {:else}
                   <a use:loading href={getMenuItemUrl(menu, item)} class="mobile-menu-item" class:highlighted={item.highlighted} on:click={closeMobileMenu}>{item.label}</a>
@@ -1964,7 +1982,6 @@
               {/each}
             </div>
           </div>
-        {/if}
       {/each}
     </div>
 

@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import { getConfigValue } from '../../bot.js';
-import { getUserById, getUserByUsername, setUserVerified, assignEditorRole } from '../../db.js';
+import { getUserById, getUserByUsername, setUserVerified, assignUserRole } from '../../db.js';
 
 const promptRow = new ActionRowBuilder()
   .addComponents(
@@ -103,7 +103,7 @@ export async function execute(interaction) {
 
     await discordUserVerify.roles.add(verifiedRole);
     await setUserVerified(userVerify.id, true);
-    await assignEditorRole(userVerify.id);
+    await assignUserRole(userVerify.id);
     try {
       await interaction.channel.send(`${userVerify.global_name} has been successfully verified with the Entropia name "${userVerify.eu_name}"!`);
       await interaction.channel.setArchived(true);
