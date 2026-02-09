@@ -261,7 +261,6 @@
     margin-bottom: 0.25rem;
   }
 
-  .pilot-discord,
   .pilot-euname {
     font-size: 0.85rem;
     color: var(--text-muted, #888);

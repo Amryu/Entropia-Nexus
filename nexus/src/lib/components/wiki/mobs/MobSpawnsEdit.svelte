@@ -642,7 +642,6 @@
     text-transform: uppercase;
   }
 
-  .field input[type="text"],
   .field input[type="number"],
   .field select,
   .field textarea {

@@ -11,14 +11,12 @@ const tierableTypes = new Set([
 ]);
 
 export function isBlueprint(item: any): boolean {
-  return (
-    item?.Properties?.Type === 'Blueprint' ||
-    item?.t === 'Blueprint'
-  );
+  const type = item?.Properties?.Type ?? item?.Type ?? item?.t;
+  return type === 'Blueprint';
 }
 
 export function isItemTierable(item: any): boolean {
-  const type = item?.Properties?.Type;
+  const type = item?.Properties?.Type ?? item?.Type ?? item?.t;
   return tierableTypes.has(type);
 }
 
@@ -34,7 +32,7 @@ export function itemHasCondition(item: any): boolean {
 }
 
 export function getMaxTT(item: any): number | null {
-  return item?.Properties?.Economy?.MaxTT ?? null;
+  return item?.Properties?.Economy?.MaxTT ?? item?.MaxTT ?? item?.Value ?? null;
 }
 
 export function isItemStackable(item: any): boolean {

@@ -43,6 +43,7 @@
   export let loading = false;
   export let defaultWidthBasis = 'both';
   export let horizontalScroll = true;
+  export let compact = false;
 
   /**
    * @type {(row: object) => string|null} Function to generate extra CSS classes for rows
@@ -202,15 +203,21 @@
       resizeObserver.disconnect();
       resizeObserver = null;
     }
+    if (scrollRafId) {
+      cancelAnimationFrame(scrollRafId);
+      scrollRafId = null;
+    }
     if (typeof window !== 'undefined') {
       window.removeEventListener('resize', updateMobileState);
     }
     Object.values(filterTimeouts).forEach(clearTimeout);
   });
 
-  // Reset when data source changes
-  $: if (data && !isLazyMode) {
-    // Data changed externally, reset
+  // When data or columns change, recalculate visible range after DOM update
+  $: if ((data || columns) && !isLazyMode) {
+    tick().then(() => {
+      if (scrollEl) updateVisibleRange();
+    });
   }
 
   async function loadInitialData() {
@@ -258,21 +265,27 @@
     }
   }
 
+  let scrollRafId = null;
+
   function handleScroll() {
-    updateVisibleRange();
-    syncHorizontalScroll();
+    if (scrollRafId) return;
+    scrollRafId = requestAnimationFrame(() => {
+      scrollRafId = null;
+      updateVisibleRange();
+      syncHorizontalScroll();
 
-    if (isLazyMode) {
-      // Check if we need to load more data
-      const startPage = Math.floor(visibleStart / pageSize);
-      const endPage = Math.floor(visibleEnd / pageSize);
+      if (isLazyMode) {
+        // Check if we need to load more data
+        const startPage = Math.floor(visibleStart / pageSize);
+        const endPage = Math.floor(visibleEnd / pageSize);
 
-      for (let p = startPage; p <= endPage; p++) {
-        if (!loadedRanges.has(p)) {
-          loadMore(p);
+        for (let p = startPage; p <= endPage; p++) {
+          if (!loadedRanges.has(p)) {
+            loadMore(p);
+          }
         }
       }
-    }
+    });
   }
 
   function syncHorizontalScroll() {
@@ -288,8 +301,8 @@
     const scrollTop = scrollEl.scrollTop;
     containerHeight = scrollEl.clientHeight;
 
-    // Calculate visible row range with buffer
-    const buffer = 5;
+    // Calculate visible row range with generous buffer for smooth scrolling
+    const buffer = Math.max(10, Math.ceil(containerHeight / effectiveRowHeight));
     visibleStart = Math.max(0, Math.floor(scrollTop / effectiveRowHeight) - buffer);
     visibleEnd = Math.min(totalCount, Math.ceil((scrollTop + containerHeight) / effectiveRowHeight) + buffer);
 
@@ -387,6 +400,7 @@
   }));
 
   // Calculate auto widths for columns without explicit width
+  // Sample up to 200 rows instead of iterating all data for performance
   $: columnAutoWidths = columns.reduce((acc, column) => {
     if (column.width) return acc;
 
@@ -396,7 +410,9 @@
     let contentLength = 0;
 
     if (basis !== 'header') {
-      for (const row of displayData) {
+      const sampleSize = Math.min(displayData.length, 200);
+      for (let i = 0; i < sampleSize; i++) {
+        const row = displayData[i];
         if (!row) continue;
         const cellText = getCellText(row, column);
         if (cellText) {
@@ -604,6 +620,8 @@
   .virtual-container {
     position: relative;
     width: 100%;
+    will-change: contents;
+    contain: layout style;
   }
 
   .horizontal-scroll .virtual-container {
@@ -618,9 +636,9 @@
     left: 0;
     right: 0;
     cursor: pointer;
-    transition: background-color 0.1s ease;
     border-bottom: 1px solid var(--border-color);
     box-sizing: border-box;
+    contain: layout style paint;
   }
 
   .horizontal-scroll .table-row {
@@ -829,6 +847,37 @@
     color: var(--text-muted);
   }
 
+  /* Compact mode */
+  .fancy-table-container.compact {
+    font-size: 13px;
+  }
+
+  .compact .header-cell {
+    padding: 6px 10px;
+    font-size: 11px;
+  }
+
+  .compact .filter-cell {
+    padding: 4px 6px;
+  }
+
+  .compact .filter-input {
+    padding: 4px 6px;
+    font-size: 11px;
+  }
+
+  .compact .table-cell {
+    padding: 4px 10px;
+  }
+
+  .compact .footer-cell {
+    padding: 6px 10px;
+  }
+
+  .compact .empty-state {
+    padding: 24px 16px;
+  }
+
   /* Mobile styles */
   @media (max-width: 767px) {
     .fancy-table-container {
@@ -896,7 +945,7 @@
   }
 </style>
 
-<div class="fancy-table-container" bind:this={containerEl}>
+<div class="fancy-table-container" class:compact bind:this={containerEl}>
   <!-- Header -->
   <div class="table-header" class:sticky={stickyHeader} class:horizontal-scroll={horizontalScroll} bind:this={headerEl}>
     <div class="header-row" style="grid-template-columns: {gridTemplateColumns};">

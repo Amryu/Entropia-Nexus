@@ -1005,8 +1005,6 @@
         {clothingItems}
         {armorSets}
         {consumables}
-        {armors}
-        {armorPlatings}
         loading={entitiesLoading}
       />
     {:else if currentType === 'transportation'}
@@ -2995,10 +2993,6 @@
     color: #888;
   }
 
-  .empty-state a {
-    color: #4a9eff;
-  }
-
   .back-row {
     display: flex;
     justify-content: space-between;
@@ -3889,20 +3883,6 @@
     background: var(--hover-color);
     border-radius: 4px;
     font-size: 0.85rem;
-  }
-
-  .pet-effects strong {
-    color: var(--text-color);
-  }
-
-  .pet-effects ul {
-    margin: 0.5rem 0 0 0;
-    padding-left: 1.5rem;
-  }
-
-  .pet-effects li {
-    color: #4a9eff;
-    margin: 0.25rem 0;
   }
 
   @media (max-width: 600px) {

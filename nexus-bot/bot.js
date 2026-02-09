@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { dump } from 'js-yaml';
 import { Client, GatewayIntentBits, Collection, Events, ChannelType } from 'discord.js';
-import { getUsers, getOpenChanges, setChangeThreadId, getDeletedChanges, deleteChange, getFlightsNeedingThread, setFlightThreadId, getCheckinsPendingThreadAdd, markCheckinAddedToThread, getUnnotifiedFlightStateChanges, getFlightsNeedingArchive, clearFlightThreadId, getPendingRescheduleNotifications, markRescheduleNotificationSent, getServicePilots, getFlightAcceptedCheckins, getFlightsReadyForCustomerKick, setFlightCompletedAt, expireTickets, computeAllPriceSummaries } from './db.js';
+import { getUsers, getOpenChanges, setChangeThreadId, getDeletedChanges, deleteChange, getFlightsNeedingThread, setFlightThreadId, getCheckinsPendingThreadAdd, markCheckinAddedToThread, getUnnotifiedFlightStateChanges, getFlightsNeedingArchive, clearFlightThreadId, getPendingRescheduleNotifications, markRescheduleNotificationSent, getServicePilots, getFlightAcceptedCheckins, getFlightsReadyForCustomerKick, setFlightCompletedAt, expireTickets, computeAllPriceSummaries, getPendingTradeRequests, getTradeRequestItems, setTradeRequestThread, getWarnableTradeRequests, markWarningSent, getExpirableTradeRequests, updateTradeRequestStatus, findTradeRequestByThread, updateLastActivity, getActiveTradeRequestsWithNewItems, getNewTradeRequestItems } from './db.js';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { compareJson, validate, printSideBySide } from './change.js';
 
@@ -749,6 +749,147 @@ setInterval(() => runScheduled('checkUnverifiedUsers', checkUnverifiedUsers), 1 
 setInterval(() => runScheduled('checkChanges', checkChanges), 1 * 15 * 1000);
 setInterval(() => runScheduled('checkFlights', checkFlights), 30 * 1000);
 setInterval(() => runScheduled('checkRescheduleNotifications', checkRescheduleNotifications), 30 * 1000);
+setInterval(() => runScheduled('checkTradeRequests', checkTradeRequests), 30 * 1000);
+
+// ---- Trade Request Thread Management ----
+
+let lastTradeItemCheck = new Date();
+
+async function checkTradeRequests() {
+  const tradeChannelId = config.tradeChannelId;
+  if (!tradeChannelId) return;
+
+  const channel = client.channels.cache.get(tradeChannelId);
+  if (!channel) {
+    console.error('Trade channel not found');
+    return;
+  }
+
+  // 1. Create threads for pending trade requests
+  const pending = await getPendingTradeRequests();
+  for (const req of pending) {
+    try {
+      const items = await getTradeRequestItems(req.id);
+      const requesterName = req.requester_name || req.requester_username || 'Unknown';
+      const targetName = req.target_name || req.target_username || 'Unknown';
+
+      const thread = await channel.threads.create({
+        name: `Trade: ${requesterName} \u2194 ${targetName}`.substring(0, 100),
+        autoArchiveDuration: 1440,
+        reason: `Trade request #${req.id}`,
+        type: ChannelType.PrivateThread,
+      });
+
+      await setTradeRequestThread(req.id, thread.id);
+
+      // Build initial message with item list
+      let msg = `**Trade Request #${req.id}**\n`;
+      msg += `<@${req.requester_id}> wants to trade with <@${req.target_id}>\n`;
+      if (req.planet) msg += `**Planet:** ${req.planet}\n`;
+      msg += `\n**Items:**\n`;
+      for (const item of items) {
+        const side = item.side === 'SELL' ? 'Buy' : 'Sell';
+        const mu = item.markup != null ? ` @ ${item.markup}` : '';
+        msg += `- ${side} ${item.quantity}x **${item.item_name}**${mu}\n`;
+      }
+      msg += `\nUse this thread to negotiate. Type \`/done\` when finished to close the trade.`;
+
+      await thread.send(msg);
+
+      // Add both users to the thread
+      try { await thread.members.add(req.requester_id.toString()); } catch (e) {
+        console.error(`Failed to add requester to trade thread: ${e.message}`);
+      }
+      try { await thread.members.add(req.target_id.toString()); } catch (e) {
+        console.error(`Failed to add target to trade thread: ${e.message}`);
+      }
+
+      console.log(`Created trade thread for request #${req.id}: ${thread.name}`);
+    } catch (e) {
+      console.error(`Error creating trade thread for request #${req.id}:`, e);
+    }
+  }
+
+  // 2. Announce new items added to existing active trade threads
+  const requestsWithNewItems = await getActiveTradeRequestsWithNewItems(lastTradeItemCheck);
+  for (const req of requestsWithNewItems) {
+    try {
+      const newItems = await getNewTradeRequestItems(req.id, lastTradeItemCheck);
+      if (newItems.length === 0) continue;
+
+      const thread = await channel.threads.fetch(req.discord_thread_id).catch(() => null);
+      if (!thread) continue;
+
+      let msg = `**New items added to trade:**\n`;
+      for (const item of newItems) {
+        const side = item.side === 'SELL' ? 'Buy' : 'Sell';
+        const mu = item.markup != null ? ` @ ${item.markup}` : '';
+        msg += `- ${side} ${item.quantity}x **${item.item_name}**${mu}\n`;
+      }
+      await thread.send(msg);
+    } catch (e) {
+      console.error(`Error announcing new trade items for request #${req.id}:`, e);
+    }
+  }
+  lastTradeItemCheck = new Date();
+
+  // 3. Send warnings for inactive trades (18h+)
+  const warnable = await getWarnableTradeRequests();
+  for (const req of warnable) {
+    try {
+      if (!req.discord_thread_id) continue;
+      const thread = await channel.threads.fetch(req.discord_thread_id).catch(() => null);
+      if (!thread) continue;
+
+      await thread.send(
+        `\u26a0\ufe0f **Inactivity Warning** — This trade has been inactive for 18+ hours. ` +
+        `Send a message to keep it active, or use \`/done\` to close it. ` +
+        `This thread will be automatically closed after 24 hours of inactivity.`
+      );
+      await markWarningSent(req.id);
+      console.log(`Sent inactivity warning for trade request #${req.id}`);
+    } catch (e) {
+      console.error(`Error sending trade warning for request #${req.id}:`, e);
+    }
+  }
+
+  // 4. Expire inactive trades (24h+)
+  const expirable = await getExpirableTradeRequests();
+  for (const req of expirable) {
+    try {
+      await updateTradeRequestStatus(req.id, 'expired');
+
+      if (req.discord_thread_id) {
+        const thread = await channel.threads.fetch(req.discord_thread_id).catch(() => null);
+        if (thread) {
+          await thread.send(
+            `\u274c **Trade Expired** — This trade was automatically closed due to 24 hours of inactivity.`
+          );
+          await thread.setLocked(true).catch(() => {});
+          await thread.setArchived(true).catch(() => {});
+        }
+      }
+      console.log(`Expired trade request #${req.id}`);
+    } catch (e) {
+      console.error(`Error expiring trade request #${req.id}:`, e);
+    }
+  }
+}
+
+// Track activity in trade threads
+client.on(Events.MessageCreate, async (message) => {
+  if (message.author.bot) return;
+  if (!message.channel.isThread()) return;
+
+  try {
+    const tradeRequest = await findTradeRequestByThread(message.channel.id);
+    if (tradeRequest && tradeRequest.status === 'active') {
+      await updateLastActivity(tradeRequest.id);
+    }
+  } catch (e) {
+    // Silently ignore — not every thread message is a trade thread
+  }
+});
 
 // Expire tickets once per hour
 async function runTicketExpiration() {

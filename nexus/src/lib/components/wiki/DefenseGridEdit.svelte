@@ -468,12 +468,6 @@
     border-color: var(--accent-color, #4a9eff);
   }
 
-  .input-with-unit {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-
   .unit {
     font-size: 12px;
     color: var(--text-muted, #999);

@@ -532,7 +532,6 @@
   title="Medical Tools"
   {breadcrumbs}
   entity={activeEntity}
-  entityType={getEntityType(additional.type)}
   basePath="/items/medicaltools/{additional.type || ''}"
   {navItems}
   {navFilters}
@@ -981,48 +980,6 @@
 </WikiPage>
 
 <style>
-  /* Pending change banner */
-  .pending-change-banner {
-    background: linear-gradient(135deg, #f59e0b20, #f59e0b10);
-    border: 1px solid #f59e0b;
-    border-radius: 8px;
-    padding: 12px 16px;
-    margin-bottom: 16px;
-  }
-
-  .banner-content {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex-wrap: wrap;
-  }
-
-  .banner-icon {
-    font-size: 18px;
-  }
-
-  .banner-text {
-    flex: 1;
-    font-size: 14px;
-    color: var(--text-color);
-  }
-
-  .banner-toggle {
-    padding: 6px 12px;
-    font-size: 13px;
-    font-weight: 500;
-    background: var(--accent-color);
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: opacity 0.15s;
-  }
-
-  .banner-toggle:hover {
-    opacity: 0.9;
-  }
-
   .layout-a {
     position: relative;
     width: 100%;
@@ -1164,10 +1121,6 @@
     color: var(--success-color, #4ade80);
   }
 
-  .stat-value.effect-value {
-    color: var(--accent-color, #4a9eff);
-  }
-
   .stat-row.toggleable {
     cursor: pointer;
     padding: 4px 6px;
@@ -1219,15 +1172,6 @@
     font-weight: 400;
   }
 
-  .entity-link {
-    color: var(--accent-color, #4a9eff);
-    text-decoration: none;
-  }
-
-  .entity-link:hover {
-    text-decoration: underline;
-  }
-
   /* Combined effects layout (equip + use side by side) */
   .effects-combined {
     display: flex;
@@ -1243,11 +1187,6 @@
 
   .effects-section {
     padding: 12px;
-  }
-
-  /* Effects styling */
-  .effects-section .stat-row {
-    padding: 3px 0;
   }
 
   .wiki-article {

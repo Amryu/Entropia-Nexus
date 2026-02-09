@@ -231,7 +231,6 @@
   title="Strongboxes"
   {breadcrumbs}
   entity={data.isCreateMode ? $currentEntity : (activeStrongbox || strongbox)}
-  entityType="Strongbox"
   basePath="/items/strongboxes"
   {navItems}
   {navFilters}

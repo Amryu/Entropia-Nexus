@@ -778,7 +778,6 @@
     title="Weapons"
     {breadcrumbs}
     entity={data.isCreateMode ? ($currentEntity || createSeed) : (activeWeapon || weapon)}
-    entityType="Weapon"
     basePath="/items/weapons"
     {navItems}
     {navFilters}
@@ -1361,67 +1360,6 @@
 </WikiPage>
 
 <style>
-  /* Pending Change Banner */
-  .pending-change-banner {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 10px 16px;
-    background-color: var(--warning-bg, #422006);
-    border: 1px solid var(--warning-color, #f59e0b);
-    border-radius: 8px;
-    margin-bottom: 16px;
-  }
-
-  .pending-change-banner.viewing {
-    background-color: var(--info-bg, #0c1929);
-    border-color: var(--accent-color, #4a9eff);
-  }
-
-  .banner-content {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-
-  .banner-icon {
-    display: flex;
-    color: var(--warning-color, #f59e0b);
-  }
-
-  .pending-change-banner.viewing .banner-icon {
-    color: var(--accent-color, #4a9eff);
-  }
-
-  .banner-text {
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--text-color);
-  }
-
-  .banner-toggle {
-    padding: 6px 14px;
-    font-size: 12px;
-    font-weight: 500;
-    background-color: var(--warning-color, #f59e0b);
-    color: #000;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: all 0.15s;
-    white-space: nowrap;
-  }
-
-  .pending-change-banner.viewing .banner-toggle {
-    background-color: var(--accent-color, #4a9eff);
-    color: #fff;
-  }
-
-  .banner-toggle:hover {
-    filter: brightness(1.1);
-  }
-
   .layout-a {
     position: relative;
     width: 100%;

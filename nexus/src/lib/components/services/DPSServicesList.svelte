@@ -11,8 +11,6 @@
   export let clothingItems = [];
   export let armorSets = [];
   export let consumables = [];
-  export let armors = [];
-  export let armorPlatings = [];
   export let loading = false;
 
   function viewService(service) {

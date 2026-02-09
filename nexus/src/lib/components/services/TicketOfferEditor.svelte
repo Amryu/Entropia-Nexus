@@ -155,7 +155,6 @@
     font-weight: 500;
   }
 
-  .form-group input[type="text"],
   .form-group input[type="number"],
   .form-group textarea {
     width: 100%;

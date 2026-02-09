@@ -312,7 +312,6 @@
   title="Vendors"
   {breadcrumbs}
   entity={activeVendor}
-  entityType="Vendor"
   basePath="/information/vendors"
   {navItems}
   {navFilters}

@@ -649,10 +649,6 @@
     margin-bottom: 2rem;
   }
 
-  .page-header h1 {
-    margin: 0;
-  }
-
   .back-link {
     color: var(--accent-color, #4a9eff);
     text-decoration: none;

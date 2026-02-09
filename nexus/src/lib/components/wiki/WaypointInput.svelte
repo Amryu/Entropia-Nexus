@@ -47,9 +47,6 @@
   /** Hide the name field entirely */
   export let hideName = false;
 
-  /** Placeholder text for the paste indicator */
-  export let placeholder = 'Paste waypoint or enter coordinates';
-
   /** Whether the input is disabled */
   export let disabled = false;
 

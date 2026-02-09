@@ -5,9 +5,6 @@
 <script>
   import '$lib/style.css';
 
-  // SvelteKit passes params to all pages - declare to avoid console warnings
-  export let params = {};
-
   const features = [
     {
       name: 'Items Database',

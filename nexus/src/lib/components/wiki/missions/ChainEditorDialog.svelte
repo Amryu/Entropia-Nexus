@@ -613,20 +613,13 @@
   }
 
   .form-field input,
-  .form-field select,
-  .form-field textarea {
+  .form-field select {
     padding: 8px 12px;
     border: 1px solid var(--border-color, #555);
     border-radius: 4px;
     background: var(--input-bg, var(--bg-color));
     color: var(--text-color);
     font-size: 14px;
-  }
-
-  .form-field textarea {
-    resize: vertical;
-    min-height: 60px;
-    font-family: inherit;
   }
 
   .form-field input.error {

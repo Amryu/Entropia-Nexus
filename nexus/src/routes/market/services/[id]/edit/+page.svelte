@@ -341,7 +341,7 @@
           <small>Uncheck all options to offer a free service. Decay pricing amount is determined after service completion.</small>
         </div>
 
-        <EquipmentEditor serviceType={serviceType} bind:equipment {clothings} loading={clothingsLoading} />
+        <EquipmentEditor serviceType={serviceType} bind:equipment {clothings} />
       </div>
     {/if}
 
@@ -560,11 +560,6 @@
 
   .checkbox-group input[type="checkbox"] {
     width: auto;
-  }
-
-  .info-text {
-    color: #888;
-    margin: 0;
   }
 
   .form-actions {

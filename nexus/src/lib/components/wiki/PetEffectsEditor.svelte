@@ -478,10 +478,6 @@
     grid-column: 2 / 3;
   }
 
-  .criteria-row .field-group.small + .field-group.small {
-    grid-column: 2 / 3;
-  }
-
   .criteria-row {
     grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
   }

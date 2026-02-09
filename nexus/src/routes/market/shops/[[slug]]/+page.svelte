@@ -520,7 +520,6 @@
   title="Shops"
   {breadcrumbs}
   entity={activeEntity}
-  entityType="Shop"
   basePath="/market/shops"
   {navItems}
   {navFilters}
@@ -1319,11 +1318,6 @@
     gap: 10px;
     font-size: 14px;
     color: var(--warning-text, #92400e);
-  }
-
-  .pending-info svg {
-    flex-shrink: 0;
-    stroke: var(--warning-text, #92400e);
   }
 
   .toggle-pending-btn {

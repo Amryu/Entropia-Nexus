@@ -5,7 +5,6 @@
   export let serviceType; // 'healing' or 'dps'
   export let equipment = []; // Array of equipment items
   export let clothings = []; // Clothing items for slot display
-  export let loading = false; // Loading state for parent component
   
   let showAddModal = false;
   let editingIndex = null;

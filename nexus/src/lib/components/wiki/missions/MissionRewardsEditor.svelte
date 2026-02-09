@@ -499,12 +499,6 @@
     border-bottom: 1px solid var(--border-color, #555);
   }
 
-  .rewards-header h3 {
-    margin: 0;
-    font-size: 14px;
-    color: var(--text-color);
-  }
-
   .choices-toggle {
     display: flex;
     align-items: center;

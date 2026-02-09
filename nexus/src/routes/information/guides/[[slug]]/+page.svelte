@@ -450,7 +450,7 @@
   <!-- LESSON MODE: Sidebar + lesson content -->
   <div class="guide-layout">
     <aside class="guide-sidebar">
-      <GuideNavigation {tree} currentSlug={slug} canEdit={canManageGuides} />
+      <GuideNavigation {tree} currentSlug={slug} />
     </aside>
 
     <main class="guide-content">

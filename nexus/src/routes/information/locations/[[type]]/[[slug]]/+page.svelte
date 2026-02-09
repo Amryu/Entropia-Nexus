@@ -739,7 +739,6 @@
   title="Locations"
   {breadcrumbs}
   entity={activeEntity}
-  entityType={entityType}
   basePath={effectiveBasePath}
   {user}
   editable={true}
@@ -1639,23 +1638,10 @@
     margin-bottom: 16px;
   }
 
-  .description-panel {
-    background-color: var(--secondary-color);
-    border: 1px solid var(--border-color, #555);
-    border-radius: 8px;
-    padding: 16px;
-    margin-bottom: 12px;
-  }
-
   .description-content {
     font-size: 15px;
     line-height: 1.6;
     color: var(--text-color);
-  }
-
-  .description-content.placeholder {
-    color: var(--text-muted, #999);
-    font-style: italic;
   }
 
   /* Facilities */

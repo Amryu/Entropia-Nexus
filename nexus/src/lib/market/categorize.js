@@ -52,8 +52,8 @@ export function categorizeItems(items, {
     } else if (type === 'effectchip' || type === 'teleportationchip') {
       categorized.tools.mindforce.push(item);
     } else if (type === 'enhancer') {
-      // Flat push for unknown subtype; specific endpoint will refine later
-      if (!hasEnhancers) categorized.enhancers.other.push(item);
+      // Skip base items; detailed /enhancers endpoint will categorize properly
+      if (!hasEnhancers) categorizeEnhancer(item, categorized.enhancers);
     } else if (type === 'blueprint') {
       if (!hasBlueprints) categorizeBlueprint(item, categorized.blueprints);
     } else if (type === 'material') {
@@ -171,7 +171,7 @@ function makeEmptyCategories() {
       vehicle: [],
       misc: []
     },
-    enhancers: { weapon: [], armor: [], medical: [], mining_finder: [], mining_excavator: [], other: [] },
+    enhancers: { weapon: [], armor: [], medical: [], mining_finder: [], mining_excavator: [] },
     clothes: {
       boots: [], coats: [], dresses: [], gloves: [], hats: [], jackets: [], pants: [],
       shades: [], shirts: [], shoes: [], skirts: [], underwear: [], other: []
@@ -346,7 +346,7 @@ function categorizeEnhancer(enhancer, enhancers) {
   else if (tool === 'medical tool') enhancers.medical.push(enhancer);
   else if (tool === 'mining finder') enhancers.mining_finder.push(enhancer);
   else if (tool === 'mining excavator') enhancers.mining_excavator.push(enhancer);
-  else enhancers.other.push(enhancer);
+  // Skip unrecognized enhancer types
 }
 
 function categorizeClothing(item, clothes) {

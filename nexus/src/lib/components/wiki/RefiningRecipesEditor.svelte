@@ -15,9 +15,6 @@
   /** @type {string} Field path for updateField */
   export let fieldName = 'RefiningRecipes';
 
-  /** @type {Array} Available items for ingredient selection */
-  export let availableItems = [];
-
   /** @type {string} The material name (for display) */
   export let materialName = '';
 

@@ -497,7 +497,6 @@
   title="Armor Sets"
   {breadcrumbs}
   entity={activeEntity}
-  entityType="ArmorSet"
   basePath="/items/armorsets"
   {navItems}
   {navFilters}
@@ -696,46 +695,6 @@
 </WikiPage>
 
 <style>
-  .pending-change-banner {
-    background: linear-gradient(135deg, #f59e0b22 0%, #f59e0b11 100%);
-    border: 1px solid #f59e0b44;
-    border-radius: 8px;
-    padding: 12px 16px;
-    margin-bottom: 16px;
-  }
-
-  .banner-content {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex-wrap: wrap;
-  }
-
-  .banner-icon {
-    font-size: 18px;
-  }
-
-  .banner-text {
-    flex: 1;
-    color: var(--text-color);
-    font-size: 14px;
-  }
-
-  .banner-toggle {
-    padding: 6px 12px;
-    font-size: 12px;
-    background: var(--accent-color);
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: opacity 0.2s;
-  }
-
-  .banner-toggle:hover {
-    opacity: 0.9;
-  }
-
   .layout-a {
     position: relative;
     width: 100%;
@@ -862,40 +821,6 @@
   /* Set Effects Styling */
   .set-effects {
     padding: 12px;
-  }
-
-  .effect-group {
-    margin-bottom: 12px;
-  }
-
-  .effect-group:last-child {
-    margin-bottom: 0;
-  }
-
-  .effect-pieces {
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--accent-color, #4a9eff);
-    text-transform: uppercase;
-    margin-bottom: 4px;
-  }
-
-  .effect-row {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    padding: 2px 0;
-    font-size: 12px;
-  }
-
-  .effect-value {
-    color: var(--success-color, #4ade80);
-    font-weight: 600;
-    min-width: 50px;
-  }
-
-  .effect-name {
-    color: var(--text-color);
   }
 
   .wiki-article {

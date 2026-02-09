@@ -367,17 +367,6 @@
     border-color: var(--accent-color, #4a9eff);
   }
 
-  .material-select {
-    width: 100%;
-    min-width: 120px;
-    padding: 6px 8px;
-    font-size: 13px;
-    background-color: var(--input-bg, var(--secondary-color));
-    border: 1px solid var(--border-color, #555);
-    border-radius: 4px;
-    color: var(--text-color);
-  }
-
   .amount-input {
     width: 60px;
     padding: 4px 8px;
@@ -389,8 +378,7 @@
     text-align: left;
   }
 
-  .amount-input:focus,
-  .material-select:focus {
+  .amount-input:focus {
     outline: none;
     border-color: var(--accent-color, #4a9eff);
   }
@@ -504,12 +492,6 @@
     .markup-input {
       width: 55px;
       padding: 3px 6px;
-      font-size: 12px;
-    }
-
-    .material-select {
-      min-width: 80px;
-      padding: 4px 6px;
       font-size: 12px;
     }
 

@@ -445,19 +445,6 @@
     gap: 6px;
   }
 
-  .effect-field {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  .field-label {
-    font-size: 11px;
-    color: var(--text-muted, #999);
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-  }
-
   .effect-select {
     flex: 1;
     min-width: 120px;

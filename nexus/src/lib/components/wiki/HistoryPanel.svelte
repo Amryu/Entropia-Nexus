@@ -14,9 +14,6 @@
   /** @type {number|string} Entity ID */
   export let entityId = '';
 
-  /** @type {string} Entity name for display */
-  export let entityName = '';
-
   /** @type {number} Max number of changes to show */
   export let maxItems = 5;
 

@@ -283,7 +283,6 @@
   title="Clothing"
   {breadcrumbs}
   entity={activeClothing}
-  entityType="Clothing"
   basePath="/items/clothing"
   {navItems}
   {navFilters}
@@ -734,16 +733,6 @@
     color: var(--text-color);
   }
 
-  .stat-value.effect-value {
-    color: var(--accent-color, #4a9eff);
-  }
-
-
-  /* Set Effects styling */
-  .set-selector {
-    margin-bottom: 12px;
-  }
-
   .set-name {
     font-size: 14px;
     font-weight: 600;
@@ -752,50 +741,6 @@
     padding-bottom: 8px;
     border-bottom: 1px solid var(--border-color, #555);
   }
-
-  .set-effects .effect-group {
-    margin-bottom: 12px;
-    padding-bottom: 8px;
-    border-bottom: 1px dashed var(--border-color, #555);
-  }
-
-  .set-effects .effect-group:last-child {
-    margin-bottom: 0;
-    padding-bottom: 0;
-    border-bottom: none;
-  }
-
-  .effect-pieces {
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--accent-color, #4a9eff);
-    text-transform: uppercase;
-    margin-bottom: 6px;
-  }
-
-  .effect-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 2px 0;
-    font-size: 12px;
-    justify-content: space-between;
-  }
-
-  .effect-row .effect-value {
-    color: var(--success-color, #4ade80);
-    font-weight: 600;
-    min-width: 50px;
-  }
-
-  .effect-row .effect-name {
-    color: var(--text-color);
-    text-align: right;
-    margin-left: auto;
-    flex: 1;
-    min-width: 0;
-  }
-
 
   .wiki-article {
     overflow: hidden; /* Contains floated infobox */

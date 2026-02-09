@@ -1324,15 +1324,6 @@
     font-size: 14px;
   }
 
-  .meta-row input {
-    flex: 1 1 240px;
-    background: var(--bg-color, #111);
-    border: 1px solid var(--border-color, #444);
-    color: var(--text-color);
-    border-radius: 8px;
-    padding: 6px 10px;
-  }
-
   .btn {
     padding: 8px 14px;
     border-radius: 8px;
@@ -1352,12 +1343,6 @@
 
   .btn-secondary {
     background: transparent;
-  }
-
-  .btn-danger {
-    background: rgba(239, 68, 68, 0.2);
-    border-color: rgba(239, 68, 68, 0.4);
-    color: var(--error-color);
   }
 
   .btn-small {
@@ -1482,7 +1467,6 @@
 
   .field-group select,
   .field-group input,
-  .field-group textarea,
   .panel-section select {
     background: var(--bg-color, #111);
     border: 1px solid var(--border-color, #444);

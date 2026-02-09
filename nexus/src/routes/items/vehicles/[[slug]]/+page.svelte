@@ -236,7 +236,6 @@
   title="Vehicles"
   {breadcrumbs}
   entity={activeVehicle}
-  entityType="Vehicle"
   basePath="/items/vehicles"
   {navItems}
   {navFilters}
@@ -953,61 +952,6 @@
     border-radius: 4px;
     font-size: 12px;
     color: var(--text-color);
-  }
-
-  /* Mini defense grid for infobox */
-  .infobox-defense-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 6px;
-  }
-
-  .mini-defense-item {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 6px 4px;
-    background-color: var(--secondary-color);
-    border-radius: 4px;
-    border: 1px solid var(--border-color, #555);
-  }
-
-  .mini-defense-label {
-    font-size: 9px;
-    color: var(--text-muted, #999);
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-  }
-
-  .mini-defense-value {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-color);
-  }
-
-  /* Total defense full-width box */
-  .defense-total-box {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-top: 8px;
-    padding: 10px 12px;
-    background-color: var(--accent-color, #4a9eff);
-    border-radius: 6px;
-  }
-
-  .defense-total-label {
-    font-size: 12px;
-    font-weight: 600;
-    color: rgba(255, 255, 255, 0.9);
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-  }
-
-  .defense-total-value {
-    font-size: 18px;
-    font-weight: 700;
-    color: white;
   }
 
   .wiki-article {

@@ -1035,22 +1035,6 @@
     border-color: var(--accent-color, #4a9eff);
   }
 
-  .btn-add.primary {
-    margin-top: 4px;
-    padding: 8px 12px;
-    font-size: 12px;
-    border-style: solid;
-    background-color: var(--accent-color, #4a9eff);
-    border-color: var(--accent-color, #4a9eff);
-    color: white;
-  }
-
-  .btn-add.primary:hover {
-    opacity: 0.9;
-    background-color: var(--accent-color, #4a9eff);
-    color: white;
-  }
-
   /* Mobile adjustments */
   @media (max-width: 899px) {
     .field-grid {

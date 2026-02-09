@@ -24,9 +24,6 @@
   /** @type {object|null} Current entity being viewed/edited */
   export let entity = null;
 
-  /** @type {string} Entity type for API calls */
-  export let entityType = '';
-
   /** @type {string} Base path for navigation links */
   export let basePath = '';
 

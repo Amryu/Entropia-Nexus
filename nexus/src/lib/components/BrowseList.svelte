@@ -6,7 +6,6 @@
   import { createEventDispatcher } from 'svelte';
 
   export let items = [];
-  export let currentSelection = '';
   export let title = '';
   export let basePath = '';
   export let tableViewInfo = {};

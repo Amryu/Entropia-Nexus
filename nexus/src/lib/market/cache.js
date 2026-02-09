@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { apiCall } from "$lib/util";
 import { categorizeItems } from "$lib/market/categorize";
+import { getAllOfferCounts } from "$lib/server/exchange.js";
 
 // In-memory cache
 let cache = {
@@ -13,9 +14,12 @@ let cache = {
   // Source datasets
   items: null,
   detailed: {},
+  // Offer counts per item (Map<itemId, { buys, sells }>)
+  offerCounts: null,
   // Timestamps
   lastFullBuildAt: 0,
-  lastItemsCheckAt: 0
+  lastItemsCheckAt: 0,
+  lastOfferCountsAt: 0
 };
 
 // Prevent concurrent rebuilds overwhelming the API
@@ -24,6 +28,7 @@ let deltaPromise = null;   // items delta lock
 
 const FULL_REBUILD_MS = 24 * 60 * 60 * 1000; // 24h
 const ITEMS_REFRESH_MS = 15 * 60 * 1000;     // 15m
+const OFFER_COUNTS_MS = 5 * 60 * 1000;       // 5m
 
 async function fetchAllDatasets(fetch) {
   // Base items + all detailed endpoints required by categorization
@@ -104,6 +109,29 @@ function annotateForExchange(categorized) {
   return categorized;
 }
 
+/**
+ * Some detailed endpoints (e.g. /materials) return a table-row `Id` instead of
+ * the global `Items.Id`, and lack an `ItemId` field. This function backfills the
+ * correct `ItemId` from the base /items list by matching on Name.
+ */
+function enrichWithItemIds(items, detailed) {
+  if (!items || !detailed) return;
+  const nameToId = new Map();
+  for (const item of items) {
+    const id = item.ItemId ?? item.Id;
+    if (item.Name && id != null) nameToId.set(item.Name, id);
+  }
+  for (const dataset of Object.values(detailed)) {
+    if (!Array.isArray(dataset)) continue;
+    for (const entry of dataset) {
+      if (!entry.ItemId && entry.Name) {
+        const id = nameToId.get(entry.Name);
+        if (id != null) entry.ItemId = id;
+      }
+    }
+  }
+}
+
 // Build/rebuild lightweight summary JSON and an ETag for fast responses
 function buildSummary() {
   try {
@@ -132,6 +160,7 @@ export async function rebuildMarketCache(fetch) {
     const { items, detailed } = await fetchAllDatasets(fetch);
     if (!items) return cache.annotated;
 
+    enrichWithItemIds(items, detailed);
     const categorized = categorizeItems(items, detailed);
     const annotated = annotateForExchange(categorized);
 
@@ -142,7 +171,13 @@ export async function rebuildMarketCache(fetch) {
     cache.lastFullBuildAt = Date.now();
     cache.lastItemsCheckAt = Date.now();
 
-  buildSummary();
+    // Fetch offer counts from exchange DB
+    try {
+      cache.offerCounts = await getAllOfferCounts();
+      cache.lastOfferCountsAt = Date.now();
+    } catch { /* non-fatal */ }
+
+    buildSummary();
 
     return cache.annotated;
   })();
@@ -182,6 +217,10 @@ async function itemsDeltaRefresh(fetch) {
 
     if (added.length === 0 && removed.length === 0) {
       cache.lastItemsCheckAt = Date.now();
+      // Still refresh offer counts if stale
+      if (Date.now() - cache.lastOfferCountsAt > OFFER_COUNTS_MS) {
+        refreshOfferCounts().catch(() => {});
+      }
       return cache.annotated;
     }
 
@@ -237,13 +276,20 @@ async function itemsDeltaRefresh(fetch) {
     cache.detailed = { ...cache.detailed, ...updates };
     cache.items = items;
 
+    enrichWithItemIds(cache.items, cache.detailed);
     const categorized = categorizeItems(cache.items, cache.detailed);
     const annotated = annotateForExchange(categorized);
     cache.categorized = categorized;
     cache.annotated = annotated;
     cache.lastItemsCheckAt = Date.now();
 
-  buildSummary();
+    // Refresh offer counts
+    try {
+      cache.offerCounts = await getAllOfferCounts();
+      cache.lastOfferCountsAt = Date.now();
+    } catch { /* non-fatal */ }
+
+    buildSummary();
 
     return cache.annotated;
   })();
@@ -252,6 +298,19 @@ async function itemsDeltaRefresh(fetch) {
   } finally {
     deltaPromise = null;
   }
+}
+
+/**
+ * Refresh only the offer counts and rebuild summary.
+ * Lightweight — just one DB query.
+ */
+async function refreshOfferCounts() {
+  if (!cache.annotated) return; // no data yet
+  try {
+    cache.offerCounts = await getAllOfferCounts();
+    cache.lastOfferCountsAt = Date.now();
+    buildSummary();
+  } catch { /* non-fatal */ }
 }
 
 export async function getExchangeCategorization(fetch) {
@@ -303,20 +362,32 @@ if (typeof window === 'undefined') {
         scheduleItems();
       }, jitter);
     };
+    const scheduleOfferCounts = () => {
+      const jitter = Math.floor(OFFER_COUNTS_MS * (0.9 + Math.random() * 0.2));
+      setTimeout(async () => {
+        try {
+          await refreshOfferCounts();
+        } catch {}
+        scheduleOfferCounts();
+      }, jitter);
+    };
     scheduleFull();
     scheduleItems();
+    scheduleOfferCounts();
   } catch {}
 }
 
 // Slim client payload
 function slimItem(item) {
   if (!item || typeof item !== 'object') return item;
+  const id = item.ItemId ?? item.Id ?? null;
+  const counts = id != null && cache.offerCounts ? cache.offerCounts.get(id) : null;
   return {
-    i: item.ItemId ?? item.Id ?? null,
+    i: id,
     n: item.Name ?? null,
     o: null,
-    b: null,
-    s: null,
+    b: counts?.buys || null,
+    s: counts?.sells || null,
     m: null,
     p: null,
     w: null

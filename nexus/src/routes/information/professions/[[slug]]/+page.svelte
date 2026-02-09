@@ -290,7 +290,6 @@
     title="Professions"
     {breadcrumbs}
     entity={activeEntity}
-    entityType="Profession"
     basePath="/information/professions"
     {navItems}
     {navFilters}

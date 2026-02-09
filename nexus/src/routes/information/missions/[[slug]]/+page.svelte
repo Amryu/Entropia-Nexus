@@ -898,7 +898,6 @@
   title="Missions"
   {breadcrumbs}
   entity={activeEntity}
-  entityType={entityType}
   basePath="/information/missions"
   {user}
   editable={true}
@@ -1284,7 +1283,6 @@
                 mobMaturities={data.mobMaturities || []}
                 npcOptions={npcOptions}
                 locationOptions={locationOptions}
-                planetOptions={planetIdOptions}
                 itemsIndex={itemsIndex}
                 itemsMap={itemsMap}
                 missionPlanet={missionPlanetResolved}
@@ -1781,23 +1779,6 @@
     font-size: 11px;
     color: var(--error-color, #ef4444);
     margin-top: 4px;
-  }
-
-  .event-select {
-    width: 100%;
-    padding: 4px 8px;
-    font-size: 12px;
-    background: var(--input-bg, var(--secondary-color));
-    border: 1px solid var(--border-color, #555);
-    border-radius: 4px;
-    color: var(--text-color);
-    cursor: pointer;
-  }
-
-  .event-select:hover,
-  .event-select:focus {
-    border-color: var(--accent-color, #4a9eff);
-    outline: none;
   }
 
   /* Cooldown inputs for Recurring missions */

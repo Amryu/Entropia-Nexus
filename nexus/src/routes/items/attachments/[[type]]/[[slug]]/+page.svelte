@@ -480,7 +480,6 @@
   title="Attachments"
   {breadcrumbs}
   entity={activeEntity}
-  entityType={getEntityType(additional.type)}
   basePath="/items/attachments/{additional.type || ''}"
   {navItems}
   {navFilters}
@@ -967,48 +966,6 @@
 </WikiPage>
 
 <style>
-  /* Pending change banner */
-  .pending-change-banner {
-    background: linear-gradient(135deg, #f59e0b20, #f59e0b10);
-    border: 1px solid #f59e0b;
-    border-radius: 8px;
-    padding: 12px 16px;
-    margin-bottom: 16px;
-  }
-
-  .banner-content {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex-wrap: wrap;
-  }
-
-  .banner-icon {
-    font-size: 18px;
-  }
-
-  .banner-text {
-    flex: 1;
-    font-size: 14px;
-    color: var(--text-color);
-  }
-
-  .banner-toggle {
-    padding: 6px 12px;
-    font-size: 13px;
-    font-weight: 500;
-    background: var(--accent-color);
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: opacity 0.15s;
-  }
-
-  .banner-toggle:hover {
-    opacity: 0.9;
-  }
-
   .layout-a {
     position: relative;
     width: 100%;
@@ -1131,11 +1088,6 @@
     color: var(--text-color);
   }
 
-  .stat-value.highlight {
-    color: #4ade80;
-    font-weight: 600;
-  }
-
   .stat-value.effect-value {
     color: var(--accent-color, #4a9eff);
   }
@@ -1195,122 +1147,6 @@
   .description-content.placeholder {
     color: var(--text-muted, #999);
     font-style: italic;
-  }
-
-  /* Mini damage/defense grids for infobox */
-  .infobox-damage-grid, .infobox-defense-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 6px;
-  }
-
-  .mini-damage-item, .mini-defense-item {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 6px 4px;
-    background-color: var(--secondary-color);
-    border-radius: 4px;
-    border: 1px solid var(--border-color, #555);
-  }
-
-  .mini-defense-item.block {
-    background-color: #6366f1;
-    border-color: #6366f1;
-  }
-
-  .mini-defense-item.block .mini-defense-label,
-  .mini-defense-item.block .mini-defense-value {
-    color: white;
-  }
-
-  /* Total defense full-width box */
-  .defense-total-box {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-top: 8px;
-    padding: 10px 12px;
-    background-color: var(--accent-color, #4a9eff);
-    border-radius: 6px;
-  }
-
-  .defense-total-label {
-    font-size: 12px;
-    font-weight: 600;
-    color: rgba(255, 255, 255, 0.9);
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-  }
-
-  .defense-total-value {
-    font-size: 18px;
-    font-weight: 700;
-    color: white;
-  }
-
-  .mini-damage-label, .mini-defense-label {
-    font-size: 9px;
-    color: var(--text-muted, #999);
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-  }
-
-  .mini-damage-value, .mini-defense-value {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text-color);
-  }
-
-  /* Damage/Defense grids (main article) */
-  .damage-grid, .defense-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
-    gap: 8px;
-  }
-
-  .damage-item, .defense-item {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 8px;
-    background-color: var(--bg-color, var(--primary-color));
-    border-radius: 4px;
-    border: 1px solid var(--border-color, #555);
-  }
-
-  .damage-item.total, .defense-item.total {
-    background-color: var(--accent-color, #4a9eff);
-    border-color: var(--accent-color, #4a9eff);
-  }
-
-  .damage-item.total .damage-label,
-  .damage-item.total .damage-value,
-  .defense-item.total .defense-label,
-  .defense-item.total .defense-value {
-    color: white;
-  }
-
-  .defense-item.block {
-    background-color: #6366f1;
-    border-color: #6366f1;
-  }
-
-  .defense-item.block .defense-label,
-  .defense-item.block .defense-value {
-    color: white;
-  }
-
-  .damage-label, .defense-label {
-    font-size: 11px;
-    color: var(--text-muted, #999);
-    text-transform: uppercase;
-  }
-
-  .damage-value, .defense-value {
-    font-size: 16px;
-    font-weight: 600;
-    color: var(--text-color);
   }
 
   .no-selection {
@@ -1387,15 +1223,6 @@
 
     .infobox-title {
       font-size: 16px;
-    }
-
-    .entity-icon-wrapper {
-      max-width: 320px;
-      margin: 0 auto 12px;
-    }
-
-    .damage-grid, .defense-grid {
-      grid-template-columns: repeat(3, 1fr);
     }
   }
 </style>

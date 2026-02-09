@@ -15,8 +15,18 @@ A trading platform for buying and selling items between players.
   - Sex filter for clothing
   - Tier/TiR filters for tierable items
   - QR filter for blueprints
-- **Buy/Sell Orders**: Create and manage trade orders
+- **Buy/Sell Orders**: Create and manage trade orders with real-time API
 - **Order Freshness**: Filter by last update time
+- **Offer Staleness**: Active (<3d), Stale (3-7d), Expired (7-30d), Terminated (>30d)
+- **My Offers**: View, bump, edit, and close your offers
+- **Inventory System**: Import items via JSON, manage server-stored inventory
+- **Shopping Cart**: Add sell offers to cart, group by seller/planet, checkout creates trade requests
+- **Buy/Sell Now**: Click Buy/Sell buttons on order rows to create instant trade requests
+- **Bulk Buy/Sell**: Tab in OrderDialog for batch purchasing with quantity/min/max/planet filters
+- **User Offers Panel**: Click seller names to view all their offers in a floating panel
+- **Trade Requests**: Track active trades with Discord thread integration
+- **Price Suggestions**: Match best offer, undercut/outbid with tiered amounts
+- **Exchange Pricing**: Derived price data from active exchange offers
 
 ### Routes
 
@@ -30,11 +40,29 @@ A trading platform for buying and selling items between players.
 
 ```
 nexus/src/routes/market/exchange/[[slug]]/[[id]]/
-├── +page.svelte           - Route entry
-├── ExchangeBrowser.svelte - Main exchange UI
-├── CategoryTree.svelte    - Category navigation
-├── OrderDialog.svelte     - Create/edit order modal
-└── orderUtils.js          - Order calculation helpers
+├── +page.svelte                - Route entry
+├── ExchangeBrowser.svelte      - Main exchange UI coordinator
+├── CategoryTree.svelte         - Category navigation
+├── OrderDialog.svelte          - Create/edit order modal with price suggestions + bulk tab
+├── OrderBookTable.svelte       - FancyTable wrapper for buy/sell orders
+├── OrderStatusBadge.svelte     - Color-coded staleness badge
+├── MyOffersView.svelte         - User's offers management (bump/edit/close)
+├── InventoryImportDialog.svelte - JSON import wizard
+├── InventoryPanel.svelte       - Inventory browser and management
+├── CartSummary.svelte          - Shopping cart with seller grouping + checkout
+├── FavouritesTree.svelte       - Favourites sidebar with folders and drag-and-drop
+├── QuickTradeDialog.svelte     - Buy Now / Sell Now confirmation dialog
+├── UserOffersPanel.svelte      - View a specific user's active offers
+├── TradeRequestsPanel.svelte   - View/manage trade requests in floating panel
+└── orderUtils.js               - Order calculation helpers
+```
+
+### State Management
+
+```
+nexus/src/routes/market/exchange/exchangeStore.js    - Svelte stores (myOffers, inventory, cart, showTrades, tradeRequests)
+nexus/src/routes/market/exchange/favouritesStore.js   - Favourites store with folder management
+nexus/src/routes/market/exchange/exchangeConstants.js - Constants and helpers (staleness, undercut tiers)
 ```
 
 ### Order Types
@@ -107,28 +135,269 @@ Pet orders include additional metadata:
 
 | Column | Type | Description |
 |--------|------|-------------|
-| id | integer | Primary key |
+| id | serial | Primary key |
 | user_id | bigint | Owner (Discord ID) |
-| type | text | 'Buy' or 'Sell' |
-| item_name | text | Item name |
-| item_type | text | Item category |
-| planet | text | Trading planet |
+| type | trade_offer_type | 'BUY' or 'SELL' |
+| item_id | integer | Item reference |
 | quantity | integer | Number of items |
+| min_quantity | integer | Min quantity (optional) |
 | markup | numeric | Price modifier |
-| current_tt | numeric | Current TT (optional) |
-| metadata | jsonb | Tier, TiR, pet info |
-| created_at | timestamptz | Creation time |
+| planet | varchar(50) | Trading planet |
+| details | jsonb | Item name, tier, TiR, pet info |
+| state | trade_offer_state | active/stale/expired/terminated/closed |
+| bumped_at | timestamptz | Last bump time (determines staleness) |
+| created | timestamptz | Creation time |
+| updated | timestamptz | Last update |
+
+Unique constraint: 1 active offer per user per item per side.
+Limit: 50 offers per side per user.
+
+**Table**: `user_items` (nexus-users)
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | serial | Primary key |
+| user_id | bigint | Owner (Discord ID) |
+| item_id | integer | Item reference |
+| item_name | varchar(255) | Item name |
+| quantity | integer | Stack count |
+| instance_key | varchar(255) | Null=fungible, non-null=unique instance |
+| details | jsonb | Tier, condition, QR, pet data |
+| storage | varchar(10) | 'server' or 'local' |
 | updated_at | timestamptz | Last update |
+
+### Staleness Thresholds
+
+| State | Age since bumped_at | Computed on |
+|-------|---------------------|-------------|
+| Active | < 3 days | Read (SQL CASE) |
+| Stale | 3-7 days | Read (SQL CASE) |
+| Expired | 7-30 days | Read (SQL CASE) |
+| Terminated | > 30 days | Read (SQL CASE) |
+| Closed | User action | Explicit state |
 
 ### API Endpoints
 
 ```
-GET /api/market/exchange   - Get categorized items for trading
+GET  /api/market/exchange                          - Get categorized items for trading
+GET  /api/market/exchange/offers                   - User's own offers (My Offers)
+POST /api/market/exchange/offers                   - Create a new offer
+PUT  /api/market/exchange/offers/[id]              - Edit an offer
+DELETE /api/market/exchange/offers/[id]             - Close an offer (soft delete)
+POST /api/market/exchange/offers/[id]/bump         - Bump an offer (reset staleness)
+GET  /api/market/exchange/offers/item/[itemId]     - Order book for an item
+GET  /api/market/exchange/offers/user/[userId]     - All active offers by a user (public)
+GET  /api/market/trade-requests                    - User's trade requests
+POST /api/market/trade-requests                    - Create/append trade request
+GET  /api/market/trade-requests/[id]               - Single trade request with items
+POST /api/market/trade-requests/[id]/cancel        - Cancel a trade request
+GET  /api/users/inventory                          - User's server inventory
+PUT  /api/users/inventory                          - Bulk upsert inventory (import)
+DELETE /api/users/inventory/[id]                   - Remove inventory item
+GET  /api/market/prices/exchange/[itemId]           - Exchange-derived price data
 ```
 
-### Local Storage
+### Undercut / Outbid System
 
-Filter preferences persisted:
+Price suggestions use a 2% relative undercut formula:
+
+**Percent-markup items** (stackables, L items):
+```
+undercut_amount = 2% × (markup - 100)
+```
+Example: 150% → 2% × 50 = 1.0 → undercut to 149%. Minimum: 0.01 percentage points.
+
+**Absolute-markup items** (condition items):
+```
+undercut_amount = 2% × markup
+```
+Example: +50 PED → 2% × 50 = 1.0 → undercut to +49 PED. Minimum: 0.01 PED.
+
+For buy orders the same formula is used but the amount is *added* (outbid).
+
+### Price Suggestions
+
+Three suggestion buttons in the order dialog:
+- **Match Best**: Sets markup to the best opposing offer
+- **Undercut / Outbid**: Applies the 2% relative undercut formula
+- **Daily Avg**: Uses the most recent daily average price from historical data (shown when available)
+
+Suggestions are available in both create and edit modes.
+
+### Partial Trades
+
+Fungible items support partial trades via `min_quantity`:
+- **Allow Partial** checkbox in the order dialog
+- Default min quantity: 20% of total quantity (minimum 1)
+- Stored in the `min_quantity` column of `trade_offers`
+- Instance items (tierable, condition, blueprints, pets) do not support partial trades
+
+### Edit Existing Offer
+
+When a user already has a buy or sell order for an item:
+- The button changes to "Edit Buy" / "Edit Sell"
+- Clicking opens the existing order in edit mode with pre-populated values
+- Saving updates the existing offer (PUT) and resets staleness
+
+### Favourites
+
+Users can star items to add them to favourites. Favourites appear in the sidebar and support:
+- **Folders**: Create, rename, delete folders to organize favourites
+- **Drag-and-Drop**: Move items between folders (HTML5 native DnD)
+- **Star Toggle**: Click the star in the detail title bar to add/remove
+- **Persistence**: Stored via the user preferences system (DB when logged in, localStorage otherwise)
+
+Data stored under preference key `exchange.favourites`:
+```json
+{
+  "folders": [
+    { "id": "uuid", "name": "Mining Gear", "items": [1000124, 2000081], "order": 0 }
+  ],
+  "items": [3000789]
+}
+```
+
+### User Preferences System
+
+Centralized preference storage that abstracts localStorage vs database persistence.
+
+**Client utility**: `nexus/src/lib/preferences.js`
+- `createPreference(key, defaultValue, options?)` — creates a Svelte writable store
+- Writes to localStorage immediately, syncs to DB when logged in
+- On login: migrates localStorage → DB if DB has no entry for the key
+- Option `{ debounceMs }` for frequently-changing preferences
+
+**Server module**: `nexus/src/lib/server/preferences.js`
+- Validates keys against allowed prefixes
+- Enforces 20KB max per key, 50 keys max per user
+
+**Database**: `user_preferences` table (nexus-users)
+
+| Column | Type | Description |
+|--------|------|-------------|
+| user_id | bigint | User Discord ID (PK) |
+| key | text | Preference key (PK) |
+| data | jsonb | Preference data |
+| updated_at | timestamptz | Last update |
+
+**Allowed key prefixes**: `exchange.`, `darkMode`, `construction.`, `loadouts`, `wiki.`, `services.`
+
+**API Endpoints**:
+```
+GET    /api/users/preferences           - All preferences for logged-in user
+PUT    /api/users/preferences           - Upsert { key, data }
+GET    /api/users/preferences/[key]     - Single preference
+DELETE /api/users/preferences/[key]     - Delete preference
+```
+
+### Trade Request System
+
+Players can initiate trades by clicking Buy/Sell buttons on order rows, using the bulk trade feature, or checking out from the cart. These actions create trade requests that are managed through Discord threads.
+
+#### Flow
+
+1. **User clicks Buy/Sell** on an order row -> QuickTradeDialog opens
+2. **User confirms** -> POST `/api/market/trade-requests` creates a trade request (requires `market.trade` grant)
+3. **Bot polls** every 30s, finds pending requests, creates private Discord threads
+4. **Both users** are added to the thread to negotiate
+5. **Thread activity** is tracked; after 18h inactivity a warning is sent
+6. **After 24h** inactivity the trade is auto-expired and thread is locked/archived
+7. **`/done` command** marks the trade as completed and locks the thread
+
+#### Grants
+
+| Grant | Description |
+|-------|-------------|
+| `market.trade` | Create trade requests (Buy/Sell Now, cart checkout) |
+| `market.bulk` | Use bulk buy/sell feature to create multiple trade requests |
+
+#### Trade Request Lifecycle
+
+| Status | Description |
+|--------|-------------|
+| `pending` | Just created, waiting for bot to create Discord thread |
+| `active` | Discord thread created, users negotiating |
+| `completed` | Marked complete via `/done` command |
+| `cancelled` | One party cancelled |
+| `expired` | Auto-closed after 24h inactivity |
+
+Only one open request (pending or active) is allowed between any two users at a time. If a user initiates another trade with the same person, items are appended to the existing request.
+
+#### Bulk Buy/Sell
+
+Tab 2 in the OrderDialog allows bulk trading:
+- **Quantity needed**: Total quantity to acquire
+- **Min offer amount**: Only consider offers with at least this quantity (0 = no minimum)
+- **Max traders**: Maximum number of different traders (slider 0-20, default 5)
+- **Planet**: Filter by planet
+
+Preview shows matched offers sorted by best markup. Confirm creates one trade request per matched trader.
+
+#### Database Tables
+
+**`trade_requests`** (nexus-users):
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | serial | Primary key |
+| requester_id | bigint | Requesting user (Discord ID) |
+| target_id | bigint | Target user (Discord ID) |
+| status | text | pending/active/completed/cancelled/expired |
+| planet | text | Trading planet (optional) |
+| discord_thread_id | text | Discord thread ID (set by bot) |
+| last_activity_at | timestamptz | Last activity timestamp |
+| warning_sent | boolean | Whether inactivity warning was sent |
+| created_at | timestamptz | Creation time |
+| closed_at | timestamptz | When request was closed |
+
+Unique constraint: Only 1 open request between any pair of users, using `LEAST/GREATEST` for direction-independence.
+
+**`trade_request_items`** (nexus-users):
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | serial | Primary key |
+| trade_request_id | integer | FK to trade_requests |
+| offer_id | integer | Reference to trade_offers (optional) |
+| item_id | integer | Item reference |
+| item_name | text | Item display name |
+| quantity | integer | Quantity to trade |
+| markup | numeric | Markup value |
+| side | text | 'BUY' or 'SELL' (the offer side) |
+| added_at | timestamptz | When item was added |
+
+#### API Endpoints
+
+```
+GET  /api/market/trade-requests                - User's trade requests
+POST /api/market/trade-requests                - Create/append trade request (market.trade)
+GET  /api/market/trade-requests/[id]           - Single trade request with items
+POST /api/market/trade-requests/[id]/cancel    - Cancel a trade request
+GET  /api/market/exchange/offers/user/[userId] - All active offers by a user (public)
+```
+
+#### Server Lib
+
+`nexus/src/lib/server/trade-requests.js` provides:
+- `getOrCreateTradeRequest(requesterId, targetId, planet, items)` — Transaction-safe; appends to existing open request or creates new
+- `getUserTradeRequests(userId)` — All requests where user is party, with partner names and item counts
+- `getTradeRequest(requestId)` — Full request with items array
+- `cancelTradeRequest(requestId, userId)` — Cancel (only parties can cancel)
+- `getUserPublicOffers(userId)` — All active offers by a user
+- Bot functions: `getPendingTradeRequests`, `getWarnableTradeRequests`, `getExpirableTradeRequests`, `findTradeRequestByThread`, `updateLastActivity`, `setTradeRequestThread`
+
+#### Discord Bot Integration
+
+- **Channel**: Configured via `/channel set trade #channel-name`
+- **Thread creation**: Private threads named "Trade: User1 <-> User2"
+- **Activity tracking**: `messageCreate` event updates `last_activity_at`
+- **Warning**: Sent at 18h inactivity (once per request)
+- **Expiry**: Thread locked and archived at 24h inactivity
+- **`/done` command**: Only usable by trade participants in trade threads
+
+### Local Storage (Legacy)
+
+Filter preferences persisted (will be migrated to user preferences over time):
 - `exchangeFilters.v1` - Category, planet, type filters
 - `exchangeOrderPrefs.v1` - Order creation preferences
 

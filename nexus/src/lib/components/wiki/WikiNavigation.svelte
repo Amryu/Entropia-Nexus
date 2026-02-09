@@ -2048,6 +2048,19 @@
     background-color: var(--table-alt-row, rgba(255, 255, 255, 0.02));
   }
 
+  .item-link.table-row:hover {
+    background-color: var(--hover-color);
+  }
+
+  .item-link.table-row.active {
+    background-color: var(--accent-color, #4a9eff);
+    color: white;
+  }
+
+  .item-link.table-row.active:hover {
+    background-color: var(--accent-color-hover, #3a8eef);
+  }
+
   .cell {
     font-size: 12px;
     overflow: hidden;

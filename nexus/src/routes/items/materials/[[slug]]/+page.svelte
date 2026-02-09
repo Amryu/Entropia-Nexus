@@ -201,7 +201,6 @@
   title="Materials"
   {breadcrumbs}
   entity={data.isCreateMode ? $currentEntity : (activeMaterial || material)}
-  entityType="Material"
   basePath="/items/materials"
   {navItems}
   {navFilters}
@@ -356,7 +355,6 @@
             <RefiningRecipesEditor
               recipes={activeMaterial?.RefiningRecipes || []}
               fieldName="RefiningRecipes"
-              {availableItems}
               materialName={activeMaterial?.Name || ''}
             />
           </DataSection>
@@ -642,78 +640,4 @@
     }
   }
 
-  /* Refining Recipes */
-  .refining-recipes {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-  }
-
-  .recipe-card {
-    background-color: var(--bg-color, var(--primary-color));
-    border: 1px solid var(--border-color, #555);
-    border-radius: 6px;
-    padding: 12px;
-  }
-
-  .recipe-header {
-    margin-bottom: 8px;
-    padding-bottom: 8px;
-    border-bottom: 1px solid var(--border-color, #555);
-  }
-
-  .recipe-output {
-    font-size: 14px;
-    color: var(--text-color);
-  }
-
-  .recipe-output strong {
-    color: var(--accent-color, #4a9eff);
-  }
-
-  .recipe-ingredients {
-    margin-top: 8px;
-  }
-
-  .ingredients-label {
-    font-size: 12px;
-    color: var(--text-muted, #999);
-    text-transform: uppercase;
-    margin-bottom: 6px;
-  }
-
-  .ingredients-list {
-    margin: 0;
-    padding: 0;
-    list-style: none;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
-  .ingredient {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 4px 8px;
-    background-color: var(--secondary-color);
-    border: 1px solid var(--border-color, #555);
-    border-radius: 4px;
-    font-size: 13px;
-  }
-
-  .ingredient-amount {
-    color: var(--accent-color, #4a9eff);
-    font-weight: 600;
-  }
-
-  .ingredient-name {
-    color: var(--text-color);
-  }
-
-  .no-ingredients {
-    color: var(--text-muted, #999);
-    font-style: italic;
-    font-size: 13px;
-  }
 </style>

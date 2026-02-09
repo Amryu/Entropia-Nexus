@@ -606,24 +606,6 @@
     gap: 12px;
   }
 
-  .info-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .info-label {
-    font-size: 12px;
-    text-transform: uppercase;
-    letter-spacing: 0.6px;
-    color: var(--text-muted, #999);
-  }
-
-  .info-value {
-    font-size: 14px;
-  }
-
   .member-list {
     display: flex;
     flex-direction: column;
@@ -852,12 +834,6 @@
     .society-grid {
       grid-template-columns: 1fr;
       gap: 16px;
-    }
-
-    .info-row {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 4px;
     }
 
     .member-row {

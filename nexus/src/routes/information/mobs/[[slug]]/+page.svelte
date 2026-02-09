@@ -508,7 +508,6 @@
     title="Mobs"
     {breadcrumbs}
     entity={activeMob}
-    entityType="Mob"
     basePath="/information/mobs"
     {navItems}
     {navFilters}

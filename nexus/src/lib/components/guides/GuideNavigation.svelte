@@ -6,7 +6,6 @@
 <script>
   export let tree = [];
   export let currentSlug = null;
-  export let canEdit = false;
 
   let expandedCategories = new Set();
   let expandedChapters = new Set();

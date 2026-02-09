@@ -16,7 +16,6 @@
   export let mobMaturities = [];
   export let npcOptions = [];
   export let locationOptions = [];
-  export let planetOptions = [];
   export let itemsIndex = {};
   /** Full item info map { id: { Name, Type } } for type checking */
   export let itemsMap = {};

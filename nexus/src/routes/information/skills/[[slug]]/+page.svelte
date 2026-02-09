@@ -365,7 +365,6 @@
     title="Skills"
     {breadcrumbs}
     entity={data.isCreateMode ? $currentEntity : (activeSkill || skill)}
-    entityType="Skill"
     basePath="/information/skills"
     {navItems}
     {navFilters}

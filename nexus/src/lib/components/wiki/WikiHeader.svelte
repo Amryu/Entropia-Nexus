@@ -20,9 +20,6 @@
   /** @type {object|null} Current entity */
   export let entity = null;
 
-  /** @type {string} Entity type */
-  export let entityType = '';
-
   /** @type {object|null} Current user */
   export let user = null;
 

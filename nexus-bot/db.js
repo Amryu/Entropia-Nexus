@@ -386,6 +386,115 @@ export async function setBotConfig(key, value) {
   await poolUsers.query(query, [key, value]);
 }
 
+// ---- Trade Request Functions ----
+
+export async function getPendingTradeRequests() {
+  const query = `
+    SELECT tr.*,
+           ru.eu_name AS requester_name, ru.username AS requester_username,
+           tu.eu_name AS target_name, tu.username AS target_username
+    FROM trade_requests tr
+    LEFT JOIN users ru ON ru.id = tr.requester_id
+    LEFT JOIN users tu ON tu.id = tr.target_id
+    WHERE tr.status = 'pending'
+    ORDER BY tr.created_at ASC
+  `;
+  return (await poolUsers.query(query)).rows;
+}
+
+export async function getTradeRequestItems(requestId) {
+  const query = `
+    SELECT * FROM trade_request_items
+    WHERE trade_request_id = $1
+    ORDER BY added_at ASC
+  `;
+  return (await poolUsers.query(query, [requestId])).rows;
+}
+
+export async function getNewTradeRequestItems(requestId, since) {
+  const query = `
+    SELECT * FROM trade_request_items
+    WHERE trade_request_id = $1 AND added_at > $2
+    ORDER BY added_at ASC
+  `;
+  return (await poolUsers.query(query, [requestId, since])).rows;
+}
+
+export async function setTradeRequestThread(requestId, threadId) {
+  const query = `
+    UPDATE trade_requests
+    SET discord_thread_id = $2, status = 'active'
+    WHERE id = $1
+  `;
+  await poolUsers.query(query, [requestId, threadId]);
+}
+
+export async function getWarnableTradeRequests() {
+  const query = `
+    SELECT tr.*,
+           ru.eu_name AS requester_name,
+           tu.eu_name AS target_name
+    FROM trade_requests tr
+    LEFT JOIN users ru ON ru.id = tr.requester_id
+    LEFT JOIN users tu ON tu.id = tr.target_id
+    WHERE tr.status = 'active'
+      AND tr.warning_sent = false
+      AND tr.last_activity_at < NOW() - INTERVAL '18 hours'
+  `;
+  return (await poolUsers.query(query)).rows;
+}
+
+export async function markWarningSent(requestId) {
+  await poolUsers.query(
+    'UPDATE trade_requests SET warning_sent = true WHERE id = $1',
+    [requestId]
+  );
+}
+
+export async function getExpirableTradeRequests() {
+  const query = `
+    SELECT tr.*, ru.eu_name AS requester_name, tu.eu_name AS target_name
+    FROM trade_requests tr
+    LEFT JOIN users ru ON ru.id = tr.requester_id
+    LEFT JOIN users tu ON tu.id = tr.target_id
+    WHERE tr.status = 'active'
+      AND tr.last_activity_at < NOW() - INTERVAL '24 hours'
+  `;
+  return (await poolUsers.query(query)).rows;
+}
+
+export async function updateTradeRequestStatus(requestId, status) {
+  const closedAt = ['completed', 'cancelled', 'expired'].includes(status) ? 'NOW()' : 'NULL';
+  await poolUsers.query(
+    `UPDATE trade_requests SET status = $2, closed_at = ${closedAt} WHERE id = $1`,
+    [requestId, status]
+  );
+}
+
+export async function findTradeRequestByThread(threadId) {
+  const query = 'SELECT * FROM trade_requests WHERE discord_thread_id = $1';
+  return (await poolUsers.query(query, [threadId])).rows[0];
+}
+
+export async function updateLastActivity(requestId) {
+  await poolUsers.query(
+    'UPDATE trade_requests SET last_activity_at = NOW(), warning_sent = false WHERE id = $1',
+    [requestId]
+  );
+}
+
+export async function getActiveTradeRequestsWithNewItems(since) {
+  const query = `
+    SELECT DISTINCT tr.id, tr.discord_thread_id
+    FROM trade_requests tr
+    JOIN trade_request_items tri ON tri.trade_request_id = tr.id
+    WHERE tr.status = 'active'
+      AND tr.discord_thread_id IS NOT NULL
+      AND tri.added_at > $1
+  `;
+  return (await poolUsers.query(query, [since])).rows;
+}
+
 // ---- Item Price Functions ----
 
 export async function insertItemPrices(prices) {

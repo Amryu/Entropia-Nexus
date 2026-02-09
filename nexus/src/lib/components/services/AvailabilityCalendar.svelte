@@ -5,7 +5,6 @@
 
   export let availability = []; // Array of { day_of_week, start_time, end_time, is_available }
   export let readonly = false;
-  export let lockedSlots = []; // Array of { start_time, end_time, reason } for view mode
 
   const dispatch = createEventDispatcher();
 

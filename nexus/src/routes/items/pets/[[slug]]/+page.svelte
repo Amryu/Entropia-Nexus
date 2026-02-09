@@ -254,7 +254,6 @@
   title="Pets"
   {breadcrumbs}
   entity={activeEntity}
-  entityType="Pet"
   basePath="/items/pets"
   {navItems}
   {navFilters}
@@ -503,46 +502,6 @@
 </WikiPage>
 
 <style>
-  .pending-change-banner {
-    background: linear-gradient(135deg, #f59e0b22 0%, #f59e0b11 100%);
-    border: 1px solid #f59e0b44;
-    border-radius: 8px;
-    padding: 12px 16px;
-    margin-bottom: 16px;
-  }
-
-  .banner-content {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    flex-wrap: wrap;
-  }
-
-  .banner-icon {
-    font-size: 18px;
-  }
-
-  .banner-text {
-    flex: 1;
-    color: var(--text-color);
-    font-size: 14px;
-  }
-
-  .banner-toggle {
-    padding: 6px 12px;
-    font-size: 12px;
-    background: var(--accent-color);
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: opacity 0.2s;
-  }
-
-  .banner-toggle:hover {
-    opacity: 0.9;
-  }
-
   .layout-a {
     position: relative;
     width: 100%;

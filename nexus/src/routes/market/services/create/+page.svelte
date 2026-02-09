@@ -320,7 +320,7 @@
             <small>Uncheck all options to offer a free service. Decay pricing amount is determined after service completion.</small>
           </div>
 
-          <EquipmentEditor serviceType={serviceType} bind:equipment {clothings} loading={clothingsLoading} />
+          <EquipmentEditor serviceType={serviceType} bind:equipment {clothings} />
         </div>
       {/if}
 
