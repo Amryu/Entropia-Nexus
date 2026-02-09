@@ -18,8 +18,8 @@ export async function getOrCreateTradeRequest(requesterId, targetId, planet, ite
     const existingRes = await client.query(
       `SELECT id, status, discord_thread_id
        FROM trade_requests
-       WHERE LEAST(requester_id, target_id) = LEAST($1, $2)
-         AND GREATEST(requester_id, target_id) = GREATEST($1, $2)
+       WHERE LEAST(requester_id, target_id) = LEAST($1::bigint, $2::bigint)
+         AND GREATEST(requester_id, target_id) = GREATEST($1::bigint, $2::bigint)
          AND status IN ('pending', 'active')
        FOR UPDATE`,
       [reqId, tgtId]
