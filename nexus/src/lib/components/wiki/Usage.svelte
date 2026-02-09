@@ -5,8 +5,8 @@
   import { getItemLink, getTypeLink } from '$lib/util';
   import { editMode } from '$lib/stores/wikiEditState.js';
 
-  import FancyTable from './FancyTable.svelte';
-  import RefiningRecipesDisplay from './wiki/RefiningRecipesDisplay.svelte';
+  import FancyTable from '../FancyTable.svelte';
+  import RefiningRecipesDisplay from './RefiningRecipesDisplay.svelte';
 
   export let item;
   export let usage;
@@ -113,18 +113,10 @@
     padding: 0;
   }
 
-  .table-wrapper {
-    height: 596px;
-    border-radius: 6px;
-    overflow: hidden;
-    border: 1px solid var(--border-color, #555);
-  }
-
   .recipe-wrapper {
     border-radius: 0;
     border: none;
     padding: 0;
-    min-height: 300px;
   }
 
   .recipe-wrapper :global(.recipes-display) {
@@ -169,17 +161,9 @@
     cursor: default;
   }
 
-  @media (max-width: 767px) {
+  @media (max-width: 899px) {
     .usage-grid {
       grid-template-columns: 1fr;
-    }
-
-    .table-wrapper {
-      height: 499px;
-    }
-
-    .recipe-wrapper {
-      min-height: 250px;
     }
   }
 </style>
@@ -201,16 +185,15 @@
       {#if usage.Blueprints && usage.Blueprints.length > 0}
         <div class="usage-section">
           <h4 class="section-title">Blueprints</h4>
-          <div class="table-wrapper">
-            <FancyTable
-              columns={blueprintColumns}
-              data={blueprintData}
-              rowHeight={40}
-              searchable={true}
-              sortable={true}
-              emptyMessage="No blueprint data"
-            />
-          </div>
+          <FancyTable
+            columns={blueprintColumns}
+            data={blueprintData}
+            rowHeight={32}
+            searchable={true}
+            sortable={true}
+            compact
+            emptyMessage="No blueprint data"
+          />
         </div>
       {/if}
 
@@ -232,32 +215,30 @@
       {#if usage.Missions && usage.Missions.length > 0}
         <div class="usage-section">
           <h4 class="section-title">Missions</h4>
-          <div class="table-wrapper">
-            <FancyTable
-              columns={missionColumns}
-              data={missionData}
-              rowHeight={40}
-              searchable={true}
-              sortable={true}
-              emptyMessage="No mission data"
-            />
-          </div>
+          <FancyTable
+            columns={missionColumns}
+            data={missionData}
+            rowHeight={32}
+            searchable={true}
+            sortable={true}
+            compact
+            emptyMessage="No mission data"
+          />
         </div>
       {/if}
 
       {#if usage.VendorOffers && usage.VendorOffers.length > 0 && usage.VendorOffers.some(vo => vo.Prices?.length > 0)}
         <div class="usage-section">
           <h4 class="section-title">Vendor Currency</h4>
-          <div class="table-wrapper">
-            <FancyTable
-              columns={vendorOfferColumns}
-              data={vendorOfferData}
-              rowHeight={40}
-              searchable={true}
-              sortable={true}
-              emptyMessage="No vendor offers"
-            />
-          </div>
+          <FancyTable
+            columns={vendorOfferColumns}
+            data={vendorOfferData}
+            rowHeight={32}
+            searchable={true}
+            sortable={true}
+            compact
+            emptyMessage="No vendor offers"
+          />
         </div>
       {/if}
     </div>

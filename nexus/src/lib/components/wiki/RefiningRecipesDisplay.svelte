@@ -174,7 +174,7 @@
     border-radius: 6px;
   }
 
-  @media (max-width: 767px) {
+  @media (max-width: 899px) {
     .recipes-display.grid {
       grid-template-columns: 1fr;
     }

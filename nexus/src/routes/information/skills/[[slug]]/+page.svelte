@@ -895,15 +895,9 @@
     border-color: var(--accent-color, #4a9eff);
   }
 
-  /* Tablet: non-default infobox width */
-  @media (max-width: 1023px) {
-    .wiki-infobox-float {
-      width: 260px;
-    }
-  }
 
   /* Mobile adjustments */
-  @media (max-width: 767px) {
+  @media (max-width: 899px) {
     .banner-content {
       flex-direction: column;
       align-items: flex-start;

@@ -48,7 +48,7 @@
   import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
 
   // Legacy components for data display
-  import Acquisition from '$lib/components/Acquisition.svelte';
+  import Acquisition from '$lib/components/wiki/Acquisition.svelte';
 
   // Wiki edit state
   import {

@@ -531,10 +531,4 @@
     background-color: #6b7280;
   }
 
-  /* Tablet: non-default infobox width */
-  @media (max-width: 1023px) {
-    .wiki-infobox-float {
-      width: 260px;
-    }
-  }
 </style>

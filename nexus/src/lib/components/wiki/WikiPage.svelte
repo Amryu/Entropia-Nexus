@@ -104,11 +104,11 @@
   // Portrait orientation check (height > width)
   $: isPortrait = windowHeight > windowWidth;
 
-  // Mobile: < 900px, OR portrait orientation with width < 1024px (catches portrait tablets)
-  // Tablet: 900px - 1199px (only in landscape)
-  // Desktop: >= 1200px
-  $: isMobile = windowWidth < 900 || (windowWidth < 1024 && isPortrait);
-  $: isTablet = !isMobile && windowWidth < 1200;
+  // Mobile: < 900px (sidebar hidden, mobile drawer)
+  // Tablet: 900px - 1399px (sidebar visible, infobox stacks)
+  // Desktop: >= 1400px (full layout with floating infobox)
+  $: isMobile = windowWidth < 900;
+  $: isTablet = !isMobile && windowWidth < 1400;
   $: hasCustomSidebar = !!$$slots.sidebar;
 
   function toggleDrawer() {

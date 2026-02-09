@@ -36,7 +36,7 @@
   } from '$lib/stores/wikiEditState.js';
 
   // Legacy components for data display
-  import Acquisition from '$lib/components/Acquisition.svelte';
+  import Acquisition from '$lib/components/wiki/Acquisition.svelte';
 
   // Image upload
   import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
@@ -811,7 +811,7 @@
   }
 
   /* Strongbox-specific: mobile adjustments for loots */
-  @media (max-width: 767px) {
+  @media (max-width: 899px) {
     .loots-table th,
     .loots-table td {
       padding: 8px;

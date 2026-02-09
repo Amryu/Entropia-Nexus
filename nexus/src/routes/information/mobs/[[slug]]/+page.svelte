@@ -971,8 +971,10 @@
     opacity: 0.9;
   }
 
-  .wiki-infobox-float {
-    width: 320px;
+  @media (min-width: 1400px) {
+    .wiki-infobox-float {
+      width: 320px;
+    }
   }
 
   .type-badge.type-animal {
@@ -1003,7 +1005,7 @@
   }
 
   /* Mobile adjustments */
-  @media (max-width: 767px) {
+  @media (max-width: 899px) {
     .pending-change-banner {
       flex-direction: column;
       gap: 12px;

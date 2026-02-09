@@ -462,7 +462,7 @@
   }
 
   /* Mobile adjustments */
-  @media (max-width: 767px) {
+  @media (max-width: 899px) {
     .effect-select {
       min-width: 0;
     }

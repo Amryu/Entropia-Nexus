@@ -99,7 +99,8 @@
       data={tableData}
       searchable={tableData.length > 10}
       sortable={false}
-      rowHeight={48}
+      rowHeight={32}
+      compact
       emptyMessage="No location data available."
     />
   {/if}
@@ -116,7 +117,7 @@
     max-height: 596px;
   }
 
-  @media (max-width: 767px) {
+  @media (max-width: 899px) {
     .locations-table-container :global(.fancy-table-container) {
       max-height: 499px;
     }

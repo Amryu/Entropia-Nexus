@@ -94,7 +94,8 @@
             data={getTableData(group)}
             searchable={group.Items.length > 10}
             sortable={true}
-            rowHeight={40}
+            rowHeight={32}
+            compact
             emptyMessage="No items in this section."
           />
         </div>
@@ -129,7 +130,7 @@
     max-height: 596px;
   }
 
-  @media (max-width: 767px) {
+  @media (max-width: 899px) {
     .inventory-group :global(.fancy-table-container) {
       max-height: 499px;
     }

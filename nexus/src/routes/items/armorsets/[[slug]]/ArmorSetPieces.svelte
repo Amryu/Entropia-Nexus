@@ -600,7 +600,7 @@
   }
 
   /* Mobile adjustments */
-  @media (max-width: 767px) {
+  @media (max-width: 899px) {
     .piece-edit-body {
       padding: 8px 10px;
     }

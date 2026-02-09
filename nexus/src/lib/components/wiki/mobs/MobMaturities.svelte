@@ -183,7 +183,8 @@
       data={tableData}
       searchable={false}
       sortable={true}
-      rowHeight={40}
+      rowHeight={32}
+      compact
       rowClass={getRowClass}
       emptyMessage="No maturity data available."
     />
@@ -201,7 +202,7 @@
     max-height: 596px;
   }
 
-  @media (max-width: 767px) {
+  @media (max-width: 899px) {
     .maturities-table-container :global(.fancy-table-container) {
       max-height: 499px;
     }

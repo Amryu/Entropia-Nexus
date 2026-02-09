@@ -44,7 +44,8 @@
       data={tableData}
       searchable={false}
       sortable={true}
-      rowHeight={44}
+      rowHeight={32}
+      compact
       emptyMessage="This skill is not unlocked by any profession."
     />
   {/if}
@@ -62,7 +63,7 @@
     max-height: 596px;
   }
 
-  @media (max-width: 767px) {
+  @media (max-width: 899px) {
     .unlocks-table-container :global(.fancy-table-container) {
       max-height: 499px;
     }

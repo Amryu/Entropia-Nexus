@@ -23,7 +23,7 @@
   import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
 
   // Legacy components for data display
-  import Acquisition from '$lib/components/Acquisition.svelte';
+  import Acquisition from '$lib/components/wiki/Acquisition.svelte';
 
   // Image upload
   import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';

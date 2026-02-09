@@ -281,9 +281,10 @@
         <FancyTable
           columns={effectsTableColumns}
           data={effectsTableData}
-          rowHeight={40}
+          rowHeight={32}
           searchable={true}
           sortable={true}
+          compact
           emptyMessage="No pet effects"
         />
       </div>
@@ -543,7 +544,7 @@
   }
 
   /* Mobile adjustments */
-  @media (max-width: 767px) {
+  @media (max-width: 899px) {
     .effect-fields-row {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));

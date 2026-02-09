@@ -112,7 +112,8 @@
       data={tableData}
       searchable={tableData.length > 10}
       sortable={true}
-      rowHeight={44}
+      rowHeight={32}
+      compact
       emptyMessage="No offers found."
     />
   {/if}
@@ -130,7 +131,7 @@
     max-height: 596px;
   }
 
-  @media (max-width: 767px) {
+  @media (max-width: 899px) {
     .offers-table-container :global(.fancy-table-container) {
       max-height: 499px;
     }

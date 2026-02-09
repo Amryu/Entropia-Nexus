@@ -83,7 +83,8 @@
       footerLabelKey="name"
       searchable={false}
       sortable={true}
-      rowHeight={40}
+      rowHeight={32}
+      compact
       emptyMessage="No skill component data available."
     />
   {/if}
@@ -101,7 +102,7 @@
     max-height: 596px;
   }
 
-  @media (max-width: 767px) {
+  @media (max-width: 899px) {
     .skills-table-container :global(.fancy-table-container) {
       max-height: 499px;
     }

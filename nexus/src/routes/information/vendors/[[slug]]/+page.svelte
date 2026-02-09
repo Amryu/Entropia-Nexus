@@ -674,15 +674,9 @@
     color: var(--text-color);
   }
 
-  /* Tablet: non-default infobox width */
-  @media (max-width: 1023px) {
-    .wiki-infobox-float {
-      width: 260px;
-    }
-  }
 
   /* Mobile adjustments */
-  @media (max-width: 767px) {
+  @media (max-width: 899px) {
     .pending-change-banner {
       flex-direction: column;
       gap: 12px;

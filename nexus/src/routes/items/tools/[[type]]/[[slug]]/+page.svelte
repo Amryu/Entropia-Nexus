@@ -41,7 +41,7 @@
 
   // Legacy components for data display
   import TieringEditor from '$lib/components/wiki/TieringEditor.svelte';
-  import Acquisition from '$lib/components/Acquisition.svelte';
+  import Acquisition from '$lib/components/wiki/Acquisition.svelte';
 
   // Wiki edit components
   import EffectsEditor from '$lib/components/wiki/EffectsEditor.svelte';

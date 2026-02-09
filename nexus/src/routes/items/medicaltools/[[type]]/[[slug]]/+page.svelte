@@ -38,7 +38,7 @@
 
   // Generic wiki components
   import TieringEditor from '$lib/components/wiki/TieringEditor.svelte';
-  import Acquisition from '$lib/components/Acquisition.svelte';
+  import Acquisition from '$lib/components/wiki/Acquisition.svelte';
 
   // Image upload
   import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';

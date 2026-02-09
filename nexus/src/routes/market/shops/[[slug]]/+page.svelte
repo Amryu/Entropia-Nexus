@@ -1309,15 +1309,9 @@
     color: var(--text-muted, #999);
   }
 
-  /* Tablet: non-default infobox width */
-  @media (max-width: 1023px) {
-    .wiki-infobox-float {
-      width: 260px;
-    }
-  }
 
   /* Mobile adjustments */
-  @media (max-width: 767px) {
+  @media (max-width: 899px) {
     .entity-icon-wrapper {
       max-width: 320px;
       margin: 0 auto 12px;

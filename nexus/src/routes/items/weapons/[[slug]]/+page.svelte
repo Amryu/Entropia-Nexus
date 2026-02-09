@@ -43,7 +43,7 @@
   import EffectsEditor from '$lib/components/wiki/EffectsEditor.svelte';
 
   // Legacy components for comparison
-  import Acquisition from '$lib/components/Acquisition.svelte';
+  import Acquisition from '$lib/components/wiki/Acquisition.svelte';
 
   // Image upload
   import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
@@ -1360,9 +1360,12 @@
 </WikiPage>
 
 <style>
-  /* Width override (global default is 300px) */
-  .wiki-infobox-float {
-    width: 320px;
+  /* Width override (global default is 300px) - scoped to desktop to not
+     override the global stacked/mobile width: auto due to Svelte specificity */
+  @media (min-width: 1400px) {
+    .wiki-infobox-float {
+      width: 320px;
+    }
   }
 
   /* Wider select dropdowns for Class, Category, Type, Professions */

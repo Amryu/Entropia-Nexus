@@ -1134,8 +1134,6 @@ h2 {
   text-transform: uppercase;
   letter-spacing: 0.5px;
   margin: 0 0 10px 0;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--border-color, #555);
 }
 
 /* Stat rows (key-value pairs) */
@@ -1294,30 +1292,30 @@ h2 {
   flex-shrink: 0;
 }
 
-/* Wiki detail page responsive - Tablet */
-@media (max-width: 1023px) {
+/* Wiki detail page responsive - Tablet and below: stack infobox */
+@media (max-width: 1399px) {
   .wiki-infobox-float {
-    width: 280px;
-    margin-left: 16px;
+    float: none;
+    width: auto;
+    max-width: 300px;
+    margin: 0 auto 16px auto;
     padding: 14px;
+  }
+
+  .article-title {
+    display: none;
   }
 }
 
 /* Wiki detail page responsive - Mobile */
-@media (max-width: 767px) {
+@media (max-width: 899px) {
   .layout-a {
     max-width: 100%;
   }
 
   .wiki-infobox-float {
-    float: none;
-    width: auto;
-    margin: 0 0 16px 0;
+    max-width: none;
     padding: 12px;
-  }
-
-  .article-title {
-    display: none;
   }
 
   .infobox-title {

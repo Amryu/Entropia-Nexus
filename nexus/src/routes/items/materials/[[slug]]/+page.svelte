@@ -37,8 +37,8 @@
   } from '$lib/stores/wikiEditState.js';
 
   // Legacy components for data display
-  import Acquisition from '$lib/components/Acquisition.svelte';
-  import Usage from '$lib/components/Usage.svelte';
+  import Acquisition from '$lib/components/wiki/Acquisition.svelte';
+  import Usage from '$lib/components/wiki/Usage.svelte';
 
   // Material-specific editor
   import RefiningRecipesEditor from '$lib/components/wiki/RefiningRecipesEditor.svelte';
@@ -441,7 +441,9 @@
     filter: brightness(1.1);
   }
 
-  .wiki-infobox-float {
-    width: 280px;
+  @media (min-width: 1400px) {
+    .wiki-infobox-float {
+      width: 280px;
+    }
   }
 </style>
