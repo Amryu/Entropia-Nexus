@@ -18,7 +18,8 @@ export const Location = {
           "enum": [
             "Teleporter", "Npc", "Interactable",
             "Area", "Estate",
-            "Outpost", "Camp", "City", "WaveEvent"
+            "Outpost", "Camp", "City", "WaveEvent",
+            "RevivalPoint", "InstanceEntrance"
           ]
         },
         "Description": {
@@ -70,6 +71,15 @@ export const Location = {
           "default": null
         },
         "MaxGuests": {
+          "type": ["integer", "null"],
+          "default": null
+        },
+        // LandArea-specific properties (when Type = 'Area' and AreaType = 'LandArea')
+        "TaxRate": {
+          "type": ["number", "null"],
+          "default": null
+        },
+        "LandAreaOwnerId": {
           "type": ["integer", "null"],
           "default": null
         }

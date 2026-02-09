@@ -29,7 +29,13 @@
     { value: 'KillCycle', label: 'Kill Cycle' },
     { value: 'Explore', label: 'Explore' },
     { value: 'Interact', label: 'Interact' },
-    { value: 'HandIn', label: 'Hand In' }
+    { value: 'HandIn', label: 'Hand In' },
+    { value: 'CraftSuccess', label: 'Craft (Success)' },
+    { value: 'CraftAttempt', label: 'Craft (Attempt)' },
+    { value: 'CraftCycle', label: 'Craft (Cycle)' },
+    { value: 'MiningCycle', label: 'Mining (Cycle)' },
+    { value: 'MiningClaim', label: 'Mining (Claim)' },
+    { value: 'MiningPoints', label: 'Mining (Points)' }
   ];
 
   const objectiveDefaults = {
@@ -38,7 +44,13 @@
     KillCycle: { useKillPoints: false, mobs: [], pedToCycle: null },
     Explore: { planetId: null, longitude: null, latitude: null, altitude: null },
     Interact: { targetLocationId: null },
-    HandIn: { npcLocationId: null, items: [] }
+    HandIn: { npcLocationId: null, items: [] },
+    CraftSuccess: { totalCountRequired: null },
+    CraftAttempt: { totalCountRequired: null },
+    CraftCycle: { pedToCycle: null },
+    MiningCycle: { totalCountRequired: null },
+    MiningClaim: { totalCountRequired: null, minClaimValue: null },
+    MiningPoints: { totalCountRequired: null }
   };
 
   let itemNameDrafts = {};
@@ -674,6 +686,70 @@
                           {/each}
                           <button type="button" class="btn-add" on:click={() => addHandInItem(stepIndex, objIndex)}><span>+</span> Add Item</button>
                         </div>
+                      </div>
+                    </div>
+                  {:else if objective.Type === 'CraftSuccess' || objective.Type === 'CraftAttempt'}
+                    <div class="objective-grid">
+                      <div class="objective-field">
+                        <label>{objective.Type === 'CraftSuccess' ? 'Successful Crafts' : 'Craft Attempts'}</label>
+                        <input
+                          type="number"
+                          min="0"
+                          placeholder="0"
+                          value={payload.totalCountRequired ?? ''}
+                          on:input={(e) => updateObjectivePayload(stepIndex, objIndex, { totalCountRequired: toNumber(e.target.value) })}
+                        />
+                      </div>
+                    </div>
+                  {:else if objective.Type === 'CraftCycle'}
+                    <div class="objective-grid">
+                      <div class="objective-field">
+                        <label>PED to Cycle</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          placeholder="0"
+                          value={payload.pedToCycle ?? ''}
+                          on:input={(e) => updateObjectivePayload(stepIndex, objIndex, { pedToCycle: toNumber(e.target.value) })}
+                        />
+                      </div>
+                    </div>
+                  {:else if objective.Type === 'MiningCycle' || objective.Type === 'MiningPoints'}
+                    <div class="objective-grid">
+                      <div class="objective-field">
+                        <label>{objective.Type === 'MiningCycle' ? 'Mining Drops' : 'Mining Points'}</label>
+                        <input
+                          type="number"
+                          min="0"
+                          placeholder="0"
+                          value={payload.totalCountRequired ?? ''}
+                          on:input={(e) => updateObjectivePayload(stepIndex, objIndex, { totalCountRequired: toNumber(e.target.value) })}
+                        />
+                      </div>
+                    </div>
+                  {:else if objective.Type === 'MiningClaim'}
+                    <div class="objective-grid">
+                      <div class="objective-field">
+                        <label>Claims Required</label>
+                        <input
+                          type="number"
+                          min="0"
+                          placeholder="0"
+                          value={payload.totalCountRequired ?? ''}
+                          on:input={(e) => updateObjectivePayload(stepIndex, objIndex, { totalCountRequired: toNumber(e.target.value) })}
+                        />
+                      </div>
+                      <div class="objective-field">
+                        <label>Min Claim Value (PED)</label>
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          placeholder="Any"
+                          value={payload.minClaimValue ?? ''}
+                          on:input={(e) => updateObjectivePayload(stepIndex, objIndex, { minClaimValue: toNumber(e.target.value) })}
+                        />
                       </div>
                     </div>
                   {/if}

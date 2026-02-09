@@ -8,6 +8,7 @@
   import MyOffersView from './MyOffersView.svelte';
   import OrderBookTable from './OrderBookTable.svelte';
   import InventoryImportDialog from './InventoryImportDialog.svelte';
+  import OfferAdjustDialog from './OfferAdjustDialog.svelte';
   import InventoryPanel from './InventoryPanel.svelte';
   import CartSummary from './CartSummary.svelte';
   import FavouritesTree from './FavouritesTree.svelte';
@@ -20,7 +21,7 @@
   import { apiCall, getItemLink, hasItemTag, encodeURIComponentSafe, decodeURIComponentSafe } from "$lib/util.js";
   import { isBlueprint, isItemTierable, isLimited, itemHasCondition, isAbsoluteMarkup, getMaxTT } from '../../orderUtils';
   import { PLANETS } from '../../exchangeConstants.js';
-  import { showMyOffers, showInventory, showTradeList, showTrades, tradeList, addToTradeList } from '../../exchangeStore.js';
+  import { showMyOffers, showInventory, showTradeList, showTrades, tradeList, addToTradeList, myOffers, inventory } from '../../exchangeStore.js';
   import { favourites, isFavourite, toggleFavourite, createFolder } from '../../favouritesStore.js';
   import { hasCondition } from '$lib/shopUtils';
 
@@ -87,6 +88,7 @@
   let showQuickTrade = false;
   let quickTradeOffer = null;
   let quickTradeSide = 'buy'; // 'buy' | 'sell'
+  let quickTradeRef;
 
   // User offers panel state
   let showUserOffers = false;
@@ -97,10 +99,31 @@
 
   // Inventory & Offers panel
   let showImportDialog = false;
+  let showAdjustDialog = false;
   let inventoryPanelRef;
   let myOffersRef;
   let tradesPanelRef;
   let bumpingAll = false;
+
+  // Reactive discrepancy count: compare sell offers against inventory
+  $: discrepancyCount = computeDiscrepancyCount($myOffers, $inventory);
+
+  function computeDiscrepancyCount(offers, inv) {
+    const sellOffers = (offers || []).filter(o => o.type === 'SELL');
+    if (sellOffers.length === 0 || !inv || inv.length === 0) return 0;
+    const invQtyMap = new Map();
+    for (const item of inv) {
+      if (item.item_id > 0) {
+        invQtyMap.set(item.item_id, (invQtyMap.get(item.item_id) || 0) + item.quantity);
+      }
+    }
+    let count = 0;
+    for (const offer of sellOffers) {
+      const invQty = invQtyMap.get(offer.item_id) || 0;
+      if (offer.quantity > invQty) count++;
+    }
+    return count;
+  }
 
   function closeFloatingPanel() {
     showMyOffers.set(false);
@@ -1038,38 +1061,50 @@
       }});
     cols.push({ key: 'planet', header: 'Planet', width: '120px', sortable: true, searchable: false,
       formatter: (v) => v || selectedPlanet || 'N/A' });
-    cols.push({ key: 'seller_name', header: 'Seller', main: true, sortable: true, searchable: false,
-      formatter: (v, row) => {
-        const name = row?.SellerName ?? row?.seller ?? v ?? 'Unknown';
-        const userId = row?.user_id ?? '';
-        return `<span class="seller-link" data-seller-id="${userId}" data-seller-name="${name.replace(/"/g, '&amp;quot;')}">${name}</span>`;
-      }});
     cols.push({ key: 'bumped_at', header: 'Updated', width: '100px', sortable: true, searchable: false,
       formatter: (v, row) => formatLastUpdateDHm(getUpdatedAt(row) || v) });
 
     return cols;
   })();
 
-  // Sell orders get a "Buy" action button
+  function makeUserColumn(header) {
+    return { key: 'seller_name', header, main: true, sortable: true, searchable: false,
+      formatter: (v, row) => {
+        const name = row?.SellerName ?? row?.seller ?? v ?? 'Unknown';
+        const userId = row?.user_id ?? '';
+        return `<span class="seller-link" data-seller-id="${userId}" data-seller-name="${name.replace(/"/g, '&amp;quot;')}">${name}</span>`;
+      }};
+  }
+
+  // Sell orders: user column = "Seller", action = "Buy"
   $: sellDetailColumns = (() => {
-    return [...detailColumns, {
+    // Insert user column before 'bumped_at'
+    const cols = [...detailColumns];
+    const updatedIdx = cols.findIndex(c => c.key === 'bumped_at');
+    cols.splice(updatedIdx >= 0 ? updatedIdx : cols.length, 0, makeUserColumn('Seller'));
+    cols.push({
       key: '_action', header: '', width: '70px', sortable: false, searchable: false,
       formatter: (v, row) => {
         const offerId = row?.id ?? row?.Id ?? 0;
         return `<button class="cell-button trade-btn buy-trade-btn" data-trade-buy="${offerId}">Buy</button>`;
       }
-    }];
+    });
+    return cols;
   })();
 
-  // Buy orders get a "Sell" action button
+  // Buy orders: user column = "Buyer", action = "Sell"
   $: buyDetailColumns = (() => {
-    return [...detailColumns, {
+    const cols = [...detailColumns];
+    const updatedIdx = cols.findIndex(c => c.key === 'bumped_at');
+    cols.splice(updatedIdx >= 0 ? updatedIdx : cols.length, 0, makeUserColumn('Buyer'));
+    cols.push({
       key: '_action', header: '', width: '70px', sortable: false, searchable: false,
       formatter: (v, row) => {
         const offerId = row?.id ?? row?.Id ?? 0;
         return `<button class="cell-button trade-btn sell-trade-btn" data-trade-sell="${offerId}">Sell</button>`;
       }
-    }];
+    });
+    return cols;
   })();
 
   /** Handle clicks on Buy/Sell trade buttons and seller links in detail view */
@@ -1144,6 +1179,7 @@
       goto('/market/exchange/trades');
     } catch (err) {
       console.error('Trade request error:', err);
+      quickTradeRef?.setError(err.message || 'Failed to create trade request');
     }
   }
 
@@ -1362,15 +1398,18 @@
             <option value="recent">Recent only (7d)</option>
             <option value="all">All</option>
           </select>
-          <input
-            type="number"
-            class="filter-input-small"
-            placeholder="Min TT"
-            min="0"
-            step="0.01"
-            bind:value={minTTFilter}
-            title="Minimum total TT value to show"
-          />
+          <div class="min-tt-group">
+            <input
+              type="number"
+              class="filter-input-small"
+              placeholder="Min TT"
+              min="0"
+              step="0.01"
+              bind:value={minTTFilter}
+              title="Minimum total TT value to show"
+            />
+            <span class="filter-hint">Min total TT</span>
+          </div>
           <div class="actions-right">
             <button
               class="action-btn buy-btn"
@@ -1412,6 +1451,9 @@
           <div class="detail-title-name" title={selectedItem?.n || ""}>
             {selectedItem?.n || ""}
           </div>
+          {#if selectedItemDetails && !hasCondition(selectedItemDetails) && getMaxTT(selectedItemDetails) != null}
+            <span class="detail-tt-badge">{getMaxTT(selectedItemDetails).toFixed(2)} PED</span>
+          {/if}
           {#if isTierableDetail}
             {#if !isLimitedDetail}
               <div class="tier-filter" title="Filter by Tier (UL)">
@@ -1540,6 +1582,7 @@
         </div>
 
         <QuickTradeDialog
+          bind:this={quickTradeRef}
           show={showQuickTrade}
           offer={quickTradeOffer}
           side={quickTradeSide}
@@ -1597,6 +1640,9 @@
               {/if}
               {#if $showInventory}
                 <button class="panel-action-btn accent" on:click={() => { showImportDialog = true; }}>Import</button>
+                {#if discrepancyCount > 0}
+                  <button class="panel-action-btn warn" on:click={() => { showAdjustDialog = true; }}>Adjust ({discrepancyCount})</button>
+                {/if}
               {/if}
               <button class="panel-action-btn" on:click={refreshFloatingPanel}>Refresh</button>
             </div>
@@ -1633,6 +1679,7 @@
 
 <InventoryImportDialog
   show={showImportDialog}
+  {allItems}
   on:close={() => { showImportDialog = false; }}
   on:imported={() => {
     showImportDialog = false;
@@ -1641,6 +1688,11 @@
       inventoryPanelRef.refresh();
     }
   }}
+/>
+
+<OfferAdjustDialog
+  show={showAdjustDialog}
+  on:close={() => { showAdjustDialog = false; }}
 />
 
 <style>
@@ -1772,6 +1824,13 @@
   }
   .panel-action-btn.accent:hover {
     background: rgba(59, 130, 246, 0.1);
+  }
+  .panel-action-btn.warn {
+    color: var(--warning-color, #f59e0b);
+    border-color: var(--warning-color, #f59e0b);
+  }
+  .panel-action-btn.warn:hover {
+    background: rgba(245, 158, 11, 0.1);
   }
 
   .panel-side-filter {
@@ -1951,6 +2010,18 @@
   .filter-input-small:focus {
     border-color: var(--accent-color);
     outline: none;
+  }
+
+  .min-tt-group {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+  .filter-hint {
+    font-size: 11px;
+    color: var(--text-muted);
+    white-space: nowrap;
   }
 
   .action-btn {
@@ -2239,6 +2310,18 @@
     padding: 0 4px;
     font-size: 18px;
     line-height: 1.3;
+  }
+
+  .detail-tt-badge {
+    flex-shrink: 0;
+    background: var(--hover-color);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    white-space: nowrap;
   }
 
   .detail-title-right {

@@ -98,7 +98,7 @@ CREATE INDEX idx_missionsteps_missionid ON "MissionSteps"("MissionId");
 -- ===========================================
 -- MISSION OBJECTIVES TABLE
 -- ===========================================
--- Objective types: Dialog, KillCount, KillCycle, Explore, Interact, HandIn
+-- Objective types: Dialog, KillCount, KillCycle, Explore, Interact, HandIn, CraftSuccess, CraftAttempt, CraftCycle, MiningCycle, MiningClaim, MiningPoints
 
 CREATE TABLE "MissionObjectives" (
     "Id" SERIAL PRIMARY KEY,

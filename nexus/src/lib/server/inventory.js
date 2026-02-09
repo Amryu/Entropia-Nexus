@@ -73,6 +73,106 @@ export async function upsertInventory(userId, items) {
 }
 
 /**
+ * Full-sync inventory import.
+ * Replaces the entire server inventory for a user in a single transaction.
+ * Returns a diff summary of what changed.
+ */
+export async function syncInventory(userId, items) {
+  if (!items) items = [];
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // 1. Fetch existing inventory for diff
+    const { rows: oldItems } = await client.query(
+      `SELECT item_id, item_name, quantity, instance_key, value, container
+       FROM user_items WHERE user_id = $1 AND storage = 'server'`,
+      [userId]
+    );
+
+    // Build lookup of old items by diffKey
+    // Include container for fungible items so same item on different planets gets separate keys
+    const oldMap = new Map();
+    for (const row of oldItems) {
+      const key = row.instance_key
+        ? `${row.item_id}::${row.instance_key}`
+        : `${row.item_id}::${row.container || ''}`;
+      oldMap.set(key, row);
+    }
+
+    // 2. Delete all existing server inventory
+    await client.query(
+      `DELETE FROM user_items WHERE user_id = $1 AND storage = 'server'`,
+      [userId]
+    );
+
+    // 3. Batch INSERT new items (chunks of 100)
+    const BATCH_SIZE = 100;
+    for (let offset = 0; offset < items.length; offset += BATCH_SIZE) {
+      const batch = items.slice(offset, offset + BATCH_SIZE);
+      const values = [];
+      const params = [];
+      let paramIdx = 1;
+
+      for (const item of batch) {
+        values.push(
+          `($${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, $${paramIdx++}, 'server', NOW())`
+        );
+        params.push(
+          userId,
+          item.item_id,
+          item.item_name,
+          item.quantity ?? 0,
+          item.instance_key || null,
+          item.details ? JSON.stringify(item.details) : null,
+          item.value ?? null,
+          item.container ?? null
+        );
+      }
+
+      await client.query(
+        `INSERT INTO user_items (user_id, item_id, item_name, quantity, instance_key, details, value, container, storage, updated_at)
+         VALUES ${values.join(', ')}`,
+        params
+      );
+    }
+
+    await client.query('COMMIT');
+
+    // 4. Compute diff summary
+    const newMap = new Map();
+    for (const item of items) {
+      const key = item.instance_key
+        ? `${item.item_id}::${item.instance_key}`
+        : `${item.item_id}::${item.container || ''}`;
+      newMap.set(key, item);
+    }
+
+    let added = 0, updated = 0, removed = 0, unchanged = 0;
+    for (const [key, newItem] of newMap) {
+      const oldItem = oldMap.get(key);
+      if (!oldItem) {
+        added++;
+      } else if (oldItem.quantity !== newItem.quantity || oldItem.value !== newItem.value) {
+        updated++;
+      } else {
+        unchanged++;
+      }
+    }
+    for (const key of oldMap.keys()) {
+      if (!newMap.has(key)) removed++;
+    }
+
+    return { added, updated, removed, unchanged, total: items.length };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
  * Delete an inventory item.
  */
 export async function deleteInventoryItem(itemRowId, userId) {

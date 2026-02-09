@@ -23,6 +23,12 @@
   let submitting = false;
   let error = null;
 
+  /** Called by parent to signal that the async operation failed */
+  export function setError(msg) {
+    error = msg || 'Something went wrong';
+    submitting = false;
+  }
+
   $: if (show && offer) {
     quantity = offer.quantity || 1;
     error = null;

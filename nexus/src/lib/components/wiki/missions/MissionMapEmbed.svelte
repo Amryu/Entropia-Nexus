@@ -89,13 +89,19 @@
 
   // Colors for different objective types
   const objectiveColors = {
-    Dialog: '#4ade80',      // Green
-    KillCount: '#ef4444',   // Red
-    KillCycle: '#f97316',   // Orange
-    Explore: '#3b82f6',     // Blue
-    Interact: '#a855f7',    // Purple
-    HandIn: '#eab308',      // Yellow
-    default: '#ffffff'      // White
+    Dialog: '#4ade80',        // Green
+    KillCount: '#ef4444',     // Red
+    KillCycle: '#f97316',     // Orange
+    Explore: '#3b82f6',       // Blue
+    Interact: '#a855f7',      // Purple
+    HandIn: '#eab308',        // Yellow
+    CraftSuccess: '#06b6d4',  // Cyan
+    CraftAttempt: '#06b6d4',  // Cyan
+    CraftCycle: '#06b6d4',    // Cyan
+    MiningCycle: '#d97706',   // Amber
+    MiningClaim: '#d97706',   // Amber
+    MiningPoints: '#d97706',  // Amber
+    default: '#ffffff'        // White
   };
 
   const pathColor = 'rgba(74, 158, 255, 0.6)';

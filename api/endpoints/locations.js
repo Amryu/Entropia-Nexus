@@ -12,7 +12,9 @@ const LOCATION_TYPES = {
   Outpost: 'Outpost',
   Camp: 'Camp',
   City: 'City',
-  WaveEvent: 'WaveEvent'
+  WaveEvent: 'WaveEvent',
+  RevivalPoint: 'RevivalPoint',
+  InstanceEntrance: 'InstanceEntrance'
 };
 
 // Base query for locations
@@ -31,12 +33,16 @@ const queries = {
            e."Type"::text AS "EstateType",
            e."OwnerId" AS "EstateOwnerId",
            e."ItemTradeAvailable" AS "EstateItemTradeAvailable",
-           e."MaxGuests" AS "EstateMaxGuests"
+           e."MaxGuests" AS "EstateMaxGuests",
+           -- LandArea extension data
+           la."TaxRate" AS "LandAreaTaxRate",
+           la."OwnerId" AS "LandAreaOwnerId"
     FROM ONLY "Locations" l
     LEFT JOIN ONLY "Planets" p ON l."PlanetId" = p."Id"
     LEFT JOIN ONLY "Locations" parent ON l."ParentLocationId" = parent."Id"
     LEFT JOIN ONLY "Areas" a ON l."Id" = a."LocationId"
     LEFT JOIN ONLY "Estates" e ON l."Id" = e."LocationId"
+    LEFT JOIN ONLY "LandAreas" la ON l."Id" = la."LocationId"
   `,
   Facilities: `
     SELECT lf."LocationId", f."Id" AS "FacilityId", f."Name", f."Description", f."Icon"
@@ -131,6 +137,10 @@ function formatLocation(x, add = {}) {
     result.Properties.AreaType = x.AreaType;
     result.Properties.Shape = x.AreaShape;
     result.Properties.Data = x.AreaData;
+    if (x.AreaType === 'LandArea') {
+      result.Properties.TaxRate = x.LandAreaTaxRate ?? null;
+      result.Properties.LandAreaOwnerId = x.LandAreaOwnerId ?? null;
+    }
   }
 
   if (x.Type === 'Estate' && x.EstateType) {

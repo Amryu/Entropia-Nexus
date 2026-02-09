@@ -20,7 +20,7 @@
     {
       key: 'container', header: 'Container', width: '140px', sortable: true, searchable: true,
       hideOnMobile: true,
-      formatter: (val) => val || '<span style="opacity:0.4">—</span>'
+      formatter: (val) => val || '<span style="opacity:0.4">Inventory</span>'
     },
     {
       key: '_actions', header: '', width: '50px', sortable: false, searchable: false,

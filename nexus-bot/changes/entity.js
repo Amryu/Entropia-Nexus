@@ -1220,6 +1220,18 @@ async function applyLocationExtensionChanges(client, locationId, x) {
        ON CONFLICT ("LocationId") DO UPDATE SET "Type" = $2::"AreaType", "Shape" = $3::"Shape", "Data" = $4::jsonb`,
       [locationId, areaType, shape, data]
     );
+
+    // Handle LandAreas extension for LandArea AreaType
+    if (areaType === 'LandArea') {
+      const taxRate = x.Properties?.TaxRate ?? null;
+      const ownerId = x.Properties?.LandAreaOwnerId != null ? Number(x.Properties.LandAreaOwnerId) : null;
+      await client.query(
+        `INSERT INTO "LandAreas" ("LocationId", "TaxRate", "OwnerId")
+         VALUES ($1, $2, $3)
+         ON CONFLICT ("LocationId") DO UPDATE SET "TaxRate" = $2, "OwnerId" = $3`,
+        [locationId, taxRate, ownerId]
+      );
+    }
   }
 
   // Handle Estates extension for Estate type

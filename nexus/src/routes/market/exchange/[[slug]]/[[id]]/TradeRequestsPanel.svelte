@@ -3,6 +3,8 @@
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { tradeRequests } from '../../exchangeStore.js';
 
+  const DISCORD_GUILD_ID = import.meta.env.VITE_DISCORD_GUILD_ID;
+
   /** @type {object|null} Current user */
   export let user = null;
 
@@ -30,13 +32,6 @@
     if (user?.id) loadTradeRequests();
   }
 
-  function getPartnerName(req) {
-    if (!user) return 'Unknown';
-    return String(req.requester_id) === String(user.id)
-      ? (req.target_name || 'Unknown')
-      : (req.requester_name || 'Unknown');
-  }
-
   function formatAge(dateStr) {
     if (!dateStr) return 'N/A';
     const ts = new Date(dateStr);
@@ -49,10 +44,15 @@
     return `${days}d`;
   }
 
+  function getDiscordThreadUrl(threadId) {
+    if (!threadId || !DISCORD_GUILD_ID) return null;
+    return `https://discord.com/channels/${DISCORD_GUILD_ID}/${threadId}`;
+  }
+
   const columns = [
     {
-      key: '_partner', header: 'Partner', main: true, sortable: true, searchable: false,
-      formatter: (v, row) => getPartnerName(row)
+      key: 'partner_name', header: 'Partner', main: true, sortable: true, searchable: false,
+      formatter: (v) => v || 'Unknown'
     },
     {
       key: 'item_count', header: 'Items', width: '50px', sortable: true, searchable: false,
@@ -77,11 +77,12 @@
       formatter: (v) => formatAge(v)
     },
     {
-      key: '_actions', header: '', width: '90px', sortable: false, searchable: false,
+      key: '_actions', header: '', width: '120px', sortable: false, searchable: false,
       formatter: (v, row) => {
         const btns = [];
-        if (row?.discord_thread_id) {
-          btns.push(`<button class="cell-button trade-action-btn" data-trade-view="${row.id}">View</button>`);
+        const threadUrl = getDiscordThreadUrl(row?.discord_thread_id);
+        if (threadUrl) {
+          btns.push(`<a href="${threadUrl}" target="_blank" rel="noopener noreferrer" class="cell-button trade-action-btn discord-link">Discord</a>`);
         }
         if ((row?.status === 'pending' || row?.status === 'active') && user) {
           btns.push(`<button class="cell-button trade-action-btn cancel-btn" data-trade-cancel="${row.id}">Cancel</button>`);
@@ -111,34 +112,16 @@
       e.preventDefault();
       const id = parseInt(cancelBtn.dataset.tradeCancel, 10);
       if (id) handleCancel(id);
-      return;
-    }
-
-    const viewBtn = e.target.closest('[data-trade-view]');
-    if (viewBtn) {
-      e.stopPropagation();
-      e.preventDefault();
-      // Thread view — could open Discord link in future
-      const id = parseInt(viewBtn.dataset.tradeView, 10);
-      const req = $tradeRequests.find(r => r.id === id);
-      if (req?.discord_thread_id) {
-        // Discord thread links aren't accessible from web, so just show info
-        console.log('Trade request thread:', req.discord_thread_id);
-      }
     }
   }
 </script>
 
-<!-- svelte-ignore a11y-click-events-have-key-events -->
-<!-- svelte-ignore a11y-no-static-element-interactions -->
-<div class="trade-requests-panel" on:click|capture={handleClick}>
-  {#if loading}
-    <div class="panel-loading">Loading trade requests...</div>
-  {:else if error}
-    <div class="panel-error">{error}</div>
-  {:else if $tradeRequests.length === 0}
-    <div class="panel-empty">No trade requests yet. Use Buy/Sell buttons on the order book to create one.</div>
-  {:else}
+{#if error}
+  <div class="panel-error">{error}</div>
+{:else}
+  <!-- svelte-ignore a11y-click-events-have-key-events -->
+  <!-- svelte-ignore a11y-no-static-element-interactions -->
+  <div class="trade-requests-panel" on:click|capture={handleClick}>
     <FancyTable
       {columns}
       data={$tradeRequests}
@@ -146,10 +129,10 @@
       compact={true}
       sortable={true}
       searchable={false}
-      emptyMessage="No trade requests"
+      emptyMessage="No trade requests yet. Use Buy/Sell buttons on the order book to create one."
     />
-  {/if}
-</div>
+  </div>
+{/if}
 
 <style>
   .trade-requests-panel {
@@ -157,13 +140,10 @@
     min-height: 0;
     overflow: hidden;
   }
-  .panel-loading, .panel-error, .panel-empty {
+  .panel-error {
     padding: 24px;
     text-align: center;
     font-size: 13px;
-    color: var(--text-muted);
-  }
-  .panel-error {
     color: var(--error-color, #ef4444);
   }
   .trade-requests-panel :global(.trade-action-btn) {
@@ -171,9 +151,14 @@
     padding: 2px 8px;
     color: var(--accent-color);
     border-color: var(--accent-color);
+    text-decoration: none;
   }
   .trade-requests-panel :global(.trade-action-btn:hover) {
     background: rgba(59, 130, 246, 0.15);
+  }
+  .trade-requests-panel :global(.discord-link) {
+    display: inline-flex;
+    align-items: center;
   }
   .trade-requests-panel :global(.cancel-btn) {
     color: var(--error-color, #ef4444);

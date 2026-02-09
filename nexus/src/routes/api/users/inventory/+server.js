@@ -1,8 +1,8 @@
 //@ts-nocheck
 import { getResponse } from '$lib/util.js';
-import { getUserInventory, upsertInventory } from '$lib/server/inventory.js';
+import { getUserInventory, upsertInventory, syncInventory } from '$lib/server/inventory.js';
 
-const MAX_IMPORT_ITEMS = 500;
+const MAX_IMPORT_ITEMS = 30000;
 
 /**
  * GET /api/users/inventory — Get user's server inventory
@@ -43,14 +43,16 @@ export async function PUT({ request, locals }) {
     return getResponse({ error: `Maximum ${MAX_IMPORT_ITEMS} items per import` }, 400);
   }
 
+  const sync = body.sync !== false; // default to full sync
+
   // Validate each item
   const validated = [];
   for (let i = 0; i < body.items.length; i++) {
     const item = body.items[i];
 
     const itemId = parseInt(item.item_id, 10);
-    if (!Number.isFinite(itemId) || itemId <= 0) {
-      return getResponse({ error: `items[${i}].item_id must be a positive integer` }, 400);
+    if (!Number.isFinite(itemId) || itemId < 0) {
+      return getResponse({ error: `items[${i}].item_id must be a non-negative integer` }, 400);
     }
 
     const itemName = typeof item.item_name === 'string' ? item.item_name.trim() : '';
@@ -63,7 +65,12 @@ export async function PUT({ request, locals }) {
       return getResponse({ error: `items[${i}].quantity must be a non-negative integer` }, 400);
     }
 
-    const instanceKey = item.instance_key || null;
+    // Unresolved items (item_id=0) get a name-based instance_key for uniqueness
+    let instanceKey = item.instance_key || null;
+    if (itemId === 0 && !instanceKey) {
+      instanceKey = 'unresolved:' + itemName;
+    }
+
     const details = item.details || null;
 
     const value = item.value != null ? parseFloat(item.value) : null;
@@ -77,8 +84,13 @@ export async function PUT({ request, locals }) {
   }
 
   try {
-    const results = await upsertInventory(user.id, validated);
-    return getResponse({ imported: results.length, items: results }, 200);
+    if (sync) {
+      const diff = await syncInventory(user.id, validated);
+      return getResponse(diff, 200);
+    } else {
+      const results = await upsertInventory(user.id, validated);
+      return getResponse({ imported: results.length, items: results }, 200);
+    }
   } catch (err) {
     console.error('Error importing inventory:', err);
     return getResponse({ error: 'Failed to import inventory' }, 500);

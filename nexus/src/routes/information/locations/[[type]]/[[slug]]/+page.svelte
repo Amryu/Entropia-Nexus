@@ -82,13 +82,19 @@
   })();
 
   // Filter locations based on selected filter (client-side filtering)
+  $: isOtherFilter = selectedFilter === 'other';
   $: selectedFilterTypes = selectedFilter ? getTypesFromSlug(selectedFilter) : null;
-  $: locationsList = selectedFilterTypes
+  $: locationsList = isOtherFilter
     ? allLocations.filter(loc => {
         const locType = loc.Properties?.Type;
-        return locType && selectedFilterTypes.includes(locType);
+        return !locType || !CATEGORIZED_TYPES.has(locType);
       })
-    : allLocations;
+    : selectedFilterTypes
+      ? allLocations.filter(loc => {
+          const locType = loc.Properties?.Type;
+          return locType && selectedFilterTypes.includes(locType);
+        })
+      : allLocations;
 
   $: entityType = 'Location';
   $: entity = data.object;
@@ -100,8 +106,10 @@
   // Location type definitions (for editing/display)
   const LOCATION_TYPES = [
     { value: 'Teleporter', label: 'Teleporter' },
+    { value: 'RevivalPoint', label: 'Revival Point' },
     { value: 'Npc', label: 'NPC' },
     { value: 'Interactable', label: 'Interactable' },
+    { value: 'InstanceEntrance', label: 'Instance Entrance' },
     { value: 'Area', label: 'Area' },
     { value: 'Estate', label: 'Estate' },
     { value: 'Outpost', label: 'Outpost' },
@@ -113,16 +121,26 @@
   // Navigation type buttons (merged categories with plurals)
   const NAV_TYPE_BUTTONS = [
     { slug: 'teleporters', label: 'Teleporters', types: ['Teleporter'] },
-    { slug: 'npcs', label: 'NPCs', types: ['Npc', 'Interactable'] },
+    { slug: 'npcs', label: 'NPCs', types: ['Npc'] },
     { slug: 'areas', label: 'Areas', types: ['Area'] },
     { slug: 'estates', label: 'Estates', types: ['Estate'] },
     { slug: 'settlements', label: 'Settlements', types: ['Outpost', 'Camp', 'City'] },
-    { slug: 'waveevents', label: 'Wave Events', types: ['WaveEvent'] }
+    { slug: 'waveevents', label: 'Wave Events', types: ['WaveEvent'] },
+    { slug: 'instances', label: 'Instances', types: ['InstanceEntrance'] },
+    { slug: 'other', label: 'Other', types: null } // Catches types not in other categories
   ];
 
+  // All types explicitly assigned to a filter category (for "Other" exclusion)
+  const CATEGORIZED_TYPES = new Set(
+    NAV_TYPE_BUTTONS.filter(b => b.types).flatMap(b => b.types)
+  );
+
   // Map URL slug to type values for filtering
+  // Returns an array of types for inclusion, or null for "all"
+  // For 'other', returns null (handled separately via isOtherFilter)
   function getTypesFromSlug(slug) {
     if (!slug) return null;
+    if (slug === 'other') return null; // Handled by exclusion logic
     const btn = NAV_TYPE_BUTTONS.find(b => b.slug === slug);
     if (btn) return btn.types;
     // Fallback: try to match single type
@@ -270,13 +288,19 @@
 
   // Filter pending creates to show in correct type category
   // When on a type filter, only show creates matching that type
+  // When on "Other" filter, show creates with types not in other categories
   // When on "All" (no filter), show all pending creates
-  $: filteredPendingCreates = selectedFilterTypes
+  $: filteredPendingCreates = isOtherFilter
     ? (userPendingCreates || []).filter(change => {
         const changeType = change.data?.Properties?.Type;
-        return changeType && selectedFilterTypes.includes(changeType);
+        return !changeType || !CATEGORIZED_TYPES.has(changeType);
       })
-    : userPendingCreates || [];
+    : selectedFilterTypes
+      ? (userPendingCreates || []).filter(change => {
+          const changeType = change.data?.Properties?.Type;
+          return changeType && selectedFilterTypes.includes(changeType);
+        })
+      : userPendingCreates || [];
 
   onDestroy(() => {
     resetEditState();

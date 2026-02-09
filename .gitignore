@@ -26,4 +26,5 @@ nexus/uploads/
 sql/nexus_schema.sql
 sql/nexus_users_schema.sql
 /tools/
+/claude/
 nexus-bot/config.json

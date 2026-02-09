@@ -386,10 +386,43 @@
       return `Collect ${amount}× ${item}`;
     }
 
+    if (Type === 'CraftSuccess') {
+      const total = Payload?.totalCountRequired;
+      return total ? `Craft ${total} successfully` : 'Craft successfully';
+    }
+
+    if (Type === 'CraftAttempt') {
+      const total = Payload?.totalCountRequired;
+      return total ? `Attempt ${total} crafts` : 'Attempt crafting';
+    }
+
+    if (Type === 'CraftCycle') {
+      const ped = Payload?.pedToCycle;
+      return ped ? `Cycle ${ped} PED in crafting` : 'Cycle PED in crafting';
+    }
+
     if (Type === 'Craft') {
       const item = Payload?.itemName || 'an item';
       const amount = Payload?.amount || 1;
       return `Craft ${amount}× ${item}`;
+    }
+
+    if (Type === 'MiningCycle') {
+      const total = Payload?.totalCountRequired;
+      return total ? `Complete ${total} mining drops` : 'Complete mining drops';
+    }
+
+    if (Type === 'MiningClaim') {
+      const total = Payload?.totalCountRequired;
+      const minValue = Payload?.minClaimValue;
+      if (total && minValue) return `Find ${total} claims worth ${minValue}+ PED`;
+      if (total) return `Find ${total} mining claims`;
+      return 'Find mining claims';
+    }
+
+    if (Type === 'MiningPoints') {
+      const total = Payload?.totalCountRequired;
+      return total ? `Accumulate ${total} mining points` : 'Accumulate mining points';
     }
 
     if (Type === 'Use') {
