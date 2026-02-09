@@ -11,8 +11,10 @@ The system consolidates previously separate location entities into a single unif
 | Type | Description |
 |------|-------------|
 | `Teleporter` | Teleportation points |
+| `RevivalPoint` | Revival terminals (respawn locations) |
 | `Npc` | Non-player characters |
 | `Interactable` | Interactive objects |
+| `InstanceEntrance` | Instance/dungeon entrance points |
 | `Area` | Map regions (has extension data) |
 | `Estate` | Player-owned properties (has extension data) |
 | `Outpost` | Outpost locations |
@@ -31,7 +33,7 @@ The core table containing all location records.
 |--------|------|-------------|
 | `Id` | SERIAL | Primary key |
 | `Name` | TEXT | Location name |
-| `Type` | LocationType | Enum: Teleporter, Npc, Interactable, Area, Estate, Outpost, Camp, City, WaveEvent |
+| `Type` | LocationType | Enum: Teleporter, RevivalPoint, Npc, Interactable, InstanceEntrance, Area, Estate, Outpost, Camp, City, WaveEvent |
 | `Description` | TEXT | Optional description |
 | `PlanetId` | INTEGER | FK to Planets |
 | `Longitude` | INTEGER | X coordinate |
@@ -60,6 +62,25 @@ Additional data for locations with `Type = 'Estate'`.
 | `OwnerId` | INTEGER | FK to Users (owner) |
 | `ItemTradeAvailable` | BOOLEAN | Whether item trading is enabled |
 | `MaxGuests` | INTEGER | Maximum number of guests |
+
+#### LandAreas (Extension Table)
+Additional data for Area locations with `AreaType = 'LandArea'`.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `LocationId` | INTEGER | PK, FK to Locations |
+| `TaxRate` | NUMERIC | Tax rate for the land area |
+| `OwnerId` | INTEGER | Owner user ID (references nexus-users) |
+
+#### LandAreaMinerals (Cross Table)
+Mineral compositions for LandArea locations.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `LocationId` | INTEGER | FK to Locations (LandArea type) |
+| `MaterialId` | INTEGER | FK to Materials |
+| `Rarity` | MineralRarity | Enum: Common, Uncommon, Rare, Very Rare, Extremely Rare |
+| `Notes` | TEXT | Optional notes |
 
 ### Facilities System
 

@@ -2,7 +2,7 @@
   //@ts-nocheck
   import { createEventDispatcher } from 'svelte';
   import { page } from '$app/stores';
-  import { getMaxTT, isAbsoluteMarkup } from '../../orderUtils';
+  import { getMaxTT, isAbsoluteMarkup, isItemTierable, isBlueprint } from '../../orderUtils';
   import { hasCondition } from '$lib/shopUtils';
 
   /** @type {boolean} */
@@ -63,6 +63,14 @@
   $: totalTT = maxTT != null ? maxTT * quantity : null;
   $: totalPrice = unitPrice != null ? unitPrice * quantity : null;
 
+  // Item metadata for display
+  $: tierable = isItemTierable(item);
+  $: blueprint = isBlueprint(item);
+  $: offerTier = offer?.details?.Tier ?? offer?.details?.tier ?? null;
+  $: offerTiR = offer?.details?.TierIncreaseRate ?? offer?.details?.tir ?? null;
+  $: offerQR = offer?.details?.QualityRating ?? null;
+  $: offerCurrentTT = offer?.details?.CurrentTT ?? null;
+
   $: partnerLabel = side === 'buy' ? 'Seller' : 'Buyer';
   $: actionLabel = side === 'buy' ? 'Buy Now' : 'Sell Now';
   $: canConfirm = !submitting && !isOwnOrder && qtyValid;
@@ -120,9 +128,35 @@
           <span class="info-label">Planet</span>
           <span class="info-value">{offer.planet || 'Any'}</span>
         </div>
+
+        {#if tierable && (offerTier != null || offerTiR != null)}
+          <div class="info-row">
+            <span class="info-label">Tier</span>
+            <span class="info-value">{offerTier ?? 'N/A'}</span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">TiR</span>
+            <span class="info-value">{offerTiR ?? 'N/A'}</span>
+          </div>
+        {/if}
+
+        {#if blueprint && offerQR != null}
+          <div class="info-row">
+            <span class="info-label">QR</span>
+            <span class="info-value">{Number(offerQR).toFixed(2)}</span>
+          </div>
+        {/if}
+
+        {#if isCond && !blueprint && offerCurrentTT != null}
+          <div class="info-row">
+            <span class="info-label">Current TT</span>
+            <span class="info-value">{Number(offerCurrentTT).toFixed(2)} PED</span>
+          </div>
+        {/if}
+
         <div class="info-row">
           <span class="info-label">Markup</span>
-          <span class="info-value">{markupDisplay}</span>
+          <span class="info-value markup">{markupDisplay}</span>
         </div>
 
         <div class="quantity-row">
@@ -145,15 +179,19 @@
               <span class="price-label">TT Value</span>
               <span class="price-value">{fmt(totalTT)} PED</span>
             </div>
+            <div class="price-row">
+              <span class="price-label">Markup</span>
+              <span class="price-value">{isCond ? fmt(offer?.markup) + ' PED' : fmt(totalPrice - totalTT) + ' PED'}</span>
+            </div>
             <div class="price-row total">
-              <span class="price-label">Total (TT+MU)</span>
+              <span class="price-label">Total Price</span>
               <span class="price-value highlight">{fmt(totalPrice)} PED</span>
             </div>
           </div>
         {/if}
 
         {#if isOwnOrder}
-          <div class="error-message">This is your own order.</div>
+          <div class="own-order-notice">This is your own order.</div>
         {:else if !qtyValid}
           <div class="error-message">Quantity must be between {minQty} and {maxQty}.</div>
         {/if}
@@ -165,13 +203,22 @@
 
       <div class="dialog-actions">
         <button class="btn btn-secondary" on:click={close}>Cancel</button>
-        <button
-          class="btn {side === 'buy' ? 'btn-buy' : 'btn-sell'}"
-          on:click={confirm}
-          disabled={!canConfirm}
-        >
-          {submitting ? 'Sending...' : actionLabel}
-        </button>
+        {#if isOwnOrder}
+          <button
+            class="btn btn-edit"
+            on:click={() => dispatch('editOwn', { offer })}
+          >
+            Edit Offer
+          </button>
+        {:else}
+          <button
+            class="btn {side === 'buy' ? 'btn-buy' : 'btn-sell'}"
+            on:click={confirm}
+            disabled={!canConfirm}
+          >
+            {submitting ? 'Sending...' : actionLabel}
+          </button>
+        {/if}
       </div>
     </div>
   </div>
@@ -292,6 +339,18 @@
     color: var(--accent-color);
     font-weight: 600;
   }
+  .info-value.markup {
+    font-weight: 600;
+    color: var(--accent-color);
+  }
+  .own-order-notice {
+    color: var(--text-muted);
+    font-size: 12px;
+    padding: 6px 8px;
+    background: var(--hover-color);
+    border-radius: 4px;
+    text-align: center;
+  }
   .error-message {
     color: var(--error-color, #ef4444);
     font-size: 12px;
@@ -338,4 +397,10 @@
     border-color: var(--error-color, #ef4444);
   }
   .btn-sell:hover:not(:disabled) { opacity: 0.9; }
+  .btn-edit {
+    background: var(--accent-color);
+    color: white;
+    border-color: var(--accent-color);
+  }
+  .btn-edit:hover:not(:disabled) { opacity: 0.9; }
 </style>

@@ -173,6 +173,42 @@ export async function syncInventory(userId, items) {
 }
 
 /**
+ * Update an inventory item's mutable fields (quantity, value, details).
+ * Only updates fields that are explicitly provided (not undefined).
+ */
+export async function updateInventoryItem(itemRowId, userId, { quantity, value, details }) {
+  const setClauses = [];
+  const params = [itemRowId, userId];
+  let idx = 3;
+
+  if (quantity !== undefined) {
+    setClauses.push(`quantity = $${idx++}`);
+    params.push(quantity);
+  }
+  if (value !== undefined) {
+    setClauses.push(`value = $${idx++}`);
+    params.push(value);
+  }
+  if (details !== undefined) {
+    setClauses.push(`details = $${idx++}`);
+    params.push(details ? JSON.stringify(details) : null);
+  }
+
+  if (setClauses.length === 0) return null;
+
+  setClauses.push('updated_at = NOW()');
+
+  const query = `
+    UPDATE ONLY user_items
+    SET ${setClauses.join(', ')}
+    WHERE id = $1 AND user_id = $2
+    RETURNING id, user_id, item_id, item_name, quantity, instance_key, details, value, container, storage, updated_at
+  `;
+  const { rows } = await pool.query(query, params);
+  return rows[0] || null;
+}
+
+/**
  * Delete an inventory item.
  */
 export async function deleteInventoryItem(itemRowId, userId) {

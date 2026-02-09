@@ -19,8 +19,12 @@ A trading platform for buying and selling items between players.
 - **Order Freshness**: Filter by last update time
 - **Offer Staleness**: Active (<3d), Stale (3-7d), Expired (7-30d), Terminated (>30d)
 - **My Offers**: View, bump, edit, and close your offers
-- **Inventory System**: Import items via JSON, manage server-stored inventory
+- **Inventory System**: Full-sync import from EU API with diff preview, offer coverage checking
+- **Inventory Editing**: Inline config for item metadata (Tier, TiR, QR, value, quantity) with auto-save
+- **Sell from Inventory**: Create sell offers directly from inventory rows with pre-filled data
+- **Offer Coverage**: Standalone dialog to check/adjust sell offers exceeding inventory
 - **Shopping Cart**: Add sell offers to cart, group by seller/planet, checkout creates trade requests
+- **TT Badge**: Non-condition items show their TT value next to the item name in detail view
 - **Buy/Sell Now**: Click Buy/Sell buttons on order rows to create instant trade requests
 - **Bulk Buy/Sell**: Tab in OrderDialog for batch purchasing with quantity/min/max/planet filters
 - **User Offers Panel**: Click seller names to view all their offers in a floating panel
@@ -48,7 +52,9 @@ nexus/src/routes/market/exchange/[[slug]]/[[id]]/
 ├── OrderStatusBadge.svelte     - Color-coded staleness badge
 ├── MyOffersView.svelte         - User's offers management (bump/edit/close)
 ├── InventoryImportDialog.svelte - JSON import wizard
-├── InventoryPanel.svelte       - Inventory browser and management
+├── InventoryItemDialog.svelte  - Item config dialog (Tier/TiR/QR/value/qty editing)
+├── InventoryPanel.svelte       - Inventory browser with config/sell/remove actions
+├── OfferAdjustDialog.svelte    - Standalone offer coverage checking dialog
 ├── CartSummary.svelte          - Shopping cart with seller grouping + checkout
 ├── FavouritesTree.svelte       - Favourites sidebar with folders and drag-and-drop
 ├── QuickTradeDialog.svelte     - Buy Now / Sell Now confirmation dialog
@@ -162,9 +168,119 @@ Limit: 50 offers per side per user.
 | item_name | varchar(255) | Item name |
 | quantity | integer | Stack count |
 | instance_key | varchar(255) | Null=fungible, non-null=unique instance |
-| details | jsonb | Tier, condition, QR, pet data |
+| details | jsonb | Tier, TiR, QR metadata |
+| value | numeric | Item TT value in PED |
+| container | varchar(255) | Planet/storage location |
 | storage | varchar(10) | 'server' or 'local' |
 | updated_at | timestamptz | Last update |
+
+### Inventory Import System
+
+Full-sync import wizard that replaces the user's entire server inventory with data from the Entropia Universe API.
+
+#### Import Flow
+
+1. **Paste**: User pastes EU "myitems" JSON (with expandable "How do I get my items?" instructions)
+2. **Preview**: Shows parsed items, diff against existing inventory, and unresolved item names
+3. **Import**: Full sync (DELETE all + batch INSERT) in a single transaction
+4. **Coverage Check**: Compares sell offers against new inventory, highlights discrepancies
+
+#### EU API Format
+
+The EU inventory API returns:
+```json
+{
+  "items": [
+    { "id": 1, "value": 0.05, "quantity": 1, "name": "Item Name", "container": "Pitbull Mk. 1 (C,L)", "containerRefId": 1680 }
+  ],
+  "statusCode": 200
+}
+```
+
+Note: `id` is a positional slot ID, NOT a game item type ID. Names are resolved to `item_id` using the loaded item database.
+
+#### Processing Pipeline
+
+1. **Detect EU format**: Check for `statusCode` field or `items` array with `containerRefId`
+2. **Build container map**: `Map<id, {name, containerRefId}>` from all items
+3. **Resolve root containers**: Walk up `containerRefId` chain to find top-level container (cycle detection via Set)
+4. **Extract planet**: Regex on root container name (e.g., "STORAGE (Calypso)" → "Calypso")
+5. **Combine stacks**: Group by `(name, planet)`, sum quantities and values
+6. **Resolve name → item_id**: Lookup against loaded `allItems`. Unresolved items get `item_id = 0` with `instance_key = 'unresolved:' + name`
+
+#### Diff Preview
+
+Before importing, shows comparison against existing inventory:
+- New items (green), Changed quantities (yellow), To be removed (red), Unchanged
+- Table with Status column badges and quantity change indicators
+
+#### Offer Coverage Checking
+
+After import completes, checks sell offers against new inventory:
+- Groups inventory by `item_id`, sums quantities
+- Compares each sell offer's quantity against available inventory
+- Shows discrepancies with per-row **Adjust** (set offer qty to inventory qty) or **Cancel** buttons
+- **Bulk actions**: "Adjust All" and "Cancel All" buttons for batch handling
+- Adjusting calls `PUT /api/market/exchange/offers/[id]`, canceling calls `DELETE /api/market/exchange/offers/[id]`
+
+#### Backend
+
+- `syncInventory(userId, items)` in `nexus/src/lib/server/inventory.js`
+- Transaction: fetches existing items → DELETE all → batch INSERT (chunks of 100) → COMMIT
+- Returns diff summary: `{ added, updated, removed, unchanged, total }`
+- Max import size: 30000 items
+
+### Inventory Item Editing
+
+After importing, users can edit item metadata through the config dialog (gear icon on each row).
+
+#### Editable Fields
+
+| Field | Shown When | Constraints |
+|-------|-----------|-------------|
+| Quantity | Fungible items (`instance_key` is null) | Integer >= 0 |
+| Value (PED) | Non-fungible items with condition (`itemHasCondition`) | Number >= 0, nullable |
+| Tier | Tierable items (Weapon, Armor, Finder, Excavator, MedicalTool) | 0-10, step 0.01 |
+| TiR | Tierable items | 1-200 (UL) or 1-4000 (L) |
+| QR | Non-(L) Blueprints | 0-100 |
+
+Changes save immediately via debounced PATCH requests (400ms delay).
+
+#### API
+
+```
+PATCH /api/users/inventory/[id] — Update item fields (quantity, value, details)
+```
+
+Details JSONB validation: only `Tier`, `TierIncreaseRate`, `QualityRating` keys allowed with type/range checks.
+
+### Sell from Inventory
+
+Each inventory row has a sell button ($) that opens the OrderDialog pre-filled:
+- **Type**: Sell
+- **Planet**: From inventory `container` field (or 'Calypso' default)
+- **Quantity**: From inventory quantity
+- **Metadata**: From inventory details (Tier, TiR, QR if present)
+
+If the user already has a sell offer for that item, the existing offer opens in edit mode with a warning banner.
+
+Quantity warnings appear in the OrderDialog if the offer quantity exceeds available inventory.
+
+### Offer Coverage Dialog
+
+A standalone dialog (accessible via "Adjust (N)" button when discrepancies exist) that:
+- Compares all SELL offers against current inventory quantities
+- Shows a table of discrepancies (item, offer qty, inventory qty, deficit)
+- Per-row actions: **Adjust** (set offer qty to inventory) or **Cancel** (delete offer)
+- Bulk actions: **Adjust All**, **Cancel All**
+
+### Input Validation
+
+All exchange-related endpoints validate JSONB `details` fields server-side:
+- **Offer details**: `item_name` (string, max 200), `Tier` (0-10), `TierIncreaseRate` (1-4000), `QualityRating` (0-100), `CurrentTT` (>= 0), `Pet` (object with Level/Experience/Skills/Food)
+- **Inventory details**: `Tier` (0-10), `TierIncreaseRate` (1-4000), `QualityRating` (0-100)
+- **Planet validation**: All endpoints validate planet against the `PLANETS` constant list
+- Unknown keys are silently stripped
 
 ### Staleness Thresholds
 
@@ -192,8 +308,9 @@ POST /api/market/trade-requests                    - Create/append trade request
 GET  /api/market/trade-requests/[id]               - Single trade request with items
 POST /api/market/trade-requests/[id]/cancel        - Cancel a trade request
 GET  /api/users/inventory                          - User's server inventory
-PUT  /api/users/inventory                          - Bulk upsert inventory (import)
-DELETE /api/users/inventory/[id]                   - Remove inventory item
+PUT  /api/users/inventory                          - Full-sync inventory import (up to 30000 items)
+PATCH  /api/users/inventory/[id]                    - Update inventory item (quantity, value, details)
+DELETE /api/users/inventory/[id]                    - Remove inventory item
 GET  /api/market/prices/exchange/[itemId]           - Exchange-derived price data
 ```
 

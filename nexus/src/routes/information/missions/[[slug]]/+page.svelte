@@ -845,6 +845,61 @@
     return found?.Name || `#${id}`;
   }
 
+  function computeGraphLayers(graph) {
+    if (!graph?.nodes?.length) return { layers: [], disconnected: [] };
+    const nodes = graph.nodes;
+    const edges = graph.edges || [];
+    const nodeMap = new Map(nodes.map(n => [String(n.Id), n]));
+    const nodeIds = new Set(nodes.map(n => String(n.Id)));
+
+    // Build adjacency
+    const next = new Map();
+    const prev = new Map();
+    for (const edge of edges) {
+      const from = String(edge.FromId);
+      const to = String(edge.ToId);
+      if (!next.has(from)) next.set(from, []);
+      next.get(from).push(to);
+      if (!prev.has(to)) prev.set(to, []);
+      prev.get(to).push(from);
+    }
+
+    // Topological sort by layers
+    const inDegree = new Map();
+    for (const n of nodes) {
+      const id = String(n.Id);
+      const prereqs = (prev.get(id) || []).filter(p => nodeIds.has(p));
+      inDegree.set(id, prereqs.length);
+    }
+
+    const layers = [];
+    const processed = new Set();
+
+    while (processed.size < nodes.length) {
+      const layer = [];
+      for (const n of nodes) {
+        const id = String(n.Id);
+        if (!processed.has(id) && inDegree.get(id) === 0) {
+          layer.push(n);
+          processed.add(id);
+        }
+      }
+      if (layer.length === 0) break;
+      layers.push(layer);
+      for (const n of layer) {
+        const id = String(n.Id);
+        for (const unlockId of (next.get(id) || []).filter(u => nodeIds.has(u))) {
+          inDegree.set(unlockId, (inDegree.get(unlockId) || 1) - 1);
+        }
+      }
+    }
+
+    const disconnected = nodes.filter(n => !processed.has(String(n.Id)));
+    return { layers, disconnected };
+  }
+
+  $: graphLayers = computeGraphLayers(graphData);
+
   function addPrerequisite() {
     const current = activeMission?.Dependencies?.Prerequisites || [];
     updateField('Dependencies.Prerequisites', [...current, { Id: null, Name: null }]);
@@ -1205,10 +1260,15 @@
                       {/if}
                       {#if itemCount > 0}
                         {#each pkg.Items as item}
+                          {@const itemDisplayName = item.itemName || itemsIndex[item.itemId] || `Item #${item.itemId}`}
                           <div class="reward-row">
                             <span class="reward-value">{item.quantity ?? 1}×</span>
                             <span class="reward-name">
-                              <a href="/items/{item.itemId}" class="reward-link">{itemsIndex[item.itemId] || `Item #${item.itemId}`}</a>
+                              {#if item.itemId}
+                                <a href="/items/{item.itemId}" class="reward-link">{itemDisplayName}</a>
+                              {:else}
+                                {itemDisplayName}
+                              {/if}
                               {#if item.pedValue}<span class="reward-ped">({formatPedValue(item.pedValue)} PED)</span>{/if}
                             </span>
                           </div>
@@ -1216,9 +1276,15 @@
                       {/if}
                       {#if skillCount > 0}
                         {#each pkg.Skills as skill}
-                          {@const skillName = itemsIndex[skill.skillItemId]?.replace(' Skill Implant (L)', '') || `Skill #${skill.skillItemId}`}
+                          {@const skillDisplayName = skill.skillName || itemsIndex[skill.skillItemId]?.replace(' Skill Implant (L)', '') || `Skill #${skill.skillItemId}`}
                           <div class="reward-row">
-                            <span class="reward-name"><a href="/information/skills/{encodeURIComponent(skillName)}" class="reward-link">{skillName}</a></span>
+                            <span class="reward-name">
+                              {#if skill.skillItemId}
+                                <a href="/information/skills/{encodeURIComponent(skillDisplayName)}" class="reward-link">{skillDisplayName}</a>
+                              {:else}
+                                {skillDisplayName}
+                              {/if}
+                            </span>
                             <span class="reward-value skill">{skill.pedValue ? `+${formatPedValue(skill.pedValue)} PED` : '+'}</span>
                           </div>
                         {/each}
@@ -1284,22 +1350,23 @@
           <DataSection title="Chain Preview" subtitle="Nearby missions" icon="">
             {#if previewPrev.length || previewNext.length}
               <div class="chain-preview">
-                {#each previewPrev as node}
-                  <span class="chain-chip prev">
-                    <a href={`/information/missions/${encodeURIComponentSafe(node.Name)}`}>{node.Name}</a>
-                  </span>
+                {#each [...previewPrev].reverse() as node, i}
+                  <a class="chain-chip prev" href={`/information/missions/${encodeURIComponentSafe(node.Name)}`}>{node.Name}</a>
+                  <span class="chain-arrow">→</span>
                 {/each}
                 <span class="chain-chip current">{activeMission?.Name}</span>
                 {#each previewNext as node}
-                  <span class="chain-chip next">
-                    <a href={`/information/missions/${encodeURIComponentSafe(node.Name)}`}>{node.Name}</a>
-                  </span>
+                  <span class="chain-arrow">→</span>
+                  <a class="chain-chip next" href={`/information/missions/${encodeURIComponentSafe(node.Name)}`}>{node.Name}</a>
                 {/each}
               </div>
             {:else}
               <div class="empty-text">No nearby missions in the graph.</div>
             {/if}
-            <button class="graph-btn" on:click={() => showGraphDialog = true}>Open Full Graph</button>
+            <button class="graph-btn" on:click={() => showGraphDialog = true}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="3"/><circle cx="5" cy="19" r="3"/><circle cx="19" cy="19" r="3"/><line x1="12" y1="8" x2="5" y2="16"/><line x1="12" y1="8" x2="19" y2="16"/></svg>
+              Full Graph
+            </button>
           </DataSection>
         {/if}
 
@@ -1331,7 +1398,7 @@
                       {/if}
                     </div>
                     {#if step.Description}
-                      <p class="step-description">{step.Description}</p>
+                      <div class="step-description description-content">{@html sanitizeHtml(step.Description)}</div>
                     {/if}
                     {#if step.Objectives?.length}
                       <ul class="objective-list">
@@ -1489,7 +1556,10 @@
             {:else}
               <div class="empty-text">No missions in this chain yet.</div>
             {/if}
-            <button class="graph-btn" on:click={() => showGraphDialog = true}>Open Full Graph</button>
+            <button class="graph-btn" on:click={() => showGraphDialog = true}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="3"/><circle cx="5" cy="19" r="3"/><circle cx="19" cy="19" r="3"/><line x1="12" y1="8" x2="5" y2="16"/><line x1="12" y1="8" x2="19" y2="16"/></svg>
+              Full Graph
+            </button>
           </DataSection>
         {/if}
       </article>
@@ -1504,37 +1574,58 @@
   {#if showGraphDialog}
     <div class="dialog-overlay" on:click={() => showGraphDialog = false}>
       <div class="graph-dialog" on:click|stopPropagation>
-        <div class="dialog-header">
-          <h3>{isChainView ? 'Mission Chain Graph' : 'Mission Graph'}</h3>
-          <button class="dialog-close" on:click={() => showGraphDialog = false}>Close</button>
+        <div class="graph-dialog-header">
+          <h3>{activeMission?.MissionChain?.Name || 'Mission Graph'}</h3>
+          <span class="graph-dialog-count">{graphData?.nodes?.length || 0} missions</span>
+          <button class="dialog-close" on:click={() => showGraphDialog = false}>×</button>
         </div>
-        <div class="graph-content">
-          <div class="graph-nodes">
-            <h4>Nodes</h4>
-            {#if graphData?.nodes?.length}
-              <ul>
-                {#each graphData.nodes as node}
-                  <li class:current={String(node.Id) === String(activeMission?.Id)}>
-                    {node.Name} (#{node.Id})
-                  </li>
+        <div class="graph-flow">
+          {#if graphLayers.layers.length}
+            {#each graphLayers.layers as layer, layerIdx}
+              {#if layerIdx > 0}
+                <div class="graph-layer-arrow">↓</div>
+              {/if}
+              <div class="graph-layer">
+                <span class="graph-layer-label">{layerIdx === 0 ? 'Start' : `Stage ${layerIdx + 1}`}</span>
+                <div class="graph-layer-chips">
+                  {#each layer as node}
+                    {@const isCurrent = String(node.Id) === String(activeMission?.Id)}
+                    {#if isCurrent}
+                      <span class="graph-chip current">{node.Name}</span>
+                    {:else}
+                      <a
+                        class="graph-chip"
+                        href={`/information/missions/${encodeURIComponentSafe(node.Name)}`}
+                        on:click={() => showGraphDialog = false}
+                      >{node.Name}</a>
+                    {/if}
+                  {/each}
+                </div>
+              </div>
+            {/each}
+          {:else}
+            <div class="empty-text">No missions in this graph.</div>
+          {/if}
+          {#if graphLayers.disconnected.length}
+            <div class="graph-layer-arrow">⋯</div>
+            <div class="graph-layer disconnected">
+              <span class="graph-layer-label">Disconnected</span>
+              <div class="graph-layer-chips">
+                {#each graphLayers.disconnected as node}
+                  {@const isCurrent = String(node.Id) === String(activeMission?.Id)}
+                  {#if isCurrent}
+                    <span class="graph-chip current">{node.Name}</span>
+                  {:else}
+                    <a
+                      class="graph-chip disconnected"
+                      href={`/information/missions/${encodeURIComponentSafe(node.Name)}`}
+                      on:click={() => showGraphDialog = false}
+                    >{node.Name}</a>
+                  {/if}
                 {/each}
-              </ul>
-            {:else}
-              <div class="empty-text">No nodes available.</div>
-            {/if}
-          </div>
-          <div class="graph-edges">
-            <h4>Edges</h4>
-            {#if graphData?.edges?.length}
-              <ul>
-                {#each graphData.edges as edge}
-                  <li>{getNodeName(edge.FromId)} -> {getNodeName(edge.ToId)}</li>
-                {/each}
-              </ul>
-            {:else}
-              <div class="empty-text">No edges available.</div>
-            {/if}
-          </div>
+              </div>
+            </div>
+          {/if}
         </div>
       </div>
     </div>
@@ -1792,17 +1883,31 @@
   .chain-preview {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: 6px;
     align-items: center;
-    margin-bottom: 8px;
+    margin-bottom: 10px;
+  }
+
+  .chain-arrow {
+    color: var(--text-muted, #999);
+    font-size: 11px;
+    user-select: none;
   }
 
   .chain-chip {
     background: var(--secondary-color);
     border: 1px solid var(--border-color, #555);
-    padding: 4px 8px;
+    padding: 5px 12px;
     border-radius: 999px;
     font-size: 12px;
+    color: var(--text-color);
+    text-decoration: none;
+    transition: border-color 0.15s, background-color 0.15s;
+  }
+
+  a.chain-chip:hover {
+    border-color: var(--accent-color, #4a9eff);
+    background: var(--hover-color);
   }
 
   .chain-chip.current {
@@ -1812,20 +1917,24 @@
     font-weight: 600;
   }
 
-  .chain-chip a {
-    color: inherit;
-    text-decoration: none;
-  }
-
   .graph-btn {
-    margin-top: 8px;
-    padding: 6px 10px;
+    margin-top: 10px;
+    padding: 6px 14px;
     border-radius: 4px;
-    border: 1px solid var(--border-color, #555);
-    background: var(--bg-color, var(--primary-color));
-    color: var(--text-color);
+    border: 1px solid var(--accent-color, #4a9eff);
+    background: transparent;
+    color: var(--accent-color, #4a9eff);
     cursor: pointer;
     font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: background-color 0.15s, color 0.15s;
+  }
+
+  .graph-btn:hover {
+    background: var(--accent-color, #4a9eff);
+    color: white;
   }
 
   .steps-list {
@@ -2028,7 +2137,7 @@
   .dialog-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.6);
+    background: rgba(0, 0, 0, 0.65);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -2036,46 +2145,153 @@
   }
 
   .graph-dialog {
-    background: var(--secondary-color);
+    background: var(--primary-color);
     border: 1px solid var(--border-color, #555);
-    border-radius: 8px;
-    padding: 16px;
-    width: min(800px, 90vw);
-    max-height: 80vh;
-    overflow: auto;
+    border-radius: 10px;
+    width: min(900px, 94vw);
+    max-height: 85vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
   }
 
-  .dialog-header {
+  .graph-dialog-header {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    margin-bottom: 12px;
+    gap: 10px;
+    padding: 14px 18px;
+    border-bottom: 2px solid var(--accent-color, #4a9eff);
+  }
+
+  .graph-dialog-header h3 {
+    margin: 0;
+    font-size: 16px;
+    flex: 1;
+  }
+
+  .graph-dialog-count {
+    font-size: 12px;
+    color: var(--text-muted, #999);
   }
 
   .dialog-close {
     background: transparent;
     border: 1px solid var(--border-color, #555);
-    color: var(--text-color);
+    color: var(--text-muted, #999);
     border-radius: 4px;
-    padding: 4px 8px;
+    width: 28px;
+    height: 28px;
+    font-size: 16px;
     cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+    flex-shrink: 0;
   }
 
-  .graph-content {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 16px;
+  .dialog-close:hover {
+    color: var(--text-color);
+    border-color: var(--text-color);
   }
 
-  .graph-nodes ul,
-  .graph-edges ul {
-    padding-left: 18px;
-    font-size: 13px;
+  .graph-flow {
+    padding: 20px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
   }
 
-  .graph-nodes li.current {
-    color: var(--accent-color, #4a9eff);
+  .graph-layer {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+  }
+
+  .graph-layer-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted, #999);
     font-weight: 600;
+  }
+
+  .graph-layer-chips {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .graph-layer-arrow {
+    color: var(--text-muted, #999);
+    font-size: 16px;
+    line-height: 1;
+    user-select: none;
+    padding: 2px 0;
+  }
+
+  .graph-chip {
+    background: var(--secondary-color);
+    border: 1px solid var(--border-color, #555);
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-size: 13px;
+    color: var(--text-color);
+    text-decoration: none;
+    transition: border-color 0.15s, background-color 0.15s, box-shadow 0.15s;
+    min-height: 32px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  a.graph-chip:hover {
+    border-color: var(--accent-color, #4a9eff);
+    background: var(--hover-color);
+  }
+
+  .graph-chip.current {
+    background: var(--accent-color, #4a9eff);
+    border-color: var(--accent-color, #4a9eff);
+    color: white;
+    font-weight: 600;
+    box-shadow: 0 0 12px rgba(74, 158, 255, 0.3);
+  }
+
+  a.graph-chip.disconnected {
+    border-style: dashed;
+    color: var(--text-muted, #999);
+  }
+
+  a.graph-chip.disconnected:hover {
+    border-color: var(--warning-color, #fbbf24);
+    color: var(--text-color);
+  }
+
+  .graph-layer.disconnected .graph-layer-label {
+    color: var(--warning-color, #fbbf24);
+  }
+
+  @media (max-width: 899px) {
+    .graph-dialog {
+      width: 100vw;
+      max-height: 90vh;
+      border-radius: 10px 10px 0 0;
+    }
+
+    .graph-chip {
+      font-size: 12px;
+      padding: 8px 12px;
+      min-height: 36px;
+    }
+
+    .graph-flow {
+      padding: 14px;
+    }
   }
 
   /* Stat link styling */

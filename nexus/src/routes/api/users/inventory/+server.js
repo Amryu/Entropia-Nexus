@@ -5,6 +5,31 @@ import { getUserInventory, upsertInventory, syncInventory } from '$lib/server/in
 const MAX_IMPORT_ITEMS = 30000;
 
 /**
+ * Validate and sanitize inventory item details JSONB.
+ */
+function validateInventoryDetails(details) {
+  if (details === null || details === undefined) return null;
+  if (typeof details !== 'object' || Array.isArray(details)) return null;
+
+  const clean = {};
+
+  if (details.Tier != null) {
+    const tier = parseFloat(details.Tier);
+    if (Number.isFinite(tier) && tier >= 0 && tier <= 10) clean.Tier = tier;
+  }
+  if (details.TierIncreaseRate != null) {
+    const tir = parseInt(details.TierIncreaseRate, 10);
+    if (Number.isFinite(tir) && tir >= 1 && tir <= 4000) clean.TierIncreaseRate = tir;
+  }
+  if (details.QualityRating != null) {
+    const qr = parseFloat(details.QualityRating);
+    if (Number.isFinite(qr) && qr >= 0 && qr <= 100) clean.QualityRating = qr;
+  }
+
+  return Object.keys(clean).length > 0 ? clean : null;
+}
+
+/**
  * GET /api/users/inventory — Get user's server inventory
  */
 export async function GET({ locals }) {
@@ -71,7 +96,7 @@ export async function PUT({ request, locals }) {
       instanceKey = 'unresolved:' + itemName;
     }
 
-    const details = item.details || null;
+    const details = validateInventoryDetails(item.details);
 
     const value = item.value != null ? parseFloat(item.value) : null;
     if (value != null && !Number.isFinite(value)) {

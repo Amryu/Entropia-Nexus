@@ -93,7 +93,12 @@ export const Mission = {
           "properties": {
             "Id": { "type": ["integer", "null"] },
             "Name": { "type": ["string", "null"] },
-            "Planet": { "type": ["string", "null"] },
+            "Planet": {
+              "anyOf": [
+                { "$ref": "https://entropianexus.com/schemas/NamedEntity.json" },
+                { "type": "null" }
+              ]
+            },
             "Coordinates": {
               "type": ["object", "null"],
               "properties": {
@@ -150,11 +155,11 @@ export const Mission = {
                 "additionalProperties": false,
                 "properties": {
                   "itemId": { "type": ["integer", "null"] },
+                  "itemName": { "type": ["string", "null"] },
                   "quantity": { "type": ["integer", "null"] },
                   "minPedValue": { "type": ["number", "null"] },
                   "pedValue": { "type": ["number", "null"] }
-                },
-                "required": ["itemId", "quantity", "minPedValue", "pedValue"]
+                }
               }
             },
             "Skills": {
@@ -164,17 +169,16 @@ export const Mission = {
                 "additionalProperties": false,
                 "properties": {
                   "skillItemId": { "type": ["integer", "null"] },
+                  "skillName": { "type": ["string", "null"] },
                   "pedValue": { "type": ["number", "null"] }
-                },
-                "required": ["skillItemId", "pedValue"]
+                }
               }
             },
             "Unlocks": {
               "type": "array",
               "items": { "type": "string" }
             }
-          },
-          "required": ["Items", "Skills", "Unlocks"]
+          }
         },
         {
           "type": "array",
@@ -190,11 +194,11 @@ export const Mission = {
                   "additionalProperties": false,
                   "properties": {
                     "itemId": { "type": ["integer", "null"] },
+                    "itemName": { "type": ["string", "null"] },
                     "quantity": { "type": ["integer", "null"] },
                     "minPedValue": { "type": ["number", "null"] },
                     "pedValue": { "type": ["number", "null"] }
-                  },
-                  "required": ["itemId", "quantity", "minPedValue", "pedValue"]
+                  }
                 }
               },
               "Skills": {
@@ -204,17 +208,16 @@ export const Mission = {
                   "additionalProperties": false,
                   "properties": {
                     "skillItemId": { "type": ["integer", "null"] },
+                    "skillName": { "type": ["string", "null"] },
                     "pedValue": { "type": ["number", "null"] }
-                  },
-                  "required": ["skillItemId", "pedValue"]
+                  }
                 }
               },
               "Unlocks": {
                 "type": "array",
                 "items": { "type": "string" }
               }
-            },
-            "required": ["Items", "Skills", "Unlocks"]
+            }
           }
         },
         { "type": "null" }

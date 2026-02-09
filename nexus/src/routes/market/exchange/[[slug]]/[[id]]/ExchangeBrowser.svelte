@@ -152,13 +152,14 @@
         },
         Planet: offer.planet || 'Calypso',
         Quantity: offer.quantity || 1,
-        CurrentTT: null,
+        CurrentTT: offer.details?.CurrentTT ?? null,
         Markup: offer.markup || 0,
         Metadata: { ...(offer.details || {}) },
         _offerId: offer.id,
         _inlineEdit: true,
       };
       delete editOrder.Metadata.item_name;
+      delete editOrder.Metadata.CurrentTT;
 
       setTimeout(() => {
         orderDialogRef?.initOrder(editOrder, type, 'edit');
@@ -208,6 +209,77 @@
     if ($showMyOffers && myOffersRef) myOffersRef.refresh();
     else if ($showInventory && inventoryPanelRef) inventoryPanelRef.refresh();
     else if ($showTrades && tradesPanelRef) tradesPanelRef.refresh();
+  }
+
+  async function handleInventorySell(e) {
+    const { invItem, existingOffer } = e.detail;
+    if (!invItem?.item_id) return;
+
+    try {
+      // Fetch full item details for the OrderDialog
+      const item = await apiCall(window.fetch, `/items/${invItem.item_id}`);
+      if (!item) return;
+
+      inlineEditItem = item;
+      orderDialogType = 'sell';
+
+      if (existingOffer) {
+        // Edit existing offer
+        const editOrder = {
+          Type: 'Sell',
+          Item: {
+            Name: item?.Name || existingOffer.details?.item_name || '',
+            Type: item?.Properties?.Type || item?.Type || null,
+            MaxTT: getMaxTT(item),
+          },
+          Planet: existingOffer.planet || invItem.container || 'Calypso',
+          Quantity: existingOffer.quantity || 1,
+          CurrentTT: existingOffer.details?.CurrentTT ?? null,
+          Markup: existingOffer.markup || 0,
+          Metadata: { ...(existingOffer.details || {}) },
+          _offerId: existingOffer.id,
+          _inlineEdit: true,
+          _inventoryWarning: `You already have a sell offer for this item. Editing it now.`,
+        };
+        delete editOrder.Metadata.item_name;
+        delete editOrder.Metadata.CurrentTT;
+
+        setTimeout(() => {
+          orderDialogRef?.initOrder(editOrder, 'sell', 'edit');
+          showOrderDialog = true;
+        }, 0);
+      } else {
+        // Create new sell offer pre-filled from inventory
+        const details = typeof invItem.details === 'string' ? JSON.parse(invItem.details) : (invItem.details || {});
+        const newOrder = {
+          Type: 'Sell',
+          Item: {
+            Name: item?.Name || invItem.item_name || '',
+            Type: item?.Properties?.Type || item?.Type || null,
+            MaxTT: getMaxTT(item),
+            Id: invItem.item_id,
+          },
+          Planet: invItem.container || 'Calypso',
+          Quantity: invItem.quantity || 1,
+          CurrentTT: null,
+          Markup: 0,
+          Metadata: {},
+          _inventoryQty: invItem.quantity || 0,
+        };
+
+        // Pre-fill metadata from inventory details
+        if (details.Tier != null) newOrder.Metadata.Tier = details.Tier;
+        if (details.TierIncreaseRate != null) newOrder.Metadata.TierIncreaseRate = details.TierIncreaseRate;
+        if (details.QualityRating != null) newOrder.Metadata.QualityRating = details.QualityRating;
+
+        setTimeout(() => {
+          orderDialogRef?.initOrder(newOrder, 'sell', 'create');
+          showOrderDialog = true;
+        }, 0);
+      }
+    } catch (e) {
+      console.error('Failed to open sell dialog from inventory:', e);
+    }
   }
 
   // Exchange price data for detail view
@@ -469,13 +541,14 @@
         },
         Planet: offer.planet || 'Calypso',
         Quantity: offer.quantity || 1,
-        CurrentTT: null,
+        CurrentTT: offer.details?.CurrentTT ?? null,
         Markup: offer.markup || 0,
         Metadata: { ...(offer.details || {}) },
         _offerId: offer.id,  // track original offer ID for PUT
       };
-      // Clean up item_name from metadata (it's not a metadata field)
+      // Clean up non-metadata fields from Metadata
       delete editOrder.Metadata.item_name;
+      delete editOrder.Metadata.CurrentTT;
       orderDialogRef?.initOrder(editOrder, type, 'edit');
       showOrderDialog = true;
     }, 0);
@@ -813,8 +886,8 @@
     const type =
       selectedItemDetails?.Properties?.Type || selectedItem?.t || null;
     const isTierable = tierableTypes.has(type);
-    const tier = o?.Tier ?? o?.tier ?? null;
-    const tir = o?.TiR ?? o?.tir ?? o?.TIR ?? null;
+    const tier = o?.Tier ?? o?.tier ?? o?.details?.Tier ?? null;
+    const tir = o?.TiR ?? o?.tir ?? o?.TIR ?? o?.details?.TierIncreaseRate ?? null;
 
     const baseValues = [
       qty,
@@ -865,11 +938,11 @@
         if (!isTierableDetail) return true;
         if (!isLimitedDetail) {
           if (selectedTierFilter === "All") return true;
-          const t = Number(o?.Tier ?? o?.tier);
+          const t = Number(o?.Tier ?? o?.tier ?? o?.details?.Tier);
           return isFinite(t) ? Math.floor(t) === Number(selectedTierFilter) : true;
         } else {
           if (selectedTiRRange === "All") return true;
-          const tir = Number(o?.TiR ?? o?.tir ?? o?.TIR);
+          const tir = Number(o?.TiR ?? o?.tir ?? o?.TIR ?? o?.details?.TierIncreaseRate);
           const [min, max] = (selectedTiRRange || "0-500").split("-").map(Number);
           return isFinite(tir) ? tir >= min && tir <= max : true;
         }
@@ -898,8 +971,8 @@
         return {
           ...o,
           quantity: qty,
-          tier: o?.Tier ?? o?.tier ?? null,
-          tir: o?.TiR ?? o?.tir ?? o?.TIR ?? null,
+          tier: o?.Tier ?? o?.tier ?? o?.details?.Tier ?? null,
+          tir: o?.TiR ?? o?.tir ?? o?.TIR ?? o?.details?.TierIncreaseRate ?? null,
           planet: o?.Planet ?? o?.planet ?? selectedPlanet ?? 'N/A',
           seller_name: o?.SellerName ?? o?.seller ?? o?.seller_name ?? 'Unknown',
           markup: mu,
@@ -980,9 +1053,15 @@
         ...(order.Metadata || {}),
       }
     };
+    // Include CurrentTT if set (condition items)
+    if (order.CurrentTT != null) {
+      payload.details.CurrentTT = order.CurrentTT;
+    }
     // Clean internal tracking fields from details
     delete payload.details._offerId;
     delete payload.details._inlineEdit;
+    delete payload.details._inventoryWarning;
+    delete payload.details._inventoryQty;
 
     try {
       let res;
@@ -1007,12 +1086,49 @@
       // Reload orders for this item (detail view) or refresh My Offers (inline edit)
       if (inlineEditItem) {
         if (myOffersRef) myOffersRef.refresh();
+        // Also refresh myOffers store directly for discrepancy count
+        try {
+          const offersRes = await fetch('/api/market/exchange/offers');
+          if (offersRes.ok) myOffers.set(await offersRes.json());
+        } catch {}
       } else {
         ordersLoadedKey = '';
         if (selectedItem?.i) await loadOrders(selectedItem.i, selectedPlanet);
       }
     } catch (e) {
       console.error('Error submitting order:', e);
+    } finally {
+      closeOrderDialog();
+    }
+  }
+
+  async function handleDeleteOffer(e) {
+    const order = e?.detail?.order;
+    const offerId = order?._offerId;
+    if (!offerId) { closeOrderDialog(); return; }
+
+    if (!confirm('Are you sure you want to delete this offer?')) return;
+
+    try {
+      const res = await fetch(`/api/market/exchange/offers/${offerId}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        console.error('Delete failed:', data.error);
+        return;
+      }
+      // Refresh orders
+      if (inlineEditItem) {
+        if (myOffersRef) myOffersRef.refresh();
+        try {
+          const offersRes = await fetch('/api/market/exchange/offers');
+          if (offersRes.ok) myOffers.set(await offersRes.json());
+        } catch {}
+      } else {
+        ordersLoadedKey = '';
+        if (selectedItem?.i) await loadOrders(selectedItem.i, selectedPlanet);
+      }
+    } catch (err) {
+      console.error('Error deleting offer:', err);
     } finally {
       closeOrderDialog();
     }
@@ -1076,9 +1192,8 @@
       }};
   }
 
-  // Sell orders: user column = "Seller", action = "Buy"
+  // Sell orders: user column = "Seller", action = "Buy" (or "Edit" for own orders)
   $: sellDetailColumns = (() => {
-    // Insert user column before 'bumped_at'
     const cols = [...detailColumns];
     const updatedIdx = cols.findIndex(c => c.key === 'bumped_at');
     cols.splice(updatedIdx >= 0 ? updatedIdx : cols.length, 0, makeUserColumn('Seller'));
@@ -1086,13 +1201,15 @@
       key: '_action', header: '', width: '70px', sortable: false, searchable: false,
       formatter: (v, row) => {
         const offerId = row?.id ?? row?.Id ?? 0;
+        const isOwn = currentUser && String(getSellerId(row)) === String(currentUser.id);
+        if (isOwn) return `<button class="cell-button trade-btn edit-trade-btn" data-trade-buy="${offerId}">Edit</button>`;
         return `<button class="cell-button trade-btn buy-trade-btn" data-trade-buy="${offerId}">Buy</button>`;
       }
     });
     return cols;
   })();
 
-  // Buy orders: user column = "Buyer", action = "Sell"
+  // Buy orders: user column = "Buyer", action = "Sell" (or "Edit" for own orders)
   $: buyDetailColumns = (() => {
     const cols = [...detailColumns];
     const updatedIdx = cols.findIndex(c => c.key === 'bumped_at');
@@ -1101,6 +1218,8 @@
       key: '_action', header: '', width: '70px', sortable: false, searchable: false,
       formatter: (v, row) => {
         const offerId = row?.id ?? row?.Id ?? 0;
+        const isOwn = currentUser && String(getSellerId(row)) === String(currentUser.id);
+        if (isOwn) return `<button class="cell-button trade-btn edit-trade-btn" data-trade-sell="${offerId}">Edit</button>`;
         return `<button class="cell-button trade-btn sell-trade-btn" data-trade-sell="${offerId}">Sell</button>`;
       }
     });
@@ -1129,11 +1248,23 @@
     if (buyBtn) {
       const offerId = parseInt(buyBtn.dataset.tradeBuy, 10);
       const order = (sellOrders || []).find(o => (o?.id ?? o?.Id) === offerId);
-      if (order) openQuickTrade(order, 'buy');
+      if (order) {
+        if (currentUser && String(getSellerId(order)) === String(currentUser.id)) {
+          editOfferInline(order);
+        } else {
+          openQuickTrade(order, 'buy');
+        }
+      }
     } else if (sellBtn) {
       const offerId = parseInt(sellBtn.dataset.tradeSell, 10);
       const order = (buyOrders || []).find(o => (o?.id ?? o?.Id) === offerId);
-      if (order) openQuickTrade(order, 'sell');
+      if (order) {
+        if (currentUser && String(getSellerId(order)) === String(currentUser.id)) {
+          editOfferInline(order);
+        } else {
+          openQuickTrade(order, 'sell');
+        }
+      }
     }
   }
 
@@ -1589,17 +1720,19 @@
           item={selectedItemDetails || selectedItem}
           on:close={closeQuickTrade}
           on:confirm={handleQuickTradeConfirm}
+          on:editOwn={(e) => { closeQuickTrade(); editOfferInline(e.detail.offer); }}
         />
       {/if}
 
       <OrderDialog
         bind:this={orderDialogRef}
         show={showOrderDialog}
-        hideBulkTab={!!inlineEditItem}
+        hideBulkTab={!!inlineEditItem || !currentUser?.grants?.includes('market.bulk')}
         orderBookOffers={[...(buyOrders || []), ...(sellOrders || [])]}
         on:close={closeOrderDialog}
         on:submit={onSubmitOrder}
         on:bulkSubmit={handleBulkSubmit}
+        on:delete={handleDeleteOffer}
       />
     </div>
 
@@ -1664,6 +1797,8 @@
             <InventoryPanel
               bind:this={inventoryPanelRef}
               user={currentUser}
+              {allItems}
+              on:sell={handleInventorySell}
             />
           {:else if $showTrades}
             <TradeRequestsPanel
@@ -2134,6 +2269,13 @@
   }
   :global(.sell-trade-btn:hover) {
     background: rgba(239, 68, 68, 0.15);
+  }
+  :global(.edit-trade-btn) {
+    color: var(--accent-color);
+    border-color: var(--accent-color);
+  }
+  :global(.edit-trade-btn:hover) {
+    background: rgba(59, 130, 246, 0.15);
   }
   :global(.seller-link) {
     cursor: pointer;

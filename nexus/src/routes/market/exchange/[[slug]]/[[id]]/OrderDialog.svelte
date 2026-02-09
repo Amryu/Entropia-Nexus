@@ -413,6 +413,11 @@
     recalcPrices();
   }
 
+  // Inventory-sourced warnings
+  $: inventoryWarning = order?._inventoryWarning || null;
+  $: inventoryQty = order?._inventoryQty ?? null;
+  $: qtyExceedsInventory = inventoryQty != null && (order?.Quantity || 0) > inventoryQty;
+
   const dispatch = createEventDispatcher();
 
   function close() {
@@ -439,10 +444,10 @@
       <h3 style="margin-top:0;">
         {mode === 'create' ? 'Create' : 'Edit'} {order.Type} Order
       </h3>
-      {#if !hideBulkTab}
+      {#if !hideBulkTab && mode !== 'edit'}
         <div class="tab-bar">
           <button class="tab" class:active={activeTab === 'offer'} on:click={() => activeTab = 'offer'}>
-            {mode === 'edit' ? 'Edit Offer' : 'Create Offer'}
+            Create Offer
           </button>
           <button class="tab" class:active={activeTab === 'bulk'} on:click={() => activeTab = 'bulk'}>
             Bulk {order.Type}
@@ -454,6 +459,12 @@
         <div class="form-label">Item</div>
         <div>{order.Item?.Name}</div>
       </div>
+      {#if inventoryWarning}
+        <div class="inv-warning-banner">{inventoryWarning}</div>
+      {/if}
+      {#if qtyExceedsInventory}
+        <div class="inv-warning-banner">Offer quantity exceeds your inventory ({inventoryQty} available)</div>
+      {/if}
       <div class="form-row">
         <label for="planetSelect">Planet</label>
         <select
@@ -649,12 +660,17 @@
             {/if}
           </div>
         {:else}
+          <div class="form-row max-tt-row">
+            <label>Max TT</label>
+            <div class="static-value">{order.Item.MaxTT != null ? `${Number(order.Item.MaxTT).toFixed(2)} PED` : 'N/A'}</div>
+          </div>
           <div class="form-row">
             <label for="valueInput">Current TT (PED)</label>
             <input
               id="valueInput"
               type="number"
               min="0"
+              max={order.Item.MaxTT ?? undefined}
               step="0.01"
               bind:value={order.CurrentTT}
               on:input={recalcPrices}
@@ -741,6 +757,10 @@
         </div>
       </div>
       <div class="actions">
+        {#if mode === 'edit'}
+          <button class="delete-btn" on:click={() => dispatch('delete', { order })} title="Delete this offer">Delete</button>
+        {/if}
+        <span class="actions-spacer"></span>
         <button on:click={close}>Cancel</button>
         <button on:click={submit} title={mode === 'edit' ? 'Save changes' : 'Submit order'}>{mode === 'edit' ? 'Save' : 'Submit'}</button>
       </div>
@@ -888,6 +908,14 @@
     opacity: 0.5;
     cursor: not-allowed;
   }
+  .static-value {
+    padding: 6px 10px;
+    font-size: 13px;
+    color: var(--text-muted);
+    min-height: 33px;
+    display: flex;
+    align-items: center;
+  }
   .actions {
     display: flex;
     gap: 8px;
@@ -919,6 +947,24 @@
   }
   .actions button:last-child:hover {
     background: var(--accent-color-hover);
+  }
+  .actions-spacer {
+    flex: 1;
+  }
+  .delete-btn {
+    background: transparent;
+    border: 1px solid var(--error-color, #ef4444);
+    color: var(--error-color, #ef4444);
+    padding: 8px 18px;
+    border-radius: 6px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+  .delete-btn:hover {
+    background: var(--error-color, #ef4444);
+    color: white;
   }
   .suggestions {
     display: flex;
@@ -1131,6 +1177,15 @@
     padding: 6px 8px;
     background: rgba(239, 68, 68, 0.1);
     border-radius: 4px;
+    margin-bottom: 8px;
+  }
+  .inv-warning-banner {
+    background: var(--warning-bg);
+    color: var(--warning-color);
+    padding: 6px 10px;
+    border-radius: 4px;
+    border: 1px solid var(--warning-color);
+    font-size: 12px;
     margin-bottom: 8px;
   }
 </style>

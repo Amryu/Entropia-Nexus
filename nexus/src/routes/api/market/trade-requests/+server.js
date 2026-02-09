@@ -2,6 +2,7 @@
 import { getResponse } from '$lib/util.js';
 import { hasGrant } from '$lib/server/auth.js';
 import { getOrCreateTradeRequest, getUserTradeRequests } from '$lib/server/trade-requests.js';
+import { PLANETS } from '$lib/server/exchange.js';
 
 function getVerifiedUser(locals) {
   const user = locals.session?.user;
@@ -73,6 +74,9 @@ export async function POST({ request, locals }) {
   }
 
   const planet = body.planet || null;
+  if (planet && !PLANETS.includes(planet)) {
+    return getResponse({ error: `planet must be one of: ${PLANETS.join(', ')}` }, 400);
+  }
 
   try {
     const result = await getOrCreateTradeRequest(user.id, targetId, planet, items);

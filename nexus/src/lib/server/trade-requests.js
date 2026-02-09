@@ -8,6 +8,8 @@ import { pool } from './db.js';
  * Respects the unique constraint: only 1 open request between any 2 users.
  */
 export async function getOrCreateTradeRequest(requesterId, targetId, planet, items) {
+  const reqId = Number(requesterId);
+  const tgtId = Number(targetId);
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -20,7 +22,7 @@ export async function getOrCreateTradeRequest(requesterId, targetId, planet, ite
          AND GREATEST(requester_id, target_id) = GREATEST($1, $2)
          AND status IN ('pending', 'active')
        FOR UPDATE`,
-      [requesterId, targetId]
+      [reqId, tgtId]
     );
 
     let requestId;
@@ -39,7 +41,7 @@ export async function getOrCreateTradeRequest(requesterId, targetId, planet, ite
         `INSERT INTO trade_requests (requester_id, target_id, planet)
          VALUES ($1, $2, $3)
          RETURNING id`,
-        [requesterId, targetId, planet]
+        [reqId, tgtId, planet]
       );
       requestId = insertRes.rows[0].id;
       isNew = true;
@@ -68,6 +70,7 @@ export async function getOrCreateTradeRequest(requesterId, targetId, planet, ite
  * Get all trade requests for a user (as requester or target), with item counts.
  */
 export async function getUserTradeRequests(userId) {
+  const uid = Number(userId);
   const query = `
     SELECT
       tr.id, tr.requester_id, tr.target_id, tr.status, tr.planet,
@@ -90,7 +93,7 @@ export async function getUserTradeRequests(userId) {
     ORDER BY tr.created_at DESC
     LIMIT 50
   `;
-  const { rows } = await pool.query(query, [userId]);
+  const { rows } = await pool.query(query, [uid]);
   return rows;
 }
 
@@ -133,7 +136,7 @@ export async function cancelTradeRequest(requestId, userId) {
       AND status IN ('pending', 'active')
     RETURNING id, status, discord_thread_id
   `;
-  const { rows } = await pool.query(query, [requestId, userId]);
+  const { rows } = await pool.query(query, [requestId, Number(userId)]);
   return rows[0] || null;
 }
 
@@ -267,6 +270,7 @@ export async function findTradeRequestByThread(threadId) {
  * Get all active offers by a specific user (public endpoint).
  */
 export async function getUserPublicOffers(userId) {
+  const uid = Number(userId);
   const query = `
     SELECT
       o.id, o.type, o.item_id, o.quantity, o.min_quantity,
@@ -286,6 +290,6 @@ export async function getUserPublicOffers(userId) {
       AND o.bumped_at >= NOW() - INTERVAL '30 days'
     ORDER BY o.bumped_at DESC
   `;
-  const { rows } = await pool.query(query, [userId]);
+  const { rows } = await pool.query(query, [uid]);
   return rows;
 }
