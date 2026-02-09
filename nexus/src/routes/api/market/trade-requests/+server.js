@@ -46,12 +46,12 @@ export async function POST({ request, locals }) {
     return getResponse({ error: 'Invalid JSON' }, 400);
   }
 
-  // Validate target_id
-  const targetId = parseInt(body.target_id, 10);
-  if (!Number.isFinite(targetId) || targetId <= 0) {
+  // Validate target_id (string to preserve bigint precision)
+  const targetId = String(body.target_id || '');
+  if (!/^\d+$/.test(targetId) || targetId === '0') {
     return getResponse({ error: 'target_id must be a positive integer' }, 400);
   }
-  if (targetId === user.id) {
+  if (targetId === String(user.id)) {
     return getResponse({ error: 'Cannot create a trade request with yourself' }, 400);
   }
 

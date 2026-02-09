@@ -186,8 +186,8 @@ export async function getPendingTradeRequests() {
   const query = `
     SELECT
       tr.*,
-      ru.eu_name AS requester_name, ru.discord_id AS requester_discord_id,
-      tu.eu_name AS target_name, tu.discord_id AS target_discord_id
+      ru.eu_name AS requester_name, tr.requester_id AS requester_discord_id,
+      tu.eu_name AS target_name, tr.target_id AS target_discord_id
     FROM trade_requests tr
     LEFT JOIN users ru ON ru.id = tr.requester_id
     LEFT JOIN users tu ON tu.id = tr.target_id

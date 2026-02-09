@@ -1014,13 +1014,14 @@
           },
           Planet: existingOrder.planet || 'Calypso',
           Quantity: existingOrder.quantity || 1,
-          CurrentTT: null,
+          CurrentTT: existingOrder.details?.CurrentTT ?? null,
           Markup: existingOrder.markup || 0,
           MinQuantity: existingOrder.min_quantity || null,
           Metadata: { ...(existingOrder.details || {}) },
           _offerId: existingOrder.id,
         };
         delete editOrder.Metadata.item_name;
+        delete editOrder.Metadata.CurrentTT;
         orderDialogRef?.initOrder(editOrder, type, 'edit');
       } else {
         orderDialogRef?.initOrder(item, type, 'create');
@@ -2242,7 +2243,9 @@
     height: 100%;
   }
   :global(.cell-button) {
-    display: block;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     width: 100%;
     height: 100%;
     text-align: center;
