@@ -7,6 +7,7 @@
   import DefenseGridEdit from '$lib/components/wiki/DefenseGridEdit.svelte';
   import ImageUploadDialog from '$lib/components/wiki/ImageUploadDialog.svelte';
   import LoadoutCompactEmbed from '$lib/components/LoadoutCompactEmbed.svelte';
+  import FancyTable from '$lib/components/FancyTable.svelte';
   import { clampDecimals, encodeURIComponentSafe, getTypeLink } from '$lib/util';
   import { loadLoadoutEntities } from '$lib/utils/entityLoader';
   import { evaluateLoadout } from '$lib/utils/loadoutEvaluator';
@@ -126,6 +127,8 @@
   $: hasServices = services.length > 0;
   $: hasShops = shops.length > 0;
   $: hasOffers = offers.length > 0;
+  $: buyOffers = offers.filter(o => o.type === 'BUY');
+  $: sellOffers = offers.filter(o => o.type === 'SELL');
 
   $: availableTabs = [
     { id: 'General', label: 'General', available: true },
@@ -215,6 +218,46 @@
   $: if (browser && showcaseRecord && !showcaseRecord?.data && showcaseShareCode && !isHydratingShowcase) {
     hydrateShowcaseLoadout(showcaseShareCode);
   }
+
+  // -- Offer table columns for the Offers tab --
+  function formatOfferAge(dateStr) {
+    if (!dateStr) return 'N/A';
+    const diff = Math.max(0, Date.now() - new Date(dateStr).getTime());
+    const mins = Math.floor(diff / 60000);
+    if (mins < 60) return `${mins}m`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h`;
+    return `${Math.floor(hrs / 24)}d`;
+  }
+
+  const offerColumns = [
+    {
+      key: 'details', header: 'Item', main: true, sortable: true, searchable: true,
+      formatter: (v) => v?.item_name || 'Unknown'
+    },
+    { key: 'quantity', header: 'Qty', width: '70px', sortable: true, searchable: false },
+    {
+      key: 'markup', header: 'MU', width: '90px', sortable: true, searchable: false,
+      formatter: (v) => v != null ? `${Number(v).toFixed(1)}%` : 'N/A'
+    },
+    { key: 'planet', header: 'Planet', width: '100px', sortable: true, searchable: false },
+    {
+      key: 'computed_state', header: 'Status', width: '80px', sortable: true, searchable: false,
+      formatter: (v) => {
+        const s = v || 'active';
+        const cls = s === 'active' ? 'badge-success' : s === 'stale' ? 'badge-warning' : 'badge-error';
+        return `<span class="badge badge-subtle ${cls}">${s}</span>`;
+      }
+    },
+    {
+      key: 'bumped_at', header: 'Updated', width: '80px', sortable: true, searchable: false,
+      formatter: (v) => formatOfferAge(v)
+    }
+  ];
+
+  $: offersPageUrl = profile?.euName
+    ? `/market/exchange/offers/${encodeURIComponentSafe(profile.euName)}`
+    : null;
 
   function startEdit() {
     isEditing = true;
@@ -1083,17 +1126,52 @@
 
     {#if activeTab === 'Offers'}
       <section class="panel-section">
-        <h2>Offers</h2>
+        <div class="offers-header">
+          <h2>Offers</h2>
+          {#if offersPageUrl && !isOwner}
+            <a class="offers-page-link" href={offersPageUrl}>View all offers</a>
+          {/if}
+        </div>
         {#if offers.length === 0}
-          <div class="empty-state">No offers listed.</div>
+          <div class="empty-state">No active offers.</div>
         {:else}
-          <div class="list-grid">
-            {#each offers as offer}
-              <div class="list-card">
-                <div class="list-title">{offer.title}</div>
-                <a class="list-link" href={offer.href}>View offer</a>
-              </div>
-            {/each}
+          <div class="offers-split">
+            <div class="offers-side">
+              <h3 class="offers-side-title buy">Buy Orders</h3>
+              {#if buyOffers.length === 0}
+                <div class="offers-empty">No buy orders</div>
+              {:else}
+                <div class="offers-table-wrap">
+                  <FancyTable
+                    columns={offerColumns}
+                    data={buyOffers}
+                    rowHeight={36}
+                    compact={true}
+                    sortable={true}
+                    searchable={false}
+                    emptyMessage="No buy orders"
+                  />
+                </div>
+              {/if}
+            </div>
+            <div class="offers-side">
+              <h3 class="offers-side-title sell">Sell Orders</h3>
+              {#if sellOffers.length === 0}
+                <div class="offers-empty">No sell orders</div>
+              {:else}
+                <div class="offers-table-wrap">
+                  <FancyTable
+                    columns={offerColumns}
+                    data={sellOffers}
+                    rowHeight={36}
+                    compact={true}
+                    sortable={true}
+                    searchable={false}
+                    emptyMessage="No sell orders"
+                  />
+                </div>
+              {/if}
+            </div>
           </div>
         {/if}
       </section>
@@ -2020,5 +2098,56 @@
     .stats-left {
       grid-template-columns: 1fr;
     }
+
+    .offers-split {
+      flex-direction: column;
+    }
+  }
+
+  /* -- Offers tab -- */
+  .offers-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .offers-page-link {
+    font-size: 13px;
+    color: var(--accent-color);
+    text-decoration: none;
+  }
+  .offers-page-link:hover {
+    text-decoration: underline;
+  }
+  .offers-split {
+    display: flex;
+    gap: 16px;
+  }
+  .offers-side {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+  }
+  .offers-side-title {
+    margin: 0 0 8px 0;
+    font-size: 13px;
+    font-weight: 600;
+  }
+  .offers-side-title.buy { color: var(--success-color, #16a34a); }
+  .offers-side-title.sell { color: var(--error-color, #ef4444); }
+  .offers-table-wrap {
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    overflow: hidden;
+    max-height: 400px;
+  }
+  .offers-empty {
+    padding: 24px;
+    text-align: center;
+    font-size: 13px;
+    color: var(--text-muted);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
   }
 </style>

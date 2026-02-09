@@ -1,5 +1,37 @@
 //@ts-nocheck
-import { pool } from './db.js';
+import { pool, nexusPool } from './db.js';
+
+// Markup-type resolution: mirrors orderUtils.ts isPercentMarkup logic server-side
+const STACKABLE_TYPES = new Set(['Material', 'Consumable', 'Capsule', 'Enhancer']);
+const CONDITION_TYPES = new Set([
+  'Weapon', 'Armor', 'Vehicle', 'WeaponAmplifier', 'WeaponVisionAttachment',
+  'Finder', 'FinderAmplifier', 'Excavator', 'Refiner', 'Scanner',
+  'TeleportationChip', 'EffectChip', 'MedicalChip',
+  'MiscTool', 'MedicalTool', 'MindforceImplant', 'Pet'
+]);
+
+function getMarkupType(itemType, itemName) {
+  if (STACKABLE_TYPES.has(itemType)) return 'percent';
+  const isLimited = /\(L\)/.test(itemName || '');
+  if (itemType === 'Blueprint' && isLimited) return 'percent';
+  if (CONDITION_TYPES.has(itemType) && isLimited) return 'percent';
+  return 'absolute';
+}
+
+async function resolveMarkupTypes(itemIds) {
+  if (!nexusPool || itemIds.length === 0) return {};
+  try {
+    const { rows } = await nexusPool.query(
+      `SELECT "Id", "Type" FROM ONLY "Items" WHERE "Id" = ANY($1)`,
+      [itemIds]
+    );
+    const map = {};
+    for (const row of rows) map[row.Id] = row.Type;
+    return map;
+  } catch {
+    return {};
+  }
+}
 
 // ---------- Trade Requests ----------
 
@@ -46,12 +78,17 @@ export async function getOrCreateTradeRequest(requesterId, targetId, planet, ite
       isNew = true;
     }
 
+    // Resolve item types for markup formatting
+    const itemIds = [...new Set(items.map(i => i.item_id).filter(Boolean))];
+    const typeMap = await resolveMarkupTypes(itemIds);
+
     // Insert all items
     for (const item of items) {
+      const markupType = getMarkupType(typeMap[item.item_id], item.item_name);
       await client.query(
-        `INSERT INTO trade_request_items (trade_request_id, offer_id, item_id, item_name, quantity, markup, side)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-        [requestId, item.offer_id || null, item.item_id, item.item_name, item.quantity || 1, item.markup ?? null, item.side]
+        `INSERT INTO trade_request_items (trade_request_id, offer_id, item_id, item_name, quantity, markup, side, markup_type)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [requestId, item.offer_id || null, item.item_id, item.item_name, item.quantity || 1, item.markup ?? null, item.side, markupType]
       );
     }
 

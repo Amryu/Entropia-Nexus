@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { dump } from 'js-yaml';
 import { Client, GatewayIntentBits, Collection, Events, ChannelType } from 'discord.js';
-import { getUsers, getOpenChanges, setChangeThreadId, getDeletedChanges, deleteChange, getFlightsNeedingThread, setFlightThreadId, getCheckinsPendingThreadAdd, markCheckinAddedToThread, getUnnotifiedFlightStateChanges, getFlightsNeedingArchive, clearFlightThreadId, getPendingRescheduleNotifications, markRescheduleNotificationSent, getServicePilots, getFlightAcceptedCheckins, getFlightsReadyForCustomerKick, setFlightCompletedAt, expireTickets, computeAllPriceSummaries, getPendingTradeRequests, getTradeRequestItems, setTradeRequestThread, getWarnableTradeRequests, markWarningSent, getExpirableTradeRequests, updateTradeRequestStatus, findTradeRequestByThread, updateLastActivity, getActiveTradeRequestsWithNewItems, getNewTradeRequestItems } from './db.js';
+import { getUsers, getOpenChanges, setChangeThreadId, getDeletedChanges, deleteChange, getFlightsNeedingThread, setFlightThreadId, getCheckinsPendingThreadAdd, markCheckinAddedToThread, getUnnotifiedFlightStateChanges, getFlightsNeedingArchive, clearFlightThreadId, getPendingRescheduleNotifications, markRescheduleNotificationSent, getServicePilots, getFlightAcceptedCheckins, getFlightsReadyForCustomerKick, setFlightCompletedAt, expireTickets, computeAllPriceSummaries, getPendingTradeRequests, getTradeRequestItems, setTradeRequestThread, getWarnableTradeRequests, markWarningSent, getExpirableTradeRequests, updateTradeRequestStatus, findTradeRequestByThread, updateLastActivity, getActiveTradeRequestsWithNewItems, getNewTradeRequestItems, adjustOfferQuantities } from './db.js';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { compareJson, validate, printSideBySide } from './change.js';
 
@@ -160,7 +160,48 @@ client.on(Events.InteractionCreate, async interaction => {
 
   // Handle button interactions
   if (interaction.isButton()) {
-    // On-demand service requests are no longer handled by the bot.
+    const customId = interaction.customId;
+
+    // Trade completion buttons: trade_done_{yes|no|cancel}_{requestId}
+    if (customId.startsWith('trade_done_')) {
+      const parts = customId.split('_');
+      const action = parts[2]; // yes, no, cancel
+      const requestId = parseInt(parts[3], 10);
+
+      if (action === 'cancel') {
+        return interaction.update({ content: 'Trade completion cancelled.', components: [] });
+      }
+
+      try {
+        let summary = '';
+
+        if (action === 'yes') {
+          const adjustments = await adjustOfferQuantities(requestId);
+          const closed = adjustments.filter(a => a.closed);
+          const reduced = adjustments.filter(a => !a.closed);
+          const parts = [];
+          if (reduced.length > 0) parts.push(`${reduced.length} offer(s) adjusted`);
+          if (closed.length > 0) parts.push(`${closed.length} offer(s) closed (quantity depleted)`);
+          summary = parts.length > 0 ? `\n${parts.join(', ')}.` : '\nNo offers needed adjustment.';
+        }
+
+        await updateTradeRequestStatus(requestId, 'completed');
+        await interaction.update({ content: `Trade marked as completed.${summary}`, components: [] });
+
+        // Send public message and lock/archive the thread
+        const thread = interaction.channel;
+        if (thread?.isThread()) {
+          await thread.send(`\u2705 **Trade Completed** — This trade has been marked as completed by <@${interaction.user.id}>. Thread will be locked and archived.`);
+          await thread.setLocked(true).catch(() => {});
+          await thread.setArchived(true).catch(() => {});
+        }
+      } catch (error) {
+        console.error('Error completing trade via button:', error);
+        await interaction.update({ content: 'An error occurred while completing the trade.', components: [] }).catch(() => {});
+      }
+      return;
+    }
+
     return;
   }
 
@@ -753,6 +794,13 @@ setInterval(() => runScheduled('checkTradeRequests', checkTradeRequests), 30 * 1
 
 // ---- Trade Request Thread Management ----
 
+function formatMarkup(item) {
+  if (item.markup == null) return '';
+  const v = Number(item.markup);
+  if (item.markup_type === 'absolute') return ` @ +${v.toFixed(2)} PED`;
+  return ` @ ${v.toFixed(2)}%`;
+}
+
 let lastTradeItemCheck = new Date();
 
 async function checkTradeRequests() {
@@ -789,8 +837,7 @@ async function checkTradeRequests() {
       msg += `\n**Items:**\n`;
       for (const item of items) {
         const side = item.side === 'SELL' ? 'Buy' : 'Sell';
-        const mu = item.markup != null ? ` @ ${item.markup}` : '';
-        msg += `- ${side} ${item.quantity}x **${item.item_name}**${mu}\n`;
+        msg += `- ${side} ${item.quantity}x **${item.item_name}**${formatMarkup(item)}\n`;
       }
       msg += `\nUse this thread to negotiate. Type \`/done\` when finished to close the trade.`;
 
@@ -823,8 +870,7 @@ async function checkTradeRequests() {
       let msg = `**New items added to trade:**\n`;
       for (const item of newItems) {
         const side = item.side === 'SELL' ? 'Buy' : 'Sell';
-        const mu = item.markup != null ? ` @ ${item.markup}` : '';
-        msg += `- ${side} ${item.quantity}x **${item.item_name}**${mu}\n`;
+        msg += `- ${side} ${item.quantity}x **${item.item_name}**${formatMarkup(item)}\n`;
       }
       await thread.send(msg);
     } catch (e) {

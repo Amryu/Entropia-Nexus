@@ -12,6 +12,7 @@ import {
   getPendingSocietyJoinRequest
 } from '$lib/server/db.js';
 import { pool } from '$lib/server/db.js';
+import { getUserPublicOffers } from '$lib/server/trade-requests.js';
 import { sanitizeRichText } from '$lib/server/sanitizeRichText.js';
 import { getApprovedImagePath } from '$lib/server/imageProcessor.js';
 
@@ -131,10 +132,11 @@ export async function GET({ params, locals, fetch }) {
   const sessionUserId = sessionUser ? String(sessionUser.Id || sessionUser.id) : null;
   const isOwner = sessionUserId && String(profileUser.id) === sessionUserId;
 
-  const [scores, services, shops] = await Promise.all([
+  const [scores, services, shops, marketOffers] = await Promise.all([
     getUserContributionStats(profileUser.id),
     getUserServices(profileUser.id),
-    getUserShopsFromApi(fetch, profileUser.id)
+    getUserShopsFromApi(fetch, profileUser.id),
+    getUserPublicOffers(profileUser.id)
   ]);
 
   const [allTimeRanks, monthlyRanks] = await Promise.all([
@@ -190,7 +192,7 @@ export async function GET({ params, locals, fetch }) {
     },
     services: services || [],
     shops: shops || [],
-    offers: [],
+    offers: marketOffers || [],
     avatar: {
       showcaseLoadout,
       publicLoadouts

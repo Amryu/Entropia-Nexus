@@ -1,5 +1,5 @@
-import { SlashCommandBuilder } from 'discord.js';
-import { findTradeRequestByThread, updateTradeRequestStatus } from '../../db.js';
+import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import { findTradeRequestByThread } from '../../db.js';
 
 export const data = new SlashCommandBuilder()
   .setName('done')
@@ -20,24 +20,33 @@ export async function execute(interaction) {
     return interaction.reply({ content: `This trade is already ${tradeRequest.status}.`, flags: 64 });
   }
 
-  // Only participants can close the trade
+  // Only the target (offer owner/seller) can complete the trade
   const userId = interaction.user.id;
-  if (userId !== tradeRequest.requester_id.toString() && userId !== tradeRequest.target_id.toString()) {
-    return interaction.reply({ content: 'Only trade participants can close a trade.', flags: 64 });
+  if (userId !== tradeRequest.target_id.toString()) {
+    return interaction.reply({
+      content: 'Only the offer owner (the person receiving the trade request) can mark a trade as completed.',
+      flags: 64
+    });
   }
 
-  try {
-    await updateTradeRequestStatus(tradeRequest.id, 'completed');
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`trade_done_yes_${tradeRequest.id}`)
+      .setLabel('Yes')
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId(`trade_done_no_${tradeRequest.id}`)
+      .setLabel('No')
+      .setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId(`trade_done_cancel_${tradeRequest.id}`)
+      .setLabel('Cancel')
+      .setStyle(ButtonStyle.Danger),
+  );
 
-    await interaction.reply(
-      `\u2705 **Trade Completed** — This trade has been marked as completed by <@${userId}>. Thread will be locked and archived.`
-    );
-
-    // Lock and archive the thread
-    await interaction.channel.setLocked(true).catch(() => {});
-    await interaction.channel.setArchived(true).catch(() => {});
-  } catch (error) {
-    console.error('Error completing trade:', error);
-    await interaction.reply({ content: 'An error occurred while completing the trade.', flags: 64 });
-  }
+  await interaction.reply({
+    content: '**Complete Trade** — Should the offer quantities be adjusted automatically to reflect the traded amounts?',
+    components: [row],
+    flags: 64
+  });
 }

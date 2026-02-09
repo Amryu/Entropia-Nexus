@@ -21,7 +21,7 @@
   import { apiCall, getItemLink, hasItemTag, encodeURIComponentSafe, decodeURIComponentSafe } from "$lib/util.js";
   import { isBlueprint, isItemTierable, isLimited, itemHasCondition, isAbsoluteMarkup, getMaxTT } from '../../orderUtils';
   import { PLANETS } from '../../exchangeConstants.js';
-  import { showMyOffers, showInventory, showTradeList, showTrades, tradeList, addToTradeList, myOffers, inventory } from '../../exchangeStore.js';
+  import { showMyOffers, showInventory, showTradeList, showTrades, tradeList, addToTradeList, clearTradeList, myOffers, inventory } from '../../exchangeStore.js';
   import { favourites, isFavourite, toggleFavourite, createFolder } from '../../favouritesStore.js';
   import { hasCondition } from '$lib/shopUtils';
 
@@ -94,6 +94,7 @@
   let showUserOffers = false;
   let userOffersTarget = null; // { id, name }
   let userOffersReturnUrl = null; // URL to return to when closing the panel
+  let pendingTradeItem = null; // first-add confirmation dialog
 
   // Side filter for floating panel (All/Buy/Sell)
   let panelSideFilter = 'all'; // 'all' | 'BUY' | 'SELL'
@@ -130,6 +131,7 @@
     showMyOffers.set(false);
     showInventory.set(false);
     showTrades.set(false);
+    if (showUserOffers) clearTradeList();
     showUserOffers = false;
     goto('/market/exchange/listings' + getCategoryUrlSegment());
   }
@@ -195,10 +197,34 @@
     showInventory.set(false);
     showTrades.set(false);
     showTradeList.set(false);
+    clearTradeList();
     panelSideFilter = 'all';
   }
 
+  function closeUserOffersPanel() {
+    showUserOffers = false;
+    clearTradeList();
+    goto(userOffersReturnUrl || '/market/exchange/listings' + getCategoryUrlSegment());
+  }
+
+  function handleOfferAction(e) {
+    const item = e.detail;
+    if ($tradeList.length === 0) {
+      pendingTradeItem = item;
+    } else {
+      addToTradeList(item);
+    }
+  }
+
+  function confirmAddToTradeList() {
+    if (pendingTradeItem) {
+      addToTradeList(pendingTradeItem);
+      pendingTradeItem = null;
+    }
+  }
+
   function switchFloatingTab(tab) {
+    if (showUserOffers) clearTradeList();
     showMyOffers.set(tab === 'offers');
     showInventory.set(tab === 'inventory');
     showTrades.set(tab === 'trades');
@@ -468,6 +494,7 @@
       showMyOffers.set(false);
       showInventory.set(false);
       showTrades.set(false);
+      if (showUserOffers) clearTradeList();
       showUserOffers = false;
     } else if (viewSlug === 'offers') {
       const id = routeId;
@@ -1381,7 +1408,7 @@
     <!-- svelte-ignore a11y-no-static-element-interactions -->
     <div class="sidebar-overlay" class:visible={mobileSidebarOpen} on:click={() => mobileSidebarOpen = false}></div>
     <div class="sidebar" class:mobile-open={mobileSidebarOpen}>
-      <h1 class="sidebar-title">Exchange</h1>
+      <h1 class="sidebar-title">Exchange <span class="beta-badge">BETA</span></h1>
       <div class="sidebar-tabs">
         <button class="sidebar-tab" class:active={sidebarTab === 'categories'} on:click={() => { sidebarTab = 'categories'; favouriteFolderFilter = null; selectedFavFolderId = null; }}>Categories</button>
         <button class="sidebar-tab" class:active={sidebarTab === 'favourites'} on:click={() => sidebarTab = 'favourites'}>Favourites</button>
@@ -1743,7 +1770,7 @@
       <div class="floating-panel">
         {#if showUserOffers}
           <div class="panel-title-bar">
-            <button class="back-btn" on:click={() => { showUserOffers = false; goto(userOffersReturnUrl || '/market/exchange/listings' + getCategoryUrlSegment()); }}>Back</button>
+            <button class="back-btn" on:click={closeUserOffersPanel}>Back</button>
             <span class="panel-title-text">{userOffersTarget?.name || 'User'}'s Offers</span>
             <div class="panel-header-actions">
               <div class="panel-side-filter">
@@ -1751,9 +1778,18 @@
                 <button class="panel-filter-btn" class:active={panelSideFilter === 'BUY'} on:click={() => panelSideFilter = 'BUY'}>Buy</button>
                 <button class="panel-filter-btn" class:active={panelSideFilter === 'SELL'} on:click={() => panelSideFilter = 'SELL'}>Sell</button>
               </div>
+              {#if $tradeList.length > 0}
+                <button class="panel-action-btn accent" on:click={() => showTradeList.set(true)}>
+                  Trade List ({$tradeList.length})
+                </button>
+              {/if}
             </div>
           </div>
-          <UserOffersPanel user={userOffersTarget} sideFilter={panelSideFilter} />
+          {#if $showTradeList}
+            <CartSummary on:close={() => showTradeList.set(false)} />
+          {:else}
+            <UserOffersPanel user={userOffersTarget} sideFilter={panelSideFilter} on:offerAction={handleOfferAction} />
+          {/if}
         {:else}
           <div class="panel-title-bar">
             <button class="back-btn" on:click={closeFloatingPanel}>Back</button>
@@ -1832,6 +1868,31 @@
   show={showAdjustDialog}
   on:close={() => { showAdjustDialog = false; }}
 />
+
+{#if pendingTradeItem}
+  <!-- svelte-ignore a11y-click-events-have-key-events -->
+  <!-- svelte-ignore a11y-no-static-element-interactions -->
+  <div class="dialog-overlay" on:click={() => pendingTradeItem = null}>
+    <div class="trade-confirm-dialog" on:click|stopPropagation>
+      <h3>Add to Trade List</h3>
+      <p class="trade-confirm-desc">
+        Start a trade list for <strong>{userOffersTarget?.name || 'this user'}</strong>?
+        You can add more items afterwards and send them all as one trade request.
+      </p>
+      <div class="trade-confirm-item">
+        <span class="badge badge-subtle {pendingTradeItem.side === 'SELL' ? 'badge-error' : 'badge-success'}">
+          {pendingTradeItem.side === 'BUY' ? 'Buy' : 'Sell'}
+        </span>
+        <span class="trade-confirm-name">{pendingTradeItem.itemName}</span>
+        <span class="trade-confirm-meta">{pendingTradeItem.quantity}x @ {pendingTradeItem.markup}</span>
+      </div>
+      <div class="trade-confirm-actions">
+        <button class="btn-cancel" on:click={() => pendingTradeItem = null}>Cancel</button>
+        <button class="btn-confirm" on:click={confirmAddToTradeList}>Add to Trade List</button>
+      </div>
+    </div>
+  </div>
+{/if}
 
 <style>
   .exchange-browser {
@@ -2022,6 +2083,19 @@
     line-height: 1.3;
     padding-bottom: 12px;
     border-bottom: 2px solid var(--accent-color);
+  }
+  .beta-badge {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: var(--accent-color);
+    color: #fff;
+    vertical-align: middle;
+    position: relative;
+    top: -2px;
   }
 
   .sidebar h3 {
@@ -2243,11 +2317,10 @@
     height: 100%;
   }
   :global(.cell-button) {
-    display: flex;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 100%;
-    height: 100%;
+    padding: 2px 8px;
     text-align: center;
     background-color: var(--primary-color);
     border: 1px solid var(--border-color);
@@ -2628,5 +2701,86 @@
       justify-content: flex-start;
       gap: 6px;
     }
+  }
+
+  /* Trade list confirmation dialog */
+  .dialog-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .trade-confirm-dialog {
+    background: var(--secondary-color);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 20px 24px;
+    width: min(400px, 90vw);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  }
+  .trade-confirm-dialog h3 {
+    margin: 0 0 8px;
+    font-size: 16px;
+    font-weight: 700;
+  }
+  .trade-confirm-desc {
+    font-size: 13px;
+    color: var(--text-muted);
+    margin: 0 0 16px;
+    line-height: 1.5;
+  }
+  .trade-confirm-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    background: var(--hover-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    margin-bottom: 16px;
+    font-size: 13px;
+  }
+  .trade-confirm-name {
+    flex: 1;
+    font-weight: 600;
+  }
+  .trade-confirm-meta {
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+  .trade-confirm-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+  }
+  .trade-confirm-actions .btn-cancel {
+    padding: 8px 16px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-color);
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.15s ease;
+  }
+  .trade-confirm-actions .btn-cancel:hover {
+    background: var(--hover-color);
+  }
+  .trade-confirm-actions .btn-confirm {
+    padding: 8px 16px;
+    border: 1px solid var(--accent-color);
+    border-radius: 6px;
+    background: var(--accent-color);
+    color: #fff;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    transition: opacity 0.15s ease;
+  }
+  .trade-confirm-actions .btn-confirm:hover {
+    opacity: 0.9;
   }
 </style>

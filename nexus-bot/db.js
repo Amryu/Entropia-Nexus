@@ -495,6 +495,48 @@ export async function getActiveTradeRequestsWithNewItems(since) {
   return (await poolUsers.query(query, [since])).rows;
 }
 
+/**
+ * Adjust offer quantities after a completed trade.
+ * Reduces each offer's quantity by the traded amount. Closes offers that reach 0.
+ * Returns a summary of adjustments made.
+ */
+export async function adjustOfferQuantities(tradeRequestId) {
+  const itemsResult = await poolUsers.query(
+    'SELECT offer_id, quantity FROM trade_request_items WHERE trade_request_id = $1 AND offer_id IS NOT NULL',
+    [tradeRequestId]
+  );
+
+  const results = [];
+  for (const item of itemsResult.rows) {
+    // Reduce quantity, minimum 0
+    const updateResult = await poolUsers.query(
+      `UPDATE trade_offers
+       SET quantity = GREATEST(quantity - $2, 0),
+           bumped_at = NOW()
+       WHERE id = $1
+         AND state NOT IN ('closed', 'terminated')
+       RETURNING id, quantity, state`,
+      [item.offer_id, item.quantity]
+    );
+
+    if (updateResult.rows.length > 0) {
+      const updated = updateResult.rows[0];
+      // Close the offer if quantity hit 0
+      if (updated.quantity <= 0) {
+        await poolUsers.query(
+          `UPDATE trade_offers SET state = 'closed' WHERE id = $1`,
+          [item.offer_id]
+        );
+        results.push({ offerId: item.offer_id, closed: true });
+      } else {
+        results.push({ offerId: item.offer_id, remaining: updated.quantity });
+      }
+    }
+  }
+
+  return results;
+}
+
 // ---- Item Price Functions ----
 
 export async function insertItemPrices(prices) {

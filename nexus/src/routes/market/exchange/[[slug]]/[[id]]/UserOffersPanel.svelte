@@ -1,7 +1,10 @@
 <script>
   //@ts-nocheck
   import FancyTable from '$lib/components/FancyTable.svelte';
-  import { addToTradeList, tradeList } from '../../exchangeStore.js';
+  import { tradeList } from '../../exchangeStore.js';
+  import { createEventDispatcher } from 'svelte';
+
+  const dispatch = createEventDispatcher();
 
   /** @type {{ id: number|string, name: string } | null} */
   export let user = null;
@@ -90,7 +93,7 @@
     const offer = offers.find(o => o.id === offerId);
     if (!offer) return;
 
-    addToTradeList({
+    dispatch('offerAction', {
       offerId: offer.id,
       itemId: offer.item_id,
       itemName: offer.details?.item_name || 'Unknown',
