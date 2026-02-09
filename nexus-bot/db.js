@@ -5,7 +5,7 @@ dotenv.config();
 
 const Pool = pg.Pool;
 
-const poolUsers = new Pool({
+export const poolUsers = new Pool({
   connectionString: process.env.POSTGRES_USERS_CONNECTION_STRING,
 });
 

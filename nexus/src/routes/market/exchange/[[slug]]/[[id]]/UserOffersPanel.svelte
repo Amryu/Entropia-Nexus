@@ -101,9 +101,10 @@
       sellerName: offer.seller_name || user?.name || 'Unknown',
       planet: offer.planet || '',
       quantity: offer.quantity || 1,
-      unitPrice: offer.markup || 0,
-      markup: offer.markup || 0,
+      unitPrice: Number(offer.markup) || 0,
+      markup: Number(offer.markup) || 0,
       side: offer.type || 'SELL',
+      offer,
     });
   }
 

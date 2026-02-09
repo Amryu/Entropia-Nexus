@@ -15,6 +15,7 @@
   import QuickTradeDialog from './QuickTradeDialog.svelte';
   import UserOffersPanel from './UserOffersPanel.svelte';
   import TradeRequestsPanel from './TradeRequestsPanel.svelte';
+  import PriceHistoryChart from './PriceHistoryChart.svelte';
 
   import { goto } from "$app/navigation";
   import { page } from "$app/stores";
@@ -94,7 +95,6 @@
   let showUserOffers = false;
   let userOffersTarget = null; // { id, name }
   let userOffersReturnUrl = null; // URL to return to when closing the panel
-  let pendingTradeItem = null; // first-add confirmation dialog
 
   // Side filter for floating panel (All/Buy/Sell)
   let panelSideFilter = 'all'; // 'all' | 'BUY' | 'SELL'
@@ -174,6 +174,8 @@
   }
 
   async function openUserOffersByName(name) {
+    // Skip if already showing this user's offers
+    if (showUserOffers && userOffersTarget?.name === name) return;
     try {
       const res = await fetch(`/api/users/profiles/${encodeURIComponentSafe(name)}`);
       if (res.ok) {
@@ -199,6 +201,11 @@
     showTradeList.set(false);
     clearTradeList();
     panelSideFilter = 'all';
+    // Update URL to reflect the user's offers page
+    const offersUrl = `/market/exchange/offers/${encodeURIComponentSafe(name)}`;
+    if ($page.url.pathname !== offersUrl) {
+      goto(offersUrl, { replaceState: false });
+    }
   }
 
   function closeUserOffersPanel() {
@@ -210,17 +217,32 @@
   function handleOfferAction(e) {
     const item = e.detail;
     if ($tradeList.length === 0) {
-      pendingTradeItem = item;
+      // No trade list started — open QuickTradeDialog for a single trade request
+      const rawOffer = item.offer || item;
+      const side = item.side === 'SELL' ? 'buy' : 'sell';
+      openQuickTrade(rawOffer, side);
     } else {
+      // Trade list already started — add to it
       addToTradeList(item);
     }
   }
 
-  function confirmAddToTradeList() {
-    if (pendingTradeItem) {
-      addToTradeList(pendingTradeItem);
-      pendingTradeItem = null;
-    }
+  function handleAddToListFromDialog(e) {
+    const { offer, quantity, side } = e.detail;
+    if (!offer) return;
+    addToTradeList({
+      offerId: offer.id,
+      itemId: offer.item_id,
+      itemName: offer.details?.item_name || 'Unknown',
+      sellerId: userOffersTarget?.id || offer.user_id,
+      sellerName: offer.seller_name || userOffersTarget?.name || 'Unknown',
+      planet: offer.planet || '',
+      quantity: quantity || offer.quantity || 1,
+      unitPrice: Number(offer.markup) || 0,
+      markup: Number(offer.markup) || 0,
+      side: offer.type || 'SELL',
+    });
+    closeQuickTrade();
   }
 
   function switchFloatingTab(tab) {
@@ -312,6 +334,23 @@
 
   // Exchange price data for detail view
   let exchangePrices = null;
+
+  // Price history state
+  const PRICE_PERIODS = [
+    { value: '24h', label: '24h' },
+    { value: '7d', label: '7d' },
+    { value: '30d', label: '30d' },
+    { value: '3m', label: '3m' },
+    { value: '6m', label: '6m' },
+    { value: '1y', label: '1y' },
+    { value: '5y', label: '5y' },
+    { value: 'all', label: 'All' },
+  ];
+  let selectedPeriod = '7d';
+  let showPriceHistory = false;
+  let priceHistoryData = [];
+  let priceHistoryLoading = false;
+  let periodStats = null;
 
   // Detail view state
   let tableMode = "both"; // 'both' | 'buy' | 'sell'
@@ -848,10 +887,13 @@
     if (ordersLoadedKey === key) return;
     ordersLoadedKey = key;
     ordersLoading = true;
+    showPriceHistory = false;
+    priceHistoryData = [];
+    periodStats = null;
     try {
       const [ordersRes, pricesRes] = await Promise.all([
         fetch(`/api/market/exchange/offers/item/${encodeURIComponent(numericId)}`),
-        fetch(`/api/market/prices/exchange/${encodeURIComponent(numericId)}`).catch(() => null),
+        fetch(`/api/market/prices/exchange/${encodeURIComponent(numericId)}?period=${selectedPeriod}`).catch(() => null),
       ]);
       if (ordersRes.ok) {
         const data = await ordersRes.json();
@@ -862,9 +904,12 @@
         sellOrders = [];
       }
       if (pricesRes?.ok) {
-        exchangePrices = await pricesRes.json();
+        const priceData = await pricesRes.json();
+        exchangePrices = { buy: priceData.buy, sell: priceData.sell };
+        periodStats = priceData.period || null;
       } else {
         exchangePrices = null;
+        periodStats = null;
       }
     } catch (e) {
       console.error('Error loading orders:', e);
@@ -873,6 +918,58 @@
     } finally {
       ordersLoading = false;
     }
+  }
+
+  // Reload period stats when period changes (without reloading orders)
+  let lastPeriodStatsKey = '';
+  async function loadPeriodStats(itemId, period) {
+    const key = `${itemId}::${period}`;
+    if (key === lastPeriodStatsKey) return;
+    lastPeriodStatsKey = key;
+    try {
+      const includeHistory = showPriceHistory ? '&history=1' : '';
+      const res = await fetch(`/api/market/prices/exchange/${encodeURIComponent(itemId)}?period=${period}${includeHistory}`);
+      if (res.ok) {
+        const data = await res.json();
+        periodStats = data.period || null;
+        if (data.history) priceHistoryData = data.history;
+      }
+    } catch { /* non-fatal */ }
+  }
+
+  $: if (isDetailView && selectedItem?.i && selectedPeriod) {
+    loadPeriodStats(selectedItem.i, selectedPeriod);
+  }
+
+  // Load/reload price history when toggled on or period changes
+  async function loadPriceHistory() {
+    if (!selectedItem?.i) return;
+    priceHistoryLoading = true;
+    try {
+      const res = await fetch(`/api/market/prices/exchange/${encodeURIComponent(selectedItem.i)}?period=${selectedPeriod}&history=1`);
+      if (res.ok) {
+        const data = await res.json();
+        priceHistoryData = data.history || [];
+        periodStats = data.period || null;
+        lastPeriodStatsKey = `${selectedItem.i}::${selectedPeriod}`;
+      }
+    } catch {
+      priceHistoryData = [];
+    } finally {
+      priceHistoryLoading = false;
+    }
+  }
+
+  function togglePriceHistory() {
+    showPriceHistory = !showPriceHistory;
+    if (showPriceHistory && priceHistoryData.length === 0) {
+      loadPriceHistory();
+    }
+  }
+
+  // Reload chart data when period changes while chart is visible
+  $: if (showPriceHistory && selectedItem?.i && selectedPeriod) {
+    loadPriceHistory();
   }
 
   $: currentUser = $page?.data?.session?.user ?? null;
@@ -1609,9 +1706,14 @@
             on:click={handleToggleFavourite}
             title={isCurrentFavourited ? 'Remove from favourites' : 'Add to favourites'}
           >{isCurrentFavourited ? '\u2605' : '\u2606'}</button>
-          <div class="detail-title-name" title={selectedItem?.n || ""}>
-            {selectedItem?.n || ""}
-          </div>
+          <!-- svelte-ignore a11y-missing-content -->
+          <a
+            class="detail-title-name"
+            href={getItemLink(selectedItemDetails || selectedItem)}
+            target="_blank"
+            rel="noopener"
+            title={selectedItem?.n || ""}
+          >{selectedItem?.n || ""}</a>
           {#if selectedItemDetails && !hasCondition(selectedItemDetails) && getMaxTT(selectedItemDetails) != null}
             <span class="detail-tt-badge">{getMaxTT(selectedItemDetails).toFixed(2)} PED</span>
           {/if}
@@ -1661,23 +1763,23 @@
           <div class="detail-title-right">
             <div class="metric">
               Median:<br /><span class="metric-value"
-                >{typeof selectedItem?.m === "number"
-                  ? selectedItem.m.toFixed(2)
-                  : "N/A"}</span
+                >{periodStats?.median != null
+                  ? formatMarkupDisplay(periodStats.median)
+                  : (typeof selectedItem?.m === "number" ? formatMarkupDisplay(selectedItem.m) : "N/A")}</span
               >
             </div>
             <div class="metric">
               10%:<br /><span class="metric-value"
-                >{typeof selectedItem?.p === "number"
-                  ? selectedItem.p.toFixed(2)
-                  : "N/A"}</span
+                >{periodStats?.p10 != null
+                  ? formatMarkupDisplay(periodStats.p10)
+                  : (typeof selectedItem?.p === "number" ? formatMarkupDisplay(selectedItem.p) : "N/A")}</span
               >
             </div>
             <div class="metric">
               WAP:<br /><span class="metric-value"
-                >{typeof selectedItem?.w === "number"
-                  ? selectedItem.w.toFixed(2)
-                  : "N/A"}</span
+                >{periodStats?.wap != null
+                  ? formatMarkupDisplay(periodStats.wap)
+                  : (typeof selectedItem?.w === "number" ? formatMarkupDisplay(selectedItem.w) : "N/A")}</span
               >
             </div>
             {#if exchangePrices?.buy}
@@ -1690,57 +1792,77 @@
                 Best Sell:<br /><span class="metric-value sell-value">{formatMarkupDisplay(exchangePrices.sell.best_markup)}</span>
               </div>
             {/if}
-            <button
-              class="action-btn"
-              disabled={!selectedItemDetails && !selectedItem}
-              on:click={() => {
-                const item = selectedItemDetails || selectedItem;
-                const link = item ? getItemLink(item) : null;
-                if (link) window.open(link, "_blank");
-              }}
-              title="Open item page">Item Page</button>
+            <div class="history-controls">
+              <select
+                class="filter-select period-select"
+                bind:value={selectedPeriod}
+                title="Price history period"
+              >
+                {#each PRICE_PERIODS as p}
+                  <option value={p.value}>{p.label}</option>
+                {/each}
+              </select>
+              <button
+                class="action-btn chart-toggle-btn"
+                class:active={showPriceHistory}
+                on:click={togglePriceHistory}
+                title={showPriceHistory ? "Show order book" : "Show price history"}
+              >{showPriceHistory ? "Orders" : "Chart"}</button>
+            </div>
           </div>
         </div>
 
-        <!-- svelte-ignore a11y-click-events-have-key-events -->
-        <!-- svelte-ignore a11y-no-static-element-interactions -->
-        <div class="detail-wrapper" class:single-table={tableMode !== 'both'} on:click|capture={handleDetailClick}>
-          {#if tableMode !== "buy"}
-            <div class="detail-table sell">
-              <span class="table-label sell">Sell{ordersLoading ? "..." : ""}</span>
-              <FancyTable
-                columns={sellDetailColumns}
-                data={filteredSellOrders}
-                rowHeight={30}
-                compact={true}
-                sortable={true}
-                searchable={false}
-                emptyMessage="No sell orders"
-                rowClass={(row) => currentUser && String(getSellerId(row)) === String(currentUser.id) ? 'my-order' : null}
-              />
-            </div>
-          {/if}
-          {#if tableMode !== "sell"}
-            <div class="detail-table buy">
-              <span class="table-label buy">Buy{ordersLoading ? "..." : ""}</span>
-              <FancyTable
-                columns={buyDetailColumns}
-                data={filteredBuyOrders}
-                rowHeight={30}
-                compact={true}
-                sortable={true}
-                searchable={false}
-                emptyMessage="No buy orders"
-                rowClass={(row) => currentUser && String(getSellerId(row)) === String(currentUser.id) ? 'my-order' : null}
-              />
-            </div>
-          {/if}
-          {#if initialLoading}
-            <div class="overlay">
-              <div class="loader">Loading exchange…</div>
-            </div>
-          {/if}
-        </div>
+        {#if showPriceHistory}
+          <div class="detail-wrapper chart-view">
+            <PriceHistoryChart
+              itemId={selectedItem?.i}
+              period={selectedPeriod}
+              isAbsoluteMarkup={hasCondition(selectedItemDetails)}
+              data={priceHistoryData}
+              loading={priceHistoryLoading}
+            />
+          </div>
+        {:else}
+          <!-- svelte-ignore a11y-click-events-have-key-events -->
+          <!-- svelte-ignore a11y-no-static-element-interactions -->
+          <div class="detail-wrapper" class:single-table={tableMode !== 'both'} on:click|capture={handleDetailClick}>
+            {#if tableMode !== "buy"}
+              <div class="detail-table sell">
+                <span class="table-label sell">Sell{ordersLoading ? "..." : ""}</span>
+                <FancyTable
+                  columns={sellDetailColumns}
+                  data={filteredSellOrders}
+                  rowHeight={30}
+                  compact={true}
+                  sortable={true}
+                  searchable={false}
+                  emptyMessage="No sell orders"
+                  rowClass={(row) => currentUser && String(getSellerId(row)) === String(currentUser.id) ? 'my-order' : null}
+                />
+              </div>
+            {/if}
+            {#if tableMode !== "sell"}
+              <div class="detail-table buy">
+                <span class="table-label buy">Buy{ordersLoading ? "..." : ""}</span>
+                <FancyTable
+                  columns={buyDetailColumns}
+                  data={filteredBuyOrders}
+                  rowHeight={30}
+                  compact={true}
+                  sortable={true}
+                  searchable={false}
+                  emptyMessage="No buy orders"
+                  rowClass={(row) => currentUser && String(getSellerId(row)) === String(currentUser.id) ? 'my-order' : null}
+                />
+              </div>
+            {/if}
+            {#if initialLoading}
+              <div class="overlay">
+                <div class="loader">Loading exchange…</div>
+              </div>
+            {/if}
+          </div>
+        {/if}
 
         <QuickTradeDialog
           bind:this={quickTradeRef}
@@ -1748,8 +1870,10 @@
           offer={quickTradeOffer}
           side={quickTradeSide}
           item={selectedItemDetails || selectedItem}
+          showAddToList={showUserOffers}
           on:close={closeQuickTrade}
           on:confirm={handleQuickTradeConfirm}
+          on:addToList={handleAddToListFromDialog}
           on:editOwn={(e) => { closeQuickTrade(); editOfferInline(e.detail.offer); }}
         />
       {/if}
@@ -1869,30 +1993,6 @@
   on:close={() => { showAdjustDialog = false; }}
 />
 
-{#if pendingTradeItem}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="dialog-overlay" on:click={() => pendingTradeItem = null}>
-    <div class="trade-confirm-dialog" on:click|stopPropagation>
-      <h3>Add to Trade List</h3>
-      <p class="trade-confirm-desc">
-        Start a trade list for <strong>{userOffersTarget?.name || 'this user'}</strong>?
-        You can add more items afterwards and send them all as one trade request.
-      </p>
-      <div class="trade-confirm-item">
-        <span class="badge badge-subtle {pendingTradeItem.side === 'SELL' ? 'badge-error' : 'badge-success'}">
-          {pendingTradeItem.side === 'BUY' ? 'Buy' : 'Sell'}
-        </span>
-        <span class="trade-confirm-name">{pendingTradeItem.itemName}</span>
-        <span class="trade-confirm-meta">{pendingTradeItem.quantity}x @ {pendingTradeItem.markup}</span>
-      </div>
-      <div class="trade-confirm-actions">
-        <button class="btn-cancel" on:click={() => pendingTradeItem = null}>Cancel</button>
-        <button class="btn-confirm" on:click={confirmAddToTradeList}>Add to Trade List</button>
-      </div>
-    </div>
-  </div>
-{/if}
 
 <style>
   .exchange-browser {
@@ -2201,7 +2301,6 @@
     background-color: var(--bg-color, var(--secondary-color));
     color: var(--text-color);
     font-size: 13px;
-    flex: 0 0 180px;
     transition: border-color 0.2s ease;
   }
   .filter-select:focus {
@@ -2441,6 +2540,14 @@
   .detail-wrapper.single-table {
     grid-template-rows: 1fr;
   }
+  .detail-wrapper.chart-view {
+    display: flex;
+    flex-direction: column;
+    background: var(--secondary-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 12px;
+  }
 
   .detail-table {
     background: var(--secondary-color);
@@ -2530,6 +2637,12 @@
     padding: 0 4px;
     font-size: 18px;
     line-height: 1.3;
+    color: var(--text-color);
+    text-decoration: none;
+  }
+  a.detail-title-name:hover {
+    color: var(--accent-color);
+    text-decoration: underline;
   }
 
   .detail-tt-badge {
@@ -2605,6 +2718,32 @@
   }
   .exchange-metric .sell-value {
     color: var(--error-color, #ef4444);
+  }
+
+  .history-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    flex-shrink: 0;
+    align-items: stretch;
+  }
+
+  .period-select {
+    width: auto;
+    min-width: 55px;
+    padding: 3px 6px;
+    font-size: 12px;
+  }
+
+  .chart-toggle-btn {
+    min-width: 56px;
+    padding: 3px 8px;
+    font-size: 11px;
+  }
+  .chart-toggle-btn.active {
+    background: var(--accent-color);
+    color: white;
+    border-color: var(--accent-color);
   }
 
   /* Mobile sidebar toggle */
@@ -2703,84 +2842,4 @@
     }
   }
 
-  /* Trade list confirmation dialog */
-  .dialog-overlay {
-    position: fixed;
-    inset: 0;
-    z-index: 100;
-    background: rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .trade-confirm-dialog {
-    background: var(--secondary-color);
-    border: 1px solid var(--border-color);
-    border-radius: 10px;
-    padding: 20px 24px;
-    width: min(400px, 90vw);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-  }
-  .trade-confirm-dialog h3 {
-    margin: 0 0 8px;
-    font-size: 16px;
-    font-weight: 700;
-  }
-  .trade-confirm-desc {
-    font-size: 13px;
-    color: var(--text-muted);
-    margin: 0 0 16px;
-    line-height: 1.5;
-  }
-  .trade-confirm-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 12px;
-    background: var(--hover-color);
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    margin-bottom: 16px;
-    font-size: 13px;
-  }
-  .trade-confirm-name {
-    flex: 1;
-    font-weight: 600;
-  }
-  .trade-confirm-meta {
-    color: var(--text-muted);
-    white-space: nowrap;
-  }
-  .trade-confirm-actions {
-    display: flex;
-    gap: 8px;
-    justify-content: flex-end;
-  }
-  .trade-confirm-actions .btn-cancel {
-    padding: 8px 16px;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background: transparent;
-    color: var(--text-color);
-    cursor: pointer;
-    font-size: 13px;
-    transition: all 0.15s ease;
-  }
-  .trade-confirm-actions .btn-cancel:hover {
-    background: var(--hover-color);
-  }
-  .trade-confirm-actions .btn-confirm {
-    padding: 8px 16px;
-    border: 1px solid var(--accent-color);
-    border-radius: 6px;
-    background: var(--accent-color);
-    color: #fff;
-    cursor: pointer;
-    font-size: 13px;
-    font-weight: 600;
-    transition: opacity 0.15s ease;
-  }
-  .trade-confirm-actions .btn-confirm:hover {
-    opacity: 0.9;
-  }
 </style>

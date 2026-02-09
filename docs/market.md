@@ -60,6 +60,7 @@ nexus/src/routes/market/exchange/[[slug]]/[[id]]/
 ├── QuickTradeDialog.svelte     - Buy Now / Sell Now confirmation dialog
 ├── UserOffersPanel.svelte      - View a specific user's active offers
 ├── TradeRequestsPanel.svelte   - View/manage trade requests in floating panel
+├── PriceHistoryChart.svelte    - Chart.js line chart for exchange price history
 └── orderUtils.js               - Order calculation helpers
 ```
 
@@ -156,7 +157,64 @@ Pet orders include additional metadata:
 | updated | timestamptz | Last update |
 
 Unique constraint: 1 active offer per user per item per side.
-Limit: 50 offers per side per user.
+Limit: 200 offers per side per user.
+
+### Exchange Price History
+
+The bot snapshots exchange prices every 15 minutes from active trade offers. Each snapshot computes a volume-weighted average price (WAP) per item, combining buy and sell sides with IQR outlier filtering.
+
+#### Snapshot Pipeline
+
+1. Query all non-closed offers with `bumped_at` within 7 days
+2. Group by item, separate buy/sell sides
+3. Apply IQR filtering per side (Tukey fence, k=1.5; skipped if <4 offers)
+4. Compute per-side WAP: `SUM(markup * qty) / SUM(qty)`
+5. Combine sides: volume-weighted average when both exist, single side otherwise
+6. Insert into `exchange_price_snapshots` with `source='exchange'`
+7. Compute summaries (hour/day/week) into `exchange_price_summaries`
+
+#### Frontend
+
+- **Period dropdown**: 24h, 7d (default), 30d, 3m, 6m, 1y, 5y, All
+- **Chart toggle**: Replaces order book with line chart (WAP over time, with min/max for summary periods)
+- **Metrics**: Median, 10%, WAP update based on selected period
+- **Item name**: Clickable link to wiki page
+
+#### Database Tables (nexus-users)
+
+**`exchange_price_snapshots`**: Raw WAP observations per item per 15-min interval
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | bigserial | Primary key |
+| item_id | integer | Item reference |
+| markup_value | numeric(12,4) | Computed WAP markup |
+| volume | integer | Total offer volume |
+| buy_count | smallint | Number of buy offers |
+| sell_count | smallint | Number of sell offers |
+| recorded_at | timestamptz | Snapshot time |
+
+**`exchange_price_summaries`**: Pre-computed rollups for chart display
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | bigserial | Primary key |
+| item_id | integer | Item reference |
+| period_type | exchange_price_period | hour/day/week |
+| period_start | timestamptz | Period start time |
+| price_min/max/avg | numeric(12,4) | Price range stats |
+| price_p10/median/p90 | numeric(12,4) | Percentiles |
+| price_wap | numeric(12,4) | Volume-weighted average |
+| volume | bigint | Total volume in period |
+| sample_count | integer | Number of snapshots |
+
+#### Bot Module
+
+`nexus-bot/exchange-prices.js`: `snapshotExchangePrices()`, `computeAllExchangeSummaries()`
+
+#### API
+
+`GET /api/market/prices/exchange/[itemId]?period=7d&history=1` — Returns live offer stats, period summary (median/p10/wap), and optional time series for charting.
 
 **Table**: `user_items` (nexus-users)
 

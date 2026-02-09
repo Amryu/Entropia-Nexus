@@ -17,6 +17,9 @@
   /** @type {object|null} Item details for display */
   export let item = null;
 
+  /** Whether to show the "Add to Trade List" button */
+  export let showAddToList = false;
+
   const dispatch = createEventDispatcher();
 
   let quantity = 1;
@@ -211,6 +214,15 @@
             Edit Offer
           </button>
         {:else}
+          {#if showAddToList}
+            <button
+              class="btn btn-list"
+              on:click={() => dispatch('addToList', { offer, quantity, side })}
+              disabled={submitting || !qtyValid}
+            >
+              Add to Trade List
+            </button>
+          {/if}
           <button
             class="btn {side === 'buy' ? 'btn-buy' : 'btn-sell'}"
             on:click={confirm}
@@ -397,6 +409,14 @@
     border-color: var(--error-color, #ef4444);
   }
   .btn-sell:hover:not(:disabled) { opacity: 0.9; }
+  .btn-list {
+    background: transparent;
+    color: var(--accent-color);
+    border-color: var(--accent-color);
+  }
+  .btn-list:hover:not(:disabled) {
+    background: rgba(59, 130, 246, 0.1);
+  }
   .btn-edit {
     background: var(--accent-color);
     color: white;

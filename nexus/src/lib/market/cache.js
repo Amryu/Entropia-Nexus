@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { apiCall } from "$lib/util";
 import { categorizeItems } from "$lib/market/categorize";
-import { getAllOfferCounts } from "$lib/server/exchange.js";
+import { getAllOfferCounts, getLatestExchangePriceMap } from "$lib/server/exchange.js";
 
 // In-memory cache
 let cache = {
@@ -16,6 +16,8 @@ let cache = {
   detailed: {},
   // Offer counts per item (Map<itemId, { buys, sells }>)
   offerCounts: null,
+  // Exchange price data per item (Map<itemId, { wap, median, p10 }>)
+  exchangePrices: null,
   // Timestamps
   lastFullBuildAt: 0,
   lastItemsCheckAt: 0,
@@ -307,7 +309,12 @@ async function itemsDeltaRefresh(fetch) {
 async function refreshOfferCounts() {
   if (!cache.annotated) return; // no data yet
   try {
-    cache.offerCounts = await getAllOfferCounts();
+    const [counts, prices] = await Promise.all([
+      getAllOfferCounts(),
+      getLatestExchangePriceMap().catch(() => null)
+    ]);
+    cache.offerCounts = counts;
+    if (prices) cache.exchangePrices = prices;
     cache.lastOfferCountsAt = Date.now();
     buildSummary();
   } catch { /* non-fatal */ }
@@ -382,15 +389,16 @@ function slimItem(item) {
   if (!item || typeof item !== 'object') return item;
   const id = item.ItemId ?? item.Id ?? null;
   const counts = id != null && cache.offerCounts ? cache.offerCounts.get(id) : null;
+  const ep = id != null && cache.exchangePrices ? cache.exchangePrices.get(id) : null;
   return {
     i: id,
     n: item.Name ?? null,
     o: null,
     b: counts?.buys || null,
     s: counts?.sells || null,
-    m: null,
-    p: null,
-    w: null
+    m: ep?.median ?? null,
+    p: ep?.p10 ?? null,
+    w: ep?.wap ?? null
   };
 }
 

@@ -6,6 +6,7 @@ import { Client, GatewayIntentBits, Collection, Events, ChannelType } from 'disc
 import { getUsers, getOpenChanges, setChangeThreadId, getDeletedChanges, deleteChange, getFlightsNeedingThread, setFlightThreadId, getCheckinsPendingThreadAdd, markCheckinAddedToThread, getUnnotifiedFlightStateChanges, getFlightsNeedingArchive, clearFlightThreadId, getPendingRescheduleNotifications, markRescheduleNotificationSent, getServicePilots, getFlightAcceptedCheckins, getFlightsReadyForCustomerKick, setFlightCompletedAt, expireTickets, computeAllPriceSummaries, getPendingTradeRequests, getTradeRequestItems, setTradeRequestThread, getWarnableTradeRequests, markWarningSent, getExpirableTradeRequests, updateTradeRequestStatus, findTradeRequestByThread, updateLastActivity, getActiveTradeRequestsWithNewItems, getNewTradeRequestItems, adjustOfferQuantities } from './db.js';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { compareJson, validate, printSideBySide } from './change.js';
+import { snapshotExchangePrices, computeAllExchangeSummaries } from './exchange-prices.js';
 
 const adminUserId = '178245652633878528';
 
@@ -964,6 +965,24 @@ async function runPriceSummaries() {
   }
 }
 setInterval(() => runScheduled('runPriceSummaries', runPriceSummaries), 15 * 60 * 1000);
+
+// Snapshot exchange prices then compute exchange summaries every 15 minutes
+async function runExchangePriceSnapshot() {
+  try {
+    const count = await snapshotExchangePrices();
+    if (count > 0) {
+      console.log(`Exchange price snapshot: ${count} items`);
+    }
+    const results = await computeAllExchangeSummaries();
+    const totalProcessed = results.reduce((sum, r) => sum + r.processed, 0);
+    if (totalProcessed > 0) {
+      console.log(`Exchange summaries: ${results.map(r => `${r.period_type}=${r.processed}`).join(', ')}`);
+    }
+  } catch (e) {
+    console.error('Error in exchange price snapshot:', e);
+  }
+}
+setInterval(() => runScheduled('runExchangePriceSnapshot', runExchangePriceSnapshot), 15 * 60 * 1000);
 
 client.login(process.env.CLIENT_TOKEN);
 
