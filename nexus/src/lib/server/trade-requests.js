@@ -8,8 +8,7 @@ import { pool } from './db.js';
  * Respects the unique constraint: only 1 open request between any 2 users.
  */
 export async function getOrCreateTradeRequest(requesterId, targetId, planet, items) {
-  const reqId = Number(requesterId);
-  const tgtId = Number(targetId);
+  // Pass IDs as strings — Number() loses precision for bigint Discord snowflakes
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -22,7 +21,7 @@ export async function getOrCreateTradeRequest(requesterId, targetId, planet, ite
          AND GREATEST(requester_id, target_id) = GREATEST($1::bigint, $2::bigint)
          AND status IN ('pending', 'active')
        FOR UPDATE`,
-      [reqId, tgtId]
+      [requesterId, targetId]
     );
 
     let requestId;
@@ -41,7 +40,7 @@ export async function getOrCreateTradeRequest(requesterId, targetId, planet, ite
         `INSERT INTO trade_requests (requester_id, target_id, planet)
          VALUES ($1, $2, $3)
          RETURNING id`,
-        [reqId, tgtId, planet]
+        [requesterId, targetId, planet]
       );
       requestId = insertRes.rows[0].id;
       isNew = true;
@@ -70,30 +69,29 @@ export async function getOrCreateTradeRequest(requesterId, targetId, planet, ite
  * Get all trade requests for a user (as requester or target), with item counts.
  */
 export async function getUserTradeRequests(userId) {
-  const uid = Number(userId);
   const query = `
     SELECT
       tr.id, tr.requester_id, tr.target_id, tr.status, tr.planet,
       tr.discord_thread_id, tr.last_activity_at, tr.created_at, tr.closed_at,
       COUNT(tri.id)::int AS item_count,
       CASE
-        WHEN tr.requester_id = $1 THEN tu.eu_name
+        WHEN tr.requester_id = $1::bigint THEN tu.eu_name
         ELSE ru.eu_name
       END AS partner_name,
       CASE
-        WHEN tr.requester_id = $1 THEN tr.target_id
+        WHEN tr.requester_id = $1::bigint THEN tr.target_id
         ELSE tr.requester_id
       END AS partner_id
     FROM trade_requests tr
     LEFT JOIN trade_request_items tri ON tri.trade_request_id = tr.id
     LEFT JOIN users ru ON ru.id = tr.requester_id
     LEFT JOIN users tu ON tu.id = tr.target_id
-    WHERE tr.requester_id = $1 OR tr.target_id = $1
+    WHERE tr.requester_id = $1::bigint OR tr.target_id = $1::bigint
     GROUP BY tr.id, ru.eu_name, tu.eu_name
     ORDER BY tr.created_at DESC
     LIMIT 50
   `;
-  const { rows } = await pool.query(query, [uid]);
+  const { rows } = await pool.query(query, [userId]);
   return rows;
 }
 
@@ -136,7 +134,7 @@ export async function cancelTradeRequest(requestId, userId) {
       AND status IN ('pending', 'active')
     RETURNING id, status, discord_thread_id
   `;
-  const { rows } = await pool.query(query, [requestId, Number(userId)]);
+  const { rows } = await pool.query(query, [requestId, userId]);
   return rows[0] || null;
 }
 
@@ -270,7 +268,6 @@ export async function findTradeRequestByThread(threadId) {
  * Get all active offers by a specific user (public endpoint).
  */
 export async function getUserPublicOffers(userId) {
-  const uid = Number(userId);
   const query = `
     SELECT
       o.id, o.type, o.item_id, o.quantity, o.min_quantity,
@@ -290,6 +287,6 @@ export async function getUserPublicOffers(userId) {
       AND o.bumped_at >= NOW() - INTERVAL '30 days'
     ORDER BY o.bumped_at DESC
   `;
-  const { rows } = await pool.query(query, [uid]);
+  const { rows } = await pool.query(query, [userId]);
   return rows;
 }

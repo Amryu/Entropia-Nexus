@@ -93,6 +93,7 @@
   // User offers panel state
   let showUserOffers = false;
   let userOffersTarget = null; // { id, name }
+  let userOffersReturnUrl = null; // URL to return to when closing the panel
 
   // Side filter for floating panel (All/Buy/Sell)
   let panelSideFilter = 'all'; // 'all' | 'BUY' | 'SELL'
@@ -188,6 +189,7 @@
 
   function openUserOffersPanel(userId, name) {
     userOffersTarget = { id: userId, name };
+    userOffersReturnUrl = $page.url.pathname;
     showUserOffers = true;
     showMyOffers.set(false);
     showInventory.set(false);
@@ -1740,7 +1742,7 @@
       <div class="floating-panel">
         {#if showUserOffers}
           <div class="panel-title-bar">
-            <button class="back-btn" on:click={() => { showUserOffers = false; goto('/market/exchange/listings' + getCategoryUrlSegment()); }}>Back</button>
+            <button class="back-btn" on:click={() => { showUserOffers = false; goto(userOffersReturnUrl || '/market/exchange/listings' + getCategoryUrlSegment()); }}>Back</button>
             <span class="panel-title-text">{userOffersTarget?.name || 'User'}'s Offers</span>
             <div class="panel-header-actions">
               <div class="panel-side-filter">

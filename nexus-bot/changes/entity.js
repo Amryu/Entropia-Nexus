@@ -898,6 +898,21 @@ async function applyMissionObjectivesChanges(client, stepId, objectives) {
 }
 
 async function applyMissionRewardsChanges(client, missionId, rewards) {
+  // Choices format: rewards is an array of {Items, Skills, Unlocks} packages
+  if (Array.isArray(rewards)) {
+    await client.query(
+      `INSERT INTO "MissionRewards" ("MissionId", "Items", "Skills", "Unlocks")
+       VALUES ($1, $2::jsonb, NULL, NULL)
+       ON CONFLICT ("MissionId") DO UPDATE SET
+         "Items" = EXCLUDED."Items",
+         "Skills" = NULL,
+         "Unlocks" = NULL`,
+      [missionId, JSON.stringify(rewards)]
+    );
+    return;
+  }
+
+  // Flat format: rewards is {Items, Skills, Unlocks}
   const items = Array.isArray(rewards?.Items) ? rewards.Items : [];
   const skills = Array.isArray(rewards?.Skills) ? rewards.Skills : [];
   const unlocks = Array.isArray(rewards?.Unlocks) ? rewards.Unlocks : [];

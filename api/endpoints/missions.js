@@ -162,11 +162,16 @@ async function loadMissionRelated(missionIds) {
 
   const rewardsByMissionId = {};
   for (const reward of rewards) {
-    rewardsByMissionId[reward.MissionId] = {
-      Items: Array.isArray(reward.Items) ? reward.Items : reward.Items || [],
-      Skills: Array.isArray(reward.Skills) ? reward.Skills : reward.Skills || [],
-      Unlocks: Array.isArray(reward.Unlocks) ? reward.Unlocks : reward.Unlocks || []
-    };
+    // Detect choices format: Items column contains array of {Items, Skills, Unlocks} packages
+    if (Array.isArray(reward.Items) && reward.Items.length > 0 && reward.Items[0]?.Items !== undefined) {
+      rewardsByMissionId[reward.MissionId] = reward.Items;
+    } else {
+      rewardsByMissionId[reward.MissionId] = {
+        Items: Array.isArray(reward.Items) ? reward.Items : reward.Items || [],
+        Skills: Array.isArray(reward.Skills) ? reward.Skills : reward.Skills || [],
+        Unlocks: Array.isArray(reward.Unlocks) ? reward.Unlocks : reward.Unlocks || []
+      };
+    }
   }
 
   const dependenciesByMissionId = {};
