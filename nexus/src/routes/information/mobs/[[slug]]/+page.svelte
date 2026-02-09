@@ -581,7 +581,7 @@
         </div>
 
         <!-- Key Stats -->
-        <div class="stats-section tier-1">
+        <div class="stats-section tier-1 tier-blue">
           <div class="stat-row primary">
             <span class="stat-label">HP/Level</span>
             <span class="stat-value">{lowestHpPerLevel ? lowestHpPerLevel.toFixed(2) : 'N/A'}</span>
@@ -971,63 +971,8 @@
     opacity: 0.9;
   }
 
-  .layout-a {
-    position: relative;
-    width: 100%;
-  }
-
-  /* Clearfix to ensure spacing after floated infobox */
-  .layout-a::after {
-    content: '';
-    display: block;
-    clear: both;
-  }
-
-  /* Floating infobox - Wikipedia style */
   .wiki-infobox-float {
-    float: right;
     width: 320px;
-    margin: 0 0 0 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    background-color: var(--secondary-color);
-    border: 1px solid var(--border-color, #555);
-    border-radius: 8px;
-    padding: 16px;
-  }
-
-  .infobox-header {
-    text-align: center;
-    padding-bottom: 12px;
-    border-bottom: 1px solid var(--border-color, #555);
-  }
-
-  .infobox-title {
-    font-size: 18px;
-    font-weight: 600;
-    color: var(--text-color);
-  }
-
-  .infobox-subtitle {
-    font-size: 12px;
-    color: var(--text-muted, #999);
-    margin-top: 4px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-
-  .type-badge {
-    padding: 2px 8px;
-    font-size: 10px;
-    font-weight: 600;
-    background-color: var(--accent-color, #4a9eff);
-    color: white;
-    border-radius: 4px;
-    text-transform: uppercase;
   }
 
   .type-badge.type-animal {
@@ -1047,83 +992,6 @@
     color: #000;
   }
 
-  /* Stats sections */
-  .stats-section {
-    padding: 12px;
-    background-color: var(--bg-color, var(--primary-color));
-    border-radius: 6px;
-  }
-
-  .stats-section.tier-1 {
-    background: linear-gradient(135deg, #3a6d99 0%, #2d5577 100%);
-    padding: 14px;
-  }
-
-  .stats-section.tier-1 .stat-row.primary {
-    background-color: rgba(255, 255, 255, 0.1);
-    border-radius: 4px;
-    padding: 8px 12px;
-    margin-bottom: 6px;
-  }
-
-  .stats-section.tier-1 .stat-row.primary:last-child {
-    margin-bottom: 0;
-  }
-
-  .stats-section.tier-1 .stat-label {
-    color: rgba(255, 255, 255, 0.9);
-    font-size: 13px;
-    text-transform: uppercase;
-    font-weight: 500;
-  }
-
-  .stats-section.tier-1 .stat-value {
-    color: #e8f4ff;
-    font-size: 18px;
-    font-weight: 700;
-  }
-
-  .section-title {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-muted, #999);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin: 0 0 10px 0;
-    padding-bottom: 6px;
-    border-bottom: 1px solid var(--border-color, #555);
-  }
-
-  .stat-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    padding: 4px 0;
-    font-size: 13px;
-  }
-
-  .stat-label {
-    color: var(--text-muted, #999);
-  }
-
-  .stat-value {
-    font-weight: 500;
-    color: var(--text-color);
-  }
-
-  .stat-value.highlight-yes {
-    color: var(--success-color, #4ade80);
-  }
-
-  .profession-link {
-    color: var(--accent-color, #4a9eff);
-    text-decoration: none;
-  }
-
-  .profession-link:hover {
-    text-decoration: underline;
-  }
-
   .damage-section {
     padding: 12px;
   }
@@ -1134,125 +1002,12 @@
     font-size: 13px;
   }
 
-  .map-link-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    padding: 10px 16px;
-    background-color: var(--bg-color, var(--primary-color));
-    border: 1px solid var(--border-color, #555);
-    border-radius: 6px;
-    color: var(--text-color);
-    text-decoration: none;
-    font-size: 13px;
-    font-weight: 500;
-    transition: all 0.15s;
-  }
-
-  .map-link-btn:hover {
-    background-color: var(--accent-color, #4a9eff);
-    border-color: var(--accent-color, #4a9eff);
-    color: white;
-  }
-
-  .map-link-btn svg {
-    flex-shrink: 0;
-  }
-
-  .wiki-article {
-    overflow: hidden; /* Contains floated infobox */
-  }
-
-  .article-title {
-    font-size: 32px;
-    font-weight: 600;
-    margin: 0 0 16px 0;
-    padding-bottom: 8px;
-    border-bottom: 2px solid var(--accent-color, #4a9eff);
-  }
-
-  .description-panel {
-    background-color: var(--secondary-color);
-    border: 1px solid var(--border-color, #555);
-    border-radius: 8px;
-    padding: 16px;
-    margin-bottom: 12px;
-  }
-
-  .description-content {
-    font-size: 15px;
-    line-height: 1.6;
-    color: var(--text-color);
-  }
-
-  .description-content.placeholder {
-    color: var(--text-muted, #999);
-    font-style: italic;
-  }
-
-  .no-selection {
-    text-align: center;
-    padding: 60px 20px;
-  }
-
-  .no-selection h2 {
-    font-size: 28px;
-    margin-bottom: 12px;
-  }
-
-  .no-selection p {
-    color: var(--text-muted, #999);
-    margin: 8px 0;
-  }
-
-  /* Tablet adjustments */
-  @media (max-width: 1023px) {
-    .wiki-infobox-float {
-      width: 280px;
-      margin-left: 16px;
-      padding: 14px;
-    }
-  }
-
   /* Mobile adjustments */
   @media (max-width: 767px) {
-    .layout-a {
-      max-width: 100%;
-    }
-
-    .wiki-infobox-float {
-      float: none;
-      width: auto;
-      margin: 0 0 16px 0;
-      padding: 12px;
-    }
-
-    /* Hide article title on mobile - redundant with infobox */
-    .article-title {
-      display: none;
-    }
-
-    .infobox-title {
-      font-size: 16px;
-    }
-
-    .stats-section {
-      padding: 10px;
-    }
-
-    .stat-row {
-      font-size: 12px;
-    }
-
     .pending-change-banner {
       flex-direction: column;
       gap: 12px;
       align-items: flex-start;
-    }
-
-    .description-panel {
-      padding: 12px;
     }
   }
 

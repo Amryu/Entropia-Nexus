@@ -1613,87 +1613,6 @@
     color: white;
   }
 
-  .layout-a {
-    position: relative;
-    width: 100%;
-  }
-
-  .layout-a::after {
-    content: '';
-    display: block;
-    clear: both;
-  }
-
-  .wiki-infobox-float {
-    float: right;
-    width: 300px;
-    margin: 0 0 0 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    background-color: var(--secondary-color);
-    border: 1px solid var(--border-color, #555);
-    border-radius: 8px;
-    padding: 16px;
-  }
-
-  .infobox-header {
-    text-align: center;
-    padding-bottom: 12px;
-    border-bottom: 1px solid var(--border-color, #555);
-  }
-
-  .infobox-title {
-    font-size: 18px;
-    font-weight: 600;
-  }
-
-  .infobox-subtitle {
-    font-size: 12px;
-    color: var(--text-muted, #999);
-    margin-top: 4px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-
-  .stats-section {
-    padding: 12px;
-    background-color: var(--bg-color, var(--primary-color));
-    border-radius: 6px;
-  }
-
-  .section-title {
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-muted, #999);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin: 0 0 10px 0;
-    padding-bottom: 6px;
-    border-bottom: 1px solid var(--border-color, #555);
-  }
-
-  .stat-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    gap: 12px;
-    padding: 4px 0;
-    font-size: 13px;
-  }
-
-  .stat-label {
-    color: var(--text-muted, #999);
-  }
-
-  .stat-value {
-    font-weight: 500;
-    color: var(--text-color);
-  }
-
   .stat-value.chain-value {
     flex: 1;
     min-width: 0;
@@ -1835,37 +1754,6 @@
   .cooldown-value-input::-webkit-inner-spin-button,
   .cooldown-value-input::-webkit-outer-spin-button {
     opacity: 1;
-  }
-
-  .wiki-article {
-    overflow: hidden;
-  }
-
-  .article-title {
-    font-size: 28px;
-    font-weight: 600;
-    margin: 0 0 16px 0;
-    padding-bottom: 8px;
-    border-bottom: 2px solid var(--accent-color, #4a9eff);
-  }
-
-  .description-panel {
-    background-color: var(--secondary-color);
-    border: 1px solid var(--border-color, #555);
-    border-radius: 8px;
-    padding: 16px;
-    margin-bottom: 12px;
-  }
-
-  .description-content {
-    font-size: 15px;
-    line-height: 1.6;
-    color: var(--text-color);
-  }
-
-  .description-content.placeholder {
-    color: var(--text-muted, #999);
-    font-style: italic;
   }
 
   .chain-preview {
@@ -2104,11 +1992,6 @@
     font-style: italic;
   }
 
-  .no-selection {
-    text-align: center;
-    padding: 60px 20px;
-  }
-
   .dialog-overlay {
     position: fixed;
     inset: 0;
@@ -2252,44 +2135,5 @@
     margin-left: 4px;
   }
 
-  /* Show on Map button */
-  .map-link-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-    padding: 10px 16px;
-    background-color: var(--bg-color, var(--primary-color));
-    border: 1px solid var(--border-color, #555);
-    border-radius: 6px;
-    color: var(--text-color);
-    text-decoration: none;
-    font-size: 13px;
-    font-weight: 500;
-    transition: all 0.15s;
-  }
-
-  .map-link-btn:hover {
-    background-color: var(--accent-color, #4a9eff);
-    border-color: var(--accent-color, #4a9eff);
-    color: white;
-  }
-
-  .map-link-btn svg {
-    flex-shrink: 0;
-  }
-
-  @media (max-width: 767px) {
-    .wiki-infobox-float {
-      float: none;
-      width: auto;
-      margin: 0 0 16px 0;
-      padding: 12px;
-    }
-
-    .article-title {
-      display: none;
-    }
-  }
 </style>
 

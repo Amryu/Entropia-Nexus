@@ -855,6 +855,7 @@ h2 {
 
 /* Base description content styles for rich text */
 .description-content {
+  font-size: 15px;
   line-height: 1.6;
   color: var(--text-color);
 }
@@ -988,6 +989,352 @@ h2 {
   width: 100%;
   height: 100%;
   border: none;
+}
+
+/* ==================================================
+   Wiki Detail Page Layout
+   ================================================== */
+
+/* Layout container with clearfix for floating infobox */
+.layout-a {
+  position: relative;
+  width: 100%;
+}
+
+.layout-a::after {
+  content: '';
+  display: block;
+  clear: both;
+}
+
+/* Floating infobox - Wikipedia style right panel */
+.wiki-infobox-float {
+  float: right;
+  width: 300px;
+  margin: 0 0 0 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background-color: var(--secondary-color);
+  border: 1px solid var(--border-color, #555);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.infobox-header {
+  text-align: center;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-color, #555);
+}
+
+.infobox-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-color);
+}
+
+.infobox-subtitle {
+  font-size: 12px;
+  color: var(--text-muted, #999);
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Type badge in infobox subtitle */
+.type-badge {
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 600;
+  background-color: var(--accent-color, #4a9eff);
+  color: white;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+/* Category/planet badge variant (professions, skills, vendors, shops) */
+.category-badge,
+.planet-badge {
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  background-color: var(--accent-color, #4a9eff);
+  color: white;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+/* Stats sections */
+.stats-section {
+  padding: 12px;
+  background-color: var(--bg-color, var(--primary-color));
+  border-radius: 6px;
+}
+
+/* Tier-1 highlighted stats - uses CSS custom properties for per-entity theming */
+.stats-section.tier-1 {
+  --tier1-start: #4a7c59;
+  --tier1-end: #3a6349;
+  --tier1-value-color: #e8f4e8;
+  background: linear-gradient(135deg, var(--tier1-start) 0%, var(--tier1-end) 100%);
+  padding: 14px;
+}
+
+.stats-section.tier-1 .stat-row.primary {
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin-bottom: 6px;
+}
+
+.stats-section.tier-1 .stat-row.primary:last-child {
+  margin-bottom: 0;
+}
+
+.stats-section.tier-1 .stat-label {
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 13px;
+  text-transform: uppercase;
+  font-weight: 500;
+}
+
+.stats-section.tier-1 .stat-value {
+  color: var(--tier1-value-color);
+  font-size: 18px;
+  font-weight: 700;
+}
+
+/* Tier-1 color themes */
+.stats-section.tier-1.tier-blue {
+  --tier1-start: #3a6d99;
+  --tier1-end: #2d5577;
+  --tier1-value-color: #e8f4ff;
+}
+
+.stats-section.tier-1.tier-brown {
+  --tier1-start: #7c5a4a;
+  --tier1-end: #634939;
+  --tier1-value-color: #f4e8e8;
+}
+
+.stats-section.tier-1.tier-purple {
+  --tier1-start: #5a4a7c;
+  --tier1-end: #493963;
+  --tier1-value-color: #e8e8f4;
+}
+
+/* Section title within stats sections */
+.section-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted, #999);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin: 0 0 10px 0;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border-color, #555);
+}
+
+/* Stat rows (key-value pairs) */
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 4px 0;
+  font-size: 13px;
+}
+
+.stat-label {
+  color: var(--text-muted, #999);
+}
+
+.stat-value {
+  font-weight: 500;
+  color: var(--text-color);
+}
+
+.stat-value.highlight-yes {
+  color: var(--success-color, #4ade80);
+}
+
+.stat-value.muted {
+  color: var(--text-muted, #999);
+  font-style: italic;
+}
+
+/* Toggleable stat rows (click to switch between values) */
+.stat-row.toggleable {
+  cursor: pointer;
+  padding: 4px 6px;
+  margin: 0 -6px;
+  border-radius: 4px;
+  transition: background-color 0.15s;
+}
+
+.stat-row.toggleable:hover {
+  background-color: var(--hover-color);
+}
+
+.toggle-hint {
+  font-size: 10px;
+  color: var(--text-muted, #999);
+  margin-left: 4px;
+  opacity: 0.7;
+}
+
+.stat-row.toggleable:hover .toggle-hint {
+  opacity: 1;
+}
+
+/* Indented stat rows (sub-values) */
+.stat-row.indent {
+  padding-left: 12px;
+}
+
+.stat-row.indent .stat-label {
+  font-size: 11px;
+}
+
+/* Interval editor (min-max ranges) */
+.interval-edit {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.interval-sep {
+  color: var(--text-muted, #999);
+  font-weight: 400;
+}
+
+/* Entity links (profession, skill, etc.) */
+.entity-link,
+.profession-link,
+.skill-link {
+  color: var(--accent-color, #4a9eff);
+  text-decoration: none;
+}
+
+.entity-link:hover,
+.profession-link:hover,
+.skill-link:hover {
+  text-decoration: underline;
+}
+
+/* Main wiki article */
+.wiki-article {
+  overflow: hidden;
+}
+
+.article-title {
+  font-size: 32px;
+  font-weight: 600;
+  margin: 0 0 16px 0;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--accent-color, #4a9eff);
+}
+
+/* Description panel */
+.description-panel {
+  background-color: var(--secondary-color);
+  border: 1px solid var(--border-color, #555);
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+/* No selection state */
+.no-selection {
+  text-align: center;
+  padding: 60px 20px;
+}
+
+.no-selection h2 {
+  font-size: 28px;
+  margin-bottom: 12px;
+}
+
+.no-selection p {
+  color: var(--text-muted, #999);
+  margin: 8px 0;
+}
+
+.no-selection .hint {
+  font-size: 14px;
+  margin-top: 16px;
+}
+
+/* Map link button (locations, missions, mobs, vendors, shops) */
+.map-link-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background-color: var(--bg-color, var(--primary-color));
+  border: 1px solid var(--border-color, #555);
+  border-radius: 6px;
+  color: var(--text-color);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.15s;
+}
+
+.map-link-btn:hover {
+  background-color: var(--accent-color, #4a9eff);
+  border-color: var(--accent-color, #4a9eff);
+  color: white;
+}
+
+.map-link-btn svg {
+  flex-shrink: 0;
+}
+
+/* Wiki detail page responsive - Tablet */
+@media (max-width: 1023px) {
+  .wiki-infobox-float {
+    width: 280px;
+    margin-left: 16px;
+    padding: 14px;
+  }
+}
+
+/* Wiki detail page responsive - Mobile */
+@media (max-width: 767px) {
+  .layout-a {
+    max-width: 100%;
+  }
+
+  .wiki-infobox-float {
+    float: none;
+    width: auto;
+    margin: 0 0 16px 0;
+    padding: 12px;
+  }
+
+  .article-title {
+    display: none;
+  }
+
+  .infobox-title {
+    font-size: 16px;
+  }
+
+  .stats-section {
+    padding: 10px;
+  }
+
+  .stat-row {
+    font-size: 12px;
+  }
+
+  .description-panel {
+    padding: 12px;
+  }
 }
 
 /* Hide number input spinner arrows globally */
