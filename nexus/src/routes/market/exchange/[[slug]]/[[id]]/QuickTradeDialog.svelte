@@ -2,7 +2,7 @@
   //@ts-nocheck
   import { createEventDispatcher } from 'svelte';
   import { page } from '$app/stores';
-  import { getMaxTT, isAbsoluteMarkup, isItemTierable, isBlueprint } from '../../orderUtils';
+  import { getMaxTT, isAbsoluteMarkup, isItemTierable, isBlueprint, formatMarkupValue, formatPedValue } from '../../orderUtils';
   import { hasCondition } from '$lib/shopUtils';
 
   /** @type {boolean} */
@@ -51,11 +51,7 @@
   $: isAbsMu = isAbsoluteMarkup(item);
   $: maxTT = getMaxTT(item);
 
-  $: markupDisplay = (() => {
-    const mu = order?.markup;
-    if (mu == null) return 'N/A';
-    return isAbsMu ? `+${Number(mu).toFixed(2)} PED` : `${Number(mu).toFixed(1)}%`;
-  })();
+  $: markupDisplay = formatMarkupValue(order?.markup, isAbsMu);
 
   // Compute unit price (TT + MU per unit)
   $: unitPrice = (() => {
@@ -100,8 +96,8 @@
     }
   }
 
-  function fmt(v) {
-    return typeof v === 'number' && isFinite(v) ? v.toFixed(2) : 'N/A';
+  function fmtPed(v) {
+    return formatPedValue(v);
   }
 </script>
 
@@ -154,7 +150,7 @@
         {#if isCond && !blueprint && orderCurrentTT != null}
           <div class="info-row">
             <span class="info-label">Current TT</span>
-            <span class="info-value">{Number(orderCurrentTT).toFixed(2)} PED</span>
+            <span class="info-value">{fmtPed(Number(orderCurrentTT))}</span>
           </div>
         {/if}
 
@@ -181,15 +177,15 @@
           <div class="price-summary">
             <div class="price-row">
               <span class="price-label">TT Value</span>
-              <span class="price-value">{fmt(totalTT)} PED</span>
+              <span class="price-value">{fmtPed(totalTT)}</span>
             </div>
             <div class="price-row">
               <span class="price-label">Markup</span>
-              <span class="price-value">{isAbsMu ? fmt(order?.markup) + ' PED' : fmt(totalPrice - totalTT) + ' PED'}</span>
+              <span class="price-value">{isAbsMu ? fmtPed(order?.markup) : fmtPed(totalPrice - totalTT)}</span>
             </div>
             <div class="price-row total">
               <span class="price-label">Total Price</span>
-              <span class="price-value highlight">{fmt(totalPrice)} PED</span>
+              <span class="price-value highlight">{fmtPed(totalPrice)}</span>
             </div>
           </div>
         {/if}

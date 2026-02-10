@@ -13,6 +13,10 @@ export const Material = {
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "Type": {
+          "type": ["string", "null"],
+          "default": null
+        },
         "Description": {
           "type": ["string", "null"],
           "default": null
@@ -36,6 +40,7 @@ export const Material = {
         }
       },
       "required": [
+        "Type",
         "Description",
         "Weight",
         "Economy"

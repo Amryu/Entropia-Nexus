@@ -86,3 +86,25 @@ export function formatMarkupValue(value: any, absolute: boolean): string {
 export function formatMarkupForItem(value: any, item: any): string {
   return formatMarkupValue(value, isAbsoluteMarkup(item));
 }
+
+/**
+ * Format a PED value for display.
+ * - Thousands separators, smart decimals (2-4), scientific notation >= 1,000,000
+ */
+export function formatPedValue(value: any): string {
+  if (value == null || !isFinite(value)) return 'N/A';
+  const v = Number(value);
+  const MIN_DECIMALS = 2;
+  const MAX_DECIMALS = 4;
+  function smartDecimals(val: number, usePrecision: boolean): number {
+    if (!usePrecision) return MIN_DECIMALS;
+    const rounded2 = Math.round(val * 100) / 100;
+    if (Math.abs(val - rounded2) < 1e-9) return MIN_DECIMALS;
+    const rounded3 = Math.round(val * 1000) / 1000;
+    if (Math.abs(val - rounded3) < 1e-9) return 3;
+    return MAX_DECIMALS;
+  }
+  if (Math.abs(v) >= 1000000) return `${v.toExponential(2)} PED`;
+  const d = smartDecimals(v, Math.abs(v) < 5);
+  return `${v.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d })} PED`;
+}

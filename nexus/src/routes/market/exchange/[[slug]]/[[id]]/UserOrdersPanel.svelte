@@ -3,7 +3,7 @@
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { goto } from '$app/navigation';
   import { tradeList } from '../../exchangeStore.js';
-  import { isAbsoluteMarkup, getMaxTT, formatMarkupForItem } from '../../orderUtils';
+  import { isAbsoluteMarkup, getMaxTT, formatMarkupForItem, formatPedValue } from '../../orderUtils';
   import { encodeURIComponentSafe } from '$lib/util.js';
   import { createEventDispatcher } from 'svelte';
 
@@ -57,10 +57,6 @@
     if (user?.id) loadOrders(user.id);
   }
 
-  function fmt(v) {
-    return typeof v === 'number' && isFinite(v) ? v.toFixed(2) : 'N/A';
-  }
-
   $: columns = (() => {
     const cols = [
       {
@@ -80,7 +76,7 @@
         formatter: (v, row) => {
           const item = itemLookup.get(row?.item_id);
           const maxTT = item?.v ?? null;
-          return maxTT != null ? `${fmt(maxTT)} PED` : 'N/A';
+          return formatPedValue(maxTT);
         }
       },
       {
@@ -100,7 +96,7 @@
           const isAbsMu = item ? isAbsoluteMarkup({ Type: item.t, Name: item.n }) : false;
           const unitPrice = isAbsMu ? maxTT + mu : maxTT * (mu / 100);
           const qty = row?.quantity ?? 1;
-          return `${fmt(unitPrice * qty)} PED`;
+          return formatPedValue(unitPrice * qty);
         }
       },
       { key: 'planet', header: 'Planet', width: '80px', sortable: true, searchable: false },

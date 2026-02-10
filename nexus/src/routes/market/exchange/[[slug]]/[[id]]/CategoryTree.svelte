@@ -11,8 +11,15 @@
 
   // Initialize functions if not provided (for root component)
   if (!toggleExpanded) {
-    toggleExpanded = function(nodeId) {
+    toggleExpanded = function(nodeId, categoryNode) {
       if (expandedNodes.has(nodeId)) {
+        // Collapsing — if selected category is a descendant, select the parent instead
+        if (categoryNode && selectedPath) {
+          const parentDisplay = categoryNode.path.map(formatCategoryName).join(' > ');
+          if (selectedPath !== parentDisplay && selectedPath.startsWith(parentDisplay + ' > ')) {
+            handleCategorySelect(categoryNode);
+          }
+        }
         expandedNodes.delete(nodeId);
       } else {
         expandedNodes.add(nodeId);
@@ -135,7 +142,7 @@
         <!-- svelte-ignore a11y-no-static-element-interactions -->
         <span
           class="expand-toggle {expandedNodes.has(category.id) ? 'expanded' : ''}"
-          on:click|stopPropagation={() => toggleExpanded(category.id)}
+          on:click|stopPropagation={() => toggleExpanded(category.id, category)}
           role="button"
           tabindex="-1"
         >{expandedNodes.has(category.id) ? '▾' : '▸'}</span>

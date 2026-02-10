@@ -1,7 +1,7 @@
 <!--
   @component Material Wiki Page
   Wikipedia-style layout with floating infobox on the right side.
-  Infobox: Weight, Value
+  Infobox Tier 1: Type, Value  |  Tier 2: Weight
   Article: Description, Acquisition, Usage
 
   Supports full wiki editing with wikiEditState integration.
@@ -71,6 +71,7 @@
     Id: null,
     Name: '',
     Properties: {
+      Type: null,
       Description: null,
       Weight: null,
       Economy: { MaxTT: null }
@@ -272,6 +273,21 @@
         <!-- Primary Stats -->
         <div class="stats-section tier-1">
           <div class="stat-row primary">
+            <span class="stat-label">Type</span>
+            <span class="stat-value">
+              {#if $editMode}
+                <InlineEdit
+                  value={activeMaterial?.Properties?.Type}
+                  path="Properties.Type"
+                  type="text"
+                  placeholder="e.g. Ore"
+                />
+              {:else}
+                {activeMaterial?.Properties?.Type || 'N/A'}
+              {/if}
+            </span>
+          </div>
+          <div class="stat-row primary">
             <span class="stat-label">Value</span>
             <span class="stat-value">
               {#if $editMode}
@@ -289,7 +305,12 @@
               {/if}
             </span>
           </div>
-          <div class="stat-row primary">
+        </div>
+
+        <!-- Secondary Stats -->
+        <div class="stats-section tier-2">
+          <h4 class="section-title">Properties</h4>
+          <div class="stat-row">
             <span class="stat-label">Weight</span>
             <span class="stat-value">
               {#if $editMode}

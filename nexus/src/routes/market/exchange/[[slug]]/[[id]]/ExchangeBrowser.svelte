@@ -22,7 +22,7 @@
   import { goto } from "$app/navigation";
   import { page } from "$app/stores";
   import { apiCall, getItemLink, hasItemTag, encodeURIComponentSafe, decodeURIComponentSafe } from "$lib/util.js";
-  import { isBlueprint, isItemTierable, isItemStackable, isLimited, itemHasCondition, isAbsoluteMarkup, getMaxTT, formatMarkupValue, formatMarkupForItem } from '../../orderUtils';
+  import { isBlueprint, isItemTierable, isItemStackable, isLimited, itemHasCondition, isAbsoluteMarkup, getMaxTT, formatMarkupValue, formatMarkupForItem, formatPedValue } from '../../orderUtils';
   import { PLANETS } from '../../exchangeConstants.js';
   import { showMyOrders, showInventory, showTradeList, showTrades, tradeList, addToTradeList, clearTradeList, myOrders, inventory, enrichOrders } from '../../exchangeStore.js';
   import { favourites, isFavourite, toggleFavourite, createFolder } from '../../favouritesStore.js';
@@ -36,6 +36,7 @@
   let selectedPlanet = "All Planets";
   let selectedLimited = "all";
   let selectedSex = "both";
+  let savedOverviewFilters = null; // snapshot of filters before entering detail view
   let filteredItems = [];
   let selectedItems = [];
   let loading = false;
@@ -140,7 +141,7 @@
     showTrades.set(false);
     if (showUserOrders) clearTradeList();
     showUserOrders = false;
-    goto('/market/exchange/listings' + getCategoryUrlSegment());
+    goto('/market/exchange/listings');
   }
 
   async function editOrderInline(order) {
@@ -219,7 +220,7 @@
   function closeUserOrdersPanel() {
     showUserOrders = false;
     clearTradeList();
-    goto(userOrdersReturnUrl || '/market/exchange/listings' + getCategoryUrlSegment());
+    goto(userOrdersReturnUrl || '/market/exchange/listings');
   }
 
   function handleOrderAction(e) {
@@ -436,12 +437,6 @@
     return key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ');
   }
 
-  // Get URL segment for current category (empty string for All)
-  function getCategoryUrlSegment() {
-    if (!selectedCategory || selectedCategory === 'All') return '';
-    if (selectedCategoryRawPath) return '/' + selectedCategoryRawPath.join('.');
-    return '';
-  }
 
   // Recursively find a category by display name in the raw categorization object
   function findCategoryByName(obj, targetName, path = []) {
@@ -522,6 +517,29 @@
   // Detail view = listings + routeId present + NOT a category match
   $: isDetailView = viewSlug === 'listings' && !!routeId && !resolvedCategory;
 
+  // Save overview filters when entering detail view
+  let wasDetailView = false;
+  $: {
+    if (isDetailView && !wasDetailView) {
+      savedOverviewFilters = {
+        category: selectedCategory,
+        categoryRawPath: selectedCategoryRawPath,
+        items: selectedItems,
+        searchTerm,
+        planet: selectedPlanet,
+        limited: selectedLimited,
+        sex: selectedSex,
+        sidebarTab,
+        favFolderId: selectedFavFolderId,
+        favFolderFilter: favouriteFolderFilter,
+        tierFilter: selectedTierFilter,
+        tiRRange: selectedTiRRange,
+        qrRange: selectedQRRange,
+      };
+    }
+    wasDetailView = isDetailView;
+  }
+
   // Resolve the selected item for detail view
   $: selectedItem = (() => {
     if (!isDetailView) return null;
@@ -547,18 +565,36 @@
   $: {
     if (viewSlug === 'listings') {
       if (!routeId || !resolvedCategory) {
-        // No routeId or it's an item (not category) — default to All unless item resolves below
         if (!routeId) {
-          selectedCategory = 'All';
-          selectedCategoryRawPath = null;
-          selectedItems = allItems;
+          if (savedOverviewFilters) {
+            // Restore saved filters from before detail view
+            selectedCategory = savedOverviewFilters.category;
+            selectedCategoryRawPath = savedOverviewFilters.categoryRawPath;
+            selectedItems = savedOverviewFilters.items;
+            searchTerm = savedOverviewFilters.searchTerm;
+            selectedPlanet = savedOverviewFilters.planet;
+            selectedLimited = savedOverviewFilters.limited;
+            selectedSex = savedOverviewFilters.sex;
+            sidebarTab = savedOverviewFilters.sidebarTab;
+            selectedFavFolderId = savedOverviewFilters.favFolderId;
+            favouriteFolderFilter = savedOverviewFilters.favFolderFilter;
+            selectedTierFilter = savedOverviewFilters.tierFilter;
+            selectedTiRRange = savedOverviewFilters.tiRRange;
+            selectedQRRange = savedOverviewFilters.qrRange;
+            savedOverviewFilters = null;
+          } else {
+            selectedCategory = 'All';
+            selectedCategoryRawPath = null;
+            selectedItems = allItems;
+          }
         }
       } else {
-        // Matched a category by path
+        // Matched a category by path (legacy URL)
         const displayPath = resolvedCategory.path.map(formatCategoryName).join(' > ');
         selectedCategory = displayPath;
         selectedCategoryRawPath = resolvedCategory.path;
         selectedItems = gatherItemsAtPath(categorizedItems, resolvedCategory.path);
+        savedOverviewFilters = null;
       }
     }
   }
@@ -788,22 +824,22 @@
     selectedCategory = categoryPath;
     selectedCategoryRawPath = rawPath || null;
     selectedItems = Array.isArray(items) ? items : [];
-    // Use dot-separated raw key path for unambiguous URL routing
-    const urlSegment = rawPath ? rawPath.join('.') : '';
-    goto('/market/exchange/listings' + (urlSegment ? '/' + urlSegment : ''));
+    savedOverviewFilters = null; // clear saved filters when explicitly selecting a category
+    if (isDetailView) goto('/market/exchange/listings');
   }
 
   function handleFavouriteFolderSelect(folderId, itemIds) {
     selectedFavFolderId = folderId;
     favouriteFolderFilter = new Set(itemIds);
-    if (viewSlug !== 'listings' || isDetailView || selectedCategory !== 'All') {
+    savedOverviewFilters = null;
+    if (viewSlug !== 'listings' || isDetailView) {
       goto('/market/exchange/listings');
     }
     mobileSidebarOpen = false;
   }
 
   function formatPrice(value) {
-    return value ? `${value.toFixed(2)} PED` : "N/A";
+    return formatPedValue(value);
   }
 
   function formatMarkupDisplay(value) {
@@ -1080,15 +1116,9 @@
         ? unit - ttUnit
         : (o?.Markup ?? o?.markup ?? null);
     const isAbsMu = isAbsoluteMarkup(selectedItemDetails);
-    const fmt = (x, digits = 2) =>
-      typeof x === "number" && isFinite(x) ? x.toFixed(digits) : "N/A";
     const muText = isAbsMu
-      ? absMu != null
-        ? `+${fmt(absMu)}`
-        : "N/A"
-      : muPct != null
-        ? `${fmt(muPct, 1)}%`
-        : "N/A";
+      ? formatMarkupValue(absMu, true)
+      : formatMarkupValue(muPct, false);
 
     const type =
       selectedItemDetails?.Properties?.Type || selectedItem?.t || null;
@@ -1098,9 +1128,9 @@
 
     const baseValues = [
       qty,
-      ttUnit != null ? `${fmt(ttUnit)} PED` : "N/A",
+      formatPedValue(ttUnit),
       muText,
-      total != null ? `${fmt(total)} PED` : "N/A",
+      formatPedValue(total),
       o?.Planet || o?.planet || selectedPlanet || "N/A",
       o?.SellerName || o?.seller || "Unknown",
       formatLastUpdateDHm(getUpdatedAt(o)),
@@ -1396,7 +1426,7 @@
       formatter: (v, row) => {
         const tt = row?.details?.CurrentTT ?? (stackable && itemMaxTT != null ? itemMaxTT * (row?.quantity ?? 1) : itemMaxTT);
         if (tt == null) return 'N/A';
-        const ttStr = `${Number(tt).toFixed(2)} PED`;
+        const ttStr = formatPedValue(tt);
         if (!stackable && row?.details?.CurrentTT != null && itemMaxTT != null && itemMaxTT > 0) {
           const pct = Math.round((Number(row.details.CurrentTT) / itemMaxTT) * 100);
           return `${ttStr} <span class="tt-pct">(${pct}%)</span>`;
@@ -1419,7 +1449,7 @@
         const mu = row?.markup != null ? Number(row.markup) : null;
         if (tt == null || mu == null) return 'N/A';
         const total = isAbsMu ? tt + mu * qty : tt * (mu / 100);
-        return `${Number(total).toFixed(2)} PED`;
+        return formatPedValue(total);
       }});
     cols.push({ key: 'planet', header: 'Planet', width: '120px', sortable: true, searchable: false,
       formatter: (v) => v || selectedPlanet || 'N/A' });
@@ -1471,6 +1501,16 @@
   // Buy orders: user column = "Buyer", action = "Sell" (or "Edit" for own orders)
   $: buyDetailColumns = (() => {
     const cols = [...detailColumns];
+    const stackable = isItemStackable(selectedItemDetails || selectedItem);
+    if (stackable) {
+      const qtyIdx = cols.findIndex(c => c.key === 'quantity');
+      if (qtyIdx >= 0) {
+        cols.splice(qtyIdx + 1, 0, {
+          key: 'min_quantity', header: 'Min Qty', width: '70px', sortable: true, searchable: false,
+          formatter: (v) => v != null && v > 0 ? v : '\u2014'
+        });
+      }
+    }
     const updatedIdx = cols.findIndex(c => c.key === 'bumped_at');
     cols.splice(updatedIdx >= 0 ? updatedIdx : cols.length, 0, makeUserColumn('Buyer'));
     if (canPostOrders) {
@@ -1858,8 +1898,7 @@
         <div class="detail-title">
           <button
             class="action-btn"
-            on:click={() =>
-              goto('/market/exchange/listings' + getCategoryUrlSegment())}
+            on:click={() => goto('/market/exchange/listings')}
             title="Back to list">Back</button
           >
           <button
@@ -1877,7 +1916,7 @@
             title={selectedItem?.n || ""}
           >{selectedItem?.n || ""}</a>
           {#if selectedItemDetails && !hasCondition(selectedItemDetails) && getMaxTT(selectedItemDetails) != null}
-            <span class="detail-tt-badge">{getMaxTT(selectedItemDetails).toFixed(2)} PED</span>
+            <span class="detail-tt-badge">{formatPedValue(getMaxTT(selectedItemDetails))}</span>
           {/if}
           {#if isTierableDetail}
             {#if !isLimitedDetail}

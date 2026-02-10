@@ -1,6 +1,7 @@
 <script>
   //@ts-nocheck
   import { tradeList, removeFromTradeList, clearTradeList } from '../../exchangeStore.js';
+  import { formatPedValue } from '../../orderUtils';
   import { createEventDispatcher } from 'svelte';
 
   const dispatch = createEventDispatcher();
@@ -123,7 +124,7 @@
             {#if group.planet}
               <span class="seller-planet">{group.planet}</span>
             {/if}
-            <span class="seller-total">{group.total.toFixed(2)} PED</span>
+            <span class="seller-total">{formatPedValue(group.total)}</span>
           </div>
           {#each group.items as item}
             <div class="cart-item">
@@ -133,14 +134,14 @@
                   {item.itemName || 'Unknown Item'}
                 </span>
                 <span class="item-details">
-                  {item.quantity || 1}x @ {(item.unitPrice || 0).toFixed(2)} PED
+                  {item.quantity || 1}x @ {formatPedValue(item.unitPrice || 0)}
                   {#if item.markup != null}
                     <span class="item-markup">({item.markup}% MU)</span>
                   {/if}
                 </span>
               </div>
               <div class="item-total">
-                {((item.unitPrice || 0) * (item.quantity || 1)).toFixed(2)}
+                {formatPedValue((item.unitPrice || 0) * (item.quantity || 1))}
               </div>
               <button class="remove-btn" on:click={() => handleRemove(item.orderId)} title="Remove">&times;</button>
             </div>
@@ -158,7 +159,7 @@
       {/if}
       <div class="cart-totals">
         <span>{totalItems} item{totalItems !== 1 ? 's' : ''} from {groupedBySeller.length} seller{groupedBySeller.length !== 1 ? 's' : ''}</span>
-        <span class="total-amount">{totalPED.toFixed(2)} PED</span>
+        <span class="total-amount">{formatPedValue(totalPED)}</span>
       </div>
       <button
         class="checkout-btn"
