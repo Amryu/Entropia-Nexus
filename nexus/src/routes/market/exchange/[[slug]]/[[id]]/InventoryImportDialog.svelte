@@ -12,7 +12,6 @@
 
   const dispatch = createEventDispatcher();
   const MAX_ITEMS = 30000;
-  const CONSOLE_SNIPPET = `fetch('/api/account/myitems',{method:'POST'}).then(r=>r.text()).then(t=>{Object.assign(document.createElement('a'),{href:URL.createObjectURL(new Blob([t])),download:'inventory.json'}).click();console.log('Downloaded!')}).catch(e=>console.error('Failed:',e))`;
 
   let step = 'paste'; // 'paste' | 'preview' | 'done'
   let rawInput = '';
@@ -25,7 +24,7 @@
   let importError = null;
   let showHelp = false;
   let showUnresolved = false;
-  let inputMode = 'file'; // 'file' | 'text'
+  let inputMode = 'text'; // 'text' | 'file'
   let fileInput;
 
   // Diff state (computed in preview)
@@ -72,6 +71,69 @@
     return match ? match[1].trim() : null;
   }
 
+  // --- TSV parsing ---
+
+  function parseTsvField(field) {
+    // Handle quoted fields: "Pitbull Mk. 1 (C,L)" → Pitbull Mk. 1 (C,L)
+    field = field.trim();
+    if (field.startsWith('"') && field.endsWith('"')) {
+      return field.slice(1, -1).replace(/""/g, '"');
+    }
+    return field;
+  }
+
+  function detectAndParseTsv(text) {
+    const lines = text.split(/\r?\n/).filter(l => l.trim());
+    if (lines.length < 2) return null;
+
+    // Check if the first line looks like a TSV header with expected columns
+    const header = lines[0].split('\t');
+    if (header.length < 3) return null;
+
+    // Normalize header names to find column indices
+    const headerMap = {};
+    for (let i = 0; i < header.length; i++) {
+      const h = header[i].trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+      headerMap[h] = i;
+    }
+
+    // Must have at least Name and Quantity columns
+    const nameIdx = headerMap['name'] ?? headerMap['itemname'] ?? -1;
+    const qtyIdx = headerMap['quantity'] ?? headerMap['qty'] ?? -1;
+    if (nameIdx < 0 || qtyIdx < 0) return null;
+
+    const idIdx = headerMap['id'] ?? -1;
+    const valueIdx = headerMap['valueped'] ?? headerMap['value'] ?? -1;
+    const containerIdx = headerMap['container'] ?? -1;
+    const containerRefIdx = headerMap['containerrefid'] ?? headerMap['containerref'] ?? -1;
+
+    const items = [];
+    for (let i = 1; i < lines.length; i++) {
+      const cols = lines[i].split('\t');
+      if (cols.length < Math.max(nameIdx, qtyIdx) + 1) continue;
+
+      const name = parseTsvField(cols[nameIdx]);
+      if (!name) continue;
+
+      const qty = parseInt(cols[qtyIdx], 10);
+      const value = valueIdx >= 0 ? parseFloat(cols[valueIdx]) : null;
+      const container = containerIdx >= 0 ? parseTsvField(cols[containerIdx]) : null;
+      const containerRefId = containerRefIdx >= 0 ? cols[containerRefIdx]?.trim() : null;
+      const id = idIdx >= 0 ? parseInt(cols[idIdx], 10) : i;
+
+      items.push({
+        id: isFinite(id) ? id : i,
+        item_name: name,
+        quantity: isFinite(qty) ? qty : 1,
+        value: isFinite(value) ? value : null,
+        container: container || null,
+        containerRefId: (containerRefId && containerRefId !== 'null') ? parseInt(containerRefId, 10) : null,
+      });
+    }
+
+    return items.length > 0 ? items : null;
+  }
+
   // --- Parse pipeline ---
 
   function handleParse() {
@@ -84,6 +146,12 @@
     if (!text) {
       parseError = 'Please paste some data.';
       return;
+    }
+
+    // Try TSV first
+    const tsvData = detectAndParseTsv(text);
+    if (tsvData) {
+      return processItems(tsvData);
     }
 
     try {
@@ -111,174 +179,183 @@
         return;
       }
 
-      rawItemCount = data.length;
-
-      // 1. Build container map for hierarchy resolution
-      const containerMap = new Map();
-      for (const raw of data) {
-        if (raw.id != null) {
-          const rawContainer = raw.container ?? raw.Container ?? null;
-          containerMap.set(raw.id, {
-            container: typeof rawContainer === 'string' ? rawContainer.trim() : null,
-            containerRefId: raw.containerRefId ?? raw.container_ref_id ?? null,
-          });
-        }
-      }
-
-      // 2. Normalize items and resolve containers
-      const normalized = [];
-      for (let i = 0; i < data.length; i++) {
-        const raw = data[i];
-        const itemName = raw.item_name ?? raw.ItemName ?? raw.Name ?? raw.name ?? '';
-        const quantity = raw.quantity ?? raw.Quantity ?? raw.qty ?? raw.Qty ?? 1;
-        const value = raw.value ?? raw.Value ?? null;
-        const instanceKey = raw.instance_key ?? raw.InstanceKey ?? raw.instanceKey ?? null;
-        const details = raw.details ?? raw.Details ?? null;
-
-        if (!itemName) continue; // skip empty-name entries (containers without items)
-
-        // Skip blueprint books — not real tradeable items
-        const trimmedName = String(itemName).trim();
-        if (/\(Vol\.\s*\d+\)/.test(trimmedName) || trimmedName.startsWith('Blueprints:')) continue;
-
-        // Resolve storage location (STORAGE/CARRIED)
-        const containerRefId = raw.containerRefId ?? raw.container_ref_id ?? null;
-        const explicitContainer = raw.container ?? raw.Container ?? null;
-        let storageLocation = null;
-
-        if (containerRefId != null) {
-          // Item is inside another item — walk up the chain to find root storage
-          storageLocation = resolveStorageLocation(containerRefId, containerMap, new Set());
-        }
-        if (!storageLocation && typeof explicitContainer === 'string') {
-          // Item directly in STORAGE/CARRIED (no parent container)
-          storageLocation = explicitContainer.trim() || null;
-        }
-
-        // Skip items currently on auction — not in player inventory
-        if (storageLocation && storageLocation.toUpperCase() === 'AUCTION') continue;
-
-        const planet = extractPlanet(storageLocation);
-
-        normalized.push({
-          item_name: String(itemName).replace(/\s+/g, ' ').trim(),
-          quantity: Math.max(0, Number(quantity) || 0),
-          value: value != null ? Number(value) : null,
-          instance_key: instanceKey || null,
-          details: details || null,
-          container: planet || null,
-          _planet: planet,
-        });
-      }
-
-      // 3. Resolve name → item_id (before combining, so we know item types)
-      const nameLookup = buildNameLookup();
-
-      function resolveItemId(itemName) {
-        const lookupName = normalizeName(itemName);
-        let itemId = nameLookup.get(lookupName) ?? 0;
-        if (itemId === 0 && (hasItemTag(itemName, 'M') || hasItemTag(itemName, 'F'))) {
-          const stripped = removeItemTag(removeItemTag(itemName, 'M'), 'F');
-          itemId = nameLookup.get(normalizeName(stripped)) ?? 0;
-        }
-        if (itemId === 0 && lookupName.endsWith(' pet')) {
-          itemId = nameLookup.get(lookupName.slice(0, -4)) ?? 0;
-        }
-        if (itemId === 0 && lookupName.includes("'")) {
-          itemId = nameLookup.get(lookupName.replace(/'/g, '')) ?? 0;
-        }
-        return itemId;
-      }
-
-      // Stackable item types by ID range (from api/endpoints/constants.js offsets)
-      // Non-(L) blueprints are non-fungible (individual QR) and should not be stacked
-      function isStackable(itemId, itemName) {
-        if (itemId === 0) return false;
-        if (itemId >= 1000000 && itemId < 2000000) return true;    // Materials
-        if (itemId >= 6000000 && itemId < 7000000) {               // Blueprints
-          return hasItemTag(itemName, 'L');                           // Only (L) blueprints stack
-        }
-        if (itemId >= 10000000 && itemId < 10200000) return true;  // Consumables, Capsules
-        return false;
-      }
-
-      // 4. Combine stackable items by (item_id, planet); keep non-stackable as individual entries
-      const stackMap = new Map();
-      const individuals = [];
-      let instanceCounter = 0;
-
-      for (const item of normalized) {
-        const itemId = resolveItemId(item.item_name);
-
-        if (item.instance_key) {
-          // Already has an instance key — keep as-is
-          individuals.push({ ...item, _itemId: itemId });
-          continue;
-        }
-
-        if (itemId > 0 && isStackable(itemId, item.item_name)) {
-          // Stackable: combine by (item_id, planet)
-          const key = `${itemId}::${item._planet || ''}`;
-          if (stackMap.has(key)) {
-            const existing = stackMap.get(key);
-            existing.quantity += item.quantity;
-            if (item.value != null) {
-              existing.value = (existing.value || 0) + item.value;
-            }
-          } else {
-            stackMap.set(key, { ...item, _itemId: itemId });
-          }
-        } else {
-          // Non-stackable or unresolved: each entry gets a unique instance_key
-          individuals.push({
-            ...item,
-            _itemId: itemId,
-            instance_key: itemId > 0 ? `inv:${++instanceCounter}` : null,
-          });
-        }
-      }
-
-      // 5. Build final resolved/unresolved lists
-      const resolved = [];
-      const unresolved = [];
-      const allEntries = [...stackMap.values(), ...individuals];
-
-      for (const item of allEntries) {
-        const itemId = item._itemId;
-        const entry = {
-          item_id: itemId,
-          item_name: item.item_name,
-          quantity: item.quantity,
-          value: item.value,
-          instance_key: item.instance_key,
-          details: item.details,
-          container: item.container,
-          _planet: item._planet,
-        };
-        if (itemId === 0) {
-          unresolved.push(entry);
-        } else {
-          resolved.push(entry);
-        }
-      }
-
-      parsedItems = resolved;
-      // Deduplicate unresolved by name
-      const seenNames = new Set();
-      unresolvedItems = unresolved.filter(item => {
-        const lower = item.item_name.toLowerCase();
-        if (seenNames.has(lower)) return false;
-        seenNames.add(lower);
-        return true;
-      });
-
-      // 5. Compute diff against current inventory
-      computeDiff();
-
-      step = 'preview';
+      processItems(data);
     } catch (e) {
       parseError = e.message;
     }
+  }
+
+  function processItems(data) {
+    if (data.length > MAX_ITEMS) {
+      parseError = `Too many items (${data.length}). Maximum ${MAX_ITEMS.toLocaleString()} items per import.`;
+      return;
+    }
+
+    rawItemCount = data.length;
+
+    // 1. Build container map for hierarchy resolution
+    const containerMap = new Map();
+    for (const raw of data) {
+      if (raw.id != null) {
+        const rawContainer = raw.container ?? raw.Container ?? null;
+        containerMap.set(raw.id, {
+          container: typeof rawContainer === 'string' ? rawContainer.trim() : null,
+          containerRefId: raw.containerRefId ?? raw.container_ref_id ?? null,
+        });
+      }
+    }
+
+    // 2. Normalize items and resolve containers
+    const normalized = [];
+    for (let i = 0; i < data.length; i++) {
+      const raw = data[i];
+      const itemName = raw.item_name ?? raw.ItemName ?? raw.Name ?? raw.name ?? '';
+      const quantity = raw.quantity ?? raw.Quantity ?? raw.qty ?? raw.Qty ?? 1;
+      const value = raw.value ?? raw.Value ?? null;
+      const instanceKey = raw.instance_key ?? raw.InstanceKey ?? raw.instanceKey ?? null;
+      const details = raw.details ?? raw.Details ?? null;
+
+      if (!itemName) continue; // skip empty-name entries (containers without items)
+
+      // Skip blueprint books — not real tradeable items
+      const trimmedName = String(itemName).trim();
+      if (/\(Vol\.\s*\d+\)/.test(trimmedName) || trimmedName.startsWith('Blueprints:')) continue;
+
+      // Resolve storage location (STORAGE/CARRIED)
+      const containerRefId = raw.containerRefId ?? raw.container_ref_id ?? null;
+      const explicitContainer = raw.container ?? raw.Container ?? null;
+      let storageLocation = null;
+
+      if (containerRefId != null) {
+        // Item is inside another item — walk up the chain to find root storage
+        storageLocation = resolveStorageLocation(containerRefId, containerMap, new Set());
+      }
+      if (!storageLocation && typeof explicitContainer === 'string') {
+        // Item directly in STORAGE/CARRIED (no parent container)
+        storageLocation = explicitContainer.trim() || null;
+      }
+
+      // Skip items currently on auction — not in player inventory
+      if (storageLocation && storageLocation.toUpperCase() === 'AUCTION') continue;
+
+      const planet = extractPlanet(storageLocation);
+
+      normalized.push({
+        item_name: String(itemName).replace(/\s+/g, ' ').trim(),
+        quantity: Math.max(0, Number(quantity) || 0),
+        value: value != null ? Number(value) : null,
+        instance_key: instanceKey || null,
+        details: details || null,
+        container: planet || null,
+        _planet: planet,
+      });
+    }
+
+    // 3. Resolve name → item_id (before combining, so we know item types)
+    const nameLookup = buildNameLookup();
+
+    function resolveItemId(itemName) {
+      const lookupName = normalizeName(itemName);
+      let itemId = nameLookup.get(lookupName) ?? 0;
+      if (itemId === 0 && (hasItemTag(itemName, 'M') || hasItemTag(itemName, 'F'))) {
+        const stripped = removeItemTag(removeItemTag(itemName, 'M'), 'F');
+        itemId = nameLookup.get(normalizeName(stripped)) ?? 0;
+      }
+      if (itemId === 0 && lookupName.endsWith(' pet')) {
+        itemId = nameLookup.get(lookupName.slice(0, -4)) ?? 0;
+      }
+      if (itemId === 0 && lookupName.includes("'")) {
+        itemId = nameLookup.get(lookupName.replace(/'/g, '')) ?? 0;
+      }
+      return itemId;
+    }
+
+    // Stackable item types by ID range (from api/endpoints/constants.js offsets)
+    // Non-(L) blueprints are non-fungible (individual QR) and should not be stacked
+    function isStackable(itemId, itemName) {
+      if (itemId === 0) return false;
+      if (itemId >= 1000000 && itemId < 2000000) return true;    // Materials
+      if (itemId >= 6000000 && itemId < 7000000) {               // Blueprints
+        return hasItemTag(itemName, 'L');                           // Only (L) blueprints stack
+      }
+      if (itemId >= 10000000 && itemId < 10200000) return true;  // Consumables, Capsules
+      return false;
+    }
+
+    // 4. Combine stackable items by (item_id, planet); keep non-stackable as individual entries
+    const stackMap = new Map();
+    const individuals = [];
+    let instanceCounter = 0;
+
+    for (const item of normalized) {
+      const itemId = resolveItemId(item.item_name);
+
+      if (item.instance_key) {
+        // Already has an instance key — keep as-is
+        individuals.push({ ...item, _itemId: itemId });
+        continue;
+      }
+
+      if (itemId > 0 && isStackable(itemId, item.item_name)) {
+        // Stackable: combine by (item_id, planet)
+        const key = `${itemId}::${item._planet || ''}`;
+        if (stackMap.has(key)) {
+          const existing = stackMap.get(key);
+          existing.quantity += item.quantity;
+          if (item.value != null) {
+            existing.value = (existing.value || 0) + item.value;
+          }
+        } else {
+          stackMap.set(key, { ...item, _itemId: itemId });
+        }
+      } else {
+        // Non-stackable or unresolved: each entry gets a unique instance_key
+        individuals.push({
+          ...item,
+          _itemId: itemId,
+          instance_key: itemId > 0 ? `inv:${++instanceCounter}` : null,
+        });
+      }
+    }
+
+    // 5. Build final resolved/unresolved lists
+    const resolved = [];
+    const unresolved = [];
+    const allEntries = [...stackMap.values(), ...individuals];
+
+    for (const item of allEntries) {
+      const itemId = item._itemId;
+      const entry = {
+        item_id: itemId,
+        item_name: item.item_name,
+        quantity: item.quantity,
+        value: item.value,
+        instance_key: item.instance_key,
+        details: item.details,
+        container: item.container,
+        _planet: item._planet,
+      };
+      if (itemId === 0) {
+        unresolved.push(entry);
+      } else {
+        resolved.push(entry);
+      }
+    }
+
+    parsedItems = resolved;
+    // Deduplicate unresolved by name
+    const seenNames = new Set();
+    unresolvedItems = unresolved.filter(item => {
+      const lower = item.item_name.toLowerCase();
+      if (seenNames.has(lower)) return false;
+      seenNames.add(lower);
+      return true;
+    });
+
+    // 6. Compute diff against current inventory
+    computeDiff();
+
+    step = 'preview';
   }
 
   // --- Diff computation ---
@@ -519,7 +596,7 @@
     discrepancies = [];
     showHelp = false;
     showUnresolved = false;
-    inputMode = 'file';
+    inputMode = 'text';
     dispatch('close');
   }
 
@@ -574,10 +651,6 @@
     ta.remove();
   }
 
-  function copySnippet() {
-    copyToClipboard(CONSOLE_SNIPPET);
-  }
-
   function copyUnresolved() {
     const names = unresolvedItems.map(i => i.item_name).join('\n');
     copyToClipboard(names);
@@ -615,23 +688,10 @@
         {#if showHelp}
           <div class="help-panel" transition:slide={{ duration: 200 }}>
             <div class="help-method">
-              <strong>Quick method</strong> (recommended)
               <ol>
-                <li>Go to <a href="https://account.entropiauniverse.com/account/inventory" target="_blank" rel="noopener noreferrer">account.entropiauniverse.com/account/inventory</a> and log in</li>
-                <li>Open the browser console:
-                  <ul>
-                    <li><strong>Chrome/Edge:</strong> Ctrl+Shift+J (or Cmd+Option+J on Mac)</li>
-                    <li><strong>Firefox:</strong> Ctrl+Shift+K (or Cmd+Option+K on Mac)</li>
-                  </ul>
-                </li>
-                <li>
-                  Paste this command and press Enter:
-                  <div class="snippet-row">
-                    <code class="snippet">{CONSOLE_SNIPPET}</code>
-                    <button class="copy-btn" on:click={copySnippet} title="Copy to clipboard">Copy</button>
-                  </div>
-                </li>
-                <li>An <strong>inventory.json</strong> file will download &mdash; upload it below</li>
+                <li>Go to <a href="https://account.entropiauniverse.com/account/my-items" target="_blank" rel="noopener noreferrer">account.entropiauniverse.com/account/my-items</a> and log in</li>
+                <li>Click the <strong>"Copy to CSV"</strong> button</li>
+                <li>Paste the copied data into the text box below</li>
               </ol>
             </div>
           </div>
@@ -648,19 +708,19 @@
             <input
               bind:this={fileInput}
               type="file"
-              accept=".json,application/json"
+              accept=".json,.tsv,.csv,.txt,application/json,text/tab-separated-values,text/csv,text/plain"
               on:change={handleFileUpload}
               style="display:none"
             />
             <div class="file-drop-label">
-              Drop <strong>inventory.json</strong> here or click to browse
+              Drop inventory file here or click to browse
             </div>
           </div>
         {:else}
           <textarea
             class="json-input"
             bind:value={rawInput}
-            placeholder="Paste your EU inventory JSON here..."
+            placeholder="Paste your inventory data here (TSV from Copy to CSV, or JSON)..."
             rows="10"
           ></textarea>
         {/if}
@@ -912,23 +972,6 @@
   }
   .help-method a {
     color: var(--accent-color);
-  }
-  .snippet-row {
-    display: flex;
-    gap: 6px;
-    align-items: flex-start;
-    margin-top: 4px;
-  }
-  .snippet {
-    flex: 1;
-    background: var(--bg-color);
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    padding: 6px 8px;
-    font-family: monospace;
-    font-size: 11px;
-    word-break: break-all;
-    user-select: all;
   }
   .copy-btn {
     flex-shrink: 0;
