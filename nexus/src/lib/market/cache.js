@@ -118,17 +118,21 @@ function annotateForExchange(categorized) {
  */
 function enrichWithItemIds(items, detailed) {
   if (!items || !detailed) return;
-  const nameToId = new Map();
+  const nameToItem = new Map();
   for (const item of items) {
     const id = item.ItemId ?? item.Id;
-    if (item.Name && id != null) nameToId.set(item.Name, id);
+    if (item.Name) nameToItem.set(item.Name, item);
   }
   for (const dataset of Object.values(detailed)) {
     if (!Array.isArray(dataset)) continue;
     for (const entry of dataset) {
-      if (!entry.ItemId && entry.Name) {
-        const id = nameToId.get(entry.Name);
-        if (id != null) entry.ItemId = id;
+      const base = entry.Name ? nameToItem.get(entry.Name) : null;
+      if (base) {
+        const id = base.ItemId ?? base.Id;
+        if (!entry.ItemId && id != null) entry.ItemId = id;
+        // Copy base type so detailed items (whose Properties.Type is a sub-type) retain the top-level type
+        const baseType = base.Properties?.Type ?? base.Type;
+        if (baseType && !entry.Type) entry.Type = baseType;
       }
     }
   }
@@ -403,7 +407,7 @@ function slimItem(item) {
   return {
     i: id,
     n: item.Name ?? null,
-    t: item.Properties?.Type ?? item.Type ?? null,
+    t: item.Type ?? item.Properties?.Type ?? null,
     v: item.Properties?.Economy?.MaxTT ?? item.MaxTT ?? item.Value ?? null,
     o: null,
     b: counts?.buys || null,

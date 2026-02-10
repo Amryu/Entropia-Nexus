@@ -5,7 +5,7 @@
  */
 export function isNonStackable(item) {
   // Items with condition/TT that can be damaged
-  const t = item?.Properties?.Type || item?.Type || item?.type || '';
+  const t = item?.Properties?.Type || item?.Type || item?.type || item?.t || '';
   return [
     'Weapon', 'Armor', 'Vehicle',
     'WeaponAmplifier', 'WeaponVisionAttachment',

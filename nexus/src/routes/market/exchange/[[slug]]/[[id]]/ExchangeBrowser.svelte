@@ -21,7 +21,7 @@
   import { goto } from "$app/navigation";
   import { page } from "$app/stores";
   import { apiCall, getItemLink, hasItemTag, encodeURIComponentSafe, decodeURIComponentSafe } from "$lib/util.js";
-  import { isBlueprint, isItemTierable, isItemStackable, isLimited, itemHasCondition, isAbsoluteMarkup, getMaxTT } from '../../orderUtils';
+  import { isBlueprint, isItemTierable, isItemStackable, isLimited, itemHasCondition, isAbsoluteMarkup, getMaxTT, formatMarkupValue, formatMarkupForItem } from '../../orderUtils';
   import { PLANETS } from '../../exchangeConstants.js';
   import { showMyOffers, showInventory, showTradeList, showTrades, tradeList, addToTradeList, clearTradeList, myOffers, inventory, enrichOffers } from '../../exchangeStore.js';
   import { favourites, isFavourite, toggleFavourite, createFolder } from '../../favouritesStore.js';
@@ -621,7 +621,7 @@
         Item: {
           Name: selectedItemDetails?.Name || offer.details?.item_name || '',
           Type: selectedItemDetails?.Properties?.Type || selectedItemDetails?.Type || null,
-          MaxTT: getMaxTT(selectedItemDetails),
+          MaxTT: getMaxTT(selectedItemDetails) ?? selectedItem?.v ?? null,
         },
         Planet: offer.planet || 'Calypso',
         Quantity: offer.quantity || 1,
@@ -706,9 +706,9 @@
   // Columns for the main list view FancyTable
   const listColumns = [
     { key: 'name', header: 'Item', main: true, sortable: true, searchable: true },
-    { key: 'median', header: 'Median', width: '100px', sortable: true, searchable: false, formatter: (v) => v != null ? Number(v).toFixed(2) : '<span style="opacity:0.35">N/A</span>' },
-    { key: 'percentile10', header: '10%', width: '80px', sortable: true, searchable: false, hideOnMobile: true, formatter: (v) => v != null ? Number(v).toFixed(2) : '<span style="opacity:0.35">N/A</span>' },
-    { key: 'wap', header: 'WAP', width: '80px', sortable: true, searchable: false, hideOnMobile: true, formatter: (v) => v != null ? Number(v).toFixed(2) : '<span style="opacity:0.35">N/A</span>' },
+    { key: 'median', header: 'Median', width: '100px', sortable: true, searchable: false, formatter: (v, row) => v != null ? formatMarkupForItem(v, row?._item) : '<span style="opacity:0.35">N/A</span>' },
+    { key: 'percentile10', header: '10%', width: '80px', sortable: true, searchable: false, hideOnMobile: true, formatter: (v, row) => v != null ? formatMarkupForItem(v, row?._item) : '<span style="opacity:0.35">N/A</span>' },
+    { key: 'wap', header: 'WAP', width: '80px', sortable: true, searchable: false, hideOnMobile: true, formatter: (v, row) => v != null ? formatMarkupForItem(v, row?._item) : '<span style="opacity:0.35">N/A</span>' },
     { key: 'buys', header: 'Buys', width: '70px', sortable: true, searchable: false, hideOnMobile: true, formatter: (v) => v != null ? v : '<span style="opacity:0.35">-</span>' },
     { key: 'sells', header: 'Sells', width: '70px', sortable: true, searchable: false, hideOnMobile: true, formatter: (v) => v != null ? v : '<span style="opacity:0.35">-</span>' },
     { key: 'lastUpdate', header: 'Updated', width: '100px', sortable: true, searchable: false, hideOnMobile: true, formatter: (v) => v || '<span style="opacity:0.35">-</span>' },
@@ -754,11 +754,7 @@
   }
 
   function formatMarkupDisplay(value) {
-    if (value == null || !isFinite(value)) return 'N/A';
-    if (isAbsoluteMarkup(selectedItemDetails)) {
-      return `+${value.toFixed(2)}`;
-    }
-    return `${value.toFixed(1)}%`;
+    return formatMarkupValue(value, isAbsoluteMarkup(selectedItemDetails));
   }
 
   // Only apply L/UL filter for specific category paths
@@ -1176,6 +1172,11 @@
       return;
     }
 
+    // Ensure MaxTT is available — fall back to slim item value if full details lack it
+    if (getMaxTT(item) == null && selectedItem?.v != null) {
+      item.MaxTT = selectedItem.v;
+    }
+
     setTimeout(() => {
       orderDialogRef?.initOrder(item, type, 'create');
       showOrderDialog = true;
@@ -1344,11 +1345,7 @@
         return tt != null ? `${Number(tt).toFixed(2)} PED` : 'N/A';
       }});
     cols.push({ key: 'markup', header: isAbsMu ? 'MU (+PED)' : 'MU (%)', width: '90px', sortable: true, searchable: false,
-      formatter: (v) => {
-        const mu = v != null ? Number(v) : null;
-        if (mu == null || !isFinite(mu)) return 'N/A';
-        return isAbsMu ? `+${mu.toFixed(2)}` : `${mu.toFixed(1)}%`;
-      }});
+      formatter: (v) => formatMarkupValue(v, isAbsMu)});
     cols.push({ key: '_total', header: 'Total', width: '100px', sortable: true, searchable: false,
       sortValue: (row) => {
         const qty = row?.quantity ?? 1;

@@ -3,7 +3,7 @@
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { goto } from '$app/navigation';
   import { tradeList } from '../../exchangeStore.js';
-  import { isAbsoluteMarkup, getMaxTT } from '../../orderUtils';
+  import { isAbsoluteMarkup, getMaxTT, formatMarkupForItem } from '../../orderUtils';
   import { encodeURIComponentSafe } from '$lib/util.js';
   import { createEventDispatcher } from 'svelte';
 
@@ -86,11 +86,8 @@
       {
         key: 'markup', header: 'Markup', width: '80px', sortable: true, searchable: false,
         formatter: (v, row) => {
-          const mu = v != null ? Number(v) : null;
-          if (mu == null || !isFinite(mu)) return 'N/A';
           const item = itemLookup.get(row?.item_id);
-          const isAbsMu = item ? isAbsoluteMarkup({ Type: item.t, Name: item.n }) : false;
-          return isAbsMu ? `+${mu.toFixed(2)}` : `${mu.toFixed(1)}%`;
+          return formatMarkupForItem(v, item);
         }
       },
       {

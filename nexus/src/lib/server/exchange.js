@@ -339,25 +339,31 @@ export async function getExchangePriceHistory(itemId, period = '7d') {
 }
 
 /**
- * Get latest exchange WAP for all items (for market cache).
+ * Get price stats for all items from active trade offers (for market cache).
+ * Computes median, 10th percentile, and volume-weighted average markup
+ * directly from current non-closed, non-terminated sell offers.
  * Returns a Map of itemId -> { wap, median, p10 }.
  */
 export async function getLatestExchangePriceMap() {
-  // Latest daily summary per item
   const { rows } = await pool.query(`
-    SELECT DISTINCT ON (item_id)
-      item_id, price_median, price_p10, price_wap
-    FROM exchange_price_summaries
-    WHERE period_type = 'day'
-    ORDER BY item_id, period_start DESC
+    SELECT
+      item_id,
+      PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY markup) AS median,
+      PERCENTILE_CONT(0.1) WITHIN GROUP (ORDER BY markup) AS p10,
+      SUM(markup * quantity) / NULLIF(SUM(quantity), 0) AS wap
+    FROM trade_offers
+    WHERE state != 'closed'
+      AND type = 'SELL'
+      AND bumped_at >= NOW() - INTERVAL '${EXPIRED_DAYS} days'
+    GROUP BY item_id
   `);
 
   const map = new Map();
   for (const r of rows) {
     map.set(r.item_id, {
-      median: r.price_median != null ? parseFloat(r.price_median) : null,
-      p10: r.price_p10 != null ? parseFloat(r.price_p10) : null,
-      wap: r.price_wap != null ? parseFloat(r.price_wap) : null
+      median: r.median != null ? parseFloat(r.median) : null,
+      p10: r.p10 != null ? parseFloat(r.p10) : null,
+      wap: r.wap != null ? parseFloat(r.wap) : null
     });
   }
   return map;
