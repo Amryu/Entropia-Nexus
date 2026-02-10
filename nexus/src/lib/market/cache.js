@@ -412,6 +412,7 @@ function slimItem(item) {
     o: null,
     b: counts?.buys || null,
     s: counts?.sells || null,
+    u: counts?.lastUpdate ? counts.lastUpdate.toISOString() : null,
     m: ep?.median ?? null,
     p: ep?.p10 ?? null,
     w: ep?.wap ?? null

@@ -115,7 +115,7 @@
   let showLandAreas = true;
   let showMobAreas = false;  // Off by default - there are many mob areas
   let showPvpAreas = true;
-  let showOtherAreas = true;
+  let showOtherAreas = false;
 
   const mapLoadedStore = writable(false);
 

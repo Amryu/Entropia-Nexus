@@ -694,7 +694,7 @@
       wap: item.w ?? null,
       buys: item.b || null,
       sells: item.s || null,
-      lastUpdate: null,
+      lastUpdate: item.u ?? null,
       // Sort priority: 2 = both buy+sell, 1 = either, 0 = none
       _orderPriority: (item.b > 0 && item.s > 0) ? 2 : (item.b > 0 || item.s > 0) ? 1 : 0,
     }));
@@ -711,7 +711,21 @@
     { key: 'wap', header: 'WAP', width: '80px', sortable: true, searchable: false, hideOnMobile: true, formatter: (v, row) => v != null ? formatMarkupForItem(v, row?._item) : '<span style="opacity:0.35">N/A</span>' },
     { key: 'buys', header: 'Buys', width: '70px', sortable: true, searchable: false, hideOnMobile: true, formatter: (v) => v != null ? v : '<span style="opacity:0.35">-</span>' },
     { key: 'sells', header: 'Sells', width: '70px', sortable: true, searchable: false, hideOnMobile: true, formatter: (v) => v != null ? v : '<span style="opacity:0.35">-</span>' },
-    { key: 'lastUpdate', header: 'Updated', width: '100px', sortable: true, searchable: false, hideOnMobile: true, formatter: (v) => v || '<span style="opacity:0.35">-</span>' },
+    { key: 'lastUpdate', header: 'Updated', width: '100px', sortable: true, searchable: false, hideOnMobile: true,
+      sortValue: (row) => row.lastUpdate ? new Date(row.lastUpdate).getTime() : 0,
+      formatter: (v) => {
+        if (!v) return '<span style="opacity:0.35">-</span>';
+        const diff = Date.now() - new Date(v).getTime();
+        const mins = Math.floor(diff / 60000);
+        if (mins < 2) return 'Just now';
+        if (mins < 60) return `${mins}m ago`;
+        const hours = Math.floor(mins / 60);
+        if (hours < 24) return `${hours}h ago`;
+        const days = Math.floor(hours / 24);
+        if (days < 30) return `${days}d ago`;
+        return new Date(v).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      }
+    },
   ];
 
   function flattenItems(obj) {

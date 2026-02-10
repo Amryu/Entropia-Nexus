@@ -193,11 +193,11 @@ export async function getExchangePrices(itemId) {
 
 /**
  * Get offer counts per item for all active (non-closed, non-terminated) offers.
- * Returns a Map of itemId -> { buys, sells }.
+ * Returns a Map of itemId -> { buys, sells, lastUpdate }.
  */
 export async function getAllOfferCounts() {
   const query = `
-    SELECT item_id, type, COUNT(*) AS cnt
+    SELECT item_id, type, COUNT(*) AS cnt, MAX(bumped_at) AS last_update
     FROM trade_offers
     WHERE state != 'closed'
       AND bumped_at >= NOW() - INTERVAL '${TERMINATED_DAYS} days'
@@ -207,10 +207,12 @@ export async function getAllOfferCounts() {
   const counts = new Map();
   for (const row of rows) {
     const id = row.item_id;
-    if (!counts.has(id)) counts.set(id, { buys: 0, sells: 0 });
+    if (!counts.has(id)) counts.set(id, { buys: 0, sells: 0, lastUpdate: null });
     const entry = counts.get(id);
     if (row.type === 'BUY') entry.buys = parseInt(row.cnt, 10);
     else entry.sells = parseInt(row.cnt, 10);
+    const ts = row.last_update ? new Date(row.last_update) : null;
+    if (ts && (!entry.lastUpdate || ts > entry.lastUpdate)) entry.lastUpdate = ts;
   }
   return counts;
 }
