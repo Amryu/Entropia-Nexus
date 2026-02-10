@@ -197,8 +197,43 @@
         const key = order?.Item?.Id ?? order?.Item?.Name ?? null;
         if (key != null) loadPetSkills(String(key));
       }
+    } else if (itemOrOrder?.Item?.Name != null) {
+      // Pre-built order object (e.g. from inventory sell) — clone and apply defaults
+      order = JSON.parse(JSON.stringify(itemOrOrder));
+      order.Type = order.Type || (type === 'buy' ? 'Buy' : 'Sell');
+      order.Planet = order.Planet || 'Calypso';
+      order.Quantity = order.Quantity || 1;
+      order.CurrentTT = order.CurrentTT ?? null;
+      order.Metadata = order.Metadata || {};
+      order.MinQuantity = order.MinQuantity ?? null;
+
+      // Derive item-type-aware defaults from the nested Item
+      const itemType = order.Item?.Type;
+      const itemRef = { Type: itemType, Properties: { Type: itemType } };
+      if (order.Markup == null || order.Markup === 0) {
+        order.Markup = isPercentMarkup(itemRef) ? 100 : 0;
+      }
+      if (isItemTierable(itemRef)) {
+        if (order.Metadata.Tier == null) order.Metadata.Tier = 0;
+        if (order.Metadata.TierIncreaseRate == null) order.Metadata.TierIncreaseRate = 1;
+      }
+      if (isBlueprint(itemRef)) {
+        if (order.Metadata.QualityRating == null) order.Metadata.QualityRating = type === 'buy' ? '0' : 1;
+      }
+      if (itemType === 'Pet') {
+        order.Metadata.Pet = order.Metadata.Pet || { Level: 1, Experience: 0, Skills: [], Food: 0 };
+        order.Item.Metadata = order.Item.Metadata || {};
+        order.Item.Metadata.Skills = Array.isArray(order.Item.Metadata.Skills) ? order.Item.Metadata.Skills : [];
+        const key = order.Item?.Id ?? order.Item?.Name ?? null;
+        if (key != null) loadPetSkills(String(key));
+      }
+      if (itemHasCondition(itemRef) && !isBlueprint(itemRef) && order.Item.MaxTT != null && order.CurrentTT == null) {
+        order.CurrentTT = order.Item.MaxTT;
+      }
+      allowPartial = true;
+      order.MinQuantity = order.MinQuantity ?? Math.max(1, Math.floor((order.Quantity || 1) * DEFAULT_PARTIAL_RATIO));
     } else {
-      // Creating: build from item
+      // Creating: build from raw item
       const item = itemOrOrder;
       order = {
         Type: type === 'buy' ? 'Buy' : 'Sell',
@@ -235,7 +270,7 @@
         const key = item?.Id ?? item?.i ?? item?.Name ?? item?.n ?? null;
         if (key != null) loadPetSkills(String(key));
       }
-      
+
       if (itemHasCondition(item) && !isBlueprint(item) && order.Item.MaxTT != null) {
         order.CurrentTT = order.Item.MaxTT;
       }
