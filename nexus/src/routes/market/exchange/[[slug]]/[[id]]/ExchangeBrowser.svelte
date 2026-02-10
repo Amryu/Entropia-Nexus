@@ -23,7 +23,7 @@
   import { apiCall, getItemLink, hasItemTag, encodeURIComponentSafe, decodeURIComponentSafe } from "$lib/util.js";
   import { isBlueprint, isItemTierable, isItemStackable, isLimited, itemHasCondition, isAbsoluteMarkup, getMaxTT } from '../../orderUtils';
   import { PLANETS } from '../../exchangeConstants.js';
-  import { showMyOffers, showInventory, showTradeList, showTrades, tradeList, addToTradeList, clearTradeList, myOffers, inventory } from '../../exchangeStore.js';
+  import { showMyOffers, showInventory, showTradeList, showTrades, tradeList, addToTradeList, clearTradeList, myOffers, inventory, enrichOffers } from '../../exchangeStore.js';
   import { favourites, isFavourite, toggleFavourite, createFolder } from '../../favouritesStore.js';
   import { hasCondition } from '$lib/shopUtils';
 
@@ -1252,18 +1252,15 @@
 
   async function refreshAfterOfferChange() {
     if (inlineEditItem) {
-      if (myOffersRef) myOffersRef.refresh();
-      try {
-        const offersRes = await fetch('/api/market/exchange/offers');
-        if (offersRes.ok) myOffers.set(await offersRes.json());
-      } catch {}
+      // MyOffersView.refresh() fetches and enriches data (item_name, state_display)
+      if (myOffersRef) await myOffersRef.refresh();
     } else {
       ordersLoadedKey = '';
       if (selectedItem?.i) await loadOrders(selectedItem.i, selectedPlanet);
       // Also refresh myOffers store
       try {
         const offersRes = await fetch('/api/market/exchange/offers');
-        if (offersRes.ok) myOffers.set(await offersRes.json());
+        if (offersRes.ok) myOffers.set(enrichOffers(await offersRes.json()));
       } catch {}
     }
   }
@@ -1325,9 +1322,15 @@
     }
     cols.push({ key: 'quantity', header: 'Qty', width: '80px', sortable: true, searchable: false,
       formatter: (v) => v ?? 0 });
+    const itemMaxTT = getMaxTT(selectedItemDetails) ?? selectedItem?.v ?? null;
+    const stackable = isItemStackable(selectedItemDetails || selectedItem);
     cols.push({ key: '_value', header: 'Value', width: '100px', sortable: true, searchable: false,
+      sortValue: (row) => {
+        const tt = row?.details?.CurrentTT ?? (stackable && itemMaxTT != null ? itemMaxTT * (row?.quantity ?? 1) : itemMaxTT);
+        return tt ?? -1;
+      },
       formatter: (v, row) => {
-        const tt = row?.TTValue ?? row?.Value ?? row?.tt_value ?? null;
+        const tt = row?.details?.CurrentTT ?? (stackable && itemMaxTT != null ? itemMaxTT * (row?.quantity ?? 1) : itemMaxTT);
         return tt != null ? `${Number(tt).toFixed(2)} PED` : 'N/A';
       }});
     cols.push({ key: 'markup', header: isAbsMu ? 'MU (+PED)' : 'MU (%)', width: '90px', sortable: true, searchable: false,
@@ -1337,11 +1340,20 @@
         return isAbsMu ? `+${mu.toFixed(2)}` : `${mu.toFixed(1)}%`;
       }});
     cols.push({ key: '_total', header: 'Total', width: '100px', sortable: true, searchable: false,
+      sortValue: (row) => {
+        const qty = row?.quantity ?? 1;
+        const tt = row?.details?.CurrentTT ?? (stackable && itemMaxTT != null ? itemMaxTT * qty : itemMaxTT);
+        const mu = row?.markup != null ? Number(row.markup) : null;
+        if (tt == null || mu == null) return -1;
+        return isAbsMu ? tt + mu * qty : tt * (mu / 100);
+      },
       formatter: (v, row) => {
-        const qty = row?.Quantity ?? row?.quantity ?? 0;
-        const price = row?.Price ?? row?.price ?? row?.UnitPrice ?? row?.unit_price ?? null;
-        const total = row?.TotalPrice ?? row?.total ?? (price != null ? price * qty : null);
-        return total != null ? `${Number(total).toFixed(2)} PED` : 'N/A';
+        const qty = row?.quantity ?? 1;
+        const tt = row?.details?.CurrentTT ?? (stackable && itemMaxTT != null ? itemMaxTT * qty : itemMaxTT);
+        const mu = row?.markup != null ? Number(row.markup) : null;
+        if (tt == null || mu == null) return 'N/A';
+        const total = isAbsMu ? tt + mu * qty : tt * (mu / 100);
+        return `${Number(total).toFixed(2)} PED`;
       }});
     cols.push({ key: 'planet', header: 'Planet', width: '120px', sortable: true, searchable: false,
       formatter: (v) => v || selectedPlanet || 'N/A' });
@@ -1610,10 +1622,10 @@
             <option value="female">Female</option>
           </select>
           <div class="actions-right">
-            <button class="action-btn accent-btn" title="My Offers" on:click={() => {
+            <button class="action-btn accent-btn" title="My Orders" on:click={() => {
               const userName = currentUser?.eu_name;
               goto(userName ? `/market/exchange/offers/${encodeURIComponentSafe(userName)}` : '/market/exchange/offers');
-            }}>My Offers</button>
+            }}>My Orders</button>
             <button class="action-btn accent-btn" title="Inventory" on:click={() => goto('/market/exchange/inventory')}>Inventory</button>
             {#if $tradeList.length > 0}
               <button class="action-btn trade-list-btn" title="Trade List" on:click={() => { closeFloatingPanel(); showTradeList.set(true); }}>
@@ -1954,13 +1966,8 @@
         {#if showUserOffers}
           <div class="panel-title-bar">
             <button class="back-btn" on:click={closeUserOffersPanel}>Back</button>
-            <span class="panel-title-text">{userOffersTarget?.name || 'User'}'s Offers</span>
+            <span class="panel-title-text">{userOffersTarget?.name || 'User'}</span>
             <div class="panel-header-actions">
-              <div class="panel-side-filter">
-                <button class="panel-filter-btn" class:active={panelSideFilter === 'all'} on:click={() => panelSideFilter = 'all'}>All</button>
-                <button class="panel-filter-btn" class:active={panelSideFilter === 'BUY'} on:click={() => panelSideFilter = 'BUY'}>Buy</button>
-                <button class="panel-filter-btn" class:active={panelSideFilter === 'SELL'} on:click={() => panelSideFilter = 'SELL'}>Sell</button>
-              </div>
               {#if $tradeList.length > 0}
                 <button class="panel-action-btn accent" on:click={() => showTradeList.set(!$showTradeList)}>
                   Trade List ({$tradeList.length})
@@ -1971,7 +1978,16 @@
           {#if $showTradeList}
             <CartSummary on:close={() => showTradeList.set(false)} />
           {:else}
-            <UserOffersPanel user={userOffersTarget} sideFilter={panelSideFilter} {allItems} on:offerAction={handleOfferAction} />
+            <div class="user-offers-stacked">
+              <div class="user-offers-section">
+                <div class="user-offers-section-label sell">Sell Offers</div>
+                <UserOffersPanel user={userOffersTarget} sideFilter="SELL" {allItems} on:offerAction={handleOfferAction} />
+              </div>
+              <div class="user-offers-section">
+                <div class="user-offers-section-label buy">Buy Offers</div>
+                <UserOffersPanel user={userOffersTarget} sideFilter="BUY" {allItems} on:offerAction={handleOfferAction} />
+              </div>
+            </div>
           {/if}
         {:else}
           <div class="panel-title-bar">
@@ -1980,7 +1996,7 @@
               <button class="panel-tab" class:active={$showMyOffers} on:click={() => {
                 const userName = currentUser?.eu_name;
                 goto(userName ? `/market/exchange/offers/${encodeURIComponentSafe(userName)}` : '/market/exchange/offers');
-              }}>My Offers</button>
+              }}>My Orders</button>
               <button class="panel-tab" class:active={$showInventory} on:click={() => goto('/market/exchange/inventory')}>Inventory</button>
               <button class="panel-tab" class:active={$showTrades} on:click={() => goto('/market/exchange/trades')}>Trades</button>
             </div>
@@ -2130,6 +2146,40 @@
     font-weight: 600;
     color: var(--text-color);
     flex: 1;
+  }
+
+  .user-offers-stacked {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    overflow: hidden;
+  }
+  .user-offers-section {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    background: var(--secondary-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .user-offers-section-label {
+    padding: 6px 12px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+  }
+  .user-offers-section-label.sell {
+    color: var(--error-color);
+  }
+  .user-offers-section-label.buy {
+    color: var(--success-color);
   }
 
   .panel-tabs {

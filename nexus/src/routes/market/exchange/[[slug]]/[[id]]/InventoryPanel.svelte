@@ -17,30 +17,64 @@
   let showConfigDialog = false;
   let configItem = null;
 
-  const columns = [
-    { key: 'item_name', header: 'Item', main: true, sortable: true, searchable: true },
-    { key: 'quantity', header: 'Qty', width: '60px', sortable: true, searchable: false },
-    {
-      key: 'value', header: 'Value', width: '80px', sortable: true, searchable: false,
-      hideOnMobile: true,
-      formatter: (val) => val != null ? Number(val).toFixed(2) : '<span style="opacity:0.4">\u2014</span>'
-    },
-    {
-      key: 'container', header: 'Container', width: '140px', sortable: true, searchable: true,
-      hideOnMobile: true,
-      formatter: (val) => val || '<span style="opacity:0.4">Inventory</span>'
-    },
-    {
-      key: '_actions', header: '', width: '110px', sortable: false, searchable: false,
-      formatter: (val, row) => {
-        return `<span class="inv-actions">`
-          + `<button class="inv-action-btn config" data-action="config" data-id="${row.id}" title="Edit details">&#9881;</button>`
-          + `<button class="inv-action-btn sell" data-action="sell" data-id="${row.id}" title="Create sell offer">&#36;</button>`
-          + `<button class="inv-action-btn remove" data-action="remove" data-id="${row.id}" title="Remove">&#x2715;</button>`
-          + `</span>`;
+  // Build offer count lookup: item_id → { buy, sell }
+  $: offersByItemId = (() => {
+    const map = new Map();
+    for (const offer of ($myOffers || [])) {
+      if (!map.has(offer.item_id)) {
+        map.set(offer.item_id, { buy: 0, sell: 0 });
       }
-    },
-  ];
+      const entry = map.get(offer.item_id);
+      if (offer.type === 'BUY') entry.buy++;
+      else if (offer.type === 'SELL') entry.sell++;
+    }
+    return map;
+  })();
+
+  $: columns = (() => {
+    // Reference offersByItemId to trigger re-evaluation when offers change
+    offersByItemId;
+    return [
+      { key: 'item_name', header: 'Item', main: true, sortable: true, searchable: true },
+      {
+        key: '_orders', header: 'Orders', width: '75px', sortable: true, searchable: false,
+        hideOnMobile: true,
+        sortValue: (row) => {
+          const info = offersByItemId.get(row.item_id);
+          return info ? info.buy + info.sell : 0;
+        },
+        formatter: (val, row) => {
+          const info = offersByItemId.get(row.item_id);
+          if (!info || (info.buy === 0 && info.sell === 0)) return '';
+          const parts = [];
+          if (info.buy > 0) parts.push(`<span class="inv-order-badge buy">${info.buy}B</span>`);
+          if (info.sell > 0) parts.push(`<span class="inv-order-badge sell">${info.sell}S</span>`);
+          return parts.join(' ');
+        }
+      },
+      { key: 'quantity', header: 'Qty', width: '60px', sortable: true, searchable: false },
+      {
+        key: 'value', header: 'Value', width: '80px', sortable: true, searchable: false,
+        hideOnMobile: true,
+        formatter: (val) => val != null ? Number(val).toFixed(2) : '<span style="opacity:0.4">\u2014</span>'
+      },
+      {
+        key: 'container', header: 'Container', width: '140px', sortable: true, searchable: true,
+        hideOnMobile: true,
+        formatter: (val) => val || '<span style="opacity:0.4">Inventory</span>'
+      },
+      {
+        key: '_actions', header: '', width: '110px', sortable: false, searchable: false,
+        formatter: (val, row) => {
+          return `<span class="inv-actions">`
+            + `<button class="inv-action-btn config" data-action="config" data-id="${row.id}" title="Edit details">&#9881;</button>`
+            + `<button class="inv-action-btn sell" data-action="sell" data-id="${row.id}" title="Create sell offer">&#36;</button>`
+            + `<button class="inv-action-btn remove" data-action="remove" data-id="${row.id}" title="Remove">&#x2715;</button>`
+            + `</span>`;
+        }
+      },
+    ];
+  })();
 
   onMount(loadInventory);
 
@@ -219,5 +253,22 @@
   }
   .inventory-table :global(.inv-action-btn.remove:hover) {
     background: rgba(239, 68, 68, 0.15);
+  }
+
+  /* Order indicator badges */
+  .inventory-table :global(.inv-order-badge) {
+    padding: 1px 5px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+  }
+  .inventory-table :global(.inv-order-badge.buy) {
+    background: rgba(59, 130, 246, 0.15);
+    color: var(--accent-color);
+  }
+  .inventory-table :global(.inv-order-badge.sell) {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--error-color);
   }
 </style>

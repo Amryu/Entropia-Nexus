@@ -1,8 +1,22 @@
 //@ts-nocheck
 import { writable } from 'svelte/store';
+import { computeState } from './exchangeConstants.js';
 
 /** User's own active offers */
 export const myOffers = writable([]);
+
+/**
+ * Enrich raw offer data with display fields (item_name, state_display).
+ * @param {Array} offers - Raw offers from the API
+ * @returns {Array} Enriched offers
+ */
+export function enrichOffers(offers) {
+  return (offers || []).map(o => ({
+    ...o,
+    state_display: o.computed_state || computeState(o.bumped_at),
+    item_name: o.item_name || o.details?.item_name || `Item #${o.item_id}`,
+  }));
+}
 
 /** User's server-stored inventory */
 export const inventory = writable([]);

@@ -1,8 +1,7 @@
 <script>
   //@ts-nocheck
   import FancyTable from '$lib/components/FancyTable.svelte';
-  import { myOffers } from '../../exchangeStore.js';
-  import { computeState } from '../../exchangeConstants.js';
+  import { myOffers, enrichOffers } from '../../exchangeStore.js';
   import { createEventDispatcher, onMount } from 'svelte';
 
   export let user = null;
@@ -64,12 +63,7 @@
       const res = await fetch('/api/market/exchange/offers');
       if (!res.ok) throw new Error('Failed to load offers');
       const data = await res.json();
-      const enriched = (data || []).map(o => ({
-        ...o,
-        state_display: o.computed_state || computeState(o.bumped_at),
-        item_name: o.details?.item_name || `Item #${o.item_id}`,
-      }));
-      myOffers.set(enriched);
+      myOffers.set(enrichOffers(data));
     } catch (e) {
       error = e.message;
     } finally {
@@ -145,7 +139,7 @@
   }
 
   export function refresh() {
-    loadOffers();
+    return loadOffers();
   }
 
 </script>

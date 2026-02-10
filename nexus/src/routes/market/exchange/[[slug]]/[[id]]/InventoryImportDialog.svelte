@@ -4,7 +4,7 @@
   import { slide } from 'svelte/transition';
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { hasItemTag, removeItemTag } from '$lib/util.js';
-  import { myOffers, inventory } from '../../exchangeStore.js';
+  import { myOffers, inventory, enrichOffers } from '../../exchangeStore.js';
 
   export let show = false;
   /** Flattened item list from ExchangeBrowser for name→id resolution: [{i, n}, ...] */
@@ -191,11 +191,15 @@
       }
 
       // Stackable item types by ID range (from api/endpoints/constants.js offsets)
-      function isStackable(itemId) {
+      // Non-(L) blueprints are non-fungible (individual QR) and should not be stacked
+      function isStackable(itemId, itemName) {
         if (itemId === 0) return false;
-        return (itemId >= 1000000 && itemId < 2000000)   // Materials
-            || (itemId >= 6000000 && itemId < 7000000)   // Blueprints
-            || (itemId >= 10000000 && itemId < 10200000); // Consumables, Capsules
+        if (itemId >= 1000000 && itemId < 2000000) return true;    // Materials
+        if (itemId >= 6000000 && itemId < 7000000) {               // Blueprints
+          return hasItemTag(itemName, 'L');                           // Only (L) blueprints stack
+        }
+        if (itemId >= 10000000 && itemId < 10200000) return true;  // Consumables, Capsules
+        return false;
       }
 
       // 4. Combine stackable items by (item_id, planet); keep non-stackable as individual entries
@@ -212,7 +216,7 @@
           continue;
         }
 
-        if (itemId > 0 && isStackable(itemId)) {
+        if (itemId > 0 && isStackable(itemId, item.item_name)) {
           // Stackable: combine by (item_id, planet)
           const key = `${itemId}::${item._planet || ''}`;
           if (stackMap.has(key)) {
@@ -363,7 +367,7 @@
       try {
         const res = await fetch('/api/market/exchange/offers');
         if (res.ok) {
-          offers = await res.json();
+          offers = enrichOffers(await res.json());
           myOffers.set(offers);
         }
       } catch {}
@@ -468,7 +472,7 @@
   async function refreshOffers() {
     try {
       const res = await fetch('/api/market/exchange/offers');
-      if (res.ok) myOffers.set(await res.json());
+      if (res.ok) myOffers.set(enrichOffers(await res.json()));
     } catch {}
   }
 

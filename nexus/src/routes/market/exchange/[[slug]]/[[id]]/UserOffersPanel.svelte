@@ -1,8 +1,10 @@
 <script>
   //@ts-nocheck
   import FancyTable from '$lib/components/FancyTable.svelte';
+  import { goto } from '$app/navigation';
   import { tradeList } from '../../exchangeStore.js';
   import { isAbsoluteMarkup, getMaxTT } from '../../orderUtils';
+  import { encodeURIComponentSafe } from '$lib/util.js';
   import { createEventDispatcher } from 'svelte';
 
   const dispatch = createEventDispatcher();
@@ -151,6 +153,18 @@
     });
   }
 
+  function handleRowClick(e) {
+    const row = e.detail?.row;
+    if (!row) return;
+    const item = itemLookup.get(row.item_id);
+    const name = item?.n || row.details?.item_name;
+    if (name) {
+      goto(`/market/exchange/listings/${encodeURIComponentSafe(name)}`);
+    } else if (row.item_id) {
+      goto(`/market/exchange/listings/${row.item_id}`);
+    }
+  }
+
 </script>
 
 <!-- svelte-ignore a11y-click-events-have-key-events -->
@@ -172,6 +186,7 @@
       sortable={true}
       searchable={false}
       emptyMessage="No offers"
+      on:rowClick={handleRowClick}
     />
   {/if}
 </div>

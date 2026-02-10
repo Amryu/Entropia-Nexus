@@ -1,7 +1,7 @@
 <script>
   //@ts-nocheck
   import { createEventDispatcher, onMount } from 'svelte';
-  import { myOffers, inventory } from '../../exchangeStore.js';
+  import { myOffers, inventory, enrichOffers } from '../../exchangeStore.js';
 
   export let show = false;
 
@@ -23,7 +23,7 @@
       try {
         const res = await fetch('/api/market/exchange/offers');
         if (res.ok) {
-          offers = await res.json();
+          offers = enrichOffers(await res.json());
           myOffers.set(offers);
         }
       } catch {}
@@ -129,7 +129,7 @@
   async function refreshOffers() {
     try {
       const res = await fetch('/api/market/exchange/offers');
-      if (res.ok) myOffers.set(await res.json());
+      if (res.ok) myOffers.set(enrichOffers(await res.json()));
     } catch {}
   }
 

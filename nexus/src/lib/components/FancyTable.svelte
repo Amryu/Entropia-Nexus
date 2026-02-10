@@ -655,7 +655,7 @@
   }
 
   .table-row.odd {
-    background-color: var(--primary-color);
+    background-color: color-mix(in srgb, var(--primary-color) 30%, var(--secondary-color) 70%);
   }
 
   .table-row:hover {

@@ -23,7 +23,7 @@
   $: scores = data.profileData.scores;
   $: services = data.profileData.services || [];
   $: shops = data.profileData.shops || [];
-  $: offers = data.profileData.offers || [];
+  $: orders = data.profileData.orders || [];
   $: avatar = data.profileData.avatar || {};
   $: isOwner = data.profileData.permissions?.isOwner;
   $: society = profile?.society || null;
@@ -126,16 +126,16 @@
   $: hasAvatarData = !!(form.showcaseLoadoutCode || avatar?.showcaseLoadout);
   $: hasServices = services.length > 0;
   $: hasShops = shops.length > 0;
-  $: hasOffers = offers.length > 0;
-  $: buyOffers = offers.filter(o => o.type === 'BUY');
-  $: sellOffers = offers.filter(o => o.type === 'SELL');
+  $: hasOrders = orders.length > 0;
+  $: buyOrders = orders.filter(o => o.type === 'BUY');
+  $: sellOrders = orders.filter(o => o.type === 'SELL');
 
   $: availableTabs = [
     { id: 'General', label: 'General', available: true },
     { id: 'Avatar', label: 'Avatar', available: hasAvatarData || (isOwner && isEditing) },
     { id: 'Services', label: 'Services', available: hasServices },
     { id: 'Shops', label: 'Shops', available: hasShops },
-    { id: 'Offers', label: 'Offers', available: hasOffers }
+    { id: 'Orders', label: 'Orders', available: hasOrders }
   ].filter(tab => tab.available);
 
   let activeTab = 'General';
@@ -219,7 +219,7 @@
     hydrateShowcaseLoadout(showcaseShareCode);
   }
 
-  // -- Offer table columns for the Offers tab --
+  // -- Offer table columns for the Orders tab --
   function formatOfferAge(dateStr) {
     if (!dateStr) return 'N/A';
     const diff = Math.max(0, Date.now() - new Date(dateStr).getTime());
@@ -255,8 +255,8 @@
     }
   ];
 
-  $: offersPageUrl = profile?.euName
-    ? `/market/exchange/offers/${encodeURIComponentSafe(profile.euName)}`
+  $: ordersPageUrl = profile?.euName
+    ? `/market/exchange/orders/${encodeURIComponentSafe(profile.euName)}`
     : null;
 
   function startEdit() {
@@ -1124,45 +1124,21 @@
       </section>
     {/if}
 
-    {#if activeTab === 'Offers'}
+    {#if activeTab === 'Orders'}
       <section class="panel-section">
-        <div class="offers-header">
-          <h2>Offers</h2>
-          {#if offersPageUrl && !isOwner}
-            <a class="offers-page-link" href={offersPageUrl}>View all offers</a>
-          {/if}
-        </div>
-        {#if offers.length === 0}
-          <div class="empty-state">No active offers.</div>
+        {#if orders.length === 0}
+          <div class="empty-state">No active orders.</div>
         {:else}
-          <div class="offers-split">
-            <div class="offers-side">
-              <h3 class="offers-side-title buy">Buy Orders</h3>
-              {#if buyOffers.length === 0}
-                <div class="offers-empty">No buy orders</div>
+          <div class="orders-stacked">
+            <div class="orders-side">
+              <h3 class="orders-side-title sell">Sell Orders</h3>
+              {#if sellOrders.length === 0}
+                <div class="orders-empty">No sell orders</div>
               {:else}
-                <div class="offers-table-wrap">
+                <div class="orders-table-wrap">
                   <FancyTable
                     columns={offerColumns}
-                    data={buyOffers}
-                    rowHeight={36}
-                    compact={true}
-                    sortable={true}
-                    searchable={false}
-                    emptyMessage="No buy orders"
-                  />
-                </div>
-              {/if}
-            </div>
-            <div class="offers-side">
-              <h3 class="offers-side-title sell">Sell Orders</h3>
-              {#if sellOffers.length === 0}
-                <div class="offers-empty">No sell orders</div>
-              {:else}
-                <div class="offers-table-wrap">
-                  <FancyTable
-                    columns={offerColumns}
-                    data={sellOffers}
+                    data={sellOrders}
                     rowHeight={36}
                     compact={true}
                     sortable={true}
@@ -1172,7 +1148,28 @@
                 </div>
               {/if}
             </div>
+            <div class="orders-side">
+              <h3 class="orders-side-title buy">Buy Orders</h3>
+              {#if buyOrders.length === 0}
+                <div class="orders-empty">No buy orders</div>
+              {:else}
+                <div class="orders-table-wrap">
+                  <FancyTable
+                    columns={offerColumns}
+                    data={buyOrders}
+                    rowHeight={36}
+                    compact={true}
+                    sortable={true}
+                    searchable={false}
+                    emptyMessage="No buy orders"
+                  />
+                </div>
+              {/if}
+            </div>
           </div>
+          {#if ordersPageUrl && !isOwner}
+            <a class="orders-page-link" href={ordersPageUrl}>View all orders on exchange</a>
+          {/if}
         {/if}
       </section>
     {/if}
@@ -2099,50 +2096,44 @@
       grid-template-columns: 1fr;
     }
 
-    .offers-split {
-      flex-direction: column;
-    }
   }
 
-  /* -- Offers tab -- */
-  .offers-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-  }
-  .offers-page-link {
+  /* -- Orders tab -- */
+  .orders-page-link {
+    display: block;
+    margin-top: 12px;
     font-size: 13px;
     color: var(--accent-color);
     text-decoration: none;
   }
-  .offers-page-link:hover {
+  .orders-page-link:hover {
     text-decoration: underline;
   }
-  .offers-split {
+  .orders-stacked {
     display: flex;
+    flex-direction: column;
     gap: 16px;
   }
-  .offers-side {
+  .orders-side {
     flex: 1;
     min-width: 0;
     display: flex;
     flex-direction: column;
   }
-  .offers-side-title {
+  .orders-side-title {
     margin: 0 0 8px 0;
     font-size: 13px;
     font-weight: 600;
   }
-  .offers-side-title.buy { color: var(--success-color, #16a34a); }
-  .offers-side-title.sell { color: var(--error-color, #ef4444); }
-  .offers-table-wrap {
+  .orders-side-title.buy { color: var(--success-color, #16a34a); }
+  .orders-side-title.sell { color: var(--error-color, #ef4444); }
+  .orders-table-wrap {
     border: 1px solid var(--border-color);
     border-radius: 8px;
     overflow: hidden;
     max-height: 400px;
   }
-  .offers-empty {
+  .orders-empty {
     padding: 24px;
     text-align: center;
     font-size: 13px;
