@@ -1282,18 +1282,10 @@
         return tt != null ? `${Number(tt).toFixed(2)} PED` : 'N/A';
       }});
     cols.push({ key: 'markup', header: isAbsMu ? 'MU (+PED)' : 'MU (%)', width: '90px', sortable: true, searchable: false,
-      formatter: (v, row) => {
-        if (isAbsMu) {
-          const abs = v ?? row?.Markup ?? null;
-          return abs != null ? `+${Number(abs).toFixed(2)}` : 'N/A';
-        }
-        const ttUnit = row?.TTValue ?? row?.Value ?? row?.tt_value ?? null;
-        const price = row?.Price ?? row?.price ?? row?.UnitPrice ?? row?.unit_price ?? null;
-        if (ttUnit && price) {
-          const pct = (price / ttUnit) * 100;
-          return `${pct.toFixed(1)}%`;
-        }
-        return v != null ? `${Number(v).toFixed(1)}%` : 'N/A';
+      formatter: (v) => {
+        const mu = v != null ? Number(v) : null;
+        if (mu == null || !isFinite(mu)) return 'N/A';
+        return isAbsMu ? `+${mu.toFixed(2)}` : `${mu.toFixed(1)}%`;
       }});
     cols.push({ key: '_total', header: 'Total', width: '100px', sortable: true, searchable: false,
       formatter: (v, row) => {
@@ -1864,19 +1856,20 @@
           </div>
         {/if}
 
-        <QuickTradeDialog
-          bind:this={quickTradeRef}
-          show={showQuickTrade}
-          offer={quickTradeOffer}
-          side={quickTradeSide}
-          item={selectedItemDetails || selectedItem}
-          showAddToList={showUserOffers}
-          on:close={closeQuickTrade}
-          on:confirm={handleQuickTradeConfirm}
-          on:addToList={handleAddToListFromDialog}
-          on:editOwn={(e) => { closeQuickTrade(); editOfferInline(e.detail.offer); }}
-        />
       {/if}
+
+      <QuickTradeDialog
+        bind:this={quickTradeRef}
+        show={showQuickTrade}
+        offer={quickTradeOffer}
+        side={quickTradeSide}
+        item={selectedItemDetails || selectedItem}
+        showAddToList={showUserOffers}
+        on:close={closeQuickTrade}
+        on:confirm={handleQuickTradeConfirm}
+        on:addToList={handleAddToListFromDialog}
+        on:editOwn={(e) => { closeQuickTrade(); editOfferInline(e.detail.offer); }}
+      />
 
       <OrderDialog
         bind:this={orderDialogRef}
