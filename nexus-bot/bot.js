@@ -175,6 +175,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
       try {
         let summary = '';
+        let publicMsg;
 
         if (action === 'yes') {
           const adjustments = await adjustOfferQuantities(requestId);
@@ -186,19 +187,21 @@ client.on(Events.InteractionCreate, async interaction => {
           summary = parts.length > 0 ? `\n${parts.join(', ')}.` : '\nNo offers needed adjustment.';
         }
 
+        publicMsg = `\ud83d\udd12 **Thread Closed** — This trade thread has been closed by <@${interaction.user.id}>. Thread will be locked and archived.`;
+
         await updateTradeRequestStatus(requestId, 'completed');
-        await interaction.update({ content: `Trade marked as completed.${summary}`, components: [] });
+        await interaction.update({ content: `Thread closed.${summary}`, components: [] });
 
         // Send public message and lock/archive the thread
         const thread = interaction.channel;
         if (thread?.isThread()) {
-          await thread.send(`\u2705 **Trade Completed** — This trade has been marked as completed by <@${interaction.user.id}>. Thread will be locked and archived.`);
+          await thread.send(publicMsg);
           await thread.setLocked(true).catch(() => {});
           await thread.setArchived(true).catch(() => {});
         }
       } catch (error) {
-        console.error('Error completing trade via button:', error);
-        await interaction.update({ content: 'An error occurred while completing the trade.', components: [] }).catch(() => {});
+        console.error('Error closing trade thread via button:', error);
+        await interaction.update({ content: 'An error occurred while closing the trade thread.', components: [] }).catch(() => {});
       }
       return;
     }

@@ -3,7 +3,7 @@ import { findTradeRequestByThread } from '../../db.js';
 
 export const data = new SlashCommandBuilder()
   .setName('done')
-  .setDescription('Mark the current trade as completed and close the thread');
+  .setDescription('Close this trade thread (whether or not a trade was made)');
 
 export async function execute(interaction) {
   // Must be used in a thread
@@ -20,11 +20,11 @@ export async function execute(interaction) {
     return interaction.reply({ content: `This trade is already ${tradeRequest.status}.`, flags: 64 });
   }
 
-  // Only the target (offer owner/seller) can complete the trade
+  // Only the target (offer owner/seller) can close the thread
   const userId = interaction.user.id;
   if (userId !== tradeRequest.target_id.toString()) {
     return interaction.reply({
-      content: 'Only the offer owner (the person receiving the trade request) can mark a trade as completed.',
+      content: 'Only the offer owner (the person receiving the trade request) can close this thread.',
       flags: 64
     });
   }
@@ -32,11 +32,11 @@ export async function execute(interaction) {
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`trade_done_yes_${tradeRequest.id}`)
-      .setLabel('Yes')
+      .setLabel('Adjust offer quantities')
       .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
       .setCustomId(`trade_done_no_${tradeRequest.id}`)
-      .setLabel('No')
+      .setLabel('Close without adjusting')
       .setStyle(ButtonStyle.Secondary),
     new ButtonBuilder()
       .setCustomId(`trade_done_cancel_${tradeRequest.id}`)
@@ -45,7 +45,7 @@ export async function execute(interaction) {
   );
 
   await interaction.reply({
-    content: '**Complete Trade** — Should the offer quantities be adjusted automatically to reflect the traded amounts?',
+    content: '**Close Trade Thread** — Should the offer quantities be adjusted to reflect traded amounts?',
     components: [row],
     flags: 64
   });

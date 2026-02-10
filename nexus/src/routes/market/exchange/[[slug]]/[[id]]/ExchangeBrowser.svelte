@@ -1414,11 +1414,13 @@
       cols.push({ key: 'tir', header: 'TiR', width: '80px', sortable: true, searchable: false,
         formatter: (v) => v ?? 'N/A' });
     }
-    cols.push({ key: 'quantity', header: 'Qty', width: '80px', sortable: true, searchable: false,
-      formatter: (v) => v ?? 0 });
     const itemMaxTT = getMaxTT(selectedItemDetails) ?? selectedItem?.v ?? null;
     const stackable = isItemStackable(selectedItemDetails || selectedItem);
-    cols.push({ key: '_value', header: 'Value', width: '110px', sortable: true, searchable: false,
+    if (stackable) {
+      cols.push({ key: 'quantity', header: 'Qty', width: '80px', sortable: true, searchable: false,
+        formatter: (v) => v ?? 0 });
+    }
+    cols.push({ key: '_value', header: 'Value', width: '130px', sortable: true, searchable: false,
       sortValue: (row) => {
         const tt = row?.details?.CurrentTT ?? (stackable && itemMaxTT != null ? itemMaxTT * (row?.quantity ?? 1) : itemMaxTT);
         return tt ?? -1;
@@ -1433,9 +1435,9 @@
         }
         return ttStr;
       }});
-    cols.push({ key: 'markup', header: isAbsMu ? 'MU (+PED)' : 'MU (%)', width: '90px', sortable: true, searchable: false,
+    cols.push({ key: 'markup', header: isAbsMu ? 'MU (+PED)' : 'MU (%)', width: '100px', sortable: true, searchable: false,
       formatter: (v) => formatMarkupValue(v, isAbsMu)});
-    cols.push({ key: '_total', header: 'Total', width: '100px', sortable: true, searchable: false,
+    cols.push({ key: '_total', header: 'Total', width: '120px', sortable: true, searchable: false,
       sortValue: (row) => {
         const qty = row?.quantity ?? 1;
         const tt = row?.details?.CurrentTT ?? (stackable && itemMaxTT != null ? itemMaxTT * qty : itemMaxTT);
