@@ -1093,12 +1093,13 @@
       .map(o => {
         const qty = o?.Quantity ?? o?.quantity ?? 0;
         const mu = o?.Markup ?? o?.markup ?? null;
+        const muNum = mu != null ? Number(mu) : null;
         // Compute TT value and unit price from item's MaxTT and order markup
         let ttValue = o?.TTValue ?? o?.Value ?? o?.tt_value ?? o?.details?.CurrentTT ?? null;
         let unitPrice = o?.Price ?? o?.price ?? o?.UnitPrice ?? o?.unit_price ?? null;
         if (ttValue == null && maxTT != null) ttValue = maxTT;
-        if (unitPrice == null && ttValue != null && mu != null) {
-          unitPrice = isAbsMu ? ttValue + mu : ttValue * (mu / 100);
+        if (unitPrice == null && ttValue != null && muNum != null) {
+          unitPrice = isAbsMu ? ttValue + muNum : ttValue * (muNum / 100);
         }
         return {
           ...o,
@@ -1911,7 +1912,7 @@
           {#if $showTradeList}
             <CartSummary on:close={() => showTradeList.set(false)} />
           {:else}
-            <UserOffersPanel user={userOffersTarget} sideFilter={panelSideFilter} on:offerAction={handleOfferAction} />
+            <UserOffersPanel user={userOffersTarget} sideFilter={panelSideFilter} {allItems} on:offerAction={handleOfferAction} />
           {/if}
         {:else}
           <div class="panel-title-bar">

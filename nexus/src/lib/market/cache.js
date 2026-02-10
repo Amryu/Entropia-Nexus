@@ -393,6 +393,8 @@ function slimItem(item) {
   return {
     i: id,
     n: item.Name ?? null,
+    t: item.Properties?.Type ?? item.Type ?? null,
+    v: item.Properties?.Economy?.MaxTT ?? item.MaxTT ?? item.Value ?? null,
     o: null,
     b: counts?.buys || null,
     s: counts?.sells || null,

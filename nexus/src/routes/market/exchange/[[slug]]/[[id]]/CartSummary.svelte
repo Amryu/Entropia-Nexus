@@ -5,27 +5,17 @@
 
   const dispatch = createEventDispatcher();
 
-  let minAmount = 0;
-  let optimized = false;
   let checkingOut = false;
   let checkoutError = null;
   let checkoutResult = null;
 
-  // Group trade list items by seller (and optionally planet)
-  $: filteredItems = $tradeList.filter(item => {
-    if (minAmount > 0) {
-      const total = (item.unitPrice || 0) * (item.quantity || 1);
-      return total >= minAmount;
-    }
-    return true;
-  });
+  // Group trade list items by seller
+  $: filteredItems = $tradeList;
 
   $: groupedBySeller = (() => {
     const groups = {};
     for (const item of filteredItems) {
-      const key = optimized
-        ? `${item.sellerId || 'unknown'}::${item.planet || 'any'}`
-        : `${item.sellerId || 'unknown'}`;
+      const key = `${item.sellerId || 'unknown'}`;
       if (!groups[key]) {
         groups[key] = {
           sellerId: item.sellerId,
@@ -54,10 +44,6 @@
 
   function handleClear() {
     clearTradeList();
-  }
-
-  function toggleOptimize() {
-    optimized = !optimized;
   }
 
   async function handleCheckout() {
@@ -120,9 +106,6 @@
     <button class="back-btn" on:click={handleClose}>Back</button>
     <h2>Trade List</h2>
     <div class="header-actions">
-      <button class="btn-optimize" class:active={optimized} on:click={toggleOptimize} title="Group by seller and planet to minimize trades">
-        {optimized ? 'Grouped' : 'Optimize'}
-      </button>
       <button class="btn-clear" on:click={handleClear} disabled={$tradeList.length === 0}>Clear</button>
     </div>
   </div>
@@ -132,14 +115,6 @@
       <p>Your trade list is empty. Add items from the order book or seller offers.</p>
     </div>
   {:else}
-    <div class="cart-filters">
-      <label class="min-amount-label">
-        Min amount:
-        <input type="number" min="0" step="0.01" bind:value={minAmount} class="min-amount-input" placeholder="0.00" />
-        <span class="unit">PED</span>
-      </label>
-    </div>
-
     <div class="cart-body">
       {#each groupedBySeller as group}
         <div class="seller-group">
@@ -205,7 +180,6 @@
     background: var(--secondary-color);
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    margin-top: 8px;
     overflow: hidden;
   }
   .cart-header {
@@ -239,61 +213,18 @@
     transition: all 0.2s ease;
   }
   .back-btn:hover { background: var(--hover-color); border-color: var(--border-hover); }
-  .btn-optimize, .btn-clear {
+  .btn-clear {
     padding: 6px 14px;
-    border: 1px solid var(--border-color);
+    border: 1px solid var(--error-color);
     border-radius: 6px;
     background: transparent;
-    color: var(--text-color);
+    color: var(--error-color);
     cursor: pointer;
     font-size: 13px;
     transition: all 0.2s ease;
   }
-  .btn-optimize:hover, .btn-clear:hover { background: var(--hover-color); border-color: var(--border-hover); }
-  .btn-optimize.active {
-    background: rgba(59, 130, 246, 0.12);
-    color: var(--accent-color);
-    border-color: var(--accent-color);
-  }
+  .btn-clear:hover:not(:disabled) { background: rgba(239, 68, 68, 0.1); border-color: var(--error-color); }
   .btn-clear:disabled { opacity: 0.7; cursor: not-allowed; }
-  .btn-clear {
-    color: var(--error-color);
-    border-color: var(--error-color);
-  }
-  .btn-clear:hover:not(:disabled) {
-    background: rgba(239, 68, 68, 0.1);
-  }
-
-  .cart-filters {
-    padding: 8px 16px;
-    flex-shrink: 0;
-    border-bottom: 1px solid var(--border-color);
-  }
-  .min-amount-label {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 12px;
-    color: var(--text-muted);
-  }
-  .min-amount-input {
-    width: 80px;
-    padding: 5px 8px;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background: var(--bg-color, var(--secondary-color));
-    color: var(--text-color);
-    font-size: 12px;
-    transition: border-color 0.2s ease;
-  }
-  .min-amount-input:focus {
-    border-color: var(--accent-color);
-    outline: none;
-  }
-  .unit {
-    font-size: 11px;
-    color: var(--text-muted);
-  }
 
   .cart-body {
     flex: 1;

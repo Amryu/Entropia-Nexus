@@ -2,6 +2,7 @@
   //@ts-nocheck
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { tradeList } from '../../exchangeStore.js';
+  import { isAbsoluteMarkup, getMaxTT } from '../../orderUtils';
   import { createEventDispatcher } from 'svelte';
 
   const dispatch = createEventDispatcher();
@@ -9,12 +10,24 @@
   /** @type {{ id: number|string, name: string } | null} */
   export let user = null;
 
+  /** @type {Array} All slim items from the exchange categorized data */
+  export let allItems = [];
+
   let offers = [];
   let loading = false;
   let error = null;
   export let sideFilter = 'all'; // 'all' | 'BUY' | 'SELL'
 
   $: if (user?.id) loadOffers(user.id);
+
+  // Build item lookup by ID: item_id -> slim item { i, n, t, v, ... }
+  $: itemLookup = (() => {
+    const map = new Map();
+    for (const item of allItems || []) {
+      if (item?.i != null) map.set(item.i, item);
+    }
+    return map;
+  })();
 
   $: filteredOffers = sideFilter === 'all'
     ? offers
@@ -42,45 +55,75 @@
     if (user?.id) loadOffers(user.id);
   }
 
-  let columns = [
-    {
-      key: 'details', header: 'Item', main: true, sortable: true, searchable: false,
-      formatter: (v) => v?.item_name || 'Unknown'
-    },
-    {
-      key: 'type', header: 'Side', width: '60px', sortable: true, searchable: false,
-      formatter: (v) => {
-        const cls = v === 'BUY' ? 'badge-success' : 'badge-error';
-        return `<span class="badge badge-subtle ${cls}">${v === 'BUY' ? 'Buy' : 'Sell'}</span>`;
-      }
-    },
-    { key: 'quantity', header: 'Qty', width: '60px', sortable: true, searchable: false },
-    {
-      key: 'markup', header: 'Markup', width: '80px', sortable: true, searchable: false,
-      formatter: (v) => v != null ? Number(v).toFixed(1) : 'N/A'
-    },
-    { key: 'planet', header: 'Planet', width: '90px', sortable: true, searchable: false },
-    {
-      key: '_action', header: '', width: '60px', sortable: false, searchable: false,
-      formatter: (v, row) => {
-        const offerId = row?.id ?? 0;
-        const inList = tradeListOfferIds.has(offerId);
-        if (inList) {
-          return `<span class="cell-badge added-badge">Added</span>`;
-        }
-        const side = row?.type === 'SELL' ? 'buy' : 'sell';
-        const label = side === 'buy' ? 'Buy' : 'Sell';
-        const cls = side === 'buy' ? 'buy-offer-btn' : 'sell-offer-btn';
-        return `<button class="cell-button ${cls}" data-offer-action="${offerId}" data-action-side="${side}">${label}</button>`;
-      }
-    }
-  ];
-
-  // Rebuild columns reactively when tradeListOfferIds changes
-  $: {
-    tradeListOfferIds;
-    columns = columns;
+  function fmt(v) {
+    return typeof v === 'number' && isFinite(v) ? v.toFixed(2) : 'N/A';
   }
+
+  $: columns = (() => {
+    const cols = [
+      {
+        key: 'details', header: 'Item', main: true, sortable: true, searchable: false,
+        formatter: (v) => v?.item_name || 'Unknown'
+      },
+      {
+        key: 'type', header: 'Side', width: '55px', sortable: true, searchable: false,
+        formatter: (v) => {
+          const cls = v === 'BUY' ? 'badge-success' : 'badge-error';
+          return `<span class="badge badge-subtle ${cls}">${v === 'BUY' ? 'Buy' : 'Sell'}</span>`;
+        }
+      },
+      { key: 'quantity', header: 'Qty', width: '55px', sortable: true, searchable: false },
+      {
+        key: '_tt', header: 'TT', width: '80px', sortable: true, searchable: false,
+        formatter: (v, row) => {
+          const item = itemLookup.get(row?.item_id);
+          const maxTT = item?.v ?? null;
+          return maxTT != null ? `${fmt(maxTT)} PED` : 'N/A';
+        }
+      },
+      {
+        key: 'markup', header: 'Markup', width: '80px', sortable: true, searchable: false,
+        formatter: (v, row) => {
+          const mu = v != null ? Number(v) : null;
+          if (mu == null || !isFinite(mu)) return 'N/A';
+          const item = itemLookup.get(row?.item_id);
+          const isAbsMu = item ? isAbsoluteMarkup({ Type: item.t }) : false;
+          return isAbsMu ? `+${mu.toFixed(2)}` : `${mu.toFixed(1)}%`;
+        }
+      },
+      {
+        key: '_total', header: 'Total', width: '90px', sortable: true, searchable: false,
+        formatter: (v, row) => {
+          const item = itemLookup.get(row?.item_id);
+          const maxTT = item?.v ?? null;
+          const mu = row?.markup != null ? Number(row.markup) : null;
+          if (maxTT == null || mu == null) return 'N/A';
+          const isAbsMu = item ? isAbsoluteMarkup({ Type: item.t }) : false;
+          const unitPrice = isAbsMu ? maxTT + mu : maxTT * (mu / 100);
+          const qty = row?.quantity ?? 1;
+          return `${fmt(unitPrice * qty)} PED`;
+        }
+      },
+      { key: 'planet', header: 'Planet', width: '80px', sortable: true, searchable: false },
+      {
+        key: '_action', header: '', width: '55px', sortable: false, searchable: false,
+        formatter: (v, row) => {
+          const offerId = row?.id ?? 0;
+          const inList = tradeListOfferIds.has(offerId);
+          if (inList) {
+            return `<span class="cell-badge added-badge">Added</span>`;
+          }
+          const side = row?.type === 'SELL' ? 'buy' : 'sell';
+          const label = side === 'buy' ? 'Buy' : 'Sell';
+          const cls = side === 'buy' ? 'buy-offer-btn' : 'sell-offer-btn';
+          return `<button class="cell-button ${cls}" data-offer-action="${offerId}" data-action-side="${side}">${label}</button>`;
+        }
+      }
+    ];
+    // Force re-evaluation when tradeListOfferIds changes
+    tradeListOfferIds;
+    return cols;
+  })();
 
   function handleClick(e) {
     const btn = e.target.closest('[data-offer-action]');
