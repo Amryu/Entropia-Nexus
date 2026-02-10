@@ -669,16 +669,22 @@
   }
 
   // Map filtered items to FancyTable data
-  $: listTableData = (filteredItems || []).map((item) => ({
-    _item: item,
-    name: item.n,
-    median: null,
-    percentile10: null,
-    wap: null,
-    buys: item.b || null,
-    sells: item.s || null,
-    lastUpdate: null,
-  }));
+  $: listTableData = (() => {
+    const rows = (filteredItems || []).map((item) => ({
+      _item: item,
+      name: item.n,
+      median: item.m ?? null,
+      percentile10: item.p ?? null,
+      wap: item.w ?? null,
+      buys: item.b || null,
+      sells: item.s || null,
+      lastUpdate: null,
+      _hasBoth: (item.b > 0 && item.s > 0) ? 1 : 0,
+    }));
+    // Default: items with both buy + sell orders float to top
+    rows.sort((a, b) => b._hasBoth - a._hasBoth);
+    return rows;
+  })();
 
   // Columns for the main list view FancyTable
   const listColumns = [

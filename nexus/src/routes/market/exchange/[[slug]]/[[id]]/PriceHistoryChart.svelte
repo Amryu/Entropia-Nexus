@@ -217,8 +217,11 @@
   .chart-notice {
     text-align: center;
     color: var(--text-muted);
-    font-size: 11px;
-    padding: 2px 0;
+    font-size: 12px;
+    padding: 6px 12px;
+    background: var(--hover-color);
+    border-radius: 4px;
+    margin: 4px 8px;
     flex-shrink: 0;
   }
 </style>
