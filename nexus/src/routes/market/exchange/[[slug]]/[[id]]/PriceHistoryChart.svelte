@@ -1,10 +1,10 @@
 <script>
   //@ts-nocheck
   import { onMount, onDestroy } from 'svelte';
-  import { Chart, LinearScale, PointElement, LineElement, TimeScale, Tooltip, Filler } from 'chart.js';
+  import { Chart, LineController, LinearScale, PointElement, LineElement, TimeScale, Tooltip, Filler, Legend } from 'chart.js';
   import 'chartjs-adapter-date-fns';
 
-  Chart.register(LinearScale, PointElement, LineElement, TimeScale, Tooltip, Filler);
+  Chart.register(LineController, LinearScale, PointElement, LineElement, TimeScale, Tooltip, Filler, Legend);
 
   /** @type {number|null} */
   export let itemId = null;
