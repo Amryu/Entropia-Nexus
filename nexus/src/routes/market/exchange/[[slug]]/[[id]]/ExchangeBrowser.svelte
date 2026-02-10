@@ -698,8 +698,14 @@
       // Sort priority: 2 = both buy+sell, 1 = either, 0 = none
       _orderPriority: (item.b > 0 && item.s > 0) ? 2 : (item.b > 0 || item.s > 0) ? 1 : 0,
     }));
-    // Items with active orders float to top (both > either > none)
-    rows.sort((a, b) => b._orderPriority - a._orderPriority);
+    // Items with orders first (newest updated on top), then items without orders
+    rows.sort((a, b) => {
+      if (a._orderPriority !== b._orderPriority) return b._orderPriority - a._orderPriority;
+      if (a._orderPriority > 0 && a.lastUpdate && b.lastUpdate) {
+        return new Date(b.lastUpdate).getTime() - new Date(a.lastUpdate).getTime();
+      }
+      return 0;
+    });
     return rows;
   })();
 
