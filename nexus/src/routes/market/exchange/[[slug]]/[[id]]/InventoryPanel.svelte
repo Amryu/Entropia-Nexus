@@ -2,7 +2,7 @@
   //@ts-nocheck
   import FancyTable from '$lib/components/FancyTable.svelte';
   import InventoryItemDialog from './InventoryItemDialog.svelte';
-  import { inventory, myOrders } from '../../exchangeStore.js';
+  import { inventory, myOrders, enrichOrders } from '../../exchangeStore.js';
   import { isItemStackable } from '../../orderUtils';
   import { MAX_ORDERS_PER_SIDE } from '../../exchangeConstants.js';
   import { createEventDispatcher, onMount } from 'svelte';
@@ -190,7 +190,10 @@
     ];
   })();
 
-  onMount(loadInventory);
+  onMount(() => {
+    loadInventory();
+    loadOrders();
+  });
 
   async function loadInventory() {
     if (!user) return;
@@ -206,6 +209,15 @@
     } finally {
       loading = false;
     }
+  }
+
+  async function loadOrders() {
+    if (!user || $myOrders.length > 0) return;
+    try {
+      const res = await fetch('/api/market/exchange/orders');
+      if (!res.ok) return;
+      myOrders.set(enrichOrders(await res.json()));
+    } catch { /* ignore — orders column just stays empty */ }
   }
 
   async function handleRemove(item) {

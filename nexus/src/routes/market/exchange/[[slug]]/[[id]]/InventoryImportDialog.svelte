@@ -32,6 +32,7 @@
 
   // Order coverage state (computed after import)
   let discrepancies = [];
+  let checkingCoverage = false;
   let adjustingAll = false;
   let cancellingAll = false;
 
@@ -429,7 +430,9 @@
       dispatch('imported', data);
 
       // Check order coverage
+      checkingCoverage = true;
       await checkOrderCoverage();
+      checkingCoverage = false;
     } catch (e) {
       importError = e.message;
     } finally {
@@ -812,7 +815,9 @@
         </div>
 
         <!-- Order coverage -->
-        {#if discrepancies.length > 0}
+        {#if checkingCoverage}
+          <div class="coverage-loading">Checking sell order coverage...</div>
+        {:else if discrepancies.length > 0}
           <div class="discrepancy-section">
             <h4 class="discrepancy-title">Sell orders exceeding inventory</h4>
             <p class="discrepancy-desc">
@@ -872,7 +877,7 @@
         {/if}
 
         <div class="modal-actions">
-          <button class="btn-primary" on:click={handleClose}>Done</button>
+          <button class="btn-primary" on:click={handleClose} disabled={checkingCoverage}>Done</button>
         </div>
       {/if}
     </div>
@@ -1109,6 +1114,15 @@
     font-size: 14px;
     text-align: center;
   }
+  .coverage-loading {
+    margin: 8px 0;
+    padding: 0.5rem 1rem;
+    border-radius: 4px;
+    color: var(--text-muted);
+    font-size: 13px;
+    text-align: center;
+  }
+
   .coverage-ok {
     margin: 8px 0;
     padding: 0.5rem 1rem;
