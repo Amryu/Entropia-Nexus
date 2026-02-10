@@ -17,20 +17,20 @@ A trading platform for buying and selling items between players.
   - QR filter for blueprints
 - **Buy/Sell Orders**: Create and manage trade orders with real-time API
 - **Order Freshness**: Filter by last update time
-- **Offer Staleness**: Active (<3d), Stale (3-7d), Expired (7-30d), Terminated (>30d)
-- **My Offers**: View, bump, edit, and close your offers
-- **Inventory System**: Full-sync import from EU API with diff preview, offer coverage checking
+- **Order Staleness**: Active (<3d), Stale (3-7d), Expired (7-30d), Terminated (>30d)
+- **My Orders**: View, bump, edit, and close your orders
+- **Inventory System**: Full-sync import from EU API with diff preview, order coverage checking
 - **Inventory Editing**: Inline config for item metadata (Tier, TiR, QR, value, quantity) with auto-save
-- **Sell from Inventory**: Create sell offers directly from inventory rows with pre-filled data
-- **Offer Coverage**: Standalone dialog to check/adjust sell offers exceeding inventory
-- **Shopping Cart**: Add sell offers to cart, group by seller/planet, checkout creates trade requests
+- **Sell from Inventory**: Create sell orders directly from inventory rows with pre-filled data
+- **Order Coverage**: Standalone dialog to check/adjust sell orders exceeding inventory
+- **Shopping Cart**: Add sell orders to cart, group by seller/planet, checkout creates trade requests
 - **TT Badge**: Non-condition items show their TT value next to the item name in detail view
 - **Buy/Sell Now**: Click Buy/Sell buttons on order rows to create instant trade requests
 - **Bulk Buy/Sell**: Tab in OrderDialog for batch purchasing with quantity/min/max/planet filters
-- **User Offers Panel**: Click seller names to view all their offers in a floating panel
+- **User Orders Panel**: Click seller names to view all their orders in a floating panel
 - **Trade Requests**: Track active trades with Discord thread integration
-- **Price Suggestions**: Match best offer, undercut/outbid with tiered amounts
-- **Exchange Pricing**: Derived price data from active exchange offers
+- **Price Suggestions**: Match best order, undercut/outbid with tiered amounts
+- **Exchange Pricing**: Derived price data from active exchange orders
 
 ### Routes
 
@@ -50,15 +50,15 @@ nexus/src/routes/market/exchange/[[slug]]/[[id]]/
 ├── OrderDialog.svelte          - Create/edit order modal with price suggestions + bulk tab
 ├── OrderBookTable.svelte       - FancyTable wrapper for buy/sell orders
 ├── OrderStatusBadge.svelte     - Color-coded staleness badge
-├── MyOffersView.svelte         - User's offers management (bump/edit/close)
+├── MyOrdersView.svelte         - User's orders management (bump/edit/close)
 ├── InventoryImportDialog.svelte - JSON import wizard
 ├── InventoryItemDialog.svelte  - Item config dialog (Tier/TiR/QR/value/qty editing)
 ├── InventoryPanel.svelte       - Inventory browser with config/sell/remove actions
-├── OfferAdjustDialog.svelte    - Standalone offer coverage checking dialog
+├── OrderAdjustDialog.svelte    - Standalone order coverage checking dialog
 ├── CartSummary.svelte          - Shopping cart with seller grouping + checkout
 ├── FavouritesTree.svelte       - Favourites sidebar with folders and drag-and-drop
 ├── QuickTradeDialog.svelte     - Buy Now / Sell Now confirmation dialog
-├── UserOffersPanel.svelte      - View a specific user's active offers
+├── UserOrdersPanel.svelte      - View a specific user's active orders
 ├── TradeRequestsPanel.svelte   - View/manage trade requests in floating panel
 ├── PriceHistoryChart.svelte    - Chart.js line chart for exchange price history
 └── orderUtils.js               - Order calculation helpers
@@ -156,18 +156,18 @@ Pet orders include additional metadata:
 | created | timestamptz | Creation time |
 | updated | timestamptz | Last update |
 
-Unique constraint: 1 active offer per user per item per side.
-Limit: 200 offers per side per user.
+Unique constraint: 1 active order per user per item per side.
+Limit: 200 orders per side per user.
 
 ### Exchange Price History
 
-The bot snapshots exchange prices every 15 minutes from active trade offers. Each snapshot computes a volume-weighted average price (WAP) per item, combining buy and sell sides with IQR outlier filtering.
+The bot snapshots exchange prices every 15 minutes from active trade orders. Each snapshot computes a volume-weighted average price (WAP) per item, combining buy and sell sides with IQR outlier filtering.
 
 #### Snapshot Pipeline
 
-1. Query all non-closed offers with `bumped_at` within 7 days
+1. Query all non-closed orders with `bumped_at` within 7 days
 2. Group by item, separate buy/sell sides
-3. Apply IQR filtering per side (Tukey fence, k=1.5; skipped if <4 offers)
+3. Apply IQR filtering per side (Tukey fence, k=1.5; skipped if <4 orders)
 4. Compute per-side WAP: `SUM(markup * qty) / SUM(qty)`
 5. Combine sides: volume-weighted average when both exist, single side otherwise
 6. Insert into `exchange_price_snapshots` with `source='exchange'`
@@ -189,9 +189,9 @@ The bot snapshots exchange prices every 15 minutes from active trade offers. Eac
 | id | bigserial | Primary key |
 | item_id | integer | Item reference |
 | markup_value | numeric(12,4) | Computed WAP markup |
-| volume | integer | Total offer volume |
-| buy_count | smallint | Number of buy offers |
-| sell_count | smallint | Number of sell offers |
+| volume | integer | Total order volume |
+| buy_count | smallint | Number of buy orders |
+| sell_count | smallint | Number of sell orders |
 | recorded_at | timestamptz | Snapshot time |
 
 **`exchange_price_summaries`**: Pre-computed rollups for chart display
@@ -214,7 +214,7 @@ The bot snapshots exchange prices every 15 minutes from active trade offers. Eac
 
 #### API
 
-`GET /api/market/prices/exchange/[itemId]?period=7d&history=1` — Returns live offer stats, period summary (median/p10/wap), and optional time series for charting.
+`GET /api/market/prices/exchange/[itemId]?period=7d&history=1` — Returns live order stats, period summary (median/p10/wap), and optional time series for charting.
 
 **Table**: `user_items` (nexus-users)
 
@@ -241,7 +241,7 @@ Full-sync import wizard that replaces the user's entire server inventory with da
 1. **Paste**: User pastes EU "myitems" JSON (with expandable "How do I get my items?" instructions)
 2. **Preview**: Shows parsed items, diff against existing inventory, and unresolved item names
 3. **Import**: Full sync (DELETE all + batch INSERT) in a single transaction
-4. **Coverage Check**: Compares sell offers against new inventory, highlights discrepancies
+4. **Coverage Check**: Compares sell orders against new inventory, highlights discrepancies
 
 #### EU API Format
 
@@ -272,14 +272,14 @@ Before importing, shows comparison against existing inventory:
 - New items (green), Changed quantities (yellow), To be removed (red), Unchanged
 - Table with Status column badges and quantity change indicators
 
-#### Offer Coverage Checking
+#### Order Coverage Checking
 
-After import completes, checks sell offers against new inventory:
+After import completes, checks sell orders against new inventory:
 - Groups inventory by `item_id`, sums quantities
-- Compares each sell offer's quantity against available inventory
-- Shows discrepancies with per-row **Adjust** (set offer qty to inventory qty) or **Cancel** buttons
+- Compares each sell order's quantity against available inventory
+- Shows discrepancies with per-row **Adjust** (set order qty to inventory qty) or **Cancel** buttons
 - **Bulk actions**: "Adjust All" and "Cancel All" buttons for batch handling
-- Adjusting calls `PUT /api/market/exchange/offers/[id]`, canceling calls `DELETE /api/market/exchange/offers/[id]`
+- Adjusting calls `PUT /api/market/exchange/orders/[id]`, canceling calls `DELETE /api/market/exchange/orders/[id]`
 
 #### Backend
 
@@ -320,22 +320,22 @@ Each inventory row has a sell button ($) that opens the OrderDialog pre-filled:
 - **Quantity**: From inventory quantity
 - **Metadata**: From inventory details (Tier, TiR, QR if present)
 
-If the user already has a sell offer for that item, the existing offer opens in edit mode with a warning banner.
+If the user already has a sell order for that item, the existing order opens in edit mode with a warning banner.
 
-Quantity warnings appear in the OrderDialog if the offer quantity exceeds available inventory.
+Quantity warnings appear in the OrderDialog if the order quantity exceeds available inventory.
 
-### Offer Coverage Dialog
+### Order Coverage Dialog
 
 A standalone dialog (accessible via "Adjust (N)" button when discrepancies exist) that:
-- Compares all SELL offers against current inventory quantities
-- Shows a table of discrepancies (item, offer qty, inventory qty, deficit)
-- Per-row actions: **Adjust** (set offer qty to inventory) or **Cancel** (delete offer)
+- Compares all SELL orders against current inventory quantities
+- Shows a table of discrepancies (item, order qty, inventory qty, deficit)
+- Per-row actions: **Adjust** (set order qty to inventory) or **Cancel** (delete order)
 - Bulk actions: **Adjust All**, **Cancel All**
 
 ### Input Validation
 
 All exchange-related endpoints validate JSONB `details` fields server-side:
-- **Offer details**: `item_name` (string, max 200), `Tier` (0-10), `TierIncreaseRate` (1-4000), `QualityRating` (0-100), `CurrentTT` (>= 0), `Pet` (object with Level/Experience/Skills/Food)
+- **Order details**: `item_name` (string, max 200), `Tier` (0-10), `TierIncreaseRate` (1-4000), `QualityRating` (0-100), `CurrentTT` (>= 0), `Pet` (object with Level/Experience/Skills/Food)
 - **Inventory details**: `Tier` (0-10), `TierIncreaseRate` (1-4000), `QualityRating` (0-100)
 - **Planet validation**: All endpoints validate planet against the `PLANETS` constant list
 - Unknown keys are silently stripped
@@ -354,13 +354,13 @@ All exchange-related endpoints validate JSONB `details` fields server-side:
 
 ```
 GET  /api/market/exchange                          - Get categorized items for trading
-GET  /api/market/exchange/offers                   - User's own offers (My Offers)
-POST /api/market/exchange/offers                   - Create a new offer
-PUT  /api/market/exchange/offers/[id]              - Edit an offer
-DELETE /api/market/exchange/offers/[id]             - Close an offer (soft delete)
-POST /api/market/exchange/offers/[id]/bump         - Bump an offer (reset staleness)
-GET  /api/market/exchange/offers/item/[itemId]     - Order book for an item
-GET  /api/market/exchange/offers/user/[userId]     - All active offers by a user (public)
+GET  /api/market/exchange/orders                   - User's own orders (My Orders)
+POST /api/market/exchange/orders                   - Create a new order
+PUT  /api/market/exchange/orders/[id]              - Edit an order
+DELETE /api/market/exchange/orders/[id]             - Close an order (soft delete)
+POST /api/market/exchange/orders/[id]/bump         - Bump an order (reset staleness)
+GET  /api/market/exchange/orders/item/[itemId]     - Order book for an item
+GET  /api/market/exchange/orders/user/[userId]     - All active orders by a user (public)
 GET  /api/market/trade-requests                    - User's trade requests
 POST /api/market/trade-requests                    - Create/append trade request
 GET  /api/market/trade-requests/[id]               - Single trade request with items
@@ -393,7 +393,7 @@ For buy orders the same formula is used but the amount is *added* (outbid).
 ### Price Suggestions
 
 Three suggestion buttons in the order dialog:
-- **Match Best**: Sets markup to the best opposing offer
+- **Match Best**: Sets markup to the best opposing order
 - **Undercut / Outbid**: Applies the 2% relative undercut formula
 - **Daily Avg**: Uses the most recent daily average price from historical data (shown when available)
 
@@ -407,12 +407,12 @@ Fungible items support partial trades via `min_quantity`:
 - Stored in the `min_quantity` column of `trade_offers`
 - Instance items (tierable, condition, blueprints, pets) do not support partial trades
 
-### Edit Existing Offer
+### Edit Existing Order
 
 When a user already has a buy or sell order for an item:
 - The button changes to "Edit Buy" / "Edit Sell"
 - Clicking opens the existing order in edit mode with pre-populated values
-- Saving updates the existing offer (PUT) and resets staleness
+- Saving updates the existing order (PUT) and resets staleness
 
 ### Favourites
 
@@ -502,11 +502,11 @@ Only one open request (pending or active) is allowed between any two users at a 
 
 Tab 2 in the OrderDialog allows bulk trading:
 - **Quantity needed**: Total quantity to acquire
-- **Min offer amount**: Only consider offers with at least this quantity (0 = no minimum)
+- **Min order amount**: Only consider orders with at least this quantity (0 = no minimum)
 - **Max traders**: Maximum number of different traders (slider 0-20, default 5)
 - **Planet**: Filter by planet
 
-Preview shows matched offers sorted by best markup. Confirm creates one trade request per matched trader.
+Preview shows matched orders sorted by best markup. Confirm creates one trade request per matched trader.
 
 #### Database Tables
 
@@ -538,7 +538,7 @@ Unique constraint: Only 1 open request between any pair of users, using `LEAST/G
 | item_name | text | Item display name |
 | quantity | integer | Quantity to trade |
 | markup | numeric | Markup value |
-| side | text | 'BUY' or 'SELL' (the offer side) |
+| side | text | 'BUY' or 'SELL' (the order side) |
 | added_at | timestamptz | When item was added |
 
 #### API Endpoints
@@ -548,7 +548,7 @@ GET  /api/market/trade-requests                - User's trade requests
 POST /api/market/trade-requests                - Create/append trade request (market.trade)
 GET  /api/market/trade-requests/[id]           - Single trade request with items
 POST /api/market/trade-requests/[id]/cancel    - Cancel a trade request
-GET  /api/market/exchange/offers/user/[userId] - All active offers by a user (public)
+GET  /api/market/exchange/orders/user/[userId] - All active orders by a user (public)
 ```
 
 #### Server Lib
@@ -558,7 +558,7 @@ GET  /api/market/exchange/offers/user/[userId] - All active offers by a user (pu
 - `getUserTradeRequests(userId)` — All requests where user is party, with partner names and item counts
 - `getTradeRequest(requestId)` — Full request with items array
 - `cancelTradeRequest(requestId, userId)` — Cancel (only parties can cancel)
-- `getUserPublicOffers(userId)` — All active offers by a user
+- `getUserPublicOrders(userId)` — All active orders by a user
 - Bot functions: `getPendingTradeRequests`, `getWarnableTradeRequests`, `getExpirableTradeRequests`, `findTradeRequestByThread`, `updateLastActivity`, `setTradeRequestThread`
 
 #### Discord Bot Integration

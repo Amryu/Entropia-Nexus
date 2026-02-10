@@ -7,6 +7,7 @@
   export let onSelectItem = null;
   export let onSelectFolder = null;
   export let selectedFolderId = null; // 'all' | 'root' | folder id | null
+  export let selectedItemId = null; // currently selected item id
   export let showNewFolderButton = true;
 
   let expandedFolders = new Set();
@@ -200,16 +201,18 @@
           <div class="fav-folder-items">
             {#each (folder.items || []) as itemId (itemId)}
               <!-- svelte-ignore a11y-no-static-element-interactions -->
+              <!-- svelte-ignore a11y-click-events-have-key-events -->
               <div
                 class="fav-item"
                 class:dragging={dragItemId === itemId}
+                class:selected={selectedItemId === itemId}
                 draggable="true"
+                on:click={() => handleItemClick(itemId)}
                 on:dragstart={(e) => handleDragStart(e, itemId)}
                 on:dragend={handleDragEnd}
               >
                 <span class="expand-spacer"></span>
-                <!-- svelte-ignore a11y-click-events-have-key-events -->
-                <span class="fav-item-name" on:click={() => handleItemClick(itemId)} role="button" tabindex="0">
+                <span class="fav-item-name">
                   {itemMap[itemId]?.n || `Item #${itemId}`}
                 </span>
                 <button class="fav-remove-btn" on:click|stopPropagation={() => removeFavourite(itemId)} title="Remove">x</button>
@@ -235,16 +238,18 @@
       >
         {#each rootItems as itemId (itemId)}
           <!-- svelte-ignore a11y-no-static-element-interactions -->
+          <!-- svelte-ignore a11y-click-events-have-key-events -->
           <div
             class="fav-item"
             class:dragging={dragItemId === itemId}
+            class:selected={selectedItemId === itemId}
             draggable="true"
+            on:click={() => handleItemClick(itemId)}
             on:dragstart={(e) => handleDragStart(e, itemId)}
             on:dragend={handleDragEnd}
           >
             <span class="expand-spacer"></span>
-            <!-- svelte-ignore a11y-click-events-have-key-events -->
-            <span class="fav-item-name" on:click={() => handleItemClick(itemId)} role="button" tabindex="0">
+            <span class="fav-item-name">
               {itemMap[itemId]?.n || `Item #${itemId}`}
             </span>
             <button class="fav-remove-btn" on:click|stopPropagation={() => removeFavourite(itemId)} title="Remove">x</button>
@@ -404,11 +409,15 @@
     border-radius: 4px;
     border-left: 2px solid transparent;
     gap: 2px;
-    cursor: grab;
+    cursor: pointer;
     transition: all 0.15s ease;
   }
   .fav-item:hover {
     background-color: var(--hover-color);
+  }
+  .fav-item.selected {
+    background-color: rgba(22, 163, 74, 0.08);
+    border-left-color: var(--success-color, #16a34a);
   }
   .fav-item.dragging {
     opacity: 0.4;
@@ -417,13 +426,9 @@
   .fav-item-name {
     flex: 1;
     font-weight: 500;
-    cursor: pointer;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-  .fav-item-name:hover {
-    color: var(--accent-color);
   }
 
   .fav-remove-btn {

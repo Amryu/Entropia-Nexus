@@ -4,7 +4,7 @@ export const STALENESS_THRESHOLDS = {
   TERMINATED_DAYS: 30,
 };
 
-export const MAX_OFFERS_PER_SIDE = 50;
+export const MAX_ORDERS_PER_SIDE = 200;
 
 export const PLANETS = [
   'Calypso',
@@ -14,7 +14,7 @@ export const PLANETS = [
   'Next Island',
   'Monria',
   'Toulan',
-  'Other',
+  'Howling Mine (Space)',
 ];
 
 // 2% relative undercut system

@@ -12,7 +12,7 @@ import {
   getPendingSocietyJoinRequest
 } from '$lib/server/db.js';
 import { pool } from '$lib/server/db.js';
-import { getUserPublicOffers } from '$lib/server/trade-requests.js';
+import { getUserPublicOrders } from '$lib/server/trade-requests.js';
 import { sanitizeRichText } from '$lib/server/sanitizeRichText.js';
 import { getApprovedImagePath } from '$lib/server/imageProcessor.js';
 
@@ -136,7 +136,7 @@ export async function GET({ params, locals, fetch }) {
     getUserContributionStats(profileUser.id),
     getUserServices(profileUser.id),
     getUserShopsFromApi(fetch, profileUser.id),
-    getUserPublicOffers(profileUser.id)
+    getUserPublicOrders(profileUser.id)
   ]);
 
   const [allTimeRanks, monthlyRanks] = await Promise.all([

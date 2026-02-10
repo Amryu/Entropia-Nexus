@@ -1,7 +1,7 @@
 <script>
   //@ts-nocheck
   import FancyTable from '$lib/components/FancyTable.svelte';
-  import { myOffers, enrichOffers } from '../../exchangeStore.js';
+  import { myOrders, enrichOrders } from '../../exchangeStore.js';
   import { createEventDispatcher, onMount } from 'svelte';
 
   export let user = null;
@@ -12,9 +12,9 @@
   let bumping = false;
   let error = null;
 
-  $: filteredOffers = sideFilter === 'all'
-    ? $myOffers
-    : $myOffers.filter(o => o.type === sideFilter);
+  $: filteredOrders = sideFilter === 'all'
+    ? $myOrders
+    : $myOrders.filter(o => o.type === sideFilter);
 
   const columns = [
     { key: 'item_name', header: 'Item', main: true, sortable: true, searchable: true },
@@ -45,25 +45,25 @@
     {
       key: '_actions', header: '', width: '120px', sortable: false, searchable: false,
       formatter: (val, row) => {
-        return `<span class="offer-actions">`
-          + `<button class="offer-action-btn edit" data-action="edit" data-id="${row.id}">Edit</button>`
-          + `<button class="offer-action-btn close" data-action="close" data-id="${row.id}">Close</button>`
+        return `<span class="order-actions">`
+          + `<button class="order-action-btn edit" data-action="edit" data-id="${row.id}">Edit</button>`
+          + `<button class="order-action-btn close" data-action="close" data-id="${row.id}">Close</button>`
           + `</span>`;
       }
     },
   ];
 
-  onMount(loadOffers);
+  onMount(loadOrders);
 
-  async function loadOffers() {
+  async function loadOrders() {
     if (!user) return;
     loading = true;
     error = null;
     try {
-      const res = await fetch('/api/market/exchange/offers');
-      if (!res.ok) throw new Error('Failed to load offers');
+      const res = await fetch('/api/market/exchange/orders');
+      if (!res.ok) throw new Error('Failed to load orders');
       const data = await res.json();
-      myOffers.set(enrichOffers(data));
+      myOrders.set(enrichOrders(data));
     } catch (e) {
       error = e.message;
     } finally {
@@ -83,9 +83,9 @@
     return `${days}d ago`;
   }
 
-  /** Bump all eligible (active/stale) offers */
+  /** Bump all eligible (active/stale) orders */
   export async function bumpAll() {
-    const eligible = $myOffers.filter(o => {
+    const eligible = $myOrders.filter(o => {
       const s = o.computed_state || computeState(o.bumped_at);
       return s !== 'terminated' && s !== 'closed';
     });
@@ -94,32 +94,32 @@
     bumping = true;
     error = null;
     let failed = 0;
-    for (const offer of eligible) {
+    for (const order of eligible) {
       try {
-        const res = await fetch(`/api/market/exchange/offers/${offer.id}/bump`, { method: 'POST' });
+        const res = await fetch(`/api/market/exchange/orders/${order.id}/bump`, { method: 'POST' });
         if (!res.ok) failed++;
       } catch { failed++; }
     }
     bumping = false;
-    if (failed > 0) error = `Failed to bump ${failed} offer(s)`;
-    await loadOffers();
+    if (failed > 0) error = `Failed to bump ${failed} order(s)`;
+    await loadOrders();
   }
 
-  async function handleClose(offer) {
+  async function handleClose(order) {
     try {
-      const res = await fetch(`/api/market/exchange/offers/${offer.id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/market/exchange/orders/${order.id}`, { method: 'DELETE' });
       if (!res.ok) {
         const data = await res.json();
         throw new Error(data.error || 'Close failed');
       }
-      await loadOffers();
+      await loadOrders();
     } catch (e) {
       error = e.message;
     }
   }
 
-  function handleEdit(offer) {
-    dispatch('edit', offer);
+  function handleEdit(order) {
+    dispatch('edit', order);
   }
 
   /** Intercept clicks on action buttons inside FancyTable rows */
@@ -131,40 +131,40 @@
 
     const action = btn.dataset.action;
     const id = parseInt(btn.dataset.id, 10);
-    const offer = $myOffers.find(o => o.id === id);
-    if (!offer) return;
+    const order = $myOrders.find(o => o.id === id);
+    if (!order) return;
 
-    if (action === 'edit') handleEdit(offer);
-    else if (action === 'close') handleClose(offer);
+    if (action === 'edit') handleEdit(order);
+    else if (action === 'close') handleClose(order);
   }
 
   export function refresh() {
-    return loadOffers();
+    return loadOrders();
   }
 
 </script>
 
 {#if !user}
   <div class="empty-state">
-    <p>Please log in to view your offers.</p>
+    <p>Please log in to view your orders.</p>
   </div>
 {:else if error}
   <div class="error-state">
     <p>{error}</p>
-    <button class="btn-retry" on:click={loadOffers}>Retry</button>
+    <button class="btn-retry" on:click={loadOrders}>Retry</button>
   </div>
 {:else}
   <!-- svelte-ignore a11y-click-events-have-key-events -->
   <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="offers-table" on:click|capture={handleTableClick}>
+  <div class="orders-table" on:click|capture={handleTableClick}>
     <FancyTable
       columns={columns}
-      data={filteredOffers}
+      data={filteredOrders}
       rowHeight={30}
       compact={true}
       sortable={true}
       searchable={true}
-      emptyMessage={sideFilter === 'all' ? 'You have no active offers' : `No ${sideFilter === 'BUY' ? 'buy' : 'sell'} offers`}
+      emptyMessage={sideFilter === 'all' ? 'You have no active orders' : `No ${sideFilter === 'BUY' ? 'buy' : 'sell'} orders`}
       rowClass={(row) => {
         const s = row.state_display;
         return s === 'stale' ? 'row-stale' : s === 'expired' ? 'row-expired' : null;
@@ -174,7 +174,7 @@
 {/if}
 
 <style>
-  .offers-table {
+  .orders-table {
     flex: 1;
     min-height: 0;
     background: var(--secondary-color);
@@ -205,20 +205,20 @@
     transition: all 0.2s ease;
   }
   .btn-retry:hover { background: var(--hover-color); border-color: var(--border-hover); }
-  .offers-table :global(.row-stale) {
+  .orders-table :global(.row-stale) {
     opacity: 0.7;
   }
-  .offers-table :global(.row-expired) {
+  .orders-table :global(.row-expired) {
     opacity: 0.45;
   }
 
   /* Action buttons inside FancyTable cells */
-  .offers-table :global(.offer-actions) {
+  .orders-table :global(.order-actions) {
     display: flex;
     gap: 4px;
     align-items: center;
   }
-  .offers-table :global(.offer-action-btn) {
+  .orders-table :global(.order-action-btn) {
     padding: 2px 6px;
     border: 1px solid var(--border-color);
     border-radius: 4px;
@@ -229,14 +229,14 @@
     white-space: nowrap;
     transition: all 0.15s ease;
   }
-  .offers-table :global(.offer-action-btn:hover) {
+  .orders-table :global(.order-action-btn:hover) {
     background: var(--hover-color);
   }
-  .offers-table :global(.offer-action-btn.close) {
+  .orders-table :global(.order-action-btn.close) {
     color: var(--error-color, #ef4444);
     border-color: var(--error-color, #ef4444);
   }
-  .offers-table :global(.offer-action-btn.close:hover) {
+  .orders-table :global(.order-action-btn.close:hover) {
     background: rgba(239, 68, 68, 0.15);
   }
 </style>

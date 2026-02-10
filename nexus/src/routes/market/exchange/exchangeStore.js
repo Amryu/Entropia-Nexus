@@ -2,16 +2,16 @@
 import { writable } from 'svelte/store';
 import { computeState } from './exchangeConstants.js';
 
-/** User's own active offers */
-export const myOffers = writable([]);
+/** User's own active orders */
+export const myOrders = writable([]);
 
 /**
- * Enrich raw offer data with display fields (item_name, state_display).
- * @param {Array} offers - Raw offers from the API
- * @returns {Array} Enriched offers
+ * Enrich raw order data with display fields (item_name, state_display).
+ * @param {Array} orders - Raw orders from the API
+ * @returns {Array} Enriched orders
  */
-export function enrichOffers(offers) {
-  return (offers || []).map(o => ({
+export function enrichOrders(orders) {
+  return (orders || []).map(o => ({
     ...o,
     state_display: o.computed_state || computeState(o.bumped_at),
     item_name: o.item_name || o.details?.item_name || `Item #${o.item_id}`,
@@ -21,11 +21,11 @@ export function enrichOffers(offers) {
 /** User's server-stored inventory */
 export const inventory = writable([]);
 
-/** Trade list items (offers the user wants to act on) */
+/** Trade list items (orders the user wants to act on) */
 export const tradeList = writable([]);
 
-/** Whether the my-offers view is open */
-export const showMyOffers = writable(false);
+/** Whether the my-orders view is open */
+export const showMyOrders = writable(false);
 
 /** Whether the inventory panel is open */
 export const showInventory = writable(false);
@@ -41,22 +41,22 @@ export const tradeRequests = writable([]);
 
 /**
  * Add an item to the trade list.
- * @param {object} offer - The offer to add (must include offerId and side)
+ * @param {object} order - The order to add (must include orderId and side)
  */
-export function addToTradeList(offer) {
+export function addToTradeList(order) {
   tradeList.update(items => {
     // Don't add duplicates
-    if (items.some(i => i.offerId === offer.offerId)) return items;
-    return [...items, offer];
+    if (items.some(i => i.orderId === order.orderId)) return items;
+    return [...items, order];
   });
 }
 
 /**
  * Remove an item from the trade list.
- * @param {number} offerId
+ * @param {number} orderId
  */
-export function removeFromTradeList(offerId) {
-  tradeList.update(items => items.filter(i => i.offerId !== offerId));
+export function removeFromTradeList(orderId) {
+  tradeList.update(items => items.filter(i => i.orderId !== orderId));
 }
 
 /**

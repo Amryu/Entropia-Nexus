@@ -1,11 +1,11 @@
 //@ts-nocheck
 import { getResponse } from '$lib/util.js';
-import { getOfferById, updateOffer, closeOffer, PLANETS } from '$lib/server/exchange.js';
+import { getOrderById, updateOrder, closeOrder, PLANETS } from '$lib/server/exchange.js';
 
 /**
- * Validate and sanitize offer details JSONB.
+ * Validate and sanitize order details JSONB.
  */
-function validateOfferDetails(details) {
+function validateOrderDetails(details) {
   if (details === null || details === undefined) return null;
   if (typeof details !== 'object' || Array.isArray(details)) return null;
 
@@ -68,27 +68,27 @@ function getVerifiedUser(locals) {
 }
 
 /**
- * PUT /api/market/exchange/offers/[id] — Edit an offer
+ * PUT /api/market/exchange/orders/[id] — Edit an order
  */
 export async function PUT({ params, request, locals }) {
   const { user, error } = getVerifiedUser(locals);
   if (error) return error;
 
-  const offerId = parseInt(params.id, 10);
-  if (!Number.isFinite(offerId)) {
-    return getResponse({ error: 'Invalid offer ID' }, 400);
+  const orderId = parseInt(params.id, 10);
+  if (!Number.isFinite(orderId)) {
+    return getResponse({ error: 'Invalid order ID' }, 400);
   }
 
   // Verify ownership
-  const existing = await getOfferById(offerId);
+  const existing = await getOrderById(orderId);
   if (!existing) {
-    return getResponse({ error: 'Offer not found' }, 404);
+    return getResponse({ error: 'Order not found' }, 404);
   }
   if (String(existing.user_id) !== String(user.id)) {
     return getResponse({ error: 'Not authorized' }, 403);
   }
   if (existing.state === 'closed') {
-    return getResponse({ error: 'Cannot edit a closed offer' }, 400);
+    return getResponse({ error: 'Cannot edit a closed order' }, 400);
   }
 
   let body;
@@ -115,45 +115,45 @@ export async function PUT({ params, request, locals }) {
   }
 
   const minQuantity = body.min_quantity != null ? parseInt(body.min_quantity, 10) : null;
-  const details = validateOfferDetails(body.details);
+  const details = validateOrderDetails(body.details);
 
   try {
-    const updated = await updateOffer(offerId, { quantity, minQuantity, markup, planet, details });
+    const updated = await updateOrder(orderId, { quantity, minQuantity, markup, planet, details });
     return getResponse(updated, 200);
   } catch (err) {
-    console.error('Error updating offer:', err);
-    return getResponse({ error: 'Failed to update offer' }, 500);
+    console.error('Error updating order:', err);
+    return getResponse({ error: 'Failed to update order' }, 500);
   }
 }
 
 /**
- * DELETE /api/market/exchange/offers/[id] — Close an offer
+ * DELETE /api/market/exchange/orders/[id] — Close an order
  */
 export async function DELETE({ params, locals }) {
   const { user, error: authErr } = getVerifiedUser(locals);
   if (authErr) return authErr;
 
-  const offerId = parseInt(params.id, 10);
-  if (!Number.isFinite(offerId)) {
-    return getResponse({ error: 'Invalid offer ID' }, 400);
+  const orderId = parseInt(params.id, 10);
+  if (!Number.isFinite(orderId)) {
+    return getResponse({ error: 'Invalid order ID' }, 400);
   }
 
-  const existing = await getOfferById(offerId);
+  const existing = await getOrderById(orderId);
   if (!existing) {
-    return getResponse({ error: 'Offer not found' }, 404);
+    return getResponse({ error: 'Order not found' }, 404);
   }
   if (String(existing.user_id) !== String(user.id)) {
     return getResponse({ error: 'Not authorized' }, 403);
   }
   if (existing.state === 'closed') {
-    return getResponse({ error: 'Offer is already closed' }, 400);
+    return getResponse({ error: 'Order is already closed' }, 400);
   }
 
   try {
-    await closeOffer(offerId);
+    await closeOrder(orderId);
     return getResponse({ success: true }, 200);
   } catch (err) {
-    console.error('Error closing offer:', err);
-    return getResponse({ error: 'Failed to close offer' }, 500);
+    console.error('Error closing order:', err);
+    return getResponse({ error: 'Failed to close order' }, 500);
   }
 }

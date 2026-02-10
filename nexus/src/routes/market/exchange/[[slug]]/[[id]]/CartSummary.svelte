@@ -38,8 +38,8 @@
     dispatch('close');
   }
 
-  function handleRemove(offerId) {
-    removeFromTradeList(offerId);
+  function handleRemove(orderId) {
+    removeFromTradeList(orderId);
   }
 
   function handleClear() {
@@ -68,7 +68,7 @@
             target_id: group.sellerId,
             planet: group.planet || null,
             items: group.items.map(item => ({
-              offer_id: item.offerId || null,
+              offer_id: item.orderId || null,
               item_id: item.itemId,
               item_name: item.itemName || 'Unknown',
               quantity: item.quantity || 1,
@@ -112,7 +112,7 @@
 
   {#if $tradeList.length === 0}
     <div class="empty-state">
-      <p>Your trade list is empty. Add items from the order book or seller offers.</p>
+      <p>Your trade list is empty. Add items from the order book or seller orders.</p>
     </div>
   {:else}
     <div class="cart-body">
@@ -142,7 +142,7 @@
               <div class="item-total">
                 {((item.unitPrice || 0) * (item.quantity || 1)).toFixed(2)}
               </div>
-              <button class="remove-btn" on:click={() => handleRemove(item.offerId)} title="Remove">&times;</button>
+              <button class="remove-btn" on:click={() => handleRemove(item.orderId)} title="Remove">&times;</button>
             </div>
           {/each}
         </div>

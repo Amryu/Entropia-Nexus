@@ -1,7 +1,7 @@
 <script>
   //@ts-nocheck
   import { createEventDispatcher, onMount } from 'svelte';
-  import { myOffers, inventory, enrichOffers } from '../../exchangeStore.js';
+  import { myOrders, inventory, enrichOrders } from '../../exchangeStore.js';
 
   export let show = false;
 
@@ -17,21 +17,21 @@
   async function computeDiscrepancies() {
     loading = true;
 
-    // Ensure offers are loaded
-    let offers = $myOffers;
-    if (!offers || offers.length === 0) {
+    // Ensure orders are loaded
+    let orders = $myOrders;
+    if (!orders || orders.length === 0) {
       try {
-        const res = await fetch('/api/market/exchange/offers');
+        const res = await fetch('/api/market/exchange/orders');
         if (res.ok) {
-          offers = enrichOffers(await res.json());
-          myOffers.set(offers);
+          orders = enrichOrders(await res.json());
+          myOrders.set(orders);
         }
       } catch {}
     }
 
-    // Only check SELL offers
-    const sellOffers = (offers || []).filter(o => o.type === 'SELL');
-    if (sellOffers.length === 0) {
+    // Only check SELL orders
+    const sellOrders = (orders || []).filter(o => o.type === 'SELL');
+    if (sellOrders.length === 0) {
       discrepancies = [];
       loading = false;
       return;
@@ -45,16 +45,16 @@
       }
     }
 
-    discrepancies = sellOffers
-      .map(offer => {
-        const invQty = invQtyMap.get(offer.item_id) || 0;
-        if (offer.quantity > invQty) {
+    discrepancies = sellOrders
+      .map(order => {
+        const invQty = invQtyMap.get(order.item_id) || 0;
+        if (order.quantity > invQty) {
           return {
-            offer,
-            offerQty: offer.quantity,
+            order,
+            orderQty: order.quantity,
             invQty,
-            deficit: offer.quantity - invQty,
-            item_name: offer.details?.item_name || `Item #${offer.item_id}`,
+            deficit: order.quantity - invQty,
+            item_name: order.details?.item_name || `Item #${order.item_id}`,
             _processing: false,
           };
         }
@@ -65,43 +65,43 @@
     loading = false;
   }
 
-  async function adjustOffer(disc) {
+  async function adjustOrder(disc) {
     disc._processing = true;
     discrepancies = discrepancies;
     try {
       const newQty = disc.invQty;
       if (newQty <= 0) {
-        await cancelOffer(disc);
+        await cancelOrder(disc);
         return;
       }
-      const res = await fetch(`/api/market/exchange/offers/${disc.offer.id}`, {
+      const res = await fetch(`/api/market/exchange/orders/${disc.order.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           quantity: newQty,
-          markup: disc.offer.markup,
-          planet: disc.offer.planet,
-          min_quantity: disc.offer.min_quantity ? Math.min(disc.offer.min_quantity, newQty) : null,
-          details: disc.offer.details,
+          markup: disc.order.markup,
+          planet: disc.order.planet,
+          min_quantity: disc.order.min_quantity ? Math.min(disc.order.min_quantity, newQty) : null,
+          details: disc.order.details,
         }),
       });
-      if (!res.ok) throw new Error('Failed to adjust offer');
+      if (!res.ok) throw new Error('Failed to adjust order');
       discrepancies = discrepancies.filter(d => d !== disc);
-      refreshOffers();
+      refreshOrders();
     } catch (e) {
       disc._processing = false;
       discrepancies = discrepancies;
     }
   }
 
-  async function cancelOffer(disc) {
+  async function cancelOrder(disc) {
     disc._processing = true;
     discrepancies = discrepancies;
     try {
-      const res = await fetch(`/api/market/exchange/offers/${disc.offer.id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Failed to cancel offer');
+      const res = await fetch(`/api/market/exchange/orders/${disc.order.id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to cancel order');
       discrepancies = discrepancies.filter(d => d !== disc);
-      refreshOffers();
+      refreshOrders();
     } catch (e) {
       disc._processing = false;
       discrepancies = discrepancies;
@@ -112,7 +112,7 @@
     adjustingAll = true;
     const toProcess = [...discrepancies];
     for (const disc of toProcess) {
-      await adjustOffer(disc);
+      await adjustOrder(disc);
     }
     adjustingAll = false;
   }
@@ -121,15 +121,15 @@
     cancellingAll = true;
     const toProcess = [...discrepancies];
     for (const disc of toProcess) {
-      await cancelOffer(disc);
+      await cancelOrder(disc);
     }
     cancellingAll = false;
   }
 
-  async function refreshOffers() {
+  async function refreshOrders() {
     try {
-      const res = await fetch('/api/market/exchange/offers');
-      if (res.ok) myOffers.set(enrichOffers(await res.json()));
+      const res = await fetch('/api/market/exchange/orders');
+      if (res.ok) myOrders.set(enrichOrders(await res.json()));
     } catch {}
   }
 
@@ -154,15 +154,15 @@
   <div class="modal-overlay" on:click|self={handleClose}>
     <div class="modal">
       <div class="modal-header">
-        <h3 class="modal-title">Offer Coverage</h3>
+        <h3 class="modal-title">Order Coverage</h3>
         <button class="close-btn" on:click={handleClose}>&times;</button>
       </div>
 
       {#if loading}
-        <p class="loading-msg">Checking offers against inventory...</p>
+        <p class="loading-msg">Checking orders against inventory...</p>
       {:else if discrepancies.length > 0}
         <p class="discrepancy-desc">
-          These sell offers advertise more items than you currently have in inventory.
+          These sell orders advertise more items than you currently have in inventory.
         </p>
         <div class="bulk-actions">
           <button
@@ -181,7 +181,7 @@
             <thead>
               <tr>
                 <th>Item</th>
-                <th>Offer</th>
+                <th>Order</th>
                 <th>Inventory</th>
                 <th>Deficit</th>
                 <th></th>
@@ -191,19 +191,19 @@
               {#each discrepancies as disc}
                 <tr>
                   <td class="disc-name">{disc.item_name}</td>
-                  <td>{disc.offerQty}</td>
+                  <td>{disc.orderQty}</td>
                   <td>{disc.invQty}</td>
                   <td class="disc-deficit">-{disc.deficit}</td>
                   <td class="disc-actions">
                     {#if disc._processing}
                       <span class="processing">...</span>
                     {:else}
-                      <button class="disc-btn adjust" on:click={() => adjustOffer(disc)}
+                      <button class="disc-btn adjust" on:click={() => adjustOrder(disc)}
                         title={disc.invQty > 0 ? `Set to ${disc.invQty}` : 'Cancel (no inventory)'}>
                         {disc.invQty > 0 ? 'Adjust' : 'Cancel'}
                       </button>
                       {#if disc.invQty > 0}
-                        <button class="disc-btn cancel" on:click={() => cancelOffer(disc)}>Cancel</button>
+                        <button class="disc-btn cancel" on:click={() => cancelOrder(disc)}>Cancel</button>
                       {/if}
                     {/if}
                   </td>
@@ -213,7 +213,7 @@
           </table>
         </div>
       {:else}
-        <div class="coverage-ok">All sell offers are covered by your inventory.</div>
+        <div class="coverage-ok">All sell orders are covered by your inventory.</div>
       {/if}
 
       <div class="modal-actions">

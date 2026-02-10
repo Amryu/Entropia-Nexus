@@ -8,10 +8,10 @@
   /** @type {boolean} */
   export let show = false;
 
-  /** @type {object|null} The offer being responded to */
-  export let offer = null;
+  /** @type {object|null} The order being responded to */
+  export let order = null;
 
-  /** @type {'buy'|'sell'} What the user is doing (buy = responding to a sell offer) */
+  /** @type {'buy'|'sell'} What the user is doing (buy = responding to a sell order) */
   export let side = 'buy';
 
   /** @type {object|null} Item details for display */
@@ -32,17 +32,17 @@
     submitting = false;
   }
 
-  $: if (show && offer) {
-    quantity = offer.quantity || 1;
+  $: if (show && order) {
+    quantity = order.quantity || 1;
     error = null;
     submitting = false;
   }
 
-  $: minQty = offer?.min_quantity || 1;
-  $: maxQty = offer?.quantity || 1;
+  $: minQty = order?.min_quantity || 1;
+  $: maxQty = order?.quantity || 1;
   $: isOwnOrder = (() => {
     const userId = $page?.data?.session?.user?.id;
-    const sellerId = offer?.user_id ?? offer?.SellerId ?? offer?.UserId ?? null;
+    const sellerId = order?.user_id ?? order?.SellerId ?? order?.UserId ?? null;
     return userId && sellerId && String(userId) === String(sellerId);
   })();
   $: qtyValid = quantity >= minQty && quantity <= maxQty;
@@ -52,15 +52,15 @@
   $: maxTT = getMaxTT(item);
 
   $: markupDisplay = (() => {
-    const mu = offer?.markup;
+    const mu = order?.markup;
     if (mu == null) return 'N/A';
     return isAbsMu ? `+${Number(mu).toFixed(2)} PED` : `${Number(mu).toFixed(1)}%`;
   })();
 
   // Compute unit price (TT + MU per unit)
   $: unitPrice = (() => {
-    if (maxTT == null || offer?.markup == null) return null;
-    return isAbsMu ? maxTT + offer.markup : maxTT * (offer.markup / 100);
+    if (maxTT == null || order?.markup == null) return null;
+    return isAbsMu ? maxTT + order.markup : maxTT * (order.markup / 100);
   })();
 
   // Compute total TT and total price for the selected quantity
@@ -70,10 +70,10 @@
   // Item metadata for display
   $: tierable = isItemTierable(item);
   $: blueprint = isBlueprint(item);
-  $: offerTier = offer?.details?.Tier ?? offer?.details?.tier ?? null;
-  $: offerTiR = offer?.details?.TierIncreaseRate ?? offer?.details?.tir ?? null;
-  $: offerQR = offer?.details?.QualityRating ?? null;
-  $: offerCurrentTT = offer?.details?.CurrentTT ?? null;
+  $: orderTier = order?.details?.Tier ?? order?.details?.tier ?? null;
+  $: orderTiR = order?.details?.TierIncreaseRate ?? order?.details?.tir ?? null;
+  $: orderQR = order?.details?.QualityRating ?? null;
+  $: orderCurrentTT = order?.details?.CurrentTT ?? null;
 
   $: partnerLabel = side === 'buy' ? 'Seller' : 'Buyer';
   $: actionLabel = side === 'buy' ? 'Buy Now' : 'Sell Now';
@@ -90,7 +90,7 @@
 
     try {
       dispatch('confirm', {
-        offer,
+        order,
         quantity,
         side
       });
@@ -105,7 +105,7 @@
   }
 </script>
 
-{#if show && offer}
+{#if show && order}
   <div
     class="modal-overlay"
     role="button"
@@ -122,39 +122,39 @@
       <div class="dialog-body">
         <div class="info-row">
           <span class="info-label">Item</span>
-          <span class="info-value">{offer.details?.item_name || item?.Name || 'Unknown'}</span>
+          <span class="info-value">{order.details?.item_name || item?.Name || 'Unknown'}</span>
         </div>
         <div class="info-row">
           <span class="info-label">{partnerLabel}</span>
-          <span class="info-value">{offer.seller_name || 'Unknown'}</span>
+          <span class="info-value">{order.seller_name || 'Unknown'}</span>
         </div>
         <div class="info-row">
           <span class="info-label">Planet</span>
-          <span class="info-value">{offer.planet || 'Any'}</span>
+          <span class="info-value">{order.planet || 'Any'}</span>
         </div>
 
-        {#if tierable && (offerTier != null || offerTiR != null)}
+        {#if tierable && (orderTier != null || orderTiR != null)}
           <div class="info-row">
             <span class="info-label">Tier</span>
-            <span class="info-value">{offerTier ?? 'N/A'}</span>
+            <span class="info-value">{orderTier ?? 'N/A'}</span>
           </div>
           <div class="info-row">
             <span class="info-label">TiR</span>
-            <span class="info-value">{offerTiR ?? 'N/A'}</span>
+            <span class="info-value">{orderTiR ?? 'N/A'}</span>
           </div>
         {/if}
 
-        {#if blueprint && offerQR != null}
+        {#if blueprint && orderQR != null}
           <div class="info-row">
             <span class="info-label">QR</span>
-            <span class="info-value">{Number(offerQR).toFixed(2)}</span>
+            <span class="info-value">{Number(orderQR).toFixed(2)}</span>
           </div>
         {/if}
 
-        {#if isCond && !blueprint && offerCurrentTT != null}
+        {#if isCond && !blueprint && orderCurrentTT != null}
           <div class="info-row">
             <span class="info-label">Current TT</span>
-            <span class="info-value">{Number(offerCurrentTT).toFixed(2)} PED</span>
+            <span class="info-value">{Number(orderCurrentTT).toFixed(2)} PED</span>
           </div>
         {/if}
 
@@ -185,7 +185,7 @@
             </div>
             <div class="price-row">
               <span class="price-label">Markup</span>
-              <span class="price-value">{isAbsMu ? fmt(offer?.markup) + ' PED' : fmt(totalPrice - totalTT) + ' PED'}</span>
+              <span class="price-value">{isAbsMu ? fmt(order?.markup) + ' PED' : fmt(totalPrice - totalTT) + ' PED'}</span>
             </div>
             <div class="price-row total">
               <span class="price-label">Total Price</span>
@@ -210,15 +210,15 @@
         {#if isOwnOrder}
           <button
             class="btn btn-edit"
-            on:click={() => dispatch('editOwn', { offer })}
+            on:click={() => dispatch('editOwn', { order })}
           >
-            Edit Offer
+            Edit Order
           </button>
         {:else}
           {#if showAddToList}
             <button
               class="btn btn-list"
-              on:click={() => dispatch('addToList', { offer, quantity, side })}
+              on:click={() => dispatch('addToList', { order, quantity, side })}
               disabled={submitting || !qtyValid}
             >
               Add to Trade List

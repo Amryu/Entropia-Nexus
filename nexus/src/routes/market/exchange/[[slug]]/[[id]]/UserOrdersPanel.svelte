@@ -15,12 +15,12 @@
   /** @type {Array} All slim items from the exchange categorized data */
   export let allItems = [];
 
-  let offers = [];
+  let orders = [];
   let loading = false;
   let error = null;
   export let sideFilter = 'all'; // 'all' | 'BUY' | 'SELL'
 
-  $: if (user?.id) loadOffers(user.id);
+  $: if (user?.id) loadOrders(user.id);
 
   // Build item lookup by ID: item_id -> slim item { i, n, t, v, ... }
   $: itemLookup = (() => {
@@ -31,21 +31,21 @@
     return map;
   })();
 
-  $: filteredOffers = sideFilter === 'all'
-    ? offers
-    : offers.filter(o => o.type === sideFilter);
+  $: filteredOrders = sideFilter === 'all'
+    ? orders
+    : orders.filter(o => o.type === sideFilter);
 
-  // Set of offer IDs already in the trade list
-  $: tradeListOfferIds = new Set($tradeList.map(i => i.offerId));
+  // Set of order IDs already in the trade list
+  $: tradeListOrderIds = new Set($tradeList.map(i => i.orderId));
 
-  async function loadOffers(userId) {
+  async function loadOrders(userId) {
     loading = true;
     error = null;
-    offers = [];
+    orders = [];
     try {
-      const res = await fetch(`/api/market/exchange/offers/user/${userId}`);
-      if (!res.ok) throw new Error('Failed to load offers');
-      offers = await res.json();
+      const res = await fetch(`/api/market/exchange/orders/user/${userId}`);
+      if (!res.ok) throw new Error('Failed to load orders');
+      orders = await res.json();
     } catch (err) {
       error = err.message;
     } finally {
@@ -54,7 +54,7 @@
   }
 
   export function refresh() {
-    if (user?.id) loadOffers(user.id);
+    if (user?.id) loadOrders(user.id);
   }
 
   function fmt(v) {
@@ -107,46 +107,46 @@
       {
         key: '_action', header: '', width: '55px', sortable: false, searchable: false,
         formatter: (v, row) => {
-          const offerId = row?.id ?? 0;
-          const inList = tradeListOfferIds.has(offerId);
+          const orderId = row?.id ?? 0;
+          const inList = tradeListOrderIds.has(orderId);
           if (inList) {
             return `<span class="cell-badge added-badge">Added</span>`;
           }
           const side = row?.type === 'SELL' ? 'buy' : 'sell';
           const label = side === 'buy' ? 'Buy' : 'Sell';
-          const cls = side === 'buy' ? 'buy-offer-btn' : 'sell-offer-btn';
-          return `<button class="cell-button ${cls}" data-offer-action="${offerId}" data-action-side="${side}">${label}</button>`;
+          const cls = side === 'buy' ? 'buy-order-btn' : 'sell-order-btn';
+          return `<button class="cell-button ${cls}" data-order-action="${orderId}" data-action-side="${side}">${label}</button>`;
         }
       }
     ];
-    // Force re-evaluation when tradeListOfferIds changes
-    tradeListOfferIds;
+    // Force re-evaluation when tradeListOrderIds changes
+    tradeListOrderIds;
     return cols;
   })();
 
   function handleClick(e) {
-    const btn = e.target.closest('[data-offer-action]');
+    const btn = e.target.closest('[data-order-action]');
     if (!btn) return;
     e.stopPropagation();
     e.preventDefault();
 
-    const offerId = parseInt(btn.dataset.offerAction, 10);
+    const orderId = parseInt(btn.dataset.orderAction, 10);
     const side = btn.dataset.actionSide;
-    const offer = offers.find(o => o.id === offerId);
-    if (!offer) return;
+    const order = orders.find(o => o.id === orderId);
+    if (!order) return;
 
-    dispatch('offerAction', {
-      offerId: offer.id,
-      itemId: offer.item_id,
-      itemName: offer.details?.item_name || 'Unknown',
+    dispatch('orderAction', {
+      orderId: order.id,
+      itemId: order.item_id,
+      itemName: order.details?.item_name || 'Unknown',
       sellerId: user?.id,
-      sellerName: offer.seller_name || user?.name || 'Unknown',
-      planet: offer.planet || '',
-      quantity: offer.quantity || 1,
-      unitPrice: Number(offer.markup) || 0,
-      markup: Number(offer.markup) || 0,
-      side: offer.type || 'SELL',
-      offer,
+      sellerName: order.seller_name || user?.name || 'Unknown',
+      planet: order.planet || '',
+      quantity: order.quantity || 1,
+      unitPrice: Number(order.markup) || 0,
+      markup: Number(order.markup) || 0,
+      side: order.type || 'SELL',
+      order,
     });
   }
 
@@ -166,30 +166,30 @@
 
 <!-- svelte-ignore a11y-click-events-have-key-events -->
 <!-- svelte-ignore a11y-no-static-element-interactions -->
-<div class="user-offers-panel" on:click|capture={handleClick}>
+<div class="user-orders-panel" on:click|capture={handleClick}>
 
   {#if loading}
-    <div class="panel-loading">Loading offers...</div>
+    <div class="panel-loading">Loading orders...</div>
   {:else if error}
     <div class="panel-error">{error}</div>
-  {:else if filteredOffers.length === 0}
-    <div class="panel-empty">{offers.length === 0 ? 'No active offers' : 'No matching offers'}</div>
+  {:else if filteredOrders.length === 0}
+    <div class="panel-empty">{orders.length === 0 ? 'No active orders' : 'No matching orders'}</div>
   {:else}
     <FancyTable
       {columns}
-      data={filteredOffers}
+      data={filteredOrders}
       rowHeight={30}
       compact={true}
       sortable={true}
       searchable={false}
-      emptyMessage="No offers"
+      emptyMessage="No orders"
       on:rowClick={handleRowClick}
     />
   {/if}
 </div>
 
 <style>
-  .user-offers-panel {
+  .user-orders-panel {
     flex: 1;
     min-height: 0;
     overflow: hidden;
@@ -205,23 +205,23 @@
   .panel-error {
     color: var(--error-color, #ef4444);
   }
-  .user-offers-panel :global(.buy-offer-btn) {
+  .user-orders-panel :global(.buy-order-btn) {
     color: var(--success-color, #16a34a);
     border-color: var(--success-color, #16a34a);
     font-size: 10px;
   }
-  .user-offers-panel :global(.buy-offer-btn:hover) {
+  .user-orders-panel :global(.buy-order-btn:hover) {
     background: rgba(22, 163, 74, 0.15);
   }
-  .user-offers-panel :global(.sell-offer-btn) {
+  .user-orders-panel :global(.sell-order-btn) {
     color: var(--error-color, #ef4444);
     border-color: var(--error-color, #ef4444);
     font-size: 10px;
   }
-  .user-offers-panel :global(.sell-offer-btn:hover) {
+  .user-orders-panel :global(.sell-order-btn:hover) {
     background: rgba(239, 68, 68, 0.15);
   }
-  .user-offers-panel :global(.added-badge) {
+  .user-orders-panel :global(.added-badge) {
     font-size: 10px;
     color: var(--text-muted);
     font-style: italic;

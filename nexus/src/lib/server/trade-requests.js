@@ -302,9 +302,9 @@ export async function findTradeRequestByThread(threadId) {
 }
 
 /**
- * Get all active offers by a specific user (public endpoint).
+ * Get all active orders by a specific user (public endpoint).
  */
-export async function getUserPublicOffers(userId) {
+export async function getUserPublicOrders(userId) {
   const query = `
     SELECT
       o.id, o.type, o.item_id, o.quantity, o.min_quantity,

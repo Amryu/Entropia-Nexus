@@ -3,7 +3,7 @@ import { getResponse } from '$lib/util.js';
 import { getOrderBook } from '$lib/server/exchange.js';
 
 /**
- * GET /api/market/exchange/offers/item/[itemId] — Get order book for an item
+ * GET /api/market/exchange/orders/item/[itemId] — Get order book for an item
  * Public endpoint, no auth required.
  */
 export async function GET({ params }) {

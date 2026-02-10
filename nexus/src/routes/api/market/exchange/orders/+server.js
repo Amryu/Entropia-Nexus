@@ -1,14 +1,14 @@
 //@ts-nocheck
 import { getResponse } from '$lib/util.js';
-import { getUserOffers, createOffer, countUserOffersBySide, countUserOffersForItem, MAX_OFFERS_PER_SIDE, MAX_OFFERS_PER_ITEM, PLANETS } from '$lib/server/exchange.js';
+import { getUserOrders, createOrder, countUserOrdersBySide, countUserOrdersForItem, MAX_ORDERS_PER_SIDE, MAX_ORDERS_PER_ITEM, PLANETS } from '$lib/server/exchange.js';
 
 const VALID_TYPES = ['BUY', 'SELL'];
 
 /**
- * Validate and sanitize offer details JSONB.
+ * Validate and sanitize order details JSONB.
  * Only allows known metadata keys with correct types.
  */
-function validateOfferDetails(details) {
+function validateOrderDetails(details) {
   if (details === null || details === undefined) return null;
   if (typeof details !== 'object' || Array.isArray(details)) return null;
 
@@ -71,23 +71,23 @@ function getVerifiedUser(locals) {
 }
 
 /**
- * GET /api/market/exchange/offers — Get current user's offers (My Offers)
+ * GET /api/market/exchange/orders — Get current user's orders (My Orders)
  */
 export async function GET({ locals }) {
   const { user, error } = getVerifiedUser(locals);
   if (error) return error;
 
   try {
-    const offers = await getUserOffers(user.id);
-    return getResponse(offers, 200);
+    const orders = await getUserOrders(user.id);
+    return getResponse(orders, 200);
   } catch (err) {
-    console.error('Error fetching user offers:', err);
-    return getResponse({ error: 'Failed to fetch offers' }, 500);
+    console.error('Error fetching user orders:', err);
+    return getResponse({ error: 'Failed to fetch orders' }, 500);
   }
 }
 
 /**
- * POST /api/market/exchange/offers — Create a new offer
+ * POST /api/market/exchange/orders — Create a new order
  */
 export async function POST({ request, locals }) {
   const { user, error } = getVerifiedUser(locals);
@@ -136,43 +136,43 @@ export async function POST({ request, locals }) {
     return getResponse({ error: 'min_quantity must be a positive integer' }, 400);
   }
 
-  const details = validateOfferDetails(body.details);
+  const details = validateOrderDetails(body.details);
 
-  // Check offer limit per side (global cap)
+  // Check order limit per side (global cap)
   try {
-    const sideCount = await countUserOffersBySide(user.id, type);
-    if (sideCount >= MAX_OFFERS_PER_SIDE) {
+    const sideCount = await countUserOrdersBySide(user.id, type);
+    if (sideCount >= MAX_ORDERS_PER_SIDE) {
       return getResponse({
-        error: `Maximum ${MAX_OFFERS_PER_SIDE} ${type.toLowerCase()} offers reached. Close some offers first.`
+        error: `Maximum ${MAX_ORDERS_PER_SIDE} ${type.toLowerCase()} orders reached. Close some orders first.`
       }, 409);
     }
   } catch (err) {
-    console.error('Error checking offer count:', err);
-    return getResponse({ error: 'Failed to check offer limits' }, 500);
+    console.error('Error checking order count:', err);
+    return getResponse({ error: 'Failed to check order limits' }, 500);
   }
 
-  // Check per-item offer limit (up to MAX_OFFERS_PER_ITEM per item per side)
+  // Check per-item order limit (up to MAX_ORDERS_PER_ITEM per item per side)
   try {
-    const itemCount = await countUserOffersForItem(user.id, itemId, type);
-    if (itemCount >= MAX_OFFERS_PER_ITEM) {
+    const itemCount = await countUserOrdersForItem(user.id, itemId, type);
+    if (itemCount >= MAX_ORDERS_PER_ITEM) {
       return getResponse({
-        error: `Maximum ${MAX_OFFERS_PER_ITEM} ${type.toLowerCase()} offers per item reached.`,
-        itemOfferCount: itemCount
+        error: `Maximum ${MAX_ORDERS_PER_ITEM} ${type.toLowerCase()} orders per item reached.`,
+        itemOrderCount: itemCount
       }, 409);
     }
   } catch (err) {
-    console.error('Error checking item offer count:', err);
-    return getResponse({ error: 'Failed to check item offer limits' }, 500);
+    console.error('Error checking item order count:', err);
+    return getResponse({ error: 'Failed to check item order limits' }, 500);
   }
 
-  // Create the offer
+  // Create the order
   try {
-    const offer = await createOffer({
+    const order = await createOrder({
       userId: user.id, type, itemId, quantity, minQuantity, markup, planet, details
     });
-    return getResponse(offer, 201);
+    return getResponse(order, 201);
   } catch (err) {
-    console.error('Error creating offer:', err);
-    return getResponse({ error: 'Failed to create offer' }, 500);
+    console.error('Error creating order:', err);
+    return getResponse({ error: 'Failed to create order' }, 500);
   }
 }

@@ -4,7 +4,7 @@
   import { slide } from 'svelte/transition';
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { hasItemTag, removeItemTag } from '$lib/util.js';
-  import { myOffers, inventory, enrichOffers } from '../../exchangeStore.js';
+  import { myOrders, inventory, enrichOrders } from '../../exchangeStore.js';
 
   export let show = false;
   /** Flattened item list from ExchangeBrowser for name→id resolution: [{i, n}, ...] */
@@ -30,7 +30,7 @@
   // Diff state (computed in preview)
   let diffSummary = { added: 0, changed: 0, removed: 0, unchanged: 0 };
 
-  // Offer coverage state (computed after import)
+  // Order coverage state (computed after import)
   let discrepancies = [];
   let adjustingAll = false;
   let cancellingAll = false;
@@ -282,10 +282,9 @@
       return false;
     }
 
-    // 4. Combine stackable items by (item_id, planet); keep non-stackable as individual entries
+    // 4. Combine all resolved items by (item_id, planet); keep unresolved individual
     const stackMap = new Map();
     const individuals = [];
-    let instanceCounter = 0;
 
     for (const item of normalized) {
       const itemId = resolveItemId(item.item_name);
@@ -296,25 +295,28 @@
         continue;
       }
 
-      if (itemId > 0 && isStackable(itemId, item.item_name)) {
-        // Stackable: combine by (item_id, planet)
+      if (itemId > 0) {
+        // Combine by (item_id, planet)
         const key = `${itemId}::${item._planet || ''}`;
+        const stackable = isStackable(itemId, item.item_name);
         if (stackMap.has(key)) {
           const existing = stackMap.get(key);
-          existing.quantity += item.quantity;
+          existing.quantity += item.quantity || 1;
           if (item.value != null) {
             existing.value = (existing.value || 0) + item.value;
           }
         } else {
-          stackMap.set(key, { ...item, _itemId: itemId });
+          stackMap.set(key, {
+            ...item,
+            _itemId: itemId,
+            quantity: item.quantity || 1,
+            // Non-stackable items use planet-based instance_key for DB uniqueness
+            instance_key: stackable ? null : `stack:${item._planet || 'inventory'}`,
+          });
         }
       } else {
-        // Non-stackable or unresolved: each entry gets a unique instance_key
-        individuals.push({
-          ...item,
-          _itemId: itemId,
-          instance_key: itemId > 0 ? `inv:${++instanceCounter}` : null,
-        });
+        // Unresolved: keep individual
+        individuals.push({ ...item, _itemId: itemId });
       }
     }
 
@@ -426,8 +428,8 @@
       step = 'done';
       dispatch('imported', data);
 
-      // Check offer coverage
-      await checkOfferCoverage();
+      // Check order coverage
+      await checkOrderCoverage();
     } catch (e) {
       importError = e.message;
     } finally {
@@ -435,24 +437,24 @@
     }
   }
 
-  // --- Offer coverage checking ---
+  // --- Order coverage checking ---
 
-  async function checkOfferCoverage() {
-    // Ensure offers are loaded
-    let offers = $myOffers;
-    if (!offers || offers.length === 0) {
+  async function checkOrderCoverage() {
+    // Ensure orders are loaded
+    let orders = $myOrders;
+    if (!orders || orders.length === 0) {
       try {
-        const res = await fetch('/api/market/exchange/offers');
+        const res = await fetch('/api/market/exchange/orders');
         if (res.ok) {
-          offers = enrichOffers(await res.json());
-          myOffers.set(offers);
+          orders = enrichOrders(await res.json());
+          myOrders.set(orders);
         }
       } catch {}
     }
 
-    // Only check SELL offers
-    const sellOffers = (offers || []).filter(o => o.type === 'SELL');
-    if (sellOffers.length === 0) {
+    // Only check SELL orders
+    const sellOrders = (orders || []).filter(o => o.type === 'SELL');
+    if (sellOrders.length === 0) {
       discrepancies = [];
       return;
     }
@@ -465,16 +467,16 @@
       }
     }
 
-    discrepancies = sellOffers
-      .map(offer => {
-        const invQty = invQtyMap.get(offer.item_id) || 0;
-        if (offer.quantity > invQty) {
+    discrepancies = sellOrders
+      .map(order => {
+        const invQty = invQtyMap.get(order.item_id) || 0;
+        if (order.quantity > invQty) {
           return {
-            offer,
-            offerQty: offer.quantity,
+            order,
+            orderQty: order.quantity,
             invQty,
-            deficit: offer.quantity - invQty,
-            item_name: offer.details?.item_name || `Item #${offer.item_id}`,
+            deficit: order.quantity - invQty,
+            item_name: order.details?.item_name || `Item #${order.item_id}`,
             _processing: false,
           };
         }
@@ -485,43 +487,43 @@
 
   // --- Discrepancy actions ---
 
-  async function adjustOffer(disc) {
+  async function adjustOrder(disc) {
     disc._processing = true;
     discrepancies = discrepancies;
     try {
       const newQty = disc.invQty;
       if (newQty <= 0) {
-        await cancelOffer(disc);
+        await cancelOrder(disc);
         return;
       }
-      const res = await fetch(`/api/market/exchange/offers/${disc.offer.id}`, {
+      const res = await fetch(`/api/market/exchange/orders/${disc.order.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           quantity: newQty,
-          markup: disc.offer.markup,
-          planet: disc.offer.planet,
-          min_quantity: disc.offer.min_quantity ? Math.min(disc.offer.min_quantity, newQty) : null,
-          details: disc.offer.details,
+          markup: disc.order.markup,
+          planet: disc.order.planet,
+          min_quantity: disc.order.min_quantity ? Math.min(disc.order.min_quantity, newQty) : null,
+          details: disc.order.details,
         }),
       });
-      if (!res.ok) throw new Error('Failed to adjust offer');
+      if (!res.ok) throw new Error('Failed to adjust order');
       discrepancies = discrepancies.filter(d => d !== disc);
-      refreshOffers();
+      refreshOrders();
     } catch (e) {
       disc._processing = false;
       discrepancies = discrepancies;
     }
   }
 
-  async function cancelOffer(disc) {
+  async function cancelOrder(disc) {
     disc._processing = true;
     discrepancies = discrepancies;
     try {
-      const res = await fetch(`/api/market/exchange/offers/${disc.offer.id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Failed to cancel offer');
+      const res = await fetch(`/api/market/exchange/orders/${disc.order.id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to cancel order');
       discrepancies = discrepancies.filter(d => d !== disc);
-      refreshOffers();
+      refreshOrders();
     } catch (e) {
       disc._processing = false;
       discrepancies = discrepancies;
@@ -532,7 +534,7 @@
     adjustingAll = true;
     const toProcess = [...discrepancies];
     for (const disc of toProcess) {
-      await adjustOffer(disc);
+      await adjustOrder(disc);
     }
     adjustingAll = false;
   }
@@ -541,15 +543,15 @@
     cancellingAll = true;
     const toProcess = [...discrepancies];
     for (const disc of toProcess) {
-      await cancelOffer(disc);
+      await cancelOrder(disc);
     }
     cancellingAll = false;
   }
 
-  async function refreshOffers() {
+  async function refreshOrders() {
     try {
-      const res = await fetch('/api/market/exchange/offers');
-      if (res.ok) myOffers.set(enrichOffers(await res.json()));
+      const res = await fetch('/api/market/exchange/orders');
+      if (res.ok) myOrders.set(enrichOrders(await res.json()));
     } catch {}
   }
 
@@ -689,7 +691,7 @@
           <div class="help-panel" transition:slide={{ duration: 200 }}>
             <div class="help-method">
               <ol>
-                <li>Go to <a href="https://account.entropiauniverse.com/account/my-items" target="_blank" rel="noopener noreferrer">account.entropiauniverse.com/account/my-items</a> and log in</li>
+                <li>Go to <a href="https://account.entropiauniverse.com/account/inventory" target="_blank" rel="noopener noreferrer">account.entropiauniverse.com/account/inventory</a> and log in</li>
                 <li>Click the <strong>"Copy to CSV"</strong> button</li>
                 <li>Paste the copied data into the text box below</li>
               </ol>
@@ -809,12 +811,12 @@
           {/if}
         </div>
 
-        <!-- Offer coverage -->
+        <!-- Order coverage -->
         {#if discrepancies.length > 0}
           <div class="discrepancy-section">
-            <h4 class="discrepancy-title">Sell offers exceeding inventory</h4>
+            <h4 class="discrepancy-title">Sell orders exceeding inventory</h4>
             <p class="discrepancy-desc">
-              These sell offers advertise more items than you currently have.
+              These sell orders advertise more items than you currently have.
             </p>
             <div class="bulk-actions">
               <button
@@ -833,7 +835,7 @@
                 <thead>
                   <tr>
                     <th>Item</th>
-                    <th>Offer</th>
+                    <th>Order</th>
                     <th>Inventory</th>
                     <th>Deficit</th>
                     <th></th>
@@ -843,19 +845,19 @@
                   {#each discrepancies as disc}
                     <tr>
                       <td class="disc-name">{disc.item_name}</td>
-                      <td>{disc.offerQty}</td>
+                      <td>{disc.orderQty}</td>
                       <td>{disc.invQty}</td>
                       <td class="disc-deficit">-{disc.deficit}</td>
                       <td class="disc-actions">
                         {#if disc._processing}
                           <span class="processing">...</span>
                         {:else}
-                          <button class="disc-btn adjust" on:click={() => adjustOffer(disc)}
+                          <button class="disc-btn adjust" on:click={() => adjustOrder(disc)}
                             title={disc.invQty > 0 ? `Set to ${disc.invQty}` : 'Cancel (no inventory)'}>
                             {disc.invQty > 0 ? 'Adjust' : 'Cancel'}
                           </button>
                           {#if disc.invQty > 0}
-                            <button class="disc-btn cancel" on:click={() => cancelOffer(disc)}>Cancel</button>
+                            <button class="disc-btn cancel" on:click={() => cancelOrder(disc)}>Cancel</button>
                           {/if}
                         {/if}
                       </td>
@@ -865,8 +867,8 @@
               </table>
             </div>
           </div>
-        {:else if $myOffers.some(o => o.type === 'SELL')}
-          <div class="coverage-ok">All sell offers are covered by your inventory.</div>
+        {:else if $myOrders.some(o => o.type === 'SELL')}
+          <div class="coverage-ok">All sell orders are covered by your inventory.</div>
         {/if}
 
         <div class="modal-actions">

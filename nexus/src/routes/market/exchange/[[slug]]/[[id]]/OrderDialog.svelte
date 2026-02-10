@@ -27,35 +27,35 @@
   // Partial trade state
   let allowPartial = true;
 
-  /** @type {number} How many offers already exist for this item+side */
-  export let existingOfferCount = 0;
+  /** @type {number} How many orders already exist for this item+side */
+  export let existingOrderCount = 0;
 
-  /** @type {number} Max offers allowed per item */
-  export let maxOffersPerItem = 5;
+  /** @type {number} Max orders allowed per item */
+  export let maxOrdersPerItem = 5;
 
-  /** @type {boolean} Whether this is a non-fungible item (allows multiple offers) */
+  /** @type {boolean} Whether this is a non-fungible item (allows multiple orders) */
   export let isNonFungible = false;
 
-  // Track offers created in this multi-offer session
-  let sessionOfferCount = 0;
+  // Track orders created in this multi-order session
+  let sessionOrderCount = 0;
 
   async function loadSuggestions(itemId) {
     if (!itemId) return;
     suggestionsLoading = true;
     suggestions = null;
     try {
-      const res = await fetch(`/api/market/exchange/offers/item/${encodeURIComponent(itemId)}`);
+      const res = await fetch(`/api/market/exchange/orders/item/${encodeURIComponent(itemId)}`);
       if (res.ok) {
         const data = await res.json();
-        const buyOffers = data.buy || [];
-        const sellOffers = data.sell || [];
-        // Best buy = highest markup among buy offers
-        const bestBuy = buyOffers.length > 0
-          ? Math.max(...buyOffers.map(o => Number(o.markup) || 0))
+        const buyOrders = data.buy || [];
+        const sellOrders = data.sell || [];
+        // Best buy = highest markup among buy orders
+        const bestBuy = buyOrders.length > 0
+          ? Math.max(...buyOrders.map(o => Number(o.markup) || 0))
           : null;
-        // Best sell = lowest markup among sell offers
-        const bestSell = sellOffers.length > 0
-          ? Math.min(...sellOffers.map(o => Number(o.markup) || 0))
+        // Best sell = lowest markup among sell orders
+        const bestSell = sellOrders.length > 0
+          ? Math.min(...sellOrders.map(o => Number(o.markup) || 0))
           : null;
         suggestions = { bestBuy, bestSell };
       }
@@ -117,7 +117,7 @@
    */
   export function initOrder(itemOrOrder, type, dialogMode = 'create') {
     mode = dialogMode;
-    sessionOfferCount = 0;
+    sessionOrderCount = 0;
     if (mode === 'edit' && itemOrOrder && itemOrOrder.Type) {
       // Editing: clone the order
       order = JSON.parse(JSON.stringify(itemOrOrder));
@@ -366,7 +366,7 @@
   $: if (selectedSkillUnlocked !== undefined) updateSkillMetadata();
   $: if (selectedSkillCriteria !== undefined) updateSkillMetadata();
   export let  planets = [
-    'Calypso', 'Arkadia', 'Cyrene', 'Rocktropia', 'Next Island', 'Monria', 'Toulan', 'Other'
+    'Calypso', 'Arkadia', 'Cyrene', 'Rocktropia', 'Next Island', 'Monria', 'Toulan', 'Howling Mine (Space)'
   ];
   // QR range options for buy orders (matching the exchange filter pattern)
   const qrRangeOptions = [
@@ -381,13 +381,13 @@
   // Inventory-sourced warnings
   $: inventoryWarning = order?._inventoryWarning || null;
   $: inventoryQty = order?._inventoryQty ?? null;
-  $: totalOffersIfSubmitted = existingOfferCount + sessionOfferCount + 1;
-  $: canCreateMore = isNonFungible && totalOffersIfSubmitted < maxOffersPerItem && mode === 'create';
-  $: offerLimitReached = totalOffersIfSubmitted >= maxOffersPerItem;
-  // For inventory sell: warn if total sell offers exceed inventory qty
+  $: totalOrdersIfSubmitted = existingOrderCount + sessionOrderCount + 1;
+  $: canCreateMore = isNonFungible && totalOrdersIfSubmitted < maxOrdersPerItem && mode === 'create';
+  $: orderLimitReached = totalOrdersIfSubmitted >= maxOrdersPerItem;
+  // For inventory sell: warn if total sell orders exceed inventory qty
   $: totalSellQty = (() => {
     if (inventoryQty == null || order?.Type !== 'Sell') return null;
-    return (existingOfferCount + sessionOfferCount + 1);
+    return (existingOrderCount + sessionOrderCount + 1);
   })();
   $: qtyExceedsInventory = inventoryQty != null && totalSellQty != null && totalSellQty > inventoryQty;
 
@@ -397,18 +397,18 @@
   const dispatch = createEventDispatcher();
 
   function close() {
-    sessionOfferCount = 0;
+    sessionOrderCount = 0;
     dispatch('close');
   }
   function submit() {
     if (submitting) return;
     dispatch('submit', { order });
-    sessionOfferCount = 0;
+    sessionOrderCount = 0;
   }
   function submitAndNext() {
     if (submitting) return;
     dispatch('next', { order });
-    sessionOfferCount++;
+    sessionOrderCount++;
   }
 </script>
 
@@ -436,7 +436,7 @@
         <div class="inv-warning-banner">{inventoryWarning}</div>
       {/if}
       {#if qtyExceedsInventory}
-        <div class="inv-warning-banner">Offer quantity exceeds your inventory ({inventoryQty} available)</div>
+        <div class="inv-warning-banner">Order quantity exceeds your inventory ({inventoryQty} available)</div>
       {/if}
       <div class="form-row">
         <label for="planetSelect">Planet</label>
@@ -684,25 +684,25 @@
           <div class="suggestions">
             {#if order.Type === 'Sell'}
               {#if suggestions?.bestSell != null}
-                <button class="suggest-btn" on:click={() => applySuggestion(suggestions.bestSell)} title="Match the lowest sell offer">
+                <button class="suggest-btn" on:click={() => applySuggestion(suggestions.bestSell)} title="Match the lowest sell order">
                   Match Best ({suggestions.bestSell.toFixed(isPercentMarkup(order.Item) ? 0 : 2)})
                 </button>
                 <button class="suggest-btn undercut" on:click={() => applySuggestion(computeUndercutValue(suggestions.bestSell, 'Sell'))} title="Undercut the lowest sell by ~2%">
                   Undercut
                 </button>
               {:else if suggestions}
-                <span class="suggest-hint">No sell offers yet</span>
+                <span class="suggest-hint">No sell orders yet</span>
               {/if}
             {:else}
               {#if suggestions?.bestBuy != null}
-                <button class="suggest-btn" on:click={() => applySuggestion(suggestions.bestBuy)} title="Match the highest buy offer">
+                <button class="suggest-btn" on:click={() => applySuggestion(suggestions.bestBuy)} title="Match the highest buy order">
                   Match Best ({suggestions.bestBuy.toFixed(isPercentMarkup(order.Item) ? 0 : 2)})
                 </button>
                 <button class="suggest-btn outbid" on:click={() => applySuggestion(computeUndercutValue(suggestions.bestBuy, 'Buy'))} title="Outbid the highest buy by ~2%">
                   Outbid
                 </button>
               {:else if suggestions}
-                <span class="suggest-hint">No buy offers yet</span>
+                <span class="suggest-hint">No buy orders yet</span>
               {/if}
             {/if}
             {#if dailyAverage != null}
@@ -738,21 +738,21 @@
         {/if}
       </div>
       {#if qtyExceedsInventory}
-        <div class="inventory-warning">You are creating more sell offers than you have in your inventory ({inventoryQty}).</div>
+        <div class="inventory-warning">You are creating more sell orders than you have in your inventory ({inventoryQty}).</div>
       {/if}
-      {#if isNonFungible && mode === 'create' && (existingOfferCount + sessionOfferCount > 0)}
-        <div class="offer-count-indicator">Offer {existingOfferCount + sessionOfferCount + 1} of {maxOffersPerItem}</div>
+      {#if isNonFungible && mode === 'create' && (existingOrderCount + sessionOrderCount > 0)}
+        <div class="order-count-indicator">Order {existingOrderCount + sessionOrderCount + 1} of {maxOrdersPerItem}</div>
       {/if}
       <div class="actions">
         {#if mode === 'edit'}
-          <button class="delete-btn" on:click={() => dispatch('delete', { order })} title="Delete this offer">Delete</button>
+          <button class="delete-btn" on:click={() => dispatch('delete', { order })} title="Delete this order">Delete</button>
         {/if}
         <span class="actions-spacer"></span>
-        <button on:click={close} disabled={submitting}>{sessionOfferCount > 0 ? 'Done' : 'Cancel'}</button>
-        {#if canCreateMore && !offerLimitReached}
-          <button class="next-btn" on:click={submitAndNext} disabled={submitting} title="Create this offer and set up the next one">{submitting ? 'Saving...' : 'Next'}</button>
+        <button on:click={close} disabled={submitting}>{sessionOrderCount > 0 ? 'Done' : 'Cancel'}</button>
+        {#if canCreateMore && !orderLimitReached}
+          <button class="next-btn" on:click={submitAndNext} disabled={submitting} title="Create this order and set up the next one">{submitting ? 'Saving...' : 'Next'}</button>
         {/if}
-        <button on:click={submit} disabled={offerLimitReached || submitting} title={mode === 'edit' ? 'Save changes' : 'Submit order'}>{submitting ? 'Saving...' : (mode === 'edit' ? 'Save' : 'Submit')}</button>
+        <button on:click={submit} disabled={orderLimitReached || submitting} title={mode === 'edit' ? 'Save changes' : 'Submit order'}>{submitting ? 'Saving...' : (mode === 'edit' ? 'Save' : 'Submit')}</button>
       </div>
     </div>
   </div>
@@ -1027,7 +1027,7 @@
     background: rgba(245, 158, 11, 0.1);
     border: 1px solid var(--warning-color, #f59e0b);
   }
-  .offer-count-indicator {
+  .order-count-indicator {
     text-align: center;
     font-size: 12px;
     color: var(--text-muted);

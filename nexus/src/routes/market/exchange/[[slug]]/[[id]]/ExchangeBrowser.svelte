@@ -5,17 +5,18 @@
   import CategoryTree from "./CategoryTree.svelte";
   import FancyTable from "$lib/components/FancyTable.svelte";
   import OrderDialog from './OrderDialog.svelte';
-  import MyOffersView from './MyOffersView.svelte';
+  import MyOrdersView from './MyOrdersView.svelte';
   import OrderBookTable from './OrderBookTable.svelte';
   import InventoryImportDialog from './InventoryImportDialog.svelte';
-  import OfferAdjustDialog from './OfferAdjustDialog.svelte';
+  import OrderAdjustDialog from './OrderAdjustDialog.svelte';
   import InventoryPanel from './InventoryPanel.svelte';
   import CartSummary from './CartSummary.svelte';
   import FavouritesTree from './FavouritesTree.svelte';
   import QuickTradeDialog from './QuickTradeDialog.svelte';
-  import UserOffersPanel from './UserOffersPanel.svelte';
+  import UserOrdersPanel from './UserOrdersPanel.svelte';
   import BulkTradeDialog from './BulkTradeDialog.svelte';
   import TradeRequestsPanel from './TradeRequestsPanel.svelte';
+  import MassSellDialog from './MassSellDialog.svelte';
   import PriceHistoryChart from './PriceHistoryChart.svelte';
 
   import { goto } from "$app/navigation";
@@ -23,11 +24,11 @@
   import { apiCall, getItemLink, hasItemTag, encodeURIComponentSafe, decodeURIComponentSafe } from "$lib/util.js";
   import { isBlueprint, isItemTierable, isItemStackable, isLimited, itemHasCondition, isAbsoluteMarkup, getMaxTT, formatMarkupValue, formatMarkupForItem } from '../../orderUtils';
   import { PLANETS } from '../../exchangeConstants.js';
-  import { showMyOffers, showInventory, showTradeList, showTrades, tradeList, addToTradeList, clearTradeList, myOffers, inventory, enrichOffers } from '../../exchangeStore.js';
+  import { showMyOrders, showInventory, showTradeList, showTrades, tradeList, addToTradeList, clearTradeList, myOrders, inventory, enrichOrders } from '../../exchangeStore.js';
   import { favourites, isFavourite, toggleFavourite, createFolder } from '../../favouritesStore.js';
   import { hasCondition } from '$lib/shopUtils';
 
-  const VIEW_SLUGS = new Set(['listings', 'offers', 'inventory', 'trades']);
+  const VIEW_SLUGS = new Set(['listings', 'orders', 'inventory', 'trades']);
 
   let searchTerm = "";
   let selectedCategory = "All";
@@ -42,7 +43,7 @@
   let showBulkTradeDialog = false;
   let orderDialogType = null; // 'buy' | 'sell'
   let orderDialogRef;
-  let orderDialogExistingCount = 0; // existing offers for the current item+side
+  let orderDialogExistingCount = 0; // existing orders for the current item+side
   // Title bar filters for tierable items
   let mobileSidebarOpen = false;
   let sidebarTab = 'categories'; // 'categories' | 'favourites'
@@ -82,40 +83,43 @@
     "MedicalTool",
   ]);
 
-  // Pending edit offer (set when user clicks Edit in MyOffersView)
-  let pendingEditOffer = null;
+  // Pending edit order (set when user clicks Edit in MyOrdersView)
+  let pendingEditOrder = null;
 
   // Inline edit: item details loaded separately from detail view
   let inlineEditItem = null;
 
   // Quick trade dialog state
   let showQuickTrade = false;
-  let quickTradeOffer = null;
+  let quickTradeOrder = null;
   let quickTradeSide = 'buy'; // 'buy' | 'sell'
   let quickTradeRef;
 
-  // User offers panel state
-  let showUserOffers = false;
-  let userOffersTarget = null; // { id, name }
-  let userOffersReturnUrl = null; // URL to return to when closing the panel
+  // User orders panel state
+  let showUserOrders = false;
+  let userOrdersTarget = null; // { id, name }
+  let userOrdersReturnUrl = null; // URL to return to when closing the panel
 
   // Side filter for floating panel (All/Buy/Sell)
   let panelSideFilter = 'all'; // 'all' | 'BUY' | 'SELL'
 
-  // Inventory & Offers panel
+  // Inventory & Orders panel
   let showImportDialog = false;
   let showAdjustDialog = false;
+  let showMassSellDialog = false;
+  let massSellItems = [];
+  let massSellMode = false;
   let inventoryPanelRef;
-  let myOffersRef;
+  let myOrdersRef;
   let tradesPanelRef;
   let bumpingAll = false;
 
-  // Reactive discrepancy count: compare sell offers against inventory
-  $: discrepancyCount = computeDiscrepancyCount($myOffers, $inventory);
+  // Reactive discrepancy count: compare sell orders against inventory
+  $: discrepancyCount = computeDiscrepancyCount($myOrders, $inventory);
 
-  function computeDiscrepancyCount(offers, inv) {
-    const sellOffers = (offers || []).filter(o => o.type === 'SELL');
-    if (sellOffers.length === 0 || !inv || inv.length === 0) return 0;
+  function computeDiscrepancyCount(orders, inv) {
+    const sellOrders = (orders || []).filter(o => o.type === 'SELL');
+    if (sellOrders.length === 0 || !inv || inv.length === 0) return 0;
     const invQtyMap = new Map();
     for (const item of inv) {
       if (item.item_id > 0) {
@@ -123,45 +127,45 @@
       }
     }
     let count = 0;
-    for (const offer of sellOffers) {
-      const invQty = invQtyMap.get(offer.item_id) || 0;
-      if (offer.quantity > invQty) count++;
+    for (const order of sellOrders) {
+      const invQty = invQtyMap.get(order.item_id) || 0;
+      if (order.quantity > invQty) count++;
     }
     return count;
   }
 
   function closeFloatingPanel() {
-    showMyOffers.set(false);
+    showMyOrders.set(false);
     showInventory.set(false);
     showTrades.set(false);
-    if (showUserOffers) clearTradeList();
-    showUserOffers = false;
+    if (showUserOrders) clearTradeList();
+    showUserOrders = false;
     goto('/market/exchange/listings' + getCategoryUrlSegment());
   }
 
-  async function editOfferInline(offer) {
-    if (!offer?.item_id) return;
+  async function editOrderInline(order) {
+    if (!order?.item_id) return;
     try {
-      const item = await apiCall(window.fetch, `/items/${offer.item_id}`);
+      const item = await apiCall(window.fetch, `/items/${order.item_id}`);
       if (!item) return;
 
       inlineEditItem = item;
-      const type = offer.type === 'BUY' ? 'buy' : 'sell';
+      const type = order.type === 'BUY' ? 'buy' : 'sell';
       orderDialogType = type;
 
       const editOrder = {
-        Type: offer.type === 'BUY' ? 'Buy' : 'Sell',
+        Type: order.type === 'BUY' ? 'Buy' : 'Sell',
         Item: {
-          Name: item?.Name || offer.details?.item_name || '',
+          Name: item?.Name || order.details?.item_name || '',
           Type: item?.Properties?.Type || item?.Type || null,
           MaxTT: getMaxTT(item),
         },
-        Planet: offer.planet || 'Calypso',
-        Quantity: offer.quantity || 1,
-        CurrentTT: offer.details?.CurrentTT ?? null,
-        Markup: offer.markup || 0,
-        Metadata: { ...(offer.details || {}) },
-        _offerId: offer.id,
+        Planet: order.planet || 'Calypso',
+        Quantity: order.quantity || 1,
+        CurrentTT: order.details?.CurrentTT ?? null,
+        Markup: order.markup || 0,
+        Metadata: { ...(order.details || {}) },
+        _orderId: order.id,
         _inlineEdit: true,
       };
       delete editOrder.Metadata.item_name;
@@ -176,54 +180,54 @@
     }
   }
 
-  async function openUserOffersByName(name) {
-    // Skip if already showing this user's offers
-    if (showUserOffers && userOffersTarget?.name === name) return;
+  async function openUserOrdersByName(name) {
+    // Skip if already showing this user's orders
+    if (showUserOrders && userOrdersTarget?.name === name) return;
     try {
       const res = await fetch(`/api/users/profiles/${encodeURIComponentSafe(name)}`);
       if (res.ok) {
         const data = await res.json();
         const userId = data?.profile?.id;
         if (userId) {
-          openUserOffersPanel(userId, name);
+          openUserOrdersPanel(userId, name);
           return;
         }
       }
     } catch {}
-    // Fallback: just open My Offers if lookup fails
-    switchFloatingTab('offers');
+    // Fallback: just open My Orders if lookup fails
+    switchFloatingTab('orders');
   }
 
-  function openUserOffersPanel(userId, name) {
-    userOffersTarget = { id: userId, name };
-    userOffersReturnUrl = $page.url.pathname;
-    showUserOffers = true;
-    showMyOffers.set(false);
+  function openUserOrdersPanel(userId, name) {
+    userOrdersTarget = { id: userId, name };
+    userOrdersReturnUrl = $page.url.pathname;
+    showUserOrders = true;
+    showMyOrders.set(false);
     showInventory.set(false);
     showTrades.set(false);
     showTradeList.set(false);
     clearTradeList();
     panelSideFilter = 'all';
-    // Update URL to reflect the user's offers page
-    const offersUrl = `/market/exchange/offers/${encodeURIComponentSafe(name)}`;
-    if ($page.url.pathname !== offersUrl) {
-      goto(offersUrl, { replaceState: false });
+    // Update URL to reflect the user's orders page
+    const ordersUrl = `/market/exchange/orders/${encodeURIComponentSafe(name)}`;
+    if ($page.url.pathname !== ordersUrl) {
+      goto(ordersUrl, { replaceState: false });
     }
   }
 
-  function closeUserOffersPanel() {
-    showUserOffers = false;
+  function closeUserOrdersPanel() {
+    showUserOrders = false;
     clearTradeList();
-    goto(userOffersReturnUrl || '/market/exchange/listings' + getCategoryUrlSegment());
+    goto(userOrdersReturnUrl || '/market/exchange/listings' + getCategoryUrlSegment());
   }
 
-  function handleOfferAction(e) {
+  function handleOrderAction(e) {
     const item = e.detail;
     if ($tradeList.length === 0) {
       // No trade list started — open QuickTradeDialog for a single trade request
-      const rawOffer = item.offer || item;
+      const rawOrder = item.order || item;
       const side = item.side === 'SELL' ? 'buy' : 'sell';
-      openQuickTrade(rawOffer, side);
+      openQuickTrade(rawOrder, side);
     } else {
       // Trade list already started — add to it
       addToTradeList(item);
@@ -231,41 +235,41 @@
   }
 
   function handleAddToListFromDialog(e) {
-    const { offer, quantity, side } = e.detail;
-    if (!offer) return;
+    const { order, quantity, side } = e.detail;
+    if (!order) return;
     addToTradeList({
-      offerId: offer.id,
-      itemId: offer.item_id,
-      itemName: offer.details?.item_name || 'Unknown',
-      sellerId: userOffersTarget?.id || offer.user_id,
-      sellerName: offer.seller_name || userOffersTarget?.name || 'Unknown',
-      planet: offer.planet || '',
-      quantity: quantity || offer.quantity || 1,
-      unitPrice: Number(offer.markup) || 0,
-      markup: Number(offer.markup) || 0,
-      side: offer.type || 'SELL',
+      orderId: order.id,
+      itemId: order.item_id,
+      itemName: order.details?.item_name || 'Unknown',
+      sellerId: userOrdersTarget?.id || order.user_id,
+      sellerName: order.seller_name || userOrdersTarget?.name || 'Unknown',
+      planet: order.planet || '',
+      quantity: quantity || order.quantity || 1,
+      unitPrice: Number(order.markup) || 0,
+      markup: Number(order.markup) || 0,
+      side: order.type || 'SELL',
     });
     closeQuickTrade();
   }
 
   function switchFloatingTab(tab) {
-    if (showUserOffers) clearTradeList();
-    showMyOffers.set(tab === 'offers');
+    if (showUserOrders) clearTradeList();
+    showMyOrders.set(tab === 'orders');
     showInventory.set(tab === 'inventory');
     showTrades.set(tab === 'trades');
     showTradeList.set(false);
-    showUserOffers = false;
+    showUserOrders = false;
     panelSideFilter = 'all';
   }
 
   function refreshFloatingPanel() {
-    if ($showMyOffers && myOffersRef) myOffersRef.refresh();
+    if ($showMyOrders && myOrdersRef) myOrdersRef.refresh();
     else if ($showInventory && inventoryPanelRef) inventoryPanelRef.refresh();
     else if ($showTrades && tradesPanelRef) tradesPanelRef.refresh();
   }
 
   async function handleInventorySell(e) {
-    const { invItem, existingOffer } = e.detail;
+    const { invItem, existingOrder } = e.detail;
     if (!invItem?.item_id) return;
 
     try {
@@ -284,28 +288,28 @@
       inlineEditItem = item;
       orderDialogType = 'sell';
 
-      // Count existing sell offers for this item
-      orderDialogExistingCount = ($myOffers || []).filter(
+      // Count existing sell orders for this item
+      orderDialogExistingCount = ($myOrders || []).filter(
         o => o.item_id === invItem.item_id && o.type === 'SELL' && o.state !== 'closed'
       ).length;
 
-      if (existingOffer) {
-        // Edit existing offer
+      if (existingOrder) {
+        // Edit existing order
         const editOrder = {
           Type: 'Sell',
           Item: {
-            Name: item?.Name || existingOffer.details?.item_name || '',
+            Name: item?.Name || existingOrder.details?.item_name || '',
             Type: itemType,
             MaxTT: maxTT,
           },
-          Planet: existingOffer.planet || invItem.container || 'Calypso',
-          Quantity: existingOffer.quantity || 1,
-          CurrentTT: existingOffer.details?.CurrentTT ?? invCurrentTT,
-          Markup: existingOffer.markup || 0,
-          Metadata: { ...(existingOffer.details || {}) },
-          _offerId: existingOffer.id,
+          Planet: existingOrder.planet || invItem.container || 'Calypso',
+          Quantity: existingOrder.quantity || 1,
+          CurrentTT: existingOrder.details?.CurrentTT ?? invCurrentTT,
+          Markup: existingOrder.markup || 0,
+          Metadata: { ...(existingOrder.details || {}) },
+          _orderId: existingOrder.id,
           _inlineEdit: true,
-          _inventoryWarning: `You already have a sell offer for this item. Editing it now.`,
+          _inventoryWarning: `You already have a sell order for this item. Editing it now.`,
         };
         delete editOrder.Metadata.item_name;
         delete editOrder.Metadata.CurrentTT;
@@ -315,7 +319,7 @@
           showOrderDialog = true;
         }, 0);
       } else {
-        // Create new sell offer pre-filled from inventory
+        // Create new sell order pre-filled from inventory
         const details = typeof invItem.details === 'string' ? JSON.parse(invItem.details) : (invItem.details || {});
         const newOrder = {
           Type: 'Sell',
@@ -346,6 +350,32 @@
     } catch (e) {
       console.error('Failed to open sell dialog from inventory:', e);
     }
+  }
+
+  function toggleMassSellMode() {
+    massSellMode = !massSellMode;
+    if (inventoryPanelRef) {
+      if (massSellMode) {
+        inventoryPanelRef.setMassSellMode(true);
+      } else {
+        inventoryPanelRef.clearMassSell();
+      }
+    }
+  }
+
+  function handleMassSell(e) {
+    massSellItems = e.detail.items;
+    showMassSellDialog = true;
+  }
+
+  async function handleMassSellComplete() {
+    showMassSellDialog = false;
+    massSellMode = false;
+    // Clear mass sell list in inventory panel
+    if (inventoryPanelRef) inventoryPanelRef.clearMassSell();
+    await refreshAfterOrderChange();
+    // Also refresh inventory panel
+    if (inventoryPanelRef) inventoryPanelRef.refresh();
   }
 
   // Exchange price data for detail view
@@ -546,19 +576,19 @@
   $: if (viewSlug !== currentViewSlug) {
     currentViewSlug = viewSlug;
     if (viewSlug === 'listings') {
-      showMyOffers.set(false);
+      showMyOrders.set(false);
       showInventory.set(false);
       showTrades.set(false);
-      if (showUserOffers) clearTradeList();
-      showUserOffers = false;
-    } else if (viewSlug === 'offers') {
+      if (showUserOrders) clearTradeList();
+      showUserOrders = false;
+    } else if (viewSlug === 'orders') {
       const id = routeId;
       const decodedName = id ? decodeURIComponentSafe(id) : null;
       const currentUserName = $page?.data?.session?.user?.eu_name;
       if (decodedName && decodedName !== currentUserName) {
-        openUserOffersByName(decodedName);
+        openUserOrdersByName(decodedName);
       } else {
-        switchFloatingTab('offers');
+        switchFloatingTab('orders');
       }
     } else if (viewSlug === 'inventory') {
       switchFloatingTab('inventory');
@@ -608,27 +638,27 @@
     }
   }
 
-  // If a pending edit offer exists and item details have loaded, open the edit dialog
-  $: if (pendingEditOffer && selectedItemDetails) {
-    const offer = pendingEditOffer;
-    pendingEditOffer = null;
-    const type = offer.type === 'BUY' ? 'buy' : 'sell';
+  // If a pending edit order exists and item details have loaded, open the edit dialog
+  $: if (pendingEditOrder && selectedItemDetails) {
+    const order = pendingEditOrder;
+    pendingEditOrder = null;
+    const type = order.type === 'BUY' ? 'buy' : 'sell';
     orderDialogType = type;
     setTimeout(() => {
-      // Build an order object from the offer for editing
+      // Build an order object for editing
       const editOrder = {
-        Type: offer.type === 'BUY' ? 'Buy' : 'Sell',
+        Type: order.type === 'BUY' ? 'Buy' : 'Sell',
         Item: {
-          Name: selectedItemDetails?.Name || offer.details?.item_name || '',
+          Name: selectedItemDetails?.Name || order.details?.item_name || '',
           Type: selectedItemDetails?.Properties?.Type || selectedItemDetails?.Type || null,
           MaxTT: getMaxTT(selectedItemDetails) ?? selectedItem?.v ?? null,
         },
-        Planet: offer.planet || 'Calypso',
-        Quantity: offer.quantity || 1,
-        CurrentTT: offer.details?.CurrentTT ?? null,
-        Markup: offer.markup || 0,
-        Metadata: { ...(offer.details || {}) },
-        _offerId: offer.id,  // track original offer ID for PUT
+        Planet: order.planet || 'Calypso',
+        Quantity: order.quantity || 1,
+        CurrentTT: order.details?.CurrentTT ?? null,
+        Markup: order.markup || 0,
+        Metadata: { ...(order.details || {}) },
+        _orderId: order.id,  // track original order ID for PUT
       };
       // Clean up non-metadata fields from Metadata
       delete editOrder.Metadata.item_name;
@@ -931,7 +961,7 @@
     periodStats = null;
     try {
       const [ordersRes, pricesRes] = await Promise.all([
-        fetch(`/api/market/exchange/offers/item/${encodeURIComponent(numericId)}`),
+        fetch(`/api/market/exchange/orders/item/${encodeURIComponent(numericId)}`),
         fetch(`/api/market/prices/exchange/${encodeURIComponent(numericId)}?period=${selectedPeriod}`).catch(() => null),
       ]);
       if (ordersRes.ok) {
@@ -1090,8 +1120,8 @@
       : baseStyles;
 
     if (addCartCol) {
-      const offerId = o?.id ?? o?.Id ?? 0;
-      const cartBtn = `<button class="cell-button cart-add-btn" data-cart-add="${offerId}">+Cart</button>`;
+      const orderId = o?.id ?? o?.Id ?? 0;
+      const cartBtn = `<button class="cell-button cart-add-btn" data-cart-add="${orderId}">+Cart</button>`;
       values.push(cartBtn);
       tdStyles.push(cellStyle);
     }
@@ -1167,7 +1197,7 @@
 
   $: myBuyOrder = currentUser && (buyOrders || []).find(o => getSellerId(o) === currentUser.id) || null;
   $: mySellOrder = currentUser && (sellOrders || []).find(o => getSellerId(o) === currentUser.id) || null;
-  // Only show "Edit" for fungible/stackable items (single offer per side)
+  // Only show "Edit" for fungible/stackable items (single order per side)
   $: detailItemStackable = selectedItemDetails ? isItemStackable(selectedItemDetails) : false;
   $: hasMyBuyOrder = detailItemStackable && !!myBuyOrder;
   $: hasMySellOrder = detailItemStackable && !!mySellOrder;
@@ -1178,17 +1208,17 @@
     orderDialogType = type;
     const itemId = item?.ItemId ?? item?.Id ?? item?.i;
     const side = type === 'buy' ? 'BUY' : 'SELL';
-    // Count existing offers for this item+side
-    orderDialogExistingCount = ($myOffers || []).filter(
+    // Count existing orders for this item+side
+    orderDialogExistingCount = ($myOrders || []).filter(
       o => o.item_id === itemId && o.type === side && o.state !== 'closed'
     ).length;
 
-    // For fungible/stackable items, edit the existing offer if one exists
-    const existingOffer = detailItemStackable
+    // For fungible/stackable items, edit the existing order if one exists
+    const existingOrder = detailItemStackable
       ? (type === 'buy' ? myBuyOrder : mySellOrder)
       : null;
-    if (existingOffer) {
-      editOfferInline(existingOffer);
+    if (existingOrder) {
+      editOrderInline(existingOrder);
       return;
     }
 
@@ -1202,7 +1232,7 @@
       showOrderDialog = true;
     }, 0);
   }
-  // Compute whether the current dialog item is non-fungible (allows multiple offers)
+  // Compute whether the current dialog item is non-fungible (allows multiple orders)
   $: orderDialogItemType = (() => {
     const item = inlineEditItem || selectedItemDetails || selectedItem;
     return item?.Properties?.Type ?? item?.Type ?? item?.t ?? null;
@@ -1226,7 +1256,7 @@
     const itemId = item?.ItemId ?? item?.Id ?? item?.i;
     if (!itemId) { if (closeAfter) closeOrderDialog(); submittingOrder = false; return false; }
 
-    const isEdit = !!order._offerId;
+    const isEdit = !!order._orderId;
     const payload = {
       type: order.Type === 'Buy' ? 'BUY' : 'SELL',
       item_id: itemId,
@@ -1242,7 +1272,7 @@
     if (order.CurrentTT != null) {
       payload.details.CurrentTT = order.CurrentTT;
     }
-    delete payload.details._offerId;
+    delete payload.details._orderId;
     delete payload.details._inlineEdit;
     delete payload.details._inventoryWarning;
     delete payload.details._inventoryQty;
@@ -1250,13 +1280,13 @@
     try {
       let res;
       if (isEdit) {
-        res = await fetch(`/api/market/exchange/offers/${order._offerId}`, {
+        res = await fetch(`/api/market/exchange/orders/${order._orderId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
         });
       } else {
-        res = await fetch('/api/market/exchange/offers', {
+        res = await fetch('/api/market/exchange/orders', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
@@ -1268,8 +1298,8 @@
         submittingOrder = false;
         return false;
       }
-      // Refresh offers data
-      await refreshAfterOfferChange();
+      // Refresh orders data
+      await refreshAfterOrderChange();
       if (closeAfter) closeOrderDialog();
       return true;
     } catch (e) {
@@ -1281,17 +1311,17 @@
     }
   }
 
-  async function refreshAfterOfferChange() {
+  async function refreshAfterOrderChange() {
     if (inlineEditItem) {
-      // MyOffersView.refresh() fetches and enriches data (item_name, state_display)
-      if (myOffersRef) await myOffersRef.refresh();
+      // MyOrdersView.refresh() fetches and enriches data (item_name, state_display)
+      if (myOrdersRef) await myOrdersRef.refresh();
     } else {
       ordersLoadedKey = '';
       if (selectedItem?.i) await loadOrders(selectedItem.i, selectedPlanet);
-      // Also refresh myOffers store
+      // Also refresh myOrders store
       try {
-        const offersRes = await fetch('/api/market/exchange/offers');
-        if (offersRes.ok) myOffers.set(enrichOffers(await offersRes.json()));
+        const ordersRes = await fetch('/api/market/exchange/orders');
+        if (ordersRes.ok) myOrders.set(enrichOrders(await ordersRes.json()));
       } catch {}
     }
   }
@@ -1308,7 +1338,7 @@
     const success = await submitOrderPayload(order, false);
     if (success) {
       orderDialogExistingCount++;
-      // Re-init dialog for the next offer (keep same item, reset form)
+      // Re-init dialog for the next order (keep same item, reset form)
       const item = inlineEditItem || selectedItemDetails || selectedItem;
       if (item) {
         orderDialogRef?.initOrder(item, orderDialogType || 'sell', 'create');
@@ -1316,23 +1346,23 @@
     }
   }
 
-  async function handleDeleteOffer(e) {
+  async function handleDeleteOrder(e) {
     const order = e?.detail?.order;
-    const offerId = order?._offerId;
-    if (!offerId) { closeOrderDialog(); return; }
+    const orderId = order?._orderId;
+    if (!orderId) { closeOrderDialog(); return; }
 
-    if (!confirm('Are you sure you want to delete this offer?')) return;
+    if (!confirm('Are you sure you want to delete this order?')) return;
 
     try {
-      const res = await fetch(`/api/market/exchange/offers/${offerId}`, { method: 'DELETE' });
+      const res = await fetch(`/api/market/exchange/orders/${orderId}`, { method: 'DELETE' });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         console.error('Delete failed:', data.error);
         return;
       }
-      await refreshAfterOfferChange();
+      await refreshAfterOrderChange();
     } catch (err) {
-      console.error('Error deleting offer:', err);
+      console.error('Error deleting order:', err);
     } finally {
       closeOrderDialog();
     }
@@ -1355,14 +1385,20 @@
       formatter: (v) => v ?? 0 });
     const itemMaxTT = getMaxTT(selectedItemDetails) ?? selectedItem?.v ?? null;
     const stackable = isItemStackable(selectedItemDetails || selectedItem);
-    cols.push({ key: '_value', header: 'Value', width: '100px', sortable: true, searchable: false,
+    cols.push({ key: '_value', header: 'Value', width: '110px', sortable: true, searchable: false,
       sortValue: (row) => {
         const tt = row?.details?.CurrentTT ?? (stackable && itemMaxTT != null ? itemMaxTT * (row?.quantity ?? 1) : itemMaxTT);
         return tt ?? -1;
       },
       formatter: (v, row) => {
         const tt = row?.details?.CurrentTT ?? (stackable && itemMaxTT != null ? itemMaxTT * (row?.quantity ?? 1) : itemMaxTT);
-        return tt != null ? `${Number(tt).toFixed(2)} PED` : 'N/A';
+        if (tt == null) return 'N/A';
+        const ttStr = `${Number(tt).toFixed(2)} PED`;
+        if (!stackable && row?.details?.CurrentTT != null && itemMaxTT != null && itemMaxTT > 0) {
+          const pct = Math.round((Number(row.details.CurrentTT) / itemMaxTT) * 100);
+          return `${ttStr} <span class="tt-pct">(${pct}%)</span>`;
+        }
+        return ttStr;
       }});
     cols.push({ key: 'markup', header: isAbsMu ? 'MU (+PED)' : 'MU (%)', width: '90px', sortable: true, searchable: false,
       formatter: (v) => formatMarkupValue(v, isAbsMu)});
@@ -1408,10 +1444,10 @@
       cols.push({
         key: '_action', header: '', width: '70px', sortable: false, searchable: false,
         formatter: (v, row) => {
-          const offerId = row?.id ?? row?.Id ?? 0;
+          const orderId = row?.id ?? row?.Id ?? 0;
           const isOwn = currentUser && String(getSellerId(row)) === String(currentUser.id);
-          if (isOwn) return `<button class="cell-button trade-btn edit-trade-btn" data-trade-buy="${offerId}">Edit</button>`;
-          return `<button class="cell-button trade-btn buy-trade-btn" data-trade-buy="${offerId}">Buy</button>`;
+          if (isOwn) return `<button class="cell-button trade-btn edit-trade-btn" data-trade-buy="${orderId}">Edit</button>`;
+          return `<button class="cell-button trade-btn buy-trade-btn" data-trade-buy="${orderId}">Buy</button>`;
         }
       });
     }
@@ -1427,10 +1463,10 @@
       cols.push({
         key: '_action', header: '', width: '70px', sortable: false, searchable: false,
         formatter: (v, row) => {
-          const offerId = row?.id ?? row?.Id ?? 0;
+          const orderId = row?.id ?? row?.Id ?? 0;
           const isOwn = currentUser && String(getSellerId(row)) === String(currentUser.id);
-          if (isOwn) return `<button class="cell-button trade-btn edit-trade-btn" data-trade-sell="${offerId}">Edit</button>`;
-          return `<button class="cell-button trade-btn sell-trade-btn" data-trade-sell="${offerId}">Sell</button>`;
+          if (isOwn) return `<button class="cell-button trade-btn edit-trade-btn" data-trade-sell="${orderId}">Edit</button>`;
+          return `<button class="cell-button trade-btn sell-trade-btn" data-trade-sell="${orderId}">Sell</button>`;
         }
       });
     }
@@ -1439,14 +1475,14 @@
 
   /** Handle clicks on Buy/Sell trade buttons and seller links in detail view */
   function handleDetailClick(e) {
-    // Seller name click → open user offers panel
+    // Seller name click → open user orders panel
     const sellerEl = e.target.closest('[data-seller-id]');
     if (sellerEl) {
       e.stopPropagation();
       e.preventDefault();
       const userId = sellerEl.dataset.sellerId;
       const name = sellerEl.dataset.sellerName || 'Unknown';
-      if (userId) openUserOffersPanel(userId, name);
+      if (userId) openUserOrdersPanel(userId, name);
       return;
     }
 
@@ -1457,21 +1493,21 @@
     e.preventDefault();
 
     if (buyBtn) {
-      const offerId = parseInt(buyBtn.dataset.tradeBuy, 10);
-      const order = (sellOrders || []).find(o => (o?.id ?? o?.Id) === offerId);
+      const orderId = parseInt(buyBtn.dataset.tradeBuy, 10);
+      const order = (sellOrders || []).find(o => (o?.id ?? o?.Id) === orderId);
       if (order) {
         if (currentUser && String(getSellerId(order)) === String(currentUser.id)) {
-          editOfferInline(order);
+          editOrderInline(order);
         } else {
           openQuickTrade(order, 'buy');
         }
       }
     } else if (sellBtn) {
-      const offerId = parseInt(sellBtn.dataset.tradeSell, 10);
-      const order = (buyOrders || []).find(o => (o?.id ?? o?.Id) === offerId);
+      const orderId = parseInt(sellBtn.dataset.tradeSell, 10);
+      const order = (buyOrders || []).find(o => (o?.id ?? o?.Id) === orderId);
       if (order) {
         if (currentUser && String(getSellerId(order)) === String(currentUser.id)) {
-          editOfferInline(order);
+          editOrderInline(order);
         } else {
           openQuickTrade(order, 'sell');
         }
@@ -1479,36 +1515,36 @@
     }
   }
 
-  function openQuickTrade(offer, side) {
-    quickTradeOffer = offer;
+  function openQuickTrade(order, side) {
+    quickTradeOrder = order;
     quickTradeSide = side;
     showQuickTrade = true;
   }
 
   function closeQuickTrade() {
     showQuickTrade = false;
-    quickTradeOffer = null;
+    quickTradeOrder = null;
   }
 
   async function handleQuickTradeConfirm(e) {
-    const { offer, quantity, side } = e.detail;
+    const { order, quantity, side } = e.detail;
     const item = selectedItemDetails || selectedItem;
-    const itemName = offer.details?.item_name || item?.Name || item?.n || 'Unknown';
+    const itemName = order.details?.item_name || item?.Name || item?.n || 'Unknown';
 
     try {
       const res = await fetch('/api/market/trade-requests', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          target_id: offer.user_id,
-          planet: offer.planet || null,
+          target_id: order.user_id,
+          planet: order.planet || null,
           items: [{
-            offer_id: offer.id,
-            item_id: offer.item_id ?? item?.i ?? item?.Id,
+            offer_id: order.id,
+            item_id: order.item_id ?? item?.i ?? item?.Id,
             item_name: itemName,
-            quantity: quantity || offer.quantity || 1,
-            markup: offer.markup || 0,
-            side: offer.type || (side === 'buy' ? 'SELL' : 'BUY')
+            quantity: quantity || order.quantity || 1,
+            markup: order.markup || 0,
+            side: order.type || (side === 'buy' ? 'SELL' : 'BUY')
           }]
         })
       });
@@ -1613,6 +1649,7 @@
             {allItems}
             showNewFolderButton={false}
             selectedFolderId={selectedFavFolderId}
+            selectedItemId={currentItemId}
             onSelectItem={(itemId) => { handleFavouriteItemSelect(itemId); mobileSidebarOpen = false; }}
             onSelectFolder={handleFavouriteFolderSelect}
           />
@@ -1656,7 +1693,7 @@
             {#if canPostOrders}
               <button class="action-btn accent-btn" title="My Orders" on:click={() => {
                 const userName = currentUser?.eu_name;
-                goto(userName ? `/market/exchange/offers/${encodeURIComponentSafe(userName)}` : '/market/exchange/offers');
+                goto(userName ? `/market/exchange/orders/${encodeURIComponentSafe(userName)}` : '/market/exchange/orders');
               }}>My Orders</button>
               <button class="action-btn accent-btn" title="Inventory" on:click={() => goto('/market/exchange/inventory')}>Inventory</button>
               {#if $tradeList.length > 0}
@@ -1789,7 +1826,7 @@
               {/if}
               {#if $tradeList.length > 0}
                 <span class="actions-divider"></span>
-                <button class="action-btn trade-list-btn" title="Trade List" on:click={() => { showMyOffers.set(false); showInventory.set(false); showTradeList.set(true); }}>
+                <button class="action-btn trade-list-btn" title="Trade List" on:click={() => { showMyOrders.set(false); showInventory.set(false); showTradeList.set(true); }}>
                   Trade List ({$tradeList.length})
                 </button>
               {/if}
@@ -1980,44 +2017,44 @@
       <QuickTradeDialog
         bind:this={quickTradeRef}
         show={showQuickTrade}
-        offer={quickTradeOffer}
+        order={quickTradeOrder}
         side={quickTradeSide}
         item={selectedItemDetails || selectedItem}
-        showAddToList={showUserOffers}
+        showAddToList={showUserOrders}
         on:close={closeQuickTrade}
         on:confirm={handleQuickTradeConfirm}
         on:addToList={handleAddToListFromDialog}
-        on:editOwn={(e) => { closeQuickTrade(); editOfferInline(e.detail.offer); }}
+        on:editOwn={(e) => { closeQuickTrade(); editOrderInline(e.detail.order); }}
       />
 
       <OrderDialog
         bind:this={orderDialogRef}
         show={showOrderDialog}
-        existingOfferCount={orderDialogExistingCount}
+        existingOrderCount={orderDialogExistingCount}
         isNonFungible={orderDialogIsNonFungible}
         submitting={submittingOrder}
         on:close={closeOrderDialog}
         on:submit={onSubmitOrder}
         on:next={onNextOrder}
-        on:delete={handleDeleteOffer}
+        on:delete={handleDeleteOrder}
       />
 
       <BulkTradeDialog
         show={showBulkTradeDialog}
         itemName={selectedItemDetails?.Name || selectedItem?.n || ''}
         item={selectedItemDetails || selectedItem}
-        orderBookOffers={[...(buyOrders || []), ...(sellOrders || [])]}
+        orderBookOrders={[...(buyOrders || []), ...(sellOrders || [])]}
         on:close={() => showBulkTradeDialog = false}
         on:bulkSubmit={handleBulkSubmit}
       />
     </div>
 
-    {#if canPostOrders && ($showMyOffers || $showInventory || $showTrades || showUserOffers)}
+    {#if canPostOrders && ($showMyOrders || $showInventory || $showTrades || showUserOrders)}
       <div class="floating-panel">
-        {#if showUserOffers}
+        {#if showUserOrders}
           <div class="panel-title-bar">
-            <button class="back-btn" on:click={closeUserOffersPanel}>Back</button>
-            <span class="panel-title-text">{userOffersTarget?.name || 'User'}</span>
+            <button class="back-btn" on:click={closeUserOrdersPanel}>Back</button>
+            <span class="panel-title-text">{userOrdersTarget?.name || 'User'}</span>
             <div class="panel-header-actions">
               {#if $tradeList.length > 0}
                 <button class="panel-action-btn accent" on:click={() => showTradeList.set(!$showTradeList)}>
@@ -2029,14 +2066,14 @@
           {#if $showTradeList}
             <CartSummary on:close={() => showTradeList.set(false)} />
           {:else}
-            <div class="user-offers-stacked">
-              <div class="user-offers-section">
-                <div class="user-offers-section-label sell">Sell Offers</div>
-                <UserOffersPanel user={userOffersTarget} sideFilter="SELL" {allItems} on:offerAction={handleOfferAction} />
+            <div class="user-orders-stacked">
+              <div class="user-orders-section">
+                <div class="user-orders-section-label sell">Sell Orders</div>
+                <UserOrdersPanel user={userOrdersTarget} sideFilter="SELL" {allItems} on:orderAction={handleOrderAction} />
               </div>
-              <div class="user-offers-section">
-                <div class="user-offers-section-label buy">Buy Offers</div>
-                <UserOffersPanel user={userOffersTarget} sideFilter="BUY" {allItems} on:offerAction={handleOfferAction} />
+              <div class="user-orders-section">
+                <div class="user-orders-section-label buy">Buy Orders</div>
+                <UserOrdersPanel user={userOrdersTarget} sideFilter="BUY" {allItems} on:orderAction={handleOrderAction} />
               </div>
             </div>
           {/if}
@@ -2044,23 +2081,24 @@
           <div class="panel-title-bar">
             <button class="back-btn" on:click={closeFloatingPanel}>Back</button>
             <div class="panel-tabs">
-              <button class="panel-tab" class:active={$showMyOffers} on:click={() => {
+              <button class="panel-tab" class:active={$showMyOrders} on:click={() => {
                 const userName = currentUser?.eu_name;
-                goto(userName ? `/market/exchange/offers/${encodeURIComponentSafe(userName)}` : '/market/exchange/offers');
+                goto(userName ? `/market/exchange/orders/${encodeURIComponentSafe(userName)}` : '/market/exchange/orders');
               }}>My Orders</button>
               <button class="panel-tab" class:active={$showInventory} on:click={() => goto('/market/exchange/inventory')}>Inventory</button>
               <button class="panel-tab" class:active={$showTrades} on:click={() => goto('/market/exchange/trades')}>Trades</button>
             </div>
             <div class="panel-header-actions">
-              {#if $showMyOffers}
+              {#if $showMyOrders}
                 <div class="panel-side-filter">
                   <button class="panel-filter-btn" class:active={panelSideFilter === 'all'} on:click={() => panelSideFilter = 'all'}>All</button>
                   <button class="panel-filter-btn" class:active={panelSideFilter === 'BUY'} on:click={() => panelSideFilter = 'BUY'}>Buy</button>
                   <button class="panel-filter-btn" class:active={panelSideFilter === 'SELL'} on:click={() => panelSideFilter = 'SELL'}>Sell</button>
                 </div>
-                <button class="panel-action-btn accent" disabled={bumpingAll} on:click={async () => { bumpingAll = true; await myOffersRef?.bumpAll(); bumpingAll = false; }}>{bumpingAll ? 'Bumping...' : 'Bump All'}</button>
+                <button class="panel-action-btn accent" disabled={bumpingAll} on:click={async () => { bumpingAll = true; await myOrdersRef?.bumpAll(); bumpingAll = false; }}>{bumpingAll ? 'Bumping...' : 'Bump All'}</button>
               {/if}
               {#if $showInventory}
+                <button class="panel-action-btn" class:mass-sell={!massSellMode} class:mass-sell-cancel={massSellMode} on:click={toggleMassSellMode}>{massSellMode ? 'Cancel' : 'Mass Sell'}</button>
                 <button class="panel-action-btn accent" on:click={() => { showImportDialog = true; }}>Import</button>
                 {#if discrepancyCount > 0}
                   <button class="panel-action-btn warn" on:click={() => { showAdjustDialog = true; }}>Adjust ({discrepancyCount})</button>
@@ -2070,15 +2108,15 @@
             </div>
           </div>
 
-          {#if $showMyOffers}
-            <MyOffersView
-              bind:this={myOffersRef}
+          {#if $showMyOrders}
+            <MyOrdersView
+              bind:this={myOrdersRef}
               user={currentUser}
               sideFilter={panelSideFilter}
               on:edit={(e) => {
-                const offer = e.detail;
-                if (offer?.item_id) {
-                  editOfferInline(offer);
+                const order = e.detail;
+                if (order?.item_id) {
+                  editOrderInline(order);
                 }
               }}
             />
@@ -2088,6 +2126,7 @@
               user={currentUser}
               {allItems}
               on:sell={handleInventorySell}
+              on:massSell={handleMassSell}
             />
           {:else if $showTrades}
             <TradeRequestsPanel
@@ -2106,17 +2145,24 @@
   {allItems}
   on:close={() => { showImportDialog = false; }}
   on:imported={() => {
-    showImportDialog = false;
-    // Refresh inventory panel if open
+    // Refresh inventory panel — dialog stays open to show results
     if ($showInventory && inventoryPanelRef) {
       inventoryPanelRef.refresh();
     }
   }}
 />
 
-<OfferAdjustDialog
+<OrderAdjustDialog
   show={showAdjustDialog}
   on:close={() => { showAdjustDialog = false; }}
+/>
+
+<MassSellDialog
+  show={showMassSellDialog}
+  items={massSellItems}
+  {allItems}
+  on:close={() => { showMassSellDialog = false; }}
+  on:complete={handleMassSellComplete}
 />
 
 {#if showAuthDialog}
@@ -2287,7 +2333,7 @@
     flex: 1;
   }
 
-  .user-offers-stacked {
+  .user-orders-stacked {
     flex: 1;
     min-height: 0;
     display: flex;
@@ -2295,7 +2341,7 @@
     gap: 8px;
     overflow: hidden;
   }
-  .user-offers-section {
+  .user-orders-section {
     flex: 1;
     min-height: 0;
     display: flex;
@@ -2305,7 +2351,7 @@
     border-radius: 8px;
     overflow: hidden;
   }
-  .user-offers-section-label {
+  .user-orders-section-label {
     padding: 6px 12px;
     font-size: 11px;
     font-weight: 600;
@@ -2314,10 +2360,10 @@
     border-bottom: 1px solid var(--border-color);
     flex-shrink: 0;
   }
-  .user-offers-section-label.sell {
+  .user-orders-section-label.sell {
     color: var(--error-color);
   }
-  .user-offers-section-label.buy {
+  .user-orders-section-label.buy {
     color: var(--success-color);
   }
 
@@ -2378,6 +2424,20 @@
   }
   .panel-action-btn.warn:hover {
     background: rgba(245, 158, 11, 0.1);
+  }
+  .panel-action-btn.mass-sell {
+    color: var(--success-color);
+    border-color: var(--success-color);
+  }
+  .panel-action-btn.mass-sell:hover {
+    background: rgba(52, 199, 89, 0.1);
+  }
+  .panel-action-btn.mass-sell-cancel {
+    color: var(--error-color);
+    border-color: var(--error-color);
+  }
+  .panel-action-btn.mass-sell-cancel:hover {
+    background: rgba(239, 68, 68, 0.1);
   }
 
   .panel-side-filter {
@@ -2715,6 +2775,10 @@
   }
   :global(.seller-link:hover) {
     text-decoration: underline;
+  }
+  :global(.tt-pct) {
+    color: var(--text-muted);
+    font-size: 0.9em;
   }
 
   .empty-state,

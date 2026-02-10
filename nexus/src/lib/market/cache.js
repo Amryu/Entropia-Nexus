@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { apiCall } from "$lib/util";
 import { categorizeItems } from "$lib/market/categorize";
-import { getAllOfferCounts, getLatestExchangePriceMap } from "$lib/server/exchange.js";
+import { getAllOrderCounts, getLatestExchangePriceMap } from "$lib/server/exchange.js";
 
 // In-memory cache
 let cache = {
@@ -180,7 +180,7 @@ export async function rebuildMarketCache(fetch) {
     // Fetch offer counts and prices from exchange DB
     try {
       const [counts, prices] = await Promise.all([
-        getAllOfferCounts(),
+        getAllOrderCounts(),
         getLatestExchangePriceMap().catch(() => null)
       ]);
       cache.offerCounts = counts;
@@ -297,7 +297,7 @@ async function itemsDeltaRefresh(fetch) {
     // Refresh offer counts and prices
     try {
       const [counts, prices] = await Promise.all([
-        getAllOfferCounts(),
+        getAllOrderCounts(),
         getLatestExchangePriceMap().catch(() => null)
       ]);
       cache.offerCounts = counts;
@@ -324,7 +324,7 @@ async function refreshOfferCounts() {
   if (!cache.annotated) return; // no data yet
   try {
     const [counts, prices] = await Promise.all([
-      getAllOfferCounts(),
+      getAllOrderCounts(),
       getLatestExchangePriceMap().catch(() => null)
     ]);
     cache.offerCounts = counts;

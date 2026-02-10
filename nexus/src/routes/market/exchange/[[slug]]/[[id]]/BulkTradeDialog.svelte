@@ -11,8 +11,8 @@
   /** @type {object|null} Item type info for markup detection */
   export let item = null;
 
-  /** @type {Array} All order book offers (buy + sell) */
-  export let orderBookOffers = [];
+  /** @type {Array} All order book orders (buy + sell) */
+  export let orderBookOrders = [];
 
   /** @type {Array} Available planets */
   export let planets = ['Calypso', 'Arkadia', 'Cyrene', 'Monria', 'Next Island', 'Rocktropia', 'Toulan'];
@@ -21,25 +21,25 @@
 
   let activeTab = 'buy'; // 'buy' | 'sell'
   let quantity = 1;
-  let minOffer = 0;
+  let minOrder = 0;
   let maxTraders = 5;
   let planet = 'All Planets';
   let submitting = false;
   let error = null;
 
-  $: matched = computeMatches(orderBookOffers, activeTab, quantity, minOffer, maxTraders, planet);
+  $: matched = computeMatches(orderBookOrders, activeTab, quantity, minOrder, maxTraders, planet);
 
-  function computeMatches(offers, tab, qty, minOfferQty, maxTradersLimit, planetFilter) {
-    if (!offers || qty <= 0) return { matched: [], totalFilled: 0, remaining: qty };
+  function computeMatches(orders, tab, qty, minOrderQty, maxTradersLimit, planetFilter) {
+    if (!orders || !qty || qty <= 0) return { matched: [], totalFilled: 0, remaining: 0 };
 
     const opposingSide = tab === 'buy' ? 'SELL' : 'BUY';
-    let candidates = offers.filter(o => o.type === opposingSide);
+    let candidates = orders.filter(o => o.type === opposingSide);
 
     if (planetFilter && planetFilter !== 'All Planets') {
       candidates = candidates.filter(o => o.planet === planetFilter);
     }
-    if (minOfferQty > 0) {
-      candidates = candidates.filter(o => (o.quantity || 0) >= minOfferQty);
+    if (minOrderQty > 0) {
+      candidates = candidates.filter(o => (o.quantity || 0) >= minOrderQty);
     }
 
     // Sort: best markup first (lowest for buy, highest for sell)
@@ -54,14 +54,14 @@
     let totalFilled = 0;
     let tradersUsed = 0;
 
-    for (const offer of candidates) {
+    for (const order of candidates) {
       if (tradersUsed >= traderLimit) break;
       if (totalFilled >= qty) break;
 
       const remaining = qty - totalFilled;
-      const fillQty = Math.min(remaining, offer.quantity || 1);
+      const fillQty = Math.min(remaining, order.quantity || 1);
 
-      result.push({ ...offer, fillQuantity: fillQty });
+      result.push({ ...order, fillQuantity: fillQty });
       totalFilled += fillQty;
       tradersUsed++;
     }
@@ -109,8 +109,8 @@
           <input id="bulkQty" type="number" min="1" bind:value={quantity} />
         </div>
         <div class="form-row">
-          <label for="bulkMinOffer">Min Offer Qty</label>
-          <input id="bulkMinOffer" type="number" min="0" bind:value={minOffer} placeholder="0 = any" />
+          <label for="bulkMinOrder">Min Order Qty</label>
+          <input id="bulkMinOrder" type="number" min="0" bind:value={minOrder} placeholder="0 = any" />
         </div>
         <div class="form-row">
           <label for="bulkMaxTraders">Max Traders</label>
@@ -132,9 +132,9 @@
 
       <div class="bulk-preview">
         <div class="bulk-preview-header">
-          <span class="bulk-preview-title">Matching Offers</span>
+          <span class="bulk-preview-title">Matching Orders</span>
           <span class="bulk-preview-summary">
-            {matched.totalFilled} / {quantity} filled
+            {matched.totalFilled} / {quantity || 0} filled
             {#if matched.remaining > 0}
               <span class="bulk-warning">({matched.remaining} remaining)</span>
             {/if}
@@ -160,7 +160,7 @@
             {/each}
           </div>
         {:else}
-          <div class="bulk-empty">No matching offers found</div>
+          <div class="bulk-empty">No matching orders found</div>
         {/if}
       </div>
 
