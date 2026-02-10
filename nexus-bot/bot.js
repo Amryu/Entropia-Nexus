@@ -966,7 +966,10 @@ async function runPriceSummaries() {
 }
 setInterval(() => runScheduled('runPriceSummaries', runPriceSummaries), 15 * 60 * 1000);
 
-// Snapshot exchange prices then compute exchange summaries every 15 minutes
+// Snapshot exchange prices then compute exchange summaries at quarter-hour boundaries (:00, :15, :30, :45)
+const SNAPSHOT_INTERVAL_MS = 15 * 60 * 1000;
+const SNAPSHOT_GRACE_MS = 5 * 60 * 1000;
+
 async function runExchangePriceSnapshot() {
   try {
     const count = await snapshotExchangePrices();
@@ -982,7 +985,24 @@ async function runExchangePriceSnapshot() {
     console.error('Error in exchange price snapshot:', e);
   }
 }
-setInterval(() => runScheduled('runExchangePriceSnapshot', runExchangePriceSnapshot), 15 * 60 * 1000);
+
+function scheduleNextSnapshot() {
+  const now = Date.now();
+  const msSinceLastBoundary = now % SNAPSHOT_INTERVAL_MS;
+
+  // If we're within the grace period past a boundary, run immediately (retroactive)
+  if (msSinceLastBoundary > 0 && msSinceLastBoundary <= SNAPSHOT_GRACE_MS) {
+    runScheduled('runExchangePriceSnapshot', runExchangePriceSnapshot);
+  }
+
+  // Schedule next boundary
+  const delay = SNAPSHOT_INTERVAL_MS - msSinceLastBoundary;
+  setTimeout(() => {
+    runScheduled('runExchangePriceSnapshot', runExchangePriceSnapshot);
+    scheduleNextSnapshot();
+  }, delay);
+}
+scheduleNextSnapshot();
 
 client.login(process.env.CLIENT_TOKEN);
 

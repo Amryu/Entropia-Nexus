@@ -732,7 +732,7 @@
 
   function formatMarkupDisplay(value) {
     if (value == null || !isFinite(value)) return 'N/A';
-    if (hasCondition(selectedItemDetails)) {
+    if (isAbsoluteMarkup(selectedItemDetails)) {
       return `+${value.toFixed(2)}`;
     }
     return `${value.toFixed(1)}%`;
@@ -981,7 +981,7 @@
       : "";
     const qty = o?.Quantity ?? o?.quantity ?? 0;
     const unit = getPrice(o) ?? o?.UnitPrice ?? o?.unit_price ?? null;
-    const ttUnit = o?.TTValue ?? o?.Value ?? o?.tt_value ?? null;
+    const ttUnit = o?.TTValue ?? o?.Value ?? o?.tt_value ?? o?.details?.CurrentTT ?? null;
     const total =
       o?.TotalPrice ??
       o?.total ??
@@ -998,10 +998,10 @@
       unit != null && ttUnit != null
         ? unit - ttUnit
         : (o?.Markup ?? o?.markup ?? null);
-    const isCond = hasCondition(selectedItemDetails);
+    const isAbsMu = isAbsoluteMarkup(selectedItemDetails);
     const fmt = (x, digits = 2) =>
       typeof x === "number" && isFinite(x) ? x.toFixed(digits) : "N/A";
-    const muText = isCond
+    const muText = isAbsMu
       ? absMu != null
         ? `+${fmt(absMu)}`
         : "N/A"
@@ -1053,7 +1053,7 @@
 
   function applyOrderFilters(orders) {
     const maxTT = getMaxTT(selectedItemDetails);
-    const isCond = hasCondition(selectedItemDetails);
+    const isAbsMu = isAbsoluteMarkup(selectedItemDetails);
 
     return (orders || [])
       .filter((o) =>
@@ -1088,11 +1088,11 @@
         const qty = o?.Quantity ?? o?.quantity ?? 0;
         const mu = o?.Markup ?? o?.markup ?? null;
         // Compute TT value and unit price from item's MaxTT and order markup
-        let ttValue = o?.TTValue ?? o?.Value ?? o?.tt_value ?? null;
+        let ttValue = o?.TTValue ?? o?.Value ?? o?.tt_value ?? o?.details?.CurrentTT ?? null;
         let unitPrice = o?.Price ?? o?.price ?? o?.UnitPrice ?? o?.unit_price ?? null;
         if (ttValue == null && maxTT != null) ttValue = maxTT;
         if (unitPrice == null && ttValue != null && mu != null) {
-          unitPrice = isCond ? ttValue + mu : ttValue * (mu / 100);
+          unitPrice = isAbsMu ? ttValue + mu : ttValue * (mu / 100);
         }
         return {
           ...o,
@@ -1265,7 +1265,7 @@
   $: detailColumns = (() => {
     const type = selectedItemDetails?.Properties?.Type || selectedItem?.t || null;
     const showTier = tierableTypes.has(type);
-    const isCond = hasCondition(selectedItemDetails);
+    const isAbsMu = isAbsoluteMarkup(selectedItemDetails);
     const cols = [];
 
     if (showTier) {
@@ -1281,9 +1281,9 @@
         const tt = row?.TTValue ?? row?.Value ?? row?.tt_value ?? null;
         return tt != null ? `${Number(tt).toFixed(2)} PED` : 'N/A';
       }});
-    cols.push({ key: 'markup', header: 'MU', width: '90px', sortable: true, searchable: false,
+    cols.push({ key: 'markup', header: isAbsMu ? 'MU (+PED)' : 'MU (%)', width: '90px', sortable: true, searchable: false,
       formatter: (v, row) => {
-        if (isCond) {
+        if (isAbsMu) {
           const abs = v ?? row?.Markup ?? null;
           return abs != null ? `+${Number(abs).toFixed(2)}` : 'N/A';
         }
@@ -1817,7 +1817,7 @@
             <PriceHistoryChart
               itemId={selectedItem?.i}
               period={selectedPeriod}
-              isAbsoluteMarkup={hasCondition(selectedItemDetails)}
+              isAbsoluteMarkup={isAbsoluteMarkup(selectedItemDetails)}
               data={priceHistoryData}
               loading={priceHistoryLoading}
             />

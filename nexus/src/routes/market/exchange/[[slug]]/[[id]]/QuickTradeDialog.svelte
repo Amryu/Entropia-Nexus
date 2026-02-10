@@ -48,18 +48,19 @@
   $: qtyValid = quantity >= minQty && quantity <= maxQty;
 
   $: isCond = hasCondition(item);
+  $: isAbsMu = isAbsoluteMarkup(item);
   $: maxTT = getMaxTT(item);
 
   $: markupDisplay = (() => {
     const mu = offer?.markup;
     if (mu == null) return 'N/A';
-    return isCond ? `+${Number(mu).toFixed(2)} PED` : `${Number(mu).toFixed(1)}%`;
+    return isAbsMu ? `+${Number(mu).toFixed(2)} PED` : `${Number(mu).toFixed(1)}%`;
   })();
 
   // Compute unit price (TT + MU per unit)
   $: unitPrice = (() => {
     if (maxTT == null || offer?.markup == null) return null;
-    return isCond ? maxTT + offer.markup : maxTT * (offer.markup / 100);
+    return isAbsMu ? maxTT + offer.markup : maxTT * (offer.markup / 100);
   })();
 
   // Compute total TT and total price for the selected quantity
@@ -184,7 +185,7 @@
             </div>
             <div class="price-row">
               <span class="price-label">Markup</span>
-              <span class="price-value">{isCond ? fmt(offer?.markup) + ' PED' : fmt(totalPrice - totalTT) + ' PED'}</span>
+              <span class="price-value">{isAbsMu ? fmt(offer?.markup) + ' PED' : fmt(totalPrice - totalTT) + ' PED'}</span>
             </div>
             <div class="price-row total">
               <span class="price-label">Total Price</span>
