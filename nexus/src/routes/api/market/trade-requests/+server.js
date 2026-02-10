@@ -86,6 +86,10 @@ export async function POST({ request, locals }) {
     if (err.code === '23505') {
       return getResponse({ error: 'An open trade request already exists between you and this user' }, 409);
     }
+    // Validation errors thrown with a status property
+    if (err.status === 400) {
+      return getResponse({ error: err.message }, 400);
+    }
     console.error('Error creating trade request:', err);
     return getResponse({ error: 'Failed to create trade request' }, 500);
   }

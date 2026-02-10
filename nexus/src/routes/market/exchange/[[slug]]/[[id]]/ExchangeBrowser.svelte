@@ -94,6 +94,7 @@
   let showQuickTrade = false;
   let quickTradeOrder = null;
   let quickTradeSide = 'buy'; // 'buy' | 'sell'
+  let quickTradeItem = null; // Override item context for type detection
   let quickTradeRef;
 
   // User orders panel state
@@ -220,16 +221,27 @@
   function closeUserOrdersPanel() {
     showUserOrders = false;
     clearTradeList();
-    goto(userOrdersReturnUrl || '/market/exchange/listings');
+    if (userOrdersReturnUrl && userOrdersReturnUrl !== $page.url.pathname) {
+      goto(userOrdersReturnUrl);
+    } else {
+      // Fallback: use history.back if we came here via navigation, else go to listings
+      if (window.history.length > 1) {
+        window.history.back();
+      } else {
+        goto('/market/exchange/listings');
+      }
+    }
   }
 
   function handleOrderAction(e) {
     const item = e.detail;
+    // Resolve the slim item for the order's item_id so type detection works
+    const rawOrder = item.order || item;
+    const slimItem = (allItems || []).find(si => si?.i === (rawOrder.item_id ?? item.itemId));
     if ($tradeList.length === 0) {
       // No trade list started — open QuickTradeDialog for a single trade request
-      const rawOrder = item.order || item;
       const side = item.side === 'SELL' ? 'buy' : 'sell';
-      openQuickTrade(rawOrder, side);
+      openQuickTrade(rawOrder, side, slimItem || null);
     } else {
       // Trade list already started — add to it
       addToTradeList(item);
@@ -1571,15 +1583,17 @@
     }
   }
 
-  function openQuickTrade(order, side) {
+  function openQuickTrade(order, side, itemOverride = null) {
     quickTradeOrder = order;
     quickTradeSide = side;
+    quickTradeItem = itemOverride;
     showQuickTrade = true;
   }
 
   function closeQuickTrade() {
     showQuickTrade = false;
     quickTradeOrder = null;
+    quickTradeItem = null;
   }
 
   async function handleQuickTradeConfirm(e) {
@@ -2074,7 +2088,7 @@
         show={showQuickTrade}
         order={quickTradeOrder}
         side={quickTradeSide}
-        item={selectedItemDetails || selectedItem}
+        item={quickTradeItem || selectedItemDetails || selectedItem}
         showAddToList={showUserOrders}
         on:close={closeQuickTrade}
         on:confirm={handleQuickTradeConfirm}
@@ -2111,25 +2125,50 @@
             <button class="back-btn" on:click={closeUserOrdersPanel}>Back</button>
             <span class="panel-title-text">{userOrdersTarget?.name || 'User'}</span>
             <div class="panel-header-actions">
-              {#if $tradeList.length > 0}
-                <button class="panel-action-btn accent" on:click={() => showTradeList.set(!$showTradeList)}>
-                  Trade List ({$tradeList.length})
-                </button>
-              {/if}
+              <div class="panel-side-filter">
+                <button class="panel-filter-btn" class:active={panelSideFilter === 'all'} on:click={() => panelSideFilter = 'all'}>All</button>
+                <button class="panel-filter-btn" class:active={panelSideFilter === 'BUY'} on:click={() => panelSideFilter = 'BUY'}>Buy</button>
+                <button class="panel-filter-btn" class:active={panelSideFilter === 'SELL'} on:click={() => panelSideFilter = 'SELL'}>Sell</button>
+              </div>
+              <button
+                class="panel-action-btn"
+                class:accent={$tradeList.length > 0}
+                on:click={() => {
+                  if ($tradeList.length > 0) {
+                    showTradeList.set(!$showTradeList);
+                  } else {
+                    showTradeList.set(!$showTradeList);
+                  }
+                }}
+              >
+                Trade List{$tradeList.length > 0 ? ` (${$tradeList.length})` : ''}
+              </button>
             </div>
           </div>
           {#if $showTradeList}
-            <CartSummary on:close={() => showTradeList.set(false)} />
+            {#if $tradeList.length > 0}
+              <CartSummary on:close={() => showTradeList.set(false)} />
+            {:else}
+              <div class="trade-list-empty-state">
+                <p>Your trade list is empty.</p>
+                <p class="trade-list-hint">Click <strong>Buy</strong> or <strong>Sell</strong> on any order to add items. This lets you buy multiple items from this user in a single trade request.</p>
+                <button class="back-btn" on:click={() => showTradeList.set(false)}>Back to Orders</button>
+              </div>
+            {/if}
           {:else}
-            <div class="user-orders-stacked">
-              <div class="user-orders-section">
-                <div class="user-orders-section-label sell">Sell Orders</div>
-                <UserOrdersPanel user={userOrdersTarget} sideFilter="SELL" {allItems} on:orderAction={handleOrderAction} />
-              </div>
-              <div class="user-orders-section">
-                <div class="user-orders-section-label buy">Buy Orders</div>
-                <UserOrdersPanel user={userOrdersTarget} sideFilter="BUY" {allItems} on:orderAction={handleOrderAction} />
-              </div>
+            <div class="detail-wrapper" class:single-table={panelSideFilter !== 'all'}>
+              {#if panelSideFilter !== 'BUY'}
+                <div class="detail-table sell">
+                  <span class="table-label sell">Sell</span>
+                  <UserOrdersPanel user={userOrdersTarget} sideFilter="SELL" {allItems} on:orderAction={handleOrderAction} />
+                </div>
+              {/if}
+              {#if panelSideFilter !== 'SELL'}
+                <div class="detail-table buy">
+                  <span class="table-label buy">Buy</span>
+                  <UserOrdersPanel user={userOrdersTarget} sideFilter="BUY" {allItems} on:orderAction={handleOrderAction} />
+                </div>
+              {/if}
             </div>
           {/if}
         {:else}
@@ -2388,40 +2427,27 @@
     flex: 1;
   }
 
-  .user-orders-stacked {
+  .trade-list-empty-state {
     flex: 1;
-    min-height: 0;
     display: flex;
     flex-direction: column;
+    align-items: center;
+    justify-content: center;
     gap: 8px;
-    overflow: hidden;
-  }
-  .user-orders-section {
-    flex: 1;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
+    padding: 2rem;
+    text-align: center;
+    color: var(--text-muted);
     background: var(--secondary-color);
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    overflow: hidden;
+    font-size: 13px;
   }
-  .user-orders-section-label {
-    padding: 6px 12px;
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    border-bottom: 1px solid var(--border-color);
-    flex-shrink: 0;
+  .trade-list-empty-state p { margin: 0; }
+  .trade-list-hint {
+    font-size: 12px;
+    max-width: 300px;
+    line-height: 1.5;
   }
-  .user-orders-section-label.sell {
-    color: var(--error-color);
-  }
-  .user-orders-section-label.buy {
-    color: var(--success-color);
-  }
-
   .panel-tabs {
     display: flex;
     gap: 2px;

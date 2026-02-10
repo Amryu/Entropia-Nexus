@@ -50,6 +50,7 @@
     {
       key: '_actions', header: '', width: '120px', sortable: false, searchable: false,
       formatter: (val, row) => {
+        if (row.state_display === 'closed') return '';
         return `<span class="order-actions">`
           + `<button class="order-action-btn edit" data-action="edit" data-id="${row.id}">Edit</button>`
           + `<button class="order-action-btn close" data-action="close" data-id="${row.id}">Close</button>`
@@ -178,10 +179,10 @@
       compact={true}
       sortable={true}
       searchable={true}
-      emptyMessage={sideFilter === 'all' ? 'You have no active orders' : `No ${sideFilter === 'BUY' ? 'buy' : 'sell'} orders`}
+      emptyMessage={sideFilter === 'all' ? 'You have no orders' : `No ${sideFilter === 'BUY' ? 'buy' : 'sell'} orders`}
       rowClass={(row) => {
         const s = row.state_display;
-        return s === 'stale' ? 'row-stale' : s === 'expired' ? 'row-expired' : null;
+        return s === 'closed' ? 'row-closed' : s === 'stale' ? 'row-stale' : s === 'expired' ? 'row-expired' : null;
       }}
     />
   </div>
@@ -224,6 +225,9 @@
   }
   .orders-table :global(.row-expired) {
     opacity: 0.45;
+  }
+  .orders-table :global(.row-closed) {
+    opacity: 0.35;
   }
 
   /* Action buttons inside FancyTable cells */

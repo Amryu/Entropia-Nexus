@@ -47,6 +47,7 @@ async function fetchAllDatasets(fetch) {
     armorPlatings,
     clothings,
     medicalTools,
+    medicalChips,
     finders,
     finderAmplifiers,
     excavators,
@@ -55,7 +56,8 @@ async function fetchAllDatasets(fetch) {
     enhancers,
     blueprints,
     materials,
-    vehicles
+    vehicles,
+    strongboxes
   ] = await Promise.all([
     apiCall(fetch, "/weapons"),
     apiCall(fetch, "/weaponamplifiers"),
@@ -68,6 +70,7 @@ async function fetchAllDatasets(fetch) {
     apiCall(fetch, "/armorplatings"),
     apiCall(fetch, "/clothings"),
     apiCall(fetch, "/medicaltools"),
+    apiCall(fetch, "/medicalchips"),
     apiCall(fetch, "/finders"),
     apiCall(fetch, "/finderamplifiers"),
     apiCall(fetch, "/excavators"),
@@ -76,7 +79,8 @@ async function fetchAllDatasets(fetch) {
     apiCall(fetch, "/enhancers"),
     apiCall(fetch, "/blueprints"),
     apiCall(fetch, "/materials"),
-    apiCall(fetch, "/vehicles")
+    apiCall(fetch, "/vehicles"),
+    apiCall(fetch, "/strongboxes")
   ]);
 
   return {
@@ -93,6 +97,7 @@ async function fetchAllDatasets(fetch) {
       armorPlatings,
       clothings,
       medicalTools,
+      medicalChips,
       finders,
       finderAmplifiers,
       excavators,
@@ -101,7 +106,8 @@ async function fetchAllDatasets(fetch) {
       enhancers,
       blueprints,
       materials,
-      vehicles
+      vehicles,
+      strongboxes
     }
   };
 }
@@ -258,6 +264,8 @@ async function itemsDeltaRefresh(fetch) {
       if (t === 'blueprint') need.add('blueprints');
       if (t === 'material') need.add('materials');
       if (t === 'vehicle') need.add('vehicles');
+      if (t === 'medicalchip') need.add('medicalChips');
+      if (t === 'strongbox') need.add('strongboxes');
     }
 
     const updates = {};
@@ -281,7 +289,9 @@ async function itemsDeltaRefresh(fetch) {
       need.has('enhancers') ? apiCall(fetch, '/enhancers').then(v => { updates.enhancers = v; }) : Promise.resolve(),
       need.has('blueprints') ? apiCall(fetch, '/blueprints').then(v => { updates.blueprints = v; }) : Promise.resolve(),
       need.has('materials') ? apiCall(fetch, '/materials').then(v => { updates.materials = v; }) : Promise.resolve(),
-      need.has('vehicles') ? apiCall(fetch, '/vehicles').then(v => { updates.vehicles = v; }) : Promise.resolve()
+      need.has('vehicles') ? apiCall(fetch, '/vehicles').then(v => { updates.vehicles = v; }) : Promise.resolve(),
+      need.has('medicalChips') ? apiCall(fetch, '/medicalchips').then(v => { updates.medicalChips = v; }) : Promise.resolve(),
+      need.has('strongboxes') ? apiCall(fetch, '/strongboxes').then(v => { updates.strongboxes = v; }) : Promise.resolve()
     ]);
 
     cache.detailed = { ...cache.detailed, ...updates };

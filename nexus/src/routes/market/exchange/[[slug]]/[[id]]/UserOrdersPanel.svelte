@@ -70,9 +70,9 @@
           return `<span class="badge badge-subtle ${cls}">${v === 'BUY' ? 'Buy' : 'Sell'}</span>`;
         }
       },
-      { key: 'quantity', header: 'Qty', width: '55px', sortable: true, searchable: false },
+      { key: 'quantity', header: 'Qty', width: '90px', sortable: true, searchable: false },
       {
-        key: '_tt', header: 'TT', width: '80px', sortable: true, searchable: false,
+        key: '_tt', header: 'TT', width: '90px', sortable: true, searchable: false,
         formatter: (v, row) => {
           const item = itemLookup.get(row?.item_id);
           const maxTT = item?.v ?? null;
@@ -80,14 +80,14 @@
         }
       },
       {
-        key: 'markup', header: 'Markup', width: '80px', sortable: true, searchable: false,
+        key: 'markup', header: 'Markup', width: '100px', sortable: true, searchable: false,
         formatter: (v, row) => {
           const item = itemLookup.get(row?.item_id);
           return formatMarkupForItem(v, item);
         }
       },
       {
-        key: '_total', header: 'Total', width: '90px', sortable: true, searchable: false,
+        key: '_total', header: 'Total', width: '120px', sortable: true, searchable: false,
         formatter: (v, row) => {
           const item = itemLookup.get(row?.item_id);
           const maxTT = item?.v ?? null;

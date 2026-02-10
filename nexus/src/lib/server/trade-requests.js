@@ -78,6 +78,36 @@ export async function getOrCreateTradeRequest(requesterId, targetId, planet, ite
       isNew = true;
     }
 
+    // Validate quantities against offer min_quantity for items referencing an offer
+    const offerIds = items.map(i => i.offer_id).filter(Boolean);
+    const offerMap = {};
+    if (offerIds.length > 0) {
+      const offerRes = await client.query(
+        `SELECT id, min_quantity, quantity FROM trade_offers WHERE id = ANY($1)`,
+        [offerIds]
+      );
+      for (const row of offerRes.rows) offerMap[row.id] = row;
+    }
+    for (const item of items) {
+      if (!item.offer_id) continue;
+      const offer = offerMap[item.offer_id];
+      if (!offer) continue;
+      const qty = item.quantity || 1;
+      const minQty = offer.min_quantity || 1;
+      if (qty < minQty) {
+        throw Object.assign(
+          new Error(`Quantity ${qty} is below the offer minimum of ${minQty}`),
+          { status: 400 }
+        );
+      }
+      if (qty > offer.quantity) {
+        throw Object.assign(
+          new Error(`Quantity ${qty} exceeds the offer's available quantity of ${offer.quantity}`),
+          { status: 400 }
+        );
+      }
+    }
+
     // Resolve item types for markup formatting
     const itemIds = [...new Set(items.map(i => i.item_id).filter(Boolean))];
     const typeMap = await resolveMarkupTypes(itemIds);

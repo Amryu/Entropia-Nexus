@@ -13,6 +13,7 @@ export function categorizeItems(items, {
   armorPlatings,
   clothings,
   medicalTools,
+  medicalChips,
   finders,
   finderAmplifiers,
   excavators,
@@ -21,7 +22,8 @@ export function categorizeItems(items, {
   enhancers,
   blueprints,
   materials,
-  vehicles
+  vehicles,
+  strongboxes
 } = {}) {
   const categorized = makeEmptyCategories();
   // If detailed datasets are provided, skip base-items for those types to avoid duplication
@@ -118,6 +120,7 @@ export function categorizeItems(items, {
   (clothings || []).forEach(c => { if (c.EffectsOnEquip?.length) categorized.armor.accessories.push(c); });
 
   (medicalTools || []).forEach(t => categorized.tools.medical.push(t));
+  (medicalChips || []).forEach(t => categorized.tools.medical.push(t));
   (finders || []).forEach(f => categorized.tools.mining.finders.push(f));
   (finderAmplifiers || []).forEach(a => categorized.tools.mining.amplifiers.push(a));
   (excavators || []).forEach(e => categorized.tools.mining.excavators.push(e));
@@ -128,6 +131,8 @@ export function categorizeItems(items, {
   (blueprints || []).forEach(b => categorizeBlueprint(b, categorized.blueprints));
   (materials || []).forEach(m => categorizeMaterial(m, categorized.materials));
   (vehicles || []).forEach(v => categorizeVehicle(v, categorized.vehicles));
+
+  (strongboxes || []).forEach(s => categorized.strongboxes.push(s));
 
   return categorized;
 }
@@ -190,6 +195,7 @@ function makeEmptyCategories() {
     pets: [],
     skill_implants: [],
     furnishings: { furniture: [], decorations: [], storage: [], sign: [] },
+    strongboxes: [],
     financial: { shares: [], estate_deeds: [], tokens: [] }
   };
 }

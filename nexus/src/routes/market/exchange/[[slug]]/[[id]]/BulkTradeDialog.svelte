@@ -60,6 +60,10 @@
 
       const remaining = qty - totalFilled;
       const fillQty = Math.min(remaining, order.quantity || 1);
+      const orderMin = order.min_quantity || 1;
+
+      // Skip orders where fill amount doesn't meet the offer's minimum quantity
+      if (fillQty < orderMin) continue;
 
       result.push({ ...order, fillQuantity: fillQty });
       totalFilled += fillQty;
@@ -145,6 +149,7 @@
             <div class="bulk-row bulk-header-row">
               <span class="bulk-cell name-cell">{activeTab === 'buy' ? 'Seller' : 'Buyer'}</span>
               <span class="bulk-cell">Qty</span>
+              <span class="bulk-cell">Min</span>
               <span class="bulk-cell">Markup</span>
               <span class="bulk-cell">Planet</span>
             </div>
@@ -152,6 +157,7 @@
               <div class="bulk-row">
                 <span class="bulk-cell name-cell">{match.seller_name || 'Unknown'}</span>
                 <span class="bulk-cell">{match.fillQuantity}</span>
+                <span class="bulk-cell">{match.min_quantity || 1}</span>
                 <span class="bulk-cell">{isPercentMarkup(item)
                   ? `${Number(match.markup).toFixed(1)}%`
                   : `+${Number(match.markup).toFixed(2)}`}</span>

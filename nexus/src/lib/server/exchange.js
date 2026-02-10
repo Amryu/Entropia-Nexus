@@ -58,8 +58,9 @@ export async function getUserOrders(userId) {
       ${COMPUTED_STATE_SQL} AS computed_state
     FROM trade_offers o
     WHERE o.user_id = $1
-      AND o.state != 'closed'
-    ORDER BY o.bumped_at DESC
+    ORDER BY
+      CASE WHEN o.state = 'closed' THEN 1 ELSE 0 END,
+      o.bumped_at DESC
   `;
   const { rows } = await pool.query(query, [userId]);
   return rows;
@@ -341,33 +342,46 @@ export async function getExchangePriceHistory(itemId, period = '7d') {
 }
 
 /**
- * Get price stats for all items from active trade orders (for market cache).
- * Computes median, 10th percentile, and volume-weighted average markup
- * directly from current non-closed, non-terminated sell orders.
+ * Get price stats for all items from the latest hourly exchange price summaries
+ * (pre-computed by the bot every 15 minutes with IQR outlier filtering).
+ * Falls back to raw snapshots if no summaries exist yet.
  * Returns a Map of itemId -> { wap, median, p10 }.
  */
 export async function getLatestExchangePriceMap() {
+  // Try hourly summaries first (has median/p10/wap breakdown)
   const { rows } = await pool.query(`
-    SELECT
-      item_id,
-      PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY markup) AS median,
-      PERCENTILE_CONT(0.1) WITHIN GROUP (ORDER BY markup) AS p10,
-      SUM(markup * quantity) / NULLIF(SUM(quantity), 0) AS wap
-    FROM trade_offers
-    WHERE state != 'closed'
-      AND type = 'SELL'
-      AND bumped_at >= NOW() - INTERVAL '${EXPIRED_DAYS} days'
-    GROUP BY item_id
+    SELECT DISTINCT ON (item_id)
+      item_id, price_median, price_p10, price_wap
+    FROM exchange_price_summaries
+    WHERE period_type = 'hour'
+      AND period_start >= NOW() - INTERVAL '24 hours'
+    ORDER BY item_id, period_start DESC
   `);
 
   const map = new Map();
   for (const r of rows) {
     map.set(r.item_id, {
-      median: r.median != null ? parseFloat(r.median) : null,
-      p10: r.p10 != null ? parseFloat(r.p10) : null,
-      wap: r.wap != null ? parseFloat(r.wap) : null
+      median: r.price_median != null ? parseFloat(r.price_median) : null,
+      p10: r.price_p10 != null ? parseFloat(r.price_p10) : null,
+      wap: r.price_wap != null ? parseFloat(r.price_wap) : null
     });
   }
+
+  // Fallback: if no summaries yet, use raw snapshots
+  if (map.size === 0) {
+    const { rows: snaps } = await pool.query(`
+      SELECT DISTINCT ON (item_id)
+        item_id, markup_value
+      FROM exchange_price_snapshots
+      WHERE recorded_at >= NOW() - INTERVAL '24 hours'
+      ORDER BY item_id, recorded_at DESC
+    `);
+    for (const r of snaps) {
+      const wap = r.markup_value != null ? parseFloat(r.markup_value) : null;
+      map.set(r.item_id, { median: wap, p10: wap, wap });
+    }
+  }
+
   return map;
 }
 

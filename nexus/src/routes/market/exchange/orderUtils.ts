@@ -32,7 +32,7 @@ export function itemHasCondition(item: any): boolean {
 }
 
 export function getMaxTT(item: any): number | null {
-  return item?.Properties?.Economy?.MaxTT ?? item?.MaxTT ?? item?.Value ?? null;
+  return item?.Properties?.Economy?.MaxTT ?? item?.MaxTT ?? item?.Value ?? item?.v ?? null;
 }
 
 export function isItemStackable(item: any): boolean {
