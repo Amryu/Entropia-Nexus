@@ -501,7 +501,8 @@
   const menuOverviewUrls: Record<string, string> = {
     'Items': '/items',
     'Information': '/information',
-    'Tools': '/tools'
+    'Tools': '/tools',
+    'Market': '/market'
   };
 
   function getMenuOverviewUrl(menu: string): string | null {

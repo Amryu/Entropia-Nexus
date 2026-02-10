@@ -996,6 +996,15 @@
   }
 
   $: currentUser = $page?.data?.session?.user ?? null;
+  $: needsAuth = !currentUser;
+  $: needsVerification = !!(currentUser && !currentUser.verified);
+  $: canPostOrders = !!(currentUser && currentUser.verified);
+
+  // Auth dialog state
+  let showAuthDialog = false;
+  function openAuthDialog() { showAuthDialog = true; }
+  function closeAuthDialog() { showAuthDialog = false; }
+  $: loginUrl = `/discord/login?redirect=${encodeURIComponent($page.url.pathname + $page.url.search)}`;
 
   function mapOrderRow(o, addCartCol = false) {
     const mine = currentUser && getSellerId(o) === currentUser.id;
@@ -1378,15 +1387,17 @@
     const cols = [...detailColumns];
     const updatedIdx = cols.findIndex(c => c.key === 'bumped_at');
     cols.splice(updatedIdx >= 0 ? updatedIdx : cols.length, 0, makeUserColumn('Seller'));
-    cols.push({
-      key: '_action', header: '', width: '70px', sortable: false, searchable: false,
-      formatter: (v, row) => {
-        const offerId = row?.id ?? row?.Id ?? 0;
-        const isOwn = currentUser && String(getSellerId(row)) === String(currentUser.id);
-        if (isOwn) return `<button class="cell-button trade-btn edit-trade-btn" data-trade-buy="${offerId}">Edit</button>`;
-        return `<button class="cell-button trade-btn buy-trade-btn" data-trade-buy="${offerId}">Buy</button>`;
-      }
-    });
+    if (canPostOrders) {
+      cols.push({
+        key: '_action', header: '', width: '70px', sortable: false, searchable: false,
+        formatter: (v, row) => {
+          const offerId = row?.id ?? row?.Id ?? 0;
+          const isOwn = currentUser && String(getSellerId(row)) === String(currentUser.id);
+          if (isOwn) return `<button class="cell-button trade-btn edit-trade-btn" data-trade-buy="${offerId}">Edit</button>`;
+          return `<button class="cell-button trade-btn buy-trade-btn" data-trade-buy="${offerId}">Buy</button>`;
+        }
+      });
+    }
     return cols;
   })();
 
@@ -1395,15 +1406,17 @@
     const cols = [...detailColumns];
     const updatedIdx = cols.findIndex(c => c.key === 'bumped_at');
     cols.splice(updatedIdx >= 0 ? updatedIdx : cols.length, 0, makeUserColumn('Buyer'));
-    cols.push({
-      key: '_action', header: '', width: '70px', sortable: false, searchable: false,
-      formatter: (v, row) => {
-        const offerId = row?.id ?? row?.Id ?? 0;
-        const isOwn = currentUser && String(getSellerId(row)) === String(currentUser.id);
-        if (isOwn) return `<button class="cell-button trade-btn edit-trade-btn" data-trade-sell="${offerId}">Edit</button>`;
-        return `<button class="cell-button trade-btn sell-trade-btn" data-trade-sell="${offerId}">Sell</button>`;
-      }
-    });
+    if (canPostOrders) {
+      cols.push({
+        key: '_action', header: '', width: '70px', sortable: false, searchable: false,
+        formatter: (v, row) => {
+          const offerId = row?.id ?? row?.Id ?? 0;
+          const isOwn = currentUser && String(getSellerId(row)) === String(currentUser.id);
+          if (isOwn) return `<button class="cell-button trade-btn edit-trade-btn" data-trade-sell="${offerId}">Edit</button>`;
+          return `<button class="cell-button trade-btn sell-trade-btn" data-trade-sell="${offerId}">Sell</button>`;
+        }
+      });
+    }
     return cols;
   })();
 
@@ -1623,14 +1636,24 @@
             <option value="female">Female</option>
           </select>
           <div class="actions-right">
-            <button class="action-btn accent-btn" title="My Orders" on:click={() => {
-              const userName = currentUser?.eu_name;
-              goto(userName ? `/market/exchange/offers/${encodeURIComponentSafe(userName)}` : '/market/exchange/offers');
-            }}>My Orders</button>
-            <button class="action-btn accent-btn" title="Inventory" on:click={() => goto('/market/exchange/inventory')}>Inventory</button>
-            {#if $tradeList.length > 0}
-              <button class="action-btn trade-list-btn" title="Trade List" on:click={() => { closeFloatingPanel(); showTradeList.set(true); }}>
-                Trade List ({$tradeList.length})
+            {#if canPostOrders}
+              <button class="action-btn accent-btn" title="My Orders" on:click={() => {
+                const userName = currentUser?.eu_name;
+                goto(userName ? `/market/exchange/offers/${encodeURIComponentSafe(userName)}` : '/market/exchange/offers');
+              }}>My Orders</button>
+              <button class="action-btn accent-btn" title="Inventory" on:click={() => goto('/market/exchange/inventory')}>Inventory</button>
+              {#if $tradeList.length > 0}
+                <button class="action-btn trade-list-btn" title="Trade List" on:click={() => { closeFloatingPanel(); showTradeList.set(true); }}>
+                  Trade List ({$tradeList.length})
+                </button>
+              {/if}
+            {:else}
+              <button class="auth-hint-btn" on:click={openAuthDialog}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                </svg>
+                <span>{needsAuth ? 'Log in to post Orders' : 'Verify to post Orders'}</span>
               </button>
             {/if}
           </div>
@@ -1723,33 +1746,43 @@
             <span class="filter-hint">Min total TT</span>
           </div>
           <div class="actions-right">
-            <button
-              class="action-btn buy-btn"
-              on:click={() => openOrderDialog("buy")}
-              disabled={!selectedItemDetails}
-              title={hasMyBuyOrder
-                ? "Edit your existing buy order"
-                : "Create Buy Order"}>{hasMyBuyOrder ? 'Edit Buy' : 'Buy'}</button
-            >
-            <button
-              class="action-btn sell-btn"
-              on:click={() => openOrderDialog("sell")}
-              disabled={!selectedItemDetails}
-              title={hasMySellOrder
-                ? "Edit your existing sell order"
-                : "Create Sell Order"}>{hasMySellOrder ? 'Edit Sell' : 'Sell'}</button
-            >
-            {#if currentUser?.grants?.includes('market.bulk') && selectedItemDetails}
+            {#if canPostOrders}
               <button
-                class="action-btn bulk-trade-btn"
-                on:click={() => showBulkTradeDialog = true}
-                title="Open bulk trade matching"
-              >Bulk Trade</button>
-            {/if}
-            {#if $tradeList.length > 0}
-              <span class="actions-divider"></span>
-              <button class="action-btn trade-list-btn" title="Trade List" on:click={() => { showMyOffers.set(false); showInventory.set(false); showTradeList.set(true); }}>
-                Trade List ({$tradeList.length})
+                class="action-btn buy-btn"
+                on:click={() => openOrderDialog("buy")}
+                disabled={!selectedItemDetails}
+                title={hasMyBuyOrder
+                  ? "Edit your existing buy order"
+                  : "Create Buy Order"}>{hasMyBuyOrder ? 'Edit Buy' : 'Buy'}</button
+              >
+              <button
+                class="action-btn sell-btn"
+                on:click={() => openOrderDialog("sell")}
+                disabled={!selectedItemDetails}
+                title={hasMySellOrder
+                  ? "Edit your existing sell order"
+                  : "Create Sell Order"}>{hasMySellOrder ? 'Edit Sell' : 'Sell'}</button
+              >
+              {#if currentUser?.grants?.includes('market.bulk') && selectedItemDetails}
+                <button
+                  class="action-btn bulk-trade-btn"
+                  on:click={() => showBulkTradeDialog = true}
+                  title="Open bulk trade matching"
+                >Bulk Trade</button>
+              {/if}
+              {#if $tradeList.length > 0}
+                <span class="actions-divider"></span>
+                <button class="action-btn trade-list-btn" title="Trade List" on:click={() => { showMyOffers.set(false); showInventory.set(false); showTradeList.set(true); }}>
+                  Trade List ({$tradeList.length})
+                </button>
+              {/if}
+            {:else}
+              <button class="auth-hint-btn" on:click={openAuthDialog}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                </svg>
+                <span>{needsAuth ? 'Log in to post Orders' : 'Verify to post Orders'}</span>
               </button>
             {/if}
           </div>
@@ -1962,7 +1995,7 @@
       />
     </div>
 
-    {#if $showMyOffers || $showInventory || $showTrades || showUserOffers}
+    {#if canPostOrders && ($showMyOffers || $showInventory || $showTrades || showUserOffers)}
       <div class="floating-panel">
         {#if showUserOffers}
           <div class="panel-title-bar">
@@ -2069,6 +2102,94 @@
   on:close={() => { showAdjustDialog = false; }}
 />
 
+{#if showAuthDialog}
+  <div class="auth-dialog-overlay" on:click={closeAuthDialog} on:keydown={(e) => e.key === 'Escape' && closeAuthDialog()}>
+    <div class="auth-dialog-content" on:click|stopPropagation role="dialog" aria-modal="true" aria-labelledby="auth-dialog-title">
+      <button class="auth-dialog-close" on:click={closeAuthDialog} aria-label="Close">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="6" x2="6" y2="18" />
+          <line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
+      </button>
+
+      <h2 id="auth-dialog-title" class="auth-dialog-title">
+        {needsAuth ? 'Login Required' : 'Verification Required'}
+      </h2>
+
+      {#if needsAuth}
+        <div class="auth-dialog-body">
+          <p>To post buy and sell orders on the exchange, you need to log in and verify your account.</p>
+
+          <div class="auth-steps">
+            <div class="auth-step">
+              <span class="step-number">1</span>
+              <div class="step-content">
+                <strong>Login with Discord</strong>
+                <p>Click the button below to log in using your Discord account.</p>
+              </div>
+            </div>
+
+            <div class="auth-step">
+              <span class="step-number">2</span>
+              <div class="step-content">
+                <strong>Join our Discord Server</strong>
+                <p>After logging in, join the Entropia Nexus Discord server if you haven't already.</p>
+              </div>
+            </div>
+
+            <div class="auth-step">
+              <span class="step-number">3</span>
+              <div class="step-content">
+                <strong>Complete Verification</strong>
+                <p>A verification thread will automatically open (may take up to 5 minutes). Follow the instructions to verify your Entropia Universe character.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="auth-dialog-actions">
+            <a href={loginUrl} class="auth-dialog-btn primary">Login with Discord</a>
+            <a href="https://discord.gg/hBGKyJ6EDr" target="_blank" rel="noopener" class="auth-dialog-btn secondary">Join Discord Server</a>
+          </div>
+        </div>
+      {:else}
+        <div class="auth-dialog-body">
+          <p>Your account needs to be verified before you can post orders on the exchange.</p>
+
+          <div class="auth-steps">
+            <div class="auth-step">
+              <span class="step-number">1</span>
+              <div class="step-content">
+                <strong>Join our Discord Server</strong>
+                <p>Make sure you've joined the Entropia Nexus Discord server.</p>
+              </div>
+            </div>
+
+            <div class="auth-step">
+              <span class="step-number">2</span>
+              <div class="step-content">
+                <strong>Wait for Verification Thread</strong>
+                <p>A verification thread will automatically open in your Discord DMs or in a private channel. This may take up to 5 minutes after joining.</p>
+              </div>
+            </div>
+
+            <div class="auth-step">
+              <span class="step-number">3</span>
+              <div class="step-content">
+                <strong>Follow Verification Instructions</strong>
+                <p>Respond to the verification thread with the requested information about your Entropia Universe character.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="auth-dialog-actions">
+            <a href="https://discord.gg/hBGKyJ6EDr" target="_blank" rel="noopener" class="auth-dialog-btn primary">Join Discord Server</a>
+            <button class="auth-dialog-btn secondary" on:click={closeAuthDialog}>Close</button>
+          </div>
+        </div>
+      {/if}
+    </div>
+  </div>
+{/if}
 
 <style>
   .exchange-browser {
@@ -2957,6 +3078,178 @@
       justify-content: flex-start;
       gap: 6px;
     }
+  }
+
+  /* Auth hint button */
+  .auth-hint-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background-color: transparent;
+    border: 1px dashed var(--border-color, #555);
+    border-radius: 6px;
+    color: var(--text-muted, #999);
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.15s;
+    max-height: 32px;
+    box-sizing: border-box;
+    white-space: nowrap;
+  }
+
+  .auth-hint-btn:hover {
+    border-color: var(--accent-color, #4a9eff);
+    color: var(--accent-color, #4a9eff);
+    background-color: var(--hover-color);
+  }
+
+  /* Auth dialog */
+  .auth-dialog-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 20px;
+    box-sizing: border-box;
+  }
+
+  .auth-dialog-content {
+    background-color: var(--secondary-color);
+    border: 1px solid var(--border-color, #555);
+    border-radius: 12px;
+    max-width: 500px;
+    width: 100%;
+    max-height: 90vh;
+    overflow-y: auto;
+    position: relative;
+    padding: 24px;
+    box-sizing: border-box;
+  }
+
+  .auth-dialog-close {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    background: transparent;
+    border: none;
+    color: var(--text-muted, #999);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    transition: all 0.15s;
+  }
+
+  .auth-dialog-close:hover {
+    color: var(--text-color);
+    background-color: var(--hover-color);
+  }
+
+  .auth-dialog-title {
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--text-color);
+    margin: 0 0 16px 0;
+    padding-right: 32px;
+  }
+
+  .auth-dialog-body {
+    color: var(--text-color);
+  }
+
+  .auth-dialog-body > p {
+    margin: 0 0 20px 0;
+    color: var(--text-muted, #999);
+    line-height: 1.5;
+  }
+
+  .auth-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+
+  .auth-step {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+
+  .step-number {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    background-color: var(--accent-color, #4a9eff);
+    color: white;
+    border-radius: 50%;
+    font-size: 14px;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+
+  .step-content {
+    flex: 1;
+  }
+
+  .step-content strong {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--text-color);
+  }
+
+  .step-content p {
+    margin: 0;
+    font-size: 13px;
+    color: var(--text-muted, #999);
+    line-height: 1.4;
+  }
+
+  .auth-dialog-actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .auth-dialog-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    text-decoration: none;
+    cursor: pointer;
+    transition: all 0.15s;
+    border: none;
+  }
+
+  .auth-dialog-btn.primary {
+    background-color: var(--accent-color, #4a9eff);
+    color: white;
+  }
+
+  .auth-dialog-btn.primary:hover {
+    filter: brightness(1.1);
+  }
+
+  .auth-dialog-btn.secondary {
+    background-color: var(--hover-color);
+    color: var(--text-color);
+    border: 1px solid var(--border-color, #555);
+  }
+
+  .auth-dialog-btn.secondary:hover {
+    border-color: var(--accent-color, #4a9eff);
   }
 
 </style>
