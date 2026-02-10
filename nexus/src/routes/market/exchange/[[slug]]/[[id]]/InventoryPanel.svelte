@@ -5,6 +5,8 @@
   import { inventory, myOrders, enrichOrders } from '../../exchangeStore.js';
   import { isItemStackable } from '../../orderUtils';
   import { MAX_ORDERS_PER_SIDE } from '../../exchangeConstants.js';
+  import { encodeURIComponentSafe } from '$lib/util.js';
+  import { goto } from '$app/navigation';
   import { createEventDispatcher, onMount } from 'svelte';
 
   const MAX_ORDERS_PER_ITEM = 5;
@@ -106,37 +108,42 @@
     return map;
   })();
 
+  // Sort inventory: items with active sell orders first
+  $: sortedInventory = [...($inventory || [])].sort((a, b) => {
+    const aOrders = OrdersByItemId.get(a.item_id)?.sell || 0;
+    const bOrders = OrdersByItemId.get(b.item_id)?.sell || 0;
+    if (aOrders > 0 && bOrders === 0) return -1;
+    if (aOrders === 0 && bOrders > 0) return 1;
+    return 0;
+  });
+
   $: columns = (() => {
     // Reference dependencies to trigger re-evaluation
     OrdersByItemId;
     massSellMode;
     massSellList;
     return [
-      { key: 'item_name', header: 'Item', main: true, sortable: true, searchable: true },
       {
-        key: '_orders', header: 'Orders', width: '90px', sortable: true, searchable: false,
+        key: 'item_name', header: 'Item', main: true, sortable: true, searchable: true,
+        formatter: (val, row) => `<a class="item-link" data-action="navigate" data-item-name="${val}" data-item-id="${row.item_id}">${val}</a>`
+      },
+      {
+        key: '_orders', header: 'Orders', width: '70px', sortable: true, searchable: false,
         hideOnMobile: true,
         sortValue: (row) => {
           const info = OrdersByItemId.get(row.item_id);
-          if (!info || (info.buy === 0 && info.sell === 0)) return 0;
+          const sell = info?.sell || 0;
           const limit = getItemLimit(row.item_id);
-          // Sort by fullness ratio (at-limit items first)
-          return (info.buy + info.sell) / (limit * 2);
+          // Items with active orders first, then by fullness ratio
+          return sell > 0 ? 1 + sell / limit : 0;
         },
         formatter: (val, row) => {
           const info = OrdersByItemId.get(row.item_id);
-          if (!info || (info.buy === 0 && info.sell === 0)) return '';
+          const sell = info?.sell || 0;
           const limit = getItemLimit(row.item_id);
-          const parts = [];
-          if (info.sell > 0) {
-            const full = info.sell >= limit ? ' full' : '';
-            parts.push(`<span class="inv-order-badge sell${full}">${info.sell}/${limit}S</span>`);
-          }
-          if (info.buy > 0) {
-            const full = info.buy >= limit ? ' full' : '';
-            parts.push(`<span class="inv-order-badge buy${full}">${info.buy}/${limit}B</span>`);
-          }
-          return parts.join(' ');
+          const full = sell >= limit ? ' full' : '';
+          const active = sell > 0 ? ' active' : '';
+          return `<span class="inv-order-badge${full}${active}">${sell}/${limit}</span>`;
         }
       },
       { key: 'quantity', header: 'Qty', width: '60px', sortable: true, searchable: false },
@@ -264,6 +271,15 @@
     e.preventDefault();
 
     const action = btn.dataset.action;
+
+    if (action === 'navigate') {
+      const name = btn.dataset.itemName;
+      const itemId = btn.dataset.itemId;
+      if (name) goto(`/market/exchange/listings/${encodeURIComponentSafe(name)}`);
+      else if (itemId) goto(`/market/exchange/listings/${itemId}`);
+      return;
+    }
+
     const id = parseInt(btn.dataset.id, 10);
     const item = $inventory.find(i => i.id === id);
     if (!item) return;
@@ -302,7 +318,7 @@
   <div class="inventory-table" on:click|capture={handleTableClick}>
     <FancyTable
       columns={columns}
-      data={$inventory}
+      data={sortedInventory}
       rowHeight={36}
       compact={true}
       sortable={true}
@@ -479,22 +495,27 @@
 
   /* Order indicator badges */
   .inventory-table :global(.inv-order-badge) {
-    padding: 1px 5px;
-    border-radius: 3px;
-    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
     font-weight: 600;
-    letter-spacing: 0.3px;
+    color: var(--text-muted);
+    background: transparent;
   }
-  .inventory-table :global(.inv-order-badge.buy) {
+  .inventory-table :global(.inv-order-badge.active) {
     background: rgba(59, 130, 246, 0.15);
     color: var(--accent-color);
-  }
-  .inventory-table :global(.inv-order-badge.sell) {
-    background: rgba(239, 68, 68, 0.15);
-    color: var(--error-color);
   }
   .inventory-table :global(.inv-order-badge.full) {
     background: rgba(245, 158, 11, 0.2);
     color: var(--warning-color);
+  }
+  .inventory-table :global(.item-link) {
+    color: var(--accent-color);
+    cursor: pointer;
+    text-decoration: none;
+  }
+  .inventory-table :global(.item-link:hover) {
+    text-decoration: underline;
   }
 </style>

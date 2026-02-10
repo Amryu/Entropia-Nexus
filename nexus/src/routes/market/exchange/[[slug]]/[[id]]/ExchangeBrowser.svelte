@@ -162,6 +162,7 @@
         },
         Planet: order.planet || 'Calypso',
         Quantity: order.quantity || 1,
+        MinQuantity: order.min_quantity ?? null,
         CurrentTT: order.details?.CurrentTT ?? null,
         Markup: order.markup || 0,
         Metadata: { ...(order.details || {}) },
@@ -304,6 +305,7 @@
           },
           Planet: existingOrder.planet || invItem.container || 'Calypso',
           Quantity: existingOrder.quantity || 1,
+          MinQuantity: existingOrder.min_quantity ?? null,
           CurrentTT: existingOrder.details?.CurrentTT ?? invCurrentTT,
           Markup: existingOrder.markup || 0,
           Metadata: { ...(existingOrder.details || {}) },
@@ -655,6 +657,7 @@
         },
         Planet: order.planet || 'Calypso',
         Quantity: order.quantity || 1,
+        MinQuantity: order.min_quantity ?? null,
         CurrentTT: order.details?.CurrentTT ?? null,
         Markup: order.markup || 0,
         Metadata: { ...(order.details || {}) },
@@ -1438,6 +1441,17 @@
   // Sell orders: user column = "Seller", action = "Buy" (or "Edit" for own orders)
   $: sellDetailColumns = (() => {
     const cols = [...detailColumns];
+    // For stackable items, add Min Qty column after Qty
+    const stackable = isItemStackable(selectedItemDetails || selectedItem);
+    if (stackable) {
+      const qtyIdx = cols.findIndex(c => c.key === 'quantity');
+      if (qtyIdx >= 0) {
+        cols.splice(qtyIdx + 1, 0, {
+          key: 'min_quantity', header: 'Min Qty', width: '70px', sortable: true, searchable: false,
+          formatter: (v) => v != null && v > 0 ? v : '\u2014'
+        });
+      }
+    }
     const updatedIdx = cols.findIndex(c => c.key === 'bumped_at');
     cols.splice(updatedIdx >= 0 ? updatedIdx : cols.length, 0, makeUserColumn('Seller'));
     if (canPostOrders) {

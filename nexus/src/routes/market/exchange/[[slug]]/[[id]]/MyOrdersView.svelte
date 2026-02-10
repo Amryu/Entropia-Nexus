@@ -2,6 +2,8 @@
   //@ts-nocheck
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { myOrders, enrichOrders } from '../../exchangeStore.js';
+  import { encodeURIComponentSafe } from '$lib/util.js';
+  import { goto } from '$app/navigation';
   import { createEventDispatcher, onMount } from 'svelte';
 
   export let user = null;
@@ -17,7 +19,10 @@
     : $myOrders.filter(o => o.type === sideFilter);
 
   const columns = [
-    { key: 'item_name', header: 'Item', main: true, sortable: true, searchable: true },
+    {
+      key: 'item_name', header: 'Item', main: true, sortable: true, searchable: true,
+      formatter: (val, row) => `<a class="item-link" data-action="navigate" data-item-name="${val}" data-item-id="${row.item_id}">${val}</a>`
+    },
     {
       key: 'type', header: 'Side', width: '70px', sortable: true, searchable: false,
       formatter: (val) => {
@@ -130,6 +135,15 @@
     e.preventDefault();
 
     const action = btn.dataset.action;
+
+    if (action === 'navigate') {
+      const name = btn.dataset.itemName;
+      const itemId = btn.dataset.itemId;
+      if (name) goto(`/market/exchange/listings/${encodeURIComponentSafe(name)}`);
+      else if (itemId) goto(`/market/exchange/listings/${itemId}`);
+      return;
+    }
+
     const id = parseInt(btn.dataset.id, 10);
     const order = $myOrders.find(o => o.id === id);
     if (!order) return;
@@ -238,5 +252,13 @@
   }
   .orders-table :global(.order-action-btn.close:hover) {
     background: rgba(239, 68, 68, 0.15);
+  }
+  .orders-table :global(.item-link) {
+    color: var(--accent-color);
+    cursor: pointer;
+    text-decoration: none;
+  }
+  .orders-table :global(.item-link:hover) {
+    text-decoration: underline;
   }
 </style>
