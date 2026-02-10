@@ -15,16 +15,20 @@ function validateOfferDetails(details) {
     clean.item_name = details.item_name.slice(0, 200);
   }
   if (details.Tier != null) {
-    const tier = parseFloat(details.Tier);
+    const tier = Math.round(Number(details.Tier));
     if (Number.isFinite(tier) && tier >= 0 && tier <= 10) clean.Tier = tier;
   }
   if (details.TierIncreaseRate != null) {
-    const tir = parseInt(details.TierIncreaseRate, 10);
-    if (Number.isFinite(tir) && tir >= 1 && tir <= 4000) clean.TierIncreaseRate = tir;
+    const tir = Math.round(Number(details.TierIncreaseRate));
+    // (L) items allow TiR up to 4000, non-(L) up to 200
+    const itemName = details.item_name || '';
+    const isL = /\(.*L.*\)/.test(itemName);
+    const maxTir = isL ? 4000 : 200;
+    if (Number.isFinite(tir) && tir >= 0 && tir <= maxTir) clean.TierIncreaseRate = tir;
   }
   if (details.QualityRating != null) {
-    const qr = parseFloat(details.QualityRating);
-    if (Number.isFinite(qr) && qr >= 0 && qr <= 100) clean.QualityRating = qr;
+    const qr = Math.round(Number(details.QualityRating));
+    if (Number.isFinite(qr) && qr >= 1 && qr <= 100) clean.QualityRating = qr;
   }
   if (details.CurrentTT != null) {
     const ct = parseFloat(details.CurrentTT);

@@ -14,13 +14,14 @@
   import FavouritesTree from './FavouritesTree.svelte';
   import QuickTradeDialog from './QuickTradeDialog.svelte';
   import UserOffersPanel from './UserOffersPanel.svelte';
+  import BulkTradeDialog from './BulkTradeDialog.svelte';
   import TradeRequestsPanel from './TradeRequestsPanel.svelte';
   import PriceHistoryChart from './PriceHistoryChart.svelte';
 
   import { goto } from "$app/navigation";
   import { page } from "$app/stores";
   import { apiCall, getItemLink, hasItemTag, encodeURIComponentSafe, decodeURIComponentSafe } from "$lib/util.js";
-  import { isBlueprint, isItemTierable, isLimited, itemHasCondition, isAbsoluteMarkup, getMaxTT } from '../../orderUtils';
+  import { isBlueprint, isItemTierable, isItemStackable, isLimited, itemHasCondition, isAbsoluteMarkup, getMaxTT } from '../../orderUtils';
   import { PLANETS } from '../../exchangeConstants.js';
   import { showMyOffers, showInventory, showTradeList, showTrades, tradeList, addToTradeList, clearTradeList, myOffers, inventory } from '../../exchangeStore.js';
   import { favourites, isFavourite, toggleFavourite, createFolder } from '../../favouritesStore.js';
@@ -38,8 +39,10 @@
   let selectedItems = [];
   let loading = false;
   let showOrderDialog = false;
+  let showBulkTradeDialog = false;
   let orderDialogType = null; // 'buy' | 'sell'
   let orderDialogRef;
+  let orderDialogExistingCount = 0; // existing offers for the current item+side
   // Title bar filters for tierable items
   let mobileSidebarOpen = false;
   let sidebarTab = 'categories'; // 'categories' | 'favourites'
@@ -270,8 +273,21 @@
       const item = await apiCall(window.fetch, `/items/${invItem.item_id}`);
       if (!item) return;
 
+      // Get MaxTT from cache (detailed endpoints have it, /items may not)
+      const slimItem = (allItems || []).find(si => si?.i === invItem.item_id);
+      const maxTT = getMaxTT(item) ?? (slimItem?.v != null ? Number(slimItem.v) : null);
+      const itemType = item?.Properties?.Type || item?.Type || slimItem?.t || null;
+
+      // Current TT from inventory value field
+      const invCurrentTT = invItem.value != null ? Number(invItem.value) : null;
+
       inlineEditItem = item;
       orderDialogType = 'sell';
+
+      // Count existing sell offers for this item
+      orderDialogExistingCount = ($myOffers || []).filter(
+        o => o.item_id === invItem.item_id && o.type === 'SELL' && o.state !== 'closed'
+      ).length;
 
       if (existingOffer) {
         // Edit existing offer
@@ -279,12 +295,12 @@
           Type: 'Sell',
           Item: {
             Name: item?.Name || existingOffer.details?.item_name || '',
-            Type: item?.Properties?.Type || item?.Type || null,
-            MaxTT: getMaxTT(item),
+            Type: itemType,
+            MaxTT: maxTT,
           },
           Planet: existingOffer.planet || invItem.container || 'Calypso',
           Quantity: existingOffer.quantity || 1,
-          CurrentTT: existingOffer.details?.CurrentTT ?? null,
+          CurrentTT: existingOffer.details?.CurrentTT ?? invCurrentTT,
           Markup: existingOffer.markup || 0,
           Metadata: { ...(existingOffer.details || {}) },
           _offerId: existingOffer.id,
@@ -305,13 +321,13 @@
           Type: 'Sell',
           Item: {
             Name: item?.Name || invItem.item_name || '',
-            Type: item?.Properties?.Type || item?.Type || null,
-            MaxTT: getMaxTT(item),
+            Type: itemType,
+            MaxTT: maxTT,
             Id: invItem.item_id,
           },
           Planet: invItem.container || 'Calypso',
           Quantity: invItem.quantity || 1,
-          CurrentTT: null,
+          CurrentTT: invCurrentTT,
           Markup: 0,
           Metadata: {},
           _inventoryQty: invItem.quantity || 0,
@@ -1132,47 +1148,40 @@
     const item = selectedItemDetails;
     if (!item) return;
     orderDialogType = type;
-    const existingOrder = type === 'buy' ? myBuyOrder : mySellOrder;
+    const itemId = item?.ItemId ?? item?.Id ?? item?.i;
+    const side = type === 'buy' ? 'BUY' : 'SELL';
+    // Count existing offers for this item+side
+    orderDialogExistingCount = ($myOffers || []).filter(
+      o => o.item_id === itemId && o.type === side && o.state !== 'closed'
+    ).length;
     setTimeout(() => {
-      if (existingOrder) {
-        // Open existing order for editing
-        const editOrder = {
-          Type: existingOrder.type === 'BUY' ? 'Buy' : 'Sell',
-          Item: {
-            Name: item?.Name || existingOrder.details?.item_name || '',
-            Type: item?.Properties?.Type || item?.Type || null,
-            MaxTT: getMaxTT(item),
-          },
-          Planet: existingOrder.planet || 'Calypso',
-          Quantity: existingOrder.quantity || 1,
-          CurrentTT: existingOrder.details?.CurrentTT ?? null,
-          Markup: existingOrder.markup || 0,
-          MinQuantity: existingOrder.min_quantity || null,
-          Metadata: { ...(existingOrder.details || {}) },
-          _offerId: existingOrder.id,
-        };
-        delete editOrder.Metadata.item_name;
-        delete editOrder.Metadata.CurrentTT;
-        orderDialogRef?.initOrder(editOrder, type, 'edit');
-      } else {
-        orderDialogRef?.initOrder(item, type, 'create');
-      }
+      orderDialogRef?.initOrder(item, type, 'create');
       showOrderDialog = true;
     }, 0);
   }
+  // Compute whether the current dialog item is non-fungible (allows multiple offers)
+  $: orderDialogItemType = (() => {
+    const item = inlineEditItem || selectedItemDetails || selectedItem;
+    return item?.Properties?.Type ?? item?.Type ?? item?.t ?? null;
+  })();
+  $: orderDialogIsNonFungible = orderDialogItemType ? !isItemStackable({ Type: orderDialogItemType, Name: (inlineEditItem || selectedItemDetails || selectedItem)?.Name || (inlineEditItem || selectedItemDetails || selectedItem)?.n || '' }) : false;
+
   function closeOrderDialog() {
     showOrderDialog = false;
     orderDialogType = null;
     inlineEditItem = null;
+    orderDialogExistingCount = 0;
   }
 
-  async function onSubmitOrder(e) {
-    const order = e?.detail?.order;
-    if (!order) { closeOrderDialog(); return; }
+  let submittingOrder = false; // Prevent double-click
+
+  async function submitOrderPayload(order, closeAfter = true) {
+    if (submittingOrder) return false;
+    submittingOrder = true;
 
     const item = inlineEditItem || selectedItemDetails || selectedItem;
     const itemId = item?.ItemId ?? item?.Id ?? item?.i;
-    if (!itemId) { closeOrderDialog(); return; }
+    if (!itemId) { if (closeAfter) closeOrderDialog(); submittingOrder = false; return false; }
 
     const isEdit = !!order._offerId;
     const payload = {
@@ -1187,11 +1196,9 @@
         ...(order.Metadata || {}),
       }
     };
-    // Include CurrentTT if set (condition items)
     if (order.CurrentTT != null) {
       payload.details.CurrentTT = order.CurrentTT;
     }
-    // Clean internal tracking fields from details
     delete payload.details._offerId;
     delete payload.details._inlineEdit;
     delete payload.details._inventoryWarning;
@@ -1215,24 +1222,57 @@
       const data = await res.json();
       if (!res.ok) {
         console.error(`Order ${isEdit ? 'update' : 'creation'} failed:`, data.error);
-        return;
+        submittingOrder = false;
+        return false;
       }
-      // Reload orders for this item (detail view) or refresh My Offers (inline edit)
-      if (inlineEditItem) {
-        if (myOffersRef) myOffersRef.refresh();
-        // Also refresh myOffers store directly for discrepancy count
-        try {
-          const offersRes = await fetch('/api/market/exchange/offers');
-          if (offersRes.ok) myOffers.set(await offersRes.json());
-        } catch {}
-      } else {
-        ordersLoadedKey = '';
-        if (selectedItem?.i) await loadOrders(selectedItem.i, selectedPlanet);
-      }
+      // Refresh offers data
+      await refreshAfterOfferChange();
+      if (closeAfter) closeOrderDialog();
+      return true;
     } catch (e) {
       console.error('Error submitting order:', e);
+      if (closeAfter) closeOrderDialog();
+      return false;
     } finally {
-      closeOrderDialog();
+      submittingOrder = false;
+    }
+  }
+
+  async function refreshAfterOfferChange() {
+    if (inlineEditItem) {
+      if (myOffersRef) myOffersRef.refresh();
+      try {
+        const offersRes = await fetch('/api/market/exchange/offers');
+        if (offersRes.ok) myOffers.set(await offersRes.json());
+      } catch {}
+    } else {
+      ordersLoadedKey = '';
+      if (selectedItem?.i) await loadOrders(selectedItem.i, selectedPlanet);
+      // Also refresh myOffers store
+      try {
+        const offersRes = await fetch('/api/market/exchange/offers');
+        if (offersRes.ok) myOffers.set(await offersRes.json());
+      } catch {}
+    }
+  }
+
+  async function onSubmitOrder(e) {
+    const order = e?.detail?.order;
+    if (!order) { closeOrderDialog(); return; }
+    await submitOrderPayload(order, true);
+  }
+
+  async function onNextOrder(e) {
+    const order = e?.detail?.order;
+    if (!order) return;
+    const success = await submitOrderPayload(order, false);
+    if (success) {
+      orderDialogExistingCount++;
+      // Re-init dialog for the next offer (keep same item, reset form)
+      const item = inlineEditItem || selectedItemDetails || selectedItem;
+      if (item) {
+        orderDialogRef?.initOrder(item, orderDialogType || 'sell', 'create');
+      }
     }
   }
 
@@ -1250,17 +1290,7 @@
         console.error('Delete failed:', data.error);
         return;
       }
-      // Refresh orders
-      if (inlineEditItem) {
-        if (myOffersRef) myOffersRef.refresh();
-        try {
-          const offersRes = await fetch('/api/market/exchange/offers');
-          if (offersRes.ok) myOffers.set(await offersRes.json());
-        } catch {}
-      } else {
-        ordersLoadedKey = '';
-        if (selectedItem?.i) await loadOrders(selectedItem.i, selectedPlanet);
-      }
+      await refreshAfterOfferChange();
     } catch (err) {
       console.error('Error deleting offer:', err);
     } finally {
@@ -1441,9 +1471,9 @@
   }
 
   async function handleBulkSubmit(e) {
-    const { order: bulkOrder, matches, planet } = e.detail;
+    const { matches, planet } = e.detail;
     const item = selectedItemDetails || selectedItem;
-    const itemName = bulkOrder?.Item?.Name || item?.Name || item?.n || 'Unknown';
+    const itemName = item?.Name || item?.n || 'Unknown';
     const itemId = item?.ItemId ?? item?.Id ?? item?.i;
 
     let created = 0;
@@ -1471,7 +1501,7 @@
       }
     }
     if (created > 0) {
-      closeOrderDialog();
+      showBulkTradeDialog = false;
       goto('/market/exchange/trades');
     }
   }
@@ -1684,6 +1714,13 @@
                 ? "Edit your existing sell order"
                 : "Create Sell Order"}>{hasMySellOrder ? 'Edit Sell' : 'Sell'}</button
             >
+            {#if currentUser?.grants?.includes('market.bulk') && selectedItemDetails}
+              <button
+                class="action-btn bulk-trade-btn"
+                on:click={() => showBulkTradeDialog = true}
+                title="Open bulk trade matching"
+              >Bulk Trade</button>
+            {/if}
             {#if $tradeList.length > 0}
               <span class="actions-divider"></span>
               <button class="action-btn trade-list-btn" title="Trade List" on:click={() => { showMyOffers.set(false); showInventory.set(false); showTradeList.set(true); }}>
@@ -1881,12 +1918,22 @@
       <OrderDialog
         bind:this={orderDialogRef}
         show={showOrderDialog}
-        hideBulkTab={!!inlineEditItem || !currentUser?.grants?.includes('market.bulk')}
-        orderBookOffers={[...(buyOrders || []), ...(sellOrders || [])]}
+        existingOfferCount={orderDialogExistingCount}
+        isNonFungible={orderDialogIsNonFungible}
+        submitting={submittingOrder}
         on:close={closeOrderDialog}
         on:submit={onSubmitOrder}
-        on:bulkSubmit={handleBulkSubmit}
+        on:next={onNextOrder}
         on:delete={handleDeleteOffer}
+      />
+
+      <BulkTradeDialog
+        show={showBulkTradeDialog}
+        itemName={selectedItemDetails?.Name || selectedItem?.n || ''}
+        item={selectedItemDetails || selectedItem}
+        orderBookOffers={[...(buyOrders || []), ...(sellOrders || [])]}
+        on:close={() => showBulkTradeDialog = false}
+        on:bulkSubmit={handleBulkSubmit}
       />
     </div>
 
@@ -2381,6 +2428,13 @@
     background: rgba(59, 130, 246, 0.1);
   }
 
+  .action-btn.bulk-trade-btn {
+    color: var(--accent-color);
+    border-color: var(--accent-color);
+  }
+  .action-btn.bulk-trade-btn:hover:not(:disabled) {
+    background: rgba(59, 130, 246, 0.1);
+  }
   .trade-list-btn {
     color: var(--accent-color) !important;
     border-color: var(--accent-color) !important;

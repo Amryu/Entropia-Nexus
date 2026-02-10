@@ -7,7 +7,6 @@
   export let show = false;
   export let mode = 'create'; // 'create' | 'edit'
   export let order = null;
-  export let hideBulkTab = false;
   // Dialog-local calculations
   let unitPrice = 0;
   let totalPrice = 0;
@@ -28,78 +27,17 @@
   // Partial trade state
   let allowPartial = true;
 
-  // Tab state: 'offer' or 'bulk'
-  let activeTab = 'offer';
+  /** @type {number} How many offers already exist for this item+side */
+  export let existingOfferCount = 0;
 
-  // Bulk trade state
-  let bulkQuantity = 1;
-  let bulkMinOffer = 0;
-  let bulkMaxTraders = 5;
-  let bulkPlanet = 'All Planets';
-  let bulkSubmitting = false;
-  let bulkError = null;
+  /** @type {number} Max offers allowed per item */
+  export let maxOffersPerItem = 5;
 
-  /** @type {Array} Offers available from order book, passed in by parent */
-  export let orderBookOffers = [];
+  /** @type {boolean} Whether this is a non-fungible item (allows multiple offers) */
+  export let isNonFungible = false;
 
-  $: bulkMatchedOffers = computeBulkMatches(orderBookOffers, order, bulkQuantity, bulkMinOffer, bulkMaxTraders, bulkPlanet);
-
-  function computeBulkMatches(offers, currentOrder, qty, minOffer, maxTraders, planet) {
-    if (!offers || !currentOrder || qty <= 0) return { matched: [], totalFilled: 0, remaining: qty };
-
-    // Filter to opposing side offers
-    const opposingSide = currentOrder.Type === 'Buy' ? 'SELL' : 'BUY';
-    let candidates = offers.filter(o => o.type === opposingSide);
-
-    // Planet filter
-    if (planet && planet !== 'All Planets') {
-      candidates = candidates.filter(o => o.planet === planet);
-    }
-
-    // Min offer quantity filter
-    if (minOffer > 0) {
-      candidates = candidates.filter(o => (o.quantity || 0) >= minOffer);
-    }
-
-    // Sort: best markup first (lowest for buy, highest for sell)
-    if (currentOrder.Type === 'Buy') {
-      candidates.sort((a, b) => (a.markup || 0) - (b.markup || 0));
-    } else {
-      candidates.sort((a, b) => (b.markup || 0) - (a.markup || 0));
-    }
-
-    // Limit traders
-    const traderLimit = maxTraders === 0 ? Infinity : maxTraders;
-
-    const matched = [];
-    let totalFilled = 0;
-    let tradersUsed = 0;
-
-    for (const offer of candidates) {
-      if (tradersUsed >= traderLimit) break;
-      if (totalFilled >= qty) break;
-
-      const remaining = qty - totalFilled;
-      const fillQty = Math.min(remaining, offer.quantity || 1);
-
-      matched.push({
-        ...offer,
-        fillQuantity: fillQty
-      });
-      totalFilled += fillQty;
-      tradersUsed++;
-    }
-
-    return { matched, totalFilled, remaining: Math.max(0, qty - totalFilled) };
-  }
-
-  function submitBulk() {
-    dispatch('bulkSubmit', {
-      order,
-      matches: bulkMatchedOffers.matched,
-      planet: bulkPlanet === 'All Planets' ? null : bulkPlanet
-    });
-  }
+  // Track offers created in this multi-offer session
+  let sessionOfferCount = 0;
 
   async function loadSuggestions(itemId) {
     if (!itemId) return;
@@ -179,12 +117,7 @@
    */
   export function initOrder(itemOrOrder, type, dialogMode = 'create') {
     mode = dialogMode;
-    activeTab = 'offer';
-    bulkQuantity = 1;
-    bulkMinOffer = 0;
-    bulkMaxTraders = 5;
-    bulkPlanet = 'All Planets';
-    bulkError = null;
+    sessionOfferCount = 0;
     if (mode === 'edit' && itemOrOrder && itemOrOrder.Type) {
       // Editing: clone the order
       order = JSON.parse(JSON.stringify(itemOrOrder));
@@ -439,27 +372,38 @@
     { label: "100", value: "100" }
   ];
 
-  function clampQR() {
-    if (!order?.Metadata) return;
-    let v = Number(order.Metadata.QualityRating) || 0;
-    if (v < 1) v = 1;
-    if (v > 100) v = 100;
-    order.Metadata.QualityRating = v;
-    recalcPrices();
-  }
 
   // Inventory-sourced warnings
   $: inventoryWarning = order?._inventoryWarning || null;
   $: inventoryQty = order?._inventoryQty ?? null;
-  $: qtyExceedsInventory = inventoryQty != null && (order?.Quantity || 0) > inventoryQty;
+  $: totalOffersIfSubmitted = existingOfferCount + sessionOfferCount + 1;
+  $: canCreateMore = isNonFungible && totalOffersIfSubmitted < maxOffersPerItem && mode === 'create';
+  $: offerLimitReached = totalOffersIfSubmitted >= maxOffersPerItem;
+  // For inventory sell: warn if total sell offers exceed inventory qty
+  $: totalSellQty = (() => {
+    if (inventoryQty == null || order?.Type !== 'Sell') return null;
+    return (existingOfferCount + sessionOfferCount + 1);
+  })();
+  $: qtyExceedsInventory = inventoryQty != null && totalSellQty != null && totalSellQty > inventoryQty;
+
+  /** @type {boolean} Prevent double-click submission */
+  export let submitting = false;
 
   const dispatch = createEventDispatcher();
 
   function close() {
+    sessionOfferCount = 0;
     dispatch('close');
   }
   function submit() {
+    if (submitting) return;
     dispatch('submit', { order });
+    sessionOfferCount = 0;
+  }
+  function submitAndNext() {
+    if (submitting) return;
+    dispatch('next', { order });
+    sessionOfferCount++;
   }
 </script>
 
@@ -479,17 +423,6 @@
       <h3 style="margin-top:0;">
         {mode === 'create' ? 'Create' : 'Edit'} {order.Type} Order
       </h3>
-      {#if !hideBulkTab && mode !== 'edit'}
-        <div class="tab-bar">
-          <button class="tab" class:active={activeTab === 'offer'} on:click={() => activeTab = 'offer'}>
-            Create Offer
-          </button>
-          <button class="tab" class:active={activeTab === 'bulk'} on:click={() => activeTab = 'bulk'}>
-            Bulk {order.Type}
-          </button>
-        </div>
-      {/if}
-      {#if activeTab === 'offer'}
       <div class="form-row">
         <div class="form-label">Item</div>
         <div>{order.Item?.Name}</div>
@@ -648,9 +581,10 @@
             type="number"
             min="0"
             max="10"
-            step="0.01"
+            step="1"
             bind:value={order.Metadata.Tier}
             on:input={recalcPrices}
+            on:blur={() => { order.Metadata.Tier = Math.max(0, Math.min(10, Math.round(Number(order.Metadata.Tier) || 0))); recalcPrices(); }}
           />
         </div>
         <div class="form-row">
@@ -658,11 +592,12 @@
           <input
             id="tirInput"
             type="number"
-            min=1
+            min="0"
             max={isLimited(order.Item) ? 4000 : 200}
             step="1"
             bind:value={order.Metadata.TierIncreaseRate}
             on:input={recalcPrices}
+            on:blur={() => { const maxTir = isLimited(order.Item) ? 4000 : 200; order.Metadata.TierIncreaseRate = Math.max(0, Math.min(maxTir, Math.round(Number(order.Metadata.TierIncreaseRate) || 0))); recalcPrices(); }}
           />
         </div>
       {/if}
@@ -676,10 +611,10 @@
                 type="number"
                 min="1"
                 max="100"
-                step="0.0001"
+                step="1"
                 bind:value={order.Metadata.QualityRating}
                 on:input={recalcPrices}
-                on:blur={clampQR}
+                on:blur={() => { order.Metadata.QualityRating = Math.max(1, Math.min(100, Math.round(Number(order.Metadata.QualityRating) || 1))); recalcPrices(); }}
               />
             {:else}
               <select
@@ -791,92 +726,23 @@
           {/if}
         </div>
       </div>
+      {#if qtyExceedsInventory}
+        <div class="inventory-warning">You are creating more sell offers than you have in your inventory ({inventoryQty}).</div>
+      {/if}
+      {#if isNonFungible && mode === 'create' && (existingOfferCount + sessionOfferCount > 0)}
+        <div class="offer-count-indicator">Offer {existingOfferCount + sessionOfferCount + 1} of {maxOffersPerItem}</div>
+      {/if}
       <div class="actions">
         {#if mode === 'edit'}
           <button class="delete-btn" on:click={() => dispatch('delete', { order })} title="Delete this offer">Delete</button>
         {/if}
         <span class="actions-spacer"></span>
-        <button on:click={close}>Cancel</button>
-        <button on:click={submit} title={mode === 'edit' ? 'Save changes' : 'Submit order'}>{mode === 'edit' ? 'Save' : 'Submit'}</button>
-      </div>
-      {:else}
-      <!-- Bulk Buy/Sell Tab -->
-      <div class="bulk-form">
-        <div class="form-row">
-          <label for="bulkQty">Quantity Needed</label>
-          <input id="bulkQty" type="number" min="1" bind:value={bulkQuantity} />
-        </div>
-        <div class="form-row">
-          <label for="bulkMinOffer">Min Offer Qty</label>
-          <input id="bulkMinOffer" type="number" min="0" bind:value={bulkMinOffer} placeholder="0 = any" />
-        </div>
-        <div class="form-row">
-          <label for="bulkMaxTraders">Max Traders</label>
-          <div class="slider-row">
-            <input id="bulkMaxTraders" type="range" min="0" max="20" bind:value={bulkMaxTraders} />
-            <span class="slider-value">{bulkMaxTraders === 0 ? 'No limit' : bulkMaxTraders}</span>
-          </div>
-        </div>
-        <div class="form-row">
-          <label for="bulkPlanet">Planet</label>
-          <select id="bulkPlanet" bind:value={bulkPlanet} class="filter-select select-center">
-            <option>All Planets</option>
-            {#each planets as p}
-              <option>{p}</option>
-            {/each}
-          </select>
-        </div>
-      </div>
-
-      <div class="bulk-preview">
-        <div class="bulk-preview-header">
-          <span class="bulk-preview-title">Matching Offers</span>
-          <span class="bulk-preview-summary">
-            {bulkMatchedOffers.totalFilled} / {bulkQuantity} filled
-            {#if bulkMatchedOffers.remaining > 0}
-              <span class="bulk-warning">({bulkMatchedOffers.remaining} remaining)</span>
-            {/if}
-          </span>
-        </div>
-        {#if bulkMatchedOffers.matched.length > 0}
-          <div class="bulk-table">
-            <div class="bulk-row bulk-header-row">
-              <span class="bulk-cell name-cell">{order.Type === 'Buy' ? 'Seller' : 'Buyer'}</span>
-              <span class="bulk-cell">Qty</span>
-              <span class="bulk-cell">Markup</span>
-              <span class="bulk-cell">Planet</span>
-            </div>
-            {#each bulkMatchedOffers.matched as match}
-              <div class="bulk-row">
-                <span class="bulk-cell name-cell">{match.seller_name || 'Unknown'}</span>
-                <span class="bulk-cell">{match.fillQuantity}</span>
-                <span class="bulk-cell">{isPercentMarkup(order.Item)
-                  ? `${Number(match.markup).toFixed(1)}%`
-                  : `+${Number(match.markup).toFixed(2)}`}</span>
-                <span class="bulk-cell">{match.planet || 'Any'}</span>
-              </div>
-            {/each}
-          </div>
-        {:else}
-          <div class="bulk-empty">No matching offers found</div>
+        <button on:click={close} disabled={submitting}>{sessionOfferCount > 0 ? 'Done' : 'Cancel'}</button>
+        {#if canCreateMore && !offerLimitReached}
+          <button class="next-btn" on:click={submitAndNext} disabled={submitting} title="Create this offer and set up the next one">{submitting ? 'Saving...' : 'Next'}</button>
         {/if}
+        <button on:click={submit} disabled={offerLimitReached || submitting} title={mode === 'edit' ? 'Save changes' : 'Submit order'}>{submitting ? 'Saving...' : (mode === 'edit' ? 'Save' : 'Submit')}</button>
       </div>
-
-      {#if bulkError}
-        <div class="bulk-error">{bulkError}</div>
-      {/if}
-
-      <div class="actions">
-        <button on:click={close}>Cancel</button>
-        <button
-          on:click={submitBulk}
-          disabled={bulkSubmitting || bulkMatchedOffers.matched.length === 0}
-          title="Send trade requests to all matched {order.Type === 'Buy' ? 'sellers' : 'buyers'}"
-        >
-          {bulkSubmitting ? 'Sending...' : `Bulk ${order.Type} Now`}
-        </button>
-      </div>
-      {/if}
     </div>
   </div>
 {/if}
@@ -1123,97 +989,6 @@
   .tab:hover:not(.active) {
     background: var(--hover-color);
   }
-
-  /* Bulk form */
-  .bulk-form {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    margin-bottom: 12px;
-  }
-  .slider-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex: 1;
-  }
-  .slider-row input[type="range"] {
-    flex: 1;
-    accent-color: var(--accent-color);
-  }
-  .slider-value {
-    font-size: 12px;
-    color: var(--text-muted);
-    min-width: 60px;
-    text-align: right;
-  }
-
-  /* Bulk preview */
-  .bulk-preview {
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    overflow: hidden;
-    margin-bottom: 12px;
-  }
-  .bulk-preview-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 6px 10px;
-    background: var(--bg-color);
-    border-bottom: 1px solid var(--border-color);
-    font-size: 12px;
-  }
-  .bulk-preview-title {
-    font-weight: 600;
-    color: var(--text-color);
-  }
-  .bulk-preview-summary {
-    color: var(--text-muted);
-  }
-  .bulk-warning {
-    color: var(--warning-color, #f59e0b);
-  }
-  .bulk-table {
-    max-height: 200px;
-    overflow-y: auto;
-  }
-  .bulk-row {
-    display: flex;
-    padding: 4px 10px;
-    font-size: 12px;
-    border-bottom: 1px solid var(--border-color);
-  }
-  .bulk-row:last-child { border-bottom: none; }
-  .bulk-header-row {
-    font-weight: 600;
-    color: var(--text-muted);
-    background: var(--bg-color);
-    position: sticky;
-    top: 0;
-  }
-  .bulk-cell {
-    flex: 1;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .name-cell { flex: 2; }
-  .bulk-empty {
-    padding: 16px;
-    text-align: center;
-    color: var(--text-muted);
-    font-size: 12px;
-  }
-  .bulk-error {
-    color: var(--error-color, #ef4444);
-    font-size: 12px;
-    padding: 6px 8px;
-    background: rgba(239, 68, 68, 0.1);
-    border-radius: 4px;
-    margin-bottom: 8px;
-  }
   .inv-warning-banner {
     background: var(--warning-bg);
     color: var(--warning-color);
@@ -1222,5 +997,33 @@
     border: 1px solid var(--warning-color);
     font-size: 12px;
     margin-bottom: 8px;
+  }
+  .inventory-warning {
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    color: var(--warning-color, #f59e0b);
+    background: rgba(245, 158, 11, 0.1);
+    border: 1px solid var(--warning-color, #f59e0b);
+  }
+  .offer-count-indicator {
+    text-align: center;
+    font-size: 12px;
+    color: var(--text-muted);
+    padding: 4px 0;
+  }
+  .next-btn {
+    background: transparent;
+    border: 1px solid var(--accent-color);
+    color: var(--accent-color);
+    padding: 8px 18px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s ease;
+  }
+  .next-btn:hover {
+    background: var(--accent-color);
+    color: white;
   }
 </style>

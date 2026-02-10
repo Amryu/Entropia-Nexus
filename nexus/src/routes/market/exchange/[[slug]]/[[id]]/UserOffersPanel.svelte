@@ -87,7 +87,7 @@
           const mu = v != null ? Number(v) : null;
           if (mu == null || !isFinite(mu)) return 'N/A';
           const item = itemLookup.get(row?.item_id);
-          const isAbsMu = item ? isAbsoluteMarkup({ Type: item.t }) : false;
+          const isAbsMu = item ? isAbsoluteMarkup({ Type: item.t, Name: item.n }) : false;
           return isAbsMu ? `+${mu.toFixed(2)}` : `${mu.toFixed(1)}%`;
         }
       },
@@ -98,7 +98,7 @@
           const maxTT = item?.v ?? null;
           const mu = row?.markup != null ? Number(row.markup) : null;
           if (maxTT == null || mu == null) return 'N/A';
-          const isAbsMu = item ? isAbsoluteMarkup({ Type: item.t }) : false;
+          const isAbsMu = item ? isAbsoluteMarkup({ Type: item.t, Name: item.n }) : false;
           const unitPrice = isAbsMu ? maxTT + mu : maxTT * (mu / 100);
           const qty = row?.quantity ?? 1;
           return `${fmt(unitPrice * qty)} PED`;

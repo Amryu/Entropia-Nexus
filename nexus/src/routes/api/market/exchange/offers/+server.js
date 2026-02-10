@@ -1,6 +1,6 @@
 //@ts-nocheck
 import { getResponse } from '$lib/util.js';
-import { getUserOffers, createOffer, countUserOffersBySide, MAX_OFFERS_PER_SIDE, PLANETS } from '$lib/server/exchange.js';
+import { getUserOffers, createOffer, countUserOffersBySide, countUserOffersForItem, MAX_OFFERS_PER_SIDE, MAX_OFFERS_PER_ITEM, PLANETS } from '$lib/server/exchange.js';
 
 const VALID_TYPES = ['BUY', 'SELL'];
 
@@ -18,16 +18,20 @@ function validateOfferDetails(details) {
     clean.item_name = details.item_name.slice(0, 200);
   }
   if (details.Tier != null) {
-    const tier = parseFloat(details.Tier);
+    const tier = Math.round(Number(details.Tier));
     if (Number.isFinite(tier) && tier >= 0 && tier <= 10) clean.Tier = tier;
   }
   if (details.TierIncreaseRate != null) {
-    const tir = parseInt(details.TierIncreaseRate, 10);
-    if (Number.isFinite(tir) && tir >= 1 && tir <= 4000) clean.TierIncreaseRate = tir;
+    const tir = Math.round(Number(details.TierIncreaseRate));
+    // (L) items allow TiR up to 4000, non-(L) up to 200
+    const itemName = details.item_name || '';
+    const isL = /\(.*L.*\)/.test(itemName);
+    const maxTir = isL ? 4000 : 200;
+    if (Number.isFinite(tir) && tir >= 0 && tir <= maxTir) clean.TierIncreaseRate = tir;
   }
   if (details.QualityRating != null) {
-    const qr = parseFloat(details.QualityRating);
-    if (Number.isFinite(qr) && qr >= 0 && qr <= 100) clean.QualityRating = qr;
+    const qr = Math.round(Number(details.QualityRating));
+    if (Number.isFinite(qr) && qr >= 1 && qr <= 100) clean.QualityRating = qr;
   }
   if (details.CurrentTT != null) {
     const ct = parseFloat(details.CurrentTT);
@@ -134,10 +138,10 @@ export async function POST({ request, locals }) {
 
   const details = validateOfferDetails(body.details);
 
-  // Check offer limit per side
+  // Check offer limit per side (global cap)
   try {
-    const count = await countUserOffersBySide(user.id, type);
-    if (count >= MAX_OFFERS_PER_SIDE) {
+    const sideCount = await countUserOffersBySide(user.id, type);
+    if (sideCount >= MAX_OFFERS_PER_SIDE) {
       return getResponse({
         error: `Maximum ${MAX_OFFERS_PER_SIDE} ${type.toLowerCase()} offers reached. Close some offers first.`
       }, 409);
@@ -147,19 +151,27 @@ export async function POST({ request, locals }) {
     return getResponse({ error: 'Failed to check offer limits' }, 500);
   }
 
-  // Create the offer (unique constraint enforces 1 per item/side)
+  // Check per-item offer limit (up to MAX_OFFERS_PER_ITEM per item per side)
+  try {
+    const itemCount = await countUserOffersForItem(user.id, itemId, type);
+    if (itemCount >= MAX_OFFERS_PER_ITEM) {
+      return getResponse({
+        error: `Maximum ${MAX_OFFERS_PER_ITEM} ${type.toLowerCase()} offers per item reached.`,
+        itemOfferCount: itemCount
+      }, 409);
+    }
+  } catch (err) {
+    console.error('Error checking item offer count:', err);
+    return getResponse({ error: 'Failed to check item offer limits' }, 500);
+  }
+
+  // Create the offer
   try {
     const offer = await createOffer({
       userId: user.id, type, itemId, quantity, minQuantity, markup, planet, details
     });
     return getResponse(offer, 201);
   } catch (err) {
-    // Check for unique constraint violation (1 offer per item per side)
-    if (err.code === '23505') {
-      return getResponse({
-        error: `You already have an active ${type.toLowerCase()} offer for this item`
-      }, 409);
-    }
     console.error('Error creating offer:', err);
     return getResponse({ error: 'Failed to create offer' }, 500);
   }

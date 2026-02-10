@@ -6,6 +6,7 @@ const STALE_DAYS = 3;
 const EXPIRED_DAYS = 7;
 const TERMINATED_DAYS = 30;
 const MAX_OFFERS_PER_SIDE = 200;
+const MAX_OFFERS_PER_ITEM = 5;
 
 /**
  * SQL fragment that computes the effective state from bumped_at.
@@ -362,4 +363,21 @@ export async function getLatestExchangePriceMap() {
   return map;
 }
 
-export { MAX_OFFERS_PER_SIDE, PLANETS };
+/**
+ * Count a user's active offers for a specific item and side.
+ */
+export async function countUserOffersForItem(userId, itemId, type) {
+  const query = `
+    SELECT COUNT(*) AS count
+    FROM trade_offers
+    WHERE user_id = $1
+      AND item_id = $2
+      AND type = $3
+      AND state NOT IN ('closed')
+      AND bumped_at >= NOW() - INTERVAL '${TERMINATED_DAYS} days'
+  `;
+  const { rows } = await pool.query(query, [userId, itemId, type]);
+  return parseInt(rows[0].count, 10);
+}
+
+export { MAX_OFFERS_PER_SIDE, MAX_OFFERS_PER_ITEM, PLANETS };

@@ -36,11 +36,12 @@ export function getMaxTT(item: any): number | null {
 }
 
 export function isItemStackable(item: any): boolean {
-  return item?.Type === 'Material'
-    || item?.Type === 'Consumable'
-    || item?.Type === 'Capsule'
-    || item?.Type === 'Enhancer'
-    || (item?.Type === 'Blueprint' && isLimited(item));
+  const type = item?.Properties?.Type ?? item?.Type ?? item?.t;
+  return type === 'Material'
+    || type === 'Consumable'
+    || type === 'Capsule'
+    || type === 'Enhancer'
+    || (type === 'Blueprint' && isLimited(item));
 }
 
 export function isPercentMarkup(item: any): boolean {
