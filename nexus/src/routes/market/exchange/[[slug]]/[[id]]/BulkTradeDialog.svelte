@@ -249,19 +249,17 @@
     gap: 10px;
   }
   .form-row {
-    display: flex;
+    display: grid;
+    grid-template-columns: 120px 1fr;
+    gap: 8px;
     align-items: center;
-    gap: 10px;
   }
   .form-row label {
-    width: 120px;
-    flex-shrink: 0;
     font-size: 13px;
     color: var(--text-muted);
   }
   .form-row input[type="number"],
   .form-row select {
-    flex: 1;
     padding: 6px 10px;
     border: 1px solid var(--border-color);
     border-radius: 6px;

@@ -22,7 +22,8 @@
   import { goto } from "$app/navigation";
   import { page } from "$app/stores";
   import { apiCall, getItemLink, hasItemTag, encodeURIComponentSafe, decodeURIComponentSafe } from "$lib/util.js";
-  import { isBlueprint, isItemTierable, isItemStackable, isLimited, itemHasCondition, isAbsoluteMarkup, getMaxTT, formatMarkupValue, formatMarkupForItem, formatPedValue } from '../../orderUtils';
+  import { isBlueprint, isItemTierable, isItemStackable, isLimited, itemHasCondition, isAbsoluteMarkup, getMaxTT, formatMarkupValue, formatMarkupForItem, formatPedValue, isPet, isBlueprintNonL, getUnitTT, computeUnitPrice, getPetLevel } from '../../orderUtils';
+  import { PET_ID_OFFSET } from '$lib/common/itemTypes.js';
   import { PLANETS } from '../../exchangeConstants.js';
   import { showMyOrders, showInventory, showTradeList, showTrades, tradeList, addToTradeList, clearTradeList, myOrders, inventory, upsertOrder } from '../../exchangeStore.js';
   import { favourites, isFavourite, toggleFavourite, createFolder } from '../../favouritesStore.js';
@@ -647,7 +648,20 @@
       detailsAbort = controller;
       (async () => {
         try {
-          const it = await apiCall(window.fetch, `/items/${id}`);
+          const itemType = selectedItem?.t;
+          let it;
+          if (itemType === 'Pet') {
+            const pet = await apiCall(window.fetch, `/pets/${id - PET_ID_OFFSET}`);
+            // Normalize pet response to match item shape expected by helpers
+            if (pet) {
+              pet.Id = pet.ItemId ?? id;
+              pet.Properties = pet.Properties || {};
+              pet.Properties.Type = 'Pet';
+            }
+            it = pet;
+          } else {
+            it = await apiCall(window.fetch, `/items/${id}`);
+          }
           // Ignore if another fetch superseded this
           if (controller && controller.signal.aborted) return;
           selectedItemDetails = it || null;
@@ -1156,6 +1170,7 @@
   function applyOrderFilters(orders) {
     const maxTT = getMaxTT(selectedItemDetails);
     const isAbsMu = isAbsoluteMarkup(selectedItemDetails);
+    const bpNonL = isBlueprintNonL(selectedItemDetails);
 
     return (orders || [])
       .filter((o) =>
@@ -1182,6 +1197,10 @@
       )
       .filter((o) => {
         if (!minTTFilter) return true;
+        if (bpNonL) {
+          const qr = Number(o?.details?.QualityRating) || 0;
+          return qr > 0 ? (qr / 100) >= minTTFilter : true;
+        }
         const qty = o?.Quantity ?? o?.quantity ?? 0;
         const ttTotal = maxTT != null ? maxTT * qty : null;
         return ttTotal == null || ttTotal >= minTTFilter;
@@ -1193,9 +1212,20 @@
         // Compute TT value and unit price from item's MaxTT and order markup
         let ttValue = o?.TTValue ?? o?.Value ?? o?.tt_value ?? o?.details?.CurrentTT ?? null;
         let unitPrice = o?.Price ?? o?.price ?? o?.UnitPrice ?? o?.unit_price ?? null;
-        if (ttValue == null && maxTT != null) ttValue = maxTT;
-        if (unitPrice == null && ttValue != null && muNum != null) {
-          unitPrice = isAbsMu ? ttValue + muNum : ttValue * (muNum / 100);
+        if (ttValue == null) {
+          if (bpNonL) {
+            const qr = Number(o?.details?.QualityRating) || 0;
+            if (qr > 0) ttValue = qr / 100;
+          } else if (maxTT != null) {
+            ttValue = maxTT;
+          }
+        }
+        if (unitPrice == null && muNum != null) {
+          if (bpNonL) {
+            unitPrice = (ttValue || 0) + muNum;
+          } else if (ttValue != null) {
+            unitPrice = isAbsMu ? ttValue + muNum : ttValue * (muNum / 100);
+          }
         }
         return {
           ...o,
@@ -1391,6 +1421,8 @@
     const type = selectedItemDetails?.Properties?.Type || selectedItem?.t || null;
     const showTier = tierableTypes.has(type);
     const isAbsMu = isAbsoluteMarkup(selectedItemDetails);
+    const isBpNonL = isBlueprintNonL(selectedItemDetails);
+    const isPetItem = isPet(selectedItemDetails) || selectedItem?.t === 'Pet';
     const cols = [];
 
     if (showTier) {
@@ -1399,19 +1431,40 @@
       cols.push({ key: 'tir', header: 'TiR', width: '80px', sortable: true, searchable: false,
         formatter: (v) => v ?? 'N/A' });
     }
+    if (isPetItem) {
+      cols.push({ key: '_petLevel', header: 'Level', width: '70px', sortable: true, searchable: false,
+        sortValue: (row) => getPetLevel(row) ?? -1,
+        formatter: (v, row) => {
+          const lvl = getPetLevel(row);
+          return lvl != null ? String(lvl) : 'N/A';
+        }});
+    }
     const itemMaxTT = getMaxTT(selectedItemDetails) ?? selectedItem?.v ?? null;
     const stackable = isItemStackable(selectedItemDetails || selectedItem);
     if (stackable) {
       cols.push({ key: 'quantity', header: 'Qty', width: '80px', sortable: true, searchable: false,
         formatter: (v) => v ?? 0 });
     }
+
+    // Helper: get TT value for a row, accounting for non-L BPs using QR/100
+    function getRowTT(row) {
+      if (isBpNonL) {
+        const qr = Number(row?.details?.QualityRating) || 0;
+        return qr > 0 ? qr / 100 : null;
+      }
+      const qty = row?.quantity ?? 1;
+      return row?.details?.CurrentTT ?? (stackable && itemMaxTT != null ? itemMaxTT * qty : itemMaxTT);
+    }
+
     cols.push({ key: '_value', header: 'Value', width: '130px', sortable: true, searchable: false,
-      sortValue: (row) => {
-        const tt = row?.details?.CurrentTT ?? (stackable && itemMaxTT != null ? itemMaxTT * (row?.quantity ?? 1) : itemMaxTT);
-        return tt ?? -1;
-      },
+      sortValue: (row) => getRowTT(row) ?? -1,
       formatter: (v, row) => {
-        const tt = row?.details?.CurrentTT ?? (stackable && itemMaxTT != null ? itemMaxTT * (row?.quantity ?? 1) : itemMaxTT);
+        if (isBpNonL) {
+          const qr = Number(row?.details?.QualityRating) || 0;
+          if (qr <= 0) return 'Any QR';
+          return `${formatPedValue(qr / 100)} <span class="tt-pct">(QR ${qr})</span>`;
+        }
+        const tt = getRowTT(row);
         if (tt == null) return 'N/A';
         const ttStr = formatPedValue(tt);
         if (!stackable && row?.details?.CurrentTT != null && itemMaxTT != null && itemMaxTT > 0) {
@@ -1424,17 +1477,27 @@
       formatter: (v) => formatMarkupValue(v, isAbsMu)});
     cols.push({ key: '_total', header: 'Total', width: '120px', sortable: true, searchable: false,
       sortValue: (row) => {
-        const qty = row?.quantity ?? 1;
-        const tt = row?.details?.CurrentTT ?? (stackable && itemMaxTT != null ? itemMaxTT * qty : itemMaxTT);
         const mu = row?.markup != null ? Number(row.markup) : null;
-        if (tt == null || mu == null) return -1;
+        if (mu == null) return -1;
+        if (isBpNonL) {
+          const tt = getRowTT(row);
+          return tt != null ? tt + mu : mu;
+        }
+        const qty = row?.quantity ?? 1;
+        const tt = getRowTT(row);
+        if (tt == null) return -1;
         return isAbsMu ? tt + mu * qty : tt * (mu / 100);
       },
       formatter: (v, row) => {
-        const qty = row?.quantity ?? 1;
-        const tt = row?.details?.CurrentTT ?? (stackable && itemMaxTT != null ? itemMaxTT * qty : itemMaxTT);
         const mu = row?.markup != null ? Number(row.markup) : null;
-        if (tt == null || mu == null) return 'N/A';
+        if (mu == null) return 'N/A';
+        if (isBpNonL) {
+          const tt = getRowTT(row);
+          return formatPedValue(tt != null ? tt + mu : mu);
+        }
+        const qty = row?.quantity ?? 1;
+        const tt = getRowTT(row);
+        if (tt == null) return 'N/A';
         const total = isAbsMu ? tt + mu * qty : tt * (mu / 100);
         return formatPedValue(total);
       }});
@@ -2184,6 +2247,7 @@
               bind:this={myOrdersRef}
               user={currentUser}
               sideFilter={panelSideFilter}
+              {allItems}
               on:edit={(e) => {
                 const order = e.detail;
                 if (order?.item_id) {

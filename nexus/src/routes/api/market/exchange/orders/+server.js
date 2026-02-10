@@ -1,6 +1,6 @@
 //@ts-nocheck
 import { getResponse } from '$lib/util.js';
-import { getUserOrders, createOrder, countUserOrdersBySide, countUserOrdersForItem, MAX_ORDERS_PER_SIDE, MAX_ORDERS_PER_ITEM, PLANETS } from '$lib/server/exchange.js';
+import { getUserOrders, createOrder, countUserOrdersBySide, countUserOrdersForItem, getItemType, isPercentMarkupServer, MAX_ORDERS_PER_SIDE, MAX_ORDERS_PER_ITEM, PLANETS } from '$lib/server/exchange.js';
 
 const VALID_TYPES = ['BUY', 'SELL'];
 
@@ -41,21 +41,7 @@ function validateOrderDetails(details) {
     const pet = {};
     if (details.Pet.Level != null) {
       const lvl = parseInt(details.Pet.Level, 10);
-      if (Number.isFinite(lvl) && lvl >= 1) pet.Level = lvl;
-    }
-    if (details.Pet.Experience != null) {
-      const exp = parseFloat(details.Pet.Experience);
-      if (Number.isFinite(exp) && exp >= 0) pet.Experience = exp;
-    }
-    if (details.Pet.Food != null) {
-      const food = parseFloat(details.Pet.Food);
-      if (Number.isFinite(food) && food >= 0) pet.Food = food;
-    }
-    if (Array.isArray(details.Pet.Skills)) {
-      pet.Skills = details.Pet.Skills
-        .filter(s => s && typeof s === 'object' && typeof s.Name === 'string')
-        .slice(0, 20)
-        .map(s => ({ Name: s.Name.slice(0, 100), Level: parseInt(s.Level, 10) || 0 }));
+      if (Number.isFinite(lvl) && lvl >= 0) pet.Level = lvl;
     }
     if (Object.keys(pet).length > 0) clean.Pet = pet;
   }
@@ -118,10 +104,21 @@ export async function POST({ request, locals }) {
     return getResponse({ error: 'quantity must be at least 1' }, 400);
   }
 
-  // Validate markup
+  // Validate markup (basic check first, type-aware check after item lookup)
   const markup = parseFloat(body.markup);
   if (!Number.isFinite(markup) || markup < 0) {
     return getResponse({ error: 'markup must be a non-negative number' }, 400);
+  }
+
+  // Enforce minimum markup based on item type
+  try {
+    const itemInfo = await getItemType(itemId);
+    if (itemInfo && isPercentMarkupServer(itemInfo.type, itemInfo.name) && markup < 100) {
+      return getResponse({ error: 'Markup must be at least 100% for this item type' }, 400);
+    }
+  } catch (err) {
+    console.error('Error checking item type for markup validation:', err);
+    // Non-fatal: proceed with basic validation only
   }
 
   // Validate planet

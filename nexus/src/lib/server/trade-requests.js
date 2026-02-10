@@ -1,21 +1,10 @@
 //@ts-nocheck
 import { pool, nexusPool } from './db.js';
 
-// Markup-type resolution: mirrors orderUtils.ts isPercentMarkup logic server-side
-const STACKABLE_TYPES = new Set(['Material', 'Consumable', 'Capsule', 'Enhancer']);
-const CONDITION_TYPES = new Set([
-  'Weapon', 'Armor', 'Vehicle', 'WeaponAmplifier', 'WeaponVisionAttachment',
-  'Finder', 'FinderAmplifier', 'Excavator', 'Refiner', 'Scanner',
-  'TeleportationChip', 'EffectChip', 'MedicalChip',
-  'MiscTool', 'MedicalTool', 'MindforceImplant', 'Pet'
-]);
+import { isPercentMarkupType } from '$lib/common/itemTypes.js';
 
 function getMarkupType(itemType, itemName) {
-  if (STACKABLE_TYPES.has(itemType)) return 'percent';
-  const isLimited = /\(L\)/.test(itemName || '');
-  if (itemType === 'Blueprint' && isLimited) return 'percent';
-  if (CONDITION_TYPES.has(itemType) && isLimited) return 'percent';
-  return 'absolute';
+  return isPercentMarkupType(itemType, itemName) ? 'percent' : 'absolute';
 }
 
 async function resolveMarkupTypes(itemIds) {

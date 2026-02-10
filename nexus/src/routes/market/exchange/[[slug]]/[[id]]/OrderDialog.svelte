@@ -1,8 +1,7 @@
 <script lang="ts">
   // @ts-nocheck
   import { createEventDispatcher } from "svelte";
-  import { isBlueprint, isItemTierable, isLimited, itemHasCondition, isPercentMarkup, getMaxTT, formatPedRaw } from "../../orderUtils";
-  import { hasItemTag, apiCall } from "$lib/util";
+  import { isBlueprint, isItemTierable, isLimited, itemHasCondition, isPercentMarkup, isPet, getMaxTT, formatPedRaw, PET_DEFAULT_MAX_TT } from "../../orderUtils";
   import { getPercentUndercutAmount, getAbsoluteUndercutAmount, DEFAULT_PARTIAL_RATIO } from '../../exchangeConstants.js';
   export let show = false;
   export let mode = 'create'; // 'create' | 'edit'
@@ -12,13 +11,6 @@
   let totalPrice = 0;
   let muLabel = '';
   let ttValueDisplay = '';
-  // Pet skills data and selection state
-  let petSkillOptions = [];
-  let selectedSkillKey = '';
-  let selectedSkillUnlocked = false;
-  let selectedSkillCriteria = 0; // percent
-  let lastLoadedPetKey = null; // track to avoid refetch loops
-
   // Price suggestions
   let suggestions = null; // { bestBuy, bestSell }
   let suggestionsLoading = false;
@@ -124,11 +116,7 @@
       // Ensure pet metadata scaffolding when editing
       if (order?.Item?.Type === 'Pet') {
         order.Metadata = order.Metadata || {};
-        order.Metadata.Pet = order.Metadata.Pet || { Level: 1, Experience: 0, Skills: [], Food: 0 };
-        order.Item.Metadata = order.Item.Metadata || {};
-        order.Item.Metadata.Skills = Array.isArray(order.Item.Metadata.Skills) ? order.Item.Metadata.Skills : [];
-        const key = order?.Item?.Id ?? order?.Item?.Name ?? null;
-        if (key != null) loadPetSkills(String(key));
+        order.Metadata.Pet = order.Metadata.Pet || { Level: 0 };
       }
     } else if (itemOrOrder?.Item?.Name != null) {
       // Pre-built order object (e.g. from inventory sell) — clone and apply defaults
@@ -142,7 +130,7 @@
 
       // Derive item-type-aware defaults from the nested Item
       const itemType = order.Item?.Type;
-      const itemRef = { Type: itemType, Properties: { Type: itemType } };
+      const itemRef = { Type: itemType, Properties: { Type: itemType }, Name: order.Item?.Name };
       if (order.Markup == null || order.Markup === 0) {
         order.Markup = isPercentMarkup(itemRef) ? 100 : 0;
       }
@@ -154,11 +142,7 @@
         if (order.Metadata.QualityRating == null) order.Metadata.QualityRating = type === 'buy' ? '0' : 1;
       }
       if (itemType === 'Pet') {
-        order.Metadata.Pet = order.Metadata.Pet || { Level: 1, Experience: 0, Skills: [], Food: 0 };
-        order.Item.Metadata = order.Item.Metadata || {};
-        order.Item.Metadata.Skills = Array.isArray(order.Item.Metadata.Skills) ? order.Item.Metadata.Skills : [];
-        const key = order.Item?.Id ?? order.Item?.Name ?? null;
-        if (key != null) loadPetSkills(String(key));
+        order.Metadata.Pet = order.Metadata.Pet || { Level: 0 };
       }
       if (itemHasCondition(itemRef) && !isBlueprint(itemRef) && order.Item.MaxTT != null && order.CurrentTT == null) {
         order.CurrentTT = order.Item.MaxTT;
@@ -191,17 +175,7 @@
         order.Metadata.QualityRating = type === 'buy' ? '0' : 1;
       }
       if (item?.Properties?.Type === 'Pet' || item?.Type === 'Pet' || item?.t === 'Pet') {
-        order.Metadata.Pet = {
-          Level: 1,
-          Experience: 0,
-          Skills: [],
-          Food: 0,
-        };
-        order.Item.Metadata = order.Item.Metadata || {};
-        order.Item.Metadata.Skills = Array.isArray(order.Item.Metadata.Skills) ? order.Item.Metadata.Skills : [];
-        // Kick off pet skills loading (by name as fallback id)
-        const key = item?.Id ?? item?.i ?? item?.Name ?? item?.n ?? null;
-        if (key != null) loadPetSkills(String(key));
+        order.Metadata.Pet = { Level: 0 };
       }
 
       if (itemHasCondition(item) && !isBlueprint(item) && order.Item.MaxTT != null) {
@@ -275,8 +249,6 @@
   // Watch for changes to recalc
   $: if (order) recalcPrices();
   // When pet level changes, refresh disabled/color state (options re-compute from order state)
-  $: petSkillOptions = petSkillOptions.sort((a, b) => a.level - b.level);
-
   // Derived flags for template: show Quantity only for fungible items (no instance metadata)
   $: showQuantity = (() => {
     if (!order) return false;
@@ -287,80 +259,6 @@
     return !isInstanceItem;
   })();
 
-  async function loadPetSkills(idOrName) {
-    try {
-      const key = String(idOrName || '');
-      if (!key) return;
-      if (lastLoadedPetKey === key) return; // avoid refetch if same pet
-      const path = `/pets/${encodeURIComponent(key)}`;
-      let data = await apiCall(window.fetch, path);
-      // Dev fallback: if nothing returned and running locally, try explicit localhost API
-      if (!data && typeof window !== 'undefined' && window.location.hostname === 'localhost') {
-        data = await apiCall(window.fetch, path, 'http://localhost:3000');
-      }
-      // API returns a Pet object with an Effects array
-      const list = Array.isArray(data)
-        ? data
-        : (Array.isArray(data?.Effects)
-            ? data.Effects
-            : (Array.isArray(data?.Skills) ? data.Skills : []));
-      // Normalize into options: duplicate IDs allowed for different unlock levels
-      petSkillOptions = (list || [])
-        .map((e, idx) => {
-          const eff = e || {};
-          const id = eff.Id ?? idx;
-          const name = eff.Name ?? 'Unknown';
-          const unlockLvl = Number(eff?.Properties?.Unlock?.Level ?? eff.Unlock?.Level ?? 0) || 0;
-          const strength = eff?.Properties?.Strength ?? eff.Strength ?? null;
-          const unit = eff?.Properties?.Unit ?? eff.Unit ?? '';
-          const key = `${id}@${unlockLvl}`;
-          return {
-            key,
-            id,
-            name,
-            level: unlockLvl,
-            strength,
-            unit: unit || '',
-            // label computed later using current order state
-          };
-        })
-        .sort((a, b) => a.level - b.level);
-  // Mark loaded only after success
-  lastLoadedPetKey = key;
-      // Reset selection UI
-      selectedSkillKey = '';
-      selectedSkillUnlocked = false;
-      selectedSkillCriteria = 0;
-    } catch (e) {
-      // On error, clear
-      petSkillOptions = [];
-    }
-  }
-
-  // Reflect the popup state into order.Item.Metadata.Skills
-  function updateSkillMetadata() {
-    if (!order) return;
-    order.Item = order.Item || {};
-    order.Item.Metadata = order.Item.Metadata || {};
-    const arr = Array.isArray(order.Item.Metadata.Skills)
-      ? order.Item.Metadata.Skills
-      : (order.Item.Metadata.Skills = []);
-    // Identify current option
-    const opt = petSkillOptions.find(o => o.key === selectedSkillKey);
-    if (!opt) return;
-    const existsIdx = arr.findIndex(s => s?.Level === opt.level && s?.Name === opt.name);
-    const shouldHave = !!selectedSkillKey && (selectedSkillUnlocked || (Number(selectedSkillCriteria) || 0) > 0);
-    if (shouldHave) {
-      const entry = { Level: opt.level, Name: opt.name };
-      if (existsIdx >= 0) arr[existsIdx] = entry; else arr.push(entry);
-    } else if (existsIdx >= 0) {
-      arr.splice(existsIdx, 1);
-    }
-  }
-
-  $: if (selectedSkillKey !== undefined) updateSkillMetadata();
-  $: if (selectedSkillUnlocked !== undefined) updateSkillMetadata();
-  $: if (selectedSkillCriteria !== undefined) updateSkillMetadata();
   export let  planets = [
     'Calypso', 'Arkadia', 'Cyrene', 'Rocktropia', 'Next Island', 'Monria', 'Toulan', 'Howling Mine (Space)'
   ];
@@ -488,88 +386,8 @@
           <input
             id="petLevel"
             type="number"
-            min="1"
+            min="0"
             bind:value={order.Metadata.Pet.Level}
-            on:input={recalcPrices}
-          />
-        </div>
-        <div class="form-row">
-          <label for="petExperience">Experience</label>
-          <input
-            id="petExperience"
-            type="number"
-            min="0"
-            bind:value={order.Metadata.Pet.Experience}
-            on:input={recalcPrices}
-          />
-        </div>
-        <div class="form-row skill-row">
-          <label for="petSkillSelect">Pet Skill</label>
-          <div class="skill-select-wrap">
-            <select
-              id="petSkillSelect"
-              class="filter-select select-center"
-              bind:value={selectedSkillKey}
-              on:change={() => {
-                // Reset popup toggles for new selection
-                selectedSkillUnlocked = false;
-                selectedSkillCriteria = 0;
-              }}
-            >
-              <option value="">-- none --</option>
-              {#each petSkillOptions as opt}
-                {#key opt.key}
-                  {#if true}
-                    <option
-                      value={opt.key}
-                      disabled={Number(order?.Metadata?.Pet?.Level||0) < opt.level}
-                      class={
-                        (Number(order?.Metadata?.Pet?.Level||0) < opt.level)
-                          ? 'opt-disabled'
-                          : (Array.isArray(order?.Item?.Metadata?.Skills) && order.Item.Metadata.Skills.some(s => s.Level === opt.level && s.Name === opt.name))
-                            ? 'opt-unlocked'
-                            : 'opt-locked'
-                      }
-                      style={
-                        Number(order?.Metadata?.Pet?.Level||0) < opt.level
-                          ? 'color: var(--text-color); opacity: 0.6;'
-                          : (Array.isArray(order?.Item?.Metadata?.Skills) && order.Item.Metadata.Skills.some(s => s.Level === opt.level && s.Name === opt.name))
-                            ? 'color: var(--success-color, #34c759);'
-                            : 'color: var(--danger-color, #ff6b6b);'
-                      }
-                    >
-                      {`L${opt.level}: ${opt.name} (${opt.strength ?? ''}${opt.unit ?? ''})`}
-                    </option>
-                  {/if}
-                {/key}
-              {/each}
-            </select>
-
-            {#if selectedSkillKey}
-              <div class="skill-popover" role="dialog" aria-label="Skill options">
-                <div class="row">
-                  <label class="cbx">
-                    <input type="checkbox" bind:checked={selectedSkillUnlocked} />
-                    <span>Unlocked</span>
-                  </label>
-                </div>
-                {#if !selectedSkillUnlocked}
-                  <div class="row">
-                    <label for="criteriaPct">Criteria (%)</label>
-                    <input id="criteriaPct" type="number" min="0" max="100" step="1" bind:value={selectedSkillCriteria} />
-                  </div>
-                {/if}
-              </div>
-            {/if}
-          </div>
-        </div>
-        <div class="form-row">
-          <label for="petFood">Food</label>
-          <input
-            id="petFood"
-            type="number"
-            min="0"
-            bind:value={order.Metadata.Pet.Food}
             on:input={recalcPrices}
           />
         </div>
@@ -632,8 +450,13 @@
           </div>
         {:else}
           <div class="form-row max-tt-row">
-            <label>Max TT</label>
-            <div class="static-value">{order.Item.MaxTT != null ? `${formatPedRaw(Number(order.Item.MaxTT))} PED` : 'N/A'}</div>
+            <label>{isPet(order.Item) ? 'Nutrio Cap.' : 'Max TT'}</label>
+            <div class="static-value">
+              {order.Item.MaxTT != null ? `${formatPedRaw(Number(order.Item.MaxTT))} PED` : 'N/A'}
+              {#if isPet(order.Item) && Number(order.Item.MaxTT) === PET_DEFAULT_MAX_TT}
+                <span class="fallback-hint">(fallback)</span>
+              {/if}
+            </div>
           </div>
           <div class="form-row">
             <label for="valueInput">Current TT (PED)</label>
@@ -785,7 +608,7 @@
   }
   .form-row {
     display: grid;
-    grid-template-columns: 110px 1fr;
+    grid-template-columns: 120px 1fr;
     gap: 8px;
     align-items: center;
     margin: 8px 0;
@@ -823,6 +646,12 @@
     min-height: 33px;
     display: flex;
     align-items: center;
+    gap: 6px;
+  }
+  .fallback-hint {
+    font-size: 11px;
+    opacity: 0.7;
+    font-style: italic;
   }
   .calc-grid {
     display: grid;
@@ -937,45 +766,6 @@
   .partial-label input[type="checkbox"] {
     margin: 0;
   }
-  .skill-row .skill-select-wrap {
-    position: relative;
-    display: flex;
-    align-items: flex-start;
-    gap: 8px;
-  }
-  .skill-row select {
-    width: 100%;
-  }
-  .skill-popover {
-    position: absolute;
-    top: 0;
-    left: calc(100% + 8px);
-    min-width: 220px;
-    background: var(--secondary-color);
-    color: var(--text-color);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    padding: 10px;
-    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.3);
-    z-index: 5;
-  }
-  .skill-popover .row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin: 6px 0;
-    font-size: 13px;
-  }
-  .skill-popover .cbx {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-  }
-  /* Option classes as fallback; some browsers ignore them in <option> */
-  .opt-disabled { opacity: 0.6; }
-  .opt-locked { color: var(--error-color, #ff6b6b); }
-  .opt-unlocked { color: var(--success-color, #34c759); }
-
   /* Tab bar */
   .tab-bar {
     display: flex;

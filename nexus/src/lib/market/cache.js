@@ -422,6 +422,10 @@ function slimItem(item) {
   if (type === 'Blueprint') {
     v = /\(L\)/.test(name || '') ? 0.01 : 1.00;
   }
+  // Pet values: NutrioCapacity stored in cents, convert to PED
+  if (type === 'Pet' && v == null && item.Properties?.NutrioCapacity != null) {
+    v = item.Properties.NutrioCapacity / 100;
+  }
 
   return {
     i: id,

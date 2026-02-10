@@ -3,7 +3,7 @@
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { goto } from '$app/navigation';
   import { tradeList } from '../../exchangeStore.js';
-  import { isAbsoluteMarkup, getMaxTT, formatMarkupForItem, formatPedValue } from '../../orderUtils';
+  import { isAbsoluteMarkup, formatMarkupForItem, formatPedValue, isBlueprintNonL, getUnitTT, computeUnitPrice } from '../../orderUtils';
   import { encodeURIComponentSafe } from '$lib/util.js';
   import { createEventDispatcher } from 'svelte';
 
@@ -75,8 +75,8 @@
         key: '_tt', header: 'TT', width: '90px', sortable: true, searchable: false,
         formatter: (v, row) => {
           const item = itemLookup.get(row?.item_id);
-          const maxTT = item?.v ?? null;
-          return formatPedValue(maxTT);
+          const tt = getUnitTT(item, row);
+          return formatPedValue(tt);
         }
       },
       {
@@ -90,11 +90,9 @@
         key: '_total', header: 'Total', width: '120px', sortable: true, searchable: false,
         formatter: (v, row) => {
           const item = itemLookup.get(row?.item_id);
-          const maxTT = item?.v ?? null;
           const mu = row?.markup != null ? Number(row.markup) : null;
-          if (maxTT == null || mu == null) return 'N/A';
-          const isAbsMu = item ? isAbsoluteMarkup({ Type: item.t, Name: item.n }) : false;
-          const unitPrice = isAbsMu ? maxTT + mu : maxTT * (mu / 100);
+          const unitPrice = computeUnitPrice(item, mu, row);
+          if (unitPrice == null) return 'N/A';
           const qty = row?.quantity ?? 1;
           return formatPedValue(unitPrice * qty);
         }

@@ -1,18 +1,13 @@
+import { CONDITION_TYPES } from '$lib/common/itemTypes.js';
+
 // Utility to decide which items are non-stackable for MU formatting
-// Extend this list/rules as needed based on item details
 /**
  * @param {any} item
  */
 export function isNonStackable(item) {
   // Items with condition/TT that can be damaged
   const t = item?.Properties?.Type || item?.Type || item?.type || item?.t || '';
-  return [
-    'Weapon', 'Armor', 'Vehicle',
-    'WeaponAmplifier', 'WeaponVisionAttachment',
-    'Finder', 'FinderAmplifier', 'Excavator', 'Refiner', 'Scanner',
-    'TeleportationChip', 'EffectChip', 'MedicalChip',
-    'MiscTool', 'MedicalTool', 'MindforceImplant', 'Pet'
-  ].includes(t);
+  return CONDITION_TYPES.has(t);
 }
 
 // New alias for future condition-based logic. Keep current behavior identical.

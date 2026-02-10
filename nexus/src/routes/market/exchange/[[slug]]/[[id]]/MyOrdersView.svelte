@@ -2,24 +2,35 @@
   //@ts-nocheck
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { myOrders, enrichOrders, upsertOrder } from '../../exchangeStore.js';
-  import { formatPedRaw } from '../../orderUtils';
+  import { formatPedRaw, formatMarkupForItem, isLimited, formatPedValue } from '../../orderUtils';
   import { encodeURIComponentSafe } from '$lib/util.js';
   import { goto } from '$app/navigation';
   import { createEventDispatcher, onMount } from 'svelte';
 
   export let user = null;
   export let sideFilter = 'all'; // 'all' | 'BUY' | 'SELL'
+  /** @type {Array} All slim items for item type lookup */
+  export let allItems = [];
 
   const dispatch = createEventDispatcher();
   let loading = false;
   let bumping = false;
   let error = null;
 
+  // Build item lookup by ID
+  $: itemLookup = (() => {
+    const map = new Map();
+    for (const item of allItems || []) {
+      if (item?.i != null) map.set(item.i, item);
+    }
+    return map;
+  })();
+
   $: filteredOrders = sideFilter === 'all'
     ? $myOrders
     : $myOrders.filter(o => o.type === sideFilter);
 
-  const columns = [
+  $: columns = [
     {
       key: 'item_name', header: 'Item', main: true, sortable: true, searchable: true,
       formatter: (val, row) => `<a class="item-link" data-action="navigate" data-item-name="${val}" data-item-id="${row.item_id}">${val}</a>`
@@ -34,7 +45,11 @@
     { key: 'quantity', header: 'Qty', width: '70px', sortable: true, searchable: false },
     {
       key: 'markup', header: 'Markup', width: '90px', sortable: true, searchable: false,
-      formatter: (val) => val != null ? formatPedRaw(val) : 'N/A'
+      formatter: (val, row) => {
+        const item = itemLookup.get(row?.item_id);
+        if (item) return formatMarkupForItem(val, item);
+        return val != null ? formatPedRaw(val) : 'N/A';
+      }
     },
     { key: 'planet', header: 'Planet', width: '100px', sortable: true, searchable: true },
     {
@@ -182,7 +197,7 @@
       compact={true}
       sortable={true}
       searchable={true}
-      emptyMessage={sideFilter === 'all' ? 'You have no orders' : `No ${sideFilter === 'BUY' ? 'buy' : 'sell'} orders`}
+      emptyMessage={$myOrders.length === 0 ? 'You have no orders' : sideFilter === 'all' ? 'No orders match the current filters' : `No ${sideFilter === 'BUY' ? 'buy' : 'sell'} orders`}
       rowClass={(row) => {
         const s = row.state_display;
         return s === 'closed' ? 'row-closed' : s === 'stale' ? 'row-stale' : s === 'expired' ? 'row-expired' : null;
@@ -244,7 +259,8 @@
     opacity: 0.45;
   }
   .orders-table :global(.row-closed) {
-    opacity: 0.35;
+    text-decoration: line-through;
+    color: var(--text-muted);
   }
 
   .orders-table :global(.cell-center) {

@@ -2,7 +2,7 @@
   //@ts-nocheck
   import { createEventDispatcher } from 'svelte';
   import { page } from '$app/stores';
-  import { getMaxTT, isAbsoluteMarkup, isItemTierable, isBlueprint, formatMarkupValue, formatPedValue } from '../../orderUtils';
+  import { getMaxTT, isAbsoluteMarkup, isItemTierable, isBlueprint, isLimited, formatMarkupValue, formatPedValue, isPet, isBlueprintNonL, getUnitTT, computeUnitPrice, getPetLevel } from '../../orderUtils';
   import { hasCondition } from '$lib/shopUtils';
 
   /** @type {boolean} */
@@ -49,18 +49,26 @@
 
   $: isCond = hasCondition(item);
   $: isAbsMu = isAbsoluteMarkup(item);
+  $: isBpNonL = isBlueprintNonL(item);
   $: maxTT = getMaxTT(item);
+  $: isPetItem = isPet(item) || isPet(order);
+  $: petLevel = getPetLevel(order);
 
   $: markupDisplay = formatMarkupValue(order?.markup, isAbsMu);
 
+  // Non-L BP TT value is QR/100, not MaxTT
+  $: bpTTValue = isBpNonL ? (Number(order?.details?.QualityRating) || 0) / 100 : null;
+
   // Compute unit price (TT + MU per unit)
   $: unitPrice = (() => {
-    if (maxTT == null || order?.markup == null) return null;
+    if (order?.markup == null) return null;
+    if (isBpNonL) return bpTTValue + order.markup;
+    if (maxTT == null) return null;
     return isAbsMu ? maxTT + order.markup : maxTT * (order.markup / 100);
   })();
 
   // Compute total TT and total price for the selected quantity
-  $: totalTT = maxTT != null ? maxTT * quantity : null;
+  $: totalTT = isBpNonL ? bpTTValue * quantity : (maxTT != null ? maxTT * quantity : null);
   $: totalPrice = unitPrice != null ? unitPrice * quantity : null;
 
   // Item metadata for display
@@ -151,6 +159,13 @@
           <div class="info-row">
             <span class="info-label">Current TT</span>
             <span class="info-value">{fmtPed(Number(orderCurrentTT))}</span>
+          </div>
+        {/if}
+
+        {#if isPetItem && petLevel != null}
+          <div class="info-row">
+            <span class="info-label">Level</span>
+            <span class="info-value">{petLevel}</span>
           </div>
         {/if}
 
@@ -281,8 +296,9 @@
     gap: 10px;
   }
   .info-row {
-    display: flex;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: 120px 1fr;
+    gap: 8px;
     align-items: center;
     font-size: 13px;
   }

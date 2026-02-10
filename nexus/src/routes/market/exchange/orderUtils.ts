@@ -1,14 +1,7 @@
 // Utility functions for order dialog logic
 import { hasItemTag } from '$lib/util.js';
 import { hasCondition } from '$lib/shopUtils';
-
-const tierableTypes = new Set([
-  'Weapon',
-  'Armor',
-  'Finder',
-  'Excavator',
-  'MedicalTool',
-]);
+import { STACKABLE_TYPES, TIERABLE_TYPES } from '$lib/common/itemTypes.js';
 
 export function isBlueprint(item: any): boolean {
   const type = item?.Properties?.Type ?? item?.Type ?? item?.t;
@@ -17,7 +10,7 @@ export function isBlueprint(item: any): boolean {
 
 export function isItemTierable(item: any): boolean {
   const type = item?.Properties?.Type ?? item?.Type ?? item?.t;
-  return tierableTypes.has(type);
+  return TIERABLE_TYPES.has(type);
 }
 
 export function isLimited(item: any): boolean {
@@ -31,17 +24,25 @@ export function itemHasCondition(item: any): boolean {
   return hasCondition(item);
 }
 
+/** Default MaxTT for pets when nutrio capacity is unknown (PED) */
+export const PET_DEFAULT_MAX_TT = 100;
+
 export function getMaxTT(item: any): number | null {
-  return item?.Properties?.Economy?.MaxTT ?? item?.MaxTT ?? item?.Value ?? item?.v ?? null;
+  const tt = item?.Properties?.Economy?.MaxTT ?? item?.MaxTT ?? item?.Value ?? item?.v ?? null;
+  if (tt != null) return tt;
+  // Pets: MaxTT = nutrio capacity (stored in cents, convert to PED)
+  if (isPet(item)) {
+    const nutrio = item?.Properties?.NutrioCapacity;
+    return nutrio != null ? nutrio / 100 : PET_DEFAULT_MAX_TT;
+  }
+  return null;
 }
 
 export function isItemStackable(item: any): boolean {
   const type = item?.Properties?.Type ?? item?.Type ?? item?.t;
-  return type === 'Material'
-    || type === 'Consumable'
-    || type === 'Capsule'
-    || type === 'Enhancer'
-    || (type === 'Blueprint' && isLimited(item));
+  if (STACKABLE_TYPES.has(type)) return true;
+  if (type === 'Blueprint' && isLimited(item)) return true;
+  return false;
 }
 
 export function isPercentMarkup(item: any): boolean {
@@ -50,6 +51,43 @@ export function isPercentMarkup(item: any): boolean {
 
 export function isAbsoluteMarkup(item: any): boolean {
   return !isPercentMarkup(item);
+}
+
+export function isPet(item: any): boolean {
+  const type = item?.Properties?.Type ?? item?.Type ?? item?.t;
+  return type === 'Pet';
+}
+
+/** Non-limited blueprint (instance item with QR, absolute markup) */
+export function isBlueprintNonL(item: any): boolean {
+  return isBlueprint(item) && !isLimited(item);
+}
+
+/** Get the TT value for a single unit, accounting for non-L BPs using QR/100 */
+export function getUnitTT(item: any, order?: any): number | null {
+  if (isBlueprintNonL(item)) {
+    const qr = Number(order?.details?.QualityRating ?? order?.Metadata?.QualityRating) || 0;
+    return qr > 0 ? qr / 100 : null;
+  }
+  return getMaxTT(item);
+}
+
+/** Compute the unit price for an order given item + markup */
+export function computeUnitPrice(item: any, markup: number | null, order?: any): number | null {
+  if (markup == null) return null;
+  if (isBlueprintNonL(item)) {
+    const tt = getUnitTT(item, order);
+    return tt != null ? tt + markup : markup;
+  }
+  const maxTT = getMaxTT(item);
+  if (maxTT == null) return null;
+  return isAbsoluteMarkup(item) ? maxTT + markup : maxTT * (markup / 100);
+}
+
+/** Get pet level from order details */
+export function getPetLevel(order: any): number | null {
+  const lvl = order?.details?.Pet?.Level ?? order?.Metadata?.Pet?.Level ?? null;
+  return lvl != null ? Number(lvl) : null;
 }
 
 const MIN_DECIMALS = 2;

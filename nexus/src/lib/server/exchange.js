@@ -402,4 +402,26 @@ export async function countUserOrdersForItem(userId, itemId, type) {
   return parseInt(rows[0].count, 10);
 }
 
+// ---------- Item Type Lookup ----------
+
+import { isPercentMarkupType } from '$lib/common/itemTypes.js';
+
+/**
+ * Get item type and name from the Items table.
+ * @param {number} itemId
+ * @returns {Promise<{type: string, name: string}|null>}
+ */
+export async function getItemType(itemId) {
+  const { rows } = await pool.query('SELECT "Type", "Name" FROM ONLY "Items" WHERE "Id" = $1', [itemId]);
+  return rows[0] ? { type: rows[0].Type, name: rows[0].Name } : null;
+}
+
+/**
+ * Server-side check: does this item type use percentage markup?
+ * Delegates to shared itemTypes module.
+ */
+export function isPercentMarkupServer(type, name) {
+  return isPercentMarkupType(type, name);
+}
+
 export { MAX_ORDERS_PER_SIDE, MAX_ORDERS_PER_ITEM, PLANETS };
