@@ -29,8 +29,8 @@
       } catch {}
     }
 
-    // Only check SELL orders
-    const sellOrders = (orders || []).filter(o => o.type === 'SELL');
+    // Only check active SELL orders (exclude closed/terminated)
+    const sellOrders = (orders || []).filter(o => o.type === 'SELL' && o.state_display !== 'closed' && o.state_display !== 'terminated');
     if (sellOrders.length === 0) {
       discrepancies = [];
       loading = false;

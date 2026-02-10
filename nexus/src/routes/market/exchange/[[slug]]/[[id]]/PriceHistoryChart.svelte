@@ -3,6 +3,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { Chart, LineController, LinearScale, PointElement, LineElement, TimeScale, Tooltip, Filler, Legend } from 'chart.js';
   import 'chartjs-adapter-date-fns';
+  import { formatMarkupValue } from '../../orderUtils';
 
   Chart.register(LineController, LinearScale, PointElement, LineElement, TimeScale, Tooltip, Filler, Legend);
 
@@ -120,7 +121,7 @@
             ticks: {
               color: textMuted,
               font: { size: 11 },
-              callback: (val) => isAbsoluteMarkup ? `+${val.toFixed(1)}` : `${val.toFixed(1)}%`
+              callback: (val) => formatMarkupValue(val, isAbsoluteMarkup)
             },
             grid: { color: borderColor + '40' }
           }
@@ -144,13 +145,12 @@
                 const row = historyData[idx];
                 if (!row) return '';
                 const val = ctx.parsed.y;
-                const formatted = isAbsoluteMarkup ? `+${val.toFixed(2)} PED` : `${val.toFixed(1)}%`;
+                const formatted = formatMarkupValue(val, isAbsoluteMarkup);
                 if (ctx.dataset.label === 'WAP') {
                   const lines = [`WAP: ${formatted}`];
                   if (row.volume != null) lines.push(`Volume: ${row.volume}`);
                   if (row.median != null) {
-                    const medFormatted = isAbsoluteMarkup ? `+${row.median.toFixed(2)}` : `${row.median.toFixed(1)}%`;
-                    lines.push(`Median: ${medFormatted}`);
+                    lines.push(`Median: ${formatMarkupValue(row.median, isAbsoluteMarkup)}`);
                   }
                   if (row.sample_count != null) lines.push(`Samples: ${row.sample_count}`);
                   return lines;

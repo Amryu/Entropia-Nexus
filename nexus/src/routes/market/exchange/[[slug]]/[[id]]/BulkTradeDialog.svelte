@@ -1,7 +1,7 @@
 <script>
   //@ts-nocheck
   import { createEventDispatcher } from 'svelte';
-  import { isPercentMarkup } from '../../orderUtils';
+  import { isPercentMarkup, formatMarkupValue } from '../../orderUtils';
 
   export let show = false;
 
@@ -158,9 +158,7 @@
                 <span class="bulk-cell name-cell">{match.seller_name || 'Unknown'}</span>
                 <span class="bulk-cell">{match.fillQuantity}</span>
                 <span class="bulk-cell">{match.min_quantity || 1}</span>
-                <span class="bulk-cell">{isPercentMarkup(item)
-                  ? `${Number(match.markup).toFixed(1)}%`
-                  : `+${Number(match.markup).toFixed(2)}`}</span>
+                <span class="bulk-cell">{formatMarkupValue(match.markup, !isPercentMarkup(item))}</span>
                 <span class="bulk-cell">{match.planet || 'Any'}</span>
               </div>
             {/each}

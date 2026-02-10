@@ -2,6 +2,7 @@
   //@ts-nocheck
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { myOrders, enrichOrders, upsertOrder } from '../../exchangeStore.js';
+  import { formatPedRaw } from '../../orderUtils';
   import { encodeURIComponentSafe } from '$lib/util.js';
   import { goto } from '$app/navigation';
   import { createEventDispatcher, onMount } from 'svelte';
@@ -33,7 +34,7 @@
     { key: 'quantity', header: 'Qty', width: '70px', sortable: true, searchable: false },
     {
       key: 'markup', header: 'Markup', width: '90px', sortable: true, searchable: false,
-      formatter: (val) => val != null ? Number(val).toFixed(2) : 'N/A'
+      formatter: (val) => val != null ? formatPedRaw(val) : 'N/A'
     },
     { key: 'planet', header: 'Planet', width: '100px', sortable: true, searchable: true },
     {

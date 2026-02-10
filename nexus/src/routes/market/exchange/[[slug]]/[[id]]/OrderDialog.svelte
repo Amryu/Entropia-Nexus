@@ -1,7 +1,7 @@
 <script lang="ts">
   // @ts-nocheck
   import { createEventDispatcher } from "svelte";
-  import { isBlueprint, isItemTierable, isLimited, itemHasCondition, isPercentMarkup, getMaxTT } from "../../orderUtils";
+  import { isBlueprint, isItemTierable, isLimited, itemHasCondition, isPercentMarkup, getMaxTT, formatPedRaw } from "../../orderUtils";
   import { hasItemTag, apiCall } from "$lib/util";
   import { getPercentUndercutAmount, getAbsoluteUndercutAmount, DEFAULT_PARTIAL_RATIO } from '../../exchangeConstants.js';
   export let show = false;
@@ -150,7 +150,7 @@
         if (order.Metadata.Tier == null) order.Metadata.Tier = 0;
         if (order.Metadata.TierIncreaseRate == null) order.Metadata.TierIncreaseRate = 1;
       }
-      if (isBlueprint(itemRef)) {
+      if (isBlueprint(itemRef) && !isLimited(itemRef)) {
         if (order.Metadata.QualityRating == null) order.Metadata.QualityRating = type === 'buy' ? '0' : 1;
       }
       if (itemType === 'Pet') {
@@ -187,7 +187,7 @@
         order.Metadata.Tier = 0;
         order.Metadata.TierIncreaseRate = 1;
       }
-      if (isBlueprint(item)) {
+      if (isBlueprint(item) && !isLimited(item)) {
         order.Metadata.QualityRating = type === 'buy' ? '0' : 1;
       }
       if (item?.Properties?.Type === 'Pet' || item?.Type === 'Pet' || item?.t === 'Pet') {
@@ -234,7 +234,7 @@
   function recalcPrices() {
     if (!order) return;
     const item = order.Item;
-    const isBp = isBlueprint(item);
+    const isBp = isBlueprint(item) && !isLimited(item); // (L) BPs are stackable, use percent markup
     const isTier = isItemTierable(item);
     const hasCond = itemHasCondition(item);
     const isPctMu = isPercentMarkup(item);
@@ -251,28 +251,24 @@
     let value = Number(order.CurrentTT) || 0;
     let qr = Number(order.Metadata?.QualityRating) || 0;
     const isBuyOrder = order.Type === 'Buy';
-    // Unit price
+    // Unit price — preserve precision for small values
     if (isBp) {
-      // Blueprints: buy orders have QR range, sell uses QR value + absolute markup
-      unitPrice = isBuyOrder ? clamp2(mu) : clamp2(qr / 100 + mu);
+      unitPrice = isBuyOrder ? mu : qr / 100 + mu;
     } else if (isPctMu) {
-      // Percent markup: MaxTT × markup%
-      unitPrice = clamp2(maxTT * (mu / 100));
+      unitPrice = maxTT * (mu / 100);
     } else if (hasCond) {
-      // Absolute markup with condition: CurrentTT + markup PED
-      unitPrice = clamp2(value + mu);
+      unitPrice = value + mu;
     } else {
-      // Absolute markup without condition: MaxTT + markup PED
-      unitPrice = clamp2(maxTT + mu);
+      unitPrice = maxTT + mu;
     }
-    totalPrice = clamp2(qty * unitPrice);
-    muLabel = isPctMu ? `${Math.max(0, mu).toFixed(0)}% of Max TT` : `+${clamp2(mu).toFixed(2)} PED`;
+    totalPrice = qty * unitPrice;
+    muLabel = isPctMu ? `${Math.max(0, mu).toFixed(0)}% of Max TT` : `+${formatPedRaw(mu)} PED`;
     ttValueDisplay = isPctMu
       ? `Max TT: ${maxTT || 'N/A'}`
       : isBp
-        ? (isBuyOrder ? `QR range filter` : `QR ${qr.toFixed(2)} (=${clamp2(qr / 100).toFixed(2)} PED)`)
+        ? (isBuyOrder ? `QR range filter` : `QR ${qr.toFixed(2)} (=${formatPedRaw(qr / 100)} PED)`)
         : hasCond
-          ? `Current TT: ${clamp2(value).toFixed(2)} PED`
+          ? `Current TT: ${formatPedRaw(value)} PED`
           : `Max TT: ${maxTT || 'N/A'}`;
   }
 
@@ -287,7 +283,7 @@
     const item = order.Item || {};
     const hasMetaKeys = !!order?.Metadata && Object.keys(order.Metadata).length > 0;
     const hasItemMetaKeys = !!order?.Item?.Metadata && Object.keys(order.Item.Metadata).length > 0;
-    const isInstanceItem = isItemTierable(item) || itemHasCondition(item) || isBlueprint(item) || (item?.Type === 'Pet') || hasMetaKeys || hasItemMetaKeys;
+    const isInstanceItem = isItemTierable(item) || itemHasCondition(item) || (isBlueprint(item) && !isLimited(item)) || (item?.Type === 'Pet') || hasMetaKeys || hasItemMetaKeys;
     return !isInstanceItem;
   })();
 
@@ -637,7 +633,7 @@
         {:else}
           <div class="form-row max-tt-row">
             <label>Max TT</label>
-            <div class="static-value">{order.Item.MaxTT != null ? `${Number(order.Item.MaxTT).toFixed(2)} PED` : 'N/A'}</div>
+            <div class="static-value">{order.Item.MaxTT != null ? `${formatPedRaw(Number(order.Item.MaxTT))} PED` : 'N/A'}</div>
           </div>
           <div class="form-row">
             <label for="valueInput">Current TT (PED)</label>
@@ -685,7 +681,7 @@
             {#if order.Type === 'Sell'}
               {#if suggestions?.bestSell != null}
                 <button class="suggest-btn" on:click={() => applySuggestion(suggestions.bestSell)} title="Match the lowest sell order">
-                  Match Best ({suggestions.bestSell.toFixed(isPercentMarkup(order.Item) ? 0 : 2)})
+                  Match Best ({isPercentMarkup(order.Item) ? suggestions.bestSell.toFixed(0) : formatPedRaw(suggestions.bestSell)})
                 </button>
                 <button class="suggest-btn undercut" on:click={() => applySuggestion(computeUndercutValue(suggestions.bestSell, 'Sell'))} title="Undercut the lowest sell by ~2%">
                   Undercut
@@ -696,7 +692,7 @@
             {:else}
               {#if suggestions?.bestBuy != null}
                 <button class="suggest-btn" on:click={() => applySuggestion(suggestions.bestBuy)} title="Match the highest buy order">
-                  Match Best ({suggestions.bestBuy.toFixed(isPercentMarkup(order.Item) ? 0 : 2)})
+                  Match Best ({isPercentMarkup(order.Item) ? suggestions.bestBuy.toFixed(0) : formatPedRaw(suggestions.bestBuy)})
                 </button>
                 <button class="suggest-btn outbid" on:click={() => applySuggestion(computeUndercutValue(suggestions.bestBuy, 'Buy'))} title="Outbid the highest buy by ~2%">
                   Outbid
@@ -707,7 +703,7 @@
             {/if}
             {#if dailyAverage != null}
               <button class="suggest-btn daily" on:click={() => applySuggestion(dailyAverage)} title="Use the daily average markup">
-                Daily Avg ({dailyAverage.toFixed(isPercentMarkup(order.Item) ? 0 : 2)})
+                Daily Avg ({isPercentMarkup(order.Item) ? dailyAverage.toFixed(0) : formatPedRaw(dailyAverage)})
               </button>
             {/if}
           </div>
@@ -716,24 +712,24 @@
       <div class="calc-grid">
         <span class="calc-label">{showQuantity ? 'Unit' : 'Price'}</span>
         <span class="calc-value">
-          {#if isBlueprint(order.Item)}
+          {#if isBlueprint(order.Item) && !isLimited(order.Item)}
             {#if order.Type === 'Buy'}
-              MU = {unitPrice.toFixed(2)} PED
+              MU = {formatPedRaw(unitPrice)} PED
             {:else}
-              {(Number(order.Metadata?.QualityRating) / 100).toFixed(2)} + {(Number(order.Markup) || 0).toFixed(2)} = {unitPrice.toFixed(2)} PED
+              {formatPedRaw(Number(order.Metadata?.QualityRating) / 100)} + {formatPedRaw(Number(order.Markup) || 0)} = {formatPedRaw(unitPrice)} PED
             {/if}
           {:else if isPercentMarkup(order.Item)}
-            {(Number(order.Item.MaxTT) || 0).toFixed(2)} &times; {(Number(order.Markup) || 0).toFixed(0)}% = {unitPrice.toFixed(2)} PED
+            {formatPedRaw(Number(order.Item.MaxTT) || 0)} &times; {(Number(order.Markup) || 0).toFixed(0)}% = {formatPedRaw(unitPrice)} PED
           {:else if itemHasCondition(order.Item)}
-            {(Number(order.CurrentTT) || 0).toFixed(2)} + {(Number(order.Markup) || 0).toFixed(2)} = {unitPrice.toFixed(2)} PED
+            {formatPedRaw(Number(order.CurrentTT) || 0)} + {formatPedRaw(Number(order.Markup) || 0)} = {formatPedRaw(unitPrice)} PED
           {:else}
-            {(Number(order.Item.MaxTT) || 0).toFixed(2)} + {(Number(order.Markup) || 0).toFixed(2)} = {unitPrice.toFixed(2)} PED
+            {formatPedRaw(Number(order.Item.MaxTT) || 0)} + {formatPedRaw(Number(order.Markup) || 0)} = {formatPedRaw(unitPrice)} PED
           {/if}
         </span>
         {#if showQuantity}
           <span class="calc-label">Total</span>
           <span class="calc-value">
-            {Number(order.Quantity) || 0} &times; {unitPrice.toFixed(2)} = {totalPrice.toFixed(2)} PED
+            {Number(order.Quantity) || 0} &times; {formatPedRaw(unitPrice)} = {formatPedRaw(totalPrice)} PED
           </span>
         {/if}
       </div>

@@ -213,8 +213,8 @@
     Object.values(filterTimeouts).forEach(clearTimeout);
   });
 
-  // When data or columns change, recalculate visible range after DOM update
-  $: if ((data || columns) && !isLazyMode) {
+  // When display data changes (data, filters, sort, columns), recalculate visible range after DOM update
+  $: if (displayData && !isLazyMode) {
     tick().then(() => {
       if (scrollEl) updateVisibleRange();
     });
@@ -393,11 +393,23 @@
   }
 
   // Visible rows for virtual rendering
-  $: visibleRows = displayData.slice(visibleStart, visibleEnd).map((row, i) => ({
-    row,
-    index: visibleStart + i,
-    top: (visibleStart + i) * effectiveRowHeight
-  }));
+  $: visibleRows = (() => {
+    const count = displayData.length;
+    if (count === 0) return [];
+    let start = Math.min(visibleStart, count);
+    let end = Math.min(visibleEnd, count);
+    // If visible range is empty/invalid but we have data, show initial rows
+    // (happens when data arrives before updateVisibleRange runs)
+    if (end <= start) {
+      start = 0;
+      end = Math.min(count, 50);
+    }
+    return displayData.slice(start, end).map((row, i) => ({
+      row,
+      index: start + i,
+      top: (start + i) * effectiveRowHeight
+    }));
+  })();
 
   // Calculate auto widths for columns without explicit width
   // Sample up to 200 rows instead of iterating all data for performance

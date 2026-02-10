@@ -3,6 +3,7 @@
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { createEventDispatcher } from 'svelte';
   import { computeState } from '../../exchangeConstants.js';
+  import { formatMarkupValue } from '../../orderUtils';
 
   /** @type {'buy'|'sell'} */
   export let side = 'sell';
@@ -47,7 +48,7 @@
       searchable: false,
       formatter: (val) => {
         if (val == null) return 'N/A';
-        return isAbsoluteMu ? `+${Number(val).toFixed(2)}` : `${Number(val).toFixed(1)}%`;
+        return formatMarkupValue(val, isAbsoluteMu);
       }
     });
     cols.push({ key: 'planet', header: 'Planet', width: '120px', sortable: true, searchable: false });

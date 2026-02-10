@@ -5,6 +5,7 @@
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { hasItemTag, removeItemTag } from '$lib/util.js';
   import { myOrders, inventory, enrichOrders } from '../../exchangeStore.js';
+  import { formatPedRaw } from '../../orderUtils';
 
   export let show = false;
   /** Flattened item list from ExchangeBrowser for name→id resolution: [{i, n}, ...] */
@@ -573,7 +574,7 @@
     },
     {
       key: 'value', header: 'Value', width: '80px', sortable: true, searchable: false,
-      formatter: (val) => val != null ? Number(val).toFixed(2) : '<span style="opacity:0.4">&mdash;</span>'
+      formatter: (val) => val != null ? formatPedRaw(val) : '<span style="opacity:0.4">&mdash;</span>'
     },
     {
       key: '_planet', header: 'Planet', width: '100px', sortable: true, searchable: false,

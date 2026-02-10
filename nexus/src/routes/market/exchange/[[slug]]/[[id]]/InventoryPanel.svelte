@@ -3,7 +3,7 @@
   import FancyTable from '$lib/components/FancyTable.svelte';
   import InventoryItemDialog from './InventoryItemDialog.svelte';
   import { inventory, myOrders, enrichOrders } from '../../exchangeStore.js';
-  import { isItemStackable } from '../../orderUtils';
+  import { isItemStackable, formatPedRaw } from '../../orderUtils';
   import { MAX_ORDERS_PER_SIDE } from '../../exchangeConstants.js';
   import { encodeURIComponentSafe } from '$lib/util.js';
   import { goto } from '$app/navigation';
@@ -160,7 +160,7 @@
       {
         key: 'value', header: 'Value', width: '80px', sortable: true, searchable: false,
         hideOnMobile: true,
-        formatter: (val) => val != null ? Number(val).toFixed(2) : '<span style="opacity:0.4">\u2014</span>'
+        formatter: (val) => val != null ? formatPedRaw(val) : '<span style="opacity:0.4">\u2014</span>'
       },
       {
         key: 'container', header: 'Container', width: '140px', sortable: true, searchable: true,
