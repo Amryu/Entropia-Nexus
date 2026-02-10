@@ -414,11 +414,20 @@ function slimItem(item) {
   const id = item.ItemId ?? item.Id ?? null;
   const counts = id != null && cache.offerCounts ? cache.offerCounts.get(id) : null;
   const ep = id != null && cache.exchangePrices ? cache.exchangePrices.get(id) : null;
+  const type = item.Type ?? item.Properties?.Type ?? null;
+  const name = item.Name ?? null;
+
+  let v = item.Properties?.Economy?.MaxTT ?? item.MaxTT ?? item.Value ?? null;
+  // Blueprint values: non-L MaxTT = 1.00 PED, (L) = 0.01 PED per unit
+  if (type === 'Blueprint') {
+    v = /\(L\)/.test(name || '') ? 0.01 : 1.00;
+  }
+
   return {
     i: id,
-    n: item.Name ?? null,
-    t: item.Type ?? item.Properties?.Type ?? null,
-    v: item.Properties?.Economy?.MaxTT ?? item.MaxTT ?? item.Value ?? null,
+    n: name,
+    t: type,
+    v,
     o: null,
     b: counts?.buys || null,
     s: counts?.sells || null,
