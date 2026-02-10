@@ -36,9 +36,9 @@
   let selectedPlanet = "All Planets";
   let selectedLimited = "all";
   let selectedSex = "both";
-  let savedOverviewFilters = null; // snapshot of filters before entering detail view
   let filteredItems = [];
   let selectedItems = [];
+  let savedOverviewFilters = null; // snapshot of filters before entering detail view
   let loading = false;
   let showOrderDialog = false;
   let showBulkTradeDialog = false;
@@ -466,20 +466,6 @@
     return null;
   }
 
-  // Find which category contains a specific item by ID
-  function findItemCategory(obj, itemId, path = []) {
-    for (const [key, value] of Object.entries(obj)) {
-      const currentPath = [...path, key];
-      if (Array.isArray(value)) {
-        if (value.some(item => item.i === itemId)) return currentPath;
-      } else if (typeof value === 'object' && value !== null) {
-        const found = findItemCategory(value, itemId, currentPath);
-        if (found) return found;
-      }
-    }
-    return null;
-  }
-
   // Gather items at a raw key path in the categorization object
   function gatherItemsAtPath(obj, rawKeys) {
     if (!obj || !rawKeys || rawKeys.length === 0) return [];
@@ -606,18 +592,7 @@
         selectedCategory = displayPath;
         selectedCategoryRawPath = resolvedCategory.path;
         selectedItems = gatherItemsAtPath(categorizedItems, resolvedCategory.path);
-        savedOverviewFilters = null;
       }
-    }
-  }
-
-  // When an item is resolved, auto-select its parent category
-  $: if (selectedItem && isDetailView) {
-    const catPath = findItemCategory(categorizedItems, selectedItem.i);
-    if (catPath) {
-      selectedCategory = catPath.map(formatCategoryName).join(' > ');
-      selectedCategoryRawPath = catPath;
-      selectedItems = gatherItemsAtPath(categorizedItems, catPath);
     }
   }
 
@@ -1501,6 +1476,7 @@
     if (canPostOrders) {
       cols.push({
         key: '_action', header: '', width: '70px', sortable: false, searchable: false,
+        cellClass: () => 'cell-center',
         formatter: (v, row) => {
           const orderId = row?.id ?? row?.Id ?? 0;
           const isOwn = currentUser && String(getSellerId(row)) === String(currentUser.id);
@@ -1530,6 +1506,7 @@
     if (canPostOrders) {
       cols.push({
         key: '_action', header: '', width: '70px', sortable: false, searchable: false,
+        cellClass: () => 'cell-center',
         formatter: (v, row) => {
           const orderId = row?.id ?? row?.Id ?? 0;
           const isOwn = currentUser && String(getSellerId(row)) === String(currentUser.id);
@@ -2392,7 +2369,6 @@
     z-index: 15;
     display: flex;
     flex-direction: column;
-    gap: 8px;
     background: var(--bg-color);
     box-shadow: -4px 0 20px rgba(0, 0, 0, 0.15);
   }
@@ -2804,6 +2780,11 @@
   }
 
 
+  /* Center content in action columns */
+  :global(.cell-center) {
+    justify-content: center;
+  }
+
   /* Action buttons inside last two columns */
   :global(.table-wrapper a) {
     text-decoration: none;
@@ -2812,21 +2793,17 @@
     height: 100%;
   }
   :global(.cell-button) {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 2px 8px;
-    text-align: center;
-    background-color: var(--primary-color);
+    padding: 2px 6px;
     border: 1px solid var(--border-color);
     border-radius: 4px;
-    line-height: 17px;
+    background: transparent;
     color: var(--text-color);
+    font-size: 11px;
     cursor: pointer;
+    white-space: nowrap;
     transition: all 0.15s ease;
   }
   :global(.trade-btn) {
-    font-size: 11px;
     font-weight: 500;
   }
   :global(.buy-trade-btn) {

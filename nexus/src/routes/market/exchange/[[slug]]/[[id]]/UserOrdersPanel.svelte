@@ -102,6 +102,7 @@
       { key: 'planet', header: 'Planet', width: '80px', sortable: true, searchable: false },
       {
         key: '_action', header: '', width: '55px', sortable: false, searchable: false,
+        cellClass: () => 'cell-center',
         formatter: (v, row) => {
           const orderId = row?.id ?? 0;
           const inList = tradeListOrderIds.has(orderId);
@@ -201,10 +202,12 @@
   .panel-error {
     color: var(--error-color, #ef4444);
   }
+  .user-orders-panel :global(.cell-center) {
+    justify-content: center;
+  }
   .user-orders-panel :global(.buy-order-btn) {
     color: var(--success-color, #16a34a);
     border-color: var(--success-color, #16a34a);
-    font-size: 10px;
   }
   .user-orders-panel :global(.buy-order-btn:hover) {
     background: rgba(22, 163, 74, 0.15);
@@ -212,13 +215,12 @@
   .user-orders-panel :global(.sell-order-btn) {
     color: var(--error-color, #ef4444);
     border-color: var(--error-color, #ef4444);
-    font-size: 10px;
   }
   .user-orders-panel :global(.sell-order-btn:hover) {
     background: rgba(239, 68, 68, 0.15);
   }
   .user-orders-panel :global(.added-badge) {
-    font-size: 10px;
+    font-size: 11px;
     color: var(--text-muted);
     font-style: italic;
   }

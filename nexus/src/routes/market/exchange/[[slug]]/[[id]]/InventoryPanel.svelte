@@ -38,13 +38,22 @@
     if (!massSellMode) massSellList = new Map();
   }
 
+  // Build a lookup map for allItems to avoid linear scans
+  $: itemLookup = (() => {
+    const map = new Map();
+    for (const item of allItems || []) {
+      if (item?.i != null) map.set(item.i, item);
+    }
+    return map;
+  })();
+
   function getItemLimit(itemId) {
-    const slim = (allItems || []).find(si => si?.i === itemId);
+    const slim = itemLookup.get(itemId);
     return isItemStackable(slim) ? 1 : MAX_ORDERS_PER_ITEM;
   }
 
-  // Count existing sell orders for this user
-  $: existingSellCount = ($myOrders || []).filter(o => o.type === 'SELL').length;
+  // Count existing sell orders for this user (exclude closed)
+  $: existingSellCount = ($myOrders || []).filter(o => o.type === 'SELL' && o.state !== 'closed').length;
 
   // Count mass sell orders for a specific item_id across all selections
   function getMassSellCountForItem(itemId) {
@@ -94,10 +103,11 @@
     dispatch('massSell', { items: Array.from(massSellList.values()) });
   }
 
-  // Build order count lookup: item_id → { buy, sell }
+  // Build order count lookup: item_id → { buy, sell } (exclude closed orders)
   $: OrdersByItemId = (() => {
     const map = new Map();
     for (const order of ($myOrders || [])) {
+      if (order.state === 'closed') continue;
       if (!map.has(order.item_id)) {
         map.set(order.item_id, { buy: 0, sell: 0 });
       }
@@ -119,7 +129,6 @@
 
   $: columns = (() => {
     // Reference dependencies to trigger re-evaluation
-    OrdersByItemId;
     massSellMode;
     massSellList;
     return [
@@ -128,8 +137,9 @@
         formatter: (val, row) => `<a class="item-link" data-action="navigate" data-item-name="${val}" data-item-id="${row.item_id}">${val}</a>`
       },
       {
-        key: '_orders', header: 'Orders', width: '70px', sortable: true, searchable: false,
+        key: '_orders', header: 'Orders', width: '75px', sortable: true, searchable: false,
         hideOnMobile: true,
+        cellClass: () => 'cell-center',
         sortValue: (row) => {
           const info = OrdersByItemId.get(row.item_id);
           const sell = info?.sell || 0;
@@ -158,7 +168,8 @@
         formatter: (val) => val || '<span style="opacity:0.4">Inventory</span>'
       },
       {
-        key: '_actions', header: '', width: '110px', sortable: false, searchable: false,
+        key: '_actions', header: '', width: '150px', sortable: false, searchable: false,
+        cellClass: () => 'cell-center',
         formatter: (val, row) => {
           if (massSellMode) {
             const entry = massSellList.get(row.id);
@@ -168,7 +179,7 @@
                 // Fungible: just checkmark + remove
                 return `<span class="inv-actions">`
                   + `<span class="mass-sell-check">&#10003;</span>`
-                  + `<button class="inv-action-btn mass-remove" data-action="mass-remove" data-id="${row.id}" title="Remove from list">&#x2715;</button>`
+                  + `<button class="inv-action-btn text-btn mass-remove" data-action="mass-remove" data-id="${row.id}" title="Remove from list">Remove</button>`
                   + `</span>`;
               }
               // Non-fungible: -/count/+
@@ -181,16 +192,16 @@
             }
             const { allowed, reason } = canAddItem(row);
             if (!allowed) {
-              return `<span class="inv-actions"><button class="inv-action-btn mass-add" disabled title="${reason}">Add</button></span>`;
+              return `<span class="inv-actions"><button class="inv-action-btn text-btn mass-add" disabled title="${reason}">Add</button></span>`;
             }
             return `<span class="inv-actions">`
-              + `<button class="inv-action-btn mass-add" data-action="mass-add" data-id="${row.id}" title="Add to mass sell list">Add</button>`
+              + `<button class="inv-action-btn text-btn mass-add" data-action="mass-add" data-id="${row.id}" title="Add to mass sell list">Add</button>`
               + `</span>`;
           }
           return `<span class="inv-actions">`
-            + `<button class="inv-action-btn config" data-action="config" data-id="${row.id}" title="Edit details">&#9881;</button>`
-            + `<button class="inv-action-btn sell" data-action="sell" data-id="${row.id}" title="Create sell order">&#36;</button>`
-            + `<button class="inv-action-btn remove" data-action="remove" data-id="${row.id}" title="Remove">&#x2715;</button>`
+            + `<button class="inv-action-btn text-btn config" data-action="config" data-id="${row.id}" title="Edit details">Edit</button>`
+            + `<button class="inv-action-btn text-btn sell" data-action="sell" data-id="${row.id}" title="Create sell order">Sell</button>`
+            + `<button class="inv-action-btn text-btn remove" data-action="remove" data-id="${row.id}" title="Remove">Del</button>`
             + `</span>`;
         }
       },
@@ -252,9 +263,9 @@
   }
 
   function handleSell(invItem) {
-    // Check for existing sell order for this item
+    // Check for existing active sell order for this item
     const existingOrder = ($myOrders || []).find(
-      o => o.type === 'SELL' && o.item_id === invItem.item_id
+      o => o.type === 'SELL' && o.item_id === invItem.item_id && o.state !== 'closed'
     );
 
     dispatch('sell', {
@@ -319,7 +330,7 @@
     <FancyTable
       columns={columns}
       data={sortedInventory}
-      rowHeight={36}
+      rowHeight={30}
       compact={true}
       sortable={true}
       searchable={true}
@@ -352,6 +363,7 @@
     display: flex;
     flex-direction: column;
     position: relative;
+    margin-top: 8px;
   }
   .empty-state, .error-state {
     text-align: center;
@@ -374,6 +386,11 @@
   }
   .btn-retry:hover { background: var(--hover-color); border-color: var(--border-hover); }
 
+  /* Center action cells */
+  .inventory-table :global(.cell-center) {
+    justify-content: center;
+  }
+
   /* Action buttons inside FancyTable cells */
   .inventory-table :global(.inv-actions) {
     display: flex;
@@ -381,20 +398,15 @@
     align-items: center;
   }
   .inventory-table :global(.inv-action-btn) {
-    width: 26px;
-    height: 24px;
-    padding: 0;
+    padding: 2px 6px;
     border: 1px solid var(--border-color);
     border-radius: 4px;
     background: transparent;
-    color: var(--text-muted);
-    font-size: 13px;
+    color: var(--text-color);
+    font-size: 11px;
     cursor: pointer;
-    line-height: 1;
+    white-space: nowrap;
     transition: all 0.15s ease;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
   }
   .inventory-table :global(.inv-action-btn:hover) {
     color: var(--text-color);
@@ -419,10 +431,6 @@
 
   /* Mass sell action buttons */
   .inventory-table :global(.inv-action-btn.mass-add) {
-    width: auto;
-    padding: 0 8px;
-    font-size: 11px;
-    font-weight: 500;
     color: var(--success-color);
     border-color: var(--success-color);
   }
@@ -435,6 +443,13 @@
   }
   .inventory-table :global(.inv-action-btn.mass-remove:hover) {
     background: rgba(239, 68, 68, 0.15);
+  }
+  .inventory-table :global(.inv-action-btn.config) {
+    color: var(--accent-color);
+    border-color: var(--accent-color);
+  }
+  .inventory-table :global(.inv-action-btn.config:hover) {
+    background: rgba(59, 130, 246, 0.1);
   }
   .inventory-table :global(.mass-sell-check) {
     color: var(--success-color);

@@ -49,6 +49,7 @@
     },
     {
       key: '_actions', header: '', width: '120px', sortable: false, searchable: false,
+      cellClass: () => 'cell-center',
       formatter: (val, row) => {
         if (row.state_display === 'closed') return '';
         return `<span class="order-actions">`
@@ -199,6 +200,7 @@
     display: flex;
     flex-direction: column;
     position: relative;
+    margin-top: 8px;
   }
   .empty-state, .error-state {
     text-align: center;
@@ -228,6 +230,10 @@
   }
   .orders-table :global(.row-closed) {
     opacity: 0.35;
+  }
+
+  .orders-table :global(.cell-center) {
+    justify-content: center;
   }
 
   /* Action buttons inside FancyTable cells */

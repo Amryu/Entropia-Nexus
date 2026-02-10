@@ -78,6 +78,7 @@
     },
     {
       key: '_actions', header: '', width: '120px', sortable: false, searchable: false,
+      cellClass: () => 'cell-center',
       formatter: (v, row) => {
         const btns = [];
         const threadUrl = getDiscordThreadUrl(row?.discord_thread_id);
@@ -139,6 +140,7 @@
     flex: 1;
     min-height: 0;
     overflow: hidden;
+    margin-top: 8px;
   }
   .panel-error {
     padding: 24px;
@@ -146,9 +148,12 @@
     font-size: 13px;
     color: var(--error-color, #ef4444);
   }
+  .trade-requests-panel :global(.cell-center) {
+    justify-content: center;
+  }
   .trade-requests-panel :global(.trade-action-btn) {
-    font-size: 10px;
-    padding: 2px 8px;
+    font-size: 11px;
+    padding: 2px 6px;
     color: var(--accent-color);
     border-color: var(--accent-color);
     text-decoration: none;
