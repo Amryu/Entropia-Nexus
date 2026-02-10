@@ -14,7 +14,7 @@
   $: if (user?.id) loadTradeRequests();
 
   async function loadTradeRequests() {
-    loading = true;
+    if ($tradeRequests.length === 0) loading = true;
     error = null;
     try {
       const res = await fetch('/api/market/trade-requests');
@@ -119,6 +119,8 @@
 
 {#if error}
   <div class="panel-error">{error}</div>
+{:else if loading}
+  <div class="panel-loading">Loading trade requests...</div>
 {:else}
   <!-- svelte-ignore a11y-click-events-have-key-events -->
   <!-- svelte-ignore a11y-no-static-element-interactions -->
@@ -141,6 +143,19 @@
     min-height: 0;
     overflow: hidden;
     margin-top: 8px;
+  }
+  .panel-loading {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--secondary-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    margin-top: 8px;
+    font-size: 13px;
+    color: var(--text-muted);
   }
   .panel-error {
     padding: 24px;

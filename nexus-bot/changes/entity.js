@@ -541,8 +541,6 @@ export const UpsertConfigs = {
     columns: [
       { name: "Name", value: x => x.Name },
       { name: "Description", value: x => x.Properties.Description },
-      { name: "Weight", value: x => x.Properties?.Weight ?? null },
-      { name: "MaxTT", value: x => x.Properties?.Economy?.MaxTT ?? null },
     ],
     offset: 12000000,
     table: "Strongboxes",

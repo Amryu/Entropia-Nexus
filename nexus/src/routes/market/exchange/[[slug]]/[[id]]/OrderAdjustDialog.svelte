@@ -1,7 +1,7 @@
 <script>
   //@ts-nocheck
   import { createEventDispatcher, onMount } from 'svelte';
-  import { myOrders, inventory, enrichOrders } from '../../exchangeStore.js';
+  import { myOrders, inventory, enrichOrders, upsertOrder } from '../../exchangeStore.js';
 
   export let show = false;
 
@@ -86,8 +86,9 @@
         }),
       });
       if (!res.ok) throw new Error('Failed to adjust order');
+      const data = await res.json();
+      upsertOrder(data);
       discrepancies = discrepancies.filter(d => d !== disc);
-      refreshOrders();
     } catch (e) {
       disc._processing = false;
       discrepancies = discrepancies;
@@ -100,8 +101,9 @@
     try {
       const res = await fetch(`/api/market/exchange/orders/${disc.order.id}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to cancel order');
+      const data = await res.json();
+      upsertOrder(data);
       discrepancies = discrepancies.filter(d => d !== disc);
-      refreshOrders();
     } catch (e) {
       disc._processing = false;
       discrepancies = discrepancies;
@@ -124,13 +126,6 @@
       await cancelOrder(disc);
     }
     cancellingAll = false;
-  }
-
-  async function refreshOrders() {
-    try {
-      const res = await fetch('/api/market/exchange/orders');
-      if (res.ok) myOrders.set(enrichOrders(await res.json()));
-    } catch {}
   }
 
   function handleClose() {

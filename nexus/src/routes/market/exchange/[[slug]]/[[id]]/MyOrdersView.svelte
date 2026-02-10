@@ -1,7 +1,7 @@
 <script>
   //@ts-nocheck
   import FancyTable from '$lib/components/FancyTable.svelte';
-  import { myOrders, enrichOrders } from '../../exchangeStore.js';
+  import { myOrders, enrichOrders, upsertOrder } from '../../exchangeStore.js';
   import { encodeURIComponentSafe } from '$lib/util.js';
   import { goto } from '$app/navigation';
   import { createEventDispatcher, onMount } from 'svelte';
@@ -64,7 +64,7 @@
 
   async function loadOrders() {
     if (!user) return;
-    loading = true;
+    if ($myOrders.length === 0) loading = true;
     error = null;
     try {
       const res = await fetch('/api/market/exchange/orders');
@@ -104,22 +104,21 @@
     for (const order of eligible) {
       try {
         const res = await fetch(`/api/market/exchange/orders/${order.id}/bump`, { method: 'POST' });
-        if (!res.ok) failed++;
+        if (!res.ok) { failed++; continue; }
+        const data = await res.json();
+        upsertOrder(data);
       } catch { failed++; }
     }
     bumping = false;
     if (failed > 0) error = `Failed to bump ${failed} order(s)`;
-    await loadOrders();
   }
 
   async function handleClose(order) {
     try {
       const res = await fetch(`/api/market/exchange/orders/${order.id}`, { method: 'DELETE' });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || 'Close failed');
-      }
-      await loadOrders();
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Close failed');
+      upsertOrder(data);
     } catch (e) {
       error = e.message;
     }
@@ -169,6 +168,8 @@
     <p>{error}</p>
     <button class="btn-retry" on:click={loadOrders}>Retry</button>
   </div>
+{:else if loading}
+  <div class="panel-loading">Loading orders...</div>
 {:else}
   <!-- svelte-ignore a11y-click-events-have-key-events -->
   <!-- svelte-ignore a11y-no-static-element-interactions -->
@@ -201,6 +202,19 @@
     flex-direction: column;
     position: relative;
     margin-top: 8px;
+  }
+  .panel-loading {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--secondary-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    margin-top: 8px;
+    font-size: 13px;
+    color: var(--text-muted);
   }
   .empty-state, .error-state {
     text-align: center;

@@ -16,29 +16,10 @@ export const Strongbox = {
         "Description": {
           "type": ["string", "null"],
           "default": null
-        },
-        "Weight": {
-          "type": ["number", "integer", "null"],
-          "default": null
-        },
-        "Economy": {
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "MaxTT": {
-              "type": ["number", "integer", "null"],
-              "default": null
-            }
-          },
-          "required": [
-            "MaxTT"
-          ]
         }
       },
       "required": [
-        "Description",
-        "Weight",
-        "Economy"
+        "Description"
       ]
     },
     "Loots": {

@@ -150,8 +150,8 @@ export async function DELETE({ params, locals }) {
   }
 
   try {
-    await closeOrder(orderId);
-    return getResponse({ success: true }, 200);
+    const closed = await closeOrder(orderId);
+    return getResponse(closed, 200);
   } catch (err) {
     console.error('Error closing order:', err);
     return getResponse({ error: 'Failed to close order' }, 500);

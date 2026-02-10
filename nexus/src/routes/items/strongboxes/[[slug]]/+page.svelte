@@ -65,9 +65,7 @@
     Id: null,
     Name: '',
     Properties: {
-      Description: null,
-      Weight: null,
-      Economy: { MaxTT: null }
+      Description: null
     },
     Loots: []
   };
@@ -116,14 +114,12 @@
 
   // Full column definitions for strongboxes
   const columnDefs = {
-    weight: { key: 'weight', header: 'Weight', width: '60px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Weight, format: (v) => v != null ? `${v.toFixed(1)}kg` : '-' },
-    tt: { key: 'tt', header: 'TT', width: '60px', filterPlaceholder: '>10', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? v.toFixed(2) : '-' },
     loots: { key: 'loots', header: 'Loots', width: '55px', filterPlaceholder: '>0', getValue: (item) => item.Loots?.length || 0, format: (v) => v != null ? v : '-' }
   };
 
   // Sidebar table columns
-  $: navTableColumns = [columnDefs.weight, columnDefs.tt];
-  const navFullWidthColumns = [columnDefs.weight, columnDefs.tt, columnDefs.loots];
+  $: navTableColumns = [columnDefs.loots];
+  const navFullWidthColumns = [columnDefs.loots];
   const allAvailableColumns = Object.values(columnDefs);
 
   // Breadcrumbs
@@ -302,58 +298,8 @@
         <!-- Tier-1 Stats -->
         <div class="stats-section tier-1">
           <div class="stat-row primary">
-            <span class="stat-label">TT Value</span>
-            <span class="stat-value">
-              {activeStrongbox?.Properties?.Economy?.MaxTT != null ? `${clampDecimals(activeStrongbox.Properties.Economy.MaxTT, 2, 8)} PED` : 'N/A'}
-            </span>
-          </div>
-          <div class="stat-row primary">
-            <span class="stat-label">Weight</span>
-            <span class="stat-value">
-              {activeStrongbox?.Properties?.Weight != null ? `${clampDecimals(activeStrongbox.Properties.Weight, 1, 6)}kg` : 'N/A'}
-            </span>
-          </div>
-          <div class="stat-row primary">
             <span class="stat-label">Loots</span>
             <span class="stat-value">{activeStrongbox?.Loots?.length || 0} items</span>
-          </div>
-        </div>
-
-        <!-- General Stats -->
-        <div class="stats-section">
-          <h4 class="section-title">General</h4>
-          <div class="stat-row">
-            <span class="stat-label">Weight</span>
-            <span class="stat-value">
-              <InlineEdit
-                value={activeStrongbox?.Properties?.Weight}
-                path="Properties.Weight"
-                type="number"
-                min={0}
-                step={0.1}
-                suffix="kg"
-                placeholder="0.0"
-              />
-            </span>
-          </div>
-        </div>
-
-        <!-- Economy Stats -->
-        <div class="stats-section">
-          <h4 class="section-title">Economy</h4>
-          <div class="stat-row">
-            <span class="stat-label">TT Value</span>
-            <span class="stat-value">
-              <InlineEdit
-                value={activeStrongbox?.Properties?.Economy?.MaxTT}
-                path="Properties.Economy.MaxTT"
-                type="number"
-                min={0}
-                step={0.01}
-                suffix="PED"
-                placeholder="0.00"
-              />
-            </span>
           </div>
         </div>
       </aside>

@@ -760,13 +760,13 @@
 
 <style>
   .modal-overlay {
-    position: absolute;
+    position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.5);
     display: flex;
     justify-content: center;
     align-items: center;
-    z-index: 20;
+    z-index: 1000;
   }
   .modal {
     background: var(--secondary-color);

@@ -24,7 +24,7 @@
   import { apiCall, getItemLink, hasItemTag, encodeURIComponentSafe, decodeURIComponentSafe } from "$lib/util.js";
   import { isBlueprint, isItemTierable, isItemStackable, isLimited, itemHasCondition, isAbsoluteMarkup, getMaxTT, formatMarkupValue, formatMarkupForItem, formatPedValue } from '../../orderUtils';
   import { PLANETS } from '../../exchangeConstants.js';
-  import { showMyOrders, showInventory, showTradeList, showTrades, tradeList, addToTradeList, clearTradeList, myOrders, inventory, enrichOrders } from '../../exchangeStore.js';
+  import { showMyOrders, showInventory, showTradeList, showTrades, tradeList, addToTradeList, clearTradeList, myOrders, inventory, upsertOrder } from '../../exchangeStore.js';
   import { favourites, isFavourite, toggleFavourite, createFolder } from '../../favouritesStore.js';
   import { hasCondition } from '$lib/shopUtils';
 
@@ -982,6 +982,9 @@
     if (ordersLoadedKey === key) return;
     ordersLoadedKey = key;
     ordersLoading = true;
+    buyOrders = [];
+    sellOrders = [];
+    exchangePrices = null;
     showPriceHistory = false;
     priceHistoryData = [];
     periodStats = null;
@@ -1071,6 +1074,7 @@
   $: needsAuth = !currentUser;
   $: needsVerification = !!(currentUser && !currentUser.verified);
   $: canPostOrders = !!(currentUser && currentUser.verified);
+  $: floatingPanelOpen = canPostOrders && ($showMyOrders || $showInventory || $showTrades || showUserOrders);
 
   // Auth dialog state
   let showAuthDialog = false;
@@ -1318,7 +1322,7 @@
         submittingOrder = false;
         return false;
       }
-      // Refresh orders data
+      upsertOrder(data);
       await refreshAfterOrderChange();
       if (closeAfter) closeOrderDialog();
       return true;
@@ -1332,17 +1336,10 @@
   }
 
   async function refreshAfterOrderChange() {
-    if (inlineEditItem) {
-      // MyOrdersView.refresh() fetches and enriches data (item_name, state_display)
-      if (myOrdersRef) await myOrdersRef.refresh();
-    } else {
+    if (!inlineEditItem) {
+      // Refresh the item's order book (detail tables)
       ordersLoadedKey = '';
       if (selectedItem?.i) await loadOrders(selectedItem.i, selectedPlanet);
-      // Also refresh myOrders store
-      try {
-        const ordersRes = await fetch('/api/market/exchange/orders');
-        if (ordersRes.ok) myOrders.set(enrichOrders(await ordersRes.json()));
-      } catch {}
     }
   }
 
@@ -1375,11 +1372,12 @@
 
     try {
       const res = await fetch(`/api/market/exchange/orders/${orderId}`, { method: 'DELETE' });
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
         console.error('Delete failed:', data.error);
         return;
       }
+      upsertOrder(data);
       await refreshAfterOrderChange();
     } catch (err) {
       console.error('Error deleting order:', err);
@@ -1705,7 +1703,9 @@
     </div>
 
     <div class="main-content">
-      {#if !isDetailView}
+      {#if floatingPanelOpen}
+        <!-- Content hidden when floating panel is open -->
+      {:else if !isDetailView}
         <div class="filters">
           <button class="mobile-category-toggle" on:click={() => mobileSidebarOpen = !mobileSidebarOpen}>
             Categories
@@ -2129,7 +2129,7 @@
               <div class="trade-list-empty-state">
                 <p>Your trade list is empty.</p>
                 <p class="trade-list-hint">Click <strong>Buy</strong> or <strong>Sell</strong> on any order to add items. This lets you buy multiple items from this user in a single trade request.</p>
-                <button class="back-btn" on:click={() => showTradeList.set(false)}>Back to Orders</button>
+                <button class="trade-list-back-btn" on:click={() => showTradeList.set(false)}>Back to Orders</button>
               </div>
             {/if}
           {:else}
@@ -2369,8 +2369,6 @@
     z-index: 15;
     display: flex;
     flex-direction: column;
-    background: var(--bg-color);
-    box-shadow: -4px 0 20px rgba(0, 0, 0, 0.15);
   }
 
   .panel-title-bar {
@@ -2417,12 +2415,28 @@
     border: 1px solid var(--border-color);
     border-radius: 8px;
     font-size: 13px;
+    margin-top: 8px;
   }
   .trade-list-empty-state p { margin: 0; }
   .trade-list-hint {
     font-size: 12px;
     max-width: 300px;
     line-height: 1.5;
+  }
+  .trade-list-back-btn {
+    padding: 6px 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-color);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    margin-top: 4px;
+  }
+  .trade-list-back-btn:hover {
+    background: var(--hover-color);
+    border-color: var(--border-hover);
   }
   .panel-tabs {
     display: flex;

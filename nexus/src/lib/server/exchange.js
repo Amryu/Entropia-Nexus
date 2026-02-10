@@ -138,7 +138,7 @@ export async function closeOrder(orderId) {
     UPDATE trade_offers
     SET state = 'closed', updated = NOW()
     WHERE id = $1
-    RETURNING id
+    RETURNING id, user_id, type, item_id, quantity, min_quantity, markup, planet, details, created, updated, bumped_at, state
   `;
   const { rows } = await pool.query(query, [orderId]);
   return rows[0] || null;
@@ -153,7 +153,7 @@ export async function bumpOrder(orderId) {
     SET bumped_at = NOW(), updated = NOW(), state = 'active'
     WHERE id = $1
       AND state != 'closed'
-    RETURNING id, bumped_at, state
+    RETURNING id, user_id, type, item_id, quantity, min_quantity, markup, planet, details, created, updated, bumped_at, state
   `;
   const { rows } = await pool.query(query, [orderId]);
   return rows[0] || null;

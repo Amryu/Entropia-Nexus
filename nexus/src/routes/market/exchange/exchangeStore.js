@@ -65,3 +65,22 @@ export function removeFromTradeList(orderId) {
 export function clearTradeList() {
   tradeList.set([]);
 }
+
+/**
+ * Update a single order in the myOrders store using API response data.
+ * If the order exists, replaces it; otherwise adds it.
+ * @param {object} rawOrder - Raw order from the API
+ */
+export function upsertOrder(rawOrder) {
+  if (!rawOrder?.id) return;
+  const enriched = enrichOrders([rawOrder])[0];
+  myOrders.update(orders => {
+    const idx = orders.findIndex(o => o.id === enriched.id);
+    if (idx >= 0) {
+      const updated = [...orders];
+      updated[idx] = enriched;
+      return updated;
+    }
+    return [...orders, enriched];
+  });
+}

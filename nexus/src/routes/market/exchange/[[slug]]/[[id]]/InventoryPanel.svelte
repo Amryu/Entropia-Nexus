@@ -215,7 +215,7 @@
 
   async function loadInventory() {
     if (!user) return;
-    loading = true;
+    if ($inventory.length === 0) loading = true;
     error = null;
     try {
       const res = await fetch('/api/users/inventory');
@@ -323,6 +323,8 @@
     <p>{error}</p>
     <button class="btn-retry" on:click={loadInventory}>Retry</button>
   </div>
+{:else if loading}
+  <div class="panel-loading">Loading inventory...</div>
 {:else}
   <!-- svelte-ignore a11y-click-events-have-key-events -->
   <!-- svelte-ignore a11y-no-static-element-interactions -->
@@ -364,6 +366,19 @@
     flex-direction: column;
     position: relative;
     margin-top: 8px;
+  }
+  .panel-loading {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--secondary-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    margin-top: 8px;
+    font-size: 13px;
+    color: var(--text-muted);
   }
   .empty-state, .error-state {
     text-align: center;
