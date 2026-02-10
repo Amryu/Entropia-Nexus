@@ -695,10 +695,11 @@
       buys: item.b || null,
       sells: item.s || null,
       lastUpdate: null,
-      _hasBoth: (item.b > 0 && item.s > 0) ? 1 : 0,
+      // Sort priority: 2 = both buy+sell, 1 = either, 0 = none
+      _orderPriority: (item.b > 0 && item.s > 0) ? 2 : (item.b > 0 || item.s > 0) ? 1 : 0,
     }));
-    // Default: items with both buy + sell orders float to top
-    rows.sort((a, b) => b._hasBoth - a._hasBoth);
+    // Items with active orders float to top (both > either > none)
+    rows.sort((a, b) => b._orderPriority - a._orderPriority);
     return rows;
   })();
 

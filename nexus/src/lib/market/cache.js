@@ -173,9 +173,14 @@ export async function rebuildMarketCache(fetch) {
     cache.lastFullBuildAt = Date.now();
     cache.lastItemsCheckAt = Date.now();
 
-    // Fetch offer counts from exchange DB
+    // Fetch offer counts and prices from exchange DB
     try {
-      cache.offerCounts = await getAllOfferCounts();
+      const [counts, prices] = await Promise.all([
+        getAllOfferCounts(),
+        getLatestExchangePriceMap().catch(() => null)
+      ]);
+      cache.offerCounts = counts;
+      if (prices) cache.exchangePrices = prices;
       cache.lastOfferCountsAt = Date.now();
     } catch { /* non-fatal */ }
 
@@ -285,9 +290,14 @@ async function itemsDeltaRefresh(fetch) {
     cache.annotated = annotated;
     cache.lastItemsCheckAt = Date.now();
 
-    // Refresh offer counts
+    // Refresh offer counts and prices
     try {
-      cache.offerCounts = await getAllOfferCounts();
+      const [counts, prices] = await Promise.all([
+        getAllOfferCounts(),
+        getLatestExchangePriceMap().catch(() => null)
+      ]);
+      cache.offerCounts = counts;
+      if (prices) cache.exchangePrices = prices;
       cache.lastOfferCountsAt = Date.now();
     } catch { /* non-fatal */ }
 

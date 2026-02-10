@@ -620,7 +620,6 @@
   .virtual-container {
     position: relative;
     width: 100%;
-    will-change: contents;
     contain: layout style;
   }
 
@@ -638,7 +637,7 @@
     cursor: pointer;
     border-bottom: 1px solid var(--border-color);
     box-sizing: border-box;
-    contain: layout style paint;
+    contain: layout style;
   }
 
   .horizontal-scroll .table-row {
