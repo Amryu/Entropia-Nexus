@@ -1903,7 +1903,7 @@
                 <button class="panel-filter-btn" class:active={panelSideFilter === 'SELL'} on:click={() => panelSideFilter = 'SELL'}>Sell</button>
               </div>
               {#if $tradeList.length > 0}
-                <button class="panel-action-btn accent" on:click={() => showTradeList.set(true)}>
+                <button class="panel-action-btn accent" on:click={() => showTradeList.set(!$showTradeList)}>
                   Trade List ({$tradeList.length})
                 </button>
               {/if}
