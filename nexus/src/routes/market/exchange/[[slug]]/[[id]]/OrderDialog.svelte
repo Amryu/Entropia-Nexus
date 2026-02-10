@@ -233,42 +233,47 @@
   // Recalculate dialog-local price fields
   function recalcPrices() {
     if (!order) return;
-  const item = order.Item;
-  const isBp = isBlueprint(item);
-  const isTier = isItemTierable(item);
-  const isLim = isLimited(item);
-  const hasCond = itemHasCondition(item);
-  const maxTT = Number(item?.MaxTT) || 0;
-  // Any item with instance-specific metadata (tier/condition/blueprint/pet or explicit metadata) is non-fungible => qty fixed to 1
-  const hasMetaKeys = !!order?.Metadata && Object.keys(order.Metadata).length > 0;
-  const hasItemMetaKeys = !!order?.Item?.Metadata && Object.keys(order.Item.Metadata).length > 0;
-  const isInstanceItem = isTier || hasCond || isBp || (item?.Type === 'Pet') || hasMetaKeys || hasItemMetaKeys;
+    const item = order.Item;
+    const isBp = isBlueprint(item);
+    const isTier = isItemTierable(item);
+    const hasCond = itemHasCondition(item);
+    const isPctMu = isPercentMarkup(item);
+    const maxTT = Number(item?.MaxTT) || 0;
+    // Any item with instance-specific metadata (tier/condition/blueprint/pet or explicit metadata) is non-fungible => qty fixed to 1
+    const hasMetaKeys = !!order?.Metadata && Object.keys(order.Metadata).length > 0;
+    const hasItemMetaKeys = !!order?.Item?.Metadata && Object.keys(order.Item.Metadata).length > 0;
+    const isInstanceItem = isTier || hasCond || isBp || (item?.Type === 'Pet') || hasMetaKeys || hasItemMetaKeys;
     const qty = isInstanceItem ? 1 : Math.max(0, Number(order.Quantity) || 0);
     if (isInstanceItem && order.Quantity !== 1) {
       order.Quantity = 1;
     }
     let mu = Number(order.Markup) || 0;
     let value = Number(order.CurrentTT) || 0;
-  let qr = Number(order.Metadata?.QualityRating) || 0;
+    let qr = Number(order.Metadata?.QualityRating) || 0;
     const isBuyOrder = order.Type === 'Buy';
     // Unit price
-    if (hasCond) {
-      if (isBp) {
-        // Buy orders have QR range, not exact value — price is just markup
-        unitPrice = isBuyOrder ? clamp2(mu) : clamp2(qr / 100 + mu);
-      } else {
-        unitPrice = clamp2(value + mu);
-      }
-    } else {
+    if (isBp) {
+      // Blueprints: buy orders have QR range, sell uses QR value + absolute markup
+      unitPrice = isBuyOrder ? clamp2(mu) : clamp2(qr / 100 + mu);
+    } else if (isPctMu) {
+      // Percent markup: MaxTT × markup%
       unitPrice = clamp2(maxTT * (mu / 100));
+    } else if (hasCond) {
+      // Absolute markup with condition: CurrentTT + markup PED
+      unitPrice = clamp2(value + mu);
+    } else {
+      // Absolute markup without condition: MaxTT + markup PED
+      unitPrice = clamp2(maxTT + mu);
     }
     totalPrice = clamp2(qty * unitPrice);
-    muLabel = hasCond ? `+${clamp2(mu).toFixed(2)} PED` : `${Math.max(0, mu).toFixed(0)}% of Max TT`;
-    ttValueDisplay = !hasCond
+    muLabel = isPctMu ? `${Math.max(0, mu).toFixed(0)}% of Max TT` : `+${clamp2(mu).toFixed(2)} PED`;
+    ttValueDisplay = isPctMu
       ? `Max TT: ${maxTT || 'N/A'}`
       : isBp
         ? (isBuyOrder ? `QR range filter` : `QR ${qr.toFixed(2)} (=${clamp2(qr / 100).toFixed(2)} PED)`)
-        : `Current TT: ${clamp2(value).toFixed(2)} PED`;
+        : hasCond
+          ? `Current TT: ${clamp2(value).toFixed(2)} PED`
+          : `Max TT: ${maxTT || 'N/A'}`;
   }
 
   // Watch for changes to recalc
@@ -708,23 +713,29 @@
           </div>
         </div>
       {/if}
-      <div class="form-row">
-        <div class="form-label">Calculation</div>
-        <div>
-          {#if itemHasCondition(order.Item)}
-            {#if isBlueprint(order.Item)}
-              {#if order.Type === 'Buy'}
-                {@html `Unit: MU = ${unitPrice.toFixed(2)}<br />Total: 1×${unitPrice.toFixed(2)} = ${totalPrice.toFixed(2)} PED`}
-              {:else}
-                {@html `Unit: ${(Number(order.Metadata?.QualityRating) / 100).toFixed(2)} + MU = ${unitPrice.toFixed(2)}<br />Total: ${showQuantity ? (Number(order.Quantity) || 0) : 1}×${unitPrice.toFixed(2)} = ${totalPrice.toFixed(2)} PED`}
-              {/if}
+      <div class="calc-grid">
+        <span class="calc-label">{showQuantity ? 'Unit' : 'Price'}</span>
+        <span class="calc-value">
+          {#if isBlueprint(order.Item)}
+            {#if order.Type === 'Buy'}
+              MU = {unitPrice.toFixed(2)} PED
             {:else}
-              {@html `Unit: ${(Number(order.CurrentTT) || 0).toFixed(2)} + MU = ${unitPrice.toFixed(2)}<br />Total: ${showQuantity ? (Number(order.Quantity) || 0) : 1}×${unitPrice.toFixed(2)} = ${totalPrice.toFixed(2)} PED`}
+              {(Number(order.Metadata?.QualityRating) / 100).toFixed(2)} + {(Number(order.Markup) || 0).toFixed(2)} = {unitPrice.toFixed(2)} PED
             {/if}
+          {:else if isPercentMarkup(order.Item)}
+            {(Number(order.Item.MaxTT) || 0).toFixed(2)} &times; {(Number(order.Markup) || 0).toFixed(0)}% = {unitPrice.toFixed(2)} PED
+          {:else if itemHasCondition(order.Item)}
+            {(Number(order.CurrentTT) || 0).toFixed(2)} + {(Number(order.Markup) || 0).toFixed(2)} = {unitPrice.toFixed(2)} PED
           {:else}
-            {@html `Unit: ${(Number(order.Item.MaxTT) || 0).toFixed(2)} × ${(Number(order.Markup) || 0).toFixed(0)}% = ${unitPrice.toFixed(2)}<br />Total: ${showQuantity ? (Number(order.Quantity) || 0) : 1}×${unitPrice.toFixed(2)} = ${totalPrice.toFixed(2)} PED`}
+            {(Number(order.Item.MaxTT) || 0).toFixed(2)} + {(Number(order.Markup) || 0).toFixed(2)} = {unitPrice.toFixed(2)} PED
           {/if}
-        </div>
+        </span>
+        {#if showQuantity}
+          <span class="calc-label">Total</span>
+          <span class="calc-value">
+            {Number(order.Quantity) || 0} &times; {unitPrice.toFixed(2)} = {totalPrice.toFixed(2)} PED
+          </span>
+        {/if}
       </div>
       {#if qtyExceedsInventory}
         <div class="inventory-warning">You are creating more sell offers than you have in your inventory ({inventoryQty}).</div>
@@ -817,6 +828,25 @@
     display: flex;
     align-items: center;
   }
+  .calc-grid {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 2px 10px;
+    font-size: 12px;
+    padding: 8px 10px;
+    background: var(--hover-color);
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+  }
+  .calc-label {
+    color: var(--text-muted);
+    font-weight: 500;
+    white-space: nowrap;
+  }
+  .calc-value {
+    color: var(--text-color);
+    text-align: right;
+  }
   .actions {
     display: flex;
     gap: 8px;
@@ -832,13 +862,11 @@
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s ease;
-  }
-  .actions button:first-child {
     background: transparent;
     border: 1px solid var(--border-color);
     color: var(--text-color);
   }
-  .actions button:first-child:hover {
+  .actions button:hover:not(:disabled) {
     background: var(--hover-color);
   }
   .actions button:last-child {
@@ -852,20 +880,13 @@
   .actions-spacer {
     flex: 1;
   }
-  .delete-btn {
+  .actions .delete-btn {
     background: transparent;
     border: 1px solid var(--error-color, #ef4444);
     color: var(--error-color, #ef4444);
-    padding: 8px 18px;
-    border-radius: 6px;
-    font-size: 13px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s ease;
   }
-  .delete-btn:hover {
-    background: var(--error-color, #ef4444);
-    color: white;
+  .actions .delete-btn:hover {
+    background: rgba(239, 68, 68, 0.1);
   }
   .suggestions {
     display: flex;

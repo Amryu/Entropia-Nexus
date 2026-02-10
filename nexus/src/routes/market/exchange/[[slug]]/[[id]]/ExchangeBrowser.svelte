@@ -1141,8 +1141,10 @@
 
   $: myBuyOrder = currentUser && (buyOrders || []).find(o => getSellerId(o) === currentUser.id) || null;
   $: mySellOrder = currentUser && (sellOrders || []).find(o => getSellerId(o) === currentUser.id) || null;
-  $: hasMyBuyOrder = !!myBuyOrder;
-  $: hasMySellOrder = !!mySellOrder;
+  // Only show "Edit" for fungible/stackable items (single offer per side)
+  $: detailItemStackable = selectedItemDetails ? isItemStackable(selectedItemDetails) : false;
+  $: hasMyBuyOrder = detailItemStackable && !!myBuyOrder;
+  $: hasMySellOrder = detailItemStackable && !!mySellOrder;
 
   function openOrderDialog(type) {
     const item = selectedItemDetails;
@@ -1154,6 +1156,16 @@
     orderDialogExistingCount = ($myOffers || []).filter(
       o => o.item_id === itemId && o.type === side && o.state !== 'closed'
     ).length;
+
+    // For fungible/stackable items, edit the existing offer if one exists
+    const existingOffer = detailItemStackable
+      ? (type === 'buy' ? myBuyOrder : mySellOrder)
+      : null;
+    if (existingOffer) {
+      editOfferInline(existingOffer);
+      return;
+    }
+
     setTimeout(() => {
       orderDialogRef?.initOrder(item, type, 'create');
       showOrderDialog = true;
