@@ -1,7 +1,7 @@
 <script lang="ts">
   // @ts-nocheck
   import { createEventDispatcher } from "svelte";
-  import { isBlueprint, isItemTierable, isLimited, itemHasCondition, isPercentMarkup, isPet, getMaxTT, formatPedRaw, PET_DEFAULT_MAX_TT } from "../../orderUtils";
+  import { isBlueprint, isItemTierable, isItemStackable, isLimited, itemHasCondition, isPercentMarkup, isPet, getMaxTT, formatPedRaw, PET_DEFAULT_MAX_TT } from "../../orderUtils";
   import { getPercentUndercutAmount, getAbsoluteUndercutAmount, DEFAULT_PARTIAL_RATIO } from '../../exchangeConstants.js';
   export let show = false;
   export let mode = 'create'; // 'create' | 'edit'
@@ -213,12 +213,10 @@
     const hasCond = itemHasCondition(item);
     const isPctMu = isPercentMarkup(item);
     const maxTT = Number(item?.MaxTT) || 0;
-    // Any item with instance-specific metadata (tier/condition/blueprint/pet or explicit metadata) is non-fungible => qty fixed to 1
-    const hasMetaKeys = !!order?.Metadata && Object.keys(order.Metadata).length > 0;
-    const hasItemMetaKeys = !!order?.Item?.Metadata && Object.keys(order.Item.Metadata).length > 0;
-    const isInstanceItem = isTier || hasCond || isBp || (item?.Type === 'Pet') || hasMetaKeys || hasItemMetaKeys;
-    const qty = isInstanceItem ? 1 : Math.max(0, Number(order.Quantity) || 0);
-    if (isInstanceItem && order.Quantity !== 1) {
+    // Non-stackable items are always qty 1 (single instance per order)
+    const stackable = isItemStackable(item);
+    const qty = stackable ? Math.max(0, Number(order.Quantity) || 0) : 1;
+    if (!stackable && order.Quantity !== 1) {
       order.Quantity = 1;
     }
     let mu = Number(order.Markup) || 0;
@@ -250,14 +248,7 @@
   $: if (order) recalcPrices();
   // When pet level changes, refresh disabled/color state (options re-compute from order state)
   // Derived flags for template: show Quantity only for fungible items (no instance metadata)
-  $: showQuantity = (() => {
-    if (!order) return false;
-    const item = order.Item || {};
-    const hasMetaKeys = !!order?.Metadata && Object.keys(order.Metadata).length > 0;
-    const hasItemMetaKeys = !!order?.Item?.Metadata && Object.keys(order.Item.Metadata).length > 0;
-    const isInstanceItem = isItemTierable(item) || itemHasCondition(item) || (isBlueprint(item) && !isLimited(item)) || (item?.Type === 'Pet') || hasMetaKeys || hasItemMetaKeys;
-    return !isInstanceItem;
-  })();
+  $: showQuantity = order ? isItemStackable(order.Item) : false;
 
   export let  planets = [
     'Calypso', 'Arkadia', 'Cyrene', 'Rocktropia', 'Next Island', 'Monria', 'Toulan', 'Howling Mine (Space)'
@@ -622,6 +613,8 @@
   }
   .form-row input,
   .form-row select {
+    width: 100%;
+    box-sizing: border-box;
     padding: 6px 10px;
     border: 1px solid var(--border-color);
     border-radius: 6px;
@@ -629,6 +622,9 @@
     color: var(--text-color);
     font-size: 13px;
     transition: border-color 0.2s ease;
+  }
+  .form-row input[type="checkbox"] {
+    width: auto;
   }
   .form-row input:focus,
   .form-row select:focus {
