@@ -70,18 +70,20 @@ const client = new Client({ intents: [
 
 export async function notifyModerators({ title = 'Bot Error', error = null, context = '', extra = '' } = {}) {
   try {
-    const guildId = config.guildId;
     const moderatorRoleId = config.moderatorRoleId;
-    if (!guildId || !moderatorRoleId) {
-      console.error('notifyModerators: Missing guildId or moderatorRoleId in config.');
+    if (!moderatorRoleId) {
+      console.error('notifyModerators: Missing moderatorRoleId in config.');
       return;
     }
 
-    const guild = client.guilds.cache.get(guildId) || await client.guilds.fetch(guildId).catch(() => null);
-    if (!guild) {
-      console.error('notifyModerators: Guild not found.');
+    // Resolve guild through cached channels (avoids guildId number precision loss)
+    const channel = client.channels.cache.get(config.pendingChangesChannelId)
+      || client.channels.cache.get(config.verifiedChannelId);
+    if (!channel?.guild) {
+      console.error('notifyModerators: Could not resolve guild from cached channels.');
       return;
     }
+    const guild = channel.guild;
 
     const role = guild.roles.cache.get(moderatorRoleId) || await guild.roles.fetch(moderatorRoleId).catch(() => null);
     const members = role ? Array.from(role.members.values()) : [];
