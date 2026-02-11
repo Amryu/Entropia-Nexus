@@ -3,33 +3,33 @@ export const UpsertConfigs = {
     columns: [
       { name: "Name", value: x => x.Name },
       { name: "Description", value: x => x.Description },
-      { name: "MaxGuests", value: x => x.MaxGuests ?? null },
-      { name: "OwnerId", value: x => x.OwnerId != null ? Number(x.OwnerId) : null },
+      { name: "Type", value: _ => 'Estate' },
       { name: "Longitude", value: x => x.Coordinates?.Longitude ?? null },
       { name: "Latitude", value: x => x.Coordinates?.Latitude ?? null },
       { name: "Altitude", value: x => x.Coordinates?.Altitude ?? null },
-      { name: "PlanetId", value: async (x, c) => await c.query(`SELECT "Id" FROM ONLY "Planets" WHERE "Name" = $1`, [x.Planet?.Name]).then(res => res.rows[0]?.Id ?? null) },
-      // Type is an enum EstateType in DB; use text value 'Shop'
-      { name: "Type", value: _ => 'Shop' },
-      { name: "ItemTradeAvailable", value: _ => true }
+      { name: "PlanetId", value: async (x, c) => await c.query(`SELECT "Id" FROM ONLY "Planets" WHERE "Name" = $1`, [x.Planet?.Name]).then(res => res.rows[0]?.Id ?? null) }
     ],
-    table: "Estates",
-    relationChangeFunc: async (client, id, x) => await applyEstateSectionsChanges(client, id, x.Sections ?? [])
+    table: "Locations",
+    relationChangeFunc: async (client, locationId, x) => {
+      await upsertEstateExtension(client, locationId, 'Shop', x.OwnerId, true, x.MaxGuests);
+      await applyEstateSectionsChanges(client, locationId, x.Sections ?? []);
+    }
   },
   Apartment: {
     columns: [
       { name: "Name", value: x => x.Name },
       { name: "Description", value: x => x.Properties?.Description ?? x.Description ?? null },
-      { name: "MaxGuests", value: x => x.MaxGuests ?? null },
+      { name: "Type", value: _ => 'Estate' },
       { name: "Longitude", value: x => x.Properties?.Coordinates?.Longitude ?? x.Coordinates?.Longitude ?? null },
       { name: "Latitude", value: x => x.Properties?.Coordinates?.Latitude ?? x.Coordinates?.Latitude ?? null },
       { name: "Altitude", value: x => x.Properties?.Coordinates?.Altitude ?? x.Coordinates?.Altitude ?? null },
-      { name: "PlanetId", value: async (x, c) => await c.query(`SELECT "Id" FROM ONLY "Planets" WHERE "Name" = $1`, [x.Planet?.Name]).then(res => res.rows[0]?.Id ?? null) },
-      { name: "Type", value: _ => 'Apartment' },
-      { name: "ItemTradeAvailable", value: _ => false }
+      { name: "PlanetId", value: async (x, c) => await c.query(`SELECT "Id" FROM ONLY "Planets" WHERE "Name" = $1`, [x.Planet?.Name]).then(res => res.rows[0]?.Id ?? null) }
     ],
-    table: "Estates",
-    relationChangeFunc: async (client, id, x) => await applyEstateSectionsChanges(client, id, x.Sections ?? [])
+    table: "Locations",
+    relationChangeFunc: async (client, locationId, x) => {
+      await upsertEstateExtension(client, locationId, 'Apartment', null, false, x.MaxGuests);
+      await applyEstateSectionsChanges(client, locationId, x.Sections ?? []);
+    }
   },
   Weapon: {
     columns: [
@@ -1156,6 +1156,18 @@ export async function validateChainConnectivity(client, chainId) {
     isConnected: disconnected.length === 0,
     disconnectedMissions: disconnected.map(m => m.Name)
   };
+}
+
+async function upsertEstateExtension(client, locationId, estateType, ownerId, itemTradeAvailable, maxGuests) {
+  await client.query(`
+    INSERT INTO "Estates" ("LocationId", "Type", "OwnerId", "ItemTradeAvailable", "MaxGuests")
+    VALUES ($1, $2::"EstateType", $3, $4, $5)
+    ON CONFLICT ("LocationId") DO UPDATE SET
+      "Type" = $2::"EstateType",
+      "OwnerId" = $3,
+      "ItemTradeAvailable" = $4,
+      "MaxGuests" = $5
+  `, [locationId, estateType, ownerId != null ? Number(ownerId) : null, itemTradeAvailable, maxGuests ?? null]);
 }
 
 async function applyEstateSectionsChanges(client, locationId, sections) {

@@ -7,7 +7,7 @@
   // @ts-nocheck
   import { createEventDispatcher } from 'svelte';
   import DateRangePicker from './DateRangePicker.svelte';
-  import { countDays, calculateRentalPrice, formatPrice } from '$lib/utils/rentalPricing.js';
+  import { countDays } from '$lib/utils/rentalPricing.js';
 
   const dispatch = createEventDispatcher();
 
@@ -20,15 +20,43 @@
   /** @type {Set<string>} Unavailable dates (blocked + booked) */
   export let unavailableDates = new Set();
 
+  /** @type {string|null} Pre-selected start date from calendar */
+  export let initialStart = null;
+
+  /** @type {string|null} Pre-selected end date from calendar */
+  export let initialEnd = null;
+
   let selectedStart = null;
   let selectedEnd = null;
   let note = '';
   let submitting = false;
   let error = '';
 
+  // Initialize from calendar selection when dialog opens
+  let initialized = false;
+  $: if (show && !initialized) {
+    selectedStart = initialStart || null;
+    selectedEnd = initialEnd || null;
+    initialized = true;
+  } else if (!show) {
+    initialized = false;
+  }
+
   $: totalDays = selectedStart && selectedEnd ? countDays(selectedStart, selectedEnd) : 0;
-  $: pricing = totalDays > 0 ? calculateRentalPrice(offer.price_per_day, offer.discounts || [], totalDays) : null;
-  $: canSubmit = selectedStart && selectedEnd && totalDays > 0 && !submitting;
+  $: hasConflict = selectedStart && selectedEnd ? checkConflict(selectedStart, selectedEnd) : false;
+  $: canSubmit = selectedStart && selectedEnd && totalDays > 0 && !submitting && !hasConflict;
+
+  function checkConflict(start, end) {
+    const s = new Date(start + 'T00:00:00');
+    const e = new Date(end + 'T00:00:00');
+    for (let d = new Date(s); d <= e; d.setDate(d.getDate() + 1)) {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      if (unavailableDates.has(`${y}-${m}-${day}`)) return true;
+    }
+    return false;
+  }
 
   function handleDateChange(e) {
     selectedStart = e.detail.start;
@@ -117,7 +145,7 @@
             id="request-note"
             bind:value={note}
             placeholder="Any details about your rental needs..."
-            maxlength="500"
+            maxlength="1000"
             rows="3"
           ></textarea>
         </div>

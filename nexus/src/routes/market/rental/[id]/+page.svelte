@@ -201,6 +201,8 @@
         bind:show={showRequestDialog}
         {offer}
         {unavailableDates}
+        initialStart={selectedStart}
+        initialEnd={selectedEnd}
         on:submit={handleRequestSubmit}
       />
     {/if}

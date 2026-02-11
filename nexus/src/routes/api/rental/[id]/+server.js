@@ -33,6 +33,17 @@ export async function GET({ params, locals }) {
       }
     }
 
+    // Reshape flat item set columns into nested object for ItemSetDisplay
+    if (offer.item_set_data) {
+      offer.item_set = {
+        id: offer.item_set_id,
+        name: offer.item_set_name || null,
+        data: offer.item_set_data
+      };
+    }
+    delete offer.item_set_name;
+    delete offer.item_set_data;
+
     return getResponse(offer, 200);
   } catch (error) {
     console.error('Error fetching rental offer:', error);

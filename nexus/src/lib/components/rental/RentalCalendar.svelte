@@ -214,13 +214,12 @@
               <div class="day blank"></div>
             {:else}
               {@const status = getDayStatus(dateStr)}
-              {@const inSelection = isInSelection(dateStr)}
               {@const halfDay = isHalfDay(dateStr)}
               <button
                 class="day {status}"
-                class:selected={inSelection}
-                class:selection-start={isSelectionStart(dateStr)}
-                class:selection-end={isSelectionEnd(dateStr)}
+                class:selected={selectedStart && dateStr >= selectedStart && dateStr <= (selectedEnd || selectedStart)}
+                class:selection-start={dateStr === selectedStart}
+                class:selection-end={dateStr === (selectedEnd || selectedStart)}
                 class:half-day-start={halfDay && isBookedStart(dateStr) && !isBookedEnd(dateStr)}
                 class:half-day-end={halfDay && isBookedEnd(dateStr) && !isBookedStart(dateStr)}
                 class:half-day-both={halfDay && isBookedStart(dateStr) && isBookedEnd(dateStr)}

@@ -216,10 +216,10 @@
 
   // Active entity - shows edited data in edit mode, pending change data when viewing, otherwise original
   $: activeEntity = $editMode
-    ? $currentEntity
+    ? ($currentEntity || emptyEntity)
     : $viewingPendingChange && $existingPendingChange?.data
       ? $existingPendingChange.data
-      : shop;
+      : (shop || (isCreateMode ? emptyEntity : null));
 
   // Cleanup on destroy
   onDestroy(() => {
@@ -534,7 +534,7 @@
   {userPendingCreates}
   {userPendingUpdates}
 >
-  {#if shop}
+  {#if activeEntity}
     <div class="layout-a">
       <!-- Wikipedia-style floating infobox (right panel) -->
       <aside class="wiki-infobox-float">
@@ -912,9 +912,17 @@
     </div>
   {:else}
     <div class="no-selection">
-      <h2>Shops</h2>
-      <p>Select a shop from the list to view details.</p>
-      <p class="hint">Player-owned shops sell various items at player-set prices.</p>
+      {#if isCreateMode && !user}
+        <h2>Login Required</h2>
+        <p>You need to log in and verify your account to create new shops.</p>
+      {:else if isCreateMode}
+        <h2>Loading...</h2>
+        <p>Preparing new shop form...</p>
+      {:else}
+        <h2>Shops</h2>
+        <p>Select a shop from the list to view details.</p>
+        <p class="hint">Player-owned shops sell various items at player-set prices.</p>
+      {/if}
     </div>
   {/if}
 </WikiPage>

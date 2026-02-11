@@ -34,16 +34,14 @@
   /** @type {number} Deposit amount for preview */
   export let deposit = 0;
 
-  $: effectiveMin = minDate || getTomorrow();
+  $: effectiveMin = minDate || getToday();
   $: effectiveMax = maxDate || getMaxDate();
   $: totalDays = selectedStart && selectedEnd ? countDays(selectedStart, selectedEnd) : 0;
   $: pricing = totalDays > 0 ? calculateRentalPrice(pricePerDay, discounts, totalDays) : null;
   $: hasConflict = selectedStart && selectedEnd ? checkConflict(selectedStart, selectedEnd) : false;
 
-  function getTomorrow() {
-    const d = new Date();
-    d.setDate(d.getDate() + 1);
-    return toDateStr(d);
+  function getToday() {
+    return toDateStr(new Date());
   }
 
   function getMaxDate() {
