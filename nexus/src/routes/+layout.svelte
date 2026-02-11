@@ -1,6 +1,5 @@
 <script>
   //@ts-nocheck
-
   import '$lib/style.css';
 
   import { darkMode, pageParams, initialViewportWidth } from '../stores.js';
