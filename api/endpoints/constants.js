@@ -35,6 +35,7 @@ const idOffsets = {
   Capsules:                 10100000,
   Pets:                     11000000,
   Strongboxes:              12000000,
+  ArmorSets:                13000000,
 
   equipSet:                 100000,
 };

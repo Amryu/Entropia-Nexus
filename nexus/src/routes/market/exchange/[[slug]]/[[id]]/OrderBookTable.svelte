@@ -23,15 +23,18 @@
   /** @type {string|null} Current user ID for highlighting own orders */
   export let currentUserId = null;
 
+  /** @type {boolean} Whether this item is an ArmorPlating (shows Set column) */
+  export let isArmorPlating = false;
+
   /** @type {string} Planet filter */
   export let planetFilter = 'All Planets';
 
   const dispatch = createEventDispatcher();
 
   // Build columns dynamically based on item type
-  $: columns = buildColumns(tierable, absoluteMarkup);
+  $: columns = buildColumns(tierable, absoluteMarkup, isArmorPlating);
 
-  function buildColumns(isTierable, isAbsoluteMu) {
+  function buildColumns(isTierable, isAbsoluteMu, isPlating) {
     const cols = [];
 
     if (isTierable) {
@@ -40,6 +43,19 @@
     }
 
     cols.push({ key: 'quantity', header: 'Qty', width: '80px', sortable: true, searchable: false });
+
+    if (isPlating) {
+      cols.push({
+        key: 'is_set',
+        header: 'Set',
+        width: '55px',
+        sortable: true,
+        searchable: false,
+        formatter: (val) => val
+          ? '<span class="badge badge-subtle badge-accent">Yes</span>'
+          : '<span class="badge badge-subtle">No</span>'
+      });
+    }
     cols.push({
       key: 'markup',
       header: isAbsoluteMu ? 'MU (+PED)' : 'MU (%)',
@@ -97,6 +113,7 @@
       seller_name: o.seller_name || 'Unknown',
       tier: o.details?.Tier ?? o.details?.tier ?? null,
       tir: o.details?.TierIncreaseRate ?? o.details?.tir ?? null,
+      is_set: o.details?.is_set ?? false,
     }));
 
   $: tableData = filteredOrders;
@@ -194,5 +211,10 @@
   }
   .order-book-table :global(.seller-link:hover) {
     text-decoration: underline;
+  }
+  .order-book-table :global(.badge-accent) {
+    background: var(--accent-color);
+    color: #fff;
+    font-weight: 600;
   }
 </style>

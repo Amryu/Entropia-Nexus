@@ -451,14 +451,20 @@ export async function countUserOrdersForItem(userId, itemId, type) {
 
 // ---------- Item Type Lookup ----------
 
-import { isPercentMarkupType, isStackableType } from '$lib/common/itemTypes.js';
+import { isPercentMarkupType, isStackableType, ARMOR_SET_OFFSET } from '$lib/common/itemTypes.js';
 
 /**
- * Get item type and name from the Items table.
+ * Get item type and name from the Items table (or ArmorSets for that ID range).
  * @param {number} itemId
  * @returns {Promise<{type: string, name: string}|null>}
  */
 export async function getItemType(itemId) {
+  // ArmorSet IDs live in the 13000000–13999999 range
+  if (itemId >= ARMOR_SET_OFFSET && itemId < ARMOR_SET_OFFSET + 1000000) {
+    const armorSetId = itemId - ARMOR_SET_OFFSET;
+    const { rows } = await pool.query('SELECT "Name" FROM ONLY "ArmorSets" WHERE "Id" = $1', [armorSetId]);
+    return rows[0] ? { type: 'ArmorSet', name: rows[0].Name } : null;
+  }
   const { rows } = await pool.query('SELECT "Type", "Name" FROM ONLY "Items" WHERE "Id" = $1', [itemId]);
   return rows[0] ? { type: rows[0].Type, name: rows[0].Name } : null;
 }

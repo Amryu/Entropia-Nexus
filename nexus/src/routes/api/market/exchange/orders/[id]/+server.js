@@ -48,8 +48,23 @@ function validateOrderDetails(details) {
     }
     if (Object.keys(pet).length > 0) clean.Pet = pet;
   }
+  if (details.is_set === true) {
+    clean.is_set = true;
+  }
 
   return Object.keys(clean).length > 0 ? clean : null;
+}
+
+/**
+ * Strip is_set from details if the item type doesn't support it.
+ */
+function enforceSetConstraint(details, itemType) {
+  if (!details?.is_set) return details;
+  if (itemType !== 'ArmorPlating') {
+    const { is_set, ...rest } = details;
+    return Object.keys(rest).length > 0 ? rest : null;
+  }
+  return details;
 }
 
 function getVerifiedUser(locals) {
@@ -140,7 +155,7 @@ export async function PUT({ params, request, locals }) {
   }
 
   const minQuantity = body.min_quantity != null ? parseInt(body.min_quantity, 10) : null;
-  const details = validateOrderDetails(body.details);
+  const details = enforceSetConstraint(validateOrderDetails(body.details), itemInfo?.type);
 
   try {
     const updated = await updateOrder(orderId, { quantity, minQuantity, markup, planet, details });

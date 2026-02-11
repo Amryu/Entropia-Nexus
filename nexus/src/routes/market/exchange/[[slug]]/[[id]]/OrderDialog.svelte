@@ -3,6 +3,7 @@
   import { createEventDispatcher } from "svelte";
   import { isBlueprint, isItemTierable, isItemStackable, isLimited, itemHasCondition, isPercentMarkup, isPet, getMaxTT, formatPedRaw, PET_DEFAULT_MAX_TT } from "../../orderUtils";
   import { getPercentUndercutAmount, getAbsoluteUndercutAmount, DEFAULT_PARTIAL_RATIO } from '../../exchangeConstants.js';
+  import { PLATE_SET_SIZE } from '$lib/common/itemTypes.js';
   export let show = false;
   export let mode = 'create'; // 'create' | 'edit'
   export let order = null;
@@ -11,6 +12,7 @@
   let totalPrice = 0;
   let muLabel = '';
   let ttValueDisplay = '';
+  let setPrice = null; // Set total price when is_set is checked (armor plates)
   // Price suggestions
   let suggestions = null; // { bestBuy, bestSell }
   let suggestionsLoading = false;
@@ -234,6 +236,12 @@
       unitPrice = maxTT + mu;
     }
     totalPrice = qty * unitPrice;
+    // Armor plate set pricing: multiply by PLATE_SET_SIZE
+    if (order.Metadata?.is_set && order.Item?.Type === 'ArmorPlating') {
+      setPrice = unitPrice * PLATE_SET_SIZE;
+    } else {
+      setPrice = null;
+    }
     muLabel = isPctMu ? `${Math.max(0, mu).toFixed(0)}% of Max TT` : `+${formatPedRaw(mu)} PED`;
     ttValueDisplay = isPctMu
       ? `Max TT: ${maxTT || 'N/A'}`
@@ -249,6 +257,7 @@
   // When pet level changes, refresh disabled/color state (options re-compute from order state)
   // Derived flags for template: show Quantity only for fungible items (no instance metadata)
   $: showQuantity = order ? isItemStackable(order.Item) : false;
+  $: isArmorPlating = order?.Item?.Type === 'ArmorPlating';
 
   export let  planets = [
     'Calypso', 'Arkadia', 'Cyrene', 'Rocktropia', 'Next Island', 'Monria', 'Toulan', 'Howling Mine (Space)'
@@ -334,6 +343,14 @@
           {/each}
         </select>
       </div>
+      {#if isArmorPlating}
+        <div class="form-row">
+          <label class="set-label">
+            <input type="checkbox" bind:checked={order.Metadata.is_set} on:change={recalcPrices} />
+            Full set ({PLATE_SET_SIZE} plates)
+          </label>
+        </div>
+      {/if}
   {#if showQuantity}
         <div class="form-row">
           <label for="qtyInput">Quantity</label>
@@ -546,6 +563,12 @@
             {Number(order.Quantity) || 0} &times; {formatPedRaw(unitPrice)} = {formatPedRaw(totalPrice)} PED
           </span>
         {/if}
+        {#if setPrice != null}
+          <span class="calc-label">Set ({PLATE_SET_SIZE})</span>
+          <span class="calc-value set-price">
+            {PLATE_SET_SIZE} &times; {formatPedRaw(unitPrice)} = {formatPedRaw(setPrice)} PED
+          </span>
+        {/if}
       </div>
       {#if qtyExceedsInventory}
         <div class="inventory-warning">You are creating more sell orders than you have in your inventory ({inventoryQty}).</div>
@@ -667,6 +690,21 @@
   .calc-value {
     color: var(--text-color);
     text-align: right;
+  }
+  .calc-value.set-price {
+    color: var(--accent-color);
+    font-weight: 600;
+  }
+  .set-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    grid-column: 1 / -1;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .set-label input[type="checkbox"] {
+    margin: 0;
   }
   .actions {
     display: flex;

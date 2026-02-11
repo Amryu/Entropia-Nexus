@@ -49,7 +49,7 @@ function sideWAP(offers) {
  */
 export async function snapshotExchangePrices() {
   const { rows } = await poolUsers.query(`
-    SELECT item_id, type, markup, quantity
+    SELECT item_id, type, markup, quantity, details
     FROM trade_offers
     WHERE state != 'closed'
       AND bumped_at >= NOW() - INTERVAL '${SNAPSHOT_STALENESS_DAYS} days'
@@ -63,9 +63,12 @@ export async function snapshotExchangePrices() {
       itemOffers.set(row.item_id, { buy: [], sell: [] });
     }
     const side = row.type === 'BUY' ? 'buy' : 'sell';
+    // Armor plate sets count as 7 individual plates for price weighting
+    const isSet = row.details?.is_set === true;
+    const effectiveQty = isSet ? parseInt(row.quantity, 10) * 7 : parseInt(row.quantity, 10);
     itemOffers.get(row.item_id)[side].push({
       markup: parseFloat(row.markup),
-      quantity: parseInt(row.quantity, 10)
+      quantity: effectiveQty
     });
   }
 

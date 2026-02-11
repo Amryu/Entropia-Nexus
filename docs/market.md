@@ -89,7 +89,7 @@ nexus/src/routes/market/exchange/exchangeConstants.js - Constants and helpers (s
 | Quantity | Number of items (1 for instance items) |
 | Markup | Percentage or +PED value |
 | CurrentTT | Current TT value (for condition items) |
-| Metadata | Tier, TiR, QR, Pet info |
+| Metadata | Tier, TiR, QR, Pet info, is_set (armor plates) |
 
 ### Price Calculation
 
@@ -126,6 +126,37 @@ Metadata stored:
   "TierIncreaseRate": 150
 }
 ```
+
+### Armor Plate Sets
+
+Armor plates can be traded as single plates or as a full set of 7 plates. Set orders multiply pricing accordingly:
+
+- **Absolute markup (UL plates)**: MaxTT ×7, markup ×7, total price ×7
+- **Percent markup (L plates)**: MaxTT ×7, markup % unchanged, total price ×7
+
+The "Full set (7 plates)" checkbox appears in the OrderDialog when the item type is `ArmorPlating`. The order book shows a "Set" column with highlighted "Yes"/"No" badges.
+
+Metadata stored:
+```json
+{
+  "is_set": true
+}
+```
+
+**Backend enforcement**: `is_set: true` is only accepted for `ArmorPlating` items. For any other item type, `is_set` is silently stripped by `enforceSetConstraint()`.
+
+**Price snapshots**: Set orders contribute 7× weight to the volume-weighted average price calculation in `exchange-prices.js`, reflecting that a set represents 7 individual plates at the per-plate markup value.
+
+### Armor Sets
+
+Armor sets (complete matching armor pieces) are tradeable in the exchange. Since armor sets aren't in the Items table, they use a dedicated ID offset.
+
+- **ID offset**: `ARMOR_SET_OFFSET = 13000000` (range 13000000–13999999)
+- **API**: `GET /armorsets` returns `ItemId` field (`Id + 13000000`)
+- **Type classification**: Not stackable, not tierable, no condition — uses absolute markup
+- **OrderDialog**: Shows only Markup + Planet fields (no quantity, tier, or condition)
+- **Item lookup**: `getItemType()` in `exchange.js` checks the ArmorSet ID range before querying the Items table
+- **Cache**: `slimItem()` detects ArmorSet type via the `Armors` property when no explicit `Type` field exists
 
 ### Pet Orders
 
@@ -173,7 +204,7 @@ The bot snapshots exchange prices every 15 minutes from active trade orders. Eac
 #### Snapshot Pipeline
 
 1. Query all non-closed orders with `bumped_at` within 7 days
-2. Group by item, separate buy/sell sides
+2. Group by item, separate buy/sell sides (armor plate set orders weighted as 7× quantity)
 3. Apply IQR filtering per side (Tukey fence, k=1.5; skipped if <4 orders)
 4. Compute per-side WAP: `SUM(markup * qty) / SUM(qty)`
 5. Combine sides: volume-weighted average when both exist, single side otherwise
@@ -342,7 +373,7 @@ A standalone dialog (accessible via "Adjust (N)" button when discrepancies exist
 ### Input Validation
 
 All exchange-related endpoints validate JSONB `details` fields server-side:
-- **Order details**: `item_name` (string, max 200), `Tier` (0-10), `TierIncreaseRate` (1-4000), `QualityRating` (0-100), `CurrentTT` (>= 0), `Pet` (object with Level/Experience/Skills/Food)
+- **Order details**: `item_name` (string, max 200), `Tier` (0-10), `TierIncreaseRate` (1-4000), `QualityRating` (0-100), `CurrentTT` (>= 0), `Pet` (object with Level/Experience/Skills/Food), `is_set` (boolean, ArmorPlating only)
 - **Inventory details**: `Tier` (0-10), `TierIncreaseRate` (1-4000), `QualityRating` (0-100)
 - **Planet validation**: All endpoints validate planet against the `PLANETS` constant list
 - Unknown keys are silently stripped
@@ -751,6 +782,248 @@ Available planet filters:
 
 ---
 
+## Rentals
+
+Item rental marketplace allowing players to rent equipment from other players.
+
+### Features
+
+- **Rental Offers**: Create listings for item sets available for rent
+- **Calendar Availability**: Visual calendar showing available, booked, and blocked dates
+- **Tiered Pricing**: Base price per day with discount thresholds for longer rentals
+- **Security Deposits**: Configurable deposit amounts (0 for no deposit)
+- **Rental Extensions**: Extend active rentals with optional retroactive discount recalculation
+- **Item Set Protection**: Item sets linked to rental offers cannot be edited or deleted
+- **Request Workflow**: State machine for rental request lifecycle
+
+### Routes
+
+```
+/market/rental/                 - Listing page (browse available offers)
+/market/rental/create           - Create new rental offer (verified users)
+/market/rental/[id]             - Offer detail with calendar and request button
+/market/rental/[id]/edit        - Edit offer, manage blocked dates and requests
+/market/rental/my               - Dashboard (my offers + my requests tabs)
+```
+
+### Components
+
+```
+nexus/src/lib/components/rental/
+├── RentalStatusBadge.svelte     - Color-coded status badge (offer/request)
+├── RentalOfferCard.svelte       - Card for listing page
+├── RentalCalendar.svelte        - Month-grid availability calendar
+├── DateRangePicker.svelte       - Date inputs with live pricing preview
+├── RentalPricingEditor.svelte   - Price/day, discounts, deposit editor
+├── BlockedDatesEditor.svelte    - Add/remove blocked date ranges
+└── RentalRequestDialog.svelte   - Modal for creating rental requests
+```
+
+### Shared Utilities
+
+```
+nexus/src/lib/utils/rentalPricing.js     - Pricing calculations (shared client/server)
+nexus/src/lib/server/rentalUtils.js      - Server-side validation/sanitization
+```
+
+Key functions in `rentalPricing.js`:
+- `countDays(start, end)` — Inclusive day count between two dates
+- `calculateRentalPrice(pricePerDay, discounts, totalDays)` — Price with discount lookup
+- `calculateExtensionPrice(basePricePerDay, discounts, originalTotal, originalDays, extraDays, retroactive, customPrice)` — Extension pricing
+- `generatePricingPreview(pricePerDay, discounts)` — Preview table for standard durations
+- `formatPrice(value)` — Format as PED string
+
+### Offer Status Machine
+
+```
+draft → available → unlisted → available (cycle)
+draft → available → rented (when request is in_progress)
+available → draft (only if no active requests)
+any non-deleted → deleted (only if no accepted/in_progress requests)
+```
+
+| Status | Description |
+|--------|-------------|
+| `draft` | Not published, only visible to owner |
+| `available` | Published, accepting requests |
+| `rented` | Currently rented out (has in_progress request) |
+| `unlisted` | Hidden from listing but still accessible by URL |
+| `deleted` | Soft-deleted (set `deleted_at`) |
+
+### Request Status Machine
+
+```
+open → accepted → in_progress → completed
+open → rejected (by owner)
+open → cancelled (by requester)
+```
+
+| Status | Description |
+|--------|-------------|
+| `open` | Awaiting owner response |
+| `accepted` | Owner approved, awaiting pickup |
+| `in_progress` | Items handed over, rental active |
+| `completed` | Items returned, rental finished |
+| `rejected` | Owner declined |
+| `cancelled` | Requester withdrew |
+
+### Pricing
+
+**Base rate**: Price per day in PED.
+
+**Discount thresholds**: Up to 5 tiers. Example: `[{minDays: 7, percent: 10}, {minDays: 30, percent: 20}]`. Highest applicable discount is used.
+
+**Day counting**: Both start and end dates are inclusive. `totalDays = daysBetween(start, end) + 1`.
+
+**Extensions**: Owner can extend an accepted/in_progress rental:
+- **Non-retroactive**: Extra days priced at base rate (or custom rate). Original pricing unchanged.
+- **Retroactive**: Recalculates discount for total duration (original + extension). Difference is the extra charge.
+
+### Availability
+
+A date is unavailable if:
+1. It falls within a `rental_blocked_dates` range, OR
+2. It falls within an `accepted` or `in_progress` request's date range
+
+The availability API does NOT expose blocked date reasons (stripped for privacy).
+
+Conflict detection uses an atomic CTE (INSERT ... WHERE NOT EXISTS) to prevent TOCTOU race conditions when creating requests.
+
+### Database Tables (nexus-users)
+
+#### `rental_offers`
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | serial | Primary key |
+| user_id | bigint | Owner (FK to users) |
+| item_set_id | uuid | FK to item_sets (ON DELETE RESTRICT) |
+| title | text | Offer title (max 120 chars) |
+| description | text | Description (max 2000 chars) |
+| planet_id | integer | Planet reference |
+| location | text | Pickup/return location |
+| price_per_day | numeric(10,2) | Base price per day in PED |
+| discounts | jsonb | `[{minDays, percent}]` (max 5) |
+| deposit | numeric(10,2) | Security deposit (default 0) |
+| status | rental_offer_status | draft/available/rented/unlisted/deleted |
+| created_at | timestamptz | Creation time |
+| updated_at | timestamptz | Last update |
+| deleted_at | timestamptz | Soft delete timestamp |
+
+#### `rental_blocked_dates`
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | serial | Primary key |
+| offer_id | integer | FK to rental_offers |
+| start_date | date | Block start (inclusive) |
+| end_date | date | Block end (inclusive) |
+| reason | text | Owner's reason (max 200, private) |
+
+#### `rental_requests`
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | serial | Primary key |
+| offer_id | integer | FK to rental_offers |
+| requester_id | bigint | FK to users |
+| start_date | date | Rental start (inclusive) |
+| end_date | date | Rental end (inclusive) |
+| total_days | integer | Day count |
+| price_per_day | numeric(10,2) | Effective rate after discount |
+| discount_pct | numeric(5,2) | Applied discount percentage |
+| total_price | numeric(10,2) | total_days * price_per_day |
+| deposit | numeric(10,2) | Deposit snapshot |
+| status | rental_request_status | open/accepted/rejected/in_progress/completed/cancelled |
+| actual_return_date | date | For early returns |
+| requester_note | text | Note from requester |
+| owner_note | text | Note from owner |
+| created_at | timestamptz | Creation time |
+| updated_at | timestamptz | Last update |
+
+#### `rental_extensions`
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | serial | Primary key |
+| request_id | integer | FK to rental_requests |
+| previous_end | date | End date before extension |
+| new_end | date | New end date |
+| extra_days | integer | Number of extra days |
+| retroactive | boolean | Whether discount was recalculated |
+| price_per_day | numeric(10,2) | Rate for extra days |
+| discount_pct | numeric(5,2) | Discount applied |
+| extra_price | numeric(10,2) | Cost for extra days |
+| new_total_price | numeric(10,2) | Updated total |
+| note | text | Owner note |
+| created_at | timestamptz | Creation time |
+
+### API Endpoints
+
+```
+GET    /api/rental                          - List available offers (public)
+POST   /api/rental                          - Create offer (verified, creates as draft)
+GET    /api/rental/[id]                     - Get offer detail (drafts: owner/admin only)
+PUT    /api/rental/[id]                     - Update offer (owner)
+DELETE /api/rental/[id]                     - Soft delete offer (owner)
+GET    /api/rental/[id]/availability        - Availability data for calendar (public)
+GET    /api/rental/[id]/blocked-dates       - List blocked dates (owner)
+POST   /api/rental/[id]/blocked-dates       - Add blocked date range (owner)
+DELETE /api/rental/[id]/blocked-dates       - Remove blocked date range (owner)
+GET    /api/rental/[id]/requests            - List requests for offer (owner)
+POST   /api/rental/[id]/requests            - Create rental request (verified, not owner)
+GET    /api/rental/requests/[requestId]     - Get request detail (owner or requester)
+PUT    /api/rental/requests/[requestId]     - Status transitions / extensions
+GET    /api/rental/my?type=offers|requests  - User's own offers or requests
+```
+
+### Rate Limiting
+
+| Endpoint | Limit | Window |
+|----------|-------|--------|
+| POST `/api/rental` (create offer) | 5 | 1 min |
+| PUT `/api/rental/[id]` (update offer) | 20 | 1 min |
+| DELETE `/api/rental/[id]` (delete offer) | 10 | 1 min |
+| POST `/api/rental/[id]/blocked-dates` | 20 | 1 min |
+| DELETE `/api/rental/[id]/blocked-dates` | 20 | 1 min |
+| POST `/api/rental/[id]/requests` (create request) | 10 | 1 min |
+| PUT `/api/rental/requests/[requestId]` | 20 | 1 min |
+
+### Limits
+
+| Constraint | Value |
+|-----------|-------|
+| Max offers per user | 20 |
+| Max discounts per offer | 5 |
+| Max blocked date ranges per offer | 50 |
+| Max rental duration | 365 days |
+| Max price per day | 100,000 PED |
+| Max deposit | 1,000,000 PED |
+| Max title length | 120 chars |
+| Max description length | 2,000 chars |
+
+### Item Set Protection
+
+Item sets linked to active rental offers (status != 'deleted') cannot be edited or deleted. Both the PUT and DELETE handlers on `/api/itemsets/[id]` check for linked offers and return 409 with `linkedRentalOffers` info.
+
+### Security
+
+- **Optimistic locking**: Offer updates include `expectedStatus` to prevent concurrent conflicting status transitions
+- **Atomic conflict check**: Request creation uses a CTE with `NOT EXISTS` to atomically check for date conflicts and insert
+- **Draft visibility**: Draft offers return 404 to non-owners
+- **Availability privacy**: Blocked date reasons are not exposed in the public availability endpoint
+- **Bounds validation**: Blocked dates must be in the future and within 2 years; custom extension prices are validated
+
+### Tests
+
+```
+nexus/tests/rental/rental-api.spec.ts     - E2E API tests
+```
+
+Coverage: Authentication, CRUD operations, status transitions, blocked dates, availability, request creation/conflicts, extensions, item set protection.
+
+---
+
 ## Price Tracking
 
 Historical item price observations with pre-computed summaries for charting.
@@ -840,6 +1113,7 @@ The market section works alongside the services marketplace:
 
 - **Exchange**: One-time item trades
 - **Shops**: Persistent storefronts
+- **Rentals**: Temporary item lending with calendar-based availability
 - **Services**: Recurring service offerings (healing, DPS, transport)
 
 See `docs/services.md` for service marketplace documentation.

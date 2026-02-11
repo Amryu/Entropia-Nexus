@@ -24,7 +24,7 @@
   import { page } from "$app/stores";
   import { apiCall, getItemLink, hasItemTag, encodeURIComponentSafe, decodeURIComponentSafe } from "$lib/util.js";
   import { isBlueprint, isItemTierable, isItemStackable, isLimited, itemHasCondition, isAbsoluteMarkup, getMaxTT, formatMarkupValue, formatMarkupForItem, formatPedValue, isPet, isBlueprintNonL, getUnitTT, computeUnitPrice, getPetLevel } from '../../orderUtils';
-  import { PET_ID_OFFSET } from '$lib/common/itemTypes.js';
+  import { PET_ID_OFFSET, ARMOR_SET_OFFSET } from '$lib/common/itemTypes.js';
   import { PLANETS } from '../../exchangeConstants.js';
   import { showMyOrders, showInventory, showTradeList, showTrades, tradeList, addToTradeList, clearTradeList, myOrders, inventory, upsertOrder } from '../../exchangeStore.js';
   import { favourites, isFavourite, toggleFavourite, createFolder } from '../../favouritesStore.js';
@@ -123,7 +123,7 @@
     return count;
   }
 
-  /** Fetch full item details, using /pets/ endpoint for Pet items */
+  /** Fetch full item details, using type-specific endpoints for Pet/ArmorSet items */
   async function fetchItemDetails(itemId, itemType) {
     if (itemType === 'Pet') {
       const pet = await apiCall(window.fetch, `/pets/${itemId - PET_ID_OFFSET}`);
@@ -133,6 +133,15 @@
         pet.Properties.Type = 'Pet';
       }
       return pet;
+    }
+    if (itemType === 'ArmorSet') {
+      const set = await apiCall(window.fetch, `/armorsets/${itemId - ARMOR_SET_OFFSET}`);
+      if (set) {
+        set.Id = set.ItemId ?? itemId;
+        set.Properties = set.Properties || {};
+        set.Properties.Type = 'ArmorSet';
+      }
+      return set;
     }
     return apiCall(window.fetch, `/items/${itemId}`);
   }
@@ -1455,6 +1464,16 @@
         formatter: (v) => v ?? 0 });
     }
 
+    // ArmorPlating: show Set column
+    if (type === 'ArmorPlating') {
+      cols.push({ key: '_is_set', header: 'Set', width: '55px', sortable: true, searchable: false,
+        sortValue: (row) => row?.details?.is_set ? 1 : 0,
+        formatter: (v, row) => row?.details?.is_set
+          ? '<span class="badge badge-subtle badge-set-yes">Yes</span>'
+          : '<span class="badge badge-subtle">No</span>'
+      });
+    }
+
     // Helper: get TT value for a row, accounting for non-L BPs using QR/100
     function getRowTT(row) {
       if (isBpNonL) {
@@ -1754,6 +1773,10 @@
     }
   }
 </script>
+
+<svelte:head>
+  <title>{isDetailView && selectedItem?.n ? `${selectedItem.n} - ` : viewSlug !== 'listings' ? `${viewSlug.charAt(0).toUpperCase() + viewSlug.slice(1)} - ` : ''}Exchange - Market - Entropia Nexus</title>
+</svelte:head>
 
 <div class="exchange-browser">
   <div class="content">
@@ -2924,6 +2947,11 @@
   :global(.tt-pct) {
     color: var(--text-muted);
     font-size: 0.9em;
+  }
+  :global(.badge-set-yes) {
+    background: var(--accent-color);
+    color: #fff;
+    font-weight: 600;
   }
 
   .empty-state,

@@ -200,6 +200,7 @@ function formatArmorSetsResponse(row, data) {
 
   return {
     Id: row.Id,
+    ItemId: row.Id + idOffsets.ArmorSets,
     Name: row.Name,
     Properties: {
       Description: row.Description,

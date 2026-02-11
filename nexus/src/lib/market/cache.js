@@ -423,7 +423,9 @@ function slimItem(item) {
   const counts = id != null && cache.offerCounts ? cache.offerCounts.get(id) : null;
   const planets = id != null && cache.orderPlanets ? cache.orderPlanets.get(id) : null;
   const ep = id != null && cache.exchangePrices ? cache.exchangePrices.get(id) : null;
-  const type = item.Type ?? item.Properties?.Type ?? null;
+  let type = item.Type ?? item.Properties?.Type ?? null;
+  // ArmorSets don't have a top-level Type field; detect via Armors array
+  if (!type && item.Armors) type = 'ArmorSet';
   const name = item.Name ?? null;
 
   let v = item.Properties?.Economy?.MaxTT ?? item.MaxTT ?? item.Value ?? null;
