@@ -343,14 +343,6 @@
           {/each}
         </select>
       </div>
-      {#if isArmorPlating}
-        <div class="form-row">
-          <label class="set-label">
-            <input type="checkbox" bind:checked={order.Metadata.is_set} on:change={recalcPrices} />
-            Full set ({PLATE_SET_SIZE} plates)
-          </label>
-        </div>
-      {/if}
   {#if showQuantity}
         <div class="form-row">
           <label for="qtyInput">Quantity</label>
@@ -465,6 +457,12 @@
                 <span class="fallback-hint">(fallback)</span>
               {/if}
             </div>
+            {#if isArmorPlating}
+              <label class="set-label">
+                <input type="checkbox" bind:checked={order.Metadata.is_set} on:change={recalcPrices} />
+                Full set ({PLATE_SET_SIZE})
+              </label>
+            {/if}
           </div>
           <div class="form-row">
             <label for="valueInput">Current TT (PED)</label>
@@ -695,13 +693,16 @@
     color: var(--accent-color);
     font-weight: 600;
   }
+  .max-tt-row {
+    grid-template-columns: 120px 1fr auto;
+  }
   .set-label {
     display: flex;
     align-items: center;
     gap: 6px;
-    grid-column: 1 / -1;
     font-size: 13px;
     cursor: pointer;
+    white-space: nowrap;
   }
   .set-label input[type="checkbox"] {
     margin: 0;

@@ -81,6 +81,8 @@ Use these in damage/defense components:
 
 All inputs, selects, and textareas inherit from global styles but should include:
 
+**IMPORTANT:** Any input with `width: 100%` MUST also have `box-sizing: border-box`. Without it, padding and border are added on top of the 100% width, causing the element to overflow its container.
+
 ```css
 input, select, textarea {
   background-color: var(--bg-color, var(--secondary-color));
@@ -88,6 +90,7 @@ input, select, textarea {
   border: 1px solid var(--border-color);
   padding: 0.5rem;
   border-radius: 4px;
+  box-sizing: border-box;  /* always include when using width: 100% */
 }
 
 input:focus, select:focus, textarea:focus {
@@ -351,12 +354,13 @@ Pages with scrollable content use the scroll-container pattern:
 
 ```css
 .scroll-container {
-  height: calc(100vh - 81px);  /* 81px is the menu height */
+  height: 100%;        /* fills .app-content flex area — NEVER use calc(100vh - Npx) */
   overflow-y: auto;
 }
 
 .page-container {
   padding: 1rem;
+  padding-bottom: 2rem;
   max-width: 1200px;  /* or appropriate max width */
   margin: 0 auto;
 }

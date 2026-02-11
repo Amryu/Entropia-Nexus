@@ -9,7 +9,8 @@ import {
   getLoadoutByShareCode,
   updateUserProfile,
   getSocietyById,
-  getPendingSocietyJoinRequest
+  getPendingSocietyJoinRequest,
+  getUserPublicRentalOffers
 } from '$lib/server/db.js';
 import { pool } from '$lib/server/db.js';
 import { getUserPublicOrders } from '$lib/server/trade-requests.js';
@@ -132,11 +133,12 @@ export async function GET({ params, locals, fetch }) {
   const sessionUserId = sessionUser ? String(sessionUser.Id || sessionUser.id) : null;
   const isOwner = sessionUserId && String(profileUser.id) === sessionUserId;
 
-  const [scores, services, shops, marketOffers] = await Promise.all([
+  const [scores, services, shops, marketOffers, rentalOffers] = await Promise.all([
     getUserContributionStats(profileUser.id),
     getUserServices(profileUser.id),
     getUserShopsFromApi(fetch, profileUser.id),
-    getUserPublicOrders(profileUser.id)
+    getUserPublicOrders(profileUser.id),
+    getUserPublicRentalOffers(profileUser.id).catch(() => [])
   ]);
 
   const [allTimeRanks, monthlyRanks] = await Promise.all([
@@ -192,7 +194,8 @@ export async function GET({ params, locals, fetch }) {
     },
     services: services || [],
     shops: shops || [],
-    offers: marketOffers || [],
+    orders: marketOffers || [],
+    rentals: rentalOffers || [],
     avatar: {
       showcaseLoadout,
       publicLoadouts
@@ -245,7 +248,7 @@ export async function PATCH({ params, request, locals }) {
     showcase_loadout_code: body.showcaseLoadoutCode ?? profileUser.showcase_loadout_code ?? null
   };
 
-  if (next.default_profile_tab && !['General', 'Avatar', 'Services', 'Shops', 'Offers'].includes(next.default_profile_tab)) {
+  if (next.default_profile_tab && !['General', 'Avatar', 'Services', 'Shops', 'Orders', 'Rentals'].includes(next.default_profile_tab)) {
     return getResponse({ error: 'Invalid default tab.' }, 400);
   }
 

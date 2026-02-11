@@ -39,6 +39,13 @@ function scoreSearchResult(name, query, genderedQuery) {
     return 700 - Math.min(index, 50) - nameLower.length;
   }
 
+  // Multi-word matching: score each query word against name words independently
+  const queryWords = queryLower.split(/\s+/).filter(w => w.length > 0);
+  if (queryWords.length > 1) {
+    const mwScore = scoreMultiWord(nameLower, queryWords);
+    if (mwScore > 0) return mwScore;
+  }
+
   // For short queries (< 4 chars), only match substrings
   if (queryLower.length < 4) {
     return 0;
@@ -88,6 +95,68 @@ function scoreSearchResult(name, query, genderedQuery) {
   }
 
   return 0;
+}
+
+/**
+ * Score how well a single query word matches a single name word.
+ */
+function scoreWordPair(nameWord, queryWord) {
+  if (nameWord === queryWord) return 100;
+  if (nameWord.startsWith(queryWord)) return 85 - Math.min(nameWord.length - queryWord.length, 15);
+  if (nameWord.includes(queryWord)) return 60;
+  // Fuzzy: query chars appear in order within name word
+  if (queryWord.length >= 3) {
+    let qi = 0;
+    for (let ni = 0; ni < nameWord.length && qi < queryWord.length; ni++) {
+      if (nameWord[ni] === queryWord[qi]) qi++;
+    }
+    if (qi === queryWord.length) return 30;
+  }
+  return 0;
+}
+
+/**
+ * Score multi-word query: each query word is matched against name words independently.
+ * Higher scores when more words match and match quality is better.
+ */
+function scoreMultiWord(nameLower, queryWords) {
+  const nameWords = nameLower.split(/[\s,]+/).filter(w => w.length > 0);
+  let totalScore = 0;
+  let matchedCount = 0;
+  const usedNameWords = new Set();
+
+  for (const qWord of queryWords) {
+    let bestScore = 0;
+    let bestIdx = -1;
+    for (let i = 0; i < nameWords.length; i++) {
+      if (usedNameWords.has(i)) continue;
+      const s = scoreWordPair(nameWords[i], qWord);
+      if (s > bestScore) { bestScore = s; bestIdx = i; }
+    }
+    if (bestScore > 0 && bestIdx >= 0) {
+      usedNameWords.add(bestIdx);
+      totalScore += bestScore;
+      matchedCount++;
+    }
+  }
+
+  if (matchedCount === 0) return 0;
+  const matchRatio = matchedCount / queryWords.length;
+  if (matchRatio < 0.5) return 0;
+
+  const avgScore = totalScore / queryWords.length;
+  const baseScore = 550 + avgScore * 1.5;
+  const ratioBonus = matchRatio >= 1 ? 50 : 0;
+  const lengthPenalty = Math.min(nameLower.length * 0.5, 30);
+  return Math.round(baseScore + ratioBonus - lengthPenalty);
+}
+
+/**
+ * Build SQL multi-word ILIKE condition: (column ILIKE $idx1 AND column ILIKE $idx2 AND ...)
+ */
+function buildMultiWordLike(column, paramIndices) {
+  if (!paramIndices.length) return '';
+  return '(' + paramIndices.map(i => `${column} ILIKE $${i}`).join(' AND ') + ')';
 }
 
 function formatSearchResult(x, score){
@@ -170,12 +239,22 @@ async function search(query, fuzzy = false){
     ? (genderedQuery.tag ? `${genderedQuery.baseName} (${genderedQuery.tag})` : genderedQuery.baseName)
     : query;
 
+  // Multi-word search: split query for individual word matching
+  const searchWords = searchName.split(/\s+/).filter(w => w.length >= 2);
+  const isMultiWord = searchWords.length > 1;
+  const mwStart = useFuzzy ? 4 : 2;
+  const mwIdx = isMultiWord ? searchWords.map((_, i) => mwStart + i) : [];
+  const mwParams = isMultiWord ? searchWords.map(w => `%${w}%`) : [];
+  const mwName = isMultiWord ? ' OR ' + buildMultiWordLike('"Name"', mwIdx) : '';
+  const mwArmorSet = isMultiWord ? ' OR ' + buildMultiWordLike('"ArmorSets"."Name"', mwIdx) : '';
+  const mwArmor = isMultiWord ? ' OR ' + buildMultiWordLike('"Armors"."Name"', mwIdx) : '';
+
   // Use a lower similarity threshold (0.1) for better short query matching
   // Also prioritize prefix matches over general similarity
   // ArmorSets are pre-filtered (with piece name matching), so skip outer WHERE for them
   const whereClause = useFuzzy
-    ? `WHERE "_prefiltered" OR similarity("Name", $1) >= 0.1 OR "Name" ILIKE $2`
-    : `WHERE "_prefiltered" OR "Name" ILIKE $1`;
+    ? `WHERE "_prefiltered" OR similarity("Name", $1) >= 0.1 OR "Name" ILIKE $2${mwName}`
+    : `WHERE "_prefiltered" OR "Name" ILIKE $1${mwName}`;
 
   // Order by: prefix match first, then similarity, then alphabetically
   const orderClause = useFuzzy
@@ -209,14 +288,14 @@ async function search(query, fuzzy = false){
   // Build WHERE clause for armor piece name matching (used in EXISTS subquery)
   // This allows searching for individual armor piece names but returning the parent set
   const armorPieceWhereClause = useFuzzy
-    ? `similarity("Armors"."Name", $1) >= 0.1 OR "Armors"."Name" ILIKE $2`
-    : `"Armors"."Name" ILIKE $1`;
+    ? `similarity("Armors"."Name", $1) >= 0.1 OR "Armors"."Name" ILIKE $2${mwArmor}`
+    : `"Armors"."Name" ILIKE $1${mwArmor}`;
 
   // Subquery to get a matching armor piece name for the set (if found via piece matching)
   // Order by similarity to return the best matching piece name
   const armorMatchedPieceSubquery = useFuzzy
-    ? `(SELECT "Armors"."Name" FROM ONLY "Armors" WHERE "Armors"."SetId" = "ArmorSets"."Id" AND (similarity("Armors"."Name", $1) >= 0.1 OR "Armors"."Name" ILIKE $2) ORDER BY similarity("Armors"."Name", $1) DESC LIMIT 1)`
-    : `(SELECT "Armors"."Name" FROM ONLY "Armors" WHERE "Armors"."SetId" = "ArmorSets"."Id" AND "Armors"."Name" ILIKE $1 LIMIT 1)`;
+    ? `(SELECT "Armors"."Name" FROM ONLY "Armors" WHERE "Armors"."SetId" = "ArmorSets"."Id" AND (similarity("Armors"."Name", $1) >= 0.1 OR "Armors"."Name" ILIKE $2${mwArmor}) ORDER BY similarity("Armors"."Name", $1) DESC LIMIT 1)`
+    : `(SELECT "Armors"."Name" FROM ONLY "Armors" WHERE "Armors"."SetId" = "ArmorSets"."Id" AND ("Armors"."Name" ILIKE $1${mwArmor}) LIMIT 1)`;
 
   const sql = `
     SELECT * FROM (
@@ -235,7 +314,7 @@ async function search(query, fuzzy = false){
         SELECT "ArmorSets"."Id" + 1000000000 AS "Id", "ArmorSets"."Name" AS "Name", 'ArmorSet' AS "Type", NULL AS "SubType", NULL AS "Gender", TRUE AS "_prefiltered",
           ${armorMatchedPieceSubquery} AS "MatchedName"
         FROM ONLY "ArmorSets"
-        WHERE ${useFuzzy ? `similarity("ArmorSets"."Name", $1) >= 0.1 OR "ArmorSets"."Name" ILIKE $2` : `"ArmorSets"."Name" ILIKE $1`}
+        WHERE ${useFuzzy ? `similarity("ArmorSets"."Name", $1) >= 0.1 OR "ArmorSets"."Name" ILIKE $2${mwArmorSet}` : `"ArmorSets"."Name" ILIKE $1${mwArmorSet}`}
            OR EXISTS (SELECT 1 FROM ONLY "Armors" WHERE "Armors"."SetId" = "ArmorSets"."Id" AND (${armorPieceWhereClause}))
         UNION ALL
         SELECT "Mobs"."Id" + 2000000000 AS "Id", "Mobs"."Name" AS "Name", 'Mob' AS "Type", "Planets"."Name" AS "SubType", NULL AS "Gender", FALSE AS "_prefiltered", NULL AS "MatchedName" FROM ONLY "Mobs" INNER JOIN ONLY "Planets" ON "Mobs"."PlanetId" = "Planets"."Id"
@@ -253,7 +332,7 @@ async function search(query, fuzzy = false){
     LIMIT 50`;
 
   // $3 is for prefix match check in ordering (query%)
-  const params = useFuzzy ? [searchName, `%${searchName}%`, `${searchName}%`] : [`%${searchName}%`];
+  const params = useFuzzy ? [searchName, `%${searchName}%`, `${searchName}%`, ...mwParams] : [`%${searchName}%`, ...mwParams];
   const { rows } = await pool.query(sql, params);
 
   // Post-process results: apply scoring, filter, and sort
@@ -302,12 +381,22 @@ async function searchItems(query, fuzzy = false, options = {}){
     ? (genderedQuery.tag ? `${genderedQuery.baseName} (${genderedQuery.tag})` : genderedQuery.baseName)
     : query;
 
+  // Multi-word search: split query for individual word matching
+  const searchWords = searchName.split(/\s+/).filter(w => w.length >= 2);
+  const isMultiWord = searchWords.length > 1;
+  const mwStart = useFuzzy ? 4 : 2;
+  const mwIdx = isMultiWord ? searchWords.map((_, i) => mwStart + i) : [];
+  const mwParams = isMultiWord ? searchWords.map(w => `%${w}%`) : [];
+  const mwName = isMultiWord ? ' OR ' + buildMultiWordLike('"Name"', mwIdx) : '';
+  const mwArmorSet = isMultiWord ? ' OR ' + buildMultiWordLike('"ArmorSets"."Name"', mwIdx) : '';
+  const mwArmor = isMultiWord ? ' OR ' + buildMultiWordLike('"Armors"."Name"', mwIdx) : '';
+
   // Use a lower similarity threshold (0.1) for better short query matching
   // Also prioritize prefix matches over general similarity
   // ArmorSets are pre-filtered (with piece name matching), so skip outer WHERE for them
   const whereClause = useFuzzy
-    ? `WHERE "_prefiltered" OR similarity("Name", $1) >= 0.1 OR "Name" ILIKE $2`
-    : `WHERE "_prefiltered" OR "Name" ILIKE $1`;
+    ? `WHERE "_prefiltered" OR similarity("Name", $1) >= 0.1 OR "Name" ILIKE $2${mwName}`
+    : `WHERE "_prefiltered" OR "Name" ILIKE $1${mwName}`;
 
   // Order by: prefix match first, then similarity, then alphabetically
   const orderClause = useFuzzy
@@ -316,14 +405,14 @@ async function searchItems(query, fuzzy = false, options = {}){
 
   // Build WHERE clause for armor piece name matching (used in EXISTS subquery)
   const armorPieceWhereClause = useFuzzy
-    ? `similarity("Armors"."Name", $1) >= 0.1 OR "Armors"."Name" ILIKE $2`
-    : `"Armors"."Name" ILIKE $1`;
+    ? `similarity("Armors"."Name", $1) >= 0.1 OR "Armors"."Name" ILIKE $2${mwArmor}`
+    : `"Armors"."Name" ILIKE $1${mwArmor}`;
 
   // Subquery to get a matching armor piece name for the set (if found via piece matching)
   // Order by similarity to return the best matching piece name
   const armorMatchedPieceSubquery = useFuzzy
-    ? `(SELECT "Armors"."Name" FROM ONLY "Armors" WHERE "Armors"."SetId" = "ArmorSets"."Id" AND (similarity("Armors"."Name", $1) >= 0.1 OR "Armors"."Name" ILIKE $2) ORDER BY similarity("Armors"."Name", $1) DESC LIMIT 1)`
-    : `(SELECT "Armors"."Name" FROM ONLY "Armors" WHERE "Armors"."SetId" = "ArmorSets"."Id" AND "Armors"."Name" ILIKE $1 LIMIT 1)`;
+    ? `(SELECT "Armors"."Name" FROM ONLY "Armors" WHERE "Armors"."SetId" = "ArmorSets"."Id" AND (similarity("Armors"."Name", $1) >= 0.1 OR "Armors"."Name" ILIKE $2${mwArmor}) ORDER BY similarity("Armors"."Name", $1) DESC LIMIT 1)`
+    : `(SELECT "Armors"."Name" FROM ONLY "Armors" WHERE "Armors"."SetId" = "ArmorSets"."Id" AND ("Armors"."Name" ILIKE $1${mwArmor}) LIMIT 1)`;
 
   // When filtering by a specific type, skip per-category partitioning
   // and return up to resultLimit results of that type
@@ -346,7 +435,7 @@ async function searchItems(query, fuzzy = false, options = {}){
           ${armorMatchedPieceSubquery} AS "MatchedName"
         FROM ONLY "ArmorSets"
         WHERE 'ArmorSet' = '${filterType}' AND (
-          ${useFuzzy ? `similarity("ArmorSets"."Name", $1) >= 0.1 OR "ArmorSets"."Name" ILIKE $2` : `"ArmorSets"."Name" ILIKE $1`}
+          ${useFuzzy ? `similarity("ArmorSets"."Name", $1) >= 0.1 OR "ArmorSets"."Name" ILIKE $2${mwArmorSet}` : `"ArmorSets"."Name" ILIKE $1${mwArmorSet}`}
           OR EXISTS (SELECT 1 FROM ONLY "Armors" WHERE "Armors"."SetId" = "ArmorSets"."Id" AND (${armorPieceWhereClause}))
         )
       )
@@ -372,7 +461,7 @@ async function searchItems(query, fuzzy = false, options = {}){
           SELECT "ArmorSets"."Id" + 1000000000 AS "Id", "ArmorSets"."Name" AS "Name", 'ArmorSet' AS "Type", NULL AS "SubType", NULL AS "Gender", TRUE AS "_prefiltered",
             ${armorMatchedPieceSubquery} AS "MatchedName"
           FROM ONLY "ArmorSets"
-          WHERE ${useFuzzy ? `similarity("ArmorSets"."Name", $1) >= 0.1 OR "ArmorSets"."Name" ILIKE $2` : `"ArmorSets"."Name" ILIKE $1`}
+          WHERE ${useFuzzy ? `similarity("ArmorSets"."Name", $1) >= 0.1 OR "ArmorSets"."Name" ILIKE $2${mwArmorSet}` : `"ArmorSets"."Name" ILIKE $1${mwArmorSet}`}
             OR EXISTS (SELECT 1 FROM ONLY "Armors" WHERE "Armors"."SetId" = "ArmorSets"."Id" AND (${armorPieceWhereClause}))
         )
         ${whereClause}
@@ -383,7 +472,7 @@ async function searchItems(query, fuzzy = false, options = {}){
   }
 
   // $3 is for prefix match check in ordering (query%)
-  const params = useFuzzy ? [searchName, `%${searchName}%`, `${searchName}%`] : [`%${searchName}%`];
+  const params = useFuzzy ? [searchName, `%${searchName}%`, `${searchName}%`, ...mwParams] : [`%${searchName}%`, ...mwParams];
   const { rows } = await pool.query(sql, params);
 
   // Post-process results: apply scoring, filter, and sort

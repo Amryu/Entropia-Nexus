@@ -5,7 +5,7 @@
 -->
 <script>
   // @ts-nocheck
-  import { createEventDispatcher, onMount, onDestroy } from 'svelte';
+  import { createEventDispatcher } from 'svelte';
   import { slide } from 'svelte/transition';
   import SearchInput from '$lib/components/wiki/SearchInput.svelte';
   import ItemMetaEditor from './ItemMetaEditor.svelte';
@@ -27,11 +27,23 @@
   /** @type {string|null} Optional loadout ID to link */
   export let loadoutId = null;
 
+  /** @type {Set|null} Restrict to these item types (null = all types allowed) */
+  export let allowedItemTypes = null;
+
+  /** @type {boolean} Hide the name field (auto-generates name) */
+  export let hideName = false;
+
   // Internal state
   let name = '';
   let items = [];
   let saving = false;
   let expandedMeta = {};  // Track which items have expanded metadata
+  let excludeLimited = true;
+
+  // Derived: convert Set to array for SearchInput's allowedTypes prop
+  $: allowedTypesArray = allowedItemTypes ? Array.from(allowedItemTypes) : null;
+  $: limitedFilterFn = excludeLimited ? (item) => !isLimitedByName(item.Name) : null;
+  $: showSetButton = !allowedItemTypes || allowedItemTypes.has('Armor');
 
   // Initialize state when dialog opens or itemSet changes
   $: if (show) {
@@ -44,6 +56,8 @@
     }
     saving = false;
     expandedMeta = {};
+    showSetSearch = false;
+    armorSetOptions = null;
   }
 
   $: itemCount = items.reduce((count, item) => {
@@ -51,7 +65,7 @@
     return count + 1;
   }, 0);
 
-  $: canSave = name.trim().length > 0 && items.length > 0;
+  $: canSave = (hideName || name.trim().length > 0) && items.length > 0;
 
   function handleKeydown(event) {
     if (event.key === 'Escape') close();
@@ -70,7 +84,7 @@
   // === Item Management ===
   function addItem(searchResult) {
     if (itemCount >= MAX_ITEMS) {
-      addToast(`Maximum ${MAX_ITEMS} items per set.`);
+      addToast(`Maximum ${MAX_ITEMS} items per set.`, { type: 'warning' });
       return;
     }
 
@@ -106,41 +120,31 @@
   }
 
   // === Set Quick-Add ===
-  let setSearchQuery = '';
-  let setSearchResults = [];
-  let searchingSet = false;
   let showSetSearch = false;
+  let armorSetOptions = null;
 
-  async function searchSets() {
-    if (!setSearchQuery.trim() || setSearchQuery.trim().length < 2) {
-      setSearchResults = [];
-      return;
-    }
-    searchingSet = true;
+  async function loadArmorSets() {
+    if (armorSetOptions !== null) return;
     try {
-      const armorSets = await apiCall(fetch, `/armorsets`);
+      const armorSets = await apiCall(fetch, '/armorsets');
       if (Array.isArray(armorSets)) {
-        const q = setSearchQuery.toLowerCase();
-        setSearchResults = armorSets
-          .filter(s => s.Name?.toLowerCase().includes(q))
-          .slice(0, 10)
-          .map(s => ({ ...s, _setType: 'ArmorSet' }));
+        armorSetOptions = armorSets.map(s => ({ label: s.Name, value: String(s.Id), Id: s.Id, Name: s.Name }));
+      } else {
+        armorSetOptions = [];
       }
     } catch {
-      setSearchResults = [];
+      armorSetOptions = [];
     }
-    searchingSet = false;
   }
 
-  let setSearchTimer = null;
-  function handleSetSearchInput() {
-    clearTimeout(setSearchTimer);
-    setSearchTimer = setTimeout(searchSets, 300);
+  function toggleSetSearch() {
+    showSetSearch = !showSetSearch;
+    if (showSetSearch) loadArmorSets();
   }
 
   async function addArmorSet(set) {
     if (itemCount >= MAX_ITEMS) {
-      addToast(`Maximum ${MAX_ITEMS} items per set.`);
+      addToast(`Maximum ${MAX_ITEMS} items per set.`, { type: 'warning' });
       return;
     }
 
@@ -176,8 +180,6 @@
 
     items = [...items, entry];
     showSetSearch = false;
-    setSearchQuery = '';
-    setSearchResults = [];
   }
 
   function updateSetEntry(index, updatedEntry) {
@@ -236,9 +238,6 @@
     saving = false;
   }
 
-  onDestroy(() => {
-    clearTimeout(setSearchTimer);
-  });
 </script>
 
 <svelte:window on:keydown={handleKeydown} />
@@ -250,13 +249,17 @@
     <div class="modal" role="dialog" aria-modal="true" aria-label="Item Set Editor">
       <!-- Header -->
       <div class="modal-header">
-        <input
-          class="name-input"
-          type="text"
-          bind:value={name}
-          placeholder="Item Set Name..."
-          maxlength="120"
-        />
+        {#if hideName}
+          <h3 class="modal-title">Item Set</h3>
+        {:else}
+          <input
+            class="name-input"
+            type="text"
+            bind:value={name}
+            placeholder="Item Set Name..."
+            maxlength="120"
+          />
+        {/if}
         <button class="modal-close" on:click={close}>&times;</button>
       </div>
 
@@ -269,46 +272,47 @@
               apiEndpoint="/search/items"
               placeholder="Search items..."
               displayFn={(item) => `${item.Name} (${item.Type})`}
+              allowedTypes={allowedTypesArray}
+              filterFn={limitedFilterFn}
               clearOnSelect={true}
               on:select={(e) => addItem(e.detail.data)}
             />
           </div>
           <button
-            class="btn-set-add"
-            class:active={showSetSearch}
-            on:click={() => { showSetSearch = !showSetSearch; }}
-            title="Add armor/clothing set"
+            class="btn-filter-limited"
+            class:active={excludeLimited}
+            on:click={() => excludeLimited = !excludeLimited}
+            title={excludeLimited ? 'Showing unlimited only — click to include (L) items' : 'Showing all items — click to exclude (L) items'}
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 2L2 7l10 5 10-5-10-5z" />
-              <path d="M2 17l10 5 10-5" />
-              <path d="M2 12l10 5 10-5" />
-            </svg>
-            Set
+            (L)
           </button>
+          {#if showSetButton}
+            <button
+              class="btn-set-add"
+              class:active={showSetSearch}
+              on:click={toggleSetSearch}
+              title="Add armor/clothing set"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2L2 7l10 5 10-5-10-5z" />
+                <path d="M2 17l10 5 10-5" />
+                <path d="M2 12l10 5 10-5" />
+              </svg>
+              Set
+            </button>
+          {/if}
         </div>
 
         {#if showSetSearch}
           <div class="set-search-row" transition:slide={{ duration: 150 }}>
-            <input
-              class="set-search-input"
-              type="text"
-              bind:value={setSearchQuery}
-              on:input={handleSetSearchInput}
+            <SearchInput
+              value=""
+              options={armorSetOptions || []}
               placeholder="Search armor sets..."
+              filterFn={limitedFilterFn}
+              clearOnSelect={true}
+              on:select={(e) => addArmorSet(e.detail.data)}
             />
-            {#if searchingSet}
-              <span class="search-status">Searching...</span>
-            {/if}
-            {#if setSearchResults.length > 0}
-              <div class="set-search-results">
-                {#each setSearchResults as set}
-                  <button class="set-result" on:click={() => addArmorSet(set)}>
-                    <span class="set-result-name">{set.Name}</span>
-                  </button>
-                {/each}
-              </div>
-            {/if}
           </div>
         {/if}
       </div>
@@ -429,6 +433,13 @@
     flex-shrink: 0;
   }
 
+  .modal-title {
+    flex: 1;
+    margin: 0;
+    font-size: 16px;
+    font-weight: 600;
+  }
+
   .name-input {
     flex: 1;
     padding: 8px 12px;
@@ -478,6 +489,30 @@
     min-width: 0;
   }
 
+  .btn-filter-limited {
+    padding: 7px 10px;
+    font-size: 12px;
+    font-weight: 700;
+    background-color: var(--primary-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-muted);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 0.15s;
+    text-decoration: line-through;
+  }
+
+  .btn-filter-limited.active {
+    border-color: var(--error-color);
+    color: var(--error-color);
+  }
+
+  .btn-filter-limited:not(.active) {
+    text-decoration: none;
+    color: var(--text-muted);
+  }
+
   .btn-set-add {
     display: flex;
     align-items: center;
@@ -505,58 +540,6 @@
     position: relative;
   }
 
-  .set-search-input {
-    width: 100%;
-    padding: 7px 10px;
-    font-size: 13px;
-    background-color: var(--primary-color);
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    color: var(--text-color);
-  }
-
-  .set-search-input:focus {
-    outline: none;
-    border-color: var(--accent-color);
-  }
-
-  .search-status {
-    position: absolute;
-    right: 10px;
-    top: 8px;
-    font-size: 11px;
-    color: var(--text-muted);
-  }
-
-  .set-search-results {
-    margin-top: 4px;
-    max-height: 150px;
-    overflow-y: auto;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background-color: var(--primary-color);
-  }
-
-  .set-result {
-    display: block;
-    width: 100%;
-    padding: 8px 12px;
-    font-size: 13px;
-    text-align: left;
-    background: transparent;
-    border: none;
-    border-bottom: 1px solid var(--border-color);
-    color: var(--text-color);
-    cursor: pointer;
-  }
-
-  .set-result:last-child {
-    border-bottom: none;
-  }
-
-  .set-result:hover {
-    background-color: var(--hover-color);
-  }
 
   /* Body */
   .modal-body {

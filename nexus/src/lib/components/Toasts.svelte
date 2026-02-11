@@ -60,9 +60,9 @@
     border: 1px solid var(--success-color);
   }
   .toast-info {
-    background: var(--hover-color);
-    color: var(--text-color);
-    border: 1px solid var(--border-color);
+    background: var(--accent-color-bg);
+    color: var(--accent-color);
+    border: 1px solid var(--accent-color);
   }
   .toast-message {
     flex: 1;

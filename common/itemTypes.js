@@ -14,7 +14,7 @@ export const STACKABLE_TYPES = new Set([
 
 /** Types that have condition (can be damaged, have CurrentTT) */
 export const CONDITION_TYPES = new Set([
-  'Weapon', 'Armor', 'ArmorPlating', 'Vehicle',
+  'Weapon', 'Armor', 'ArmorPlating', 'ArmorSet', 'Vehicle',
   'WeaponAmplifier', 'WeaponVisionAttachment',
   'Finder', 'FinderAmplifier', 'Excavator', 'Refiner', 'Scanner',
   'TeleportationChip', 'EffectChip', 'MedicalChip',
@@ -34,6 +34,7 @@ export const PLATE_SET_SIZE = 7;
 export const TIERABLE_TYPES = new Set([
   'Weapon',
   'Armor',
+  'ArmorSet',
   'Finder',
   'Excavator',
   'MedicalTool',

@@ -66,6 +66,7 @@
   const tierableTypes = new Set([
     "Weapon",
     "Armor",
+    "ArmorSet",
     "Finder",
     "Excavator",
     "MedicalTool",
@@ -833,16 +834,53 @@
     selectedCategory = categoryPath;
     selectedCategoryRawPath = rawPath || null;
     selectedItems = Array.isArray(items) ? items : [];
-    savedOverviewFilters = null; // clear saved filters when explicitly selecting a category
-    if (isDetailView) goto('/market/exchange/listings');
+    if (isDetailView) {
+      // Save the selected category so the route-sync reactive block restores it
+      // instead of resetting to "All" when the URL changes
+      savedOverviewFilters = {
+        category: categoryPath,
+        categoryRawPath: rawPath || null,
+        items: Array.isArray(items) ? items : [],
+        searchTerm: '',
+        planet: selectedPlanet,
+        limited: selectedLimited,
+        sex: selectedSex,
+        sidebarTab,
+        favFolderId: null,
+        favFolderFilter: null,
+        tierMin, tierMax,
+        tirMin, tirMax,
+        qrMin, qrMax,
+      };
+      goto('/market/exchange/listings');
+    } else {
+      savedOverviewFilters = null;
+    }
   }
 
   function handleFavouriteFolderSelect(folderId, itemIds) {
     selectedFavFolderId = folderId;
     favouriteFolderFilter = new Set(itemIds);
-    savedOverviewFilters = null;
     if (viewSlug !== 'listings' || isDetailView) {
+      // Save state so route-sync restores it instead of resetting to "All"
+      savedOverviewFilters = {
+        category: selectedCategory,
+        categoryRawPath: selectedCategoryRawPath,
+        items: selectedItems,
+        searchTerm: '',
+        planet: selectedPlanet,
+        limited: selectedLimited,
+        sex: selectedSex,
+        sidebarTab: 'favourites',
+        favFolderId: folderId,
+        favFolderFilter: new Set(itemIds),
+        tierMin, tierMax,
+        tirMin, tirMax,
+        qrMin, qrMax,
+      };
       goto('/market/exchange/listings');
+    } else {
+      savedOverviewFilters = null;
     }
     mobileSidebarOpen = false;
   }

@@ -805,7 +805,7 @@
   
   function importAsLoadout(weaponEquipment) {
     if (typeof localStorage === 'undefined') {
-      addToast('Loadout manager requires browser storage.', { type: 'error' });
+      addToast('Loadout manager requires browser storage.', { type: 'warning' });
       return;
     }
     

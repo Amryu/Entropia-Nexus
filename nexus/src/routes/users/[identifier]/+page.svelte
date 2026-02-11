@@ -24,6 +24,7 @@
   $: services = data.profileData.services || [];
   $: shops = data.profileData.shops || [];
   $: orders = data.profileData.orders || [];
+  $: rentals = data.profileData.rentals || [];
   $: avatar = data.profileData.avatar || {};
   $: isOwner = data.profileData.permissions?.isOwner;
   $: society = profile?.society || null;
@@ -127,13 +128,35 @@
   $: hasServices = services.length > 0;
   $: hasShops = shops.length > 0;
   $: hasOrders = orders.length > 0;
+  $: hasRentals = rentals.length > 0;
   $: buyOrders = orders.filter(o => o.type === 'BUY');
   $: sellOrders = orders.filter(o => o.type === 'SELL');
+
+  function formatRentalAvailability(offer) {
+    if (offer.status === 'available') return null;
+    if (!offer.rented_until) return 'Currently rented';
+    const until = new Date(offer.rented_until);
+    const now = new Date();
+    if (until <= now) return 'Currently rented';
+    return `Available ${until.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+  }
+
+  function getBestRentalDiscount(discounts) {
+    if (!Array.isArray(discounts) || discounts.length === 0) return null;
+    let best = null;
+    for (const d of discounts) {
+      if (d.percent > 0 && d.minDays > 0) {
+        if (!best || d.percent > best.percent) best = d;
+      }
+    }
+    return best;
+  }
 
   $: availableTabs = [
     { id: 'General', label: 'General', available: true },
     { id: 'Avatar', label: 'Avatar', available: hasAvatarData || (isOwner && isEditing) },
     { id: 'Services', label: 'Services', available: hasServices },
+    { id: 'Rentals', label: 'Rentals', available: hasRentals },
     { id: 'Shops', label: 'Shops', available: hasShops },
     { id: 'Orders', label: 'Orders', available: hasOrders }
   ].filter(tab => tab.available);
@@ -1105,6 +1128,42 @@
       </section>
     {/if}
 
+    {#if activeTab === 'Rentals'}
+      <section class="panel-section">
+        <h2>Item Rentals</h2>
+        {#if rentals.length === 0}
+          <div class="empty-state">No rental offers listed.</div>
+        {:else}
+          <div class="list-grid">
+            {#each rentals as offer}
+              {@const availability = formatRentalAvailability(offer)}
+              {@const bestDiscount = getBestRentalDiscount(offer.discounts)}
+              <a href="/market/rental/{offer.id}" class="list-card rental-card">
+                <div class="rental-card-header">
+                  <div class="list-title">{offer.title}</div>
+                  <span class="rental-status-dot" class:available={offer.status === 'available'} class:rented={offer.status === 'rented'}
+                    title={offer.status === 'available' ? 'Available now' : (availability || 'Rented')}
+                  ></span>
+                </div>
+                <div class="rental-card-info">
+                  <span class="rental-price">{parseFloat(offer.price_per_day).toFixed(2)} PED/day</span>
+                  {#if bestDiscount}
+                    <span class="rental-discount">-{bestDiscount.percent}% @ {bestDiscount.minDays}+ days</span>
+                  {/if}
+                </div>
+                {#if availability}
+                  <div class="rental-availability">{availability}</div>
+                {/if}
+                {#if offer.item_count > 0}
+                  <div class="list-meta">{offer.item_count} item{offer.item_count !== 1 ? 's' : ''}</div>
+                {/if}
+              </a>
+            {/each}
+          </div>
+        {/if}
+      </section>
+    {/if}
+
     {#if activeTab === 'Shops'}
       <section class="panel-section">
         <h2>Shops</h2>
@@ -1139,7 +1198,7 @@
                   <FancyTable
                     columns={offerColumns}
                     data={sellOrders}
-                    rowHeight={36}
+                    rowHeight={32}
                     compact={true}
                     sortable={true}
                     searchable={false}
@@ -1157,7 +1216,7 @@
                   <FancyTable
                     columns={offerColumns}
                     data={buyOrders}
-                    rowHeight={36}
+                    rowHeight={32}
                     compact={true}
                     sortable={true}
                     searchable={false}
@@ -1584,6 +1643,66 @@
   .list-link {
     font-size: 12px;
     color: var(--accent-color, #4a9eff);
+  }
+
+  a.rental-card {
+    text-decoration: none;
+    color: var(--text-color);
+    transition: border-color 0.15s;
+  }
+
+  a.rental-card:hover {
+    border-color: var(--accent-color);
+  }
+
+  .rental-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .rental-status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background: var(--text-muted);
+  }
+
+  .rental-status-dot.available {
+    background: var(--success-color);
+  }
+
+  .rental-status-dot.rented {
+    background: var(--accent-color);
+  }
+
+  .rental-card-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .rental-price {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent-color);
+  }
+
+  .rental-discount {
+    font-size: 11px;
+    color: var(--success-color);
+    background: var(--success-bg);
+    padding: 1px 6px;
+    border-radius: 4px;
+  }
+
+  .rental-availability {
+    font-size: 12px;
+    color: var(--accent-color);
+    font-style: italic;
   }
 
   .dialog-backdrop {

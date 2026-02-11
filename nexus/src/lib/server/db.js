@@ -3335,7 +3335,17 @@ export async function countUserItemSets(userId) {
 }
 
 export async function getUserItemSets(userId) {
-  const query = 'SELECT id, name, loadout_id, created_at, last_update FROM item_sets WHERE user_id = $1 ORDER BY last_update DESC';
+  const query = `SELECT s.id, s.name, s.loadout_id, s.created_at, s.last_update,
+    (SELECT r.title FROM rental_offers r WHERE r.item_set_id = s.id AND r.status != 'deleted' LIMIT 1) AS linked_rental_offer
+    FROM item_sets s WHERE s.user_id = $1 ORDER BY s.last_update DESC`;
+  const { rows } = await pool.query(query, [userId]);
+  return rows;
+}
+
+export async function getUserItemSetsWithData(userId) {
+  const query = `SELECT s.id, s.name, s.data, s.loadout_id, s.created_at, s.last_update,
+    (SELECT r.title FROM rental_offers r WHERE r.item_set_id = s.id AND r.status != 'deleted' LIMIT 1) AS linked_rental_offer
+    FROM item_sets s WHERE s.user_id = $1 ORDER BY s.last_update DESC`;
   const { rows } = await pool.query(query, [userId]);
   return rows;
 }
@@ -3373,6 +3383,445 @@ export async function deleteUserItemSet(userId, id) {
 export async function getItemSetsByLoadoutId(userId, loadoutId) {
   const query = 'SELECT id, name FROM item_sets WHERE user_id = $1 AND loadout_id = $2';
   const { rows } = await pool.query(query, [userId, loadoutId]);
+  return rows;
+}
+
+// ============================================
+// RENTAL FUNCTIONS
+// ============================================
+
+// --- Rental Offers ---
+
+export async function getRentalOffers(filters = {}) {
+  let query = `
+    SELECT ro.id, ro.title, ro.description, ro.planet_id, ro.location,
+           ro.price_per_day, ro.discounts, ro.deposit, ro.status,
+           ro.item_set_id, ro.created_at, ro.updated_at,
+           u.eu_name AS owner_name, u.id AS owner_id,
+           (SELECT COUNT(*)::int FROM jsonb_array_elements(s.data->'items')) AS item_count
+    FROM rental_offers ro
+    JOIN users u ON ro.user_id = u.id
+    LEFT JOIN item_sets s ON ro.item_set_id = s.id
+    WHERE ro.status = 'available'
+  `;
+  const values = [];
+  let paramIndex = 1;
+
+  if (filters.planet_id) {
+    query += ` AND ro.planet_id = $${paramIndex}`;
+    values.push(filters.planet_id);
+    paramIndex++;
+  }
+
+  query += ' ORDER BY ro.updated_at DESC';
+
+  if (filters.limit) {
+    query += ` LIMIT $${paramIndex}`;
+    values.push(filters.limit);
+    paramIndex++;
+  }
+  if (filters.offset) {
+    query += ` OFFSET $${paramIndex}`;
+    values.push(filters.offset);
+    paramIndex++;
+  }
+
+  const { rows } = await pool.query(query, values);
+  return rows;
+}
+
+export async function getRentalOfferById(id) {
+  const query = `
+    SELECT ro.*,
+           u.eu_name AS owner_name, u.id AS owner_id,
+           s.name AS item_set_name, s.data AS item_set_data
+    FROM rental_offers ro
+    JOIN users u ON ro.user_id = u.id
+    LEFT JOIN item_sets s ON ro.item_set_id = s.id
+    WHERE ro.id = $1 AND ro.status != 'deleted'
+  `;
+  const { rows } = await pool.query(query, [id]);
+  return rows[0];
+}
+
+export async function getUserRentalOffers(userId) {
+  const query = `
+    SELECT ro.id, ro.title, ro.planet_id, ro.location,
+           ro.price_per_day, ro.discounts, ro.deposit, ro.status,
+           ro.item_set_id, ro.created_at, ro.updated_at,
+           (SELECT COUNT(*)::int FROM jsonb_array_elements(s.data->'items')) AS item_count
+    FROM rental_offers ro
+    LEFT JOIN item_sets s ON ro.item_set_id = s.id
+    WHERE ro.user_id = $1 AND ro.status != 'deleted'
+    ORDER BY ro.updated_at DESC
+  `;
+  const { rows } = await pool.query(query, [userId]);
+  return rows;
+}
+
+export async function getUserPublicRentalOffers(userId) {
+  const query = `
+    SELECT ro.id, ro.title, ro.planet_id, ro.location,
+           ro.price_per_day, ro.discounts, ro.status,
+           ro.item_set_id, ro.created_at,
+           (SELECT COUNT(*)::int FROM jsonb_array_elements(s.data->'items')) AS item_count,
+           (SELECT rr.end_date FROM rental_requests rr
+            WHERE rr.offer_id = ro.id AND rr.status IN ('accepted', 'in_progress')
+            ORDER BY rr.end_date DESC LIMIT 1
+           ) AS rented_until
+    FROM rental_offers ro
+    LEFT JOIN item_sets s ON ro.item_set_id = s.id
+    WHERE ro.user_id = $1 AND ro.status IN ('available', 'rented')
+    ORDER BY ro.status ASC, ro.updated_at DESC
+  `;
+  const { rows } = await pool.query(query, [userId]);
+  return rows;
+}
+
+export async function countUserRentalOffers(userId) {
+  const query = "SELECT COUNT(*)::int AS count FROM rental_offers WHERE user_id = $1 AND status != 'deleted'";
+  const { rows } = await pool.query(query, [userId]);
+  return rows[0]?.count ?? 0;
+}
+
+export async function createRentalOffer(data) {
+  const query = `
+    INSERT INTO rental_offers (user_id, item_set_id, title, description, planet_id, location, price_per_day, discounts, deposit)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    RETURNING *
+  `;
+  const { rows } = await pool.query(query, [
+    data.user_id, data.item_set_id, data.title, data.description || null,
+    data.planet_id || null, data.location || null,
+    data.price_per_day, JSON.stringify(data.discounts || []), data.deposit || 0
+  ]);
+  return rows[0];
+}
+
+export async function updateRentalOffer(id, userId, data, expectedStatus = null) {
+  const sets = [];
+  const values = [];
+  let paramIndex = 1;
+
+  const fields = ['title', 'description', 'planet_id', 'location', 'price_per_day', 'deposit', 'status'];
+  for (const field of fields) {
+    if (data[field] !== undefined) {
+      sets.push(`${field} = $${paramIndex}`);
+      values.push(data[field]);
+      paramIndex++;
+    }
+  }
+
+  if (data.discounts !== undefined) {
+    sets.push(`discounts = $${paramIndex}`);
+    values.push(JSON.stringify(data.discounts));
+    paramIndex++;
+  }
+
+  if (sets.length === 0) return null;
+
+  sets.push(`updated_at = CURRENT_TIMESTAMP`);
+
+  if (data.status === 'deleted') {
+    sets.push(`deleted_at = CURRENT_TIMESTAMP`);
+  }
+
+  values.push(id, userId);
+  let whereClause = `WHERE id = $${paramIndex} AND user_id = $${paramIndex + 1} AND status != 'deleted'`;
+
+  // If expectedStatus is provided, add optimistic locking to prevent race conditions
+  if (expectedStatus) {
+    paramIndex += 2;
+    whereClause += ` AND status = $${paramIndex}`;
+    values.push(expectedStatus);
+  }
+
+  const query = `
+    UPDATE rental_offers SET ${sets.join(', ')}
+    ${whereClause}
+    RETURNING *
+  `;
+  const { rows } = await pool.query(query, values);
+  return rows[0];
+}
+
+export async function softDeleteRentalOffer(id, userId) {
+  const query = `
+    UPDATE rental_offers SET status = 'deleted', deleted_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+    WHERE id = $1 AND user_id = $2 AND status != 'deleted'
+    RETURNING id
+  `;
+  const { rows } = await pool.query(query, [id, userId]);
+  return rows[0];
+}
+
+// --- Rental Blocked Dates ---
+
+export async function getRentalBlockedDates(offerId) {
+  const query = 'SELECT id, start_date, end_date, reason FROM rental_blocked_dates WHERE offer_id = $1 ORDER BY start_date';
+  const { rows } = await pool.query(query, [offerId]);
+  return rows;
+}
+
+export async function addRentalBlockedDate(offerId, startDate, endDate, reason = null) {
+  const query = `
+    INSERT INTO rental_blocked_dates (offer_id, start_date, end_date, reason)
+    VALUES ($1, $2, $3, $4)
+    RETURNING *
+  `;
+  const { rows } = await pool.query(query, [offerId, startDate, endDate, reason]);
+  return rows[0];
+}
+
+export async function deleteRentalBlockedDate(id, offerId) {
+  const query = 'DELETE FROM rental_blocked_dates WHERE id = $1 AND offer_id = $2 RETURNING id';
+  const { rows } = await pool.query(query, [id, offerId]);
+  return rows[0];
+}
+
+export async function countRentalBlockedDates(offerId) {
+  const query = 'SELECT COUNT(*)::int AS count FROM rental_blocked_dates WHERE offer_id = $1';
+  const { rows } = await pool.query(query, [offerId]);
+  return rows[0]?.count ?? 0;
+}
+
+// --- Rental Requests ---
+
+export async function getRentalRequests(offerId, status = null) {
+  let query = `
+    SELECT rr.*, u.eu_name AS requester_name
+    FROM rental_requests rr
+    JOIN users u ON rr.requester_id = u.id
+    WHERE rr.offer_id = $1
+  `;
+  const values = [offerId];
+
+  if (status) {
+    query += ' AND rr.status = $2';
+    values.push(status);
+  }
+
+  query += ' ORDER BY rr.created_at DESC';
+  const { rows } = await pool.query(query, values);
+  return rows;
+}
+
+export async function getRentalRequestById(id) {
+  const query = `
+    SELECT rr.*,
+           u.eu_name AS requester_name,
+           ro.title AS offer_title, ro.user_id AS offer_owner_id,
+           ro.price_per_day AS offer_price_per_day, ro.discounts AS offer_discounts,
+           ro.deposit AS offer_deposit, ro.status AS offer_status
+    FROM rental_requests rr
+    JOIN users u ON rr.requester_id = u.id
+    JOIN rental_offers ro ON rr.offer_id = ro.id
+    WHERE rr.id = $1
+  `;
+  const { rows } = await pool.query(query, [id]);
+  return rows[0];
+}
+
+export async function getUserRentalRequests(userId) {
+  const query = `
+    SELECT rr.*, ro.title AS offer_title,
+           ow.eu_name AS owner_name
+    FROM rental_requests rr
+    JOIN rental_offers ro ON rr.offer_id = ro.id
+    JOIN users ow ON ro.user_id = ow.id
+    WHERE rr.requester_id = $1
+    ORDER BY rr.created_at DESC
+  `;
+  const { rows } = await pool.query(query, [userId]);
+  return rows;
+}
+
+export async function createRentalRequest(data) {
+  // Atomic conflict check + insert to prevent TOCTOU race conditions
+  const query = `
+    WITH conflict_check AS (
+      SELECT 1 FROM rental_blocked_dates
+      WHERE offer_id = $1 AND start_date <= $4 AND end_date >= $3
+      UNION ALL
+      SELECT 1 FROM rental_requests
+      WHERE offer_id = $1 AND status IN ('accepted', 'in_progress')
+        AND start_date <= $4 AND end_date >= $3
+      LIMIT 1
+    )
+    INSERT INTO rental_requests (offer_id, requester_id, start_date, end_date, total_days, price_per_day, discount_pct, total_price, deposit, requester_note)
+    SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10
+    WHERE NOT EXISTS (SELECT 1 FROM conflict_check)
+    RETURNING *
+  `;
+  const { rows } = await pool.query(query, [
+    data.offer_id, data.requester_id, data.start_date, data.end_date,
+    data.total_days, data.price_per_day, data.discount_pct, data.total_price,
+    data.deposit, data.requester_note || null
+  ]);
+  return rows[0]; // null if conflict was found
+}
+
+export async function updateRentalRequest(id, data) {
+  const sets = [];
+  const values = [];
+  let paramIndex = 1;
+
+  const fields = ['status', 'owner_note', 'actual_return_date', 'end_date', 'total_days', 'price_per_day', 'discount_pct', 'total_price'];
+  for (const field of fields) {
+    if (data[field] !== undefined) {
+      sets.push(`${field} = $${paramIndex}`);
+      values.push(data[field]);
+      paramIndex++;
+    }
+  }
+
+  if (sets.length === 0) return null;
+
+  sets.push('updated_at = CURRENT_TIMESTAMP');
+  values.push(id);
+
+  const query = `UPDATE rental_requests SET ${sets.join(', ')} WHERE id = $${paramIndex} RETURNING *`;
+  const { rows } = await pool.query(query, values);
+  return rows[0];
+}
+
+// --- Rental Extensions ---
+
+export async function getRentalExtensions(requestId) {
+  const query = 'SELECT * FROM rental_extensions WHERE request_id = $1 ORDER BY created_at';
+  const { rows } = await pool.query(query, [requestId]);
+  return rows;
+}
+
+export async function createRentalExtension(data) {
+  const query = `
+    INSERT INTO rental_extensions (request_id, previous_end, new_end, extra_days, retroactive, price_per_day, discount_pct, extra_price, new_total_price, note)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    RETURNING *
+  `;
+  const { rows } = await pool.query(query, [
+    data.request_id, data.previous_end, data.new_end, data.extra_days,
+    data.retroactive, data.price_per_day, data.discount_pct,
+    data.extra_price, data.new_total_price, data.note || null
+  ]);
+  return rows[0];
+}
+
+// --- Availability ---
+
+export async function getRentalAvailability(offerId, startDate, endDate) {
+  // Get blocked dates within range (reason excluded from public availability)
+  const blockedQuery = `
+    SELECT id, start_date, end_date
+    FROM rental_blocked_dates
+    WHERE offer_id = $1 AND end_date >= $2 AND start_date <= $3
+    ORDER BY start_date
+  `;
+  const blocked = await pool.query(blockedQuery, [offerId, startDate, endDate]);
+
+  // Get booked dates (accepted or in_progress requests) within range
+  const bookedQuery = `
+    SELECT id AS request_id, start_date, end_date, status
+    FROM rental_requests
+    WHERE offer_id = $1 AND status IN ('accepted', 'in_progress')
+      AND end_date >= $2 AND start_date <= $3
+    ORDER BY start_date
+  `;
+  const booked = await pool.query(bookedQuery, [offerId, startDate, endDate]);
+
+  return {
+    blockedDates: blocked.rows,
+    bookedDates: booked.rows
+  };
+}
+
+export async function checkRentalDateConflict(offerId, startDate, endDate, excludeRequestId = null) {
+  // Check blocked dates
+  const blockedQuery = `
+    SELECT 1 FROM rental_blocked_dates
+    WHERE offer_id = $1 AND start_date <= $3 AND end_date >= $2
+    LIMIT 1
+  `;
+  const blocked = await pool.query(blockedQuery, [offerId, startDate, endDate]);
+  if (blocked.rows.length > 0) return true;
+
+  // Check existing bookings
+  let bookedQuery = `
+    SELECT 1 FROM rental_requests
+    WHERE offer_id = $1 AND status IN ('accepted', 'in_progress')
+      AND start_date <= $3 AND end_date >= $2
+  `;
+  const bookedValues = [offerId, startDate, endDate];
+
+  if (excludeRequestId) {
+    bookedQuery += ' AND id != $4';
+    bookedValues.push(excludeRequestId);
+  }
+
+  bookedQuery += ' LIMIT 1';
+  const booked = await pool.query(bookedQuery, bookedValues);
+  return booked.rows.length > 0;
+}
+
+/**
+ * Atomically update a rental request status and (optionally) the linked offer status.
+ * Handles the 'completed' case by checking for other active requests before reverting offer to 'available'.
+ */
+export async function updateRentalRequestWithOfferStatus(requestId, requestData, offerId, offerOwnerId, newOfferStatus) {
+  const client = await startTransaction();
+  try {
+    // 1. Update the request
+    const reqSets = [];
+    const reqValues = [];
+    let p = 1;
+    const reqFields = ['status', 'owner_note', 'actual_return_date', 'end_date', 'total_days', 'price_per_day', 'discount_pct', 'total_price'];
+    for (const field of reqFields) {
+      if (requestData[field] !== undefined) {
+        reqSets.push(`${field} = $${p}`);
+        reqValues.push(requestData[field]);
+        p++;
+      }
+    }
+    reqSets.push('updated_at = CURRENT_TIMESTAMP');
+    reqValues.push(requestId);
+    const reqQuery = `UPDATE rental_requests SET ${reqSets.join(', ')} WHERE id = $${p} RETURNING *`;
+    const reqResult = await client.query(reqQuery, reqValues);
+    const updatedRequest = reqResult.rows[0];
+
+    // 2. Update the offer status if requested
+    if (newOfferStatus && offerId && offerOwnerId) {
+      let effectiveOfferStatus = newOfferStatus;
+
+      // If completing, check for other active requests before reverting to 'available'
+      if (newOfferStatus === 'available') {
+        const otherActive = await client.query(
+          `SELECT 1 FROM rental_requests WHERE offer_id = $1 AND id != $2 AND status IN ('accepted', 'in_progress') LIMIT 1`,
+          [offerId, requestId]
+        );
+        if (otherActive.rows.length > 0) {
+          effectiveOfferStatus = 'rented'; // Keep as rented if other bookings exist
+        }
+      }
+
+      await client.query(
+        `UPDATE rental_offers SET status = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2 AND user_id = $3 AND status != 'deleted'`,
+        [effectiveOfferStatus, offerId, offerOwnerId]
+      );
+    }
+
+    await commitTransaction(client);
+    return updatedRequest;
+  } catch (err) {
+    await rollbackTransaction(client);
+    throw err;
+  }
+}
+
+// --- Item Set Rental Protection ---
+
+export async function getItemSetRentalOffers(itemSetId) {
+  const query = "SELECT id, title FROM rental_offers WHERE item_set_id = $1 AND status != 'deleted'";
+  const { rows } = await pool.query(query, [itemSetId]);
   return rows;
 }
 

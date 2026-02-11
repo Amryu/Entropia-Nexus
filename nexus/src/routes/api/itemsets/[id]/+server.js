@@ -1,6 +1,6 @@
 //@ts-nocheck
 import { getResponse } from '$lib/util.js';
-import { getUserItemSetById, updateUserItemSet, deleteUserItemSet } from '$lib/server/db.js';
+import { getUserItemSetById, updateUserItemSet, deleteUserItemSet, getItemSetRentalOffers } from '$lib/server/db.js';
 import { sanitizeItemSetData, getPayloadSizeBytes, MAX_ITEM_SET_BYTES } from '$lib/server/itemSetUtils.js';
 import { checkRateLimit } from '$lib/server/rateLimiter.js';
 
@@ -57,6 +57,15 @@ export async function PUT({ params, request, locals }) {
       return getResponse({ error: 'Item set not found.' }, 404);
     }
 
+    // Block updates to item sets linked to rental offers
+    const linkedOffers = await getItemSetRentalOffers(params.id);
+    if (linkedOffers.length > 0) {
+      return getResponse({
+        error: 'This item set is linked to a rental offer and cannot be edited. Delete the rental offer first.',
+        linkedRentalOffers: linkedOffers.map(o => ({ id: o.id, title: o.title }))
+      }, 409);
+    }
+
     const sanitizedData = sanitizeItemSetData(body?.data ?? existing.data);
     const name = sanitizeName(body?.name ?? existing.name);
 
@@ -88,6 +97,15 @@ export async function DELETE({ params, locals }) {
     const record = await getUserItemSetById(user.id, params.id);
     if (!record) {
       return getResponse({ error: 'Item set not found.' }, 404);
+    }
+
+    // Block deletion of item sets linked to rental offers
+    const linkedOffers = await getItemSetRentalOffers(params.id);
+    if (linkedOffers.length > 0) {
+      return getResponse({
+        error: 'This item set is linked to a rental offer. Delete the rental offer first.',
+        linkedRentalOffers: linkedOffers.map(o => ({ id: o.id, title: o.title }))
+      }, 409);
     }
 
     await deleteUserItemSet(user.id, params.id);

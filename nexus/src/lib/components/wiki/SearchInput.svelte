@@ -197,11 +197,28 @@
   // --- Local search ---
   function filterLocalResults(query) {
     const q = query.trim().toLowerCase();
-    const normalized = normalizeOptions(options);
+    let normalized = normalizeOptions(options);
+
+    // Apply custom filter to raw data
+    if (typeof filterFn === 'function') {
+      normalized = normalized.filter(opt => filterFn(opt._raw));
+    }
 
     if (!q) {
       // Show all options on empty query (focus behavior)
       return normalized.slice(0, limit);
+    }
+
+    const words = q.split(/\s+/).filter(w => w.length > 0);
+    if (words.length > 1) {
+      // Multi-word: all words must appear in label or value
+      return normalized
+        .filter(opt => {
+          const label = opt.label.toLowerCase();
+          const val = String(opt.value).toLowerCase();
+          return words.every(w => label.includes(w) || val.includes(w));
+        })
+        .slice(0, limit);
     }
 
     return normalized

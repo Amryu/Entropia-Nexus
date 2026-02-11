@@ -153,8 +153,9 @@ Armor sets (complete matching armor pieces) are tradeable in the exchange. Since
 
 - **ID offset**: `ARMOR_SET_OFFSET = 13000000` (range 13000000–13999999)
 - **API**: `GET /armorsets` returns `ItemId` field (`Id + 13000000`)
-- **Type classification**: Not stackable, not tierable, no condition — uses absolute markup
-- **OrderDialog**: Shows only Markup + Planet fields (no quantity, tier, or condition)
+- **Type classification**: Has condition (CurrentTT for full set), tierable (Tier/TiR per piece), not stackable
+- **Markup**: Non-L sets use absolute markup (+PED); (L) sets use percent markup (condition + L)
+- **OrderDialog**: Shows Tier, TiR, MaxTT, CurrentTT, Markup, Planet fields
 - **Item lookup**: `getItemType()` in `exchange.js` checks the ArmorSet ID range before querying the Items table
 - **Cache**: `slimItem()` detects ArmorSet type via the `Armors` property when no explicit `Type` field exists
 
