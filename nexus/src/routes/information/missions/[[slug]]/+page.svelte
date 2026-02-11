@@ -153,6 +153,7 @@
   // Parse PostgreSQL INTERVAL format (e.g., "1 day", "2 hours", "30 minutes", "00:30:00")
   function parseCooldownDuration(duration) {
     if (!duration) return { value: 1, unit: 'days' };
+    if (typeof duration !== 'string') duration = String(duration);
 
     // Handle "X days" format
     const daysMatch = duration.match(/(\d+)\s*day/i);
