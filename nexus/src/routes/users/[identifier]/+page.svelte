@@ -2249,7 +2249,7 @@
   .orders-table-wrap {
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    overflow: hidden;
+    overflow: auto;
     max-height: 400px;
   }
   .orders-empty {

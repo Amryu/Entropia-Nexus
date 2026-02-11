@@ -1,5 +1,5 @@
 //@ts-nocheck
-import { getRentalOfferById, getRentalRequests, createRentalRequest, checkRentalDateConflict } from '$lib/server/db.js';
+import { getRentalOfferById, getRentalRequests, createRentalRequest, checkRentalDateConflict, createNotification } from '$lib/server/db.js';
 import { getResponse } from '$lib/util.js';
 import { checkRateLimit } from '$lib/server/rateLimiter.js';
 import { validateDateRange, sanitizeNote } from '$lib/server/rentalUtils.js';
@@ -111,6 +111,15 @@ export async function POST({ params, request, locals }) {
     if (!rentalRequest) {
       return getResponse({ error: 'The requested dates overlap with an existing booking or blocked period.' }, 409);
     }
+
+    // Notify the offer owner
+    try {
+      await createNotification(
+        offer.user_id,
+        'Rental',
+        `New rental request for "${offer.title}" (${pricing.totalDays} day${pricing.totalDays !== 1 ? 's' : ''}).`
+      );
+    } catch { /* don't block response on notification failure */ }
 
     return getResponse(rentalRequest, 201);
   } catch (error) {

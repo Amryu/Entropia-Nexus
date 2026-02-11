@@ -2,7 +2,8 @@
 import {
   getRentalRequestById, updateRentalRequest, updateRentalOffer,
   updateRentalRequestWithOfferStatus,
-  checkRentalDateConflict, createRentalExtension, getRentalExtensions
+  checkRentalDateConflict, createRentalExtension, getRentalExtensions,
+  createNotification
 } from '$lib/server/db.js';
 import { getResponse } from '$lib/util.js';
 import { checkRateLimit } from '$lib/server/rateLimiter.js';
@@ -134,6 +135,17 @@ export async function PUT({ params, request, locals }) {
     const updated = await updateRentalRequestWithOfferStatus(
       requestId, updateData, req.offer_id, req.offer_owner_id, newOfferStatus
     );
+
+    // Notify the requester when their request is accepted
+    if (body.status === 'accepted') {
+      try {
+        await createNotification(
+          req.requester_id,
+          'Rental',
+          `Your rental request for "${req.offer_title}" was accepted!`
+        );
+      } catch { /* don't block response on notification failure */ }
+    }
 
     return getResponse(updated, 200);
   } catch (error) {

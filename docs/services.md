@@ -370,7 +370,7 @@ Users can ask questions about a service without making a booking request:
 ### Services
 
 ```
-GET    /api/services                    - List services (type filter, planet filter)
+GET    /api/services                    - List services (type filter, planet filter, include_details includes equipment)
 POST   /api/services                    - Create service (verified users)
 GET    /api/services/my                 - Current user's owned services
 GET    /api/services/:id                - Get service details

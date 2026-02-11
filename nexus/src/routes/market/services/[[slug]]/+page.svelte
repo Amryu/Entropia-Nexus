@@ -942,7 +942,16 @@
     <div class="page-header">
       <div class="header-left">
         <h1>{selectedService ? selectedService.title : 'Services'}</h1>
-        {#if !selectedService}
+        {#if selectedService}
+          <div class="header-badges">
+            <span class="service-type-badge">{getServiceTypeLabel(selectedService.type)}</span>
+            {#if !selectedService.is_active}
+              <span class="inactive-badge">Inactive</span>
+            {:else if selectedService.is_busy}
+              <span class="busy-badge">Busy</span>
+            {/if}
+          </div>
+        {:else}
           <p class="subtitle">Find healing, DPS, and transportation services</p>
         {/if}
       </div>
@@ -1054,16 +1063,6 @@
     {/if}
 
     <div class="service-detail">
-      <div class="service-header">
-        <h2>{selectedService.title}</h2>
-        <span class="service-type-badge">{getServiceTypeLabel(selectedService.type)}</span>
-        {#if !selectedService.is_active}
-          <span class="inactive-badge">Inactive</span>
-        {:else if selectedService.is_busy}
-          <span class="busy-badge">Busy</span>
-        {/if}
-      </div>
-
       <div class="service-info">
         <div class="info-section">
           <h3>Provider</h3>
@@ -2987,16 +2986,11 @@
     padding: 1.5rem;
   }
 
-  .service-header {
+  .header-badges {
     display: flex;
     align-items: center;
-    gap: 1rem;
-    margin-bottom: 1.5rem;
-    flex-wrap: wrap;
-  }
-
-  .service-header h2 {
-    margin: 0;
+    gap: 0.5rem;
+    margin-top: 0.25rem;
   }
 
   .service-type-badge {
@@ -3161,11 +3155,6 @@
 
     .service-detail {
       padding: 1rem;
-    }
-
-    .service-header {
-      flex-direction: column;
-      align-items: flex-start;
     }
   }
 

@@ -1221,6 +1221,23 @@ export async function upsertServiceTransportationDetails(serviceId, details) {
   return rows[0];
 }
 
+// Service equipment (bulk)
+export async function getServicesEquipmentBulk(serviceIds) {
+  if (!serviceIds.length) return {};
+  const query = `
+    SELECT * FROM service_equipment
+    WHERE service_id = ANY($1)
+    ORDER BY service_id, is_primary DESC, sort_order ASC
+  `;
+  const { rows } = await pool.query(query, [serviceIds]);
+  const map = {};
+  for (const row of rows) {
+    if (!map[row.service_id]) map[row.service_id] = [];
+    map[row.service_id].push(row);
+  }
+  return map;
+}
+
 // Service equipment
 export async function getServiceEquipment(serviceId) {
   const query = `

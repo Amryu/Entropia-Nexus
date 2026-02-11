@@ -1,5 +1,5 @@
 //@ts-nocheck
-import { getServices, createService, upsertServiceHealingDetails, upsertServiceDpsDetails, upsertServiceTransportationDetails, addServiceEquipment, getServiceHealingDetails, getServiceDpsDetails, getServiceTransportationDetails } from "$lib/server/db.js";
+import { getServices, createService, upsertServiceHealingDetails, upsertServiceDpsDetails, upsertServiceTransportationDetails, addServiceEquipment, getServiceHealingDetails, getServiceDpsDetails, getServiceTransportationDetails, getServicesEquipmentBulk } from "$lib/server/db.js";
 import { getResponse, apiCall } from "$lib/util.js";
 import { checkRateLimit } from '$lib/server/rateLimiter.js';
 
@@ -34,17 +34,24 @@ export async function GET({ url, locals, fetch }) {
       });
     }
     
-    // If include_details is true, fetch type-specific details for each service
-    if (includeDetails && services) {
-      await Promise.all(services.map(async (service) => {
-        if (service.type === 'healing') {
-          service.healing_details = await getServiceHealingDetails(service.id);
-        } else if (service.type === 'dps') {
-          service.dps_details = await getServiceDpsDetails(service.id);
-        } else if (service.type === 'transportation') {
-          service.transportation_details = await getServiceTransportationDetails(service.id);
-        }
-      }));
+    // If include_details is true, fetch type-specific details and equipment for each service
+    if (includeDetails && services && services.length) {
+      const [, equipmentMap] = await Promise.all([
+        Promise.all(services.map(async (service) => {
+          if (service.type === 'healing') {
+            service.healing_details = await getServiceHealingDetails(service.id);
+          } else if (service.type === 'dps') {
+            service.dps_details = await getServiceDpsDetails(service.id);
+          } else if (service.type === 'transportation') {
+            service.transportation_details = await getServiceTransportationDetails(service.id);
+          }
+        })),
+        getServicesEquipmentBulk(services.map(s => s.id))
+      ]);
+
+      for (const service of services) {
+        service.equipment = equipmentMap[service.id] || [];
+      }
     }
     
     return getResponse(services, 200);
