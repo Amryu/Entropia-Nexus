@@ -3,7 +3,7 @@
  * Tracks requests per user/IP within sliding time windows.
  */
 
-// Store: Map<key, { count: number, windowStart: number }>
+// Store: Map<key, { count: number, windowStart: number, windowMs: number }>
 const requestCounts = new Map();
 
 // Cleanup old entries periodically (every 5 minutes)
@@ -21,8 +21,9 @@ function cleanup(now) {
   const keysToDelete = [];
 
   for (const [key, data] of requestCounts.entries()) {
-    // Remove entries older than 1 hour
-    if (now - data.windowStart > 60 * 60 * 1000) {
+    // Remove entries whose window has expired (default 1 hour for legacy entries)
+    const expiry = data.windowMs || 60 * 60 * 1000;
+    if (now - data.windowStart > expiry) {
       keysToDelete.push(key);
     }
   }
@@ -33,7 +34,7 @@ function cleanup(now) {
 }
 
 /**
- * Check if a request should be rate limited
+ * Check if a request should be rate limited (increments counter)
  * @param {string} key - Unique identifier (e.g., 'upload:userId' or 'upload:ip')
  * @param {number} maxRequests - Maximum requests allowed in the window
  * @param {number} windowMs - Time window in milliseconds
@@ -47,7 +48,7 @@ export function checkRateLimit(key, maxRequests, windowMs) {
 
   if (!data || now - data.windowStart >= windowMs) {
     // New window
-    requestCounts.set(key, { count: 1, windowStart: now });
+    requestCounts.set(key, { count: 1, windowStart: now, windowMs });
     return {
       allowed: true,
       remaining: maxRequests - 1,
@@ -73,6 +74,47 @@ export function checkRateLimit(key, maxRequests, windowMs) {
     remaining: maxRequests - data.count,
     resetIn
   };
+}
+
+/**
+ * Check rate limit without incrementing (peek).
+ * Use this when you want to check availability before committing to the action.
+ * @param {string} key
+ * @param {number} maxRequests
+ * @param {number} windowMs
+ * @returns {{ allowed: boolean, remaining: number, resetIn: number }}
+ */
+export function checkRateLimitPeek(key, maxRequests, windowMs) {
+  const now = Date.now();
+  const data = requestCounts.get(key);
+
+  if (!data || now - data.windowStart >= windowMs) {
+    return { allowed: true, remaining: maxRequests, resetIn: windowMs };
+  }
+
+  const resetIn = windowMs - (now - data.windowStart);
+  if (data.count >= maxRequests) {
+    return { allowed: false, remaining: 0, resetIn };
+  }
+
+  return { allowed: true, remaining: maxRequests - data.count, resetIn };
+}
+
+/**
+ * Increment a rate limit counter without checking (commit after success).
+ * Creates a new window if the key doesn't exist or window expired.
+ * @param {string} key
+ * @param {number} windowMs
+ */
+export function incrementRateLimit(key, windowMs) {
+  const now = Date.now();
+  const data = requestCounts.get(key);
+
+  if (!data || now - data.windowStart >= windowMs) {
+    requestCounts.set(key, { count: 1, windowStart: now, windowMs });
+  } else {
+    data.count++;
+  }
 }
 
 /**
@@ -128,6 +170,8 @@ export function endUpload(userId) {
 
 export default {
   checkRateLimit,
+  checkRateLimitPeek,
+  incrementRateLimit,
   getRateLimitHeaders,
   checkConcurrentUploads,
   startUpload,

@@ -157,7 +157,7 @@ Pet orders include additional metadata:
 | updated | timestamptz | Last update |
 
 Unique constraint: 1 active order per user per item per side.
-Limit: 200 orders per side per user.
+Limit: 1000 sell orders / 50 buy orders per user.
 
 ### Exchange Price History
 
@@ -339,6 +339,68 @@ All exchange-related endpoints validate JSONB `details` fields server-side:
 - **Inventory details**: `Tier` (0-10), `TierIncreaseRate` (1-4000), `QualityRating` (0-100)
 - **Planet validation**: All endpoints validate planet against the `PLANETS` constant list
 - Unknown keys are silently stripped
+
+### Rate Limiting
+
+All exchange order endpoints are rate-limited to prevent abuse. The in-memory rate limiter (`$lib/server/rateLimiter.js`) tracks requests per user within sliding time windows.
+
+#### Global Order Creation Limits
+
+| Scope | Limit | Window |
+|-------|-------|--------|
+| Per minute | 100 | 1 min |
+| Per hour | 500 | 1 hour |
+| Per day | 3,000 | 24 hours |
+
+Global limits increment on every attempt (even failed validation) to prevent abuse.
+
+#### Per-Item Limits
+
+| Scope | Fungible | Non-Fungible | Window |
+|-------|----------|--------------|--------|
+| Cooldown | 1 | 5 (`MAX_ORDERS_PER_ITEM`) | 3 min |
+| Daily | 10 | 50 (`10 × MAX_ORDERS_PER_ITEM`) | 24 hours |
+
+Per-item limits use peek-then-increment: only count on successful creation.
+
+The 3-minute per-item cooldown is **shared between create and edit** operations via the key `order:item:{userId}:{itemId}`. Creating an order starts the cooldown, and editing any order for the same item within that window also counts.
+
+#### Action Rate Limits
+
+| Action | Limit | Window |
+|--------|-------|--------|
+| Edit | 60 | 1 min |
+| Bump | 1 | 1 min |
+| Close | 100 | 1 min |
+
+#### Order Caps
+
+| Side | Max Active Orders |
+|------|-------------------|
+| SELL | 1,000 |
+| BUY | 50 |
+
+#### Error Responses
+
+Rate-limited requests return HTTP 429 with:
+```json
+{
+  "error": "Rate limit exceeded (100 orders per minute). Try again in 45s.",
+  "retryAfter": 45
+}
+```
+
+The `retryAfter` field (seconds) and human-readable time in the error message (e.g. `45s`, `3m`, `2h`) help the frontend display appropriate messaging.
+
+#### Constants
+
+Defined in `$lib/server/exchange.js`:
+- `RATE_LIMIT_CREATE_PER_MIN`, `RATE_LIMIT_CREATE_PER_HOUR`, `RATE_LIMIT_CREATE_PER_DAY`
+- `RATE_LIMIT_ITEM_COOLDOWN_MS`, `RATE_LIMIT_ITEM_FUNGIBLE_COOLDOWN`, `RATE_LIMIT_ITEM_NONFUNGIBLE_COOLDOWN`
+- `RATE_LIMIT_ITEM_DAILY_FUNGIBLE`
+- `RATE_LIMIT_EDIT_PER_MIN`, `RATE_LIMIT_BUMP_PER_MIN`, `RATE_LIMIT_CLOSE_PER_MIN`
+
+Frontend order caps in `exchangeConstants.js`: `MAX_SELL_ORDERS`, `MAX_BUY_ORDERS`.
 
 ### Staleness Thresholds
 

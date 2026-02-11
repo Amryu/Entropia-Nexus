@@ -5,8 +5,30 @@ import { pool } from './db.js';
 const STALE_DAYS = 3;
 const EXPIRED_DAYS = 7;
 const TERMINATED_DAYS = 30;
-const MAX_ORDERS_PER_SIDE = 200;
+const MAX_SELL_ORDERS = 1000;
+const MAX_BUY_ORDERS = 50;
 const MAX_ORDERS_PER_ITEM = 5;
+
+// ---------- Rate Limit Constants ----------
+
+/** Global order creation rate limits */
+const RATE_LIMIT_CREATE_PER_MIN = 100;
+const RATE_LIMIT_CREATE_PER_HOUR = 500;
+const RATE_LIMIT_CREATE_PER_DAY = 3000;
+
+/** Per-item cooldown (shared by create + edit) */
+const RATE_LIMIT_ITEM_COOLDOWN_MS = 3 * 60 * 1000; // 3 minutes
+const RATE_LIMIT_ITEM_FUNGIBLE_COOLDOWN = 1;         // 1 per 3 min for stackable items
+const RATE_LIMIT_ITEM_NONFUNGIBLE_COOLDOWN = MAX_ORDERS_PER_ITEM; // up to limit per 3 min
+
+/** Per-item daily creation limits */
+const RATE_LIMIT_ITEM_DAILY_FUNGIBLE = 10;
+// Non-fungible daily = RATE_LIMIT_ITEM_DAILY_FUNGIBLE * MAX_ORDERS_PER_ITEM
+
+/** Edit/bump/close per-minute limits */
+const RATE_LIMIT_EDIT_PER_MIN = 60;
+const RATE_LIMIT_BUMP_PER_MIN = 1;
+const RATE_LIMIT_CLOSE_PER_MIN = 100;
 
 /**
  * SQL fragment that computes the effective state from bumped_at.
@@ -404,7 +426,7 @@ export async function countUserOrdersForItem(userId, itemId, type) {
 
 // ---------- Item Type Lookup ----------
 
-import { isPercentMarkupType } from '$lib/common/itemTypes.js';
+import { isPercentMarkupType, isStackableType } from '$lib/common/itemTypes.js';
 
 /**
  * Get item type and name from the Items table.
@@ -424,4 +446,29 @@ export function isPercentMarkupServer(type, name) {
   return isPercentMarkupType(type, name);
 }
 
-export { MAX_ORDERS_PER_SIDE, MAX_ORDERS_PER_ITEM, PLANETS };
+/**
+ * Check if an item type is fungible (stackable = quantity-based, percent markup).
+ */
+export function isItemFungible(type, name) {
+  return isStackableType(type, name);
+}
+
+/**
+ * Format seconds into a human-readable retry time.
+ * @param {number} seconds
+ * @returns {string}
+ */
+export function formatRetryTime(seconds) {
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.ceil(seconds / 60)}m`;
+  if (seconds < 86400) return `${Math.ceil(seconds / 3600)}h`;
+  return `${Math.ceil(seconds / 86400)}d`;
+}
+
+export {
+  MAX_SELL_ORDERS, MAX_BUY_ORDERS, MAX_ORDERS_PER_ITEM, PLANETS,
+  RATE_LIMIT_CREATE_PER_MIN, RATE_LIMIT_CREATE_PER_HOUR, RATE_LIMIT_CREATE_PER_DAY,
+  RATE_LIMIT_ITEM_COOLDOWN_MS, RATE_LIMIT_ITEM_FUNGIBLE_COOLDOWN, RATE_LIMIT_ITEM_NONFUNGIBLE_COOLDOWN,
+  RATE_LIMIT_ITEM_DAILY_FUNGIBLE,
+  RATE_LIMIT_EDIT_PER_MIN, RATE_LIMIT_BUMP_PER_MIN, RATE_LIMIT_CLOSE_PER_MIN,
+};

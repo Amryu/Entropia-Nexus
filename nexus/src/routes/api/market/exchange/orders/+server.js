@@ -1,6 +1,14 @@
 //@ts-nocheck
 import { getResponse } from '$lib/util.js';
-import { getUserOrders, createOrder, countUserOrdersBySide, countUserOrdersForItem, getItemType, isPercentMarkupServer, MAX_ORDERS_PER_SIDE, MAX_ORDERS_PER_ITEM, PLANETS } from '$lib/server/exchange.js';
+import {
+  getUserOrders, createOrder, countUserOrdersBySide, countUserOrdersForItem,
+  getItemType, isPercentMarkupServer, isItemFungible, formatRetryTime,
+  MAX_SELL_ORDERS, MAX_BUY_ORDERS, MAX_ORDERS_PER_ITEM, PLANETS,
+  RATE_LIMIT_CREATE_PER_MIN, RATE_LIMIT_CREATE_PER_HOUR, RATE_LIMIT_CREATE_PER_DAY,
+  RATE_LIMIT_ITEM_COOLDOWN_MS, RATE_LIMIT_ITEM_FUNGIBLE_COOLDOWN, RATE_LIMIT_ITEM_NONFUNGIBLE_COOLDOWN,
+  RATE_LIMIT_ITEM_DAILY_FUNGIBLE,
+} from '$lib/server/exchange.js';
+import { checkRateLimit, checkRateLimitPeek, incrementRateLimit } from '$lib/server/rateLimiter.js';
 
 const VALID_TYPES = ['BUY', 'SELL'];
 
@@ -79,6 +87,21 @@ export async function POST({ request, locals }) {
   const { user, error } = getVerifiedUser(locals);
   if (error) return error;
 
+  // --- Global rate limits (increment on every attempt to prevent abuse via validation errors) ---
+  const globalChecks = [
+    { ...checkRateLimit(`order:min:${user.id}`, RATE_LIMIT_CREATE_PER_MIN, 60_000), label: 'per minute', limit: RATE_LIMIT_CREATE_PER_MIN },
+    { ...checkRateLimit(`order:hour:${user.id}`, RATE_LIMIT_CREATE_PER_HOUR, 3_600_000), label: 'per hour', limit: RATE_LIMIT_CREATE_PER_HOUR },
+    { ...checkRateLimit(`order:day:${user.id}`, RATE_LIMIT_CREATE_PER_DAY, 86_400_000), label: 'per day', limit: RATE_LIMIT_CREATE_PER_DAY },
+  ];
+  const denied = globalChecks.find(c => !c.allowed);
+  if (denied) {
+    const retryAfter = Math.ceil(denied.resetIn / 1000);
+    return getResponse({
+      error: `Rate limit exceeded (${denied.limit} orders ${denied.label}). Try again in ${formatRetryTime(retryAfter)}.`,
+      retryAfter
+    }, 429);
+  }
+
   let body;
   try {
     body = await request.json();
@@ -110,15 +133,44 @@ export async function POST({ request, locals }) {
     return getResponse({ error: 'markup must be a non-negative number' }, 400);
   }
 
-  // Enforce minimum markup based on item type
+  // Look up item type (used for markup validation and per-item rate limits)
+  let itemInfo = null;
   try {
-    const itemInfo = await getItemType(itemId);
-    if (itemInfo && isPercentMarkupServer(itemInfo.type, itemInfo.name) && markup < 100) {
-      return getResponse({ error: 'Markup must be at least 100% for this item type' }, 400);
-    }
+    itemInfo = await getItemType(itemId);
   } catch (err) {
-    console.error('Error checking item type for markup validation:', err);
-    // Non-fatal: proceed with basic validation only
+    console.error('Error checking item type:', err);
+  }
+
+  // Enforce minimum markup based on item type
+  if (itemInfo && isPercentMarkupServer(itemInfo.type, itemInfo.name) && markup < 100) {
+    return getResponse({ error: 'Markup must be at least 100% for this item type' }, 400);
+  }
+
+  // --- Per-item rate limits (peek first, increment only on success) ---
+  const isFungible = itemInfo ? isItemFungible(itemInfo.type, itemInfo.name) : false;
+
+  // Per-item cooldown (3-minute window, shared with edits)
+  const itemCooldownMax = isFungible ? RATE_LIMIT_ITEM_FUNGIBLE_COOLDOWN : RATE_LIMIT_ITEM_NONFUNGIBLE_COOLDOWN;
+  const itemCooldownKey = `order:item:${user.id}:${itemId}`;
+  const itemCooldown = checkRateLimitPeek(itemCooldownKey, itemCooldownMax, RATE_LIMIT_ITEM_COOLDOWN_MS);
+  if (!itemCooldown.allowed) {
+    const retryAfter = Math.ceil(itemCooldown.resetIn / 1000);
+    return getResponse({
+      error: `Please wait before creating another order for this item. Try again in ${formatRetryTime(retryAfter)}.`,
+      retryAfter
+    }, 429);
+  }
+
+  // Per-item daily limit
+  const itemDailyMax = isFungible ? RATE_LIMIT_ITEM_DAILY_FUNGIBLE : RATE_LIMIT_ITEM_DAILY_FUNGIBLE * MAX_ORDERS_PER_ITEM;
+  const itemDailyKey = `order:item-day:${user.id}:${itemId}`;
+  const itemDaily = checkRateLimitPeek(itemDailyKey, itemDailyMax, 86_400_000);
+  if (!itemDaily.allowed) {
+    const retryAfter = Math.ceil(itemDaily.resetIn / 1000);
+    return getResponse({
+      error: `Daily order limit for this item reached (${itemDailyMax}/day). Try again in ${formatRetryTime(retryAfter)}.`,
+      retryAfter
+    }, 429);
   }
 
   // Validate planet
@@ -135,12 +187,13 @@ export async function POST({ request, locals }) {
 
   const details = validateOrderDetails(body.details);
 
-  // Check order limit per side (global cap)
+  // Check order limit per side (separate caps for buy/sell)
   try {
     const sideCount = await countUserOrdersBySide(user.id, type);
-    if (sideCount >= MAX_ORDERS_PER_SIDE) {
+    const maxForSide = type === 'SELL' ? MAX_SELL_ORDERS : MAX_BUY_ORDERS;
+    if (sideCount >= maxForSide) {
       return getResponse({
-        error: `Maximum ${MAX_ORDERS_PER_SIDE} ${type.toLowerCase()} orders reached. Close some orders first.`
+        error: `Maximum ${maxForSide} ${type.toLowerCase()} orders reached. Close some orders first.`
       }, 409);
     }
   } catch (err) {
@@ -167,6 +220,11 @@ export async function POST({ request, locals }) {
     const order = await createOrder({
       userId: user.id, type, itemId, quantity, minQuantity, markup, planet, details
     });
+
+    // Increment per-item rate limits on successful creation
+    incrementRateLimit(itemCooldownKey, RATE_LIMIT_ITEM_COOLDOWN_MS);
+    incrementRateLimit(itemDailyKey, 86_400_000);
+
     return getResponse(order, 201);
   } catch (err) {
     console.error('Error creating order:', err);

@@ -4,7 +4,7 @@
   import InventoryItemDialog from './InventoryItemDialog.svelte';
   import { inventory, myOrders, enrichOrders } from '../../exchangeStore.js';
   import { isItemStackable, formatPedRaw } from '../../orderUtils';
-  import { MAX_ORDERS_PER_SIDE } from '../../exchangeConstants.js';
+  import { MAX_SELL_ORDERS } from '../../exchangeConstants.js';
   import { encodeURIComponentSafe } from '$lib/util.js';
   import { goto } from '$app/navigation';
   import { createEventDispatcher, onMount } from 'svelte';
@@ -70,7 +70,7 @@
     const existingForItem = OrdersByItemId.get(invItem.item_id)?.sell || 0;
     const massSellForItem = getMassSellCountForItem(invItem.item_id);
     if (existingForItem + massSellForItem >= limit) return { allowed: false, reason: `Maximum ${limit} sell order${limit > 1 ? 's' : ''} per item reached` };
-    if (existingSellCount + totalMassSellOrders >= MAX_ORDERS_PER_SIDE) return { allowed: false, reason: `Maximum ${MAX_ORDERS_PER_SIDE} sell orders reached` };
+    if (existingSellCount + totalMassSellOrders >= MAX_SELL_ORDERS) return { allowed: false, reason: `Maximum ${MAX_SELL_ORDERS} sell orders reached` };
     return { allowed: true, reason: '' };
   }
 

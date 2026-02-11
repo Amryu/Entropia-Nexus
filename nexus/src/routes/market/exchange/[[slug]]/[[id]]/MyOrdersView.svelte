@@ -120,13 +120,22 @@
     for (const order of eligible) {
       try {
         const res = await fetch(`/api/market/exchange/orders/${order.id}/bump`, { method: 'POST' });
-        if (!res.ok) { failed++; continue; }
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          if (res.status === 429) {
+            // Rate limited — stop bumping and show the server's error message
+            error = errData.error || 'Bump rate limit exceeded';
+            break;
+          }
+          failed++;
+          continue;
+        }
         const data = await res.json();
         upsertOrder(data);
       } catch { failed++; }
     }
     bumping = false;
-    if (failed > 0) error = `Failed to bump ${failed} order(s)`;
+    if (failed > 0 && !error) error = `Failed to bump ${failed} order(s)`;
   }
 
   async function handleClose(order) {

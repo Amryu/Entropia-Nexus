@@ -46,6 +46,7 @@
   let orderDialogType = null; // 'buy' | 'sell'
   let orderDialogRef;
   let orderDialogExistingCount = 0; // existing orders for the current item+side
+  let orderError = null; // Error message to display in the order dialog
   // Title bar filters for tierable items
   let mobileSidebarOpen = false;
   let sidebarTab = 'categories'; // 'categories' | 'favourites'
@@ -137,6 +138,20 @@
     return count;
   }
 
+  /** Fetch full item details, using /pets/ endpoint for Pet items */
+  async function fetchItemDetails(itemId, itemType) {
+    if (itemType === 'Pet') {
+      const pet = await apiCall(window.fetch, `/pets/${itemId - PET_ID_OFFSET}`);
+      if (pet) {
+        pet.Id = pet.ItemId ?? itemId;
+        pet.Properties = pet.Properties || {};
+        pet.Properties.Type = 'Pet';
+      }
+      return pet;
+    }
+    return apiCall(window.fetch, `/items/${itemId}`);
+  }
+
   function closeFloatingPanel() {
     showMyOrders.set(false);
     showInventory.set(false);
@@ -149,7 +164,9 @@
   async function editOrderInline(order) {
     if (!order?.item_id) return;
     try {
-      const item = await apiCall(window.fetch, `/items/${order.item_id}`);
+      const slimItem = (allItems || []).find(si => si?.i === order.item_id);
+      const itemType = slimItem?.t || null;
+      const item = await fetchItemDetails(order.item_id, itemType);
       if (!item) return;
 
       inlineEditItem = item;
@@ -288,14 +305,14 @@
     if (!invItem?.item_id) return;
 
     try {
-      // Fetch full item details for the OrderDialog
-      const item = await apiCall(window.fetch, `/items/${invItem.item_id}`);
+      // Fetch full item details for the OrderDialog (pet-aware)
+      const slimItem = (allItems || []).find(si => si?.i === invItem.item_id);
+      const itemType = slimItem?.t || null;
+      const item = await fetchItemDetails(invItem.item_id, itemType);
       if (!item) return;
 
-      // Get MaxTT from cache (detailed endpoints have it, /items may not)
-      const slimItem = (allItems || []).find(si => si?.i === invItem.item_id);
+      // Get MaxTT from fetched details (pet endpoint includes NutrioCapacity)
       const maxTT = getMaxTT(item) ?? (slimItem?.v != null ? Number(slimItem.v) : null);
-      const itemType = item?.Properties?.Type || item?.Type || slimItem?.t || null;
 
       // Current TT from inventory value field
       const invCurrentTT = invItem.value != null ? Number(invItem.value) : null;
@@ -648,20 +665,7 @@
       detailsAbort = controller;
       (async () => {
         try {
-          const itemType = selectedItem?.t;
-          let it;
-          if (itemType === 'Pet') {
-            const pet = await apiCall(window.fetch, `/pets/${id - PET_ID_OFFSET}`);
-            // Normalize pet response to match item shape expected by helpers
-            if (pet) {
-              pet.Id = pet.ItemId ?? id;
-              pet.Properties = pet.Properties || {};
-              pet.Properties.Type = 'Pet';
-            }
-            it = pet;
-          } else {
-            it = await apiCall(window.fetch, `/items/${id}`);
-          }
+          const it = await fetchItemDetails(id, selectedItem?.t);
           // Ignore if another fetch superseded this
           if (controller && controller.signal.aborted) return;
           selectedItemDetails = it || null;
@@ -1298,6 +1302,7 @@
     orderDialogType = null;
     inlineEditItem = null;
     orderDialogExistingCount = 0;
+    orderError = null;
   }
 
   let submittingOrder = false; // Prevent double-click
@@ -1305,6 +1310,7 @@
   async function submitOrderPayload(order, closeAfter = true) {
     if (submittingOrder) return false;
     submittingOrder = true;
+    orderError = null;
 
     const item = inlineEditItem || selectedItemDetails || selectedItem;
     const itemId = item?.ItemId ?? item?.Id ?? item?.i;
@@ -1348,7 +1354,7 @@
       }
       const data = await res.json();
       if (!res.ok) {
-        console.error(`Order ${isEdit ? 'update' : 'creation'} failed:`, data.error);
+        orderError = data.error || `Order ${isEdit ? 'update' : 'creation'} failed`;
         submittingOrder = false;
         return false;
       }
@@ -1404,15 +1410,14 @@
       const res = await fetch(`/api/market/exchange/orders/${orderId}`, { method: 'DELETE' });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        console.error('Delete failed:', data.error);
+        orderError = data.error || 'Failed to delete order';
         return;
       }
       upsertOrder(data);
       await refreshAfterOrderChange();
-    } catch (err) {
-      console.error('Error deleting order:', err);
-    } finally {
       closeOrderDialog();
+    } catch (err) {
+      orderError = 'Failed to delete order';
     }
   }
 
@@ -2142,6 +2147,7 @@
         existingOrderCount={orderDialogExistingCount}
         isNonFungible={orderDialogIsNonFungible}
         submitting={submittingOrder}
+        error={orderError}
         on:close={closeOrderDialog}
         on:submit={onSubmitOrder}
         on:next={onNextOrder}

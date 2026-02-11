@@ -287,6 +287,8 @@
 
   /** @type {boolean} Prevent double-click submission */
   export let submitting = false;
+  /** @type {string|null} Error message from server (e.g. rate limit) */
+  export let error = null;
 
   const dispatch = createEventDispatcher();
 
@@ -562,6 +564,9 @@
       {#if isNonFungible && mode === 'create' && (existingOrderCount + sessionOrderCount > 0)}
         <div class="order-count-indicator">Order {existingOrderCount + sessionOrderCount + 1} of {maxOrdersPerItem}</div>
       {/if}
+      {#if error}
+        <div class="order-error">{error}</div>
+      {/if}
       <div class="actions">
         {#if mode === 'edit'}
           <button class="delete-btn" on:click={() => dispatch('delete', { order })} title="Delete this order">Delete</button>
@@ -812,6 +817,14 @@
     color: var(--warning-color, #f59e0b);
     background: rgba(245, 158, 11, 0.1);
     border: 1px solid var(--warning-color, #f59e0b);
+  }
+  .order-error {
+    padding: 6px 10px;
+    border-radius: 4px;
+    font-size: 12px;
+    color: var(--error-color, #ef4444);
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid var(--error-color, #ef4444);
   }
   .order-count-indicator {
     text-align: center;

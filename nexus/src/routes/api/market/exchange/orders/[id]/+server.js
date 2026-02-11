@@ -1,6 +1,12 @@
 //@ts-nocheck
 import { getResponse } from '$lib/util.js';
-import { getOrderById, updateOrder, closeOrder, getItemType, isPercentMarkupServer, PLANETS } from '$lib/server/exchange.js';
+import {
+  getOrderById, updateOrder, closeOrder, getItemType, isPercentMarkupServer,
+  isItemFungible, formatRetryTime, PLANETS,
+  RATE_LIMIT_EDIT_PER_MIN, RATE_LIMIT_CLOSE_PER_MIN,
+  RATE_LIMIT_ITEM_COOLDOWN_MS, RATE_LIMIT_ITEM_FUNGIBLE_COOLDOWN, RATE_LIMIT_ITEM_NONFUNGIBLE_COOLDOWN,
+} from '$lib/server/exchange.js';
+import { checkRateLimit } from '$lib/server/rateLimiter.js';
 
 /**
  * Validate and sanitize order details JSONB.
@@ -60,6 +66,16 @@ export async function PUT({ params, request, locals }) {
   const { user, error } = getVerifiedUser(locals);
   if (error) return error;
 
+  // Global edit rate limit
+  const editCheck = checkRateLimit(`order:edit:${user.id}`, RATE_LIMIT_EDIT_PER_MIN, 60_000);
+  if (!editCheck.allowed) {
+    const retryAfter = Math.ceil(editCheck.resetIn / 1000);
+    return getResponse({
+      error: `Edit rate limit exceeded. Try again in ${formatRetryTime(retryAfter)}.`,
+      retryAfter
+    }, 429);
+  }
+
   const orderId = parseInt(params.id, 10);
   if (!Number.isFinite(orderId)) {
     return getResponse({ error: 'Invalid order ID' }, 400);
@@ -75,6 +91,24 @@ export async function PUT({ params, request, locals }) {
   }
   if (existing.state === 'closed') {
     return getResponse({ error: 'Cannot edit a closed order' }, 400);
+  }
+
+  // Per-item 3-minute cooldown (shared with create)
+  let itemInfo = null;
+  try {
+    itemInfo = await getItemType(existing.item_id);
+  } catch (err) {
+    console.error('Error checking item type for edit cooldown:', err);
+  }
+  const isFungible = itemInfo ? isItemFungible(itemInfo.type, itemInfo.name) : false;
+  const itemCooldownMax = isFungible ? RATE_LIMIT_ITEM_FUNGIBLE_COOLDOWN : RATE_LIMIT_ITEM_NONFUNGIBLE_COOLDOWN;
+  const itemCooldown = checkRateLimit(`order:item:${user.id}:${existing.item_id}`, itemCooldownMax, RATE_LIMIT_ITEM_COOLDOWN_MS);
+  if (!itemCooldown.allowed) {
+    const retryAfter = Math.ceil(itemCooldown.resetIn / 1000);
+    return getResponse({
+      error: `Please wait before modifying another order for this item. Try again in ${formatRetryTime(retryAfter)}.`,
+      retryAfter
+    }, 429);
   }
 
   let body;
@@ -95,14 +129,9 @@ export async function PUT({ params, request, locals }) {
     return getResponse({ error: 'markup must be a non-negative number' }, 400);
   }
 
-  // Enforce minimum markup based on item type
-  try {
-    const itemInfo = await getItemType(existing.item_id);
-    if (itemInfo && isPercentMarkupServer(itemInfo.type, itemInfo.name) && markup < 100) {
-      return getResponse({ error: 'Markup must be at least 100% for this item type' }, 400);
-    }
-  } catch (err) {
-    console.error('Error checking item type for markup validation:', err);
+  // Enforce minimum markup based on item type (reuse itemInfo from cooldown check)
+  if (itemInfo && isPercentMarkupServer(itemInfo.type, itemInfo.name) && markup < 100) {
+    return getResponse({ error: 'Markup must be at least 100% for this item type' }, 400);
   }
 
   const planet = body.planet || null;
@@ -128,6 +157,16 @@ export async function PUT({ params, request, locals }) {
 export async function DELETE({ params, locals }) {
   const { user, error: authErr } = getVerifiedUser(locals);
   if (authErr) return authErr;
+
+  // Global close rate limit
+  const closeCheck = checkRateLimit(`order:close:${user.id}`, RATE_LIMIT_CLOSE_PER_MIN, 60_000);
+  if (!closeCheck.allowed) {
+    const retryAfter = Math.ceil(closeCheck.resetIn / 1000);
+    return getResponse({
+      error: `Close rate limit exceeded. Try again in ${formatRetryTime(retryAfter)}.`,
+      retryAfter
+    }, 429);
+  }
 
   const orderId = parseInt(params.id, 10);
   if (!Number.isFinite(orderId)) {

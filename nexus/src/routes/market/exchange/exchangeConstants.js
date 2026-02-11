@@ -4,7 +4,8 @@ export const STALENESS_THRESHOLDS = {
   TERMINATED_DAYS: 30,
 };
 
-export const MAX_ORDERS_PER_SIDE = 200;
+export const MAX_SELL_ORDERS = 1000;
+export const MAX_BUY_ORDERS = 50;
 
 export const PLANETS = [
   'Calypso',
