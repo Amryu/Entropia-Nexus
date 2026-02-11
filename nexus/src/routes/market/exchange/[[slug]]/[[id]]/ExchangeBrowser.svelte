@@ -24,7 +24,7 @@
   import { page } from "$app/stores";
   import { apiCall, getItemLink, hasItemTag, encodeURIComponentSafe, decodeURIComponentSafe } from "$lib/util.js";
   import { isBlueprint, isItemTierable, isItemStackable, isLimited, itemHasCondition, isAbsoluteMarkup, getMaxTT, formatMarkupValue, formatMarkupForItem, formatPedValue, isPet, isBlueprintNonL, getUnitTT, computeUnitPrice, getPetLevel } from '../../orderUtils';
-  import { PET_ID_OFFSET, ARMOR_SET_OFFSET } from '$lib/common/itemTypes.js';
+  import { PET_ID_OFFSET, ARMOR_SET_OFFSET, GENDERED_TYPES } from '$lib/common/itemTypes.js';
   import { PLANETS } from '../../exchangeConstants.js';
   import { showMyOrders, showInventory, showTradeList, showTrades, tradeList, addToTradeList, clearTradeList, myOrders, inventory, upsertOrder } from '../../exchangeStore.js';
   import { favourites, isFavourite, toggleFavourite, createFolder } from '../../favouritesStore.js';
@@ -303,6 +303,12 @@
       // Fetch full item details for the OrderDialog (pet-aware)
       const slimItem = (allItems || []).find(si => si?.i === invItem.item_id);
       const itemType = slimItem?.t || null;
+
+      // Block untradeable clothing (null gender)
+      if (itemType === 'Clothing' && slimItem?.g === null) {
+        addToast('This item cannot be traded (no gender classification).', { type: 'warning' });
+        return;
+      }
       const item = await fetchItemDetails(invItem.item_id, itemType);
       if (!item) return;
 
@@ -571,6 +577,13 @@
       return all.find((it) => it?.n === key) || null;
     }
   })();
+
+  // Gender from slim cache: undefined = non-gendered, null = untradeable clothing, 'Both'/'Male'/'Female'/'Neutral'
+  $: selectedItemGender = selectedItem?.g;
+  $: isGenderedDetail = GENDERED_TYPES.has(selectedItem?.t) && selectedItemGender !== 'Neutral' && selectedItemGender !== null;
+
+  // Gender filter for price history (gendered items only)
+  let priceGender = 'Male';
 
   // Sync category selection from route
   $: {
@@ -1027,6 +1040,11 @@
     loadOrders(selectedItem.i, selectedPlanet);
   }
 
+  // Reload price data when gender filter changes for gendered items
+  $: if (isDetailView && selectedItem?.i && isGenderedDetail) {
+    reloadPricesForGender(selectedItem.i, priceGender);
+  }
+
   let ordersLoading = false;
   let ordersLoadedKey = "";
   async function loadOrders(numericId, planet) {
@@ -1041,10 +1059,13 @@
     showPriceHistory = false;
     priceHistoryData = [];
     periodStats = null;
+    // Reset price gender to 'Male' when switching items
+    priceGender = 'Male';
+    const genderParam = isGenderedDetail ? `&gender=${priceGender}` : '';
     try {
       const [ordersRes, pricesRes] = await Promise.all([
         fetch(`/api/market/exchange/orders/item/${encodeURIComponent(numericId)}`),
-        fetch(`/api/market/prices/exchange/${encodeURIComponent(numericId)}?period=${selectedPeriod}`).catch(() => null),
+        fetch(`/api/market/prices/exchange/${encodeURIComponent(numericId)}?period=${selectedPeriod}${genderParam}`).catch(() => null),
       ]);
       if (ordersRes.ok) {
         const data = await ordersRes.json();
@@ -1058,6 +1079,8 @@
         const priceData = await pricesRes.json();
         exchangePrices = { buy: priceData.buy, sell: priceData.sell };
         periodStats = priceData.period || null;
+        // Sync gender price key to prevent duplicate fetch from reloadPricesForGender reactive
+        if (genderParam) lastGenderPriceKey = `${numericId}::${priceGender}`;
       } else {
         exchangePrices = null;
         periodStats = null;
@@ -1074,12 +1097,13 @@
   // Reload period stats when period changes (without reloading orders)
   let lastPeriodStatsKey = '';
   async function loadPeriodStats(itemId, period) {
-    const key = `${itemId}::${period}`;
+    const genderParam = isGenderedDetail ? `&gender=${priceGender}` : '';
+    const key = `${itemId}::${period}::${genderParam}`;
     if (key === lastPeriodStatsKey) return;
     lastPeriodStatsKey = key;
     try {
       const includeHistory = showPriceHistory ? '&history=1' : '';
-      const res = await fetch(`/api/market/prices/exchange/${encodeURIComponent(itemId)}?period=${period}${includeHistory}`);
+      const res = await fetch(`/api/market/prices/exchange/${encodeURIComponent(itemId)}?period=${period}${includeHistory}${genderParam}`);
       if (res.ok) {
         const data = await res.json();
         periodStats = data.period || null;
@@ -1096,8 +1120,9 @@
   async function loadPriceHistory() {
     if (!selectedItem?.i) return;
     priceHistoryLoading = true;
+    const genderParam = isGenderedDetail ? `&gender=${priceGender}` : '';
     try {
-      const res = await fetch(`/api/market/prices/exchange/${encodeURIComponent(selectedItem.i)}?period=${selectedPeriod}&history=1`);
+      const res = await fetch(`/api/market/prices/exchange/${encodeURIComponent(selectedItem.i)}?period=${selectedPeriod}&history=1${genderParam}`);
       if (res.ok) {
         const data = await res.json();
         priceHistoryData = data.history || [];
@@ -1109,6 +1134,25 @@
     } finally {
       priceHistoryLoading = false;
     }
+  }
+
+  let lastGenderPriceKey = '';
+  async function reloadPricesForGender(itemId, gender) {
+    const key = `${itemId}::${gender}`;
+    if (key === lastGenderPriceKey) return;
+    lastGenderPriceKey = key;
+    const genderParam = `&gender=${gender}`;
+    try {
+      const includeHistory = showPriceHistory ? '&history=1' : '';
+      const res = await fetch(`/api/market/prices/exchange/${encodeURIComponent(itemId)}?period=${selectedPeriod}${genderParam}${includeHistory}`);
+      if (res.ok) {
+        const data = await res.json();
+        exchangePrices = { buy: data.buy, sell: data.sell };
+        periodStats = data.period || null;
+        if (data.history) priceHistoryData = data.history;
+        lastPeriodStatsKey = `${itemId}::${selectedPeriod}::${genderParam}`;
+      }
+    } catch { /* non-fatal */ }
   }
 
   function togglePriceHistory() {
@@ -1316,6 +1360,13 @@
   function openOrderDialog(type) {
     const item = selectedItemDetails;
     if (!item) return;
+
+    // Block untradeable clothing (null gender classification)
+    if (selectedItem?.t === 'Clothing' && selectedItemGender === null) {
+      addToast('This item cannot be traded (no gender classification).', { type: 'warning' });
+      return;
+    }
+
     orderDialogType = type;
     const itemId = item?.ItemId ?? item?.Id ?? item?.i;
     const side = type === 'buy' ? 'BUY' : 'SELL';
@@ -1349,6 +1400,17 @@
     return item?.Properties?.Type ?? item?.Type ?? item?.t ?? null;
   })();
   $: orderDialogIsNonFungible = orderDialogItemType ? !isItemStackable({ Type: orderDialogItemType, Name: (inlineEditItem || selectedItemDetails || selectedItem)?.Name || (inlineEditItem || selectedItemDetails || selectedItem)?.n || '' }) : false;
+
+  // Resolve gender for OrderDialog: use slim cache for inline edits, selectedItemGender for detail view
+  $: orderDialogGender = (() => {
+    if (inlineEditItem) {
+      // Inline edit: look up gender from slim cache
+      const itemId = inlineEditItem?.ItemId ?? inlineEditItem?.Id ?? inlineEditItem?.i;
+      const slimItem = itemId ? (allItems || []).find(si => si?.i === itemId) : null;
+      return slimItem?.g;
+    }
+    return selectedItemGender;
+  })();
 
   function closeOrderDialog() {
     showOrderDialog = false;
@@ -1509,6 +1571,17 @@
         formatter: (v, row) => row?.details?.is_set
           ? '<span class="badge badge-subtle badge-set-yes">Yes</span>'
           : '<span class="badge badge-subtle">No</span>'
+      });
+    }
+
+    // Gendered items: show Gender column
+    if (isGenderedDetail) {
+      cols.push({ key: '_gender', header: 'Gender', width: '70px', sortable: true, searchable: false,
+        sortValue: (row) => row?.details?.Gender === 'Male' ? 0 : row?.details?.Gender === 'Female' ? 1 : 2,
+        formatter: (v, row) => {
+          const g = row?.details?.Gender;
+          return g === 'Male' ? 'M' : g === 'Female' ? 'F' : '-';
+        }
       });
     }
 
@@ -1986,7 +2059,9 @@
             <option value="all">All</option>
           </select>
           <div class="actions-right">
-            {#if canPostOrders}
+            {#if selectedItem?.t === 'Clothing' && selectedItemGender === null}
+              <span class="untradeable-notice">This item cannot be traded (no gender classification)</span>
+            {:else if canPostOrders}
               <button
                 class="action-btn buy-btn"
                 on:click={() => openOrderDialog("buy")}
@@ -2120,6 +2195,12 @@
               </div>
             {/if}
             <div class="history-controls">
+              {#if isGenderedDetail}
+                <div class="gender-toggle">
+                  <button class="gender-btn" class:active={priceGender === 'Male'} on:click={() => priceGender = 'Male'}>M</button>
+                  <button class="gender-btn" class:active={priceGender === 'Female'} on:click={() => priceGender = 'Female'}>F</button>
+                </div>
+              {/if}
               <select
                 class="filter-select period-select"
                 bind:value={selectedPeriod}
@@ -2212,6 +2293,7 @@
         existingOrderCount={orderDialogExistingCount}
         isNonFungible={orderDialogIsNonFungible}
         submitting={submittingOrder}
+        itemGender={orderDialogGender}
         on:close={closeOrderDialog}
         on:submit={onSubmitOrder}
         on:next={onNextOrder}
@@ -3273,6 +3355,40 @@
     background: var(--accent-color);
     color: white;
     border-color: var(--accent-color);
+  }
+
+  .untradeable-notice {
+    font-size: 12px;
+    color: var(--warning-color, #f59e0b);
+    font-style: italic;
+  }
+
+  .gender-toggle {
+    display: flex;
+    gap: 0;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .gender-btn {
+    padding: 3px 10px;
+    font-size: 11px;
+    font-weight: 600;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .gender-btn:not(:last-child) {
+    border-right: 1px solid var(--border-color);
+  }
+  .gender-btn.active {
+    background: var(--accent-color);
+    color: white;
+  }
+  .gender-btn:hover:not(.active) {
+    background: var(--hover-color);
   }
 
   /* Mobile sidebar toggle */

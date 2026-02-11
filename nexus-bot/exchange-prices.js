@@ -56,17 +56,19 @@ export async function snapshotExchangePrices() {
     ORDER BY item_id, type, markup
   `);
 
-  // Group by item_id with separate buy/sell sides
+  // Group by (item_id, gender) with separate buy/sell sides
   const itemOffers = new Map();
   for (const row of rows) {
-    if (!itemOffers.has(row.item_id)) {
-      itemOffers.set(row.item_id, { buy: [], sell: [] });
+    const gender = row.details?.Gender || '';
+    const key = `${row.item_id}:${gender}`;
+    if (!itemOffers.has(key)) {
+      itemOffers.set(key, { item_id: row.item_id, gender, buy: [], sell: [] });
     }
     const side = row.type === 'BUY' ? 'buy' : 'sell';
     // Armor plate sets count as 7 individual plates for price weighting
     const isSet = row.details?.is_set === true;
     const effectiveQty = isSet ? parseInt(row.quantity, 10) * 7 : parseInt(row.quantity, 10);
-    itemOffers.get(row.item_id)[side].push({
+    itemOffers.get(key)[side].push({
       markup: parseFloat(row.markup),
       quantity: effectiveQty
     });
@@ -75,7 +77,8 @@ export async function snapshotExchangePrices() {
   const snapshots = [];
   const now = new Date();
 
-  for (const [itemId, sides] of itemOffers) {
+  for (const [, { item_id: itemId, gender, buy, sell }] of itemOffers) {
+    const sides = { buy, sell };
     const filteredBuy = iqrFilter(sides.buy);
     const filteredSell = iqrFilter(sides.sell);
 
@@ -102,6 +105,7 @@ export async function snapshotExchangePrices() {
 
     snapshots.push({
       item_id: itemId,
+      gender,
       markup_value: Math.round(wap * 10000) / 10000,
       volume: totalVolume,
       buy_count: filteredBuy.length,
@@ -123,13 +127,13 @@ async function insertSnapshots(snapshots) {
   let idx = 1;
 
   for (const s of snapshots) {
-    valueClauses.push(`($${idx}, $${idx + 1}, $${idx + 2}, $${idx + 3}, $${idx + 4}, $${idx + 5})`);
-    values.push(s.item_id, s.markup_value, s.volume, s.buy_count, s.sell_count, s.recorded_at);
-    idx += 6;
+    valueClauses.push(`($${idx}, $${idx + 1}, $${idx + 2}, $${idx + 3}, $${idx + 4}, $${idx + 5}, $${idx + 6})`);
+    values.push(s.item_id, s.gender, s.markup_value, s.volume, s.buy_count, s.sell_count, s.recorded_at);
+    idx += 7;
   }
 
   await poolUsers.query(
-    `INSERT INTO exchange_price_snapshots (item_id, markup_value, volume, buy_count, sell_count, recorded_at)
+    `INSERT INTO exchange_price_snapshots (item_id, gender, markup_value, volume, buy_count, sell_count, recorded_at)
      VALUES ${valueClauses.join(', ')}`,
     values
   );
@@ -192,13 +196,14 @@ export async function computeExchangeSummaries(periodType) {
 
   const query = `
     INSERT INTO exchange_price_summaries (
-      item_id, period_type, period_start,
+      item_id, gender, period_type, period_start,
       price_min, price_max, price_avg,
       price_p10, price_median, price_p90,
       price_wap, volume, sample_count, computed_at
     )
     SELECT
       item_id,
+      gender,
       '${periodType}'::exchange_price_period,
       ${periodTrunc} AS period_start,
       MIN(markup_value),
@@ -213,8 +218,8 @@ export async function computeExchangeSummaries(periodType) {
       now()
     FROM exchange_price_snapshots
     WHERE ${conditions.join(' AND ')}
-    GROUP BY item_id, ${periodTrunc}
-    ON CONFLICT (item_id, period_type, period_start)
+    GROUP BY item_id, gender, ${periodTrunc}
+    ON CONFLICT (item_id, gender, period_type, period_start)
     DO UPDATE SET
       price_min = EXCLUDED.price_min,
       price_max = EXCLUDED.price_max,

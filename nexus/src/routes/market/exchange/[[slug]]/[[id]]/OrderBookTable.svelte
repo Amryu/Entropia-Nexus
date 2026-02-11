@@ -26,15 +26,18 @@
   /** @type {boolean} Whether this item is an ArmorPlating (shows Set column) */
   export let isArmorPlating = false;
 
+  /** @type {boolean} Whether this item uses gender (Armor/ArmorSet/Clothing) */
+  export let isGendered = false;
+
   /** @type {string} Planet filter */
   export let planetFilter = 'All Planets';
 
   const dispatch = createEventDispatcher();
 
   // Build columns dynamically based on item type
-  $: columns = buildColumns(tierable, absoluteMarkup, isArmorPlating);
+  $: columns = buildColumns(tierable, absoluteMarkup, isArmorPlating, isGendered);
 
-  function buildColumns(isTierable, isAbsoluteMu, isPlating) {
+  function buildColumns(isTierable, isAbsoluteMu, isPlating, isGend) {
     const cols = [];
 
     if (isTierable) {
@@ -54,6 +57,16 @@
         formatter: (val) => val
           ? '<span class="badge badge-subtle badge-accent">Yes</span>'
           : '<span class="badge badge-subtle">No</span>'
+      });
+    }
+    if (isGend) {
+      cols.push({
+        key: 'gender',
+        header: 'Gender',
+        width: '70px',
+        sortable: true,
+        searchable: false,
+        formatter: (val) => val === 'Male' ? 'M' : val === 'Female' ? 'F' : '-'
       });
     }
     cols.push({
@@ -114,6 +127,7 @@
       tier: o.details?.Tier ?? o.details?.tier ?? null,
       tir: o.details?.TierIncreaseRate ?? o.details?.tir ?? null,
       is_set: o.details?.is_set ?? false,
+      gender: o.details?.Gender ?? null,
     }));
 
   $: tableData = filteredOrders;

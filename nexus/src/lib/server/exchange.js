@@ -188,7 +188,17 @@ export async function bumpAllOrders(userId) {
 /**
  * Get exchange-derived price data for an item from active orders.
  */
-export async function getExchangePrices(itemId) {
+export async function getExchangePrices(itemId, gender = null) {
+  const conditions = [
+    'item_id = $1',
+    `state != 'closed'`,
+    `bumped_at >= NOW() - INTERVAL '${EXPIRED_DAYS} days'`
+  ];
+  const values = [itemId];
+  if (gender) {
+    conditions.push(`details->>'Gender' = $2`);
+    values.push(gender);
+  }
   const query = `
     SELECT
       type,
@@ -197,12 +207,10 @@ export async function getExchangePrices(itemId) {
       MAX(markup) AS worst_markup,
       SUM(quantity) AS total_volume
     FROM trade_offers
-    WHERE item_id = $1
-      AND state != 'closed'
-      AND bumped_at >= NOW() - INTERVAL '${EXPIRED_DAYS} days'
+    WHERE ${conditions.join(' AND ')}
     GROUP BY type
   `;
-  const { rows } = await pool.query(query, [itemId]);
+  const { rows } = await pool.query(query, values);
   const result = { buy: null, sell: null };
   for (const row of rows) {
     const side = row.type === 'BUY' ? 'buy' : 'sell';
@@ -264,21 +272,33 @@ const PERIOD_INTERVALS = {
  * Get period-based exchange price statistics for an item.
  * Returns latest snapshot WAP and aggregate stats for the selected period.
  */
-export async function getExchangePriceSummary(itemId, period = '7d') {
+export async function getExchangePriceSummary(itemId, period = '7d', gender = null) {
   const interval = PERIOD_INTERVALS[period] ?? PERIOD_INTERVALS['7d'];
 
   // Latest snapshot
+  const latestConds = ['item_id = $1'];
+  const latestVals = [itemId];
+  if (gender) {
+    latestConds.push(`gender = $2`);
+    latestVals.push(gender);
+  }
   const latestResult = await pool.query(
     `SELECT markup_value, volume, recorded_at
      FROM exchange_price_snapshots
-     WHERE item_id = $1
+     WHERE ${latestConds.join(' AND ')}
      ORDER BY recorded_at DESC LIMIT 1`,
-    [itemId]
+    latestVals
   );
 
   // Period aggregation
   const conditions = ['item_id = $1'];
   const values = [itemId];
+  let paramIdx = 2;
+  if (gender) {
+    conditions.push(`gender = $${paramIdx}`);
+    values.push(gender);
+    paramIdx++;
+  }
   if (interval) {
     conditions.push(`recorded_at >= NOW() - INTERVAL '${interval}'`);
   }
@@ -314,7 +334,7 @@ export async function getExchangePriceSummary(itemId, period = '7d') {
  * Get exchange price history time series for charting.
  * Returns raw snapshots for short periods, summaries for longer ones.
  */
-export async function getExchangePriceHistory(itemId, period = '7d') {
+export async function getExchangePriceHistory(itemId, period = '7d', gender = null) {
   const interval = PERIOD_INTERVALS[period] ?? PERIOD_INTERVALS['7d'];
 
   // For ≤30d use raw snapshots, for longer use summaries
@@ -323,6 +343,12 @@ export async function getExchangePriceHistory(itemId, period = '7d') {
   if (useRaw) {
     const conditions = ['item_id = $1'];
     const values = [itemId];
+    let paramIdx = 2;
+    if (gender) {
+      conditions.push(`gender = $${paramIdx}`);
+      values.push(gender);
+      paramIdx++;
+    }
     if (interval) {
       conditions.push(`recorded_at >= NOW() - INTERVAL '${interval}'`);
     }
@@ -344,6 +370,12 @@ export async function getExchangePriceHistory(itemId, period = '7d') {
   const periodType = ['3m', '6m'].includes(period) ? 'day' : 'week';
   const conditions = ['item_id = $1', 'period_type = $2'];
   const values = [itemId, periodType];
+  let paramIdx = 3;
+  if (gender) {
+    conditions.push(`gender = $${paramIdx}`);
+    values.push(gender);
+    paramIdx++;
+  }
   if (interval) {
     conditions.push(`period_start >= NOW() - INTERVAL '${interval}'`);
   }
@@ -451,7 +483,11 @@ export async function countUserOrdersForItem(userId, itemId, type) {
 
 // ---------- Item Type Lookup ----------
 
-import { isPercentMarkupType, isStackableType, ARMOR_SET_OFFSET } from '$lib/common/itemTypes.js';
+import { isPercentMarkupType, isStackableType, ARMOR_SET_OFFSET, GENDERED_TYPES } from '$lib/common/itemTypes.js';
+
+// ID offsets for gender lookup (mirrors api/endpoints/constants.js)
+const ARMOR_ID_OFFSET = 3000000;
+const CLOTHING_ID_OFFSET = 8000000;
 
 /**
  * Get item type and name from the Items table (or ArmorSets for that ID range).
@@ -467,6 +503,25 @@ export async function getItemType(itemId) {
   }
   const { rows } = await pool.query('SELECT "Type", "Name" FROM ONLY "Items" WHERE "Id" = $1', [itemId]);
   return rows[0] ? { type: rows[0].Type, name: rows[0].Name } : null;
+}
+
+/**
+ * Look up the gender of an item (Armor/ArmorSet/Clothing).
+ * Returns 'Both', 'Male', 'Female', 'Neutral', null (Clothing with no gender), or undefined (non-gendered type).
+ */
+export async function getItemGender(itemId, itemType) {
+  if (itemType === 'ArmorSet') return 'Both';
+  if (itemType === 'Armor') {
+    const armorId = itemId - ARMOR_ID_OFFSET;
+    const { rows } = await pool.query('SELECT "Gender" FROM ONLY "Armors" WHERE "Id" = $1', [armorId]);
+    return rows[0]?.Gender ?? null;
+  }
+  if (itemType === 'Clothing') {
+    const clothingId = itemId - CLOTHING_ID_OFFSET;
+    const { rows } = await pool.query('SELECT "Gender" FROM ONLY "Clothes" WHERE "Id" = $1', [clothingId]);
+    return rows[0]?.Gender ?? null;
+  }
+  return undefined;
 }
 
 /**

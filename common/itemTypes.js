@@ -40,6 +40,12 @@ export const TIERABLE_TYPES = new Set([
   'MedicalTool',
 ]);
 
+/** Item types that require gender selection in exchange */
+export const GENDERED_TYPES = new Set(['Armor', 'ArmorSet', 'Clothing']);
+
+/** Valid gender values for exchange orders */
+export const VALID_ORDER_GENDERS = new Set(['Male', 'Female']);
+
 /** All valid item types in the database */
 export const ALL_ITEM_TYPES = new Set([
   'Absorber',

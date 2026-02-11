@@ -1,11 +1,12 @@
 //@ts-nocheck
 import { getResponse } from '$lib/util.js';
 import {
-  getOrderById, updateOrder, closeOrder, getItemType, isPercentMarkupServer,
+  getOrderById, updateOrder, closeOrder, getItemType, getItemGender, isPercentMarkupServer,
   isItemFungible, formatRetryTime, PLANETS,
   RATE_LIMIT_EDIT_PER_MIN, RATE_LIMIT_CLOSE_PER_MIN,
   RATE_LIMIT_ITEM_COOLDOWN_MS, RATE_LIMIT_ITEM_FUNGIBLE_COOLDOWN, RATE_LIMIT_ITEM_NONFUNGIBLE_COOLDOWN,
 } from '$lib/server/exchange.js';
+import { GENDERED_TYPES } from '$lib/common/itemTypes.js';
 import { checkRateLimit } from '$lib/server/rateLimiter.js';
 
 /**
@@ -51,6 +52,11 @@ function validateOrderDetails(details) {
   if (details.is_set === true) {
     clean.is_set = true;
   }
+  if (details.Gender != null && typeof details.Gender === 'string') {
+    if (details.Gender === 'Male' || details.Gender === 'Female') {
+      clean.Gender = details.Gender;
+    }
+  }
 
   return Object.keys(clean).length > 0 ? clean : null;
 }
@@ -65,6 +71,43 @@ function enforceSetConstraint(details, itemType) {
     return Object.keys(rest).length > 0 ? rest : null;
   }
   return details;
+}
+
+/**
+ * Validate and enforce gender constraints based on item type.
+ */
+async function enforceGenderConstraint(details, itemId, itemInfo) {
+  if (!GENDERED_TYPES.has(itemInfo?.type)) {
+    if (details?.Gender) {
+      const { Gender, ...rest } = details;
+      return { details: Object.keys(rest).length > 0 ? rest : null };
+    }
+    return { details };
+  }
+
+  const itemGender = await getItemGender(itemId, itemInfo.type);
+
+  if (itemInfo.type === 'Clothing' && itemGender === null) {
+    return { error: 'This clothing item cannot be traded (no gender classification).' };
+  }
+
+  if (itemGender === 'Neutral') {
+    if (details?.Gender) {
+      const { Gender, ...rest } = details;
+      return { details: Object.keys(rest).length > 0 ? rest : null };
+    }
+    return { details };
+  }
+
+  if (!details?.Gender || !['Male', 'Female'].includes(details.Gender)) {
+    return { error: 'Gender (Male or Female) is required for this item type.' };
+  }
+
+  if (itemGender !== 'Both' && details.Gender !== itemGender) {
+    return { error: `This item is ${itemGender}-only. Gender must be "${itemGender}".` };
+  }
+
+  return { details };
 }
 
 function getVerifiedUser(locals) {
@@ -155,7 +198,14 @@ export async function PUT({ params, request, locals }) {
   }
 
   const minQuantity = body.min_quantity != null ? parseInt(body.min_quantity, 10) : null;
-  const details = enforceSetConstraint(validateOrderDetails(body.details), itemInfo?.type);
+  let details = enforceSetConstraint(validateOrderDetails(body.details), itemInfo?.type);
+
+  // Validate and enforce gender constraints
+  const genderResult = await enforceGenderConstraint(details, existing.item_id, itemInfo);
+  if (genderResult.error) {
+    return getResponse({ error: genderResult.error }, 400);
+  }
+  details = genderResult.details;
 
   try {
     const updated = await updateOrder(orderId, { quantity, minQuantity, markup, planet, details });

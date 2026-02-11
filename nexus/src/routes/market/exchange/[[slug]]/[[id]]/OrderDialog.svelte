@@ -7,6 +7,13 @@
   export let show = false;
   export let mode = 'create'; // 'create' | 'edit'
   export let order = null;
+
+  /** @type {string|undefined} Item gender: 'Both', 'Male', 'Female', 'Neutral', null (untradeable clothing), undefined (non-gendered type) */
+  export let itemGender = undefined;
+
+  $: isGenderedItem = itemGender !== undefined;
+  $: showGenderSelect = isGenderedItem && itemGender !== 'Neutral' && itemGender !== null;
+  $: genderFixed = itemGender === 'Male' || itemGender === 'Female';
   // Dialog-local calculations
   let unitPrice = 0;
   let totalPrice = 0;
@@ -187,6 +194,20 @@
       order.MinQuantity = Math.max(1, Math.floor((order.Quantity || 1) * DEFAULT_PARTIAL_RATIO));
     }
 
+    // Set gender based on item gender classification
+    if (showGenderSelect) {
+      if (!order.Metadata) order.Metadata = {};
+      if (genderFixed) {
+        order.Metadata.Gender = itemGender;
+      } else if (mode !== 'edit' && !order.Metadata.Gender) {
+        // Default to 'Male' for 'Both' items when creating
+        order.Metadata.Gender = 'Male';
+      }
+    } else if (order.Metadata?.Gender) {
+      // Strip gender for non-gendered or neutral items
+      delete order.Metadata.Gender;
+    }
+
     // Restore partial trade state for edit mode
     if (mode === 'edit') {
       const existingMin = itemOrOrder?.MinQuantity ?? itemOrOrder?.min_quantity ?? null;
@@ -343,6 +364,21 @@
           {/each}
         </select>
       </div>
+      {#if showGenderSelect}
+        <div class="form-row">
+          <label for="genderSelect">Gender</label>
+          <select
+            id="genderSelect"
+            bind:value={order.Metadata.Gender}
+            class="filter-select select-center"
+            disabled={genderFixed}
+            on:change={recalcPrices}
+          >
+            <option value="Male">Male</option>
+            <option value="Female">Female</option>
+          </select>
+        </div>
+      {/if}
   {#if showQuantity}
         <div class="form-row">
           <label for="qtyInput">Quantity</label>

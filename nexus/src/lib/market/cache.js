@@ -428,6 +428,14 @@ function slimItem(item) {
   if (!type && item.Armors) type = 'ArmorSet';
   const name = item.Name ?? null;
 
+  // Gender for gendered item types (Armor/Clothing from Properties, ArmorSet always 'Both')
+  let g;
+  if (type === 'ArmorSet') {
+    g = 'Both';
+  } else if (type === 'Armor' || type === 'Clothing') {
+    g = item.Properties?.Gender ?? null;
+  }
+
   let v = item.Properties?.Economy?.MaxTT ?? item.MaxTT ?? item.Value ?? null;
   // Blueprint values: non-L MaxTT = 1.00 PED, (L) = 0.01 PED per unit
   if (type === 'Blueprint') {
@@ -443,6 +451,7 @@ function slimItem(item) {
     n: name,
     t: type,
     v,
+    ...(g !== undefined && { g }),
     o: null,
     b: counts?.buys || null,
     s: counts?.sells || null,

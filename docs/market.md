@@ -159,6 +159,51 @@ Armor sets (complete matching armor pieces) are tradeable in the exchange. Since
 - **Item lookup**: `getItemType()` in `exchange.js` checks the ArmorSet ID range before querying the Items table
 - **Cache**: `slimItem()` detects ArmorSet type via the `Armors` property when no explicit `Type` field exists
 
+### Gender in Exchange
+
+Armor, Armor Set, and Clothing items support gender (Male/Female) as a trading dimension. Gender is stored in the order `details.Gender` field and used for gender-segmented price tracking.
+
+#### Gender Rules by Item Type
+
+| Type | DB Gender | Behavior |
+|------|-----------|----------|
+| **Armor** (`Gender='Both'`) | Both | User selects Male or Female |
+| **Armor** (`Gender='Male'`/`'Female'`) | Single | Auto-selected, dropdown disabled |
+| **ArmorSet** | No column (treated as Both) | User selects Male or Female |
+| **Clothing** (`Gender='Both'`) | Both | User selects Male or Female |
+| **Clothing** (`Gender='Male'`/`'Female'`) | Single | Auto-selected, dropdown disabled |
+| **Clothing** (`Gender='Neutral'`) | Neutral | No gender field shown |
+| **Clothing** (`Gender=NULL`) | NULL | **Not tradeable** — blocked with error |
+| **All other types** | N/A | No gender concept; Gender stripped if provided |
+
+#### Implementation
+
+- **Shared constants**: `GENDERED_TYPES` and `VALID_ORDER_GENDERS` in `common/itemTypes.js`
+- **Server validation**: `enforceGenderConstraint()` in POST/PUT order endpoints validates gender based on item type and DB gender value
+- **Gender lookup**: `getItemGender(itemId, itemType)` in `exchange.js` queries Armors/Clothes tables; ArmorSets return `'Both'`
+- **Slim cache**: `slimItem()` in `cache.js` adds `g` field for Armor/ArmorSet/Clothing items (`'Both'`/`'Male'`/`'Female'`/`'Neutral'`/`null`)
+- **OrderDialog**: Gender dropdown shown for gendered items (disabled for single-gender items, hidden for Neutral/non-gendered)
+- **Detail view**: Gender column in order book tables for gendered items
+- **Untradeable clothing**: Buy/Sell buttons replaced with warning notice; blocked in inventory sell flow
+
+#### Price Tracking per Gender
+
+Exchange prices are tracked separately per `(item_id, gender)`:
+
+- **Snapshots**: `exchange_price_snapshots.gender` — `''` for non-gendered items, `'Male'`/`'Female'` for gendered
+- **Summaries**: `exchange_price_summaries.gender` — same convention
+- **Unique index**: `(item_id, gender, period_type, period_start)` on summaries
+- **Bot grouping**: `snapshotExchangePrices()` groups orders by `item_id + details.Gender`
+- **API**: `GET /api/market/prices/exchange/[itemId]?gender=Male` filters by gender
+- **Frontend**: Gender toggle (M/F buttons) in price history section for gendered items
+
+Metadata stored:
+```json
+{
+  "Gender": "Male"
+}
+```
+
 ### Pet Orders
 
 Pet orders include additional metadata:
@@ -227,6 +272,7 @@ The bot snapshots exchange prices every 15 minutes from active trade orders. Eac
 |--------|------|-------------|
 | id | bigserial | Primary key |
 | item_id | integer | Item reference |
+| gender | varchar(10) | Gender dimension ('' for non-gendered, 'Male'/'Female') |
 | markup_value | numeric(12,4) | Computed WAP markup |
 | volume | integer | Total order volume |
 | buy_count | smallint | Number of buy orders |
@@ -239,6 +285,7 @@ The bot snapshots exchange prices every 15 minutes from active trade orders. Eac
 |--------|------|-------------|
 | id | bigserial | Primary key |
 | item_id | integer | Item reference |
+| gender | varchar(10) | Gender dimension ('' for non-gendered, 'Male'/'Female') |
 | period_type | exchange_price_period | hour/day/week |
 | period_start | timestamptz | Period start time |
 | price_min/max/avg | numeric(12,4) | Price range stats |
@@ -253,7 +300,7 @@ The bot snapshots exchange prices every 15 minutes from active trade orders. Eac
 
 #### API
 
-`GET /api/market/prices/exchange/[itemId]?period=7d&history=1` — Returns live order stats, period summary (median/p10/wap), and optional time series for charting.
+`GET /api/market/prices/exchange/[itemId]?period=7d&history=1&gender=Male` — Returns live order stats, period summary (median/p10/wap), and optional time series for charting. Optional `gender` param (`Male`/`Female`) filters by gender for gendered item types.
 
 **Table**: `user_items` (nexus-users)
 
@@ -374,7 +421,7 @@ A standalone dialog (accessible via "Adjust (N)" button when discrepancies exist
 ### Input Validation
 
 All exchange-related endpoints validate JSONB `details` fields server-side:
-- **Order details**: `item_name` (string, max 200), `Tier` (0-10), `TierIncreaseRate` (1-4000), `QualityRating` (0-100), `CurrentTT` (>= 0), `Pet` (object with Level/Experience/Skills/Food), `is_set` (boolean, ArmorPlating only)
+- **Order details**: `item_name` (string, max 200), `Tier` (0-10), `TierIncreaseRate` (1-4000), `QualityRating` (0-100), `CurrentTT` (>= 0), `Pet` (object with Level/Experience/Skills/Food), `is_set` (boolean, ArmorPlating only), `Gender` ('Male'/'Female', gendered types only — enforced by `enforceGenderConstraint()`)
 - **Inventory details**: `Tier` (0-10), `TierIncreaseRate` (1-4000), `QualityRating` (0-100)
 - **Planet validation**: All endpoints validate planet against the `PLANETS` constant list
 - Unknown keys are silently stripped

@@ -8,6 +8,7 @@ import { getExchangePrices, getExchangePriceSummary, getExchangePriceHistory } f
  * Optional query params:
  *   period - price history period (24h, 7d, 30d, 3m, 6m, 1y, 5y, all)
  *   history - if "1", also return time series data for charting
+ *   gender - filter by gender ('Male' or 'Female') for gendered items
  */
 export async function GET({ params, url }) {
   const itemId = parseInt(params.itemId, 10);
@@ -17,17 +18,22 @@ export async function GET({ params, url }) {
 
   const period = url.searchParams.get('period') || '7d';
   const includeHistory = url.searchParams.get('history') === '1';
+  const gender = url.searchParams.get('gender') || null;
+
+  if (gender && gender !== 'Male' && gender !== 'Female') {
+    return getResponse({ error: 'gender must be "Male" or "Female"' }, 400);
+  }
 
   try {
     const [prices, summary] = await Promise.all([
-      getExchangePrices(itemId),
-      getExchangePriceSummary(itemId, period),
+      getExchangePrices(itemId, gender),
+      getExchangePriceSummary(itemId, period, gender),
     ]);
 
     const result = { ...prices, ...summary };
 
     if (includeHistory) {
-      result.history = await getExchangePriceHistory(itemId, period);
+      result.history = await getExchangePriceHistory(itemId, period, gender);
     }
 
     return getResponse(result, 200);

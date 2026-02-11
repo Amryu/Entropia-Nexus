@@ -2,12 +2,13 @@
 import { getResponse } from '$lib/util.js';
 import {
   getUserOrders, createOrder, countUserOrdersBySide, countUserOrdersForItem,
-  getItemType, isPercentMarkupServer, isItemFungible, formatRetryTime,
+  getItemType, getItemGender, isPercentMarkupServer, isItemFungible, formatRetryTime,
   MAX_SELL_ORDERS, MAX_BUY_ORDERS, MAX_ORDERS_PER_ITEM, PLANETS,
   RATE_LIMIT_CREATE_PER_MIN, RATE_LIMIT_CREATE_PER_HOUR, RATE_LIMIT_CREATE_PER_DAY,
   RATE_LIMIT_ITEM_COOLDOWN_MS, RATE_LIMIT_ITEM_FUNGIBLE_COOLDOWN, RATE_LIMIT_ITEM_NONFUNGIBLE_COOLDOWN,
   RATE_LIMIT_ITEM_DAILY_FUNGIBLE,
 } from '$lib/server/exchange.js';
+import { GENDERED_TYPES } from '$lib/common/itemTypes.js';
 import { checkRateLimit, checkRateLimitPeek, incrementRateLimit } from '$lib/server/rateLimiter.js';
 
 const VALID_TYPES = ['BUY', 'SELL'];
@@ -56,6 +57,11 @@ function validateOrderDetails(details) {
   if (details.is_set === true) {
     clean.is_set = true;
   }
+  if (details.Gender != null && typeof details.Gender === 'string') {
+    if (details.Gender === 'Male' || details.Gender === 'Female') {
+      clean.Gender = details.Gender;
+    }
+  }
 
   return Object.keys(clean).length > 0 ? clean : null;
 }
@@ -70,6 +76,49 @@ function enforceSetConstraint(details, itemType) {
     return Object.keys(rest).length > 0 ? rest : null;
   }
   return details;
+}
+
+/**
+ * Validate and enforce gender constraints based on item type.
+ * Returns { details } on success, { error } on failure.
+ */
+async function enforceGenderConstraint(details, itemId, itemInfo) {
+  if (!GENDERED_TYPES.has(itemInfo?.type)) {
+    // Strip Gender from non-gendered types
+    if (details?.Gender) {
+      const { Gender, ...rest } = details;
+      return { details: Object.keys(rest).length > 0 ? rest : null };
+    }
+    return { details };
+  }
+
+  const itemGender = await getItemGender(itemId, itemInfo.type);
+
+  // Clothing with null gender → not tradeable
+  if (itemInfo.type === 'Clothing' && itemGender === null) {
+    return { error: 'This clothing item cannot be traded (no gender classification).' };
+  }
+
+  // Neutral clothing → no gender required, strip if provided
+  if (itemGender === 'Neutral') {
+    if (details?.Gender) {
+      const { Gender, ...rest } = details;
+      return { details: Object.keys(rest).length > 0 ? rest : null };
+    }
+    return { details };
+  }
+
+  // Gender required (Both, Male, or Female)
+  if (!details?.Gender || !['Male', 'Female'].includes(details.Gender)) {
+    return { error: 'Gender (Male or Female) is required for this item type.' };
+  }
+
+  // Set-gender items: must match
+  if (itemGender !== 'Both' && details.Gender !== itemGender) {
+    return { error: `This item is ${itemGender}-only. Gender must be "${itemGender}".` };
+  }
+
+  return { details };
 }
 
 function getVerifiedUser(locals) {
@@ -200,7 +249,14 @@ export async function POST({ request, locals }) {
     return getResponse({ error: 'min_quantity must be a positive integer' }, 400);
   }
 
-  const details = enforceSetConstraint(validateOrderDetails(body.details), itemInfo?.type);
+  let details = enforceSetConstraint(validateOrderDetails(body.details), itemInfo?.type);
+
+  // Validate and enforce gender constraints
+  const genderResult = await enforceGenderConstraint(details, itemId, itemInfo);
+  if (genderResult.error) {
+    return getResponse({ error: genderResult.error }, 400);
+  }
+  details = genderResult.details;
 
   // Check order limit per side (separate caps for buy/sell)
   try {
