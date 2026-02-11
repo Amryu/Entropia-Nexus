@@ -5,7 +5,7 @@ import { redirect } from '@sveltejs/kit';
 export async function load({ fetch, params }) {
   let armor = await apiCall(fetch, `/armors/${encodeURIComponent(decodeURIComponentSafe(params.slug))}`);
   
-  if (!armor.Name) {
+  if (!armor?.Name || !armor?.Set?.Name) {
     redirect(301, `/items/armorsets`);
   }
   else {

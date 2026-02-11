@@ -338,9 +338,13 @@
   }, {});
 
   // Build mob ID to name lookup from maturities
+  // API returns Mob: { Name, Links: { $Url: "/mobs/<id>" } } — extract MobId from URL
   $: mobIdToName = (data.mobMaturities || []).reduce((acc, m) => {
-    if (m.MobId && m.Mob?.Name) {
-      acc[m.MobId] = m.Mob.Name;
+    const mobName = m.Mob?.Name;
+    const mobUrl = m.Mob?.Links?.$Url;
+    const mobId = mobUrl ? parseInt(mobUrl.split('/').pop(), 10) : null;
+    if (mobId && mobName) {
+      acc[mobId] = mobName;
     }
     return acc;
   }, {});
@@ -1242,8 +1246,9 @@
           </div>
         {:else}
           <!-- Rewards Section - styled like set effects -->
-          {@const hasRewardChoices = Array.isArray(activeMission?.Rewards)}
-          {@const rewardPackages = hasRewardChoices ? activeMission.Rewards : [activeMission?.Rewards || { Items: [], Skills: [], Unlocks: [] }]}
+          {@const rewards = activeMission?.Rewards || { Items: [], Skills: [], Unlocks: [] }}
+          {@const hasRewardChoices = rewards.Items?.length > 0 && rewards.Items[0]?.Items !== undefined}
+          {@const rewardPackages = hasRewardChoices ? rewards.Items : [rewards]}
           {@const hasAnyRewards = rewardPackages.some(pkg => (pkg?.Items?.length || 0) + (pkg?.Skills?.length || 0) + (pkg?.Unlocks?.length || 0) > 0)}
           {#if hasAnyRewards && !$editMode}
             <div class="stats-section rewards-section">
@@ -1270,7 +1275,7 @@
                               {:else}
                                 {itemDisplayName}
                               {/if}
-                              {#if item.pedValue}<span class="reward-ped">({formatPedValue(item.pedValue)} PED)</span>{/if}
+                              {#if item.pedValue > 0}<span class="reward-ped">({formatPedValue(item.pedValue)} PED)</span>{/if}
                             </span>
                           </div>
                         {/each}
@@ -1286,7 +1291,9 @@
                                 {skillDisplayName}
                               {/if}
                             </span>
-                            <span class="reward-value skill">{skill.pedValue ? `+${formatPedValue(skill.pedValue)} PED` : '+'}</span>
+                            {#if skill.pedValue > 0}
+                              <span class="reward-value skill">+{formatPedValue(skill.pedValue)} PED</span>
+                            {/if}
                           </div>
                         {/each}
                       {/if}

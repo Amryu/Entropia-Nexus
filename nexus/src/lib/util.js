@@ -640,7 +640,7 @@ export async function handlePageLoad(fetch, items, config) {
       await Promise
         .all(config.items.map(x => apiCall(fetch, `/${x}`)))
         .then((x) => {
-          items = Object.fromEntries(config.types.map((key, i) => [key.type, x[i]]));
+          items = Object.fromEntries(config.types.map((key, i) => [key.type, x[i] || []]));
         });
       }
     else {
@@ -648,11 +648,22 @@ export async function handlePageLoad(fetch, items, config) {
     }
   }
 
+  // Guard against null items (API failure) — return empty list instead of crashing
+  if (!items) {
+    items = [];
+  }
+  if (isMultiType) {
+    for (const t of config.types) {
+      if (!items[t.type]) items[t.type] = [];
+    }
+  }
+
   if ((!config.type && isMultiType) || !config.name) {
     return { items: items, response: pageResponse(items, null, { type: config.type }) };
   }
 
-  if ((isMultiType ? items[config.type] : items).find(x => x.Name === config.name) === undefined) {
+  const itemsList = isMultiType ? items[config.type] : items;
+  if (!Array.isArray(itemsList) || itemsList.find(x => x.Name === config.name) === undefined) {
     return { items: items, response: pageResponse(items, null, { type: config.type }, 404) };
   }
 

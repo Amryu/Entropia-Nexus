@@ -17,9 +17,10 @@
   let itemNameDrafts = {};
   let skillNameDrafts = {};
 
-  // Check if Rewards is in choices format (array of reward packages)
+  // Check if Rewards is in choices format (Items column contains choice packages)
   function isChoicesFormat(data) {
-    return Array.isArray(data);
+    const items = data?.Items;
+    return Array.isArray(items) && items.length > 0 && items[0]?.Items !== undefined;
   }
 
   // Get empty reward package
@@ -27,28 +28,27 @@
     return { Items: [], Skills: [], Unlocks: [] };
   }
 
-  // Convert flat rewards to choices format (single choice)
+  // Convert flat rewards to choices format
   function toChoicesFormat(data) {
-    if (!data) return [emptyPackage()];
+    if (!data) return { Items: [emptyPackage()], Skills: [], Unlocks: [] };
     if (isChoicesFormat(data)) return data;
-    // data is an object, wrap in array
-    return [{
-      Items: data.Items || [],
-      Skills: data.Skills || [],
-      Unlocks: data.Unlocks || []
-    }];
+    // Wrap current flat items/skills/unlocks as a single choice package
+    return {
+      Items: [{ Items: data.Items || [], Skills: data.Skills || [], Unlocks: data.Unlocks || [] }],
+      Skills: [],
+      Unlocks: []
+    };
   }
 
-  // Convert choices format to flat (merge all into one package or take first)
+  // Convert choices format to flat (take first choice)
   function toFlatFormat(data) {
     if (!data) return emptyPackage();
     if (!isChoicesFormat(data)) return data;
-    // Take first choice as the flat version
-    if (data.length === 0) return emptyPackage();
+    const first = data.Items[0] || emptyPackage();
     return {
-      Items: data[0]?.Items || [],
-      Skills: data[0]?.Skills || [],
-      Unlocks: data[0]?.Unlocks || []
+      Items: first.Items || [],
+      Skills: first.Skills || [],
+      Unlocks: first.Unlocks || []
     };
   }
 
@@ -88,12 +88,19 @@
   $: hasChoices = isChoicesFormat(rewards);
 
   // Normalize rewards data for consistent access
+  // For choices: rewardsData is the array of packages (from Items column)
+  // For flat: rewardsData is the {Items, Skills, Unlocks} object
   $: rewardsData = hasChoices
-    ? (rewards || [emptyPackage()])
+    ? (rewards?.Items || [emptyPackage()])
     : (rewards || emptyPackage());
 
   function updateRewards(next) {
-    updateField(fieldPath, next);
+    // If given an array of packages (choices mode updates), wrap in consistent format
+    if (Array.isArray(next)) {
+      updateField(fieldPath, { Items: next, Skills: [], Unlocks: [] });
+    } else {
+      updateField(fieldPath, next);
+    }
   }
 
   // Toggle choices mode
