@@ -1,4 +1,4 @@
-import { SlashCommandBuilder } from 'discord.js';
+import { SlashCommandBuilder, MessageFlags } from 'discord.js';
 import { setConfigValue } from "../../bot.js";
 
 export const data = new SlashCommandBuilder()
@@ -29,7 +29,7 @@ export const data = new SlashCommandBuilder()
 
 export async function execute(interaction) {
   if (!interaction.member.permissions.has('ADMINISTRATOR')) {
-    return interaction.reply({ content: 'You do not have permission to use this command.', ephemeral: true });
+    return interaction.reply({ content: 'You do not have permission to use this command.', flags: MessageFlags.Ephemeral });
   }
 
   const subcommand = interaction.options.getSubcommand();
@@ -39,7 +39,7 @@ export async function execute(interaction) {
     const channel = interaction.options.getChannel('channel');
 
     if (!channel) {
-      return interaction.reply({ content: 'Please provide a channel.', ephemeral: true });
+      return interaction.reply({ content: 'Please provide a channel.', flags: MessageFlags.Ephemeral });
     }
 
     // Map type to config key
@@ -54,7 +54,7 @@ export async function execute(interaction) {
 
     const configKey = configKeyMap[type];
     if (!configKey) {
-      return interaction.reply({ content: 'Invalid channel type.', ephemeral: true });
+      return interaction.reply({ content: 'Invalid channel type.', flags: MessageFlags.Ephemeral });
     }
 
     setConfigValue(configKey, channel.id);

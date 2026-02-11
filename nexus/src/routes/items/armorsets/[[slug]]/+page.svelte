@@ -646,7 +646,7 @@
         </div>
 
         <!-- Set Pieces Section -->
-        {#if activeEntity?.Armors?.length > 0}
+        {#if activeEntity?.Armors?.length > 0 || $editMode}
           <DataSection
             title="Set Pieces"
             icon=""

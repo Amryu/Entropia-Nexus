@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
 import { getConfigValue } from '../../bot.js';
 import { getChangeByThreadId, setChangeState } from '../../db.js';
 
@@ -16,23 +16,26 @@ const denyRow = new ActionRowBuilder()
 
 export const data = new SlashCommandBuilder()
   .setName('deny')
-  .setDescription('Moderator only - Denies changes.');
+  .setDescription('Reviewer/Moderator only - Denies changes.');
 
 export async function execute(interaction) {
-  let moderatorRoleId = getConfigValue('moderatorRoleId');
-  if (!moderatorRoleId) {
-    return interaction.reply({ content: 'The moderator role has not been set.', ephemeral: true });
-  }
-  if (!interaction.member.roles.cache.has(moderatorRoleId) && !interaction.member.permissions.has('ADMINISTRATOR')) {
-    return interaction.reply({ content: 'You do not have permission to use this command.', ephemeral: true });
+  const reviewerRoleId = getConfigValue('reviewerRoleId');
+  const moderatorRoleId = getConfigValue('moderatorRoleId');
+
+  const hasReviewerRole = reviewerRoleId && interaction.member.roles.cache.has(reviewerRoleId);
+  const hasModeratorRole = moderatorRoleId && interaction.member.roles.cache.has(moderatorRoleId);
+  const isAdmin = interaction.member.permissions.has('ADMINISTRATOR');
+
+  if (!hasReviewerRole && !hasModeratorRole && !isAdmin) {
+    return interaction.reply({ content: 'You do not have permission to use this command.', flags: MessageFlags.Ephemeral });
   }
 
   let channelId = getConfigValue('pendingChangesChannelId');
   if (!channelId) {
-    return interaction.reply({ content: 'The changes channel has not been set.', ephemeral: true });
+    return interaction.reply({ content: 'The changes channel has not been set.', flags: MessageFlags.Ephemeral });
   }
   if (interaction.channel.parentId !== channelId || !interaction.channel.isThread()) {
-    return interaction.reply({ content: `This command can only be used in a thread that is a child of <#${channelId}>.`, ephemeral: true });
+    return interaction.reply({ content: `This command can only be used in a thread that is a child of <#${channelId}>.`, flags: MessageFlags.Ephemeral });
   }
 
   let thread = interaction.channel;
@@ -40,7 +43,7 @@ export async function execute(interaction) {
   let change = await getChangeByThreadId(thread.id);
 
   if (change.state === 'Approved' || change.state === 'Denied') {
-    return interaction.reply({ content: `This change has already been ${change.state.toLowerCase()}.`, ephemeral: true });
+    return interaction.reply({ content: `This change has already been ${change.state.toLowerCase()}.`, flags: MessageFlags.Ephemeral });
   }
 
   await promptModeratorForConfirmation(interaction, async () => {
@@ -53,7 +56,7 @@ export async function execute(interaction) {
 }
 
 async function promptModeratorForConfirmation(interaction, onApprove) {
-  const prompt = { content: `Are you sure you want to deny these changes?`, components: [denyRow], ephemeral: true };
+  const prompt = { content: `Are you sure you want to deny these changes?`, components: [denyRow], flags: MessageFlags.Ephemeral };
   
   await interaction.reply(prompt);
 
@@ -62,14 +65,14 @@ async function promptModeratorForConfirmation(interaction, onApprove) {
   
   collector.on('collect', async i => {
     if (i.customId === 'yes') {
-      i.update({ content: '...', ephemeral: true });
+      i.update({ content: '...', flags: MessageFlags.Ephemeral });
       if (!(await onApprove())) {
-        i.update({ content: 'The denial failed.', components: [], ephemeral: true });
+        i.update({ content: 'The denial failed.', components: [], flags: MessageFlags.Ephemeral });
       }
       collector.stop();
     }
     else {
-      i.reply('The denial was cancelled.', { ephemeral: true });
+      i.reply('The denial was cancelled.', { flags: MessageFlags.Ephemeral });
       collector.stop();
     }
   });

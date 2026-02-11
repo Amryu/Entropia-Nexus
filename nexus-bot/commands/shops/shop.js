@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, EmbedBuilder } from 'discord.js';
+import { SlashCommandBuilder, EmbedBuilder, MessageFlags } from 'discord.js';
 import {
   getShops,
   getShopByName,
@@ -116,11 +116,11 @@ export async function execute(interaction) {
         await handleSetOwner(interaction, adminUserId);
         break;
       default:
-        await interaction.reply({ content: 'Unknown subcommand.', ephemeral: true });
+        await interaction.reply({ content: 'Unknown subcommand.', flags: MessageFlags.Ephemeral });
     }
   } catch (error) {
     console.error(`Error in /shop ${subcommand}:`, error);
-    await interaction.reply({ content: 'An error occurred while processing your request.', ephemeral: true });
+    await interaction.reply({ content: 'An error occurred while processing your request.', flags: MessageFlags.Ephemeral });
   }
 }
 
@@ -173,7 +173,7 @@ async function handleInfo(interaction) {
     }
 
     if (!shop) {
-      return interaction.reply({ content: `Shop "${shopIdentifier}" not found.`, ephemeral: true });
+      return interaction.reply({ content: `Shop "${shopIdentifier}" not found.`, flags: MessageFlags.Ephemeral });
     }
 
     const managers = await getShopManagers(shop.id);
@@ -212,7 +212,7 @@ async function handleList(interaction) {
 
   // If checking another user, must be admin
   if (targetUser && !isAdminQuery) {
-    return interaction.reply({ content: 'You do not have permission to check other users\' shops.', ephemeral: true });
+    return interaction.reply({ content: 'You do not have permission to check other users\' shops.', flags: MessageFlags.Ephemeral });
   }
 
   const discordUserId = targetUser ? targetUser.id : interaction.user.id;
@@ -223,7 +223,7 @@ async function handleList(interaction) {
   if (shops.length === 0) {
     return interaction.reply({
       content: targetUser ? `**${displayName}** doesn't own or manage any shops.` : 'You don\'t own or manage any shops.',
-      ephemeral: true
+      flags: MessageFlags.Ephemeral
     });
   }
 
@@ -254,7 +254,7 @@ async function handleList(interaction) {
     });
   }
 
-  await interaction.reply({ embeds: [embed], ephemeral: !isAdminQuery });
+  await interaction.reply({ embeds: [embed], flags: isAdminQuery ? 0 : MessageFlags.Ephemeral });
 }
 
 async function handleAddManager(interaction, adminUserId) {
@@ -272,7 +272,7 @@ async function handleAddManager(interaction, adminUserId) {
   }
 
   if (!shop) {
-    return interaction.reply({ content: `Shop "${shopIdentifier}" not found.`, ephemeral: true });
+    return interaction.reply({ content: `Shop "${shopIdentifier}" not found.`, flags: MessageFlags.Ephemeral });
   }
 
   // Check permissions - admin, shop owner, or existing manager can add managers
@@ -286,12 +286,12 @@ async function handleAddManager(interaction, adminUserId) {
   }
 
   if (!isAdmin && !isOwner && !isManager) {
-    return interaction.reply({ content: 'You do not have permission to manage this shop.', ephemeral: true });
+    return interaction.reply({ content: 'You do not have permission to manage this shop.', flags: MessageFlags.Ephemeral });
   }
 
   // Get target user info
   if (!targetUser && !targetUsername) {
-    return interaction.reply({ content: 'Please specify a user to add as manager.', ephemeral: true });
+    return interaction.reply({ content: 'Please specify a user to add as manager.', flags: MessageFlags.Ephemeral });
   }
 
   let targetUserId;
@@ -303,7 +303,7 @@ async function handleAddManager(interaction, adminUserId) {
   } else if (targetUsername) {
     const user = await getUserByUsername(targetUsername);
     if (!user) {
-      return interaction.reply({ content: `User "${targetUsername}" not found in the database.`, ephemeral: true });
+      return interaction.reply({ content: `User "${targetUsername}" not found in the database.`, flags: MessageFlags.Ephemeral });
     }
     targetUserId = user.id;
     userDisplay = `${user.username}`;
@@ -311,7 +311,7 @@ async function handleAddManager(interaction, adminUserId) {
 
   // Check if user is already the owner
   if (shop.owner_id === targetUserId) {
-    return interaction.reply({ content: `${userDisplay} is already the owner of this shop.`, ephemeral: true });
+    return interaction.reply({ content: `${userDisplay} is already the owner of this shop.`, flags: MessageFlags.Ephemeral });
   }
 
   await addShopManager(shop.id, targetUserId);
@@ -333,7 +333,7 @@ async function handleRemoveManager(interaction, adminUserId) {
   }
 
   if (!shop) {
-    return interaction.reply({ content: `Shop "${shopIdentifier}" not found.`, ephemeral: true });
+    return interaction.reply({ content: `Shop "${shopIdentifier}" not found.`, flags: MessageFlags.Ephemeral });
   }
 
   // Check permissions - admin, shop owner, or existing manager can remove managers
@@ -347,12 +347,12 @@ async function handleRemoveManager(interaction, adminUserId) {
   }
 
   if (!isAdmin && !isOwner && !isManager) {
-    return interaction.reply({ content: 'You do not have permission to manage this shop.', ephemeral: true });
+    return interaction.reply({ content: 'You do not have permission to manage this shop.', flags: MessageFlags.Ephemeral });
   }
 
   // Get target user info
   if (!targetUser && !targetUsername) {
-    return interaction.reply({ content: 'Please specify a user to remove as manager.', ephemeral: true });
+    return interaction.reply({ content: 'Please specify a user to remove as manager.', flags: MessageFlags.Ephemeral });
   }
 
   let targetUserId;
@@ -364,7 +364,7 @@ async function handleRemoveManager(interaction, adminUserId) {
   } else if (targetUsername) {
     const user = await getUserByUsername(targetUsername);
     if (!user) {
-      return interaction.reply({ content: `User "${targetUsername}" not found in the database.`, ephemeral: true });
+      return interaction.reply({ content: `User "${targetUsername}" not found in the database.`, flags: MessageFlags.Ephemeral });
     }
     targetUserId = user.id;
     userDisplay = `${user.username}`;
@@ -387,7 +387,7 @@ async function handleListManagers(interaction) {
   }
 
   if (!shop) {
-    return interaction.reply({ content: `Shop "${shopIdentifier}" not found.`, ephemeral: true });
+    return interaction.reply({ content: `Shop "${shopIdentifier}" not found.`, flags: MessageFlags.Ephemeral });
   }
 
   const managers = await getShopManagers(shop.id);
@@ -402,7 +402,7 @@ async function handleListManagers(interaction) {
 async function handleSetOwner(interaction, adminUserId) {
   // Check permissions - only admin can change ownership
   if (interaction.user.id !== adminUserId) {
-    return interaction.reply({ content: 'You do not have permission to use this command.', ephemeral: true });
+    return interaction.reply({ content: 'You do not have permission to use this command.', flags: MessageFlags.Ephemeral });
   }
 
   const shopIdentifier = interaction.options.getString('shop');
@@ -419,7 +419,7 @@ async function handleSetOwner(interaction, adminUserId) {
   }
 
   if (!shop) {
-    return interaction.reply({ content: `Shop "${shopIdentifier}" not found.`, ephemeral: true });
+    return interaction.reply({ content: `Shop "${shopIdentifier}" not found.`, flags: MessageFlags.Ephemeral });
   }
 
   let newOwnerId = null;
@@ -432,7 +432,7 @@ async function handleSetOwner(interaction, adminUserId) {
   } else if (ownerUsername) {
     const user = await getUserByUsername(ownerUsername);
     if (!user) {
-      return interaction.reply({ content: `User "${ownerUsername}" not found in the database.`, ephemeral: true });
+      return interaction.reply({ content: `User "${ownerUsername}" not found in the database.`, flags: MessageFlags.Ephemeral });
     }
     newOwnerId = user.id;
     ownerDisplay = `${user.username}`;

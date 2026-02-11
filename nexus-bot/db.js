@@ -67,6 +67,49 @@ export async function assignUserRole(userId) {
     [userId]
   );
 }
+export async function getUsersWithGrant(grantKey) {
+  const query = `
+    WITH RECURSIVE role_hierarchy AS (
+      SELECT ur.user_id, r.id AS role_id, r.name AS role_name, r.parent_id, 1 AS depth
+      FROM user_roles ur
+      JOIN roles r ON r.id = ur.role_id
+
+      UNION ALL
+
+      SELECT rh.user_id, r.id, r.name, r.parent_id, rh.depth + 1
+      FROM role_hierarchy rh
+      JOIN roles r ON r.id = rh.parent_id
+      WHERE rh.depth < 10
+    ),
+    admin_users AS (
+      SELECT DISTINCT user_id FROM role_hierarchy WHERE role_name = 'admin'
+    ),
+    role_grant_users AS (
+      SELECT DISTINCT rh.user_id
+      FROM role_hierarchy rh
+      JOIN role_grants rg ON rg.role_id = rh.role_id
+      JOIN grants g ON g.id = rg.grant_id
+      WHERE g.key = $1 AND rg.granted = true
+    ),
+    direct_grant_users AS (
+      SELECT ug.user_id, ug.granted
+      FROM user_grants ug
+      JOIN grants g ON g.id = ug.grant_id
+      WHERE g.key = $1
+    )
+    SELECT DISTINCT u.id
+    FROM users u
+    WHERE (
+      u.id IN (SELECT user_id FROM admin_users)
+      OR u.id IN (SELECT user_id FROM role_grant_users)
+      OR u.id IN (SELECT user_id FROM direct_grant_users WHERE granted = true)
+    )
+    AND u.id NOT IN (
+      SELECT user_id FROM direct_grant_users WHERE granted = false
+    )
+  `;
+  return (await poolUsers.query(query, [grantKey])).rows.map(r => r.id);
+}
 export async function getChanges() {
   return (await poolUsers.query('SELECT * FROM changes')).rows;
 }

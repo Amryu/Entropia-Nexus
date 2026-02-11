@@ -410,6 +410,29 @@ export async function getLatestExchangePriceMap() {
 }
 
 /**
+ * Get the set of planets with active orders per item.
+ * Returns a Map of itemId -> string[] (planet names).
+ */
+export async function getOrderPlanets() {
+  const query = `
+    SELECT item_id, planet
+    FROM trade_offers
+    WHERE state != 'closed'
+      AND bumped_at >= NOW() - INTERVAL '${TERMINATED_DAYS} days'
+      AND planet IS NOT NULL
+    GROUP BY item_id, planet
+  `;
+  const { rows } = await pool.query(query);
+  const map = new Map();
+  for (const row of rows) {
+    const id = row.item_id;
+    if (!map.has(id)) map.set(id, []);
+    map.get(id).push(row.planet);
+  }
+  return map;
+}
+
+/**
  * Count a user's active orders for a specific item and side.
  */
 export async function countUserOrdersForItem(userId, itemId, type) {

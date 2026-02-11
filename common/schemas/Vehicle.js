@@ -22,7 +22,7 @@ export const Vehicle = {
         },
         "Type": {
           "type": ["string", "null"],
-          "enum": ["Land", "Air", "Sea", "Amphibious", "Space", null],
+          "enum": ["Land", "Air", "Water", "Amphibious", "Space", null],
           "default": null
         },
         "SpawnedWeight": {

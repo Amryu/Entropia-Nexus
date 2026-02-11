@@ -16,13 +16,16 @@
 -->
 <script>
   // @ts-nocheck
-  import { onMount, onDestroy, createEventDispatcher } from 'svelte';
+  import { onMount, onDestroy, createEventDispatcher, tick } from 'svelte';
   import { Editor, Node, mergeAttributes } from '@tiptap/core';
   import StarterKit from '@tiptap/starter-kit';
   import Link from '@tiptap/extension-link';
   import { page } from '$app/stores';
 
   const dispatch = createEventDispatcher();
+
+  /** Suppress the initial onUpdate that TipTap fires when normalizing empty content */
+  let initialized = false;
 
   /** @type {string} Initial HTML content */
   export let content = '';
@@ -323,7 +326,7 @@
     }
   }
 
-  onMount(() => {
+  onMount(async () => {
     editor = new Editor({
       element: editorElement,
       extensions: [
@@ -361,6 +364,7 @@
       content: content || '',
       editable: !disabled,
       onUpdate: ({ editor }) => {
+        if (!initialized) return;
         const html = editor.getHTML();
         dispatch('change', html);
       },
@@ -374,6 +378,10 @@
         }
       }
     });
+
+    // Allow TipTap's initial content normalization to complete before accepting changes
+    await tick();
+    initialized = true;
   });
 
   onDestroy(() => {
@@ -382,9 +390,11 @@
     }
   });
 
-  // Update content when prop changes externally
+  // Update content when prop changes externally (suppress onUpdate echo)
   $: if (editor && content !== editor.getHTML()) {
+    initialized = false;
     editor.commands.setContent(content || '');
+    tick().then(() => { initialized = true; });
   }
 
   // Update editable state

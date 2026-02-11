@@ -355,7 +355,7 @@
             <span class="stat-value">
               <InlineEdit
                 type="select"
-                value={activeVehicle?.Properties?.Type || 'Land'}
+                value={activeVehicle?.Properties?.Type ?? null}
                 path="Properties.Type"
                 options={typeOptions}
               />

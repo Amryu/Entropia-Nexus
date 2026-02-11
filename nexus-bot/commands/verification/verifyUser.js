@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
 import { getConfigValue } from '../../bot.js';
 import { getUserById, getUserByUsername, setUserVerified, assignUserRole } from '../../db.js';
 
@@ -45,18 +45,18 @@ export const data = new SlashCommandBuilder()
 export async function execute(interaction) {
   let moderatorRoleId = getConfigValue('moderatorRoleId');
   if (!moderatorRoleId) {
-    return interaction.reply({ content: 'The moderator role has not been set.', ephemeral: true });
+    return interaction.reply({ content: 'The moderator role has not been set.', flags: MessageFlags.Ephemeral });
   }
   if (!interaction.member.roles.cache.has(moderatorRoleId) && !interaction.member.permissions.has('ADMINISTRATOR')) {
-    return interaction.reply({ content: 'You do not have permission to use this command.', ephemeral: true });
+    return interaction.reply({ content: 'You do not have permission to use this command.', flags: MessageFlags.Ephemeral });
   }
 
   let channelId = getConfigValue('verifiedChannelId');
   if (!channelId) {
-    return interaction.reply({ content: 'The verified channel has not been set.', ephemeral: true });
+    return interaction.reply({ content: 'The verified channel has not been set.', flags: MessageFlags.Ephemeral });
   }
   if (interaction.channel.parentId !== channelId || !interaction.channel.isThread()) {
-    return interaction.reply({ content: `This command can only be used in a thread that is a child of <#${channelId}>.`, ephemeral: true });
+    return interaction.reply({ content: `This command can only be used in a thread that is a child of <#${channelId}>.`, flags: MessageFlags.Ephemeral });
   }
 
   let guild = interaction.guild;
@@ -66,18 +66,18 @@ export async function execute(interaction) {
   let discordUserVerify = await guild.members.fetch(userVerify.id);
 
   if (!discordUserVerify) {
-    return interaction.reply({ content: 'The user was not found. Did he leave the server?', ephemeral: true });
+    return interaction.reply({ content: 'The user was not found. Did he leave the server?', flags: MessageFlags.Ephemeral });
   }
   if (userVerify.verified) {
     if (!discordUserVerify.roles.cache.has(getConfigValue('verifiedRoleId'))) {
       await discordUserVerify.roles.add(getConfigValue('verifiedRoleId'));
     }
 
-    return interaction.reply({ content: 'This user is already verified.', ephemeral: true });
+    return interaction.reply({ content: 'This user is already verified.', flags: MessageFlags.Ephemeral });
   }
 
   if (!userVerify || !userVerify.eu_name) {
-    return interaction.reply({ content: 'The user has not yet set his EU name.', ephemeral: true });
+    return interaction.reply({ content: 'The user has not yet set his EU name.', flags: MessageFlags.Ephemeral });
   }
 
   let userModerator = await getUserById(interaction.member.id);
@@ -87,7 +87,7 @@ export async function execute(interaction) {
     interaction.channel.send(`<@${userVerify.id}> - Please message "${userModerator.eu_name}" with the code ${code} in Entropia Universe via PM or Mail to finish verification.`);
   } catch (e) {
     console.error(`Failed to send verification message to thread ${interaction.channel.id} for user ${userVerify.username}: ${e.message}`);
-    return interaction.reply({ content: 'Failed to send verification message. The thread may be archived.', ephemeral: true });
+    return interaction.reply({ content: 'Failed to send verification message. The thread may be archived.', flags: MessageFlags.Ephemeral });
   }
 
   await promptModeratorForConfirmation(interaction, userVerify, code, async () => {
@@ -114,7 +114,7 @@ export async function execute(interaction) {
 }
 
 async function promptModeratorForConfirmation(interaction, verifyUser, code, onApprove) {
-  const prompt = { content: `${verifyUser.global_name} has set his name to "${verifyUser.eu_name}". Approve this if he sends you the code "${code}" inside Entropia Universe.`, components: [promptRow], ephemeral: true };
+  const prompt = { content: `${verifyUser.global_name} has set his name to "${verifyUser.eu_name}". Approve this if he sends you the code "${code}" inside Entropia Universe.`, components: [promptRow], flags: MessageFlags.Ephemeral };
   
   await interaction.reply(prompt);
 
@@ -123,17 +123,17 @@ async function promptModeratorForConfirmation(interaction, verifyUser, code, onA
   
   collector.on('collect', async i => {
     if (i.customId === 'approve') {
-      await i.update({ content: 'Are you sure you want to approve?', components: [approveRow], ephemeral: true});
+      await i.update({ content: 'Are you sure you want to approve?', components: [approveRow], flags: MessageFlags.Ephemeral});
     } else if (i.customId === 'cancel'){
-      await i.update({ content: 'Are you sure you want to cancel?', components: [cancelRow], ephemeral: true });
+      await i.update({ content: 'Are you sure you want to cancel?', components: [cancelRow], flags: MessageFlags.Ephemeral });
     } else if (i.customId === 'approve_confirm') {
-      i.update({ content: '...', components: [], ephemeral: true });
+      i.update({ content: '...', components: [], flags: MessageFlags.Ephemeral });
       await onApprove();
       collector.stop();
     } else if (i.customId === 'approve_deny') {
       await i.update(prompt);
     } else if (i.customId === 'cancel_confirm') {
-      i.update({ content: 'The verification process was cancelled.', ephemeral: true });
+      i.update({ content: 'The verification process was cancelled.', flags: MessageFlags.Ephemeral });
       collector.stop();
     } else if (i.customId === 'cancel_deny') {
       await i.update(prompt);

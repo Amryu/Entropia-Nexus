@@ -18,6 +18,7 @@
   import TradeRequestsPanel from './TradeRequestsPanel.svelte';
   import MassSellDialog from './MassSellDialog.svelte';
   import PriceHistoryChart from './PriceHistoryChart.svelte';
+  import RangeSlider from '$lib/components/RangeSlider.svelte';
 
   import { goto } from "$app/navigation";
   import { page } from "$app/stores";
@@ -52,30 +53,14 @@
   let sidebarTab = 'categories'; // 'categories' | 'favourites'
   let selectedFavFolderId = null; // folder id, 'all', 'root', or null
   let favouriteFolderFilter = null; // Set<number> | null — when set, filters main listing
-  let selectedTierFilter = "All"; // UL default
-  let selectedTiRRange = "All"; // L default
-  // QR filter dropdown options
-  const qrRangeOptions = [
-    { label: "All", value: "all" },
-    ...Array.from({ length: 10 }, (_, i) => ({
-      label: `${i * 10 + 1}-${i * 10 + 9}`,
-      value: `${i * 10}`
-    })),
-    { label: "100", value: "100" }
-  ];
-  let selectedQRRange = "all";
-  const tierOptionLabels = [
-    "All",
-    ...Array.from({ length: 11 }, (_, i) => String(i)),
-  ];
-  const tirRangeOptions = (() => {
-    const arr = [{ label: "All" }, { label: "0-500", min: 0, max: 500 }];
-    for (let start = 501; start <= 3501; start += 500) {
-      const end = start + 499;
-      arr.push({ label: `${start}-${end}`, min: start, max: end });
-    }
-    return arr;
-  })();
+  // Range slider filter state
+  let tierMin = 0;
+  let tierMax = 10;
+  let tirMin = 0;
+  let tirMax = 200;
+  let qrMin = 0;
+  let qrMax = 100;
+  let minConditionPct = 0;
 
   // Tierable types list (used by detail view tables)
   const tierableTypes = new Set([
@@ -548,9 +533,9 @@
         sidebarTab,
         favFolderId: selectedFavFolderId,
         favFolderFilter: favouriteFolderFilter,
-        tierFilter: selectedTierFilter,
-        tiRRange: selectedTiRRange,
-        qrRange: selectedQRRange,
+        tierMin, tierMax,
+        tirMin, tirMax,
+        qrMin, qrMax,
       };
     }
     wasDetailView = isDetailView;
@@ -594,9 +579,12 @@
             sidebarTab = savedOverviewFilters.sidebarTab;
             selectedFavFolderId = savedOverviewFilters.favFolderId;
             favouriteFolderFilter = savedOverviewFilters.favFolderFilter;
-            selectedTierFilter = savedOverviewFilters.tierFilter;
-            selectedTiRRange = savedOverviewFilters.tiRRange;
-            selectedQRRange = savedOverviewFilters.qrRange;
+            tierMin = savedOverviewFilters.tierMin;
+            tierMax = savedOverviewFilters.tierMax;
+            tirMin = savedOverviewFilters.tirMin;
+            tirMax = savedOverviewFilters.tirMax;
+            qrMin = savedOverviewFilters.qrMin;
+            qrMax = savedOverviewFilters.qrMax;
             savedOverviewFilters = null;
           } else {
             selectedCategory = 'All';
@@ -751,8 +739,15 @@
         if (selectedLimited === "UL" && isL) return false;
       }
 
-      if (selectedSex === "male" && hasItemTag(name, "F")) return false;
-      if (selectedSex === "female" && hasItemTag(name, "M")) return false;
+      // Gender filter: only applies to Armor/Clothing
+      const genderRelevant = item.t === 'Armor' || item.t === 'Clothing';
+      if (genderRelevant && selectedSex === "male" && hasItemTag(name, "F")) return false;
+      if (genderRelevant && selectedSex === "female" && hasItemTag(name, "M")) return false;
+
+      // Planet filter: only show items with orders on the selected planet
+      if (selectedPlanet !== "All Planets") {
+        if (!item.pl || !item.pl.includes(selectedPlanet)) return false;
+      }
 
       return true;
     });
@@ -872,22 +867,15 @@
     pathAppliesLUL(selectedCategory);
 
   let orderPlanet = "Calypso"; // persisted planet pref for order dialog
-  let lastPlanet = selectedPlanet;
-  async function handlePlanetChange() {
-    if (selectedPlanet === lastPlanet) return;
-    lastPlanet = selectedPlanet;
-    loading = true;
-    try {
-      // TODO: call backend to fetch planet-specific market data once available
-      // const res = await fetch(`/api/market/exchange?planet=${encodeURIComponent(selectedPlanet)}`);
-      // const json = await res.json();
-      if (selectedLimited !== "all" && appliesLULForCurrent) {
-        await new Promise((r) => setTimeout(r, 400));
-      }
-    } finally {
-      loading = false;
+
+  // Derive available planets from items that have orders
+  $: availablePlanets = (() => {
+    const planets = new Set();
+    for (const item of allItems || []) {
+      if (item.pl) for (const p of item.pl) planets.add(p);
     }
-  }
+    return PLANETS.filter(p => planets.has(p));
+  })();
 
   // Helpers
   function classifyFreshness(date) {
@@ -1182,17 +1170,18 @@
         (o?.Planet || o?.planet) === selectedPlanet
       )
       .filter((o) => {
+        // Tier filter (UL tierable items only)
+        if (!isTierableDetail || isLimitedDetail) return true;
+        if (tierMin <= 0 && tierMax >= 10) return true;
+        const t = Number(o?.Tier ?? o?.tier ?? o?.details?.Tier);
+        return isFinite(t) ? Math.floor(t) >= tierMin && Math.floor(t) <= tierMax : true;
+      })
+      .filter((o) => {
+        // TiR filter (all tierable items)
         if (!isTierableDetail) return true;
-        if (!isLimitedDetail) {
-          if (selectedTierFilter === "All") return true;
-          const t = Number(o?.Tier ?? o?.tier ?? o?.details?.Tier);
-          return isFinite(t) ? Math.floor(t) === Number(selectedTierFilter) : true;
-        } else {
-          if (selectedTiRRange === "All") return true;
-          const tir = Number(o?.TiR ?? o?.tir ?? o?.TIR ?? o?.details?.TierIncreaseRate);
-          const [min, max] = (selectedTiRRange || "0-500").split("-").map(Number);
-          return isFinite(tir) ? tir >= min && tir <= max : true;
-        }
+        if (tirMin <= 0 && tirMax >= tirRangeMax) return true;
+        const tir = Number(o?.TiR ?? o?.tir ?? o?.TIR ?? o?.details?.TierIncreaseRate);
+        return isFinite(tir) ? tir >= tirMin && tir <= tirMax : true;
       })
       .filter((o) =>
         lastUpdateFilter === "all"
@@ -1200,14 +1189,26 @@
           : classifyFreshness(getUpdatedAt(o)) === lastUpdateFilter
       )
       .filter((o) => {
-        if (!minTTFilter) return true;
-        if (bpNonL) {
-          const qr = Number(o?.details?.QualityRating) || 0;
-          return qr > 0 ? (qr / 100) >= minTTFilter : true;
-        }
+        // Min TT filter (stackable items only)
+        if (!minTTFilter || !detailItemStackable) return true;
         const qty = o?.Quantity ?? o?.quantity ?? 0;
         const ttTotal = maxTT != null ? maxTT * qty : null;
         return ttTotal == null || ttTotal >= minTTFilter;
+      })
+      .filter((o) => {
+        // Condition % filter (condition items only)
+        if (!detailHasCondition || minConditionPct <= 0) return true;
+        const currentTT = o?.details?.CurrentTT ?? o?.Value ?? o?.tt_value ?? null;
+        if (currentTT == null || maxTT == null || maxTT <= 0) return true;
+        const pct = (currentTT / maxTT) * 100;
+        return pct >= minConditionPct;
+      })
+      .filter((o) => {
+        // QR filter (non-L blueprints only)
+        if (!isBlueprintDetail || isLimitedDetail) return true;
+        if (qrMin <= 0 && qrMax >= 100) return true;
+        const qr = Number(o?.details?.QualityRating) || 0;
+        return qr >= qrMin && qr <= qrMax;
       })
       .map(o => {
         const qty = o?.Quantity ?? o?.quantity ?? 0;
@@ -1247,10 +1248,15 @@
 
   let minTTFilter = 0;
 
-  $: filteredSellOrders = applyOrderFilters(sellOrders)
+  // Explicit dependency list so Svelte re-runs when any filter variable changes
+  $: orderFilterDeps = [selectedPlanet, tierMin, tierMax, tirMin, tirMax, tirRangeMax,
+    lastUpdateFilter, minTTFilter, minConditionPct, qrMin, qrMax,
+    detailItemStackable, detailHasCondition, isTierableDetail, isLimitedDetail, isBlueprintDetail];
+
+  $: filteredSellOrders = (orderFilterDeps, applyOrderFilters(sellOrders))
     .sort((a, b) => (a.Price ?? Infinity) - (b.Price ?? Infinity));
 
-  $: filteredBuyOrders = applyOrderFilters(buyOrders)
+  $: filteredBuyOrders = (orderFilterDeps, applyOrderFilters(buyOrders))
     .sort((a, b) => (b.Price ?? -Infinity) - (a.Price ?? -Infinity));
 
   $: myBuyOrder = currentUser && (buyOrders || []).find(o => getSellerId(o) === currentUser.id) || null;
@@ -1711,6 +1717,25 @@
   $: isBlueprintDetail = selectedItemDetails && isBlueprint(selectedItemDetails);
   $: isTierableDetail = selectedItemDetails && isItemTierable(selectedItemDetails);
   $: isLimitedDetail = selectedItemDetails && isLimited(selectedItemDetails);
+  $: detailHasCondition = selectedItemDetails && itemHasCondition(selectedItemDetails) && !detailItemStackable && isLimitedDetail;
+  $: tirRangeMax = isLimitedDetail ? 4000 : 200;
+
+  // Reset detail filters when item changes
+  let lastFilterItemId = null;
+  $: if (selectedItem?.i !== lastFilterItemId) {
+    lastFilterItemId = selectedItem?.i ?? null;
+    tierMin = 0; tierMax = 10;
+    tirMin = 0; tirMax = tirRangeMax;
+    qrMin = 0; qrMax = 100;
+    minConditionPct = 0;
+    minTTFilter = 0;
+  }
+  // Sync tirMax when tirRangeMax changes (e.g. item details load and L/UL is determined)
+  let lastTirRangeMax = 200;
+  $: if (tirRangeMax !== lastTirRangeMax) {
+    if (tirMax === lastTirRangeMax) tirMax = tirRangeMax;
+    lastTirRangeMax = tirRangeMax;
+  }
 
   // Favourites
   $: currentItemId = selectedItem?.i ?? null;
@@ -1785,10 +1810,9 @@
           <select
             class="filter-select"
             bind:value={selectedPlanet}
-            on:change={handlePlanetChange}
           >
             <option>All Planets</option>
-            {#each PLANETS as p}
+            {#each availablePlanets as p}
               <option>{p}</option>
             {/each}
           </select>
@@ -1900,18 +1924,6 @@
             <option value="recent">Recent only (7d)</option>
             <option value="all">All</option>
           </select>
-          <div class="min-tt-group">
-            <input
-              type="number"
-              class="filter-input-small"
-              placeholder="Min TT"
-              min="0"
-              step="0.01"
-              bind:value={minTTFilter}
-              title="Minimum total TT value to show"
-            />
-            <span class="filter-hint">Min total TT</span>
-          </div>
           <div class="actions-right">
             {#if canPostOrders}
               <button
@@ -1977,47 +1989,41 @@
           {#if selectedItemDetails && !hasCondition(selectedItemDetails) && getMaxTT(selectedItemDetails) != null}
             <span class="detail-tt-badge">{formatPedValue(getMaxTT(selectedItemDetails))}</span>
           {/if}
+          {#if isTierableDetail && !isLimitedDetail}
+            <RangeSlider min={0} max={10} bind:valueMin={tierMin} bind:valueMax={tierMax} label="Tier" compact />
+          {/if}
           {#if isTierableDetail}
-            {#if !isLimitedDetail}
-              <div class="tier-filter" title="Filter by Tier (UL)">
-                <label for="tierFilterSelect">Tier</label>
-                <select
-                  id="tierFilterSelect"
-                  bind:value={selectedTierFilter}
-                  class="filter-select tier-select"
-                >
-                  {#each tierOptionLabels as t}
-                    <option value={t}>{t}</option>
-                  {/each}
-                </select>
-              </div>
-            {:else}
-              <div class="tier-filter" title="Filter by TiR range (L)">
-                <label for="tirRangeSelect">TiR</label>
-                <select
-                  id="tirRangeSelect"
-                  bind:value={selectedTiRRange}
-                  class="filter-select tier-select"
-                >
-                  {#each tirRangeOptions as opt}
-                    <option value={opt.label}>{opt.label}</option>
-                  {/each}
-                </select>
-              </div>
-            {/if}
+            <RangeSlider min={0} max={tirRangeMax} step={10} bind:valueMin={tirMin} bind:valueMax={tirMax} label="TiR" compact />
           {/if}
           {#if isBlueprintDetail && !isLimitedDetail}
-            <div class="tier-filter" title="Filter by QR range (Blueprints)">
-              <label for="qrRangeSelect">QR</label>
-              <select
-                id="qrRangeSelect"
-                bind:value={selectedQRRange}
-                class="filter-select tier-select"
-              >
-                {#each qrRangeOptions as opt}
-                  <option value={opt.value}>{opt.label}</option>
-                {/each}
-              </select>
+            <RangeSlider min={0} max={100} bind:valueMin={qrMin} bind:valueMax={qrMax} label="QR" compact />
+          {/if}
+          {#if detailItemStackable}
+            <div class="min-tt-group">
+              <input
+                type="number"
+                class="filter-input-small"
+                placeholder="Min TT"
+                min="0"
+                step="0.01"
+                bind:value={minTTFilter}
+                title="Minimum total TT value to show"
+              />
+              <span class="filter-hint">Min TT</span>
+            </div>
+          {/if}
+          {#if detailHasCondition}
+            <div class="condition-filter">
+              <label class="condition-label">Cond: <strong style="display:inline-block;min-width:4ch;text-align:right">{minConditionPct}%</strong></label>
+              <input
+                type="range"
+                class="condition-slider"
+                min="0"
+                max="100"
+                step="1"
+                bind:value={minConditionPct}
+                title="Minimum condition %"
+              />
             </div>
           {/if}
           <div class="detail-title-right">
@@ -3125,25 +3131,24 @@
     max-width: 100%;
   }
 
-  .tier-filter {
+  .condition-filter {
     display: inline-flex;
     align-items: center;
     gap: 6px;
     flex: 0 0 auto;
   }
-  .tier-filter label {
-    font-size: 11px;
-    font-weight: 500;
+  .condition-label {
+    font-size: 0.8rem;
     color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
+    white-space: nowrap;
   }
-  .tier-select {
-    flex: 0 0 auto;
+  .condition-label strong {
+    color: var(--text-color);
+  }
+  .condition-slider {
     width: 100px;
-    padding: 5px 8px;
-    height: 30px;
-    font-size: 12px;
+    accent-color: var(--accent-color);
+    cursor: pointer;
   }
 
   /* Metric mini-cards */

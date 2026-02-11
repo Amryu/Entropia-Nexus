@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { dump } from 'js-yaml';
 import { Client, GatewayIntentBits, Collection, Events, ChannelType } from 'discord.js';
-import { getUsers, getOpenChanges, setChangeThreadId, getDeletedChanges, deleteChange, getFlightsNeedingThread, setFlightThreadId, getCheckinsPendingThreadAdd, markCheckinAddedToThread, getUnnotifiedFlightStateChanges, getFlightsNeedingArchive, clearFlightThreadId, getPendingRescheduleNotifications, markRescheduleNotificationSent, getServicePilots, getFlightAcceptedCheckins, getFlightsReadyForCustomerKick, setFlightCompletedAt, expireTickets, computeAllPriceSummaries, getPendingTradeRequests, getTradeRequestItems, setTradeRequestThread, getWarnableTradeRequests, markWarningSent, getExpirableTradeRequests, updateTradeRequestStatus, findTradeRequestByThread, updateLastActivity, getActiveTradeRequestsWithNewItems, getNewTradeRequestItems, adjustOfferQuantities } from './db.js';
+import { getUsers, getOpenChanges, setChangeThreadId, getDeletedChanges, deleteChange, getFlightsNeedingThread, setFlightThreadId, getCheckinsPendingThreadAdd, markCheckinAddedToThread, getUnnotifiedFlightStateChanges, getFlightsNeedingArchive, clearFlightThreadId, getPendingRescheduleNotifications, markRescheduleNotificationSent, getServicePilots, getFlightAcceptedCheckins, getFlightsReadyForCustomerKick, setFlightCompletedAt, expireTickets, computeAllPriceSummaries, getPendingTradeRequests, getTradeRequestItems, setTradeRequestThread, getWarnableTradeRequests, markWarningSent, getExpirableTradeRequests, updateTradeRequestStatus, findTradeRequestByThread, updateLastActivity, getActiveTradeRequestsWithNewItems, getNewTradeRequestItems, adjustOfferQuantities, getUsersWithGrant } from './db.js';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { compareJson, validate, printSideBySide } from './change.js';
 import { snapshotExchangePrices, computeAllExchangeSummaries } from './exchange-prices.js';
@@ -374,7 +374,9 @@ async function checkChanges() {
         }
       }
       try {
-        await thread.send(`A new change has been submitted by <@${change.author_id}>. Please post proof to validate your changes and await approval.`);
+        const reviewerRoleId = getConfigValue('reviewerRoleId');
+        const reviewerMention = reviewerRoleId ? ` <@&${reviewerRoleId}>` : '';
+        await thread.send(`A new change has been submitted by <@${change.author_id}>.${reviewerMention} Please post proof to validate your changes and await approval.`);
       } catch (e) {
         console.error(`Failed to send submission message to thread ${thread.id} (${change.data.Name}): ${e.message}`);
       }
@@ -400,7 +402,9 @@ async function checkChanges() {
         }
       }
       try {
-        await thread.send(`This change has been updated by <@${change.author_id}>.`);
+        const reviewerRoleId = getConfigValue('reviewerRoleId');
+        const reviewerMention = reviewerRoleId ? ` <@&${reviewerRoleId}>` : '';
+        await thread.send(`This change has been updated by <@${change.author_id}>.${reviewerMention}`);
       } catch (e) {
         console.error(`Failed to send update notification to thread ${thread.id} (${change.data.Name}): ${e.message}`);
       }
@@ -410,13 +414,23 @@ async function checkChanges() {
       setConfigValue('lastChangeCheck', newCheckTime.toISOString());
     }
 
-    // Add static user to the thread
-    if (change.state == 'Pending' && !thread.members.cache.has(adminUserId)) {
-      try {
-        await thread.members.add(adminUserId);
-      }
-      catch (e) {
-        console.error(`Error adding admin to change thread (${thread.id}, ${change.data.Name}): ${e.message}`);
+    // Add all reviewers to the thread
+    if (change.state == 'Pending') {
+      const reviewerRoleId = getConfigValue('reviewerRoleId');
+      if (reviewerRoleId) {
+        const guild = channel.guild;
+        const role = guild.roles.cache.get(reviewerRoleId);
+        if (role) {
+          for (const [memberId] of role.members) {
+            if (!thread.members.cache.has(memberId)) {
+              try {
+                await thread.members.add(memberId);
+              } catch (e) {
+                console.error(`Error adding reviewer ${memberId} to change thread (${thread.id}, ${change.data.Name}): ${e.message}`);
+              }
+            }
+          }
+        }
       }
     }
   }
@@ -451,6 +465,58 @@ async function checkChanges() {
     }
 
     await deleteChange(change.id);
+  }
+}
+
+async function syncReviewerRole() {
+  const reviewerRoleId = getConfigValue('reviewerRoleId');
+  if (!reviewerRoleId) return;
+
+  const guildId = config.guildId;
+  if (!guildId) return;
+
+  const guild = client.guilds.cache.get(String(guildId)) || await client.guilds.fetch(String(guildId)).catch(() => null);
+  if (!guild) return;
+
+  try {
+    await guild.members.fetch();
+  } catch (e) {
+    console.error('syncReviewerRole: Error fetching members:', e.message);
+    return;
+  }
+
+  const role = guild.roles.cache.get(reviewerRoleId);
+  if (!role) {
+    console.error(`syncReviewerRole: Reviewer role ${reviewerRoleId} not found in guild`);
+    return;
+  }
+
+  const grantedUserIds = new Set(await getUsersWithGrant('wiki.approve'));
+  const currentMembers = role.members;
+
+  // Add role to users who should have it
+  for (const userId of grantedUserIds) {
+    const member = guild.members.cache.get(userId);
+    if (member && !member.roles.cache.has(reviewerRoleId)) {
+      try {
+        await member.roles.add(reviewerRoleId);
+        console.log(`syncReviewerRole: Added reviewer role to ${member.user.username}`);
+      } catch (e) {
+        console.error(`syncReviewerRole: Failed to add role to ${userId}: ${e.message}`);
+      }
+    }
+  }
+
+  // Remove role from users who should not have it
+  for (const [memberId, member] of currentMembers) {
+    if (!grantedUserIds.has(memberId)) {
+      try {
+        await member.roles.remove(reviewerRoleId);
+        console.log(`syncReviewerRole: Removed reviewer role from ${member.user.username}`);
+      } catch (e) {
+        console.error(`syncReviewerRole: Failed to remove role from ${memberId}: ${e.message}`);
+      }
+    }
   }
 }
 
@@ -795,6 +861,7 @@ setInterval(() => runScheduled('checkChanges', checkChanges), 1 * 15 * 1000);
 setInterval(() => runScheduled('checkFlights', checkFlights), 30 * 1000);
 setInterval(() => runScheduled('checkRescheduleNotifications', checkRescheduleNotifications), 30 * 1000);
 setInterval(() => runScheduled('checkTradeRequests', checkTradeRequests), 30 * 1000);
+setInterval(() => runScheduled('syncReviewerRole', syncReviewerRole), 5 * 60 * 1000);
 
 // ---- Trade Request Thread Management ----
 

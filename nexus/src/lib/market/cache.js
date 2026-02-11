@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { apiCall } from "$lib/util";
 import { categorizeItems } from "$lib/market/categorize";
-import { getAllOrderCounts, getLatestExchangePriceMap } from "$lib/server/exchange.js";
+import { getAllOrderCounts, getLatestExchangePriceMap, getOrderPlanets } from "$lib/server/exchange.js";
 
 // In-memory cache
 let cache = {
@@ -16,6 +16,8 @@ let cache = {
   detailed: {},
   // Offer counts per item (Map<itemId, { buys, sells }>)
   offerCounts: null,
+  // Planets with orders per item (Map<itemId, string[]>)
+  orderPlanets: null,
   // Exchange price data per item (Map<itemId, { wap, median, p10 }>)
   exchangePrices: null,
   // Timestamps
@@ -185,11 +187,13 @@ export async function rebuildMarketCache(fetch) {
 
     // Fetch offer counts and prices from exchange DB
     try {
-      const [counts, prices] = await Promise.all([
+      const [counts, planets, prices] = await Promise.all([
         getAllOrderCounts(),
+        getOrderPlanets().catch(() => null),
         getLatestExchangePriceMap().catch(() => null)
       ]);
       cache.offerCounts = counts;
+      if (planets) cache.orderPlanets = planets;
       if (prices) cache.exchangePrices = prices;
       cache.lastOfferCountsAt = Date.now();
     } catch { /* non-fatal */ }
@@ -306,11 +310,13 @@ async function itemsDeltaRefresh(fetch) {
 
     // Refresh offer counts and prices
     try {
-      const [counts, prices] = await Promise.all([
+      const [counts, planets, prices] = await Promise.all([
         getAllOrderCounts(),
+        getOrderPlanets().catch(() => null),
         getLatestExchangePriceMap().catch(() => null)
       ]);
       cache.offerCounts = counts;
+      if (planets) cache.orderPlanets = planets;
       if (prices) cache.exchangePrices = prices;
       cache.lastOfferCountsAt = Date.now();
     } catch { /* non-fatal */ }
@@ -333,11 +339,13 @@ async function itemsDeltaRefresh(fetch) {
 async function refreshOfferCounts() {
   if (!cache.annotated) return; // no data yet
   try {
-    const [counts, prices] = await Promise.all([
+    const [counts, planets, prices] = await Promise.all([
       getAllOrderCounts(),
+      getOrderPlanets().catch(() => null),
       getLatestExchangePriceMap().catch(() => null)
     ]);
     cache.offerCounts = counts;
+    if (planets) cache.orderPlanets = planets;
     if (prices) cache.exchangePrices = prices;
     cache.lastOfferCountsAt = Date.now();
     buildSummary();
@@ -413,6 +421,7 @@ function slimItem(item) {
   if (!item || typeof item !== 'object') return item;
   const id = item.ItemId ?? item.Id ?? null;
   const counts = id != null && cache.offerCounts ? cache.offerCounts.get(id) : null;
+  const planets = id != null && cache.orderPlanets ? cache.orderPlanets.get(id) : null;
   const ep = id != null && cache.exchangePrices ? cache.exchangePrices.get(id) : null;
   const type = item.Type ?? item.Properties?.Type ?? null;
   const name = item.Name ?? null;
@@ -438,7 +447,8 @@ function slimItem(item) {
     u: counts?.lastUpdate ? counts.lastUpdate.toISOString() : null,
     m: ep?.median ?? null,
     p: ep?.p10 ?? null,
-    w: ep?.wap ?? null
+    w: ep?.wap ?? null,
+    pl: planets || null
   };
 }
 

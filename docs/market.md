@@ -9,12 +9,15 @@ A trading platform for buying and selling items between players.
 ### Features
 
 - **Category Browser**: Hierarchical tree navigation for item categories
-- **Planet Filter**: Filter by trading location
+- **Planet Filter**: Filter by trading location; only shows planets that have at least one active order
 - **Item Type Filters**:
   - Limited (L) vs Unlimited (UL)
-  - Sex filter for clothing
-  - Tier/TiR filters for tierable items
-  - QR filter for blueprints
+  - Gender filter for Armor/Clothing only
+  - Tier range slider (0-10) for UL tierable items
+  - TiR range slider (0-200 UL, 0-4000 L) for L tierable items
+  - QR range slider (0-100) for non-L blueprints
+  - Condition % slider for items with condition (filters by CurrentTT/MaxTT)
+  - Min TT input for stackable items (in detail title bar)
 - **Buy/Sell Orders**: Create and manage trade orders with real-time API
 - **Order Freshness**: Filter by last update time
 - **Order Staleness**: Active (<3d), Stale (3-7d), Expired (7-30d), Terminated (>30d)
@@ -24,6 +27,7 @@ A trading platform for buying and selling items between players.
 - **Sell from Inventory**: Create sell orders directly from inventory rows with pre-filled data
 - **Order Coverage**: Standalone dialog to check/adjust sell orders exceeding inventory
 - **Shopping Cart**: Add sell orders to cart, group by seller/planet, checkout creates trade requests
+- **Planet Data**: Server-side per-item planet tracking via `getOrderPlanets()` in exchange.js; cached as `pl` field on slim items
 - **TT Badge**: Non-condition items show their TT value next to the item name in detail view
 - **Buy/Sell Now**: Click Buy/Sell buttons on order rows to create instant trade requests
 - **Bulk Buy/Sell**: Tab in OrderDialog for batch purchasing with quantity/min/max/planet filters
@@ -62,6 +66,9 @@ nexus/src/routes/market/exchange/[[slug]]/[[id]]/
 ├── TradeRequestsPanel.svelte   - View/manage trade requests in floating panel
 ├── PriceHistoryChart.svelte    - Chart.js line chart for exchange price history
 └── orderUtils.js               - Order calculation helpers
+
+nexus/src/lib/components/
+├── RangeSlider.svelte          - Dual-knob range slider for filter ranges
 ```
 
 ### State Management
