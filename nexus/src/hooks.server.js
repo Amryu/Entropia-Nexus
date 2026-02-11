@@ -147,15 +147,11 @@ export async function handle({ event, resolve }) {
     }
   }
 
-  const response = await resolve({
-    ...event,
-    locals: {
-      ...event.locals,
-      session,
-      initialViewportWidth,
-      isMobileDevice
-    }
-  });
+  event.locals.session = session;
+  event.locals.initialViewportWidth = initialViewportWidth;
+  event.locals.isMobileDevice = isMobileDevice;
+
+  const response = await resolve(event);
 
   if (sessionId) {
     response.headers['set-cookie'] = `${import.meta.env.VITE_SESSION_COOKIE_NAME}=${sessionId}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${SESSION_COOKIE_MAX_AGE}; Domain=${import.meta.env.VITE_DOMAIN}; Secure=${import.meta.env.MODE === 'development' ? false : true};`;

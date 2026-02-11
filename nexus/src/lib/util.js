@@ -546,13 +546,18 @@ function getApiBase() {
 export async function apiCall(fetch, url, apiUrl = getApiBase()) {
   const target = url.startsWith('/api/') ? url : (apiUrl + url);
 
-  let response = await fetch(target);
+  try {
+    let response = await fetch(target);
 
-  if (!response.ok) {
+    if (!response.ok) {
+      return null;
+    }
+
+    return await response.json();
+  } catch (e) {
+    console.error(`apiCall failed for ${url}:`, e.message || e);
     return null;
   }
-
-  return await response.json();
 }
 
 export async function apiPost(fetch, url, body, apiUrl = getApiBase()) {
