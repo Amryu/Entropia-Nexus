@@ -28,6 +28,7 @@
   import { showMyOrders, showInventory, showTradeList, showTrades, tradeList, addToTradeList, clearTradeList, myOrders, inventory, upsertOrder } from '../../exchangeStore.js';
   import { favourites, isFavourite, toggleFavourite, createFolder } from '../../favouritesStore.js';
   import { hasCondition } from '$lib/shopUtils';
+  import { addToast } from '$lib/stores/toasts.js';
 
   const VIEW_SLUGS = new Set(['listings', 'orders', 'inventory', 'trades']);
 
@@ -46,7 +47,6 @@
   let orderDialogType = null; // 'buy' | 'sell'
   let orderDialogRef;
   let orderDialogExistingCount = 0; // existing orders for the current item+side
-  let orderError = null; // Error message to display in the order dialog
   // Title bar filters for tierable items
   let mobileSidebarOpen = false;
   let sidebarTab = 'categories'; // 'categories' | 'favourites'
@@ -1302,7 +1302,6 @@
     orderDialogType = null;
     inlineEditItem = null;
     orderDialogExistingCount = 0;
-    orderError = null;
   }
 
   let submittingOrder = false; // Prevent double-click
@@ -1310,7 +1309,6 @@
   async function submitOrderPayload(order, closeAfter = true) {
     if (submittingOrder) return false;
     submittingOrder = true;
-    orderError = null;
 
     const item = inlineEditItem || selectedItemDetails || selectedItem;
     const itemId = item?.ItemId ?? item?.Id ?? item?.i;
@@ -1354,7 +1352,7 @@
       }
       const data = await res.json();
       if (!res.ok) {
-        orderError = data.error || `Order ${isEdit ? 'update' : 'creation'} failed`;
+        addToast(data.error || `Order ${isEdit ? 'update' : 'creation'} failed`);
         submittingOrder = false;
         return false;
       }
@@ -1410,14 +1408,14 @@
       const res = await fetch(`/api/market/exchange/orders/${orderId}`, { method: 'DELETE' });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        orderError = data.error || 'Failed to delete order';
+        addToast(data.error || 'Failed to delete order');
         return;
       }
       upsertOrder(data);
       await refreshAfterOrderChange();
       closeOrderDialog();
     } catch (err) {
-      orderError = 'Failed to delete order';
+      addToast('Failed to delete order');
     }
   }
 
@@ -2147,7 +2145,6 @@
         existingOrderCount={orderDialogExistingCount}
         isNonFungible={orderDialogIsNonFungible}
         submitting={submittingOrder}
-        error={orderError}
         on:close={closeOrderDialog}
         on:submit={onSubmitOrder}
         on:next={onNextOrder}

@@ -27,7 +27,7 @@ const RATE_LIMIT_ITEM_DAILY_FUNGIBLE = 10;
 
 /** Edit/bump/close per-minute limits */
 const RATE_LIMIT_EDIT_PER_MIN = 60;
-const RATE_LIMIT_BUMP_PER_MIN = 1;
+const RATE_LIMIT_BUMP_ALL_PER_MIN = 1;
 const RATE_LIMIT_CLOSE_PER_MIN = 100;
 
 /**
@@ -167,18 +167,20 @@ export async function closeOrder(orderId) {
 }
 
 /**
- * Bump an order (reset bumped_at to now).
+ * Bump all eligible orders for a user (reset bumped_at to now).
+ * Skips closed and terminated (>30 days) orders.
  */
-export async function bumpOrder(orderId) {
+export async function bumpAllOrders(userId) {
   const query = `
     UPDATE trade_offers
     SET bumped_at = NOW(), updated = NOW(), state = 'active'
-    WHERE id = $1
+    WHERE user_id = $1
       AND state != 'closed'
+      AND bumped_at >= NOW() - INTERVAL '${TERMINATED_DAYS} days'
     RETURNING id, user_id, type, item_id, quantity, min_quantity, markup, planet, details, created, updated, bumped_at, state
   `;
-  const { rows } = await pool.query(query, [orderId]);
-  return rows[0] || null;
+  const { rows } = await pool.query(query, [userId]);
+  return rows;
 }
 
 // ---------- Exchange Prices ----------
@@ -470,5 +472,5 @@ export {
   RATE_LIMIT_CREATE_PER_MIN, RATE_LIMIT_CREATE_PER_HOUR, RATE_LIMIT_CREATE_PER_DAY,
   RATE_LIMIT_ITEM_COOLDOWN_MS, RATE_LIMIT_ITEM_FUNGIBLE_COOLDOWN, RATE_LIMIT_ITEM_NONFUNGIBLE_COOLDOWN,
   RATE_LIMIT_ITEM_DAILY_FUNGIBLE,
-  RATE_LIMIT_EDIT_PER_MIN, RATE_LIMIT_BUMP_PER_MIN, RATE_LIMIT_CLOSE_PER_MIN,
+  RATE_LIMIT_EDIT_PER_MIN, RATE_LIMIT_BUMP_ALL_PER_MIN, RATE_LIMIT_CLOSE_PER_MIN,
 };

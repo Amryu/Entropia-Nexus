@@ -6,6 +6,7 @@
   import { encodeURIComponentSafe } from '$lib/util.js';
   import { goto } from '$app/navigation';
   import { createEventDispatcher, onMount } from 'svelte';
+  import { addToast } from '$lib/stores/toasts.js';
 
   export let user = null;
   export let sideFilter = 'all'; // 'all' | 'BUY' | 'SELL'
@@ -108,34 +109,19 @@
 
   /** Bump all eligible (active/stale) orders */
   export async function bumpAll() {
-    const eligible = $myOrders.filter(o => {
-      const s = o.computed_state || computeState(o.bumped_at);
-      return s !== 'terminated' && s !== 'closed';
-    });
-    if (eligible.length === 0) return;
-
     bumping = true;
-    error = null;
-    let failed = 0;
-    for (const order of eligible) {
-      try {
-        const res = await fetch(`/api/market/exchange/orders/${order.id}/bump`, { method: 'POST' });
-        if (!res.ok) {
-          const errData = await res.json().catch(() => ({}));
-          if (res.status === 429) {
-            // Rate limited — stop bumping and show the server's error message
-            error = errData.error || 'Bump rate limit exceeded';
-            break;
-          }
-          failed++;
-          continue;
-        }
-        const data = await res.json();
-        upsertOrder(data);
-      } catch { failed++; }
+    try {
+      const res = await fetch('/api/market/exchange/orders/bump-all', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Bump failed');
+      const enriched = enrichOrders(data.orders);
+      const updatedMap = new Map(enriched.map(o => [o.id, o]));
+      myOrders.update(current => current.map(o => updatedMap.get(o.id) || o));
+    } catch (e) {
+      addToast(e.message);
+    } finally {
+      bumping = false;
     }
-    bumping = false;
-    if (failed > 0 && !error) error = `Failed to bump ${failed} order(s)`;
   }
 
   async function handleClose(order) {
@@ -145,7 +131,7 @@
       if (!res.ok) throw new Error(data.error || 'Close failed');
       upsertOrder(data);
     } catch (e) {
-      error = e.message;
+      addToast(e.message);
     }
   }
 

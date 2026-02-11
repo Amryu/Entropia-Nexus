@@ -6,6 +6,7 @@
   import { darkMode, pageParams, initialViewportWidth } from '../stores.js';
 
   import Menu from "$lib/components/Menu.svelte";
+  import Toasts from "$lib/components/Toasts.svelte";
   import { onMount, onDestroy } from 'svelte';
   import { page, navigating } from '$app/stores';
   import { decodeURIComponentSafe } from '$lib/util.js';
@@ -149,6 +150,7 @@
   <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
   <link rel="manifest" href="/site.webmanifest">
 </svelte:head>
+<Toasts />
 <div class="app-layout">
   <Menu user={data?.session?.user} realUser={data?.session?.realUser} />
   {#if $navigating}
