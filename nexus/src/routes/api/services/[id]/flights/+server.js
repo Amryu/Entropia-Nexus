@@ -6,6 +6,7 @@ import {
   logFlightStateChange
 } from "$lib/server/db.js";
 import { getResponse } from "$lib/util.js";
+import { checkRateLimit } from "$lib/server/rateLimiter.js";
 
 // GET upcoming flights for a service
 export async function GET({ params, url, locals }) {
@@ -42,6 +43,11 @@ export async function POST({ params, request, locals }) {
   }
   if (!user.verified) {
     return getResponse({ error: 'You must verify your account.' }, 403);
+  }
+
+  const rateCheck = checkRateLimit(`services:flights:${user.id}`, 10, 60_000);
+  if (!rateCheck.allowed) {
+    return getResponse({ error: 'Too many requests. Please try again later.' }, 429);
   }
 
   const serviceId = parseInt(params.id);

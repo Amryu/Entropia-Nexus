@@ -1,6 +1,7 @@
 //@ts-nocheck
 import { getServices, createService, upsertServiceHealingDetails, upsertServiceDpsDetails, upsertServiceTransportationDetails, addServiceEquipment, getServiceHealingDetails, getServiceDpsDetails, getServiceTransportationDetails } from "$lib/server/db.js";
 import { getResponse, apiCall } from "$lib/util.js";
+import { checkRateLimit } from '$lib/server/rateLimiter.js';
 
 // GET all services (with optional filters)
 export async function GET({ url, locals, fetch }) {
@@ -62,6 +63,15 @@ export async function POST({ request, locals }) {
   }
   if (!user.verified) {
     return getResponse({ error: 'You must verify your account before creating services.' }, 403);
+  }
+
+  const rateCheck = checkRateLimit(`services:create:${user.id}`, 5, 60_000);
+  if (!rateCheck.allowed) {
+    return getResponse({ error: 'Too many requests. Please try again later.' }, 429);
+  }
+  const rateCheckH = checkRateLimit(`services:create-h:${user.id}`, 15, 3_600_000);
+  if (!rateCheckH.allowed) {
+    return getResponse({ error: 'Too many requests. Please try again later.' }, 429);
   }
 
   let body;

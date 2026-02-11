@@ -7,6 +7,7 @@ import {
   deleteServiceEquipment
 } from "$lib/server/db.js";
 import { getResponse } from "$lib/util.js";
+import { checkRateLimit } from '$lib/server/rateLimiter.js';
 
 // GET service equipment
 export async function GET({ params, locals }) {
@@ -33,6 +34,11 @@ export async function POST({ params, request, locals }) {
   }
   if (!user.verified) {
     return getResponse({ error: 'You must verify your account.' }, 403);
+  }
+
+  const rateCheck = checkRateLimit(`services:equipment:${user.id}`, 30, 60_000);
+  if (!rateCheck.allowed) {
+    return getResponse({ error: 'Too many requests. Please try again later.' }, 429);
   }
 
   const serviceId = parseInt(params.id);
@@ -78,6 +84,11 @@ export async function PUT({ params, request, locals }) {
   }
   if (!user.verified) {
     return getResponse({ error: 'You must verify your account.' }, 403);
+  }
+
+  const rateCheck = checkRateLimit(`services:equipment:${user.id}`, 30, 60_000);
+  if (!rateCheck.allowed) {
+    return getResponse({ error: 'Too many requests. Please try again later.' }, 429);
   }
 
   const serviceId = parseInt(params.id);

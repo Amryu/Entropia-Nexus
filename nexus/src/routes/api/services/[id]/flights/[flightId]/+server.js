@@ -15,6 +15,7 @@ import {
   canManageService
 } from "$lib/server/db.js";
 import { getResponse } from "$lib/util.js";
+import { checkRateLimit } from "$lib/server/rateLimiter.js";
 import { optimizeRoute, validateRoute } from "$lib/utils/routeOptimizer.js";
 
 // GET single flight with state log and checkins
@@ -53,6 +54,11 @@ export async function PUT({ params, request, locals }) {
 
   if (!user) {
     return getResponse({ error: 'You must be logged in.' }, 401);
+  }
+
+  const rateCheck = checkRateLimit(`services:flights:${user.id}`, 20, 60_000);
+  if (!rateCheck.allowed) {
+    return getResponse({ error: 'Too many requests. Please try again later.' }, 429);
   }
 
   const serviceId = parseInt(params.id);

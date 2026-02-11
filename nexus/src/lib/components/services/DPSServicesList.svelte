@@ -161,7 +161,7 @@
       header: 'Service',
       sortable: true,
       searchable: true,
-      width: '2fr'
+      width: '1.8fr'
     },
     {
       key: '_dps',
@@ -184,14 +184,14 @@
       header: 'Location',
       sortable: true,
       searchable: true,
-      width: '1.2fr'
+      width: '1fr'
     },
     {
       key: '_pricing',
       header: 'Pricing',
       sortable: false,
       searchable: false,
-      width: '120px'
+      width: '180px'
     },
     {
       key: 'owner_name',
@@ -213,7 +213,8 @@
   <FancyTable
     {columns}
     data={tableData}
-    rowHeight={48}
+    rowHeight={32}
+    compact={true}
     sortable={true}
     searchable={true}
     emptyMessage="No DPS services found"
@@ -231,6 +232,9 @@
   :global(.provider-link) {
     color: var(--accent-color);
     text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    height: 100%;
   }
 
   :global(.provider-link:hover) {

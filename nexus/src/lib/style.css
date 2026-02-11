@@ -23,6 +23,10 @@
   --success-color: #16a34a;
   --warning-bg: #3a3020;
   --warning-color: #fbbf24;
+  --warning-color-hover: #d97706;
+  --success-color-hover: #059669;
+  --accent-color-bg: #1a2a4a;
+  --main-color: #1a1a1a;
   /* Button hover colors - darker for better contrast with white text */
   --button-accent-hover: #1e40af;
   --button-success-hover: #047857;
@@ -67,6 +71,10 @@
   --success-color: #059669;
   --warning-bg: #fef3c7;
   --warning-color: #f59e0b;
+  --warning-color-hover: #b45309;
+  --success-color-hover: #047857;
+  --accent-color-bg: #e0f2fe;
+  --main-color: #f8f8f8;
   /* Button hover colors - darker for better contrast with white text */
   --button-accent-hover: #1e3a8a;
   --button-success-hover: #065f46;

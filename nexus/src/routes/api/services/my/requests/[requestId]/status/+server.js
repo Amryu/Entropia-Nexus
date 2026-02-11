@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { getResponse } from '$lib/util';
+import { checkRateLimit } from '$lib/server/rateLimiter.js';
 import {
   getRequestWithContext,
   updateRequestStatus
@@ -21,6 +22,11 @@ export async function PUT({ params, request, locals }) {
 
   if (!user) {
     return getResponse({ error: 'You must be logged in to update request status.' }, 401);
+  }
+
+  const rateCheck = checkRateLimit(`services:req-status:${user.id}`, 20, 60_000);
+  if (!rateCheck.allowed) {
+    return getResponse({ error: 'Too many requests. Please try again later.' }, 429);
   }
 
   const requestId = parseInt(params.requestId);

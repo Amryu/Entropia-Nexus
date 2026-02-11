@@ -14,6 +14,7 @@
   import { page } from '$app/stores';
   import { onMount, onDestroy } from 'svelte';
   import { getTypeLink, apiPost, encodeURIComponentSafe } from '$lib/util';
+  import { addToast } from '$lib/stores/toasts';
   import {
     canRestoreFlight,
     formatFlightTime,
@@ -184,7 +185,7 @@
 
     // Check if can restore (grace period and overlap validation)
     if (!canRestoreFlight(flight, activeFlights)) {
-      alert('Cannot restore this flight - it overlaps within 15 minutes of another active flight. Please reschedule one of the flights first.');
+      addToast('Cannot restore this flight - it overlaps within 15 minutes of another active flight.', { type: 'error' });
       return;
     }
 
@@ -199,14 +200,14 @@
 
       const result = await response.json();
       if (result.error) {
-        alert(result.error);
+        addToast(result.error, { type: 'error' });
       } else {
-        alert('Flight restored successfully!');
+        addToast('Flight restored successfully!', { type: 'success' });
         // Refresh flights list immediately
         await fetchUpcomingFlights();
       }
     } catch (e) {
-      alert('Failed to restore flight. Please try again.');
+      addToast('Failed to restore flight. Please try again.', { type: 'error' });
     }
   }
 
@@ -231,7 +232,7 @@
     // Check if user already has a ticket for this service
     const existingTicket = await checkExistingTicket();
     if (existingTicket && !user.grants?.includes('admin.panel')) {
-      alert('You already have a ticket for this service. You can only have one active ticket at a time.');
+      addToast('You already have a ticket for this service. You can only have one active ticket at a time.', { type: 'warning' });
       return;
     }
 
@@ -251,12 +252,12 @@
         offer_id: offer.id
       });
       if (result.error) {
-        alert(result.error);
+        addToast(result.error, { type: 'error' });
       } else {
-        alert('Ticket purchased successfully! It will be activated when the provider accepts your first check-in.');
+        addToast('Ticket purchased successfully! It will be activated when the provider accepts your first check-in.', { type: 'success' });
       }
     } catch (e) {
-      alert('Failed to purchase ticket. Please try again.');
+      addToast('Failed to purchase ticket. Please try again.', { type: 'error' });
     } finally {
       purchasingTicket = false;
     }
@@ -331,7 +332,7 @@
     // Check if user has a ticket
     const ticket = await checkExistingTicket();
     if (!ticket) {
-      alert('You need a ticket to check in. Please purchase a ticket first.');
+      addToast('You need a ticket to check in. Please purchase a ticket first.', { type: 'warning' });
       return;
     }
 
@@ -351,13 +352,13 @@
 
       const result = await response.json();
       if (result.error) {
-        alert(result.error);
+        addToast(result.error, { type: 'error' });
       } else {
-        alert('Check-in submitted! The provider will review your request.');
+        addToast('Check-in submitted! The provider will review your request.', { type: 'success' });
         closeCheckinDialog();
       }
     } catch (e) {
-      alert('Failed to submit check-in. Please try again.');
+      addToast('Failed to submit check-in. Please try again.', { type: 'error' });
     } finally {
       checkinSubmitting = false;
     }
@@ -804,7 +805,7 @@
   
   function importAsLoadout(weaponEquipment) {
     if (typeof localStorage === 'undefined') {
-      alert('Loadout manager requires browser storage.');
+      addToast('Loadout manager requires browser storage.', { type: 'error' });
       return;
     }
     
@@ -920,70 +921,84 @@
 </script>
 
 <svelte:head>
-  <title>Services | Entropia Nexus</title>
+  <title>{selectedService ? `${selectedService.title} - ` : ''}Services - Market - Entropia Nexus</title>
+  <meta name="description" content="Find healing, DPS, and transportation services from other players in Entropia Universe." />
 </svelte:head>
 
 <div class="scroll-container">
   <div class="page-container">
-    <div class="header-row">
-    <h1>Services</h1>
-    {#if !selectedService && user}
-      <div class="header-buttons">
-        <a href="/market/services/my" class="my-services-button">My Services and Requests</a>
-        {#if user.verified}
-          <a href="/market/services/create" class="create-button">+ Create Service</a>
+    <div class="breadcrumb">
+      <a href="/market">Market</a>
+      <span>/</span>
+      {#if selectedService}
+        <a href="/market/services">Services</a>
+        <span>/</span>
+        <span>{selectedService.title}</span>
+      {:else}
+        <span>Services</span>
+      {/if}
+    </div>
+
+    <div class="page-header">
+      <div class="header-left">
+        <h1>{selectedService ? selectedService.title : 'Services'}</h1>
+        {#if !selectedService}
+          <p class="subtitle">Find healing, DPS, and transportation services</p>
         {/if}
       </div>
-    {/if}
-    {#if selectedService && user}
-      <div class="header-action-buttons">
-        <button class="header-action-btn question-btn" on:click={() => openRequestModal('question')}>Ask a Question</button>
-        {#if selectedService.type === 'transportation' && !(selectedService.transportation_details?.service_mode === 'scheduled')}
-          {#if activeRequest && !isOwner}
-            <a href="/market/services/my/requests/{activeRequest.id}" class="header-action-btn active-request-btn">
-              View Active Request
-            </a>
-          {:else}
-            <button class="header-action-btn request-btn" on:click={() => openRequestModal('request')}>
-              {#if isOwner && user.id === selectedService.user_id}
-                Preview Flight Request
-              {:else}
-                Request Flight
-              {/if}
-            </button>
+      <div class="header-actions">
+        {#if !selectedService && user}
+          <a href="/market/services/my" class="btn-secondary">My Services</a>
+          {#if user.verified}
+            <a href="/market/services/create" class="btn-primary">Create Service</a>
+          {/if}
+        {/if}
+        {#if selectedService && user}
+          {#if isOwner}
+            <a href="/market/services/{selectedService.id}/edit" class="btn-secondary">Edit Service</a>
+          {/if}
+          <button class="btn-secondary" on:click={() => openRequestModal('question')}>Ask a Question</button>
+          {#if selectedService.type === 'transportation' && !(selectedService.transportation_details?.service_mode === 'scheduled')}
+            {#if activeRequest && !isOwner}
+              <a href="/market/services/my/requests/{activeRequest.id}" class="btn-success">
+                View Active Request
+              </a>
+            {:else}
+              <button class="btn-primary" on:click={() => openRequestModal('request')}>
+                {#if isOwner && user.id === selectedService.user_id}
+                  Preview Flight Request
+                {:else}
+                  Request Flight
+                {/if}
+              </button>
+            {/if}
           {/if}
         {/if}
       </div>
-    {/if}
-  </div>
+    </div>
 
   {#if !selectedService}
     <!-- List View -->
-    <div class="filters-bar">
-      <label class="planet-filter">
-        <span>Planet:</span>
+    <div class="filters">
+      <div class="filter-group tab-group">
+        {#each serviceTypeOptions as option}
+          <button
+            class="tab-btn"
+            class:active={currentType === option.value}
+            on:click={() => currentType = option.value}
+          >
+            {option.label}
+            <span class="tab-count">({servicesByType[option.value]?.length || 0})</span>
+          </button>
+        {/each}
+      </div>
+      <div class="filter-group">
         <select bind:value={selectedPlanetId}>
           <option value={null}>All Planets</option>
           {#each planets as planet}
             <option value={planet.Id}>{planet.Name}</option>
           {/each}
         </select>
-      </label>
-    </div>
-
-    <div class="type-selector">
-      <h2>Select Service Type</h2>
-      <div class="type-buttons">
-        {#each serviceTypeOptions as option}
-          <button
-            class="type-btn"
-            class:active={currentType === option.value}
-            on:click={() => currentType = option.value}
-          >
-            {option.label}
-            <span class="service-count">({servicesByType[option.value]?.length || 0})</span>
-          </button>
-        {/each}
       </div>
     </div>
 
@@ -1016,13 +1031,6 @@
     {/if}
   {:else}
     <!-- Detail View -->
-    <div class="header-row">
-      <a href="/market/services" class="back-link">&larr; Back to Services</a>
-      {#if user && (user.id === selectedService.user_id || user.grants?.includes('admin.panel'))}
-        <a href="/market/services/{selectedService.id}/edit" class="edit-link">Edit Service</a>
-      {/if}
-    </div>
-
     {#if !selectedService.is_active && isOwner}
       <div class="inactive-banner">
         <strong>This service is currently deactivated.</strong>
@@ -2775,97 +2783,101 @@
     box-sizing: border-box;
   }
 
-  .header-row {
+  .breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .breadcrumb a {
+    color: var(--accent-color);
+    text-decoration: none;
+  }
+
+  .breadcrumb a:hover {
+    text-decoration: underline;
+  }
+
+  .page-header {
     display: flex;
     justify-content: space-between;
-    align-items: center;
-    margin-bottom: 1rem;
+    align-items: flex-start;
+    margin-bottom: 1.5rem;
+    gap: 1rem;
   }
 
-  h1 {
+  .header-left h1 {
+    margin: 0 0 0.25rem;
+    font-size: 1.75rem;
+  }
+
+  .subtitle {
     margin: 0;
+    color: var(--text-muted);
+    font-size: 0.95rem;
   }
 
-  .create-button {
-    background: var(--accent-color, #4a9eff);
-    color: white;
-    padding: 0.5rem 1rem;
-    border-radius: 4px;
-    text-decoration: none;
-    font-weight: 500;
-  }
-
-  .create-button:hover {
-    background: var(--accent-color-hover, #3a8eef);
-  }
-
-  .header-buttons {
+  .header-actions {
     display: flex;
-    gap: 0.75rem;
-    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+    flex-wrap: wrap;
   }
 
-  .my-services-button {
-    background: var(--secondary-color);
-    color: var(--text-color);
+  .btn-primary, .btn-secondary {
     padding: 0.5rem 1rem;
     border-radius: 4px;
-    text-decoration: none;
+    font-size: 0.9rem;
     font-weight: 500;
+    text-decoration: none;
+    white-space: nowrap;
+    border: none;
+    cursor: pointer;
+  }
+
+  .btn-primary {
+    background: var(--accent-color);
+    color: white;
+  }
+
+  .btn-primary:hover {
+    background: var(--accent-color-hover);
+  }
+
+  .btn-secondary {
+    background: transparent;
+    color: var(--text-color);
     border: 1px solid var(--border-color);
   }
 
-  .my-services-button:hover {
+  .btn-secondary:hover {
     background: var(--hover-color);
   }
 
-  .header-action-buttons {
-    display: flex;
-    gap: 0.75rem;
-    align-items: center;
-  }
-
-  .header-action-btn {
+  .btn-success {
     padding: 0.5rem 1rem;
-    border: none;
     border-radius: 4px;
-    font-size: 0.95rem;
-    cursor: pointer;
+    font-size: 0.9rem;
     font-weight: 500;
-  }
-
-  .header-action-btn.question-btn {
-    background: var(--secondary-color);
-    color: var(--text-color);
-    border: 1px solid #666;
-  }
-
-  .header-action-btn.question-btn:hover {
-    background: var(--hover-color);
-  }
-
-  .header-action-btn.request-btn {
-    background: #4a9eff;
-    color: white;
-  }
-
-  .header-action-btn.request-btn:hover {
-    background: #3a8eef;
-  }
-
-  .header-action-btn.active-request-btn {
-    background: #10b981;
-    color: white;
     text-decoration: none;
+    white-space: nowrap;
+    background: var(--success-color);
+    color: white;
+    border: none;
+    cursor: pointer;
   }
 
-  .header-action-btn.active-request-btn:hover {
-    background: #059669;
+  .btn-success:hover {
+    background: var(--success-color-hover);
   }
 
   .active-request-banner {
-    background: #d1fae5;
-    border: 1px solid #10b981;
+    background: var(--success-bg);
+    border: 1px solid var(--success-color);
     border-radius: 8px;
     padding: 1rem;
     margin-bottom: 1rem;
@@ -2883,16 +2895,16 @@
 
   .active-request-banner .banner-title {
     font-weight: 600;
-    color: #059669;
+    color: var(--success-color-hover);
   }
 
   .active-request-banner .banner-text {
     font-size: 0.9rem;
-    color: var(--text-muted, #666);
+    color: var(--text-muted);
   }
 
   .active-request-banner .banner-link {
-    background: #10b981;
+    background: var(--success-color);
     color: white;
     padding: 0.5rem 1rem;
     border-radius: 4px;
@@ -2902,116 +2914,75 @@
   }
 
   .active-request-banner .banner-link:hover {
-    background: #059669;
+    background: var(--success-color-hover);
   }
 
-  .filters-bar {
+  .filters {
     display: flex;
-    justify-content: flex-end;
-    margin-bottom: 1rem;
-  }
-
-  .planet-filter {
-    display: flex;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 0.5rem;
-    font-size: 0.95rem;
   }
 
-  .planet-filter span {
-    color: var(--text-color);
-    font-weight: 500;
-  }
-
-  .planet-filter select {
+  .filter-group select {
     padding: 0.5rem 0.75rem;
-    border: 1px solid #666;
+    background: var(--secondary-color);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
     border-radius: 4px;
-    background: var(--secondary-color);
-    color: var(--text-color);
-    font-size: 0.95rem;
-    cursor: pointer;
+    font-size: 0.9rem;
     min-width: 150px;
+    box-sizing: border-box;
   }
 
-  .planet-filter select:hover {
-    background: var(--hover-color);
+  .filter-group select:focus {
+    border-color: var(--accent-color);
+    outline: none;
   }
 
-  .type-selector {
-    margin: 2rem 0;
-  }
-
-  .type-selector h2 {
-    margin: 0 0 1rem 0;
-    font-size: 1.25rem;
-    color: var(--text-color);
-  }
-
-  .type-buttons {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 1rem;
-  }
-
-  .type-btn {
+  .tab-group {
     display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 1.5rem 1rem;
-    background: var(--secondary-color);
-    border: 2px solid #666;
-    border-radius: 8px;
-    color: var(--text-color);
-    font-size: 1.1rem;
-    font-weight: 600;
+    gap: 0.25rem;
+  }
+
+  .tab-btn {
+    padding: 0.5rem 1rem;
+    background: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    font-weight: 500;
     cursor: pointer;
   }
 
-  .type-btn:hover {
+  .tab-btn:hover {
     background: var(--hover-color);
-    border-color: #4a9eff;
+    color: var(--text-color);
   }
 
-  .type-btn.active {
-    background: linear-gradient(135deg, rgba(74, 158, 255, 0.2), var(--secondary-color));
-    border-color: #4a9eff;
-    box-shadow: 0 0 0 2px rgba(74, 158, 255, 0.3);
+  .tab-btn.active {
+    background: var(--accent-color);
+    color: white;
+    border-color: var(--accent-color);
   }
 
-  .service-count {
-    font-size: 0.85rem;
+  .tab-count {
+    font-size: 0.8rem;
     font-weight: 400;
-    color: #888;
-    margin-top: 0.25rem;
+    opacity: 0.8;
   }
 
   .empty-state {
     text-align: center;
     padding: 3rem;
-    color: #888;
-  }
-
-  .back-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 1rem;
-  }
-
-  .back-link, .edit-link {
-    color: #4a9eff;
-    text-decoration: none;
-  }
-
-  .back-link:hover, .edit-link:hover {
-    text-decoration: underline;
+    color: var(--text-muted);
   }
 
   .service-detail {
     background-color: var(--secondary-color);
-    border: 1px solid #666;
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     padding: 1.5rem;
   }
@@ -3029,7 +3000,7 @@
   }
 
   .service-type-badge {
-    background: var(--accent-color, #4a9eff);
+    background: var(--accent-color);
     color: white;
     padding: 0.25rem 0.5rem;
     border-radius: 4px;
@@ -3037,7 +3008,7 @@
   }
 
   .busy-badge {
-    background: #e74c3c;
+    background: var(--error-color);
     color: white;
     padding: 0.25rem 0.5rem;
     border-radius: 4px;
@@ -3045,7 +3016,7 @@
   }
 
   .inactive-badge {
-    background: var(--text-muted, #888);
+    background: var(--text-muted);
     color: white;
     padding: 0.25rem 0.5rem;
     border-radius: 4px;
@@ -3053,9 +3024,9 @@
   }
 
   .inactive-banner {
-    background: var(--warning-bg, #fef3c7);
-    border: 1px solid var(--warning-color, #f59e0b);
-    color: var(--warning-color, #92400e);
+    background: var(--warning-bg);
+    border: 1px solid var(--warning-color);
+    color: var(--warning-color);
     padding: 1rem;
     border-radius: 8px;
     margin-bottom: 1.5rem;
@@ -3072,7 +3043,7 @@
   }
 
   .inactive-banner a {
-    color: var(--accent-color, #4a9eff);
+    color: var(--accent-color);
   }
 
   .service-info {
@@ -3083,7 +3054,7 @@
   .info-section h3 {
     margin: 0 0 0.5rem 0;
     font-size: 0.9rem;
-    color: #888;
+    color: var(--text-muted);
     text-transform: uppercase;
   }
 
@@ -3094,7 +3065,7 @@
   .pilots-list {
     margin-top: 0.5rem;
     font-size: 0.95rem;
-    color: var(--text-muted, #aaa);
+    color: var(--text-muted);
   }
 
   .provider-link {
@@ -3118,7 +3089,7 @@
   .availability-section {
     margin-top: 1.5rem;
     padding-top: 1.5rem;
-    border-top: 1px solid #666;
+    border-top: 1px solid var(--border-color);
   }
 
   .availability-header {
@@ -3131,12 +3102,12 @@
   .availability-header h3 {
     margin: 0;
     font-size: 1rem;
-    color: #888;
+    color: var(--text-muted);
     text-transform: uppercase;
   }
 
   .edit-availability-link {
-    color: #4a9eff;
+    color: var(--accent-color);
     text-decoration: none;
     font-size: 0.9rem;
   }
@@ -3146,38 +3117,46 @@
   }
 
   .no-availability {
-    color: #888;
+    color: var(--text-muted);
     font-style: italic;
     margin: 0;
   }
 
-  @media (max-width: 600px) {
+  @media (max-width: 768px) {
     .page-container {
       padding: 0.75rem;
     }
 
-    .header-row {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 0.75rem;
-    }
-
-    .filters-row {
+    .page-header {
       flex-direction: column;
     }
 
-    .type-select {
+    .header-actions {
       width: 100%;
     }
 
-    .search-input {
-      min-width: 100%;
+    .btn-primary, .btn-secondary, .btn-success {
+      flex: 1;
+      text-align: center;
     }
 
-    .back-row {
+    .filters {
       flex-direction: column;
-      align-items: flex-start;
-      gap: 0.5rem;
+    }
+
+    .tab-group {
+      width: 100%;
+      flex-wrap: wrap;
+    }
+
+    .tab-btn {
+      flex: 1;
+      text-align: center;
+    }
+
+    .filter-group select {
+      width: 100%;
+      min-width: unset;
     }
 
     .service-detail {
@@ -3187,15 +3166,6 @@
     .service-header {
       flex-direction: column;
       align-items: flex-start;
-    }
-
-    .header-action-buttons {
-      flex-direction: column;
-      width: 100%;
-    }
-
-    .header-action-btn {
-      width: 100%;
     }
   }
 
@@ -3216,7 +3186,7 @@
 
   .modal {
     background: var(--secondary-color);
-    border: 1px solid #666;
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     width: 100%;
     max-width: 600px;
@@ -3230,7 +3200,7 @@
     justify-content: space-between;
     align-items: center;
     padding: 1.5rem;
-    border-bottom: 1px solid #444;
+    border-bottom: 1px solid var(--border-color);
   }
 
   .modal-header h2 {
@@ -3241,7 +3211,7 @@
 
   .modal-tabs {
     display: flex;
-    border-bottom: 1px solid var(--border-color, #444);
+    border-bottom: 1px solid var(--border-color);
   }
 
   .modal-tab {
@@ -3250,7 +3220,7 @@
     background: none;
     border: none;
     border-bottom: 2px solid transparent;
-    color: var(--text-muted, #888);
+    color: var(--text-muted);
     cursor: pointer;
     font-size: 0.95rem;
     transition: all 0.2s ease;
@@ -3261,14 +3231,14 @@
   }
 
   .modal-tab.active {
-    color: var(--accent-color, #4a9eff);
-    border-bottom-color: var(--accent-color, #4a9eff);
+    color: var(--accent-color);
+    border-bottom-color: var(--accent-color);
   }
 
   .admin-notice {
-    background: var(--accent-color-bg, #e0f2fe);
-    border: 1px solid var(--accent-color, #4a9eff);
-    color: var(--accent-color, #0369a1);
+    background: var(--accent-color-bg);
+    border: 1px solid var(--accent-color);
+    color: var(--accent-color);
     padding: 1rem;
     border-radius: 4px;
     margin-bottom: 1.5rem;
@@ -3297,7 +3267,7 @@
 
   .form-hint {
     font-size: 0.85rem;
-    color: var(--text-muted, #888);
+    color: var(--text-muted);
     margin: 0;
   }
 
@@ -3317,7 +3287,7 @@
   }
 
   .modal-close:hover {
-    color: #4a9eff;
+    color: var(--accent-color);
   }
 
   .modal-body {
@@ -3325,9 +3295,9 @@
   }
 
   .owner-preview-notice {
-    background: #fff3cd;
-    border: 1px solid #ffc107;
-    color: #856404;
+    background: var(--warning-bg);
+    border: 1px solid var(--warning-color);
+    color: var(--warning-color);
     padding: 1rem;
     border-radius: 4px;
     margin-bottom: 1.5rem;
@@ -3343,9 +3313,9 @@
   }
 
   .ticket-required-notice {
-    background: #5a2a2a;
-    border: 1px solid #ff6b6b;
-    color: #ffcccc;
+    background: var(--error-bg);
+    border: 1px solid var(--error-color);
+    color: var(--text-color);
     padding: 1rem;
     border-radius: 4px;
     margin-bottom: 1.5rem;
@@ -3354,7 +3324,7 @@
   .ticket-required-notice strong {
     display: block;
     margin-bottom: 0.5rem;
-    color: #ff6b6b;
+    color: var(--error-color);
   }
 
   .ticket-required-notice p {
@@ -3362,9 +3332,9 @@
   }
 
   .ticket-info-notice {
-    background: #2a3a5a;
-    border: 1px solid #4a9eff;
-    color: #cce0ff;
+    background: var(--accent-color-bg);
+    border: 1px solid var(--accent-color);
+    color: var(--text-color);
     padding: 1rem;
     border-radius: 4px;
     margin-bottom: 1.5rem;
@@ -3373,7 +3343,7 @@
   .ticket-info-notice strong {
     display: block;
     margin-bottom: 0.5rem;
-    color: #4a9eff;
+    color: var(--accent-color);
   }
 
   .ticket-info-notice p {
@@ -3397,7 +3367,7 @@
     width: 100%;
     padding: 0.75rem;
     background: var(--secondary-color);
-    border: 1px solid #666;
+    border: 1px solid var(--border-color);
     border-radius: 4px;
     color: var(--text-color);
     font-family: inherit;
@@ -3422,7 +3392,7 @@
   .form-group textarea:focus,
   .form-group select:focus {
     outline: none;
-    border-color: #4a9eff;
+    border-color: var(--accent-color);
   }
 
   .form-group input:disabled,
@@ -3441,41 +3411,41 @@
     display: block;
     margin-top: 0.375rem;
     font-size: 0.85rem;
-    color: var(--text-muted, #888);
+    color: var(--text-muted);
   }
 
   .modal-error {
-    background: #fee;
-    border: 1px solid #fcc;
-    color: #c00;
+    background: var(--error-bg);
+    border: 1px solid var(--error-color);
+    color: var(--error-color);
     padding: 0.75rem;
     border-radius: 4px;
     margin-top: 1rem;
   }
 
   .discord-thread-notice {
-    background: #d1fae5;
-    border: 1px solid #10b981;
+    background: var(--success-bg);
+    border: 1px solid var(--success-color);
     border-radius: 8px;
     padding: 1rem;
     text-align: center;
   }
 
   .discord-thread-notice strong {
-    color: #059669;
+    color: var(--success-color-hover);
     display: block;
     margin-bottom: 0.5rem;
   }
 
   .discord-thread-notice p {
-    color: var(--text-muted, #666);
+    color: var(--text-muted);
     font-size: 0.9rem;
     margin: 0 0 1rem 0;
   }
 
   .discord-thread-notice .thread-link-btn {
     display: inline-block;
-    background: #10b981;
+    background: var(--success-color);
     color: white;
     padding: 0.5rem 1rem;
     border-radius: 4px;
@@ -3484,7 +3454,7 @@
   }
 
   .discord-thread-notice .thread-link-btn:hover {
-    background: #059669;
+    background: var(--success-color-hover);
   }
 
   .modal-footer {
@@ -3492,7 +3462,7 @@
     justify-content: flex-end;
     gap: 1rem;
     padding: 1.5rem;
-    border-top: 1px solid #444;
+    border-top: 1px solid var(--border-color);
   }
 
   .modal-btn {
@@ -3507,7 +3477,7 @@
   .cancel-btn {
     background: var(--secondary-color);
     color: var(--text-color);
-    border: 1px solid #666;
+    border: 1px solid var(--border-color);
   }
 
   .cancel-btn:hover:not(:disabled) {
@@ -3515,12 +3485,12 @@
   }
 
   .submit-btn {
-    background: #4a9eff;
+    background: var(--accent-color);
     color: white;
   }
 
   .submit-btn:hover:not(:disabled) {
-    background: #3a8eef;
+    background: var(--accent-color-hover);
   }
 
   .modal-btn:disabled {
@@ -3533,7 +3503,7 @@
   }
 
   .equipment-category h4 {
-    color: #4a9eff;
+    color: var(--accent-color);
     margin-bottom: 0.75rem;
     font-size: 1rem;
     font-weight: 600;
@@ -3546,41 +3516,17 @@
   }
 
   .equipment-list li {
-    background: #1a1a1a;
-    border: 1px solid #333;
+    background: var(--main-color);
+    border: 1px solid var(--border-color);
     padding: 0.75rem 1rem;
     margin-bottom: 0.5rem;
     border-radius: 4px;
   }
 
-  .light-mode .equipment-list li {
-    background: #f8f8f8;
-    border: 1px solid #ddd;
-  }
-
-  .light-mode .equipment-list li strong,
-  .light-mode .equipment-item-link strong {
-    color: #000 !important;
-  }
-
   .equipment-list li.active {
     background: linear-gradient(to right, rgba(74, 158, 255, 0.25), rgba(74, 158, 255, 0.12));
-    border-color: #4a9eff;
+    border-color: var(--accent-color);
     box-shadow: inset 0 0 0 1px rgba(74, 158, 255, 0.3);
-  }
-  
-  .light-mode .equipment-list li.active {
-    box-shadow: inset 0 0 0 1px rgba(74, 158, 255, 0.5);
-  }
-  
-  .equipment-list li.active strong,
-  .equipment-list li.active .equipment-item-link strong {
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-  }
-  
-  .light-mode .equipment-list li.active strong,
-  .light-mode .equipment-list li.active .equipment-item-link strong {
-    text-shadow: none;
   }
   
   .equipment-item-header {
@@ -3616,14 +3562,14 @@
 
   .equipment-item-details {
     font-size: 0.9rem;
-    color: #888;
+    color: var(--text-muted);
     grid-column: 1;
     grid-row: 2;
   }
   
   .equipment-category:first-child .equipment-list li {
-    border-color: #4a9eff;
-    background: linear-gradient(to right, rgba(74, 158, 255, 0.15), #1a1a1a);
+    border-color: var(--accent-color);
+    background: linear-gradient(to right, rgba(74, 158, 255, 0.15), var(--main-color));
   }
 
   .use-btn,
@@ -3635,49 +3581,49 @@
     font-weight: 600;
     cursor: pointer;
     transition: transform 0.2s;
-    border: 1px solid #555;
+    border: 1px solid var(--border-color);
   }
 
   .use-btn {
-    background: #2a2a2a;
-    color: #aaa;
+    background: var(--main-color);
+    color: var(--text-muted);
   }
 
   .use-btn:hover {
-    background: #3a3a3a;
-    border-color: #4a9eff;
+    background: var(--hover-color);
+    border-color: var(--accent-color);
   }
 
   .use-btn.active {
-    background: linear-gradient(135deg, #4a9eff 0%, #3a7ecc 100%);
+    background: var(--accent-color);
     color: white;
-    border-color: #4a9eff;
+    border-color: var(--accent-color);
   }
 
   .toggle-btn {
-    background: #2a2a2a;
-    color: #aaa;
+    background: var(--main-color);
+    color: var(--text-muted);
   }
 
   .toggle-btn:hover {
-    background: #3a3a3a;
-    border-color: #66bb6a;
+    background: var(--hover-color);
+    border-color: var(--success-color);
   }
 
   .toggle-btn.active {
-    background: linear-gradient(135deg, #66bb6a 0%, #4caf50 100%);
+    background: var(--success-color);
     color: white;
-    border-color: #66bb6a;
+    border-color: var(--success-color);
   }
 
   .toggle-btn.tier-toggle {
     margin-left: auto;
-    background: #2a2a2a;
-    color: #aaa;
+    background: var(--main-color);
+    color: var(--text-muted);
   }
 
   .toggle-btn.tier-toggle:hover {
-    background: #3a3a3a;
+    background: var(--hover-color);
     border-color: #764ba2;
   }
 
@@ -3690,14 +3636,14 @@
   .toggle-btn.tier-toggle:disabled {
     opacity: 0.4;
     cursor: not-allowed;
-    background: #1a1a1a;
-    color: #555;
-    border-color: #333;
+    background: var(--main-color);
+    color: var(--text-muted);
+    border-color: var(--border-color);
   }
 
   .toggle-btn.tier-toggle:disabled:hover {
-    background: #1a1a1a;
-    border-color: #333;
+    background: var(--main-color);
+    border-color: var(--border-color);
   }
 
   .enhancer-badge {
@@ -3710,12 +3656,12 @@
   }
 
   .equipment-list li strong {
-    color: #fff;
+    color: var(--text-color);
     margin-right: 0.5rem;
   }
   
   .equipment-item-link {
-    color: #4a9eff;
+    color: var(--accent-color);
     text-decoration: none;
     display: inline-flex;
     align-items: center;
@@ -3726,7 +3672,7 @@
   }
   
   .equipment-item-link strong {
-    color: #4a9eff;
+    color: var(--accent-color);
   }
   
   .import-loadout-btn {
@@ -3767,7 +3713,7 @@
     border-radius: 3px;
     font-size: 0.75rem;
     font-weight: 600;
-    border: 1px solid #4a9eff;
+    border: 1px solid var(--accent-color);
   }
 
   .attachments-badge {
@@ -3794,8 +3740,8 @@
   }
 
   .slot-badge {
-    background: #2a2a2a;
-    color: #aaa;
+    background: var(--main-color);
+    color: var(--text-muted);
     padding: 0.2rem 0.5rem;
     border-radius: 3px;
     font-size: 0.75rem;
@@ -3803,8 +3749,8 @@
   }
 
   .item-type-badge {
-    background: #2a2a2a;
-    color: #aaa;
+    background: var(--main-color);
+    color: var(--text-muted);
     padding: 0.2rem 0.5rem;
     border-radius: 3px;
     font-size: 0.75rem;
@@ -3812,13 +3758,13 @@
   }
 
   .extra-price {
-    color: #4a9eff;
+    color: var(--accent-color);
     font-weight: 600;
     font-size: 0.85rem;
   }
 
   .formula-text {
-    color: #888;
+    color: var(--text-muted);
     font-size: 0.8rem;
     font-weight: normal;
     font-style: italic;
@@ -3829,14 +3775,14 @@
     width: 100%;
     margin-top: 0.5rem;
     padding-top: 0.5rem;
-    border-top: 1px solid #333;
-    color: #aaa;
+    border-top: 1px solid var(--border-color);
+    color: var(--text-muted);
     font-size: 0.85rem;
     font-style: italic;
   }
   
   .unnamed-item {
-    color: #888;
+    color: var(--text-muted);
     font-style: italic;
   }
 
@@ -3873,7 +3819,7 @@
   }
 
   .damage-values {
-    color: #4a9eff;
+    color: var(--accent-color);
     font-family: monospace;
   }
 
@@ -3906,8 +3852,8 @@
 
   /* Attachment Dialog Styles */
   .attachment-dialog {
-    background: var(--secondary-color, #1a1a1a);
-    border: 1px solid var(--border-color, #444);
+    background: var(--secondary-color);
+    border: 1px solid var(--border-color);
     border-radius: 8px;
     width: 90%;
     max-width: 500px;
@@ -3920,7 +3866,7 @@
     justify-content: space-between;
     align-items: center;
     padding: 1rem;
-    border-bottom: 1px solid var(--border-color, #444);
+    border-bottom: 1px solid var(--border-color);
   }
 
   .dialog-header h3 {
@@ -3937,11 +3883,11 @@
     display: flex;
     justify-content: flex-end;
     padding: 1rem;
-    border-top: 1px solid var(--border-color, #444);
+    border-top: 1px solid var(--border-color);
   }
 
   .weapon-class-indicator {
-    background: var(--accent-color, #4a9eff);
+    background: var(--accent-color);
     color: white;
     padding: 0.25rem 0.75rem;
     border-radius: 4px;
@@ -3952,8 +3898,8 @@
   }
 
   .attachment-item {
-    background: var(--main-color, #0d0d0d);
-    border: 1px solid var(--border-color, #333);
+    background: var(--main-color);
+    border: 1px solid var(--border-color);
     border-radius: 6px;
     padding: 0.75rem;
     margin-bottom: 0.75rem;
@@ -3961,7 +3907,7 @@
 
   .attachment-item.nested {
     margin-left: 1.5rem;
-    border-left: 3px solid var(--accent-color, #4a9eff);
+    border-left: 3px solid var(--accent-color);
   }
 
   .attachment-row {
@@ -3972,17 +3918,17 @@
   }
 
   .attachment-type {
-    color: var(--text-muted, #888);
+    color: var(--text-muted);
     font-size: 0.85rem;
   }
 
   .attachment-type .nested-arrow {
-    color: var(--accent-color, #4a9eff);
+    color: var(--accent-color);
     margin-right: 0.25rem;
   }
 
   .attachment-link {
-    color: var(--accent-color, #4a9eff);
+    color: var(--accent-color);
     text-decoration: none;
     font-weight: 500;
   }
@@ -3998,15 +3944,15 @@
   }
 
   .attachment-stats .stat {
-    background: var(--secondary-color, #222);
-    color: var(--text-color, #ddd);
+    background: var(--secondary-color);
+    color: var(--text-color);
     padding: 0.2rem 0.5rem;
     border-radius: 3px;
     font-size: 0.8rem;
   }
 
   .no-attachments {
-    color: var(--text-muted, #888);
+    color: var(--text-muted);
     font-style: italic;
     text-align: center;
     padding: 1rem;
@@ -4024,7 +3970,7 @@
   }
 
   .manage-btn {
-    background: #4a9eff;
+    background: var(--accent-color);
     color: white;
     padding: 0.5rem 1rem;
     border-radius: 4px;
@@ -4034,16 +3980,16 @@
   }
 
   .manage-btn:hover {
-    background: #3a8eef;
+    background: var(--accent-color-hover);
     text-decoration: none;
   }
 
   .manage-btn.primary {
-    background: #10b981;
+    background: var(--success-color);
   }
 
   .manage-btn.primary:hover {
-    background: #059669;
+    background: var(--success-color-hover);
   }
 
   .flight-dashboard-section {
@@ -4060,12 +4006,12 @@
 
   .flight-dashboard-label {
     font-weight: 600;
-    color: #10b981;
+    color: var(--success-color);
   }
 
   .admin-note {
-    background: #3a3a5a;
-    color: #9f9fff;
+    background: var(--accent-color-bg);
+    color: var(--accent-color);
     padding: 0.75rem;
     border-radius: 4px;
     margin-bottom: 0.75rem;
@@ -4084,13 +4030,13 @@
   }
 
   .muted-text {
-    color: var(--text-muted, #888);
+    color: var(--text-muted);
   }
 
   .manage-link {
     display: inline-block;
     margin-top: 0.5rem;
-    color: #4a9eff;
+    color: var(--accent-color);
     text-decoration: none;
   }
 
@@ -4099,7 +4045,7 @@
   }
 
   .flight-dashboard-link {
-    background: #4a9eff;
+    background: var(--accent-color);
     color: white;
     padding: 0.5rem 1rem;
     border-radius: 4px;
@@ -4108,15 +4054,15 @@
   }
 
   .flight-dashboard-link:hover {
-    background: #3a8eef;
+    background: var(--accent-color-hover);
     text-decoration: none;
   }
 
   .service-mode-explanation {
-    background: #2a2a2a;
+    background: var(--main-color);
     padding: 0.75rem;
     border-radius: 4px;
-    border-left: 3px solid #4a9eff;
+    border-left: 3px solid var(--accent-color);
     line-height: 1.5;
   }
 
@@ -4127,10 +4073,10 @@
   }
 
   .flight-card {
-    background: #2a2a2a;
+    background: var(--main-color);
     padding: 1rem;
     border-radius: 4px;
-    border: 1px solid #3a3a3a;
+    border: 1px solid var(--border-color);
   }
 
   .flight-header {
@@ -4159,13 +4105,13 @@
   }
 
   .flight-status.running {
-    background: #2a4a5a;
-    color: #4a9eff;
+    background: var(--accent-color-bg);
+    color: var(--accent-color);
   }
 
   .flight-type {
     font-size: 0.75rem;
-    color: #888;
+    color: var(--text-muted);
     text-transform: uppercase;
   }
 
@@ -4176,23 +4122,23 @@
 
   .flight-current-state {
     font-size: 0.95rem;
-    color: #4a9eff;
+    color: var(--accent-color);
     font-weight: 600;
     padding: 0.5rem;
-    background: #4a9eff15;
+    background: var(--accent-color-bg);
     border-radius: 4px;
     margin-bottom: 0.5rem;
-    border-left: 3px solid #4a9eff;
+    border-left: 3px solid var(--accent-color);
   }
 
   .flight-route {
     font-size: 0.85rem;
-    color: #bbb;
+    color: var(--text-muted);
     margin-bottom: 0.75rem;
   }
 
   .route-label {
-    color: #888;
+    color: var(--text-muted);
     margin-right: 0.5rem;
   }
 
@@ -4203,20 +4149,20 @@
   }
 
   .route-planet.visited {
-    color: #4caf50;
+    color: var(--success-color);
     opacity: 1;
     font-weight: 500;
   }
 
   .route-planet.current {
-    color: #4a9eff;
+    color: var(--accent-color);
     opacity: 1;
     font-weight: 600;
     animation: pulse 2s infinite;
   }
 
   .route-planet.in-warp {
-    color: #4a9eff;
+    color: var(--accent-color);
     opacity: 1;
     font-weight: 600;
     animation: warp-pulse 1.5s infinite;
@@ -4225,17 +4171,17 @@
   .route-arrow {
     display: inline-block;
     margin: 0 0.4rem;
-    color: #555;
+    color: var(--text-muted);
     opacity: 0.6;
   }
 
   .route-arrow.completed {
-    color: #4caf50;
+    color: var(--success-color);
     opacity: 1;
   }
 
   .route-arrow.in-warp {
-    color: #4a9eff;
+    color: var(--accent-color);
     opacity: 1;
     animation: warp-pulse 1.5s infinite;
   }
@@ -4258,7 +4204,7 @@
 
   .check-in-btn {
     display: inline-block;
-    background: #4caf50;
+    background: var(--success-color);
     color: white;
     padding: 0.5rem 1rem;
     border-radius: 4px;
@@ -4270,13 +4216,13 @@
   }
 
   .check-in-btn:hover {
-    background: #45a049;
+    background: var(--success-color-hover);
     text-decoration: none;
   }
 
   .restore-btn {
     display: inline-block;
-    background: #ff9800;
+    background: var(--warning-color);
     color: white;
     padding: 0.5rem 1rem;
     border-radius: 4px;
@@ -4287,28 +4233,28 @@
   }
 
   .restore-btn:hover {
-    background: #f57c00;
+    background: var(--warning-color-hover);
   }
 
   .cancelled-flight {
     opacity: 0.7;
-    border-color: #5a3a3a;
+    border-color: var(--error-color);
   }
 
   .flight-status.cancelled {
-    background: #5a2a2a;
-    color: #ff6b6b;
+    background: var(--error-bg);
+    color: var(--error-color);
   }
 
   .highlighted-flight {
-    border: 2px solid #4a9eff;
+    border: 2px solid var(--accent-color);
     box-shadow: 0 0 8px rgba(74, 158, 255, 0.3);
   }
 
   .expand-flights-btn {
     background: none;
     border: none;
-    color: #4a9eff;
+    color: var(--accent-color);
     cursor: pointer;
     font-size: 1rem;
     font-weight: 600;
@@ -4319,11 +4265,11 @@
   }
 
   .expand-flights-btn:hover {
-    color: #3a8eef;
+    color: var(--accent-color-hover);
   }
 
   .route-display {
-    background: #1a1a1a;
+    background: var(--main-color);
     padding: 0.75rem;
     border-radius: 4px;
     margin: 0.5rem 0;

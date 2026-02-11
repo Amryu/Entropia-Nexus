@@ -6,6 +6,7 @@ import {
   removeServicePilot
 } from "$lib/server/db.js";
 import { getResponse } from "$lib/util.js";
+import { checkRateLimit } from '$lib/server/rateLimiter.js';
 import { getUserByUsernameOrDiscordTag } from "$lib/server/db.js";
 
 // GET - List all pilots for a service
@@ -50,6 +51,11 @@ export async function POST({ params, request, locals }) {
 
   if (!user) {
     return getResponse({ error: 'You must be logged in.' }, 401);
+  }
+
+  const rateCheck = checkRateLimit(`services:pilots:${user.id}`, 15, 60_000);
+  if (!rateCheck.allowed) {
+    return getResponse({ error: 'Too many requests. Please try again later.' }, 429);
   }
 
   const serviceId = parseInt(params.id);
@@ -129,6 +135,11 @@ export async function DELETE({ params, request, locals }) {
 
   if (!user) {
     return getResponse({ error: 'You must be logged in.' }, 401);
+  }
+
+  const rateCheck = checkRateLimit(`services:pilots:${user.id}`, 15, 60_000);
+  if (!rateCheck.allowed) {
+    return getResponse({ error: 'Too many requests. Please try again later.' }, 429);
   }
 
   const serviceId = parseInt(params.id);

@@ -7,6 +7,7 @@ import {
   deleteTicketOffer
 } from "$lib/server/db.js";
 import { getResponse } from "$lib/util.js";
+import { checkRateLimit } from "$lib/server/rateLimiter.js";
 
 // GET single ticket offer
 export async function GET({ params, locals }) {
@@ -36,6 +37,11 @@ export async function PUT({ params, request, locals }) {
   }
   if (!user.verified) {
     return getResponse({ error: 'You must verify your account before updating ticket offers.' }, 403);
+  }
+
+  const rateCheck = checkRateLimit(`services:ticket-offers:${user.id}`, 15, 60_000);
+  if (!rateCheck.allowed) {
+    return getResponse({ error: 'Too many requests. Please try again later.' }, 429);
   }
 
   const serviceId = parseInt(params.id);
@@ -126,6 +132,11 @@ export async function DELETE({ params, locals }) {
   }
   if (!user.verified) {
     return getResponse({ error: 'You must verify your account before deleting ticket offers.' }, 403);
+  }
+
+  const rateCheck = checkRateLimit(`services:ticket-offers:${user.id}`, 15, 60_000);
+  if (!rateCheck.allowed) {
+    return getResponse({ error: 'Too many requests. Please try again later.' }, 429);
   }
 
   const serviceId = parseInt(params.id);

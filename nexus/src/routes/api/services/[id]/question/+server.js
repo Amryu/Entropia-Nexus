@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { getResponse } from '$lib/util';
+import { checkRateLimit } from '$lib/server/rateLimiter.js';
 import { getServiceById, createServiceRequest } from '$lib/server/db';
 
 export async function POST({ params, request, locals }) {
@@ -7,6 +8,15 @@ export async function POST({ params, request, locals }) {
 
   if (!user) {
     return getResponse({ error: 'You must be logged in to ask a question.' }, 401);
+  }
+
+  const rateCheck = checkRateLimit(`services:question:${user.id}`, 5, 60_000);
+  if (!rateCheck.allowed) {
+    return getResponse({ error: 'Too many requests. Please try again later.' }, 429);
+  }
+  const rateCheckH = checkRateLimit(`services:question-h:${user.id}`, 20, 3_600_000);
+  if (!rateCheckH.allowed) {
+    return getResponse({ error: 'Too many requests. Please try again later.' }, 429);
   }
 
   const serviceId = parseInt(params.id);

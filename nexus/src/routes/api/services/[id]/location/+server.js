@@ -5,6 +5,7 @@ import {
   canManageService
 } from "$lib/server/db.js";
 import { getResponse } from "$lib/util.js";
+import { checkRateLimit } from '$lib/server/rateLimiter.js';
 
 // PUT update current location for a transportation service
 export async function PUT({ params, request, locals }) {
@@ -12,6 +13,11 @@ export async function PUT({ params, request, locals }) {
 
   if (!user) {
     return getResponse({ error: 'You must be logged in.' }, 401);
+  }
+
+  const rateCheck = checkRateLimit(`services:location:${user.id}`, 10, 60_000);
+  if (!rateCheck.allowed) {
+    return getResponse({ error: 'Too many requests. Please try again later.' }, 429);
   }
 
   const serviceId = parseInt(params.id);

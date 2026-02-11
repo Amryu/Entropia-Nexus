@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { getResponse } from '$lib/util';
+import { checkRateLimit } from '$lib/server/rateLimiter.js';
 import { syncServiceAvailability, setServiceAvailability, getUserServices } from '$lib/server/db';
 
 export async function POST({ request, locals }) {
@@ -11,6 +12,11 @@ export async function POST({ request, locals }) {
 
   if (!user.verified) {
     return getResponse({ error: 'You must verify your account to modify services.' }, 403);
+  }
+
+  const rateCheck = checkRateLimit(`services:sync-avail:${user.id}`, 5, 60_000);
+  if (!rateCheck.allowed) {
+    return getResponse({ error: 'Too many requests. Please try again later.' }, 429);
   }
 
   try {

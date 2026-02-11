@@ -1,7 +1,7 @@
 <!--
   @component Market Overview Page
   Displays category cards for all market sections with quick navigation.
-  Disabled sections (Auction, Rental) shown with reduced opacity and "Coming Soon" badge.
+  Disabled sections (Auction) shown with reduced opacity and "Coming Soon" badge.
 -->
 <script>
   import '$lib/style.css';
@@ -34,10 +34,9 @@
     },
     {
       name: 'Rental',
-      href: null,
+      href: '/market/rental',
       icon: 'RNT',
-      description: 'Equipment rental marketplace',
-      disabled: true
+      description: 'Equipment rental marketplace'
     }
   ];
 </script>

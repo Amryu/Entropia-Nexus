@@ -5,6 +5,7 @@ import {
   createTicket
 } from "$lib/server/db.js";
 import { getResponse } from "$lib/util.js";
+import { checkRateLimit } from "$lib/server/rateLimiter.js";
 
 // POST purchase a ticket
 export async function POST({ params, request, locals }) {
@@ -15,6 +16,11 @@ export async function POST({ params, request, locals }) {
   }
   if (!user.verified) {
     return getResponse({ error: 'You must verify your account before purchasing tickets.' }, 403);
+  }
+
+  const rateCheck = checkRateLimit(`services:purchase:${user.id}`, 5, 60_000);
+  if (!rateCheck.allowed) {
+    return getResponse({ error: 'Too many requests. Please try again later.' }, 429);
   }
 
   const serviceId = parseInt(params.id);

@@ -1,5 +1,6 @@
 // @ts-nocheck
 import { getResponse } from '$lib/util';
+import { checkRateLimit } from '$lib/server/rateLimiter.js';
 import { getRequestWithContext, updateRequestStatus } from '$lib/server/db';
 
 export async function PUT({ params, locals }) {
@@ -7,6 +8,11 @@ export async function PUT({ params, locals }) {
 
   if (!user) {
     return getResponse({ error: 'You must be logged in to cancel a request.' }, 401);
+  }
+
+  const rateCheck = checkRateLimit(`services:req-cancel:${user.id}`, 10, 60_000);
+  if (!rateCheck.allowed) {
+    return getResponse({ error: 'Too many requests. Please try again later.' }, 429);
   }
 
   const requestId = parseInt(params.id);

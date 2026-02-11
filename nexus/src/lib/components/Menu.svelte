@@ -431,7 +431,7 @@
     'Market': [
       { label: 'Auction', url: 'auction', disabled: true },
       { label: 'Exchange', url: 'exchange' },
-      { label: 'Rental', url: 'rental', disabled: true },
+      { label: 'Rental', url: 'rental' },
       { label: 'Services', url: 'services' },
       { label: 'Shops', url: 'shops' },
     ],
