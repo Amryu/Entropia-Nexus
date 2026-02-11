@@ -1185,6 +1185,9 @@
 
     {#if activeTab === 'Orders'}
       <section class="panel-section">
+        {#if ordersPageUrl}
+          <a class="orders-exchange-btn" href={ordersPageUrl}>View all orders on exchange</a>
+        {/if}
         {#if orders.length === 0}
           <div class="empty-state">No active orders.</div>
         {:else}
@@ -1226,9 +1229,6 @@
               {/if}
             </div>
           </div>
-          {#if ordersPageUrl && !isOwner}
-            <a class="orders-page-link" href={ordersPageUrl}>View all orders on exchange</a>
-          {/if}
         {/if}
       </section>
     {/if}
@@ -2218,15 +2218,25 @@
   }
 
   /* -- Orders tab -- */
-  .orders-page-link {
+  .orders-exchange-btn {
     display: block;
-    margin-top: 12px;
-    font-size: 13px;
+    width: 100%;
+    padding: 0.5rem 1rem;
+    margin-bottom: 12px;
+    background: transparent;
+    border: 1px solid var(--accent-color);
+    border-radius: 6px;
     color: var(--accent-color);
+    font-size: 0.9rem;
+    font-weight: 500;
+    text-align: center;
     text-decoration: none;
+    box-sizing: border-box;
+    transition: background-color 0.15s, color 0.15s;
   }
-  .orders-page-link:hover {
-    text-decoration: underline;
+  .orders-exchange-btn:hover {
+    background: var(--accent-color);
+    color: white;
   }
   .orders-stacked {
     display: flex;
@@ -2249,8 +2259,8 @@
   .orders-table-wrap {
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    overflow: auto;
-    max-height: 400px;
+    overflow: hidden;
+    height: 400px;
   }
   .orders-empty {
     padding: 24px;

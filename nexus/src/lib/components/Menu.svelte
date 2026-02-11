@@ -438,7 +438,10 @@
     'External': [
       { label: 'NI Helper', url: 'nihelper' },
       { label: 'Cyrenedream', url: 'cyrenedream' },
-      { label: 'Lootius.io (Ad)', url: 'lootiusio' },
+      { label: 'The Delta Project', url: 'deltaproject' },
+      { label: 'RipCraze', url: 'ripcraze' },
+      { label: 'Entropia Life', url: 'entropialife' },
+      { label: 'Planet Calypso Forum', url: 'pcforum' },
     ],
   };
 
@@ -489,12 +492,15 @@
     if (item.url === 'api') return `${import.meta.env.VITE_API_URL}/docs/`;
     if (item.url === 'nihelper') return 'https://www.nihelper.com';
     if (item.url === 'cyrenedream') return 'https://www.cyrenedream.org';
-    if (item.url === 'lootiusio') return 'https://www.lootius.io/User/Register/1456';
+    if (item.url === 'deltaproject') return 'https://www.thedeltaproject.net';
+    if (item.url === 'ripcraze') return 'https://ripcraze.com/';
+    if (item.url === 'entropialife') return 'http://www.entropialife.com';
+    if (item.url === 'pcforum') return 'https://www.planetcalypsoforum.com';
     return `/${menu.toLowerCase()}/${item.url.toLowerCase()}`;
   }
 
   function isExternalLink(item: { label: string; url: string }) {
-    return ['api', 'nihelper', 'cyrenedream', 'lootiusio'].includes(item.url);
+    return ['api', 'nihelper', 'cyrenedream', 'deltaproject', 'ripcraze', 'entropialife', 'pcforum'].includes(item.url);
   }
 
   // Menus with overview pages that the header should link to
