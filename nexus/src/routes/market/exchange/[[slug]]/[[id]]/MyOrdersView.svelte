@@ -43,7 +43,10 @@
         return `<span class="badge badge-subtle ${cls}">${val === 'BUY' ? 'Buy' : 'Sell'}</span>`;
       }
     },
-    { key: 'quantity', header: 'Qty', width: '70px', sortable: true, searchable: false },
+    {
+      key: 'quantity', header: 'Qty', width: '110px', sortable: true, searchable: false,
+      formatter: (val, row) => row.min_quantity != null && row.min_quantity < val ? `${val}/${row.min_quantity}` : val
+    },
     {
       key: 'markup', header: 'Markup', width: '90px', sortable: true, searchable: false,
       formatter: (val, row) => {
