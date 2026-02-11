@@ -1,0 +1,798 @@
+<!--
+  @component ItemSetDialog
+  Modal dialog for creating and editing item sets.
+  Supports item search, armor/clothing set quick-add, and per-item metadata editing.
+-->
+<script>
+  // @ts-nocheck
+  import { createEventDispatcher, onMount, onDestroy } from 'svelte';
+  import { slide } from 'svelte/transition';
+  import SearchInput from '$lib/components/wiki/SearchInput.svelte';
+  import ItemMetaEditor from './ItemMetaEditor.svelte';
+  import SetEntry from './SetEntry.svelte';
+  import { apiPost, apiPut, apiCall } from '$lib/util.js';
+  import { addToast } from '$lib/stores/toasts.js';
+  import { TIERABLE_TYPES, CONDITION_TYPES, isLimitedByName } from '$lib/common/itemTypes.js';
+
+  const dispatch = createEventDispatcher();
+
+  const MAX_ITEMS = 100;
+
+  /** @type {boolean} Whether dialog is visible */
+  export let show = false;
+
+  /** @type {object|null} Existing item set to edit (null for create) */
+  export let itemSet = null;
+
+  /** @type {string|null} Optional loadout ID to link */
+  export let loadoutId = null;
+
+  // Internal state
+  let name = '';
+  let items = [];
+  let saving = false;
+  let expandedMeta = {};  // Track which items have expanded metadata
+
+  // Initialize state when dialog opens or itemSet changes
+  $: if (show) {
+    if (itemSet) {
+      name = itemSet.name || '';
+      items = JSON.parse(JSON.stringify(itemSet.data?.items || []));
+    } else {
+      name = '';
+      items = [];
+    }
+    saving = false;
+    expandedMeta = {};
+  }
+
+  $: itemCount = items.reduce((count, item) => {
+    if (item.setType) return count + 1;
+    return count + 1;
+  }, 0);
+
+  $: canSave = name.trim().length > 0 && items.length > 0;
+
+  function handleKeydown(event) {
+    if (event.key === 'Escape') close();
+  }
+
+  function handleBackdropClick(event) {
+    if (event.target === event.currentTarget) close();
+  }
+
+  function close() {
+    if (saving) return;
+    show = false;
+    dispatch('close');
+  }
+
+  // === Item Management ===
+  function addItem(searchResult) {
+    if (itemCount >= MAX_ITEMS) {
+      addToast(`Maximum ${MAX_ITEMS} items per set.`);
+      return;
+    }
+
+    const entry = {
+      itemId: searchResult.Id || null,
+      type: searchResult.Type || '',
+      name: searchResult.Name || '',
+      quantity: 1,
+      meta: {}
+    };
+
+    items = [...items, entry];
+  }
+
+  function updateItem(index, field, value) {
+    const updated = [...items];
+    updated[index] = { ...updated[index], [field]: value };
+    items = updated;
+  }
+
+  function updateItemMeta(index, newMeta) {
+    const updated = [...items];
+    updated[index] = { ...updated[index], meta: newMeta };
+    items = updated;
+  }
+
+  function removeItem(index) {
+    items = items.filter((_, i) => i !== index);
+  }
+
+  function toggleMeta(index) {
+    expandedMeta = { ...expandedMeta, [index]: !expandedMeta[index] };
+  }
+
+  // === Set Quick-Add ===
+  let setSearchQuery = '';
+  let setSearchResults = [];
+  let searchingSet = false;
+  let showSetSearch = false;
+
+  async function searchSets() {
+    if (!setSearchQuery.trim() || setSearchQuery.trim().length < 2) {
+      setSearchResults = [];
+      return;
+    }
+    searchingSet = true;
+    try {
+      const armorSets = await apiCall(fetch, `/armorsets`);
+      if (Array.isArray(armorSets)) {
+        const q = setSearchQuery.toLowerCase();
+        setSearchResults = armorSets
+          .filter(s => s.Name?.toLowerCase().includes(q))
+          .slice(0, 10)
+          .map(s => ({ ...s, _setType: 'ArmorSet' }));
+      }
+    } catch {
+      setSearchResults = [];
+    }
+    searchingSet = false;
+  }
+
+  let setSearchTimer = null;
+  function handleSetSearchInput() {
+    clearTimeout(setSearchTimer);
+    setSearchTimer = setTimeout(searchSets, 300);
+  }
+
+  async function addArmorSet(set) {
+    if (itemCount >= MAX_ITEMS) {
+      addToast(`Maximum ${MAX_ITEMS} items per set.`);
+      return;
+    }
+
+    // Fetch full set data to get pieces
+    const fullSet = await apiCall(fetch, `/armorsets/${set.Id}`);
+    if (!fullSet) {
+      addToast('Failed to load armor set data.');
+      return;
+    }
+
+    const pieces = [];
+    if (Array.isArray(fullSet.Armors)) {
+      for (const slotGroup of fullSet.Armors) {
+        if (!Array.isArray(slotGroup)) continue;
+        for (const piece of slotGroup) {
+          pieces.push({
+            itemId: null,
+            name: piece.Name || '',
+            slot: piece.Properties?.Slot || '',
+            gender: piece.Properties?.Gender === 'Both' ? undefined : piece.Properties?.Gender,
+            meta: {}
+          });
+        }
+      }
+    }
+
+    const entry = {
+      setType: 'ArmorSet',
+      setId: fullSet.Id,
+      setName: fullSet.Name,
+      pieces
+    };
+
+    items = [...items, entry];
+    showSetSearch = false;
+    setSearchQuery = '';
+    setSearchResults = [];
+  }
+
+  function updateSetEntry(index, updatedEntry) {
+    const updated = [...items];
+    updated[index] = updatedEntry;
+    items = updated;
+  }
+
+  function removeSetEntry(index) {
+    items = items.filter((_, i) => i !== index);
+  }
+
+  // === Meta Detection Helpers ===
+  function hasMetaFields(item) {
+    if (item.setType) return false;
+    const type = item.type || '';
+    const name = item.name || '';
+    const isLimited = isLimitedByName(name);
+    return TIERABLE_TYPES.has(type) && !isLimited
+      || CONDITION_TYPES.has(type)
+      || (type === 'Blueprint' && !isLimited)
+      || type === 'Pet';
+  }
+
+  // === Save ===
+  async function save() {
+    if (!canSave || saving) return;
+    saving = true;
+
+    try {
+      const payload = {
+        name: name.trim(),
+        data: { items }
+      };
+
+      let result;
+      if (itemSet?.id) {
+        result = await apiPut(fetch, `/api/itemsets/${itemSet.id}`, payload);
+      } else {
+        if (loadoutId) payload.loadout_id = loadoutId;
+        result = await apiPost(fetch, '/api/itemsets', payload);
+      }
+
+      if (result?.error) {
+        addToast(result.error);
+        saving = false;
+        return;
+      }
+
+      dispatch('save', result);
+      show = false;
+    } catch (err) {
+      addToast('Failed to save item set.');
+      console.error('Error saving item set:', err);
+    }
+    saving = false;
+  }
+
+  onDestroy(() => {
+    clearTimeout(setSearchTimer);
+  });
+</script>
+
+<svelte:window on:keydown={handleKeydown} />
+
+{#if show}
+  <!-- svelte-ignore a11y-click-events-have-key-events -->
+  <!-- svelte-ignore a11y-no-static-element-interactions -->
+  <div class="modal-backdrop" on:click={handleBackdropClick}>
+    <div class="modal" role="dialog" aria-modal="true" aria-label="Item Set Editor">
+      <!-- Header -->
+      <div class="modal-header">
+        <input
+          class="name-input"
+          type="text"
+          bind:value={name}
+          placeholder="Item Set Name..."
+          maxlength="120"
+        />
+        <button class="modal-close" on:click={close}>&times;</button>
+      </div>
+
+      <!-- Search Bar -->
+      <div class="modal-search">
+        <div class="search-row">
+          <div class="search-main">
+            <SearchInput
+              value=""
+              apiEndpoint="/search/items"
+              placeholder="Search items..."
+              displayFn={(item) => `${item.Name} (${item.Type})`}
+              clearOnSelect={true}
+              on:select={(e) => addItem(e.detail.data)}
+            />
+          </div>
+          <button
+            class="btn-set-add"
+            class:active={showSetSearch}
+            on:click={() => { showSetSearch = !showSetSearch; }}
+            title="Add armor/clothing set"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 2L2 7l10 5 10-5-10-5z" />
+              <path d="M2 17l10 5 10-5" />
+              <path d="M2 12l10 5 10-5" />
+            </svg>
+            Set
+          </button>
+        </div>
+
+        {#if showSetSearch}
+          <div class="set-search-row" transition:slide={{ duration: 150 }}>
+            <input
+              class="set-search-input"
+              type="text"
+              bind:value={setSearchQuery}
+              on:input={handleSetSearchInput}
+              placeholder="Search armor sets..."
+            />
+            {#if searchingSet}
+              <span class="search-status">Searching...</span>
+            {/if}
+            {#if setSearchResults.length > 0}
+              <div class="set-search-results">
+                {#each setSearchResults as set}
+                  <button class="set-result" on:click={() => addArmorSet(set)}>
+                    <span class="set-result-name">{set.Name}</span>
+                  </button>
+                {/each}
+              </div>
+            {/if}
+          </div>
+        {/if}
+      </div>
+
+      <!-- Item List -->
+      <div class="modal-body">
+        {#if items.length === 0}
+          <div class="empty-state">
+            Search and add items to build your set.
+          </div>
+        {:else}
+          <div class="item-list">
+            {#each items as item, index (index)}
+              {#if item.setType}
+                <SetEntry
+                  entry={item}
+                  on:update={(e) => updateSetEntry(index, e.detail)}
+                  on:remove={() => removeSetEntry(index)}
+                />
+              {:else}
+                <div class="item-row">
+                  <div class="item-main">
+                    <button class="btn-remove" on:click={() => removeItem(index)} title="Remove item">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+                      </svg>
+                    </button>
+                    <span class="item-type-badge">{item.type}</span>
+                    <span class="item-name">{item.name}</span>
+                    <div class="item-quantity">
+                      <span class="quantity-prefix">x</span>
+                      <input
+                        type="number"
+                        class="quantity-input"
+                        value={item.quantity}
+                        min="1"
+                        max="9999999"
+                        on:change={(e) => updateItem(index, 'quantity', Math.max(1, parseInt(e.target.value) || 1))}
+                      />
+                    </div>
+                    {#if hasMetaFields(item)}
+                      <button
+                        class="btn-meta-toggle"
+                        class:active={expandedMeta[index]}
+                        on:click={() => toggleMeta(index)}
+                        title="Edit metadata"
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M12 20h9" />
+                          <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                        </svg>
+                      </button>
+                    {/if}
+                  </div>
+                  {#if expandedMeta[index] && hasMetaFields(item)}
+                    <div class="item-meta" transition:slide={{ duration: 150 }}>
+                      <ItemMetaEditor
+                        {item}
+                        on:change={(e) => updateItemMeta(index, e.detail)}
+                      />
+                    </div>
+                  {/if}
+                </div>
+              {/if}
+            {/each}
+          </div>
+        {/if}
+      </div>
+
+      <!-- Footer -->
+      <div class="modal-footer">
+        <span class="item-count">Items: {itemCount}/{MAX_ITEMS}</span>
+        <div class="footer-actions">
+          <button class="btn-cancel" on:click={close}>Cancel</button>
+          <button class="btn-save" on:click={save} disabled={!canSave || saving}>
+            {saving ? 'Saving...' : (itemSet ? 'Update' : 'Create')}
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<style>
+  .modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 1rem;
+  }
+
+  .modal {
+    background: var(--secondary-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    width: 100%;
+    max-width: 700px;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+  }
+
+  /* Header */
+  .modal-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+  }
+
+  .name-input {
+    flex: 1;
+    padding: 8px 12px;
+    font-size: 16px;
+    font-weight: 600;
+    background-color: var(--primary-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-color);
+  }
+
+  .name-input:focus {
+    outline: none;
+    border-color: var(--accent-color);
+  }
+
+  .modal-close {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    font-size: 24px;
+    cursor: pointer;
+    padding: 0 4px;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+
+  .modal-close:hover {
+    color: var(--text-color);
+  }
+
+  /* Search */
+  .modal-search {
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+  }
+
+  .search-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .search-main {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .btn-set-add {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 7px 12px;
+    font-size: 12px;
+    background-color: var(--primary-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-muted);
+    cursor: pointer;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: all 0.15s;
+  }
+
+  .btn-set-add:hover,
+  .btn-set-add.active {
+    border-color: var(--accent-color);
+    color: var(--accent-color);
+  }
+
+  .set-search-row {
+    margin-top: 8px;
+    position: relative;
+  }
+
+  .set-search-input {
+    width: 100%;
+    padding: 7px 10px;
+    font-size: 13px;
+    background-color: var(--primary-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-color);
+  }
+
+  .set-search-input:focus {
+    outline: none;
+    border-color: var(--accent-color);
+  }
+
+  .search-status {
+    position: absolute;
+    right: 10px;
+    top: 8px;
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+
+  .set-search-results {
+    margin-top: 4px;
+    max-height: 150px;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background-color: var(--primary-color);
+  }
+
+  .set-result {
+    display: block;
+    width: 100%;
+    padding: 8px 12px;
+    font-size: 13px;
+    text-align: left;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-color);
+    cursor: pointer;
+  }
+
+  .set-result:last-child {
+    border-bottom: none;
+  }
+
+  .set-result:hover {
+    background-color: var(--hover-color);
+  }
+
+  /* Body */
+  .modal-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 12px 20px;
+    min-height: 150px;
+  }
+
+  .empty-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 120px;
+    color: var(--text-muted);
+    font-size: 14px;
+  }
+
+  .item-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  /* Item Row */
+  .item-row {
+    background-color: var(--primary-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  .item-main {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+  }
+
+  .btn-remove {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 3px;
+    background: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--error-color);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 0.15s;
+  }
+
+  .btn-remove:hover {
+    background-color: var(--error-color);
+    color: white;
+    border-color: var(--error-color);
+  }
+
+  .item-type-badge {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border-radius: 3px;
+    background-color: var(--hover-color);
+    color: var(--text-muted);
+    flex-shrink: 0;
+    max-width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .item-name {
+    font-size: 13px;
+    color: var(--text-color);
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .item-quantity {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
+  }
+
+  .quantity-prefix {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .quantity-input {
+    width: 50px;
+    padding: 3px 5px;
+    font-size: 12px;
+    text-align: center;
+    background-color: var(--secondary-color);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-color);
+  }
+
+  .quantity-input:focus {
+    outline: none;
+    border-color: var(--accent-color);
+  }
+
+  .btn-meta-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px;
+    background: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-muted);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 0.15s;
+  }
+
+  .btn-meta-toggle:hover,
+  .btn-meta-toggle.active {
+    border-color: var(--accent-color);
+    color: var(--accent-color);
+  }
+
+  .item-meta {
+    padding: 8px 10px 10px 36px;
+    border-top: 1px solid var(--border-color);
+  }
+
+  /* Footer */
+  .modal-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    border-top: 1px solid var(--border-color);
+    flex-shrink: 0;
+  }
+
+  .item-count {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .footer-actions {
+    display: flex;
+    gap: 8px;
+  }
+
+  .btn-cancel {
+    padding: 8px 16px;
+    font-size: 13px;
+    background: transparent;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-color);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .btn-cancel:hover {
+    background-color: var(--hover-color);
+  }
+
+  .btn-save {
+    padding: 8px 20px;
+    font-size: 13px;
+    font-weight: 600;
+    background-color: var(--accent-color);
+    border: 1px solid var(--accent-color);
+    border-radius: 6px;
+    color: white;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .btn-save:hover:not(:disabled) {
+    background-color: var(--accent-color-hover);
+  }
+
+  .btn-save:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  /* Remove spinner arrows */
+  .quantity-input::-webkit-outer-spin-button,
+  .quantity-input::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  .quantity-input[type=number] {
+    -moz-appearance: textfield;
+  }
+
+  /* Mobile */
+  @media (max-width: 899px) {
+    .modal {
+      max-height: 95vh;
+    }
+
+    .modal-header {
+      padding: 12px 14px;
+    }
+
+    .name-input {
+      font-size: 14px;
+      padding: 6px 10px;
+    }
+
+    .modal-search {
+      padding: 10px 14px;
+    }
+
+    .modal-body {
+      padding: 10px 14px;
+    }
+
+    .modal-footer {
+      padding: 10px 14px;
+    }
+
+    .item-type-badge {
+      display: none;
+    }
+
+    .item-meta {
+      padding-left: 10px;
+    }
+  }
+</style>

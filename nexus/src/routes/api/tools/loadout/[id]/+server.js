@@ -1,7 +1,7 @@
 //@ts-nocheck
 import crypto from 'crypto';
 import { getResponse } from '$lib/util.js';
-import { getUserLoadoutById, updateUserLoadout, deleteUserLoadout } from '$lib/server/db.js';
+import { getUserLoadoutById, updateUserLoadout, deleteUserLoadout, getItemSetsByLoadoutId } from '$lib/server/db.js';
 import { sanitizeLoadoutData, getPayloadSizeBytes, MAX_LOADOUT_BYTES } from '$lib/server/loadoutUtils.js';
 
 const SHARE_CODE_LENGTH = 10;
@@ -86,6 +86,15 @@ export async function PUT({ params, request, locals }) {
       return getResponse({ error: 'Loadout not found.' }, 404);
     }
 
+    // Block updates to loadouts linked to item sets
+    const linkedSets = await getItemSetsByLoadoutId(user.id, params.id);
+    if (linkedSets.length > 0) {
+      return getResponse({
+        error: 'This loadout is linked to an item set and cannot be edited. Delete the item set first.',
+        linkedItemSets: linkedSets.map(s => ({ id: s.id, name: s.name }))
+      }, 409);
+    }
+
     const incomingData = body?.data ?? existing.data;
     const sanitizedData = sanitizeLoadoutData(incomingData);
     const name = sanitizeName(body?.name ?? sanitizedData?.Name ?? existing.name ?? 'New Loadout');
@@ -120,6 +129,15 @@ export async function DELETE({ params, locals }) {
     const record = await getUserLoadoutById(user.id, params.id);
     if (!record) {
       return getResponse({ error: 'Loadout not found.' }, 404);
+    }
+
+    // Check for linked item sets before deleting
+    const linkedSets = await getItemSetsByLoadoutId(user.id, params.id);
+    if (linkedSets.length > 0) {
+      return getResponse({
+        error: 'This loadout is linked to an item set. Delete the item set first.',
+        linkedItemSets: linkedSets.map(s => ({ id: s.id, name: s.name }))
+      }, 409);
     }
 
     await deleteUserLoadout(user.id, params.id);

@@ -30,8 +30,9 @@ export const Clothing = {
           "default": null
         },
         "Gender": {
-          "type": "string",
-          "enum": ["Both", "Male", "Female"]
+          "type": ["string", "null"],
+          "enum": ["Both", "Male", "Female", "Neutral", null],
+          "default": null
         },
         "Economy": {
           "type": "object",

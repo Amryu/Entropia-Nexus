@@ -1746,6 +1746,29 @@
   & .loadout-readonly input[readonly] {
     cursor: default;
   }
+
+  /* Linked item set: disable all interactive controls in the main content area */
+  & .loadout-readonly input:not([readonly]),
+  & .loadout-readonly select,
+  & .loadout-readonly .enhancer-btn,
+  & .loadout-readonly .enhancer-remove,
+  & .loadout-readonly .slot-clear,
+  & .loadout-readonly .picker-item {
+    pointer-events: none;
+    opacity: 0.6;
+    cursor: default;
+  }
+
+  & .linked-item-set-banner {
+    padding: 10px 16px;
+    margin-bottom: 12px;
+    background-color: var(--warning-bg);
+    color: var(--warning-color);
+    border: 1px solid var(--warning-color);
+    border-radius: 6px;
+    font-size: 13px;
+    line-height: 1.4;
+  }
 }
 
 /* ===== Dialog styles (rendered outside .tool-loadouts via WikiPage) ===== */

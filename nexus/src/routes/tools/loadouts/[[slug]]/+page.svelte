@@ -1221,6 +1221,7 @@
         public: !!row.public,
         share_code: row.share_code || null,
         last_update: row.last_update,
+        linked_item_set: row.linked_item_set || null,
         data: row.data || createEmptyLoadout()
       }));
       if (activeSource === 'online') {
@@ -1237,6 +1238,7 @@
 
   function markDirty() {
     if (suppressDirty) return;
+    if (isLinkedToItemSet) return;
     loadoutVersion += 1;
     if (activeSource !== 'online') return;
     if (!loadout) return;
@@ -1846,6 +1848,8 @@
     ? onlineLoadouts.find(r => r.id === activeOnlineId)
     : null;
   $: isPublicLoadout = !!activeRecord?.public;
+  $: linkedItemSetName = activeRecord?.linked_item_set || null;
+  $: isLinkedToItemSet = !!linkedItemSetName;
   $: pickerConfig = activePicker ? (isMobileLayout, getPickerConfig(activePicker)) : null;
   $: pickerRowHeight = isMobileLayout ? 30 : 34;
 
@@ -3026,7 +3030,7 @@
         class="action-btn save"
         class:dirty={isDirty}
         on:click={handleManualSave}
-        disabled={!loadout || isSaving || !isDirty}
+        disabled={!loadout || isSaving || !isDirty || isLinkedToItemSet}
         aria-label={isSaving ? 'Saving...' : (isDirty ? 'Save loadout' : 'Saved')}
         title={isSaving ? 'Saving...' : (isDirty ? 'Save' : 'Saved')}
       >
@@ -3136,7 +3140,7 @@
           </div>
           <div class="sidebar-actions">
             <button class="sidebar-btn create" on:click={handleNewLoadout} disabled={entitiesLoading}>New</button>
-            <button class="sidebar-btn danger" on:click={confirmDeleteLoadout} disabled={!loadout}>Delete</button>
+            <button class="sidebar-btn danger" on:click={confirmDeleteLoadout} disabled={!loadout || isLinkedToItemSet} title={isLinkedToItemSet ? 'Linked to item set' : ''}>Delete</button>
             <button class="sidebar-btn neutral" on:click={exportActiveLoadout} disabled={!loadout}>Export</button>
             <button class="sidebar-btn neutral" on:click={openImportSourceDialog}>Import</button>
           </div>
@@ -3937,7 +3941,12 @@
       </div>
     </div>
   {:else}
-  <div class="layout-a">
+  <div class="layout-a" class:loadout-readonly={isLinkedToItemSet}>
+    {#if isLinkedToItemSet}
+      <div class="linked-item-set-banner">
+        This loadout is linked to item set "{linkedItemSetName}" and cannot be edited. Delete the item set first to unlock editing.
+      </div>
+    {/if}
     {#if isMobileLayout}
       <div class="mobile-panel-overview">
         <div class="mobile-panel-track">

@@ -3237,14 +3237,18 @@ export async function countUserLoadouts(userId) {
 }
 
 export async function getUserLoadouts(userId) {
-  const query = 'SELECT id, name, data, public, share_code, created_at, last_update FROM loadouts WHERE user_id = $1 ORDER BY last_update DESC';
+  const query = `SELECT l.id, l.name, l.data, l.public, l.share_code, l.created_at, l.last_update,
+    (SELECT s.name FROM item_sets s WHERE s.loadout_id = l.id LIMIT 1) AS linked_item_set
+    FROM loadouts l WHERE l.user_id = $1 ORDER BY l.last_update DESC`;
   const values = [userId];
   const { rows } = await pool.query(query, values);
   return rows;
 }
 
 export async function getUserLoadoutById(userId, id) {
-  const query = 'SELECT id, name, data, public, share_code, created_at, last_update FROM loadouts WHERE user_id = $1 AND id = $2';
+  const query = `SELECT l.id, l.name, l.data, l.public, l.share_code, l.created_at, l.last_update,
+    (SELECT s.name FROM item_sets s WHERE s.loadout_id = l.id LIMIT 1) AS linked_item_set
+    FROM loadouts l WHERE l.user_id = $1 AND l.id = $2`;
   const values = [userId, id];
   const { rows } = await pool.query(query, values);
   return rows[0];
@@ -3321,6 +3325,55 @@ export async function updateUserCraftingPlan(userId, id, name, data) {
 export async function deleteUserCraftingPlan(userId, id) {
   const query = 'DELETE FROM crafting_plans WHERE user_id = $1 AND id = $2';
   await pool.query(query, [userId, id]);
+}
+
+// Item Sets
+export async function countUserItemSets(userId) {
+  const query = 'SELECT COUNT(*)::int AS count FROM item_sets WHERE user_id = $1';
+  const { rows } = await pool.query(query, [userId]);
+  return rows[0]?.count ?? 0;
+}
+
+export async function getUserItemSets(userId) {
+  const query = 'SELECT id, name, loadout_id, created_at, last_update FROM item_sets WHERE user_id = $1 ORDER BY last_update DESC';
+  const { rows } = await pool.query(query, [userId]);
+  return rows;
+}
+
+export async function getUserItemSetById(userId, id) {
+  const query = 'SELECT id, name, data, loadout_id, created_at, last_update FROM item_sets WHERE user_id = $1 AND id = $2';
+  const { rows } = await pool.query(query, [userId, id]);
+  return rows[0];
+}
+
+export async function createUserItemSet(userId, name, data, loadoutId = null) {
+  const query = `INSERT INTO item_sets (user_id, name, data, loadout_id)
+    VALUES ($1, $2, $3, $4)
+    RETURNING id, name, data, loadout_id, created_at, last_update`;
+  const { rows } = await pool.query(query, [userId, name, data, loadoutId]);
+  return rows[0];
+}
+
+export async function updateUserItemSet(userId, id, name, data) {
+  const query = `UPDATE item_sets
+    SET name = $3,
+        data = $4,
+        last_update = CURRENT_TIMESTAMP
+    WHERE user_id = $1 AND id = $2
+    RETURNING id, name, data, loadout_id, created_at, last_update`;
+  const { rows } = await pool.query(query, [userId, id, name, data]);
+  return rows[0];
+}
+
+export async function deleteUserItemSet(userId, id) {
+  const query = 'DELETE FROM item_sets WHERE user_id = $1 AND id = $2';
+  await pool.query(query, [userId, id]);
+}
+
+export async function getItemSetsByLoadoutId(userId, loadoutId) {
+  const query = 'SELECT id, name FROM item_sets WHERE user_id = $1 AND loadout_id = $2';
+  const { rows } = await pool.query(query, [userId, loadoutId]);
+  return rows;
 }
 
 // Blueprint Ownership

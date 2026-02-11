@@ -89,7 +89,8 @@
   const genderOptions = [
     { value: 'Both', label: 'Both' },
     { value: 'Male', label: 'Male' },
-    { value: 'Female', label: 'Female' }
+    { value: 'Female', label: 'Female' },
+    { value: 'Neutral', label: 'Neutral' }
   ];
 
   // Empty clothing template for create mode
@@ -101,7 +102,7 @@
       Weight: null,
       Type: 'Common',
       Slot: 'Body',
-      Gender: 'Unisex',
+      Gender: 'Both',
       Economy: {
         MaxTT: null,
         MinTT: 0
@@ -186,7 +187,7 @@
       },
       format: (v) => v ? 'Yes' : 'No'
     },
-    gender: { key: 'gender', header: 'Gender', width: '60px', filterPlaceholder: 'Male', getValue: (item) => item.Properties?.Gender, format: (v) => v || '-' },
+    gender: { key: 'gender', header: 'Gender', width: '60px', filterPlaceholder: 'Male', getValue: (item) => item.Properties?.Gender, format: (v) => v ?? 'Unknown' },
     weight: { key: 'weight', header: 'Weight', width: '55px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Weight, format: (v) => v != null ? clampDecimals(v, 1, 2) : '-' },
     maxTT: { key: 'maxTT', header: 'Max TT', width: '60px', filterPlaceholder: '>1', getValue: (item) => item.Properties?.Economy?.MaxTT, format: (v) => v != null ? clampDecimals(v, 2, 4) : '-' },
     minTT: { key: 'minTT', header: 'Min TT', width: '55px', filterPlaceholder: '>0', getValue: (item) => item.Properties?.Economy?.MinTT, format: (v) => v != null ? clampDecimals(v, 2, 4) : '-' },
@@ -415,7 +416,7 @@
             <span class="stat-value">
               <InlineEdit
                 type="select"
-                value={activeClothing?.Properties?.Gender || 'Unisex'}
+                value={activeClothing?.Properties?.Gender ?? 'Unknown'}
                 path="Properties.Gender"
                 options={genderOptions}
               />
