@@ -654,7 +654,7 @@
             subtitle="{pieceCount} pieces"
             on:toggle={savePanelStates}
           >
-            {#key activeEntity?.Id || activeEntity?.Name}
+            {#key armorSet?.Id ?? 'create'}
               <ArmorSetPieces armorSet={activeEntity} />
             {/key}
           </DataSection>

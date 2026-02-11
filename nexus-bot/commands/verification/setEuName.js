@@ -1,6 +1,7 @@
 import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
 import { getUsers, getUserById, setUserEuName, createUser } from '../../db.js';
 import { getConfigValue, notifyModerators } from '../../bot.js';
+import { startVerification } from './verifyUser.js';
 
 const NAME_TIMEOUT_MS = 5 * 60 * 1000;
 
@@ -70,7 +71,12 @@ export async function execute(interaction) {
       : 'Type your Entropia Universe name below.';
 
     await interaction.reply(prompt);
-    collectName(interaction.channel, interaction, targetId, isOverride);
+
+    collectEuName(interaction.channel, targetId, {
+      typerId: interaction.user.id,
+      isOverride,
+      guild: interaction.guild,
+    });
 
   } catch (error) {
     console.error('Error in seteuname:', error);
@@ -85,8 +91,20 @@ export async function execute(interaction) {
   }
 }
 
-function collectName(channel, interaction, targetId, isOverride) {
-  const invokerId = interaction.user.id;
+/**
+ * Start collecting an EU name from a user in a channel/thread.
+ * After the name is confirmed, automatically starts the verification flow (unless isOverride).
+ *
+ * @param {import('discord.js').TextChannel} channel - The channel/thread to collect in
+ * @param {string} targetId - The user ID whose EU name is being set
+ * @param {object} options
+ * @param {string} [options.typerId] - The user ID who will type the name (defaults to targetId)
+ * @param {boolean} [options.isOverride=false] - Whether a moderator is setting someone else's name
+ * @param {import('discord.js').Guild} options.guild - The guild
+ * @param {function} [options.onEnd] - Called when the entire flow (name + verification) ends
+ */
+export function collectEuName(channel, targetId, { typerId, isOverride = false, guild, onEnd }) {
+  const invokerId = typerId || targetId;
   let confirmMsg = null;
   let btnCollector = null;
   let settled = false;
@@ -131,6 +149,7 @@ function collectName(channel, interaction, targetId, isOverride) {
             content: 'This Entropia Universe name is already in use by another account. Contact a moderator if you believe this is an error.',
             components: []
           });
+          onEnd?.();
           return;
         }
 
@@ -141,12 +160,14 @@ function collectName(channel, interaction, targetId, isOverride) {
             content: `The EU name for <@${targetId}> has been set to **${euName}**.`,
             components: []
           });
+          onEnd?.();
         } else {
           await i.update({
-            content: `Your EU name has been set to **${euName}**. A moderator will continue the verification process.`,
+            content: `Your EU name has been set to **${euName}**. Verification will begin shortly.`,
             components: []
           });
-          await notifyModeratorsOfName(interaction, targetId, euName);
+          // Auto-chain into verification — onEnd is passed through
+          await startVerification(channel, targetId, guild, { onEnd });
         }
       } else if (i.customId === 'euname_no') {
         btnCollector.stop('retry');
@@ -162,46 +183,21 @@ function collectName(channel, interaction, targetId, isOverride) {
       if (reason === 'time' && !settled) {
         settled = true;
         msgCollector.stop('time');
-        confirmMsg.edit({ content: 'Timed out. Please run `/seteuname` again.', components: [] }).catch(() => {});
+        confirmMsg.edit({ content: 'Timed out. Type your name here to try again, or ask a moderator for help.', components: [] }).catch(() => {});
+        onEnd?.();
       }
     });
   });
 
-  msgCollector.on('end', (collected, reason) => {
+  msgCollector.on('end', () => {
     if (settled) return;
     settled = true;
     if (btnCollector) btnCollector.stop('done');
     if (confirmMsg) {
-      confirmMsg.edit({ content: 'Timed out. Please run `/seteuname` again.', components: [] }).catch(() => {});
+      confirmMsg.edit({ content: 'Timed out. Type your name here to try again, or ask a moderator for help.', components: [] }).catch(() => {});
     } else {
-      channel.send('No name was entered in time. Please run `/seteuname` again.').catch(() => {});
+      channel.send('No name was entered in time. Type your name here to try again, or ask a moderator for help.').catch(() => {});
     }
+    onEnd?.();
   });
-}
-
-async function notifyModeratorsOfName(interaction, targetId, euName) {
-  const moderatorRoleId = getConfigValue('moderatorRoleId');
-  if (!moderatorRoleId) return;
-
-  const moderatorRole = interaction.guild.roles.cache.get(moderatorRoleId);
-  if (!moderatorRole) return;
-
-  const guildId = interaction.guildId;
-  const threadId = interaction.channelId;
-  const threadLink = `https://discord.com/channels/${guildId}/${threadId}`;
-  const message = [
-    `A user with the ID ${targetId} has set their EU name to "${euName}". Please verify their account.`,
-    `Thread: ${threadLink}`,
-    `Guild ID: ${guildId}`,
-    `Channel ID: ${interaction.channel.parentId || threadId}`,
-    `Thread ID: ${threadId}`
-  ].join('\n');
-
-  await Promise.all(
-    moderatorRole.members.map(member =>
-      member.send(message).catch(err => {
-        console.error('Failed to DM moderator:', err);
-      })
-    )
-  );
 }

@@ -124,7 +124,7 @@
 
   // Add piece to slot
   function addPieceToSlot(slot) {
-    const armors = [...(armorSet.Armors || [])];
+    const armors = [...(armorSet?.Armors || [])];
     armors.push([newArmorPiece(slot, 'Both')]);
     updateField('Armors', armors);
   }
@@ -132,7 +132,7 @@
   // Remove piece from slot
   function removePieceFromSlot(slot) {
     const piece = piecesBySlot[slot];
-    if (piece.slotIndex === -1) return;
+    if (piece.slotIndex === -1 || !armorSet?.Armors) return;
     const armors = armorSet.Armors.filter((_, idx) => idx !== piece.slotIndex);
     updateField('Armors', armors);
   }
@@ -140,7 +140,7 @@
   // Toggle unisex for slot
   function toggleUnisex(slot) {
     const piece = piecesBySlot[slot];
-    if (piece.slotIndex === -1) return;
+    if (piece.slotIndex === -1 || !armorSet?.Armors) return;
 
     const armors = [...armorSet.Armors];
     const currentIsUnisex = isSlotUnisex(slot);
@@ -168,7 +168,7 @@
   // Update piece property
   function updatePiece(slot, gender, property, value) {
     const piece = piecesBySlot[slot];
-    if (piece.slotIndex === -1) return;
+    if (piece.slotIndex === -1 || !armorSet?.Armors) return;
 
     const armors = JSON.parse(JSON.stringify(armorSet.Armors));
     const slotArmors = armors[piece.slotIndex];

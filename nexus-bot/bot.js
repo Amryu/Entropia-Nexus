@@ -7,8 +7,13 @@ import { getUsers, getOpenChanges, setChangeThreadId, getDeletedChanges, deleteC
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { compareJson, validate, printSideBySide } from './change.js';
 import { snapshotExchangePrices, computeAllExchangeSummaries } from './exchange-prices.js';
+import { collectEuName } from './commands/verification/setEuName.js';
+import { startVerification } from './commands/verification/verifyUser.js';
 
 const adminUserId = '178245652633878528';
+
+// Track active verification flows to prevent re-triggering from the 1-minute interval
+const activeVerificationFlows = new Set();
 
 dotenv.config();
 const config = JSON.parse(readFileSync('config.json', 'utf8'));
@@ -220,7 +225,7 @@ client.on(Events.InteractionCreate, async interaction => {
 async function checkUnverifiedUsers() {
   const channel = client.channels.cache.find(channel => channel.id === config.verifiedChannelId);
   if (!channel) throw new Error('Verification channel not found');
-  
+
   try {
     await channel.guild.members.fetch();
   } catch (e) {
@@ -245,20 +250,44 @@ async function checkUnverifiedUsers() {
       continue;
     }
 
+    // Skip if a flow is already active for this user
+    if (activeVerificationFlows.has(user.id)) continue;
+
     const existingThread = channel.threads.cache.find(thread => thread.name === `${user.username}-verification`);
 
     if (existingThread) {
       try {
-        // Add user to thread if he isnt already
         await existingThread.members.add(user.id);
+      } catch (e) {
+        console.error(`Error adding user to thread. Are they on the server? ${e.message}`);
       }
-      catch (e) {
-        console.error('Error adding user to thread. Is he on the server?', e);
+
+      // Check if bot already sent the initial welcome message in this thread
+      const botHasSentWelcome = await threadHasBotMessage(existingThread);
+
+      if (!botHasSentWelcome) {
+        // Existing thread but bot never sent a message — send welcome and start name collection
+        await startNameCollectionFlow(existingThread, user, channel.guild);
+      } else if (!user.eu_name) {
+        // Bot sent welcome but user hasn't set name yet — restart name collection
+        activeVerificationFlows.add(user.id);
+        collectEuName(existingThread, user.id, {
+          typerId: user.id,
+          guild: channel.guild,
+          onEnd: () => activeVerificationFlows.delete(user.id),
+        });
+      } else {
+        // User has name set but not verified — start verification code exchange
+        activeVerificationFlows.add(user.id);
+        await startVerification(existingThread, user.id, channel.guild, {
+          onEnd: () => activeVerificationFlows.delete(user.id),
+        });
       }
 
       continue;
     }
 
+    // Create new thread
     const thread = await channel.threads.create({
       name: `${user.username}-verification`,
       autoArchiveDuration: 10080,
@@ -280,12 +309,39 @@ async function checkUnverifiedUsers() {
       ],
     });
 
-    try {
-      await thread.send(`Hello <@${user.id}>, please set your full Entropia Universe username using /seteuname and wait for a moderator to validate it in-game. You can't change your username after verification has been completed!`);
-    } catch (e) {
-      console.error(`Failed to send welcome message to verification thread for ${user.username}: ${e.message}`);
-    }
+    await startNameCollectionFlow(thread, user, channel.guild);
   }
+}
+
+/**
+ * Check if the bot has already sent a message in a thread.
+ */
+async function threadHasBotMessage(thread) {
+  try {
+    const messages = await thread.messages.fetch({ limit: 10 });
+    return messages.some(m => m.author.id === client.user.id);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Send welcome message and start EU name collection in a verification thread.
+ */
+async function startNameCollectionFlow(thread, user, guild) {
+  try {
+    await thread.send(`Hello <@${user.id}>, please type your full Entropia Universe name below to begin verification. Make sure the capitalization and spacing exactly match your in-game name.`);
+  } catch (e) {
+    console.error(`Failed to send welcome message to verification thread for ${user.username}: ${e.message}`);
+    return;
+  }
+
+  activeVerificationFlows.add(user.id);
+  collectEuName(thread, user.id, {
+    typerId: user.id,
+    guild,
+    onEnd: () => activeVerificationFlows.delete(user.id),
+  });
 }
 
 async function checkChanges() {
@@ -471,13 +527,22 @@ async function checkChanges() {
 
 async function syncReviewerRole() {
   const reviewerRoleId = getConfigValue('reviewerRoleId');
-  if (!reviewerRoleId) return;
+  if (!reviewerRoleId) {
+    console.log('syncReviewerRole: No reviewerRoleId configured, skipping');
+    return;
+  }
 
   const guildId = config.guildId;
-  if (!guildId) return;
+  if (!guildId) {
+    console.log('syncReviewerRole: No guildId configured, skipping');
+    return;
+  }
 
   const guild = client.guilds.cache.get(String(guildId)) || await client.guilds.fetch(String(guildId)).catch(() => null);
-  if (!guild) return;
+  if (!guild) {
+    console.error(`syncReviewerRole: Guild ${guildId} not found`);
+    return;
+  }
 
   try {
     await guild.members.fetch();
@@ -493,12 +558,18 @@ async function syncReviewerRole() {
   }
 
   const grantedUserIds = new Set(await getUsersWithGrant('wiki.approve'));
+  console.log(`syncReviewerRole: Found ${grantedUserIds.size} users with wiki.approve: [${[...grantedUserIds].join(', ')}]`);
   const currentMembers = role.members;
+  console.log(`syncReviewerRole: ${currentMembers.size} members currently have the role`);
 
   // Add role to users who should have it
   for (const userId of grantedUserIds) {
     const member = guild.members.cache.get(userId);
-    if (member && !member.roles.cache.has(reviewerRoleId)) {
+    if (!member) {
+      console.log(`syncReviewerRole: User ${userId} not found in guild, skipping`);
+      continue;
+    }
+    if (!member.roles.cache.has(reviewerRoleId)) {
       try {
         await member.roles.add(reviewerRoleId);
         console.log(`syncReviewerRole: Added reviewer role to ${member.user.username}`);

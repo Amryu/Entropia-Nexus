@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
 import { getConfigValue } from '../../bot.js';
-import { getUserByUsername, setUserVerified, assignUserRole } from '../../db.js';
+import { getUserById, getUserByUsername, setUserVerified, assignUserRole } from '../../db.js';
 
 const VERIFY_TIMEOUT_MS = 30 * 60 * 1000;
 
@@ -28,8 +28,11 @@ export const data = new SlashCommandBuilder()
   .setName('verifyuser')
   .setDescription('Moderator only - Starts the verification process for a user.');
 
+/**
+ * Slash command handler for /verifyuser — manual trigger by moderators.
+ */
 export async function execute(interaction) {
-  let moderatorRoleId = getConfigValue('moderatorRoleId');
+  const moderatorRoleId = getConfigValue('moderatorRoleId');
   if (!moderatorRoleId) {
     return interaction.reply({ content: 'The moderator role has not been set.', flags: MessageFlags.Ephemeral });
   }
@@ -37,7 +40,7 @@ export async function execute(interaction) {
     return interaction.reply({ content: 'You do not have permission to use this command.', flags: MessageFlags.Ephemeral });
   }
 
-  let channelId = getConfigValue('verifiedChannelId');
+  const channelId = getConfigValue('verifiedChannelId');
   if (!channelId) {
     return interaction.reply({ content: 'The verified channel has not been set.', flags: MessageFlags.Ephemeral });
   }
@@ -45,67 +48,129 @@ export async function execute(interaction) {
     return interaction.reply({ content: `This command can only be used in a thread that is a child of <#${channelId}>.`, flags: MessageFlags.Ephemeral });
   }
 
-  let guild = interaction.guild;
-  let thread = interaction.channel;
-  let userName = thread.name.split('-')[0];
-  let userVerify = await getUserByUsername(userName);
-  let discordUserVerify = await guild.members.fetch(userVerify.id);
+  const thread = interaction.channel;
+  const userName = thread.name.split('-')[0];
+  const userVerify = await getUserByUsername(userName);
 
-  if (!discordUserVerify) {
-    return interaction.reply({ content: 'The user was not found. Did they leave the server?', flags: MessageFlags.Ephemeral });
+  if (!userVerify) {
+    return interaction.reply({ content: 'Could not find a user matching this thread.', flags: MessageFlags.Ephemeral });
+  }
+  if (!userVerify.eu_name) {
+    return interaction.reply({ content: 'The user has not yet set their EU name.', flags: MessageFlags.Ephemeral });
   }
   if (userVerify.verified) {
-    if (!discordUserVerify.roles.cache.has(getConfigValue('verifiedRoleId'))) {
-      await discordUserVerify.roles.add(getConfigValue('verifiedRoleId'));
+    const guild = interaction.guild;
+    const discordUser = await guild.members.fetch(userVerify.id).catch(() => null);
+    if (discordUser && !discordUser.roles.cache.has(getConfigValue('verifiedRoleId'))) {
+      await discordUser.roles.add(getConfigValue('verifiedRoleId'));
     }
-
     return interaction.reply({ content: 'This user is already verified.', flags: MessageFlags.Ephemeral });
   }
 
+  await interaction.reply({ content: 'Verification started.', flags: MessageFlags.Ephemeral });
+  await startVerification(thread, userVerify.id, interaction.guild);
+}
+
+/**
+ * Start the verification code exchange for a user.
+ * Can be called from:
+ * - /verifyuser command (manual moderator trigger)
+ * - collectEuName (automatic after name confirmation)
+ * - bot.js checkUnverifiedUsers (for users who already have an EU name)
+ *
+ * @param {import('discord.js').ThreadChannel} thread - The verification thread
+ * @param {string} userId - The Discord user ID to verify
+ * @param {import('discord.js').Guild} guild - The guild
+ * @param {object} [options]
+ * @param {function} [options.onEnd] - Called when verification completes, times out, or is cancelled
+ */
+export async function startVerification(thread, userId, guild, { onEnd } = {}) {
+  const userVerify = await getUserById(userId);
   if (!userVerify || !userVerify.eu_name) {
-    return interaction.reply({ content: 'The user has not yet set their EU name.', flags: MessageFlags.Ephemeral });
+    onEnd?.();
+    return;
+  }
+  if (userVerify.verified) {
+    onEnd?.();
+    return;
   }
 
-  let code = Math.floor(10000000 + Math.random() * 90000000);
+  const discordUserVerify = await guild.members.fetch(userId).catch(() => null);
+  if (!discordUserVerify) {
+    onEnd?.();
+    return;
+  }
+
+  const code = Math.floor(10000000 + Math.random() * 90000000);
 
   // Public message to user in thread
   try {
-    await thread.send(`<@${userVerify.id}> — A moderator will send you a verification code in Entropia Universe via PM or Mail. Please type the code here when you receive it.`);
+    await thread.send(`<@${userId}> — A moderator will send you a verification code in Entropia Universe via PM or Mail. Please type the code here when you receive it.`);
   } catch (e) {
-    console.error(`Failed to send verification message to thread ${thread.id} for user ${userVerify.username}: ${e.message}`);
-    return interaction.reply({ content: 'Failed to send verification message. The thread may be archived.', flags: MessageFlags.Ephemeral });
+    console.error(`Failed to send verification message to thread ${thread.id}: ${e.message}`);
+    onEnd?.();
+    return;
   }
 
-  // Ephemeral message to moderator with code and cancel button
-  const modPrompt = { content: `Send the code **${code}** to "${userVerify.eu_name}" in Entropia Universe via PM or Mail.\n\nThe user will type the code here to complete verification.`, components: [cancelRow], flags: MessageFlags.Ephemeral };
-  await interaction.reply(modPrompt);
+  // DM moderators with the code
+  await notifyModeratorsWithCode(guild, thread.id, code, userVerify.eu_name);
 
-  await collectVerificationCode(interaction, thread, userVerify, discordUserVerify, guild, code, modPrompt);
+  collectVerificationCode(thread, userVerify, discordUserVerify, guild, code, onEnd);
 }
 
-async function collectVerificationCode(interaction, thread, userVerify, discordUserVerify, guild, code, modPrompt) {
+async function notifyModeratorsWithCode(guild, threadId, code, euName) {
+  const moderatorRoleId = getConfigValue('moderatorRoleId');
+  if (!moderatorRoleId) return;
+
+  const moderatorRole = guild.roles.cache.get(moderatorRoleId);
+  if (!moderatorRole) return;
+
+  const threadLink = `https://discord.com/channels/${guild.id}/${threadId}`;
+  const message = [
+    `Send the code **${code}** to "${euName}" in Entropia Universe via PM or Mail.`,
+    `The user will type it in the thread to complete verification.`,
+    `Thread: ${threadLink}`,
+  ].join('\n');
+
+  await Promise.all(
+    moderatorRole.members.map(member =>
+      member.send(message).catch(err => {
+        console.error('Failed to DM moderator:', err);
+      })
+    )
+  );
+}
+
+function collectVerificationCode(thread, userVerify, discordUserVerify, guild, code, onEnd) {
   let settled = false;
   const codeStr = String(code);
 
-  // Collect messages from the user being verified
   const msgCollector = thread.createMessageCollector({
     filter: m => m.author.id === userVerify.id,
     idle: VERIFY_TIMEOUT_MS,
   });
 
-  // Collect button interactions from the moderator
   const btnCollector = thread.createMessageComponentCollector({
-    filter: i => i.user.id === interaction.user.id,
+    filter: i => {
+      const moderatorRoleId = getConfigValue('moderatorRoleId');
+      return moderatorRoleId && i.member?.roles?.cache?.has(moderatorRoleId);
+    },
     idle: VERIFY_TIMEOUT_MS,
   });
 
-  async function onVerified() {
-    if (settled) return;
+  function settle() {
+    if (settled) return false;
     settled = true;
-    msgCollector.stop('verified');
-    btnCollector.stop('verified');
+    msgCollector.stop('done');
+    btnCollector.stop('done');
+    onEnd?.();
+    return true;
+  }
 
-    let verifiedRole = guild.roles.cache.get(getConfigValue('verifiedRoleId'));
+  async function onVerified() {
+    if (!settle()) return;
+
+    const verifiedRole = guild.roles.cache.get(getConfigValue('verifiedRoleId'));
     if (!verifiedRole) {
       try {
         await thread.send('The verified role has not been set. Please contact an administrator.');
@@ -126,13 +191,6 @@ async function collectVerificationCode(interaction, thread, userVerify, discordU
     }
   }
 
-  function onCancel() {
-    if (settled) return;
-    settled = true;
-    msgCollector.stop('cancelled');
-    btnCollector.stop('cancelled');
-  }
-
   // Listen for user typing the code
   msgCollector.on('collect', async (msg) => {
     const typed = msg.content.trim();
@@ -150,26 +208,24 @@ async function collectVerificationCode(interaction, thread, userVerify, discordU
   });
 
   msgCollector.on('end', () => {
-    if (settled) return;
-    settled = true;
-    btnCollector.stop('done');
+    if (!settle()) return;
     thread.send('Verification timed out. A moderator can restart with `/verifyuser`.').catch(() => {});
   });
 
-  // Listen for moderator cancel button
+  // Listen for moderator cancel button (from ephemeral messages in /verifyuser)
   btnCollector.on('collect', async (i) => {
     if (i.customId === 'verify_cancel') {
       await i.update({ content: 'Are you sure you want to cancel verification?', components: [cancelConfirmRow], flags: MessageFlags.Ephemeral });
     } else if (i.customId === 'verify_cancel_confirm') {
       await i.update({ content: 'Verification cancelled.', components: [], flags: MessageFlags.Ephemeral });
-      onCancel();
+      if (!settle()) return;
       try {
         await thread.send('The verification process was cancelled by a moderator.');
       } catch (e) {
         console.error(`Failed to send cancel message to thread ${thread.id}: ${e.message}`);
       }
     } else if (i.customId === 'verify_cancel_deny') {
-      await i.update(modPrompt);
+      await i.update({ content: 'Verification is in progress. The user will type the code here.', components: [cancelRow], flags: MessageFlags.Ephemeral });
     }
   });
 }
