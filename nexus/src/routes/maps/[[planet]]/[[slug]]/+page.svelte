@@ -6,7 +6,7 @@
   import { goto } from '$app/navigation';
   import { onDestroy, onMount } from 'svelte';
   import { loading } from '../../../../stores';
-  import { apiCall, getErrorMessage, getPlanetName, getLatestPendingUpdate } from '$lib/util';
+  import { apiCall, getErrorMessage, getLatestPendingUpdate } from '$lib/util';
   import {
     fuzzyScore,
     getMainPlanetNames,
@@ -735,8 +735,8 @@
 </script>
 
 <svelte:head>
-  <title>Entropia Nexus - {currentPlanet?.Name ? getPlanetName(currentPlanet.Name) : 'Map'} Map</title>
-  <meta name="description" content="Interactive map for {currentPlanet?.Name ? getPlanetName(currentPlanet.Name) : 'Entropia Universe'}." />
+  <title>Entropia Nexus - {currentPlanet?.Name || 'Map'} Map</title>
+  <meta name="description" content="Interactive map for {currentPlanet?.Name || 'Entropia Universe'}." />
   <link rel="canonical" href="https://entropianexus.com/maps/{$page.params.planet}" />
 </svelte:head>
 
