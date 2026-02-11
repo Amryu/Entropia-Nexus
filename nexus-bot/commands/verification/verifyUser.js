@@ -2,8 +2,6 @@ import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, Mess
 import { getConfigValue } from '../../bot.js';
 import { getUserById, getUserByUsername, setUserVerified, assignUserRole, getBotConfig, setBotConfig } from '../../db.js';
 
-const VERIFY_TIMEOUT_MS = 30 * 60 * 1000;
-
 const cancelRow = new ActionRowBuilder()
   .addComponents(
     new ButtonBuilder()
@@ -185,7 +183,6 @@ function collectVerificationCode(thread, userVerify, discordUserVerify, guild, c
 
   const msgCollector = thread.createMessageCollector({
     filter: m => m.author.id === userVerify.id,
-    idle: VERIFY_TIMEOUT_MS,
   });
 
   const btnCollector = thread.createMessageComponentCollector({
@@ -193,7 +190,6 @@ function collectVerificationCode(thread, userVerify, discordUserVerify, guild, c
       const moderatorRoleId = getConfigValue('moderatorRoleId');
       return moderatorRoleId && i.member?.roles?.cache?.has(moderatorRoleId);
     },
-    idle: VERIFY_TIMEOUT_MS,
   });
 
   function settle() {
@@ -247,8 +243,7 @@ function collectVerificationCode(thread, userVerify, discordUserVerify, guild, c
   });
 
   msgCollector.on('end', () => {
-    if (!settle()) return;
-    thread.send('Verification timed out. A moderator can restart with `/verifyuser`.').catch(() => {});
+    settle();
   });
 
   // Listen for moderator cancel button (from ephemeral messages in /verifyuser)

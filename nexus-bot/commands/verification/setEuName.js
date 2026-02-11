@@ -3,8 +3,6 @@ import { getUsers, getUserById, setUserEuName, createUser } from '../../db.js';
 import { getConfigValue, notifyModerators } from '../../bot.js';
 import { startVerification } from './verifyUser.js';
 
-const NAME_TIMEOUT_MS = 5 * 60 * 1000;
-
 const confirmRow = new ActionRowBuilder()
   .addComponents(
     new ButtonBuilder()
@@ -111,7 +109,6 @@ export function collectEuName(channel, targetId, { typerId, isOverride = false, 
 
   const msgCollector = channel.createMessageCollector({
     filter: m => m.author.id === invokerId,
-    idle: NAME_TIMEOUT_MS,
   });
 
   msgCollector.on('collect', async (msg) => {
@@ -131,7 +128,6 @@ export function collectEuName(channel, targetId, { typerId, isOverride = false, 
 
     btnCollector = confirmMsg.createMessageComponentCollector({
       filter: i => i.user.id === invokerId,
-      time: NAME_TIMEOUT_MS,
     });
 
     btnCollector.on('collect', async (i) => {
@@ -179,13 +175,8 @@ export function collectEuName(channel, targetId, { typerId, isOverride = false, 
       }
     });
 
-    btnCollector.on('end', (_, reason) => {
-      if (reason === 'time' && !settled) {
-        settled = true;
-        msgCollector.stop('time');
-        if (confirmMsg) confirmMsg.edit({ components: [] }).catch(() => {});
-        onEnd?.();
-      }
+    btnCollector.on('end', () => {
+      if (confirmMsg) confirmMsg.edit({ components: [] }).catch(() => {});
     });
   });
 

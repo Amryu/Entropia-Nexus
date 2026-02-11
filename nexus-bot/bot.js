@@ -255,9 +255,30 @@ async function checkUnverifiedUsers() {
     // Skip if a flow is already active for this user
     if (activeVerificationFlows.has(user.id)) continue;
 
-    const existingThread = channel.threads.cache.find(thread => thread.name === `${user.username}-verification`);
+    let existingThread = channel.threads.cache.find(thread => thread.name === `${user.username}-verification`);
+
+    // Also check archived threads — they won't be in the cache
+    if (!existingThread) {
+      try {
+        const archived = await channel.threads.fetchArchived({ type: 'private' });
+        existingThread = archived.threads.find(thread => thread.name === `${user.username}-verification`);
+      } catch (e) {
+        console.error(`Error fetching archived threads: ${e.message}`);
+      }
+    }
 
     if (existingThread) {
+      // Unarchive if needed so the bot can send messages and collectors work
+      if (existingThread.archived) {
+        try {
+          await existingThread.setArchived(false);
+          console.log(`Unarchived verification thread for ${user.username}`);
+        } catch (e) {
+          console.error(`Error unarchiving thread for ${user.username}: ${e.message}`);
+          continue;
+        }
+      }
+
       try {
         await existingThread.members.add(user.id);
       } catch (e) {
