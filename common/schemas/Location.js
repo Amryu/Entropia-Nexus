@@ -63,7 +63,7 @@ export const Location = {
           "default": null
         },
         "OwnerId": {
-          "type": ["integer", "null"],
+          "type": ["string", "integer", "null"],
           "default": null
         },
         "ItemTradeAvailable": {
@@ -80,7 +80,7 @@ export const Location = {
           "default": null
         },
         "LandAreaOwnerId": {
-          "type": ["integer", "null"],
+          "type": ["string", "integer", "null"],
           "default": null
         }
       },
