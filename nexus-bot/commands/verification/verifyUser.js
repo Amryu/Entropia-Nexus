@@ -1,5 +1,5 @@
 import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
-import { getConfigValue } from '../../bot.js';
+import { getConfigValue, replaceVerificationFlow } from '../../bot.js';
 import { getUserById, getUserByUsername, setUserVerified, assignUserRole, getBotConfig, setBotConfig } from '../../db.js';
 
 const cancelRow = new ActionRowBuilder()
@@ -116,7 +116,9 @@ export async function startVerification(thread, userId, guild, { onEnd } = {}) {
   // DM moderators with the code
   await notifyModeratorsWithCode(guild, thread.id, code, userVerify.eu_name);
 
-  collectVerificationCode(thread, userVerify, discordUserVerify, guild, code, onEnd);
+  const handle = collectVerificationCode(thread, userVerify, discordUserVerify, guild, code, onEnd);
+  replaceVerificationFlow(userId, handle);
+  return handle;
 }
 
 /**
@@ -151,7 +153,9 @@ export async function resumeVerification(thread, userId, guild, { onEnd } = {}) 
   }
 
   console.log(`resumeVerification: Resuming code collector for ${userVerify.username} (code preserved)`);
-  collectVerificationCode(thread, userVerify, discordUserVerify, guild, parseInt(existingCode, 10), onEnd);
+  const handle = collectVerificationCode(thread, userVerify, discordUserVerify, guild, parseInt(existingCode, 10), onEnd);
+  replaceVerificationFlow(userId, handle);
+  return handle;
 }
 
 async function notifyModeratorsWithCode(guild, threadId, code, euName) {
@@ -177,6 +181,9 @@ async function notifyModeratorsWithCode(guild, threadId, code, euName) {
   );
 }
 
+/**
+ * @returns {{ stop: () => void }} Handle to stop the collector externally
+ */
 function collectVerificationCode(thread, userVerify, discordUserVerify, guild, code, onEnd) {
   let settled = false;
   const codeStr = String(code);
@@ -262,4 +269,6 @@ function collectVerificationCode(thread, userVerify, discordUserVerify, guild, c
       await i.update({ content: 'Verification is in progress. The user will type the code here.', components: [cancelRow], flags: MessageFlags.Ephemeral });
     }
   });
+
+  return { stop: () => settle() };
 }

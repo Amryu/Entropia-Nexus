@@ -1,5 +1,5 @@
 import { SlashCommandBuilder, MessageFlags } from 'discord.js';
-import { getConfigValue } from '../../bot.js';
+import { getConfigValue, replaceVerificationFlow, clearVerificationFlow } from '../../bot.js';
 import { getUserByUsername, setUserEuName, setBotConfig } from '../../db.js';
 import { collectEuName } from './setEuName.js';
 
@@ -42,8 +42,10 @@ export async function execute(interaction) {
   await interaction.reply({ content: 'Verification has been reset.', flags: MessageFlags.Ephemeral });
   await thread.send(`Verification has been reset by a moderator. <@${user.id}>, please type your full Entropia Universe name below to begin again.`);
 
-  collectEuName(thread, user.id, {
+  const handle = collectEuName(thread, user.id, {
     typerId: user.id,
     guild: interaction.guild,
+    onEnd: () => clearVerificationFlow(user.id),
   });
+  replaceVerificationFlow(user.id, handle);
 }

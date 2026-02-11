@@ -101,6 +101,9 @@ export async function execute(interaction) {
  * @param {import('discord.js').Guild} options.guild - The guild
  * @param {function} [options.onEnd] - Called when the entire flow (name + verification) ends
  */
+/**
+ * @returns {{ stop: () => void }} Handle to stop the collector externally
+ */
 export function collectEuName(channel, targetId, { typerId, isOverride = false, guild, onEnd }) {
   const invokerId = typerId || targetId;
   let confirmMsg = null;
@@ -110,6 +113,8 @@ export function collectEuName(channel, targetId, { typerId, isOverride = false, 
   const msgCollector = channel.createMessageCollector({
     filter: m => m.author.id === invokerId,
   });
+
+  const handle = { stop: () => msgCollector.stop('replaced') };
 
   msgCollector.on('collect', async (msg) => {
     const euName = msg.content.trim();
@@ -189,4 +194,6 @@ export function collectEuName(channel, targetId, { typerId, isOverride = false, 
     }
     onEnd?.();
   });
+
+  return handle;
 }

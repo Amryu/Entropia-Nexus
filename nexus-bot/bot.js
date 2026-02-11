@@ -12,8 +12,28 @@ import { resumeVerification } from './commands/verification/verifyUser.js';
 
 const adminUserId = '178245652633878528';
 
-// Track active verification flows to prevent re-triggering from the 1-minute interval
-const activeVerificationFlows = new Set();
+// Track active verification flows to prevent re-triggering from the 1-minute interval.
+// Maps userId -> { stop() } so existing collectors can be stopped before starting new ones.
+const activeVerificationFlows = new Map();
+
+/**
+ * Stop any existing verification flow for a user and start tracking a new one.
+ * @param {string} userId
+ * @param {{ stop: () => void }} handle - The collector handle to track
+ */
+export function replaceVerificationFlow(userId, handle) {
+  const existing = activeVerificationFlows.get(userId);
+  if (existing) existing.stop();
+  activeVerificationFlows.set(userId, handle);
+}
+
+/**
+ * Remove the verification flow tracking for a user.
+ * @param {string} userId
+ */
+export function clearVerificationFlow(userId) {
+  activeVerificationFlows.delete(userId);
+}
 
 dotenv.config();
 const config = JSON.parse(readFileSync('config.json', 'utf8'));
@@ -293,17 +313,17 @@ async function checkUnverifiedUsers() {
         await startNameCollectionFlow(existingThread, user, channel.guild);
       } else if (!user.eu_name) {
         // Bot sent welcome but user hasn't set name yet — restart name collection
-        activeVerificationFlows.add(user.id);
-        collectEuName(existingThread, user.id, {
+        const handle = collectEuName(existingThread, user.id, {
           typerId: user.id,
           guild: channel.guild,
-          onEnd: () => activeVerificationFlows.delete(user.id),
+          onEnd: () => clearVerificationFlow(user.id),
         });
+        replaceVerificationFlow(user.id, handle);
       } else {
         // User has name set but not verified — resume existing or start new verification
-        activeVerificationFlows.add(user.id);
+        // Note: resumeVerification calls replaceVerificationFlow internally
         await resumeVerification(existingThread, user.id, channel.guild, {
-          onEnd: () => activeVerificationFlows.delete(user.id),
+          onEnd: () => clearVerificationFlow(user.id),
         });
       }
 
@@ -359,12 +379,12 @@ async function startNameCollectionFlow(thread, user, guild) {
     return;
   }
 
-  activeVerificationFlows.add(user.id);
-  collectEuName(thread, user.id, {
+  const handle = collectEuName(thread, user.id, {
     typerId: user.id,
     guild,
-    onEnd: () => activeVerificationFlows.delete(user.id),
+    onEnd: () => clearVerificationFlow(user.id),
   });
+  replaceVerificationFlow(user.id, handle);
 }
 
 async function checkChanges() {
