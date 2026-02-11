@@ -3728,8 +3728,9 @@ export async function createRentalExtension(data) {
 
 export async function getRentalAvailability(offerId, startDate, endDate) {
   // Get blocked dates within range (reason excluded from public availability)
+  // Alias start_date/end_date to start/end for frontend consumption
   const blockedQuery = `
-    SELECT id, start_date, end_date
+    SELECT id, start_date AS start, end_date AS end
     FROM rental_blocked_dates
     WHERE offer_id = $1 AND end_date >= $2 AND start_date <= $3
     ORDER BY start_date
@@ -3738,7 +3739,7 @@ export async function getRentalAvailability(offerId, startDate, endDate) {
 
   // Get booked dates (accepted or in_progress requests) within range
   const bookedQuery = `
-    SELECT id AS request_id, start_date, end_date, status
+    SELECT id AS request_id, start_date AS start, end_date AS end, status
     FROM rental_requests
     WHERE offer_id = $1 AND status IN ('accepted', 'in_progress')
       AND end_date >= $2 AND start_date <= $3
