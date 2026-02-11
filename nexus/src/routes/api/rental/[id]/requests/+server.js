@@ -1,5 +1,5 @@
 //@ts-nocheck
-import { getRentalOfferById, getRentalRequests, createRentalRequest, checkRentalDateConflict, createNotification } from '$lib/server/db.js';
+import { getRentalOfferById, getRentalRequests, createRentalRequest, checkRentalDateConflict, createNotification, createRentalDmNotification } from '$lib/server/db.js';
 import { getResponse } from '$lib/util.js';
 import { checkRateLimit } from '$lib/server/rateLimiter.js';
 import { validateDateRange, sanitizeNote } from '$lib/server/rentalUtils.js';
@@ -112,7 +112,7 @@ export async function POST({ params, request, locals }) {
       return getResponse({ error: 'The requested dates overlap with an existing booking or blocked period.' }, 409);
     }
 
-    // Notify the offer owner
+    // Notify the offer owner (in-app + Discord DM)
     try {
       await createNotification(
         offer.user_id,
@@ -120,6 +120,20 @@ export async function POST({ params, request, locals }) {
         `New rental request for "${offer.title}" (${pricing.totalDays} day${pricing.totalDays !== 1 ? 's' : ''}).`
       );
     } catch { /* don't block response on notification failure */ }
+
+    try {
+      await createRentalDmNotification({
+        owner_id: offer.user_id,
+        offer_id: offer.id,
+        offer_title: offer.title,
+        requester_name: user.eu_name || user.global_name || user.username,
+        start_date: body.start_date,
+        end_date: body.end_date,
+        total_days: pricing.totalDays,
+        total_price: pricing.totalPrice,
+        deposit: parseFloat(offer.deposit) || 0
+      });
+    } catch { /* don't block response on DM notification failure */ }
 
     return getResponse(rentalRequest, 201);
   } catch (error) {

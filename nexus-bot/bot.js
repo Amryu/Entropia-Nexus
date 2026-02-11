@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { dump } from 'js-yaml';
 import { Client, GatewayIntentBits, Collection, Events, ChannelType } from 'discord.js';
-import { getUsers, getOpenChanges, setChangeThreadId, getDeletedChanges, deleteChange, getFlightsNeedingThread, setFlightThreadId, getCheckinsPendingThreadAdd, markCheckinAddedToThread, getUnnotifiedFlightStateChanges, getFlightsNeedingArchive, clearFlightThreadId, getPendingRescheduleNotifications, markRescheduleNotificationSent, getServicePilots, getFlightAcceptedCheckins, getFlightsReadyForCustomerKick, setFlightCompletedAt, expireTickets, computeAllPriceSummaries, getPendingTradeRequests, getTradeRequestItems, setTradeRequestThread, getWarnableTradeRequests, markWarningSent, getExpirableTradeRequests, updateTradeRequestStatus, findTradeRequestByThread, updateLastActivity, getActiveTradeRequestsWithNewItems, getNewTradeRequestItems, adjustOfferQuantities, getUsersWithGrant } from './db.js';
+import { getUsers, getOpenChanges, setChangeThreadId, getDeletedChanges, deleteChange, getFlightsNeedingThread, setFlightThreadId, getCheckinsPendingThreadAdd, markCheckinAddedToThread, getUnnotifiedFlightStateChanges, getFlightsNeedingArchive, clearFlightThreadId, getPendingRescheduleNotifications, markRescheduleNotificationSent, getPendingRentalDmNotifications, markRentalDmNotificationSent, getServicePilots, getFlightAcceptedCheckins, getFlightsReadyForCustomerKick, setFlightCompletedAt, expireTickets, computeAllPriceSummaries, getPendingTradeRequests, getTradeRequestItems, setTradeRequestThread, getWarnableTradeRequests, markWarningSent, getExpirableTradeRequests, updateTradeRequestStatus, findTradeRequestByThread, updateLastActivity, getActiveTradeRequestsWithNewItems, getNewTradeRequestItems, adjustOfferQuantities, getUsersWithGrant } from './db.js';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { compareJson, validate, printSideBySide } from './change.js';
 import { snapshotExchangePrices, computeAllExchangeSummaries } from './exchange-prices.js';
@@ -955,6 +955,50 @@ async function checkRescheduleNotifications() {
   }
 }
 
+async function checkRentalDmNotifications() {
+  try {
+    const notifications = await getPendingRentalDmNotifications();
+
+    for (const n of notifications) {
+      try {
+        const user = await client.users.fetch(n.discord_user_id);
+        if (!user) {
+          console.error(`User ${n.discord_user_id} not found for rental DM notification #${n.id}`);
+          await markRentalDmNotificationSent(n.id);
+          continue;
+        }
+
+        const startDate = new Date(n.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        const endDate = new Date(n.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+        let message = `**New Rental Request**\n\n` +
+          `**${n.requester_name}** wants to rent your **${n.offer_title}**.\n\n` +
+          `**Period:** ${startDate} – ${endDate} (${n.total_days} day${n.total_days !== 1 ? 's' : ''})\n` +
+          `**Total:** ${parseFloat(n.total_price).toFixed(2)} PED\n`;
+
+        if (parseFloat(n.deposit) > 0) {
+          message += `**Deposit:** ${parseFloat(n.deposit).toFixed(2)} PED\n`;
+        }
+
+        message += `\nView and respond: https://entropianexus.com/market/rental/${n.offer_id}/edit`;
+
+        await user.send(message);
+        console.log(`Sent rental DM notification to ${n.discord_user_id} for offer #${n.offer_id}`);
+
+        await markRentalDmNotificationSent(n.id);
+      } catch (e) {
+        console.error(`Error sending rental DM notification #${n.id} to user ${n.discord_user_id}:`, e);
+        if (e.code === 50007) {
+          console.error(`Cannot send DM to user ${n.discord_user_id}, marking as sent`);
+          await markRentalDmNotificationSent(n.id);
+        }
+      }
+    }
+  } catch (e) {
+    console.error('Error in checkRentalDmNotifications:', e);
+  }
+}
+
 async function runScheduled(label, fn) {
   try {
     await fn();
@@ -972,6 +1016,7 @@ setInterval(() => runScheduled('checkUnverifiedUsers', checkUnverifiedUsers), 1 
 setInterval(() => runScheduled('checkChanges', checkChanges), 1 * 15 * 1000);
 setInterval(() => runScheduled('checkFlights', checkFlights), 30 * 1000);
 setInterval(() => runScheduled('checkRescheduleNotifications', checkRescheduleNotifications), 30 * 1000);
+setInterval(() => runScheduled('checkRentalDmNotifications', checkRentalDmNotifications), 30 * 1000);
 setInterval(() => runScheduled('checkTradeRequests', checkTradeRequests), 30 * 1000);
 setInterval(() => runScheduled('syncReviewerRole', syncReviewerRole), 5 * 60 * 1000);
 

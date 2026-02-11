@@ -3843,6 +3843,20 @@ export async function getItemSetRentalOffers(itemSetId) {
   return rows;
 }
 
+// --- Rental DM Notifications ---
+
+export async function createRentalDmNotification(data) {
+  const query = `
+    INSERT INTO rental_dm_notifications
+      (owner_id, offer_id, offer_title, requester_name, start_date, end_date, total_days, total_price, deposit)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+  `;
+  await pool.query(query, [
+    data.owner_id, data.offer_id, data.offer_title, data.requester_name,
+    data.start_date, data.end_date, data.total_days, data.total_price, data.deposit
+  ]);
+}
+
 // Blueprint Ownership
 export async function getUserBlueprintOwnership(userId) {
   const query = 'SELECT data, last_update FROM blueprint_ownership WHERE user_id = $1';

@@ -345,6 +345,24 @@ export async function markRescheduleNotificationSent(notificationId) {
   await poolUsers.query(query, [notificationId]);
 }
 
+// Get pending rental DM notifications
+export async function getPendingRentalDmNotifications() {
+  const query = `
+    SELECT rdn.*, u.id AS discord_user_id
+    FROM rental_dm_notifications rdn
+    JOIN users u ON rdn.owner_id = u.id
+    WHERE rdn.sent = false
+    ORDER BY rdn.created_at ASC
+  `;
+  return (await poolUsers.query(query)).rows;
+}
+
+// Mark a rental DM notification as sent
+export async function markRentalDmNotificationSent(notificationId) {
+  const query = 'UPDATE rental_dm_notifications SET sent = true WHERE id = $1';
+  await poolUsers.query(query, [notificationId]);
+}
+
 // Get pilots for a service
 export async function getServicePilots(serviceId) {
   const query = `
