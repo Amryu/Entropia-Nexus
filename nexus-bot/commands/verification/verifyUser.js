@@ -1,6 +1,6 @@
 import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
 import { getConfigValue } from '../../bot.js';
-import { getUserById, getUserByUsername, setUserVerified, assignUserRole } from '../../db.js';
+import { getUserById, getUserByUsername, setUserVerified, assignUserRole, getBotConfig, setBotConfig } from '../../db.js';
 
 const VERIFY_TIMEOUT_MS = 30 * 60 * 1000;
 
@@ -103,6 +103,9 @@ export async function startVerification(thread, userId, guild, { onEnd } = {}) {
 
   const code = Math.floor(10000000 + Math.random() * 90000000);
 
+  // Persist code so it survives bot restarts
+  await setBotConfig(`verify_code:${userId}`, String(code));
+
   // Public message to user in thread
   try {
     await thread.send(`<@${userId}> — A moderator will send you a verification code in Entropia Universe via PM or Mail. Please type the code here when you receive it.`);
@@ -116,6 +119,41 @@ export async function startVerification(thread, userId, guild, { onEnd } = {}) {
   await notifyModeratorsWithCode(guild, thread.id, code, userVerify.eu_name);
 
   collectVerificationCode(thread, userVerify, discordUserVerify, guild, code, onEnd);
+}
+
+/**
+ * Resume listening for a verification code that was already generated before a restart.
+ * Does NOT generate a new code or send any messages — just sets up the collector.
+ *
+ * @param {import('discord.js').ThreadChannel} thread
+ * @param {string} userId
+ * @param {import('discord.js').Guild} guild
+ * @param {object} [options]
+ * @param {function} [options.onEnd]
+ */
+export async function resumeVerification(thread, userId, guild, { onEnd } = {}) {
+  const existingCode = await getBotConfig(`verify_code:${userId}`);
+  if (!existingCode) {
+    // No code was ever generated — nothing to resume
+    onEnd?.();
+    return;
+  }
+
+  const userVerify = await getUserById(userId);
+  if (!userVerify || !userVerify.eu_name || userVerify.verified) {
+    await setBotConfig(`verify_code:${userId}`, null);
+    onEnd?.();
+    return;
+  }
+
+  const discordUserVerify = await guild.members.fetch(userId).catch(() => null);
+  if (!discordUserVerify) {
+    onEnd?.();
+    return;
+  }
+
+  console.log(`resumeVerification: Resuming code collector for ${userVerify.username} (code preserved)`);
+  collectVerificationCode(thread, userVerify, discordUserVerify, guild, parseInt(existingCode, 10), onEnd);
 }
 
 async function notifyModeratorsWithCode(guild, threadId, code, euName) {
@@ -183,6 +221,7 @@ function collectVerificationCode(thread, userVerify, discordUserVerify, guild, c
     await discordUserVerify.roles.add(verifiedRole);
     await setUserVerified(userVerify.id, true);
     await assignUserRole(userVerify.id);
+    await setBotConfig(`verify_code:${userVerify.id}`, null);
     try {
       await thread.send(`${userVerify.global_name} has been successfully verified with the Entropia name "${userVerify.eu_name}"!`);
       await thread.setArchived(true);

@@ -8,7 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { compareJson, validate, printSideBySide } from './change.js';
 import { snapshotExchangePrices, computeAllExchangeSummaries } from './exchange-prices.js';
 import { collectEuName } from './commands/verification/setEuName.js';
-import { startVerification } from './commands/verification/verifyUser.js';
+import { resumeVerification } from './commands/verification/verifyUser.js';
 
 const adminUserId = '178245652633878528';
 
@@ -277,9 +277,9 @@ async function checkUnverifiedUsers() {
           onEnd: () => activeVerificationFlows.delete(user.id),
         });
       } else {
-        // User has name set but not verified — start verification code exchange
+        // User has name set but not verified — resume existing or start new verification
         activeVerificationFlows.add(user.id);
-        await startVerification(existingThread, user.id, channel.guild, {
+        await resumeVerification(existingThread, user.id, channel.guild, {
           onEnd: () => activeVerificationFlows.delete(user.id),
         });
       }

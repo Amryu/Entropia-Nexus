@@ -183,7 +183,7 @@ export function collectEuName(channel, targetId, { typerId, isOverride = false, 
       if (reason === 'time' && !settled) {
         settled = true;
         msgCollector.stop('time');
-        confirmMsg.edit({ content: 'Timed out. Type your name here to try again, or ask a moderator for help.', components: [] }).catch(() => {});
+        if (confirmMsg) confirmMsg.edit({ components: [] }).catch(() => {});
         onEnd?.();
       }
     });
@@ -194,9 +194,7 @@ export function collectEuName(channel, targetId, { typerId, isOverride = false, 
     settled = true;
     if (btnCollector) btnCollector.stop('done');
     if (confirmMsg) {
-      confirmMsg.edit({ content: 'Timed out. Type your name here to try again, or ask a moderator for help.', components: [] }).catch(() => {});
-    } else {
-      channel.send('No name was entered in time. Type your name here to try again, or ask a moderator for help.').catch(() => {});
+      confirmMsg.edit({ components: [] }).catch(() => {});
     }
     onEnd?.();
   });
