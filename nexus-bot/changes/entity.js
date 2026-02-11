@@ -1167,7 +1167,7 @@ async function upsertEstateExtension(client, locationId, estateType, ownerId, it
       "OwnerId" = $3,
       "ItemTradeAvailable" = $4,
       "MaxGuests" = $5
-  `, [locationId, estateType, ownerId != null ? Number(ownerId) : null, itemTradeAvailable, maxGuests ?? null]);
+  `, [locationId, estateType, ownerId ?? null, itemTradeAvailable, maxGuests ?? null]);
 }
 
 async function applyEstateSectionsChanges(client, locationId, sections) {
@@ -1249,7 +1249,7 @@ async function applyLocationExtensionChanges(client, locationId, x) {
     // Handle LandAreas extension for LandArea AreaType
     if (areaType === 'LandArea') {
       const taxRate = x.Properties?.TaxRate ?? null;
-      const ownerId = x.Properties?.LandAreaOwnerId != null ? Number(x.Properties.LandAreaOwnerId) : null;
+      const ownerId = x.Properties?.LandAreaOwnerId ?? null;
       await client.query(
         `INSERT INTO "LandAreas" ("LocationId", "TaxRate", "OwnerId")
          VALUES ($1, $2, $3)
