@@ -2163,6 +2163,12 @@
             </div>
           {/if}
           <div class="detail-title-right">
+            {#if isGenderedDetail}
+              <div class="gender-toggle">
+                <button class="gender-btn" class:active={priceGender === 'Male'} on:click={() => priceGender = 'Male'}>M</button>
+                <button class="gender-btn" class:active={priceGender === 'Female'} on:click={() => priceGender = 'Female'}>F</button>
+              </div>
+            {/if}
             <div class="metric">
               Median:<br /><span class="metric-value"
                 >{periodStats?.median != null
@@ -2195,12 +2201,6 @@
               </div>
             {/if}
             <div class="history-controls">
-              {#if isGenderedDetail}
-                <div class="gender-toggle">
-                  <button class="gender-btn" class:active={priceGender === 'Male'} on:click={() => priceGender = 'Male'}>M</button>
-                  <button class="gender-btn" class:active={priceGender === 'Female'} on:click={() => priceGender = 'Female'}>F</button>
-                </div>
-              {/if}
               <select
                 class="filter-select period-select"
                 bind:value={selectedPeriod}
@@ -3367,12 +3367,13 @@
     display: flex;
     gap: 0;
     border: 1px solid var(--border-color);
-    border-radius: 4px;
+    border-radius: 6px;
     overflow: hidden;
+    align-self: stretch;
   }
   .gender-btn {
-    padding: 3px 10px;
-    font-size: 11px;
+    padding: 4px 12px;
+    font-size: 12px;
     font-weight: 600;
     border: none;
     background: transparent;
