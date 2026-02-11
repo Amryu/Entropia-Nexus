@@ -122,8 +122,10 @@
     return piece.male?.Properties?.Gender === 'Both';
   }
 
-  // Add piece to slot
+  // Add piece to slot (only if slot is empty)
   function addPieceToSlot(slot) {
+    const piece = piecesBySlot[slot];
+    if (piece.male || piece.female) return; // slot already has a piece
     const armors = [...(armorSet?.Armors || [])];
     armors.push([newArmorPiece(slot, 'Both')]);
     updateField('Armors', armors);
@@ -200,13 +202,13 @@
   <div class="pieces-edit-container">
     {#each slots as slot}
       {@const piece = piecesBySlot[slot]}
-      {@const hasPiece = slotHasPiece(slot)}
-      {@const unisex = isSlotUnisex(slot)}
+      {@const hasPiece = !!(piece.male || piece.female)}
+      {@const unisex = (!piece.male && !piece.female) || piece.male?.Properties?.Gender === 'Both'}
 
       <div class="piece-edit-card" class:empty={!hasPiece}>
-        <div class="piece-edit-header">
-          <span class="slot-label">{slot}</span>
-          {#if hasPiece}
+        {#if hasPiece}
+          <div class="piece-edit-header">
+            <span class="slot-label">{slot}</span>
             <div class="piece-controls">
               <label class="unisex-toggle" title="When unchecked, allows different male/female variants">
                 <input
@@ -222,17 +224,7 @@
                 </svg>
               </button>
             </div>
-          {:else}
-            <button class="btn-add-piece" on:click={() => addPieceToSlot(slot)}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-              </svg>
-              Add
-            </button>
-          {/if}
-        </div>
-
-        {#if hasPiece}
+          </div>
           <div class="piece-edit-body">
             {#if unisex}
               <!-- Unisex piece - single compact row -->
@@ -327,6 +319,16 @@
                 </div>
               {/each}
             {/if}
+          </div>
+        {:else}
+          <div class="piece-edit-header">
+            <span class="slot-label">{slot}</span>
+            <button class="btn-add-piece" on:click={() => addPieceToSlot(slot)}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+              Add
+            </button>
           </div>
         {/if}
       </div>
