@@ -532,17 +532,14 @@ async function syncReviewerRole() {
     return;
   }
 
-  const guildId = config.guildId;
-  if (!guildId) {
-    console.log('syncReviewerRole: No guildId configured, skipping');
+  // Get guild through a cached channel (avoids guildId number precision loss)
+  const channel = client.channels.cache.get(config.pendingChangesChannelId)
+    || client.channels.cache.get(config.verifiedChannelId);
+  if (!channel?.guild) {
+    console.error('syncReviewerRole: Could not resolve guild from cached channels');
     return;
   }
-
-  const guild = client.guilds.cache.get(String(guildId)) || await client.guilds.fetch(String(guildId)).catch(() => null);
-  if (!guild) {
-    console.error(`syncReviewerRole: Guild ${guildId} not found`);
-    return;
-  }
+  const guild = channel.guild;
 
   try {
     await guild.members.fetch();
