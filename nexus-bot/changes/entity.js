@@ -269,6 +269,7 @@ export const UpsertConfigs = {
   MiscTool: {
     columns: [
       { name: "Name", value: x => x.Name },
+      { name: "Type", value: x => x.Properties.Type },
       { name: "Description", value: x => x.Properties.Description },
       { name: "Weight", value: x => x.Properties.Weight },
       { name: "MaxTT", value: x => x.Properties.Economy.MaxTT },

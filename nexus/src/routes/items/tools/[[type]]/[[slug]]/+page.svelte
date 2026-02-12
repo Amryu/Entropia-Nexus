@@ -672,7 +672,6 @@
                   value={activeEntity?.Properties?.Type}
                   path="Properties.Type"
                   type="text"
-                  placeholder="Enter tool type..."
                 />
               </span>
             </div>
