@@ -913,6 +913,9 @@
     color: var(--text-muted);
     padding: 4px 0;
   }
+  :global(.turnstile-container) {
+    margin-top: 1rem;
+  }
   .next-btn {
     background: transparent;
     border: 1px solid var(--accent-color);
