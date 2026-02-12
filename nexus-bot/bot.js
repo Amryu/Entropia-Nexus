@@ -248,13 +248,17 @@ async function checkUnverifiedUsers() {
   const channel = client.channels.cache.find(channel => channel.id === config.verifiedChannelId);
   if (!channel) throw new Error('Verification channel not found');
 
-  try {
-    await channel.guild.members.fetch();
-  } catch (e) {
-    console.error('Error fetching members, using old list instead.', e);
-  }
-
   const unverifiedUsers = (await getUsers()).filter(x => !x.verified);
+
+  // Fetch only the specific members we need instead of the entire guild
+  const userIds = unverifiedUsers.map(u => u.id);
+  if (userIds.length > 0) {
+    try {
+      await channel.guild.members.fetch({ user: userIds });
+    } catch (e) {
+      console.error('Error fetching members, using cache instead.', e);
+    }
+  }
 
   for (const user of unverifiedUsers) {
     const guildMember = channel.guild.members.cache.get(user.id);
@@ -584,13 +588,6 @@ async function syncReviewerRole() {
   }
   const guild = channel.guild;
 
-  try {
-    await guild.members.fetch();
-  } catch (e) {
-    console.error('syncReviewerRole: Error fetching members:', e.message);
-    return;
-  }
-
   const role = guild.roles.cache.get(reviewerRoleId);
   if (!role) {
     console.error(`syncReviewerRole: Reviewer role ${reviewerRoleId} not found in guild`);
@@ -599,6 +596,17 @@ async function syncReviewerRole() {
 
   const grantedUserIds = new Set(await getUsersWithGrant('wiki.approve'));
   console.log(`syncReviewerRole: Found ${grantedUserIds.size} users with wiki.approve: [${[...grantedUserIds].join(', ')}]`);
+
+  // Fetch only the specific members we need instead of the entire guild
+  const idsToFetch = [...new Set([...grantedUserIds, ...role.members.keys()])];
+  if (idsToFetch.length > 0) {
+    try {
+      await guild.members.fetch({ user: idsToFetch });
+    } catch (e) {
+      console.error('syncReviewerRole: Error fetching members, using cache:', e.message);
+    }
+  }
+
   const currentMembers = role.members;
   console.log(`syncReviewerRole: ${currentMembers.size} members currently have the role`);
 
