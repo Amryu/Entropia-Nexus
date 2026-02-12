@@ -131,7 +131,7 @@ export async function getAuction(auctionId) {
   const { rows } = await pool.query(
     `SELECT a.*,
        u.eu_name AS seller_name,
-       u.avatar_url AS seller_avatar,
+       u.avatar AS seller_avatar,
        is2.name AS item_set_name,
        is2.data AS item_set_data,
        is2.customized AS item_set_customized
