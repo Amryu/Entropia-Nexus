@@ -77,7 +77,8 @@ export function categorizeItems(items, {
     } else if (type === 'pet') {
       categorized.pets.push(item);
     } else if (type === 'skillimplant') {
-      categorized.skill_implants.push(item);
+      // Skip base items when detailed /misctools endpoint provides them
+      if (!hasMiscTools) categorized.skill_implants.push(item);
     } else if (type === 'furniture') {
       categorized.furnishings.furniture.push(item);
     } else if (type === 'decoration') {

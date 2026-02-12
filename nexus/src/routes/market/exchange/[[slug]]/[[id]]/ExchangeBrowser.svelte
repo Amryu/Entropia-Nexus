@@ -1335,6 +1335,11 @@
         const qr = Number(o?.details?.QualityRating) || 0;
         return qr >= qrMin && qr <= qrMax;
       })
+      .filter((o) => {
+        // Gender filter (gendered items only)
+        if (!isGenderedDetail || priceGender === 'Both') return true;
+        return o?.details?.Gender === priceGender;
+      })
       .map(o => {
         const qty = o?.Quantity ?? o?.quantity ?? 0;
         const mu = o?.Markup ?? o?.markup ?? null;
@@ -1376,7 +1381,8 @@
   // Explicit dependency list so Svelte re-runs when any filter variable changes
   $: orderFilterDeps = [selectedPlanet, tierMin, tierMax, tirMin, tirMax, tirRangeMax,
     lastUpdateFilter, minTTFilter, minConditionPct, qrMin, qrMax,
-    detailItemStackable, detailHasCondition, isTierableDetail, isLimitedDetail, isBlueprintDetail];
+    detailItemStackable, detailHasCondition, isTierableDetail, isLimitedDetail, isBlueprintDetail,
+    isGenderedDetail, priceGender];
 
   $: filteredSellOrders = (orderFilterDeps, applyOrderFilters(sellOrders))
     .sort((a, b) => (a.Price ?? Infinity) - (b.Price ?? Infinity));
@@ -1521,9 +1527,21 @@
 
   async function refreshAfterOrderChange() {
     if (!inlineEditItem) {
-      // Refresh the item's order book (detail tables)
+      // New order created — full reload including prices
       ordersLoadedKey = '';
       if (selectedItem?.i) await loadOrders(selectedItem.i, selectedPlanet);
+    } else if (isDetailView && selectedItem?.i) {
+      // Edited/deleted from detail view — refresh orders only (preserve price/gender state)
+      try {
+        const res = await fetch(`/api/market/exchange/orders/item/${encodeURIComponent(selectedItem.i)}`);
+        if (res.ok) {
+          const data = await res.json();
+          buyOrders = data.buy || [];
+          sellOrders = data.sell || [];
+        }
+      } catch (e) {
+        console.error('Error refreshing orders:', e);
+      }
     }
   }
 
