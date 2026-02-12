@@ -21,6 +21,7 @@
   import WikiSEO from '$lib/components/wiki/WikiSEO.svelte';
   import DataSection from '$lib/components/wiki/DataSection.svelte';
   import WaypointCopyButton from '$lib/components/wiki/WaypointCopyButton.svelte';
+  import WaypointInput from '$lib/components/wiki/WaypointInput.svelte';
   import InlineEdit from '$lib/components/wiki/InlineEdit.svelte';
   import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
 
@@ -83,7 +84,6 @@
       { Name: SECTION_NAMES[0], ItemPoints: null, Description: null },
       { Name: SECTION_NAMES[1], ItemPoints: null, Description: null }
     ],
-    MaxGuests: null,
     HasAdditionalArea: false
   };
 
@@ -152,6 +152,13 @@
   $: ownerDisplayName = $editMode
     ? (selectedOwnerDisplayName || (activeEntity?.OwnerId ? `User #${activeEntity.OwnerId}` : ''))
     : (activeEntity?.Owner?.Name || (activeEntity?.OwnerId ? `User #${activeEntity.OwnerId}` : 'No Owner'));
+
+  // Handle waypoint input changes
+  function handleWaypointChange(detail) {
+    if (detail.x !== undefined) updateField('Coordinates.Longitude', detail.x);
+    if (detail.y !== undefined) updateField('Coordinates.Latitude', detail.y);
+    if (detail.z !== undefined) updateField('Coordinates.Altitude', detail.z);
+  }
 
   // Handle HasAdditionalArea toggle
   function handleAdditionalAreaChange(event) {
@@ -461,6 +468,13 @@
   $: totalGroups = getTotalGroups(activeEntity);
   $: hasLocation = hasCoordinates(activeEntity);
   $: coordinates = formatCoordinates(activeEntity);
+  $: waypointValue = {
+    planet: activeEntity?.Planet?.Name || 'Calypso',
+    x: activeEntity?.Coordinates?.Longitude ?? null,
+    y: activeEntity?.Coordinates?.Latitude ?? null,
+    z: activeEntity?.Coordinates?.Altitude ?? null,
+    name: activeEntity?.Name || ''
+  };
   $: sectionNames = getSectionNames(activeEntity);
   // Owner/manager permissions still based on original shop data
   $: canEdit = canUserEditShop(shop, user);
@@ -642,19 +656,6 @@
               {/if}
             </span>
           </div>
-          {#if activeEntity?.MaxGuests != null || $editMode}
-            <div class="stat-row">
-              <span class="stat-label">Max Guests</span>
-              <span class="stat-value">
-                <InlineEdit
-                  value={activeEntity?.MaxGuests}
-                  path="MaxGuests"
-                  type="number"
-                  min={0}
-                />
-              </span>
-            </div>
-          {/if}
           {#if activeEntity?.Managers?.length > 0}
             <div class="stat-row">
               <span class="stat-label">Managers</span>
@@ -669,8 +670,7 @@
           <div class="stat-row">
             <span class="stat-label">Planet</span>
             <span class="stat-value">
-              {#if $editMode && !hasOwner}
-                <!-- Planet editable only when no owner exists -->
+              {#if $editMode}
                 <InlineEdit
                   value={activeEntity?.Planet?.Name}
                   path="Planet.Name"
@@ -691,41 +691,15 @@
               {/if}
             </span>
           </div>
-          {#if $editMode && !hasOwner}
-            <!-- Coordinates editable only when no owner exists -->
-            <div class="stat-row">
-              <span class="stat-label">Longitude</span>
-              <span class="stat-value">
-                <InlineEdit
-                  value={activeEntity?.Coordinates?.Longitude}
-                  path="Coordinates.Longitude"
-                  type="number"
-                  step={1}
-                />
-              </span>
-            </div>
-            <div class="stat-row">
-              <span class="stat-label">Latitude</span>
-              <span class="stat-value">
-                <InlineEdit
-                  value={activeEntity?.Coordinates?.Latitude}
-                  path="Coordinates.Latitude"
-                  type="number"
-                  step={1}
-                />
-              </span>
-            </div>
-            <div class="stat-row">
-              <span class="stat-label">Altitude</span>
-              <span class="stat-value">
-                <InlineEdit
-                  value={activeEntity?.Coordinates?.Altitude}
-                  path="Coordinates.Altitude"
-                  type="number"
-                  step={1}
-                />
-              </span>
-            </div>
+          {#if $editMode}
+            <WaypointInput
+              value={waypointValue}
+              planetLocked={true}
+              nameLocked={true}
+              hidePlanet={true}
+              hideName={true}
+              on:change={(e) => handleWaypointChange(e.detail)}
+            />
           {:else if hasLocation}
             <div class="coordinates-display">
               <span class="coordinates-label">Waypoint</span>
