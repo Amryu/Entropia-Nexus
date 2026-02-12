@@ -28,6 +28,10 @@
   let resetTurnstile = false;
   let submitting = false;
 
+  // Confirmation state
+  let confirmAction = null; // 'bid' | 'buyout'
+  let confirmBidAmount = 0;
+
   $: hasBids = auction.bid_count > 0;
   $: minBid = hasBids ? getMinNextBid(parseFloat(auction.current_bid), true) : parseFloat(auction.starting_bid);
   $: buyoutOnly = isBuyoutOnly(auction);
@@ -38,7 +42,7 @@
     turnstileToken = e.detail.token;
   }
 
-  async function handleBid() {
+  function handleBid() {
     if (!turnstileToken) {
       addToast('Please complete the captcha verification', { type: 'warning' });
       return;
@@ -48,12 +52,20 @@
       return;
     }
 
-    const amount = parseFloat(bidAmount);
-    if (!Number.isFinite(amount) || amount < minBid) {
+    // Default to minimum bid if input is empty
+    const raw = bidAmount === '' || bidAmount == null ? minBid : parseFloat(bidAmount);
+    if (!Number.isFinite(raw) || raw < minBid) {
       addToast(`Minimum bid is ${minBid.toFixed(2)} PED`, { type: 'warning' });
       return;
     }
 
+    confirmBidAmount = raw;
+    confirmAction = 'bid';
+  }
+
+  async function doBid() {
+    const amount = confirmBidAmount;
+    confirmAction = null;
     submitting = true;
     try {
       const res = await fetch(`/api/auction/${auction.id}/bid`, {
@@ -81,7 +93,7 @@
     }
   }
 
-  async function handleBuyout() {
+  function handleBuyout() {
     if (!turnstileToken) {
       addToast('Please complete the captcha verification', { type: 'warning' });
       return;
@@ -91,6 +103,11 @@
       return;
     }
 
+    confirmAction = 'buyout';
+  }
+
+  async function doBuyout() {
+    confirmAction = null;
     submitting = true;
     try {
       const res = await fetch(`/api/auction/${auction.id}/buyout`, {
@@ -170,6 +187,27 @@
         bind:reset={resetTurnstile}
         on:verified={handleTurnstileVerified}
       />
+    </div>
+  </div>
+{/if}
+
+{#if confirmAction}
+  <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+  <div class="modal-overlay" on:click|self={() => confirmAction = null}>
+    <div class="confirm-dialog" role="dialog" aria-modal="true">
+      {#if confirmAction === 'bid'}
+        <p class="confirm-message">Place a bid of <strong>{confirmBidAmount.toFixed(2)} PED</strong> on this auction?</p>
+      {:else}
+        <p class="confirm-message">Buy out this auction for <strong>{parseFloat(auction.buyout_price).toFixed(2)} PED</strong>?</p>
+      {/if}
+      <div class="confirm-actions">
+        <button class="btn btn-cancel" on:click={() => confirmAction = null}>Cancel</button>
+        {#if confirmAction === 'bid'}
+          <button class="btn btn-primary" on:click={doBid}>Confirm Bid</button>
+        {:else}
+          <button class="btn btn-buyout-confirm" on:click={doBuyout}>Confirm Buyout</button>
+        {/if}
+      </div>
     </div>
   </div>
 {/if}
@@ -283,5 +321,61 @@
   .turnstile-wrapper {
     display: flex;
     justify-content: center;
+  }
+
+  /* Confirmation dialog */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 100;
+  }
+
+  .confirm-dialog {
+    background: var(--secondary-color);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1.5rem;
+    width: 380px;
+    max-width: calc(100% - 32px);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+  }
+
+  .confirm-message {
+    margin: 0 0 1rem 0;
+    font-size: 0.9rem;
+    line-height: 1.5;
+  }
+
+  .confirm-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+  }
+
+  .btn-cancel {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--text-color);
+  }
+
+  .btn-cancel:hover:not(:disabled) {
+    background: var(--hover-color);
+  }
+
+  .btn-buyout-confirm {
+    background: var(--success-bg);
+    color: var(--success-color);
+    border: 1px solid var(--success-color);
+    font-weight: 600;
+  }
+
+  .btn-buyout-confirm:hover:not(:disabled) {
+    background: var(--success-color);
+    color: white;
   }
 </style>

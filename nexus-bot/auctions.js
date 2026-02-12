@@ -3,7 +3,7 @@
  * Manages embed messages in a dedicated channel, one per active auction.
  * Polls auction_audit_log to react to state changes in near-real-time.
  */
-import { EmbedBuilder } from 'discord.js';
+import { EmbedBuilder, ChannelType } from 'discord.js';
 import { poolUsers, getBotConfig, setBotConfig } from './db.js';
 import { isBuyoutOnly } from './common/auctionUtils.js';
 
@@ -207,17 +207,63 @@ function buildAuctionEmbed(auction) {
 
 // ---- Message Operations ----
 
+// Forum channels store thread IDs in discord_message_id; text channels store message IDs.
+
+function isForumChannel(channel) {
+  return channel.type === ChannelType.GuildForum;
+}
+
+/**
+ * Send a new auction embed. For forum channels, creates a thread (forum post).
+ * @returns {string} The ID to store (thread ID for forums, message ID for text channels)
+ */
+async function sendEmbed(channel, embed, threadName) {
+  if (isForumChannel(channel)) {
+    const thread = await channel.threads.create({
+      name: threadName,
+      message: { embeds: [embed] }
+    });
+    return thread.id;
+  }
+  const msg = await channel.send({ embeds: [embed] });
+  return msg.id;
+}
+
+/**
+ * Fetch the auction embed message. For forum channels, fetches the starter message of the thread.
+ */
+async function fetchEmbedMessage(channel, discordId) {
+  if (isForumChannel(channel)) {
+    const thread = await channel.threads.fetch(discordId);
+    return thread.fetchStarterMessage();
+  }
+  return channel.messages.fetch(discordId);
+}
+
+/**
+ * Delete the auction post. For forum channels, deletes the entire thread.
+ */
+async function deleteEmbedPost(channel, discordId) {
+  if (isForumChannel(channel)) {
+    const thread = await channel.threads.fetch(discordId);
+    await thread.delete();
+    return;
+  }
+  const msg = await channel.messages.fetch(discordId);
+  await msg.delete();
+}
+
 async function editAuctionEmbed(channel, auctionId) {
   const auction = await getAuctionForEmbed(auctionId);
   if (!auction || !auction.discord_message_id) return;
 
   try {
-    const msg = await channel.messages.fetch(auction.discord_message_id);
+    const msg = await fetchEmbedMessage(channel, auction.discord_message_id);
     const embed = buildAuctionEmbed(auction);
     await msg.edit({ embeds: [embed] });
   } catch (e) {
     if (e.code === 10008) {
-      // Unknown Message — deleted externally
+      // Unknown Message/Thread — deleted externally
       console.log(`Auction ${auctionId}: Discord message not found, clearing reference`);
       await clearAuctionMessageId(auctionId);
     } else {
@@ -231,8 +277,7 @@ async function deleteAuctionMessage(channel, auctionId) {
   if (!auction || !auction.discord_message_id) return;
 
   try {
-    const msg = await channel.messages.fetch(auction.discord_message_id);
-    await msg.delete();
+    await deleteEmbedPost(channel, auction.discord_message_id);
   } catch (e) {
     if (e.code !== 10008) {
       console.error(`Failed to delete auction message for ${auctionId}:`, e.message);
@@ -273,8 +318,8 @@ async function processAuditEntry(channel, entry) {
         await editAuctionEmbed(channel, auctionId);
       } else {
         const embed = buildAuctionEmbed(auction);
-        const msg = await channel.send({ embeds: [embed] });
-        await setAuctionMessageId(auctionId, msg.id);
+        const id = await sendEmbed(channel, embed, auction.title || 'Auction');
+        await setAuctionMessageId(auctionId, id);
       }
       break;
     }
@@ -333,15 +378,15 @@ async function fullSync(channel) {
       if (auction.discord_message_id) {
         // Verify message still exists and update it
         try {
-          const msg = await channel.messages.fetch(auction.discord_message_id);
+          const msg = await fetchEmbedMessage(channel, auction.discord_message_id);
           const embed = buildAuctionEmbed(auction);
           await msg.edit({ embeds: [embed] });
         } catch (e) {
           if (e.code === 10008) {
-            // Message deleted — repost
+            // Message/thread deleted — repost
             const embed = buildAuctionEmbed(auction);
-            const msg = await channel.send({ embeds: [embed] });
-            await setAuctionMessageId(auction.id, msg.id);
+            const id = await sendEmbed(channel, embed, auction.title || 'Auction');
+            await setAuctionMessageId(auction.id, id);
           } else {
             throw e;
           }
@@ -349,8 +394,8 @@ async function fullSync(channel) {
       } else {
         // No message yet — post new embed
         const embed = buildAuctionEmbed(auction);
-        const msg = await channel.send({ embeds: [embed] });
-        await setAuctionMessageId(auction.id, msg.id);
+        const id = await sendEmbed(channel, embed, auction.title || 'Auction');
+        await setAuctionMessageId(auction.id, id);
       }
       synced++;
     } catch (e) {
@@ -367,12 +412,13 @@ async function fullSync(channel) {
 
   for (const stale of staleAuctions) {
     try {
-      const msg = await channel.messages.fetch(stale.discord_message_id).catch(() => null);
-      if (msg) await msg.delete().catch(() => {});
-      await clearAuctionMessageId(stale.id);
+      await deleteEmbedPost(channel, stale.discord_message_id);
     } catch (e) {
-      console.error(`Error cleaning stale auction message ${stale.id}:`, e);
+      if (e.code !== 10008) {
+        console.error(`Error cleaning stale auction message ${stale.id}:`, e);
+      }
     }
+    await clearAuctionMessageId(stale.id);
   }
 
   // Set watermark to current max audit log ID
@@ -451,7 +497,7 @@ export async function refreshAuctionColors(client, config) {
     if (!auction.discord_message_id) continue;
 
     try {
-      const msg = await channel.messages.fetch(auction.discord_message_id);
+      const msg = await fetchEmbedMessage(channel, auction.discord_message_id);
       const currentColor = msg.embeds[0]?.color;
       const newColor = getEmbedColor(auction);
 
