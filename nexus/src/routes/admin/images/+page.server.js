@@ -16,15 +16,37 @@ const TYPE_ENDPOINT_MAP = {
   'skill': '/skills',
   'profession': '/professions',
   'vendor': '/vendors',
-  'clothing': '/clothing',
-  'consumable': '/consumables',
-  'tool': '/tools',
-  'attachment': '/attachments',
+  'clothing': '/clothings',
+  'consumable': '/stimulants',
+  'capsule': '/capsules',
   'medicaltool': '/medicaltools',
+  'medicalchip': '/medicalchips',
   'vehicle': '/vehicles',
   'pet': '/pets',
-  'furnishing': '/furnishings',
-  'strongbox': '/strongboxes'
+  'strongbox': '/strongboxes',
+  'shop': '/shops',
+  'location': '/locations',
+  // Tools subtypes
+  'refiner': '/refiners',
+  'scanner': '/scanners',
+  'finder': '/finders',
+  'excavator': '/excavators',
+  'teleportationchip': '/teleportationchips',
+  'effectchip': '/effectchips',
+  'misctool': '/misctools',
+  // Attachment subtypes
+  'weaponamplifier': '/weaponamplifiers',
+  'weaponvisionattachment': '/weaponvisionattachments',
+  'absorber': '/absorbers',
+  'armorplating': '/armorplatings',
+  'finderamplifier': '/finderamplifiers',
+  'enhancer': '/enhancers',
+  'mindforceimplant': '/mindforceimplants',
+  // Furnishing subtypes
+  'furniture': '/furniture',
+  'decoration': '/decorations',
+  'storagecontainer': '/storagecontainers',
+  'sign': '/signs'
 };
 
 // Get entity name by type and ID via API call

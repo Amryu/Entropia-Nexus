@@ -21,7 +21,7 @@
   // Map entity type to URL base path
   const ENTITY_TYPE_PATHS = {
     'weapon': '/items/weapons',
-    'mob': '/information/mobs-wiki',
+    'mob': '/information/mobs',
     'armorset': '/items/armorsets',
     'material': '/items/materials',
     'blueprint': '/items/blueprints',
@@ -29,18 +29,40 @@
     'profession': '/information/professions',
     'vendor': '/information/vendors',
     'clothing': '/items/clothing',
-    'consumable': '/items/consumables',
-    'tool': '/items/tools',
-    'attachment': '/items/attachments',
-    'medicaltool': '/items/medicaltools',
+    'consumable': '/items/consumables/stimulants',
+    'capsule': '/items/consumables/capsules',
+    'medicaltool': '/items/medicaltools/tools',
+    'medicalchip': '/items/medicaltools/chips',
     'vehicle': '/items/vehicles',
     'pet': '/items/pets',
-    'furnishing': '/items/furnishings',
-    'strongbox': '/items/strongboxes'
+    'strongbox': '/items/strongboxes',
+    'shop': '/market/shops',
+    // Tools subtypes
+    'refiner': '/items/tools/refiners',
+    'scanner': '/items/tools/scanners',
+    'finder': '/items/tools/finders',
+    'excavator': '/items/tools/excavators',
+    'teleportationchip': '/items/tools/teleportationchips',
+    'effectchip': '/items/tools/effectchips',
+    'misctool': '/items/tools/misctools',
+    // Attachment subtypes
+    'weaponamplifier': '/items/attachments/weaponamplifiers',
+    'weaponvisionattachment': '/items/attachments/weaponvisionattachments',
+    'absorber': '/items/attachments/absorbers',
+    'armorplating': '/items/attachments/armorplatings',
+    'finderamplifier': '/items/attachments/finderamplifiers',
+    'enhancer': '/items/attachments/enhancers',
+    'mindforceimplant': '/items/attachments/mindforceimplants',
+    // Furnishing subtypes
+    'furniture': '/items/furnishings/furniture',
+    'decoration': '/items/furnishings/decorations',
+    'storagecontainer': '/items/furnishings/storagecontainers',
+    'sign': '/items/furnishings/signs'
   };
 
   function getEntityLink(entityType, entityName) {
-    const basePath = ENTITY_TYPE_PATHS[entityType.toLowerCase()] || `/items/${entityType.toLowerCase()}s`;
+    const basePath = ENTITY_TYPE_PATHS[entityType.toLowerCase()];
+    if (!basePath) return null;
     return `${basePath}/${encodeURIComponentSafe(entityName)}`;
   }
 
@@ -135,9 +157,13 @@
             <div class="image-info">
               <div class="info-row">
                 <span class="label">Entity:</span>
-                <a href={getEntityLink(image.entityType, image.entityName)} class="value link entity-link">
-                  {image.entityName}
-                </a>
+                {#if getEntityLink(image.entityType, image.entityName)}
+                  <a href={getEntityLink(image.entityType, image.entityName)} class="value link entity-link">
+                    {image.entityName}
+                  </a>
+                {:else}
+                  <span class="value entity-link">{image.entityName}</span>
+                {/if}
               </div>
               <div class="info-row">
                 <span class="label">Type:</span>
@@ -212,9 +238,13 @@
             <div class="image-info">
               <div class="info-row">
                 <span class="label">Entity:</span>
-                <a href={getEntityLink(image.entityType, image.entityName)} class="value link entity-link">
-                  {image.entityName}
-                </a>
+                {#if getEntityLink(image.entityType, image.entityName)}
+                  <a href={getEntityLink(image.entityType, image.entityName)} class="value link entity-link">
+                    {image.entityName}
+                  </a>
+                {:else}
+                  <span class="value entity-link">{image.entityName}</span>
+                {/if}
               </div>
               <div class="info-row">
                 <span class="label">Type:</span>

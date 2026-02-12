@@ -83,7 +83,7 @@ function getEntityPath(baseDir, entityType, entityId) {
  * @param {string} entityType
  * @returns {boolean}
  */
-function isValidEntityType(entityType) {
+export function isValidEntityType(entityType) {
   if (!entityType || typeof entityType !== 'string') return false;
   // Normalize and check against whitelist
   const normalized = entityType.toLowerCase().trim();

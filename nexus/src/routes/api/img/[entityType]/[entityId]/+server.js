@@ -5,17 +5,9 @@
  * GET /api/img/:entityType/:entityId - Serves the icon image
  * GET /api/img/:entityType/:entityId?type=thumb - Serves the thumbnail
  */
-import { getApprovedImagePath } from '$lib/server/imageProcessor.js';
+import { getApprovedImagePath, isValidEntityType } from '$lib/server/imageProcessor.js';
 import { existsSync, statSync } from 'fs';
 import { readFile } from 'fs/promises';
-
-// Valid entity types to prevent path traversal
-const VALID_ENTITY_TYPES = [
-  'weapon', 'armorset', 'material', 'blueprint', 'clothing',
-  'consumable', 'tool', 'attachment', 'medicaltool', 'vehicle',
-  'pet', 'furnishing', 'strongbox', 'mob', 'skill', 'profession', 'vendor',
-  'teleporter', 'apartment', 'area', 'user', 'guide-category', 'richtext'
-];
 
 // Cache duration: 1 day for approved images (they rarely change)
 const CACHE_MAX_AGE = 86400;
@@ -25,7 +17,7 @@ export async function GET({ params, url }) {
   const type = url.searchParams.get('type') || 'icon';
 
   // Validate entity type
-  if (!entityType || !VALID_ENTITY_TYPES.includes(entityType.toLowerCase())) {
+  if (!isValidEntityType(entityType)) {
     return new Response('Invalid entity type', { status: 400 });
   }
 
