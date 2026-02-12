@@ -25,6 +25,7 @@
         'Bids cannot be retracted once placed.',
         'If you win an auction, you are obligated to pay the winning amount in-game.',
         'Failure to complete transactions may result in account restrictions.',
+        'If any issues arise or mistakes need to be corrected, you must inform moderators as soon as possible to avoid account penalties.',
         'The platform facilitates connections between buyers and sellers but does not guarantee trades.'
       ]
     },
@@ -36,6 +37,7 @@
         'Items in your item set should match their description. Misrepresentation may result in account restrictions.',
         'You are responsible for completing the in-game trade with the winning bidder.',
         'Auctions with bids cannot be cancelled by the seller.',
+        'If any issues arise or mistakes need to be corrected, you must inform moderators as soon as possible to avoid account penalties.',
         'The platform facilitates connections between buyers and sellers but does not guarantee trades.'
       ]
     }
