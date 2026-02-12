@@ -40,10 +40,32 @@ const SANITIZE_CONFIG = {
 };
 
 /**
- * Sanitizes the Description field if present in the body.
+ * Recursively trims all string values in an object or array.
+ */
+function trimStrings(obj) {
+  if (obj === null || obj === undefined) return obj;
+  if (Array.isArray(obj)) {
+    for (let i = 0; i < obj.length; i++) {
+      if (typeof obj[i] === 'string') obj[i] = obj[i].trim();
+      else if (typeof obj[i] === 'object') trimStrings(obj[i]);
+    }
+  } else if (typeof obj === 'object') {
+    for (const key of Object.keys(obj)) {
+      if (typeof obj[key] === 'string') obj[key] = obj[key].trim();
+      else if (typeof obj[key] === 'object') trimStrings(obj[key]);
+    }
+  }
+  return obj;
+}
+
+/**
+ * Sanitizes the body: trims all string fields and sanitizes HTML Description fields.
  * This prevents XSS attacks from forged requests bypassing the frontend.
  */
 function sanitizeBody(body) {
+  // Trim all string fields (Name, Description, nested properties, etc.)
+  trimStrings(body);
+
   if (body && typeof body.Description === 'string') {
     body.Description = sanitizeHtml(body.Description, SANITIZE_CONFIG);
   }
