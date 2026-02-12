@@ -34,6 +34,7 @@ function formatVehicle(x,data){
         Durability: x.Durability != null ? Number(x.Durability) : null,
         FuelConsumptionActive: x.FuelActive != null ? Number(x.FuelActive) : null,
         FuelConsumptionPassive: x.FuelPassive != null ? Number(x.FuelPassive) : null,
+        Decay: x.Decay != null ? Number(x.Decay) : null,
       },
       Defense: {
         Stab: x.Stab != null ? Number(x.Stab) : null,

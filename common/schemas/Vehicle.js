@@ -80,6 +80,10 @@ export const Vehicle = {
             "FuelConsumptionPassive": {
               "type": ["number", "null"],
               "default": null
+            },
+            "Decay": {
+              "type": ["number", "null"],
+              "default": null
             }
           },
           "required": [
@@ -87,7 +91,8 @@ export const Vehicle = {
             "MaxTT",
             "MinTT",
             "FuelConsumptionActive",
-            "FuelConsumptionPassive"
+            "FuelConsumptionPassive",
+            "Decay"
           ]
         },
         "Defense": {

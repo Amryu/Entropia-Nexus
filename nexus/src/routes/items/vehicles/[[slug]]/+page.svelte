@@ -94,7 +94,8 @@
         MinTT: null,
         Durability: null,
         FuelConsumptionActive: null,
-        FuelConsumptionPassive: null
+        FuelConsumptionPassive: null,
+        Decay: null
       },
       Defense: {}
     },
@@ -556,6 +557,18 @@
                 value={activeVehicle?.Properties?.Economy?.Durability ?? ''}
                 path="Properties.Economy.Durability"
                 step={1}
+              />
+            </span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Decay</span>
+            <span class="stat-value">
+              <InlineEdit
+                type="number"
+                value={activeVehicle?.Properties?.Economy?.Decay ?? ''}
+                path="Properties.Economy.Decay"
+                step={0.01}
+                suffix=" PEC/km"
               />
             </span>
           </div>

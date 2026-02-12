@@ -499,6 +499,7 @@ export const UpsertConfigs = {
       { name: "Acid", value: x => x.Properties.Defense.Acid },
       { name: "Electric", value: x => x.Properties.Defense.Electric },
       { name: "Durability", value: x => x.Properties.Economy.Durability },
+      { name: "Decay", value: x => x.Properties.Economy.Decay },
     ],
     offset: 7000000,
     table: "Vehicles",
