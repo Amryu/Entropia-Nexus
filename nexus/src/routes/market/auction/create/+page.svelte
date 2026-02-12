@@ -88,11 +88,19 @@
         return;
       }
       itemSet = null;
+      if (customImagePreview) URL.revokeObjectURL(customImagePreview);
       customImagePreview = null;
     } catch {
       addToast('Failed to remove item set', { type: 'error' });
     } finally {
       removingItemSet = false;
+    }
+  }
+
+  function removeCustomImage() {
+    if (customImagePreview) {
+      URL.revokeObjectURL(customImagePreview);
+      customImagePreview = null;
     }
   }
 
@@ -236,22 +244,23 @@
       <h2>Item Set</h2>
       {#if itemSet}
         <div class="item-set-preview">
-          <div class="set-header">
-            <span class="set-name">{itemSet.name || 'Unnamed Set'}</span>
-            <span class="set-count">{itemSet.items?.length || 0} item{(itemSet.items?.length || 0) !== 1 ? 's' : ''}</span>
-          </div>
-          <div class="set-items">
-            {#each (itemSet.items || []).slice(0, 6) as item}
-              <div class="set-item-thumb">
-                {#if item.id}
-                  <img src="/api/img/item/{item.id}" alt={item.name || ''} loading="lazy" />
-                {/if}
-              </div>
+          <ul class="set-item-list">
+            {#each (itemSet.items || []) as item}
+              {#if item.setName}
+                <li class="set-item-entry set-entry">
+                  <span class="item-name">{item.setName}</span>
+                  <span class="item-detail">{item.setType} set — {item.pieces?.length || 0} pieces</span>
+                </li>
+              {:else}
+                <li class="set-item-entry">
+                  <span class="item-name">{item.name}</span>
+                  {#if item.quantity > 1}
+                    <span class="item-detail">x{item.quantity}</span>
+                  {/if}
+                </li>
+              {/if}
             {/each}
-            {#if (itemSet.items?.length || 0) > 6}
-              <div class="set-item-thumb more">+{itemSet.items.length - 6}</div>
-            {/if}
-          </div>
+          </ul>
           <div class="set-actions">
             <label class="checkbox-label">
               <input type="checkbox" bind:checked={customized} />
@@ -267,7 +276,7 @@
               {#if customImagePreview}
                 <div class="image-preview-row">
                   <img src={customImagePreview} alt="Custom item preview" class="image-preview" />
-                  <button class="btn-danger-sm" on:click={() => customImagePreview = null}>Remove</button>
+                  <button class="btn-danger-sm" on:click={removeCustomImage}>Remove</button>
                 </div>
               {:else}
                 <label class="upload-area" class:uploading={uploadingImage}>
@@ -510,51 +519,29 @@
     border-radius: 6px;
   }
 
-  .set-header {
+  .set-item-list {
+    list-style: none;
+    margin: 0 0 0.5rem 0;
+    padding: 0;
     display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 0.5rem;
+    flex-direction: column;
+    gap: 4px;
   }
 
-  .set-name {
-    font-weight: 600;
-    font-size: 0.9rem;
+  .set-item-entry {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-size: 0.85rem;
     color: var(--text-color);
   }
 
-  .set-count {
+  .set-item-entry .item-name {
+    font-weight: 500;
+  }
+
+  .set-item-entry .item-detail {
     font-size: 0.8rem;
-    color: var(--text-muted);
-  }
-
-  .set-items {
-    display: flex;
-    gap: 6px;
-    flex-wrap: wrap;
-    margin-bottom: 0.5rem;
-  }
-
-  .set-item-thumb {
-    width: 48px;
-    height: 48px;
-    border-radius: 4px;
-    background: var(--secondary-color);
-    border: 1px solid var(--border-color);
-    overflow: hidden;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .set-item-thumb img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .set-item-thumb.more {
-    font-size: 0.75rem;
     color: var(--text-muted);
   }
 

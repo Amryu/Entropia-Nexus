@@ -3,6 +3,7 @@ import { getResponse } from '$lib/util.js';
 import { getUserItemSetById, updateUserItemSet, deleteUserItemSet, getItemSetRentalOffers } from '$lib/server/db.js';
 import { sanitizeItemSetData, getPayloadSizeBytes, MAX_ITEM_SET_BYTES } from '$lib/server/itemSetUtils.js';
 import { checkRateLimit } from '$lib/server/rateLimiter.js';
+import { deleteApprovedImage } from '$lib/server/imageProcessor.js';
 
 function sanitizeName(value, fallback = 'New Item Set') {
   if (typeof value !== 'string') return fallback;
@@ -110,6 +111,10 @@ export async function DELETE({ params, locals }) {
     }
 
     await deleteUserItemSet(user.id, params.id);
+
+    // Clean up associated image on disk (best-effort)
+    try { await deleteApprovedImage('item-set', params.id); } catch {}
+
     return getResponse({ success: true }, 200);
   } catch (error) {
     console.error('Error deleting item set:', error);
