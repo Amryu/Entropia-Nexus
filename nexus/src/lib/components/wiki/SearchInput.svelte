@@ -32,6 +32,7 @@
   // @ts-nocheck
   import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
   import { browser } from '$app/environment';
+  import { scoreSearchResult } from '$lib/search.js';
 
   /** @type {string} Current value (displayed in input) */
   export let value = '';
@@ -209,23 +210,16 @@
       return normalized.slice(0, limit);
     }
 
-    const words = q.split(/\s+/).filter(w => w.length > 0);
-    if (words.length > 1) {
-      // Multi-word: all words must appear in label or value
-      return normalized
-        .filter(opt => {
-          const label = opt.label.toLowerCase();
-          const val = String(opt.value).toLowerCase();
-          return words.every(w => label.includes(w) || val.includes(w));
-        })
-        .slice(0, limit);
-    }
-
     return normalized
-      .filter(opt =>
-        opt.label.toLowerCase().includes(q) ||
-        String(opt.value).toLowerCase().includes(q)
-      )
+      .map(opt => ({
+        ...opt,
+        _score: Math.max(
+          scoreSearchResult(opt.label, q),
+          scoreSearchResult(String(opt.value), q)
+        )
+      }))
+      .filter(opt => opt._score > 0)
+      .sort((a, b) => b._score - a._score)
       .slice(0, limit);
   }
 

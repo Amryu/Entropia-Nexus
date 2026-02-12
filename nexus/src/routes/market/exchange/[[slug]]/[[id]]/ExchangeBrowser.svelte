@@ -13,6 +13,7 @@
   import CartSummary from './CartSummary.svelte';
   import FavouritesTree from './FavouritesTree.svelte';
   import QuickTradeDialog from './QuickTradeDialog.svelte';
+  import { scoreSearchResult } from '$lib/search.js';
   import UserOrdersPanel from './UserOrdersPanel.svelte';
   import BulkTradeDialog from './BulkTradeDialog.svelte';
   import TradeRequestsPanel from './TradeRequestsPanel.svelte';
@@ -781,7 +782,14 @@
       // Favourites folder filter
       if (favouriteFolderFilter && !favouriteFolderFilter.has(item?.i)) return false;
 
-      if (needle && !name.toLowerCase().includes(needle)) return false;
+      // Search filter with scoring
+      if (needle) {
+        const score = scoreSearchResult(name, searchTerm);
+        if (score <= 0) return false;
+        item._searchScore = score;
+      } else {
+        item._searchScore = 0;
+      }
 
       if (selectedLimited !== "all") {
         const isL = hasItemTag(name, "L");
@@ -817,8 +825,14 @@
       // Sort priority: 2 = both buy+sell, 1 = either, 0 = none
       _orderPriority: (item.b > 0 && item.s > 0) ? 2 : (item.b > 0 || item.s > 0) ? 1 : 0,
     }));
-    // Items with orders first (newest updated on top), then items without orders
+    // When searching, sort by match score first; otherwise by order priority + recency
+    const isSearching = !!searchTerm;
     rows.sort((a, b) => {
+      if (isSearching) {
+        const sa = a._item._searchScore || 0;
+        const sb = b._item._searchScore || 0;
+        if (sa !== sb) return sb - sa;
+      }
       if (a._orderPriority !== b._orderPriority) return b._orderPriority - a._orderPriority;
       if (a._orderPriority > 0 && a.lastUpdate && b.lastUpdate) {
         return new Date(b.lastUpdate).getTime() - new Date(a.lastUpdate).getTime();

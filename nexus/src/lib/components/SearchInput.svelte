@@ -21,6 +21,7 @@
   import { createEventDispatcher, onDestroy } from 'svelte';
   import { browser } from '$app/environment';
   import { getTypeLink, getTypeName } from '$lib/util';
+  import { scoreSearchResult } from '$lib/search.js';
 
   const dispatch = createEventDispatcher();
 
@@ -72,12 +73,18 @@
   });
 
   function rankSearchResults(results, query) {
-    // Backend provides Score field - use it directly (already filtered and sorted)
-    // Map Score to _score for internal use
-    return results.map(result => ({
-      ...result,
-      _score: result.Score || 0
-    }));
+    // Re-score client-side using the shared algorithm for consistent ranking
+    // This ensures exact matches always float to the top
+    return results
+      .map(result => ({
+        ...result,
+        _score: scoreSearchResult(result.Name, query) || result.Score || 0
+      }))
+      .filter(r => r._score > 0)
+      .sort((a, b) => {
+        if (b._score !== a._score) return b._score - a._score;
+        return a.Name.length - b.Name.length;
+      });
   }
 
   function categorizeResults(results) {

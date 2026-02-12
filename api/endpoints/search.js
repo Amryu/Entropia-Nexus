@@ -242,7 +242,8 @@ async function search(query, fuzzy = false){
   // Multi-word search: split query for individual word matching
   const searchWords = searchName.split(/\s+/).filter(w => w.length >= 2 || /^\d+$/.test(w));
   const isMultiWord = searchWords.length > 1;
-  const mwStart = useFuzzy ? 4 : 2;
+  // Fuzzy params: $1=name, $2=%name%, $3=name%, $4+=mw  Non-fuzzy: $1=%name%, $2=name%, $3+=mw
+  const mwStart = useFuzzy ? 4 : 3;
   const mwIdx = isMultiWord ? searchWords.map((_, i) => mwStart + i) : [];
   const mwParams = isMultiWord ? searchWords.map(w => `%${w}%`) : [];
   const mwName = isMultiWord ? ' OR ' + buildMultiWordLike('"Name"', mwIdx) : '';
@@ -256,10 +257,10 @@ async function search(query, fuzzy = false){
     ? `WHERE "_prefiltered" OR similarity("Name", $1) >= 0.1 OR "Name" ILIKE $2${mwName}`
     : `WHERE "_prefiltered" OR "Name" ILIKE $1${mwName}`;
 
-  // Order by: prefix match first, then similarity, then alphabetically
+  // Order by: prefix match first, then by name length (shorter = more relevant), then alphabetically
   const orderClause = useFuzzy
     ? `ORDER BY (CASE WHEN "Name" ILIKE $3 THEN 0 ELSE 1 END), similarity("Name", $1) DESC, "Name" ASC`
-    : `ORDER BY "Id"`;
+    : `ORDER BY (CASE WHEN "Name" ILIKE $2 THEN 0 ELSE 1 END), length("Name") ASC, "Name" ASC`;
 
   // Build optional UNION parts for tables that may not exist
   let optionalUnions = '';
@@ -331,8 +332,8 @@ async function search(query, fuzzy = false){
     ORDER BY rn, "Type"
     LIMIT 50`;
 
-  // $3 is for prefix match check in ordering (query%)
-  const params = useFuzzy ? [searchName, `%${searchName}%`, `${searchName}%`, ...mwParams] : [`%${searchName}%`, ...mwParams];
+  // Fuzzy: $1=name, $2=%name%, $3=name%  Non-fuzzy: $1=%name%, $2=name%
+  const params = useFuzzy ? [searchName, `%${searchName}%`, `${searchName}%`, ...mwParams] : [`%${searchName}%`, `${searchName}%`, ...mwParams];
   const { rows } = await pool.query(sql, params);
 
   // Post-process results: apply scoring, filter, and sort
@@ -384,7 +385,8 @@ async function searchItems(query, fuzzy = false, options = {}){
   // Multi-word search: split query for individual word matching
   const searchWords = searchName.split(/\s+/).filter(w => w.length >= 2 || /^\d+$/.test(w));
   const isMultiWord = searchWords.length > 1;
-  const mwStart = useFuzzy ? 4 : 2;
+  // Fuzzy params: $1=name, $2=%name%, $3=name%, $4+=mw  Non-fuzzy: $1=%name%, $2=name%, $3+=mw
+  const mwStart = useFuzzy ? 4 : 3;
   const mwIdx = isMultiWord ? searchWords.map((_, i) => mwStart + i) : [];
   const mwParams = isMultiWord ? searchWords.map(w => `%${w}%`) : [];
   const mwName = isMultiWord ? ' OR ' + buildMultiWordLike('"Name"', mwIdx) : '';
@@ -398,10 +400,10 @@ async function searchItems(query, fuzzy = false, options = {}){
     ? `WHERE "_prefiltered" OR similarity("Name", $1) >= 0.1 OR "Name" ILIKE $2${mwName}`
     : `WHERE "_prefiltered" OR "Name" ILIKE $1${mwName}`;
 
-  // Order by: prefix match first, then similarity, then alphabetically
+  // Order by: prefix match first, then by name length (shorter = more relevant), then alphabetically
   const orderClause = useFuzzy
     ? `ORDER BY (CASE WHEN "Name" ILIKE $3 THEN 0 ELSE 1 END), similarity("Name", $1) DESC, "Name" ASC`
-    : `ORDER BY "Id"`;
+    : `ORDER BY (CASE WHEN "Name" ILIKE $2 THEN 0 ELSE 1 END), length("Name") ASC, "Name" ASC`;
 
   // Build WHERE clause for armor piece name matching (used in EXISTS subquery)
   const armorPieceWhereClause = useFuzzy
@@ -471,8 +473,8 @@ async function searchItems(query, fuzzy = false, options = {}){
       LIMIT ${parseInt(resultLimit) || 50}`;
   }
 
-  // $3 is for prefix match check in ordering (query%)
-  const params = useFuzzy ? [searchName, `%${searchName}%`, `${searchName}%`, ...mwParams] : [`%${searchName}%`, ...mwParams];
+  // Fuzzy: $1=name, $2=%name%, $3=name%  Non-fuzzy: $1=%name%, $2=name%
+  const params = useFuzzy ? [searchName, `%${searchName}%`, `${searchName}%`, ...mwParams] : [`%${searchName}%`, `${searchName}%`, ...mwParams];
   const { rows } = await pool.query(sql, params);
 
   // Post-process results: apply scoring, filter, and sort
