@@ -12,8 +12,14 @@
   import BidSection from '$lib/components/auction/BidSection.svelte';
   import BidHistoryPanel from '$lib/components/auction/BidHistoryPanel.svelte';
   import AuctionDisclaimerDialog from '$lib/components/auction/AuctionDisclaimerDialog.svelte';
+  import ItemSetDisplay from '$lib/components/itemsets/ItemSetDisplay.svelte';
+  import { getTypeLink } from '$lib/util.js';
+
+  const MAX_GRID_ITEMS = 10;
 
   export let data;
+
+  let customImageVisible = true;
 
   $: auction = data.auction;
   $: bids = auction?.bids || [];
@@ -285,32 +291,62 @@
 
           <!-- Item Set -->
           <div class="section">
-            <h2 class="section-title">
-              Items
-              {#if auction.item_set_name}
-                <span class="set-name">({auction.item_set_name})</span>
-              {/if}
-            </h2>
+            <h2 class="section-title">Items</h2>
+            {#if auction.item_set_customized}
+              <div class="custom-image-container">
+                {#if customImageVisible}
+                  <img
+                    src="/api/img/item-set/{auction.item_set_id}"
+                    alt="Customized item preview"
+                    class="custom-image"
+                    loading="lazy"
+                    on:error={() => customImageVisible = false}
+                  />
+                {:else}
+                  <div class="custom-image-placeholder">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                      <rect x="3" y="3" width="18" height="18" rx="2" />
+                      <circle cx="8.5" cy="8.5" r="1.5" />
+                      <path d="M21 15l-5-5L5 21" />
+                    </svg>
+                    <span>No custom image uploaded</span>
+                  </div>
+                {/if}
+              </div>
+            {/if}
             {#if items.length === 0}
               <p class="muted">No items in set</p>
-            {:else}
+            {:else if items.length <= MAX_GRID_ITEMS}
               <div class="item-grid">
                 {#each items as item}
-                  <div class="item-card">
+                  {@const href = item.setType ? getTypeLink(item.setName, item.setType) : getTypeLink(item.name, item.type)}
+                  <a href={href} class="item-card" class:no-link={!href}>
                     <div class="item-image">
-                      {#if item.id}
-                        <img src="/api/img/item/{item.id}" alt={item.name || ''} loading="lazy" />
+                      {#if item.itemId}
+                        <img src="/api/img/item/{item.itemId}" alt={item.name || ''} loading="lazy" />
+                      {:else}
+                        <svg class="item-placeholder" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                          <rect x="3" y="3" width="18" height="18" rx="2" />
+                          <circle cx="8.5" cy="8.5" r="1.5" />
+                          <path d="M21 15l-5-5L5 21" />
+                        </svg>
                       {/if}
                     </div>
                     <div class="item-info">
-                      <span class="item-name">{item.name || 'Unknown Item'}</span>
+                      <span class="item-name">{item.setName || item.name || 'Unknown Item'}</span>
                       {#if item.quantity > 1}
                         <span class="item-qty">x{item.quantity}</span>
                       {/if}
                     </div>
-                  </div>
+                  </a>
                 {/each}
               </div>
+            {:else}
+              <ItemSetDisplay
+                itemSet={{ data: auction.item_set_data }}
+                showHeader={false}
+                linkItems
+              />
             {/if}
           </div>
 
@@ -411,7 +447,7 @@
 
 <style>
   .page-container {
-    max-width: 900px;
+    max-width: 1200px;
     margin: 0 auto;
     padding: 1.5rem;
   }
@@ -510,12 +546,6 @@
     margin: 0 0 0.75rem 0;
   }
 
-  .set-name {
-    font-weight: 400;
-    color: var(--text-muted);
-    font-size: 0.9rem;
-  }
-
   .description {
     font-size: 0.9rem;
     color: var(--text-color);
@@ -524,31 +554,74 @@
     margin: 0;
   }
 
-  .muted {
+  .custom-image-container {
+    margin-bottom: 0.75rem;
+  }
+
+  .custom-image {
+    max-width: 100%;
+    max-height: 400px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background: var(--hover-color);
+    object-fit: contain;
+  }
+
+  .custom-image-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 2rem;
+    background: var(--hover-color);
+    border: 1px dashed var(--border-color);
+    border-radius: 8px;
     color: var(--text-muted);
     font-size: 0.85rem;
   }
 
+  .muted {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    margin: 0;
+  }
+
+  /* Item Grid */
   .item-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-    gap: 0.75rem;
+    gap: 8px;
   }
 
   .item-card {
+    display: flex;
+    flex-direction: column;
     background: var(--secondary-color);
     border: 1px solid var(--border-color);
     border-radius: 6px;
     overflow: hidden;
-    text-align: center;
+    text-decoration: none;
+    color: inherit;
+    transition: border-color 0.15s;
+  }
+
+  .item-card:hover:not(.no-link) {
+    border-color: var(--accent-color);
+  }
+
+  .item-card.no-link {
+    pointer-events: none;
   }
 
   .item-image {
+    width: 100%;
     aspect-ratio: 1;
     background: var(--hover-color);
     display: flex;
     align-items: center;
     justify-content: center;
+    overflow: hidden;
   }
 
   .item-image img {
@@ -557,22 +630,33 @@
     object-fit: cover;
   }
 
+  .item-placeholder {
+    color: var(--text-muted);
+    opacity: 0.4;
+  }
+
   .item-info {
-    padding: 0.4rem;
+    padding: 6px 8px;
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    min-width: 0;
   }
 
   .item-name {
-    font-size: 0.75rem;
+    font-size: 0.8rem;
     color: var(--text-color);
-    display: block;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    flex: 1;
+    min-width: 0;
   }
 
   .item-qty {
-    font-size: 0.7rem;
+    font-size: 0.75rem;
     color: var(--text-muted);
+    flex-shrink: 0;
   }
 
   /* Admin Panel */
@@ -773,5 +857,6 @@
     .page-container { padding: 1rem; }
     .auction-panels { grid-template-columns: 1fr; }
     .auction-header { flex-direction: column; }
+    .item-grid { grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); }
   }
 </style>

@@ -9,27 +9,26 @@
   import { goto } from '$app/navigation';
   import AuctionDurationSelector from '$lib/components/auction/AuctionDurationSelector.svelte';
   import FeePreview from '$lib/components/auction/FeePreview.svelte';
+  import ItemSetDisplay from '$lib/components/itemsets/ItemSetDisplay.svelte';
   import { addToast } from '$lib/stores/toasts';
 
   export let data;
 
   $: auction = data.auction;
 
-  // Form state (initialized from auction data)
-  let title = auction?.title || '';
-  let description = auction?.description || '';
-  let startingBid = auction?.starting_bid ? String(parseFloat(auction.starting_bid)) : '';
-  let buyoutPrice = auction?.buyout_price ? String(parseFloat(auction.buyout_price)) : '';
-  let buyoutOnly = auction?.buyout_price != null && parseFloat(auction.buyout_price) === parseFloat(auction.starting_bid);
-  let durationDays = auction?.duration_days || 7;
+  // Form state (initialized from server data to avoid SSR issues)
+  let title = data.auction?.title || '';
+  let description = data.auction?.description || '';
+  let startingBid = data.auction?.starting_bid ? String(parseFloat(data.auction.starting_bid)) : '';
+  let buyoutPrice = data.auction?.buyout_price ? String(parseFloat(data.auction.buyout_price)) : '';
+  let buyoutOnly = data.auction?.buyout_price != null && parseFloat(data.auction.buyout_price) === parseFloat(data.auction.starting_bid);
+  let durationDays = data.auction?.duration_days || 7;
 
   let saving = false;
 
   $: startingBidNum = parseFloat(startingBid) || 0;
   $: buyoutPriceNum = buyoutOnly ? startingBidNum : (parseFloat(buyoutPrice) || 0);
   $: effectiveBuyout = buyoutOnly ? startingBidNum : (buyoutPriceNum > 0 ? buyoutPriceNum : null);
-
-  $: items = auction?.item_set_data?.items || [];
 
   async function handleSave(activate = false) {
     if (!title.trim()) {
@@ -121,20 +120,12 @@
 
     <!-- Item Set (read-only here) -->
     <section class="form-section">
-      <h2>Item Set</h2>
-      <div class="item-set-preview">
-        <span class="set-name">{auction?.item_set_name || 'Unnamed Set'}</span>
-        <span class="set-count">{items.length} item{items.length !== 1 ? 's' : ''}</span>
-        <div class="set-items">
-          {#each items.slice(0, 8) as item}
-            <div class="set-item-thumb">
-              {#if item.id}
-                <img src="/api/img/item/{item.id}" alt={item.name || ''} loading="lazy" />
-              {/if}
-            </div>
-          {/each}
-        </div>
-      </div>
+      <h2>Items</h2>
+      <ItemSetDisplay
+        itemSet={{ data: auction?.item_set_data }}
+        showHeader={false}
+        linkItems
+      />
     </section>
 
     <!-- Pricing -->
@@ -232,7 +223,7 @@
 
 <style>
   .page-container {
-    max-width: 700px;
+    max-width: 800px;
     margin: 0 auto;
     padding: 1.5rem;
   }
@@ -319,34 +310,6 @@
     font-size: 0.85rem;
     color: var(--text-color);
   }
-
-  .item-set-preview {
-    padding: 0.75rem;
-    background: var(--hover-color);
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-  }
-
-  .set-name { font-weight: 600; font-size: 0.9rem; }
-  .set-count { font-size: 0.8rem; color: var(--text-muted); margin-left: 0.5rem; }
-
-  .set-items {
-    display: flex;
-    gap: 6px;
-    flex-wrap: wrap;
-    margin-top: 0.5rem;
-  }
-
-  .set-item-thumb {
-    width: 48px;
-    height: 48px;
-    border-radius: 4px;
-    background: var(--secondary-color);
-    border: 1px solid var(--border-color);
-    overflow: hidden;
-  }
-
-  .set-item-thumb img { width: 100%; height: 100%; object-fit: cover; }
 
   .form-actions {
     display: flex;

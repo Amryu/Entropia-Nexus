@@ -6,12 +6,21 @@
 <script>
   // @ts-nocheck
   import { TIERABLE_TYPES, CONDITION_TYPES, isLimitedByName } from '$lib/common/itemTypes.js';
+  import { getTypeLink } from '$lib/util.js';
 
   /** @type {object} Full item set object with data */
   export let itemSet;
 
   /** @type {boolean} Whether to show the set name as a header */
   export let showHeader = true;
+
+  /** @type {boolean} Whether to render item names as links */
+  export let linkItems = false;
+
+  function getItemHref(name, type) {
+    if (!linkItems) return null;
+    return getTypeLink(name, type) || null;
+  }
 
   $: items = itemSet?.data?.items || [];
 
@@ -72,7 +81,12 @@
           <div class="display-set-entry">
             <div class="display-set-header">
               <span class="set-type-badge">{item.setType === 'ArmorSet' ? 'Armor' : 'Clothing'}</span>
-              <span class="display-set-name">{item.setName}</span>
+              {@const setHref = getItemHref(item.setName, item.setType)}
+              {#if setHref}
+                <a href={setHref} class="display-set-name item-link">{item.setName}</a>
+              {:else}
+                <span class="display-set-name">{item.setName}</span>
+              {/if}
               {#if item.gender}
                 <span class="badge badge-gender">{item.gender === 'Male' ? '(M)' : '(F)'}</span>
               {/if}
@@ -95,7 +109,12 @@
         {:else}
           <!-- Regular item -->
           <div class="display-item">
-            <span class="display-item-name">{item.name}</span>
+            {@const itemHref = getItemHref(item.name, item.type)}
+            {#if itemHref}
+              <a href={itemHref} class="display-item-name item-link">{item.name}</a>
+            {:else}
+              <span class="display-item-name">{item.name}</span>
+            {/if}
             {#if item.quantity > 1}
               <span class="display-quantity">x{item.quantity}</span>
             {/if}
@@ -163,6 +182,15 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  .item-link {
+    color: var(--accent-color);
+    text-decoration: none;
+  }
+
+  .item-link:hover {
+    text-decoration: underline;
   }
 
   .display-quantity {

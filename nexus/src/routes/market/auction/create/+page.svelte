@@ -7,7 +7,7 @@
   import '$lib/style.css';
   import { goto, beforeNavigate } from '$app/navigation';
   import { onDestroy } from 'svelte';
-  import { apiPost, apiPut, apiDelete, hasItemTag } from '$lib/util';
+  import { apiPost, apiPut, apiDelete, hasItemTag, getTypeLink } from '$lib/util';
   import ItemSetDialog from '$lib/components/itemsets/ItemSetDialog.svelte';
   import AuctionDurationSelector from '$lib/components/auction/AuctionDurationSelector.svelte';
   import FeePreview from '$lib/components/auction/FeePreview.svelte';
@@ -257,13 +257,23 @@
           <ul class="set-item-list">
             {#each (itemSet.items || []) as item}
               {#if item.setName}
+                {@const setHref = getTypeLink(item.setName, item.setType)}
                 <li class="set-item-entry set-entry">
-                  <span class="item-name">{item.setName}</span>
-                  <span class="item-detail">{item.setType} set — {item.pieces?.length || 0} pieces</span>
+                  {#if setHref}
+                    <a href={setHref} class="item-link">{item.setName}</a>
+                  {:else}
+                    <span class="item-name">{item.setName}</span>
+                  {/if}
+                  <span class="item-detail">{item.setType === 'ArmorSet' ? 'Armor' : 'Clothing'} set — {item.pieces?.length || 0} pieces</span>
                 </li>
               {:else}
+                {@const itemHref = getTypeLink(item.name, item.type)}
                 <li class="set-item-entry">
-                  <span class="item-name">{item.name}</span>
+                  {#if itemHref}
+                    <a href={itemHref} class="item-link">{item.name}</a>
+                  {:else}
+                    <span class="item-name">{item.name}</span>
+                  {/if}
                   {#if item.quantity > 1}
                     <span class="item-detail">x{item.quantity}</span>
                   {/if}
@@ -429,7 +439,7 @@
   }
 
   .page-container {
-    max-width: 700px;
+    max-width: 800px;
     margin: 0 auto;
     padding: 1rem;
     padding-bottom: 2rem;
@@ -553,6 +563,16 @@
 
   .set-item-entry .item-name {
     font-weight: 500;
+  }
+
+  .set-item-entry .item-link {
+    font-weight: 500;
+    color: var(--accent-color);
+    text-decoration: none;
+  }
+
+  .set-item-entry .item-link:hover {
+    text-decoration: underline;
   }
 
   .set-item-entry .item-detail {
