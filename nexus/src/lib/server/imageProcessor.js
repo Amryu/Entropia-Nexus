@@ -28,10 +28,21 @@ const ALLOWED_FORMATS = ['jpeg', 'png', 'webp', 'gif'];
 
 // Valid entity types to prevent path traversal
 const VALID_ENTITY_TYPES = [
-  'weapon', 'armorset', 'material', 'blueprint', 'clothing',
-  'consumable', 'tool', 'attachment', 'medicaltool', 'vehicle',
-  'pet', 'furnishing', 'strongbox', 'mob', 'skill', 'profession', 'vendor',
-  'location', 'area', 'user', 'guide-category', 'richtext'
+  // Items - main types
+  'weapon', 'armorset', 'material', 'blueprint', 'clothing', 'vehicle', 'pet', 'strongbox',
+  // Tools
+  'tool', 'misctool', 'refiner', 'scanner', 'finder', 'excavator',
+  'teleportationchip', 'effectchip',
+  // Attachments
+  'attachment', 'weaponamplifier', 'weaponvisionattachment', 'absorber',
+  'finderamplifier', 'armorplating', 'enhancer', 'mindforceimplant',
+  // Consumables & Medical
+  'consumable', 'capsule', 'medicaltool', 'medicalchip',
+  // Furnishings
+  'furnishing', 'furniture', 'decoration', 'storagecontainer', 'sign',
+  // Information & other
+  'mob', 'skill', 'profession', 'vendor', 'location', 'area', 'shop',
+  'user', 'guide-category', 'richtext'
 ];
 
 // Entity types that skip the approval workflow and use banner dimensions

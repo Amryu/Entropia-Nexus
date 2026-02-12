@@ -8,6 +8,7 @@
   import { createEventDispatcher, onMount } from 'svelte';
   import { browser } from '$app/environment';
   import Cropper from 'svelte-easy-crop';
+  import { addToast } from '$lib/stores/toasts.js';
 
   const dispatch = createEventDispatcher();
 
@@ -132,10 +133,12 @@
         imageUrl: entityType === 'user' ? `/api/image/user/${entityId}` : null
       });
 
+      addToast('Image uploaded — pending approval', { type: 'success' });
       handleClose();
     } catch (err) {
       console.error('Upload error:', err);
       error = err.message || 'Failed to upload image.';
+      addToast(error, { type: 'error' });
       step = 'crop';
     } finally {
       uploading = false;
@@ -228,9 +231,11 @@
         throw new Error(data.error || `Delete failed: ${response.status}`);
       }
       dispatch('deleted');
+      addToast('Image deleted', { type: 'success' });
       handleClose();
     } catch (err) {
       error = err.message || 'Failed to delete image.';
+      addToast(error, { type: 'error' });
     } finally {
       uploading = false;
     }
