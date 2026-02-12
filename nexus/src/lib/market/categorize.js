@@ -100,8 +100,8 @@ export function categorizeItems(items, {
   (mindforceImplants || []).forEach(m => categorized.weapons.mindforce.implants.push(m));
   (clothings || []).forEach(c => categorizeClothing(c, categorized.clothes));
 
-  // Populate Skill Implants by matching names from /skills endpoint
-  if (Array.isArray(skills) && skills.length > 0) {
+  // Populate Skill Implants by matching names from /skills endpoint (fallback when /misctools not available)
+  if (!hasMiscTools && Array.isArray(skills) && skills.length > 0) {
     try {
       const set = new Set();
       const addIfFound = (name) => {
