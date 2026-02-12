@@ -193,6 +193,9 @@
         { value: 'Furniture', label: 'Furniture' },
         { value: 'Attachment', label: 'Attachment' },
         { value: 'Enhancer', label: 'Enhancer' },
+        { value: 'Metal Component', label: 'Metal Component' },
+        { value: 'Electrical Component', label: 'Electrical Component' },
+        { value: 'Mechanical Component', label: 'Mechanical Component' },
       ]
     }
   ];
@@ -206,7 +209,10 @@
     { value: 'Textile', label: 'Textile' },
     { value: 'Furniture', label: 'Furniture' },
     { value: 'Attachment', label: 'Attachment' },
-    { value: 'Enhancer', label: 'Enhancer' }
+    { value: 'Enhancer', label: 'Enhancer' },
+    { value: 'Metal Component', label: 'Metal Component' },
+    { value: 'Electrical Component', label: 'Electrical Component' },
+    { value: 'Mechanical Component', label: 'Mechanical Component' }
   ];
 
   // Sidebar table columns for blueprints
