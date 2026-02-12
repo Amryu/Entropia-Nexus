@@ -52,6 +52,7 @@ function formatMob(m, rel){
       Description: m.Description,
       AttackRange: m.AttackRange != null ? Number(m.AttackRange) : null,
       AggressionRange: m.AggressionRange != null ? Number(m.AggressionRange) : null,
+      AggressionTimer: m.AggressionTimer || null,
       AttacksPerMinute: m.AttacksPerMinute != null ? Number(m.AttacksPerMinute) : null,
       IsSweatable: m.Sweatable === 1,
     },

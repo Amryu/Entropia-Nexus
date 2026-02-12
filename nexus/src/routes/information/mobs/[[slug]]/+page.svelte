@@ -106,6 +106,7 @@
       AttacksPerMinute: null,
       AttackRange: null,
       AggressionRange: null,
+      AggressionTimer: null,
       IsSweatable: false
     },
     Maturities: [],
@@ -290,6 +291,13 @@
       filterPlaceholder: '>10',
       getValue: (item) => item.Properties?.AggressionRange,
       format: (v) => v != null ? v : '-'
+    },
+    aggrTimer: {
+      key: 'aggrTimer',
+      header: 'Aggr Timer',
+      width: '80px',
+      getValue: (item) => item.Properties?.AggressionTimer,
+      format: (v) => v || '-'
     }
   };
 
@@ -677,6 +685,25 @@
                   suffix="m"
                   step={0.1}
                   min={0}
+                />
+              </span>
+            </div>
+            <div class="stat-row">
+              <span class="stat-label">Aggro Timer</span>
+              <span class="stat-value">
+                <InlineEdit
+                  value={activeMob?.Properties?.AggressionTimer}
+                  path="Properties.AggressionTimer"
+                  type="select"
+                  placeholder="N/A"
+                  options={[
+                    { value: 'Very Long', label: 'Very Long' },
+                    { value: 'Long', label: 'Long' },
+                    { value: 'Medium', label: 'Medium' },
+                    { value: 'Short', label: 'Short' },
+                    { value: 'Very Short', label: 'Very Short' },
+                    { value: 'Instant', label: 'Instant' },
+                  ]}
                 />
               </span>
             </div>

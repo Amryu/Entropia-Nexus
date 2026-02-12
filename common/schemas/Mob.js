@@ -25,6 +25,11 @@ export const Mob = {
           "type": ["number", "null"],
           "default": null
         },
+        "AggressionTimer": {
+          "type": ["string", "null"],
+          "enum": ["Very Long", "Long", "Medium", "Short", "Very Short", "Instant", null],
+          "default": null
+        },
         "AttacksPerMinute": {
           "type": ["number", "null"],
           "default": null
