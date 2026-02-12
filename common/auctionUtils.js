@@ -41,19 +41,39 @@ export function getMinNextBid(currentBid, hasBids) {
  * Calculate the auction fee for a given sale amount.
  * Tiered bracket system:
  * - First 100 PED: free
- * - 100-1000 PED: 2%
- * - Above 1000 PED: 1%
+ * - 100–1,000 PED: 2%
+ * - 1,000–2,500 PED: 1%
+ * - 2,500–5,000 PED: 0.5%
+ * - 5,000–10,000 PED: 0.2%
+ * - Above 10,000 PED: 0.1%
  * @param {number} amount - Sale amount in PED
  * @returns {number} Fee in PED (2 decimal places)
  */
 export function calculateAuctionFee(amount) {
   if (amount <= 0) return 0;
   if (amount <= 100) return 0;
-  if (amount <= 1000) {
-    return Math.round((amount - 100) * 0.02 * 100) / 100;
-  }
-  // 900 * 0.02 = 18 PED for the 100-1000 bracket
-  return Math.round((18 + (amount - 1000) * 0.01) * 100) / 100;
+
+  let fee = 0;
+  // 100–1,000: 2%
+  fee += Math.min(amount, 1000) - 100;
+  fee *= 0.02;
+  if (amount <= 1000) return Math.round(fee * 100) / 100;
+
+  // 1,000–2,500: 1%  (cumulative: 18)
+  fee += (Math.min(amount, 2500) - 1000) * 0.01;
+  if (amount <= 2500) return Math.round(fee * 100) / 100;
+
+  // 2,500–5,000: 0.5%  (cumulative: 33)
+  fee += (Math.min(amount, 5000) - 2500) * 0.005;
+  if (amount <= 5000) return Math.round(fee * 100) / 100;
+
+  // 5,000–10,000: 0.2%  (cumulative: 45.50)
+  fee += (Math.min(amount, 10000) - 5000) * 0.002;
+  if (amount <= 10000) return Math.round(fee * 100) / 100;
+
+  // 10,000+: 0.1%  (cumulative: 55.50)
+  fee += (amount - 10000) * 0.001;
+  return Math.round(fee * 100) / 100;
 }
 
 /**

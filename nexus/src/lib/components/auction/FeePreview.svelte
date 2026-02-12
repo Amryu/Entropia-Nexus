@@ -27,8 +27,9 @@
     </div>
   {/if}
   <div class="fee-breakdown">
-    <span class="fee-hint">First 100 PED free, 2% up to 1000, 1% above</span>
+    <span class="fee-hint">First 100 PED free · 2% to 1k · 1% to 2.5k · 0.5% to 5k · 0.2% to 10k · 0.1% above</span>
   </div>
+  <div class="fee-info">This fee must be paid to the Nexus Team after a successful auction. Payment can wait until the auction is settled.</div>
 </div>
 
 <style>
@@ -74,5 +75,12 @@
   .fee-hint {
     font-size: 0.75rem;
     color: var(--text-muted);
+  }
+
+  .fee-info {
+    margin-top: 8px;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    line-height: 1.4;
   }
 </style>
