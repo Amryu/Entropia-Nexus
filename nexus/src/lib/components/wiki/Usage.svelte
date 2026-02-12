@@ -103,6 +103,10 @@
     overflow: hidden;
   }
 
+  .usage-section :global(.fancy-table-container) {
+    max-height: 596px;
+  }
+
   .section-title {
     font-size: 13px;
     font-weight: 600;
@@ -164,6 +168,10 @@
   @media (max-width: 899px) {
     .usage-grid {
       grid-template-columns: 1fr;
+    }
+
+    .usage-section :global(.fancy-table-container) {
+      max-height: 499px;
     }
   }
 </style>

@@ -212,6 +212,10 @@
     overflow: hidden;
   }
 
+  .acquisition-section :global(.fancy-table-container) {
+    max-height: 596px;
+  }
+
   .section-title {
     font-size: 13px;
     font-weight: 600;
@@ -282,6 +286,10 @@
   @media (max-width: 899px) {
     .acquisition-grid {
       grid-template-columns: 1fr;
+    }
+
+    .acquisition-section :global(.fancy-table-container) {
+      max-height: 499px;
     }
   }
 </style>
