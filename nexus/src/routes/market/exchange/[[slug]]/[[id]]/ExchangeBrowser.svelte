@@ -2230,42 +2230,36 @@
                 <button class="gender-btn" class:active={priceGender === 'Female'} on:click={() => priceGender = 'Female'}>F</button>
               </div>
             {/if}
-            {#if isGenderedDetail && priceGender === 'Both'}
-              <div class="metric gender-hint">
-                Select <strong>M</strong> or <strong>F</strong> for prices
+            <div class="metric">
+              Median:<br /><span class="metric-value"
+                >{periodStats?.median != null
+                  ? formatMarkupDisplay(periodStats.median)
+                  : (typeof selectedItem?.m === "number" && !(isGenderedDetail && priceGender === 'Both') ? formatMarkupDisplay(selectedItem.m) : "\u2014")}</span
+              >
+            </div>
+            <div class="metric">
+              10%:<br /><span class="metric-value"
+                >{periodStats?.p10 != null
+                  ? formatMarkupDisplay(periodStats.p10)
+                  : (typeof selectedItem?.p === "number" && !(isGenderedDetail && priceGender === 'Both') ? formatMarkupDisplay(selectedItem.p) : "\u2014")}</span
+              >
+            </div>
+            <div class="metric">
+              WAP:<br /><span class="metric-value"
+                >{periodStats?.wap != null
+                  ? formatMarkupDisplay(periodStats.wap)
+                  : (typeof selectedItem?.w === "number" && !(isGenderedDetail && priceGender === 'Both') ? formatMarkupDisplay(selectedItem.w) : "\u2014")}</span
+              >
+            </div>
+            {#if exchangePrices?.buy}
+              <div class="metric exchange-metric">
+                Best Buy:<br /><span class="metric-value buy-value">{formatMarkupDisplay(exchangePrices.buy.best_markup)}</span>
               </div>
-            {:else}
-              <div class="metric">
-                Median:<br /><span class="metric-value"
-                  >{periodStats?.median != null
-                    ? formatMarkupDisplay(periodStats.median)
-                    : (typeof selectedItem?.m === "number" ? formatMarkupDisplay(selectedItem.m) : "N/A")}</span
-                >
+            {/if}
+            {#if exchangePrices?.sell}
+              <div class="metric exchange-metric">
+                Best Sell:<br /><span class="metric-value sell-value">{formatMarkupDisplay(exchangePrices.sell.best_markup)}</span>
               </div>
-              <div class="metric">
-                10%:<br /><span class="metric-value"
-                  >{periodStats?.p10 != null
-                    ? formatMarkupDisplay(periodStats.p10)
-                    : (typeof selectedItem?.p === "number" ? formatMarkupDisplay(selectedItem.p) : "N/A")}</span
-                >
-              </div>
-              <div class="metric">
-                WAP:<br /><span class="metric-value"
-                  >{periodStats?.wap != null
-                    ? formatMarkupDisplay(periodStats.wap)
-                    : (typeof selectedItem?.w === "number" ? formatMarkupDisplay(selectedItem.w) : "N/A")}</span
-                >
-              </div>
-              {#if exchangePrices?.buy}
-                <div class="metric exchange-metric">
-                  Best Buy:<br /><span class="metric-value buy-value">{formatMarkupDisplay(exchangePrices.buy.best_markup)}</span>
-                </div>
-              {/if}
-              {#if exchangePrices?.sell}
-                <div class="metric exchange-metric">
-                  Best Sell:<br /><span class="metric-value sell-value">{formatMarkupDisplay(exchangePrices.sell.best_markup)}</span>
-                </div>
-              {/if}
             {/if}
             <div class="history-controls">
               <select
@@ -3438,6 +3432,10 @@
     color: var(--text-muted);
     line-height: 1.4;
     text-align: center;
+    align-self: stretch;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
   }
 
   .detail-title-right .action-btn {
@@ -3500,7 +3498,9 @@
     align-self: stretch;
   }
   .gender-btn {
-    padding: 4px 12px;
+    padding: 4px 0;
+    width: 36px;
+    text-align: center;
     font-size: 12px;
     font-weight: 600;
     border: none;
@@ -3518,14 +3518,6 @@
   }
   .gender-btn:hover:not(.active) {
     background: var(--hover-color);
-  }
-  .gender-hint {
-    color: var(--text-muted);
-    font-size: 11px;
-    white-space: nowrap;
-  }
-  .gender-hint strong {
-    color: var(--text-color);
   }
 
   /* Mobile sidebar toggle */
