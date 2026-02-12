@@ -378,12 +378,7 @@
   }
 
   function handleProductSelect(e) {
-    const selected = e.detail?.data;
-    if (selected) {
-      updateField('Product', selected);
-    } else {
-      updateField('Product.Name', e.detail?.value || '');
-    }
+    updateField('Product.Name', e.detail?.value || '');
   }
 
   // Drops array handlers
