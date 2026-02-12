@@ -11,6 +11,21 @@ function sanitizeName(value, fallback = 'New Item Set') {
   return trimmed ? trimmed.slice(0, 120) : fallback;
 }
 
+/** Check if an item name contains a (C) tag */
+function hasCustomizedTag(name) {
+  return typeof name === 'string' && /\(([^)]*,)?C(,[^)]*)?\)$/.test(name);
+}
+
+/** Check if any item in the set data has a (C) tag */
+function itemSetHasCustomizedItems(data) {
+  const items = data?.items || [];
+  return items.some(item =>
+    item.setName
+      ? item.pieces?.some(p => hasCustomizedTag(p.name))
+      : hasCustomizedTag(item.name)
+  );
+}
+
 export async function GET({ params, locals }) {
   const user = locals.session?.user;
   if (!user) {
@@ -70,6 +85,11 @@ export async function PUT({ params, request, locals }) {
     const sanitizedData = sanitizeItemSetData(body?.data ?? existing.data);
     const name = sanitizeName(body?.name ?? existing.name);
     const customized = typeof body?.customized === 'boolean' ? body.customized : (existing.customized ?? false);
+
+    // Validate customized flag requires (C) tagged items
+    if (customized && !itemSetHasCustomizedItems(sanitizedData)) {
+      return getResponse({ error: 'Cannot mark as customized — no items have a (C) tag.' }, 400);
+    }
 
     if (getPayloadSizeBytes(sanitizedData) > MAX_ITEM_SET_BYTES) {
       return getResponse({ error: 'Item set data exceeds 100KB limit.' }, 413);

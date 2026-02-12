@@ -7,7 +7,7 @@
   import '$lib/style.css';
   import { goto, beforeNavigate } from '$app/navigation';
   import { onDestroy } from 'svelte';
-  import { apiPost, apiPut, apiDelete } from '$lib/util';
+  import { apiPost, apiPut, apiDelete, hasItemTag } from '$lib/util';
   import ItemSetDialog from '$lib/components/itemsets/ItemSetDialog.svelte';
   import AuctionDurationSelector from '$lib/components/auction/AuctionDurationSelector.svelte';
   import FeePreview from '$lib/components/auction/FeePreview.svelte';
@@ -63,6 +63,16 @@
   $: startingBidNum = parseFloat(startingBid) || 0;
   $: buyoutPriceNum = buyoutOnly ? startingBidNum : (parseFloat(buyoutPrice) || 0);
   $: effectiveBuyout = buyoutOnly ? startingBidNum : (buyoutPriceNum > 0 ? buyoutPriceNum : null);
+
+  // Check if any item in the set has a (C) tag
+  $: hasCustomizableItems = itemSet?.items?.some(item =>
+    item.setName
+      ? item.pieces?.some(p => hasItemTag(p.name, 'C'))
+      : hasItemTag(item.name, 'C')
+  ) ?? false;
+
+  // Reset customized if no (C) items
+  $: if (!hasCustomizableItems) customized = false;
 
   // Exchange redirect warning
   $: singleNonCustomItem = !customized && itemSet && itemSet.items?.length === 1;
@@ -262,8 +272,8 @@
             {/each}
           </ul>
           <div class="set-actions">
-            <label class="checkbox-label">
-              <input type="checkbox" bind:checked={customized} />
+            <label class="checkbox-label" class:disabled={!hasCustomizableItems}>
+              <input type="checkbox" bind:checked={customized} disabled={!hasCustomizableItems} />
               <span>Customized (C) — items have custom modifications</span>
             </label>
             <button class="btn-danger-sm" on:click={removeItemSet} disabled={removingItemSet}>
@@ -509,6 +519,11 @@
     cursor: pointer;
     font-size: 0.85rem;
     color: var(--text-color);
+  }
+
+  .checkbox-label.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   /* Item Set Preview */

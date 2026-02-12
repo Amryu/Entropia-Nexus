@@ -21,6 +21,7 @@ import {
   startUpload,
   endUpload
 } from '$lib/server/rateLimiter.js';
+import { getUserItemSetById } from '$lib/server/db.js';
 
 // Rate limit configuration
 const RATE_LIMIT_MAX = 50; // Max uploads
@@ -130,6 +131,23 @@ export async function POST({ request, locals }) {
     // 8. Validate entity type format (alphanumeric and hyphens)
     if (!/^[a-zA-Z][a-zA-Z\-]*$/.test(entityType)) {
       throw error(400, 'Invalid entity type format');
+    }
+
+    // 8a. For item-set images, verify ownership and that set contains (C) items
+    if (entityType === 'item-set') {
+      const itemSet = await getUserItemSetById(userId, entityId);
+      if (!itemSet) {
+        throw error(404, 'Item set not found');
+      }
+      const items = itemSet.data?.items || [];
+      const hasCTag = items.some(item =>
+        item.setName
+          ? item.pieces?.some(p => /\(([^)]*,)?C(,[^)]*)?\)$/.test(p.name))
+          : /\(([^)]*,)?C(,[^)]*)?\)$/.test(item.name)
+      );
+      if (!hasCTag) {
+        throw error(400, 'Custom image upload requires at least one item with a (C) tag');
+      }
     }
 
     // 9. Validate file size
