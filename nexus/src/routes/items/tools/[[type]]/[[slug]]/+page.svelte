@@ -99,6 +99,16 @@
     { label: 'Misc. Tools', title: 'Misc. Tools', type: 'misctools' }
   ];
 
+  // When misctools profession is cleared, also clear skill fields
+  // InlineEdit already updates Profession.Name via its own path prop
+  function handleMiscToolProfessionChange(e) {
+    if (!e.detail.value) {
+      updateField('Properties.Skill.IsSiB', null);
+      updateField('Properties.Skill.LearningIntervalStart', null);
+      updateField('Properties.Skill.LearningIntervalEnd', null);
+    }
+  }
+
   // Type name mapping
   function getTypeName(type) {
     switch (type) {
@@ -148,7 +158,12 @@
         break;
       case 'misctools':
         base.Properties.Type = '';
-        base.Profession = { Name: '' };
+        base.Properties.Skill = {
+          IsSiB: null,
+          LearningIntervalStart: null,
+          LearningIntervalEnd: null
+        };
+        base.Profession = { Name: null };
         break;
       case 'scanners':
         base.Properties.Range = 0;
@@ -909,16 +924,18 @@
         {#if additional.type !== 'scanners' && additional.type !== 'refiners'}
           <div class="stats-section">
             <h4 class="section-title">Skilling</h4>
-            <div class="stat-row">
-              <span class="stat-label">SiB</span>
-              <span class="stat-value" class:highlight-yes={activeEntity?.Properties?.Skill?.IsSiB}>
-                <InlineEdit
-                  value={activeEntity?.Properties?.Skill?.IsSiB}
-                  path="Properties.Skill.IsSiB"
-                  type="checkbox"
-                />
-              </span>
-            </div>
+            {#if additional.type !== 'misctools'}
+              <div class="stat-row">
+                <span class="stat-label">SiB</span>
+                <span class="stat-value" class:highlight-yes={activeEntity?.Properties?.Skill?.IsSiB}>
+                  <InlineEdit
+                    value={activeEntity?.Properties?.Skill?.IsSiB}
+                    path="Properties.Skill.IsSiB"
+                    type="checkbox"
+                  />
+                </span>
+              </div>
+            {/if}
             {#if additional.type === 'finders'}
               <div class="stat-row">
                 <span class="stat-label">Professions</span>
@@ -949,11 +966,13 @@
                 <span class="stat-label">Profession</span>
                 <span class="stat-value">
                   {#if $editMode}
-                    <SearchInput
-                      value={activeEntity?.Profession?.Name || ''}
+                    <InlineEdit
+                      value={activeEntity?.Profession?.Name}
+                      path="Profession.Name"
+                      type="select"
+                      placeholder="None"
                       options={professionOptions}
-                      placeholder="Select profession..."
-                      on:select={(e) => updateField('Profession.Name', e.detail.value)}
+                      on:change={handleMiscToolProfessionChange}
                     />
                   {:else if activeEntity?.Profession?.Name}
                     <a href={getTypeLink(activeEntity.Profession.Name, 'Profession')} class="profession-link">{activeEntity.Profession.Name}</a>
@@ -962,6 +981,36 @@
                   {/if}
                 </span>
               </div>
+              {#if activeEntity?.Profession?.Name}
+                <div class="stat-row">
+                  <span class="stat-label">SiB</span>
+                  <span class="stat-value" class:highlight-yes={activeEntity?.Properties?.Skill?.IsSiB}>
+                    <InlineEdit
+                      value={activeEntity?.Properties?.Skill?.IsSiB}
+                      path="Properties.Skill.IsSiB"
+                      type="checkbox"
+                    />
+                  </span>
+                </div>
+                <div class="stat-row">
+                  <span class="stat-label">Level Range</span>
+                  <span class="stat-value">
+                    <InlineEdit
+                      value={activeEntity?.Properties?.Skill?.LearningIntervalStart}
+                      path="Properties.Skill.LearningIntervalStart"
+                      type="number"
+                      step={0.1}
+                    />
+                    -
+                    <InlineEdit
+                      value={activeEntity?.Properties?.Skill?.LearningIntervalEnd}
+                      path="Properties.Skill.LearningIntervalEnd"
+                      type="number"
+                      step={0.1}
+                    />
+                  </span>
+                </div>
+              {/if}
             {:else if activeEntity?.Profession?.Name}
               <div class="stat-row">
                 <span class="stat-label">Profession</span>
@@ -970,24 +1019,26 @@
                 </span>
               </div>
             {/if}
-            <div class="stat-row">
-              <span class="stat-label">Level Range</span>
-              <span class="stat-value">
-                <InlineEdit
-                  value={activeEntity?.Properties?.Skill?.LearningIntervalStart}
-                  path="Properties.Skill.LearningIntervalStart"
-                  type="number"
-                  step={0.1}
-                />
-                -
-                <InlineEdit
-                  value={activeEntity?.Properties?.Skill?.LearningIntervalEnd}
-                  path="Properties.Skill.LearningIntervalEnd"
-                  type="number"
-                  step={0.1}
-                />
-              </span>
-            </div>
+            {#if additional.type !== 'misctools'}
+              <div class="stat-row">
+                <span class="stat-label">Level Range</span>
+                <span class="stat-value">
+                  <InlineEdit
+                    value={activeEntity?.Properties?.Skill?.LearningIntervalStart}
+                    path="Properties.Skill.LearningIntervalStart"
+                    type="number"
+                    step={0.1}
+                  />
+                  -
+                  <InlineEdit
+                    value={activeEntity?.Properties?.Skill?.LearningIntervalEnd}
+                    path="Properties.Skill.LearningIntervalEnd"
+                    type="number"
+                    step={0.1}
+                  />
+                </span>
+              </div>
+            {/if}
           </div>
         {/if}
 

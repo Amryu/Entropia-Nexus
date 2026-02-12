@@ -274,10 +274,13 @@ export const UpsertConfigs = {
       { name: "MaxTT", value: x => x.Properties.Economy.MaxTT },
       { name: "MinTT", value: x => x.Properties.Economy.MinTT },
       { name: "Decay", value: x => x.Properties.Economy.Decay },
-      { name: "ProfessionId", value: async (x, c) => await c.query(`SELECT "Id" FROM ONLY "Professions" WHERE "Name" = $1`, [x.Profession.Name]).then(res => res.rows[0]?.Id) },
-      { name: "IsSib", value: x => x.Properties.Skill.IsSiB ? 1 : 0 },
-      { name: "MinLevel", value: x => x.Properties.Skill.LearningIntervalStart },
-      { name: "MaxLevel", value: x => x.Properties.Skill.LearningIntervalEnd }
+      { name: "ProfessionId", value: async (x, c) => {
+        if (!x.Profession?.Name) return null;
+        return c.query(`SELECT "Id" FROM ONLY "Professions" WHERE "Name" = $1`, [x.Profession.Name]).then(res => res.rows[0]?.Id);
+      }},
+      { name: "IsSib", value: x => x.Properties.Skill?.IsSiB ? 1 : 0 },
+      { name: "MinLevel", value: x => x.Properties.Skill?.LearningIntervalStart ?? null },
+      { name: "MaxLevel", value: x => x.Properties.Skill?.LearningIntervalEnd ?? null }
     ],
     offset: 4200000,
     table: "MiscTools"
