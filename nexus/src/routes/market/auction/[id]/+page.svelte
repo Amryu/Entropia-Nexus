@@ -14,6 +14,7 @@
   import AuctionDisclaimerDialog from '$lib/components/auction/AuctionDisclaimerDialog.svelte';
   import ItemSetDisplay from '$lib/components/itemsets/ItemSetDisplay.svelte';
   import { getTypeLink } from '$lib/util.js';
+  import { globalIdToEntityId } from '$lib/common/itemTypes.js';
 
   const MAX_GRID_ITEMS = 10;
 
@@ -293,7 +294,7 @@
           <div class="section">
             <h2 class="section-title">Items</h2>
             {#if auction.item_set_customized}
-              <div class="custom-image-container">
+              <div class="custom-image-float">
                 {#if customImageVisible}
                   <img
                     src="/api/img/item-set/{auction.item_set_id}"
@@ -322,8 +323,8 @@
                   {@const href = item.setType ? getTypeLink(item.setName, item.setType) : getTypeLink(item.name, item.type)}
                   <a href={href} class="item-card" class:no-link={!href}>
                     <div class="item-image">
-                      {#if item.itemId}
-                        <img src="/api/img/item/{item.itemId}" alt={item.name || ''} loading="lazy" />
+                      {#if item.itemId && item.type && globalIdToEntityId(item.itemId, item.type) != null}
+                        <img src="/api/img/{item.type.toLowerCase()}/{globalIdToEntityId(item.itemId, item.type)}" alt={item.name || ''} loading="lazy" />
                       {:else}
                         <svg class="item-placeholder" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                           <rect x="3" y="3" width="18" height="18" rx="2" />
@@ -554,13 +555,14 @@
     margin: 0;
   }
 
-  .custom-image-container {
-    margin-bottom: 0.75rem;
+  .custom-image-float {
+    float: right;
+    max-width: 280px;
+    margin: 0 0 0.75rem 1rem;
   }
 
   .custom-image {
-    max-width: 100%;
-    max-height: 400px;
+    width: 100%;
     border-radius: 8px;
     border: 1px solid var(--border-color);
     background: var(--hover-color);
@@ -858,5 +860,14 @@
     .auction-panels { grid-template-columns: 1fr; }
     .auction-header { flex-direction: column; }
     .item-grid { grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); }
+    .custom-image-float {
+      float: none;
+      max-width: 100%;
+      margin: 0 0 0.75rem 0;
+      text-align: center;
+    }
+    .custom-image-float .custom-image {
+      max-width: 280px;
+    }
   }
 </style>

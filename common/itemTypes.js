@@ -27,6 +27,59 @@ export const PET_ID_OFFSET = 11000000;
 /** ID offset for armor set items (ItemId = ArmorSets.Id + ARMOR_SET_OFFSET) */
 export const ARMOR_SET_OFFSET = 13000000;
 
+/**
+ * Maps item type names to their global ID offsets in the Items table.
+ * Items.Id = EntityTable.Id + offset
+ */
+export const TYPE_ID_OFFSETS = {
+  Material:                1000000,
+  Weapon:                  2000000,
+  Armor:                   3000000,
+  Tool:                    4000000,
+  MedicalTool:             4100000,
+  MiscTool:                4200000,
+  Refiner:                 4300000,
+  Scanner:                 4400000,
+  Finder:                  4500000,
+  Excavator:               4600000,
+  BlueprintBook:           4700000,
+  MedicalChip:             4800000,
+  TeleportationChip:       4810000,
+  EffectChip:              4820000,
+  Attachment:              5000000,
+  WeaponAmplifier:         5100000,
+  WeaponVisionAttachment:  5200000,
+  Absorber:                5300000,
+  FinderAmplifier:         5400000,
+  ArmorPlating:            5500000,
+  Enhancer:                5600000,
+  MindforceImplant:        5700000,
+  Blueprint:               6000000,
+  Vehicle:                 7000000,
+  Clothing:                8000000,
+  Furniture:               9100000,
+  Decoration:              9200000,
+  StorageContainer:        9300000,
+  Sign:                    9400000,
+  Consumable:              10000000,
+  Capsule:                 10100000,
+  Pet:                     11000000,
+  Strongbox:               12000000,
+  ArmorSet:                13000000,
+};
+
+/**
+ * Convert a global Items.Id to the entity's own table ID.
+ * @param {number} globalId - The ID from the Items table (with offset baked in)
+ * @param {string} type - The item type (e.g., 'Weapon', 'Material')
+ * @returns {number|null} The entity-specific ID, or null if type is unknown
+ */
+export function globalIdToEntityId(globalId, type) {
+  const offset = TYPE_ID_OFFSETS[type];
+  if (offset == null) return null;
+  return globalId - offset;
+}
+
 /** Number of armor plates in a full set */
 export const PLATE_SET_SIZE = 7;
 

@@ -7,6 +7,7 @@
   import AuctionStatusBadge from './AuctionStatusBadge.svelte';
   import AuctionCountdown from './AuctionCountdown.svelte';
   import { isBuyoutOnly } from '$lib/common/auctionUtils.js';
+  import { globalIdToEntityId } from '$lib/common/itemTypes.js';
 
   /** @type {object} Auction data */
   export let auction;
@@ -16,8 +17,13 @@
   $: isActive = auction.status === 'active';
   $: isFrozen = auction.status === 'frozen';
   $: items = auction.item_set_data?.items || [];
-  $: firstItemId = items[0]?.id || null;
-  $: imageUrl = firstItemId ? `/api/img/item/${firstItemId}` : null;
+  $: firstItem = items[0] || null;
+  $: firstItemEntityId = (firstItem?.itemId && firstItem?.type)
+    ? globalIdToEntityId(firstItem.itemId, firstItem.type)
+    : null;
+  $: imageUrl = (firstItemEntityId != null && firstItem?.type)
+    ? `/api/img/${firstItem.type.toLowerCase()}/${firstItemEntityId}`
+    : null;
 </script>
 
 <a href="/market/auction/{auction.id}" class="auction-card">

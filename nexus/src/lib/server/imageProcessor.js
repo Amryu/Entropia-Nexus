@@ -11,6 +11,8 @@ import { randomUUID, createHash } from 'crypto';
 const ICON_SIZE = 320;
 const THUMB_SIZE = 128;
 const BANNER_WIDTH = 1200;
+const ITEM_SET_MAX_WIDTH = 320;
+const ITEM_SET_MAX_HEIGHT = 480;
 
 // Base upload directories (configured via environment)
 const UPLOAD_BASE = process.env.UPLOAD_DIR || './uploads';
@@ -285,8 +287,10 @@ export async function processAndSaveImage(imageBuffer, entityType, entityId, upl
 
     const isBanner = GUIDE_ENTITY_TYPES.includes(entityType);
     const isRichtext = entityType === 'richtext';
+    const isItemSet = entityType === 'item-set';
 
-    // Process icon — banner types get wider dimensions, richtext preserves aspect ratio, others get square
+    // Process icon — banner types get wider dimensions, richtext preserves aspect ratio,
+    // item-sets fit within 320x480 (portrait), others get square
     const iconPath = join(tempEntityPath, 'icon.webp');
     if (isBanner) {
       await image
@@ -295,6 +299,14 @@ export async function processAndSaveImage(imageBuffer, entityType, entityId, upl
         .toFile(iconPath);
     } else if (isRichtext) {
       await image
+        .webp({ quality: 90 })
+        .toFile(iconPath);
+    } else if (isItemSet) {
+      await image
+        .resize(ITEM_SET_MAX_WIDTH, ITEM_SET_MAX_HEIGHT, {
+          fit: 'inside',
+          withoutEnlargement: true
+        })
         .webp({ quality: 90 })
         .toFile(iconPath);
     } else {

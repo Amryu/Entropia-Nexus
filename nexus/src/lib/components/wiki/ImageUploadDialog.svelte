@@ -1,7 +1,7 @@
 <!--
   @component ImageUploadDialog
   Dialog for uploading and cropping entity images.
-  Uses svelte-easy-crop for square cropping (320x320 max).
+  Uses svelte-easy-crop with configurable aspect ratio.
 -->
 <script>
   // @ts-nocheck
@@ -28,8 +28,14 @@
   /** @type {boolean} Whether entity currently has an image */
   export let hasImage = false;
 
-  // Maximum output dimensions
-  const MAX_SIZE = 320;
+  /** @type {number} Crop aspect ratio (width/height). Default 1 = square */
+  export let aspect = 1;
+
+  /** @type {number} Maximum output width */
+  export let maxWidth = 320;
+
+  /** @type {number} Maximum output height */
+  export let maxHeight = 320;
 
   // State
   let fileInput;
@@ -147,7 +153,7 @@
 
   /**
    * Create a cropped image from the source and crop area.
-   * Outputs at max 320x320.
+   * Outputs at max maxWidth x maxHeight, preserving the crop aspect ratio.
    */
   async function getCroppedImage(imageSrc, cropArea) {
     if (!browser) {
@@ -161,10 +167,15 @@
       image.onload = () => {
         const canvas = document.createElement('canvas');
 
-        // Calculate output size (max 320x320)
-        const outputSize = Math.min(MAX_SIZE, cropArea.width, cropArea.height);
-        canvas.width = outputSize;
-        canvas.height = outputSize;
+        // Scale down to fit within maxWidth x maxHeight while preserving aspect ratio
+        const scaleW = maxWidth / cropArea.width;
+        const scaleH = maxHeight / cropArea.height;
+        const scale = Math.min(1, scaleW, scaleH);
+        const outputWidth = Math.round(cropArea.width * scale);
+        const outputHeight = Math.round(cropArea.height * scale);
+
+        canvas.width = outputWidth;
+        canvas.height = outputHeight;
 
         const ctx = canvas.getContext('2d');
         if (!ctx) {
@@ -181,8 +192,8 @@
           cropArea.height,
           0,
           0,
-          outputSize,
-          outputSize
+          outputWidth,
+          outputHeight
         );
 
         // Convert to blob
@@ -284,7 +295,7 @@
               image={imageSrc}
               bind:crop
               bind:zoom
-              aspect={1}
+              {aspect}
               on:cropcomplete={handleCropComplete}
             />
           </div>

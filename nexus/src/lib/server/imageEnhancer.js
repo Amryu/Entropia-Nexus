@@ -19,6 +19,9 @@ const MAX_SCALE_FACTOR = 3.0;
 // Minimum trimmed content dimension — skip enhancement if content is smaller
 const MIN_CONTENT_SIZE = 8;
 
+// Skip trim+scale when content already fills this fraction of the canvas (0–1)
+const MIN_TRIM_RATIO = 0.75;
+
 // Extra pixels to preserve around trimmed content (protects anti-aliased edges)
 const TRIM_MARGIN = 2;
 
@@ -174,14 +177,44 @@ export async function enhanceEntityImage(imageBuffer, mode) {
     return imageBuffer;
   }
 
-  // Step 2: Calculate scale factor
+  // Step 2: Check if content already fills most of the canvas — skip trim/scale if so
+  const origMeta2 = await sharp(imageBuffer).metadata();
+  const canvasArea = (origMeta2.width || CANVAS_SIZE) * (origMeta2.height || CANVAS_SIZE);
+  const trimRatio = (contentWidth * contentHeight) / canvasArea;
+  const skipScale = trimRatio > MIN_TRIM_RATIO;
+
+  // Step 3: Brightness analysis and backdrop decision (always needed)
+  const brightness = await analyzeBrightness(skipScale ? imageBuffer : trimmedBuffer);
+  const backdropType = getBackdropType(mode, brightness);
+
+  // Step 4: If content fills the canvas, only apply backdrop (if needed) on the original
+  if (skipScale) {
+    if (!backdropType) return imageBuffer;
+
+    // Composite backdrop behind original image
+    return sharp({
+      create: {
+        width: origMeta2.width || CANVAS_SIZE,
+        height: origMeta2.height || CANVAS_SIZE,
+        channels: 4,
+        background: { r: 0, g: 0, b: 0, alpha: 0 }
+      }
+    })
+      .composite([
+        { input: createBackdropSvg(backdropType, origMeta2.width || CANVAS_SIZE), top: 0, left: 0 },
+        { input: imageBuffer, top: 0, left: 0 }
+      ])
+      .webp({ quality: 90 })
+      .toBuffer();
+  }
+
+  // Step 5: Calculate scale factor and resize
   const maxDim = Math.max(contentWidth, contentHeight);
   const scaleFactor = Math.min(MAX_SCALE_FACTOR, availableSize / maxDim);
 
   const newWidth = Math.round(contentWidth * scaleFactor);
   const newHeight = Math.round(contentHeight * scaleFactor);
 
-  // Step 3: Scale the trimmed content with mild sharpening when upscaling
   let scaledContent;
   try {
     let scaleOp = sharp(trimmedBuffer)
@@ -199,11 +232,7 @@ export async function enhanceEntityImage(imageBuffer, mode) {
       .toBuffer();
   }
 
-  // Step 4: Brightness analysis and backdrop decision
-  const brightness = await analyzeBrightness(trimmedBuffer);
-  const backdropType = getBackdropType(mode, brightness);
-
-  // Step 5: Composite onto transparent canvas
+  // Step 6: Composite onto transparent canvas
   const layers = [];
 
   if (backdropType) {

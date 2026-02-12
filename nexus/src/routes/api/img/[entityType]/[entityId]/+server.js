@@ -57,7 +57,12 @@ export async function GET({ params, url }) {
     // Apply enhancement pipeline for icons when mode is specified
     let outputBuffer = imageBuffer;
     if (mode && type === 'icon') {
-      outputBuffer = await enhanceEntityImage(imageBuffer, mode);
+      try {
+        outputBuffer = await enhanceEntityImage(imageBuffer, mode);
+      } catch {
+        // Enhancement failed — serve original image
+        outputBuffer = imageBuffer;
+      }
     }
 
     // Include mode in ETag so CDN caches dark/light variants separately
