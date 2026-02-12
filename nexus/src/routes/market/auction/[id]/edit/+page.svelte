@@ -75,6 +75,7 @@
   }
 
   let showDeleteConfirm = false;
+  let showActivateConfirm = false;
 
   async function handleDelete() {
     showDeleteConfirm = true;
@@ -200,7 +201,7 @@
         <button class="btn-secondary" on:click={() => handleSave(false)} disabled={saving}>
           {saving ? 'Saving...' : 'Save Changes'}
         </button>
-        <button class="btn-primary" on:click={() => handleSave(true)} disabled={saving}>
+        <button class="btn-primary" on:click={() => showActivateConfirm = true} disabled={saving}>
           {saving ? 'Activating...' : 'Activate Auction'}
         </button>
       </div>
@@ -214,6 +215,20 @@
           <div class="confirm-actions">
             <button class="btn-secondary" on:click={() => showDeleteConfirm = false}>Cancel</button>
             <button class="btn-danger" on:click={doDelete}>Delete</button>
+          </div>
+        </div>
+      </div>
+    {/if}
+
+    {#if showActivateConfirm}
+      <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
+      <div class="modal-overlay" on:click|self={() => showActivateConfirm = false}>
+        <div class="confirm-dialog" role="dialog" aria-modal="true">
+          <p class="confirm-message">Are you sure you want to activate this auction?</p>
+          <p class="confirm-warning">Once a bid is placed, the auction cannot be cancelled or edited. Make sure your pricing, duration, and item set are correct before proceeding.</p>
+          <div class="confirm-actions">
+            <button class="btn-secondary" on:click={() => showActivateConfirm = false}>Cancel</button>
+            <button class="btn-primary" on:click={() => { showActivateConfirm = false; handleSave(true); }}>Activate Auction</button>
           </div>
         </div>
       </div>
@@ -367,7 +382,8 @@
     box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
   }
 
-  .confirm-message { margin: 0 0 1rem 0; font-size: 0.9rem; line-height: 1.5; }
+  .confirm-message { margin: 0 0 0.5rem 0; font-size: 0.9rem; line-height: 1.5; }
+  .confirm-warning { margin: 0 0 1rem 0; font-size: 0.8rem; line-height: 1.5; color: var(--text-muted); }
   .confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
 
   @media (max-width: 899px) {
