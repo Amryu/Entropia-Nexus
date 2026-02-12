@@ -429,7 +429,7 @@
       { label: 'API', url: 'api' },
     ],
     'Market': [
-      { label: 'Auction', url: 'auction', disabled: true },
+      { label: 'Auction', url: 'auction' },
       { label: 'Exchange', url: 'exchange' },
       { label: 'Rental', url: 'rental' },
       { label: 'Services', url: 'services' },

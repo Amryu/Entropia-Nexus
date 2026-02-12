@@ -68,12 +68,13 @@ export async function PUT({ params, request, locals }) {
 
     const sanitizedData = sanitizeItemSetData(body?.data ?? existing.data);
     const name = sanitizeName(body?.name ?? existing.name);
+    const customized = typeof body?.customized === 'boolean' ? body.customized : (existing.customized ?? false);
 
     if (getPayloadSizeBytes(sanitizedData) > MAX_ITEM_SET_BYTES) {
       return getResponse({ error: 'Item set data exceeds 100KB limit.' }, 413);
     }
 
-    const record = await updateUserItemSet(user.id, params.id, name, sanitizedData);
+    const record = await updateUserItemSet(user.id, params.id, name, sanitizedData, customized);
     return getResponse(record, 200);
   } catch (error) {
     console.error('Error updating item set:', error);

@@ -42,7 +42,9 @@ const VALID_ENTITY_TYPES = [
   'furnishing', 'furniture', 'decoration', 'storagecontainer', 'sign',
   // Information & other
   'mob', 'skill', 'profession', 'vendor', 'location', 'area', 'shop',
-  'user', 'guide-category', 'richtext'
+  'user', 'guide-category', 'richtext',
+  // Auction
+  'item-set'
 ];
 
 // Entity types that skip the approval workflow and use banner dimensions
@@ -636,7 +638,7 @@ export async function cleanupTempUploads() {
  * @returns {boolean}
  */
 export function isAutoApproveType(entityType) {
-  return GUIDE_ENTITY_TYPES.includes(entityType);
+  return GUIDE_ENTITY_TYPES.includes(entityType) || entityType === 'item-set';
 }
 
 /**

@@ -27,10 +27,9 @@
     },
     {
       name: 'Auction',
-      href: null,
+      href: '/market/auction',
       icon: 'AUC',
-      description: 'In-game auction house listings and history',
-      disabled: true
+      description: 'Bid on item sets and buyout listings from other players'
     },
     {
       name: 'Rental',

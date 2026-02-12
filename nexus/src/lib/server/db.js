@@ -3368,7 +3368,7 @@ export async function getUserItemSetsWithData(userId) {
 }
 
 export async function getUserItemSetById(userId, id) {
-  const query = 'SELECT id, name, data, loadout_id, created_at, last_update FROM item_sets WHERE user_id = $1 AND id = $2';
+  const query = 'SELECT id, name, data, customized, loadout_id, created_at, last_update FROM item_sets WHERE user_id = $1 AND id = $2';
   const { rows } = await pool.query(query, [userId, id]);
   return rows[0];
 }
@@ -3381,14 +3381,15 @@ export async function createUserItemSet(userId, name, data, loadoutId = null) {
   return rows[0];
 }
 
-export async function updateUserItemSet(userId, id, name, data) {
+export async function updateUserItemSet(userId, id, name, data, customized) {
   const query = `UPDATE item_sets
     SET name = $3,
         data = $4,
+        customized = $5,
         last_update = CURRENT_TIMESTAMP
     WHERE user_id = $1 AND id = $2
-    RETURNING id, name, data, loadout_id, created_at, last_update`;
-  const { rows } = await pool.query(query, [userId, id, name, data]);
+    RETURNING id, name, data, customized, loadout_id, created_at, last_update`;
+  const { rows } = await pool.query(query, [userId, id, name, data, customized]);
   return rows[0];
 }
 

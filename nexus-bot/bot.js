@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { compareJson, validate, printSideBySide } from './change.js';
 import { getTypeLink } from './util.js';
 import { snapshotExchangePrices, computeAllExchangeSummaries } from './exchange-prices.js';
+import { checkAuctions, refreshAuctionColors } from './auctions.js';
 import { collectEuName } from './commands/verification/setEuName.js';
 import { resumeVerification } from './commands/verification/verifyUser.js';
 
@@ -1042,6 +1043,8 @@ setInterval(() => runScheduled('checkRescheduleNotifications', checkRescheduleNo
 setInterval(() => runScheduled('checkRentalDmNotifications', checkRentalDmNotifications), 30 * 1000);
 setInterval(() => runScheduled('checkTradeRequests', checkTradeRequests), 30 * 1000);
 setInterval(() => runScheduled('syncReviewerRole', syncReviewerRole), 5 * 60 * 1000);
+setInterval(() => runScheduled('checkAuctions', () => checkAuctions(client, config)), 30 * 1000);
+setInterval(() => runScheduled('refreshAuctionColors', () => refreshAuctionColors(client, config)), 5 * 60 * 1000);
 
 // ---- Trade Request Thread Management ----
 

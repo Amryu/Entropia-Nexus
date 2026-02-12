@@ -1,6 +1,6 @@
 # Market System
 
-Player-to-player trading features including the exchange and shop directory.
+Player-to-player trading features including the exchange, shop directory, rentals, and auctions.
 
 ## Exchange
 
@@ -1090,6 +1090,315 @@ Coverage: Authentication, CRUD operations, status transitions, blocked dates, av
 
 ---
 
+## Auctions
+
+Timed auction system for item sets with bidding, optional buyout pricing, admin controls, and Cloudflare Turnstile captcha protection.
+
+### Features
+
+- **Timed Bidding**: Auctions with configurable duration (1-30 days, up to 365 for buyout-only)
+- **Buyout Pricing**: Optional instant-buy price; when buyout equals starting bid, becomes "Buyout Only" mode
+- **Tiered Fee Brackets**: Free under 100 PED, 2% for 100-1000, 1% above 1000
+- **Bid Increments**: 2% of current bid rounded to neat values (minimum 1 PEC)
+- **Anti-Sniping**: Bids within last 5 minutes reset the countdown to 5 minutes (max 30 min total extension)
+- **Turnstile Captcha**: Cloudflare Turnstile required for bids and buyouts (first captcha in project)
+- **Disclaimers**: First-time bidder and seller disclaimers before participation
+- **Item Set Integration**: Uses existing item set system with optional "customized" flag
+- **Exchange Redirect**: Single non-customized items shown a suggestion to use Exchange instead
+- **Admin Controls**: Freeze/unfreeze, force cancel, bid rollback with audit trail
+- **Full Audit Log**: Every action recorded with user, timestamp, and context details
+
+### Routes
+
+```
+/market/auction/                - Listing page (browse active auctions)
+/market/auction/create          - Create new auction (verified users)
+/market/auction/[id]            - Auction detail with bidding and history
+/market/auction/[id]/edit       - Edit draft auction
+/market/auction/my              - Dashboard (my auctions + my bids tabs)
+```
+
+### Components
+
+```
+nexus/src/lib/components/auction/
+├── AuctionCard.svelte             - Grid card for listing page
+├── AuctionStatusBadge.svelte      - Color-coded status badge
+├── AuctionCountdown.svelte        - Live countdown with anti-sniping awareness
+├── AuctionPricePanel.svelte       - Price info display (current/starting/buyout/min next)
+├── BidSection.svelte              - Bid input + Turnstile + place bid/buyout buttons
+├── BidHistoryPanel.svelte         - Scrollable bid history with admin rollback
+├── AuctionDisclaimerDialog.svelte - First-time disclaimer acceptance modal
+├── FeePreview.svelte              - Real-time fee calculator with bracket breakdown
+├── AuctionDurationSelector.svelte - Duration picker with presets
+└── ExchangeRedirectWarning.svelte - Warning for single non-customized items
+
+nexus/src/lib/components/
+└── TurnstileWidget.svelte         - Generic Cloudflare Turnstile captcha (reusable)
+```
+
+### Shared Utilities
+
+**File:** `common/auctionUtils.js`
+
+| Function | Description |
+|----------|-------------|
+| `getMinIncrement(currentBid)` | 2% of current bid rounded to nearest neat value |
+| `getMinNextBid(currentBid, hasBids)` | Minimum next bid amount |
+| `calculateAuctionFee(amount)` | Tiered bracket fee calculation |
+| `isBuyoutOnly(auction)` | Check if buyout_price equals starting_bid |
+| `getMaxDuration(auction)` | 365 for buyout-only, 30 otherwise |
+| `getTimeRemaining(endsAt)` | Time remaining with days/hours/minutes/seconds |
+
+Constants: `ANTI_SNIPE_WINDOW_MS` (5 min), `ANTI_SNIPE_EXTENSION_MS` (5 min), `ANTI_SNIPE_MAX_EXTENSION_MS` (30 min), `ACTIVE_STATUSES`, `COMPLETED_STATUSES`.
+
+Neat value steps for bid increments: `[0.01, 0.02, 0.05, 0.10, 0.20, 0.50, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000]`
+
+### Auction Status Machine
+
+```
+draft → active (seller activates)
+active → ended (time expires or buyout)
+ended → settled (seller confirms)
+active → cancelled (seller: no bids only)
+active → frozen (admin) → active (admin unfreezes, extends end time)
+active/frozen → cancelled (admin force cancel)
+```
+
+| Status | Description |
+|--------|-------------|
+| `draft` | Not published, editable by owner |
+| `active` | Live, accepting bids/buyouts |
+| `ended` | Time expired or bought out, awaiting settlement |
+| `settled` | Seller confirmed completion |
+| `cancelled` | Cancelled by seller (no bids) or admin |
+| `frozen` | Admin paused — no bids, countdown paused |
+
+### Fee Calculation
+
+Tiered bracket system applied at settlement:
+
+| Bracket | Rate |
+|---------|------|
+| First 100 PED | Free |
+| 100-1000 PED | 2% |
+| Above 1000 PED | 1% |
+
+Example: 1500 PED sale → 0 + (900 × 0.02) + (500 × 0.01) = 18 + 5 = 23 PED fee.
+
+### Bid Increment Algorithm
+
+Minimum increment = 2% of current bid, rounded up to nearest neat value. Minimum 1 PEC (0.01 PED).
+
+Example: Current bid 250 PED → 2% = 5 → nearest neat value = 5 PED → min next bid = 255 PED.
+
+### Anti-Sniping
+
+When a bid is placed within the last 5 minutes of an auction:
+- `ends_at` is reset to 5 minutes from the time of the bid
+- Maximum total extension from `original_ends_at` is 30 minutes
+- Prevents last-second sniping
+
+### Cloudflare Turnstile Integration
+
+**Server:** `nexus/src/lib/server/turnstile.js` — `verifyTurnstile(token, remoteip)` posts to Cloudflare's siteverify endpoint. Falls back to `return true` when `TURNSTILE_SECRET_KEY` is not configured (dev mode).
+
+**Client:** `TurnstileWidget.svelte` — Generic reusable component. Props: `siteKey`, `theme`, `token` (bindable), `reset` (bindable). Events: `on:verified`, `on:error`, `on:expired`. Dynamically loads the Turnstile script from Cloudflare CDN.
+
+**Environment:** `TURNSTILE_SECRET_KEY` (server), `PUBLIC_TURNSTILE_SITE_KEY` (client).
+
+### Disclaimer System
+
+First-time participants must accept a disclaimer before bidding or creating auctions:
+
+- **Seller disclaimer**: Warning about fees, item lock during auction, settlement responsibility
+- **Bidder disclaimer**: Warning about bid commitment, payment obligation if winning
+
+Stored in `auction_disclaimers` table with `(user_id, role)` primary key. Checked server-side on every bid/create. Client caches in localStorage for instant UI but server is source of truth.
+
+### Admin Controls
+
+Available on the auction detail page for admin users:
+
+- **Freeze/Unfreeze**: Pauses bidding and countdown. On unfreeze, `ends_at` is extended by the frozen duration. Requires reason.
+- **Force Cancel**: Cancels auction regardless of bid state. Requires reason.
+- **Bid Rollback**: Roll back bids to a specific point or remove all bids. All rolled-back bids are marked as `rolled_back` in the audit log. Requires reason.
+- **Audit Log**: Toggle to view complete audit trail of all actions on an auction.
+
+### Database Tables (nexus-users)
+
+#### ENUM Types
+
+```sql
+auction_status: draft, active, ended, settled, cancelled, frozen
+auction_bid_status: active, outbid, won, rolled_back
+auction_audit_action: created, activated, bid_placed, buyout, ended, settled,
+                      cancelled_by_seller, cancelled_by_admin, frozen, unfrozen,
+                      bid_rolled_back, edited
+```
+
+#### `auctions`
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | uuid | Primary key |
+| seller_id | bigint | FK to users |
+| item_set_id | uuid | FK to item_sets (ON DELETE RESTRICT) |
+| title | text | Auction title (max 120 chars) |
+| description | text | Description (max 2000 chars) |
+| starting_bid | numeric(12,2) | Starting bid (>= 0.01) |
+| buyout_price | numeric(12,2) | Optional buyout (>= starting_bid) |
+| current_bid | numeric(12,2) | Current highest bid |
+| current_bidder | bigint | FK to users (current highest bidder) |
+| bid_count | integer | Number of bids |
+| fee | numeric(12,2) | Calculated fee at settlement |
+| status | auction_status | Current status |
+| duration_days | integer | Duration (1-365) |
+| starts_at | timestamptz | When auction went active |
+| ends_at | timestamptz | When auction ends (extended by anti-sniping) |
+| original_ends_at | timestamptz | Original end time (caps anti-snipe extension) |
+| frozen_at | timestamptz | When frozen (for calculating freeze duration) |
+| settled_at | timestamptz | Settlement time |
+| created_at | timestamptz | Creation time |
+| updated_at | timestamptz | Last update |
+| deleted_at | timestamptz | Soft delete |
+
+#### `auction_bids`
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | uuid | Primary key |
+| auction_id | uuid | FK to auctions |
+| bidder_id | bigint | FK to users |
+| amount | numeric(12,2) | Bid amount |
+| status | auction_bid_status | active/outbid/won/rolled_back |
+| created_at | timestamptz | Bid time |
+
+#### `auction_audit_log`
+
+| Column | Type | Description |
+|--------|------|-------------|
+| id | bigserial | Primary key |
+| auction_id | uuid | FK to auctions |
+| user_id | bigint | FK to users (nullable for system actions) |
+| action | auction_audit_action | Action type |
+| details | jsonb | Context-specific data |
+| created_at | timestamptz | Action time |
+
+`details` JSONB stores context like: bid amounts, previous values, rollback target, admin reason, etc.
+
+#### `auction_disclaimers`
+
+| Column | Type | Description |
+|--------|------|-------------|
+| user_id | bigint | FK to users (PK) |
+| role | text | 'bidder' or 'seller' (PK) |
+| accepted_at | timestamptz | Acceptance time |
+
+#### Item Set Extension
+
+```sql
+ALTER TABLE item_sets ADD COLUMN IF NOT EXISTS customized boolean NOT NULL DEFAULT false;
+```
+
+### API Endpoints
+
+```
+GET    /api/auction                        - List auctions (public, filters + pagination)
+POST   /api/auction                        - Create draft auction (verified, seller disclaimer)
+GET    /api/auction/[id]                   - Auction detail with bid history (public)
+PUT    /api/auction/[id]                   - Edit draft / activate auction (owner)
+DELETE /api/auction/[id]                   - Cancel or soft-delete (owner, no bids for cancel)
+POST   /api/auction/[id]/bid              - Place bid (verified, Turnstile, bidder disclaimer)
+POST   /api/auction/[id]/buyout           - Buyout (verified, Turnstile, bidder disclaimer)
+POST   /api/auction/[id]/settle           - Settle ended auction (seller)
+GET    /api/auction/my                     - User's auctions + bids (verified)
+GET    /api/auction/disclaimer             - Check disclaimer status (verified)
+POST   /api/auction/disclaimer             - Accept disclaimer (verified)
+POST   /api/auction/[id]/admin/freeze      - Freeze/unfreeze (admin)
+POST   /api/auction/[id]/admin/cancel      - Force cancel (admin)
+POST   /api/auction/[id]/admin/rollback    - Rollback bids (admin)
+GET    /api/auction/[id]/admin/audit       - Audit log (admin)
+```
+
+### Rate Limiting
+
+| Endpoint | Limit | Window |
+|----------|-------|--------|
+| Create auction | 5 | 1 hour |
+| Place bid | 10 | 1 minute |
+| Buyout | 5 | 1 minute |
+| Settle | 10 | 1 minute |
+| Admin actions | 20 | 1 minute |
+
+Uses peek-then-increment pattern: validate first, only increment rate limit on successful action.
+
+### Bid Placement Flow
+
+1. Auth + verified check
+2. Rate limit peek
+3. Turnstile token verification
+4. Check bidder disclaimer accepted
+5. Validate bid amount >= current_bid + min_increment
+6. `BEGIN` transaction with `SELECT ... FOR UPDATE` on auction row
+7. Re-verify bid validity inside transaction (anti-race)
+8. Insert bid, update auction `current_bid`/`current_bidder`/`bid_count`, mark previous bid as `outbid`
+9. Apply anti-sniping extension if within 5-minute window
+10. Insert audit log entry
+11. Increment rate limit
+12. `COMMIT`
+
+### Limits
+
+| Constraint | Value |
+|-----------|-------|
+| Max auctions per user | 20 |
+| Max title length | 120 chars |
+| Max description length | 2,000 chars |
+| Min starting bid | 0.01 PED |
+| Max duration (bidding) | 30 days |
+| Max duration (buyout-only) | 365 days |
+
+### Tests
+
+```
+nexus/tests/auction/auction-api.spec.ts    - E2E API tests
+nexus/tests/auction/auction-pages.spec.ts  - E2E page tests
+```
+
+Coverage: Authentication, disclaimers, admin access, bid validation, page loading, navigation, form sections, market overview.
+
+### Discord Integration
+
+A dedicated Discord text channel displays all active auctions as embed messages, managed by the bot.
+
+**Module:** `nexus-bot/auctions.js`
+
+**Setup:** `/channel set type:Auctions channel:#channel-name`
+
+**How it works:**
+- Bot polls `auction_audit_log` every 30 seconds using a watermark (`lastAuctionAuditId` in `bot_config`)
+- Each active auction gets one embed message with title, pricing, seller, and a Discord auto-updating relative timestamp (`<t:UNIX:R>`)
+- Embeds are color-coded by urgency: green (>24h), yellow (1-24h), red (<1h), blue (frozen), gray (ended), purple (bought out)
+- Every 5 minutes, embed colors are refreshed to reflect time progression
+- On bot restart, performs a full sync: posts missing embeds, updates existing ones, cleans stale ones
+
+**Audit action → Discord action:**
+
+| Action | Effect |
+|--------|--------|
+| `activated` | Post new embed (or update if already exists) |
+| `bid_placed`, `edited`, `bid_rolled_back`, `frozen`, `unfrozen` | Edit embed |
+| `buyout` | Edit embed, delete after 30 min |
+| `ended`, `settled` | Edit embed, delete after 30 min |
+| `cancelled_by_seller`, `cancelled_by_admin` | Delete embed immediately |
+
+**Database:** `auctions.discord_message_id` (TEXT) tracks which Discord message corresponds to each auction. Migration: `047_auction_discord.sql`.
+
+**Sorting:** Discord messages cannot be reordered. Auctions appear in activation order. Discord's `<t:UNIX:R>` timestamps auto-update on the client, and color coding provides visual urgency cues.
+
+---
+
 ## Price Tracking
 
 Historical item price observations with pre-computed summaries for charting.
@@ -1181,6 +1490,7 @@ The market section works alongside the services marketplace:
 - **Exchange**: One-time item trades
 - **Shops**: Persistent storefronts
 - **Rentals**: Temporary item lending with calendar-based availability
+- **Auctions**: Timed bidding on item sets with optional buyout
 - **Services**: Recurring service offerings (healing, DPS, transport)
 
 See `docs/services.md` for service marketplace documentation.
