@@ -93,6 +93,26 @@
     }
   }
 
+  // Cancel auction (owner, active with no bids)
+  $: canCancel = isSeller && auction?.status === 'active' && (auction?.bid_count || 0) === 0;
+
+  function handleCancel() {
+    requestConfirm('Cancel this auction? This cannot be undone.', async () => {
+      try {
+        const res = await fetch(`/api/auction/${auction.id}`, { method: 'DELETE' });
+        const result = await res.json();
+        if (!res.ok) {
+          addToast(result.error || 'Failed to cancel', { type: 'error' });
+          return;
+        }
+        addToast('Auction cancelled', { type: 'success' });
+        await invalidateAll();
+      } catch {
+        addToast('Failed to cancel auction', { type: 'error' });
+      }
+    });
+  }
+
   // Admin: freeze/unfreeze
   async function handleFreeze() {
     if (!adminReason.trim()) {
@@ -251,9 +271,14 @@
             {/if}
           </div>
         </div>
-        {#if isSeller && auction.status === 'draft'}
+        {#if isSeller && (auction.status === 'draft' || canCancel)}
           <div class="header-actions">
-            <a href="/market/auction/{auction.id}/edit" class="btn-secondary">Edit</a>
+            {#if auction.status === 'draft'}
+              <a href="/market/auction/{auction.id}/edit" class="btn-secondary">Edit</a>
+            {/if}
+            {#if canCancel}
+              <button class="btn-danger" on:click={handleCancel}>Cancel Auction</button>
+            {/if}
           </div>
         {/if}
       </div>
