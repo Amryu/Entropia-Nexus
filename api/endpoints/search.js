@@ -240,7 +240,7 @@ async function search(query, fuzzy = false){
     : query;
 
   // Multi-word search: split query for individual word matching
-  const searchWords = searchName.split(/\s+/).filter(w => w.length >= 2);
+  const searchWords = searchName.split(/\s+/).filter(w => w.length >= 2 || /^\d+$/.test(w));
   const isMultiWord = searchWords.length > 1;
   const mwStart = useFuzzy ? 4 : 2;
   const mwIdx = isMultiWord ? searchWords.map((_, i) => mwStart + i) : [];
@@ -382,7 +382,7 @@ async function searchItems(query, fuzzy = false, options = {}){
     : query;
 
   // Multi-word search: split query for individual word matching
-  const searchWords = searchName.split(/\s+/).filter(w => w.length >= 2);
+  const searchWords = searchName.split(/\s+/).filter(w => w.length >= 2 || /^\d+$/.test(w));
   const isMultiWord = searchWords.length > 1;
   const mwStart = useFuzzy ? 4 : 2;
   const mwIdx = isMultiWord ? searchWords.map((_, i) => mwStart + i) : [];
