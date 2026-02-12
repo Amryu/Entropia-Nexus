@@ -441,7 +441,7 @@
   function isShopOwner(s, u) {
     if (!s || !u?.verified) return false;
     if (u?.administrator) return true;
-    return s?.OwnerId === u?.id;
+    return s?.OwnerId != null && String(s.OwnerId) === String(u.id);
   }
 
   // Check if user can edit this shop (owner or manager)
@@ -450,7 +450,7 @@
     if (u?.administrator) return true;
 
     // Owner check
-    if (s?.OwnerId === u?.id) return true;
+    if (s?.OwnerId != null && String(s.OwnerId) === String(u.id)) return true;
 
     // Manager check
     return s?.Managers?.some(manager => manager.user_id === u?.id) || false;

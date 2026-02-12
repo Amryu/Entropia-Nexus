@@ -24,7 +24,7 @@ export async function GET({ params, locals, fetch }) {
   }
 
   // Check if user is owner
-  const isOwner = currentShop.OwnerId === user.id;
+  const isOwner = currentShop.OwnerId != null && String(currentShop.OwnerId) === String(user.id);
   
   if (!isOwner && !user?.grants?.includes('admin.panel')) {
     return getResponse({ error: 'You can only view managers for shops you own.' }, 403);
@@ -58,7 +58,7 @@ export async function PUT({ params, request, locals, fetch }) {
   }
 
   // Check if user is owner
-  const isOwner = currentShop.OwnerId === user.id;
+  const isOwner = currentShop.OwnerId != null && String(currentShop.OwnerId) === String(user.id);
   
   if (!isOwner && !user?.grants?.includes('admin.panel')) {
     return getResponse({ error: 'You can only manage managers for shops you own.' }, 403);

@@ -24,7 +24,7 @@ export async function GET({ params, locals, fetch }) {
   }
 
   // Check if user is owner or manager
-  const isOwner = currentShop.OwnerId === user.id;
+  const isOwner = currentShop.OwnerId != null && String(currentShop.OwnerId) === String(user.id);
   let isManager = false;
   
   if (!isOwner) {
@@ -73,7 +73,7 @@ export async function PUT({ params, request, locals, fetch }) {
   }
 
   // Check if user is owner or manager
-  const isOwner = currentShop.OwnerId === user.id;
+  const isOwner = currentShop.OwnerId != null && String(currentShop.OwnerId) === String(user.id);
   let isManager = false;
   
   if (!isOwner) {

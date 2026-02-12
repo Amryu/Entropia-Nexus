@@ -640,8 +640,8 @@
   }
 
   function selectOwner(u) {
-    // Store only the ID in Properties.OwnerId (as the schema expects)
-    updateField('Properties.OwnerId', u ? Number(u.id) : null);
+    // Store ID as string to avoid precision loss with large Discord snowflakes
+    updateField('Properties.OwnerId', u ? String(u.id) : null);
     // Keep display name locally for the editing session
     selectedOwnerDisplayName = u ? (u.eu_name || u.global_name || '') : '';
     ownerSearchQuery = '';

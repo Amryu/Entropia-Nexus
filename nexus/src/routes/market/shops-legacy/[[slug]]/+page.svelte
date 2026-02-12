@@ -260,7 +260,7 @@
     if (user?.administrator) return true;
     
     // Owner check
-    if (shop?.OwnerId === user?.id) return true;
+    if (shop?.OwnerId != null && String(shop.OwnerId) === String(user.id)) return true;
     
     // Manager check
     return shop?.Managers?.some(manager => manager.user_id === user?.id) || false;
