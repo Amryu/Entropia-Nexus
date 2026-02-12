@@ -19,6 +19,15 @@ const MAX_SCALE_FACTOR = 3.0;
 // Minimum trimmed content dimension — skip enhancement if content is smaller
 const MIN_CONTENT_SIZE = 8;
 
+// Extra pixels to preserve around trimmed content (protects anti-aliased edges)
+const TRIM_MARGIN = 2;
+
+// Mild sharpen applied after upscaling to recover detail
+// sigma controls radius; flat/jagged control thresholds for flat vs textured areas
+const SHARPEN_SIGMA = 0.8;
+const SHARPEN_FLAT = 1.0;
+const SHARPEN_JAGGED = 1.5;
+
 // Brightness classification thresholds (0–255 luminance)
 const BRIGHTNESS_DARK_THRESHOLD = 80;
 const BRIGHTNESS_LIGHT_THRESHOLD = 180;
@@ -117,35 +126,78 @@ export async function enhanceEntityImage(imageBuffer, mode) {
   const padding = Math.round(CANVAS_SIZE * PADDING_RATIO);
   const availableSize = CANVAS_SIZE - padding * 2;
 
-  // Step 1: Trim transparent borders
-  let trimmedBuffer, trimInfo;
+  // Step 1: Trim transparent borders, then optionally re-extract with margin to preserve AA edges
+  let trimmedBuffer, contentWidth = 0, contentHeight = 0;
   try {
-    const result = await sharp(imageBuffer)
+    const trimResult = await sharp(imageBuffer)
       .ensureAlpha()
       .trim({ threshold: 10 })
       .toBuffer({ resolveWithObject: true });
-    trimmedBuffer = result.data;
-    trimInfo = result.info;
+
+    const { width: tw, height: th, trimOffsetLeft, trimOffsetTop } = trimResult.info;
+
+    // Only attempt margin re-extraction if sharp provided valid offset info
+    if (typeof trimOffsetLeft === 'number' && typeof trimOffsetTop === 'number'
+        && tw > 0 && th > 0) {
+      const origMeta = await sharp(imageBuffer).metadata();
+      if (origMeta.width && origMeta.height) {
+        const left = Math.max(0, trimOffsetLeft - TRIM_MARGIN);
+        const top = Math.max(0, trimOffsetTop - TRIM_MARGIN);
+        const right = Math.min(origMeta.width, trimOffsetLeft + tw + TRIM_MARGIN);
+        const bottom = Math.min(origMeta.height, trimOffsetTop + th + TRIM_MARGIN);
+        contentWidth = right - left;
+        contentHeight = bottom - top;
+
+        // Sanity check: extracted region must be valid and smaller than original
+        if (contentWidth >= MIN_CONTENT_SIZE && contentHeight >= MIN_CONTENT_SIZE
+            && contentWidth <= origMeta.width && contentHeight <= origMeta.height) {
+          trimmedBuffer = await sharp(imageBuffer)
+            .ensureAlpha()
+            .extract({ left, top, width: contentWidth, height: contentHeight })
+            .toBuffer();
+        }
+      }
+    }
+
+    // Fall back to sharp's own trim output if margin extraction was skipped or invalid
+    if (!trimmedBuffer) {
+      trimmedBuffer = trimResult.data;
+      contentWidth = tw;
+      contentHeight = th;
+    }
   } catch {
     // Trim can fail on fully uniform images — return original
     return imageBuffer;
   }
 
-  if (trimInfo.width < MIN_CONTENT_SIZE || trimInfo.height < MIN_CONTENT_SIZE) {
+  if (contentWidth < MIN_CONTENT_SIZE || contentHeight < MIN_CONTENT_SIZE) {
     return imageBuffer;
   }
 
   // Step 2: Calculate scale factor
-  const maxDim = Math.max(trimInfo.width, trimInfo.height);
+  const maxDim = Math.max(contentWidth, contentHeight);
   const scaleFactor = Math.min(MAX_SCALE_FACTOR, availableSize / maxDim);
 
-  const newWidth = Math.round(trimInfo.width * scaleFactor);
-  const newHeight = Math.round(trimInfo.height * scaleFactor);
+  const newWidth = Math.round(contentWidth * scaleFactor);
+  const newHeight = Math.round(contentHeight * scaleFactor);
 
-  // Step 3: Scale the trimmed content
-  const scaledContent = await sharp(trimmedBuffer)
-    .resize(newWidth, newHeight, { kernel: sharp.kernel.lanczos3, fit: 'fill' })
-    .toBuffer();
+  // Step 3: Scale the trimmed content with mild sharpening when upscaling
+  let scaledContent;
+  try {
+    let scaleOp = sharp(trimmedBuffer)
+      .resize(newWidth, newHeight, { kernel: sharp.kernel.lanczos3, fit: 'fill' });
+
+    if (scaleFactor > 1.05) {
+      scaleOp = scaleOp.sharpen(SHARPEN_SIGMA, SHARPEN_FLAT, SHARPEN_JAGGED);
+    }
+
+    scaledContent = await scaleOp.toBuffer();
+  } catch {
+    // If sharpening fails, retry without it
+    scaledContent = await sharp(trimmedBuffer)
+      .resize(newWidth, newHeight, { kernel: sharp.kernel.lanczos3, fit: 'fill' })
+      .toBuffer();
+  }
 
   // Step 4: Brightness analysis and backdrop decision
   const brightness = await analyzeBrightness(trimmedBuffer);
