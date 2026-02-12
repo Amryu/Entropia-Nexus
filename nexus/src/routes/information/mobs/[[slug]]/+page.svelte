@@ -366,40 +366,59 @@
   }
 
   // ========== MOB CALCULATIONS ==========
-  function getDamageSpread(mobData, attackName) {
+  const DAMAGE_KEYS = ['Impact', 'Cut', 'Stab', 'Penetration', 'Shrapnel', 'Burn', 'Cold', 'Acid', 'Electric'];
+
+  function getDamageGroups(mobData, attackName) {
     if (!mobData?.Maturities) return null;
 
-    let attackSpreads = mobData.Maturities.map(x => {
-      let attack = x.Attacks?.find(y => y.Name === attackName);
-      if (attack == null) return null;
-      return {
-        Impact: attack.Damage?.Impact || 0,
-        Cut: attack.Damage?.Cut || 0,
-        Stab: attack.Damage?.Stab || 0,
-        Penetration: attack.Damage?.Penetration || 0,
-        Shrapnel: attack.Damage?.Shrapnel || 0,
-        Burn: attack.Damage?.Burn || 0,
-        Cold: attack.Damage?.Cold || 0,
-        Acid: attack.Damage?.Acid || 0,
-        Electric: attack.Damage?.Electric || 0,
-      }
-    }).filter(x => x != null);
+    // Sort maturities same as MobMaturities.svelte: non-bosses first, by HP*Level
+    const sorted = [...mobData.Maturities].sort((a, b) => {
+      const aIsBoss = a.Properties?.Boss === true;
+      const bIsBoss = b.Properties?.Boss === true;
+      if (aIsBoss !== bIsBoss) return aIsBoss ? 1 : -1;
+      const aHp = a.Properties?.Health;
+      const aLvl = a.Properties?.Level;
+      const bHp = b.Properties?.Health;
+      const bLvl = b.Properties?.Level;
+      const aHas = aHp != null && aLvl != null;
+      const bHas = bHp != null && bLvl != null;
+      if (aHas !== bHas) return aHas ? -1 : 1;
+      if (!aHas && !bHas) return 0;
+      return (aHp * aLvl) - (bHp * bLvl);
+    });
 
-    if (attackSpreads.length === 0) {
-      // Check if the attack exists at all
-      const hasAttack = mobData.Maturities.some(x => x.Attacks?.some(y => y.Name === attackName));
-      if (hasAttack) {
-        return { Impact: 0, Cut: 0, Stab: 0, Penetration: 0, Shrapnel: 0, Burn: 0, Cold: 0, Acid: 0, Electric: 0 };
-      }
-      return null;
+    let hasAnyAttack = false;
+    const entries = [];
+    for (const mat of sorted) {
+      const attack = mat.Attacks?.find(a => a.Name === attackName);
+      if (!attack) continue;
+      hasAnyAttack = true;
+      const spread = {};
+      for (const k of DAMAGE_KEYS) spread[k] = attack.Damage?.[k] || 0;
+      const key = DAMAGE_KEYS.map(k => Math.round(spread[k])).join(',');
+      entries.push({ name: mat.Name || 'Unknown', spread, key });
     }
 
-    // Average the damage spreads
-    const avgSpread = {};
-    ['Impact', 'Cut', 'Stab', 'Penetration', 'Shrapnel', 'Burn', 'Cold', 'Acid', 'Electric'].forEach(key => {
-      avgSpread[key] = attackSpreads.map(x => x[key]).reduce((a, b) => a + b, 0) / attackSpreads.length;
-    });
-    return avgSpread;
+    if (!hasAnyAttack) return null;
+    if (entries.length === 0) return null;
+
+    // Group consecutive maturities with matching damage composition
+    const groups = [];
+    for (const entry of entries) {
+      const last = groups[groups.length - 1];
+      if (last && last.key === entry.key) {
+        last.maturities.push(entry.name);
+      } else {
+        groups.push({ damageSpread: entry.spread, maturities: [entry.name], key: entry.key });
+      }
+    }
+    return groups.map(({ damageSpread, maturities }) => ({ damageSpread, maturities }));
+  }
+
+  function formatMaturityLabel(maturities, totalCount) {
+    if (maturities.length === totalCount) return null;
+    if (maturities.length <= 2) return maturities.join(', ');
+    return `${maturities[0]} \u2013 ${maturities[maturities.length - 1]}`;
   }
 
   function getLowestHpPerLevel(mobData) {
@@ -482,9 +501,10 @@
   }
 
   // Reactive calculations
-  $: primaryDamageSpread = getDamageSpread(activeMob, 'Primary');
-  $: secondaryDamageSpread = getDamageSpread(activeMob, 'Secondary');
-  $: tertiaryDamageSpread = getDamageSpread(activeMob, 'Tertiary');
+  $: primaryDamageGroups = getDamageGroups(activeMob, 'Primary');
+  $: secondaryDamageGroups = getDamageGroups(activeMob, 'Secondary');
+  $: tertiaryDamageGroups = getDamageGroups(activeMob, 'Tertiary');
+  $: totalMaturityCount = activeMob?.Maturities?.length || 0;
   $: lowestHpPerLevel = getLowestHpPerLevel(activeMob);
   $: healthRange = getHealthRange(activeMob);
   $: levelRange = getLevelRange(activeMob);
@@ -775,16 +795,18 @@
         {#if !isAsteroid}
           <div class="stats-section damage-section">
             <h4 class="section-title">Damage Breakdown</h4>
-            {#if primaryDamageSpread}
-              <MobDamageGrid damageSpread={primaryDamageSpread} label="Primary" />
-            {/if}
-            {#if secondaryDamageSpread}
-              <MobDamageGrid damageSpread={secondaryDamageSpread} label="Secondary" />
-            {/if}
-            {#if tertiaryDamageSpread}
-              <MobDamageGrid damageSpread={tertiaryDamageSpread} label="Tertiary" />
-            {/if}
-            {#if !primaryDamageSpread && !secondaryDamageSpread && !tertiaryDamageSpread}
+            {#each [{ name: 'Primary', groups: primaryDamageGroups }, { name: 'Secondary', groups: secondaryDamageGroups }, { name: 'Tertiary', groups: tertiaryDamageGroups }] as attack}
+              {#if attack.groups}
+                {#each attack.groups as group}
+                  {@const matLabel = formatMaturityLabel(group.maturities, totalMaturityCount)}
+                  <MobDamageGrid
+                    damageSpread={group.damageSpread}
+                    label={attack.groups.length === 1 && !matLabel ? attack.name : `${attack.name}${matLabel ? ` (${matLabel})` : ''}`}
+                  />
+                {/each}
+              {/if}
+            {/each}
+            {#if !primaryDamageGroups && !secondaryDamageGroups && !tertiaryDamageGroups}
               <div class="no-data">No damage data available</div>
             {/if}
           </div>
