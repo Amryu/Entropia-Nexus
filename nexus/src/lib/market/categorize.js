@@ -59,8 +59,12 @@ export function categorizeItems(items, {
     } else if (type === 'blueprint') {
       if (!hasBlueprints) categorizeBlueprint(item, categorized.blueprints);
     } else if (type === 'material') {
-      // Do not reroute here; only move explicit Financial items in the 'financial' type branch
-      if (!hasMaterials) categorizeMaterial(item, categorized.materials);
+      const subType = item?.Properties?.Type?.toLowerCase?.() || '';
+      if (subType === 'deed' || subType === 'token') {
+        categorizeFinancial(item, categorized.financial);
+      } else if (!hasMaterials) {
+        categorizeMaterial(item, categorized.materials);
+      }
     } else if (type === 'consumable') {
       categorizeConsumable(item, categorized.consumables);
     } else if (type === 'vehicle') {
@@ -493,24 +497,12 @@ function categorizeVehicle(item, vehicles) {
 }
 
 function categorizeFinancial(item, financial) {
+  const t = item?.Properties?.Type?.toLowerCase?.() || '';
   const n = (item?.Name || '').toLowerCase();
-  // Map specific names only
-  const shares = new Set([
-    'arkadia underground deed',
-    'arkadia moon deed',
-    'compet deed',
-    'entropia unreal token',
-    'calypso plot token'
-  ]);
-  const tokens = new Set([
-    'twen token',
-    'combat token',
-    'teleportation token'
-  ]);
 
-  if (shares.has(n)) financial.shares.push(item);
-  else if (tokens.has(n)) financial.tokens.push(item);
-  // Deeds intentionally left empty for now; ignore others
+  if (t === 'deed' || n.includes('deed')) financial.estate_deeds.push(item);
+  else if (t === 'token' || n.includes('token')) financial.tokens.push(item);
+  else if (n.includes('share')) financial.shares.push(item);
 }
 
 function isFinancialItem(item) {
