@@ -25,6 +25,10 @@ export const Mob = {
           "type": ["number", "null"],
           "default": null
         },
+        "AttacksPerMinute": {
+          "type": ["number", "null"],
+          "default": null
+        },
         "IsSweatable": {
           "type": ["boolean", "null"],
           "default": null

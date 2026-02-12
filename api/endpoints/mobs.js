@@ -51,7 +51,8 @@ function formatMob(m, rel){
     Properties: {
       Description: m.Description,
       AttackRange: m.AttackRange != null ? Number(m.AttackRange) : null,
-      AggressionRange: m.AggressionRange,
+      AggressionRange: m.AggressionRange != null ? Number(m.AggressionRange) : null,
+      AttacksPerMinute: m.AttacksPerMinute != null ? Number(m.AttacksPerMinute) : null,
       IsSweatable: m.Sweatable === 1,
     },
     DefensiveProfession: m.DefensiveProfession ? { Name: m.DefensiveProfession, Links: { "$Url": `/professions/${m.DefensiveProfessionId}` } } : null,

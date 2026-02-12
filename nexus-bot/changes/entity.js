@@ -713,7 +713,8 @@ export const UpsertConfigs = {
       { name: "SpeciesId", value: async (x, c) => await c.query(`SELECT "Id" FROM ONLY "MobSpecies" WHERE "Name" = $1`, [x.Species.Name]).then(res => res.rows[0]?.Id) },
       { name: "PlanetId", value: async (x, c) => await c.query(`SELECT "Id" FROM ONLY "Planets" WHERE "Name" = $1`, [x.Planet.Name]).then(res => res.rows[0]?.Id) },
       { name: "AttackRange", value: x => x.Properties.AttackRange },
-      { name: "AggressionRange", value: x => x.Properties.Aggression },
+      { name: "AggressionRange", value: x => x.Properties.AggressionRange },
+      { name: "AttacksPerMinute", value: x => x.Properties.AttacksPerMinute },
       { name: "Sweatable", value: x => x.Properties.IsSweatable ? 1 : 0 },
       { name: "DefensiveProfessionId", value: async (x, c) => await c.query(`SELECT "Id" FROM ONLY "Professions" WHERE "Name" = $1`, [x.DefensiveProfession.Name]).then(res => res.rows[0]?.Id) },
       { name: "Type", value: x => {
