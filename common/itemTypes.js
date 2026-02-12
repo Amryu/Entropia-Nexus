@@ -40,6 +40,9 @@ export const TIERABLE_TYPES = new Set([
   'MedicalTool',
 ]);
 
+/** Material sub-types (from Materials.Type) that use absolute markup despite being stackable */
+export const ABSOLUTE_MARKUP_MATERIAL_TYPES = new Set(['Deed', 'Token']);
+
 /** Item types that require gender selection in exchange */
 export const GENDERED_TYPES = new Set(['Armor', 'ArmorSet', 'Clothing']);
 
@@ -141,10 +144,15 @@ export function isStackableType(type, name) {
  * Determine if an item type + name combination uses percent markup.
  * @param {string} type - Item type string
  * @param {string} name - Item name string
+ * @param {string|null} subType - Material sub-type (e.g., 'Deed', 'Token') for absolute markup override
  * @returns {boolean}
  */
-export function isPercentMarkupType(type, name) {
-  if (isStackableType(type, name)) return true;
+export function isPercentMarkupType(type, name, subType = null) {
+  if (isStackableType(type, name)) {
+    // Deed/Token materials use absolute markup despite being stackable
+    if (subType && ABSOLUTE_MARKUP_MATERIAL_TYPES.has(subType)) return false;
+    return true;
+  }
   // (L) items with condition use percent markup
   if (isLimitedByName(name) && CONDITION_TYPES.has(type)) return true;
   return false;

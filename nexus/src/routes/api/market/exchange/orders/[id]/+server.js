@@ -188,7 +188,7 @@ export async function PUT({ params, request, locals }) {
   }
 
   // Enforce minimum markup based on item type (reuse itemInfo from cooldown check)
-  if (itemInfo && isPercentMarkupServer(itemInfo.type, itemInfo.name) && markup < 100) {
+  if (itemInfo && isPercentMarkupServer(itemInfo.type, itemInfo.name, itemInfo.subType) && markup < 100) {
     return getResponse({ error: 'Markup must be at least 100% for this item type' }, 400);
   }
 

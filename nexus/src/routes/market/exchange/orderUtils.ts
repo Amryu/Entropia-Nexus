@@ -1,7 +1,7 @@
 // Utility functions for order dialog logic
 import { hasItemTag } from '$lib/util.js';
 import { hasCondition } from '$lib/shopUtils';
-import { STACKABLE_TYPES, TIERABLE_TYPES } from '$lib/common/itemTypes.js';
+import { STACKABLE_TYPES, TIERABLE_TYPES, ABSOLUTE_MARKUP_MATERIAL_TYPES } from '$lib/common/itemTypes.js';
 
 export function isBlueprint(item: any): boolean {
   const type = item?.Properties?.Type ?? item?.Type ?? item?.t;
@@ -46,7 +46,13 @@ export function isItemStackable(item: any): boolean {
 }
 
 export function isPercentMarkup(item: any): boolean {
-  return isItemStackable(item) || (itemHasCondition(item) && isLimited(item));
+  if (isItemStackable(item)) {
+    // Deed/Token materials use absolute markup despite being stackable
+    const subType = item?.Properties?.Type ?? item?.st;
+    if (ABSOLUTE_MARKUP_MATERIAL_TYPES.has(subType)) return false;
+    return true;
+  }
+  return itemHasCondition(item) && isLimited(item);
 }
 
 export function isAbsoluteMarkup(item: any): boolean {

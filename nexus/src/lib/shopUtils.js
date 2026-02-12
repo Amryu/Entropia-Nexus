@@ -1,13 +1,16 @@
-import { CONDITION_TYPES } from '$lib/common/itemTypes.js';
+import { CONDITION_TYPES, ABSOLUTE_MARKUP_MATERIAL_TYPES } from '$lib/common/itemTypes.js';
 
-// Utility to decide which items are non-stackable for MU formatting
+// Utility to decide which items use absolute markup (non-stackable display)
 /**
  * @param {any} item
  */
 export function isNonStackable(item) {
-  // Items with condition/TT that can be damaged
   const t = item?.Properties?.Type || item?.Type || item?.type || item?.t || '';
-  return CONDITION_TYPES.has(t);
+  // Items with condition/TT that can be damaged
+  if (CONDITION_TYPES.has(t)) return true;
+  // Deed/Token materials use absolute markup despite being stackable
+  if (ABSOLUTE_MARKUP_MATERIAL_TYPES.has(t)) return true;
+  return false;
 }
 
 // New alias for future condition-based logic. Keep current behavior identical.

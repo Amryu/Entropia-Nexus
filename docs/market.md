@@ -99,11 +99,13 @@ Unit Price = MaxTT × (Markup / 100)
 Total = Quantity × Unit Price
 ```
 
-**Absolute Markup Items** (condition items):
+**Absolute Markup Items** (condition items, Deed/Token materials):
 ```
 Unit Price = CurrentTT + Markup
 Total = Quantity × Unit Price
 ```
+
+**Note**: Deed and Token materials use absolute markup despite being stackable. This is determined by `ABSOLUTE_MARKUP_MATERIAL_TYPES` in `common/itemTypes.js`. The slim payload includes an `st` field for these items to carry the sub-type.
 
 **Blueprints**:
 ```
@@ -203,6 +205,22 @@ Metadata stored:
   "Gender": "Male"
 }
 ```
+
+### Clothing Categories
+
+Clothing items in the exchange are sub-categorized by `Properties.Type`:
+
+| Category | Types |
+|----------|-------|
+| **Rings** | `Ring` — further split by `Properties.Slot`: Left Finger, Right Finger, Other (no slot) |
+| **Boots** | Boot variants |
+| **Coats** | Coat, Cloak |
+| **Dresses** | Dress variants |
+| **Gloves** | Glove variants |
+| ... | Standard clothing types |
+| **Other** | Unrecognized clothing types |
+
+Rings are positioned first in the clothing sub-categories. Implementation in `categorize.js:categorizeClothing()`.
 
 ### Pet Orders
 
@@ -524,13 +542,13 @@ GET  /api/market/prices/exchange/[itemId]           - Exchange-derived price dat
 
 Price suggestions use a 2% relative undercut formula:
 
-**Percent-markup items** (stackables, L items):
+**Percent-markup items** (stackables, L items — excludes Deed/Token materials):
 ```
 undercut_amount = 2% × (markup - 100)
 ```
 Example: 150% → 2% × 50 = 1.0 → undercut to 149%. Minimum: 0.01 percentage points.
 
-**Absolute-markup items** (condition items):
+**Absolute-markup items** (condition items, Deed/Token materials):
 ```
 undercut_amount = 2% × markup
 ```
@@ -1078,8 +1096,9 @@ Historical item price observations with pre-computed summaries for charting.
 
 ### Price Formats
 
-- **Stackable items**: percentage markup (e.g., `123.4567` = 123.4567% of MaxTT)
+- **Stackable items**: percentage markup (e.g., `123.4567` = 123.4567% of MaxTT) — excludes Deed/Token materials
 - **Condition items** (`hasCondition()` = true): flat absolute markup (e.g., `45.0000` = +45 PED)
+- **Deed/Token materials**: flat absolute markup despite being stackable (`ABSOLUTE_MARKUP_MATERIAL_TYPES`)
 
 The `price_value` column stores the raw number; interpretation depends on item type.
 

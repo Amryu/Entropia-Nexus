@@ -178,6 +178,7 @@ function makeEmptyCategories() {
     },
     enhancers: { weapon: [], armor: [], medical: [], mining_finder: [], mining_excavator: [] },
     clothes: {
+      rings: { left: [], right: [], other: [] },
       boots: [], coats: [], dresses: [], gloves: [], hats: [], jackets: [], pants: [],
       shades: [], shirts: [], shoes: [], skirts: [], underwear: [], other: []
     },
@@ -357,6 +358,14 @@ function categorizeEnhancer(enhancer, enhancers) {
 
 function categorizeClothing(item, clothes) {
   const t = (item?.Properties?.Type || item?.Type || '').toLowerCase();
+
+  if (t === 'ring') {
+    const slot = (item?.Properties?.Slot || '').toLowerCase();
+    if (slot.includes('left')) clothes.rings.left.push(item);
+    else if (slot.includes('right')) clothes.rings.right.push(item);
+    else clothes.rings.other.push(item);
+    return;
+  }
 
   // Normalize and map many variants into existing buckets
   if (t.includes('boot')) {

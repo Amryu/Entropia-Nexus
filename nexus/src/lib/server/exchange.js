@@ -485,14 +485,16 @@ export async function countUserOrdersForItem(userId, itemId, type) {
 
 import { isPercentMarkupType, isStackableType, ARMOR_SET_OFFSET, GENDERED_TYPES } from '$lib/common/itemTypes.js';
 
-// ID offsets for gender lookup (mirrors api/endpoints/constants.js)
+// ID offsets for type/gender lookup (mirrors api/endpoints/constants.js)
+const MATERIAL_ID_OFFSET = 1000000;
 const ARMOR_ID_OFFSET = 3000000;
 const CLOTHING_ID_OFFSET = 8000000;
 
 /**
- * Get item type and name from the Items table (or ArmorSets for that ID range).
+ * Get item type, name, and optional sub-type from the Items table (or ArmorSets for that ID range).
+ * For Materials, also returns the sub-type from the Materials table (e.g., 'Deed', 'Token').
  * @param {number} itemId
- * @returns {Promise<{type: string, name: string}|null>}
+ * @returns {Promise<{type: string, name: string, subType?: string}|null>}
  */
 export async function getItemType(itemId) {
   // ArmorSet IDs live in the 13000000–13999999 range
@@ -502,7 +504,15 @@ export async function getItemType(itemId) {
     return rows[0] ? { type: 'ArmorSet', name: rows[0].Name } : null;
   }
   const { rows } = await pool.query('SELECT "Type", "Name" FROM ONLY "Items" WHERE "Id" = $1', [itemId]);
-  return rows[0] ? { type: rows[0].Type, name: rows[0].Name } : null;
+  if (!rows[0]) return null;
+  const result = { type: rows[0].Type, name: rows[0].Name };
+  // For Materials, look up sub-type (Deed, Token, etc.)
+  if (result.type === 'Material') {
+    const matId = itemId - MATERIAL_ID_OFFSET;
+    const { rows: matRows } = await pool.query('SELECT "Type" FROM ONLY "Materials" WHERE "Id" = $1', [matId]);
+    if (matRows[0]?.Type) result.subType = matRows[0].Type;
+  }
+  return result;
 }
 
 /**
@@ -527,9 +537,12 @@ export async function getItemGender(itemId, itemType) {
 /**
  * Server-side check: does this item type use percentage markup?
  * Delegates to shared itemTypes module.
+ * @param {string} type - Item type (e.g., 'Material')
+ * @param {string} name - Item name
+ * @param {string|null} subType - Material sub-type (e.g., 'Deed', 'Token')
  */
-export function isPercentMarkupServer(type, name) {
-  return isPercentMarkupType(type, name);
+export function isPercentMarkupServer(type, name, subType = null) {
+  return isPercentMarkupType(type, name, subType);
 }
 
 /**

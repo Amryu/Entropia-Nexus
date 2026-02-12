@@ -3,19 +3,27 @@ import { pool, nexusPool } from './db.js';
 
 import { isPercentMarkupType } from '$lib/common/itemTypes.js';
 
-function getMarkupType(itemType, itemName) {
-  return isPercentMarkupType(itemType, itemName) ? 'percent' : 'absolute';
+function getMarkupType(typeInfo, itemName) {
+  if (typeInfo && typeof typeInfo === 'object') {
+    return isPercentMarkupType(typeInfo.type, itemName, typeInfo.subType) ? 'percent' : 'absolute';
+  }
+  return isPercentMarkupType(typeInfo, itemName) ? 'percent' : 'absolute';
 }
+
+const MATERIAL_ID_OFFSET = 1000000;
 
 async function resolveMarkupTypes(itemIds) {
   if (!nexusPool || itemIds.length === 0) return {};
   try {
     const { rows } = await nexusPool.query(
-      `SELECT "Id", "Type" FROM ONLY "Items" WHERE "Id" = ANY($1)`,
+      `SELECT i."Id", i."Type", m."Type" AS "SubType"
+       FROM ONLY "Items" i
+       LEFT JOIN ONLY "Materials" m ON i."Type" = 'Material' AND m."Id" = i."Id" - ${MATERIAL_ID_OFFSET}
+       WHERE i."Id" = ANY($1)`,
       [itemIds]
     );
     const map = {};
-    for (const row of rows) map[row.Id] = row.Type;
+    for (const row of rows) map[row.Id] = { type: row.Type, subType: row.SubType };
     return map;
   } catch {
     return {};

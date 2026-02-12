@@ -2,6 +2,7 @@
 import { apiCall } from "$lib/util";
 import { categorizeItems } from "$lib/market/categorize";
 import { getAllOrderCounts, getLatestExchangePriceMap, getOrderPlanets } from "$lib/server/exchange.js";
+import { ABSOLUTE_MARKUP_MATERIAL_TYPES } from "$lib/common/itemTypes.js";
 
 // In-memory cache
 let cache = {
@@ -446,12 +447,17 @@ function slimItem(item) {
     v = item.Properties.NutrioCapacity / 100;
   }
 
+  // Material sub-type for absolute markup items (Deed, Token)
+  const st = type === 'Material' && item.Properties?.Type && ABSOLUTE_MARKUP_MATERIAL_TYPES.has(item.Properties.Type)
+    ? item.Properties.Type : undefined;
+
   return {
     i: id,
     n: name,
     t: type,
     v,
     ...(g !== undefined && { g }),
+    ...(st && { st }),
     o: null,
     b: counts?.buys || null,
     s: counts?.sells || null,
