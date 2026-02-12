@@ -6,8 +6,12 @@ const { recordQuery } = require('../metrics');
 try {
 	// numeric
 	types.setTypeParser(1700, v => (v === null ? null : parseFloat(v)));
-	// int8
-	types.setTypeParser(20, v => (v === null ? null : parseInt(v, 10)));
+	// int8 — parse as number when safe, keep as string for large values (e.g. Discord snowflakes)
+	types.setTypeParser(20, v => {
+		if (v === null) return null;
+		const n = parseInt(v, 10);
+		return Number.isSafeInteger(n) ? n : v;
+	});
 	// float4, float8
 	types.setTypeParser(700, v => (v === null ? null : parseFloat(v)));
 	types.setTypeParser(701, v => (v === null ? null : parseFloat(v)));
