@@ -16,6 +16,7 @@
 <script>
   // @ts-nocheck
   import { browser } from '$app/environment';
+  import { darkMode } from '../../../stores.js';
   import ImageUploadDialog from './ImageUploadDialog.svelte';
 
   /** @type {string|number|null} Entity ID */
@@ -117,7 +118,7 @@
   $: entityImageUrl = (!isCreateMode && entityId)
     ? (pendingImagePreview ||
       userPendingImage?.previewUrl ||
-      (imageChecked && imageExists ? `/api/img/${entityType}/${entityId}` : null))
+      (imageChecked && imageExists ? `/api/img/${entityType}/${entityId}?mode=${$darkMode ? 'dark' : 'light'}` : null))
     : null;
 
   // Show pending overlay for just-uploaded preview OR user's existing pending image
