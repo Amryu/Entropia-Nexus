@@ -1,7 +1,7 @@
 //@ts-nocheck
 import { getResponse } from '$lib/util.js';
 import {
-  getOrderById, updateOrder, closeOrder, getItemType, getItemGender, isPercentMarkupServer,
+  getOrderById, updateOrder, closeOrder, getItemType, isPercentMarkupServer,
   isItemFungible, formatRetryTime, PLANETS,
   RATE_LIMIT_EDIT_PER_MIN, RATE_LIMIT_CLOSE_PER_MIN,
   RATE_LIMIT_ITEM_COOLDOWN_MS, RATE_LIMIT_ITEM_FUNGIBLE_COOLDOWN, RATE_LIMIT_ITEM_NONFUNGIBLE_COOLDOWN,
@@ -76,8 +76,9 @@ function enforceSetConstraint(details, itemType) {
 
 /**
  * Validate and enforce gender constraints based on item type.
+ * Gender is available on itemInfo.gender (fetched from API).
  */
-async function enforceGenderConstraint(details, itemId, itemInfo) {
+function enforceGenderConstraint(details, itemInfo) {
   if (!GENDERED_TYPES.has(itemInfo?.type)) {
     if (details?.Gender) {
       const { Gender, ...rest } = details;
@@ -86,7 +87,7 @@ async function enforceGenderConstraint(details, itemId, itemInfo) {
     return { details };
   }
 
-  const itemGender = await getItemGender(itemId, itemInfo.type);
+  const itemGender = itemInfo.gender;
 
   if (itemInfo.type === 'Clothing' && itemGender === null) {
     return { error: 'This clothing item cannot be traded (no gender classification).' };
@@ -121,7 +122,7 @@ function getVerifiedUser(locals) {
 /**
  * PUT /api/market/exchange/orders/[id] — Edit an order
  */
-export async function PUT({ params, request, locals }) {
+export async function PUT({ params, request, locals, fetch }) {
   const { user, error } = getVerifiedUser(locals);
   if (error) return error;
 
@@ -155,7 +156,7 @@ export async function PUT({ params, request, locals }) {
   // Per-item 3-minute cooldown (shared with create)
   let itemInfo = null;
   try {
-    itemInfo = await getItemType(existing.item_id);
+    itemInfo = await getItemType(existing.item_id, fetch);
   } catch (err) {
     console.error('Error checking item type for edit cooldown:', err);
   }
@@ -208,7 +209,7 @@ export async function PUT({ params, request, locals }) {
   let details = enforceSetConstraint(validateOrderDetails(body.details), itemInfo?.type);
 
   // Validate and enforce gender constraints
-  const genderResult = await enforceGenderConstraint(details, existing.item_id, itemInfo);
+  const genderResult = enforceGenderConstraint(details, itemInfo);
   if (genderResult.error) {
     return getResponse({ error: genderResult.error }, 400);
   }

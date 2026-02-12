@@ -2,7 +2,7 @@
 import { getResponse } from '$lib/util.js';
 import {
   getUserOrders, createOrder, countUserOrdersBySide, countUserOrdersForItem,
-  getItemType, getItemGender, isPercentMarkupServer, isItemFungible, formatRetryTime,
+  getItemType, isPercentMarkupServer, isItemFungible, formatRetryTime,
   MAX_SELL_ORDERS, MAX_BUY_ORDERS, MAX_ORDERS_PER_ITEM, PLANETS,
   RATE_LIMIT_CREATE_PER_MIN, RATE_LIMIT_CREATE_PER_HOUR, RATE_LIMIT_CREATE_PER_DAY,
   RATE_LIMIT_ITEM_COOLDOWN_MS, RATE_LIMIT_ITEM_FUNGIBLE_COOLDOWN, RATE_LIMIT_ITEM_NONFUNGIBLE_COOLDOWN,
@@ -81,9 +81,10 @@ function enforceSetConstraint(details, itemType) {
 
 /**
  * Validate and enforce gender constraints based on item type.
+ * Gender is available on itemInfo.gender (fetched from API).
  * Returns { details } on success, { error } on failure.
  */
-async function enforceGenderConstraint(details, itemId, itemInfo) {
+function enforceGenderConstraint(details, itemInfo) {
   if (!GENDERED_TYPES.has(itemInfo?.type)) {
     // Strip Gender from non-gendered types
     if (details?.Gender) {
@@ -93,7 +94,7 @@ async function enforceGenderConstraint(details, itemId, itemInfo) {
     return { details };
   }
 
-  const itemGender = await getItemGender(itemId, itemInfo.type);
+  const itemGender = itemInfo.gender;
 
   // Clothing with null gender → not tradeable
   if (itemInfo.type === 'Clothing' && itemGender === null) {
@@ -148,7 +149,7 @@ export async function GET({ locals }) {
 /**
  * POST /api/market/exchange/orders — Create a new order
  */
-export async function POST({ request, locals }) {
+export async function POST({ request, locals, fetch }) {
   const { user, error } = getVerifiedUser(locals);
   if (error) return error;
 
@@ -207,7 +208,7 @@ export async function POST({ request, locals }) {
   // Look up item type (used for markup validation and per-item rate limits)
   let itemInfo = null;
   try {
-    itemInfo = await getItemType(itemId);
+    itemInfo = await getItemType(itemId, fetch);
   } catch (err) {
     console.error('Error checking item type:', err);
   }
@@ -259,7 +260,7 @@ export async function POST({ request, locals }) {
   let details = enforceSetConstraint(validateOrderDetails(body.details), itemInfo?.type);
 
   // Validate and enforce gender constraints
-  const genderResult = await enforceGenderConstraint(details, itemId, itemInfo);
+  const genderResult = enforceGenderConstraint(details, itemInfo);
   if (genderResult.error) {
     return getResponse({ error: genderResult.error }, 400);
   }

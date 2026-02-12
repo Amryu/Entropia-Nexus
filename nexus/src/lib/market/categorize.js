@@ -35,6 +35,7 @@ export function categorizeItems(items, {
   const hasBlueprints = Array.isArray(blueprints) && blueprints.length > 0;
   const hasMaterials = Array.isArray(materials) && materials.length > 0;
   const hasVehicles = Array.isArray(vehicles) && vehicles.length > 0;
+  const hasMiscTools = Array.isArray(miscTools) && miscTools.length > 0;
 
   // First pass: generic Items list
   (items || []).forEach(item => {
@@ -51,6 +52,9 @@ export function categorizeItems(items, {
       if (!hasArmor) categorizeArmor(item, categorized.armor);
     } else if (type === 'tool') {
       categorizeTool(item, categorized.tools);
+    } else if (type === 'misctool') {
+      // Skip base items when detailed /misctools endpoint provides them
+      if (!hasMiscTools) categorized.tools.misc.push(item);
     } else if (type === 'effectchip' || type === 'teleportationchip') {
       categorized.tools.mindforce.push(item);
     } else if (type === 'enhancer') {
@@ -129,7 +133,7 @@ export function categorizeItems(items, {
   (finderAmplifiers || []).forEach(a => categorized.tools.mining.amplifiers.push(a));
   (excavators || []).forEach(e => categorized.tools.mining.excavators.push(e));
   (scanners || []).forEach(s => categorized.tools.scanning.push(s));
-  (miscTools || []).forEach(tool => categorizeMiscTool(tool, categorized.tools));
+  (miscTools || []).forEach(tool => categorizeMiscTool(tool, categorized.tools, categorized.skill_implants));
 
   (enhancers || []).forEach(e => categorizeEnhancer(e, categorized.enhancers));
   (blueprints || []).forEach(b => categorizeBlueprint(b, categorized.blueprints));
@@ -341,9 +345,10 @@ function categorizeTool(item, tools) {
   else tools.misc.push(item);
 }
 
-function categorizeMiscTool(tool, tools) {
+function categorizeMiscTool(tool, tools, skillImplants) {
   const t = tool?.Properties?.Type?.toLowerCase?.() || '';
-  if (t === 'harvester') tools.harvesting.push(tool);
+  if (t === 'skill implant') skillImplants.push(tool);
+  else if (t === 'harvester') tools.harvesting.push(tool);
   else if (t === 'beauty') tools.beauty.push(tool);
   else if (t === 'texturizing' || t === 'colorator' || t === 'bleacher') tools.design.push(tool);
   else if (t === 'vehicle repair') tools.vehicle.push(tool);

@@ -610,7 +610,7 @@
   $: isGenderedDetail = GENDERED_TYPES.has(selectedItem?.t) && selectedItemGender !== 'Neutral' && selectedItemGender !== null;
 
   // Gender filter for price history (gendered items only)
-  let priceGender = 'Male';
+  let priceGender = 'Both';
 
   // Sync category selection from route
   $: {
@@ -1069,7 +1069,14 @@
 
   // Reload price data when gender filter changes for gendered items
   $: if (isDetailView && selectedItem?.i && isGenderedDetail) {
-    reloadPricesForGender(selectedItem.i, priceGender);
+    if (priceGender === 'Both') {
+      exchangePrices = null;
+      periodStats = null;
+      priceHistoryData = [];
+      lastGenderPriceKey = '';
+    } else {
+      reloadPricesForGender(selectedItem.i, priceGender);
+    }
   }
 
   let ordersLoading = false;
@@ -1086,13 +1093,13 @@
     showPriceHistory = false;
     priceHistoryData = [];
     periodStats = null;
-    // Reset price gender to 'Male' when switching items
-    priceGender = 'Male';
-    const genderParam = isGenderedDetail ? `&gender=${priceGender}` : '';
+    // Reset price gender to 'Both' when switching items (no prices loaded until M/F selected)
+    priceGender = 'Both';
+    const skipPrices = isGenderedDetail; // gendered items on 'Both' don't need prices
     try {
       const [ordersRes, pricesRes] = await Promise.all([
         fetch(`/api/market/exchange/orders/item/${encodeURIComponent(numericId)}`),
-        fetch(`/api/market/prices/exchange/${encodeURIComponent(numericId)}?period=${selectedPeriod}${genderParam}`).catch(() => null),
+        skipPrices ? null : fetch(`/api/market/prices/exchange/${encodeURIComponent(numericId)}?period=${selectedPeriod}`).catch(() => null),
       ]);
       if (ordersRes.ok) {
         const data = await ordersRes.json();
@@ -1106,8 +1113,6 @@
         const priceData = await pricesRes.json();
         exchangePrices = { buy: priceData.buy, sell: priceData.sell };
         periodStats = priceData.period || null;
-        // Sync gender price key to prevent duplicate fetch from reloadPricesForGender reactive
-        if (genderParam) lastGenderPriceKey = `${numericId}::${priceGender}`;
       } else {
         exchangePrices = null;
         periodStats = null;
@@ -1124,6 +1129,7 @@
   // Reload period stats when period changes (without reloading orders)
   let lastPeriodStatsKey = '';
   async function loadPeriodStats(itemId, period) {
+    if (isGenderedDetail && priceGender === 'Both') return;
     const genderParam = isGenderedDetail ? `&gender=${priceGender}` : '';
     const key = `${itemId}::${period}::${genderParam}`;
     if (key === lastPeriodStatsKey) return;
@@ -1146,6 +1152,7 @@
   // Load/reload price history when toggled on or period changes
   async function loadPriceHistory() {
     if (!selectedItem?.i) return;
+    if (isGenderedDetail && priceGender === 'Both') return;
     priceHistoryLoading = true;
     const genderParam = isGenderedDetail ? `&gender=${priceGender}` : '';
     try {
@@ -2201,39 +2208,46 @@
             {#if isGenderedDetail}
               <div class="gender-toggle">
                 <button class="gender-btn" class:active={priceGender === 'Male'} on:click={() => priceGender = 'Male'}>M</button>
+                <button class="gender-btn" class:active={priceGender === 'Both'} on:click={() => priceGender = 'Both'}>M+F</button>
                 <button class="gender-btn" class:active={priceGender === 'Female'} on:click={() => priceGender = 'Female'}>F</button>
               </div>
             {/if}
-            <div class="metric">
-              Median:<br /><span class="metric-value"
-                >{periodStats?.median != null
-                  ? formatMarkupDisplay(periodStats.median)
-                  : (typeof selectedItem?.m === "number" ? formatMarkupDisplay(selectedItem.m) : "N/A")}</span
-              >
-            </div>
-            <div class="metric">
-              10%:<br /><span class="metric-value"
-                >{periodStats?.p10 != null
-                  ? formatMarkupDisplay(periodStats.p10)
-                  : (typeof selectedItem?.p === "number" ? formatMarkupDisplay(selectedItem.p) : "N/A")}</span
-              >
-            </div>
-            <div class="metric">
-              WAP:<br /><span class="metric-value"
-                >{periodStats?.wap != null
-                  ? formatMarkupDisplay(periodStats.wap)
-                  : (typeof selectedItem?.w === "number" ? formatMarkupDisplay(selectedItem.w) : "N/A")}</span
-              >
-            </div>
-            {#if exchangePrices?.buy}
-              <div class="metric exchange-metric">
-                Best Buy:<br /><span class="metric-value buy-value">{formatMarkupDisplay(exchangePrices.buy.best_markup)}</span>
+            {#if isGenderedDetail && priceGender === 'Both'}
+              <div class="metric gender-hint">
+                Select <strong>M</strong> or <strong>F</strong> for prices
               </div>
-            {/if}
-            {#if exchangePrices?.sell}
-              <div class="metric exchange-metric">
-                Best Sell:<br /><span class="metric-value sell-value">{formatMarkupDisplay(exchangePrices.sell.best_markup)}</span>
+            {:else}
+              <div class="metric">
+                Median:<br /><span class="metric-value"
+                  >{periodStats?.median != null
+                    ? formatMarkupDisplay(periodStats.median)
+                    : (typeof selectedItem?.m === "number" ? formatMarkupDisplay(selectedItem.m) : "N/A")}</span
+                >
               </div>
+              <div class="metric">
+                10%:<br /><span class="metric-value"
+                  >{periodStats?.p10 != null
+                    ? formatMarkupDisplay(periodStats.p10)
+                    : (typeof selectedItem?.p === "number" ? formatMarkupDisplay(selectedItem.p) : "N/A")}</span
+                >
+              </div>
+              <div class="metric">
+                WAP:<br /><span class="metric-value"
+                  >{periodStats?.wap != null
+                    ? formatMarkupDisplay(periodStats.wap)
+                    : (typeof selectedItem?.w === "number" ? formatMarkupDisplay(selectedItem.w) : "N/A")}</span
+                >
+              </div>
+              {#if exchangePrices?.buy}
+                <div class="metric exchange-metric">
+                  Best Buy:<br /><span class="metric-value buy-value">{formatMarkupDisplay(exchangePrices.buy.best_markup)}</span>
+                </div>
+              {/if}
+              {#if exchangePrices?.sell}
+                <div class="metric exchange-metric">
+                  Best Sell:<br /><span class="metric-value sell-value">{formatMarkupDisplay(exchangePrices.sell.best_markup)}</span>
+                </div>
+              {/if}
             {/if}
             <div class="history-controls">
               <select
@@ -3486,6 +3500,14 @@
   }
   .gender-btn:hover:not(.active) {
     background: var(--hover-color);
+  }
+  .gender-hint {
+    color: var(--text-muted);
+    font-size: 11px;
+    white-space: nowrap;
+  }
+  .gender-hint strong {
+    color: var(--text-color);
   }
 
   /* Mobile sidebar toggle */

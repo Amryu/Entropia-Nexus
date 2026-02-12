@@ -482,56 +482,51 @@ export async function countUserOrdersForItem(userId, itemId, type) {
 }
 
 // ---------- Item Type Lookup ----------
+// Fetches item metadata via the entity API (not direct DB queries — entity tables
+// live in the nexus database, while this module's pool connects to nexus-users).
 
+import { apiCall } from '$lib/util.js';
 import { isPercentMarkupType, isStackableType, ARMOR_SET_OFFSET, GENDERED_TYPES } from '$lib/common/itemTypes.js';
 
-// ID offsets for type/gender lookup (mirrors api/endpoints/constants.js)
+// Material ID offset for sub-type lookup (mirrors api/endpoints/constants.js)
 const MATERIAL_ID_OFFSET = 1000000;
-const ARMOR_ID_OFFSET = 3000000;
-const CLOTHING_ID_OFFSET = 8000000;
 
 /**
- * Get item type, name, and optional sub-type from the Items table (or ArmorSets for that ID range).
- * For Materials, also returns the sub-type from the Materials table (e.g., 'Deed', 'Token').
+ * Get item type, name, gender, and optional sub-type via the entity API.
+ * ArmorSets (13M+ range) are detected by ID since they aren't in the Items table.
+ * Gender is included for Armor/Clothing items (from the /items endpoint).
+ * For Materials, also fetches the sub-type from /materials (e.g., 'Deed', 'Token').
+ *
  * @param {number} itemId
- * @returns {Promise<{type: string, name: string, subType?: string}|null>}
+ * @param {typeof fetch} fetch - SvelteKit fetch for server-side API calls
+ * @returns {Promise<{type: string, name: string, gender?: string, subType?: string}|null>}
  */
-export async function getItemType(itemId) {
-  // ArmorSet IDs live in the 13000000–13999999 range
+export async function getItemType(itemId, fetch) {
+  // ArmorSet IDs live in the 13000000–13999999 range (not in Items table)
   if (itemId >= ARMOR_SET_OFFSET && itemId < ARMOR_SET_OFFSET + 1000000) {
-    const armorSetId = itemId - ARMOR_SET_OFFSET;
-    const { rows } = await pool.query('SELECT "Name" FROM ONLY "ArmorSets" WHERE "Id" = $1', [armorSetId]);
-    return rows[0] ? { type: 'ArmorSet', name: rows[0].Name } : null;
+    return { type: 'ArmorSet', name: null, gender: 'Both' };
   }
-  const { rows } = await pool.query('SELECT "Type", "Name" FROM ONLY "Items" WHERE "Id" = $1', [itemId]);
-  if (!rows[0]) return null;
-  const result = { type: rows[0].Type, name: rows[0].Name };
-  // For Materials, look up sub-type (Deed, Token, etc.)
+
+  const item = await apiCall(fetch, `/items/${itemId}`);
+  if (!item) return null;
+
+  const type = item.Properties?.Type;
+  const result = {
+    type,
+    name: item.Name,
+    // For gendered types: null means "no gender data" (e.g. clothing with NULL gender → non-tradeable).
+    // For non-gendered types: undefined means "gender not applicable".
+    gender: GENDERED_TYPES.has(type) ? (item.Properties?.Gender ?? null) : undefined
+  };
+
+  // For Materials, look up sub-type (Deed, Token, etc.) from detailed endpoint
   if (result.type === 'Material') {
     const matId = itemId - MATERIAL_ID_OFFSET;
-    const { rows: matRows } = await pool.query('SELECT "Type" FROM ONLY "Materials" WHERE "Id" = $1', [matId]);
-    if (matRows[0]?.Type) result.subType = matRows[0].Type;
+    const mat = await apiCall(fetch, `/materials/${matId}`);
+    if (mat?.Properties?.Type) result.subType = mat.Properties.Type;
   }
-  return result;
-}
 
-/**
- * Look up the gender of an item (Armor/ArmorSet/Clothing).
- * Returns 'Both', 'Male', 'Female', 'Neutral', null (Clothing with no gender), or undefined (non-gendered type).
- */
-export async function getItemGender(itemId, itemType) {
-  if (itemType === 'ArmorSet') return 'Both';
-  if (itemType === 'Armor') {
-    const armorId = itemId - ARMOR_ID_OFFSET;
-    const { rows } = await pool.query('SELECT "Gender" FROM ONLY "Armors" WHERE "Id" = $1', [armorId]);
-    return rows[0]?.Gender ?? null;
-  }
-  if (itemType === 'Clothing') {
-    const clothingId = itemId - CLOTHING_ID_OFFSET;
-    const { rows } = await pool.query('SELECT "Gender" FROM ONLY "Clothes" WHERE "Id" = $1', [clothingId]);
-    return rows[0]?.Gender ?? null;
-  }
-  return undefined;
+  return result;
 }
 
 /**

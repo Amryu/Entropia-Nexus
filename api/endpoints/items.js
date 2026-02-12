@@ -22,7 +22,12 @@ function formatItem(x){
     Id: x.Id,
     Name: x.Name,
     Aliases: aliases.length > 0 ? aliases : undefined,
-    Properties: { Type: x.Type, Weight: x.Weight !== null ? Number(x.Weight) : null, Economy: { Value: x.Value !== null ? Number(x.Value) : null } },
+    Properties: {
+      Type: x.Type,
+      Weight: x.Weight !== null ? Number(x.Weight) : null,
+      Economy: { Value: x.Value !== null ? Number(x.Value) : null },
+      ...(x.Gender != null && { Gender: x.Gender })
+    },
     Links: { "$Url": `/${x.Type.toLowerCase()}s/${x.Id % 100000}` }
   };
 }
