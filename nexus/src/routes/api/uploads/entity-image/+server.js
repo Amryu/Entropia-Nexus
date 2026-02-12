@@ -23,7 +23,7 @@ import {
 } from '$lib/server/rateLimiter.js';
 
 // Rate limit configuration
-const RATE_LIMIT_MAX = 10; // Max uploads
+const RATE_LIMIT_MAX = 50; // Max uploads
 const RATE_LIMIT_WINDOW = 5 * 60 * 1000; // 5 minutes
 
 // Max request body size (slightly larger than max file to account for form data)
