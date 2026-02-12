@@ -6,6 +6,7 @@ import { Client, GatewayIntentBits, Collection, Events, ChannelType } from 'disc
 import { getUsers, getOpenChanges, setChangeThreadId, getDeletedChanges, deleteChange, getFlightsNeedingThread, setFlightThreadId, getCheckinsPendingThreadAdd, markCheckinAddedToThread, getUnnotifiedFlightStateChanges, getFlightsNeedingArchive, clearFlightThreadId, getPendingRescheduleNotifications, markRescheduleNotificationSent, getPendingRentalDmNotifications, markRentalDmNotificationSent, getServicePilots, getFlightAcceptedCheckins, getFlightsReadyForCustomerKick, setFlightCompletedAt, expireTickets, computeAllPriceSummaries, getPendingTradeRequests, getTradeRequestItems, setTradeRequestThread, getWarnableTradeRequests, markWarningSent, getExpirableTradeRequests, updateTradeRequestStatus, findTradeRequestByThread, updateLastActivity, getActiveTradeRequestsWithNewItems, getNewTradeRequestItems, adjustOfferQuantities, getUsersWithGrant } from './db.js';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { compareJson, validate, printSideBySide } from './change.js';
+import { getTypeLink } from './util.js';
 import { snapshotExchangePrices, computeAllExchangeSummaries } from './exchange-prices.js';
 import { collectEuName } from './commands/verification/setEuName.js';
 import { resumeVerification } from './commands/verification/verifyUser.js';
@@ -483,6 +484,20 @@ async function checkChanges() {
         await thread.send(`A new change has been submitted by <@${change.author_id}>.${reviewerMention} Please post proof to validate your changes and await approval.`);
       } catch (e) {
         console.error(`Failed to send submission message to thread ${thread.id} (${change.data.Name}): ${e.message}`);
+      }
+
+      const entityPath = getTypeLink(change.data.Name, change.entity, change.data.Planet?.Name ?? null);
+      if (entityPath) {
+        try {
+          const baseUrl = `https://entropianexus.com${entityPath}`;
+          const editUrl = change.type === 'Create'
+            ? `${baseUrl}?mode=create&changeId=${change.id}`
+            : baseUrl;
+          const linkMsg = await thread.send(`**Edit:** ${editUrl}`);
+          await linkMsg.pin().catch(e => console.error(`Failed to pin edit link in thread ${thread.id}: ${e.message}`));
+        } catch (e) {
+          console.error(`Failed to post edit link in thread ${thread.id}: ${e.message}`);
+        }
       }
     }
     else {

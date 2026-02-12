@@ -70,8 +70,36 @@ export function getTypeLink(name, type, subType = null) {
       return `/information/professions/${encodeURIComponentSafe(name)}`;
     case 'Vendor':
       return `/information/vendors/${encodeURIComponentSafe(name)}`;
+    case 'ArmorSet':
+      return `/items/armorsets/${encodeURIComponentSafe(name)}`;
+    case 'Mission':
+      return `/information/missions/${encodeURIComponentSafe(name)}`;
+    case 'MissionChain':
+      return `/information/missions/${encodeURIComponentSafe(name)}?view=chains`;
+    case 'Strongbox':
+      return `/items/strongboxes/${encodeURIComponentSafe(name)}`;
+    case 'Shop':
+      return `/market/shops/${encodeURIComponentSafe(name)}`;
+    case 'Apartment':
+      return `/maps/${getMainPlanetName(subType).replace(/[^0-9a-zA-Z]/g, '').toLowerCase()}/${encodeURIComponentSafe(name)}`;
     default:
       return null;
+  }
+}
+
+export function getMainPlanetName(planetName) {
+  if (planetName === 'Asteroid F.O.M.A.' || planetName === 'Crystal Palace' || planetName === 'Space' || planetName === 'Setesh') {
+    return 'Calypso';
+  } else if (planetName === 'Arkadia Moon' || planetName === 'Arkadia Underground') {
+    return 'Arkadia';
+  } else if (planetName === 'HELL' || planetName === 'Secret Island' || planetName === 'Hunt The THING') {
+    return 'ROCKtropia';
+  } else if (planetName === 'Ancient Greece') {
+    return 'Next Island';
+  } else if (planetName === 'DSEC9') {
+    return 'Monria';
+  } else {
+    return planetName;
   }
 }
 
