@@ -1101,9 +1101,10 @@ Timed auction system for item sets with bidding, optional buyout pricing, admin 
 - **Tiered Fee Brackets**: Free under 100 PED, 2% for 100-1000, 1% above 1000
 - **Bid Increments**: 2% of current bid rounded to neat values (minimum 1 PEC)
 - **Anti-Sniping**: Bids within last 5 minutes reset the countdown to 5 minutes (max 30 min total extension)
-- **Turnstile Captcha**: Cloudflare Turnstile required for bids and buyouts (first captcha in project)
+- **Turnstile Captcha**: Cloudflare Turnstile required for bids and buyouts
 - **Disclaimers**: First-time bidder and seller disclaimers before participation
-- **Item Set Integration**: Uses existing item set system with optional "customized" flag
+- **Item Set Integration**: Uses item set system with optional "customized" flag and custom image upload
+- **Custom Images**: Item sets with (C) tagged items can upload portrait images (up to 320x480)
 - **Exchange Redirect**: Single non-customized items shown a suggestion to use Exchange instead
 - **Admin Controls**: Freeze/unfreeze, force cancel, bid rollback with audit trail
 - **Full Audit Log**: Every action recorded with user, timestamp, and context details
@@ -1122,7 +1123,7 @@ Timed auction system for item sets with bidding, optional buyout pricing, admin 
 
 ```
 nexus/src/lib/components/auction/
-├── AuctionCard.svelte             - Grid card for listing page
+├── AuctionCard.svelte             - Grid card for listing page (first item image preview)
 ├── AuctionStatusBadge.svelte      - Color-coded status badge
 ├── AuctionCountdown.svelte        - Live countdown with anti-sniping awareness
 ├── AuctionPricePanel.svelte       - Price info display (current/starting/buyout/min next)
@@ -1132,6 +1133,12 @@ nexus/src/lib/components/auction/
 ├── FeePreview.svelte              - Real-time fee calculator with bracket breakdown
 ├── AuctionDurationSelector.svelte - Duration picker with presets
 └── ExchangeRedirectWarning.svelte - Warning for single non-customized items
+
+nexus/src/lib/components/itemsets/
+├── ItemSetDialog.svelte           - Create/edit item sets with search and metadata
+├── ItemSetDisplay.svelte          - Read-only viewer with metadata badges
+├── ItemMetaEditor.svelte          - Per-item metadata fields (tier, TT, QR, gender, pet)
+└── SetEntry.svelte                - Item row in edit mode (drag, quantity, delete)
 
 nexus/src/lib/components/
 └── TurnstileWidget.svelte         - Generic Cloudflare Turnstile captcha (reusable)
@@ -1154,6 +1161,15 @@ Constants: `ANTI_SNIPE_WINDOW_MS` (5 min), `ANTI_SNIPE_EXTENSION_MS` (5 min), `A
 
 Neat value steps for bid increments: `[0.01, 0.02, 0.05, 0.10, 0.20, 0.50, 1, 2, 5, 10, 20, 50, 100, 200, 500, 1000]`
 
+**File:** `common/itemTypes.js`
+
+| Export | Description |
+|--------|-------------|
+| `TYPE_ID_OFFSETS` | Map of item type names to their global ID offsets in the Items table |
+| `globalIdToEntityId(globalId, type)` | Convert global Items.Id to entity-specific table ID |
+
+Used by auction detail page and AuctionCard to construct correct image URLs. Item sets store global offset IDs from the search API (e.g., weapon ID 5 → `Items.Id = 2000005`), but image files are stored under the entity's own ID (`/api/img/weapon/5`).
+
 ### Auction Status Machine
 
 ```
@@ -1163,6 +1179,7 @@ ended → settled (seller confirms)
 active → cancelled (seller: no bids only)
 active → frozen (admin) → active (admin unfreezes, extends end time)
 active/frozen → cancelled (admin force cancel)
+draft → deleted (soft delete, sets deleted_at)
 ```
 
 | Status | Description |
@@ -1173,6 +1190,152 @@ active/frozen → cancelled (admin force cancel)
 | `settled` | Seller confirmed completion |
 | `cancelled` | Cancelled by seller (no bids) or admin |
 | `frozen` | Admin paused — no bids, countdown paused |
+
+### Auction Create Flow
+
+1. User navigates to `/market/auction/create`
+2. **Seller disclaimer**: If not yet accepted, modal appears before form submission
+3. **Item set creation**: User creates an item set via `ItemSetDialog` (search items, add metadata)
+   - Item set is immediately persisted to DB (`POST /api/itemsets`)
+   - If user navigates away without saving the auction, orphaned item set is auto-deleted (`beforeNavigate` + `onDestroy`)
+4. **(C) detection**: If any item has a `(C)` tag (regex: `/\(([^)]*,)?C(,[^)]*)?\)$/`), a "Customized" checkbox appears
+5. **Custom image upload** (if customized): Direct file upload to `POST /api/uploads/entity-image` with `entityType: 'item-set'`. Server validates ownership and (C) tag presence. Image processed to fit within 320x480 (`fit: 'inside'`).
+6. **Exchange redirect warning**: If single non-customized item, suggests using Exchange instead
+7. **Form fields**: Title, description, starting bid, buyout price (optional), buyout-only toggle, duration
+8. **Save as draft**: `POST /api/auction` creates draft; sets `customized` flag on item set if checked
+9. **Activate**: `PUT /api/auction/[id]` with `action: 'activate'` transitions draft → active
+
+### Auction Detail Page Layout
+
+- **Left panel**: Item set section with optional custom image
+  - Custom image (if `item_set_customized`): Floats right on desktop (max-width 280px), full-width on mobile
+  - Item grid: Up to 10 items shown as image cards, flowing around the custom image
+  - Item images: Loaded from `/api/img/{type}/{entityId}` where `entityId = globalIdToEntityId(item.itemId, item.type)`
+  - Larger item sets (>10 items): Full `ItemSetDisplay` component
+- **Right panel**: Pricing, bid section, bid history
+- **Admin section**: Freeze/cancel/rollback controls, audit log toggle
+
+### Item Sets
+
+Item sets are reusable collections of items with metadata, used by both auctions and rentals.
+
+#### Data Structure
+
+`item_sets.data` JSONB stores the item collection:
+
+```javascript
+{
+  items: [
+    // Regular items
+    {
+      itemId: number | null,     // Global offset ID from Items table (search API)
+      type: string,              // e.g., "Weapon", "Blueprint", "Material"
+      name: string,              // Item display name
+      quantity: number,          // 1-9999999
+      meta: {
+        tier: number,            // 0-9 (tierable non-L items only)
+        tiR: number,             // 0-999999 (tierable non-L items only)
+        currentTT: number,       // 0-10000 (condition items only)
+        qr: number,              // 0.01-1.0 (non-L blueprints only)
+        gender: "Male"|"Female", // Gender-selectable items only
+        pet: {                   // Pet type items only
+          level: number,         // 0-200
+          currentTT: number,     // 0-10000
+          skills: { [name]: boolean }
+        }
+      }
+    },
+    // Armor/Clothing set entries
+    {
+      setType: "ArmorSet" | "ClothingSet",
+      setId: number | null,      // Global offset ID of the set
+      setName: string,
+      gender: "Male" | "Female", // Optional
+      pieces: [
+        {
+          itemId: number | null,
+          name: string,
+          slot: string,          // e.g., "Chest", "Feet"
+          gender: "Male" | "Female",
+          meta: { currentTT: number }
+        }
+      ]
+    }
+  ]
+}
+```
+
+#### Item ID Offsets
+
+Item sets store `itemId` values from the search API, which are global IDs with type-specific offsets baked in (from `api/endpoints/constants.js`). To display item images, these must be converted to entity-specific IDs using `globalIdToEntityId()` from `common/itemTypes.js`.
+
+| Type | Offset | Example |
+|------|--------|---------|
+| Material | 1,000,000 | Material ID 124 → `Items.Id = 1000124` |
+| Weapon | 2,000,000 | Weapon ID 5 → `Items.Id = 2000005` |
+| Armor | 3,000,000 | Armor ID 50 → `Items.Id = 3000050` |
+| Blueprint | 6,000,000 | Blueprint ID 100 → `Items.Id = 6000100` |
+| Vehicle | 7,000,000 | Vehicle ID 10 → `Items.Id = 7000010` |
+| Clothing | 8,000,000 | ... |
+| Pet | 11,000,000 | ... |
+| ArmorSet | 13,000,000 | ... |
+
+Full offset map: `TYPE_ID_OFFSETS` in `common/itemTypes.js`.
+
+#### Image URL Construction
+
+```javascript
+// Item set stores global offset ID
+item.itemId = 2000005;  // Weapon with entity ID 5
+item.type = "Weapon";
+
+// Convert to entity ID for image URL
+const entityId = globalIdToEntityId(item.itemId, item.type); // → 5
+const url = `/api/img/weapon/5`;
+```
+
+Used in `AuctionCard.svelte` (listing thumbnail) and `auction/[id]/+page.svelte` (detail item grid).
+
+#### Item Set Validation
+
+**File:** `nexus/src/lib/server/itemSetUtils.js`
+
+| Constant | Value |
+|----------|-------|
+| `MAX_ITEM_SET_BYTES` | 100KB |
+| `MAX_ITEMS_PER_SET` | 100 |
+| `MAX_ITEM_SETS_PER_USER` | 50 |
+
+`sanitizeItemSetData(input)` validates and clamps all values:
+- Types checked against known type sets (`TIERABLE_TYPES`, `CONDITION_TYPES`, etc.)
+- Numeric values clamped to valid ranges
+- Unknown fields stripped
+- Set pieces limited to 20 per set
+
+#### Customized Flag
+
+The `customized` boolean on `item_sets` enables custom image upload. Requirements:
+- At least one item must have a `(C)` tag in its name
+- Flag persisted via `PUT /api/itemsets/[id]` with `{ customized: true }`
+- Validated server-side: rejects if no (C) items found
+
+#### Custom Image Processing
+
+Item-set images are processed differently from standard wiki entity images:
+
+| Property | Entity Images | Item-Set Images |
+|----------|---------------|-----------------|
+| Max dimensions | 320x320 | 320x480 |
+| Resize mode | `cover` (crop to square) | `inside` (fit, preserve aspect) |
+| Thumbnail | 128x128 | 128x128 (cover) |
+
+Server constant: `ITEM_SET_MAX_WIDTH = 320`, `ITEM_SET_MAX_HEIGHT = 480` in `imageProcessor.js`.
+
+The `ImageUploadDialog` component supports configurable `aspect`, `maxWidth`, and `maxHeight` props. For item-set uploads on the create page, files are uploaded directly (no cropper) and the server resizes to fit within 320x480.
+
+#### Item Set Protection
+
+Item sets linked to active rental offers (`status != 'deleted'`) cannot be edited or deleted. Both PUT and DELETE on `/api/itemsets/[id]` return 409 with `linkedRentalOffers` info.
 
 ### Fee Calculation
 
@@ -1221,9 +1384,64 @@ Stored in `auction_disclaimers` table with `(user_id, role)` primary key. Checke
 Available on the auction detail page for admin users:
 
 - **Freeze/Unfreeze**: Pauses bidding and countdown. On unfreeze, `ends_at` is extended by the frozen duration. Requires reason.
-- **Force Cancel**: Cancels auction regardless of bid state. Requires reason.
-- **Bid Rollback**: Roll back bids to a specific point or remove all bids. All rolled-back bids are marked as `rolled_back` in the audit log. Requires reason.
+- **Force Cancel**: Cancels auction regardless of bid state. Requires reason. All bids marked as `rolled_back`.
+- **Bid Rollback**: Roll back bids to a specific point or remove all bids. Target bid becomes `active`; all later bids marked as `rolled_back`. Requires reason.
 - **Audit Log**: Toggle to view complete audit trail of all actions on an auction.
+
+### Server-Side Logic
+
+**File:** `nexus/src/lib/server/auction.js`
+
+#### Constants
+
+| Constant | Value |
+|----------|-------|
+| `MAX_AUCTIONS_PER_USER` | 20 |
+| `MAX_TITLE_LENGTH` | 120 chars |
+| `MAX_DESCRIPTION_LENGTH` | 2,000 chars |
+| `MIN_STARTING_BID` | 0.01 PED |
+| `MAX_STARTING_BID` | 10,000,000 PED |
+| `MAX_BUYOUT_PRICE` | 10,000,000 PED |
+| `RATE_LIMIT_CREATE_PER_HOUR` | 5 |
+| `RATE_LIMIT_BID_PER_MIN` | 10 |
+| `RATE_LIMIT_BUYOUT_PER_MIN` | 5 |
+| `RATE_LIMIT_SETTLE_PER_MIN` | 10 |
+| `RATE_LIMIT_ADMIN_PER_MIN` | 20 |
+
+#### Key Functions
+
+| Function | Description |
+|----------|-------------|
+| `getAuction(id)` | Load auction with seller name, item set data, bid history |
+| `listAuctions(opts)` | Paginated listing with status/search/sort filters |
+| `getUserAuctions(userId)` | User's own auctions |
+| `getUserBids(userId)` | Auctions user has bid on |
+| `countUserActiveAuctions(userId)` | Count for limit enforcement |
+| `createAuction(userId, data)` | Create draft (validates item set ownership) |
+| `updateAuction(id, userId, data)` | Edit draft fields |
+| `activateAuction(id, userId)` | Draft → active (sets timing fields) |
+| `cancelAuction(id, userId)` | Seller cancel (only if no bids) |
+| `deleteAuction(id, userId)` | Soft-delete draft |
+| `placeBid(id, bidderId, amount)` | Transactional bid with `FOR UPDATE` lock |
+| `buyoutAuction(id, buyerId)` | Immediate buyout, calculates fee |
+| `settleAuction(id, userId)` | Seller confirms, marks winning bid |
+| `endExpiredAuctions()` | Debounced (30s), ends auctions past `ends_at` |
+| `freezeAuction(id, adminId, reason)` | Records `frozen_at` |
+| `unfreezeAuction(id, adminId, reason)` | Extends end by frozen duration |
+| `adminCancelAuction(id, adminId, reason)` | Force cancel, rolls back all bids |
+| `rollbackBids(id, adminId, targetBidId, reason)` | Selective bid rollback |
+| `hasAcceptedDisclaimer(userId, role)` | Check disclaimer status |
+| `acceptDisclaimer(userId, role)` | Record disclaimer acceptance |
+| `insertAuditLog(client, id, userId, action, details)` | Append to audit trail |
+| `getAuditLog(id)` | Full audit history with user names |
+
+#### Auction End Processing
+
+`endExpiredAuctions()` is called on-demand (not scheduled). Triggered by:
+- `GET /api/auction/[id]` — single auction detail load
+- `GET /api/auction/my` — user dashboard load
+
+Debounced to run at most once per 30 seconds. Finds all active auctions with `ends_at < NOW()`, sets status to `ended`, calculates fee, and logs the `ended` audit action.
 
 ### Database Tables (nexus-users)
 
@@ -1259,6 +1477,7 @@ auction_audit_action: created, activated, bid_placed, buyout, ended, settled,
 | original_ends_at | timestamptz | Original end time (caps anti-snipe extension) |
 | frozen_at | timestamptz | When frozen (for calculating freeze duration) |
 | settled_at | timestamptz | Settlement time |
+| discord_message_id | text | Discord embed message ID |
 | created_at | timestamptz | Creation time |
 | updated_at | timestamptz | Last update |
 | deleted_at | timestamptz | Soft delete |
@@ -1273,6 +1492,16 @@ auction_audit_action: created, activated, bid_placed, buyout, ended, settled,
 | amount | numeric(12,2) | Bid amount |
 | status | auction_bid_status | active/outbid/won/rolled_back |
 | created_at | timestamptz | Bid time |
+
+#### Bid Status Lifecycle
+
+| Event | Effect |
+|-------|--------|
+| New bid placed | Previous active bid → `outbid`, new bid → `active` |
+| Auction settled | Active bid → `won` |
+| Buyout | All bids → `outbid`, buyout bid → `won` |
+| Admin cancel | All bids → `rolled_back` |
+| Admin rollback | Bids after target → `rolled_back`, target → `active` |
 
 #### `auction_audit_log`
 
@@ -1295,13 +1524,22 @@ auction_audit_action: created, activated, bid_placed, buyout, ended, settled,
 | role | text | 'bidder' or 'seller' (PK) |
 | accepted_at | timestamptz | Acceptance time |
 
-#### Item Set Extension
+#### `item_sets`
 
-```sql
-ALTER TABLE item_sets ADD COLUMN IF NOT EXISTS customized boolean NOT NULL DEFAULT false;
-```
+| Column | Type | Description |
+|--------|------|-------------|
+| id | uuid | Primary key |
+| user_id | bigint | FK to users (ON DELETE CASCADE) |
+| name | text | Set name (max 120 chars) |
+| data | jsonb | Item collection (see data structure above) |
+| customized | boolean | Whether set uses custom images (default false) |
+| loadout_id | uuid | FK to loadouts (ON DELETE RESTRICT, nullable) |
+| created_at | timestamptz | Creation time |
+| last_update | timestamptz | Last update |
 
 ### API Endpoints
+
+#### Auction Endpoints
 
 ```
 GET    /api/auction                        - List auctions (public, filters + pagination)
@@ -1321,6 +1559,37 @@ POST   /api/auction/[id]/admin/rollback    - Rollback bids (admin)
 GET    /api/auction/[id]/admin/audit       - Audit log (admin)
 ```
 
+#### Listing Filters (`GET /api/auction`)
+
+| Parameter | Default | Values |
+|-----------|---------|--------|
+| `status` | `active` | active, ended, settled, cancelled |
+| `search` | — | Title search (ILIKE, max 100 chars) |
+| `sort` | `ends_at` | ends_at, created_at, current_bid, bid_count, starting_bid |
+| `order` | `asc` | asc, desc |
+| `limit` | 24 | 1-100 |
+| `offset` | 0 | Pagination offset |
+
+#### Item Set Endpoints
+
+```
+GET    /api/itemsets                        - User's item sets (authenticated)
+POST   /api/itemsets                        - Create item set (authenticated)
+GET    /api/itemsets/[id]                   - Get item set (owner)
+PUT    /api/itemsets/[id]                   - Update item set (owner)
+DELETE /api/itemsets/[id]                   - Delete item set (owner)
+```
+
+#### Image Endpoints
+
+```
+POST   /api/uploads/entity-image            - Upload custom image (verified, multipart/form-data)
+GET    /api/uploads/pending/[type]/[id]     - Check pending image status (authenticated)
+GET    /api/img/[entityType]/[entityId]     - Serve approved image (public)
+GET    /api/img/[entityType]/[entityId]?type=thumb  - Serve thumbnail (public)
+GET    /api/img/[entityType]/[entityId]?mode=dark   - Enhanced image with backdrop (public)
+```
+
 ### Rate Limiting
 
 | Endpoint | Limit | Window |
@@ -1330,6 +1599,10 @@ GET    /api/auction/[id]/admin/audit       - Audit log (admin)
 | Buyout | 5 | 1 minute |
 | Settle | 10 | 1 minute |
 | Admin actions | 20 | 1 minute |
+| Create item set | 10/min, 30/hour | — |
+| Update item set | 30 | 1 minute |
+| Delete item set | 10 | 1 minute |
+| Image upload | 50 | 5 minutes |
 
 Uses peek-then-increment pattern: validate first, only increment rate limit on successful action.
 
@@ -1353,11 +1626,17 @@ Uses peek-then-increment pattern: validate first, only increment rate limit on s
 | Constraint | Value |
 |-----------|-------|
 | Max auctions per user | 20 |
+| Max item sets per user | 50 |
+| Max items per set | 100 |
+| Max set data size | 100KB |
 | Max title length | 120 chars |
 | Max description length | 2,000 chars |
 | Min starting bid | 0.01 PED |
+| Max starting/buyout price | 10,000,000 PED |
 | Max duration (bidding) | 30 days |
 | Max duration (buyout-only) | 365 days |
+| Max custom image size | 2MB |
+| Custom image max dimensions | 320x480 (item-set), 320x320 (others) |
 
 ### Tests
 

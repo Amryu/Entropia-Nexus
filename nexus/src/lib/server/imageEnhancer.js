@@ -144,10 +144,13 @@ export async function enhanceEntityImage(imageBuffer, mode) {
         && tw > 0 && th > 0) {
       const origMeta = await sharp(imageBuffer).metadata();
       if (origMeta.width && origMeta.height) {
-        const left = Math.max(0, trimOffsetLeft - TRIM_MARGIN);
-        const top = Math.max(0, trimOffsetTop - TRIM_MARGIN);
-        const right = Math.min(origMeta.width, trimOffsetLeft + tw + TRIM_MARGIN);
-        const bottom = Math.min(origMeta.height, trimOffsetTop + th + TRIM_MARGIN);
+        // sharp 0.33+ returns negative offsets (e.g. -50 means 50px trimmed from that edge)
+        const absLeft = Math.abs(trimOffsetLeft);
+        const absTop = Math.abs(trimOffsetTop);
+        const left = Math.max(0, absLeft - TRIM_MARGIN);
+        const top = Math.max(0, absTop - TRIM_MARGIN);
+        const right = Math.min(origMeta.width, absLeft + tw + TRIM_MARGIN);
+        const bottom = Math.min(origMeta.height, absTop + th + TRIM_MARGIN);
         contentWidth = right - left;
         contentHeight = bottom - top;
 
@@ -221,7 +224,7 @@ export async function enhanceEntityImage(imageBuffer, mode) {
       .resize(newWidth, newHeight, { kernel: sharp.kernel.lanczos3, fit: 'fill' });
 
     if (scaleFactor > 1.05) {
-      scaleOp = scaleOp.sharpen(SHARPEN_SIGMA, SHARPEN_FLAT, SHARPEN_JAGGED);
+      scaleOp = scaleOp.sharpen({ sigma: SHARPEN_SIGMA, m1: SHARPEN_FLAT, m2: SHARPEN_JAGGED });
     }
 
     scaledContent = await scaleOp.toBuffer();
