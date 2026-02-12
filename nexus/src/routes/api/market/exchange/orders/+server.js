@@ -10,6 +10,7 @@ import {
 } from '$lib/server/exchange.js';
 import { GENDERED_TYPES } from '$lib/common/itemTypes.js';
 import { checkRateLimit, checkRateLimitPeek, incrementRateLimit } from '$lib/server/rateLimiter.js';
+import { verifyTurnstile } from '$lib/server/turnstile.js';
 
 const VALID_TYPES = ['BUY', 'SELL'];
 
@@ -172,6 +173,12 @@ export async function POST({ request, locals }) {
   } catch {
     return getResponse({ error: 'Invalid JSON' }, 400);
   }
+
+  // Verify Turnstile
+  const turnstileToken = body.turnstile_token;
+  if (!turnstileToken) return getResponse({ error: 'Captcha verification required' }, 400);
+  const ip = locals.ip || request.headers.get('x-forwarded-for') || request.headers.get('cf-connecting-ip');
+  if (!await verifyTurnstile(turnstileToken, ip)) return getResponse({ error: 'Captcha verification failed. Please try again.' }, 400);
 
   // Validate type
   const type = (body.type || '').toUpperCase();

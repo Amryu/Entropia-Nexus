@@ -4,6 +4,12 @@
   import { isBlueprint, isItemTierable, isItemStackable, isLimited, itemHasCondition, isPercentMarkup, isPet, getMaxTT, formatPedRaw, PET_DEFAULT_MAX_TT } from "../../orderUtils";
   import { getPercentUndercutAmount, getAbsoluteUndercutAmount, DEFAULT_PARTIAL_RATIO } from '../../exchangeConstants.js';
   import { PLATE_SET_SIZE } from '$lib/common/itemTypes.js';
+  import { env } from '$env/dynamic/public';
+  import TurnstileWidget from '$lib/components/TurnstileWidget.svelte';
+  import { addToast } from '$lib/stores/toasts.js';
+
+  let turnstileToken = null;
+  let resetTurnstile = false;
   export let show = false;
   export let mode = 'create'; // 'create' | 'edit'
   export let order = null;
@@ -317,13 +323,23 @@
   }
   function submit() {
     if (submitting) return;
-    dispatch('submit', { order });
+    if (env.PUBLIC_TURNSTILE_SITE_KEY && !turnstileToken) {
+      addToast('Please complete the captcha verification', { type: 'warning' });
+      return;
+    }
+    dispatch('submit', { order, turnstileToken });
     sessionOrderCount = 0;
+    resetTurnstile = true;
   }
   function submitAndNext() {
     if (submitting) return;
-    dispatch('next', { order });
+    if (env.PUBLIC_TURNSTILE_SITE_KEY && !turnstileToken) {
+      addToast('Please complete the captcha verification', { type: 'warning' });
+      return;
+    }
+    dispatch('next', { order, turnstileToken });
     sessionOrderCount++;
+    resetTurnstile = true;
   }
 </script>
 
@@ -610,9 +626,16 @@
       {#if isNonFungible && mode === 'create' && (existingOrderCount + sessionOrderCount > 0)}
         <div class="order-count-indicator">Order {existingOrderCount + sessionOrderCount + 1} of {maxOrdersPerItem}</div>
       {/if}
+      {#if env.PUBLIC_TURNSTILE_SITE_KEY}
+        <TurnstileWidget
+          siteKey={env.PUBLIC_TURNSTILE_SITE_KEY}
+          bind:token={turnstileToken}
+          bind:reset={resetTurnstile}
+        />
+      {/if}
       <div class="actions">
         {#if mode === 'edit'}
-          <button class="delete-btn" on:click={() => dispatch('delete', { order })} title="Delete this order">Delete</button>
+          <button class="delete-btn" on:click={() => { if (env.PUBLIC_TURNSTILE_SITE_KEY && !turnstileToken) { addToast('Please complete the captcha verification', { type: 'warning' }); return; } dispatch('delete', { order, turnstileToken }); resetTurnstile = true; }} title="Delete this order">Delete</button>
         {/if}
         <span class="actions-spacer"></span>
         <button on:click={close} disabled={submitting}>{sessionOrderCount > 0 ? 'Done' : 'Cancel'}</button>

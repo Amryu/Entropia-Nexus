@@ -30,6 +30,8 @@
   import { favourites, isFavourite, toggleFavourite, createFolder } from '../../favouritesStore.js';
   import { hasCondition } from '$lib/shopUtils';
   import { addToast } from '$lib/stores/toasts.js';
+  import { env } from '$env/dynamic/public';
+  import TurnstileWidget from '$lib/components/TurnstileWidget.svelte';
 
   const VIEW_SLUGS = new Set(['listings', 'orders', 'inventory', 'trades']);
 
@@ -103,6 +105,31 @@
   let myOrdersRef;
   let tradesPanelRef;
   let bumpingAll = false;
+
+  // Turnstile confirmation modal (for actions outside OrderDialog: bump-all, close)
+  let pendingTurnstileAction = null; // { type: 'bump'|'close', order?, callback }
+  let turnstileModalToken = null;
+  let resetTurnstileModal = false;
+
+  function requestTurnstile(type, callback, order = null) {
+    turnstileModalToken = null;
+    resetTurnstileModal = true;
+    pendingTurnstileAction = { type, callback, order };
+  }
+
+  function cancelTurnstileModal() {
+    pendingTurnstileAction = null;
+    turnstileModalToken = null;
+  }
+
+  async function executeTurnstileAction() {
+    if (!pendingTurnstileAction || !turnstileModalToken) return;
+    const { callback } = pendingTurnstileAction;
+    const token = turnstileModalToken;
+    pendingTurnstileAction = null;
+    turnstileModalToken = null;
+    await callback(token);
+  }
 
   // Reactive discrepancy count: compare sell orders against inventory
   $: discrepancyCount = computeDiscrepancyCount($myOrders, $inventory);
@@ -1421,7 +1448,7 @@
 
   let submittingOrder = false; // Prevent double-click
 
-  async function submitOrderPayload(order, closeAfter = true) {
+  async function submitOrderPayload(order, closeAfter = true, turnstileToken = null) {
     if (submittingOrder) return false;
     submittingOrder = true;
 
@@ -1442,6 +1469,7 @@
         ...(order.Metadata || {}),
       }
     };
+    if (turnstileToken) payload.turnstile_token = turnstileToken;
     if (order.CurrentTT != null) {
       payload.details.CurrentTT = order.CurrentTT;
     }
@@ -1494,14 +1522,16 @@
 
   async function onSubmitOrder(e) {
     const order = e?.detail?.order;
+    const turnstileToken = e?.detail?.turnstileToken;
     if (!order) { closeOrderDialog(); return; }
-    await submitOrderPayload(order, true);
+    await submitOrderPayload(order, true, turnstileToken);
   }
 
   async function onNextOrder(e) {
     const order = e?.detail?.order;
+    const turnstileToken = e?.detail?.turnstileToken;
     if (!order) return;
-    const success = await submitOrderPayload(order, false);
+    const success = await submitOrderPayload(order, false, turnstileToken);
     if (success) {
       orderDialogExistingCount++;
       // Re-init dialog for the next order (keep same item, reset form)
@@ -1514,13 +1544,18 @@
 
   async function handleDeleteOrder(e) {
     const order = e?.detail?.order;
+    const turnstileToken = e?.detail?.turnstileToken;
     const orderId = order?._orderId;
     if (!orderId) { closeOrderDialog(); return; }
 
     if (!confirm('Are you sure you want to delete this order?')) return;
 
     try {
-      const res = await fetch(`/api/market/exchange/orders/${orderId}`, { method: 'DELETE' });
+      const res = await fetch(`/api/market/exchange/orders/${orderId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ turnstile_token: turnstileToken })
+      });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         addToast(data.error || 'Failed to delete order');
@@ -2381,7 +2416,13 @@
                   <button class="panel-filter-btn" class:active={panelSideFilter === 'BUY'} on:click={() => panelSideFilter = 'BUY'}>Buy</button>
                   <button class="panel-filter-btn" class:active={panelSideFilter === 'SELL'} on:click={() => panelSideFilter = 'SELL'}>Sell</button>
                 </div>
-                <button class="panel-action-btn accent" disabled={bumpingAll} on:click={async () => { bumpingAll = true; await myOrdersRef?.bumpAll(); bumpingAll = false; }}>{bumpingAll ? 'Bumping...' : 'Bump All'}</button>
+                <button class="panel-action-btn accent" disabled={bumpingAll} on:click={() => {
+                  if (env.PUBLIC_TURNSTILE_SITE_KEY) {
+                    requestTurnstile('bump', async (token) => { bumpingAll = true; await myOrdersRef?.bumpAll(token); bumpingAll = false; });
+                  } else {
+                    (async () => { bumpingAll = true; await myOrdersRef?.bumpAll(); bumpingAll = false; })();
+                  }
+                }}>{bumpingAll ? 'Bumping...' : 'Bump All'}</button>
               {/if}
               {#if $showInventory}
                 <button class="panel-action-btn" class:mass-sell={!massSellMode} class:mass-sell-cancel={massSellMode} on:click={toggleMassSellMode}>{massSellMode ? 'Cancel' : 'Mass Sell'}</button>
@@ -2404,6 +2445,37 @@
                 const order = e.detail;
                 if (order?.item_id) {
                   editOrderInline(order);
+                }
+              }}
+              on:close={(e) => {
+                const order = e.detail;
+                if (!order?.id) return;
+                if (env.PUBLIC_TURNSTILE_SITE_KEY) {
+                  requestTurnstile('close', async (token) => {
+                    try {
+                      const res = await fetch(`/api/market/exchange/orders/${order.id}`, {
+                        method: 'DELETE',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ turnstile_token: token })
+                      });
+                      const data = await res.json();
+                      if (!res.ok) throw new Error(data.error || 'Close failed');
+                      upsertOrder(data);
+                    } catch (err) {
+                      addToast(err.message);
+                    }
+                  }, order);
+                } else {
+                  (async () => {
+                    try {
+                      const res = await fetch(`/api/market/exchange/orders/${order.id}`, { method: 'DELETE' });
+                      const data = await res.json();
+                      if (!res.ok) throw new Error(data.error || 'Close failed');
+                      upsertOrder(data);
+                    } catch (err) {
+                      addToast(err.message);
+                    }
+                  })();
                 }
               }}
             />
@@ -2451,6 +2523,30 @@
   on:close={() => { showMassSellDialog = false; }}
   on:complete={handleMassSellComplete}
 />
+
+{#if pendingTurnstileAction}
+  <!-- svelte-ignore a11y-click-events-have-key-events -->
+  <!-- svelte-ignore a11y-no-static-element-interactions -->
+  <div class="turnstile-modal-overlay" on:click={cancelTurnstileModal}>
+    <div class="turnstile-modal" on:click|stopPropagation>
+      <h3 class="turnstile-modal-title">
+        {pendingTurnstileAction.type === 'bump' ? 'Bump All Orders' : 'Close Order'}
+      </h3>
+      <p class="turnstile-modal-desc">Please complete the verification to continue.</p>
+      <TurnstileWidget
+        siteKey={env.PUBLIC_TURNSTILE_SITE_KEY}
+        bind:token={turnstileModalToken}
+        bind:reset={resetTurnstileModal}
+      />
+      <div class="turnstile-modal-actions">
+        <button class="btn-cancel" on:click={cancelTurnstileModal}>Cancel</button>
+        <button class="btn-confirm" disabled={!turnstileModalToken} on:click={executeTurnstileAction}>
+          {pendingTurnstileAction.type === 'bump' ? 'Bump All' : 'Close Order'}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
 
 {#if showAuthDialog}
   <div class="auth-dialog-overlay" on:click={closeAuthDialog} on:keydown={(e) => e.key === 'Escape' && closeAuthDialog()}>
@@ -3658,6 +3754,75 @@
 
   .auth-dialog-btn.secondary:hover {
     border-color: var(--accent-color, #4a9eff);
+  }
+
+  /* Turnstile confirmation modal */
+  .turnstile-modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 20px;
+    box-sizing: border-box;
+  }
+  .turnstile-modal {
+    background-color: var(--secondary-color);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 24px;
+    max-width: 400px;
+    width: 100%;
+    box-sizing: border-box;
+  }
+  .turnstile-modal-title {
+    margin: 0 0 8px 0;
+    font-size: 16px;
+    color: var(--text-color);
+  }
+  .turnstile-modal-desc {
+    margin: 0 0 16px 0;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+  .turnstile-modal-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 16px;
+  }
+  .turnstile-modal-actions .btn-cancel {
+    padding: 8px 16px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-color);
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .turnstile-modal-actions .btn-cancel:hover {
+    background: var(--hover-color);
+  }
+  .turnstile-modal-actions .btn-confirm {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    background: var(--accent-color);
+    color: #fff;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .turnstile-modal-actions .btn-confirm:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .turnstile-modal-actions .btn-confirm:hover:not(:disabled) {
+    filter: brightness(1.1);
   }
 
 </style>

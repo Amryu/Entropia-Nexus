@@ -111,10 +111,14 @@
   }
 
   /** Bump all eligible (active/stale) orders */
-  export async function bumpAll() {
+  export async function bumpAll(turnstileToken = null) {
     bumping = true;
     try {
-      const res = await fetch('/api/market/exchange/orders/bump-all', { method: 'POST' });
+      const res = await fetch('/api/market/exchange/orders/bump-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ turnstile_token: turnstileToken })
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Bump failed');
       const enriched = enrichOrders(data.orders);
@@ -127,15 +131,8 @@
     }
   }
 
-  async function handleClose(order) {
-    try {
-      const res = await fetch(`/api/market/exchange/orders/${order.id}`, { method: 'DELETE' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Close failed');
-      upsertOrder(data);
-    } catch (e) {
-      addToast(e.message);
-    }
+  function handleClose(order) {
+    dispatch('close', order);
   }
 
   function handleEdit(order) {
