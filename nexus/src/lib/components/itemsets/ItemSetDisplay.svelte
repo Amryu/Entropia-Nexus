@@ -81,9 +81,8 @@
           <div class="display-set-entry">
             <div class="display-set-header">
               <span class="set-type-badge">{item.setType === 'ArmorSet' ? 'Armor' : 'Clothing'}</span>
-              {@const setHref = getItemHref(item.setName, item.setType)}
-              {#if setHref}
-                <a href={setHref} class="display-set-name item-link">{item.setName}</a>
+              {#if getItemHref(item.setName, item.setType)}
+                <a href={getItemHref(item.setName, item.setType)} class="display-set-name item-link">{item.setName}</a>
               {:else}
                 <span class="display-set-name">{item.setName}</span>
               {/if}
@@ -109,9 +108,8 @@
         {:else}
           <!-- Regular item -->
           <div class="display-item">
-            {@const itemHref = getItemHref(item.name, item.type)}
-            {#if itemHref}
-              <a href={itemHref} class="display-item-name item-link">{item.name}</a>
+            {#if getItemHref(item.name, item.type)}
+              <a href={getItemHref(item.name, item.type)} class="display-item-name item-link">{item.name}</a>
             {:else}
               <span class="display-item-name">{item.name}</span>
             {/if}
