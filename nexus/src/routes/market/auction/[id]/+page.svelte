@@ -450,7 +450,8 @@
   .page-container {
     max-width: 1200px;
     margin: 0 auto;
-    padding: 1.5rem;
+    padding: 1rem;
+    padding-bottom: 2rem;
   }
 
   .breadcrumb {
@@ -856,7 +857,7 @@
   }
 
   @media (max-width: 899px) {
-    .page-container { padding: 1rem; }
+    .page-container { padding: 1rem; padding-bottom: 2rem; }
     .auction-panels { grid-template-columns: 1fr; }
     .auction-header { flex-direction: column; }
     .item-grid { grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); }

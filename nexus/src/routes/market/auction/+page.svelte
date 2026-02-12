@@ -323,6 +323,7 @@
   @media (max-width: 899px) {
     .page-container {
       padding: 1rem;
+      padding-bottom: 2rem;
     }
 
     .page-header {

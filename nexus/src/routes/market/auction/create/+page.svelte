@@ -697,7 +697,7 @@
   }
 
   @media (max-width: 899px) {
-    .page-container { padding: 1rem; }
+    .page-container { padding: 1rem; padding-bottom: 2rem; }
     .form-actions { flex-direction: column; }
     .form-actions .btn-primary,
     .form-actions .btn-secondary { width: 100%; text-align: center; justify-content: center; }

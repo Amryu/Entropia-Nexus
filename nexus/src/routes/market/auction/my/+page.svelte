@@ -310,7 +310,7 @@
   .btn-secondary:hover { background: var(--hover-color); }
 
   @media (max-width: 899px) {
-    .page-container { padding: 1rem; }
+    .page-container { padding: 1rem; padding-bottom: 2rem; }
     .list-item { flex-direction: column; align-items: flex-start; }
     .list-pricing { text-align: left; }
   }

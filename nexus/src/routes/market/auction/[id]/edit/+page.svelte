@@ -225,7 +225,8 @@
   .page-container {
     max-width: 800px;
     margin: 0 auto;
-    padding: 1.5rem;
+    padding: 1rem;
+    padding-bottom: 2rem;
   }
 
   .scroll-container {
@@ -370,7 +371,7 @@
   .confirm-actions { display: flex; gap: 8px; justify-content: flex-end; }
 
   @media (max-width: 899px) {
-    .page-container { padding: 1rem; }
+    .page-container { padding: 1rem; padding-bottom: 2rem; }
     .form-actions { flex-direction: column; }
     .actions-right { flex-direction: column; width: 100%; }
     .actions-right button { width: 100%; text-align: center; justify-content: center; }
