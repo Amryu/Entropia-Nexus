@@ -359,20 +359,12 @@
         <!-- Primary Stats -->
         <div class="stats-section tier-1">
           <div class="stat-row primary">
-            <span class="stat-label">TT Value</span>
-            <span class="stat-value">
-              {activeClothing?.Properties?.Economy?.MaxTT != null
-                ? `${clampDecimals(activeClothing.Properties.Economy.MaxTT, 2, 8)} PED`
-                : 'N/A'}
-            </span>
+            <span class="stat-label">Type</span>
+            <span class="stat-value">{activeClothing?.Properties?.Type || 'N/A'}</span>
           </div>
           <div class="stat-row primary">
-            <span class="stat-label">Weight</span>
-            <span class="stat-value">
-              {activeClothing?.Properties?.Weight != null
-                ? `${clampDecimals(activeClothing.Properties.Weight, 1, 6)} kg`
-                : 'N/A'}
-            </span>
+            <span class="stat-label">Slot</span>
+            <span class="stat-value">{activeClothing?.Properties?.Slot || 'N/A'}</span>
           </div>
         </div>
 
@@ -419,6 +411,18 @@
                 value={activeClothing?.Properties?.Gender ?? 'Unknown'}
                 path="Properties.Gender"
                 options={genderOptions}
+              />
+            </span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Weight</span>
+            <span class="stat-value">
+              <InlineEdit
+                type="number"
+                value={activeClothing?.Properties?.Weight ?? ''}
+                path="Properties.Weight"
+                step={0.1}
+                suffix=" kg"
               />
             </span>
           </div>
