@@ -64,6 +64,23 @@
   $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user.grants?.includes('wiki.approve')));
   // Constants for section names (matches legacy)
   const SECTION_NAMES = ['Indoor', 'Display', 'Additional'];
+  const PLANET_OPTIONS = [
+    { value: 'Calypso', label: 'Calypso' },
+    { value: 'ARIS', label: 'ARIS' },
+    { value: 'Arkadia', label: 'Arkadia' },
+    { value: 'Cyrene', label: 'Cyrene' },
+    { value: 'Monria', label: 'Monria' },
+    { value: 'ROCKtropia', label: 'Rocktropia' },
+    { value: 'Toulan', label: 'Toulan' },
+    { value: 'Next Island', label: 'Next Island' },
+    { value: 'Space', label: 'Space (Howling Mine)' }
+  ];
+
+  function getPlanetDisplayName(planetName) {
+    if (!planetName) return null;
+    const option = PLANET_OPTIONS.find((x) => x.value === planetName);
+    return option ? option.label : planetName;
+  }
 
   // Empty entity template for create mode
   const emptyEntity = {
@@ -242,16 +259,7 @@
     {
       key: 'Planet.Name',
       label: 'Planet',
-      values: [
-        { value: 'Calypso', label: 'Calypso' },
-        { value: 'ARIS', label: 'ARIS' },
-        { value: 'Arkadia', label: 'Arkadia' },
-        { value: 'Cyrene', label: 'Cyrene' },
-        { value: 'Monria', label: 'Monria' },
-        { value: 'ROCKtropia', label: 'Rocktropia' },
-        { value: 'Toulan', label: 'Toulan' },
-        { value: 'Next Island', label: 'Next Island' },
-      ]
+      values: PLANET_OPTIONS
     }
   ];
 
@@ -286,7 +294,7 @@
       width: '80px',
       filterPlaceholder: 'Calypso',
       getValue: (item) => item?.Planet?.Name,
-      format: (v) => v || '-'
+      format: (v) => getPlanetDisplayName(v) || '-'
     },
     sections: {
       key: 'sections',
@@ -321,7 +329,7 @@
 
   // SEO
   $: seoDescription = activeEntity?.Description ||
-    `${activeEntity?.Name || 'Shop'} - Player shop on ${activeEntity?.Planet?.Name || 'Calypso'} in Entropia Universe.`;
+    `${activeEntity?.Name || 'Shop'} - Player shop on ${getPlanetDisplayName(activeEntity?.Planet?.Name) || 'Calypso'} in Entropia Universe.`;
 
   $: canonicalUrl = activeEntity?.Name
     ? `https://entropianexus.com/market/shops/${encodeURIComponentSafe(activeEntity.Name)}`
@@ -433,7 +441,7 @@
   }
 
   function getLocationShort(s) {
-    const planet = s?.Planet?.Name;
+    const planet = getPlanetDisplayName(s?.Planet?.Name);
     const coords = s?.Coordinates;
     const lon = coords?.Longitude;
     const lat = coords?.Latitude;
@@ -573,7 +581,7 @@
           </div>
           <div class="infobox-subtitle">
             <span class="planet-badge {getPlanetBadgeClass(activeEntity?.Planet?.Name)}">
-              {activeEntity?.Planet?.Name || 'Unknown'}
+              {getPlanetDisplayName(activeEntity?.Planet?.Name) || 'Unknown'}
             </span>
           </div>
         </div>
@@ -675,19 +683,10 @@
                   value={activeEntity?.Planet?.Name}
                   path="Planet.Name"
                   type="select"
-                  options={[
-                    { value: 'Calypso', label: 'Calypso' },
-                    { value: 'ARIS', label: 'ARIS' },
-                    { value: 'Arkadia', label: 'Arkadia' },
-                    { value: 'Cyrene', label: 'Cyrene' },
-                    { value: 'Monria', label: 'Monria' },
-                    { value: 'ROCKtropia', label: 'Rocktropia' },
-                    { value: 'Toulan', label: 'Toulan' },
-                    { value: 'Next Island', label: 'Next Island' }
-                  ]}
+                  options={PLANET_OPTIONS}
                 />
               {:else}
-                {activeEntity?.Planet?.Name || 'N/A'}
+                {getPlanetDisplayName(activeEntity?.Planet?.Name) || 'N/A'}
               {/if}
             </span>
           </div>
@@ -841,7 +840,7 @@
             <div class="description-content">{@html sanitizeHtml(activeEntity.Description)}</div>
           {:else}
             <div class="description-content placeholder">
-              {activeEntity?.Name || 'This shop'} is a player-owned shop located on {activeEntity?.Planet?.Name || 'Calypso'}.
+              {activeEntity?.Name || 'This shop'} is a player-owned shop located on {getPlanetDisplayName(activeEntity?.Planet?.Name) || 'Calypso'}.
               {#if activeEntity?.Owner?.Name}
                 It is owned by {activeEntity.Owner.Name}.
               {/if}
