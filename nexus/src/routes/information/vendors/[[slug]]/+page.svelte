@@ -24,6 +24,7 @@
 
   // Vendor-specific components
   import VendorOffers from '$lib/components/wiki/vendors/VendorOffers.svelte';
+  import VendorOffersEdit from '$lib/components/wiki/vendors/VendorOffersEdit.svelte';
 
   // Image upload
   import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
@@ -514,7 +515,11 @@
           subtitle="{offerCount} item{offerCount !== 1 ? 's' : ''}"
           on:toggle={savePanelStates}
         >
-          <VendorOffers offers={activeVendor?.Offers || []} />
+          {#if $editMode}
+            <VendorOffersEdit offers={activeVendor?.Offers || []} fieldPath="Offers" />
+          {:else}
+            <VendorOffers offers={activeVendor?.Offers || []} />
+          {/if}
         </DataSection>
       </article>
     </div>
