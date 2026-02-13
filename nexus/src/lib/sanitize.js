@@ -55,8 +55,16 @@ function configureDOMPurify() {
   DOMPurify.addHook('afterSanitizeAttributes', (node) => {
     // Force safe attributes on links
     if (node.tagName === 'A') {
-      node.setAttribute('target', '_blank');
-      node.setAttribute('rel', 'noopener noreferrer');
+      const href = node.getAttribute('href') || '';
+      if (href.startsWith('/')) {
+        // Relative links: allow SvelteKit router to handle client-side navigation
+        node.removeAttribute('target');
+        node.removeAttribute('rel');
+      } else {
+        // External links: open in new tab safely
+        node.setAttribute('target', '_blank');
+        node.setAttribute('rel', 'noopener noreferrer');
+      }
     }
 
     // Validate img sources (only allow our own image endpoint)

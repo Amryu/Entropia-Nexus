@@ -26,10 +26,14 @@ const SANITIZE_CONFIG = {
   },
   allowedIframeHostnames: ['www.youtube.com', 'youtube.com', 'player.vimeo.com', 'vimeo.com'],
   transformTags: {
-    'a': (tagName, attribs) => ({
-      tagName: 'a',
-      attribs: { href: attribs.href || '', target: '_blank', rel: 'noopener noreferrer' }
-    }),
+    'a': (tagName, attribs) => {
+      const href = attribs.href || '';
+      if (href.startsWith('/')) {
+        // Relative links: no target/rel so SvelteKit router handles navigation
+        return { tagName: 'a', attribs: { href } };
+      }
+      return { tagName: 'a', attribs: { href, target: '_blank', rel: 'noopener noreferrer' } };
+    },
     'img': (tagName, attribs) => {
       if (!(attribs.src || '').startsWith('/api/img/')) {
         return { tagName: '', attribs: {} };

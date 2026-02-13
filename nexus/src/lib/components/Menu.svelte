@@ -533,6 +533,24 @@
     z-index: 100;
   }
 
+  .dev-mode-notice {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: var(--warning-color, #f59e0b);
+    border: 2px solid var(--warning-color, #f59e0b);
+    padding: 2px 12px;
+    border-radius: 4px;
+    pointer-events: none;
+    user-select: none;
+    text-transform: uppercase;
+    z-index: 1;
+  }
+
   .menu-container, .auth-container {
     display: flex;
     position: relative;
@@ -1289,6 +1307,13 @@
     color: var(--warning-color, #f59e0b);
   }
 
+  /* Hide dev mode notice on mobile (logo occupies center) */
+  @media (max-width: 899px) {
+    .dev-mode-notice {
+      display: none;
+    }
+  }
+
   /* Mobile Menu Styles */
   .burger-button {
     display: none;
@@ -1759,6 +1784,9 @@
 </style>
 
 <nav>
+  {#if import.meta.env.DEV}
+    <span class="dev-mode-notice">DEV MODE</span>
+  {/if}
   <div class="menu-container">
     <a href="/" class="logo-link"><img class="website-icon" src="/favicon.png" alt="Entropia Nexus" title="Entropia Nexus" width="48px" height="48px" /></a>
     {#each Object.keys(menuItemsWiki) as menu (menu)}
