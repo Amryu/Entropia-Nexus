@@ -58,6 +58,21 @@
   $: canCreateNew = data.canCreateNew ?? true;
   $: userPendingCreates = data.userPendingCreates || [];
   $: userPendingUpdates = data.userPendingUpdates || [];
+
+  // Local filter state - decoupled from URL
+  let selectedFilter = null;
+  let filterInitialized = false;
+
+  $: if (!filterInitialized) {
+    selectedFilter = additional.type || null;
+    filterInitialized = true;
+  }
+
+  $: if (filterInitialized && !consumable && !isCreateMode) {
+    if ((additional.type || null) !== selectedFilter) {
+      selectedFilter = additional.type || null;
+    }
+  }
   $: effectsList = data.effects || [];
   $: mobsList = data.mobs || [];
   $: mobOptions = (mobsList || []).map(m => ({ label: m.Name, value: m.Name }));
@@ -71,13 +86,12 @@
   $: canEdit = user?.verified || user?.grants?.includes('wiki.edit');
 
   // For multi-type pages, data.items is an object keyed by type
-  // When no type is selected, show all items from all types (with _type added for linking)
   $: allItems = (() => {
     if (!data.items) return [];
-    if (additional.type && data.items[additional.type]) {
-      return data.items[additional.type];
+    if (selectedFilter && data.items[selectedFilter]) {
+      return data.items[selectedFilter];
     }
-    // No type selected - combine all items from all types, adding _type for correct linking
+    // No filter selected - combine all items from all types, adding _type for correct linking
     const combined = [];
     for (const [type, items] of Object.entries(data.items)) {
       for (const item of items) {
@@ -176,13 +190,13 @@
   // Build navigation items
   $: navItems = allItems;
 
-  // Navigation filters - type buttons with deselection support
+  // Navigation filters - uses selectedFilter for active state (local, not URL-based)
   $: navFilters = typeButtons.map(btn => ({
     label: btn.label,
     title: btn.title,
     type: btn.type,
-    active: additional.type === btn.type,
-    href: additional.type === btn.type ? '/items/consumables' : `/items/consumables/${btn.type}`
+    active: selectedFilter === btn.type,
+    href: selectedFilter === btn.type ? '/items/consumables' : `/items/consumables/${btn.type}`
   }));
 
   // Full column definitions for consumables
@@ -222,19 +236,32 @@
     }
   }
 
-  $: navTableColumns = getNavTableColumns(additional.type);
-  $: navFullWidthColumns = getNavFullWidthColumns(additional.type);
+  $: navTableColumns = getNavTableColumns(selectedFilter);
+  $: navFullWidthColumns = getNavFullWidthColumns(selectedFilter);
   const allAvailableColumns = Object.values(columnDefs);
-  $: navPageTypeId = `consumables-${additional.type || 'all'}`;
+  $: navPageTypeId = `consumables-${selectedFilter || 'all'}`;
 
-  // Custom href generator for items - handles _type property for "all items" view
+  // Custom href generator for items
   function getItemHref(item, basePath) {
-    const type = item._type || additional.type;
+    const type = item._type || selectedFilter || additional.type;
     if (type) {
       return `/items/consumables/${type}/${encodeURIComponentSafe(item.Name)}`;
     }
     return `${basePath}/${encodeURIComponentSafe(item.Name)}`;
   }
+
+  // Base path for navigation - uses selectedFilter so it persists
+  $: effectiveBasePath = selectedFilter
+    ? `/items/consumables/${selectedFilter}`
+    : '/items/consumables';
+
+  // Filter pending creates by selected filter type
+  $: filteredPendingCreates = selectedFilter
+    ? (userPendingCreates || []).filter(change => {
+        const entityType = getEntityType(selectedFilter);
+        return change.entity === entityType;
+      })
+    : userPendingCreates || [];
 
   // Breadcrumbs
   $: breadcrumbs = [
@@ -318,7 +345,7 @@
   title="Consumables"
   {breadcrumbs}
   entity={activeEntity}
-  basePath="/items/consumables/{additional.type || ''}"
+  basePath={effectiveBasePath}
   {navItems}
   {navFilters}
   {navTableColumns}
@@ -330,7 +357,7 @@
   editable={true}
   canEdit={canEdit && !!additional.type}
   {canCreateNew}
-  {userPendingCreates}
+  userPendingCreates={filteredPendingCreates}
   {userPendingUpdates}
 >
   {#if consumable || isCreateMode}

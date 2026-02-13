@@ -60,6 +60,24 @@
   $: canCreateNew = data.canCreateNew ?? true;
   $: userPendingCreates = data.userPendingCreates || [];
   $: userPendingUpdates = data.userPendingUpdates || [];
+
+  // Local filter state - decoupled from URL
+  // Filter persists through item navigation; only changes when explicitly clicking filter buttons
+  let selectedFilter = null;
+  let filterInitialized = false;
+
+  // Initialize filter from URL once on first data load
+  $: if (!filterInitialized) {
+    selectedFilter = additional.type || null;
+    filterInitialized = true;
+  }
+
+  // Sync filter only when on list view (no item selected, not create mode)
+  $: if (filterInitialized && !tool && !isCreateMode) {
+    if ((additional.type || null) !== selectedFilter) {
+      selectedFilter = additional.type || null;
+    }
+  }
   $: effects = data.effects || [];
   $: professions = data.professions || [];
   $: professionOptions = professions.map(p => ({ value: p.Name, label: p.Name })).sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
@@ -72,13 +90,13 @@
   $: canEdit = user?.verified || user?.grants?.includes('wiki.edit');
 
   // For multi-type pages, data.items is an object keyed by type
-  // When no type is selected, show all items from all types (with _type added for linking)
+  // When no filter is selected, show all items from all types (with _type added for linking)
   $: allItems = (() => {
     if (!data.items) return [];
-    if (additional.type && data.items[additional.type]) {
-      return data.items[additional.type];
+    if (selectedFilter && data.items[selectedFilter]) {
+      return data.items[selectedFilter];
     }
-    // No type selected - combine all items from all types, adding _type for correct linking
+    // No filter selected - combine all items from all types, adding _type for correct linking
     const combined = [];
     for (const [type, items] of Object.entries(data.items)) {
       for (const item of items) {
@@ -247,13 +265,13 @@
   $: navItems = allItems;
 
   // Navigation filters - type buttons
-  // When a button is active, clicking it deselects (goes back to /items/tools to show all)
+  // Uses selectedFilter for active state (local filter state, not URL-based)
   $: navFilters = typeButtons.map(btn => ({
     label: btn.label,
     title: btn.title,
     type: btn.type,
-    active: additional.type === btn.type,
-    href: additional.type === btn.type ? '/items/tools' : `/items/tools/${btn.type}`
+    active: selectedFilter === btn.type,
+    href: selectedFilter === btn.type ? '/items/tools' : `/items/tools/${btn.type}`
   }));
 
   // Type-specific sidebar table columns
@@ -335,7 +353,7 @@
     }
   }
 
-  $: navTableColumns = getNavTableColumns(additional.type);
+  $: navTableColumns = getNavTableColumns(selectedFilter);
 
   // Full column definitions for all tool types
   const columnDefs = {
@@ -381,18 +399,31 @@
     }
   }
 
-  $: navFullWidthColumns = getNavFullWidthColumns(additional.type);
+  $: navFullWidthColumns = getNavFullWidthColumns(selectedFilter);
   $: allAvailableColumns = Object.values(columnDefs);
-  $: navPageTypeId = `tools-${additional.type || 'all'}`;
+  $: navPageTypeId = `tools-${selectedFilter || 'all'}`;
 
   // Custom href generator for items - handles _type property for "all items" view
   function getItemHref(item, basePath) {
-    const type = item._type || additional.type;
+    const type = item._type || selectedFilter || additional.type;
     if (type) {
       return `/items/tools/${type}/${encodeURIComponentSafe(item.Name)}`;
     }
     return `${basePath}/${encodeURIComponentSafe(item.Name)}`;
   }
+
+  // Base path for navigation - uses selectedFilter so it persists through navigation
+  $: effectiveBasePath = selectedFilter
+    ? `/items/tools/${selectedFilter}`
+    : '/items/tools';
+
+  // Filter pending creates by selected filter type
+  $: filteredPendingCreates = selectedFilter
+    ? (userPendingCreates || []).filter(change => {
+        const entityType = getEntityType(selectedFilter);
+        return change.entity === entityType;
+      })
+    : userPendingCreates || [];
 
   // Breadcrumbs
   $: breadcrumbs = [
@@ -530,7 +561,7 @@
   title="Tools"
   {breadcrumbs}
   entity={activeEntity}
-  basePath="/items/tools/{additional.type || ''}"
+  basePath={effectiveBasePath}
   {navItems}
   {navFilters}
   {navTableColumns}
@@ -542,7 +573,7 @@
   editable={true}
   canEdit={canEdit && !!additional.type}
   {canCreateNew}
-  {userPendingCreates}
+  userPendingCreates={filteredPendingCreates}
   {userPendingUpdates}
 >
   {#if tool || isCreateMode}

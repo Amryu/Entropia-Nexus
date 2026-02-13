@@ -80,6 +80,19 @@ function sanitizeBody(body) {
   return body;
 }
 
+/**
+ * Maps schema-based entity names to their DB change_entity enum equivalents.
+ * Reverse of ENTITY_TYPE_MAP in schemaValidator.js.
+ */
+const SCHEMA_TO_ENUM = {
+  TeleportationChip: 'TeleportChip',
+  Capsule: 'CreatureControlCapsule',
+};
+
+function resolveEntityName(name) {
+  return SCHEMA_TO_ENUM[name] || name;
+}
+
 let change_entities = null;
 let change_types = null;
 
@@ -124,16 +137,16 @@ export async function GET({ params, url }) {
   // Otherwise, list changes with filters
   const filters = {};
 
-  // Parse entity filter
-  const entity = url.searchParams.get('entity');
-  if (entity) {
+  // Parse entity filter (resolve schema names to DB enum names)
+  const entityParam = url.searchParams.get('entity');
+  if (entityParam) {
     const validEntities = await getChangeEntities();
-    const entityList = entity.split(',').map(e => e.trim()).filter(Boolean);
+    const entityList = entityParam.split(',').map(e => resolveEntityName(e.trim())).filter(Boolean);
     const invalidEntities = entityList.filter(e => !validEntities.includes(e));
     if (invalidEntities.length > 0) {
       return getResponse({ error: `Invalid entity. Must be one of: ${validEntities.join(', ')}` }, 400);
     }
-    filters.entity = entity;
+    filters.entity = entityList.join(',');
   }
 
   // Parse type filter (Create, Update, Delete)
@@ -249,7 +262,7 @@ export async function POST({ request, params, locals, url }) {
     return getResponse({ error: 'Invalid request. Please do not provide the change id.' }, 400);
   }
 
-  let entity = url.searchParams.get('entity');
+  let entity = resolveEntityName(url.searchParams.get('entity'));
   let type = url.searchParams.get('type');
 
   if (!entity || !type) {

@@ -1391,7 +1391,7 @@
     {:else}
       <div class="virtual-list" style="height: {totalHeight}px;">
         <div class="virtual-items" style="transform: translateY({offsetY}px);">
-          {#each visibleItems as item, localIndex (item._isPendingCreate ? `pending-${item._changeId}` : (item.Id ?? item.Name))}
+          {#each visibleItems as item, localIndex (item._isPendingCreate ? `pending-${item._changeId}` : (item._type ? `${item._type}-${item.Id ?? item.Name}` : (item.Id ?? item.Name)))}
             {@const globalIndex = startIndex + localIndex}
             <a
               href={getItemHref(item)}

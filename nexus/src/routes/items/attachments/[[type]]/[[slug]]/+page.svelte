@@ -57,6 +57,21 @@
   $: userPendingCreates = data.userPendingCreates || [];
   $: userPendingUpdates = data.userPendingUpdates || [];
   $: effectsList = data.effects || [];
+
+  // Local filter state - decoupled from URL
+  let selectedFilter = null;
+  let filterInitialized = false;
+
+  $: if (!filterInitialized) {
+    selectedFilter = additional.type || null;
+    filterInitialized = true;
+  }
+
+  $: if (filterInitialized && !attachment && !isCreateMode) {
+    if ((additional.type || null) !== selectedFilter) {
+      selectedFilter = additional.type || null;
+    }
+  }
   $: attachmentEntityId = attachment?.Id ?? attachment?.ItemId;
   $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, attachmentEntityId);
   $: resolvedPendingChange = userPendingUpdate || pendingChange;
@@ -69,10 +84,10 @@
   // For multi-type pages, data.items is an object keyed by type
   $: allItems = (() => {
     if (!data.items) return [];
-    if (additional.type && data.items[additional.type]) {
-      return data.items[additional.type];
+    if (selectedFilter && data.items[selectedFilter]) {
+      return data.items[selectedFilter];
     }
-    // No type selected - combine all items from all types
+    // No filter selected - combine all items from all types
     const combined = [];
     for (const [type, items] of Object.entries(data.items)) {
       for (const item of items) {
@@ -219,13 +234,13 @@
   // Build navigation items
   $: navItems = allItems;
 
-  // Navigation filters - type buttons with deselection support
+  // Navigation filters - uses selectedFilter for active state (local, not URL-based)
   $: navFilters = typeButtons.map(btn => ({
     label: btn.label,
     title: btn.title,
     type: btn.type,
-    active: additional.type === btn.type,
-    href: additional.type === btn.type ? '/items/attachments' : `/items/attachments/${btn.type}`
+    active: selectedFilter === btn.type,
+    href: selectedFilter === btn.type ? '/items/attachments' : `/items/attachments/${btn.type}`
   }));
 
   // Full column definitions for attachments
@@ -300,19 +315,32 @@
     }
   }
 
-  $: navTableColumns = getNavTableColumns(additional.type);
-  $: navFullWidthColumns = getNavFullWidthColumns(additional.type);
+  $: navTableColumns = getNavTableColumns(selectedFilter);
+  $: navFullWidthColumns = getNavFullWidthColumns(selectedFilter);
   const allAvailableColumns = Object.values(columnDefs);
-  $: navPageTypeId = `attachments-${additional.type || 'all'}`;
+  $: navPageTypeId = `attachments-${selectedFilter || 'all'}`;
 
   // Custom href generator for items
   function getItemHref(item, basePath) {
-    const type = item._type || additional.type;
+    const type = item._type || selectedFilter || additional.type;
     if (type) {
       return `/items/attachments/${type}/${encodeURIComponentSafe(item.Name)}`;
     }
     return `${basePath}/${encodeURIComponentSafe(item.Name)}`;
   }
+
+  // Base path for navigation - uses selectedFilter so it persists
+  $: effectiveBasePath = selectedFilter
+    ? `/items/attachments/${selectedFilter}`
+    : '/items/attachments';
+
+  // Filter pending creates by selected filter type
+  $: filteredPendingCreates = selectedFilter
+    ? (userPendingCreates || []).filter(change => {
+        const entityType = getEntityType(selectedFilter);
+        return change.entity === entityType;
+      })
+    : userPendingCreates || [];
 
   // Breadcrumbs
   $: breadcrumbs = [
@@ -480,7 +508,7 @@
   title="Attachments"
   {breadcrumbs}
   entity={activeEntity}
-  basePath="/items/attachments/{additional.type || ''}"
+  basePath={effectiveBasePath}
   {navItems}
   {navFilters}
   {navTableColumns}
@@ -492,7 +520,7 @@
   editable={true}
   canEdit={canEdit && !!additional.type}
   {canCreateNew}
-  {userPendingCreates}
+  userPendingCreates={filteredPendingCreates}
   {userPendingUpdates}
 >
   {#if attachment || isCreateMode}
