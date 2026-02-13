@@ -42,13 +42,6 @@
       width: '90px',
       getValue: (item) => item?.Properties?.Source || '-',
       format: (v) => v || '-'
-    },
-    {
-      key: 'unit',
-      header: 'Unit',
-      width: '90px',
-      getValue: (item) => item?.Properties?.Unit || '-',
-      format: (v) => v || '-'
     }
   ];
 
@@ -106,10 +99,6 @@
     return `<a href="${escapeHtml(href)}" class="enum-link">${escapedText}</a>`;
   }
 
-  $: metadataJson = activeEnumeration?.Properties?.Metadata
-    ? JSON.stringify(activeEnumeration.Properties.Metadata, null, 2)
-    : null;
-
   $: tableColumns = (activeEnumeration?.Table?.Columns || []).map((col) => ({
     key: col.key,
     header: col.label,
@@ -164,18 +153,7 @@
           <span class="meta-label">Source</span>
           <span class="meta-value">{activeEnumeration?.Properties?.Source || '-'}</span>
         </div>
-        <div class="meta-item">
-          <span class="meta-label">Unit</span>
-          <span class="meta-value">{activeEnumeration?.Properties?.Unit || '-'}</span>
-        </div>
       </div>
-
-      {#if metadataJson}
-        <section class="metadata-block">
-          <h2>Metadata</h2>
-          <pre>{metadataJson}</pre>
-        </section>
-      {/if}
 
       <section class="table-section">
         <h2>Values</h2>
@@ -234,25 +212,9 @@
     color: var(--text-color);
   }
 
-  .metadata-block {
-    margin: 8px 0 18px;
-  }
-
-  .metadata-block h2,
   .table-section h2 {
     font-size: 18px;
     margin: 0 0 8px;
-  }
-
-  .metadata-block pre {
-    margin: 0;
-    padding: 12px;
-    border-radius: 6px;
-    border: 1px solid var(--border-color);
-    background-color: var(--secondary-color);
-    overflow: auto;
-    font-size: 12px;
-    line-height: 1.45;
   }
 
   .table-section {

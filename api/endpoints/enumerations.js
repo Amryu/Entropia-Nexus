@@ -44,7 +44,6 @@ function formatListItem({
   name,
   source,
   description = null,
-  unit = null,
   metadata = null
 }) {
   return {
@@ -53,7 +52,6 @@ function formatListItem({
     Properties: {
       Source: source,
       Description: description,
-      Unit: unit,
       Metadata: metadata
     },
     Links: { "$Url": detailLink(name) }
@@ -65,7 +63,6 @@ function formatDetail({
   name,
   source,
   description = null,
-  unit = null,
   metadata = null,
   columns,
   rows
@@ -76,7 +73,6 @@ function formatDetail({
     Properties: {
       Source: source,
       Description: description,
-      Unit: unit,
       Metadata: metadata
     },
     Table: {
@@ -104,6 +100,65 @@ function getMetadataColumns(metadata) {
     .filter((x) => !!x && x !== 'Name' && x !== 'Value');
 }
 
+function romanToInt(value) {
+  if (typeof value !== 'string') return null;
+  const roman = value.trim().toUpperCase();
+  if (!roman || !/^[IVXLCDM]+$/.test(roman)) return null;
+
+  const map = { I: 1, V: 5, X: 10, L: 50, C: 100, D: 500, M: 1000 };
+  let total = 0;
+  let prev = 0;
+  for (let i = roman.length - 1; i >= 0; i--) {
+    const current = map[roman[i]];
+    if (!current) return null;
+    if (current < prev) total -= current;
+    else total += current;
+    prev = current;
+  }
+  return total;
+}
+
+function classifySortValue(value) {
+  if (value === null || value === undefined || value === '') {
+    return { group: 2, value: null };
+  }
+
+  if (typeof value === 'number') {
+    return Number.isFinite(value)
+      ? { group: 0, value }
+      : { group: 2, value: null };
+  }
+
+  if (typeof value === 'boolean') {
+    return { group: 0, value: value ? 1 : 0 };
+  }
+
+  const text = String(value).trim();
+  if (!text) return { group: 2, value: null };
+
+  const numeric = Number(text);
+  if (!Number.isNaN(numeric) && Number.isFinite(numeric)) {
+    return { group: 0, value: numeric };
+  }
+
+  const roman = romanToInt(text);
+  if (roman !== null) {
+    return { group: 0, value: roman };
+  }
+
+  return { group: 1, value: text.toLowerCase() };
+}
+
+function compareSortValues(left, right) {
+  const a = classifySortValue(left);
+  const b = classifySortValue(right);
+
+  if (a.group !== b.group) return a.group - b.group;
+  if (a.group === 2) return 0;
+  if (a.group === 0) return a.value - b.value;
+  return String(a.value).localeCompare(String(b.value));
+}
+
 function buildCustomDetailTable(metadata, values) {
   const metadataColumns = getMetadataColumns(metadata);
   const fallbackKeys = new Set();
@@ -124,12 +179,11 @@ function buildCustomDetailTable(metadata, values) {
 
   const columns = [
     { key: 'Name', label: 'Name' },
-    { key: 'Value', label: 'Value' },
     ...extraKeys.map((key) => ({ key, label: key })),
   ];
 
   const rows = values.map((row) => {
-    const out = { Name: row.Name, Value: row.Value };
+    const out = { Name: row.Name };
     const data = row.Data && typeof row.Data === 'object' && !Array.isArray(row.Data)
       ? row.Data
       : null;
@@ -138,6 +192,15 @@ function buildCustomDetailTable(metadata, values) {
     }
     return out;
   });
+
+  if (extraKeys.length > 0) {
+    const firstKey = extraKeys[0];
+    rows.sort((a, b) => {
+      const byPrimary = compareSortValues(a[firstKey], b[firstKey]);
+      if (byPrimary !== 0) return byPrimary;
+      return String(a.Name || '').localeCompare(String(b.Name || ''));
+    });
+  }
 
   return { columns, rows };
 }
@@ -156,7 +219,7 @@ async function safeRows(sql, params = []) {
 async function getCustomEnumerations() {
   try {
     const { rows } = await pool.query(
-      `SELECT "Id", "Name", "Description", "Unit", "Metadata"
+      `SELECT "Id", "Name", "Description", "Metadata"
        FROM ONLY "Enumerations"
        ORDER BY "Name"`
     );
@@ -170,7 +233,7 @@ async function getCustomEnumerations() {
 async function getCustomEnumerationByName(name) {
   try {
     const { rows } = await pool.query(
-      `SELECT "Id", "Name", "Description", "Unit", "Metadata"
+      `SELECT "Id", "Name", "Description", "Metadata"
        FROM ONLY "Enumerations"
        WHERE LOWER("Name") = LOWER($1)`,
       [name]
@@ -185,7 +248,7 @@ async function getCustomEnumerationByName(name) {
 async function getCustomEnumerationValues(enumerationId) {
   try {
     const { rows } = await pool.query(
-      `SELECT "Name", "Value", "Data"
+      `SELECT "Name", "Data"
        FROM ONLY "EnumerationValues"
        WHERE "EnumerationId" = $1
        ORDER BY "Name"`,
@@ -693,7 +756,6 @@ async function getBuiltinDetail(name) {
     name: def.name,
     source: 'builtin',
     description: def.description,
-    unit: null,
     metadata: null,
     columns: loaded.columns,
     rows: loaded.rows
@@ -720,7 +782,6 @@ function register(app) {
         name: x.Name,
         source: 'custom',
         description: x.Description || null,
-        unit: x.Unit || null,
         metadata: x.Metadata || null
       }));
 
@@ -731,7 +792,6 @@ function register(app) {
           name: x.name,
           source: 'builtin',
           description: x.description,
-          unit: null,
           metadata: null
         }));
 
@@ -774,7 +834,6 @@ function register(app) {
           name: custom.Name,
           source: 'custom',
           description: custom.Description || null,
-          unit: custom.Unit || null,
           metadata: custom.Metadata || null,
           columns: table.columns,
           rows: table.rows

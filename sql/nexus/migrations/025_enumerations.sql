@@ -11,7 +11,6 @@ CREATE TABLE IF NOT EXISTS "Enumerations" (
   "Id" SERIAL PRIMARY KEY,
   "Name" TEXT NOT NULL UNIQUE,
   "Description" TEXT,
-  "Unit" TEXT,
   "Metadata" JSONB
 );
 
@@ -22,7 +21,6 @@ CREATE TABLE IF NOT EXISTS "Enumerations_audit" (
   "Id" INTEGER NOT NULL,
   "Name" TEXT NOT NULL,
   "Description" TEXT,
-  "Unit" TEXT,
   "Metadata" JSONB
 );
 
@@ -67,7 +65,6 @@ CREATE TRIGGER "Enumerations_audit_trigger"
 CREATE TABLE IF NOT EXISTS "EnumerationValues" (
   "EnumerationId" INTEGER NOT NULL REFERENCES "Enumerations"("Id") ON DELETE CASCADE,
   "Name" TEXT NOT NULL,
-  "Value" TEXT,
   "Data" JSONB,
   PRIMARY KEY ("EnumerationId", "Name")
 );
@@ -83,7 +80,6 @@ CREATE TABLE IF NOT EXISTS "EnumerationValues_audit" (
   userid TEXT NOT NULL,
   "EnumerationId" INTEGER NOT NULL,
   "Name" TEXT NOT NULL,
-  "Value" TEXT,
   "Data" JSONB
 );
 
