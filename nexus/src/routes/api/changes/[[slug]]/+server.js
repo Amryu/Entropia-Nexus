@@ -1,47 +1,8 @@
 //@ts-nocheck
 import { getChangeById, getChangeEntities as dbGetChangeEntities, getChangeTypes as dbGetChangeTypes, updateChange, deleteChange, createChange, executeVector, getChangeByEntityId, getOpenChangeByEntityId, getChangesFiltered } from "$lib/server/db.js"
 import { apiCall, getResponse } from "$lib/util.js";
-import sanitizeHtml from "sanitize-html";
+import { sanitizeRichText } from "$lib/server/sanitizeRichText.js";
 import { getValidator } from "$lib/server/schemaValidator.js";
-
-// HTML sanitization config for TipTap rich text editor output
-const SANITIZE_CONFIG = {
-  allowedTags: [
-    'p', 'strong', 'em', 's', 'code', 'br',
-    'h1', 'h2', 'h3', 'h4',
-    'ul', 'ol', 'li',
-    'blockquote', 'pre', 'hr',
-    'a',
-    'div', 'iframe',
-    'img'
-  ],
-  allowedAttributes: {
-    'a': ['href', 'target', 'rel'],
-    'div': ['data-type', 'data-provider', 'data-src', 'data-width', 'data-pending', 'data-alt', 'class', 'style'],
-    'iframe': ['src', 'width', 'height', 'frameborder', 'allow', 'allowfullscreen'],
-    'img': ['src', 'alt', 'data-width', 'data-pending', 'style']
-  },
-  allowedStyles: {
-    '*': { 'width': [/^\d+px$/], 'max-width': [/^\d+(%|px)$/] }
-  },
-  allowedIframeHostnames: ['www.youtube.com', 'youtube.com', 'player.vimeo.com', 'vimeo.com'],
-  transformTags: {
-    'a': (tagName, attribs) => {
-      const href = attribs.href || '';
-      if (href.startsWith('/')) {
-        // Relative links: no target/rel so SvelteKit router handles navigation
-        return { tagName: 'a', attribs: { href } };
-      }
-      return { tagName: 'a', attribs: { href, target: '_blank', rel: 'noopener noreferrer' } };
-    },
-    'img': (tagName, attribs) => {
-      if (!(attribs.src || '').startsWith('/api/img/')) {
-        return { tagName: '', attribs: {} };
-      }
-      return { tagName: 'img', attribs };
-    }
-  }
-};
 
 /**
  * Recursively trims all string values in an object or array.
@@ -71,10 +32,10 @@ function sanitizeBody(body) {
   trimStrings(body);
 
   if (body && typeof body.Description === 'string') {
-    body.Description = sanitizeHtml(body.Description, SANITIZE_CONFIG);
+    body.Description = sanitizeRichText(body.Description);
   }
   if (body?.Properties && typeof body.Properties.Description === 'string') {
-    body.Properties.Description = sanitizeHtml(body.Properties.Description, SANITIZE_CONFIG);
+    body.Properties.Description = sanitizeRichText(body.Properties.Description);
   }
   // Ensure Set is a valid object for entities that require it (e.g. Clothing)
   if (body && 'Set' in body && !body.Set) {

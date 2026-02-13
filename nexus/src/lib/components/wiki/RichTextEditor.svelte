@@ -366,6 +366,7 @@
       onUpdate: ({ editor }) => {
         if (!initialized) return;
         const html = editor.getHTML();
+        content = html;
         dispatch('change', html);
       },
       onSelectionUpdate: () => {

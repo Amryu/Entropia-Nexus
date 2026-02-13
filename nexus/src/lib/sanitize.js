@@ -2,15 +2,15 @@
  * Client-side HTML sanitization for wiki descriptions.
  * Uses DOMPurify for browser-compatible XSS prevention.
  *
- * This mirrors the server-side sanitization in /api/changes to ensure
- * consistent handling of rich text content from the TipTap editor.
+ * The canonical server-side config lives in $lib/server/sanitizeRichText.js.
+ * Keep allowed tags, attributes, and transform rules in sync between both files.
  */
 
 import DOMPurify from 'dompurify';
 
 /**
  * Allowed HTML tags from TipTap rich text editor.
- * Must match the server-side SANITIZE_CONFIG in /api/changes/+server.js
+ * Must match the server-side SANITIZE_CONFIG in $lib/server/sanitizeRichText.js.
  */
 const ALLOWED_TAGS = [
   // Basic formatting
@@ -31,7 +31,7 @@ const ALLOWED_TAGS = [
 
 /**
  * Allowed attributes by tag.
- * Must match the server-side configuration.
+ * Must match the server-side SANITIZE_CONFIG in $lib/server/sanitizeRichText.js.
  */
 const ALLOWED_ATTR = [
   'href', 'target', 'rel',                    // Links
