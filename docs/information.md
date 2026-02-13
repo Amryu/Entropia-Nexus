@@ -91,12 +91,14 @@ GET /skillcategories     - Skill categories
 
 ## Vendors (`/information/vendors/`)
 
-NPC trade terminal vendors.
+NPC trade terminal vendors. Vendors are stored as Location entities with `Type = 'Vendor'` in the Locations table, with VendorOffers as an extension table (similar to Areas/Estates for other location types).
 
 ### Route
 ```
 /information/vendors/[[slug]]
 ```
+
+Vendors also appear in the Locations navigation under the "Vendors" type filter at `/information/locations/vendors`.
 
 ### Data Structure
 
@@ -104,24 +106,35 @@ NPC trade terminal vendors.
 {
   "Id": 1,
   "Name": "Trade Terminal",
-  "Planet": {
-    "Id": 1,
-    "Name": "Calypso"
+  "Properties": {
+    "Description": "A standard trade terminal.",
+    "Coordinates": {
+      "Longitude": 12345,
+      "Latitude": 67890,
+      "Altitude": 100
+    }
   },
-  "Location": {
-    "Longitude": 12345,
-    "Latitude": 67890
+  "Planet": {
+    "Name": "Calypso"
   },
   "Offers": [
     {
-      "ItemId": 100,
-      "ItemName": "Basic Filters",
-      "Price": 5.00,
-      "Quantity": -1
+      "IsLimited": false,
+      "Value": 5.00,
+      "Item": { "Name": "Basic Filters" },
+      "Prices": [
+        { "Item": { "Name": "PED" }, "Amount": 5 }
+      ]
     }
   ]
 }
 ```
+
+### Database
+
+Vendors live in the `Locations` table with `Type = 'Vendor'`. Extension data:
+- `VendorOffers` table (FK: `LocationId` → `Locations.Id`)
+- `VendorOfferPrices` table (FK: `OfferId` → `VendorOffers.Id`)
 
 ### Properties
 
@@ -129,15 +142,22 @@ NPC trade terminal vendors.
 |-------|-------------|
 | Name | Vendor name |
 | Planet | Location planet |
-| Location | Coordinates |
-| Offers | Items for sale |
+| Properties.Description | Vendor description |
+| Properties.Coordinates | Longitude, Latitude, Altitude |
+| Offers | Items for sale with prices |
+
+### Edit Mode
+
+- **Coordinates**: Uses `WaypointInput` component (supports paste from game waypoints)
+- **View mode**: `WaypointCopyButton` for copying waypoint strings
+- **Offers panel**: Always visible (including create mode)
 
 ### API Endpoints
 
 ```
-GET /vendors           - All vendors
-GET /vendors/:id       - Single vendor
-GET /vendoroffers      - All vendor offers
+GET /vendors           - All vendors (queries Locations WHERE Type='Vendor')
+GET /vendors/:id       - Single vendor by ID or name
+GET /vendoroffers      - All vendor offers with prices
 ```
 
 ---

@@ -115,7 +115,8 @@
     { value: 'Outpost', label: 'Outpost' },
     { value: 'Camp', label: 'Camp' },
     { value: 'City', label: 'City' },
-    { value: 'WaveEvent', label: 'Wave Event' }
+    { value: 'WaveEvent', label: 'Wave Event' },
+    { value: 'Vendor', label: 'Vendor' }
   ];
 
   // Navigation type buttons (merged categories with plurals)
@@ -127,6 +128,7 @@
     { slug: 'settlements', label: 'Settlements', types: ['Outpost', 'Camp', 'City'] },
     { slug: 'waveevents', label: 'Wave Events', types: ['WaveEvent'] },
     { slug: 'instances', label: 'Instances', types: ['InstanceEntrance'] },
+    { slug: 'vendors', label: 'Vendors', types: ['Vendor'] },
     { slug: 'other', label: 'Other', types: null } // Catches types not in other categories
   ];
 

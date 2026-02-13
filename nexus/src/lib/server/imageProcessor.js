@@ -720,7 +720,7 @@ const NEXUS_DESCRIPTION_TABLES = [
   'MindforceImplants', 'MiscTools', 'MissionChains', 'MissionSteps', 'Missions',
   'MobMaturities', 'MobSpawns', 'MobSpecies', 'Mobs', 'Pets', 'Planets', 'Professions',
   'Refiners', 'Scanners', 'Signs', 'Skills', 'StorageContainers', 'Strongboxes',
-  'TeleportationChips', 'VehicleAttachmentTypes', 'Vehicles', 'Vendors',
+  'TeleportationChips', 'VehicleAttachmentTypes', 'Vehicles',
   'WeaponAmplifiers', 'WeaponVisionAttachments', 'Weapons'
 ];
 

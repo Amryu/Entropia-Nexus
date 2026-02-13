@@ -4,7 +4,7 @@ const { pool } = require("./dbClient");
 
 const queries = {
   VendorOffers:
-    'SELECT "VendorOffers".*, "Items"."Name" AS "Item", "Items"."Value" AS "ItemValue", "Items"."Type" AS "ItemType", "Vendors"."Name" AS "Vendor", "Vendors"."PlanetId" AS "PlanetId", "Planets"."Name" AS "Planet" FROM ONLY "VendorOffers" LEFT JOIN ONLY "Items" ON "VendorOffers"."ItemId" = "Items"."Id" LEFT JOIN ONLY "Vendors" ON "VendorOffers"."VendorId" = "Vendors"."Id" LEFT JOIN ONLY "Planets" ON "Vendors"."PlanetId" = "Planets"."Id"',
+    'SELECT "VendorOffers".*, "Items"."Name" AS "Item", "Items"."Value" AS "ItemValue", "Items"."Type" AS "ItemType", l."Name" AS "Vendor", l."PlanetId" AS "PlanetId", "Planets"."Name" AS "Planet" FROM ONLY "VendorOffers" LEFT JOIN ONLY "Items" ON "VendorOffers"."ItemId" = "Items"."Id" LEFT JOIN ONLY "Locations" l ON "VendorOffers"."LocationId" = l."Id" LEFT JOIN ONLY "Planets" ON l."PlanetId" = "Planets"."Id"',
 };
 
 function _formatVendorOfferPrice(x) {
@@ -41,7 +41,7 @@ async function formatVendorOffer(x, data) {
     Vendor: {
       Name: x.Vendor,
       Planet: { Name: x.Planet, Links: { $Url: `/planets/${x.PlanetId}` } },
-      Links: { $Url: `/vendors/${x.VendorId}` },
+      Links: { $Url: `/vendors/${x.LocationId}` },
     },
     Prices: prices,
     Links: { $Url: `/vendoroffers/${x.Id}` },

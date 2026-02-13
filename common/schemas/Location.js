@@ -19,7 +19,8 @@ export const Location = {
             "Teleporter", "Npc", "Interactable",
             "Area", "Estate",
             "Outpost", "Camp", "City", "WaveEvent",
-            "RevivalPoint", "InstanceEntrance"
+            "RevivalPoint", "InstanceEntrance",
+            "Vendor"
           ]
         },
         "Description": {

@@ -17,8 +17,10 @@
   import WikiSEO from '$lib/components/wiki/WikiSEO.svelte';
   import DataSection from '$lib/components/wiki/DataSection.svelte';
   import WaypointCopyButton from '$lib/components/wiki/WaypointCopyButton.svelte';
+  import WaypointInput from '$lib/components/wiki/WaypointInput.svelte';
   import InlineEdit from '$lib/components/wiki/InlineEdit.svelte';
   import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
+  import { getWaypoint } from '$lib/mapUtil';
 
   // Vendor-specific components
   import VendorOffers from '$lib/components/wiki/vendors/VendorOffers.svelte';
@@ -265,18 +267,6 @@
     return coords && (coords.Longitude != null || coords.Latitude != null);
   }
 
-  function formatCoordinates(v) {
-    const coords = v?.Properties?.Coordinates;
-    if (!coords) return null;
-
-    const planet = v.Planet?.Properties?.TechnicalName || v.Planet?.Name || 'Unknown';
-    const lon = coords.Longitude ?? 0;
-    const lat = coords.Latitude ?? 0;
-    const alt = coords.Altitude ?? 100;
-
-    return `[${planet}, ${lon}, ${lat}, ${alt}, ${v.Name}]`;
-  }
-
   function getPlanetBadgeClass(planetName) {
     if (!planetName) return '';
     const lower = planetName.toLowerCase().replace(/\s+/g, '-');
@@ -288,9 +278,34 @@
   $: limitedCount = getLimitedCount(activeVendor);
   $: uniqueTypes = getUniqueTypes(activeVendor);
   $: hasLocation = hasCoordinates(activeVendor);
-  $: coordinates = formatCoordinates(activeVendor);
+
+  // Build waypoint value object for WaypointInput (edit mode)
+  $: waypointValue = {
+    planet: activeVendor?.Planet?.Name || 'Calypso',
+    x: activeVendor?.Properties?.Coordinates?.Longitude ?? null,
+    y: activeVendor?.Properties?.Coordinates?.Latitude ?? null,
+    z: activeVendor?.Properties?.Coordinates?.Altitude ?? null,
+    name: activeVendor?.Name || ''
+  };
+
+  // Build waypoint string for WaypointCopyButton (view mode)
+  $: waypointString = activeVendor?.Properties?.Coordinates?.Longitude != null
+    ? getWaypoint(
+        activeVendor?.Planet?.Name || 'Calypso',
+        activeVendor?.Properties?.Coordinates?.Longitude,
+        activeVendor?.Properties?.Coordinates?.Latitude,
+        activeVendor?.Properties?.Coordinates?.Altitude ?? 100,
+        activeVendor?.Name || ''
+      )
+    : '';
 
   // ========== EDIT HANDLERS ==========
+  function handleWaypointChange(detail) {
+    if (detail.x !== undefined) updateField('Properties.Coordinates.Longitude', detail.x);
+    if (detail.y !== undefined) updateField('Properties.Coordinates.Latitude', detail.y);
+    if (detail.z !== undefined) updateField('Properties.Coordinates.Altitude', detail.z);
+  }
+
   function handleDescriptionChange(event) {
     updateField('Properties.Description', event.detail);
   }
@@ -414,43 +429,18 @@
             </span>
           </div>
           {#if $editMode}
-            <div class="stat-row">
-              <span class="stat-label">Longitude</span>
-              <span class="stat-value">
-                <InlineEdit
-                  type="number"
-                  value={activeVendor?.Properties?.Coordinates?.Longitude ?? ''}
-                  path="Properties.Coordinates.Longitude"
-                  step={1}
-                />
-              </span>
-            </div>
-            <div class="stat-row">
-              <span class="stat-label">Latitude</span>
-              <span class="stat-value">
-                <InlineEdit
-                  type="number"
-                  value={activeVendor?.Properties?.Coordinates?.Latitude ?? ''}
-                  path="Properties.Coordinates.Latitude"
-                  step={1}
-                />
-              </span>
-            </div>
-            <div class="stat-row">
-              <span class="stat-label">Altitude</span>
-              <span class="stat-value">
-                <InlineEdit
-                  type="number"
-                  value={activeVendor?.Properties?.Coordinates?.Altitude ?? 100}
-                  path="Properties.Coordinates.Altitude"
-                  step={1}
-                />
-              </span>
-            </div>
+            <WaypointInput
+              value={waypointValue}
+              planetLocked={true}
+              nameLocked={true}
+              hidePlanet={true}
+              hideName={true}
+              on:change={(e) => handleWaypointChange(e.detail)}
+            />
           {:else if hasLocation}
             <div class="coordinates-display">
               <span class="coordinates-label">Waypoint</span>
-              <WaypointCopyButton waypoint={coordinates} />
+              <WaypointCopyButton waypoint={waypointString} />
             </div>
           {:else}
             <div class="stat-row">
@@ -517,17 +507,15 @@
         </div>
 
         <!-- Offers Section -->
-        {#if !isCreateMode}
-          <DataSection
-            title="Offers"
-            icon=""
-            bind:expanded={panelStates.offers}
-            subtitle="{offerCount} item{offerCount !== 1 ? 's' : ''}"
-            on:toggle={savePanelStates}
-          >
-            <VendorOffers offers={activeVendor?.Offers || []} />
-          </DataSection>
-        {/if}
+        <DataSection
+          title="Offers"
+          icon=""
+          bind:expanded={panelStates.offers}
+          subtitle="{offerCount} item{offerCount !== 1 ? 's' : ''}"
+          on:toggle={savePanelStates}
+        >
+          <VendorOffers offers={activeVendor?.Offers || []} />
+        </DataSection>
       </article>
     </div>
   {:else}

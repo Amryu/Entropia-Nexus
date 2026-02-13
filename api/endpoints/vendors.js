@@ -1,9 +1,9 @@
 const pgp = require('pg-promise')();
-const { getObjects, getObjectByIdOrName } = require('./utils');
+const { getObjects } = require('./utils');
 const { pool } = require('./dbClient');
 
 const queries = {
-  Vendors: 'SELECT "Vendors".*, "Planets"."Name" AS "Planet", "Planets"."TechnicalName" AS "PlanetTechnicalName" FROM ONLY "Vendors" LEFT JOIN ONLY "Planets" ON "Vendors"."PlanetId" = "Planets"."Id"',
+  Vendors: 'SELECT l.*, "Planets"."Name" AS "Planet", "Planets"."TechnicalName" AS "PlanetTechnicalName" FROM ONLY "Locations" l LEFT JOIN ONLY "Planets" ON l."PlanetId" = "Planets"."Id" WHERE l."Type" = \'Vendor\'',
 };
 
 function _formatVendorOfferPrice(x){
@@ -63,27 +63,30 @@ function formatVendor(x, data){
 
 async function _getVendorOffers(ids){
   if (ids.length === 0) return { Offers: {}, Prices: {} };
-  const { rows: offers } = await pool.query(`SELECT "VendorOffers".*, "Items"."Name" AS "Item", "Items"."Type" AS "ItemType", "Items"."Value" AS "Value" FROM ONLY "VendorOffers" INNER JOIN ONLY "Items" ON "VendorOffers"."ItemId" = "Items"."Id" WHERE "VendorId" IN (${ids.join(',')})`);
+  const { rows: offers } = await pool.query(`SELECT "VendorOffers".*, "Items"."Name" AS "Item", "Items"."Type" AS "ItemType", "Items"."Value" AS "Value" FROM ONLY "VendorOffers" INNER JOIN ONLY "Items" ON "VendorOffers"."ItemId" = "Items"."Id" WHERE "LocationId" IN (${ids.join(',')})`);
   const offerIds = offers.map(x => x.Id);
   if (offerIds.length === 0) return { Offers: {}, Prices: {} };
   const { rows: prices } = await pool.query(`SELECT "VendorOfferPrices".*, "Items"."Name" AS "Item", "Items"."Type" AS "ItemType", "Items"."Value" AS "Value" FROM ONLY "VendorOfferPrices" INNER JOIN ONLY "Items" ON "VendorOfferPrices"."ItemId" = "Items"."Id" WHERE "OfferId" IN (${offerIds.join(',')})`);
-  return { Offers: offers.reduce((a,r)=>{ (a[r.VendorId] ||= []).push(r); return a; }, {}), Prices: prices.reduce((a,r)=>{ (a[r.OfferId] ||= []).push(r); return a; }, {}) };
+  return { Offers: offers.reduce((a,r)=>{ (a[r.LocationId] ||= []).push(r); return a; }, {}), Prices: prices.reduce((a,r)=>{ (a[r.OfferId] ||= []).push(r); return a; }, {}) };
 }
 
 // DB methods
 async function getVendors(offerItems = null){
-  let where = '';
+  let extra = '';
   if (offerItems !== null){
-    where = pgp.as.format(' WHERE "Vendors"."Id" IN (SELECT DISTINCT "VendorId" FROM ONLY "VendorOffers" INNER JOIN ONLY "Items" ON "VendorOffers"."ItemId" = "Items"."Id" WHERE "Items"."Name" IN ($1:csv))', [offerItems.map(x => `${x}`)]);
+    extra = pgp.as.format(' AND l."Id" IN (SELECT DISTINCT "LocationId" FROM ONLY "VendorOffers" INNER JOIN ONLY "Items" ON "VendorOffers"."ItemId" = "Items"."Id" WHERE "Items"."Name" IN ($1:csv))', [offerItems.map(x => `${x}`)]);
   }
-  const rows = await getObjects(queries.Vendors + where, x=>x);
+  const rows = await getObjects(queries.Vendors + extra, x=>x);
   const data = await _getVendorOffers(rows.map(r=>r.Id));
   return rows.map(r => formatVendor(r, data));
 }
 
 async function getVendor(idOrName){
-  const row = await getObjectByIdOrName(queries.Vendors, 'Vendors', idOrName);
-  if (!row) return null;
+  const isById = /^(\d+)$/.test(String(idOrName));
+  const sql = queries.Vendors + (isById ? ' AND l."Id" = $1' : ' AND l."Name" = $1');
+  const { rows } = await pool.query(sql, [idOrName]);
+  if (rows.length !== 1) return null;
+  const row = rows[0];
   const data = await _getVendorOffers([row.Id]);
   return formatVendor(row, data);
 }

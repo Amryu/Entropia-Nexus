@@ -14,7 +14,8 @@ const LOCATION_TYPES = {
   City: 'City',
   WaveEvent: 'WaveEvent',
   RevivalPoint: 'RevivalPoint',
-  InstanceEntrance: 'InstanceEntrance'
+  InstanceEntrance: 'InstanceEntrance',
+  Vendor: 'Vendor'
 };
 
 // Base query for locations

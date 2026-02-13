@@ -1,7 +1,7 @@
 <!--
   @component Material Wiki Page
   Wikipedia-style layout with floating infobox on the right side.
-  Infobox Tier 1: Type, Value  |  Tier 2: Weight
+  Infobox Tier 1: Type, Value (read-only)  |  Tier 2: Type (editable), Weight  |  Economy: Value (editable)
   Article: Description, Acquisition, Usage
 
   Supports full wiki editing with wikiEditState integration.
@@ -20,6 +20,7 @@
   import DataSection from '$lib/components/wiki/DataSection.svelte';
   import InlineEdit from '$lib/components/wiki/InlineEdit.svelte';
   import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
+  import SearchInput from '$lib/components/wiki/SearchInput.svelte';
 
   // Edit state management
   import {
@@ -111,6 +112,10 @@
   onDestroy(() => {
     resetEditState();
   });
+
+  // Build material type options for SearchInput (unique types from loaded materials)
+  $: materialTypeOptions = [...new Set(allItems.filter(m => m?.Properties?.Type).map(m => m.Properties.Type))].sort()
+    .map(t => ({ label: t, value: t }));
 
   // Build navigation items
   $: navItems = allItems;
@@ -270,46 +275,37 @@
           </div>
         </div>
 
-        <!-- Primary Stats -->
+        <!-- Primary Stats (read-only summary) -->
         <div class="stats-section tier-1">
           <div class="stat-row primary">
             <span class="stat-label">Type</span>
-            <span class="stat-value">
-              {#if $editMode}
-                <InlineEdit
-                  value={activeMaterial?.Properties?.Type}
-                  path="Properties.Type"
-                  type="text"
-                  placeholder="e.g. Ore"
-                />
-              {:else}
-                {activeMaterial?.Properties?.Type || 'N/A'}
-              {/if}
-            </span>
+            <span class="stat-value">{activeMaterial?.Properties?.Type || 'N/A'}</span>
           </div>
           <div class="stat-row primary">
             <span class="stat-label">Value</span>
-            <span class="stat-value">
-              {#if $editMode}
-                <InlineEdit
-                  value={activeMaterial?.Properties?.Economy?.MaxTT}
-                  path="Properties.Economy.MaxTT"
-                  type="number"
-                  min={0}
-                  step={0.0001}
-                  suffix="PED"
-                  placeholder="0.00"
-                />
-              {:else}
-                {formatValue(activeMaterial?.Properties?.Economy?.MaxTT)}
-              {/if}
-            </span>
+            <span class="stat-value">{formatValue(activeMaterial?.Properties?.Economy?.MaxTT)}</span>
           </div>
         </div>
 
         <!-- Secondary Stats -->
         <div class="stats-section tier-2">
           <h4 class="section-title">Properties</h4>
+          <div class="stat-row">
+            <span class="stat-label">Type</span>
+            <span class="stat-value">
+              {#if $editMode}
+                <SearchInput
+                  value={activeMaterial?.Properties?.Type || ''}
+                  options={materialTypeOptions}
+                  placeholder="e.g. Ore"
+                  on:select={(e) => updateField('Properties.Type', e.detail.value)}
+                  on:change={(e) => updateField('Properties.Type', e.detail.value)}
+                />
+              {:else}
+                {activeMaterial?.Properties?.Type || 'N/A'}
+              {/if}
+            </span>
+          </div>
           <div class="stat-row">
             <span class="stat-label">Weight</span>
             <span class="stat-value">
@@ -325,6 +321,29 @@
                 />
               {:else}
                 {formatWeight(activeMaterial?.Properties?.Weight)}
+              {/if}
+            </span>
+          </div>
+        </div>
+
+        <!-- Economy -->
+        <div class="stats-section tier-2">
+          <h4 class="section-title">Economy</h4>
+          <div class="stat-row">
+            <span class="stat-label">Value</span>
+            <span class="stat-value">
+              {#if $editMode}
+                <InlineEdit
+                  value={activeMaterial?.Properties?.Economy?.MaxTT}
+                  path="Properties.Economy.MaxTT"
+                  type="number"
+                  min={0}
+                  step={0.0001}
+                  suffix="PED"
+                  placeholder="0.00"
+                />
+              {:else}
+                {formatValue(activeMaterial?.Properties?.Economy?.MaxTT)}
               {/if}
             </span>
           </div>

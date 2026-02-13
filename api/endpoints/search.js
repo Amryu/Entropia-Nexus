@@ -283,7 +283,8 @@ async function search(query, fuzzy = false){
         UNION ALL
         SELECT "Locations"."Id" + 8000000000 AS "Id", "Locations"."Name" AS "Name", 'Location' AS "Type", "Locations"."Type"::text AS "SubType", NULL AS "Gender", FALSE AS "_prefiltered", NULL AS "MatchedName"
         FROM ONLY "Locations"
-        LEFT JOIN ONLY "Planets" ON "Locations"."PlanetId" = "Planets"."Id"`;
+        LEFT JOIN ONLY "Planets" ON "Locations"."PlanetId" = "Planets"."Id"
+        WHERE "Locations"."Type" != 'Vendor'`;
   }
 
   // Build WHERE clause for armor piece name matching (used in EXISTS subquery)
@@ -324,7 +325,7 @@ async function search(query, fuzzy = false){
         UNION ALL
         SELECT "Professions"."Id" + 4000000000 AS "Id", "Professions"."Name" AS "Name", 'Profession' AS "Type", NULL AS "SubType", NULL AS "Gender", FALSE AS "_prefiltered", NULL AS "MatchedName" FROM ONLY "Professions"
         UNION ALL
-        SELECT "Vendors"."Id" + 5000000000 AS "Id", "Vendors"."Name" AS "Name", 'Vendor' AS "Type", NULL AS "SubType", NULL AS "Gender", FALSE AS "_prefiltered", NULL AS "MatchedName" FROM ONLY "Vendors"${optionalUnions}
+        SELECT "Locations"."Id" + 5000000000 AS "Id", "Locations"."Name" AS "Name", 'Vendor' AS "Type", NULL AS "SubType", NULL AS "Gender", FALSE AS "_prefiltered", NULL AS "MatchedName" FROM ONLY "Locations" WHERE "Locations"."Type" = 'Vendor'${optionalUnions}
       )
       ${whereClause}
     ) x
