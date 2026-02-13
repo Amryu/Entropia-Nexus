@@ -412,6 +412,7 @@
       { label: 'Skills', url: 'skills' },
       { label: 'Vendors', url: 'vendors' },
       { label: 'Locations', url: 'locations' },
+      { label: 'Enumerations', url: 'enumerations' },
     ],
     'Maps': [
       { label: 'Calypso', url: 'calypso' },

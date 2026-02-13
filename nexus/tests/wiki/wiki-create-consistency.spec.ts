@@ -8,9 +8,9 @@ const TEST_PAGES = WIKI_PAGES_WITH_SUBTYPES;
 test.describe('Wiki Create Mode - Consistency Across Pages', () => {
   test.describe('Create New Button', () => {
     for (const page of TEST_PAGES) {
-      // Skip enhancers - they are database-generated and not editable
-      if (page.path.includes('enhancers')) {
-        test.skip(`${page.name}: verified user sees "Create New" button (skipped - database-generated)`, async () => {});
+      // Skip pages marked as non-editable (e.g. enhancers, read-only pages)
+      if (('editable' in page && page.editable === false) || page.path.includes('enhancers')) {
+        test.skip(`${page.name}: verified user sees "Create New" button (skipped - non-editable)`, async () => {});
         continue;
       }
 
@@ -27,6 +27,11 @@ test.describe('Wiki Create Mode - Consistency Across Pages', () => {
   test.describe('Create Mode Image Placeholder', () => {
     for (const page of TEST_PAGES) {
       test(`${page.name}: create mode shows "Available after approval" message`, async ({ verifiedUser }) => {
+        if ('editable' in page && page.editable === false) {
+          test.skip();
+          return;
+        }
+
         await verifiedUser.goto(`${page.path}?mode=create`);
         await verifiedUser.waitForLoadState('networkidle');
 
@@ -45,6 +50,11 @@ test.describe('Wiki Create Mode - Consistency Across Pages', () => {
   test.describe('Required Fields Validation', () => {
     for (const page of TEST_PAGES) {
       test(`${page.name}: cannot save without required fields`, async ({ verifiedUser }) => {
+        if ('editable' in page && page.editable === false) {
+          test.skip();
+          return;
+        }
+
         await verifiedUser.goto(`${page.path}?mode=create`);
         await verifiedUser.waitForLoadState('networkidle');
 

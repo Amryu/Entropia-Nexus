@@ -28,6 +28,7 @@ export const WIKI_PAGES = [
   { path: '/information/vendors', name: 'Vendors' },
   { path: '/information/mobs', name: 'Mobs' },
   { path: '/information/missions', name: 'Missions' },
+  { path: '/information/enumerations', name: 'Enumerations', editable: false, hasInfobox: false },
   { path: '/market/shops', name: 'Shops' },
 ] as const;
 
@@ -107,4 +108,6 @@ export const EFFECT_PAGES = [
 /**
  * Simple array of paths for tests that only need the path strings
  */
-export const WIKI_PAGE_PATHS = WIKI_PAGES.map(p => p.path);
+export const WIKI_PAGE_PATHS = WIKI_PAGES
+  .filter(p => !('editable' in p) || p.editable !== false)
+  .map(p => p.path);

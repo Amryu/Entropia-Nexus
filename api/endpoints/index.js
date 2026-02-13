@@ -45,6 +45,7 @@ const skillcategories = require('./skillcategories');
 const refiners = require('./refiners');
 const acquisition = require('./acquisition');
 const usage = require('./usage');
+const enumerations = require('./enumerations');
 const audit = require('./audit');
 const entitychanges = require('./entitychanges');
 // Newly added (migration phase 3)
@@ -115,6 +116,7 @@ function registerAll(app){
   refiners.register(app);
   acquisition.register(app);
   usage.register(app);
+  enumerations.register(app);
   audit.register(app);
   entitychanges.register(app);
   // Conditionally register new modules if present

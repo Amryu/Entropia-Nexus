@@ -41,13 +41,19 @@
       href: '/information/locations',
       icon: 'LOC',
       description: 'Teleporters, areas, estates, outposts, and other locations'
+    },
+    {
+      name: 'Enumerations',
+      href: '/information/enumerations',
+      icon: 'ENUM',
+      description: 'Built-in and custom name/value datasets shown as flattened reference tables'
     }
   ];
 </script>
 
 <svelte:head>
   <title>Information - Entropia Nexus</title>
-  <meta name="description" content="Browse Entropia Universe reference data: missions, mobs, professions, skills, and vendors." />
+  <meta name="description" content="Browse Entropia Universe reference data: missions, mobs, professions, skills, vendors, locations, and enumerations." />
   <link rel="canonical" href="https://entropianexus.com/information" />
 </svelte:head>
 
