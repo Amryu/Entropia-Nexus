@@ -117,10 +117,17 @@ test.describe('Main Navigation Menu', () => {
 
     test('short link button is shown on supported route types', async ({ page }) => {
       const supportedRoutes = [
+        { path: '/', expectedPrefix: 'https://eunex.us/h' },
+        { path: '/login', expectedPrefix: 'https://eunex.us/lo' },
+        { path: '/market', expectedPrefix: 'https://eunex.us/mk' },
+        { path: '/tools/loadouts', expectedPrefix: 'https://eunex.us/tl' },
+        { path: '/maps/calypso', expectedPrefix: 'https://eunex.us/mp/' },
         { path: '/information/mobs', expectedPrefix: 'https://eunex.us/nm' },
-        { path: '/market/exchange/orders/Oknar~Zec~Zuki', expectedPrefix: 'https://eunex.us/eo/' },
-        { path: '/users/verified1', expectedPrefix: 'https://eunex.us/u/verified1' },
-        { path: '/societies/example-society', expectedPrefix: 'https://eunex.us/s/example-society' }
+        { path: '/information/missions?view=chains&chain=Iron~Challenge', expectedPrefix: 'https://eunex.us/mc/' },
+        { path: '/market/exchange?item=12345', expectedPrefix: 'https://eunex.us/eq/12345' },
+        { path: '/market/exchange/orders/Oknar~Zec~Zuki', expectedPrefix: 'https://eunex.us/mo/' },
+        { path: '/users/verified1', expectedPrefix: 'https://eunex.us/us/verified1' },
+        { path: '/societies/example-society', expectedPrefix: 'https://eunex.us/so/example-society' }
       ];
 
       for (const route of supportedRoutes) {
@@ -134,7 +141,7 @@ test.describe('Main Navigation Menu', () => {
     });
 
     test('short link button is hidden on unsupported routes', async ({ page }) => {
-      await page.goto('/market');
+      await page.goto('/this-route-does-not-exist');
       await page.waitForLoadState('networkidle');
 
       await expect(page.locator('.short-link-action')).toHaveCount(0);
@@ -378,11 +385,11 @@ test.describe('Main Navigation Menu', () => {
 
       const shortLinkQuickButton = page.locator('.mobile-quick-btn.short-link-mobile-btn');
       await expect(shortLinkQuickButton).toBeVisible();
-      await expect(shortLinkQuickButton).toHaveAttribute('data-short-url', /^https:\/\/eunex\.us\/u\/verified1/);
+      await expect(shortLinkQuickButton).toHaveAttribute('data-short-url', /^https:\/\/eunex\.us\/us\/verified1/);
     });
 
     test('mobile quick short-link action stays hidden on unsupported pages', async ({ page }) => {
-      await page.goto('/');
+      await page.goto('/this-route-does-not-exist');
       await page.waitForLoadState('networkidle');
       await page.locator('.burger-button').click();
 

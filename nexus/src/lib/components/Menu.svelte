@@ -10,6 +10,7 @@
 
   import { getTypeLink, getTypeName, encodeURIComponentSafe, copyToClipboard } from "$lib/util";
   import { addToast } from '$lib/stores/toasts';
+  import { PREFERRED_SHORT_ROUTE_BY_PREFIX } from '$lib/short-url-routes.js';
   import { loading } from "../../actions/loading";
   import FancyTable from '$lib/components/FancyTable.svelte';
   import SearchInput from '$lib/components/SearchInput.svelte';
@@ -22,33 +23,8 @@
   $: logoutUrl = `/discord/logout?redirect=${encodeURIComponent($page.url.pathname + $page.url.search)}`;
   $: profileUrl = user ? `/users/${encodeURIComponentSafe(String(user.eu_name || user.id))}` : '/discord/login';
   const SHORT_LINK_ORIGIN = 'https://eunex.us';
-
-  const SHORT_WIKI_ROUTE_CODES: Array<[string, string]> = [
-    ['/items/weapons', 'iw'],
-    ['/items/armorsets', 'ia'],
-    ['/items/armors', 'ir'],
-    ['/items/attachments', 'ij'],
-    ['/items/blueprints', 'ib'],
-    ['/items/consumables', 'ic'],
-    ['/items/furnishings', 'if'],
-    ['/items/clothing', 'il'],
-    ['/items/materials', 'im'],
-    ['/items/medicaltools', 'it'],
-    ['/items/tools', 'io'],
-    ['/items/pets', 'ip'],
-    ['/items/vehicles', 'iv'],
-    ['/items/strongboxes', 'ix'],
-    ['/items', 'i'],
-    ['/information/guides', 'ng'],
-    ['/information/mobs', 'nm'],
-    ['/information/missions', 'ni'],
-    ['/information/professions', 'np'],
-    ['/information/skills', 'ns'],
-    ['/information/vendors', 'nv'],
-    ['/information/locations', 'nl'],
-    ['/information/enumerations', 'ne'],
-    ['/information', 'n']
-  ];
+  const SHORT_ROUTE_PREFIXES = Object.entries(PREFERRED_SHORT_ROUTE_BY_PREFIX)
+    .sort((a, b) => b[0].length - a[0].length);
 
   let dropdownOpen: string | null = null;
   let dropdownCloseTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -168,37 +144,46 @@
     return null;
   }
 
+  function appendQuery(path: string, params: URLSearchParams) {
+    const queryString = params.toString();
+    return `${path}${queryString ? `?${queryString}` : ''}`;
+  }
+
+  function getPseudoShortPath(pathname: string, search: string) {
+    const params = new URLSearchParams(search || '');
+
+    // Missions chains view: use mg/mc pseudo routes.
+    if (pathname === '/information/missions' && params.get('view') === 'chains') {
+      const chain = params.get('chain');
+      params.delete('view');
+      params.delete('chain');
+
+      if (chain) {
+        return appendQuery(`/mc/${encodeURIComponent(chain)}`, params);
+      }
+      return appendQuery('/mg', params);
+    }
+
+    // Exchange direct item filter: use eq pseudo route.
+    if (pathname === '/market/exchange' && params.has('item')) {
+      const item = params.get('item');
+      params.delete('item');
+      if (item) {
+        return appendQuery(`/eq/${encodeURIComponent(item)}`, params);
+      }
+      return appendQuery('/eq', params);
+    }
+
+    return null;
+  }
+
   function getShortPath(pathname: string, search: string) {
     const normalizedPath = trimTrailingSlash(pathname || '/');
     const query = search || '';
-    const segments = normalizedPath.split('/').filter(Boolean);
+    const pseudoPath = getPseudoShortPath(normalizedPath, query);
+    if (pseudoPath) return pseudoPath;
 
-    // Exchange detail pages and user order pages
-    if (segments[0] === 'market' && segments[1] === 'exchange') {
-      if (segments[2] === 'orders') {
-        const tail = segments.slice(3).join('/');
-        return tail ? `/eo/${tail}${query}` : `/eo${query}`;
-      }
-
-      // Detail views use /market/exchange/<view>/<id>
-      if (segments.length >= 4) {
-        const tail = segments.slice(2).join('/');
-        return `/ke/${tail}${query}`;
-      }
-
-      return null;
-    }
-
-    // User and society profiles
-    if (segments[0] === 'users' && segments.length >= 2) {
-      return `/u/${segments.slice(1).join('/')}${query}`;
-    }
-    if (segments[0] === 'societies' && segments.length >= 2) {
-      return `/s/${segments.slice(1).join('/')}${query}`;
-    }
-
-    // Wiki pages
-    for (const [prefix, code] of SHORT_WIKI_ROUTE_CODES) {
+    for (const [prefix, code] of SHORT_ROUTE_PREFIXES) {
       const tail = getTailAfterPrefix(normalizedPath, prefix);
       if (tail == null) continue;
       return tail ? `/${code}/${tail}${query}` : `/${code}${query}`;

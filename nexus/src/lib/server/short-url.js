@@ -1,74 +1,9 @@
 //@ts-nocheck
+import { SHORT_ROUTE_MAP, SHORT_PSEUDO_MAP } from '../short-url-routes.js';
+export { SHORT_ROUTE_MAP, SHORT_PSEUDO_MAP };
 
 const DEFAULT_CANONICAL_PUBLIC_URL = 'https://entropianexus.com';
 const DEFAULT_SHORT_REDIRECT_HOSTS = 'eunex.us,www.eunex.us';
-
-/**
- * Manual short-code map.
- * Each key maps to a long-form prefix route on the canonical host.
- */
-export const SHORT_ROUTE_MAP = Object.freeze({
-  h: '/',
-  a: '/account/setup',
-  l: '/login',
-  d: '/discord',
-  b: '/banned',
-  p: '/sitemap',
-  x: '/sitemap.xml',
-  r: '/legal/privacy',
-  e: '/legal/terms',
-  u: '/users',
-  s: '/societies',
-  i: '/items',
-  iw: '/items/weapons',
-  ia: '/items/armorsets',
-  ir: '/items/armors',
-  ij: '/items/attachments',
-  ib: '/items/blueprints',
-  ic: '/items/consumables',
-  if: '/items/furnishings',
-  il: '/items/clothing',
-  im: '/items/materials',
-  it: '/items/medicaltools',
-  io: '/items/tools',
-  ip: '/items/pets',
-  iv: '/items/vehicles',
-  ix: '/items/strongboxes',
-  n: '/information',
-  ng: '/information/guides',
-  nm: '/information/mobs',
-  ni: '/information/missions',
-  np: '/information/professions',
-  ns: '/information/skills',
-  nv: '/information/vendors',
-  nl: '/information/locations',
-  ne: '/information/enumerations',
-  m: '/maps',
-  t: '/tools',
-  tl: '/tools/loadouts',
-  tc: '/tools/construction',
-  k: '/market',
-  ka: '/market/auction',
-  ke: '/market/exchange',
-  el: '/market/exchange/listings',
-  eo: '/market/exchange/orders',
-  ei: '/market/exchange/inventory',
-  et: '/market/exchange/trades',
-  kr: '/market/rental',
-  ks: '/market/services',
-  kh: '/market/shops',
-  kz: '/market/shops-legacy'
-});
-
-/**
- * Pseudo-route transforms.
- * They map short patterns to long-form canonical routes.
- */
-export const SHORT_PSEUDO_MAP = Object.freeze({
-  mg: '/information/missions',
-  mc: '/information/missions',
-  eq: '/market/exchange'
-});
 
 function toBoolean(value, defaultValue = true) {
   if (value == null || value === '') return defaultValue;
@@ -210,4 +145,3 @@ export function resolveShortRedirect({ host, path, search = '', env = process.en
     location: `${canonicalOrigin}${pathname}${search || ''}`
   };
 }
-

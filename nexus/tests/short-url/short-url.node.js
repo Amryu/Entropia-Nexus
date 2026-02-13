@@ -19,10 +19,32 @@ test('short code iw expands to weapons route', () => {
   assert.equal(result?.location, 'https://entropianexus.com/items/weapons/Adjusted~Harrier');
 });
 
+test('renamed alias lo expands to login route', () => {
+  const result = resolveShortRedirect({
+    host: 'eunex.us',
+    path: '/lo',
+    search: '',
+    env
+  });
+  assert.equal(result?.status, 301);
+  assert.equal(result?.location, 'https://entropianexus.com/login');
+});
+
 test('short code eo expands to exchange orders route', () => {
   const result = resolveShortRedirect({
     host: 'eunex.us',
     path: '/eo/Oknar~Zec~Zuki',
+    search: '',
+    env
+  });
+  assert.equal(result?.status, 301);
+  assert.equal(result?.location, 'https://entropianexus.com/market/exchange/orders/Oknar~Zec~Zuki');
+});
+
+test('renamed alias mo expands to exchange orders route', () => {
+  const result = resolveShortRedirect({
+    host: 'eunex.us',
+    path: '/mo/Oknar~Zec~Zuki',
     search: '',
     env
   });
@@ -94,4 +116,3 @@ test('short code matching is case-insensitive', () => {
   assert.equal(result?.status, 301);
   assert.equal(result?.location, 'https://entropianexus.com/items/weapons/foo');
 });
-
