@@ -8,7 +8,8 @@
 
   import { darkMode } from '../../stores.js';
 
-  import { getTypeLink, getTypeName, encodeURIComponentSafe } from "$lib/util";
+  import { getTypeLink, getTypeName, encodeURIComponentSafe, copyToClipboard } from "$lib/util";
+  import { addToast } from '$lib/stores/toasts';
   import { loading } from "../../actions/loading";
   import FancyTable from '$lib/components/FancyTable.svelte';
   import SearchInput from '$lib/components/SearchInput.svelte';
@@ -20,6 +21,34 @@
   $: loginUrl = `/discord/login?redirect=${encodeURIComponent($page.url.pathname + $page.url.search)}`;
   $: logoutUrl = `/discord/logout?redirect=${encodeURIComponent($page.url.pathname + $page.url.search)}`;
   $: profileUrl = user ? `/users/${encodeURIComponentSafe(String(user.eu_name || user.id))}` : '/discord/login';
+  const SHORT_LINK_ORIGIN = 'https://eunex.us';
+
+  const SHORT_WIKI_ROUTE_CODES: Array<[string, string]> = [
+    ['/items/weapons', 'iw'],
+    ['/items/armorsets', 'ia'],
+    ['/items/armors', 'ir'],
+    ['/items/attachments', 'ij'],
+    ['/items/blueprints', 'ib'],
+    ['/items/consumables', 'ic'],
+    ['/items/furnishings', 'if'],
+    ['/items/clothing', 'il'],
+    ['/items/materials', 'im'],
+    ['/items/medicaltools', 'it'],
+    ['/items/tools', 'io'],
+    ['/items/pets', 'ip'],
+    ['/items/vehicles', 'iv'],
+    ['/items/strongboxes', 'ix'],
+    ['/items', 'i'],
+    ['/information/guides', 'ng'],
+    ['/information/mobs', 'nm'],
+    ['/information/missions', 'ni'],
+    ['/information/professions', 'np'],
+    ['/information/skills', 'ns'],
+    ['/information/vendors', 'nv'],
+    ['/information/locations', 'nl'],
+    ['/information/enumerations', 'ne'],
+    ['/information', 'n']
+  ];
 
   let dropdownOpen: string | null = null;
   let dropdownCloseTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -40,6 +69,8 @@
   let notificationsLastLoaded = 0;
 
   $: notificationsTotalPages = Math.max(1, Math.ceil(notificationsTotal / notificationsPageSize));
+  $: shortLinkUrl = getShortLinkForCurrentPage($page.url);
+  $: canCopyShortLink = !!shortLinkUrl;
 
   // Media query for auto-closing mobile menu
   let mediaQuery: MediaQueryList | null = null;
@@ -124,6 +155,75 @@
   function formatNotificationDate(dateStr) {
     if (!dateStr) return '';
     return new Date(dateStr).toLocaleString();
+  }
+
+  function trimTrailingSlash(pathname: string) {
+    if (!pathname || pathname === '/') return '/';
+    return pathname.replace(/\/+$/, '');
+  }
+
+  function getTailAfterPrefix(pathname: string, prefix: string): string | null {
+    if (pathname === prefix) return '';
+    if (pathname.startsWith(`${prefix}/`)) return pathname.slice(prefix.length + 1);
+    return null;
+  }
+
+  function getShortPath(pathname: string, search: string) {
+    const normalizedPath = trimTrailingSlash(pathname || '/');
+    const query = search || '';
+    const segments = normalizedPath.split('/').filter(Boolean);
+
+    // Exchange detail pages and user order pages
+    if (segments[0] === 'market' && segments[1] === 'exchange') {
+      if (segments[2] === 'orders') {
+        const tail = segments.slice(3).join('/');
+        return tail ? `/eo/${tail}${query}` : `/eo${query}`;
+      }
+
+      // Detail views use /market/exchange/<view>/<id>
+      if (segments.length >= 4) {
+        const tail = segments.slice(2).join('/');
+        return `/ke/${tail}${query}`;
+      }
+
+      return null;
+    }
+
+    // User and society profiles
+    if (segments[0] === 'users' && segments.length >= 2) {
+      return `/u/${segments.slice(1).join('/')}${query}`;
+    }
+    if (segments[0] === 'societies' && segments.length >= 2) {
+      return `/s/${segments.slice(1).join('/')}${query}`;
+    }
+
+    // Wiki pages
+    for (const [prefix, code] of SHORT_WIKI_ROUTE_CODES) {
+      const tail = getTailAfterPrefix(normalizedPath, prefix);
+      if (tail == null) continue;
+      return tail ? `/${code}/${tail}${query}` : `/${code}${query}`;
+    }
+
+    return null;
+  }
+
+  function getShortLinkForCurrentPage(currentUrl: URL | null) {
+    if (!currentUrl) return null;
+    const shortPath = getShortPath(currentUrl.pathname, currentUrl.search);
+    if (!shortPath) return null;
+    return `${SHORT_LINK_ORIGIN}${shortPath}`;
+  }
+
+  async function copyCurrentShortLink() {
+    if (!shortLinkUrl) return;
+
+    const copied = await copyToClipboard(shortLinkUrl);
+    if (copied) {
+      addToast('Short link copied to clipboard.', { type: 'success', duration: 3000 });
+      return;
+    }
+
+    addToast('Failed to copy short link.', { type: 'error' });
   }
 
   async function loadNotifications(page = notificationsPage, { force = false } = {}) {
@@ -709,6 +809,7 @@
   .search-container {
     position: relative;
     margin-left: 20px;
+    margin-right: 10px;
     width: 280px;
   }
 
@@ -896,6 +997,30 @@
 
   .dark-light-toggle {
     margin-left: 8px;
+  }
+
+  .short-link-action {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: none;
+    color: var(--text-color);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+    margin-left: 4px;
+  }
+
+  .short-link-action:hover {
+    background-color: var(--hover-color);
+  }
+
+  .short-link-action svg {
+    width: 18px;
+    height: 18px;
   }
 
   .dark-light-button {
@@ -1760,6 +1885,10 @@
       display: none;
     }
 
+    .auth-container .short-link-action {
+      display: none;
+    }
+
     .auth-container .discord-button,
     .auth-container a:has(.discord-button) {
       display: none;
@@ -1823,6 +1952,20 @@
         on:select={handleSearchSelect}
       />
     </div>
+    {#if canCopyShortLink}
+      <button
+        class="short-link-action"
+        on:click={copyCurrentShortLink}
+        title="Copy short link"
+        aria-label="Copy short link"
+        data-short-url={shortLinkUrl}
+      >
+        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M13.8 10.2a3.5 3.5 0 0 1 0 5l-2.6 2.6a3.5 3.5 0 1 1-5-5l2.1-2.1" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+          <path d="M10.2 13.8a3.5 3.5 0 0 1 0-5l2.6-2.6a3.5 3.5 0 0 1 5 5l-2.1 2.1" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
+    {/if}
     {#if user}
       <!-- svelte-ignore a11y-no-static-element-interactions -->
       <div class="menu-item notification-menu" on:mouseenter={() => handleDropdownEnter('notifications')} on:mouseleave={handleDropdownLeave}>
@@ -2045,6 +2188,20 @@
             </div>
           </div>
           <div class="mobile-user-quick-actions" on:click|stopPropagation>
+            {#if canCopyShortLink}
+              <button
+                class="mobile-quick-btn short-link-mobile-btn"
+                on:click={copyCurrentShortLink}
+                title="Copy short link"
+                aria-label="Copy short link"
+                data-short-url={shortLinkUrl}
+              >
+                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M13.8 10.2a3.5 3.5 0 0 1 0 5l-2.6 2.6a3.5 3.5 0 1 1-5-5l2.1-2.1" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                  <path d="M10.2 13.8a3.5 3.5 0 0 1 0-5l2.6-2.6a3.5 3.5 0 0 1 5 5l-2.1 2.1" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                </svg>
+              </button>
+            {/if}
             <!-- Dark/Light Mode Toggle -->
             <button
               class="mobile-quick-btn"
@@ -2124,6 +2281,20 @@
         </div>
       {:else}
         <div class="mobile-user-actions-guest">
+          {#if canCopyShortLink}
+            <button
+              class="mobile-quick-btn short-link-mobile-btn"
+              on:click={copyCurrentShortLink}
+              title="Copy short link"
+              aria-label="Copy short link"
+              data-short-url={shortLinkUrl}
+            >
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M13.8 10.2a3.5 3.5 0 0 1 0 5l-2.6 2.6a3.5 3.5 0 1 1-5-5l2.1-2.1" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                <path d="M10.2 13.8a3.5 3.5 0 0 1 0-5l2.6-2.6a3.5 3.5 0 0 1 5 5l-2.1 2.1" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+            </button>
+          {/if}
           <!-- Dark/Light Mode Toggle -->
           <button
             class="mobile-quick-btn"

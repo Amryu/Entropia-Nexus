@@ -114,6 +114,31 @@ test.describe('Main Navigation Menu', () => {
       const logoutLink = verifiedUser.locator('.dropdown-content a[href*="logout"]');
       await expect(logoutLink).toBeVisible();
     });
+
+    test('short link button is shown on supported route types', async ({ page }) => {
+      const supportedRoutes = [
+        { path: '/information/mobs', expectedPrefix: 'https://eunex.us/nm' },
+        { path: '/market/exchange/orders/Oknar~Zec~Zuki', expectedPrefix: 'https://eunex.us/eo/' },
+        { path: '/users/verified1', expectedPrefix: 'https://eunex.us/u/verified1' },
+        { path: '/societies/example-society', expectedPrefix: 'https://eunex.us/s/example-society' }
+      ];
+
+      for (const route of supportedRoutes) {
+        await page.goto(route.path);
+        await page.waitForLoadState('networkidle');
+
+        const shortLinkButton = page.locator('.short-link-action');
+        await expect(shortLinkButton).toBeVisible();
+        await expect(shortLinkButton).toHaveAttribute('data-short-url', new RegExp(`^${route.expectedPrefix}`));
+      }
+    });
+
+    test('short link button is hidden on unsupported routes', async ({ page }) => {
+      await page.goto('/market');
+      await page.waitForLoadState('networkidle');
+
+      await expect(page.locator('.short-link-action')).toHaveCount(0);
+    });
   });
 
   test.describe('Mobile Menu (<900px)', () => {
@@ -344,6 +369,24 @@ test.describe('Main Navigation Menu', () => {
       // Look for logout link
       const logoutLink = verifiedUser.locator('.mobile-menu a[href*="logout"]');
       await expect(logoutLink).toBeVisible();
+    });
+
+    test('mobile quick short-link action appears on supported pages', async ({ page }) => {
+      await page.goto('/users/verified1');
+      await page.waitForLoadState('networkidle');
+      await page.locator('.burger-button').click();
+
+      const shortLinkQuickButton = page.locator('.mobile-quick-btn.short-link-mobile-btn');
+      await expect(shortLinkQuickButton).toBeVisible();
+      await expect(shortLinkQuickButton).toHaveAttribute('data-short-url', /^https:\/\/eunex\.us\/u\/verified1/);
+    });
+
+    test('mobile quick short-link action stays hidden on unsupported pages', async ({ page }) => {
+      await page.goto('/');
+      await page.waitForLoadState('networkidle');
+      await page.locator('.burger-button').click();
+
+      await expect(page.locator('.mobile-quick-btn.short-link-mobile-btn')).toHaveCount(0);
     });
   });
 

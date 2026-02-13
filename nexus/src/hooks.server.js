@@ -1,4 +1,6 @@
 //@ts-nocheck
+import { resolveShortRedirect } from '$lib/server/short-url.js';
+
 let dbGetSession, getUserFromSession, updateSession, upsertUser, getUserInfo, handleRefresh, getUserById, getUserFullDetails, resolveUserGrants;
 
 if (import.meta.env.SSR) {
@@ -72,6 +74,18 @@ const GRANTS_REFRESH_INTERVAL = 30_000; // 30 seconds
 const sessions = new Map();
 
 export async function handle({ event, resolve }) {
+  const shortRedirect = resolveShortRedirect({
+    host: event.url.host,
+    path: event.url.pathname,
+    search: event.url.search
+  });
+  if (shortRedirect) {
+    return new Response(null, {
+      status: shortRedirect.status,
+      headers: { Location: shortRedirect.location }
+    });
+  }
+
   let sessionId = event.cookies.get(import.meta.env.VITE_SESSION_COOKIE_NAME);
 
   let session = await getSessionObject(sessionId);

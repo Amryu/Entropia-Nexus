@@ -216,6 +216,11 @@ VITE_API_URL=http://localhost:3000
 
 # Public URL (for production deployments)
 PUBLIC_URL=http://localhost:3001
+
+# Canonical redirect config for short domain
+SHORT_REDIRECT_ENABLED=true
+SHORT_REDIRECT_HOSTS=eunex.us,www.eunex.us
+CANONICAL_PUBLIC_URL=https://entropianexus.com
 ```
 
 ### Discord Bot (.env)
@@ -319,6 +324,22 @@ docker-compose down
 When the API is running, access interactive API documentation at:
 
 - Swagger UI: http://localhost:3000/api-docs
+
+## Short URL Domain (eunex.us)
+
+`eunex.us` is configured as a redirect-only short domain.
+
+- Requests to `eunex.us` are resolved to canonical long-form URLs on `CANONICAL_PUBLIC_URL`.
+- Redirects are permanent (`301`) and preserve query strings.
+- Unknown short codes are still redirected to the canonical host with the original path/query unchanged.
+- Short codes are only active on hosts listed in `SHORT_REDIRECT_HOSTS`.
+
+Operational requirements:
+
+1. Point DNS for `eunex.us` and `www.eunex.us` to the frontend entrypoint.
+2. Ensure TLS certificates include both short hosts.
+3. Preserve the incoming `Host` header at the reverse proxy/load balancer.
+4. Set `CANONICAL_PUBLIC_URL` to the correct long-form site origin per environment.
 
 ## Contributing
 
