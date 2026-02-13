@@ -243,4 +243,25 @@ test.describe('Exchange categories and markup types', () => {
       }
     }
   });
+
+  test('User orders page is visible in read-only mode when logged out', async ({ page, loginAs, logout }) => {
+    await page.goto('/');
+    await loginAs('verified1');
+
+    const profileRes = await page.request.get('/api/users/profiles/900000000000000001');
+    expect(profileRes.ok()).toBe(true);
+    const profileData = await profileRes.json();
+    const sellerName = profileData?.profile?.euName;
+    expect(typeof sellerName).toBe('string');
+    expect(sellerName.length).toBeGreaterThan(0);
+
+    await logout();
+    await page.goto(`/market/exchange/orders/${encodeURIComponent(sellerName)}`, { waitUntil: 'networkidle' });
+    await expect(page.locator('.floating-panel')).toBeVisible({ timeout: TIMEOUT_LONG });
+    await expect(page.locator('.panel-title-text')).toContainText(sellerName, { timeout: TIMEOUT_LONG });
+    await expect(page.locator('.user-orders-panel')).toBeVisible({ timeout: TIMEOUT_LONG });
+
+    await expect(page.locator('[data-order-action]')).toHaveCount(0, { timeout: TIMEOUT_LONG });
+    await expect(page.locator('.panel-action-btn', { hasText: 'Trade List' })).toHaveCount(0, { timeout: TIMEOUT_LONG });
+  });
 });

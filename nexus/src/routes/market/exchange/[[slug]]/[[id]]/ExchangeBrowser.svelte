@@ -275,6 +275,10 @@
   }
 
   function handleOrderAction(e) {
+    if (!canPostOrders) {
+      openAuthDialog();
+      return;
+    }
     const item = e.detail;
     // Resolve the slim item for the order's item_id so type detection works
     const rawOrder = item.order || item;
@@ -1224,7 +1228,8 @@
   $: needsAuth = !currentUser;
   $: needsVerification = !!(currentUser && !currentUser.verified);
   $: canPostOrders = !!(currentUser && currentUser.verified);
-  $: floatingPanelOpen = canPostOrders && ($showMyOrders || $showInventory || $showTrades || showUserOrders);
+  $: floatingPanelOpen = showUserOrders || (canPostOrders && ($showMyOrders || $showInventory || $showTrades));
+  $: if (!canPostOrders && $showTradeList) showTradeList.set(false);
 
   // Auth dialog state
   let showAuthDialog = false;
@@ -2390,7 +2395,7 @@
       />
     </div>
 
-    {#if canPostOrders && ($showMyOrders || $showInventory || $showTrades || showUserOrders)}
+    {#if showUserOrders || (canPostOrders && ($showMyOrders || $showInventory || $showTrades))}
       <div class="floating-panel">
         {#if showUserOrders}
           <div class="panel-title-bar">
@@ -2402,19 +2407,21 @@
                 <button class="panel-filter-btn" class:active={panelSideFilter === 'BUY'} on:click={() => panelSideFilter = 'BUY'}>Buy</button>
                 <button class="panel-filter-btn" class:active={panelSideFilter === 'SELL'} on:click={() => panelSideFilter = 'SELL'}>Sell</button>
               </div>
-              <button
-                class="panel-action-btn"
-                class:accent={$tradeList.length > 0}
-                on:click={() => {
-                  if ($tradeList.length > 0) {
-                    showTradeList.set(!$showTradeList);
-                  } else {
-                    showTradeList.set(!$showTradeList);
-                  }
-                }}
-              >
-                Trade List{$tradeList.length > 0 ? ` (${$tradeList.length})` : ''}
-              </button>
+              {#if canPostOrders}
+                <button
+                  class="panel-action-btn"
+                  class:accent={$tradeList.length > 0}
+                  on:click={() => {
+                    if ($tradeList.length > 0) {
+                      showTradeList.set(!$showTradeList);
+                    } else {
+                      showTradeList.set(!$showTradeList);
+                    }
+                  }}
+                >
+                  Trade List{$tradeList.length > 0 ? ` (${$tradeList.length})` : ''}
+                </button>
+              {/if}
             </div>
           </div>
           {#if $showTradeList}
@@ -2432,13 +2439,13 @@
               {#if panelSideFilter !== 'BUY'}
                 <div class="detail-table sell">
                   <span class="table-label sell">Sell</span>
-                  <UserOrdersPanel user={userOrdersTarget} sideFilter="SELL" {allItems} on:orderAction={handleOrderAction} />
+                  <UserOrdersPanel user={userOrdersTarget} sideFilter="SELL" canTrade={canPostOrders} {allItems} on:orderAction={handleOrderAction} />
                 </div>
               {/if}
               {#if panelSideFilter !== 'SELL'}
                 <div class="detail-table buy">
                   <span class="table-label buy">Buy</span>
-                  <UserOrdersPanel user={userOrdersTarget} sideFilter="BUY" {allItems} on:orderAction={handleOrderAction} />
+                  <UserOrdersPanel user={userOrdersTarget} sideFilter="BUY" canTrade={canPostOrders} {allItems} on:orderAction={handleOrderAction} />
                 </div>
               {/if}
             </div>

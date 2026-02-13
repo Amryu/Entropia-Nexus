@@ -14,6 +14,8 @@
 
   /** @type {Array} All slim items from the exchange categorized data */
   export let allItems = [];
+  /** @type {boolean} Whether buy/sell action buttons should be shown */
+  export let canTrade = true;
 
   let orders = [];
   let loading = false;
@@ -98,7 +100,9 @@
         }
       },
       { key: 'planet', header: 'Planet', width: '80px', sortable: true, searchable: false },
-      {
+    ];
+    if (canTrade) {
+      cols.push({
         key: '_action', header: '', width: '55px', sortable: false, searchable: false,
         cellClass: () => 'cell-center',
         formatter: (v, row) => {
@@ -112,14 +116,16 @@
           const cls = side === 'buy' ? 'buy-order-btn' : 'sell-order-btn';
           return `<button class="cell-button ${cls}" data-order-action="${orderId}" data-action-side="${side}">${label}</button>`;
         }
-      }
-    ];
+      });
+    }
     // Force re-evaluation when tradeListOrderIds changes
     tradeListOrderIds;
+    canTrade;
     return cols;
   })();
 
   function handleClick(e) {
+    if (!canTrade) return;
     const btn = e.target.closest('[data-order-action]');
     if (!btn) return;
     e.stopPropagation();
