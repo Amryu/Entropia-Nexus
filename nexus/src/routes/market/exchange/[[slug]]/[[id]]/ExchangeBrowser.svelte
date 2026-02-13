@@ -243,8 +243,30 @@
   }
 
   function openUserOrdersPanel(userId, name) {
+    const currentPath = $page.url.pathname;
+    const currentSearch = $page.url.search || '';
+    const currentUrl = `${currentPath}${currentSearch}`;
+    const isCurrentExchange = currentPath.startsWith('/market/exchange');
+    const isCurrentOrdersRoute = currentPath.startsWith('/market/exchange/orders/');
+    let fallbackReturnUrl = '/market/exchange';
+
+    // When arriving directly on /orders/<name>, use exchange referrer if present;
+    // otherwise fall back to base exchange to avoid login/callback history loops.
+    if (!isCurrentOrdersRoute && isCurrentExchange) {
+      fallbackReturnUrl = currentUrl;
+    } else if (typeof document !== 'undefined' && document.referrer) {
+      try {
+        const ref = new URL(document.referrer);
+        if (ref.origin === window.location.origin && ref.pathname.startsWith('/market/exchange')) {
+          fallbackReturnUrl = `${ref.pathname}${ref.search || ''}`;
+        }
+      } catch {
+        fallbackReturnUrl = '/market/exchange';
+      }
+    }
+
     userOrdersTarget = { id: userId, name };
-    userOrdersReturnUrl = $page.url.pathname;
+    userOrdersReturnUrl = fallbackReturnUrl;
     showUserOrders = true;
     showMyOrders.set(false);
     showInventory.set(false);
@@ -262,16 +284,9 @@
   function closeUserOrdersPanel() {
     showUserOrders = false;
     clearTradeList();
-    if (userOrdersReturnUrl && userOrdersReturnUrl !== $page.url.pathname) {
-      goto(userOrdersReturnUrl);
-    } else {
-      // Fallback: use history.back if we came here via navigation, else go to listings
-      if (window.history.length > 1) {
-        window.history.back();
-      } else {
-        goto('/market/exchange/listings');
-      }
-    }
+    const currentUrl = `${$page.url.pathname}${$page.url.search || ''}`;
+    if (userOrdersReturnUrl && userOrdersReturnUrl !== currentUrl) goto(userOrdersReturnUrl);
+    else goto('/market/exchange');
   }
 
   function handleOrderAction(e) {
