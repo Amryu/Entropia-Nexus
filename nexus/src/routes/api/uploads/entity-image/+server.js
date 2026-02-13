@@ -113,6 +113,7 @@ export async function POST({ request, locals }) {
     const imageFile = formData.get('image');
     const entityType = formData.get('entityType');
     let entityId = formData.get('entityId');
+    const entityName = formData.get('entityName') || null;
     const autoApprove = formData.get('autoApprove') === 'true';
 
     // 7. Validate required fields
@@ -196,7 +197,7 @@ export async function POST({ request, locals }) {
     }
 
     // 13. Process and save the image (additional validations happen here)
-    const result = await processAndSaveImage(buffer, entityType, entityId, userId);
+    const result = await processAndSaveImage(buffer, entityType, entityId, userId, entityName);
 
     // 14. Auto-approve: type-based (guide-category) or grant-based (richtext with user grant)
     let approved = false;

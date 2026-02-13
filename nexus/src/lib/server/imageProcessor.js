@@ -205,9 +205,10 @@ export async function getUserPendingImage(uploaderId, entityType, entityId) {
  * @param {string} entityType - Entity type (e.g., 'weapon', 'mob')
  * @param {string|number} entityId - Entity ID
  * @param {string} uploaderId - ID of the user uploading the image
+ * @param {string|null} entityName - Optional entity name for admin panel display
  * @returns {Promise<{tempPath: string, previewUrl: string}>}
  */
-export async function processAndSaveImage(imageBuffer, entityType, entityId, uploaderId) {
+export async function processAndSaveImage(imageBuffer, entityType, entityId, uploaderId, entityName = null) {
   // ===== SECURITY VALIDATIONS =====
 
   // 1. Validate entity type (prevent path traversal)
@@ -335,6 +336,7 @@ export async function processAndSaveImage(imageBuffer, entityType, entityId, upl
     await fs.writeFile(metadataPath, JSON.stringify({
       entityType,
       entityId: String(entityId),
+      ...(entityName ? { entityName } : {}),
       uploaderId,
       uploadedAt: new Date().toISOString(),
       tempId

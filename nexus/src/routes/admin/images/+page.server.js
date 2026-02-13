@@ -101,13 +101,17 @@ export async function load() {
   // Enrich pending images with entity names and uploader names
   const enrichedPending = await Promise.all(
     pendingImages.map(async (image) => {
-      const [entityName, uploaderInfo] = await Promise.all([
-        getEntityName(image.entityType, image.entityId),
-        getUploaderInfo(image.uploaderId)
-      ]);
+      // Prefer stored entityName from metadata, fall back to API lookup
+      let entityName = image.entityName || null;
+      if (!entityName) {
+        entityName = await getEntityName(image.entityType, image.entityId);
+      }
+      const uploaderInfo = await getUploaderInfo(image.uploaderId);
+      const isNameResolved = !!entityName;
       return {
         ...image,
         entityName: entityName || image.entityId,
+        isNameResolved,
         uploaderName: uploaderInfo?.displayName || 'Unknown',
         uploaderProfile: uploaderInfo?.profileName || null
       };
@@ -117,10 +121,16 @@ export async function load() {
   // Enrich approved images with entity names
   const enrichedApproved = await Promise.all(
     approvedImages.map(async (image) => {
-      const entityName = await getEntityName(image.entityType, image.entityId);
+      // Prefer stored entityName from metadata, fall back to API lookup
+      let entityName = image.entityName || null;
+      if (!entityName) {
+        entityName = await getEntityName(image.entityType, image.entityId);
+      }
+      const isNameResolved = !!entityName;
       return {
         ...image,
-        entityName: entityName || image.entityId
+        entityName: entityName || image.entityId,
+        isNameResolved
       };
     })
   );

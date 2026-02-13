@@ -60,7 +60,8 @@
     'sign': '/items/furnishings/signs'
   };
 
-  function getEntityLink(entityType, entityName) {
+  function getEntityLink(entityType, entityName, isNameResolved) {
+    if (!isNameResolved) return null;
     const basePath = ENTITY_TYPE_PATHS[entityType.toLowerCase()];
     if (!basePath) return null;
     return `${basePath}/${encodeURIComponentSafe(entityName)}`;
@@ -157,8 +158,8 @@
             <div class="image-info">
               <div class="info-row">
                 <span class="label">Entity:</span>
-                {#if getEntityLink(image.entityType, image.entityName)}
-                  <a href={getEntityLink(image.entityType, image.entityName)} class="value link entity-link">
+                {#if getEntityLink(image.entityType, image.entityName, image.isNameResolved)}
+                  <a href={getEntityLink(image.entityType, image.entityName, image.isNameResolved)} class="value link entity-link">
                     {image.entityName}
                   </a>
                 {:else}
@@ -238,8 +239,8 @@
             <div class="image-info">
               <div class="info-row">
                 <span class="label">Entity:</span>
-                {#if getEntityLink(image.entityType, image.entityName)}
-                  <a href={getEntityLink(image.entityType, image.entityName)} class="value link entity-link">
+                {#if getEntityLink(image.entityType, image.entityName, image.isNameResolved)}
+                  <a href={getEntityLink(image.entityType, image.entityName, image.isNameResolved)} class="value link entity-link">
                     {image.entityName}
                   </a>
                 {:else}

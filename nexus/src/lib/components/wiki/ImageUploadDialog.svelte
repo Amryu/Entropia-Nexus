@@ -115,6 +115,7 @@
       formData.append('image', croppedBlob, 'image.webp');
       formData.append('entityType', entityType);
       formData.append('entityId', String(entityId));
+      if (entityName) formData.append('entityName', entityName);
 
       // Upload to server
       const uploadUrl = entityType === 'user'
