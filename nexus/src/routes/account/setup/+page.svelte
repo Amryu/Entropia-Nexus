@@ -40,41 +40,40 @@
         <div class="step">
           <div class="step-number">1</div>
           <div class="step-content">
-            <h3>Find Your Verification Thread</h3>
-            <p>Look for your verification thread in the <strong>#verification</strong> channel on Discord.</p>
+            <h3>Join the Discord Server</h3>
+            <p>Join the Entropia Nexus Discord server using the button above.</p>
           </div>
         </div>
 
         <div class="step">
           <div class="step-number">2</div>
           <div class="step-content">
-            <h3>Set Your Character Name</h3>
-            <p>Use the <code>/seteuname</code> command to set your Entropia Universe character name.</p>
-            <div class="example">Example: <code>/seteuname Pugnus Amryu Tonitrus</code></div>
+            <h3>Wait for Your Verification Thread</h3>
+            <p>A private verification thread will be created for you on Discord.</p>
           </div>
         </div>
 
         <div class="step">
           <div class="step-number">3</div>
           <div class="step-content">
-            <h3>Wait for Your Code</h3>
-            <p>A moderator will generate a verification code for you. This may take some time depending on moderator availability.</p>
+            <h3>Type Your Full EU Name</h3>
+            <p>In the thread, enter your full Entropia Universe name exactly as it appears in-game and confirm it.</p>
           </div>
         </div>
 
         <div class="step">
           <div class="step-number">4</div>
           <div class="step-content">
-            <h3>Send the Code In-Game</h3>
-            <p>Send the verification code to the moderator's character via <strong>PM</strong> or <strong>Mail</strong> in Entropia Universe. The character name will be posted in your verification thread.</p>
+            <h3>Wait for the In-Game Code</h3>
+            <p>You will receive a verification code in Entropia Universe.</p>
           </div>
         </div>
 
         <div class="step">
           <div class="step-number">5</div>
           <div class="step-content">
-            <h3>Verification Complete</h3>
-            <p>Once your code is confirmed, your account will be upgraded to verified status and you'll have full access to all features.</p>
+            <h3>Complete Verification</h3>
+            <p>Enter that code in your verification thread. Once verified, your account will have access to all Entropia Nexus features.</p>
           </div>
         </div>
       </div>
@@ -216,21 +215,6 @@
     color: var(--text-muted);
     margin: 0;
     line-height: 1.5;
-  }
-
-  code {
-    background-color: var(--hover-color);
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-family: monospace;
-    font-size: 13px;
-    color: var(--accent-color);
-  }
-
-  .example {
-    margin-top: 8px;
-    font-size: 13px;
-    color: var(--text-muted);
   }
 
   .help-box {
