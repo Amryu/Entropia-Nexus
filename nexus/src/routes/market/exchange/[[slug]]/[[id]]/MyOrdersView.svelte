@@ -110,7 +110,10 @@
     return `${days}d ago`;
   }
 
-  /** Bump all eligible (active/stale) orders */
+  /**
+   * Bump all eligible (active/stale) orders.
+   * Returns cooldown in seconds (1hr on success, retryAfter on rate-limit, null on error).
+   */
   export async function bumpAll(turnstileToken = null) {
     bumping = true;
     try {
@@ -120,12 +123,18 @@
         body: JSON.stringify({ turnstile_token: turnstileToken })
       });
       const data = await res.json();
+      if (res.status === 429) {
+        addToast(data.error || 'Rate limited');
+        return data.retryAfter || 3600;
+      }
       if (!res.ok) throw new Error(data.error || 'Bump failed');
       const enriched = enrichOrders(data.orders);
       const updatedMap = new Map(enriched.map(o => [o.id, o]));
       myOrders.update(current => current.map(o => updatedMap.get(o.id) || o));
+      return 3600;
     } catch (e) {
       addToast(e.message);
+      return null;
     } finally {
       bumping = false;
     }

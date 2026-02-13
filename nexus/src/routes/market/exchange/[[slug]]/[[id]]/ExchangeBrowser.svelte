@@ -1,6 +1,6 @@
 <script lang="ts">
   // @ts-nocheck
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
 
   import CategoryTree from "./CategoryTree.svelte";
   import FancyTable from "$lib/components/FancyTable.svelte";
@@ -106,6 +106,35 @@
   let myOrdersRef;
   let tradesPanelRef;
   let bumpingAll = false;
+  let bumpCooldownEnd = 0;
+  let bumpCooldownRemaining = 0;
+  let bumpCooldownTimer = null;
+
+  function startBumpCooldown(seconds) {
+    bumpCooldownEnd = Date.now() + seconds * 1000;
+    tickBumpCooldown();
+  }
+
+  function tickBumpCooldown() {
+    clearInterval(bumpCooldownTimer);
+    const remaining = Math.max(0, Math.ceil((bumpCooldownEnd - Date.now()) / 1000));
+    bumpCooldownRemaining = remaining;
+    if (remaining > 0) {
+      bumpCooldownTimer = setInterval(() => {
+        const r = Math.max(0, Math.ceil((bumpCooldownEnd - Date.now()) / 1000));
+        bumpCooldownRemaining = r;
+        if (r <= 0) clearInterval(bumpCooldownTimer);
+      }, 1000);
+    }
+  }
+
+  function formatCooldown(seconds) {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return m > 0 ? `${m}m ${s}s` : `${s}s`;
+  }
+
+  onDestroy(() => clearInterval(bumpCooldownTimer));
 
   // Turnstile confirmation modal (for actions outside OrderDialog: bump-all, close)
   let pendingTurnstileAction = null; // { type: 'bump'|'close', order?, callback }
@@ -2483,13 +2512,19 @@
                   <button class="panel-filter-btn" class:active={panelSideFilter === 'BUY'} on:click={() => panelSideFilter = 'BUY'}>Buy</button>
                   <button class="panel-filter-btn" class:active={panelSideFilter === 'SELL'} on:click={() => panelSideFilter = 'SELL'}>Sell</button>
                 </div>
-                <button class="panel-action-btn accent" disabled={bumpingAll} on:click={() => {
-                  if (env.PUBLIC_TURNSTILE_SITE_KEY) {
-                    requestTurnstile('bump', async (token) => { bumpingAll = true; await myOrdersRef?.bumpAll(token); bumpingAll = false; });
-                  } else {
-                    (async () => { bumpingAll = true; await myOrdersRef?.bumpAll(); bumpingAll = false; })();
+                <button class="panel-action-btn accent" disabled={bumpingAll || bumpCooldownRemaining > 0} on:click={() => {
+                  async function doBump(token) {
+                    bumpingAll = true;
+                    const cooldown = await myOrdersRef?.bumpAll(token);
+                    bumpingAll = false;
+                    if (cooldown != null) startBumpCooldown(cooldown);
                   }
-                }}>{bumpingAll ? 'Bumping...' : 'Bump All'}</button>
+                  if (env.PUBLIC_TURNSTILE_SITE_KEY) {
+                    requestTurnstile('bump', doBump);
+                  } else {
+                    doBump();
+                  }
+                }}>{bumpingAll ? 'Bumping...' : bumpCooldownRemaining > 0 ? `Bump All (${formatCooldown(bumpCooldownRemaining)})` : 'Bump All'}</button>
               {/if}
               {#if $showInventory}
                 <button class="panel-action-btn" class:mass-sell={!massSellMode} class:mass-sell-cancel={massSellMode} on:click={toggleMassSellMode}>{massSellMode ? 'Cancel' : 'Mass Sell'}</button>
