@@ -13,7 +13,7 @@ import {
   getUserPublicRentalOffers
 } from '$lib/server/db.js';
 import { pool } from '$lib/server/db.js';
-import { getUserPublicOrders } from '$lib/server/trade-requests.js';
+import { getUserPublicOrders } from '$lib/server/exchange.js';
 import { sanitizeRichText } from '$lib/server/sanitizeRichText.js';
 import { getApprovedImagePath } from '$lib/server/imageProcessor.js';
 
@@ -137,7 +137,7 @@ export async function GET({ params, locals, fetch }) {
     getUserContributionStats(profileUser.id),
     getUserServices(profileUser.id),
     getUserShopsFromApi(fetch, profileUser.id),
-    getUserPublicOrders(profileUser.id),
+    getUserPublicOrders(profileUser.id, fetch),
     getUserPublicRentalOffers(profileUser.id).catch(() => [])
   ]);
 

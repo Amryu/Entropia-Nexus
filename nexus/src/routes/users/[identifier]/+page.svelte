@@ -253,10 +253,27 @@
     return `${Math.floor(hrs / 24)}d`;
   }
 
+  function escapeHtml(value) {
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   const offerColumns = [
     {
       key: 'details', header: 'Item', main: true, sortable: true, searchable: true,
-      formatter: (v) => v?.item_name || 'Unknown'
+      formatter: (v, row) => {
+        const itemName = v?.item_name;
+        if (!itemName) return 'Unknown';
+        const href = row?.item_type ? getTypeLink(itemName, row.item_type, row.item_sub_type || null) : null;
+        const label = escapeHtml(itemName);
+        return href
+          ? `<a class="order-item-link" href="${escapeHtml(href)}">${label}</a>`
+          : label;
+      }
     },
     { key: 'quantity', header: 'Qty', width: '70px', sortable: true, searchable: false },
     {
@@ -2269,5 +2286,12 @@
     color: var(--text-muted);
     border: 1px solid var(--border-color);
     border-radius: 8px;
+  }
+  :global(.order-item-link) {
+    color: var(--accent-color);
+    text-decoration: none;
+  }
+  :global(.order-item-link:hover) {
+    text-decoration: underline;
   }
 </style>

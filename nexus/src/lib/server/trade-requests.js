@@ -1,7 +1,8 @@
 //@ts-nocheck
-import { pool, nexusPool } from './db.js';
+import { pool } from './db.js';
 
 import { isPercentMarkupType } from '$lib/common/itemTypes.js';
+import { resolveItemTypesByItemId } from '$lib/server/item-type-cache.js';
 
 function getMarkupType(typeInfo, itemName) {
   if (typeInfo && typeof typeInfo === 'object') {
@@ -10,33 +11,13 @@ function getMarkupType(typeInfo, itemName) {
   return isPercentMarkupType(typeInfo, itemName) ? 'percent' : 'absolute';
 }
 
-const MATERIAL_ID_OFFSET = 1000000;
-
-async function resolveMarkupTypes(itemIds) {
-  if (!nexusPool || itemIds.length === 0) return {};
-  try {
-    const { rows } = await nexusPool.query(
-      `SELECT i."Id", i."Type", m."Type" AS "SubType"
-       FROM ONLY "Items" i
-       LEFT JOIN ONLY "Materials" m ON i."Type" = 'Material' AND m."Id" = i."Id" - ${MATERIAL_ID_OFFSET}
-       WHERE i."Id" = ANY($1)`,
-      [itemIds]
-    );
-    const map = {};
-    for (const row of rows) map[row.Id] = { type: row.Type, subType: row.SubType };
-    return map;
-  } catch {
-    return {};
-  }
-}
-
 // ---------- Trade Requests ----------
 
 /**
  * Create a new trade request with items, or add items to an existing open request.
  * Respects the unique constraint: only 1 open request between any 2 users.
  */
-export async function getOrCreateTradeRequest(requesterId, targetId, planet, items) {
+export async function getOrCreateTradeRequest(requesterId, targetId, planet, items, fetch) {
   // Pass IDs as strings — Number() loses precision for bigint Discord snowflakes
   const client = await pool.connect();
   try {
@@ -107,7 +88,7 @@ export async function getOrCreateTradeRequest(requesterId, targetId, planet, ite
 
     // Resolve item types for markup formatting
     const itemIds = [...new Set(items.map(i => i.item_id).filter(Boolean))];
-    const typeMap = await resolveMarkupTypes(itemIds);
+    const typeMap = await resolveItemTypesByItemId(itemIds, fetch);
 
     // Insert all items
     for (const item of items) {
@@ -328,29 +309,3 @@ export async function findTradeRequestByThread(threadId) {
   return rows[0] || null;
 }
 
-/**
- * Get all active orders by a specific user (public endpoint).
- */
-export async function getUserPublicOrders(userId) {
-  const query = `
-    SELECT
-      o.id, o.type, o.item_id, o.quantity, o.min_quantity,
-      o.markup, o.planet, o.details, o.bumped_at,
-      CASE
-        WHEN o.state = 'closed' THEN 'closed'
-        WHEN o.bumped_at < NOW() - INTERVAL '30 days' THEN 'terminated'
-        WHEN o.bumped_at < NOW() - INTERVAL '7 days' THEN 'expired'
-        WHEN o.bumped_at < NOW() - INTERVAL '3 days' THEN 'stale'
-        ELSE 'active'
-      END AS computed_state,
-      u.eu_name AS seller_name
-    FROM trade_offers o
-    LEFT JOIN users u ON u.id = o.user_id
-    WHERE o.user_id = $1
-      AND o.state != 'closed'
-      AND o.bumped_at >= NOW() - INTERVAL '30 days'
-    ORDER BY o.bumped_at DESC
-  `;
-  const { rows } = await pool.query(query, [userId]);
-  return rows;
-}

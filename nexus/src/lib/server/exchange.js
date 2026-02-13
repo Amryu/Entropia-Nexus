@@ -89,6 +89,34 @@ export async function getUserOrders(userId) {
 }
 
 /**
+ * Get all active orders by a specific user (public endpoint).
+ */
+export async function getUserPublicOrders(userId, fetch) {
+  const query = `
+    SELECT
+      o.id, o.type, o.item_id, o.quantity, o.min_quantity,
+      o.markup, o.planet, o.details, o.bumped_at,
+      ${COMPUTED_STATE_SQL} AS computed_state,
+      u.eu_name AS seller_name
+    FROM trade_offers o
+    LEFT JOIN users u ON u.id = o.user_id
+    WHERE o.user_id = $1
+      AND o.state != 'closed'
+      AND o.bumped_at >= NOW() - INTERVAL '${TERMINATED_DAYS} days'
+    ORDER BY o.bumped_at DESC
+  `;
+  const { rows } = await pool.query(query, [userId]);
+  const itemIds = [...new Set(rows.map(row => row.item_id).filter(Boolean))];
+  const typeMap = await resolveItemTypesByItemId(itemIds, fetch);
+
+  return rows.map(row => ({
+    ...row,
+    item_type: typeMap[row.item_id]?.type || null,
+    item_sub_type: typeMap[row.item_id]?.subType || null
+  }));
+}
+
+/**
  * Count a user's active (non-closed, non-terminated) orders on a given side.
  */
 export async function countUserOrdersBySide(userId, type) {
@@ -487,6 +515,7 @@ export async function countUserOrdersForItem(userId, itemId, type) {
 
 import { apiCall } from '$lib/util.js';
 import { isPercentMarkupType, isStackableType, ARMOR_SET_OFFSET, GENDERED_TYPES } from '$lib/common/itemTypes.js';
+import { resolveItemTypesByItemId } from '$lib/server/item-type-cache.js';
 
 // Material ID offset for sub-type lookup (mirrors api/endpoints/constants.js)
 const MATERIAL_ID_OFFSET = 1000000;

@@ -31,7 +31,7 @@ export async function GET({ locals }) {
  * POST /api/market/trade-requests — Create or add to a trade request
  * Requires market.trade grant.
  */
-export async function POST({ request, locals }) {
+export async function POST({ request, locals, fetch }) {
   const { user, error } = getVerifiedUser(locals);
   if (error) return error;
 
@@ -79,7 +79,7 @@ export async function POST({ request, locals }) {
   }
 
   try {
-    const result = await getOrCreateTradeRequest(user.id, targetId, planet, items);
+    const result = await getOrCreateTradeRequest(user.id, targetId, planet, items, fetch);
     return getResponse(result, result.isNew ? 201 : 200);
   } catch (err) {
     // Unique constraint violation = open request already exists (race condition)
