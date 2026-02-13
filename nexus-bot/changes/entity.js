@@ -377,7 +377,8 @@ export const UpsertConfigs = {
       { name: "Electric", value: x => x.Properties.Defense.Electric },
     ],
     offset: 5500000,
-    table: "ArmorPlatings"
+    table: "ArmorPlatings",
+    relationChangeFunc: async (client, id, x) => await applyEffectsOnEquipChanges(client, id, x.EffectsOnEquip)
   },
   MindforceImplant: {
     columns: [
@@ -390,7 +391,8 @@ export const UpsertConfigs = {
       { name: "Absorption", value: x => x.Properties.Economy.Absorption },
     ],
     offset: 5700000,
-    table: "MindforceImplants"
+    table: "MindforceImplants",
+    relationChangeFunc: async (client, id, x) => await applyEffectsOnEquipChanges(client, id, x.EffectsOnEquip)
   },
   Blueprint: {
     columns: [

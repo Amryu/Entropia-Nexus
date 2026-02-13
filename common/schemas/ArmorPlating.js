@@ -108,10 +108,12 @@ export const ArmorPlating = {
         "Economy",
         "Defense"
       ]
-    }
+    },
+    "EffectsOnEquip": { "$ref": "https://entropianexus.com/schemas/EffectsOnEquip.json" }
   },
   "required": [
     "Name",
-    "Properties"
+    "Properties",
+    "EffectsOnEquip"
   ]
 }

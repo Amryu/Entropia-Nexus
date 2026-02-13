@@ -54,10 +54,12 @@ export const MindforceImplant = {
         "MaxProfessionLevel",
         "Economy"
       ]
-    }
+    },
+    "EffectsOnEquip": { "$ref": "https://entropianexus.com/schemas/EffectsOnEquip.json" }
   },
   "required": [
     "Name",
-    "Properties"
+    "Properties",
+    "EffectsOnEquip"
   ]
 }
