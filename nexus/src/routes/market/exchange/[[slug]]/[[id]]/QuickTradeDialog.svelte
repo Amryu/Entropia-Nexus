@@ -25,6 +25,13 @@
   let quantity = 1;
   let submitting = false;
   let error = null;
+  let minQty = 1;
+  let maxQty = 1;
+  let effectiveMinQty = 1;
+  let currentOrderId = null;
+  let initializedOrderId = null;
+  let wasOpen = false;
+  let qtyNumber = 1;
 
   /** Called by parent to signal that the async operation failed */
   export function setError(msg) {
@@ -32,20 +39,31 @@
     submitting = false;
   }
 
+  $: minQty = Math.max(1, Math.floor(Number(order?.min_quantity ?? 1) || 1));
+  $: maxQty = Math.max(1, Math.floor(Number(order?.quantity ?? 1) || 1));
+  $: effectiveMinQty = Math.min(minQty, maxQty);
+  $: currentOrderId = order?.id ?? order?.Id ?? null;
   $: if (show && order) {
-    quantity = order.quantity || 1;
-    error = null;
-    submitting = false;
+    if (!wasOpen || initializedOrderId !== currentOrderId) {
+      quantity = maxQty;
+      error = null;
+      submitting = false;
+      initializedOrderId = currentOrderId;
+    }
+    wasOpen = true;
+  }
+  $: if (!show && wasOpen) {
+    wasOpen = false;
+    initializedOrderId = null;
   }
 
-  $: minQty = order?.min_quantity || 1;
-  $: maxQty = order?.quantity || 1;
   $: isOwnOrder = (() => {
     const userId = $page?.data?.session?.user?.id;
     const sellerId = order?.user_id ?? order?.SellerId ?? order?.UserId ?? null;
     return userId && sellerId && String(userId) === String(sellerId);
   })();
-  $: qtyValid = quantity >= minQty && quantity <= maxQty;
+  $: qtyNumber = Number(quantity);
+  $: qtyValid = Number.isInteger(qtyNumber) && qtyNumber >= effectiveMinQty && qtyNumber <= maxQty;
 
   $: isCond = hasCondition(item);
   $: isAbsMu = isAbsoluteMarkup(item);
@@ -83,19 +101,33 @@
   $: actionLabel = side === 'buy' ? 'Buy Now' : 'Sell Now';
   $: canConfirm = !submitting && !isOwnOrder && qtyValid;
 
+  function getNormalizedQuantity() {
+    const parsed = Math.floor(Number(quantity));
+    if (!Number.isFinite(parsed)) return null;
+    return Math.max(effectiveMinQty, Math.min(maxQty, parsed));
+  }
+
+  function normalizeQuantity() {
+    const normalized = getNormalizedQuantity();
+    quantity = normalized ?? effectiveMinQty;
+  }
+
   function close() {
     dispatch('close');
   }
 
   async function confirm() {
     if (!canConfirm) return;
+    const normalized = getNormalizedQuantity();
+    if (normalized == null) return;
+    quantity = normalized;
     submitting = true;
     error = null;
 
     try {
       dispatch('confirm', {
         order,
-        quantity,
+        quantity: normalized,
         side
       });
     } catch (err) {
@@ -179,12 +211,18 @@
           <input
             id="tradeQty"
             type="number"
-            min={minQty}
+            step="1"
+            min={effectiveMinQty}
             max={maxQty}
             bind:value={quantity}
+            on:blur={normalizeQuantity}
           />
           <span class="qty-hint">
-            {#if minQty < maxQty}Min: {minQty}, Max: {maxQty}{:else}Fixed: {maxQty}{/if}
+            {#if effectiveMinQty < maxQty}
+              Owner minimum: {effectiveMinQty}. Available up to {maxQty}.
+            {:else}
+              Fixed quantity: {maxQty} (owner minimum equals available).
+            {/if}
           </span>
         </div>
 
@@ -208,7 +246,7 @@
         {#if isOwnOrder}
           <div class="own-order-notice">This is your own order.</div>
         {:else if !qtyValid}
-          <div class="error-message">Quantity must be between {minQty} and {maxQty}.</div>
+          <div class="error-message">Quantity must be between {effectiveMinQty} and {maxQty}.</div>
         {/if}
 
         {#if error}
@@ -229,7 +267,7 @@
           {#if showAddToList}
             <button
               class="btn btn-list"
-              on:click={() => dispatch('addToList', { order, quantity, side })}
+              on:click={() => dispatch('addToList', { order, quantity: getNormalizedQuantity() ?? quantity, side })}
               disabled={submitting || !qtyValid}
             >
               Add to Trade List

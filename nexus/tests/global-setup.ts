@@ -13,14 +13,39 @@
 import { spawnSync, execSync } from 'child_process';
 import { unlinkSync, existsSync } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { join, resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import pg from 'pg';
+import dotenv from 'dotenv';
 
-// Database configuration (from environment or defaults)
-const DB_HOST = process.env.PGHOST || 'localhost';
-const DB_PORT = process.env.PGPORT || '5432';
-const DB_USER = process.env.PGUSER || 'postgres';
-const DB_PASSWORD = process.env.PGPASSWORD || '';
+// Load .env.test so we have the correct database credentials
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+dotenv.config({ path: resolve(__dirname, '..', '.env.test') });
+
+// Parse database credentials from connection string or environment
+function parseDbConfig() {
+  const connStr = process.env.POSTGRES_CONNECTION_STRING;
+  if (connStr) {
+    try {
+      const url = new URL(connStr);
+      return {
+        host: url.hostname || 'localhost',
+        port: url.port || '5432',
+        user: decodeURIComponent(url.username) || 'postgres',
+        password: decodeURIComponent(url.password) || '',
+      };
+    } catch { /* fall through to defaults */ }
+  }
+  return {
+    host: process.env.PGHOST || 'localhost',
+    port: process.env.PGPORT || '5432',
+    user: process.env.PGUSER || 'postgres',
+    password: process.env.PGPASSWORD || '',
+  };
+}
+
+const { host: DB_HOST, port: DB_PORT, user: DB_USER, password: DB_PASSWORD } = parseDbConfig();
 
 // Database pairs to clone
 const DATABASE_PAIRS = [

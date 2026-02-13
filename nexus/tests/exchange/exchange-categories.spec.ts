@@ -13,6 +13,16 @@ import { TIMEOUT_MEDIUM, TIMEOUT_LONG } from '../test-constants';
 const EXCHANGE_API = '/api/market/exchange';
 
 test.describe('Exchange categories and markup types', () => {
+  function collectItems(node: unknown): Array<Record<string, unknown>> {
+    if (Array.isArray(node)) return node as Array<Record<string, unknown>>;
+    if (!node || typeof node !== 'object') return [];
+
+    const out: Array<Record<string, unknown>> = [];
+    for (const value of Object.values(node as Record<string, unknown>)) {
+      out.push(...collectItems(value));
+    }
+    return out;
+  }
 
   test('Ring sub-categories exist under clothes', async ({ page }) => {
     const response = await page.request.get(EXCHANGE_API);
@@ -128,6 +138,109 @@ test.describe('Exchange categories and markup types', () => {
       // Should see "Rings" as a sub-category
       const ringsNode = page.locator('.category-tree').getByText('Rings');
       await expect(ringsNode).toBeVisible({ timeout: TIMEOUT_MEDIUM });
+    }
+  });
+
+  test('Detail metrics show percent markup for regular material item', async ({ page }) => {
+    const response = await page.request.get(EXCHANGE_API);
+    expect(response.ok()).toBe(true);
+
+    const data = await response.json();
+    const allItems = collectItems(data);
+    const materialWithMedian = allItems.find((item) =>
+      item?.t === 'Material' &&
+      item?.st === undefined &&
+      typeof item?.m === 'number' &&
+      Number.isFinite(item.m as number)
+    );
+
+    expect(materialWithMedian).toBeDefined();
+
+    await page.goto(`/market/exchange/listings/${materialWithMedian!.i}`, { waitUntil: 'networkidle' });
+
+    const medianValue = page.locator('.detail-title-right .metric').filter({ hasText: 'Median:' }).locator('.metric-value');
+    await expect(medianValue).toBeVisible({ timeout: TIMEOUT_LONG });
+    await expect(medianValue).toContainText('%', { timeout: TIMEOUT_LONG });
+    await expect(medianValue).not.toContainText('+', { timeout: TIMEOUT_LONG });
+  });
+
+  test('Quick trade quantity is editable and shows owner minimum quantity hint', async ({ page, loginAs }) => {
+    await page.goto('/');
+    await loginAs('verified2');
+
+    const summaryRes = await page.request.get(EXCHANGE_API);
+    expect(summaryRes.ok()).toBe(true);
+    const summary = await summaryRes.json();
+    const candidates = collectItems(summary)
+      .filter((item) =>
+        item?.t === 'Material' &&
+        item?.st === undefined &&
+        Number.isInteger(Number(item?.i))
+      )
+      .map((item) => Number(item.i))
+      .filter((id) => id > 0);
+
+    expect(candidates.length).toBeGreaterThan(0);
+
+    const ordersRes = await page.request.get('/api/market/exchange/orders');
+    expect(ordersRes.ok()).toBe(true);
+    const existingOrders = await ordersRes.json();
+
+    let createdOrder: any = null;
+    let itemId = 0;
+    for (const candidateId of candidates.slice(0, 25)) {
+      for (const order of existingOrders) {
+        if (order?.item_id === candidateId && order?.type === 'SELL' && order?.state !== 'closed') {
+          await page.request.delete(`/api/market/exchange/orders/${order.id}`);
+        }
+      }
+
+      const createRes = await page.request.post('/api/market/exchange/orders', {
+        data: {
+          type: 'SELL',
+          item_id: candidateId,
+          quantity: 9,
+          min_quantity: 3,
+          markup: 110,
+          planet: 'Calypso'
+        }
+      });
+
+      if (createRes.ok()) {
+        createdOrder = await createRes.json();
+        itemId = candidateId;
+        break;
+      }
+    }
+
+    expect(createdOrder?.id).toBeDefined();
+
+    try {
+      await loginAs('verified1');
+      await page.goto(`/market/exchange/listings/${itemId}`, { waitUntil: 'networkidle' });
+
+      const buyBtn = page.locator(`[data-trade-buy="${createdOrder.id}"]`).first();
+      await expect(buyBtn).toBeVisible({ timeout: TIMEOUT_LONG });
+      await buyBtn.click();
+
+      const qtyInput = page.locator('#tradeQty');
+      await expect(qtyInput).toBeVisible({ timeout: TIMEOUT_MEDIUM });
+      await expect(qtyInput).toHaveValue('9');
+
+      await qtyInput.fill('5');
+      await expect(qtyInput).toHaveValue('5');
+      await page.waitForTimeout(TIMEOUT_MEDIUM);
+      await expect(qtyInput).toHaveValue('5');
+
+      const qtyHint = page.locator('.qty-hint');
+      await expect(qtyHint).toContainText('Owner minimum');
+      await expect(qtyHint).toContainText('3');
+      await expect(qtyHint).toContainText('9');
+    } finally {
+      await loginAs('verified2');
+      if (createdOrder?.id) {
+        await page.request.delete(`/api/market/exchange/orders/${createdOrder.id}`);
+      }
     }
   });
 });

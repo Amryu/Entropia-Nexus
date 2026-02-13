@@ -943,8 +943,13 @@
     return formatPedValue(value);
   }
 
-  function formatMarkupDisplay(value) {
-    return formatMarkupValue(value, isAbsoluteMarkup(selectedItemDetails));
+  let detailMarkupItem = null;
+  let detailIsAbsoluteMarkup = true;
+  $: detailMarkupItem = selectedItemDetails || selectedItem;
+  $: detailIsAbsoluteMarkup = isAbsoluteMarkup(detailMarkupItem);
+
+  function formatMarkupDisplay(value, absoluteMarkup) {
+    return formatMarkupValue(value, absoluteMarkup);
   }
 
   // Only apply L/UL filter for specific category paths
@@ -1251,7 +1256,7 @@
       unit != null && ttUnit != null
         ? unit - ttUnit
         : (o?.Markup ?? o?.markup ?? null);
-    const isAbsMu = isAbsoluteMarkup(selectedItemDetails);
+    const isAbsMu = detailIsAbsoluteMarkup;
     const muText = isAbsMu
       ? formatMarkupValue(absMu, true)
       : formatMarkupValue(muPct, false);
@@ -1300,7 +1305,7 @@
 
   function applyOrderFilters(orders) {
     const maxTT = getMaxTT(selectedItemDetails);
-    const isAbsMu = isAbsoluteMarkup(selectedItemDetails);
+    const isAbsMu = detailIsAbsoluteMarkup;
     const bpNonL = isBlueprintNonL(selectedItemDetails);
 
     return (orders || [])
@@ -1612,7 +1617,7 @@
   $: detailColumns = (() => {
     const type = selectedItemDetails?.Properties?.Type || selectedItem?.t || null;
     const showTier = tierableTypes.has(type);
-    const isAbsMu = isAbsoluteMarkup(selectedItemDetails);
+    const isAbsMu = detailIsAbsoluteMarkup;
     const isBpNonL = isBlueprintNonL(selectedItemDetails);
     const isPetItem = isPet(selectedItemDetails) || selectedItem?.t === 'Pet';
     const cols = [];
@@ -2247,32 +2252,32 @@
             <div class="metric">
               Median:<br /><span class="metric-value"
                 >{periodStats?.median != null
-                  ? formatMarkupDisplay(periodStats.median)
-                  : (typeof selectedItem?.m === "number" && !(isGenderedDetail && priceGender === 'Both') ? formatMarkupDisplay(selectedItem.m) : "\u2014")}</span
+                  ? formatMarkupDisplay(periodStats.median, detailIsAbsoluteMarkup)
+                  : (typeof selectedItem?.m === "number" && !(isGenderedDetail && priceGender === 'Both') ? formatMarkupDisplay(selectedItem.m, detailIsAbsoluteMarkup) : "\u2014")}</span
               >
             </div>
             <div class="metric">
               10%:<br /><span class="metric-value"
                 >{periodStats?.p10 != null
-                  ? formatMarkupDisplay(periodStats.p10)
-                  : (typeof selectedItem?.p === "number" && !(isGenderedDetail && priceGender === 'Both') ? formatMarkupDisplay(selectedItem.p) : "\u2014")}</span
+                  ? formatMarkupDisplay(periodStats.p10, detailIsAbsoluteMarkup)
+                  : (typeof selectedItem?.p === "number" && !(isGenderedDetail && priceGender === 'Both') ? formatMarkupDisplay(selectedItem.p, detailIsAbsoluteMarkup) : "\u2014")}</span
               >
             </div>
             <div class="metric">
               WAP:<br /><span class="metric-value"
                 >{periodStats?.wap != null
-                  ? formatMarkupDisplay(periodStats.wap)
-                  : (typeof selectedItem?.w === "number" && !(isGenderedDetail && priceGender === 'Both') ? formatMarkupDisplay(selectedItem.w) : "\u2014")}</span
+                  ? formatMarkupDisplay(periodStats.wap, detailIsAbsoluteMarkup)
+                  : (typeof selectedItem?.w === "number" && !(isGenderedDetail && priceGender === 'Both') ? formatMarkupDisplay(selectedItem.w, detailIsAbsoluteMarkup) : "\u2014")}</span
               >
             </div>
             {#if exchangePrices?.buy}
               <div class="metric exchange-metric">
-                Best Buy:<br /><span class="metric-value buy-value">{formatMarkupDisplay(exchangePrices.buy.best_markup)}</span>
+                Best Buy:<br /><span class="metric-value buy-value">{formatMarkupDisplay(exchangePrices.buy.best_markup, detailIsAbsoluteMarkup)}</span>
               </div>
             {/if}
             {#if exchangePrices?.sell}
               <div class="metric exchange-metric">
-                Best Sell:<br /><span class="metric-value sell-value">{formatMarkupDisplay(exchangePrices.sell.best_markup)}</span>
+                Best Sell:<br /><span class="metric-value sell-value">{formatMarkupDisplay(exchangePrices.sell.best_markup, detailIsAbsoluteMarkup)}</span>
               </div>
             {/if}
             <div class="history-controls">
@@ -2300,7 +2305,7 @@
             <PriceHistoryChart
               itemId={selectedItem?.i}
               period={selectedPeriod}
-              isAbsoluteMarkup={isAbsoluteMarkup(selectedItemDetails)}
+              isAbsoluteMarkup={detailIsAbsoluteMarkup}
               data={priceHistoryData}
               loading={priceHistoryLoading}
             />
