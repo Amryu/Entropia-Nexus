@@ -270,7 +270,8 @@ test.describe('Main Navigation Menu', () => {
       await page.locator('.burger-button').click();
 
       // Should show icon image (light.png or dark.png)
-      const modeButton = page.locator('.mobile-quick-btn').first();
+      const modeButton = page.locator('.mobile-quick-btn[title="Dark Mode"], .mobile-quick-btn[title="Light Mode"]').first();
+      await expect(modeButton).toBeVisible();
       const hasImg = await modeButton.locator('img').isVisible();
 
       expect(hasImg).toBeTruthy();
