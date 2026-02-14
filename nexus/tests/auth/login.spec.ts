@@ -1,5 +1,9 @@
 import { test, expect } from '../fixtures/auth';
 
+function isAuthRedirect(url: string): boolean {
+  return /login|discord\/login|discord\.com\/oauth2\/authorize/i.test(url);
+}
+
 test.describe('Login Flow', () => {
   test.describe('Login Page', () => {
     test('login page redirects to discord auth', async ({ page }) => {
@@ -49,14 +53,14 @@ test.describe('Login Flow', () => {
       await page.goto('/market/services/create');
       await page.waitForLoadState('networkidle');
 
-      expect(page.url()).toContain('login');
+      expect(isAuthRedirect(page.url())).toBeTruthy();
     });
 
     test('accessing my services redirects to login', async ({ page }) => {
       await page.goto('/market/services/my');
       await page.waitForLoadState('networkidle');
 
-      expect(page.url()).toContain('login');
+      expect(isAuthRedirect(page.url())).toBeTruthy();
     });
 
     test('accessing admin panel requires auth', async ({ page }) => {
