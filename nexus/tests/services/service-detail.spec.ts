@@ -1,449 +1,289 @@
-import { test, expect } from '@playwright/test';
-import { TIMEOUT_INSTANT, TIMEOUT_LONG } from '../test-constants';
+import { test, expect } from '../fixtures/auth';
+import { TIMEOUT_LONG } from '../test-constants';
 
-test.describe('Service Detail View', () => {
-  test.describe('List View (No Service Selected)', () => {
-    test('services list shows type selector', async ({ page }) => {
-      await page.goto('/market/services');
-      await page.waitForLoadState('networkidle');
+// ─── Detail View (Specific Service) ─────────────────────────────
 
-      // Check if page loaded successfully (not a 500 error)
-      const hasError = await page.locator('text=500').or(page.locator('text=Server Error')).first().isVisible().catch(() => false);
-      if (hasError) {
-        // Skip test if API server is unavailable
-        test.skip();
-        return;
-      }
+test.describe('Service Detail - Healing Service', () => {
+  test('shows service title as page heading', async ({ page }) => {
+    await page.goto('/market/services/1');
+    await page.waitForLoadState('networkidle');
 
-      // Should have type selector buttons (may appear after loading)
-      const typeSelector = page.locator('.type-selector, .type-buttons, .type-btn').first();
-      const hasTypeSelector = await typeSelector.isVisible({ timeout: TIMEOUT_LONG }).catch(() => false);
-
-      // Pass if type selector is visible, or if page layout is visible (graceful handling)
-      expect(hasTypeSelector || await page.locator('h1').isVisible().catch(() => false)).toBeTruthy();
-    });
-
-    test('type buttons show service counts', async ({ page }) => {
-      await page.goto('/market/services');
-      await page.waitForLoadState('networkidle');
-
-      // Check if page loaded successfully (not a 500 error)
-      const hasError = await page.locator('text=500').or(page.locator('text=Server Error')).first().isVisible().catch(() => false);
-      if (hasError) {
-        // Skip test if API server is unavailable
-        test.skip();
-        return;
-      }
-
-      // Look for service count indicators
-      const countIndicator = page.locator('.service-count').or(
-        page.locator('text=/\\(\\d+\\)/')
-      );
-
-      const hasCount = await countIndicator.first().isVisible().catch(() => false);
-      // Pass if count is visible, or just verify page loaded
-      expect(hasCount || await page.locator('h1').isVisible().catch(() => false)).toBeTruthy();
-    });
-
-    test('has planet filter', async ({ page }) => {
-      await page.goto('/market/services');
-      await page.waitForLoadState('networkidle');
-
-      // Check if page loaded successfully (not a 500 error)
-      const hasError = await page.locator('text=500').or(page.locator('text=Server Error')).first().isVisible().catch(() => false);
-      if (hasError) {
-        // Skip test if API server is unavailable
-        test.skip();
-        return;
-      }
-
-      // Should have planet filter dropdown
-      const planetFilter = page.locator('.planet-filter select').or(
-        page.getByLabel(/planet/i)
-      );
-
-      const hasFilter = await planetFilter.isVisible().catch(() => false);
-      if (hasFilter) {
-        // Should have "All Planets" option
-        const options = await planetFilter.locator('option').allTextContents();
-        expect(options.some(o => /all/i.test(o))).toBeTruthy();
-      } else {
-        // Pass if page loaded without filter (graceful handling)
-        expect(await page.locator('h1').isVisible().catch(() => false)).toBeTruthy();
-      }
-    });
-
-    test('type buttons are clickable and switch content', async ({ page }) => {
-      await page.goto('/market/services');
-      await page.waitForLoadState('networkidle');
-
-      // Click on different type buttons
-      const healingBtn = page.locator('.type-btn:has-text("Healing")');
-      const dpsBtn = page.locator('.type-btn:has-text("DPS")');
-      const transportBtn = page.locator('.type-btn:has-text("Transport")');
-
-      // Click healing (Svelte uses class:active directive which adds 'active' to class list)
-      if (await healingBtn.isVisible({ timeout: TIMEOUT_LONG }).catch(() => false)) {
-        await healingBtn.click();
-        // Check that clicking changes the page state (URL or visual indicator)
-        await page.waitForTimeout(TIMEOUT_INSTANT);
-      }
-
-      // Click DPS
-      if (await dpsBtn.isVisible().catch(() => false)) {
-        await dpsBtn.click();
-        await page.waitForTimeout(TIMEOUT_INSTANT);
-        // Verify URL changed or button is somehow different
-        const dpsClasses = await dpsBtn.getAttribute('class');
-        expect(dpsClasses).toBeTruthy();
-      }
-
-      // Click Transport
-      if (await transportBtn.isVisible().catch(() => false)) {
-        await transportBtn.click();
-        await page.waitForTimeout(TIMEOUT_INSTANT);
-      }
-
-      // Test passes if we can click all visible buttons without errors
-    });
-
-    test('header has My Services button for logged in users', async ({ page }) => {
-      await page.goto('/market/services');
-
-      // Look for My Services link
-      const myServicesLink = page.locator('a[href="/market/services/my"]').or(
-        page.getByRole('link', { name: /my services/i })
-      );
-
-      // May or may not be visible depending on auth state
-      const isVisible = await myServicesLink.isVisible().catch(() => false);
-      // Don't assert - just verify page works
-      expect(true).toBeTruthy();
-    });
+    const heading = page.locator('h1');
+    await expect(heading).toBeVisible();
+    // Detail view heading shows the service title, not "Services"
+    const headingText = await heading.textContent();
+    expect(headingText).not.toMatch(/^Services$/);
   });
 
-  test.describe('Detail View (Service Selected)', () => {
-    // We can't reliably test with a specific service ID without knowing what exists
-    // Test navigation patterns instead
+  test('has breadcrumb linking back to services list', async ({ page }) => {
+    await page.goto('/market/services/1');
+    await page.waitForLoadState('networkidle');
 
-    test('invalid service ID shows graceful handling', async ({ page }) => {
-      await page.goto('/market/services/999999');
+    const breadcrumb = page.locator('.breadcrumb');
+    await expect(breadcrumb).toBeVisible();
 
-      // Should not crash - may show error or redirect
-      await expect(page.locator('body')).toBeVisible();
-    });
-
-    test('back link returns to services list', async ({ page }) => {
-      // Start from services list
-      await page.goto('/market/services');
-
-      // Try to click on a service row
-      const serviceRow = page.locator('table tbody tr').first();
-
-      if (await serviceRow.isVisible().catch(() => false)) {
-        await serviceRow.click();
-        await page.waitForLoadState('networkidle');
-
-        // If we navigated to a detail view, check for back link
-        const backLink = page.locator('.back-link').or(
-          page.getByRole('link', { name: /back/i })
-        );
-
-        if (await backLink.isVisible().catch(() => false)) {
-          await backLink.click();
-          await expect(page).toHaveURL(/\/market\/services\/?$/);
-        }
-      }
-    });
+    const servicesLink = breadcrumb.locator('a[href="/market/services"]');
+    await expect(servicesLink).toBeVisible();
+    await expect(servicesLink).toContainText('Services');
   });
 
-  test.describe('Healing Service Detail', () => {
-    test('healing service list shows expected columns', async ({ page }) => {
-      await page.goto('/market/services');
+  test('shows service type badge', async ({ page }) => {
+    await page.goto('/market/services/1');
+    await page.waitForLoadState('networkidle');
 
-      // Click on healing type
-      const healingBtn = page.locator('.type-btn:has-text("Healing")');
-      if (await healingBtn.isVisible().catch(() => false)) {
-        await healingBtn.click();
-      }
-
-      // Check for expected table headers
-      const table = page.locator('.table-wrapper table').or(page.locator('table'));
-
-      if (await table.isVisible().catch(() => false)) {
-        const headers = await page.locator('th').allTextContents();
-
-        // Expected headers for healing
-        const expectedHeaders = ['Service', 'HP/s', 'Location', 'Pricing', 'Provider'];
-        for (const header of expectedHeaders) {
-          const hasHeader = headers.some(h => h.toLowerCase().includes(header.toLowerCase()));
-          // At least some headers should be present
-        }
-      }
-    });
+    const badge = page.locator('.service-type-badge');
+    await expect(badge).toBeVisible();
+    await expect(badge).toContainText(/healing/i);
   });
 
-  test.describe('DPS Service Detail', () => {
-    test('DPS service list shows expected columns', async ({ page }) => {
-      await page.goto('/market/services');
+  test('shows provider section with owner', async ({ page }) => {
+    await page.goto('/market/services/1');
+    await page.waitForLoadState('networkidle');
 
-      // Click on DPS type
-      const dpsBtn = page.locator('.type-btn:has-text("DPS")');
-      if (await dpsBtn.isVisible().catch(() => false)) {
-        await dpsBtn.click();
-      }
-
-      // Check for expected table headers
-      const table = page.locator('.table-wrapper table').or(page.locator('table'));
-
-      if (await table.isVisible().catch(() => false)) {
-        const headers = await page.locator('th').allTextContents();
-
-        // Expected headers for DPS
-        const expectedHeaders = ['Service', 'DPS', 'Location', 'Pricing', 'Provider'];
-        for (const header of expectedHeaders) {
-          const hasHeader = headers.some(h => h.toLowerCase().includes(header.toLowerCase()));
-        }
-      }
-    });
+    const providerSection = page.locator('.info-section', { has: page.locator('h3', { hasText: 'Provider' }) });
+    await expect(providerSection).toBeVisible();
+    await expect(providerSection).toContainText('Owner');
   });
 
-  test.describe('Transportation Service Detail', () => {
-    test('transportation service list shows expected columns', async ({ page }) => {
-      await page.goto('/market/services');
+  test('shows location section', async ({ page }) => {
+    await page.goto('/market/services/1');
+    await page.waitForLoadState('networkidle');
 
-      // Click on transport type
-      const transportBtn = page.locator('.type-btn:has-text("Transport")');
-      if (await transportBtn.isVisible().catch(() => false)) {
-        await transportBtn.click();
-      }
-
-      // Check for expected table headers
-      const table = page.locator('.table-wrapper table').or(page.locator('table'));
-
-      if (await table.isVisible().catch(() => false)) {
-        const headers = await page.locator('th').allTextContents();
-
-        // Expected headers for transportation
-        const expectedHeaders = ['Service', 'Type', 'Ship', 'Location', 'Provider'];
-        for (const header of expectedHeaders) {
-          const hasHeader = headers.some(h => h.toLowerCase().includes(header.toLowerCase()));
-        }
-      }
-    });
+    const locationSection = page.locator('.info-section', { has: page.locator('h3', { hasText: 'Location' }) });
+    await expect(locationSection).toBeVisible();
   });
 
-  test.describe('Custom Service Type', () => {
-    test('custom services shows coming soon message', async ({ page }) => {
-      await page.goto('/market/services');
+  test('owner action buttons visible for logged-in user', async ({ page }) => {
+    await page.goto('/market/services/1');
+    await page.waitForLoadState('networkidle');
 
-      // Click on custom type if visible
-      const customBtn = page.locator('.type-btn:has-text("Custom")');
-      if (await customBtn.isVisible().catch(() => false)) {
-        await customBtn.click();
-
-        // Should show coming soon message
-        const comingSoon = page.locator('text=coming soon');
-        const hasMessage = await comingSoon.isVisible().catch(() => false);
-        // It's okay if this doesn't exist
-      }
-    });
-  });
-
-  test.describe('Page Layout and Styling', () => {
-    test('page has proper header structure', async ({ page }) => {
-      await page.goto('/market/services');
-
-      // Should have h1 heading
-      const heading = page.locator('h1');
-      await expect(heading).toBeVisible();
-      await expect(heading).toContainText(/services/i);
-    });
-
-    test('type buttons have proper styling', async ({ page }) => {
-      await page.goto('/market/services');
-      await page.waitForLoadState('networkidle');
-
-      const typeBtn = page.locator('.type-btn').first();
-
-      if (await typeBtn.isVisible({ timeout: TIMEOUT_LONG }).catch(() => false)) {
-        // Check button has some styling (either background or border)
-        const bgColor = await typeBtn.evaluate(el =>
-          getComputedStyle(el).backgroundColor
-        );
-        const borderColor = await typeBtn.evaluate(el =>
-          getComputedStyle(el).borderColor
-        );
-
-        // Should have either a background or a visible border
-        const hasStyling = bgColor !== 'rgba(0, 0, 0, 0)' || borderColor !== 'rgba(0, 0, 0, 0)';
-        expect(hasStyling).toBeTruthy();
-
-        // Active button should have different style
-        await typeBtn.click();
-
-        const activeBgColor = await typeBtn.evaluate(el =>
-          getComputedStyle(el).backgroundColor
-        );
-
-        // Should have visible styling
-        expect(activeBgColor).toBeTruthy();
-      } else {
-        // Skip test if type buttons are not present (might be different layout)
-        expect(true).toBeTruthy();
-      }
-    });
-
-    test('filters bar is positioned correctly', async ({ page }) => {
-      await page.goto('/market/services');
-
-      const filtersBar = page.locator('.filters-bar');
-
-      if (await filtersBar.isVisible().catch(() => false)) {
-        // Should be visible and accessible
-        await expect(filtersBar).toBeVisible();
-      }
-    });
-  });
-
-  test.describe('Table Interactions', () => {
-    test('table rows highlight on hover', async ({ page }) => {
-      await page.goto('/market/services');
-
-      const tableRow = page.locator('table tbody tr').first();
-
-      if (await tableRow.isVisible().catch(() => false)) {
-        // Hover over row
-        await tableRow.hover();
-
-        // Row should have hover styling (cursor or background change)
-        const cursor = await tableRow.evaluate(el => getComputedStyle(el).cursor);
-        expect(cursor === 'pointer' || cursor === 'default').toBeTruthy();
-      }
-    });
-
-    test('table is searchable', async ({ page }) => {
-      await page.goto('/market/services');
-
-      // Look for search input
-      const searchInput = page.locator('input[type="search"]').or(
-        page.locator('input[placeholder*="search" i]')
-      ).or(page.locator('.search-input'));
-
-      const hasSearch = await searchInput.first().isVisible().catch(() => false);
-      // Tables should have searchable option per component config
-    });
-
-    test('table is sortable', async ({ page }) => {
-      await page.goto('/market/services');
-
-      // Look for sortable header
-      const sortableHeader = page.locator('th').first();
-
-      if (await sortableHeader.isVisible().catch(() => false)) {
-        // Try clicking header to sort
-        await sortableHeader.click();
-
-        // Table should still be visible after sorting
-        const table = page.locator('table');
-        await expect(table).toBeVisible();
-      }
-    });
-  });
-
-  test.describe('Empty States', () => {
-    test('shows empty state when no services of type', async ({ page }) => {
-      await page.goto('/market/services');
-
-      // Look for empty state message
-      const emptyState = page.locator('.empty-state').or(
-        page.locator('text=No.*services')
-      );
-
-      // May or may not show depending on data
-      const isEmpty = await emptyState.first().isVisible().catch(() => false);
-      // Just verify page works
-      expect(true).toBeTruthy();
-    });
-  });
-
-  test.describe('Responsiveness', () => {
-    test('mobile view hides certain columns', async ({ page }) => {
-      await page.setViewportSize({ width: 375, height: 667 });
-      await page.goto('/market/services');
-      await page.waitForLoadState('networkidle');
-
-      // Page should still work on mobile
-      await expect(page.locator('body')).toBeVisible();
-      await expect(page.locator('h1')).toBeVisible();
-    });
-
-    test('tablet view maintains functionality', async ({ page }) => {
-      await page.setViewportSize({ width: 768, height: 1024 });
-      await page.goto('/market/services');
-      await page.waitForLoadState('networkidle');
-
-      await expect(page.locator('body')).toBeVisible();
-      await expect(page.locator('h1')).toBeVisible();
-    });
-  });
-
-  test.describe('URL Parameters', () => {
-    test('respects type query parameter', async ({ page }) => {
-      await page.goto('/market/services?type=transportation');
-
-      // Should show transportation tab as active
-      const transportBtn = page.locator('.type-btn:has-text("Transport")');
-
-      if (await transportBtn.isVisible().catch(() => false)) {
-        // Should have active class
-        const classes = await transportBtn.getAttribute('class');
-        // Type param should be respected
-      }
-    });
+    // Non-owner, non-logged-in user should NOT see edit or request buttons
+    const editBtn = page.locator('a[href="/market/services/1/edit"]');
+    await expect(editBtn).not.toBeVisible();
   });
 });
 
-test.describe('Service Edit Page', () => {
-  test('edit page requires authentication', async ({ page }) => {
+test.describe('Service Detail - Transportation Service', () => {
+  test('shows transportation type badge', async ({ page }) => {
+    await page.goto('/market/services/3');
+    await page.waitForLoadState('networkidle');
+
+    const badge = page.locator('.service-type-badge');
+    await expect(badge).toBeVisible();
+    await expect(badge).toContainText(/transport/i);
+  });
+
+  test('shows provider section', async ({ page }) => {
+    await page.goto('/market/services/3');
+    await page.waitForLoadState('networkidle');
+
+    const providerSection = page.locator('.info-section', { has: page.locator('h3', { hasText: 'Provider' }) });
+    await expect(providerSection).toBeVisible();
+  });
+});
+
+test.describe('Service Detail - Non-Existent Service', () => {
+  test('non-existent service ID falls back to list view', async ({ page }) => {
+    await page.goto('/market/services/999999');
+    await page.waitForLoadState('networkidle');
+
+    // When service is not found, selectedService is null → list view renders
+    // Should show the page heading as "Services" (list view)
+    const heading = page.locator('h1');
+    await expect(heading).toBeVisible();
+    await expect(heading).toContainText('Services');
+  });
+});
+
+// ─── DPS Table Columns ──────────────────────────────────────────
+
+test.describe('Service Detail - DPS Table', () => {
+  test('DPS table has correct column headers', async ({ page }) => {
+    await page.goto('/market/services/dps');
+    await page.waitForLoadState('networkidle');
+
+    // FancyTable uses .header-cell divs, not <th> elements
+    const headers = await page.locator('.header-cell').allTextContents();
+    const headerTexts = headers.map(h => h.replace(/[▲▼]/, '').trim().toLowerCase());
+
+    for (const expected of ['service', 'dps', 'location', 'pricing', 'provider']) {
+      expect(headerTexts.some(h => h.includes(expected))).toBeTruthy();
+    }
+  });
+});
+
+// ─── Custom Services Tab ────────────────────────────────────────
+
+test.describe('Service Detail - Custom Tab', () => {
+  test('custom tab shows coming soon message', async ({ page }) => {
+    await page.goto('/market/services/custom');
+    await page.waitForLoadState('networkidle');
+
+    const customTab = page.locator('.tab-btn', { hasText: 'Custom' });
+    await expect(customTab).toHaveClass(/active/);
+
+    const emptyState = page.locator('.empty-state');
+    await expect(emptyState).toBeVisible();
+    await expect(emptyState).toContainText(/coming soon/i);
+  });
+});
+
+// ─── Verified User Detail Actions ───────────────────────────────
+
+test.describe('Service Detail - Verified User', () => {
+  test('verified user sees Ask a Question button', async ({ verifiedUser }) => {
+    await verifiedUser.goto('/market/services/1');
+    await verifiedUser.waitForLoadState('networkidle');
+
+    const askBtn = verifiedUser.getByRole('button', { name: /ask a question/i });
+    await expect(askBtn).toBeVisible();
+  });
+
+  test('verified non-owner does not see Edit button', async ({ verifiedUser }) => {
+    // Service 1 is owned by a different user
+    await verifiedUser.goto('/market/services/1');
+    await verifiedUser.waitForLoadState('networkidle');
+
+    const editBtn = verifiedUser.locator('a[href="/market/services/1/edit"]');
+    await expect(editBtn).not.toBeVisible();
+  });
+});
+
+// ─── Auth-Gated Sub-Pages: Unauthenticated ──────────────────────
+
+test.describe('Service Sub-Pages - Unauthenticated', () => {
+  test('edit page redirects to login', async ({ page }) => {
     await page.goto('/market/services/1/edit');
     await page.waitForLoadState('networkidle');
 
-    // Should redirect to login or show auth required
-    const pageUrl = page.url();
-    const hasForm = await page.locator('form').isVisible().catch(() => false);
-    const isLoginRedirect = pageUrl.includes('login') || pageUrl.includes('discord');
-
-    expect(hasForm || isLoginRedirect).toBeTruthy();
+    const currentUrl = page.url();
+    const inAuthFlow =
+      currentUrl.includes('/discord/login') ||
+      currentUrl.includes('discord.com/oauth2/authorize') ||
+      currentUrl.includes('discord.com/login');
+    expect(inAuthFlow).toBeTruthy();
   });
-});
 
-test.describe('Service Availability Page', () => {
-  test('availability page loads', async ({ page }) => {
+  test('availability page redirects to login', async ({ page }) => {
     await page.goto('/market/services/1/availability');
     await page.waitForLoadState('networkidle');
 
-    // Should show content or redirect
-    await expect(page.locator('body')).toBeVisible();
+    const currentUrl = page.url();
+    const inAuthFlow =
+      currentUrl.includes('/discord/login') ||
+      currentUrl.includes('discord.com/oauth2/authorize') ||
+      currentUrl.includes('discord.com/login');
+    expect(inAuthFlow).toBeTruthy();
+  });
+
+  test('flights page redirects to login', async ({ page }) => {
+    await page.goto('/market/services/3/flights');
+    await page.waitForLoadState('networkidle');
+
+    const currentUrl = page.url();
+    const inAuthFlow =
+      currentUrl.includes('/discord/login') ||
+      currentUrl.includes('discord.com/oauth2/authorize') ||
+      currentUrl.includes('discord.com/login');
+    expect(inAuthFlow).toBeTruthy();
+  });
+
+  test('ticket-offers page redirects to login', async ({ page }) => {
+    await page.goto('/market/services/3/ticket-offers');
+    await page.waitForLoadState('networkidle');
+
+    const currentUrl = page.url();
+    const inAuthFlow =
+      currentUrl.includes('/discord/login') ||
+      currentUrl.includes('discord.com/oauth2/authorize') ||
+      currentUrl.includes('discord.com/login');
+    expect(inAuthFlow).toBeTruthy();
   });
 });
 
-test.describe('Service Flights Page', () => {
-  test('flights page loads', async ({ page }) => {
-    await page.goto('/market/services/1/flights');
-    await page.waitForLoadState('networkidle');
+// ─── Auth-Gated Sub-Pages: Unverified User ──────────────────────
 
-    // Should show content or redirect
-    await expect(page.locator('body')).toBeVisible();
+test.describe('Service Sub-Pages - Unverified User', () => {
+  test('edit page shows 403 for unverified user', async ({ unverifiedUser }) => {
+    await unverifiedUser.goto('/market/services/1/edit');
+    await unverifiedUser.waitForLoadState('networkidle');
+
+    const errorStatus = unverifiedUser.locator('.error-status');
+    await expect(errorStatus).toHaveText('403');
+
+    const errorTitle = unverifiedUser.locator('.error-title');
+    await expect(errorTitle).toContainText('Access Denied');
+  });
+
+  test('availability page shows 403 for unverified user', async ({ unverifiedUser }) => {
+    await unverifiedUser.goto('/market/services/1/availability');
+    await unverifiedUser.waitForLoadState('networkidle');
+
+    const errorStatus = unverifiedUser.locator('.error-status');
+    await expect(errorStatus).toHaveText('403');
+  });
+
+  test('flights page shows 403 for unverified user', async ({ unverifiedUser }) => {
+    await unverifiedUser.goto('/market/services/3/flights');
+    await unverifiedUser.waitForLoadState('networkidle');
+
+    const errorStatus = unverifiedUser.locator('.error-status');
+    await expect(errorStatus).toHaveText('403');
+  });
+
+  test('ticket-offers page shows 403 for unverified user', async ({ unverifiedUser }) => {
+    await unverifiedUser.goto('/market/services/3/ticket-offers');
+    await unverifiedUser.waitForLoadState('networkidle');
+
+    const errorStatus = unverifiedUser.locator('.error-status');
+    await expect(errorStatus).toHaveText('403');
+  });
+
+  test('403 page shows verify hint with account setup link', async ({ unverifiedUser }) => {
+    await unverifiedUser.goto('/market/services/1/edit');
+    await unverifiedUser.waitForLoadState('networkidle');
+
+    const verifyHint = unverifiedUser.locator('.verify-hint');
+    await expect(verifyHint).toBeVisible();
+
+    const verifyLink = verifyHint.locator('a[href="/account/setup"]');
+    await expect(verifyLink).toBeVisible();
+    await expect(verifyLink).toContainText('Verify');
   });
 });
 
-test.describe('Service Ticket Offers Page', () => {
-  test('ticket offers page loads', async ({ page }) => {
-    await page.goto('/market/services/1/ticket-offers');
-    await page.waitForLoadState('networkidle');
+// ─── Auth-Gated Sub-Pages: Verified Non-Owner ──────────────────
 
-    // Should show content or redirect
-    await expect(page.locator('body')).toBeVisible();
+test.describe('Service Sub-Pages - Verified Non-Owner', () => {
+  test('edit page shows 403 for non-owner', async ({ verifiedUser }) => {
+    await verifiedUser.goto('/market/services/1/edit');
+    await verifiedUser.waitForLoadState('networkidle');
+
+    const errorStatus = verifiedUser.locator('.error-status');
+    await expect(errorStatus).toHaveText('403');
+  });
+
+  test('availability page redirects non-owner to detail', async ({ verifiedUser }) => {
+    await verifiedUser.goto('/market/services/1/availability');
+    await verifiedUser.waitForLoadState('networkidle');
+
+    // availability uses redirect(302) for non-owners, not 403
+    await expect(verifiedUser).toHaveURL(/\/market\/services\/1$/);
+  });
+
+  test('flights page shows 403 for non-owner', async ({ verifiedUser }) => {
+    await verifiedUser.goto('/market/services/3/flights');
+    await verifiedUser.waitForLoadState('networkidle');
+
+    const errorStatus = verifiedUser.locator('.error-status');
+    await expect(errorStatus).toHaveText('403');
+  });
+
+  test('ticket-offers page shows 403 for non-owner', async ({ verifiedUser }) => {
+    await verifiedUser.goto('/market/services/3/ticket-offers');
+    await verifiedUser.waitForLoadState('networkidle');
+
+    const errorStatus = verifiedUser.locator('.error-status');
+    await expect(errorStatus).toHaveText('403');
   });
 });

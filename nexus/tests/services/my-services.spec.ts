@@ -63,19 +63,12 @@ test.describe('My Services Dashboard - Verified User', () => {
     await expect(createBtn.first()).toBeVisible();
   });
 
-  test('has link to browse all services', async ({ verifiedUser }) => {
+  test('page heading is visible', async ({ verifiedUser }) => {
     await verifiedUser.goto('/market/services/my');
     await verifiedUser.waitForLoadState('networkidle');
 
-    // Look for browse link in the page content (not nav)
-    const browseLink = verifiedUser.locator('.page-container a[href="/market/services"]').or(
-      verifiedUser.locator('main a[href="/market/services"]')
-    ).or(verifiedUser.getByRole('link', { name: /browse.*services/i }));
-
-    // Check if browse link exists (may be in nav or content)
-    await browseLink.first().isVisible({ timeout: TIMEOUT_MEDIUM }).catch(() => false);
-    // Test passes - we just verify the page loads without errors
-    expect(true).toBeTruthy();
+    const heading = verifiedUser.locator('h1');
+    await expect(heading).toBeVisible();
   });
 
   test('shows empty state for new user', async ({ verifiedUser }) => {
@@ -195,6 +188,35 @@ test.describe('My Tickets Page', () => {
   test('verified user can access', async ({ verifiedUser }) => {
     await verifiedUser.goto('/market/services/my/tickets');
     await verifiedUser.waitForLoadState('networkidle');
+
+    const pageContainer = verifiedUser.locator('.page-container');
+    await expect(pageContainer).toBeVisible();
+  });
+});
+
+test.describe('Sync Availability Page', () => {
+  test('redirects unauthenticated users to login', async ({ page }) => {
+    await page.goto('/market/services/my/offers/sync-availability');
+    await page.waitForLoadState('networkidle');
+
+    expectInAuthFlow(page.url());
+  });
+
+  test('shows 403 for unverified users', async ({ unverifiedUser }) => {
+    await unverifiedUser.goto('/market/services/my/offers/sync-availability');
+    await unverifiedUser.waitForLoadState('networkidle');
+
+    const errorStatus = unverifiedUser.locator('.error-status');
+    await expect(errorStatus).toHaveText('403');
+  });
+
+  test('verified user can access', async ({ verifiedUser }) => {
+    await verifiedUser.goto('/market/services/my/offers/sync-availability');
+    await verifiedUser.waitForLoadState('networkidle');
+
+    // Should not be on error or login page
+    const errorStatus = verifiedUser.locator('.error-status');
+    await expect(errorStatus).not.toBeVisible();
 
     const pageContainer = verifiedUser.locator('.page-container');
     await expect(pageContainer).toBeVisible();

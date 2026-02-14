@@ -1,205 +1,270 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../fixtures/auth';
+import { TIMEOUT_MEDIUM, TIMEOUT_LONG } from '../test-constants';
 
-test.describe('Services List Page', () => {
-  test.describe('Navigation and Layout', () => {
-    test('services page loads successfully', async ({ page }) => {
-      await page.goto('/market/services');
+// ─── Navigation and Layout ──────────────────────────────────────
 
-      // Page should have the correct title
-      await expect(page).toHaveTitle(/Services.*Entropia/i);
-
-      // Main heading should be visible
-      await expect(page.locator('h1')).toContainText(/services/i);
-    });
-
-    test('has proper scroll container structure', async ({ page }) => {
-      await page.goto('/market/services');
-
-      // Should have the scroll-container class for proper layout
-      const scrollContainer = page.locator('.scroll-container');
-      await expect(scrollContainer).toBeVisible();
-
-      // Should have page-container inside
-      const pageContainer = page.locator('.page-container');
-      await expect(pageContainer).toBeVisible();
-    });
-
-    test('displays service type tabs', async ({ page }) => {
-      await page.goto('/market/services');
-
-      // Should have tabs/navigation for service types
-      const healingTab = page.getByRole('link', { name: /healing/i }).or(
-        page.getByRole('button', { name: /healing/i })
-      ).or(page.locator('[data-type="healing"]')).or(page.locator('text=Healing'));
-
-      const dpsTab = page.getByRole('link', { name: /dps/i }).or(
-        page.getByRole('button', { name: /dps/i })
-      ).or(page.locator('[data-type="dps"]')).or(page.locator('text=DPS'));
-
-      const transportTab = page.getByRole('link', { name: /transport/i }).or(
-        page.getByRole('button', { name: /transport/i })
-      ).or(page.locator('[data-type="transportation"]')).or(page.locator('text=Transportation'));
-
-      // At least one of these should exist (the nav structure may vary)
-      const tabsExist = await Promise.all([
-        healingTab.first().isVisible().catch(() => false),
-        dpsTab.first().isVisible().catch(() => false),
-        transportTab.first().isVisible().catch(() => false)
-      ]);
-
-      expect(tabsExist.some(v => v)).toBeTruthy();
-    });
-
-    test('has create service link for navigation', async ({ page }) => {
-      await page.goto('/market/services');
-
-      // Should have a link to create services (may require auth to see)
-      const createLink = page.getByRole('link', { name: /create/i });
-      // It's okay if this doesn't exist for unauthenticated users
-      const isVisible = await createLink.isVisible().catch(() => false);
-
-      // Just verify the page doesn't crash
-      expect(true).toBeTruthy();
-    });
+test.describe('Services List Page - Layout', () => {
+  test('page loads with correct title', async ({ page }) => {
+    await page.goto('/market/services/healing');
+    await expect(page).toHaveTitle(/Services.*Entropia/i);
+    await expect(page.locator('h1')).toContainText(/services/i);
   });
 
-  test.describe('Healing Services Tab', () => {
-    test('healing services section displays correctly', async ({ page }) => {
-      await page.goto('/market/services');
-
-      // Look for healing section content
-      const healingSection = page.locator('.table-wrapper').first();
-
-      // Should either show services or empty state
-      const hasTable = await healingSection.locator('table').isVisible().catch(() => false);
-      const hasEmptyState = await page.locator('text=No healing services').isVisible().catch(() => false);
-
-      // One of these should be true
-      expect(hasTable || hasEmptyState || true).toBeTruthy(); // Allow graceful handling
-    });
-
-    test('healing table has correct column headers', async ({ page }) => {
-      await page.goto('/market/services');
-
-      // If there's a table, check headers
-      const table = page.locator('table').first();
-      const hasTable = await table.isVisible().catch(() => false);
-
-      if (hasTable) {
-        // Expected headers for healing services
-        const expectedHeaders = ['Service', 'HP/s', 'Decay', 'Location', 'Pricing', 'Provider'];
-
-        for (const header of expectedHeaders) {
-          const headerCell = page.locator('th', { hasText: new RegExp(header, 'i') });
-          // At least some headers should exist
-        }
-      }
-    });
+  test('has proper scroll container structure', async ({ page }) => {
+    await page.goto('/market/services/healing');
+    await expect(page.locator('.scroll-container')).toBeVisible();
+    await expect(page.locator('.page-container')).toBeVisible();
   });
 
-  test.describe('DPS Services Tab', () => {
-    test('can navigate to DPS services', async ({ page }) => {
-      await page.goto('/market/services');
+  test('has breadcrumb navigation to Market', async ({ page }) => {
+    await page.goto('/market/services/healing');
+    // Breadcrumb is inside the page content area (not the nav bar)
+    const breadcrumb = page.locator('.page-container a[href="/market"]');
+    await expect(breadcrumb).toBeVisible();
+  });
+});
 
-      // Try to click on DPS tab/link
-      const dpsLink = page.getByRole('link', { name: /dps/i }).or(
-        page.locator('a[href*="dps"]')
-      ).or(page.locator('text=DPS').first());
+// ─── Category Routing ───────────────────────────────────────────
 
-      const canClick = await dpsLink.isVisible().catch(() => false);
-
-      if (canClick) {
-        await dpsLink.click();
-        // Should navigate or show DPS content
-        await page.waitForLoadState('networkidle');
-      }
-    });
+test.describe('Services List Page - Category Routing', () => {
+  test('auto-redirects /market/services to default category', async ({ page }) => {
+    await page.goto('/market/services');
+    // Should redirect to a category slug (healing by default, or last-used)
+    await page.waitForURL(/\/market\/services\/(healing|dps|transportation|custom)/, { timeout: TIMEOUT_LONG });
   });
 
-  test.describe('Transportation Services Tab', () => {
-    test('can navigate to transportation services', async ({ page }) => {
-      await page.goto('/market/services');
-
-      // Try to click on Transportation tab/link
-      const transportLink = page.getByRole('link', { name: /transport/i }).or(
-        page.locator('a[href*="transport"]')
-      ).or(page.locator('text=Transportation').first());
-
-      const canClick = await transportLink.isVisible().catch(() => false);
-
-      if (canClick) {
-        await transportLink.click();
-        await page.waitForLoadState('networkidle');
-      }
-    });
+  test('direct URL /market/services/dps loads DPS tab as active', async ({ page }) => {
+    await page.goto('/market/services/dps');
+    await page.waitForLoadState('networkidle');
+    const dpsTab = page.locator('.tab-btn', { hasText: 'DPS' });
+    await expect(dpsTab).toHaveClass(/active/);
   });
 
-  test.describe('Theme and Styling', () => {
-    test('page uses CSS variables for theming', async ({ page }) => {
-      await page.goto('/market/services');
-
-      // Check that page uses theme variables (dark/light mode support)
-      const body = page.locator('body');
-
-      // Verify page has styling applied
-      await expect(body).toBeVisible();
-    });
-
-    test('tables have proper contrast', async ({ page }) => {
-      await page.goto('/market/services');
-
-      // Check for any tables with proper background
-      const tableWrapper = page.locator('.table-wrapper');
-      const hasWrapper = await tableWrapper.first().isVisible().catch(() => false);
-
-      if (hasWrapper) {
-        // Table wrapper should have a background color set
-        const bgColor = await tableWrapper.first().evaluate(el =>
-          getComputedStyle(el).backgroundColor
-        );
-
-        // Should have some background color (not transparent)
-        expect(bgColor).not.toBe('rgba(0, 0, 0, 0)');
-      }
-    });
+  test('direct URL /market/services/transportation loads Taxi/Warp tab as active', async ({ page }) => {
+    await page.goto('/market/services/transportation');
+    await page.waitForLoadState('networkidle');
+    const transportTab = page.getByRole('button', { name: /Taxi\/Warp/ });
+    await expect(transportTab).toHaveClass(/active/);
   });
 
-  test.describe('Responsiveness', () => {
-    test('page renders on mobile viewport', async ({ page }) => {
-      await page.setViewportSize({ width: 375, height: 667 });
-      await page.goto('/market/services');
-      await page.waitForLoadState('networkidle');
-
-      // Page should still be functional on mobile - just check body is visible
-      await expect(page.locator('body')).toBeVisible();
-      await expect(page.locator('h1')).toBeVisible();
-    });
-
-    test('page renders on tablet viewport', async ({ page }) => {
-      await page.setViewportSize({ width: 768, height: 1024 });
-      await page.goto('/market/services');
-      await page.waitForLoadState('networkidle');
-
-      await expect(page.locator('body')).toBeVisible();
-      await expect(page.locator('h1')).toBeVisible();
-    });
-
-    test('page renders on desktop viewport', async ({ page }) => {
-      await page.setViewportSize({ width: 1920, height: 1080 });
-      await page.goto('/market/services');
-      await page.waitForLoadState('networkidle');
-
-      await expect(page.locator('body')).toBeVisible();
-      await expect(page.locator('h1')).toBeVisible();
-    });
+  test('direct URL /market/services/custom loads Custom tab as active', async ({ page }) => {
+    await page.goto('/market/services/custom');
+    await page.waitForLoadState('networkidle');
+    const customTab = page.locator('.tab-btn', { hasText: 'Custom' });
+    await expect(customTab).toHaveClass(/active/);
   });
 
-  test.describe('Error Handling', () => {
-    test('handles invalid service type gracefully', async ({ page }) => {
-      await page.goto('/market/services?type=invalid');
+  test('clicking tab navigates to category URL', async ({ page }) => {
+    await page.goto('/market/services/healing');
+    await page.waitForLoadState('networkidle');
+    const dpsTab = page.locator('.tab-btn', { hasText: 'DPS' });
+    await dpsTab.click();
+    await page.waitForURL(/\/market\/services\/dps/, { timeout: TIMEOUT_LONG });
+  });
 
-      // Should not crash, should show some content
-      await expect(page.locator('body')).toBeVisible();
-    });
+  test('invalid category slug does not crash', async ({ page }) => {
+    await page.goto('/market/services/invalidcategory');
+    await expect(page.locator('body')).toBeVisible();
+  });
+});
+
+// ─── Service Type Tabs ──────────────────────────────────────────
+
+test.describe('Services List Page - Tabs', () => {
+  test('displays all four category tabs', async ({ page }) => {
+    await page.goto('/market/services/healing');
+    await page.waitForLoadState('networkidle');
+    const tabs = page.locator('.tab-btn');
+    await expect(tabs).toHaveCount(4);
+  });
+
+  test('tab labels are correct', async ({ page }) => {
+    await page.goto('/market/services/healing');
+    await page.waitForLoadState('networkidle');
+    const tabTexts = await page.locator('.tab-btn').allTextContents();
+    // Strip whitespace and count markers like "(1)"
+    const labels = tabTexts.map(t => t.replace(/\s*\(\d+\)\s*/, '').trim());
+    expect(labels).toEqual(['Healing', 'DPS', 'Taxi/Warp', 'Custom']);
+  });
+
+  test('active tab has .active class', async ({ page }) => {
+    await page.goto('/market/services/healing');
+    await page.waitForLoadState('networkidle');
+    const healingTab = page.locator('.tab-btn', { hasText: 'Healing' });
+    await expect(healingTab).toHaveClass(/active/);
+
+    // Other tabs should NOT be active
+    const dpsTab = page.locator('.tab-btn', { hasText: 'DPS' });
+    const classes = await dpsTab.getAttribute('class');
+    expect(classes).not.toContain('active');
+  });
+
+  test('tabs show service counts', async ({ page }) => {
+    await page.goto('/market/services/healing');
+    await page.waitForLoadState('networkidle');
+    const tabTexts = await page.locator('.tab-btn').allTextContents();
+    for (const text of tabTexts) {
+      expect(text).toMatch(/\(\d+\)/);
+    }
+  });
+});
+
+// ─── Planet Filter ──────────────────────────────────────────────
+
+test.describe('Services List Page - Planet Filter', () => {
+  test('planet filter dropdown is visible', async ({ page }) => {
+    await page.goto('/market/services/healing');
+    const select = page.locator('.filter-group select');
+    await expect(select).toBeVisible();
+  });
+
+  test('has All Planets default option', async ({ page }) => {
+    await page.goto('/market/services/healing');
+    const options = await page.locator('.filter-group select option').allTextContents();
+    expect(options[0]).toMatch(/All Planets/i);
+  });
+});
+
+// ─── Transportation Tab Content ─────────────────────────────────
+
+test.describe('Services List Page - Transportation Tab', () => {
+  test('transportation table has correct column headers', async ({ page }) => {
+    await page.goto('/market/services/transportation');
+    await page.waitForLoadState('networkidle');
+
+    // FancyTable uses .header-cell divs, not <th> elements
+    const headers = await page.locator('.header-cell').allTextContents();
+    const headerTexts = headers.map(h => h.replace(/[▲▼]/, '').trim().toLowerCase());
+
+    for (const expected of ['service', 'type', 'ship', 'location', 'price', 'provider']) {
+      expect(headerTexts.some(h => h.includes(expected))).toBeTruthy();
+    }
+  });
+
+  test('shows empty state or data rows', async ({ page }) => {
+    await page.goto('/market/services/transportation');
+    await page.waitForLoadState('networkidle');
+
+    // Should show either data rows or an empty state message
+    const dataRow = page.locator('.data-row');
+    const emptyState = page.locator('.empty-state, .empty-row');
+    const hasData = await dataRow.first().isVisible().catch(() => false);
+    const hasEmpty = await emptyState.first().isVisible().catch(() => false);
+    expect(hasData || hasEmpty).toBeTruthy();
+  });
+});
+
+// ─── Healing Tab Content ────────────────────────────────────────
+
+test.describe('Services List Page - Healing Tab', () => {
+  test('healing table has correct column headers', async ({ page }) => {
+    await page.goto('/market/services/healing');
+    await page.waitForLoadState('networkidle');
+
+    // FancyTable uses .header-cell divs, not <th> elements
+    const headers = await page.locator('.header-cell').allTextContents();
+    const headerTexts = headers.map(h => h.replace(/[▲▼]/, '').trim().toLowerCase());
+
+    for (const expected of ['service', 'hp/s', 'decay', 'location', 'pricing', 'provider']) {
+      expect(headerTexts.some(h => h.includes(expected))).toBeTruthy();
+    }
+  });
+});
+
+// ─── LoginToCreateButton (unauthenticated) ──────────────────────
+
+test.describe('Services List Page - LoginToCreateButton', () => {
+  test('shows lock icon button when not logged in', async ({ page }) => {
+    await page.goto('/market/services/healing');
+    await page.waitForLoadState('networkidle');
+    const loginBtn = page.getByRole('button', { name: /Login to create service/i });
+    await expect(loginBtn).toBeVisible();
+  });
+
+  test('clicking opens auth dialog with 3-step instructions', async ({ page }) => {
+    await page.goto('/market/services/healing');
+    await page.waitForLoadState('networkidle');
+
+    await page.getByRole('button', { name: /Login to create service/i }).click();
+
+    // Dialog uses role="dialog" attribute
+    const dialog = page.locator('[role="dialog"]');
+    await expect(dialog).toBeVisible({ timeout: TIMEOUT_MEDIUM });
+    await expect(dialog.locator('h2')).toContainText('Login Required');
+
+    // Should have 3 steps
+    const steps = dialog.locator('.auth-step');
+    await expect(steps).toHaveCount(3);
+  });
+
+  test('auth dialog has Login with Discord link', async ({ page }) => {
+    await page.goto('/market/services/healing');
+    await page.waitForLoadState('networkidle');
+
+    await page.getByRole('button', { name: /Login to create service/i }).click();
+
+    const dialog = page.locator('[role="dialog"]');
+    await expect(dialog).toBeVisible({ timeout: TIMEOUT_MEDIUM });
+
+    const discordLink = dialog.getByRole('link', { name: /Login with Discord/i });
+    await expect(discordLink).toBeVisible();
+    const href = await discordLink.getAttribute('href');
+    expect(href).toContain('/discord/login');
+    expect(href).toContain('redirect');
+  });
+
+  test('auth dialog can be closed', async ({ page }) => {
+    await page.goto('/market/services/healing');
+    await page.waitForLoadState('networkidle');
+
+    await page.getByRole('button', { name: /Login to create service/i }).click();
+    const dialog = page.locator('[role="dialog"]');
+    await expect(dialog).toBeVisible({ timeout: TIMEOUT_MEDIUM });
+
+    await dialog.getByRole('button', { name: 'Close' }).click();
+    await expect(dialog).not.toBeVisible();
+  });
+});
+
+// ─── Authenticated Header Actions ───────────────────────────────
+
+test.describe('Services List Page - Verified User Actions', () => {
+  test('verified user sees My Services and Create Service buttons', async ({ verifiedUser }) => {
+    await verifiedUser.goto('/market/services/healing');
+    await verifiedUser.waitForLoadState('networkidle');
+
+    const myServicesLink = verifiedUser.locator('a[href="/market/services/my"]');
+    await expect(myServicesLink).toBeVisible();
+
+    const createLink = verifiedUser.locator('a[href="/market/services/create"]');
+    await expect(createLink).toBeVisible();
+  });
+
+  test('verified user does not see LoginToCreateButton', async ({ verifiedUser }) => {
+    await verifiedUser.goto('/market/services/healing');
+    await verifiedUser.waitForLoadState('networkidle');
+
+    const loginBtn = verifiedUser.getByRole('button', { name: /Login to create/i });
+    await expect(loginBtn).not.toBeVisible();
+  });
+});
+
+// ─── Responsiveness ─────────────────────────────────────────────
+
+test.describe('Services List Page - Responsiveness', () => {
+  test('renders on mobile viewport', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 667 });
+    await page.goto('/market/services/healing');
+    await page.waitForLoadState('networkidle');
+    await expect(page.locator('h1')).toBeVisible();
+    await expect(page.locator('.tab-btn').first()).toBeVisible();
+  });
+
+  test('renders on tablet viewport', async ({ page }) => {
+    await page.setViewportSize({ width: 768, height: 1024 });
+    await page.goto('/market/services/healing');
+    await page.waitForLoadState('networkidle');
+    await expect(page.locator('h1')).toBeVisible();
+    await expect(page.locator('.tab-btn').first()).toBeVisible();
   });
 });

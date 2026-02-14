@@ -462,7 +462,11 @@ PUT    /api/services/my/requests/:id/status    - Update request status
 ## Frontend Routes
 
 ```
-/market/services/                     - Browse services (type tabs, planet filter)
+/market/services/                     - Auto-redirects to last category (default: healing)
+/market/services/healing              - Healing services list
+/market/services/dps                  - DPS services list
+/market/services/transportation       - Transportation (Taxi/Warp) services list
+/market/services/custom               - Custom services list
 /market/services/create               - Create new service
 /market/services/[id]                 - Service detail view
 /market/services/[id]/edit            - Edit service
@@ -496,6 +500,9 @@ nexus/src/lib/components/services/
 ├── TicketOfferCard.svelte           - Ticket package display
 ├── TicketOfferEditor.svelte         - Create/edit ticket offers
 └── TransportationServicesList.svelte - Transport services table
+
+nexus/src/lib/components/
+└── LoginToCreateButton.svelte       - Auth prompt for unauthenticated users (shared)
 ```
 
 ## Discord Bot Integration

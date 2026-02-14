@@ -6,11 +6,12 @@ test.describe('Service Creation Page - Unauthenticated', () => {
     await page.goto('/market/services/create');
     await page.waitForLoadState('networkidle');
 
-    // Should redirect into auth flow (site login route or direct Discord OAuth)
+    // Should redirect into auth flow (site login route or Discord OAuth/login)
     const currentUrl = page.url();
     const inAuthFlow =
       currentUrl.includes('/discord/login') ||
-      currentUrl.includes('discord.com/oauth2/authorize');
+      currentUrl.includes('discord.com/oauth2/authorize') ||
+      currentUrl.includes('discord.com/login');
     expect(inAuthFlow).toBeTruthy();
   });
 });
