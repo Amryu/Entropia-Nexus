@@ -645,6 +645,11 @@
   }
 
 
+  .menu-container {
+    flex-shrink: 0;
+  }
+
+
   .website-icon {
     width: 36px;
     height: 36px;
@@ -660,6 +665,7 @@
     position: relative;
     transition: background-color 0.15s ease;
     border-radius: 4px;
+    flex-shrink: 0;
   }
 
   .menu-item.menu-top {
@@ -795,11 +801,13 @@
     position: relative;
     margin-left: 20px;
     margin-right: 10px;
-    width: 280px;
+    flex: 0 1 280px;
+    min-width: 80px;
   }
 
   .notification-menu {
     padding: 0 12px;
+    flex-shrink: 0;
   }
 
   .notification-menu:hover {
@@ -982,6 +990,7 @@
 
   .dark-light-toggle {
     margin-left: 8px;
+    flex-shrink: 0;
   }
 
   .short-link-action {
@@ -997,6 +1006,7 @@
     cursor: pointer;
     transition: background-color 0.15s ease;
     margin-left: 4px;
+    flex-shrink: 0;
   }
 
   .short-link-action:hover {
@@ -1045,6 +1055,8 @@
     font-size: 13px;
     font-weight: 500;
     margin-left: 20px;
+    flex-shrink: 0;
+    white-space: nowrap;
   }
 
   .discord-button:hover {
