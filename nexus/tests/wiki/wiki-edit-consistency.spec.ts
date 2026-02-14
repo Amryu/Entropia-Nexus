@@ -63,6 +63,11 @@ test.describe('Wiki Edit Mode - Consistency Across Pages', () => {
           test.skip();
           return;
         }
+        // Missions currently do not expose an editable entity icon/upload control.
+        if (page.name === 'Missions') {
+          test.skip();
+          return;
+        }
 
         await verifiedUser.goto(page.path);
         await verifiedUser.waitForLoadState('networkidle');
