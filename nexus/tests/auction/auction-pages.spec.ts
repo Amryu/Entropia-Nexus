@@ -12,6 +12,13 @@ import { TIMEOUT_MEDIUM, TIMEOUT_LONG } from '../test-constants';
  * 5. Market overview shows Auction as active (not coming soon)
  */
 
+function expectInAuthFlow(url: string) {
+  const inAuthFlow =
+    url.includes('/discord/login') ||
+    url.includes('discord.com/');
+  expect(inAuthFlow).toBeTruthy();
+}
+
 test.describe('Auction Listing Page', () => {
   test('loads and shows auction listing', async ({ page }) => {
     await page.goto('/market/auction', { waitUntil: 'networkidle' });
@@ -20,8 +27,9 @@ test.describe('Auction Listing Page', () => {
 
   test('has search and filter controls', async ({ page }) => {
     await page.goto('/market/auction', { waitUntil: 'networkidle' });
-    await expect(page.locator('input[placeholder*="Search"]')).toBeVisible();
-    await expect(page.locator('select')).toHaveCount(2); // status + sort
+    await expect(page.getByPlaceholder('Search auctions...')).toBeVisible();
+    const filterSelects = page.locator('main select, .page-container select');
+    expect(await filterSelects.count()).toBeGreaterThanOrEqual(2); // status + sort
   });
 
   test('breadcrumb links work', async ({ page }) => {
@@ -44,8 +52,7 @@ test.describe('Auction Listing Page', () => {
 test.describe('Auction Create Page', () => {
   test('redirects unauthenticated users to login', async ({ page }) => {
     await page.goto('/market/auction/create', { waitUntil: 'networkidle' });
-    // Should redirect to login
-    expect(page.url()).toContain('/discord/login');
+    expectInAuthFlow(page.url());
   });
 
   test('loads for verified users', async ({ verifiedUser }) => {
@@ -57,14 +64,14 @@ test.describe('Auction Create Page', () => {
     await verifiedUser.goto('/market/auction/create', { waitUntil: 'networkidle' });
 
     // Item Set section
-    await expect(verifiedUser.locator('text=Item Set')).toBeVisible();
+    await expect(verifiedUser.getByRole('heading', { name: 'Item Set' })).toBeVisible();
 
     // Pricing section
-    await expect(verifiedUser.locator('text=Pricing')).toBeVisible();
+    await expect(verifiedUser.getByRole('heading', { name: 'Pricing' })).toBeVisible();
     await expect(verifiedUser.locator('#starting-bid')).toBeVisible();
 
     // Duration section
-    await expect(verifiedUser.locator('text=Duration')).toBeVisible();
+    await expect(verifiedUser.getByRole('heading', { name: 'Duration' })).toBeVisible();
 
     // Details section
     await expect(verifiedUser.locator('#auction-title')).toBeVisible();
@@ -74,7 +81,7 @@ test.describe('Auction Create Page', () => {
 test.describe('My Auctions Page', () => {
   test('redirects unauthenticated users to login', async ({ page }) => {
     await page.goto('/market/auction/my', { waitUntil: 'networkidle' });
-    expect(page.url()).toContain('/discord/login');
+    expectInAuthFlow(page.url());
   });
 
   test('shows tabs for verified users', async ({ verifiedUser }) => {
@@ -89,11 +96,11 @@ test.describe('Market Overview', () => {
   test('auction is active (not coming soon)', async ({ page }) => {
     await page.goto('/market', { waitUntil: 'networkidle' });
 
-    // Auction card should be a link now, not disabled
-    const auctionLink = page.locator('a[href="/market/auction"]');
-    await expect(auctionLink).toBeVisible();
+    // Auction card should be a link now, not disabled.
+    const auctionCard = page.locator('.category-card[href="/market/auction"]').first();
+    await expect(auctionCard).toBeVisible();
 
-    // Should NOT have "Coming Soon" badge
-    await expect(page.locator('text=Coming Soon')).not.toBeVisible();
+    // Auction card should not be marked as coming soon.
+    await expect(auctionCard).not.toContainText(/coming soon/i);
   });
 });

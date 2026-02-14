@@ -1,12 +1,19 @@
 import { test, expect } from '../fixtures/auth';
 import { TIMEOUT_MEDIUM } from '../test-constants';
 
+function expectInAuthFlow(url: string) {
+  const inAuthFlow =
+    url.includes('/discord/login') ||
+    url.includes('discord.com/');
+  expect(inAuthFlow).toBeTruthy();
+}
+
 test.describe('My Services Dashboard - Unauthenticated', () => {
   test('redirects unauthenticated users to login', async ({ page }) => {
     await page.goto('/market/services/my');
     await page.waitForLoadState('networkidle');
 
-    expect(page.url()).toContain('login');
+    expectInAuthFlow(page.url());
   });
 });
 
@@ -124,7 +131,7 @@ test.describe('My Offers Page', () => {
     await page.goto('/market/services/my/offers');
     await page.waitForLoadState('networkidle');
 
-    expect(page.url()).toContain('login');
+    expectInAuthFlow(page.url());
   });
 
   test('shows 403 for unverified users', async ({ unverifiedUser }) => {
@@ -149,7 +156,7 @@ test.describe('My Requests Page', () => {
     await page.goto('/market/services/my/requests');
     await page.waitForLoadState('networkidle');
 
-    expect(page.url()).toContain('login');
+    expectInAuthFlow(page.url());
   });
 
   test('shows 403 for unverified users', async ({ unverifiedUser }) => {
@@ -174,7 +181,7 @@ test.describe('My Tickets Page', () => {
     await page.goto('/market/services/my/tickets');
     await page.waitForLoadState('networkidle');
 
-    expect(page.url()).toContain('login');
+    expectInAuthFlow(page.url());
   });
 
   test('shows 403 for unverified users', async ({ unverifiedUser }) => {

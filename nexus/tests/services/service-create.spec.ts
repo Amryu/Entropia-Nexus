@@ -6,8 +6,12 @@ test.describe('Service Creation Page - Unauthenticated', () => {
     await page.goto('/market/services/create');
     await page.waitForLoadState('networkidle');
 
-    // Should redirect to login
-    expect(page.url()).toContain('login');
+    // Should redirect into auth flow (site login route or direct Discord OAuth)
+    const currentUrl = page.url();
+    const inAuthFlow =
+      currentUrl.includes('/discord/login') ||
+      currentUrl.includes('discord.com/oauth2/authorize');
+    expect(inAuthFlow).toBeTruthy();
   });
 });
 
@@ -62,11 +66,8 @@ test.describe('Service Creation Page - Verified User', () => {
     await verifiedUser.goto('/market/services/create');
     await verifiedUser.waitForLoadState('networkidle');
 
-    const backLink = verifiedUser.locator('a[href="/market/services"]').or(
-      verifiedUser.getByRole('link', { name: /back/i })
-    ).or(verifiedUser.locator('.back-link'));
-
-    await expect(backLink.first()).toBeVisible();
+    const backLink = verifiedUser.getByRole('link', { name: /back to services/i });
+    await expect(backLink).toBeVisible();
   });
 
   test('has service type selector with options', async ({ verifiedUser }) => {
