@@ -81,11 +81,8 @@ test.describe('Wiki Edit Mode - Consistency Across Pages', () => {
         await editButton.click();
         await verifiedUser.waitForTimeout(TIMEOUT_INSTANT);
 
-        const imageWrapper = verifiedUser.locator('.entity-icon-wrapper');
-        const isEditable = await imageWrapper.evaluate(el =>
-          el.classList.contains('editable')
-        );
-        expect(isEditable).toBeTruthy();
+        const imageWrapper = verifiedUser.locator('.entity-icon-wrapper.editable').first();
+        await expect(imageWrapper).toBeVisible();
       });
     }
   });
@@ -191,7 +188,7 @@ test.describe('Wiki Edit Mode - Consistency Across Pages', () => {
         await editButton.click();
         await verifiedUser.waitForTimeout(TIMEOUT_INSTANT);
 
-        const editor = verifiedUser.locator('.tiptap, .ProseMirror, textarea[data-path*=\"Description\"]');
+        const editor = verifiedUser.locator('.tiptap:visible, .ProseMirror:visible, textarea[data-path*=\"Description\"]:visible').first();
         await expect(editor).toBeVisible();
       });
     }
