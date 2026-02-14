@@ -1456,24 +1456,31 @@ test.describe('Shop Pages - Inventory CRUD Operations', () => {
     // Enable edit mode
     const editModeToggle = adminUser.locator('.edit-mode-toggle');
     await editModeToggle.click();
+    await adminUser.waitForTimeout(TIMEOUT_INSTANT);
+
+    // Select first group explicitly (newly created groups become active by default)
+    const firstGroupTab = adminUser.locator('.group-tab').first();
+    await firstGroupTab.click();
+    await adminUser.waitForTimeout(TIMEOUT_INSTANT);
 
     // Get first group name
-    const firstGroupTab = adminUser.locator('.group-tab').first();
     const firstGroupName = await firstGroupTab.textContent();
 
-    // Click move right on first group
-    const moveRightBtn = adminUser.locator('button[title="Move group right"]').first();
-    try {
-      await expect(moveRightBtn).toBeVisible({ timeout: TIMEOUT_MEDIUM });
-      await moveRightBtn.click();
-
-      // First group should now be second
-      await adminUser.waitForTimeout(TIMEOUT_INSTANT);
-      const secondGroupName = await adminUser.locator('.group-tab').nth(1).textContent();
-      expect(secondGroupName).toContain(firstGroupName?.split(/\d/)[0]); // Compare name part without count badge
-    } catch {
-      // Move right button may not be available
+    // Click an enabled move-right button for the selected group
+    const moveRightBtn = adminUser.locator('button[title="Move group right"]:not([disabled])').first();
+    if (await moveRightBtn.count() === 0) {
+      await cancelDialog(adminUser);
+      test.skip();
+      return;
     }
+    await expect(moveRightBtn).toBeVisible({ timeout: TIMEOUT_MEDIUM });
+    await moveRightBtn.click();
+
+    // First group should now be second
+    await adminUser.waitForTimeout(TIMEOUT_INSTANT);
+    const secondGroupName = await adminUser.locator('.group-tab').nth(1).textContent();
+    const normalizedFirstName = (firstGroupName ?? '').replace(/\s+\d+\s*$/, '').trim();
+    expect(secondGroupName).toContain(normalizedFirstName);
 
     // Cancel to discard changes
     await cancelDialog(adminUser);
