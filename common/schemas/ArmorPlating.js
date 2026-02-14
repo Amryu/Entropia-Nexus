@@ -113,7 +113,6 @@ export const ArmorPlating = {
   },
   "required": [
     "Name",
-    "Properties",
-    "EffectsOnEquip"
+    "Properties"
   ]
 }
