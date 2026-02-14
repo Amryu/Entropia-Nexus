@@ -7,12 +7,15 @@ test.describe('Admin Dashboard', () => {
       await page.goto('/admin');
       await page.waitForLoadState('networkidle');
 
-      // Should redirect to login or show error
-      const isLoginPage = page.url().includes('login');
+      // Should redirect into auth flow or show an explicit error page
+      const currentUrl = page.url();
+      const inAuthFlow =
+        currentUrl.includes('/discord/login') ||
+        currentUrl.includes('discord.com');
       const errorStatus = page.locator('.error-status');
       const hasError = await errorStatus.isVisible().catch(() => false);
 
-      expect(isLoginPage || hasError).toBeTruthy();
+      expect(inAuthFlow || hasError).toBeTruthy();
     });
 
     test('non-admin users are redirected', async ({ verifiedUser }) => {

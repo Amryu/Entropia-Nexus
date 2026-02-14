@@ -5,6 +5,7 @@
  * 1. Kills any existing test servers on ports 3100 (API) and 3101 (frontend)
  * 2. Creates a full clone of nexus -> nexus-test (schema + all data)
  * 3. Creates a full clone of nexus-users -> nexus-users-test (schema + all data)
+ * 4. Seeds required mock-login test users in nexus-users-test
  *
  * This approach uses real production data for realistic testing.
  * Requires pg_dump and psql to be available in PATH.
@@ -55,6 +56,72 @@ const DATABASE_PAIRS = [
 
 // Test server ports to kill before setup
 const TEST_PORTS = [3100, 3101]; // API and frontend
+
+const MOCK_TEST_USERS = [
+  {
+    id: '900000000000000001',
+    username: 'verified1',
+    globalName: 'Verified User 1',
+    euName: 'Verified User 1',
+    verified: true,
+    administrator: false,
+    roleName: 'user'
+  },
+  {
+    id: '900000000000000002',
+    username: 'verified2',
+    globalName: 'Verified User 2',
+    euName: 'Verified User 2',
+    verified: true,
+    administrator: false,
+    roleName: 'user'
+  },
+  {
+    id: '900000000000000003',
+    username: 'verified3',
+    globalName: 'Verified User 3',
+    euName: 'Verified User 3',
+    verified: true,
+    administrator: false,
+    roleName: 'user'
+  },
+  {
+    id: '900000000000000004',
+    username: 'unverified1',
+    globalName: 'Unverified User 1',
+    euName: null,
+    verified: false,
+    administrator: false,
+    roleName: 'user'
+  },
+  {
+    id: '900000000000000005',
+    username: 'unverified2',
+    globalName: 'Unverified User 2',
+    euName: null,
+    verified: false,
+    administrator: false,
+    roleName: 'user'
+  },
+  {
+    id: '900000000000000006',
+    username: 'unverified3',
+    globalName: 'Unverified User 3',
+    euName: null,
+    verified: false,
+    administrator: false,
+    roleName: 'user'
+  },
+  {
+    id: '900000000000000007',
+    username: 'admin',
+    globalName: 'Admin User',
+    euName: 'Admin User',
+    verified: true,
+    administrator: true,
+    roleName: 'admin'
+  }
+];
 
 async function createPool(database: string) {
   return new pg.Pool({
@@ -154,6 +221,87 @@ async function cloneDatabase(sourceDb: string, targetDb: string) {
   }
 }
 
+async function seedMockTestUsers(targetDb: string) {
+  console.log(`\n👥 Seeding mock test users in ${targetDb}...`);
+  const pool = await createPool(targetDb);
+
+  try {
+    await pool.query('BEGIN');
+
+    const { rows: roleRows } = await pool.query(
+      `SELECT id, name FROM roles WHERE name = ANY($1::text[])`,
+      [['admin', 'user']]
+    );
+
+    const roleByName = new Map<string, number>(roleRows.map((r) => [r.name, r.id]));
+    const adminRoleId = roleByName.get('admin');
+    const userRoleId = roleByName.get('user');
+
+    if (!adminRoleId || !userRoleId) {
+      throw new Error('Required roles (admin/user) not found in test database');
+    }
+
+    for (const user of MOCK_TEST_USERS) {
+      await pool.query(
+        `
+          INSERT INTO users (
+            id, username, global_name, discriminator, avatar, eu_name, verified, administrator, locked, banned
+          )
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, false, false)
+          ON CONFLICT (id) DO UPDATE
+          SET
+            username = EXCLUDED.username,
+            global_name = EXCLUDED.global_name,
+            discriminator = EXCLUDED.discriminator,
+            avatar = EXCLUDED.avatar,
+            eu_name = EXCLUDED.eu_name,
+            verified = EXCLUDED.verified,
+            administrator = EXCLUDED.administrator,
+            locked = false,
+            locked_reason = NULL,
+            locked_at = NULL,
+            locked_by = NULL,
+            banned = false,
+            banned_reason = NULL,
+            banned_at = NULL,
+            banned_until = NULL,
+            banned_by = NULL
+        `,
+        [
+          user.id,
+          user.username,
+          user.globalName,
+          '0000',
+          null,
+          user.euName,
+          user.verified,
+          user.administrator
+        ]
+      );
+    }
+
+    const seededIds = MOCK_TEST_USERS.map((u) => u.id);
+    await pool.query(`DELETE FROM user_roles WHERE user_id = ANY($1::bigint[])`, [seededIds]);
+    await pool.query(`DELETE FROM user_grants WHERE user_id = ANY($1::bigint[])`, [seededIds]);
+
+    for (const user of MOCK_TEST_USERS) {
+      const roleId = user.roleName === 'admin' ? adminRoleId : userRoleId;
+      await pool.query(
+        `INSERT INTO user_roles (user_id, role_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+        [user.id, roleId]
+      );
+    }
+
+    await pool.query('COMMIT');
+    console.log(`✅ Seeded ${MOCK_TEST_USERS.length} mock test users`);
+  } catch (error) {
+    await pool.query('ROLLBACK');
+    throw error;
+  } finally {
+    await pool.end();
+  }
+}
+
 /**
  * Kill any processes listening on the test ports (Windows-specific)
  */
@@ -216,6 +364,8 @@ async function globalSetup() {
     for (const { source, target } of DATABASE_PAIRS) {
       await cloneDatabase(source, target);
     }
+
+    await seedMockTestUsers('nexus-users-test');
 
     console.log('\n🎉 All test databases ready!\n');
   } catch (error: any) {

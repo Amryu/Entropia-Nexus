@@ -1,5 +1,14 @@
 import { test, expect } from '../fixtures/auth';
 
+async function openUserDropdown(page) {
+  const userMenu = page.locator('.menu-item.user');
+  const userAvatar = userMenu.locator('.user-image');
+  await userAvatar.hover();
+  const dropdown = userMenu.locator('.dropdown-content.right');
+  await expect(dropdown).toBeVisible();
+  return dropdown;
+}
+
 test.describe('Admin Impersonation', () => {
   test.describe('API Tests', () => {
     test('admin can start impersonating a user via API', async ({ adminUser }) => {
@@ -14,7 +23,7 @@ test.describe('Admin Impersonation', () => {
       const data = await response.json();
       expect(data.success).toBe(true);
       expect(data.impersonating).toBeDefined();
-      expect(data.impersonating.username).toBe('testuser1');
+      expect(data.impersonating.username).toBe('verified1');
     });
 
     test('admin can stop impersonating via API', async ({ adminUser }) => {
@@ -101,13 +110,7 @@ test.describe('Admin Impersonation', () => {
       await page.goto('/');
       await page.waitForLoadState('networkidle');
 
-      // Hover over user avatar to open dropdown
-      const userAvatar = page.locator('.user-image');
-      await userAvatar.hover();
-
-      // Wait for dropdown to be visible
-      const dropdown = page.locator('.dropdown-content.right');
-      await dropdown.waitFor({ state: 'visible' });
+      const dropdown = await openUserDropdown(page);
 
       // Should see impersonate user button in desktop dropdown (not mobile menu)
       const impersonateButton = dropdown.locator('button:has-text("Impersonate User")');
@@ -119,13 +122,7 @@ test.describe('Admin Impersonation', () => {
       await page.goto('/');
       await page.waitForLoadState('networkidle');
 
-      // Hover over user avatar to open dropdown
-      const userAvatar = page.locator('.user-image');
-      await userAvatar.hover();
-
-      // Wait for dropdown to be visible
-      const dropdown = page.locator('.dropdown-content.right');
-      await dropdown.waitFor({ state: 'visible' });
+      const dropdown = await openUserDropdown(page);
 
       // Should NOT see impersonate user button in desktop dropdown
       const impersonateButton = dropdown.locator('button:has-text("Impersonate User")');
@@ -137,13 +134,7 @@ test.describe('Admin Impersonation', () => {
       await page.goto('/');
       await page.waitForLoadState('networkidle');
 
-      // Hover over user avatar to open dropdown
-      const userAvatar = page.locator('.user-image');
-      await userAvatar.hover();
-
-      // Wait for dropdown to be fully visible and stable
-      const dropdown = page.locator('.dropdown-content.right');
-      await dropdown.waitFor({ state: 'visible' });
+      const dropdown = await openUserDropdown(page);
 
       // Click impersonate button while keeping hover
       const impersonateBtn = dropdown.locator('button:has-text("Impersonate User")');
@@ -191,13 +182,7 @@ test.describe('Admin Impersonation', () => {
       await page.goto('/');
       await page.waitForLoadState('networkidle');
 
-      // Hover over user avatar
-      const userAvatar = page.locator('.user-image');
-      await userAvatar.hover();
-
-      // Wait for dropdown to be visible
-      const dropdown = page.locator('.dropdown-content.right');
-      await dropdown.waitFor({ state: 'visible' });
+      const dropdown = await openUserDropdown(page);
 
       // Should show stop impersonating button in desktop dropdown
       const stopButton = dropdown.locator('button:has-text("Stop Impersonating")');
@@ -225,13 +210,7 @@ test.describe('Admin Impersonation', () => {
       // Verify impersonating indicator is visible
       await expect(page.locator('.user-image.impersonating')).toBeVisible();
 
-      // Hover over user avatar
-      const userAvatar = page.locator('.user-image');
-      await userAvatar.hover();
-
-      // Wait for dropdown to be fully visible and stable
-      const dropdown = page.locator('.dropdown-content.right');
-      await dropdown.waitFor({ state: 'visible' });
+      const dropdown = await openUserDropdown(page);
 
       // Click stop button while dropdown is visible
       const stopBtn = dropdown.locator('button:has-text("Stop Impersonating")');
@@ -257,13 +236,7 @@ test.describe('Admin Impersonation', () => {
       await page.goto('/');
       await page.waitForLoadState('networkidle');
 
-      // Hover over user avatar
-      const userAvatar = page.locator('.user-image');
-      await userAvatar.hover();
-
-      // Wait for dropdown to be visible
-      const dropdown = page.locator('.dropdown-content.right');
-      await dropdown.waitFor({ state: 'visible' });
+      const dropdown = await openUserDropdown(page);
 
       // Should NOT see "Impersonate User" button in desktop dropdown while already impersonating
       const impersonateButton = dropdown.locator('button:has-text("Impersonate User")');
@@ -286,14 +259,7 @@ test.describe('Admin Impersonation', () => {
       await page.goto('/');
       await page.waitForLoadState('networkidle');
 
-      // The admin menu/links should not be visible since we're impersonating a non-admin
-      // But we should still see admin controls for the real user (stop impersonating)
-      const userAvatar = page.locator('.user-image');
-      await userAvatar.hover();
-
-      // Wait for dropdown to be visible
-      const dropdown = page.locator('.dropdown-content.right');
-      await dropdown.waitFor({ state: 'visible' });
+      const dropdown = await openUserDropdown(page);
 
       // Stop button should be visible in desktop dropdown (real user is admin)
       const stopButton = dropdown.locator('button:has-text("Stop Impersonating")');

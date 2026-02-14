@@ -252,7 +252,7 @@ test.describe('Exchange categories and markup types', () => {
   });
 
   test('User orders page is visible in read-only mode when logged out', async ({ page }) => {
-    const sellerName = 'Test User One Calypso';
+    const sellerName = 'Verified User 1';
     await page.goto(`/market/exchange/orders/${encodeURIComponent(sellerName)}`, { waitUntil: 'domcontentloaded' });
     await expect(page.locator('.floating-panel')).toBeVisible({ timeout: TIMEOUT_LONG });
     await expect(page.locator('.panel-title-text')).toContainText(sellerName, { timeout: TIMEOUT_LONG });

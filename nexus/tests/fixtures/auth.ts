@@ -1,4 +1,4 @@
-import { test as base, Page } from '@playwright/test';
+import { test as base, Page, Browser, StorageState } from '@playwright/test';
 
 // Test user IDs - must match the migration file
 export const TEST_USERS = {
@@ -19,6 +19,9 @@ export interface AuthFixtures {
   verifiedUser: Page;
   unverifiedUser: Page;
   adminUser: Page;
+  verifiedStorageState: StorageState;
+  unverifiedStorageState: StorageState;
+  adminStorageState: StorageState;
 }
 
 /**
@@ -46,6 +49,18 @@ async function logout(page: Page): Promise<void> {
   await page.reload();
 }
 
+async function buildStorageState(browser: Browser, userId: TestUser): Promise<StorageState> {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+
+  await page.goto('/');
+  await loginAs(page, userId);
+
+  const state = await context.storageState();
+  await context.close();
+  return state;
+}
+
 /**
  * Extended test with authentication fixtures
  */
@@ -64,38 +79,40 @@ export const test = base.extend<AuthFixtures>({
     });
   },
 
-  // Pre-authenticated as a verified user
-  verifiedUser: async ({ browser }, use) => {
-    const context = await browser.newContext();
-    const page = await context.newPage();
+  verifiedStorageState: [async ({ browser }, use) => {
+    await use(await buildStorageState(browser, 'verified1'));
+  }, { scope: 'worker' }],
 
-    // Navigate to any page first to initialize the session
-    await page.goto('/');
-    await loginAs(page, 'verified1');
+  unverifiedStorageState: [async ({ browser }, use) => {
+    await use(await buildStorageState(browser, 'unverified1'));
+  }, { scope: 'worker' }],
+
+  adminStorageState: [async ({ browser }, use) => {
+    await use(await buildStorageState(browser, 'admin'));
+  }, { scope: 'worker' }],
+
+  // Pre-authenticated as a verified user
+  verifiedUser: async ({ browser, verifiedStorageState }, use) => {
+    const context = await browser.newContext({ storageState: verifiedStorageState });
+    const page = await context.newPage();
 
     await use(page);
     await context.close();
   },
 
   // Pre-authenticated as an unverified user
-  unverifiedUser: async ({ browser }, use) => {
-    const context = await browser.newContext();
+  unverifiedUser: async ({ browser, unverifiedStorageState }, use) => {
+    const context = await browser.newContext({ storageState: unverifiedStorageState });
     const page = await context.newPage();
-
-    await page.goto('/');
-    await loginAs(page, 'unverified1');
 
     await use(page);
     await context.close();
   },
 
   // Pre-authenticated as an admin user
-  adminUser: async ({ browser }, use) => {
-    const context = await browser.newContext();
+  adminUser: async ({ browser, adminStorageState }, use) => {
+    const context = await browser.newContext({ storageState: adminStorageState });
     const page = await context.newPage();
-
-    await page.goto('/');
-    await loginAs(page, 'admin');
 
     await use(page);
     await context.close();
