@@ -2,11 +2,18 @@
   //@ts-nocheck
   import { createEventDispatcher } from 'svelte';
   import { isItemStackable, isPercentMarkup, isItemTierable, isBlueprint, isLimited, itemHasCondition } from '../../orderUtils';
-  import { PLANETS, DEFAULT_PARTIAL_RATIO } from '../../exchangeConstants.js';
+  import { PLANETS, DEFAULT_PARTIAL_RATIO, MAX_SELL_ORDERS } from '../../exchangeConstants.js';
+  import { env } from '$env/dynamic/public';
+  import TurnstileWidget from '$lib/components/TurnstileWidget.svelte';
+  import { addToast } from '$lib/stores/toasts.js';
+
+  let turnstileToken = null;
+  let resetTurnstile = false;
 
   export let show = false;
   export let items = []; // Array of { invItem, count }
   export let allItems = []; // Slim items for type lookup
+  export let sellOrderCount = 0; // Current number of active sell orders
 
   const dispatch = createEventDispatcher();
 
@@ -217,46 +224,74 @@
     if (submitting) return;
     if (!validateAll()) return;
 
+    // Require Turnstile verification
+    if (env.PUBLIC_TURNSTILE_SITE_KEY && !turnstileToken) {
+      addToast('Please complete the captcha verification', { type: 'warning' });
+      return;
+    }
+
     submitting = true;
     progressError = null;
     totalOrders = orderRows.length;
     progress = 0;
 
-    for (let i = 0; i < orderRows.length; i++) {
-      const row = orderRows[i];
-      const payload = buildPayload(row);
+    // Mark all rows as submitting
+    orderRows = orderRows.map(r => ({ ...r, status: 'submitting', error: null }));
 
-      orderRows[i] = { ...orderRows[i], status: 'submitting', error: null };
-      orderRows = orderRows;
+    const payloads = orderRows.map(row => buildPayload(row));
 
-      try {
-        const res = await fetch('/api/market/exchange/orders', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        const data = await res.json();
-        if (!res.ok) {
-          orderRows[i] = { ...orderRows[i], status: 'error', error: data.error || 'Failed to create order' };
-          orderRows = orderRows;
-          progressError = `Failed on "${row.itemName}": ${data.error || 'Unknown error'}`;
-          submitting = false;
-          return;
-        }
-        progress++;
-        orderRows[i] = { ...orderRows[i], status: 'done' };
-        orderRows = orderRows;
-      } catch (err) {
-        orderRows[i] = { ...orderRows[i], status: 'error', error: err.message || 'Network error' };
-        orderRows = orderRows;
-        progressError = `Failed on "${row.itemName}": ${err.message || 'Network error'}`;
+    try {
+      const res = await fetch('/api/market/exchange/orders/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orders: payloads,
+          turnstile_token: turnstileToken,
+        }),
+      });
+
+      // Reset Turnstile for potential retry
+      resetTurnstile = true;
+      turnstileToken = null;
+
+      const data = await res.json();
+
+      if (!res.ok && !data.results) {
+        // Batch-level error (auth, rate limit, turnstile, etc.)
+        orderRows = orderRows.map(r => ({ ...r, status: 'error', error: data.error || 'Batch request failed' }));
+        progressError = data.error || 'Batch request failed';
         submitting = false;
         return;
       }
-    }
 
-    submitting = false;
-    dispatch('complete');
+      // Process per-order results
+      const results = data.results || [];
+      let failedCount = 0;
+
+      for (let i = 0; i < orderRows.length; i++) {
+        const result = results[i];
+        if (result?.success) {
+          orderRows[i] = { ...orderRows[i], status: 'done', error: null };
+          progress++;
+        } else {
+          orderRows[i] = { ...orderRows[i], status: 'error', error: result?.error || 'Unknown error' };
+          failedCount++;
+        }
+      }
+      orderRows = orderRows;
+
+      if (failedCount > 0) {
+        progressError = `${failedCount} order${failedCount > 1 ? 's' : ''} failed. Review errors and retry.`;
+        submitting = false;
+      } else {
+        submitting = false;
+        dispatch('complete');
+      }
+    } catch (err) {
+      orderRows = orderRows.map(r => r.status !== 'done' ? { ...r, status: 'error', error: 'Network error' } : r);
+      progressError = `Network error: ${err.message || 'Failed to reach server'}`;
+      submitting = false;
+    }
   }
 
   function retryFromError() {
@@ -265,6 +300,9 @@
     progressError = null;
     progress = 0;
     totalOrders = orderRows.length;
+    // Reset Turnstile for fresh token
+    resetTurnstile = true;
+    turnstileToken = null;
   }
 
   function close() {
@@ -290,6 +328,10 @@
             <option>{p}</option>
           {/each}
         </select>
+      </div>
+
+      <div class="batch-info">
+        {sellOrderCount + orderRows.length} / {MAX_SELL_ORDERS} sell orders after this batch
       </div>
 
       <div class="order-rows-container">
@@ -443,12 +485,22 @@
         </div>
         <div class="progress-text">
           {#if submitting}
-            Creating order {progress + 1} of {totalOrders}...
+            Creating {totalOrders} orders...
           {:else if progress === totalOrders && !progressError}
             All {totalOrders} orders created!
           {:else if progressError}
-            {progressError}
+            {progress} of {totalOrders} created. {progressError}
           {/if}
+        </div>
+      {/if}
+
+      {#if env.PUBLIC_TURNSTILE_SITE_KEY}
+        <div class="turnstile-section">
+          <TurnstileWidget
+            siteKey={env.PUBLIC_TURNSTILE_SITE_KEY}
+            bind:token={turnstileToken}
+            bind:reset={resetTurnstile}
+          />
         </div>
       {/if}
 
@@ -458,10 +510,10 @@
         </button>
         <span class="footer-spacer"></span>
         {#if progressError}
-          <button class="btn-retry" on:click={retryFromError}>Retry Remaining</button>
+          <button class="btn-retry" on:click={retryFromError} disabled={env.PUBLIC_TURNSTILE_SITE_KEY && !turnstileToken}>Retry Remaining</button>
         {/if}
         {#if !progressError && progress < orderRows.length}
-          <button class="btn-submit" on:click={submit} disabled={submitting || orderRows.length === 0}>
+          <button class="btn-submit" on:click={submit} disabled={submitting || orderRows.length === 0 || (env.PUBLIC_TURNSTILE_SITE_KEY && !turnstileToken)}>
             {submitting ? 'Submitting...' : `Submit ${orderRows.length} Orders`}
           </button>
         {/if}
@@ -537,6 +589,13 @@
     font-size: 12px;
   }
   .field-select:disabled { opacity: 0.5; }
+
+  .batch-info {
+    font-size: 11px;
+    color: var(--text-muted);
+    padding: 4px 16px;
+    border-bottom: 1px solid var(--border-color);
+  }
 
   .order-rows-container {
     flex: 1;
@@ -677,6 +736,10 @@
     color: var(--text-muted);
     text-align: center;
     padding: 4px 16px;
+  }
+
+  .turnstile-section {
+    padding: 8px 16px 0;
   }
 
   .modal-footer {
