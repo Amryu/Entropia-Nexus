@@ -11,9 +11,9 @@ import { test, expect } from '../fixtures/auth';
 
 const UPLOAD_API = '/api/uploads/entity-image';
 
-// 1x1 red pixel PNG (minimal valid image)
-const TINY_PNG = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==',
+// 32x32 red pixel PNG (meets MIN_IMAGE_DIMENSION=32 requirement)
+const TEST_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAANklEQVR4nO3WuQkAQAwDwem/aV0VhgsWnAuMnjVOTwJ6kVy0gqaqWG2qwVmTKaoQeAkdfU3XDzLD/C4XqhOlAAAAAElFTkSuQmCC',
   'base64'
 );
 
@@ -28,7 +28,7 @@ async function uploadImage(page: any, entityType: string, entityId = '999999') {
       image: {
         name: 'test.png',
         mimeType: 'image/png',
-        buffer: TINY_PNG,
+        buffer: TEST_PNG,
       },
       entityType,
       entityId,

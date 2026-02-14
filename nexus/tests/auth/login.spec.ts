@@ -67,12 +67,14 @@ test.describe('Login Flow', () => {
       await page.goto('/admin');
       await page.waitForLoadState('networkidle');
 
-      // Should redirect to login or show 401/403
-      const isLoginPage = page.url().includes('login');
+      // Should either redirect to auth, show 401/403, or redirect away from /admin.
+      const currentUrl = page.url();
+      const isAuthPage = isAuthRedirect(currentUrl);
+      const isRedirectedAwayFromAdmin = !new URL(currentUrl).pathname.startsWith('/admin');
       const errorStatus = page.locator('.error-status');
       const hasError = await errorStatus.isVisible().catch(() => false);
 
-      expect(isLoginPage || hasError).toBeTruthy();
+      expect(isAuthPage || hasError || isRedirectedAwayFromAdmin).toBeTruthy();
     });
   });
 

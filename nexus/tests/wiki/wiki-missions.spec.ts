@@ -389,7 +389,8 @@ baseTest.describe('Missions Page - URL Routing', () => {
 
     // Page should load correctly
     await expect(page.locator('.wiki-page')).toBeVisible();
-    await expect(page.locator('.wiki-infobox-float')).toBeVisible();
+    await expect(page).toHaveURL(/\/information\/missions(\/|$)/);
+    await expect(page.locator('.wiki-nav')).toBeVisible();
   });
 });
 

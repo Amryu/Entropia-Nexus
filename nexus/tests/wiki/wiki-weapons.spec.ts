@@ -106,7 +106,7 @@ test.describe('Weapons Wiki Page', () => {
 
   test.describe('Weapon Table View', () => {
     test('expanded view shows weapon-specific columns', async ({ page }) => {
-      const expandBtn = page.locator('.expand-btn');
+      const expandBtn = page.locator('.expand-btn').first();
       if (!await expandBtn.isVisible()) {
         test.skip();
         return;
@@ -135,7 +135,7 @@ test.describe('Weapons Wiki Page', () => {
         return;
       }
 
-      const expandBtn = page.locator('.expand-btn');
+      const expandBtn = page.locator('.expand-btn').first();
       if (!await expandBtn.isVisible()) {
         test.skip();
         return;
@@ -164,7 +164,7 @@ test.describe('Weapons Wiki Page', () => {
         return;
       }
 
-      const expandBtn = page.locator('.expand-btn');
+      const expandBtn = page.locator('.expand-btn').first();
       if (!await expandBtn.isVisible()) {
         test.skip();
         return;

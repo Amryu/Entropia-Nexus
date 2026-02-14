@@ -105,7 +105,7 @@ test.describe('Wiki Pages - State Persistence', () => {
       await waitForWikiNav(page);
 
       // Check if expand button exists
-      const expandBtn = page.locator('.expand-btn');
+      const expandBtn = page.getByRole('button', { name: 'Expand to table view' });
 
       try {
         await expect(expandBtn).toBeVisible({ timeout: TIMEOUT_MEDIUM });
@@ -385,7 +385,7 @@ test.describe('Wiki Pages - State Persistence', () => {
       }
 
       // Expand to table view
-      const expandBtn = page.locator('.expand-btn');
+      const expandBtn = page.getByRole('button', { name: 'Expand to table view' });
       if (!await expandBtn.isVisible()) {
         test.skip();
         return;
@@ -427,7 +427,7 @@ test.describe('Wiki Pages - State Persistence', () => {
       }
 
       // Expand to table view
-      const expandBtn = page.locator('.expand-btn');
+      const expandBtn = page.getByRole('button', { name: 'Expand to table view' });
       if (!await expandBtn.isVisible()) {
         test.skip();
         return;

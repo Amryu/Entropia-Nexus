@@ -302,7 +302,7 @@ test.describe('Vehicles Wiki Page', () => {
   });
 
   test('sidebar table shows speed column', async ({ page }) => {
-    const expandBtn = page.locator('.expand-btn');
+    const expandBtn = page.locator('.expand-btn').first();
     if (!await expandBtn.isVisible()) {
       test.skip();
       return;

@@ -26,7 +26,7 @@ test.describe('Wiki Enumerations', () => {
     await expect(visibleRows.first()).toBeVisible({ timeout: TIMEOUT_LONG });
   });
 
-  test('custom entry (if present) shows Name/Value table and metadata/unit', async ({ page, request }) => {
+  test('custom entry (if present) shows Name + data columns without Value/metadata blocks', async ({ page, request }) => {
     const res = await request.get(`${API_BASE}/enumerations`);
     expect(res.ok()).toBeTruthy();
 
@@ -44,17 +44,13 @@ test.describe('Wiki Enumerations', () => {
     await expect(page.locator('.table-section h2')).toContainText('Values');
 
     const nameHeader = page.locator('.fancy-table-container .header-cell:has-text("Name")').first();
-    const valueHeader = page.locator('.fancy-table-container .header-cell:has-text("Value")').first();
+    const valueHeader = page.locator('.fancy-table-container .header-cell:has-text("Value")');
+    const headers = page.locator('.fancy-table-container .header-cell');
     await expect(nameHeader).toBeVisible();
-    await expect(valueHeader).toBeVisible();
-
-    if (custom.Properties?.Unit) {
-      await expect(page.locator('.meta-item .meta-value', { hasText: custom.Properties.Unit }).first()).toBeVisible();
-    }
-
-    if (custom.Properties?.Metadata) {
-      await expect(page.locator('.metadata-block')).toBeVisible();
-    }
+    await expect(headers.first()).toBeVisible();
+    expect(await headers.count()).toBeGreaterThan(0);
+    await expect(valueHeader).toHaveCount(0);
+    await expect(page.locator('.metadata-block')).toHaveCount(0);
   });
 
   test('linkable cells navigate to entity pages when refs exist', async ({ page }) => {

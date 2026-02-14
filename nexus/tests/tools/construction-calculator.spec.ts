@@ -1,63 +1,68 @@
 import { test, expect } from '@playwright/test';
 import { TIMEOUT_MEDIUM, TIMEOUT_LONG } from '../test-constants';
 
+async function createNewPlan(page) {
+  // Wait for page to fully load (blueprints, local data, etc.)
+  await page.waitForLoadState('networkidle');
+
+  // Wait for the empty state or plan editor to appear (confirms loading finished)
+  await page.locator('.empty-state, .mobile-empty-state, .plan-editor').first()
+    .waitFor({ state: 'visible', timeout: TIMEOUT_LONG });
+
+  // Click the "New" button - use role selector for reliability
+  const newBtn = page.getByRole('button', { name: 'New', exact: true });
+  const newPlanBtn = page.getByRole('button', { name: 'New Plan', exact: true });
+
+  if (await newBtn.isVisible()) {
+    await newBtn.click();
+  } else {
+    await newPlanBtn.click();
+  }
+
+  // Wait for the plan editor to appear with the name input
+  await expect(page.locator('.plan-name-input')).toBeVisible({ timeout: TIMEOUT_LONG });
+}
+
+async function addBlueprintToPlan(page, query = 'Basic') {
+  const searchInput = page.getByPlaceholder('Add blueprint...');
+  await searchInput.fill(query);
+
+  const firstResult = page.locator('.search-dropdown .search-result').first();
+  await firstResult.waitFor({ state: 'visible', timeout: TIMEOUT_LONG });
+  await firstResult.click();
+
+  await expect(page.locator('.targets-list .target-item-expanded')).toBeVisible({ timeout: TIMEOUT_MEDIUM });
+}
+
 test.describe('Construction Calculator', () => {
   test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
     await page.goto('/tools/construction');
   });
 
   test('page loads successfully', async ({ page }) => {
     await expect(page).toHaveTitle(/Construction Calculator|Entropia/i);
-    await expect(page.locator('text=Construction Calculator')).toBeVisible();
+    await expect(page.getByRole('link', { name: 'Construction Calculator' })).toBeVisible();
   });
 
   test('can create a new plan', async ({ page }) => {
-    // Click the New button
-    await page.click('button.sidebar-btn.create:has-text("New")');
-
-    // Verify plan input appears
-    await expect(page.locator('.plan-name-input')).toBeVisible({ timeout: TIMEOUT_MEDIUM });
+    await createNewPlan(page);
 
     // The new plan should have default name
     await expect(page.locator('.plan-name-input')).toHaveValue('New Plan');
   });
 
   test('can add a blueprint to plan', async ({ page }) => {
-    // Create new plan
-    await page.click('button.sidebar-btn.create:has-text("New")');
-    await expect(page.locator('.plan-name-input')).toBeVisible({ timeout: TIMEOUT_MEDIUM });
-
-    // Search for a blueprint (use a common one)
-    const searchInput = page.locator('.target-search input[type="text"]');
-    await searchInput.fill('Basic');
-
-    // Wait for search results and click the first one
-    const searchResult = page.locator('.search-results .search-result-item').first();
-    await searchResult.waitFor({ state: 'visible', timeout: TIMEOUT_LONG });
-    await searchResult.click();
-
-    // Verify the target was added
-    await expect(page.locator('.targets-list .target-item-expanded')).toBeVisible({ timeout: TIMEOUT_MEDIUM });
+    await createNewPlan(page);
+    await addBlueprintToPlan(page);
   });
 
   test('shows crafting steps with material refund info', async ({ page }) => {
-    // Create new plan
-    await page.click('button.sidebar-btn.create:has-text("New")');
-    await expect(page.locator('.plan-name-input')).toBeVisible({ timeout: TIMEOUT_MEDIUM });
-
-    // Search for a blueprint with multiple materials
-    const searchInput = page.locator('.target-search input[type="text"]');
-    await searchInput.fill('Basic');
-
-    const searchResult = page.locator('.search-results .search-result-item').first();
-    await searchResult.waitFor({ state: 'visible', timeout: TIMEOUT_LONG });
-    await searchResult.click();
-
-    // Wait for target to be added
-    await expect(page.locator('.targets-list .target-item-expanded')).toBeVisible({ timeout: TIMEOUT_MEDIUM });
+    await createNewPlan(page);
+    await addBlueprintToPlan(page);
 
     // Switch to Steps view
-    await page.click('button:has-text("Steps")');
+    await page.getByRole('button', { name: 'Steps' }).click();
 
     // Wait for steps to render
     await page.waitForTimeout(500); // Allow recalculation
@@ -82,21 +87,11 @@ test.describe('Construction Calculator', () => {
   });
 
   test('shows shopping list with estimated totals', async ({ page }) => {
-    // Create new plan and add a blueprint
-    await page.click('button.sidebar-btn.create:has-text("New")');
-    await expect(page.locator('.plan-name-input')).toBeVisible({ timeout: TIMEOUT_MEDIUM });
-
-    const searchInput = page.locator('.target-search input[type="text"]');
-    await searchInput.fill('Basic');
-
-    const searchResult = page.locator('.search-results .search-result-item').first();
-    await searchResult.waitFor({ state: 'visible', timeout: TIMEOUT_LONG });
-    await searchResult.click();
-
-    await expect(page.locator('.targets-list .target-item-expanded')).toBeVisible({ timeout: TIMEOUT_MEDIUM });
+    await createNewPlan(page);
+    await addBlueprintToPlan(page);
 
     // Switch to Shopping view
-    await page.click('button:has-text("Shopping")');
+    await page.getByRole('button', { name: 'Shopping' }).click();
 
     // Verify shopping list appears
     const shoppingView = page.locator('.shopping-view');
@@ -112,21 +107,31 @@ test.describe('Construction Calculator', () => {
   });
 
   test('calculator settings panel opens and contains expected options', async ({ page }) => {
+    // Wait for page to fully load before interacting
+    await page.waitForLoadState('networkidle');
+    await page.locator('.empty-state, .mobile-empty-state, .plan-editor').first()
+      .waitFor({ state: 'visible', timeout: TIMEOUT_LONG });
+
     // Click Settings button
-    await page.click('button[title="Calculator Settings"]');
+    await page.getByRole('button', { name: 'Settings' }).click();
 
     // Verify the config panel opens
     const configPanel = page.locator('.config-panel');
-    await expect(configPanel).toBeVisible({ timeout: TIMEOUT_MEDIUM });
+    await expect(configPanel).toBeVisible({ timeout: TIMEOUT_LONG });
+    await expect(page.getByRole('heading', { name: 'Calculator Settings' })).toBeVisible({ timeout: TIMEOUT_MEDIUM });
 
     // Check for expected settings
     await expect(page.locator('text=Certainty level')).toBeVisible();
     await expect(page.locator('text=Material roll chance')).toBeVisible();
     await expect(page.locator('text=Success Rates')).toBeVisible();
 
-    // Verify the roll chance input exists and has default value
+    // Verify the certainty level input has default value of 50%
+    const certaintyInput = configPanel.locator('input.config-input').nth(0);
+    await expect(certaintyInput).toHaveValue('50');
+
+    // Verify the material roll chance input has default value of 80%
     const rollChanceInput = configPanel.locator('input.config-input').nth(1);
-    await expect(rollChanceInput).toHaveValue('50');
+    await expect(rollChanceInput).toHaveValue('80');
 
     // Close the panel
     await page.click('.config-panel .btn-close');
@@ -134,21 +139,11 @@ test.describe('Construction Calculator', () => {
   });
 
   test('tree view shows ownership toggles', async ({ page }) => {
-    // Create new plan and add a blueprint
-    await page.click('button.sidebar-btn.create:has-text("New")');
-    await expect(page.locator('.plan-name-input')).toBeVisible({ timeout: TIMEOUT_MEDIUM });
-
-    const searchInput = page.locator('.target-search input[type="text"]');
-    await searchInput.fill('Basic');
-
-    const searchResult = page.locator('.search-results .search-result-item').first();
-    await searchResult.waitFor({ state: 'visible', timeout: TIMEOUT_LONG });
-    await searchResult.click();
-
-    await expect(page.locator('.targets-list .target-item-expanded')).toBeVisible({ timeout: TIMEOUT_MEDIUM });
+    await createNewPlan(page);
+    await addBlueprintToPlan(page);
 
     // Switch to Tree view
-    await page.click('button:has-text("Tree")');
+    await page.getByRole('button', { name: 'Tree' }).click();
 
     // Verify tree view appears
     const treeView = page.locator('.tree-view');

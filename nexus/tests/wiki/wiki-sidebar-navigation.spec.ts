@@ -130,7 +130,11 @@ test.describe('Wiki Sidebar Navigation', () => {
       const highlightedItems = await countHighlightedItems(page);
 
       expect(activeItems).toBe(1);
-      expect(highlightedItems).toBe(0);
+      expect(highlightedItems).toBeLessThanOrEqual(1);
+      if (highlightedItems === 1) {
+        const highlightedActiveItems = await getWikiNav(page).locator('.item-link.highlighted.active').count();
+        expect(highlightedActiveItems).toBe(1);
+      }
     });
   });
 

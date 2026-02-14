@@ -11,12 +11,12 @@ test.describe('Basic navigation', () => {
   test('can navigate to tools section', async ({ page }) => {
     await page.goto('/');
 
-    // Look for a tools link and click it (adjust based on your navigation)
-    const toolsLink = page.locator('a[href="/tools"]');
-    if (await toolsLink.isVisible()) {
-      await toolsLink.click();
-      await expect(page).toHaveURL(/.*tools.*/);
-    }
+    // Click the Tools link in the main navigation menu
+    const toolsLink = page.getByRole('link', { name: 'Tools', exact: true });
+    await expect(toolsLink).toBeVisible();
+    await toolsLink.click();
+    await expect(page).toHaveURL(/.*tools.*/);
+
   });
 });
 
