@@ -1720,7 +1720,9 @@
         return qr > 0 ? qr / 100 : null;
       }
       const qty = row?.quantity ?? 1;
-      return row?.details?.CurrentTT ?? (stackable && itemMaxTT != null ? itemMaxTT * qty : itemMaxTT);
+      // Stackable items have fixed TT per unit — always use maxTT * qty
+      if (stackable && itemMaxTT != null) return itemMaxTT * qty;
+      return row?.details?.CurrentTT ?? itemMaxTT;
     }
 
     cols.push({ key: '_value', header: 'Value', width: '130px', sortable: true, searchable: false,
