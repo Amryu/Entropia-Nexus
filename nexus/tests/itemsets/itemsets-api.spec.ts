@@ -6,23 +6,34 @@ const API_BASE = '/api/itemsets';
 
 // Helper to create an item set
 async function createItemSet(page: Page, opts: { name?: string; data?: object; loadout_id?: string } = {}) {
-  return page.request.post(API_BASE, {
+  const payload = {
+    name: opts.name ?? 'Test Item Set',
+    data: opts.data ?? {
+      items: [
+        {
+          itemId: 1000001,
+          type: 'Weapon',
+          name: 'Test Weapon',
+          quantity: 1,
+          meta: { tier: 3, tiR: 45.5 }
+        }
+      ]
+    }
+  };
+  const requestData = {
     data: {
-      name: opts.name ?? 'Test Item Set',
-      data: opts.data ?? {
-        items: [
-          {
-            itemId: 1000001,
-            type: 'Weapon',
-            name: 'Test Weapon',
-            quantity: 1,
-            meta: { tier: 3, tiR: 45.5 }
-          }
-        ]
-      },
+      ...payload,
       ...(opts.loadout_id ? { loadout_id: opts.loadout_id } : {})
     }
-  });
+  };
+
+  let res = await page.request.post(API_BASE, requestData);
+  for (let attempt = 0; attempt < 2 && res.status() === 429; attempt++) {
+    await page.waitForTimeout(TIMEOUT_MEDIUM);
+    res = await page.request.post(API_BASE, requestData);
+  }
+
+  return res;
 }
 
 test.describe('Item Sets API', () => {
@@ -246,9 +257,12 @@ test.describe('Item Sets API', () => {
   });
 
   test.describe('Loadout Deletion Protection', () => {
-    test('prevents deletion of loadout linked to item set', async ({ verifiedUser }) => {
+    test('prevents deletion of loadout linked to item set', async ({ page, loginAs }) => {
+      await page.goto('/');
+      await loginAs('verified2');
+
       // First create a loadout
-      const loadoutRes = await verifiedUser.request.post('/api/tools/loadout', {
+      const loadoutRes = await page.request.post('/api/tools/loadout', {
         data: {
           name: 'Protected Loadout',
           data: {
@@ -271,7 +285,7 @@ test.describe('Item Sets API', () => {
       const loadout = await loadoutRes.json();
 
       // Create item set linked to that loadout
-      const setRes = await createItemSet(verifiedUser, {
+      const setRes = await createItemSet(page, {
         name: 'Linked Set',
         data: { items: [{ itemId: 1, type: 'Weapon', name: 'Test', quantity: 1 }] }
       });
@@ -279,17 +293,15 @@ test.describe('Item Sets API', () => {
       expect(setRes.status()).toBe(201);
 
       // Create a properly linked item set
-      const linkedSetRes = await verifiedUser.request.post(API_BASE, {
-        data: {
-          name: 'Linked Set',
-          data: { items: [{ itemId: 1, type: 'Weapon', name: 'Test', quantity: 1 }] },
-          loadout_id: loadout.id
-        }
+      const linkedSetRes = await createItemSet(page, {
+        name: 'Linked Set',
+        data: { items: [{ itemId: 1, type: 'Weapon', name: 'Test', quantity: 1 }] },
+        loadout_id: loadout.id
       });
       expect(linkedSetRes.status()).toBe(201);
 
       // Try to delete the loadout - should be blocked
-      const deleteRes = await verifiedUser.request.delete(`/api/tools/loadout/${loadout.id}`);
+      const deleteRes = await page.request.delete(`/api/tools/loadout/${loadout.id}`);
       expect(deleteRes.status()).toBe(409);
 
       const deleteData = await deleteRes.json();
@@ -299,8 +311,8 @@ test.describe('Item Sets API', () => {
 
       // Clean up: delete item set first, then loadout
       const linkedSet = await linkedSetRes.json();
-      await verifiedUser.request.delete(`${API_BASE}/${linkedSet.id}`);
-      const deleteRetry = await verifiedUser.request.delete(`/api/tools/loadout/${loadout.id}`);
+      await page.request.delete(`${API_BASE}/${linkedSet.id}`);
+      const deleteRetry = await page.request.delete(`/api/tools/loadout/${loadout.id}`);
       expect(deleteRetry.status()).toBe(200);
     });
   });
