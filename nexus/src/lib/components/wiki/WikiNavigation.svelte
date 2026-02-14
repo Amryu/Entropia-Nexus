@@ -1257,6 +1257,7 @@
       {/if}
       {#if filters.length > 0 && filters[0]?.href === undefined}
         <!-- Value-based category filters -->
+        <div class="filter-groups-row">
         {#each filters as filter, filterIdx}
           <div class="filter-group">
             <div class="filter-label-row">
@@ -1274,14 +1275,6 @@
                     <line x1="12" y1="17" x2="12.01" y2="17" />
                   </svg>
                 </button>
-              {/if}
-              {#if filterIdx === 0 && showTableView && allAvailableColumns && linkFilters.length === 0}
-                <span class="column-config-inline">
-                  <button class="column-config-btn" on:click={handleOpenColumnDialog} title="Configure columns">Columns...</button>
-                  {#if hasCustomColumns}
-                    <button class="column-config-btn reset" on:click={handleResetColumns} title="Reset to default columns">Reset</button>
-                  {/if}
-                </span>
               {/if}
             </div>
             {#if filter.helpText && openFilterHelp === filter.key}
@@ -1306,6 +1299,15 @@
             </div>
           </div>
         {/each}
+        {#if showTableView && allAvailableColumns && linkFilters.length === 0}
+          <span class="column-config-inline">
+            <button class="column-config-btn" on:click={handleOpenColumnDialog} title="Configure columns">Columns...</button>
+            {#if hasCustomColumns}
+              <button class="column-config-btn reset" on:click={handleResetColumns} title="Reset to default columns">Reset</button>
+            {/if}
+          </span>
+        {/if}
+        </div>
 
         {#if Object.values(activeFilters).some(v => v !== null && (Array.isArray(v) ? v.length > 0 : true))}
           <button class="clear-filters" on:click={clearFilters}>
@@ -1429,7 +1431,11 @@
                   {item.Name}
                 </span>
                 {#each activeColumns as column}
-                  <span class="cell cell-{column.key}">{formatCell(item, column)}</span>
+                  {#if column.html}
+                    <span class="cell cell-{column.key}">{@html formatCell(item, column)}</span>
+                  {:else}
+                    <span class="cell cell-{column.key}">{formatCell(item, column)}</span>
+                  {/if}
                 {/each}
               {:else}
                 <span class="item-name" title={item.Name}>
@@ -1590,6 +1596,13 @@
     padding-bottom: 10px;
     border-bottom: 1px solid var(--border-color, #555);
     flex-shrink: 0;
+  }
+
+  .filter-groups-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 16px;
+    align-items: flex-start;
   }
 
   .filter-group {

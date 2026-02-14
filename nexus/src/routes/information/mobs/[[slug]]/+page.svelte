@@ -8,12 +8,14 @@
   // @ts-nocheck
   import '$lib/style.css';
   import { page } from '$app/stores';
-  import { onMount, onDestroy } from 'svelte';
-  import { encodeURIComponentSafe, clampDecimals, getTypeLink, getLatestPendingUpdate } from '$lib/util';
+  import { goto } from '$app/navigation';
+  import { onMount, onDestroy, tick } from 'svelte';
+  import { encodeURIComponentSafe, getTypeLink, getLatestPendingUpdate } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
 
   // Wiki components
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
+  import WikiNavigation from '$lib/components/wiki/WikiNavigation.svelte';
   import WikiSEO from '$lib/components/wiki/WikiSEO.svelte';
   import DataSection from '$lib/components/wiki/DataSection.svelte';
   import InlineEdit from '$lib/components/wiki/InlineEdit.svelte';
@@ -38,7 +40,6 @@
   // Wiki edit state
   import {
     editMode,
-    isCreateMode as isCreateModeStore,
     initEditState,
     resetEditState,
     currentEntity,
@@ -46,8 +47,7 @@
     viewingPendingChange,
     setExistingPendingChange,
     setViewingPendingChange,
-    updateField,
-    changeMetadata
+    updateField
   } from '$lib/stores/wikiEditState';
 
   export let data;
@@ -64,6 +64,10 @@
   $: userPendingCreates = data.userPendingCreates || [];
   $: userPendingUpdates = data.userPendingUpdates || [];
   $: isCreateMode = data.isCreateMode || false;
+  $: currentChangeId = $page.url.searchParams.get('changeId');
+  $: activeView = data.view || 'mobs';
+  $: isMaturityView = activeView === 'maturities' && !isCreateMode;
+  $: selectedMaturityId = data.selectedMaturityId ?? null;
   $: mobEntityId = mob?.Id ?? mob?.ItemId;
   $: userPendingUpdate = getLatestPendingUpdate(userPendingUpdates, mobEntityId);
   $: resolvedPendingChange = userPendingUpdate || pendingChange;
@@ -114,14 +118,19 @@
     Loots: []
   };
 
-  // Initialize edit state when user/mob changes
-  $: if (user) {
-    const existingChange = data.existingChange || null;
-    const initialEntity = isCreateMode
-      ? (existingChange?.data || emptyMob)
-      : mob;
-    const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
-    initEditState(initialEntity, 'Mob', isCreateMode, editChange);
+  // Track initialization to avoid resetting edits on query-only navigation.
+  let lastInitKey = null;
+  $: {
+    const initKey = `Mob-${mob?.Id ?? 'new'}-${isCreateMode}-${data.existingChange?.id ?? 'none'}`;
+    if (user && initKey !== lastInitKey) {
+      lastInitKey = initKey;
+      const existingChange = data.existingChange || null;
+      const initialEntity = isCreateMode
+        ? (existingChange?.data || emptyMob)
+        : mob;
+      const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
+      initEditState(initialEntity, 'Mob', isCreateMode, editChange);
+    }
   }
 
   // Set pending change in store when it changes
@@ -147,8 +156,89 @@
     resetEditState();
   });
 
+  // Sidebar expanded/full-width state
+  let sidebarExpanded = false;
+  let sidebarFullWidth = false;
+
+  // Damage type abbreviations for sidebar columns
+  const damageAbbreviations = {
+    Impact: 'Imp', Cut: 'Cut', Stab: 'Stab', Penetration: 'Pen',
+    Shrapnel: 'Shr', Burn: 'Brn', Cold: 'Cld', Acid: 'Acd', Electric: 'Elc'
+  };
+
+  function formatDamageHtml(damageObj) {
+    if (!damageObj) return '-';
+    const parts = Object.entries(damageObj)
+      .filter(([_, v]) => v != null && v > 0)
+      .map(([key, value]) =>
+        `<span style="color: var(--damage-${key.toLowerCase()})">${Math.round(value)} ${damageAbbreviations[key] || key}</span>`
+      );
+    return parts.length > 0 ? parts.join('<span style="opacity:0.5">/</span>') : '-';
+  }
+
   // Build navigation items from mobs
   $: navItems = allItems;
+
+  function getPrimaryDamage(maturity) {
+    const primaryAttack = maturity?.Attacks?.find(a => a.Name === 'Primary') || maturity?.Attacks?.[0];
+    return primaryAttack?.TotalDamage ?? null;
+  }
+
+  function getMaturityDefense(maturity) {
+    const def = maturity?.Properties?.Defense;
+    if (!def) return null;
+    const total = (def.Impact || 0) + (def.Cut || 0) + (def.Stab || 0) +
+      (def.Penetration || 0) + (def.Shrapnel || 0) + (def.Burn || 0) +
+      (def.Cold || 0) + (def.Acid || 0) + (def.Electric || 0);
+    return total > 0 ? total : null;
+  }
+
+  // Flatten mobs to maturity rows for sidebar maturity mode.
+  $: maturityNavItems = (allItems || []).flatMap((mobItem) => {
+    const mobName = mobItem?.Name;
+    if (!mobName || !Array.isArray(mobItem?.Maturities)) return [];
+
+    return mobItem.Maturities
+      .map((maturity) => {
+        const level = maturity?.Properties?.Level ?? null;
+        const hp = maturity?.Properties?.Health ?? null;
+        const hpPerLevel = hp != null && level != null && level > 0 ? hp / level : null;
+        const maturityName = maturity?.Name?.trim()?.length ? maturity.Name : 'Single Maturity';
+        const maturityId = maturity?.Id;
+        if (maturityId == null) return null;
+
+        const primaryAttack = maturity?.Attacks?.find(a => a.Name === 'Primary') || maturity?.Attacks?.[0];
+        const secondaryAttack = maturity?.Attacks?.find(a => a.Name === 'Secondary') || maturity?.Attacks?.[1];
+        const tertiaryAttack = maturity?.Attacks?.find(a => a.Name === 'Tertiary') || maturity?.Attacks?.[2];
+        return {
+          Id: maturityId,
+          Name: `${mobName} - ${maturityName}`,
+          MaturityName: maturityName,
+          MobName: mobName,
+          MobId: mobItem?.Id ?? null,
+          Planet: mobItem?.Planet?.Name || null,
+          Type: mobItem?.Type || null,
+          Level: level,
+          HP: hp,
+          HpPerLevel: hpPerLevel,
+          Boss: maturity?.Properties?.Boss === true,
+          PrimaryDamage: primaryAttack?.TotalDamage ?? null,
+          PrimaryDamageComposition: primaryAttack?.Damage || null,
+          SecondaryDamage: secondaryAttack?.TotalDamage ?? null,
+          SecondaryDamageComposition: secondaryAttack?.Damage || null,
+          TertiaryDamage: tertiaryAttack?.TotalDamage ?? null,
+          TertiaryDamageComposition: tertiaryAttack?.Damage || null,
+          Defense: getMaturityDefense(maturity),
+          Sweatable: mobItem?.Properties?.IsSweatable || false,
+          APM: mobItem?.Properties?.AttacksPerMinute ?? null,
+          AttackRange: mobItem?.Properties?.AttackRange ?? null,
+          AggressionRange: mobItem?.Properties?.AggressionRange ?? null,
+          AggressionTimer: mobItem?.Properties?.AggressionTimer || null,
+          Cat4: mobItem?.Species?.Properties?.CodexType === 'MobLooter'
+        };
+      })
+      .filter(Boolean);
+  });
 
   // Navigation filters - filter by planet and type
   const navFilters = [
@@ -176,6 +266,33 @@
         { value: 'Asteroid', label: 'Asteroid' },
       ]
     }
+  ];
+
+  const maturityNavFilters = [
+    {
+      key: 'Planet',
+      label: 'Planet',
+      values: [
+        { value: 'Calypso', label: 'Calypso' },
+        { value: 'Arkadia', label: 'Arkadia' },
+        { value: 'Cyrene', label: 'Cyrene' },
+        { value: 'Monria', label: 'Monria' },
+        { value: 'ROCKtropia', label: 'Rocktropia' },
+        { value: 'Toulan', label: 'Toulan' },
+        { value: 'Next Island', label: 'Next Island' },
+        { value: 'Space', label: 'Space' },
+      ]
+    },
+    {
+      key: 'Type',
+      label: 'Type',
+      values: [
+        { value: 'Animal', label: 'Animal' },
+        { value: 'Mutant', label: 'Mutant' },
+        { value: 'Robot', label: 'Robot' },
+        { value: 'Asteroid', label: 'Asteroid' },
+      ]
+    },
   ];
 
   function isCat4Mob(item) {
@@ -298,6 +415,24 @@
       width: '80px',
       getValue: (item) => item.Properties?.AggressionTimer,
       format: (v) => v || '-'
+    },
+    damage: {
+      key: 'damage',
+      header: 'Damage (%)',
+      width: '120px',
+      html: true,
+      getValue: (item) => {
+        const mats = item.Maturities?.filter(m => !m.Properties?.Boss);
+        const mat = mats?.length ? mats[0] : item.Maturities?.[0];
+        const primary = mat?.Attacks?.find(a => a.Name === 'Primary') || mat?.Attacks?.[0];
+        return primary?.TotalDamage ?? null;
+      },
+      format: (_v, item) => {
+        const mats = item.Maturities?.filter(m => !m.Properties?.Boss);
+        const mat = mats?.length ? mats[0] : item.Maturities?.[0];
+        const primary = mat?.Attacks?.find(a => a.Name === 'Primary') || mat?.Attacks?.[0];
+        return formatDamageHtml(primary?.Damage);
+      }
     }
   };
 
@@ -311,6 +446,7 @@
   // Full-width table columns (superset of navTableColumns with additional stats)
   const navFullWidthColumns = [
     ...navTableColumns,
+    mobColumnDefs.damage,
     mobColumnDefs.type,
     mobColumnDefs.planet,
     mobColumnDefs.sweatable,
@@ -319,6 +455,224 @@
   ];
 
   const allAvailableColumns = Object.values(mobColumnDefs);
+
+  const maturityColumnDefs = {
+    mob: {
+      key: 'mob',
+      header: 'Mob',
+      width: '120px',
+      filterPlaceholder: 'Atrox',
+      getValue: (item) => item.MobName,
+      format: (v) => v || '-'
+    },
+    maturity: {
+      key: 'maturity',
+      header: 'Maturity',
+      width: '105px',
+      filterPlaceholder: 'Young',
+      getValue: (item) => item.MaturityName,
+      format: (v) => v || '-'
+    },
+    level: {
+      key: 'level',
+      header: 'Level',
+      width: '65px',
+      filterPlaceholder: '>10',
+      getValue: (item) => item.Level,
+      format: (v) => v != null ? v : '-'
+    },
+    hp: {
+      key: 'hp',
+      header: 'HP',
+      width: '70px',
+      filterPlaceholder: '>100',
+      getValue: (item) => item.HP,
+      format: (v) => v != null ? v : '-'
+    },
+    hpPerLevel: {
+      key: 'hpPerLevel',
+      header: 'HP/Lvl',
+      width: '70px',
+      filterPlaceholder: '>50',
+      getValue: (item) => item.HpPerLevel,
+      format: (v) => v != null ? Math.round(v) : '-'
+    },
+    primaryDamage: {
+      key: 'primaryDamage',
+      header: 'Damage',
+      width: '70px',
+      filterPlaceholder: '>20',
+      getValue: (item) => item.PrimaryDamage,
+      format: (v) => v != null ? v : '-'
+    },
+    damage: {
+      key: 'damage',
+      header: 'Damage (%)',
+      width: '120px',
+      html: true,
+      getValue: (item) => item.PrimaryDamage ?? null,
+      format: (_v, item) => formatDamageHtml(item.PrimaryDamageComposition)
+    },
+    secondaryDamage: {
+      key: 'secondaryDamage',
+      header: 'Secondary',
+      width: '70px',
+      filterPlaceholder: '>20',
+      getValue: (item) => item.SecondaryDamage,
+      format: (v) => v != null ? v : '-'
+    },
+    secondaryDamageComp: {
+      key: 'secondaryDamageComp',
+      header: 'Secondary (%)',
+      width: '120px',
+      html: true,
+      getValue: (item) => item.SecondaryDamage ?? null,
+      format: (_v, item) => formatDamageHtml(item.SecondaryDamageComposition)
+    },
+    tertiaryDamage: {
+      key: 'tertiaryDamage',
+      header: 'Tertiary',
+      width: '70px',
+      filterPlaceholder: '>20',
+      getValue: (item) => item.TertiaryDamage,
+      format: (v) => v != null ? v : '-'
+    },
+    tertiaryDamageComp: {
+      key: 'tertiaryDamageComp',
+      header: 'Tertiary (%)',
+      width: '120px',
+      html: true,
+      getValue: (item) => item.TertiaryDamage ?? null,
+      format: (_v, item) => formatDamageHtml(item.TertiaryDamageComposition)
+    },
+    defense: {
+      key: 'defense',
+      header: 'Defense',
+      width: '70px',
+      filterPlaceholder: '>20',
+      getValue: (item) => item.Defense,
+      format: (v) => v != null ? v : '-'
+    },
+    boss: {
+      key: 'boss',
+      header: 'Boss',
+      width: '60px',
+      filterPlaceholder: 'Yes',
+      getValue: (item) => item.Boss ? 1 : 0,
+      format: (v) => v ? 'Yes' : 'No'
+    },
+    planet: {
+      key: 'planet',
+      header: 'Planet',
+      width: '80px',
+      filterPlaceholder: 'Calypso',
+      getValue: (item) => item.Planet,
+      format: (v) => v || '-'
+    },
+    type: {
+      key: 'type',
+      header: 'Type',
+      width: '70px',
+      filterPlaceholder: 'Animal',
+      getValue: (item) => item.Type,
+      format: (v) => v || '-'
+    },
+    sweatable: {
+      key: 'sweatable',
+      header: 'Sweat',
+      width: '55px',
+      filterPlaceholder: 'Yes',
+      getValue: (item) => item.Sweatable ? 1 : 0,
+      format: (v) => v ? 'Yes' : 'No'
+    },
+    apm: {
+      key: 'apm',
+      header: 'APM',
+      width: '50px',
+      filterPlaceholder: '>20',
+      getValue: (item) => item.APM,
+      format: (v) => v != null ? v : '-'
+    },
+    atkRange: {
+      key: 'atkRange',
+      header: 'Range',
+      width: '55px',
+      filterPlaceholder: '>5',
+      getValue: (item) => item.AttackRange,
+      format: (v) => v != null ? v : '-'
+    },
+    aggrRange: {
+      key: 'aggrRange',
+      header: 'Aggr Range',
+      width: '70px',
+      filterPlaceholder: '>10',
+      getValue: (item) => item.AggressionRange,
+      format: (v) => v != null ? v : '-'
+    },
+    aggrTimer: {
+      key: 'aggrTimer',
+      header: 'Aggr Timer',
+      width: '80px',
+      getValue: (item) => item.AggressionTimer,
+      format: (v) => v || '-'
+    },
+    cat4: {
+      key: 'cat4',
+      header: 'Cat 4',
+      width: '55px',
+      filterPlaceholder: 'Yes',
+      getValue: (item) => item.Cat4 ? 1 : 0,
+      format: (v) => v ? 'Yes' : 'No'
+    }
+  };
+
+  const maturityNavTableColumns = [
+    maturityColumnDefs.mob,
+    maturityColumnDefs.maturity,
+    maturityColumnDefs.level,
+    maturityColumnDefs.hp
+  ];
+
+  const maturityNavFullWidthColumns = [
+    ...maturityNavTableColumns,
+    maturityColumnDefs.hpPerLevel,
+    maturityColumnDefs.damage,
+    maturityColumnDefs.primaryDamage,
+    maturityColumnDefs.defense,
+    maturityColumnDefs.type,
+    maturityColumnDefs.planet
+  ];
+
+  const maturityAllAvailableColumns = Object.values(maturityColumnDefs);
+
+  $: activeSidebarItems = isMaturityView ? maturityNavItems : navItems;
+  $: activeSidebarFilters = isMaturityView ? maturityNavFilters : navFilters;
+  $: activeSidebarTableColumns = isMaturityView ? maturityNavTableColumns : navTableColumns;
+  $: activeSidebarFullWidthColumns = isMaturityView ? maturityNavFullWidthColumns : navFullWidthColumns;
+  $: activeSidebarColumns = isMaturityView ? maturityAllAvailableColumns : allAvailableColumns;
+  $: activeSidebarPageTypeId = isMaturityView ? 'mobs-maturities' : 'mobs';
+  $: sidebarPendingCreates = isMaturityView ? [] : userPendingCreates;
+  $: sidebarPendingUpdates = isMaturityView ? [] : userPendingUpdates;
+
+  function switchSidebar(mode) {
+    if (mode === 'maturities' && isMaturityView) return;
+    if (mode === 'mobs' && !isMaturityView) return;
+
+    const nextUrl = new URL($page.url);
+    if (mode === 'maturities') {
+      nextUrl.searchParams.set('view', 'maturities');
+    } else {
+      nextUrl.searchParams.delete('view');
+      nextUrl.searchParams.delete('maturity');
+    }
+
+    goto(`${nextUrl.pathname}${nextUrl.search}`);
+  }
+
+  function getMaturitySidebarHref(item) {
+    const mobSlug = encodeURIComponentSafe(item.MobName);
+    return `/information/mobs/${mobSlug}?view=maturities&maturity=${item.Id}`;
+  }
 
   // Breadcrumbs
   $: breadcrumbs = [
@@ -345,6 +699,8 @@
     loots: true,
     codex: true
   };
+  let maturitiesSectionAnchor;
+  let lastMaturityScrollKey = null;
 
   onMount(() => {
     try {
@@ -513,6 +869,22 @@
   $: scanningProfession = getScanningProfession(activeMob);
   $: lootingProfession = getLootingProfession(activeMob);
   $: hasCodex = activeMob?.Species?.Properties?.CodexBaseCost != null;
+  $: selectedMaturityBelongsToActiveMob = selectedMaturityId != null
+    && !!activeMob?.Maturities?.some(m => String(m.Id) === String(selectedMaturityId));
+  $: selectedMaturityIdForActiveMob = selectedMaturityBelongsToActiveMob ? selectedMaturityId : null;
+
+  // Ensure selected maturity is visible in the article and section stays open.
+  $: maturityScrollKey = selectedMaturityIdForActiveMob != null && activeMob?.Id != null && !$editMode
+    ? `${activeMob.Id}-${selectedMaturityIdForActiveMob}`
+    : null;
+  $: if (maturityScrollKey && maturityScrollKey !== lastMaturityScrollKey) {
+    lastMaturityScrollKey = maturityScrollKey;
+    panelStates = { ...panelStates, maturities: true };
+    savePanelStates();
+    tick().then(() => {
+      maturitiesSectionAnchor?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
 
   // ========== EDIT HANDLERS ==========
   function handleDescriptionChange(event) {
@@ -532,24 +904,48 @@
   breadcrumbs={breadcrumbs.map(b => ({ name: b.label, url: b.href }))}
 />
 
-  <WikiPage
-    title="Mobs"
-    {breadcrumbs}
-    entity={activeMob}
-    basePath="/information/mobs"
-    {navItems}
-    {navFilters}
-    {navTableColumns}
-    {navFullWidthColumns}
-    navAllAvailableColumns={allAvailableColumns}
-    navPageTypeId="mobs"
-    {user}
-    editable={true}
+<WikiPage
+  title="Mobs"
+  {breadcrumbs}
+  entity={activeMob}
+  basePath="/information/mobs"
+  {user}
+  editable={true}
   {canEdit}
   {canCreateNew}
   {userPendingCreates}
   {userPendingUpdates}
+  bind:sidebarExpanded
+  bind:sidebarFullWidth
 >
+  <div slot="sidebar" class="mobs-sidebar">
+    <WikiNavigation
+      items={activeSidebarItems}
+      filters={activeSidebarFilters}
+      basePath="/information/mobs"
+      title="Mobs"
+      currentSlug={isMaturityView ? null : activeMob?.Name}
+      currentItemId={isMaturityView ? selectedMaturityId : null}
+      {currentChangeId}
+      customGetItemHref={isMaturityView ? getMaturitySidebarHref : null}
+      userPendingCreates={sidebarPendingCreates}
+      userPendingUpdates={sidebarPendingUpdates}
+      tableColumns={activeSidebarTableColumns}
+      fullWidthColumns={activeSidebarFullWidthColumns}
+      allAvailableColumns={activeSidebarColumns}
+      pageTypeId={activeSidebarPageTypeId}
+      expanded={sidebarExpanded}
+      fullWidth={sidebarFullWidth}
+      on:toggleExpand={() => sidebarExpanded = !sidebarExpanded}
+      on:toggleFullWidth={() => sidebarFullWidth = !sidebarFullWidth}
+    >
+      <div slot="after-header" class="sidebar-toggle">
+        <button class:active={!isMaturityView} on:click={() => switchSidebar('mobs')}>Mobs</button>
+        <button class:active={isMaturityView} on:click={() => switchSidebar('maturities')}>Maturities</button>
+      </div>
+    </WikiNavigation>
+  </div>
+
   {#if activeMob || isCreateMode}
     <!-- Pending Change Banner -->
     {#if $existingPendingChange && !$editMode && !isCreateMode}
@@ -869,23 +1265,29 @@
         </div>
 
         <!-- Maturities Section -->
-        <DataSection
-          title="Maturities"
-          icon=""
-          bind:expanded={panelStates.maturities}
-          subtitle="{activeMob?.Maturities?.length || 0} maturities"
-          on:toggle={savePanelStates}
-        >
-          {#if $editMode}
-            <MobMaturitiesEdit
-              maturities={activeMob?.Maturities || []}
-              type={activeMob?.Type}
-              fieldPath="Maturities"
-            />
-          {:else}
-            <MobMaturities maturities={activeMob?.Maturities} type={activeMob?.Type} />
-          {/if}
-        </DataSection>
+        <div bind:this={maturitiesSectionAnchor}>
+          <DataSection
+            title="Maturities"
+            icon=""
+            bind:expanded={panelStates.maturities}
+            subtitle="{activeMob?.Maturities?.length || 0} maturities"
+            on:toggle={savePanelStates}
+          >
+            {#if $editMode}
+              <MobMaturitiesEdit
+                maturities={activeMob?.Maturities || []}
+                type={activeMob?.Type}
+                fieldPath="Maturities"
+              />
+            {:else}
+              <MobMaturities
+                maturities={activeMob?.Maturities}
+                type={activeMob?.Type}
+                selectedMaturityId={selectedMaturityIdForActiveMob}
+              />
+            {/if}
+          </DataSection>
+        </div>
 
         <!-- Locations Section -->
         {#if $editMode || (activeMob?.Spawns && activeMob.Spawns.length > 0)}
@@ -1051,6 +1453,43 @@
     color: var(--text-muted, #999);
     font-style: italic;
     font-size: 13px;
+  }
+
+  .mobs-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .mobs-sidebar :global(.wiki-nav) {
+    flex: 1;
+    min-height: 0;
+  }
+
+  .sidebar-toggle {
+    display: flex;
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .sidebar-toggle button {
+    flex: 1;
+    border: 1px solid var(--border-color, #555);
+    background: var(--secondary-color);
+    color: var(--text-color);
+    padding: 6px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  .sidebar-toggle button.active {
+    background: var(--accent-color, #4a9eff);
+    border-color: var(--accent-color, #4a9eff);
+    color: white;
   }
 
   /* Mobile adjustments */

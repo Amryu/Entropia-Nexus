@@ -8,15 +8,15 @@
   export let label = '';
 
   const damageTypes = [
-    { key: 'Impact', color: '#60a5fa' },
-    { key: 'Cut', color: '#f87171' },
-    { key: 'Stab', color: '#4ade80' },
-    { key: 'Penetration', color: '#fbbf24' },
-    { key: 'Shrapnel', color: '#a78bfa' },
-    { key: 'Burn', color: '#fb923c' },
-    { key: 'Cold', color: '#22d3ee' },
-    { key: 'Acid', color: '#a3e635' },
-    { key: 'Electric', color: '#c084fc' }
+    { key: 'Impact', color: 'var(--damage-impact)' },
+    { key: 'Cut', color: 'var(--damage-cut)' },
+    { key: 'Stab', color: 'var(--damage-stab)' },
+    { key: 'Penetration', color: 'var(--damage-penetration)' },
+    { key: 'Shrapnel', color: 'var(--damage-shrapnel)' },
+    { key: 'Burn', color: 'var(--damage-burn)' },
+    { key: 'Cold', color: 'var(--damage-cold)' },
+    { key: 'Acid', color: 'var(--damage-acid)' },
+    { key: 'Electric', color: 'var(--damage-electric)' }
   ];
 
   $: activeDamage = damageSpread

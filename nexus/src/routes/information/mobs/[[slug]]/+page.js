@@ -6,10 +6,15 @@
 let items;
 let itemsGrouped;
 
-import { handlePageLoad, getMainPlanetName, apiCall, resolveItemLink, decodeURIComponentSafe, encodeURIComponentSafe, loadPendingChangesData } from '$lib/util';
-import { redirect } from '@sveltejs/kit';
+import { handlePageLoad, getMainPlanetName, apiCall, resolveItemLink, decodeURIComponentSafe, loadPendingChangesData } from '$lib/util';
 
 export async function load({ fetch, params, url, parent }) {
+  const view = url.searchParams.get('view') === 'maturities' ? 'maturities' : 'mobs';
+  const selectedMaturityRaw = url.searchParams.get('maturity');
+  const selectedMaturityId = selectedMaturityRaw && /^\d+$/.test(selectedMaturityRaw)
+    ? Number(selectedMaturityRaw)
+    : null;
+
   const config = {
     items: 'mobs',
     types: { tierable: false },
@@ -49,6 +54,8 @@ export async function load({ fetch, params, url, parent }) {
   response.items = itemsGrouped;
   response.allItems = items;
   response.isCreateMode = config.mode === 'create';
+  response.view = view;
+  response.selectedMaturityId = selectedMaturityId;
 
   const changeId = url.searchParams.get('changeId');
   if (changeId && response.isCreateMode) {

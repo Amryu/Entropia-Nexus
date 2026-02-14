@@ -607,6 +607,72 @@ test.describe('Mobs Wiki Page - Codex Calculator', () => {
   });
 });
 
+test.describe('Mobs Wiki Page - Maturity View', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.goto('/information/mobs');
+    await page.waitForLoadState('networkidle');
+  });
+
+  test('sidebar has mobs/maturities toggle and can switch to maturities', async ({ page }) => {
+    if (!await pageLoaded(page)) {
+      test.skip();
+      return;
+    }
+    await waitForWikiNav(page);
+
+    const maturitiesBtn = page.locator('.sidebar-toggle button:has-text("Maturities")').first();
+    await expect(maturitiesBtn).toBeVisible();
+    await maturitiesBtn.click();
+    await page.waitForLoadState('networkidle');
+
+    await expect(page).toHaveURL(/view=maturities/);
+  });
+
+  test('selecting a maturity navigates to mob page with maturity query', async ({ page }) => {
+    if (!await pageLoaded(page)) {
+      test.skip();
+      return;
+    }
+    await waitForWikiNav(page);
+
+    const maturitiesBtn = page.locator('.sidebar-toggle button:has-text("Maturities")').first();
+    await expect(maturitiesBtn).toBeVisible();
+    await maturitiesBtn.click();
+    await page.waitForLoadState('networkidle');
+
+    const maturityItems = page.locator('.item-link[href*="view=maturities"][href*="maturity="]');
+    if (await maturityItems.count() === 0) {
+      test.skip();
+      return;
+    }
+
+    await maturityItems.first().click();
+    await page.waitForLoadState('networkidle');
+
+    const url = page.url();
+    expect(url).toMatch(/\/information\/mobs(\/[^?]+)?/);
+    expect(url).toContain('view=maturities');
+    expect(url).toMatch(/maturity=\d+/);
+
+    // Main mob page should still render.
+    await expect(page.locator('.wiki-infobox-float, aside').first()).toBeVisible();
+    await expect(page.locator('h1.article-title, h1').first()).toBeVisible();
+  });
+
+  test('invalid maturity query does not crash page', async ({ page }) => {
+    await page.goto('/information/mobs?view=maturities&maturity=notanumber');
+    await page.waitForLoadState('networkidle');
+
+    if (!await pageLoaded(page)) {
+      test.skip();
+      return;
+    }
+
+    await expect(page.locator('body')).toBeVisible();
+    await expect(page).toHaveURL(/view=maturities/);
+  });
+});
+
 test.describe('Mobs Wiki Page - URL Routing', () => {
   test('direct URL navigation loads mob', async ({ page }) => {
     // Navigate directly to a mob page

@@ -81,11 +81,11 @@
   // Mobile drawer state - can be bound from parent
   export let drawerOpen = false;
 
-  // Sidebar expanded state (for table view)
-  let sidebarExpanded = false;
+  // Sidebar expanded state (for table view) - exported for pages with custom sidebars
+  export let sidebarExpanded = false;
 
-  // Sidebar full-width state (takes entire page, hides content)
-  let sidebarFullWidth = false;
+  // Sidebar full-width state (takes entire page, hides content) - exported for pages with custom sidebars
+  export let sidebarFullWidth = false;
 
   // Auth help dialog state
   let showAuthDialog = false;

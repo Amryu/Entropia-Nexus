@@ -36,15 +36,18 @@
   --cat2-bg: rgba(147, 112, 219, 0.35);
   --cat3-bg: rgba(60, 179, 113, 0.35);
   /* Damage/Defense type colors - used in damage grids, defense grids, and related components */
-  --damage-impact: #6b7280;
-  --damage-cut: #ef4444;
-  --damage-stab: #f97316;
-  --damage-penetration: #eab308;
-  --damage-shrapnel: #84cc16;
-  --damage-burn: #f59e0b;
-  --damage-cold: #06b6d4;
-  --damage-acid: #22c55e;
-  --damage-electric: #8b5cf6;
+  /* Physical primary */
+  --damage-impact: #94a3b8;
+  --damage-cut: #e06060;
+  --damage-stab: #d48840;
+  /* Physical secondary */
+  --damage-penetration: #c8a830;
+  --damage-shrapnel: #88a040;
+  /* Elemental */
+  --damage-burn: #e07028;
+  --damage-cold: #38a8d8;
+  --damage-acid: #48b868;
+  --damage-electric: #9878c8;
   --damage-block: #60a5fa;
 }
 .light-mode {
@@ -84,15 +87,18 @@
   --cat2-bg: rgba(124, 58, 237, 0.2);
   --cat3-bg: rgba(5, 150, 105, 0.2);
   /* Damage/Defense type colors - same in light mode for visibility */
-  --damage-impact: #6b7280;
-  --damage-cut: #ef4444;
-  --damage-stab: #f97316;
-  --damage-penetration: #eab308;
-  --damage-shrapnel: #84cc16;
-  --damage-burn: #f59e0b;
-  --damage-cold: #06b6d4;
-  --damage-acid: #22c55e;
-  --damage-electric: #8b5cf6;
+  /* Physical primary */
+  --damage-impact: #94a3b8;
+  --damage-cut: #e06060;
+  --damage-stab: #d48840;
+  /* Physical secondary */
+  --damage-penetration: #c8a830;
+  --damage-shrapnel: #88a040;
+  /* Elemental */
+  --damage-burn: #e07028;
+  --damage-cold: #38a8d8;
+  --damage-acid: #48b868;
+  --damage-electric: #9878c8;
   --damage-block: #60a5fa;
 }
 

@@ -5,10 +5,14 @@
 -->
 <script>
   // @ts-nocheck
+  import { tick } from 'svelte';
   import FancyTable from '$lib/components/FancyTable.svelte';
 
   export let maturities = [];
   export let type = null;
+  export let selectedMaturityId = null;
+  let tableContainer;
+  let lastSelectedKey = null;
 
   // Sort maturities: non-bosses first, by HP*Level (nulls at end)
   $: sortedMaturities = maturities ? [...maturities].sort((a, b) => {
@@ -75,6 +79,7 @@
     const tertiaryAttack = maturity.Attacks?.find(a => a.Name === 'Tertiary') || maturity.Attacks?.[2];
 
     return {
+      id: maturity?.Id ?? null,
       name: sortedMaturities.length === 1 && (!maturity.Name || maturity.Name.trim().length === 0)
         ? 'Single Maturity'
         : maturity.Name || 'Unknown',
@@ -96,7 +101,32 @@
 
   // Row class function for boss highlighting
   function getRowClass(row) {
-    return row.boss ? 'boss-row' : null;
+    const classes = [];
+    if (row.boss) classes.push('boss-row');
+    if (selectedMaturityId != null && String(row.id) === String(selectedMaturityId)) {
+      classes.push('selected-row');
+    }
+    return classes.length > 0 ? classes.join(' ') : null;
+  }
+
+  function scrollToSelectedRow() {
+    if (selectedMaturityId == null || !tableContainer) return;
+
+    const selectedIndex = tableData.findIndex(row => String(row.id) === String(selectedMaturityId));
+    if (selectedIndex < 0) return;
+
+    const tableBody = tableContainer.querySelector('.table-body');
+    if (!tableBody) return;
+
+    const rowTop = selectedIndex * 32;
+    const targetScrollTop = Math.max(0, rowTop - Math.max(0, (tableBody.clientHeight - 32) / 2));
+    tableBody.scrollTop = targetScrollTop;
+  }
+
+  $: selectedKey = selectedMaturityId != null ? `${selectedMaturityId}-${tableData.length}` : null;
+  $: if (selectedKey && selectedKey !== lastSelectedKey) {
+    lastSelectedKey = selectedKey;
+    tick().then(scrollToSelectedRow);
   }
 
   // Base columns for asteroids
@@ -174,7 +204,7 @@
   $: columns = isAsteroid ? baseColumns : [...baseColumns, ...mobColumns];
 </script>
 
-<div class="maturities-table-container">
+<div class="maturities-table-container" bind:this={tableContainer}>
   {#if !sortedMaturities || sortedMaturities.length === 0}
     <div class="no-data">No maturity data available.</div>
   {:else}
@@ -215,6 +245,15 @@
 
   .maturities-table-container :global(.table-row.boss-row:hover) {
     background-color: rgba(220, 38, 38, 0.25);
+  }
+
+  .maturities-table-container :global(.table-row.selected-row) {
+    box-shadow: inset 0 0 0 2px var(--accent-color, #4a9eff);
+    background-color: rgba(74, 158, 255, 0.18);
+  }
+
+  .maturities-table-container :global(.table-row.selected-row:hover) {
+    background-color: rgba(74, 158, 255, 0.28);
   }
 
   .no-data {
