@@ -246,10 +246,10 @@ async function itemsDeltaRefresh(fetch) {
       return cache.annotated;
     }
 
-    // Determine which detailed sets to refresh based on added item types
+    // Determine which detailed sets to refresh based on added/removed item types
     const need = new Set();
     const typeOf = (it) => (it?.Properties?.Type || it?.Type || '').toLowerCase();
-    for (const it of added) {
+    for (const it of [...added, ...removed]) {
       const t = typeOf(it);
       if (t === 'weapon') need.add('weapons');
       if (t === 'weaponvisionattachment') need.add('weaponVisionAttachments');
