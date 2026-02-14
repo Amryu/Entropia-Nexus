@@ -190,7 +190,7 @@
       // Create auction
       const body = {
         title: title.trim(),
-        description: description.trim() || null,
+        description: description || null,
         starting_bid: startingBidNum,
         buyout_price: effectiveBuyout,
         duration_days: durationDays,
@@ -394,14 +394,18 @@
         />
       </div>
       <div class="form-group">
-        <label for="auction-desc">Description (optional)</label>
-        <textarea
-          id="auction-desc"
-          bind:value={description}
-          maxlength="2000"
-          rows="4"
-          placeholder="Describe your item(s)..."
-        ></textarea>
+        <label>Description (optional)</label>
+        {#await import('$lib/components/wiki/RichTextEditor.svelte') then { default: RichTextEditor }}
+          <RichTextEditor
+            content={description}
+            placeholder="Describe your item(s)..."
+            showHeadings={false}
+            showCodeBlock={false}
+            showVideo={false}
+            showImages={false}
+            on:change={(e) => description = e.detail}
+          />
+        {/await}
       </div>
     </section>
 

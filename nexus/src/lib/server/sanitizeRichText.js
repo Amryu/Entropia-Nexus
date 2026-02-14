@@ -56,3 +56,42 @@ export function sanitizeRichText(html) {
   if (typeof html !== 'string') return '';
   return sanitizeHtml(html, SANITIZE_CONFIG);
 }
+
+/**
+ * Restricted sanitization config for market descriptions (auctions, rentals).
+ * Only allows basic formatting and links — no images, videos, headings, or code blocks.
+ * Defense-in-depth: strips tags even if crafted API requests try to inject them.
+ */
+const MARKET_SANITIZE_CONFIG = {
+  allowedTags: [
+    'p', 'strong', 'em', 's', 'br',
+    'ul', 'ol', 'li',
+    'blockquote', 'hr',
+    'a'
+  ],
+  allowedAttributes: {
+    'a': ['href', 'target', 'rel']
+  },
+  allowedStyles: {},
+  transformTags: {
+    'a': (tagName, attribs) => {
+      const href = attribs.href || '';
+      if (href.startsWith('/')) {
+        return { tagName: 'a', attribs: { href } };
+      }
+      return { tagName: 'a', attribs: { href, target: '_blank', rel: 'noopener noreferrer' } };
+    }
+  }
+};
+
+/**
+ * Sanitize HTML for market descriptions (auctions, rentals).
+ * Uses a restricted tag allowlist — no images, videos, headings, or code.
+ *
+ * @param {string} html - The HTML string to sanitize
+ * @returns {string} - Sanitized HTML safe for storage and rendering
+ */
+export function sanitizeMarketDescription(html) {
+  if (typeof html !== 'string') return '';
+  return sanitizeHtml(html, MARKET_SANITIZE_CONFIG);
+}

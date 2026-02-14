@@ -4,11 +4,12 @@
  */
 
 import { RENTAL_ALLOWED_ITEM_TYPES, isLimitedByName } from '$lib/common/itemTypes.js';
+import { sanitizeMarketDescription } from '$lib/server/sanitizeRichText.js';
 
 export const MAX_RENTAL_OFFERS_PER_USER = 20;
 export const MAX_DISCOUNTS = 5;
 export const MAX_BLOCKED_RANGES = 50;
-export const MAX_DESCRIPTION_LENGTH = 2000;
+export const MAX_DESCRIPTION_LENGTH = 5000;
 export const MAX_TITLE_LENGTH = 120;
 export const MAX_LOCATION_LENGTH = 200;
 export const MAX_NOTE_LENGTH = 1000;
@@ -39,14 +40,17 @@ export function sanitizeTitle(value, fallback = 'New Rental Offer') {
 }
 
 /**
- * Sanitize a description string.
+ * Sanitize a description string (supports rich text HTML).
+ * Strips disallowed tags via sanitizeMarketDescription, then truncates.
  * @param {any} value
  * @returns {string|null}
  */
 export function sanitizeDescription(value) {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
-  return trimmed ? trimmed.slice(0, MAX_DESCRIPTION_LENGTH) : null;
+  if (!trimmed) return null;
+  const sanitized = sanitizeMarketDescription(trimmed);
+  return sanitized ? sanitized.slice(0, MAX_DESCRIPTION_LENGTH) : null;
 }
 
 /**

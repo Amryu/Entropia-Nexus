@@ -195,7 +195,7 @@
     try {
       const result = await apiPost(fetch, '/api/rental', {
         title: title.trim(),
-        description: description.trim() || null,
+        description: description || null,
         item_set_id: itemSet.id,
         planet_id: planetId ? parseInt(planetId) : null,
         location: location.trim() || null,
@@ -262,14 +262,18 @@
         </div>
 
         <div class="form-group">
-          <label for="description">Description</label>
-          <textarea
-            id="description"
-            bind:value={description}
-            placeholder="Describe the rental terms, conditions, etc."
-            rows="4"
-            maxlength="2000"
-          ></textarea>
+          <label>Description</label>
+          {#await import('$lib/components/wiki/RichTextEditor.svelte') then { default: RichTextEditor }}
+            <RichTextEditor
+              content={description}
+              placeholder="Describe the rental terms, conditions, etc."
+              showHeadings={false}
+              showCodeBlock={false}
+              showVideo={false}
+              showImages={false}
+              on:change={(e) => description = e.detail}
+            />
+          {/await}
         </div>
       </div>
 

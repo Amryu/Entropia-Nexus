@@ -128,6 +128,40 @@ export function sanitizeHtml(html) {
 }
 
 /**
+ * Restricted allowed tags for market descriptions (auctions, rentals).
+ * Must match MARKET_SANITIZE_CONFIG in $lib/server/sanitizeRichText.js.
+ */
+const MARKET_ALLOWED_TAGS = [
+  'p', 'strong', 'em', 's', 'br',
+  'ul', 'ol', 'li',
+  'blockquote', 'hr',
+  'a'
+];
+
+/**
+ * Sanitize HTML for market descriptions (auctions, rentals).
+ * Uses a restricted tag allowlist — no images, videos, headings, or code.
+ * The existing afterSanitizeAttributes hook handles link safety.
+ *
+ * @param {string} html - The HTML string to sanitize
+ * @returns {string} - Sanitized HTML safe for rendering with {@html}
+ */
+export function sanitizeMarketHtml(html) {
+  if (!html || typeof html !== 'string') {
+    return '';
+  }
+
+  if (typeof window === 'undefined') {
+    return '';
+  }
+
+  return DOMPurify.sanitize(html, {
+    ALLOWED_TAGS: MARKET_ALLOWED_TAGS,
+    ALLOWED_ATTR: ['href', 'target', 'rel'],
+  });
+}
+
+/**
  * Check if a string contains any HTML tags.
  * Useful for determining whether to use {@html} or plain text.
  *

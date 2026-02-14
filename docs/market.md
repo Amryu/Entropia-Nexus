@@ -2,6 +2,25 @@
 
 Player-to-player trading features including the exchange, shop directory, rentals, and auctions.
 
+### Rich Text Descriptions
+
+Auction and rental descriptions support rich text editing via the TipTap-based `RichTextEditor` component with a restricted feature set.
+
+**Allowed formatting**: bold, italic, strikethrough, bullet/ordered lists, blockquotes, horizontal rules, links (relative + external).
+
+**Disabled for market**: headings, code blocks, video embeds, image uploads. The editor uses feature-toggle props: `showHeadings={false} showCodeBlock={false} showVideo={false} showImages={false}`.
+
+**Sanitization** (3 layers):
+1. **Editor level**: TipTap only generates HTML for enabled extensions
+2. **Server-side**: `sanitizeMarketDescription()` in `$lib/server/sanitizeRichText.js` — restricted allowlist (`p`, `strong`, `em`, `s`, `br`, `ul`, `ol`, `li`, `blockquote`, `hr`, `a`). No `img`, `iframe`, `div`, headings, or code blocks.
+3. **Client-side display**: `sanitizeMarketHtml()` in `$lib/sanitize.js` — same restricted allowlist via DOMPurify
+
+**Link handling**: Relative links (`/...`) use SvelteKit router navigation; external links open in new tab with `rel="noopener noreferrer"`.
+
+**Backward compatibility**: `containsHtml()` detects old plain-text vs new HTML descriptions. Plain text renders with `white-space: pre-wrap`; HTML renders via `{@html sanitizeMarketHtml()}` with `.description-content` styling.
+
+**Max length**: 5,000 chars (HTML, after sanitization).
+
 ## Exchange
 
 A trading platform for buying and selling items between players.
@@ -965,7 +984,7 @@ Conflict detection uses an atomic CTE (INSERT ... WHERE NOT EXISTS) to prevent T
 | user_id | bigint | Owner (FK to users) |
 | item_set_id | uuid | FK to item_sets (ON DELETE RESTRICT) |
 | title | text | Offer title (max 120 chars) |
-| description | text | Description (max 2000 chars) |
+| description | text | Rich text HTML description (max 5000 chars) |
 | planet_id | integer | Planet reference |
 | location | text | Pickup/return location |
 | price_per_day | numeric(10,2) | Base price per day in PED |
@@ -1066,7 +1085,7 @@ GET    /api/rental/my?type=offers|requests  - User's own offers or requests
 | Max price per day | 100,000 PED |
 | Max deposit | 1,000,000 PED |
 | Max title length | 120 chars |
-| Max description length | 2,000 chars |
+| Max description length | 5,000 chars (rich text HTML) |
 
 ### Item Set Protection
 
@@ -1463,7 +1482,7 @@ auction_audit_action: created, activated, bid_placed, buyout, ended, settled,
 | seller_id | bigint | FK to users |
 | item_set_id | uuid | FK to item_sets (ON DELETE RESTRICT) |
 | title | text | Auction title (max 120 chars) |
-| description | text | Description (max 2000 chars) |
+| description | text | Rich text HTML description (max 5000 chars) |
 | starting_bid | numeric(12,2) | Starting bid (>= 0.01) |
 | buyout_price | numeric(12,2) | Optional buyout (>= starting_bid) |
 | current_bid | numeric(12,2) | Current highest bid |
@@ -1630,7 +1649,7 @@ Uses peek-then-increment pattern: validate first, only increment rate limit on s
 | Max items per set | 100 |
 | Max set data size | 100KB |
 | Max title length | 120 chars |
-| Max description length | 2,000 chars |
+| Max description length | 5,000 chars (rich text HTML) |
 | Min starting bid | 0.01 PED |
 | Max starting/buyout price | 10,000,000 PED |
 | Max duration (bidding) | 30 days |

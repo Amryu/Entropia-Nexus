@@ -7,6 +7,7 @@ import {
   getMinIncrement, getMinNextBid, calculateAuctionFee, isBuyoutOnly, getMaxDuration,
   ANTI_SNIPE_WINDOW_MS, ANTI_SNIPE_EXTENSION_MS, ANTI_SNIPE_MAX_EXTENSION_MS
 } from '$lib/common/auctionUtils.js';
+import { sanitizeMarketDescription } from '$lib/server/sanitizeRichText.js';
 
 // Re-export utilities for API layer convenience
 export {
@@ -17,7 +18,7 @@ export {
 
 export const MAX_AUCTIONS_PER_USER = 20;
 export const MAX_TITLE_LENGTH = 120;
-export const MAX_DESCRIPTION_LENGTH = 2000;
+export const MAX_DESCRIPTION_LENGTH = 5000;
 export const MAX_STARTING_BID = 10000000;  // 10M PED
 export const MAX_BUYOUT_PRICE = 10000000;
 export const MIN_STARTING_BID = 0.01;
@@ -294,14 +295,17 @@ export function sanitizeTitle(value) {
 }
 
 /**
- * Sanitize auction description.
+ * Sanitize auction description (supports rich text HTML).
+ * Strips disallowed tags via sanitizeMarketDescription, then truncates.
  * @param {any} value
  * @returns {string|null}
  */
 export function sanitizeDescription(value) {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
-  return trimmed ? trimmed.slice(0, MAX_DESCRIPTION_LENGTH) : null;
+  if (!trimmed) return null;
+  const sanitized = sanitizeMarketDescription(trimmed);
+  return sanitized ? sanitized.slice(0, MAX_DESCRIPTION_LENGTH) : null;
 }
 
 /**

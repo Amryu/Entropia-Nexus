@@ -1,18 +1,20 @@
 <!--
   @component RichTextEditor
-  TipTap-based rich text editor for wiki descriptions.
+  TipTap-based rich text editor for wiki descriptions and market listings.
   Lazy-loaded only when editing is active.
 
-  Features:
+  Features (all enabled by default, configurable via props):
   - Basic formatting (bold, italic, strikethrough)
-  - Headings (H2, H3, H4)
+  - Headings (H2, H3, H4) — showHeadings
   - Lists (bullet, ordered)
   - Blockquotes
-  - Code blocks
+  - Code blocks — showCodeBlock
   - Horizontal rules
-  - Links
-  - YouTube/Vimeo video embeds (resizable)
-  - Image upload with hash deduplication (resizable)
+  - Links (with relative link support)
+  - YouTube/Vimeo video embeds (resizable) — showVideo
+  - Image upload with hash deduplication (resizable) — showImages
+
+  Market usage: showHeadings={false} showCodeBlock={false} showVideo={false} showImages={false}
 -->
 <script>
   // @ts-nocheck
@@ -35,6 +37,18 @@
 
   /** @type {boolean} Whether the editor is disabled */
   export let disabled = false;
+
+  /** @type {boolean} Show heading buttons (H2, H3, H4) */
+  export let showHeadings = true;
+
+  /** @type {boolean} Show code block button */
+  export let showCodeBlock = true;
+
+  /** @type {boolean} Show video embed button */
+  export let showVideo = true;
+
+  /** @type {boolean} Show image upload button */
+  export let showImages = true;
 
   /** @type {Editor|null} */
   let editor = null;
@@ -327,40 +341,37 @@
   }
 
   onMount(async () => {
+    const extensions = [
+      StarterKit.configure({
+        // Disable link from StarterKit since we're adding it separately with custom config
+        link: false,
+        heading: showHeadings ? { levels: [2, 3, 4] } : false,
+        codeBlock: showCodeBlock ? { HTMLAttributes: { class: 'code-block' } } : false,
+        blockquote: {
+          HTMLAttributes: {
+            class: 'blockquote'
+          }
+        },
+        horizontalRule: {
+          HTMLAttributes: {
+            class: 'horizontal-rule'
+          }
+        }
+      }),
+      Link.configure({
+        openOnClick: false,
+        HTMLAttributes: {
+          class: 'editor-link'
+        }
+      })
+    ];
+
+    if (showVideo) extensions.push(VideoEmbed);
+    if (showImages) extensions.push(ResizableImage);
+
     editor = new Editor({
       element: editorElement,
-      extensions: [
-        StarterKit.configure({
-          // Disable link from StarterKit since we're adding it separately with custom config
-          link: false,
-          heading: {
-            levels: [2, 3, 4]
-          },
-          codeBlock: {
-            HTMLAttributes: {
-              class: 'code-block'
-            }
-          },
-          blockquote: {
-            HTMLAttributes: {
-              class: 'blockquote'
-            }
-          },
-          horizontalRule: {
-            HTMLAttributes: {
-              class: 'horizontal-rule'
-            }
-          }
-        }),
-        Link.configure({
-          openOnClick: false,
-          HTMLAttributes: {
-            class: 'editor-link'
-          }
-        }),
-        VideoEmbed,
-        ResizableImage
-      ],
+      extensions,
       content: content || '',
       editable: !disabled,
       onUpdate: ({ editor }) => {
@@ -620,38 +631,40 @@
         </button>
       </div>
 
-      <div class="toolbar-separator"></div>
+      {#if showHeadings}
+        <div class="toolbar-separator"></div>
 
-      <!-- Headings -->
-      <div class="toolbar-group">
-        <button
-          type="button"
-          class="toolbar-btn"
-          class:active={isActive('heading', { level: 2 })}
-          on:click={() => toggleHeading(2)}
-          title="Heading 2"
-        >
-          H2
-        </button>
-        <button
-          type="button"
-          class="toolbar-btn"
-          class:active={isActive('heading', { level: 3 })}
-          on:click={() => toggleHeading(3)}
-          title="Heading 3"
-        >
-          H3
-        </button>
-        <button
-          type="button"
-          class="toolbar-btn"
-          class:active={isActive('heading', { level: 4 })}
-          on:click={() => toggleHeading(4)}
-          title="Heading 4"
-        >
-          H4
-        </button>
-      </div>
+        <!-- Headings -->
+        <div class="toolbar-group">
+          <button
+            type="button"
+            class="toolbar-btn"
+            class:active={isActive('heading', { level: 2 })}
+            on:click={() => toggleHeading(2)}
+            title="Heading 2"
+          >
+            H2
+          </button>
+          <button
+            type="button"
+            class="toolbar-btn"
+            class:active={isActive('heading', { level: 3 })}
+            on:click={() => toggleHeading(3)}
+            title="Heading 3"
+          >
+            H3
+          </button>
+          <button
+            type="button"
+            class="toolbar-btn"
+            class:active={isActive('heading', { level: 4 })}
+            on:click={() => toggleHeading(4)}
+            title="Heading 4"
+          >
+            H4
+          </button>
+        </div>
+      {/if}
 
       <div class="toolbar-separator"></div>
 
@@ -707,18 +720,20 @@
             <path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3z"/>
           </svg>
         </button>
-        <button
-          type="button"
-          class="toolbar-btn"
-          class:active={isActive('codeBlock')}
-          on:click={toggleCodeBlock}
-          title="Code Block"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="16,18 22,12 16,6"/>
-            <polyline points="8,6 2,12 8,18"/>
-          </svg>
-        </button>
+        {#if showCodeBlock}
+          <button
+            type="button"
+            class="toolbar-btn"
+            class:active={isActive('codeBlock')}
+            on:click={toggleCodeBlock}
+            title="Code Block"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="16,18 22,12 16,6"/>
+              <polyline points="8,6 2,12 8,18"/>
+            </svg>
+          </button>
+        {/if}
         <button
           type="button"
           class="toolbar-btn"
@@ -747,18 +762,20 @@
             <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
           </svg>
         </button>
-        <button
-          type="button"
-          class="toolbar-btn"
-          on:click={openVideoModal}
-          title="Embed Video (YouTube/Vimeo)"
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="2" y="4" width="20" height="16" rx="2"/>
-            <polygon points="10,8 16,12 10,16" fill="currentColor" stroke="none"/>
-          </svg>
-        </button>
-        {#if canUploadImages}
+        {#if showVideo}
+          <button
+            type="button"
+            class="toolbar-btn"
+            on:click={openVideoModal}
+            title="Embed Video (YouTube/Vimeo)"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="2" y="4" width="20" height="16" rx="2"/>
+              <polygon points="10,8 16,12 10,16" fill="currentColor" stroke="none"/>
+            </svg>
+          </button>
+        {/if}
+        {#if showImages && canUploadImages}
           <button
             type="button"
             class="toolbar-btn"
@@ -787,7 +804,7 @@
   <div class="editor-container" class:has-toolbar={!disabled}>
     <div bind:this={editorElement} class="editor-element"></div>
 
-    {#if showResizeToolbar && !disabled}
+    {#if showResizeToolbar && !disabled && (showVideo || showImages)}
       <div class="resize-toolbar" style="top: {resizeToolbarPos.top}px; left: {resizeToolbarPos.left}px;">
         <button type="button" class="resize-btn" on:click={() => setMediaWidth(null)} title="Reset to full width">Full</button>
         <div class="resize-width-input">
@@ -807,13 +824,15 @@
   </div>
 
   <!-- Hidden file input for image upload -->
-  <input
-    bind:this={fileInput}
-    type="file"
-    accept="image/jpeg,image/png,image/webp,image/gif"
-    style="display:none"
-    on:change={handleImageUpload}
-  />
+  {#if showImages}
+    <input
+      bind:this={fileInput}
+      type="file"
+      accept="image/jpeg,image/png,image/webp,image/gif"
+      style="display:none"
+      on:change={handleImageUpload}
+    />
+  {/if}
 
   {#if isLinkModalOpen}
     <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
@@ -854,7 +873,7 @@
     </div>
   {/if}
 
-  {#if isVideoModalOpen}
+  {#if showVideo && isVideoModalOpen}
     <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
     <div class="link-modal-overlay" role="dialog" on:click={closeVideoModal} on:keydown={(e) => e.key === 'Escape' && closeVideoModal()}>
       <!-- svelte-ignore a11y-click-events-have-key-events -->
