@@ -163,6 +163,8 @@
 
   // Reactive discrepancy count: compare sell orders against inventory
   $: discrepancyCount = computeDiscrepancyCount($myOrders, $inventory);
+  // Current active sell order count for MassSellDialog pre-flight display
+  $: currentSellCount = ($myOrders || []).filter(o => o.type === 'SELL' && o.state !== 'closed').length;
 
   function computeDiscrepancyCount(orders, inv) {
     const sellOrders = (orders || []).filter(o => o.type === 'SELL');
@@ -211,6 +213,16 @@
     if (showUserOrders) clearTradeList();
     showUserOrders = false;
     goto('/market/exchange/listings');
+  }
+
+  /** Close floating panel tabs without navigating — used by sidebar handlers */
+  function closeFloatingPanelIfOpen() {
+    if (!floatingPanelOpen) return;
+    showMyOrders.set(false);
+    showInventory.set(false);
+    showTrades.set(false);
+    showTradeList.set(false);
+    if (showUserOrders) { clearTradeList(); showUserOrders = false; }
   }
 
   async function editOrderInline(order) {
@@ -867,11 +879,10 @@
       median: item.m ?? null,
       percentile10: item.p ?? null,
       wap: item.w ?? null,
-      buys: item.b || null,
-      sells: item.s || null,
+      orders: (item.s || 0) + (item.b || 0),
+      volume: (item.sv || 0) + (item.bv || 0),
       lastUpdate: item.u ?? null,
-      // Sort priority: 2 = both buy+sell, 1 = either, 0 = none
-      _orderPriority: (item.b > 0 && item.s > 0) ? 2 : (item.b > 0 || item.s > 0) ? 1 : 0,
+      _orderPriority: (item.b > 0 || item.s > 0) ? 1 : 0,
     }));
     // When searching, sort by match score first; otherwise by order priority + recency
     const isSearching = !!searchTerm;
@@ -894,10 +905,26 @@
   const listColumns = [
     { key: 'name', header: 'Item', main: true, sortable: true, searchable: true },
     { key: 'median', header: 'Median', width: '100px', sortable: true, searchable: false, formatter: (v, row) => v != null ? formatMarkupForItem(v, row?._item) : '<span style="opacity:0.35">N/A</span>' },
-    { key: 'percentile10', header: '10%', width: '80px', sortable: true, searchable: false, hideOnMobile: true, formatter: (v, row) => v != null ? formatMarkupForItem(v, row?._item) : '<span style="opacity:0.35">N/A</span>' },
-    { key: 'wap', header: 'WAP', width: '80px', sortable: true, searchable: false, hideOnMobile: true, formatter: (v, row) => v != null ? formatMarkupForItem(v, row?._item) : '<span style="opacity:0.35">N/A</span>' },
-    { key: 'buys', header: 'Buys', width: '70px', sortable: true, searchable: false, hideOnMobile: true, formatter: (v) => v != null ? v : '<span style="opacity:0.35">-</span>' },
-    { key: 'sells', header: 'Sells', width: '70px', sortable: true, searchable: false, hideOnMobile: true, formatter: (v) => v != null ? v : '<span style="opacity:0.35">-</span>' },
+    { key: 'percentile10', header: '10%', width: '100px', sortable: true, searchable: false, hideOnMobile: true, formatter: (v, row) => v != null ? formatMarkupForItem(v, row?._item) : '<span style="opacity:0.35">N/A</span>' },
+    { key: 'wap', header: 'Weighted Avg', width: '100px', sortable: true, searchable: false, hideOnMobile: true, formatter: (v, row) => v != null ? formatMarkupForItem(v, row?._item) : '<span style="opacity:0.35">N/A</span>' },
+    { key: 'orders', header: 'Orders', width: '90px', sortable: true, searchable: false, hideOnMobile: true,
+      cellClass: () => 'cell-center',
+      sortValue: (row) => (row._item?.s || 0) + (row._item?.b || 0),
+      formatter: (v, row) => {
+        const s = row._item?.s || 0;
+        const b = row._item?.b || 0;
+        return `<span class="split-cell"><span class="split-l" style="color:var(--error-color)">${s}</span><span class="split-sep">/</span><span class="split-r" style="color:var(--success-color)">${b}</span></span>`;
+      }
+    },
+    { key: 'volume', header: 'Volume', width: '90px', sortable: true, searchable: false, hideOnMobile: true,
+      cellClass: () => 'cell-center',
+      sortValue: (row) => (row._item?.sv || 0) + (row._item?.bv || 0),
+      formatter: (v, row) => {
+        const sv = row._item?.sv || 0;
+        const bv = row._item?.bv || 0;
+        return `<span class="split-cell"><span class="split-l" style="color:var(--error-color)">${sv}</span><span class="split-sep">/</span><span class="split-r" style="color:var(--success-color)">${bv}</span></span>`;
+      }
+    },
     { key: 'lastUpdate', header: 'Updated', width: '100px', sortable: true, searchable: false, hideOnMobile: true,
       sortValue: (row) => row.lastUpdate ? new Date(row.lastUpdate).getTime() : 0,
       formatter: (v) => {
@@ -931,12 +958,14 @@
   }
 
   function handleCategorySelect(categoryPath, items, rawPath) {
+    const wasFloatingPanelOpen = floatingPanelOpen;
+    closeFloatingPanelIfOpen();
     favouriteFolderFilter = null;
     selectedFavFolderId = null;
     selectedCategory = categoryPath;
     selectedCategoryRawPath = rawPath || null;
     selectedItems = Array.isArray(items) ? items : [];
-    if (isDetailView) {
+    if (isDetailView || wasFloatingPanelOpen) {
       // Save the selected category so the route-sync reactive block restores it
       // instead of resetting to "All" when the URL changes
       savedOverviewFilters = {
@@ -961,9 +990,11 @@
   }
 
   function handleFavouriteFolderSelect(folderId, itemIds) {
+    const wasFloatingPanelOpen = floatingPanelOpen;
+    closeFloatingPanelIfOpen();
     selectedFavFolderId = folderId;
     favouriteFolderFilter = new Set(itemIds);
-    if (viewSlug !== 'listings' || isDetailView) {
+    if (viewSlug !== 'listings' || isDetailView || wasFloatingPanelOpen) {
       // Save state so route-sync restores it instead of resetting to "All"
       savedOverviewFilters = {
         category: selectedCategory,
@@ -1789,7 +1820,7 @@
 
   // Sell orders: user column = "Seller", action = "Buy" (or "Edit" for own orders)
   $: sellDetailColumns = (() => {
-    const cols = [...detailColumns];
+    const cols = detailColumns.map(c => ({...c}));
     // For stackable items, add Min Qty column after Qty
     const stackable = isItemStackable(selectedItemDetails || selectedItem);
     if (stackable) {
@@ -1820,7 +1851,14 @@
 
   // Buy orders: user column = "Buyer", action = "Sell" (or "Edit" for own orders)
   $: buyDetailColumns = (() => {
-    const cols = [...detailColumns];
+    const cols = detailColumns.map(c => ({...c}));
+    // Buy orders specify minimum requirements for properties
+    for (const col of cols) {
+      if (col.key === 'tier') col.header = 'Min. Tier';
+      else if (col.key === 'tir') col.header = 'Min. TiR';
+      else if (col.key === '_petLevel') col.header = 'Min. Level';
+      else if (col.key === '_value' && isBlueprintNonL(selectedItemDetails)) col.header = 'Min. QR';
+    }
     const stackable = isItemStackable(selectedItemDetails || selectedItem);
     if (stackable) {
       const qtyIdx = cols.findIndex(c => c.key === 'quantity');
@@ -2006,6 +2044,7 @@
   }
 
   function handleFavouriteItemSelect(itemId) {
+    closeFloatingPanelIfOpen();
     const item = (allItems || []).find(it => it?.i === itemId);
     if (item?.n) {
       goto(`/market/exchange/listings/${encodeURIComponentSafe(item.n)}`);
@@ -2315,7 +2354,7 @@
               >
             </div>
             <div class="metric">
-              WAP:<br /><span class="metric-value"
+              Weighted Avg:<br /><span class="metric-value"
                 >{periodStats?.wap != null
                   ? formatMarkupDisplay(periodStats.wap, detailIsAbsoluteMarkup)
                   : (typeof selectedItem?.w === "number" && !(isGenderedDetail && priceGender === 'Both') ? formatMarkupDisplay(selectedItem.w, detailIsAbsoluteMarkup) : "\u2014")}</span
@@ -2624,6 +2663,7 @@
   show={showMassSellDialog}
   items={massSellItems}
   {allItems}
+  sellOrderCount={currentSellCount}
   on:close={() => { showMassSellDialog = false; }}
   on:complete={handleMassSellComplete}
 />
@@ -3213,6 +3253,26 @@
   /* Center content in action columns */
   :global(.cell-center) {
     justify-content: center;
+  }
+
+  /* Split cell: left value / right value with fixed separator */
+  :global(.split-cell) {
+    display: inline-flex;
+    width: 100%;
+  }
+  :global(.split-l) {
+    flex: 1;
+    text-align: right;
+  }
+  :global(.split-sep) {
+    width: 14px;
+    text-align: center;
+    opacity: 0.4;
+    flex-shrink: 0;
+  }
+  :global(.split-r) {
+    flex: 1;
+    text-align: left;
   }
 
   /* Action buttons inside last two columns */

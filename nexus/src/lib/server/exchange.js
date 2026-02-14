@@ -8,6 +8,7 @@ const TERMINATED_DAYS = 30;
 const MAX_SELL_ORDERS = 1000;
 const MAX_BUY_ORDERS = 50;
 const MAX_ORDERS_PER_ITEM = 5;
+const MAX_BATCH_SIZE = 50;
 
 // ---------- Rate Limit Constants ----------
 
@@ -253,12 +254,14 @@ export async function getExchangePrices(itemId, gender = null) {
 }
 
 /**
- * Get order counts per item for all active (non-closed, non-terminated) orders.
- * Returns a Map of itemId -> { buys, sells, lastUpdate }.
+ * Get order counts and volume per item for all active (non-closed, non-terminated) orders.
+ * Returns a Map of itemId -> { buys, sells, buyVol, sellVol, lastUpdate, bestBuyMarkup }.
  */
 export async function getAllOrderCounts() {
   const query = `
-    SELECT item_id, type, COUNT(*) AS cnt, MAX(bumped_at) AS last_update
+    SELECT item_id, type, COUNT(*) AS cnt, COALESCE(SUM(quantity), 0) AS vol,
+      MAX(bumped_at) AS last_update,
+      CASE WHEN type = 'BUY' THEN MAX(markup) ELSE NULL END AS best_markup
     FROM trade_offers
     WHERE state != 'closed'
       AND bumped_at >= NOW() - INTERVAL '${TERMINATED_DAYS} days'
@@ -268,10 +271,16 @@ export async function getAllOrderCounts() {
   const counts = new Map();
   for (const row of rows) {
     const id = row.item_id;
-    if (!counts.has(id)) counts.set(id, { buys: 0, sells: 0, lastUpdate: null });
+    if (!counts.has(id)) counts.set(id, { buys: 0, sells: 0, buyVol: 0, sellVol: 0, lastUpdate: null, bestBuyMarkup: null });
     const entry = counts.get(id);
-    if (row.type === 'BUY') entry.buys = parseInt(row.cnt, 10);
-    else entry.sells = parseInt(row.cnt, 10);
+    if (row.type === 'BUY') {
+      entry.buys = parseInt(row.cnt, 10);
+      entry.buyVol = parseInt(row.vol, 10);
+      entry.bestBuyMarkup = row.best_markup != null ? parseFloat(row.best_markup) : null;
+    } else {
+      entry.sells = parseInt(row.cnt, 10);
+      entry.sellVol = parseInt(row.vol, 10);
+    }
     const ts = row.last_update ? new Date(row.last_update) : null;
     if (ts && (!entry.lastUpdate || ts > entry.lastUpdate)) entry.lastUpdate = ts;
   }
@@ -589,7 +598,7 @@ export function formatRetryTime(seconds) {
 }
 
 export {
-  MAX_SELL_ORDERS, MAX_BUY_ORDERS, MAX_ORDERS_PER_ITEM, PLANETS,
+  MAX_SELL_ORDERS, MAX_BUY_ORDERS, MAX_ORDERS_PER_ITEM, MAX_BATCH_SIZE, PLANETS,
   RATE_LIMIT_CREATE_PER_MIN, RATE_LIMIT_CREATE_PER_HOUR, RATE_LIMIT_CREATE_PER_DAY,
   RATE_LIMIT_ITEM_COOLDOWN_MS, RATE_LIMIT_ITEM_FUNGIBLE_COOLDOWN, RATE_LIMIT_ITEM_NONFUNGIBLE_COOLDOWN,
   RATE_LIMIT_ITEM_DAILY_FUNGIBLE,

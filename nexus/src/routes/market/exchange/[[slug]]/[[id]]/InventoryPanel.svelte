@@ -3,7 +3,7 @@
   import FancyTable from '$lib/components/FancyTable.svelte';
   import InventoryItemDialog from './InventoryItemDialog.svelte';
   import { inventory, myOrders, enrichOrders } from '../../exchangeStore.js';
-  import { isItemStackable, formatPedRaw } from '../../orderUtils';
+  import { isItemStackable, formatPedRaw, formatMarkupForItem } from '../../orderUtils';
   import { MAX_SELL_ORDERS } from '../../exchangeConstants.js';
   import { encodeURIComponentSafe } from '$lib/util.js';
   import { goto } from '$app/navigation';
@@ -118,13 +118,15 @@
     return map;
   })();
 
-  // Sort inventory: items with active sell orders first
+  // Sort inventory: items with active sell orders first, then items with buy demand
   $: sortedInventory = [...($inventory || [])].sort((a, b) => {
     const aOrders = OrdersByItemId.get(a.item_id)?.sell || 0;
     const bOrders = OrdersByItemId.get(b.item_id)?.sell || 0;
-    if (aOrders > 0 && bOrders === 0) return -1;
-    if (aOrders === 0 && bOrders > 0) return 1;
-    return 0;
+    const aBuyDemand = itemLookup.get(a.item_id)?.b || 0;
+    const bBuyDemand = itemLookup.get(b.item_id)?.b || 0;
+    const aScore = (aOrders > 0 ? 2 : 0) + (aBuyDemand > 0 ? 1 : 0);
+    const bScore = (bOrders > 0 ? 2 : 0) + (bBuyDemand > 0 ? 1 : 0);
+    return bScore - aScore;
   });
 
   $: columns = (() => {
@@ -154,6 +156,22 @@
           const full = sell >= limit ? ' full' : '';
           const active = sell > 0 ? ' active' : '';
           return `<span class="inv-order-badge${full}${active}">${sell}/${limit}</span>`;
+        }
+      },
+      {
+        key: '_buyDemand', header: 'Buy Demand', width: '110px', sortable: true, searchable: false,
+        hideOnMobile: true,
+        sortValue: (row) => {
+          const slim = itemLookup.get(row.item_id);
+          return slim?.bb ?? -1;
+        },
+        formatter: (val, row) => {
+          const slim = itemLookup.get(row.item_id);
+          if (!slim?.b) return '<span style="opacity:0.35">\u2014</span>';
+          const parts = [];
+          if (slim.bb != null) parts.push(formatMarkupForItem(slim.bb, slim));
+          parts.push(`<span style="opacity:0.6">(${slim.b})</span>`);
+          return `<span style="color:var(--success-color);font-weight:600">${parts.join(' ')}</span>`;
         }
       },
       { key: 'quantity', header: 'Qty', width: '60px', sortable: true, searchable: false },
