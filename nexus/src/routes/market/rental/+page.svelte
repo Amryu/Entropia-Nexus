@@ -8,6 +8,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import RentalOfferCard from '$lib/components/rental/RentalOfferCard.svelte';
+  import LoginToCreateButton from '$lib/components/LoginToCreateButton.svelte';
 
   export let data;
 
@@ -62,6 +63,8 @@
         {#if isVerified}
           <a href="/market/rental/my" class="btn-secondary">My Rentals</a>
           <a href="/market/rental/create" class="btn-primary">Create Offer</a>
+        {:else}
+          <LoginToCreateButton {user} label="Login to create offer" createUrl="/market/rental/create" />
         {/if}
       </div>
     </div>

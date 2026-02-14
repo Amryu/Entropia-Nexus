@@ -21,6 +21,7 @@
   --error-color: #ff6b6b;
   --success-bg: #1a3a2a;
   --success-color: #16a34a;
+  --success-text: #a7f3d0;
   --warning-bg: #3a3020;
   --warning-color: #fbbf24;
   --warning-color-hover: #d97706;
@@ -72,6 +73,7 @@
   --error-color: #dc2626;
   --success-bg: #d1fae5;
   --success-color: #059669;
+  --success-text: #065f46;
   --warning-bg: #fef3c7;
   --warning-color: #f59e0b;
   --warning-color-hover: #b45309;

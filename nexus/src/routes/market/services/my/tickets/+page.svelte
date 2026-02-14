@@ -151,7 +151,7 @@
     {#if ownedTickets.length === 0 && expiredTickets.length === 0}
       <div class="empty-state">
         <p>You don't have any transportation tickets.</p>
-        <a href="/market/services?type=transportation" class="browse-link">Browse transportation services</a>
+        <a href="/market/services/transportation" class="browse-link">Browse transportation services</a>
       </div>
     {:else}
       {#if activeTickets.length > 0}

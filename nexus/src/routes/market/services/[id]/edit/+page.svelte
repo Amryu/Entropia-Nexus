@@ -643,9 +643,9 @@
   }
 
   .inactive-banner.new-service {
-    background: var(--success-bg, #d1fae5);
-    border-color: var(--success-color, #10b981);
-    color: var(--success-text, #065f46);
+    background: var(--success-bg);
+    border-color: var(--success-color);
+    color: var(--success-text);
   }
 
   .availability-link-section {

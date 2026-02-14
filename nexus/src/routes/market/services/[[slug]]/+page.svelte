@@ -10,6 +10,7 @@
   import TicketOfferCard from '$lib/components/services/TicketOfferCard.svelte';
   import LocationManager from '$lib/components/services/LocationManager.svelte';
   import PilotManager from '$lib/components/services/PilotManager.svelte';
+  import LoginToCreateButton from '$lib/components/LoginToCreateButton.svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { onMount, onDestroy } from 'svelte';
@@ -493,31 +494,25 @@
     return false;
   }
 
-  // Load last selected service type and planet from localStorage
-  // Check for type query parameter first (for links like "Browse transportation services")
+  const CATEGORY_SLUGS = ['healing', 'dps', 'transportation', 'custom'];
+
   let currentType = 'healing';
   let selectedPlanetId = null;
 
-  // Initialize from URL params or localStorage
+  // Initialize from URL slug or localStorage
   if (typeof window !== 'undefined') {
-    const urlParams = new URLSearchParams(window.location.search);
-    const typeParam = urlParams.get('type');
-    if (typeParam && ['healing', 'dps', 'transportation', 'custom'].includes(typeParam)) {
-      currentType = typeParam;
-      // Save to localStorage so it persists
-      localStorage.setItem('lastServiceType', typeParam);
-      // Clear the URL param after applying it
-      if (window.history.replaceState) {
-        const url = new URL(window.location.href);
-        url.searchParams.delete('type');
-        window.history.replaceState({}, '', url.toString());
-      }
-    } else if (typeof localStorage !== 'undefined') {
+    const slug = $page.params.slug;
+    if (slug && CATEGORY_SLUGS.includes(slug)) {
+      // URL has a category slug — use it and save to localStorage
+      currentType = slug;
+      localStorage.setItem('lastServiceType', slug);
+    } else if (!slug) {
+      // No slug — redirect to saved or default category
       const saved = localStorage.getItem('lastServiceType');
-      if (saved && ['healing', 'dps', 'transportation', 'custom'].includes(saved)) {
-        currentType = saved;
-      }
+      const cat = (saved && CATEGORY_SLUGS.includes(saved)) ? saved : 'healing';
+      goto(`/market/services/${cat}`, { replaceState: true });
     }
+    // If slug is a number (service detail), currentType stays at default (detail view renders instead)
 
     const savedPlanet = localStorage.getItem('lastServicePlanet');
     if (savedPlanet) {
@@ -539,9 +534,17 @@
   const serviceTypeOptions = [
     { value: 'healing', label: 'Healing' },
     { value: 'dps', label: 'DPS' },
-    { value: 'transportation', label: 'Transportation' },
+    { value: 'transportation', label: 'Taxi/Warp' },
     { value: 'custom', label: 'Custom' }
   ];
+
+  // Update currentType reactively when navigating between category slugs
+  $: {
+    const slug = $page.params.slug;
+    if (slug && CATEGORY_SLUGS.includes(slug)) {
+      currentType = slug;
+    }
+  }
 
   // Save selected service type and planet to localStorage
   $: if (typeof localStorage !== 'undefined' && currentType) {
@@ -956,10 +959,12 @@
         {/if}
       </div>
       <div class="header-actions">
-        {#if !selectedService && user}
-          <a href="/market/services/my" class="btn-secondary">My Services</a>
-          {#if user.verified}
+        {#if !selectedService}
+          {#if user?.verified}
+            <a href="/market/services/my" class="btn-secondary">My Services</a>
             <a href="/market/services/create" class="btn-primary">Create Service</a>
+          {:else}
+            <LoginToCreateButton {user} label="Login to create service" createUrl="/market/services/create" />
           {/if}
         {/if}
         {#if selectedService && user}
@@ -994,7 +999,7 @@
           <button
             class="tab-btn"
             class:active={currentType === option.value}
-            on:click={() => currentType = option.value}
+            on:click={() => goto(`/market/services/${option.value}`)}
           >
             {option.label}
             <span class="tab-count">({servicesByType[option.value]?.length || 0})</span>

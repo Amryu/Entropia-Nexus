@@ -8,6 +8,7 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import AuctionCard from '$lib/components/auction/AuctionCard.svelte';
+  import LoginToCreateButton from '$lib/components/LoginToCreateButton.svelte';
 
   export let data;
 
@@ -74,6 +75,8 @@
         {#if isVerified}
           <a href="/market/auction/my" class="btn-secondary">My Auctions</a>
           <a href="/market/auction/create" class="btn-primary">Create Auction</a>
+        {:else}
+          <LoginToCreateButton {user} label="Login to create auction" createUrl="/market/auction/create" />
         {/if}
       </div>
     </div>
