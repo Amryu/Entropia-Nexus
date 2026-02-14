@@ -3,6 +3,9 @@
  * Tracks requests per user/IP within sliding time windows.
  */
 
+// Bypass rate limiting in test environment (NODE_ENV=test set in playwright.config.ts)
+const isTestEnv = process.env.NODE_ENV === 'test';
+
 // Store: Map<key, { count: number, windowStart: number, windowMs: number }>
 const requestCounts = new Map();
 
@@ -41,6 +44,8 @@ function cleanup(now) {
  * @returns {{ allowed: boolean, remaining: number, resetIn: number }}
  */
 export function checkRateLimit(key, maxRequests, windowMs) {
+  if (isTestEnv) return { allowed: true, remaining: maxRequests, resetIn: windowMs };
+
   const now = Date.now();
   cleanup(now);
 
@@ -85,6 +90,8 @@ export function checkRateLimit(key, maxRequests, windowMs) {
  * @returns {{ allowed: boolean, remaining: number, resetIn: number }}
  */
 export function checkRateLimitPeek(key, maxRequests, windowMs) {
+  if (isTestEnv) return { allowed: true, remaining: maxRequests, resetIn: windowMs };
+
   const now = Date.now();
   const data = requestCounts.get(key);
 
@@ -107,6 +114,8 @@ export function checkRateLimitPeek(key, maxRequests, windowMs) {
  * @param {number} windowMs
  */
 export function incrementRateLimit(key, windowMs) {
+  if (isTestEnv) return;
+
   const now = Date.now();
   const data = requestCounts.get(key);
 

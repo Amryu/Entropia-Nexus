@@ -167,7 +167,7 @@
   $: currentSellCount = ($myOrders || []).filter(o => o.type === 'SELL' && o.state !== 'closed').length;
 
   function computeDiscrepancyCount(orders, inv) {
-    const sellOrders = (orders || []).filter(o => o.type === 'SELL');
+    const sellOrders = (orders || []).filter(o => o.type === 'SELL' && o.state_display !== 'closed' && o.state_display !== 'terminated');
     if (sellOrders.length === 0 || !inv || inv.length === 0) return 0;
     const invQtyMap = new Map();
     for (const item of inv) {
