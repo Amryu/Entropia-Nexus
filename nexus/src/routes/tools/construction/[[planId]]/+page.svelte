@@ -191,6 +191,15 @@
     return effective;
   })();
 
+  // Sync calculator config into plan data for persistence
+  $: if (activePlan) {
+    const config = {};
+    if (Object.keys(nonFailChances).length > 0) config.nonFailChances = nonFailChances;
+    if (Object.keys(conditionPercents).length > 0) config.conditionPercents = conditionPercents;
+    if (Object.keys(materialCraftConfig).length > 0) config.materialCraftConfig = materialCraftConfig;
+    activePlan.data.config = Object.keys(config).length > 0 ? config : undefined;
+  }
+
   // Computed - pass configuration to buildCraftingTree
   $: craftingConfig = { rollChance, certainty, nonFailChances, materialCraftConfig, conditionPercents };
   $: craftingTree = activePlan && blueprintCache.size > 0
@@ -343,6 +352,7 @@
       }
     }
     conditionPercents = newConditions;
+    markDirty();
   }
 
   $: anyStepSupportsOutput = craftingSteps.some(s => stepSupportsOutputOptimization(s));
@@ -659,6 +669,13 @@
         data: plan.data ? { ...plan.data, targets: [...(plan.data.targets || [])] } : { targets: [] }
       };
       activePlanId = planId;
+
+      // Restore calculator config from plan data
+      const savedConfig = activePlan.data.config;
+      nonFailChances = savedConfig?.nonFailChances ? { ...savedConfig.nonFailChances } : {};
+      conditionPercents = savedConfig?.conditionPercents ? { ...savedConfig.conditionPercents } : {};
+      materialCraftConfig = savedConfig?.materialCraftConfig ? { ...savedConfig.materialCraftConfig } : {};
+
       isDirty = false;
       if (saveTimeout) clearTimeout(saveTimeout);
 
@@ -676,6 +693,9 @@
   function deselectPlan() {
     activePlan = null;
     activePlanId = null;
+    nonFailChances = {};
+    conditionPercents = {};
+    materialCraftConfig = {};
     isDirty = false;
     if (saveTimeout) clearTimeout(saveTimeout);
     updateUrlSlug(null);
@@ -931,7 +951,7 @@
   function setNonFailChance(blueprintId, value) {
     const blueprint = blueprintCache.get(blueprintId);
     const maxNonFail = blueprint ? getMaxNonFailChance(blueprint) : MAX_NON_FAIL_SIB;
-    const parsed = parseInt(value, 10);
+    const parsed = parseFloat(value);
 
     if (!isNaN(parsed)) {
       const clamped = Math.max(0, Math.min(maxNonFail, parsed));
@@ -942,6 +962,7 @@
         nonFailChances[blueprintId] = clamped;
       }
       nonFailChances = { ...nonFailChances }; // Trigger reactivity
+      markDirty();
     }
   }
 
@@ -955,6 +976,12 @@
 
   function resetNonFailChances() {
     nonFailChances = {};
+    markDirty();
+  }
+
+  function setConditionPercent(blueprintId, value) {
+    conditionPercents = { ...conditionPercents, [blueprintId]: parseInt(value) };
+    markDirty();
   }
 
   // Material crafting configuration functions
@@ -968,6 +995,7 @@
       materialCraftConfig[materialName] = { craft: true, preferLimited: false };
     }
     materialCraftConfig = { ...materialCraftConfig };
+    markDirty();
   }
 
   function toggleMaterialLimited(materialName) {
@@ -979,6 +1007,7 @@
       preferLimited: !current.preferLimited
     };
     materialCraftConfig = { ...materialCraftConfig };
+    markDirty();
   }
 
   function selectMaterialBlueprint(materialName, blueprintId) {
@@ -989,6 +1018,7 @@
       selectedBlueprintId: blueprintId
     };
     materialCraftConfig = { ...materialCraftConfig };
+    markDirty();
   }
 
   function isMaterialCraftEnabled(materialName) {
@@ -1541,7 +1571,7 @@
                               max={CONDITION_MAX}
                               step="1"
                               value={step.conditionPercent}
-                              on:input={(e) => { conditionPercents = { ...conditionPercents, [step.blueprint.Id]: parseInt(e.target.value) }; }}
+                              on:input={(e) => setConditionPercent(step.blueprint.Id, e.target.value)}
                             />
                             <span class="condition-value">{step.conditionPercent}%{#if step.conditionPercent > 0} ({step.conditionMultiplier.toFixed(2)}x){/if}</span>
                           </label>
@@ -1549,19 +1579,19 @@
                             <button
                               class="condition-preset"
                               class:active={step.conditionPercent === 0}
-                              on:click={() => { conditionPercents = { ...conditionPercents, [step.blueprint.Id]: 0 }; }}
+                              on:click={() => setConditionPercent(step.blueprint.Id, 0)}
                               title="0% condition — highest success rate, lowest output per success"
                             >Stability</button>
                             <button
                               class="condition-preset"
                               class:active={step.conditionPercent === optAttempts}
-                              on:click={() => { conditionPercents = { ...conditionPercents, [step.blueprint.Id]: optAttempts }; }}
+                              on:click={() => setConditionPercent(step.blueprint.Id, optAttempts)}
                               title="{optAttempts}% condition — fewest craft attempts needed"
                             >Attempts ({optAttempts}%)</button>
                             <button
                               class="condition-preset"
                               class:active={step.conditionPercent === optOutput}
-                              on:click={() => { conditionPercents = { ...conditionPercents, [step.blueprint.Id]: optOutput }; }}
+                              on:click={() => setConditionPercent(step.blueprint.Id, optOutput)}
                               title="{optOutput}% condition — best output per attempt ratio"
                             >Output ({optOutput}%)</button>
                           </div>

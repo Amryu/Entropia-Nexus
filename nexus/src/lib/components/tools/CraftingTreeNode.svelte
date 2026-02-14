@@ -65,19 +65,16 @@
     {#if totalTime > 0}<span class="node-time" title="Total crafting time (this + sub-materials)">{formatCraftTime(totalTime)}</span>{/if}
     {#if node.owned}
       <span class="node-nonfail" title="Non-fail chance (max {maxNonFail}% for {node.isSiB ? 'SiB' : 'non-SiB'})">
-        {#if !isTargetBlueprint(node.blueprint.Id)}
-          <input
-            type="number"
-            class="nonfail-input"
-            value={getNonFailChance(node.blueprint.Id)}
-            min="0"
-            max={maxNonFail}
-            on:change={(e) => setNonFailChance(node.blueprint.Id, e.target.value)}
-            on:click|stopPropagation
-          />%
-        {:else}
-          {node.nonFailChance}%
-        {/if}
+        <input
+          type="number"
+          class="nonfail-input"
+          value={getNonFailChance(node.blueprint.Id)}
+          min="0"
+          max={maxNonFail}
+          step="any"
+          on:change={(e) => setNonFailChance(node.blueprint.Id, e.target.value)}
+          on:click|stopPropagation
+        />%
       </span>
     {/if}
     {#if !isTargetBlueprint(node.blueprint.Id)}
