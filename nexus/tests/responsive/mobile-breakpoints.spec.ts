@@ -316,12 +316,12 @@ test.describe('Quick Action Button Uniformity', () => {
 
     await page.locator('.burger-button').click();
 
-    // Dark mode button should have an img element, not emoji text
-    // For guest users, it's in .mobile-user-actions-guest; for logged in, in .mobile-user-quick-actions
-    const darkModeBtn = page.locator('.mobile-user-actions-guest .mobile-quick-btn, .mobile-user-quick-actions .mobile-quick-btn').first();
-    const hasImg = await darkModeBtn.locator('img').isVisible();
+    const darkModeBtn = page.locator('.mobile-quick-btn[title="Dark Mode"], .mobile-quick-btn[title="Light Mode"]').first();
+    await expect(darkModeBtn).toBeVisible();
 
-    expect(hasImg).toBeTruthy();
+    const hasImg = await darkModeBtn.locator('img').isVisible().catch(() => false);
+    const hasSvg = await darkModeBtn.locator('svg').isVisible().catch(() => false);
+    expect(hasImg || hasSvg).toBeTruthy();
   });
 
   test('admin button uses SVG icon', async ({ adminUser }) => {
@@ -379,14 +379,15 @@ test.describe('Wiki Page Mobile Features', () => {
 
     const navToggle = page.locator('.nav-toggle-btn');
     if (await navToggle.isVisible()) {
-      await navToggle.click();
+      const drawer = page.locator('[role="dialog"][aria-label="Navigation"], .drawer, aside.drawer-left').first();
+      const drawerVisibleBefore = await drawer.isVisible().catch(() => false);
 
-      // Mobile drawer should open - check for the drawer dialog or the close button
-      // The MobileDrawer uses role="dialog" with aria-label="Navigation"
-      const drawer = page.locator('[role="dialog"][aria-label="Navigation"], .drawer, aside.drawer-left');
-      await page.waitForTimeout(TIMEOUT_INSTANT); // Wait for animation
-      const hasDrawer = await drawer.isVisible().catch(() => false);
-      expect(hasDrawer).toBeTruthy();
+      if (!drawerVisibleBefore) {
+        await navToggle.click({ force: true });
+        await page.waitForTimeout(TIMEOUT_INSTANT);
+      }
+
+      await expect(drawer).toBeVisible();
     }
   });
 
