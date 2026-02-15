@@ -6,7 +6,7 @@ const STALE_DAYS = 3;
 const EXPIRED_DAYS = 7;
 const TERMINATED_DAYS = 30;
 const MAX_SELL_ORDERS = 1000;
-const MAX_BUY_ORDERS = 50;
+const MAX_BUY_ORDERS = 1000;
 const MAX_ORDERS_PER_ITEM = 5;
 const MAX_BATCH_SIZE = 50;
 

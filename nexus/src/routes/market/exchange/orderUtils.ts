@@ -78,6 +78,13 @@ export function getUnitTT(item: any, order?: any): number | null {
   return getMaxTT(item);
 }
 
+/** Get the display value for an order: CurrentTT from details if available, otherwise getUnitTT */
+export function getOrderValue(item: any, order?: any): number | null {
+  const ct = Number(order?.details?.CurrentTT ?? order?.Metadata?.CurrentTT);
+  if (ct > 0) return ct;
+  return getUnitTT(item, order);
+}
+
 /** Compute the unit price for an order given item + markup */
 export function computeUnitPrice(item: any, markup: number | null, order?: any): number | null {
   if (markup == null) return null;
@@ -88,7 +95,13 @@ export function computeUnitPrice(item: any, markup: number | null, order?: any):
   }
   const maxTT = getMaxTT(item);
   if (maxTT == null) return null;
-  return isAbsoluteMarkup(item) ? maxTT + mu : maxTT * (mu / 100);
+  if (isAbsoluteMarkup(item)) {
+    // Use CurrentTT if available (e.g. sell orders with specific condition), otherwise MaxTT
+    const ct = Number(order?.details?.CurrentTT ?? order?.Metadata?.CurrentTT);
+    const tt = ct > 0 ? ct : maxTT;
+    return tt + mu;
+  }
+  return maxTT * (mu / 100);
 }
 
 /** Get pet level from order details */

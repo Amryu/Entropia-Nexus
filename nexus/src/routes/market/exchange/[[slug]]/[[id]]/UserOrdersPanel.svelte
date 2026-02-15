@@ -3,7 +3,7 @@
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { goto } from '$app/navigation';
   import { tradeList } from '../../exchangeStore.js';
-  import { isAbsoluteMarkup, formatMarkupForItem, formatPedValue, isBlueprintNonL, getUnitTT, computeUnitPrice, itemTypeBadge } from '../../orderUtils';
+  import { isAbsoluteMarkup, formatMarkupForItem, formatPedValue, isBlueprintNonL, getOrderValue, computeUnitPrice, itemTypeBadge } from '../../orderUtils';
   import { encodeURIComponentSafe } from '$lib/util.js';
   import { createEventDispatcher } from 'svelte';
 
@@ -91,11 +91,10 @@
       },
       { key: 'quantity', header: 'Qty', width: '90px', sortable: true, searchable: false, hideOnMobile: true },
       {
-        key: '_tt', header: 'TT', width: '90px', sortable: true, searchable: false, hideOnMobile: true,
+        key: '_value', header: 'Value', width: '90px', sortable: true, searchable: false, hideOnMobile: true,
         formatter: (v, row) => {
           const item = itemLookup.get(row?.item_id);
-          const tt = getUnitTT(item, row);
-          return formatPedValue(tt);
+          return formatPedValue(getOrderValue(item, row));
         }
       },
       {
