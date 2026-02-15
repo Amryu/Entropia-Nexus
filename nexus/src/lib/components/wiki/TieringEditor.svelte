@@ -95,17 +95,15 @@
     }
   }
 
-  // Persistence: save/load markups to user preferences
-  $: entityId = entity?.Id;
-
+  // Persistence: save/load markups to user preferences (keyed by entity type, not individual item)
   async function loadMarkups() {
-    if (!entityId) return;
+    if (!entityType) return;
     try {
       const res = await fetch(`/api/users/preferences/${encodeURIComponent(PREF_KEY)}`);
       if (!res.ok) return;
       const result = await res.json();
       prefCache = result?.data || {};
-      const stored = prefCache[entityId];
+      const stored = prefCache[entityType];
       if (stored) {
         const loaded = {};
         for (const [tier, values] of Object.entries(stored)) {
@@ -119,7 +117,7 @@
   }
 
   async function saveMarkups() {
-    if (!entityId) return;
+    if (!entityType) return;
     const toSave = {};
     for (const [tier, values] of Object.entries(allMarkups)) {
       if (values.some((v, i) => v !== DEFAULT_MARKUPS[i])) {
@@ -128,9 +126,9 @@
     }
     const data = prefCache || {};
     if (Object.keys(toSave).length > 0) {
-      data[entityId] = toSave;
+      data[entityType] = toSave;
     } else {
-      delete data[entityId];
+      delete data[entityType];
     }
     prefCache = data;
     try {
