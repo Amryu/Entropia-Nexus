@@ -42,6 +42,7 @@
   let selectedPlanet = "All Planets";
   let selectedLimited = "all";
   let selectedSex = "both";
+  let selectedOrderSide = "all"; // 'all' | 'buy' | 'sell'
   let filteredItems = [];
   let selectedItems = [];
   let savedOverviewFilters = null; // snapshot of filters before entering detail view
@@ -64,6 +65,12 @@
   let qrMin = 0;
   let qrMax = 100;
   let minConditionPct = 0;
+  let showFilterDialog = false;
+  let smallViewport = false;
+
+  function handleViewportResize() {
+    smallViewport = typeof window !== 'undefined' && window.innerWidth <= 600;
+  }
 
   // Tierable types list (used by detail view tables)
   const tierableTypes = new Set([
@@ -134,7 +141,10 @@
     return m > 0 ? `${m}m ${s}s` : `${s}s`;
   }
 
-  onDestroy(() => clearInterval(bumpCooldownTimer));
+  onDestroy(() => {
+    clearInterval(bumpCooldownTimer);
+    if (typeof window !== 'undefined') window.removeEventListener('resize', handleViewportResize);
+  });
 
   // Turnstile confirmation modal (for actions outside OrderDialog: bump-all, close)
   let pendingTurnstileAction = null; // { type: 'bump'|'close', order?, callback }
@@ -215,6 +225,24 @@
     goto('/market/exchange/listings');
   }
 
+  /** Navigate from detail view back to overview, explicitly resetting detail state */
+  function handleBackToOverview() {
+    // Abort any in-flight detail requests
+    if (detailsAbort?.abort) detailsAbort.abort();
+    detailsAbort = null;
+    lastDetailsItemId = null;
+    // Clear detail-specific data
+    selectedItemDetails = null;
+    buyOrders = [];
+    sellOrders = [];
+    ordersLoadedKey = '';
+    showPriceHistory = false;
+    showFilterDialog = false;
+    // Navigate — this triggers the route-sync reactive block
+    // which will restore savedOverviewFilters
+    goto('/market/exchange/listings');
+  }
+
   /** Close floating panel tabs without navigating — used by sidebar handlers */
   function closeFloatingPanelIfOpen() {
     if (!floatingPanelOpen) return;
@@ -248,7 +276,7 @@
         Quantity: order.quantity || 1,
         MinQuantity: order.min_quantity ?? null,
         CurrentTT: order.details?.CurrentTT ?? null,
-        Markup: order.markup || 0,
+        Markup: Number(order.markup) || 0,
         Metadata: { ...(order.details || {}) },
         _orderId: order.id,
         _inlineEdit: true,
@@ -799,7 +827,7 @@
         Quantity: order.quantity || 1,
         MinQuantity: order.min_quantity ?? null,
         CurrentTT: order.details?.CurrentTT ?? null,
-        Markup: order.markup || 0,
+        Markup: Number(order.markup) || 0,
         Metadata: { ...(order.details || {}) },
         _orderId: order.id,  // track original order ID for PUT
       };
@@ -867,6 +895,10 @@
         if (!item.pl || !item.pl.includes(selectedPlanet)) return false;
       }
 
+      // Order side filter: only show items with orders of the selected type
+      if (selectedOrderSide === 'buy' && (!item.b || item.b === 0)) return false;
+      if (selectedOrderSide === 'sell' && (!item.s || item.s === 0)) return false;
+
       return true;
     });
   }
@@ -903,22 +935,32 @@
 
   // Columns for the main list view FancyTable
   const listColumns = [
-    { key: 'name', header: 'Item', main: true, sortable: true, searchable: true, formatter: (val, row) => val + itemTypeBadge(row._item?.t) },
-    { key: 'median', header: 'Median', width: '100px', sortable: true, searchable: false, formatter: (v, row) => v != null ? formatMarkupForItem(v, row?._item) : '<span style="opacity:0.35">N/A</span>' },
+    { key: 'name', header: 'Item', main: true, mobileWidth: '1fr', sortable: true, searchable: true, formatter: (val, row) => val + itemTypeBadge(row._item?.t) },
+    { key: 'median', header: 'Median', width: '100px', mobileWidth: '60px', sortable: true, searchable: false, formatter: (v, row) => v != null ? formatMarkupForItem(v, row?._item) : '<span style="opacity:0.35">N/A</span>' },
     { key: 'percentile10', header: '10%', width: '100px', sortable: true, searchable: false, hideOnMobile: true, formatter: (v, row) => v != null ? formatMarkupForItem(v, row?._item) : '<span style="opacity:0.35">N/A</span>' },
-    { key: 'wap', header: 'Weighted Avg', width: '100px', sortable: true, searchable: false, hideOnMobile: true, formatter: (v, row) => v != null ? formatMarkupForItem(v, row?._item) : '<span style="opacity:0.35">N/A</span>' },
-    { key: 'orders', header: 'Orders', width: '90px', sortable: true, searchable: false, hideOnMobile: true,
+    { key: 'wap', header: 'Weight. Avg', width: '100px', sortable: true, searchable: false, hideOnMobile: true, formatter: (v, row) => v != null ? formatMarkupForItem(v, row?._item) : '<span style="opacity:0.35">N/A</span>' },
+    { key: 'orders', header: 'Orders', width: '90px', mobileWidth: '50px', sortable: true, searchable: false,
       cellClass: () => 'cell-center',
-      sortValue: (row) => (row._item?.s || 0) + (row._item?.b || 0),
+      sortPhases: [
+        { sortValue: (row) => row._item?.s || 0, order: 'DESC', color: 'var(--error-color)' },
+        { sortValue: (row) => row._item?.s || 0, order: 'ASC', color: 'var(--error-color)' },
+        { sortValue: (row) => row._item?.b || 0, order: 'DESC', color: 'var(--success-color)' },
+        { sortValue: (row) => row._item?.b || 0, order: 'ASC', color: 'var(--success-color)' },
+      ],
       formatter: (v, row) => {
         const s = row._item?.s || 0;
         const b = row._item?.b || 0;
         return `<span class="split-cell"><span class="split-l" style="color:var(--error-color)">${s}</span><span class="split-sep">/</span><span class="split-r" style="color:var(--success-color)">${b}</span></span>`;
       }
     },
-    { key: 'volume', header: 'Volume', width: '90px', sortable: true, searchable: false, hideOnMobile: true,
+    { key: 'volume', header: 'Volume', width: '120px', sortable: true, searchable: false, hideOnMobile: true,
       cellClass: () => 'cell-center',
-      sortValue: (row) => (row._item?.sv || 0) + (row._item?.bv || 0),
+      sortPhases: [
+        { sortValue: (row) => row._item?.sv || 0, order: 'DESC', color: 'var(--error-color)' },
+        { sortValue: (row) => row._item?.sv || 0, order: 'ASC', color: 'var(--error-color)' },
+        { sortValue: (row) => row._item?.bv || 0, order: 'DESC', color: 'var(--success-color)' },
+        { sortValue: (row) => row._item?.bv || 0, order: 'ASC', color: 'var(--success-color)' },
+      ],
       formatter: (v, row) => {
         const sv = row._item?.sv || 0;
         const bv = row._item?.bv || 0;
@@ -1124,6 +1166,8 @@
   // Persist and restore basic filters
   onMount(() => {
     try {
+      handleViewportResize();
+      window.addEventListener('resize', handleViewportResize);
       // Ensure categories are loaded
       ensureCategorizedLoaded();
       if (typeof window !== "undefined") {
@@ -1702,14 +1746,34 @@
     const isPetItem = isPet(selectedItemDetails) || selectedItem?.t === 'Pet';
     const cols = [];
 
+    // Mobile: combined "Details" column with tags (like UserOrdersPanel)
+    const hasDetailTags = showTier || isPetItem || type === 'ArmorPlating' || isGenderedDetail || isBpNonL;
+    if (hasDetailTags) {
+      cols.push({ key: '_detailTags', header: 'Details', width: '120px', mobileWidth: '95px', sortable: false, searchable: false,
+        hideOnDesktop: true,
+        formatter: (v, row) => {
+          const d = row?.details;
+          if (!d) return '';
+          const tags = [];
+          if (showTier && d.Tier != null) tags.push(`<span class="detail-tag">T${d.Tier}</span>`);
+          if (showTier && d.TierIncreaseRate != null) tags.push(`<span class="detail-tag">TiR ${d.TierIncreaseRate}</span>`);
+          if (isPetItem && d.Pet?.Level != null) tags.push(`<span class="detail-tag">Lv ${d.Pet.Level}</span>`);
+          if (isBpNonL && d.QualityRating != null) tags.push(`<span class="detail-tag">QR ${d.QualityRating}</span>`);
+          if (type === 'ArmorPlating' && d.is_set) tags.push(`<span class="detail-tag">Set</span>`);
+          if (isGenderedDetail && d.Gender) tags.push(`<span class="detail-tag">${d.Gender === 'Male' ? '♂' : '♀'}</span>`);
+          return tags.length ? `<span class="detail-tags">${tags.join('')}</span>` : '';
+        }
+      });
+    }
+
     if (showTier) {
-      cols.push({ key: 'tier', header: 'Tier', width: '60px', sortable: true, searchable: false,
+      cols.push({ key: 'tier', header: 'Tier', width: '60px', sortable: true, searchable: false, hideOnMobile: true,
         formatter: (v) => v ?? 'N/A' });
-      cols.push({ key: 'tir', header: 'TiR', width: '80px', sortable: true, searchable: false,
+      cols.push({ key: 'tir', header: 'TiR', width: '80px', sortable: true, searchable: false, hideOnMobile: true,
         formatter: (v) => v ?? 'N/A' });
     }
     if (isPetItem) {
-      cols.push({ key: '_petLevel', header: 'Level', width: '70px', sortable: true, searchable: false,
+      cols.push({ key: '_petLevel', header: 'Level', width: '70px', sortable: true, searchable: false, hideOnMobile: true,
         sortValue: (row) => getPetLevel(row) ?? -1,
         formatter: (v, row) => {
           const lvl = getPetLevel(row);
@@ -1719,13 +1783,13 @@
     const itemMaxTT = getMaxTT(selectedItemDetails) ?? selectedItem?.v ?? null;
     const stackable = isItemStackable(selectedItemDetails || selectedItem);
     if (stackable) {
-      cols.push({ key: 'quantity', header: 'Qty', width: '80px', sortable: true, searchable: false,
+      cols.push({ key: 'quantity', header: 'Qty', width: '80px', mobileWidth: '55px', sortable: true, searchable: false,
         formatter: (v) => v ?? 0 });
     }
 
     // ArmorPlating: show Set column
     if (type === 'ArmorPlating') {
-      cols.push({ key: '_is_set', header: 'Set', width: '55px', sortable: true, searchable: false,
+      cols.push({ key: '_is_set', header: 'Set', width: '55px', sortable: true, searchable: false, hideOnMobile: true,
         sortValue: (row) => row?.details?.is_set ? 1 : 0,
         formatter: (v, row) => row?.details?.is_set
           ? '<span class="badge badge-subtle badge-set-yes">Yes</span>'
@@ -1735,7 +1799,7 @@
 
     // Gendered items: show Gender column
     if (isGenderedDetail) {
-      cols.push({ key: '_gender', header: 'Gender', width: '70px', sortable: true, searchable: false,
+      cols.push({ key: '_gender', header: 'Gender', width: '70px', sortable: true, searchable: false, hideOnMobile: true,
         sortValue: (row) => row?.details?.Gender === 'Male' ? 0 : row?.details?.Gender === 'Female' ? 1 : 2,
         formatter: (v, row) => {
           const g = row?.details?.Gender;
@@ -1756,7 +1820,7 @@
       return row?.details?.CurrentTT ?? itemMaxTT;
     }
 
-    cols.push({ key: '_value', header: 'Value', width: '130px', sortable: true, searchable: false,
+    cols.push({ key: '_value', header: 'Value', width: '130px', mobileWidth: '85px', sortable: true, searchable: false,
       sortValue: (row) => getRowTT(row) ?? -1,
       formatter: (v, row) => {
         if (isBpNonL) {
@@ -1773,9 +1837,9 @@
         }
         return ttStr;
       }});
-    cols.push({ key: 'markup', header: isAbsMu ? 'MU (+PED)' : 'MU (%)', width: '100px', sortable: true, searchable: false,
+    cols.push({ key: 'markup', header: isAbsMu ? 'MU (+PED)' : 'MU (%)', width: '100px', mobileWidth: '80px', sortable: true, searchable: false,
       formatter: (v) => formatMarkupValue(v, isAbsMu)});
-    cols.push({ key: '_total', header: 'Total', width: '120px', sortable: true, searchable: false,
+    cols.push({ key: '_total', header: 'Total', width: '120px', sortable: true, searchable: false, hideOnMobile: true,
       sortValue: (row) => {
         const mu = row?.markup != null ? Number(row.markup) : null;
         if (mu == null) return -1;
@@ -1801,20 +1865,22 @@
         const total = isAbsMu ? tt + mu * qty : tt * (mu / 100);
         return formatPedValue(total);
       }});
-    cols.push({ key: 'planet', header: 'Planet', width: '120px', sortable: true, searchable: false,
+    cols.push({ key: 'planet', header: 'Planet', width: '120px', sortable: true, searchable: false, hideOnMobile: true,
       formatter: (v) => v || selectedPlanet || 'N/A' });
-    cols.push({ key: 'bumped_at', header: 'Updated', width: '100px', sortable: true, searchable: false,
+    cols.push({ key: 'bumped_at', header: 'Updated', width: '100px', sortable: true, searchable: false, hideOnMobile: true,
       formatter: (v, row) => formatLastUpdateDHm(getUpdatedAt(row) || v) });
 
     return cols;
   })();
 
   function makeUserColumn(header) {
-    return { key: 'seller_name', header, main: true, sortable: true, searchable: false,
+    return { key: 'seller_name', header, main: true, mobileWidth: '1fr', sortable: true, searchable: false,
       formatter: (v, row) => {
         const name = row?.SellerName ?? row?.seller ?? v ?? 'Unknown';
         const userId = row?.user_id ?? '';
-        return `<span class="seller-link" data-seller-id="${userId}" data-seller-name="${name.replace(/"/g, '&amp;quot;')}">${name}</span>`;
+        const safeName = name.replace(/"/g, '&quot;');
+        const href = `/market/exchange/orders/${encodeURIComponent(name)}`;
+        return `<a class="seller-link" href="${href}" data-seller-id="${userId}" data-seller-name="${safeName}">${name}</a>`;
       }};
   }
 
@@ -1827,25 +1893,23 @@
       const qtyIdx = cols.findIndex(c => c.key === 'quantity');
       if (qtyIdx >= 0) {
         cols.splice(qtyIdx + 1, 0, {
-          key: 'min_quantity', header: 'Min Qty', width: '70px', sortable: true, searchable: false,
+          key: 'min_quantity', header: 'Min Qty', width: '70px', sortable: true, searchable: false, hideOnMobile: true,
           formatter: (v) => v != null && v > 0 ? v : '\u2014'
         });
       }
     }
     const updatedIdx = cols.findIndex(c => c.key === 'bumped_at');
     cols.splice(updatedIdx >= 0 ? updatedIdx : cols.length, 0, makeUserColumn('Seller'));
-    if (canPostOrders) {
-      cols.push({
-        key: '_action', header: '', width: '70px', sortable: false, searchable: false,
-        cellClass: () => 'cell-center',
-        formatter: (v, row) => {
-          const orderId = row?.id ?? row?.Id ?? 0;
-          const isOwn = currentUser && String(getSellerId(row)) === String(currentUser.id);
-          if (isOwn) return `<button class="cell-button trade-btn edit-trade-btn" data-trade-buy="${orderId}">Edit</button>`;
-          return `<button class="cell-button trade-btn buy-trade-btn" data-trade-buy="${orderId}">Buy</button>`;
-        }
-      });
-    }
+    cols.push({
+      key: '_action', header: '', width: '70px', mobileWidth: '40px', sortable: false, searchable: false,
+      cellClass: () => 'cell-center',
+      formatter: canPostOrders ? (v, row) => {
+        const orderId = row?.id ?? row?.Id ?? 0;
+        const isOwn = currentUser && String(getSellerId(row)) === String(currentUser.id);
+        if (isOwn) return `<button class="cell-button trade-btn edit-trade-btn" data-trade-buy="${orderId}">Edit</button>`;
+        return `<button class="cell-button trade-btn buy-trade-btn" data-trade-buy="${orderId}">Buy</button>`;
+      } : () => ''
+    });
     return cols;
   })();
 
@@ -1864,25 +1928,23 @@
       const qtyIdx = cols.findIndex(c => c.key === 'quantity');
       if (qtyIdx >= 0) {
         cols.splice(qtyIdx + 1, 0, {
-          key: 'min_quantity', header: 'Min Qty', width: '70px', sortable: true, searchable: false,
+          key: 'min_quantity', header: 'Min Qty', width: '70px', sortable: true, searchable: false, hideOnMobile: true,
           formatter: (v) => v != null && v > 0 ? v : '\u2014'
         });
       }
     }
     const updatedIdx = cols.findIndex(c => c.key === 'bumped_at');
     cols.splice(updatedIdx >= 0 ? updatedIdx : cols.length, 0, makeUserColumn('Buyer'));
-    if (canPostOrders) {
-      cols.push({
-        key: '_action', header: '', width: '70px', sortable: false, searchable: false,
-        cellClass: () => 'cell-center',
-        formatter: (v, row) => {
-          const orderId = row?.id ?? row?.Id ?? 0;
-          const isOwn = currentUser && String(getSellerId(row)) === String(currentUser.id);
-          if (isOwn) return `<button class="cell-button trade-btn edit-trade-btn" data-trade-sell="${orderId}">Edit</button>`;
-          return `<button class="cell-button trade-btn sell-trade-btn" data-trade-sell="${orderId}">Sell</button>`;
-        }
-      });
-    }
+    cols.push({
+      key: '_action', header: '', width: '70px', mobileWidth: '40px', sortable: false, searchable: false,
+      cellClass: () => 'cell-center',
+      formatter: canPostOrders ? (v, row) => {
+        const orderId = row?.id ?? row?.Id ?? 0;
+        const isOwn = currentUser && String(getSellerId(row)) === String(currentUser.id);
+        if (isOwn) return `<button class="cell-button trade-btn edit-trade-btn" data-trade-sell="${orderId}">Edit</button>`;
+        return `<button class="cell-button trade-btn sell-trade-btn" data-trade-sell="${orderId}">Sell</button>`;
+      } : () => ''
+    });
     return cols;
   })();
 
@@ -2017,6 +2079,12 @@
   $: isLimitedDetail = selectedItemDetails && isLimited(selectedItemDetails);
   $: detailHasCondition = selectedItemDetails && itemHasCondition(selectedItemDetails) && !detailItemStackable && isLimitedDetail;
   $: tirRangeMax = isLimitedDetail ? 4000 : 200;
+  $: hasDetailFilters = isTierableDetail || (isBlueprintDetail && !isLimitedDetail) || detailItemStackable || detailHasCondition;
+  $: hasActiveDetailFilters = (isTierableDetail && !isLimitedDetail && (tierMin > 0 || tierMax < 10))
+    || (isTierableDetail && (tirMin > 0 || tirMax < tirRangeMax))
+    || (isBlueprintDetail && !isLimitedDetail && (qrMin > 0 || qrMax < 100))
+    || (detailItemStackable && minTTFilter > 0)
+    || (detailHasCondition && minConditionPct > 0);
 
   // Reset detail filters when item changes
   let lastFilterItemId = null;
@@ -2027,6 +2095,7 @@
     qrMin = 0; qrMax = 100;
     minConditionPct = 0;
     minTTFilter = 0;
+    showFilterDialog = false;
   }
   // Sync tirMax when tirRangeMax changes (e.g. item details load and L/UL is determined)
   let lastTirRangeMax = 200;
@@ -2098,35 +2167,45 @@
         <!-- Content hidden when floating panel is open -->
       {:else if !isDetailView}
         <div class="filters">
-          <button class="mobile-category-toggle" on:click={() => mobileSidebarOpen = !mobileSidebarOpen}>
-            Categories
-          </button>
-          <input
-            type="text"
-            placeholder="Search items..."
-            bind:value={searchTerm}
-            class="search-input"
-          />
-          <select
-            class="filter-select"
-            bind:value={selectedPlanet}
-          >
-            <option>All Planets</option>
-            {#each availablePlanets as p}
-              <option>{p}</option>
-            {/each}
-          </select>
-          <select class="filter-select" bind:value={selectedLimited}>
-            <option value="all">Limited & Unlimited</option>
-            <option value="L">Limited</option>
-            <option value="UL">Unlimited</option>
-          </select>
-          <select class="filter-select" bind:value={selectedSex}>
-            <option value="both">Male & Female</option>
-            <option value="male">Male</option>
-            <option value="female">Female</option>
-          </select>
-          <div class="actions-right">
+          <div class="filter-search-row">
+            <button class="mobile-category-toggle" on:click={() => mobileSidebarOpen = !mobileSidebarOpen}>
+              Categories
+            </button>
+            <input
+              type="text"
+              placeholder="Search items..."
+              bind:value={searchTerm}
+              class="search-input"
+            />
+          </div>
+          <div class="filter-dropdowns">
+            <select
+              class="filter-select"
+              bind:value={selectedPlanet}
+            >
+              <option>All Planets</option>
+              {#each availablePlanets as p}
+                <option>{p}</option>
+              {/each}
+            </select>
+            <select class="filter-select" bind:value={selectedLimited}>
+              <option value="all">{smallViewport ? 'L & UL' : 'Limited & Unlimited'}</option>
+              <option value="L">{smallViewport ? 'L' : 'Limited'}</option>
+              <option value="UL">{smallViewport ? 'UL' : 'Unlimited'}</option>
+            </select>
+            <select class="filter-select" bind:value={selectedSex}>
+              <option value="both">{smallViewport ? 'M & F' : 'Male & Female'}</option>
+              <option value="male">{smallViewport ? 'M' : 'Male'}</option>
+              <option value="female">{smallViewport ? 'F' : 'Female'}</option>
+            </select>
+          </div>
+          <div class="filter-actions">
+            <div class="order-side-toggle">
+              <button class="order-side-btn" class:active={selectedOrderSide === 'all'} on:click={() => selectedOrderSide = 'all'}>All</button>
+              <button class="order-side-btn" class:active={selectedOrderSide === 'sell'} on:click={() => selectedOrderSide = 'sell'}>Sell</button>
+              <button class="order-side-btn" class:active={selectedOrderSide === 'buy'} on:click={() => selectedOrderSide = 'buy'}>Buy</button>
+            </div>
+            <div class="actions-right">
             {#if canPostOrders}
               <button class="action-btn accent-btn" title="My Orders" on:click={() => {
                 const userName = currentUser?.eu_name;
@@ -2147,6 +2226,7 @@
                 <span>{needsAuth ? 'Log in to post Orders' : 'Verify to post Orders'}</span>
               </button>
             {/if}
+            </div>
           </div>
         </div>
 
@@ -2161,6 +2241,7 @@
               compact={true}
               sortable={true}
               searchable={false}
+              defaultSort={{ column: 'orders', order: 'DESC' }}
               emptyMessage="No items found"
               on:rowClick={(evt) => {
                 const item = evt?.detail?.row?._item;
@@ -2196,7 +2277,7 @@
           <div class="overlay"><div class="loader">Loading exchange…</div></div>
         {/if}
       {:else}
-        <div class="filters">
+        <div class="filters filters-detail">
           <button class="mobile-category-toggle" on:click={() => mobileSidebarOpen = !mobileSidebarOpen}>
             Categories
           </button>
@@ -2266,10 +2347,15 @@
         </div>
         <div class="detail-title">
           <button
-            class="action-btn"
-            on:click={() => goto('/market/exchange/listings')}
-            title="Back to list">Back</button
+            class="action-btn back-btn"
+            on:click={handleBackToOverview}
+            title="Back to list"
           >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
+            <span class="back-text">Back</span>
+          </button>
           <button
             class="favourite-star"
             class:active={isCurrentFavourited}
@@ -2287,46 +2373,98 @@
           {#if selectedItemDetails && !hasCondition(selectedItemDetails) && getMaxTT(selectedItemDetails) != null}
             <span class="detail-tt-badge">{formatPedValue(getMaxTT(selectedItemDetails))}</span>
           {/if}
-          {#if isTierableDetail && !isLimitedDetail}
-            <RangeSlider min={0} max={10} bind:valueMin={tierMin} bind:valueMax={tierMax} label="Tier" compact />
-          {/if}
-          {#if isTierableDetail}
-            <RangeSlider min={0} max={tirRangeMax} step={10} bind:valueMin={tirMin} bind:valueMax={tirMax} label="TiR" compact />
-          {/if}
-          {#if isBlueprintDetail && !isLimitedDetail}
-            <RangeSlider min={0} max={100} bind:valueMin={qrMin} bind:valueMax={qrMax} label="QR" compact />
-          {/if}
-          {#if detailItemStackable}
-            <div class="min-tt-group">
-              <input
-                type="number"
-                class="filter-input-small"
-                placeholder="Min TT"
-                min="0"
-                step="0.01"
-                bind:value={minTTFilter}
-                title="Minimum total TT value to show"
-              />
-              <span class="filter-hint">Min TT</span>
+          <!-- Title-row controls: filter btn + history controls (mobile: same row as title) -->
+          <div class="detail-title-controls">
+            {#if hasDetailFilters || isGenderedDetail}
+              <button
+                class="detail-filter-btn"
+                class:has-active={hasActiveDetailFilters}
+                on:click={() => showFilterDialog = !showFilterDialog}
+                title="Filters"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+                </svg>
+              </button>
+            {/if}
+            <div class="history-controls">
+              <select
+                class="filter-select period-select"
+                bind:value={selectedPeriod}
+                title="Price history period"
+              >
+                {#each PRICE_PERIODS as p}
+                  <option value={p.value}>{p.label}</option>
+                {/each}
+              </select>
+              <button
+                class="action-btn chart-toggle-btn"
+                class:active={showPriceHistory}
+                on:click={togglePriceHistory}
+                title={showPriceHistory ? "Show order book" : "Show price history"}
+              >{showPriceHistory ? "Orders" : "Chart"}</button>
             </div>
-          {/if}
-          {#if detailHasCondition}
-            <div class="condition-filter">
-              <label class="condition-label">Cond: <strong style="display:inline-block;min-width:4ch;text-align:right">{minConditionPct}%</strong></label>
-              <input
-                type="range"
-                class="condition-slider"
-                min="0"
-                max="100"
-                step="1"
-                bind:value={minConditionPct}
-                title="Minimum condition %"
-              />
+          </div>
+          <!-- svelte-ignore a11y-click-events-have-key-events -->
+          <!-- svelte-ignore a11y-no-static-element-interactions -->
+          <div class="detail-filters" class:open={showFilterDialog} on:click|self={() => showFilterDialog = false}>
+            <div class="detail-filters-content">
+              <div class="detail-filters-header">
+                <span>Filters</span>
+                <button class="detail-filters-close" on:click={() => showFilterDialog = false}>&times;</button>
+              </div>
+              {#if isGenderedDetail}
+                <div class="dialog-gender-toggle">
+                  <span class="dialog-filter-label">Gender</span>
+                  <div class="gender-toggle">
+                    <button class="gender-btn" class:active={priceGender === 'Male'} on:click={() => priceGender = 'Male'}>M</button>
+                    <button class="gender-btn" class:active={priceGender === 'Both'} on:click={() => priceGender = 'Both'}>M+F</button>
+                    <button class="gender-btn" class:active={priceGender === 'Female'} on:click={() => priceGender = 'Female'}>F</button>
+                  </div>
+                </div>
+              {/if}
+              {#if isTierableDetail && !isLimitedDetail}
+                <RangeSlider min={0} max={10} bind:valueMin={tierMin} bind:valueMax={tierMax} label="Tier" compact />
+              {/if}
+              {#if isTierableDetail}
+                <RangeSlider min={0} max={tirRangeMax} step={10} bind:valueMin={tirMin} bind:valueMax={tirMax} label="TiR" compact />
+              {/if}
+              {#if isBlueprintDetail && !isLimitedDetail}
+                <RangeSlider min={0} max={100} bind:valueMin={qrMin} bind:valueMax={qrMax} label="QR" compact />
+              {/if}
+              {#if detailItemStackable}
+                <div class="min-tt-group">
+                  <span class="filter-hint">Min TT</span>
+                  <input
+                    type="number"
+                    class="filter-input-small"
+                    placeholder="Min TT"
+                    min="0"
+                    step="0.01"
+                    bind:value={minTTFilter}
+                    title="Minimum total TT value to show"
+                  />
+                </div>
+              {/if}
+              {#if detailHasCondition}
+                <div class="condition-filter">
+                  <label class="condition-label">Cond: <strong style="display:inline-block;min-width:4ch;text-align:right">{minConditionPct}%</strong></label>
+                  <input
+                    type="range"
+                    class="condition-slider"
+                    min="0"
+                    max="100"
+                    step="1"
+                    bind:value={minConditionPct}
+                    title="Minimum condition %"
+                  />
+                </div>
+              {/if}
             </div>
-          {/if}
+          </div>
           <div class="detail-title-right">
             {#if isGenderedDetail}
-              <div class="gender-toggle">
+              <div class="gender-toggle desktop-only-gender">
                 <button class="gender-btn" class:active={priceGender === 'Male'} on:click={() => priceGender = 'Male'}>M</button>
                 <button class="gender-btn" class:active={priceGender === 'Both'} on:click={() => priceGender = 'Both'}>M+F</button>
                 <button class="gender-btn" class:active={priceGender === 'Female'} on:click={() => priceGender = 'Female'}>F</button>
@@ -2363,7 +2501,7 @@
                 Best Sell:<br /><span class="metric-value sell-value">{formatMarkupDisplay(exchangePrices.sell.best_markup, detailIsAbsoluteMarkup)}</span>
               </div>
             {/if}
-            <div class="history-controls">
+            <div class="history-controls desktop-only-history">
               <select
                 class="filter-select period-select"
                 bind:value={selectedPeriod}
@@ -2480,10 +2618,10 @@
             <button class="back-btn" on:click={closeUserOrdersPanel}>Back</button>
             <span class="panel-title-text">{userOrdersTarget?.name || 'User'}</span>
             <div class="panel-header-actions">
-              <div class="panel-side-filter">
-                <button class="panel-filter-btn" class:active={panelSideFilter === 'all'} on:click={() => panelSideFilter = 'all'}>All</button>
-                <button class="panel-filter-btn" class:active={panelSideFilter === 'BUY'} on:click={() => panelSideFilter = 'BUY'}>Buy</button>
-                <button class="panel-filter-btn" class:active={panelSideFilter === 'SELL'} on:click={() => panelSideFilter = 'SELL'}>Sell</button>
+              <div class="order-side-toggle">
+                <button class="order-side-btn" class:active={panelSideFilter === 'all'} on:click={() => panelSideFilter = 'all'}>All</button>
+                <button class="order-side-btn" class:active={panelSideFilter === 'SELL'} on:click={() => panelSideFilter = 'SELL'}>Sell</button>
+                <button class="order-side-btn" class:active={panelSideFilter === 'BUY'} on:click={() => panelSideFilter = 'BUY'}>Buy</button>
               </div>
               {#if canPostOrders}
                 <button
@@ -2541,10 +2679,10 @@
             </div>
             <div class="panel-header-actions">
               {#if $showMyOrders}
-                <div class="panel-side-filter">
-                  <button class="panel-filter-btn" class:active={panelSideFilter === 'all'} on:click={() => panelSideFilter = 'all'}>All</button>
-                  <button class="panel-filter-btn" class:active={panelSideFilter === 'BUY'} on:click={() => panelSideFilter = 'BUY'}>Buy</button>
-                  <button class="panel-filter-btn" class:active={panelSideFilter === 'SELL'} on:click={() => panelSideFilter = 'SELL'}>Sell</button>
+                <div class="order-side-toggle">
+                  <button class="order-side-btn" class:active={panelSideFilter === 'all'} on:click={() => panelSideFilter = 'all'}>All</button>
+                  <button class="order-side-btn" class:active={panelSideFilter === 'SELL'} on:click={() => panelSideFilter = 'SELL'}>Sell</button>
+                  <button class="order-side-btn" class:active={panelSideFilter === 'BUY'} on:click={() => panelSideFilter = 'BUY'}>Buy</button>
                 </div>
                 <button class="panel-action-btn accent" disabled={bumpingAll || bumpCooldownRemaining > 0} on:click={() => {
                   async function doBump(token) {
@@ -2960,34 +3098,6 @@
     background: rgba(239, 68, 68, 0.1);
   }
 
-  .panel-side-filter {
-    display: flex;
-    gap: 2px;
-    background: var(--bg-color, rgba(0,0,0,0.05));
-    border-radius: 6px;
-    padding: 2px;
-  }
-  .panel-filter-btn {
-    padding: 4px 12px;
-    border: none;
-    border-radius: 4px;
-    background: transparent;
-    color: var(--text-muted);
-    cursor: pointer;
-    font-size: 12px;
-    font-weight: 500;
-    transition: all 0.15s ease;
-  }
-  .panel-filter-btn:hover {
-    color: var(--text-color);
-    background: var(--secondary-color);
-  }
-  .panel-filter-btn.active {
-    color: var(--text-color);
-    background: var(--secondary-color);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
-  }
-
   .sidebar {
     flex: 0 0 300px;
     display: flex;
@@ -3114,6 +3224,15 @@
     flex-wrap: wrap;
   }
 
+  .filter-search-row {
+    display: contents;
+  }
+  .filter-dropdowns {
+    display: contents;
+  }
+  .filter-actions {
+    display: contents;
+  }
   .actions-right {
     margin-left: auto;
     display: flex;
@@ -3313,6 +3432,11 @@
   :global(.seller-link) {
     cursor: pointer;
     color: var(--accent-color);
+    text-decoration: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: block;
   }
   :global(.seller-link:hover) {
     text-decoration: underline;
@@ -3325,6 +3449,20 @@
     background: var(--accent-color);
     color: #fff;
     font-weight: 600;
+  }
+  :global(.detail-tags) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+    align-items: center;
+  }
+  :global(.detail-tag) {
+    font-size: 10px;
+    padding: 1px 4px;
+    border-radius: 3px;
+    background: var(--accent-color-bg);
+    color: var(--accent-color);
+    white-space: nowrap;
   }
 
   .empty-state,
@@ -3463,7 +3601,7 @@
 
   .detail-title {
     display: flex;
-    align-items: center;
+    align-items: stretch;
     gap: 12px;
     background: var(--secondary-color);
     border: 1px solid var(--border-color);
@@ -3484,6 +3622,8 @@
     line-height: 1;
     flex-shrink: 0;
     transition: color 0.15s ease;
+    display: flex;
+    align-items: center;
   }
   .favourite-star:hover {
     color: var(--warning-color, #f59e0b);
@@ -3504,6 +3644,8 @@
     line-height: 1.3;
     color: var(--text-color);
     text-decoration: none;
+    display: flex;
+    align-items: center;
   }
   a.detail-title-name:hover {
     color: var(--accent-color);
@@ -3520,20 +3662,39 @@
     font-weight: 600;
     color: var(--text-muted);
     white-space: nowrap;
+    display: flex;
+    align-items: center;
   }
 
   .detail-title-right {
     margin-left: auto;
     display: flex;
-    align-items: center;
+    align-items: stretch;
     gap: 8px;
     flex-wrap: wrap;
     flex: 0 0 auto;
     max-width: 100%;
   }
 
+  /* Title controls: hidden on desktop (duplicate controls live in .detail-title-right) */
+  .detail-title-controls {
+    display: none;
+  }
+  .desktop-only-gender,
+  .desktop-only-history {
+    display: flex;
+  }
+  .dialog-gender-toggle {
+    display: none;
+  }
+  .dialog-filter-label {
+    font-size: 13px;
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+
   .condition-filter {
-    display: inline-flex;
+    display: flex;
     align-items: center;
     gap: 6px;
     flex: 0 0 auto;
@@ -3552,21 +3713,52 @@
     cursor: pointer;
   }
 
-  /* Metric mini-cards */
+  /* Back button with icon */
+  .back-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding-left: 8px;
+  }
+  .back-btn svg {
+    flex-shrink: 0;
+  }
+
+  /* Filter button: hidden on desktop, shown on mobile */
+  .detail-filter-btn {
+    display: none;
+  }
+
+  /* Filter container: inline on desktop */
+  .detail-filters {
+    display: contents;
+  }
+  .detail-filters-content {
+    display: contents;
+  }
+  .detail-filters-header {
+    display: none;
+  }
+
+  /* Metric mini-cards — inline by default for compact title bar */
   .detail-title-right .metric {
     flex: 0 1 auto;
-    min-width: 70px;
+    min-width: 0;
     background: var(--hover-color);
     border-radius: 6px;
-    padding: 4px 10px;
+    padding: 3px 8px;
     font-size: 11px;
     color: var(--text-muted);
     line-height: 1.4;
-    text-align: center;
-    align-self: stretch;
+    text-align: left;
     display: flex;
-    flex-direction: column;
-    justify-content: center;
+    flex-direction: row;
+    gap: 3px;
+    align-items: center;
+    white-space: nowrap;
+  }
+  .detail-title-right .metric br {
+    display: none;
   }
 
   .detail-title-right .action-btn {
@@ -3577,8 +3769,8 @@
   .metric .metric-value {
     font-weight: 700;
     color: var(--text-color);
-    font-size: 13px;
-    display: block;
+    font-size: 12px;
+    display: inline;
   }
   
   .exchange-metric .buy-value {
@@ -3590,8 +3782,8 @@
 
   .history-controls {
     display: flex;
-    flex-direction: column;
-    gap: 3px;
+    flex-direction: row;
+    gap: 4px;
     flex-shrink: 0;
     align-items: stretch;
   }
@@ -3606,7 +3798,7 @@
   .chart-toggle-btn {
     min-width: 56px;
     padding: 3px 8px;
-    font-size: 11px;
+    font-size: 12px;
   }
   .chart-toggle-btn.active {
     background: var(--accent-color);
@@ -3648,6 +3840,36 @@
     color: white;
   }
   .gender-btn:hover:not(.active) {
+    background: var(--hover-color);
+  }
+
+  .order-side-toggle {
+    display: flex;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    overflow: hidden;
+    align-self: stretch;
+  }
+  .order-side-btn {
+    padding: 6px 0;
+    width: 36px;
+    text-align: center;
+    font-size: 12px;
+    font-weight: 600;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .order-side-btn:not(:last-child) {
+    border-right: 1px solid var(--border-color);
+  }
+  .order-side-btn.active {
+    background: var(--accent-color);
+    color: white;
+  }
+  .order-side-btn:hover:not(.active) {
     background: var(--hover-color);
   }
 
@@ -3703,15 +3925,37 @@
     .mobile-category-toggle {
       display: flex;
       align-items: center;
+      justify-content: center;
       gap: 6px;
     }
-    .filter-select {
-      flex: 1 1 auto;
-      min-width: 120px;
+    .filter-search-row {
+      display: flex;
+      flex: 1 1 100%;
+      gap: 8px;
+      align-items: center;
     }
-    .actions-right {
-      flex: 1 0 100%;
-      justify-content: flex-start;
+    .filter-search-row .search-input {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+    .filter-dropdowns {
+      display: flex;
+      flex: 1 1 100%;
+      gap: 8px;
+    }
+    .filter-dropdowns .filter-select {
+      flex: 1 1 0;
+      min-width: 0;
+    }
+    .filter-actions {
+      display: flex;
+      flex: 1 1 100%;
+      align-items: center;
+      gap: 8px;
+    }
+    .filter-actions .actions-right {
+      flex: 1 0 auto;
+      margin-left: auto;
     }
     .floating-panel {
       width: 100%;
@@ -3724,26 +3968,256 @@
   }
 
   @media (max-width: 600px) {
+    :global(.tt-pct) {
+      display: none;
+    }
     .filters {
-      gap: 6px;
+      gap: 4px;
       padding: 6px 8px;
     }
     .filter-select {
-      flex: 1 1 100%;
+      padding: 5px 6px;
+      font-size: 12px;
+    }
+    .search-input {
+      padding: 5px 8px;
+      font-size: 12px;
+      min-width: 100px;
+    }
+    .mobile-category-toggle {
+      padding: 5px 10px;
+      font-size: 12px;
+    }
+    .action-btn {
+      padding: 5px 10px;
+      font-size: 12px;
+    }
+    .auth-hint-btn {
+      padding: 5px 10px;
+      font-size: 12px;
+      max-height: none;
+      gap: 4px;
+    }
+    .auth-hint-btn svg {
+      width: 12px;
+      height: 12px;
+    }
+    /* Detail view: 12-col grid — Row 1: 4 equal buttons (3 cols each), Row 2: 3 equal dropdowns (4 cols each) */
+    .filters-detail {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      column-gap: 4px;
+      row-gap: 4px;
+    }
+    .filters-detail {
+      padding: 8px;
+    }
+    .filters-detail > .mobile-category-toggle {
+      grid-row: 1;
+      grid-column: span 3;
+      text-align: center;
+      font-size: 13px;
+      padding: 8px;
+    }
+    /* Flatten actions-right so its children become direct grid items */
+    .filters-detail > .actions-right {
+      display: contents;
+    }
+    .filters-detail > .actions-right > .action-btn,
+    .filters-detail > .actions-right > .auth-hint-btn {
+      grid-row: 1;
+      grid-column: span 3;
+      min-width: 0;
+      justify-content: center;
+      text-align: center;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-size: 13px;
+      padding: 8px;
+    }
+    /* Auth button (when not logged in) spans remaining cols */
+    .filters-detail > .actions-right > .auth-hint-btn {
+      grid-column: span 9;
+    }
+    .filters-detail > .actions-right > .actions-divider,
+    .filters-detail > .actions-right > .trade-list-btn {
+      display: none;
+    }
+    .filters-detail > .filter-select {
+      grid-row: 2;
+      grid-column: span 4;
+      min-width: 0;
+      overflow: hidden;
+      padding: 8px;
+      font-size: 13px;
+    }
+    .filter-search-row {
+      gap: 4px;
+    }
+    .filter-dropdowns {
+      gap: 4px;
+    }
+    .filter-actions {
+      gap: 4px;
     }
     .detail-title {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 8px;
-      padding: 10px 12px;
+      gap: 4px 8px;
+      padding: 8px 10px;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+    /* Mobile: square back button with icon only */
+    .back-btn {
+      padding: 6px;
+    }
+    .back-text {
+      display: none;
     }
     .detail-title-name {
-      font-size: 16px;
+      font-size: 15px;
+      flex: 1 1 0;
+      min-width: 60px;
+    }
+    .detail-tt-badge {
+      font-size: 13px;
+      padding: 1px 6px;
+    }
+    /* Mobile: controls row with filter btn + period + chart — same height as back btn */
+    .detail-title-controls {
+      display: flex;
+      align-items: stretch;
+      gap: 4px;
+      margin-left: auto;
+    }
+    .desktop-only-gender,
+    .desktop-only-history {
+      display: none !important;
+    }
+    .dialog-gender-toggle {
+      display: contents;
+    }
+    .dialog-gender-toggle :global(.gender-toggle) {
+      justify-self: start;
+    }
+    .dialog-gender-toggle :global(.gender-btn) {
+      padding: 6px 12px;
     }
     .detail-title-right {
       width: 100%;
       justify-content: flex-start;
-      gap: 6px;
+      gap: 4px;
+      flex-wrap: wrap;
+    }
+    .detail-title-right .metric {
+      padding: 2px 6px;
+      font-size: 10px;
+    }
+    .metric .metric-value {
+      font-size: 13px;
+    }
+    .detail-title-controls .period-select {
+      min-width: 45px;
+      padding: 5px 4px;
+      font-size: 13px;
+    }
+    .detail-title-controls .chart-toggle-btn {
+      min-width: 44px;
+      padding: 5px 6px;
+      font-size: 13px;
+    }
+    /* Mobile filter dialog */
+    .detail-filter-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 4px 8px;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .detail-filter-btn.has-active {
+      color: var(--accent-color);
+      border-color: var(--accent-color);
+      background: var(--accent-color-bg);
+    }
+    .detail-filters {
+      display: none;
+    }
+    .detail-filters.open {
+      display: flex;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 1000;
+      background: rgba(0, 0, 0, 0.5);
+      align-items: flex-end;
+      justify-content: center;
+    }
+    .detail-filters-content {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      column-gap: 8px;
+      row-gap: 16px;
+      align-items: center;
+      width: 100%;
+      max-height: 80vh;
+      overflow-y: auto;
+      background: var(--bg-color);
+      border-radius: 12px 12px 0 0;
+      padding: 16px 20px 24px;
+      box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.2);
+    }
+    .detail-filters-header {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text-color);
+    }
+    .detail-filters-close {
+      background: none;
+      border: none;
+      font-size: 22px;
+      color: var(--text-muted);
+      cursor: pointer;
+      padding: 0 4px;
+      line-height: 1;
+    }
+    .detail-filters-close:hover {
+      color: var(--text-color);
+    }
+    /* Min-tt group: display:contents to align label + input in grid */
+    .detail-filters .min-tt-group {
+      display: contents;
+    }
+    .detail-filters .filter-input-small {
+      width: 100%;
+    }
+    /* RangeSliders: display:contents to expose label + track to parent grid */
+    .detail-filters-content :global(.range-slider.compact) {
+      display: contents;
+    }
+    .detail-filters-content :global(.range-slider.compact .track) {
+      width: 100%;
+      margin: 0;
+    }
+    .detail-filters-content :global(.range-slider.compact .range-label) {
+      white-space: nowrap;
+    }
+    /* Condition filter: also use display:contents for label + slider alignment */
+    .detail-filters .condition-filter {
+      display: contents;
+    }
+    .detail-filters .condition-slider {
+      width: 100%;
     }
   }
 

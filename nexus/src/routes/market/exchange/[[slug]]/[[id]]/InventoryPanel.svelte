@@ -135,7 +135,7 @@
     massSellList;
     return [
       {
-        key: 'item_name', header: 'Item', main: true, sortable: true, searchable: true,
+        key: 'item_name', header: 'Item', main: true, mobileWidth: '1fr', sortable: true, searchable: true,
         formatter: (val, row) => {
           const slim = itemLookup.get(row.item_id);
           return `<a class="item-link" data-action="navigate" data-item-id="${row.item_id}">${val}${itemTypeBadge(slim?.t)}</a>`;
@@ -177,7 +177,7 @@
           return `<span style="color:var(--success-color);font-weight:600">${parts.join(' ')}</span>`;
         }
       },
-      { key: 'quantity', header: 'Qty', width: '60px', sortable: true, searchable: false },
+      { key: 'quantity', header: 'Qty', width: '60px', mobileWidth: '45px', sortable: true, searchable: false },
       {
         key: 'value', header: 'Value', width: '80px', sortable: true, searchable: false,
         hideOnMobile: true,
@@ -189,7 +189,7 @@
         formatter: (val) => val || '<span style="opacity:0.4">Inventory</span>'
       },
       {
-        key: '_actions', header: '', width: '150px', sortable: false, searchable: false,
+        key: '_actions', header: '', width: '150px', mobileWidth: '100px', sortable: false, searchable: false,
         cellClass: () => 'cell-center',
         formatter: (val, row) => {
           if (massSellMode) {

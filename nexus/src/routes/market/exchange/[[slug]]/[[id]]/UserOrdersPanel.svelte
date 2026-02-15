@@ -59,6 +59,23 @@
     if (user?.id) loadOrders(user.id);
   }
 
+  /** Format order detail tags (Tier, TiR, QR, Level, Gender, Set) */
+  function formatDetailTags(row) {
+    const d = row?.details;
+    if (!d) return '';
+    const tags = [];
+
+    if (d.Tier != null) tags.push(`<span class="detail-tag">T${d.Tier}</span>`);
+    if (d.TierIncreaseRate != null) tags.push(`<span class="detail-tag">TiR ${d.TierIncreaseRate}</span>`);
+    if (d.QualityRating != null) tags.push(`<span class="detail-tag">QR ${d.QualityRating}</span>`);
+    if (d.Pet?.Level != null) tags.push(`<span class="detail-tag">Lv ${d.Pet.Level}</span>`);
+    if (d.Gender) tags.push(`<span class="detail-tag">${d.Gender === 'Male' ? '♂' : '♀'}</span>`);
+    if (d.is_set) tags.push(`<span class="detail-tag">Set</span>`);
+
+    if (tags.length === 0) return '';
+    return `<span class="detail-tags">${tags.join('')}</span>`;
+  }
+
   $: columns = (() => {
     const cols = [
       {
@@ -69,15 +86,12 @@
         }
       },
       {
-        key: 'type', header: 'Side', width: '55px', sortable: true, searchable: false,
-        formatter: (v) => {
-          const cls = v === 'BUY' ? 'badge-success' : 'badge-error';
-          return `<span class="badge badge-subtle ${cls}">${v === 'BUY' ? 'Buy' : 'Sell'}</span>`;
-        }
+        key: '_details', header: 'Details', width: '150px', mobileWidth: '100px', sortable: false, searchable: false,
+        formatter: (v, row) => formatDetailTags(row)
       },
-      { key: 'quantity', header: 'Qty', width: '90px', sortable: true, searchable: false },
+      { key: 'quantity', header: 'Qty', width: '90px', sortable: true, searchable: false, hideOnMobile: true },
       {
-        key: '_tt', header: 'TT', width: '90px', sortable: true, searchable: false,
+        key: '_tt', header: 'TT', width: '90px', sortable: true, searchable: false, hideOnMobile: true,
         formatter: (v, row) => {
           const item = itemLookup.get(row?.item_id);
           const tt = getUnitTT(item, row);
@@ -85,14 +99,14 @@
         }
       },
       {
-        key: 'markup', header: 'Markup', width: '100px', sortable: true, searchable: false,
+        key: 'markup', header: 'Markup', width: '100px', mobileWidth: '80px', sortable: true, searchable: false,
         formatter: (v, row) => {
           const item = itemLookup.get(row?.item_id);
           return formatMarkupForItem(v, item);
         }
       },
       {
-        key: '_total', header: 'Total', width: '120px', sortable: true, searchable: false,
+        key: '_total', header: 'Total', width: '120px', sortable: true, searchable: false, hideOnMobile: true,
         formatter: (v, row) => {
           const item = itemLookup.get(row?.item_id);
           const mu = row?.markup != null ? Number(row.markup) : null;
@@ -102,25 +116,23 @@
           return formatPedValue(unitPrice * qty);
         }
       },
-      { key: 'planet', header: 'Planet', width: '80px', sortable: true, searchable: false },
+      { key: 'planet', header: 'Planet', width: '80px', sortable: true, searchable: false, hideOnMobile: true },
     ];
-    if (canTrade) {
-      cols.push({
-        key: '_action', header: '', width: '55px', sortable: false, searchable: false,
-        cellClass: () => 'cell-center',
-        formatter: (v, row) => {
-          const orderId = row?.id ?? 0;
-          const inList = tradeListOrderIds.has(orderId);
-          if (inList) {
-            return `<span class="cell-badge added-badge">Added</span>`;
-          }
-          const side = row?.type === 'SELL' ? 'buy' : 'sell';
-          const label = side === 'buy' ? 'Buy' : 'Sell';
-          const cls = side === 'buy' ? 'buy-order-btn' : 'sell-order-btn';
-          return `<button class="cell-button ${cls}" data-order-action="${orderId}" data-action-side="${side}">${label}</button>`;
+    cols.push({
+      key: '_action', header: '', width: '55px', sortable: false, searchable: false,
+      cellClass: () => 'cell-center',
+      formatter: canTrade ? (v, row) => {
+        const orderId = row?.id ?? 0;
+        const inList = tradeListOrderIds.has(orderId);
+        if (inList) {
+          return `<span class="cell-badge added-badge">Added</span>`;
         }
-      });
-    }
+        const side = row?.type === 'SELL' ? 'buy' : 'sell';
+        const label = side === 'buy' ? 'Buy' : 'Sell';
+        const cls = side === 'buy' ? 'buy-order-btn' : 'sell-order-btn';
+        return `<button class="cell-button ${cls}" data-order-action="${orderId}" data-action-side="${side}">${label}</button>`;
+      } : () => ''
+    });
     // Force re-evaluation when tradeListOrderIds changes
     tradeListOrderIds;
     canTrade;
@@ -230,5 +242,21 @@
     font-size: 11px;
     color: var(--text-muted);
     font-style: italic;
+  }
+
+  /* Detail tags */
+  .user-orders-panel :global(.detail-tags) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+    align-items: center;
+  }
+  .user-orders-panel :global(.detail-tag) {
+    font-size: 10px;
+    padding: 1px 4px;
+    border-radius: 3px;
+    background: var(--accent-color-bg);
+    color: var(--accent-color);
+    white-space: nowrap;
   }
 </style>

@@ -81,13 +81,14 @@ export function getUnitTT(item: any, order?: any): number | null {
 /** Compute the unit price for an order given item + markup */
 export function computeUnitPrice(item: any, markup: number | null, order?: any): number | null {
   if (markup == null) return null;
+  const mu = Number(markup);
   if (isBlueprintNonL(item)) {
     const tt = getUnitTT(item, order);
-    return tt != null ? tt + markup : markup;
+    return tt != null ? tt + mu : mu;
   }
   const maxTT = getMaxTT(item);
   if (maxTT == null) return null;
-  return isAbsoluteMarkup(item) ? maxTT + markup : maxTT * (markup / 100);
+  return isAbsoluteMarkup(item) ? maxTT + mu : maxTT * (mu / 100);
 }
 
 /** Get pet level from order details */

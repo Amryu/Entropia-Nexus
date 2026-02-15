@@ -4,6 +4,7 @@
   import { page } from '$app/stores';
   import { getMaxTT, isAbsoluteMarkup, isItemTierable, isBlueprint, isLimited, formatMarkupValue, formatPedValue, isPet, isBlueprintNonL, getUnitTT, computeUnitPrice, getPetLevel } from '../../orderUtils';
   import { hasCondition } from '$lib/shopUtils';
+  import { encodeURIComponentSafe } from '$lib/util.js';
 
   /** @type {boolean} */
   export let show = false;
@@ -80,9 +81,10 @@
   // Compute unit price (TT + MU per unit)
   $: unitPrice = (() => {
     if (order?.markup == null) return null;
-    if (isBpNonL) return bpTTValue + order.markup;
+    const mu = Number(order.markup);
+    if (isBpNonL) return bpTTValue + mu;
     if (maxTT == null) return null;
-    return isAbsMu ? maxTT + order.markup : maxTT * (order.markup / 100);
+    return isAbsMu ? maxTT + mu : maxTT * (mu / 100);
   })();
 
   // Compute total TT and total price for the selected quantity
@@ -162,7 +164,18 @@
         </div>
         <div class="info-row">
           <span class="info-label">{partnerLabel}</span>
-          <span class="info-value">{order.seller_name || 'Unknown'}</span>
+          <span class="info-value">
+            {#if order.seller_name}
+              <a
+                class="partner-link"
+                href="/market/exchange/orders/{encodeURIComponentSafe(order.seller_name)}"
+                target="_blank"
+                rel="noopener"
+              >{order.seller_name}</a>
+            {:else}
+              Unknown
+            {/if}
+          </span>
         </div>
         <div class="info-row">
           <span class="info-label">Planet</span>
@@ -206,23 +219,25 @@
           <span class="info-value markup">{markupDisplay}</span>
         </div>
 
-        <div class="quantity-row">
-          <label for="tradeQty">Quantity</label>
-          <input
-            id="tradeQty"
-            type="number"
-            step="1"
-            min={effectiveMinQty}
-            max={maxQty}
-            bind:value={quantity}
-            on:blur={normalizeQuantity}
-          />
-          <span class="qty-hint">
-            {#if effectiveMinQty < maxQty}
-              Owner minimum: {effectiveMinQty}. Available up to {maxQty}.
-            {:else}
-              Fixed quantity: {maxQty} (owner minimum equals available).
-            {/if}
+        <div class="info-row">
+          <label class="info-label" for="tradeQty">Quantity</label>
+          <span class="qty-field">
+            <input
+              id="tradeQty"
+              type="number"
+              step="1"
+              min={effectiveMinQty}
+              max={maxQty}
+              bind:value={quantity}
+              on:blur={normalizeQuantity}
+            />
+            <span class="qty-hint">
+              {#if effectiveMinQty < maxQty}
+                min {effectiveMinQty}, max {maxQty}
+              {:else}
+                fixed: {maxQty}
+              {/if}
+            </span>
           </span>
         </div>
 
@@ -348,19 +363,13 @@
     color: var(--text-color);
     font-weight: 500;
   }
-  .quantity-row {
+  .qty-field {
     display: flex;
     align-items: center;
     gap: 8px;
-    font-size: 13px;
   }
-  .quantity-row label {
-    color: var(--text-muted);
-    font-weight: 500;
-    min-width: 60px;
-  }
-  .quantity-row input {
-    width: 80px;
+  .qty-field input {
+    width: 70px;
     padding: 4px 8px;
     border: 1px solid var(--border-color);
     border-radius: 6px;
@@ -371,6 +380,13 @@
   .qty-hint {
     color: var(--text-muted);
     font-size: 11px;
+  }
+  .partner-link {
+    color: var(--accent-color);
+    text-decoration: none;
+  }
+  .partner-link:hover {
+    text-decoration: underline;
   }
   .price-summary {
     background: var(--hover-color);

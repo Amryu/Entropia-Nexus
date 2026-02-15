@@ -33,45 +33,45 @@
 
   $: columns = [
     {
-      key: 'item_name', header: 'Item', main: true, sortable: true, searchable: true,
+      key: 'item_name', header: 'Item', main: true, mobileWidth: '1fr', sortable: true, searchable: true,
       formatter: (val, row) => {
         const slim = itemLookup.get(row.item_id);
         return `<a class="item-link" data-action="navigate" data-item-id="${row.item_id}">${val}${itemTypeBadge(slim?.t)}</a>`;
       }
     },
     {
-      key: 'type', header: 'Side', width: '70px', sortable: true, searchable: false,
+      key: 'type', header: 'Side', width: '55px', mobileWidth: '40px', sortable: true, searchable: false,
       formatter: (val) => {
         const cls = val === 'BUY' ? 'badge-success' : 'badge-error';
         return `<span class="badge badge-subtle ${cls}">${val === 'BUY' ? 'Buy' : 'Sell'}</span>`;
       }
     },
     {
-      key: 'quantity', header: 'Qty', width: '110px', sortable: true, searchable: false,
+      key: 'quantity', header: 'Qty', width: '80px', sortable: true, searchable: false, hideOnMobile: true,
       formatter: (val, row) => row.min_quantity != null && row.min_quantity < val ? `${val}/${row.min_quantity}` : val
     },
     {
-      key: 'markup', header: 'Markup', width: '90px', sortable: true, searchable: false,
+      key: 'markup', header: 'Markup', width: '90px', mobileWidth: '70px', sortable: true, searchable: false,
       formatter: (val, row) => {
         const item = itemLookup.get(row?.item_id);
         if (item) return formatMarkupForItem(val, item);
         return val != null ? formatPedRaw(val) : 'N/A';
       }
     },
-    { key: 'planet', header: 'Planet', width: '100px', sortable: true, searchable: true },
+    { key: 'planet', header: 'Planet', width: '100px', sortable: true, searchable: true, hideOnMobile: true },
     {
-      key: 'state_display', header: 'Status', width: '80px', sortable: true, searchable: true,
+      key: 'state_display', header: 'Status', width: '80px', mobileWidth: '60px', sortable: true, searchable: true,
       formatter: (val) => {
         const cls = val === 'active' ? 'badge-success' : val === 'stale' ? 'badge-warning' : 'badge-error';
         return `<span class="badge badge-subtle ${cls}">${val}</span>`;
       }
     },
     {
-      key: 'bumped_at', header: 'Last Bumped', width: '120px', sortable: true, searchable: false,
-      formatter: (val) => formatAge(val)
+      key: 'bumped_at', header: 'Last Bumped', width: '120px', sortable: true, searchable: false, hideOnMobile: true,
+    formatter: (val) => formatAge(val)
     },
     {
-      key: '_actions', header: '', width: '120px', sortable: false, searchable: false,
+      key: '_actions', header: '', width: '120px', mobileWidth: '80px', sortable: false, searchable: false,
       cellClass: () => 'cell-center',
       formatter: (val, row) => {
         if (row.state_display === 'closed') return '';
