@@ -169,7 +169,13 @@
   }
 
   function handleInput(event) {
-    value = event.target.value;
+    // Strip game client brackets from pasted names like "[Item Name]"
+    let raw = event.target.value;
+    const cleaned = raw.replace(/^\[/, '').replace(/\]$/, '');
+    if (cleaned !== raw) {
+      event.target.value = cleaned;
+    }
+    value = cleaned;
     highlightedIndex = -1;
 
     if (searchTimeout) clearTimeout(searchTimeout);

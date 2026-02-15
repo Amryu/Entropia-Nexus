@@ -306,7 +306,13 @@
 
   // --- Event handlers ---
   function handleInput(event) {
-    const query = event.target.value;
+    // Strip game client brackets from pasted names like "[Item Name]"
+    let raw = event.target.value;
+    const cleaned = raw.replace(/^\[/, '').replace(/\]$/, '');
+    if (cleaned !== raw) {
+      event.target.value = cleaned;
+    }
+    const query = cleaned;
     localValue = query;
     dispatch('change', { value: query });
 
