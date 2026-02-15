@@ -1,5 +1,6 @@
 const { getObjects, getObjectByIdOrName } = require('./utils');
 const { idOffsets } = require('./constants');
+const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = {
   Enhancers: 'SELECT "Enhancers".*, "EnhancerType"."Name" AS "Type", "EnhancerType"."Tool" AS "Tool" FROM ONLY "Enhancers" LEFT JOIN ONLY "EnhancerType" ON "Enhancers"."TypeId" = "EnhancerType"."Id"',
@@ -36,7 +37,7 @@ function register(app){
    *      '200':
    *        description: A list of enhancers
    */
-  app.get('/enhancers', async (req,res) => { res.json(await getEnhancers()); });
+  app.get('/enhancers', async (req,res) => { res.json(await withCache('/enhancers', ['Enhancers'], getEnhancers)); });
   /**
    * @swagger
    * /enhancers/{enhancer}:
@@ -55,7 +56,7 @@ function register(app){
    *      '404':
    *        description: Enhancer not found
    */
-  app.get('/enhancers/:enhancer', async (req,res) => { const r = await getEnhancer(req.params.enhancer); if (r) res.json(r); else res.status(404).send(); });
+  app.get('/enhancers/:enhancer', async (req,res) => { const r = await withCachedLookup('/enhancers', ['Enhancers'], getEnhancers, req.params.enhancer); if (r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getEnhancers, getEnhancer };

@@ -1,5 +1,6 @@
 const { getObjects, getObjectByIdOrName } = require('./utils');
 const { idOffsets } = require('./constants');
+const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = { MiscTools: 'SELECT "MiscTools".*, "Professions"."Name" AS "Profession" FROM ONLY "MiscTools" LEFT JOIN ONLY "Professions" ON "MiscTools"."ProfessionId" = "Professions"."Id"' };
 
@@ -44,7 +45,7 @@ function register(app){
    *      '200':
    *        description: A list of misc. tools
    */
-  app.get('/misctools', async (req,res)=>{ res.json(await getMiscTools()); });
+  app.get('/misctools', async (req,res)=>{ res.json(await withCache('/misctools', ['MiscTools'], getMiscTools)); });
   /**
    * @swagger
    * /misctools/{miscTool}:
@@ -63,7 +64,7 @@ function register(app){
    *      '404':
    *        description: Misc. tool not found
    */
-  app.get('/misctools/:miscTool', async (req,res)=>{ const r = await getMiscTool(req.params.miscTool); if(r) res.json(r); else res.status(404).send(); });
+  app.get('/misctools/:miscTool', async (req,res)=>{ const r = await withCachedLookup('/misctools', ['MiscTools'], getMiscTools, req.params.miscTool); if(r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getMiscTools, getMiscTool, formatMiscTool };

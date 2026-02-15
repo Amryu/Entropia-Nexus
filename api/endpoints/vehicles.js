@@ -1,6 +1,7 @@
 const { pool } = require('./dbClient');
 const { idOffsets } = require('./constants');
 const { getObjectByIdOrName } = require('./utils');
+const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = { Vehicles: 'SELECT "Vehicles".*, "Materials"."Name" AS "Fuel" FROM ONLY "Vehicles" LEFT JOIN ONLY "Materials" ON "Vehicles"."FuelMaterialId" = "Materials"."Id"' };
 
@@ -67,7 +68,7 @@ function register(app){
    *      '200':
    *        description: A list of vehicles
    */
-  app.get('/vehicles', async (req,res)=>{ res.json(await getVehicles()); });
+  app.get('/vehicles', async (req,res)=>{ res.json(await withCache('/vehicles', ['Vehicles'], getVehicles)); });
   /**
    * @swagger
    * /vehicles/{vehicle}:
@@ -86,7 +87,7 @@ function register(app){
    *      '404':
    *        description: Vehicle not found
    */
-  app.get('/vehicles/:vehicle', async (req,res)=>{ const r = await getVehicle(req.params.vehicle); if(r) res.json(r); else res.status(404).send(); });
+  app.get('/vehicles/:vehicle', async (req,res)=>{ const r = await withCachedLookup('/vehicles', ['Vehicles'], getVehicles, req.params.vehicle); if(r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getVehicles, getVehicle, formatVehicle };

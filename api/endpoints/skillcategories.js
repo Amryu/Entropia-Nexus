@@ -1,5 +1,6 @@
 const { pool } = require('./dbClient');
 const { getObjectByIdOrName } = require('./utils');
+const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = {
   SkillCategories: 'SELECT * FROM ONLY "SkillCategories"',
@@ -20,7 +21,7 @@ function register(app){
    *      '200':
    *        description: A list of skill categories
    */
-  app.get('/skillcategories', async (req,res) => { res.json(await getSkillCategories()); });
+  app.get('/skillcategories', async (req,res) => { res.json(await withCache('/skillcategories', ['SkillCategories'], getSkillCategories)); });
   /**
    * @swagger
    * /skillcategories/{skillCategory}:
@@ -39,7 +40,7 @@ function register(app){
    *      '404':
    *        description: Skill category not found
    */
-  app.get('/skillcategories/:skillCategory', async (req,res) => { const r = await getSkillCategory(req.params.skillCategory); if (r) res.json(r); else res.status(404).send(); });
+  app.get('/skillcategories/:skillCategory', async (req,res) => { const r = await withCachedLookup('/skillcategories', ['SkillCategories'], getSkillCategories, req.params.skillCategory); if (r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getSkillCategories, getSkillCategory };

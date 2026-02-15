@@ -1,5 +1,6 @@
 const { pool } = require('./dbClient');
 const { getObjectByIdOrName } = require('./utils');
+const { withCache, withCachedLookup } = require('./responseCache');
 
 async function getMobSpecies(ids){
 	if(!ids || ids.length===0) return {};
@@ -21,6 +22,11 @@ function formatMobSpecies(x){
 	};
 }
 
+async function getAllMobSpecies() {
+	const { rows } = await pool.query(baseQuery);
+	return rows.map(formatMobSpecies);
+}
+
 function register(app){
 	/**
 	 * @swagger
@@ -32,8 +38,7 @@ function register(app){
 	 *        description: A list of mob species
 	 */
 	app.get('/mobspecies', async (req,res)=>{
-		const { rows } = await pool.query(baseQuery);
-		res.json(rows.map(formatMobSpecies));
+		res.json(await withCache('/mobspecies', ['MobSpecies'], getAllMobSpecies));
 	});
 
 	/**
@@ -54,9 +59,8 @@ function register(app){
 	 *        description: Not found
 	 */
 	app.get('/mobspecies/:species', async (req,res)=>{
-		const row = await getObjectByIdOrName(baseQuery, 'MobSpecies', req.params.species);
-		if (!row) return res.status(404).send();
-		res.json(formatMobSpecies(row));
+		const r = await withCachedLookup('/mobspecies', ['MobSpecies'], getAllMobSpecies, req.params.species);
+		if (r) res.json(r); else res.status(404).send();
 	});
 }
 

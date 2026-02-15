@@ -2,6 +2,7 @@ const { pool } = require('./dbClient');
 const { idOffsets } = require('./constants');
 const { getObjectByIdOrName } = require('./utils');
 const { loadEffectsOnEquipByItemIds } = require('./effects-utils');
+const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = { WeaponVisionAttachments: 'SELECT * FROM ONLY "WeaponVisionAttachments"' };
 
@@ -57,7 +58,7 @@ function register(app){
    *        description: A list of weapon vision attachments
    */
   app.get('/weaponvisionattachments', async (req,res)=>{
-    res.json(await getWeaponVisionAttachments());
+    res.json(await withCache('/weaponvisionattachments', ['WeaponVisionAttachments'], getWeaponVisionAttachments));
   });
   /**
    * @swagger
@@ -78,7 +79,7 @@ function register(app){
    *        description: Weapon vision attachment not found
    */
   app.get('/weaponvisionattachments/:weaponVisionAttachment', async (req,res)=>{
-    const r = await getWeaponVisionAttachment(req.params.weaponVisionAttachment);
+    const r = await withCachedLookup('/weaponvisionattachments', ['WeaponVisionAttachments'], getWeaponVisionAttachments, req.params.weaponVisionAttachment);
     if(r) res.json(r); else res.status(404).send();
   });
 }

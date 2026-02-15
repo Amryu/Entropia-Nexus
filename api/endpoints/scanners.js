@@ -1,6 +1,7 @@
 const { pool } = require('./dbClient');
 const { getObjectByIdOrName } = require('./utils');
 const { idOffsets } = require('./constants');
+const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = {
   Scanners: 'SELECT * FROM ONLY "Scanners"',
@@ -35,7 +36,7 @@ function register(app){
    *      '200':
    *        description: A list of scanners
    */
-  app.get('/scanners', async (req,res) => { res.json(await getScanners()); });
+  app.get('/scanners', async (req,res) => { res.json(await withCache('/scanners', ['Scanners'], getScanners)); });
   /**
    * @swagger
    * /scanners/{scanner}:
@@ -54,7 +55,7 @@ function register(app){
    *      '404':
    *        description: Scanner not found
    */
-  app.get('/scanners/:scanner', async (req,res) => { const r = await getScanner(req.params.scanner); if (r) res.json(r); else res.status(404).send(); });
+  app.get('/scanners/:scanner', async (req,res) => { const r = await withCachedLookup('/scanners', ['Scanners'], getScanners, req.params.scanner); if (r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getScanners, getScanner, formatScanner };

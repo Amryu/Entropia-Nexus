@@ -1,6 +1,7 @@
 const { pool } = require('./dbClient');
 const { getObjectByIdOrName } = require('./utils');
 const { idOffsets } = require('./constants');
+const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = {
   Furniture: 'SELECT f.*, p."Name" AS "Planet" FROM ONLY "Furniture" f LEFT JOIN ONLY "Planets" p ON f."PlanetId" = p."Id"',
@@ -23,7 +24,7 @@ function register(app){
    *      '200':
    *        description: A list of furniture
    */
-  app.get('/furniture', async (req,res) => { res.json(await getFurnitures()); });
+  app.get('/furniture', async (req,res) => { res.json(await withCache('/furniture', ['Furniture'], getFurnitures)); });
   /**
    * @swagger
    * /furniture/{furniture}:
@@ -42,7 +43,7 @@ function register(app){
    *      '404':
    *        description: Furniture not found
    */
-  app.get('/furniture/:furniture', async (req,res) => { const r = await getFurniture(req.params.furniture); if (r) res.json(r); else res.status(404).send(); });
+  app.get('/furniture/:furniture', async (req,res) => { const r = await withCachedLookup('/furniture', ['Furniture'], getFurnitures, req.params.furniture); if (r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getFurnitures, getFurniture, formatFurniture };

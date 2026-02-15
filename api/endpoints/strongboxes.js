@@ -1,6 +1,7 @@
 const { getObjects, getObjectByIdOrName } = require('./utils');
 const { idOffsets } = require('./constants');
 const { pool } = require('./dbClient');
+const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = { Strongboxes: 'SELECT * FROM ONLY "Strongboxes"' };
 
@@ -34,7 +35,7 @@ function register(app){
    *      '200':
    *        description: A list of strongboxes
    */
-  app.get('/strongboxes', async (req,res)=>{ res.json(await getStrongboxes()); });
+  app.get('/strongboxes', async (req,res)=>{ res.json(await withCache('/strongboxes', ['Strongboxes'], getStrongboxes)); });
   /**
    * @swagger
    * /strongboxes/{strongbox}:
@@ -53,6 +54,6 @@ function register(app){
    *      '404':
    *        description: Strongbox not found
    */
-  app.get('/strongboxes/:strongbox', async (req,res)=>{ const r = await getStrongbox(req.params.strongbox); if(r) res.json(r); else res.status(404).send(); });
+  app.get('/strongboxes/:strongbox', async (req,res)=>{ const r = await withCachedLookup('/strongboxes', ['Strongboxes'], getStrongboxes, req.params.strongbox); if(r) res.json(r); else res.status(404).send(); });
 }
 module.exports = { register, getStrongboxes, getStrongbox };

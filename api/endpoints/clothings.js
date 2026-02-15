@@ -2,6 +2,7 @@ const { pool } = require('./dbClient');
 const { idOffsets } = require('./constants');
 const { getObjectByIdOrName, generateGenderAliases } = require('./utils');
 const { loadEffectsOnEquipByItemIds, loadSetEffectsByItemIdsFromEquipSets, formatEffectOnSetEquip } = require('./effects-utils');
+const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = { Clothings: 'SELECT * FROM ONLY "Clothes"' };
 
@@ -71,7 +72,7 @@ function register(app){
    *      '200':
    *        description: A list of clothings
    */
-  app.get('/clothings', async (req,res) => { res.json(await getClothings()); });
+  app.get('/clothings', async (req,res) => { res.json(await withCache('/clothings', ['Clothes', 'EffectsOnEquip', 'EffectsOnSetEquip', 'Effects', 'EquipSets'], getClothings)); });
   /**
    * @swagger
    * /clothings/{clothing}:
@@ -90,7 +91,7 @@ function register(app){
    *      '404':
    *        description: Clothing not found
    */
-  app.get('/clothings/:clothing', async (req,res) => { const r = await getClothing(req.params.clothing); if (r) res.json(r); else res.status(404).send(); });
+  app.get('/clothings/:clothing', async (req,res) => { const r = await withCachedLookup('/clothings', ['Clothes', 'EffectsOnEquip', 'EffectsOnSetEquip', 'Effects', 'EquipSets'], getClothings, req.params.clothing); if (r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getClothings, getClothing, formatClothing };

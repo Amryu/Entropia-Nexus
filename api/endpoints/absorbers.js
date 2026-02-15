@@ -1,5 +1,6 @@
 const { getObjects, getObjectByIdOrName } = require('./utils');
 const { idOffsets } = require('./constants');
+const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = { Absorbers: 'SELECT * FROM ONLY "Absorbers"' };
 
@@ -36,7 +37,7 @@ function register(app){
    *      '200':
    *        description: A list of absorbers
    */
-  app.get('/absorbers', async (req,res)=>{ res.json(await getAbsorbers()); });
+  app.get('/absorbers', async (req,res)=>{ res.json(await withCache('/absorbers', ['Absorbers'], getAbsorbers)); });
   /**
    * @swagger
    * /absorbers/{absorber}:
@@ -55,7 +56,7 @@ function register(app){
    *      '404':
    *        description: Absorber not found
    */
-  app.get('/absorbers/:absorber', async (req,res)=>{ const r = await getAbsorber(req.params.absorber); if(r) res.json(r); else res.status(404).send(); });
+  app.get('/absorbers/:absorber', async (req,res)=>{ const r = await withCachedLookup('/absorbers', ['Absorbers'], getAbsorbers, req.params.absorber); if(r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getAbsorbers, getAbsorber, formatAbsorber };

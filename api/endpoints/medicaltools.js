@@ -6,6 +6,7 @@ const {
   loadEffectsOnUseByItemIds,
 } = require('./effects-utils');
 const { getTiersByItemIds } = require('./tiers');
+const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = { MedicalTools: 'SELECT * FROM ONLY "MedicalTools"' };
 
@@ -78,7 +79,7 @@ function register(app){
    *      '200':
    *        description: A list of medical tools
    */
-  app.get('/medicaltools', async (req,res) => { res.json(await getMedicalTools()); });
+  app.get('/medicaltools', async (req,res) => { res.json(await withCache('/medicaltools', ['MedicalTools', 'EffectsOnEquip', 'EffectsOnUse', 'Effects', 'Tiers', 'TierMaterials'], getMedicalTools)); });
   /**
    * @swagger
    * /medicaltools/{medicalTool}:
@@ -97,7 +98,7 @@ function register(app){
    *      '404':
    *        description: Medical tool not found
    */
-  app.get('/medicaltools/:medicalTool', async (req,res) => { const r = await getMedicalTool(req.params.medicalTool); if (r) res.json(r); else res.status(404).send(); });
+  app.get('/medicaltools/:medicalTool', async (req,res) => { const r = await withCachedLookup('/medicaltools', ['MedicalTools', 'EffectsOnEquip', 'EffectsOnUse', 'Effects', 'Tiers', 'TierMaterials'], getMedicalTools, req.params.medicalTool); if (r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getMedicalTools, getMedicalTool, formatMedicalTool };

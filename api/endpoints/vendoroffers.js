@@ -1,6 +1,7 @@
 const pgp = require("pg-promise")();
 const { getObjectByIdOrName, parseItemList } = require("./utils");
 const { pool } = require("./dbClient");
+const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = {
   VendorOffers:
@@ -127,7 +128,11 @@ function register(app) {
         if (items.length === 0)
           return res.status(400).send("Items cannot be empty");
       }
-      res.json(await getVendorOffers(items));
+      if (items) {
+        res.json(await getVendorOffers(items));
+      } else {
+        res.json(await withCache('/vendoroffers', ['VendorOffers', 'VendorOfferPrices', 'Items', 'Locations', 'Planets'], getVendorOffers));
+      }
     } catch (e) {
       next(e);
     }
@@ -152,7 +157,7 @@ function register(app) {
    *        description: Vendor offer not found
    */
   app.get("/vendoroffers/:vendorOffer", async (req, res) => {
-    const r = await getVendorOffer(req.params.vendorOffer);
+    const r = await withCachedLookup('/vendoroffers', ['VendorOffers', 'VendorOfferPrices', 'Items', 'Locations', 'Planets'], getVendorOffers, req.params.vendorOffer);
     if (r) res.json(r);
     else res.status(404).send();
   });

@@ -2,6 +2,7 @@ const pgp = require('pg-promise')();
 const { pool } = require('./dbClient');
 const { parseItemList } = require('./utils');
 const { idOffsets } = require('./constants');
+const { withCache } = require('./responseCache');
 
 const queries = {
   BlueprintDrops: `
@@ -110,16 +111,18 @@ function register(app){
         if (drops.length === 0) return res.status(400).send('Drops cannot be empty');
       }
 
-      const rows = await getBlueprintDrops({ sources, drops });
-      if (sources) {
-        // return only the drops for the given sources
-        return res.json(rows.map(r => r.Drop));
+      if (sources || drops) {
+        const rows = await getBlueprintDrops({ sources, drops });
+        if (sources) {
+          return res.json(rows.map(r => r.Drop));
+        }
+        if (drops) {
+          return res.json(rows.map(r => r.Source));
+        }
+        res.json(rows);
+      } else {
+        res.json(await withCache('/blueprintdrops', ['BlueprintDrops', 'Blueprints'], getBlueprintDrops));
       }
-      if (drops) {
-        // return only the sources for the given drops
-        return res.json(rows.map(r => r.Source));
-      }
-      res.json(rows);
     } catch (e){ next(e); }
   });
 }

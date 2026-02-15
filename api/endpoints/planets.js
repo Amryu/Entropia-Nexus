@@ -1,4 +1,5 @@
 const { getObjects, getObjectByIdOrName } = require('./utils');
+const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = { Planets: 'SELECT * FROM ONLY "Planets"' };
 
@@ -33,7 +34,7 @@ function register(app){
    *      '200':
    *        description: A list of planets
    */
-  app.get('/planets', async (req,res) => { res.json(await getPlanets()); });
+  app.get('/planets', async (req,res) => { res.json(await withCache('/planets', ['Planets'], getPlanets)); });
   app.get('/planets/:planet', async (req,res) => {
     /**
      * @swagger
@@ -53,7 +54,7 @@ function register(app){
      *      '404':
      *        description: Planet not found
      */
-    const result = await getPlanet(req.params.planet);
+    const result = await withCachedLookup('/planets', ['Planets'], getPlanets, req.params.planet);
     if (result) res.json(result); else res.status(404).send();
   });
 }

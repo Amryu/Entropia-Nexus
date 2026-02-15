@@ -1,6 +1,7 @@
 const pgp = require('pg-promise')();
 const { pool } = require('./dbClient');
 const { getObjects, parseItemList } = require('./utils');
+const { withCache } = require('./responseCache');
 
 // Location types for filtering
 const LOCATION_TYPES = {
@@ -372,7 +373,12 @@ function register(app) {
         }
       }
 
-      res.json(await getLocations(options));
+      const hasFilters = Object.keys(options).length > 0;
+      if (hasFilters) {
+        res.json(await getLocations(options));
+      } else {
+        res.json(await withCache('/locations', ['Locations', 'Planets', 'Areas', 'Estates', 'LandAreas', 'LocationFacilities', 'Facilities', 'WaveEventWaves'], getLocations));
+      }
     } catch (e) {
       console.error('Error fetching locations:', e);
       res.status(500).send('Internal server error');

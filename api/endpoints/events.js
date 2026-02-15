@@ -1,4 +1,5 @@
 const { getObjects, getObjectByIdOrName } = require('./utils');
+const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = {
   Events: 'SELECT * FROM ONLY "Events" ORDER BY "StartDate" DESC NULLS LAST, "Name"'
@@ -33,7 +34,7 @@ const getEvent = (idOrName) => _getObject(idOrName, queries.Events);
 function register(app) {
   app.get('/events', async (req, res) => {
     try {
-      res.json(await getEvents());
+      res.json(await withCache('/events', ['Events'], getEvents));
     } catch (err) {
       console.error('Error fetching events:', err);
       res.status(500).json({ error: 'Failed to fetch events' });
@@ -42,7 +43,7 @@ function register(app) {
 
   app.get('/events/:event', async (req, res) => {
     try {
-      const result = await getEvent(req.params.event);
+      const result = await withCachedLookup('/events', ['Events'], getEvents, req.params.event);
       if (result) {
         res.json(result);
       } else {

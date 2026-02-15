@@ -1,4 +1,5 @@
 const { pool, usersPool } = require('./dbClient');
+const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = {
   Apartments: `
@@ -106,7 +107,7 @@ function register(app) {
    *      '200':
    *        description: A list of apartments
    */
-  app.get('/apartments', async (req, res) => { res.json(await getApartments()); });
+  app.get('/apartments', async (req, res) => { res.json(await withCache('/apartments', ['Locations', 'Planets', 'Estates', 'EstateSections'], getApartments)); });
 
   /**
    * @swagger
@@ -127,7 +128,7 @@ function register(app) {
    *        description: Apartment not found
    */
   app.get('/apartments/:apartment', async (req, res) => {
-    const apartment = await getApartment(req.params.apartment);
+    const apartment = await withCachedLookup('/apartments', ['Locations', 'Planets', 'Estates', 'EstateSections'], getApartments, req.params.apartment);
     if (apartment) res.json(apartment); else res.status(404).send();
   });
 }

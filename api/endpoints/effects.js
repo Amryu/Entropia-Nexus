@@ -1,4 +1,5 @@
 const { getObjects, getObjectByIdOrName } = require('./utils');
+const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = {
   Effects: 'SELECT * FROM ONLY "Effects"',
@@ -40,7 +41,7 @@ function register(app) {
    *        description: A list of effects
    */
   app.get('/effects', async (req, res) => {
-    res.json(await getEffects());
+    res.json(await withCache('/effects', ['Effects'], getEffects));
   });
 
   /**
@@ -62,7 +63,7 @@ function register(app) {
    *        description: Effect not found
    */
   app.get('/effects/:effect', async (req, res) => {
-    const r = await getEffect(req.params.effect);
+    const r = await withCachedLookup('/effects', ['Effects'], getEffects, req.params.effect);
     if (r) res.json(r);
     else res.status(404).send();
   });

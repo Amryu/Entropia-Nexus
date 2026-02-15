@@ -3,6 +3,7 @@ const { getTiersByItemIds } = require('./tiers');
 const { pool } = require('./dbClient');
 const { getObjectByIdOrName } = require('./utils');
 const { idOffsets } = require('./constants');
+const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = { Finders: 'SELECT * FROM ONLY "Finders"' };
 
@@ -70,7 +71,7 @@ function register(app){
    *      '200':
    *        description: A list of finders
    */
-  app.get('/finders', async (req,res) => { res.json(await getFinders()); });
+  app.get('/finders', async (req,res) => { res.json(await withCache('/finders', ['Finders', 'EffectsOnEquip', 'Effects', 'Tiers', 'TierMaterials'], getFinders)); });
   /**
    * @swagger
    * /finders/{finder}:
@@ -89,7 +90,7 @@ function register(app){
    *      '404':
    *        description: Finder not found
    */
-  app.get('/finders/:finder', async (req,res) => { const r = await getFinder(req.params.finder); if (r) res.json(r); else res.status(404).send(); });
+  app.get('/finders/:finder', async (req,res) => { const r = await withCachedLookup('/finders', ['Finders', 'EffectsOnEquip', 'Effects', 'Tiers', 'TierMaterials'], getFinders, req.params.finder); if (r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getFinders, getFinder, formatFinder };

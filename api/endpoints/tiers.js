@@ -1,6 +1,8 @@
-const pgp = require('pg-promise')();
 const { pool } = require('./dbClient');
 const { isId } = require('./utils');
+const { withCache } = require('./responseCache');
+
+const TIER_TABLES = ['Tiers', 'TierMaterials', 'Materials', 'Items', 'ArmorSets'];
 
 // Shared formatting helpers
 function formatTierMaterial(x){
@@ -32,36 +34,44 @@ function formatTierGroup(group, { includeId = false, linkStyle = 'byId' } = {}){
   return { ...withId, Links: link };
 }
 
-// Single source of truth for querying tier rows
-async function fetchTierRows(filters = {}){
-  // Normalize inputs
-  const itemIds = Array.isArray(filters.itemIds) ? filters.itemIds.map(Number).filter(Number.isFinite) : undefined;
-  const ItemId = filters.ItemId != null ? Number(filters.ItemId) : undefined;
-  const IsArmorSet = filters.IsArmorSet != null ? Number(filters.IsArmorSet) : undefined;
-  const Tier = filters.Tier != null ? Number(filters.Tier) : undefined;
-
-  const whereParts = ['1=1'];
-  if (itemIds && itemIds.length) whereParts.push('t."ItemId" IN (${itemIds:csv})');
-  if (ItemId != null) whereParts.push('t."ItemId" = ${ItemId}');
-  if (IsArmorSet != null) whereParts.push('t."IsArmorSet" = ${IsArmorSet}');
-  if (Tier != null) whereParts.push('t."Tier" = ${Tier}');
-
-  const sql = `SELECT t."Id" AS "TierId", t."Tier", t."ItemId", t."IsArmorSet", COALESCE(s."Name", i."Name") AS "ItemName",
+// Load all tier rows once — served from cache on subsequent calls
+async function loadAllTierRows() {
+  const sql = `SELECT t."Id" AS "TierId", t."Tier", t."ItemId", t."IsArmorSet",
+                      COALESCE(s."Name", i."Name") AS "ItemName",
                       tm."MaterialId", tm."Amount",
                       m."Name" AS "MaterialName", m."Value" AS "Value", m."Weight" AS "Weight", m."Type" AS "Type"
                FROM ONLY "Tiers" t
                INNER JOIN ONLY "TierMaterials" tm ON t."Id" = tm."TierId"
                INNER JOIN ONLY "Materials" m ON tm."MaterialId" = m."Id"
                LEFT JOIN ONLY "Items" i ON t."ItemId" = i."Id"
-               LEFT JOIN ONLY "ArmorSets" s ON t."ItemId" = s."Id"
-               WHERE ${whereParts.join(' AND ')}`;
-  const { rows } = await pool.query(pgp.as.format(sql, { itemIds, ItemId, IsArmorSet, Tier }));
+               LEFT JOIN ONLY "ArmorSets" s ON t."ItemId" = s."Id"`;
+  const { rows } = await pool.query(sql);
   return rows;
 }
 
+async function getAllTierRows() {
+  return withCache('_tiers', TIER_TABLES, loadAllTierRows);
+}
+
+// Filter rows in-memory
+function filterRows(allRows, filters) {
+  const itemIds = Array.isArray(filters.itemIds) ? new Set(filters.itemIds.map(Number).filter(Number.isFinite)) : null;
+  const ItemId = filters.ItemId != null ? Number(filters.ItemId) : undefined;
+  const IsArmorSet = filters.IsArmorSet != null ? Number(filters.IsArmorSet) : undefined;
+  const Tier = filters.Tier != null ? Number(filters.Tier) : undefined;
+
+  return allRows.filter(r => {
+    if (itemIds && !itemIds.has(r.ItemId)) return false;
+    if (ItemId != null && r.ItemId !== ItemId) return false;
+    if (IsArmorSet != null && r.IsArmorSet !== IsArmorSet) return false;
+    if (Tier != null && r.Tier !== Tier) return false;
+    return true;
+  });
+}
+
 async function getTiers(filters){
-  const rows = await fetchTierRows(filters);
-  // group by TierId -> list of formatted tiers
+  const allRows = await getAllTierRows();
+  const rows = filterRows(allRows, filters);
   const byTier = rows.reduce((acc, r) => { (acc[r.TierId] ||= []).push(r); return acc; }, {});
   return Object.values(byTier).map(group => formatTierGroup(group, { includeId: true, linkStyle: 'byId' }));
 }
@@ -95,14 +105,15 @@ function register(app){
 }
 module.exports = { register, getTiers };
 
-// Helper for other endpoints: fetch tiers for multiple ItemIds (non-armor sets) and return grouped, formatted per item
+// Helper for other endpoints: fetch tiers for multiple ItemIds and return grouped, formatted per item
 async function getTiersByItemIds(itemIds, isArmorSet = 0){
   if (!Array.isArray(itemIds) || itemIds.length === 0) return {};
   const ids = itemIds.map(Number).filter(Number.isFinite);
   if (ids.length === 0) return {};
-  const rows = await fetchTierRows({ itemIds: ids, IsArmorSet: isArmorSet });
-  // group rows -> by ItemId, then by Tier
-  const byItem = rows.reduce((acc,r)=>{ (acc[r.ItemId] ||= []); acc[r.ItemId].push(r); return acc; },{});
+  const allRows = await getAllTierRows();
+  const idSet = new Set(ids);
+  const rows = allRows.filter(r => idSet.has(r.ItemId) && r.IsArmorSet === isArmorSet);
+  const byItem = rows.reduce((acc,r)=>{ (acc[r.ItemId] ||= []).push(r); return acc; },{});
   const result = {};
   for (const [itemId, list] of Object.entries(byItem)){
     const byTier = list.reduce((a,r)=>{ (a[r.Tier] ||= []); a[r.Tier].push(r); return a; },{});

@@ -3,6 +3,7 @@ const { idOffsets } = require('./constants');
 const { getObjectByIdOrName } = require('./utils');
 const { loadEffectsOnEquipByItemIds, loadEffectsOnUseByItemIds } = require('./effects-utils');
 const { getTiersByItemIds } = require('./tiers');
+const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = { Weapons: 'SELECT "Weapons".*, "VehicleAttachmentTypes"."Name" AS "AttachmentType", "Materials"."Name" AS "Ammo", hit."Name" AS "ProfessionHit", dmg."Name" AS "ProfessionDmg" FROM ONLY "Weapons" LEFT JOIN ONLY "VehicleAttachmentTypes" ON "Weapons"."AttachmentTypeId" = "VehicleAttachmentTypes"."Id" LEFT JOIN ONLY "Materials" ON "Weapons"."AmmoId" = "Materials"."Id" LEFT JOIN ONLY "Professions" hit ON "Weapons"."ProfessionHitId" = hit."Id" LEFT JOIN ONLY "Professions" dmg ON "Weapons"."ProfessionDmgId" = dmg."Id"' };
 
@@ -96,7 +97,7 @@ function register(app){
    *      '200':
    *        description: A list of weapons
    */
-  app.get('/weapons', async (req,res)=>{ res.json(await getWeapons()); });
+  app.get('/weapons', async (req,res)=>{ res.json(await withCache('/weapons', ['Weapons', 'VehicleAttachmentTypes', 'Materials', 'Professions', 'EffectsOnEquip', 'EffectsOnUse', 'Effects', 'Tiers', 'TierMaterials'], getWeapons)); });
   /**
    * @swagger
    * /weapons/{weapon}:
@@ -115,6 +116,6 @@ function register(app){
    *      '404':
    *        description: Weapon not found
    */
-  app.get('/weapons/:weapon', async (req,res)=>{ const r = await getWeapon(req.params.weapon); if(r) res.json(r); else res.status(404).send(); });
+  app.get('/weapons/:weapon', async (req,res)=>{ const r = await withCachedLookup('/weapons', ['Weapons', 'VehicleAttachmentTypes', 'Materials', 'Professions', 'EffectsOnEquip', 'EffectsOnUse', 'Effects', 'Tiers', 'TierMaterials'], getWeapons, req.params.weapon); if(r) res.json(r); else res.status(404).send(); });
 }
 module.exports = { register, getWeapons, getWeapon, formatWeapon, queries };

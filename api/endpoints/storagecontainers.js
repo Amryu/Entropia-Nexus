@@ -1,5 +1,6 @@
 const { getObjects, getObjectByIdOrName } = require('./utils');
 const { idOffsets } = require('./constants');
+const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = { StorageContainers: 'SELECT "StorageContainers".*, "Planets"."Name" AS "Planet" FROM ONLY "StorageContainers" LEFT JOIN ONLY "Planets" ON "StorageContainers"."PlanetId" = "Planets"."Id"' };
 
@@ -33,7 +34,7 @@ function register(app){
    *      '200':
    *        description: A list of storage containers
    */
-  app.get('/storagecontainers', async (req,res)=>{ res.json(await getStorageContainers()); });
+  app.get('/storagecontainers', async (req,res)=>{ res.json(await withCache('/storagecontainers', ['StorageContainers'], getStorageContainers)); });
   /**
    * @swagger
    * /storagecontainers/{storageContainer}:
@@ -52,7 +53,7 @@ function register(app){
    *      '404':
    *        description: Storage container not found
    */
-  app.get('/storagecontainers/:storageContainer', async (req,res)=>{ const r = await getStorageContainer(req.params.storageContainer); if(r) res.json(r); else res.status(404).send(); });
+  app.get('/storagecontainers/:storageContainer', async (req,res)=>{ const r = await withCachedLookup('/storagecontainers', ['StorageContainers'], getStorageContainers, req.params.storageContainer); if(r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getStorageContainers, getStorageContainer, formatStorageContainer };

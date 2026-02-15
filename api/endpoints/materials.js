@@ -1,4 +1,5 @@
 const { getObjects, getObjectByIdOrName } = require('./utils');
+const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = {
   Materials: 'SELECT * FROM ONLY "Materials"',
@@ -33,7 +34,7 @@ function register(app){
    *      '200':
    *        description: A list of materials
    */
-  app.get('/materials', async (req,res) => { res.json(await getMaterials()); });
+  app.get('/materials', async (req,res) => { res.json(await withCache('/materials', ['Materials'], getMaterials)); });
 
   /**
    * @swagger
@@ -53,7 +54,7 @@ function register(app){
    *      '404':
    *        description: Material not found
    */
-  app.get('/materials/:material', async (req,res) => { const r = await getMaterial(req.params.material); if (r) res.json(r); else res.status(404).send(); });
+  app.get('/materials/:material', async (req,res) => { const r = await withCachedLookup('/materials', ['Materials'], getMaterials, req.params.material); if (r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getMaterials, getMaterial, formatMaterial };

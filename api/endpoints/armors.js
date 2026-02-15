@@ -1,5 +1,6 @@
 const { getObjects, getObjectByIdOrName, generateGenderAliases } = require('./utils');
 const { idOffsets } = require('./constants');
+const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = {
   Armors: 'SELECT "Armors"."Id", "Armors"."Name", "Armors"."Description", "ArmorSets"."Name" AS "Set", "Gender", "Slot", "SetId", "Weight", "MaxTT", "MinTT", "Durability", "Stab", "Cut", "Impact", "Penetration", "Shrapnel", "Burn", "Cold", "Acid", "Electric" FROM ONLY "Armors" LEFT JOIN ONLY "ArmorSets" ON "Armors"."SetId" = "ArmorSets"."Id"',
@@ -56,7 +57,7 @@ function register(app){
    *      '200':
    *        description: A list of armors
    */
-  app.get('/armors', async (req,res) => { res.json(await getArmors()); });
+  app.get('/armors', async (req,res) => { res.json(await withCache('/armors', ['Armors', 'ArmorSets'], getArmors)); });
   /**
    * @swagger
    * /armors/{armor}:
@@ -75,7 +76,7 @@ function register(app){
    *      '404':
    *        description: Armor not found
    */
-  app.get('/armors/:armor', async (req,res) => { const r = await getArmor(req.params.armor); if (r) res.json(r); else res.status(404).send(); });
+  app.get('/armors/:armor', async (req,res) => { const r = await withCachedLookup('/armors', ['Armors', 'ArmorSets'], getArmors, req.params.armor); if (r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getArmors, getArmor };

@@ -1,6 +1,7 @@
 const { pool } = require('./dbClient');
 const { idOffsets } = require('./constants');
 const { getObjectByIdOrName } = require('./utils');
+const { withCache, withCachedLookup } = require('./responseCache');
 
 // Use legacy query fields (Planet join); Mount mission isn't in legacy, so omit it for now
 const query = 'SELECT "Pets".*, "Planets"."Name" AS "Planet" FROM ONLY "Pets" LEFT JOIN ONLY "Planets" ON "Pets"."PlanetId" = "Planets"."Id"';
@@ -43,7 +44,7 @@ function register(app){
    *      '200':
    *        description: A list of pets
    */
-  app.get('/pets', async (req,res)=>{ res.json(await getPets()); });
+  app.get('/pets', async (req,res)=>{ res.json(await withCache('/pets', ['Pets'], getPets)); });
   /**
    * @swagger
    * /pets/{pet}:
@@ -62,6 +63,6 @@ function register(app){
    *      '404':
    *        description: Pet not found
    */
-  app.get('/pets/:pet', async (req,res)=>{ const r = await getPet(req.params.pet); if(r) res.json(r); else res.status(404).send(); });
+  app.get('/pets/:pet', async (req,res)=>{ const r = await withCachedLookup('/pets', ['Pets'], getPets, req.params.pet); if(r) res.json(r); else res.status(404).send(); });
 }
 module.exports = { register, getPets, getPet, formatPet };

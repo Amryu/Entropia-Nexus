@@ -1,5 +1,6 @@
 const { pool } = require('./dbClient');
 const { getObjectByIdOrName } = require('./utils');
+const { withCache } = require('./responseCache');
 
 const baseQuery = `
   SELECT "Missions".*, "Planets"."Name" AS "Planet",
@@ -299,7 +300,9 @@ function register(app) {
     try {
       const planetId = req.query.planetId || req.query.PlanetId;
       const parsed = planetId ? Number(planetId) : null;
-      const result = await getMissions(Number.isFinite(parsed) ? parsed : null);
+      const result = Number.isFinite(parsed)
+        ? await getMissions(parsed)
+        : await withCache('/missions', ['Missions', 'Planets', 'MissionChains', 'Events', 'Locations'], getMissions);
       res.json(result);
     } catch (e) {
       res.status(500).json({ error: 'Failed to fetch missions' });

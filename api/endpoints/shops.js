@@ -1,4 +1,5 @@
 const { pool, usersPool } = require('./dbClient');
+const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = {
   Shops: `
@@ -182,7 +183,11 @@ function register(app) {
     if (req.query.OwnerId != null && !Number.isFinite(ownerId)) {
       return res.status(400).json({ error: 'OwnerId must be a number.' });
     }
-    res.json(await getShops(Number.isFinite(ownerId) ? ownerId : null));
+    if (Number.isFinite(ownerId)) {
+      res.json(await getShops(ownerId));
+    } else {
+      res.json(await withCache('/shops', ['Locations', 'Planets', 'Estates', 'EstateSections'], getShops));
+    }
   });
   app.get('/shops/:shop', async (req, res) => {
     /**
@@ -203,7 +208,7 @@ function register(app) {
      *      '404':
      *        description: Shop not found
      */
-    const shop = await getShop(req.params.shop);
+    const shop = await withCachedLookup('/shops', ['Locations', 'Planets', 'Estates', 'EstateSections'], getShops, req.params.shop);
     if (shop) res.json(shop); else res.status(404).send();
   });
 }

@@ -1,5 +1,6 @@
 const { getObjects, getObjectByIdOrName } = require('./utils');
 const { idOffsets } = require('./constants');
+const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = { Refiners: 'SELECT * FROM ONLY "Refiners"' };
 
@@ -36,7 +37,7 @@ function register(app){
    *        description: A list of refiners
    */
   app.get('/refiners', async (req,res) => {
-    res.json(await getRefiners());
+    res.json(await withCache('/refiners', ['Refiners'], getRefiners));
   });
   /**
    * @swagger
@@ -57,7 +58,7 @@ function register(app){
    *        description: Refiner not found
    */
   app.get('/refiners/:refiner', async (req,res) => {
-    const r = await getRefiner(req.params.refiner);
+    const r = await withCachedLookup('/refiners', ['Refiners'], getRefiners, req.params.refiner);
     if (r) res.json(r); else res.status(404).send();
   });
 }

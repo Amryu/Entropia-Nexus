@@ -1,4 +1,5 @@
 const { getObjects, getObjectByIdOrName } = require('./utils');
+const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = { VehicleAttachmentTypes: 'SELECT * FROM ONLY "VehicleAttachmentTypes"' };
 
@@ -17,7 +18,7 @@ function register(app){
    *      '200':
    *        description: A list of vehicle attachment types
    */
-  app.get('/vehicleattachmenttypes', async (req,res)=>{ res.json(await getVehicleAttachmentTypes()); });
+  app.get('/vehicleattachmenttypes', async (req,res)=>{ res.json(await withCache('/vehicleattachmenttypes', ['VehicleAttachmentTypes'], getVehicleAttachmentTypes)); });
   /**
    * @swagger
    * /vehicleattachmenttypes/{vehicleAttachmentType}:
@@ -36,7 +37,7 @@ function register(app){
    *      '404':
    *        description: Vehicle attachment type not found
    */
-  app.get('/vehicleattachmenttypes/:vehicleAttachmentType', async (req,res)=>{ const r = await getVehicleAttachmentType(req.params.vehicleAttachmentType); if(r) res.json(r); else res.status(404).send(); });
+  app.get('/vehicleattachmenttypes/:vehicleAttachmentType', async (req,res)=>{ const r = await withCachedLookup('/vehicleattachmenttypes', ['VehicleAttachmentTypes'], getVehicleAttachmentTypes, req.params.vehicleAttachmentType); if(r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getVehicleAttachmentTypes, getVehicleAttachmentType };

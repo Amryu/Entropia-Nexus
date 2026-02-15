@@ -1,6 +1,7 @@
 const pgp = require('pg-promise')();
 const { pool } = require('./dbClient');
 const { parseItemList } = require('./utils');
+const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = {
   Areas: `
@@ -122,7 +123,11 @@ function register(app) {
         areaTypes = req.query.Types ? parseItemList(req.query.Types) : [req.query.Type];
       }
 
-      res.json(await getAreas(planets, areaTypes));
+      if (planets || areaTypes) {
+        res.json(await getAreas(planets, areaTypes));
+      } else {
+        res.json(await withCache('/areas', ['Areas', 'Locations', 'Planets'], getAreas));
+      }
     } catch (e) {
       console.error('Error fetching areas:', e);
       res.status(500).send('Internal server error');
@@ -148,7 +153,7 @@ function register(app) {
    *        description: Area not found
    */
   app.get('/areas/:area', async (req, res) => {
-    const result = await getArea(req.params.area);
+    const result = await withCachedLookup('/areas', ['Areas', 'Locations', 'Planets'], getAreas, req.params.area);
     if (result) res.json(result); else res.status(404).send('Area not found');
   });
 }

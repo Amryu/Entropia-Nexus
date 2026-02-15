@@ -1,4 +1,5 @@
 const { pool } = require('./dbClient');
+const { withCache } = require('./responseCache');
 
 const BUILTIN_ENUMERATIONS = [
   { name: 'MobSpecies', description: 'Mob species definitions.' },
@@ -774,31 +775,31 @@ function register(app) {
    */
   app.get('/enumerations', async (req, res, next) => {
     try {
-      const custom = await getCustomEnumerations();
-      const customNames = new Set(custom.map((x) => String(x.Name).toLowerCase()));
+      res.json(await withCache('/enumerations', ['Enumerations', 'EnumerationValues'], async () => {
+        const custom = await getCustomEnumerations();
+        const customNames = new Set(custom.map((x) => String(x.Name).toLowerCase()));
 
-      const customItems = custom.map((x) => formatListItem({
-        id: x.Id,
-        name: x.Name,
-        source: 'custom',
-        description: x.Description || null,
-        metadata: x.Metadata || null
-      }));
-
-      const builtinItems = BUILTIN_ENUMERATIONS
-        .filter((x) => !customNames.has(x.name.toLowerCase()))
-        .map((x) => formatListItem({
-          id: null,
-          name: x.name,
-          source: 'builtin',
-          description: x.description,
-          metadata: null
+        const customItems = custom.map((x) => formatListItem({
+          id: x.Id,
+          name: x.Name,
+          source: 'custom',
+          description: x.Description || null,
+          metadata: x.Metadata || null
         }));
 
-      const result = [...customItems, ...builtinItems]
-        .sort((a, b) => a.Name.localeCompare(b.Name));
+        const builtinItems = BUILTIN_ENUMERATIONS
+          .filter((x) => !customNames.has(x.name.toLowerCase()))
+          .map((x) => formatListItem({
+            id: null,
+            name: x.name,
+            source: 'builtin',
+            description: x.description,
+            metadata: null
+          }));
 
-      res.json(result);
+        return [...customItems, ...builtinItems]
+          .sort((a, b) => a.Name.localeCompare(b.Name));
+      }));
     } catch (err) {
       next(err);
     }

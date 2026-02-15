@@ -2,6 +2,7 @@ const pgp = require('pg-promise')();
 const { pool } = require('./dbClient');
 const { getObjectByIdOrName } = require('./utils');
 const { idOffsets } = require('./constants');
+const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = {
   Consumables: 'SELECT * FROM ONLY "Consumables"',
@@ -37,7 +38,7 @@ function register(app){
    *      '200':
    *        description: A list of stimulants
    */
-  app.get('/stimulants', async (req,res) => { res.json(await getConsumables()); });
+  app.get('/stimulants', async (req,res) => { res.json(await withCache('/consumables', ['Consumables', 'EffectsOnConsume', 'Effects'], getConsumables)); });
   /**
    * @swagger
    * /stimulants/{stimulant}:
@@ -56,7 +57,7 @@ function register(app){
    *      '404':
    *        description: Stimulant not found
    */
-  app.get('/stimulants/:stimulant', async (req,res) => { const r = await getConsumable(req.params.stimulant); if (r) res.json(r); else res.status(404).send(); });
+  app.get('/stimulants/:stimulant', async (req,res) => { const r = await withCachedLookup('/consumables', ['Consumables', 'EffectsOnConsume', 'Effects'], getConsumables, req.params.stimulant); if (r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getConsumables, getConsumable, formatConsumable };

@@ -1,5 +1,6 @@
 const { pool } = require('./dbClient');
 const { getObjectByIdOrName } = require('./utils');
+const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = {
   Professions: 'SELECT "Professions".*, "ProfessionCategories"."Name" AS "Category" FROM ONLY "Professions" INNER JOIN ONLY "ProfessionCategories" ON "Professions"."CategoryId" = "ProfessionCategories"."Id"',
@@ -40,7 +41,7 @@ function register(app){
    *      '200':
    *        description: A list of professions
    */
-  app.get('/professions', async (req,res) => { res.json(await getProfessions()); });
+  app.get('/professions', async (req,res) => { res.json(await withCache('/professions', ['Professions', 'ProfessionCategories', 'ProfessionSkills', 'SkillUnlocks', 'Skills'], getProfessions)); });
   /**
    * @swagger
    * /professions/{profession}:
@@ -59,6 +60,6 @@ function register(app){
    *      '404':
    *        description: Profession not found
    */
-  app.get('/professions/:profession', async (req,res) => { const r = await getProfession(req.params.profession); if (r) res.json(r); else res.status(404).send(); });
+  app.get('/professions/:profession', async (req,res) => { const r = await withCachedLookup('/professions', ['Professions', 'ProfessionCategories', 'ProfessionSkills', 'SkillUnlocks', 'Skills'], getProfessions, req.params.profession); if (r) res.json(r); else res.status(404).send(); });
 }
 module.exports = { register, getProfessions, getProfession };

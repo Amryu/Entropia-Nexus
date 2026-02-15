@@ -8,6 +8,7 @@ const { recordRequest, snapshotAndReset } = require('./metrics');
 // Register split endpoint modules (DB + routes colocated) while keeping a single DB pool
 const endpoints = require('./endpoints');
 const { checkHealth, shutdown: dbShutdown } = require('./endpoints/dbClient');
+const { startPolling: startCachePolling, stopPolling: stopCachePolling } = require('./endpoints/responseCache');
 const app = express();
 const port = parseInt(process.env.API_PORT || '3000', 10);
 
@@ -129,6 +130,9 @@ const server = app.listen(port, () => {
 // Attach modular endpoints
 try { endpoints.registerAll(app); } catch (e) { console.warn('Endpoints registration failed:', e?.message); }
 
+// Start cache change-tracking poller (non-blocking — API works without it)
+startCachePolling().catch(e => console.warn('[cache] Initial poll failed:', e?.message));
+
 app.get('/schema.json', (_req, res) => {
   res.setHeader('Content-Type', 'application/json');
   res.send(swaggerDocs);
@@ -190,6 +194,9 @@ async function gracefulShutdown(signal) {
   server.close(() => {
     console.log('[shutdown] HTTP server closed');
   });
+
+  // Stop cache poller
+  stopCachePolling();
 
   // Close database pools
   await dbShutdown();

@@ -1,5 +1,6 @@
 const pgp = require('pg-promise')();
 const { getObjectByIdOrName, parseItemList } = require('./utils');
+const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = {
   RefiningRecipes: 'SELECT "RefiningRecipes".*, "Items"."Name" AS "Product", "Items"."Type" AS "ProductType", "Items"."Value" AS "ProductValue" FROM ONLY "RefiningRecipes" INNER JOIN ONLY "Items" ON "RefiningRecipes"."ProductId" = "Items"."Id"',
@@ -75,7 +76,7 @@ function register(app){
         if (products.length === 0) return res.status(400).send('Products cannot be empty');
         res.json(await getRefiningRecipes(products));
       } else {
-        res.json(await getRefiningRecipes());
+        res.json(await withCache('/refiningrecipes', ['RefiningRecipes', 'RefiningIngredients', 'Items'], getRefiningRecipes));
       }
     } catch (e){ next(e); }
   });
@@ -100,7 +101,7 @@ function register(app){
    */
   app.get('/refiningrecipes/:refiningRecipe', async (req,res,next) => {
     try {
-      const result = await getRefiningRecipe(req.params.refiningRecipe);
+      const result = await withCachedLookup('/refiningrecipes', ['RefiningRecipes', 'RefiningIngredients', 'Items'], getRefiningRecipes, req.params.refiningRecipe);
       if (result) res.json(result); else res.status(404).send();
     } catch (e){ next(e); }
   });

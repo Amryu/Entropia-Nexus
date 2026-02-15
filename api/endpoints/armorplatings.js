@@ -1,5 +1,6 @@
 const { getObjects, getObjectByIdOrName } = require('./utils');
 const { idOffsets } = require('./constants');
+const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = {
   ArmorPlatings: 'SELECT * FROM ONLY "ArmorPlatings"',
@@ -52,7 +53,7 @@ function register(app){
    *      '200':
    *        description: A list of armor platings
    */
-  app.get('/armorplatings', async (req,res) => { res.json(await getArmorPlatings()); });
+  app.get('/armorplatings', async (req,res) => { res.json(await withCache('/armorplatings', ['ArmorPlatings'], getArmorPlatings)); });
   /**
    * @swagger
    * /armorplatings/{armorPlating}:
@@ -71,7 +72,7 @@ function register(app){
    *      '404':
    *        description: Armor plating not found
    */
-  app.get('/armorplatings/:armorPlating', async (req,res) => { const r = await getArmorPlating(req.params.armorPlating); if (r) res.json(r); else res.status(404).send(); });
+  app.get('/armorplatings/:armorPlating', async (req,res) => { const r = await withCachedLookup('/armorplatings', ['ArmorPlatings'], getArmorPlatings, req.params.armorPlating); if (r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getArmorPlatings, getArmorPlating, formatArmorPlating };

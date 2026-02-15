@@ -1,5 +1,6 @@
 const { getObjects, getObjectByIdOrName } = require('./utils');
 const { idOffsets } = require('./constants');
+const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = { MindforceImplants: 'SELECT * FROM ONLY "MindforceImplants"' };
 
@@ -36,7 +37,7 @@ function register(app){
    *      '200':
    *        description: A list of Mindforce implants
    */
-  app.get('/mindforceimplants', async (req,res) => { res.json(await getMindforceImplants()); });
+  app.get('/mindforceimplants', async (req,res) => { res.json(await withCache('/mindforce', ['Mindforce'], getMindforceImplants)); });
 
   /**
    * @swagger
@@ -56,7 +57,7 @@ function register(app){
    *      '404':
    *        description: Mindforce implant not found
    */
-  app.get('/mindforceimplants/:mindforceImplant', async (req,res) => { const r = await getMindforceImplant(req.params.mindforceImplant); if (r) res.json(r); else res.status(404).send(); });
+  app.get('/mindforceimplants/:mindforceImplant', async (req,res) => { const r = await withCachedLookup('/mindforce', ['Mindforce'], getMindforceImplants, req.params.mindforceImplant); if (r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getMindforceImplants, getMindforceImplant, formatMindforceImplant };

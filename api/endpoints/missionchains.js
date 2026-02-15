@@ -1,6 +1,7 @@
 const { pool } = require('./dbClient');
 const { getObjectByIdOrName } = require('./utils');
 const { formatMissionSummary, getMissionChainGraph } = require('./missions');
+const { withCache } = require('./responseCache');
 
 const baseQuery = `
   SELECT "MissionChains".*, "Planets"."Name" AS "Planet"
@@ -66,7 +67,9 @@ function register(app) {
     try {
       const planetId = req.query.planetId || req.query.PlanetId;
       const parsed = planetId ? Number(planetId) : null;
-      const result = await getMissionChains(Number.isFinite(parsed) ? parsed : null);
+      const result = Number.isFinite(parsed)
+        ? await getMissionChains(parsed)
+        : await withCache('/missionchains', ['MissionChains', 'Planets'], getMissionChains);
       res.json(result);
     } catch (e) {
       res.status(500).json({ error: 'Failed to fetch mission chains' });

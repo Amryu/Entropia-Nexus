@@ -2,6 +2,7 @@ const { pool } = require('./dbClient');
 const { getObjectByIdOrName } = require('./utils');
 const { idOffsets } = require('./constants');
 const { loadEffectsOnEquipByItemIds } = require('./effects-utils');
+const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = {
   FinderAmplifiers: 'SELECT * FROM ONLY "FinderAmplifiers"',
@@ -55,7 +56,7 @@ function register(app){
    *      '200':
    *        description: A list of finders
    */
-  app.get('/finderamplifiers', async (req,res) => { res.json(await getFinderAmplifiers()); });
+  app.get('/finderamplifiers', async (req,res) => { res.json(await withCache('/finderamplifiers', ['FinderAmplifiers'], getFinderAmplifiers)); });
   /**
    * @swagger
    * /finderamplifiers/{finderAmplifier}:
@@ -74,7 +75,7 @@ function register(app){
    *      '404':
    *        description: Finder amplifier not found
    */
-  app.get('/finderamplifiers/:finderAmplifier', async (req,res) => { const r = await getFinderAmplifier(req.params.finderAmplifier); if (r) res.json(r); else res.status(404).send(); });
+  app.get('/finderamplifiers/:finderAmplifier', async (req,res) => { const r = await withCachedLookup('/finderamplifiers', ['FinderAmplifiers'], getFinderAmplifiers, req.params.finderAmplifier); if (r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getFinderAmplifiers, getFinderAmplifier, formatFinderAmplifier };

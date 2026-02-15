@@ -1,4 +1,5 @@
 const { pool } = require('./dbClient');
+const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = {
   Teleporters: `
@@ -50,7 +51,7 @@ function register(app) {
    *      '200':
    *        description: A list of teleporters
    */
-  app.get('/teleporters', async (req, res) => { res.json(await getTeleporters()); });
+  app.get('/teleporters', async (req, res) => { res.json(await withCache('/teleporters', ['Locations', 'Planets'], getTeleporters)); });
 
   /**
    * @swagger
@@ -71,7 +72,7 @@ function register(app) {
    *        description: Teleporter not found
    */
   app.get('/teleporters/:teleporter', async (req, res) => {
-    const t = await getTeleporter(req.params.teleporter);
+    const t = await withCachedLookup('/teleporters', ['Locations', 'Planets'], getTeleporters, req.params.teleporter);
     if (t) res.json(t); else res.status(404).send('Teleporter not found');
   });
 }

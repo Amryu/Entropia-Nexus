@@ -1,5 +1,6 @@
 const { pool } = require("./dbClient");
 const { getObjectByIdOrName } = require("./utils");
+const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = {
   Skills:
@@ -96,7 +97,7 @@ function register(app) {
    *        description: A list of skills
    */
   app.get("/skills", async (req, res) => {
-    res.json(await getSkills());
+    res.json(await withCache('/skills', ['Skills', 'SkillCategories', 'ProfessionSkills', 'SkillUnlocks', 'Professions', 'ProfessionCategories'], getSkills));
   });
   /**
    * @swagger
@@ -117,7 +118,7 @@ function register(app) {
    *        description: Skill not found
    */
   app.get("/skills/:skill", async (req, res) => {
-    const r = await getSkill(req.params.skill);
+    const r = await withCachedLookup('/skills', ['Skills', 'SkillCategories', 'ProfessionSkills', 'SkillUnlocks', 'Professions', 'ProfessionCategories'], getSkills, req.params.skill);
     if (r) res.json(r);
     else res.status(404).send();
   });

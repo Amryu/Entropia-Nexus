@@ -5,6 +5,7 @@ const {
   loadEffectsOnEquipByItemIds,
   loadEffectsOnUseByItemIds,
 } = require('./effects-utils');
+const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = {
   MedicalChips: 'SELECT "MedicalChips".*, "Materials"."Name" AS "Ammo" FROM ONLY "MedicalChips" LEFT JOIN ONLY "Materials" ON "MedicalChips"."AmmoId" = "Materials"."Id"',
@@ -79,7 +80,7 @@ function register(app){
    *      '200':
    *        description: A list of medical chips
    */
-  app.get('/medicalchips', async (req,res) => { res.json(await getMedicalChips()); });
+  app.get('/medicalchips', async (req,res) => { res.json(await withCache('/medicalchips', ['MedicalChips', 'Materials', 'EffectsOnEquip', 'EffectsOnUse', 'Effects'], getMedicalChips)); });
   /**
    * @swagger
    * /medicalchips/{medicalChip}:
@@ -98,7 +99,7 @@ function register(app){
    *      '404':
    *        description: Medical chip not found
    */
-  app.get('/medicalchips/:medicalChip', async (req,res) => { const r = await getMedicalChip(req.params.medicalChip); if (r) res.json(r); else res.status(404).send(); });
+  app.get('/medicalchips/:medicalChip', async (req,res) => { const r = await withCachedLookup('/medicalchips', ['MedicalChips', 'Materials', 'EffectsOnEquip', 'EffectsOnUse', 'Effects'], getMedicalChips, req.params.medicalChip); if (r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getMedicalChips, getMedicalChip, formatMedicalChip };

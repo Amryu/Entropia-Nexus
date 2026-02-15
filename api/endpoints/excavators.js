@@ -4,6 +4,7 @@ const { getObjectByIdOrName } = require('./utils');
 const { idOffsets } = require('./constants');
 const { loadEffectsOnEquipByItemIds } = require('./effects-utils');
 const { getTiersByItemIds } = require('./tiers');
+const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = {
   Excavators: 'SELECT * FROM ONLY "Excavators"',
@@ -70,7 +71,7 @@ function register(app){
    *      '200':
    *        description: A list of excavators
    */
-  app.get('/excavators', async (req,res) => { res.json(await getExcavators()); });
+  app.get('/excavators', async (req,res) => { res.json(await withCache('/excavators', ['Excavators', 'EffectsOnEquip', 'Effects', 'Tiers', 'TierMaterials'], getExcavators)); });
   /**
    * @swagger
    * /excavators/{excavator}:
@@ -89,7 +90,7 @@ function register(app){
    *      '404':
    *        description: Excavator not found
    */
-  app.get('/excavators/:excavator', async (req,res) => { const r = await getExcavator(req.params.excavator); if (r) res.json(r); else res.status(404).send(); });
+  app.get('/excavators/:excavator', async (req,res) => { const r = await withCachedLookup('/excavators', ['Excavators', 'EffectsOnEquip', 'Effects', 'Tiers', 'TierMaterials'], getExcavators, req.params.excavator); if (r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getExcavators, getExcavator, formatExcavator };

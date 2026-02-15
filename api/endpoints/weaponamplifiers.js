@@ -2,6 +2,7 @@ const { pool } = require('./dbClient');
 const { idOffsets } = require('./constants');
 const { getObjectByIdOrName } = require('./utils');
 const { loadEffectsOnEquipByItemIds } = require('./effects-utils');
+const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = {
   WeaponAmplifiers: 'SELECT * FROM ONLY "WeaponAmplifiers"',
@@ -68,7 +69,7 @@ function register(app){
    *        description: A list of weapon amplifiers
    */
   app.get('/weaponamplifiers', async (req,res) => {
-    res.json(await getWeaponAmplifiers());
+    res.json(await withCache('/weaponamplifiers', ['WeaponAmplifiers'], getWeaponAmplifiers));
   });
   /**
    * @swagger
@@ -89,7 +90,7 @@ function register(app){
    *        description: Weapon amplifier not found
    */
   app.get('/weaponamplifiers/:weaponAmplifier', async (req,res) => {
-    const r = await getWeaponAmplifier(req.params.weaponAmplifier);
+    const r = await withCachedLookup('/weaponamplifiers', ['WeaponAmplifiers'], getWeaponAmplifiers, req.params.weaponAmplifier);
     if (r) res.json(r); else res.status(404).send();
   });
 }

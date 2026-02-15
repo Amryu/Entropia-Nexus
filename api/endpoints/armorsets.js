@@ -4,6 +4,7 @@ const { idOffsets } = require('./constants');
 const { getObjectByIdOrName } = require('./utils');
 const { loadEffectsOnEquipByItemIds, loadSetEffectsBySetIds } = require('./effects-utils');
 const { getTiersByItemIds } = require('./tiers');
+const { withCache, withCachedLookup } = require('./responseCache');
 
 // Queries (formatted, parameterized)
 const queries = {
@@ -257,7 +258,7 @@ function register(app){
    *      '200':
    *        description: A list of armor sets
    */
-  app.get('/armorsets', async (req,res) => { res.json(await getArmorSets()); });
+  app.get('/armorsets', async (req,res) => { res.json(await withCache('/armorsets', ['ArmorSets', 'Armors', 'EffectsOnEquip', 'EffectsOnSetEquip', 'Effects', 'Tiers', 'TierMaterials'], getArmorSets)); });
   /**
    * @swagger
    * /armorsets/{armorset}:
@@ -276,7 +277,7 @@ function register(app){
    *      '404':
    *        description: Armor set not found
    */
-  app.get('/armorsets/:armorset', async (req,res) => { const r = await getArmorSet(req.params.armorset); if (r) res.json(r); else res.status(404).send(); });
+  app.get('/armorsets/:armorset', async (req,res) => { const r = await withCachedLookup('/armorsets', ['ArmorSets', 'Armors', 'EffectsOnEquip', 'EffectsOnSetEquip', 'Effects', 'Tiers', 'TierMaterials'], getArmorSets, req.params.armorset); if (r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getArmorSets, getArmorSet, formatArmorSetsResponse, queries };

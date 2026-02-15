@@ -1,6 +1,7 @@
 const { pool } = require('./dbClient');
 const { getObjectByIdOrName } = require('./utils');
 const { idOffsets } = require('./constants');
+const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = {
   Decorations: 'SELECT * FROM ONLY "Decorations"',
@@ -23,7 +24,7 @@ function register(app){
    *      '200':
    *        description: A list of decorations
    */
-  app.get('/decorations', async (req,res) => { res.json(await getDecorations()); });
+  app.get('/decorations', async (req,res) => { res.json(await withCache('/decorations', ['Decorations'], getDecorations)); });
   /**
    * @swagger
    * /decorations/{decoration}:
@@ -42,7 +43,7 @@ function register(app){
    *      '404':
    *        description: Decoration not found
    */
-  app.get('/decorations/:decoration', async (req,res) => { const r = await getDecoration(req.params.decoration); if (r) res.json(r); else res.status(404).send(); });
+  app.get('/decorations/:decoration', async (req,res) => { const r = await withCachedLookup('/decorations', ['Decorations'], getDecorations, req.params.decoration); if (r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getDecorations, getDecoration, formatDecoration };
