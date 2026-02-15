@@ -46,11 +46,12 @@ export async function load({ fetch, params, url, parent }) {
   response.isCreateMode = isCreateMode;
 
   // Fetch dependent data for edit mode dropdowns
-  const [blueprintbooksList, professionsList, itemsList, materialsList] = await Promise.all([
+  const [blueprintbooksList, professionsList, itemsList, materialsList, weaponsList] = await Promise.all([
     apiCall(fetch, '/blueprintbooks'),
     apiCall(fetch, '/professions'),
     apiCall(fetch, '/items'),
-    apiCall(fetch, '/materials')
+    apiCall(fetch, '/materials'),
+    apiCall(fetch, '/weapons')
   ]);
 
   // Filter professions to only Manufacturing category
@@ -61,6 +62,7 @@ export async function load({ fetch, params, url, parent }) {
     i.Properties?.Type !== 'Blueprint' && i.Properties?.Type !== 'Pet'
   );
   response.materials = materialsList || [];
+  response.weaponItems = weaponsList || [];
 
   // If a changeId is provided (editing an existing pending create), fetch that change
   if (changeId && isCreateMode) {

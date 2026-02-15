@@ -90,6 +90,7 @@
   $: professions = data.professions || [];
   $: productItems = data.productItems || [];
   $: materials = data.materials || [];
+  $: weaponItems = data.weaponItems || [];
 
   // Options for SearchInput dropdowns
   $: bookOptions = blueprintbooks.map(b => ({ value: b.Name, label: b.Name })).sort((a, b) => a.label.localeCompare(b.label));
@@ -387,6 +388,20 @@
     'Mechanical Component': 'Mechanical Engineer',
   };
 
+  const WEAPON_TYPE_TO_PROFESSION = {
+    'BLP': 'BLP Weapons Engineer',
+    'Laser': 'Laser Weapons Engineer',
+    'Gauss': 'Gauss Weapons Engineer',
+    'Plasma': 'Plasma Weapons Engineer',
+    'Explosive': 'Projectile Launcher Engineer',
+    'Fists': 'Powerfist Engineer',
+    'Clubs': 'Shortblades Engineer',
+    'Whips': 'Shortblades Engineer',
+    'Mining Laser (Low)': 'Mining Laser Engineer',
+    'Mining Laser (Medium)': 'Mining Laser Engineer',
+    'Mining Laser (High)': 'Mining Laser Engineer',
+  };
+
   const LEVEL_TO_MIN_PROFESSION = {
     1:0, 2:2.5, 3:5, 4:7.5, 5:10, 6:12.5, 7:15, 8:17.5, 9:20, 10:22.5,
     11:30, 12:44, 13:57, 14:71, 15:85
@@ -403,6 +418,27 @@
     }
   }
 
+  /** Auto-fill Profession based on blueprint type and product weapon type */
+  function autoFillProfession(bpType, productName) {
+    // For non-weapon types, use direct mapping
+    const directProfession = TYPE_TO_PROFESSION[bpType];
+    if (directProfession) {
+      updateField('Profession.Name', directProfession);
+      return;
+    }
+    // For Weapon type, look up the product's weapon type
+    if (bpType === 'Weapon' && productName) {
+      const weapon = weaponItems.find(w => w.Name === productName);
+      const weaponType = weapon?.Properties?.Type;
+      if (weaponType) {
+        const profession = WEAPON_TYPE_TO_PROFESSION[weaponType];
+        if (profession) {
+          updateField('Profession.Name', profession);
+        }
+      }
+    }
+  }
+
   /** Auto-fill Product and Book from blueprint name, strip game brackets */
   function handleNameChange(e) {
     if (!$editMode) return;
@@ -416,19 +452,20 @@
       const productName = match[1].trim();
       updateField('Product.Name', productName);
       autoFillAmountForProduct(productName);
+      // Auto-fill profession using current blueprint type
+      const bpType = $currentEntity?.Properties?.Type;
+      if (bpType) autoFillProfession(bpType, productName);
     }
     if (name.endsWith('Blueprint (L)')) {
       updateField('Book.Name', 'Limited (Vol. 1) (C)');
     }
   }
 
-  /** Auto-fill Profession from Type (1:1 mappings only) */
+  /** Auto-fill Profession from Type */
   function handleTypeChange(e) {
     if (!$editMode) return;
-    const profession = TYPE_TO_PROFESSION[e.detail.value];
-    if (profession) {
-      updateField('Profession.Name', profession);
-    }
+    const productName = $currentEntity?.Product?.Name;
+    autoFillProfession(e.detail.value, productName);
   }
 
   /** Auto-fill LearningIntervalStart from blueprint Level */
@@ -456,7 +493,11 @@
   function handleProductSelect(e) {
     const productName = e.detail?.value || '';
     updateField('Product.Name', productName);
-    if (productName) autoFillAmountForProduct(productName);
+    if (productName) {
+      autoFillAmountForProduct(productName);
+      const bpType = $currentEntity?.Properties?.Type;
+      if (bpType) autoFillProfession(bpType, productName);
+    }
   }
 
   // Drops array handlers
