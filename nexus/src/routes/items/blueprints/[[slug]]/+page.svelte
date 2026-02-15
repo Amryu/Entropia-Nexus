@@ -31,6 +31,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { encodeURIComponentSafe, clampDecimals, getTypeLink, getItemLink, getLatestPendingUpdate, hasItemTag } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
+  import { CONDITION_TYPES } from '$lib/common/itemTypes.js';
 
   // Wiki components
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
@@ -393,13 +394,28 @@
 
   // ========== EDIT MODE HANDLERS ==========
 
-  /** Auto-fill Product and Book from blueprint name */
+  /** If product has condition (non-stackable), set craft amount to 1-1 */
+  function autoFillAmountForProduct(productName) {
+    const product = productItems.find(i => i.Name === productName);
+    if (product && CONDITION_TYPES.has(product.Properties?.Type)) {
+      updateField('Properties.MinimumCraftAmount', 1);
+      updateField('Properties.MaximumCraftAmount', 1);
+    }
+  }
+
+  /** Auto-fill Product and Book from blueprint name, strip game brackets */
   function handleNameChange(e) {
     if (!$editMode) return;
-    const name = e.detail.value || '';
+    // Strip game client brackets: [Item Name] → Item Name
+    const name = (e.detail.value || '').replace(/^\[|\]$/g, '');
+    if (name !== e.detail.value) {
+      updateField('Name', name);
+    }
     const match = name.match(/^(.+?)\s+Blueprint(?:\s+\(L\))?$/);
     if (match) {
-      updateField('Product.Name', match[1].trim());
+      const productName = match[1].trim();
+      updateField('Product.Name', productName);
+      autoFillAmountForProduct(productName);
     }
     if (name.endsWith('Blueprint (L)')) {
       updateField('Book.Name', 'Limited (Vol. 1) (C)');
@@ -437,7 +453,9 @@
   }
 
   function handleProductSelect(e) {
-    updateField('Product.Name', e.detail?.value || '');
+    const productName = e.detail?.value || '';
+    updateField('Product.Name', productName);
+    if (productName) autoFillAmountForProduct(productName);
   }
 
   // Drops array handlers

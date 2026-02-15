@@ -8,8 +8,8 @@
   // @ts-nocheck
   import { onMount, onDestroy, tick } from 'svelte';
   import { page, navigating } from '$app/stores';
-  import { goto, afterNavigate } from '$app/navigation';
-  import { editMode, isCreateMode, resetEditState, startEdit, cancelEdit } from '$lib/stores/wikiEditState.js';
+  import { goto, afterNavigate, beforeNavigate } from '$app/navigation';
+  import { editMode, isCreateMode, hasChanges, resetEditState, startEdit, cancelEdit } from '$lib/stores/wikiEditState.js';
   import { initialViewportWidth } from '../../../stores.js';
   import WikiNavigation from './WikiNavigation.svelte';
   import MobileDrawer from './MobileDrawer.svelte';
@@ -184,6 +184,10 @@
 
   function handleCreate() {
     if (basePath) {
+      if ($editMode && $hasChanges) {
+        if (!confirm('You have unsaved changes. Start a new creation?')) return;
+      }
+      skipNavGuard = true;
       goto(`${basePath}?mode=create`);
     }
   }
@@ -237,12 +241,34 @@
     return false;
   }
 
+  // Navigation guard: warn about unsaved changes
+  let skipNavGuard = false;
+  beforeNavigate(({ cancel }) => {
+    if (skipNavGuard) { skipNavGuard = false; return; }
+    if (!$editMode || !$hasChanges) return;
+    if (!confirm('You have unsaved changes. Are you sure you want to leave?')) {
+      cancel();
+    }
+  });
+
+  // Browser close/reload guard
+  function handleBeforeUnload(e) {
+    if ($editMode && $hasChanges) {
+      e.preventDefault();
+      e.returnValue = '';
+    }
+  }
+
   // Clean up edit state when component is destroyed
   onDestroy(() => {
     resetEditState();
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    }
   });
 
   onMount(() => {
+    window.addEventListener('beforeunload', handleBeforeUnload);
     windowWidth = window.innerWidth;
     mounted = true;
 
@@ -363,7 +389,7 @@
 
         <div class="header-actions">
           <slot name="header-actions">
-            {#if canEdit && !$isCreateMode}
+            {#if canEdit}
               <button
                 class="action-btn create"
                 on:click={handleCreate}
