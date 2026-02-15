@@ -78,6 +78,15 @@
   function handleInput(event) {
     let newValue = event.target.value;
 
+    // Strip game client brackets from Name fields: [Item Name] → Item Name
+    if (path === 'Name' && type === 'text') {
+      const stripped = newValue.replace(/^\[+|\]+$/g, '');
+      if (stripped !== newValue) {
+        newValue = stripped;
+        event.target.value = stripped;
+      }
+    }
+
     // Type coercion
     if (type === 'number') {
       newValue = newValue === '' ? null : parseFloat(newValue);
