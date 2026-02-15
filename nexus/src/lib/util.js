@@ -3,6 +3,7 @@ import { loading } from "../stores";
 import { goto, invalidateAll } from "$app/navigation";
 import { browser } from "$app/environment";
 import { MAX_PENDING_CREATES } from "$lib/constants";
+import { TYPE_ID_OFFSETS, isPercentMarkupType } from "$lib/common/itemTypes.js";
 
 export function addItemTag(currentName, tag) {
   // Extract the base name and the existing tags
@@ -710,6 +711,58 @@ export async function handlePageLoad(fetch, items, config) {
 
   if (object === null) {
     return { items: items, response: pageResponse(items, null, { type: config.type }, 404) };
+  }
+
+  // Fetch and attach exchange sell orders to acquisition data
+  // Mapping from API endpoint to entity type for ItemId fallback and markup classification
+  const ENDPOINT_ENTITY_TYPE = {
+    materials: 'Material', weapons: 'Weapon', vehicles: 'Vehicle',
+    pets: 'Pet', clothings: 'Clothing', strongboxes: 'Strongbox', blueprints: 'Blueprint'
+  };
+  const exchangeItemId = itemId || object?.ItemId
+    || (object?.Id != null && ENDPOINT_ENTITY_TYPE[endpoint] ? object.Id + TYPE_ID_OFFSETS[ENDPOINT_ENTITY_TYPE[endpoint]] : null);
+  const exchangeOrders = (config.isItem && !config.isArmorSet && exchangeItemId)
+    ? await apiCall(fetch, `/api/market/exchange/orders/item/${exchangeItemId}`)
+    : null;
+
+  if (exchangeOrders?.sell?.length > 0 && acquisition) {
+    // Use entity type (from config) rather than Properties.Type (which is a subtype like "BLP", "Natural Materials")
+    const entityType = isMultiType ? config.type : (ENDPOINT_ENTITY_TYPE[endpoint] || config.type);
+    const itemName = object?.Name || '';
+    const subType = object?.Properties?.Type;
+    const isPercent = isPercentMarkupType(entityType, itemName, subType);
+    const isBpNonL = entityType === 'Blueprint' && !hasItemTag(itemName, 'L');
+    const maxTT = object?.Properties?.Economy?.MaxTT ?? object?.Value ?? null;
+
+    acquisition.ExchangeOrders = exchangeOrders.sell
+      .filter(o => o.computed_state === 'active' || o.computed_state === 'stale')
+      .map(o => {
+        const mu = Number(o.markup);
+        let unitPrice = null;
+        if (isBpNonL) {
+          const qr = Number(o.details?.QualityRating) || 0;
+          const tt = qr > 0 ? qr / 100 : null;
+          unitPrice = tt != null ? tt + mu : mu > 0 ? mu : null;
+        } else if (isPercent) {
+          const ct = Number(o.details?.CurrentTT);
+          const tt = ct > 0 ? ct : maxTT;
+          unitPrice = tt != null ? tt * (mu / 100) : null;
+        } else {
+          const ct = Number(o.details?.CurrentTT);
+          const tt = ct > 0 ? ct : maxTT;
+          unitPrice = tt != null ? tt + mu : null;
+        }
+        return {
+          seller_name: o.seller_name || 'Anonymous',
+          markup: mu,
+          formattedMarkup: isPercent ? `${mu.toFixed(2)}%` : `+${mu.toFixed(2)}`,
+          unitPrice,
+          quantity: o.quantity,
+          planet: o.planet || 'Any',
+          state: o.computed_state
+        };
+      });
+    acquisition._exchangeItemId = exchangeItemId;
   }
 
   return { items: items, response: pageResponse(items, object, { type: config.type, tierInfo, acquisition, usage }) };

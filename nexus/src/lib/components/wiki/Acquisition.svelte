@@ -2,6 +2,7 @@
 // @ts-nocheck
   import '$lib/style.css';
 
+  import { goto } from '$app/navigation';
   import { encodeURIComponentSafe, getItemLink, getTypeLink } from '$lib/util';
   import { hasCondition } from '$lib/shopUtils';
   import { editMode } from '$lib/stores/wikiEditState.js';
@@ -78,73 +79,88 @@
     { key: 'frequency', header: 'Frequency' }
   ];
 
-  // Build shop listing data
-  $: shopData = (() => {
-    if (!acquisition?.ShopListings?.length) return [];
+  // Build combined market data (exchange orders + shop listings)
+  $: marketData = (() => {
+    const rows = [];
 
-    const groups = new Map();
-    for (const e of acquisition.ShopListings) {
-      const shopId = e?.Shop?.Id ?? e?.ShopId ?? e?.shopId;
-      const itemId = e?.Item?.Id ?? e?.ItemId ?? e?.itemId;
-      if (!shopId || !itemId) continue;
-      const key = `${shopId}|${itemId}`;
-      if (!groups.has(key)) {
-        groups.set(key, { shop: e.Shop, item: e.Item, ItemId: e.ItemId ?? e.Item?.Id ?? itemId, entries: [] });
+    // Exchange orders — deduplicate by seller (keep cheapest markup)
+    if (acquisition?.ExchangeOrders?.length) {
+      const bestBySeller = new Map();
+      for (const order of acquisition.ExchangeOrders) {
+        const key = order.seller_name;
+        if (!bestBySeller.has(key) || order.markup < bestBySeller.get(key).markup) {
+          bestBySeller.set(key, order);
+        }
       }
-      const g = groups.get(key);
-      const s = Number(e.StackSize ?? e.stack_size ?? 0);
-      const m = Number(e.Markup ?? e.markup ?? 0);
-      if (!Number.isNaN(s) && s > 0 && !Number.isNaN(m) && m > 0) {
-        const muText = hasCondition(g.item) ? `+${m.toFixed(2)}` : `${m.toFixed(2)}%`;
-        g.entries.push({ stack: s, muText });
+      const exchangeItemId = acquisition._exchangeItemId;
+      for (const order of bestBySeller.values()) {
+        rows.push({
+          name: order.seller_name,
+          source: 'Exchange',
+          markup: order.formattedMarkup,
+          markupRaw: order.markup,
+          quantity: order.quantity,
+          planet: order.planet,
+          stale: order.state === 'stale',
+          rowLink: exchangeItemId ? `/market/exchange/listings/${exchangeItemId}` : null
+        });
       }
     }
 
-    const rows = [];
-    for (const g of Array.from(groups.values())) {
-      const coords = g.shop?.Coordinates;
-      const locationText = (coords?.Longitude != null && coords?.Latitude != null)
-        ? `${coords.Longitude}, ${coords.Latitude}`
-        : 'N/A';
-      const planetTech = g.shop?.Planet?.Properties?.TechnicalName ?? g.shop?.Planet?.Name;
-      const wpCopy = (coords?.Longitude != null && coords?.Latitude != null && planetTech)
-        ? `/wp [${planetTech}, ${coords.Longitude}, ${coords.Latitude}, ${coords?.Altitude ?? 100}, ${g.shop?.Name ?? ''}]`
-        : null;
+    // Shop listings
+    if (acquisition?.ShopListings?.length) {
+      const groups = new Map();
+      for (const e of acquisition.ShopListings) {
+        const shopId = e?.Shop?.Id ?? e?.ShopId ?? e?.shopId;
+        const itemId = e?.Item?.Id ?? e?.ItemId ?? e?.itemId;
+        if (!shopId || !itemId) continue;
+        const key = `${shopId}|${itemId}`;
+        if (!groups.has(key)) {
+          groups.set(key, { shop: e.Shop, item: e.Item, entries: [] });
+        }
+        const g = groups.get(key);
+        const s = Number(e.StackSize ?? e.stack_size ?? 0);
+        const m = Number(e.Markup ?? e.markup ?? 0);
+        if (!Number.isNaN(s) && s > 0 && !Number.isNaN(m) && m > 0) {
+          g.entries.push({ stack: s, markup: m });
+        }
+      }
 
-      if (g.entries.length === 0) {
-        rows.push({
-          shop: g.shop?.Name ?? 'N/A',
-          shopLink: g.shop ? `/market/shops/${encodeURIComponentSafe(g.shop.Name)}` : null,
-          planet: g.shop?.Planet?.Name ?? 'N/A',
-          location: locationText,
-          waypoint: wpCopy,
-          stack: 'N/A',
-          mu: 'N/A'
-        });
-      } else {
+      for (const g of Array.from(groups.values())) {
+        const isAbs = hasCondition(g.item);
+        if (g.entries.length === 0) continue;
         for (const entry of g.entries) {
           rows.push({
-            shop: g.shop?.Name ?? 'N/A',
-            shopLink: g.shop ? `/market/shops/${encodeURIComponentSafe(g.shop.Name)}` : null,
+            name: g.shop?.Name ?? 'N/A',
+            source: 'Shop',
+            markup: isAbs ? `+${entry.markup.toFixed(2)}` : `${entry.markup.toFixed(2)}%`,
+            markupRaw: entry.markup,
+            quantity: entry.stack,
             planet: g.shop?.Planet?.Name ?? 'N/A',
-            location: locationText,
-            waypoint: wpCopy,
-            stack: entry.stack,
-            mu: entry.muText
+            stale: false,
+            rowLink: g.shop ? `/market/shops/${encodeURIComponentSafe(g.shop.Name)}` : null
           });
         }
       }
     }
+
     return rows;
   })();
 
-  $: shopColumns = [
-    { key: 'shop', header: 'Shop', main: true, formatter: (v, row) => row.shopLink ? `<a href="${row.shopLink}">${v}</a>` : v },
-    { key: 'planet', header: 'Planet' },
-    { key: 'location', header: 'Location', formatter: (v, row) => row.waypoint ? `<span class="copyable" title="Click to copy waypoint">${v}</span>` : v },
-    { key: 'stack', header: 'Stack' },
-    { key: 'mu', header: 'MU' }
+  $: hasMarketData = marketData.length > 0;
+
+  $: marketColumns = [
+    { key: 'name', header: 'Name', main: true, formatter: (v, row) => row.stale ? `<span class="stale-text">${v}</span>` : v },
+    { key: 'source', header: 'Source', width: '80px' },
+    { key: 'markup', header: 'Markup', sortValue: (row) => row.markupRaw, formatter: (v, row) => row.stale ? `<span class="stale-text">${v}</span>` : v },
+    { key: 'quantity', header: 'Qty' },
+    { key: 'planet', header: 'Planet' }
   ];
+
+  function handleMarketRowClick(e) {
+    const { row } = e.detail;
+    if (row.rowLink) goto(row.rowLink);
+  }
 
   // Build blueprint data
   $: blueprintData = (() => {
@@ -283,6 +299,15 @@
     cursor: default;
   }
 
+  /* Market rows are clickable */
+  :global(.market-section .table-row) {
+    cursor: pointer;
+  }
+
+  :global(.acquisition-container .stale-text) {
+    color: var(--text-muted, #999);
+  }
+
   @media (max-width: 899px) {
     .acquisition-grid {
       grid-template-columns: 1fr;
@@ -309,7 +334,7 @@
   && (!acquisition.RefiningRecipes || acquisition.RefiningRecipes.length === 0)
   && (!acquisition.Blueprints || acquisition.Blueprints.length === 0)
   && (!acquisition.BlueprintDrops || acquisition.BlueprintDrops.length === 0)
-  && (!acquisition.ShopListings || acquisition.ShopListings.length === 0)
+  && !hasMarketData
   && (!acquisition.Upgrades || acquisition.Upgrades.length === 0)
   && (!acquisition.Events || acquisition.Events.length === 0)))}
 <div class="no-data">No acquisition data available for this item.</div>
@@ -346,17 +371,19 @@
         </div>
       {/if}
 
-      {#if acquisition.ShopListings && acquisition.ShopListings.length > 0}
-        <div class="acquisition-section">
-          <h4 class="section-title">Shop Listings</h4>
+      {#if hasMarketData}
+        <div class="acquisition-section market-section">
+          <h4 class="section-title">Market</h4>
           <FancyTable
-            columns={shopColumns}
-            data={shopData}
+            columns={marketColumns}
+            data={marketData}
             rowHeight={32}
             searchable={true}
             sortable={true}
             compact
-            emptyMessage="No shop listings"
+            defaultSort={{ column: 'markup', order: 'ASC' }}
+            emptyMessage="No market listings"
+            on:rowClick={handleMarketRowClick}
           />
         </div>
       {/if}
