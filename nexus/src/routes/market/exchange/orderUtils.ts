@@ -171,3 +171,9 @@ export function formatPedRaw(value: any): string {
   if (value == null || !isFinite(value)) return 'N/A';
   return formatNum(Number(value), Math.abs(Number(value)) < 5);
 }
+
+/** Returns an inline HTML badge for special item types (e.g. ArmorSet → "Set"). */
+export function itemTypeBadge(type: string | null | undefined): string {
+  if (type === 'ArmorSet') return ' <span class="badge badge-subtle badge-accent" style="margin-left:6px">Set</span>';
+  return '';
+}

@@ -3,7 +3,7 @@
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { goto } from '$app/navigation';
   import { tradeList } from '../../exchangeStore.js';
-  import { isAbsoluteMarkup, formatMarkupForItem, formatPedValue, isBlueprintNonL, getUnitTT, computeUnitPrice } from '../../orderUtils';
+  import { isAbsoluteMarkup, formatMarkupForItem, formatPedValue, isBlueprintNonL, getUnitTT, computeUnitPrice, itemTypeBadge } from '../../orderUtils';
   import { encodeURIComponentSafe } from '$lib/util.js';
   import { createEventDispatcher } from 'svelte';
 
@@ -63,7 +63,10 @@
     const cols = [
       {
         key: 'details', header: 'Item', main: true, sortable: true, searchable: false,
-        formatter: (v) => v?.item_name || 'Unknown'
+        formatter: (v, row) => {
+          const slim = itemLookup.get(row?.item_id);
+          return (v?.item_name || 'Unknown') + itemTypeBadge(slim?.t);
+        }
       },
       {
         key: 'type', header: 'Side', width: '55px', sortable: true, searchable: false,

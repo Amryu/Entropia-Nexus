@@ -1,10 +1,21 @@
 <script>
   //@ts-nocheck
   import { tradeList, removeFromTradeList, clearTradeList } from '../../exchangeStore.js';
-  import { formatPedValue } from '../../orderUtils';
+  import { formatPedValue, itemTypeBadge } from '../../orderUtils';
   import { createEventDispatcher } from 'svelte';
 
   const dispatch = createEventDispatcher();
+
+  /** @type {Array} All slim items for type lookup */
+  export let allItems = [];
+
+  $: itemLookup = (() => {
+    const map = new Map();
+    for (const it of allItems || []) {
+      if (it?.i != null) map.set(it.i, it);
+    }
+    return map;
+  })();
 
   let checkingOut = false;
   let checkoutError = null;
@@ -131,7 +142,7 @@
               <div class="item-info">
                 <span class="item-name">
                   <span class="badge badge-subtle {item.side === 'BUY' ? 'badge-success' : 'badge-error'} side-badge">{item.side === 'BUY' ? 'Buy' : 'Sell'}</span>
-                  {item.itemName || 'Unknown Item'}
+                  {item.itemName || 'Unknown Item'}{@html itemTypeBadge(itemLookup.get(item.itemId)?.t)}
                 </span>
                 <span class="item-details">
                   {item.quantity || 1}x @ {formatPedValue(item.unitPrice || 0)}

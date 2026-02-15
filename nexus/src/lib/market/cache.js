@@ -424,9 +424,8 @@ function slimItem(item) {
   const counts = id != null && cache.offerCounts ? cache.offerCounts.get(id) : null;
   const planets = id != null && cache.orderPlanets ? cache.orderPlanets.get(id) : null;
   const ep = id != null && cache.exchangePrices ? cache.exchangePrices.get(id) : null;
-  let type = item.Type ?? item.Properties?.Type ?? null;
-  // ArmorSets don't have a top-level Type field; detect via Armors array
-  if (!type && item.Armors) type = 'ArmorSet';
+  // ArmorSets have an Armors array; detect before checking Type (enrichWithItemIds may copy 'Armor' from base items)
+  let type = item.Armors ? 'ArmorSet' : (item.Type ?? item.Properties?.Type ?? null);
   const name = item.Name ?? null;
 
   // Gender for gendered item types (Armor/Clothing from Properties, ArmorSet always 'Both')

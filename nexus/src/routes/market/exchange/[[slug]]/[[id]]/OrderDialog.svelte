@@ -1,7 +1,7 @@
 <script lang="ts">
   // @ts-nocheck
   import { createEventDispatcher } from "svelte";
-  import { isBlueprint, isItemTierable, isItemStackable, isLimited, itemHasCondition, isPercentMarkup, isPet, getMaxTT, formatPedRaw, PET_DEFAULT_MAX_TT } from "../../orderUtils";
+  import { isBlueprint, isItemTierable, isItemStackable, isLimited, itemHasCondition, isPercentMarkup, isPet, getMaxTT, formatPedRaw, PET_DEFAULT_MAX_TT, itemTypeBadge } from "../../orderUtils";
   import { getPercentUndercutAmount, getAbsoluteUndercutAmount, DEFAULT_PARTIAL_RATIO } from '../../exchangeConstants.js';
   import { PLATE_SET_SIZE } from '$lib/common/itemTypes.js';
   import { env } from '$env/dynamic/public';
@@ -361,7 +361,7 @@
       </h3>
       <div class="form-row">
         <div class="form-label">Item</div>
-        <div>{order.Item?.Name}</div>
+        <div>{order.Item?.Name}{@html itemTypeBadge(order.Item?.Type)}</div>
       </div>
       {#if inventoryWarning}
         <div class="inv-warning-banner">{inventoryWarning}</div>

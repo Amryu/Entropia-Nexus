@@ -123,7 +123,8 @@ export function categorizeItems(items, {
     } catch {}
   }
 
-  (armorSets || []).forEach(s => categorized.armor.sets.push(s));
+  // Skip single-piece armor sets — they're redundant with the individual armor piece
+  (armorSets || []).forEach(s => { if (!s.Armors || s.Armors.length > 1) categorized.armor.sets.push(s); });
   (armors || []).forEach(p => categorized.armor.pieces.push(p));
   (armorPlatings || []).forEach(att => categorized.armor.attachments.push(att));
   (clothings || []).forEach(c => { if (c.EffectsOnEquip?.length) categorized.armor.accessories.push(c); });

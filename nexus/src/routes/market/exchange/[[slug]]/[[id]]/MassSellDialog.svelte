@@ -1,7 +1,7 @@
 <script>
   //@ts-nocheck
   import { createEventDispatcher } from 'svelte';
-  import { isItemStackable, isPercentMarkup, isItemTierable, isBlueprint, isLimited, itemHasCondition } from '../../orderUtils';
+  import { isItemStackable, isPercentMarkup, isItemTierable, isBlueprint, isLimited, itemHasCondition, itemTypeBadge } from '../../orderUtils';
   import { PLANETS, DEFAULT_PARTIAL_RATIO, MAX_SELL_ORDERS } from '../../exchangeConstants.js';
   import { env } from '$env/dynamic/public';
   import TurnstileWidget from '$lib/components/TurnstileWidget.svelte';
@@ -339,7 +339,7 @@
           <div class="order-row" class:error={row.error} class:done={row.status === 'done'} class:submitting={row.status === 'submitting'}>
             <div class="row-header">
               <span class="row-name" title={row.itemName}>
-                {row.itemName}
+                {row.itemName}{@html itemTypeBadge(row.itemType)}
               </span>
               <span class="row-status">
                 {#if row.status === 'done'}

@@ -3,7 +3,7 @@
   import FancyTable from '$lib/components/FancyTable.svelte';
   import InventoryItemDialog from './InventoryItemDialog.svelte';
   import { inventory, myOrders, enrichOrders } from '../../exchangeStore.js';
-  import { isItemStackable, formatPedRaw, formatMarkupForItem } from '../../orderUtils';
+  import { isItemStackable, formatPedRaw, formatMarkupForItem, itemTypeBadge } from '../../orderUtils';
   import { MAX_SELL_ORDERS } from '../../exchangeConstants.js';
   import { encodeURIComponentSafe } from '$lib/util.js';
   import { goto } from '$app/navigation';
@@ -136,7 +136,10 @@
     return [
       {
         key: 'item_name', header: 'Item', main: true, sortable: true, searchable: true,
-        formatter: (val, row) => `<a class="item-link" data-action="navigate" data-item-name="${val}" data-item-id="${row.item_id}">${val}</a>`
+        formatter: (val, row) => {
+          const slim = itemLookup.get(row.item_id);
+          return `<a class="item-link" data-action="navigate" data-item-id="${row.item_id}">${val}${itemTypeBadge(slim?.t)}</a>`;
+        }
       },
       {
         key: '_orders', header: 'Orders', width: '75px', sortable: true, searchable: false,
@@ -302,10 +305,8 @@
     const action = btn.dataset.action;
 
     if (action === 'navigate') {
-      const name = btn.dataset.itemName;
       const itemId = btn.dataset.itemId;
-      if (name) goto(`/market/exchange/listings/${encodeURIComponentSafe(name)}`);
-      else if (itemId) goto(`/market/exchange/listings/${itemId}`);
+      if (itemId) goto(`/market/exchange/listings/${itemId}`);
       return;
     }
 

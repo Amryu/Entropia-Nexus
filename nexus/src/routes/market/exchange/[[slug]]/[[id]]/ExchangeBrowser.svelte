@@ -24,7 +24,7 @@
   import { goto } from "$app/navigation";
   import { page } from "$app/stores";
   import { apiCall, getItemLink, hasItemTag, encodeURIComponentSafe, decodeURIComponentSafe } from "$lib/util.js";
-  import { isBlueprint, isItemTierable, isItemStackable, isLimited, itemHasCondition, isAbsoluteMarkup, getMaxTT, formatMarkupValue, formatMarkupForItem, formatPedValue, isPet, isBlueprintNonL, getUnitTT, computeUnitPrice, getPetLevel } from '../../orderUtils';
+  import { isBlueprint, isItemTierable, isItemStackable, isLimited, itemHasCondition, isAbsoluteMarkup, getMaxTT, formatMarkupValue, formatMarkupForItem, formatPedValue, isPet, isBlueprintNonL, getUnitTT, computeUnitPrice, getPetLevel, itemTypeBadge } from '../../orderUtils';
   import { PET_ID_OFFSET, ARMOR_SET_OFFSET, GENDERED_TYPES } from '$lib/common/itemTypes.js';
   import { PLANETS } from '../../exchangeConstants.js';
   import { showMyOrders, showInventory, showTradeList, showTrades, tradeList, addToTradeList, clearTradeList, myOrders, inventory, upsertOrder } from '../../exchangeStore.js';
@@ -903,7 +903,7 @@
 
   // Columns for the main list view FancyTable
   const listColumns = [
-    { key: 'name', header: 'Item', main: true, sortable: true, searchable: true },
+    { key: 'name', header: 'Item', main: true, sortable: true, searchable: true, formatter: (val, row) => val + itemTypeBadge(row._item?.t) },
     { key: 'median', header: 'Median', width: '100px', sortable: true, searchable: false, formatter: (v, row) => v != null ? formatMarkupForItem(v, row?._item) : '<span style="opacity:0.35">N/A</span>' },
     { key: 'percentile10', header: '10%', width: '100px', sortable: true, searchable: false, hideOnMobile: true, formatter: (v, row) => v != null ? formatMarkupForItem(v, row?._item) : '<span style="opacity:0.35">N/A</span>' },
     { key: 'wap', header: 'Weighted Avg', width: '100px', sortable: true, searchable: false, hideOnMobile: true, formatter: (v, row) => v != null ? formatMarkupForItem(v, row?._item) : '<span style="opacity:0.35">N/A</span>' },
@@ -2045,10 +2045,7 @@
 
   function handleFavouriteItemSelect(itemId) {
     closeFloatingPanelIfOpen();
-    const item = (allItems || []).find(it => it?.i === itemId);
-    if (item?.n) {
-      goto(`/market/exchange/listings/${encodeURIComponentSafe(item.n)}`);
-    } else if (itemId != null) {
+    if (itemId != null) {
       goto(`/market/exchange/listings/${itemId}`);
     }
   }
@@ -2154,7 +2151,7 @@
         </div>
 
         {#if $showTradeList}
-          <CartSummary on:close={() => showTradeList.set(false)} />
+          <CartSummary {allItems} on:close={() => showTradeList.set(false)} />
         {:else if listTableData.length > 0}
           <div class="table-wrapper">
             <FancyTable
@@ -2167,11 +2164,7 @@
               emptyMessage="No items found"
               on:rowClick={(evt) => {
                 const item = evt?.detail?.row?._item;
-                if (item?.n) {
-                  goto(`/market/exchange/listings/${encodeURIComponentSafe(item.n)}`);
-                } else if (item?.i != null) {
-                  goto(`/market/exchange/listings/${item.i}`);
-                }
+                if (item?.i != null) goto(`/market/exchange/listings/${item.i}`);
               }}
             />
             {#if loading}
@@ -2290,7 +2283,7 @@
             target="_blank"
             rel="noopener"
             title={selectedItem?.n || ""}
-          >{selectedItem?.n || ""}</a>
+          >{selectedItem?.n || ""}{@html itemTypeBadge(selectedItem?.t)}</a>
           {#if selectedItemDetails && !hasCondition(selectedItemDetails) && getMaxTT(selectedItemDetails) != null}
             <span class="detail-tt-badge">{formatPedValue(getMaxTT(selectedItemDetails))}</span>
           {/if}
@@ -2511,7 +2504,7 @@
           </div>
           {#if $showTradeList}
             {#if $tradeList.length > 0}
-              <CartSummary on:close={() => showTradeList.set(false)} />
+              <CartSummary {allItems} on:close={() => showTradeList.set(false)} />
             {:else}
               <div class="trade-list-empty-state">
                 <p>Your trade list is empty.</p>

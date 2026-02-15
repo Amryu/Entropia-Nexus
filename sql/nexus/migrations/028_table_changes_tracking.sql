@@ -54,7 +54,8 @@ BEGIN
 END;
 $$;
 
--- Grant read access for the API role
-GRANT SELECT ON "TableChanges" TO nexus_bot;
+-- Grant access for app and bot roles (trigger needs INSERT/UPDATE to track changes)
+GRANT SELECT, INSERT, UPDATE ON "TableChanges" TO "nexus";
+GRANT SELECT, INSERT, UPDATE ON "TableChanges" TO "nexus-bot";
 
 COMMIT;

@@ -196,6 +196,17 @@ button {
   color: white;
 }
 
+.badge-accent {
+  color: #a78bfa;
+}
+.badge-accent.badge-subtle {
+  background-color: rgba(167, 139, 250, 0.2);
+}
+.badge-accent.badge-solid {
+  background-color: #a78bfa;
+  color: #000;
+}
+
 .badge-muted {
   color: var(--text-muted, #999);
 }
@@ -276,6 +287,9 @@ button {
 
 .light-mode .badge-density-high { color: #b91c1c; }
 .light-mode .badge-density-high.badge-subtle { background-color: rgba(220, 38, 38, 0.2); }
+
+.light-mode .badge-accent { color: #7c3aed; }
+.light-mode .badge-accent.badge-subtle { background-color: rgba(124, 58, 237, 0.15); }
 
 table {
   border-spacing: 2px;

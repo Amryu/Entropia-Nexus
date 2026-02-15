@@ -2,7 +2,7 @@
   //@ts-nocheck
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { myOrders, enrichOrders, upsertOrder } from '../../exchangeStore.js';
-  import { formatPedRaw, formatMarkupForItem, isLimited, formatPedValue } from '../../orderUtils';
+  import { formatPedRaw, formatMarkupForItem, isLimited, formatPedValue, itemTypeBadge } from '../../orderUtils';
   import { encodeURIComponentSafe } from '$lib/util.js';
   import { goto } from '$app/navigation';
   import { createEventDispatcher, onMount } from 'svelte';
@@ -34,7 +34,10 @@
   $: columns = [
     {
       key: 'item_name', header: 'Item', main: true, sortable: true, searchable: true,
-      formatter: (val, row) => `<a class="item-link" data-action="navigate" data-item-name="${val}" data-item-id="${row.item_id}">${val}</a>`
+      formatter: (val, row) => {
+        const slim = itemLookup.get(row.item_id);
+        return `<a class="item-link" data-action="navigate" data-item-id="${row.item_id}">${val}${itemTypeBadge(slim?.t)}</a>`;
+      }
     },
     {
       key: 'type', header: 'Side', width: '70px', sortable: true, searchable: false,
@@ -158,10 +161,8 @@
     const action = btn.dataset.action;
 
     if (action === 'navigate') {
-      const name = btn.dataset.itemName;
       const itemId = btn.dataset.itemId;
-      if (name) goto(`/market/exchange/listings/${encodeURIComponentSafe(name)}`);
-      else if (itemId) goto(`/market/exchange/listings/${itemId}`);
+      if (itemId) goto(`/market/exchange/listings/${itemId}`);
       return;
     }
 
