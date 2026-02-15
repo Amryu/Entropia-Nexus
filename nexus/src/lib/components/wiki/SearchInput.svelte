@@ -131,6 +131,7 @@
       return {
         label: opt?.label ?? opt?.value ?? '',
         value: opt?.value ?? opt?.label ?? '',
+        sublabel: opt?.sublabel ?? null,
         _raw: opt
       };
     });
@@ -215,7 +216,8 @@
         ...opt,
         _score: Math.max(
           scoreSearchResult(opt.label, q),
-          scoreSearchResult(String(opt.value), q)
+          scoreSearchResult(String(opt.value), q),
+          opt.sublabel ? scoreSearchResult(opt.sublabel, q) : 0
         )
       }))
       .filter(opt => opt._score > 0)
@@ -432,6 +434,9 @@
             on:mouseenter={() => highlightedIndex = resultIndex}
           >
             <span class="result-name">{getDisplayText(result)}</span>
+            {#if result.sublabel}
+              <span class="result-sublabel">{result.sublabel}</span>
+            {/if}
           </div>
         {/each}
       {/if}
@@ -561,5 +566,15 @@
     overflow: hidden;
     text-overflow: ellipsis;
     display: block;
+  }
+
+  .result-sublabel {
+    display: block;
+    font-size: 10px;
+    color: var(--text-muted, #999);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 1px;
   }
 </style>

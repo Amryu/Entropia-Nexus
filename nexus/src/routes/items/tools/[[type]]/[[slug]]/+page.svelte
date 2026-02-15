@@ -207,11 +207,29 @@
         };
         break;
       case 'teleportationchips':
+        base.Properties.Range = 0;
+        base.Properties.UsesPerMinute = 0;
+        base.Properties.Economy.AmmoBurn = 0;
+        base.Ammo = { Name: 'Mind Essence' };
+        base.Properties.Mindforce = {
+          Level: 0,
+          Concentration: 0,
+          Cooldown: 0,
+          CooldownGroup: null
+        };
+        base.Properties.Skill = {
+          IsSiB: false,
+          LearningIntervalStart: null,
+          LearningIntervalEnd: null
+        };
+        break;
       case 'effectchips':
         base.Properties.Range = 0;
         base.Properties.UsesPerMinute = 0;
         base.Properties.Economy.AmmoBurn = 0;
         base.Ammo = { Name: 'Mind Essence' };
+        base.Profession = { Name: null };
+        base.EffectsOnUse = [];
         base.Properties.Mindforce = {
           Level: 0,
           Concentration: 0,
@@ -989,6 +1007,25 @@
                 <span class="stat-label">Profession</span>
                 <span class="stat-value">
                   <a href={getTypeLink('Translocator', 'Profession')} class="profession-link">Translocator</a>
+                </span>
+              </div>
+            {:else if additional.type === 'effectchips'}
+              <div class="stat-row">
+                <span class="stat-label">Profession</span>
+                <span class="stat-value">
+                  {#if $editMode}
+                    <SearchInput
+                      value={activeEntity?.Profession?.Name || ''}
+                      options={professionOptions}
+                      placeholder="Search profession..."
+                      on:select={(e) => updateField('Profession.Name', e.detail.value)}
+                      on:change={(e) => updateField('Profession.Name', e.detail.value)}
+                    />
+                  {:else if activeEntity?.Profession?.Name}
+                    <a href={getTypeLink(activeEntity.Profession.Name, 'Profession')} class="profession-link">{activeEntity.Profession.Name}</a>
+                  {:else}
+                    N/A
+                  {/if}
                 </span>
               </div>
             {:else if additional.type === 'misctools'}

@@ -2,12 +2,14 @@
   @component EffectsEditor
   Generic effects array editor component.
   Supports EffectsOnEquip, EffectsOnUse, EffectsOnConsume arrays with add/edit/remove functionality.
-  Based on WeaponEffects.svelte pattern.
+  Uses SearchInput for effect selection with sublabel support for CanonicalName.
 -->
 <script>
   // @ts-nocheck
   import { getTimeString } from '$lib/util';
   import { editMode, updateField } from '$lib/stores/wikiEditState.js';
+  import SearchInput from './SearchInput.svelte';
+  import CreateEffectDialog from './CreateEffectDialog.svelte';
 
   /** @type {Array} Effects array to display/edit */
   export let effects = [];
@@ -15,7 +17,7 @@
   /** @type {string} Field path for updateField (e.g., 'EffectsOnEquip', 'EffectsOnConsume') */
   export let fieldName = 'EffectsOnEquip';
 
-  /** @type {Array} Available effects for dropdown [{Name, Properties: {Unit}}] */
+  /** @type {Array} Available effects for dropdown [{Name, CanonicalName, Properties: {Unit}}] */
   export let availableEffects = [];
 
   /** @type {string} Effect type: 'equip', 'use', 'consume' - determines UI/features */
@@ -27,6 +29,11 @@
   /** @type {boolean} Whether to show the section even when empty */
   export let showEmpty = false;
 
+  let showCreateDialog = false;
+  // Local copy of available effects so newly created ones appear immediately
+  let localAvailableEffects = [];
+  $: localAvailableEffects = [...(availableEffects || [])];
+
   // Computed title based on effect type if not provided
   $: displayTitle = title || (effectType === 'equip' ? 'Effects on Equip' : effectType === 'use' ? 'Effects on Use' : 'Effects on Consume');
 
@@ -36,18 +43,22 @@
   // Sort effects alphabetically for display
   $: sortedEffects = [...(effects || [])].sort((a, b) => a.Name?.localeCompare(b.Name) || 0);
 
-  // Available effect names for dropdowns
-  $: effectOptions = (availableEffects || []).map(e => ({ value: e.Name, label: e.Name }));
+  // Build SearchInput options with sublabel
+  $: effectOptions = localAvailableEffects.map(e => ({
+    label: e.Name,
+    value: e.Name,
+    sublabel: e.CanonicalName || null
+  }));
 
   // Show section if has effects, in edit mode, or showEmpty is true
   $: shouldShow = $editMode || (effects?.length > 0) || showEmpty;
 
   // Get unit for an effect name from availableEffects list
   function getEffectUnit(effectName, currentEffect = null) {
-    if (!effectName || !availableEffects?.length) {
+    if (!effectName || !localAvailableEffects?.length) {
       return currentEffect?.Values?.Unit || '';
     }
-    const matched = availableEffects.find(e => e.Name === effectName);
+    const matched = localAvailableEffects.find(e => e.Name === effectName);
     if (matched?.Properties?.Unit) return matched.Properties.Unit;
     return currentEffect?.Values?.Unit || matched?.Values?.Unit || '';
   }
@@ -68,12 +79,14 @@
   function updateEffect(index, field, value) {
     const newEffects = [...effects];
     if (field === 'Name') {
+      // When changing the effect name, remove any _newEffect from the old entry
+      const { _newEffect, ...rest } = newEffects[index];
       newEffects[index] = {
-        ...newEffects[index],
+        ...rest,
         Name: value,
         Values: {
-          ...newEffects[index].Values,
-          Unit: getEffectUnit(value, newEffects[index])
+          ...rest.Values,
+          Unit: getEffectUnit(value, rest)
         }
       };
     } else if (field === 'Strength') {
@@ -98,14 +111,12 @@
 
   function addEffect() {
     const newEffect = {
-      Name: effectOptions[0]?.value || '',
+      Name: '',
       Values: {
-        Strength: 0,
-        Unit: availableEffects[0]?.Properties?.Unit || ''
+        Strength: 0
       }
     };
 
-    // Add duration for use/consume effects
     if (hasDuration) {
       newEffect.Values.DurationSeconds = 0;
     }
@@ -115,6 +126,35 @@
 
   function removeEffect(index) {
     updateField(fieldName, effects.filter((_, i) => i !== index));
+  }
+
+  function handleCreateEffect(event) {
+    const { Name, _newEffect } = event.detail;
+
+    // Add to local available effects so it appears in search immediately
+    localAvailableEffects = [...localAvailableEffects, {
+      Name,
+      CanonicalName: _newEffect.CanonicalName,
+      Properties: {
+        Unit: _newEffect.Unit || ''
+      }
+    }];
+
+    // Add as a new effect row with _newEffect metadata for bot upsert
+    const newEffect = {
+      Name,
+      _newEffect,
+      Values: {
+        Strength: 0
+      }
+    };
+
+    if (hasDuration) {
+      newEffect.Values.DurationSeconds = 0;
+    }
+
+    updateField(fieldName, [...effects, newEffect]);
+    showCreateDialog = false;
   }
 
   // Get CSS class for effect type
@@ -146,15 +186,15 @@
         {#each effects as effect, i}
           <div class="effect-edit-row" class:use={hasDuration}>
             <div class="effect-row-top">
-              <select
-                class="effect-select"
-                value={effect.Name}
-                on:change={(e) => updateEffect(i, 'Name', e.target.value)}
-              >
-                {#each effectOptions as opt}
-                  <option value={opt.value}>{opt.label}</option>
-                {/each}
-              </select>
+              <div class="effect-search-wrapper">
+                <SearchInput
+                  value={effect.Name}
+                  options={effectOptions}
+                  placeholder="Search effect..."
+                  on:select={(e) => updateEffect(i, 'Name', e.detail.value)}
+                  on:change={(e) => updateEffect(i, 'Name', e.detail.value)}
+                />
+              </div>
               <button class="btn-remove" on:click={() => removeEffect(i)} title="Remove effect">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <line x1="18" y1="6" x2="6" y2="18" />
@@ -187,13 +227,24 @@
             </div>
           </div>
         {/each}
-        <button class="btn-add" on:click={addEffect}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="12" y1="5" x2="12" y2="19" />
-            <line x1="5" y1="12" x2="19" y2="12" />
-          </svg>
-          Add Effect
-        </button>
+        <div class="btn-row">
+          <button class="btn-add" on:click={addEffect}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            Add Effect
+          </button>
+          <button class="btn-add btn-create" on:click={() => showCreateDialog = true}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <line x1="12" y1="18" x2="12" y2="12" />
+              <line x1="9" y1="15" x2="15" y2="15" />
+            </svg>
+            Create New Effect
+          </button>
+        </div>
       </div>
     {:else if effects?.length > 0}
       <ul class="effects-list">
@@ -213,6 +264,13 @@
       <div class="no-effects">No effects</div>
     {/if}
   </div>
+{/if}
+
+{#if showCreateDialog}
+  <CreateEffectDialog
+    on:create={handleCreateEffect}
+    on:cancel={() => showCreateDialog = false}
+  />
 {/if}
 
 <style>
@@ -320,22 +378,16 @@
     gap: 8px;
   }
 
+  .effect-search-wrapper {
+    flex: 1;
+    min-width: 120px;
+  }
+
   .effect-row-bottom {
     display: flex;
     align-items: center;
     gap: 6px;
     flex-wrap: nowrap;
-  }
-
-  .effect-select {
-    flex: 1;
-    min-width: 120px;
-    padding: 6px 8px;
-    font-size: 13px;
-    background-color: var(--input-bg, var(--secondary-color));
-    border: 1px solid var(--border-color, #555);
-    border-radius: 4px;
-    color: var(--text-color);
   }
 
   .effect-input {
@@ -384,6 +436,12 @@
     border-color: var(--error-color, #ff6b6b);
   }
 
+  .btn-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
   .btn-add {
     display: flex;
     align-items: center;
@@ -397,6 +455,7 @@
     font-size: 12px;
     cursor: pointer;
     transition: all 0.15s;
+    flex: 1;
   }
 
   .btn-add:hover {

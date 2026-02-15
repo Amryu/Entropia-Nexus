@@ -10,6 +10,8 @@
 <script>
   // @ts-nocheck
   import { editMode, updateField } from '$lib/stores/wikiEditState.js';
+  import SearchInput from './SearchInput.svelte';
+  import CreateEffectDialog from './CreateEffectDialog.svelte';
 
   /** @type {Array} Effects array to display/edit */
   export let effects = [];
@@ -17,11 +19,16 @@
   /** @type {string} Field path for updateField */
   export let fieldName = 'EffectsOnSetEquip';
 
-  /** @type {Array} Available effects for dropdown [{Name, Properties: {Unit}}] */
+  /** @type {Array} Available effects for dropdown [{Name, CanonicalName, Properties: {Unit}}] */
   export let availableEffects = [];
 
   /** @type {number} Max number of pieces in the set (for MinSetPieces validation) */
   export let maxPieces = 7;
+
+  let showCreateDialog = false;
+  let createDialogPieceCount = null;
+  let localAvailableEffects = [];
+  $: localAvailableEffects = [...(availableEffects || [])];
 
   // Group effects by MinSetPieces for display and editing
   $: groupedEffects = (() => {
@@ -46,16 +53,20 @@
   $: availablePieceCounts = Array.from({ length: maxPieces - 1 }, (_, i) => i + 2)
     .filter(n => !usedPieceCounts.has(n));
 
-  // Available effect names for dropdowns
-  $: effectOptions = (availableEffects || []).map(e => ({ value: e.Name, label: e.Name }));
+  // Available effect options with sublabel for SearchInput
+  $: effectOptions = localAvailableEffects.map(e => ({
+    label: e.Name,
+    value: e.Name,
+    sublabel: e.CanonicalName || null
+  }));
 
   // Show section if has effects or in edit mode
   $: shouldShow = $editMode || (effects?.length > 0);
 
   // Get unit for an effect name from availableEffects list
   function getEffectUnit(effectName) {
-    if (!effectName || !availableEffects?.length) return '';
-    const effect = availableEffects.find(e => e.Name === effectName);
+    if (!effectName || !localAvailableEffects?.length) return '';
+    const effect = localAvailableEffects.find(e => e.Name === effectName);
     return effect?.Properties?.Unit || '';
   }
 
@@ -72,11 +83,10 @@
 
     // Add a default effect for the new section
     const newEffect = {
-      Name: effectOptions[0]?.value || '',
+      Name: '',
       Values: {
         Strength: 0,
-        MinSetPieces: pieceCount,
-        Unit: availableEffects[0]?.Properties?.Unit || ''
+        MinSetPieces: pieceCount
       }
     };
     updateField(fieldName, [...effects, newEffect]);
@@ -91,14 +101,36 @@
   // === Effect CRUD Operations ===
   function addEffectToSection(pieceCount) {
     const newEffect = {
-      Name: effectOptions[0]?.value || '',
+      Name: '',
       Values: {
         Strength: 0,
-        MinSetPieces: pieceCount,
-        Unit: availableEffects[0]?.Properties?.Unit || ''
+        MinSetPieces: pieceCount
       }
     };
     updateField(fieldName, [...effects, newEffect]);
+  }
+
+  function handleCreateEffect(event) {
+    const { Name, _newEffect } = event.detail;
+
+    localAvailableEffects = [...localAvailableEffects, {
+      Name,
+      CanonicalName: _newEffect.CanonicalName,
+      Properties: { Unit: _newEffect.Unit || '' }
+    }];
+
+    const newEffect = {
+      Name,
+      _newEffect,
+      Values: {
+        Strength: 0,
+        MinSetPieces: createDialogPieceCount || (availablePieceCounts[0] ?? 2)
+      }
+    };
+
+    updateField(fieldName, [...effects, newEffect]);
+    showCreateDialog = false;
+    createDialogPieceCount = null;
   }
 
   function updateEffect(originalIndex, field, value) {
@@ -156,15 +188,15 @@
               {#each group.effects as effect}
                 <div class="effect-edit-row">
                   <div class="effect-row-top">
-                    <select
-                      class="effect-select"
-                      value={effect.Name}
-                      on:change={(e) => updateEffect(effect._originalIndex, 'Name', e.target.value)}
-                    >
-                      {#each effectOptions as opt}
-                        <option value={opt.value}>{opt.label}</option>
-                      {/each}
-                    </select>
+                    <div class="effect-search-wrapper">
+                      <SearchInput
+                        value={effect.Name}
+                        options={effectOptions}
+                        placeholder="Search effect..."
+                        on:select={(e) => updateEffect(effect._originalIndex, 'Name', e.detail.value)}
+                        on:change={(e) => updateEffect(effect._originalIndex, 'Name', e.detail.value)}
+                      />
+                    </div>
                     <button class="btn-remove-effect" on:click={() => removeEffect(effect._originalIndex)} title="Remove effect">
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="18" y1="6" x2="6" y2="18" />
@@ -185,13 +217,24 @@
                   </div>
                 </div>
               {/each}
-              <button class="btn-add-effect" on:click={() => addEffectToSection(group.pieces)}>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <line x1="12" y1="5" x2="12" y2="19" />
-                  <line x1="5" y1="12" x2="19" y2="12" />
-                </svg>
-                Add Effect
-              </button>
+              <div class="btn-row">
+                <button class="btn-add-effect" on:click={() => addEffectToSection(group.pieces)}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="12" y1="5" x2="12" y2="19" />
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                  Add Effect
+                </button>
+                <button class="btn-add-effect btn-create" on:click={() => { createDialogPieceCount = group.pieces; showCreateDialog = true; }}>
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+                    <polyline points="14 2 14 8 20 8" />
+                    <line x1="12" y1="18" x2="12" y2="12" />
+                    <line x1="9" y1="15" x2="15" y2="15" />
+                  </svg>
+                  New Effect
+                </button>
+              </div>
             </div>
           </div>
         {/each}
@@ -232,6 +275,13 @@
       <div class="no-effects">No set effects</div>
     {/if}
   </div>
+{/if}
+
+{#if showCreateDialog}
+  <CreateEffectDialog
+    on:create={handleCreateEffect}
+    on:cancel={() => { showCreateDialog = false; createDialogPieceCount = null; }}
+  />
 {/if}
 
 <style>
@@ -339,6 +389,11 @@
     gap: 6px;
   }
 
+  .effect-search-wrapper {
+    flex: 1;
+    min-width: 120px;
+  }
+
   .effect-row-bottom {
     display: flex;
     align-items: center;
@@ -362,19 +417,7 @@
     min-width: 25px;
   }
 
-  .effect-select {
-    flex: 1;
-    min-width: 100px;
-    padding: 5px 8px;
-    font-size: 12px;
-    background-color: var(--input-bg, var(--primary-color));
-    border: 1px solid var(--border-color, #555);
-    border-radius: 4px;
-    color: var(--text-color);
-  }
-
-  .effect-strength:focus,
-  .effect-select:focus {
+  .effect-strength:focus {
     outline: none;
     border-color: var(--accent-color, #4a9eff);
   }
@@ -401,13 +444,18 @@
     border-color: var(--error-color, #ff6b6b);
   }
 
+  .btn-row {
+    display: flex;
+    gap: 6px;
+    margin-top: 4px;
+  }
+
   .btn-add-effect {
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 4px;
     padding: 6px 10px;
-    margin-top: 4px;
     background-color: transparent;
     border: 1px dashed var(--border-color, #555);
     border-radius: 4px;
@@ -415,6 +463,7 @@
     font-size: 11px;
     cursor: pointer;
     transition: all 0.15s;
+    flex: 1;
   }
 
   .btn-add-effect:hover {
@@ -461,10 +510,4 @@
     color: white;
   }
 
-  /* Mobile adjustments */
-  @media (max-width: 899px) {
-    .effect-select {
-      min-width: 0;
-    }
-  }
 </style>

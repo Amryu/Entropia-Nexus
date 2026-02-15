@@ -1494,8 +1494,27 @@ async function applyBlueprintMaterialsChanges(client, blueprintId, materialEntri
   ]);
 }
 
+async function upsertNewEffects(client, effects) {
+  for (const effect of effects) {
+    if (!effect._newEffect || !effect.Name) continue;
+    const { CanonicalName, Unit, IsPositive, Description } = effect._newEffect;
+    await client.query(
+      `INSERT INTO ONLY "Effects" ("Name", "CanonicalName", "Unit", "IsPositive", "Description")
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT ("Name") DO UPDATE SET
+         "CanonicalName" = COALESCE(EXCLUDED."CanonicalName", "Effects"."CanonicalName"),
+         "Unit" = COALESCE(EXCLUDED."Unit", "Effects"."Unit"),
+         "IsPositive" = COALESCE(EXCLUDED."IsPositive", "Effects"."IsPositive"),
+         "Description" = COALESCE(EXCLUDED."Description", "Effects"."Description")`,
+      [effect.Name, CanonicalName || null, Unit || null, IsPositive != null ? (IsPositive ? 1 : 0) : null, Description || null]
+    );
+  }
+}
+
 async function applyEffectsOnUseChanges(client, id, effects) {
-  let newEffects = await Promise.all(effects.map(effect => client.query(`SELECT "Id" FROM ONLY "Effects" WHERE "Name" = $1`, [effect.Name]).then(res => ({ Id: res.rows[0].Id, ...effect }))));
+  await upsertNewEffects(client, effects);
+  const validEffects = effects.filter(e => e.Name);
+  let newEffects = await Promise.all(validEffects.map(effect => client.query(`SELECT "Id" FROM ONLY "Effects" WHERE "Name" = $1`, [effect.Name]).then(res => ({ Id: res.rows[0].Id, ...effect }))));
 
   let newEffectsArrayId = newEffects.map(effect => effect.Id);
 
@@ -1506,7 +1525,9 @@ async function applyEffectsOnUseChanges(client, id, effects) {
 }
 
 async function applyEffectsOnConsumeChanges(client, id, effects) {
-  let newEffects = await Promise.all(effects.map(effect => client.query(`SELECT "Id" FROM ONLY "Effects" WHERE "Name" = $1`, [effect.Name]).then(res => ({ Id: res.rows[0].Id, ...effect }))));
+  await upsertNewEffects(client, effects);
+  const validEffects = effects.filter(e => e.Name);
+  let newEffects = await Promise.all(validEffects.map(effect => client.query(`SELECT "Id" FROM ONLY "Effects" WHERE "Name" = $1`, [effect.Name]).then(res => ({ Id: res.rows[0].Id, ...effect }))));
 
   let newEffectsArrayId = newEffects.map(effect => effect.Id);
 
@@ -1517,7 +1538,9 @@ async function applyEffectsOnConsumeChanges(client, id, effects) {
 }
 
 async function applyEffectsOnEquipChanges(client, id, effects) {
-  let newEffects = await Promise.all(effects.map(effect => client.query(`SELECT "Id" FROM ONLY "Effects" WHERE "Name" = $1`, [effect.Name]).then(res => ({ Id: res.rows[0].Id, ...effect }))));
+  await upsertNewEffects(client, effects);
+  const validEffects = effects.filter(e => e.Name);
+  let newEffects = await Promise.all(validEffects.map(effect => client.query(`SELECT "Id" FROM ONLY "Effects" WHERE "Name" = $1`, [effect.Name]).then(res => ({ Id: res.rows[0].Id, ...effect }))));
 
   let newEffectsArrayId = newEffects.map(effect => effect.Id);
 
@@ -1528,7 +1551,9 @@ async function applyEffectsOnEquipChanges(client, id, effects) {
 }
 
 async function applyEffectsOnSetEquipChanges(client, setId, effects) {
-  let newEffects = await Promise.all(effects.map(effect => client.query(`SELECT "Id" FROM ONLY "Effects" WHERE "Name" = $1`, [effect.Name]).then(res => ({ Id: res.rows[0].Id, ...effect }))));
+  await upsertNewEffects(client, effects);
+  const validEffects = effects.filter(e => e.Name);
+  let newEffects = await Promise.all(validEffects.map(effect => client.query(`SELECT "Id" FROM ONLY "Effects" WHERE "Name" = $1`, [effect.Name]).then(res => ({ Id: res.rows[0].Id, ...effect }))));
 
   let newEffectsArrayId = newEffects.map(effect => effect.Id);
   let newEffectsArrayMinSetPieces = newEffects.map(effect => effect.Values.MinSetPieces);
@@ -1541,7 +1566,9 @@ async function applyEffectsOnSetEquipChanges(client, setId, effects) {
 }
 
 async function applyPetEffectChanges(client, petId, effects) {
-  let newEffects = await Promise.all(effects.map(effect => client.query(`SELECT "Id" FROM ONLY "Effects" WHERE "Name" = $1`, [effect.Name]).then(res => ({ Id: res.rows[0].Id, ...effect }))));
+  await upsertNewEffects(client, effects);
+  const validEffects = effects.filter(e => e.Name);
+  let newEffects = await Promise.all(validEffects.map(effect => client.query(`SELECT "Id" FROM ONLY "Effects" WHERE "Name" = $1`, [effect.Name]).then(res => ({ Id: res.rows[0].Id, ...effect }))));
 
   let newEffectsArrayId = newEffects.map(effect => effect.Id);
   let newEffectsArrayStrength = newEffects.map(effect => effect.Properties.Strength);

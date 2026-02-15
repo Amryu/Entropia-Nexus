@@ -13,6 +13,8 @@
   // @ts-nocheck
   import { editMode, updateField } from '$lib/stores/wikiEditState.js';
   import FancyTable from '$lib/components/FancyTable.svelte';
+  import SearchInput from './SearchInput.svelte';
+  import CreateEffectDialog from './CreateEffectDialog.svelte';
 
   /** @type {Array} Effects array to display/edit */
   export let effects = [];
@@ -20,24 +22,32 @@
   /** @type {string} Field path for updateField */
   export let fieldName = 'Effects';
 
-  /** @type {Array} Available effects for dropdown [{Name, Properties: {Unit}}] */
+  /** @type {Array} Available effects for dropdown [{Name, CanonicalName, Properties: {Unit}}] */
   export let availableEffects = [];
+
+  let showCreateDialog = false;
+  let localAvailableEffects = [];
+  $: localAvailableEffects = [...(availableEffects || [])];
 
   // Sort effects by unlock level for display
   $: sortedEffects = [...(effects || [])].sort((a, b) =>
     (a.Properties?.Unlock?.Level || 0) - (b.Properties?.Unlock?.Level || 0)
   );
 
-  // Available effect names for dropdowns
-  $: effectOptions = (availableEffects || []).map(e => ({ value: e.Name, label: e.Name }));
+  // Available effect options with sublabel for SearchInput
+  $: effectOptions = localAvailableEffects.map(e => ({
+    label: e.Name,
+    value: e.Name,
+    sublabel: e.CanonicalName || null
+  }));
 
   // Show section if has effects or in edit mode
   $: shouldShow = $editMode || (effects?.length > 0);
 
   // Get unit for an effect name from availableEffects list
   function getEffectUnit(effectName) {
-    if (!effectName || !availableEffects?.length) return '';
-    const effect = availableEffects.find(e => e.Name === effectName);
+    if (!effectName || !localAvailableEffects?.length) return '';
+    const effect = localAvailableEffects.find(e => e.Name === effectName);
     return effect?.Properties?.Unit || '';
   }
 
@@ -79,10 +89,10 @@
   // === Effect CRUD Operations ===
   function addEffect() {
     const newEffect = {
-      Name: effectOptions[0]?.value || '',
+      Name: '',
       Properties: {
         Strength: 0,
-        Unit: availableEffects[0]?.Properties?.Unit || '',
+        Unit: '',
         NutrioConsumptionPerHour: 0,
         Unlock: {
           Level: 1,
@@ -95,6 +105,37 @@
       }
     };
     updateField(fieldName, [...effects, newEffect]);
+  }
+
+  function handleCreateEffect(event) {
+    const { Name, _newEffect } = event.detail;
+
+    localAvailableEffects = [...localAvailableEffects, {
+      Name,
+      CanonicalName: _newEffect.CanonicalName,
+      Properties: { Unit: _newEffect.Unit || '' }
+    }];
+
+    const newEffect = {
+      Name,
+      _newEffect,
+      Properties: {
+        Strength: 0,
+        Unit: _newEffect.Unit || '',
+        NutrioConsumptionPerHour: 0,
+        Unlock: {
+          Level: 1,
+          CostPED: 0,
+          CostEssence: 0,
+          CostRareEssence: 0,
+          Criteria: null,
+          CriteriaValue: null
+        }
+      }
+    };
+
+    updateField(fieldName, [...effects, newEffect]);
+    showCreateDialog = false;
   }
 
   function updateEffect(index, path, value) {
@@ -138,15 +179,15 @@
         {#each effects as effect, i}
           <div class="effect-card">
             <div class="effect-main-row">
-              <select
-                class="effect-select"
-                value={effect.Name}
-                on:change={(e) => updateEffect(i, 'Name', e.target.value)}
-              >
-                {#each effectOptions as opt}
-                  <option value={opt.value}>{opt.label}</option>
-                {/each}
-              </select>
+              <div class="effect-search-wrapper">
+                <SearchInput
+                  value={effect.Name}
+                  options={effectOptions}
+                  placeholder="Search effect..."
+                  on:select={(e) => updateEffect(i, 'Name', e.detail.value)}
+                  on:change={(e) => updateEffect(i, 'Name', e.detail.value)}
+                />
+              </div>
               <button class="btn-remove" on:click={() => removeEffect(i)} title="Remove effect">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <line x1="18" y1="6" x2="6" y2="18" />
@@ -268,13 +309,24 @@
           </div>
         {/each}
 
-        <button class="btn-add" on:click={addEffect}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <line x1="12" y1="5" x2="12" y2="19" />
-            <line x1="5" y1="12" x2="19" y2="12" />
-          </svg>
-          Add Effect
-        </button>
+        <div class="btn-row">
+          <button class="btn-add" on:click={addEffect}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            Add Effect
+          </button>
+          <button class="btn-add btn-create" on:click={() => showCreateDialog = true}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+              <polyline points="14 2 14 8 20 8" />
+              <line x1="12" y1="18" x2="12" y2="12" />
+              <line x1="9" y1="15" x2="15" y2="15" />
+            </svg>
+            Create New Effect
+          </button>
+        </div>
       </div>
     {:else if effects?.length > 0}
       <div class="effects-table-wrapper">
@@ -292,6 +344,13 @@
       <div class="no-effects">No pet effects defined</div>
     {/if}
   </div>
+{/if}
+
+{#if showCreateDialog}
+  <CreateEffectDialog
+    on:create={handleCreateEffect}
+    on:cancel={() => showCreateDialog = false}
+  />
 {/if}
 
 <style>
@@ -322,15 +381,9 @@
     gap: 8px;
   }
 
-  .effect-select {
+  .effect-search-wrapper {
     flex: 1;
     min-width: 120px;
-    padding: 6px 8px;
-    font-size: 13px;
-    background-color: var(--input-bg, var(--secondary-color));
-    border: 1px solid var(--border-color, #555);
-    border-radius: 4px;
-    color: var(--text-color);
   }
 
   .effect-fields-row {
@@ -403,8 +456,7 @@
     width: 100%;
   }
 
-  .field-group input:focus,
-  .effect-select:focus {
+  .field-group input:focus {
     outline: none;
     border-color: var(--accent-color, #4a9eff);
   }
@@ -505,6 +557,12 @@
     border-color: var(--error-color, #ff6b6b);
   }
 
+  .btn-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
   .btn-add {
     display: flex;
     align-items: center;
@@ -518,6 +576,7 @@
     font-size: 12px;
     cursor: pointer;
     transition: all 0.15s;
+    flex: 1;
   }
 
   .btn-add:hover {

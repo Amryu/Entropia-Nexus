@@ -9,6 +9,7 @@ function formatEffect(x) {
   return {
     Id: x.Id,
     Name: x.Name,
+    CanonicalName: x.CanonicalName || null,
     Properties: {
       Description: x.Description,
       IsPositive: x.IsPositive === 1,

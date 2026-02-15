@@ -22,6 +22,15 @@ export const EffectsOnEquip = {
         "required": [
           "Strength"
         ]
+      },
+      "_newEffect": {
+        "type": "object",
+        "properties": {
+          "CanonicalName": { "type": ["string", "null"] },
+          "Unit": { "type": ["string", "null"] },
+          "IsPositive": { "type": ["boolean", "null"] },
+          "Description": { "type": ["string", "null"] }
+        }
       }
     },
     "required": [
@@ -60,6 +69,15 @@ export const EffectsOnSetEquip = {
           "Strength",
           "MinSetPieces"
         ]
+      },
+      "_newEffect": {
+        "type": "object",
+        "properties": {
+          "CanonicalName": { "type": ["string", "null"] },
+          "Unit": { "type": ["string", "null"] },
+          "IsPositive": { "type": ["boolean", "null"] },
+          "Description": { "type": ["string", "null"] }
+        }
       }
     },
     "required": [
@@ -98,6 +116,15 @@ export const EffectsOnUse = {
           "Strength",
           "DurationSeconds"
         ]
+      },
+      "_newEffect": {
+        "type": "object",
+        "properties": {
+          "CanonicalName": { "type": ["string", "null"] },
+          "Unit": { "type": ["string", "null"] },
+          "IsPositive": { "type": ["boolean", "null"] },
+          "Description": { "type": ["string", "null"] }
+        }
       }
     },
     "required": [
