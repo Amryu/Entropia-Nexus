@@ -280,6 +280,14 @@
       filterPlaceholder: 'Yes',
       getValue: (item) => item.Properties?.IsBoosted ? 1 : 0,
       format: (v) => v ? 'Yes' : 'No'
+    },
+    cost: {
+      key: 'cost',
+      header: 'Cost',
+      width: '70px',
+      filterPlaceholder: '>1',
+      getValue: (item) => getCost(item),
+      format: (v) => v != null ? `${v.toFixed(2)}` : '-'
     }
   };
 
@@ -293,6 +301,7 @@
   const navFullWidthColumns = [
     ...navTableColumns,
     bpColumnDefs.product,
+    bpColumnDefs.cost,
     bpColumnDefs.sib,
     bpColumnDefs.limited,
     bpColumnDefs.book,

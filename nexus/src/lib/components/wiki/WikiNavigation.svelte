@@ -136,7 +136,7 @@
   // Handles all three matching modes: changeId, itemId, and slug (Name)
   function isCurrentItem(item) {
     if (currentChangeId && item._isPendingCreate && item._changeId === currentChangeId) return true;
-    if (currentItemId != null && (item.Id ?? item.ItemId) === currentItemId) return true;
+    if (currentItemId != null) return (item.Id ?? item.ItemId) === currentItemId;
     if (currentSlug && item.Name === currentSlug) return true;
     return false;
   }

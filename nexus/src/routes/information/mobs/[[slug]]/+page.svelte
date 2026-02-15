@@ -1285,7 +1285,7 @@
         </div>
 
         <!-- Maturities Section -->
-        <div bind:this={maturitiesSectionAnchor}>
+        <div class="maturities-anchor" bind:this={maturitiesSectionAnchor}>
           <DataSection
             title="Maturities"
             icon=""
@@ -1480,6 +1480,16 @@
     color: var(--text-muted, #999);
     font-style: italic;
     font-size: 13px;
+  }
+
+  .maturities-anchor {
+    margin-bottom: 16px;
+  }
+
+  @media (max-width: 899px) {
+    .maturities-anchor {
+      margin-bottom: 12px;
+    }
   }
 
   .mobs-sidebar {

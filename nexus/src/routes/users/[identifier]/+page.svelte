@@ -9,6 +9,8 @@
   import LoadoutCompactEmbed from '$lib/components/LoadoutCompactEmbed.svelte';
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { clampDecimals, encodeURIComponentSafe, getTypeLink } from '$lib/util';
+  import { isPercentMarkupType } from '$lib/common/itemTypes.js';
+  import { formatMarkupValue } from '../../market/exchange/orderUtils';
   import { loadLoadoutEntities } from '$lib/utils/entityLoader';
   import { evaluateLoadout } from '$lib/utils/loadoutEvaluator';
   import { buildEffectCaps } from '$lib/utils/loadoutEffects';
@@ -278,7 +280,13 @@
     { key: 'quantity', header: 'Qty', width: '70px', sortable: true, searchable: false },
     {
       key: 'markup', header: 'MU', width: '90px', sortable: true, searchable: false,
-      formatter: (v) => v != null ? `${Number(v).toFixed(1)}%` : 'N/A'
+      formatter: (v, row) => {
+        const type = row?.item_type;
+        const name = row?.details?.item_name || '';
+        const subType = row?.item_sub_type || null;
+        const isPercent = type ? isPercentMarkupType(type, name, subType) : true;
+        return formatMarkupValue(v, !isPercent);
+      }
     },
     { key: 'planet', header: 'Planet', width: '100px', sortable: true, searchable: false },
     {

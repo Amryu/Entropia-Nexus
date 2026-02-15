@@ -796,6 +796,39 @@
             </div>
           {/if}
 
+          {#if additional.type === 'mindforceimplants'}
+            <div class="stat-row">
+              <span class="stat-label">Absorption</span>
+              <span class="stat-value">
+                {#if $editMode}
+                  <span class="inline-edit editable">
+                    <span class="edit-wrapper">
+                      <input
+                        type="number"
+                        class="edit-input"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                        value={activeEntity?.Properties?.Economy?.Absorption != null
+                          ? (activeEntity.Properties.Economy.Absorption * 100).toFixed(1)
+                          : ''}
+                        on:input={(e) => {
+                          const value = e.target.value === '' ? null : parseFloat(e.target.value) / 100;
+                          updateField('Properties.Economy.Absorption', value);
+                        }}
+                      />
+                      <span class="suffix">%</span>
+                    </span>
+                  </span>
+                {:else}
+                  {activeEntity?.Properties?.Economy?.Absorption != null
+                    ? `${clampDecimals(activeEntity.Properties.Economy.Absorption * 100, 0, 2)}%`
+                    : 'N/A'}
+                {/if}
+              </span>
+            </div>
+          {/if}
+
           {#if additional.type === 'weaponamplifiers' || additional.type === 'weaponvisionattachments'}
             <div class="stat-row">
               <span class="stat-label">Decay</span>
