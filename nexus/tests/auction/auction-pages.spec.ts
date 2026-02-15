@@ -97,7 +97,7 @@ test.describe('Market Overview', () => {
     await page.goto('/market', { waitUntil: 'networkidle' });
 
     // Auction card should be a link now, not disabled.
-    const auctionCard = page.locator('.category-card[href="/market/auction"]').first();
+    const auctionCard = page.locator('.secondary-card[href="/market/auction"]').first();
     await expect(auctionCard).toBeVisible();
 
     // Auction card should not be marked as coming soon.

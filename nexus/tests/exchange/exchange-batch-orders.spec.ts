@@ -68,6 +68,24 @@ async function closeOrder(page: import('@playwright/test').Page, orderId: number
   });
 }
 
+/** Clean up any stale orders in the 9000xxx test range from previous failed runs */
+async function cleanupStaleTestOrders(page: import('@playwright/test').Page) {
+  const res = await page.request.get(`${SINGLE_API}?include_closed=false`);
+  if (!res.ok()) return;
+  const orders = await res.json();
+  if (!Array.isArray(orders)) return;
+  for (const order of orders) {
+    if (order.item_id >= 9000000 && order.item_id <= 9999999 && order.state !== 'closed') {
+      await closeOrder(page, order.id);
+    }
+  }
+}
+
+// Clean up stale test orders before running any tests
+test.beforeAll(async ({ verifiedUser }) => {
+  await cleanupStaleTestOrders(verifiedUser);
+});
+
 // ─── Authentication ──────────────────────────────────────────────
 
 test.describe('Batch Orders - Authentication', () => {
