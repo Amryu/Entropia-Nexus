@@ -572,6 +572,8 @@
 
     darkMode.set(isDarkMode);
     localStorage.setItem('darkMode', isDarkMode ? 'true' : 'false');
+    // Ensure manual choice is preserved across theme migrations
+    localStorage.setItem('themeVersion', '2');
   }
 
   function getMenuItemUrl(menu: string, item: { label: string; url: string }) {
