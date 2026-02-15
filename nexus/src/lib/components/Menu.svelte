@@ -574,6 +574,15 @@
     localStorage.setItem('darkMode', isDarkMode ? 'true' : 'false');
     // Ensure manual choice is preserved across theme migrations
     localStorage.setItem('themeVersion', '2');
+
+    // Sync to server if logged in
+    if (user) {
+      fetch('/api/users/preferences', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: 'darkMode', data: isDarkMode })
+      }).catch(() => {});
+    }
   }
 
   function getMenuItemUrl(menu: string, item: { label: string; url: string }) {
