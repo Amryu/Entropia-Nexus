@@ -1174,30 +1174,6 @@
     to { opacity: 1; transform: translateY(0); }
   }
 
-  .dark-light-button {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: none;
-    border: none;
-    padding: 8px;
-    margin: 0;
-    font: inherit;
-    color: inherit;
-    cursor: pointer;
-    border-radius: 4px;
-    transition: background-color 0.15s ease;
-  }
-
-  .dark-light-button:hover {
-    background-color: var(--hover-color);
-  }
-
-  .dark-light-button img {
-    width: 20px;
-    height: 20px;
-  }
-
   .discord-button {
     display: flex;
     align-items: center;
@@ -1883,11 +1859,6 @@
     padding: 0;
   }
 
-  .mobile-quick-btn img {
-    width: 18px;
-    height: 18px;
-    object-fit: contain;
-  }
 
   .mobile-quick-btn svg {
     width: 18px;
