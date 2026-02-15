@@ -111,8 +111,8 @@
       Type: 'Weapon',
       Level: 1,
       IsBoosted: false,
-      MinimumCraftAmount: 1,
-      MaximumCraftAmount: 1,
+      MinimumCraftAmount: null,
+      MaximumCraftAmount: null,
       Skill: {
         IsSiB: true,
         LearningIntervalStart: 0,
@@ -373,7 +373,57 @@
   $: cost = getCost(activeEntity);
   $: cyclePerHour = getCyclePerHour(activeEntity);
 
+  // ========== AUTO-FILL MAPPINGS ==========
+  const TYPE_TO_PROFESSION = {
+    'Armor': 'Armor Engineer',
+    'Tool': 'Tool Engineer',
+    'Vehicle': 'Vehicle Engineer',
+    'Furniture': 'Carpenter',
+    'Attachment': 'Attachment Engineer',
+    'Enhancer': 'Enhancer Constructor',
+    'Metal Component': 'Metal Engineer',
+    'Electrical Component': 'Electronics Engineer',
+    'Mechanical Component': 'Mechanical Engineer',
+  };
+
+  const LEVEL_TO_MIN_PROFESSION = {
+    1:0, 2:2.5, 3:5, 4:7.5, 5:10, 6:12.5, 7:15, 8:17.5, 9:20, 10:22.5,
+    11:30, 12:44, 13:57, 14:71, 15:85
+  };
+
   // ========== EDIT MODE HANDLERS ==========
+
+  /** Auto-fill Product and Book from blueprint name */
+  function handleNameChange(e) {
+    if (!$editMode) return;
+    const name = e.detail.value || '';
+    const match = name.match(/^(.+?)\s+Blueprint(?:\s+\(L\))?$/);
+    if (match) {
+      updateField('Product.Name', match[1].trim());
+    }
+    if (name.endsWith('Blueprint (L)')) {
+      updateField('Book.Name', 'Limited (Vol. 1) (C)');
+    }
+  }
+
+  /** Auto-fill Profession from Type (1:1 mappings only) */
+  function handleTypeChange(e) {
+    if (!$editMode) return;
+    const profession = TYPE_TO_PROFESSION[e.detail.value];
+    if (profession) {
+      updateField('Profession.Name', profession);
+    }
+  }
+
+  /** Auto-fill LearningIntervalStart from blueprint Level */
+  function handleLevelChange(e) {
+    if (!$editMode) return;
+    const minLvl = LEVEL_TO_MIN_PROFESSION[Number(e.detail.value)];
+    if (minLvl != null) {
+      updateField('Properties.Skill.LearningIntervalStart', minLvl);
+    }
+  }
+
   function handleBookChange(e) {
     updateField('Book.Name', e.detail.value);
   }
@@ -468,6 +518,7 @@
               path="Name"
               type="text"
               placeholder="Blueprint Name"
+              on:change={handleNameChange}
             />
           </div>
           <div class="infobox-subtitle">
@@ -510,6 +561,7 @@
                 type="number"
                 min={1}
                 max={100}
+                on:change={handleLevelChange}
               />
             </span>
           </div>
@@ -521,6 +573,7 @@
                 path="Properties.Type"
                 type="select"
                 options={typeOptions}
+                on:change={handleTypeChange}
               />
             </span>
           </div>

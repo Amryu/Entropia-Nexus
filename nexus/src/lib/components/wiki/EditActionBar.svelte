@@ -175,7 +175,7 @@
         }
 
         if (response?.id) {
-          changeMetadata.update(m => ({ ...m, id: response.id }));
+          changeMetadata.update(m => ({ ...m, id: response.id, state: 'Pending' }));
           if ($isCreateMode && browser) {
             await invalidateAll();
             await goto(`${window.location.pathname}?mode=create&changeId=${response.id}`, {
@@ -189,10 +189,12 @@
       statusMessage = 'Changes submitted for review!';
       statusType = 'success';
 
-      // Exit edit mode after successful submit
-      setTimeout(() => {
-        cancelEdit();
-      }, 1500);
+      // Exit edit mode after successful submit (not in create mode — no view state exists)
+      if (!$isCreateMode) {
+        setTimeout(() => {
+          cancelEdit();
+        }, 1500);
+      }
     } catch (error) {
       console.error('Submit error:', error);
       statusMessage = error.message || 'Failed to submit changes.';
