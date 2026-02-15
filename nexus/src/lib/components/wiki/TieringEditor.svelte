@@ -38,9 +38,25 @@
 
   const MAX_TIERS = 10;
 
-  // Display order for tier materials (data storage order: 0=Component, 1=Gem, 2=Blazar, 3=Material1, 4=Material2)
-  // Display order: Material1 (ore), Material2 (enmatter), Pile of XXX, Blazar Fragment, Tier Component
-  const MATERIAL_DISPLAY_ORDER = [3, 4, 1, 2, 0];
+  // Display sort priorities for tier materials
+  // Order: Material1 (ore), Material2 (enmatter), Pile of XXX, Blazar Fragment, Tier Component
+  const MAT_SORT_MATERIAL1 = 0;
+  const MAT_SORT_MATERIAL2 = 1;
+  const MAT_SORT_GEM = 2;
+  const MAT_SORT_BLAZAR = 3;
+  const MAT_SORT_COMPONENT = 4;
+  const MAT_SORT_UNKNOWN = 5;
+
+  // Classify a material by name to determine its display sort order
+  function classifyMaterial(matName) {
+    if (!matName || matName === '<Unknown Material>') return MAT_SORT_UNKNOWN;
+    if (matName === 'Blazar Fragment') return MAT_SORT_BLAZAR;
+    if (matName.startsWith('Pile of ')) return MAT_SORT_GEM;
+    if (/^Tier \d+ Component$/.test(matName)) return MAT_SORT_COMPONENT;
+    if (materialArrays?.Material1?.includes(matName)) return MAT_SORT_MATERIAL1;
+    if (materialArrays?.Material2?.includes(matName)) return MAT_SORT_MATERIAL2;
+    return MAT_SORT_UNKNOWN;
+  }
 
   // Get material arrays based on entity type
   function getMaterialArrays(type) {
@@ -413,11 +429,9 @@
     return [];
   })();
 
-  // Transform materials data for table display (reordered for presentation)
-  $: materialTableData = MATERIAL_DISPLAY_ORDER
-    .filter(origIdx => origIdx < displayMaterials.length)
-    .map(origIdx => {
-      const mat = displayMaterials[origIdx];
+  // Transform materials data for table display (sorted by material category)
+  $: materialTableData = displayMaterials
+    .map((mat, origIdx) => {
       const matName = mat.Material?.Name || 'Unknown';
       const matTT = mat.Material?.Properties?.Economy?.MaxTT || matValues[matName] || 0;
       const amount = mat.Amount;
@@ -427,11 +441,18 @@
       return {
         _idx: origIdx,
         _matName: matName,
+        _sort: classifyMaterial(matName),
         tt: formatPED(matTT),
         amount: amount,
         cost: formatPED(totalCost)
       };
-    });
+    })
+    .sort((a, b) => a._sort - b._sort);
+
+  // Sorted material entries for edit mode (preserves original indices for data operations)
+  $: orderedEditMaterials = displayMaterials
+    .map((mat, origIdx) => ({ mat, origIdx, sort: classifyMaterial(mat.Material?.Name) }))
+    .sort((a, b) => a.sort - b.sort);
 </script>
 
 {#if canBeTiered}
@@ -461,23 +482,20 @@
       {#if $editMode}
         <!-- Compact edit view -->
         <div class="materials-edit-list">
-          {#each MATERIAL_DISPLAY_ORDER as origIdx}
-            {#if origIdx < displayMaterials.length}
-              {@const mat = displayMaterials[origIdx]}
-              {@const matName = mat.Material?.Name || 'Unknown'}
-              {@const editAmount = getEntityTierMaterialAmount(selectedTier, origIdx)}
-              <div class="material-edit-row">
-                <span class="mat-edit-name">{matName}</span>
-                <input
-                  type="number"
-                  value={editAmount}
-                  min="0"
-                  step="1"
-                  class="amount-input-compact"
-                  on:change={(e) => updateMaterialAmount(selectedTier, origIdx, parseInt(e.target.value) || 0)}
-                />
-              </div>
-            {/if}
+          {#each orderedEditMaterials as { mat, origIdx } (origIdx)}
+            {@const matName = mat.Material?.Name || 'Unknown'}
+            {@const editAmount = getEntityTierMaterialAmount(selectedTier, origIdx)}
+            <div class="material-edit-row">
+              <span class="mat-edit-name">{matName}</span>
+              <input
+                type="number"
+                value={editAmount}
+                min="0"
+                step="1"
+                class="amount-input-compact"
+                on:change={(e) => updateMaterialAmount(selectedTier, origIdx, parseInt(e.target.value) || 0)}
+              />
+            </div>
           {/each}
         </div>
       {:else}
