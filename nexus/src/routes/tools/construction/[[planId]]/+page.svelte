@@ -144,8 +144,9 @@
   let showMassBuy = false;
   let massBuyItems = [];
 
-  // Exchange data for WAP and inventory import
+  // Exchange data for WAP, sell order counts, and inventory import
   let exchangeWapMap = new Map(); // itemId → wap markup %
+  let exchangeSellCounts = new Map(); // itemId → sell order count
   let exchangeSlimItems = []; // flat array for InventoryImportDialog
 
   // Track targets for resetting checked state
@@ -307,12 +308,15 @@
       const items = flattenExchangeItems(data);
       exchangeSlimItems = items;
       const wapMap = new Map();
+      const sellMap = new Map();
       for (const item of items) {
-        if (item.i && item.w) {
-          wapMap.set(item.i, item.w);
+        if (item.i) {
+          if (item.w) wapMap.set(item.i, item.w);
+          if (item.s != null) sellMap.set(item.i, item.s);
         }
       }
       exchangeWapMap = wapMap;
+      exchangeSellCounts = sellMap;
     } catch {
       // Non-critical — WAP fallback simply won't be available
     }
@@ -2037,7 +2041,7 @@
                           {#if isLoggedIn}
                             <button class="btn-shop-action btn-order" title="Create buy order" on:click={() => openMassBuy([{ itemId: item.item.Id, name: item.item.Name, quantity: Math.ceil(item.adjustedAmount || item.totalAmount), markup: mu }])}>Order</button>
                           {/if}
-                          <a href="/market/exchange/listings/{item.item.Id}" target="_blank" rel="noopener" class="btn-shop-action btn-buy" title="Browse sell orders">Buy</a>
+                          <a href="/market/exchange/listings/{item.item.Id}" target="_blank" rel="noopener" class="btn-shop-action btn-buy" class:no-orders={!exchangeSellCounts.get(item.item.Id)} title="{exchangeSellCounts.get(item.item.Id) || 0} sell order{(exchangeSellCounts.get(item.item.Id) || 0) !== 1 ? 's' : ''} available">Buy{#if exchangeSellCounts.get(item.item.Id)} ({exchangeSellCounts.get(item.item.Id)}){/if}</a>
                         </div>
                       {/if}
                     </td>
@@ -2104,7 +2108,7 @@
                         {#if isLoggedIn}
                           <button class="btn-shop-action btn-order" title="Create buy order" on:click={() => openMassBuy([{ itemId: item.blueprint.Id + BLUEPRINT_ID_OFFSET, name: item.blueprint.Name, quantity: Math.ceil(item.totalAmount), markup: mu }])}>Order</button>
                         {/if}
-                        <a href="/market/exchange/listings/{item.blueprint.Id + BLUEPRINT_ID_OFFSET}" target="_blank" rel="noopener" class="btn-shop-action btn-buy" title="Browse sell orders">Buy</a>
+                        <a href="/market/exchange/listings/{item.blueprint.Id + BLUEPRINT_ID_OFFSET}" target="_blank" rel="noopener" class="btn-shop-action btn-buy" class:no-orders={!exchangeSellCounts.get(item.blueprint.Id + BLUEPRINT_ID_OFFSET)} title="{exchangeSellCounts.get(item.blueprint.Id + BLUEPRINT_ID_OFFSET) || 0} sell order{(exchangeSellCounts.get(item.blueprint.Id + BLUEPRINT_ID_OFFSET) || 0) !== 1 ? 's' : ''} available">Buy{#if exchangeSellCounts.get(item.blueprint.Id + BLUEPRINT_ID_OFFSET)} ({exchangeSellCounts.get(item.blueprint.Id + BLUEPRINT_ID_OFFSET)}){/if}</a>
                       </div>
                     </td>
                   </tr>
@@ -2147,7 +2151,7 @@
                           {#if isLoggedIn}
                             <button class="btn-shop-action btn-order" title="Create buy order" on:click={() => openMassBuy([{ itemId: item.item.Id, name: item.item.Name, quantity: Math.ceil(item.totalAmount), markup: prodMU }])}>Order</button>
                           {/if}
-                          <a href="/market/exchange/listings/{item.item.Id}" target="_blank" rel="noopener" class="btn-shop-action btn-buy" title="Browse sell orders">Buy</a>
+                          <a href="/market/exchange/listings/{item.item.Id}" target="_blank" rel="noopener" class="btn-shop-action btn-buy" class:no-orders={!exchangeSellCounts.get(item.item.Id)} title="{exchangeSellCounts.get(item.item.Id) || 0} sell order{(exchangeSellCounts.get(item.item.Id) || 0) !== 1 ? 's' : ''} available">Buy{#if exchangeSellCounts.get(item.item.Id)} ({exchangeSellCounts.get(item.item.Id)}){/if}</a>
                         </div>
                       {/if}
                     </td>

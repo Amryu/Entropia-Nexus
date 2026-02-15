@@ -179,7 +179,7 @@ test.describe('Construction Calculator', () => {
     // Check that action buttons exist (Buy button should always show, Order only for logged-in)
     const buyBtn = page.locator('.btn-shop-action.btn-buy').first();
     await expect(buyBtn).toBeVisible({ timeout: TIMEOUT_MEDIUM });
-    await expect(buyBtn).toHaveText('Buy');
+    await expect(buyBtn).toHaveText(/^Buy/);
 
     // Verify the Buy button links to exchange listings
     const href = await buyBtn.getAttribute('href');

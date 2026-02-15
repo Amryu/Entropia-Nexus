@@ -1922,6 +1922,11 @@
     background: rgba(239, 68, 68, 0.1);
   }
 
+  & .btn-shop-action.btn-buy.no-orders {
+    opacity: 0.4;
+    border-style: dashed;
+  }
+
   /* Markup indicator styles */
   & .markup-cell {
     display: flex;
