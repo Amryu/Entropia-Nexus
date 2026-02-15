@@ -84,10 +84,11 @@
   }
 
   .table-container {
-    border-radius: 6px;
+    border-radius: 8px;
     overflow-x: auto;
     background-color: var(--secondary-color);
-    border: 1px solid var(--border-color, #555);
+    border: 1px solid var(--border-color);
+    font-size: 13px;
   }
 
   .construction-table {
@@ -96,16 +97,18 @@
   }
 
   .construction-table th {
-    padding: 12px 16px;
+    height: 32px;
+    padding: 0 10px;
     text-align: left;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
     color: var(--text-color);
     background-color: var(--hover-color);
-    border-bottom: 1px solid var(--border-color, #555);
-    border-right: 1px solid var(--border-color, #555);
+    border-bottom: 1px solid var(--border-color);
+    border-right: 1px solid var(--border-color);
+    white-space: nowrap;
   }
 
   .construction-table th:last-child {
@@ -113,11 +116,13 @@
   }
 
   .construction-table td {
-    padding: 10px 16px;
-    font-size: 14px;
+    height: 32px;
+    padding: 0 10px;
+    font-size: 13px;
     color: var(--text-color);
-    border-bottom: 1px solid var(--border-color, #555);
-    border-right: 1px solid var(--border-color, #555);
+    border-bottom: 1px solid var(--border-color);
+    border-right: 1px solid var(--border-color);
+    white-space: nowrap;
   }
 
   .construction-table td:last-child {
@@ -125,7 +130,7 @@
   }
 
   .construction-table tbody tr:nth-child(odd) {
-    background-color: var(--primary-color);
+    background-color: color-mix(in srgb, var(--primary-color) 30%, var(--secondary-color) 70%);
   }
 
   .construction-table tbody tr:nth-child(even) {
@@ -147,11 +152,11 @@
 
   .construction-table tfoot td {
     border-bottom: none;
-    border-top: 2px solid var(--border-color, #555);
+    border-top: 2px solid var(--border-color);
   }
 
   .construction-table a {
-    color: var(--accent-color, #4a9eff);
+    color: var(--accent-color);
     text-decoration: none;
   }
 
@@ -161,18 +166,19 @@
 
   .construction-table input[type="text"] {
     width: 70px;
-    padding: 4px 8px;
-    border: 1px solid var(--border-color, #555);
+    padding: 2px 6px;
+    border: 1px solid var(--border-color);
     border-radius: 4px;
     background-color: var(--bg-color, var(--primary-color));
     color: var(--text-color);
-    font-size: 13px;
+    font-size: 12px;
     text-align: right;
+    box-sizing: border-box;
   }
 
   .construction-table input[type="text"]:focus {
     outline: none;
-    border-color: var(--accent-color, #4a9eff);
+    border-color: var(--accent-color);
   }
 
   .text-right {
@@ -180,26 +186,27 @@
   }
 
   .text-muted {
-    color: var(--text-muted, #999);
+    color: var(--text-muted);
   }
 
   .product-row {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 12px 16px;
+    padding: 8px 10px;
     background-color: var(--secondary-color);
-    border: 1px solid var(--border-color, #555);
-    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    font-size: 13px;
   }
 
   .product-label {
     font-weight: 500;
-    color: var(--text-muted, #999);
+    color: var(--text-muted);
   }
 
   .product-link {
-    color: var(--accent-color, #4a9eff);
+    color: var(--accent-color);
     text-decoration: none;
     font-weight: 500;
   }
@@ -210,16 +217,19 @@
 
   /* Mobile responsiveness */
   @media (max-width: 600px) {
-    .construction-table th,
+    .construction-table th {
+      padding: 0 8px;
+      font-size: 10px;
+    }
+
     .construction-table td {
-      padding: 8px 10px;
+      padding: 0 8px;
       font-size: 12px;
     }
 
     .construction-table input[type="text"] {
       width: 55px;
-      padding: 3px 6px;
-      font-size: 12px;
+      font-size: 11px;
     }
 
     .hide-mobile {

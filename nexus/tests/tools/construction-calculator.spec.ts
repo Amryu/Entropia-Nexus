@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { TIMEOUT_MEDIUM, TIMEOUT_LONG } from '../test-constants';
+import { TIMEOUT_INSTANT, TIMEOUT_SHORT, TIMEOUT_MEDIUM, TIMEOUT_LONG } from '../test-constants';
 
 async function createNewPlan(page) {
   // Wait for page to fully load (blueprints, local data, etc.)
@@ -151,5 +151,136 @@ test.describe('Construction Calculator', () => {
 
     // Tree should contain a node with the blueprint
     await expect(page.locator('.tree-node')).toBeVisible({ timeout: TIMEOUT_MEDIUM });
+  });
+
+  test('shopping list table has rounded borders', async ({ page }) => {
+    await createNewPlan(page);
+    await addBlueprintToPlan(page);
+
+    await page.getByRole('button', { name: 'Shopping' }).click();
+
+    const shoppingTable = page.locator('.shopping-table.unified');
+    await expect(shoppingTable).toBeVisible({ timeout: TIMEOUT_MEDIUM });
+
+    // Verify the table uses border-collapse: separate (required for border-radius)
+    const borderCollapse = await shoppingTable.evaluate(el => getComputedStyle(el).borderCollapse);
+    expect(borderCollapse).toBe('separate');
+  });
+
+  test('shopping list shows Order and Buy buttons on desktop', async ({ page }) => {
+    await createNewPlan(page);
+    await addBlueprintToPlan(page);
+
+    await page.getByRole('button', { name: 'Shopping' }).click();
+
+    const shoppingTable = page.locator('.shopping-table');
+    await expect(shoppingTable).toBeVisible({ timeout: TIMEOUT_MEDIUM });
+
+    // Check that action buttons exist (Buy button should always show, Order only for logged-in)
+    const buyBtn = page.locator('.btn-shop-action.btn-buy').first();
+    await expect(buyBtn).toBeVisible({ timeout: TIMEOUT_MEDIUM });
+    await expect(buyBtn).toHaveText('Buy');
+
+    // Verify the Buy button links to exchange listings
+    const href = await buyBtn.getAttribute('href');
+    expect(href).toContain('/market/exchange/listings/');
+  });
+
+  test('shopping list action buttons hidden on mobile', async ({ page }) => {
+    await createNewPlan(page);
+    await addBlueprintToPlan(page);
+
+    await page.getByRole('button', { name: 'Shopping' }).click();
+    await expect(page.locator('.shopping-table')).toBeVisible({ timeout: TIMEOUT_MEDIUM });
+
+    // Resize to mobile viewport
+    await page.setViewportSize({ width: 600, height: 800 });
+    await page.waitForTimeout(TIMEOUT_INSTANT);
+
+    // Action columns should be hidden on mobile
+    const actionCols = page.locator('.col-actions.hide-mobile');
+    const count = await actionCols.count();
+    if (count > 0) {
+      const isVisible = await actionCols.first().isVisible();
+      expect(isVisible).toBe(false);
+    }
+  });
+
+  test('shopping list MU% input accepts custom markup', async ({ page }) => {
+    await createNewPlan(page);
+    await addBlueprintToPlan(page);
+
+    await page.getByRole('button', { name: 'Shopping' }).click();
+    await expect(page.locator('.shopping-table')).toBeVisible({ timeout: TIMEOUT_MEDIUM });
+
+    // Find a markup input and change its value
+    const markupInput = page.locator('.shopping-table .markup-input-inline').first();
+    await expect(markupInput).toBeVisible({ timeout: TIMEOUT_SHORT });
+
+    // Set a custom value and dispatch a native change event
+    await markupInput.evaluate(el => {
+      (el as HTMLInputElement).value = '150';
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await page.waitForTimeout(TIMEOUT_SHORT);
+
+    // The input should now have the is-custom class
+    await expect(markupInput).toHaveClass(/is-custom/);
+
+    // A reset button should appear
+    const resetBtn = page.locator('.shopping-table .markup-reset').first();
+    await expect(resetBtn).toBeVisible({ timeout: TIMEOUT_SHORT });
+  });
+
+  test('markup reset button clears custom value', async ({ page }) => {
+    await createNewPlan(page);
+    await addBlueprintToPlan(page);
+
+    await page.getByRole('button', { name: 'Shopping' }).click();
+    await expect(page.locator('.shopping-table')).toBeVisible({ timeout: TIMEOUT_MEDIUM });
+
+    const markupInput = page.locator('.shopping-table .markup-input-inline').first();
+    await expect(markupInput).toBeVisible({ timeout: TIMEOUT_SHORT });
+
+    // Set a custom value and dispatch a native change event
+    await markupInput.evaluate(el => {
+      (el as HTMLInputElement).value = '200';
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    await page.waitForTimeout(TIMEOUT_SHORT);
+
+    // Click the reset button
+    const resetBtn = page.locator('.shopping-table .markup-reset').first();
+    await expect(resetBtn).toBeVisible({ timeout: TIMEOUT_SHORT });
+    await resetBtn.click();
+    await page.waitForTimeout(TIMEOUT_INSTANT);
+
+    // The is-custom class should be removed
+    await expect(markupInput).not.toHaveClass(/is-custom/);
+  });
+
+  test('shopping list checkboxes toggle items', async ({ page }) => {
+    await createNewPlan(page);
+    await addBlueprintToPlan(page);
+
+    await page.getByRole('button', { name: 'Shopping' }).click();
+    await expect(page.locator('.shopping-table')).toBeVisible({ timeout: TIMEOUT_MEDIUM });
+
+    // Find a checkbox in the shopping list
+    const checkbox = page.locator('.shopping-table .col-check input[type="checkbox"]').first();
+    await expect(checkbox).toBeVisible({ timeout: TIMEOUT_SHORT });
+
+    // Click to check it
+    await checkbox.click();
+    await page.waitForTimeout(TIMEOUT_INSTANT);
+
+    // The row should get the checked class (strikethrough styling)
+    const row = page.locator('.shopping-table tbody tr').first();
+    await expect(row).toHaveClass(/checked/);
+
+    // Click again to uncheck
+    await checkbox.click();
+    await page.waitForTimeout(TIMEOUT_INSTANT);
+    await expect(row).not.toHaveClass(/checked/);
   });
 });

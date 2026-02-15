@@ -10,6 +10,7 @@
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
   import WikiSearchInput from '$lib/components/wiki/SearchInput.svelte';
   import CraftingTreeNode from '$lib/components/tools/CraftingTreeNode.svelte';
+  import MassBuyDialog from '../MassBuyDialog.svelte';
   import { loading } from '../../../../stores.js';
   import { hasItemTag, getItemLink, getTypeLink, clampDecimals } from '$lib/util.js';
   import { hasCondition } from '$lib/shopUtils.js';
@@ -139,6 +140,14 @@
   let checkedShoppingMaterials = new Set();
   let checkedShoppingProducts = new Set();
 
+  // Mass Buy dialog state
+  let showMassBuy = false;
+  let massBuyItems = [];
+
+  // Exchange data for WAP and inventory import
+  let exchangeWapMap = new Map(); // itemId → wap markup %
+  let exchangeSlimItems = []; // flat array for InventoryImportDialog
+
   // Track targets for resetting checked state
   let previousTargetsKey = '';
 
@@ -254,7 +263,16 @@
   }
 
   function getMarkup(key) {
-    return markupValues[key] ?? DEFAULT_MARKUP;
+    if (markupValues[key] != null) return markupValues[key];
+    return shoppingItemWapMap[key] ?? DEFAULT_MARKUP;
+  }
+
+  function hasCustomMarkup(key) {
+    return markupValues[key] != null;
+  }
+
+  function getWapMarkup(key) {
+    return shoppingItemWapMap[key] ?? null;
   }
 
   function setMarkup(key, value) {
@@ -262,6 +280,41 @@
     if (!isNaN(num) && num >= 0) {
       markupValues[key] = Math.min(100000, num);
       markupValues = markupValues; // trigger reactivity
+    }
+  }
+
+  function resetMarkup(key) {
+    delete markupValues[key];
+    markupValues = markupValues; // trigger reactivity
+  }
+
+  // Exchange data helpers
+  function flattenExchangeItems(obj) {
+    const items = [];
+    function traverse(current) {
+      if (Array.isArray(current)) items.push(...current);
+      else if (typeof current === 'object' && current !== null) Object.values(current).forEach(traverse);
+    }
+    traverse(obj);
+    return items;
+  }
+
+  async function fetchExchangeData() {
+    try {
+      const res = await fetch('/api/market/exchange');
+      if (!res.ok) return;
+      const data = await res.json();
+      const items = flattenExchangeItems(data);
+      exchangeSlimItems = items;
+      const wapMap = new Map();
+      for (const item of items) {
+        if (item.i && item.w) {
+          wapMap.set(item.i, item.w);
+        }
+      }
+      exchangeWapMap = wapMap;
+    } catch {
+      // Non-critical — WAP fallback simply won't be available
     }
   }
 
@@ -376,6 +429,91 @@
     checkedShoppingProducts = new Set(checkedShoppingProducts);
   }
 
+  // Mass Buy helpers
+  function openMassBuy(items) {
+    massBuyItems = items;
+    showMassBuy = true;
+  }
+
+  function openMassBuyAll() {
+    const items = [];
+    for (const mat of shoppingList.materials) {
+      if (checkedShoppingMaterials.has(mat.item.Name)) continue;
+      if (!mat.item?.Id) continue;
+      items.push({
+        itemId: mat.item.Id,
+        name: mat.item.Name,
+        quantity: Math.ceil(mat.adjustedAmount || mat.totalAmount),
+        markup: getMarkup(`mat:${mat.item?.Name}`)
+      });
+    }
+    for (const bp of shoppingList.limitedBlueprints || []) {
+      if (checkedShoppingProducts.has(bp.blueprint.Name)) continue;
+      items.push({
+        itemId: bp.blueprint.Id + BLUEPRINT_ID_OFFSET,
+        name: bp.blueprint.Name,
+        quantity: Math.ceil(bp.totalAmount),
+        markup: getMarkup(`bp:${bp.blueprint.Id}`)
+      });
+    }
+    for (const prod of shoppingList.productsToBuy) {
+      if (checkedShoppingProducts.has(prod.item.Name)) continue;
+      if (!prod.item?.Id) continue;
+      items.push({
+        itemId: prod.item.Id,
+        name: prod.item.Name,
+        quantity: Math.ceil(prod.totalAmount),
+        markup: getMarkup(`prod:${prod.item?.Name}`)
+      });
+    }
+    if (items.length > 0) {
+      massBuyItems = items;
+      showMassBuy = true;
+    }
+  }
+
+  $: allShoppingItemsChecked = (() => {
+    if (!shoppingList) return true;
+    const matUnchecked = shoppingList.materials.some(m => !checkedShoppingMaterials.has(m.item.Name));
+    const bpUnchecked = (shoppingList.limitedBlueprints || []).some(b => !checkedShoppingProducts.has(b.blueprint.Name));
+    const prodUnchecked = shoppingList.productsToBuy.some(p => !checkedShoppingProducts.has(p.item.Name));
+    return !matUnchecked && !bpUnchecked && !prodUnchecked;
+  })();
+
+  // Build WAP lookup keyed by markup key (mat:Name, bp:Id, prod:Name)
+  // Used by getMarkup() as fallback when no custom value is set
+  $: shoppingItemWapMap = (() => {
+    const map = {};
+    if (exchangeWapMap.size === 0) return map;
+    // Materials from crafting steps
+    for (const step of craftingSteps) {
+      if (!step.owned) continue;
+      for (const mat of step.materials) {
+        if (mat.item?.Id && mat.item?.Name) {
+          const wap = exchangeWapMap.get(mat.item.Id);
+          if (wap != null) map[`mat:${mat.item.Name}`] = wap;
+        }
+      }
+    }
+    // Limited blueprints
+    for (const step of craftingSteps) {
+      if (step.isLimited && step.owned && step.blueprint?.Id) {
+        const wap = exchangeWapMap.get(step.blueprint.Id + BLUEPRINT_ID_OFFSET);
+        if (wap != null) map[`bp:${step.blueprint.Id}`] = wap;
+      }
+    }
+    // Products from shopping list
+    if (shoppingList) {
+      for (const prod of shoppingList.productsToBuy) {
+        if (prod.item?.Id && prod.item?.Name) {
+          const wap = exchangeWapMap.get(prod.item.Id);
+          if (wap != null) map[`prod:${prod.item.Name}`] = wap;
+        }
+      }
+    }
+    return map;
+  })();
+
   // Get all unique materials needing markup (for the markup section)
   $: allMaterialsForMarkup = (() => {
     const materials = new Map();
@@ -483,6 +621,24 @@
         updateUrlSlug(null);
       }
     }
+
+    // Handle addBlueprint query param (from blueprint page "Create a construction plan" link)
+    if (data.additional?.addBlueprint && !data.additional?.planId) {
+      const bpId = data.additional.addBlueprint;
+      const blueprint = blueprintCache.get(bpId);
+      if (blueprint) {
+        await handleNewPlan();
+        handleAddTarget(blueprint);
+        currentView = 'planning';
+        // Clean the URL to remove query param
+        if (activePlanId) {
+          goto(`/tools/construction/${activePlanId}`, { replaceState: true });
+        }
+      }
+    }
+
+    // Fetch exchange data for WAP markup fallback (non-blocking)
+    fetchExchangeData();
 
     // Add beforeunload handler
     if (browser) {
@@ -1397,18 +1553,27 @@
                   <h4>Materials</h4>
                   <div class="markup-grid">
                     {#each allMaterialsForMarkup as { name, item }}
+                      {@const markupKey = `mat:${name}`}
+                      {@const isCustom = markupValues[markupKey] != null}
+                      {@const wap = shoppingItemWapMap[markupKey] ?? null}
                       <div class="markup-item">
                         <a href={getItemLink(item)} class="markup-name">{name}</a>
                         <div class="markup-input-wrapper">
                           <input
                             type="number"
                             class="markup-input"
-                            value={getMarkup(`mat:${name}`)}
-                            on:change={(e) => setMarkup(`mat:${name}`, e.target.value)}
+                            class:is-custom={isCustom}
+                            value={markupValues[markupKey] ?? shoppingItemWapMap[markupKey] ?? DEFAULT_MARKUP}
+                            on:change={(e) => setMarkup(markupKey, e.target.value)}
                             min="0"
                             step="1"
                           />
                           <span class="markup-suffix">%</span>
+                          {#if isCustom}
+                            <button class="markup-reset" title="Reset to market value" on:click={() => resetMarkup(markupKey)}>&times;</button>
+                          {:else if wap != null}
+                            <span class="markup-wap-badge" title="Weighted Average Price from exchange">WAP</span>
+                          {/if}
                         </div>
                       </div>
                     {/each}
@@ -1419,7 +1584,7 @@
                           <input
                             type="number"
                             class="markup-input"
-                            value={getMarkup('residue')}
+                            value={markupValues['residue'] ?? DEFAULT_MARKUP}
                             on:change={(e) => setMarkup('residue', e.target.value)}
                             min="0"
                             step="1"
@@ -1437,18 +1602,27 @@
                   <h4>Limited Blueprints</h4>
                   <div class="markup-grid">
                     {#each limitedBlueprintsForMarkup as bp}
+                      {@const markupKey = `bp:${bp.Id}`}
+                      {@const isCustom = markupValues[markupKey] != null}
+                      {@const wap = shoppingItemWapMap[markupKey] ?? null}
                       <div class="markup-item">
                         <a href={getBlueprintLink(bp)} class="markup-name">{bp.Name}</a>
                         <div class="markup-input-wrapper">
                           <input
                             type="number"
                             class="markup-input"
-                            value={getMarkup(`bp:${bp.Id}`)}
-                            on:change={(e) => setMarkup(`bp:${bp.Id}`, e.target.value)}
+                            class:is-custom={isCustom}
+                            value={markupValues[markupKey] ?? shoppingItemWapMap[markupKey] ?? DEFAULT_MARKUP}
+                            on:change={(e) => setMarkup(markupKey, e.target.value)}
                             min="0"
                             step="1"
                           />
                           <span class="markup-suffix">%</span>
+                          {#if isCustom}
+                            <button class="markup-reset" title="Reset to market value" on:click={() => resetMarkup(markupKey)}>&times;</button>
+                          {:else if wap != null}
+                            <span class="markup-wap-badge" title="Weighted Average Price from exchange">WAP</span>
+                          {/if}
                         </div>
                       </div>
                     {/each}
@@ -1461,18 +1635,27 @@
                   <h4>Products to Buy</h4>
                   <div class="markup-grid">
                     {#each productsToBuyForMarkup as { name, item }}
+                      {@const markupKey = `prod:${name}`}
+                      {@const isCustom = markupValues[markupKey] != null}
+                      {@const wap = shoppingItemWapMap[markupKey] ?? null}
                       <div class="markup-item">
                         <a href={getItemLink(item)} class="markup-name">{name}</a>
                         <div class="markup-input-wrapper">
                           <input
                             type="number"
                             class="markup-input"
-                            value={getMarkup(`prod:${name}`)}
-                            on:change={(e) => setMarkup(`prod:${name}`, e.target.value)}
+                            class:is-custom={isCustom}
+                            value={markupValues[markupKey] ?? shoppingItemWapMap[markupKey] ?? DEFAULT_MARKUP}
+                            on:change={(e) => setMarkup(markupKey, e.target.value)}
                             min="0"
                             step="1"
                           />
                           <span class="markup-suffix">%</span>
+                          {#if isCustom}
+                            <button class="markup-reset" title="Reset to market value" on:click={() => resetMarkup(markupKey)}>&times;</button>
+                          {:else if wap != null}
+                            <span class="markup-wap-badge" title="Weighted Average Price from exchange">WAP</span>
+                          {/if}
                         </div>
                       </div>
                     {/each}
@@ -1598,19 +1781,21 @@
                         </div>
 
                         {#if step.materials.length > 0 || step.adjustedResidue > 0}
-                          {@const residueMU = getMarkup('residue')}
+                          {@const residueMU = markupValues['residue'] ?? DEFAULT_MARKUP}
                           {@const adjustedResidueCost = (step.adjustedResidue || 0) * residueMU / 100}
                           {@const adjustedTotalCost = step.materials.reduce((sum, mat) => {
                             // Skip materials being crafted - they have their own cost
                             if (craftedProductNames.has(mat.item?.Name)) return sum;
                             const matTT = mat.item?.Properties?.Economy?.MaxTT || 0;
-                            const mu = getMarkup(`mat:${mat.item?.Name}`);
+                            const key = `mat:${mat.item?.Name}`;
+                            const mu = markupValues[key] ?? shoppingItemWapMap[key] ?? DEFAULT_MARKUP;
                             return sum + (matTT * (mat.adjustedAmount || mat.totalAmount) * mu / 100);
                           }, 0) + adjustedResidueCost}
                           {@const costPerClick = step.materials.reduce((sum, mat) => {
                             if (craftedProductNames.has(mat.item?.Name)) return sum;
                             const matTT = mat.item?.Properties?.Economy?.MaxTT || 0;
-                            const mu = getMarkup(`mat:${mat.item?.Name}`);
+                            const key = `mat:${mat.item?.Name}`;
+                            const mu = markupValues[key] ?? shoppingItemWapMap[key] ?? DEFAULT_MARKUP;
                             return sum + (matTT * mat.amountPerAttempt * mu / 100);
                           }, 0) + (step.residuePerClick || 0) * residueMU / 100}
                           <div class="step-materials-table">
@@ -1632,7 +1817,8 @@
                                   {@const expectedRefund = mat.totalAmount - adjustedAmount}
                                   {@const refundPct = mat.totalAmount > 0 ? (expectedRefund / mat.totalAmount * 100) : 0}
                                   {@const lineTT = matTT * adjustedAmount}
-                                  {@const mu = getMarkup(`mat:${mat.item?.Name}`)}
+                                  {@const stepMatKey = `mat:${mat.item?.Name}`}
+                                  {@const mu = markupValues[stepMatKey] ?? shoppingItemWapMap[stepMatKey] ?? DEFAULT_MARKUP}
                                   {@const lineCost = lineTT * mu / 100}
                                   {@const isCrafting = craftedProductNames.has(mat.item?.Name)}
                                   {@const bpOptions = mat.hasCraftableBlueprint ? getMaterialBlueprintOptions(mat.item?.Name) : null}
@@ -1658,7 +1844,7 @@
                                     <td class="text-right refund-cell" title="Expected refund: {expectedRefund} units ({clampDecimals(refundPct, 0, 1)}%)">
                                       {expectedRefund > 0 ? `-${expectedRefund}` : '0'} <span class="refund-pct">({clampDecimals(refundPct, 0, 1)}%)</span>
                                     </td>
-                                    <td class="text-right">{#if isCrafting}—{:else}<input type="number" class="markup-input-inline" value={mu} min="0" step="1" on:change={(e) => setMarkup(`mat:${mat.item?.Name}`, e.target.value)} />%{/if}</td>
+                                    <td class="text-right">{#if isCrafting}—{:else}<span class="markup-cell"><input type="number" class="markup-input-inline" class:is-custom={markupValues[stepMatKey] != null} value={mu} min="0" step="1" on:change={(e) => setMarkup(stepMatKey, e.target.value)} />%{#if markupValues[stepMatKey] != null}<button class="markup-reset" title="Reset to market value" on:click={() => resetMarkup(stepMatKey)}>&times;</button>{:else if shoppingItemWapMap[stepMatKey] != null}<span class="markup-wap-badge" title="WAP">WAP</span>{/if}</span>{/if}</td>
                                     <td class="text-right">{isCrafting ? '—' : `${clampDecimals(lineCost, 2, 4)} PED`}</td>
                                   </tr>
                                 {/each}
@@ -1697,7 +1883,8 @@
                         {@const productName = product?.Name || step.blueprint.Name}
                         {@const productUnitTT = product?.Properties?.Economy?.MaxTT || 0}
                         {@const productTotalTT = productUnitTT * step.quantityWanted}
-                        {@const productMU = getMarkup(`prod:${productName}`)}
+                        {@const stepProdKey = `prod:${productName}`}
+                        {@const productMU = markupValues[stepProdKey] ?? shoppingItemWapMap[stepProdKey] ?? DEFAULT_MARKUP}
                         {@const productCost = productTotalTT * productMU / 100}
                         <p class="step-action buy">
                           Buy <strong>{step.quantityWanted}</strong>
@@ -1721,7 +1908,7 @@
                                   <td><a href={getItemLink(product)}>{productName}</a></td>
                                   <td class="text-right">{step.quantityWanted}</td>
                                   <td class="text-right">{clampDecimals(productTotalTT, 2, 4)} PED</td>
-                                  <td class="text-right"><input type="number" class="markup-input-inline" value={productMU} min="0" step="1" on:change={(e) => setMarkup(`prod:${productName}`, e.target.value)} />%</td>
+                                  <td class="text-right"><span class="markup-cell"><input type="number" class="markup-input-inline" class:is-custom={markupValues[stepProdKey] != null} value={productMU} min="0" step="1" on:change={(e) => setMarkup(stepProdKey, e.target.value)} />%{#if markupValues[stepProdKey] != null}<button class="markup-reset" title="Reset to market value" on:click={() => resetMarkup(stepProdKey)}>&times;</button>{:else if shoppingItemWapMap[stepProdKey] != null}<span class="markup-wap-badge" title="WAP">WAP</span>{/if}</span></td>
                                   <td class="text-right">{clampDecimals(productCost, 2, 4)} PED</td>
                                 </tr>
                               </tbody>
@@ -1769,25 +1956,35 @@
         </div>
       {:else if currentView === 'shopping'}
         <div class="shopping-view">
-          <h2>Shopping List</h2>
+          <div class="shopping-header">
+            <h2>Shopping List</h2>
+            {#if isLoggedIn}
+              <button class="btn-order-all" on:click={openMassBuyAll} disabled={allShoppingItemsChecked}>
+                Order All
+              </button>
+            {/if}
+          </div>
           <p class="shopping-list-info">Estimated amounts at {certainty}% confidence, accounting for {rollChance}% material roll chance.</p>
 
           {#if shoppingList.materials.length === 0 && shoppingList.productsToBuy.length === 0 && (!shoppingList.limitedBlueprints || shoppingList.limitedBlueprints.length === 0) && (!shoppingList.adjustedTotalResidue || shoppingList.adjustedTotalResidue === 0)}
             <p class="empty">No items needed.</p>
           {:else}
             {@const adjustedMaterialsTotalMU = shoppingList.materials.reduce((sum, item) => {
-              const mu = getMarkup(`mat:${item.item?.Name}`);
+              const key = `mat:${item.item?.Name}`;
+              const mu = markupValues[key] ?? shoppingItemWapMap[key] ?? DEFAULT_MARKUP;
               return sum + ((item.adjustedTTValue || item.ttValue) * mu / 100);
             }, 0)}
-            {@const residueMU = getMarkup('residue')}
+            {@const residueMU = markupValues['residue'] ?? DEFAULT_MARKUP}
             {@const adjustedResidueCost = (shoppingList.adjustedTotalResidue || 0) * residueMU / 100}
             {@const limitedBpTotalMU = (shoppingList.limitedBlueprints || []).reduce((sum, item) => {
-              const mu = getMarkup(`bp:${item.blueprint.Id}`);
+              const key = `bp:${item.blueprint.Id}`;
+              const mu = markupValues[key] ?? shoppingItemWapMap[key] ?? DEFAULT_MARKUP;
               return sum + ((item.ttValue || 0) * mu / 100);
             }, 0)}
             {@const productsTotalTT = (shoppingList.productsToBuy || []).reduce((sum, item) => sum + (item.ttValue || 0), 0)}
             {@const productsTotalMU = (shoppingList.productsToBuy || []).reduce((sum, item) => {
-              const mu = getMarkup(`prod:${item.item?.Name}`);
+              const key = `prod:${item.item?.Name}`;
+              const mu = markupValues[key] ?? shoppingItemWapMap[key] ?? DEFAULT_MARKUP;
               return sum + ((item.ttValue || 0) * mu / 100);
             }, 0)}
             {@const grandTotalTT = (shoppingList.adjustedTotalTT || shoppingList.totalTT) + (shoppingList.adjustedTotalResidue || 0) + (shoppingList.limitedBlueprints || []).reduce((sum, item) => sum + (item.ttValue || 0), 0) + productsTotalTT}
@@ -1801,13 +1998,17 @@
                   <th class="text-right">Est. TT</th>
                   <th class="text-right">MU%</th>
                   <th class="text-right">Cost</th>
+                  <th class="col-actions hide-mobile"></th>
                 </tr>
               </thead>
               <tbody>
                 <!-- Materials -->
                 {#each shoppingList.materials as item}
                   {@const isChecked = checkedShoppingMaterials.has(item.item.Name)}
-                  {@const mu = getMarkup(`mat:${item.item?.Name}`)}
+                  {@const markupKey = `mat:${item.item?.Name}`}
+                  {@const mu = markupValues[markupKey] ?? shoppingItemWapMap[markupKey] ?? DEFAULT_MARKUP}
+                  {@const isCustomMU = markupValues[markupKey] != null}
+                  {@const wapMU = shoppingItemWapMap[markupKey] ?? null}
                   {@const adjustedTT = item.adjustedTTValue || item.ttValue}
                   {@const cost = adjustedTT * mu / 100}
                   <tr class:checked={isChecked}>
@@ -1817,17 +2018,29 @@
                     <td><span class="type-badge material">Material</span></td>
                     <td>{item.adjustedAmount || item.totalAmount} x <a href={getItemLink(item.item)}>{item.item.Name}</a></td>
                     <td class="text-right">{clampDecimals(adjustedTT, 2, 4)} PED</td>
-                    <td class="text-right">
+                    <td class="text-right markup-cell">
                       <input
                         type="number"
                         class="markup-input-inline"
+                        class:is-custom={isCustomMU}
                         value={mu}
                         min="0"
                         step="1"
-                        on:change={(e) => setMarkup(`mat:${item.item?.Name}`, e.target.value)}
+                        on:change={(e) => setMarkup(markupKey, e.target.value)}
                       />%
+                      {#if isCustomMU}<button class="markup-reset" title="Reset to market value" on:click={() => resetMarkup(markupKey)}>&times;</button>{:else if wapMU != null}<span class="markup-wap-badge" title="WAP">WAP</span>{/if}
                     </td>
                     <td class="text-right">{clampDecimals(cost, 2, 4)} PED</td>
+                    <td class="col-actions hide-mobile">
+                      {#if item.item?.Id}
+                        <div class="shopping-actions">
+                          {#if isLoggedIn}
+                            <button class="btn-shop-action btn-order" title="Create buy order" on:click={() => openMassBuy([{ itemId: item.item.Id, name: item.item.Name, quantity: Math.ceil(item.adjustedAmount || item.totalAmount), markup: mu }])}>Order</button>
+                          {/if}
+                          <a href="/market/exchange/listings/{item.item.Id}" target="_blank" rel="noopener" class="btn-shop-action btn-buy" title="Browse sell orders">Buy</a>
+                        </div>
+                      {/if}
+                    </td>
                   </tr>
                 {/each}
                 <!-- Residue -->
@@ -1851,12 +2064,16 @@
                       />%
                     </td>
                     <td class="text-right">{clampDecimals(adjustedResidueCost, 2, 4)} PED</td>
+                    <td class="col-actions hide-mobile"></td>
                   </tr>
                 {/if}
                 <!-- Limited Blueprints -->
                 {#each shoppingList.limitedBlueprints || [] as item}
                   {@const isChecked = checkedShoppingProducts.has(item.blueprint.Name)}
-                  {@const mu = getMarkup(`bp:${item.blueprint.Id}`)}
+                  {@const bpMarkupKey = `bp:${item.blueprint.Id}`}
+                  {@const mu = markupValues[bpMarkupKey] ?? shoppingItemWapMap[bpMarkupKey] ?? DEFAULT_MARKUP}
+                  {@const isCustomMU = markupValues[bpMarkupKey] != null}
+                  {@const wapMU = shoppingItemWapMap[bpMarkupKey] ?? null}
                   {@const ttValue = item.ttValue || 0}
                   {@const cost = ttValue * mu / 100}
                   <tr class:checked={isChecked}>
@@ -1869,23 +2086,36 @@
                       <span class="shopping-note">(est. attempts needed)</span>
                     </td>
                     <td class="text-right">{clampDecimals(ttValue, 2, 4)} PED</td>
-                    <td class="text-right">
+                    <td class="text-right markup-cell">
                       <input
                         type="number"
                         class="markup-input-inline"
+                        class:is-custom={isCustomMU}
                         value={mu}
                         min="0"
                         step="1"
-                        on:change={(e) => setMarkup(`bp:${item.blueprint.Id}`, e.target.value)}
+                        on:change={(e) => setMarkup(bpMarkupKey, e.target.value)}
                       />%
+                      {#if isCustomMU}<button class="markup-reset" title="Reset to market value" on:click={() => resetMarkup(bpMarkupKey)}>&times;</button>{:else if wapMU != null}<span class="markup-wap-badge" title="WAP">WAP</span>{/if}
                     </td>
                     <td class="text-right">{clampDecimals(cost, 2, 4)} PED</td>
+                    <td class="col-actions hide-mobile">
+                      <div class="shopping-actions">
+                        {#if isLoggedIn}
+                          <button class="btn-shop-action btn-order" title="Create buy order" on:click={() => openMassBuy([{ itemId: item.blueprint.Id + BLUEPRINT_ID_OFFSET, name: item.blueprint.Name, quantity: Math.ceil(item.totalAmount), markup: mu }])}>Order</button>
+                        {/if}
+                        <a href="/market/exchange/listings/{item.blueprint.Id + BLUEPRINT_ID_OFFSET}" target="_blank" rel="noopener" class="btn-shop-action btn-buy" title="Browse sell orders">Buy</a>
+                      </div>
+                    </td>
                   </tr>
                 {/each}
                 <!-- Products to Buy (from unowned BPs) -->
                 {#each shoppingList.productsToBuy as item}
                   {@const isChecked = checkedShoppingProducts.has(item.item.Name)}
-                  {@const prodMU = getMarkup(`prod:${item.item?.Name}`)}
+                  {@const prodMarkupKey = `prod:${item.item?.Name}`}
+                  {@const prodMU = markupValues[prodMarkupKey] ?? shoppingItemWapMap[prodMarkupKey] ?? DEFAULT_MARKUP}
+                  {@const isCustomProdMU = markupValues[prodMarkupKey] != null}
+                  {@const wapProdMU = shoppingItemWapMap[prodMarkupKey] ?? null}
                   {@const prodTT = item.ttValue || 0}
                   {@const prodCost = prodTT * prodMU / 100}
                   <tr class="product-row" class:checked={isChecked}>
@@ -1898,17 +2128,29 @@
                       <span class="shopping-note muted">(from {item.blueprintName})</span>
                     </td>
                     <td class="text-right">{clampDecimals(prodTT, 2, 4)} PED</td>
-                    <td class="text-right">
+                    <td class="text-right markup-cell">
                       <input
                         type="number"
                         class="markup-input-inline"
+                        class:is-custom={isCustomProdMU}
                         value={prodMU}
                         min="0"
                         step="1"
-                        on:change={(e) => setMarkup(`prod:${item.item?.Name}`, e.target.value)}
+                        on:change={(e) => setMarkup(prodMarkupKey, e.target.value)}
                       />%
+                      {#if isCustomProdMU}<button class="markup-reset" title="Reset to market value" on:click={() => resetMarkup(prodMarkupKey)}>&times;</button>{:else if wapProdMU != null}<span class="markup-wap-badge" title="WAP">WAP</span>{/if}
                     </td>
                     <td class="text-right">{clampDecimals(prodCost, 2, 4)} PED</td>
+                    <td class="col-actions hide-mobile">
+                      {#if item.item?.Id}
+                        <div class="shopping-actions">
+                          {#if isLoggedIn}
+                            <button class="btn-shop-action btn-order" title="Create buy order" on:click={() => openMassBuy([{ itemId: item.item.Id, name: item.item.Name, quantity: Math.ceil(item.totalAmount), markup: prodMU }])}>Order</button>
+                          {/if}
+                          <a href="/market/exchange/listings/{item.item.Id}" target="_blank" rel="noopener" class="btn-shop-action btn-buy" title="Browse sell orders">Buy</a>
+                        </div>
+                      {/if}
+                    </td>
                   </tr>
                 {/each}
               </tbody>
@@ -1920,6 +2162,7 @@
                   <td class="text-right"><strong>{clampDecimals(grandTotalTT, 2, 4)} PED</strong></td>
                   <td></td>
                   <td class="text-right"><strong>{clampDecimals(grandTotalMU, 2, 4)} PED</strong></td>
+                  <td class="col-actions hide-mobile"></td>
                 </tr>
               </tfoot>
             </table>
@@ -2257,4 +2500,13 @@
   </div>
 </div>
 {/if}
+
+<MassBuyDialog
+  show={showMassBuy}
+  items={massBuyItems}
+  allItems={exchangeSlimItems}
+  {isLoggedIn}
+  on:close={() => { showMassBuy = false; massBuyItems = []; }}
+  on:complete={() => { showMassBuy = false; massBuyItems = []; }}
+/>
 </div>

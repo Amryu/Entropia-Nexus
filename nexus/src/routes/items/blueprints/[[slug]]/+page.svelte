@@ -128,12 +128,28 @@
     Drops: []
   };
 
+  /** Enrich material Items with full data from availableMaterials (for cost calc) */
+  function enrichMaterials(entity) {
+    if (!entity?.Materials?.length || !materials.length) return entity;
+    const materialsByName = new Map(materials.map(m => [m.Name, m]));
+    const enriched = { ...entity, Materials: entity.Materials.map(mat => {
+      if (mat.Item?.Properties?.Economy?.MaxTT != null) return mat;
+      const full = materialsByName.get(mat.Item?.Name);
+      return full ? { ...mat, Item: full } : mat;
+    })};
+    return enriched;
+  }
+
   // Initialize edit state when entity or user changes
   $: if (user) {
     const entity = isCreateMode ? (existingChange?.data || emptyEntity) : blueprint;
     if (entity) {
       const editChange = isCreateMode ? existingChange : (canUsePendingChange ? resolvedPendingChange : null);
-      initEditState(entity, 'Blueprint', isCreateMode, editChange);
+      // Enrich material Items in the change data so cost calculations work
+      const enrichedChange = editChange?.data
+        ? { ...editChange, data: enrichMaterials(editChange.data) }
+        : editChange;
+      initEditState(enrichMaterials(entity), 'Blueprint', isCreateMode, enrichedChange);
     }
   }
 
@@ -388,6 +404,29 @@
     'Mechanical Component': 'Mechanical Engineer',
   };
 
+  const PRODUCT_TYPE_TO_BP_TYPE = {
+    'Weapon': 'Weapon',
+    'Enhancer': 'Enhancer',
+    'Armor': 'Armor',
+    'ArmorPlating': 'Armor',
+    'Vehicle': 'Vehicle',
+    'Clothing': 'Textile',
+    'MedicalTool': 'Tool',
+    'MiscTool': 'Tool',
+    'Finder': 'Tool',
+    'Excavator': 'Tool',
+    'Refiner': 'Tool',
+    'Scanner': 'Tool',
+    'WeaponAmplifier': 'Attachment',
+    'FinderAmplifier': 'Attachment',
+    'WeaponVisionAttachment': 'Attachment',
+    'Absorber': 'Attachment',
+    'Sign': 'Furniture',
+    'Decoration': 'Furniture',
+    'Furniture': 'Furniture',
+    'StorageContainer': 'Furniture',
+  };
+
   const WEAPON_TYPE_TO_PROFESSION = {
     'BLP': 'BLP Weapons Engineer',
     'Laser': 'Laser Weapons Engineer',
@@ -418,6 +457,18 @@
     }
   }
 
+  /** Auto-fill Type and Profession from product, returns the resolved bp type */
+  function autoFillFromProduct(productName) {
+    const product = productItems.find(i => i.Name === productName);
+    const productType = product?.Properties?.Type;
+    const bpType = productType ? PRODUCT_TYPE_TO_BP_TYPE[productType] : null;
+    if (bpType) {
+      updateField('Properties.Type', bpType);
+      autoFillProfession(bpType, productName);
+    }
+    return bpType;
+  }
+
   /** Auto-fill Profession based on blueprint type and product weapon type */
   function autoFillProfession(bpType, productName) {
     // For non-weapon types, use direct mapping
@@ -439,22 +490,16 @@
     }
   }
 
-  /** Auto-fill Product and Book from blueprint name, strip game brackets */
+  /** Auto-fill Product and Book from blueprint name */
   function handleNameChange(e) {
     if (!$editMode) return;
-    // Strip game client brackets: [Item Name] → Item Name
-    const name = (e.detail.value || '').replace(/^\[|\]$/g, '');
-    if (name !== e.detail.value) {
-      updateField('Name', name);
-    }
+    const name = e.detail.value || '';
     const match = name.match(/^(.+?)\s+Blueprint(?:\s+\(L\))?$/);
     if (match) {
       const productName = match[1].trim();
       updateField('Product.Name', productName);
       autoFillAmountForProduct(productName);
-      // Auto-fill profession using current blueprint type
-      const bpType = $currentEntity?.Properties?.Type;
-      if (bpType) autoFillProfession(bpType, productName);
+      autoFillFromProduct(productName);
     }
     if (name.endsWith('Blueprint (L)')) {
       updateField('Book.Name', 'Limited (Vol. 1) (C)');
@@ -495,8 +540,7 @@
     updateField('Product.Name', productName);
     if (productName) {
       autoFillAmountForProduct(productName);
-      const bpType = $currentEntity?.Properties?.Type;
-      if (bpType) autoFillProfession(bpType, productName);
+      autoFillFromProduct(productName);
     }
   }
 
@@ -586,6 +630,15 @@
             <span>Level {activeEntity?.Properties?.Level ?? '?'}</span>
           </div>
         </div>
+
+        {#if !$editMode && activeEntity?.Id}
+          <a href="/tools/construction?addBlueprint={activeEntity.Id}" class="construction-plan-btn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+            </svg>
+            Create a construction plan
+          </a>
+        {/if}
 
         <!-- Primary Stats -->
         <div class="stats-section tier-1 tier-brown">
@@ -877,6 +930,32 @@
 
   .stats-section.tier-1 .tier1-link:hover {
     text-decoration: underline;
+  }
+
+  .construction-plan-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 16px;
+    margin-bottom: 8px;
+    background-color: var(--bg-color, var(--primary-color));
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    color: var(--text-color);
+    font-size: 13px;
+    font-weight: 500;
+    text-decoration: none;
+    cursor: pointer;
+    transition: all 0.15s;
+    box-sizing: border-box;
+    max-width: 100%;
+  }
+
+  .construction-plan-btn:hover {
+    background-color: var(--accent-color);
+    border-color: var(--accent-color);
+    color: white;
   }
 
   .stat-value {
