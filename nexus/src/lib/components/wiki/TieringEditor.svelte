@@ -7,6 +7,7 @@
 -->
 <script>
   // @ts-nocheck
+  import { onMount } from 'svelte';
   import { clampDecimals, getTypeLink } from '$lib/util';
   import {
     genericMats,
@@ -66,20 +67,94 @@
     return result.toFixed(2);
   }
 
-  // Markup handling
-  function handleMarkupInput(event, idx) {
-    const value = event.target.value;
-    const num = parseFloat(value);
-    if (!isNaN(num) && num >= 100) {
-      markups[idx] = num;
-    }
-  }
+  const DEFAULT_MARKUPS = [100, 100, 100, 100, 100];
+  const PREF_KEY = 'wiki.tierMarkups';
+  const SAVE_DEBOUNCE_MS = 500;
 
   // Selected tier for material display
   let selectedTier = 1;
 
-  // Markup percentages for each material (default 100%)
-  let markups = Array(5).fill(100);
+  // Per-tier markups: { [tierNum]: [mu1, mu2, mu3, mu4, mu5] }
+  let allMarkups = {};
+  let saveTimer = null;
+  let prefCache = null;
+
+  // Markups for the currently selected tier
+  $: markups = allMarkups[selectedTier] || DEFAULT_MARKUPS;
+
+  function handleMarkupInput(event, idx) {
+    const value = event.target.value;
+    const num = parseFloat(value);
+    if (!isNaN(num) && num >= 100) {
+      if (!allMarkups[selectedTier]) {
+        allMarkups[selectedTier] = [...DEFAULT_MARKUPS];
+      }
+      allMarkups[selectedTier][idx] = num;
+      allMarkups = allMarkups;
+      debounceSaveMarkups();
+    }
+  }
+
+  // Persistence: save/load markups to user preferences
+  $: entityId = entity?.Id;
+
+  async function loadMarkups() {
+    if (!entityId) return;
+    try {
+      const res = await fetch(`/api/users/preferences/${encodeURIComponent(PREF_KEY)}`);
+      if (!res.ok) return;
+      const result = await res.json();
+      prefCache = result?.data || {};
+      const stored = prefCache[entityId];
+      if (stored) {
+        const loaded = {};
+        for (const [tier, values] of Object.entries(stored)) {
+          loaded[Number(tier)] = [...values];
+        }
+        allMarkups = loaded;
+      }
+    } catch (e) {
+      // Non-critical — use defaults
+    }
+  }
+
+  async function saveMarkups() {
+    if (!entityId) return;
+    const toSave = {};
+    for (const [tier, values] of Object.entries(allMarkups)) {
+      if (values.some((v, i) => v !== DEFAULT_MARKUPS[i])) {
+        toSave[tier] = values;
+      }
+    }
+    const data = prefCache || {};
+    if (Object.keys(toSave).length > 0) {
+      data[entityId] = toSave;
+    } else {
+      delete data[entityId];
+    }
+    prefCache = data;
+    try {
+      await fetch('/api/users/preferences', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: PREF_KEY, data })
+      });
+    } catch (e) {
+      // Non-critical
+    }
+  }
+
+  function debounceSaveMarkups() {
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveMarkups, SAVE_DEBOUNCE_MS);
+  }
+
+  onMount(() => {
+    loadMarkups();
+    return () => {
+      if (saveTimer) clearTimeout(saveTimer);
+    };
+  });
 
   // Full set toggle for armor
   let fullSet = false;
@@ -220,18 +295,19 @@
     return { tt, mu: total - tt, total };
   })();
 
-  // Calculate cumulative cost up to selected tier
+  // Calculate cumulative cost up to selected tier (using per-tier markups)
   $: cumulativeCost = (() => {
     let tt = 0;
     let total = 0;
     for (let i = 1; i <= selectedTier; i++) {
       const tierData = processedTierInfo.find(t => (t.Properties?.Tier || t.Tier) === i);
       if (tierData?.Materials) {
+        const tierMarkups = allMarkups[i] || DEFAULT_MARKUPS;
         tierData.Materials.forEach((mat, idx) => {
           const matTT = mat.Material?.Properties?.Economy?.MaxTT || matValues[mat.Material?.Name] || 0;
           const cost = matTT * mat.Amount;
           tt += cost;
-          total += cost * (markups[idx] || 100) / 100;
+          total += cost * (tierMarkups[idx] || 100) / 100;
         });
       }
     }
