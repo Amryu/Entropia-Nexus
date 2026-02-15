@@ -158,6 +158,7 @@ export const ArmorSet = {
                   },
                   "Values": {
                     "type": "object",
+                    "additionalProperties": false,
                     "properties": {
                       "Strength": {
                         "type": ["number", "null"],
@@ -167,6 +168,15 @@ export const ArmorSet = {
                     "required": [
                       "Strength"
                     ]
+                  },
+                  "_newEffect": {
+                    "type": "object",
+                    "properties": {
+                      "CanonicalName": { "type": ["string", "null"] },
+                      "Unit": { "type": ["string", "null"] },
+                      "IsPositive": { "type": ["boolean", "null"] },
+                      "Description": { "type": ["string", "null"] }
+                    }
                   }
                 },
                 "required": [

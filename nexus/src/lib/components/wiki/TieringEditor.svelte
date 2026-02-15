@@ -38,6 +38,10 @@
 
   const MAX_TIERS = 10;
 
+  // Display order for tier materials (data storage order: 0=Component, 1=Gem, 2=Blazar, 3=Material1, 4=Material2)
+  // Display order: Material1 (ore), Material2 (enmatter), Pile of XXX, Blazar Fragment, Tier Component
+  const MATERIAL_DISPLAY_ORDER = [3, 4, 1, 2, 0];
+
   // Get material arrays based on entity type
   function getMaterialArrays(type) {
     switch (type) {
@@ -409,22 +413,25 @@
     return [];
   })();
 
-  // Transform materials data for table display
-  $: materialTableData = displayMaterials.map((mat, idx) => {
-    const matName = mat.Material?.Name || 'Unknown';
-    const matTT = mat.Material?.Properties?.Economy?.MaxTT || matValues[matName] || 0;
-    const amount = mat.Amount;
-    const baseCost = matTT * amount;
-    const totalCost = baseCost * (markups[idx] || 100) / 100;
+  // Transform materials data for table display (reordered for presentation)
+  $: materialTableData = MATERIAL_DISPLAY_ORDER
+    .filter(origIdx => origIdx < displayMaterials.length)
+    .map(origIdx => {
+      const mat = displayMaterials[origIdx];
+      const matName = mat.Material?.Name || 'Unknown';
+      const matTT = mat.Material?.Properties?.Economy?.MaxTT || matValues[matName] || 0;
+      const amount = mat.Amount;
+      const baseCost = matTT * amount;
+      const totalCost = baseCost * (markups[origIdx] || 100) / 100;
 
-    return {
-      _idx: idx,
-      _matName: matName,
-      tt: formatPED(matTT),
-      amount: amount,
-      cost: formatPED(totalCost)
-    };
-  });
+      return {
+        _idx: origIdx,
+        _matName: matName,
+        tt: formatPED(matTT),
+        amount: amount,
+        cost: formatPED(totalCost)
+      };
+    });
 </script>
 
 {#if canBeTiered}
@@ -454,20 +461,23 @@
       {#if $editMode}
         <!-- Compact edit view -->
         <div class="materials-edit-list">
-          {#each displayMaterials as mat, idx}
-            {@const matName = mat.Material?.Name || 'Unknown'}
-            {@const editAmount = getEntityTierMaterialAmount(selectedTier, idx)}
-            <div class="material-edit-row">
-              <span class="mat-edit-name">{matName}</span>
-              <input
-                type="number"
-                value={editAmount}
-                min="0"
-                step="1"
-                class="amount-input-compact"
-                on:change={(e) => updateMaterialAmount(selectedTier, idx, parseInt(e.target.value) || 0)}
-              />
-            </div>
+          {#each MATERIAL_DISPLAY_ORDER as origIdx}
+            {#if origIdx < displayMaterials.length}
+              {@const mat = displayMaterials[origIdx]}
+              {@const matName = mat.Material?.Name || 'Unknown'}
+              {@const editAmount = getEntityTierMaterialAmount(selectedTier, origIdx)}
+              <div class="material-edit-row">
+                <span class="mat-edit-name">{matName}</span>
+                <input
+                  type="number"
+                  value={editAmount}
+                  min="0"
+                  step="1"
+                  class="amount-input-compact"
+                  on:change={(e) => updateMaterialAmount(selectedTier, origIdx, parseInt(e.target.value) || 0)}
+                />
+              </div>
+            {/if}
           {/each}
         </div>
       {:else}
@@ -663,7 +673,7 @@
     border-color: var(--accent-color, #4a9eff);
   }
 
-  /* FancyTable-style grid layout */
+  /* FancyTable-style grid layout (compact, 32px rows) */
   .fancy-table-container {
     display: flex;
     flex-direction: column;
@@ -671,7 +681,7 @@
     border: 1px solid var(--border-color);
     border-radius: 8px;
     overflow: hidden;
-    font-size: 14px;
+    font-size: 13px;
   }
 
   .table-header {
@@ -687,7 +697,7 @@
   }
 
   .header-cell {
-    padding: 12px 14px;
+    padding: 6px 10px;
     font-weight: 600;
     color: var(--text-muted, #999);
     font-size: 11px;
@@ -727,12 +737,13 @@
   }
 
   .table-cell {
-    padding: 12px 14px;
+    padding: 4px 10px;
     color: var(--text-color);
     display: flex;
     align-items: center;
     border-right: 1px solid var(--border-color);
     box-sizing: border-box;
+    min-height: 32px;
   }
 
   .table-cell:last-child {
@@ -794,7 +805,7 @@
   }
 
   .footer-cell {
-    padding: 12px 14px;
+    padding: 6px 10px;
     font-weight: 600;
     color: var(--text-color);
     display: flex;
@@ -901,11 +912,17 @@
     padding: 12px;
   }
 
-  .tiering-editor.compact .header-cell,
-  .tiering-editor.compact .table-cell,
+  .tiering-editor.compact .header-cell {
+    padding: 6px 10px;
+    font-size: 11px;
+  }
+
+  .tiering-editor.compact .table-cell {
+    padding: 4px 10px;
+  }
+
   .tiering-editor.compact .footer-cell {
-    padding: 10px 12px;
-    font-size: 12px;
+    padding: 6px 10px;
   }
 
   /* Desktop-only and mobile-only visibility */
@@ -954,10 +971,18 @@
       grid-template-columns: 1fr 90px 110px;
     }
 
-    .header-cell,
-    .table-cell,
+    .header-cell {
+      padding: 6px 8px;
+      font-size: 11px;
+    }
+
+    .table-cell {
+      padding: 4px 8px;
+      font-size: 12px;
+    }
+
     .footer-cell {
-      padding: 10px 8px;
+      padding: 6px 8px;
       font-size: 12px;
     }
   }

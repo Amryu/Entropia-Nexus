@@ -369,7 +369,8 @@
       <FancyTable
         columns={tableColumns}
         data={tableData}
-        rowHeight={40}
+        rowHeight={32}
+        compact={true}
         sortable={false}
         searchable={false}
         stickyHeader={false}
@@ -573,7 +574,7 @@
   }
 
   .pieces-table-wrapper {
-    height: 350px;
+    height: auto;
     max-height: 350px;
   }
 

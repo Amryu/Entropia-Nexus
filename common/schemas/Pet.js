@@ -61,6 +61,15 @@ export const Pet = {
           "Name": {
             "type": "string"
           },
+          "_newEffect": {
+            "type": "object",
+            "properties": {
+              "CanonicalName": { "type": ["string", "null"] },
+              "Unit": { "type": ["string", "null"] },
+              "IsPositive": { "type": ["boolean", "null"] },
+              "Description": { "type": ["string", "null"] }
+            }
+          },
           "Properties": {
             "type": "object",
             "additionalProperties": false,
