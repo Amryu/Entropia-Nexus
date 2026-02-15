@@ -66,7 +66,7 @@
   let qrMax = 100;
   let minConditionPct = 0;
   let showFilterDialog = false;
-  let smallViewport = false;
+  let smallViewport = typeof window !== 'undefined' && window.innerWidth <= 600;
 
   function handleViewportResize() {
     smallViewport = typeof window !== 'undefined' && window.innerWidth <= 600;
@@ -932,6 +932,8 @@
     });
     return rows;
   })();
+
+  $: listDefaultSort = { column: smallViewport ? 'orders' : 'lastUpdate', order: 'DESC' };
 
   // Columns for the main list view FancyTable
   const listColumns = [
@@ -2241,7 +2243,7 @@
               compact={true}
               sortable={true}
               searchable={false}
-              defaultSort={{ column: 'orders', order: 'DESC' }}
+              defaultSort={listDefaultSort}
               emptyMessage="No items found"
               on:rowClick={(evt) => {
                 const item = evt?.detail?.row?._item;

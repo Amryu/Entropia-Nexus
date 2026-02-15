@@ -80,6 +80,14 @@
   let sortColumn = defaultSort?.column ?? null;
   let sortOrder = defaultSort?.order ?? 'ASC';
   let sortPhaseIdx = 0;
+  let userSorted = false;
+
+  // React to external defaultSort changes (e.g. viewport switch) unless user manually sorted
+  $: if (!userSorted && defaultSort && (defaultSort.column !== sortColumn || defaultSort.order !== sortOrder)) {
+    sortColumn = defaultSort.column ?? null;
+    sortOrder = defaultSort.order ?? 'ASC';
+    sortPhaseIdx = 0;
+  }
   let filters = {};
   let filterTimeouts = {};
   let isLoading = false;
@@ -326,6 +334,7 @@
 
   function handleSort(column) {
     if (!sortable || column.sortable === false) return;
+    userSorted = true;
 
     if (column.sortPhases?.length) {
       // Cycle through sort phases (e.g. sell DESC → sell ASC → buy DESC → buy ASC)
