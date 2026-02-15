@@ -116,8 +116,8 @@
       MaximumCraftAmount: null,
       Skill: {
         IsSiB: true,
-        LearningIntervalStart: 0,
-        LearningIntervalEnd: 100
+        LearningIntervalStart: null,
+        LearningIntervalEnd: null
       }
     },
     Book: null,
@@ -437,6 +437,7 @@
     const minLvl = LEVEL_TO_MIN_PROFESSION[Number(e.detail.value)];
     if (minLvl != null) {
       updateField('Properties.Skill.LearningIntervalStart', minLvl);
+      updateField('Properties.Skill.LearningIntervalEnd', minLvl + 5);
     }
   }
 
@@ -723,6 +724,7 @@
             path="Name"
             type="text"
             placeholder="Blueprint Name"
+            on:change={handleNameChange}
           />
         </h1>
 
