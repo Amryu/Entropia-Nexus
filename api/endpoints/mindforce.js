@@ -37,7 +37,7 @@ function register(app){
    *      '200':
    *        description: A list of Mindforce implants
    */
-  app.get('/mindforceimplants', async (req,res) => { res.json(await withCache('/mindforce', ['Mindforce'], getMindforceImplants)); });
+  app.get('/mindforceimplants', async (req,res) => { res.json(await withCache('/mindforce', ['MindforceImplants'], getMindforceImplants)); });
 
   /**
    * @swagger
@@ -57,7 +57,7 @@ function register(app){
    *      '404':
    *        description: Mindforce implant not found
    */
-  app.get('/mindforceimplants/:mindforceImplant', async (req,res) => { const r = await withCachedLookup('/mindforce', ['Mindforce'], getMindforceImplants, req.params.mindforceImplant); if (r) res.json(r); else res.status(404).send(); });
+  app.get('/mindforceimplants/:mindforceImplant', async (req,res) => { const r = await withCachedLookup('/mindforce', ['MindforceImplants'], getMindforceImplants, req.params.mindforceImplant); if (r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getMindforceImplants, getMindforceImplant, formatMindforceImplant };

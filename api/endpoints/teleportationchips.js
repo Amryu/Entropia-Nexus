@@ -74,7 +74,7 @@ function register(app){
    *        description: A list of teleportation chips
    */
   app.get('/teleportationchips', async (req,res) => {
-    res.json(await withCache('/teleportationchips', ['TeleportationChips'], getTeleportationChips));
+    res.json(await withCache('/teleportationchips', ['TeleportationChips', 'Professions', 'Materials'], getTeleportationChips));
   });
   /**
    * @swagger
@@ -95,7 +95,7 @@ function register(app){
    *        description: Teleportation chip not found
    */
   app.get('/teleportationchips/:teleportationChip', async (req,res) => {
-    const r = await withCachedLookup('/teleportationchips', ['TeleportationChips'], getTeleportationChips, req.params.teleportationChip);
+    const r = await withCachedLookup('/teleportationchips', ['TeleportationChips', 'Professions', 'Materials'], getTeleportationChips, req.params.teleportationChip);
     if (r) res.json(r); else res.status(404).send();
   });
 }
