@@ -69,7 +69,7 @@
     if (d.TierIncreaseRate != null) tags.push(`<span class="detail-tag">TiR ${d.TierIncreaseRate}</span>`);
     if (d.QualityRating != null) tags.push(`<span class="detail-tag">QR ${d.QualityRating}</span>`);
     if (d.Pet?.Level != null) tags.push(`<span class="detail-tag">Lv ${d.Pet.Level}</span>`);
-    if (d.Gender) tags.push(`<span class="detail-tag">${d.Gender === 'Male' ? '♂' : '♀'}</span>`);
+    if (d.Gender) tags.push(`<span class="detail-tag">${d.Gender}</span>`);
     if (d.is_set) tags.push(`<span class="detail-tag">Set</span>`);
 
     if (tags.length === 0) return '';
@@ -251,8 +251,8 @@
     align-items: center;
   }
   .user-orders-panel :global(.detail-tag) {
-    font-size: 10px;
-    padding: 1px 4px;
+    font-size: 11px;
+    padding: 2px 5px;
     border-radius: 3px;
     background: var(--accent-color-bg);
     color: var(--accent-color);

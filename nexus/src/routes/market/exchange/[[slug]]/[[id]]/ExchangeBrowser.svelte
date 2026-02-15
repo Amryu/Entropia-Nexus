@@ -1760,7 +1760,7 @@
           if (isPetItem && d.Pet?.Level != null) tags.push(`<span class="detail-tag">Lv ${d.Pet.Level}</span>`);
           if (isBpNonL && d.QualityRating != null) tags.push(`<span class="detail-tag">QR ${d.QualityRating}</span>`);
           if (type === 'ArmorPlating' && d.is_set) tags.push(`<span class="detail-tag">Set</span>`);
-          if (isGenderedDetail && d.Gender) tags.push(`<span class="detail-tag">${d.Gender === 'Male' ? '♂' : '♀'}</span>`);
+          if (isGenderedDetail && d.Gender) tags.push(`<span class="detail-tag">${d.Gender}</span>`);
           return tags.length ? `<span class="detail-tags">${tags.join('')}</span>` : '';
         }
       });
@@ -3457,8 +3457,8 @@
     align-items: center;
   }
   :global(.detail-tag) {
-    font-size: 10px;
-    padding: 1px 4px;
+    font-size: 11px;
+    padding: 2px 5px;
     border-radius: 3px;
     background: var(--accent-color-bg);
     color: var(--accent-color);

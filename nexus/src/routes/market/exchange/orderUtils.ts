@@ -95,13 +95,10 @@ export function computeUnitPrice(item: any, markup: number | null, order?: any):
   }
   const maxTT = getMaxTT(item);
   if (maxTT == null) return null;
-  if (isAbsoluteMarkup(item)) {
-    // Use CurrentTT if available (e.g. sell orders with specific condition), otherwise MaxTT
-    const ct = Number(order?.details?.CurrentTT ?? order?.Metadata?.CurrentTT);
-    const tt = ct > 0 ? ct : maxTT;
-    return tt + mu;
-  }
-  return maxTT * (mu / 100);
+  // Use CurrentTT if available (e.g. sell orders with specific condition), otherwise MaxTT
+  const ct = Number(order?.details?.CurrentTT ?? order?.Metadata?.CurrentTT);
+  const tt = ct > 0 ? ct : maxTT;
+  return isAbsoluteMarkup(item) ? tt + mu : tt * (mu / 100);
 }
 
 /** Get pet level from order details */
