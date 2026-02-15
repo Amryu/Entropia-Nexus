@@ -14,6 +14,7 @@ function _formatBlueprintMaterial(x){
   return {
     Amount: x.Amount,
     Item: {
+      Id: x.ItemId,
       Name: x.Name,
       Properties: { Type: x.ItemType, Economy: { MaxTT: x.Value } },
       Links: { "$Url": `/${x.Type.toLowerCase()}s/${x.ItemId % 100000}` },
@@ -48,7 +49,7 @@ function formatBlueprint(x, materials, dropsBySource){
     },
     Profession: { Name: x.Profession, Links: { "$Url": `/professions/${x.ProfessionId}` } },
     Book: { Name: x.Book, Links: { "$Url": `/blueprintbooks/${x.BookId}` } },
-    Product: x.Item != null ? { Name: x.Item, Properties: { Type: x.ItemType, Economy: { MaxTT: x.ProductValue } }, Links: { "$Url": `/${x.ItemType.toLowerCase()}s/${x.ItemId % 100000}` } } : null,
+    Product: x.Item != null ? { Id: x.ItemId, Name: x.Item, Properties: { Type: x.ItemType, Economy: { MaxTT: x.ProductValue } }, Links: { "$Url": `/${x.ItemType.toLowerCase()}s/${x.ItemId % 100000}` } } : null,
     Materials: mats,
     Drops: drops,
     Links: { "$Url": `/blueprints/${x.Id}` },
