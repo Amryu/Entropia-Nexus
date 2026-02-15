@@ -34,6 +34,10 @@
   let mobileSearchMode = false;
   let mobileUserExpanded = false; // Track mobile user panel expanded state
 
+  // Ko-fi support prompt
+  let showKofiPrompt = false;
+  let kofiTimeInterval = null;
+
   // Notifications state
   let notifications = [];
   let notificationsLoading = false;
@@ -74,6 +78,42 @@
       mediaQuery = window.matchMedia('(max-width: 899px)');
       mediaQuery.addEventListener('change', handleMediaChange);
       document.addEventListener('keydown', handleGlobalKeydown);
+
+      // Ko-fi support prompt tracking
+      try {
+        if (!localStorage.getItem('nexus.kofi.dismissed')) {
+          const snoozed = localStorage.getItem('nexus.kofi.snoozed');
+          const isSnoozed = snoozed && new Date(snoozed).getTime() > Date.now();
+
+          // Increment visit count (once per session via sessionStorage)
+          if (!sessionStorage.getItem('nexus.kofi.counted')) {
+            const visits = (parseInt(localStorage.getItem('nexus.kofi.visits')) || 0) + 1;
+            localStorage.setItem('nexus.kofi.visits', String(visits));
+            sessionStorage.setItem('nexus.kofi.counted', '1');
+          }
+
+          // Track time (save every 30s)
+          kofiTimeInterval = setInterval(() => {
+            try {
+              const secs = (parseInt(localStorage.getItem('nexus.kofi.seconds')) || 0) + 30;
+              localStorage.setItem('nexus.kofi.seconds', String(secs));
+            } catch {}
+          }, 30000);
+
+          // Check threshold after a delay so user settles in first
+          if (!isSnoozed) {
+            setTimeout(() => {
+              try {
+                const visits = parseInt(localStorage.getItem('nexus.kofi.visits')) || 0;
+                const secs = parseInt(localStorage.getItem('nexus.kofi.seconds')) || 0;
+                if (visits >= 5 || secs >= 1800) {
+                  showKofiPrompt = true;
+                }
+              } catch {}
+            }, 5000);
+          }
+        }
+      } catch {}
     }
   });
 
@@ -82,10 +122,24 @@
       mediaQuery.removeEventListener('change', handleMediaChange);
     }
     if (dropdownCloseTimeout) clearTimeout(dropdownCloseTimeout);
+    if (kofiTimeInterval) clearInterval(kofiTimeInterval);
     if (typeof window !== 'undefined') {
       document.removeEventListener('keydown', handleGlobalKeydown);
     }
   });
+
+  function dismissKofi() {
+    showKofiPrompt = false;
+    try { localStorage.setItem('nexus.kofi.dismissed', '1'); } catch {}
+  }
+
+  function snoozeKofi() {
+    showKofiPrompt = false;
+    try {
+      const snoozeUntil = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+      localStorage.setItem('nexus.kofi.snoozed', snoozeUntil);
+    } catch {}
+  }
 
   function handleMediaChange(e: MediaQueryListEvent) {
     if (!e.matches) {
@@ -515,8 +569,8 @@
       { label: 'API', url: 'api' },
     ],
     'Market': [
+      { label: 'Exchange', url: 'exchange', highlighted: true },
       { label: 'Auction', url: 'auction' },
-      { label: 'Exchange', url: 'exchange' },
       { label: 'Rental', url: 'rental' },
       { label: 'Services', url: 'services' },
       { label: 'Shops', url: 'shops' },
@@ -599,6 +653,9 @@
   function isExternalLink(item: { label: string; url: string }) {
     return ['api', 'nihelper', 'cyrenedream', 'deltaproject', 'ripcraze', 'entropialife', 'pcforum'].includes(item.url);
   }
+
+  // Top-level menus to visually highlight
+  const highlightedMenus = new Set(['Market']);
 
   // Menus with overview pages that the header should link to
   const menuOverviewUrls: Record<string, string> = {
@@ -690,6 +747,12 @@
   .menu-header-link {
     color: var(--text-color);
     text-decoration: none;
+  }
+
+  .menu-item.highlighted .menu-header-link,
+  .menu-item.highlighted {
+    color: var(--accent-color);
+    font-weight: 600;
   }
 
   .menu-header-link:hover {
@@ -810,7 +873,7 @@
 
   .search-container {
     position: relative;
-    margin-left: 20px;
+    margin-left: 10px;
     margin-right: 10px;
     flex: 0 1 280px;
     min-width: 80px;
@@ -1027,6 +1090,110 @@
   .short-link-action svg {
     width: 18px;
     height: 18px;
+  }
+
+  .kofi-button {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: none;
+    color: var(--text-muted);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+    text-decoration: none;
+  }
+  .kofi-button:hover {
+    background-color: var(--hover-color);
+    color: #ff5e5b;
+  }
+  .kofi-button svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .kofi-wrapper {
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .kofi-bubble {
+    position: absolute;
+    top: calc(100% + 10px);
+    right: -8px;
+    width: 240px;
+    background: var(--secondary-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 12px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+    z-index: 1000;
+    animation: kofi-fade-in 0.3s ease;
+  }
+
+  .kofi-bubble-arrow {
+    position: absolute;
+    top: -6px;
+    right: 16px;
+    width: 12px;
+    height: 12px;
+    background: var(--secondary-color);
+    border-left: 1px solid var(--border-color);
+    border-top: 1px solid var(--border-color);
+    transform: rotate(45deg);
+  }
+
+  .kofi-bubble-text {
+    margin: 0 0 10px;
+    font-size: 13px;
+    color: var(--text-color);
+    line-height: 1.4;
+  }
+
+  .kofi-bubble-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .kofi-bubble-btn {
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    text-align: center;
+    text-decoration: none;
+    border: none;
+    transition: opacity 0.15s;
+  }
+
+  .kofi-bubble-btn.support {
+    background: #ff5e5b;
+    color: white;
+  }
+  .kofi-bubble-btn.support:hover { opacity: 0.9; }
+
+  .kofi-bubble-btn.later {
+    background: var(--hover-color);
+    color: var(--text-color);
+  }
+  .kofi-bubble-btn.later:hover { background: var(--border-color); }
+
+  .kofi-bubble-btn.dismiss {
+    background: none;
+    color: var(--text-muted);
+    font-size: 11px;
+  }
+  .kofi-bubble-btn.dismiss:hover { color: var(--text-color); }
+
+  @keyframes kofi-fade-in {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
   }
 
   .dark-light-button {
@@ -1617,6 +1784,10 @@
     flex: 1;
   }
 
+  .mobile-section-title.highlighted {
+    color: var(--accent-color);
+  }
+
   .mobile-section-chevron {
     font-size: 12px;
     color: var(--text-muted);
@@ -1656,6 +1827,29 @@
   .mobile-menu-item.disabled {
     opacity: 0.4;
     cursor: default;
+  }
+
+  /* Mobile Ko-fi Link */
+  .mobile-kofi-link {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 16px;
+    color: var(--text-color);
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 500;
+    border-top: 1px solid var(--border-color);
+    background-color: var(--hover-color);
+  }
+  .mobile-kofi-link:active {
+    background-color: var(--primary-color);
+  }
+  .mobile-kofi-icon {
+    width: 18px;
+    height: 18px;
+    color: #ff5e5b;
+    flex-shrink: 0;
   }
 
   /* Mobile User Section - Collapsible */
@@ -1901,6 +2095,10 @@
     .auth-container a:has(.discord-button) {
       display: none;
     }
+
+    .kofi-wrapper {
+      display: none;
+    }
   }
 
   @media (max-width: 500px) {
@@ -1928,7 +2126,7 @@
     <a href="/" class="logo-link"><img class="website-icon" src="/favicon.png" alt="Entropia Nexus" title="Entropia Nexus" width="48px" height="48px" /></a>
     {#each Object.keys(menuItemsWiki) as menu (menu)}
       <!-- svelte-ignore a11y-no-static-element-interactions -->
-      <div class="menu-item" class:menu-top={!!getMenuOverviewUrl(menu)} on:mouseenter={() => handleDropdownEnter(menu)} on:mouseleave={handleDropdownLeave}>
+      <div class="menu-item" class:menu-top={!!getMenuOverviewUrl(menu)} class:highlighted={highlightedMenus.has(menu)} on:mouseenter={() => handleDropdownEnter(menu)} on:mouseleave={handleDropdownLeave}>
         {#if getMenuOverviewUrl(menu)}
           <a href={getMenuOverviewUrl(menu)} class="menu-header-link menu-header-link-full" use:loading>{menu}</a>
         {:else}
@@ -1950,6 +2148,24 @@
   </div>
 
   <div class="auth-container">
+    <div class="kofi-wrapper">
+      <a href="https://ko-fi.com/C0C21JO3B1" target="_blank" rel="noopener noreferrer" class="kofi-button" title="Support me on Ko-fi">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path fill="currentColor" d="M23.881 8.948c-.773-4.085-4.859-4.593-4.859-4.593H.723c-.604 0-.679.798-.679.798s-.082 7.324-.022 11.822c.164 2.424 2.586 2.672 2.586 2.672s8.267-.023 11.966-.049c2.438-.426 2.683-2.566 2.658-3.734 4.352.24 7.422-2.831 6.649-6.916zm-11.062 3.511c-1.246 1.453-4.011 3.976-4.011 3.976s-.121.119-.31.023c-.076-.057-.108-.09-.108-.09-.443-.441-3.368-3.049-4.034-3.954-.709-.965-1.041-2.7-.091-3.71.951-1.01 3.005-1.086 4.363.407 0 0 1.565-1.782 3.468-.963 1.904.82 1.832 3.011.723 4.311zm6.173.478c-.928.116-1.682.028-1.682.028V7.284h1.77s1.971.551 1.971 2.638c0 1.913-.985 2.667-2.059 3.015z"/>
+        </svg>
+      </a>
+      {#if showKofiPrompt}
+        <div class="kofi-bubble">
+          <div class="kofi-bubble-arrow"></div>
+          <p class="kofi-bubble-text">Enjoying Entropia Nexus? Consider supporting me!</p>
+          <div class="kofi-bubble-actions">
+            <a href="https://ko-fi.com/C0C21JO3B1" target="_blank" rel="noopener noreferrer" class="kofi-bubble-btn support" on:click={dismissKofi}>Support Me</a>
+            <button class="kofi-bubble-btn later" on:click={snoozeKofi}>Maybe Later</button>
+            <button class="kofi-bubble-btn dismiss" on:click={dismissKofi}>No, Thanks</button>
+          </div>
+        </div>
+      {/if}
+    </div>
     <div class="search-container">
       <SearchInput
         bind:this={desktopSearchRef}
@@ -2154,7 +2370,7 @@
             <!-- On mobile, clicking header just expands/collapses - no navigation -->
             <!-- This prevents menu from closing before user can see options -->
             <div class="mobile-section-header" on:click={() => toggleSection(menu)}>
-              <span class="mobile-section-title">{menu}</span>
+              <span class="mobile-section-title" class:highlighted={highlightedMenus.has(menu)}>{menu}</span>
               <span class="mobile-section-chevron" class:expanded={expandedSections.has(menu)}>&#9660;</span>
             </div>
             <div class="mobile-section-items" class:expanded={expandedSections.has(menu)}>
@@ -2171,6 +2387,14 @@
           </div>
       {/each}
     </div>
+
+    <!-- Ko-fi support link -->
+    <a href="https://ko-fi.com/C0C21JO3B1" target="_blank" rel="noopener noreferrer" class="mobile-kofi-link" on:click={closeMobileMenu}>
+      <svg viewBox="0 0 24 24" aria-hidden="true" class="mobile-kofi-icon">
+        <path fill="currentColor" d="M23.881 8.948c-.773-4.085-4.859-4.593-4.859-4.593H.723c-.604 0-.679.798-.679.798s-.082 7.324-.022 11.822c.164 2.424 2.586 2.672 2.586 2.672s8.267-.023 11.966-.049c2.438-.426 2.683-2.566 2.658-3.734 4.352.24 7.422-2.831 6.649-6.916zm-11.062 3.511c-1.246 1.453-4.011 3.976-4.011 3.976s-.121.119-.31.023c-.076-.057-.108-.09-.108-.09-.443-.441-3.368-3.049-4.034-3.954-.709-.965-1.041-2.7-.091-3.71.951-1.01 3.005-1.086 4.363.407 0 0 1.565-1.782 3.468-.963 1.904.82 1.832 3.011.723 4.311zm6.173.478c-.928.116-1.682.028-1.682.028V7.284h1.77s1.971.551 1.971 2.638c0 1.913-.985 2.667-2.059 3.015z"/>
+      </svg>
+      <span>Support me on Ko-fi</span>
+    </a>
 
     <!-- User Section (at bottom, collapsible) -->
     <div class="mobile-user-section" class:expanded={mobileUserExpanded}>
