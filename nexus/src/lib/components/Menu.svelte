@@ -22,7 +22,7 @@
   $: loginUrl = `/discord/login?redirect=${encodeURIComponent($page.url.pathname + $page.url.search)}`;
   $: logoutUrl = `/discord/logout?redirect=${encodeURIComponent($page.url.pathname + $page.url.search)}`;
   $: profileUrl = user ? `/users/${encodeURIComponentSafe(String(user.eu_name || user.id))}` : '/discord/login';
-  const SHORT_LINK_ORIGIN = 'https://eunex.us';
+  const SHORT_LINK_ORIGIN = 'eunex.us';
   const SHORT_ROUTE_PREFIXES = Object.entries(PREFERRED_SHORT_ROUTE_BY_PREFIX)
     .sort((a, b) => b[0].length - a[0].length);
 
