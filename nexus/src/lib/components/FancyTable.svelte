@@ -10,7 +10,8 @@
    *   { key: string, header: string, sortable?: boolean, searchable?: boolean, width?: string,
    *     widthBasis?: 'content' | 'header' | 'both', formatter?: (value, row) => string,
    *     cellClass?: (value, row) => string, hideOnMobile?: boolean, mobileWidth?: string,
-   *     main?: boolean, rawValue?: boolean, sortValue?: (row) => any, sortFn?: (a, b) => number }
+   *     main?: boolean, rawValue?: boolean, sortValue?: (row) => any, sortFn?: (a, b) => number,
+   *     sortPhases?: Array<{ sortValue: (row) => any, order: 'ASC'|'DESC', color?: string }> }
    *   - main: If true, column grows to fill available space using minmax(width, 1fr)
    *   - rawValue: If true, renders value as text instead of HTML (allows reactive content)
    * - data: Array of row objects (for non-lazy mode)
@@ -45,6 +46,9 @@
   export let horizontalScroll = true;
   export let compact = false;
 
+  /** @type {{ column: string, order: 'ASC'|'DESC' }|null} Initial sort to apply */
+  export let defaultSort = null;
+
   /**
    * @type {(row: object) => string|null} Function to generate extra CSS classes for rows
    * Example: (row) => row.boss ? 'boss-row' : null
@@ -73,8 +77,9 @@
   let footerEl;
   let internalData = [];
   let totalRows = 0;
-  let sortColumn = null;
-  let sortOrder = 'ASC';
+  let sortColumn = defaultSort?.column ?? null;
+  let sortOrder = defaultSort?.order ?? 'ASC';
+  let sortPhaseIdx = 0;
   let filters = {};
   let filterTimeouts = {};
   let isLoading = false;
@@ -89,7 +94,7 @@
   let isMobile = false;
 
   function updateMobileState() {
-    isMobile = typeof window !== 'undefined' && window.innerWidth <= 767;
+    isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
   }
 
   // Computed
@@ -147,14 +152,15 @@
     // Apply sorting
     if (sortColumn) {
       const columnDef = columns.find(col => col.key === sortColumn);
+      const phaseSortValue = columnDef?.sortPhases?.[sortPhaseIdx]?.sortValue;
       result.sort((a, b) => {
         if (columnDef?.sortFn) {
           const cmp = columnDef.sortFn(a, b);
           return sortOrder === 'ASC' ? cmp : -cmp;
         }
 
-        const aVal = columnDef?.sortValue ? columnDef.sortValue(a) : a[sortColumn];
-        const bVal = columnDef?.sortValue ? columnDef.sortValue(b) : b[sortColumn];
+        const aVal = phaseSortValue ? phaseSortValue(a) : (columnDef?.sortValue ? columnDef.sortValue(a) : a[sortColumn]);
+        const bVal = phaseSortValue ? phaseSortValue(b) : (columnDef?.sortValue ? columnDef.sortValue(b) : b[sortColumn]);
 
         // Handle nulls
         if (aVal == null && bVal == null) return 0;
@@ -321,11 +327,23 @@
   function handleSort(column) {
     if (!sortable || column.sortable === false) return;
 
-    if (sortColumn === column.key) {
-      sortOrder = sortOrder === 'ASC' ? 'DESC' : 'ASC';
-    } else {
+    if (column.sortPhases?.length) {
+      // Cycle through sort phases (e.g. sell DESC → sell ASC → buy DESC → buy ASC)
+      if (sortColumn === column.key) {
+        sortPhaseIdx = (sortPhaseIdx + 1) % column.sortPhases.length;
+      } else {
+        sortPhaseIdx = 0;
+      }
       sortColumn = column.key;
-      sortOrder = 'ASC';
+      sortOrder = column.sortPhases[sortPhaseIdx].order;
+    } else {
+      if (sortColumn === column.key) {
+        sortOrder = sortOrder === 'ASC' ? 'DESC' : 'ASC';
+      } else {
+        sortColumn = column.key;
+        sortOrder = 'ASC';
+      }
+      sortPhaseIdx = 0;
     }
 
     dispatch('sort', { column: sortColumn, order: sortOrder });
@@ -450,7 +468,7 @@
   // - main columns use minmax() to allow growing with available space
   // - use mobileWidth on mobile for responsive layouts
   $: gridTemplateColumns = columns
-    .filter(col => !isMobile || !col.hideOnMobile)
+    .filter(col => (!isMobile || !col.hideOnMobile) && (isMobile || !col.hideOnDesktop))
     .map(col => {
       const width = (isMobile && col.mobileWidth)
         ? col.mobileWidth
@@ -695,6 +713,7 @@
     white-space: nowrap;
     border-right: 1px solid var(--border-color);
     box-sizing: border-box;
+    min-width: 0;
   }
 
   .table-cell:last-child {
@@ -889,8 +908,15 @@
     padding: 24px 16px;
   }
 
+  /* Desktop: hide mobile-only columns */
+  @media (min-width: 769px) {
+    .hide-on-desktop {
+      display: none !important;
+    }
+  }
+
   /* Mobile styles */
-  @media (max-width: 767px) {
+  @media (max-width: 768px) {
     .fancy-table-container {
       font-size: 12px;
       border-radius: 6px;
@@ -953,6 +979,32 @@
     .hide-on-mobile {
       display: none !important;
     }
+
+    /* Disable horizontal scroll on mobile — columns are already sized to fit */
+    .table-body.horizontal-scroll {
+      overflow-x: hidden;
+    }
+    .horizontal-scroll .virtual-container {
+      display: block;
+      min-width: auto;
+    }
+    .horizontal-scroll .table-row {
+      right: 0;
+      min-width: auto;
+    }
+    .horizontal-scroll .header-row,
+    .horizontal-scroll .filter-row {
+      display: grid;
+      min-width: auto;
+    }
+    .horizontal-scroll .footer-row {
+      display: grid;
+      min-width: auto;
+    }
+    .table-header.horizontal-scroll,
+    .table-footer.horizontal-scroll {
+      overflow-x: hidden;
+    }
   }
 </style>
 
@@ -968,11 +1020,13 @@
           class:sortable={sortable && column.sortable !== false}
           class:sorted={sortColumn === column.key}
           class:hide-on-mobile={column.hideOnMobile}
+          class:hide-on-desktop={column.hideOnDesktop}
           on:click={() => handleSort(column)}
         >
           {column.header}
           {#if sortColumn === column.key}
-            <span class="sort-indicator">{sortOrder === 'ASC' ? '▲' : '▼'}</span>
+            {@const phaseColor = column.sortPhases?.[sortPhaseIdx]?.color}
+            <span class="sort-indicator" style={phaseColor ? `color: ${phaseColor}` : ''}>{sortOrder === 'ASC' ? '▲' : '▼'}</span>
           {/if}
         </div>
       {/each}
@@ -981,7 +1035,8 @@
     {#if searchable}
       <div class="filter-row" style="grid-template-columns: {gridTemplateColumns};">
         {#each columns as column}
-          <div class="filter-cell" class:hide-on-mobile={column.hideOnMobile}>
+          <div class="filter-cell" class:hide-on-mobile={column.hideOnMobile}
+          class:hide-on-desktop={column.hideOnDesktop}>
             {#if column.searchable !== false}
               <input
                 type="text"
@@ -1029,7 +1084,8 @@
             on:mouseout={() => handleRowHover(null, null)}
           >
             {#each columns as column}
-              <div class="table-cell {getCellClass(row, column)}" class:hide-on-mobile={column.hideOnMobile}>
+              <div class="table-cell {getCellClass(row, column)}" class:hide-on-mobile={column.hideOnMobile}
+          class:hide-on-desktop={column.hideOnDesktop}>
                 {#if column.component}
                   <svelte:component this={column.component} {row} value={row[column.key]} />
                 {:else if column.rawValue}
@@ -1052,7 +1108,8 @@
               style="top: {emptyIndex * effectiveRowHeight}px; height: {effectiveRowHeight}px; grid-template-columns: {gridTemplateColumns};"
             >
               {#each columns as column}
-                <div class="table-cell" class:hide-on-mobile={column.hideOnMobile}></div>
+                <div class="table-cell" class:hide-on-mobile={column.hideOnMobile}
+          class:hide-on-desktop={column.hideOnDesktop}></div>
               {/each}
             </div>
           {/each}
@@ -1079,6 +1136,7 @@
               class="footer-cell"
               class:label-cell={isLabelCell}
               class:hide-on-mobile={column.hideOnMobile}
+          class:hide-on-desktop={column.hideOnDesktop}
             >
               {#if value !== undefined}
                 {value}
