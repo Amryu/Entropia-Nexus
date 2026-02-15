@@ -278,7 +278,7 @@ Pet orders include additional metadata:
 | updated | timestamptz | Last update |
 
 Unique constraint: 1 active order per user per item per side.
-Limit: 1000 sell orders / 50 buy orders per user.
+Limit: 1000 sell orders / 1000 buy orders per user.
 
 ### Exchange Price History
 

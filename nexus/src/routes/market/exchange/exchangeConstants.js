@@ -5,7 +5,7 @@ export const STALENESS_THRESHOLDS = {
 };
 
 export const MAX_SELL_ORDERS = 1000;
-export const MAX_BUY_ORDERS = 50;
+export const MAX_BUY_ORDERS = 1000;
 
 export const PLANETS = [
   'Calypso',

@@ -77,7 +77,7 @@ Create a new buy or sell order.
   | `min_quantity` | integer | No | >= 1 |
   | `details` | object | No | `{ item_name, Tier, TierIncreaseRate, QualityRating, CurrentTT, Pet: { Level }, is_set, Gender }` |
   | `turnstile_token` | string | Yes | Captcha token |
-- **Validations**: Gender constraints per item type, set constraint (ArmorPlating only), per-side order cap (`MAX_SELL_ORDERS`=1000, `MAX_BUY_ORDERS`=50), per-item order cap (`MAX_ORDERS_PER_ITEM`=5)
+- **Validations**: Gender constraints per item type, set constraint (ArmorPlating only), per-side order cap (`MAX_SELL_ORDERS`=1000, `MAX_BUY_ORDERS`=1000), per-item order cap (`MAX_ORDERS_PER_ITEM`=5)
 - **Response** `201`: Created order object
 
 ### `PUT /api/market/exchange/orders/[id]`
