@@ -64,12 +64,14 @@
     </div>
   {/if}
 
+  <!-- Fee temporarily hidden
   {#if fee > 0}
     <div class="price-row muted">
       <span class="price-label">Est. Fee</span>
       <span class="price-value muted">{fee.toFixed(2)} PED</span>
     </div>
   {/if}
+  -->
 </div>
 
 <style>

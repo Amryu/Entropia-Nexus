@@ -366,7 +366,9 @@
         </div>
       {/if}
 
+      <!-- Fee temporarily hidden
       <FeePreview amount={startingBidNum} />
+      -->
     </section>
 
     <!-- Duration Section -->
