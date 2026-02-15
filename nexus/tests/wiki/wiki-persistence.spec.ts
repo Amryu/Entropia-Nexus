@@ -137,15 +137,9 @@ test.describe('Wiki Pages - State Persistence', () => {
       await page.waitForLoadState('networkidle');
       await waitForWikiNav(page);
 
-      // Check if search input exists
-      const searchInput = page.locator('.search-input');
-
-      try {
-        await expect(searchInput).toBeVisible({ timeout: TIMEOUT_MEDIUM });
-      } catch {
-        test.skip();
-        return;
-      }
+      // Scope to wiki nav to avoid matching the global search input
+      const searchInput = page.locator('.wiki-nav .search-input');
+      await expect(searchInput).toBeVisible({ timeout: TIMEOUT_MEDIUM });
 
       // Search for something
       await searchInput.fill('sword');
@@ -161,7 +155,7 @@ test.describe('Wiki Pages - State Persistence', () => {
       await waitForWikiNav(page);
 
       // Search should be cleared
-      const value = await page.locator('.search-input').inputValue();
+      const value = await page.locator('.wiki-nav .search-input').inputValue();
       expect(value).toBe('');
     });
   });

@@ -106,15 +106,11 @@ test.describe('Wiki Pages - Navigation Sidebar', () => {
     }
     await waitForWikiNav(page);
 
-    const searchInput = page.locator('.search-input');
-    try {
-      await expect(searchInput).toBeVisible({ timeout: TIMEOUT_LONG });
-      await searchInput.fill('test');
-      await expect(searchInput).toHaveValue('test');
-    } catch {
-      // Search may not be present
-      test.skip();
-    }
+    // Scope to wiki nav to avoid matching the global search input
+    const searchInput = page.locator('.wiki-nav .search-input');
+    await expect(searchInput).toBeVisible({ timeout: TIMEOUT_LONG });
+    await searchInput.fill('test');
+    await expect(searchInput).toHaveValue('test');
   });
 
   test('sidebar displays item list container', async ({ page }) => {
@@ -158,19 +154,15 @@ test.describe('Wiki Pages - Navigation Sidebar', () => {
     }
     await waitForWikiNav(page);
 
-    const expandBtn = page.locator('.expand-btn');
-    try {
-      await expect(expandBtn).toBeVisible({ timeout: TIMEOUT_LONG });
-      await expandBtn.click();
-      await page.waitForTimeout(TIMEOUT_INSTANT);
+    // Use .first() to avoid strict mode violation (two expand buttons exist)
+    const expandBtn = page.locator('.expand-btn').first();
+    await expect(expandBtn).toBeVisible({ timeout: TIMEOUT_LONG });
+    await expandBtn.click();
+    await page.waitForTimeout(TIMEOUT_INSTANT);
 
-      // Should show table headers or expanded class
-      const wikiNav = page.locator('.wiki-nav');
-      await expect(wikiNav).toHaveClass(/expanded/);
-    } catch {
-      // Expand button may not be present
-      test.skip();
-    }
+    // Should show table headers or expanded class
+    const wikiNav = page.locator('.wiki-nav');
+    await expect(wikiNav).toHaveClass(/expanded/);
   });
 });
 
@@ -289,19 +281,15 @@ test.describe('Wiki Pages - Search and Filtering', () => {
     await page.waitForLoadState('networkidle');
     await waitForWikiNav(page);
 
-    const searchInput = page.locator('.search-input');
-    try {
-      await expect(searchInput).toBeVisible({ timeout: TIMEOUT_LONG });
-      await searchInput.fill('sword');
-      await expect(searchInput).toHaveValue('sword');
+    // Scope to wiki nav to avoid matching the global search input
+    const searchInput = page.locator('.wiki-nav .search-input');
+    await expect(searchInput).toBeVisible({ timeout: TIMEOUT_LONG });
+    await searchInput.fill('sword');
+    await expect(searchInput).toHaveValue('sword');
 
-      // Clear button should appear
-      const clearBtn = page.locator('.clear-search');
-      await expect(clearBtn).toBeVisible();
-    } catch {
-      // Search may not be present
-      test.skip();
-    }
+    // Clear button should appear
+    const clearBtn = page.locator('.clear-search');
+    await expect(clearBtn).toBeVisible();
   });
 
   test('filter buttons exist on pets page', async ({ page }) => {

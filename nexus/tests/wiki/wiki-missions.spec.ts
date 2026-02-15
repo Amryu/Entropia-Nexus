@@ -175,15 +175,11 @@ baseTest.describe('Missions Page - Navigation Sidebar', () => {
 
     await waitForWikiNav(page);
 
-    const searchInput = page.locator('.search-input');
-    try {
-      await expect(searchInput).toBeVisible({ timeout: TIMEOUT_MEDIUM });
-      await searchInput.fill('test');
-      await expect(searchInput).toHaveValue('test');
-    } catch {
-      // Search may not be present
-      baseTest.skip();
-    }
+    // Scope to wiki nav to avoid matching the global search input
+    const searchInput = page.locator('.wiki-nav .search-input');
+    await expect(searchInput).toBeVisible({ timeout: TIMEOUT_MEDIUM });
+    await searchInput.fill('test');
+    await expect(searchInput).toHaveValue('test');
   });
 
   baseTest('sidebar has planet filter', async ({ page }) => {

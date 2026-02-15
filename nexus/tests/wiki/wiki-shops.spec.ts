@@ -956,6 +956,22 @@ test.describe('Shop Pages - Group Management', () => {
 });
 
 test.describe('Shop Pages - Inventory CRUD Operations', () => {
+  // Helper to find and switch to a group that has items
+  async function findGroupWithItems(page: Page): Promise<boolean> {
+    const groupTabs = page.locator('.group-tab');
+    const groupCount = await groupTabs.count();
+
+    for (let i = 0; i < groupCount; i++) {
+      await groupTabs.nth(i).click();
+      await page.waitForTimeout(TIMEOUT_INSTANT);
+      const itemCount = await page.locator('.item-row').count();
+      if (itemCount > 0) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   // Helper to open inventory dialog
   async function openInventoryDialog(page: Page) {
     await page.goto(SHOP_PAGE);
@@ -1303,9 +1319,8 @@ test.describe('Shop Pages - Inventory CRUD Operations', () => {
       return;
     }
 
-    // Check if there are items
-    const itemCount = await adminUser.locator('.item-row').count();
-    if (itemCount === 0) {
+    // Find a group that has items (first group may be empty)
+    if (!await findGroupWithItems(adminUser)) {
       await cancelDialog(adminUser);
       test.skip();
       return;
@@ -1333,9 +1348,8 @@ test.describe('Shop Pages - Inventory CRUD Operations', () => {
       return;
     }
 
-    // Check if there are items
-    const itemCount = await adminUser.locator('.item-row').count();
-    if (itemCount === 0) {
+    // Find a group that has items (first group may be empty)
+    if (!await findGroupWithItems(adminUser)) {
       await cancelDialog(adminUser);
       test.skip();
       return;
@@ -1363,9 +1377,19 @@ test.describe('Shop Pages - Inventory CRUD Operations', () => {
       return;
     }
 
-    // Need at least 2 items to reorder
-    const itemCount = await adminUser.locator('.item-row').count();
-    if (itemCount < 2) {
+    // Find a group that has at least 2 items to reorder
+    const groupTabs = adminUser.locator('.group-tab');
+    const groupCount = await groupTabs.count();
+    let foundGroup = false;
+    for (let i = 0; i < groupCount; i++) {
+      await groupTabs.nth(i).click();
+      await adminUser.waitForTimeout(TIMEOUT_INSTANT);
+      if (await adminUser.locator('.item-row').count() >= 2) {
+        foundGroup = true;
+        break;
+      }
+    }
+    if (!foundGroup) {
       await cancelDialog(adminUser);
       test.skip();
       return;

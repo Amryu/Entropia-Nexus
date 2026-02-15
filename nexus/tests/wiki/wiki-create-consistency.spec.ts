@@ -1,6 +1,6 @@
 import { test, expect } from '../fixtures/auth';
 import { WIKI_PAGES_WITH_SUBTYPES } from './test-pages';
-import { TIMEOUT_MEDIUM } from '../test-constants';
+import { TIMEOUT_MEDIUM, TIMEOUT_LONG } from '../test-constants';
 
 const TEST_PAGES = WIKI_PAGES_WITH_SUBTYPES;
 
@@ -27,7 +27,8 @@ test.describe('Wiki Create Mode - Consistency Across Pages', () => {
   test.describe('Create Mode Image Placeholder', () => {
     for (const page of TEST_PAGES) {
       test(`${page.name}: create mode shows "Available after approval" message`, async ({ verifiedUser }) => {
-        if ('editable' in page && page.editable === false) {
+        // Skip non-editable pages and Missions (no image upload component)
+        if (('editable' in page && page.editable === false) || page.path.includes('missions')) {
           test.skip();
           return;
         }
@@ -36,13 +37,8 @@ test.describe('Wiki Create Mode - Consistency Across Pages', () => {
         await verifiedUser.waitForLoadState('networkidle');
 
         // In create mode, should show placeholder with hint
-        const createHint = verifiedUser.locator('.create-mode-hint, text=\"Available after approval\"');
-        // Skip test if element doesn't exist within timeout
-        try {
-          await expect(createHint).toBeVisible({ timeout: TIMEOUT_MEDIUM });
-        } catch {
-          test.skip();
-        }
+        const createHint = verifiedUser.locator('.create-mode-hint');
+        await expect(createHint).toBeVisible({ timeout: TIMEOUT_LONG });
       });
     }
   });

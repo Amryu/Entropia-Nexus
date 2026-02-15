@@ -112,16 +112,11 @@ test.describe('Wiki Pages - Accessibility', () => {
       await page.waitForLoadState('networkidle');
       await waitForWikiNav(page);
 
-      const searchInput = page.locator('.search-input');
-
-      try {
-        await expect(searchInput).toBeVisible({ timeout: TIMEOUT_MEDIUM });
-        await searchInput.focus();
-        await expect(searchInput).toBeFocused();
-      } catch {
-        // Search input not present, skip this check
-        test.skip();
-      }
+      // Scope to wiki nav to avoid matching the global search input
+      const searchInput = page.locator('.wiki-nav .search-input');
+      await expect(searchInput).toBeVisible({ timeout: TIMEOUT_LONG });
+      await searchInput.focus();
+      await expect(searchInput).toBeFocused();
     });
 
     test('expand button is keyboard accessible', async ({ page }) => {
@@ -129,16 +124,11 @@ test.describe('Wiki Pages - Accessibility', () => {
       await page.waitForLoadState('networkidle');
       await waitForWikiNav(page);
 
-      const expandBtn = page.locator('.expand-btn');
-
-      try {
-        await expect(expandBtn).toBeVisible({ timeout: TIMEOUT_MEDIUM });
-        await expandBtn.focus();
-        await expect(expandBtn).toBeFocused();
-      } catch {
-        // Expand button not present, skip this check
-        test.skip();
-      }
+      // Use .first() to avoid strict mode violation (two expand buttons exist)
+      const expandBtn = page.locator('.expand-btn').first();
+      await expect(expandBtn).toBeVisible({ timeout: TIMEOUT_LONG });
+      await expandBtn.focus();
+      await expect(expandBtn).toBeFocused();
     });
   });
 
@@ -148,16 +138,10 @@ test.describe('Wiki Pages - Accessibility', () => {
       await page.waitForLoadState('networkidle');
       await waitForWikiNav(page);
 
-      const expandBtn = page.locator('.expand-btn');
-
-      try {
-        await expect(expandBtn).toBeVisible({ timeout: TIMEOUT_MEDIUM });
-        const title = await expandBtn.getAttribute('title');
-        expect(title || await expandBtn.getAttribute('aria-label')).toBeTruthy();
-      } catch {
-        // Expand button not present, skip this check
-        test.skip();
-      }
+      const expandBtn = page.locator('.expand-btn').first();
+      await expect(expandBtn).toBeVisible({ timeout: TIMEOUT_LONG });
+      const title = await expandBtn.getAttribute('title');
+      expect(title || await expandBtn.getAttribute('aria-label')).toBeTruthy();
     });
 
     test('breadcrumbs have aria-label', async ({ page }) => {
