@@ -33,6 +33,7 @@
   import MobMaturitiesEdit from '$lib/components/wiki/mobs/MobMaturitiesEdit.svelte';
   import MobSpawnsEdit from '$lib/components/wiki/mobs/MobSpawnsEdit.svelte';
   import MobLootsEdit from '$lib/components/wiki/mobs/MobLootsEdit.svelte';
+  import CreateSpeciesDialog from '$lib/components/wiki/mobs/CreateSpeciesDialog.svelte';
 
   // Image upload
   import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
@@ -74,7 +75,10 @@
   $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve')));
 
   // Build species options for autocomplete
-  $: speciesOptions = speciesList.map(s => ({ value: s.Name, label: s.Name }));
+  let showCreateSpeciesDialog = false;
+  let localSpeciesList = [];
+  $: localSpeciesList = [...(speciesList || [])];
+  $: speciesOptions = localSpeciesList.map(s => ({ value: s.Name, label: s.Name }));
 
   // Verified users can edit
   $: canEdit = user?.verified || user?.grants?.includes('wiki.edit');
@@ -890,6 +894,13 @@
   function handleDescriptionChange(event) {
     updateField('Properties.Description', event.detail);
   }
+
+  function handleCreateSpecies(event) {
+    const { Name, _newSpecies } = event.detail;
+    localSpeciesList = [...localSpeciesList, { Name, Properties: { CodexBaseCost: _newSpecies.CodexBaseCost, CodexType: _newSpecies.CodexType } }];
+    updateField('Species', { Name, _newSpecies });
+    showCreateSpeciesDialog = false;
+  }
 </script>
 
 <WikiSEO
@@ -1031,13 +1042,22 @@
               <span class="stat-label">Species</span>
               <span class="stat-value">
                 {#if $editMode}
-                  <SearchInput
-                    value={activeMob?.Species?.Name || ''}
-                    placeholder="Search species..."
-                    options={speciesOptions}
-                    on:change={(e) => updateField('Species.Name', e.detail.value || '')}
-                    on:select={(e) => updateField('Species.Name', e.detail.value || '')}
-                  />
+                  <div class="species-edit-row">
+                    <SearchInput
+                      value={activeMob?.Species?.Name || ''}
+                      placeholder="Search species..."
+                      options={speciesOptions}
+                      on:change={(e) => updateField('Species.Name', e.detail.value || '')}
+                      on:select={(e) => updateField('Species.Name', e.detail.value || '')}
+                    />
+                    <button class="btn-create-inline" on:click={() => showCreateSpeciesDialog = true} title="Create new species">
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="12" y1="5" x2="12" y2="19" />
+                        <line x1="5" y1="12" x2="19" y2="12" />
+                      </svg>
+                      New
+                    </button>
+                  </div>
                 {:else}
                   {activeMob?.Species?.Name || 'N/A'}
                 {/if}
@@ -1360,6 +1380,13 @@
   {/if}
 </WikiPage>
 
+{#if showCreateSpeciesDialog}
+  <CreateSpeciesDialog
+    on:create={handleCreateSpecies}
+    on:cancel={() => showCreateSpeciesDialog = false}
+  />
+{/if}
+
 <style>
   .pending-change-banner {
     display: flex;
@@ -1490,6 +1517,35 @@
     background: var(--accent-color, #4a9eff);
     border-color: var(--accent-color, #4a9eff);
     color: white;
+  }
+
+  .species-edit-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+  }
+
+  .btn-create-inline {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    padding: 5px 8px;
+    font-size: 11px;
+    background-color: transparent;
+    border: 1px dashed var(--border-color, #555);
+    border-radius: 4px;
+    color: var(--text-muted, #999);
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .btn-create-inline:hover {
+    background-color: var(--hover-color);
+    color: var(--accent-color, #4a9eff);
+    border-color: var(--accent-color, #4a9eff);
   }
 
   /* Mobile adjustments */

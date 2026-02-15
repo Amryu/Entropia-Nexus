@@ -713,7 +713,20 @@ export const UpsertConfigs = {
     columns: [
       { name: "Name", value: x => x.Name },
       { name: "Description", value: x => x.Properties.Description },
-      { name: "SpeciesId", value: async (x, c) => await c.query(`SELECT "Id" FROM ONLY "MobSpecies" WHERE "Name" = $1`, [x.Species.Name]).then(res => res.rows[0]?.Id) },
+      { name: "SpeciesId", value: async (x, c) => {
+        if (x.Species?._newSpecies && x.Species?.Name) {
+          const ns = x.Species._newSpecies;
+          await c.query(
+            `INSERT INTO ONLY "MobSpecies" ("Name", "CodexBaseCost", "CodexType")
+             VALUES ($1, $2, $3)
+             ON CONFLICT ("Name") DO UPDATE SET
+               "CodexBaseCost" = COALESCE(EXCLUDED."CodexBaseCost", "MobSpecies"."CodexBaseCost"),
+               "CodexType" = COALESCE(EXCLUDED."CodexType", "MobSpecies"."CodexType")`,
+            [x.Species.Name, ns.CodexBaseCost ?? null, ns.CodexType ?? null]
+          );
+        }
+        return await c.query(`SELECT "Id" FROM ONLY "MobSpecies" WHERE "Name" = $1`, [x.Species.Name]).then(res => res.rows[0]?.Id);
+      }},
       { name: "PlanetId", value: async (x, c) => await c.query(`SELECT "Id" FROM ONLY "Planets" WHERE "Name" = $1`, [x.Planet.Name]).then(res => res.rows[0]?.Id) },
       { name: "AttackRange", value: x => x.Properties.AttackRange },
       { name: "AggressionRange", value: x => x.Properties.AggressionRange },
