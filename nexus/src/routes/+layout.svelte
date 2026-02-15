@@ -2,7 +2,7 @@
   //@ts-nocheck
   import '$lib/style.css';
 
-  import { darkMode, pageParams, initialViewportWidth } from '../stores.js';
+  import { pageParams, initialViewportWidth } from '../stores.js';
 
   import Menu from "$lib/components/Menu.svelte";
   import Toasts from "$lib/components/Toasts.svelte";
@@ -15,7 +15,6 @@
   // Declared as const to accept prop without Svelte "unused" warning
   export const params = {};
 
-  let darkModeValue = true;
   $page;
 
   // Set initial viewport width from server-side detection
@@ -35,11 +34,6 @@
     );
   }
   
-  const unsubscribe = darkMode.subscribe(value => {
-    darkModeValue = value;
-    updateDarkMode();
-  });
-
   // Viewport cookie storage - debounced to avoid excessive cookie writes
   let viewportDebounceTimer = null;
   const VIEWPORT_COOKIE_NAME = 'nexus_viewport';
@@ -61,85 +55,20 @@
     }, VIEWPORT_DEBOUNCE_MS);
   }
 
-  function saveDarkModeToServer(isDark) {
-    fetch('/api/users/preferences', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key: 'darkMode', data: isDark })
-    }).catch(() => {}); // fire and forget
-  }
-
   onMount(() => {
-    updateDarkMode();
+    // Ensure dark mode — remove any leftover light-mode class from previous versions
+    document.body.classList.remove('light-mode');
 
     if (typeof window !== 'undefined') {
-      // Theme migration: force all users to re-evaluate based on OS preference,
-      // defaulting to dark mode. After this one-time migration, respect their choice.
-      const THEME_VERSION = 2;
-      const storedVersion = localStorage.getItem('themeVersion');
-      let migrated = false;
-
-      if (storedVersion === String(THEME_VERSION)) {
-        // Already migrated — use their stored preference
-        darkMode.set(localStorage.getItem('darkMode') === 'true');
-      } else {
-        // New user or pre-migration user: check OS/browser preference
-        const prefersLight = window.matchMedia('(prefers-color-scheme: light)').matches;
-        const useDark = !prefersLight;
-        darkMode.set(useDark);
-        localStorage.setItem('darkMode', useDark ? 'true' : 'false');
-        localStorage.setItem('themeVersion', String(THEME_VERSION));
-        migrated = true;
-      }
-
-      // Sync dark mode with server for logged-in users
-      const user = data?.session?.user;
-      if (user) {
-        if (migrated) {
-          // Just migrated — push new value to server
-          saveDarkModeToServer(darkModeValue);
-        } else {
-          // Load from server for cross-device sync
-          fetch('/api/users/preferences/darkMode')
-            .then(res => res.ok ? res.json() : null)
-            .then(pref => {
-              if (pref?.data !== null && pref?.data !== undefined) {
-                const serverDark = pref.data === true;
-                if (serverDark !== darkModeValue) {
-                  darkMode.set(serverDark);
-                  localStorage.setItem('darkMode', serverDark ? 'true' : 'false');
-                }
-              } else {
-                // Server has no value yet — seed it from localStorage
-                saveDarkModeToServer(darkModeValue);
-              }
-            })
-            .catch(() => {}); // localStorage is fine as fallback
-        }
-      }
-
       // Store initial viewport width
       storeViewportWidth(window.innerWidth);
 
       // Listen for resize to update the cookie
       window.addEventListener('resize', handleResize);
-
     }
   });
 
-  function updateDarkMode() {
-    if (typeof window === 'undefined') return;
-
-    if (darkModeValue === true) {
-      document.body.classList.remove('light-mode');
-    } else {
-      document.body.classList.add('light-mode');
-    }
-  }
-
-  // Remember to unsubscribe when the component is destroyed
   onDestroy(() => {
-    unsubscribe();
     if (viewportDebounceTimer) {
       clearTimeout(viewportDebounceTimer);
     }

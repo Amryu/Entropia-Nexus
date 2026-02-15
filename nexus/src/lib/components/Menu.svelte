@@ -6,7 +6,7 @@
   import { afterNavigate, goto } from '$app/navigation';
   import { page } from '$app/stores';
 
-  import { darkMode } from '../../stores.js';
+
 
   import { getTypeLink, getTypeName, encodeURIComponentSafe, copyToClipboard } from "$lib/util";
   import { addToast } from '$lib/stores/toasts';
@@ -621,23 +621,6 @@
     closeMobileMenu();
   }
 
-  function setDarkModePreference(isDarkMode) {
-    if (typeof window === 'undefined') return;
-
-    darkMode.set(isDarkMode);
-    localStorage.setItem('darkMode', isDarkMode ? 'true' : 'false');
-    // Ensure manual choice is preserved across theme migrations
-    localStorage.setItem('themeVersion', '2');
-
-    // Sync to server if logged in
-    if (user) {
-      fetch('/api/users/preferences', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key: 'darkMode', data: isDarkMode })
-      }).catch(() => {});
-    }
-  }
 
   function getMenuItemUrl(menu: string, item: { label: string; url: string }) {
     if (item.url === 'api') return `${import.meta.env.VITE_API_URL}/docs/`;
@@ -1060,11 +1043,6 @@
     color: inherit;
     cursor: pointer;
     padding: 8px 12px;
-  }
-
-  .dark-light-toggle {
-    margin-left: 8px;
-    flex-shrink: 0;
   }
 
   .short-link-action {
@@ -2083,10 +2061,6 @@
       display: none;
     }
 
-    .auth-container .dark-light-toggle {
-      display: none;
-    }
-
     .auth-container .short-link-action {
       display: none;
     }
@@ -2323,13 +2297,6 @@
         </div>
       </div>
     {/if}
-    <div class="dark-light-toggle">
-      {#if $darkMode === null || $darkMode === false}
-        <button class="dark-light-button" on:click={() => setDarkModePreference(true)}><img width="20px" height="20px" src={'/dark.png'} alt="Dark mode button" title="Enable Dark Mode" /></button>
-      {:else}
-        <button class="dark-light-button" on:click={() => setDarkModePreference(false)}><img width="20px" height="20px" src={'/light.png'} alt="Light mode button" title="Disable Dark Mode" /></button>
-      {/if}
-    </div>
     <button class="burger-button" class:open={mobileMenuOpen} on:click={toggleMobileMenu} aria-label="Toggle menu">
       <span class="burger-line"></span>
       <span class="burger-line"></span>
@@ -2434,18 +2401,6 @@
                 </svg>
               </button>
             {/if}
-            <!-- Dark/Light Mode Toggle -->
-            <button
-              class="mobile-quick-btn"
-              on:click={() => setDarkModePreference(!$darkMode)}
-              title={$darkMode ? 'Light Mode' : 'Dark Mode'}
-            >
-              {#if $darkMode}
-                <img src="/light.png" alt="Light mode" width="18" height="18" />
-              {:else}
-                <img src="/dark.png" alt="Dark mode" width="18" height="18" />
-              {/if}
-            </button>
             {#if effectiveAdmin && !isCurrentlyImpersonating}
               <a
                 href="/admin"
@@ -2527,18 +2482,6 @@
               </svg>
             </button>
           {/if}
-          <!-- Dark/Light Mode Toggle -->
-          <button
-            class="mobile-quick-btn"
-            on:click={() => setDarkModePreference(!$darkMode)}
-            title={$darkMode ? 'Light Mode' : 'Dark Mode'}
-          >
-            {#if $darkMode}
-              <img src="/light.png" alt="Light mode" width="18" height="18" />
-            {:else}
-              <img src="/dark.png" alt="Dark mode" width="18" height="18" />
-            {/if}
-          </button>
           <a href={loginUrl} class="mobile-user-action primary" on:click={closeMobileMenu}>
             <img src="/discord.svg" alt="" class="mobile-discord-icon" />
             <span class="mobile-action-text">Login with Discord</span>
