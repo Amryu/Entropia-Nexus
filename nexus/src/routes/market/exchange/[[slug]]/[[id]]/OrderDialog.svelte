@@ -145,7 +145,7 @@
 
       // Derive item-type-aware defaults from the nested Item
       const itemType = order.Item?.Type;
-      const itemRef = { Type: itemType, Properties: { Type: itemType }, Name: order.Item?.Name };
+      const itemRef = { Type: itemType, Properties: { Type: itemType }, Name: order.Item?.Name, st: order.Item?.st ?? null };
       if (order.Markup == null || order.Markup === 0) {
         order.Markup = isPercentMarkup(itemRef) ? 100 : 0;
       }
@@ -173,6 +173,7 @@
           Name: item?.Name ?? item?.n ?? null,
           Type: item?.Type ?? item?.Properties?.Type ?? item?.t ?? null,
           MaxTT: getMaxTT(item),
+          st: item?.st ?? null,
         },
         Planet: 'Calypso',
         Quantity: 1,

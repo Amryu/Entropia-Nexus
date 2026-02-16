@@ -63,12 +63,8 @@ export function categorizeItems(items, {
     } else if (type === 'blueprint') {
       if (!hasBlueprints) categorizeBlueprint(item, categorized.blueprints);
     } else if (type === 'material') {
-      const subType = item?.Properties?.Type?.toLowerCase?.() || '';
-      if (subType === 'deed' || subType === 'token') {
-        categorizeFinancial(item, categorized.financial);
-      } else if (!hasMaterials) {
-        categorizeMaterial(item, categorized.materials);
-      }
+      // Base items have Properties.Type = 'Material'; detailed materials pass handles sub-types (Deed/Token/Share → financial)
+      if (!hasMaterials) categorizeMaterial(item, categorized.materials);
     } else if (type === 'consumable') {
       categorizeConsumable(item, categorized.consumables);
     } else if (type === 'vehicle') {
@@ -141,7 +137,7 @@ export function categorizeItems(items, {
   (blueprints || []).forEach(b => categorizeBlueprint(b, categorized.blueprints));
   (materials || []).forEach(m => {
     const mt = m?.Properties?.Type?.toLowerCase?.() || '';
-    if (mt === 'deed' || mt === 'token') {
+    if (mt === 'deed' || mt === 'token' || mt === 'share') {
       categorizeFinancial(m, categorized.financial);
     } else {
       categorizeMaterial(m, categorized.materials);
@@ -511,21 +507,13 @@ function categorizeVehicle(item, vehicles) {
 }
 
 function categorizeFinancial(item, financial) {
-  const t = item?.Properties?.Type?.toLowerCase?.() || '';
-  const n = (item?.Name || '').toLowerCase();
-
-  if (t === 'deed' || n.includes('deed')) financial.estate_deeds.push(item);
-  else if (t === 'token' || n.includes('token')) financial.tokens.push(item);
-  else if (n.includes('share')) financial.shares.push(item);
+  const t = (item?.Properties?.Type || '').toLowerCase();
+  if (t === 'deed') financial.estate_deeds.push(item);
+  else if (t === 'token') financial.tokens.push(item);
+  else if (t === 'share') financial.shares.push(item);
 }
 
 function isFinancialItem(item) {
-  try {
-    const t = item?.Properties?.Type?.toLowerCase?.() || '';
-    const n = item?.Name?.toLowerCase?.() || '';
-  // Only route likely financial items; refined mapping happens in categorizeFinancial
-  if (t.includes('share') || t.includes('deed') || t.includes('token')) return true;
-  if (n.includes('share') || n.includes('deed') || n.includes('token')) return true;
-  return false;
-  } catch { return false; }
+  const t = (item?.Properties?.Type || '').toLowerCase();
+  return t === 'deed' || t === 'token' || t === 'share';
 }

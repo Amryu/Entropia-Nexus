@@ -271,6 +271,7 @@
           Name: item?.Name || order.details?.item_name || '',
           Type: item?.Properties?.Type || item?.Type || null,
           MaxTT: getMaxTT(item),
+          st: slimItem?.st ?? null,
         },
         Planet: order.planet || 'Calypso',
         Quantity: order.quantity || 1,
@@ -450,6 +451,7 @@
             Name: item?.Name || existingOrder.details?.item_name || '',
             Type: itemType,
             MaxTT: maxTT,
+            st: slimItem?.st ?? null,
           },
           Planet: existingOrder.planet || invItem.container || 'Calypso',
           Quantity: existingOrder.quantity || 1,
@@ -478,6 +480,7 @@
             Type: itemType,
             MaxTT: maxTT,
             Id: invItem.item_id,
+            st: slimItem?.st ?? null,
           },
           Planet: invItem.container || 'Calypso',
           Quantity: invItem.quantity || 1,
@@ -1573,6 +1576,8 @@
     if (getMaxTT(item) == null && selectedItem?.v != null) {
       item.MaxTT = selectedItem.v;
     }
+    // Carry material sub-type (Deed/Token/Share) from slim item for markup detection
+    if (selectedItem?.st) item.st = selectedItem.st;
 
     setTimeout(() => {
       orderDialogRef?.initOrder(item, type, 'create');

@@ -221,15 +221,15 @@ test.describe('Exchange Orders - Bump Rate Limit', () => {
 // ─── Side-Specific Order Caps ────────────────────────────────────
 
 test.describe('Exchange Orders - Side Caps', () => {
-  test('buy order cap error message mentions 50 limit', async ({ verifiedUser }) => {
-    // We can't actually create 50 orders in a test, but we can verify the
+  test('buy order cap error message mentions 1000 limit', async ({ verifiedUser }) => {
+    // We can't actually create 1000 orders in a test, but we can verify the
     // cap is correctly referenced. Create a buy order to confirm it works.
     const res = await createOrder(verifiedUser, {
       type: 'BUY',
       item_id: 1000009,
       markup: 110,
     });
-    // Should succeed (we're well under 50)
+    // Should succeed (we're well under 1000)
     expect(res.status()).toBe(201);
   });
 });
