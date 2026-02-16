@@ -24,7 +24,7 @@ export async function execute(interaction) {
   const userId = interaction.user.id;
   if (userId !== tradeRequest.target_id.toString()) {
     return interaction.reply({
-      content: 'Only the offer owner (the person receiving the trade request) can close this thread.',
+      content: 'Only the order owner (the person receiving the trade request) can close this thread.',
       flags: 64
     });
   }
@@ -32,7 +32,7 @@ export async function execute(interaction) {
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId(`trade_done_yes_${tradeRequest.id}`)
-      .setLabel('Adjust offer quantities')
+      .setLabel('Adjust order quantities')
       .setStyle(ButtonStyle.Success),
     new ButtonBuilder()
       .setCustomId(`trade_done_no_${tradeRequest.id}`)
@@ -45,7 +45,7 @@ export async function execute(interaction) {
   );
 
   await interaction.reply({
-    content: '**Close Trade Thread** — Should the offer quantities be adjusted to reflect traded amounts?',
+    content: '**Close Trade Thread** — Should the order quantities be adjusted to reflect traded amounts?',
     components: [row],
     flags: 64
   });

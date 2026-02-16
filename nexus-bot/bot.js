@@ -212,9 +212,9 @@ client.on(Events.InteractionCreate, async interaction => {
           const closed = adjustments.filter(a => a.closed);
           const reduced = adjustments.filter(a => !a.closed);
           const parts = [];
-          if (reduced.length > 0) parts.push(`${reduced.length} offer(s) adjusted`);
-          if (closed.length > 0) parts.push(`${closed.length} offer(s) closed (quantity depleted)`);
-          summary = parts.length > 0 ? `\n${parts.join(', ')}.` : '\nNo offers needed adjustment.';
+          if (reduced.length > 0) parts.push(`${reduced.length} order(s) adjusted`);
+          if (closed.length > 0) parts.push(`${closed.length} order(s) closed (quantity depleted)`);
+          summary = parts.length > 0 ? `\n${parts.join(', ')}.` : '\nNo orders needed adjustment.';
         }
 
         publicMsg = `\ud83d\udd12 **Thread Closed** — This trade thread has been closed by <@${interaction.user.id}>. Thread will be locked and archived.`;
@@ -1041,7 +1041,7 @@ setInterval(() => runScheduled('checkChanges', checkChanges), 1 * 15 * 1000);
 setInterval(() => runScheduled('checkFlights', checkFlights), 30 * 1000);
 setInterval(() => runScheduled('checkRescheduleNotifications', checkRescheduleNotifications), 30 * 1000);
 setInterval(() => runScheduled('checkRentalDmNotifications', checkRentalDmNotifications), 30 * 1000);
-setInterval(() => runScheduled('checkTradeRequests', checkTradeRequests), 30 * 1000);
+setInterval(() => runScheduled('checkTradeRequests', checkTradeRequests), 15 * 1000);
 setInterval(() => runScheduled('syncReviewerRole', syncReviewerRole), 5 * 60 * 1000);
 setInterval(() => runScheduled('checkAuctions', () => checkAuctions(client, config)), 30 * 1000);
 setInterval(() => runScheduled('refreshAuctionColors', () => refreshAuctionColors(client, config)), 5 * 60 * 1000);

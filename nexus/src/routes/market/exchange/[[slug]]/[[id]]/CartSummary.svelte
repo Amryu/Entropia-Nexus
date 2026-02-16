@@ -105,7 +105,7 @@
     checkingOut = false;
 
     if (created > 0) {
-      checkoutResult = `Created ${created} trade request${created !== 1 ? 's' : ''}${failed > 0 ? `, ${failed} failed` : ''}`;
+      checkoutResult = `Created ${created} trade request${created !== 1 ? 's' : ''}${failed > 0 ? `, ${failed} failed` : ''} — a Discord thread will be opened shortly.`;
       clearTradeList();
     } else if (failed > 0) {
       checkoutError = `Failed to create trade requests. Make sure you have the market.trade permission.`;

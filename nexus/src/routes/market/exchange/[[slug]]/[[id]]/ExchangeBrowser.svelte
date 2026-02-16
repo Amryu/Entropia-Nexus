@@ -2057,7 +2057,7 @@
         throw new Error(data.error || 'Failed to create trade request');
       }
       closeQuickTrade();
-      // Open trades tab so user can see the new request
+      addToast('Trade request created — a Discord thread will be opened shortly.', { type: 'success', duration: 8000 });
       goto('/market/exchange/trades');
     } catch (err) {
       console.error('Trade request error:', err);
@@ -2097,6 +2097,7 @@
     }
     if (created > 0) {
       showBulkTradeDialog = false;
+      addToast(`Created ${created} trade request${created !== 1 ? 's' : ''} — a Discord thread will be opened shortly.`, { type: 'success', duration: 8000 });
       goto('/market/exchange/trades');
     }
   }
