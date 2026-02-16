@@ -21,6 +21,8 @@
   import InlineEdit from '$lib/components/wiki/InlineEdit.svelte';
   import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
   import PetEffectsEditor from '$lib/components/wiki/PetEffectsEditor.svelte';
+  import Acquisition from '$lib/components/wiki/Acquisition.svelte';
+  import Usage from '$lib/components/wiki/Usage.svelte';
 
   // Wiki edit state
   import {
@@ -205,7 +207,9 @@
 
   // ========== PANEL STATE PERSISTENCE ==========
   let panelStates = {
-    skills: true
+    skills: true,
+    acquisition: true,
+    usage: true
   };
 
   onMount(() => {
@@ -489,6 +493,30 @@
               fieldName="Effects"
               availableEffects={effectsList}
             />
+          </DataSection>
+        {/if}
+
+        <!-- Acquisition Section -->
+        {#if additional.acquisition}
+          <DataSection
+            title="Acquisition"
+            icon=""
+            bind:expanded={panelStates.acquisition}
+            on:toggle={savePanelStates}
+          >
+            <Acquisition acquisition={additional.acquisition} />
+          </DataSection>
+        {/if}
+
+        <!-- Usage Section -->
+        {#if additional.usage}
+          <DataSection
+            title="Usage"
+            icon=""
+            bind:expanded={panelStates.usage}
+            on:toggle={savePanelStates}
+          >
+            <Usage usage={additional.usage} item={activeEntity} />
           </DataSection>
         {/if}
       </article>

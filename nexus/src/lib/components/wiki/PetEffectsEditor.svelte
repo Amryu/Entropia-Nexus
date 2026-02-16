@@ -587,7 +587,7 @@
 
   /* View mode styles */
   .effects-table-wrapper {
-    height: 320px;
+    max-height: 320px;
     border: 1px solid var(--border-color, #555);
     border-radius: 6px;
     overflow: hidden;
@@ -627,7 +627,7 @@
     }
 
     .effects-table-wrapper {
-      height: 260px;
+      max-height: 260px;
     }
   }
 </style>
