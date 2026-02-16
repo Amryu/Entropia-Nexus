@@ -250,8 +250,8 @@
     }
   }
 
-  async function loadOrders() {
-    if (!user || $myOrders.length > 0) return;
+  async function loadOrders(force = false) {
+    if (!user || (!force && $myOrders.length > 0)) return;
     try {
       const res = await fetch('/api/market/exchange/orders');
       if (!res.ok) return;
@@ -325,6 +325,7 @@
 
   export function refresh() {
     loadInventory();
+    loadOrders(true);
   }
 
   export function clearMassSell() {
