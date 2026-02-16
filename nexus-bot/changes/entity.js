@@ -717,7 +717,7 @@ export const UpsertConfigs = {
         if (x.Species?._newSpecies && x.Species?.Name) {
           const ns = x.Species._newSpecies;
           await c.query(
-            `INSERT INTO ONLY "MobSpecies" ("Name", "CodexBaseCost", "CodexType")
+            `INSERT INTO "MobSpecies" ("Name", "CodexBaseCost", "CodexType")
              VALUES ($1, $2, $3)
              ON CONFLICT ("Name") DO UPDATE SET
                "CodexBaseCost" = COALESCE(EXCLUDED."CodexBaseCost", "MobSpecies"."CodexBaseCost"),
@@ -1512,7 +1512,7 @@ async function upsertNewEffects(client, effects) {
     if (!effect._newEffect || !effect.Name) continue;
     const { CanonicalName, Unit, IsPositive, Description } = effect._newEffect;
     await client.query(
-      `INSERT INTO ONLY "Effects" ("Name", "CanonicalName", "Unit", "IsPositive", "Description")
+      `INSERT INTO "Effects" ("Name", "CanonicalName", "Unit", "IsPositive", "Description")
        VALUES ($1, $2, $3, $4, $5)
        ON CONFLICT ("Name") DO UPDATE SET
          "CanonicalName" = COALESCE(EXCLUDED."CanonicalName", "Effects"."CanonicalName"),
