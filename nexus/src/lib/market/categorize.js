@@ -139,7 +139,14 @@ export function categorizeItems(items, {
 
   (enhancers || []).forEach(e => categorizeEnhancer(e, categorized.enhancers));
   (blueprints || []).forEach(b => categorizeBlueprint(b, categorized.blueprints));
-  (materials || []).forEach(m => categorizeMaterial(m, categorized.materials));
+  (materials || []).forEach(m => {
+    const mt = m?.Properties?.Type?.toLowerCase?.() || '';
+    if (mt === 'deed' || mt === 'token') {
+      categorizeFinancial(m, categorized.financial);
+    } else {
+      categorizeMaterial(m, categorized.materials);
+    }
+  });
   (vehicles || []).forEach(v => categorizeVehicle(v, categorized.vehicles));
 
   (strongboxes || []).forEach(s => categorized.strongboxes.push(s));

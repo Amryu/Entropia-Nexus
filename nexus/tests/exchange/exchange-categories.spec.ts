@@ -93,6 +93,30 @@ test.describe('Exchange categories and markup types', () => {
     }
   });
 
+  test('Deeds and Tokens are NOT in materials category', async ({ page }) => {
+    const response = await page.request.get(EXCHANGE_API);
+    expect(response.ok()).toBe(true);
+    const data = await response.json();
+
+    const materialItems = collectItems(data.materials);
+    const misplaced = materialItems.filter((item) =>
+      item?.st === 'Deed' || item?.st === 'Token' ||
+      item?.t === 'Deed' || item?.t === 'Token'
+    );
+    expect(misplaced).toHaveLength(0);
+  });
+
+  test('Deeds and Tokens exist in financial category', async ({ page }) => {
+    const response = await page.request.get(EXCHANGE_API);
+    expect(response.ok()).toBe(true);
+    const data = await response.json();
+
+    const financialItems = collectItems(data.financial);
+    const deeds = financialItems.filter((item) => item?.st === 'Deed');
+    const tokens = financialItems.filter((item) => item?.st === 'Token');
+    expect(deeds.length + tokens.length).toBeGreaterThan(0);
+  });
+
   test('Deed order creation accepts low markup (absolute)', async ({ verifiedUser }) => {
     const summaryRes = await verifiedUser.request.get(EXCHANGE_API);
     expect(summaryRes.ok()).toBe(true);
