@@ -887,7 +887,7 @@ export async function getPendingCheckinsDmNotify() {
       AND c.added_to_thread = false
       AND fi.discord_thread_id IS NULL
       AND std.discord_code IS NOT NULL AND std.discord_code != ''
-    ORDER BY c.created_at ASC
+    ORDER BY c.checked_in_at ASC
   `;
   return (await poolUsers.query(query)).rows;
 }
