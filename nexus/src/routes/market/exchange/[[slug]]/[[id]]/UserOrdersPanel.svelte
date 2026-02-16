@@ -111,8 +111,7 @@
           const mu = row?.markup != null ? Number(row.markup) : null;
           const unitPrice = computeUnitPrice(item, mu, row);
           if (unitPrice == null) return 'N/A';
-          const qty = row?.quantity ?? 1;
-          return formatPedValue(unitPrice * qty);
+          return formatPedValue(unitPrice);
         }
       },
       { key: 'planet', header: 'Planet', width: '80px', sortable: true, searchable: false, hideOnMobile: true },
