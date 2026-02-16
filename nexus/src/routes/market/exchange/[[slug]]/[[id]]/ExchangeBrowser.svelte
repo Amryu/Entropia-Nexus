@@ -955,7 +955,7 @@
       formatter: (v, row) => {
         const s = row._item?.s || 0;
         const b = row._item?.b || 0;
-        return `<span class="split-cell"><span class="split-l" style="color:var(--error-color)">${s}</span><span class="split-sep">/</span><span class="split-r" style="color:var(--success-color)">${b}</span></span>`;
+        return `<span class="split-cell"><span class="split-l" style="color:var(--error-color)${s === 0 ? ';opacity:0.3' : ''}">${s}</span><span class="split-sep">/</span><span class="split-r" style="color:var(--success-color)${b === 0 ? ';opacity:0.3' : ''}">${b}</span></span>`;
       }
     },
     { key: 'volume', header: 'Volume', width: '120px', sortable: true, searchable: false, hideOnMobile: true,
@@ -969,7 +969,7 @@
       formatter: (v, row) => {
         const sv = row._item?.sv || 0;
         const bv = row._item?.bv || 0;
-        return `<span class="split-cell"><span class="split-l" style="color:var(--error-color)">${sv}</span><span class="split-sep">/</span><span class="split-r" style="color:var(--success-color)">${bv}</span></span>`;
+        return `<span class="split-cell"><span class="split-l" style="color:var(--error-color)${sv === 0 ? ';opacity:0.3' : ''}">${sv}</span><span class="split-sep">/</span><span class="split-r" style="color:var(--success-color)${bv === 0 ? ';opacity:0.3' : ''}">${bv}</span></span>`;
       }
     },
     { key: 'lastUpdate', header: 'Updated', width: '100px', sortable: true, searchable: false, hideOnMobile: true,
