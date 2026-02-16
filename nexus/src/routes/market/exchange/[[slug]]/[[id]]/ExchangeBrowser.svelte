@@ -572,11 +572,28 @@
       if (res.ok) {
         const json = await res.json();
         categorizedItems = json || {};
+        // After data loads, apply pending category from market overview
+        applyPendingCategory();
       }
     } finally {
       initialLoading = false;
     }
   }
+
+  // Apply a pending category selection stored in sessionStorage (from market overview)
+  function applyPendingCategory() {
+    if (typeof sessionStorage === 'undefined') return;
+    const key = sessionStorage.getItem('exchangeCategory');
+    if (!key) return;
+    sessionStorage.removeItem('exchangeCategory');
+    if (!(key in categorizedItems)) return;
+    const displayPath = formatCategoryName(key);
+    const items = gatherItemsAtPath(categorizedItems, [key]);
+    selectedCategory = displayPath;
+    selectedCategoryRawPath = [key];
+    selectedItems = items;
+  }
+
   // State for category tree and route-driven selection
   let categorizedItems = {};
   let initialLoading = false;
@@ -645,7 +662,12 @@
         return { path: keys, value: node };
       }
 
-      // Legacy: single name lookup (leaf name)
+      // Direct raw key lookup at root level (exact match, case-sensitive)
+      if (decoded in categorizedItems) {
+        return { path: [decoded], value: categorizedItems[decoded] };
+      }
+
+      // Legacy: display name lookup (leaf name)
       return findCategoryByName(categorizedItems, decoded);
     } catch { return null; }
   })();
@@ -2146,7 +2168,7 @@
         <div class="category-scroll">
           <CategoryTree
             categories={categoriesWithAll}
-            onSelectCategory={(path, items) => { handleCategorySelect(path, items); mobileSidebarOpen = false; }}
+            onSelectCategory={(path, items, rawPath) => { handleCategorySelect(path, items, rawPath); mobileSidebarOpen = false; }}
             selectedPath={selectedCategory}
           />
         </div>

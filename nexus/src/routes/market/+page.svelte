@@ -122,6 +122,7 @@
             href="/market/exchange/{category.key}"
             class="category-card"
             class:category-empty={category.activeCount === 0}
+            on:click={() => typeof sessionStorage !== 'undefined' && sessionStorage.setItem('exchangeCategory', category.key)}
           >
             <span class="category-name">{category.name}</span>
             <span class="category-count">{formatCount(category.activeCount)} {category.activeCount === 1 ? 'item' : 'items'}</span>
