@@ -18,6 +18,14 @@ if (import.meta.env.SSR) {
   const discord = await import('$lib/server/discord');
   getUserInfo = discord.getUserInfo;
   handleRefresh = discord.handleRefresh;
+
+  // Periodically end expired auctions so they don't depend on API traffic
+  const { endExpiredAuctions } = await import('$lib/server/auction.js');
+  const AUCTION_EXPIRY_INTERVAL_MS = 60_000; // 1 minute
+  endExpiredAuctions().catch(err => console.error('[auction] Error ending expired auctions:', err));
+  setInterval(() => {
+    endExpiredAuctions().catch(err => console.error('[auction] Error ending expired auctions:', err));
+  }, AUCTION_EXPIRY_INTERVAL_MS).unref();
 }
 
 const IMPERSONATE_COOKIE = 'nexus_impersonate';

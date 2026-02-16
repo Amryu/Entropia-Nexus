@@ -1444,7 +1444,7 @@ Available on the auction detail page for admin users:
 | `placeBid(id, bidderId, amount)` | Transactional bid with `FOR UPDATE` lock |
 | `buyoutAuction(id, buyerId)` | Immediate buyout, calculates fee |
 | `settleAuction(id, userId)` | Seller confirms, marks winning bid |
-| `endExpiredAuctions()` | Debounced (30s), ends auctions past `ends_at` |
+| `endExpiredAuctions()` | Scheduled (60s interval) + on-demand, ends auctions past `ends_at` |
 | `freezeAuction(id, adminId, reason)` | Records `frozen_at` |
 | `unfreezeAuction(id, adminId, reason)` | Extends end by frozen duration |
 | `adminCancelAuction(id, adminId, reason)` | Force cancel, rolls back all bids |
@@ -1456,11 +1456,13 @@ Available on the auction detail page for admin users:
 
 #### Auction End Processing
 
-`endExpiredAuctions()` is called on-demand (not scheduled). Triggered by:
+`endExpiredAuctions()` runs on a 60-second `setInterval` started in `hooks.server.js` at server boot, plus on-demand when these API routes are accessed:
 - `GET /api/auction/[id]` — single auction detail load
 - `GET /api/auction/my` — user dashboard load
 
 Debounced to run at most once per 30 seconds. Finds all active auctions with `ends_at < NOW()`, sets status to `ended`, calculates fee, and logs the `ended` audit action.
+
+A partial unique index (`idx_auction_bids_one_active`) enforces at most one `active` bid per auction at the database level.
 
 ### Database Tables (nexus-users)
 
