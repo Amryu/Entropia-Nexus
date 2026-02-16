@@ -725,13 +725,14 @@ export async function handlePageLoad(fetch, items, config) {
     ? await apiCall(fetch, `/api/market/exchange/orders/item/${exchangeItemId}`)
     : null;
 
+  // Shared markup-type info for exchange order formatting
+  const entityType = isMultiType ? config.type : (ENDPOINT_ENTITY_TYPE[endpoint] || config.type);
+  const exItemName = object?.Name || '';
+  const exSubType = object?.Properties?.Type;
+  const isPercent = isPercentMarkupType(entityType, exItemName, exSubType);
+
   if (exchangeOrders?.sell?.length > 0 && acquisition) {
-    // Use entity type (from config) rather than Properties.Type (which is a subtype like "BLP", "Natural Materials")
-    const entityType = isMultiType ? config.type : (ENDPOINT_ENTITY_TYPE[endpoint] || config.type);
-    const itemName = object?.Name || '';
-    const subType = object?.Properties?.Type;
-    const isPercent = isPercentMarkupType(entityType, itemName, subType);
-    const isBpNonL = entityType === 'Blueprint' && !hasItemTag(itemName, 'L');
+    const isBpNonL = entityType === 'Blueprint' && !hasItemTag(exItemName, 'L');
     const maxTT = object?.Properties?.Economy?.MaxTT ?? object?.Value ?? null;
 
     acquisition.ExchangeOrders = exchangeOrders.sell
@@ -763,6 +764,23 @@ export async function handlePageLoad(fetch, items, config) {
         };
       });
     acquisition._exchangeItemId = exchangeItemId;
+  }
+
+  if (exchangeOrders?.buy?.length > 0 && usage) {
+    usage.ExchangeBuyOrders = exchangeOrders.buy
+      .filter(o => o.computed_state === 'active' || o.computed_state === 'stale')
+      .map(o => {
+        const mu = Number(o.markup);
+        return {
+          buyer_name: o.seller_name || 'Anonymous',
+          markup: mu,
+          formattedMarkup: isPercent ? `${mu.toFixed(2)}%` : `+${mu.toFixed(2)}`,
+          quantity: o.quantity,
+          planet: o.planet || 'Any',
+          state: o.computed_state
+        };
+      });
+    usage._exchangeItemId = exchangeItemId;
   }
 
   return { items: items, response: pageResponse(items, object, { type: config.type, tierInfo, acquisition, usage }) };

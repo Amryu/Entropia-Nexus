@@ -2,6 +2,7 @@
   // @ts-nocheck
   import '$lib/style.css';
 
+  import { goto } from '$app/navigation';
   import { getItemLink, getTypeLink } from '$lib/util';
   import { editMode } from '$lib/stores/wikiEditState.js';
 
@@ -69,8 +70,50 @@
     { key: 'amount', header: 'Amount' }
   ];
 
+  // Build market data from exchange buy orders
+  $: marketData = (() => {
+    if (!usage?.ExchangeBuyOrders?.length) return [];
+    // Deduplicate by buyer — keep highest bid
+    const bestByBuyer = new Map();
+    for (const order of usage.ExchangeBuyOrders) {
+      const key = order.buyer_name;
+      if (!bestByBuyer.has(key) || order.markup > bestByBuyer.get(key).markup) {
+        bestByBuyer.set(key, order);
+      }
+    }
+    const exchangeItemId = usage._exchangeItemId;
+    const rows = [];
+    for (const order of bestByBuyer.values()) {
+      rows.push({
+        name: order.buyer_name,
+        markup: order.formattedMarkup,
+        markupRaw: order.markup,
+        quantity: order.quantity,
+        planet: order.planet,
+        stale: order.state === 'stale',
+        rowLink: exchangeItemId ? `/market/exchange/listings/${exchangeItemId}` : null
+      });
+    }
+    return rows;
+  })();
+
+  $: hasMarketData = marketData.length > 0;
+
+  $: marketColumns = [
+    { key: 'name', header: 'Name', main: true, formatter: (v, row) => row.stale ? `<span class="stale-text">${v}</span>` : v },
+    { key: 'markup', header: 'Markup', sortValue: (row) => row.markupRaw, formatter: (v, row) => row.stale ? `<span class="stale-text">${v}</span>` : v },
+    { key: 'quantity', header: 'Qty' },
+    { key: 'planet', header: 'Planet' }
+  ];
+
+  function handleMarketRowClick(e) {
+    const { row } = e.detail;
+    if (row.rowLink) goto(row.rowLink);
+  }
+
   // Check if there's any usage data
   $: hasUsageData = usage != null && (
+    hasMarketData ||
     (usage.Blueprints?.length > 0) ||
     (usage.RefiningRecipes?.length > 0) ||
     (usage.Missions?.length > 0) ||
@@ -165,6 +208,15 @@
     cursor: default;
   }
 
+  /* Market rows are clickable */
+  :global(.market-section .table-row) {
+    cursor: pointer;
+  }
+
+  :global(.usage-container .stale-text) {
+    color: var(--text-muted, #999);
+  }
+
   @media (max-width: 899px) {
     .usage-grid {
       grid-template-columns: 1fr;
@@ -190,6 +242,23 @@
 {:else}
   <div class="usage-container">
     <div class="usage-grid">
+      {#if hasMarketData}
+        <div class="usage-section market-section">
+          <h4 class="section-title">Market</h4>
+          <FancyTable
+            columns={marketColumns}
+            data={marketData}
+            rowHeight={32}
+            searchable={true}
+            sortable={true}
+            compact
+            defaultSort={{ column: 'markup', order: 'DESC' }}
+            emptyMessage="No buy orders"
+            on:rowClick={handleMarketRowClick}
+          />
+        </div>
+      {/if}
+
       {#if usage.Blueprints && usage.Blueprints.length > 0}
         <div class="usage-section">
           <h4 class="section-title">Blueprints</h4>
