@@ -15,10 +15,10 @@ export const STACKABLE_TYPES = new Set([
 /** Types that have condition (can be damaged, have CurrentTT) */
 export const CONDITION_TYPES = new Set([
   'Weapon', 'Armor', 'ArmorPlating', 'ArmorSet', 'Vehicle',
-  'WeaponAmplifier', 'WeaponVisionAttachment',
+  'WeaponAmplifier', 'WeaponVisionAttachment', 'Absorber',
   'Finder', 'FinderAmplifier', 'Excavator', 'Refiner', 'Scanner',
   'TeleportationChip', 'EffectChip', 'MedicalChip',
-  'MiscTool', 'MedicalTool', 'MindforceImplant', 'Pet',
+  'MiscTool', 'MedicalTool', 'MindforceImplant', 'Pet', 'Clothing',
 ]);
 
 /** ID offset for pet items (Items.Id = Pets.Id + PET_ID_OFFSET) */
