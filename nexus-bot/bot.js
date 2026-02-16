@@ -1069,6 +1069,7 @@ async function checkTradeRequests() {
 
   // 1. Create threads for pending trade requests
   const pending = await getPendingTradeRequests();
+  const newlyCreatedIds = new Set();
   for (const req of pending) {
     try {
       const items = await getTradeRequestItems(req.id);
@@ -1105,15 +1106,17 @@ async function checkTradeRequests() {
         console.error(`Failed to add target to trade thread: ${e.message}`);
       }
 
+      newlyCreatedIds.add(req.id);
       console.log(`Created trade thread for request #${req.id}: ${thread.name}`);
     } catch (e) {
       console.error(`Error creating trade thread for request #${req.id}:`, e);
     }
   }
 
-  // 2. Announce new items added to existing active trade threads
+  // 2. Announce new items added to existing active trade threads (skip newly created ones — those items were already in the initial message)
   const requestsWithNewItems = await getActiveTradeRequestsWithNewItems(lastTradeItemCheck);
   for (const req of requestsWithNewItems) {
+    if (newlyCreatedIds.has(req.id)) continue;
     try {
       const newItems = await getNewTradeRequestItems(req.id, lastTradeItemCheck);
       if (newItems.length === 0) continue;
