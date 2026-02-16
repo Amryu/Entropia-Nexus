@@ -248,7 +248,7 @@ export function getItemLink(item, subtype = null) {
   return getTypeLink(name, type, subtype);
 }
 
-export function getTypeLink(name, type, subType = null) {
+export function getTypeLink(name, type, subType = null, id = null) {
   switch (type) {
     case 'Weapon':
       return `/items/weapons/${encodeURIComponentSafe(name)}`;
@@ -312,9 +312,8 @@ export function getTypeLink(name, type, subType = null) {
     case 'Mob':
       return `/information/mobs/${encodeURIComponentSafe(name)}`;
     case 'Location':
-      return `/maps/${getMainPlanetName(subType).replace(/[^0-9a-zA-Z]/g, '').toLowerCase()}/${encodeURIComponentSafe(name)}`;
     case 'Area':
-      return `/maps/${getMainPlanetName(subType).replace(/[^0-9a-zA-Z]/g, '').toLowerCase()}/${encodeURIComponentSafe(name)}`;
+      return `/maps/${getMainPlanetName(subType).replace(/[^0-9a-zA-Z]/g, '').toLowerCase()}/${id != null ? id : encodeURIComponentSafe(name)}`;
     case 'Skill':
       return `/information/skills/${encodeURIComponentSafe(name)}`;
     case 'Profession':

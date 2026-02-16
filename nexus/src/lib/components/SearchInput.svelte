@@ -124,6 +124,15 @@
     return orderedCategories;
   }
 
+  // Search API ID offsets for non-item entity types
+  const SEARCH_ID_OFFSETS = { Location: 8_000_000_000, Vendor: 5_000_000_000 };
+
+  /** Compute the raw entity ID by stripping the search API offset */
+  function getRawId(result) {
+    const offset = SEARCH_ID_OFFSETS[result.Type];
+    return offset ? result.Id - offset : null;
+  }
+
   // Build flat list for keyboard navigation
   $: categorizedResults = categorizeResults(searchResults);
   $: {
@@ -133,7 +142,7 @@
         flatResults.push({
           ...result,
           _category: category,
-          _url: getTypeLink(result.Name, result.Type, result.SubType)
+          _url: getTypeLink(result.Name, result.Type, result.SubType, getRawId(result))
         });
       }
     }
@@ -252,7 +261,7 @@
       name: result.Name,
       type: result.Type,
       subType: result.SubType,
-      url: result._url || getTypeLink(result.Name, result.Type, result.SubType)
+      url: result._url || getTypeLink(result.Name, result.Type, result.SubType, getRawId(result))
     });
     closeResults();
   }
@@ -350,7 +359,7 @@
           <div class="search-category">{category}</div>
           {#each categorizedResults[category] as result, i}
             {@const globalIndex = flatResults.findIndex(r => r.Id === result.Id)}
-            {@const resultUrl = getTypeLink(result.Name, result.Type, result.SubType)}
+            {@const resultUrl = getTypeLink(result.Name, result.Type, result.SubType, getRawId(result))}
             <a
               href={resultUrl}
               class="search-result-item"

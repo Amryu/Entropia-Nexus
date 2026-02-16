@@ -281,9 +281,9 @@ async function search(query, fuzzy = false){
   if (locationsExist) {
     optionalUnions += `
         UNION ALL
-        SELECT "Locations"."Id" + 8000000000 AS "Id", "Locations"."Name" AS "Name", 'Location' AS "Type", "Locations"."Type"::text AS "SubType", NULL AS "Gender", FALSE AS "_prefiltered", NULL AS "MatchedName"
+        SELECT "Locations"."Id" + 8000000000 AS "Id", "Locations"."Name" AS "Name", 'Location' AS "Type", "Planets"."Name" AS "SubType", NULL AS "Gender", FALSE AS "_prefiltered", NULL AS "MatchedName"
         FROM ONLY "Locations"
-        LEFT JOIN ONLY "Planets" ON "Locations"."PlanetId" = "Planets"."Id"
+        INNER JOIN ONLY "Planets" ON "Locations"."PlanetId" = "Planets"."Id"
         WHERE "Locations"."Type" != 'Vendor'`;
   }
 
