@@ -713,25 +713,19 @@ export async function handlePageLoad(fetch, items, config) {
   }
 
   // Fetch and attach exchange sell orders to acquisition data
-  // Mapping from API endpoint to entity type for ItemId fallback and markup classification
-  const ENDPOINT_ENTITY_TYPE = {
-    materials: 'Material', weapons: 'Weapon', vehicles: 'Vehicle',
-    pets: 'Pet', clothings: 'Clothing', strongboxes: 'Strongbox', blueprints: 'Blueprint'
-  };
+  const objType = object?.Properties?.Type; // Canonical entity type (e.g., 'Absorber', 'Weapon', 'Material')
   const exchangeItemId = itemId || object?.ItemId
-    || (object?.Id != null && ENDPOINT_ENTITY_TYPE[endpoint] ? object.Id + TYPE_ID_OFFSETS[ENDPOINT_ENTITY_TYPE[endpoint]] : null);
+    || (object?.Id != null && objType && TYPE_ID_OFFSETS[objType] != null ? object.Id + TYPE_ID_OFFSETS[objType] : null);
   const exchangeOrders = (config.isItem && !config.isArmorSet && exchangeItemId)
     ? await apiCall(fetch, `/api/market/exchange/orders/item/${exchangeItemId}`)
     : null;
 
   // Shared markup-type info for exchange order formatting
-  const entityType = isMultiType ? config.type : (ENDPOINT_ENTITY_TYPE[endpoint] || config.type);
   const exItemName = object?.Name || '';
-  const exSubType = object?.Properties?.Type;
-  const isPercent = isPercentMarkupType(entityType, exItemName, exSubType);
+  const isPercent = isPercentMarkupType(objType || '', exItemName, objType);
 
   if (exchangeOrders?.sell?.length > 0 && acquisition) {
-    const isBpNonL = entityType === 'Blueprint' && !hasItemTag(exItemName, 'L');
+    const isBpNonL = objType === 'Blueprint' && !hasItemTag(exItemName, 'L');
     const maxTT = object?.Properties?.Economy?.MaxTT ?? object?.Value ?? null;
 
     acquisition.ExchangeOrders = exchangeOrders.sell
