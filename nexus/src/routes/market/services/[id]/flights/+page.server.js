@@ -17,7 +17,7 @@ export async function load({ fetch, params, locals, url }) {
     throw error(404, 'Service not found');
   }
 
-  if (service.user_id !== user.id && !user?.grants?.includes('admin.panel')) {
+  if (service.user_id !== user.id && service.owner_user_id !== user.id && !user?.grants?.includes('admin.panel')) {
     throw error(403, 'You can only manage flights for your own services');
   }
 

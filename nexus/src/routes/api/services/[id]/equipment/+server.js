@@ -51,7 +51,7 @@ export async function POST({ params, request, locals }) {
   if (!service) {
     return getResponse({ error: 'Service not found.' }, 404);
   }
-  if (service.user_id !== user.id && !user?.grants?.includes('admin.panel')) {
+  if (service.user_id !== user.id && service.owner_user_id !== user.id && !user?.grants?.includes('admin.panel')) {
     return getResponse({ error: 'You can only edit your own services.' }, 403);
   }
 
@@ -101,7 +101,7 @@ export async function PUT({ params, request, locals }) {
   if (!service) {
     return getResponse({ error: 'Service not found.' }, 404);
   }
-  if (service.user_id !== user.id && !user?.grants?.includes('admin.panel')) {
+  if (service.user_id !== user.id && service.owner_user_id !== user.id && !user?.grants?.includes('admin.panel')) {
     return getResponse({ error: 'You can only edit your own services.' }, 403);
   }
 

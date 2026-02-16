@@ -68,6 +68,10 @@
   let differentOwner = !!(data.service?.owner_display_name || data.service?.owner_user_id);
   let ownerDisplayName = data.service?.owner_display_name || '';
 
+  // Pickup (transportation)
+  let allowsPickup = data.service?.transportation_details?.allows_pickup || false;
+  let pickupFee = data.service?.transportation_details?.pickup_fee || '';
+
   // Discord code (warp services only)
   let discordCode = data.service?.transportation_details?.discord_code || '';
 
@@ -169,6 +173,8 @@
         transportation_type: transportationType,
         ship_name: shipName || null,
         service_mode: serviceMode,
+        allows_pickup: allowsPickup,
+        pickup_fee: allowsPickup && pickupFee ? parseFloat(pickupFee) : null,
         discord_code: (transportationType === 'warp_equus' || transportationType === 'warp_privateer') ? (discordCode.trim() || null) : null
       };
       payload.owner_display_name = differentOwner && ownerDisplayName.trim() ? ownerDisplayName.trim() : null;
@@ -407,6 +413,22 @@
             <small>Regular and Equus transportation is on-demand only.</small>
           {/if}
         </div>
+
+        <div class="form-group checkbox-group">
+          <label>
+            <input type="checkbox" bind:checked={allowsPickup} />
+            Allow pickup requests
+          </label>
+          <small>Let customers request pickup from a custom location (incurs an additional jump).</small>
+        </div>
+
+        {#if allowsPickup}
+          <div class="form-group">
+            <label for="pickupFee">Pickup Fee (PED)</label>
+            <input type="number" id="pickupFee" bind:value={pickupFee} min="0" step="0.01" placeholder="0.00" />
+            <small>Flat fee charged per pickup request. Leave empty for no additional charge.</small>
+          </div>
+        {/if}
 
         <div class="form-group checkbox-group">
           <label>

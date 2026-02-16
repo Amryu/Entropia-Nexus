@@ -5,6 +5,7 @@ import {
   extendTicketUses,
   extendTicketValidity,
   reactivateExpiredTicket,
+  cancelTicket,
   canManageService
 } from "$lib/server/db.js";
 import { getResponse } from "$lib/util.js";
@@ -94,8 +95,20 @@ export async function POST({ params, request, locals }) {
         }, 200);
       }
 
+      case 'cancel': {
+        if (ticket.status === 'cancelled') {
+          return getResponse({ error: 'This ticket is already cancelled.' }, 400);
+        }
+
+        const cancelledTicket = await cancelTicket(ticketId);
+        return getResponse({
+          ...cancelledTicket,
+          message: 'Ticket cancelled successfully.'
+        }, 200);
+      }
+
       default:
-        return getResponse({ error: 'Invalid action. Valid actions: extend_uses, extend_validity, reactivate' }, 400);
+        return getResponse({ error: 'Invalid action. Valid actions: extend_uses, extend_validity, reactivate, cancel' }, 400);
     }
   } catch (error) {
     console.error('Error extending ticket:', error);

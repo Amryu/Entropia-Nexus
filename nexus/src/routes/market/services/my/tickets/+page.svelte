@@ -77,6 +77,34 @@
     error = '';
   }
 
+  async function handleCancelTicket() {
+    if (!selectedTicket) return;
+    if (!confirm('Are you sure you want to cancel this ticket? This action is permanent. Coordinate refunds with the customer separately.')) return;
+
+    saving = true;
+    error = '';
+
+    try {
+      const response = await fetch(`/api/tickets/${selectedTicket.id}/extend`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'cancel' })
+      });
+
+      const result = await response.json();
+      if (result.error) {
+        error = result.error;
+      } else {
+        closeExtendDialog();
+        await invalidateAll();
+      }
+    } catch (e) {
+      error = 'Failed to cancel ticket. Please try again.';
+    } finally {
+      saving = false;
+    }
+  }
+
   async function submitExtension() {
     if (!selectedTicket) return;
 
@@ -343,11 +371,22 @@
         {/if}
       </div>
 
+      {#if selectedTicket.status !== 'cancelled'}
+        <div class="cancel-ticket-section">
+          <button class="cancel-ticket-btn" on:click={handleCancelTicket} disabled={saving}>
+            Cancel This Ticket
+          </button>
+          <small>Cancelling is permanent. Coordinate refunds with the customer separately.</small>
+        </div>
+      {/if}
+
       <div class="dialog-footer">
-        <button class="cancel-btn" on:click={closeExtendDialog} disabled={saving}>Cancel</button>
-        <button class="confirm-btn" on:click={submitExtension} disabled={saving}>
-          {saving ? 'Processing...' : (getTicketStatus(selectedTicket) === 'expired' ? 'Reactivate' : 'Extend')}
-        </button>
+        <button class="cancel-btn" on:click={closeExtendDialog} disabled={saving}>Close</button>
+        {#if selectedTicket.status !== 'cancelled'}
+          <button class="confirm-btn" on:click={submitExtension} disabled={saving}>
+            {saving ? 'Processing...' : (getTicketStatus(selectedTicket) === 'expired' ? 'Reactivate' : 'Extend')}
+          </button>
+        {/if}
       </div>
     </div>
   </div>
@@ -711,6 +750,38 @@
     gap: 0.5rem;
     cursor: pointer;
     font-weight: normal;
+  }
+
+  .cancel-ticket-section {
+    padding: 0 1.5rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .cancel-ticket-section small {
+    color: var(--text-muted, #888);
+    font-size: 0.8rem;
+  }
+
+  .cancel-ticket-btn {
+    padding: 0.5rem 1rem;
+    border: 1px solid var(--error-color, #ff6b6b);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--error-color, #ff6b6b);
+    cursor: pointer;
+    font-size: 0.85rem;
+    width: fit-content;
+  }
+
+  .cancel-ticket-btn:hover:not(:disabled) {
+    background: var(--error-bg, #5a2a2a);
+  }
+
+  .cancel-ticket-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
   .dialog-footer {

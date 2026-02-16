@@ -25,7 +25,7 @@ export async function load({ fetch, locals, params, url }) {
   }
 
   // Verify ownership
-  if (service.user_id !== user.id && !user?.grants?.includes('admin.panel')) {
+  if (service.user_id !== user.id && service.owner_user_id !== user.id && !user?.grants?.includes('admin.panel')) {
     throw error(403, 'You can only view your own services');
   }
 

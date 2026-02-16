@@ -80,7 +80,8 @@ Transportation-specific configuration.
 | service_mode | text | on_demand, scheduled, both |
 | ship_name | text | Name of the ship |
 | departure_location | text | Default departure location |
-| pickup_fee | numeric | Fee for pickup requests |
+| allows_pickup | boolean | Whether customers can request pickup from a custom location |
+| pickup_fee | numeric | Flat fee per pickup request (PED) |
 | routes | jsonb | Available routes configuration |
 | discord_code | text | Discord invite code (warp only, nullable). When set, bot skips thread creation. |
 
@@ -349,6 +350,19 @@ Users can ask questions about a service without making a booking request:
    └─> Ticket uses decremented, check-ins marked complete
 ```
 
+### Ticket Management
+
+Providers can manage customer tickets via `POST /api/tickets/:ticketId/extend`:
+
+| Action | Description |
+|--------|-------------|
+| `extend_uses` | Add uses to an active ticket |
+| `extend_validity` | Extend expiration date |
+| `reactivate` | Reactivate an expired/used ticket with new validity |
+| `cancel` | Cancel any ticket (permanent, provider coordinates refunds separately) |
+
+Auth: requires `canManageService()` (manager, owner, or admin).
+
 ### Flight States
 
 | State | Description |
@@ -426,7 +440,7 @@ POST   /api/services/:id/tickets/purchase  - Buy ticket
 GET    /api/services/:id/tickets/my        - User's tickets for service
 GET    /api/tickets/my                     - All user's tickets
 GET    /api/tickets/my/:ticketId           - Ticket details
-PUT    /api/tickets/:ticketId/extend       - Extend ticket validity
+POST   /api/tickets/:ticketId/extend       - Manage ticket (extend, reactivate, cancel)
 GET    /api/services/tickets/owned         - All owned tickets
 GET    /api/services/tickets/issued        - Tickets issued by provider
 ```
