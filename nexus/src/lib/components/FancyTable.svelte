@@ -484,8 +484,10 @@
         : (col.width || columnAutoWidths[col.key] || '1fr');
       // Main columns should grow to fill available space
       if (col.main) {
-        if (width.includes('fr')) {
-          return width;
+        // Explicit width → use as minimum; auto-computed → use 0 so table can shrink in narrow containers
+        const hasExplicitWidth = col.width || (isMobile && col.mobileWidth);
+        if (!hasExplicitWidth || width.includes('fr')) {
+          return 'minmax(0, 1fr)';
         }
         return `minmax(${width}, 1fr)`;
       }

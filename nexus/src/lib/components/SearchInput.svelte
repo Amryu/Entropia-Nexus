@@ -349,7 +349,7 @@
         {#each Object.keys(categorizedResults) as category}
           <div class="search-category">{category}</div>
           {#each categorizedResults[category] as result, i}
-            {@const globalIndex = flatResults.findIndex(r => r.Name === result.Name && r.Type === result.Type)}
+            {@const globalIndex = flatResults.findIndex(r => r.Id === result.Id)}
             {@const resultUrl = getTypeLink(result.Name, result.Type, result.SubType)}
             <a
               href={resultUrl}
