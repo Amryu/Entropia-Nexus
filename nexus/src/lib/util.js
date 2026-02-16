@@ -713,19 +713,31 @@ export async function handlePageLoad(fetch, items, config) {
   }
 
   // Fetch and attach exchange sell orders to acquisition data
-  const objType = object?.Properties?.Type; // Canonical entity type (e.g., 'Absorber', 'Weapon', 'Material')
+  // Map API endpoint slugs to canonical entity type names from itemTypes.js
+  // Built from TYPE_ID_OFFSETS keys: lowercase + 's' covers most endpoints
+  const ENDPOINT_ENTITY_TYPE = Object.fromEntries(
+    Object.keys(TYPE_ID_OFFSETS).map(t => [t.toLowerCase() + 's', t])
+  );
+  // Overrides for endpoints that don't follow the lowercase+s pattern
+  Object.assign(ENDPOINT_ENTITY_TYPE, {
+    clothings: 'Clothing', stimulants: 'Consumable', furniture: 'Furniture',
+    strongboxes: 'Strongbox', tools: 'MedicalTool', chips: 'MedicalChip',
+  });
+  const resolvedEndpoint = isMultiType ? config.type : endpoint;
+  const entityType = ENDPOINT_ENTITY_TYPE[resolvedEndpoint] || '';
   const exchangeItemId = itemId || object?.ItemId
-    || (object?.Id != null && objType && TYPE_ID_OFFSETS[objType] != null ? object.Id + TYPE_ID_OFFSETS[objType] : null);
+    || (object?.Id != null && entityType && TYPE_ID_OFFSETS[entityType] != null ? object.Id + TYPE_ID_OFFSETS[entityType] : null);
   const exchangeOrders = (config.isItem && !config.isArmorSet && exchangeItemId)
     ? await apiCall(fetch, `/api/market/exchange/orders/item/${exchangeItemId}`)
     : null;
 
   // Shared markup-type info for exchange order formatting
   const exItemName = object?.Name || '';
-  const isPercent = isPercentMarkupType(objType || '', exItemName, objType);
+  const exSubType = object?.Properties?.Type; // Material sub-type (Deed, Token, Share)
+  const isPercent = isPercentMarkupType(entityType, exItemName, exSubType);
 
   if (exchangeOrders?.sell?.length > 0 && acquisition) {
-    const isBpNonL = objType === 'Blueprint' && !hasItemTag(exItemName, 'L');
+    const isBpNonL = entityType === 'Blueprint' && !hasItemTag(exItemName, 'L');
     const maxTT = object?.Properties?.Economy?.MaxTT ?? object?.Value ?? null;
 
     acquisition.ExchangeOrders = exchangeOrders.sell
