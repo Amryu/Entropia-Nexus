@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { dump } from 'js-yaml';
 import { Client, GatewayIntentBits, Collection, Events, ChannelType } from 'discord.js';
-import { getUsers, getOpenChanges, setChangeThreadId, getDeletedChanges, deleteChange, getFlightsNeedingThread, setFlightThreadId, getCheckinsPendingThreadAdd, markCheckinAddedToThread, getUnnotifiedFlightStateChanges, getFlightsNeedingArchive, clearFlightThreadId, getPendingRescheduleNotifications, markRescheduleNotificationSent, getPendingRentalDmNotifications, markRentalDmNotificationSent, getServicePilots, getFlightAcceptedCheckins, getFlightsReadyForCustomerKick, setFlightCompletedAt, expireTickets, computeAllPriceSummaries, getPendingTradeRequests, getTradeRequestItems, setTradeRequestThread, getWarnableTradeRequests, markWarningSent, getExpirableTradeRequests, updateTradeRequestStatus, findTradeRequestByThread, updateLastActivity, getActiveTradeRequestsWithNewItems, getNewTradeRequestItems, adjustOfferQuantities, getUsersWithGrant } from './db.js';
+import { getUsers, getOpenChanges, setChangeThreadId, getDeletedChanges, deleteChange, getFlightsNeedingThread, setFlightThreadId, getCheckinsPendingThreadAdd, markCheckinAddedToThread, getUnnotifiedFlightStateChanges, getFlightsNeedingArchive, clearFlightThreadId, getPendingRescheduleNotifications, markRescheduleNotificationSent, getPendingRentalDmNotifications, markRentalDmNotificationSent, getServicePilots, getFlightAcceptedCheckins, getFlightsReadyForCustomerKick, setFlightCompletedAt, expireTickets, computeAllPriceSummaries, getPendingTradeRequests, getTradeRequestItems, setTradeRequestThread, getWarnableTradeRequests, markWarningSent, getExpirableTradeRequests, updateTradeRequestStatus, findTradeRequestByThread, updateLastActivity, getActiveTradeRequestsWithNewItems, getNewTradeRequestItems, adjustOfferQuantities, getUsersWithGrant, getPendingServiceRequests, setServiceRequestThread, markServiceRequestNotified, acceptServiceRequest, declineServiceRequest, getServiceRequestById, acceptCheckin, denyCheckin, getCheckinWithContext, activateTicketByCheckin, getPendingCheckinsDmNotify } from './db.js';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { compareJson, validate, printSideBySide } from './change.js';
 import { getTypeLink } from './util.js';
@@ -232,6 +232,96 @@ client.on(Events.InteractionCreate, async interaction => {
       } catch (error) {
         console.error('Error closing trade thread via button:', error);
         await interaction.update({ content: 'An error occurred while closing the trade thread.', components: [] }).catch(() => {});
+      }
+      return;
+    }
+
+    // Service request buttons: svc_req_{accept|decline}_{requestId}
+    if (customId.startsWith('svc_req_')) {
+      const parts = customId.split('_');
+      const action = parts[2]; // accept, decline
+      const requestId = parseInt(parts[3], 10);
+
+      try {
+        const req = await getServiceRequestById(requestId);
+        if (!req) {
+          return interaction.reply({ content: 'Request not found.', flags: 64 });
+        }
+
+        // Verify the user is staff (manager, owner, or pilot)
+        const userId = interaction.user.id;
+        const isStaff = userId === req.manager_id.toString() ||
+          (req.owner_user_id && userId === req.owner_user_id.toString()) ||
+          (await getServicePilots(req.service_id)).some(p => p.user_id.toString() === userId);
+
+        if (!isStaff) {
+          return interaction.reply({ content: 'You do not have permission to manage this request.', flags: 64 });
+        }
+
+        if (action === 'accept') {
+          const updated = await acceptServiceRequest(requestId);
+          if (!updated) {
+            return interaction.update({ content: interaction.message.content + '\n\n✅ Already processed.', components: [] });
+          }
+          await interaction.update({ content: interaction.message.content + `\n\n✅ **Accepted** by <@${userId}>`, components: [] });
+        } else if (action === 'decline') {
+          const updated = await declineServiceRequest(requestId);
+          if (!updated) {
+            return interaction.update({ content: interaction.message.content + '\n\n❌ Already processed.', components: [] });
+          }
+          await interaction.update({ content: interaction.message.content + `\n\n❌ **Declined** by <@${userId}>`, components: [] });
+        }
+      } catch (error) {
+        console.error('Error handling service request button:', error);
+        await interaction.reply({ content: 'An error occurred.', flags: 64 }).catch(() => {});
+      }
+      return;
+    }
+
+    // Check-in buttons: checkin_{accept|deny}_{checkinId}
+    if (customId.startsWith('checkin_')) {
+      const parts = customId.split('_');
+      const action = parts[1]; // accept, deny
+      const checkinId = parseInt(parts[2], 10);
+
+      try {
+        const checkin = await getCheckinWithContext(checkinId);
+        if (!checkin) {
+          return interaction.reply({ content: 'Check-in not found.', flags: 64 });
+        }
+
+        // Verify the user is staff
+        const userId = interaction.user.id;
+        const isStaff = userId === checkin.manager_id.toString() ||
+          (checkin.owner_user_id && userId === checkin.owner_user_id.toString()) ||
+          (await getServicePilots(checkin.service_id)).some(p => p.user_id.toString() === userId);
+
+        if (!isStaff) {
+          return interaction.reply({ content: 'You do not have permission to manage this check-in.', flags: 64 });
+        }
+
+        const passengerName = checkin.passenger_name || checkin.passenger_username || 'Unknown';
+
+        if (action === 'accept') {
+          const updated = await acceptCheckin(checkinId);
+          if (!updated) {
+            return interaction.update({ content: interaction.message.content + '\n\n✅ Already processed.', components: [] });
+          }
+          // Activate ticket on first accepted check-in
+          if (checkin.ticket_id) {
+            await activateTicketByCheckin(checkin.ticket_id).catch(() => {});
+          }
+          await interaction.update({ content: interaction.message.content + `\n\n✅ **${passengerName}** accepted by <@${userId}>`, components: [] });
+        } else if (action === 'deny') {
+          const updated = await denyCheckin(checkinId);
+          if (!updated) {
+            return interaction.update({ content: interaction.message.content + '\n\n❌ Already processed.', components: [] });
+          }
+          await interaction.update({ content: interaction.message.content + `\n\n❌ **${passengerName}** denied by <@${userId}>`, components: [] });
+        }
+      } catch (error) {
+        console.error('Error handling check-in button:', error);
+        await interaction.reply({ content: 'An error occurred.', flags: 64 }).catch(() => {});
       }
       return;
     }
@@ -724,6 +814,9 @@ async function checkFlights() {
         initialMessage += `**Scheduled Departure:** ${departureTime}\n`;
         initialMessage += `**Status:** ${flight.status === 'boarding' ? 'Boarding' : 'In Flight'}\n\n`;
         initialMessage += `**Started by:** <@${flight.provider_user_id}> (${flight.provider_username})\n`;
+        if (flight.owner_user_id && flight.owner_user_id.toString() !== flight.provider_user_id.toString()) {
+          initialMessage += `**Owner:** <@${flight.owner_user_id}>\n`;
+        }
         if (pilots.length > 0) {
           initialMessage += `**Pilots:** ${pilotMentions}\n`;
         }
@@ -737,9 +830,19 @@ async function checkFlights() {
           console.error(`Failed to add provider to flight thread: ${e.message}`);
         }
 
-        // Add pilots to the thread (if different from provider)
+        // Add owner to the thread (if different from provider)
+        if (flight.owner_user_id && flight.owner_user_id.toString() !== flight.provider_user_id.toString()) {
+          try {
+            await thread.members.add(flight.owner_user_id.toString());
+          } catch (e) {
+            console.error(`Failed to add owner to flight thread: ${e.message}`);
+          }
+        }
+
+        // Add pilots to the thread (if different from provider/owner)
         for (const pilot of pilots) {
-          if (pilot.user_id.toString() !== flight.provider_user_id.toString()) {
+          if (pilot.user_id.toString() !== flight.provider_user_id.toString() &&
+              (!flight.owner_user_id || pilot.user_id.toString() !== flight.owner_user_id.toString())) {
             try {
               await thread.members.add(pilot.user_id.toString());
             } catch (e) {
@@ -1193,6 +1296,196 @@ client.on(Events.MessageCreate, async (message) => {
     // Silently ignore — not every thread message is a trade thread
   }
 });
+
+// ---- Service Request Thread/DM Management ----
+
+async function checkServiceRequests() {
+  const servicesChannelId = config.servicesChannelId;
+  if (!servicesChannelId) return;
+
+  const channel = client.channels.cache.get(servicesChannelId);
+  if (!channel) {
+    console.error('Services channel not found');
+    return;
+  }
+
+  const pending = await getPendingServiceRequests();
+  for (const req of pending) {
+    try {
+      const isQuestion = req.service_notes?.startsWith('[QUESTION]');
+      const isFlightRequest = req.service_notes?.startsWith('[FLIGHT_REQUEST]');
+      const pilots = typeof req.pilots === 'string' ? JSON.parse(req.pilots) : (req.pilots || []);
+      const requesterName = req.requester_name || req.requester_username || 'Unknown';
+
+      // Build the message content
+      let content = '';
+      if (isQuestion) {
+        const questionText = req.service_notes.replace('[QUESTION]', '').trim();
+        content = `**Question for ${req.service_title}**\n`;
+        content += `From: <@${req.requester_id}> (${requesterName})\n\n`;
+        content += `> ${questionText}\n`;
+      } else if (isFlightRequest) {
+        const details = req.service_notes.replace('[FLIGHT_REQUEST]', '').trim();
+        content = `**Flight Request for ${req.service_title}**\n`;
+        content += `From: <@${req.requester_id}> (${requesterName})\n\n`;
+        content += `${details}\n`;
+      } else {
+        content = `**Service Request for ${req.service_title}**\n`;
+        content += `From: <@${req.requester_id}> (${requesterName})\n`;
+        if (req.service_notes) content += `\n> ${req.service_notes}\n`;
+      }
+
+      // Build staff mentions
+      const staffMentions = [`<@${req.manager_id}>`];
+      if (req.owner_user_id && req.owner_user_id.toString() !== req.manager_id.toString()) {
+        staffMentions.push(`<@${req.owner_user_id}>`);
+      }
+      for (const pilot of pilots) {
+        if (pilot.user_id.toString() !== req.manager_id.toString() &&
+            (!req.owner_user_id || pilot.user_id.toString() !== req.owner_user_id.toString())) {
+          staffMentions.push(`<@${pilot.user_id}>`);
+        }
+      }
+
+      // If the service has its own Discord server, send DMs instead of creating a thread
+      if (req.discord_code) {
+        const dmContent = content + `\n**Staff:** ${staffMentions.join(', ')}`;
+
+        // Build action buttons for flight requests
+        const dmComponents = [];
+        if (isFlightRequest) {
+          const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+              .setCustomId(`svc_req_accept_${req.id}`)
+              .setLabel('Accept Request')
+              .setStyle(ButtonStyle.Success),
+            new ButtonBuilder()
+              .setCustomId(`svc_req_decline_${req.id}`)
+              .setLabel('Decline Request')
+              .setStyle(ButtonStyle.Danger),
+          );
+          dmComponents.push(row);
+        }
+
+        // Collect unique user IDs to DM (manager, owner, pilots)
+        const dmTargets = new Set();
+        dmTargets.add(req.manager_id.toString());
+        if (req.owner_user_id) dmTargets.add(req.owner_user_id.toString());
+        for (const pilot of pilots) dmTargets.add(pilot.user_id.toString());
+
+        for (const userId of dmTargets) {
+          try {
+            const dmUser = await client.users.fetch(userId);
+            await dmUser.send({ content: dmContent, components: dmComponents });
+          } catch (e) {
+            console.error(`Failed to DM user ${userId} for service request #${req.id}: ${e.message}`);
+          }
+        }
+
+        await markServiceRequestNotified(req.id);
+        console.log(`Sent DM notifications for service request #${req.id} (${dmTargets.size} users)`);
+        continue;
+      }
+
+      // Create a private thread in the services channel
+      const emoji = isQuestion ? '❓' : '✈';
+      const thread = await channel.threads.create({
+        name: `${emoji} ${requesterName} → ${req.service_title}`.substring(0, 100),
+        autoArchiveDuration: 1440,
+        reason: `Service request #${req.id}`,
+        type: ChannelType.PrivateThread,
+      });
+
+      await setServiceRequestThread(req.id, thread.id);
+
+      content += `\n**Staff:** ${staffMentions.join(', ')}`;
+      content += `\nUse this thread to discuss. The provider can manage the request on the website.`;
+      await thread.send(content);
+
+      // Add requester to thread
+      try { await thread.members.add(req.requester_id.toString()); } catch (e) {
+        console.error(`Failed to add requester to service thread: ${e.message}`);
+      }
+
+      // Add manager
+      try { await thread.members.add(req.manager_id.toString()); } catch (e) {
+        console.error(`Failed to add manager to service thread: ${e.message}`);
+      }
+
+      // Add owner (if different from manager)
+      if (req.owner_user_id && req.owner_user_id.toString() !== req.manager_id.toString()) {
+        try { await thread.members.add(req.owner_user_id.toString()); } catch (e) {
+          console.error(`Failed to add owner to service thread: ${e.message}`);
+        }
+      }
+
+      // Add pilots (if different from manager/owner)
+      for (const pilot of pilots) {
+        if (pilot.user_id.toString() !== req.manager_id.toString() &&
+            (!req.owner_user_id || pilot.user_id.toString() !== req.owner_user_id.toString())) {
+          try { await thread.members.add(pilot.user_id.toString()); } catch (e) {
+            console.error(`Failed to add pilot ${pilot.username} to service thread: ${e.message}`);
+          }
+        }
+      }
+
+      console.log(`Created service thread for request #${req.id}: ${thread.name}`);
+    } catch (e) {
+      console.error(`Error processing service request #${req.id}:`, e);
+    }
+  }
+}
+
+setInterval(() => runScheduled('checkServiceRequests', checkServiceRequests), 15 * 1000);
+
+// Send DM notifications for check-ins on services with their own Discord server
+async function checkCheckinDmNotifications() {
+  const pendingCheckins = await getPendingCheckinsDmNotify();
+  for (const checkin of pendingCheckins) {
+    try {
+      const passengerName = checkin.passenger_name || checkin.passenger_username || 'Unknown';
+      let content = `**New Check-in for ${checkin.service_title}** — Flight #${checkin.flight_id}\n`;
+      content += `Passenger: <@${checkin.user_id}> (${passengerName})\n`;
+      if (checkin.join_location) content += `Boarding at: ${checkin.join_location}\n`;
+      if (checkin.exit_location) content += `Exit at: ${checkin.exit_location}\n`;
+      content += `\n_Check-in lets a passenger reserve a spot on this flight. Accept to confirm their boarding, or deny to reject._`;
+
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`checkin_accept_${checkin.id}`)
+          .setLabel('Accept Check-in')
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId(`checkin_deny_${checkin.id}`)
+          .setLabel('Deny Check-in')
+          .setStyle(ButtonStyle.Danger),
+      );
+
+      const pilots = typeof checkin.pilots === 'string' ? JSON.parse(checkin.pilots) : (checkin.pilots || []);
+      const dmTargets = new Set();
+      dmTargets.add(checkin.manager_id.toString());
+      if (checkin.owner_user_id) dmTargets.add(checkin.owner_user_id.toString());
+      for (const pilot of pilots) dmTargets.add(pilot.user_id.toString());
+
+      for (const userId of dmTargets) {
+        try {
+          const dmUser = await client.users.fetch(userId);
+          await dmUser.send({ content, components: [row] });
+        } catch (e) {
+          console.error(`Failed to DM user ${userId} for check-in #${checkin.id}: ${e.message}`);
+        }
+      }
+
+      // Mark as notified using the existing added_to_thread column
+      await markCheckinAddedToThread(checkin.id);
+      console.log(`Sent DM notifications for check-in #${checkin.id} (${dmTargets.size} users)`);
+    } catch (e) {
+      console.error(`Error processing check-in DM #${checkin.id}:`, e);
+    }
+  }
+}
+
+setInterval(() => runScheduled('checkCheckinDmNotifications', checkCheckinDmNotifications), 15 * 1000);
 
 // Expire tickets once per hour
 async function runTicketExpiration() {

@@ -246,7 +246,7 @@ export async function getShops() {
 // Get flights that entered boarding/running state but don't have a Discord thread yet
 export async function getFlightsNeedingThread() {
   const query = `
-    SELECT fi.*, s.title as service_title, s.user_id as provider_user_id,
+    SELECT fi.*, s.title as service_title, s.user_id as provider_user_id, s.owner_user_id,
            u.username as provider_username,
            COALESCE(
              (SELECT json_agg(json_build_object('user_id', sp.user_id, 'username', pu.username))
@@ -741,4 +741,153 @@ export async function computeAllPriceSummaries() {
     results.push(await computePriceSummaries(pt));
   }
   return results;
+}
+
+// ---- Service Requests (Questions & On-Demand Flight Requests) ----
+
+export async function getPendingServiceRequests() {
+  const query = `
+    SELECT sr.*, s.title as service_title, s.user_id as manager_id, s.owner_user_id,
+           s.type as service_type,
+           req_u.username as requester_username, req_u.eu_name as requester_name,
+           mgr_u.username as manager_username,
+           std.discord_code,
+           COALESCE(
+             (SELECT json_agg(json_build_object('user_id', sp.user_id, 'username', pu.username))
+              FROM service_pilots sp
+              JOIN users pu ON sp.user_id = pu.id
+              WHERE sp.service_id = s.id),
+             '[]'::json
+           ) as pilots
+    FROM service_requests sr
+    JOIN services s ON sr.service_id = s.id
+    JOIN users req_u ON sr.requester_id = req_u.id
+    JOIN users mgr_u ON s.user_id = mgr_u.id
+    LEFT JOIN service_transportation_details std ON std.service_id = s.id
+    WHERE sr.status = 'pending'
+      AND sr.discord_thread_id IS NULL
+    ORDER BY sr.created_at ASC
+  `;
+  return (await poolUsers.query(query)).rows;
+}
+
+export async function setServiceRequestThread(requestId, threadId) {
+  const query = 'UPDATE service_requests SET discord_thread_id = $2, status = \'negotiating\' WHERE id = $1';
+  await poolUsers.query(query, [requestId, threadId]);
+}
+
+// Mark a service request as notified via DM (no thread created)
+export async function markServiceRequestNotified(requestId) {
+  const query = "UPDATE service_requests SET status = 'negotiating' WHERE id = $1";
+  await poolUsers.query(query, [requestId]);
+}
+
+// Accept a service request (flight request) — only if still negotiating/pending
+export async function acceptServiceRequest(requestId) {
+  const query = `
+    UPDATE service_requests SET status = 'accepted', updated_at = CURRENT_TIMESTAMP
+    WHERE id = $1 AND status IN ('pending', 'negotiating')
+    RETURNING *
+  `;
+  const result = await poolUsers.query(query, [requestId]);
+  return result.rows[0] || null;
+}
+
+// Decline a service request (flight request) — only if still negotiating/pending
+export async function declineServiceRequest(requestId) {
+  const query = `
+    UPDATE service_requests SET status = 'declined', updated_at = CURRENT_TIMESTAMP
+    WHERE id = $1 AND status IN ('pending', 'negotiating')
+    RETURNING *
+  `;
+  const result = await poolUsers.query(query, [requestId]);
+  return result.rows[0] || null;
+}
+
+// Get a service request by ID (for button interaction validation)
+export async function getServiceRequestById(requestId) {
+  const query = `
+    SELECT sr.*, s.user_id as manager_id, s.owner_user_id, s.title as service_title
+    FROM service_requests sr
+    JOIN services s ON sr.service_id = s.id
+    WHERE sr.id = $1
+  `;
+  const result = await poolUsers.query(query, [requestId]);
+  return result.rows[0] || null;
+}
+
+// Accept a flight check-in — only if still pending
+export async function acceptCheckin(checkinId) {
+  const query = `
+    UPDATE service_checkins SET status = 'accepted', accepted_at = CURRENT_TIMESTAMP
+    WHERE id = $1 AND status = 'pending'
+    RETURNING *
+  `;
+  const result = await poolUsers.query(query, [checkinId]);
+  return result.rows[0] || null;
+}
+
+// Deny a flight check-in — only if still pending
+export async function denyCheckin(checkinId) {
+  const query = `
+    UPDATE service_checkins SET status = 'denied'
+    WHERE id = $1 AND status = 'pending'
+    RETURNING *
+  `;
+  const result = await poolUsers.query(query, [checkinId]);
+  return result.rows[0] || null;
+}
+
+// Get a check-in by ID with flight and service info (for button validation)
+export async function getCheckinWithContext(checkinId) {
+  const query = `
+    SELECT c.*, fi.service_id, fi.id as flight_id, fi.status as flight_status,
+           s.user_id as manager_id, s.owner_user_id, s.title as service_title,
+           u.username as passenger_username, u.eu_name as passenger_name
+    FROM service_checkins c
+    JOIN service_flight_instances fi ON c.flight_id = fi.id
+    JOIN services s ON fi.service_id = s.id
+    JOIN users u ON c.user_id = u.id
+    WHERE c.id = $1
+  `;
+  const result = await poolUsers.query(query, [checkinId]);
+  return result.rows[0] || null;
+}
+
+// Activate a ticket (first accepted check-in)
+export async function activateTicketByCheckin(ticketId) {
+  const query = `
+    UPDATE service_tickets SET status = 'active', activated_at = CURRENT_TIMESTAMP
+    WHERE id = $1 AND status = 'purchased'
+    RETURNING *
+  `;
+  const result = await poolUsers.query(query, [ticketId]);
+  return result.rows[0] || null;
+}
+
+// Get pending check-ins for flights on services with discord_code (for DM notifications)
+// Uses added_to_thread = false as the "not yet notified" marker (thread-based check-ins
+// are handled separately and require discord_thread_id IS NOT NULL)
+export async function getPendingCheckinsDmNotify() {
+  const query = `
+    SELECT c.*, fi.id as flight_id,
+           s.title as service_title, s.user_id as manager_id, s.owner_user_id,
+           u.username as passenger_username, u.eu_name as passenger_name,
+           COALESCE(
+             (SELECT json_agg(json_build_object('user_id', sp.user_id))
+              FROM service_pilots sp WHERE sp.service_id = s.id),
+             '[]'::json
+           ) as pilots
+    FROM service_checkins c
+    JOIN service_flight_instances fi ON c.flight_id = fi.id
+    JOIN services s ON fi.service_id = s.id
+    JOIN users u ON c.user_id = u.id
+    JOIN service_transportation_details std ON std.service_id = s.id
+    WHERE c.status = 'pending'
+      AND c.added_to_thread = false
+      AND fi.discord_thread_id IS NULL
+      AND std.discord_code IS NOT NULL AND std.discord_code != ''
+    ORDER BY c.created_at ASC
+  `;
+  return (await poolUsers.query(query)).rows;
 }
