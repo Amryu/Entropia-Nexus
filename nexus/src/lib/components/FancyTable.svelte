@@ -49,6 +49,9 @@
   /** @type {{ column: string, order: 'ASC'|'DESC' }|null} Initial sort to apply */
   export let defaultSort = null;
 
+  /** @type {boolean} When true, skip column sorting and preserve the data array order (e.g. external relevance sort) */
+  export let preserveDataOrder = false;
+
   /**
    * @type {(row: object) => string|null} Function to generate extra CSS classes for rows
    * Example: (row) => row.boss ? 'boss-row' : null
@@ -88,6 +91,22 @@
     sortOrder = defaultSort.order ?? 'ASC';
     sortPhaseIdx = 0;
   }
+
+  // React to preserveDataOrder transitions (e.g. search active/cleared)
+  let prevPreserveDataOrder = false;
+  $: if (preserveDataOrder !== prevPreserveDataOrder) {
+    prevPreserveDataOrder = preserveDataOrder;
+    if (preserveDataOrder) {
+      sortColumn = null;
+      userSorted = false;
+    } else {
+      sortColumn = defaultSort?.column ?? null;
+      sortOrder = defaultSort?.order ?? 'ASC';
+      sortPhaseIdx = 0;
+      userSorted = false;
+    }
+  }
+
   let filters = {};
   let filterTimeouts = {};
   let isLoading = false;
@@ -157,8 +176,8 @@
       }
     }
 
-    // Apply sorting
-    if (sortColumn) {
+    // Apply sorting (skip when preserveDataOrder — parent controls order)
+    if (sortColumn && !preserveDataOrder) {
       const columnDef = columns.find(col => col.key === sortColumn);
       const phaseSortValue = columnDef?.sortPhases?.[sortPhaseIdx]?.sortValue;
       result.sort((a, b) => {
@@ -333,7 +352,7 @@
   }
 
   function handleSort(column) {
-    if (!sortable || column.sortable === false) return;
+    if (!sortable || column.sortable === false || preserveDataOrder) return;
     userSorted = true;
 
     if (column.sortPhases?.length) {

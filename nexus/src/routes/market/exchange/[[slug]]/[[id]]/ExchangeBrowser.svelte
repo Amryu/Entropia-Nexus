@@ -2249,6 +2249,7 @@
               sortable={true}
               searchable={false}
               defaultSort={listDefaultSort}
+              preserveDataOrder={!!searchTerm}
               emptyMessage="No items found"
               on:rowClick={(evt) => {
                 const item = evt?.detail?.row?._item;
