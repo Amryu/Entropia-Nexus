@@ -13,6 +13,7 @@ import { verifyTurnstile } from '$lib/server/turnstile.js';
 import {
   validateOrderDetails, enforceSetConstraint, enforceGenderConstraint, getVerifiedUser
 } from '$lib/server/exchange-order-validation.js';
+import { invalidateOfferCounts } from '$lib/market/cache';
 
 const VALID_TYPES = ['BUY', 'SELL'];
 
@@ -190,6 +191,7 @@ export async function POST({ request, locals, fetch }) {
     incrementRateLimit(itemCooldownKey, RATE_LIMIT_ITEM_COOLDOWN_MS);
     incrementRateLimit(itemDailyKey, 86_400_000);
 
+    invalidateOfferCounts();
     return getResponse(order, 201);
   } catch (err) {
     console.error('Error creating order:', err);

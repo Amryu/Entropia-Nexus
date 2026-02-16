@@ -566,9 +566,7 @@
       initialLoading = true;
       // If already loaded, skip
       if (categorizedItems && Object.keys(categorizedItems).length > 0) return;
-      const res = await fetch("/api/market/exchange", {
-        headers: { "cache-control": "max-age=60" },
-      });
+      const res = await fetch("/api/market/exchange");
       if (res.ok) {
         const json = await res.json();
         categorizedItems = json || {};

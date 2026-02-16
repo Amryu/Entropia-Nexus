@@ -9,6 +9,7 @@ import {
 import { GENDERED_TYPES } from '$lib/common/itemTypes.js';
 import { checkRateLimit } from '$lib/server/rateLimiter.js';
 import { verifyTurnstile } from '$lib/server/turnstile.js';
+import { invalidateOfferCounts } from '$lib/market/cache';
 
 /**
  * Validate and sanitize order details JSONB.
@@ -217,6 +218,7 @@ export async function PUT({ params, request, locals, fetch }) {
 
   try {
     const updated = await updateOrder(orderId, { quantity, minQuantity, markup, planet, details });
+    invalidateOfferCounts();
     return getResponse(updated, 200);
   } catch (err) {
     console.error('Error updating order:', err);
@@ -267,6 +269,7 @@ export async function DELETE({ params, request, locals }) {
 
   try {
     const closed = await closeOrder(orderId);
+    invalidateOfferCounts();
     return getResponse(closed, 200);
   } catch (err) {
     console.error('Error closing order:', err);

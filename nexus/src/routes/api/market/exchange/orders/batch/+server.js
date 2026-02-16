@@ -13,6 +13,7 @@ import { verifyTurnstile } from '$lib/server/turnstile.js';
 import {
   validateOrderDetails, enforceSetConstraint, enforceGenderConstraint, getVerifiedUser
 } from '$lib/server/exchange-order-validation.js';
+import { invalidateOfferCounts } from '$lib/market/cache';
 
 const VALID_TYPES = ['BUY', 'SELL'];
 
@@ -128,6 +129,7 @@ export async function POST({ request, locals, fetch }) {
   }
 
   const succeeded = created + updated;
+  if (succeeded > 0) invalidateOfferCounts();
   return getResponse(
     { results, created, updated, failed: orders.length - succeeded },
     succeeded > 0 ? 200 : 400

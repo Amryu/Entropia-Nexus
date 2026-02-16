@@ -398,6 +398,20 @@ async function refreshOfferCounts() {
   } catch { /* non-fatal */ }
 }
 
+/**
+ * Debounced invalidation of offer counts — called after order mutations
+ * (create, edit, close, bump) so the exchange summary reflects changes
+ * within ~500ms instead of waiting for the next 5m polling cycle.
+ */
+let offerCountsInvalidateTimer = null;
+export function invalidateOfferCounts() {
+  if (offerCountsInvalidateTimer) clearTimeout(offerCountsInvalidateTimer);
+  offerCountsInvalidateTimer = setTimeout(async () => {
+    offerCountsInvalidateTimer = null;
+    try { await refreshOfferCounts(); } catch {}
+  }, 500);
+}
+
 export async function getExchangeCategorization(fetch) {
   const now = Date.now();
   const needsFull = !cache.annotated || (now - cache.lastFullBuildAt > FULL_REBUILD_MS);

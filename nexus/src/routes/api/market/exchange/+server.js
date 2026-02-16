@@ -8,7 +8,7 @@ export async function GET({ fetch, request }) {
     const ae = request.headers.get('accept-encoding') || '';
     const headers = new Headers({
       'Content-Type': 'application/json; charset=utf-8',
-      'Cache-Control': 'public, max-age=60',
+      'Cache-Control': 'public, no-cache',
       'Vary': 'Accept-Encoding',
       ...(etag ? { 'ETag': etag } : {})
     });

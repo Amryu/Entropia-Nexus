@@ -3,6 +3,7 @@ import { getResponse } from '$lib/util.js';
 import { bumpAllOrders, formatRetryTime, RATE_LIMIT_BUMP_ALL_PER_HOUR } from '$lib/server/exchange.js';
 import { checkRateLimit } from '$lib/server/rateLimiter.js';
 import { verifyTurnstile } from '$lib/server/turnstile.js';
+import { invalidateOfferCounts } from '$lib/market/cache';
 
 /**
  * POST /api/market/exchange/orders/bump-all — Bump all eligible orders for the current user
@@ -31,6 +32,7 @@ export async function POST({ request, locals }) {
 
   try {
     const orders = await bumpAllOrders(user.id);
+    if (orders.length > 0) invalidateOfferCounts();
     return getResponse({ orders, count: orders.length }, 200);
   } catch (err) {
     console.error('Error bumping all orders:', err);
