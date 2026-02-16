@@ -258,8 +258,10 @@ export async function getFlightsNeedingThread() {
     FROM service_flight_instances fi
     JOIN services s ON fi.service_id = s.id
     JOIN users u ON s.user_id = u.id
+    LEFT JOIN service_transportation_details std ON std.service_id = s.id
     WHERE fi.status IN ('boarding', 'running')
       AND fi.discord_thread_id IS NULL
+      AND (std.discord_code IS NULL OR std.discord_code = '')
   `;
   return (await poolUsers.query(query)).rows;
 }

@@ -923,12 +923,15 @@ export async function getServices(filters = {}) {
   let query = `
     SELECT
       s.*,
-      u.eu_name as owner_name,
-      u.id as owner_id,
+      u.eu_name as manager_name,
+      u.id as manager_id,
+      COALESCE(s.owner_display_name, owner_u.eu_name, u.eu_name) as owner_name,
+      COALESCE(s.owner_user_id, s.user_id) as owner_id,
       ticket_prices.min_price,
       ticket_prices.max_price
     FROM services s
     JOIN users u ON s.user_id = u.id
+    LEFT JOIN users owner_u ON s.owner_user_id = owner_u.id
     LEFT JOIN (
       SELECT
         service_id,
@@ -968,32 +971,19 @@ export async function getServices(filters = {}) {
 }
 
 export async function getServiceById(serviceId) {
-  console.log('[DB] getServiceById - Pool status:', {
-    total: pool.totalCount,
-    idle: pool.idleCount,
-    waiting: pool.waitingCount
-  });
-  
-  // Check for blocking queries
-  const lockCheck = await pool.query(`
-    SELECT pid, state, query, wait_event_type, wait_event 
-    FROM pg_stat_activity 
-    WHERE datname = current_database() AND state != 'idle'
-  `);
-  console.log('[DB] Active connections:', lockCheck.rows);
-  
   const query = `
     SELECT
       s.*,
-      u.eu_name as owner_name,
-      u.id as owner_id
+      u.eu_name as manager_name,
+      u.id as manager_id,
+      COALESCE(s.owner_display_name, owner_u.eu_name, u.eu_name) as owner_name,
+      COALESCE(s.owner_user_id, s.user_id) as owner_id
     FROM services s
     JOIN users u ON s.user_id = u.id
+    LEFT JOIN users owner_u ON s.owner_user_id = owner_u.id
     WHERE s.id = $1
   `;
-  console.log('[DB] getServiceById - Executing query for service', serviceId);
   const { rows } = await pool.query(query, [serviceId]);
-  console.log('[DB] getServiceById - Query completed, got', rows.length, 'rows');
   return rows[0];
 }
 
@@ -1004,10 +994,13 @@ export async function getServiceByIdOrTitle(identifier) {
     query = `
       SELECT
         s.*,
-        u.eu_name as owner_name,
-        u.id as owner_id
+        u.eu_name as manager_name,
+        u.id as manager_id,
+        COALESCE(s.owner_display_name, owner_u.eu_name, u.eu_name) as owner_name,
+        COALESCE(s.owner_user_id, s.user_id) as owner_id
       FROM services s
       JOIN users u ON s.user_id = u.id
+      LEFT JOIN users owner_u ON s.owner_user_id = owner_u.id
       WHERE s.id = $1
     `;
     values = [parseInt(identifier)];
@@ -1015,10 +1008,13 @@ export async function getServiceByIdOrTitle(identifier) {
     query = `
       SELECT
         s.*,
-        u.eu_name as owner_name,
-        u.id as owner_id
+        u.eu_name as manager_name,
+        u.id as manager_id,
+        COALESCE(s.owner_display_name, owner_u.eu_name, u.eu_name) as owner_name,
+        COALESCE(s.owner_user_id, s.user_id) as owner_id
       FROM services s
       JOIN users u ON s.user_id = u.id
+      LEFT JOIN users owner_u ON s.owner_user_id = owner_u.id
       WHERE LOWER(s.title) = LOWER($1)
     `;
     values = [identifier];
@@ -1033,8 +1029,8 @@ export async function createService(serviceData) {
     INSERT INTO services (
       user_id, type, custom_type_name, title, description,
       planet_id, willing_to_travel, travel_fee,
-      is_active, is_busy
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      is_active, is_busy, owner_user_id, owner_display_name
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
     RETURNING *
   `;
   const values = [
@@ -1047,7 +1043,9 @@ export async function createService(serviceData) {
     serviceData.willing_to_travel || false,
     serviceData.travel_fee || null,
     false, // Services start deactivated so provider can configure first
-    false
+    false,
+    serviceData.owner_user_id != null ? serviceData.owner_user_id : null,
+    serviceData.owner_display_name || null
   ];
 
   const { rows } = await pool.query(query, values);
@@ -1065,6 +1063,8 @@ export async function updateService(serviceId, serviceData) {
       willing_to_travel = $7,
       travel_fee = $8,
       is_active = $9,
+      owner_user_id = $10,
+      owner_display_name = $11,
       updated_at = CURRENT_TIMESTAMP
     WHERE id = $1
     RETURNING *
@@ -1078,7 +1078,9 @@ export async function updateService(serviceId, serviceData) {
     serviceData.planet_id || null,
     serviceData.willing_to_travel || false,
     serviceData.travel_fee || null,
-    serviceData.is_active !== false
+    serviceData.is_active !== false,
+    serviceData.owner_user_id !== undefined ? serviceData.owner_user_id : null,
+    serviceData.owner_display_name !== undefined ? serviceData.owner_display_name : null
   ];
 
   const { rows } = await pool.query(query, values);
@@ -1096,11 +1098,14 @@ export async function getUserServices(userId) {
   const query = `
     SELECT
       s.*,
-      u.eu_name as owner_name,
-      u.id as owner_id
+      u.eu_name as manager_name,
+      u.id as manager_id,
+      COALESCE(s.owner_display_name, owner_u.eu_name, u.eu_name) as owner_name,
+      COALESCE(s.owner_user_id, s.user_id) as owner_id
     FROM services s
     JOIN users u ON s.user_id = u.id
-    WHERE s.user_id = $1
+    LEFT JOIN users owner_u ON s.owner_user_id = owner_u.id
+    WHERE s.user_id = $1 OR s.owner_user_id = $1
     ORDER BY s.is_active DESC, s.created_at DESC
   `;
   const { rows } = await pool.query(query, [userId]);
@@ -1180,9 +1185,9 @@ export async function upsertServiceTransportationDetails(serviceId, details) {
       service_id, vehicle_id, route_description,
       departure_planet_id, departure_location, arrival_planet_id, arrival_location,
       allows_pickup, pickup_fee, request_window_hours_before, request_cutoff_minutes,
-      transportation_type, ship_name, service_mode, current_planet_id
+      transportation_type, ship_name, service_mode, current_planet_id, discord_code
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
     ON CONFLICT (service_id) DO UPDATE SET
       vehicle_id = $2,
       route_description = $3,
@@ -1197,7 +1202,8 @@ export async function upsertServiceTransportationDetails(serviceId, details) {
       transportation_type = $12,
       ship_name = $13,
       service_mode = $14,
-      current_planet_id = $15
+      current_planet_id = $15,
+      discord_code = $16
     RETURNING *
   `;
   const values = [
@@ -1215,7 +1221,8 @@ export async function upsertServiceTransportationDetails(serviceId, details) {
     details.transportation_type || 'regular',
     details.ship_name || null,
     details.service_mode || 'on_demand',
-    details.current_planet_id || null
+    details.current_planet_id || null,
+    details.discord_code || null
   ];
   const { rows } = await pool.query(query, values);
   return rows[0];
@@ -2657,17 +2664,63 @@ export async function isServicePilot(serviceId, userId) {
   return result.rows.length > 0;
 }
 
-// Check if a user can manage a service (owner or pilot)
+// Check if a user can manage a service (manager, owner, or pilot)
 export async function canManageService(serviceId, userId, isAdmin = false) {
   // Admins can manage everything
   if (isAdmin) return true;
 
-  // Check if owner
+  // Check if manager
   const service = await getServiceById(serviceId);
   if (service && service.user_id === userId) return true;
 
+  // Check if owner
+  if (service && service.owner_user_id && service.owner_user_id === userId) return true;
+
   // Check if pilot
   return await isServicePilot(serviceId, userId);
+}
+
+// Transfer the manager role to another user (pilot or owner)
+export async function transferManager(serviceId, newManagerUserId, oldManagerUserId) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // Update manager (user_id) to new user
+    await client.query(
+      `UPDATE services SET user_id = $1, updated_at = CURRENT_TIMESTAMP WHERE id = $2`,
+      [newManagerUserId, serviceId]
+    );
+
+    // Remove new manager from pilots if they were a pilot
+    await client.query(
+      `DELETE FROM service_pilots WHERE service_id = $1 AND user_id = $2`,
+      [serviceId, newManagerUserId]
+    );
+
+    // Add old manager as pilot (unless they are the owner)
+    const service = await client.query(
+      `SELECT owner_user_id FROM services WHERE id = $1`,
+      [serviceId]
+    );
+    const isOldManagerOwner = service.rows[0]?.owner_user_id === oldManagerUserId;
+
+    if (!isOldManagerOwner) {
+      await client.query(
+        `INSERT INTO service_pilots (service_id, user_id, added_by)
+         VALUES ($1, $2, $3)
+         ON CONFLICT (service_id, user_id) DO NOTHING`,
+        [serviceId, oldManagerUserId, newManagerUserId]
+      );
+    }
+
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 // Add a pilot to a service
@@ -2698,10 +2751,12 @@ export async function getUserPilotServices(userId) {
     SELECT
       sp.id as pilot_id,
       s.*,
-      u.username as owner_name
+      u.eu_name as manager_name,
+      COALESCE(s.owner_display_name, owner_u.eu_name, u.eu_name) as owner_name
     FROM service_pilots sp
     JOIN services s ON sp.service_id = s.id
     LEFT JOIN users u ON s.user_id = u.id
+    LEFT JOIN users owner_u ON s.owner_user_id = owner_u.id
     WHERE sp.user_id = $1
     ORDER BY s.title ASC
   `;

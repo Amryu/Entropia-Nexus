@@ -64,6 +64,13 @@
   // Custom type name
   let customTypeName = data.service?.custom_type_name || '';
 
+  // Owner fields (transportation only)
+  let differentOwner = !!(data.service?.owner_display_name || data.service?.owner_user_id);
+  let ownerDisplayName = data.service?.owner_display_name || '';
+
+  // Discord code (warp services only)
+  let discordCode = data.service?.transportation_details?.discord_code || '';
+
   // Ship name options for regular transportation
   const regularShipOptions = ['Sleipnir', 'Quad-Wing Interceptor'];
 
@@ -128,7 +135,7 @@
     const payload = {
       // Note: type cannot be changed after creation
       title: title.trim(),
-      description: description.trim() || null,
+      description: description || null,
       planet_id: serviceType === 'transportation' ? null : (planetId || null),
       willing_to_travel: serviceType === 'transportation' ? true : willingToTravel,
       travel_fee: (serviceType === 'transportation' || willingToTravel) && travelFee ? parseFloat(travelFee) : null,
@@ -161,8 +168,10 @@
       payload.transportation_details = {
         transportation_type: transportationType,
         ship_name: shipName || null,
-        service_mode: serviceMode
+        service_mode: serviceMode,
+        discord_code: (transportationType === 'warp_equus' || transportationType === 'warp_privateer') ? (discordCode.trim() || null) : null
       };
+      payload.owner_display_name = differentOwner && ownerDisplayName.trim() ? ownerDisplayName.trim() : null;
     }
 
     try {
@@ -261,8 +270,18 @@
       </div>
 
       <div class="form-group">
-        <label for="description">Description</label>
-        <textarea id="description" bind:value={description} rows="4" placeholder="Describe your service..."></textarea>
+        <label>Description</label>
+        {#await import('$lib/components/wiki/RichTextEditor.svelte') then { default: RichTextEditor }}
+          <RichTextEditor
+            content={description}
+            placeholder="Describe your service..."
+            showHeadings={false}
+            showCodeBlock={false}
+            showVideo={false}
+            showImages={false}
+            on:change={(e) => description = e.detail}
+          />
+        {/await}
       </div>
     </div>
 
@@ -389,11 +408,39 @@
           {/if}
         </div>
 
+        <div class="form-group checkbox-group">
+          <label>
+            <input type="checkbox" bind:checked={differentOwner} />
+            The ship owner is a different player
+          </label>
+        </div>
+
+        {#if differentOwner}
+          <div class="form-group">
+            <label for="ownerDisplayName">Owner Name (EU Name)</label>
+            <input type="text" id="ownerDisplayName" bind:value={ownerDisplayName} placeholder="Enter the owner's Entropia Universe name" maxlength="100" />
+            <small>The owner does not need to have a Nexus account. If they do, they will get full management access.</small>
+          </div>
+        {/if}
+
+        {#if transportationType === 'warp_equus' || transportationType === 'warp_privateer'}
+          <div class="form-group">
+            <label for="discordCode">Discord Server (optional)</label>
+            <input type="text" id="discordCode" bind:value={discordCode} placeholder="Invite link or code" />
+            <small>Setting this will disable Nexus Discord thread creation for this service's flights. Only the invite code is stored.</small>
+          </div>
+        {/if}
+
         {#if transportationType === 'warp_privateer'}
           <PilotManager
             serviceId={service.id}
             {pilots}
             isOwner={true}
+            managerId={service.user_id}
+            managerName={service.manager_name}
+            ownerUserId={service.owner_user_id}
+            ownerDisplayName={service.owner_display_name}
+            currentUserId={data.user?.id}
           />
         {/if}
 

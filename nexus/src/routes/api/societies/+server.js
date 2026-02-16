@@ -2,22 +2,7 @@
 import { getResponse } from '$lib/util.js';
 import { createSociety, searchSocieties, updateUserSociety, getUserProfileById } from '$lib/server/db.js';
 import { sanitizeRichText } from '$lib/server/sanitizeRichText.js';
-
-function extractDiscordInviteCode(input) {
-  if (!input) return null;
-  const raw = String(input).trim();
-  if (!raw) return null;
-
-  const match = raw.match(/discord(?:app)?\.com\/invite\/([A-Za-z0-9-]+)/i)
-    || raw.match(/discord\.gg\/([A-Za-z0-9-]+)/i);
-
-  const code = match ? match[1] : raw;
-  return code.trim();
-}
-
-function isValidDiscordCode(code) {
-  return /^[A-Za-z0-9-]{2,32}$/.test(code);
-}
+import { extractDiscordInviteCode, isValidDiscordCode } from '$lib/server/discordUtils.js';
 
 /** @type {import('./$types').RequestHandler} */
 export async function GET({ url }) {

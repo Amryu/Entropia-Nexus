@@ -21,6 +21,8 @@ Player-offered services marketplace with availability management, ticket-based t
 - **Tool Whitelist**: Per-service-type allowed item categories
 - **Reviews**: Rating system with 1-10 score + comments
 - **Pilots**: Transportation services can have multiple authorized pilots
+- **Manager/Owner Roles**: `user_id` = manager (creates/edits service), `owner_user_id` = optional separate owner (may be a non-Nexus player via `owner_display_name`). Both manager and owner have full management access. Manager role can be transferred to a pilot or the owner.
+- **Discord Server Override**: Warp services (equus/privateer) can set a `discord_code` to use their own Discord server; the Nexus bot skips thread creation for those flights.
 
 ## Database Schema
 
@@ -32,16 +34,18 @@ Main service listings.
 | Column | Type | Description |
 |--------|------|-------------|
 | id | integer | Primary key |
-| user_id | bigint | Service owner (Discord ID) |
+| user_id | bigint | Service manager (Discord ID) |
 | type | enum | Service type (healing, dps, transportation, etc.) |
 | custom_type_name | text | Name for custom service types |
 | title | text | Service title |
-| description | text | Full description |
+| description | text | Full description (rich text HTML) |
 | planet_id | integer | Base planet (FK to planets) |
 | willing_to_travel | boolean | If provider travels to client |
 | travel_fee | numeric | Fee for traveling to client |
 | is_active | boolean | Visible in marketplace |
 | is_busy | boolean | Currently in session |
+| owner_user_id | bigint | Optional separate owner (FK to users, nullable) |
+| owner_display_name | text | Owner EU name (when different from manager, nullable) |
 | created_at, updated_at, deleted_at | timestamptz | Timestamps |
 
 #### `service_healing_details`
@@ -78,6 +82,7 @@ Transportation-specific configuration.
 | departure_location | text | Default departure location |
 | pickup_fee | numeric | Fee for pickup requests |
 | routes | jsonb | Available routes configuration |
+| discord_code | text | Discord invite code (warp only, nullable). When set, bot skips thread creation. |
 
 ### Equipment Tables
 
@@ -386,13 +391,14 @@ POST   /api/services/:id/equipment      - Add equipment item
 PUT    /api/services/:id/equipment      - Update equipment
 ```
 
-### Location & Pilots (Transportation)
+### Location, Pilots & Roles (Transportation)
 
 ```
-PUT    /api/services/:id/location       - Update current location
-GET    /api/services/:id/pilots         - List pilots
-POST   /api/services/:id/pilots         - Add pilot
-DELETE /api/services/:id/pilots         - Remove pilot
+PUT    /api/services/:id/location          - Update current location
+GET    /api/services/:id/pilots            - List pilots
+POST   /api/services/:id/pilots            - Add pilot
+DELETE /api/services/:id/pilots            - Remove pilot
+POST   /api/services/:id/transfer-manager  - Transfer manager role to a pilot or owner
 ```
 
 ### Availability
@@ -522,10 +528,12 @@ When a request is created:
 
 ### Flight Threads
 
-When a flight has check-ins:
+When a flight has check-ins (and the service has no `discord_code` set):
 1. Bot creates thread for flight coordination
 2. Adds passengers as they check in
 3. Updates with flight status changes
+
+Services with a `discord_code` (warp services with their own Discord server) are skipped by the bot — no threads are created for their flights.
 
 ### Button Handlers
 

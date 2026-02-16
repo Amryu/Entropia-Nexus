@@ -16,6 +16,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { getTypeLink, apiPost, encodeURIComponentSafe } from '$lib/util';
   import { addToast } from '$lib/stores/toasts';
+  import { sanitizeMarketHtml } from '$lib/sanitize';
   import {
     canRestoreFlight,
     formatFlightTime,
@@ -50,7 +51,7 @@
   $: availability = data.availability || [];
   $: activeRequest = data.activeRequest;
   $: user = data.session?.user;
-  $: isOwner = user && selectedService && (user.id === selectedService.user_id || user.grants?.includes('admin.panel'));
+  $: isOwner = user && selectedService && (user.id === selectedService.user_id || user.id === selectedService.owner_user_id || user.grants?.includes('admin.panel'));
   // Check if user can manage flights (owner, pilot, or admin)
   $: canManageFlights = isOwner || (user && selectedService && pilots.some(p => p.user_id === user.id));
 
@@ -1071,16 +1072,35 @@
       <div class="service-info">
         <div class="info-section">
           <h3>Provider</h3>
-          <p>
-            <strong>Owner:</strong>
-            {#if selectedService?.owner_id}
-              <a class="provider-link" href={getProfileUrl({ id: selectedService.owner_id, eu_name: selectedService.owner_name })}>
-                {selectedService.owner_name || 'Unknown'}
+          {#if selectedService.manager_name && selectedService.manager_name !== selectedService.owner_name}
+            <p>
+              <strong>Manager:</strong>
+              <a class="provider-link" href={getProfileUrl({ id: selectedService.manager_id || selectedService.user_id, eu_name: selectedService.manager_name })}>
+                {selectedService.manager_name}
               </a>
-            {:else}
-              {selectedService.owner_name || 'Unknown'}
-            {/if}
-          </p>
+            </p>
+            <p>
+              <strong>Owner:</strong>
+              {#if selectedService.owner_user_id}
+                <a class="provider-link" href={getProfileUrl({ id: selectedService.owner_user_id, eu_name: selectedService.owner_name })}>
+                  {selectedService.owner_name || 'Unknown'}
+                </a>
+              {:else}
+                {selectedService.owner_name || 'Unknown'}
+              {/if}
+            </p>
+          {:else}
+            <p>
+              <strong>Owner & Manager:</strong>
+              {#if selectedService?.owner_id}
+                <a class="provider-link" href={getProfileUrl({ id: selectedService.owner_id, eu_name: selectedService.owner_name })}>
+                  {selectedService.owner_name || 'Unknown'}
+                </a>
+              {:else}
+                {selectedService.owner_name || 'Unknown'}
+              {/if}
+            </p>
+          {/if}
           {#if selectedService.type === 'transportation' && pilots.length > 0}
             <p class="pilots-list">
               <strong>Pilots:</strong>
@@ -1096,12 +1116,20 @@
               {/each}
             </p>
           {/if}
+          {#if selectedService.type === 'transportation' && selectedService.transportation_details?.discord_code}
+            <p>
+              <strong>Discord:</strong>
+              <a class="provider-link" href="https://discord.gg/{selectedService.transportation_details.discord_code}" target="_blank" rel="noopener noreferrer">
+                discord.gg/{selectedService.transportation_details.discord_code}
+              </a>
+            </p>
+          {/if}
         </div>
 
         {#if selectedService.description}
           <div class="info-section">
             <h3>Description</h3>
-            <p>{selectedService.description}</p>
+            <div class="description-content">{@html sanitizeMarketHtml(selectedService.description)}</div>
           </div>
         {/if}
 

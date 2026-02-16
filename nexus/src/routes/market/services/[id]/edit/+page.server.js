@@ -37,8 +37,8 @@ export async function load({ fetch, params, locals, url }) {
     throw error(404, 'Service not found');
   }
 
-  // Check ownership
-  if (service.user_id !== user.id && !user?.grants?.includes('admin.panel')) {
+  // Check ownership (manager or owner)
+  if (service.user_id !== user.id && service.owner_user_id !== user.id && !user?.grants?.includes('admin.panel')) {
     throw error(403, 'You can only edit your own services');
   }
 
@@ -58,6 +58,7 @@ export async function load({ fetch, params, locals, url }) {
   return {
     service,
     planets,
-    pilots
+    pilots,
+    user: { id: user.id }
   };
 }

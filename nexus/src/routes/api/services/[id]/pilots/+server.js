@@ -28,7 +28,7 @@ export async function GET({ params, locals }) {
     return getResponse({ error: 'Service not found.' }, 404);
   }
 
-  if (service.user_id !== user.id && !user?.grants?.includes('admin.panel')) {
+  if (service.user_id !== user.id && service.owner_user_id !== user.id && !user?.grants?.includes('admin.panel')) {
     return getResponse({ error: 'You can only manage pilots for your own services.' }, 403);
   }
 
@@ -69,7 +69,7 @@ export async function POST({ params, request, locals }) {
     return getResponse({ error: 'Service not found.' }, 404);
   }
 
-  if (service.user_id !== user.id && !user?.grants?.includes('admin.panel')) {
+  if (service.user_id !== user.id && service.owner_user_id !== user.id && !user?.grants?.includes('admin.panel')) {
     return getResponse({ error: 'You can only manage pilots for your own services.' }, 403);
   }
 
@@ -103,9 +103,9 @@ export async function POST({ params, request, locals }) {
       return getResponse({ error: 'User must be verified to be added as a pilot.' }, 400);
     }
 
-    // Check if user is already the owner
+    // Check if user is already the manager
     if (pilotUser.id === service.user_id) {
-      return getResponse({ error: 'Service owner cannot be added as a pilot.' }, 400);
+      return getResponse({ error: 'Service manager cannot be added as a pilot.' }, 400);
     }
 
     // Check if already a pilot
@@ -153,7 +153,7 @@ export async function DELETE({ params, request, locals }) {
     return getResponse({ error: 'Service not found.' }, 404);
   }
 
-  if (service.user_id !== user.id && !user?.grants?.includes('admin.panel')) {
+  if (service.user_id !== user.id && service.owner_user_id !== user.id && !user?.grants?.includes('admin.panel')) {
     return getResponse({ error: 'You can only manage pilots for your own services.' }, 403);
   }
 

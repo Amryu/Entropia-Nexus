@@ -4,11 +4,22 @@
   export let pilots = [];
   export let isOwner = false;
 
+  // Manager/owner role props
+  export let managerId = null;
+  export let managerName = '';
+  export let ownerUserId = null;
+  export let ownerDisplayName = '';
+  export let currentUserId = null;
+
   let adding = false;
   let removing = false;
+  let transferring = false;
   let identifier = '';
   let error = '';
   let success = '';
+
+  $: isManagerOrOwner = currentUserId && (currentUserId === managerId || currentUserId === ownerUserId);
+  $: ownerIsDifferent = ownerDisplayName || (ownerUserId && ownerUserId !== managerId);
 
   async function addPilot() {
     if (!identifier.trim()) {
@@ -78,6 +89,41 @@
     }
   }
 
+  async function makeManager(newManagerUserId, name) {
+    const currentIsOwner = currentUserId === ownerUserId;
+    const message = currentIsOwner
+      ? `Transfer the manager role to ${name}? You will keep your owner role.`
+      : `Transfer the manager role to ${name}? You will become a pilot instead.`;
+
+    if (!confirm(message)) return;
+
+    transferring = true;
+    error = '';
+    success = '';
+
+    try {
+      const response = await fetch(`/api/services/${serviceId}/transfer-manager`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newManagerUserId })
+      });
+
+      const result = await response.json();
+
+      if (result.error) {
+        error = result.error;
+      } else {
+        success = `Manager role transferred to ${name}. Reloading...`;
+        // Reload page to reflect new roles
+        setTimeout(() => { location.reload(); }, 1500);
+      }
+    } catch (e) {
+      error = 'Failed to transfer manager role.';
+    } finally {
+      transferring = false;
+    }
+  }
+
   async function fetchPilots() {
     try {
       const response = await fetch(`/api/services/${serviceId}/pilots`);
@@ -92,10 +138,43 @@
 </script>
 
 <div class="pilot-manager">
-  <h4>Pilots</h4>
+  <h4>Team</h4>
   <p class="description">
-    Pilots can manage flights, update ship location, and accept check-ins. They cannot edit service settings or ticket offers.
+    Pilots can manage flights, update ship location, and accept check-ins. The manager has full control over service settings, ticket offers, and team.
   </p>
+
+  <!-- Role display -->
+  {#if managerId}
+    <div class="role-cards">
+      <div class="role-card">
+        <div class="role-info">
+          <span class="role-badge manager-badge">Manager</span>
+          <span class="role-name">{managerName || 'Unknown'}</span>
+          {#if !ownerIsDifferent}
+            <span class="role-badge owner-badge">Owner</span>
+          {/if}
+        </div>
+      </div>
+
+      {#if ownerIsDifferent}
+        <div class="role-card">
+          <div class="role-info">
+            <span class="role-badge owner-badge">Owner</span>
+            <span class="role-name">{ownerDisplayName || 'Unknown'}</span>
+          </div>
+          {#if isOwner && ownerUserId && ownerUserId !== currentUserId && currentUserId === managerId}
+            <button
+              class="make-manager-btn"
+              on:click={() => makeManager(ownerUserId, ownerDisplayName || 'the owner')}
+              disabled={transferring}
+            >
+              Make Manager
+            </button>
+          {/if}
+        </div>
+      {/if}
+    </div>
+  {/if}
 
   {#if isOwner}
     <div class="add-pilot-section">
@@ -123,7 +202,7 @@
 
   {#if pilots.length > 0}
     <div class="pilots-list">
-      <h5>Current Pilots</h5>
+      <h5>Pilots</h5>
       {#each pilots as pilot (pilot.id)}
         <div class="pilot-card">
           <div class="pilot-info">
@@ -133,15 +212,26 @@
             {/if}
             <div class="pilot-added">Added by {pilot.added_by_name || 'Unknown'}</div>
           </div>
-          {#if isOwner}
-            <button
-              class="remove-btn"
-              on:click={() => removePilot(pilot.user_id)}
-              disabled={removing}
-            >
-              Remove
-            </button>
-          {/if}
+          <div class="pilot-actions">
+            {#if isOwner && currentUserId === managerId && pilot.user_id !== currentUserId}
+              <button
+                class="make-manager-btn"
+                on:click={() => makeManager(pilot.user_id, pilot.eu_name || pilot.username)}
+                disabled={transferring}
+              >
+                Make Manager
+              </button>
+            {/if}
+            {#if isOwner}
+              <button
+                class="remove-btn"
+                on:click={() => removePilot(pilot.user_id)}
+                disabled={removing}
+              >
+                Remove
+              </button>
+            {/if}
+          </div>
         </div>
       {/each}
     </div>
@@ -182,6 +272,57 @@
     margin: 0 0 1rem 0;
     font-size: 0.9rem;
     color: var(--text-muted, #888);
+  }
+
+  .role-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid #555;
+  }
+
+  .role-card {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.5rem 0.75rem;
+    background: var(--secondary-color, #2a2a2a);
+    border: 1px solid #555;
+    border-radius: 4px;
+  }
+
+  .role-info {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .role-badge {
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 0.15rem 0.5rem;
+    border-radius: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+
+  .manager-badge {
+    background: #1e3a5f;
+    color: #7cb3e0;
+    border: 1px solid #2d5a8a;
+  }
+
+  .owner-badge {
+    background: #3a2f1e;
+    color: #e0c07c;
+    border: 1px solid #8a6e2d;
+  }
+
+  .role-name {
+    font-weight: 500;
   }
 
   .add-pilot-section {
@@ -270,6 +411,32 @@
   .pilot-added {
     font-size: 0.8rem;
     color: var(--text-muted, #666);
+  }
+
+  .pilot-actions {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+  }
+
+  .make-manager-btn {
+    padding: 0.35rem 0.7rem;
+    border: 1px solid #2d5a8a;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    background: #1e3a5f;
+    color: #7cb3e0;
+    transition: background 0.2s;
+  }
+
+  .make-manager-btn:hover:not(:disabled) {
+    background: #2a4d75;
+  }
+
+  .make-manager-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
   .remove-btn {

@@ -15,10 +15,13 @@ import {
   addServiceEquipment,
   deleteServiceEquipment,
   getServiceRequests,
-  updateRequestStatus
+  updateRequestStatus,
+  getUserByEntropiaName
 } from "$lib/server/db.js";
 import { getResponse } from "$lib/util.js";
 import { checkRateLimit } from '$lib/server/rateLimiter.js';
+import { sanitizeMarketDescription } from '$lib/server/sanitizeRichText.js';
+import { extractDiscordInviteCode, isValidDiscordCode } from '$lib/server/discordUtils.js';
 
 // GET single service with all details
 export async function GET({ params, locals }) {
@@ -85,7 +88,7 @@ export async function PUT({ params, request, locals }) {
     return getResponse({ error: 'Service not found.' }, 404);
   }
 
-  if (existingService.user_id !== user.id && !user?.grants?.includes('admin.panel')) {
+  if (existingService.user_id !== user.id && existingService.owner_user_id !== user.id && !user?.grants?.includes('admin.panel')) {
     return getResponse({ error: 'You can only edit your own services.' }, 403);
   }
 
@@ -123,17 +126,54 @@ export async function PUT({ params, request, locals }) {
     }
   }
 
+  // Validate owner_display_name length
+  if (body.owner_display_name !== undefined && body.owner_display_name && String(body.owner_display_name).trim().length > 100) {
+    return getResponse({ error: 'Owner name cannot exceed 100 characters.' }, 400);
+  }
+
+  // Validate discord_code if provided for transportation details
+  if (body.transportation_details?.discord_code !== undefined) {
+    const rawDiscord = body.transportation_details.discord_code;
+    if (rawDiscord) {
+      const code = extractDiscordInviteCode(rawDiscord);
+      if (code && !isValidDiscordCode(code)) {
+        return getResponse({ error: 'Invalid Discord invite code.' }, 400);
+      }
+      body.transportation_details.discord_code = code;
+    } else {
+      body.transportation_details.discord_code = null;
+    }
+  }
+
   try {
+    // Resolve owner fields
+    let owner_user_id = existingService.owner_user_id;
+    let owner_display_name = existingService.owner_display_name;
+    if (body.owner_display_name !== undefined) {
+      const ownerName = body.owner_display_name?.trim() || null;
+      if (ownerName) {
+        owner_display_name = ownerName;
+        const ownerUser = await getUserByEntropiaName(ownerName);
+        owner_user_id = ownerUser ? ownerUser.id : null;
+      } else {
+        // Clearing owner — revert to manager as owner
+        owner_user_id = null;
+        owner_display_name = null;
+      }
+    }
+
     // Update main service fields
     const serviceData = {
       type: body.type || existingService.type,
       custom_type_name: body.type === 'custom' ? body.custom_type_name : null,
       title: body.title?.trim() || existingService.title,
-      description: body.description?.trim() || existingService.description,
+      description: body.description != null ? (sanitizeMarketDescription(body.description) || null) : existingService.description,
       planet_id: body.planet_id !== undefined ? body.planet_id : existingService.planet_id,
       willing_to_travel: body.willing_to_travel !== undefined ? body.willing_to_travel : existingService.willing_to_travel,
       travel_fee: body.travel_fee !== undefined ? (body.travel_fee ? parseFloat(parseFloat(body.travel_fee).toFixed(2)) : null) : existingService.travel_fee,
-      is_active: body.is_active !== undefined ? body.is_active : existingService.is_active
+      is_active: body.is_active !== undefined ? body.is_active : existingService.is_active,
+      owner_user_id,
+      owner_display_name
     };
 
     const service = await updateService(serviceId, serviceData);
@@ -210,7 +250,7 @@ export async function DELETE({ params, locals }) {
     return getResponse({ error: 'Service not found.' }, 404);
   }
 
-  if (existingService.user_id !== user.id && !user?.grants?.includes('admin.panel')) {
+  if (existingService.user_id !== user.id && existingService.owner_user_id !== user.id && !user?.grants?.includes('admin.panel')) {
     return getResponse({ error: 'You can only delete your own services.' }, 403);
   }
 

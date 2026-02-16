@@ -1,7 +1,8 @@
 //@ts-nocheck
-import { getServices, createService, upsertServiceHealingDetails, upsertServiceDpsDetails, upsertServiceTransportationDetails, addServiceEquipment, getServiceHealingDetails, getServiceDpsDetails, getServiceTransportationDetails, getServicesEquipmentBulk } from "$lib/server/db.js";
+import { getServices, createService, upsertServiceHealingDetails, upsertServiceDpsDetails, upsertServiceTransportationDetails, addServiceEquipment, getServiceHealingDetails, getServiceDpsDetails, getServiceTransportationDetails, getServicesEquipmentBulk, getUserByEntropiaName } from "$lib/server/db.js";
 import { getResponse, apiCall } from "$lib/util.js";
 import { checkRateLimit } from '$lib/server/rateLimiter.js';
+import { sanitizeMarketDescription } from '$lib/server/sanitizeRichText.js';
 
 // GET all services (with optional filters)
 export async function GET({ url, locals, fetch }) {
@@ -106,17 +107,36 @@ export async function POST({ request, locals }) {
     return getResponse({ error: 'Equipment list cannot exceed 50 items.' }, 400);
   }
 
+  // Validate owner_display_name length
+  if (body.owner_display_name && String(body.owner_display_name).trim().length > 100) {
+    return getResponse({ error: 'Owner name cannot exceed 100 characters.' }, 400);
+  }
+
   try {
+    // Resolve owner fields
+    let owner_user_id = null;
+    let owner_display_name = null;
+    const ownerName = body.owner_display_name?.trim();
+    if (ownerName) {
+      owner_display_name = ownerName;
+      const ownerUser = await getUserByEntropiaName(ownerName);
+      if (ownerUser) {
+        owner_user_id = ownerUser.id;
+      }
+    }
+
     // Create the service
     const serviceData = {
       user_id: user.id,
       type: body.type,
       custom_type_name: body.type === 'custom' ? body.custom_type_name : null,
       title: body.title.trim(),
-      description: body.description?.trim() || null,
+      description: body.description ? (sanitizeMarketDescription(body.description) || null) : null,
       planet_id: body.planet_id || null,
       willing_to_travel: body.willing_to_travel || false,
-      travel_fee: body.travel_fee ? parseFloat(parseFloat(body.travel_fee).toFixed(2)) : null
+      travel_fee: body.travel_fee ? parseFloat(parseFloat(body.travel_fee).toFixed(2)) : null,
+      owner_user_id,
+      owner_display_name
     };
 
     const service = await createService(serviceData);

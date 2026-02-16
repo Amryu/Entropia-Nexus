@@ -58,6 +58,10 @@
   // Custom type name
   let customTypeName = '';
 
+  // Owner fields (transportation only)
+  let differentOwner = false;
+  let ownerDisplayName = '';
+
   // Ship name options for regular transportation
   const regularShipOptions = ['Sleipnir', 'Quad-Wing Interceptor'];
 
@@ -125,7 +129,7 @@
     const payload = {
       type: serviceType,
       title: title.trim(),
-      description: description.trim() || null,
+      description: description || null,
       planet_id: planetId || null,
       willing_to_travel: serviceType === 'transportation' ? true : willingToTravel,
       travel_fee: (serviceType === 'transportation' || willingToTravel) && travelFee ? parseFloat(travelFee) : null,
@@ -161,6 +165,9 @@
         ship_name: shipName || null,
         service_mode: serviceMode
       };
+      if (differentOwner && ownerDisplayName.trim()) {
+        payload.owner_display_name = ownerDisplayName.trim();
+      }
     }
 
     try {
@@ -235,8 +242,18 @@
         </div>
 
         <div class="form-group">
-          <label for="description">Description</label>
-          <textarea id="description" bind:value={description} rows="4" placeholder="Describe your service..."></textarea>
+          <label>Description</label>
+          {#await import('$lib/components/wiki/RichTextEditor.svelte') then { default: RichTextEditor }}
+            <RichTextEditor
+              content={description}
+              placeholder="Describe your service..."
+              showHeadings={false}
+              showCodeBlock={false}
+              showVideo={false}
+              showImages={false}
+              on:change={(e) => description = e.detail}
+            />
+          {/await}
         </div>
       </div>
 
@@ -367,6 +384,21 @@
               <small>Regular and Equus transportation is on-demand only.</small>
             {/if}
           </div>
+
+          <div class="form-group checkbox-group">
+            <label>
+              <input type="checkbox" bind:checked={differentOwner} />
+              The ship owner is a different player
+            </label>
+          </div>
+
+          {#if differentOwner}
+            <div class="form-group">
+              <label for="ownerDisplayName">Owner Name (EU Name)</label>
+              <input type="text" id="ownerDisplayName" bind:value={ownerDisplayName} placeholder="Enter the owner's Entropia Universe name" maxlength="100" />
+              <small>The owner does not need to have a Nexus account.</small>
+            </div>
+          {/if}
 
           <p class="info-text">
             Routes, schedules, and ticket pricing can be configured after creating the service.
