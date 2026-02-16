@@ -1,11 +1,9 @@
 // @ts-nocheck
 import { getExchangeCategorizationSummaryJson } from '$lib/market/cache';
-import { brotliCompressSync, gzipSync } from 'node:zlib';
 
 export async function GET({ fetch, request }) {
   try {
-    const { json, etag } = await getExchangeCategorizationSummaryJson(fetch);
-    const body = json;
+    const { json, etag, brotli, gzip } = await getExchangeCategorizationSummaryJson(fetch);
 
     const ae = request.headers.get('accept-encoding') || '';
     const headers = new Headers({
@@ -20,15 +18,16 @@ export async function GET({ fetch, request }) {
       return new Response(null, { status: 304, headers });
     }
 
-    if (ae.includes('br')) {
+    // Serve pre-compressed buffers directly (compressed once at build time, not per-request)
+    if (ae.includes('br') && brotli) {
       headers.set('Content-Encoding', 'br');
-      return new Response(brotliCompressSync(Buffer.from(body)), { status: 200, headers });
+      return new Response(brotli, { status: 200, headers });
     }
-    if (ae.includes('gzip')) {
+    if (ae.includes('gzip') && gzip) {
       headers.set('Content-Encoding', 'gzip');
-      return new Response(gzipSync(Buffer.from(body)), { status: 200, headers });
+      return new Response(gzip, { status: 200, headers });
     }
-    return new Response(body, { status: 200, headers });
+    return new Response(json, { status: 200, headers });
   } catch (e) {
     return new Response(JSON.stringify({ error: 'Failed to retrieve market cache' }), {
       status: 500,

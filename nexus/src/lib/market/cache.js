@@ -3,6 +3,8 @@ import { apiCall } from "$lib/util";
 import { categorizeItems } from "$lib/market/categorize";
 import { getAllOrderCounts, getLatestExchangePriceMap, getOrderPlanets } from "$lib/server/exchange.js";
 import { ABSOLUTE_MARKUP_MATERIAL_TYPES } from "$lib/common/itemTypes.js";
+import { brotliCompressSync, gzipSync } from 'node:zlib';
+import { createHash } from 'node:crypto';
 
 // In-memory cache
 let cache = {
@@ -12,6 +14,8 @@ let cache = {
   // Precomputed summary payload for the exchange endpoint
   summaryJson: null,
   summaryEtag: null,
+  summaryBrotli: null, // Pre-compressed Brotli buffer
+  summaryGzip: null,   // Pre-compressed Gzip buffer
   // Source datasets
   items: null,
   detailed: {},
@@ -21,6 +25,8 @@ let cache = {
   orderPlanets: null,
   // Exchange price data per item (Map<itemId, { wap, median, p10 }>)
   exchangePrices: null,
+  // Fingerprint of last offer counts/planets/prices used to skip no-op rebuilds
+  countsFingerprint: null,
   // Timestamps
   lastFullBuildAt: 0,
   lastItemsCheckAt: 0,
@@ -147,24 +153,33 @@ function enrichWithItemIds(items, detailed) {
   }
 }
 
-// Build/rebuild lightweight summary JSON and an ETag for fast responses
+// Build/rebuild lightweight summary JSON, pre-compress, and compute content-based ETag
 function buildSummary() {
   try {
     if (!cache.annotated) {
       cache.summaryJson = null;
       cache.summaryEtag = null;
+      cache.summaryBrotli = null;
+      cache.summaryGzip = null;
       return;
     }
     const slim = slimCategorized(cache.annotated);
     const json = JSON.stringify(slim);
-    // Simple weak ETag based on length and last full build timestamp
-    const len = Buffer.byteLength(json);
-    const stamp = cache.lastFullBuildAt || Date.now();
+    const buf = Buffer.from(json);
+
+    // Content-based ETag using MD5 hash
+    const hash = createHash('md5').update(buf).digest('hex').slice(0, 16);
     cache.summaryJson = json;
-    cache.summaryEtag = `W/"${len}-${stamp}"`;
+    cache.summaryEtag = `W/"${hash}"`;
+
+    // Pre-compress so the endpoint never has to compress per-request
+    cache.summaryBrotli = brotliCompressSync(buf);
+    cache.summaryGzip = gzipSync(buf);
   } catch {
     cache.summaryJson = null;
     cache.summaryEtag = null;
+    cache.summaryBrotli = null;
+    cache.summaryGzip = null;
   }
 }
 
@@ -334,8 +349,32 @@ async function itemsDeltaRefresh(fetch) {
 }
 
 /**
- * Refresh only the offer counts and rebuild summary.
- * Lightweight — just one DB query.
+ * Compute a lightweight fingerprint of the offer counts, planets, and prices
+ * so we can skip buildSummary() when nothing has changed.
+ */
+function countsFingerprint(counts, planets, prices) {
+  const parts = [(counts?.size || 0), (planets?.size || 0), (prices?.size || 0)];
+  if (counts) {
+    for (const [id, c] of counts) {
+      parts.push(id, c.buys, c.sells, c.buyVol, c.sellVol, c.bestBuyMarkup ?? '');
+    }
+  }
+  if (planets) {
+    for (const [id, pl] of planets) {
+      parts.push(id, pl.join(','));
+    }
+  }
+  if (prices) {
+    for (const [id, p] of prices) {
+      parts.push(id, p.wap, p.median, p.p10);
+    }
+  }
+  return parts.join('|');
+}
+
+/**
+ * Refresh only the offer counts and rebuild summary if data changed.
+ * Lightweight — just DB queries, skips tree walk + compression when unchanged.
  */
 async function refreshOfferCounts() {
   if (!cache.annotated) return; // no data yet
@@ -349,7 +388,13 @@ async function refreshOfferCounts() {
     if (planets) cache.orderPlanets = planets;
     if (prices) cache.exchangePrices = prices;
     cache.lastOfferCountsAt = Date.now();
-    buildSummary();
+
+    // Only rebuild summary if the data actually changed
+    const fp = countsFingerprint(counts, planets, prices);
+    if (fp !== cache.countsFingerprint) {
+      cache.countsFingerprint = fp;
+      buildSummary();
+    }
   } catch { /* non-fatal */ }
 }
 
@@ -420,6 +465,8 @@ if (typeof window === 'undefined') {
 // Slim client payload
 function slimItem(item) {
   if (!item || typeof item !== 'object') return item;
+  // Filter items marked as untradeable in their description
+  if (item.Properties?.Description?.includes('Untradeable')) return null;
   const id = item.ItemId ?? item.Id ?? null;
   const counts = id != null && cache.offerCounts ? cache.offerCounts.get(id) : null;
   const planets = id != null && cache.orderPlanets ? cache.orderPlanets.get(id) : null;
@@ -472,7 +519,7 @@ function slimItem(item) {
 }
 
 function slimCategorized(obj) {
-  if (Array.isArray(obj)) return obj.map(slimItem);
+  if (Array.isArray(obj)) return obj.map(slimItem).filter(Boolean);
   if (obj && typeof obj === 'object') {
     const out = {};
     for (const [k, v] of Object.entries(obj)) {
@@ -493,9 +540,14 @@ export async function getExchangeCategorizationSummary(fetch) {
   }
 }
 
-// Fast path for API route: returns precomputed JSON string and ETag
+// Fast path for API route: returns precomputed JSON string, ETag, and pre-compressed buffers
 export async function getExchangeCategorizationSummaryJson(fetch) {
   await getExchangeCategorization(fetch);
   if (!cache.summaryJson) buildSummary();
-  return { json: cache.summaryJson || '{}', etag: cache.summaryEtag || null };
+  return {
+    json: cache.summaryJson || '{}',
+    etag: cache.summaryEtag || null,
+    brotli: cache.summaryBrotli,
+    gzip: cache.summaryGzip
+  };
 }
