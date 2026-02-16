@@ -4,7 +4,7 @@
 
   import { goto } from '$app/navigation';
   import { encodeURIComponentSafe, getItemLink, getTypeLink } from '$lib/util';
-  import { hasCondition } from '$lib/shopUtils';
+  import { isPercentMarkupType } from '$lib/common/itemTypes.js';
   import { editMode } from '$lib/stores/wikiEditState.js';
 
   import FancyTable from '../FancyTable.svelte';
@@ -127,13 +127,15 @@
       }
 
       for (const g of Array.from(groups.values())) {
-        const isAbs = hasCondition(g.item);
+        const itemType = g.item?.Properties?.Type || g.item?.Type || g.item?.t || '';
+        const itemName = g.item?.Name || g.item?.n || '';
+        const isPercent = isPercentMarkupType(itemType, itemName);
         if (g.entries.length === 0) continue;
         for (const entry of g.entries) {
           rows.push({
             name: g.shop?.Name ?? 'N/A',
             source: 'Shop',
-            markup: isAbs ? `+${entry.markup.toFixed(2)}` : `${entry.markup.toFixed(2)}%`,
+            markup: isPercent ? `${entry.markup.toFixed(2)}%` : `+${entry.markup.toFixed(2)}`,
             markupRaw: entry.markup,
             quantity: entry.stack,
             planet: g.shop?.Planet?.Name ?? 'N/A',
