@@ -56,7 +56,8 @@ function getActiveArmorSetEffects(loadout, armorSlots, armors, armorSets) {
   const result = [];
   if (!manageIndividual && setName) {
     const set = findByName(armorSets, setName);
-    const pieces = pieceCountBySet.get(setName) || 0;
+    // In set mode, assume full set — individual pieces may not exist in the database
+    const pieces = pieceCountBySet.get(setName) || slotList.length;
     if (!set?.EffectsOnSetEquip) return [];
     return uniqueEffectsByNameHighestPieces(set.EffectsOnSetEquip, () => pieces);
   }

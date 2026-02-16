@@ -3,20 +3,22 @@ import { test, expect } from '../fixtures/auth';
 /**
  * Exchange Batch Order Tests
  *
- * Tests the batch order creation endpoint (/api/market/exchange/orders/batch).
- * Covers authentication, validation, per-item limits, partial success, and rate limits.
+ * Tests the batch order creation/editing endpoint (/api/market/exchange/orders/batch).
+ * Covers authentication, validation, per-item limits, partial success, rate limits,
+ * and batch editing of existing orders.
  *
  * Item IDs used (9000xxx range — IDs that don't exist in the DB to avoid
  * gendered-type validation and conflicts with exchange-rate-limits.spec.ts):
  * - 9000001–9000010: Single-item batch tests
  * - 9000011–9000020: Multi-item batch tests
+ * - 9000021–9000030: Batch edit tests
  */
 
 const BATCH_API = '/api/market/exchange/orders/batch';
 const SINGLE_API = '/api/market/exchange/orders';
 const TEST_TURNSTILE_TOKEN = 'test';
 
-/** Helper to create a batch of orders */
+/** Helper to create a batch of orders (optionally with order_id for edits) */
 async function createBatch(
   page: import('@playwright/test').Page,
   orders: Array<{
@@ -26,19 +28,24 @@ async function createBatch(
     markup: number;
     planet?: string;
     details?: object;
+    order_id?: number;
   }>,
   turnstileToken: string = TEST_TURNSTILE_TOKEN
 ) {
   return page.request.post(BATCH_API, {
     data: {
-      orders: orders.map(o => ({
-        type: o.type ?? 'SELL',
-        item_id: o.item_id,
-        quantity: o.quantity ?? 1,
-        markup: o.markup,
-        planet: o.planet ?? 'Calypso',
-        details: o.details,
-      })),
+      orders: orders.map(o => {
+        const entry: Record<string, unknown> = {
+          type: o.type ?? 'SELL',
+          item_id: o.item_id,
+          quantity: o.quantity ?? 1,
+          markup: o.markup,
+          planet: o.planet ?? 'Calypso',
+          details: o.details,
+        };
+        if (o.order_id != null) entry.order_id = o.order_id;
+        return entry;
+      }),
       turnstile_token: turnstileToken,
     },
   });
@@ -192,15 +199,17 @@ test.describe('Batch Orders - Successful Creation', () => {
       { item_id: 9000012, markup: 120 },
       { item_id: 9000013, markup: 130 },
     ]);
-    expect(res.status()).toBe(201);
+    expect(res.status()).toBe(200);
     const data = await res.json();
 
     expect(data.created).toBe(3);
+    expect(data.updated).toBe(0);
     expect(data.failed).toBe(0);
     expect(data.results).toHaveLength(3);
 
     for (const result of data.results) {
       expect(result.success).toBe(true);
+      expect(result.action).toBe('created');
       expect(result.order.id).toBeDefined();
       expect(result.order.type).toBe('SELL');
       createdOrderIds.push(result.order.id);
@@ -229,8 +238,8 @@ test.describe('Batch Orders - Per-Item Limit', () => {
     const res = await createBatch(verifiedUser, orders);
     const data = await res.json();
 
-    // Should be 201 since at least some succeeded
-    expect(res.status()).toBe(201);
+    // Should be 200 since at least some succeeded
+    expect(res.status()).toBe(200);
     expect(data.created).toBe(5);
     expect(data.failed).toBe(1);
 
@@ -259,7 +268,7 @@ test.describe('Batch Orders - Per-Item Limit', () => {
     const res = await createBatch(verifiedUser, orders);
     const data = await res.json();
 
-    expect(res.status()).toBe(201);
+    expect(res.status()).toBe(200);
     expect(data.created).toBe(4);
     expect(data.failed).toBe(1);
 
@@ -292,8 +301,8 @@ test.describe('Batch Orders - Partial Success', () => {
       },
     });
 
-    // At least one succeeded → 201
-    expect(res.status()).toBe(201);
+    // At least one succeeded → 200
+    expect(res.status()).toBe(200);
     const data = await res.json();
 
     expect(data.created).toBe(2);
@@ -332,6 +341,143 @@ test.describe('Batch Orders - Partial Success', () => {
   });
 });
 
+// ─── Batch Editing ──────────────────────────────────────────────
+
+test.describe('Batch Orders - Editing', () => {
+  const createdOrderIds: number[] = [];
+
+  test.afterAll(async ({ verifiedUser }) => {
+    for (const id of createdOrderIds) {
+      await closeOrder(verifiedUser, id);
+    }
+  });
+
+  test('edits an existing order via order_id', async ({ verifiedUser }) => {
+    // Create an order first
+    const createRes = await createSingleOrder(verifiedUser, { item_id: 9000021, markup: 110 });
+    expect(createRes.status()).toBe(201);
+    const created = await createRes.json();
+    createdOrderIds.push(created.id);
+
+    // Edit it via batch endpoint
+    const res = await createBatch(verifiedUser, [{
+      item_id: 9000021,
+      markup: 150,
+      quantity: 5,
+      order_id: created.id,
+    }]);
+    expect(res.status()).toBe(200);
+    const data = await res.json();
+
+    expect(data.created).toBe(0);
+    expect(data.updated).toBe(1);
+    expect(data.failed).toBe(0);
+    expect(data.results[0].success).toBe(true);
+    expect(data.results[0].action).toBe('updated');
+    expect(Number(data.results[0].order.markup)).toBe(150);
+    expect(Number(data.results[0].order.quantity)).toBe(5);
+  });
+
+  test('mixed batch with creates and edits', async ({ verifiedUser }) => {
+    // Create an order to edit later
+    const createRes = await createSingleOrder(verifiedUser, { item_id: 9000022, markup: 110, type: 'BUY' });
+    expect(createRes.status()).toBe(201);
+    const existing = await createRes.json();
+    createdOrderIds.push(existing.id);
+
+    // Batch: edit the existing + create a new one
+    const res = await createBatch(verifiedUser, [
+      { item_id: 9000022, markup: 130, type: 'BUY', order_id: existing.id },
+      { item_id: 9000023, markup: 120 },
+    ]);
+    expect(res.status()).toBe(200);
+    const data = await res.json();
+
+    expect(data.created).toBe(1);
+    expect(data.updated).toBe(1);
+    expect(data.failed).toBe(0);
+
+    // First result: edit
+    expect(data.results[0].success).toBe(true);
+    expect(data.results[0].action).toBe('updated');
+
+    // Second result: create
+    expect(data.results[1].success).toBe(true);
+    expect(data.results[1].action).toBe('created');
+    createdOrderIds.push(data.results[1].order.id);
+  });
+
+  test('rejects edit of non-existent order', async ({ verifiedUser }) => {
+    const res = await createBatch(verifiedUser, [{
+      item_id: 9000024,
+      markup: 110,
+      order_id: 999999999,
+    }]);
+    expect(res.status()).toBe(400);
+    const data = await res.json();
+    expect(data.results[0].success).toBe(false);
+    expect(data.results[0].error).toContain('not found');
+  });
+
+  test('rejects edit with mismatched item_id', async ({ verifiedUser }) => {
+    // Create an order for item 9000025
+    const createRes = await createSingleOrder(verifiedUser, { item_id: 9000025, markup: 110 });
+    expect(createRes.status()).toBe(201);
+    const created = await createRes.json();
+    createdOrderIds.push(created.id);
+
+    // Try to edit it with a different item_id
+    const res = await createBatch(verifiedUser, [{
+      item_id: 9000026,
+      markup: 120,
+      order_id: created.id,
+    }]);
+    const data = await res.json();
+    expect(data.results[0].success).toBe(false);
+    expect(data.results[0].error).toContain('mismatch');
+  });
+
+  test('rejects edit with mismatched type', async ({ verifiedUser }) => {
+    // Create a SELL order
+    const createRes = await createSingleOrder(verifiedUser, { item_id: 9000027, markup: 110, type: 'SELL' });
+    expect(createRes.status()).toBe(201);
+    const created = await createRes.json();
+    createdOrderIds.push(created.id);
+
+    // Try to edit it as BUY type
+    const res = await createBatch(verifiedUser, [{
+      item_id: 9000027,
+      markup: 120,
+      type: 'BUY',
+      order_id: created.id,
+    }]);
+    const data = await res.json();
+    expect(data.results[0].success).toBe(false);
+    expect(data.results[0].error).toContain('mismatch');
+  });
+
+  test('edits do not count toward side limits', async ({ verifiedUser }) => {
+    // Create an order
+    const createRes = await createSingleOrder(verifiedUser, { item_id: 9000028, markup: 110 });
+    expect(createRes.status()).toBe(201);
+    const created = await createRes.json();
+    createdOrderIds.push(created.id);
+
+    // Edit it — should succeed without counting toward sell limit
+    const res = await createBatch(verifiedUser, [{
+      item_id: 9000028,
+      markup: 200,
+      order_id: created.id,
+    }]);
+    expect(res.status()).toBe(200);
+    const data = await res.json();
+    expect(data.updated).toBe(1);
+    expect(data.created).toBe(0);
+    expect(data.results[0].success).toBe(true);
+    expect(data.results[0].action).toBe('updated');
+  });
+});
+
 // ─── Rate Limit Pre-Check ────────────────────────────────────────
 
 test.describe('Batch Orders - Rate Limit Pre-Check', () => {
@@ -344,7 +490,7 @@ test.describe('Batch Orders - Rate Limit Pre-Check', () => {
       { item_id: 9000019, markup: 110 },
     ]);
     // Should succeed (well under limit)
-    expect(res.status()).toBe(201);
+    expect(res.status()).toBe(200);
 
     // Clean up
     const data = await res.json();

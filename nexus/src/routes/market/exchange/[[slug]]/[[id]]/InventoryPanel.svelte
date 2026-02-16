@@ -4,12 +4,10 @@
   import InventoryItemDialog from './InventoryItemDialog.svelte';
   import { inventory, myOrders, enrichOrders } from '../../exchangeStore.js';
   import { isItemStackable, formatPedRaw, formatMarkupForItem, itemTypeBadge } from '../../orderUtils';
-  import { MAX_SELL_ORDERS } from '../../exchangeConstants.js';
+  import { MAX_SELL_ORDERS, MAX_ORDERS_PER_ITEM } from '../../exchangeConstants.js';
   import { encodeURIComponentSafe } from '$lib/util.js';
   import { goto } from '$app/navigation';
   import { createEventDispatcher, onMount } from 'svelte';
-
-  const MAX_ORDERS_PER_ITEM = 5;
 
   export let user = null;
   export let allItems = [];

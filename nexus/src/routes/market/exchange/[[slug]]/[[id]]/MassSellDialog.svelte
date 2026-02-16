@@ -2,7 +2,8 @@
   //@ts-nocheck
   import { createEventDispatcher } from 'svelte';
   import { isItemStackable, isPercentMarkup, isItemTierable, isBlueprint, isLimited, itemHasCondition, itemTypeBadge } from '../../orderUtils';
-  import { PLANETS, DEFAULT_PARTIAL_RATIO, MAX_SELL_ORDERS } from '../../exchangeConstants.js';
+  import { PLANETS, DEFAULT_PARTIAL_RATIO, MAX_SELL_ORDERS, MAX_ORDERS_PER_ITEM } from '../../exchangeConstants.js';
+  import { myOrders, upsertOrder } from '../../exchangeStore.js';
   import { env } from '$env/dynamic/public';
   import TurnstileWidget from '$lib/components/TurnstileWidget.svelte';
   import { addToast } from '$lib/stores/toasts.js';
@@ -45,6 +46,16 @@
     rowKeyCounter = 0;
     const rows = [];
 
+    // Build lookup of existing active SELL orders by item_id
+    const existingOrdersByItem = new Map();
+    for (const order of ($myOrders || [])) {
+      if (order.type !== 'SELL' || order.state === 'closed') continue;
+      if (!existingOrdersByItem.has(order.item_id)) existingOrdersByItem.set(order.item_id, []);
+      existingOrdersByItem.get(order.item_id).push(order);
+    }
+    // Track how many new rows have been generated per item (for non-stackable limit tracking)
+    const newRowCountByItem = new Map();
+
     for (const { invItem, count } of items) {
       const slim = (allItems || []).find(si => si?.i === invItem.item_id);
       const stackable = isItemStackable(slim);
@@ -71,8 +82,33 @@
         ? Math.round(Number(invItem.value) / invItem.quantity * 100) / 100
         : null;
 
+      const existingOrders = existingOrdersByItem.get(invItem.item_id) || [];
+      const existingCount = existingOrders.length;
+
       for (let c = 0; c < rowCount; c++) {
         const qty = stackable ? (invItem.quantity || 1) : 1;
+
+        // Determine if this row should edit an existing order or is blocked
+        let isEdit = false;
+        let existingOrderId = null;
+        let blocked = false;
+        let blockError = null;
+
+        if (stackable && existingCount > 0) {
+          // Stackable: limit 1 per item, edit the existing order
+          isEdit = true;
+          existingOrderId = existingOrders[0].id;
+        } else if (!stackable) {
+          // Non-stackable: check if per-item limit is reached
+          const newForItem = newRowCountByItem.get(invItem.item_id) || 0;
+          if (existingCount + newForItem >= MAX_ORDERS_PER_ITEM) {
+            blocked = true;
+            blockError = `Maximum ${MAX_ORDERS_PER_ITEM} sell orders for this item reached`;
+          } else {
+            newRowCountByItem.set(invItem.item_id, newForItem + 1);
+          }
+        }
+
         rows.push({
           key: `${invItem.id}_${rowKeyCounter++}`,
           invItem,
@@ -85,7 +121,8 @@
           blueprint,
           hasCond,
           limited,
-          markup: defaultMarkup,
+          // For edits, use existing order's markup; for new, use default
+          markup: isEdit ? existingOrders[0].markup : defaultMarkup,
           quantity: qty,
           allowPartial: stackable && qty > 1,
           minQuantity: stackable ? Math.max(1, Math.floor(qty * DEFAULT_PARTIAL_RATIO)) : null,
@@ -96,8 +133,11 @@
           tier: details.Tier != null ? Number(details.Tier) : (tierable ? 0 : null),
           tir: details.TierIncreaseRate != null ? Number(details.TierIncreaseRate) : (tierable ? 1 : null),
           qr: details.QualityRating != null ? Number(details.QualityRating) : (blueprint && !limited ? 1 : null),
-          error: null,
-          status: 'pending', // 'pending' | 'submitting' | 'done' | 'error'
+          isEdit,
+          existingOrderId,
+          blocked,
+          error: blockError,
+          status: blocked ? 'blocked' : 'pending',
         });
       }
     }
@@ -187,9 +227,15 @@
     return null;
   }
 
+  // Submittable rows: not blocked, not already done
+  $: submittableRows = orderRows.filter(r => !r.blocked && r.status !== 'done');
+  $: newOrderCount = orderRows.filter(r => !r.isEdit && !r.blocked && r.status !== 'done').length;
+  $: editOrderCount = orderRows.filter(r => r.isEdit && !r.blocked && r.status !== 'done').length;
+
   function validateAll() {
     let valid = true;
     orderRows = orderRows.map(row => {
+      if (row.blocked) return row; // Skip validation for blocked rows
       const err = validateRow(row);
       if (err) valid = false;
       return { ...row, error: err };
@@ -209,7 +255,7 @@
     if (row.hasCond && row.currentTT != null) {
       details.CurrentTT = Number(row.currentTT);
     }
-    return {
+    const payload = {
       type: 'SELL',
       item_id: row.itemId,
       quantity: row.stackable ? (row.quantity || 1) : 1,
@@ -218,6 +264,10 @@
       min_quantity: (row.stackable && row.allowPartial && row.minQuantity) ? row.minQuantity : null,
       details,
     };
+    if (row.isEdit && row.existingOrderId) {
+      payload.order_id = row.existingOrderId;
+    }
+    return payload;
   }
 
   async function submit() {
@@ -232,13 +282,16 @@
 
     submitting = true;
     progressError = null;
-    totalOrders = orderRows.length;
+
+    // Only submit non-blocked rows
+    const rowsToSubmit = orderRows.filter(r => !r.blocked && r.status !== 'done');
+    totalOrders = rowsToSubmit.length;
     progress = 0;
 
-    // Mark all rows as submitting
-    orderRows = orderRows.map(r => ({ ...r, status: 'submitting', error: null }));
+    // Mark submittable rows as submitting
+    orderRows = orderRows.map(r => r.blocked || r.status === 'done' ? r : { ...r, status: 'submitting', error: null });
 
-    const payloads = orderRows.map(row => buildPayload(row));
+    const payloads = rowsToSubmit.map(row => buildPayload(row));
 
     try {
       const res = await fetch('/api/market/exchange/orders/batch', {
@@ -258,20 +311,23 @@
 
       if (!res.ok && !data.results) {
         // Batch-level error (auth, rate limit, turnstile, etc.)
-        orderRows = orderRows.map(r => ({ ...r, status: 'error', error: data.error || 'Batch request failed' }));
+        orderRows = orderRows.map(r => r.blocked ? r : { ...r, status: 'error', error: data.error || 'Batch request failed' });
         progressError = data.error || 'Batch request failed';
         submitting = false;
         return;
       }
 
-      // Process per-order results
+      // Process per-order results — map back to submittable rows
       const results = data.results || [];
       let failedCount = 0;
+      let resultIdx = 0;
 
       for (let i = 0; i < orderRows.length; i++) {
-        const result = results[i];
+        if (orderRows[i].blocked || orderRows[i].status === 'done') continue;
+        const result = results[resultIdx++];
         if (result?.success) {
           orderRows[i] = { ...orderRows[i], status: 'done', error: null };
+          if (result.order) upsertOrder(result.order);
           progress++;
         } else {
           orderRows[i] = { ...orderRows[i], status: 'error', error: result?.error || 'Unknown error' };
@@ -288,14 +344,14 @@
         dispatch('complete');
       }
     } catch (err) {
-      orderRows = orderRows.map(r => r.status !== 'done' ? { ...r, status: 'error', error: 'Network error' } : r);
+      orderRows = orderRows.map(r => (r.blocked || r.status === 'done') ? r : { ...r, status: 'error', error: 'Network error' });
       progressError = `Network error: ${err.message || 'Failed to reach server'}`;
       submitting = false;
     }
   }
 
   function retryFromError() {
-    orderRows = orderRows.filter(r => r.status !== 'done');
+    orderRows = orderRows.filter(r => r.status !== 'done' && !r.blocked);
     orderRows = orderRows.map(r => r.status === 'error' ? { ...r, status: 'pending', error: null } : r);
     progressError = null;
     progress = 0;
@@ -331,29 +387,36 @@
       </div>
 
       <div class="batch-info">
-        {sellOrderCount + orderRows.length} / {MAX_SELL_ORDERS} sell orders after this batch
+        {sellOrderCount + newOrderCount} / {MAX_SELL_ORDERS} sell orders after this batch{#if editOrderCount > 0} ({editOrderCount} edit{editOrderCount !== 1 ? 's' : ''}){/if}
       </div>
 
       <div class="order-rows-container">
         {#each orderRows as row, i (row.key)}
-          <div class="order-row" class:error={row.error} class:done={row.status === 'done'} class:submitting={row.status === 'submitting'}>
+          <div class="order-row" class:error={row.error && !row.blocked} class:done={row.status === 'done'} class:submitting={row.status === 'submitting'} class:blocked={row.blocked}>
             <div class="row-header">
               <span class="row-name" title={row.itemName}>
                 {row.itemName}{@html itemTypeBadge(row.itemType)}
               </span>
+              {#if row.isEdit}
+                <span class="edit-badge">Edit</span>
+              {/if}
+              {#if row.blocked}
+                <span class="blocked-badge">Limit</span>
+              {/if}
               <span class="row-status">
                 {#if row.status === 'done'}
                   <span class="status-done">&#10003;</span>
                 {:else if row.status === 'submitting'}
                   <span class="status-submitting">...</span>
-                {:else if row.status === 'error'}
+                {:else if row.error && !row.blocked}
                   <span class="status-error">!</span>
                 {/if}
               </span>
-              {#if !submitting}
+              {#if !submitting && !row.blocked}
                 <button class="row-remove" on:click={() => removeRow(i)} title="Remove">&times;</button>
               {/if}
             </div>
+            {#if !row.blocked}
             <div class="row-fields">
               <div class="field">
                 <label>Markup{row.pctMarkup ? ' (%)' : ' (+PED)'}</label>
@@ -472,6 +535,7 @@
                 </div>
               {/if}
             </div>
+            {/if}
             {#if row.error}
               <div class="row-error-msg">{row.error}</div>
             {/if}
@@ -485,11 +549,11 @@
         </div>
         <div class="progress-text">
           {#if submitting}
-            Creating {totalOrders} orders...
+            Submitting {totalOrders} order{totalOrders !== 1 ? 's' : ''}...
           {:else if progress === totalOrders && !progressError}
-            All {totalOrders} orders created!
+            All {totalOrders} order{totalOrders !== 1 ? 's' : ''} submitted!
           {:else if progressError}
-            {progress} of {totalOrders} created. {progressError}
+            {progress} of {totalOrders} submitted. {progressError}
           {/if}
         </div>
       {/if}
@@ -512,9 +576,9 @@
         {#if progressError}
           <button class="btn-retry" on:click={retryFromError} disabled={env.PUBLIC_TURNSTILE_SITE_KEY && !turnstileToken}>Retry Remaining</button>
         {/if}
-        {#if !progressError && progress < orderRows.length}
-          <button class="btn-submit" on:click={submit} disabled={submitting || orderRows.length === 0 || (env.PUBLIC_TURNSTILE_SITE_KEY && !turnstileToken)}>
-            {submitting ? 'Submitting...' : `Submit ${orderRows.length} Orders`}
+        {#if !progressError && submittableRows.length > 0 && progress < submittableRows.length}
+          <button class="btn-submit" on:click={submit} disabled={submitting || submittableRows.length === 0 || (env.PUBLIC_TURNSTILE_SITE_KEY && !turnstileToken)}>
+            {submitting ? 'Submitting...' : `Submit ${submittableRows.length} Order${submittableRows.length !== 1 ? 's' : ''}${editOrderCount > 0 ? ` (${editOrderCount} edit${editOrderCount !== 1 ? 's' : ''})` : ''}`}
           </button>
         {/if}
       </div>
@@ -625,6 +689,13 @@
   .order-row.submitting {
     border-color: var(--accent-color);
   }
+  .order-row.blocked {
+    opacity: 0.45;
+    border-style: dashed;
+  }
+  .order-row.blocked .row-name {
+    text-decoration: line-through;
+  }
 
   .row-header {
     display: flex;
@@ -658,6 +729,26 @@
     line-height: 1;
   }
   .row-remove:hover { color: var(--error-color); }
+  .edit-badge {
+    font-size: 10px;
+    color: var(--accent-color);
+    background: rgba(59, 130, 246, 0.15);
+    padding: 1px 6px;
+    border-radius: 3px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    font-weight: 600;
+  }
+  .blocked-badge {
+    font-size: 10px;
+    color: var(--error-color);
+    background: rgba(239, 68, 68, 0.15);
+    padding: 1px 6px;
+    border-radius: 3px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    font-weight: 600;
+  }
 
   .row-fields {
     display: flex;

@@ -1,11 +1,12 @@
 //@ts-nocheck
 import { getResponse } from '$lib/util.js';
 import {
-  createOrder, countUserOrdersBySide, countUserOrdersForItem,
+  createOrder, getOrderById, updateOrder,
+  countUserOrdersBySide, countUserOrdersForItem,
   getItemType, isPercentMarkupServer, formatRetryTime,
   MAX_SELL_ORDERS, MAX_BUY_ORDERS, MAX_ORDERS_PER_ITEM, MAX_BATCH_SIZE, PLANETS,
   RATE_LIMIT_CREATE_PER_MIN, RATE_LIMIT_CREATE_PER_HOUR, RATE_LIMIT_CREATE_PER_DAY,
-  RATE_LIMIT_ITEM_COOLDOWN_MS,
+  RATE_LIMIT_ITEM_COOLDOWN_MS, RATE_LIMIT_EDIT_PER_MIN,
 } from '$lib/server/exchange.js';
 import { checkRateLimitPeek, incrementRateLimit } from '$lib/server/rateLimiter.js';
 import { verifyTurnstile } from '$lib/server/turnstile.js';
@@ -16,7 +17,8 @@ import {
 const VALID_TYPES = ['BUY', 'SELL'];
 
 /**
- * POST /api/market/exchange/orders/batch — Create multiple orders in a single request.
+ * POST /api/market/exchange/orders/batch — Create or update multiple orders in a single request.
+ * Supports `order_id` per entry for editing existing orders instead of creating new ones.
  * Requires a single Turnstile verification for the entire batch.
  * Returns per-order results (partial success is possible).
  */
@@ -48,38 +50,55 @@ export async function POST({ request, locals, fetch }) {
     return getResponse({ error: 'Captcha verification failed. Please try again.' }, 400);
   }
 
-  // Check global rate limits — ensure user has budget for the entire batch (peek without incrementing)
-  const batchSize = orders.length;
-  const globalChecks = [
-    { ...checkRateLimitPeek(`order:min:${user.id}`, RATE_LIMIT_CREATE_PER_MIN, 60_000), label: 'per minute', limit: RATE_LIMIT_CREATE_PER_MIN },
-    { ...checkRateLimitPeek(`order:hour:${user.id}`, RATE_LIMIT_CREATE_PER_HOUR, 3_600_000), label: 'per hour', limit: RATE_LIMIT_CREATE_PER_HOUR },
-    { ...checkRateLimitPeek(`order:day:${user.id}`, RATE_LIMIT_CREATE_PER_DAY, 86_400_000), label: 'per day', limit: RATE_LIMIT_CREATE_PER_DAY },
-  ];
-  const denied = globalChecks.find(c => c.remaining < batchSize);
-  if (denied) {
-    const retryAfter = Math.ceil(denied.resetIn / 1000);
-    return getResponse({
-      error: `Rate limit exceeded (${denied.limit} orders ${denied.label}). Try again in ${formatRetryTime(retryAfter)}.`,
-      retryAfter
-    }, 429);
+  // Separate new creates from edits
+  const newOrders = orders.filter(o => !o.order_id);
+  const editOrders = orders.filter(o => o.order_id);
+
+  // Check global rate limits for new creates only
+  if (newOrders.length > 0) {
+    const globalChecks = [
+      { ...checkRateLimitPeek(`order:min:${user.id}`, RATE_LIMIT_CREATE_PER_MIN, 60_000), label: 'per minute', limit: RATE_LIMIT_CREATE_PER_MIN },
+      { ...checkRateLimitPeek(`order:hour:${user.id}`, RATE_LIMIT_CREATE_PER_HOUR, 3_600_000), label: 'per hour', limit: RATE_LIMIT_CREATE_PER_HOUR },
+      { ...checkRateLimitPeek(`order:day:${user.id}`, RATE_LIMIT_CREATE_PER_DAY, 86_400_000), label: 'per day', limit: RATE_LIMIT_CREATE_PER_DAY },
+    ];
+    const denied = globalChecks.find(c => c.remaining < newOrders.length);
+    if (denied) {
+      const retryAfter = Math.ceil(denied.resetIn / 1000);
+      return getResponse({
+        error: `Rate limit exceeded (${denied.limit} orders ${denied.label}). Try again in ${formatRetryTime(retryAfter)}.`,
+        retryAfter
+      }, 429);
+    }
   }
 
-  // Pre-check sell/buy order count to avoid partial batch failures
-  const sellCount = orders.filter(o => (o.type || '').toUpperCase() === 'SELL').length;
-  const buyCount = orders.filter(o => (o.type || '').toUpperCase() === 'BUY').length;
+  // Check edit rate limit for edits
+  if (editOrders.length > 0) {
+    const editCheck = checkRateLimitPeek(`order:edit:${user.id}`, RATE_LIMIT_EDIT_PER_MIN, 60_000);
+    if (editCheck.remaining < editOrders.length) {
+      const retryAfter = Math.ceil(editCheck.resetIn / 1000);
+      return getResponse({
+        error: `Edit rate limit exceeded. Try again in ${formatRetryTime(retryAfter)}.`,
+        retryAfter
+      }, 429);
+    }
+  }
+
+  // Pre-check sell/buy order count for new creates only
+  const newSellCount = newOrders.filter(o => (o.type || '').toUpperCase() === 'SELL').length;
+  const newBuyCount = newOrders.filter(o => (o.type || '').toUpperCase() === 'BUY').length;
 
   try {
-    if (sellCount > 0) {
+    if (newSellCount > 0) {
       const currentSellCount = await countUserOrdersBySide(user.id, 'SELL');
-      if (currentSellCount + sellCount > MAX_SELL_ORDERS) {
+      if (currentSellCount + newSellCount > MAX_SELL_ORDERS) {
         return getResponse({
           error: `This batch would exceed the maximum ${MAX_SELL_ORDERS} sell orders. You currently have ${currentSellCount} sell orders.`
         }, 409);
       }
     }
-    if (buyCount > 0) {
+    if (newBuyCount > 0) {
       const currentBuyCount = await countUserOrdersBySide(user.id, 'BUY');
-      if (currentBuyCount + buyCount > MAX_BUY_ORDERS) {
+      if (currentBuyCount + newBuyCount > MAX_BUY_ORDERS) {
         return getResponse({
           error: `This batch would exceed the maximum ${MAX_BUY_ORDERS} buy orders. You currently have ${currentBuyCount} buy orders.`
         }, 409);
@@ -93,6 +112,7 @@ export async function POST({ request, locals, fetch }) {
   // Process each order
   const results = [];
   let created = 0;
+  let updated = 0;
 
   // Cache item info lookups to avoid redundant API calls for the same item
   const itemInfoCache = new Map();
@@ -101,15 +121,23 @@ export async function POST({ request, locals, fetch }) {
     const entry = orders[i];
     const result = await processOrderEntry(entry, user, fetch, itemInfoCache);
     results.push(result);
-    if (result.success) created++;
+    if (result.success) {
+      if (result.action === 'updated') updated++;
+      else created++;
+    }
   }
 
-  return getResponse({ results, created, failed: orders.length - created }, created > 0 ? 201 : 400);
+  const succeeded = created + updated;
+  return getResponse(
+    { results, created, updated, failed: orders.length - succeeded },
+    succeeded > 0 ? 200 : 400
+  );
 }
 
 /**
  * Process a single order entry within a batch.
- * Returns { success: true, order } or { success: false, error, index }.
+ * If entry.order_id is set, updates the existing order instead of creating a new one.
+ * Returns { success: true, order, action } or { success: false, error }.
  */
 async function processOrderEntry(entry, user, fetch, itemInfoCache) {
   // Validate type
@@ -174,6 +202,40 @@ async function processOrderEntry(entry, user, fetch, itemInfoCache) {
   }
   details = genderResult.details;
 
+  // --- Update existing order ---
+  const orderId = entry.order_id ? parseInt(entry.order_id, 10) : null;
+  if (orderId != null) {
+    if (!Number.isFinite(orderId) || orderId <= 0) {
+      return { success: false, error: 'order_id must be a positive integer' };
+    }
+
+    const existing = await getOrderById(orderId);
+    if (!existing) {
+      return { success: false, error: 'Order not found' };
+    }
+    if (String(existing.user_id) !== String(user.id)) {
+      return { success: false, error: 'Not authorized to edit this order' };
+    }
+    if (existing.state === 'closed') {
+      return { success: false, error: 'Cannot edit a closed order' };
+    }
+    if (Number(existing.item_id) !== itemId || existing.type !== type) {
+      return { success: false, error: 'Order item/type mismatch' };
+    }
+
+    try {
+      const order = await updateOrder(orderId, { quantity, minQuantity: minQuantity ?? null, markup, planet, details });
+      incrementRateLimit(`order:edit:${user.id}`, 60_000);
+      incrementRateLimit(`order:item:${user.id}:${itemId}`, RATE_LIMIT_ITEM_COOLDOWN_MS);
+      return { success: true, order, action: 'updated' };
+    } catch (err) {
+      console.error('Error updating order in batch:', err);
+      return { success: false, error: 'Failed to update order' };
+    }
+  }
+
+  // --- Create new order ---
+
   // Check per-item order limit
   // Note: countUserOrdersForItem sees orders created earlier in this batch
   // because each createOrder commits immediately (auto-commit).
@@ -200,7 +262,7 @@ async function processOrderEntry(entry, user, fetch, itemInfoCache) {
     incrementRateLimit(`order:item:${user.id}:${itemId}`, RATE_LIMIT_ITEM_COOLDOWN_MS);
     incrementRateLimit(`order:item-day:${user.id}:${itemId}`, 86_400_000);
 
-    return { success: true, order };
+    return { success: true, order, action: 'created' };
   } catch (err) {
     console.error('Error creating order:', err);
     return { success: false, error: 'Failed to create order' };

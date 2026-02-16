@@ -35,6 +35,11 @@
   let totalOrders = 0;
   let progressError = null;
 
+  // User orders state (for edit detection)
+  let userOrders = [];
+  let ordersLoaded = false;
+  let ordersLoading = false;
+
   // Inventory state
   let inventoryItems = [];
   let inventoryLoaded = false;
@@ -58,13 +63,67 @@
     applyInventoryToRows();
   }
 
+  // Fetch user orders when dialog opens (for edit detection)
+  $: if (show && isLoggedIn && !ordersLoaded && !ordersLoading) {
+    loadUserOrders();
+  }
+
   // Rebuild order rows when items change and dialog is shown
   $: if (show && items.length > 0) {
     buildOrderRows();
   }
 
   // Count of active (non-covered) rows for submit button
-  $: activeRowCount = orderRows.filter(r => !r.covered && r.status !== 'done').length;
+  $: submittableRows = orderRows.filter(r => !r.covered && r.status !== 'done');
+  $: newOrderCount = orderRows.filter(r => !r.isEdit && !r.covered && r.status !== 'done').length;
+  $: editOrderCount = orderRows.filter(r => r.isEdit && !r.covered && r.status !== 'done').length;
+  $: activeRowCount = submittableRows.length;
+
+  async function loadUserOrders() {
+    ordersLoading = true;
+    try {
+      const res = await fetch('/api/market/exchange/orders');
+      if (!res.ok) throw new Error('Failed to load orders');
+      const data = await res.json();
+      userOrders = Array.isArray(data) ? data : (data.orders || []);
+      ordersLoaded = true;
+      // Update buyOrderCount from fetched data
+      buyOrderCount = userOrders.filter(o => o.type === 'BUY' && o.state !== 'closed').length;
+      applyExistingOrders();
+    } catch (err) {
+      console.error('Failed to load user orders:', err);
+      ordersLoaded = true; // Prevent infinite retry loop
+    } finally {
+      ordersLoading = false;
+    }
+  }
+
+  function applyExistingOrders() {
+    if (!ordersLoaded || orderRows.length === 0) return;
+
+    // Build lookup of existing active BUY orders by item_id
+    const existingByItem = new Map();
+    for (const order of userOrders) {
+      if (order.type !== 'BUY' || order.state === 'closed') continue;
+      if (!existingByItem.has(order.item_id)) existingByItem.set(order.item_id, []);
+      existingByItem.get(order.item_id).push(order);
+    }
+
+    orderRows = orderRows.map(row => {
+      if (row.covered || row.status === 'done') return row;
+      const existing = existingByItem.get(row.itemId);
+      if (existing && existing.length > 0) {
+        // All items here are stackable — edit the existing order
+        return {
+          ...row,
+          isEdit: true,
+          existingOrderId: existing[0].id,
+          markup: existing[0].markup, // Pre-fill with existing markup
+        };
+      }
+      return row;
+    });
+  }
 
   function buildOrderRows() {
     // Preserve existing rows if re-opening with same items
@@ -87,6 +146,8 @@
       minQuantity: Math.max(1, Math.floor((item.quantity || 1) * DEFAULT_PARTIAL_RATIO)),
       ownedQty: 0,
       covered: false,
+      isEdit: false,
+      existingOrderId: null,
       error: null,
       status: 'pending'
     }));
@@ -98,6 +159,11 @@
     // If inventory was already loaded, apply it
     if (inventoryLoaded) {
       applyInventoryToRows();
+    }
+
+    // If user orders were already loaded, apply edit detection
+    if (ordersLoaded) {
+      applyExistingOrders();
     }
   }
 
@@ -200,7 +266,7 @@
   }
 
   function buildPayload(row) {
-    return {
+    const payload = {
       type: 'BUY',
       item_id: row.itemId,
       quantity: row.quantity || 1,
@@ -209,6 +275,10 @@
       min_quantity: (row.allowPartial && row.minQuantity) ? row.minQuantity : null,
       details: { item_name: row.itemName },
     };
+    if (row.isEdit && row.existingOrderId) {
+      payload.order_id = row.existingOrderId;
+    }
+    return payload;
   }
 
   async function submit() {
@@ -278,7 +348,12 @@
         submitting = false;
       } else {
         submitting = false;
-        addToast(`${progress} buy order${progress > 1 ? 's' : ''} created successfully`, { type: 'success' });
+        const parts = [];
+        const createdCount = results.filter(r => r?.action === 'created').length;
+        const updatedCount = results.filter(r => r?.action === 'updated').length;
+        if (createdCount > 0) parts.push(`${createdCount} created`);
+        if (updatedCount > 0) parts.push(`${updatedCount} updated`);
+        addToast(`${progress} buy order${progress > 1 ? 's' : ''} processed (${parts.join(', ')})`, { type: 'success' });
         dispatch('complete');
       }
     } catch (err) {
@@ -300,6 +375,7 @@
 
   function close() {
     if (submitting) return;
+    ordersLoaded = false;
     dispatch('close');
   }
 </script>
@@ -349,7 +425,7 @@
       </div>
 
       <div class="batch-info">
-        {buyOrderCount + activeRowCount} / {MAX_BUY_ORDERS} buy orders after this batch
+        {buyOrderCount + newOrderCount} / {MAX_BUY_ORDERS} buy orders after this batch{#if editOrderCount > 0} ({editOrderCount} edit{editOrderCount !== 1 ? 's' : ''}){/if}
       </div>
 
       <div class="order-rows-container">
@@ -364,6 +440,8 @@
               </span>
               {#if row.covered}
                 <span class="covered-badge">Covered</span>
+              {:else if row.isEdit}
+                <span class="edit-badge">Edit</span>
               {/if}
               <span class="row-status">
                 {#if row.status === 'done'}
@@ -450,11 +528,11 @@
         </div>
         <div class="progress-text">
           {#if submitting}
-            Creating {totalOrders} orders...
+            Processing {totalOrders} orders...
           {:else if progress === totalOrders && !progressError}
-            All {totalOrders} orders created!
+            All {totalOrders} orders processed!
           {:else if progressError}
-            {progress} of {totalOrders} created. {progressError}
+            {progress} of {totalOrders} processed. {progressError}
           {/if}
         </div>
       {/if}
@@ -477,9 +555,9 @@
         {#if progressError}
           <button class="btn-retry" on:click={retryFromError} disabled={env.PUBLIC_TURNSTILE_SITE_KEY && !turnstileToken}>Retry Remaining</button>
         {/if}
-        {#if !progressError && activeRowCount > 0}
-          <button class="btn-submit" on:click={submit} disabled={submitting || activeRowCount === 0 || (env.PUBLIC_TURNSTILE_SITE_KEY && !turnstileToken)}>
-            {submitting ? 'Submitting...' : `Submit ${activeRowCount} Buy Order${activeRowCount !== 1 ? 's' : ''}`}
+        {#if !progressError && submittableRows.length > 0}
+          <button class="btn-submit" on:click={submit} disabled={submitting || submittableRows.length === 0 || (env.PUBLIC_TURNSTILE_SITE_KEY && !turnstileToken)}>
+            {submitting ? 'Submitting...' : `Submit ${submittableRows.length} Order${submittableRows.length !== 1 ? 's' : ''}${editOrderCount > 0 ? ` (${editOrderCount} edit${editOrderCount !== 1 ? 's' : ''})` : ''}`}
           </button>
         {/if}
       </div>
@@ -641,6 +719,15 @@
     font-size: 10px;
     color: var(--success-color, #22c55e);
     background: rgba(34, 197, 94, 0.1);
+    padding: 1px 6px;
+    border-radius: 3px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .edit-badge {
+    font-size: 10px;
+    color: var(--accent-color, #3b82f6);
+    background: rgba(59, 130, 246, 0.1);
     padding: 1px 6px;
     border-radius: 3px;
     white-space: nowrap;
