@@ -45,17 +45,24 @@
   // Computed values
   $: pageTitle = title ? `${title} | ${siteName}` : siteName;
 
-  $: truncatedDescription = description
-    ? description.substring(0, 160) + (description.length > 160 ? '...' : '')
+  $: cleanDescription = stripHtml(description).replace(/\s+/g, ' ').trim();
+  $: truncatedDescription = cleanDescription
+    ? cleanDescription.substring(0, 160) + (cleanDescription.length > 160 ? '...' : '')
     : '';
 
   $: ogImage = imageUrl || '/default-og-image.png';
 
   const MAX_OG_DESCRIPTION = 200;
 
+  /** Strip HTML tags from text for use in meta tags and structured data */
+  function stripHtml(text) {
+    if (!text) return '';
+    return `${text}`.replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ');
+  }
+
   function clampText(text, limit = MAX_OG_DESCRIPTION) {
     if (!text) return '';
-    const cleaned = `${text}`.replace(/\s+/g, ' ').trim();
+    const cleaned = stripHtml(text).replace(/\s+/g, ' ').trim();
     if (cleaned.length <= limit) return cleaned;
     return cleaned.substring(0, limit - 1).trimEnd() + '…';
   }
@@ -74,7 +81,7 @@
   function normalizeFactValue(value) {
     if (value == null) return null;
     if (typeof value === 'string') {
-      const trimmed = value.replace(/\s+/g, ' ').trim();
+      const trimmed = stripHtml(value).replace(/\s+/g, ' ').trim();
       if (!trimmed || trimmed === '-') return null;
       return trimmed;
     }
@@ -163,7 +170,7 @@
           '@context': 'https://schema.org',
           '@type': 'Product',
           'name': entity.Name,
-          'description': entity.Properties?.Description || truncatedDescription,
+          'description': stripHtml(entity.Properties?.Description) || truncatedDescription,
           'image': imageUrl,
           'url': url,
           'category': type,
@@ -186,7 +193,7 @@
           '@context': 'https://schema.org',
           '@type': 'Article',
           'headline': entity.Name,
-          'description': entity.Properties?.Description || truncatedDescription,
+          'description': stripHtml(entity.Properties?.Description) || truncatedDescription,
           'image': imageUrl,
           'url': url,
           'publisher': {
@@ -201,7 +208,7 @@
           '@context': 'https://schema.org',
           '@type': 'HowTo',
           'name': `How to craft ${entity.Name}`,
-          'description': entity.Properties?.Description || `Crafting guide for ${entity.Name}`,
+          'description': stripHtml(entity.Properties?.Description) || `Crafting guide for ${entity.Name}`,
           'url': url,
           ...(entity.Materials && {
             'supply': entity.Materials.map(mat => ({
@@ -217,7 +224,7 @@
           '@context': 'https://schema.org',
           '@type': 'Article',
           'headline': entity.Name || title,
-          'description': entity.Properties?.Description || truncatedDescription,
+          'description': stripHtml(entity.Properties?.Description) || truncatedDescription,
           'image': imageUrl,
           'url': url,
           'publisher': {
