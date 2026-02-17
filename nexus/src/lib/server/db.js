@@ -4412,3 +4412,280 @@ export async function getGuideTree() {
       }))
   }));
 }
+
+// =============================================================================
+// Announcements
+// =============================================================================
+
+export async function getPublishedAnnouncements(limit = 10) {
+  const result = await pool.query(
+    `SELECT id, title, summary, link, image_url, pinned, author_id, created_at,
+            content_html IS NOT NULL AND content_html != '' AS has_content
+     FROM announcements
+     WHERE published = true
+     ORDER BY pinned DESC, created_at DESC
+     LIMIT $1`,
+    [limit]
+  );
+  return result.rows;
+}
+
+export async function getAnnouncementsAdmin(page = 1, limit = 20) {
+  const offset = (page - 1) * limit;
+  const [dataResult, countResult] = await Promise.all([
+    pool.query(
+      `SELECT a.*, u.global_name AS author_name
+       FROM announcements a
+       LEFT JOIN users u ON u.id = a.author_id
+       ORDER BY a.created_at DESC
+       LIMIT $1 OFFSET $2`,
+      [limit, offset]
+    ),
+    pool.query('SELECT COUNT(*)::int AS total FROM announcements')
+  ]);
+  return { announcements: dataResult.rows, total: countResult.rows[0].total, page, limit };
+}
+
+export async function getAnnouncementById(id) {
+  const result = await pool.query('SELECT * FROM announcements WHERE id = $1', [id]);
+  return result.rows[0] || null;
+}
+
+export async function getPublishedAnnouncementById(id) {
+  const result = await pool.query(
+    `SELECT a.*, u.global_name AS author_name
+     FROM announcements a
+     LEFT JOIN users u ON u.id = a.author_id
+     WHERE a.id = $1 AND a.published = true`,
+    [id]
+  );
+  return result.rows[0] || null;
+}
+
+export async function createAnnouncement({ title, summary, link, image_url, pinned, published, author_id, content_html }) {
+  const result = await pool.query(
+    `INSERT INTO announcements (title, summary, link, image_url, pinned, published, author_id, content_html)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
+    [title, summary || null, link || null, image_url || null, pinned || false, published || false, author_id, content_html || null]
+  );
+  return result.rows[0];
+}
+
+export async function updateAnnouncement(id, fields) {
+  const allowedFields = ['title', 'summary', 'link', 'image_url', 'pinned', 'published', 'content_html'];
+  const sets = [];
+  const values = [];
+  let paramIndex = 1;
+
+  for (const key of allowedFields) {
+    if (key in fields) {
+      sets.push(`${key} = $${paramIndex++}`);
+      values.push(fields[key]);
+    }
+  }
+  if (sets.length === 0) return null;
+  sets.push('updated_at = CURRENT_TIMESTAMP');
+  values.push(id);
+
+  const result = await pool.query(
+    `UPDATE announcements SET ${sets.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
+    values
+  );
+  return result.rows[0] || null;
+}
+
+export async function deleteAnnouncement(id) {
+  const result = await pool.query('DELETE FROM announcements WHERE id = $1 RETURNING id', [id]);
+  return result.rowCount > 0;
+}
+
+// =============================================================================
+// Events
+// =============================================================================
+
+export async function getUpcomingEvents(limit = 5) {
+  const result = await pool.query(
+    `SELECT e.id, e.title, e.description, e.start_date, e.end_date,
+            e.location, e.type, e.link, e.image_url,
+            u.global_name AS submitted_by_name
+     FROM events e
+     LEFT JOIN users u ON u.id = e.submitted_by
+     WHERE e.state = 'approved' AND e.start_date >= NOW() - INTERVAL '1 day'
+     ORDER BY e.start_date ASC
+     LIMIT $1`,
+    [limit]
+  );
+  return result.rows;
+}
+
+export async function getEventsAdmin(page = 1, limit = 20, state = null) {
+  const offset = (page - 1) * limit;
+  const params = [limit, offset];
+  let where = '';
+  if (state) {
+    where = 'WHERE e.state = $3';
+    params.push(state);
+  }
+  const countWhere = state ? 'WHERE state = $1' : '';
+  const countParams = state ? [state] : [];
+
+  const [dataResult, countResult] = await Promise.all([
+    pool.query(
+      `SELECT e.*, u.global_name AS submitted_by_name, a.global_name AS approved_by_name
+       FROM events e
+       LEFT JOIN users u ON u.id = e.submitted_by
+       LEFT JOIN users a ON a.id = e.approved_by
+       ${where}
+       ORDER BY e.created_at DESC
+       LIMIT $1 OFFSET $2`,
+      params
+    ),
+    pool.query(`SELECT COUNT(*)::int AS total FROM events ${countWhere}`, countParams)
+  ]);
+  return { events: dataResult.rows, total: countResult.rows[0].total, page, limit };
+}
+
+export async function getEventById(id) {
+  const result = await pool.query(
+    `SELECT e.*, u.global_name AS submitted_by_name, a.global_name AS approved_by_name
+     FROM events e
+     LEFT JOIN users u ON u.id = e.submitted_by
+     LEFT JOIN users a ON a.id = e.approved_by
+     WHERE e.id = $1`,
+    [id]
+  );
+  return result.rows[0] || null;
+}
+
+export async function createEvent({ title, description, start_date, end_date, location, type, link, image_url, submitted_by }) {
+  const result = await pool.query(
+    `INSERT INTO events (title, description, start_date, end_date, location, type, link, image_url, submitted_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+    [title, description || null, start_date, end_date || null, location || null, type || 'player_run', link || null, image_url || null, submitted_by]
+  );
+  return result.rows[0];
+}
+
+export async function updateEventState(id, state, approved_by, admin_note = null) {
+  const result = await pool.query(
+    `UPDATE events SET state = $1, approved_by = $2, admin_note = $3, updated_at = CURRENT_TIMESTAMP
+     WHERE id = $4 RETURNING *`,
+    [state, approved_by, admin_note, id]
+  );
+  return result.rows[0] || null;
+}
+
+export async function updateEvent(id, fields) {
+  const allowedFields = ['title', 'description', 'start_date', 'end_date', 'location', 'type', 'link', 'image_url'];
+  const sets = [];
+  const values = [];
+  let paramIndex = 1;
+
+  for (const key of allowedFields) {
+    if (key in fields) {
+      sets.push(`${key} = $${paramIndex++}`);
+      values.push(fields[key]);
+    }
+  }
+  if (sets.length === 0) return null;
+  sets.push('updated_at = CURRENT_TIMESTAMP');
+  values.push(id);
+
+  const result = await pool.query(
+    `UPDATE events SET ${sets.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
+    values
+  );
+  return result.rows[0] || null;
+}
+
+export async function deleteEvent(id) {
+  const result = await pool.query('DELETE FROM events WHERE id = $1 RETURNING id', [id]);
+  return result.rowCount > 0;
+}
+
+export async function countPendingEventsByUser(userId) {
+  const result = await pool.query(
+    "SELECT COUNT(*)::int AS count FROM events WHERE submitted_by = $1 AND state = 'pending'",
+    [userId]
+  );
+  return result.rows[0].count;
+}
+
+// =============================================================================
+// Content Creators
+// =============================================================================
+
+export async function getActiveCreators() {
+  const result = await pool.query(
+    `SELECT id, name, platform, channel_id, channel_url, description,
+            avatar_url, display_order, cached_data, cached_at
+     FROM content_creators
+     WHERE active = true
+     ORDER BY display_order ASC, name ASC`
+  );
+  return result.rows;
+}
+
+export async function getCreatorsAdmin() {
+  const result = await pool.query(
+    `SELECT cc.*, u.global_name AS added_by_name
+     FROM content_creators cc
+     LEFT JOIN users u ON u.id = cc.added_by
+     ORDER BY cc.display_order ASC, cc.name ASC`
+  );
+  return result.rows;
+}
+
+export async function getCreatorById(id) {
+  const result = await pool.query('SELECT * FROM content_creators WHERE id = $1', [id]);
+  return result.rows[0] || null;
+}
+
+export async function createCreator({ name, platform, channel_id, channel_url, description, avatar_url, active, display_order, added_by }) {
+  const result = await pool.query(
+    `INSERT INTO content_creators (name, platform, channel_id, channel_url, description, avatar_url, active, display_order, added_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+    [name, platform, channel_id || null, channel_url, description || null, avatar_url || null, active !== false, display_order || 0, added_by]
+  );
+  return result.rows[0];
+}
+
+export async function updateCreator(id, fields) {
+  const allowedFields = ['name', 'platform', 'channel_id', 'channel_url', 'description', 'avatar_url', 'active', 'display_order', 'cached_data', 'cached_at'];
+  const sets = [];
+  const values = [];
+  let paramIndex = 1;
+
+  for (const key of allowedFields) {
+    if (key in fields) {
+      sets.push(`${key} = $${paramIndex++}`);
+      values.push(key === 'cached_data' ? JSON.stringify(fields[key]) : fields[key]);
+    }
+  }
+  if (sets.length === 0) return null;
+  sets.push('updated_at = CURRENT_TIMESTAMP');
+  values.push(id);
+
+  const result = await pool.query(
+    `UPDATE content_creators SET ${sets.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
+    values
+  );
+  return result.rows[0] || null;
+}
+
+export async function deleteCreator(id) {
+  const result = await pool.query('DELETE FROM content_creators WHERE id = $1 RETURNING id', [id]);
+  return result.rowCount > 0;
+}
+
+export async function getCreatorsForRefresh() {
+  const result = await pool.query(
+    `SELECT * FROM content_creators
+     WHERE active = true
+       AND platform != 'kick'
+       AND (cached_at IS NULL OR cached_at < NOW() - INTERVAL '1 hour')
+     ORDER BY cached_at ASC NULLS FIRST
+     LIMIT 10`
+  );
+  return result.rows;
+}

@@ -44,13 +44,13 @@ const VALID_ENTITY_TYPES = [
   'furnishing', 'furniture', 'decoration', 'storagecontainer', 'sign',
   // Information & other
   'mob', 'skill', 'profession', 'vendor', 'location', 'area', 'shop',
-  'user', 'guide-category', 'richtext',
+  'user', 'guide-category', 'richtext', 'announcement',
   // Auction
   'item-set'
 ];
 
 // Entity types that skip the approval workflow and use banner dimensions
-const GUIDE_ENTITY_TYPES = ['guide-category'];
+const GUIDE_ENTITY_TYPES = ['guide-category', 'announcement'];
 
 /**
  * Ensure directory exists, creating it if necessary

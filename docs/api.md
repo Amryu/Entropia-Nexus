@@ -42,6 +42,36 @@ Rate-limited responses return HTTP 429 with `{ error, retryAfter }`.
 
 ---
 
+## Events
+
+### `GET /api/events`
+
+Upcoming approved events for the landing page.
+
+- **Auth**: Public
+- **Query Params**: `limit` (default 5, max 20)
+- **Response** `200`: Array of approved events with future start dates
+
+### `POST /api/events`
+
+Submit a community event for admin review.
+
+- **Auth**: Verified
+- **Rate Limits**: Max 5 pending events per user
+- **Body**:
+  | Field | Type | Required | Description |
+  |-------|------|----------|-------------|
+  | `title` | string | Yes | Event title (max 200) |
+  | `start_date` | ISO date | Yes | Must be in the future |
+  | `end_date` | ISO date | No | Must be after start_date |
+  | `description` | string | No | Event description (max 2000) |
+  | `location` | string | No | In-game location (max 200) |
+  | `type` | string | No | `"official"` or `"player_run"` (default) |
+  | `link` | string | No | External link |
+- **Response** `201`: Created event (state: `pending`)
+
+---
+
 ## Market & Exchange
 
 ### `GET /api/market/exchange`
@@ -1314,6 +1344,46 @@ Change shop owner (admin only).
 | `/api/admin/changes/[id]` | GET | `wiki.approve` | Change detail with history |
 | `/api/admin/entity-changes/search` | GET | `wiki.approve` | Search entities with changes. Query: `q`, `type`, `limit`, `offset` |
 | `/api/admin/entity-changes/types` | GET | `wiki.approve` | Entity types with change counts |
+
+### News Detail (Public)
+
+| Route | Description |
+|-------|-------------|
+| `/news/[id]` | Public page displaying a published announcement with rich text content. SSR rendered. Requires `published = true`. |
+
+### Announcements (Admin)
+
+| Endpoint | Method | Auth | Description |
+|----------|--------|------|-------------|
+| `/api/admin/announcements` | GET | `admin.panel` | List announcements. Query: `page`, `limit` |
+| `/api/admin/announcements` | POST | `admin.panel` | Create: `{ title, summary?, link?, image_url?, pinned?, published?, content_html? }` |
+| `/api/admin/announcements/[id]` | GET | `admin.panel` | Single announcement (includes `content_html`) |
+| `/api/admin/announcements/[id]` | PUT | `admin.panel` | Update announcement fields (including `content_html`) |
+| `/api/admin/announcements/[id]` | DELETE | `admin.panel` | Delete announcement |
+
+**`content_html`**: Rich text body sanitized server-side via `sanitizeRichText()`. When present, the landing page links to `/news/{id}` for on-site reading. When absent, links to the external `link` URL. Image uploads use the `announcement` entity type in `imageProcessor.js` (banner dimensions, auto-approve).
+
+### Events (Admin)
+
+| Endpoint | Method | Auth | Description |
+|----------|--------|------|-------------|
+| `/api/admin/events` | GET | `admin.panel` | List events. Query: `page`, `limit`, `state` |
+| `/api/admin/events/[id]` | GET | `admin.panel` | Single event with submitter info |
+| `/api/admin/events/[id]` | PUT | `admin.panel` | Update event fields |
+| `/api/admin/events/[id]` | DELETE | `admin.panel` | Delete event |
+| `/api/admin/events/[id]/approve` | POST | `admin.panel` | Approve pending event |
+| `/api/admin/events/[id]/deny` | POST | `admin.panel` | Deny with optional `{ reason }` |
+
+### Content Creators (Admin)
+
+| Endpoint | Method | Auth | Description |
+|----------|--------|------|-------------|
+| `/api/admin/creators` | GET | `admin.panel` | List all creators |
+| `/api/admin/creators` | POST | `admin.panel` | Add: `{ name, platform, channel_url, channel_id?, ... }` |
+| `/api/admin/creators/[id]` | GET | `admin.panel` | Single creator |
+| `/api/admin/creators/[id]` | PUT | `admin.panel` | Update creator fields |
+| `/api/admin/creators/[id]` | DELETE | `admin.panel` | Delete creator |
+| `/api/admin/creators/[id]/refresh` | POST | `admin.panel` | Manual API data refresh |
 
 ### Other Admin
 

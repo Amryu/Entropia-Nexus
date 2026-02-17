@@ -26,6 +26,14 @@ if (import.meta.env.SSR) {
   setInterval(() => {
     endExpiredAuctions().catch(err => console.error('[auction] Error ending expired auctions:', err));
   }, AUCTION_EXPIRY_INTERVAL_MS).unref();
+
+  // Periodically refresh content creator cached data (YouTube, Twitch)
+  const { refreshStaleCreators } = await import('$lib/server/creator-enrichment.js');
+  const CREATOR_REFRESH_INTERVAL_MS = 15 * 60_000; // 15 minutes
+  refreshStaleCreators().catch(err => console.error('[creator-enrichment] Error refreshing creators:', err));
+  setInterval(() => {
+    refreshStaleCreators().catch(err => console.error('[creator-enrichment] Error refreshing creators:', err));
+  }, CREATOR_REFRESH_INTERVAL_MS).unref();
 }
 
 const IMPERSONATE_COOKIE = 'nexus_impersonate';

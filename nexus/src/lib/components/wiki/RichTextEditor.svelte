@@ -50,6 +50,9 @@
   /** @type {boolean} Show image upload button */
   export let showImages = true;
 
+  /** @type {boolean} Auto-detect and convert markdown pastes to rich text */
+  export let handleMarkdownPaste = false;
+
   /** @type {Editor|null} */
   let editor = null;
 
@@ -340,6 +343,39 @@
     }
   }
 
+  // Markdown paste detection patterns
+  const MD_PATTERNS = [
+    /^#{1,6}\s/m,           // headings
+    /\*\*.+?\*\*/,          // bold
+    /^[-*+]\s/m,            // unordered list
+    /^\d+\.\s/m,            // ordered list
+    /\[.+?\]\(.+?\)/,       // links
+    /^```/m,                // code fences
+    /^>\s/m,                // blockquotes
+    /^---+$/m               // horizontal rules
+  ];
+
+  function looksLikeMarkdown(text) {
+    if (!text) return false;
+    let matches = 0;
+    for (const pattern of MD_PATTERNS) {
+      if (pattern.test(text)) matches++;
+      if (matches >= 2) return true;
+    }
+    return false;
+  }
+
+  /** @type {any} Lazily loaded markdown-it instance */
+  let mdInstance = null;
+
+  async function convertMarkdownToHtml(markdown) {
+    if (!mdInstance) {
+      const { default: MarkdownIt } = await import('markdown-it');
+      mdInstance = new MarkdownIt({ html: false, linkify: true, breaks: true });
+    }
+    return mdInstance.render(markdown);
+  }
+
   onMount(async () => {
     const extensions = [
       StarterKit.configure({
@@ -387,7 +423,18 @@
         attributes: {
           class: 'tiptap-content',
           'data-placeholder': placeholder
-        }
+        },
+        handlePaste: handleMarkdownPaste ? (view, event) => {
+          const plainText = event.clipboardData?.getData('text/plain');
+          if (plainText && looksLikeMarkdown(plainText)) {
+            event.preventDefault();
+            convertMarkdownToHtml(plainText).then(html => {
+              editor?.commands.insertContent(html);
+            });
+            return true;
+          }
+          return false;
+        } : undefined
       }
     });
 

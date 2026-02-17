@@ -38,6 +38,49 @@ Entropia Nexus/
 
 ## Site Sections
 
+### Landing Page (`/`)
+
+Dynamic homepage with four content sections:
+
+| Section | Data Source | Description |
+|---------|------------|-------------|
+| **Latest News** | Steam News API (App 3642750) + Nexus announcements | Merged news feed; pinned first, then date desc. Nexus articles with `content_html` link to `/news/{id}` for on-site reading |
+| **Upcoming Events** | `events` table (approved, future) | Community-submitted events approved by admins |
+| **Content Creators** | `content_creators` table (active) | Whitelisted YouTube/Twitch/Kick channels with API-enriched data |
+| **Explore** | Static | Links to Items, Information, Maps, Tools, Market |
+
+**Server data**: `+page.server.js` loads all four data sources in parallel.
+
+**News cache**: `$lib/server/news-cache.js` — 30-minute in-memory TTL, filters Steam to "Community Announcements" feed.
+
+**Creator enrichment**: `$lib/server/creator-enrichment.js` — background loop every 15 minutes refreshes stale YouTube (RSS + Data API v3) and Twitch (Helix) data. Kick has no API.
+
+**Database tables** (in `nexus-users`):
+- `announcements` — Admin-created news posts (with optional `content_html` for on-site rich text articles)
+- `events` — Community events with state machine (pending → approved/denied)
+- `content_creators` — Whitelisted channels with `cached_data` JSONB
+
+### News (`/news/`)
+
+| Route | Description |
+|-------|-------------|
+| `/news/[id]` | Public article page for a published Nexus announcement with rich text content |
+
+Announcements are created by admins via `/admin/announcements`. They can have either rich text content (read on-site), an external link, or both. The RichTextEditor supports markdown paste auto-conversion. Banner images use the `announcement` entity type in the image processor (1200px wide, auto-approve).
+
+### Events (`/events/`)
+
+| Route | Description |
+|-------|-------------|
+| `/events/submit` | Submit a community event (requires verified user) |
+
+Events follow a submission-approval flow:
+1. Verified user submits via `/events/submit` → state `pending`
+2. Admin reviews in `/admin/events` → approves or denies with optional note
+3. Approved events with future `start_date` appear on the landing page
+
+Rate limit: max 5 pending events per user.
+
 ### Items (`/items/`)
 
 Browse game items organized by category:
@@ -305,6 +348,9 @@ User-generated content and sessions:
 - Trade offers (exchange)
 - Service marketplace (see `docs/services.md`)
 - Change requests
+- Announcements (admin-created news posts)
+- Events (community-submitted, admin-approved)
+- Content creators (whitelisted channels with API-enriched cached data)
 
 ## Styling
 

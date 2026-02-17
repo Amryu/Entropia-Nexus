@@ -11,7 +11,10 @@
     { path: '/admin/users', label: 'Users', icon: '👥' },
     { path: '/admin/societies', label: 'Societies', icon: '\u{1F3DB}\u{FE0F}' },
     { path: '/admin/roles', label: 'Roles & Grants', icon: '\u{1F511}' },
-    { path: '/admin/map', label: 'Map', icon: '\u{1F5FA}\u{FE0F}' }
+    { path: '/admin/map', label: 'Map', icon: '\u{1F5FA}\u{FE0F}' },
+    { path: '/admin/announcements', label: 'Announcements', icon: '\u{1F4E2}' },
+    { path: '/admin/events', label: 'Events', icon: '\u{1F4C5}' },
+    { path: '/admin/creators', label: 'Creators', icon: '\u{1F3AC}' }
   ];
 
   // Use reactive statement to compute active states based on current path
