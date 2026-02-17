@@ -1,4 +1,4 @@
-const { pool } = require('./dbClient');
+const { pool, usersPool } = require('./dbClient');
 const { idOffsets } = require('./constants');
 
 /**
@@ -336,10 +336,39 @@ async function search(query, fuzzy = false){
 
   // Fuzzy: $1=name, $2=%name%, $3=name%  Non-fuzzy: $1=%name%, $2=name%
   const params = useFuzzy ? [searchName, `%${searchName}%`, `${searchName}%`, ...mwParams] : [`%${searchName}%`, `${searchName}%`, ...mwParams];
-  const { rows } = await pool.query(sql, params);
+
+  // Query users and societies from nexus-users DB (separate database, parallel query)
+  const userMwParams = isMultiWord ? searchWords.map(w => `%${w}%`) : [];
+  const userMwIdx = isMultiWord ? searchWords.map((_, i) => 3 + i) : [];
+  const userMwEuName = isMultiWord ? ' OR ' + buildMultiWordLike('eu_name', userMwIdx) : '';
+  const userMwSocName = isMultiWord ? ' OR ' + buildMultiWordLike('name', userMwIdx) : '';
+  const usersSql = `
+    SELECT * FROM (
+      (SELECT id + 9000000000 AS "Id", eu_name AS "Name", 'User' AS "Type",
+        NULL AS "SubType", NULL AS "Gender", FALSE AS "_prefiltered", NULL AS "MatchedName"
+      FROM users
+      WHERE verified = true AND eu_name IS NOT NULL
+        AND (eu_name ILIKE $1${userMwEuName})
+      ORDER BY (CASE WHEN eu_name ILIKE $2 THEN 0 ELSE 1 END), length(eu_name) ASC
+      LIMIT 5)
+      UNION ALL
+      (SELECT id + 10000000000 AS "Id", name AS "Name", 'Society' AS "Type",
+        abbreviation AS "SubType", NULL AS "Gender", FALSE AS "_prefiltered", NULL AS "MatchedName"
+      FROM societies
+      WHERE name ILIKE $1 OR abbreviation ILIKE $1${userMwSocName}
+      ORDER BY (CASE WHEN name ILIKE $2 OR abbreviation ILIKE $2 THEN 0 ELSE 1 END), length(name) ASC
+      LIMIT 5)
+    ) combined`;
+  const usersParams = [`%${searchName}%`, `${searchName}%`, ...userMwParams];
+
+  const [{ rows }, { rows: userRows }] = await Promise.all([
+    pool.query(sql, params),
+    usersPool.query(usersSql, usersParams)
+  ]);
+  const allRows = [...rows, ...userRows];
 
   // Post-process results: apply scoring, filter, and sort
-  const scoredResults = rows.map(row => {
+  const scoredResults = allRows.map(row => {
     let displayName = null;
     // If searching for a gendered variant and this is a clothing item with 'Both' or null gender,
     // generate a display name with the gender tag (but keep Name as the original for URL linking)

@@ -324,6 +324,10 @@ export function getTypeLink(name, type, subType = null, id = null) {
         return `/information/missions/${encodeURIComponentSafe(name)}`;
       case 'MissionChain':
         return `/information/missions/${encodeURIComponentSafe(name)}?view=chains`;
+      case 'User':
+        return `/users/${encodeURIComponentSafe(name)}`;
+      case 'Society':
+        return `/societies/${encodeURIComponentSafe(name)}`;
       default:
         return null;
     }
@@ -409,6 +413,10 @@ export function getTypeName(type) {
         return 'Mission Chain';
       case 'Shop':
         return 'Shop';
+      case 'User':
+        return 'User';
+      case 'Society':
+        return 'Society';
       default:
         return 'N/A';
   }
