@@ -361,10 +361,18 @@ async function search(query, fuzzy = false){
     ) combined`;
   const usersParams = [`%${searchName}%`, `${searchName}%`, ...userMwParams];
 
-  const [{ rows }, { rows: userRows }] = await Promise.all([
-    pool.query(sql, params),
-    usersPool.query(usersSql, usersParams)
-  ]);
+  // Run both queries in parallel; if the users query fails, degrade gracefully
+  let rows, userRows = [];
+  try {
+    [{ rows }, { rows: userRows }] = await Promise.all([
+      pool.query(sql, params),
+      usersPool.query(usersSql, usersParams)
+    ]);
+  } catch (err) {
+    // If the users query fails, fall back to nexus-only results
+    console.error('User/society search failed, falling back:', err.message);
+    ({ rows } = await pool.query(sql, params));
+  }
   const allRows = [...rows, ...userRows];
 
   // Post-process results: apply scoring, filter, and sort
@@ -380,7 +388,11 @@ async function search(query, fuzzy = false){
     }
     // Score using MatchedName if available (e.g., armor sets matched via piece name)
     const nameToScore = row.MatchedName || row.Name;
-    const score = scoreSearchResult(nameToScore, query, genderedQuery);
+    let score = scoreSearchResult(nameToScore, query, genderedQuery);
+    // For societies, also score against abbreviation (stored in SubType)
+    if (row.Type === 'Society' && row.SubType) {
+      score = Math.max(score, scoreSearchResult(row.SubType, query, genderedQuery));
+    }
     return { ...row, DisplayName: displayName, _score: score };
   });
 
