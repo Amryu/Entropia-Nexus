@@ -1,9 +1,68 @@
 //@ts-nocheck
+
+/**
+ * Format a MobArea/MobSpawn display name from its raw DB name.
+ * Raw format: "Mob1 - Mat1/Mat2/Mat3, Mob2 - Mat4/Mat5"
+ *
+ * @param {string} name - Raw DB name
+ * @param {Array|null} [maturities] - Optional MobSpawn.Maturities array with Level data
+ * @returns {string} Simplified display name
+ */
+export function formatMobSpawnDisplayName(name, maturities) {
+  if (!name) return '';
+
+  // Parse "Mob1 - Mat1/Mat2, Mob2 - Mat3/Mat4" into groups
+  const groups = name.split(',').map(g => g.trim()).filter(Boolean);
+  const parsed = [];
+  for (const g of groups) {
+    const dashIdx = g.indexOf(' - ');
+    if (dashIdx === -1) {
+      parsed.push({ mob: g, mats: [] });
+    } else {
+      const mob = g.substring(0, dashIdx).trim();
+      const mats = g.substring(dashIdx + 3).trim().split('/').map(m => m.trim()).filter(Boolean);
+      parsed.push({ mob, mats });
+    }
+  }
+
+  if (parsed.length === 0) return name;
+
+  const mobNames = parsed.map(g => g.mob);
+  const totalMats = parsed.reduce((sum, g) => sum + g.mats.length, 0);
+
+  // Multiple mobs
+  if (parsed.length > 1) {
+    return totalMats > 0
+      ? `${mobNames.join(', ')} (${totalMats} ${totalMats === 1 ? 'Maturity' : 'Maturities'})`
+      : mobNames.join(', ');
+  }
+
+  // Single mob
+  const { mob, mats } = parsed[0];
+  if (mats.length === 0) return mob;
+  if (mats.length === 1) return `${mob} (${mats[0]})`;
+
+  // 2+ maturities: try level-sorted range from structured data
+  if (maturities?.length >= 2) {
+    const nonBoss = maturities
+      .filter(m => !m.Maturity?.Properties?.Boss)
+      .sort((a, b) => (a.Maturity?.Properties?.Level ?? Infinity) - (b.Maturity?.Properties?.Level ?? Infinity));
+    if (nonBoss.length >= 2) {
+      const low = nonBoss[0].Maturity?.Name;
+      const high = nonBoss[nonBoss.length - 1].Maturity?.Name;
+      if (low && high) return `${mob} (${low}-${high})`;
+    }
+  }
+
+  // Fallback: use first/last from name string (already stored in level order)
+  return `${mob} (${mats[0]}-${mats[mats.length - 1]})`;
+}
+
 export function getTooltipText(location) {
   let name;
 
   if (location.Properties.Type === 'MobArea') {
-    name = location.Name.replace(',', ' + ');
+    name = formatMobSpawnDisplayName(location.Name, location.Maturities);
   }
   else {
     name = location.Name;

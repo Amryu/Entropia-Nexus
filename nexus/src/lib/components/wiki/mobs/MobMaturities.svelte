@@ -14,7 +14,7 @@
   let tableContainer;
   let lastSelectedKey = null;
 
-  // Sort maturities: non-bosses first, by HP*Level (nulls at end)
+  // Sort maturities: non-bosses first, by Level then Health (nulls at end)
   $: sortedMaturities = maturities ? [...maturities].sort((a, b) => {
     const aIsBoss = a.Properties?.Boss === true;
     const bIsBoss = b.Properties?.Boss === true;
@@ -24,27 +24,32 @@
       return aIsBoss ? 1 : -1;
     }
 
-    // Calculate HP * Level, treating null as Infinity (sort to end)
     const aHp = a.Properties?.Health;
     const aLvl = a.Properties?.Level;
     const bHp = b.Properties?.Health;
     const bLvl = b.Properties?.Level;
 
-    const aHasValue = aHp != null && aLvl != null;
-    const bHasValue = bHp != null && bLvl != null;
+    const aHasValue = aLvl != null;
+    const bHasValue = bLvl != null;
 
-    // Items with null values go to the end (within their boss group)
+    // Items with null Level go to the end (within their boss group)
     if (aHasValue !== bHasValue) {
       return aHasValue ? -1 : 1;
     }
 
-    // Both have null values - treat as equal
+    // Both have null Level - treat as equal
     if (!aHasValue && !bHasValue) {
       return 0;
     }
 
-    // Both have values - sort by HP * Level ascending
-    return (aHp * aLvl) - (bHp * bLvl);
+    // Primary: Level ascending
+    if (aLvl !== bLvl) return aLvl - bLvl;
+
+    // Secondary: Health ascending (tiebreaker for same level)
+    if (aHp != null && bHp != null) return aHp - bHp;
+    if (aHp != null) return -1;
+    if (bHp != null) return 1;
+    return 0;
   }) : [];
 
   function getTotalDamage(attack) {

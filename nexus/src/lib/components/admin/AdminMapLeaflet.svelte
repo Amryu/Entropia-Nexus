@@ -2,6 +2,7 @@
   // @ts-nocheck
   import { onMount, onDestroy, createEventDispatcher } from 'svelte';
   import { buildCoordTransforms, getTypeColor, getEffectiveType, isArea } from './adminMapUtils.js';
+  import { formatMobSpawnDisplayName } from '$lib/mapUtil.js';
 
   export let planet = null;
   export let locations = [];
@@ -202,7 +203,8 @@
       fillOpacity: style.fillOpacity,
       dashArray: style.dashArray
     });
-    marker.bindTooltip(loc.Name, { direction: 'top', offset: [0, -8] });
+    const tooltipName = loc.Properties?.Type === 'MobArea' ? formatMobSpawnDisplayName(loc.Name, loc.Maturities) : loc.Name;
+    marker.bindTooltip(tooltipName, { direction: 'top', offset: [0, -8] });
     return marker;
   }
 
@@ -243,7 +245,8 @@
     }
 
     if (layer) {
-      layer.bindTooltip(loc.Name, { sticky: true });
+      const tooltipName = loc.Properties?.Type === 'MobArea' ? formatMobSpawnDisplayName(loc.Name, loc.Maturities) : loc.Name;
+      layer.bindTooltip(tooltipName, { sticky: true });
     }
     return layer;
   }

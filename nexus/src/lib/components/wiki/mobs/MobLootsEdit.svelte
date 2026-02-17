@@ -55,7 +55,7 @@
         Name: ''
       },
       Maturity: {
-        Name: maturities[0]?.Name || null
+        Name: null
       },
       Frequency: 'Common',
       IsEvent: false

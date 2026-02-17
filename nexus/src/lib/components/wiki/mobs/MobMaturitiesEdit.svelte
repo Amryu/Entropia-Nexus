@@ -38,8 +38,52 @@
   // Track open copy menus (by matIndex-attackIndex)
   let openCopyMenu = null;
 
-  // Track which maturity panels are expanded
+  // UID tracking for maturity identity (survives reordering)
+  let uidCounter = 0;
+  const uidMap = new WeakMap();
+
+  function getUid(obj) {
+    if (!uidMap.has(obj)) {
+      uidMap.set(obj, ++uidCounter);
+    }
+    return uidMap.get(obj);
+  }
+
+  // Track which maturity panels are expanded (by UID)
   let expandedMaturities = {};
+
+  // Sort comparator: Level ascending, Health secondary, Bosses at bottom, nulls at end
+  function maturitySortComparator(a, b) {
+    const aIsBoss = a.Properties?.Boss || false;
+    const bIsBoss = b.Properties?.Boss || false;
+    if (aIsBoss !== bIsBoss) return aIsBoss ? 1 : -1;
+
+    const aLvl = a.Properties?.Level;
+    const bLvl = b.Properties?.Level;
+    const aHasLvl = aLvl != null;
+    const bHasLvl = bLvl != null;
+    if (aHasLvl !== bHasLvl) return aHasLvl ? -1 : 1;
+    if (aHasLvl && bHasLvl && aLvl !== bLvl) return aLvl - bLvl;
+
+    const aHp = a.Properties?.Health;
+    const bHp = b.Properties?.Health;
+    if (aHp != null && bHp != null) return aHp - bHp;
+
+    return 0;
+  }
+
+  // Check if maturities are in sorted order
+  function isSorted(arr) {
+    for (let i = 1; i < arr.length; i++) {
+      if (maturitySortComparator(arr[i - 1], arr[i]) > 0) return false;
+    }
+    return true;
+  }
+
+  // Auto-sort on initial load if data arrives unsorted
+  $: if (maturities && maturities.length > 1 && !isSorted(maturities)) {
+    updateField(fieldPath, [...maturities].sort(maturitySortComparator));
+  }
 
   // === Maturity Constructor ===
   function createMaturity() {
@@ -142,20 +186,22 @@
     const newList = [...maturities, newMaturity];
     updateField(fieldPath, newList);
     // Expand the new maturity
-    expandedMaturities[newList.length - 1] = true;
+    expandedMaturities[getUid(newMaturity)] = true;
   }
 
-  function removeMaturity(index) {
-    const newList = maturities.filter((_, i) => i !== index);
+  function removeMaturity(mat) {
+    const uid = getUid(mat);
+    const newList = maturities.filter(m => m !== mat);
     updateField(fieldPath, newList);
     // Clean up expanded state
-    delete expandedMaturities[index];
+    delete expandedMaturities[uid];
   }
 
   function updateMaturityField(matIndex, field, value) {
     const newList = [...maturities];
+    const editedMat = newList[matIndex];
     const parts = field.split('.');
-    let target = newList[matIndex];
+    let target = editedMat;
 
     for (let i = 0; i < parts.length - 1; i++) {
       if (!target[parts[i]]) target[parts[i]] = {};
@@ -165,10 +211,10 @@
 
     // Auto-update Stamina when Health changes
     if (field === 'Properties.Health' && value != null && !isNaN(value)) {
-      if (!newList[matIndex].Properties.Attributes) {
-        newList[matIndex].Properties.Attributes = {};
+      if (!editedMat.Properties.Attributes) {
+        editedMat.Properties.Attributes = {};
       }
-      newList[matIndex].Properties.Attributes.Stamina = Math.round(value / 10);
+      editedMat.Properties.Attributes.Stamina = Math.round(value / 10);
     }
 
     updateField(fieldPath, newList);
@@ -203,21 +249,10 @@
     updateField(fieldPath, newList);
   }
 
-  function toggleMaturity(index) {
-    expandedMaturities[index] = !expandedMaturities[index];
+  function toggleMaturity(mat) {
+    const uid = getUid(mat);
+    expandedMaturities[uid] = !expandedMaturities[uid];
     expandedMaturities = expandedMaturities; // Trigger reactivity
-  }
-
-  function moveMaturity(index, direction) {
-    if (direction === 'up' && index > 0) {
-      const newList = [...maturities];
-      [newList[index], newList[index - 1]] = [newList[index - 1], newList[index]];
-      updateField(fieldPath, newList);
-    } else if (direction === 'down' && index < maturities.length - 1) {
-      const newList = [...maturities];
-      [newList[index], newList[index + 1]] = [newList[index + 1], newList[index]];
-      updateField(fieldPath, newList);
-    }
   }
 
   // Format maturity name for header
@@ -322,14 +357,14 @@
   </div>
 
   <div class="maturities-list">
-    {#each maturities as maturity, matIndex}
-      <div class="maturity-item" class:expanded={expandedMaturities[matIndex]}>
+    {#each maturities as maturity, matIndex (getUid(maturity))}
+      <div class="maturity-item" class:expanded={expandedMaturities[getUid(maturity)]}>
         <button
           class="maturity-header"
-          on:click={() => toggleMaturity(matIndex)}
+          on:click={() => toggleMaturity(maturity)}
           type="button"
         >
-          <span class="expand-icon">{expandedMaturities[matIndex] ? '▼' : '▶'}</span>
+          <span class="expand-icon">{expandedMaturities[getUid(maturity)] ? '▼' : '▶'}</span>
           <span class="maturity-name">{getMaturityLabel(maturity, matIndex)}</span>
           <span class="maturity-summary">
             {#if maturity.Properties?.Level}Lv.{maturity.Properties.Level}{/if}
@@ -337,29 +372,15 @@
           </span>
           <div class="maturity-actions">
             <button
-              class="btn-icon"
-              on:click|stopPropagation={() => moveMaturity(matIndex, 'up')}
-              disabled={matIndex === 0}
-              title="Move up"
-              type="button"
-            >↑</button>
-            <button
-              class="btn-icon"
-              on:click|stopPropagation={() => moveMaturity(matIndex, 'down')}
-              disabled={matIndex === maturities.length - 1}
-              title="Move down"
-              type="button"
-            >↓</button>
-            <button
               class="btn-icon danger"
-              on:click|stopPropagation={() => removeMaturity(matIndex)}
+              on:click|stopPropagation={() => removeMaturity(maturity)}
               title="Remove maturity"
               type="button"
             >×</button>
           </div>
         </button>
 
-        {#if expandedMaturities[matIndex]}
+        {#if expandedMaturities[getUid(maturity)]}
           <div class="maturity-content">
             <!-- General Fields -->
             <div class="field-group">

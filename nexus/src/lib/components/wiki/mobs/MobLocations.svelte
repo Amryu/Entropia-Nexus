@@ -13,6 +13,44 @@
   export let mobName = '';
   export let mobSpawns = [];
 
+  function getLowestMaturityLevel(spawnMaturities, mob) {
+    const levels = (spawnMaturities || [])
+      .filter(sm => sm.Maturity?.Mob?.Name === mob)
+      .map(sm => sm.Maturity?.Properties?.Level)
+      .filter(l => l != null);
+    return levels.length > 0 ? Math.min(...levels) : Infinity;
+  }
+
+  function formatMaturitiesRange(spawnMaturities, mob) {
+    const mats = (spawnMaturities || [])
+      .filter(sm => sm.Maturity?.Mob?.Name === mob);
+    if (mats.length === 0) return 'All';
+
+    const nonBoss = mats
+      .filter(m => !m.Maturity?.Properties?.Boss)
+      .sort((a, b) => (a.Maturity?.Properties?.Level ?? Infinity) - (b.Maturity?.Properties?.Level ?? Infinity));
+    const bosses = mats.filter(m => m.Maturity?.Properties?.Boss);
+
+    let result = '';
+    if (nonBoss.length === 1) {
+      result = nonBoss[0].Maturity?.Name || '<No Name>';
+    } else if (nonBoss.length >= 2) {
+      result = `${nonBoss[0].Maturity?.Name}-${nonBoss[nonBoss.length - 1].Maturity?.Name}`;
+    }
+
+    if (bosses.length > 0) {
+      const bossNames = bosses.map(b => b.Maturity?.Name || '<No Name>').join(', ');
+      result = result ? `${result}, ${bossNames}` : bossNames;
+    }
+
+    return result || 'All';
+  }
+
+  // Sort spawns by lowest maturity level of the current mob
+  $: sortedSpawns = [...(mobSpawns || [])].sort((a, b) => {
+    return getLowestMaturityLevel(a.Maturities, mobName) - getLowestMaturityLevel(b.Maturities, mobName);
+  });
+
   const densityLabels = { 1: 'Low', 2: 'Medium', 3: 'High' };
   const densityColors = {
     1: { bg: 'rgba(202, 138, 4, 0.25)', color: '#eab308' },
@@ -31,21 +69,18 @@
   }
 
   // Transform data for FancyTable
-  $: tableData = (mobSpawns || []).map(spawn => {
+  $: tableData = sortedSpawns.map(spawn => {
     const coords = spawn.Properties?.Coordinates || spawn.Properties?.Data || {};
     const x = coords.Longitude || coords.x || 0;
     const y = coords.Latitude || coords.y || 0;
     const z = coords.Altitude || 0;
     const waypoint = getWaypoint(spawn.Planet, x, y, z, mobName);
     const density = spawn.Properties?.Density;
-    const maturitiesHere = spawn.Maturities?.filter(sm => sm.Maturity?.Mob?.Name === mobName) || [];
     const otherMobs = [...new Set(spawn.Maturities?.map(sm => sm.Maturity?.Mob?.Name).filter(n => n && n !== mobName) || [])];
 
     return {
       id: spawn.Id,
-      maturities: maturitiesHere.length > 0
-        ? maturitiesHere.map(sm => sm.Maturity?.Name || '<No Name>').join(', ')
-        : 'All',
+      maturities: formatMaturitiesRange(spawn.Maturities, mobName),
       otherMobs: otherMobs,
       otherMobsHtml: otherMobs.length > 0
         ? otherMobs.map(m => `<a href="/information/mobs/${encodeURIComponentSafe(m)}" class="wiki-link-normal">${m}</a>`).join(', ')
