@@ -11,6 +11,7 @@
   import { clampDecimals, encodeURIComponentSafe, getTypeLink } from '$lib/util';
   import { isPercentMarkupType } from '$lib/common/itemTypes.js';
   import { formatMarkupValue } from '../../market/exchange/orderUtils';
+  import { getItemCategoryPath } from '$lib/market/categorize.js';
   import { loadLoadoutEntities } from '$lib/utils/entityLoader';
   import { evaluateLoadout } from '$lib/utils/loadoutEvaluator';
   import { buildEffectCaps } from '$lib/utils/loadoutEffects';
@@ -131,8 +132,19 @@
   $: hasShops = shops.length > 0;
   $: hasOrders = orders.length > 0;
   $: hasRentals = rentals.length > 0;
-  $: buyOrders = orders.filter(o => o.type === 'BUY');
-  $: sellOrders = orders.filter(o => o.type === 'SELL');
+  function sortOrdersByCategory(orderList) {
+    return orderList
+      .map(o => ({ ...o, category: getItemCategoryPath(o.item_type, o.item_sub_type) }))
+      .sort((a, b) => {
+        const catCmp = a.category.localeCompare(b.category);
+        if (catCmp !== 0) return catCmp;
+        const nameA = a.details?.item_name || '';
+        const nameB = b.details?.item_name || '';
+        return nameA.localeCompare(nameB);
+      });
+  }
+  $: buyOrders = sortOrdersByCategory(orders.filter(o => o.type === 'BUY'));
+  $: sellOrders = sortOrdersByCategory(orders.filter(o => o.type === 'SELL'));
 
   function formatRentalAvailability(offer) {
     if (offer.status === 'available') return null;
@@ -276,6 +288,11 @@
           ? `<a class="order-item-link" href="${escapeHtml(href)}">${label}</a>`
           : label;
       }
+    },
+    {
+      key: 'category', header: 'Category', width: '140px',
+      hideOnMobile: true, sortable: false, searchable: false,
+      formatter: (v) => `<span class="category-label">${v || ''}</span>`
     },
     { key: 'quantity', header: 'Qty', width: '70px', sortable: true, searchable: false },
     {
@@ -2301,5 +2318,12 @@
   }
   :global(.order-item-link:hover) {
     text-decoration: underline;
+  }
+  :global(.category-label) {
+    color: var(--text-muted, #999);
+    font-size: 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 </style>

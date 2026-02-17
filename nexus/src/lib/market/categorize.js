@@ -517,3 +517,53 @@ function isFinancialItem(item) {
   const t = (item?.Properties?.Type || '').toLowerCase();
   return t === 'deed' || t === 'token' || t === 'share';
 }
+
+// Static mapping from entity item_type to display category path.
+// Mirrors the category structure from makeEmptyCategories().
+const ITEM_TYPE_CATEGORY_MAP = {
+  'Weapon': 'Weapons',
+  'WeaponAmplifier': 'Weapons > Amplifiers',
+  'WeaponVisionAttachment': 'Weapons > Ranged',
+  'Absorber': 'Weapons > Absorbers',
+  'MindforceImplant': 'Weapons > Mindforce',
+  'Armor': 'Armor',
+  'ArmorSet': 'Armor > Sets',
+  'ArmorPlating': 'Armor > Attachments',
+  'MedicalTool': 'Tools > Medical',
+  'MedicalChip': 'Tools > Medical',
+  'Finder': 'Tools > Mining',
+  'FinderAmplifier': 'Tools > Mining',
+  'Excavator': 'Tools > Mining',
+  'Scanner': 'Tools > Scanning',
+  'MiscTool': 'Tools',
+  'Tool': 'Tools',
+  'EffectChip': 'Tools > Mindforce',
+  'TeleportationChip': 'Tools > Mindforce',
+  'Enhancer': 'Enhancers',
+  'Clothing': 'Clothes',
+  'Blueprint': 'Blueprints',
+  'Material': 'Materials',
+  'Consumable': 'Consumables',
+  'Vehicle': 'Vehicles',
+  'Pet': 'Pets',
+  'SkillImplant': 'Skill Implants',
+  'Furniture': 'Furnishings',
+  'Decoration': 'Furnishings',
+  'StorageContainer': 'Furnishings',
+  'Sign': 'Furnishings',
+  'Strongbox': 'Strongboxes'
+};
+
+/**
+ * Map an item_type (and optional sub_type) to a display category path.
+ * Used for grouping orders on user profiles.
+ */
+export function getItemCategoryPath(itemType, itemSubType) {
+  if (!itemType) return 'Other';
+  // Materials with financial sub-types go to Financial
+  if (itemType === 'Material' && itemSubType) {
+    const st = itemSubType.toLowerCase();
+    if (st === 'deed' || st === 'token' || st === 'share') return 'Financial';
+  }
+  return ITEM_TYPE_CATEGORY_MAP[itemType] || 'Other';
+}
