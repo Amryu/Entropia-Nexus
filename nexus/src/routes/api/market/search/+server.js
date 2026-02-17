@@ -7,7 +7,7 @@
  */
 import { getResponse, apiCall, encodeURIComponentSafe } from '$lib/util.js';
 import { getExchangeCategorizationSummary } from '$lib/market/cache.js';
-import { ABSOLUTE_MARKUP_MATERIAL_TYPES } from '$lib/common/itemTypes.js';
+import { ABSOLUTE_MARKUP_MATERIAL_TYPES, isPercentMarkupType } from '$lib/common/itemTypes.js';
 
 const MAX_RESULTS = 20;
 const MIN_QUERY_LENGTH = 2;
@@ -75,14 +75,20 @@ function formatExchangePrice(item) {
 
   if (median == null || median <= 0) return null;
 
-  // Absolute markup items (Deeds, Tokens) — show PED value
+  // Absolute markup items (Deeds, Tokens, Shares) — show PED value
   if (subType && ABSOLUTE_MARKUP_MATERIAL_TYPES.has(subType)) {
     return `${median.toFixed(2)} PED`;
   }
 
-  // Percentage markup
+  // Percent-markup items (stackables, (L) blueprints, (L) condition items):
+  // median IS the markup percentage directly (e.g., 102.50 = 102.50%)
+  if (isPercentMarkupType(item.t, item.n, subType)) {
+    return `${median.toFixed(0)}% MU`;
+  }
+
+  // Absolute markup (condition items): median is +PED over TT, convert to %
   if (maxTT != null && maxTT > 0) {
-    const pct = Math.round((median / maxTT) * 100);
+    const pct = Math.round(((maxTT + median) / maxTT) * 100);
     return `${pct}% MU`;
   }
 
