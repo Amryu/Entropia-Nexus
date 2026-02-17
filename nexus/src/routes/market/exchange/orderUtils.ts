@@ -80,8 +80,11 @@ export function getUnitTT(item: any, order?: any): number | null {
 
 /** Get the display value for an order: CurrentTT from details if available, otherwise getUnitTT */
 export function getOrderValue(item: any, order?: any): number | null {
-  const ct = Number(order?.details?.CurrentTT ?? order?.Metadata?.CurrentTT);
-  if (ct > 0) return ct;
+  const raw = order?.details?.CurrentTT ?? order?.Metadata?.CurrentTT;
+  if (raw != null) {
+    const ct = Number(raw);
+    if (!isNaN(ct)) return ct;
+  }
   return getUnitTT(item, order);
 }
 
@@ -96,8 +99,9 @@ export function computeUnitPrice(item: any, markup: number | null, order?: any):
   const maxTT = getMaxTT(item);
   if (maxTT == null) return null;
   // Use CurrentTT if available (e.g. sell orders with specific condition), otherwise MaxTT
-  const ct = Number(order?.details?.CurrentTT ?? order?.Metadata?.CurrentTT);
-  const tt = ct > 0 ? ct : maxTT;
+  const rawCt = order?.details?.CurrentTT ?? order?.Metadata?.CurrentTT;
+  const ct = rawCt != null ? Number(rawCt) : NaN;
+  const tt = !isNaN(ct) ? ct : maxTT;
   return isAbsoluteMarkup(item) ? tt + mu : tt * (mu / 100);
 }
 
