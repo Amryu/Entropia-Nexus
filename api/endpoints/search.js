@@ -161,6 +161,7 @@ function buildMultiWordLike(column, paramIndices) {
 
 function formatSearchResult(x, score){
   const result = { Id: x.Id, Name: x.Name, Type: x.Type, SubType: x.SubType, Score: score };
+  if (x.DisplayName) result.DisplayName = x.DisplayName;
   return result;
 }
 
@@ -339,8 +340,9 @@ async function search(query, fuzzy = false){
 
   // Post-process results: apply scoring, filter, and sort
   const scoredResults = rows.map(row => {
-    let displayName = row.Name;
-    // If searching for a gendered variant and this is a clothing item with 'Both' or null gender
+    let displayName = null;
+    // If searching for a gendered variant and this is a clothing item with 'Both' or null gender,
+    // generate a display name with the gender tag (but keep Name as the original for URL linking)
     if (genderedQuery && row.Type === 'Clothing' && (row.Gender === 'Both' || row.Gender === null)) {
       // Check if the item name doesn't already have a gender tag
       if (!/\((M|F)\)/.test(row.Name) && !/\(M,/.test(row.Name) && !/,\s*M\)/.test(row.Name) && !/\(F,/.test(row.Name) && !/,\s*F\)/.test(row.Name)) {
@@ -350,7 +352,7 @@ async function search(query, fuzzy = false){
     // Score using MatchedName if available (e.g., armor sets matched via piece name)
     const nameToScore = row.MatchedName || row.Name;
     const score = scoreSearchResult(nameToScore, query, genderedQuery);
-    return { ...row, Name: displayName, _score: score };
+    return { ...row, DisplayName: displayName, _score: score };
   });
 
   // Filter out zero-score results and sort by score descending
@@ -480,8 +482,9 @@ async function searchItems(query, fuzzy = false, options = {}){
 
   // Post-process results: apply scoring, filter, and sort
   const scoredResults = rows.map(row => {
-    let displayName = row.Name;
-    // If searching for a gendered variant and this is a clothing item with 'Both' or null gender
+    let displayName = null;
+    // If searching for a gendered variant and this is a clothing item with 'Both' or null gender,
+    // generate a display name with the gender tag (but keep Name as the original for URL linking)
     if (genderedQuery && row.Type === 'Clothing' && (row.Gender === 'Both' || row.Gender === null)) {
       // Check if the item name doesn't already have a gender tag
       if (!/\((M|F)\)/.test(row.Name) && !/\(M,/.test(row.Name) && !/,\s*M\)/.test(row.Name) && !/\(F,/.test(row.Name) && !/,\s*F\)/.test(row.Name)) {
@@ -491,7 +494,7 @@ async function searchItems(query, fuzzy = false, options = {}){
     // Score using MatchedName if available (e.g., armor sets matched via piece name)
     const nameToScore = row.MatchedName || row.Name;
     const score = scoreSearchResult(nameToScore, query, genderedQuery);
-    return { ...row, Name: displayName, _score: score };
+    return { ...row, DisplayName: displayName, _score: score };
   });
 
   // Filter out zero-score results and sort by score descending

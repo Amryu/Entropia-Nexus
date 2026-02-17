@@ -368,7 +368,7 @@
               on:click={(e) => handleResultClick(e, result)}
               on:mouseenter={() => handleResultMouseEnter(globalIndex)}
             >
-              <span class="search-result-name">{result.Name}</span>
+              <span class="search-result-name">{result.DisplayName || result.Name}</span>
               <span class="search-result-type">{getTypeName(result.Type)}</span>
             </a>
           {/each}
