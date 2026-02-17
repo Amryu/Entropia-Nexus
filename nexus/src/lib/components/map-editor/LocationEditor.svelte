@@ -1,0 +1,614 @@
+<script>
+  // @ts-nocheck
+  import { createEventDispatcher } from 'svelte';
+  import { addToast } from '$lib/stores/toasts.js';
+  import { apiCall } from '$lib/util.js';
+  import { LOCATION_TYPES, AREA_TYPES, SHAPES, isArea, getEffectiveType } from './mapEditorUtils.js';
+  import SearchInput from '$lib/components/wiki/SearchInput.svelte';
+
+  export let location = null;  // The selected location object (or null)
+  export let isNew = false;    // Whether this is a newly drawn shape
+  export let drawnShapeData = null;  // { shape, data, center } from drawing
+  /** @type {'admin' | 'public'} */
+  export let mode = 'admin';
+  /** All locations on current planet (for parent picker) */
+  export let allLocations = [];
+
+  const dispatch = createEventDispatcher();
+
+  // Edit form state
+  let name = '';
+  let locationType = 'Area';
+  let longitude = 0;
+  let latitude = 0;
+  let altitude = 0;
+  let areaType = 'MobArea';
+  let shape = 'Polygon';
+  let shapeDataJson = '';
+
+  // Structured shape fields (Circle / Rectangle)
+  let circleX = 0;
+  let circleY = 0;
+  let circleRadius = 100;
+  let rectX = 0;
+  let rectY = 0;
+  let rectWidth = 100;
+  let rectHeight = 100;
+
+  // Parent location state
+  let parentLocationName = '';
+
+  // LandArea state
+  let landAreaOwner = '';
+  let landAreaTaxRate = null;
+
+  // Related entities
+  let relatedExpanded = false;
+  let relatedMissions = null;
+  let relatedLoading = false;
+
+  // Track which location is loaded to avoid resetting form when same location re-renders
+  let loadedLocationId = null;
+  let loadedDrawnShapeRef = null;
+
+  // Parent location options for SearchInput (areas only)
+  $: parentOptions = allLocations
+    .filter(l => isArea(l) && l.Id !== location?.Id)
+    .map(l => ({ label: l.Name, value: String(l.Id), sublabel: getEffectiveType(l) }));
+
+  // Populate form from location or drawn data — only when the actual location changes
+  $: if (location && !isNew && location.Id !== loadedLocationId) {
+    loadedLocationId = location.Id;
+    loadedDrawnShapeRef = null;
+    name = location.Name || '';
+    locationType = location.Properties?.Type === 'Area' || isArea(location) ? 'Area' : (location.Properties?.Type || 'Area');
+    longitude = location.Properties?.Coordinates?.Longitude ?? 0;
+    latitude = location.Properties?.Coordinates?.Latitude ?? 0;
+    altitude = location.Properties?.Coordinates?.Altitude ?? 0;
+    areaType = location.Properties?.AreaType || location.Properties?.Type || 'MobArea';
+    shape = location.Properties?.Shape || 'Polygon';
+    const existingData = location.Properties?.Data;
+    if (shape === 'Circle' && existingData) {
+      circleX = existingData.x ?? 0;
+      circleY = existingData.y ?? 0;
+      circleRadius = existingData.radius ?? 100;
+      shapeDataJson = '';
+    } else if (shape === 'Rectangle' && existingData) {
+      rectX = existingData.x ?? 0;
+      rectY = existingData.y ?? 0;
+      rectWidth = existingData.width ?? 100;
+      rectHeight = existingData.height ?? 100;
+      shapeDataJson = '';
+    } else {
+      shapeDataJson = existingData ? JSON.stringify(existingData, null, 2) : '';
+    }
+    parentLocationName = location.ParentLocation?.Name || '';
+    landAreaOwner = location.Properties?.LandAreaOwnerName || '';
+    landAreaTaxRate = location.Properties?.TaxRate ?? null;
+    // Reset related data when location changes
+    relatedMissions = null;
+    relatedExpanded = false;
+  }
+
+  // Clear tracking when deselected
+  $: if (!location && !isNew) {
+    loadedLocationId = null;
+    loadedDrawnShapeRef = null;
+  }
+
+  $: if (isNew && drawnShapeData && drawnShapeData !== loadedDrawnShapeRef) {
+    loadedDrawnShapeRef = drawnShapeData;
+    loadedLocationId = null;
+    name = '';
+    locationType = drawnShapeData.isMarker ? 'Teleporter' : 'Area';
+    longitude = drawnShapeData.center?.x ?? 0;
+    latitude = drawnShapeData.center?.y ?? 0;
+    altitude = 0;
+    areaType = 'MobArea';
+    shape = drawnShapeData.shape || 'Polygon';
+    const drawnData = drawnShapeData.data;
+    if (shape === 'Circle' && drawnData) {
+      circleX = drawnData.x ?? 0;
+      circleY = drawnData.y ?? 0;
+      circleRadius = drawnData.radius ?? 100;
+      shapeDataJson = '';
+    } else if (shape === 'Rectangle' && drawnData) {
+      rectX = drawnData.x ?? 0;
+      rectY = drawnData.y ?? 0;
+      rectWidth = drawnData.width ?? 100;
+      rectHeight = drawnData.height ?? 100;
+      shapeDataJson = '';
+    } else {
+      shapeDataJson = drawnData ? JSON.stringify(drawnData, null, 2) : '';
+    }
+  }
+
+  // Build shape data object from current form state
+  function buildShapeData(shapeType) {
+    if (shapeType === 'Circle') {
+      return { x: Number(circleX), y: Number(circleY), radius: Number(circleRadius) };
+    } else if (shapeType === 'Rectangle') {
+      return { x: Number(rectX), y: Number(rectY), width: Number(rectWidth), height: Number(rectHeight) };
+    } else if (shapeType === 'Polygon') {
+      try {
+        if (shapeDataJson.trim()) return JSON.parse(shapeDataJson);
+      } catch { return null; }
+    }
+    return null;
+  }
+
+  // Dispatch preview events when form fields change (debounced)
+  let previewTimeout;
+  $: {
+    // Track all shape-related fields for reactivity
+    const _shape = shape;
+    const _shapeDataJson = shapeDataJson;
+    const _cX = circleX; const _cY = circleY; const _cR = circleRadius;
+    const _rX = rectX; const _rY = rectY; const _rW = rectWidth; const _rH = rectHeight;
+    const _lon = longitude;
+    const _lat = latitude;
+    const _locType = locationType;
+    const _active = location || isNew;
+
+    clearTimeout(previewTimeout);
+    previewTimeout = setTimeout(() => {
+      if (!_active) {
+        dispatch('preview', null);
+        return;
+      }
+
+      if (_locType === 'Area' && _shape) {
+        let shapeData = null;
+        if (_shape === 'Circle') {
+          shapeData = { x: Number(_cX), y: Number(_cY), radius: Number(_cR) };
+        } else if (_shape === 'Rectangle') {
+          shapeData = { x: Number(_rX), y: Number(_rY), width: Number(_rW), height: Number(_rH) };
+        } else if (_shape === 'Polygon') {
+          try {
+            if (_shapeDataJson.trim()) shapeData = JSON.parse(_shapeDataJson);
+          } catch { return; } // invalid JSON — skip preview update
+        }
+        if (shapeData) {
+          dispatch('preview', { shape: _shape, data: shapeData, center: null });
+        } else {
+          dispatch('preview', null);
+        }
+      } else if (_locType !== 'Area') {
+        dispatch('preview', { shape: null, data: null, center: { x: Number(_lon), y: Number(_lat) } });
+      } else {
+        dispatch('preview', null);
+      }
+    }, 150);
+  }
+
+  function handleSave() {
+    let shapeData = null;
+    if (locationType === 'Area') {
+      if (shape === 'Circle') {
+        shapeData = { x: Number(circleX), y: Number(circleY), radius: Number(circleRadius) };
+      } else if (shape === 'Rectangle') {
+        shapeData = { x: Number(rectX), y: Number(rectY), width: Number(rectWidth), height: Number(rectHeight) };
+      } else {
+        try {
+          if (shapeDataJson.trim()) shapeData = JSON.parse(shapeDataJson);
+        } catch (e) {
+          addToast('Invalid shape data JSON', { type: 'error' });
+          return;
+        }
+      }
+    }
+
+    const modified = {
+      name,
+      locationType,
+      longitude: Number(longitude),
+      latitude: Number(latitude),
+      altitude: Number(altitude) || null,
+      areaType: locationType === 'Area' ? areaType : null,
+      shape: locationType === 'Area' ? shape : null,
+      shapeData: locationType === 'Area' ? shapeData : null,
+      parentLocationName: parentLocationName || null,
+      landAreaOwner: (isLandArea && landAreaOwner) ? landAreaOwner : null,
+      landAreaTaxRate: isLandArea ? landAreaTaxRate : null
+    };
+
+    if (isNew) {
+      dispatch('add', modified);
+    } else {
+      dispatch('edit', { original: location, modified });
+    }
+  }
+
+  function handleDelete() {
+    if (!location) return;
+    if (mode === 'public') {
+      // In public mode: copy delete info to clipboard
+      const type = getEffectiveType(location);
+      const coords = location.Properties?.Coordinates;
+      const coordStr = coords ? `${coords.Longitude ?? 0}, ${coords.Latitude ?? 0}, ${coords.Altitude ?? 0}` : 'N/A';
+      const text = `Location: ${location.Name} (ID: ${location.Id}), Type: ${type}, Coords: ${coordStr}`;
+      navigator.clipboard?.writeText(text);
+      addToast('Delete info copied to clipboard', { type: 'success' });
+    } else {
+      dispatch('delete', location);
+    }
+  }
+
+  function handleRemovePendingAdd() {
+    if (!location) return;
+    dispatch('removePendingAdd', location.Id);
+  }
+
+  function handleRevert() {
+    dispatch('revert', location);
+  }
+
+  function handleEditMobArea() {
+    dispatch('editMobArea', { location, isNew });
+  }
+
+  $: isAreaType = locationType === 'Area';
+  $: isMobArea = isAreaType && areaType === 'MobArea';
+  $: isLandArea = isAreaType && areaType === 'LandArea';
+
+  async function fetchRelatedEntities() {
+    if (!location?.Id || location._isPendingAdd || relatedLoading) return;
+    relatedLoading = true;
+    try {
+      const missions = await apiCall(fetch, `/missions?StartLocationId=${location.Id}`);
+      relatedMissions = missions || [];
+    } catch (e) {
+      relatedMissions = [];
+    } finally {
+      relatedLoading = false;
+    }
+  }
+
+  function toggleRelated() {
+    relatedExpanded = !relatedExpanded;
+    if (relatedExpanded && relatedMissions === null) {
+      fetchRelatedEntities();
+    }
+  }
+</script>
+
+<style>
+  .editor-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+    height: 100%;
+    overflow-y: auto;
+  }
+
+  .editor-title {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-color);
+    margin: 0;
+  }
+
+  .field-group {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .field-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+
+  .field-input {
+    padding: 6px 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--primary-color);
+    color: var(--text-color);
+    font-size: 13px;
+    width: 100%;
+    box-sizing: border-box;
+  }
+
+  .field-input:focus {
+    outline: none;
+    border-color: var(--accent-color);
+  }
+
+  select.field-input {
+    cursor: pointer;
+  }
+
+  textarea.field-input {
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    font-size: 11px;
+    resize: vertical;
+    min-height: 60px;
+  }
+
+  .coord-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 4px;
+  }
+
+  .actions {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 8px;
+  }
+
+  .btn {
+    padding: 8px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    text-align: center;
+    background: var(--secondary-color);
+    color: var(--text-color);
+  }
+  .btn:hover { background: var(--hover-color); }
+
+  .btn-primary {
+    background: var(--accent-color);
+    color: white;
+    border-color: var(--accent-color);
+  }
+  .btn-primary:hover { opacity: 0.9; }
+
+  .btn-danger {
+    border-color: #ef4444;
+    color: #ef4444;
+  }
+  .btn-danger:hover { background: rgba(239, 68, 68, 0.15); }
+
+  .btn-mob {
+    border-color: #eab308;
+    color: #eab308;
+  }
+  .btn-mob:hover { background: rgba(234, 179, 8, 0.15); }
+
+  .section-divider {
+    border-top: 1px solid var(--border-color);
+    margin: 4px 0;
+  }
+
+  .no-selection {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--text-muted);
+    font-size: 13px;
+    text-align: center;
+    padding: 20px;
+  }
+
+  .related-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    padding: 6px 0;
+    border: none;
+    background: none;
+    color: var(--text-muted);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    cursor: pointer;
+  }
+  .related-toggle:hover { color: var(--text-color); }
+
+  .related-toggle-arrow {
+    font-size: 10px;
+    transition: transform 0.15s ease;
+  }
+
+  .related-section {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .related-loading, .related-empty {
+    font-size: 12px;
+    color: var(--text-muted);
+    padding: 4px 0;
+  }
+
+  .related-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .related-item {
+    font-size: 12px;
+    color: var(--accent-color);
+    text-decoration: none;
+    padding: 2px 0;
+  }
+  .related-item:hover { text-decoration: underline; }
+</style>
+
+{#if !location && !isNew}
+  <div class="no-selection">
+    Select a location on the map or in the list, or draw a new shape to edit.
+  </div>
+{:else}
+  <div class="editor-container">
+    <h3 class="editor-title">{isNew ? 'New Location' : `Edit: ${location?.Name || ''}`}</h3>
+
+    <div class="field-group">
+      <span class="field-label">Name</span>
+      <input class="field-input" type="text" bind:value={name} placeholder="Location name" />
+    </div>
+
+    <div class="field-group">
+      <span class="field-label">Type</span>
+      <select class="field-input" bind:value={locationType}>
+        {#each LOCATION_TYPES as t}
+          <option value={t}>{t}</option>
+        {/each}
+        <option value="Area">Area</option>
+      </select>
+    </div>
+
+    <div class="field-group">
+      <span class="field-label">Coordinates</span>
+      <div class="coord-row">
+        <input class="field-input" type="number" bind:value={longitude} placeholder="Lon" title="Longitude" />
+        <input class="field-input" type="number" bind:value={latitude} placeholder="Lat" title="Latitude" />
+        <input class="field-input" type="number" bind:value={altitude} placeholder="Alt" title="Altitude" />
+      </div>
+    </div>
+
+    {#if isAreaType}
+      <div class="section-divider"></div>
+
+      <div class="field-group">
+        <span class="field-label">Area Type</span>
+        <select class="field-input" bind:value={areaType}>
+          {#each AREA_TYPES as t}
+            <option value={t}>{t}</option>
+          {/each}
+        </select>
+      </div>
+
+      <div class="field-group">
+        <span class="field-label">Shape</span>
+        <select class="field-input" bind:value={shape}>
+          {#each SHAPES as s}
+            <option value={s}>{s}</option>
+          {/each}
+        </select>
+      </div>
+
+      {#if shape === 'Circle'}
+        <div class="field-group">
+          <span class="field-label">Center</span>
+          <div class="coord-row" style="grid-template-columns: 1fr 1fr;">
+            <input class="field-input" type="number" bind:value={circleX} placeholder="X" title="Center X" />
+            <input class="field-input" type="number" bind:value={circleY} placeholder="Y" title="Center Y" />
+          </div>
+        </div>
+        <div class="field-group">
+          <span class="field-label">Radius</span>
+          <input class="field-input" type="number" bind:value={circleRadius} min="1" placeholder="Radius" title="Radius" />
+        </div>
+      {:else if shape === 'Rectangle'}
+        <div class="field-group">
+          <span class="field-label">Origin</span>
+          <div class="coord-row" style="grid-template-columns: 1fr 1fr;">
+            <input class="field-input" type="number" bind:value={rectX} placeholder="X" title="Origin X" />
+            <input class="field-input" type="number" bind:value={rectY} placeholder="Y" title="Origin Y" />
+          </div>
+        </div>
+        <div class="field-group">
+          <span class="field-label">Size</span>
+          <div class="coord-row" style="grid-template-columns: 1fr 1fr;">
+            <input class="field-input" type="number" bind:value={rectWidth} min="1" placeholder="Width" title="Width" />
+            <input class="field-input" type="number" bind:value={rectHeight} min="1" placeholder="Height" title="Height" />
+          </div>
+        </div>
+      {:else}
+        <div class="field-group">
+          <span class="field-label">Shape Data (JSON)</span>
+          <textarea class="field-input" bind:value={shapeDataJson} rows="4"></textarea>
+        </div>
+      {/if}
+
+      {#if isMobArea}
+        <button class="btn btn-mob" on:click={handleEditMobArea}>
+          Edit Mob Spawns
+        </button>
+      {/if}
+
+      {#if isLandArea}
+        <div class="section-divider"></div>
+        <div class="field-group">
+          <span class="field-label">Land Area Owner</span>
+          <input class="field-input" type="text" bind:value={landAreaOwner} placeholder="Player name (resolved on approval)" />
+        </div>
+        <div class="field-group">
+          <span class="field-label">Tax Rate (%)</span>
+          <input class="field-input" type="number" bind:value={landAreaTaxRate} min="0" max="100" step="0.1" placeholder="0-100" />
+        </div>
+      {/if}
+    {/if}
+
+    <div class="section-divider"></div>
+
+    <!-- Parent Location -->
+    <div class="field-group">
+      <span class="field-label">Parent Location</span>
+      {#if allLocations.length > 0}
+        <SearchInput
+          value={parentLocationName}
+          options={parentOptions}
+          placeholder="Search parent area..."
+          limit={15}
+          on:change={(e) => parentLocationName = e.detail.value}
+          on:select={(e) => parentLocationName = e.detail.data?.label || e.detail.value}
+        />
+      {:else}
+        <input class="field-input" type="text" bind:value={parentLocationName} placeholder="Parent area name" />
+      {/if}
+    </div>
+
+    <div class="section-divider"></div>
+
+    <div class="actions">
+      <button class="btn btn-primary" on:click={handleSave}>
+        {isNew ? 'Add Location' : 'Save Changes'}
+      </button>
+      {#if !isNew && location?._isPendingAdd}
+        <button class="btn btn-danger" on:click={handleRemovePendingAdd}>
+          Remove
+        </button>
+      {:else if !isNew}
+        <button class="btn btn-danger" on:click={handleDelete}>
+          {mode === 'public' ? 'Copy Delete Info' : 'Mark for Deletion'}
+        </button>
+        <button class="btn" on:click={handleRevert}>Revert Changes</button>
+      {/if}
+    </div>
+
+    <!-- Related Entities (read-only, collapsible) -->
+    {#if !isNew && location?.Id}
+      <div class="section-divider"></div>
+      <button class="related-toggle" on:click={toggleRelated}>
+        <span class="related-toggle-label">Related Entities</span>
+        <span class="related-toggle-arrow" class:expanded={relatedExpanded}>{relatedExpanded ? '\u25B2' : '\u25BC'}</span>
+      </button>
+      {#if relatedExpanded}
+        <div class="related-section">
+          {#if relatedLoading}
+            <div class="related-loading">Loading...</div>
+          {:else if relatedMissions !== null}
+            {#if relatedMissions.length > 0}
+              <span class="field-label">Missions ({relatedMissions.length})</span>
+              <div class="related-list">
+                {#each relatedMissions as mission}
+                  <a class="related-item" href="/information/missions/{mission.Id}" target="_blank" rel="noopener">
+                    {mission.Name}
+                  </a>
+                {/each}
+              </div>
+            {:else}
+              <div class="related-empty">No related entities found.</div>
+            {/if}
+          {/if}
+        </div>
+      {/if}
+    {/if}
+  </div>
+{/if}

@@ -1,12 +1,15 @@
 <script>
   // @ts-nocheck
   import { createEventDispatcher } from 'svelte';
-  import { LOCATION_TYPES, AREA_TYPES, getEffectiveType, getTypeColor, isArea } from './adminMapUtils.js';
+  import { addToast } from '$lib/stores/toasts.js';
+  import { LOCATION_TYPES, AREA_TYPES, getEffectiveType, getTypeColor, isArea } from './mapEditorUtils.js';
 
   export let locations = [];
   export let selectedId = null;
   export let pendingChanges = new Map();
   export let editMode = false;
+  /** @type {'admin' | 'public'} */
+  export let mode = 'admin';
 
   const dispatch = createEventDispatcher();
 
@@ -100,9 +103,29 @@
   }
 
   function markSelectedForDeletion() {
-    dispatch('massDelete', selectedForDeletion);
-    selectedForDeletion = new Set();
-    multiSelectMode = false;
+    if (mode === 'public') {
+      // In public mode: format and copy to clipboard instead of dispatching mass delete
+      const lines = [];
+      for (const locId of selectedForDeletion) {
+        const loc = locations.find(l => l.Id === locId);
+        if (!loc) continue;
+        const type = getEffectiveType(loc);
+        const coords = loc.Properties?.Coordinates;
+        const coordStr = coords ? `${coords.Longitude ?? 0}, ${coords.Latitude ?? 0}, ${coords.Altitude ?? 0}` : 'N/A';
+        lines.push(`ID: ${loc.Id} | ${type} | ${loc.Name} | Coords: ${coordStr}`);
+      }
+      if (lines.length) {
+        const text = `Locations requested for deletion:\n${lines.join('\n')}`;
+        navigator.clipboard?.writeText(text);
+        addToast(`Copied ${lines.length} location(s) info to clipboard`, { type: 'success' });
+      }
+      selectedForDeletion = new Set();
+      multiSelectMode = false;
+    } else {
+      dispatch('massDelete', selectedForDeletion);
+      selectedForDeletion = new Set();
+      multiSelectMode = false;
+    }
   }
 
   function getChangeIndicator(locId) {
@@ -180,10 +203,6 @@
     cursor: pointer;
   }
   .quick-toggles button:hover { background: var(--hover-color); }
-
-  .area-filters {
-    padding-left: 12px;
-  }
 
   .search-section {
     padding: 8px;
@@ -364,7 +383,7 @@
     <div class="mass-actions">
       {#if multiSelectMode}
         <button class="delete-btn" on:click={markSelectedForDeletion} disabled={selectedForDeletion.size === 0}>
-          Delete Selected ({selectedForDeletion.size})
+          {mode === 'public' ? 'Copy Info' : 'Delete Selected'} ({selectedForDeletion.size})
         </button>
         <button on:click={() => { multiSelectMode = false; selectedForDeletion = new Set(); }}>Cancel</button>
       {:else}

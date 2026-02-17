@@ -1,7 +1,7 @@
 <script>
   // @ts-nocheck
   import { createEventDispatcher, onMount } from 'svelte';
-  import { generateMobAreaName } from './adminMapUtils.js';
+  import { generateMobAreaName } from './mapEditorUtils.js';
   import { formatMobSpawnDisplayName } from '$lib/mapUtil.js';
 
   export let mobs = [];          // All mobs from /mobs (cached by parent)
@@ -16,7 +16,6 @@
   let density = 3;
   let autoName = '';
   let nameOverride = '';
-  let loadingMaturities = {};
   let maturityDialog = null; // { mobId } when dialog is open
 
   // If editing an existing mob area, populate from its spawn data
@@ -25,23 +24,32 @@
   }
 
   function initFromExisting() {
-    if (!location?.Properties?.Maturities) return;
+    // Maturities come from the /mobspawns API at the top level, not inside Properties.
+    // Each entry: { IsRare, Maturity: { Id, Name, Properties: { Health, Level, Boss }, Mob: { Name, Links } } }
+    const spawnMats = location?.Maturities;
+    if (!spawnMats?.length) return;
+
     // Group existing maturities by mob
     const matsByMob = new Map();
-    for (const mat of (location.Properties.Maturities || [])) {
+    for (const entry of spawnMats) {
+      const mat = entry.Maturity;
+      if (!mat) continue;
       const mobName = mat.Mob?.Name || 'Unknown';
-      const mobId = mat.Mob?.Id || 0;
+      // Look up mob ID from the loaded mobs list by name
+      const mobMatch = mobs.find(m => m.Name === mobName);
+      const mobId = mobMatch?.Id || 0;
+
       if (!matsByMob.has(mobId)) {
         matsByMob.set(mobId, { mobId, mobName, maturities: [] });
       }
       matsByMob.get(mobId).maturities.push({
         id: mat.Id,
         name: mat.Name,
-        health: mat.Health || 0,
-        level: mat.Level ?? mat.Properties?.Level ?? null,
-        boss: mat.Properties?.Boss === true || mat.Boss === true,
+        health: mat.Properties?.Health ?? 0,
+        level: mat.Properties?.Level ?? null,
+        boss: mat.Properties?.Boss === true,
         selected: true,
-        isRare: mat.IsRare || false
+        isRare: entry.IsRare || false
       });
     }
     selectedMobs = Array.from(matsByMob.values());
@@ -97,43 +105,36 @@
 
   $: effectiveName = nameOverride || autoName;
 
-  async function addMob(mob) {
+  function addMob(mob) {
     mobSearch = '';
     mobSearchResults = [];
     const entry = { mobId: mob.Id, mobName: mob.Name, maturities: [] };
     selectedMobs = [...selectedMobs, entry];
-    await loadMaturitiesForMob(entry);
+    loadMaturitiesForMob(entry);
   }
 
-  async function loadMaturitiesForMob(entry) {
-    if (loadingMaturities[entry.mobId]) return;
-    loadingMaturities[entry.mobId] = true;
-    loadingMaturities = loadingMaturities;
-
-    try {
-      const res = await fetch(`/api/proxy/mobs/${entry.mobId}`);
-      if (!res.ok) throw new Error('Failed to fetch mob');
-      const data = await res.json();
-      const mats = (data.Maturities || []).map(m => ({
-        id: m.Id,
-        name: m.Name,
-        health: m.Properties?.Health ?? m.Health ?? 0,
-        level: m.Properties?.Level ?? null,
-        boss: m.Properties?.Boss === true,
-        selected: false,
-        isRare: false
-      }));
-      sortMaturities(mats);
-
-      selectedMobs = selectedMobs.map(m =>
-        m.mobId === entry.mobId ? { ...m, maturities: mats } : m
-      );
-    } catch (e) {
-      console.error('Failed to load maturities for mob:', entry.mobName, e);
-    } finally {
-      loadingMaturities[entry.mobId] = false;
-      loadingMaturities = loadingMaturities;
+  function loadMaturitiesForMob(entry) {
+    // Look up maturities from the already-loaded mobs list (no API call needed)
+    const mob = mobs.find(m => m.Id === entry.mobId);
+    if (!mob) {
+      console.error('Mob not found in loaded data:', entry.mobName, entry.mobId);
+      return;
     }
+
+    const mats = (mob.Maturities || []).map(m => ({
+      id: m.Id,
+      name: m.Name,
+      health: m.Properties?.Health ?? 0,
+      level: m.Properties?.Level ?? null,
+      boss: m.Properties?.Boss === true,
+      selected: false,
+      isRare: false
+    }));
+    sortMaturities(mats);
+
+    selectedMobs = selectedMobs.map(m =>
+      m.mobId === entry.mobId ? { ...m, maturities: mats } : m
+    );
   }
 
   function removeMob(mobId) {
@@ -351,13 +352,6 @@
   }
   .configure-btn:hover { background: rgba(59, 130, 246, 0.2); }
   .configure-btn:disabled { opacity: 0.5; cursor: default; }
-
-  .mat-loading {
-    padding: 8px;
-    font-size: 11px;
-    color: var(--text-muted);
-    text-align: center;
-  }
 
   .density-row {
     display: flex;
@@ -636,17 +630,13 @@
         </div>
       </div>
       <div class="mob-entry-body">
-        {#if loadingMaturities[mob.mobId]}
-          <div class="mat-loading" style="flex:1">Loading maturities...</div>
-        {:else}
-          <button
-            class="configure-btn"
-            disabled={mob.maturities.length === 0}
-            on:click={() => openMaturityDialog(mob.mobId)}
-          >
-            Configure Maturities ({getSelectedCount(mob)}/{mob.maturities.length})
-          </button>
-        {/if}
+        <button
+          class="configure-btn"
+          disabled={mob.maturities.length === 0}
+          on:click={() => openMaturityDialog(mob.mobId)}
+        >
+          Configure Maturities ({getSelectedCount(mob)}/{mob.maturities.length})
+        </button>
       </div>
     </div>
   {/each}

@@ -200,12 +200,20 @@ async function loadMissionRelated(missionIds) {
   };
 }
 
-async function getMissions(planetId = null) {
+async function getMissions(planetId = null, startLocationId = null) {
   const params = [];
+  const conditions = [];
   let sql = baseQuery;
   if (planetId) {
     params.push(planetId);
-    sql += ' WHERE "Missions"."PlanetId" = $1';
+    conditions.push(`"Missions"."PlanetId" = $${params.length}`);
+  }
+  if (startLocationId) {
+    params.push(startLocationId);
+    conditions.push(`"Missions"."StartLocationId" = $${params.length}`);
+  }
+  if (conditions.length) {
+    sql += ' WHERE ' + conditions.join(' AND ');
   }
   const { rows } = await pool.query(sql, params);
   return rows.map(formatMissionSummary);
@@ -299,9 +307,14 @@ function register(app) {
   app.get('/missions', async (req, res) => {
     try {
       const planetId = req.query.planetId || req.query.PlanetId;
-      const parsed = planetId ? Number(planetId) : null;
-      const result = Number.isFinite(parsed)
-        ? await getMissions(parsed)
+      const parsedPlanet = planetId ? Number(planetId) : null;
+      const startLocationId = req.query.startLocationId || req.query.StartLocationId;
+      const parsedLocation = startLocationId ? Number(startLocationId) : null;
+
+      // Use cache only for unfiltered requests
+      const hasFilters = Number.isFinite(parsedPlanet) || Number.isFinite(parsedLocation);
+      const result = hasFilters
+        ? await getMissions(Number.isFinite(parsedPlanet) ? parsedPlanet : null, Number.isFinite(parsedLocation) ? parsedLocation : null)
         : await withCache('/missions', ['Missions', 'Planets', 'MissionChains', 'Events', 'Locations'], getMissions);
       res.json(result);
     } catch (e) {

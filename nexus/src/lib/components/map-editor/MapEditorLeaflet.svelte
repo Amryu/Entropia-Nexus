@@ -1,8 +1,9 @@
 <script>
   // @ts-nocheck
   import { onMount, onDestroy, createEventDispatcher } from 'svelte';
-  import { buildCoordTransforms, getTypeColor, getEffectiveType, isArea } from './adminMapUtils.js';
+  import { buildCoordTransforms, getTypeColor, getEffectiveType, isArea } from './mapEditorUtils.js';
   import { formatMobSpawnDisplayName } from '$lib/mapUtil.js';
+  import ContextMenu from '../ContextMenu.svelte';
 
   export let planet = null;
   export let locations = [];
@@ -32,7 +33,31 @@
   let editableOverlay = null;
   let _clickedLayer = false;
 
-  $: if (map && locations) rebuildLayers();
+  // Context menu state
+  let contextMenuElement;
+  let contextMenuVisible = false;
+  let contextMenuPos = { x: 0, y: 0 };
+  let contextMenuPayload = null;
+  const contextMenuItems = [
+    {
+      label: 'Clone Shape',
+      action: (payload) => {
+        if (payload) dispatch('clone', payload);
+      }
+    },
+    {
+      label: 'Copy Waypoint',
+      action: (payload) => {
+        if (!payload) return;
+        const coords = payload.Properties?.Coordinates;
+        if (!coords) return;
+        const wp = `/wp [${planet?.Name || ''}, ${coords.Longitude ?? 0}, ${coords.Latitude ?? 0}, ${coords.Altitude ?? 0}, ${payload.Name || ''}]`;
+        navigator.clipboard?.writeText(wp);
+      }
+    }
+  ];
+
+  $: if (map && locations && pendingChanges !== undefined) rebuildLayers();
   $: if (map && filteredLocationIds !== undefined) updateVisibility();
   $: if (map && selectedId !== undefined) updateSelection();
   $: if (map && editMode !== undefined) toggleDrawControl();
@@ -84,6 +109,11 @@
         return;
       }
       dispatch('select', null);
+    });
+
+    // Hide context menu on map click
+    map.on('click', () => {
+      contextMenuVisible = false;
     });
 
     if (planet) loadPlanetImage();
@@ -158,17 +188,44 @@
           _clickedLayer = true;
           dispatch('select', loc.Id);
         });
+        // Right-click context menu
+        layer.on('contextmenu', (e) => {
+          if (!editMode) return;
+          L.DomEvent.stop(e);
+          contextMenuPos = { x: e.originalEvent.clientX, y: e.originalEvent.clientY };
+          contextMenuPayload = loc;
+          contextMenuVisible = true;
+        });
         layerGroup.addLayer(layer);
         layerById.set(loc.Id, layer);
       }
     }
 
-    // Also add pending 'add' items
-    for (const [key, change] of pendingChanges) {
-      if (change.action === 'add' && change.leafletLayer) {
-        layerGroup.addLayer(change.leafletLayer);
+    // Also add pending 'add' items as selectable layers
+    for (const [tempId, change] of pendingChanges) {
+      if (change.action !== 'add' || !change.modified) continue;
+      const mod = change.modified;
+      const layer = createPendingAddLayer(mod, tempId);
+      if (layer) {
+        layer._locId = tempId;
+        layer.on('click', () => {
+          _clickedLayer = true;
+          dispatch('select', tempId);
+        });
+        layer.on('contextmenu', (e) => {
+          if (!editMode) return;
+          L.DomEvent.stop(e);
+          contextMenuPos = { x: e.originalEvent.clientX, y: e.originalEvent.clientY };
+          contextMenuPayload = { Id: tempId, Name: mod.name, Properties: { Coordinates: { Longitude: mod.longitude, Latitude: mod.latitude } } };
+          contextMenuVisible = true;
+        });
+        layerGroup.addLayer(layer);
+        layerById.set(tempId, layer);
       }
     }
+
+    // Clear drawn items (they've been converted to pending changes)
+    if (drawnItems) drawnItems.clearLayers();
 
     updateVisibility();
     updateSelection();
@@ -249,6 +306,51 @@
       layer.bindTooltip(tooltipName, { sticky: true });
     }
     return layer;
+  }
+
+  function createPendingAddLayer(mod, tempId) {
+    if (!transforms || !L) return null;
+    const addStyle = {
+      fillColor: '#00ff00',
+      color: '#00ff00',
+      weight: 3,
+      fillOpacity: 0.2,
+      dashArray: '6,3'
+    };
+
+    const isAreaAdd = mod.locationType === 'Area' && mod.shape && mod.shapeData;
+    if (isAreaAdd) {
+      const data = mod.shapeData;
+      let layer;
+      if (mod.shape === 'Circle') {
+        const [lat, lng] = transforms.entropiaToLeaflet(data.x, data.y);
+        const radius = data.radius / transforms.ratio;
+        layer = L.circle([lat, lng], { ...addStyle, radius });
+      } else if (mod.shape === 'Rectangle') {
+        const [lat1, lng1] = transforms.entropiaToLeaflet(data.x, data.y);
+        const [lat2, lng2] = transforms.entropiaToLeaflet(data.x + data.width, data.y + data.height);
+        layer = L.rectangle([[lat1, lng1], [lat2, lng2]], addStyle);
+      } else if (mod.shape === 'Polygon' && data.vertices?.length >= 6) {
+        const latLngs = [];
+        for (let i = 0; i < data.vertices.length; i += 2) {
+          const [lat, lng] = transforms.entropiaToLeaflet(data.vertices[i], data.vertices[i + 1]);
+          latLngs.push([lat, lng]);
+        }
+        layer = L.polygon(latLngs, addStyle);
+      }
+      if (layer) layer.bindTooltip(mod.name || '(new)', { sticky: true });
+      return layer;
+    } else if (mod.longitude != null && mod.latitude != null) {
+      const [lat, lng] = transforms.entropiaToLeaflet(mod.longitude, mod.latitude);
+      const marker = L.circleMarker([lat, lng], {
+        radius: 5,
+        ...addStyle,
+        fillOpacity: 0.7
+      });
+      marker.bindTooltip(mod.name || '(new)', { direction: 'top', offset: [0, -8] });
+      return marker;
+    }
+    return null;
   }
 
   function getChangeState(locId) {
@@ -378,28 +480,41 @@
       dashArray: '6,4'
     };
 
-    if (ps.shape === 'Circle' && ps.data) {
-      const [lat, lng] = transforms.entropiaToLeaflet(ps.data.x, ps.data.y);
-      const radius = ps.data.radius / transforms.ratio;
-      previewLayer = L.circle([lat, lng], { ...previewStyle, radius });
-    } else if (ps.shape === 'Rectangle' && ps.data) {
-      const [lat1, lng1] = transforms.entropiaToLeaflet(ps.data.x, ps.data.y);
-      const [lat2, lng2] = transforms.entropiaToLeaflet(ps.data.x + ps.data.width, ps.data.y + ps.data.height);
-      previewLayer = L.rectangle([[lat1, lng1], [lat2, lng2]], previewStyle);
-    } else if (ps.shape === 'Polygon' && ps.data?.vertices?.length >= 6) {
-      const latLngs = [];
-      for (let i = 0; i < ps.data.vertices.length; i += 2) {
-        const [lat, lng] = transforms.entropiaToLeaflet(ps.data.vertices[i], ps.data.vertices[i + 1]);
-        latLngs.push([lat, lng]);
+    try {
+      if (ps.shape === 'Circle' && ps.data) {
+        const x = Number(ps.data.x), y = Number(ps.data.y), r = Number(ps.data.radius);
+        if (!isFinite(x) || !isFinite(y) || !isFinite(r) || r <= 0) return;
+        const [lat, lng] = transforms.entropiaToLeaflet(x, y);
+        const radius = r / transforms.ratio;
+        previewLayer = L.circle([lat, lng], { ...previewStyle, radius });
+      } else if (ps.shape === 'Rectangle' && ps.data) {
+        const x = Number(ps.data.x), y = Number(ps.data.y), w = Number(ps.data.width), h = Number(ps.data.height);
+        if (!isFinite(x) || !isFinite(y) || !isFinite(w) || !isFinite(h)) return;
+        const [lat1, lng1] = transforms.entropiaToLeaflet(x, y);
+        const [lat2, lng2] = transforms.entropiaToLeaflet(x + w, y + h);
+        previewLayer = L.rectangle([[lat1, lng1], [lat2, lng2]], previewStyle);
+      } else if (ps.shape === 'Polygon' && ps.data?.vertices?.length >= 6) {
+        const latLngs = [];
+        for (let i = 0; i < ps.data.vertices.length; i += 2) {
+          const vx = Number(ps.data.vertices[i]), vy = Number(ps.data.vertices[i + 1]);
+          if (!isFinite(vx) || !isFinite(vy)) return;
+          const [lat, lng] = transforms.entropiaToLeaflet(vx, vy);
+          latLngs.push([lat, lng]);
+        }
+        previewLayer = L.polygon(latLngs, previewStyle);
+      } else if (!ps.shape && ps.center) {
+        const cx = Number(ps.center.x), cy = Number(ps.center.y);
+        if (!isFinite(cx) || !isFinite(cy)) return;
+        const [lat, lng] = transforms.entropiaToLeaflet(cx, cy);
+        previewLayer = L.circleMarker([lat, lng], {
+          ...previewStyle,
+          radius: 7,
+          fillOpacity: 0.4
+        });
       }
-      previewLayer = L.polygon(latLngs, previewStyle);
-    } else if (!ps.shape && ps.center) {
-      const [lat, lng] = transforms.entropiaToLeaflet(ps.center.x, ps.center.y);
-      previewLayer = L.circleMarker([lat, lng], {
-        ...previewStyle,
-        radius: 7,
-        fillOpacity: 0.4
-      });
+    } catch (e) {
+      // Invalid shape data — skip preview silently
+      return;
     }
 
     if (previewLayer) {
@@ -502,6 +617,7 @@
     width: 100%;
     height: 100%;
     background: #1a1a2e;
+    position: relative;
   }
 
   .map-container :global(.leaflet-container) {
@@ -512,3 +628,11 @@
 </style>
 
 <div class="map-container" bind:this={mapContainer}></div>
+
+<ContextMenu
+  bind:element={contextMenuElement}
+  menu={contextMenuItems}
+  bind:visible={contextMenuVisible}
+  bind:contextMenuPos={contextMenuPos}
+  bind:payload={contextMenuPayload}
+/>

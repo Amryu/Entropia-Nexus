@@ -16,11 +16,26 @@
     planetGroups
   } from '$lib/mapUtil';
 
-  import Map from '$lib/components/Map.svelte';
+  import MapCanvas from '$lib/components/MapCanvas.svelte';
   import InlineEdit from '$lib/components/wiki/InlineEdit.svelte';
   import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
   import WaypointCopyButton from '$lib/components/wiki/WaypointCopyButton.svelte';
   import EditActionBar from '$lib/components/wiki/EditActionBar.svelte';
+
+  // Map Editor components (Leaflet-based edit mode) — loaded dynamically to avoid SSR issues
+  import { browser } from '$app/environment';
+
+  let MapEditorWorkspace, ChangesSummary;
+
+  if (browser) {
+    Promise.all([
+      import('$lib/components/map-editor/MapEditorWorkspace.svelte'),
+      import('$lib/components/map-editor/ChangesSummary.svelte'),
+    ]).then(([mew, cs]) => {
+      MapEditorWorkspace = mew.default;
+      ChangesSummary = cs.default;
+    });
+  }
 
   import {
     editMode,
@@ -69,7 +84,32 @@
   let pendingEditId = null;
   let changeIdParam = null;
   let searchResultsHovered = false;
+  let searchSelectedIndex = -1;
   let panelLoading = false;
+
+  // --- Leaflet Edit Mode state ---
+  let leafletEditMode = false;
+  let editorPendingChanges = new Map();
+  let editorRightPanel = 'editor';
+  let editorChangeCount = 0;
+  let allMobs = [];
+
+  async function activateEditMode() {
+    if (!allMobs.length) {
+      const mobsData = await apiCall(fetch, '/mobs');
+      allMobs = mobsData || [];
+    }
+    leafletEditMode = true;
+  }
+
+  function deactivateEditMode() {
+    if (editorPendingChanges.size > 0) {
+      if (!confirm('You have unsaved changes. Exit edit mode?')) return;
+    }
+    leafletEditMode = false;
+    editorPendingChanges = new Map();
+    editorRightPanel = 'editor';
+  }
 
   const mainPlanets = getMainPlanetNames();
 
@@ -439,6 +479,9 @@
     searchOpen = false;
   }
 
+  // Reset keyboard selection when results change
+  $: searchResults, searchSelectedIndex = -1;
+
   // Clear hover state when search closes
   $: if (!searchOpen && searchResultsHovered) {
     searchResultsHovered = false;
@@ -691,6 +734,45 @@
     }, 120);
   }
 
+  function handleSearchKeydown(e) {
+    if (e.key === 'Escape') {
+      searchOpen = false;
+      e.target.blur();
+      return;
+    }
+    if (searchResults.length === 0) return;
+
+    // Open results dropdown on arrow navigation
+    if (!searchOpen && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+      searchOpen = true;
+    }
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      searchSelectedIndex = Math.min(searchSelectedIndex + 1, searchResults.length - 1);
+      hoveredLocation = searchResults[searchSelectedIndex];
+      scrollSearchResultIntoView(searchSelectedIndex);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      searchSelectedIndex = Math.max(searchSelectedIndex - 1, 0);
+      hoveredLocation = searchResults[searchSelectedIndex];
+      scrollSearchResultIntoView(searchSelectedIndex);
+    } else if (e.key === 'Enter' && searchSelectedIndex >= 0) {
+      e.preventDefault();
+      if (isMobile) searchOpen = false;
+      selectLocation(searchResults[searchSelectedIndex], { focus: true });
+    }
+  }
+
+  function scrollSearchResultIntoView(index) {
+    requestAnimationFrame(() => {
+      const container = document.querySelector('.search-results');
+      if (!container) return;
+      const buttons = container.querySelectorAll('.search-result');
+      buttons[index]?.scrollIntoView({ block: 'nearest' });
+    });
+  }
+
   function clearSelection() {
     selectedLocation = null;
     if (currentPlanet?.Name) {
@@ -749,13 +831,14 @@
         </div>
       {/if}
       {#if currentPlanet}
-        <Map
+        <MapCanvas
           bind:this={mapRef}
           mapName={currentPlanet?.Name}
           planet={currentPlanet}
           locations={locations}
           bind:selected={selectedLocation}
           bind:hovered={hoveredLocation}
+          searchResults={searchOpen ? searchResults : []}
         />
       {:else}
         <div class="map-empty">
@@ -796,7 +879,7 @@
         bind:value={searchQuery}
         on:focus={() => searchOpen = true}
         on:blur={handleSearchBlur}
-        on:keydown={(e) => { if (e.key === 'Escape') { searchOpen = false; e.target.blur(); } }}
+        on:keydown={handleSearchKeydown}
       />
 
       {#if isEditAllowed}
@@ -820,13 +903,15 @@
         on:mouseenter={() => searchResultsHovered = true}
         on:mouseleave={() => { searchResultsHovered = false; hoveredLocation = null; }}
       >
-        {#each searchResults as result}
+        {#each searchResults as result, index}
           <button
             class="search-result"
-            on:click={() => { if (isMobile) searchOpen = false; selectLocation(result, { focus: true }); }}
-            on:mouseenter={() => hoveredLocation = result}
+            class:active={searchSelectedIndex === index}
+            on:click={() => { searchSelectedIndex = index; if (isMobile) searchOpen = false; selectLocation(result, { focus: true }); }}
+            on:mouseenter={() => { searchSelectedIndex = index; hoveredLocation = result; }}
             on:mouseleave={() => {}}
           >
+            <span class="result-index">{index + 1}</span>
             <span class="result-name">{result.Name}</span>
             <span class="result-type">{result.Properties?.Type || 'Location'}</span>
           </button>
@@ -1146,6 +1231,61 @@
       entityName={(activeLocation?.Id ?? activeLocation?.Name) || ''}
     />
   {/if}
+
+  <!-- Edit Mode Button (bottom-right, desktop only) -->
+  {#if canEdit && !isMobile && currentPlanet && !leafletEditMode}
+    <button class="edit-mode-btn" on:click={activateEditMode} title="Open Leaflet map editor">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+        <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+      </svg>
+      Edit Mode
+    </button>
+  {/if}
+
+  <!-- Leaflet Editor Layout (replaces canvas view) -->
+  {#if leafletEditMode && MapEditorWorkspace}
+    <div class="leaflet-editor-overlay">
+      <div class="editor-toolbar">
+        <span class="editor-toolbar-label">{currentPlanet?.Name || 'Map'} — Edit Mode</span>
+
+        <div class="editor-toolbar-right">
+          <button
+            class="editor-toolbar-btn"
+            class:active={editorRightPanel === 'changes'}
+            on:click={() => editorRightPanel = editorRightPanel === 'changes' ? 'editor' : 'changes'}
+          >
+            Changes
+            {#if editorChangeCount > 0}
+              <span class="editor-badge">{editorChangeCount}</span>
+            {/if}
+          </button>
+          <button class="editor-toolbar-btn editor-exit-btn" on:click={deactivateEditMode}>
+            Exit Edit Mode
+          </button>
+        </div>
+      </div>
+
+      <svelte:component this={MapEditorWorkspace}
+        planet={currentPlanet}
+        {locations}
+        {allMobs}
+        editMode={true}
+        mode="public"
+        bind:pendingChanges={editorPendingChanges}
+        bind:rightPanel={editorRightPanel}
+        bind:changeCount={editorChangeCount}
+      >
+        <svelte:fragment slot="output">
+          <svelte:component this={ChangesSummary}
+            pendingChanges={editorPendingChanges}
+            planet={currentPlanet}
+            on:clear={() => { editorPendingChanges = new Map(); }}
+          />
+        </svelte:fragment>
+      </svelte:component>
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -1276,14 +1416,14 @@
     background-color: var(--bg-color, var(--primary-color));
     border: 1px solid var(--border-color, #555);
     border-radius: 8px;
-    max-height: 260px;
+    max-height: min(520px, calc(100vh - 200px));
     overflow-y: auto;
   }
 
   .search-result {
     width: 100%;
     display: flex;
-    justify-content: space-between;
+    align-items: center;
     gap: 8px;
     padding: 8px 10px;
     border: none;
@@ -1293,11 +1433,30 @@
     cursor: pointer;
   }
 
-  .search-result:hover {
+  .search-result:hover,
+  .search-result.active {
     background-color: var(--hover-color);
   }
 
+  .result-index {
+    flex-shrink: 0;
+    width: 20px;
+    text-align: right;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted, #999);
+  }
+
+  .result-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .result-type {
+    flex-shrink: 0;
     color: var(--text-muted, #999);
     font-size: 11px;
   }
@@ -1927,5 +2086,103 @@
       max-height: 200px;
       padding-bottom: 12px;
     }
+
+    .edit-mode-btn {
+      display: none;
+    }
   }
+
+  /* --- Edit Mode Button --- */
+
+  .edit-mode-btn {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 16px;
+    border: none;
+    border-radius: 8px;
+    background: var(--accent-color);
+    color: white;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    transition: opacity 0.15s ease;
+  }
+  .edit-mode-btn:hover { opacity: 0.9; }
+
+  /* --- Leaflet Editor Overlay --- */
+
+  .leaflet-editor-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 30;
+    display: flex;
+    flex-direction: column;
+    background: var(--primary-color);
+  }
+
+  .editor-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 16px;
+    background: var(--secondary-color);
+    border-bottom: 1px solid var(--border-color);
+    flex-shrink: 0;
+  }
+
+  .editor-toolbar-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-color);
+  }
+
+  .editor-toolbar-right {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .editor-toolbar-btn {
+    position: relative;
+    padding: 6px 12px;
+    font-size: 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--primary-color);
+    color: var(--text-color);
+    cursor: pointer;
+  }
+  .editor-toolbar-btn:hover { background: var(--hover-color); }
+  .editor-toolbar-btn.active { border-color: var(--accent-color); color: var(--accent-color); }
+
+  .editor-exit-btn {
+    border-color: #ef4444;
+    color: #ef4444;
+  }
+  .editor-exit-btn:hover { background: rgba(239, 68, 68, 0.15); }
+
+  .editor-badge {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 8px;
+    background: #ef4444;
+    color: white;
+    font-size: 10px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
 </style>
