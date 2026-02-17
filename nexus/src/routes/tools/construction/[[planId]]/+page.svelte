@@ -140,6 +140,12 @@
   let checkedShoppingMaterials = new Set();
   let checkedShoppingProducts = new Set();
 
+  // Inventory state for shopping list
+  let inventoryItems = [];
+  let inventoryLoaded = false;
+  let inventoryLoading = false;
+  let inventoryFilter = 'none'; // 'none' | 'all' | 'carried' | planet name
+
   // Mass Buy dialog state
   let showMassBuy = false;
   let massBuyItems = [];
@@ -322,6 +328,64 @@
     }
   }
 
+  // Inventory helpers for shopping list
+  async function loadShoppingInventory() {
+    inventoryLoading = true;
+    try {
+      const res = await fetch('/api/users/inventory');
+      if (!res.ok) throw new Error('Failed to load');
+      inventoryItems = await res.json();
+      inventoryLoaded = true;
+    } catch {
+      // Non-critical — inventory column won't show
+    } finally {
+      inventoryLoading = false;
+    }
+  }
+
+  function filterShoppingInventory(items, filter) {
+    if (filter === 'all') return items;
+    if (filter === 'carried') return items.filter(i => !i.container || i.container === 'CARRIED');
+    // Planet filter: items on that planet + carried inventory
+    return items.filter(i => {
+      if (!i.container || i.container === 'CARRIED') return true;
+      return i.container === filter;
+    });
+  }
+
+  function handleInventoryFilterChange(e) {
+    inventoryFilter = e.target.value;
+    if (inventoryFilter !== 'none' && !inventoryLoaded && !inventoryLoading) {
+      loadShoppingInventory();
+    }
+  }
+
+  // Reactive: available planets from inventory data
+  $: inventoryPlanets = (() => {
+    const planets = new Set();
+    for (const item of inventoryItems) {
+      if (item.container && item.container !== 'CARRIED') {
+        planets.add(item.container);
+      }
+    }
+    return [...planets].sort();
+  })();
+
+  // Reactive: filtered inventory grouped by item_id → total quantity
+  $: inventoryMap = (() => {
+    if (inventoryFilter === 'none' || !inventoryLoaded) return new Map();
+    const filtered = filterShoppingInventory(inventoryItems, inventoryFilter);
+    const map = new Map();
+    for (const inv of filtered) {
+      if (inv.item_id) {
+        map.set(inv.item_id, (map.get(inv.item_id) || 0) + (inv.quantity || 0));
+      }
+    }
+    return map;
+  })();
+
+  $: showInventoryColumn = inventoryFilter !== 'none' && inventoryLoaded;
+
   function getBlueprintCostPerClick(blueprint, _markupValues) {
     if (!blueprint?.Materials) return { ttCost: 0, muCost: 0 };
     let ttCost = 0;
@@ -439,34 +503,50 @@
     showMassBuy = true;
   }
 
+  function getInventoryAdjustedQty(itemId, neededQty) {
+    if (!showInventoryColumn) return neededQty;
+    const have = inventoryMap.get(itemId) || 0;
+    return Math.max(0, neededQty - have);
+  }
+
   function openMassBuyAll() {
     const items = [];
     for (const mat of shoppingList.materials) {
       if (checkedShoppingMaterials.has(mat.item.Name)) continue;
       if (!mat.item?.Id) continue;
+      const needed = Math.ceil(mat.adjustedAmount || mat.totalAmount);
+      const qty = getInventoryAdjustedQty(mat.item.Id, needed);
+      if (qty <= 0) continue;
       items.push({
         itemId: mat.item.Id,
         name: mat.item.Name,
-        quantity: Math.ceil(mat.adjustedAmount || mat.totalAmount),
+        quantity: qty,
         markup: getMarkup(`mat:${mat.item?.Name}`)
       });
     }
     for (const bp of shoppingList.limitedBlueprints || []) {
       if (checkedShoppingProducts.has(bp.blueprint.Name)) continue;
+      const bpItemId = bp.blueprint.Id + BLUEPRINT_ID_OFFSET;
+      const needed = Math.ceil(bp.totalAmount);
+      const qty = getInventoryAdjustedQty(bpItemId, needed);
+      if (qty <= 0) continue;
       items.push({
-        itemId: bp.blueprint.Id + BLUEPRINT_ID_OFFSET,
+        itemId: bpItemId,
         name: bp.blueprint.Name,
-        quantity: Math.ceil(bp.totalAmount),
+        quantity: qty,
         markup: getMarkup(`bp:${bp.blueprint.Id}`)
       });
     }
     for (const prod of shoppingList.productsToBuy) {
       if (checkedShoppingProducts.has(prod.item.Name)) continue;
       if (!prod.item?.Id) continue;
+      const needed = Math.ceil(prod.totalAmount);
+      const qty = getInventoryAdjustedQty(prod.item.Id, needed);
+      if (qty <= 0) continue;
       items.push({
         itemId: prod.item.Id,
         name: prod.item.Name,
-        quantity: Math.ceil(prod.totalAmount),
+        quantity: qty,
         markup: getMarkup(`prod:${prod.item?.Name}`)
       });
     }
@@ -1962,11 +2042,24 @@
         <div class="shopping-view">
           <div class="shopping-header">
             <h2>Shopping List</h2>
-            {#if isLoggedIn}
-              <button class="btn-order-all" on:click={openMassBuyAll} disabled={allShoppingItemsChecked}>
-                Order All
-              </button>
-            {/if}
+            <div class="shopping-header-controls">
+              {#if isLoggedIn}
+                <select class="inventory-filter-select" value={inventoryFilter} on:change={handleInventoryFilterChange}>
+                  <option value="none">No Inventory</option>
+                  <option value="carried">Only Carried</option>
+                  <option value="all">All Storages</option>
+                  {#each inventoryPlanets as planet}
+                    <option value={planet}>{planet}</option>
+                  {/each}
+                </select>
+                {#if inventoryLoading}
+                  <span class="inventory-loading">Loading...</span>
+                {/if}
+                <button class="btn-order-all" on:click={openMassBuyAll} disabled={allShoppingItemsChecked}>
+                  Order All
+                </button>
+              {/if}
+            </div>
           </div>
           <p class="shopping-list-info">Estimated amounts at {certainty}% confidence, accounting for {rollChance}% material roll chance.</p>
 
@@ -1999,6 +2092,7 @@
                   <th class="col-check"></th>
                   <th>Type</th>
                   <th>Item</th>
+                  {#if showInventoryColumn}<th class="text-right col-have">Have</th>{/if}
                   <th class="text-right">Est. TT</th>
                   <th class="text-right">MU%</th>
                   <th class="text-right">Cost</th>
@@ -2015,12 +2109,15 @@
                   {@const wapMU = shoppingItemWapMap[markupKey] ?? null}
                   {@const adjustedTT = item.adjustedTTValue || item.ttValue}
                   {@const cost = adjustedTT * mu / 100}
-                  <tr class:checked={isChecked}>
+                  <tr class:checked={isChecked} class:inventory-covered={showInventoryColumn && (inventoryMap.get(item.item?.Id) || 0) >= Math.ceil(item.adjustedAmount || item.totalAmount)}>
                     <td class="col-check">
                       <input type="checkbox" checked={isChecked} on:change={() => toggleShoppingMaterial(item.item.Name)} />
                     </td>
                     <td><span class="type-badge material">Material</span></td>
-                    <td>{item.adjustedAmount || item.totalAmount} x <a href={getItemLink(item.item)}>{item.item.Name}</a></td>
+                    <td>{Math.ceil(item.adjustedAmount || item.totalAmount)} x <a href={getItemLink(item.item)}>{item.item.Name}</a></td>
+                    {#if showInventoryColumn}
+                      <td class="text-right col-have" class:have-sufficient={(inventoryMap.get(item.item?.Id) || 0) >= Math.ceil(item.adjustedAmount || item.totalAmount)} class:have-partial={(inventoryMap.get(item.item?.Id) || 0) > 0 && (inventoryMap.get(item.item?.Id) || 0) < Math.ceil(item.adjustedAmount || item.totalAmount)}>{(inventoryMap.get(item.item?.Id) || 0) || '—'}</td>
+                    {/if}
                     <td class="text-right">{clampDecimals(adjustedTT, 2, 4)} PED</td>
                     <td class="text-right markup-cell">
                       <input
@@ -2039,7 +2136,7 @@
                       {#if item.item?.Id}
                         <div class="shopping-actions">
                           {#if isLoggedIn}
-                            <button class="btn-shop-action btn-order" title="Create buy order" on:click={() => openMassBuy([{ itemId: item.item.Id, name: item.item.Name, quantity: Math.ceil(item.adjustedAmount || item.totalAmount), markup: mu }])}>Order</button>
+                            <button class="btn-shop-action btn-order" title="Create buy order" on:click={() => openMassBuy([{ itemId: item.item.Id, name: item.item.Name, quantity: getInventoryAdjustedQty(item.item.Id, Math.ceil(item.adjustedAmount || item.totalAmount)), markup: mu }])}>Order</button>
                           {/if}
                           <a href="/market/exchange/listings/{item.item.Id}" target="_blank" rel="noopener" class="btn-shop-action btn-buy" class:no-orders={!exchangeSellCounts.get(item.item.Id)} title="{exchangeSellCounts.get(item.item.Id) || 0} sell order{(exchangeSellCounts.get(item.item.Id) || 0) !== 1 ? 's' : ''} available">Buy{#if exchangeSellCounts.get(item.item.Id)} ({exchangeSellCounts.get(item.item.Id)}){/if}</a>
                         </div>
@@ -2056,6 +2153,7 @@
                     </td>
                     <td><span class="type-badge material">Material</span></td>
                     <td><span class="residue-name">Residue</span> <span class="residue-note">(est.)</span></td>
+                    {#if showInventoryColumn}<td class="text-right col-have">—</td>{/if}
                     <td class="text-right">{clampDecimals(shoppingList.adjustedTotalResidue, 2, 4)} PED</td>
                     <td class="text-right">
                       <input
@@ -2080,15 +2178,18 @@
                   {@const wapMU = shoppingItemWapMap[bpMarkupKey] ?? null}
                   {@const ttValue = item.ttValue || 0}
                   {@const cost = ttValue * mu / 100}
-                  <tr class:checked={isChecked}>
+                  <tr class:checked={isChecked} class:inventory-covered={showInventoryColumn && (inventoryMap.get(item.blueprint.Id + BLUEPRINT_ID_OFFSET) || 0) >= Math.ceil(item.totalAmount)}>
                     <td class="col-check">
                       <input type="checkbox" checked={isChecked} on:change={() => toggleShoppingProduct(item.blueprint.Name)} />
                     </td>
                     <td><span class="type-badge limited">BP (L)</span></td>
                     <td>
-                      {item.totalAmount} x <a href={getBlueprintLink(item.blueprint)}>{item.blueprint.Name}</a>
+                      {Math.ceil(item.totalAmount)} x <a href={getBlueprintLink(item.blueprint)}>{item.blueprint.Name}</a>
                       <span class="shopping-note">(est. attempts needed)</span>
                     </td>
+                    {#if showInventoryColumn}
+                      <td class="text-right col-have" class:have-sufficient={(inventoryMap.get(item.blueprint.Id + BLUEPRINT_ID_OFFSET) || 0) >= Math.ceil(item.totalAmount)} class:have-partial={(inventoryMap.get(item.blueprint.Id + BLUEPRINT_ID_OFFSET) || 0) > 0 && (inventoryMap.get(item.blueprint.Id + BLUEPRINT_ID_OFFSET) || 0) < Math.ceil(item.totalAmount)}>{(inventoryMap.get(item.blueprint.Id + BLUEPRINT_ID_OFFSET) || 0) || '—'}</td>
+                    {/if}
                     <td class="text-right">{clampDecimals(ttValue, 2, 4)} PED</td>
                     <td class="text-right markup-cell">
                       <input
@@ -2106,7 +2207,7 @@
                     <td class="col-actions hide-mobile">
                       <div class="shopping-actions">
                         {#if isLoggedIn}
-                          <button class="btn-shop-action btn-order" title="Create buy order" on:click={() => openMassBuy([{ itemId: item.blueprint.Id + BLUEPRINT_ID_OFFSET, name: item.blueprint.Name, quantity: Math.ceil(item.totalAmount), markup: mu }])}>Order</button>
+                          <button class="btn-shop-action btn-order" title="Create buy order" on:click={() => openMassBuy([{ itemId: item.blueprint.Id + BLUEPRINT_ID_OFFSET, name: item.blueprint.Name, quantity: getInventoryAdjustedQty(item.blueprint.Id + BLUEPRINT_ID_OFFSET, Math.ceil(item.totalAmount)), markup: mu }])}>Order</button>
                         {/if}
                         <a href="/market/exchange/listings/{item.blueprint.Id + BLUEPRINT_ID_OFFSET}" target="_blank" rel="noopener" class="btn-shop-action btn-buy" class:no-orders={!exchangeSellCounts.get(item.blueprint.Id + BLUEPRINT_ID_OFFSET)} title="{exchangeSellCounts.get(item.blueprint.Id + BLUEPRINT_ID_OFFSET) || 0} sell order{(exchangeSellCounts.get(item.blueprint.Id + BLUEPRINT_ID_OFFSET) || 0) !== 1 ? 's' : ''} available">Buy{#if exchangeSellCounts.get(item.blueprint.Id + BLUEPRINT_ID_OFFSET)} ({exchangeSellCounts.get(item.blueprint.Id + BLUEPRINT_ID_OFFSET)}){/if}</a>
                       </div>
@@ -2122,15 +2223,18 @@
                   {@const wapProdMU = shoppingItemWapMap[prodMarkupKey] ?? null}
                   {@const prodTT = item.ttValue || 0}
                   {@const prodCost = prodTT * prodMU / 100}
-                  <tr class="product-row" class:checked={isChecked}>
+                  <tr class="product-row" class:checked={isChecked} class:inventory-covered={showInventoryColumn && (inventoryMap.get(item.item?.Id) || 0) >= Math.ceil(item.totalAmount)}>
                     <td class="col-check">
                       <input type="checkbox" checked={isChecked} on:change={() => toggleShoppingProduct(item.item.Name)} />
                     </td>
                     <td><span class="type-badge product">Product</span></td>
                     <td>
-                      {item.totalAmount} x <a href={getItemLink(item.item)}>{item.item.Name}</a>
+                      {Math.ceil(item.totalAmount)} x <a href={getItemLink(item.item)}>{item.item.Name}</a>
                       <span class="shopping-note muted">(from {item.blueprintName})</span>
                     </td>
+                    {#if showInventoryColumn}
+                      <td class="text-right col-have" class:have-sufficient={(inventoryMap.get(item.item?.Id) || 0) >= Math.ceil(item.totalAmount)} class:have-partial={(inventoryMap.get(item.item?.Id) || 0) > 0 && (inventoryMap.get(item.item?.Id) || 0) < Math.ceil(item.totalAmount)}>{(inventoryMap.get(item.item?.Id) || 0) || '—'}</td>
+                    {/if}
                     <td class="text-right">{clampDecimals(prodTT, 2, 4)} PED</td>
                     <td class="text-right markup-cell">
                       <input
@@ -2149,7 +2253,7 @@
                       {#if item.item?.Id}
                         <div class="shopping-actions">
                           {#if isLoggedIn}
-                            <button class="btn-shop-action btn-order" title="Create buy order" on:click={() => openMassBuy([{ itemId: item.item.Id, name: item.item.Name, quantity: Math.ceil(item.totalAmount), markup: prodMU }])}>Order</button>
+                            <button class="btn-shop-action btn-order" title="Create buy order" on:click={() => openMassBuy([{ itemId: item.item.Id, name: item.item.Name, quantity: getInventoryAdjustedQty(item.item.Id, Math.ceil(item.totalAmount)), markup: prodMU }])}>Order</button>
                           {/if}
                           <a href="/market/exchange/listings/{item.item.Id}" target="_blank" rel="noopener" class="btn-shop-action btn-buy" class:no-orders={!exchangeSellCounts.get(item.item.Id)} title="{exchangeSellCounts.get(item.item.Id) || 0} sell order{(exchangeSellCounts.get(item.item.Id) || 0) !== 1 ? 's' : ''} available">Buy{#if exchangeSellCounts.get(item.item.Id)} ({exchangeSellCounts.get(item.item.Id)}){/if}</a>
                         </div>
@@ -2163,6 +2267,7 @@
                   <td></td>
                   <td></td>
                   <td><strong>Est. Totals</strong></td>
+                  {#if showInventoryColumn}<td></td>{/if}
                   <td class="text-right"><strong>{clampDecimals(grandTotalTT, 2, 4)} PED</strong></td>
                   <td></td>
                   <td class="text-right"><strong>{clampDecimals(grandTotalMU, 2, 4)} PED</strong></td>
@@ -2509,6 +2614,7 @@
   show={showMassBuy}
   items={massBuyItems}
   allItems={exchangeSlimItems}
+  inventoryData={inventoryLoaded ? inventoryItems : null}
   {isLoggedIn}
   on:close={() => { showMassBuy = false; massBuyItems = []; }}
   on:complete={() => { showMassBuy = false; massBuyItems = []; }}

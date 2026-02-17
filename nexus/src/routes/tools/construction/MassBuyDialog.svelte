@@ -25,6 +25,8 @@
   export let isLoggedIn = false;
   /** @type {Array} Exchange slim items for InventoryImportDialog name resolution */
   export let allItems = [];
+  /** @type {Array|null} Pre-loaded inventory data from parent (avoids re-fetch) */
+  export let inventoryData = null;
 
   const dispatch = createEventDispatcher();
 
@@ -60,6 +62,13 @@
 
   // Re-apply inventory when storage filter changes
   $: if (inventoryLoaded && storageFilter) {
+    applyInventoryToRows();
+  }
+
+  // Pre-populate inventory from parent if provided
+  $: if (show && inventoryData && !inventoryLoaded && !inventoryLoading) {
+    inventoryItems = inventoryData;
+    inventoryLoaded = true;
     applyInventoryToRows();
   }
 
