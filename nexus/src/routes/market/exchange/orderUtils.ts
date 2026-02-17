@@ -188,3 +188,63 @@ export function itemTypeBadge(type: string | null | undefined): string {
   if (type === 'ArmorSet') return ' <span class="badge badge-subtle badge-accent" style="margin-left:6px">Set</span>';
   return '';
 }
+
+/**
+ * Map raw item types to top-level exchange sidebar category display names.
+ * Mirrors the category structure from categorize.js makeEmptyCategories().
+ */
+const ITEM_TYPE_TOP_CATEGORY: Record<string, string> = {
+  'Weapon': 'Weapons',
+  'WeaponAmplifier': 'Weapons',
+  'WeaponVisionAttachment': 'Weapons',
+  'Absorber': 'Weapons',
+  'MindforceImplant': 'Weapons',
+  'Armor': 'Armor',
+  'ArmorSet': 'Armor',
+  'ArmorPlating': 'Armor',
+  'MedicalTool': 'Tools',
+  'MedicalChip': 'Tools',
+  'Finder': 'Tools',
+  'FinderAmplifier': 'Tools',
+  'Excavator': 'Tools',
+  'Scanner': 'Tools',
+  'MiscTool': 'Tools',
+  'Tool': 'Tools',
+  'EffectChip': 'Tools',
+  'TeleportationChip': 'Tools',
+  'Refiner': 'Tools',
+  'Enhancer': 'Enhancers',
+  'Clothing': 'Clothes',
+  'Blueprint': 'Blueprints',
+  'BlueprintBook': 'Blueprints',
+  'Material': 'Materials',
+  'Consumable': 'Consumables',
+  'Capsule': 'Consumables',
+  'Vehicle': 'Vehicles',
+  'Pet': 'Pets',
+  'SkillImplant': 'Skill Implants',
+  'Furniture': 'Furnishings',
+  'Decoration': 'Furnishings',
+  'StorageContainer': 'Furnishings',
+  'Sign': 'Furnishings',
+  'Strongbox': 'Strongboxes',
+};
+
+/** Exchange sidebar category order */
+const CATEGORY_ORDER = [
+  'Weapons', 'Armor', 'Tools', 'Enhancers', 'Clothes',
+  'Blueprints', 'Materials', 'Consumables', 'Vehicles', 'Pets',
+  'Skill Implants', 'Furnishings', 'Strongboxes',
+];
+
+/** Map a raw item type to its top-level exchange category display name. */
+export function getTopCategory(itemType: string | null | undefined): string {
+  if (!itemType) return 'Other';
+  return ITEM_TYPE_TOP_CATEGORY[itemType] || 'Other';
+}
+
+/** Get the sort index for a category (matches exchange sidebar order). */
+export function getCategoryOrder(category: string): number {
+  const idx = CATEGORY_ORDER.indexOf(category);
+  return idx >= 0 ? idx : CATEGORY_ORDER.length;
+}

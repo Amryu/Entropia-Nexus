@@ -2,7 +2,7 @@
   //@ts-nocheck
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { myOrders, enrichOrders, upsertOrder } from '../../exchangeStore.js';
-  import { formatPedRaw, formatMarkupForItem, isLimited, formatPedValue, itemTypeBadge, getOrderValue, computeUnitPrice } from '../../orderUtils';
+  import { formatPedRaw, formatMarkupForItem, isLimited, formatPedValue, itemTypeBadge, getOrderValue, computeUnitPrice, getTopCategory, getCategoryOrder } from '../../orderUtils';
   import { encodeURIComponentSafe } from '$lib/util.js';
   import { goto } from '$app/navigation';
   import { createEventDispatcher, onMount } from 'svelte';
@@ -37,7 +37,7 @@
     const mu = o.markup != null ? Number(o.markup) : null;
     return {
       ...o,
-      _category: item?.t || '',
+      _category: getTopCategory(item?.t),
       _value: getOrderValue(item, o) ?? null,
       _total: computeUnitPrice(item, mu, o) ?? null,
     };
@@ -58,7 +58,10 @@
         return `<span class="badge badge-subtle ${cls}">${val === 'BUY' ? 'Buy' : 'Sell'}</span>`;
       }
     },
-    { key: '_category', header: 'Category', width: '110px', sortable: true, searchable: true, hideOnMobile: true },
+    {
+      key: '_category', header: 'Category', width: '110px', sortable: true, searchable: true, hideOnMobile: true,
+      sortValue: (row) => getCategoryOrder(row._category)
+    },
     {
       key: 'quantity', header: 'Qty', width: '80px', sortable: true, searchable: true, hideOnMobile: true,
       formatter: (val, row) => row.min_quantity != null && row.min_quantity < val ? `${val}/${row.min_quantity}` : val
@@ -223,6 +226,7 @@
       compact={true}
       sortable={true}
       searchable={true}
+      defaultSort={{ column: '_category', order: 'ASC' }}
       emptyMessage={$myOrders.length === 0 ? 'You have no orders' : sideFilter === 'all' ? 'No orders match the current filters' : `No ${sideFilter === 'BUY' ? 'buy' : 'sell'} orders`}
       rowClass={(row) => {
         const s = row.state_display;

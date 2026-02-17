@@ -3,7 +3,7 @@
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { goto } from '$app/navigation';
   import { tradeList } from '../../exchangeStore.js';
-  import { isAbsoluteMarkup, formatMarkupForItem, formatPedValue, isBlueprintNonL, getOrderValue, computeUnitPrice, itemTypeBadge } from '../../orderUtils';
+  import { isAbsoluteMarkup, formatMarkupForItem, formatPedValue, isBlueprintNonL, getOrderValue, computeUnitPrice, itemTypeBadge, getTopCategory, getCategoryOrder } from '../../orderUtils';
   import { encodeURIComponentSafe } from '$lib/util.js';
   import { createEventDispatcher } from 'svelte';
 
@@ -44,7 +44,7 @@
     return {
       ...o,
       _item_name: o.details?.item_name || 'Unknown',
-      _category: item?.t || '',
+      _category: getTopCategory(item?.t),
       _value: getOrderValue(item, o) ?? null,
       _total: computeUnitPrice(item, mu, o) ?? null,
     };
@@ -105,7 +105,10 @@
           return `<span class="badge badge-subtle ${cls}">${val === 'BUY' ? 'Buy' : 'Sell'}</span>`;
         }
       },
-      { key: '_category', header: 'Category', width: '110px', sortable: true, searchable: true, hideOnMobile: true },
+      {
+        key: '_category', header: 'Category', width: '110px', sortable: true, searchable: true, hideOnMobile: true,
+        sortValue: (row) => getCategoryOrder(row._category)
+      },
       {
         key: '_details', header: 'Details', width: '150px', mobileWidth: '100px', sortable: false, searchable: false,
         formatter: (v, row) => formatDetailTags(row)
@@ -206,6 +209,7 @@
       compact={true}
       sortable={true}
       searchable={true}
+      defaultSort={{ column: '_category', order: 'ASC' }}
       emptyMessage={orders.length === 0 ? 'No active orders' : 'No matching orders'}
       on:rowClick={handleRowClick}
     />
