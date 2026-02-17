@@ -6,7 +6,8 @@
 -->
 <script>
   // @ts-nocheck
-  import { editMode, updateField, currentEntity } from '$lib/stores/wikiEditState.js';
+  import { onMount } from 'svelte';
+  import { editMode, updateField, currentEntity, originalEntity } from '$lib/stores/wikiEditState.js';
 
   /** @type {Array} Maturities array from the mob */
   export let maturities = [];
@@ -80,10 +81,22 @@
     return true;
   }
 
-  // Auto-sort on initial load if data arrives unsorted
-  $: if (maturities && maturities.length > 1 && !isSorted(maturities)) {
-    updateField(fieldPath, [...maturities].sort(maturitySortComparator));
-  }
+  // Sort maturities once on initial load — updates the original entity directly
+  // so it doesn't create dirty state
+  onMount(() => {
+    if (maturities && maturities.length > 1 && !isSorted(maturities)) {
+      const sorted = [...maturities].sort(maturitySortComparator);
+      originalEntity.update(e => {
+        if (!e) return e;
+        const parts = fieldPath.split('.');
+        const copy = JSON.parse(JSON.stringify(e));
+        let target = copy;
+        for (let i = 0; i < parts.length - 1; i++) target = target[parts[i]];
+        target[parts[parts.length - 1]] = sorted;
+        return copy;
+      });
+    }
+  });
 
   // === Maturity Constructor ===
   function createMaturity() {
