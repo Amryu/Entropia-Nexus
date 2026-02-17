@@ -47,7 +47,7 @@
   let inventoryLoaded = false;
   let inventoryLoading = false;
   let showInventoryImport = false;
-  let storageFilter = 'all'; // 'all' | planet name | 'inventory'
+  let storageFilter = 'all'; // 'none' | 'all' | planet name | 'inventory'
 
   // Available planets from inventory data
   $: availablePlanets = (() => {
@@ -222,6 +222,7 @@
   }
 
   function filterInventoryByStorage(items, filter) {
+    if (filter === 'none') return [];
     if (filter === 'all') return items;
     if (filter === 'inventory') return items.filter(i => !i.container || i.container === 'CARRIED');
     // Planet filter: include items on that planet + carried inventory
@@ -417,11 +418,16 @@
             </button>
           {:else}
             <select bind:value={storageFilter} class="field-select" disabled={submitting}>
+              <option value="none">No Inventory</option>
               <option value="all">All storages</option>
               <option value="inventory">Carried only</option>
-              {#each availablePlanets as planet}
-                <option value={planet}>{planet}</option>
-              {/each}
+              {#if availablePlanets.length > 0}
+                <optgroup label="Planet">
+                  {#each availablePlanets as planet}
+                    <option value={planet}>{planet}</option>
+                  {/each}
+                </optgroup>
+              {/if}
             </select>
             <button class="btn-sm" on:click={loadInventory} disabled={inventoryLoading || submitting} title="Refresh">
               {inventoryLoading ? '...' : '↻'}

@@ -2048,9 +2048,13 @@
                   <option value="none">No Inventory</option>
                   <option value="carried">Only Carried</option>
                   <option value="all">All Storages</option>
-                  {#each inventoryPlanets as planet}
-                    <option value={planet}>{planet}</option>
-                  {/each}
+                  {#if inventoryPlanets.length > 0}
+                    <optgroup label="Planet">
+                      {#each inventoryPlanets as planet}
+                        <option value={planet}>{planet}</option>
+                      {/each}
+                    </optgroup>
+                  {/if}
                 </select>
                 {#if inventoryLoading}
                   <span class="inventory-loading">Loading...</span>
@@ -2092,7 +2096,7 @@
                   <th class="col-check"></th>
                   <th>Type</th>
                   <th>Item</th>
-                  {#if showInventoryColumn}<th class="text-right col-have">Have</th>{/if}
+                  <th class="text-right col-have">Have</th>
                   <th class="text-right">Est. TT</th>
                   <th class="text-right">MU%</th>
                   <th class="text-right">Cost</th>
@@ -2115,9 +2119,7 @@
                     </td>
                     <td><span class="type-badge material">Material</span></td>
                     <td>{Math.ceil(item.adjustedAmount || item.totalAmount)} x <a href={getItemLink(item.item)}>{item.item.Name}</a></td>
-                    {#if showInventoryColumn}
-                      <td class="text-right col-have" class:have-sufficient={(inventoryMap.get(item.item?.Id) || 0) >= Math.ceil(item.adjustedAmount || item.totalAmount)} class:have-partial={(inventoryMap.get(item.item?.Id) || 0) > 0 && (inventoryMap.get(item.item?.Id) || 0) < Math.ceil(item.adjustedAmount || item.totalAmount)}>{(inventoryMap.get(item.item?.Id) || 0) || '—'}</td>
-                    {/if}
+                    <td class="text-right col-have" class:have-sufficient={showInventoryColumn && (inventoryMap.get(item.item?.Id) || 0) >= Math.ceil(item.adjustedAmount || item.totalAmount)} class:have-partial={showInventoryColumn && (inventoryMap.get(item.item?.Id) || 0) > 0 && (inventoryMap.get(item.item?.Id) || 0) < Math.ceil(item.adjustedAmount || item.totalAmount)}>{showInventoryColumn ? ((inventoryMap.get(item.item?.Id) || 0) || '—') : '—'}</td>
                     <td class="text-right">{clampDecimals(adjustedTT, 2, 4)} PED</td>
                     <td class="text-right markup-cell">
                       <input
@@ -2153,7 +2155,7 @@
                     </td>
                     <td><span class="type-badge material">Material</span></td>
                     <td><span class="residue-name">Residue</span> <span class="residue-note">(est.)</span></td>
-                    {#if showInventoryColumn}<td class="text-right col-have">—</td>{/if}
+                    <td class="text-right col-have">—</td>
                     <td class="text-right">{clampDecimals(shoppingList.adjustedTotalResidue, 2, 4)} PED</td>
                     <td class="text-right">
                       <input
@@ -2187,9 +2189,7 @@
                       {Math.ceil(item.totalAmount)} x <a href={getBlueprintLink(item.blueprint)}>{item.blueprint.Name}</a>
                       <span class="shopping-note">(est. attempts needed)</span>
                     </td>
-                    {#if showInventoryColumn}
-                      <td class="text-right col-have" class:have-sufficient={(inventoryMap.get(item.blueprint.Id + BLUEPRINT_ID_OFFSET) || 0) >= Math.ceil(item.totalAmount)} class:have-partial={(inventoryMap.get(item.blueprint.Id + BLUEPRINT_ID_OFFSET) || 0) > 0 && (inventoryMap.get(item.blueprint.Id + BLUEPRINT_ID_OFFSET) || 0) < Math.ceil(item.totalAmount)}>{(inventoryMap.get(item.blueprint.Id + BLUEPRINT_ID_OFFSET) || 0) || '—'}</td>
-                    {/if}
+                    <td class="text-right col-have" class:have-sufficient={showInventoryColumn && (inventoryMap.get(item.blueprint.Id + BLUEPRINT_ID_OFFSET) || 0) >= Math.ceil(item.totalAmount)} class:have-partial={showInventoryColumn && (inventoryMap.get(item.blueprint.Id + BLUEPRINT_ID_OFFSET) || 0) > 0 && (inventoryMap.get(item.blueprint.Id + BLUEPRINT_ID_OFFSET) || 0) < Math.ceil(item.totalAmount)}>{showInventoryColumn ? ((inventoryMap.get(item.blueprint.Id + BLUEPRINT_ID_OFFSET) || 0) || '—') : '—'}</td>
                     <td class="text-right">{clampDecimals(ttValue, 2, 4)} PED</td>
                     <td class="text-right markup-cell">
                       <input
@@ -2232,9 +2232,7 @@
                       {Math.ceil(item.totalAmount)} x <a href={getItemLink(item.item)}>{item.item.Name}</a>
                       <span class="shopping-note muted">(from {item.blueprintName})</span>
                     </td>
-                    {#if showInventoryColumn}
-                      <td class="text-right col-have" class:have-sufficient={(inventoryMap.get(item.item?.Id) || 0) >= Math.ceil(item.totalAmount)} class:have-partial={(inventoryMap.get(item.item?.Id) || 0) > 0 && (inventoryMap.get(item.item?.Id) || 0) < Math.ceil(item.totalAmount)}>{(inventoryMap.get(item.item?.Id) || 0) || '—'}</td>
-                    {/if}
+                    <td class="text-right col-have" class:have-sufficient={showInventoryColumn && (inventoryMap.get(item.item?.Id) || 0) >= Math.ceil(item.totalAmount)} class:have-partial={showInventoryColumn && (inventoryMap.get(item.item?.Id) || 0) > 0 && (inventoryMap.get(item.item?.Id) || 0) < Math.ceil(item.totalAmount)}>{showInventoryColumn ? ((inventoryMap.get(item.item?.Id) || 0) || '—') : '—'}</td>
                     <td class="text-right">{clampDecimals(prodTT, 2, 4)} PED</td>
                     <td class="text-right markup-cell">
                       <input
@@ -2267,7 +2265,7 @@
                   <td></td>
                   <td></td>
                   <td><strong>Est. Totals</strong></td>
-                  {#if showInventoryColumn}<td></td>{/if}
+                  <td></td>
                   <td class="text-right"><strong>{clampDecimals(grandTotalTT, 2, 4)} PED</strong></td>
                   <td></td>
                   <td class="text-right"><strong>{clampDecimals(grandTotalMU, 2, 4)} PED</strong></td>
