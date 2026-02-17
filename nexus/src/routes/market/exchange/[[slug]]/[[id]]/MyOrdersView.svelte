@@ -31,6 +31,18 @@
     ? $myOrders
     : $myOrders.filter(o => o.type === sideFilter);
 
+  // Enrich orders with computed fields for filtering and sorting
+  $: enrichedOrders = filteredOrders.map(o => {
+    const item = itemLookup.get(o.item_id);
+    const mu = o.markup != null ? Number(o.markup) : null;
+    return {
+      ...o,
+      _category: item?.t || '',
+      _value: getOrderValue(item, o) ?? null,
+      _total: computeUnitPrice(item, mu, o) ?? null,
+    };
+  });
+
   $: columns = [
     {
       key: 'item_name', header: 'Item', main: true, mobileWidth: '1fr', sortable: true, searchable: true,
@@ -46,20 +58,17 @@
         return `<span class="badge badge-subtle ${cls}">${val === 'BUY' ? 'Buy' : 'Sell'}</span>`;
       }
     },
+    { key: '_category', header: 'Category', width: '110px', sortable: true, searchable: true, hideOnMobile: true },
     {
-      key: 'quantity', header: 'Qty', width: '80px', sortable: true, searchable: false, hideOnMobile: true,
+      key: 'quantity', header: 'Qty', width: '80px', sortable: true, searchable: true, hideOnMobile: true,
       formatter: (val, row) => row.min_quantity != null && row.min_quantity < val ? `${val}/${row.min_quantity}` : val
     },
     {
-      key: '_value', header: 'Value', width: '90px', sortable: true, searchable: false, hideOnMobile: true,
-      formatter: (val, row) => {
-        const item = itemLookup.get(row?.item_id);
-        const v = getOrderValue(item, row);
-        return formatPedValue(v);
-      }
+      key: '_value', header: 'Value', width: '90px', sortable: true, searchable: true, hideOnMobile: true,
+      formatter: (val) => formatPedValue(val)
     },
     {
-      key: 'markup', header: 'Markup', width: '90px', mobileWidth: '70px', sortable: true, searchable: false,
+      key: 'markup', header: 'Markup', width: '90px', mobileWidth: '70px', sortable: true, searchable: true,
       formatter: (val, row) => {
         const item = itemLookup.get(row?.item_id);
         if (item) return formatMarkupForItem(val, item);
@@ -67,14 +76,8 @@
       }
     },
     {
-      key: '_total', header: 'Total', width: '110px', sortable: true, searchable: false, hideOnMobile: true,
-      formatter: (val, row) => {
-        const item = itemLookup.get(row?.item_id);
-        const mu = row?.markup != null ? Number(row.markup) : null;
-        const unitPrice = computeUnitPrice(item, mu, row);
-        if (unitPrice == null) return 'N/A';
-        return formatPedValue(unitPrice);
-      }
+      key: '_total', header: 'Total', width: '110px', sortable: true, searchable: true, hideOnMobile: true,
+      formatter: (val) => formatPedValue(val)
     },
     { key: 'planet', header: 'Planet', width: '100px', sortable: true, searchable: true, hideOnMobile: true },
     {
@@ -215,7 +218,7 @@
   <div class="orders-table" on:click|capture={handleTableClick}>
     <FancyTable
       columns={columns}
-      data={filteredOrders}
+      data={enrichedOrders}
       rowHeight={30}
       compact={true}
       sortable={true}

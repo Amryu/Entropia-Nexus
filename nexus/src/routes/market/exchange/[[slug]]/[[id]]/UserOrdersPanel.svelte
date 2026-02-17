@@ -37,6 +37,19 @@
     ? orders
     : orders.filter(o => o.type === sideFilter);
 
+  // Enrich orders with computed fields for filtering and sorting
+  $: enrichedOrders = filteredOrders.map(o => {
+    const item = itemLookup.get(o.item_id);
+    const mu = o.markup != null ? Number(o.markup) : null;
+    return {
+      ...o,
+      _item_name: o.details?.item_name || 'Unknown',
+      _category: item?.t || '',
+      _value: getOrderValue(item, o) ?? null,
+      _total: computeUnitPrice(item, mu, o) ?? null,
+    };
+  });
+
   // Set of order IDs already in the trade list
   $: tradeListOrderIds = new Set($tradeList.map(i => i.orderId));
 
@@ -79,42 +92,41 @@
   $: columns = (() => {
     const cols = [
       {
-        key: 'details', header: 'Item', main: true, sortable: true, searchable: false,
+        key: '_item_name', header: 'Item', main: true, sortable: true, searchable: true,
         formatter: (v, row) => {
           const slim = itemLookup.get(row?.item_id);
-          return (v?.item_name || 'Unknown') + itemTypeBadge(slim?.t);
+          return v + itemTypeBadge(slim?.t);
         }
       },
+      {
+        key: 'type', header: 'Side', width: '55px', mobileWidth: '40px', sortable: true, searchable: false,
+        formatter: (val) => {
+          const cls = val === 'BUY' ? 'badge-success' : 'badge-error';
+          return `<span class="badge badge-subtle ${cls}">${val === 'BUY' ? 'Buy' : 'Sell'}</span>`;
+        }
+      },
+      { key: '_category', header: 'Category', width: '110px', sortable: true, searchable: true, hideOnMobile: true },
       {
         key: '_details', header: 'Details', width: '150px', mobileWidth: '100px', sortable: false, searchable: false,
         formatter: (v, row) => formatDetailTags(row)
       },
-      { key: 'quantity', header: 'Qty', width: '90px', sortable: true, searchable: false, hideOnMobile: true },
+      { key: 'quantity', header: 'Qty', width: '90px', sortable: true, searchable: true, hideOnMobile: true },
       {
-        key: '_value', header: 'Value', width: '90px', sortable: true, searchable: false, hideOnMobile: true,
-        formatter: (v, row) => {
-          const item = itemLookup.get(row?.item_id);
-          return formatPedValue(getOrderValue(item, row));
-        }
+        key: '_value', header: 'Value', width: '90px', sortable: true, searchable: true, hideOnMobile: true,
+        formatter: (val) => formatPedValue(val)
       },
       {
-        key: 'markup', header: 'Markup', width: '100px', mobileWidth: '80px', sortable: true, searchable: false,
+        key: 'markup', header: 'Markup', width: '100px', mobileWidth: '80px', sortable: true, searchable: true,
         formatter: (v, row) => {
           const item = itemLookup.get(row?.item_id);
           return formatMarkupForItem(v, item);
         }
       },
       {
-        key: '_total', header: 'Total', width: '120px', sortable: true, searchable: false, hideOnMobile: true,
-        formatter: (v, row) => {
-          const item = itemLookup.get(row?.item_id);
-          const mu = row?.markup != null ? Number(row.markup) : null;
-          const unitPrice = computeUnitPrice(item, mu, row);
-          if (unitPrice == null) return 'N/A';
-          return formatPedValue(unitPrice);
-        }
+        key: '_total', header: 'Total', width: '120px', sortable: true, searchable: true, hideOnMobile: true,
+        formatter: (val) => formatPedValue(val)
       },
-      { key: 'planet', header: 'Planet', width: '80px', sortable: true, searchable: false, hideOnMobile: true },
+      { key: 'planet', header: 'Planet', width: '80px', sortable: true, searchable: true, hideOnMobile: true },
     ];
     cols.push({
       key: '_action', header: '', width: '55px', sortable: false, searchable: false,
@@ -186,17 +198,15 @@
     <div class="panel-loading">Loading orders...</div>
   {:else if error}
     <div class="panel-error">{error}</div>
-  {:else if filteredOrders.length === 0}
-    <div class="panel-empty">{orders.length === 0 ? 'No active orders' : 'No matching orders'}</div>
   {:else}
     <FancyTable
       {columns}
-      data={filteredOrders}
+      data={enrichedOrders}
       rowHeight={30}
       compact={true}
       sortable={true}
-      searchable={false}
-      emptyMessage="No orders"
+      searchable={true}
+      emptyMessage={orders.length === 0 ? 'No active orders' : 'No matching orders'}
       on:rowClick={handleRowClick}
     />
   {/if}
