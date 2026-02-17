@@ -208,7 +208,7 @@ export async function getChangeById(id) {
 }
 
 export async function getChangeByEntityId(id) {
-  const query = 'SELECT * FROM changes WHERE data->>\'Id\' = $1 AND state IN (\'Draft\', \'Pending\')';
+  const query = 'SELECT * FROM changes WHERE data->>\'Id\' = $1 AND state IN (\'Draft\', \'Pending\', \'DirectApply\', \'ApplyFailed\')';
   const values = [id];
 
   const { rows } = await pool.query(query, values);
@@ -218,7 +218,7 @@ export async function getChangeByEntityId(id) {
 export async function getOpenChangeByEntityId(entity, id, type = null) {
   const conditions = [
     `c.entity = $1`,
-    `c.state IN ('Draft', 'Pending')`,
+    `c.state IN ('Draft', 'Pending', 'DirectApply', 'ApplyFailed')`,
     `c.data->>'Id' = $2`
   ];
   const values = [entity, String(id)];

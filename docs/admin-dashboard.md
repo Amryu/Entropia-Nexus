@@ -22,6 +22,8 @@ Changes can be submitted for the following entity types:
 |-------|-------------|
 | Draft | Saved locally, not yet submitted for review |
 | Pending | Submitted for moderator review (Discord thread created) |
+| DirectApply | Admin-only: skip review, bot applies immediately without creating a thread |
+| ApplyFailed | Direct apply failed; admin can retry or discard via Discord DM buttons |
 | Approved | Moderator approved - changes applied to database |
 | Denied | Moderator rejected the change |
 | Deleted | Soft-deleted by user |

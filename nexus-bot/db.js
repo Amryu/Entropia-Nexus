@@ -116,7 +116,8 @@ export async function getChanges() {
 export async function getOpenChanges(date) {
   // Use content_updated_at to only pick up changes where actual content was modified
   // This prevents duplicate notifications when only admin fields (thread_id, etc.) change
-  return (await poolUsers.query('SELECT * FROM changes WHERE state IN (\'Draft\', \'Pending\') AND content_updated_at > $1', [date.toISOString()])).rows;
+  // DirectApply: admin pass-through changes that skip review and get applied immediately
+  return (await poolUsers.query('SELECT * FROM changes WHERE state IN (\'Draft\', \'Pending\', \'DirectApply\') AND content_updated_at > $1', [date.toISOString()])).rows;
 }
 export async function getDeletedChanges() {
   return (await poolUsers.query('SELECT * FROM changes WHERE state = \'Deleted\'')).rows;
@@ -126,6 +127,9 @@ export async function deleteChange(id) {
 }
 export async function deleteChanges(ids) {
   await poolUsers.query('DELETE FROM changes WHERE id = ANY($1)', [ids]);
+}
+export async function getChangeById(id) {
+  return (await poolUsers.query('SELECT * FROM changes WHERE id = $1', [id])).rows[0];
 }
 export async function getChangeByThreadId(threadId) {
   const query = 'SELECT * FROM changes WHERE thread_id = $1';

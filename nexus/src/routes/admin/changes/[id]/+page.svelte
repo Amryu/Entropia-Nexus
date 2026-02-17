@@ -123,8 +123,10 @@
   function getStateClass(state) {
     switch (state) {
       case 'Pending': return 'state-pending';
+      case 'DirectApply': return 'state-pending';
       case 'Approved': return 'state-approved';
       case 'Denied': return 'state-denied';
+      case 'ApplyFailed': return 'state-denied';
       case 'Draft': return 'state-draft';
       case 'Deleted': return 'state-deleted';
       default: return '';
@@ -903,7 +905,7 @@
                 View on Wiki →
               </a>
             {/if}
-            {#if change.state === 'Pending' || change.state === 'Draft'}
+            {#if change.state === 'Pending' || change.state === 'Draft' || change.state === 'DirectApply' || change.state === 'ApplyFailed'}
               {@const editUrl = getEditUrl(change)}
               {#if editUrl}
                 <a

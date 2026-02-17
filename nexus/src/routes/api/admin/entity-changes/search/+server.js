@@ -21,7 +21,7 @@ export async function GET({ locals, url }) {
   try {
     // Build query to find unique entities with their change counts
     // Group by entity type and entity ID (or name for creates without ID)
-    let whereConditions = ["state IN ('Draft', 'Pending', 'Approved', 'Denied')"];
+    let whereConditions = ["state IN ('Draft', 'Pending', 'Approved', 'Denied', 'DirectApply', 'ApplyFailed')"];
     let params = [];
     let paramIndex = 1;
 

@@ -173,7 +173,7 @@ export async function PUT({ params, request, locals, url }) {
     return getResponse({ error: 'You are not the author of this change.' }, 403);
   }
 
-  if (change.state !== 'Draft' && change.state !== 'Pending') {
+  if (change.state !== 'Draft' && change.state !== 'Pending' && change.state !== 'DirectApply' && change.state !== 'ApplyFailed') {
     return getResponse({ error: 'This change was already finalized. You cannot edit it anymore. Please create a new change.' }, 400);
   }
 
@@ -203,7 +203,11 @@ export async function PUT({ params, request, locals, url }) {
     body = change.data;
   }
 
-  if (state !== 'Draft' && state !== 'Pending') {
+  if (state === 'DirectApply') {
+    if (!user?.grants?.includes('admin.panel') && !user?.administrator) {
+      return getResponse({ error: 'Only administrators can use Direct Apply.' }, 403);
+    }
+  } else if (state !== 'Draft' && state !== 'Pending') {
     return getResponse({ error: 'Invalid state. Must be one of the following values: Draft, Pending' }, 400);
   }
 
@@ -284,7 +288,11 @@ export async function POST({ request, params, locals, url }) {
 
   let state = url.searchParams.get('state') || 'Draft';
 
-  if (state !== 'Draft' && state !== 'Pending') {
+  if (state === 'DirectApply') {
+    if (!user?.grants?.includes('admin.panel') && !user?.administrator) {
+      return getResponse({ error: 'Only administrators can use Direct Apply.' }, 403);
+    }
+  } else if (state !== 'Draft' && state !== 'Pending') {
     return getResponse({ error: 'Invalid state. Must be one of the following values: Draft, Pending' }, 400);
   }
 
@@ -318,7 +326,7 @@ export async function DELETE({ params, locals }) {
     return getResponse({ error: 'You are not the author of this change.' }, 403);
   }
 
-  if (change.state !== 'Draft' && change.state !== 'Pending') {
+  if (change.state !== 'Draft' && change.state !== 'Pending' && change.state !== 'DirectApply' && change.state !== 'ApplyFailed') {
     return getResponse({ error: 'This change was already finalized. You cannot delete it anymore.' }, 400);
   }
 
@@ -359,7 +367,7 @@ function validateChange(body, entity) {
 async function checkDuplicates(name, entity) {
   const [apiEntity, dbEntities] = await Promise.all([
     apiCall(fetch, `/${getEntityCategory(entity)}/${encodeURIComponent(name)}`),
-    executeVector(`SELECT entity FROM changes WHERE state IN ('Draft', 'Pending') AND data->>'Name' = $1`, [name])
+    executeVector(`SELECT entity FROM changes WHERE state IN ('Draft', 'Pending', 'DirectApply', 'ApplyFailed') AND data->>'Name' = $1`, [name])
   ]);
 
   if (apiEntity) {

@@ -20,7 +20,7 @@ export async function GET({ locals }) {
         entity as "entityType",
         COUNT(*) as count
       FROM changes
-      WHERE state IN ('Draft', 'Pending', 'Approved', 'Denied')
+      WHERE state IN ('Draft', 'Pending', 'Approved', 'Denied', 'DirectApply', 'ApplyFailed')
       GROUP BY entity
       ORDER BY entity
     `);

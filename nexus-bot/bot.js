@@ -2,10 +2,11 @@ import dotenv from 'dotenv';
 import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { dump } from 'js-yaml';
-import { Client, GatewayIntentBits, Collection, Events, ChannelType } from 'discord.js';
-import { getUsers, getUserById, getOpenChanges, setChangeThreadId, getDeletedChanges, deleteChange, getFlightsNeedingThread, setFlightThreadId, getCheckinsPendingThreadAdd, markCheckinAddedToThread, getUnnotifiedFlightStateChanges, getFlightsNeedingArchive, clearFlightThreadId, getPendingRescheduleNotifications, markRescheduleNotificationSent, getPendingRentalDmNotifications, markRentalDmNotificationSent, getServicePilots, getFlightAcceptedCheckins, getFlightsReadyForCustomerKick, setFlightCompletedAt, expireTickets, computeAllPriceSummaries, getPendingTradeRequests, getTradeRequestItems, setTradeRequestThread, getWarnableTradeRequests, markWarningSent, getExpirableTradeRequests, updateTradeRequestStatus, findTradeRequestByThread, updateLastActivity, getActiveTradeRequestsWithNewItems, getNewTradeRequestItems, adjustOfferQuantities, getUsersWithGrant, getPendingServiceRequests, setServiceRequestThread, markServiceRequestNotified, acceptServiceRequest, declineServiceRequest, getServiceRequestById, acceptCheckin, denyCheckin, getCheckinWithContext, activateTicketByCheckin, getPendingCheckinsDmNotify, getBotConfig, setBotConfig } from './db.js';
+import { Client, GatewayIntentBits, Collection, Events, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import { getUsers, getUserById, getOpenChanges, setChangeThreadId, getDeletedChanges, deleteChange, getChangeById, setChangeState, getFlightsNeedingThread, setFlightThreadId, getCheckinsPendingThreadAdd, markCheckinAddedToThread, getUnnotifiedFlightStateChanges, getFlightsNeedingArchive, clearFlightThreadId, getPendingRescheduleNotifications, markRescheduleNotificationSent, getPendingRentalDmNotifications, markRentalDmNotificationSent, getServicePilots, getFlightAcceptedCheckins, getFlightsReadyForCustomerKick, setFlightCompletedAt, expireTickets, computeAllPriceSummaries, getPendingTradeRequests, getTradeRequestItems, setTradeRequestThread, getWarnableTradeRequests, markWarningSent, getExpirableTradeRequests, updateTradeRequestStatus, findTradeRequestByThread, updateLastActivity, getActiveTradeRequestsWithNewItems, getNewTradeRequestItems, adjustOfferQuantities, getUsersWithGrant, getPendingServiceRequests, setServiceRequestThread, markServiceRequestNotified, acceptServiceRequest, declineServiceRequest, getServiceRequestById, acceptCheckin, denyCheckin, getCheckinWithContext, activateTicketByCheckin, getPendingCheckinsDmNotify, getBotConfig, setBotConfig } from './db.js';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { compareJson, validate, printSideBySide } from './change.js';
+import { applyChange } from './changes/util.js';
 import { getTypeLink } from './util.js';
 import { snapshotExchangePrices, computeAllExchangeSummaries } from './exchange-prices.js';
 import { checkAuctions, refreshAuctionColors } from './auctions.js';
@@ -326,6 +327,61 @@ client.on(Events.InteractionCreate, async interaction => {
       return;
     }
 
+    // Direct Apply retry/discard buttons (sent via DM, persist across restarts)
+    if (customId.startsWith('change_retry_') || customId.startsWith('change_discard_')) {
+      const parts = customId.split('_');
+      const action = parts[1]; // retry or discard
+      const changeId = parseInt(parts[2], 10);
+
+      try {
+        const change = await getChangeById(changeId);
+        if (!change) {
+          return interaction.update({ content: 'Change not found.', components: [] });
+        }
+        if (change.author_id.toString() !== interaction.user.id) {
+          return interaction.reply({ content: 'You are not the author of this change.', flags: 64 });
+        }
+        if (change.state !== 'ApplyFailed' && change.state !== 'DirectApply') {
+          return interaction.update({ content: `This change is no longer pending (state: ${change.state}).`, components: [] });
+        }
+
+        if (action === 'retry') {
+          await interaction.update({ content: `Retrying **${change.data.Name}**...`, components: [] });
+
+          const success = await applyChange(change);
+          if (success) {
+            await setChangeState(changeId, 'Approved');
+            await interaction.followUp(`Change **${change.data.Name}** applied successfully!`);
+          } else {
+            const row = new ActionRowBuilder().addComponents(
+              new ButtonBuilder()
+                .setCustomId(`change_retry_${changeId}`)
+                .setLabel('Retry')
+                .setStyle(ButtonStyle.Success),
+              new ButtonBuilder()
+                .setCustomId(`change_discard_${changeId}`)
+                .setLabel('Discard')
+                .setStyle(ButtonStyle.Danger),
+            );
+            await interaction.followUp({
+              content: `Failed again to apply **${change.data.Name}**. You can retry or discard.`,
+              components: [row]
+            });
+          }
+        } else if (action === 'discard') {
+          await setChangeState(changeId, 'Deleted');
+          await interaction.update({
+            content: `Change **${change.data.Name}** has been discarded.`,
+            components: []
+          });
+        }
+      } catch (error) {
+        console.error('Error handling change button:', error);
+        await interaction.reply({ content: 'An error occurred.', flags: 64 }).catch(() => {});
+      }
+      return;
+    }
+
     return;
   }
 
@@ -539,6 +595,61 @@ async function startNameCollectionFlow(thread, user, guild) {
   replaceVerificationFlow(user.id, handle);
 }
 
+/**
+ * Handle a DirectApply change: apply immediately without creating a review thread.
+ * On success, set state to Approved and DM the admin.
+ * On failure, set state to ApplyFailed and DM the admin with retry/discard buttons.
+ */
+async function handleDirectApply(change) {
+  console.log(`Direct apply: ${change.entity} "${change.data.Name}" (change ${change.id})`);
+
+  // Verify the author has admin privileges (defense in depth — API already validates)
+  const author = await getUserById(change.author_id);
+  if (!author?.administrator) {
+    console.error(`DirectApply rejected: author ${change.author_id} is not an admin`);
+    await setChangeState(change.id, 'Pending'); // Downgrade to regular review flow
+    return;
+  }
+
+  const success = await applyChange(change);
+
+  if (success) {
+    await setChangeState(change.id, 'Approved');
+    try {
+      const dmUser = await client.users.fetch(String(change.author_id));
+      await dmUser.send(`Your change **${change.data.Name}** (${change.type} ${change.entity}) was directly applied successfully.`);
+    } catch (e) {
+      console.error(`Failed to DM admin ${change.author_id}:`, e.message);
+    }
+  } else {
+    await setChangeState(change.id, 'ApplyFailed');
+    try {
+      const dmUser = await client.users.fetch(String(change.author_id));
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`change_retry_${change.id}`)
+          .setLabel('Retry')
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId(`change_discard_${change.id}`)
+          .setLabel('Discard')
+          .setStyle(ButtonStyle.Danger),
+      );
+      await dmUser.send({
+        content: `Failed to apply change **${change.data.Name}** (${change.type} ${change.entity}). You can retry or discard this change.`,
+        components: [row]
+      });
+    } catch (e) {
+      console.error(`Failed to DM admin ${change.author_id}:`, e.message);
+    }
+  }
+
+  // Update lastChangeCheck so this change isn't re-processed
+  let newCheckTime = new Date(change.content_updated_at);
+  newCheckTime.setMilliseconds(newCheckTime.getMilliseconds() + 1);
+  setConfigValue('lastChangeCheck', newCheckTime.toISOString());
+}
+
 async function checkChanges() {
   const channel = client.channels.cache.find(channel => channel.id === config.pendingChangesChannelId);
   if (!channel) {
@@ -551,6 +662,12 @@ async function checkChanges() {
   let changes = (await getOpenChanges(lastCheck)).sort((a, b) => new Date(a.content_updated_at).getTime() - new Date(b.content_updated_at).getTime());
 
   for (const change of changes) {
+    // DirectApply: skip thread creation, apply immediately
+    if (change.state === 'DirectApply') {
+      await handleDirectApply(change);
+      continue;
+    }
+
     let thread = change.thread_id
       ? await channel.threads.fetch(change.thread_id).catch(_ => null)
       : null;

@@ -25,7 +25,7 @@
     'Market': ['Shop']
   };
 
-  const stateOptions = ['Draft', 'Pending', 'Approved', 'Denied', 'Deleted'];
+  const stateOptions = ['Draft', 'Pending', 'Approved', 'Denied', 'Deleted', 'DirectApply', 'ApplyFailed'];
 
   onMount(() => {
     // Read initial filters from URL
@@ -110,8 +110,10 @@
   function getStateClass(state) {
     switch (state) {
       case 'Pending': return 'state-pending';
+      case 'DirectApply': return 'state-pending';
       case 'Approved': return 'state-approved';
       case 'Denied': return 'state-denied';
+      case 'ApplyFailed': return 'state-denied';
       case 'Draft': return 'state-draft';
       case 'Deleted': return 'state-deleted';
       default: return '';

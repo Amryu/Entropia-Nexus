@@ -28,6 +28,10 @@
   // Determine current change state - Pending means already submitted for review
   $: isPending = $existingPendingChange?.state === 'Pending' || $changeMetadata.state === 'Pending';
 
+  // DirectApply/ApplyFailed: change was submitted for direct application
+  $: isDirectApplyState = $changeMetadata.state === 'DirectApply' || $changeMetadata.state === 'ApplyFailed'
+    || $existingPendingChange?.state === 'DirectApply' || $existingPendingChange?.state === 'ApplyFailed';
+
   /** @type {Function|null} Custom save handler */
   export let onSave = null;
 
@@ -45,9 +49,13 @@
 
   let saving = false;
   let submitting = false;
+  let directApplying = false;
   let deleting = false;
   let statusMessage = '';
   let statusType = ''; // success, error
+
+  // Admin-only: allow Direct Apply (pass-through without review)
+  $: isUserAdmin = user?.grants?.includes('admin.panel') || user?.administrator;
 
   // Check if user can delete the change (author or admin)
   $: canDelete = user && $changeMetadata.id && (
@@ -75,8 +83,12 @@
 
     try {
       const change = getChangeForSubmission();
-      // Preserve current state - don't change Pending back to Draft
-      const currentState = isPending ? 'Pending' : 'Draft';
+      // Preserve current state - don't change Pending/DirectApply back to Draft
+      // ApplyFailed → re-submit as DirectApply so the bot retries
+      const rawState = $changeMetadata.state || $existingPendingChange?.state;
+      const currentState = isPending ? 'Pending'
+        : rawState === 'DirectApply' || rawState === 'ApplyFailed' ? 'DirectApply'
+        : 'Draft';
 
       if (onSave) {
         await onSave(change);
@@ -204,6 +216,68 @@
     }
   }
 
+  async function handleDirectApply() {
+    if (nameIsEmpty) {
+      setFieldError('Name', 'Name is required');
+      statusMessage = 'Name is required.';
+      statusType = 'error';
+      return;
+    }
+
+    if ($hasErrors) {
+      statusMessage = 'Please fix validation errors before applying.';
+      statusType = 'error';
+      return;
+    }
+
+    if (!$hasChanges && !$changeMetadata.id) {
+      statusMessage = 'No changes to apply.';
+      statusType = 'error';
+      return;
+    }
+
+    directApplying = true;
+    statusMessage = '';
+
+    try {
+      const change = getChangeForSubmission();
+
+      let response;
+      if ($changeMetadata.id) {
+        response = await apiPut(fetch, `/api/changes/${$changeMetadata.id}?state=DirectApply`, change.data);
+        if (response?.error) {
+          throw new Error(response.error);
+        }
+      } else {
+        const type = change.data.Id ? 'Update' : 'Create';
+        response = await apiPost(fetch, `/api/changes?type=${type}&entity=${change.entity}&state=DirectApply`, change.data);
+        if (response?.error) {
+          throw new Error(response.error);
+        }
+      }
+
+      if (response?.id) {
+        changeMetadata.update(m => ({ ...m, id: response.id, state: 'DirectApply' }));
+        if ($isCreateMode && browser) {
+          await invalidateAll();
+          await goto(`${window.location.pathname}?mode=create&changeId=${response.id}`, {
+            replaceState: true,
+            noScroll: true
+          });
+        }
+      }
+
+      statusMessage = 'Submitted for direct application. Check Discord for confirmation.';
+      statusType = 'success';
+    } catch (error) {
+      console.error('Direct apply error:', error);
+      statusMessage = error.message || 'Failed to submit for direct application.';
+      statusType = 'error';
+    } finally {
+      directApplying = false;
+    }
+  }
+
   function handleCancel() {
     const doCancel = () => {
       cancelEdit();
@@ -295,9 +369,13 @@
             Unsaved changes
           </span>
         {:else if $changeMetadata.id}
-          <span class="status-indicator saved">
-            {isPending ? 'Pending review' : 'Saved'}
-          </span>
+          {#if $changeMetadata.state === 'ApplyFailed'}
+            <span class="status-indicator apply-failed">Apply failed</span>
+          {:else}
+            <span class="status-indicator saved">
+              {isPending ? 'Pending review' : $changeMetadata.state === 'DirectApply' ? 'Awaiting direct apply' : 'Saved'}
+            </span>
+          {/if}
         {:else}
           <span class="status-indicator">
             No changes
@@ -306,7 +384,7 @@
       </div>
 
       <div class="action-buttons">
-        <button class="btn btn-cancel" on:click={handleCancel} disabled={saving || submitting || deleting}>
+        <button class="btn btn-cancel" on:click={handleCancel} disabled={saving || submitting || directApplying || deleting}>
           Cancel
         </button>
 
@@ -314,7 +392,7 @@
           <button
             class="btn btn-danger"
             on:click={handleDelete}
-            disabled={saving || submitting || deleting}
+            disabled={saving || submitting || directApplying || deleting}
             title="Delete this pending change"
           >
             {deleting ? 'Deleting...' : 'Delete Change'}
@@ -326,7 +404,7 @@
           class:btn-secondary={!isPending}
           class:btn-primary={isPending}
           on:click={handleSaveDraft}
-          disabled={saving || submitting || deleting || !$hasChanges || hasValidationIssues}
+          disabled={saving || submitting || directApplying || deleting || !$hasChanges || hasValidationIssues}
           title={nameIsEmpty ? 'Name is required' : ''}
         >
           {saving ? 'Saving...' : 'Save'}
@@ -336,10 +414,21 @@
           <button
             class="btn btn-primary"
             on:click={handleSubmit}
-            disabled={saving || submitting || deleting || hasValidationIssues}
+            disabled={saving || submitting || directApplying || deleting || hasValidationIssues}
             title={nameIsEmpty ? 'Name is required' : ''}
           >
             {submitting ? 'Submitting...' : 'Submit for Review'}
+          </button>
+        {/if}
+
+        {#if isUserAdmin}
+          <button
+            class="btn btn-accent"
+            on:click={handleDirectApply}
+            disabled={saving || submitting || directApplying || deleting || hasValidationIssues}
+            title="Apply changes immediately without review (admin only)"
+          >
+            {directApplying ? 'Applying...' : 'Direct Apply'}
           </button>
         {/if}
       </div>
@@ -388,6 +477,10 @@
 
   .status-indicator.saved {
     color: var(--success-color, #4ade80);
+  }
+
+  .status-indicator.apply-failed {
+    color: var(--error-color, #ff6b6b);
   }
 
   .status-indicator.validation-hint {
@@ -479,6 +572,16 @@
 
   .btn-danger:hover:not(:disabled) {
     background-color: var(--error-color-hover, #ff5252);
+  }
+
+  .btn-accent {
+    background-color: var(--success-color, #16a34a);
+    border: 1px solid var(--success-color, #16a34a);
+    color: white;
+  }
+
+  .btn-accent:hover:not(:disabled) {
+    background-color: var(--button-success-hover, #047857);
   }
 
   /* Mobile adjustments - aligned with global 900px breakpoint */
