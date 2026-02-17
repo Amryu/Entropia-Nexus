@@ -10,7 +10,8 @@
     { path: '/admin/images', label: 'Images', icon: '🖼️' },
     { path: '/admin/users', label: 'Users', icon: '👥' },
     { path: '/admin/societies', label: 'Societies', icon: '\u{1F3DB}\u{FE0F}' },
-    { path: '/admin/roles', label: 'Roles & Grants', icon: '\u{1F511}' }
+    { path: '/admin/roles', label: 'Roles & Grants', icon: '\u{1F511}' },
+    { path: '/admin/map', label: 'Map', icon: '\u{1F5FA}\u{FE0F}' }
   ];
 
   // Use reactive statement to compute active states based on current path
