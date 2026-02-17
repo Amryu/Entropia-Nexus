@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { dump } from 'js-yaml';
 import { Client, GatewayIntentBits, Collection, Events, ChannelType } from 'discord.js';
-import { getUsers, getUserById, getOpenChanges, setChangeThreadId, getDeletedChanges, deleteChange, getFlightsNeedingThread, setFlightThreadId, getCheckinsPendingThreadAdd, markCheckinAddedToThread, getUnnotifiedFlightStateChanges, getFlightsNeedingArchive, clearFlightThreadId, getPendingRescheduleNotifications, markRescheduleNotificationSent, getPendingRentalDmNotifications, markRentalDmNotificationSent, getServicePilots, getFlightAcceptedCheckins, getFlightsReadyForCustomerKick, setFlightCompletedAt, expireTickets, computeAllPriceSummaries, getPendingTradeRequests, getTradeRequestItems, setTradeRequestThread, getWarnableTradeRequests, markWarningSent, getExpirableTradeRequests, updateTradeRequestStatus, findTradeRequestByThread, updateLastActivity, getActiveTradeRequestsWithNewItems, getNewTradeRequestItems, adjustOfferQuantities, getUsersWithGrant, getPendingServiceRequests, setServiceRequestThread, markServiceRequestNotified, acceptServiceRequest, declineServiceRequest, getServiceRequestById, acceptCheckin, denyCheckin, getCheckinWithContext, activateTicketByCheckin, getPendingCheckinsDmNotify } from './db.js';
+import { getUsers, getUserById, getOpenChanges, setChangeThreadId, getDeletedChanges, deleteChange, getFlightsNeedingThread, setFlightThreadId, getCheckinsPendingThreadAdd, markCheckinAddedToThread, getUnnotifiedFlightStateChanges, getFlightsNeedingArchive, clearFlightThreadId, getPendingRescheduleNotifications, markRescheduleNotificationSent, getPendingRentalDmNotifications, markRentalDmNotificationSent, getServicePilots, getFlightAcceptedCheckins, getFlightsReadyForCustomerKick, setFlightCompletedAt, expireTickets, computeAllPriceSummaries, getPendingTradeRequests, getTradeRequestItems, setTradeRequestThread, getWarnableTradeRequests, markWarningSent, getExpirableTradeRequests, updateTradeRequestStatus, findTradeRequestByThread, updateLastActivity, getActiveTradeRequestsWithNewItems, getNewTradeRequestItems, adjustOfferQuantities, getUsersWithGrant, getPendingServiceRequests, setServiceRequestThread, markServiceRequestNotified, acceptServiceRequest, declineServiceRequest, getServiceRequestById, acceptCheckin, denyCheckin, getCheckinWithContext, activateTicketByCheckin, getPendingCheckinsDmNotify, getBotConfig, setBotConfig } from './db.js';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { compareJson, validate, printSideBySide } from './change.js';
 import { getTypeLink } from './util.js';
@@ -368,16 +368,22 @@ async function checkUnverifiedUsers() {
       continue;
     }
 
-    // Skip if a flow is already active for this user
-    if (activeVerificationFlows.has(user.id)) continue;
-
     let existingThread = channel.threads.cache.find(thread => thread.name === `${user.username}-verification`);
 
-    // Also check archived threads — they won't be in the cache
+    // Also check archived threads — they won't be in the cache.
+    // Paginate through all pages since there may be many archived threads.
     if (!existingThread) {
       try {
-        const archived = await channel.threads.fetchArchived({ type: 'private' });
-        existingThread = archived.threads.find(thread => thread.name === `${user.username}-verification`);
+        let hasMore = true;
+        let before;
+        while (hasMore && !existingThread) {
+          const archived = await channel.threads.fetchArchived({ type: 'private', before });
+          existingThread = archived.threads.find(thread => thread.name === `${user.username}-verification`);
+          hasMore = archived.hasMore;
+          if (hasMore && archived.threads.size > 0) {
+            before = archived.threads.last()?.id;
+          }
+        }
       } catch (e) {
         console.error(`Error fetching archived threads: ${e.message}`);
       }
@@ -401,26 +407,32 @@ async function checkUnverifiedUsers() {
         console.error(`Error adding user to thread. Are they on the server? ${e.message}`);
       }
 
-      // Check if bot already sent the initial welcome message in this thread
-      const botHasSentWelcome = await threadHasBotMessage(existingThread);
+      // Send a reminder if the thread has been idle for too long
+      await sendVerificationReminder(existingThread, user);
 
-      if (!botHasSentWelcome) {
-        // Existing thread but bot never sent a message — send welcome and start name collection
-        await startNameCollectionFlow(existingThread, user, channel.guild);
-      } else if (!user.eu_name) {
-        // Bot sent welcome but user hasn't set name yet — restart name collection
-        const handle = collectEuName(existingThread, user.id, {
-          typerId: user.id,
-          guild: channel.guild,
-          onEnd: () => clearVerificationFlow(user.id),
-        });
-        replaceVerificationFlow(user.id, handle);
-      } else {
-        // User has name set but not verified — resume existing or start new verification
-        // Note: resumeVerification calls replaceVerificationFlow internally
-        await resumeVerification(existingThread, user.id, channel.guild, {
-          onEnd: () => clearVerificationFlow(user.id),
-        });
+      // Only start/resume the verification flow if one isn't already active
+      if (!activeVerificationFlows.has(user.id)) {
+        // Check if bot already sent the initial welcome message in this thread
+        const botHasSentWelcome = await threadHasBotMessage(existingThread);
+
+        if (!botHasSentWelcome) {
+          // Existing thread but bot never sent a message — send welcome and start name collection
+          await startNameCollectionFlow(existingThread, user, channel.guild);
+        } else if (!user.eu_name) {
+          // Bot sent welcome but user hasn't set name yet — restart name collection
+          const handle = collectEuName(existingThread, user.id, {
+            typerId: user.id,
+            guild: channel.guild,
+            onEnd: () => clearVerificationFlow(user.id),
+          });
+          replaceVerificationFlow(user.id, handle);
+        } else {
+          // User has name set but not verified — resume existing or start new verification
+          // Note: resumeVerification calls replaceVerificationFlow internally
+          await resumeVerification(existingThread, user.id, channel.guild, {
+            onEnd: () => clearVerificationFlow(user.id),
+          });
+        }
       }
 
       continue;
@@ -461,6 +473,50 @@ async function threadHasBotMessage(thread) {
     return messages.some(m => m.author.id === client.user.id);
   } catch {
     return false;
+  }
+}
+
+const VERIFICATION_REMINDER_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+/**
+ * Send a periodic reminder in an idle verification thread.
+ * Checks how long it has been since the last reminder (or thread creation)
+ * and sends a contextual nudge if the thread has been idle too long.
+ */
+async function sendVerificationReminder(thread, user) {
+  const configKey = `verify_reminder:${user.id}`;
+  try {
+    const lastReminder = await getBotConfig(configKey);
+    const now = Date.now();
+
+    if (lastReminder && (now - Number(lastReminder)) < VERIFICATION_REMINDER_INTERVAL_MS) {
+      return; // Too soon for another reminder
+    }
+
+    // Check if the user has sent any message recently — if so, they're active, no nudge needed
+    const messages = await thread.messages.fetch({ limit: 20 });
+    const lastUserMsg = messages.find(m => m.author.id === user.id);
+    if (lastUserMsg && (now - lastUserMsg.createdTimestamp) < VERIFICATION_REMINDER_INTERVAL_MS) {
+      return;
+    }
+
+    // Don't send a reminder if the thread was just created (no bot messages yet)
+    const botMessages = messages.filter(m => m.author.id === client.user.id);
+    if (botMessages.size === 0) return;
+
+    // Contextual reminder based on verification state
+    let reminder;
+    if (!user.eu_name) {
+      reminder = `<@${user.id}> — Friendly reminder: please type your full Entropia Universe name here to begin verification. Make sure the capitalization and spacing exactly match your in-game name.`;
+    } else {
+      reminder = `<@${user.id}> — Reminder: a verification code was sent to you in Entropia Universe via PM or Mail. Please type the code here to complete verification. If you haven't received it, let a moderator know.`;
+    }
+
+    await thread.send(reminder);
+    await setBotConfig(configKey, String(now));
+    console.log(`Sent verification reminder to ${user.username} (eu_name: ${user.eu_name ? 'set' : 'not set'})`);
+  } catch (e) {
+    console.error(`Error sending verification reminder for ${user.username}: ${e.message}`);
   }
 }
 
@@ -1297,7 +1353,7 @@ client.on(Events.MessageCreate, async (message) => {
   }
 });
 
-// Re-add unverified users who leave their verification thread
+// Re-add unverified users who leave their verification thread and restart their flow
 client.on(Events.ThreadMembersUpdate, async (addedMembers, removedMembers, thread) => {
   // Only care about verification threads in the verified channel
   if (thread.parentId !== config.verifiedChannelId) return;
@@ -1310,8 +1366,28 @@ client.on(Events.ThreadMembersUpdate, async (addedMembers, removedMembers, threa
     try {
       const user = await getUserById(memberId);
       if (user && !user.verified) {
+        // Unarchive the thread if it was archived
+        if (thread.archived) {
+          await thread.setArchived(false);
+        }
         await thread.members.add(memberId);
         console.log(`Re-added unverified user ${user.username} to their verification thread.`);
+
+        // Restart the verification flow if it isn't running
+        if (!activeVerificationFlows.has(memberId)) {
+          if (!user.eu_name) {
+            const handle = collectEuName(thread, user.id, {
+              typerId: user.id,
+              guild: thread.guild,
+              onEnd: () => clearVerificationFlow(user.id),
+            });
+            replaceVerificationFlow(user.id, handle);
+          } else {
+            await resumeVerification(thread, user.id, thread.guild, {
+              onEnd: () => clearVerificationFlow(user.id),
+            });
+          }
+        }
       }
     } catch (e) {
       console.error(`Error re-adding user ${memberId} to verification thread: ${e.message}`);
