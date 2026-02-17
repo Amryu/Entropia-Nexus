@@ -31,7 +31,14 @@ export async function GET({ params, locals }) {
 
   const members = await getSocietyMembers(society.id);
   const sessionUser = locals.session?.user;
-  const isLeader = sessionUser && String(sessionUser.Id || sessionUser.id) === String(society.leader_id);
+  const userId = sessionUser ? String(sessionUser.Id || sessionUser.id) : null;
+  const isLeader = userId && userId === String(society.leader_id);
+  const isMember = userId && members.some(m => String(m.id) === userId);
+
+  // Discord link is private by default — only expose to members unless explicitly public
+  if (!society.discord_public && !isMember) {
+    society.discord_code = null;
+  }
 
   let pending = [];
   let pendingCount = 0;
@@ -44,6 +51,7 @@ export async function GET({ params, locals }) {
     society,
     members,
     isLeader,
+    isMember: !!isMember,
     pending,
     pendingCount
   }, 200);
@@ -93,6 +101,8 @@ export async function PATCH({ params, request, locals }) {
     return getResponse({ error: 'Invalid Discord invite code.' }, 400);
   }
 
-  const updated = await updateSocietyDetails(society.id, nextDescription || null, discordCode || null);
+  const discordPublic = body?.discordPublic != null ? !!body.discordPublic : !!society.discord_public;
+
+  const updated = await updateSocietyDetails(society.id, nextDescription || null, discordCode || null, discordPublic);
   return getResponse({ success: true, society: updated }, 200);
 }

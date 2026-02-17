@@ -22,9 +22,11 @@
   let isDisbanding = false;
   let showDisbandDialog = false;
   let disbandStep = 1;
+  let isMember = data.societyData.isMember;
   let isEditingDescription = false;
   let descriptionDraft = society.description || '';
   let discordDraft = society.discord_code || '';
+  let discordPublicDraft = society.discord_public || false;
   let descriptionError = '';
   let descriptionStatus = '';
   let isSavingDescription = false;
@@ -167,6 +169,7 @@
       society = payload.society;
       members = payload.members || [];
       isLeader = payload.isLeader;
+      isMember = payload.isMember;
       pendingCount = payload.pendingCount || 0;
     } catch (err) {
       console.error('Failed to refresh society data:', err);
@@ -183,6 +186,7 @@
   function startEditingDescription() {
     descriptionDraft = society.description || '';
     discordDraft = society.discord_code || '';
+    discordPublicDraft = society.discord_public || false;
     descriptionError = '';
     descriptionStatus = '';
     isEditingDescription = true;
@@ -191,6 +195,7 @@
   function cancelEditingDescription() {
     descriptionDraft = society.description || '';
     discordDraft = society.discord_code || '';
+    discordPublicDraft = society.discord_public || false;
     descriptionError = '';
     descriptionStatus = '';
     isEditingDescription = false;
@@ -205,7 +210,7 @@
       const response = await fetch(`/api/societies/${society.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ description: descriptionDraft, discord: discordDraft })
+        body: JSON.stringify({ description: descriptionDraft, discord: discordDraft, discordPublic: discordPublicDraft })
       });
       const payload = await response.json();
       if (!response.ok) {
@@ -286,8 +291,10 @@
             <a class="meta-link" href={`https://discord.gg/${society.discord_code}`} target="_blank" rel="noreferrer">
               discord.gg/{society.discord_code}
             </a>
-          {:else}
+          {:else if isMember}
             <span class="meta-value">-</span>
+          {:else}
+            <span class="meta-value meta-muted">Members only</span>
           {/if}
         </div>
       </div>
@@ -300,7 +307,10 @@
             bind:value={discordDraft}
             placeholder="Invite link or code"
           />
-          <div class="society-edit-hint">Only the invite code is stored.</div>
+          <label class="society-edit-checkbox">
+            <input type="checkbox" bind:checked={discordPublicDraft} />
+            Public — visible to everyone (otherwise members only)
+          </label>
           {#if descriptionError}
             <div class="dialog-error">{descriptionError}</div>
           {:else if descriptionStatus}
@@ -526,8 +536,21 @@
     color: var(--text-color);
   }
 
-  .society-edit-hint {
-    font-size: 11px;
+  .society-edit-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--text-muted, #999);
+    cursor: pointer;
+  }
+
+  .society-edit-checkbox input[type="checkbox"] {
+    cursor: pointer;
+  }
+
+  .meta-muted {
+    font-style: italic;
     color: var(--text-muted, #999);
   }
 

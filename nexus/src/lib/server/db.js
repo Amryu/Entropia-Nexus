@@ -519,7 +519,7 @@ export async function updateUserSociety(userId, societyId = null) {
 
 export async function getSocietyById(societyId) {
   const query = `
-      SELECT id, name, abbreviation, description, discord_code, leader_id
+      SELECT id, name, abbreviation, description, discord_code, discord_public, leader_id
       FROM societies
       WHERE id = $1
     `;
@@ -529,7 +529,7 @@ export async function getSocietyById(societyId) {
 
 export async function getSocietyByName(name) {
   const query = `
-      SELECT id, name, abbreviation, description, discord_code, leader_id
+      SELECT id, name, abbreviation, description, discord_code, discord_public, leader_id
       FROM societies
       WHERE LOWER(name) = LOWER($1)
     `;
@@ -647,15 +647,16 @@ export async function countSocietyJoinRequests(societyId, status = 'Pending') {
   return rows[0]?.count ?? 0;
 }
 
-export async function updateSocietyDetails(societyId, description = null, discordCode = null) {
+export async function updateSocietyDetails(societyId, description = null, discordCode = null, discordPublic = false) {
   const query = `
     UPDATE societies
     SET description = $2,
-        discord_code = $3
+        discord_code = $3,
+        discord_public = $4
     WHERE id = $1
-    RETURNING id, name, abbreviation, description, discord_code, leader_id
+    RETURNING id, name, abbreviation, description, discord_code, discord_public, leader_id
   `;
-  const { rows } = await pool.query(query, [societyId, description, discordCode]);
+  const { rows } = await pool.query(query, [societyId, description, discordCode, discordPublic]);
   return rows[0];
 }
 
