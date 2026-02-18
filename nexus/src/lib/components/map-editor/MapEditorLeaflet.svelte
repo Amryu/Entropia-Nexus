@@ -638,7 +638,7 @@
               }
               dispatch('shapeEdited', { locId, entropiaData });
             }
-          }, 300);
+          }, 80);
         });
       }
 
