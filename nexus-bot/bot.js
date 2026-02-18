@@ -1406,6 +1406,17 @@ async function checkYouTubeVideos(channel, creator) {
 
   if (lastVideoId === latestVideo.videoId) return; // No new video
 
+  // Only notify for videos published within the last 48 hours
+  const MAX_VIDEO_AGE_MS = 48 * 60 * 60 * 1000;
+  if (latestVideo.publishedAt) {
+    const publishedAge = Date.now() - new Date(latestVideo.publishedAt).getTime();
+    if (publishedAge > MAX_VIDEO_AGE_MS) {
+      // Old video — update stored ID silently (e.g. playlist reorder)
+      await setBotConfig(configKey, latestVideo.videoId);
+      return;
+    }
+  }
+
   const channelName = cached_data.channelName || creator.name;
   const embed = new EmbedBuilder()
     .setColor(0xFF0000)
