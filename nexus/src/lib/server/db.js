@@ -4431,7 +4431,7 @@ export async function getGuideTree() {
 
 export async function getPublishedAnnouncements(limit = 10) {
   const result = await pool.query(
-    `SELECT id, title, summary, link, image_url, pinned, author_id, created_at,
+    `SELECT id, title, summary, link, image_url, pinned, author_id, created_at, source,
             content_html IS NOT NULL AND content_html != '' AS has_content
      FROM announcements
      WHERE published = true
@@ -4442,6 +4442,26 @@ export async function getPublishedAnnouncements(limit = 10) {
   return result.rows;
 }
 
+export async function getSteamNewsCount() {
+  const result = await pool.query(
+    `SELECT COUNT(*)::int AS count FROM announcements WHERE source = 'steam'`
+  );
+  return result.rows[0].count;
+}
+
+export async function upsertSteamNews({ title, summary, link, content_html, source_id, created_at }) {
+  const result = await pool.query(
+    `INSERT INTO announcements (title, summary, link, content_html, source, source_id, published, created_at)
+     VALUES ($1, $2, $3, $4, 'steam', $5, true, $6)
+     ON CONFLICT (source, source_id) WHERE source_id IS NOT NULL
+     DO UPDATE SET title = EXCLUDED.title, summary = EXCLUDED.summary,
+       content_html = EXCLUDED.content_html, link = EXCLUDED.link
+     RETURNING id`,
+    [title, summary, link, content_html, source_id, created_at]
+  );
+  return result.rows[0];
+}
+
 export async function getAnnouncementsAdmin(page = 1, limit = 20) {
   const offset = (page - 1) * limit;
   const [dataResult, countResult] = await Promise.all([
@@ -4449,7 +4469,7 @@ export async function getAnnouncementsAdmin(page = 1, limit = 20) {
       `SELECT a.*, u.global_name AS author_name
        FROM announcements a
        LEFT JOIN users u ON u.id = a.author_id
-       ORDER BY a.created_at DESC
+       ORDER BY a.source ASC, a.created_at DESC
        LIMIT $1 OFFSET $2`,
       [limit, offset]
     ),
@@ -4526,6 +4546,25 @@ export async function getUpcomingEvents(limit = 5) {
        AND (e.start_date >= NOW() - INTERVAL '1 day'
             OR (e.end_date IS NOT NULL AND e.end_date >= NOW()))
      ORDER BY e.start_date ASC
+     LIMIT $1`,
+    [limit]
+  );
+  return result.rows;
+}
+
+export async function getPastEvents(limit = 50) {
+  const result = await pool.query(
+    `SELECT e.id, e.title, e.description, e.start_date, e.end_date,
+            e.location, e.type, e.link, e.image_url,
+            u.global_name AS submitted_by_name
+     FROM events e
+     LEFT JOIN users u ON u.id = e.submitted_by
+     WHERE e.state = 'approved'
+       AND (
+         (e.end_date IS NOT NULL AND e.end_date < NOW())
+         OR (e.end_date IS NULL AND e.start_date < NOW() - INTERVAL '1 day')
+       )
+     ORDER BY e.start_date DESC
      LIMIT $1`,
     [limit]
   );

@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { getPublishedAnnouncements, getUpcomingEvents, getActiveCreators } from '$lib/server/db.js';
-import { getCachedSteamNews, mergeAndSortNews } from '$lib/server/news-cache.js';
+import { formatNewsFeed } from '$lib/server/news-cache.js';
 
 const MAX_STREAMS = 6;
 const MAX_VIDEOS = 6;
@@ -68,38 +68,41 @@ function processCreators(creators) {
     return b.viewerCount - a.viewerCount;
   });
 
-  // Collect YouTube videos, evenly distributed across creators
-  const ytCreators = creators.filter(c =>
-    c.platform === 'youtube' && c.cached_data?.recentVideos?.length > 0
-  );
+  // Collect YouTube videos: 1 per creator, more if fewer than 6 creators
+  const ytCreators = creators
+    .filter(c => c.platform === 'youtube' &&
+      ((c.cached_data?.playlistVideos?.length > 0) || (c.cached_data?.recentVideos?.length > 0)))
+    .sort((a, b) => a.display_order - b.display_order);
 
   if (ytCreators.length > 0) {
-    const indices = new Map();
-    ytCreators.forEach(c => indices.set(c.id, 0));
+    const videosPerCreator = ytCreators.length < 6
+      ? Math.ceil(MAX_VIDEOS / ytCreators.length)
+      : 1;
 
-    // Round-robin: take 1 video from each creator per pass
-    while (videos.length < MAX_VIDEOS) {
-      let added = false;
-      for (const c of ytCreators) {
-        if (videos.length >= MAX_VIDEOS) break;
-        const idx = indices.get(c.id);
-        const vids = c.cached_data.recentVideos;
-        if (idx < vids.length) {
-          videos.push({
-            videoId: vids[idx].videoId,
-            title: vids[idx].title,
-            thumbnail: vids[idx].thumbnail,
-            publishedAt: vids[idx].publishedAt,
-            creatorName: getDisplayName(c),
-            creatorAvatar: getAvatar(c),
-            channelUrl: c.channel_url
-          });
-          indices.set(c.id, idx + 1);
-          added = true;
-        }
+    const allCandidates = [];
+    for (const c of ytCreators) {
+      const vids = (c.cached_data.playlistVideos || c.cached_data.recentVideos).slice(0, videosPerCreator);
+      for (const v of vids) {
+        allCandidates.push({
+          videoId: v.videoId,
+          title: v.title,
+          thumbnail: v.thumbnail,
+          publishedAt: v.publishedAt,
+          creatorName: getDisplayName(c),
+          creatorAvatar: getAvatar(c),
+          channelUrl: c.channel_url,
+          displayOrder: c.display_order
+        });
       }
-      if (!added) break;
     }
+
+    // Sort: display_order ASC, then publishedAt DESC
+    allCandidates.sort((a, b) => {
+      if (a.displayOrder !== b.displayOrder) return a.displayOrder - b.displayOrder;
+      return new Date(b.publishedAt) - new Date(a.publishedAt);
+    });
+
+    videos.push(...allCandidates.slice(0, MAX_VIDEOS));
   }
 
   return {
@@ -109,14 +112,13 @@ function processCreators(creators) {
 }
 
 export async function load() {
-  const [announcements, steamNews, events, creators] = await Promise.all([
+  const [announcements, events, creators] = await Promise.all([
     getPublishedAnnouncements(6),
-    getCachedSteamNews(),
     getUpcomingEvents(5),
     getActiveCreators()
   ]);
 
-  const news = mergeAndSortNews(announcements, steamNews);
+  const news = formatNewsFeed(announcements);
   const { streams, videos } = processCreators(creators);
 
   return {

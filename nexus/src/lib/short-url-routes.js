@@ -81,7 +81,9 @@ export const SHORT_ROUTE_MAP = Object.freeze({
   mz: '/market/shops-legacy',
   ev: '/events',
   es: '/events/submit',
-  nw: '/news'
+  nw: '/news',
+  vi: '/videos',
+  st: '/streams'
 });
 
 /**
@@ -141,7 +143,9 @@ export const PREFERRED_SHORT_ROUTE_BY_PREFIX = Object.freeze({
   '/market/shops-legacy': 'mz',
   '/events': 'ev',
   '/events/submit': 'es',
-  '/news': 'nw'
+  '/news': 'nw',
+  '/videos': 'vi',
+  '/streams': 'st'
 });
 
 /**

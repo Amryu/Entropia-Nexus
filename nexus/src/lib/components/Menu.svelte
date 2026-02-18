@@ -531,7 +531,6 @@
     'Home': [
       { label: 'News', url: 'news' },
       { label: 'Events', url: 'events' },
-      { label: 'Submit Event', url: 'submitEvent' },
     ],
     'Items': [
       { label: 'Weapons', url: 'weapons' },
@@ -637,7 +636,6 @@
     'pcforum': 'https://www.planetcalypsoforum.com',
     'news': '/',
     'events': '/#events',
-    'submitEvent': '/events/submit',
   };
 
   function getMenuItemUrl(menu: string, item: { label: string; url: string }) {

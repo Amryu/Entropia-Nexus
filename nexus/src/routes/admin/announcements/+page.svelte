@@ -74,6 +74,9 @@
             <tr class="clickable-row" on:click={() => goto(`/admin/announcements/${item.id}`)}>
               <td class="title-cell">
                 {item.title}
+                {#if item.source === 'steam'}
+                  <span class="badge badge-steam">Steam</span>
+                {/if}
                 {#if item.pinned}
                   <span class="badge badge-info">Pinned</span>
                 {/if}
@@ -236,6 +239,11 @@
   .badge-info {
     background: rgba(74, 158, 255, 0.15);
     color: var(--accent-color);
+  }
+
+  .badge-steam {
+    background: rgba(102, 192, 244, 0.12);
+    color: #66c0f4;
   }
 
   .pagination {

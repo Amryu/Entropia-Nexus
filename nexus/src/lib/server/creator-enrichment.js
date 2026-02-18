@@ -22,40 +22,55 @@ let twitchTokenExpiresAt = 0;
 // YouTube enrichment
 // ============================================
 
+function parseYouTubeRss(xml) {
+  const entries = xml.match(/<entry>[\s\S]*?<\/entry>/g);
+  if (!entries || entries.length === 0) return [];
+  const videos = [];
+  for (const entry of entries.slice(0, 6)) {
+    const videoId = entry.match(/<yt:videoId>([^<]+)<\/yt:videoId>/)?.[1];
+    const title = entry.match(/<title>([^<]+)<\/title>/)?.[1];
+    const published = entry.match(/<published>([^<]+)<\/published>/)?.[1];
+    if (videoId && title) {
+      videos.push({
+        videoId,
+        title,
+        thumbnail: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
+        publishedAt: published
+      });
+    }
+  }
+  return videos;
+}
+
+async function fetchYouTubeRss(param, value) {
+  const rssUrl = `https://www.youtube.com/feeds/videos.xml?${param}=${value}`;
+  const response = await fetch(rssUrl);
+  if (!response.ok) return [];
+  return parseYouTubeRss(await response.text());
+}
+
 async function fetchYouTubeData(channelId, playlistId) {
   if (!channelId && !playlistId) return null;
 
   const data = {};
 
-  // 1. RSS feed for recent videos (free, no API key needed)
+  // 1. RSS feed for recent channel videos (free, no API key needed)
   try {
-    const rssUrl = playlistId
-      ? `https://www.youtube.com/feeds/videos.xml?playlist_id=${playlistId}`
-      : `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`;
-    const rssResponse = await fetch(rssUrl);
-    if (rssResponse.ok) {
-      const xml = await rssResponse.text();
-      const entries = xml.match(/<entry>[\s\S]*?<\/entry>/g);
-      if (entries && entries.length > 0) {
-        data.recentVideos = [];
-        for (const entry of entries.slice(0, 6)) {
-          const videoId = entry.match(/<yt:videoId>([^<]+)<\/yt:videoId>/)?.[1];
-          const title = entry.match(/<title>([^<]+)<\/title>/)?.[1];
-          const published = entry.match(/<published>([^<]+)<\/published>/)?.[1];
-          if (videoId && title) {
-            data.recentVideos.push({
-              videoId,
-              title,
-              thumbnail: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
-              publishedAt: published
-            });
-          }
-        }
-        // Keep latestVideo for backward compatibility
-        if (data.recentVideos.length > 0) {
-          data.latestVideo = data.recentVideos[0];
-        }
-      }
+    if (channelId) {
+      data.recentVideos = await fetchYouTubeRss('channel_id', channelId);
+    }
+
+    // If playlist is set, also fetch playlist videos (sorted by publish date, newest first)
+    if (playlistId) {
+      const playlistVideos = await fetchYouTubeRss('playlist_id', playlistId);
+      playlistVideos.sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt));
+      data.playlistVideos = playlistVideos;
+    }
+
+    // latestVideo for backward compatibility — prefer playlist if set
+    const primaryVideos = data.playlistVideos || data.recentVideos;
+    if (primaryVideos?.length > 0) {
+      data.latestVideo = primaryVideos[0];
     }
   } catch (err) {
     console.error(`[creator-enrichment] YouTube RSS failed for ${channelId}:`, err.message);

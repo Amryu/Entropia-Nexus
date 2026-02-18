@@ -34,6 +34,14 @@ if (import.meta.env.SSR) {
   setInterval(() => {
     refreshStaleCreators().catch(err => console.error('[creator-enrichment] Error refreshing creators:', err));
   }, CREATOR_REFRESH_INTERVAL_MS).unref();
+
+  // Periodically sync Steam news to the announcements table
+  const { syncSteamNews } = await import('$lib/server/news-cache.js');
+  const STEAM_SYNC_INTERVAL_MS = 30 * 60_000; // 30 minutes
+  syncSteamNews().catch(err => console.error('[news-sync] Error syncing Steam news:', err));
+  setInterval(() => {
+    syncSteamNews().catch(err => console.error('[news-sync] Error syncing Steam news:', err));
+  }, STEAM_SYNC_INTERVAL_MS).unref();
 }
 
 const IMPERSONATE_COOKIE = 'nexus_impersonate';

@@ -21,6 +21,23 @@
   {#if announcement.summary}
     <meta name="description" content={announcement.summary} />
   {/if}
+  <link rel="canonical" href={`https://entropianexus.com/news/${announcement.id}`} />
+
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content={`https://entropianexus.com/news/${announcement.id}`} />
+  <meta property="og:title" content={announcement.title} />
+  {#if announcement.summary}
+    <meta property="og:description" content={announcement.summary} />
+  {/if}
+  <meta property="og:image" content={announcement.image_url || 'https://entropianexus.com/icon.png'} />
+  <meta property="og:site_name" content="Entropia Nexus" />
+
+  <meta name="twitter:card" content={announcement.image_url ? 'summary_large_image' : 'summary'} />
+  <meta name="twitter:title" content={announcement.title} />
+  {#if announcement.summary}
+    <meta name="twitter:description" content={announcement.summary} />
+  {/if}
+  <meta name="twitter:image" content={announcement.image_url || 'https://entropianexus.com/icon.png'} />
 </svelte:head>
 
 <div class="page-container">
@@ -34,6 +51,9 @@
     <header class="article-header">
       <h1>{announcement.title}</h1>
       <div class="article-meta">
+        <span class="source-badge" class:steam={announcement.source === 'steam'}>
+          {announcement.source === 'steam' ? 'EU News' : 'Nexus'}
+        </span>
         {#if announcement.author_name}
           <span class="author">By {announcement.author_name}</span>
           <span class="dot">&middot;</span>
@@ -61,13 +81,13 @@
     {#if announcement.link}
       <div class="external-link">
         <a href={announcement.link} target="_blank" rel="noopener noreferrer">
-          View original source &rarr;
+          {announcement.source === 'steam' ? 'View on Steam' : 'View original source'} &rarr;
         </a>
       </div>
     {/if}
 
     <div class="back-link">
-      <a href="/">&larr; Back to Home</a>
+      <a href="/news">&larr; Back to News</a>
     </div>
   </article>
 </div>
@@ -78,8 +98,6 @@
     padding-bottom: 2rem;
     max-width: 800px;
     margin: 0 auto;
-    height: 100%;
-    overflow-y: auto;
   }
 
   .breadcrumb {
@@ -128,6 +146,22 @@
     gap: 0.5rem;
     font-size: 0.875rem;
     color: var(--text-muted);
+  }
+
+  .source-badge {
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    background-color: rgba(59, 130, 246, 0.15);
+    color: var(--accent-color);
+  }
+
+  .source-badge.steam {
+    background-color: rgba(102, 192, 244, 0.12);
+    color: #66c0f4;
   }
 
   .author {

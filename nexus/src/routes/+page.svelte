@@ -83,9 +83,21 @@
 
 <svelte:head>
   <title>Entropia Nexus - Your Entropia Universe Resource</title>
-  <meta name="description" content="Your comprehensive resource for Entropia Universe. News, events, items, mobs, maps, tools and more." />
-  <meta name="keywords" content="Entropia Universe, Entropia, Entropia Nexus, EU, PE, Items, Mobs, Maps, Tools, MindArk, Wiki" />
+  <meta name="description" content="Your comprehensive resource for Entropia Universe. Browse items, mobs, maps, tools, calculators, market data, news and events - all in one place." />
+  <meta name="keywords" content="Entropia Universe, Entropia, Entropia Nexus, EU, PE, Items, Mobs, Maps, Tools, MindArk, Wiki, Market, Calculator" />
   <link rel="canonical" href="https://entropianexus.com" />
+
+  <meta property="og:type" content="website" />
+  <meta property="og:url" content="https://entropianexus.com" />
+  <meta property="og:title" content="Entropia Nexus - Your Entropia Universe Resource" />
+  <meta property="og:description" content="Your comprehensive resource for Entropia Universe. Browse items, mobs, maps, tools, calculators, market data, news and events." />
+  <meta property="og:image" content="https://entropianexus.com/icon.png" />
+  <meta property="og:site_name" content="Entropia Nexus" />
+
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="Entropia Nexus - Your Entropia Universe Resource" />
+  <meta name="twitter:description" content="Your comprehensive resource for Entropia Universe. Browse items, mobs, maps, tools, calculators, market data, news and events." />
+  <meta name="twitter:image" content="https://entropianexus.com/icon.png" />
 </svelte:head>
 
 <div class="home-page">
@@ -101,10 +113,11 @@
       <section class="section">
         <div class="section-header">
           <h2 class="section-title">Latest News</h2>
+          <a href="/news" class="section-action">More</a>
         </div>
         <div class="news-grid">
           {#each news as item}
-            <a href={item.url || '#'} class="news-card" target={item.source === 'steam' || (item.source === 'nexus' && !item.has_content) ? '_blank' : undefined} rel={item.source === 'steam' || (item.source === 'nexus' && !item.has_content) ? 'noopener' : undefined}>
+            <a href={item.url || '#'} class="news-card" target={!item.has_content ? '_blank' : undefined} rel={!item.has_content ? 'noopener' : undefined}>
               {#if item.image_url}
                 <div class="news-image" style="background-image: url({item.image_url})"></div>
               {/if}
@@ -134,7 +147,10 @@
       <section class="section" id="events">
         <div class="section-header">
           <h2 class="section-title">Events</h2>
-          <a href="/events/submit" class="section-action">Submit Event</a>
+          <div class="section-actions">
+            <a href="/events" class="section-action">More</a>
+            <a href="/events/submit" class="section-action">Submit Event</a>
+          </div>
         </div>
         <div class="events-list">
           {#each events as event}
@@ -181,6 +197,7 @@
       <section class="section">
         <div class="section-header">
           <h2 class="section-title">{allOffline ? 'Channels' : 'Live Streams'}</h2>
+          <a href="/streams" class="section-action">More</a>
         </div>
         <div class="preview-grid">
           {#each streams as stream}
@@ -229,6 +246,7 @@
       <section class="section">
         <div class="section-header">
           <h2 class="section-title">Latest Videos</h2>
+          <a href="/videos" class="section-action">More</a>
         </div>
         <div class="preview-grid">
           {#each videos as video}
@@ -381,6 +399,11 @@
     font-size: 0.875rem;
     color: var(--accent-color);
     text-decoration: none;
+  }
+
+  .section-actions {
+    display: flex;
+    gap: 1rem;
   }
 
   .section-action:hover {
@@ -667,14 +690,19 @@
   .offline-avatar {
     width: 52px;
     height: 52px;
+    min-width: 52px;
+    min-height: 52px;
     border-radius: 50%;
     border: 2px solid rgba(255, 255, 255, 0.25);
     object-fit: cover;
+    flex-shrink: 0;
   }
 
   .no-thumbnail .offline-avatar {
     width: 64px;
     height: 64px;
+    min-width: 64px;
+    min-height: 64px;
     border-color: var(--border-color);
   }
 
@@ -758,10 +786,9 @@
     font-size: 0.8125rem;
     font-weight: 600;
     line-height: 1.35;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
+    white-space: nowrap;
     overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .preview-meta {
