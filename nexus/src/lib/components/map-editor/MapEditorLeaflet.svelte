@@ -12,6 +12,8 @@
   export let pendingChanges = new Map();
   export let editMode = false;
   export let previewShape = null;
+  export let dbPendingChanges = [];
+  export let currentUserId = null;
 
   const dispatch = createEventDispatcher();
 
@@ -19,6 +21,7 @@
   let map;
   let imageOverlay;
   let layerGroup;
+  let dbChangesLayerGroup;
   let drawControl;
   let transforms = null;
   let imgWidth = 0;
@@ -60,6 +63,7 @@
   ];
 
   $: if (map && locations && pendingChanges !== undefined && !_editingActive) rebuildLayers();
+  $: if (map && dbPendingChanges && transforms) rebuildDbChangesOverlay();
   $: if (map && filteredLocationIds !== undefined) updateVisibility();
   $: if (map && selectedId !== undefined) updateSelection();
   $: if (map && editMode !== undefined) toggleDrawControl();
@@ -110,6 +114,7 @@
     });
 
     layerGroup = L.layerGroup().addTo(map);
+    dbChangesLayerGroup = L.layerGroup().addTo(map);
 
     // Draw events — use string literal; L.Draw.Event.CREATED may be undefined with ESM imports
     map.on('draw:created', (e) => {
@@ -444,6 +449,81 @@
       return { ...base, borderColor: '#00ff00', dashArray: '6,3', weight: 3 };
     }
     return base;
+  }
+
+  // --- DB Pending Changes Overlay ---
+  const DB_CHANGE_STYLE = {
+    color: '#a855f7',       // purple
+    fillColor: '#a855f7',
+    weight: 2,
+    opacity: 0.7,
+    fillOpacity: 0.1,
+    dashArray: '4,4',
+    interactive: false
+  };
+  const DB_CHANGE_POINT_STYLE = {
+    radius: 7,
+    color: '#a855f7',
+    fillColor: '#a855f7',
+    weight: 2,
+    opacity: 0.7,
+    fillOpacity: 0.3,
+    dashArray: '4,4',
+    interactive: false
+  };
+
+  function rebuildDbChangesOverlay() {
+    if (!dbChangesLayerGroup || !transforms || !L) return;
+    dbChangesLayerGroup.clearLayers();
+
+    for (const change of dbPendingChanges) {
+      // Skip own changes (they're already shown via pendingChanges or the location itself)
+      if (change.author_id === currentUserId) continue;
+
+      const data = change.data;
+      if (!data?.Properties) continue;
+
+      const props = data.Properties;
+      const authorLabel = change.author_name || change.author_eu_name || `User #${change.author_id}`;
+      const stateLabel = change.state === 'Draft' ? 'Draft' : 'Pending';
+      const typeLabel = change.type === 'Create' ? 'New' : (change.type === 'Delete' ? 'Delete' : 'Edit');
+      const tooltip = `${typeLabel}: ${data.Name || '(unnamed)'}\nby ${authorLabel} (${stateLabel})`;
+
+      // Areas with shape data
+      if (props.Shape && props.Data) {
+        const shapeData = props.Data;
+        let layer;
+
+        if (props.Shape === 'Circle' && shapeData.x != null) {
+          const [lat, lng] = transforms.entropiaToLeaflet(shapeData.x, shapeData.y);
+          const radius = (shapeData.radius || 0) / transforms.ratio;
+          layer = L.circle([lat, lng], { ...DB_CHANGE_STYLE, radius });
+        } else if (props.Shape === 'Rectangle' && shapeData.x != null) {
+          const [lat1, lng1] = transforms.entropiaToLeaflet(shapeData.x, shapeData.y);
+          const [lat2, lng2] = transforms.entropiaToLeaflet(shapeData.x + (shapeData.width || 0), shapeData.y + (shapeData.height || 0));
+          layer = L.rectangle([[lat1, lng1], [lat2, lng2]], DB_CHANGE_STYLE);
+        } else if (props.Shape === 'Polygon' && shapeData.vertices?.length >= 6) {
+          const latLngs = [];
+          for (let i = 0; i < shapeData.vertices.length; i += 2) {
+            const [lat, lng] = transforms.entropiaToLeaflet(shapeData.vertices[i], shapeData.vertices[i + 1]);
+            latLngs.push([lat, lng]);
+          }
+          layer = L.polygon(latLngs, DB_CHANGE_STYLE);
+        }
+
+        if (layer) {
+          layer.bindTooltip(tooltip, { sticky: true });
+          dbChangesLayerGroup.addLayer(layer);
+        }
+      }
+      // Point locations (no shape)
+      else if (props.Coordinates?.Longitude != null) {
+        const [lat, lng] = transforms.entropiaToLeaflet(props.Coordinates.Longitude, props.Coordinates.Latitude);
+        const marker = L.circleMarker([lat, lng], DB_CHANGE_POINT_STYLE);
+        marker.bindTooltip(tooltip, { direction: 'top', offset: [0, -8] });
+        dbChangesLayerGroup.addLayer(marker);
+      }
+    }
   }
 
   function updateVisibility() {

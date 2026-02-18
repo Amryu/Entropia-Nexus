@@ -23,24 +23,45 @@
   $: deleteCount = changeList.filter(c => c.action === 'delete').length;
 
   function buildEntityBody(change) {
+    // Delete changes: construct body from original
+    if (change.action === 'delete') {
+      const orig = change.original;
+      if (!orig) return null;
+      return {
+        Id: orig.Id,
+        Name: orig.Name,
+        Properties: {
+          Type: orig.Properties?.Type || 'Area',
+          Coordinates: {
+            Longitude: orig.Properties?.Coordinates?.Longitude ?? null,
+            Latitude: orig.Properties?.Coordinates?.Latitude ?? null,
+            Altitude: orig.Properties?.Coordinates?.Altitude ?? null
+          }
+        },
+        Planet: { Name: planet?.Name }
+      };
+    }
+
     const mod = change.modified;
     if (!mod) return null;
 
     const isArea = mod.locationType === 'Area';
 
+    // Always submit as Location entity — Areas are Location extensions
+    const props = {
+      Type: isArea ? 'Area' : (mod.locationType || 'Teleporter'),
+      Coordinates: {
+        Longitude: mod.longitude ?? null,
+        Latitude: mod.latitude ?? null,
+        Altitude: mod.altitude ?? null
+      }
+    };
+
     if (isArea) {
-      // Submit as Area entity
-      const props = {
-        Description: null,
-        Type: mod.areaType || null,
-        Shape: mod.shape || null,
-        Data: mod.shapeData || null,
-        Coordinates: {
-          Longitude: mod.longitude ?? null,
-          Latitude: mod.latitude ?? null,
-          Altitude: mod.altitude ?? null
-        }
-      };
+      props.AreaType = mod.areaType || null;
+      props.Shape = mod.shape || null;
+      props.Data = mod.shapeData || null;
+
       // LandArea extension fields
       if (mod.areaType === 'LandArea') {
         props.TaxRateHunting = mod.taxRateHunting ?? null;
@@ -48,29 +69,14 @@
         props.TaxRateShops = mod.taxRateShops ?? null;
         if (mod.landAreaOwner) props.LandAreaOwnerName = mod.landAreaOwner;
       }
-      return {
-        Id: change.action === 'edit' ? change.original?.Id : null,
-        Name: mod.name,
-        Properties: props,
-        Planet: { Name: planet?.Name }
-      };
-    } else {
-      // Submit as Location entity
-      const body = {
-        Id: change.action === 'edit' ? change.original?.Id : null,
-        Name: mod.name,
-        Properties: {
-          Type: mod.locationType || 'Teleporter',
-          Coordinates: {
-            Longitude: mod.longitude ?? null,
-            Latitude: mod.latitude ?? null,
-            Altitude: mod.altitude ?? null
-          }
-        },
-        Planet: { Name: planet?.Name }
-      };
-      return body;
     }
+
+    return {
+      Id: change.action === 'edit' ? change.original?.Id : null,
+      Name: mod.name,
+      Properties: props,
+      Planet: { Name: planet?.Name }
+    };
   }
 
   async function submitChange(change) {
@@ -79,9 +85,7 @@
     changeStatuses = changeStatuses;
 
     try {
-      const isArea = change.modified?.locationType === 'Area';
-      const entityType = isArea ? 'Area' : 'Location';
-      const changeType = change.action === 'add' ? 'Create' : 'Update';
+      const changeType = change.action === 'add' ? 'Create' : (change.action === 'delete' ? 'Delete' : 'Update');
       const body = buildEntityBody(change);
 
       if (!body) {
@@ -92,7 +96,7 @@
 
       const result = await apiPost(
         fetch,
-        `/api/changes?type=${changeType}&entity=${entityType}&state=Pending`,
+        `/api/changes?type=${changeType}&entity=Location&state=Pending`,
         body
       );
 
@@ -119,8 +123,6 @@
     let successCount = 0;
 
     for (const change of changeList) {
-      // Skip deletes — info-only in public mode
-      if (change.action === 'delete') continue;
       // Skip already submitted
       if (changeStatuses[change.key] === 'success') continue;
 
@@ -338,15 +340,9 @@
       {/each}
     </div>
 
-    {#if deleteCount > 0}
-      <div class="delete-note">
-        Delete entries are info-only. Use "Copy Delete Info" on individual locations, or Multi-Select to copy.
-      </div>
-    {/if}
-
     <div class="changes-actions">
-      <button class="btn btn-primary" on:click={submitAll} disabled={submitting || (addCount + editCount === 0)}>
-        {submitting ? 'Submitting...' : `Submit ${addCount + editCount} Change(s)`}
+      <button class="btn btn-primary" on:click={submitAll} disabled={submitting || changeList.length === 0}>
+        {submitting ? 'Submitting...' : `Submit ${changeList.length} Change(s)`}
       </button>
       <button class="btn btn-danger" on:click={clearAll} disabled={submitting}>
         Clear All

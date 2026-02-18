@@ -15,11 +15,30 @@
   /** @type {'admin' | 'public'} */
   export let mode = 'admin';
 
+  // --- DB pending changes (from all users) ---
+  /** @type {Array} All pending changes for this planet from the database */
+  export let dbPendingChanges = [];
+  export let currentUserId = null;
+  export let isAdmin = false;
+
   // --- Bindable state (parent reads/controls) ---
   export let pendingChanges = new Map();
   export let rightPanel = 'editor'; // 'editor' | 'mobEditor' | <any other value shows output slot>
   export let mapComponent = undefined;
   export let changeCount = 0;
+
+  // --- Locked locations (active changes from other users) ---
+  $: lockedLocationMap = (() => {
+    const map = new Map();
+    for (const c of dbPendingChanges) {
+      if (c.author_id === currentUserId) continue;
+      const entityId = c.data?.Id;
+      if (entityId && c.type === 'Update') {
+        map.set(entityId, c);
+      }
+    }
+    return map;
+  })();
 
   // --- Internal state ---
   let selectedId = null;
@@ -185,6 +204,8 @@
 
   function handleEditLocation(e) {
     const { original, modified } = e.detail;
+    // Block editing if locked by another user (unless admin)
+    if (!isAdmin && original?.Id && lockedLocationMap.has(original.Id)) return;
     const existingChange = pendingChanges.get(original.Id);
     if (existingChange?.action === 'add') {
       // Editing a pending add: merge into the existing add entry, don't overwrite with 'edit'
@@ -301,6 +322,8 @@
 
   function handleShapeEdited(e) {
     const { locId, entropiaData } = e.detail;
+    // Block shape editing if locked by another user (unless admin)
+    if (!isAdmin && lockedLocationMap.has(locId)) return;
     const loc = locations.find(l => l.Id === locId);
     const existing = pendingChanges.get(locId);
 
@@ -489,6 +512,8 @@
         {pendingChanges}
         {editMode}
         {previewShape}
+        {dbPendingChanges}
+        {currentUserId}
         on:select={handleMapSelect}
         on:drawCreated={handleDrawCreated}
         on:shapeEdited={handleShapeEdited}
@@ -517,6 +542,8 @@
         isNew={isNewLocation}
         {drawnShapeData}
         {mode}
+        {isAdmin}
+        lockedBy={selectedLocation?.Id ? lockedLocationMap.get(selectedLocation.Id) : null}
         allLocations={locations}
         on:add={handleAddLocation}
         on:edit={handleEditLocation}

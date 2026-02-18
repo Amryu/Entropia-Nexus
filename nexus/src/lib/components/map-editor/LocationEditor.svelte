@@ -11,8 +11,13 @@
   export let drawnShapeData = null;  // { shape, data, center } from drawing
   /** @type {'admin' | 'public'} */
   export let mode = 'admin';
+  export let isAdmin = false;
+  /** If this location is locked by another user's pending change, this is the change object */
+  export let lockedBy = null;
   /** All locations on current planet (for parent picker) */
   export let allLocations = [];
+
+  $: isLocked = !!lockedBy && !isAdmin;
 
   const dispatch = createEventDispatcher();
 
@@ -379,6 +384,22 @@
     gap: 4px;
   }
 
+  .lock-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 10px 12px;
+    margin-top: 4px;
+    background: rgba(168, 85, 247, 0.1);
+    border: 1px solid rgba(168, 85, 247, 0.3);
+    border-radius: 4px;
+    font-size: 12px;
+    color: var(--text-color);
+  }
+  .lock-icon { font-size: 16px; flex-shrink: 0; }
+  .lock-title { font-weight: 600; margin-bottom: 2px; }
+  .lock-detail { color: var(--text-muted); font-size: 11px; }
+
   .actions {
     display: flex;
     flex-direction: column;
@@ -396,7 +417,8 @@
     background: var(--secondary-color);
     color: var(--text-color);
   }
-  .btn:hover { background: var(--hover-color); }
+  .btn:hover:not(:disabled) { background: var(--hover-color); }
+  .btn:disabled { opacity: 0.5; cursor: default; }
 
   .btn-primary {
     background: var(--accent-color);
@@ -613,8 +635,18 @@
 
     <div class="section-divider"></div>
 
+    {#if isLocked}
+      <div class="lock-notice">
+        <span class="lock-icon">&#x1F512;</span>
+        <div>
+          <div class="lock-title">Locked by another user</div>
+          <div class="lock-detail">{lockedBy.author_name || lockedBy.author_eu_name || 'Another user'} has a pending {lockedBy.state?.toLowerCase() || ''} change for this location.</div>
+        </div>
+      </div>
+    {/if}
+
     <div class="actions">
-      <button class="btn btn-primary" on:click={handleSave}>
+      <button class="btn btn-primary" on:click={handleSave} disabled={isLocked}>
         {isNew ? 'Add Location' : 'Save Changes'}
       </button>
       {#if !isNew && location?._isPendingAdd}
@@ -622,7 +654,7 @@
           Remove
         </button>
       {:else if !isNew}
-        <button class="btn btn-danger" on:click={handleDelete}
+        <button class="btn btn-danger" on:click={handleDelete} disabled={isLocked}
           title={mode === 'public' ? 'Copies location details to your clipboard — send this to an admin if you believe this location should be deleted' : null}
         >
           {mode === 'public' ? 'Copy Delete Info' : 'Mark for Deletion'}

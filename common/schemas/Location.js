@@ -92,6 +92,10 @@ export const Location = {
         "LandAreaOwnerId": {
           "type": ["string", "integer", "null"],
           "default": null
+        },
+        "LandAreaOwnerName": {
+          "type": ["string", "null"],
+          "default": null
         }
       },
       "required": ["Type", "Coordinates"]

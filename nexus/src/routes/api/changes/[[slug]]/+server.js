@@ -111,7 +111,7 @@ export async function GET({ params, url }) {
     if (invalidEntities.length > 0) {
       return getResponse({ error: `Invalid entity. Must be one of: ${validEntities.join(', ')}` }, 400);
     }
-    filters.entity = entityList.join(',');
+    filters.entity = entityList.length === 1 ? entityList[0] : entityList;
   }
 
   // Parse type filter (Create, Update, Delete)
@@ -137,6 +137,12 @@ export async function GET({ params, url }) {
   if (state) {
     const states = state.split(',').map(s => s.trim());
     filters.state = states.length === 1 ? states[0] : states;
+  }
+
+  // Parse planet filter (for map editor: all pending changes on a planet)
+  const planetFilter = url.searchParams.get('planet');
+  if (planetFilter) {
+    filters.planet = planetFilter;
   }
 
   // Parse pagination

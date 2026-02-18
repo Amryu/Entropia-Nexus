@@ -3066,6 +3066,10 @@ export async function getChangesFiltered(filters = {}, page = 1, limit = 20) {
     whereConditions.push(`c.data->>'Name' ILIKE $${paramIndex++}`);
     params.push(`%${filters.search}%`);
   }
+  if (filters.planet) {
+    whereConditions.push(`c.data->'Planet'->>'Name' = $${paramIndex++}`);
+    params.push(filters.planet);
+  }
 
   const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
 

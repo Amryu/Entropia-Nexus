@@ -1272,6 +1272,9 @@
         {allMobs}
         editMode={true}
         mode="public"
+        dbPendingChanges={data.planetPendingChanges || []}
+        currentUserId={user?.id}
+        isAdmin={user?.grants?.includes('wiki.approve') || false}
         bind:pendingChanges={editorPendingChanges}
         bind:rightPanel={editorRightPanel}
         bind:changeCount={editorChangeCount}

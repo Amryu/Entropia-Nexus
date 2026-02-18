@@ -11,6 +11,7 @@
   let selectedPlanet = null;
   let locations = [];
   let allMobs = [];
+  let planetPendingChanges = [];
   let loading = false;
   let editMode = false;
   let workspace;
@@ -51,6 +52,14 @@
       if (!allMobs.length) {
         const mobsData = await apiCall(fetch, '/mobs');
         allMobs = mobsData || [];
+      }
+
+      // Load all pending changes for this planet (any author)
+      try {
+        const pendingRes = await fetch(`/api/changes?entity=Location,Area&state=Pending,Draft&planet=${encodeURIComponent(planet.Name)}&limit=100`);
+        planetPendingChanges = pendingRes.ok ? await pendingRes.json() : [];
+      } catch {
+        planetPendingChanges = [];
       }
     } catch (e) {
       console.error('Failed to load planet data:', e);
@@ -190,6 +199,9 @@
     {editMode}
     {loading}
     mode="admin"
+    dbPendingChanges={planetPendingChanges}
+    currentUserId={data.session?.user?.id}
+    isAdmin={true}
     bind:pendingChanges
     bind:rightPanel
     bind:mapComponent
