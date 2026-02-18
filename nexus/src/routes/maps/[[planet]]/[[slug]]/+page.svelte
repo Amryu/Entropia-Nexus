@@ -728,8 +728,8 @@
   function handleSearchBlur() {
     // Allow clicks on results before closing
     setTimeout(() => {
-      // On desktop, keep the list open if mouse is hovering over results
-      if (!isMobile && searchResultsHovered) return;
+      // On desktop, keep the dropdown open so the user can inspect the map while browsing results
+      if (!isMobile && searchQuery.trim()) return;
       searchOpen = false;
     }, 120);
   }
