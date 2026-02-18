@@ -22,14 +22,16 @@ let twitchTokenExpiresAt = 0;
 // YouTube enrichment
 // ============================================
 
-async function fetchYouTubeData(channelId) {
-  if (!channelId) return null;
+async function fetchYouTubeData(channelId, playlistId) {
+  if (!channelId && !playlistId) return null;
 
   const data = {};
 
   // 1. RSS feed for recent videos (free, no API key needed)
   try {
-    const rssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`;
+    const rssUrl = playlistId
+      ? `https://www.youtube.com/feeds/videos.xml?playlist_id=${playlistId}`
+      : `https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`;
     const rssResponse = await fetch(rssUrl);
     if (rssResponse.ok) {
       const xml = await rssResponse.text();
@@ -188,7 +190,7 @@ export async function refreshCreator(creator) {
   let cachedData = null;
 
   if (creator.platform === 'youtube') {
-    cachedData = await fetchYouTubeData(creator.channel_id);
+    cachedData = await fetchYouTubeData(creator.channel_id, creator.youtube_playlist_id);
   } else if (creator.platform === 'twitch') {
     cachedData = await fetchTwitchData(creator);
     // Preserve last known stream thumbnail for offline display

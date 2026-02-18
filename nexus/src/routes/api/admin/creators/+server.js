@@ -33,7 +33,8 @@ export async function POST({ request, locals }) {
     avatar_url: body.avatar_url?.trim() || null,
     active: body.active !== false,
     display_order: parseInt(body.display_order, 10) || 0,
-    added_by: user.id
+    added_by: user.id,
+    youtube_playlist_id: body.youtube_playlist_id?.trim() || null
   });
 
   return json(creator, { status: 201 });

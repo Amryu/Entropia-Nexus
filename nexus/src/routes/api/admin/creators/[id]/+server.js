@@ -38,6 +38,7 @@ export async function PUT({ params, request, locals }) {
   if ('avatar_url' in body) fields.avatar_url = body.avatar_url?.trim() || null;
   if ('active' in body) fields.active = !!body.active;
   if ('display_order' in body) fields.display_order = parseInt(body.display_order, 10) || 0;
+  if ('youtube_playlist_id' in body) fields.youtube_playlist_id = body.youtube_playlist_id?.trim() || null;
 
   const updated = await updateCreator(id, fields);
   return json(updated);

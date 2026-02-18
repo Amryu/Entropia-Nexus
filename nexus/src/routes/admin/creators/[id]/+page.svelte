@@ -16,6 +16,7 @@
   let avatar_url = '';
   let active = true;
   let display_order = 0;
+  let youtube_playlist_id = '';
 
   let isLoading = !isNew;
   let saving = false;
@@ -36,6 +37,7 @@
         avatar_url = data.avatar_url || '';
         active = data.active !== false;
         display_order = data.display_order || 0;
+        youtube_playlist_id = data.youtube_playlist_id || '';
       } catch (err) {
         error = err.message;
       } finally {
@@ -66,7 +68,8 @@
         description: description.trim() || null,
         avatar_url: avatar_url.trim() || null,
         active,
-        display_order: parseInt(display_order, 10) || 0
+        display_order: parseInt(display_order, 10) || 0,
+        youtube_playlist_id: youtube_playlist_id.trim() || null
       };
 
       let response;
@@ -180,6 +183,14 @@
           {/if}
         </span>
       </div>
+
+      {#if platform === 'youtube'}
+        <div class="form-group">
+          <label for="youtube_playlist_id">Playlist ID (optional)</label>
+          <input id="youtube_playlist_id" type="text" bind:value={youtube_playlist_id} placeholder="PLxxxxxxxxx" />
+          <span class="hint">If set, only videos from this playlist will be shown and trigger notifications. Leave empty for all uploads.</span>
+        </div>
+      {/if}
 
       <div class="form-group">
         <label for="description">Description</label>

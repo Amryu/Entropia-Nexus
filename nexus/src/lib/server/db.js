@@ -4655,17 +4655,17 @@ export async function getCreatorById(id) {
   return result.rows[0] || null;
 }
 
-export async function createCreator({ name, platform, channel_id, channel_url, description, avatar_url, active, display_order, added_by }) {
+export async function createCreator({ name, platform, channel_id, channel_url, description, avatar_url, active, display_order, added_by, youtube_playlist_id }) {
   const result = await pool.query(
-    `INSERT INTO content_creators (name, platform, channel_id, channel_url, description, avatar_url, active, display_order, added_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
-    [name, platform, channel_id || null, channel_url, description || null, avatar_url || null, active !== false, display_order || 0, added_by]
+    `INSERT INTO content_creators (name, platform, channel_id, channel_url, description, avatar_url, active, display_order, added_by, youtube_playlist_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+    [name, platform, channel_id || null, channel_url, description || null, avatar_url || null, active !== false, display_order || 0, added_by, youtube_playlist_id || null]
   );
   return result.rows[0];
 }
 
 export async function updateCreator(id, fields) {
-  const allowedFields = ['name', 'platform', 'channel_id', 'channel_url', 'description', 'avatar_url', 'active', 'display_order', 'cached_data', 'cached_at'];
+  const allowedFields = ['name', 'platform', 'channel_id', 'channel_url', 'description', 'avatar_url', 'active', 'display_order', 'cached_data', 'cached_at', 'youtube_playlist_id'];
   const sets = [];
   const values = [];
   let paramIndex = 1;
