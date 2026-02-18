@@ -399,33 +399,22 @@ async function checkUnverifiedUsers() {
   const unverifiedUsers = (await getUsers()).filter(x => !x.verified);
   console.log(`[VERIFY] Checking ${unverifiedUsers.length} unverified users`);
 
-  // Fetch only the specific members we need instead of the entire guild
+  // Fetch guild members in batches — Discord Gateway limits REQUEST_GUILD_MEMBERS to 100 user IDs
+  const MEMBER_FETCH_BATCH = 100;
   const userIds = unverifiedUsers.map(u => u.id);
-  console.log(`[VERIFY] User IDs to fetch (type=${typeof userIds[0]}): ${userIds.join(', ')}`);
-  if (userIds.length > 0) {
+  for (let i = 0; i < userIds.length; i += MEMBER_FETCH_BATCH) {
+    const batch = userIds.slice(i, i + MEMBER_FETCH_BATCH);
     try {
-      const fetched = await channel.guild.members.fetch({ user: userIds });
-      console.log(`[VERIFY] Batch fetch returned ${fetched.size} members: ${[...fetched.keys()].join(', ')}`);
+      const fetched = await channel.guild.members.fetch({ user: batch });
+      console.log(`[VERIFY] Batch ${Math.floor(i / MEMBER_FETCH_BATCH) + 1}: fetched ${fetched.size}/${batch.length} members`);
     } catch (e) {
-      console.error('[VERIFY] Error fetching members:', e.message);
+      console.error(`[VERIFY] Batch fetch error:`, e.message);
     }
   }
-  console.log(`[VERIFY] Guild member cache size: ${channel.guild.members.cache.size}`);
 
   for (const user of unverifiedUsers) {
     try {
-      let guildMember = channel.guild.members.cache.get(user.id);
-
-      // If batch fetch missed this user, try individual fetch
-      if (!guildMember) {
-        console.log(`[VERIFY] ${user.username}: cache miss for id=${user.id} (type=${typeof user.id}), trying individual fetch...`);
-        try {
-          guildMember = await channel.guild.members.fetch(user.id);
-          console.log(`[VERIFY] ${user.username}: individual fetch ${guildMember ? 'succeeded' : 'returned null'}`);
-        } catch (e) {
-          console.log(`[VERIFY] ${user.username}: individual fetch failed: ${e.message}`);
-        }
-      }
+      const guildMember = channel.guild.members.cache.get(user.id);
 
       if (!guildMember) {
         console.log(`[VERIFY] ${user.username}: not in guild, marking left_server_at`);
