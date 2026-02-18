@@ -69,14 +69,25 @@
     L = await import('leaflet');
     await import('leaflet-draw');
 
-    // Patch leaflet-draw readableArea bug: undeclared 'type' variable crashes in strict mode (ESM)
+    // Patch leaflet-draw strict-mode bugs: undeclared variable assignments crash in ESM.
     // See: https://github.com/Leaflet/Leaflet.draw/issues/1026
-    // The bug is an undeclared `type` variable assignment. We replace the function
-    // on both our L reference and window.L, since bundled leaflet-draw may use either.
     // CRS.Simple doesn't need real area formatting, so returning '' is safe.
     const safeReadableArea = function () { return ''; };
     if (L.GeometryUtil) L.GeometryUtil.readableArea = safeReadableArea;
     if (window.L?.GeometryUtil) window.L.GeometryUtil.readableArea = safeReadableArea;
+
+    // Patch undeclared `radius` in L.Edit.Circle._resize (same class of bug).
+    const EditCircle = L.Edit?.Circle?.prototype;
+    if (EditCircle?._resize) {
+      EditCircle._resize = function (latlng) {
+        var moveLatLng = this._moveMarker.getLatLng();
+        var radius = L.GeometryUtil.isVersion07x()
+          ? moveLatLng.distanceTo(latlng)
+          : this._map.distance(moveLatLng, latlng);
+        this._shape.setRadius(radius);
+        this._map.fire(L.Draw.Event.EDITRESIZE, { layer: this._shape });
+      };
+    }
 
     // Import CSS
     const linkLeaflet = document.createElement('link');

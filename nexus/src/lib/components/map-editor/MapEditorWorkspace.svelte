@@ -191,11 +191,16 @@
       Object.assign(existingChange.modified, modified);
       pendingChanges.set(original.Id, existingChange);
     } else {
-      pendingChanges.set(original.Id, { action: 'edit', original, modified });
+      // Preserve the true original from the first edit — `original` from the editor
+      // is the merged selectedLocation, not the raw location from locations[].
+      const trueOriginal = existingChange?.original || locations.find(l => l.Id === original.Id) || original;
+      pendingChanges.set(original.Id, { action: 'edit', original: trueOriginal, modified });
       // Show afterimage of original for committed edits
       showAfterimageForOriginal(original.Id);
     }
     pendingChanges = pendingChanges;
+    // Force rebuild so the map reflects the saved state even when _editingActive blocks the reactive
+    if (mapComponent?.forceRebuild) mapComponent.forceRebuild();
   }
 
   function handleDeleteLocation(e) {
