@@ -736,6 +736,18 @@ export async function createNotification(userId, type, message) {
   return rows[0];
 }
 
+export async function notifyAdmins(message) {
+  const { rows: admins } = await pool.query(
+    `SELECT id FROM ONLY users WHERE administrator = true`
+  );
+  for (const admin of admins) {
+    await pool.query(
+      `INSERT INTO notifications (user_id, type, message) VALUES ($1, 'Admin', $2)`,
+      [admin.id, message]
+    );
+  }
+}
+
 export async function getNotifications(userId, limit = 10, offset = 0) {
   const query = `
     SELECT id, user_id, type, message, date, read
@@ -4510,7 +4522,9 @@ export async function getUpcomingEvents(limit = 5) {
             u.global_name AS submitted_by_name
      FROM events e
      LEFT JOIN users u ON u.id = e.submitted_by
-     WHERE e.state = 'approved' AND e.start_date >= NOW() - INTERVAL '1 day'
+     WHERE e.state = 'approved'
+       AND (e.start_date >= NOW() - INTERVAL '1 day'
+            OR (e.end_date IS NOT NULL AND e.end_date >= NOW()))
      ORDER BY e.start_date ASC
      LIMIT $1`,
     [limit]
@@ -4683,7 +4697,7 @@ export async function getCreatorsForRefresh() {
     `SELECT * FROM content_creators
      WHERE active = true
        AND platform != 'kick'
-       AND (cached_at IS NULL OR cached_at < NOW() - INTERVAL '1 hour')
+       AND (cached_at IS NULL OR cached_at < NOW() - INTERVAL '3 minutes')
      ORDER BY cached_at ASC NULLS FIRST
      LIMIT 10`
   );

@@ -21,7 +21,7 @@ import {
   startUpload,
   endUpload
 } from '$lib/server/rateLimiter.js';
-import { getUserItemSetById } from '$lib/server/db.js';
+import { getUserItemSetById, notifyAdmins } from '$lib/server/db.js';
 
 // Rate limit configuration
 const RATE_LIMIT_MAX = 50; // Max uploads
@@ -210,6 +210,12 @@ export async function POST({ request, locals }) {
         await approveImage(entityType, entityId);
         approved = true;
       }
+    }
+
+    if (!approved) {
+      const displayName = user.eu_name || user.global_name || user.username;
+      const label = entityName || entityId;
+      notifyAdmins(`${displayName} uploaded an image for review: ${entityType} "${label}"`).catch(() => {});
     }
 
     return new Response(JSON.stringify({

@@ -1,6 +1,6 @@
 // @ts-nocheck
 import { json } from '@sveltejs/kit';
-import { getUpcomingEvents, createEvent, countPendingEventsByUser } from '$lib/server/db.js';
+import { getUpcomingEvents, createEvent, countPendingEventsByUser, notifyAdmins } from '$lib/server/db.js';
 import { requireVerified } from '$lib/server/auth.js';
 
 const MAX_PENDING_PER_USER = 5;
@@ -74,6 +74,9 @@ export async function POST({ request, locals, url }) {
     image_url: body.image_url?.trim() || null,
     submitted_by: user.id
   });
+
+  const displayName = user.eu_name || user.global_name || user.username;
+  notifyAdmins(`${displayName} submitted an event for review: ${event.title}`).catch(() => {});
 
   return json(event, { status: 201 });
 }
