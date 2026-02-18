@@ -500,6 +500,7 @@ async function checkUnverifiedUsers() {
 
           if (!botHasSentWelcome) {
             console.log(`[VERIFY] ${user.username}: no welcome yet, starting name collection`);
+            await setBotConfig(`verify_reminder:${user.id}`, String(Date.now()));
             await startNameCollectionFlow(existingThread, user, channel.guild);
           } else if (!user.eu_name) {
             console.log(`[VERIFY] ${user.username}: has welcome but no EU name, restarting name collection`);
@@ -530,6 +531,9 @@ async function checkUnverifiedUsers() {
       });
       await thread.members.add(user.id);
       console.log(`[VERIFY] ${user.username}: created thread ${thread.id}, starting name collection`);
+
+      // Seed the reminder cooldown so the user isn't nudged immediately
+      await setBotConfig(`verify_reminder:${user.id}`, String(Date.now()));
 
       await startNameCollectionFlow(thread, user, channel.guild);
     } catch (e) {
