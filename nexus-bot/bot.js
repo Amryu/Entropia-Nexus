@@ -409,114 +409,108 @@ async function checkUnverifiedUsers() {
   }
 
   for (const user of unverifiedUsers) {
-    const guildMember = channel.guild.members.cache.get(user.id);
+    try {
+      const guildMember = channel.guild.members.cache.get(user.id);
 
-    if (!guildMember) {
-      const existingThread = channel.threads.cache.find(thread => thread.name === `${user.username}-verification`);
-      if (existingThread && !existingThread.archived) {
-        try {
-          await existingThread.setArchived(true);
-          console.log(`Archived thread for user ${user.username} as they are no longer on the server.`);
-        } catch (e) {
-          console.error('Error archiving thread for user no longer on the server.', e);
-        }
-      }
-      continue;
-    }
-
-    let existingThread = channel.threads.cache.find(thread => thread.name === `${user.username}-verification`);
-
-    // Also check archived threads — they won't be in the cache.
-    // Paginate through all pages since there may be many archived threads.
-    if (!existingThread) {
-      try {
-        let hasMore = true;
-        let before;
-        while (hasMore && !existingThread) {
-          const archived = await channel.threads.fetchArchived({ type: 'private', before });
-          existingThread = archived.threads.find(thread => thread.name === `${user.username}-verification`);
-          hasMore = archived.hasMore;
-          if (hasMore && archived.threads.size > 0) {
-            before = archived.threads.last()?.id;
+      if (!guildMember) {
+        const existingThread = channel.threads.cache.find(thread => thread.name === `${user.username}-verification`);
+        if (existingThread && !existingThread.archived) {
+          try {
+            await existingThread.setArchived(true);
+            console.log(`Archived thread for user ${user.username} as they are no longer on the server.`);
+          } catch (e) {
+            console.error('Error archiving thread for user no longer on the server.', e);
           }
         }
-      } catch (e) {
-        console.error(`Error fetching archived threads: ${e.message}`);
+        continue;
       }
-    }
 
-    if (existingThread) {
-      // Unarchive if needed so the bot can send messages and collectors work
-      if (existingThread.archived) {
+      let existingThread = channel.threads.cache.find(thread => thread.name === `${user.username}-verification`);
+
+      // Also check archived threads — they won't be in the cache.
+      // Paginate through all pages since there may be many archived threads.
+      if (!existingThread) {
         try {
-          await existingThread.setArchived(false);
-          console.log(`Unarchived verification thread for ${user.username}`);
+          let hasMore = true;
+          let before;
+          while (hasMore && !existingThread) {
+            const archived = await channel.threads.fetchArchived({ type: 'private', before });
+            existingThread = archived.threads.find(thread => thread.name === `${user.username}-verification`);
+            hasMore = archived.hasMore;
+            if (hasMore && archived.threads.size > 0) {
+              before = archived.threads.last()?.id;
+            }
+          }
         } catch (e) {
-          console.error(`Error unarchiving thread for ${user.username}: ${e.message}`);
-          continue;
+          console.error(`Error fetching archived threads: ${e.message}`);
         }
       }
 
-      try {
-        await existingThread.members.add(user.id);
-      } catch (e) {
-        console.error(`Error adding user to thread. Are they on the server? ${e.message}`);
-      }
-
-      // Send a reminder if the thread has been idle for too long
-      await sendVerificationReminder(existingThread, user);
-
-      // Only start/resume the verification flow if one isn't already active
-      if (!activeVerificationFlows.has(user.id)) {
-        // Check if bot already sent the initial welcome message in this thread
-        const botHasSentWelcome = await threadHasBotMessage(existingThread);
-
-        if (!botHasSentWelcome) {
-          // Existing thread but bot never sent a message — send welcome and start name collection
-          await startNameCollectionFlow(existingThread, user, channel.guild);
-        } else if (!user.eu_name) {
-          // Bot sent welcome but user hasn't set name yet — restart name collection
-          const handle = collectEuName(existingThread, user.id, {
-            typerId: user.id,
-            guild: channel.guild,
-            onEnd: () => clearVerificationFlow(user.id),
-          });
-          replaceVerificationFlow(user.id, handle);
-        } else {
-          // User has name set but not verified — resume existing or start new verification
-          // Note: resumeVerification calls replaceVerificationFlow internally
-          await resumeVerification(existingThread, user.id, channel.guild, {
-            onEnd: () => clearVerificationFlow(user.id),
-          });
+      if (existingThread) {
+        // Unarchive if needed so the bot can send messages and collectors work.
+        // If unarchiving fails, discard the stale thread and fall through to create a new one.
+        if (existingThread.archived) {
+          try {
+            await existingThread.setArchived(false);
+            console.log(`Unarchived verification thread for ${user.username}`);
+          } catch (e) {
+            console.error(`Cannot reuse archived thread for ${user.username}, will create new: ${e.message}`);
+            existingThread = null;
+          }
         }
       }
 
-      continue;
+      if (existingThread) {
+        try {
+          await existingThread.members.add(user.id);
+        } catch (e) {
+          console.error(`Error adding user to thread. Are they on the server? ${e.message}`);
+        }
+
+        // Send a reminder if the thread has been idle for too long
+        await sendVerificationReminder(existingThread, user);
+
+        // Only start/resume the verification flow if one isn't already active
+        if (!activeVerificationFlows.has(user.id)) {
+          // Check if bot already sent the initial welcome message in this thread
+          const botHasSentWelcome = await threadHasBotMessage(existingThread);
+
+          if (!botHasSentWelcome) {
+            // Existing thread but bot never sent a message — send welcome and start name collection
+            await startNameCollectionFlow(existingThread, user, channel.guild);
+          } else if (!user.eu_name) {
+            // Bot sent welcome but user hasn't set name yet — restart name collection
+            const handle = collectEuName(existingThread, user.id, {
+              typerId: user.id,
+              guild: channel.guild,
+              onEnd: () => clearVerificationFlow(user.id),
+            });
+            replaceVerificationFlow(user.id, handle);
+          } else {
+            // User has name set but not verified — resume existing or start new verification
+            // Note: resumeVerification calls replaceVerificationFlow internally
+            await resumeVerification(existingThread, user.id, channel.guild, {
+              onEnd: () => clearVerificationFlow(user.id),
+            });
+          }
+        }
+
+        continue;
+      }
+
+      // Create new thread — private threads are only visible to added members
+      const thread = await channel.threads.create({
+        name: `${user.username}-verification`,
+        autoArchiveDuration: 10080,
+        reason: `Verification thread created for ${user.username}`,
+        type: ChannelType.PrivateThread,
+      });
+      await thread.members.add(user.id);
+
+      await startNameCollectionFlow(thread, user, channel.guild);
+    } catch (e) {
+      console.error(`Error processing unverified user ${user.username}: ${e.message}`);
     }
-
-    // Create new thread
-    const thread = await channel.threads.create({
-      name: `${user.username}-verification`,
-      autoArchiveDuration: 10080,
-      reason: `Verification thread created for ${user.username}`,
-      type: ChannelType.PrivateThread,
-      permissionOverwrites: [
-        {
-          id: user.id,
-          allow: ['VIEW_CHANNEL', 'SEND_MESSAGES'],
-        },
-        {
-          id: config.moderatorRoleId,
-          allow: ['VIEW_CHANNEL', 'SEND_MESSAGES'],
-        },
-        {
-          id: channel.guild.roles.everyone.id,
-          deny: ['VIEW_CHANNEL', 'SEND_MESSAGES'],
-        },
-      ],
-    });
-
-    await startNameCollectionFlow(thread, user, channel.guild);
   }
 }
 
