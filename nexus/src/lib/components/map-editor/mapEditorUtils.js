@@ -236,8 +236,6 @@ function polygonCentroid(vertices) {
 // ─── Snap Constants ─────────────────────────────────────────────────────────
 
 export const SERVER_TILE_SIZE = 8192;
-export const SNAP_THRESHOLD_PX = 25;
-export const SNAP_THRESHOLD_MAX_EU = 500;     // Max snap range for whole-shape dragging
 export const VERTEX_SNAP_THRESHOLD_PX = 10;
 export const VERTEX_SNAP_THRESHOLD_MAX_EU = 100; // Max snap range for vertex editing
 export const MIN_GRID_DISPLAY_PX = 50; // Minimum pixel spacing between displayed grid lines
@@ -312,105 +310,6 @@ export function getServerGridLines(planet) {
   }
 
   return { xLines, yLines };
-}
-
-/**
- * Compute snap offset for a shape's bounding box against candidates and grid lines.
- * @param {{ minX, maxX, minY, maxY }} bounds — current shape bounds in Entropia coords
- * @param {Array<{ minX, maxX, minY, maxY }>} candidates — other same-type shape bounds
- * @param {{ xLines: number[], yLines: number[] } | null} gridLines — server grid
- * @param {number} gap — desired gap between adjacent edges (Entropia units)
- * @param {number} threshold — max snap distance (Entropia units)
- * @returns {{ dx: number, dy: number, guideX: number|null, guideY: number|null }}
- */
-export function computeSnapOffset(bounds, candidates, gridLines, gap, threshold) {
-  let bestDx = 0, bestDy = 0;
-  let bestAbsDx = threshold + 1, bestAbsDy = threshold + 1;
-  let guideX = null, guideY = null;
-  const proximity = threshold * 2;
-
-  const proximitySq = proximity * proximity;
-
-  // Edge-to-edge snapping against candidates
-  for (const c of candidates) {
-    // Proximity filter: skip candidates far away (Euclidean distance between bounding boxes)
-    const xGap = Math.max(0, c.minX - bounds.maxX, bounds.minX - c.maxX);
-    const yGap = Math.max(0, c.minY - bounds.maxY, bounds.minY - c.maxY);
-    if (xGap * xGap + yGap * yGap > proximitySq) continue;
-
-    // Determine spatial relationship on each axis
-    const separatedOnX = bounds.maxX <= c.minX || bounds.minX >= c.maxX;
-    const separatedOnY = bounds.maxY <= c.minY || bounds.minY >= c.maxY;
-
-    // X-axis: adjacent pairings (always valid — they create gaps)
-    const xPairs = [
-      { corr: c.minX - gap - bounds.maxX, guide: c.minX },  // right→left (adjacent)
-      { corr: c.maxX + gap - bounds.minX, guide: c.maxX },  // left→right (adjacent)
-    ];
-    // X-axis: alignment pairings only when shapes are separated on Y
-    // (prevents pulling shapes into each other on the X axis)
-    if (separatedOnY) {
-      xPairs.push(
-        { corr: c.maxX - bounds.maxX, guide: c.maxX },       // right→right (align)
-        { corr: c.minX - bounds.minX, guide: c.minX },       // left→left (align)
-      );
-    }
-    for (const { corr, guide } of xPairs) {
-      const abs = Math.abs(corr);
-      if (abs <= threshold && abs < bestAbsDx) {
-        bestDx = corr; bestAbsDx = abs; guideX = guide;
-      }
-    }
-
-    // Y-axis: adjacent pairings (always valid)
-    const yPairs = [
-      { corr: c.minY - gap - bounds.maxY, guide: c.minY },
-      { corr: c.maxY + gap - bounds.minY, guide: c.maxY },
-    ];
-    // Y-axis: alignment pairings only when shapes are separated on X
-    if (separatedOnX) {
-      yPairs.push(
-        { corr: c.maxY - bounds.maxY, guide: c.maxY },
-        { corr: c.minY - bounds.minY, guide: c.minY },
-      );
-    }
-    for (const { corr, guide } of yPairs) {
-      const abs = Math.abs(corr);
-      if (abs <= threshold && abs < bestAbsDy) {
-        bestDy = corr; bestAbsDy = abs; guideY = guide;
-      }
-    }
-  }
-
-  // Grid line snapping (gap=0, just snap edge to grid)
-  if (gridLines) {
-    for (const gx of gridLines.xLines) {
-      const pairs = [
-        { corr: gx - bounds.minX, guide: gx },
-        { corr: gx - bounds.maxX, guide: gx },
-      ];
-      for (const { corr, guide } of pairs) {
-        const abs = Math.abs(corr);
-        if (abs <= threshold && abs < bestAbsDx) {
-          bestDx = corr; bestAbsDx = abs; guideX = guide;
-        }
-      }
-    }
-    for (const gy of gridLines.yLines) {
-      const pairs = [
-        { corr: gy - bounds.minY, guide: gy },
-        { corr: gy - bounds.maxY, guide: gy },
-      ];
-      for (const { corr, guide } of pairs) {
-        const abs = Math.abs(corr);
-        if (abs <= threshold && abs < bestAbsDy) {
-          bestDy = corr; bestAbsDy = abs; guideY = guide;
-        }
-      }
-    }
-  }
-
-  return { dx: bestDx, dy: bestDy, guideX, guideY };
 }
 
 /**

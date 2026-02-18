@@ -1,7 +1,7 @@
 <script>
   // @ts-nocheck
   import { onMount, onDestroy, createEventDispatcher } from 'svelte';
-  import { buildCoordTransforms, getTypeColor, getEffectiveType, isArea, poleOfInaccessibility, getShapeBounds, computeSnapOffset, getServerGridLines, snapAngleToDirection, getShapeVertices, computeVertexSnap, SERVER_TILE_SIZE, SNAP_THRESHOLD_PX, SNAP_THRESHOLD_MAX_EU, VERTEX_SNAP_THRESHOLD_PX, VERTEX_SNAP_THRESHOLD_MAX_EU, getGridSpacing } from './mapEditorUtils.js';
+  import { buildCoordTransforms, getTypeColor, getEffectiveType, isArea, poleOfInaccessibility, getServerGridLines, snapAngleToDirection, getShapeVertices, computeVertexSnap, SERVER_TILE_SIZE, VERTEX_SNAP_THRESHOLD_PX, VERTEX_SNAP_THRESHOLD_MAX_EU, getGridSpacing } from './mapEditorUtils.js';
   import { formatMobSpawnDisplayName } from '$lib/mapUtil.js';
   import ContextMenu from '../ContextMenu.svelte';
 
@@ -657,47 +657,6 @@
 
   // --- Snap helpers ---
 
-  function getSnapCandidates(loc) {
-    const type = getEffectiveType(loc);
-    const excludeId = loc.Id;
-
-    // Collect own bounds (both original and edited) to exclude by value
-    const ownBoundsSet = new Set();
-    const originalLoc = locations.find(l => l.Id === excludeId);
-    if (originalLoc) {
-      const ob = getShapeBounds(originalLoc);
-      if (ob) ownBoundsSet.add(`${ob.minX},${ob.maxX},${ob.minY},${ob.maxY}`);
-    }
-    const eb = getShapeBounds(loc);
-    if (eb) ownBoundsSet.add(`${eb.minX},${eb.maxX},${eb.minY},${eb.maxY}`);
-
-    const candidates = [];
-    for (const other of locations) {
-      if (other.Id === excludeId) continue;
-      if (!isArea(other)) continue;
-      if (getEffectiveType(other) !== type) continue;
-      const bounds = getShapeBounds(getEffectiveLocData(other));
-      if (bounds && !ownBoundsSet.has(`${bounds.minX},${bounds.maxX},${bounds.minY},${bounds.maxY}`)) {
-        candidates.push(bounds);
-      }
-    }
-    // Also include pending add areas of the same type
-    for (const [tempId, change] of pendingChanges) {
-      if (change.action !== 'add' || !change.modified) continue;
-      if (tempId === excludeId) continue;
-      const mod = change.modified;
-      if (mod.locationType !== 'Area' || !mod.shape || !mod.shapeData) continue;
-      const modType = mod.areaType || 'Area';
-      if (modType !== type) continue;
-      const fakeLoc = { Properties: { Shape: mod.shape, Data: mod.shapeData } };
-      const bounds = getShapeBounds(fakeLoc);
-      if (bounds && !ownBoundsSet.has(`${bounds.minX},${bounds.maxX},${bounds.minY},${bounds.maxY}`)) {
-        candidates.push(bounds);
-      }
-    }
-    return candidates;
-  }
-
   function getVertexSnapCandidates(loc) {
     const type = getEffectiveType(loc);
     const excludeId = loc.Id;
@@ -734,47 +693,11 @@
     return allVertices;
   }
 
-  function getSnapThreshold() {
-    if (!transforms || !map) return SNAP_THRESHOLD_MAX_EU;
-    // Convert screen pixels to Entropia units at current zoom, with floor and ceiling
-    // Floor: snapping still works when drag steps are large (~100 EU per frame)
-    // Ceiling: prevents snapping to distant areas across the map at low zoom
-    const pixelBased = SNAP_THRESHOLD_PX * transforms.ratio / map.options.crs.scale(map.getZoom());
-    return Math.min(SNAP_THRESHOLD_MAX_EU, Math.max(200, pixelBased));
-  }
-
   /** Tighter threshold for vertex editing — mouse follows precisely, no need for large floor. */
   function getVertexSnapThreshold() {
     if (!transforms || !map) return VERTEX_SNAP_THRESHOLD_MAX_EU;
     const pixelBased = VERTEX_SNAP_THRESHOLD_PX * transforms.ratio / map.options.crs.scale(map.getZoom());
     return Math.min(VERTEX_SNAP_THRESHOLD_MAX_EU, Math.max(15, pixelBased));
-  }
-
-  function updateSnapGuides(gx, gy) {
-    if (!snapGuideLayerGroup || !transforms || !L) return;
-    snapGuideLayerGroup.clearLayers();
-    const guideStyle = { color: '#ff00ff', weight: 1, dashArray: '6,4', opacity: 0.8, interactive: false };
-    if (gx != null) {
-      // Vertical line at Entropia X — convert two extremes to Leaflet
-      const mapInfo = planet?.Properties?.Map;
-      if (mapInfo) {
-        const yMin = mapInfo.Y * SERVER_TILE_SIZE;
-        const yMax = yMin + mapInfo.Height * SERVER_TILE_SIZE;
-        const [lat1, lng1] = transforms.entropiaToLeaflet(gx, yMin);
-        const [lat2, lng2] = transforms.entropiaToLeaflet(gx, yMax);
-        snapGuideLayerGroup.addLayer(L.polyline([[lat1, lng1], [lat2, lng2]], guideStyle));
-      }
-    }
-    if (gy != null) {
-      const mapInfo = planet?.Properties?.Map;
-      if (mapInfo) {
-        const xMin = mapInfo.X * SERVER_TILE_SIZE;
-        const xMax = xMin + mapInfo.Width * SERVER_TILE_SIZE;
-        const [lat1, lng1] = transforms.entropiaToLeaflet(xMin, gy);
-        const [lat2, lng2] = transforms.entropiaToLeaflet(xMax, gy);
-        snapGuideLayerGroup.addLayer(L.polyline([[lat1, lng1], [lat2, lng2]], guideStyle));
-      }
-    }
   }
 
   /**
@@ -1046,30 +969,6 @@
             const shapeType = loc.Properties.Shape.toLowerCase();
             const entropiaData = leafletShapeToEntropia(layer, shapeType);
             if (entropiaData) {
-              // Circle snap: apply edge/grid snap to circle center after move
-              if ((snapEnabled || snapToGrid) && shapeType === 'circle' && entropiaData.data) {
-                const r = entropiaData.data.radius || 0;
-                const circleBounds = {
-                  minX: entropiaData.data.x - r, maxX: entropiaData.data.x + r,
-                  minY: entropiaData.data.y - r, maxY: entropiaData.data.y + r,
-                };
-                const candidates = snapEnabled ? getSnapCandidates(loc) : [];
-                const gridLines = snapToGrid ? _cachedGridLines : null;
-                const threshold = getSnapThreshold();
-                const snap = computeSnapOffset(circleBounds, candidates, gridLines, snapGap, threshold);
-                if (snap.dx !== 0 || snap.dy !== 0) {
-                  entropiaData.data.x += snap.dx;
-                  entropiaData.data.y += snap.dy;
-                  entropiaData.center.x += snap.dx;
-                  entropiaData.center.y += snap.dy;
-                  const [newLat, newLng] = transforms.entropiaToLeaflet(entropiaData.data.x, entropiaData.data.y);
-                  layer.setLatLng([newLat, newLng]);
-                }
-                updateSnapGuides(snap.guideX, snap.guideY);
-              } else if (shapeType !== 'circle') {
-                clearSnapGuides();
-              }
-
               // Update move handle position to match new pole of inaccessibility
               if (editableOverlay && entropiaData.center) {
                 const [lat, lng] = transforms.entropiaToLeaflet(entropiaData.center.x, entropiaData.center.y);
@@ -1098,25 +997,16 @@
 
         let dragState = null;
         editableOverlay.on('dragstart', () => {
-          // Store original geometry and disable vertex editing during move
+          // Disable vertex editing during whole-shape move
           if (editingLayer?.editing) {
             try { editingLayer.editing.disable(); } catch {}
           }
           const startPos = editableOverlay.getLatLng();
-          const base = { startCenter: startPos };
-
-          // Cache snap data
-          base.candidates = snapEnabled ? getSnapCandidates(loc) : [];
-          base.gridLines = snapToGrid ? _cachedGridLines : null;
-          base.originalBounds = getShapeBounds(loc);
-          base.snapThreshold = getSnapThreshold();
-          base.eOrigCenter = transforms.leafletToEntropia(startPos.lat, startPos.lng);
-
           if (loc.Properties.Shape === 'Rectangle') {
-            dragState = { ...base, bounds: layer.getBounds() };
+            dragState = { startCenter: startPos, bounds: layer.getBounds() };
           } else if (loc.Properties.Shape === 'Polygon') {
             dragState = {
-              ...base,
+              startCenter: startPos,
               latLngs: layer.getLatLngs()[0].map(ll => L.latLng(ll.lat, ll.lng)),
             };
           }
@@ -1125,31 +1015,8 @@
         editableOverlay.on('drag', () => {
           if (!dragState) return;
           const pos = editableOverlay.getLatLng();
-          let dLat = pos.lat - dragState.startCenter.lat;
-          let dLng = pos.lng - dragState.startCenter.lng;
-
-          // Snap computation
-          if ((snapEnabled || snapToGrid) && dragState.originalBounds) {
-            const ePos = transforms.leafletToEntropia(pos.lat, pos.lng);
-            const eDx = ePos.x - dragState.eOrigCenter.x;
-            const eDy = ePos.y - dragState.eOrigCenter.y;
-            const currentBounds = {
-              minX: dragState.originalBounds.minX + eDx,
-              maxX: dragState.originalBounds.maxX + eDx,
-              minY: dragState.originalBounds.minY + eDy,
-              maxY: dragState.originalBounds.maxY + eDy,
-            };
-            const snap = computeSnapOffset(currentBounds, dragState.candidates,
-              dragState.gridLines, snapGap, dragState.snapThreshold);
-            if (snap.dx !== 0 || snap.dy !== 0) {
-              const [sLat, sLng] = transforms.entropiaToLeaflet(ePos.x + snap.dx, ePos.y + snap.dy);
-              dLat = sLat - dragState.startCenter.lat;
-              dLng = sLng - dragState.startCenter.lng;
-            }
-            updateSnapGuides(snap.guideX, snap.guideY);
-          } else {
-            clearSnapGuides();
-          }
+          const dLat = pos.lat - dragState.startCenter.lat;
+          const dLng = pos.lng - dragState.startCenter.lng;
 
           if (loc.Properties.Shape === 'Rectangle' && dragState.bounds) {
             const b = dragState.bounds;
@@ -1167,29 +1034,8 @@
         editableOverlay.on('dragend', () => {
           if (!dragState) return;
           const pos = editableOverlay.getLatLng();
-          let dLat = pos.lat - dragState.startCenter.lat;
-          let dLng = pos.lng - dragState.startCenter.lng;
-
-          // Apply snap on final position
-          if ((snapEnabled || snapToGrid) && dragState.originalBounds) {
-            const ePos = transforms.leafletToEntropia(pos.lat, pos.lng);
-            const eDx = ePos.x - dragState.eOrigCenter.x;
-            const eDy = ePos.y - dragState.eOrigCenter.y;
-            const currentBounds = {
-              minX: dragState.originalBounds.minX + eDx,
-              maxX: dragState.originalBounds.maxX + eDx,
-              minY: dragState.originalBounds.minY + eDy,
-              maxY: dragState.originalBounds.maxY + eDy,
-            };
-            const snap = computeSnapOffset(currentBounds, dragState.candidates,
-              dragState.gridLines, snapGap, dragState.snapThreshold);
-            if (snap.dx !== 0 || snap.dy !== 0) {
-              const [sLat, sLng] = transforms.entropiaToLeaflet(ePos.x + snap.dx, ePos.y + snap.dy);
-              dLat = sLat - dragState.startCenter.lat;
-              dLng = sLng - dragState.startCenter.lng;
-            }
-          }
-          clearSnapGuides();
+          const dLat = pos.lat - dragState.startCenter.lat;
+          const dLng = pos.lng - dragState.startCenter.lng;
 
           const eFinalCenter = transforms.leafletToEntropia(
             dragState.startCenter.lat + dLat, dragState.startCenter.lng + dLng
