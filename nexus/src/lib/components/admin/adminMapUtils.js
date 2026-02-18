@@ -28,6 +28,19 @@ function escJsonb(obj) {
 }
 
 /**
+ * Ensure polygon vertices form a closed ring (first vertex = last vertex).
+ * PostGIS requires closed rings for ST_MakePolygon.
+ */
+function closePolygon(shapeData) {
+  if (!shapeData?.vertices || shapeData.vertices.length < 6) return shapeData;
+  const v = shapeData.vertices;
+  if (v[0] !== v[v.length - 2] || v[1] !== v[v.length - 1]) {
+    return { ...shapeData, vertices: [...v, v[0], v[1]] };
+  }
+  return shapeData;
+}
+
+/**
  * Generate DELETE SQL for a location (cascade through extension tables).
  */
 export function generateDeleteSql(locationId) {
@@ -64,7 +77,7 @@ export function generateInsertSql(location, planetId) {
   lines.push(`DO $$`);
   lines.push(`DECLARE new_id INTEGER;`);
   lines.push(`BEGIN`);
-  lines.push(`  INSERT INTO ONLY "Locations" ("Name", "Type", "PlanetId", "Longitude", "Latitude", "Altitude")`);
+  lines.push(`  INSERT INTO "Locations" ("Name", "Type", "PlanetId", "Longitude", "Latitude", "Altitude")`);
   lines.push(`  VALUES (${name}, ${type}, ${planetId}, ${lon}, ${lat}, ${alt})`);
   lines.push(`  RETURNING "Id" INTO new_id;`);
 
@@ -72,9 +85,10 @@ export function generateInsertSql(location, planetId) {
   if (location.areaType && location.shape && location.shapeData) {
     const areaType = escSql(location.areaType);
     const shape = escSql(location.shape);
-    const data = escJsonb(location.shapeData);
+    const shapeData = location.shape === 'Polygon' ? closePolygon(location.shapeData) : location.shapeData;
+    const data = escJsonb(shapeData);
     lines.push('');
-    lines.push(`  INSERT INTO ONLY "Areas" ("LocationId", "Type", "Shape", "Data")`);
+    lines.push(`  INSERT INTO "Areas" ("LocationId", "Type", "Shape", "Data")`);
     lines.push(`  VALUES (new_id, ${areaType}, ${shape}, ${data});`);
   }
 
@@ -82,14 +96,14 @@ export function generateInsertSql(location, planetId) {
   if (location.areaType === 'MobArea' && location.mobData) {
     const density = location.mobData.density ?? 3;
     lines.push('');
-    lines.push(`  INSERT INTO ONLY "MobSpawns" ("LocationId", "Density")`);
+    lines.push(`  INSERT INTO "MobSpawns" ("LocationId", "Density")`);
     lines.push(`  VALUES (new_id, ${density});`);
 
     if (location.mobData.maturities?.length) {
       lines.push('');
       for (const mat of location.mobData.maturities) {
         const isRare = mat.isRare ? 1 : 0;
-        lines.push(`  INSERT INTO ONLY "MobSpawnMaturities" ("LocationId", "MaturityId", "IsRare")`);
+        lines.push(`  INSERT INTO "MobSpawnMaturities" ("LocationId", "MaturityId", "IsRare")`);
         lines.push(`  VALUES (new_id, ${mat.maturityId}, ${isRare});`);
       }
     }
@@ -133,7 +147,11 @@ export function generateUpdateSql(original, modified) {
     const areaSets = [];
     if (modified.areaType) areaSets.push(`"Type" = ${escSql(modified.areaType)}`);
     if (modified.shape) areaSets.push(`"Shape" = ${escSql(modified.shape)}`);
-    if (modified.shapeData) areaSets.push(`"Data" = ${escJsonb(modified.shapeData)}`);
+    if (modified.shapeData) {
+      const effectiveShape = modified.shape || original.Properties?.Shape;
+      const sd = effectiveShape === 'Polygon' ? closePolygon(modified.shapeData) : modified.shapeData;
+      areaSets.push(`"Data" = ${escJsonb(sd)}`);
+    }
     if (areaSets.length) {
       lines.push(`UPDATE ONLY "Areas" SET ${areaSets.join(', ')} WHERE "LocationId" = ${id};`);
     }
@@ -146,11 +164,11 @@ export function generateUpdateSql(original, modified) {
     lines.push(`DELETE FROM ONLY "MobSpawnMaturities" WHERE "LocationId" = ${id};`);
     lines.push(`DELETE FROM ONLY "MobSpawns" WHERE "LocationId" = ${id};`);
     const density = modified.mobData.density ?? 3;
-    lines.push(`INSERT INTO ONLY "MobSpawns" ("LocationId", "Density") VALUES (${id}, ${density});`);
+    lines.push(`INSERT INTO "MobSpawns" ("LocationId", "Density") VALUES (${id}, ${density});`);
     if (modified.mobData.maturities?.length) {
       for (const mat of modified.mobData.maturities) {
         const isRare = mat.isRare ? 1 : 0;
-        lines.push(`INSERT INTO ONLY "MobSpawnMaturities" ("LocationId", "MaturityId", "IsRare") VALUES (${id}, ${mat.maturityId}, ${isRare});`);
+        lines.push(`INSERT INTO "MobSpawnMaturities" ("LocationId", "MaturityId", "IsRare") VALUES (${id}, ${mat.maturityId}, ${isRare});`);
       }
     }
   }
