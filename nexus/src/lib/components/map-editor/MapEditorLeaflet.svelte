@@ -779,6 +779,9 @@
   export function updateLayerShape(locId, shapeInfo) {
     const layer = layerById.get(locId);
     if (!layer || !transforms || !L) return;
+    // Don't programmatically update a layer that leaflet-draw is actively editing —
+    // the round-trip through integer Entropia coords would desync the editing handles.
+    if (layer === editingLayer) return;
 
     if (shapeInfo.shape === 'Circle' && shapeInfo.data) {
       const [lat, lng] = transforms.entropiaToLeaflet(shapeInfo.data.x, shapeInfo.data.y);
