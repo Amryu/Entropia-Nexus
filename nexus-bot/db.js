@@ -906,3 +906,106 @@ export async function getPendingCheckinsDmNotify() {
   `;
   return (await poolUsers.query(query)).rows;
 }
+
+// ── Unverified account cleanup ──────────────────────────────────────────────
+
+/** Mark an unverified user as having left the Discord server. Only sets if not already set. */
+export async function setUserLeftServer(userId) {
+  await poolUsers.query(
+    'UPDATE users SET left_server_at = NOW() WHERE id = $1 AND left_server_at IS NULL',
+    [userId]
+  );
+}
+
+/** Clear the left_server_at timestamp (user rejoined the server). */
+export async function clearUserLeftServer(userId) {
+  await poolUsers.query(
+    'UPDATE users SET left_server_at = NULL WHERE id = $1',
+    [userId]
+  );
+}
+
+/** Get unverified users who left the server 7+ days ago. */
+export async function getStaleUnverifiedUsers() {
+  const query = `
+    SELECT id, username, left_server_at FROM users
+    WHERE verified = false
+      AND left_server_at IS NOT NULL
+      AND left_server_at < NOW() - INTERVAL '7 days'
+  `;
+  return (await poolUsers.query(query)).rows;
+}
+
+/**
+ * Delete a single unverified user and all their data within a transaction.
+ * Returns the deleted user row, or null if safety checks prevent deletion.
+ *
+ * Safety: triple-checks verified=false (query filter, FOR UPDATE lock, final DELETE WHERE).
+ * Aborts if any NO ACTION FK tables have rows (should never happen for unverified users).
+ */
+export async function deleteUnverifiedUser(userId, txClient) {
+  // Safety gate: re-check verified status with row lock
+  const userCheck = await txClient.query(
+    'SELECT id, username, verified FROM users WHERE id = $1 FOR UPDATE',
+    [userId]
+  );
+
+  if (!userCheck.rows[0]) return null;
+  if (userCheck.rows[0].verified === true) {
+    console.error(`[CLEANUP] SAFETY ABORT: User ${userId} is verified! Skipping.`);
+    return null;
+  }
+
+  // Step A: Clean tables with no FK constraint (won't block deletion)
+  await txClient.query('DELETE FROM sessions WHERE user_id = $1', [userId]);
+  await txClient.query('DELETE FROM notifications WHERE user_id = $1', [userId]);
+  await txClient.query('DELETE FROM bot_config WHERE key = $1', [`verify_reminder:${userId}`]);
+  await txClient.query('DELETE FROM shop_managers WHERE user_id = $1', [userId]);
+  await txClient.query('DELETE FROM trade_offers WHERE user_id = $1', [userId]);
+  await txClient.query('DELETE FROM user_items WHERE user_id = $1', [userId]);
+  await txClient.query('DELETE FROM trade_requests WHERE requester_id = $1', [userId]);
+  await txClient.query('DELETE FROM society_join_requests WHERE user_id = $1', [userId]);
+
+  // Step B: Safety-check ALL NO ACTION FK tables
+  // These should always be empty for unverified users. If any have rows, abort.
+  const blockCheck = await txClient.query(`
+    SELECT
+      (SELECT COUNT(*) FROM service_tickets WHERE user_id = $1) +
+      (SELECT COUNT(*) FROM service_checkins WHERE user_id = $1) +
+      (SELECT COUNT(*) FROM service_requests WHERE requester_id = $1) +
+      (SELECT COUNT(*) FROM service_pilots WHERE added_by = $1) +
+      (SELECT COUNT(*) FROM services WHERE owner_user_id = $1) +
+      (SELECT COUNT(*) FROM flight_reschedule_notifications WHERE user_id = $1) +
+      (SELECT COUNT(*) FROM rental_requests WHERE requester_id = $1) +
+      (SELECT COUNT(*) FROM rental_dm_notifications WHERE owner_id = $1) +
+      (SELECT COUNT(*) FROM auctions WHERE seller_id = $1) +
+      (SELECT COUNT(*) FROM auctions WHERE current_bidder = $1) +
+      (SELECT COUNT(*) FROM auction_bids WHERE bidder_id = $1) +
+      (SELECT COUNT(*) FROM auction_disclaimers WHERE user_id = $1) +
+      (SELECT COUNT(*) FROM auction_audit_log WHERE user_id = $1) +
+      (SELECT COUNT(*) FROM admin_actions WHERE admin_id = $1) +
+      (SELECT COUNT(*) FROM announcements WHERE author_id = $1) +
+      (SELECT COUNT(*) FROM events WHERE submitted_by = $1) +
+      (SELECT COUNT(*) FROM events WHERE approved_by = $1) +
+      (SELECT COUNT(*) FROM content_creators WHERE added_by = $1) +
+      (SELECT COUNT(*) FROM change_history WHERE created_by = $1) +
+      (SELECT COUNT(*) FROM changes WHERE reviewed_by = $1) +
+      (SELECT COUNT(*) FROM users WHERE locked_by = $1) +
+      (SELECT COUNT(*) FROM users WHERE banned_by = $1)
+    AS blocking_refs
+  `, [userId]);
+
+  const blockingRefs = parseInt(blockCheck.rows[0].blocking_refs);
+  if (blockingRefs > 0) {
+    console.error(`[CLEANUP] ABORT: User ${userId} (${userCheck.rows[0].username}) has ${blockingRefs} blocking FK reference(s). Manual review needed.`);
+    return null;
+  }
+
+  // Step C: Delete user row (CASCADE handles loadouts, services, user_roles, etc.)
+  const result = await txClient.query(
+    'DELETE FROM users WHERE id = $1 AND verified = false RETURNING *',
+    [userId]
+  );
+
+  return result.rows[0] || null;
+}

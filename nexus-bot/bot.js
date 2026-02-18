@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { dump } from 'js-yaml';
 import { Client, GatewayIntentBits, Collection, Events, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
-import { getUsers, getUserById, getOpenChanges, setChangeThreadId, getDeletedChanges, deleteChange, getChangeById, setChangeState, getFlightsNeedingThread, setFlightThreadId, getCheckinsPendingThreadAdd, markCheckinAddedToThread, getUnnotifiedFlightStateChanges, getFlightsNeedingArchive, clearFlightThreadId, getPendingRescheduleNotifications, markRescheduleNotificationSent, getPendingRentalDmNotifications, markRentalDmNotificationSent, getServicePilots, getFlightAcceptedCheckins, getFlightsReadyForCustomerKick, setFlightCompletedAt, expireTickets, computeAllPriceSummaries, getPendingTradeRequests, getTradeRequestItems, setTradeRequestThread, getWarnableTradeRequests, markWarningSent, getExpirableTradeRequests, updateTradeRequestStatus, findTradeRequestByThread, updateLastActivity, getActiveTradeRequestsWithNewItems, getNewTradeRequestItems, adjustOfferQuantities, getUsersWithGrant, getPendingServiceRequests, setServiceRequestThread, markServiceRequestNotified, acceptServiceRequest, declineServiceRequest, getServiceRequestById, acceptCheckin, denyCheckin, getCheckinWithContext, activateTicketByCheckin, getPendingCheckinsDmNotify, getBotConfig, setBotConfig, getActiveContentCreators } from './db.js';
+import { getUsers, getUserById, getOpenChanges, setChangeThreadId, getDeletedChanges, deleteChange, getChangeById, setChangeState, getFlightsNeedingThread, setFlightThreadId, getCheckinsPendingThreadAdd, markCheckinAddedToThread, getUnnotifiedFlightStateChanges, getFlightsNeedingArchive, clearFlightThreadId, getPendingRescheduleNotifications, markRescheduleNotificationSent, getPendingRentalDmNotifications, markRentalDmNotificationSent, getServicePilots, getFlightAcceptedCheckins, getFlightsReadyForCustomerKick, setFlightCompletedAt, expireTickets, computeAllPriceSummaries, getPendingTradeRequests, getTradeRequestItems, setTradeRequestThread, getWarnableTradeRequests, markWarningSent, getExpirableTradeRequests, updateTradeRequestStatus, findTradeRequestByThread, updateLastActivity, getActiveTradeRequestsWithNewItems, getNewTradeRequestItems, adjustOfferQuantities, getUsersWithGrant, getPendingServiceRequests, setServiceRequestThread, markServiceRequestNotified, acceptServiceRequest, declineServiceRequest, getServiceRequestById, acceptCheckin, denyCheckin, getCheckinWithContext, activateTicketByCheckin, getPendingCheckinsDmNotify, getBotConfig, setBotConfig, getActiveContentCreators, setUserLeftServer, clearUserLeftServer, getStaleUnverifiedUsers, deleteUnverifiedUser, startUsersTransaction, commitTransaction, rollbackTransaction } from './db.js';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { compareJson, validate, printSideBySide } from './change.js';
 import { applyChange } from './changes/util.js';
@@ -428,7 +428,8 @@ async function checkUnverifiedUsers() {
       }
 
       if (!guildMember) {
-        console.log(`[VERIFY] ${user.username}: not in guild, skipping`);
+        console.log(`[VERIFY] ${user.username}: not in guild, marking left_server_at`);
+        await setUserLeftServer(user.id);
         const existingThread = channel.threads.cache.find(thread => thread.name === `${user.username}-verification`);
         if (existingThread && !existingThread.archived) {
           try {
@@ -440,6 +441,9 @@ async function checkUnverifiedUsers() {
         }
         continue;
       }
+
+      // User is in guild — clear left_server_at if previously set (handles rejoins)
+      await clearUserLeftServer(user.id);
 
       let existingThread = channel.threads.cache.find(thread => thread.name === `${user.username}-verification`);
       console.log(`[VERIFY] ${user.username}: in guild, cached thread=${existingThread?.id || 'none'}`);
@@ -1322,6 +1326,30 @@ async function checkRentalDmNotifications() {
   }
 }
 
+async function cleanupStaleUnverifiedUsers() {
+  const staleUsers = await getStaleUnverifiedUsers();
+  if (staleUsers.length === 0) return;
+
+  console.log(`[CLEANUP] Found ${staleUsers.length} stale unverified user(s)`);
+
+  for (const user of staleUsers) {
+    const txClient = await startUsersTransaction();
+    try {
+      const deleted = await deleteUnverifiedUser(user.id, txClient);
+      if (deleted) {
+        await commitTransaction(txClient);
+        console.log(`[CLEANUP] Deleted: ${deleted.username} (${deleted.id}), left at ${user.left_server_at}`);
+      } else {
+        await rollbackTransaction(txClient);
+        console.log(`[CLEANUP] Skipped: ${user.username} (${user.id}) — safety check`);
+      }
+    } catch (error) {
+      await rollbackTransaction(txClient);
+      console.error(`[CLEANUP] Error deleting ${user.username} (${user.id}):`, error);
+    }
+  }
+}
+
 async function runScheduled(label, fn) {
   try {
     await fn();
@@ -1344,6 +1372,7 @@ setInterval(() => runScheduled('checkTradeRequests', checkTradeRequests), 15 * 1
 setInterval(() => runScheduled('syncReviewerRole', syncReviewerRole), 5 * 60 * 1000);
 setInterval(() => runScheduled('checkAuctions', () => checkAuctions(client, config)), 30 * 1000);
 setInterval(() => runScheduled('refreshAuctionColors', () => refreshAuctionColors(client, config)), 5 * 60 * 1000);
+setInterval(() => runScheduled('cleanupStaleUnverifiedUsers', cleanupStaleUnverifiedUsers), 60 * 60 * 1000);
 
 // ---- Content Creator Notifications ----
 
@@ -1649,6 +1678,19 @@ client.on(Events.ThreadMembersUpdate, async (addedMembers, removedMembers, threa
     } catch (e) {
       console.error(`Error re-adding user ${memberId} to verification thread: ${e.message}`);
     }
+  }
+});
+
+// Mark unverified users as left when they leave the Discord server
+client.on(Events.GuildMemberRemove, async (member) => {
+  try {
+    const user = await getUserById(member.id);
+    if (user && !user.verified) {
+      await setUserLeftServer(user.id);
+      console.log(`[CLEANUP] ${member.user.username}: left guild, marked left_server_at`);
+    }
+  } catch (e) {
+    console.error(`[CLEANUP] Error handling member remove for ${member.id}:`, e);
   }
 });
 
