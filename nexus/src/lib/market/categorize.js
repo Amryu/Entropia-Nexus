@@ -123,7 +123,6 @@ export function categorizeItems(items, {
   (armorSets || []).forEach(s => { if (!s.Armors || s.Armors.length > 1) categorized.armor.sets.push(s); });
   (armors || []).forEach(p => categorized.armor.pieces.push(p));
   (armorPlatings || []).forEach(att => categorized.armor.attachments.push(att));
-  (clothings || []).forEach(c => { if (c.EffectsOnEquip?.length) categorized.armor.accessories.push(c); });
 
   (medicalTools || []).forEach(t => categorized.tools.medical.push(t));
   (medicalChips || []).forEach(t => categorized.tools.medical.push(t));
@@ -177,7 +176,7 @@ function makeEmptyCategories() {
       mindforce: { chip: { pyrokinetic: [], electrokinesis: [], cryogenic: [] }, implants: [], amplifiers: [] },
       absorbers: []
     },
-    armor: { sets: [], pieces: [], attachments: [], accessories: [] },
+    armor: { sets: [], pieces: [], attachments: [] },
     tools: {
       medical: [],
       mining: { finders: [], amplifiers: [], excavators: [] },
