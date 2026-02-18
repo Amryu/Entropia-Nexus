@@ -115,12 +115,14 @@
 
         if (response?.id) {
           changeMetadata.update(m => ({ ...m, id: response.id }));
-          if ($isCreateMode && browser) {
+          if (browser) {
             await invalidateAll();
-            await goto(`${window.location.pathname}?mode=create&changeId=${response.id}`, {
-              replaceState: true,
-              noScroll: true
-            });
+            if ($isCreateMode) {
+              await goto(`${window.location.pathname}?mode=create&changeId=${response.id}`, {
+                replaceState: true,
+                noScroll: true
+              });
+            }
           }
         }
       }
@@ -188,12 +190,14 @@
 
         if (response?.id) {
           changeMetadata.update(m => ({ ...m, id: response.id, state: 'Pending' }));
-          if ($isCreateMode && browser) {
+          if (browser) {
             await invalidateAll();
-            await goto(`${window.location.pathname}?mode=create&changeId=${response.id}`, {
-              replaceState: true,
-              noScroll: true
-            });
+            if ($isCreateMode) {
+              await goto(`${window.location.pathname}?mode=create&changeId=${response.id}`, {
+                replaceState: true,
+                noScroll: true
+              });
+            }
           }
         }
       }
@@ -258,12 +262,14 @@
 
       if (response?.id) {
         changeMetadata.update(m => ({ ...m, id: response.id, state: 'DirectApply' }));
-        if ($isCreateMode && browser) {
+        if (browser) {
           await invalidateAll();
-          await goto(`${window.location.pathname}?mode=create&changeId=${response.id}`, {
-            replaceState: true,
-            noScroll: true
-          });
+          if ($isCreateMode) {
+            await goto(`${window.location.pathname}?mode=create&changeId=${response.id}`, {
+              replaceState: true,
+              noScroll: true
+            });
+          }
         }
       }
 
