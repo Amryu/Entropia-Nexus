@@ -453,6 +453,17 @@ export async function setBotConfig(key, value) {
   await poolUsers.query(query, [key, value]);
 }
 
+// ---- Content Creator Functions ----
+
+export async function getActiveContentCreators() {
+  const result = await poolUsers.query(
+    `SELECT id, name, platform, channel_id, channel_url, cached_data
+     FROM content_creators
+     WHERE active = true`
+  );
+  return result.rows;
+}
+
 // ---- Trade Request Functions ----
 
 export async function getPendingTradeRequests() {

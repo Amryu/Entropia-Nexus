@@ -20,7 +20,8 @@ export const data = new SlashCommandBuilder()
             { name: 'Flights', value: 'flights' },
             { name: 'Services', value: 'services' },
             { name: 'Trade', value: 'trade' },
-            { name: 'Auctions', value: 'auctions' }
+            { name: 'Auctions', value: 'auctions' },
+            { name: 'Creators', value: 'creators' }
           ))
       .addChannelOption(option =>
         option
@@ -51,7 +52,8 @@ export async function execute(interaction) {
       'flights': 'flightsChannelId',
       'services': 'servicesChannelId',
       'trade': 'tradeChannelId',
-      'auctions': 'auctionChannelId'
+      'auctions': 'auctionChannelId',
+      'creators': 'creatorsChannelId'
     };
 
     const configKey = configKeyMap[type];
@@ -69,7 +71,8 @@ export async function execute(interaction) {
       'flights': 'Flights',
       'services': 'Services',
       'trade': 'Trade',
-      'auctions': 'Auctions'
+      'auctions': 'Auctions',
+      'creators': 'Creators'
     };
 
     await interaction.reply(`${typeNames[type]} channel set to <#${channel.id}>.`);

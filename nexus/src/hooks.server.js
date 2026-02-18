@@ -29,7 +29,7 @@ if (import.meta.env.SSR) {
 
   // Periodically refresh content creator cached data (YouTube, Twitch)
   const { refreshStaleCreators } = await import('$lib/server/creator-enrichment.js');
-  const CREATOR_REFRESH_INTERVAL_MS = 15 * 60_000; // 15 minutes
+  const CREATOR_REFRESH_INTERVAL_MS = 3 * 60_000; // 3 minutes
   refreshStaleCreators().catch(err => console.error('[creator-enrichment] Error refreshing creators:', err));
   setInterval(() => {
     refreshStaleCreators().catch(err => console.error('[creator-enrichment] Error refreshing creators:', err));

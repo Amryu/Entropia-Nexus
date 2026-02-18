@@ -2,8 +2,8 @@ import dotenv from 'dotenv';
 import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { dump } from 'js-yaml';
-import { Client, GatewayIntentBits, Collection, Events, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
-import { getUsers, getUserById, getOpenChanges, setChangeThreadId, getDeletedChanges, deleteChange, getChangeById, setChangeState, getFlightsNeedingThread, setFlightThreadId, getCheckinsPendingThreadAdd, markCheckinAddedToThread, getUnnotifiedFlightStateChanges, getFlightsNeedingArchive, clearFlightThreadId, getPendingRescheduleNotifications, markRescheduleNotificationSent, getPendingRentalDmNotifications, markRentalDmNotificationSent, getServicePilots, getFlightAcceptedCheckins, getFlightsReadyForCustomerKick, setFlightCompletedAt, expireTickets, computeAllPriceSummaries, getPendingTradeRequests, getTradeRequestItems, setTradeRequestThread, getWarnableTradeRequests, markWarningSent, getExpirableTradeRequests, updateTradeRequestStatus, findTradeRequestByThread, updateLastActivity, getActiveTradeRequestsWithNewItems, getNewTradeRequestItems, adjustOfferQuantities, getUsersWithGrant, getPendingServiceRequests, setServiceRequestThread, markServiceRequestNotified, acceptServiceRequest, declineServiceRequest, getServiceRequestById, acceptCheckin, denyCheckin, getCheckinWithContext, activateTicketByCheckin, getPendingCheckinsDmNotify, getBotConfig, setBotConfig } from './db.js';
+import { Client, GatewayIntentBits, Collection, Events, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
+import { getUsers, getUserById, getOpenChanges, setChangeThreadId, getDeletedChanges, deleteChange, getChangeById, setChangeState, getFlightsNeedingThread, setFlightThreadId, getCheckinsPendingThreadAdd, markCheckinAddedToThread, getUnnotifiedFlightStateChanges, getFlightsNeedingArchive, clearFlightThreadId, getPendingRescheduleNotifications, markRescheduleNotificationSent, getPendingRentalDmNotifications, markRentalDmNotificationSent, getServicePilots, getFlightAcceptedCheckins, getFlightsReadyForCustomerKick, setFlightCompletedAt, expireTickets, computeAllPriceSummaries, getPendingTradeRequests, getTradeRequestItems, setTradeRequestThread, getWarnableTradeRequests, markWarningSent, getExpirableTradeRequests, updateTradeRequestStatus, findTradeRequestByThread, updateLastActivity, getActiveTradeRequestsWithNewItems, getNewTradeRequestItems, adjustOfferQuantities, getUsersWithGrant, getPendingServiceRequests, setServiceRequestThread, markServiceRequestNotified, acceptServiceRequest, declineServiceRequest, getServiceRequestById, acceptCheckin, denyCheckin, getCheckinWithContext, activateTicketByCheckin, getPendingCheckinsDmNotify, getBotConfig, setBotConfig, getActiveContentCreators } from './db.js';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { compareJson, validate, printSideBySide } from './change.js';
 import { applyChange } from './changes/util.js';
@@ -1321,6 +1321,112 @@ setInterval(() => runScheduled('checkTradeRequests', checkTradeRequests), 15 * 1
 setInterval(() => runScheduled('syncReviewerRole', syncReviewerRole), 5 * 60 * 1000);
 setInterval(() => runScheduled('checkAuctions', () => checkAuctions(client, config)), 30 * 1000);
 setInterval(() => runScheduled('refreshAuctionColors', () => refreshAuctionColors(client, config)), 5 * 60 * 1000);
+
+// ---- Content Creator Notifications ----
+
+const CREATOR_LIVE_COOLDOWN_MS = 4 * 60 * 60 * 1000; // 4 hours
+
+async function checkContentCreators() {
+  const creatorsChannelId = config.creatorsChannelId;
+  if (!creatorsChannelId) return;
+
+  const channel = client.channels.cache.get(creatorsChannelId);
+  if (!channel) {
+    console.error('Creators channel not found');
+    return;
+  }
+
+  const creators = await getActiveContentCreators();
+
+  for (const creator of creators) {
+    if (!creator.cached_data) continue;
+
+    try {
+      if (creator.platform === 'twitch') {
+        await checkTwitchLive(channel, creator);
+      } else if (creator.platform === 'youtube') {
+        await checkYouTubeVideos(channel, creator);
+      }
+    } catch (e) {
+      console.error(`Error checking creator ${creator.name} (${creator.platform}):`, e);
+    }
+  }
+}
+
+async function checkTwitchLive(channel, creator) {
+  const { cached_data } = creator;
+  if (!cached_data.isLive) return;
+
+  const configKey = `creator_live_notified:${creator.id}`;
+  const lastNotified = await getBotConfig(configKey);
+
+  if (lastNotified && (Date.now() - Number(lastNotified)) < CREATOR_LIVE_COOLDOWN_MS) {
+    return; // Cooldown active
+  }
+
+  const displayName = cached_data.displayName || creator.name;
+  const embed = new EmbedBuilder()
+    .setColor(0x9146FF)
+    .setAuthor({
+      name: `${displayName} is live on Twitch!`,
+      iconURL: cached_data.avatar || undefined,
+      url: creator.channel_url
+    })
+    .setTitle(cached_data.streamTitle || 'Live Stream')
+    .setURL(creator.channel_url);
+
+  if (cached_data.streamThumbnail) {
+    // Cache-bust the thumbnail so Discord doesn't show a stale preview
+    embed.setImage(`${cached_data.streamThumbnail}?t=${Date.now()}`);
+  }
+
+  const fields = [];
+  if (cached_data.gameName) fields.push({ name: 'Game', value: cached_data.gameName, inline: true });
+  if (cached_data.viewerCount != null) fields.push({ name: 'Viewers', value: String(cached_data.viewerCount), inline: true });
+  if (fields.length > 0) embed.addFields(fields);
+
+  await channel.send({ embeds: [embed] });
+  await setBotConfig(configKey, String(Date.now()));
+  console.log(`Sent live notification for ${creator.name} (Twitch)`);
+}
+
+async function checkYouTubeVideos(channel, creator) {
+  const { cached_data } = creator;
+  const latestVideo = cached_data.recentVideos?.[0] || cached_data.latestVideo;
+  if (!latestVideo?.videoId) return;
+
+  const configKey = `creator_yt_latest:${creator.id}`;
+  const lastVideoId = await getBotConfig(configKey);
+
+  if (!lastVideoId) {
+    // First run — store current video ID without notifying
+    await setBotConfig(configKey, latestVideo.videoId);
+    return;
+  }
+
+  if (lastVideoId === latestVideo.videoId) return; // No new video
+
+  const channelName = cached_data.channelName || creator.name;
+  const embed = new EmbedBuilder()
+    .setColor(0xFF0000)
+    .setAuthor({
+      name: `${channelName} posted a new video!`,
+      iconURL: cached_data.channelAvatar || undefined,
+      url: creator.channel_url
+    })
+    .setTitle(latestVideo.title)
+    .setURL(`https://www.youtube.com/watch?v=${latestVideo.videoId}`);
+
+  if (latestVideo.thumbnail) {
+    embed.setImage(latestVideo.thumbnail);
+  }
+
+  await channel.send({ embeds: [embed] });
+  await setBotConfig(configKey, latestVideo.videoId);
+  console.log(`Sent new video notification for ${creator.name} (YouTube): ${latestVideo.title}`);
+}
+
+setInterval(() => runScheduled('checkContentCreators', checkContentCreators), 60 * 1000);
 
 // ---- Trade Request Thread Management ----
 
