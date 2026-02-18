@@ -3066,6 +3066,11 @@ export async function getChangesFiltered(filters = {}, page = 1, limit = 20) {
     whereConditions.push(`c.data->>'Name' ILIKE $${paramIndex++}`);
     params.push(`%${filters.search}%`);
   }
+  if (filters.entityId) {
+    whereConditions.push(`(c.data->>'Id' = $${paramIndex} OR c.data->>'ItemId' = $${paramIndex})`);
+    params.push(String(filters.entityId));
+    paramIndex++;
+  }
   if (filters.planet) {
     whereConditions.push(`c.data->'Planet'->>'Name' = $${paramIndex++}`);
     params.push(filters.planet);

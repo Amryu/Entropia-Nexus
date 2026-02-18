@@ -89,21 +89,24 @@ export async function GET({ params, url }) {
     return new Response(JSON.stringify(change), { status: 200 });
   }
 
-  // If we have entityId, get single change by entity ID
-  if (url.searchParams.get('entityId')) {
-    const change = await getChangeByEntityId(url.searchParams.get('entityId'));
+  // Legacy: entityId-only lookup returns a single object (used by EntityViewer)
+  const entityId = url.searchParams.get('entityId');
+  const entityParam = url.searchParams.get('entity');
+  if (entityId && !entityParam && !url.searchParams.get('state') && !url.searchParams.get('type') && !url.searchParams.get('authorId')) {
+    const change = await getChangeByEntityId(entityId);
     if (!change) {
-      // Return 200 with null instead of 404 to avoid console spam
       return new Response(JSON.stringify(null), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     return new Response(JSON.stringify(change), { status: 200 });
   }
 
-  // Otherwise, list changes with filters
+  // List changes with filters
   const filters = {};
 
-  // Parse entity filter (resolve schema names to DB enum names)
-  const entityParam = url.searchParams.get('entity');
+  // Parse entityId filter (matches data.Id or data.ItemId)
+  if (entityId) {
+    filters.entityId = entityId;
+  }
   if (entityParam) {
     const validEntities = await getChangeEntities();
     const entityList = entityParam.split(',').map(e => resolveEntityName(e.trim())).filter(Boolean);

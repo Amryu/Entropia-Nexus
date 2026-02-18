@@ -770,8 +770,10 @@ export const UpsertConfigs = {
         x.Maturities = (x.Maturities || []).map(m => ({
           ...m,
           Properties: {
+            Description: m?.Properties?.Description ?? null,
             Level: m?.Properties?.Level ?? null,
             Health: m?.Properties?.Health ?? null,
+            AttacksPerMinute: null,
             RegenerationInterval: null,
             RegenerationAmount: null,
             MissChance: null,
@@ -1356,10 +1358,10 @@ async function applyMobMaturityChanges(client, mobId, maturities) {
     client.query(`DELETE FROM ONLY "MobMaturities" WHERE "MobId" = $1 AND "Name" NOT IN (SELECT * FROM unnest($2::text[]))`, [mobId, maturities.map(x => x.Name)]),
     ...maturities.map(maturity => client.query(`
       INSERT INTO "MobMaturities"
-      ("MobId", "Name", "Health", "RegenerationInterval", "RegenerationAmount", "AttackSpeed", "DangerLevel", "TamingLevel", "Strength", "Agility", "Intelligence", "Psyche", "Stamina", "MissChance", "ResistanceStab", "ResistanceCut", "ResistanceImpact", "ResistancePenetration", "ResistanceShrapnel", "ResistanceBurn", "ResistanceCold", "ResistanceAcid", "ResistanceElectric", "Boss")
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
+      ("MobId", "Name", "Health", "RegenerationInterval", "RegenerationAmount", "AttackSpeed", "DangerLevel", "TamingLevel", "Strength", "Agility", "Intelligence", "Psyche", "Stamina", "MissChance", "ResistanceStab", "ResistanceCut", "ResistanceImpact", "ResistancePenetration", "ResistanceShrapnel", "ResistanceBurn", "ResistanceCold", "ResistanceAcid", "ResistanceElectric", "Boss", "Description")
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
       ON CONFLICT ("MobId", "Name") DO UPDATE SET
-      "Health" = $3, "RegenerationInterval" = $4, "RegenerationAmount" = $5, "AttackSpeed" = $6, "DangerLevel" = $7, "TamingLevel" = $8, "Strength" = $9, "Agility" = $10, "Intelligence" = $11, "Psyche" = $12, "Stamina" = $13, "MissChance" = $14, "ResistanceStab" = $15, "ResistanceCut" = $16, "ResistanceImpact" = $17, "ResistancePenetration" = $18, "ResistanceShrapnel" = $19, "ResistanceBurn" = $20, "ResistanceCold" = $21, "ResistanceAcid" = $22, "ResistanceElectric" = $23, "Boss" = $24
+      "Health" = $3, "RegenerationInterval" = $4, "RegenerationAmount" = $5, "AttackSpeed" = $6, "DangerLevel" = $7, "TamingLevel" = $8, "Strength" = $9, "Agility" = $10, "Intelligence" = $11, "Psyche" = $12, "Stamina" = $13, "MissChance" = $14, "ResistanceStab" = $15, "ResistanceCut" = $16, "ResistanceImpact" = $17, "ResistancePenetration" = $18, "ResistanceShrapnel" = $19, "ResistanceBurn" = $20, "ResistanceCold" = $21, "ResistanceAcid" = $22, "ResistanceElectric" = $23, "Boss" = $24, "Description" = $25
       RETURNING "Id"`,
       [
         mobId,
@@ -1369,23 +1371,24 @@ async function applyMobMaturityChanges(client, mobId, maturities) {
         maturity.Properties.RegenerationAmount,
         maturity.Properties.AttacksPerMinute,
         maturity.Properties.Level,
-        maturity.Properties.Taming.TamingLevel,
-        maturity.Properties.Attributes.Strength,
-        maturity.Properties.Attributes.Agility,
-        maturity.Properties.Attributes.Intelligence,
-        maturity.Properties.Attributes.Psyche,
-        maturity.Properties.Attributes.Stamina,
+        maturity.Properties.Taming?.TamingLevel ?? null,
+        maturity.Properties.Attributes?.Strength ?? null,
+        maturity.Properties.Attributes?.Agility ?? null,
+        maturity.Properties.Attributes?.Intelligence ?? null,
+        maturity.Properties.Attributes?.Psyche ?? null,
+        maturity.Properties.Attributes?.Stamina ?? null,
         maturity.Properties.MissChance,
-        maturity.Properties.Defense.Stab,
-        maturity.Properties.Defense.Cut,
-        maturity.Properties.Defense.Impact,
-        maturity.Properties.Defense.Penetration,
-        maturity.Properties.Defense.Shrapnel,
-        maturity.Properties.Defense.Burn,
-        maturity.Properties.Defense.Cold,
-        maturity.Properties.Defense.Acid,
-        maturity.Properties.Defense.Electric,
-        maturity.Properties.Boss || false]).then(res => ({ ...maturity, Id: res.rows[0].Id })))
+        maturity.Properties.Defense?.Stab ?? null,
+        maturity.Properties.Defense?.Cut ?? null,
+        maturity.Properties.Defense?.Impact ?? null,
+        maturity.Properties.Defense?.Penetration ?? null,
+        maturity.Properties.Defense?.Shrapnel ?? null,
+        maturity.Properties.Defense?.Burn ?? null,
+        maturity.Properties.Defense?.Cold ?? null,
+        maturity.Properties.Defense?.Acid ?? null,
+        maturity.Properties.Defense?.Electric ?? null,
+        maturity.Properties.Boss || false,
+        maturity.Properties.Description ?? null]).then(res => ({ ...maturity, Id: res.rows[0].Id })))
   ]).then(res => res.slice(1));
 
   await Promise.all(maturities.map(maturity => applyMobAttackChanges(client, maturity.Id, maturity.Attacks)));

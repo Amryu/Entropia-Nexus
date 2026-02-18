@@ -103,8 +103,10 @@
     const template = {
       Name: '',
       Properties: {
+        Description: null,
         Level: null,
         Health: null,
+        AttacksPerMinute: $currentEntity?.Properties?.AttacksPerMinute ?? null,
         Boss: false,
         RegenerationInterval: null,
         RegenerationAmount: null,

@@ -197,6 +197,24 @@
     return total > 0 ? total : null;
   }
 
+  /**
+   * When mob-level AttacksPerMinute is changed, cascade to all maturities.
+   */
+  function handleMobApmChange(event) {
+    const newApm = event.detail.value;
+    const maturities = $currentEntity?.Maturities;
+    if (!maturities || maturities.length === 0) return;
+
+    const updatedMaturities = maturities.map(m => ({
+      ...m,
+      Properties: {
+        ...m.Properties,
+        AttacksPerMinute: newApm
+      }
+    }));
+    updateField('Maturities', updatedMaturities);
+  }
+
   // Flatten mobs to maturity rows for sidebar maturity mode.
   $: maturityNavItems = (allItems || []).flatMap((mobItem) => {
     const mobName = mobItem?.Name;
@@ -1095,6 +1113,7 @@
                   type="number"
                   step={0.1}
                   min={0}
+                  on:change={handleMobApmChange}
                 />
               </span>
             </div>
