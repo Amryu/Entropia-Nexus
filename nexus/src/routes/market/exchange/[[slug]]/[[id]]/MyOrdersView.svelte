@@ -31,7 +31,10 @@
     ? $myOrders
     : $myOrders.filter(o => o.type === sideFilter);
 
+  const STATUS_ORDER = { active: 0, stale: 1, expired: 2, closed: 3 };
+
   // Enrich orders with computed fields for filtering and sorting
+  // Pre-sorted by status (active first, closed last) then category
   $: enrichedOrders = filteredOrders.map(o => {
     const item = itemLookup.get(o.item_id);
     const mu = o.markup != null ? Number(o.markup) : null;
@@ -41,6 +44,11 @@
       _value: getOrderValue(item, o) ?? null,
       _total: computeUnitPrice(item, mu, o) ?? null,
     };
+  }).sort((a, b) => {
+    const sa = STATUS_ORDER[a.state_display] ?? 9;
+    const sb = STATUS_ORDER[b.state_display] ?? 9;
+    if (sa !== sb) return sa - sb;
+    return getCategoryOrder(a._category) - getCategoryOrder(b._category);
   });
 
   $: columns = [
@@ -226,7 +234,7 @@
       compact={true}
       sortable={true}
       searchable={true}
-      defaultSort={{ column: '_category', order: 'ASC' }}
+      defaultSort={null}
       emptyMessage={$myOrders.length === 0 ? 'You have no orders' : sideFilter === 'all' ? 'No orders match the current filters' : `No ${sideFilter === 'BUY' ? 'buy' : 'sell'} orders`}
       rowClass={(row) => {
         const s = row.state_display;
