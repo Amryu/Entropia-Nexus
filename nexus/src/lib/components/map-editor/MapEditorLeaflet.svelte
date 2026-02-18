@@ -77,17 +77,17 @@
     if (window.L?.GeometryUtil) window.L.GeometryUtil.readableArea = safeReadableArea;
 
     // Patch undeclared `radius` in L.Edit.Circle._resize (same class of bug).
-    const EditCircle = L.Edit?.Circle?.prototype;
-    if (EditCircle?._resize) {
-      EditCircle._resize = function (latlng) {
-        var moveLatLng = this._moveMarker.getLatLng();
-        var radius = L.GeometryUtil.isVersion07x()
-          ? moveLatLng.distanceTo(latlng)
-          : this._map.distance(moveLatLng, latlng);
-        this._shape.setRadius(radius);
-        this._map.fire(L.Draw.Event.EDITRESIZE, { layer: this._shape });
-      };
-    }
+    // Must patch on both the module L and window.L since leaflet-draw may use either.
+    const fixedResize = function (latlng) {
+      var moveLatLng = this._moveMarker.getLatLng();
+      var radius = (L.GeometryUtil?.isVersion07x?.())
+        ? moveLatLng.distanceTo(latlng)
+        : this._map.distance(moveLatLng, latlng);
+      this._shape.setRadius(radius);
+      this._map.fire(L.Draw.Event.EDITRESIZE, { layer: this._shape });
+    };
+    if (L.Edit?.Circle?.prototype) L.Edit.Circle.prototype._resize = fixedResize;
+    if (window.L?.Edit?.Circle?.prototype) window.L.Edit.Circle.prototype._resize = fixedResize;
 
     // Import CSS
     const linkLeaflet = document.createElement('link');
