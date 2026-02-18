@@ -118,11 +118,31 @@
     if (L.Edit?.Circle?.prototype) L.Edit.Circle.prototype._resize = fixedResize;
     if (window.L?.Edit?.Circle?.prototype) window.L.Edit.Circle.prototype._resize = fixedResize;
 
-    // Patch polygon vertex drag for angle snapping and vertex position snapping.
-    // Modifies marker._latlng in-place before the original handler reads it.
+    // Patch polygon vertex drag for angle snapping, vertex position snapping,
+    // and visual class toggling on the dragged vertex handle.
     const patchVertexDrag = (lib) => {
       const proto = lib?.Edit?.PolyVerticesEdit?.prototype;
       if (!proto || proto._origOnMarkerDrag) return;
+
+      // Highlight the dragged vertex handle
+      proto._origOnMarkerDragStart = proto._onMarkerDragStart;
+      proto._onMarkerDragStart = function(e) {
+        const el = e.target?._icon;
+        if (el) el.classList.add('vertex-dragging');
+        this._origOnMarkerDragStart.call(this, e);
+      };
+
+      // Remove highlight on dragend (_fireEdit is the dragend handler)
+      proto._origFireEdit = proto._fireEdit;
+      proto._fireEdit = function() {
+        if (this._markerGroup) {
+          this._markerGroup.eachLayer(m => {
+            m._icon?.classList.remove('vertex-dragging');
+          });
+        }
+        this._origFireEdit.call(this);
+      };
+
       proto._origOnMarkerDrag = proto._onMarkerDrag;
       proto._onMarkerDrag = function(e) {
         const marker = e.target;
@@ -191,7 +211,8 @@
       maxZoom: 10,
       zoomSnap: 0.25,
       zoomDelta: 0.5,
-      attributionControl: false
+      attributionControl: false,
+      markerZoomAnimation: false,
     });
 
     layerGroup = L.layerGroup().addTo(map);
@@ -708,7 +729,7 @@
   function updateVertexSnapGuides(snappedX, snappedY, snap) {
     if (!snapGuideLayerGroup || !transforms || !L) return;
     snapGuideLayerGroup.clearLayers();
-    if (!snap.guideX && !snap.guideY && !snap.bisector) return;
+    if (snap.guideX == null && snap.guideY == null && !snap.bisector) return;
 
     const gap = snap.gap || 0;
     const guideStyle = { color: '#ff00ff', weight: 1.5, dashArray: '6,4', opacity: 0.8, interactive: false };
@@ -1070,6 +1091,15 @@
           if (entropiaData) {
             dispatch('shapeEdited', { locId, entropiaData });
           }
+          // Re-enable vertex editing so handles reattach to moved geometry.
+          // L.Edit.Poly caches latlngs at init; update the stale reference
+          // after setLatLngs() replaced the polygon's _latlngs array.
+          if (editingLayer?.editing) {
+            if (editingLayer.editing.latlngs) {
+              editingLayer.editing.latlngs = [editingLayer._latlngs];
+            }
+            try { editingLayer.editing.enable(); } catch {}
+          }
         });
       }
     } else {
@@ -1366,6 +1396,23 @@
     font-size: 10px;
     color: var(--text-muted, #777);
     padding-left: 4px;
+  }
+
+  /* Vertex editing handles: smaller and round */
+  .map-container :global(.leaflet-editing-icon) {
+    width: 8px !important;
+    height: 8px !important;
+    margin-left: -4px !important;
+    margin-top: -4px !important;
+    border-radius: 50%;
+    border: 2px solid white;
+    background: var(--accent-color, #3b82f6);
+    box-shadow: 0 0 3px rgba(0, 0, 0, 0.5);
+  }
+  .map-container :global(.leaflet-editing-icon.vertex-dragging) {
+    background: #ff8c00;
+    box-shadow: 0 0 6px rgba(255, 140, 0, 0.7);
+    opacity: 0.7;
   }
 
   .map-container :global(.snap-dist-label) {
