@@ -1271,13 +1271,15 @@ async function applyLocationExtensionChanges(client, locationId, x) {
 
     // Handle LandAreas extension for LandArea AreaType
     if (areaType === 'LandArea') {
-      const taxRate = x.Properties?.TaxRate ?? null;
+      const taxHunting = x.Properties?.TaxRateHunting ?? null;
+      const taxMining = x.Properties?.TaxRateMining ?? null;
+      const taxShops = x.Properties?.TaxRateShops ?? null;
       const ownerId = x.Properties?.LandAreaOwnerId ?? null;
       await client.query(
-        `INSERT INTO "LandAreas" ("LocationId", "TaxRate", "OwnerId")
-         VALUES ($1, $2, $3)
-         ON CONFLICT ("LocationId") DO UPDATE SET "TaxRate" = $2, "OwnerId" = $3`,
-        [locationId, taxRate, ownerId]
+        `INSERT INTO "LandAreas" ("LocationId", "TaxRateHunting", "TaxRateMining", "TaxRateShops", "OwnerId")
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT ("LocationId") DO UPDATE SET "TaxRateHunting" = $2, "TaxRateMining" = $3, "TaxRateShops" = $4, "OwnerId" = $5`,
+        [locationId, taxHunting, taxMining, taxShops, ownerId]
       );
     }
   }

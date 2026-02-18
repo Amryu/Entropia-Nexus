@@ -76,7 +76,16 @@ export const Location = {
           "default": null
         },
         // LandArea-specific properties (when Type = 'Area' and AreaType = 'LandArea')
-        "TaxRate": {
+        // Tax rates are split into 3 components, each 0-5%
+        "TaxRateHunting": {
+          "type": ["number", "null"],
+          "default": null
+        },
+        "TaxRateMining": {
+          "type": ["number", "null"],
+          "default": null
+        },
+        "TaxRateShops": {
           "type": ["number", "null"],
           "default": null
         },

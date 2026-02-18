@@ -37,7 +37,9 @@ const queries = {
            e."ItemTradeAvailable" AS "EstateItemTradeAvailable",
            e."MaxGuests" AS "EstateMaxGuests",
            -- LandArea extension data
-           la."TaxRate" AS "LandAreaTaxRate",
+           la."TaxRateHunting" AS "LandAreaTaxRateHunting",
+           la."TaxRateMining" AS "LandAreaTaxRateMining",
+           la."TaxRateShops" AS "LandAreaTaxRateShops",
            la."OwnerId" AS "LandAreaOwnerId"
     FROM ONLY "Locations" l
     LEFT JOIN ONLY "Planets" p ON l."PlanetId" = p."Id"
@@ -140,7 +142,9 @@ function formatLocation(x, add = {}) {
     result.Properties.Shape = x.AreaShape;
     result.Properties.Data = x.AreaData;
     if (x.AreaType === 'LandArea') {
-      result.Properties.TaxRate = x.LandAreaTaxRate ?? null;
+      result.Properties.TaxRateHunting = x.LandAreaTaxRateHunting ?? null;
+      result.Properties.TaxRateMining = x.LandAreaTaxRateMining ?? null;
+      result.Properties.TaxRateShops = x.LandAreaTaxRateShops ?? null;
       result.Properties.LandAreaOwnerId = x.LandAreaOwnerId ?? null;
     }
   }
