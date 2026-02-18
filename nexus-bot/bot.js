@@ -397,6 +397,7 @@ async function checkUnverifiedUsers() {
   if (!channel) throw new Error('Verification channel not found');
 
   const unverifiedUsers = (await getUsers()).filter(x => !x.verified);
+  console.log(`[VERIFY] Checking ${unverifiedUsers.length} unverified users`);
 
   // Fetch only the specific members we need instead of the entire guild
   const userIds = unverifiedUsers.map(u => u.id);
@@ -404,7 +405,7 @@ async function checkUnverifiedUsers() {
     try {
       await channel.guild.members.fetch({ user: userIds });
     } catch (e) {
-      console.error('Error fetching members, using cache instead.', e);
+      console.error('[VERIFY] Error fetching members, using cache instead.', e);
     }
   }
 
@@ -413,19 +414,21 @@ async function checkUnverifiedUsers() {
       const guildMember = channel.guild.members.cache.get(user.id);
 
       if (!guildMember) {
+        console.log(`[VERIFY] ${user.username}: not in guild, skipping`);
         const existingThread = channel.threads.cache.find(thread => thread.name === `${user.username}-verification`);
         if (existingThread && !existingThread.archived) {
           try {
             await existingThread.setArchived(true);
-            console.log(`Archived thread for user ${user.username} as they are no longer on the server.`);
+            console.log(`[VERIFY] ${user.username}: archived orphan thread`);
           } catch (e) {
-            console.error('Error archiving thread for user no longer on the server.', e);
+            console.error(`[VERIFY] ${user.username}: error archiving orphan thread:`, e);
           }
         }
         continue;
       }
 
       let existingThread = channel.threads.cache.find(thread => thread.name === `${user.username}-verification`);
+      console.log(`[VERIFY] ${user.username}: in guild, cached thread=${existingThread?.id || 'none'}`);
 
       // Also check archived threads — they won't be in the cache.
       // Paginate through all pages since there may be many archived threads.
@@ -433,7 +436,9 @@ async function checkUnverifiedUsers() {
         try {
           let hasMore = true;
           let before;
+          let pages = 0;
           while (hasMore && !existingThread) {
+            pages++;
             const archived = await channel.threads.fetchArchived({ type: 'private', before });
             existingThread = archived.threads.find(thread => thread.name === `${user.username}-verification`);
             hasMore = archived.hasMore;
@@ -441,8 +446,9 @@ async function checkUnverifiedUsers() {
               before = archived.threads.last()?.id;
             }
           }
+          console.log(`[VERIFY] ${user.username}: searched ${pages} archived page(s), found=${existingThread?.id || 'none'}`);
         } catch (e) {
-          console.error(`Error fetching archived threads: ${e.message}`);
+          console.error(`[VERIFY] ${user.username}: error fetching archived threads: ${e.message}`);
         }
       }
 
@@ -452,34 +458,37 @@ async function checkUnverifiedUsers() {
         if (existingThread.archived) {
           try {
             await existingThread.setArchived(false);
-            console.log(`Unarchived verification thread for ${user.username}`);
+            console.log(`[VERIFY] ${user.username}: unarchived thread ${existingThread.id}`);
           } catch (e) {
-            console.error(`Cannot reuse archived thread for ${user.username}, will create new: ${e.message}`);
+            console.error(`[VERIFY] ${user.username}: cannot unarchive thread ${existingThread.id}, will create new: ${e.message}`);
             existingThread = null;
           }
         }
       }
 
       if (existingThread) {
+        console.log(`[VERIFY] ${user.username}: reusing existing thread ${existingThread.id}`);
         try {
           await existingThread.members.add(user.id);
         } catch (e) {
-          console.error(`Error adding user to thread. Are they on the server? ${e.message}`);
+          console.error(`[VERIFY] ${user.username}: error adding to thread: ${e.message}`);
         }
 
         // Send a reminder if the thread has been idle for too long
         await sendVerificationReminder(existingThread, user);
 
         // Only start/resume the verification flow if one isn't already active
-        if (!activeVerificationFlows.has(user.id)) {
+        if (activeVerificationFlows.has(user.id)) {
+          console.log(`[VERIFY] ${user.username}: flow already active, skipping`);
+        } else {
           // Check if bot already sent the initial welcome message in this thread
           const botHasSentWelcome = await threadHasBotMessage(existingThread);
 
           if (!botHasSentWelcome) {
-            // Existing thread but bot never sent a message — send welcome and start name collection
+            console.log(`[VERIFY] ${user.username}: no welcome yet, starting name collection`);
             await startNameCollectionFlow(existingThread, user, channel.guild);
           } else if (!user.eu_name) {
-            // Bot sent welcome but user hasn't set name yet — restart name collection
+            console.log(`[VERIFY] ${user.username}: has welcome but no EU name, restarting name collection`);
             const handle = collectEuName(existingThread, user.id, {
               typerId: user.id,
               guild: channel.guild,
@@ -487,8 +496,7 @@ async function checkUnverifiedUsers() {
             });
             replaceVerificationFlow(user.id, handle);
           } else {
-            // User has name set but not verified — resume existing or start new verification
-            // Note: resumeVerification calls replaceVerificationFlow internally
+            console.log(`[VERIFY] ${user.username}: has EU name "${user.eu_name}", resuming verification`);
             await resumeVerification(existingThread, user.id, channel.guild, {
               onEnd: () => clearVerificationFlow(user.id),
             });
@@ -499,6 +507,7 @@ async function checkUnverifiedUsers() {
       }
 
       // Create new thread — private threads are only visible to added members
+      console.log(`[VERIFY] ${user.username}: creating new verification thread`);
       const thread = await channel.threads.create({
         name: `${user.username}-verification`,
         autoArchiveDuration: 10080,
@@ -506,12 +515,14 @@ async function checkUnverifiedUsers() {
         type: ChannelType.PrivateThread,
       });
       await thread.members.add(user.id);
+      console.log(`[VERIFY] ${user.username}: created thread ${thread.id}, starting name collection`);
 
       await startNameCollectionFlow(thread, user, channel.guild);
     } catch (e) {
-      console.error(`Error processing unverified user ${user.username}: ${e.message}`);
+      console.error(`[VERIFY] ${user.username}: UNHANDLED ERROR: ${e.message}`, e.stack);
     }
   }
+  console.log(`[VERIFY] Finished processing ${unverifiedUsers.length} users`);
 }
 
 /**
