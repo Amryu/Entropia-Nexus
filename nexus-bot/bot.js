@@ -140,7 +140,7 @@ export async function notifyModerators({ title = 'Bot Error', error = null, cont
   }
 }
 
-client.on('ready', async () => {
+client.on(Events.ClientReady, async () => {
   console.log(`Logged in as ${client.user.tag}!`);
   // Fetch planets from API on startup
   await fetchPlanets();
@@ -401,17 +401,31 @@ async function checkUnverifiedUsers() {
 
   // Fetch only the specific members we need instead of the entire guild
   const userIds = unverifiedUsers.map(u => u.id);
+  console.log(`[VERIFY] User IDs to fetch (type=${typeof userIds[0]}): ${userIds.join(', ')}`);
   if (userIds.length > 0) {
     try {
-      await channel.guild.members.fetch({ user: userIds });
+      const fetched = await channel.guild.members.fetch({ user: userIds });
+      console.log(`[VERIFY] Batch fetch returned ${fetched.size} members: ${[...fetched.keys()].join(', ')}`);
     } catch (e) {
-      console.error('[VERIFY] Error fetching members, using cache instead.', e);
+      console.error('[VERIFY] Error fetching members:', e.message);
     }
   }
+  console.log(`[VERIFY] Guild member cache size: ${channel.guild.members.cache.size}`);
 
   for (const user of unverifiedUsers) {
     try {
-      const guildMember = channel.guild.members.cache.get(user.id);
+      let guildMember = channel.guild.members.cache.get(user.id);
+
+      // If batch fetch missed this user, try individual fetch
+      if (!guildMember) {
+        console.log(`[VERIFY] ${user.username}: cache miss for id=${user.id} (type=${typeof user.id}), trying individual fetch...`);
+        try {
+          guildMember = await channel.guild.members.fetch(user.id);
+          console.log(`[VERIFY] ${user.username}: individual fetch ${guildMember ? 'succeeded' : 'returned null'}`);
+        } catch (e) {
+          console.log(`[VERIFY] ${user.username}: individual fetch failed: ${e.message}`);
+        }
+      }
 
       if (!guildMember) {
         console.log(`[VERIFY] ${user.username}: not in guild, skipping`);
