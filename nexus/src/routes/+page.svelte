@@ -9,7 +9,7 @@
 
   export let data;
 
-  $: ({ news, events, creators } = data);
+  $: ({ news, events, streams, videos } = data);
 
   const features = [
     { name: 'Items Database', href: '/items', icon: 'ITM', description: 'Weapons, armor, tools, materials, blueprints and more' },
@@ -18,18 +18,6 @@
     { name: 'Tools & Calculators', href: '/tools', icon: 'TLS', description: 'Loadout calculator, DPS analysis and planning' },
     { name: 'Market & Services', href: '/market', icon: 'MKT', description: 'Exchange, shops and player services' }
   ];
-
-  const platformColors = {
-    youtube: '#FF0000',
-    twitch: '#9146FF',
-    kick: '#53FC18'
-  };
-
-  const platformLabels = {
-    youtube: 'YouTube',
-    twitch: 'Twitch',
-    kick: 'Kick'
-  };
 
   function formatDate(dateStr) {
     const d = new Date(dateStr);
@@ -58,16 +46,38 @@
     };
   }
 
-  function getCreatorDisplayName(creator) {
-    if (creator.cached_data?.channelName) return creator.cached_data.channelName;
-    if (creator.cached_data?.displayName) return creator.cached_data.displayName;
-    return creator.name;
+  const platformLabels = { youtube: 'YouTube', twitch: 'Twitch', kick: 'Kick' };
+
+  function isEventActive(event) {
+    const now = Date.now();
+    const start = new Date(event.start_date).getTime();
+    if (start > now) return false;
+    if (event.end_date) return new Date(event.end_date).getTime() > now;
+    // No end date: consider active within 1 day of start
+    return now - start < 24 * 60 * 60 * 1000;
   }
 
-  function getCreatorAvatar(creator) {
-    if (creator.cached_data?.channelAvatar) return creator.cached_data.channelAvatar;
-    if (creator.cached_data?.avatar) return creator.cached_data.avatar;
-    return creator.avatar_url;
+  function formatDuration(event, active) {
+    if (!event.end_date) return null;
+    const now = Date.now();
+    const end = new Date(event.end_date).getTime();
+    const start = new Date(event.start_date).getTime();
+    // For active events: show time remaining; for upcoming: show total length
+    const ms = active ? end - now : end - start;
+    if (ms <= 0) return null;
+    const hours = Math.round(ms / (60 * 60 * 1000));
+    const days = Math.round(ms / (24 * 60 * 60 * 1000));
+    let span;
+    if (days < 1) span = hours <= 1 ? '1 hour' : `${hours} hours`;
+    else if (days === 1) span = '1 day';
+    else if (days < 14) span = `${days} days`;
+    else { const w = Math.round(days / 7); span = w === 1 ? '1 week' : `${w} weeks`; }
+    return active ? `ends in ${span}` : `lasts ${span}`;
+  }
+
+  function formatViewerCount(count) {
+    if (count >= 1000) return `${(count / 1000).toFixed(1)}K`;
+    return String(count);
   }
 </script>
 
@@ -119,17 +129,19 @@
       </section>
     {/if}
 
-    <!-- Upcoming Events -->
+    <!-- Events -->
     {#if events && events.length > 0}
-      <section class="section">
+      <section class="section" id="events">
         <div class="section-header">
-          <h2 class="section-title">Upcoming Events</h2>
+          <h2 class="section-title">Events</h2>
           <a href="/events/submit" class="section-action">Submit Event</a>
         </div>
         <div class="events-list">
           {#each events as event}
             {@const ed = formatEventDate(event.start_date)}
-            <div class="event-row">
+            {@const active = isEventActive(event)}
+            {@const duration = formatDuration(event, active)}
+            <div class="event-row" class:event-active={active}>
               <div class="event-date-block">
                 <span class="event-month">{ed.month}</span>
                 <span class="event-day">{ed.day}</span>
@@ -137,12 +149,18 @@
               <div class="event-info">
                 <div class="event-title-row">
                   <h3 class="event-title">{event.title}</h3>
+                  {#if active}
+                    <span class="event-active-badge">Live</span>
+                  {/if}
                   <span class="event-type-badge" class:official={event.type === 'official'}>
                     {event.type === 'official' ? 'Official' : 'Player Event'}
                   </span>
                 </div>
                 <div class="event-details">
                   <span class="event-time">{ed.time} UTC</span>
+                  {#if duration}
+                    <span class="event-duration">{duration}</span>
+                  {/if}
                   {#if event.location}
                     <span class="event-location">{event.location}</span>
                   {/if}
@@ -157,35 +175,76 @@
       </section>
     {/if}
 
-    <!-- Content Creators -->
-    {#if creators && creators.length > 0}
+    <!-- Streams / Channels -->
+    {#if streams && streams.length > 0}
+      {@const allOffline = streams.every(s => s.offline)}
       <section class="section">
         <div class="section-header">
-          <h2 class="section-title">Content Creators</h2>
+          <h2 class="section-title">{allOffline ? 'Channels' : 'Live Streams'}</h2>
         </div>
-        <div class="creators-grid">
-          {#each creators as creator}
-            <a href={creator.channel_url} class="creator-card" target="_blank" rel="noopener">
-              <div class="creator-avatar">
-                {#if getCreatorAvatar(creator)}
-                  <img src={getCreatorAvatar(creator)} alt={getCreatorDisplayName(creator)} />
-                {:else}
-                  <div class="creator-avatar-placeholder">{creator.name.charAt(0).toUpperCase()}</div>
+        <div class="preview-grid">
+          {#each streams as stream}
+            <a href={stream.channelUrl} class="preview-card" target="_blank" rel="noopener">
+              <div class="preview-thumbnail">
+                {#if stream.thumbnail}
+                  <img src={stream.thumbnail} alt={stream.offline ? stream.name : stream.title} loading="lazy" />
                 {/if}
-                {#if creator.platform === 'twitch' && creator.cached_data?.isLive}
-                  <span class="live-badge">LIVE</span>
+                {#if stream.offline}
+                  <div class="offline-overlay" class:no-thumbnail={!stream.thumbnail}>
+                    {#if stream.avatar}
+                      <img src={stream.avatar} alt={stream.name} class="offline-avatar" />
+                    {/if}
+                  </div>
+                  <span class="platform-badge {stream.platform}">{platformLabels[stream.platform]}</span>
+                {:else}
+                  <span class="platform-badge twitch">Twitch</span>
+                  {#if stream.avatar}
+                    <div class="preview-avatar">
+                      <img src={stream.avatar} alt={stream.name} />
+                    </div>
+                  {/if}
+                  <div class="live-indicator">
+                    <span class="live-dot"></span>
+                    {formatViewerCount(stream.viewerCount)}
+                  </div>
                 {/if}
               </div>
-              <div class="creator-info">
-                <span class="creator-name">{getCreatorDisplayName(creator)}</span>
-                <span class="creator-platform" style="color: {platformColors[creator.platform]}">
-                  {platformLabels[creator.platform]}
-                </span>
-                {#if creator.platform === 'twitch' && creator.cached_data?.isLive}
-                  <span class="creator-live-detail">{creator.cached_data.viewerCount} viewers — {creator.cached_data.gameName}</span>
-                {:else if creator.platform === 'youtube' && creator.cached_data?.latestVideo}
-                  <span class="creator-latest">Latest: {creator.cached_data.latestVideo.title}</span>
+              <div class="preview-info">
+                {#if stream.offline}
+                  <span class="preview-title">{stream.name}</span>
+                  <span class="preview-meta">Offline</span>
+                {:else}
+                  <span class="preview-title">{stream.title}</span>
+                  <span class="preview-meta">{stream.name}{stream.gameName ? ` \u00B7 ${stream.gameName}` : ''}</span>
                 {/if}
+              </div>
+            </a>
+          {/each}
+        </div>
+      </section>
+    {/if}
+
+    <!-- Latest Videos -->
+    {#if videos && videos.length > 0}
+      <section class="section">
+        <div class="section-header">
+          <h2 class="section-title">Latest Videos</h2>
+        </div>
+        <div class="preview-grid">
+          {#each videos as video}
+            <a href={`https://www.youtube.com/watch?v=${video.videoId}`} class="preview-card" target="_blank" rel="noopener">
+              <div class="preview-thumbnail">
+                <img src={video.thumbnail} alt={video.title} loading="lazy" />
+                <span class="platform-badge youtube">YouTube</span>
+                {#if video.creatorAvatar}
+                  <div class="preview-avatar">
+                    <img src={video.creatorAvatar} alt={video.creatorName} />
+                  </div>
+                {/if}
+              </div>
+              <div class="preview-info">
+                <span class="preview-title">{video.title}</span>
+                <span class="preview-meta">{video.creatorName}{video.publishedAt ? ` \u00B7 ${timeAgo(video.publishedAt)}` : ''}</span>
               </div>
             </a>
           {/each}
@@ -448,6 +507,22 @@
     border-color: var(--accent-color);
   }
 
+  .event-row.event-active {
+    border-color: rgba(34, 197, 94, 0.4);
+    background-color: rgba(34, 197, 94, 0.05);
+  }
+
+  .event-active-badge {
+    font-size: 0.6875rem;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    background-color: rgba(34, 197, 94, 0.15);
+    color: #22c55e;
+  }
+
   .event-date-block {
     flex-shrink: 0;
     width: 52px;
@@ -516,6 +591,7 @@
     color: var(--text-muted);
   }
 
+  .event-duration::before,
   .event-location::before {
     content: '\00B7';
     margin-right: 12px;
@@ -536,95 +612,159 @@
     border-color: var(--accent-color);
   }
 
-  /* Creators */
-  .creators-grid {
+  /* Preview Cards (Streams & Videos) */
+  .preview-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    grid-template-columns: repeat(3, 1fr);
     gap: 16px;
   }
 
-  .creator-card {
+  .preview-card {
     display: flex;
-    align-items: center;
-    gap: 14px;
-    padding: 16px;
-    background-color: var(--secondary-color);
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
+    flex-direction: column;
     text-decoration: none;
     color: var(--text-color);
-    transition: border-color 0.15s ease, background-color 0.15s ease;
-  }
-
-  .creator-card:hover {
-    border-color: var(--accent-color);
-    background-color: var(--hover-color);
-  }
-
-  .creator-avatar {
-    flex-shrink: 0;
-    width: 52px;
-    height: 52px;
-    border-radius: 50%;
+    border-radius: 8px;
     overflow: hidden;
-    position: relative;
+    background-color: var(--secondary-color);
+    border: 1px solid var(--border-color);
+    transition: border-color 0.15s ease, transform 0.15s ease;
   }
 
-  .creator-avatar img {
+  .preview-card:hover {
+    border-color: var(--accent-color);
+    transform: translateY(-2px);
+  }
+
+  .preview-thumbnail {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
+    background-color: var(--primary-color);
+  }
+
+  .preview-thumbnail img {
     width: 100%;
     height: 100%;
     object-fit: cover;
   }
 
-  .creator-avatar-placeholder {
-    width: 100%;
-    height: 100%;
+  .offline-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
     display: flex;
     align-items: center;
     justify-content: center;
-    background-color: var(--primary-color);
-    color: var(--text-muted);
-    font-size: 1.25rem;
-    font-weight: 700;
+    z-index: 1;
   }
 
-  .live-badge {
+  .offline-overlay.no-thumbnail {
+    background: var(--secondary-color);
+  }
+
+  .offline-avatar {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.25);
+    object-fit: cover;
+  }
+
+  .no-thumbnail .offline-avatar {
+    width: 64px;
+    height: 64px;
+    border-color: var(--border-color);
+  }
+
+  .platform-badge {
     position: absolute;
-    bottom: -2px;
-    left: 50%;
-    transform: translateX(-50%);
-    background-color: #ef4444;
-    color: white;
-    font-size: 0.5625rem;
+    top: 8px;
+    right: 8px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 0.625rem;
     font-weight: 700;
-    padding: 1px 6px;
-    border-radius: 3px;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
   }
 
-  .creator-info {
-    flex: 1;
-    min-width: 0;
+  .platform-badge.twitch {
+    background: rgba(145, 70, 255, 0.9);
+    color: white;
+  }
+
+  .platform-badge.youtube {
+    background: rgba(255, 0, 0, 0.9);
+    color: white;
+  }
+
+  .platform-badge.kick {
+    background: rgba(83, 252, 24, 0.9);
+    color: #111;
+  }
+
+  .preview-avatar {
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 2px solid rgba(0, 0, 0, 0.4);
+    background-color: var(--primary-color);
+  }
+
+  .preview-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .live-indicator {
+    position: absolute;
+    bottom: 8px;
+    right: 8px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 8px;
+    background: rgba(0, 0, 0, 0.75);
+    border-radius: 4px;
+    font-size: 0.6875rem;
+    color: white;
+    font-weight: 600;
+  }
+
+  .live-dot {
+    width: 7px;
+    height: 7px;
+    background: #ef4444;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .preview-info {
+    padding: 10px 12px;
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 3px;
+    min-width: 0;
   }
 
-  .creator-name {
-    font-size: 0.9375rem;
+  .preview-title {
+    font-size: 0.8125rem;
     font-weight: 600;
-    color: var(--text-color);
+    line-height: 1.35;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
   }
 
-  .creator-platform {
-    font-size: 0.75rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-  }
-
-  .creator-live-detail,
-  .creator-latest {
+  .preview-meta {
     font-size: 0.75rem;
     color: var(--text-muted);
     white-space: nowrap;
@@ -850,8 +990,8 @@
       grid-template-columns: 1fr;
     }
 
-    .creators-grid {
-      grid-template-columns: 1fr;
+    .preview-grid {
+      grid-template-columns: repeat(2, 1fr);
     }
   }
 
@@ -867,6 +1007,10 @@
 
     .event-link {
       margin-left: auto;
+    }
+
+    .preview-grid {
+      grid-template-columns: 1fr;
     }
 
     .discord-btn {

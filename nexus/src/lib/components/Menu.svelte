@@ -528,6 +528,11 @@
     [key: string]: { label: string; url: string; disabled?: boolean; highlighted?: boolean }[];
   }
   const menuItemsWiki: MenuItems = {
+    'Home': [
+      { label: 'News', url: 'news' },
+      { label: 'Events', url: 'events' },
+      { label: 'Submit Event', url: 'submitEvent' },
+    ],
     'Items': [
       { label: 'Weapons', url: 'weapons' },
       { label: 'Armor Sets', url: 'armorsets' },
@@ -622,14 +627,21 @@
   }
 
 
+  const customUrls: Record<string, string> = {
+    'api': `${import.meta.env.VITE_API_URL}/docs/`,
+    'nihelper': 'https://www.nihelper.com',
+    'cyrenedream': 'https://www.cyrenedream.org',
+    'deltaproject': 'https://www.thedeltaproject.net',
+    'ripcraze': 'https://ripcraze.com/',
+    'entropialife': 'http://www.entropialife.com',
+    'pcforum': 'https://www.planetcalypsoforum.com',
+    'news': '/',
+    'events': '/#events',
+    'submitEvent': '/events/submit',
+  };
+
   function getMenuItemUrl(menu: string, item: { label: string; url: string }) {
-    if (item.url === 'api') return `${import.meta.env.VITE_API_URL}/docs/`;
-    if (item.url === 'nihelper') return 'https://www.nihelper.com';
-    if (item.url === 'cyrenedream') return 'https://www.cyrenedream.org';
-    if (item.url === 'deltaproject') return 'https://www.thedeltaproject.net';
-    if (item.url === 'ripcraze') return 'https://ripcraze.com/';
-    if (item.url === 'entropialife') return 'http://www.entropialife.com';
-    if (item.url === 'pcforum') return 'https://www.planetcalypsoforum.com';
+    if (customUrls[item.url]) return customUrls[item.url];
     return `/${menu.toLowerCase()}/${item.url.toLowerCase()}`;
   }
 
@@ -642,6 +654,7 @@
 
   // Menus with overview pages that the header should link to
   const menuOverviewUrls: Record<string, string> = {
+    'Home': '/',
     'Items': '/items',
     'Information': '/information',
     'Tools': '/tools',

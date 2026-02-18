@@ -121,12 +121,8 @@
 
 <style>
   .page-container {
-    padding: 1rem;
-    padding-bottom: 2rem;
     max-width: 1200px;
-    margin: 0 auto;
-    height: 100%;
-    overflow-y: auto;
+    padding-bottom: 2rem;
   }
 
   .breadcrumb {

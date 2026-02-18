@@ -46,14 +46,15 @@ Dynamic homepage with four content sections:
 |---------|------------|-------------|
 | **Latest News** | Steam News API (App 3642750) + Nexus announcements | Merged news feed; pinned first, then date desc. Nexus articles with `content_html` link to `/news/{id}` for on-site reading |
 | **Upcoming Events** | `events` table (approved, future) | Community-submitted events approved by admins |
-| **Content Creators** | `content_creators` table (active) | Whitelisted YouTube/Twitch/Kick channels with API-enriched data |
+| **Live Streams** | `content_creators` table (active, Twitch live) | Privacy-safe stream previews with creator avatars, ordered by priority then viewer count (up to 6) |
+| **Latest Videos** | `content_creators` table (active, YouTube) | Clickable video thumbnails evenly distributed across creators (up to 6) |
 | **Explore** | Static | Links to Items, Information, Maps, Tools, Market |
 
 **Server data**: `+page.server.js` loads all four data sources in parallel.
 
 **News cache**: `$lib/server/news-cache.js` — 30-minute in-memory TTL, filters Steam to "Community Announcements" feed.
 
-**Creator enrichment**: `$lib/server/creator-enrichment.js` — background loop every 15 minutes refreshes stale YouTube (RSS + Data API v3) and Twitch (Helix) data. Kick has no API.
+**Creator enrichment**: `$lib/server/creator-enrichment.js` — background loop every 15 minutes refreshes stale YouTube (RSS feed for up to 6 recent videos + Data API v3 for channel info) and Twitch (Helix API for profile + live stream status with thumbnail). Kick has no API. The server processes creators into `streams` (live Twitch, sorted by display_order then viewer count) and `videos` (YouTube, evenly distributed across creators via round-robin).
 
 **Database tables** (in `nexus-users`):
 - `announcements` — Admin-created news posts (with optional `content_html` for on-site rich text articles)
