@@ -345,6 +345,10 @@
       const modified = existing?.modified || {};
       modified.name = modified.name ?? loc.Name;
       modified.locationType = modified.locationType ?? (isArea(loc) ? 'Area' : (loc.Properties?.Type || 'Area'));
+      // Preserve area type — Areas endpoint stores it in Properties.Type, not Properties.AreaType
+      if (modified.locationType === 'Area' && modified.areaType === undefined) {
+        modified.areaType = loc.Properties?.AreaType || loc.Properties?.Type || 'MobArea';
+      }
 
       if (entropiaData.center) {
         modified.longitude = entropiaData.center.x;

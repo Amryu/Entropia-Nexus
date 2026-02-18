@@ -128,12 +128,17 @@
     }
   }
 
-  function getChangeIndicator(locId) {
-    for (const [, change] of pendingChanges) {
-      if (change.original?.Id === locId) return change.action;
+  // Reactive map of locId → change action for the orange/green/red dots.
+  // Must be a reactive declaration (not a function) so Svelte tracks pendingChanges as a dependency
+  // and re-renders the list items when changes are added/removed.
+  $: changeIndicators = (() => {
+    const m = new Map();
+    for (const [key, change] of pendingChanges) {
+      const locId = change.original?.Id ?? key;
+      m.set(locId, change.action);
     }
-    return null;
-  }
+    return m;
+  })();
 </script>
 
 <style>
@@ -357,7 +362,7 @@
         <span class="group-count">{locs.length}</span>
       </div>
       {#each locs as loc}
-        {@const changeType = getChangeIndicator(loc.Id)}
+        {@const changeType = changeIndicators.get(loc.Id) ?? null}
         <div
           class="location-row"
           class:selected={selectedId === loc.Id}
