@@ -233,6 +233,372 @@ function polygonCentroid(vertices) {
   return { x: Math.round(sx / n), y: Math.round(sy / n) };
 }
 
+// ─── Snap Constants ─────────────────────────────────────────────────────────
+
+export const SERVER_TILE_SIZE = 8192;
+export const SNAP_THRESHOLD_PX = 25;
+export const SNAP_THRESHOLD_MAX_EU = 500;     // Max snap range for whole-shape dragging
+export const VERTEX_SNAP_THRESHOLD_PX = 10;
+export const VERTEX_SNAP_THRESHOLD_MAX_EU = 100; // Max snap range for vertex editing
+export const MIN_GRID_DISPLAY_PX = 50; // Minimum pixel spacing between displayed grid lines
+
+/**
+ * Compute the finest grid spacing (power of 2) that keeps lines ≥ MIN_GRID_DISPLAY_PX apart.
+ * Returns a power of 2 from 1 to SERVER_TILE_SIZE.
+ * @param {number} zoom — current map zoom level
+ * @param {number} ratio — EU per image pixel (transforms.ratio)
+ * @returns {number} grid spacing in Entropia units
+ */
+export function getGridSpacing(zoom, ratio) {
+  const scale = Math.pow(2, zoom);
+  const euPerPixel = ratio / scale;
+  const minSpacing = euPerPixel * MIN_GRID_DISPLAY_PX;
+  let spacing = 1;
+  while (spacing < minSpacing) spacing *= 2;
+  return Math.min(spacing, SERVER_TILE_SIZE);
+}
+
+// ─── Snap Utilities ─────────────────────────────────────────────────────────
+
+/**
+ * Get bounding box of a location's shape in Entropia coordinates.
+ * Works with the location object directly (reads Properties.Shape + Properties.Data).
+ * @param {object} loc — location object with Properties.Shape and Properties.Data
+ * @returns {{ minX: number, maxX: number, minY: number, maxY: number } | null}
+ */
+export function getShapeBounds(loc) {
+  const data = loc?.Properties?.Data;
+  const shape = loc?.Properties?.Shape;
+  if (!data || !shape) return null;
+
+  if (shape === 'Circle') {
+    const r = data.radius || 0;
+    return { minX: data.x - r, maxX: data.x + r, minY: data.y - r, maxY: data.y + r };
+  } else if (shape === 'Rectangle') {
+    return { minX: data.x, maxX: data.x + data.width, minY: data.y, maxY: data.y + data.height };
+  } else if (shape === 'Polygon' && data.vertices?.length >= 6) {
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (let i = 0; i < data.vertices.length; i += 2) {
+      const vx = data.vertices[i], vy = data.vertices[i + 1];
+      if (vx < minX) minX = vx;
+      if (vx > maxX) maxX = vx;
+      if (vy < minY) minY = vy;
+      if (vy > maxY) maxY = vy;
+    }
+    return { minX, maxX, minY, maxY };
+  }
+  return null;
+}
+
+/**
+ * Get server tile border positions for a planet.
+ * @param {object} planet — planet with Properties.Map.{X, Y, Width, Height}
+ * @returns {{ xLines: number[], yLines: number[] }}
+ */
+export function getServerGridLines(planet) {
+  const mapInfo = planet?.Properties?.Map;
+  if (!mapInfo) return { xLines: [], yLines: [] };
+
+  const offsetX = mapInfo.X * SERVER_TILE_SIZE;
+  const offsetY = mapInfo.Y * SERVER_TILE_SIZE;
+  const xLines = [];
+  const yLines = [];
+
+  for (let i = 0; i <= mapInfo.Width; i++) {
+    xLines.push(offsetX + i * SERVER_TILE_SIZE);
+  }
+  for (let i = 0; i <= mapInfo.Height; i++) {
+    yLines.push(offsetY + i * SERVER_TILE_SIZE);
+  }
+
+  return { xLines, yLines };
+}
+
+/**
+ * Compute snap offset for a shape's bounding box against candidates and grid lines.
+ * @param {{ minX, maxX, minY, maxY }} bounds — current shape bounds in Entropia coords
+ * @param {Array<{ minX, maxX, minY, maxY }>} candidates — other same-type shape bounds
+ * @param {{ xLines: number[], yLines: number[] } | null} gridLines — server grid
+ * @param {number} gap — desired gap between adjacent edges (Entropia units)
+ * @param {number} threshold — max snap distance (Entropia units)
+ * @returns {{ dx: number, dy: number, guideX: number|null, guideY: number|null }}
+ */
+export function computeSnapOffset(bounds, candidates, gridLines, gap, threshold) {
+  let bestDx = 0, bestDy = 0;
+  let bestAbsDx = threshold + 1, bestAbsDy = threshold + 1;
+  let guideX = null, guideY = null;
+  const proximity = threshold * 2;
+
+  const proximitySq = proximity * proximity;
+
+  // Edge-to-edge snapping against candidates
+  for (const c of candidates) {
+    // Proximity filter: skip candidates far away (Euclidean distance between bounding boxes)
+    const xGap = Math.max(0, c.minX - bounds.maxX, bounds.minX - c.maxX);
+    const yGap = Math.max(0, c.minY - bounds.maxY, bounds.minY - c.maxY);
+    if (xGap * xGap + yGap * yGap > proximitySq) continue;
+
+    // Determine spatial relationship on each axis
+    const separatedOnX = bounds.maxX <= c.minX || bounds.minX >= c.maxX;
+    const separatedOnY = bounds.maxY <= c.minY || bounds.minY >= c.maxY;
+
+    // X-axis: adjacent pairings (always valid — they create gaps)
+    const xPairs = [
+      { corr: c.minX - gap - bounds.maxX, guide: c.minX },  // right→left (adjacent)
+      { corr: c.maxX + gap - bounds.minX, guide: c.maxX },  // left→right (adjacent)
+    ];
+    // X-axis: alignment pairings only when shapes are separated on Y
+    // (prevents pulling shapes into each other on the X axis)
+    if (separatedOnY) {
+      xPairs.push(
+        { corr: c.maxX - bounds.maxX, guide: c.maxX },       // right→right (align)
+        { corr: c.minX - bounds.minX, guide: c.minX },       // left→left (align)
+      );
+    }
+    for (const { corr, guide } of xPairs) {
+      const abs = Math.abs(corr);
+      if (abs <= threshold && abs < bestAbsDx) {
+        bestDx = corr; bestAbsDx = abs; guideX = guide;
+      }
+    }
+
+    // Y-axis: adjacent pairings (always valid)
+    const yPairs = [
+      { corr: c.minY - gap - bounds.maxY, guide: c.minY },
+      { corr: c.maxY + gap - bounds.minY, guide: c.maxY },
+    ];
+    // Y-axis: alignment pairings only when shapes are separated on X
+    if (separatedOnX) {
+      yPairs.push(
+        { corr: c.maxY - bounds.maxY, guide: c.maxY },
+        { corr: c.minY - bounds.minY, guide: c.minY },
+      );
+    }
+    for (const { corr, guide } of yPairs) {
+      const abs = Math.abs(corr);
+      if (abs <= threshold && abs < bestAbsDy) {
+        bestDy = corr; bestAbsDy = abs; guideY = guide;
+      }
+    }
+  }
+
+  // Grid line snapping (gap=0, just snap edge to grid)
+  if (gridLines) {
+    for (const gx of gridLines.xLines) {
+      const pairs = [
+        { corr: gx - bounds.minX, guide: gx },
+        { corr: gx - bounds.maxX, guide: gx },
+      ];
+      for (const { corr, guide } of pairs) {
+        const abs = Math.abs(corr);
+        if (abs <= threshold && abs < bestAbsDx) {
+          bestDx = corr; bestAbsDx = abs; guideX = guide;
+        }
+      }
+    }
+    for (const gy of gridLines.yLines) {
+      const pairs = [
+        { corr: gy - bounds.minY, guide: gy },
+        { corr: gy - bounds.maxY, guide: gy },
+      ];
+      for (const { corr, guide } of pairs) {
+        const abs = Math.abs(corr);
+        if (abs <= threshold && abs < bestAbsDy) {
+          bestDy = corr; bestAbsDy = abs; guideY = guide;
+        }
+      }
+    }
+  }
+
+  return { dx: bestDx, dy: bestDy, guideX, guideY };
+}
+
+/**
+ * Snap an angle to the nearest 22.5° increment (16 directions).
+ * @param {number} angle — angle in radians
+ * @returns {number} snapped angle in radians
+ */
+export function snapAngleToDirection(angle) {
+  const step = Math.PI / 8; // 22.5°
+  return Math.round(angle / step) * step;
+}
+
+// ─── Vertex Snap Utilities ───────────────────────────────────────────────────
+
+/**
+ * Extract vertices in Entropia coordinates from a location's shape.
+ * @param {object} loc — location object with Properties.Shape and Properties.Data
+ * @returns {Array<{ x: number, y: number }>}
+ */
+export function getShapeVertices(loc) {
+  const data = loc?.Properties?.Data;
+  const shape = loc?.Properties?.Shape;
+  if (!data || !shape) return [];
+
+  let rawVerts;
+  if (shape === 'Rectangle') {
+    rawVerts = [
+      { x: data.x, y: data.y },
+      { x: data.x + data.width, y: data.y },
+      { x: data.x + data.width, y: data.y + data.height },
+      { x: data.x, y: data.y + data.height },
+    ];
+  } else if (shape === 'Polygon' && data.vertices?.length >= 6) {
+    rawVerts = [];
+    for (let i = 0; i < data.vertices.length; i += 2) {
+      rawVerts.push({ x: data.vertices[i], y: data.vertices[i + 1] });
+    }
+  } else {
+    return [];
+  }
+
+  // Include neighbor vertices for bisector computation at each corner
+  const n = rawVerts.length;
+  return rawVerts.map((v, i) => ({
+    x: v.x, y: v.y,
+    prevX: rawVerts[(i - 1 + n) % n].x, prevY: rawVerts[(i - 1 + n) % n].y,
+    nextX: rawVerts[(i + 1) % n].x,     nextY: rawVerts[(i + 1) % n].y,
+  }));
+}
+
+/**
+ * Compute snap offset for a single vertex against candidate vertices and grid lines.
+ * Snaps X and Y independently.
+ * @param {number} vx — vertex X in Entropia coords
+ * @param {number} vy — vertex Y in Entropia coords
+ * @param {Array<{ x: number, y: number }>} candidateVertices — vertices from same-type areas
+ * @param {{ xLines: number[], yLines: number[] } | null} gridLines — server grid
+ * @param {number} gap — desired gap (Entropia units)
+ * @param {number} threshold — max snap distance (Entropia units)
+ * @returns {{ dx: number, dy: number, guideX: number|null, guideY: number|null }}
+ */
+export function computeVertexSnap(vx, vy, candidateVertices, gridLines, gap, threshold) {
+  let bestDx = 0, bestDy = 0;
+  let bestAbsDx = threshold + 1, bestAbsDy = threshold + 1;
+  let guideX = null, guideY = null;
+  let matchX = null, matchY = null; // candidate vertex that triggered the X/Y snap
+  const proximity = threshold * 2;
+
+  const proximitySq = proximity * proximity;
+
+  for (const cv of candidateVertices) {
+    // Proximity filter: only snap to nearby vertices (Euclidean distance)
+    const pdx = cv.x - vx, pdy = cv.y - vy;
+    if (pdx * pdx + pdy * pdy > proximitySq) continue;
+
+    // Exact vertex coordinate match (X and Y independently)
+    const dxExact = cv.x - vx;
+    if (Math.abs(dxExact) <= threshold && Math.abs(dxExact) < bestAbsDx) {
+      bestDx = dxExact; bestAbsDx = Math.abs(dxExact); guideX = cv.x; matchX = cv;
+    }
+    const dyExact = cv.y - vy;
+    if (Math.abs(dyExact) <= threshold && Math.abs(dyExact) < bestAbsDy) {
+      bestDy = dyExact; bestAbsDy = Math.abs(dyExact); guideY = cv.y; matchY = cv;
+    }
+
+    // Gap-offset match: snap to gap distance from candidate vertex
+    if (gap > 0) {
+      const gapSignX = vx >= cv.x ? 1 : -1;
+      const gapDx = (cv.x + gapSignX * gap) - vx;
+      if (Math.abs(gapDx) <= threshold && Math.abs(gapDx) < bestAbsDx) {
+        bestDx = gapDx; bestAbsDx = Math.abs(gapDx); guideX = cv.x; matchX = cv;
+      }
+      const gapSignY = vy >= cv.y ? 1 : -1;
+      const gapDy = (cv.y + gapSignY * gap) - vy;
+      if (Math.abs(gapDy) <= threshold && Math.abs(gapDy) < bestAbsDy) {
+        bestDy = gapDy; bestAbsDy = Math.abs(gapDy); guideY = cv.y; matchY = cv;
+      }
+    }
+  }
+
+  // Grid line snapping — vertex matches take priority, so grid must be
+  // significantly closer (at least 2x) to override a vertex match
+  if (gridLines) {
+    for (const gx of gridLines.xLines) {
+      const dx = gx - vx;
+      const adx = Math.abs(dx);
+      const limit = matchX ? bestAbsDx * 0.5 : bestAbsDx; // grid must beat half the vertex distance
+      if (adx <= threshold && adx < limit) {
+        bestDx = dx; bestAbsDx = adx; guideX = gx; matchX = null;
+      }
+    }
+    for (const gy of gridLines.yLines) {
+      const dy = gy - vy;
+      const ady = Math.abs(dy);
+      const limit = matchY ? bestAbsDy * 0.5 : bestAbsDy; // grid must beat half the vertex distance
+      if (ady <= threshold && ady < limit) {
+        bestDy = dy; bestAbsDy = ady; guideY = gy; matchY = null;
+      }
+    }
+  }
+
+  // --- Bisector snap: snap to angle bisector line of nearby corner vertices ---
+  // Points on the bisector are equidistant from both edges meeting at the corner.
+  let bisector = null;
+  const hasAxisSnap = bestAbsDx <= threshold || bestAbsDy <= threshold;
+  const bestAxisDisp = hasAxisSnap ? Math.sqrt(bestDx * bestDx + bestDy * bestDy) : Infinity;
+
+  for (const cv of candidateVertices) {
+    // Need neighbor info for bisector computation
+    if (cv.prevX === undefined || cv.nextX === undefined) continue;
+
+    // Proximity filter (same as above)
+    const pdx = cv.x - vx, pdy = cv.y - vy;
+    if (pdx * pdx + pdy * pdy > proximitySq) continue;
+
+    // Edge directions from corner vertex
+    const e1x = cv.prevX - cv.x, e1y = cv.prevY - cv.y;
+    const e2x = cv.nextX - cv.x, e2y = cv.nextY - cv.y;
+    const len1 = Math.sqrt(e1x * e1x + e1y * e1y);
+    const len2 = Math.sqrt(e2x * e2x + e2y * e2y);
+    if (len1 < 1 || len2 < 1) continue; // degenerate edges
+
+    // Bisector direction = normalize(normalize(e1) + normalize(e2))
+    const bx = e1x / len1 + e2x / len2;
+    const by = e1y / len1 + e2y / len2;
+    const bLen = Math.sqrt(bx * bx + by * by);
+    if (bLen < 0.01) continue; // nearly 180° angle, bisector undefined
+
+    const bdx = bx / bLen, bdy = by / bLen;
+
+    // Project vertex onto bisector line through cv
+    const vRelX = vx - cv.x, vRelY = vy - cv.y;
+    const t = vRelX * bdx + vRelY * bdy;
+    const projX = cv.x + t * bdx;
+    const projY = cv.y + t * bdy;
+    const perpDx = vx - projX, perpDy = vy - projY;
+    const perpDist = Math.sqrt(perpDx * perpDx + perpDy * perpDy);
+
+    if (perpDist > threshold) continue;
+
+    // Bisector gap snap: snap to distance=gap from corner along bisector
+    if (gap > 0) {
+      const tSign = t >= 0 ? 1 : -1;
+      const gapProjX = cv.x + tSign * gap * bdx;
+      const gapProjY = cv.y + tSign * gap * bdy;
+      const gapSnapDx = gapProjX - vx, gapSnapDy = gapProjY - vy;
+      const gapTotalDisp = Math.sqrt(gapSnapDx * gapSnapDx + gapSnapDy * gapSnapDy);
+      if (gapTotalDisp <= threshold && gapTotalDisp < bestAxisDisp) {
+        bestDx = gapSnapDx;
+        bestDy = gapSnapDy;
+        bisector = { cx: cv.x, cy: cv.y, dirX: bdx, dirY: bdy };
+        continue; // gap point wins for this candidate, skip raw projection
+      }
+    }
+
+    const snapDx = projX - vx, snapDy = projY - vy;
+    const totalDisp = Math.sqrt(snapDx * snapDx + snapDy * snapDy);
+    // Bisector only wins if total displacement is strictly less than axis snaps
+    if (totalDisp < bestAxisDisp) {
+      bestDx = snapDx;
+      bestDy = snapDy;
+      bisector = { cx: cv.x, cy: cv.y, dirX: bdx, dirY: bdy };
+    }
+  }
+
+  return { dx: bestDx, dy: bestDy, guideX, guideY, matchX, matchY, bisector, gap };
+}
+
 // ─── Mob Area Name Generation ────────────────────────────────────────────────
 
 /**

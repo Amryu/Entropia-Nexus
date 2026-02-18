@@ -1,7 +1,7 @@
 <script>
   // @ts-nocheck
   import { onMount, onDestroy, createEventDispatcher } from 'svelte';
-  import { buildCoordTransforms, getTypeColor, getEffectiveType, isArea, poleOfInaccessibility } from './mapEditorUtils.js';
+  import { buildCoordTransforms, getTypeColor, getEffectiveType, isArea, poleOfInaccessibility, getShapeBounds, computeSnapOffset, getServerGridLines, snapAngleToDirection, getShapeVertices, computeVertexSnap, SERVER_TILE_SIZE, SNAP_THRESHOLD_PX, SNAP_THRESHOLD_MAX_EU, VERTEX_SNAP_THRESHOLD_PX, VERTEX_SNAP_THRESHOLD_MAX_EU, getGridSpacing } from './mapEditorUtils.js';
   import { formatMobSpawnDisplayName } from '$lib/mapUtil.js';
   import ContextMenu from '../ContextMenu.svelte';
 
@@ -28,6 +28,16 @@
   let imgHeight = 0;
   let layerById = new Map();
   let L;
+
+  // Snap state
+  let snapEnabled = true;
+  let snapToGrid = true;
+  let snapGap = 5;
+  let snapGuideLayerGroup;
+  let gridOverlayGroup;
+  let _cachedGridLines = null;
+  let _activeVertexSnapData = null; // { vertices, gridLines, gap, threshold } for vertex editing
+  let _editingLoc = null; // Location object being edited (for reactive snap refresh)
 
   // Preview and editing state
   let previewLayer = null;
@@ -69,6 +79,21 @@
   $: if (map && editMode !== undefined) toggleDrawControl();
   $: if (map && L && transforms) updatePreview(previewShape);
 
+  // Refresh vertex snap data reactively when snap settings change during editing
+  $: if (_editingActive && _editingLoc) {
+    if (snapEnabled || snapToGrid) {
+      _activeVertexSnapData = {
+        vertices: snapEnabled ? getVertexSnapCandidates(_editingLoc) : [],
+        gridLines: snapToGrid ? _cachedGridLines : null,
+        gap: snapGap,
+        threshold: getVertexSnapThreshold(),
+      };
+    } else {
+      _activeVertexSnapData = null;
+      clearSnapGuides();
+    }
+  }
+
   onMount(async () => {
     L = await import('leaflet');
     await import('leaflet-draw');
@@ -93,6 +118,62 @@
     if (L.Edit?.Circle?.prototype) L.Edit.Circle.prototype._resize = fixedResize;
     if (window.L?.Edit?.Circle?.prototype) window.L.Edit.Circle.prototype._resize = fixedResize;
 
+    // Patch polygon vertex drag for angle snapping and vertex position snapping.
+    // Modifies marker._latlng in-place before the original handler reads it.
+    const patchVertexDrag = (lib) => {
+      const proto = lib?.Edit?.PolyVerticesEdit?.prototype;
+      if (!proto || proto._origOnMarkerDrag) return;
+      proto._origOnMarkerDrag = proto._onMarkerDrag;
+      proto._onMarkerDrag = function(e) {
+        const marker = e.target;
+
+        // Shift+drag: angle snap (16 directions / 22.5° steps)
+        if (e.originalEvent?.shiftKey) {
+          const idx = marker._index;
+          if (idx !== undefined && this._poly) {
+            const latlngs = this._poly.getLatLngs()[0];
+            if (latlngs?.length > 1) {
+              const prevIdx = (idx - 1 + latlngs.length) % latlngs.length;
+              const prevLL = latlngs[prevIdx];
+              const curLL = marker.getLatLng();
+              const dx = curLL.lng - prevLL.lng;
+              const dy = curLL.lat - prevLL.lat;
+              const dist = Math.sqrt(dx * dx + dy * dy);
+              const angle = Math.atan2(dy, dx);
+              const snapped = snapAngleToDirection(angle);
+              marker._latlng.lat = prevLL.lat + dist * Math.sin(snapped);
+              marker._latlng.lng = prevLL.lng + dist * Math.cos(snapped);
+            }
+          }
+        }
+
+        // Vertex position snap: snap to candidate vertices and grid lines
+        if (_activeVertexSnapData && transforms) {
+          const curLL = marker.getLatLng();
+          const ePos = transforms.leafletToEntropia(curLL.lat, curLL.lng);
+          const snap = computeVertexSnap(
+            ePos.x, ePos.y,
+            _activeVertexSnapData.vertices,
+            _activeVertexSnapData.gridLines,
+            _activeVertexSnapData.gap,
+            _activeVertexSnapData.threshold
+          );
+          const snappedX = ePos.x + snap.dx;
+          const snappedY = ePos.y + snap.dy;
+          if (snap.dx !== 0 || snap.dy !== 0) {
+            const [newLat, newLng] = transforms.entropiaToLeaflet(snappedX, snappedY);
+            marker._latlng.lat = newLat;
+            marker._latlng.lng = newLng;
+          }
+          updateVertexSnapGuides(snappedX, snappedY, snap);
+        }
+
+        this._origOnMarkerDrag.call(this, e);
+      };
+    };
+    patchVertexDrag(L);
+    patchVertexDrag(window.L);
+
     // Import CSS
     const linkLeaflet = document.createElement('link');
     linkLeaflet.rel = 'stylesheet';
@@ -107,7 +188,7 @@
     map = L.map(mapContainer, {
       crs: L.CRS.Simple,
       minZoom: -5,
-      maxZoom: 5,
+      maxZoom: 10,
       zoomSnap: 0.25,
       zoomDelta: 0.5,
       attributionControl: false
@@ -115,6 +196,8 @@
 
     layerGroup = L.layerGroup().addTo(map);
     dbChangesLayerGroup = L.layerGroup().addTo(map);
+    snapGuideLayerGroup = L.layerGroup().addTo(map);
+    gridOverlayGroup = L.layerGroup().addTo(map);
 
     // Draw events — use string literal; L.Draw.Event.CREATED may be undefined with ESM imports
     map.on('draw:created', (e) => {
@@ -176,6 +259,7 @@
       imgHeight = img.naturalHeight;
 
       transforms = buildCoordTransforms(planet, imgWidth, imgHeight);
+      _cachedGridLines = getServerGridLines(planet);
 
       if (imageOverlay) map.removeLayer(imageOverlay);
 
@@ -185,8 +269,11 @@
 
       updateMaxBounds();
       map.on('zoomend', updateMaxBounds);
+      map.on('zoomend', rebuildGridOverlay);
+      map.on('moveend', rebuildGridOverlay);
 
       rebuildLayers();
+      rebuildGridOverlay();
     };
     img.onerror = () => {
       console.error(`Failed to load planet image: ${imageUrl}`);
@@ -568,6 +655,317 @@
     });
   }
 
+  // --- Snap helpers ---
+
+  function getSnapCandidates(loc) {
+    const type = getEffectiveType(loc);
+    const excludeId = loc.Id;
+
+    // Collect own bounds (both original and edited) to exclude by value
+    const ownBoundsSet = new Set();
+    const originalLoc = locations.find(l => l.Id === excludeId);
+    if (originalLoc) {
+      const ob = getShapeBounds(originalLoc);
+      if (ob) ownBoundsSet.add(`${ob.minX},${ob.maxX},${ob.minY},${ob.maxY}`);
+    }
+    const eb = getShapeBounds(loc);
+    if (eb) ownBoundsSet.add(`${eb.minX},${eb.maxX},${eb.minY},${eb.maxY}`);
+
+    const candidates = [];
+    for (const other of locations) {
+      if (other.Id === excludeId) continue;
+      if (!isArea(other)) continue;
+      if (getEffectiveType(other) !== type) continue;
+      const bounds = getShapeBounds(getEffectiveLocData(other));
+      if (bounds && !ownBoundsSet.has(`${bounds.minX},${bounds.maxX},${bounds.minY},${bounds.maxY}`)) {
+        candidates.push(bounds);
+      }
+    }
+    // Also include pending add areas of the same type
+    for (const [tempId, change] of pendingChanges) {
+      if (change.action !== 'add' || !change.modified) continue;
+      if (tempId === excludeId) continue;
+      const mod = change.modified;
+      if (mod.locationType !== 'Area' || !mod.shape || !mod.shapeData) continue;
+      const modType = mod.areaType || 'Area';
+      if (modType !== type) continue;
+      const fakeLoc = { Properties: { Shape: mod.shape, Data: mod.shapeData } };
+      const bounds = getShapeBounds(fakeLoc);
+      if (bounds && !ownBoundsSet.has(`${bounds.minX},${bounds.maxX},${bounds.minY},${bounds.maxY}`)) {
+        candidates.push(bounds);
+      }
+    }
+    return candidates;
+  }
+
+  function getVertexSnapCandidates(loc) {
+    const type = getEffectiveType(loc);
+    const excludeId = loc.Id;
+
+    // Build a set of own vertices (both original and edited) to exclude by value.
+    // This prevents self-snapping even if the same shape appears through different paths.
+    const ownVertexSet = new Set();
+    const originalLoc = locations.find(l => l.Id === excludeId);
+    if (originalLoc) {
+      for (const v of getShapeVertices(originalLoc)) ownVertexSet.add(`${v.x},${v.y}`);
+    }
+    for (const v of getShapeVertices(loc)) ownVertexSet.add(`${v.x},${v.y}`);
+
+    const allVertices = [];
+    for (const other of locations) {
+      if (other.Id === excludeId) continue;
+      if (!isArea(other)) continue;
+      if (getEffectiveType(other) !== type) continue;
+      for (const v of getShapeVertices(getEffectiveLocData(other))) {
+        if (!ownVertexSet.has(`${v.x},${v.y}`)) allVertices.push(v);
+      }
+    }
+    for (const [tempId, change] of pendingChanges) {
+      if (change.action !== 'add' || !change.modified) continue;
+      if (tempId === excludeId) continue;
+      const mod = change.modified;
+      if (mod.locationType !== 'Area' || !mod.shape || !mod.shapeData) continue;
+      if ((mod.areaType || 'Area') !== type) continue;
+      const fakeLoc = { Properties: { Shape: mod.shape, Data: mod.shapeData } };
+      for (const v of getShapeVertices(fakeLoc)) {
+        if (!ownVertexSet.has(`${v.x},${v.y}`)) allVertices.push(v);
+      }
+    }
+    return allVertices;
+  }
+
+  function getSnapThreshold() {
+    if (!transforms || !map) return SNAP_THRESHOLD_MAX_EU;
+    // Convert screen pixels to Entropia units at current zoom, with floor and ceiling
+    // Floor: snapping still works when drag steps are large (~100 EU per frame)
+    // Ceiling: prevents snapping to distant areas across the map at low zoom
+    const pixelBased = SNAP_THRESHOLD_PX * transforms.ratio / map.options.crs.scale(map.getZoom());
+    return Math.min(SNAP_THRESHOLD_MAX_EU, Math.max(200, pixelBased));
+  }
+
+  /** Tighter threshold for vertex editing — mouse follows precisely, no need for large floor. */
+  function getVertexSnapThreshold() {
+    if (!transforms || !map) return VERTEX_SNAP_THRESHOLD_MAX_EU;
+    const pixelBased = VERTEX_SNAP_THRESHOLD_PX * transforms.ratio / map.options.crs.scale(map.getZoom());
+    return Math.min(VERTEX_SNAP_THRESHOLD_MAX_EU, Math.max(15, pixelBased));
+  }
+
+  function updateSnapGuides(gx, gy) {
+    if (!snapGuideLayerGroup || !transforms || !L) return;
+    snapGuideLayerGroup.clearLayers();
+    const guideStyle = { color: '#ff00ff', weight: 1, dashArray: '6,4', opacity: 0.8, interactive: false };
+    if (gx != null) {
+      // Vertical line at Entropia X — convert two extremes to Leaflet
+      const mapInfo = planet?.Properties?.Map;
+      if (mapInfo) {
+        const yMin = mapInfo.Y * SERVER_TILE_SIZE;
+        const yMax = yMin + mapInfo.Height * SERVER_TILE_SIZE;
+        const [lat1, lng1] = transforms.entropiaToLeaflet(gx, yMin);
+        const [lat2, lng2] = transforms.entropiaToLeaflet(gx, yMax);
+        snapGuideLayerGroup.addLayer(L.polyline([[lat1, lng1], [lat2, lng2]], guideStyle));
+      }
+    }
+    if (gy != null) {
+      const mapInfo = planet?.Properties?.Map;
+      if (mapInfo) {
+        const xMin = mapInfo.X * SERVER_TILE_SIZE;
+        const xMax = xMin + mapInfo.Width * SERVER_TILE_SIZE;
+        const [lat1, lng1] = transforms.entropiaToLeaflet(xMin, gy);
+        const [lat2, lng2] = transforms.entropiaToLeaflet(xMax, gy);
+        snapGuideLayerGroup.addLayer(L.polyline([[lat1, lng1], [lat2, lng2]], guideStyle));
+      }
+    }
+  }
+
+  /**
+   * Draw focused vertex snap guides: localized alignment lines + highlighted candidate vertices.
+   * Includes connecting lines and distance labels showing per-axis distance.
+   * Green highlighting when distance equals the configured gap.
+   */
+  function updateVertexSnapGuides(snappedX, snappedY, snap) {
+    if (!snapGuideLayerGroup || !transforms || !L) return;
+    snapGuideLayerGroup.clearLayers();
+    if (!snap.guideX && !snap.guideY && !snap.bisector) return;
+
+    const gap = snap.gap || 0;
+    const guideStyle = { color: '#ff00ff', weight: 1.5, dashArray: '6,4', opacity: 0.8, interactive: false };
+    const guideStyleGap = { color: '#22cc44', weight: 1.5, dashArray: '6,4', opacity: 0.8, interactive: false };
+    const matchStyle = { radius: 5, color: '#ff00ff', fillColor: '#ff00ff', weight: 2, opacity: 0.9, fillOpacity: 0.4, interactive: false };
+    const matchStyleGap = { radius: 5, color: '#22cc44', fillColor: '#22cc44', weight: 2, opacity: 0.9, fillOpacity: 0.4, interactive: false };
+    const connectExact = { color: '#ff00ff', weight: 1, opacity: 0.6, interactive: false };
+    const connectGap = { color: '#22cc44', weight: 1.5, opacity: 0.8, interactive: false };
+    const connectBisect = { color: '#00ffff', weight: 1, opacity: 0.6, interactive: false };
+    const mapInfo = planet?.Properties?.Map;
+
+    // X guide: vertical line at guideX
+    if (snap.guideX != null) {
+      const distX = Math.round(Math.abs(snappedX - snap.guideX));
+      const isGapX = gap > 0 && distX === Math.round(gap);
+      const activeGuideStyle = isGapX ? guideStyleGap : guideStyle;
+      const activeMatchStyle = isGapX ? matchStyleGap : matchStyle;
+
+      if (snap.matchX) {
+        const yMin = Math.min(snap.matchX.y, snappedY);
+        const yMax = Math.max(snap.matchX.y, snappedY);
+        const padding = Math.max(200, (yMax - yMin) * 0.3);
+        const [latA, lngA] = transforms.entropiaToLeaflet(snap.guideX, yMin - padding);
+        const [latB, lngB] = transforms.entropiaToLeaflet(snap.guideX, yMax + padding);
+        snapGuideLayerGroup.addLayer(L.polyline([[latA, lngA], [latB, lngB]], activeGuideStyle));
+        const [mLat, mLng] = transforms.entropiaToLeaflet(snap.matchX.x, snap.matchX.y);
+        snapGuideLayerGroup.addLayer(L.circleMarker([mLat, mLng], activeMatchStyle));
+
+        // Connecting line + distance label for non-zero distance
+        if (distX > 0) {
+          const connStyle = isGapX ? connectGap : connectExact;
+          const [cLatA, cLngA] = transforms.entropiaToLeaflet(snappedX, snappedY);
+          const [cLatB, cLngB] = transforms.entropiaToLeaflet(snap.guideX, snappedY);
+          snapGuideLayerGroup.addLayer(L.polyline([[cLatA, cLngA], [cLatB, cLngB]], connStyle));
+          const midX = (snappedX + snap.guideX) / 2;
+          const [midLat, midLng] = transforms.entropiaToLeaflet(midX, snappedY);
+          const cls = isGapX ? 'snap-dist-label snap-dist-gap' : 'snap-dist-label';
+          const icon = L.divIcon({ className: cls, html: `${distX}`, iconSize: [40, 16], iconAnchor: [20, 20] });
+          snapGuideLayerGroup.addLayer(L.marker([midLat, midLng], { icon, interactive: false }));
+        }
+      } else if (mapInfo) {
+        const yMin = mapInfo.Y * SERVER_TILE_SIZE;
+        const yMax = yMin + mapInfo.Height * SERVER_TILE_SIZE;
+        const [lat1, lng1] = transforms.entropiaToLeaflet(snap.guideX, yMin);
+        const [lat2, lng2] = transforms.entropiaToLeaflet(snap.guideX, yMax);
+        snapGuideLayerGroup.addLayer(L.polyline([[lat1, lng1], [lat2, lng2]], guideStyle));
+      }
+    }
+
+    // Y guide: horizontal line at guideY
+    if (snap.guideY != null) {
+      const distY = Math.round(Math.abs(snappedY - snap.guideY));
+      const isGapY = gap > 0 && distY === Math.round(gap);
+      const activeGuideStyle = isGapY ? guideStyleGap : guideStyle;
+      const activeMatchStyle = isGapY ? matchStyleGap : matchStyle;
+
+      if (snap.matchY) {
+        const xMin = Math.min(snap.matchY.x, snappedX);
+        const xMax = Math.max(snap.matchY.x, snappedX);
+        const padding = Math.max(200, (xMax - xMin) * 0.3);
+        const [latA, lngA] = transforms.entropiaToLeaflet(xMin - padding, snap.guideY);
+        const [latB, lngB] = transforms.entropiaToLeaflet(xMax + padding, snap.guideY);
+        snapGuideLayerGroup.addLayer(L.polyline([[latA, lngA], [latB, lngB]], activeGuideStyle));
+        const [mLat, mLng] = transforms.entropiaToLeaflet(snap.matchY.x, snap.matchY.y);
+        snapGuideLayerGroup.addLayer(L.circleMarker([mLat, mLng], activeMatchStyle));
+
+        // Connecting line + distance label for non-zero distance
+        if (distY > 0) {
+          const connStyle = isGapY ? connectGap : connectExact;
+          const [cLatA, cLngA] = transforms.entropiaToLeaflet(snappedX, snappedY);
+          const [cLatB, cLngB] = transforms.entropiaToLeaflet(snappedX, snap.guideY);
+          snapGuideLayerGroup.addLayer(L.polyline([[cLatA, cLngA], [cLatB, cLngB]], connStyle));
+          const midY = (snappedY + snap.guideY) / 2;
+          const [midLat, midLng] = transforms.entropiaToLeaflet(snappedX, midY);
+          const cls = isGapY ? 'snap-dist-label snap-dist-gap' : 'snap-dist-label';
+          const icon = L.divIcon({ className: cls, html: `${distY}`, iconSize: [40, 16], iconAnchor: [20, -4] });
+          snapGuideLayerGroup.addLayer(L.marker([midLat, midLng], { icon, interactive: false }));
+        }
+      } else if (mapInfo) {
+        const xMin = mapInfo.X * SERVER_TILE_SIZE;
+        const xMax = xMin + mapInfo.Width * SERVER_TILE_SIZE;
+        const [lat1, lng1] = transforms.entropiaToLeaflet(xMin, snap.guideY);
+        const [lat2, lng2] = transforms.entropiaToLeaflet(xMax, snap.guideY);
+        snapGuideLayerGroup.addLayer(L.polyline([[lat1, lng1], [lat2, lng2]], guideStyle));
+      }
+    }
+
+    // Bisector guide line (cyan) + connecting line to corner + distance label
+    if (snap.bisector) {
+      const { cx, cy, dirX, dirY } = snap.bisector;
+      const BISECTOR_GUIDE_LEN = 400;
+      const [latA, lngA] = transforms.entropiaToLeaflet(cx - BISECTOR_GUIDE_LEN * dirX, cy - BISECTOR_GUIDE_LEN * dirY);
+      const [latB, lngB] = transforms.entropiaToLeaflet(cx + BISECTOR_GUIDE_LEN * dirX, cy + BISECTOR_GUIDE_LEN * dirY);
+      const bisectorStyle = { color: '#00ffff', weight: 1.5, dashArray: '4,4', opacity: 0.7, interactive: false };
+      snapGuideLayerGroup.addLayer(L.polyline([[latA, lngA], [latB, lngB]], bisectorStyle));
+
+      const bisectDist = Math.round(Math.sqrt((snappedX - cx) ** 2 + (snappedY - cy) ** 2));
+      const isBisectGap = gap > 0 && bisectDist === Math.round(gap);
+      const cornerStyle = isBisectGap ? matchStyleGap : matchStyle;
+
+      // Highlight the corner vertex
+      const [cLat, cLng] = transforms.entropiaToLeaflet(cx, cy);
+      snapGuideLayerGroup.addLayer(L.circleMarker([cLat, cLng], cornerStyle));
+
+      // Connecting line from snapped vertex to corner + distance label
+      if (bisectDist > 0) {
+        const connStyle = isBisectGap ? connectGap : connectBisect;
+        const [sLat, sLng] = transforms.entropiaToLeaflet(snappedX, snappedY);
+        snapGuideLayerGroup.addLayer(L.polyline([[sLat, sLng], [cLat, cLng]], connStyle));
+        const midX = (snappedX + cx) / 2;
+        const midY = (snappedY + cy) / 2;
+        const [midLat, midLng] = transforms.entropiaToLeaflet(midX, midY);
+        const cls = isBisectGap ? 'snap-dist-label snap-dist-gap' : 'snap-dist-label snap-dist-bisector';
+        const icon = L.divIcon({ className: cls, html: `${bisectDist}`, iconSize: [40, 16], iconAnchor: [20, 20] });
+        snapGuideLayerGroup.addLayer(L.marker([midLat, midLng], { icon, interactive: false }));
+      }
+    }
+  }
+
+  function clearSnapGuides() {
+    if (snapGuideLayerGroup) snapGuideLayerGroup.clearLayers();
+  }
+
+  function rebuildGridOverlay() {
+    if (!gridOverlayGroup || !transforms || !L) return;
+    gridOverlayGroup.clearLayers();
+    if (!snapToGrid) return;
+
+    const mapInfo = planet?.Properties?.Map;
+    if (!mapInfo || !map) return;
+
+    // Planet bounds in Entropia coords
+    const planetXMin = mapInfo.X * SERVER_TILE_SIZE;
+    const planetXMax = planetXMin + mapInfo.Width * SERVER_TILE_SIZE;
+    const planetYMin = mapInfo.Y * SERVER_TILE_SIZE;
+    const planetYMax = planetYMin + mapInfo.Height * SERVER_TILE_SIZE;
+
+    // Visible viewport in Entropia coords (clamp to planet bounds)
+    const bounds = map.getBounds();
+    const topLeft = transforms.leafletToEntropia(bounds.getNorth(), bounds.getWest());
+    const bottomRight = transforms.leafletToEntropia(bounds.getSouth(), bounds.getEast());
+    const viewXMin = Math.max(planetXMin, Math.min(topLeft.x, bottomRight.x));
+    const viewXMax = Math.min(planetXMax, Math.max(topLeft.x, bottomRight.x));
+    const viewYMin = Math.max(planetYMin, Math.min(topLeft.y, bottomRight.y));
+    const viewYMax = Math.min(planetYMax, Math.max(topLeft.y, bottomRight.y));
+
+    // Get finest displayable spacing at current zoom
+    const spacing = getGridSpacing(map.getZoom(), transforms.ratio);
+
+    // Draw grid lines at each power-of-2 level from spacing up to SERVER_TILE_SIZE
+    // Coarser levels get brighter/thicker lines
+    for (let level = spacing; level <= SERVER_TILE_SIZE; level *= 2) {
+      const isServerBorder = level === SERVER_TILE_SIZE;
+      const style = isServerBorder
+        ? { color: '#ffffff', weight: 1.0, opacity: 0.45, dashArray: '8,8', interactive: false }
+        : level >= SERVER_TILE_SIZE / 2
+          ? { color: '#ffffff', weight: 0.6, opacity: 0.30, dashArray: '6,6', interactive: false }
+          : { color: '#ffffff', weight: 0.4, opacity: 0.22, interactive: false };
+
+      // Vertical lines (constant X)
+      const xStart = Math.ceil(viewXMin / level) * level;
+      for (let gx = xStart; gx <= viewXMax; gx += level) {
+        // Skip if a coarser level will draw this line
+        if (level < SERVER_TILE_SIZE && gx % (level * 2) === 0) continue;
+        const [lat1, lng1] = transforms.entropiaToLeaflet(gx, viewYMin);
+        const [lat2, lng2] = transforms.entropiaToLeaflet(gx, viewYMax);
+        gridOverlayGroup.addLayer(L.polyline([[lat1, lng1], [lat2, lng2]], style));
+      }
+
+      // Horizontal lines (constant Y)
+      const yStart = Math.ceil(viewYMin / level) * level;
+      for (let gy = yStart; gy <= viewYMax; gy += level) {
+        if (level < SERVER_TILE_SIZE && gy % (level * 2) === 0) continue;
+        const [lat1, lng1] = transforms.entropiaToLeaflet(viewXMin, gy);
+        const [lat2, lng2] = transforms.entropiaToLeaflet(viewXMax, gy);
+        gridOverlayGroup.addLayer(L.polyline([[lat1, lng1], [lat2, lng2]], style));
+      }
+    }
+  }
+
   // --- Edit mode: drag/drop and shape editing ---
 
   function cleanupEditing() {
@@ -576,6 +974,9 @@
       clearTimeout(_editDebounceTimer);
       _editDebounceTimer = null;
     }
+    clearSnapGuides();
+    _activeVertexSnapData = null;
+    _editingLoc = null;
     _editingActive = false;
     if (editingLayer) {
       // Remove handler BEFORE disabling editing — editing.disable() can fire
@@ -620,7 +1021,21 @@
       if (layer.editing) {
         layer.editing.enable();
         editingLayer = layer;
+        _editingLoc = loc;
         _editingActive = true;
+
+        // Set up vertex snap data for polygon vertex editing
+        // (also refreshed reactively when snap settings change — see reactive statement)
+        if (snapEnabled || snapToGrid) {
+          _activeVertexSnapData = {
+            vertices: snapEnabled ? getVertexSnapCandidates(loc) : [],
+            gridLines: snapToGrid ? _cachedGridLines : null,
+            gap: snapGap,
+            threshold: getVertexSnapThreshold(),
+          };
+        } else {
+          _activeVertexSnapData = null;
+        }
 
         // Debounce edit events — leaflet-draw fires 'edit' on every drag step.
         // _editingActive suppresses rebuildLayers so the layer isn't destroyed mid-edit.
@@ -631,6 +1046,30 @@
             const shapeType = loc.Properties.Shape.toLowerCase();
             const entropiaData = leafletShapeToEntropia(layer, shapeType);
             if (entropiaData) {
+              // Circle snap: apply edge/grid snap to circle center after move
+              if ((snapEnabled || snapToGrid) && shapeType === 'circle' && entropiaData.data) {
+                const r = entropiaData.data.radius || 0;
+                const circleBounds = {
+                  minX: entropiaData.data.x - r, maxX: entropiaData.data.x + r,
+                  minY: entropiaData.data.y - r, maxY: entropiaData.data.y + r,
+                };
+                const candidates = snapEnabled ? getSnapCandidates(loc) : [];
+                const gridLines = snapToGrid ? _cachedGridLines : null;
+                const threshold = getSnapThreshold();
+                const snap = computeSnapOffset(circleBounds, candidates, gridLines, snapGap, threshold);
+                if (snap.dx !== 0 || snap.dy !== 0) {
+                  entropiaData.data.x += snap.dx;
+                  entropiaData.data.y += snap.dy;
+                  entropiaData.center.x += snap.dx;
+                  entropiaData.center.y += snap.dy;
+                  const [newLat, newLng] = transforms.entropiaToLeaflet(entropiaData.data.x, entropiaData.data.y);
+                  layer.setLatLng([newLat, newLng]);
+                }
+                updateSnapGuides(snap.guideX, snap.guideY);
+              } else if (shapeType !== 'circle') {
+                clearSnapGuides();
+              }
+
               // Update move handle position to match new pole of inaccessibility
               if (editableOverlay && entropiaData.center) {
                 const [lat, lng] = transforms.entropiaToLeaflet(entropiaData.center.x, entropiaData.center.y);
@@ -664,12 +1103,21 @@
             try { editingLayer.editing.disable(); } catch {}
           }
           const startPos = editableOverlay.getLatLng();
+          const base = { startCenter: startPos };
+
+          // Cache snap data
+          base.candidates = snapEnabled ? getSnapCandidates(loc) : [];
+          base.gridLines = snapToGrid ? _cachedGridLines : null;
+          base.originalBounds = getShapeBounds(loc);
+          base.snapThreshold = getSnapThreshold();
+          base.eOrigCenter = transforms.leafletToEntropia(startPos.lat, startPos.lng);
+
           if (loc.Properties.Shape === 'Rectangle') {
-            dragState = { bounds: layer.getBounds(), startCenter: startPos };
+            dragState = { ...base, bounds: layer.getBounds() };
           } else if (loc.Properties.Shape === 'Polygon') {
             dragState = {
+              ...base,
               latLngs: layer.getLatLngs()[0].map(ll => L.latLng(ll.lat, ll.lng)),
-              startCenter: startPos
             };
           }
         });
@@ -677,8 +1125,32 @@
         editableOverlay.on('drag', () => {
           if (!dragState) return;
           const pos = editableOverlay.getLatLng();
-          const dLat = pos.lat - dragState.startCenter.lat;
-          const dLng = pos.lng - dragState.startCenter.lng;
+          let dLat = pos.lat - dragState.startCenter.lat;
+          let dLng = pos.lng - dragState.startCenter.lng;
+
+          // Snap computation
+          if ((snapEnabled || snapToGrid) && dragState.originalBounds) {
+            const ePos = transforms.leafletToEntropia(pos.lat, pos.lng);
+            const eDx = ePos.x - dragState.eOrigCenter.x;
+            const eDy = ePos.y - dragState.eOrigCenter.y;
+            const currentBounds = {
+              minX: dragState.originalBounds.minX + eDx,
+              maxX: dragState.originalBounds.maxX + eDx,
+              minY: dragState.originalBounds.minY + eDy,
+              maxY: dragState.originalBounds.maxY + eDy,
+            };
+            const snap = computeSnapOffset(currentBounds, dragState.candidates,
+              dragState.gridLines, snapGap, dragState.snapThreshold);
+            if (snap.dx !== 0 || snap.dy !== 0) {
+              const [sLat, sLng] = transforms.entropiaToLeaflet(ePos.x + snap.dx, ePos.y + snap.dy);
+              dLat = sLat - dragState.startCenter.lat;
+              dLng = sLng - dragState.startCenter.lng;
+            }
+            updateSnapGuides(snap.guideX, snap.guideY);
+          } else {
+            clearSnapGuides();
+          }
+
           if (loc.Properties.Shape === 'Rectangle' && dragState.bounds) {
             const b = dragState.bounds;
             layer.setBounds(L.latLngBounds(
@@ -695,9 +1167,33 @@
         editableOverlay.on('dragend', () => {
           if (!dragState) return;
           const pos = editableOverlay.getLatLng();
-          const dLat = pos.lat - dragState.startCenter.lat;
-          const dLng = pos.lng - dragState.startCenter.lng;
-          const eCenter = transforms.leafletToEntropia(pos.lat, pos.lng);
+          let dLat = pos.lat - dragState.startCenter.lat;
+          let dLng = pos.lng - dragState.startCenter.lng;
+
+          // Apply snap on final position
+          if ((snapEnabled || snapToGrid) && dragState.originalBounds) {
+            const ePos = transforms.leafletToEntropia(pos.lat, pos.lng);
+            const eDx = ePos.x - dragState.eOrigCenter.x;
+            const eDy = ePos.y - dragState.eOrigCenter.y;
+            const currentBounds = {
+              minX: dragState.originalBounds.minX + eDx,
+              maxX: dragState.originalBounds.maxX + eDx,
+              minY: dragState.originalBounds.minY + eDy,
+              maxY: dragState.originalBounds.maxY + eDy,
+            };
+            const snap = computeSnapOffset(currentBounds, dragState.candidates,
+              dragState.gridLines, snapGap, dragState.snapThreshold);
+            if (snap.dx !== 0 || snap.dy !== 0) {
+              const [sLat, sLng] = transforms.entropiaToLeaflet(ePos.x + snap.dx, ePos.y + snap.dy);
+              dLat = sLat - dragState.startCenter.lat;
+              dLng = sLng - dragState.startCenter.lng;
+            }
+          }
+          clearSnapGuides();
+
+          const eFinalCenter = transforms.leafletToEntropia(
+            dragState.startCenter.lat + dLat, dragState.startCenter.lng + dLng
+          );
           let entropiaData;
 
           if (loc.Properties.Shape === 'Rectangle' && dragState.bounds) {
@@ -709,7 +1205,7 @@
             entropiaData = {
               shape: 'Rectangle',
               data: { x, y, width: Math.abs(ne.x - sw.x), height: Math.abs(ne.y - sw.y) },
-              center: eCenter
+              center: eFinalCenter
             };
           } else if (loc.Properties.Shape === 'Polygon' && dragState.latLngs) {
             const vertices = [];
@@ -941,11 +1437,16 @@
 </script>
 
 <style>
+  .map-wrapper {
+    width: 100%;
+    height: 100%;
+    position: relative;
+  }
+
   .map-container {
     width: 100%;
     height: 100%;
     background: #1a1a2e;
-    position: relative;
   }
 
   .map-container :global(.leaflet-container) {
@@ -964,9 +1465,118 @@
   .map-container :global(.move-handle:active) {
     cursor: grabbing;
   }
+
+  .snap-toolbar {
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 6px;
+    background: rgba(0, 0, 0, 0.75);
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    font-size: 12px;
+    color: var(--text-color, #e0e0e0);
+  }
+
+  .snap-btn {
+    padding: 3px 8px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-muted, #999);
+    font-size: 11px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .snap-btn:hover { background: rgba(255, 255, 255, 0.1); }
+  .snap-btn.active {
+    background: var(--accent-color, #3b82f6);
+    color: white;
+    border-color: var(--accent-color, #3b82f6);
+  }
+
+  .snap-gap-label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    color: var(--text-muted, #999);
+  }
+  .snap-gap-input {
+    width: 60px;
+    padding: 2px 4px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-color, #e0e0e0);
+    font-size: 11px;
+  }
+
+  .snap-hint {
+    font-size: 10px;
+    color: var(--text-muted, #777);
+    padding-left: 4px;
+  }
+
+  .map-container :global(.snap-dist-label) {
+    background: rgba(0, 0, 0, 0.8);
+    color: #ff00ff;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 1px 4px;
+    border-radius: 3px;
+    border: 1px solid rgba(255, 0, 255, 0.4);
+    white-space: nowrap;
+    text-align: center;
+    pointer-events: none;
+    line-height: 14px;
+  }
+
+  .map-container :global(.snap-dist-label.snap-dist-gap) {
+    color: #22cc44;
+    border-color: rgba(34, 204, 68, 0.5);
+  }
+
+  .map-container :global(.snap-dist-label.snap-dist-bisector) {
+    color: #00ffff;
+    border-color: rgba(0, 255, 255, 0.4);
+  }
 </style>
 
-<div class="map-container" bind:this={mapContainer}></div>
+<div class="map-wrapper">
+  <div class="map-container" bind:this={mapContainer}></div>
+  {#if editMode}
+    <div class="snap-toolbar">
+      <button
+        class="snap-btn"
+        class:active={snapEnabled}
+        on:click={() => snapEnabled = !snapEnabled}
+      >Snap Edges</button>
+      <button
+        class="snap-btn"
+        class:active={snapToGrid}
+        on:click={() => { snapToGrid = !snapToGrid; rebuildGridOverlay(); }}
+      >Snap Grid</button>
+      {#if snapEnabled}
+        <label class="snap-gap-label">
+          Gap
+          <input
+            type="number"
+            class="snap-gap-input"
+            bind:value={snapGap}
+            min="0"
+            step="100"
+          />
+        </label>
+      {/if}
+      <span class="snap-hint">Shift+drag vertex = angle snap</span>
+    </div>
+  {/if}
+</div>
 
 <ContextMenu
   bind:element={contextMenuElement}
