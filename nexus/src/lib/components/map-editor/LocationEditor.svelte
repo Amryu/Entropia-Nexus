@@ -40,7 +40,9 @@
 
   // LandArea state
   let landAreaOwner = '';
-  let landAreaTaxRate = null;
+  let taxRateHunting = null;
+  let taxRateMining = null;
+  let taxRateShops = null;
 
   // Related entities
   let relatedExpanded = false;
@@ -50,6 +52,8 @@
   // Track which location is loaded to avoid resetting form when same location re-renders
   let loadedLocationId = null;
   let loadedDrawnShapeRef = null;
+  let _lastShapeDataRef = null;
+  let _lastCoordsRef = null;
 
   // Parent location options for SearchInput (areas only)
   $: parentOptions = allLocations
@@ -84,16 +88,53 @@
     }
     parentLocationName = location.ParentLocation?.Name || '';
     landAreaOwner = location.Properties?.LandAreaOwnerName || '';
-    landAreaTaxRate = location.Properties?.TaxRate ?? null;
+    taxRateHunting = location.Properties?.TaxRateHunting ?? null;
+    taxRateMining = location.Properties?.TaxRateMining ?? null;
+    taxRateShops = location.Properties?.TaxRateShops ?? null;
+    _lastShapeDataRef = location.Properties?.Data;
+    _lastCoordsRef = location.Properties?.Coordinates;
     // Reset related data when location changes
     relatedMissions = null;
     relatedExpanded = false;
+  }
+
+  // Update shape fields when shape data changes externally (e.g., map drag/resize)
+  $: if (location && location.Id === loadedLocationId && !isNew) {
+    const newData = location.Properties?.Data;
+    const newCoords = location.Properties?.Coordinates;
+    if (newData !== _lastShapeDataRef) {
+      _lastShapeDataRef = newData;
+      if (newData) {
+        const currentShape = location.Properties?.Shape || shape;
+        if (currentShape === 'Circle') {
+          circleX = newData.x ?? 0;
+          circleY = newData.y ?? 0;
+          circleRadius = newData.radius ?? 100;
+        } else if (currentShape === 'Rectangle') {
+          rectX = newData.x ?? 0;
+          rectY = newData.y ?? 0;
+          rectWidth = newData.width ?? 100;
+          rectHeight = newData.height ?? 100;
+        } else {
+          shapeDataJson = JSON.stringify(newData, null, 2);
+        }
+      }
+    }
+    if (newCoords !== _lastCoordsRef) {
+      _lastCoordsRef = newCoords;
+      if (newCoords) {
+        longitude = newCoords.Longitude ?? longitude;
+        latitude = newCoords.Latitude ?? latitude;
+      }
+    }
   }
 
   // Clear tracking when deselected
   $: if (!location && !isNew) {
     loadedLocationId = null;
     loadedDrawnShapeRef = null;
+    _lastShapeDataRef = null;
+    _lastCoordsRef = null;
   }
 
   $: if (isNew && drawnShapeData && drawnShapeData !== loadedDrawnShapeRef) {
@@ -209,7 +250,9 @@
       shapeData: locationType === 'Area' ? shapeData : null,
       parentLocationName: parentLocationName || null,
       landAreaOwner: (isLandArea && landAreaOwner) ? landAreaOwner : null,
-      landAreaTaxRate: isLandArea ? landAreaTaxRate : null
+      taxRateHunting: isLandArea ? taxRateHunting : null,
+      taxRateMining: isLandArea ? taxRateMining : null,
+      taxRateShops: isLandArea ? taxRateShops : null
     };
 
     if (isNew) {
@@ -539,8 +582,12 @@
           <input class="field-input" type="text" bind:value={landAreaOwner} placeholder="Player name (resolved on approval)" />
         </div>
         <div class="field-group">
-          <span class="field-label">Tax Rate (%)</span>
-          <input class="field-input" type="number" bind:value={landAreaTaxRate} min="0" max="100" step="0.1" placeholder="0-100" />
+          <span class="field-label">Tax Rates (%)</span>
+          <div class="coord-row">
+            <input class="field-input" type="number" bind:value={taxRateHunting} min="0" max="5" step="0.1" placeholder="Hunt" title="Hunting Tax %" />
+            <input class="field-input" type="number" bind:value={taxRateMining} min="0" max="5" step="0.1" placeholder="Mine" title="Mining Tax %" />
+            <input class="field-input" type="number" bind:value={taxRateShops} min="0" max="5" step="0.1" placeholder="Shop" title="Shops Tax %" />
+          </div>
         </div>
       {/if}
     {/if}
@@ -575,7 +622,9 @@
           Remove
         </button>
       {:else if !isNew}
-        <button class="btn btn-danger" on:click={handleDelete}>
+        <button class="btn btn-danger" on:click={handleDelete}
+          title={mode === 'public' ? 'Copies location details to your clipboard — send this to an admin if you believe this location should be deleted' : null}
+        >
           {mode === 'public' ? 'Copy Delete Info' : 'Mark for Deletion'}
         </button>
         <button class="btn" on:click={handleRevert}>Revert Changes</button>

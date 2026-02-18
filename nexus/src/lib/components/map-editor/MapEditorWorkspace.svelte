@@ -42,13 +42,39 @@
     filteredLocationIds = null;
     nextTempId = -1;
     changeCount = 0;
+    if (mapComponent?.clearDrawnLayer) mapComponent.clearDrawnLayer();
   }
 
   // --- Reactive derivations ---
   $: selectedLocation = (() => {
     if (!selectedId) return null;
     const loc = locations.find(l => l.Id === selectedId);
-    if (loc) return loc;
+    if (loc) {
+      // Merge pending edit data so the editor form reflects map edits
+      const pending = pendingChanges.get(loc.Id);
+      if (pending?.action === 'edit' && pending.modified) {
+        const mod = pending.modified;
+        return {
+          ...loc,
+          Name: mod.name ?? loc.Name,
+          _hasPendingEdit: true,
+          Properties: {
+            ...loc.Properties,
+            Type: mod.locationType ? (mod.locationType === 'Area' ? 'Area' : mod.locationType) : loc.Properties?.Type,
+            AreaType: mod.areaType !== undefined ? mod.areaType : loc.Properties?.AreaType,
+            Shape: mod.shape ?? loc.Properties?.Shape,
+            Data: mod.shapeData !== undefined ? mod.shapeData : loc.Properties?.Data,
+            Coordinates: {
+              ...loc.Properties?.Coordinates,
+              ...(mod.longitude !== undefined ? { Longitude: mod.longitude } : {}),
+              ...(mod.latitude !== undefined ? { Latitude: mod.latitude } : {}),
+              ...(mod.altitude !== undefined ? { Altitude: mod.altitude } : {})
+            }
+          }
+        };
+      }
+      return loc;
+    }
     const pending = pendingChanges.get(selectedId);
     if (pending?.action === 'add' && pending.modified) {
       const mod = pending.modified;
@@ -68,6 +94,20 @@
     return null;
   })();
 
+  // Show cyan afterimage of the ORIGINAL shape for a given location
+  function showAfterimageForOriginal(locId) {
+    const loc = locations.find(l => l.Id === locId);
+    if (!loc) { previewShape = null; return; }
+    if (isArea(loc)) {
+      previewShape = { shape: loc.Properties.Shape, data: loc.Properties.Data, center: null };
+    } else {
+      const coords = loc.Properties?.Coordinates;
+      previewShape = coords
+        ? { shape: null, data: null, center: { x: coords.Longitude, y: coords.Latitude } }
+        : null;
+    }
+  }
+
   $: changeCount = pendingChanges.size;
 
   // --- Event handlers ---
@@ -77,6 +117,11 @@
     drawnShapeData = null;
     previewShape = null;
     rightPanel = 'editor';
+    if (mapComponent?.clearDrawnLayer) mapComponent.clearDrawnLayer();
+    // Show afterimage if this location has a pending edit
+    if (selectedId && pendingChanges.has(selectedId) && pendingChanges.get(selectedId).action === 'edit') {
+      showAfterimageForOriginal(selectedId);
+    }
   }
 
   function handleListSelect(e) {
@@ -85,6 +130,11 @@
     drawnShapeData = null;
     previewShape = null;
     rightPanel = 'editor';
+    if (mapComponent?.clearDrawnLayer) mapComponent.clearDrawnLayer();
+    // Show afterimage if this location has a pending edit
+    if (selectedId && pendingChanges.has(selectedId) && pendingChanges.get(selectedId).action === 'edit') {
+      showAfterimageForOriginal(selectedId);
+    }
     const loc = locations.find(l => l.Id === selectedId);
     if (loc && mapComponent) mapComponent.panToLocation(loc);
   }
@@ -94,10 +144,33 @@
   }
 
   function handleDrawCreated(e) {
-    drawnShapeData = e.detail;
-    isNewLocation = true;
-    selectedId = null;
+    const entropiaData = e.detail;
+
+    // Immediately create a pending add so the shape persists on the map.
+    // The user can edit details later or remove it via the Remove button.
+    const tempId = nextTempId--;
+    const isMarker = entropiaData.isMarker;
+    const modified = {
+      name: '',
+      locationType: isMarker ? 'Teleporter' : 'Area',
+      longitude: entropiaData.center?.x ?? 0,
+      latitude: entropiaData.center?.y ?? 0,
+      altitude: 0,
+      areaType: isMarker ? null : 'MobArea',
+      shape: entropiaData.shape || null,
+      shapeData: entropiaData.data || null,
+      tempId
+    };
+
+    pendingChanges.set(tempId, { action: 'add', original: null, modified });
+    pendingChanges = pendingChanges;
+
+    // Select the new pending add for editing
+    selectedId = tempId;
+    isNewLocation = false;
+    drawnShapeData = null;
     rightPanel = 'editor';
+    previewShape = null;
   }
 
   function handleAddLocation(e) {
@@ -112,7 +185,16 @@
 
   function handleEditLocation(e) {
     const { original, modified } = e.detail;
-    pendingChanges.set(original.Id, { action: 'edit', original, modified });
+    const existingChange = pendingChanges.get(original.Id);
+    if (existingChange?.action === 'add') {
+      // Editing a pending add: merge into the existing add entry, don't overwrite with 'edit'
+      Object.assign(existingChange.modified, modified);
+      pendingChanges.set(original.Id, existingChange);
+    } else {
+      pendingChanges.set(original.Id, { action: 'edit', original, modified });
+      // Show afterimage of original for committed edits
+      showAfterimageForOriginal(original.Id);
+    }
     pendingChanges = pendingChanges;
   }
 
@@ -126,6 +208,9 @@
     const loc = e.detail;
     if (loc?.Id) pendingChanges.delete(loc.Id);
     pendingChanges = pendingChanges;
+    previewShape = null; // Clear afterimage
+    // Force rebuild: _editingActive may block the reactive rebuildLayers
+    if (mapComponent?.forceRebuild) mapComponent.forceRebuild();
   }
 
   function handleRemovePendingAdd(e) {
@@ -136,6 +221,8 @@
       if (selectedId === tempId) {
         selectedId = null;
       }
+      // Force rebuild: _editingActive may block the reactive rebuildLayers
+      if (mapComponent?.forceRebuild) mapComponent.forceRebuild();
     }
   }
 
@@ -150,31 +237,102 @@
     pendingChanges = pendingChanges;
   }
 
+  /**
+   * Check if preview data from the form actually differs from the original location data.
+   * Used to distinguish real edits from initial form load (which replays current data).
+   */
+  function hasShapeChanged(loc, pd) {
+    if (!pd) return false;
+    if (isArea(loc)) {
+      const origShape = loc.Properties?.Shape;
+      const origData = loc.Properties?.Data;
+      if (!origShape || !origData) return !!pd.shape;
+      if (!pd.shape || !pd.data) return true;
+      if (origShape !== pd.shape) return true;
+      if (origShape === 'Circle') {
+        return origData.x !== pd.data.x || origData.y !== pd.data.y || origData.radius !== pd.data.radius;
+      } else if (origShape === 'Rectangle') {
+        return origData.x !== pd.data.x || origData.y !== pd.data.y || origData.width !== pd.data.width || origData.height !== pd.data.height;
+      } else if (origShape === 'Polygon') {
+        const ov = origData.vertices || [], nv = pd.data?.vertices || [];
+        if (ov.length !== nv.length) return true;
+        return ov.some((v, i) => v !== nv[i]);
+      }
+      return true;
+    } else {
+      const coords = loc.Properties?.Coordinates;
+      if (!coords) return !!pd.center;
+      if (!pd.center) return true;
+      return coords.Longitude !== pd.center.x || coords.Latitude !== pd.center.y;
+    }
+  }
+
   function handlePreview(e) {
-    previewShape = e.detail;
+    const pd = e.detail;
+    if (isNewLocation) return;
+
+    if (selectedId && pd) {
+      // Always update the map shape to follow form data
+      if (mapComponent?.updateLayerShape) {
+        mapComponent.updateLayerShape(selectedId, pd);
+      }
+      // Show/hide afterimage based on whether form data actually differs from original
+      const loc = locations.find(l => l.Id === selectedId);
+      if (loc && hasShapeChanged(loc, pd)) {
+        // Form data differs from original — show afterimage if not already visible
+        if (!previewShape) {
+          showAfterimageForOriginal(selectedId);
+        }
+      } else if (previewShape && !pendingChanges.has(selectedId)) {
+        // Form data matches original AND no committed pending edit — clear afterimage
+        previewShape = null;
+      }
+    } else if (selectedId && !pd) {
+      if (!pendingChanges.has(selectedId)) {
+        previewShape = null;
+      }
+    }
   }
 
   function handleShapeEdited(e) {
     const { locId, entropiaData } = e.detail;
     const loc = locations.find(l => l.Id === locId);
-    if (!loc) return;
-
     const existing = pendingChanges.get(locId);
-    const modified = existing?.modified || {};
-    modified.name = modified.name ?? loc.Name;
-    modified.locationType = modified.locationType ?? (isArea(loc) ? 'Area' : (loc.Properties?.Type || 'Area'));
 
-    if (entropiaData.center) {
-      modified.longitude = entropiaData.center.x;
-      modified.latitude = entropiaData.center.y;
-    }
-    if (entropiaData.shape) {
-      modified.shape = entropiaData.shape;
-      modified.shapeData = entropiaData.data;
-    }
+    if (existing?.action === 'add' && existing.modified) {
+      // Pending add: update the modified data in place
+      const modified = existing.modified;
+      if (entropiaData.center) {
+        modified.longitude = entropiaData.center.x;
+        modified.latitude = entropiaData.center.y;
+      }
+      if (entropiaData.shape) {
+        modified.shape = entropiaData.shape;
+        modified.shapeData = entropiaData.data;
+      }
+      pendingChanges.set(locId, existing);
+      pendingChanges = pendingChanges;
+    } else if (loc) {
+      // Existing location: create/update edit change
+      const modified = existing?.modified || {};
+      modified.name = modified.name ?? loc.Name;
+      modified.locationType = modified.locationType ?? (isArea(loc) ? 'Area' : (loc.Properties?.Type || 'Area'));
 
-    pendingChanges.set(locId, { action: 'edit', original: loc, modified });
-    pendingChanges = pendingChanges;
+      if (entropiaData.center) {
+        modified.longitude = entropiaData.center.x;
+        modified.latitude = entropiaData.center.y;
+      }
+      if (entropiaData.shape) {
+        modified.shape = entropiaData.shape;
+        modified.shapeData = entropiaData.data;
+      }
+
+      pendingChanges.set(locId, { action: 'edit', original: loc, modified });
+      pendingChanges = pendingChanges;
+
+      // Show afterimage of original position
+      showAfterimageForOriginal(locId);
+    }
   }
 
   function handleEditMobArea(e) {
@@ -187,13 +345,17 @@
     if (mobEditorContext?.location) {
       const loc = mobEditorContext.location;
       const existing = pendingChanges.get(loc.Id);
-      const modified = existing?.modified || {};
-      modified.name = mobData.name;
-      modified.mobData = { density: mobData.density, maturities: mobData.maturities };
-      pendingChanges.set(loc.Id, { action: 'edit', original: loc, modified });
-    } else if (mobEditorContext?.isNew && drawnShapeData) {
-      drawnShapeData.mobData = { density: mobData.density, maturities: mobData.maturities };
-      drawnShapeData.suggestedName = mobData.name;
+      if (existing?.action === 'add') {
+        // Pending add: merge mob data into existing add entry
+        existing.modified.name = mobData.name;
+        existing.modified.mobData = { density: mobData.density, maturities: mobData.maturities };
+        pendingChanges.set(loc.Id, existing);
+      } else {
+        const modified = existing?.modified || {};
+        modified.name = mobData.name;
+        modified.mobData = { density: mobData.density, maturities: mobData.maturities };
+        pendingChanges.set(loc.Id, { action: 'edit', original: loc, modified });
+      }
     }
     pendingChanges = pendingChanges;
     rightPanel = 'editor';

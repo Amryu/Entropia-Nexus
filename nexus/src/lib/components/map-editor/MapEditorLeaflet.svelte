@@ -1,7 +1,7 @@
 <script>
   // @ts-nocheck
   import { onMount, onDestroy, createEventDispatcher } from 'svelte';
-  import { buildCoordTransforms, getTypeColor, getEffectiveType, isArea } from './mapEditorUtils.js';
+  import { buildCoordTransforms, getTypeColor, getEffectiveType, isArea, poleOfInaccessibility } from './mapEditorUtils.js';
   import { formatMobSpawnDisplayName } from '$lib/mapUtil.js';
   import ContextMenu from '../ContextMenu.svelte';
 
@@ -20,7 +20,6 @@
   let imageOverlay;
   let layerGroup;
   let drawControl;
-  let drawnItems;
   let transforms = null;
   let imgWidth = 0;
   let imgHeight = 0;
@@ -29,9 +28,12 @@
 
   // Preview and editing state
   let previewLayer = null;
+  let drawnLayer = null; // Temporary layer for just-drawn shapes (removed on add/cancel)
   let editingLayer = null;
   let editableOverlay = null;
   let _clickedLayer = false;
+  let _editingActive = false;
+  let _editDebounceTimer = null;
 
   // Context menu state
   let contextMenuElement;
@@ -57,7 +59,7 @@
     }
   ];
 
-  $: if (map && locations && pendingChanges !== undefined) rebuildLayers();
+  $: if (map && locations && pendingChanges !== undefined && !_editingActive) rebuildLayers();
   $: if (map && filteredLocationIds !== undefined) updateVisibility();
   $: if (map && selectedId !== undefined) updateSelection();
   $: if (map && editMode !== undefined) toggleDrawControl();
@@ -66,6 +68,15 @@
   onMount(async () => {
     L = await import('leaflet');
     await import('leaflet-draw');
+
+    // Patch leaflet-draw readableArea bug: undeclared 'type' variable crashes in strict mode (ESM)
+    // See: https://github.com/Leaflet/Leaflet.draw/issues/1026
+    // The bug is an undeclared `type` variable assignment. We replace the function
+    // on both our L reference and window.L, since bundled leaflet-draw may use either.
+    // CRS.Simple doesn't need real area formatting, so returning '' is safe.
+    const safeReadableArea = function () { return ''; };
+    if (L.GeometryUtil) L.GeometryUtil.readableArea = safeReadableArea;
+    if (window.L?.GeometryUtil) window.L.GeometryUtil.readableArea = safeReadableArea;
 
     // Import CSS
     const linkLeaflet = document.createElement('link');
@@ -88,17 +99,30 @@
     });
 
     layerGroup = L.layerGroup().addTo(map);
-    drawnItems = new L.FeatureGroup().addTo(map);
 
     // Draw events — use string literal; L.Draw.Event.CREATED may be undefined with ESM imports
     map.on('draw:created', (e) => {
       const layer = e.layer;
       const shapeType = e.layerType;
-      drawnItems.addLayer(layer);
+
       const entropiaData = leafletShapeToEntropia(layer, shapeType);
       if (entropiaData) {
         entropiaData.isMarker = (shapeType === 'marker');
       }
+
+      // Keep the drawn layer on the map temporarily so the user can see it
+      // while filling the form. Style it with the default type color (MobArea).
+      if (drawnLayer) {
+        map.removeLayer(drawnLayer);
+      }
+      const color = getTypeColor('MobArea');
+      layer.options.interactive = false;
+      if (layer.setStyle) {
+        layer.setStyle({ color, fillColor: color, weight: 2, opacity: 0.9, fillOpacity: 0.3 });
+      }
+      layer.addTo(map);
+      drawnLayer = layer;
+
       dispatch('drawCreated', entropiaData);
     });
 
@@ -120,6 +144,7 @@
   });
 
   onDestroy(() => {
+    if (_editDebounceTimer) clearTimeout(_editDebounceTimer);
     if (map) map.remove();
   });
 
@@ -164,10 +189,42 @@
     map.setMaxBounds([[-padLat, -padLng], [imgHeight + padLat, imgWidth + padLng]]);
   }
 
+  /**
+   * Merge pending edit data into a location for visual display.
+   * Returns the original loc if no pending edit exists.
+   */
+  function getEffectiveLocData(loc) {
+    const pending = pendingChanges.get(loc.Id);
+    if (!pending || pending.action !== 'edit' || !pending.modified) return loc;
+    const mod = pending.modified;
+    return {
+      ...loc,
+      Name: mod.name ?? loc.Name,
+      Properties: {
+        ...loc.Properties,
+        Type: mod.locationType === 'Area' ? 'Area' : (mod.locationType ?? loc.Properties?.Type),
+        AreaType: mod.areaType ?? loc.Properties?.AreaType,
+        Shape: mod.shape ?? loc.Properties?.Shape,
+        Data: mod.shapeData !== undefined ? mod.shapeData : loc.Properties?.Data,
+        Coordinates: {
+          ...loc.Properties?.Coordinates,
+          ...(mod.longitude !== undefined ? { Longitude: mod.longitude } : {}),
+          ...(mod.latitude !== undefined ? { Latitude: mod.latitude } : {}),
+          ...(mod.altitude !== undefined ? { Altitude: mod.altitude } : {})
+        }
+      }
+    };
+  }
+
   function rebuildLayers() {
     if (!map || !transforms || !L) return;
 
     cleanupEditing();
+    // Remove temporary drawn layer — pending add now renders via createPendingAddLayer
+    if (drawnLayer) {
+      map.removeLayer(drawnLayer);
+      drawnLayer = null;
+    }
     layerGroup.clearLayers();
     layerById.clear();
 
@@ -181,7 +238,8 @@
     });
 
     for (const loc of sorted) {
-      const layer = createLocationLayer(loc);
+      const effectiveLoc = getEffectiveLocData(loc);
+      const layer = createLocationLayer(effectiveLoc);
       if (layer) {
         layer._locId = loc.Id;
         layer.on('click', () => {
@@ -193,7 +251,7 @@
           if (!editMode) return;
           L.DomEvent.stop(e);
           contextMenuPos = { x: e.originalEvent.clientX, y: e.originalEvent.clientY };
-          contextMenuPayload = loc;
+          contextMenuPayload = effectiveLoc;
           contextMenuVisible = true;
         });
         layerGroup.addLayer(layer);
@@ -223,9 +281,6 @@
         layerById.set(tempId, layer);
       }
     }
-
-    // Clear drawn items (they've been converted to pending changes)
-    if (drawnItems) drawnItems.clearLayers();
 
     updateVisibility();
     updateSelection();
@@ -315,7 +370,8 @@
       color: '#00ff00',
       weight: 3,
       fillOpacity: 0.2,
-      dashArray: '6,3'
+      dashArray: '6,3',
+      interactive: true
     };
 
     const isAreaAdd = mod.locationType === 'Area' && mod.shape && mod.shapeData;
@@ -384,7 +440,9 @@
     layerGroup.eachLayer(layer => {
       const locId = layer._locId;
       if (locId === undefined) return;
-      const visible = !filteredLocationIds || filteredLocationIds.has(locId);
+      // Pending adds (negative tempIds) are always visible regardless of filters
+      const isPendingAdd = pendingChanges.has(locId) && pendingChanges.get(locId).action === 'add';
+      const visible = isPendingAdd || !filteredLocationIds || filteredLocationIds.has(locId);
       if (visible && !map.hasLayer(layer)) map.addLayer(layer);
       else if (!visible && map.hasLayer(layer)) map.removeLayer(layer);
     });
@@ -400,13 +458,20 @@
         if (layer.setStyle) layer.setStyle({ weight: 4, color: '#ffff00' });
         if (editMode) enableEditing(layer, locId);
       } else {
-        const loc = locations.find(l => l.Id === locId);
-        if (loc && layer.setStyle) {
-          const effectiveType = getEffectiveType(loc);
-          const color = getTypeColor(effectiveType);
-          const changeState = getChangeState(locId);
-          const style = getChangeStyle(changeState, color);
-          layer.setStyle({ weight: style.weight, color: style.borderColor });
+        // Check if this is a pending add (negative tempId)
+        const pending = pendingChanges.get(locId);
+        if (pending?.action === 'add') {
+          // Restore pending add style
+          if (layer.setStyle) layer.setStyle({ weight: 3, color: '#00ff00', dashArray: '6,3' });
+        } else {
+          const loc = locations.find(l => l.Id === locId);
+          if (loc && layer.setStyle) {
+            const effectiveType = getEffectiveType(loc);
+            const color = getTypeColor(effectiveType);
+            const changeState = getChangeState(locId);
+            const style = getChangeStyle(changeState, color);
+            layer.setStyle({ weight: style.weight, color: style.borderColor });
+          }
         }
       }
     });
@@ -415,11 +480,19 @@
   // --- Edit mode: drag/drop and shape editing ---
 
   function cleanupEditing() {
+    // Clear pending debounce to prevent stale callbacks after layer destruction
+    if (_editDebounceTimer) {
+      clearTimeout(_editDebounceTimer);
+      _editDebounceTimer = null;
+    }
+    _editingActive = false;
     if (editingLayer) {
+      // Remove handler BEFORE disabling editing — editing.disable() can fire
+      // a final 'edit' event, which would start a stale debounce cycle
+      editingLayer.off('edit');
       if (editingLayer.editing) {
         try { editingLayer.editing.disable(); } catch {}
       }
-      editingLayer.off('edit');
       editingLayer = null;
     }
     if (editableOverlay) {
@@ -429,18 +502,138 @@
   }
 
   function enableEditing(layer, locId) {
-    const loc = locations.find(l => l.Id === locId);
-    if (!loc) return;
+    let loc = locations.find(l => l.Id === locId);
+    if (loc) {
+      loc = getEffectiveLocData(loc);
+    } else {
+      // Check pending adds (negative tempIds)
+      const pending = pendingChanges.get(locId);
+      if (!pending?.modified) return;
+      const mod = pending.modified;
+      loc = {
+        Id: locId,
+        Name: mod.name || '',
+        _isPendingAdd: true,
+        Properties: {
+          Type: mod.locationType === 'Area' ? 'Area' : (mod.locationType || 'Area'),
+          AreaType: mod.areaType || null,
+          Coordinates: { Longitude: mod.longitude, Latitude: mod.latitude, Altitude: mod.altitude },
+          Shape: mod.shape || null,
+          Data: mod.shapeData || null,
+        }
+      };
+    }
 
     if (isArea(loc)) {
       // Areas: enable vertex/shape editing via leaflet-draw
       if (layer.editing) {
         layer.editing.enable();
         editingLayer = layer;
+        _editingActive = true;
 
+        // Debounce edit events — leaflet-draw fires 'edit' on every drag step.
+        // _editingActive suppresses rebuildLayers so the layer isn't destroyed mid-edit.
         layer.on('edit', () => {
-          const shapeType = loc.Properties.Shape.toLowerCase();
-          const entropiaData = leafletShapeToEntropia(layer, shapeType);
+          clearTimeout(_editDebounceTimer);
+          _editDebounceTimer = setTimeout(() => {
+            _editDebounceTimer = null;
+            const shapeType = loc.Properties.Shape.toLowerCase();
+            const entropiaData = leafletShapeToEntropia(layer, shapeType);
+            if (entropiaData) {
+              // Update move handle position to match new pole of inaccessibility
+              if (editableOverlay && entropiaData.center) {
+                const [lat, lng] = transforms.entropiaToLeaflet(entropiaData.center.x, entropiaData.center.y);
+                editableOverlay.setLatLng([lat, lng]);
+              }
+              dispatch('shapeEdited', { locId, entropiaData });
+            }
+          }, 300);
+        });
+      }
+
+      // Add center drag handle for moving entire shapes
+      // (Circles already have a built-in move handle from leaflet-draw)
+      if (loc.Properties.Shape !== 'Circle') {
+        // Use the stored coordinates — these are the pole of inaccessibility,
+        // guaranteed to be inside the shape and far from edges
+        const coords = loc.Properties?.Coordinates;
+        const center = coords
+          ? L.latLng(...transforms.entropiaToLeaflet(coords.Longitude, coords.Latitude))
+          : layer.getBounds().getCenter();
+        const moveIcon = L.divIcon({
+          className: 'move-handle',
+          iconSize: new L.Point(14, 14)
+        });
+        editableOverlay = L.marker(center, { draggable: true, icon: moveIcon }).addTo(map);
+
+        let dragState = null;
+        editableOverlay.on('dragstart', () => {
+          // Store original geometry and disable vertex editing during move
+          if (editingLayer?.editing) {
+            try { editingLayer.editing.disable(); } catch {}
+          }
+          const startPos = editableOverlay.getLatLng();
+          if (loc.Properties.Shape === 'Rectangle') {
+            dragState = { bounds: layer.getBounds(), startCenter: startPos };
+          } else if (loc.Properties.Shape === 'Polygon') {
+            dragState = {
+              latLngs: layer.getLatLngs()[0].map(ll => L.latLng(ll.lat, ll.lng)),
+              startCenter: startPos
+            };
+          }
+        });
+
+        editableOverlay.on('drag', () => {
+          if (!dragState) return;
+          const pos = editableOverlay.getLatLng();
+          const dLat = pos.lat - dragState.startCenter.lat;
+          const dLng = pos.lng - dragState.startCenter.lng;
+          if (loc.Properties.Shape === 'Rectangle' && dragState.bounds) {
+            const b = dragState.bounds;
+            layer.setBounds(L.latLngBounds(
+              [b.getSouth() + dLat, b.getWest() + dLng],
+              [b.getNorth() + dLat, b.getEast() + dLng]
+            ));
+          } else if (loc.Properties.Shape === 'Polygon' && dragState.latLngs) {
+            layer.setLatLngs([dragState.latLngs.map(ll =>
+              L.latLng(ll.lat + dLat, ll.lng + dLng)
+            )]);
+          }
+        });
+
+        editableOverlay.on('dragend', () => {
+          if (!dragState) return;
+          const pos = editableOverlay.getLatLng();
+          const dLat = pos.lat - dragState.startCenter.lat;
+          const dLng = pos.lng - dragState.startCenter.lng;
+          const eCenter = transforms.leafletToEntropia(pos.lat, pos.lng);
+          let entropiaData;
+
+          if (loc.Properties.Shape === 'Rectangle' && dragState.bounds) {
+            const b = dragState.bounds;
+            const sw = transforms.leafletToEntropia(b.getSouth() + dLat, b.getWest() + dLng);
+            const ne = transforms.leafletToEntropia(b.getNorth() + dLat, b.getEast() + dLng);
+            const x = Math.min(sw.x, ne.x);
+            const y = Math.min(sw.y, ne.y);
+            entropiaData = {
+              shape: 'Rectangle',
+              data: { x, y, width: Math.abs(ne.x - sw.x), height: Math.abs(ne.y - sw.y) },
+              center: eCenter
+            };
+          } else if (loc.Properties.Shape === 'Polygon' && dragState.latLngs) {
+            const vertices = [];
+            for (const ll of dragState.latLngs) {
+              const e = transforms.leafletToEntropia(ll.lat + dLat, ll.lng + dLng);
+              vertices.push(e.x, e.y);
+            }
+            entropiaData = {
+              shape: 'Polygon',
+              data: { vertices },
+              center: poleOfInaccessibility(vertices)
+            };
+          }
+
+          dragState = null;
           if (entropiaData) {
             dispatch('shapeEdited', { locId, entropiaData });
           }
@@ -535,7 +728,7 @@
           polyline: false,
           circlemarker: false
         },
-        edit: { featureGroup: drawnItems, remove: false }
+        edit: false // We use our own enableEditing(), not leaflet-draw's edit toolbar
       });
       map.addControl(drawControl);
     } else if (!editMode && drawControl) {
@@ -565,15 +758,12 @@
     } else if (shapeType === 'polygon') {
       const latLngs = layer.getLatLngs()[0];
       const vertices = [];
-      let sumX = 0, sumY = 0;
       for (const ll of latLngs) {
         const e = transforms.leafletToEntropia(ll.lat, ll.lng);
         vertices.push(e.x, e.y);
-        sumX += e.x; sumY += e.y;
       }
-      const cx = Math.round(sumX / latLngs.length);
-      const cy = Math.round(sumY / latLngs.length);
-      return { shape: 'Polygon', data: { vertices }, center: { x: cx, y: cy } };
+      const center = poleOfInaccessibility(vertices);
+      return { shape: 'Polygon', data: { vertices }, center };
     } else if (shapeType === 'marker') {
       const ll = layer.getLatLng();
       const e = transforms.leafletToEntropia(ll.lat, ll.lng);
@@ -583,8 +773,52 @@
   }
 
   /**
+   * Directly update a layer's geometry without a full rebuild.
+   * Used for real-time form-to-map updates during editing.
+   */
+  export function updateLayerShape(locId, shapeInfo) {
+    const layer = layerById.get(locId);
+    if (!layer || !transforms || !L) return;
+
+    if (shapeInfo.shape === 'Circle' && shapeInfo.data) {
+      const [lat, lng] = transforms.entropiaToLeaflet(shapeInfo.data.x, shapeInfo.data.y);
+      const radius = shapeInfo.data.radius / transforms.ratio;
+      if (layer.setLatLng) layer.setLatLng([lat, lng]);
+      if (layer.setRadius) layer.setRadius(radius);
+    } else if (shapeInfo.shape === 'Rectangle' && shapeInfo.data) {
+      const d = shapeInfo.data;
+      const [lat1, lng1] = transforms.entropiaToLeaflet(d.x, d.y);
+      const [lat2, lng2] = transforms.entropiaToLeaflet(d.x + d.width, d.y + d.height);
+      if (layer.setBounds) layer.setBounds([[lat1, lng1], [lat2, lng2]]);
+    } else if (shapeInfo.shape === 'Polygon' && shapeInfo.data?.vertices?.length >= 6) {
+      const latLngs = [];
+      for (let i = 0; i < shapeInfo.data.vertices.length; i += 2) {
+        const [lat, lng] = transforms.entropiaToLeaflet(shapeInfo.data.vertices[i], shapeInfo.data.vertices[i + 1]);
+        latLngs.push([lat, lng]);
+      }
+      if (layer.setLatLngs) layer.setLatLngs([latLngs]);
+    } else if (!shapeInfo.shape && shapeInfo.center) {
+      const [lat, lng] = transforms.entropiaToLeaflet(shapeInfo.center.x, shapeInfo.center.y);
+      if (layer.setLatLng) layer.setLatLng([lat, lng]);
+    }
+  }
+
+  /**
    * Pan the map to a specific location.
    */
+  export function clearDrawnLayer() {
+    if (drawnLayer && map) {
+      map.removeLayer(drawnLayer);
+      drawnLayer = null;
+    }
+  }
+
+  /** Force cleanup of editing state and rebuild all layers. */
+  export function forceRebuild() {
+    cleanupEditing();
+    rebuildLayers();
+  }
+
   export function panToLocation(loc) {
     if (!map || !transforms) return;
 
@@ -624,6 +858,17 @@
     background: #1a1a2e;
     width: 100%;
     height: 100%;
+  }
+
+  .map-container :global(.move-handle) {
+    background: var(--accent-color, #3b82f6);
+    border: 2px solid white;
+    border-radius: 50%;
+    cursor: grab;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.4);
+  }
+  .map-container :global(.move-handle:active) {
+    cursor: grabbing;
   }
 </style>
 

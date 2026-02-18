@@ -30,20 +30,28 @@
 
     if (isArea) {
       // Submit as Area entity
+      const props = {
+        Description: null,
+        Type: mod.areaType || null,
+        Shape: mod.shape || null,
+        Data: mod.shapeData || null,
+        Coordinates: {
+          Longitude: mod.longitude ?? null,
+          Latitude: mod.latitude ?? null,
+          Altitude: mod.altitude ?? null
+        }
+      };
+      // LandArea extension fields
+      if (mod.areaType === 'LandArea') {
+        props.TaxRateHunting = mod.taxRateHunting ?? null;
+        props.TaxRateMining = mod.taxRateMining ?? null;
+        props.TaxRateShops = mod.taxRateShops ?? null;
+        if (mod.landAreaOwner) props.LandAreaOwnerName = mod.landAreaOwner;
+      }
       return {
         Id: change.action === 'edit' ? change.original?.Id : null,
         Name: mod.name,
-        Properties: {
-          Description: null,
-          Type: mod.areaType || null,
-          Shape: mod.shape || null,
-          Data: mod.shapeData || null,
-          Coordinates: {
-            Longitude: mod.longitude ?? null,
-            Latitude: mod.latitude ?? null,
-            Altitude: mod.altitude ?? null
-          }
-        },
+        Properties: props,
         Planet: { Name: planet?.Name }
       };
     } else {
