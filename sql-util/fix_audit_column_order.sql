@@ -7,6 +7,7 @@ DECLARE
     audit_table TEXT;
     parent_table TEXT;
     col_record RECORD;
+    constraint_record RECORD;
     audit_columns TEXT := '';
     parent_columns TEXT := '';
     select_columns TEXT := '';
@@ -114,6 +115,18 @@ BEGIN
 
         -- Drop temp table
         DROP TABLE _temp_audit_fix;
+
+        -- Copy CHECK constraints from parent table (required for inheritance)
+        FOR constraint_record IN
+            SELECT conname, pg_get_constraintdef(oid) as definition
+            FROM pg_constraint
+            WHERE conrelid = (quote_ident('public') || '.' || quote_ident(parent_table))::regclass
+              AND contype = 'c'
+        LOOP
+            EXECUTE format('ALTER TABLE %I ADD CONSTRAINT %I %s',
+                           audit_table, constraint_record.conname, constraint_record.definition);
+            RAISE NOTICE '  Added CHECK constraint % to %', constraint_record.conname, audit_table;
+        END LOOP;
 
         -- Re-establish inheritance
         EXECUTE format('ALTER TABLE %I INHERIT %I', audit_table, parent_table);
