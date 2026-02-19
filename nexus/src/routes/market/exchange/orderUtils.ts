@@ -88,6 +88,23 @@ export function getOrderValue(item: any, order?: any): number | null {
   return getUnitTT(item, order);
 }
 
+/** Get the total stack TT value for an order (always returns total, not per-unit) */
+export function getOrderStackValue(item: any, order?: any): number | null {
+  const qty = order?.quantity || 1;
+  // Stackable items: always use MaxTT * qty (ignore CurrentTT)
+  if (isItemStackable(item)) {
+    const maxTT = getMaxTT(item);
+    return maxTT != null ? maxTT * qty : null;
+  }
+  // Non-stackable: use CurrentTT if available, else unit TT (handles non-L BPs via getUnitTT)
+  const raw = order?.details?.CurrentTT ?? order?.Metadata?.CurrentTT;
+  if (raw != null) {
+    const ct = Number(raw);
+    if (!isNaN(ct)) return ct;
+  }
+  return getUnitTT(item, order);
+}
+
 /** Compute the unit price for an order given item + markup */
 export function computeUnitPrice(item: any, markup: number | null, order?: any): number | null {
   if (markup == null) return null;
@@ -98,10 +115,14 @@ export function computeUnitPrice(item: any, markup: number | null, order?: any):
   }
   const maxTT = getMaxTT(item);
   if (maxTT == null) return null;
-  // Use CurrentTT if available (e.g. sell orders with specific condition), otherwise MaxTT
-  const rawCt = order?.details?.CurrentTT ?? order?.Metadata?.CurrentTT;
-  const ct = rawCt != null ? Number(rawCt) : NaN;
-  const tt = !isNaN(ct) ? ct : maxTT;
+  // For stackable items, always use MaxTT (CurrentTT is total stack value, not per-unit)
+  // For non-stackable condition items (qty=1), prefer CurrentTT if available
+  let tt = maxTT;
+  if (!isItemStackable(item)) {
+    const rawCt = order?.details?.CurrentTT ?? order?.Metadata?.CurrentTT;
+    const ct = rawCt != null ? Number(rawCt) : NaN;
+    if (!isNaN(ct)) tt = ct;
+  }
   return isAbsoluteMarkup(item) ? tt + mu : tt * (mu / 100);
 }
 

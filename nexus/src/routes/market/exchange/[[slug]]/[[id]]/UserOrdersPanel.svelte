@@ -3,7 +3,7 @@
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { goto } from '$app/navigation';
   import { tradeList } from '../../exchangeStore.js';
-  import { isAbsoluteMarkup, formatMarkupForItem, formatPedValue, isBlueprintNonL, getOrderValue, computeUnitPrice, itemTypeBadge, getTopCategory, getCategoryOrder } from '../../orderUtils';
+  import { isAbsoluteMarkup, formatMarkupForItem, formatPedValue, isBlueprintNonL, getOrderStackValue, computeUnitPrice, itemTypeBadge, getTopCategory, getCategoryOrder } from '../../orderUtils';
   import { encodeURIComponentSafe } from '$lib/util.js';
   import { createEventDispatcher } from 'svelte';
 
@@ -45,7 +45,7 @@
       ...o,
       _item_name: o.details?.item_name || 'Unknown',
       _category: getTopCategory(item?.t),
-      _value: getOrderValue(item, o) ?? null,
+      _value: getOrderStackValue(item, o) ?? null,
       _total: (() => { const u = computeUnitPrice(item, mu, o); return u != null ? u * (o.quantity || 1) : null; })(),
     };
   });

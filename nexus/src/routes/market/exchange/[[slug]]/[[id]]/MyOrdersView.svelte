@@ -2,7 +2,7 @@
   //@ts-nocheck
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { myOrders, enrichOrders, upsertOrder } from '../../exchangeStore.js';
-  import { formatPedRaw, formatMarkupForItem, isLimited, formatPedValue, itemTypeBadge, getOrderValue, computeUnitPrice, getTopCategory, getCategoryOrder } from '../../orderUtils';
+  import { formatPedRaw, formatMarkupForItem, isLimited, formatPedValue, itemTypeBadge, getOrderStackValue, computeUnitPrice, getTopCategory, getCategoryOrder } from '../../orderUtils';
   import { encodeURIComponentSafe } from '$lib/util.js';
   import { goto } from '$app/navigation';
   import { createEventDispatcher, onMount } from 'svelte';
@@ -41,7 +41,7 @@
     return {
       ...o,
       _category: getTopCategory(item?.t),
-      _value: getOrderValue(item, o) ?? null,
+      _value: getOrderStackValue(item, o) ?? null,
       _total: (() => { const u = computeUnitPrice(item, mu, o); return u != null ? u * (o.quantity || 1) : null; })(),
     };
   }).sort((a, b) => {
@@ -56,8 +56,7 @@
     const sells = enrichedOrders.filter(o => o.type === 'SELL' && o.state_display !== 'closed');
     let totalTT = 0, totalValue = 0;
     for (const o of sells) {
-      const qty = o.quantity || 1;
-      if (o._value != null) totalTT += o._value * qty;
+      if (o._value != null) totalTT += o._value;
       if (o._total != null) totalValue += o._total;
     }
     return { totalTT, totalValue, count: sells.length };
@@ -279,10 +278,13 @@
   .order-summary {
     display: flex;
     gap: 16px;
-    padding: 6px 12px;
+    padding: 8px 12px;
     margin-top: 4px;
     font-size: 12px;
     color: var(--text-muted);
+    background: var(--secondary-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
   }
   .order-summary strong {
     color: var(--text-color);
