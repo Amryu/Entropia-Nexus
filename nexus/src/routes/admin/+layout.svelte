@@ -14,7 +14,8 @@
     { path: '/admin/map', label: 'Map', icon: '\u{1F5FA}\u{FE0F}' },
     { path: '/admin/announcements', label: 'Announcements', icon: '\u{1F4E2}' },
     { path: '/admin/events', label: 'Events', icon: '\u{1F4C5}' },
-    { path: '/admin/creators', label: 'Creators', icon: '\u{1F3AC}' }
+    { path: '/admin/creators', label: 'Creators', icon: '\u{1F3AC}' },
+    { path: '/admin/unknown-items', label: 'Unknown Items', icon: '\u{2753}' }
   ];
 
   // Use reactive statement to compute active states based on current path

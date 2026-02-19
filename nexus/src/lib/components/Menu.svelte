@@ -2258,6 +2258,16 @@
                 Profile
               </div>
             </a>
+            <a use:loading href="/account/inventory">
+              <div class="menu-dropdown-item">
+                <span class="menu-item-icon">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                  </svg>
+                </span>
+                Inventory
+              </div>
+            </a>
             {#if isUnverified}
               <div class="menu-dropdown-item unverified-notice">
                 Account not verified
@@ -2270,12 +2280,41 @@
             {/if}
           {/if}
           {#if effectiveAdmin && !isCurrentlyImpersonating}
-            <a use:loading href="/admin"><div class="menu-dropdown-item"><span class="menu-item-icon">⚙️</span> Admin Dashboard</div></a>
+            <a use:loading href="/admin">
+              <div class="menu-dropdown-item">
+                <span class="menu-item-icon">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="3" />
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                  </svg>
+                </span>
+                Admin Dashboard
+              </div>
+            </a>
             <button class="menu-dropdown-item" on:click={() => showImpersonateDialog = true}>
-              <span class="menu-item-icon">🎭</span> Impersonate User
+              <span class="menu-item-icon">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                  <circle cx="9" cy="7" r="4" />
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+                </svg>
+              </span>
+              Impersonate User
             </button>
           {/if}
-          <a use:loading href={logoutUrl}><div class="menu-dropdown-item"><span class="menu-item-icon">→</span> Logout</div></a>
+          <a use:loading href={logoutUrl}>
+            <div class="menu-dropdown-item">
+              <span class="menu-item-icon">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                  <polyline points="16 17 21 12 16 7" />
+                  <line x1="21" y1="12" x2="9" y2="12" />
+                </svg>
+              </span>
+              Logout
+            </div>
+          </a>
         </div>
       </div>
     {/if}
@@ -2441,6 +2480,14 @@
                 </svg>
               </span>
               <span class="mobile-action-text">User Profile</span>
+            </a>
+            <a href="/account/inventory" class="mobile-user-action" on:click={closeMobileMenu}>
+              <span class="mobile-action-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+                </svg>
+              </span>
+              <span class="mobile-action-text">Inventory</span>
             </a>
             <a use:loading href={logoutUrl} class="mobile-user-action" on:click={closeMobileMenu}>
               <span class="mobile-action-icon">→</span>
