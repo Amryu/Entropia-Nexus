@@ -351,7 +351,8 @@ The bot snapshots exchange prices every 15 minutes from active trade orders. Eac
 | instance_key | varchar(255) | Null=fungible, non-null=unique instance |
 | details | jsonb | Tier, TiR, QR metadata |
 | value | numeric | Item TT value in PED |
-| container | varchar(255) | Planet/storage location |
+| container | varchar(255) | Planet/storage location (flattened) |
+| container_path | text | Full container hierarchy (e.g., `STORAGE (Calypso) > Vehicle > Box`) |
 | storage | varchar(10) | 'server' or 'local' |
 | updated_at | timestamptz | Last update |
 
@@ -386,8 +387,9 @@ Note: `id` is a positional slot ID, NOT a game item type ID. Names are resolved 
 2. **Build container map**: `Map<id, {name, containerRefId}>` from all items
 3. **Resolve root containers**: Walk up `containerRefId` chain to find top-level container (cycle detection via Set)
 4. **Extract planet**: Regex on root container name (e.g., "STORAGE (Calypso)" → "Calypso")
-5. **Combine stacks**: Group by `(name, planet)`, sum quantities and values
-6. **Resolve name → item_id**: Lookup against loaded `allItems`. Unresolved items get `item_id = 0` with `instance_key = 'unresolved:' + name`
+5. **Build container_path**: `buildContainerPath()` walks the containerRefId chain and joins segment names with ` > ` (e.g., `STORAGE (Calypso) > Sleipnir Mk.1 (C,L)`)
+6. **Combine stacks**: Group by `(name, planet)`, sum quantities and values
+7. **Resolve name → item_id**: Lookup against loaded `allItems`. Unresolved items get `item_id = 0` with `instance_key = 'unresolved:' + name`
 
 #### Diff Preview
 
@@ -410,6 +412,13 @@ After import completes, checks sell orders against new inventory:
 - Transaction: fetches existing items → DELETE all → batch INSERT (chunks of 100) → COMMIT
 - Returns diff summary: `{ added, updated, removed, unchanged, total }`
 - Max import size: 30000 items
+- **Delta recording**: Each import creates an `inventory_imports` row and per-item `inventory_import_deltas` for added/removed/changed items
+- **Unknown item tracking**: Items with `item_id=0` are tracked in `unknown_items` table with per-user dedup and user_count aggregation
+- **Container path**: `container_path` field preserved from import alongside flattened `container` (planet)
+
+#### Dedicated Inventory Page
+
+A full inventory management page is available at `/account/inventory` (short URL: `ai`). See `docs/items.md` for complete documentation of the inventory page features, views, markup management, and delta tracking.
 
 ### Inventory Item Editing
 

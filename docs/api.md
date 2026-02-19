@@ -822,7 +822,49 @@ Import/sync inventory.
 
 - **Auth**: Verified
 - **Body**: `{ items: [...], sync?: boolean }` (max 30,000 items)
-- **Response** `200`: Inventory or sync diff
+- Each item may include `container_path` (string) for full container hierarchy
+- **Response** `200`: Inventory or sync diff (includes `{ added, updated, removed, unchanged, total }`)
+- **Side effects**: Creates `inventory_imports` row, records per-item deltas in `inventory_import_deltas`, tracks unknown items (`item_id=0`) in `unknown_items`
+
+### `GET /api/users/inventory/imports`
+
+Import history (paginated).
+
+- **Auth**: Verified
+- **Query Params**: `limit` (default 20, max 100), `offset` (default 0)
+- **Response** `200`: Array of `{ id, imported_at, item_count, total_value, summary }`
+
+### `GET /api/users/inventory/imports/[id]/deltas`
+
+Deltas for a specific import. Verifies ownership (import must belong to requesting user).
+
+- **Auth**: Verified
+- **Path Params**: `id` (import ID, positive integer)
+- **Response** `200`: Array of `{ id, delta_type, item_id, item_name, container, instance_key, old_quantity, new_quantity, old_value, new_value }`
+
+### `GET /api/users/inventory/markups`
+
+User's markup configurations.
+
+- **Auth**: Verified
+- **Response** `200`: Array of `{ item_id, markup, updated_at }`
+
+### `PUT /api/users/inventory/markups`
+
+Bulk upsert markup configurations.
+
+- **Auth**: Verified
+- **Body**: `{ items: [{ item_id: number, markup: number }] }` (max 1000 per request)
+- **Validations**: `item_id` must be positive integer, `markup` must be finite number
+- **Response** `200`: Array of upserted markup rows
+
+### `DELETE /api/users/inventory/markups/[itemId]`
+
+Remove markup for a specific item.
+
+- **Auth**: Verified
+- **Path Params**: `itemId` (positive integer)
+- **Response** `200`: `{ success: true }`
 
 ### `PATCH /api/users/inventory/[id]`
 
@@ -1384,6 +1426,13 @@ Change shop owner (admin only).
 | `/api/admin/creators/[id]` | PUT | `admin.panel` | Update creator fields |
 | `/api/admin/creators/[id]` | DELETE | `admin.panel` | Delete creator |
 | `/api/admin/creators/[id]/refresh` | POST | `admin.panel` | Manual API data refresh |
+
+### Unknown Items
+
+| Endpoint | Method | Auth | Description |
+|----------|--------|------|-------------|
+| `/api/admin/unknown-items` | GET | Admin | List unknown items. Query: `resolved` (true/false), `limit` (max 200), `offset` |
+| `/api/admin/unknown-items/[id]` | PATCH | Admin | Mark resolved: `{ resolved_item_id? }` |
 
 ### Other Admin
 
