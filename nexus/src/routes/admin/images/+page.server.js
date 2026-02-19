@@ -118,7 +118,16 @@ export async function load() {
     })
   );
 
-  // Enrich approved images with entity names
+  // Build link count map: how many other images link to each source entity
+  const linkCounts = new Map();
+  for (const image of approvedImages) {
+    if (image.linkedFrom) {
+      const sourceKey = `${image.linkedFrom.entityType}/${image.linkedFrom.entityId}`;
+      linkCounts.set(sourceKey, (linkCounts.get(sourceKey) || 0) + 1);
+    }
+  }
+
+  // Enrich approved images with entity names and link counts
   const enrichedApproved = await Promise.all(
     approvedImages.map(async (image) => {
       // Prefer stored entityName from metadata, fall back to API lookup
@@ -127,10 +136,12 @@ export async function load() {
         entityName = await getEntityName(image.entityType, image.entityId);
       }
       const isNameResolved = !!entityName;
+      const key = `${image.entityType}/${image.entityId}`;
       return {
         ...image,
         entityName: entityName || image.entityId,
-        isNameResolved
+        isNameResolved,
+        linkCount: linkCounts.get(key) || 0
       };
     })
   );

@@ -67,8 +67,12 @@
     return `${basePath}/${encodeURIComponentSafe(entityName)}`;
   }
 
-  function confirmDelete(event) {
-    if (!confirm('Are you sure you want to delete this image? This action cannot be undone.')) {
+  function confirmDelete(event, linkCount = 0) {
+    let message = 'Are you sure you want to delete this image? This action cannot be undone.';
+    if (linkCount > 0) {
+      message = `Warning: ${linkCount} other ${linkCount === 1 ? 'entity relies' : 'entities rely'} on this image via linking. Deleting it will break ${linkCount === 1 ? 'that image' : 'those images'} too.\n\n${message}`;
+    }
+    if (!confirm(message)) {
       event.preventDefault();
     }
   }
@@ -251,6 +255,18 @@
                 <span class="label">Type:</span>
                 <span class="value type-value">{image.entityType}</span>
               </div>
+              {#if image.linkedFrom}
+                <div class="info-row">
+                  <span class="label">Linked from:</span>
+                  <span class="value">{image.linkedFrom.entityType}/{image.linkedFrom.entityId}</span>
+                </div>
+              {/if}
+              {#if image.linkCount > 0}
+                <div class="info-row">
+                  <span class="label">Used by:</span>
+                  <span class="value link-count">{image.linkCount} other {image.linkCount === 1 ? 'entity' : 'entities'}</span>
+                </div>
+              {/if}
               {#if image.approvedAt}
                 <div class="info-row">
                   <span class="label">Approved:</span>
@@ -260,7 +276,7 @@
             </div>
 
             <div class="image-actions single">
-              <form method="POST" action="?/delete" use:enhance on:submit={confirmDelete}>
+              <form method="POST" action="?/delete" use:enhance on:submit={(e) => confirmDelete(e, image.linkCount)}>
                 <input type="hidden" name="entityType" value={image.entityType} />
                 <input type="hidden" name="entityId" value={image.entityId} />
                 <button type="submit" class="btn btn-delete">
@@ -493,6 +509,10 @@
 
   .value.type-value {
     text-transform: capitalize;
+  }
+
+  .value.link-count {
+    color: var(--accent-color);
   }
 
   .image-actions {

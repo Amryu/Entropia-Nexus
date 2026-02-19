@@ -46,6 +46,14 @@
   let uploading = false;
   let error = '';
   let step = 'select'; // 'select', 'crop', 'uploading'
+  let mode = 'upload'; // 'upload' or 'existing'
+
+  // "Use Existing" state
+  let searchQuery = '';
+  let searchResults = [];
+  let selectedSource = null;
+  let searching = false;
+  let searchTimer = null;
 
   function handleClose() {
     reset();
@@ -59,7 +67,14 @@
     croppedAreaPixels = null;
     error = '';
     step = 'select';
+    mode = 'upload';
     uploading = false;
+    searchQuery = '';
+    searchResults = [];
+    selectedSource = null;
+    searching = false;
+    if (searchTimer) clearTimeout(searchTimer);
+    searchTimer = null;
   }
 
   function handleFileSelect(event) {
@@ -219,6 +234,77 @@
     });
   }
 
+  function handleSearchInput() {
+    if (searchTimer) clearTimeout(searchTimer);
+    selectedSource = null;
+    error = '';
+
+    const q = searchQuery.trim();
+    if (q.length < 2) {
+      searchResults = [];
+      searching = false;
+      return;
+    }
+
+    searching = true;
+    searchTimer = setTimeout(async () => {
+      try {
+        const params = new URLSearchParams({ query: q, entityType });
+        if (entityId) params.set('excludeId', String(entityId));
+        const response = await fetch(`/api/uploads/image-search?${params}`);
+        if (response.ok) {
+          searchResults = await response.json();
+        } else {
+          searchResults = [];
+        }
+      } catch {
+        searchResults = [];
+      } finally {
+        searching = false;
+      }
+    }, 300);
+  }
+
+  async function handleLink() {
+    if (!selectedSource) return;
+
+    uploading = true;
+    error = '';
+
+    try {
+      const response = await fetch('/api/uploads/link-image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          entityType,
+          entityId: String(entityId),
+          sourceEntityId: String(selectedSource.entityId)
+        })
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.message || `Link failed: ${response.status}`);
+      }
+
+      const result = await response.json();
+
+      dispatch('uploaded', {
+        imageUrl: result.imageUrl,
+        linked: true
+      });
+
+      addToast('Image linked successfully', { type: 'success' });
+      handleClose();
+    } catch (err) {
+      console.error('Link error:', err);
+      error = err.message || 'Failed to link image.';
+      addToast(error, { type: 'error' });
+    } finally {
+      uploading = false;
+    }
+  }
+
   function handleBackdropClick(event) {
     if (event.target === event.currentTarget) {
       handleClose();
@@ -261,7 +347,7 @@
   <div class="dialog-backdrop" on:click={handleBackdropClick}>
     <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
       <div class="dialog-header">
-        <h2 id="dialog-title">Upload Image</h2>
+        <h2 id="dialog-title">{step === 'select' && mode === 'existing' ? 'Link Existing Image' : 'Upload Image'}</h2>
         <button class="close-btn" on:click={handleClose} aria-label="Close">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M18 6L6 18M6 6l12 12" />
@@ -271,25 +357,93 @@
 
       <div class="dialog-content">
         {#if step === 'select'}
-          <div class="upload-zone">
-            <input
-              bind:this={fileInput}
-              type="file"
-              accept="image/jpeg,image/png,image/webp,image/gif"
-              on:change={handleFileSelect}
-              class="file-input"
-              id="image-upload"
-            />
-            <label for="image-upload" class="upload-label">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
-                <polyline points="17 8 12 3 7 8" />
-                <line x1="12" y1="3" x2="12" y2="15" />
-              </svg>
-              <span class="upload-text">Click to select an image</span>
-              <span class="upload-hint">JPEG, PNG, WebP, or GIF (max 2MB)</span>
-            </label>
+          <!-- Mode tabs -->
+          <div class="mode-tabs">
+            <button
+              class="mode-tab"
+              class:active={mode === 'upload'}
+              on:click={() => { mode = 'upload'; error = ''; }}
+            >Upload New</button>
+            <button
+              class="mode-tab"
+              class:active={mode === 'existing'}
+              on:click={() => { mode = 'existing'; error = ''; }}
+            >Use Existing</button>
           </div>
+
+          {#if mode === 'upload'}
+            <div class="upload-zone">
+              <input
+                bind:this={fileInput}
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/gif"
+                on:change={handleFileSelect}
+                class="file-input"
+                id="image-upload"
+              />
+              <label for="image-upload" class="upload-label">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                  <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                  <polyline points="17 8 12 3 7 8" />
+                  <line x1="12" y1="3" x2="12" y2="15" />
+                </svg>
+                <span class="upload-text">Click to select an image</span>
+                <span class="upload-hint">JPEG, PNG, WebP, or GIF (max 2MB)</span>
+              </label>
+            </div>
+          {:else}
+            <!-- Use Existing mode -->
+            <div class="search-section">
+              <input
+                type="text"
+                class="search-input"
+                placeholder="Search by name..."
+                bind:value={searchQuery}
+                on:input={handleSearchInput}
+              />
+
+              {#if searching}
+                <div class="search-status">Searching...</div>
+              {:else if searchQuery.trim().length >= 2 && searchResults.length === 0}
+                <div class="search-status">No items with images found</div>
+              {/if}
+
+              {#if searchResults.length > 0}
+                <div class="search-results">
+                  {#each searchResults as result}
+                    <!-- svelte-ignore a11y-click-events-have-key-events -->
+                    <div
+                      class="search-result"
+                      class:selected={selectedSource?.entityId === result.entityId}
+                      on:click={() => { selectedSource = result; error = ''; }}
+                      role="button"
+                      tabindex="0"
+                      on:keydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { selectedSource = result; error = ''; } }}
+                    >
+                      <img
+                        src={result.thumbUrl}
+                        alt=""
+                        class="result-thumb"
+                        on:error={(e) => { e.target.style.display = 'none'; }}
+                      />
+                      <span class="result-name">{result.entityName}</span>
+                    </div>
+                  {/each}
+                </div>
+              {/if}
+
+              {#if selectedSource}
+                <div class="link-preview">
+                  <img
+                    src="/api/img/{selectedSource.entityType}/{selectedSource.entityId}"
+                    alt={selectedSource.entityName}
+                    class="preview-image"
+                  />
+                  <span class="preview-name">{selectedSource.entityName}</span>
+                </div>
+              {/if}
+            </div>
+          {/if}
         {:else if step === 'crop'}
           <div class="crop-container">
             <Cropper
@@ -323,7 +477,9 @@
         {/if}
 
         {#if entityName}
-          <p class="entity-info">Uploading image for: <strong>{entityName}</strong></p>
+          <p class="entity-info">
+            {mode === 'existing' ? 'Linking image for:' : 'Uploading image for:'} <strong>{entityName}</strong>
+          </p>
         {/if}
       </div>
 
@@ -336,7 +492,7 @@
             Upload
           </button>
         {:else if step === 'select'}
-          {#if showDelete}
+          {#if showDelete && mode === 'upload'}
             <button class="btn btn-danger" on:click={handleDelete} disabled={uploading || !hasImage}>
               Delete Image
             </button>
@@ -344,6 +500,11 @@
           <button class="btn btn-secondary" on:click={handleClose}>
             Cancel
           </button>
+          {#if mode === 'existing'}
+            <button class="btn btn-primary" on:click={handleLink} disabled={uploading || !selectedSource}>
+              Link
+            </button>
+          {/if}
         {/if}
       </div>
     </div>
@@ -410,6 +571,139 @@
     padding: 20px;
     flex: 1;
     overflow-y: auto;
+  }
+
+  .mode-tabs {
+    display: flex;
+    gap: 0;
+    margin-bottom: 16px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  .mode-tab {
+    flex: 1;
+    padding: 8px 12px;
+    font-size: 14px;
+    font-weight: 500;
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: background-color 0.15s, color 0.15s;
+  }
+
+  .mode-tab:not(:last-child) {
+    border-right: 1px solid var(--border-color);
+  }
+
+  .mode-tab.active {
+    background-color: var(--accent-color);
+    color: white;
+  }
+
+  .mode-tab:not(.active):hover {
+    background-color: var(--hover-color);
+    color: var(--text-color);
+  }
+
+  .search-section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .search-input {
+    width: 100%;
+    padding: 10px 12px;
+    font-size: 14px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    outline: none;
+    box-sizing: border-box;
+  }
+
+  .search-input:focus {
+    border-color: var(--accent-color);
+  }
+
+  .search-status {
+    font-size: 13px;
+    color: var(--text-muted);
+    text-align: center;
+    padding: 8px;
+  }
+
+  .search-results {
+    max-height: 180px;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+  }
+
+  .search-result {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    cursor: pointer;
+    transition: background-color 0.1s;
+  }
+
+  .search-result:not(:last-child) {
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .search-result:hover {
+    background-color: var(--hover-color);
+  }
+
+  .search-result.selected {
+    background-color: var(--accent-color);
+    color: white;
+  }
+
+  .result-thumb {
+    width: 32px;
+    height: 32px;
+    object-fit: contain;
+    border-radius: 4px;
+    background-color: var(--bg-color);
+    flex-shrink: 0;
+  }
+
+  .result-name {
+    font-size: 14px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .link-preview {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 16px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background-color: var(--bg-color);
+  }
+
+  .preview-image {
+    width: 160px;
+    height: 160px;
+    object-fit: contain;
+    border-radius: 6px;
+  }
+
+  .preview-name {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-color);
   }
 
   .upload-zone {

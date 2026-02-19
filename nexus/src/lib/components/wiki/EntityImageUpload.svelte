@@ -131,10 +131,20 @@
   }
 
   function handleImageUploaded(event) {
-    pendingImagePreview = event.detail.previewUrl;
-    userPendingImage = null; // Clear old pending image since we just uploaded a new one
-    imageExists = true;
-    imageChecked = true;
+    if (event.detail.linked) {
+      // Linked images are already approved — show directly without pending overlay
+      pendingImagePreview = null;
+      userPendingImage = null;
+      imageExists = true;
+      imageChecked = true;
+      // Force URL refresh by bumping lastCheckedId
+      lastCheckedId = null;
+    } else {
+      pendingImagePreview = event.detail.previewUrl;
+      userPendingImage = null; // Clear old pending image since we just uploaded a new one
+      imageExists = true;
+      imageChecked = true;
+    }
   }
 </script>
 

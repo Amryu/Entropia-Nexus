@@ -849,11 +849,86 @@ export async function scanRichtextImageUsage(usersPool, nexusPool = null) {
   };
 }
 
+// --- Image link support ---
+
+/**
+ * Create a hard link from one entity's image to another's approved image.
+ * Skips approval workflow since the source is already approved.
+ * @param {string} entityType - Target entity type
+ * @param {string|number} entityId - Target entity ID
+ * @param {string} sourceEntityType - Source entity type (must match entityType)
+ * @param {string|number} sourceEntityId - Source entity ID
+ * @param {string} userId - ID of the user creating the link
+ * @returns {Promise<void>}
+ */
+export async function createImageLink(entityType, entityId, sourceEntityType, sourceEntityId, userId) {
+  if (!isValidEntityType(entityType) || !isValidEntityType(sourceEntityType)) {
+    throw new Error('Invalid entity type');
+  }
+  if (!isValidEntityId(entityId) || !isValidEntityId(sourceEntityId)) {
+    throw new Error('Invalid entity ID');
+  }
+
+  const sourceDir = getEntityPath(APPROVED_DIR, sourceEntityType, sourceEntityId);
+  const sourceIcon = join(sourceDir, 'icon.webp');
+  const sourceThumb = join(sourceDir, 'thumb.webp');
+
+  if (!existsSync(sourceIcon)) {
+    throw new Error('Source entity has no approved image');
+  }
+
+  const fs = await import('fs/promises');
+  const targetDir = getEntityPath(APPROVED_DIR, entityType, entityId);
+
+  // Remove existing directory contents (old image or old symlinks)
+  if (existsSync(targetDir)) {
+    await fs.rm(targetDir, { recursive: true, force: true });
+  }
+  ensureDir(targetDir);
+
+  // Create hard links to save disk space (same inode, no duplication).
+  // Hard links work on Windows without admin/Developer Mode unlike symlinks.
+  await fs.link(sourceIcon, join(targetDir, 'icon.webp'));
+  if (existsSync(sourceThumb)) {
+    await fs.link(sourceThumb, join(targetDir, 'thumb.webp'));
+  }
+
+  // Write metadata recording the link
+  await fs.writeFile(join(targetDir, 'metadata.json'), JSON.stringify({
+    entityType,
+    entityId: String(entityId),
+    linkedFrom: { entityType: sourceEntityType, entityId: String(sourceEntityId) },
+    linkedBy: userId,
+    linkedAt: new Date().toISOString()
+  }));
+}
+
+// --- Cached approved images for search ---
+
+let _approvedImagesCache = null;
+let _approvedImagesCacheTime = 0;
+const APPROVED_CACHE_TTL = 60_000; // 60 seconds
+
+/**
+ * Get approved images with a 60-second cache to avoid repeated filesystem scans.
+ * @returns {Promise<Array>}
+ */
+export async function getCachedApprovedImages() {
+  const now = Date.now();
+  if (_approvedImagesCache && (now - _approvedImagesCacheTime) < APPROVED_CACHE_TTL) {
+    return _approvedImagesCache;
+  }
+  _approvedImagesCache = await getApprovedImages();
+  _approvedImagesCacheTime = now;
+  return _approvedImagesCache;
+}
+
 export default {
   processAndSaveImage,
   getPreviewImage,
   getPendingImages,
   getApprovedImages,
+  getCachedApprovedImages,
   getUserPendingImage,
   submitImageForApproval,
   approveImage,
@@ -863,5 +938,6 @@ export default {
   isAutoApproveType,
   cleanupTempUploads,
   computeImageHash,
+  createImageLink,
   scanRichtextImageUsage
 };
