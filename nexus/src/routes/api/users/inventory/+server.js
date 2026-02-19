@@ -113,14 +113,7 @@ export async function PUT({ request, locals }) {
       return getResponse({ error: `items[${i}].quantity must be a non-negative integer` }, 400);
     }
 
-    // Unresolved items (item_id=0) get a name-based instance_key for uniqueness
     let instanceKey = item.instance_key || null;
-    if (itemId === 0 && !instanceKey) {
-      instanceKey = 'unresolved:' + itemName;
-    }
-    if (instanceKey && instanceKey.length > MAX_INSTANCE_KEY_LENGTH) {
-      return getResponse({ error: `items[${i}].instance_key exceeds maximum length of ${MAX_INSTANCE_KEY_LENGTH}` }, 400);
-    }
 
     const details = validateInventoryDetails(item.details);
 
@@ -132,6 +125,16 @@ export async function PUT({ request, locals }) {
     const container = typeof item.container === 'string' ? item.container.trim() || null : null;
     if (container && container.length > MAX_CONTAINER_LENGTH) {
       return getResponse({ error: `items[${i}].container exceeds maximum length of ${MAX_CONTAINER_LENGTH}` }, 400);
+    }
+
+    // Unresolved items (item_id=0) get a name+container instance_key for uniqueness
+    if (itemId === 0 && !instanceKey) {
+      instanceKey = container
+        ? `unresolved:${itemName}:${container}`
+        : `unresolved:${itemName}`;
+    }
+    if (instanceKey && instanceKey.length > MAX_INSTANCE_KEY_LENGTH) {
+      return getResponse({ error: `items[${i}].instance_key exceeds maximum length of ${MAX_INSTANCE_KEY_LENGTH}` }, 400);
     }
 
     const containerPath = typeof item.container_path === 'string' ? item.container_path.trim() || null : null;

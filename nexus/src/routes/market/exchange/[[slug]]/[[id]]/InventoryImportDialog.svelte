@@ -419,7 +419,9 @@
     let added = 0, changed = 0, unchanged = 0;
     const newKeys = new Set();
 
-    for (const item of parsedItems) {
+    // Include both resolved and unresolved items in diff
+    const allItems = [...parsedItems, ...unresolvedItems];
+    for (const item of allItems) {
       const key = diffKey(item);
       newKeys.add(key);
 
@@ -457,15 +459,16 @@
       const res = await fetch('/api/users/inventory', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: parsedItems, sync: true }),
+        body: JSON.stringify({ items: [...parsedItems, ...unresolvedItems], sync: true }),
       });
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.error || 'Import failed');
       }
       importResult = data;
-      // Update the inventory store with the imported items
-      inventory.set(parsedItems.map((item, i) => ({ ...item, id: i + 1 })));
+      // Update the inventory store with all imported items (including unresolved)
+      const allImported = [...parsedItems, ...unresolvedItems];
+      inventory.set(allImported.map((item, i) => ({ ...item, id: i + 1 })));
       step = 'done';
       dispatch('imported', data);
 
