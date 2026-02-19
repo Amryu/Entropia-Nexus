@@ -21,6 +21,7 @@
   import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
   import WaypointCopyButton from '$lib/components/wiki/WaypointCopyButton.svelte';
   import EditActionBar from '$lib/components/wiki/EditActionBar.svelte';
+  import PendingChangeBanner from '$lib/components/wiki/PendingChangeBanner.svelte';
 
   // Map Editor components (Leaflet-based edit mode) — loaded dynamically to avoid SSR issues
   import { browser } from '$app/environment';
@@ -323,9 +324,6 @@
 
   $: if (resolvedPendingChange) {
     setExistingPendingChange(resolvedPendingChange);
-    if (user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve'))) {
-      setViewingPendingChange(true);
-    }
   } else {
     setExistingPendingChange(null);
     setViewingPendingChange(false);
@@ -935,6 +933,13 @@
         <div class="panel-loading-overlay">
           <div class="loading-spinner"></div>
         </div>
+      {/if}
+      {#if $existingPendingChange && !$editMode && !effectiveCreateMode}
+        <PendingChangeBanner
+          pendingChange={$existingPendingChange}
+          viewing={$viewingPendingChange}
+          onToggle={() => setViewingPendingChange(!$viewingPendingChange)}
+        />
       {/if}
       <div class="info-header">
         {#if isMobile}

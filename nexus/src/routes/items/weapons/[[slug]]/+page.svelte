@@ -143,10 +143,6 @@
   // Initialize pending change state
   $: if (resolvedPendingChange) {
     setExistingPendingChange(resolvedPendingChange);
-    // Auto-enable viewing pending change for author or admin
-    if (user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve'))) {
-      setViewingPendingChange(true);
-    }
   } else {
     setExistingPendingChange(null);
     setViewingPendingChange(false);

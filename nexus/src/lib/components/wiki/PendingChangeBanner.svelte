@@ -8,8 +8,7 @@
   export let viewing = false;
   export let onToggle = () => {};
 
-  const mapEntities = new Set(['Location', 'Area', 'Apartment']);
-  $: showBanner = pendingChange && mapEntities.has(pendingChange.entity);
+  $: showBanner = !!pendingChange;
 </script>
 
 {#if showBanner}

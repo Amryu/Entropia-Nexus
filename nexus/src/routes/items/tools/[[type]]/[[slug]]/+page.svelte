@@ -259,9 +259,6 @@
   // Set pending change when it exists
   $: if (resolvedPendingChange) {
     setExistingPendingChange(resolvedPendingChange);
-    if (user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve'))) {
-      setViewingPendingChange(true);
-    }
   } else {
     setExistingPendingChange(null);
     setViewingPendingChange(false);
