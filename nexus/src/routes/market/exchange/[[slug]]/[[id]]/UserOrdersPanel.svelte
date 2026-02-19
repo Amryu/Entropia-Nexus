@@ -46,7 +46,7 @@
       _item_name: o.details?.item_name || 'Unknown',
       _category: getTopCategory(item?.t),
       _value: getOrderValue(item, o) ?? null,
-      _total: computeUnitPrice(item, mu, o) ?? null,
+      _total: (() => { const u = computeUnitPrice(item, mu, o); return u != null ? u * (o.quantity || 1) : null; })(),
     };
   });
 

@@ -42,7 +42,7 @@
       ...o,
       _category: getTopCategory(item?.t),
       _value: getOrderValue(item, o) ?? null,
-      _total: computeUnitPrice(item, mu, o) ?? null,
+      _total: (() => { const u = computeUnitPrice(item, mu, o); return u != null ? u * (o.quantity || 1) : null; })(),
     };
   }).sort((a, b) => {
     const sa = STATUS_ORDER[a.state_display] ?? 9;
@@ -50,6 +50,18 @@
     if (sa !== sb) return sa - sb;
     return getCategoryOrder(a._category) - getCategoryOrder(b._category);
   });
+
+  // Summary of active sell orders
+  $: orderSummary = (() => {
+    const sells = enrichedOrders.filter(o => o.type === 'SELL' && o.state_display !== 'closed');
+    let totalTT = 0, totalValue = 0;
+    for (const o of sells) {
+      const qty = o.quantity || 1;
+      if (o._value != null) totalTT += o._value * qty;
+      if (o._total != null) totalValue += o._total;
+    }
+    return { totalTT, totalValue, count: sells.length };
+  })();
 
   $: columns = [
     {
@@ -242,6 +254,13 @@
       }}
     />
   </div>
+  {#if orderSummary.count > 0}
+    <div class="order-summary">
+      <span>Sell Orders: <strong>{orderSummary.count}</strong></span>
+      <span>Total TT: <strong>{formatPedValue(orderSummary.totalTT)}</strong></span>
+      <span>Total Value: <strong>{formatPedValue(orderSummary.totalValue)}</strong></span>
+    </div>
+  {/if}
 {/if}
 
 <style>
@@ -256,6 +275,17 @@
     flex-direction: column;
     position: relative;
     margin-top: 8px;
+  }
+  .order-summary {
+    display: flex;
+    gap: 16px;
+    padding: 6px 12px;
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .order-summary strong {
+    color: var(--text-color);
   }
   .panel-loading {
     flex: 1;
