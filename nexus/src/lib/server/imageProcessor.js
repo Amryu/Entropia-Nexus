@@ -555,6 +555,13 @@ export function getApprovedImagePath(entityType, entityId, type = 'icon') {
 }
 
 /**
+ * Build the approved image path without checking existence (for cache writes).
+ */
+export function buildApprovedImagePath(entityType, entityId, type) {
+  return join(getEntityPath(APPROVED_DIR, entityType, entityId), `${type}.webp`);
+}
+
+/**
  * Get list of all approved images
  * @returns {Promise<Array>}
  */
