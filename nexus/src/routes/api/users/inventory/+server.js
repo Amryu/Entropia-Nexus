@@ -1,8 +1,14 @@
 //@ts-nocheck
 import { getResponse } from '$lib/util.js';
 import { getUserInventory, upsertInventory, syncInventory } from '$lib/server/inventory.js';
+import { checkRateLimit } from '$lib/server/rateLimiter.js';
 
 const MAX_IMPORT_ITEMS = 30000;
+const MAX_UNKNOWN_ITEMS = 500;
+const MAX_ITEM_NAME_LENGTH = 200;
+const MAX_CONTAINER_LENGTH = 200;
+const MAX_CONTAINER_PATH_LENGTH = 500;
+const MAX_INSTANCE_KEY_LENGTH = 300;
 
 /**
  * Validate and sanitize inventory item details JSONB.
@@ -54,6 +60,16 @@ export async function PUT({ request, locals }) {
   if (!user) return getResponse({ error: 'Authentication required' }, 401);
   if (!user.verified) return getResponse({ error: 'Verified account required' }, 403);
 
+  // Rate limit: 5 imports per minute, 20 per hour
+  const rateMinute = checkRateLimit(`inv:import:${user.id}`, 5, 60_000);
+  if (!rateMinute.allowed) {
+    return getResponse({ error: 'Too many imports. Please wait a moment before trying again.' }, 429);
+  }
+  const rateHour = checkRateLimit(`inv:import-h:${user.id}`, 20, 3_600_000);
+  if (!rateHour.allowed) {
+    return getResponse({ error: 'Import limit reached. Please try again later.' }, 429);
+  }
+
   let body;
   try {
     body = await request.json();
@@ -72,6 +88,8 @@ export async function PUT({ request, locals }) {
 
   // Validate each item
   const validated = [];
+  let unknownCount = 0;
+
   for (let i = 0; i < body.items.length; i++) {
     const item = body.items[i];
 
@@ -80,9 +98,14 @@ export async function PUT({ request, locals }) {
       return getResponse({ error: `items[${i}].item_id must be a non-negative integer` }, 400);
     }
 
+    if (itemId === 0) unknownCount++;
+
     const itemName = typeof item.item_name === 'string' ? item.item_name.trim() : '';
     if (!itemName) {
       return getResponse({ error: `items[${i}].item_name is required` }, 400);
+    }
+    if (itemName.length > MAX_ITEM_NAME_LENGTH) {
+      return getResponse({ error: `items[${i}].item_name exceeds maximum length of ${MAX_ITEM_NAME_LENGTH}` }, 400);
     }
 
     const quantity = item.quantity != null ? parseInt(item.quantity, 10) : 0;
@@ -95,6 +118,9 @@ export async function PUT({ request, locals }) {
     if (itemId === 0 && !instanceKey) {
       instanceKey = 'unresolved:' + itemName;
     }
+    if (instanceKey && instanceKey.length > MAX_INSTANCE_KEY_LENGTH) {
+      return getResponse({ error: `items[${i}].instance_key exceeds maximum length of ${MAX_INSTANCE_KEY_LENGTH}` }, 400);
+    }
 
     const details = validateInventoryDetails(item.details);
 
@@ -104,8 +130,21 @@ export async function PUT({ request, locals }) {
     }
 
     const container = typeof item.container === 'string' ? item.container.trim() || null : null;
+    if (container && container.length > MAX_CONTAINER_LENGTH) {
+      return getResponse({ error: `items[${i}].container exceeds maximum length of ${MAX_CONTAINER_LENGTH}` }, 400);
+    }
 
-    validated.push({ item_id: itemId, item_name: itemName, quantity, instance_key: instanceKey, details, value, container });
+    const containerPath = typeof item.container_path === 'string' ? item.container_path.trim() || null : null;
+    if (containerPath && containerPath.length > MAX_CONTAINER_PATH_LENGTH) {
+      return getResponse({ error: `items[${i}].container_path exceeds maximum length of ${MAX_CONTAINER_PATH_LENGTH}` }, 400);
+    }
+
+    validated.push({ item_id: itemId, item_name: itemName, quantity, instance_key: instanceKey, details, value, container, container_path: containerPath });
+  }
+
+  // Reject imports with excessive unknown items (spam detection)
+  if (unknownCount > MAX_UNKNOWN_ITEMS) {
+    return getResponse({ error: `Too many unrecognized items (${unknownCount}). Maximum ${MAX_UNKNOWN_ITEMS} unknown items per import.` }, 400);
   }
 
   try {

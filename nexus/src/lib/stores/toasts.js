@@ -8,12 +8,13 @@ export const toasts = writable([]);
 /**
  * Show a toast message.
  * @param {string} message
- * @param {{ type?: 'error'|'warning'|'success'|'info', duration?: number }} [opts]
+ * @param {'error'|'warning'|'success'|'info'|{ type?: 'error'|'warning'|'success'|'info', duration?: number }} [opts]
  */
 export function addToast(message, opts = {}) {
   const id = nextId++;
-  const type = opts.type ?? 'error';
-  const duration = opts.duration ?? 6000;
+  // Accept string shorthand: addToast('msg', 'success') or object: addToast('msg', { type: 'success' })
+  const type = typeof opts === 'string' ? opts : (opts.type ?? 'error');
+  const duration = typeof opts === 'string' ? 6000 : (opts.duration ?? 6000);
 
   toasts.update(t => [...t, { id, message, type, duration }]);
 

@@ -1,6 +1,7 @@
 //@ts-nocheck
 import { getResponse } from '$lib/util.js';
 import { deleteInventoryItem, updateInventoryItem } from '$lib/server/inventory.js';
+import { checkRateLimit } from '$lib/server/rateLimiter.js';
 
 /**
  * Validate and sanitize inventory item details.
@@ -24,6 +25,16 @@ function validateDetails(details) {
     const qr = parseFloat(details.QualityRating);
     if (Number.isFinite(qr) && qr >= 0 && qr <= 100) clean.QualityRating = qr;
   }
+  if (details.Level != null) {
+    const lvl = parseInt(details.Level, 10);
+    if (Number.isFinite(lvl) && lvl >= 0 && lvl <= 200) clean.Level = lvl;
+  }
+  if (Array.isArray(details.UnlockedSkills)) {
+    const skills = details.UnlockedSkills
+      .filter(s => typeof s === 'string' && s.length > 0 && s.length <= 100)
+      .slice(0, 50);
+    if (skills.length > 0) clean.UnlockedSkills = skills;
+  }
 
   return Object.keys(clean).length > 0 ? clean : null;
 }
@@ -35,6 +46,12 @@ export async function PATCH({ params, request, locals }) {
   const user = locals.session?.user;
   if (!user) return getResponse({ error: 'Authentication required' }, 401);
   if (!user.verified) return getResponse({ error: 'Verified account required' }, 403);
+
+  // Rate limit: 30 updates per minute
+  const rateCheck = checkRateLimit(`inv:item:${user.id}`, 30, 60_000);
+  if (!rateCheck.allowed) {
+    return getResponse({ error: 'Too many updates. Please slow down.' }, 429);
+  }
 
   const itemRowId = parseInt(params.id, 10);
   if (!Number.isFinite(itemRowId)) {
@@ -97,6 +114,12 @@ export async function DELETE({ params, locals }) {
   const user = locals.session?.user;
   if (!user) return getResponse({ error: 'Authentication required' }, 401);
   if (!user.verified) return getResponse({ error: 'Verified account required' }, 403);
+
+  // Share rate limit bucket with item updates
+  const rateCheck = checkRateLimit(`inv:item:${user.id}`, 30, 60_000);
+  if (!rateCheck.allowed) {
+    return getResponse({ error: 'Too many requests. Please slow down.' }, 429);
+  }
 
   const itemRowId = parseInt(params.id, 10);
   if (!Number.isFinite(itemRowId)) {

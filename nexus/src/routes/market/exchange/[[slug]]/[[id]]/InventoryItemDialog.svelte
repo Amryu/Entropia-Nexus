@@ -24,6 +24,8 @@
   let editTier = '';
   let editTiR = '';
   let editQR = '';
+  let editLevel = '';
+  let editUnlockedSkills = [];
 
   // Cache fetched item details by item_id
   const detailsCache = new Map();
@@ -41,6 +43,8 @@
     editTier = details.Tier != null ? String(details.Tier) : '';
     editTiR = details.TierIncreaseRate != null ? String(details.TierIncreaseRate) : '';
     editQR = details.QualityRating != null ? String(details.QualityRating) : '';
+    editLevel = details.Level != null ? String(details.Level) : '';
+    editUnlockedSkills = details.UnlockedSkills || [];
 
     // Resolve item type
     await loadItemDetails(inv.item_id);
@@ -90,7 +94,9 @@
   $: showTier = tierable;
   $: showTiR = tierable;
   $: showQR = blueprint && !limited;
-  $: tirMax = limited ? 200 : 4000;
+  $: tirMax = limited ? 4000 : 200;
+  $: isPetItem = itemDetails?.Properties?.Type === 'Pet' || itemDetails?.Type === 'Pet';
+  $: petEffects = isPetItem && itemDetails?.Effects ? itemDetails.Effects : [];
 
   function scheduleSave() {
     saved = false;
@@ -135,6 +141,15 @@
     if (showQR && editQR !== '') {
       const q = parseFloat(editQR);
       if (Number.isFinite(q) && q >= 0 && q <= 100) details.QualityRating = q;
+    }
+    if (isPetItem) {
+      if (editLevel !== '') {
+        const lvl = parseInt(editLevel, 10);
+        if (Number.isFinite(lvl) && lvl >= 0 && lvl <= 200) details.Level = lvl;
+      }
+      if (editUnlockedSkills.length > 0) {
+        details.UnlockedSkills = editUnlockedSkills;
+      }
     }
 
     body.details = Object.keys(details).length > 0 ? details : null;
@@ -275,7 +290,51 @@
             </div>
           {/if}
 
-          {#if !isFungible && !showValue && !showTier && !showQR}
+          {#if isPetItem}
+            <div class="form-row">
+              <label for="inv-level">Level</label>
+              <input
+                id="inv-level"
+                type="number"
+                min="0"
+                max="200"
+                step="1"
+                placeholder="0"
+                bind:value={editLevel}
+                on:input={scheduleSave}
+              />
+            </div>
+
+            {#if petEffects.length > 0}
+              <div class="skill-section">
+                <label class="skill-label">Unlocked Skills</label>
+                <div class="skill-list">
+                  {#each petEffects as effect}
+                    {@const effectName = effect.Name || effect._newEffect?.CanonicalName || 'Unknown'}
+                    {@const strength = effect.Properties?.Strength}
+                    {@const unit = effect._newEffect?.Unit || ''}
+                    <label class="skill-checkbox">
+                      <input
+                        type="checkbox"
+                        checked={editUnlockedSkills.includes(effectName)}
+                        on:change={(e) => {
+                          if (e.target.checked) {
+                            editUnlockedSkills = [...editUnlockedSkills, effectName];
+                          } else {
+                            editUnlockedSkills = editUnlockedSkills.filter(s => s !== effectName);
+                          }
+                          scheduleSave();
+                        }}
+                      />
+                      <span>{effectName}{strength != null ? ` (${strength}${unit})` : ''}</span>
+                    </label>
+                  {/each}
+                </div>
+              </div>
+            {/if}
+          {/if}
+
+          {#if !isFungible && !showValue && !showTier && !showQR && !isPetItem}
             <p class="no-extra-fields">No additional metadata for this item type.</p>
           {/if}
         </div>
@@ -403,6 +462,38 @@
     font-size: 11px;
     color: var(--text-muted);
     white-space: nowrap;
+  }
+
+  .skill-section {
+    margin-top: 4px;
+  }
+  .skill-label {
+    font-size: 13px;
+    color: var(--text-muted);
+    font-weight: 500;
+    display: block;
+    margin-bottom: 4px;
+  }
+  .skill-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 180px;
+    overflow-y: auto;
+  }
+  .skill-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+  .skill-checkbox input {
+    margin: 0;
+    cursor: pointer;
+  }
+  .skill-checkbox span {
+    line-height: 1.3;
   }
 
   .no-extra-fields {
