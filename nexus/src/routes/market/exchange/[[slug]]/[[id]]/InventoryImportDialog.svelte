@@ -73,6 +73,35 @@
     return match ? match[1].trim() : null;
   }
 
+  /**
+   * Build a full container path string by walking the hierarchy chain.
+   * Returns e.g. "STORAGE (Calypso) > Sleipnir Mk.1 (C,L) > Storage Container (L)"
+   * or null if the item has no container hierarchy.
+   */
+  function buildContainerPath(itemId, containerMap, data) {
+    const segments = [];
+    let currentId = itemId;
+    const visited = new Set();
+
+    while (currentId != null && containerMap.has(currentId)) {
+      if (visited.has(currentId)) break; // cycle detection
+      visited.add(currentId);
+
+      const entry = containerMap.get(currentId);
+
+      // Add this container's name (look up the item name from data)
+      const containerItem = data.find(d => d.id === currentId);
+      const containerName = entry.container || (containerItem
+        ? (containerItem.item_name ?? containerItem.ItemName ?? containerItem.Name ?? containerItem.name ?? '')
+        : '');
+      if (containerName) segments.unshift(containerName.replace(/\s+/g, ' ').trim());
+
+      currentId = entry.containerRefId;
+    }
+
+    return segments.length > 0 ? segments.join(' > ') : null;
+  }
+
   // --- TSV parsing ---
 
   function parseTsvField(field) {
@@ -242,6 +271,14 @@
 
       const planet = extractPlanet(storageLocation);
 
+      // Build full container path for hierarchy display
+      let containerPath = null;
+      if (containerRefId != null) {
+        containerPath = buildContainerPath(containerRefId, containerMap, data);
+      } else if (storageLocation) {
+        containerPath = storageLocation;
+      }
+
       normalized.push({
         item_name: String(itemName).replace(/\s+/g, ' ').trim(),
         quantity: Math.max(0, Number(quantity) || 0),
@@ -249,6 +286,7 @@
         instance_key: instanceKey || null,
         details: details || null,
         container: planet || null,
+        container_path: containerPath,
         _planet: planet,
       });
     }
@@ -337,6 +375,7 @@
         instance_key: item.instance_key,
         details: item.details,
         container: item.container,
+        container_path: item.container_path || null,
         _planet: item._planet,
       };
       if (itemId === 0) {
