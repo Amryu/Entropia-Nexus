@@ -65,15 +65,33 @@
   // Constants for section names (matches legacy)
   const SECTION_NAMES = ['Indoor', 'Display', 'Additional'];
   const PLANET_OPTIONS = [
+    // Calypso system
     { value: 'Calypso', label: 'Calypso' },
     { value: 'ARIS', label: 'ARIS' },
+    { value: 'Setesh', label: 'Setesh' },
+    { value: 'Asteroid F.O.M.A.', label: 'Asteroid F.O.M.A.' },
+    { value: 'Crystal Palace', label: 'Crystal Palace' },
+    // Arkadia system
     { value: 'Arkadia', label: 'Arkadia' },
+    { value: 'Arkadia Moon', label: 'Arkadia Moon' },
+    { value: 'Arkadia Underground', label: 'Arkadia Underground' },
+    // Cyrene
     { value: 'Cyrene', label: 'Cyrene' },
+    // Monria
     { value: 'Monria', label: 'Monria' },
-    { value: 'ROCKtropia', label: 'Rocktropia' },
-    { value: 'Toulan', label: 'Toulan' },
+    { value: 'DSEC9', label: 'DSEC9' },
+    // Next Island
     { value: 'Next Island', label: 'Next Island' },
-    { value: 'Space', label: 'Space (Howling Mine)' }
+    { value: 'Ancient Greece', label: 'Ancient Greece' },
+    // ROCKtropia system
+    { value: 'ROCKtropia', label: 'Rocktropia' },
+    { value: 'HELL', label: 'HELL' },
+    { value: 'Hunt The THING', label: 'Hunt The THING' },
+    { value: 'Secret Island', label: 'Secret Island' },
+    // Toulan
+    { value: 'Toulan', label: 'Toulan' },
+    // Space
+    { value: 'Space', label: 'Space (Howling Mine)' },
   ];
 
   function getPlanetDisplayName(planetName) {

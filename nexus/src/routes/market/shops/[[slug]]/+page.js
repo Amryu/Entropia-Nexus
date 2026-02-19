@@ -35,24 +35,15 @@ export async function load({ fetch, params, url, parent }) {
 
   ({ items, response } = await handlePageLoad(fetch, items, config));
 
-  // Group shops by planet for filtering in navigation
-  const itemsGrouped = {
-    calypso: [],
-    aris: [],
-    arkadia: [],
-    cyrene: [],
-    monria: [],
-    rocktropia: [],
-    toulan: [],
-    nextisland: [],
-  };
-
+  // Group shops by planet name for filtering in navigation
+  const itemsGrouped = {};
   if (items) {
     for (const shop of items) {
-      const planetName = shop.Planet?.Properties?.TechnicalName;
-      if (planetName && itemsGrouped[planetName]) {
-        itemsGrouped[planetName].push(shop);
-      }
+      const planetName = shop.Planet?.Name || shop.Planet?.Properties?.TechnicalName;
+      if (!planetName) continue;
+      const key = planetName.toLowerCase().replace(/[\s.]+/g, '');
+      if (!itemsGrouped[key]) itemsGrouped[key] = [];
+      itemsGrouped[key].push(shop);
     }
   }
 
