@@ -53,7 +53,7 @@ export const Apartment = {
     },
     "Planet": { "$ref": "https://entropianexus.com/schemas/NamedEntity.json" },
     "OwnerId": {
-      "type": ["integer", "null"],
+      "type": ["string", "null"],
       "default": null
     },
     "MaxGuests": {
