@@ -20,6 +20,7 @@
     getTierMaterial
   } from '$lib/tieringUtil.js';
   import { editMode, updateField } from '$lib/stores/wikiEditState.js';
+  import { fetchExchangeWapByName, fetchInventoryMarkups } from '$lib/markupSources.js';
 
   /** @type {object} Entity being displayed/edited */
   export let entity = null;
@@ -99,8 +100,31 @@
   let saveTimer = null;
   let prefCache = null;
 
+  // Markup source toggle: 'custom' | 'market' | 'inventory'
+  let markupSource = 'custom';
+  let nameToWapMap = new Map();
+  let nameToIdMap = new Map();
+  let inventoryMarkupMap = new Map();
+
   // Markups for the currently selected tier
   $: markups = allMarkups[selectedTier] || DEFAULT_MARKUPS;
+
+  /**
+   * Resolve the effective markup for a material based on the active source.
+   * Falls back: selected source → custom value → 100
+   */
+  function getResolvedMarkup(matName, idx, tierMarkups) {
+    const mu = tierMarkups || markups;
+    if (markupSource === 'market') {
+      return nameToWapMap.get(matName) ?? mu[idx] ?? 100;
+    }
+    if (markupSource === 'inventory') {
+      const itemId = nameToIdMap.get(matName);
+      const inv = itemId != null ? inventoryMarkupMap.get(itemId) : undefined;
+      return inv ?? mu[idx] ?? 100;
+    }
+    return mu[idx] ?? 100;
+  }
 
   function handleMarkupInput(event, idx) {
     const value = event.target.value;
@@ -125,9 +149,14 @@
       prefCache = result?.data || {};
       const stored = prefCache[entityType];
       if (stored) {
+        // Load markup source preference
+        if (stored._source) markupSource = stored._source;
         const loaded = {};
         for (const [tier, values] of Object.entries(stored)) {
-          loaded[Number(tier)] = [...values];
+          if (tier === '_source') continue;
+          if (Array.isArray(values)) {
+            loaded[Number(tier)] = [...values];
+          }
         }
         allMarkups = loaded;
       }
@@ -143,6 +172,9 @@
       if (values.some((v, i) => v !== DEFAULT_MARKUPS[i])) {
         toSave[tier] = values;
       }
+    }
+    if (markupSource !== 'custom') {
+      toSave._source = markupSource;
     }
     const data = prefCache || {};
     if (Object.keys(toSave).length > 0) {
@@ -167,8 +199,20 @@
     saveTimer = setTimeout(saveMarkups, SAVE_DEBOUNCE_MS);
   }
 
+  async function loadMarkupSourceData() {
+    try {
+      const { wapByName, nameToId } = await fetchExchangeWapByName();
+      nameToWapMap = wapByName;
+      nameToIdMap = nameToId;
+    } catch { /* non-critical */ }
+    try {
+      inventoryMarkupMap = await fetchInventoryMarkups();
+    } catch { /* not logged in or not verified */ }
+  }
+
   onMount(() => {
     loadMarkups();
+    loadMarkupSourceData();
     return () => {
       if (saveTimer) clearTimeout(saveTimer);
     };
@@ -308,7 +352,7 @@
       const matTT = mat.Material?.Properties?.Economy?.MaxTT || matValues[mat.Material?.Name] || 0;
       const cost = matTT * mat.Amount;
       tt += cost;
-      total += cost * (markups[idx] || 100) / 100;
+      total += cost * getResolvedMarkup(mat.Material?.Name, idx) / 100;
     });
     return { tt, mu: total - tt, total };
   })();
@@ -325,7 +369,7 @@
           const matTT = mat.Material?.Properties?.Economy?.MaxTT || matValues[mat.Material?.Name] || 0;
           const cost = matTT * mat.Amount;
           tt += cost;
-          total += cost * (tierMarkups[idx] || 100) / 100;
+          total += cost * getResolvedMarkup(mat.Material?.Name, idx, tierMarkups) / 100;
         });
       }
     }
@@ -436,7 +480,7 @@
       const matTT = mat.Material?.Properties?.Economy?.MaxTT || matValues[matName] || 0;
       const amount = mat.Amount;
       const baseCost = matTT * amount;
-      const totalCost = baseCost * (markups[origIdx] || 100) / 100;
+      const totalCost = baseCost * getResolvedMarkup(matName, origIdx) / 100;
 
       return {
         _idx: origIdx,
@@ -457,6 +501,32 @@
 
 {#if canBeTiered}
   <div class="tiering-editor" class:compact>
+    <!-- Markup Source Toggle -->
+    {#if !$editMode && displayMaterials.length > 0}
+      <div class="markup-source-toggle">
+        <span class="markup-source-label">MU Source:</span>
+        <div class="markup-source-buttons">
+          <button
+            class="source-btn"
+            class:active={markupSource === 'custom'}
+            on:click={() => { markupSource = 'custom'; debounceSaveMarkups(); }}
+          >Custom</button>
+          <button
+            class="source-btn"
+            class:active={markupSource === 'market'}
+            disabled={nameToWapMap.size === 0}
+            on:click={() => { markupSource = 'market'; debounceSaveMarkups(); }}
+          >Market</button>
+          <button
+            class="source-btn"
+            class:active={markupSource === 'inventory'}
+            disabled={inventoryMarkupMap.size === 0}
+            on:click={() => { markupSource = 'inventory'; debounceSaveMarkups(); }}
+          >Inventory</button>
+        </div>
+      </div>
+    {/if}
+
     <!-- Tier Selection Buttons -->
     <div class="tier-buttons">
       {#each Array(MAX_TIERS) as _, i}
@@ -522,14 +592,25 @@
                 <div class="table-cell col-tt mobile-hide">{row.tt}</div>
                 <div class="table-cell col-amount">{row.amount}</div>
                 <div class="table-cell col-markup mobile-hide">
-                  <input
-                    type="text"
-                    value={markups[row._idx]}
-                    on:input={(e) => handleMarkupInput(e, row._idx)}
-                    on:blur={(e) => handleMarkupInput(e, row._idx)}
-                    class="markup-input"
-                    inputmode="decimal"
-                  />
+                  {#if markupSource === 'custom'}
+                    <input
+                      type="text"
+                      value={markups[row._idx]}
+                      on:input={(e) => handleMarkupInput(e, row._idx)}
+                      on:blur={(e) => handleMarkupInput(e, row._idx)}
+                      class="markup-input"
+                      inputmode="decimal"
+                    />
+                  {:else}
+                    {@const resolved = getResolvedMarkup(row._matName, row._idx)}
+                    {@const isFallback = markupSource === 'market' ? !nameToWapMap.has(row._matName) : !inventoryMarkupMap.has(nameToIdMap.get(row._matName))}
+                    <span class="markup-value-readonly" class:is-fallback={isFallback}>
+                      {resolved}
+                    </span>
+                    {#if isFallback}
+                      <span class="markup-fallback-note" title="No {markupSource} data; using custom value">*</span>
+                    {/if}
+                  {/if}
                 </div>
                 <div class="table-cell col-cost">{row.cost}</div>
               </div>
@@ -600,6 +681,7 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
+    position: relative;
   }
 
   /* Tier Selection Buttons */
@@ -804,6 +886,75 @@
     border-color: var(--accent-color, #4a9eff);
   }
 
+  /* Markup source toggle */
+  .markup-source-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    position: absolute;
+    top: 0;
+    right: 0;
+  }
+
+  .markup-source-label {
+    color: var(--text-muted, #999);
+    font-size: 12px;
+  }
+
+  .markup-source-buttons {
+    display: flex;
+    border: 1px solid var(--border-color, #555);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .source-btn {
+    padding: 3px 8px;
+    font-size: 11px;
+    border: none;
+    border-right: 1px solid var(--border-color, #555);
+    background: var(--bg-color);
+    color: var(--text-muted, #999);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .source-btn:last-child {
+    border-right: none;
+  }
+
+  .source-btn:hover:not(:disabled) {
+    background: var(--hover-color);
+    color: var(--text-color);
+  }
+
+  .source-btn.active {
+    background: var(--accent-color, #4a9eff);
+    color: white;
+  }
+
+  .source-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .markup-value-readonly {
+    font-size: 13px;
+    color: var(--text-color);
+    font-family: monospace;
+  }
+
+  .markup-value-readonly.is-fallback {
+    opacity: 0.6;
+  }
+
+  .markup-fallback-note {
+    font-size: 10px;
+    color: var(--text-muted, #999);
+    margin-left: 2px;
+  }
+
   /* Footer */
   .table-footer {
     flex-shrink: 0;
@@ -1002,6 +1153,11 @@
     .footer-cell {
       padding: 6px 8px;
       font-size: 12px;
+    }
+
+    .markup-source-toggle {
+      position: static;
+      align-self: flex-end;
     }
   }
 </style>
