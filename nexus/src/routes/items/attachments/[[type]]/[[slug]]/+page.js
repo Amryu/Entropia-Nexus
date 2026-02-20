@@ -70,8 +70,11 @@ export async function load({ fetch, params, url, parent }) {
   // Get entity type for API calls
   const entityType = getEntityType(response.additional?.type);
 
+  // Enhancers are database-generated and not wiki-editable
+  const isEditable = entityType && entityType !== 'Enhancer';
+
   // If a changeId is provided (editing an existing pending create), fetch that change
-  if (changeId && isCreateMode && entityType) {
+  if (changeId && isCreateMode && isEditable) {
     try {
       const changeRes = await fetch(`/api/changes/${changeId}`);
       if (changeRes.ok) {
@@ -88,7 +91,7 @@ export async function load({ fetch, params, url, parent }) {
   const session = parentData.session;
   response.session = session;
 
-  const pendingData = entityType
+  const pendingData = isEditable
     ? await loadPendingChangesData(fetch, session?.user, {
       entity: entityType,
       entityId: response.object?.Id,
