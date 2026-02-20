@@ -201,6 +201,33 @@ test.describe('Import History API', () => {
       expect(Array.isArray(data)).toBeTruthy();
     });
 
+    test('returns estimated_value and unknown_value columns', async ({ verifiedUser }) => {
+      // Import items including an unknown item (item_id=0)
+      const importRes = await verifiedUser.request.put('/api/users/inventory', {
+        data: {
+          items: [
+            { item_id: 1000001, item_name: 'Test Material', quantity: 50, value: 5.0, container: 'Calypso' },
+            { item_id: 0, item_name: 'Unknown Widget', quantity: 1, value: 3.50, container: 'Calypso' },
+          ],
+          sync: true
+        }
+      });
+      expect(importRes.ok()).toBeTruthy();
+
+      // Fetch latest import
+      const historyRes = await verifiedUser.request.get('/api/users/inventory/imports?limit=1');
+      expect(historyRes.ok()).toBeTruthy();
+      const history = await historyRes.json();
+      expect(history.length).toBeGreaterThanOrEqual(1);
+
+      const latest = history[0];
+      // unknown_value should capture the unknown item's TT value
+      expect(latest.unknown_value).not.toBeNull();
+      expect(Number(latest.unknown_value)).toBeCloseTo(3.50, 1);
+      // total_value (TT sum) should include both items
+      expect(Number(latest.total_value)).toBeCloseTo(8.50, 1);
+    });
+
     test('supports pagination params', async ({ verifiedUser }) => {
       const response = await verifiedUser.request.get('/api/users/inventory/imports?limit=5&offset=0');
       expect(response.ok()).toBeTruthy();
@@ -213,6 +240,23 @@ test.describe('Import History API', () => {
     test('rejects unauthenticated requests', async ({ page }) => {
       const response = await page.request.get('/api/users/inventory/imports');
       expect(response.ok()).toBeFalsy();
+    });
+  });
+
+  test.describe('GET /api/users/inventory/imports/value-history', () => {
+    test('returns value history with estimated_value and unknown_value', async ({ verifiedUser }) => {
+      const response = await verifiedUser.request.get('/api/users/inventory/imports/value-history');
+      expect(response.ok()).toBeTruthy();
+
+      const data = await response.json();
+      expect(Array.isArray(data)).toBeTruthy();
+      if (data.length > 0) {
+        const entry = data[data.length - 1]; // most recent
+        expect(entry).toHaveProperty('total_value');
+        expect(entry).toHaveProperty('estimated_value');
+        expect(entry).toHaveProperty('unknown_value');
+        expect(entry).toHaveProperty('item_count');
+      }
     });
   });
 

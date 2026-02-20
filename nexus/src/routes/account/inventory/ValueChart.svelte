@@ -1,5 +1,5 @@
 <script>
-  export let data = []; // [{ imported_at, total_value, item_count }]
+  export let data = []; // [{ imported_at, total_value, estimated_value, unknown_value, item_count }]
 
   const PADDING = { top: 20, right: 16, bottom: 30, left: 60 };
   const WIDTH = 600;
@@ -12,18 +12,31 @@
   $: chartWidth = WIDTH - PADDING.left - PADDING.right;
   $: chartHeight = HEIGHT - PADDING.top - PADDING.bottom;
 
-  $: values = data.map(d => Number(d.total_value));
+  // Compute display total: estimated_value + unknown_value for modern imports, total_value for legacy
+  function getDisplayTotal(d) {
+    const est = d.estimated_value != null ? Number(d.estimated_value) : null;
+    const tt = d.total_value != null ? Number(d.total_value) : 0;
+    const unknown = d.unknown_value != null ? Number(d.unknown_value) : 0;
+    return (est != null ? est : tt) + unknown;
+  }
+
+  $: values = data.map(d => getDisplayTotal(d));
   $: minVal = values.length > 0 ? Math.min(...values) : 0;
   $: maxVal = values.length > 0 ? Math.max(...values) : 100;
   $: valRange = maxVal - minVal || 1;
 
-  $: points = data.map((d, i) => ({
-    x: PADDING.left + (data.length > 1 ? (i / (data.length - 1)) * chartWidth : chartWidth / 2),
-    y: PADDING.top + chartHeight - ((Number(d.total_value) - minVal) / valRange) * chartHeight,
-    date: new Date(d.imported_at).toLocaleDateString(),
-    value: Number(d.total_value),
-    items: d.item_count,
-  }));
+  $: points = data.map((d, i) => {
+    const total = getDisplayTotal(d);
+    const unknownVal = d.unknown_value != null ? Number(d.unknown_value) : 0;
+    return {
+      x: PADDING.left + (data.length > 1 ? (i / (data.length - 1)) * chartWidth : chartWidth / 2),
+      y: PADDING.top + chartHeight - ((total - minVal) / valRange) * chartHeight,
+      date: new Date(d.imported_at).toLocaleDateString(),
+      value: total,
+      unknownValue: unknownVal,
+      items: d.item_count,
+    };
+  });
 
   $: linePath = points.length > 1
     ? 'M ' + points.map(p => `${p.x},${p.y}`).join(' L ')
@@ -111,12 +124,17 @@
     {#if hoveredIndex != null && points[hoveredIndex]}
       <div class="chart-tooltip" style="left: {(tooltipX / WIDTH) * 100}%;">
         <strong>{points[hoveredIndex].value.toFixed(2)} PED</strong>
-        <span>{points[hoveredIndex].date} &middot; {points[hoveredIndex].items} items</span>
+        <span>
+          {points[hoveredIndex].date} &middot; {points[hoveredIndex].items} items
+          {#if points[hoveredIndex].unknownValue > 0}
+            &middot; {points[hoveredIndex].unknownValue.toFixed(2)} unknown
+          {/if}
+        </span>
       </div>
     {/if}
   </div>
 {:else if data.length === 1}
-  <p class="chart-single">Portfolio value: <strong>{Number(data[0].total_value).toFixed(2)} PED</strong> ({data[0].item_count} items)</p>
+  <p class="chart-single">Portfolio value: <strong>{getDisplayTotal(data[0]).toFixed(2)} PED</strong> ({data[0].item_count} items)</p>
 {/if}
 
 <style>

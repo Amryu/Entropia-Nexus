@@ -1,6 +1,7 @@
 //@ts-nocheck
 import { getResponse } from '$lib/util.js';
-import { getUserInventory, upsertInventory, syncInventory } from '$lib/server/inventory.js';
+import { getUserInventory, upsertInventory, syncInventory, getUserMarkups } from '$lib/server/inventory.js';
+import { getSlimItemLookup } from '$lib/market/cache.js';
 import { checkRateLimit } from '$lib/server/rateLimiter.js';
 
 const MAX_IMPORT_ITEMS = 30000;
@@ -150,9 +151,23 @@ export async function PUT({ request, locals }) {
     return getResponse({ error: `Too many unrecognized items (${unknownCount}). Maximum ${MAX_UNKNOWN_ITEMS} unknown items per import.` }, 400);
   }
 
+  // Load price data for markup-aware snapshot values (non-fatal if unavailable)
+  let slimLookup = null;
+  let userMarkupsMap = null;
+  try {
+    slimLookup = getSlimItemLookup();
+    const markupRows = await getUserMarkups(user.id);
+    userMarkupsMap = new Map();
+    for (const m of markupRows) {
+      userMarkupsMap.set(m.item_id, Number(m.markup));
+    }
+  } catch (err) {
+    console.error('Warning: could not load price data for snapshot:', err);
+  }
+
   try {
     if (sync) {
-      const diff = await syncInventory(user.id, validated);
+      const diff = await syncInventory(user.id, validated, { slimLookup, userMarkups: userMarkupsMap });
       return getResponse(diff, 200);
     } else {
       const results = await upsertInventory(user.id, validated);

@@ -1,5 +1,6 @@
 //@ts-nocheck
 import { pool } from './db.js';
+import { isStackableType, isLimitedByName, isPercentMarkupType } from '$lib/common/itemTypes.js';
 
 /**
  * Get a user's server-stored inventory.
@@ -77,13 +78,88 @@ export async function upsertInventory(userId, items) {
 }
 
 /**
+ * Compute markup-aware snapshot values for an inventory import.
+ * Mirrors the frontend enrichedItems priority chain: Custom markup > Market price > TT value.
+ *
+ * @param {Array} items - Validated inventory items
+ * @param {Map<number, object>|null} slimLookup - item_id → slim item (from market cache)
+ * @param {Map<number, number>|null} userMarkups - item_id → markup value
+ * @returns {{ estimatedValue: number, unknownValue: number }}
+ */
+function computeSnapshotValues(items, slimLookup, userMarkups) {
+  let estimatedValue = 0;
+  let unknownValue = 0;
+
+  for (const item of items) {
+    const qty = item.quantity ?? 0;
+
+    // Unknown items: add TT value directly (100% MU assumption)
+    if (item.item_id === 0) {
+      if (item.value != null) unknownValue += Number(item.value) || 0;
+      continue;
+    }
+
+    const slim = slimLookup?.get(item.item_id);
+    const type = slim?.t || null;
+    const name = slim?.n || item.item_name || '';
+    const maxTT = slim?.v ?? null;
+    const stackable = type ? isStackableType(type, name) : false;
+    const markup = userMarkups?.get(item.item_id) ?? null;
+    const marketPrice = slim?.w ?? slim?.m ?? null;
+
+    // Compute TT value
+    let ttValue = null;
+    if (item.value != null) {
+      ttValue = Number(item.value);
+    } else if (maxTT != null) {
+      ttValue = stackable ? maxTT * qty : maxTT;
+    }
+
+    // Priority chain: Custom markup > Market price > TT value
+    let totalValue = null;
+
+    // 1. Custom markup
+    if (markup != null && slim) {
+      const mu = Number(markup);
+      // Non-L blueprints: absolute markup, TT from QR
+      if (type === 'Blueprint' && !isLimitedByName(name)) {
+        const qr = Number(item.details?.QualityRating) || 0;
+        const tt = qr > 0 ? qr / 100 : null;
+        totalValue = tt != null ? tt + mu : mu;
+      } else if (maxTT != null) {
+        const isPercent = isPercentMarkupType(type, name, slim.st || null);
+        const unitPrice = isPercent ? maxTT * (mu / 100) : maxTT + mu;
+        totalValue = stackable ? unitPrice * qty : unitPrice;
+      }
+    }
+
+    // 2. Market price (WAP or median)
+    if (totalValue == null && marketPrice != null) {
+      const mp = Number(marketPrice);
+      if (mp > 0) {
+        totalValue = stackable ? mp * qty : mp;
+      }
+    }
+
+    // 3. TT value fallback
+    if (totalValue == null && ttValue != null) {
+      totalValue = ttValue;
+    }
+
+    if (totalValue != null) estimatedValue += totalValue;
+  }
+
+  return { estimatedValue, unknownValue };
+}
+
+/**
  * Full-sync inventory import.
  * Replaces the entire server inventory for a user in a single transaction.
  * Records import history and per-item deltas for change tracking.
  * Tracks unknown items (item_id=0) for admin visibility.
  * Returns a diff summary of what changed.
  */
-export async function syncInventory(userId, items) {
+export async function syncInventory(userId, items, { slimLookup, userMarkups } = {}) {
   if (!items) items = [];
   const client = await pool.connect();
   try {
@@ -200,12 +276,13 @@ export async function syncInventory(userId, items) {
 
     // 5. Record import history
     const totalValue = items.reduce((sum, item) => sum + (Number(item.value) || 0), 0);
+    const { estimatedValue, unknownValue } = computeSnapshotValues(items, slimLookup, userMarkups);
     const summary = { added, updated, removed, unchanged };
     const { rows: [importRow] } = await client.query(
-      `INSERT INTO inventory_imports (user_id, item_count, total_value, summary)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO inventory_imports (user_id, item_count, total_value, estimated_value, unknown_value, summary)
+       VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING id`,
-      [userId, items.length, totalValue || null, JSON.stringify(summary)]
+      [userId, items.length, totalValue || null, estimatedValue || null, unknownValue || null, JSON.stringify(summary)]
     );
 
     // 6. Record deltas in batches
@@ -354,7 +431,7 @@ export async function deleteInventoryItem(itemRowId, userId) {
  */
 export async function getImportHistory(userId, limit = 20, offset = 0) {
   const { rows } = await pool.query(
-    `SELECT id, user_id, imported_at, item_count, total_value, summary
+    `SELECT id, user_id, imported_at, item_count, total_value, estimated_value, unknown_value, summary
      FROM inventory_imports
      WHERE user_id = $1
      ORDER BY imported_at DESC
@@ -391,9 +468,9 @@ export async function getImportDeltas(importId, userId) {
  */
 export async function getValueHistory(userId) {
   const { rows } = await pool.query(
-    `SELECT imported_at, total_value, item_count
+    `SELECT imported_at, total_value, estimated_value, unknown_value, item_count
      FROM inventory_imports
-     WHERE user_id = $1 AND total_value IS NOT NULL
+     WHERE user_id = $1 AND (total_value IS NOT NULL OR estimated_value IS NOT NULL)
      ORDER BY imported_at ASC`,
     [userId]
   );

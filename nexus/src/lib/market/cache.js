@@ -33,6 +33,9 @@ let cache = {
   lastOfferCountsAt: 0
 };
 
+// Flat lookup of slim items for server-side value computation (inventory snapshots)
+let slimItemLookup = null;
+
 // Prevent concurrent rebuilds overwhelming the API
 let rebuildPromise = null; // full rebuild lock
 let deltaPromise = null;   // items delta lock
@@ -175,12 +178,41 @@ function buildSummary() {
     // Pre-compress so the endpoint never has to compress per-request
     cache.summaryBrotli = brotliCompressSync(buf);
     cache.summaryGzip = gzipSync(buf);
+
+    // Build flat lookup for server-side value computation
+    buildSlimLookup();
   } catch {
     cache.summaryJson = null;
     cache.summaryEtag = null;
     cache.summaryBrotli = null;
     cache.summaryGzip = null;
   }
+}
+
+// Build flat slim item lookup (Map<itemId, slimItem>) for server-side consumers
+function buildSlimLookup() {
+  if (!cache.annotated) { slimItemLookup = null; return; }
+  const map = new Map();
+  function walk(obj) {
+    if (Array.isArray(obj)) {
+      for (const item of obj) {
+        const slim = slimItem(item);
+        if (slim && slim.i != null) map.set(slim.i, slim);
+      }
+    } else if (obj && typeof obj === 'object') {
+      for (const val of Object.values(obj)) walk(val);
+    }
+  }
+  walk(cache.annotated);
+  slimItemLookup = map;
+}
+
+/**
+ * Get the flat slim item lookup (Map<itemId, slimItem>).
+ * Returns null if the cache hasn't been built yet.
+ */
+export function getSlimItemLookup() {
+  return slimItemLookup;
 }
 
 // Full rebuild (24h): fetch all datasets, categorize, annotate

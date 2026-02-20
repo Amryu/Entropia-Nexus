@@ -137,8 +137,18 @@
               <div class="import-date">{formatDate(imp.imported_at)}</div>
               <div class="import-stats">
                 <span>{imp.item_count} items</span>
-                {#if imp.total_value != null}
-                  <span class="import-value">{formatPedRaw(Number(imp.total_value))} PED</span>
+                {#if imp.estimated_value != null || imp.total_value != null}
+                  {@const estVal = imp.estimated_value != null ? Number(imp.estimated_value) : null}
+                  {@const ttVal = imp.total_value != null ? Number(imp.total_value) : null}
+                  {@const unknownVal = imp.unknown_value != null ? Number(imp.unknown_value) : 0}
+                  {@const displayTotal = (estVal != null ? estVal : (ttVal ?? 0)) + unknownVal}
+                  <span class="import-value">{formatPedRaw(displayTotal)} PED</span>
+                  {#if estVal != null && ttVal != null && Math.abs(estVal - ttVal) > 0.01}
+                    <span class="import-secondary" title="TT Value">({formatPedRaw(ttVal)} TT)</span>
+                  {/if}
+                  {#if unknownVal > 0}
+                    <span class="import-unknown" title="Unknown items value (at 100% MU)">+{formatPedRaw(unknownVal)} unknown</span>
+                  {/if}
                 {/if}
               </div>
               <div class="import-changes">
@@ -286,6 +296,16 @@
 
   .import-value {
     font-weight: 500;
+  }
+
+  .import-secondary {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+
+  .import-unknown {
+    font-size: 0.75rem;
+    color: var(--warning-color);
   }
 
   .import-changes {
