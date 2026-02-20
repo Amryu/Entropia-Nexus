@@ -70,7 +70,6 @@
   }
 
   function toggleResolved() {
-    showResolved = !showResolved;
     loadItems();
   }
 </script>

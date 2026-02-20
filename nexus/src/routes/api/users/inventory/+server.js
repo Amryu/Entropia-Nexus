@@ -1,7 +1,7 @@
 //@ts-nocheck
 import { getResponse } from '$lib/util.js';
 import { getUserInventory, upsertInventory, syncInventory, getUserMarkups } from '$lib/server/inventory.js';
-import { getSlimItemLookup } from '$lib/market/cache.js';
+import { getSlimItemLookup, getSlimNameLookup } from '$lib/market/cache.js';
 import { checkRateLimit } from '$lib/server/rateLimiter.js';
 
 const MAX_IMPORT_ITEMS = 30000;
@@ -163,6 +163,22 @@ export async function PUT({ request, locals }) {
     }
   } catch (err) {
     console.error('Warning: could not load price data for snapshot:', err);
+  }
+
+  // Resolve unrecognized items (item_id=0) by name, including gender aliases
+  const nameLookup = getSlimNameLookup();
+  if (nameLookup) {
+    for (const item of validated) {
+      if (item.item_id === 0 && item.item_name) {
+        const match = nameLookup.get(item.item_name.toLowerCase());
+        if (match && match.i) {
+          item.item_id = match.i;
+          if (item.instance_key?.startsWith('unresolved:')) {
+            item.instance_key = null;
+          }
+        }
+      }
+    }
   }
 
   try {

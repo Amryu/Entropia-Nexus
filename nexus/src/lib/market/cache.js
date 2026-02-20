@@ -35,6 +35,8 @@ let cache = {
 
 // Flat lookup of slim items for server-side value computation (inventory snapshots)
 let slimItemLookup = null;
+// Name-based lookup (Map<lowercaseName, slimItem>) including gender aliases
+let slimNameLookup = null;
 
 // Prevent concurrent rebuilds overwhelming the API
 let rebuildPromise = null; // full rebuild lock
@@ -191,7 +193,7 @@ function buildSummary() {
 
 // Build flat slim item lookup (Map<itemId, slimItem>) for server-side consumers
 function buildSlimLookup() {
-  if (!cache.annotated) { slimItemLookup = null; return; }
+  if (!cache.annotated) { slimItemLookup = null; slimNameLookup = null; return; }
   const map = new Map();
   function walk(obj) {
     if (Array.isArray(obj)) {
@@ -205,6 +207,43 @@ function buildSlimLookup() {
   }
   walk(cache.annotated);
   slimItemLookup = map;
+  buildSlimNameLookup();
+}
+
+/**
+ * Generate gender aliases for items with Gender: Both.
+ * E.g. "Bear Armor" → ["Bear Armor (M)", "Bear Armor (F)"]
+ * "Bear Armor (L)" → ["Bear Armor (M, L)", "Bear Armor (F, L)"]
+ * Canonical source: api/endpoints/utils.js — keep in sync.
+ */
+function generateGenderAliases(name) {
+  if (!name) return [];
+  const hasGenderTag = /\((M|F)\)/.test(name) || /\(M,/.test(name) || /,\s*M\)/.test(name) || /\(F,/.test(name) || /,\s*F\)/.test(name);
+  if (hasGenderTag) return [];
+  const tagMatch = name.match(/^(.+?)(\s*\([^)]+\))$/);
+  if (tagMatch) {
+    const baseName = tagMatch[1].trim();
+    const tagContent = tagMatch[2].trim().slice(1, -1);
+    return [`${baseName} (M, ${tagContent})`, `${baseName} (F, ${tagContent})`];
+  }
+  return [`${name} (M)`, `${name} (F)`];
+}
+
+// Build name-based lookup including gender aliases for server-side item resolution
+function buildSlimNameLookup() {
+  if (!slimItemLookup) { slimNameLookup = null; return; }
+  const map = new Map();
+  for (const slim of slimItemLookup.values()) {
+    if (!slim.n) continue;
+    map.set(slim.n.toLowerCase(), slim);
+    // Generate gender aliases for Armor/Clothing with Gender: Both
+    if ((slim.t === 'Armor' || slim.t === 'Clothing') && slim.g === 'Both') {
+      for (const alias of generateGenderAliases(slim.n)) {
+        map.set(alias.toLowerCase(), slim);
+      }
+    }
+  }
+  slimNameLookup = map;
 }
 
 /**
@@ -213,6 +252,14 @@ function buildSlimLookup() {
  */
 export function getSlimItemLookup() {
   return slimItemLookup;
+}
+
+/**
+ * Get the name-based slim item lookup (Map<lowercaseName, slimItem>).
+ * Includes exact names and gender aliases. Returns null if cache not built.
+ */
+export function getSlimNameLookup() {
+  return slimNameLookup;
 }
 
 // Full rebuild (24h): fetch all datasets, categorize, annotate

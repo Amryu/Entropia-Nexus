@@ -202,17 +202,21 @@
     }
 
     // Compute total value: custom markup > market price > TT
+    // For non-stackable condition items, use CurrentTT from inventory instead of MaxTT
+    const orderLike = !isItemStackable(slim) && item.value != null
+      ? { details: { CurrentTT: Number(item.value) } }
+      : undefined;
     let totalValue = null;
     let valueSource = 'default'; // 'custom' | 'market' | 'default'
     if (markup != null && slim) {
-      const unitPrice = computeUnitPrice(slim, markup, item);
+      const unitPrice = computeUnitPrice(slim, markup, orderLike);
       if (unitPrice != null) {
         totalValue = isItemStackable(slim) ? unitPrice * item.quantity : unitPrice;
         valueSource = 'custom';
       }
     }
     if (valueSource === 'default' && marketPrice != null && slim) {
-      const unitPrice = computeUnitPrice(slim, Number(marketPrice), item);
+      const unitPrice = computeUnitPrice(slim, Number(marketPrice), orderLike);
       if (unitPrice != null && unitPrice > 0) {
         totalValue = isItemStackable(slim) ? unitPrice * item.quantity : unitPrice;
         valueSource = 'market';

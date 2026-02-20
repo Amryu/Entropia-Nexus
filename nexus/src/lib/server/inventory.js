@@ -116,6 +116,8 @@ function computeSnapshotValues(items, slimLookup, userMarkups) {
     }
 
     // Priority chain: Custom markup > Market price > TT value
+    // For non-stackable condition items, use CurrentTT from inventory instead of MaxTT
+    const tt = stackable ? maxTT : (item.value != null ? Number(item.value) : maxTT);
     let totalValue = null;
 
     // 1. Custom markup
@@ -124,21 +126,21 @@ function computeSnapshotValues(items, slimLookup, userMarkups) {
       // Non-L blueprints: absolute markup, TT from QR
       if (type === 'Blueprint' && !isLimitedByName(name)) {
         const qr = Number(item.details?.QualityRating) || 0;
-        const tt = qr > 0 ? qr / 100 : null;
-        totalValue = tt != null ? tt + mu : mu;
-      } else if (maxTT != null) {
+        const bpTT = qr > 0 ? qr / 100 : null;
+        totalValue = bpTT != null ? bpTT + mu : mu;
+      } else if (tt != null) {
         const isPercent = isPercentMarkupType(type, name, slim.st || null);
-        const unitPrice = isPercent ? maxTT * (mu / 100) : maxTT + mu;
+        const unitPrice = isPercent ? tt * (mu / 100) : tt + mu;
         totalValue = stackable ? unitPrice * qty : unitPrice;
       }
     }
 
     // 2. Market price (WAP or median) — stored as markup value, convert to PED
-    if (totalValue == null && marketPrice != null && maxTT != null) {
+    if (totalValue == null && marketPrice != null && tt != null) {
       const mu = Number(marketPrice);
       if (mu > 0) {
         const isPercent = isPercentMarkupType(type, name, slim.st || null);
-        const unitPrice = isPercent ? maxTT * (mu / 100) : maxTT + mu;
+        const unitPrice = isPercent ? tt * (mu / 100) : tt + mu;
         if (unitPrice > 0) {
           totalValue = stackable ? unitPrice * qty : unitPrice;
         }
