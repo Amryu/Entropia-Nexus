@@ -28,7 +28,7 @@ export function itemHasCondition(item: any): boolean {
 export const PET_DEFAULT_MAX_TT = 100;
 
 export function getMaxTT(item: any): number | null {
-  const tt = item?.Properties?.Economy?.MaxTT ?? item?.MaxTT ?? item?.Value ?? item?.v ?? null;
+  const tt = item?.Properties?.Economy?.MaxTT ?? item?.Properties?.Economy?.Value ?? item?.MaxTT ?? item?.Value ?? item?.v ?? null;
   if (tt != null) return tt;
   // Pets: MaxTT = nutrio capacity (stored in cents, convert to PED)
   if (isPet(item)) {

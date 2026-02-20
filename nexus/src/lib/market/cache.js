@@ -497,7 +497,7 @@ function slimItem(item) {
     g = item.Properties?.Gender ?? null;
   }
 
-  let v = item.Properties?.Economy?.MaxTT ?? item.MaxTT ?? item.Value ?? null;
+  let v = item.Properties?.Economy?.MaxTT ?? item.Properties?.Economy?.Value ?? item.MaxTT ?? item.Value ?? null;
   // Blueprint values: non-L MaxTT = 1.00 PED, (L) = 0.01 PED per unit
   if (type === 'Blueprint') {
     v = /\(L\)/.test(name || '') ? 0.01 : 1.00;

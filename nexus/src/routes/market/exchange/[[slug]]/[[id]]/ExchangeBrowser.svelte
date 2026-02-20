@@ -270,7 +270,7 @@
         Item: {
           Name: item?.Name || order.details?.item_name || '',
           Type: item?.Properties?.Type || item?.Type || null,
-          MaxTT: getMaxTT(item),
+          MaxTT: getMaxTT(item) ?? slimItem?.v ?? null,
           st: slimItem?.st ?? null,
         },
         Planet: order.planet || 'Calypso',
