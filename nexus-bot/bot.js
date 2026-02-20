@@ -1433,7 +1433,10 @@ async function checkTwitchLive(channel, creator) {
 
 async function checkYouTubeVideos(channel, creator) {
   const { cached_data } = creator;
-  const latestVideo = cached_data.playlistVideos?.[0] || cached_data.recentVideos?.[0] || cached_data.latestVideo;
+  // Prefer playlist videos when configured — channel feed may include streams
+  const latestVideo = creator.youtube_playlist_id
+    ? cached_data.playlistVideos?.[0]
+    : cached_data.recentVideos?.[0] || cached_data.latestVideo;
   if (!latestVideo?.videoId) return;
 
   const configKey = `creator_yt_latest:${creator.id}`;
