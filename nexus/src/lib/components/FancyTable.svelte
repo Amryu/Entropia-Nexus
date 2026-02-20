@@ -10,10 +10,11 @@
    *   { key: string, header: string, sortable?: boolean, searchable?: boolean, width?: string,
    *     widthBasis?: 'content' | 'header' | 'both', formatter?: (value, row) => string,
    *     cellClass?: (value, row) => string, hideOnMobile?: boolean, mobileWidth?: string,
-   *     main?: boolean, rawValue?: boolean, sortValue?: (row) => any, sortFn?: (a, b) => number,
+   *     main?: boolean, rawValue?: boolean, slotted?: boolean, sortValue?: (row) => any, sortFn?: (a, b) => number,
    *     sortPhases?: Array<{ sortValue: (row) => any, order: 'ASC'|'DESC', color?: string }> }
    *   - main: If true, column grows to fill available space using minmax(width, 1fr)
    *   - rawValue: If true, renders value as text instead of HTML (allows reactive content)
+   *   - slotted: If true, renders cell via the "cell" slot (receives column, row, value)
    * - data: Array of row objects (for non-lazy mode)
    * - fetchData: async (offset, limit, sortBy, sortOrder, filters) => { rows, total } (for lazy loading)
    * - rowHeight: Height of each row in pixels (default: 44)
@@ -1116,7 +1117,9 @@
             {#each columns as column}
               <div class="table-cell {getCellClass(row, column)}" class:hide-on-mobile={column.hideOnMobile}
           class:hide-on-desktop={column.hideOnDesktop}>
-                {#if column.component}
+                {#if $$slots.cell && column.slotted}
+                  <slot name="cell" {column} {row} value={row[column.key]} />
+                {:else if column.component}
                   <svelte:component this={column.component} {row} value={row[column.key]} />
                 {:else if column.rawValue}
                   {getCellValue(row, column)}

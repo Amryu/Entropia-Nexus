@@ -540,7 +540,7 @@
   // --- FancyTable columns ---
   const listColumns = [
     {
-      key: 'item_name', header: 'Item', main: true, sortable: true, searchable: true,
+      key: 'item_name', header: 'Item', main: true, sortable: true, searchable: true, slotted: true,
       formatter: (v, row) => `${v}${row._slim ? itemTypeBadge(row._type) : ''}${sellBadge(row)}`,
     },
     {
@@ -552,19 +552,28 @@
       formatter: (v) => v != null ? formatPedRaw(v) : '-',
     },
     {
-      key: '_markup', header: 'Markup', sortable: true, width: '90px', hideOnMobile: true,
-      rawValue: true,
+      key: '_markup', header: 'Markup', sortable: true, width: '90px', hideOnMobile: true, slotted: true,
+      sortValue: (row) => row._markup ?? (row._isAbsolute ? 0 : 100),
     },
     {
       key: '_marketPrice', header: 'Market', sortable: true, width: '90px', hideOnMobile: true,
-      sortValue: (row) => (row._slim?.s || 0) + (row._slim?.b || 0),
+      cellClass: () => 'text-center',
+      sortPhases: [
+        { sortValue: (row) => row._slim?.b || 0, order: 'DESC', color: 'var(--success-color)' },
+        { sortValue: (row) => row._slim?.b || 0, order: 'ASC', color: 'var(--success-color)' },
+        { sortValue: (row) => row._slim?.s || 0, order: 'DESC', color: 'var(--error-color)' },
+        { sortValue: (row) => row._slim?.s || 0, order: 'ASC', color: 'var(--error-color)' },
+      ],
       formatter: (v, row) => {
         const s = row._slim?.s || 0;
         const b = row._slim?.b || 0;
         if (s === 0 && b === 0) return '<span class="text-muted">-</span>';
+        const sv = row._slim?.sv ? formatPedRaw(row._slim.sv) + ' PED' : '0 PED';
+        const bv = row._slim?.bv ? formatPedRaw(row._slim.bv) + ' PED' : '0 PED';
+        const tooltip = `${s} Sell Order${s !== 1 ? 's' : ''} (${sv}) / ${b} Buy Order${b !== 1 ? 's' : ''} (${bv})`;
         const cell = `<span class="split-cell"><span class="split-l" style="color:var(--error-color)${s === 0 ? ';opacity:0.3' : ''}">${s}</span><span class="split-sep">/</span><span class="split-r" style="color:var(--success-color)${b === 0 ? ';opacity:0.3' : ''}">${b}</span></span>`;
-        if (row.item_id > 0) return `<a href="/market/exchange/listings/${row.item_id}" class="market-link">${cell}</a>`;
-        return cell;
+        if (row.item_id > 0) return `<a href="/market/exchange/listings/${row.item_id}" class="market-link" title="${tooltip}">${cell}</a>`;
+        return `<span title="${tooltip}">${cell}</span>`;
       },
     },
     {
@@ -807,10 +816,14 @@
               compact={true}
               emptyMessage="No items match your filters"
               defaultSort={{ column: 'item_name', order: 'ASC' }}
-              on:rowClick={(e) => openItemDialog(e.detail.row)}
             >
-              <svelte:fragment slot="cell" let:column let:row let:value>
-                {#if column.key === '_markup'}
+              <svelte:fragment slot="cell" let:column let:row>
+                {#if column.key === 'item_name'}
+                  <!-- svelte-ignore a11y-click-events-have-key-events -->
+                  <span class="item-name-link" on:click={() => openItemDialog(row)}>
+                    {@html `${row.item_name}${row._slim ? itemTypeBadge(row._type) : ''}${sellBadge(row)}`}
+                  </span>
+                {:else if column.key === '_markup'}
                   {#if editingMarkupId === row.item_id}
                     <!-- svelte-ignore a11y-autofocus -->
                     <input
@@ -828,7 +841,7 @@
                     <span
                       class="markup-cell"
                       class:has-markup={row._markup != null}
-                      on:click|stopPropagation={() => row.item_id > 0 && startMarkupEdit(row)}
+                      on:click={() => row.item_id > 0 && startMarkupEdit(row)}
                       title="Click to edit markup"
                     >
                       {#if row._markup != null}
@@ -1318,6 +1331,19 @@
     color: #fff;
   }
 
+  /* Item name link */
+  .item-name-link {
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: block;
+  }
+
+  .item-name-link:hover {
+    text-decoration: underline;
+  }
+
   /* Markup cell */
   .markup-cell {
     cursor: pointer;
@@ -1341,8 +1367,9 @@
   }
 
   .markup-input {
-    width: 80px;
+    width: 100%;
     padding: 2px 4px;
+    box-sizing: border-box;
     border: 1px solid var(--accent-color);
     border-radius: 3px;
     background: var(--primary-color);
@@ -1711,9 +1738,14 @@
     text-decoration: none;
     color: inherit;
     display: block;
+    padding: 2px 4px;
+    border-radius: 3px;
   }
   :global(.market-link:hover) {
-    text-decoration: underline;
+    background: var(--hover-color);
+  }
+  :global(.text-center) {
+    justify-content: center;
   }
 
   /* Responsive */
