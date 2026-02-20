@@ -633,6 +633,7 @@
         if (v == null) return '<span class="text-muted">-</span>';
         const src = row._valueSource;
         if (src === 'custom') return `<span style="color:var(--accent-color)">${formatPedRaw(v)}</span>`;
+        if (src === 'market') return `<span style="color:var(--text-color)">${formatPedRaw(v)}</span>`;
         if (src === 'default') return `<span class="text-muted">${formatPedRaw(v)}</span>`;
         return formatPedRaw(v);
       },
@@ -982,7 +983,7 @@
                   </div>
                   <div class="grid-stat">
                     <span class="grid-stat-label">Value</span>
-                    <span class="grid-stat-value" class:value-custom={item._valueSource === 'custom'} class:text-muted={item._valueSource === 'default' || item._totalValue == null}>
+                    <span class="grid-stat-value" class:value-custom={item._valueSource === 'custom'} class:value-market={item._valueSource === 'market'} class:text-muted={item._valueSource === 'default' || item._totalValue == null}>
                       {item._totalValue != null ? formatPedRaw(item._totalValue) : '-'}
                     </span>
                   </div>
@@ -1547,6 +1548,10 @@
 
   .value-custom {
     color: var(--accent-color);
+  }
+
+  .value-market {
+    color: var(--text-color);
   }
 
   .grid-card-footer {

@@ -274,7 +274,7 @@
               </span>
             {/if}
           </span>
-          <span class="tree-col tree-col-total" class:value-custom={row.item._valueSource === 'custom'} class:value-default={row.item._valueSource === 'default' || row.item._totalValue == null}>
+          <span class="tree-col tree-col-total" class:value-custom={row.item._valueSource === 'custom'} class:value-market={row.item._valueSource === 'market'} class:value-default={row.item._valueSource === 'default' || row.item._totalValue == null}>
             {row.item._totalValue != null ? formatPedRaw(row.item._totalValue) + ' PED' : '-'}
           </span>
         </div>
@@ -435,6 +435,10 @@
 
   .tree-col-total.value-custom {
     color: var(--accent-color);
+  }
+
+  .tree-col-total.value-market {
+    color: var(--text-color);
   }
 
   .tree-col-total.value-default {
