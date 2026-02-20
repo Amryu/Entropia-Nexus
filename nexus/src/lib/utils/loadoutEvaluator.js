@@ -317,22 +317,23 @@ export function evaluateLoadout(loadout, context = {}, options = {}) {
 
   const consumableEffects = buildConsumableEffects(loadout, entities.stimulants, effectsCatalog);
   const petEffect = getActivePetEffect(loadout, entities.pets);
-  const actionEffects = [...consumableEffects];
-  if (petEffect) actionEffects.push(petEffect);
+
+  const itemEffects = [
+    ...weaponEquipEffects,
+    ...weaponUseEffects,
+    ...armorEquipEffects,
+    ...armorSetEffects,
+    ...clothingEquipEffects,
+    ...clothingSetEffects,
+    ...healingEquipEffects,
+    ...healingUseEffects
+  ];
+  if (petEffect) itemEffects.push(petEffect);
 
   const allEffects = summarizeEffects(
     {
-      itemEffects: [
-        ...weaponEquipEffects,
-        ...weaponUseEffects,
-        ...armorEquipEffects,
-        ...armorSetEffects,
-        ...clothingEquipEffects,
-        ...clothingSetEffects,
-        ...healingEquipEffects,
-        ...healingUseEffects
-      ],
-      actionEffects,
+      itemEffects,
+      actionEffects: consumableEffects,
       bonusEffects
     },
     { effectsCatalog, effectCaps }
