@@ -346,30 +346,9 @@
   let editingMarkupValue = '';
   let markupSaveTimer = null;
 
-  function getDefaultMarkup(item) {
-    const slim = item._slim;
-    if (!slim) return item._isAbsolute ? '0' : '100';
-
-    const marketPrice = slim.w ?? slim.m ?? null;
-    if (marketPrice == null) return item._isAbsolute ? '0' : '100';
-
-    if (item._isAbsolute) {
-      const tt = item._maxTT ?? 0;
-      const mu = Number(marketPrice) - tt;
-      return mu >= 0 ? mu.toFixed(2) : '0';
-    } else {
-      const tt = item._maxTT;
-      if (tt && tt > 0) {
-        const mu = (Number(marketPrice) / tt) * 100;
-        return mu.toFixed(2);
-      }
-      return '100';
-    }
-  }
-
   function startMarkupEdit(item) {
     editingMarkupId = item.item_id;
-    editingMarkupValue = item._markup != null ? String(item._markup) : getDefaultMarkup(item);
+    editingMarkupValue = item._markup != null ? String(item._markup) : '';
   }
 
   function handleMarkupInput() {
@@ -893,17 +872,21 @@
                       on:keydown={(e) => e.key === 'Enter' && finishMarkupEdit()}
                       autofocus
                       step="0.01"
+                      placeholder={row._isAbsolute ? '+0' : '100%'}
                     />
                   {:else}
                     <!-- svelte-ignore a11y-click-events-have-key-events -->
                     <span
                       class="markup-cell"
                       class:has-markup={row._markup != null}
+                      class:has-market={row._markup == null && row._marketPrice != null}
                       on:click={() => row.item_id > 0 && startMarkupEdit(row)}
                       title="Click to edit markup"
                     >
                       {#if row._markup != null}
                         {row._isAbsolute ? formatMarkupValue(row._markup, true) : formatMarkupValue(row._markup, false)}
+                      {:else if row._marketPrice != null}
+                        {row._isAbsolute ? formatMarkupValue(row._marketPrice, true) : formatMarkupValue(row._marketPrice, false)}
                       {:else}
                         <span class="text-muted">{row._isAbsolute ? '+0' : '100%'}</span>
                       {/if}
@@ -963,17 +946,21 @@
                           on:click|stopPropagation
                           autofocus
                           step="0.01"
+                          placeholder={item._isAbsolute ? '+0' : '100%'}
                         />
                       {:else}
                         <!-- svelte-ignore a11y-click-events-have-key-events -->
                         <span
                           class="markup-cell"
                           class:has-markup={item._markup != null}
+                          class:has-market={item._markup == null && item._marketPrice != null}
                           on:click|stopPropagation={() => item.item_id > 0 && startMarkupEdit(item)}
                           title="Click to edit markup"
                         >
                           {#if item._markup != null}
                             {item._isAbsolute ? formatMarkupValue(item._markup, true) : formatMarkupValue(item._markup, false)}
+                          {:else if item._marketPrice != null}
+                            {item._isAbsolute ? formatMarkupValue(item._marketPrice, true) : formatMarkupValue(item._marketPrice, false)}
                           {:else}
                             <span class="text-muted">{item._isAbsolute ? '+0' : '100%'}</span>
                           {/if}
@@ -1420,6 +1407,11 @@
 
   .markup-cell.has-markup {
     color: var(--accent-color);
+    border-color: transparent;
+  }
+
+  .markup-cell.has-market {
+    color: var(--text-color);
     border-color: transparent;
   }
 

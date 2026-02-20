@@ -257,17 +257,21 @@
                 on:click|stopPropagation
                 autofocus
                 step="0.01"
+                placeholder={row.item._isAbsolute ? '+0' : '100%'}
               />
             {:else}
               <!-- svelte-ignore a11y-click-events-have-key-events -->
               <span
                 class="mu-cell"
                 class:has-mu={row.item._markup != null}
+                class:has-market={row.item._markup == null && row.item._marketPrice != null}
                 on:click|stopPropagation={() => row.item.item_id > 0 && startMarkupEdit(row.item)}
                 title="Click to edit markup"
               >
                 {#if row.item._markup != null}
                   {row.item._isAbsolute ? formatMarkupValue(row.item._markup, true) : formatMarkupValue(row.item._markup, false)}
+                {:else if row.item._marketPrice != null}
+                  {row.item._isAbsolute ? formatMarkupValue(row.item._marketPrice, true) : formatMarkupValue(row.item._marketPrice, false)}
                 {:else}
                   <span class="text-muted">{row.item._isAbsolute ? '+0' : '100%'}</span>
                 {/if}
@@ -465,6 +469,11 @@
 
   .mu-cell.has-mu {
     color: var(--accent-color);
+    border-color: transparent;
+  }
+
+  .mu-cell.has-market {
+    color: var(--text-color);
     border-color: transparent;
   }
 
