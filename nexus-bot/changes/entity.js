@@ -1529,10 +1529,19 @@ async function upsertNewEffects(client, effects) {
   }
 }
 
-async function applyEffectsOnUseChanges(client, id, effects) {
+async function resolveEffectIds(client, effects) {
   await upsertNewEffects(client, effects);
   const validEffects = effects.filter(e => e.Name);
-  let newEffects = await Promise.all(validEffects.map(effect => client.query(`SELECT "Id" FROM ONLY "Effects" WHERE "Name" = $1`, [effect.Name]).then(res => ({ Id: res.rows[0].Id, ...effect }))));
+  return Promise.all(validEffects.map(effect =>
+    client.query(`SELECT "Id" FROM ONLY "Effects" WHERE "Name" = $1`, [effect.Name]).then(res => {
+      if (!res.rows[0]) throw new Error(`Effect "${effect.Name}" not found in Effects table`);
+      return { Id: res.rows[0].Id, ...effect };
+    })
+  ));
+}
+
+async function applyEffectsOnUseChanges(client, id, effects) {
+  let newEffects = await resolveEffectIds(client, effects);
 
   let newEffectsArrayId = newEffects.map(effect => effect.Id);
 
@@ -1543,9 +1552,7 @@ async function applyEffectsOnUseChanges(client, id, effects) {
 }
 
 async function applyEffectsOnConsumeChanges(client, id, effects) {
-  await upsertNewEffects(client, effects);
-  const validEffects = effects.filter(e => e.Name);
-  let newEffects = await Promise.all(validEffects.map(effect => client.query(`SELECT "Id" FROM ONLY "Effects" WHERE "Name" = $1`, [effect.Name]).then(res => ({ Id: res.rows[0].Id, ...effect }))));
+  let newEffects = await resolveEffectIds(client, effects);
 
   let newEffectsArrayId = newEffects.map(effect => effect.Id);
 
@@ -1556,9 +1563,7 @@ async function applyEffectsOnConsumeChanges(client, id, effects) {
 }
 
 async function applyEffectsOnEquipChanges(client, id, effects) {
-  await upsertNewEffects(client, effects);
-  const validEffects = effects.filter(e => e.Name);
-  let newEffects = await Promise.all(validEffects.map(effect => client.query(`SELECT "Id" FROM ONLY "Effects" WHERE "Name" = $1`, [effect.Name]).then(res => ({ Id: res.rows[0].Id, ...effect }))));
+  let newEffects = await resolveEffectIds(client, effects);
 
   let newEffectsArrayId = newEffects.map(effect => effect.Id);
 
@@ -1569,9 +1574,7 @@ async function applyEffectsOnEquipChanges(client, id, effects) {
 }
 
 async function applyEffectsOnSetEquipChanges(client, setId, effects) {
-  await upsertNewEffects(client, effects);
-  const validEffects = effects.filter(e => e.Name);
-  let newEffects = await Promise.all(validEffects.map(effect => client.query(`SELECT "Id" FROM ONLY "Effects" WHERE "Name" = $1`, [effect.Name]).then(res => ({ Id: res.rows[0].Id, ...effect }))));
+  let newEffects = await resolveEffectIds(client, effects);
 
   let newEffectsArrayId = newEffects.map(effect => effect.Id);
   let newEffectsArrayMinSetPieces = newEffects.map(effect => effect.Values.MinSetPieces);
@@ -1584,9 +1587,7 @@ async function applyEffectsOnSetEquipChanges(client, setId, effects) {
 }
 
 async function applyPetEffectChanges(client, petId, effects) {
-  await upsertNewEffects(client, effects);
-  const validEffects = effects.filter(e => e.Name);
-  let newEffects = await Promise.all(validEffects.map(effect => client.query(`SELECT "Id" FROM ONLY "Effects" WHERE "Name" = $1`, [effect.Name]).then(res => ({ Id: res.rows[0].Id, ...effect }))));
+  let newEffects = await resolveEffectIds(client, effects);
 
   let newEffectsArrayId = newEffects.map(effect => effect.Id);
   let newEffectsArrayStrength = newEffects.map(effect => effect.Properties.Strength);
