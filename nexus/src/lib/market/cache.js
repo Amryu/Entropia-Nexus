@@ -616,6 +616,7 @@ function slimCategorized(obj) {
   if (obj && typeof obj === 'object') {
     const out = {};
     for (const [k, v] of Object.entries(obj)) {
+      if (k.startsWith('_')) continue; // skip internal-only buckets (e.g. _unlisted)
       out[k] = slimCategorized(v);
     }
     return out;

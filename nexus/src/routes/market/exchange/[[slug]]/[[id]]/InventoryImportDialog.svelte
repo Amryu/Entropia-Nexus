@@ -52,9 +52,28 @@
     for (const item of (allItems || [])) {
       if (item.i && item.n) {
         map.set(normalizeName(item.n), item.i);
+        // Generate gender aliases for Armor/Clothing with Gender: Both
+        if ((item.t === 'Armor' || item.t === 'Clothing') && item.g === 'Both') {
+          for (const alias of generateGenderAliases(item.n)) {
+            map.set(normalizeName(alias), item.i);
+          }
+        }
       }
     }
     return map;
+  }
+
+  /** Generate gendered name variants for Gender: Both items (mirrors cache.js logic) */
+  function generateGenderAliases(name) {
+    if (!name) return [];
+    if (/\((M|F)\)/.test(name) || /\(M,/.test(name) || /,\s*M\)/.test(name) || /\(F,/.test(name) || /,\s*F\)/.test(name)) return [];
+    const tagMatch = name.match(/^(.+?)(\s*\([^)]+\))$/);
+    if (tagMatch) {
+      const baseName = tagMatch[1].trim();
+      const tagContent = tagMatch[2].trim().slice(1, -1);
+      return [`${baseName} (M, ${tagContent})`, `${baseName} (F, ${tagContent})`];
+    }
+    return [`${name} (M)`, `${name} (F)`];
   }
 
   // --- Container hierarchy resolution ---

@@ -55,6 +55,8 @@ export function categorizeItems(items, {
     } else if (type === 'misctool') {
       // Skip base items when detailed /misctools endpoint provides them
       if (!hasMiscTools) categorized.tools.misc.push(item);
+    } else if (type === 'refiner') {
+      categorized.tools.harvesting.push(item);
     } else if (type === 'effectchip' || type === 'teleportationchip') {
       categorized.tools.mindforce.push(item);
     } else if (type === 'enhancer') {
@@ -62,6 +64,10 @@ export function categorizeItems(items, {
       if (!hasEnhancers) categorizeEnhancer(item, categorized.enhancers);
     } else if (type === 'blueprint') {
       if (!hasBlueprints) categorizeBlueprint(item, categorized.blueprints);
+    } else if (type === 'blueprintbook') {
+      categorized._unlisted.push(item);
+    } else if (type === 'capsule') {
+      categorizeConsumable(item, categorized.consumables);
     } else if (type === 'material') {
       // Base items have Properties.Type = 'Material'; detailed materials pass handles sub-types (Deed/Token/Share → financial)
       if (!hasMaterials) categorizeMaterial(item, categorized.materials);
@@ -209,7 +215,8 @@ function makeEmptyCategories() {
     skill_implants: [],
     furnishings: { furniture: [], decorations: [], storage: [], sign: [] },
     strongboxes: [],
-    financial: { shares: [], estate_deeds: [], tokens: [] }
+    financial: { shares: [], estate_deeds: [], tokens: [] },
+    _unlisted: []
   };
 }
 
@@ -533,6 +540,7 @@ const ITEM_TYPE_CATEGORY_MAP = {
   'Finder': 'Tools > Mining',
   'FinderAmplifier': 'Tools > Mining',
   'Excavator': 'Tools > Mining',
+  'Refiner': 'Tools > Harvesting',
   'Scanner': 'Tools > Scanning',
   'MiscTool': 'Tools',
   'Tool': 'Tools',
@@ -541,6 +549,7 @@ const ITEM_TYPE_CATEGORY_MAP = {
   'Enhancer': 'Enhancers',
   'Clothing': 'Clothes',
   'Blueprint': 'Blueprints',
+  'Capsule': 'Consumables',
   'Material': 'Materials',
   'Consumable': 'Consumables',
   'Vehicle': 'Vehicles',

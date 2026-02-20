@@ -174,6 +174,7 @@
       );
       // Update local item reference
       item = updated;
+      dispatch('updated', updated);
 
       saved = true;
       setTimeout(() => { saved = false; }, 1500);
