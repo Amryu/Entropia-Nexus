@@ -537,6 +537,7 @@
         mobs={allMobs}
         location={mobEditorContext?.location}
         isNew={mobEditorContext?.isNew || false}
+        pendingMobData={mobEditorContext?.location ? pendingChanges.get(mobEditorContext.location.Id)?.modified?.mobData : null}
         on:save={handleMobSave}
         on:cancel={handleMobCancel}
       />

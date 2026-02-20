@@ -7,6 +7,7 @@
   export let mobs = [];          // All mobs from /mobs (cached by parent)
   export let location = null;    // Existing MobArea location (if editing)
   export let isNew = false;
+  export let pendingMobData = null; // { density, maturities: [{ maturityId, isRare }] } from pending changes
 
   const dispatch = createEventDispatcher();
 
@@ -18,9 +19,13 @@
   let nameOverride = '';
   let maturityDialog = null; // { mobId } when dialog is open
 
-  // If editing an existing mob area, populate from its spawn data
+  // If editing an existing mob area, populate from pending changes or spawn data
   $: if (location && !isNew && mobs.length) {
-    initFromExisting();
+    if (pendingMobData) {
+      initFromPending();
+    } else {
+      initFromExisting();
+    }
   }
 
   function initFromExisting() {
@@ -58,6 +63,64 @@
       sortMaturities(mob.maturities);
     }
     density = location.Properties?.Density ?? 3;
+    nameOverride = location.Name || '';
+  }
+
+  function initFromPending() {
+    // Restore mob selections from pending changes (saved earlier in this session)
+    // pendingMobData.maturities is [{ maturityId, isRare }]
+    if (!pendingMobData?.maturities?.length) return;
+
+    // Build a lookup: maturityId → isRare
+    const pendingMap = new Map();
+    for (const pm of pendingMobData.maturities) {
+      pendingMap.set(pm.maturityId, pm.isRare);
+    }
+
+    // Walk all mobs and their maturities to find matches
+    const matsByMob = new Map();
+    for (const mob of mobs) {
+      for (const m of (mob.Maturities || [])) {
+        if (!pendingMap.has(m.Id)) continue;
+        if (!matsByMob.has(mob.Id)) {
+          matsByMob.set(mob.Id, { mobId: mob.Id, mobName: mob.Name, maturities: [] });
+        }
+        matsByMob.get(mob.Id).maturities.push({
+          id: m.Id,
+          name: m.Name,
+          health: m.Properties?.Health ?? 0,
+          level: m.Properties?.Level ?? null,
+          boss: m.Properties?.Boss === true,
+          selected: true,
+          isRare: pendingMap.get(m.Id) || false
+        });
+      }
+    }
+
+    // For each matched mob, also load the unselected maturities so the dialog is complete
+    for (const [mobId, entry] of matsByMob) {
+      const mob = mobs.find(m => m.Id === mobId);
+      if (!mob) continue;
+      const selectedIds = new Set(entry.maturities.map(m => m.id));
+      for (const m of (mob.Maturities || [])) {
+        if (selectedIds.has(m.Id)) continue;
+        entry.maturities.push({
+          id: m.Id,
+          name: m.Name,
+          health: m.Properties?.Health ?? 0,
+          level: m.Properties?.Level ?? null,
+          boss: m.Properties?.Boss === true,
+          selected: false,
+          isRare: false
+        });
+      }
+    }
+
+    selectedMobs = Array.from(matsByMob.values());
+    for (const mob of selectedMobs) {
+      sortMaturities(mob.maturities);
+    }
+    density = pendingMobData.density ?? location.Properties?.Density ?? 3;
     nameOverride = location.Name || '';
   }
 
