@@ -12,8 +12,13 @@ const STEAM_SYNC_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
 const STEAM_FETCH_COUNT = 100;
 const SUMMARY_MAX_LENGTH = 300;
 
+// Bump to force a full re-sync on next restart (re-converts all BBCode → HTML).
+// Set to false after deploying the fix.
+const FORCE_RESYNC = true;
+
 let lastSyncAt = 0;
 let syncing = false;
+let resyncDone = false;
 
 /**
  * Convert Steam BBCode to HTML.
@@ -23,6 +28,10 @@ let syncing = false;
 export function convertBBCodeToHtml(bbcode) {
   if (!bbcode) return '';
   let html = bbcode;
+
+  // Steam BBCode sometimes wraps attribute values in quotes, e.g. [url="https://..."].
+  // Helper to strip surrounding quotes from a captured value.
+  const stripQuotes = (s) => s.replace(/^["']|["']$/g, '');
 
   // Simple tag replacements
   const tagMap = [
@@ -44,13 +53,15 @@ export function convertBBCodeToHtml(bbcode) {
   }
 
   // URLs: [url=X]text[/url] and [url]X[/url]
-  html = html.replace(/\[url=([^\]]+)\]([\s\S]*?)\[\/url\]/gi,
+  // Steam BBCode may quote the URL and add extra attrs: [url="https://..." style="button"]
+  html = html.replace(/\[url="?([^\]"]+)"?[^\]]*\]([\s\S]*?)\[\/url\]/gi,
     '<a href="$1" target="_blank" rel="noopener">$2</a>');
   html = html.replace(/\[url\]([\s\S]*?)\[\/url\]/gi,
-    '<a href="$1" target="_blank" rel="noopener">$1</a>');
+    (_, url) => `<a href="${stripQuotes(url.trim())}" target="_blank" rel="noopener">${stripQuotes(url.trim())}</a>`);
 
-  // Images
-  html = html.replace(/\[img\]([\s\S]*?)\[\/img\]/gi, '<img src="$1" />');
+  // Images: [img]url[/img] — content may be wrapped in quotes
+  html = html.replace(/\[img\]([\s\S]*?)\[\/img\]/gi,
+    (_, url) => `<img src="${stripQuotes(url.trim())}" />`);
 
   // Lists
   html = html.replace(/\[list\]([\s\S]*?)\[\/list\]/gi, (_, content) => {
@@ -63,8 +74,9 @@ export function convertBBCodeToHtml(bbcode) {
   });
 
   // YouTube embeds: [previewyoutube=ID;full][/previewyoutube]
-  html = html.replace(/\[previewyoutube=([^;\]]+)[^\]]*\][\s\S]*?\[\/previewyoutube\]/gi,
-    '<div style="position:relative;padding-bottom:56.25%;height:0;overflow:hidden;margin:1em 0"><iframe src="https://www.youtube.com/embed/$1" style="position:absolute;top:0;left:0;width:100%;height:100%" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>');
+  // Steam may quote the ID: [previewyoutube="ID";full]
+  html = html.replace(/\[previewyoutube="?([^;"'\]]+)"?[^\]]*\][\s\S]*?\[\/previewyoutube\]/gi,
+    '<div class="video-embed-wrapper"><iframe class="video-embed-iframe" src="https://www.youtube.com/embed/$1" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe></div>');
 
   // Tables
   html = html.replace(/\[table\]([\s\S]*?)\[\/table\]/gi, '<table>$1</table>');
@@ -138,11 +150,13 @@ export async function syncSteamNews() {
   syncing = true;
   try {
     const existingCount = await getSteamNewsCount();
-    const isBackfill = existingCount === 0;
+    const needsResync = FORCE_RESYNC && !resyncDone;
+    const isBackfill = existingCount === 0 || needsResync;
 
     if (isBackfill) {
-      console.log('[news-sync] No Steam news in DB, starting historical backfill...');
+      console.log(`[news-sync] ${needsResync ? 'Force re-sync' : 'No Steam news in DB'}, starting historical backfill...`);
       await backfillSteamNews();
+      resyncDone = true;
     } else {
       const items = await fetchSteamNewsPage(STEAM_FETCH_COUNT);
       let inserted = 0;
