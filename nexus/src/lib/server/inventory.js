@@ -133,11 +133,15 @@ function computeSnapshotValues(items, slimLookup, userMarkups) {
       }
     }
 
-    // 2. Market price (WAP or median)
-    if (totalValue == null && marketPrice != null) {
-      const mp = Number(marketPrice);
-      if (mp > 0) {
-        totalValue = stackable ? mp * qty : mp;
+    // 2. Market price (WAP or median) — stored as markup value, convert to PED
+    if (totalValue == null && marketPrice != null && maxTT != null) {
+      const mu = Number(marketPrice);
+      if (mu > 0) {
+        const isPercent = isPercentMarkupType(type, name, slim.st || null);
+        const unitPrice = isPercent ? maxTT * (mu / 100) : maxTT + mu;
+        if (unitPrice > 0) {
+          totalValue = stackable ? unitPrice * qty : unitPrice;
+        }
       }
     }
 

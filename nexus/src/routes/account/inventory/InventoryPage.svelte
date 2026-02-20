@@ -212,9 +212,9 @@
       }
     }
     if (valueSource === 'default' && marketPrice != null && slim) {
-      const mp = Number(marketPrice);
-      if (mp > 0) {
-        totalValue = isItemStackable(slim) ? mp * item.quantity : mp;
+      const unitPrice = computeUnitPrice(slim, Number(marketPrice), item);
+      if (unitPrice != null && unitPrice > 0) {
+        totalValue = isItemStackable(slim) ? unitPrice * item.quantity : unitPrice;
         valueSource = 'market';
       }
     }
@@ -307,6 +307,7 @@
   // --- Summary values ---
   $: summaryTT = filteredItems.reduce((sum, item) => sum + (item._ttValue || 0), 0);
   $: summaryTotal = filteredItems.reduce((sum, item) => sum + (item._totalValue || 0), 0);
+  $: summaryUnknown = filteredItems.filter(item => !item._slim).reduce((sum, item) => sum + (item._ttValue || 0), 0);
   $: summaryCount = filteredItems.length;
   $: summaryLabel = (() => {
     const parts = [];
@@ -716,6 +717,12 @@
           <span class="summary-label">Est. Value</span>
           <span class="summary-value">{formatPedRaw(summaryTotal)} PED</span>
         </div>
+        {#if summaryUnknown > 0}
+          <div class="summary-item">
+            <span class="summary-label">Unknown</span>
+            <span class="summary-value">{formatPedRaw(summaryUnknown)} PED</span>
+          </div>
+        {/if}
       </div>
 
       <!-- Delta panel -->
