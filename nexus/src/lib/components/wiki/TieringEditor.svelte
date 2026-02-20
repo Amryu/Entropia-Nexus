@@ -345,6 +345,8 @@
 
   // Calculate tier costs
   $: tierCost = (() => {
+    // Declare reactive deps hidden inside getResolvedMarkup
+    void (markups, markupSource, nameToWapMap, inventoryMarkupMap, nameToIdMap);
     if (!selectedTierInfo?.Materials) return { tt: 0, mu: 0, total: 0 };
     let tt = 0;
     let total = 0;
@@ -359,6 +361,8 @@
 
   // Calculate cumulative cost up to selected tier (using per-tier markups)
   $: cumulativeCost = (() => {
+    // Declare reactive deps hidden inside getResolvedMarkup
+    void (markupSource, nameToWapMap, inventoryMarkupMap, nameToIdMap);
     let tt = 0;
     let total = 0;
     for (let i = 1; i <= selectedTier; i++) {
@@ -474,24 +478,28 @@
   })();
 
   // Transform materials data for table display (sorted by material category)
-  $: materialTableData = displayMaterials
-    .map((mat, origIdx) => {
-      const matName = mat.Material?.Name || 'Unknown';
-      const matTT = mat.Material?.Properties?.Economy?.MaxTT || matValues[matName] || 0;
-      const amount = mat.Amount;
-      const baseCost = matTT * amount;
-      const totalCost = baseCost * getResolvedMarkup(matName, origIdx) / 100;
+  $: materialTableData = (() => {
+    // Declare reactive deps hidden inside getResolvedMarkup
+    void (markups, markupSource, nameToWapMap, inventoryMarkupMap, nameToIdMap);
+    return displayMaterials
+      .map((mat, origIdx) => {
+        const matName = mat.Material?.Name || 'Unknown';
+        const matTT = mat.Material?.Properties?.Economy?.MaxTT || matValues[matName] || 0;
+        const amount = mat.Amount;
+        const baseCost = matTT * amount;
+        const totalCost = baseCost * getResolvedMarkup(matName, origIdx) / 100;
 
-      return {
-        _idx: origIdx,
-        _matName: matName,
-        _sort: classifyMaterial(matName),
-        tt: formatPED(matTT),
-        amount: amount,
-        cost: formatPED(totalCost)
-      };
-    })
-    .sort((a, b) => a._sort - b._sort);
+        return {
+          _idx: origIdx,
+          _matName: matName,
+          _sort: classifyMaterial(matName),
+          tt: formatPED(matTT),
+          amount: amount,
+          cost: formatPED(totalCost)
+        };
+      })
+      .sort((a, b) => a._sort - b._sort);
+  })();
 
   // Sorted material entries for edit mode (preserves original indices for data operations)
   $: orderedEditMaterials = displayMaterials
