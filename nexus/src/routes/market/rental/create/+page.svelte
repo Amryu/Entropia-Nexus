@@ -67,53 +67,98 @@
   // === Loadout → Item Set conversion ===
   const ARMOR_SLOTS = ['Head', 'Torso', 'Arms', 'Hands', 'Legs', 'Shins', 'Feet'];
 
-  function extractItemsFromLoadout(gear) {
-    if (!gear) return [];
-    const items = [];
+  function extractItemsFromGear(gear, items, seen) {
+    if (!gear) return;
 
     // Weapon + attachments
-    if (gear.Weapon?.Name) {
+    if (gear.Weapon?.Name && !seen.has('Weapon:' + gear.Weapon.Name)) {
+      seen.add('Weapon:' + gear.Weapon.Name);
       items.push({ type: 'Weapon', name: gear.Weapon.Name, quantity: 1, meta: {} });
     }
-    if (gear.Weapon?.Amplifier?.Name) {
+    if (gear.Weapon?.Amplifier?.Name && !seen.has('WeaponAmplifier:' + gear.Weapon.Amplifier.Name)) {
+      seen.add('WeaponAmplifier:' + gear.Weapon.Amplifier.Name);
       items.push({ type: 'WeaponAmplifier', name: gear.Weapon.Amplifier.Name, quantity: 1, meta: {} });
     }
-    if (gear.Weapon?.Scope?.Name) {
+    if (gear.Weapon?.Scope?.Name && !seen.has('WeaponVisionAttachment:' + gear.Weapon.Scope.Name)) {
+      seen.add('WeaponVisionAttachment:' + gear.Weapon.Scope.Name);
       items.push({ type: 'WeaponVisionAttachment', name: gear.Weapon.Scope.Name, quantity: 1, meta: {} });
     }
-    if (gear.Weapon?.Sight?.Name) {
+    if (gear.Weapon?.Sight?.Name && !seen.has('WeaponVisionAttachment:' + gear.Weapon.Sight.Name)) {
+      seen.add('WeaponVisionAttachment:' + gear.Weapon.Sight.Name);
       items.push({ type: 'WeaponVisionAttachment', name: gear.Weapon.Sight.Name, quantity: 1, meta: {} });
     }
-    if (gear.Weapon?.Absorber?.Name) {
+    if (gear.Weapon?.Absorber?.Name && !seen.has('Absorber:' + gear.Weapon.Absorber.Name)) {
+      seen.add('Absorber:' + gear.Weapon.Absorber.Name);
       items.push({ type: 'Absorber', name: gear.Weapon.Absorber.Name, quantity: 1, meta: {} });
     }
-    if (gear.Weapon?.Implant?.Name) {
+    if (gear.Weapon?.Implant?.Name && !seen.has('MindforceImplant:' + gear.Weapon.Implant.Name)) {
+      seen.add('MindforceImplant:' + gear.Weapon.Implant.Name);
       items.push({ type: 'MindforceImplant', name: gear.Weapon.Implant.Name, quantity: 1, meta: {} });
     }
 
     // Armor pieces + plates
     for (const slot of ARMOR_SLOTS) {
       const piece = gear.Armor?.[slot];
-      if (piece?.Name) {
+      if (piece?.Name && !seen.has('Armor:' + piece.Name)) {
+        seen.add('Armor:' + piece.Name);
         items.push({ type: 'Armor', name: piece.Name, quantity: 1, meta: {} });
       }
-      if (piece?.Plate?.Name) {
+      if (piece?.Plate?.Name && !seen.has('ArmorPlating:' + piece.Plate.Name)) {
+        seen.add('ArmorPlating:' + piece.Plate.Name);
         items.push({ type: 'ArmorPlating', name: piece.Plate.Name, quantity: 1, meta: {} });
       }
+    }
+
+    // Healing tool
+    if (gear.Healing?.Name && !seen.has('MedicalTool:' + gear.Healing.Name)) {
+      seen.add('MedicalTool:' + gear.Healing.Name);
+      items.push({ type: 'MedicalTool', name: gear.Healing.Name, quantity: 1, meta: {} });
     }
 
     // Clothing
     if (Array.isArray(gear.Clothing)) {
       for (const c of gear.Clothing) {
-        if (c?.Name) {
+        if (c?.Name && !seen.has('Clothing:' + c.Name)) {
+          seen.add('Clothing:' + c.Name);
           items.push({ type: 'Clothing', name: c.Name, quantity: 1, meta: {} });
         }
       }
     }
 
     // Pet
-    if (gear.Pet?.Name) {
+    if (gear.Pet?.Name && !seen.has('Pet:' + gear.Pet.Name)) {
+      seen.add('Pet:' + gear.Pet.Name);
       items.push({ type: 'Pet', name: gear.Pet.Name, quantity: 1, meta: {} });
+    }
+  }
+
+  function extractItemsFromLoadout(loadoutData) {
+    if (!loadoutData?.Gear) return [];
+    const items = [];
+    const seen = new Set();
+
+    // Extract from active gear
+    extractItemsFromGear(loadoutData.Gear, items, seen);
+
+    // Extract from all sets (union of items across all sets)
+    if (loadoutData.Sets) {
+      for (const section of ['Weapon', 'Armor', 'Healing', 'Accessories']) {
+        const sets = loadoutData.Sets[section];
+        if (!Array.isArray(sets)) continue;
+        for (const setEntry of sets) {
+          if (!setEntry?.gear) continue;
+          // Build a gear-like object from set entry for extraction
+          const setGear = {};
+          if (section === 'Weapon') setGear.Weapon = setEntry.gear;
+          else if (section === 'Armor') setGear.Armor = setEntry.gear;
+          else if (section === 'Healing') setGear.Healing = setEntry.gear;
+          else if (section === 'Accessories') {
+            setGear.Clothing = setEntry.gear.Clothing;
+            setGear.Pet = setEntry.gear.Pet;
+          }
+          extractItemsFromGear(setGear, items, seen);
+        }
+      }
     }
 
     return items;
@@ -129,7 +174,7 @@
         return;
       }
 
-      const items = extractItemsFromLoadout(loadoutData.data.Gear);
+      const items = extractItemsFromLoadout(loadoutData.data);
       if (items.length === 0) {
         addToast('No rental-compatible items found in this loadout.', { type: 'info' });
         return;

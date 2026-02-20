@@ -107,6 +107,8 @@
         return getTypeLink(name, 'Pet');
       case 'consumable':
         return getTypeLink(name, 'Consumable');
+      case 'healingtool':
+        return getTypeLink(name, 'MedicalTool');
       default:
         return null;
     }
@@ -136,6 +138,7 @@
   let enhancers = [];
   let clothing = [];
   let pets = [];
+  let medicalTools = [];
   let stimulants = [];
   let effectsCatalog = [];
   let effectCaps = {};
@@ -195,6 +198,14 @@
   let utilityEffects = [];
   let offensiveTotals = { damage: 0, reload: 0, critChance: 0, critDamage: 0 };
   let expandedEffectKeys = new Set();
+
+  // Set management
+  const MAX_SETS = 10;
+  let activeSetIndices = { Weapon: 0, Armor: 0, Healing: 0, Accessories: 0 };
+  let setMenuOpen = null; // 'Weapon', 'Armor', etc. or null
+  let setAddMenuOpen = null; // section name or null
+  let setTabMenuOpen = null; // { section, index } or null — dropdown on active tab
+  let setRenameDialog = null; // { section, index, name } or null
 
   let compareMode = false;
   let compareType = 'weapons'; // 'weapons' | 'armor'
@@ -398,6 +409,7 @@
     { key: 'settings', label: 'Settings', icon: 'icon-settings' },
     { key: 'weapons', label: 'Weapons', icon: 'icon-weapon' },
     { key: 'armor', label: 'Armor', icon: 'icon-armor' },
+    { key: 'healing', label: 'Healing', icon: 'icon-healing' },
     { key: 'accessories', label: 'Accessories & Buffs', icon: 'icon-accessories' },
   ];
   const mobilePanels = mobilePanelItems.map((panel) => panel.key);
@@ -454,6 +466,7 @@
     enhancers = (entities.enhancers || []).sort(alphabeticalSort);
     clothing = (entities.clothings || []).sort(alphabeticalSort);
     pets = (entities.pets || []).sort(alphabeticalSort);
+    medicalTools = (entities.medicalTools || []).sort(alphabeticalSort);
     stimulants = (entities.consumables || []).sort(alphabeticalSort);
     entitiesVersion += 1;
     if (loadout) {
@@ -506,7 +519,8 @@
             armorSets: armorsets,
             clothing,
             pets,
-            stimulants
+            stimulants,
+            medicalTools
           },
           { effectsCatalog, effectCaps, isLimitedName }
         )
@@ -559,7 +573,8 @@
       armorSets: armorsets,
       clothing,
       pets,
-      stimulants
+      stimulants,
+      medicalTools
     };
   }
 
@@ -1022,6 +1037,13 @@
           },
           ManageIndividual: false,
         },
+        Healing: {
+          Name: null,
+          Enhancers: {
+            Economy: 0,
+            SkillMod: 0,
+          }
+        },
         Clothing: [],
         Consumables: [],
         Pet: {
@@ -1029,9 +1051,11 @@
           Effect: null,
         }
       },
+      Sets: null,
       Skill: {
         Hit: 200,
         Dmg: 200,
+        Heal: 200,
       },
       Markup: {
         Weapon: 100,
@@ -1063,6 +1087,7 @@
           Shins: 100,
           Feet: 100,
         },
+        HealingTool: 100,
       }
     };
   }
@@ -1076,12 +1101,19 @@
       const normalizedConsumables = (item.Gear?.Consumables || []).map(entry => (
         typeof entry === 'string' ? { Name: entry } : entry
       ));
+      const healingGear = item.Gear?.Healing ?? { Name: null, Enhancers: { Heal: 0, Economy: 0, SkillMod: 0 } };
+      if (healingGear.Enhancers && healingGear.Enhancers.Heal == null) healingGear.Enhancers.Heal = 0;
       item.Gear = {
         ...item.Gear,
+        Healing: healingGear,
         Clothing: item.Gear?.Clothing ?? [],
         Pet: item.Gear?.Pet ?? { Name: null, Effect: null },
         Consumables: normalizedConsumables
       };
+      if (!item.Skill) item.Skill = { Hit: 200, Dmg: 200, Heal: 200 };
+      if (item.Skill.Heal == null) item.Skill.Heal = 200;
+      if (!item.Markup) item.Markup = {};
+      if (item.Markup.HealingTool == null) item.Markup.HealingTool = 100;
       return item;
     });
   }
@@ -1163,6 +1195,7 @@
 
     suppressDirty = true;
     loadout = nextLoadout || null;
+    if (loadout) onLoadoutLoad(loadout);
     isDirty = false;
     autosaveDueAt = null;
     clearAutosaveTicker();
@@ -1215,15 +1248,18 @@
       if (!response.ok) {
         throw new Error(data?.error || 'Failed to load online loadouts');
       }
-      onlineLoadouts = (data || []).map(row => ({
-        id: row.id,
-        name: row.name,
-        public: !!row.public,
-        share_code: row.share_code || null,
-        last_update: row.last_update,
-        linked_item_set: row.linked_item_set || null,
-        data: row.data || createEmptyLoadout()
-      }));
+      onlineLoadouts = (data || []).map(row => {
+        const normalized = ensureLoadoutIds([row.data || createEmptyLoadout()])[0];
+        return {
+          id: row.id,
+          name: row.name,
+          public: !!row.public,
+          share_code: row.share_code || null,
+          last_update: row.last_update,
+          linked_item_set: row.linked_item_set || null,
+          data: normalized
+        };
+      });
       if (activeSource === 'online') {
         loadouts = onlineLoadouts.map(r => r.data);
         // Don't auto-select first loadout
@@ -1247,6 +1283,7 @@
   }
 
   function touchLoadouts() {
+    onLoadoutPreSave();
     if (activeSource === 'online') {
       onlineLoadouts = onlineLoadouts;
     } else {
@@ -1281,6 +1318,7 @@
   async function handleSave() {
     if (activeSource !== 'online' || !loadout) return;
     if (!activeOnlineId) return;
+    onLoadoutPreSave();
     isSaving = true;
     saveError = null;
     try {
@@ -1585,6 +1623,8 @@
           loadout.Gear.Armor[slot].Plate = { Name: item.Name };
         });
       }
+    } else if (activePicker === 'healingtool') {
+      loadout.Gear.Healing.Name = item.Name;
     } else if (activePicker === 'pet') {
       loadout.Gear.Pet = { Name: item.Name, Effect: null };
     } else if (activePicker === 'ring-left') {
@@ -1871,6 +1911,408 @@
     }
   }
 
+  async function handleCloneLoadout() {
+    if (!loadout) return;
+    const clone = JSON.parse(JSON.stringify(loadout));
+    clone.Id = crypto?.randomUUID ? crypto.randomUUID() : Math.random().toString(16).slice(2);
+    clone.Name = (loadout.Name || 'Loadout') + ' (copy)';
+
+    if (activeSource === 'online') {
+      try {
+        const response = await fetch('/api/tools/loadout', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: clone.Name, data: clone })
+        });
+        const result = await response.json();
+        if (!response.ok) {
+          throw new Error(result?.error || 'Failed to clone loadout');
+        }
+        const record = {
+          id: result.id,
+          name: result.name,
+          public: !!result.public,
+          share_code: result.share_code || null,
+          last_update: result.last_update,
+          data: result.data || clone
+        };
+        onlineLoadouts = [record, ...onlineLoadouts];
+        loadouts = onlineLoadouts.map(r => r.data);
+        await setActiveLoadout(record.data);
+        isDirty = false;
+        autosaveDueAt = null;
+        clearAutosaveTicker();
+      } catch (err) {
+        console.error('Clone failed:', err);
+        onlineError = err.message;
+      }
+    } else {
+      localLoadouts = [clone, ...localLoadouts];
+      loadouts = localLoadouts;
+      await setActiveLoadout(clone);
+      writeLocalLoadouts(localLoadouts);
+    }
+  }
+
+  // ===== Set Management =====
+
+  function extractWeaponGear(gear) {
+    return {
+      Name: gear.Weapon?.Name ?? null,
+      Amplifier: { Name: gear.Weapon?.Amplifier?.Name ?? null },
+      Scope: {
+        Name: gear.Weapon?.Scope?.Name ?? null,
+        Sight: { Name: gear.Weapon?.Scope?.Sight?.Name ?? null }
+      },
+      Sight: { Name: gear.Weapon?.Sight?.Name ?? null },
+      Absorber: { Name: gear.Weapon?.Absorber?.Name ?? null },
+      Implant: { Name: gear.Weapon?.Implant?.Name ?? null },
+      Matrix: { Name: gear.Weapon?.Matrix?.Name ?? null },
+      Enhancers: { ...(gear.Weapon?.Enhancers || { Damage: 0, Range: 0, SkillMod: 0, Economy: 0 }) }
+    };
+  }
+
+  function extractWeaponMarkup(markup) {
+    return {
+      Weapon: markup?.Weapon ?? 100,
+      Ammo: markup?.Ammo ?? 100,
+      Amplifier: markup?.Amplifier ?? 100,
+      Absorber: markup?.Absorber ?? 100,
+      Scope: markup?.Scope ?? 100,
+      Sight: markup?.Sight ?? 100,
+      ScopeSight: markup?.ScopeSight ?? 100,
+      Matrix: markup?.Matrix ?? 100,
+      Implant: markup?.Implant ?? 100
+    };
+  }
+
+  function extractArmorGear(gear) {
+    const armorData = {
+      SetName: gear.Armor?.SetName ?? null,
+      PlateName: gear.Armor?.PlateName ?? null,
+      Enhancers: { ...(gear.Armor?.Enhancers || { Durability: 0 }) },
+      ManageIndividual: gear.Armor?.ManageIndividual ?? false
+    };
+    for (const slot of armorSlots) {
+      armorData[slot] = {
+        Name: gear.Armor?.[slot]?.Name ?? null,
+        Plate: { Name: gear.Armor?.[slot]?.Plate?.Name ?? null }
+      };
+    }
+    return armorData;
+  }
+
+  function extractArmorMarkup(markup) {
+    const armorMarkup = {
+      ArmorSet: markup?.ArmorSet ?? 100,
+      PlateSet: markup?.PlateSet ?? 100,
+      Armors: {},
+      Plates: {}
+    };
+    for (const slot of armorSlots) {
+      armorMarkup.Armors[slot] = markup?.Armors?.[slot] ?? 100;
+      armorMarkup.Plates[slot] = markup?.Plates?.[slot] ?? 100;
+    }
+    return armorMarkup;
+  }
+
+  function extractHealingGear(gear) {
+    return {
+      Name: gear.Healing?.Name ?? null,
+      Enhancers: { ...(gear.Healing?.Enhancers || { Heal: 0, Economy: 0, SkillMod: 0 }) }
+    };
+  }
+
+  function extractHealingMarkup(markup) {
+    return { HealingTool: markup?.HealingTool ?? 100 };
+  }
+
+  function extractAccessoriesGear(gear) {
+    return {
+      Clothing: JSON.parse(JSON.stringify(gear.Clothing || [])),
+      Consumables: JSON.parse(JSON.stringify(gear.Consumables || [])),
+      Pet: JSON.parse(JSON.stringify(gear.Pet || { Name: null, Effect: null }))
+    };
+  }
+
+  function getDefaultSetName(section, gear) {
+    switch (section) {
+      case 'Weapon': return gear?.Weapon?.Name || 'Set 1';
+      case 'Armor': return gear?.Armor?.SetName || 'Set 1';
+      case 'Healing': return gear?.Healing?.Name || 'Set 1';
+      case 'Accessories': return 'Set 1';
+      default: return 'Set 1';
+    }
+  }
+
+  function extractSectionData(section, loadoutData) {
+    switch (section) {
+      case 'Weapon':
+        return { gear: extractWeaponGear(loadoutData.Gear), markup: extractWeaponMarkup(loadoutData.Markup) };
+      case 'Armor':
+        return { gear: extractArmorGear(loadoutData.Gear), markup: extractArmorMarkup(loadoutData.Markup) };
+      case 'Healing':
+        return { gear: extractHealingGear(loadoutData.Gear), markup: extractHealingMarkup(loadoutData.Markup) };
+      case 'Accessories':
+        return { gear: extractAccessoriesGear(loadoutData.Gear) };
+      default:
+        return {};
+    }
+  }
+
+  function applySectionData(section, loadoutData, setEntry) {
+    switch (section) {
+      case 'Weapon':
+        loadoutData.Gear.Weapon = setEntry.gear;
+        loadoutData.Markup.Weapon = setEntry.markup.Weapon;
+        loadoutData.Markup.Ammo = setEntry.markup.Ammo;
+        loadoutData.Markup.Amplifier = setEntry.markup.Amplifier;
+        loadoutData.Markup.Absorber = setEntry.markup.Absorber;
+        loadoutData.Markup.Scope = setEntry.markup.Scope;
+        loadoutData.Markup.Sight = setEntry.markup.Sight;
+        loadoutData.Markup.ScopeSight = setEntry.markup.ScopeSight;
+        loadoutData.Markup.Matrix = setEntry.markup.Matrix;
+        loadoutData.Markup.Implant = setEntry.markup.Implant;
+        break;
+      case 'Armor':
+        loadoutData.Gear.Armor = setEntry.gear;
+        loadoutData.Markup.ArmorSet = setEntry.markup.ArmorSet;
+        loadoutData.Markup.PlateSet = setEntry.markup.PlateSet;
+        loadoutData.Markup.Armors = setEntry.markup.Armors;
+        loadoutData.Markup.Plates = setEntry.markup.Plates;
+        break;
+      case 'Healing':
+        loadoutData.Gear.Healing = setEntry.gear;
+        loadoutData.Markup.HealingTool = setEntry.markup.HealingTool;
+        break;
+      case 'Accessories':
+        loadoutData.Gear.Clothing = setEntry.gear.Clothing;
+        loadoutData.Gear.Consumables = setEntry.gear.Consumables;
+        loadoutData.Gear.Pet = setEntry.gear.Pet;
+        break;
+    }
+  }
+
+  function syncActiveSetToSets(section) {
+    if (!loadout?.Sets?.[section]) return;
+    const idx = activeSetIndices[section];
+    if (idx < 0 || idx >= loadout.Sets[section].length) return;
+    const data = extractSectionData(section, loadout);
+    loadout.Sets[section][idx].gear = data.gear;
+    if (data.markup) loadout.Sets[section][idx].markup = data.markup;
+  }
+
+  function syncAllActiveSetsToSets() {
+    if (!loadout?.Sets) return;
+    for (const section of ['Weapon', 'Armor', 'Healing', 'Accessories']) {
+      syncActiveSetToSets(section);
+    }
+  }
+
+  function initializeSetsForSection(section) {
+    if (!loadout) return;
+    if (!loadout.Sets) {
+      loadout.Sets = { Weapon: null, Armor: null, Healing: null, Accessories: null };
+    }
+    if (!loadout.Sets[section]) {
+      const data = extractSectionData(section, loadout);
+      loadout.Sets[section] = [{
+        id: crypto?.randomUUID ? crypto.randomUUID() : Math.random().toString(16).slice(2),
+        name: getDefaultSetName(section, loadout.Gear),
+        isDefault: true,
+        gear: data.gear,
+        markup: data.markup || undefined
+      }];
+      activeSetIndices[section] = 0;
+    }
+  }
+
+  function addNewSet(section, copyFromCurrent = false) {
+    if (!loadout) return;
+    initializeSetsForSection(section);
+    if (loadout.Sets[section].length >= MAX_SETS) return;
+
+    // First sync current active data back
+    syncActiveSetToSets(section);
+
+    let newEntry;
+    if (copyFromCurrent) {
+      const data = extractSectionData(section, loadout);
+      newEntry = {
+        id: crypto?.randomUUID ? crypto.randomUUID() : Math.random().toString(16).slice(2),
+        name: getDefaultSetName(section, loadout.Gear) + ' (copy)',
+        isDefault: false,
+        gear: data.gear,
+        markup: data.markup || undefined
+      };
+    } else {
+      // Create empty set
+      const emptyGear = section === 'Weapon'
+        ? extractWeaponGear({ Weapon: createEmptyLoadout().Gear.Weapon })
+        : section === 'Armor'
+          ? extractArmorGear({ Armor: createEmptyLoadout().Gear.Armor })
+          : section === 'Healing'
+            ? extractHealingGear({ Healing: createEmptyLoadout().Gear.Healing })
+            : extractAccessoriesGear(createEmptyLoadout().Gear);
+      const emptyMarkup = section === 'Weapon'
+        ? extractWeaponMarkup(createEmptyLoadout().Markup)
+        : section === 'Armor'
+          ? extractArmorMarkup(createEmptyLoadout().Markup)
+          : section === 'Healing'
+            ? extractHealingMarkup(createEmptyLoadout().Markup)
+            : undefined;
+      newEntry = {
+        id: crypto?.randomUUID ? crypto.randomUUID() : Math.random().toString(16).slice(2),
+        name: `Set ${loadout.Sets[section].length + 1}`,
+        isDefault: false,
+        gear: emptyGear,
+        markup: emptyMarkup
+      };
+    }
+
+    loadout.Sets[section] = [...loadout.Sets[section], newEntry];
+    // Switch to the new set
+    switchToSet(section, loadout.Sets[section].length - 1);
+    setAddMenuOpen = null;
+    markDirty();
+  }
+
+  function switchToSet(section, newIndex) {
+    if (!loadout?.Sets?.[section]) return;
+    if (newIndex < 0 || newIndex >= loadout.Sets[section].length) return;
+    if (newIndex === activeSetIndices[section]) return;
+
+    // Save current gear back to active set
+    syncActiveSetToSets(section);
+
+    // Load new set data into Gear/Markup
+    const setEntry = loadout.Sets[section][newIndex];
+    applySectionData(section, loadout, setEntry);
+
+    activeSetIndices[section] = newIndex;
+    activeSetIndices = activeSetIndices; // Trigger reactivity
+    loadout = loadout; // Trigger reactivity
+    loadoutVersion += 1;
+  }
+
+  function deleteSet(section, index) {
+    if (!loadout?.Sets?.[section]) return;
+    if (loadout.Sets[section].length <= 1) {
+      // If deleting the last set, remove Sets for this section entirely
+      loadout.Sets[section] = null;
+      activeSetIndices[section] = 0;
+      // Check if all sections are null, if so remove Sets entirely
+      const allNull = ['Weapon', 'Armor', 'Healing', 'Accessories'].every(s => !loadout.Sets[s]);
+      if (allNull) loadout.Sets = null;
+    } else {
+      // If we're deleting the active set, switch to another first
+      if (index === activeSetIndices[section]) {
+        const newIdx = index > 0 ? index - 1 : 0;
+        // Load the new set's data into Gear before deleting
+        const setEntry = loadout.Sets[section][newIdx >= index ? newIdx + 1 : newIdx];
+        if (setEntry) applySectionData(section, loadout, setEntry);
+      } else {
+        // Still sync current active data back before modifying the array
+        syncActiveSetToSets(section);
+      }
+
+      loadout.Sets[section].splice(index, 1);
+      loadout.Sets[section] = loadout.Sets[section]; // Trigger reactivity
+
+      // Ensure isDefault exists on at least one
+      if (!loadout.Sets[section].some(s => s.isDefault)) {
+        loadout.Sets[section][0].isDefault = true;
+      }
+
+      // Adjust active index
+      if (activeSetIndices[section] >= loadout.Sets[section].length) {
+        activeSetIndices[section] = loadout.Sets[section].length - 1;
+      } else if (index < activeSetIndices[section]) {
+        activeSetIndices[section] -= 1;
+      }
+    }
+
+    activeSetIndices = activeSetIndices;
+    loadout = loadout;
+    loadoutVersion += 1;
+    setTabMenuOpen = null;
+    markDirty();
+  }
+
+  function setDefaultSet(section, index) {
+    if (!loadout?.Sets?.[section]) return;
+    for (let i = 0; i < loadout.Sets[section].length; i++) {
+      loadout.Sets[section][i].isDefault = (i === index);
+    }
+    loadout = loadout;
+    setTabMenuOpen = null;
+    markDirty();
+  }
+
+  function openSetRename(section, index) {
+    setRenameDialog = {
+      section,
+      index,
+      name: loadout.Sets[section][index].name || ''
+    };
+    setTabMenuOpen = null;
+  }
+
+  function applySetRename() {
+    if (!setRenameDialog || !loadout?.Sets?.[setRenameDialog.section]) return;
+    const { section, index, name } = setRenameDialog;
+    loadout.Sets[section][index].name = name.trim().slice(0, 120) || `Set ${index + 1}`;
+    loadout = loadout;
+    setRenameDialog = null;
+    markDirty();
+  }
+
+  function onLoadoutLoad(loadoutData) {
+    // Reset active set indices and resolve defaults from Sets
+    activeSetIndices = { Weapon: 0, Armor: 0, Healing: 0, Accessories: 0 };
+    if (!loadoutData?.Sets) return;
+
+    for (const section of ['Weapon', 'Armor', 'Healing', 'Accessories']) {
+      const sectionSets = loadoutData.Sets[section];
+      if (!sectionSets || !Array.isArray(sectionSets) || sectionSets.length === 0) continue;
+
+      // Find default set
+      const defaultIdx = sectionSets.findIndex(s => s.isDefault);
+      const idx = defaultIdx >= 0 ? defaultIdx : 0;
+      activeSetIndices[section] = idx;
+
+      // Load default set's data into Gear/Markup
+      applySectionData(section, loadoutData, sectionSets[idx]);
+    }
+  }
+
+  function onLoadoutPreSave() {
+    // Sync all active gear data back to their respective set entries before saving
+    syncAllActiveSetsToSets();
+  }
+
+  function closeSetMenus(event) {
+    // Close menus when clicking outside
+    if (setAddMenuOpen) setAddMenuOpen = null;
+    if (setTabMenuOpen) setTabMenuOpen = null;
+  }
+
+  function handleSetTabClick(section, index) {
+    if (activeSetIndices[section] === index) {
+      // Click on already-active tab → toggle management dropdown
+      if (setTabMenuOpen?.section === section && setTabMenuOpen?.index === index) {
+        setTabMenuOpen = null;
+      } else {
+        setTabMenuOpen = { section, index };
+        setAddMenuOpen = null;
+      }
+    } else {
+      // Click on inactive tab → switch to it
+      switchToSet(section, index);
+      setTabMenuOpen = null;
+    }
+  }
+
   function handleManualSave() {
     if (activeSource !== 'online') return;
     if (!isDirty) return;
@@ -1915,6 +2357,11 @@
   $: if(loadout?.Gear.Armor.Enhancers) {
     loadout.Gear.Armor.Enhancers.Defense = clamp(loadout.Gear.Armor.Enhancers.Defense, 0, 10);
     loadout.Gear.Armor.Enhancers.Durability = clamp(loadout.Gear.Armor.Enhancers.Durability, 0, 10);
+  }
+
+  $: if(loadout?.Gear?.Healing?.Enhancers) {
+    loadout.Gear.Healing.Enhancers.Economy = clamp(loadout.Gear.Healing.Enhancers.Economy, 0, 10);
+    loadout.Gear.Healing.Enhancers.SkillMod = clamp(loadout.Gear.Healing.Enhancers.SkillMod, 0, 10);
   }
 
   $: if (loadout && loadout.Markup == null) {
@@ -2331,6 +2778,8 @@
     } else if (slot === 'armorset') {
       resetArmor();
       return;
+    } else if (slot === 'healingtool') {
+      loadout.Gear.Healing.Name = null;
     } else if (slot === 'pet') {
       loadout.Gear.Pet = { Name: null, Effect: null };
     } else if (slot === 'ring-left') {
@@ -2640,6 +3089,28 @@
             ? `${(weapon.Properties.Economy.Decay * item.Properties.Economy.Absorption).toFixed(4)} PEC`
             : 'N/A',
           uses: weapon ? (LoadoutCalc.calculateAbsorberTotalUses(item, weapon) ?? 'N/A') : 'N/A'
+        }))
+      };
+    }
+
+    if (kind === 'healingtool') {
+      return {
+        title: 'Select Healing Tool',
+        columns: finalizePickerColumns(kind, [
+          { key: 'name', header: 'Name', main: true },
+          { key: 'maxHeal', header: 'Max Heal', width: '80px' },
+          { key: 'minHeal', header: 'Min Heal', width: '80px' },
+          { key: 'upm', header: 'Uses/min', width: '80px' },
+          { key: 'decay', header: 'Decay', width: '80px' },
+          { key: 'efficiency', header: 'Efficiency', width: '90px' }
+        ]),
+        rows: buildPickerRows(medicalTools, item => ({
+          name: item.Name,
+          maxHeal: item.Properties?.MaxHeal != null ? item.Properties.MaxHeal.toFixed(1) : 'N/A',
+          minHeal: item.Properties?.MinHeal != null ? item.Properties.MinHeal.toFixed(1) : 'N/A',
+          upm: item.Properties?.UsesPerMinute != null ? item.Properties.UsesPerMinute.toFixed(1) : 'N/A',
+          decay: item.Properties?.Economy?.Decay != null ? `${item.Properties.Economy.Decay.toFixed(4)}` : 'N/A',
+          efficiency: item.Properties?.Economy?.Efficiency != null ? `${item.Properties.Economy.Efficiency.toFixed(1)}%` : 'N/A'
         }))
       };
     }
@@ -3006,7 +3477,7 @@
   {/if}
 </svelte:head>
 
-<svelte:window bind:innerWidth={windowWidth} />
+<svelte:window bind:innerWidth={windowWidth} on:click={closeSetMenus} />
 
 <WikiPage
   title={isSharedMode ? 'Loadout Manager' : 'Loadouts'}
@@ -3143,6 +3614,7 @@
             <button class="sidebar-btn danger" on:click={confirmDeleteLoadout} disabled={!loadout || isLinkedToItemSet} title={isLinkedToItemSet ? 'Linked to item set' : ''}>Delete</button>
             <button class="sidebar-btn neutral" on:click={exportActiveLoadout} disabled={!loadout}>Export</button>
             <button class="sidebar-btn neutral" on:click={openImportSourceDialog}>Import</button>
+            <button class="sidebar-btn neutral" on:click={handleCloneLoadout} disabled={!loadout}>Clone</button>
           </div>
           <input type="file" bind:this={fileInput} on:change={handleFileChange} class="file-input-hidden" />
           {#if activeSource === 'online' && onlineLoading}
@@ -3430,6 +3902,18 @@
             <div class="stat-row"><span class="stat-label">Total Uses</span><span class="stat-value">{stats.lowestTotalUses != null ? stats.lowestTotalUses : 'N/A'}</span></div>
           </div>
           <div class="stats-section">
+            <h4 class="section-title">Healing</h4>
+            <div class="stat-row"><span class="stat-label">Total Heal</span><span class="stat-value">{stats.totalHeal != null ? stats.totalHeal.toFixed(1) : 'N/A'}</span></div>
+            <div class="stat-row"><span class="stat-label">Effective Heal</span><span class="stat-value">{stats.effectiveHeal != null ? stats.effectiveHeal.toFixed(2) : 'N/A'}</span></div>
+            <div class="stat-row"><span class="stat-label">Heal Interval</span><span class="stat-value">{stats.healInterval != null ? `${stats.healInterval.min.toFixed(1)} - ${stats.healInterval.max.toFixed(1)}` : 'N/A'}</span></div>
+            <div class="stat-row"><span class="stat-label">Reload</span><span class="stat-value">{stats.healReload != null ? `${stats.healReload.toFixed(2)}s` : 'N/A'}</span></div>
+            <div class="stat-row"><span class="stat-label">Uses/min</span><span class="stat-value">{stats.healReload != null ? `${clampDecimals(60 / stats.healReload, 0, 2)}` : 'N/A'}</span></div>
+            <div class="stat-row"><span class="stat-label">Decay</span><span class="stat-value">{stats.healDecay != null ? `${stats.healDecay.toFixed(4)} PEC` : 'N/A'}</span></div>
+            <div class="stat-row"><span class="stat-label">HPS</span><span class="stat-value">{stats.hps != null ? stats.hps.toFixed(4) : 'N/A'}</span></div>
+            <div class="stat-row"><span class="stat-label">HPP</span><span class="stat-value">{stats.hpp != null ? stats.hpp.toFixed(4) : 'N/A'}</span></div>
+            <div class="stat-row"><span class="stat-label">Heal Uses</span><span class="stat-value">{stats.healTotalUses != null ? stats.healTotalUses : 'N/A'}</span></div>
+          </div>
+          <div class="stats-section">
             <h4 class="section-title">Defense</h4>
             <div class="stat-row"><span class="stat-label">Armor Defense</span><span class="stat-value">{stats.armorDefense != null ? stats.armorDefense.toFixed(2) : 'N/A'}</span></div>
             <div class="stat-row"><span class="stat-label">Plate Defense</span><span class="stat-value">{stats.plateDefense != null ? stats.plateDefense.toFixed(2) : 'N/A'}</span></div>
@@ -3463,6 +3947,10 @@
                 <div class="setting-row">
                   <label>Dmg Profession</label>
                   <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Skill?.Dmg ?? ''} />
+                </div>
+                <div class="setting-row">
+                  <label>Heal Profession</label>
+                  <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Skill?.Heal ?? ''} />
                 </div>
                 <div class="settings-group-title">Bonus Stats</div>
                 <div class="settings-divider" aria-hidden="true"></div>
@@ -3780,6 +4268,42 @@
                 <input type="checkbox" checked={!!sharedLoadoutData?.Gear?.Armor?.ManageIndividual} disabled />
                 <span>Manage armor pieces individually</span>
               </label>
+            </div>
+          </div>
+        </DataSection>
+
+        <DataSection title="Healing">
+          <div class="panel-grid two-col">
+            <div class="panel-block">
+              <h3 class="panel-title">Healing Tool</h3>
+              <div class="form-grid">
+                <div class="form-label">Healing Tool</div>
+                {#if sharedLoadoutData?.Gear?.Healing?.Name}
+                  <a class="slot select-button read-only link-slot" href={getEquipmentLink('healingtool', sharedLoadoutData.Gear.Healing.Name)}>
+                    {sharedLoadoutData.Gear.Healing.Name}
+                  </a>
+                {:else}
+                  <div class="slot select-button read-only read-only-slot"><span class="placeholder-muted">No healing tool selected.</span></div>
+                {/if}
+                {#if isLimitedName(sharedLoadoutData?.Gear?.Healing?.Name)}
+                  <div class="form-label">Healing Tool MU</div>
+                  <div class="markup-field">
+                    <input class="markup-input read-only-field" type="number" readonly value={sharedLoadoutData?.Markup?.HealingTool ?? 100} />
+                    <span class="markup-suffix">%</span>
+                  </div>
+                {/if}
+              </div>
+            </div>
+            <div class="panel-block">
+              <h3 class="panel-title">Enhancers</h3>
+              <div class="form-grid">
+                <div class="form-label">Heal</div>
+                <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Gear?.Healing?.Enhancers?.Heal ?? 0} />
+                <div class="form-label">Economy</div>
+                <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Gear?.Healing?.Enhancers?.Economy ?? 0} />
+                <div class="form-label">Skill Modification</div>
+                <input class="read-only-field" type="number" readonly value={sharedLoadoutData?.Gear?.Healing?.Enhancers?.SkillMod ?? 0} />
+              </div>
             </div>
           </div>
         </DataSection>
@@ -4246,6 +4770,18 @@
             <div class="stat-row"><span class="stat-label">Total Uses</span><span class="stat-value">{stats.lowestTotalUses != null ? stats.lowestTotalUses : 'N/A'}</span></div>
           </div>
           <div class="stats-section">
+            <h4 class="section-title">Healing</h4>
+            <div class="stat-row"><span class="stat-label">Total Heal</span><span class="stat-value">{stats.totalHeal != null ? stats.totalHeal.toFixed(1) : 'N/A'}</span></div>
+            <div class="stat-row"><span class="stat-label">Effective Heal</span><span class="stat-value">{stats.effectiveHeal != null ? stats.effectiveHeal.toFixed(2) : 'N/A'}</span></div>
+            <div class="stat-row"><span class="stat-label">Heal Interval</span><span class="stat-value">{stats.healInterval != null ? `${stats.healInterval.min.toFixed(1)} - ${stats.healInterval.max.toFixed(1)}` : 'N/A'}</span></div>
+            <div class="stat-row"><span class="stat-label">Reload</span><span class="stat-value">{stats.healReload != null ? `${stats.healReload.toFixed(2)}s` : 'N/A'}</span></div>
+            <div class="stat-row"><span class="stat-label">Uses/min</span><span class="stat-value">{stats.healReload != null ? `${clampDecimals(60 / stats.healReload, 0, 2)}` : 'N/A'}</span></div>
+            <div class="stat-row"><span class="stat-label">Decay</span><span class="stat-value">{stats.healDecay != null ? `${stats.healDecay.toFixed(4)} PEC` : 'N/A'}</span></div>
+            <div class="stat-row"><span class="stat-label">HPS</span><span class="stat-value">{stats.hps != null ? stats.hps.toFixed(4) : 'N/A'}</span></div>
+            <div class="stat-row"><span class="stat-label">HPP</span><span class="stat-value">{stats.hpp != null ? stats.hpp.toFixed(4) : 'N/A'}</span></div>
+            <div class="stat-row"><span class="stat-label">Heal Uses</span><span class="stat-value">{stats.healTotalUses != null ? stats.healTotalUses : 'N/A'}</span></div>
+          </div>
+          <div class="stats-section">
             <h4 class="section-title">Defense</h4>
             <div class="stat-row"><span class="stat-label">Armor Defense</span><span class="stat-value">{stats.armorDefense != null ? stats.armorDefense.toFixed(2) : 'N/A'}</span></div>
             <div class="stat-row"><span class="stat-label">Plate Defense</span><span class="stat-value">{stats.plateDefense != null ? stats.plateDefense.toFixed(2) : 'N/A'}</span></div>
@@ -4285,6 +4821,10 @@
                   <label>Dmg Profession</label>
                   <input type="number" bind:value={loadout.Skill.Dmg} />
                 </div>
+                <div class="setting-row">
+                  <label>Heal Profession</label>
+                  <input type="number" bind:value={loadout.Skill.Heal} />
+                </div>
                 <div class="settings-group-title">Bonus Stats</div>
                 <div class="settings-divider" aria-hidden="true"></div>
                 <div class="setting-row">
@@ -4319,7 +4859,53 @@
         {/if}
 
         <div class="mobile-panel" class:active={activeMobilePanel === 'weapons'}>
-          <DataSection title="Weapons">
+          <DataSection title="Weapons" allowOverflow>
+            {#if loadout?.Sets?.Weapon?.length > 1}
+              <div class="set-tabs">
+                {#each loadout.Sets.Weapon as setEntry, i}
+                  <div class="set-tab-wrapper">
+                    <button
+                      class="set-tab"
+                      class:active={activeSetIndices.Weapon === i}
+                      on:click|stopPropagation={() => handleSetTabClick('Weapon', i)}
+                    >
+                      <span class="set-tab-name">{setEntry.name || `Set ${i + 1}`}</span>
+                      {#if setEntry.isDefault}<span class="set-default-star" title="Default set">&#9733;</span>{/if}
+                      {#if activeSetIndices.Weapon === i}<span class="set-tab-chevron">&#9662;</span>{/if}
+                    </button>
+                    {#if setTabMenuOpen?.section === 'Weapon' && setTabMenuOpen?.index === i}
+                      <div class="set-tab-menu" on:click|stopPropagation>
+                        <button class="set-tab-menu-item" on:click|stopPropagation={() => openSetRename('Weapon', i)}>Rename</button>
+                        <button class="set-tab-menu-item" on:click|stopPropagation={() => setDefaultSet('Weapon', i)}>
+                          {setEntry.isDefault ? 'Already default' : 'Set as default'}
+                        </button>
+                        <div class="set-tab-menu-divider"></div>
+                        <button class="set-tab-menu-item danger" on:click|stopPropagation={() => deleteSet('Weapon', i)}>Delete set</button>
+                      </div>
+                    {/if}
+                  </div>
+                {/each}
+                <button class="set-tab-add" on:click|stopPropagation={() => { setAddMenuOpen = setAddMenuOpen === 'Weapon' ? null : 'Weapon'; }} title="Add set">+
+                  {#if setAddMenuOpen === 'Weapon'}
+                    <div class="set-tab-menu">
+                      <button class="set-tab-menu-item" on:click|stopPropagation={() => addNewSet('Weapon', false)}>New empty set</button>
+                      <button class="set-tab-menu-item" on:click|stopPropagation={() => addNewSet('Weapon', true)}>Copy current set</button>
+                    </div>
+                  {/if}
+                </button>
+              </div>
+            {:else}
+              <div class="set-tabs">
+                <button class="set-tab-add" on:click|stopPropagation={() => { setAddMenuOpen = setAddMenuOpen === 'Weapon' ? null : 'Weapon'; }} title="Add set">+
+                  {#if setAddMenuOpen === 'Weapon'}
+                    <div class="set-tab-menu">
+                      <button class="set-tab-menu-item" on:click|stopPropagation={() => addNewSet('Weapon', false)}>New empty set</button>
+                      <button class="set-tab-menu-item" on:click|stopPropagation={() => addNewSet('Weapon', true)}>Copy current set</button>
+                    </div>
+                  {/if}
+                </button>
+              </div>
+            {/if}
             <div class="panel-grid two-col">
               <div class="panel-block">
                 <h3 class="panel-title">Weapon & Attachments</h3>
@@ -4565,7 +5151,53 @@
         </div>
         {#if !compareMode}
           <div class="mobile-panel" class:active={activeMobilePanel === 'armor'}>
-            <DataSection title="Armor">
+            <DataSection title="Armor" allowOverflow>
+              {#if loadout?.Sets?.Armor?.length > 1}
+                <div class="set-tabs">
+                  {#each loadout.Sets.Armor as setEntry, i}
+                    <div class="set-tab-wrapper">
+                      <button
+                        class="set-tab"
+                        class:active={activeSetIndices.Armor === i}
+                        on:click|stopPropagation={() => handleSetTabClick('Armor', i)}
+                      >
+                        <span class="set-tab-name">{setEntry.name || `Set ${i + 1}`}</span>
+                        {#if setEntry.isDefault}<span class="set-default-star" title="Default set">&#9733;</span>{/if}
+                        {#if activeSetIndices.Armor === i}<span class="set-tab-chevron">&#9662;</span>{/if}
+                      </button>
+                      {#if setTabMenuOpen?.section === 'Armor' && setTabMenuOpen?.index === i}
+                        <div class="set-tab-menu" on:click|stopPropagation>
+                          <button class="set-tab-menu-item" on:click|stopPropagation={() => openSetRename('Armor', i)}>Rename</button>
+                          <button class="set-tab-menu-item" on:click|stopPropagation={() => setDefaultSet('Armor', i)}>
+                            {setEntry.isDefault ? 'Already default' : 'Set as default'}
+                          </button>
+                          <div class="set-tab-menu-divider"></div>
+                          <button class="set-tab-menu-item danger" on:click|stopPropagation={() => deleteSet('Armor', i)}>Delete set</button>
+                        </div>
+                      {/if}
+                    </div>
+                  {/each}
+                  <button class="set-tab-add" on:click|stopPropagation={() => { setAddMenuOpen = setAddMenuOpen === 'Armor' ? null : 'Armor'; }} title="Add set">+
+                    {#if setAddMenuOpen === 'Armor'}
+                      <div class="set-tab-menu">
+                        <button class="set-tab-menu-item" on:click|stopPropagation={() => addNewSet('Armor', false)}>New empty set</button>
+                        <button class="set-tab-menu-item" on:click|stopPropagation={() => addNewSet('Armor', true)}>Copy current set</button>
+                      </div>
+                    {/if}
+                  </button>
+                </div>
+              {:else}
+                <div class="set-tabs">
+                  <button class="set-tab-add" on:click|stopPropagation={() => { setAddMenuOpen = setAddMenuOpen === 'Armor' ? null : 'Armor'; }} title="Add set">+
+                    {#if setAddMenuOpen === 'Armor'}
+                      <div class="set-tab-menu">
+                        <button class="set-tab-menu-item" on:click|stopPropagation={() => addNewSet('Armor', false)}>New empty set</button>
+                        <button class="set-tab-menu-item" on:click|stopPropagation={() => addNewSet('Armor', true)}>Copy current set</button>
+                      </div>
+                    {/if}
+                  </button>
+                </div>
+              {/if}
               <div class="panel-grid two-col">
               <div class="panel-block">
                 <h3 class="panel-title">Armor Selection</h3>
@@ -4685,8 +5317,160 @@
               </div>
             </DataSection>
           </div>
+          <div class="mobile-panel" class:active={activeMobilePanel === 'healing'}>
+            <DataSection title="Healing" allowOverflow>
+              {#if loadout?.Sets?.Healing?.length > 1}
+                <div class="set-tabs">
+                  {#each loadout.Sets.Healing as setEntry, i}
+                    <div class="set-tab-wrapper">
+                      <button
+                        class="set-tab"
+                        class:active={activeSetIndices.Healing === i}
+                        on:click|stopPropagation={() => handleSetTabClick('Healing', i)}
+                      >
+                        <span class="set-tab-name">{setEntry.name || `Set ${i + 1}`}</span>
+                        {#if setEntry.isDefault}<span class="set-default-star" title="Default set">&#9733;</span>{/if}
+                        {#if activeSetIndices.Healing === i}<span class="set-tab-chevron">&#9662;</span>{/if}
+                      </button>
+                      {#if setTabMenuOpen?.section === 'Healing' && setTabMenuOpen?.index === i}
+                        <div class="set-tab-menu" on:click|stopPropagation>
+                          <button class="set-tab-menu-item" on:click|stopPropagation={() => openSetRename('Healing', i)}>Rename</button>
+                          <button class="set-tab-menu-item" on:click|stopPropagation={() => setDefaultSet('Healing', i)}>
+                            {setEntry.isDefault ? 'Already default' : 'Set as default'}
+                          </button>
+                          <div class="set-tab-menu-divider"></div>
+                          <button class="set-tab-menu-item danger" on:click|stopPropagation={() => deleteSet('Healing', i)}>Delete set</button>
+                        </div>
+                      {/if}
+                    </div>
+                  {/each}
+                  <button class="set-tab-add" on:click|stopPropagation={() => { setAddMenuOpen = setAddMenuOpen === 'Healing' ? null : 'Healing'; }} title="Add set">+
+                    {#if setAddMenuOpen === 'Healing'}
+                      <div class="set-tab-menu">
+                        <button class="set-tab-menu-item" on:click|stopPropagation={() => addNewSet('Healing', false)}>New empty set</button>
+                        <button class="set-tab-menu-item" on:click|stopPropagation={() => addNewSet('Healing', true)}>Copy current set</button>
+                      </div>
+                    {/if}
+                  </button>
+                </div>
+              {:else}
+                <div class="set-tabs">
+                  <button class="set-tab-add" on:click|stopPropagation={() => { setAddMenuOpen = setAddMenuOpen === 'Healing' ? null : 'Healing'; }} title="Add set">+
+                    {#if setAddMenuOpen === 'Healing'}
+                      <div class="set-tab-menu">
+                        <button class="set-tab-menu-item" on:click|stopPropagation={() => addNewSet('Healing', false)}>New empty set</button>
+                        <button class="set-tab-menu-item" on:click|stopPropagation={() => addNewSet('Healing', true)}>Copy current set</button>
+                      </div>
+                    {/if}
+                  </button>
+                </div>
+              {/if}
+              <div class="panel-grid two-col">
+                <div class="panel-block">
+                  <h3 class="panel-title">Healing Tool</h3>
+                  <div class="form-grid">
+                    <div class="form-label">Healing Tool</div>
+                    <div class="control-row">
+                      <button class="slot select-button" on:contextmenu={e => clearSlot(e, 'healingtool')} on:click={() => openPicker('healingtool')}>
+                        {#if loadout?.Gear?.Healing?.Name != null}
+                          {loadout.Gear.Healing.Name}
+                        {:else}
+                          <span class="placeholder-text">Select healing tool...</span>
+                        {/if}
+                      </button>
+                    </div>
+                    {#if isLimitedName(loadout?.Gear?.Healing?.Name)}
+                      <div class="form-label">Healing Tool MU</div>
+                      <div class="markup-field">
+                        <span class="markup-label">MU%</span>
+                        <input class="markup-input" type="number" min="0" step="0.01" bind:value={loadout.Markup.HealingTool} />
+                      </div>
+                    {/if}
+                  </div>
+                </div>
+                <div class="panel-block">
+                  <h3 class="panel-title">Enhancers</h3>
+                  <div class="enhancer-grid">
+                    <div class="enhancer-field">
+                      <label>Heal</label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="10"
+                        bind:value={loadout.Gear.Healing.Enhancers.Heal}
+                      />
+                    </div>
+                    <div class="enhancer-field">
+                      <label>Economy</label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="10"
+                        bind:value={loadout.Gear.Healing.Enhancers.Economy}
+                      />
+                    </div>
+                    <div class="enhancer-field">
+                      <label>Skill Modification</label>
+                      <input
+                        type="number"
+                        min="0"
+                        max="10"
+                        bind:value={loadout.Gear.Healing.Enhancers.SkillMod}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </DataSection>
+          </div>
           <div class="mobile-panel" class:active={activeMobilePanel === 'accessories'}>
-            <DataSection title="Accessories & Buffs">
+            <DataSection title="Accessories & Buffs" allowOverflow>
+              {#if loadout?.Sets?.Accessories?.length > 1}
+                <div class="set-tabs">
+                  {#each loadout.Sets.Accessories as setEntry, i}
+                    <div class="set-tab-wrapper">
+                      <button
+                        class="set-tab"
+                        class:active={activeSetIndices.Accessories === i}
+                        on:click|stopPropagation={() => handleSetTabClick('Accessories', i)}
+                      >
+                        <span class="set-tab-name">{setEntry.name || `Set ${i + 1}`}</span>
+                        {#if setEntry.isDefault}<span class="set-default-star" title="Default set">&#9733;</span>{/if}
+                        {#if activeSetIndices.Accessories === i}<span class="set-tab-chevron">&#9662;</span>{/if}
+                      </button>
+                      {#if setTabMenuOpen?.section === 'Accessories' && setTabMenuOpen?.index === i}
+                        <div class="set-tab-menu" on:click|stopPropagation>
+                          <button class="set-tab-menu-item" on:click|stopPropagation={() => openSetRename('Accessories', i)}>Rename</button>
+                          <button class="set-tab-menu-item" on:click|stopPropagation={() => setDefaultSet('Accessories', i)}>
+                            {setEntry.isDefault ? 'Already default' : 'Set as default'}
+                          </button>
+                          <div class="set-tab-menu-divider"></div>
+                          <button class="set-tab-menu-item danger" on:click|stopPropagation={() => deleteSet('Accessories', i)}>Delete set</button>
+                        </div>
+                      {/if}
+                    </div>
+                  {/each}
+                  <button class="set-tab-add" on:click|stopPropagation={() => { setAddMenuOpen = setAddMenuOpen === 'Accessories' ? null : 'Accessories'; }} title="Add set">+
+                    {#if setAddMenuOpen === 'Accessories'}
+                      <div class="set-tab-menu">
+                        <button class="set-tab-menu-item" on:click|stopPropagation={() => addNewSet('Accessories', false)}>New empty set</button>
+                        <button class="set-tab-menu-item" on:click|stopPropagation={() => addNewSet('Accessories', true)}>Copy current set</button>
+                      </div>
+                    {/if}
+                  </button>
+                </div>
+              {:else}
+                <div class="set-tabs">
+                  <button class="set-tab-add" on:click|stopPropagation={() => { setAddMenuOpen = setAddMenuOpen === 'Accessories' ? null : 'Accessories'; }} title="Add set">+
+                    {#if setAddMenuOpen === 'Accessories'}
+                      <div class="set-tab-menu">
+                        <button class="set-tab-menu-item" on:click|stopPropagation={() => addNewSet('Accessories', false)}>New empty set</button>
+                        <button class="set-tab-menu-item" on:click|stopPropagation={() => addNewSet('Accessories', true)}>Copy current set</button>
+                      </div>
+                    {/if}
+                  </button>
+                </div>
+              {/if}
               <div class="accessory-panel">
                 <div class="accessory-section">
                   <h3 class="panel-title">Rings & Pet</h3>
@@ -5114,6 +5898,23 @@
     <div class="dialog-footer">
       <button class="dialog-btn secondary" on:click={cancelDelete}>Cancel</button>
       <button class="dialog-btn danger" on:click={deleteActiveLoadout}>Delete</button>
+    </div>
+  </div>
+</div>
+{/if}
+
+{#if setRenameDialog}
+<div class="dialog-backdrop" on:click={() => setRenameDialog = null} on:keydown={(e) => e.key === 'Escape' && (setRenameDialog = null)}>
+  <div class="dialog dialog-compact" on:click|stopPropagation role="dialog" aria-modal="true">
+    <div class="dialog-header">
+      <h3>Rename Set</h3>
+    </div>
+    <div class="dialog-body">
+      <input type="text" bind:value={setRenameDialog.name} maxlength="120" on:keydown={(e) => e.key === 'Enter' && applySetRename()} style="width:100%; padding:8px; background:var(--bg-color, var(--secondary-color)); color:var(--text-color); border:1px solid var(--border-color, #555); border-radius:6px; box-sizing:border-box;" />
+    </div>
+    <div class="dialog-footer">
+      <button class="dialog-btn secondary" on:click={() => setRenameDialog = null}>Cancel</button>
+      <button class="dialog-btn" on:click={applySetRename}>Rename</button>
     </div>
   </div>
 </div>

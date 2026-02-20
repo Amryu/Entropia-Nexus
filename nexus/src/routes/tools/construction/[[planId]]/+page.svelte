@@ -988,6 +988,43 @@
     updateUrlSlug(null);
   }
 
+  async function handleClonePlan() {
+    if (!activePlan) return;
+    const cloneData = JSON.parse(JSON.stringify(activePlan.data || { targets: [] }));
+    const cloneName = (activePlan.name || 'Plan') + ' (copy)';
+    const cloneId = crypto?.randomUUID ? crypto.randomUUID() : Math.random().toString(16).slice(2);
+
+    if (activeSource === 'online' && isLoggedIn) {
+      try {
+        const response = await fetch('/api/tools/construction/plans', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: cloneName, data: cloneData })
+        });
+        if (response.ok) {
+          const created = await response.json();
+          onlinePlans = [created, ...onlinePlans];
+          updatePlansList();
+          selectPlan(created.id);
+        }
+      } catch (error) {
+        console.error('Failed to clone plan:', error);
+      }
+    } else {
+      const clonePlan = {
+        id: cloneId,
+        name: cloneName,
+        data: cloneData,
+        created_at: new Date().toISOString(),
+        last_update: new Date().toISOString()
+      };
+      localPlans = [clonePlan, ...localPlans];
+      saveLocalData();
+      updatePlansList();
+      selectPlan(clonePlan.id);
+    }
+  }
+
   async function handleNewPlan() {
     const newPlan = createEmptyPlan('New Plan');
 
@@ -1520,6 +1557,7 @@
           <button class="sidebar-btn danger" on:click={() => activePlan && confirmDeletePlan(activePlanId)} disabled={!activePlan}>Delete</button>
           <button class="sidebar-btn neutral" on:click={exportActivePlan} disabled={!activePlan}>Export</button>
           <button class="sidebar-btn neutral" on:click={openImportDialog}>Import</button>
+          <button class="sidebar-btn neutral" on:click={handleClonePlan} disabled={!activePlan}>Clone</button>
         </div>
         <input type="file" bind:this={fileInput} on:change={handleFileChange} accept=".json" class="file-input-hidden" />
         {#if hasLocalData && isLoggedIn && activeSource === 'online' && showImportPrompt}

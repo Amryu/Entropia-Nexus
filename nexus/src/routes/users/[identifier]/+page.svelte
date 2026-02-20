@@ -95,6 +95,7 @@
   let clothing = [];
   let pets = [];
   let stimulants = [];
+  let medicalTools = [];
   let effectsCatalog = [];
   let effectCaps = {};
 
@@ -188,7 +189,8 @@
   }
 
   $: showcaseRecord = avatar?.showcaseLoadout || null;
-  $: showcaseLoadout = showcaseRecord?.data || null;
+  $: showcaseLoadoutRaw = showcaseRecord?.data || null;
+  $: showcaseLoadout = resolveDefaultSets(showcaseLoadoutRaw);
   $: showcaseShareCode = showcaseRecord?.share_code || showcaseRecord?.shareCode || null;
   $: showcaseName = showcaseRecord?.name || showcaseLoadout?.Name || 'Showcase Loadout';
 
@@ -196,6 +198,7 @@
     { id: 'Stats', label: 'Detailed Stats' },
     { id: 'Weapons', label: 'Weapons' },
     { id: 'Armor', label: 'Armor' },
+    { id: 'Healing', label: 'Healing' },
     { id: 'Accessories', label: 'Rings, Clothing & Pet' }
   ];
 
@@ -236,7 +239,8 @@
           armorSets: armorsets,
           clothing,
           pets,
-          stimulants
+          stimulants,
+          medicalTools
         },
         { effectsCatalog, effectCaps }
       )
@@ -482,6 +486,41 @@
     return a.Name.localeCompare(b.Name, undefined, { numeric: true });
   }
 
+  function resolveDefaultSets(loadoutData) {
+    if (!loadoutData) return null;
+    if (!loadoutData.Sets) return loadoutData;
+    // Deep clone so we don't mutate the original record data
+    const resolved = JSON.parse(JSON.stringify(loadoutData));
+    const sections = ['Weapon', 'Armor', 'Healing', 'Accessories'];
+    for (const section of sections) {
+      const sectionSets = resolved.Sets?.[section];
+      if (!Array.isArray(sectionSets) || sectionSets.length === 0) continue;
+      const defaultSet = sectionSets.find(s => s.isDefault) || sectionSets[0];
+      if (!defaultSet?.gear) continue;
+      // Apply default set gear/markup into Gear/Markup
+      if (section === 'Weapon') {
+        resolved.Gear.Weapon = defaultSet.gear;
+        if (defaultSet.markup) Object.assign(resolved.Markup, defaultSet.markup);
+      } else if (section === 'Armor') {
+        resolved.Gear.Armor = defaultSet.gear;
+        if (defaultSet.markup) {
+          resolved.Markup.ArmorSet = defaultSet.markup.ArmorSet;
+          resolved.Markup.PlateSet = defaultSet.markup.PlateSet;
+          resolved.Markup.Armors = defaultSet.markup.Armors;
+          resolved.Markup.Plates = defaultSet.markup.Plates;
+        }
+      } else if (section === 'Healing') {
+        resolved.Gear.Healing = defaultSet.gear;
+        if (defaultSet.markup) resolved.Markup.HealingTool = defaultSet.markup.HealingTool;
+      } else if (section === 'Accessories') {
+        resolved.Gear.Clothing = defaultSet.gear.Clothing || [];
+        resolved.Gear.Consumables = defaultSet.gear.Consumables || [];
+        resolved.Gear.Pet = defaultSet.gear.Pet || { Name: null, Effect: null };
+      }
+    }
+    return resolved;
+  }
+
   function processEntityData(entities) {
     const rawWeapons = entities.weapons || [];
     const rawAmplifiers = entities.weaponAmplifiers || [];
@@ -500,6 +539,7 @@
     clothing = (entities.clothings || []).sort(alphabeticalSort);
     pets = (entities.pets || []).sort(alphabeticalSort);
     stimulants = (entities.consumables || []).sort(alphabeticalSort);
+    medicalTools = (entities.medicalTools || []).sort(alphabeticalSort);
   }
 
   function getClothingSlot(slotName, side = null) {
@@ -583,6 +623,8 @@
         return getTypeLink(name, 'Clothing');
       case 'pet':
         return getTypeLink(name, 'Pet');
+      case 'healingtool':
+        return getTypeLink(name, 'MedicalTool');
       default:
         return null;
     }
@@ -1091,6 +1133,41 @@
                             showBlockSeparately={true}
                           />
                         {/if}
+                      </div>
+                    </div>
+                  {/if}
+
+                  {#if avatarDetailTab === 'Healing'}
+                    <div class="gear-panel">
+                      <div class="gear-section">
+                        <h3>Healing Tool</h3>
+                        <div class="gear-list">
+                          <div class="gear-item">
+                            <span class="gear-label">Healing Tool</span>
+                            {#if showcaseLoadout?.Gear?.Healing?.Name}
+                              <a class="gear-link" href={getEquipmentLink('healingtool', showcaseLoadout.Gear.Healing.Name)}>{showcaseLoadout.Gear.Healing.Name}</a>
+                            {:else}
+                              <span class="gear-empty">-</span>
+                            {/if}
+                          </div>
+                        </div>
+                      </div>
+                      <div class="gear-section">
+                        <h3>Enhancers</h3>
+                        <div class="enhancer-grid">
+                          <div class="enhancer-item">
+                            <span class="enhancer-label">Heal</span>
+                            <span class="enhancer-value">{showcaseLoadout?.Gear?.Healing?.Enhancers?.Heal ?? 0}</span>
+                          </div>
+                          <div class="enhancer-item">
+                            <span class="enhancer-label">Economy</span>
+                            <span class="enhancer-value">{showcaseLoadout?.Gear?.Healing?.Enhancers?.Economy ?? 0}</span>
+                          </div>
+                          <div class="enhancer-item">
+                            <span class="enhancer-label">Skill Mod</span>
+                            <span class="enhancer-value">{showcaseLoadout?.Gear?.Healing?.Enhancers?.SkillMod ?? 0}</span>
+                          </div>
+                        </div>
                       </div>
                     </div>
                   {/if}

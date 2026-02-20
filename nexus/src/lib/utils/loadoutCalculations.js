@@ -828,3 +828,96 @@ export function calculateItemTotalAbsorptionPreview(item) {
     ? totalDefense * ((maxTT - minTT) / (maxDecay / 100))
     : null;
 }
+
+// ========== Healing Calculations ==========
+
+export function calculateTotalHeal(tool, healEnhancers) {
+  if (tool == null || tool.Properties?.MaxHeal == null) return null;
+  return tool.Properties.MaxHeal * (1 + (healEnhancers ?? 0) * 0.1);
+}
+
+export function calculateHealInterval(tool, healSkill, skillModEnhancers, healEnhancers) {
+  if (tool == null || !tool.Properties || tool.Properties.MaxHeal == null || tool.Properties.MinHeal == null) return null;
+
+  const effectiveHealSkill = healSkill + (skillModEnhancers ?? 0) * 0.5;
+  const healBoost = 1 + (healEnhancers ?? 0) * 0.1;
+  const maxHeal = tool.Properties.MaxHeal * healBoost;
+  const minHeal = tool.Properties.MinHeal * healBoost;
+
+  if (tool.Properties.Skill?.IsSiB) {
+    const progress = getLerpProgress(
+      tool.Properties.Skill.LearningIntervalStart,
+      tool.Properties.Skill.LearningIntervalEnd,
+      effectiveHealSkill
+    );
+
+    return {
+      min: minHeal + (maxHeal - minHeal) * 0.25 * (1 + progress),
+      max: minHeal + (maxHeal - minHeal) * 0.5 * (1 + progress)
+    };
+  }
+  else {
+    return {
+      min: minHeal + (maxHeal - minHeal) * 0.25 * (1 + Math.min(effectiveHealSkill / 100, 1)),
+      max: maxHeal
+    };
+  }
+}
+
+export function calculateEffectiveHeal(healInterval) {
+  if (healInterval == null) return null;
+  return (healInterval.min + healInterval.max) / 2;
+}
+
+export function calculateHealReload(tool, healSkill, skillModEnhancers) {
+  if (tool == null || !tool.Properties || !tool.Properties.UsesPerMinute) return null;
+
+  const effectiveHealSkill = healSkill + (skillModEnhancers ?? 0) * 0.5;
+
+  if (!tool.Properties.Skill || !tool.Properties.Skill.IsSiB) {
+    return 60 / tool.Properties.UsesPerMinute;
+  }
+
+  if (effectiveHealSkill < tool.Properties.Skill.LearningIntervalStart) {
+    return 60 / (tool.Properties.UsesPerMinute * 0.45);
+  }
+  else {
+    const intervalSize = tool.Properties.Skill.LearningIntervalEnd - tool.Properties.Skill.LearningIntervalStart;
+    const scalingRange = intervalSize * 0.25;
+
+    const progress = getLerpProgress(
+      tool.Properties.Skill.LearningIntervalStart,
+      tool.Properties.Skill.LearningIntervalEnd != null ? tool.Properties.Skill.LearningIntervalEnd + scalingRange : null,
+      effectiveHealSkill
+    );
+
+    return 60 / (tool.Properties.UsesPerMinute * 0.8 + tool.Properties.UsesPerMinute * 0.2 * progress);
+  }
+}
+
+export function calculateHealDecay(tool, healEnhancers, economyEnhancers, markup) {
+  if (tool == null || tool.Properties?.Economy?.Decay == null) return null;
+  return tool.Properties.Economy.Decay * (1 + (healEnhancers ?? 0) * 0.1) * (1 - (economyEnhancers ?? 0) * 0.01111) * ((markup ?? 100) / 100);
+}
+
+export function calculateHPS(effectiveHeal, reload) {
+  return effectiveHeal != null && reload != null && reload > 0
+    ? effectiveHeal / reload
+    : null;
+}
+
+export function calculateHPP(effectiveHeal, healDecay) {
+  return effectiveHeal != null && healDecay != null && healDecay > 0
+    ? effectiveHeal / healDecay
+    : null;
+}
+
+export function calculateHealTotalUses(tool, healEnhancers, economyEnhancers) {
+  if (tool == null) return null;
+  const maxTT = tool.Properties?.Economy?.MaxTT ?? null;
+  const minTT = tool.Properties?.Economy?.MinTT ?? 0;
+  const baseDecay = tool.Properties?.Economy?.Decay;
+  if (maxTT == null || baseDecay == null) return null;
+  const decay = baseDecay * (1 + (healEnhancers ?? 0) * 0.1) * (1 - (economyEnhancers ?? 0) * 0.01111);
+  return Math.floor((maxTT - minTT) / (decay / 100));
+}

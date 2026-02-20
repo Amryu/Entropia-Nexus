@@ -21,6 +21,8 @@
         return `/items/clothing/${encode(name)}`;
       case 'pet':
         return `/items/pets/${encode(name)}`;
+      case 'healingtool':
+        return `/items/medicaltools/${encode(name)}`;
       default:
         return null;
     }
@@ -69,6 +71,8 @@
   $: armorLink = loadout?.Gear?.Armor?.ManageIndividual
     ? null
     : getEquipmentLink('armorset', loadout?.Gear?.Armor?.SetName || loadout?.Gear?.Armor?.Name);
+  $: healingLabel = loadout?.Gear?.Healing?.Name || '-';
+  $: healingLink = getEquipmentLink('healingtool', loadout?.Gear?.Healing?.Name);
   $: encodedShareCode = shareCode ? encodeURIComponent(shareCode) : null;
 </script>
 
@@ -92,6 +96,10 @@
       <span class="stat-label">DPP</span>
       <span class="stat-value">{formatStat(stats?.dpp, 4)}</span>
     </div>
+    <div class="stat-row primary">
+      <span class="stat-label">HPS</span>
+      <span class="stat-value">{formatStat(stats?.hps, 4)}</span>
+    </div>
   </div>
   <div class="gear-list">
     <div class="gear-row">
@@ -108,6 +116,14 @@
         <a class="gear-value gear-link" href={armorLink}>{armorLabel}</a>
       {:else}
         <span class="gear-value">{armorLabel}</span>
+      {/if}
+    </div>
+    <div class="gear-row">
+      <span class="gear-label">Healing</span>
+      {#if healingLink}
+        <a class="gear-value gear-link" href={healingLink}>{healingLabel}</a>
+      {:else}
+        <span class="gear-value">{healingLabel}</span>
       {/if}
     </div>
     <div class="gear-row">

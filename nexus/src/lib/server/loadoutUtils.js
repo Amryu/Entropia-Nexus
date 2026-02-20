@@ -1,5 +1,6 @@
 // @ts-nocheck
-const MAX_LOADOUT_BYTES = 20000;
+const MAX_LOADOUT_BYTES = 50000;
+const MAX_SETS_PER_SECTION = 10;
 const MAX_IMPORT_BYTES = 1024 * 1024; // 1MB per import request payload
 
 function clampNumber(value, fallback = 0, min = null, max = null) {
@@ -70,6 +71,14 @@ export function createEmptyLoadout() {
         },
         ManageIndividual: false
       },
+      Healing: {
+        Name: null,
+        Enhancers: {
+          Heal: 0,
+          Economy: 0,
+          SkillMod: 0
+        }
+      },
       Clothing: [],
       Consumables: [],
       Pet: {
@@ -77,9 +86,11 @@ export function createEmptyLoadout() {
         Effect: null
       }
     },
+    Sets: null,
     Skill: {
       Hit: 200,
-      Dmg: 200
+      Dmg: 200,
+      Heal: 200
     },
     Markup: {
       Weapon: 100,
@@ -110,7 +121,8 @@ export function createEmptyLoadout() {
         Legs: 100,
         Shins: 100,
         Feet: 100
-      }
+      },
+      HealingTool: 100
     }
   };
 }
@@ -133,6 +145,7 @@ export function sanitizeLoadoutData(input) {
 
   sanitized.Skill.Hit = clampNumber(input?.Skill?.Hit, 200, 0, 10000);
   sanitized.Skill.Dmg = clampNumber(input?.Skill?.Dmg, 200, 0, 10000);
+  sanitized.Skill.Heal = clampNumber(input?.Skill?.Heal, 200, 0, 10000);
 
   sanitized.Gear.Weapon.Name = sanitizeString(input?.Gear?.Weapon?.Name, null, 200);
   sanitized.Gear.Weapon.Amplifier = sanitizeNameObject(input?.Gear?.Weapon?.Amplifier);
@@ -173,6 +186,15 @@ export function sanitizeLoadoutData(input) {
     ? input.Gear.Consumables.map(sanitizeNameObject).filter(Boolean)
     : [];
 
+  sanitized.Gear.Healing = {
+    Name: sanitizeString(input?.Gear?.Healing?.Name, null, 200),
+    Enhancers: {
+      Heal: clampNumber(input?.Gear?.Healing?.Enhancers?.Heal, 0, 0, 10),
+      Economy: clampNumber(input?.Gear?.Healing?.Enhancers?.Economy, 0, 0, 10),
+      SkillMod: clampNumber(input?.Gear?.Healing?.Enhancers?.SkillMod, 0, 0, 10)
+    }
+  };
+
   sanitized.Gear.Pet = {
     Name: sanitizeString(input?.Gear?.Pet?.Name, null, 200),
     Effect: sanitizeString(input?.Gear?.Pet?.Effect, null, 200)
@@ -195,7 +217,165 @@ export function sanitizeLoadoutData(input) {
     sanitized.Markup.Plates[slot] = clampNumber(input?.Markup?.Plates?.[slot], 100, 0, 100000);
   });
 
+  sanitized.Markup.HealingTool = clampNumber(input?.Markup?.HealingTool, 100, 0, 100000);
+
+  // Sanitize Sets (multi-set support)
+  sanitized.Sets = sanitizeSets(input?.Sets);
+
   return sanitized;
+}
+
+function sanitizeWeaponGear(weapon) {
+  return {
+    Name: sanitizeString(weapon?.Name, null, 200),
+    Amplifier: sanitizeNameObject(weapon?.Amplifier),
+    Scope: sanitizeNameObject(weapon?.Scope),
+    Sight: sanitizeNameObject(weapon?.Sight),
+    Absorber: sanitizeNameObject(weapon?.Absorber),
+    Implant: sanitizeNameObject(weapon?.Implant),
+    Matrix: sanitizeNameObject(weapon?.Matrix),
+    Enhancers: {
+      Damage: clampNumber(weapon?.Enhancers?.Damage, 0, 0, 10),
+      Accuracy: clampNumber(weapon?.Enhancers?.Accuracy, 0, 0, 10),
+      Range: clampNumber(weapon?.Enhancers?.Range, 0, 0, 10),
+      Economy: clampNumber(weapon?.Enhancers?.Economy, 0, 0, 10),
+      SkillMod: clampNumber(weapon?.Enhancers?.SkillMod, 0, 0, 10)
+    }
+  };
+}
+
+function sanitizeWeaponMarkup(markup) {
+  return {
+    Weapon: clampNumber(markup?.Weapon, 100, 0, 100000),
+    Ammo: clampNumber(markup?.Ammo, 100, 0, 100000),
+    Amplifier: clampNumber(markup?.Amplifier, 100, 0, 100000),
+    Absorber: clampNumber(markup?.Absorber, 100, 0, 100000),
+    Scope: clampNumber(markup?.Scope, 100, 0, 100000),
+    Sight: clampNumber(markup?.Sight, 100, 0, 100000),
+    ScopeSight: clampNumber(markup?.ScopeSight, 100, 0, 100000),
+    Matrix: clampNumber(markup?.Matrix, 100, 0, 100000),
+    Implant: clampNumber(markup?.Implant, 100, 0, 100000)
+  };
+}
+
+function sanitizeArmorGear(armor) {
+  const armorSlots = ['Head', 'Torso', 'Arms', 'Hands', 'Legs', 'Shins', 'Feet'];
+  const result = {
+    SetName: sanitizeString(armor?.SetName, null, 200),
+    PlateName: sanitizeString(armor?.PlateName, null, 200),
+    Enhancers: {
+      Defense: clampNumber(armor?.Enhancers?.Defense, 0, 0, 10),
+      Durability: clampNumber(armor?.Enhancers?.Durability, 0, 0, 10)
+    },
+    ManageIndividual: !!armor?.ManageIndividual
+  };
+  armorSlots.forEach(slot => {
+    result[slot] = {
+      Name: sanitizeString(armor?.[slot]?.Name, null, 200),
+      Plate: sanitizeNameObject(armor?.[slot]?.Plate)
+    };
+  });
+  return result;
+}
+
+function sanitizeArmorMarkup(markup) {
+  const armorSlots = ['Head', 'Torso', 'Arms', 'Hands', 'Legs', 'Shins', 'Feet'];
+  const result = {
+    ArmorSet: clampNumber(markup?.ArmorSet, 100, 0, 100000),
+    PlateSet: clampNumber(markup?.PlateSet, 100, 0, 100000),
+    Armors: {},
+    Plates: {}
+  };
+  armorSlots.forEach(slot => {
+    result.Armors[slot] = clampNumber(markup?.Armors?.[slot], 100, 0, 100000);
+    result.Plates[slot] = clampNumber(markup?.Plates?.[slot], 100, 0, 100000);
+  });
+  return result;
+}
+
+function sanitizeHealingGear(healing) {
+  return {
+    Name: sanitizeString(healing?.Name, null, 200),
+    Enhancers: {
+      Heal: clampNumber(healing?.Enhancers?.Heal, 0, 0, 10),
+      Economy: clampNumber(healing?.Enhancers?.Economy, 0, 0, 10),
+      SkillMod: clampNumber(healing?.Enhancers?.SkillMod, 0, 0, 10)
+    }
+  };
+}
+
+function sanitizeHealingMarkup(markup) {
+  return {
+    HealingTool: clampNumber(markup?.HealingTool, 100, 0, 100000)
+  };
+}
+
+function sanitizeAccessoriesGear(gear) {
+  const clothing = Array.isArray(gear?.Clothing)
+    ? gear.Clothing
+      .map(item => ({
+        Slot: sanitizeString(item?.Slot, null, 60),
+        Side: sanitizeString(item?.Side, null, 20),
+        Name: sanitizeString(item?.Name ?? item, null, 200)
+      }))
+      .filter(item => item.Name && item.Slot)
+    : [];
+
+  const consumables = Array.isArray(gear?.Consumables)
+    ? gear.Consumables.map(sanitizeNameObject).filter(Boolean)
+    : [];
+
+  const pet = {
+    Name: sanitizeString(gear?.Pet?.Name, null, 200),
+    Effect: sanitizeString(gear?.Pet?.Effect, null, 200)
+  };
+
+  return { Clothing: clothing, Consumables: consumables, Pet: pet };
+}
+
+function sanitizeSetEntry(entry, sanitizeGearFn, sanitizeMarkupFn) {
+  if (!entry || typeof entry !== 'object') return null;
+  const result = {
+    id: sanitizeString(entry.id, null, 64),
+    name: sanitizeString(entry.name, 'Unnamed Set', 120),
+    isDefault: !!entry.isDefault,
+    gear: sanitizeGearFn(entry.gear)
+  };
+  if (sanitizeMarkupFn) {
+    result.markup = sanitizeMarkupFn(entry.markup);
+  }
+  return result;
+}
+
+function sanitizeSectionSets(arr, sanitizeGearFn, sanitizeMarkupFn) {
+  if (!Array.isArray(arr) || arr.length === 0) return null;
+  const sets = arr
+    .slice(0, MAX_SETS_PER_SECTION)
+    .map(entry => sanitizeSetEntry(entry, sanitizeGearFn, sanitizeMarkupFn))
+    .filter(Boolean);
+  if (sets.length === 0) return null;
+  // Ensure exactly one default
+  const hasDefault = sets.some(s => s.isDefault);
+  if (!hasDefault) sets[0].isDefault = true;
+  return sets;
+}
+
+function sanitizeSets(sets) {
+  if (!sets || typeof sets !== 'object') return null;
+
+  const weapon = sanitizeSectionSets(sets.Weapon, sanitizeWeaponGear, sanitizeWeaponMarkup);
+  const armor = sanitizeSectionSets(sets.Armor, sanitizeArmorGear, sanitizeArmorMarkup);
+  const healing = sanitizeSectionSets(sets.Healing, sanitizeHealingGear, sanitizeHealingMarkup);
+  const accessories = sanitizeSectionSets(sets.Accessories, sanitizeAccessoriesGear, null);
+
+  if (!weapon && !armor && !healing && !accessories) return null;
+
+  return {
+    Weapon: weapon,
+    Armor: armor,
+    Healing: healing,
+    Accessories: accessories
+  };
 }
 
 export function getPayloadSizeBytes(payload) {

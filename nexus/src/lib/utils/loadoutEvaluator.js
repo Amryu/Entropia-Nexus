@@ -286,7 +286,8 @@ export function evaluateLoadout(loadout, context = {}, options = {}) {
     armorSets: context.armorSets || [],
     clothing: context.clothing || [],
     pets: context.pets || [],
-    stimulants: context.stimulants || []
+    stimulants: context.stimulants || [],
+    medicalTools: context.medicalTools || []
   };
 
   const effectsCatalog = options.effectsCatalog || [];
@@ -300,6 +301,11 @@ export function evaluateLoadout(loadout, context = {}, options = {}) {
   const armorSetEffects = getActiveArmorSetEffects(loadout, armorSlots, entities.armors, entities.armorSets) || [];
   const clothingEquipEffects = getClothingEquipEffects(loadout, entities.clothing);
   const clothingSetEffects = getClothingSetEffects(loadout, entities.clothing);
+
+  // Healing tool effects
+  const healingTool = findByName(entities.medicalTools, loadout?.Gear?.Healing?.Name);
+  const healingEquipEffects = healingTool?.EffectsOnEquip ?? [];
+  const healingUseEffects = healingTool?.EffectsOnUse ?? [];
 
   // Bonus stats: count toward Total cap only (ignore Item/Action caps).
   const bonusEffects = [
@@ -322,7 +328,9 @@ export function evaluateLoadout(loadout, context = {}, options = {}) {
         ...armorEquipEffects,
         ...armorSetEffects,
         ...clothingEquipEffects,
-        ...clothingSetEffects
+        ...clothingSetEffects,
+        ...healingEquipEffects,
+        ...healingUseEffects
       ],
       actionEffects,
       bonusEffects
@@ -483,6 +491,38 @@ export function evaluateLoadout(loadout, context = {}, options = {}) {
   const armorMarkupCost = calcArmorMarkupCost(loadout, armorSlots, entities, isLimitedName);
   const plateMarkupCost = calcPlateMarkupCost(loadout, armorSlots, entities, isLimitedName);
 
+  // ---------- Healing Stats ----------
+  const healEnhancers = loadout?.Gear?.Healing?.Enhancers?.Heal ?? 0;
+  const healEcoEnhancers = loadout?.Gear?.Healing?.Enhancers?.Economy ?? 0;
+  const healSkillModEnhancers = loadout?.Gear?.Healing?.Enhancers?.SkillMod ?? 0;
+
+  const totalHeal = LoadoutCalc.calculateTotalHeal(healingTool, healEnhancers);
+  const healInterval = LoadoutCalc.calculateHealInterval(
+    healingTool,
+    loadout?.Skill?.Heal ?? 0,
+    healSkillModEnhancers,
+    healEnhancers
+  );
+  const effectiveHeal = LoadoutCalc.calculateEffectiveHeal(healInterval);
+  const healReload = LoadoutCalc.calculateHealReload(
+    healingTool,
+    loadout?.Skill?.Heal ?? 0,
+    healSkillModEnhancers
+  );
+  const healDecay = LoadoutCalc.calculateHealDecay(
+    healingTool,
+    healEnhancers,
+    healEcoEnhancers,
+    loadout?.Markup?.HealingTool ?? 100
+  );
+  const hps = LoadoutCalc.calculateHPS(effectiveHeal, healReload);
+  const hpp = LoadoutCalc.calculateHPP(effectiveHeal, healDecay);
+  const healTotalUses = LoadoutCalc.calculateHealTotalUses(
+    healingTool,
+    healEnhancers,
+    healEcoEnhancers
+  );
+
   return {
     offensiveTotals,
     effects: {
@@ -523,7 +563,15 @@ export function evaluateLoadout(loadout, context = {}, options = {}) {
       skillBonus,
       lowestTotalUses,
       armorMarkupCost,
-      plateMarkupCost
+      plateMarkupCost,
+      totalHeal,
+      healInterval,
+      effectiveHeal,
+      healReload,
+      healDecay,
+      hps,
+      hpp,
+      healTotalUses
     }
   };
 }
