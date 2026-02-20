@@ -40,4 +40,20 @@ const idOffsets = {
   equipSet:                 100000,
 };
 
-module.exports = { idOffsets };
+// All physical tables behind the Items VIEW (including sub-views: Tools, Attachments, Furnishings).
+// Used for cache invalidation — Items/Tools/Attachments/Furnishings are VIEWs with no TableChanges triggers.
+const ITEM_TABLES = [
+  // Direct in Items VIEW
+  'Materials', 'Weapons', 'Armors', 'Blueprints', 'Vehicles', 'Clothes',
+  'Consumables', 'CreatureControlCapsules', 'Pets',
+  // Tools VIEW
+  'MedicalTools', 'MiscTools', 'Refiners', 'Scanners', 'Finders', 'Excavators',
+  'BlueprintBooks', 'MedicalChips', 'TeleportationChips', 'EffectChips',
+  // Attachments VIEW
+  'WeaponAmplifiers', 'WeaponVisionAttachments', 'Absorbers', 'FinderAmplifiers',
+  'ArmorPlatings', 'Enhancers', 'MindforceImplants',
+  // Furnishings VIEW
+  'Furniture', 'Decorations', 'StorageContainers', 'Signs',
+];
+
+module.exports = { idOffsets, ITEM_TABLES };

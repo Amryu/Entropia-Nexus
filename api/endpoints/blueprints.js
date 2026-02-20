@@ -1,5 +1,5 @@
 const pgp = require('pg-promise')();
-const { idOffsets } = require('./constants');
+const { idOffsets, ITEM_TABLES } = require('./constants');
 const { parseItemList } = require('./utils');
 const { pool } = require('./dbClient');
 const { withCache, withCachedLookup } = require('./responseCache');
@@ -195,7 +195,7 @@ function register(app){
         if (products.length === 0) return res.status(400).send('Products cannot be empty');
         res.json(await getBlueprints(products));
       } else {
-        res.json(await withCache('/blueprints', ['Blueprints', 'BlueprintBooks', 'Items', 'Professions', 'BlueprintMaterials', 'BlueprintDrops'], getBlueprints));
+        res.json(await withCache('/blueprints', ['Blueprints', 'BlueprintBooks', ...ITEM_TABLES, 'Professions', 'BlueprintMaterials', 'BlueprintDrops'], getBlueprints));
       }
     } catch (e){ next(e); }
   });
@@ -219,7 +219,7 @@ function register(app){
    *        description: Blueprint not found
    */
   app.get('/blueprints/:blueprint', async (req,res) => {
-    const result = await withCachedLookup('/blueprints', ['Blueprints', 'BlueprintBooks', 'Items', 'Professions', 'BlueprintMaterials', 'BlueprintDrops'], getBlueprints, req.params.blueprint);
+    const result = await withCachedLookup('/blueprints', ['Blueprints', 'BlueprintBooks', ...ITEM_TABLES, 'Professions', 'BlueprintMaterials', 'BlueprintDrops'], getBlueprints, req.params.blueprint);
     if (result) res.json(result); else res.status(404).send('Blueprint not found');
   });
 }

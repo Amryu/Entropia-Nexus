@@ -3,6 +3,7 @@ const { getObjectByIdOrName } = require('./utils');
 const { getMobLoots, formatMobLoot } = require('./mobloots');
 const { getMobMaturities, formatMobMaturity } = require('./mobmaturities');
 const { getMobSpawns } = require('./mobspawns');
+const { ITEM_TABLES } = require('./constants');
 const { withCache, withCachedLookup } = require('./responseCache');
 
 // Match legacy query to include species and profession names; CodexType replaces IsCat4Codex
@@ -110,7 +111,7 @@ function register(app){
   app.get('/mobs', async (req,res)=>{
     try {
       if (res.headersSent || res.writableEnded) return;
-      const data = await withCache('/mobs', ['Mobs', 'MobSpecies', 'Planets', 'Professions', 'MobLoots', 'MobMaturities', 'MobSpawns', 'Items'], getMobs);
+      const data = await withCache('/mobs', ['Mobs', 'MobSpecies', 'Planets', 'Professions', 'MobLoots', 'MobMaturities', 'MobSpawns', ...ITEM_TABLES], getMobs);
       if (!res.headersSent) res.json(data);
     } catch (e) {
       if (!res.headersSent) res.status(500).json({ error: 'Failed to fetch mobs' });
@@ -136,7 +137,7 @@ function register(app){
   app.get('/mobs/:mob', async (req,res)=>{
     try {
       if (res.headersSent || res.writableEnded) return;
-      const r = await withCachedLookup('/mobs', ['Mobs', 'MobSpecies', 'Planets', 'Professions', 'MobLoots', 'MobMaturities', 'MobSpawns', 'Items'], getMobs, req.params.mob);
+      const r = await withCachedLookup('/mobs', ['Mobs', 'MobSpecies', 'Planets', 'Professions', 'MobLoots', 'MobMaturities', 'MobSpawns', ...ITEM_TABLES], getMobs, req.params.mob);
       if (r) {
         if (!res.headersSent) res.json(r);
       } else {

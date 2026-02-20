@@ -1,6 +1,6 @@
 const { getObjects, getObjectByIdOrName, generateGenderAliases } = require('./utils');
 const { pool } = require('./dbClient');
-const { idOffsets } = require('./constants');
+const { idOffsets, ITEM_TABLES } = require('./constants');
 const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = {
@@ -80,7 +80,7 @@ function register(app){
       const ids = req.query.Ids.split(',').map(s => s.trim()).filter(Boolean);
       res.json(await getItemsByIds(ids));
     } else {
-      res.json(await withCache('/items', ['Items', 'Armors', 'Clothes'], getItems));
+      res.json(await withCache('/items', ITEM_TABLES, getItems));
     }
   });
   app.get('/items/:item', async (req,res) => {
@@ -102,7 +102,7 @@ function register(app){
      *      '404':
      *        description: Item not found
      */
-    const it = await withCachedLookup('/items', ['Items', 'Armors', 'Clothes'], getItems, req.params.item);
+    const it = await withCachedLookup('/items', ITEM_TABLES, getItems, req.params.item);
     if (it) res.json(it); else res.status(404).send('Item not found');
   });
 }

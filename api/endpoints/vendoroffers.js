@@ -1,6 +1,7 @@
 const pgp = require("pg-promise")();
 const { getObjectByIdOrName, parseItemList } = require("./utils");
 const { pool } = require("./dbClient");
+const { ITEM_TABLES } = require('./constants');
 const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = {
@@ -131,7 +132,7 @@ function register(app) {
       if (items) {
         res.json(await getVendorOffers(items));
       } else {
-        res.json(await withCache('/vendoroffers', ['VendorOffers', 'VendorOfferPrices', 'Items', 'Locations', 'Planets'], getVendorOffers));
+        res.json(await withCache('/vendoroffers', ['VendorOffers', 'VendorOfferPrices', ...ITEM_TABLES, 'Locations', 'Planets'], getVendorOffers));
       }
     } catch (e) {
       next(e);
@@ -157,7 +158,7 @@ function register(app) {
    *        description: Vendor offer not found
    */
   app.get("/vendoroffers/:vendorOffer", async (req, res) => {
-    const r = await withCachedLookup('/vendoroffers', ['VendorOffers', 'VendorOfferPrices', 'Items', 'Locations', 'Planets'], getVendorOffers, req.params.vendorOffer);
+    const r = await withCachedLookup('/vendoroffers', ['VendorOffers', 'VendorOfferPrices', ...ITEM_TABLES, 'Locations', 'Planets'], getVendorOffers, req.params.vendorOffer);
     if (r) res.json(r);
     else res.status(404).send();
   });

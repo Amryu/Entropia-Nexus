@@ -1,5 +1,6 @@
 const { pool } = require('./dbClient');
 const { getObjectByIdOrName } = require('./utils');
+const { ITEM_TABLES } = require('./constants');
 const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = {
@@ -61,7 +62,7 @@ function register(app){
    *      '200':
    *        description: A list of equip sets
    */
-  app.get('/equipsets', async (req,res) => { res.json(await withCache('/equipsets', ['EquipSets', 'EquipSetItems', 'Items', 'EffectsOnSetEquip', 'Effects'], getEquipSets)); });
+  app.get('/equipsets', async (req,res) => { res.json(await withCache('/equipsets', ['EquipSets', 'EquipSetItems', ...ITEM_TABLES, 'EffectsOnSetEquip', 'Effects'], getEquipSets)); });
   /**
    * @swagger
    * /equipsets/{equipSet}:
@@ -80,7 +81,7 @@ function register(app){
    *      '404':
    *        description: Equip set not found
    */
-  app.get('/equipsets/:equipSet', async (req,res) => { const r = await withCachedLookup('/equipsets', ['EquipSets', 'EquipSetItems', 'Items', 'EffectsOnSetEquip', 'Effects'], getEquipSets, req.params.equipSet); if (r) res.json(r); else res.status(404).send(); });
+  app.get('/equipsets/:equipSet', async (req,res) => { const r = await withCachedLookup('/equipsets', ['EquipSets', 'EquipSetItems', ...ITEM_TABLES, 'EffectsOnSetEquip', 'Effects'], getEquipSets, req.params.equipSet); if (r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getEquipSets, getEquipSet };

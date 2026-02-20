@@ -1,6 +1,7 @@
 const pgp = require('pg-promise')();
 const { getObjects } = require('./utils');
 const { pool } = require('./dbClient');
+const { ITEM_TABLES } = require('./constants');
 const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = {
@@ -103,7 +104,7 @@ function register(app){
    *      '200':
    *        description: A list of vendors
    */
-  app.get('/vendors', async (req,res) => { res.json(await withCache('/vendors', ['Locations', 'Planets', 'VendorOffers', 'VendorOfferPrices', 'Items'], getVendors)); });
+  app.get('/vendors', async (req,res) => { res.json(await withCache('/vendors', ['Locations', 'Planets', 'VendorOffers', 'VendorOfferPrices', ...ITEM_TABLES], getVendors)); });
   /**
    * @swagger
    * /vendors/{vendor}:
@@ -122,7 +123,7 @@ function register(app){
    *      '404':
    *        description: Vendor not found
    */
-  app.get('/vendors/:vendor', async (req,res) => { const r = await withCachedLookup('/vendors', ['Locations', 'Planets', 'VendorOffers', 'VendorOfferPrices', 'Items'], getVendors, req.params.vendor); if (r) res.json(r); else res.status(404).send(); });
+  app.get('/vendors/:vendor', async (req,res) => { const r = await withCachedLookup('/vendors', ['Locations', 'Planets', 'VendorOffers', 'VendorOfferPrices', ...ITEM_TABLES], getVendors, req.params.vendor); if (r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getVendors, getVendor, formatVendor };
