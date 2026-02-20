@@ -170,7 +170,7 @@ function formatNum(v: number, usePrecision: boolean): string {
 
 /**
  * Format a markup value for display.
- * - Percentage: thousands separators, up to 4 decimals if < 105%, scientific notation if >= 100,000%
+ * - Percentage: thousands separators, up to 4 decimals if < 105%, scientific notation if >= 10,000,000%
  * - Absolute: thousands separators, up to 4 decimals, scientific notation for very small values
  */
 export function formatMarkupValue(value: any, absolute: boolean): string {
@@ -179,7 +179,7 @@ export function formatMarkupValue(value: any, absolute: boolean): string {
   if (absolute) {
     return `+${formatNum(v, v < 5)}`;
   }
-  if (v >= 100000) return `${v.toExponential(2)}%`;
+  if (v >= 10_000_000) return `${v.toExponential(2)}%`;
   return `${formatNum(v, v < 105)}%`;
 }
 
