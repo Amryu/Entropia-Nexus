@@ -473,3 +473,93 @@ export async function resolveUnknownItem(unknownItemId, resolvedItemId = null) {
   );
   return rows[0] || null;
 }
+
+// --- Container custom names ---
+
+/**
+ * Get all custom container names for a user.
+ */
+export async function getUserContainerNames(userId) {
+  const { rows } = await pool.query(
+    `SELECT id, container_path, custom_name, container_ref, item_name, updated_at
+     FROM user_container_names
+     WHERE user_id = $1`,
+    [userId]
+  );
+  return rows;
+}
+
+/**
+ * Upsert a custom container name.
+ */
+export async function upsertContainerName(userId, containerPath, customName, containerRef = null, itemName = '') {
+  const { rows } = await pool.query(
+    `INSERT INTO user_container_names (user_id, container_path, custom_name, container_ref, item_name, updated_at)
+     VALUES ($1, $2, $3, $4, $5, NOW())
+     ON CONFLICT (user_id, container_path)
+     DO UPDATE SET
+       custom_name = EXCLUDED.custom_name,
+       container_ref = COALESCE(EXCLUDED.container_ref, user_container_names.container_ref),
+       item_name = COALESCE(NULLIF(EXCLUDED.item_name, ''), user_container_names.item_name),
+       updated_at = NOW()
+     RETURNING id, container_path, custom_name, container_ref, item_name, updated_at`,
+    [userId, containerPath, customName, containerRef, itemName]
+  );
+  return rows[0] || null;
+}
+
+/**
+ * Delete a custom container name (revert to default).
+ */
+export async function deleteContainerName(userId, containerPath) {
+  const { rowCount } = await pool.query(
+    `DELETE FROM user_container_names WHERE user_id = $1 AND container_path = $2`,
+    [userId, containerPath]
+  );
+  return rowCount > 0;
+}
+
+/**
+ * Batch remap container name paths after an import.
+ * remaps: [{ oldPath, newPath, containerRef? }]
+ * removePaths: string[] — orphaned paths to delete
+ */
+export async function remapContainerNames(userId, remaps = [], removePaths = []) {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    for (const { oldPath, newPath, containerRef } of remaps) {
+      if (containerRef != null) {
+        await client.query(
+          `UPDATE user_container_names
+           SET container_path = $3, container_ref = $4, updated_at = NOW()
+           WHERE user_id = $1 AND container_path = $2`,
+          [userId, oldPath, newPath, containerRef]
+        );
+      } else {
+        await client.query(
+          `UPDATE user_container_names
+           SET container_path = $3, updated_at = NOW()
+           WHERE user_id = $1 AND container_path = $2`,
+          [userId, oldPath, newPath]
+        );
+      }
+    }
+
+    if (removePaths.length > 0) {
+      await client.query(
+        `DELETE FROM user_container_names
+         WHERE user_id = $1 AND container_path = ANY($2)`,
+        [userId, removePaths]
+      );
+    }
+
+    await client.query('COMMIT');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}

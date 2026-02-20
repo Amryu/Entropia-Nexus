@@ -31,6 +31,10 @@
   // Diff state (computed in preview)
   let diffSummary = { added: 0, changed: 0, removed: 0, unchanged: 0 };
 
+  // Container ref mapping for cross-import name preservation
+  // Maps raw containerRefId → { path, itemName }
+  let containerRefMap = new Map();
+
   // Order coverage state (computed after import)
   let discrepancies = [];
   let checkingCoverage = false;
@@ -395,7 +399,26 @@
       return true;
     });
 
-    // 6. Compute diff against current inventory
+    // 6. Build container ref → path mapping for cross-import name preservation
+    // A "container" is any item referenced by another item's containerRefId
+    const referencedRefs = new Set();
+    for (const raw of data) {
+      const ref = raw.containerRefId ?? raw.container_ref_id ?? null;
+      if (ref != null) referencedRefs.add(ref);
+    }
+    containerRefMap = new Map();
+    for (const refId of referencedRefs) {
+      const containerItem = data.find(d => d.id === refId);
+      if (containerItem) {
+        const path = buildContainerPath(refId, containerMap, data);
+        const name = (containerItem.item_name ?? containerItem.ItemName ?? containerItem.Name ?? containerItem.name ?? '').replace(/\s+/g, ' ').trim();
+        if (path) {
+          containerRefMap.set(refId, { path, itemName: name });
+        }
+      }
+    }
+
+    // 7. Compute diff against current inventory
     computeDiff();
 
     step = 'preview';
@@ -471,6 +494,9 @@
       inventory.set(allImported.map((item, i) => ({ ...item, id: i + 1 })));
       step = 'done';
       dispatch('imported', data);
+
+      // Remap container custom names (best-effort, non-blocking)
+      remapContainerNames(allImported);
 
       // Check order coverage
       checkingCoverage = true;
@@ -601,6 +627,137 @@
     } catch {}
   }
 
+  // --- Container name preservation across imports ---
+
+  /**
+   * Try to find a new container_path for a saved name whose old path no longer exists.
+   * Strategies (in order):
+   *   1. Ref match: saved container_ref matches a ref in the new import
+   *   2. Name + parent: same item_name under the same parent path
+   *   3. Name + root: same item_name under the same root storage
+   */
+  function findRemappedPath(saved, newPathSet, newPathsByItemName) {
+    // Strategy 1: Match by container_ref
+    if (saved.container_ref != null) {
+      const refInfo = containerRefMap.get(saved.container_ref);
+      if (refInfo && newPathSet.has(refInfo.path)) {
+        return { newPath: refInfo.path, containerRef: saved.container_ref };
+      }
+    }
+
+    // Strategy 2: Same item_name under same parent
+    const savedSegments = saved.container_path.split(' > ');
+    const savedItemName = saved.item_name || savedSegments[savedSegments.length - 1];
+    const candidates = newPathsByItemName.get(savedItemName) || [];
+
+    if (savedSegments.length >= 2) {
+      const savedParent = savedSegments.slice(0, -1).join(' > ');
+      for (const candidate of candidates) {
+        const candSegments = candidate.path.split(' > ');
+        const candParent = candSegments.slice(0, -1).join(' > ');
+        if (candParent === savedParent) {
+          return { newPath: candidate.path, containerRef: candidate.ref };
+        }
+      }
+    }
+
+    // Strategy 3: Same item_name under same root storage
+    const savedRoot = savedSegments[0];
+    for (const candidate of candidates) {
+      const candRoot = candidate.path.split(' > ')[0];
+      if (candRoot === savedRoot) {
+        return { newPath: candidate.path, containerRef: candidate.ref };
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * After a successful import, remap saved container custom names to match
+   * the new container paths. Best-effort — errors don't block the import flow.
+   */
+  async function remapContainerNames(allImported) {
+    try {
+      // 1. Fetch existing container names
+      const res = await fetch('/api/users/inventory/containers');
+      if (!res.ok) return;
+      const savedNames = await res.json();
+      if (!Array.isArray(savedNames) || savedNames.length === 0) return;
+
+      // 2. Build set of all container_path values in the new import
+      const newPathSet = new Set();
+      for (const item of allImported) {
+        if (item.container_path) newPathSet.add(item.container_path);
+      }
+
+      // 3. Build lookup: item_name → [{ path, ref }] for new import containers
+      //    A "container" is any path segment that appears as a non-root in a container_path
+      const newPathsByItemName = new Map();
+      for (const path of newPathSet) {
+        const segments = path.split(' > ');
+        // Register each non-root segment with its full sub-path
+        for (let i = 1; i < segments.length; i++) {
+          const subPath = segments.slice(0, i + 1).join(' > ');
+          const itemName = segments[i];
+          if (!newPathsByItemName.has(itemName)) {
+            newPathsByItemName.set(itemName, []);
+          }
+          // Find ref for this container (reverse lookup from containerRefMap)
+          let ref = null;
+          for (const [refId, info] of containerRefMap) {
+            if (info.path === subPath) { ref = refId; break; }
+          }
+          newPathsByItemName.get(itemName).push({ path: subPath, ref });
+        }
+      }
+
+      // 4. For each saved name, check if path still exists; if not, try remapping
+      const remaps = [];
+      const removePaths = [];
+      for (const saved of savedNames) {
+        if (newPathSet.has(saved.container_path)) {
+          // Path still exists — update container_ref if we have a new one
+          for (const [refId, info] of containerRefMap) {
+            if (info.path === saved.container_path && refId !== saved.container_ref) {
+              remaps.push({
+                old_path: saved.container_path,
+                new_path: saved.container_path,
+                container_ref: refId,
+              });
+              break;
+            }
+          }
+          continue;
+        }
+
+        // Path doesn't exist in new import — try to find a match
+        const match = findRemappedPath(saved, newPathSet, newPathsByItemName);
+        if (match) {
+          remaps.push({
+            old_path: saved.container_path,
+            new_path: match.newPath,
+            container_ref: match.containerRef,
+          });
+        } else {
+          removePaths.push(saved.container_path);
+        }
+      }
+
+      // 5. Send remap request if there's anything to do
+      if (remaps.length > 0 || removePaths.length > 0) {
+        await fetch('/api/users/inventory/containers', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ remaps, remove_paths: removePaths }),
+        });
+      }
+    } catch (err) {
+      // Best-effort — don't break import flow
+      console.error('Container name remap failed:', err);
+    }
+  }
+
   // --- UI helpers ---
 
   const previewColumns = [
@@ -645,6 +802,7 @@
     showHelp = false;
     showUnresolved = false;
     inputMode = 'text';
+    containerRefMap = new Map();
     dispatch('close');
   }
 

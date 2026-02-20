@@ -28,6 +28,7 @@
   let userMarkups = new Map(); // item_id → markup value
   let importHistory = [];
   let userSellOrders = new Map(); // item_id → [{ id, planet, computed_state }]
+  let containerNames = new Map(); // container_path → custom_name
   let loading = true;
   let error = null;
 
@@ -88,12 +89,13 @@
     loading = true;
     error = null;
     try {
-      const [invRes, exchangeRes, markupRes, histRes, ordersRes] = await Promise.all([
+      const [invRes, exchangeRes, markupRes, histRes, ordersRes, containerNamesRes] = await Promise.all([
         fetch('/api/users/inventory'),
         fetch('/api/market/exchange'),
         user?.verified ? fetch('/api/users/inventory/markups') : Promise.resolve(null),
         user?.verified ? fetch('/api/users/inventory/imports?limit=5') : Promise.resolve(null),
         user?.verified ? fetch('/api/market/exchange/orders') : Promise.resolve(null),
+        user?.verified ? fetch('/api/users/inventory/containers') : Promise.resolve(null),
       ]);
 
       if (invRes.ok) {
@@ -137,6 +139,14 @@
           const list = userSellOrders.get(o.item_id) || [];
           list.push(o);
           userSellOrders.set(o.item_id, list);
+        }
+      }
+
+      if (containerNamesRes?.ok) {
+        const names = await containerNamesRes.json();
+        containerNames = new Map();
+        for (const entry of names) {
+          containerNames.set(entry.container_path, entry.custom_name);
         }
       }
     } catch (err) {
@@ -491,6 +501,46 @@
     addToast('Inventory imported successfully', 'success');
   }
 
+  // --- Container renaming ---
+  async function handleSaveContainerName(e) {
+    const { path, name, itemName } = e.detail;
+    try {
+      const res = await fetch('/api/users/inventory/containers', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ container_path: path, custom_name: name, item_name: itemName }),
+      });
+      if (res.status === 429) {
+        addToast('Too many updates. Please slow down.', 'warning');
+        return;
+      }
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        addToast(data.error || 'Failed to rename container', 'error');
+        return;
+      }
+      containerNames.set(path, name);
+      containerNames = containerNames;
+    } catch {
+      addToast('Failed to rename container', 'error');
+    }
+  }
+
+  async function handleDeleteContainerName(e) {
+    const { path } = e.detail;
+    try {
+      await fetch('/api/users/inventory/containers', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ container_path: path }),
+      });
+      containerNames.delete(path);
+      containerNames = containerNames;
+    } catch {
+      // Non-critical — silently handle
+    }
+  }
+
   // --- Item dialog ---
   function openItemDialog(item) {
     detailItem = item;
@@ -627,21 +677,21 @@
       <div class="inventory-header">
         <h1>Inventory</h1>
         <div class="header-actions">
-          {#if latestImport}
-            <button class="btn btn-ghost btn-sm" on:click={toggleDeltaPanel}
-              title="Show changes from last import">
-              Changes
-              {#if latestImport.summary}
-                <span class="badge badge-subtle badge-info">
-                  {(latestImport.summary.added || 0) + (latestImport.summary.updated || 0) + (latestImport.summary.removed || 0)}
-                </span>
-              {/if}
-            </button>
-            <button class="btn btn-ghost btn-sm" on:click={() => showHistoryPanel = true}
-              title="View import history and value chart">
-              History
-            </button>
-          {/if}
+          <button class="btn btn-ghost btn-sm" on:click={toggleDeltaPanel}
+            title={latestImport ? 'Show changes from last import' : 'Import your inventory first to see changes'}
+            disabled={!latestImport}>
+            Changes
+            {#if latestImport?.summary}
+              <span class="badge badge-subtle badge-info">
+                {(latestImport.summary.added || 0) + (latestImport.summary.updated || 0) + (latestImport.summary.removed || 0)}
+              </span>
+            {/if}
+          </button>
+          <button class="btn btn-ghost btn-sm" on:click={() => showHistoryPanel = true}
+            title={latestImport ? 'View import history and value chart' : 'Import your inventory first to see history'}
+            disabled={!latestImport}>
+            History
+          </button>
           <button class="btn btn-primary btn-sm" on:click={() => showImportDialog = true}>
             Import
           </button>
@@ -951,10 +1001,13 @@
               items={filteredItems}
               {editingMarkupId}
               {editingMarkupValue}
+              {containerNames}
               on:rowClick={(e) => openItemDialog(e.detail.row)}
               on:startMarkupEdit={(e) => startMarkupEdit(e.detail.item)}
               on:markupInput={(e) => { editingMarkupValue = e.detail.value; handleMarkupInput(); }}
               on:finishMarkupEdit={finishMarkupEdit}
+              on:saveContainerName={handleSaveContainerName}
+              on:deleteContainerName={handleDeleteContainerName}
             />
           {/if}
           </div>

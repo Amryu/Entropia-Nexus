@@ -146,6 +146,76 @@ test.describe('Inventory Short URL', () => {
   });
 });
 
+test.describe('Inventory Container Rename', () => {
+  test('rename button only appears on non-root containers in tree view', async ({ verifiedUser }) => {
+    // Import items with a nested container hierarchy
+    await verifiedUser.request.put('/api/users/inventory', {
+      data: {
+        items: [
+          {
+            item_id: 1000001,
+            item_name: 'Test Material',
+            quantity: 100,
+            value: 1.0,
+            container: 'Calypso',
+            container_path: 'STORAGE (Calypso) > Sleipnir Mk.1 (C,L)',
+          }
+        ],
+        sync: true
+      }
+    });
+
+    await verifiedUser.goto('/account/inventory', { waitUntil: 'networkidle' });
+    await verifiedUser.waitForTimeout(TIMEOUT_MEDIUM);
+
+    // Switch to Tree view
+    const treeBtn = verifiedUser.getByRole('button', { name: 'Tree' });
+    await treeBtn.click();
+    await verifiedUser.waitForTimeout(TIMEOUT_SHORT);
+
+    // Wait for tree containers to render
+    const containers = verifiedUser.locator('.tree-container');
+    await expect(containers.first()).toBeVisible({ timeout: TIMEOUT_MEDIUM });
+
+    // Expand root to reveal child containers
+    await containers.first().click();
+    await verifiedUser.waitForTimeout(TIMEOUT_SHORT);
+
+    // The rename-btn should exist in DOM only for non-root containers (depth > 0)
+    const renameBtns = verifiedUser.locator('.rename-btn');
+    const btnCount = await renameBtns.count();
+    // We imported a nested container, so there should be at least one rename button
+    expect(btnCount).toBeGreaterThanOrEqual(1);
+  });
+
+  test('container name API persists custom names', async ({ verifiedUser }) => {
+    const testPath = 'STORAGE (Calypso) > Test Rename Container (L)';
+
+    // Create a custom name via API
+    const putRes = await verifiedUser.request.put('/api/users/inventory/containers', {
+      data: {
+        container_path: testPath,
+        custom_name: 'My Custom Name',
+        item_name: 'Test Rename Container (L)',
+      }
+    });
+    expect(putRes.ok()).toBeTruthy();
+
+    // Verify it's returned in GET
+    const getRes = await verifiedUser.request.get('/api/users/inventory/containers');
+    expect(getRes.ok()).toBeTruthy();
+    const names = await getRes.json();
+    const found = names.find((n: any) => n.container_path === testPath);
+    expect(found).toBeTruthy();
+    expect(found.custom_name).toBe('My Custom Name');
+
+    // Cleanup
+    await verifiedUser.request.delete('/api/users/inventory/containers', {
+      data: { container_path: testPath }
+    });
+  });
+});
+
 test.describe('Inventory Mobile Layout', () => {
   test('sidebar becomes overlay on mobile', async ({ verifiedUser }) => {
     await verifiedUser.setViewportSize({ width: 600, height: 800 });

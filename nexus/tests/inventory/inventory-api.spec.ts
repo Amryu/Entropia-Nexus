@@ -236,6 +236,222 @@ test.describe('Import History API', () => {
   });
 });
 
+test.describe('Container Names API', () => {
+  const TEST_PATH = 'STORAGE (Calypso) > Test Vehicle (C,L)';
+  const TEST_PATH_2 = 'STORAGE (Calypso) > Another Container (L)';
+
+  test.describe('GET /api/users/inventory/containers', () => {
+    test('returns container names for verified user', async ({ verifiedUser }) => {
+      const response = await verifiedUser.request.get('/api/users/inventory/containers');
+      expect(response.ok()).toBeTruthy();
+
+      const data = await response.json();
+      expect(Array.isArray(data)).toBeTruthy();
+    });
+
+    test('rejects unauthenticated requests', async ({ page }) => {
+      const response = await page.request.get('/api/users/inventory/containers');
+      expect(response.ok()).toBeFalsy();
+    });
+
+    test('rejects unverified users', async ({ unverifiedUser }) => {
+      const response = await unverifiedUser.request.get('/api/users/inventory/containers');
+      expect(response.ok()).toBeFalsy();
+      expect(response.status()).toBe(403);
+    });
+  });
+
+  test.describe('PUT /api/users/inventory/containers', () => {
+    test('upserts a container name', async ({ verifiedUser }) => {
+      const response = await verifiedUser.request.put('/api/users/inventory/containers', {
+        data: {
+          container_path: TEST_PATH,
+          custom_name: 'My Vehicle',
+          item_name: 'Test Vehicle (C,L)',
+        }
+      });
+      expect(response.ok()).toBeTruthy();
+
+      // Verify it appears in GET
+      const getRes = await verifiedUser.request.get('/api/users/inventory/containers');
+      const names = await getRes.json();
+      const found = names.find((n: any) => n.container_path === TEST_PATH);
+      expect(found).toBeTruthy();
+      expect(found.custom_name).toBe('My Vehicle');
+    });
+
+    test('updates existing container name', async ({ verifiedUser }) => {
+      // Create
+      await verifiedUser.request.put('/api/users/inventory/containers', {
+        data: {
+          container_path: TEST_PATH,
+          custom_name: 'Old Name',
+          item_name: 'Test Vehicle (C,L)',
+        }
+      });
+
+      // Update
+      const response = await verifiedUser.request.put('/api/users/inventory/containers', {
+        data: {
+          container_path: TEST_PATH,
+          custom_name: 'New Name',
+          item_name: 'Test Vehicle (C,L)',
+        }
+      });
+      expect(response.ok()).toBeTruthy();
+
+      const getRes = await verifiedUser.request.get('/api/users/inventory/containers');
+      const names = await getRes.json();
+      const found = names.find((n: any) => n.container_path === TEST_PATH);
+      expect(found.custom_name).toBe('New Name');
+    });
+
+    test('rejects renaming base storages (no > separator)', async ({ verifiedUser }) => {
+      const response = await verifiedUser.request.put('/api/users/inventory/containers', {
+        data: {
+          container_path: 'STORAGE (Calypso)',
+          custom_name: 'My Planet',
+          item_name: 'STORAGE (Calypso)',
+        }
+      });
+      expect(response.ok()).toBeFalsy();
+      expect(response.status()).toBe(400);
+    });
+
+    test('rejects empty custom_name', async ({ verifiedUser }) => {
+      const response = await verifiedUser.request.put('/api/users/inventory/containers', {
+        data: {
+          container_path: TEST_PATH,
+          custom_name: '',
+          item_name: 'Test Vehicle (C,L)',
+        }
+      });
+      expect(response.ok()).toBeFalsy();
+      expect(response.status()).toBe(400);
+    });
+
+    test('rejects empty container_path', async ({ verifiedUser }) => {
+      const response = await verifiedUser.request.put('/api/users/inventory/containers', {
+        data: {
+          container_path: '',
+          custom_name: 'Name',
+          item_name: 'Something',
+        }
+      });
+      expect(response.ok()).toBeFalsy();
+      expect(response.status()).toBe(400);
+    });
+  });
+
+  test.describe('DELETE /api/users/inventory/containers', () => {
+    test('deletes an existing container name', async ({ verifiedUser }) => {
+      // Create first
+      await verifiedUser.request.put('/api/users/inventory/containers', {
+        data: {
+          container_path: TEST_PATH_2,
+          custom_name: 'To Delete',
+          item_name: 'Another Container (L)',
+        }
+      });
+
+      // Delete
+      const response = await verifiedUser.request.delete('/api/users/inventory/containers', {
+        data: { container_path: TEST_PATH_2 }
+      });
+      expect(response.ok()).toBeTruthy();
+
+      // Verify it's gone
+      const getRes = await verifiedUser.request.get('/api/users/inventory/containers');
+      const names = await getRes.json();
+      const found = names.find((n: any) => n.container_path === TEST_PATH_2);
+      expect(found).toBeFalsy();
+    });
+
+    test('returns 404 for non-existent path', async ({ verifiedUser }) => {
+      const response = await verifiedUser.request.delete('/api/users/inventory/containers', {
+        data: { container_path: 'STORAGE (Calypso) > Non Existent' }
+      });
+      expect(response.status()).toBe(404);
+    });
+  });
+
+  test.describe('PATCH /api/users/inventory/containers (remap)', () => {
+    test('remaps container paths', async ({ verifiedUser }) => {
+      const oldPath = 'STORAGE (Calypso) > Remap Source (C,L)';
+      const newPath = 'STORAGE (Calypso) > Remap Target (C,L)';
+
+      // Create a name at the old path
+      await verifiedUser.request.put('/api/users/inventory/containers', {
+        data: {
+          container_path: oldPath,
+          custom_name: 'Remapped Container',
+          item_name: 'Remap Source (C,L)',
+        }
+      });
+
+      // Remap
+      const response = await verifiedUser.request.patch('/api/users/inventory/containers', {
+        data: {
+          remaps: [{ old_path: oldPath, new_path: newPath }],
+          remove_paths: [],
+        }
+      });
+      expect(response.ok()).toBeTruthy();
+
+      // Verify the name is now at the new path
+      const getRes = await verifiedUser.request.get('/api/users/inventory/containers');
+      const names = await getRes.json();
+      const found = names.find((n: any) => n.container_path === newPath);
+      expect(found).toBeTruthy();
+      expect(found.custom_name).toBe('Remapped Container');
+      const oldFound = names.find((n: any) => n.container_path === oldPath);
+      expect(oldFound).toBeFalsy();
+    });
+
+    test('removes orphaned paths', async ({ verifiedUser }) => {
+      const orphanPath = 'STORAGE (Calypso) > Orphan Container (L)';
+
+      // Create a name
+      await verifiedUser.request.put('/api/users/inventory/containers', {
+        data: {
+          container_path: orphanPath,
+          custom_name: 'Orphan',
+          item_name: 'Orphan Container (L)',
+        }
+      });
+
+      // Remove it via PATCH
+      const response = await verifiedUser.request.patch('/api/users/inventory/containers', {
+        data: {
+          remaps: [],
+          remove_paths: [orphanPath],
+        }
+      });
+      expect(response.ok()).toBeTruthy();
+
+      // Verify it's gone
+      const getRes = await verifiedUser.request.get('/api/users/inventory/containers');
+      const names = await getRes.json();
+      const found = names.find((n: any) => n.container_path === orphanPath);
+      expect(found).toBeFalsy();
+    });
+  });
+
+  // Cleanup: remove test data after all container name tests
+  test.afterEach(async ({ verifiedUser }) => {
+    // Best-effort cleanup of test container names
+    const getRes = await verifiedUser.request.get('/api/users/inventory/containers');
+    if (getRes.ok()) {
+      const names = await getRes.json();
+      for (const n of names) {
+        await verifiedUser.request.delete('/api/users/inventory/containers', {
+          data: { container_path: n.container_path }
+        });
+      }
+    }
+  });
+});
+
 test.describe('Admin Unknown Items API', () => {
   test.describe('GET /api/admin/unknown-items', () => {
     test('returns unknown items for admin', async ({ adminUser }) => {

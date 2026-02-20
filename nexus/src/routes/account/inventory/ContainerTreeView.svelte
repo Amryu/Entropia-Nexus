@@ -6,11 +6,16 @@
   export let items = [];
   export let editingMarkupId = null;
   export let editingMarkupValue = '';
+  export let containerNames = new Map();
 
   const dispatch = createEventDispatcher();
 
   let expandedPaths = new Set();
   let expandedVersion = 0; // Trigger reactivity on set changes
+
+  // Container rename state
+  let editingContainerPath = null;
+  let editingContainerName = '';
 
   // Build tree from items' container_path
   $: tree = buildTree(items);
@@ -124,6 +129,37 @@
     dispatch('finishMarkupEdit');
   }
 
+  // --- Container rename ---
+
+  function startContainerRename(node) {
+    editingContainerPath = node.path;
+    editingContainerName = containerNames?.get(node.path) || node.name;
+  }
+
+  function finishContainerRename() {
+    if (editingContainerPath == null) return;
+    const path = editingContainerPath;
+    const name = editingContainerName.trim();
+
+    // Extract original segment name from the path
+    const segments = path.split(' > ');
+    const originalName = segments[segments.length - 1];
+
+    if (!name || name === originalName) {
+      // Revert to default — delete custom name
+      dispatch('deleteContainerName', { path });
+    } else {
+      dispatch('saveContainerName', { path, name, itemName: originalName });
+    }
+    editingContainerPath = null;
+    editingContainerName = '';
+  }
+
+  function cancelContainerRename() {
+    editingContainerPath = null;
+    editingContainerName = '';
+  }
+
   // Depend on both tree AND expandedVersion for reactivity
   $: flatRows = (expandedVersion, flattenTree(tree, expandedPaths));
 </script>
@@ -138,7 +174,7 @@
         <div
           class="tree-row tree-container"
           class:expanded={expandedPaths.has(row.node.path)}
-          on:click={() => toggleExpand(row.node.path)}
+          on:click={() => editingContainerPath !== row.node.path && toggleExpand(row.node.path)}
         >
           <span class="tree-indent" style="width: {row.node.depth * 12}px"></span>
           <span class="tree-arrow">
@@ -148,7 +184,44 @@
               ·
             {/if}
           </span>
-          <span class="tree-name">{row.node.name}</span>
+          <span class="tree-name">
+            {#if editingContainerPath === row.node.path}
+              <!-- svelte-ignore a11y-autofocus -->
+              <input
+                type="text"
+                class="container-name-input"
+                bind:value={editingContainerName}
+                on:blur={finishContainerRename}
+                on:keydown={(e) => {
+                  if (e.key === 'Enter') finishContainerRename();
+                  if (e.key === 'Escape') cancelContainerRename();
+                }}
+                on:click|stopPropagation
+                autofocus
+                maxlength="100"
+              />
+            {:else}
+              {@const customName = containerNames?.get(row.node.path)}
+              <span
+                class="container-label"
+                class:has-custom-name={!!customName}
+                title={customName ? `Original: ${row.node.name}` : row.node.name}
+              >
+                {customName || row.node.name}
+              </span>
+              {#if row.node.depth > 0}
+                <!-- svelte-ignore a11y-click-events-have-key-events -->
+                <span
+                  class="rename-btn"
+                  role="button"
+                  tabindex="0"
+                  on:click|stopPropagation={() => startContainerRename(row.node)}
+                  on:keydown|stopPropagation={(e) => e.key === 'Enter' && startContainerRename(row.node)}
+                  title="Rename container"
+                >&#9998;</span>
+              {/if}
+            {/if}
+          </span>
           <span class="tree-col tree-col-value">
             {#if row.node.totalValue > 0}
               {formatPedRaw(row.node.totalValue)} PED
@@ -262,11 +335,62 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     padding-left: 4px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
   }
 
   .tree-item-name {
     font-weight: 400;
     font-size: 0.82rem;
+  }
+
+  .container-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .container-label.has-custom-name {
+    color: var(--accent-color);
+  }
+
+  .rename-btn {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.7rem;
+    padding: 0 2px;
+    opacity: 0;
+    transition: opacity 0.15s;
+    line-height: 1;
+  }
+
+  .tree-container:hover .rename-btn {
+    opacity: 0.5;
+  }
+
+  .rename-btn:hover {
+    opacity: 1 !important;
+    color: var(--accent-color);
+  }
+
+  .container-name-input {
+    width: 100%;
+    padding: 1px 4px;
+    border: 1px solid var(--accent-color);
+    border-radius: 3px;
+    background: var(--primary-color);
+    color: var(--text-color);
+    font-size: 0.85rem;
+    box-sizing: border-box;
+  }
+
+  .container-name-input:focus {
+    outline: none;
   }
 
   .tree-col {
