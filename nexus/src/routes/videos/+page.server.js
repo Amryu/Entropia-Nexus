@@ -15,7 +15,7 @@ export async function load() {
   const videos = [];
   for (const c of creators) {
     if (c.platform !== 'youtube') continue;
-    const vids = c.cached_data?.playlistVideos || c.cached_data?.recentVideos || [];
+    const vids = c.cached_data?.playlistVideos?.length > 0 ? c.cached_data.playlistVideos : (c.cached_data?.recentVideos || []);
     for (const v of vids) {
       videos.push({
         videoId: v.videoId,

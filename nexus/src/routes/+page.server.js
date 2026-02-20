@@ -81,7 +81,8 @@ function processCreators(creators) {
 
     const allCandidates = [];
     for (const c of ytCreators) {
-      const vids = (c.cached_data.playlistVideos || c.cached_data.recentVideos).slice(0, videosPerCreator);
+      const src = c.cached_data.playlistVideos?.length > 0 ? c.cached_data.playlistVideos : c.cached_data.recentVideos;
+      const vids = (src || []).slice(0, videosPerCreator);
       for (const v of vids) {
         allCandidates.push({
           videoId: v.videoId,
