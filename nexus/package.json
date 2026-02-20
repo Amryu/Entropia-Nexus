@@ -56,5 +56,9 @@
 		"svelte-easy-crop": "^3.0.1",
 		"svg-path-to-polygons": "^0.1.0",
 		"uuid": "^9.0.1"
+	},
+	"overrides": {
+		"minimatch": "^10.2.1",
+		"cookie": "^0.7.0"
 	}
 }
