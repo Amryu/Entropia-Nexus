@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
+import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags, PermissionFlagsBits } from 'discord.js';
 import { getUsers, getUserById, setUserEuName, createUser } from '../../db.js';
 import { getConfigValue, notifyModerators } from '../../bot.js';
 import { startVerification } from './verifyUser.js';
@@ -36,7 +36,7 @@ export async function execute(interaction) {
     const moderatorRoleId = getConfigValue('moderatorRoleId');
     const isModerator = moderatorRoleId && (
       interaction.member.roles.cache.has(moderatorRoleId) ||
-      interaction.member.permissions.has('ADMINISTRATOR')
+      interaction.member.permissions.has(PermissionFlagsBits.Administrator)
     );
     const isOverride = !!targetDiscordUser;
 

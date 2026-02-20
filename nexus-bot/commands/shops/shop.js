@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, EmbedBuilder, MessageFlags } from 'discord.js';
+import { SlashCommandBuilder, EmbedBuilder, MessageFlags, PermissionFlagsBits } from 'discord.js';
 import {
   getShops,
   getShopByName,
@@ -208,7 +208,7 @@ async function handleInfo(interaction) {
 
 async function handleList(interaction) {
   const targetUser = interaction.options.getUser('user');
-  const isAdminQuery = targetUser && interaction.member.permissions.has('ADMINISTRATOR');
+  const isAdminQuery = targetUser && interaction.member.permissions.has(PermissionFlagsBits.Administrator);
 
   // If checking another user, must be admin
   if (targetUser && !isAdminQuery) {

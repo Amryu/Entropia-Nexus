@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, MessageFlags } from 'discord.js';
+import { SlashCommandBuilder, MessageFlags, PermissionFlagsBits } from 'discord.js';
 import { setConfigValue } from "../../bot.js";
 
 export const data = new SlashCommandBuilder()
@@ -30,7 +30,7 @@ export const data = new SlashCommandBuilder()
           .setRequired(true)));
 
 export async function execute(interaction) {
-  if (!interaction.member.permissions.has('ADMINISTRATOR')) {
+  if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
     return interaction.reply({ content: 'You do not have permission to use this command.', flags: MessageFlags.Ephemeral });
   }
 

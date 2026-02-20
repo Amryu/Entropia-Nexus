@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
+import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags, PermissionFlagsBits } from 'discord.js';
 import { getConfigValue, replaceVerificationFlow } from '../../bot.js';
 import { getUserById, getUserByUsername, setUserVerified, assignUserRole, getBotConfig, setBotConfig } from '../../db.js';
 
@@ -34,7 +34,7 @@ export async function execute(interaction) {
   if (!moderatorRoleId) {
     return interaction.reply({ content: 'The moderator role has not been set.', flags: MessageFlags.Ephemeral });
   }
-  if (!interaction.member.roles.cache.has(moderatorRoleId) && !interaction.member.permissions.has('ADMINISTRATOR')) {
+  if (!interaction.member.roles.cache.has(moderatorRoleId) && !interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
     return interaction.reply({ content: 'You do not have permission to use this command.', flags: MessageFlags.Ephemeral });
   }
 

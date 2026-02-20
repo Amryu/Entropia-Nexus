@@ -1,4 +1,4 @@
-import { SlashCommandBuilder } from 'discord.js';
+import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
 import { setConfigValue } from "../../bot.js";
 
 export const data = new SlashCommandBuilder()
@@ -8,7 +8,7 @@ export const data = new SlashCommandBuilder()
     .setDescription('The role to set as the reviewer role.')
     .setRequired(true));
 export async function execute(interaction) {
-  if (!interaction.member.permissions.has('ADMINISTRATOR')) {
+  if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
     return interaction.reply('You do not have permission to use this command.');
   }
 

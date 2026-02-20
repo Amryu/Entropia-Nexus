@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } from 'discord.js';
+import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags, PermissionFlagsBits } from 'discord.js';
 import { getConfigValue } from '../../bot.js';
 import { getChangeByThreadId, setChangeState } from '../../db.js';
 
@@ -24,7 +24,7 @@ export async function execute(interaction) {
 
   const hasReviewerRole = reviewerRoleId && interaction.member.roles.cache.has(reviewerRoleId);
   const hasModeratorRole = moderatorRoleId && interaction.member.roles.cache.has(moderatorRoleId);
-  const isAdmin = interaction.member.permissions.has('ADMINISTRATOR');
+  const isAdmin = interaction.member.permissions.has(PermissionFlagsBits.Administrator);
 
   if (!hasReviewerRole && !hasModeratorRole && !isAdmin) {
     return interaction.reply({ content: 'You do not have permission to use this command.', flags: MessageFlags.Ephemeral });
