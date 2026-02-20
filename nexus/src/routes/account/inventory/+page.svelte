@@ -7,7 +7,7 @@
   let user = null;
   let loaded = false;
 
-  $: user = $page.data?.user ?? null;
+  $: user = $page.data?.session?.user ?? null;
 
   onMount(() => {
     loaded = true;
