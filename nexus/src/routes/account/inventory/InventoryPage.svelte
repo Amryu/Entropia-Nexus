@@ -562,7 +562,9 @@
         const s = row._slim?.s || 0;
         const b = row._slim?.b || 0;
         if (s === 0 && b === 0) return '<span class="text-muted">-</span>';
-        return `<span class="split-cell"><span class="split-l" style="color:var(--error-color)${s === 0 ? ';opacity:0.3' : ''}">${s}</span><span class="split-sep">/</span><span class="split-r" style="color:var(--success-color)${b === 0 ? ';opacity:0.3' : ''}">${b}</span></span>`;
+        const cell = `<span class="split-cell"><span class="split-l" style="color:var(--error-color)${s === 0 ? ';opacity:0.3' : ''}">${s}</span><span class="split-sep">/</span><span class="split-r" style="color:var(--success-color)${b === 0 ? ';opacity:0.3' : ''}">${b}</span></span>`;
+        if (row.item_id > 0) return `<a href="/market/exchange/listings/${row.item_id}" class="market-link">${cell}</a>`;
+        return cell;
       },
     },
     {
@@ -1704,6 +1706,14 @@
   :global(.split-r) {
     flex: 1;
     text-align: left;
+  }
+  :global(.market-link) {
+    text-decoration: none;
+    color: inherit;
+    display: block;
+  }
+  :global(.market-link:hover) {
+    text-decoration: underline;
   }
 
   /* Responsive */
