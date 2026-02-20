@@ -506,8 +506,7 @@
           <InlineEdit
             type="text"
             value={activeClothing?.Name || ''}
-            field="Name"
-            label="Name"
+            path="Name"
             placeholder="Enter clothing name"
           />
         </h1>
