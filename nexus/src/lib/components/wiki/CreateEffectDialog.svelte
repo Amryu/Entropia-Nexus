@@ -1,25 +1,33 @@
 <!--
   @component CreateEffectDialog
-  Modal dialog for creating a new effect inline from the EffectsEditor.
-  Returns the effect data via 'create' event for embedding in the parent entity's change.
+  Modal dialog for creating or editing an effect inline from the EffectsEditor.
+  Returns the effect data via 'create' or 'edit' event for embedding in the parent entity's change.
+
+  Props:
+    effect - Optional existing effect to edit. When provided, dialog is in "edit" mode.
 -->
 <script>
   // @ts-nocheck
   import { createEventDispatcher } from 'svelte';
 
+  /** @type {{ Name: string, CanonicalName?: string, Properties?: { Unit?: string, IsPositive?: boolean, Description?: string } } | null} */
+  export let effect = null;
+
   const dispatch = createEventDispatcher();
 
-  let name = '';
-  let canonicalName = '';
-  let unit = '';
-  let isPositive = true;
-  let description = '';
+  $: isEditMode = !!effect;
+
+  let name = effect?.Name || '';
+  let canonicalName = effect?.CanonicalName || '';
+  let unit = effect?.Properties?.Unit || '';
+  let isPositive = effect?.Properties?.IsPositive ?? true;
+  let description = effect?.Properties?.Description || '';
 
   $: canSubmit = name.trim().length > 0;
 
   function handleSubmit() {
     if (!canSubmit) return;
-    dispatch('create', {
+    const payload = {
       Name: name.trim(),
       _newEffect: {
         CanonicalName: canonicalName.trim() || null,
@@ -27,7 +35,8 @@
         IsPositive: isPositive,
         Description: description.trim() || null
       }
-    });
+    };
+    dispatch(isEditMode ? 'edit' : 'create', payload);
   }
 
   function handleCancel() {
@@ -55,12 +64,16 @@
   on:keydown={handleKeydown}
 >
   <div class="modal" role="dialog" aria-modal="true">
-    <h3>Create New Effect</h3>
+    <h3>{isEditMode ? 'Edit Effect' : 'Create New Effect'}</h3>
 
     <div class="form-group">
       <label for="effect-name">Name <span class="required">*</span></label>
-      <input id="effect-name" type="text" bind:value={name} placeholder="e.g. Health Regeneration" autocomplete="off" maxlength="100" />
-      <span class="hint">Unique identifier for this effect</span>
+      {#if isEditMode}
+        <input id="effect-name" type="text" value={name} disabled class="disabled" />
+      {:else}
+        <input id="effect-name" type="text" bind:value={name} placeholder="e.g. Health Regeneration" autocomplete="off" maxlength="100" />
+      {/if}
+      <span class="hint">{isEditMode ? 'Effect name cannot be changed' : 'Unique identifier for this effect'}</span>
     </div>
 
     <div class="form-group">
@@ -88,7 +101,7 @@
 
     <div class="actions">
       <button class="btn-cancel" on:click={handleCancel}>Cancel</button>
-      <button class="btn-create" on:click={handleSubmit} disabled={!canSubmit}>Create</button>
+      <button class="btn-submit" on:click={handleSubmit} disabled={!canSubmit}>{isEditMode ? 'Save' : 'Create'}</button>
     </div>
   </div>
 </div>
@@ -159,6 +172,11 @@
     border-color: var(--accent-color, #4a9eff);
   }
 
+  .form-group input.disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
   .form-group textarea {
     resize: vertical;
     font-family: inherit;
@@ -205,7 +223,7 @@
     background: var(--hover-color);
   }
 
-  .btn-create {
+  .btn-submit {
     padding: 8px 16px;
     font-size: 13px;
     background: var(--accent-color, #4a9eff);
@@ -216,11 +234,11 @@
     font-weight: 500;
   }
 
-  .btn-create:hover:not(:disabled) {
+  .btn-submit:hover:not(:disabled) {
     filter: brightness(1.1);
   }
 
-  .btn-create:disabled {
+  .btn-submit:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }

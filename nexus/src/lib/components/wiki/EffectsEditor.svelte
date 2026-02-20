@@ -30,6 +30,7 @@
   export let showEmpty = false;
 
   let showCreateDialog = false;
+  let editingEffectIndex = null;
   // Local copy of available effects so newly created ones appear immediately
   let localAvailableEffects = [];
   $: localAvailableEffects = [...(availableEffects || [])];
@@ -157,6 +158,44 @@
     showCreateDialog = false;
   }
 
+  function openEditEffect(index) {
+    editingEffectIndex = index;
+  }
+
+  function handleEditEffect(event) {
+    if (editingEffectIndex == null) return;
+    const { _newEffect } = event.detail;
+    const newEffects = [...effects];
+    newEffects[editingEffectIndex] = { ...newEffects[editingEffectIndex], _newEffect };
+
+    // Update local catalog with new properties
+    const effectName = newEffects[editingEffectIndex].Name;
+    const catalogIndex = localAvailableEffects.findIndex(e => e.Name === effectName);
+    if (catalogIndex >= 0) {
+      localAvailableEffects[catalogIndex] = {
+        ...localAvailableEffects[catalogIndex],
+        CanonicalName: _newEffect.CanonicalName,
+        Properties: {
+          ...localAvailableEffects[catalogIndex].Properties,
+          Unit: _newEffect.Unit || '',
+          IsPositive: _newEffect.IsPositive,
+          Description: _newEffect.Description
+        }
+      };
+      localAvailableEffects = localAvailableEffects;
+    }
+
+    updateField(fieldName, newEffects);
+    editingEffectIndex = null;
+  }
+
+  function getEditEffectData(index) {
+    const effect = effects[index];
+    if (!effect?.Name) return null;
+    const catalog = localAvailableEffects.find(e => e.Name === effect.Name);
+    return catalog || { Name: effect.Name, Properties: {} };
+  }
+
   // Get CSS class for effect type
   function getEffectClass() {
     return effectType === 'equip' ? 'equip' : 'use';
@@ -195,6 +234,13 @@
                   on:change={(e) => updateEffect(i, 'Name', e.detail.value)}
                 />
               </div>
+              {#if effect.Name}
+                <button class="btn-edit" on:click={() => openEditEffect(i)} title="Edit effect properties">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M17 3a2.83 2.83 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+                  </svg>
+                </button>
+              {/if}
               <button class="btn-remove" on:click={() => removeEffect(i)} title="Remove effect">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <line x1="18" y1="6" x2="6" y2="18" />
@@ -270,6 +316,14 @@
   <CreateEffectDialog
     on:create={handleCreateEffect}
     on:cancel={() => showCreateDialog = false}
+  />
+{/if}
+
+{#if editingEffectIndex != null}
+  <CreateEffectDialog
+    effect={getEditEffectData(editingEffectIndex)}
+    on:edit={handleEditEffect}
+    on:cancel={() => editingEffectIndex = null}
   />
 {/if}
 
@@ -413,7 +467,7 @@
     margin: 0 2px;
   }
 
-  .btn-remove {
+  .btn-edit {
     display: flex;
     align-items: center;
     justify-content: center;
@@ -421,6 +475,28 @@
     height: 26px;
     padding: 0;
     margin-left: auto;
+    background-color: transparent;
+    border: 1px solid var(--border-color, #555);
+    border-radius: 4px;
+    color: var(--text-muted, #999);
+    cursor: pointer;
+    transition: all 0.15s;
+    flex-shrink: 0;
+  }
+
+  .btn-edit:hover {
+    background-color: var(--accent-color, #4a9eff);
+    color: white;
+    border-color: var(--accent-color, #4a9eff);
+  }
+
+  .btn-remove {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
     background-color: transparent;
     border: 1px solid var(--border-color, #555);
     border-radius: 4px;

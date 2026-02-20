@@ -24,7 +24,7 @@ export function getHealingReloadSpeedBonus(service, clothingItems, armorSets, co
       const clothingItem = clothingItems.find(item => item.Name === equip.item_name);
       if (clothingItem?.EffectsOnEquip) {
         for (const effect of clothingItem.EffectsOnEquip) {
-          if (effect.Name === 'Increased Reload Speed') {
+          if (effect.Name === 'Reload Speed Increased') {
             equipmentBonus += parseFloat(effect.Values?.Strength) || 0;
           }
         }
@@ -36,7 +36,7 @@ export function getHealingReloadSpeedBonus(service, clothingItems, armorSets, co
       const armorSet = armorSets.find(item => item.Name === equip.item_name);
       if (armorSet?.EffectsOnSetEquip) {
         for (const effect of armorSet.EffectsOnSetEquip) {
-          if (effect.Name === 'Increased Reload Speed') {
+          if (effect.Name === 'Reload Speed Increased') {
             equipmentBonus += parseFloat(effect.Values?.Strength) || 0;
           }
         }
@@ -56,7 +56,7 @@ export function getHealingReloadSpeedBonus(service, clothingItems, armorSets, co
         // Skip enhancers - they affect heal amount, not reload speed
         if (!isEnhancer) {
           for (const effect of consumable.EffectsOnConsume) {
-            if (effect.Name === 'Increased Reload Speed') {
+            if (effect.Name === 'Reload Speed Increased') {
               const effectStrength = parseFloat(effect.Values?.Strength) || 0;
               strongestConsumableBonus = Math.max(strongestConsumableBonus, effectStrength);
             }
@@ -98,7 +98,7 @@ export function getHealingEnhancerBonus(service, consumables, enabledConsumables
       if (consumable?.EffectsOnConsume && consumable.Properties?.Type === 'Enhancer') {
         for (const effect of consumable.EffectsOnConsume) {
           // Enhancers typically boost "Healing" or similar effects
-          if (effect.Name === 'Healing' || effect.Name === 'Increased Healing') {
+          if (effect.Name === 'Healing' || effect.Name === 'Healing Increased') {
             const effectStrength = parseFloat(effect.Values?.Strength) || 0;
             strongestEnhancerBonus = Math.max(strongestEnhancerBonus, effectStrength);
           }
@@ -331,7 +331,7 @@ export function getDPSReloadSpeedBonus(service, clothingItems, armorSets, consum
       const clothingItem = clothingItems.find(item => item.Name === equip.item_name);
       if (clothingItem?.EffectsOnEquip) {
         for (const effect of clothingItem.EffectsOnEquip) {
-          if (effect.Name === 'Increased Reload Speed') {
+          if (effect.Name === 'Reload Speed Increased') {
             equipmentBonus += parseFloat(effect.Values?.Strength) || 0;
           }
         }
@@ -343,7 +343,7 @@ export function getDPSReloadSpeedBonus(service, clothingItems, armorSets, consum
       const armorSet = armorSets.find(item => item.Name === equip.item_name);
       if (armorSet?.EffectsOnSetEquip) {
         for (const effect of armorSet.EffectsOnSetEquip) {
-          if (effect.Name === 'Increased Reload Speed') {
+          if (effect.Name === 'Reload Speed Increased') {
             equipmentBonus += parseFloat(effect.Values?.Strength) || 0;
           }
         }
@@ -358,7 +358,7 @@ export function getDPSReloadSpeedBonus(service, clothingItems, armorSets, consum
       const consumable = consumables.find(item => item.Name === equip.item_name);
       if (consumable?.EffectsOnConsume) {
         for (const effect of consumable.EffectsOnConsume) {
-          if (effect.Name === 'Increased Reload Speed') {
+          if (effect.Name === 'Reload Speed Increased') {
             const effectStrength = parseFloat(effect.Values?.Strength) || 0;
             strongestConsumableBonus = Math.max(strongestConsumableBonus, effectStrength);
           }
@@ -378,7 +378,7 @@ export function getDPSReloadSpeedBonus(service, clothingItems, armorSets, consum
           const key = `${e.Id}-${e.Properties?.Strength || 0}-${i}`;
           return key === activeAbilityKey;
         });
-        if (activeEffect && (activeEffect.Name === 'Increased Reload Speed' || activeEffect.Name === 'Added Reload Speed')) {
+        if (activeEffect && (activeEffect.Name === 'Reload Speed Increased' || activeEffect.Name === 'Reload Speed Added')) {
           petBonus += parseFloat(activeEffect.Properties?.Strength) || 0;
         }
       }
@@ -421,7 +421,7 @@ export function getDPSDamageBonus(service, consumables, pets, enabledConsumables
       const consumable = consumables.find(item => item.Name === equip.item_name);
       if (consumable?.EffectsOnConsume) {
         for (const effect of consumable.EffectsOnConsume) {
-          if (effect.Name === 'Increased Damage') {
+          if (effect.Name === 'Damage Increased') {
             const effectStrength = parseFloat(effect.Values?.Strength) || 0;
             strongestConsumableBonus = Math.max(strongestConsumableBonus, effectStrength);
           }
@@ -441,7 +441,7 @@ export function getDPSDamageBonus(service, consumables, pets, enabledConsumables
           const key = `${e.Id}-${e.Properties?.Strength || 0}-${i}`;
           return key === activeAbilityKey;
         });
-        if (activeEffect && (activeEffect.Name === 'Increased Damage' || activeEffect.Name === 'Added Damage')) {
+        if (activeEffect && (activeEffect.Name === 'Damage Increased' || activeEffect.Name === 'Damage Added')) {
           petBonus += parseFloat(activeEffect.Properties?.Strength) || 0;
         }
       }
@@ -485,7 +485,7 @@ export function getDPSCritChanceBonus(service, clothingItems, armorSets, consuma
       const clothingItem = clothingItems.find(item => item.Name === equip.item_name);
       if (clothingItem?.EffectsOnEquip) {
         for (const effect of clothingItem.EffectsOnEquip) {
-          if (effect.Name === 'Increased Critical Chance' || effect.Name === 'Added Critical Chance') {
+          if (effect.Name === 'Critical Chance Increased' || effect.Name === 'Critical Chance Added') {
             equipmentBonus += parseFloat(effect.Values?.Strength) || 0;
           }
         }
@@ -496,7 +496,7 @@ export function getDPSCritChanceBonus(service, clothingItems, armorSets, consuma
       const armorSet = armorSets.find(item => item.Name === equip.item_name);
       if (armorSet?.EffectsOnSetEquip) {
         for (const effect of armorSet.EffectsOnSetEquip) {
-          if (effect.Name === 'Increased Critical Chance' || effect.Name === 'Added Critical Chance') {
+          if (effect.Name === 'Critical Chance Increased' || effect.Name === 'Critical Chance Added') {
             equipmentBonus += parseFloat(effect.Values?.Strength) || 0;
           }
         }
@@ -511,7 +511,7 @@ export function getDPSCritChanceBonus(service, clothingItems, armorSets, consuma
       const consumable = consumables.find(item => item.Name === equip.item_name);
       if (consumable?.EffectsOnConsume) {
         for (const effect of consumable.EffectsOnConsume) {
-          if (effect.Name === 'Increased Critical Chance' || effect.Name === 'Added Critical Chance') {
+          if (effect.Name === 'Critical Chance Increased' || effect.Name === 'Critical Chance Added') {
             const effectStrength = parseFloat(effect.Values?.Strength) || 0;
             strongestConsumableBonus = Math.max(strongestConsumableBonus, effectStrength);
           }
@@ -531,7 +531,7 @@ export function getDPSCritChanceBonus(service, clothingItems, armorSets, consuma
           const key = `${e.Id}-${e.Properties?.Strength || 0}-${i}`;
           return key === activeAbilityKey;
         });
-        if (activeEffect && (activeEffect.Name === 'Increased Critical Chance' || activeEffect.Name === 'Added Critical Chance')) {
+        if (activeEffect && (activeEffect.Name === 'Critical Chance Increased' || activeEffect.Name === 'Critical Chance Added')) {
           petBonus += parseFloat(activeEffect.Properties?.Strength) || 0;
         }
       }
@@ -576,7 +576,7 @@ export function getDPSCritDamageBonus(service, clothingItems, armorSets, consuma
       const clothingItem = clothingItems.find(item => item.Name === equip.item_name);
       if (clothingItem?.EffectsOnEquip) {
         for (const effect of clothingItem.EffectsOnEquip) {
-          if (effect.Name === 'Increased Critical Damage' || effect.Name === 'Added Critical Damage') {
+          if (effect.Name === 'Critical Damage Increased' || effect.Name === 'Critical Damage Added') {
             equipmentBonus += parseFloat(effect.Values?.Strength) || 0;
           }
         }
@@ -587,7 +587,7 @@ export function getDPSCritDamageBonus(service, clothingItems, armorSets, consuma
       const armorSet = armorSets.find(item => item.Name === equip.item_name);
       if (armorSet?.EffectsOnSetEquip) {
         for (const effect of armorSet.EffectsOnSetEquip) {
-          if (effect.Name === 'Increased Critical Damage' || effect.Name === 'Added Critical Damage') {
+          if (effect.Name === 'Critical Damage Increased' || effect.Name === 'Critical Damage Added') {
             equipmentBonus += parseFloat(effect.Values?.Strength) || 0;
           }
         }
@@ -602,7 +602,7 @@ export function getDPSCritDamageBonus(service, clothingItems, armorSets, consuma
       const consumable = consumables.find(item => item.Name === equip.item_name);
       if (consumable?.EffectsOnConsume) {
         for (const effect of consumable.EffectsOnConsume) {
-          if (effect.Name === 'Increased Critical Damage' || effect.Name === 'Added Critical Damage') {
+          if (effect.Name === 'Critical Damage Increased' || effect.Name === 'Critical Damage Added') {
             const effectStrength = parseFloat(effect.Values?.Strength) || 0;
             strongestConsumableBonus = Math.max(strongestConsumableBonus, effectStrength);
           }
@@ -622,7 +622,7 @@ export function getDPSCritDamageBonus(service, clothingItems, armorSets, consuma
           const key = `${e.Id}-${e.Properties?.Strength || 0}-${i}`;
           return key === activeAbilityKey;
         });
-        if (activeEffect && (activeEffect.Name === 'Increased Critical Damage' || activeEffect.Name === 'Added Critical Damage')) {
+        if (activeEffect && (activeEffect.Name === 'Critical Damage Increased' || activeEffect.Name === 'Critical Damage Added')) {
           petBonus += parseFloat(activeEffect.Properties?.Strength) || 0;
         }
       }
@@ -668,7 +668,7 @@ export function getTotalHP(baseHP, service, clothingItems, armorSets, consumable
       const clothingItem = clothingItems.find(item => item.Name === equip.item_name);
       if (clothingItem?.EffectsOnEquip) {
         for (const effect of clothingItem.EffectsOnEquip) {
-          if (effect.Name === 'Increased Health' || effect.Name === 'Added Health') {
+          if (effect.Name === 'Health Increased' || effect.Name === 'Health Added') {
             equipmentBonus += parseFloat(effect.Values?.Strength) || 0;
           }
         }
@@ -679,7 +679,7 @@ export function getTotalHP(baseHP, service, clothingItems, armorSets, consumable
       const armorSet = armorSets.find(item => item.Name === equip.item_name);
       if (armorSet?.EffectsOnSetEquip) {
         for (const effect of armorSet.EffectsOnSetEquip) {
-          if (effect.Name === 'Increased Health' || effect.Name === 'Added Health') {
+          if (effect.Name === 'Health Increased' || effect.Name === 'Health Added') {
             equipmentBonus += parseFloat(effect.Values?.Strength) || 0;
           }
         }
@@ -694,7 +694,7 @@ export function getTotalHP(baseHP, service, clothingItems, armorSets, consumable
       const consumable = consumables.find(item => item.Name === equip.item_name);
       if (consumable?.EffectsOnConsume) {
         for (const effect of consumable.EffectsOnConsume) {
-          if (effect.Name === 'Increased Health' || effect.Name === 'Added Health') {
+          if (effect.Name === 'Health Increased' || effect.Name === 'Health Added') {
             const effectStrength = parseFloat(effect.Values?.Strength) || 0;
             strongestConsumableBonus = Math.max(strongestConsumableBonus, effectStrength);
           }
@@ -714,7 +714,7 @@ export function getTotalHP(baseHP, service, clothingItems, armorSets, consumable
           const key = `${e.Id}-${e.Properties?.Strength || 0}-${i}`;
           return key === activeAbilityKey;
         });
-        if (activeEffect && (activeEffect.Name === 'Increased Health' || activeEffect.Name === 'Added Health')) {
+        if (activeEffect && (activeEffect.Name === 'Health Increased' || activeEffect.Name === 'Health Added')) {
           petBonus += parseFloat(activeEffect.Properties?.Strength) || 0;
         }
       }

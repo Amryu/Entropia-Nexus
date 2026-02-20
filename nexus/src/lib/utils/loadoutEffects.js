@@ -4,26 +4,26 @@
 
 import { clamp } from '$lib/utils/loadoutCalculations.js';
 
-export const PREFIX_RULES = [
+export const SUFFIX_RULES = [
   { positive: 'Increased', negative: 'Decreased', type: 'mult' },
   { positive: 'Added', negative: 'Reduced', type: 'add' }
 ];
 
 export const OFFENSIVE_EFFECTS = [
-  { key: 'reload', type: 'mult', base: 'Reload Speed', name: 'Increased Reload Speed' },
-  { key: 'critChance', type: 'add', base: 'Critical Chance', name: 'Added Critical Chance' },
-  { key: 'critDamage', type: 'add', base: 'Critical Damage', name: 'Added Critical Damage' },
-  { key: 'damage', type: 'mult', base: 'Damage', name: 'Increased Damage' }
+  { key: 'reload', type: 'mult', base: 'Reload Speed', name: 'Reload Speed Increased' },
+  { key: 'critChance', type: 'add', base: 'Critical Chance', name: 'Critical Chance Added' },
+  { key: 'critDamage', type: 'add', base: 'Critical Damage', name: 'Critical Damage Added' },
+  { key: 'damage', type: 'mult', base: 'Damage', name: 'Damage Increased' }
 ];
 
 export const DEFENSIVE_EFFECT_NAMES = new Set([
-  'Added Health',
-  'Added Lifesteal',
-  'Decreased Damage Taken',
-  'Increased Evade Chance',
-  'Increased Dodge Chance',
-  'Increased Jamming Chance',
-  'Decreased Critical Damage Taken'
+  'Health Added',
+  'Lifesteal Added',
+  'Damage Taken Decreased',
+  'Evade Chance Increased',
+  'Dodge Chance Increased',
+  'Jamming Chance Increased',
+  'Critical Damage Taken Decreased'
 ]);
 
 export function getEffectStrength(effect) {
@@ -109,14 +109,14 @@ export function getCatalogPolarity(effectsCatalog, name) {
   return null;
 }
 
-function parsePrefix(name) {
+function parseSuffix(name) {
   if (!name) return null;
-  for (const rule of PREFIX_RULES) {
-    if (name.startsWith(`${rule.positive} `)) {
-      return { type: rule.type, base: name.slice(rule.positive.length).trim(), direction: 1, rule };
+  for (const rule of SUFFIX_RULES) {
+    if (name.endsWith(` ${rule.positive}`)) {
+      return { type: rule.type, base: name.slice(0, -(rule.positive.length + 1)), direction: 1, rule };
     }
-    if (name.startsWith(`${rule.negative} `)) {
-      return { type: rule.type, base: name.slice(rule.negative.length).trim(), direction: -1, rule };
+    if (name.endsWith(` ${rule.negative}`)) {
+      return { type: rule.type, base: name.slice(0, -(rule.negative.length + 1)), direction: -1, rule };
     }
   }
   return null;
@@ -136,7 +136,7 @@ export function summarizeEffects({ itemEffects = [], actionEffects = [], bonusEf
     const value = getEffectStrength(effect);
     if (!Number.isFinite(value)) return;
     const unit = getEffectUnit(effectsCatalog, name, effect) || '';
-    const prefix = parsePrefix(name);
+    const prefix = parseSuffix(name);
     if (prefix) {
       const key = `${prefix.type}::${prefix.base}::${unit}`;
       const current = prefixMap.get(key) || {
@@ -176,8 +176,8 @@ export function summarizeEffects({ itemEffects = [], actionEffects = [], bonusEf
     const rawAction = (entry.actionPos || 0) - (entry.actionNeg || 0);
     const rawBonus = (entry.bonusPos || 0) - (entry.bonusNeg || 0);
 
-    const basePositiveName = `${entry.rule.positive} ${entry.base}`.trim();
-    const baseNegativeName = `${entry.rule.negative} ${entry.base}`.trim();
+    const basePositiveName = `${entry.base} ${entry.rule.positive}`.trim();
+    const baseNegativeName = `${entry.base} ${entry.rule.negative}`.trim();
     const limits = getLimitsForName(basePositiveName) || getLimitsForName(baseNegativeName);
 
     const cappedItem = limits?.item != null ? clamp(rawItem, -limits.item, limits.item) : rawItem;
@@ -225,7 +225,7 @@ export function summarizeEffects({ itemEffects = [], actionEffects = [], bonusEf
       return {
         name: entry.name,
         unit: entry.unit,
-        prefix: parsePrefix(entry.name),
+        prefix: parseSuffix(entry.name),
         rawItem,
         rawAction,
         rawBonus,

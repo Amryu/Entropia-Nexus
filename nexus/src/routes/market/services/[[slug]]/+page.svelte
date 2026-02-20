@@ -2039,8 +2039,8 @@
                                 {@const _ = tooltipParts.push(`Consumption: +${effectConsumption.toFixed(1)}/h`)}
                               {/if}
                               {@const effectTooltip = tooltipParts.join(' | ')}
-                              {@const skillName = effect.Name.replace('Increased ', '').replace('Added ', '')}
-                              {@const sameSkillCount = relevantEffects.filter(e => e.Name.replace('Increased ', '').replace('Added ', '') === skillName).length}
+                              {@const skillName = effect.Name.replace(/ Increased$/, '').replace(/ Added$/, '')}
+                              {@const sameSkillCount = relevantEffects.filter(e => e.Name.replace(/ Increased$/, '').replace(/ Added$/, '') === skillName).length}
                               <button 
                                 class="toggle-btn" 
                                 class:active={isThisAbilityActive}

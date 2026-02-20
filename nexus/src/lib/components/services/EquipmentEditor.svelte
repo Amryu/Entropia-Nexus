@@ -88,14 +88,14 @@
           if (itemType === 'armorsets') {
             // Check EffectsOnSetEquip (armor sets use this property name)
             const hasReloadSpeed = 
-              item.EffectsOnSetEquip?.some(e => e.Name === 'Increased Reload Speed');
+              item.EffectsOnSetEquip?.some(e => e.Name === 'Reload Speed Increased');
             return hasReloadSpeed;
           } else if (itemType === 'clothings') {
             // Only show clothings with reload speed effects
-            return item.EffectsOnEquip?.some(e => e.Name === 'Increased Reload Speed');
+            return item.EffectsOnEquip?.some(e => e.Name === 'Reload Speed Increased');
           } else if (itemType === 'consumables') {
             // Only show consumables with reload speed effects
-            return item.EffectsOnConsume?.some(e => e.Name === 'Increased Reload Speed');
+            return item.EffectsOnConsume?.some(e => e.Name === 'Reload Speed Increased');
           }
         } else {
           // For DPS services, show clothings only if they have effects
