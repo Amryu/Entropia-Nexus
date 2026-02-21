@@ -294,6 +294,20 @@ export function setFieldError(path, error) {
 }
 
 /**
+ * Mark changes as saved — rebase originalEntity to include pending changes and clear dirty state.
+ * Called after a successful save (Draft, DirectApply, etc.) so the form reflects the persisted state.
+ */
+export function markSaved() {
+  let current;
+  currentEntity.subscribe(e => current = e)();
+  if (current) {
+    originalEntity.set(JSON.parse(JSON.stringify(current)));
+  }
+  pendingChanges.set({});
+  validationErrors.set({});
+}
+
+/**
  * Clear all pending changes and exit edit mode
  */
 export function cancelEdit() {

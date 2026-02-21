@@ -17,6 +17,7 @@
     existingPendingChange,
     getChangeForSubmission,
     cancelEdit,
+    markSaved,
     setFieldError
   } from '$lib/stores/wikiEditState.js';
   import { apiPost, apiPut, encodeURIComponentSafe } from '$lib/util';
@@ -115,6 +116,7 @@
 
         if (response?.id) {
           changeMetadata.update(m => ({ ...m, id: response.id }));
+          markSaved();
           if (browser) {
             await invalidateAll();
             if ($isCreateMode) {
@@ -262,6 +264,7 @@
 
       if (response?.id) {
         changeMetadata.update(m => ({ ...m, id: response.id, state: 'DirectApply' }));
+        markSaved();
         if (browser) {
           await invalidateAll();
           if ($isCreateMode) {
