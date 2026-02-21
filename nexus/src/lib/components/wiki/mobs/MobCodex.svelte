@@ -6,49 +6,19 @@
 <script>
   // @ts-nocheck
   import { getTypeLink } from '$lib/util';
+  import {
+    CODEX_MULTIPLIERS,
+    REWARD_DIVISORS,
+    CODEX_SKILL_CATEGORIES,
+    getCategoryForRank,
+    getCumulativeCost,
+    calcCumulativeSkillGain
+  } from '$lib/utils/codexUtils';
 
   export let baseCost = null;
   export let codexType = null;
   export let mobType = 'Animal';  // Animal, Mutant, Robot - to determine which looter profession to check
   export let skills = [];  // Skills data from API
-
-  const CODEX_MULTIPLIERS = [
-    1, 2, 3, 4, 6,
-    8, 10, 12, 14, 16,
-    18, 20, 24, 28, 32,
-    36, 40, 44, 48, 56,
-    64, 72, 80, 90, 100
-  ];
-
-  // Skill category reward divisors
-  const REWARD_DIVISORS = { cat1: 200, cat2: 320, cat3: 640, cat4: 1000 };
-
-  // Fallback skill lists if API data not available
-  const SKILLS_FALLBACK = {
-    cat1: [
-      'Aim', 'Anatomy', 'Athletics', 'BLP Weaponry Technology', 'Combat Reflexes',
-      'Dexterity', 'Handgun', 'Heavy Melee Weapons', 'Laser Weaponry Technology',
-      'Light Melee Weapons', 'Longblades', 'Power Fist', 'Rifle', 'Shortblades', 'Weapons Handling'
-    ],
-    cat2: [
-      'Clubs', 'Courage', 'Cryogenics', 'Diagnosis', 'Electrokinesis',
-      'Inflict Melee Damage', 'Inflict Ranged Damage', 'Melee Combat',
-      'Perception', 'Plasma Weaponry Technology', 'Pyrokinesis'
-    ],
-    cat3: [
-      'Alertness', 'Bioregenesis', 'Bravado', 'Concentration', 'Dodge',
-      'Evade', 'First Aid', 'Telepathy', 'Translocation', 'Vehicle Repairing'
-    ],
-    cat4: [
-      'Analysis', 'Animal Lore', 'Biology', 'Botany', 'Computer',
-      'Explosive Projectile Weaponry Technology', 'Heavy Weapons',
-      'Support Weapon Systems', 'Zoology'
-    ],
-    asteroid: [
-      'Mining Laser Technology', 'Mining Laser Operator', 'Prospecting',
-      'Surveying', 'Analysis', 'Fragmentating', 'Perception', 'Geology'
-    ]
-  };
 
   // Build skill lookup from API data
   $: skillLookup = skills.reduce((acc, skill) => {
@@ -65,7 +35,7 @@
   // Codex skill categories are a specific game mechanic that doesn't map directly
   // to database skill categories, so we use the hardcoded lists.
   // The skills API data is used for skill metadata (HP increase, profession weights).
-  const SKILLS = SKILLS_FALLBACK;
+  const SKILLS = CODEX_SKILL_CATEGORIES;
 
   const LOOTER_PROFESSIONS = ['Animal Looter', 'Mutant Looter', 'Robot Looter'];
 
@@ -189,35 +159,6 @@
     return badges;
   }
 
-  function getCategoryForRank(rank) {
-    const mod = rank % 5;
-    if (mod === 1 || mod === 2) return 'cat1';
-    if (mod === 3 || mod === 4) return 'cat2';
-    return 'cat3';
-  }
-
-  // Calculate cumulative cost up to a rank
-  function getCumulativeCost(upToRank) {
-    let total = 0;
-    for (let i = 0; i <= upToRank; i++) {
-      total += CODEX_MULTIPLIERS[i] * baseCost;
-    }
-    return total;
-  }
-
-  // Calculate cumulative skill gain for a category up to selected rank
-  function calcCumulativeSkillGain(category, upToRank, base) {
-    if (!base) return '0.0000';
-    let total = 0;
-    const divisor = REWARD_DIVISORS[category];
-    for (let i = 0; i <= upToRank; i++) {
-      const rankCategory = getCategoryForRank(i + 1);
-      if (rankCategory === category) {
-        total += (CODEX_MULTIPLIERS[i] * base) / divisor;
-      }
-    }
-    return total.toFixed(4);
-  }
 
   let selectedRank = 0;
   let showCumulative = false;
@@ -227,15 +168,15 @@
   $: rewardDivisor = REWARD_DIVISORS[category];
   $: isCat4Rank = codexType === 'MobLooter' && (selectedRank + 1) % 10 === 5;
   $: costForRank = baseCost ? CODEX_MULTIPLIERS[selectedRank] * baseCost : null;
-  $: cumulativeCost = baseCost ? getCumulativeCost(selectedRank) : null;
+  $: cumulativeCost = baseCost ? getCumulativeCost(selectedRank, baseCost) : null;
   $: displayCost = showCumulative ? cumulativeCost : costForRank;
   $: rewardValue = costForRank ? (costForRank / rewardDivisor).toFixed(4) : 'N/A';
   $: cat4RewardValue = costForRank ? (costForRank / REWARD_DIVISORS.cat4).toFixed(4) : 'N/A';
 
   // Reactive cumulative skill gains - these update when selectedRank changes
-  $: cumulativeCat1 = calcCumulativeSkillGain('cat1', selectedRank, baseCost);
-  $: cumulativeCat2 = calcCumulativeSkillGain('cat2', selectedRank, baseCost);
-  $: cumulativeCat3 = calcCumulativeSkillGain('cat3', selectedRank, baseCost);
+  $: cumulativeCat1 = calcCumulativeSkillGain('cat1', selectedRank, baseCost).toFixed(4);
+  $: cumulativeCat2 = calcCumulativeSkillGain('cat2', selectedRank, baseCost).toFixed(4);
+  $: cumulativeCat3 = calcCumulativeSkillGain('cat3', selectedRank, baseCost).toFixed(4);
 </script>
 
 <div class="codex-calculator">
@@ -254,7 +195,7 @@
                 {@const isSelected = selectedRank === rankIndex}
                 {@const rankCategory = getCategoryForRank(rankIndex + 1)}
                 {@const isCat4 = codexType === 'MobLooter' && (rankIndex + 1) % 10 === 5}
-                {@const displayValue = showCumulative ? getCumulativeCost(rankIndex) : multiplier * baseCost}
+                {@const displayValue = showCumulative ? getCumulativeCost(rankIndex, baseCost) : multiplier * baseCost}
                 <button
                   class="rank-btn cat-{rankCategory}"
                   class:selected={isSelected}

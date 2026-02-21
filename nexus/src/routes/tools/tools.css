@@ -1,7 +1,7 @@
 /* Shared Tools Styles - Used by Loadouts and Construction Calculator */
 /* Scoped under .tool-construction / .tool-loadouts to prevent CSS leaking via preload */
 
-:is(.tool-construction, .tool-loadouts) {
+:is(.tool-construction, .tool-loadouts, .tool-skills) {
   /* Sidebar Header - Wiki-style */
   & .nav-header {
     display: flex;
@@ -283,9 +283,18 @@
   }
 }
 
+/* PED value loading shimmer */
+.tool-skills .ped-loading {
+  background: linear-gradient(90deg, var(--bg-secondary) 25%, var(--hover-color) 50%, var(--bg-secondary) 75%);
+  background-size: 200% 100%;
+  animation: wiki-skeleton-loading 1.5s infinite;
+  border-radius: 3px;
+  min-width: 3ch;
+}
+
 /* Mobile - only hide labels, keep button sizes */
 @media (max-width: 767px) {
-  :is(.tool-construction, .tool-loadouts) {
+  :is(.tool-construction, .tool-loadouts, .tool-skills) {
     & .sidebar-body {
       padding: 10px 8px;
     }

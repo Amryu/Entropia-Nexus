@@ -226,22 +226,138 @@ Compare mode allows side-by-side comparison of two loadouts:
 
 ---
 
-## Future Tools
+## Skills Calculator
 
-Planned tools (not yet implemented):
+Import skill data, calculate profession levels and HP, and optimize skill progression costs.
 
-### Crafting Calculator
-- Blueprint selection
-- Material requirements
-- Success rate estimation
-- Cost/profit analysis
+### Route
 
-### Mining Calculator
-- Finder/amp combinations
-- Expected returns
-- Decay calculations
+```
+/tools/skills
+```
 
-### Skill Planner
-- Profession progress tracking
-- Skill point allocation
-- Training recommendations
+### Layout
+
+Uses `WikiPage` component with `pageClass="tool-skills"` for consistent layout:
+- Desktop: sidebar (280px) + content area
+- Mobile (<900px): sidebar as slide-in drawer via `MobileDrawer`
+- Breadcrumbs: Tools / Skills Calculator
+- Header actions: Import, Export (icon-only on mobile), History & Online/Local toggle (when logged in)
+- Shared CSS from `tools.css` (`.sidebar-toggle`, `.sidebar-search`, `.sidebar-item`, `.action-btn`, etc.)
+
+### Features
+
+- **Skill Import**: Import skill data via JSON (supports external kebab-case format and Nexus format)
+- **Profession Levels**: Automatic calculation using `Level = Σ(skill_points × weight) / 10000`
+- **HP Calculation**: Base 80 + contributions from skills with HPIncrease
+- **Interactive Navigation**: Click between skills and professions to explore relationships
+- **Online/Local Mode**: Dual storage with auto-import prompt on login
+- **Import History**: Track skill changes over time with per-skill deltas
+- **Optimizer**: Find cheapest path to target profession level or HP
+  - **Target types**: Profession level or HP
+  - **Per-skill method toggle**: Codex / Chip / None per skill, with bulk toggle buttons
+  - **Skills without codex** are locked to Chip/None only
+- **Markup Sources**: Custom, Market (WAP), or Inventory markups for skill implant pricing
+  - Market lookup uses `"{SkillName} Skill Implant (L)"` naming convention
+  - Warning icon shown for skills missing market data
+
+### Profession Level Formula
+
+```
+Level = Σ(skill_points × weight) / 10000
+```
+
+Where `weight` is from the ProfessionSkills cross-table. Weights often sum to 100 but not always.
+
+### HP Formula
+
+```
+Total HP = 80 + Σ(skill_points / HPIncrease)
+```
+
+For each skill where HPIncrease > 0.
+
+### Codex Cost per Skill PED
+
+| Category | Cost Multiplier |
+|----------|----------------|
+| Cat 1 | 200 PED/PED |
+| Cat 2 | 320 PED/PED |
+| Cat 3 | 640 PED/PED |
+| Cat 4 | 1000 PED/PED |
+
+### Skill Value Conversion API
+
+Skill point ↔ PED conversions are computed server-side to keep the formula secret.
+
+```
+POST /api/tools/skills/values
+
+Request:  { skillPointsToPED?: number[], pedToSkillPoints?: number[] }
+Response: { skillPointsToPED?: number[], pedToSkillPoints?: number[] }
+```
+
+- **Public** endpoint (no auth required)
+- **Rate limited**: 60 requests/minute per IP
+- **Batch cap**: 200 total conversions per request
+- Formula implementation: `nexus/src/lib/server/skillFormula.js` (server-only)
+- Client wrappers: `fetchSkillPEDValues()`, `fetchPEDToSkillPoints()`, `fetchAllSkillPEDValues()` in `skillCalculations.js`
+- UI uses debounced (400ms) batch fetch with loading shimmer
+
+### Constants
+
+- `CHIP_OUT_LOSS_PERCENT` — Skill extraction loss percentage (unknown, set to 0)
+
+### Optimizer Functions
+
+In `skillCalculations.js`:
+
+- `findCheapestPath(currentSkills, professionSkills, currentLevel, targetLevel, markups, methodOverrides)` — Greedy allocation by cost-efficiency (profession level gained per PED spent)
+- `findCheapestHPPath(currentSkills, skillMetadata, currentHP, targetHP, markups, methodOverrides)` — Same greedy approach but optimizes for HP gain (only skills with `HPIncrease > 0`)
+- `methodOverrides` object: `{ skillName: 'codex' | 'chip' | 'none' }` — forces method per skill, `'none'` excludes the skill
+
+### Components & Files
+
+```
+nexus/src/routes/tools/skills/
+└── [[slug]]/
+    ├── +page.js            - Page loader (fetches skills/professions from API)
+    └── +page.svelte        - Main skills calculator UI (uses WikiPage + tools.css)
+
+nexus/src/routes/tools/
+└── tools.css               - Shared tool styles (scoped under .tool-skills)
+
+nexus/src/lib/utils/
+├── skillCalculations.js    - Profession level, HP, optimizer functions
+├── codexUtils.js           - Codex constants and calculations (shared with MobCodex)
+└── skillImportUtils.js     - Import/export format parsing
+
+nexus/src/lib/server/
+├── skillsDb.js             - Database operations for user skills
+└── skillFormula.js         - Server-only skill↔PED conversion formula
+
+nexus/src/routes/api/tools/skills/
+├── +server.js              - GET/PUT user skills
+├── values/+server.js       - POST batch skill↔PED conversions
+└── imports/
+    ├── +server.js          - GET import history
+    ├── value-history/+server.js - GET value over time
+    └── [id]/deltas/+server.js   - GET per-skill deltas
+```
+
+### Database Tables (nexus-users)
+
+- `user_skills` — Current skill values per user (JSONB)
+- `skill_imports` — Import history records
+- `skill_import_deltas` — Per-skill change tracking
+
+---
+
+## Summary Bar (Skills Calculator)
+
+| Metric | Description |
+|--------|-------------|
+| HP | Base 80 + skill contributions |
+| Total Value | Sum of all skill point values |
+| Total Skill Points | Sum of all positive skill point values |
+| Unlocks remaining | Profession unlocks not yet reached |

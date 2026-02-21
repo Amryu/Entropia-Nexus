@@ -62,7 +62,7 @@ function formatSkill(x, data) {
       Description: x.Description,
       HpIncrease: x.HPIncrease !== null ? Number(x.HPIncrease) : null,
       IsHidden: unlocks !== null && unlocks.length > 0,
-      IsExtractable: x.IsExtractable === 1,
+      IsExtractable: !!x.IsExtractable,
     },
     Professions: professionSkills,
     Unlocks: unlocks.length > 0 ? unlocks : null,
