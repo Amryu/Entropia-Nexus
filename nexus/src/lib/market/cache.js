@@ -558,8 +558,7 @@ if (typeof window === 'undefined') {
 // Slim client payload
 function slimItem(item) {
   if (!item || typeof item !== 'object') return item;
-  // Filter items marked as untradeable in their description
-  if (item.Properties?.Description?.includes('Untradeable')) return null;
+  const ut = item.Properties?.Description?.includes('Untradeable') || undefined;
   const id = item.ItemId ?? item.Id ?? null;
   const counts = id != null && cache.offerCounts ? cache.offerCounts.get(id) : null;
   const planets = id != null && cache.orderPlanets ? cache.orderPlanets.get(id) : null;
@@ -597,6 +596,7 @@ function slimItem(item) {
     v,
     ...(g !== undefined && { g }),
     ...(st && { st }),
+    ...(ut && { ut }),
     o: null,
     b: counts?.buys || null,
     s: counts?.sells || null,
@@ -612,7 +612,7 @@ function slimItem(item) {
 }
 
 function slimCategorized(obj) {
-  if (Array.isArray(obj)) return obj.map(slimItem).filter(Boolean);
+  if (Array.isArray(obj)) return obj.map(slimItem).filter(item => item && !item.ut);
   if (obj && typeof obj === 'object') {
     const out = {};
     for (const [k, v] of Object.entries(obj)) {

@@ -421,6 +421,11 @@
       const slimItem = (allItems || []).find(si => si?.i === invItem.item_id);
       const itemType = slimItem?.t || null;
 
+      // Block untradeable items
+      if (slimItem?.ut) {
+        addToast('This item is untradeable.', { type: 'warning' });
+        return;
+      }
       // Block untradeable clothing (null gender)
       if (itemType === 'Clothing' && slimItem?.g === null) {
         addToast('This item cannot be traded (no gender classification).', { type: 'warning' });
@@ -1569,6 +1574,11 @@
     const item = selectedItemDetails;
     if (!item) return;
 
+    // Block untradeable items
+    if (selectedItem?.ut) {
+      addToast('This item is untradeable.', { type: 'warning' });
+      return;
+    }
     // Block untradeable clothing (null gender classification)
     if (selectedItem?.t === 'Clothing' && selectedItemGender === null) {
       addToast('This item cannot be traded (no gender classification).', { type: 'warning' });
@@ -2331,7 +2341,9 @@
             <option value="all">All</option>
           </select>
           <div class="actions-right">
-            {#if selectedItem?.t === 'Clothing' && selectedItemGender === null}
+            {#if selectedItem?.ut}
+              <span class="untradeable-notice">This item is untradeable</span>
+            {:else if selectedItem?.t === 'Clothing' && selectedItemGender === null}
               <span class="untradeable-notice">This item cannot be traded (no gender classification)</span>
             {:else if canPostOrders}
               <button
