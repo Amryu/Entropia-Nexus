@@ -21,6 +21,13 @@
       description: 'Calculate crafting requirements, materials, and costs for blueprints'
     },
     {
+      name: 'Skills Calculator',
+      href: '/tools/skills',
+      icon: 'SC',
+      description: 'Import skills, calculate profession levels, and optimize skill progression',
+      comingSoon: true
+    },
+    {
       name: 'API',
       href: apiDocsUrl,
       icon: 'API',
@@ -44,7 +51,15 @@
 
   <div class="category-grid">
     {#each categories as category}
-      {#if category.external}
+      {#if category.comingSoon}
+        <div class="category-card disabled">
+          <span class="category-icon">{category.icon}</span>
+          <div class="category-content">
+            <h2 class="category-name">{category.name} <span class="coming-soon">Coming Soon</span></h2>
+            <p class="category-description">{category.description}</p>
+          </div>
+        </div>
+      {:else if category.external}
         <a href={category.href} class="category-card" target="_blank" rel="noreferrer">
           <span class="category-icon">{category.icon}</span>
           <div class="category-content">
@@ -156,6 +171,21 @@
   .category-card:hover .category-arrow {
     transform: translateX(4px);
     color: var(--accent-color);
+  }
+
+  .category-card.disabled {
+    opacity: 0.55;
+    cursor: default;
+    pointer-events: none;
+  }
+
+  .coming-soon {
+    font-size: 0.7rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-left: 6px;
   }
 
   /* Mobile responsive */

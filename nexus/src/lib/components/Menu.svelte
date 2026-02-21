@@ -570,6 +570,7 @@
     'Tools': [
       { label: 'Loadout Manager', url: 'loadouts' },
       { label: 'Construction Calculator', url: 'construction' },
+      { label: 'Skills Calculator', url: 'skills', disabled: true },
       { label: 'API', url: 'api' },
     ],
     'Market': [
