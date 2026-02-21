@@ -6,6 +6,7 @@
   import { onDestroy, onMount } from 'svelte';
   import { getTypeLink, getTypeName } from '$lib/util';
   import { getColumnsForType } from '$lib/search-columns';
+  import { itemTypeBadge } from '../market/exchange/orderUtils';
 
   export let data;
 
@@ -245,9 +246,9 @@
                       >
                         <td class="col-name">
                           {#if link}
-                            <a href={link}>{result.Name}</a>
+                            <a href={link}>{result.Name}{@html itemTypeBadge(result.Type)}</a>
                           {:else}
-                            {result.Name}
+                            {result.Name}{@html itemTypeBadge(result.Type)}
                           {/if}
                         </td>
                         {#each columns as col}
