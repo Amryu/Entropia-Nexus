@@ -626,6 +626,17 @@
     closeMobileMenu();
   }
 
+  function handleSearchNavigate(event) {
+    // Navigate to dedicated search page
+    const query = event.detail.query;
+    if (query && query.trim().length >= 2) {
+      goto(`/search?q=${encodeURIComponent(query.trim())}`);
+      desktopSearchRef?.clear?.();
+      mobileSearchRef?.clear?.();
+      closeMobileMenu();
+    }
+  }
+
 
   const customUrls: Record<string, string> = {
     'api': `${import.meta.env.VITE_API_URL}/docs/`,
@@ -2131,6 +2142,7 @@
         mode="dropdown"
         containerClass="desktop-search"
         on:select={handleSearchSelect}
+        on:search={handleSearchNavigate}
       />
     </div>
     {#if canCopyShortLink}
@@ -2341,6 +2353,7 @@
         containerClass="mobile-search"
         showOnFocus={true}
         on:select={handleSearchSelect}
+        on:search={handleSearchNavigate}
         on:close={exitMobileSearchMode}
       />
       {#if mobileSearchMode}

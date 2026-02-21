@@ -66,6 +66,7 @@
   let searchTimeout;
   let flatResults = []; // Flattened results for keyboard navigation
   let preventBlurClose = false; // Prevent blur from closing when context menu opens
+  let hasUsedArrowKeys = false; // Track if arrow keys were used for selection
 
   // Cleanup on destroy
   onDestroy(() => {
@@ -146,8 +147,8 @@
         });
       }
     }
-    // Reset highlight when results change
-    highlightedIndex = flatResults.length > 0 ? 0 : -1;
+    // Don't auto-select — let user explicitly choose with arrow keys
+    highlightedIndex = -1;
   }
 
   async function performSearch() {
@@ -186,6 +187,7 @@
     }
     value = cleaned;
     highlightedIndex = -1;
+    hasUsedArrowKeys = false;
 
     if (searchTimeout) clearTimeout(searchTimeout);
 
@@ -205,6 +207,19 @@
   }
 
   function handleKeydown(event) {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      if (hasUsedArrowKeys && highlightedIndex >= 0 && highlightedIndex < flatResults.length) {
+        // Arrow key selection made — navigate to that result
+        selectResult(flatResults[highlightedIndex]);
+      } else if (value.trim().length >= 2) {
+        // No arrow key selection — go to dedicated search page
+        dispatch('search', { query: value });
+        closeResults();
+      }
+      return;
+    }
+
     if (!showResults || flatResults.length === 0) {
       if (event.key === 'Escape') {
         closeResults();
@@ -216,21 +231,16 @@
     switch (event.key) {
       case 'ArrowDown':
         event.preventDefault();
+        hasUsedArrowKeys = true;
         highlightedIndex = Math.min(highlightedIndex + 1, flatResults.length - 1);
         scrollToHighlighted();
         break;
 
       case 'ArrowUp':
         event.preventDefault();
+        hasUsedArrowKeys = true;
         highlightedIndex = Math.max(highlightedIndex - 1, 0);
         scrollToHighlighted();
-        break;
-
-      case 'Enter':
-        event.preventDefault();
-        if (highlightedIndex >= 0 && highlightedIndex < flatResults.length) {
-          selectResult(flatResults[highlightedIndex]);
-        }
         break;
 
       case 'Escape':

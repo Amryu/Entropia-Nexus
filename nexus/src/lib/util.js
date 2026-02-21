@@ -361,6 +361,8 @@ export function getTypeName(type) {
       return 'Misc Tool';
     case 'Blueprint':
       return 'Blueprint';
+    case 'BlueprintBook':
+      return 'Blueprint Book';
     case 'Material':
       return 'Material';
     case 'Vehicle':

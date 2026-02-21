@@ -158,6 +158,22 @@ Player utilities:
 |-------|-------------|---------------|
 | `/tools/loadouts` | Loadout calculator | See below |
 
+### Search (`/search`)
+
+Dedicated search results page with grouped, columnar results.
+
+| Route | Description |
+|-------|-------------|
+| `/search?q=...` | Full search results with enriched entity data |
+
+**Features**:
+- Debounced search input updates URL reactively
+- Results grouped by entity type, sorted by search score
+- Compact tables with user-configured columns (from sidebar preferences)
+- Collapsible sections per entity type
+- Falls back to default columns when no user preferences exist
+- API: `/search/detailed` enriches results with full entity Properties
+
 ### Account (`/account/`)
 
 User account management:

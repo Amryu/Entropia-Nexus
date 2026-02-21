@@ -1,5 +1,44 @@
 const { pool, usersPool } = require('./dbClient');
-const { idOffsets } = require('./constants');
+const { idOffsets, ITEM_TABLES } = require('./constants');
+const { withCache } = require('./responseCache');
+const { getWeapons } = require('./weapons');
+const { getMaterials } = require('./materials');
+const { getBlueprints } = require('./blueprints');
+const { getArmorSets } = require('./armorsets');
+const { getVehicles } = require('./vehicles');
+const { getClothings } = require('./clothings');
+const { getPets } = require('./pets');
+const { getMobs } = require('./mobs');
+const { getSkills } = require('./skills');
+const { getProfessions } = require('./professions');
+const { getVendors } = require('./vendors');
+const { getMedicalTools } = require('./medicaltools');
+const { getConsumables } = require('./consumables');
+const { getStrongboxes } = require('./strongboxes');
+const { getMiscTools } = require('./misctools');
+const { getMissions } = require('./missions');
+const { getLocations } = require('./locations');
+const { getMissionChains } = require('./missionchains');
+const { getMedicalChips } = require('./medicalchips');
+const { getRefiners } = require('./refiners');
+const { getScanners } = require('./scanners');
+const { getFinders } = require('./finders');
+const { getExcavators } = require('./excavators');
+const { getTeleportationChips } = require('./teleportationchips');
+const { getEffectChips } = require('./effectchips');
+const { getCapsules } = require('./capsules');
+const { getFurnitures } = require('./furniture');
+const { getDecorations } = require('./decorations');
+const { getStorageContainers } = require('./storagecontainers');
+const { getSigns } = require('./signs');
+const { getWeaponAmplifiers } = require('./weaponamplifiers');
+const { getWeaponVisionAttachments } = require('./weaponvisionattachments');
+const { getAbsorbers } = require('./absorbers');
+const { getArmorPlatings } = require('./armorplatings');
+const { getFinderAmplifiers } = require('./finderamplifiers');
+const { getEnhancers } = require('./enhancers');
+const { getMindforceImplants } = require('./mindforce');
+const { getBlueprintBooks } = require('./blueprintbooks');
 
 /**
  * Score a search result against the query.
@@ -222,7 +261,7 @@ async function checkTableExists(tableName) {
   return tableExistsCache[tableName];
 }
 
-async function search(query, fuzzy = false){
+async function search(query, fuzzy = false, perType = 5, totalLimit = 50){
   query = query.trim(); // Trim whitespace to avoid matching issues
   const useFuzzy = fuzzy && await checkTrgmAvailable();
 
@@ -330,9 +369,9 @@ async function search(query, fuzzy = false){
       )
       ${whereClause}
     ) x
-    WHERE rn <= 5
+    WHERE rn <= ${parseInt(perType) || 5}
     ORDER BY rn, "Type"
-    LIMIT 50`;
+    LIMIT ${parseInt(totalLimit) || 50}`;
 
   // Fuzzy: $1=name, $2=%name%, $3=name%  Non-fuzzy: $1=%name%, $2=name%
   const params = useFuzzy ? [searchName, `%${searchName}%`, `${searchName}%`, ...mwParams] : [`%${searchName}%`, `${searchName}%`, ...mwParams];
@@ -548,6 +587,108 @@ async function searchItems(query, fuzzy = false, options = {}){
     .map(r => formatSearchResult(r, r._score));
 }
 
+// --- Detailed search with entity enrichment ---
+
+// Map search result Type to cache config for enrichment
+const ENRICHMENT_MAP = {
+  Weapon:       { route: '/weapons',      tables: ['Weapons', 'VehicleAttachmentTypes', 'Materials', 'Professions', 'EffectsOnEquip', 'EffectsOnUse', 'Effects', 'Tiers', 'TierMaterials'], getter: getWeapons },
+  Material:     { route: '/materials',     tables: ['Materials'], getter: getMaterials },
+  Blueprint:    { route: '/blueprints',    tables: ['Blueprints', 'BlueprintBooks', ...ITEM_TABLES, 'Professions', 'BlueprintMaterials', 'BlueprintDrops'], getter: getBlueprints },
+  ArmorSet:     { route: '/armorsets',     tables: ['ArmorSets', 'Armors', 'EffectsOnEquip', 'EffectsOnSetEquip', 'Effects', 'Tiers', 'TierMaterials'], getter: getArmorSets },
+  Vehicle:      { route: '/vehicles',      tables: ['Vehicles'], getter: getVehicles },
+  Clothing:     { route: '/clothings',     tables: ['Clothes', 'EffectsOnEquip', 'EffectsOnSetEquip', 'Effects', 'EquipSets'], getter: getClothings },
+  Pet:          { route: '/pets',          tables: ['Pets'], getter: getPets },
+  Mob:          { route: '/mobs',          tables: ['Mobs', 'MobSpecies', 'Planets', 'Professions', 'MobLoots', 'MobMaturities', 'MobSpawns', ...ITEM_TABLES], getter: getMobs },
+  Skill:        { route: '/skills',        tables: ['Skills', 'SkillCategories', 'ProfessionSkills', 'SkillUnlocks', 'Professions', 'ProfessionCategories'], getter: getSkills },
+  Profession:   { route: '/professions',   tables: ['Professions', 'ProfessionCategories', 'ProfessionSkills', 'SkillUnlocks', 'Skills'], getter: getProfessions },
+  Vendor:       { route: '/vendors',       tables: ['Locations', 'Planets', 'VendorOffers', 'VendorOfferPrices', ...ITEM_TABLES], getter: getVendors },
+  MedicalTool:  { route: '/medicaltools',  tables: ['MedicalTools', 'EffectsOnEquip', 'EffectsOnUse', 'Effects', 'Tiers', 'TierMaterials'], getter: getMedicalTools },
+  Consumable:   { route: '/consumables',   tables: ['Consumables', 'EffectsOnConsume', 'Effects'], getter: getConsumables },
+  Strongbox:    { route: '/strongboxes',   tables: ['Strongboxes'], getter: getStrongboxes },
+  MiscTool:     { route: '/misctools',     tables: ['MiscTools'], getter: getMiscTools },
+  Mission:      { route: '/missions',     tables: ['Missions', 'Planets', 'MissionChains', 'Events', 'Locations'], getter: getMissions },
+  MissionChain: { route: '/missionchains', tables: ['MissionChains', 'Planets'], getter: getMissionChains },
+  Location:     { route: '/locations',    tables: ['Locations', 'Planets', 'Areas', 'Estates', 'LandAreas', 'LocationFacilities', 'Facilities', 'WaveEventWaves'], getter: getLocations },
+  MedicalChip:           { route: '/medicalchips',           tables: ['MedicalChips', 'Materials', 'EffectsOnEquip', 'EffectsOnUse', 'Effects'], getter: getMedicalChips },
+  Refiner:               { route: '/refiners',               tables: ['Refiners'], getter: getRefiners },
+  Scanner:               { route: '/scanners',               tables: ['Scanners'], getter: getScanners },
+  Finder:                { route: '/finders',                tables: ['Finders', 'EffectsOnEquip', 'Effects', 'Tiers', 'TierMaterials'], getter: getFinders },
+  Excavator:             { route: '/excavators',             tables: ['Excavators', 'EffectsOnEquip', 'Effects', 'Tiers', 'TierMaterials'], getter: getExcavators },
+  TeleportationChip:     { route: '/teleportationchips',     tables: ['TeleportationChips', 'Professions', 'Materials'], getter: getTeleportationChips },
+  EffectChip:            { route: '/effectchips',            tables: ['EffectChips', 'Professions', 'Materials', 'EffectsOnUse', 'Effects'], getter: getEffectChips },
+  CreatureControlCapsule: { route: '/capsules',              tables: ['CreatureControlCapsules'], getter: getCapsules },
+  Furniture:             { route: '/furniture',              tables: ['Furniture'], getter: getFurnitures },
+  Decoration:            { route: '/decorations',            tables: ['Decorations'], getter: getDecorations },
+  StorageContainer:      { route: '/storagecontainers',      tables: ['StorageContainers'], getter: getStorageContainers },
+  Sign:                  { route: '/signs',                  tables: ['Signs'], getter: getSigns },
+  WeaponAmplifier:       { route: '/weaponamplifiers',       tables: ['WeaponAmplifiers'], getter: getWeaponAmplifiers },
+  WeaponVisionAttachment: { route: '/weaponvisionattachments', tables: ['WeaponVisionAttachments'], getter: getWeaponVisionAttachments },
+  Absorber:              { route: '/absorbers',              tables: ['Absorbers'], getter: getAbsorbers },
+  ArmorPlating:          { route: '/armorplatings',          tables: ['ArmorPlatings'], getter: getArmorPlatings },
+  FinderAmplifier:       { route: '/finderamplifiers',       tables: ['FinderAmplifiers'], getter: getFinderAmplifiers },
+  Enhancer:              { route: '/enhancers',              tables: ['Enhancers', 'EnhancerType'], getter: getEnhancers },
+  MindforceImplant:      { route: '/mindforceimplants',      tables: ['MindforceImplants'], getter: getMindforceImplants },
+  BlueprintBook:         { route: '/blueprintbooks',         tables: ['BlueprintBooks', 'Planets'], getter: getBlueprintBooks },
+};
+
+/**
+ * Build name-lookup maps from cached entity lists.
+ * Only fetches caches for types present in the search results.
+ */
+async function buildEntityCaches(types) {
+  const caches = {};
+  const uniqueTypes = [...new Set(types)];
+  await Promise.all(uniqueTypes.map(async (type) => {
+    const config = ENRICHMENT_MAP[type];
+    if (!config) return;
+    try {
+      const list = await withCache(config.route, config.tables, config.getter);
+      if (Array.isArray(list)) {
+        caches[type] = new Map(list.map(item => [item.Name, item]));
+      }
+    } catch (e) {
+      console.warn(`[search/detailed] Failed to load cache for ${type}:`, e.message);
+    }
+  }));
+  return caches;
+}
+
+// Fields to exclude when merging full entity data (already present from search result or internal)
+const ENRICHMENT_EXCLUDE = new Set(['Id', 'Name', 'Type', 'SubType', 'Score', 'Links']);
+
+/**
+ * Detailed search: runs search then enriches each result with full entity data
+ * from the cached entity data (Properties, Maturities, Planet, Profession, etc.).
+ */
+async function searchDetailed(query, fuzzy = false, perType = 100, totalLimit = 300) {
+  const results = await search(query, fuzzy, perType, totalLimit);
+
+  // Build caches only for types that appear in results
+  const resultTypes = results.map(r => r.Type);
+  const caches = await buildEntityCaches(resultTypes);
+
+  // Enrich each result with all top-level fields from the full entity
+  const enriched = results.map(result => {
+    const cache = caches[result.Type];
+    if (!cache) return result;
+    const fullEntity = cache.get(result.Name);
+    if (!fullEntity) return result;
+    const merged = { ...result };
+    for (const key of Object.keys(fullEntity)) {
+      if (!ENRICHMENT_EXCLUDE.has(key)) {
+        merged[key] = fullEntity[key];
+      }
+    }
+    // Preserve the entity's own Type (e.g. "Animal" for mobs) under EntityType
+    if (fullEntity.Type && fullEntity.Type !== result.Type) {
+      merged.EntityType = fullEntity.Type;
+    }
+    return merged;
+  });
+
+  return enriched;
+}
+
 function register(app){
   /**
    * @swagger
@@ -577,6 +718,35 @@ function register(app){
     if (!req.query.query || req.query.query.trim().length===0) return res.status(400).send('Query cannot be empty');
     const fuzzy = req.query.fuzzy === 'true' || req.query.fuzzy === '1';
     res.json(await search(req.query.query, fuzzy));
+  });
+  /**
+   * @swagger
+   * /search/detailed:
+   *  get:
+   *    description: Search with enriched results. Returns full Properties for each result from cached entity data.
+   *    parameters:
+   *      - in: query
+   *        name: query
+   *        schema:
+   *          type: string
+   *        required: true
+   *        description: The search query
+   *      - in: query
+   *        name: fuzzy
+   *        schema:
+   *          type: boolean
+   *        required: false
+   *        description: Enable fuzzy matching (requires pg_trgm extension)
+   *    responses:
+   *      '200':
+   *        description: A list of enriched entities matching the search query
+   *      '400':
+   *        description: Query cannot be empty
+   */
+  app.get('/search/detailed', async (req, res) => {
+    if (!req.query.query || req.query.query.trim().length === 0) return res.status(400).send('Query cannot be empty');
+    const fuzzy = req.query.fuzzy === 'true' || req.query.fuzzy === '1';
+    res.json(await searchDetailed(req.query.query, fuzzy));
   });
   /**
    * @swagger
@@ -625,4 +795,4 @@ function register(app){
   });
 }
 
-module.exports = { register, search, searchItems };
+module.exports = { register, search, searchItems, searchDetailed };

@@ -85,7 +85,8 @@ export const SHORT_ROUTE_MAP = Object.freeze({
   nw: '/news',
   vi: '/videos',
   st: '/streams',
-  ai: '/account/inventory'
+  ai: '/account/inventory',
+  se: '/search'
 });
 
 /**
@@ -149,7 +150,8 @@ export const PREFERRED_SHORT_ROUTE_BY_PREFIX = Object.freeze({
   '/news': 'nw',
   '/videos': 'vi',
   '/streams': 'st',
-  '/account/inventory': 'ai'
+  '/account/inventory': 'ai',
+  '/search': 'se'
 });
 
 /**

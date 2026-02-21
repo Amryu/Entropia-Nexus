@@ -98,11 +98,38 @@ Results from SQL are then scored in JavaScript and re-sorted by score descending
 | Consumer | How it uses search | File |
 |---|---|---|
 | Exchange browser (item list) | Client-side scoring via `$lib/search.js`. Items filtered by `score > 0`, sorted by score (primary) then order priority (secondary). | `ExchangeBrowser.svelte` |
-| Global SearchInput | Calls backend API (`/search`), then re-scores client-side for consistent ranking. | `nexus/src/lib/components/SearchInput.svelte` |
+| Global SearchInput | Calls backend API (`/search`), then re-scores client-side for consistent ranking. Enter without arrow selection → navigates to `/search?q=...`. | `nexus/src/lib/components/SearchInput.svelte` |
+| Search page (`/search`) | Calls backend API (`/search/detailed`). Displays enriched results in grouped tables with user-configured columns. | `nexus/src/routes/search/+page.svelte` |
 | Wiki SearchInput (local mode) | Client-side scoring via `$lib/search.js`. Options scored, filtered, and sorted by score. | `nexus/src/lib/components/wiki/SearchInput.svelte` |
 | Wiki SearchInput (API mode) | Calls backend API (`/search/items`). Backend scoring applies. | `nexus/src/lib/components/wiki/SearchInput.svelte` |
 | Backend `/search` endpoint | SQL pre-filter + JavaScript scoring. | `api/endpoints/search.js` |
+| Backend `/search/detailed` endpoint | Enriches `/search` results with full entity Properties from cached data. `perType=20`, `totalLimit=100`. | `api/endpoints/search.js` |
 | Backend `/search/items` endpoint | SQL pre-filter + JavaScript scoring. Optional type filter removes per-category limit. | `api/endpoints/search.js` |
+
+## Search Page (`/search`)
+
+The dedicated search page provides a full-page search experience with enriched results.
+
+### Architecture
+
+- **Data loader** (`+page.js`): Reads `q` from URL params, calls `/search/detailed?query=...&fuzzy=true`
+- **Page** (`+page.svelte`): Debounced input (300ms) updates URL via `goto()` with `replaceState`
+- **Column defs** (`search-columns.js`): Shared column definitions per entity type, matching sidebar column keys
+
+### Column Resolution
+
+1. Read `localStorage` key `wiki-nav-columns-{pageTypeId}` (user's sidebar preferences)
+2. Take first 5 column keys, resolve against `SEARCH_COLUMN_DEFS[pageTypeId]`
+3. Fall back to `DEFAULT_SEARCH_COLUMNS[pageTypeId]` if no stored preferences
+
+### `/search/detailed` Endpoint
+
+Enriches standard search results with full entity Properties:
+
+1. Runs `search(query, fuzzy, perType=20, totalLimit=100)`
+2. For each result Type, loads entity cache via `withCache` (already in memory from regular API usage)
+3. Matches results by Name, merges `Properties` from cached entity data
+4. Types without enrichment endpoints (User, Society, Location, Mission) are returned as-is
 
 ## Keeping Implementations in Sync
 
