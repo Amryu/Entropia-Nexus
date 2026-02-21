@@ -35,6 +35,7 @@
 
   // Legacy components for data display
   import Acquisition from '$lib/components/wiki/Acquisition.svelte';
+  import Usage from '$lib/components/wiki/Usage.svelte';
 
   // Image upload
   import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
@@ -407,7 +408,8 @@
   let panelStates = {
     pieces: true,
     tiering: true,
-    acquisition: true
+    acquisition: true,
+    usage: true
   };
 
   onMount(() => {
@@ -677,7 +679,19 @@
             bind:expanded={panelStates.acquisition}
             on:toggle={savePanelStates}
           >
-            <Acquisition acquisition={additional.acquisition} />
+            <Acquisition acquisition={additional.acquisition} isMultiItem={true} />
+          </DataSection>
+        {/if}
+
+        <!-- Usage Section -->
+        {#if additional.usage}
+          <DataSection
+            title="Usage"
+            icon=""
+            bind:expanded={panelStates.usage}
+            on:toggle={savePanelStates}
+          >
+            <Usage usage={additional.usage} item={armorSet} isMultiItem={true} />
           </DataSection>
         {/if}
       </article>

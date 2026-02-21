@@ -109,6 +109,7 @@ function formatArmorPiece(row, effectsByItemId) {
   const equipEffects = effectsByItemId[itemId] || [];
 
   return {
+    ItemId: itemId,
     Name: row.Name,
     Properties: {
       Description: row.Description,

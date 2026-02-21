@@ -11,6 +11,7 @@
   import RefiningRecipesDisplay from './RefiningRecipesDisplay.svelte';
 
   export let acquisition;
+  export let isMultiItem = false;
 
   const frequencyOrder = {
     'Always': 0,
@@ -74,6 +75,7 @@
 
   $: lootColumns = [
     { key: 'mob', header: 'Mob', main: true, formatter: (v, row) => row.mobLink ? `<a href="${row.mobLink}">${v}</a>` : v },
+    ...(isMultiItem ? [{ key: 'item', header: 'Item', formatter: (v, row) => row.itemLink ? `<a href="${row.itemLink}">${v}</a>` : v }] : []),
     { key: 'planet', header: 'Planet' },
     { key: 'maturity', header: 'Lowest Maturity' },
     { key: 'frequency', header: 'Frequency' }
@@ -83,26 +85,28 @@
   $: marketData = (() => {
     const rows = [];
 
-    // Exchange orders — deduplicate by seller (keep cheapest markup)
+    // Exchange orders — deduplicate by seller (+ item for multi-item), keep cheapest markup
     if (acquisition?.ExchangeOrders?.length) {
       const bestBySeller = new Map();
       for (const order of acquisition.ExchangeOrders) {
-        const key = order.seller_name;
+        const key = isMultiItem ? `${order.seller_name}|${order.item_name || ''}` : order.seller_name;
         if (!bestBySeller.has(key) || order.markup < bestBySeller.get(key).markup) {
           bestBySeller.set(key, order);
         }
       }
-      const exchangeItemId = acquisition._exchangeItemId;
+      const globalExchangeItemId = acquisition._exchangeItemId;
       for (const order of bestBySeller.values()) {
+        const exchId = order._exchangeItemId || globalExchangeItemId;
         rows.push({
           name: order.seller_name,
+          item: order.item_name || null,
           source: 'Exchange',
           markup: order.formattedMarkup,
           markupRaw: order.markup,
           quantity: order.quantity,
           planet: order.planet,
           stale: order.state === 'stale',
-          rowLink: exchangeItemId ? `/market/exchange/listings/${exchangeItemId}` : null
+          rowLink: exchId ? `/market/exchange/listings/${exchId}` : null
         });
       }
     }
@@ -153,6 +157,7 @@
 
   $: marketColumns = [
     { key: 'name', header: 'Name', main: true, formatter: (v, row) => row.stale ? `<span class="stale-text">${v}</span>` : v },
+    ...(isMultiItem ? [{ key: 'item', header: 'Item' }] : []),
     { key: 'source', header: 'Source', width: '80px' },
     { key: 'markup', header: 'Markup', sortValue: (row) => row.markupRaw, formatter: (v, row) => row.stale ? `<span class="stale-text">${v}</span>` : v },
     { key: 'quantity', header: 'Qty' },

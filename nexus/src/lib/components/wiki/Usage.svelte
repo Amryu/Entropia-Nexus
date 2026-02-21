@@ -11,6 +11,7 @@
 
   export let item;
   export let usage;
+  export let isMultiItem = false;
 
   // Build blueprint data
   $: blueprintData = (() => {
@@ -73,25 +74,27 @@
   // Build market data from exchange buy orders
   $: marketData = (() => {
     if (!usage?.ExchangeBuyOrders?.length) return [];
-    // Deduplicate by buyer — keep highest bid
+    // Deduplicate by buyer (+ item for multi-item) — keep highest bid
     const bestByBuyer = new Map();
     for (const order of usage.ExchangeBuyOrders) {
-      const key = order.buyer_name;
+      const key = isMultiItem ? `${order.buyer_name}|${order.item_name || ''}` : order.buyer_name;
       if (!bestByBuyer.has(key) || order.markup > bestByBuyer.get(key).markup) {
         bestByBuyer.set(key, order);
       }
     }
-    const exchangeItemId = usage._exchangeItemId;
+    const globalExchangeItemId = usage._exchangeItemId;
     const rows = [];
     for (const order of bestByBuyer.values()) {
+      const exchId = order._exchangeItemId || globalExchangeItemId;
       rows.push({
         name: order.buyer_name,
+        item: order.item_name || null,
         markup: order.formattedMarkup,
         markupRaw: order.markup,
         quantity: order.quantity,
         planet: order.planet,
         stale: order.state === 'stale',
-        rowLink: exchangeItemId ? `/market/exchange/listings/${exchangeItemId}` : null
+        rowLink: exchId ? `/market/exchange/listings/${exchId}` : null
       });
     }
     return rows;
@@ -101,6 +104,7 @@
 
   $: marketColumns = [
     { key: 'name', header: 'Name', main: true, formatter: (v, row) => row.stale ? `<span class="stale-text">${v}</span>` : v },
+    ...(isMultiItem ? [{ key: 'item', header: 'Item' }] : []),
     { key: 'markup', header: 'Markup', sortValue: (row) => row.markupRaw, formatter: (v, row) => row.stale ? `<span class="stale-text">${v}</span>` : v },
     { key: 'quantity', header: 'Qty' },
     { key: 'planet', header: 'Planet' }

@@ -716,6 +716,67 @@ export async function handlePageLoad(fetch, items, config) {
       acquisition = await getAcquisitionInfo(fetch, armorNames);
       usage = await getUsageInfo(fetch, armorNames);
     }
+
+    // Fetch exchange orders for each individual armor piece
+    const allPieces = object.Armors.flat().filter(p => p.ItemId != null);
+    if (allPieces.length > 0 && (acquisition || usage)) {
+      const orderResults = await Promise.all(
+        allPieces.map(async (piece) => {
+          const orders = await apiCall(fetch, `/api/market/exchange/orders/item/${piece.ItemId}`);
+          return { name: piece.Name, exchangeItemId: piece.ItemId, maxTT: piece.Properties?.Economy?.MaxTT, orders };
+        })
+      );
+
+      const allSellOrders = [];
+      const allBuyOrders = [];
+      for (const { name, exchangeItemId, maxTT, orders } of orderResults) {
+        if (!orders) continue;
+        if (orders.sell?.length > 0) {
+          for (const o of orders.sell) {
+            if (o.computed_state !== 'active' && o.computed_state !== 'stale') continue;
+            const mu = Number(o.markup);
+            const ct = Number(o.details?.CurrentTT);
+            const tt = ct > 0 ? ct : maxTT;
+            allSellOrders.push({
+              seller_name: o.seller_name || 'Anonymous',
+              markup: mu,
+              formattedMarkup: `+${mu.toFixed(2)}`,
+              unitPrice: tt != null ? tt + mu : null,
+              quantity: o.quantity,
+              planet: o.planet || 'Any',
+              state: o.computed_state,
+              item_name: name,
+              _exchangeItemId: exchangeItemId
+            });
+          }
+        }
+        if (orders.buy?.length > 0) {
+          for (const o of orders.buy) {
+            if (o.computed_state !== 'active' && o.computed_state !== 'stale') continue;
+            const mu = Number(o.markup);
+            allBuyOrders.push({
+              buyer_name: o.seller_name || 'Anonymous',
+              markup: mu,
+              formattedMarkup: `+${mu.toFixed(2)}`,
+              quantity: o.quantity,
+              planet: o.planet || 'Any',
+              state: o.computed_state,
+              item_name: name,
+              _exchangeItemId: exchangeItemId
+            });
+          }
+        }
+      }
+
+      if (allSellOrders.length > 0 && acquisition) {
+        acquisition.ExchangeOrders = allSellOrders;
+        acquisition._isMultiItem = true;
+      }
+      if (allBuyOrders.length > 0 && usage) {
+        usage.ExchangeBuyOrders = allBuyOrders;
+        usage._isMultiItem = true;
+      }
+    }
   }
 
   if (object === null) {
