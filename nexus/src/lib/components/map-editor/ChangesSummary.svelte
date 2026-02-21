@@ -7,10 +7,12 @@
 
   export let pendingChanges = new Map();
   export let planet = null;
+  export let isAdmin = false;
 
   const dispatch = createEventDispatcher();
 
   let submitting = false;
+  let directApplying = false;
   let changeStatuses = {}; // changeKey → 'pending' | 'submitting' | 'success' | 'error'
 
   $: changeList = Array.from(pendingChanges.entries()).map(([key, change]) => ({
@@ -134,6 +136,55 @@
 
     if (successCount > 0) {
       addToast(`Submitted ${successCount} change(s) for review`, { type: 'success' });
+    }
+  }
+
+  async function directApplyAll() {
+    if (!confirm(`Directly apply ${changeList.length} change(s)? This will be applied immediately.`)) return;
+    directApplying = true;
+    let successCount = 0;
+
+    for (const change of changeList) {
+      if (changeStatuses[change.key] === 'success') continue;
+
+      const key = change.key;
+      changeStatuses[key] = 'submitting';
+      changeStatuses = changeStatuses;
+
+      try {
+        const changeType = change.action === 'add' ? 'Create' : (change.action === 'delete' ? 'Delete' : 'Update');
+        const body = buildEntityBody(change);
+
+        if (!body) {
+          changeStatuses[key] = 'error';
+          changeStatuses = changeStatuses;
+          continue;
+        }
+
+        const result = await apiPost(
+          fetch,
+          `/api/changes?type=${changeType}&entity=Location&state=DirectApply`,
+          body
+        );
+
+        if (result?.id) {
+          changeStatuses[key] = 'success';
+          successCount++;
+        } else {
+          changeStatuses[key] = 'error';
+          addToast(`Failed to apply: ${result?.error || 'Unknown error'}`, { type: 'error' });
+        }
+      } catch (e) {
+        changeStatuses[key] = 'error';
+        addToast(`Apply error: ${e.message}`, { type: 'error' });
+      }
+      changeStatuses = changeStatuses;
+    }
+
+    directApplying = false;
+
+    if (successCount > 0) {
+      addToast(`Directly applied ${successCount} change(s)`, { type: 'success' });
     }
   }
 
@@ -272,6 +323,13 @@
   .btn:hover { background: var(--hover-color); }
   .btn:disabled { opacity: 0.5; cursor: default; }
 
+  .btn-apply {
+    background: #22c55e;
+    color: white;
+    border-color: #22c55e;
+  }
+  .btn-apply:hover:not(:disabled) { opacity: 0.9; }
+
   .btn-primary {
     background: var(--accent-color);
     color: white;
@@ -341,10 +399,15 @@
     </div>
 
     <div class="changes-actions">
-      <button class="btn btn-primary" on:click={submitAll} disabled={submitting || changeList.length === 0}>
+      {#if isAdmin}
+        <button class="btn btn-apply" on:click={directApplyAll} disabled={submitting || directApplying || changeList.length === 0}>
+          {directApplying ? 'Applying...' : `Direct Apply ${changeList.length} Change(s)`}
+        </button>
+      {/if}
+      <button class="btn btn-primary" on:click={submitAll} disabled={submitting || directApplying || changeList.length === 0}>
         {submitting ? 'Submitting...' : `Submit ${changeList.length} Change(s)`}
       </button>
-      <button class="btn btn-danger" on:click={clearAll} disabled={submitting}>
+      <button class="btn btn-danger" on:click={clearAll} disabled={submitting || directApplying}>
         Clear All
       </button>
     </div>

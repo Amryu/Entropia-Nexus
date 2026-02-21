@@ -1288,6 +1288,7 @@
           <svelte:component this={ChangesSummary}
             pendingChanges={editorPendingChanges}
             planet={currentPlanet}
+            isAdmin={user?.grants?.includes('admin.panel') || user?.administrator || false}
             on:clear={() => { editorPendingChanges = new Map(); }}
           />
         </svelte:fragment>

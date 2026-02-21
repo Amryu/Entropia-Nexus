@@ -208,7 +208,7 @@
     bind:changeCount
   >
     <svelte:fragment slot="output">
-      <AdminSqlOutput {pendingChanges} planetId={selectedPlanet?.Id} />
+      <AdminSqlOutput {pendingChanges} planetId={selectedPlanet?.Id} planet={selectedPlanet} />
     </svelte:fragment>
   </MapEditorWorkspace>
 </div>
