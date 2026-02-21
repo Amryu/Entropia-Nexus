@@ -353,7 +353,7 @@ export const SEARCH_TYPE_TO_PAGE_TYPE_ID = {
   Excavator:              'items',
   TeleportationChip:      'items',
   EffectChip:             'items',
-  CreatureControlCapsule: 'items',
+  Capsule:                'items',
   Furniture:              'furnishings',
   Decoration:             'furnishings',
   StorageContainer:       'furnishings',

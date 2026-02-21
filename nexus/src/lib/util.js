@@ -283,7 +283,7 @@ export function getTypeLink(name, type, subType = null, id = null) {
       return `/items/pets/${encodeURIComponentSafe(name)}`;
     case 'Consumable':
       return `/items/consumables/stimulants/${encodeURIComponentSafe(name)}`;
-    case 'CreatureControlCapsule':
+    case 'Capsule':
       return `/items/consumables/capsules/${encodeURIComponentSafe(name)}`;
     case 'Furniture':
       return `/items/furnishings/furniture/${encodeURIComponentSafe(name)}`;
@@ -371,8 +371,8 @@ export function getTypeName(type) {
       return 'Pet';
     case 'Consumable':
       return 'Stimulant';
-    case 'CreatureControlCapsule':
-      return 'Creature Control Capsule';
+    case 'Capsule':
+      return 'Capsule';
     case 'Furniture':
       return 'Furniture';
     case 'Decoration':

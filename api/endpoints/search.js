@@ -616,7 +616,7 @@ const ENRICHMENT_MAP = {
   Excavator:             { route: '/excavators',             tables: ['Excavators', 'EffectsOnEquip', 'Effects', 'Tiers', 'TierMaterials'], getter: getExcavators },
   TeleportationChip:     { route: '/teleportationchips',     tables: ['TeleportationChips', 'Professions', 'Materials'], getter: getTeleportationChips },
   EffectChip:            { route: '/effectchips',            tables: ['EffectChips', 'Professions', 'Materials', 'EffectsOnUse', 'Effects'], getter: getEffectChips },
-  CreatureControlCapsule: { route: '/capsules',              tables: ['CreatureControlCapsules'], getter: getCapsules },
+  Capsule:                { route: '/capsules',              tables: ['CreatureControlCapsules'], getter: getCapsules },
   Furniture:             { route: '/furniture',              tables: ['Furniture'], getter: getFurnitures },
   Decoration:            { route: '/decorations',            tables: ['Decorations'], getter: getDecorations },
   StorageContainer:      { route: '/storagecontainers',      tables: ['StorageContainers'], getter: getStorageContainers },
