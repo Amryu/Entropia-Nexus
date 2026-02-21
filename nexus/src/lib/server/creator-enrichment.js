@@ -206,6 +206,22 @@ export async function refreshCreator(creator) {
 
   if (creator.platform === 'youtube') {
     cachedData = await fetchYouTubeData(creator.channel_id, creator.youtube_playlist_id);
+    // Preserve existing video data when RSS feed returns empty (YouTube RSS outages)
+    if (cachedData && creator.cached_data) {
+      const prev = creator.cached_data;
+      if (!cachedData.recentVideos?.length && prev.recentVideos?.length) {
+        cachedData.recentVideos = prev.recentVideos;
+        console.warn(`[creator-enrichment] YouTube RSS returned empty for ${creator.name}, preserving ${prev.recentVideos.length} cached videos`);
+      }
+      if (!cachedData.playlistVideos?.length && prev.playlistVideos?.length) {
+        cachedData.playlistVideos = prev.playlistVideos;
+      }
+      // Recompute latestVideo from preserved data
+      if (!cachedData.latestVideo) {
+        const primaryVideos = cachedData.playlistVideos || cachedData.recentVideos;
+        if (primaryVideos?.length > 0) cachedData.latestVideo = primaryVideos[0];
+      }
+    }
   } else if (creator.platform === 'twitch') {
     cachedData = await fetchTwitchData(creator);
     // Preserve last known stream thumbnail for offline display
