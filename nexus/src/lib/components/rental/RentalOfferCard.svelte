@@ -6,6 +6,7 @@
   // @ts-nocheck
   import RentalStatusBadge from './RentalStatusBadge.svelte';
   import { formatPrice } from '$lib/utils/rentalPricing.js';
+  import { stripHtml } from '$lib/sanitize.js';
 
   /** @type {object} Rental offer object */
   export let offer;
@@ -46,7 +47,7 @@
   </div>
 
   {#if offer.description}
-    <p class="card-description">{offer.description}</p>
+    <p class="card-description">{stripHtml(offer.description)}</p>
   {/if}
 
   <div class="card-details">

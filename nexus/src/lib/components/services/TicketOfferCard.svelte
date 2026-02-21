@@ -1,6 +1,7 @@
 <script>
   // @ts-nocheck
   import { createEventDispatcher } from 'svelte';
+  import { stripHtml } from '$lib/sanitize.js';
 
   export let offer;
   export let isOwner = false;
@@ -35,7 +36,7 @@
   </div>
 
   {#if offer.description}
-    <p class="offer-description">{offer.description}</p>
+    <p class="offer-description">{stripHtml(offer.description)}</p>
   {/if}
 
   <div class="offer-details">

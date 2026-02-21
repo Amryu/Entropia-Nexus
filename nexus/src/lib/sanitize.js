@@ -174,3 +174,15 @@ export function containsHtml(str) {
   }
   return /<[a-z][\s\S]*>/i.test(str);
 }
+
+/**
+ * Strip all HTML tags from a string, returning plain text.
+ * Also decodes common HTML entities.
+ *
+ * @param {string} text - The string potentially containing HTML
+ * @returns {string} - Plain text with tags and entities removed
+ */
+export function stripHtml(text) {
+  if (!text) return '';
+  return `${text}`.replace(/<[^>]*>/g, '').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ');
+}
