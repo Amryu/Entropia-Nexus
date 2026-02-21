@@ -1082,6 +1082,7 @@
             </div>
           </div>
 
+          <div class="optimizer-panels">
           <!-- Per-skill method overrides -->
           {#if optimizerSkills.length > 0}
             <div class="method-config">
@@ -1158,6 +1159,7 @@
             </div>
           {/if}
 
+          <div class="optimizer-results">
           {#if optimizerResult}
             {#if !optimizerResult.feasible}
               <div class="optimizer-warning">Cannot reach target with available skills.</div>
@@ -1210,6 +1212,8 @@
           {:else}
             <div class="optimizer-empty">Select a target to calculate the cheapest path.</div>
           {/if}
+          </div>
+          </div>
         </div>
         </div>
       </div>
@@ -2081,6 +2085,29 @@
   .mu-btn.active { background: var(--accent-color); color: white; border-color: var(--accent-color); }
   .mu-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
+  /* ─── Optimizer Panels (side-by-side on wide screens) ─── */
+  .optimizer-panels {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    flex: 1;
+    min-height: 0;
+  }
+
+  .optimizer-panels > .method-config {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .optimizer-results {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-height: 0;
+  }
+
   /* ─── Method Config ─── */
   .method-config {
     border: 1px solid var(--border-color);
@@ -2553,6 +2580,22 @@
   .delta-change.positive { color: var(--success-color); }
   .delta-change.negative { color: var(--error-color); }
 
+  /* ─── Side-by-side optimizer panels on wide screens ─── */
+  @media (min-width: 1100px) {
+    .optimizer-panels {
+      flex-direction: row;
+    }
+
+    .optimizer-panels > .method-config,
+    .optimizer-results {
+      min-width: 340px;
+    }
+
+    .method-list {
+      max-height: none;
+    }
+  }
+
   /* ─── Responsive ─── */
   @media (max-width: 900px) {
     .skills-content { padding: 8px; gap: 8px; }
@@ -2561,8 +2604,10 @@
     .summary-value { font-size: 14px; }
     .detail-header { flex-direction: column; gap: 8px; }
     .detail-columns { flex-direction: column; }
-    .optimizer-controls { flex-direction: column; }
+    .optimizer-controls { flex-direction: column; align-items: stretch; gap: 8px; }
     .control-group select { min-width: 0; width: 100%; }
+    .control-group input[type="number"] { width: 100%; }
+    .target-toggle .mu-btn, .mu-buttons .mu-btn { flex: 1; justify-content: center; }
 
     /* On mobile, hide collapsed optimizer (toggle is in header bar) */
     .optimizer-section:not(.expanded) { display: none; }
