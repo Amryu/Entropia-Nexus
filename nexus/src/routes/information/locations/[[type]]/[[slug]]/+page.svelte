@@ -8,6 +8,7 @@
   import { page } from '$app/stores';
   import { onDestroy } from 'svelte';
   import { encodeURIComponentSafe, getLatestPendingUpdate } from '$lib/util';
+  import { getPlanetNavFilter } from '$lib/mapUtil';
   import { sanitizeHtml } from '$lib/sanitize';
 
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
@@ -334,23 +335,8 @@
     return baseUrl;
   }
 
-  // Planet filter (value-based)
-  const planetFilters = [
-    {
-      key: 'Planet.Name',
-      label: 'Planet',
-      values: [
-        { value: 'Calypso', label: 'Calypso' },
-        { value: 'Arkadia', label: 'Arkadia' },
-        { value: 'Cyrene', label: 'Cyrene' },
-        { value: 'Monria', label: 'Monria' },
-        { value: 'ROCKtropia', label: 'Rocktropia' },
-        { value: 'Toulan', label: 'Toulan' },
-        { value: 'Next Island', label: 'Next Island' },
-        { value: 'Space', label: 'Space' }
-      ]
-    }
-  ];
+  // Planet filter (value-based, includes sub-planets)
+  const planetFilters = [getPlanetNavFilter('Planet.Name')];
 
   $: breadcrumbs = [
     { label: 'Information', href: '/information' },

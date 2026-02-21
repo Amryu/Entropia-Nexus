@@ -10,6 +10,7 @@
   import '$lib/style.css';
   import { onMount, onDestroy } from 'svelte';
   import { encodeURIComponentSafe, getLatestPendingUpdate } from '$lib/util';
+  import { getPlanetNavFilter } from '$lib/mapUtil';
   import { sanitizeHtml } from '$lib/sanitize';
 
   // Wiki components
@@ -123,23 +124,8 @@
   // Build navigation items from vendors
   $: navItems = allItems;
 
-  // Navigation filters - filter by planet
-  const navFilters = [
-    {
-      key: 'Planet.Name',
-      label: 'Planet',
-      values: [
-        { value: 'Calypso', label: 'Calypso' },
-        { value: 'ARIS', label: 'ARIS' },
-        { value: 'Arkadia', label: 'Arkadia' },
-        { value: 'Cyrene', label: 'Cyrene' },
-        { value: 'Monria', label: 'Monria' },
-        { value: 'ROCKtropia', label: 'Rocktropia' },
-        { value: 'Toulan', label: 'Toulan' },
-        { value: 'Next Island', label: 'Next Island' },
-      ]
-    }
-  ];
+  // Navigation filters - filter by planet (includes sub-planets)
+  const navFilters = [getPlanetNavFilter('Planet.Name')];
 
   const vendorColumnDefs = {
     planet: {

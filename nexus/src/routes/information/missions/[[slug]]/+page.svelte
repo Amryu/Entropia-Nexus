@@ -9,6 +9,7 @@
   import { goto } from '$app/navigation';
   import { onDestroy } from 'svelte';
   import { encodeURIComponentSafe, getLatestPendingUpdate } from '$lib/util';
+  import { getPlanetNavFilter } from '$lib/mapUtil';
   import { sanitizeHtml } from '$lib/sanitize';
 
   import WikiPage from '$lib/components/wiki/WikiPage.svelte';
@@ -579,22 +580,7 @@
     };
   })();
 
-  const navFilters = [
-    {
-      key: 'Planet.Name',
-      label: 'Planet',
-      values: [
-        { value: 'Calypso', label: 'Calypso' },
-        { value: 'Arkadia', label: 'Arkadia' },
-        { value: 'Cyrene', label: 'Cyrene' },
-        { value: 'Monria', label: 'Monria' },
-        { value: 'ROCKtropia', label: 'Rocktropia' },
-        { value: 'Toulan', label: 'Toulan' },
-        { value: 'Next Island', label: 'Next Island' },
-        { value: 'Space', label: 'Space' },
-      ]
-    }
-  ];
+  const navFilters = [getPlanetNavFilter('Planet.Name')];
 
   function switchSidebar(mode) {
     if (mode === view) return;

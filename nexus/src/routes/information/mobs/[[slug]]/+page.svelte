@@ -11,6 +11,7 @@
   import { goto } from '$app/navigation';
   import { onMount, onDestroy, tick } from 'svelte';
   import { encodeURIComponentSafe, getTypeLink, getLatestPendingUpdate } from '$lib/util';
+  import { getPlanetNavFilter } from '$lib/mapUtil';
   import { sanitizeHtml } from '$lib/sanitize';
 
   // Wiki components
@@ -261,20 +262,7 @@
 
   // Navigation filters - filter by planet and type
   const navFilters = [
-    {
-      key: 'Planet.Name',
-      label: 'Planet',
-      values: [
-        { value: 'Calypso', label: 'Calypso' },
-        { value: 'Arkadia', label: 'Arkadia' },
-        { value: 'Cyrene', label: 'Cyrene' },
-        { value: 'Monria', label: 'Monria' },
-        { value: 'ROCKtropia', label: 'Rocktropia' },
-        { value: 'Toulan', label: 'Toulan' },
-        { value: 'Next Island', label: 'Next Island' },
-        { value: 'Space', label: 'Space' },
-      ]
-    },
+    getPlanetNavFilter('Planet.Name'),
     {
       key: 'Type',
       label: 'Type',
@@ -288,20 +276,7 @@
   ];
 
   const maturityNavFilters = [
-    {
-      key: 'Planet',
-      label: 'Planet',
-      values: [
-        { value: 'Calypso', label: 'Calypso' },
-        { value: 'Arkadia', label: 'Arkadia' },
-        { value: 'Cyrene', label: 'Cyrene' },
-        { value: 'Monria', label: 'Monria' },
-        { value: 'ROCKtropia', label: 'Rocktropia' },
-        { value: 'Toulan', label: 'Toulan' },
-        { value: 'Next Island', label: 'Next Island' },
-        { value: 'Space', label: 'Space' },
-      ]
-    },
+    getPlanetNavFilter('Planet'),
     {
       key: 'Type',
       label: 'Type',

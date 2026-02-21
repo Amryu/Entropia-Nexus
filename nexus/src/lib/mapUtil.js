@@ -75,7 +75,9 @@ export const planetGroups = {
   Calypso: [
     { Name: 'Calypso', _type: 'calypso' },
     { Name: 'Setesh', _type: 'setesh' },
-    { Name: 'ARIS', _type: 'aris' }
+    { Name: 'ARIS', _type: 'aris' },
+    { Name: 'Crystal Palace', _type: 'crystalpalace' },
+    { Name: 'Asteroid F.O.M.A', _type: 'asteroidfoma' }
   ],
   Arkadia: [
     { Name: 'Arkadia', _type: 'arkadia' },
@@ -86,7 +88,7 @@ export const planetGroups = {
   Rocktropia: [
     { Name: 'ROCKtropia', _type: 'rocktropia' },
     { Name: 'HELL', _type: 'hell' },
-    { Name: 'Hunt the THING', _type: 'huntthething' },
+    { Name: 'Hunt The THING', _type: 'huntthething' },
     { Name: 'Secret Island', _type: 'secretisland' }
   ],
   NextIsland: [
@@ -99,14 +101,60 @@ export const planetGroups = {
     { Name: 'DSEC9', _type: 'dsec9' },
   ],
   Space: [
-    { Name: 'Space', _type: 'space' },
-    { Name: 'Crystal Palace', _type: 'crystalpalace' },
-    { Name: 'Asteroid F.O.M.A', _type: 'asteroidfoma' },
+    { Name: 'Space', _type: 'space' }
   ]
 };
 
 export function getMainPlanetNames() {
   return Object.keys(planetGroups);
+}
+
+/**
+ * Get the main (parent) planet name for any planet/sub-planet name.
+ * e.g. 'ARIS' → 'Calypso', 'Arkadia Moon' → 'Arkadia', 'Calypso' → 'Calypso'
+ */
+export function getMainPlanet(planetName) {
+  for (const planets of Object.values(planetGroups)) {
+    if (planets.some(p => p.Name === planetName)) {
+      return planets[0].Name;
+    }
+  }
+  return planetName;
+}
+
+/**
+ * Build a planet nav filter config for WikiNavigation.
+ * Shows main planets as buttons; filterFn includes sub-planets.
+ * @param {string} key - Dot-notation path to planet name on items (e.g. 'Planet.Name' or 'Planet')
+ */
+export function getPlanetNavFilter(key = 'Planet.Name') {
+  const groupNames = {};
+  for (const planets of Object.values(planetGroups)) {
+    const names = new Set(planets.map(p => p.Name));
+    for (const p of planets) {
+      groupNames[p.Name] = names;
+    }
+  }
+
+  const values = Object.entries(planetGroups).map(([groupKey, planets]) => ({
+    value: planets[0].Name,
+    label: groupKey === 'NextIsland' ? 'Next Island' : groupKey
+  }));
+
+  return {
+    key,
+    label: 'Planet',
+    values,
+    filterFn: (item, selectedValue) => {
+      const parts = key.split('.');
+      let planetName = item;
+      for (const part of parts) {
+        planetName = planetName?.[part];
+      }
+      const group = groupNames[selectedValue];
+      return group ? group.has(planetName) : planetName === selectedValue;
+    }
+  };
 }
 
 export function getPlanetGroupByType(type) {
