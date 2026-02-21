@@ -476,6 +476,7 @@ export const UpsertConfigs = {
     offset: 10100000,
     table: "CreatureControlCapsules"
   },
+  get CreatureControlCapsule() { return this.Capsule; },
   Vehicle: {
     columns: [
       { name: "Name", value: x => x.Name },
