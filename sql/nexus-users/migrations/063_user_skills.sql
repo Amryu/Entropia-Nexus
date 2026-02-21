@@ -28,10 +28,10 @@ CREATE INDEX IF NOT EXISTS idx_skill_imports_user ON skill_imports(user_id);
 CREATE INDEX IF NOT EXISTS idx_skill_import_deltas_import ON skill_import_deltas(import_id);
 
 -- Grant permissions for the web application role
-GRANT SELECT, INSERT, UPDATE, DELETE ON user_skills TO nexus;
-GRANT SELECT, INSERT ON skill_imports TO nexus;
-GRANT SELECT, INSERT ON skill_import_deltas TO nexus;
-GRANT USAGE, SELECT ON SEQUENCE skill_imports_id_seq TO nexus;
-GRANT USAGE, SELECT ON SEQUENCE skill_import_deltas_id_seq TO nexus;
+GRANT SELECT, INSERT, UPDATE, DELETE ON user_skills TO "nexus-users";
+GRANT SELECT, INSERT ON skill_imports TO "nexus-users";
+GRANT SELECT, INSERT ON skill_import_deltas TO "nexus-users";
+GRANT USAGE, SELECT ON SEQUENCE skill_imports_id_seq TO "nexus-users";
+GRANT USAGE, SELECT ON SEQUENCE skill_import_deltas_id_seq TO "nexus-users";
 
 COMMIT;
