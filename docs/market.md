@@ -2,6 +2,22 @@
 
 Player-to-player trading features including the exchange, shop directory, rentals, and auctions.
 
+### Unified Market Search
+
+`GET /api/market/search?query=<text>` — searches across all market types in parallel.
+
+**Scoring**: Uses the standard fuzzy algorithm from `$lib/search.js` (`scoreSearchResult`). Non-exchange results receive a +50 score bonus to surface them above exchange items.
+
+**Per-type limits**: Exchange max 10, others (services, auctions, rentals, shops) max 5 each.
+
+**Item set searching**: Rentals and auctions are scored against both listing title/description AND item names within their item sets. When the best match comes from an item name rather than the title, the matched item name is shown in the result `detail` field.
+
+**Multi-field bonus**: For rentals, auctions, and services, results that match across multiple fields (title, description, items) receive a +30 bonus per additional matching field. This surfaces listings where the search term appears in multiple places.
+
+**Shop inventory searching**: Shops are scored against both shop name and inventory item names. Item IDs are resolved to names via `getSlimItemLookup()` from the exchange cache.
+
+**Files**: `nexus/src/routes/api/market/search/+server.js`, consumer: `nexus/src/lib/components/MarketSearch.svelte`.
+
 ### Rich Text Descriptions
 
 Auction and rental descriptions support rich text editing via the TipTap-based `RichTextEditor` component with a restricted feature set.

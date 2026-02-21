@@ -105,6 +105,7 @@ Results from SQL are then scored in JavaScript and re-sorted by score descending
 | Backend `/search` endpoint | SQL pre-filter + JavaScript scoring. | `api/endpoints/search.js` |
 | Backend `/search/detailed` endpoint | Enriches `/search` results with full entity Properties from cached data. `perType=20`, `totalLimit=100`. | `api/endpoints/search.js` |
 | Backend `/search/items` endpoint | SQL pre-filter + JavaScript scoring. Optional type filter removes per-category limit. | `api/endpoints/search.js` |
+| Market search (`/api/market/search`) | Server-side scoring via `$lib/search.js`. Searches exchange cache, services, auctions (with item sets), rentals (with item sets), and shops (with inventory). Per-type limits: exchange 10, others 5. Non-exchange +50 bonus. | `nexus/src/routes/api/market/search/+server.js` |
 
 ## Search Page (`/search`)
 

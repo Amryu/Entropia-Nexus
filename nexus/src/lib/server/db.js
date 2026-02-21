@@ -3493,6 +3493,7 @@ export async function getRentalOffers(filters = {}) {
            ro.price_per_day, ro.discounts, ro.deposit, ro.status,
            ro.item_set_id, ro.created_at, ro.updated_at,
            u.eu_name AS owner_name, u.id AS owner_id,
+           s.data AS item_set_data,
            (SELECT COUNT(*)::int FROM jsonb_array_elements(s.data->'items')) AS item_count
     FROM rental_offers ro
     JOIN users u ON ro.user_id = u.id
