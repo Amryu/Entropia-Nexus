@@ -25,7 +25,7 @@
   let totalPrice = 0;
   let muLabel = '';
   let ttValueDisplay = '';
-  let setPrice = null; // Set total price when is_set is checked (armor plates)
+  let singlePieceMaxTT = null; // Original single-piece MaxTT for set toggle reference
   // Price suggestions
   let suggestions = null; // { bestBuy, bestSell }
   let suggestionsLoading = false;
@@ -133,6 +133,12 @@
         order.Metadata = order.Metadata || {};
         order.Metadata.Pet = order.Metadata.Pet || { Level: 0 };
       }
+      // Store single-piece MaxTT; for set orders the stored MaxTT is single-piece
+      singlePieceMaxTT = order.Item?.MaxTT != null ? Number(order.Item.MaxTT) : null;
+      // If editing an existing set order, inflate MaxTT to set value
+      if (order.Metadata?.is_set && order.Item?.Type === 'ArmorPlating' && singlePieceMaxTT != null) {
+        order.Item.MaxTT = singlePieceMaxTT * PLATE_SET_SIZE;
+      }
     } else if (itemOrOrder?.Item?.Name != null) {
       // Pre-built order object (e.g. from inventory sell) — clone and apply defaults
       order = JSON.parse(JSON.stringify(itemOrOrder));
@@ -142,6 +148,9 @@
       order.CurrentTT = order.CurrentTT ?? null;
       order.Metadata = order.Metadata || {};
       order.MinQuantity = order.MinQuantity ?? null;
+
+      // Store single-piece MaxTT
+      singlePieceMaxTT = order.Item?.MaxTT != null ? Number(order.Item.MaxTT) : null;
 
       // Derive item-type-aware defaults from the nested Item
       const itemType = order.Item?.Type;
@@ -182,6 +191,9 @@
         MinQuantity: null,
         Metadata: {}
       };
+      // Store single-piece MaxTT
+      singlePieceMaxTT = order.Item.MaxTT;
+
       // Set defaults for condition/tier/blueprint
       if (isItemTierable(item)) {
         order.Metadata.Tier = 0;
@@ -234,6 +246,34 @@
     }
   }
 
+  // Handle toggling the "Full set" checkbox for ArmorPlating
+  function handleSetToggle() {
+    if (!order || singlePieceMaxTT == null) { recalcPrices(); return; }
+
+    if (order.Metadata.is_set) {
+      // Toggling ON → multiply MaxTT by PLATE_SET_SIZE
+      const oldMaxTT = order.Item.MaxTT;
+      order.Item.MaxTT = singlePieceMaxTT * PLATE_SET_SIZE;
+      // Adjust CurrentTT if still at the single-piece default
+      if (order.CurrentTT != null && order.CurrentTT === oldMaxTT) {
+        order.CurrentTT = order.Item.MaxTT;
+      }
+    } else {
+      // Toggling OFF → revert to single piece
+      const oldMaxTT = order.Item.MaxTT;
+      order.Item.MaxTT = singlePieceMaxTT;
+      // Adjust CurrentTT if still at the set default
+      if (order.CurrentTT != null && order.CurrentTT === oldMaxTT) {
+        order.CurrentTT = order.Item.MaxTT;
+      }
+      // Clamp CurrentTT to new (lower) MaxTT
+      if (order.CurrentTT != null && order.CurrentTT > order.Item.MaxTT) {
+        order.CurrentTT = order.Item.MaxTT;
+      }
+    }
+    recalcPrices();
+  }
+
   // Recalculate dialog-local price fields
   function recalcPrices() {
     if (!order) return;
@@ -264,12 +304,6 @@
       unitPrice = maxTT + mu;
     }
     totalPrice = qty * unitPrice;
-    // Armor plate set pricing: multiply by PLATE_SET_SIZE
-    if (order.Metadata?.is_set && order.Item?.Type === 'ArmorPlating') {
-      setPrice = unitPrice * PLATE_SET_SIZE;
-    } else {
-      setPrice = null;
-    }
     muLabel = isPctMu ? `${Math.max(0, mu).toFixed(0)}% of Max TT` : `+${formatPedRaw(mu)} PED`;
     ttValueDisplay = isPctMu
       ? `Max TT: ${maxTT || 'N/A'}`
@@ -442,6 +476,7 @@
             min="0"
             bind:value={order.Metadata.Pet.Level}
             on:input={recalcPrices}
+            on:blur={() => { order.Metadata.Pet.Level = Math.max(0, Math.round(Number(order.Metadata.Pet.Level) || 0)); recalcPrices(); }}
           />
         </div>
       {/if}
@@ -512,7 +547,7 @@
             </div>
             {#if isArmorPlating}
               <label class="set-label">
-                <input type="checkbox" bind:checked={order.Metadata.is_set} on:change={recalcPrices} />
+                <input type="checkbox" bind:checked={order.Metadata.is_set} on:change={handleSetToggle} />
                 Full set ({PLATE_SET_SIZE})
               </label>
             {/if}
@@ -527,6 +562,7 @@
               step="0.01"
               bind:value={order.CurrentTT}
               on:input={recalcPrices}
+              on:blur={() => { const max = order.Item.MaxTT ?? Infinity; order.CurrentTT = Math.max(0, Math.min(max, Math.round((Number(order.CurrentTT) || 0) * 100) / 100)); recalcPrices(); }}
             />
           </div>
         {/if}
@@ -541,6 +577,7 @@
             step="1"
             bind:value={order.Markup}
             on:input={recalcPrices}
+            on:blur={() => { order.Markup = Math.max(100, Math.round(Number(order.Markup) || 100)); recalcPrices(); }}
           />
         </div>
       {:else}
@@ -553,6 +590,7 @@
             step="0.01"
             bind:value={order.Markup}
             on:input={recalcPrices}
+            on:blur={() => { order.Markup = Math.max(0, Math.round((Number(order.Markup) || 0) * 100) / 100); recalcPrices(); }}
           />
         </div>
       {/if}
@@ -612,12 +650,6 @@
           <span class="calc-label">Total</span>
           <span class="calc-value">
             {Number(order.Quantity) || 0} &times; {formatPedRaw(unitPrice)} = {formatPedRaw(totalPrice)} PED
-          </span>
-        {/if}
-        {#if setPrice != null}
-          <span class="calc-label">Set ({PLATE_SET_SIZE})</span>
-          <span class="calc-value set-price">
-            {PLATE_SET_SIZE} &times; {formatPedRaw(unitPrice)} = {formatPedRaw(setPrice)} PED
           </span>
         {/if}
       </div>
@@ -748,10 +780,6 @@
   .calc-value {
     color: var(--text-color);
     text-align: right;
-  }
-  .calc-value.set-price {
-    color: var(--accent-color);
-    font-weight: 600;
   }
   .max-tt-row {
     grid-template-columns: 120px 1fr auto;
