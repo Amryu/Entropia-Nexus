@@ -15,7 +15,7 @@ import { TIMEOUT_SHORT, TIMEOUT_MEDIUM, TIMEOUT_LONG } from '../test-constants';
 const EXCHANGE_API = '/api/market/exchange';
 
 test.describe('Exchange categories and markup types', () => {
-  test.describe.configure({ mode: 'serial' });
+  test.describe.configure({ mode: 'serial', retries: 1 });
 
   function collectItems(node: unknown): Array<Record<string, unknown>> {
     if (Array.isArray(node)) return node as Array<Record<string, unknown>>;

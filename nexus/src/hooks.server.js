@@ -252,6 +252,11 @@ async function getSessionObject(sessionId) {
         console.error('Error resolving user grants:', e);
         user.grants = [];
       }
+      // Unverified users get no grants — verification is a prerequisite
+      if (!user.verified) {
+        user.grants = [];
+        user.administrator = false;
+      }
     }
 
     sessionData = {
@@ -275,6 +280,11 @@ async function getSessionObject(sessionId) {
         sessionData.grantsCachedAt = now;
       } catch (e) {
         console.error('Error refreshing user grants:', e);
+      }
+      // Unverified users get no grants — verification is a prerequisite
+      if (!sessionData.user.verified) {
+        sessionData.user.grants = [];
+        sessionData.user.administrator = false;
       }
     }
   }
@@ -326,6 +336,11 @@ async function getSessionObject(sessionId) {
         } catch (e) {
           console.error('Error resolving user grants after refresh:', e);
           user.grants = [];
+        }
+        // Unverified users get no grants — verification is a prerequisite
+        if (!user.verified) {
+          user.grants = [];
+          user.administrator = false;
         }
       }
 

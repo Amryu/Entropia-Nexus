@@ -94,6 +94,23 @@ export function hasGrant(locals, grantKey) {
   return userHasGrant(user, grantKey);
 }
 
+// --- API-specific login check (returns 401 instead of redirect) ---
+
+/**
+ * Check if user is logged in, throw 401 error if not.
+ * Use this in API endpoints (+server.js) instead of requireLogin,
+ * which throws a redirect unsuitable for JSON API responses.
+ * @param {Object} locals - Request locals containing session
+ * @throws {HttpError} 401 if not logged in
+ */
+export function requireLoginAPI(locals) {
+  const user = locals.session?.user;
+  if (!user) {
+    throw error(401, 'Authentication required.');
+  }
+  return user;
+}
+
 // --- Admin helpers (use grants with backward compat) ---
 
 /**
@@ -106,6 +123,21 @@ export function requireAdmin(locals) {
 
   if (!userHasGrant(user, 'admin.panel') && !user.administrator) {
     throw error(403, 'This page is restricted to administrators.');
+  }
+
+  return user;
+}
+
+/**
+ * Check if user is an administrator (API version - returns 401 instead of redirect)
+ * @param {Object} locals - Request locals containing session
+ * @throws {HttpError} 401 if not logged in, 403 if not admin
+ */
+export function requireAdminAPI(locals) {
+  const user = requireLoginAPI(locals);
+
+  if (!userHasGrant(user, 'admin.panel') && !user.administrator) {
+    throw error(403, 'This endpoint is restricted to administrators.');
   }
 
   return user;

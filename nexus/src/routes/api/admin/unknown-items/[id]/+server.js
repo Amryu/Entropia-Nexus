@@ -1,13 +1,13 @@
 //@ts-nocheck
 import { json } from '@sveltejs/kit';
-import { requireAdmin } from '$lib/server/auth.js';
+import { requireAdminAPI } from '$lib/server/auth.js';
 import { resolveUnknownItem } from '$lib/server/inventory.js';
 
 /**
  * PATCH /api/admin/unknown-items/[id] — Mark unknown item as resolved
  */
 export async function PATCH({ params, request, locals }) {
-  requireAdmin(locals);
+  requireAdminAPI(locals);
 
   const id = parseInt(params.id, 10);
   if (!Number.isFinite(id) || id <= 0) {
