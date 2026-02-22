@@ -3,9 +3,9 @@
  *
  * This script runs before any tests start and:
  * 1. Kills any existing test servers on ports 3100 (API) and 3101 (frontend)
- * 2. Creates a full clone of nexus -> nexus-test (schema + all data)
- * 3. Creates a full clone of nexus-users -> nexus-users-test (schema + all data)
- * 4. Seeds required mock-login test users in nexus-users-test
+ * 2. Creates a full clone of nexus -> nexus_test (schema + all data)
+ * 3. Creates a full clone of nexus_users -> nexus_users_test (schema + all data)
+ * 4. Seeds required mock-login test users in nexus_users_test
  *
  * This approach uses real production data for realistic testing.
  * Requires pg_dump and psql to be available in PATH.
@@ -50,8 +50,8 @@ const { host: DB_HOST, port: DB_PORT, user: DB_USER, password: DB_PASSWORD } = p
 
 // Database pairs to clone
 const DATABASE_PAIRS = [
-  { source: 'nexus', target: 'nexus-test' },
-  { source: 'nexus-users', target: 'nexus-users-test' },
+  { source: 'nexus', target: 'nexus_test' },
+  { source: 'nexus_users', target: 'nexus_users_test' },
 ];
 
 // Test server ports to kill before setup
@@ -365,7 +365,7 @@ async function globalSetup() {
       await cloneDatabase(source, target);
     }
 
-    await seedMockTestUsers('nexus-users-test');
+    await seedMockTestUsers('nexus_users_test');
 
     console.log('\n🎉 All test databases ready!\n');
   } catch (error: any) {

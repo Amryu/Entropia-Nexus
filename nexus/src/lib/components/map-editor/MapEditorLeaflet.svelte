@@ -1,7 +1,7 @@
 <script>
   // @ts-nocheck
   import { onMount, onDestroy, createEventDispatcher } from 'svelte';
-  import { buildCoordTransforms, getTypeColor, getEffectiveType, isArea, poleOfInaccessibility, getServerGridLines, snapAngleToDirection, getShapeVertices, computeVertexSnap, SERVER_TILE_SIZE, VERTEX_SNAP_THRESHOLD_PX, VERTEX_SNAP_THRESHOLD_MAX_EU, getGridSpacing } from './mapEditorUtils.js';
+  import { buildCoordTransforms, getTypeColor, getEffectiveType, isArea, poleOfInaccessibility, getServerGridLines, snapAngleToDirection, getShapeVertices, getShapeEdges, computeVertexSnap, SERVER_TILE_SIZE, VERTEX_SNAP_THRESHOLD_PX, VERTEX_SNAP_THRESHOLD_MAX_EU, getGridSpacing } from './mapEditorUtils.js';
   import { formatMobSpawnDisplayName } from '$lib/mapUtil.js';
   import ContextMenu from '../ContextMenu.svelte';
 
@@ -84,6 +84,7 @@
     if (snapEnabled || snapToGrid) {
       _activeVertexSnapData = {
         vertices: snapEnabled ? getVertexSnapCandidates(_editingLoc) : [],
+        edges: snapEnabled ? getEdgeSnapCandidates(_editingLoc) : [],
         gridLines: snapToGrid ? _cachedGridLines : null,
         gap: snapGap,
         threshold: getVertexSnapThreshold(),
@@ -176,7 +177,8 @@
             _activeVertexSnapData.vertices,
             _activeVertexSnapData.gridLines,
             _activeVertexSnapData.gap,
-            _activeVertexSnapData.threshold
+            _activeVertexSnapData.threshold,
+            _activeVertexSnapData.edges
           );
           const snappedX = ePos.x + snap.dx;
           const snappedY = ePos.y + snap.dy;
@@ -714,6 +716,33 @@
     return allVertices;
   }
 
+  function getEdgeSnapCandidates(loc) {
+    const type = getEffectiveType(loc);
+    const excludeId = loc.Id;
+
+    const allEdges = [];
+    for (const other of locations) {
+      if (other.Id === excludeId) continue;
+      if (!isArea(other)) continue;
+      if (getEffectiveType(other) !== type) continue;
+      for (const e of getShapeEdges(getEffectiveLocData(other))) {
+        allEdges.push(e);
+      }
+    }
+    for (const [tempId, change] of pendingChanges) {
+      if (change.action !== 'add' || !change.modified) continue;
+      if (tempId === excludeId) continue;
+      const mod = change.modified;
+      if (mod.locationType !== 'Area' || !mod.shape || !mod.shapeData) continue;
+      if ((mod.areaType || 'Area') !== type) continue;
+      const fakeLoc = { Properties: { Shape: mod.shape, Data: mod.shapeData } };
+      for (const e of getShapeEdges(fakeLoc)) {
+        allEdges.push(e);
+      }
+    }
+    return allEdges;
+  }
+
   /** Tighter threshold for vertex editing — mouse follows precisely, no need for large floor. */
   function getVertexSnapThreshold() {
     if (!transforms || !map) return VERTEX_SNAP_THRESHOLD_MAX_EU;
@@ -729,7 +758,7 @@
   function updateVertexSnapGuides(snappedX, snappedY, snap) {
     if (!snapGuideLayerGroup || !transforms || !L) return;
     snapGuideLayerGroup.clearLayers();
-    if (snap.guideX == null && snap.guideY == null && !snap.bisector) return;
+    if (snap.guideX == null && snap.guideY == null && !snap.bisector && !snap.edge) return;
 
     const gap = snap.gap || 0;
     const guideStyle = { color: '#ff00ff', weight: 1.5, dashArray: '6,4', opacity: 0.8, interactive: false };
@@ -845,6 +874,65 @@
         const cls = isBisectGap ? 'snap-dist-label snap-dist-gap' : 'snap-dist-label snap-dist-bisector';
         const icon = L.divIcon({ className: cls, html: `${bisectDist}`, iconSize: [40, 16], iconAnchor: [20, 20] });
         snapGuideLayerGroup.addLayer(L.marker([midLat, midLng], { icon, interactive: false }));
+      }
+    }
+
+    // Edge guide: highlight the snapped-to edge + perpendicular connecting line + distance label
+    if (snap.edge) {
+      const { ax, ay, bx, by, projX, projY, isGap } = snap.edge;
+      const edgeColor = isGap ? '#22cc44' : '#ff8800';
+      const edgeStyle = { color: edgeColor, weight: 2.5, opacity: 0.9, interactive: false };
+      const connStyle = isGap ? connectGap : { color: '#ff8800', weight: 1, opacity: 0.6, interactive: false };
+
+      // Draw the snapped-to edge
+      const [eLatA, eLngA] = transforms.entropiaToLeaflet(ax, ay);
+      const [eLatB, eLngB] = transforms.entropiaToLeaflet(bx, by);
+      snapGuideLayerGroup.addLayer(L.polyline([[eLatA, eLngA], [eLatB, eLngB]], edgeStyle));
+
+      // Draw perpendicular connecting line from snapped vertex to projection on original edge
+      // For gap snaps, compute the projection on the original edge for the connecting line
+      const perpDist = Math.round(Math.sqrt((snappedX - projX) ** 2 + (snappedY - projY) ** 2));
+      if (isGap) {
+        // Draw connecting line to the original edge (not the offset edge)
+        // projX/projY is on the offset edge; compute projection on original edge
+        const [sLat, sLng] = transforms.entropiaToLeaflet(snappedX, snappedY);
+        const [pLat, pLng] = transforms.entropiaToLeaflet(projX, projY);
+        // The distance to the original edge is gap
+        const edgeDist = Math.round(gap);
+        // Draw connecting line from snapped vertex perpendicular toward the edge
+        // Use the edge normal direction: from snappedX,snappedY toward the original edge
+        const edx = bx - ax, edy = by - ay;
+        const eLen = Math.sqrt(edx * edx + edy * edy);
+        if (eLen > 0) {
+          let nx = -edy / eLen, ny = edx / eLen;
+          const dotToVertex = (snappedX - ax) * nx + (snappedY - ay) * ny;
+          if (dotToVertex < 0) { nx = -nx; ny = -ny; }
+          // Point on original edge nearest to snapped vertex
+          const origProjX = snappedX - nx * gap;
+          const origProjY = snappedY - ny * gap;
+          const [oLat, oLng] = transforms.entropiaToLeaflet(origProjX, origProjY);
+          snapGuideLayerGroup.addLayer(L.polyline([[sLat, sLng], [oLat, oLng]], connStyle));
+
+          // Distance label
+          const midX = (snappedX + origProjX) / 2;
+          const midY = (snappedY + origProjY) / 2;
+          const [midLat, midLng] = transforms.entropiaToLeaflet(midX, midY);
+          const cls = 'snap-dist-label snap-dist-gap';
+          const icon = L.divIcon({ className: cls, html: `${edgeDist}`, iconSize: [40, 16], iconAnchor: [20, 20] });
+          snapGuideLayerGroup.addLayer(L.marker([midLat, midLng], { icon, interactive: false }));
+        }
+      } else if (perpDist > 0) {
+        // Direct edge snap: show connecting line from vertex to edge
+        const [sLat, sLng] = transforms.entropiaToLeaflet(snappedX, snappedY);
+        // For direct snap, snappedX/Y IS on the edge, so the perpDist is 0 after snap.
+        // Show a small marker at the snap point on the edge
+        const snapMarkerStyle = { radius: 4, color: edgeColor, fillColor: edgeColor, weight: 2, opacity: 0.9, fillOpacity: 0.5, interactive: false };
+        snapGuideLayerGroup.addLayer(L.circleMarker([sLat, sLng], snapMarkerStyle));
+      } else {
+        // Snapped directly onto the edge — show a marker at the snap point
+        const [sLat, sLng] = transforms.entropiaToLeaflet(snappedX, snappedY);
+        const snapMarkerStyle = { radius: 4, color: edgeColor, fillColor: edgeColor, weight: 2, opacity: 0.9, fillOpacity: 0.5, interactive: false };
+        snapGuideLayerGroup.addLayer(L.circleMarker([sLat, sLng], snapMarkerStyle));
       }
     }
   }
@@ -973,6 +1061,7 @@
         if (snapEnabled || snapToGrid) {
           _activeVertexSnapData = {
             vertices: snapEnabled ? getVertexSnapCandidates(loc) : [],
+            edges: snapEnabled ? getEdgeSnapCandidates(loc) : [],
             gridLines: snapToGrid ? _cachedGridLines : null,
             gap: snapGap,
             threshold: getVertexSnapThreshold(),

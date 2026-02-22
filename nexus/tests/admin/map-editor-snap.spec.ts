@@ -1057,3 +1057,372 @@ test.describe('Map Editor Snap - Bisector Snap', () => {
     expect(result.gap).toBe(5);
   });
 });
+
+// ─── getShapeEdges Tests ──────────────────────────────────────────────────
+
+test.describe('Map Editor Snap - getShapeEdges', () => {
+  test.beforeEach(async ({ adminUser }) => {
+    await adminUser.goto('/admin/map');
+    await adminUser.waitForLoadState('networkidle');
+  });
+
+  test('extracts polygon edges including closing edge', async ({ adminUser }) => {
+    const result = await adminUser.evaluate(async () => {
+      const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
+      const loc = {
+        Properties: {
+          Shape: 'Polygon',
+          Data: { vertices: [100, 200, 300, 200, 300, 400] },
+        },
+      };
+      return mod.getShapeEdges(loc);
+    });
+
+    expect(result).toHaveLength(3);
+    // Edge 0→1
+    expect(result[0]).toEqual({ ax: 100, ay: 200, bx: 300, by: 200 });
+    // Edge 1→2
+    expect(result[1]).toEqual({ ax: 300, ay: 200, bx: 300, by: 400 });
+    // Closing edge 2→0
+    expect(result[2]).toEqual({ ax: 300, ay: 400, bx: 100, by: 200 });
+  });
+
+  test('extracts rectangle edges', async ({ adminUser }) => {
+    const result = await adminUser.evaluate(async () => {
+      const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
+      const loc = {
+        Properties: {
+          Shape: 'Rectangle',
+          Data: { x: 100, y: 200, width: 300, height: 150 },
+        },
+      };
+      return mod.getShapeEdges(loc);
+    });
+
+    expect(result).toHaveLength(4);
+    // Bottom edge
+    expect(result[0]).toEqual({ ax: 100, ay: 200, bx: 400, by: 200 });
+    // Right edge
+    expect(result[1]).toEqual({ ax: 400, ay: 200, bx: 400, by: 350 });
+    // Top edge
+    expect(result[2]).toEqual({ ax: 400, ay: 350, bx: 100, by: 350 });
+    // Left edge
+    expect(result[3]).toEqual({ ax: 100, ay: 350, bx: 100, by: 200 });
+  });
+
+  test('returns empty for circles', async ({ adminUser }) => {
+    const result = await adminUser.evaluate(async () => {
+      const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
+      return mod.getShapeEdges({
+        Properties: { Shape: 'Circle', Data: { x: 100, y: 200, radius: 50 } },
+      });
+    });
+
+    expect(result).toHaveLength(0);
+  });
+
+  test('returns empty for invalid shapes', async ({ adminUser }) => {
+    const result = await adminUser.evaluate(async () => {
+      const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
+      return [
+        mod.getShapeEdges(null),
+        mod.getShapeEdges({}),
+        mod.getShapeEdges({ Properties: { Shape: 'Polygon', Data: { vertices: [1, 2] } } }), // too few
+      ];
+    });
+
+    for (const r of result) {
+      expect(r).toHaveLength(0);
+    }
+  });
+});
+
+// ─── projectPointOnSegment Tests ─────────────────────────────────────────
+
+test.describe('Map Editor Snap - projectPointOnSegment', () => {
+  test.beforeEach(async ({ adminUser }) => {
+    await adminUser.goto('/admin/map');
+    await adminUser.waitForLoadState('networkidle');
+  });
+
+  test('projects onto middle of horizontal segment', async ({ adminUser }) => {
+    const result = await adminUser.evaluate(async () => {
+      const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
+      // Horizontal edge from (100,200) to (400,200), point at (250, 220)
+      return mod.projectPointOnSegment(250, 220, 100, 200, 400, 200);
+    });
+
+    expect(result.projX).toBe(250);
+    expect(result.projY).toBe(200);
+    expect(result.t).toBeCloseTo(0.5, 2);
+    expect(result.distSq).toBe(400); // 20^2
+  });
+
+  test('clamps to segment start', async ({ adminUser }) => {
+    const result = await adminUser.evaluate(async () => {
+      const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
+      // Point before segment start
+      return mod.projectPointOnSegment(50, 200, 100, 200, 400, 200);
+    });
+
+    expect(result.projX).toBe(100);
+    expect(result.projY).toBe(200);
+    expect(result.t).toBe(0);
+  });
+
+  test('clamps to segment end', async ({ adminUser }) => {
+    const result = await adminUser.evaluate(async () => {
+      const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
+      // Point past segment end
+      return mod.projectPointOnSegment(500, 200, 100, 200, 400, 200);
+    });
+
+    expect(result.projX).toBe(400);
+    expect(result.projY).toBe(200);
+    expect(result.t).toBe(1);
+  });
+
+  test('projects onto diagonal segment', async ({ adminUser }) => {
+    const result = await adminUser.evaluate(async () => {
+      const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
+      // 45° diagonal from (0,0) to (100,100), point at (50, 60)
+      return mod.projectPointOnSegment(50, 60, 0, 0, 100, 100);
+    });
+
+    // Projection should be at (55, 55) — midpoint area on diagonal
+    expect(result.projX).toBeCloseTo(55, 0);
+    expect(result.projY).toBeCloseTo(55, 0);
+    expect(result.t).toBeCloseTo(0.55, 2);
+  });
+});
+
+// ─── Edge Snap Algorithm Tests ───────────────────────────────────────────
+
+test.describe('Map Editor Snap - Edge Snap', () => {
+  test.beforeEach(async ({ adminUser }) => {
+    await adminUser.goto('/admin/map');
+    await adminUser.waitForLoadState('networkidle');
+  });
+
+  test('vertex snaps to horizontal edge', async ({ adminUser }) => {
+    const result = await adminUser.evaluate(async () => {
+      const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
+
+      const edges = [{ ax: 100, ay: 200, bx: 400, by: 200 }];
+      // Point at (250, 210) — 10 units above the horizontal edge
+      const snap = mod.computeVertexSnap(250, 210, [], null, 0, 50, edges);
+      return {
+        dx: snap.dx,
+        dy: snap.dy,
+        finalX: 250 + snap.dx,
+        finalY: 210 + snap.dy,
+        edge: snap.edge,
+      };
+    });
+
+    // Should snap to (250, 200) on the edge
+    expect(result.finalX).toBe(250);
+    expect(result.finalY).toBe(200);
+    expect(result.edge).not.toBeNull();
+    expect(result.edge.isGap).toBe(false);
+  });
+
+  test('vertex snaps to vertical edge', async ({ adminUser }) => {
+    const result = await adminUser.evaluate(async () => {
+      const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
+
+      const edges = [{ ax: 300, ay: 100, bx: 300, by: 400 }];
+      // Point at (310, 250) — 10 units right of the vertical edge
+      const snap = mod.computeVertexSnap(310, 250, [], null, 0, 50, edges);
+      return {
+        finalX: 310 + snap.dx,
+        finalY: 250 + snap.dy,
+        edge: snap.edge,
+      };
+    });
+
+    // Should snap to (300, 250) on the edge
+    expect(result.finalX).toBe(300);
+    expect(result.finalY).toBe(250);
+    expect(result.edge).not.toBeNull();
+  });
+
+  test('vertex snaps to diagonal edge', async ({ adminUser }) => {
+    const result = await adminUser.evaluate(async () => {
+      const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
+
+      // 45° diagonal edge from (0,0) to (200,200)
+      const edges = [{ ax: 0, ay: 0, bx: 200, by: 200 }];
+      // Point at (100, 110) — slightly above the diagonal
+      const snap = mod.computeVertexSnap(100, 110, [], null, 0, 50, edges);
+      return {
+        finalX: 100 + snap.dx,
+        finalY: 110 + snap.dy,
+        edge: snap.edge,
+      };
+    });
+
+    // Should snap to (105, 105) on the diagonal
+    expect(result.finalX).toBeCloseTo(105, 0);
+    expect(result.finalY).toBeCloseTo(105, 0);
+    expect(result.edge).not.toBeNull();
+  });
+
+  test('edge snap does not activate beyond threshold', async ({ adminUser }) => {
+    const result = await adminUser.evaluate(async () => {
+      const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
+
+      const edges = [{ ax: 100, ay: 200, bx: 400, by: 200 }];
+      // Point at (250, 300) — 100 units above the edge, threshold is 50
+      const snap = mod.computeVertexSnap(250, 300, [], null, 0, 50, edges);
+      return { dx: snap.dx, dy: snap.dy, edge: snap.edge };
+    });
+
+    expect(result.dx).toBe(0);
+    expect(result.dy).toBe(0);
+    expect(result.edge).toBeNull();
+  });
+
+  test('edge snap skips endpoints (t=0 and t=1)', async ({ adminUser }) => {
+    const result = await adminUser.evaluate(async () => {
+      const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
+
+      const edges = [{ ax: 100, ay: 200, bx: 400, by: 200 }];
+      // Point at (95, 205) — would project to t<0 (before segment start)
+      const snap1 = mod.computeVertexSnap(95, 205, [], null, 0, 50, edges);
+      // Point at (405, 195) — would project to t>1 (past segment end)
+      const snap2 = mod.computeVertexSnap(405, 195, [], null, 0, 50, edges);
+      return { snap1, snap2 };
+    });
+
+    // Should not trigger edge snap (endpoint projections)
+    expect(result.snap1.edge).toBeNull();
+    expect(result.snap2.edge).toBeNull();
+  });
+
+  test('vertex snap takes priority over edge snap when closer', async ({ adminUser }) => {
+    const result = await adminUser.evaluate(async () => {
+      const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
+
+      // Vertex at (200, 200), edge from (100, 215) to (400, 215)
+      const candidateVertices = [{ x: 200, y: 200 }];
+      const edges = [{ ax: 100, ay: 215, bx: 400, by: 215 }];
+      // Point at (202, 203): vertex snap = (200,200) → disp ~3.6, edge snap → (202,215) → disp 12
+      const snap = mod.computeVertexSnap(202, 203, candidateVertices, null, 0, 50, edges);
+      return {
+        finalX: 202 + snap.dx,
+        finalY: 203 + snap.dy,
+        edge: snap.edge,
+      };
+    });
+
+    // Vertex snap should win (closer)
+    expect(result.finalX).toBe(200);
+    expect(result.finalY).toBe(200);
+    expect(result.edge).toBeNull();
+  });
+
+  test('edge snap wins when vertex snap is far', async ({ adminUser }) => {
+    const result = await adminUser.evaluate(async () => {
+      const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
+
+      // Vertex at (200, 200) — far from point
+      // Edge from (100, 305) to (400, 305) — point is 5 units from edge
+      const candidateVertices = [{ x: 200, y: 200 }];
+      const edges = [{ ax: 100, ay: 305, bx: 400, by: 305 }];
+      // Point at (250, 300): vertex snap on X → dx=-50 (within threshold=100 but large),
+      // vertex snap on Y → dy=-100 (at threshold limit),
+      // edge snap → (250, 305) → disp 5
+      const snap = mod.computeVertexSnap(250, 300, candidateVertices, null, 0, 100, edges);
+      return {
+        finalX: 250 + snap.dx,
+        finalY: 300 + snap.dy,
+        edge: snap.edge,
+      };
+    });
+
+    // Edge snap should win (displacement 5 vs axis snap displacement ~50+)
+    expect(result.finalX).toBeCloseTo(250, 0);
+    expect(result.finalY).toBeCloseTo(305, 0);
+    expect(result.edge).not.toBeNull();
+  });
+
+  test('edge gap-offset snap maintains gap distance from edge', async ({ adminUser }) => {
+    const result = await adminUser.evaluate(async () => {
+      const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
+
+      // Horizontal edge at y=200
+      const edges = [{ ax: 100, ay: 200, bx: 400, by: 200 }];
+      const gap = 10;
+      // Point at (250, 212) — should snap to (250, 210) which is gap=10 above the edge
+      const snap = mod.computeVertexSnap(250, 212, [], null, gap, 50, edges);
+      return {
+        finalX: 250 + snap.dx,
+        finalY: 212 + snap.dy,
+        edge: snap.edge,
+      };
+    });
+
+    // Should snap to gap distance above the edge
+    expect(result.finalX).toBe(250);
+    expect(result.finalY).toBe(210); // 200 + 10 gap
+    expect(result.edge).not.toBeNull();
+    expect(result.edge.isGap).toBe(true);
+  });
+
+  test('edge gap-offset snap from below', async ({ adminUser }) => {
+    const result = await adminUser.evaluate(async () => {
+      const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
+
+      // Horizontal edge at y=200
+      const edges = [{ ax: 100, ay: 200, bx: 400, by: 200 }];
+      const gap = 10;
+      // Point at (250, 188) — should snap to (250, 190) which is gap=10 below the edge
+      const snap = mod.computeVertexSnap(250, 188, [], null, gap, 50, edges);
+      return {
+        finalX: 250 + snap.dx,
+        finalY: 188 + snap.dy,
+        edge: snap.edge,
+      };
+    });
+
+    expect(result.finalX).toBe(250);
+    expect(result.finalY).toBe(190); // 200 - 10 gap
+    expect(result.edge).not.toBeNull();
+    expect(result.edge.isGap).toBe(true);
+  });
+
+  test('edge snap returns correct edge info for visualization', async ({ adminUser }) => {
+    const result = await adminUser.evaluate(async () => {
+      const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
+
+      const edges = [{ ax: 100, ay: 200, bx: 400, by: 200 }];
+      const snap = mod.computeVertexSnap(250, 205, [], null, 0, 50, edges);
+      return snap.edge;
+    });
+
+    expect(result).not.toBeNull();
+    expect(result.ax).toBe(100);
+    expect(result.ay).toBe(200);
+    expect(result.bx).toBe(400);
+    expect(result.by).toBe(200);
+    expect(result.projX).toBe(250);
+    expect(result.projY).toBe(200);
+    expect(result.isGap).toBe(false);
+  });
+
+  test('no edge snap when candidateEdges is empty or omitted', async ({ adminUser }) => {
+    const result = await adminUser.evaluate(async () => {
+      const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
+
+      // No edges parameter
+      const snap1 = mod.computeVertexSnap(250, 205, [], null, 0, 50);
+      // Empty edges array
+      const snap2 = mod.computeVertexSnap(250, 205, [], null, 0, 50, []);
+      return { edge1: snap1.edge, edge2: snap2.edge };
+    });
+
+    expect(result.edge1).toBeNull();
+    expect(result.edge2).toBeNull();
+  });
+});
