@@ -45,6 +45,7 @@ let deltaPromise = null;   // items delta lock
 const FULL_REBUILD_MS = 24 * 60 * 60 * 1000; // 24h
 const ITEMS_REFRESH_MS = 15 * 60 * 1000;     // 15m
 const OFFER_COUNTS_MS = 5 * 60 * 1000;       // 5m
+const STALE_MAX_MS = 30 * 60 * 1000;         // 30m — max time to serve stale data
 
 async function fetchAllDatasets(fetch) {
   // Base items + all detailed endpoints required by categorization
@@ -492,22 +493,38 @@ export function invalidateOfferCounts() {
 }
 
 export async function getExchangeCategorization(fetch) {
-  const now = Date.now();
-  const needsFull = !cache.annotated || (now - cache.lastFullBuildAt > FULL_REBUILD_MS);
-  const needsItems = !cache.annotated || (now - cache.lastItemsCheckAt > ITEMS_REFRESH_MS);
-
-  if (needsFull) {
-    // SWR: try to rebuild in background, serve stale if available
-    if (!rebuildPromise) rebuildMarketCache(fetch).catch(() => {});
-    if (cache.annotated) return cache.annotated;
+  // First request: block on initial build
+  if (!cache.annotated) {
     return await rebuildMarketCache(fetch);
   }
 
-  if (needsItems) {
-    // Items-only refresh in the background
-    if (!deltaPromise) itemsDeltaRefresh(fetch).catch(() => {});
+  const now = Date.now();
+  const needsFull = now - cache.lastFullBuildAt > FULL_REBUILD_MS;
+  const needsItems = now - cache.lastItemsCheckAt > ITEMS_REFRESH_MS;
+
+  if (!needsFull && !needsItems) return cache.annotated;
+
+  // How old is the most recent successful refresh?
+  const lastUpdate = Math.max(cache.lastFullBuildAt, cache.lastItemsCheckAt, cache.lastOfferCountsAt);
+  const tooStale = (now - lastUpdate) > STALE_MAX_MS;
+
+  if (needsFull) {
+    if (tooStale) {
+      // Data too old — block until rebuild finishes
+      return await rebuildMarketCache(fetch);
+    }
+    // SWR: serve stale, rebuild in background
+    if (!rebuildPromise) rebuildMarketCache(fetch).catch(() => {});
+    return cache.annotated;
   }
 
+  // needsItems
+  if (tooStale) {
+    // Data too old — block until delta finishes
+    return await itemsDeltaRefresh(fetch);
+  }
+  // SWR: serve stale, delta in background
+  if (!deltaPromise) itemsDeltaRefresh(fetch).catch(() => {});
   return cache.annotated;
 }
 
