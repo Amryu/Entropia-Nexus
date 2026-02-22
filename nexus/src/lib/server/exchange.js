@@ -443,12 +443,13 @@ export async function getExchangePriceHistory(itemId, period = '7d', gender = nu
 export async function getLatestExchangePriceMap() {
   const map = new Map();
 
-  // Base: daily summaries — covers all items with >= 1 day of data
+  // Base: daily summaries within 7 days (aligned with snapshot staleness window)
   const { rows: dailyRows } = await pool.query(`
     SELECT DISTINCT ON (item_id)
       item_id, price_median, price_p10, price_wap
     FROM exchange_price_summaries
     WHERE period_type = 'day'
+      AND period_start >= NOW() - INTERVAL '7 days'
     ORDER BY item_id, period_start DESC
   `);
   for (const r of dailyRows) {
