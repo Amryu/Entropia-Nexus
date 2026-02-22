@@ -260,6 +260,7 @@
       const itemType = slimItem?.t || null;
       const item = await fetchItemDetails(order.item_id, itemType);
       if (!item) return;
+      if (slimItem?.st) item.st = slimItem.st;
 
       inlineEditItem = item;
       const type = order.type === 'BUY' ? 'buy' : 'sell';
@@ -433,6 +434,7 @@
       }
       const item = await fetchItemDetails(invItem.item_id, itemType);
       if (!item) return;
+      if (slimItem?.st) item.st = slimItem.st;
 
       // Get MaxTT from fetched details (pet endpoint includes NutrioCapacity)
       const maxTT = getMaxTT(item) ?? (slimItem?.v != null ? Number(slimItem.v) : null);
@@ -823,6 +825,9 @@
           const it = await fetchItemDetails(id, selectedItem?.t);
           // Ignore if another fetch superseded this
           if (controller && controller.signal.aborted) return;
+          // Propagate material sub-type from slim item — the /items/ API returns
+          // Properties.Type as the top-level type ("Material"), losing the sub-type
+          if (it && selectedItem?.st) it.st = selectedItem.st;
           selectedItemDetails = it || null;
           console.log('[ExchangeBrowser] selectedItemDetails loaded:', selectedItemDetails);
         } catch (e) {
