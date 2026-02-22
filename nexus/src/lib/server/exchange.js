@@ -441,18 +441,17 @@ export async function getExchangePriceHistory(itemId, period = '7d', gender = nu
  * Returns a Map of itemId -> { wap, median, p10 }.
  */
 export async function getLatestExchangePriceMap() {
-  // Try hourly summaries first (has median/p10/wap breakdown)
-  const { rows } = await pool.query(`
+  const map = new Map();
+
+  // Base: daily summaries — covers all items with >= 1 day of data
+  const { rows: dailyRows } = await pool.query(`
     SELECT DISTINCT ON (item_id)
       item_id, price_median, price_p10, price_wap
     FROM exchange_price_summaries
-    WHERE period_type = 'hour'
-      AND period_start >= NOW() - INTERVAL '24 hours'
+    WHERE period_type = 'day'
     ORDER BY item_id, period_start DESC
   `);
-
-  const map = new Map();
-  for (const r of rows) {
+  for (const r of dailyRows) {
     map.set(r.item_id, {
       median: r.price_median != null ? parseFloat(r.price_median) : null,
       p10: r.price_p10 != null ? parseFloat(r.price_p10) : null,
@@ -460,13 +459,30 @@ export async function getLatestExchangePriceMap() {
     });
   }
 
-  // Fallback: if no summaries yet, use raw snapshots
+  // Overlay: fresh hourly summaries override daily where available
+  const { rows: hourlyRows } = await pool.query(`
+    SELECT DISTINCT ON (item_id)
+      item_id, price_median, price_p10, price_wap
+    FROM exchange_price_summaries
+    WHERE period_type = 'hour'
+      AND period_start >= NOW() - INTERVAL '24 hours'
+    ORDER BY item_id, period_start DESC
+  `);
+  for (const r of hourlyRows) {
+    map.set(r.item_id, {
+      median: r.price_median != null ? parseFloat(r.price_median) : null,
+      p10: r.price_p10 != null ? parseFloat(r.price_p10) : null,
+      wap: r.price_wap != null ? parseFloat(r.price_wap) : null
+    });
+  }
+
+  // Fallback: raw snapshots for items with no summaries yet
   if (map.size === 0) {
     const { rows: snaps } = await pool.query(`
       SELECT DISTINCT ON (item_id)
         item_id, markup_value
       FROM exchange_price_snapshots
-      WHERE recorded_at >= NOW() - INTERVAL '24 hours'
+      WHERE recorded_at >= NOW() - INTERVAL '7 days'
       ORDER BY item_id, recorded_at DESC
     `);
     for (const r of snaps) {
