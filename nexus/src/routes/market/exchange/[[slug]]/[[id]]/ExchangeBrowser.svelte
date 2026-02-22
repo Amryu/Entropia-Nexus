@@ -1529,10 +1529,16 @@
           }
         }
         if (unitPrice == null && muNum != null) {
+          // For armor plate sets, TT value covers all 7 plates
+          const itemType = selectedItemDetails?.Properties?.Type || selectedItem?.t;
+          let effectiveTT = ttValue;
+          if (itemType === 'ArmorPlating' && effectiveTT != null && Number(qty) === PLATE_SET_SIZE) {
+            effectiveTT = effectiveTT * PLATE_SET_SIZE;
+          }
           if (bpNonL) {
-            unitPrice = (ttValue || 0) + muNum;
-          } else if (ttValue != null) {
-            unitPrice = isAbsMu ? ttValue + muNum : ttValue * (muNum / 100);
+            unitPrice = (effectiveTT || 0) + muNum;
+          } else if (effectiveTT != null) {
+            unitPrice = isAbsMu ? effectiveTT + muNum : effectiveTT * (muNum / 100);
           }
         }
         return {
@@ -1854,7 +1860,12 @@
       const qty = row?.quantity ?? 1;
       // Stackable items have fixed TT per unit — always use maxTT * qty
       if (stackable && itemMaxTT != null) return itemMaxTT * qty;
-      return row?.details?.CurrentTT ?? itemMaxTT;
+      const tt = row?.details?.CurrentTT ?? itemMaxTT;
+      // Armor plate sets: TT value covers all 7 plates
+      if (type === 'ArmorPlating' && tt != null && Number(qty) === PLATE_SET_SIZE) {
+        return tt * PLATE_SET_SIZE;
+      }
+      return tt;
     }
 
     cols.push({ key: '_value', header: 'Value', width: '130px', mobileWidth: '85px', sortable: true, searchable: false,
@@ -1887,7 +1898,9 @@
         const qty = row?.quantity ?? 1;
         const tt = getRowTT(row);
         if (tt == null) return -1;
-        return isAbsMu ? tt + mu * qty : tt * (mu / 100);
+        // For sets, getRowTT already includes all plates and markup is total set markup
+        const isSet = type === 'ArmorPlating' && Number(qty) === PLATE_SET_SIZE;
+        return isAbsMu ? tt + mu * (isSet ? 1 : qty) : tt * (mu / 100);
       },
       formatter: (v, row) => {
         const mu = row?.markup != null ? Number(row.markup) : null;
@@ -1899,7 +1912,9 @@
         const qty = row?.quantity ?? 1;
         const tt = getRowTT(row);
         if (tt == null) return 'N/A';
-        const total = isAbsMu ? tt + mu * qty : tt * (mu / 100);
+        // For sets, getRowTT already includes all plates and markup is total set markup
+        const isSet = type === 'ArmorPlating' && Number(qty) === PLATE_SET_SIZE;
+        const total = isAbsMu ? tt + mu * (isSet ? 1 : qty) : tt * (mu / 100);
         return formatPedValue(total);
       }});
     cols.push({ key: 'planet', header: 'Planet', width: '120px', sortable: true, searchable: false, hideOnMobile: true,

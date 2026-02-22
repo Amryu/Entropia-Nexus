@@ -43,7 +43,13 @@
       ...o,
       _category: getTopCategory(item?.t),
       _value: getOrderStackValue(item, o) ?? null,
-      _total: (() => { const u = computeUnitPrice(item, mu, o); return u != null ? u * (o.quantity || 1) : null; })(),
+      _total: (() => {
+        const u = computeUnitPrice(item, mu, o);
+        if (u == null) return null;
+        // Set orders: computeUnitPrice already includes full set TT, don't multiply by qty again
+        const isSet = item?.t === 'ArmorPlating' && Number(o.quantity) === PLATE_SET_SIZE;
+        return isSet ? u : u * (o.quantity || 1);
+      })(),
     };
   }).sort((a, b) => {
     const sa = STATUS_ORDER[a.state_display] ?? 9;

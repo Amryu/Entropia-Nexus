@@ -736,17 +736,19 @@ export async function handlePageLoad(fetch, items, config) {
             if (o.computed_state !== 'active' && o.computed_state !== 'stale') continue;
             const mu = Number(o.markup);
             const ct = Number(o.details?.CurrentTT);
+            const isSet = Number(o.quantity) === PLATE_SET_SIZE;
             const tt = ct > 0 ? ct : maxTT;
+            const effectiveTT = isSet && tt != null ? tt * PLATE_SET_SIZE : tt;
             allSellOrders.push({
               seller_name: o.seller_name || 'Anonymous',
               markup: mu,
               formattedMarkup: `+${mu.toFixed(2)}`,
-              unitPrice: tt != null ? tt + mu : null,
+              unitPrice: effectiveTT != null ? effectiveTT + mu : null,
               quantity: o.quantity,
               planet: o.planet || 'Any',
               state: o.computed_state,
               item_name: name,
-              is_set: Number(o.quantity) === PLATE_SET_SIZE,
+              is_set: isSet,
               _exchangeItemId: exchangeItemId
             });
           }
@@ -828,8 +830,10 @@ export async function handlePageLoad(fetch, items, config) {
           unitPrice = tt != null ? tt * (mu / 100) : null;
         } else {
           const ct = Number(o.details?.CurrentTT);
+          const isSet = entityType === 'ArmorPlating' && Number(o.quantity) === PLATE_SET_SIZE;
           const tt = ct > 0 ? ct : maxTT;
-          unitPrice = tt != null ? tt + mu : null;
+          const effectiveTT = isSet && tt != null ? tt * PLATE_SET_SIZE : tt;
+          unitPrice = effectiveTT != null ? effectiveTT + mu : null;
         }
         return {
           seller_name: o.seller_name || 'Anonymous',

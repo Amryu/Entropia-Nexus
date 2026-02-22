@@ -1,7 +1,7 @@
 // Utility functions for order dialog logic
 import { hasItemTag } from '$lib/util.js';
 import { hasCondition } from '$lib/shopUtils';
-import { STACKABLE_TYPES, TIERABLE_TYPES, ABSOLUTE_MARKUP_MATERIAL_TYPES } from '$lib/common/itemTypes.js';
+import { STACKABLE_TYPES, TIERABLE_TYPES, ABSOLUTE_MARKUP_MATERIAL_TYPES, PLATE_SET_SIZE } from '$lib/common/itemTypes.js';
 
 export function isBlueprint(item: any): boolean {
   const type = item?.Properties?.Type ?? item?.Type ?? item?.t;
@@ -100,11 +100,19 @@ export function getOrderStackValue(item: any, order?: any): number | null {
   }
   // Non-stackable: use CurrentTT if available, else unit TT (handles non-L BPs via getUnitTT)
   const raw = order?.details?.CurrentTT ?? order?.Metadata?.CurrentTT;
+  let unitTT: number | null = null;
   if (raw != null) {
     const ct = Number(raw);
-    if (!isNaN(ct)) return ct;
+    if (!isNaN(ct)) unitTT = ct;
   }
-  return getUnitTT(item, order);
+  if (unitTT == null) unitTT = getUnitTT(item, order);
+  if (unitTT == null) return null;
+  // Armor plate sets: total value covers all 7 plates
+  const type = item?.Properties?.Type ?? item?.Type ?? item?.t;
+  if (type === 'ArmorPlating' && Number(qty) === PLATE_SET_SIZE) {
+    return unitTT * PLATE_SET_SIZE;
+  }
+  return unitTT;
 }
 
 /** Compute the unit price for an order given item + markup */
@@ -124,6 +132,11 @@ export function computeUnitPrice(item: any, markup: number | null, order?: any):
     const rawCt = order?.details?.CurrentTT ?? order?.Metadata?.CurrentTT;
     const ct = rawCt != null ? Number(rawCt) : NaN;
     if (!isNaN(ct)) tt = ct;
+  }
+  // Armor plate sets: TT value covers all 7 plates
+  const type = item?.Properties?.Type ?? item?.Type ?? item?.t;
+  if (type === 'ArmorPlating' && Number(order?.quantity) === PLATE_SET_SIZE) {
+    tt = tt * PLATE_SET_SIZE;
   }
   return isAbsoluteMarkup(item) ? tt + mu : tt * (mu / 100);
 }

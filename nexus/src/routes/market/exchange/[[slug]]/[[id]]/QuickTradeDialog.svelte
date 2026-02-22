@@ -5,6 +5,7 @@
   import { getMaxTT, isAbsoluteMarkup, isItemTierable, isBlueprint, isLimited, formatMarkupValue, formatPedValue, isPet, isBlueprintNonL, getUnitTT, computeUnitPrice, getPetLevel } from '../../orderUtils';
   import { hasCondition } from '$lib/shopUtils';
   import { encodeURIComponentSafe } from '$lib/util.js';
+  import { PLATE_SET_SIZE } from '$lib/common/itemTypes.js';
 
   /** @type {boolean} */
   export let show = false;
@@ -78,18 +79,24 @@
   // Non-L BP TT value is QR/100, not MaxTT
   $: bpTTValue = isBpNonL ? (Number(order?.details?.QualityRating) || 0) / 100 : null;
 
-  // Compute unit price (TT + MU per unit)
+  $: itemType = item?.Properties?.Type ?? item?.Type ?? item?.t ?? null;
+  $: isSet = itemType === 'ArmorPlating' && Number(order?.quantity) === PLATE_SET_SIZE;
+
+  // Compute unit price (TT + MU per unit; for sets, includes all plates)
   $: unitPrice = (() => {
     if (order?.markup == null) return null;
     const mu = Number(order.markup);
     if (isBpNonL) return bpTTValue + mu;
     if (maxTT == null) return null;
-    return isAbsMu ? maxTT + mu : maxTT * (mu / 100);
+    // Armor plate sets: TT value covers all 7 plates
+    const tt = isSet ? maxTT * PLATE_SET_SIZE : maxTT;
+    return isAbsMu ? tt + mu : tt * (mu / 100);
   })();
 
   // Compute total TT and total price for the selected quantity
   $: totalTT = isBpNonL ? bpTTValue * quantity : (maxTT != null ? maxTT * quantity : null);
-  $: totalPrice = unitPrice != null ? unitPrice * quantity : null;
+  // For sets, unitPrice already covers the full set; don't multiply by qty again
+  $: totalPrice = unitPrice != null ? (isSet ? unitPrice : unitPrice * quantity) : null;
 
   // Item metadata for display
   $: tierable = isItemTierable(item);
