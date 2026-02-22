@@ -1,5 +1,5 @@
 import { test, expect } from '../fixtures/auth';
-import { TIMEOUT_INSTANT, TIMEOUT_SHORT } from '../test-constants';
+import { TIMEOUT_INSTANT, TIMEOUT_SHORT, TIMEOUT_MEDIUM } from '../test-constants';
 
 /**
  * Admin Unknown Items Page Tests
@@ -33,8 +33,10 @@ test.describe('Admin Unknown Items Page', () => {
     test('has page title', async ({ adminUser }) => {
       await adminUser.goto('/admin/unknown-items');
       await adminUser.waitForLoadState('networkidle');
+      await adminUser.waitForTimeout(TIMEOUT_SHORT);
 
-      await expect(adminUser.locator('h1, h2').first()).toContainText(/unknown items/i);
+      // Use .admin-content to avoid matching the sidebar "Admin Panel" h2
+      await expect(adminUser.locator('.admin-content h1')).toContainText(/unknown items/i, { timeout: TIMEOUT_MEDIUM });
     });
 
     test('has table for unknown items', async ({ adminUser }) => {

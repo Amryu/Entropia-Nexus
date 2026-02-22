@@ -116,8 +116,8 @@ test.describe('Locations Page', () => {
       await verifiedUser.waitForTimeout(TIMEOUT_MEDIUM);
 
       // Check for create/new button
-      const createButton = verifiedUser.locator('button, a', { hasText: /create|new/i });
-      await expect(createButton.first()).toBeVisible({ timeout: TIMEOUT_MEDIUM });
+      const createButton = verifiedUser.getByRole('button', { name: /new/i });
+      await expect(createButton).toBeVisible({ timeout: TIMEOUT_MEDIUM });
     });
   });
 

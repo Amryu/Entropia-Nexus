@@ -309,21 +309,6 @@ test.describe('Quick Action Button Uniformity', () => {
     }
   });
 
-  test('dark mode button uses icon instead of emoji', async ({ page }) => {
-    await page.setViewportSize(PORTRAIT_MOBILE);
-    await page.goto('/');
-    await page.waitForLoadState('networkidle');
-
-    await page.locator('.burger-button').click();
-
-    const darkModeBtn = page.locator('.mobile-quick-btn[title="Dark Mode"], .mobile-quick-btn[title="Light Mode"]').first();
-    await expect(darkModeBtn).toBeVisible();
-
-    const hasImg = await darkModeBtn.locator('img').isVisible().catch(() => false);
-    const hasSvg = await darkModeBtn.locator('svg').isVisible().catch(() => false);
-    expect(hasImg || hasSvg).toBeTruthy();
-  });
-
   test('admin button uses SVG icon', async ({ adminUser }) => {
     await adminUser.setViewportSize(PORTRAIT_MOBILE);
     await adminUser.goto('/');

@@ -6,7 +6,7 @@ test.describe('Search page', () => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
-    const searchInput = page.locator('.menu-container input[type="text"][placeholder*="Search"]');
+    const searchInput = page.locator('.search-container input[type="text"]');
     await searchInput.fill('opalo');
     await page.waitForTimeout(TIMEOUT_INSTANT);
 
@@ -18,7 +18,7 @@ test.describe('Search page', () => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
 
-    const searchInput = page.locator('.menu-container input[type="text"][placeholder*="Search"]');
+    const searchInput = page.locator('.search-container input[type="text"]');
     await searchInput.fill('opalo');
 
     // Wait for results to appear

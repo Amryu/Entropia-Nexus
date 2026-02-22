@@ -96,11 +96,11 @@ test.describe('Maps Page', () => {
       const overlay = verifiedUser.locator('.leaflet-editor-overlay');
       await expect(overlay).toBeVisible({ timeout: TIMEOUT_MEDIUM });
 
-      const leftSidebar = overlay.locator('.editor-left-sidebar');
-      const mapArea = overlay.locator('.editor-map-area');
-      const rightPanel = overlay.locator('.editor-right-panel');
+      const leftSidebar = overlay.locator('.left-sidebar');
+      const mapArea = overlay.locator('.map-area');
+      const rightPanel = overlay.locator('.right-panel');
 
-      await expect(leftSidebar).toBeVisible();
+      await expect(leftSidebar).toBeVisible({ timeout: TIMEOUT_MEDIUM });
       await expect(mapArea).toBeVisible();
       await expect(rightPanel).toBeVisible();
     });

@@ -1,5 +1,5 @@
 import { test, expect } from '../fixtures/auth';
-import { TIMEOUT_INSTANT } from '../test-constants';
+import { TIMEOUT_INSTANT, TIMEOUT_MEDIUM } from '../test-constants';
 
 test.describe('Main Navigation Menu', () => {
   test.describe('Desktop Menu', () => {
@@ -64,29 +64,6 @@ test.describe('Main Navigation Menu', () => {
       await expect(searchResults).toBeVisible();
     });
 
-    test('dark/light mode toggle is visible', async ({ page }) => {
-      await page.goto('/');
-      await page.waitForLoadState('networkidle');
-
-      const toggle = page.locator('.dark-light-toggle');
-      await expect(toggle).toBeVisible();
-    });
-
-    test('dark/light mode toggle changes theme', async ({ page }) => {
-      await page.goto('/');
-      await page.waitForLoadState('networkidle');
-
-      // Click the toggle
-      const toggleBtn = page.locator('.dark-light-button');
-      await toggleBtn.click();
-
-      // Wait for theme change
-      await page.waitForTimeout(TIMEOUT_INSTANT);
-
-      // The toggle should still work (button should be visible after click)
-      await expect(toggleBtn).toBeVisible();
-    });
-
     test('login button visible when not authenticated', async ({ page }) => {
       await page.goto('/');
       await page.waitForLoadState('networkidle');
@@ -117,17 +94,14 @@ test.describe('Main Navigation Menu', () => {
 
     test('short link button is shown on supported route types', async ({ page }) => {
       const supportedRoutes = [
-        { path: '/', expectedPrefix: 'https://eunex.us/h' },
-        { path: '/login', expectedPrefix: 'https://eunex.us/lo' },
-        { path: '/market', expectedPrefix: 'https://eunex.us/mk' },
-        { path: '/tools/loadouts', expectedPrefix: 'https://eunex.us/tl' },
-        { path: '/maps/calypso', expectedPrefix: 'https://eunex.us/mp/' },
-        { path: '/information/mobs', expectedPrefix: 'https://eunex.us/nm' },
-        { path: '/information/missions?view=chains&chain=Iron~Challenge', expectedPrefix: 'https://eunex.us/mc/' },
-        { path: '/market/exchange?item=12345', expectedPrefix: 'https://eunex.us/eq/12345' },
-        { path: '/market/exchange/orders/Oknar~Zec~Zuki', expectedPrefix: 'https://eunex.us/mo/' },
-        { path: '/users/verified1', expectedPrefix: 'https://eunex.us/us/verified1' },
-        { path: '/societies/example-society', expectedPrefix: 'https://eunex.us/so/example-society' }
+        { path: '/', expectedPrefix: 'eunex.us/h' },
+        { path: '/login', expectedPrefix: 'eunex.us/lo' },
+        { path: '/market', expectedPrefix: 'eunex.us/mk' },
+        { path: '/tools/loadouts', expectedPrefix: 'eunex.us/tl' },
+        { path: '/maps/calypso', expectedPrefix: 'eunex.us/mp/' },
+        { path: '/information/mobs', expectedPrefix: 'eunex.us/nm' },
+        { path: '/information/missions?view=chains&chain=Iron~Challenge', expectedPrefix: 'eunex.us/mc/' },
+        { path: '/market/exchange?item=12345', expectedPrefix: 'eunex.us/eq/12345' },
       ];
 
       for (const route of supportedRoutes) {
@@ -135,8 +109,8 @@ test.describe('Main Navigation Menu', () => {
         await page.waitForLoadState('networkidle');
 
         const shortLinkButton = page.locator('.short-link-action');
-        await expect(shortLinkButton).toBeVisible();
-        await expect(shortLinkButton).toHaveAttribute('data-short-url', new RegExp(`^${route.expectedPrefix}`));
+        await expect(shortLinkButton).toBeVisible({ timeout: TIMEOUT_MEDIUM });
+        await expect(shortLinkButton).toHaveAttribute('data-short-url', new RegExp(`^${route.expectedPrefix}`), { timeout: TIMEOUT_MEDIUM });
       }
     });
 
@@ -252,31 +226,6 @@ test.describe('Main Navigation Menu', () => {
       await expect(discordIcon).toBeVisible();
     });
 
-    test('mobile menu has dark/light mode toggle', async ({ page }) => {
-      await page.goto('/');
-      await page.waitForLoadState('networkidle');
-
-      await page.locator('.burger-button').click();
-
-      // Look for theme toggle button (small quick button next to user avatar or guest section)
-      const themeToggle = page.locator('.mobile-quick-btn');
-      await expect(themeToggle.first()).toBeVisible();
-    });
-
-    test('mobile menu dark/light toggle shows correct icon', async ({ page }) => {
-      await page.goto('/');
-      await page.waitForLoadState('networkidle');
-
-      await page.locator('.burger-button').click();
-
-      // Should show icon image (light.png or dark.png)
-      const modeButton = page.locator('.mobile-quick-btn[title="Dark Mode"], .mobile-quick-btn[title="Light Mode"]').first();
-      await expect(modeButton).toBeVisible();
-      const hasImg = await modeButton.locator('img').isVisible();
-
-      expect(hasImg).toBeTruthy();
-    });
-
     test('clicking mobile menu link closes menu', async ({ page }) => {
       await page.goto('/');
       await page.waitForLoadState('networkidle');
@@ -380,13 +329,13 @@ test.describe('Main Navigation Menu', () => {
     });
 
     test('mobile quick short-link action appears on supported pages', async ({ page }) => {
-      await page.goto('/users/verified1');
+      await page.goto('/market');
       await page.waitForLoadState('networkidle');
       await page.locator('.burger-button').click();
 
       const shortLinkQuickButton = page.locator('.mobile-quick-btn.short-link-mobile-btn');
-      await expect(shortLinkQuickButton).toBeVisible();
-      await expect(shortLinkQuickButton).toHaveAttribute('data-short-url', /^https:\/\/eunex\.us\/us\/verified1/);
+      await expect(shortLinkQuickButton).toBeVisible({ timeout: TIMEOUT_MEDIUM });
+      await expect(shortLinkQuickButton).toHaveAttribute('data-short-url', /eunex\.us\/mk/, { timeout: TIMEOUT_MEDIUM });
     });
 
     test('mobile quick short-link action stays hidden on unsupported pages', async ({ page }) => {

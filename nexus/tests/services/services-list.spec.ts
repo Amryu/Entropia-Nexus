@@ -145,9 +145,9 @@ test.describe('Services List Page - Transportation Tab', () => {
     await page.goto('/market/services/transportation');
     await page.waitForLoadState('networkidle');
 
-    // Should show either data rows or an empty state message
-    const dataRow = page.locator('.data-row');
-    const emptyState = page.locator('.empty-state, .empty-row');
+    // Should show either data rows (FancyTable uses .table-row) or an empty state message
+    const dataRow = page.locator('.table-row:not(.empty)');
+    const emptyState = page.locator('.empty-state, .table-row.empty');
     const hasData = await dataRow.first().isVisible().catch(() => false);
     const hasEmpty = await emptyState.first().isVisible().catch(() => false);
     expect(hasData || hasEmpty).toBeTruthy();

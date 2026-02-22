@@ -98,15 +98,13 @@ test.describe('Service Creation Page - Verified User', () => {
     await expect(titleInput).toBeVisible();
   });
 
-  test('has description textarea', async ({ verifiedUser }) => {
+  test('has description editor', async ({ verifiedUser }) => {
     await verifiedUser.goto('/market/services/create');
     await verifiedUser.waitForLoadState('networkidle');
 
-    const descTextarea = verifiedUser.locator('textarea#description').or(
-      verifiedUser.locator('textarea[name="description"]')
-    ).or(verifiedUser.getByLabel(/description/i));
-
-    await expect(descTextarea).toBeVisible();
+    // Description uses a Rich Text Editor (tiptap) instead of a textarea
+    const descEditor = verifiedUser.locator('.tiptap-content');
+    await expect(descEditor).toBeVisible();
   });
 
   test('has submit and cancel buttons', async ({ verifiedUser }) => {
