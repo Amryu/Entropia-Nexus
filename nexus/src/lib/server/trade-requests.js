@@ -1,14 +1,56 @@
 //@ts-nocheck
 import { pool } from './db.js';
 
-import { isPercentMarkupType } from '$lib/common/itemTypes.js';
-import { resolveItemTypesByItemId } from '$lib/server/item-type-cache.js';
+import { isPercentMarkupType, isLimitedByName, isStackableType, CONDITION_TYPES } from '$lib/common/itemTypes.js';
+import { resolveItemDataByItemId } from '$lib/server/item-type-cache.js';
 
 function getMarkupType(typeInfo, itemName) {
   if (typeInfo && typeof typeInfo === 'object') {
     return isPercentMarkupType(typeInfo.type, itemName, typeInfo.subType) ? 'percent' : 'absolute';
   }
   return isPercentMarkupType(typeInfo, itemName) ? 'percent' : 'absolute';
+}
+
+/**
+ * Compute per-unit TT value for a trade request item.
+ * Mirrors orderUtils.ts getUnitTT() / getMaxTT() logic.
+ */
+function computeUnitTT(itemData, itemName, offer) {
+  if (!itemData) return null;
+  const { type, item } = itemData;
+  if (!type) return null;
+
+  const isLimited = isLimitedByName(itemName);
+  const isBP = type === 'Blueprint';
+
+  // (L) blueprints: always 0.01 PED per unit (DB stores 1.00 for all BPs)
+  if (isBP && isLimited) return 0.01;
+
+  // Non-L blueprints: TT = QR/100
+  if (isBP) {
+    const qr = Number(offer?.details?.QualityRating) || 0;
+    return qr > 0 ? qr / 100 : null;
+  }
+
+  // Condition items (non-stackable): prefer CurrentTT from offer details
+  if (!isStackableType(type, itemName) && CONDITION_TYPES.has(type)) {
+    const ct = Number(offer?.details?.CurrentTT);
+    if (!isNaN(ct) && ct > 0) return ct;
+  }
+
+  // Default: MaxTT from item database
+  const maxTT = item?.Properties?.Economy?.MaxTT
+    ?? item?.Properties?.Economy?.Value
+    ?? item?.MaxTT ?? item?.Value ?? null;
+  if (maxTT != null) return Number(maxTT);
+
+  // Pets: NutrioCapacity fallback
+  if (type === 'Pet') {
+    const nutrio = item?.Properties?.NutrioCapacity;
+    return nutrio != null ? nutrio / 100 : null;
+  }
+
+  return null;
 }
 
 // ---------- Trade Requests ----------
@@ -61,7 +103,7 @@ export async function getOrCreateTradeRequest(requesterId, targetId, planet, ite
     const offerMap = {};
     if (offerIds.length > 0) {
       const offerRes = await client.query(
-        `SELECT id, min_quantity, quantity FROM trade_offers WHERE id = ANY($1)`,
+        `SELECT id, min_quantity, quantity, details FROM trade_offers WHERE id = ANY($1)`,
         [offerIds]
       );
       for (const row of offerRes.rows) offerMap[row.id] = row;
@@ -86,17 +128,20 @@ export async function getOrCreateTradeRequest(requesterId, targetId, planet, ite
       }
     }
 
-    // Resolve item types for markup formatting
+    // Resolve item data for markup formatting and TT computation
     const itemIds = [...new Set(items.map(i => i.item_id).filter(Boolean))];
-    const typeMap = await resolveItemTypesByItemId(itemIds, fetch);
+    const dataMap = await resolveItemDataByItemId(itemIds, fetch);
 
     // Insert all items
     for (const item of items) {
-      const markupType = getMarkupType(typeMap[item.item_id], item.item_name);
+      const itemData = dataMap[item.item_id];
+      const markupType = getMarkupType(itemData, item.item_name);
+      const offer = item.offer_id ? offerMap[item.offer_id] : null;
+      const unitTT = computeUnitTT(itemData, item.item_name, offer);
       await client.query(
-        `INSERT INTO trade_request_items (trade_request_id, offer_id, item_id, item_name, quantity, markup, side, markup_type)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-        [requestId, item.offer_id || null, item.item_id, item.item_name, item.quantity || 1, item.markup ?? null, item.side, markupType]
+        `INSERT INTO trade_request_items (trade_request_id, offer_id, item_id, item_name, quantity, markup, side, markup_type, unit_tt)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [requestId, item.offer_id || null, item.item_id, item.item_name, item.quantity || 1, item.markup ?? null, item.side, markupType, unitTT]
       );
     }
 

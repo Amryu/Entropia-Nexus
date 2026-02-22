@@ -1485,11 +1485,24 @@ setInterval(() => runScheduled('checkContentCreators', checkContentCreators), 60
 
 // ---- Trade Request Thread Management ----
 
-function formatMarkup(item) {
+function formatTradeItem(item) {
   if (item.markup == null) return '';
-  const v = Number(item.markup);
-  if (item.markup_type === 'absolute') return ` @ +${v.toFixed(2)} PED`;
-  return ` @ ${v.toFixed(2)}%`;
+  const mu = Number(item.markup);
+  const markupStr = item.markup_type === 'absolute'
+    ? `@ +${mu.toFixed(2)} PED`
+    : `@ ${mu.toFixed(2)}%`;
+
+  if (item.unit_tt != null) {
+    const unitTT = Number(item.unit_tt);
+    const qty = item.quantity || 1;
+    const totalTT = unitTT * qty;
+    const totalCost = item.markup_type === 'absolute'
+      ? (unitTT + mu) * qty
+      : unitTT * (mu / 100) * qty;
+    return ` ${markupStr} \u2014 TT: ${totalTT.toFixed(2)} PED, Total: ${totalCost.toFixed(2)} PED`;
+  }
+
+  return ` ${markupStr}`;
 }
 
 let lastTradeItemCheck = new Date();
@@ -1529,7 +1542,7 @@ async function checkTradeRequests() {
       msg += `\n**Items:**\n`;
       for (const item of items) {
         const side = item.side === 'SELL' ? 'Buy' : 'Sell';
-        msg += `- ${side} ${item.quantity}x **${item.item_name}**${formatMarkup(item)}\n`;
+        msg += `- ${side} ${item.quantity}x **${item.item_name}**${formatTradeItem(item)}\n`;
       }
       msg += `\nUse this thread to negotiate. Type \`/done\` when finished to close the trade.`;
 
@@ -1564,7 +1577,7 @@ async function checkTradeRequests() {
       let msg = `**New items added to trade:**\n`;
       for (const item of newItems) {
         const side = item.side === 'SELL' ? 'Buy' : 'Sell';
-        msg += `- ${side} ${item.quantity}x **${item.item_name}**${formatMarkup(item)}\n`;
+        msg += `- ${side} ${item.quantity}x **${item.item_name}**${formatTradeItem(item)}\n`;
       }
       await thread.send(msg);
     } catch (e) {

@@ -110,3 +110,41 @@ export async function resolveItemTypesByItemId(itemIds, fetch) {
   return map;
 }
 
+/**
+ * Resolve item data by item ID, returning type info plus the raw item object
+ * for TT value computation.
+ * @returns {{ [itemId: number]: { type: string, subType: string|null, item: object|null } }}
+ */
+export async function resolveItemDataByItemId(itemIds, fetch) {
+  const map = {};
+  if (!Array.isArray(itemIds) || itemIds.length === 0) return map;
+
+  const unresolved = [];
+  for (const itemId of itemIds) {
+    if (itemId >= ARMOR_SET_OFFSET && itemId <= ARMOR_SET_MAX_ID) {
+      map[itemId] = { type: 'ArmorSet', subType: null, item: null };
+    } else {
+      unresolved.push(itemId);
+    }
+  }
+
+  if (unresolved.length === 0 || !fetch) return map;
+
+  const cache = await getCachedItemTypeData(fetch);
+  for (const itemId of unresolved) {
+    const item = cache.itemsById.get(itemId);
+    const type = item?.Properties?.Type ?? item?.Type ?? null;
+    if (!type) continue;
+
+    map[itemId] = {
+      type,
+      subType: type === 'Material'
+        ? (cache.materialSubTypeByItemId.get(itemId) ?? null)
+        : null,
+      item: item || null
+    };
+  }
+
+  return map;
+}
+
