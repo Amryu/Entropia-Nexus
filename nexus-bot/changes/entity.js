@@ -1263,8 +1263,9 @@ async function applyLocationExtensionChanges(client, locationId, x) {
   // Handle Areas extension for Area type
   if (locationType === 'Area' && x.Properties?.AreaType) {
     const areaType = x.Properties.AreaType;
-    const shape = x.Properties?.Shape ?? 'Point';
-    const data = JSON.stringify(x.Properties?.Data ?? {});
+    const sanitized = sanitizeShapeAndData(x.Properties || {});
+    const shape = sanitized.shape ?? x.Properties?.Shape ?? 'Point';
+    const data = sanitized.data ?? JSON.stringify(x.Properties?.Data ?? {});
     await client.query(
       `INSERT INTO "Areas" ("LocationId", "Type", "Shape", "Data")
        VALUES ($1, $2::"AreaType", $3::"Shape", $4::jsonb)
