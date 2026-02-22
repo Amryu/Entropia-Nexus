@@ -817,7 +817,7 @@
 <svelte:head>
   <title>Entropia Nexus - {currentPlanet?.Name || 'Map'} Map</title>
   <meta name="description" content="Interactive map for {currentPlanet?.Name || 'Entropia Universe'}." />
-  <link rel="canonical" href="https://entropianexus.com/maps/{$page.params.planet}" />
+  <link rel="canonical" href="https://entropianexus.com/maps/{normalizePlanetSlug(currentPlanet?.Name)}" />
 </svelte:head>
 
 <div class="map-page">
