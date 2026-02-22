@@ -286,6 +286,12 @@
     ? `/items/furnishings/${selectedFilter}`
     : '/items/furnishings';
 
+  // Create categories for the "New" dropdown
+  $: createCategories = typeButtons.map(btn => ({
+    label: getTypeName(btn.type),
+    href: `/items/furnishings/${btn.type}`
+  }));
+
   // Filter pending creates by selected filter type
   $: filteredPendingCreates = selectedFilter
     ? (userPendingCreates || []).filter(change => {
@@ -364,7 +370,8 @@
   navGetItemHref={getItemHref}
   {user}
   editable={true}
-  canEdit={canEdit && !!additional.type}
+  canEdit={canEdit}
+  {createCategories}
   {canCreateNew}
   userPendingCreates={filteredPendingCreates}
   {userPendingUpdates}

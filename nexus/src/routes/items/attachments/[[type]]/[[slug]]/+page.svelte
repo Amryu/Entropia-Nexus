@@ -331,6 +331,14 @@
     ? `/items/attachments/${selectedFilter}`
     : '/items/attachments';
 
+  // Create categories for the "New" dropdown (exclude enhancers which are database-generated)
+  $: createCategories = typeButtons
+    .filter(btn => btn.type !== 'enhancers')
+    .map(btn => ({
+      label: getTypeName(btn.type),
+      href: `/items/attachments/${btn.type}`
+    }));
+
   // Filter pending creates by selected filter type
   $: filteredPendingCreates = selectedFilter
     ? (userPendingCreates || []).filter(change => {
@@ -515,7 +523,8 @@
   navGetItemHref={getItemHref}
   {user}
   editable={true}
-  canEdit={canEdit && !!additional.type}
+  canEdit={canEdit}
+  {createCategories}
   {canCreateNew}
   userPendingCreates={filteredPendingCreates}
   {userPendingUpdates}

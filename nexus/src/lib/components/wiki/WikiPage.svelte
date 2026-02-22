@@ -69,6 +69,9 @@
   /** @type {boolean} Whether the user can create new entities (may be limited) */
   export let canCreateNew = true;
 
+  /** @type {Array<{label: string, href: string}>|null} Category options for create dropdown (multi-type pages) */
+  export let createCategories = null;
+
   /** @type {Array} User's pending create changes to show at top of sidebar */
   export let userPendingCreates = [];
 
@@ -190,6 +193,26 @@
       skipNavGuard = true;
       goto(`${basePath}?mode=create`);
     }
+  }
+
+  // Create category dropdown state (for multi-type pages)
+  let createDropdownOpen = false;
+
+  function toggleCreateDropdown() {
+    createDropdownOpen = !createDropdownOpen;
+  }
+
+  function closeCreateDropdown() {
+    createDropdownOpen = false;
+  }
+
+  function handleCreateCategory(category) {
+    if ($editMode && $hasChanges) {
+      if (!confirm('You have unsaved changes. Start a new creation?')) return;
+    }
+    skipNavGuard = true;
+    createDropdownOpen = false;
+    goto(`${category.href}?mode=create`);
   }
 
   function handleEdit() {
@@ -390,18 +413,42 @@
         <div class="header-actions">
           <slot name="header-actions">
             {#if canEdit}
-              <button
-                class="action-btn create"
-                on:click={handleCreate}
-                title={canCreateNew ? 'Create new' : 'You have reached the limit of 50 pending creations'}
-                disabled={!canCreateNew}
-              >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <line x1="12" y1="5" x2="12" y2="19" />
-                  <line x1="5" y1="12" x2="19" y2="12" />
-                </svg>
-                <span>New</span>
-              </button>
+              <div class="create-btn-wrapper">
+                <button
+                  class="action-btn create"
+                  on:click={createCategories ? toggleCreateDropdown : handleCreate}
+                  title={canCreateNew ? 'Create new' : 'You have reached the limit of 50 pending creations'}
+                  disabled={!canCreateNew}
+                  aria-haspopup={createCategories ? 'true' : undefined}
+                  aria-expanded={createCategories ? createDropdownOpen : undefined}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="12" y1="5" x2="12" y2="19" />
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                  <span>New</span>
+                  {#if createCategories}
+                    <svg class="dropdown-chevron" class:open={createDropdownOpen} width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="6 9 12 15 18 9" />
+                    </svg>
+                  {/if}
+                </button>
+                {#if createDropdownOpen}
+                  <!-- svelte-ignore a11y-no-static-element-interactions -->
+                  <div class="create-dropdown-backdrop" on:click={closeCreateDropdown}></div>
+                  <div class="create-dropdown" role="menu" on:keydown={(e) => e.key === 'Escape' && closeCreateDropdown()}>
+                    {#each createCategories as category}
+                      <button
+                        class="create-dropdown-item"
+                        role="menuitem"
+                        on:click={() => handleCreateCategory(category)}
+                      >
+                        {category.label}
+                      </button>
+                    {/each}
+                  </div>
+                {/if}
+              </div>
             {/if}
             {#if entity && canEdit && !$isCreateMode}
               {#if $editMode}
@@ -738,6 +785,65 @@
     box-shadow: none;
   }
 
+  /* Create button wrapper for dropdown positioning */
+  .create-btn-wrapper {
+    position: relative;
+  }
+
+  .dropdown-chevron {
+    transition: transform 0.15s ease;
+    margin-left: -2px;
+  }
+
+  .dropdown-chevron.open {
+    transform: rotate(180deg);
+  }
+
+  .create-dropdown-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 99;
+  }
+
+  .create-dropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    min-width: 180px;
+    background-color: var(--secondary-color);
+    border: 1px solid var(--border-color, #555);
+    border-radius: 6px;
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+    z-index: 100;
+    padding: 4px 0;
+  }
+
+  .create-dropdown-item {
+    display: block;
+    width: 100%;
+    padding: 10px 14px;
+    font-size: 13px;
+    color: var(--text-color);
+    background: none;
+    border: none;
+    text-align: left;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+    white-space: nowrap;
+  }
+
+  .create-dropdown-item:hover {
+    background-color: var(--hover-color);
+  }
+
+  .create-dropdown-item:focus-visible {
+    outline: 2px solid var(--accent-color, #4a9eff);
+    outline-offset: -2px;
+  }
+
   .content-body {
     flex: 1;
     overflow-y: auto;
@@ -778,8 +884,16 @@
     display: none; /* Hide text, show only icons on mobile */
   }
 
+  .wiki-page.mobile .dropdown-chevron {
+    display: none;
+  }
+
   .wiki-page.mobile .action-btn {
     padding: 8px;
+  }
+
+  .wiki-page.mobile .create-dropdown {
+    min-width: 160px;
   }
 
   .wiki-page.mobile .content-body {
