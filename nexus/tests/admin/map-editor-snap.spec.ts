@@ -3,8 +3,8 @@ import { TIMEOUT_SHORT, TIMEOUT_MEDIUM, TIMEOUT_LONG } from '../test-constants';
 
 /**
  * Tests for the map editor snap functionality:
- * - Snap toolbar UI (Snap Edges, Snap Grid, Gap input)
- * - computeVertexSnap algorithm (vertex-to-vertex, gap-offset, grid lines, bisector)
+ * - Snap toolbar UI (Snap, Snap Grid, Gap input)
+ * - computeVertexSnap algorithm (edge extensions, grid lines, bisector, gap-offset)
  * - getShapeVertices extraction
  * - getShapeBounds computation
  */
@@ -66,12 +66,12 @@ test.describe('Map Editor Snap - Toolbar UI', () => {
     const snapToolbar = adminUser.locator('.snap-toolbar');
     await expect(snapToolbar).toBeVisible({ timeout: TIMEOUT_LONG });
 
-    // Snap Edges button
-    const snapEdgesBtn = snapToolbar.locator('button', { hasText: 'Snap Edges' });
+    // Snap button
+    const snapEdgesBtn = snapToolbar.getByRole('button', { name: 'Snap', exact: true });
     await expect(snapEdgesBtn).toBeVisible();
 
     // Snap Grid button
-    const snapGridBtn = snapToolbar.locator('button', { hasText: 'Snap Grid' });
+    const snapGridBtn = snapToolbar.getByRole('button', { name: 'Snap Grid' });
     await expect(snapGridBtn).toBeVisible();
 
     // Hint text
@@ -79,7 +79,7 @@ test.describe('Map Editor Snap - Toolbar UI', () => {
     await expect(hint).toContainText('Shift+drag vertex');
   });
 
-  test('gap input toggles with Snap Edges button', async ({ adminUser }) => {
+  test('gap input toggles with Snap button', async ({ adminUser }) => {
     const editBtn = adminUser.locator('.mode-toggle button', { hasText: 'Edit' });
     await editBtn.click();
 
@@ -94,12 +94,12 @@ test.describe('Map Editor Snap - Toolbar UI', () => {
     const snapToolbar = adminUser.locator('.snap-toolbar');
     await expect(snapToolbar).toBeVisible({ timeout: TIMEOUT_LONG });
 
-    // Snap Edges enabled by default → gap input visible with value 5
-    const snapEdgesBtn = snapToolbar.locator('button', { hasText: 'Snap Edges' });
+    // Snap enabled by default → gap input visible with value 5
+    const snapEdgesBtn = snapToolbar.getByRole('button', { name: 'Snap', exact: true });
     const gapInput = snapToolbar.locator('.snap-gap-input');
     await expect(snapEdgesBtn).toHaveClass(/active/, { timeout: TIMEOUT_SHORT });
     await expect(gapInput).toBeVisible({ timeout: TIMEOUT_SHORT });
-    await expect(gapInput).toHaveValue('5');
+    await expect(gapInput).toHaveValue('20');
 
     // Toggle off → gap input hidden
     await snapEdgesBtn.click();
@@ -148,121 +148,7 @@ test.describe('Map Editor Snap - computeVertexSnap Algorithm', () => {
     await adminUser.waitForLoadState('networkidle');
   });
 
-  test('vertex snaps exactly to candidate vertex (gap=0)', async ({ adminUser }) => {
-    const result = await adminUser.evaluate(async () => {
-      const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
-
-      const candidateVertices = [
-        { x: 1000, y: 2000 },
-        { x: 3000, y: 4000 },
-      ];
-
-      // Vertex near first candidate
-      const snap1 = mod.computeVertexSnap(1010, 1990, candidateVertices, null, 0, 500);
-      // Vertex near second candidate
-      const snap2 = mod.computeVertexSnap(3005, 4008, candidateVertices, null, 0, 500);
-      // Vertex far from any candidate (beyond threshold)
-      const snap3 = mod.computeVertexSnap(5000, 5000, candidateVertices, null, 0, 500);
-
-      return { snap1, snap2, snap3 };
-    });
-
-    // Near (1000, 2000): dx = -10, dy = 10
-    expect(result.snap1.dx).toBe(-10);
-    expect(result.snap1.dy).toBe(10);
-    // matchX/matchY should reference the candidate vertex that triggered the snap
-    expect(result.snap1.matchX).toEqual(expect.objectContaining({ x: 1000, y: 2000 }));
-    expect(result.snap1.matchY).toEqual(expect.objectContaining({ x: 1000, y: 2000 }));
-
-    // Near (3000, 4000): dx = -5, dy = -8
-    expect(result.snap2.dx).toBe(-5);
-    expect(result.snap2.dy).toBe(-8);
-    expect(result.snap2.matchX).toEqual(expect.objectContaining({ x: 3000, y: 4000 }));
-    expect(result.snap2.matchY).toEqual(expect.objectContaining({ x: 3000, y: 4000 }));
-
-    // Far: no snap — matchX/matchY should be null
-    expect(result.snap3.dx).toBe(0);
-    expect(result.snap3.dy).toBe(0);
-    expect(result.snap3.matchX).toBeNull();
-    expect(result.snap3.matchY).toBeNull();
-  });
-
-  test('vertex snaps with gap offset at different gap sizes', async ({ adminUser }) => {
-    const result = await adminUser.evaluate(async () => {
-      const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
-
-      const candidateVertices = [{ x: 1000, y: 2000 }];
-      const results = [];
-
-      // Vertex approaching from the right side (vx > cv.x)
-      for (const gap of [5, 10, 50, 100]) {
-        const snap = mod.computeVertexSnap(1000 + gap + 3, 2000, candidateVertices, null, gap, 500);
-        results.push({
-          gap,
-          dx: snap.dx,
-          finalX: 1000 + gap + 3 + snap.dx,
-          expectedX: 1000 + gap, // Should snap to cv.x + gap
-        });
-      }
-      return results;
-    });
-
-    for (const r of result) {
-      expect(r.finalX).toBe(r.expectedX);
-    }
-  });
-
-  test('vertex gap snap respects direction (sign)', async ({ adminUser }) => {
-    const result = await adminUser.evaluate(async () => {
-      const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
-
-      const candidateVertices = [{ x: 1000, y: 2000 }];
-      const gap = 20;
-
-      // Approaching from right (vx > cv.x) → snaps to cv.x + gap = 1020
-      const snapRight = mod.computeVertexSnap(1025, 2000, candidateVertices, null, gap, 500);
-      // Approaching from left (vx < cv.x) → snaps to cv.x - gap = 980
-      const snapLeft = mod.computeVertexSnap(975, 2000, candidateVertices, null, gap, 500);
-      // Approaching from above (vy > cv.y) → snaps to cv.y + gap = 2020
-      const snapAbove = mod.computeVertexSnap(1000, 2025, candidateVertices, null, gap, 500);
-      // Approaching from below (vy < cv.y) → snaps to cv.y - gap = 1980
-      const snapBelow = mod.computeVertexSnap(1000, 1975, candidateVertices, null, gap, 500);
-
-      return {
-        fromRight: { dx: snapRight.dx, finalX: 1025 + snapRight.dx },
-        fromLeft: { dx: snapLeft.dx, finalX: 975 + snapLeft.dx },
-        fromAbove: { dy: snapAbove.dy, finalY: 2025 + snapAbove.dy },
-        fromBelow: { dy: snapBelow.dy, finalY: 1975 + snapBelow.dy },
-      };
-    });
-
-    expect(result.fromRight.finalX).toBe(1020); // cv.x + gap
-    expect(result.fromLeft.finalX).toBe(980);   // cv.x - gap
-    expect(result.fromAbove.finalY).toBe(2020); // cv.y + gap
-    expect(result.fromBelow.finalY).toBe(1980); // cv.y - gap
-  });
-
-  test('vertex snaps to both X and Y independently for corner alignment', async ({ adminUser }) => {
-    const result = await adminUser.evaluate(async () => {
-      const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
-
-      // Two candidate vertices forming a corner
-      const candidateVertices = [
-        { x: 1000, y: 2000 },
-        { x: 1000, y: 3000 },
-        { x: 2000, y: 2000 },
-      ];
-
-      // Vertex near corner — should snap X to 1000, Y to 2000
-      const snap = mod.computeVertexSnap(1008, 1995, candidateVertices, null, 0, 500);
-      return { dx: snap.dx, dy: snap.dy, finalX: 1008 + snap.dx, finalY: 1995 + snap.dy };
-    });
-
-    expect(result.finalX).toBe(1000);
-    expect(result.finalY).toBe(2000);
-  });
-
-  test('vertex snaps to grid lines', async ({ adminUser }) => {
+  test('snaps to grid lines (per-axis)', async ({ adminUser }) => {
     const result = await adminUser.evaluate(async () => {
       const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
 
@@ -284,6 +170,8 @@ test.describe('Map Editor Snap - computeVertexSnap Algorithm', () => {
     // Near grid intersection: dx = 16384 - 16390 = -6, dy = 24576 - 24580 = -4
     expect(result.snap1.dx).toBe(-6);
     expect(result.snap1.dy).toBe(-4);
+    expect(result.snap1.guideX).toBe(16384);
+    expect(result.snap1.guideY).toBe(24576);
 
     // Far: no snap
     expect(result.snap2.dx).toBe(0);
@@ -292,162 +180,36 @@ test.describe('Map Editor Snap - computeVertexSnap Algorithm', () => {
     // Near X grid only: dx = 24576 - 24570 = 6, dy = 0
     expect(result.snap3.dx).toBe(6);
     expect(result.snap3.dy).toBe(0);
+    expect(result.snap3.guideX).toBe(24576);
+    expect(result.snap3.guideY).toBeNull();
   });
 
-  test('exact vertex match takes priority over gap-offset when closer', async ({ adminUser }) => {
+  test('no snap when no candidates, grid, or edges', async ({ adminUser }) => {
     const result = await adminUser.evaluate(async () => {
       const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
-
-      // Candidate at (1000, 2000), gap = 50
-      // Vertex at (1002, 2000) — exact match is 2 away, gap-offset (1050) is 48 away
-      const candidateVertices = [{ x: 1000, y: 2000 }];
-      const snap = mod.computeVertexSnap(1002, 2000, candidateVertices, null, 50, 500);
-      return { dx: snap.dx, finalX: 1002 + snap.dx };
+      return mod.computeVertexSnap(500, 500, [], null, 0, 50);
     });
 
-    // Exact match (distance 2) wins over gap-offset (distance 48)
-    expect(result.finalX).toBe(1000);
+    expect(result.dx).toBe(0);
+    expect(result.dy).toBe(0);
+    expect(result.edge).toBeNull();
+    expect(result.bisector).toBeNull();
+    expect(result.guideX).toBeNull();
+    expect(result.guideY).toBeNull();
   });
 
-  test('matchX and matchY track different candidate vertices for independent axis snaps', async ({ adminUser }) => {
+  test('returns gap value in result', async ({ adminUser }) => {
     const result = await adminUser.evaluate(async () => {
       const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
-
-      // Two nearby candidate vertices: one closer on X, another closer on Y
-      // Vertex at (1005, 1003), threshold=100, proximity=200
-      const candidateVertices = [
-        { x: 1000, y: 1100 }, // closer on X (dx=-5), Y distance=97 (within proximity)
-        { x: 1080, y: 1000 }, // closer on Y (dy=-3), X distance=75 (within proximity)
-      ];
-      const snap = mod.computeVertexSnap(1005, 1003, candidateVertices, null, 0, 100);
-      return snap;
+      const snap1 = mod.computeVertexSnap(100, 100, [], null, 20, 50);
+      const snap2 = mod.computeVertexSnap(100, 100, [], null, 0, 50);
+      const snap3 = mod.computeVertexSnap(100, 100, [], null, 42, 50);
+      return { gap1: snap1.gap, gap2: snap2.gap, gap3: snap3.gap };
     });
 
-    // X should snap to first candidate (dx=-5), Y to second (dy=-3)
-    expect(result.dx).toBe(-5);
-    expect(result.dy).toBe(-3);
-    expect(result.matchX).toEqual(expect.objectContaining({ x: 1000, y: 1100 }));
-    expect(result.matchY).toEqual(expect.objectContaining({ x: 1080, y: 1000 }));
-  });
-
-  test('grid snap sets matchX/matchY to null', async ({ adminUser }) => {
-    const result = await adminUser.evaluate(async () => {
-      const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
-
-      const gridLines = { xLines: [16384], yLines: [24576] };
-      // Vertex near grid, no candidate vertices
-      const snap = mod.computeVertexSnap(16390, 24580, [], gridLines, 0, 500);
-      return snap;
-    });
-
-    expect(result.dx).toBe(-6);
-    expect(result.dy).toBe(-4);
-    // Grid snaps should have null matchX/matchY (no specific vertex to highlight)
-    expect(result.matchX).toBeNull();
-    expect(result.matchY).toBeNull();
-  });
-
-  test('distant vertices are ignored by proximity filter (Euclidean)', async ({ adminUser }) => {
-    const result = await adminUser.evaluate(async () => {
-      const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
-
-      const threshold = 100; // proximity = 200, proximitySq = 40000
-
-      // Vertex at (1000, 1000). Candidate far away — Euclidean dist ~5657, skipped
-      const farBoth = [{ x: 5000, y: 5000 }];
-      const snap1 = mod.computeVertexSnap(1000, 1000, farBoth, null, 0, threshold);
-
-      // Candidate far on Y only — Euclidean dist ~49000, skipped
-      const farY = [{ x: 1005, y: 50000 }];
-      const snap2 = mod.computeVertexSnap(1000, 1000, farY, null, 0, threshold);
-
-      // Candidate far on X only — Euclidean dist ~49000, skipped
-      const farX = [{ x: 50000, y: 1005 }];
-      const snap3 = mod.computeVertexSnap(1000, 1000, farX, null, 0, threshold);
-
-      // Nearby candidate — Euclidean dist ~54, well within proximity
-      const nearby = [{ x: 1050, y: 1020 }];
-      const snap4 = mod.computeVertexSnap(1000, 1000, nearby, null, 0, threshold);
-
-      // Candidate at (1140, 1140): dist = sqrt(140^2+140^2) ≈ 198 < 200 → included
-      const insideCircle = [{ x: 1140, y: 1140 }];
-      const snap5 = mod.computeVertexSnap(1000, 1000, insideCircle, null, 0, threshold);
-
-      // Candidate at (1142, 1142): dist = sqrt(142^2+142^2) ≈ 201 > 200 → skipped
-      const outsideCircle = [{ x: 1142, y: 1142 }];
-      const snap6 = mod.computeVertexSnap(1000, 1000, outsideCircle, null, 0, threshold);
-
-      return { snap1, snap2, snap3, snap4, snap5, snap6 };
-    });
-
-    // Far on both axes: no snap
-    expect(result.snap1.dx).toBe(0);
-    expect(result.snap1.dy).toBe(0);
-
-    // Far on Y, close on X: skipped — prevents cross-map snapping
-    expect(result.snap2.dx).toBe(0);
-    expect(result.snap2.dy).toBe(0);
-
-    // Far on X, close on Y: skipped
-    expect(result.snap3.dx).toBe(0);
-    expect(result.snap3.dy).toBe(0);
-
-    // Nearby: snaps on both axes
-    expect(result.snap4.dx).toBe(50);
-    expect(result.snap4.dy).toBe(20);
-
-    // Inside Euclidean circle but correction > threshold on each axis: no snap
-    // (140 > 100 threshold on each axis individually)
-    expect(result.snap5.dx).toBe(0);
-    expect(result.snap5.dy).toBe(0);
-
-    // Outside Euclidean circle: filtered out entirely
-    expect(result.snap6.dx).toBe(0);
-    expect(result.snap6.dy).toBe(0);
-  });
-
-  test('vertex match has priority over grid — grid must be 2x closer to win', async ({ adminUser }) => {
-    const result = await adminUser.evaluate(async () => {
-      const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
-
-      const candidateVertices = [{ x: 16400, y: 24600 }];
-      const gridLines = { xLines: [16384], yLines: [24576] };
-
-      // vx=16390: vertex dx=10, grid dx=6. Grid needs < 10*0.5=5 to win → 6 > 5, vertex wins.
-      // vy=24580: vertex dy=20, grid dy=4. Grid needs < 20*0.5=10 to win → 4 < 10, grid wins.
-      const snap1 = mod.computeVertexSnap(16390, 24580, candidateVertices, gridLines, 0, 500);
-
-      // Case where grid is exactly 2x closer: grid at 5 vs vertex at 10.
-      // Grid needs < 10*0.5=5. Grid=5, NOT < 5 (equal). Vertex still wins.
-      const snap2 = mod.computeVertexSnap(16394, 24580, candidateVertices, gridLines, 0, 500);
-      // vx=16394: vertex dx=6, grid dx=10. Vertex is closer, vertex wins outright.
-      // Let me pick a better example: vertex at 20, grid at 10 → grid needs <10, grid=10 → no.
-      // vx=16380: vertex=16400 → dx=20, grid=16384 → dx=4. Grid needs < 20*0.5=10. 4 < 10 → grid wins.
-      const snap3 = mod.computeVertexSnap(16380, 24580, candidateVertices, gridLines, 0, 500);
-
-      // No vertex match — grid snaps normally without the 2x hurdle
-      const snap4 = mod.computeVertexSnap(16390, 24580, [], gridLines, 0, 500);
-
-      return { snap1, snap2, snap3, snap4 };
-    });
-
-    // Case 1: vertex wins on X (grid not 2x closer), grid wins on Y (4 < 20*0.5=10)
-    expect(result.snap1.dx).toBe(10);   // vertex
-    expect(result.snap1.matchX).not.toBeNull();
-    expect(result.snap1.dy).toBe(-4);   // grid
-    expect(result.snap1.matchY).toBeNull();
-
-    // Case 2: vertex is closer on X (6 < 10), vertex wins
-    expect(result.snap2.dx).toBe(6);
-    expect(result.snap2.matchX).not.toBeNull();
-
-    // Case 3: grid is much closer (4 vs 20), grid wins on X
-    expect(result.snap3.dx).toBe(4);
-    expect(result.snap3.matchX).toBeNull();
-
-    // Case 4: no vertex candidates, grid snaps normally
-    expect(result.snap4.dx).toBe(-6);
-    expect(result.snap4.matchX).toBeNull();
+    expect(result.gap1).toBe(20);
+    expect(result.gap2).toBe(0);
+    expect(result.gap3).toBe(42);
   });
 });
 
@@ -506,6 +268,28 @@ test.describe('Map Editor Snap - getShapeVertices', () => {
     // Verify neighbor info: vertex 0 (100,200) has prev=(100,300) [last vertex], next=(300,200)
     expect(result[0].prevX).toBe(100);
     expect(result[0].prevY).toBe(300);
+    expect(result[0].nextX).toBe(300);
+    expect(result[0].nextY).toBe(200);
+  });
+
+  test('strips duplicate closing vertex from polygon', async ({ adminUser }) => {
+    const result = await adminUser.evaluate(async () => {
+      const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
+      // Closed ring: first vertex duplicated at end (common in DB data)
+      const loc = {
+        Properties: {
+          Shape: 'Polygon',
+          Data: { vertices: [100, 200, 300, 200, 300, 400, 100, 200] },
+        },
+      };
+      return mod.getShapeVertices(loc);
+    });
+
+    // Should have 3 unique vertices, not 4
+    expect(result).toHaveLength(3);
+    // First vertex: prev should be LAST unique vertex (300,400), not itself
+    expect(result[0].prevX).toBe(300);
+    expect(result[0].prevY).toBe(400);
     expect(result[0].nextX).toBe(300);
     expect(result[0].nextY).toBe(200);
   });
@@ -856,31 +640,31 @@ test.describe('Map Editor Snap - Bisector Snap', () => {
     expect(result.bisector.dirY).toBeCloseTo(0.5, 1);
   });
 
-  test('axis snap wins over bisector when closer', async ({ adminUser }) => {
+  test('edge snap wins over bisector when closer', async ({ adminUser }) => {
     const result = await adminUser.evaluate(async () => {
       const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
 
-      // Right-angle corner at (1000, 1000)
+      // Right-angle corner at (1000, 1000) with two edges
       const cv = [
         { x: 1000, y: 1000, prevX: 1000, prevY: 1200, nextX: 1200, nextY: 1000 },
       ];
+      // Horizontal edge at y=1000 from (1000,1000) to (1200,1000)
+      const edges = [{ ax: 1000, ay: 1000, bx: 1200, by: 1000 }];
 
-      // Vertex at (1001, 940): very close to X=1000 axis match (dx=-1)
-      // Y=940 is 60 away from 1000, beyond threshold=50 → no Y snap
-      // Axis snap total displacement = 1 EU
-      // Bisector projection ≈ (970, 970), displacement ≈ 43 EU → axis wins
-      const snap = mod.computeVertexSnap(1001, 940, cv, null, 0, 50);
+      // Vertex at (1100, 1002): 2 EU from the edge (very close), bisector projection much further
+      const snap = mod.computeVertexSnap(1100, 1002, cv, null, 0, 50, edges);
 
       return {
         dx: snap.dx,
         dy: snap.dy,
+        edge: snap.edge,
         bisector: snap.bisector,
       };
     });
 
-    // Axis snap should win — tiny X correction, no bisector override
-    expect(result.dx).toBe(-1);
-    expect(result.dy).toBe(0); // Y beyond threshold
+    // Edge snap should win — tiny perpendicular correction
+    expect(result.dy).toBe(-2);
+    expect(result.edge).not.toBeNull();
     expect(result.bisector).toBeNull();
   });
 
@@ -1009,52 +793,33 @@ test.describe('Map Editor Snap - Bisector Snap', () => {
     expect(result.gap3).toBe(42);
   });
 
-  test('per-axis distance equals zero for exact vertex match', async ({ adminUser }) => {
+  test('bisector competes with grid snap on displacement', async ({ adminUser }) => {
     const result = await adminUser.evaluate(async () => {
       const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
 
-      // Vertex very close to candidate — snaps exactly on it
-      const cv = [{ x: 1000, y: 2000 }];
-      const snap = mod.computeVertexSnap(1003, 1997, cv, null, 0, 50);
-      const snappedX = 1003 + snap.dx;
-      const distX = Math.round(Math.abs(snappedX - snap.guideX));
-      const snappedY = 1997 + snap.dy;
-      const distY = Math.round(Math.abs(snappedY - snap.guideY));
+      // Right-angle corner at (1000, 1000)
+      const cv = [
+        { x: 1000, y: 1000, prevX: 1000, prevY: 1200, nextX: 1200, nextY: 1000 },
+      ];
+      // Grid lines far from vertex — grid snap displacement >> bisector displacement
+      const gridLines = { xLines: [930], yLines: [930] };
 
-      return { distX, distY, snappedX, snappedY };
+      // Vertex at (952, 948): close to bisector (proj ≈ 950,950), disp ~4.2 EU
+      // Grid snap: dx=-22, dy=-18, disp ~28 EU
+      const snap = mod.computeVertexSnap(952, 948, cv, gridLines, 0, 100);
+
+      return {
+        bisector: snap.bisector,
+        guideX: snap.guideX,
+        guideY: snap.guideY,
+      };
     });
 
-    // Exact match: snapped position equals guide position → distance = 0
-    expect(result.distX).toBe(0);
-    expect(result.distY).toBe(0);
-    expect(result.snappedX).toBe(1000);
-    expect(result.snappedY).toBe(2000);
-  });
-
-  test('per-axis distance equals gap for gap-offset snap', async ({ adminUser }) => {
-    const result = await adminUser.evaluate(async () => {
-      const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
-
-      const cv = [{ x: 1000, y: 2000 }];
-      const gap = 5;
-      // Vertex approaching from right: should snap to x=1005 (cv.x + gap)
-      const snap = mod.computeVertexSnap(1006, 1998, cv, null, gap, 50);
-      const snappedX = 1006 + snap.dx;
-      const snappedY = 1998 + snap.dy;
-      const distX = Math.round(Math.abs(snappedX - snap.guideX));
-      const distY = Math.round(Math.abs(snappedY - snap.guideY));
-
-      return { distX, distY, snappedX, snappedY, guideX: snap.guideX, guideY: snap.guideY, gap: snap.gap };
-    });
-
-    // Gap-offset on X: snapped at gap distance from guide → distance = gap
-    expect(result.distX).toBe(5);
-    expect(result.snappedX).toBe(1005); // cv.x + gap
-    expect(result.guideX).toBe(1000); // guide points at the candidate vertex
-    // Exact match on Y: snapped directly to guideY → distance = 0
-    expect(result.distY).toBe(0);
-    expect(result.snappedY).toBe(2000);
-    expect(result.gap).toBe(5);
+    // Bisector should win (smaller displacement than grid)
+    expect(result.bisector).not.toBeNull();
+    // Grid guides should be cleared when bisector wins
+    expect(result.guideX).toBeNull();
+    expect(result.guideY).toBeNull();
   });
 });
 
@@ -1283,68 +1048,85 @@ test.describe('Map Editor Snap - Edge Snap', () => {
     expect(result.edge).toBeNull();
   });
 
-  test('edge snap skips endpoints (t=0 and t=1)', async ({ adminUser }) => {
+  test('bounded edge snap does not extend beyond endpoints', async ({ adminUser }) => {
     const result = await adminUser.evaluate(async () => {
       const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
 
       const edges = [{ ax: 100, ay: 200, bx: 400, by: 200 }];
-      // Point at (95, 205) — would project to t<0 (before segment start)
-      const snap1 = mod.computeVertexSnap(95, 205, [], null, 0, 50, edges);
-      // Point at (405, 195) — would project to t>1 (past segment end)
-      const snap2 = mod.computeVertexSnap(405, 195, [], null, 0, 50, edges);
+      // Point at (50, 205) — beyond segment start, no gap → no extension snap
+      const snap1 = mod.computeVertexSnap(50, 205, [], null, 0, 50, edges);
+      // Point at (450, 195) — beyond segment end, no gap → no extension snap
+      const snap2 = mod.computeVertexSnap(450, 195, [], null, 0, 50, edges);
       return { snap1, snap2 };
     });
 
-    // Should not trigger edge snap (endpoint projections)
+    // Without gap, no extension magnetic points → no edge snap beyond endpoints
     expect(result.snap1.edge).toBeNull();
     expect(result.snap2.edge).toBeNull();
   });
 
-  test('vertex snap takes priority over edge snap when closer', async ({ adminUser }) => {
+  test('edge snap skips near-exact endpoints (bisector handles corners)', async ({ adminUser }) => {
     const result = await adminUser.evaluate(async () => {
       const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
 
-      // Vertex at (200, 200), edge from (100, 215) to (400, 215)
-      const candidateVertices = [{ x: 200, y: 200 }];
-      const edges = [{ ax: 100, ay: 215, bx: 400, by: 215 }];
-      // Point at (202, 203): vertex snap = (200,200) → disp ~3.6, edge snap → (202,215) → disp 12
-      const snap = mod.computeVertexSnap(202, 203, candidateVertices, null, 0, 50, edges);
-      return {
-        finalX: 202 + snap.dx,
-        finalY: 203 + snap.dy,
-        edge: snap.edge,
-      };
+      const edges = [{ ax: 100, ay: 200, bx: 400, by: 200 }];
+      // Point at (100, 205) — projects to t≈0 (very close to endpoint A)
+      const snap1 = mod.computeVertexSnap(100, 205, [], null, 0, 50, edges);
+      // Point at (400, 195) — projects to t≈1 (very close to endpoint B)
+      const snap2 = mod.computeVertexSnap(400, 195, [], null, 0, 50, edges);
+      return { snap1, snap2 };
     });
 
-    // Vertex snap should win (closer)
-    expect(result.finalX).toBe(200);
-    expect(result.finalY).toBe(200);
-    expect(result.edge).toBeNull();
+    // Near-exact endpoints should NOT trigger edge snap
+    expect(result.snap1.edge).toBeNull();
+    expect(result.snap2.edge).toBeNull();
   });
 
-  test('edge snap wins when vertex snap is far', async ({ adminUser }) => {
+  test('edge snap wins over grid snap when closer', async ({ adminUser }) => {
     const result = await adminUser.evaluate(async () => {
       const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
 
-      // Vertex at (200, 200) — far from point
       // Edge from (100, 305) to (400, 305) — point is 5 units from edge
-      const candidateVertices = [{ x: 200, y: 200 }];
+      const gridLines = { xLines: [200], yLines: [250] };
       const edges = [{ ax: 100, ay: 305, bx: 400, by: 305 }];
-      // Point at (250, 300): vertex snap on X → dx=-50 (within threshold=100 but large),
-      // vertex snap on Y → dy=-100 (at threshold limit),
+      // Point at (250, 300): grid snap → dx=-50, dy=-50 (large displacement),
       // edge snap → (250, 305) → disp 5
-      const snap = mod.computeVertexSnap(250, 300, candidateVertices, null, 0, 100, edges);
+      const snap = mod.computeVertexSnap(250, 300, [], gridLines, 0, 100, edges);
       return {
         finalX: 250 + snap.dx,
         finalY: 300 + snap.dy,
         edge: snap.edge,
+        guideX: snap.guideX,
       };
     });
 
-    // Edge snap should win (displacement 5 vs axis snap displacement ~50+)
+    // Edge snap should win (displacement 5 vs grid displacement ~70)
     expect(result.finalX).toBeCloseTo(250, 0);
     expect(result.finalY).toBeCloseTo(305, 0);
     expect(result.edge).not.toBeNull();
+    // Grid guides cleared when edge wins
+    expect(result.guideX).toBeNull();
+  });
+
+  test('grid snap wins over edge when closer', async ({ adminUser }) => {
+    const result = await adminUser.evaluate(async () => {
+      const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
+
+      // Grid line very close to point, edge farther away
+      const gridLines = { xLines: [251], yLines: [] };
+      const edges = [{ ax: 100, ay: 350, bx: 400, by: 350 }];
+      // Point at (250, 300): grid snap → dx=1, disp=1; edge snap → dy=50, disp=50
+      const snap = mod.computeVertexSnap(250, 300, [], gridLines, 0, 100, edges);
+      return {
+        finalX: 250 + snap.dx,
+        guideX: snap.guideX,
+        edge: snap.edge,
+      };
+    });
+
+    // Grid should win (displacement 1 vs edge 50)
+    expect(result.finalX).toBe(251);
+    expect(result.guideX).toBe(251);
   });
 
   test('edge gap-offset snap maintains gap distance from edge', async ({ adminUser }) => {
@@ -1409,6 +1191,7 @@ test.describe('Map Editor Snap - Edge Snap', () => {
     expect(result.projX).toBe(250);
     expect(result.projY).toBe(200);
     expect(result.isGap).toBe(false);
+    expect(result.isExtension).toBe(false);
   });
 
   test('no edge snap when candidateEdges is empty or omitted', async ({ adminUser }) => {
@@ -1424,5 +1207,140 @@ test.describe('Map Editor Snap - Edge Snap', () => {
 
     expect(result.edge1).toBeNull();
     expect(result.edge2).toBeNull();
+  });
+
+  test('no gap-offset extension magnetic points (only direct line extensions)', async ({ adminUser }) => {
+    const result = await adminUser.evaluate(async () => {
+      const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
+
+      // Horizontal edge at y=200 from x=100 to x=400
+      const edges = [{ ax: 100, ay: 200, bx: 400, by: 200 }];
+      const gap = 20;
+      // Position where a gap-offset extension point WOULD be: (80, 220)
+      // Should NOT snap — gap-offset extension magnetic points were removed
+      // (82, 260) is far enough from direct extension point at (80,200) to avoid it
+      const snap = mod.computeVertexSnap(82, 260, [], null, gap, 50, edges);
+      return { edge: snap.edge };
+    });
+
+    // No extension snap — gap-offset extension magnetic points don't exist
+    expect(result.edge).toBeNull();
+  });
+
+  test('extension magnetic point: direct line before endpoint A', async ({ adminUser }) => {
+    const result = await adminUser.evaluate(async () => {
+      const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
+
+      // Horizontal edge from (100,200) to (400,200)
+      const edges = [{ ax: 100, ay: 200, bx: 400, by: 200 }];
+      const gap = 20;
+      // Direct-line magnetic point before A: (100 - 20, 200) = (80, 200)
+      // Place vertex near that: (82, 203)
+      const snap = mod.computeVertexSnap(82, 203, [], null, gap, 50, edges);
+      return {
+        finalX: 82 + snap.dx,
+        finalY: 203 + snap.dy,
+        edge: snap.edge,
+      };
+    });
+
+    // Should snap to (80, 200) — gap distance before endpoint A on direct line
+    expect(result.finalX).toBe(80);
+    expect(result.finalY).toBe(200);
+    expect(result.edge).not.toBeNull();
+    expect(result.edge.isGap).toBe(false);
+    expect(result.edge.isExtension).toBe(true);
+  });
+
+  test('extension magnetic point: direct line after endpoint B', async ({ adminUser }) => {
+    const result = await adminUser.evaluate(async () => {
+      const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
+
+      // Horizontal edge from (100,200) to (400,200)
+      const edges = [{ ax: 100, ay: 200, bx: 400, by: 200 }];
+      const gap = 20;
+      // Direct-line magnetic point after B: (400 + 20, 200) = (420, 200)
+      // Place vertex near that: (418, 197)
+      const snap = mod.computeVertexSnap(418, 197, [], null, gap, 50, edges);
+      return {
+        finalX: 418 + snap.dx,
+        finalY: 197 + snap.dy,
+        edge: snap.edge,
+      };
+    });
+
+    // Should snap to (420, 200) — gap distance after endpoint B on direct line
+    expect(result.finalX).toBe(420);
+    expect(result.finalY).toBe(200);
+    expect(result.edge).not.toBeNull();
+    expect(result.edge.isGap).toBe(false);
+    expect(result.edge.isExtension).toBe(true);
+  });
+
+  test('edge extension not activated beyond threshold + gap distance', async ({ adminUser }) => {
+    const result = await adminUser.evaluate(async () => {
+      const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
+
+      // Horizontal edge at y=200
+      const edges = [{ ax: 100, ay: 200, bx: 400, by: 200 }];
+      // Point at (50, 300) — 100 units away, threshold=50, gap=20 → 100 > 50+20
+      const snap = mod.computeVertexSnap(50, 300, [], null, 20, 50, edges);
+      return { edge: snap.edge };
+    });
+
+    expect(result.edge).toBeNull();
+  });
+});
+
+// ─── projectPointOnLine Tests ──────────────────────────────────────────────
+
+test.describe('Map Editor Snap - projectPointOnLine', () => {
+  test.beforeEach(async ({ adminUser }) => {
+    await adminUser.goto('/admin/map');
+    await adminUser.waitForLoadState('networkidle');
+  });
+
+  test('projects onto infinite line with unclamped t', async ({ adminUser }) => {
+    const result = await adminUser.evaluate(async () => {
+      const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
+
+      // Horizontal line from (100,200) to (400,200)
+      // Point at (50, 210) — before segment start → t < 0
+      const p1 = mod.projectPointOnLine(50, 210, 100, 200, 400, 200);
+      // Point at (500, 190) — past segment end → t > 1
+      const p2 = mod.projectPointOnLine(500, 190, 100, 200, 400, 200);
+      // Point in middle — t between 0 and 1
+      const p3 = mod.projectPointOnLine(250, 220, 100, 200, 400, 200);
+
+      return { p1, p2, p3 };
+    });
+
+    // Before segment: t < 0, projects to (50, 200)
+    expect(result.p1.t).toBeCloseTo(-1 / 6, 4);
+    expect(result.p1.projX).toBeCloseTo(50, 0);
+    expect(result.p1.projY).toBe(200);
+
+    // Past segment: t > 1, projects to (500, 200)
+    expect(result.p2.t).toBeCloseTo(4 / 3, 4);
+    expect(result.p2.projX).toBeCloseTo(500, 0);
+    expect(result.p2.projY).toBe(200);
+
+    // In middle: t ≈ 0.5
+    expect(result.p3.t).toBe(0.5);
+    expect(result.p3.projX).toBe(250);
+    expect(result.p3.projY).toBe(200);
+    expect(result.p3.distSq).toBe(400); // 20^2
+  });
+
+  test('handles zero-length segment', async ({ adminUser }) => {
+    const result = await adminUser.evaluate(async () => {
+      const mod = await import('/src/lib/components/map-editor/mapEditorUtils.js');
+      return mod.projectPointOnLine(50, 60, 100, 100, 100, 100);
+    });
+
+    // t = 0 for degenerate segment, projects to the point itself
+    expect(result.t).toBe(0);
+    expect(result.projX).toBe(100);
+    expect(result.projY).toBe(100);
   });
 });

@@ -1818,10 +1818,16 @@ function sanitizeShapeAndData(props) {
     if (vertices.length % 2 !== 0) vertices = vertices.slice(0, vertices.length - 1);
     const pointCount = Math.floor(vertices.length / 2);
     if (pointCount < 3) return { shape: null, data: null };
-    // Ensure closing point present
+    // Ensure closing point present (tolerance for rounding errors)
     const x1 = vertices[0], y1 = vertices[1];
     const lastX = vertices[vertices.length - 2], lastY = vertices[vertices.length - 1];
-    if (x1 !== lastX || y1 !== lastY) vertices = [...vertices, x1, y1];
+    if (Math.abs(x1 - lastX) < 0.01 && Math.abs(y1 - lastY) < 0.01) {
+      // Already closed — snap last to exactly match first
+      vertices[vertices.length - 2] = x1;
+      vertices[vertices.length - 1] = y1;
+    } else {
+      vertices = [...vertices, x1, y1];
+    }
     if (vertices.length < 8) return { shape: null, data: null }; // 3 points + closing
     return { shape: 'Polygon', data: JSON.stringify({ vertices }) };
   }

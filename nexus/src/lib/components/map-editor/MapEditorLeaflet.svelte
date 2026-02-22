@@ -32,7 +32,7 @@
   // Snap state
   let snapEnabled = true;
   let snapToGrid = true;
-  let snapGap = 5;
+  let snapGap = 20;
   let snapGuideLayerGroup;
   let gridOverlayGroup;
   let _cachedGridLines = null;
@@ -762,88 +762,26 @@
 
     const gap = snap.gap || 0;
     const guideStyle = { color: '#ff00ff', weight: 1.5, dashArray: '6,4', opacity: 0.8, interactive: false };
-    const guideStyleGap = { color: '#22cc44', weight: 1.5, dashArray: '6,4', opacity: 0.8, interactive: false };
-    const matchStyle = { radius: 5, color: '#ff00ff', fillColor: '#ff00ff', weight: 2, opacity: 0.9, fillOpacity: 0.4, interactive: false };
-    const matchStyleGap = { radius: 5, color: '#22cc44', fillColor: '#22cc44', weight: 2, opacity: 0.9, fillOpacity: 0.4, interactive: false };
-    const connectExact = { color: '#ff00ff', weight: 1, opacity: 0.6, interactive: false };
     const connectGap = { color: '#22cc44', weight: 1.5, opacity: 0.8, interactive: false };
     const connectBisect = { color: '#00ffff', weight: 1, opacity: 0.6, interactive: false };
+    const matchStyleGap = { radius: 5, color: '#22cc44', fillColor: '#22cc44', weight: 2, opacity: 0.9, fillOpacity: 0.4, interactive: false };
+    const matchStyle = { radius: 5, color: '#ff00ff', fillColor: '#ff00ff', weight: 2, opacity: 0.9, fillOpacity: 0.4, interactive: false };
     const mapInfo = planet?.Properties?.Map;
 
-    // X guide: vertical line at guideX
-    if (snap.guideX != null) {
-      const distX = Math.round(Math.abs(snappedX - snap.guideX));
-      const isGapX = gap > 0 && distX === Math.round(gap);
-      const activeGuideStyle = isGapX ? guideStyleGap : guideStyle;
-      const activeMatchStyle = isGapX ? matchStyleGap : matchStyle;
-
-      if (snap.matchX) {
-        const yMin = Math.min(snap.matchX.y, snappedY);
-        const yMax = Math.max(snap.matchX.y, snappedY);
-        const padding = Math.max(200, (yMax - yMin) * 0.3);
-        const [latA, lngA] = transforms.entropiaToLeaflet(snap.guideX, yMin - padding);
-        const [latB, lngB] = transforms.entropiaToLeaflet(snap.guideX, yMax + padding);
-        snapGuideLayerGroup.addLayer(L.polyline([[latA, lngA], [latB, lngB]], activeGuideStyle));
-        const [mLat, mLng] = transforms.entropiaToLeaflet(snap.matchX.x, snap.matchX.y);
-        snapGuideLayerGroup.addLayer(L.circleMarker([mLat, mLng], activeMatchStyle));
-
-        // Connecting line + distance label for non-zero distance
-        if (distX > 0) {
-          const connStyle = isGapX ? connectGap : connectExact;
-          const [cLatA, cLngA] = transforms.entropiaToLeaflet(snappedX, snappedY);
-          const [cLatB, cLngB] = transforms.entropiaToLeaflet(snap.guideX, snappedY);
-          snapGuideLayerGroup.addLayer(L.polyline([[cLatA, cLngA], [cLatB, cLngB]], connStyle));
-          const midX = (snappedX + snap.guideX) / 2;
-          const [midLat, midLng] = transforms.entropiaToLeaflet(midX, snappedY);
-          const cls = isGapX ? 'snap-dist-label snap-dist-gap' : 'snap-dist-label';
-          const icon = L.divIcon({ className: cls, html: `${distX}`, iconSize: [40, 16], iconAnchor: [20, 20] });
-          snapGuideLayerGroup.addLayer(L.marker([midLat, midLng], { icon, interactive: false }));
-        }
-      } else if (mapInfo) {
-        const yMin = mapInfo.Y * SERVER_TILE_SIZE;
-        const yMax = yMin + mapInfo.Height * SERVER_TILE_SIZE;
-        const [lat1, lng1] = transforms.entropiaToLeaflet(snap.guideX, yMin);
-        const [lat2, lng2] = transforms.entropiaToLeaflet(snap.guideX, yMax);
-        snapGuideLayerGroup.addLayer(L.polyline([[lat1, lng1], [lat2, lng2]], guideStyle));
-      }
+    // Grid guides: planet-spanning lines for guideX/guideY
+    if (snap.guideX != null && mapInfo) {
+      const yMin = mapInfo.Y * SERVER_TILE_SIZE;
+      const yMax = yMin + mapInfo.Height * SERVER_TILE_SIZE;
+      const [lat1, lng1] = transforms.entropiaToLeaflet(snap.guideX, yMin);
+      const [lat2, lng2] = transforms.entropiaToLeaflet(snap.guideX, yMax);
+      snapGuideLayerGroup.addLayer(L.polyline([[lat1, lng1], [lat2, lng2]], guideStyle));
     }
-
-    // Y guide: horizontal line at guideY
-    if (snap.guideY != null) {
-      const distY = Math.round(Math.abs(snappedY - snap.guideY));
-      const isGapY = gap > 0 && distY === Math.round(gap);
-      const activeGuideStyle = isGapY ? guideStyleGap : guideStyle;
-      const activeMatchStyle = isGapY ? matchStyleGap : matchStyle;
-
-      if (snap.matchY) {
-        const xMin = Math.min(snap.matchY.x, snappedX);
-        const xMax = Math.max(snap.matchY.x, snappedX);
-        const padding = Math.max(200, (xMax - xMin) * 0.3);
-        const [latA, lngA] = transforms.entropiaToLeaflet(xMin - padding, snap.guideY);
-        const [latB, lngB] = transforms.entropiaToLeaflet(xMax + padding, snap.guideY);
-        snapGuideLayerGroup.addLayer(L.polyline([[latA, lngA], [latB, lngB]], activeGuideStyle));
-        const [mLat, mLng] = transforms.entropiaToLeaflet(snap.matchY.x, snap.matchY.y);
-        snapGuideLayerGroup.addLayer(L.circleMarker([mLat, mLng], activeMatchStyle));
-
-        // Connecting line + distance label for non-zero distance
-        if (distY > 0) {
-          const connStyle = isGapY ? connectGap : connectExact;
-          const [cLatA, cLngA] = transforms.entropiaToLeaflet(snappedX, snappedY);
-          const [cLatB, cLngB] = transforms.entropiaToLeaflet(snappedX, snap.guideY);
-          snapGuideLayerGroup.addLayer(L.polyline([[cLatA, cLngA], [cLatB, cLngB]], connStyle));
-          const midY = (snappedY + snap.guideY) / 2;
-          const [midLat, midLng] = transforms.entropiaToLeaflet(snappedX, midY);
-          const cls = isGapY ? 'snap-dist-label snap-dist-gap' : 'snap-dist-label';
-          const icon = L.divIcon({ className: cls, html: `${distY}`, iconSize: [40, 16], iconAnchor: [20, -4] });
-          snapGuideLayerGroup.addLayer(L.marker([midLat, midLng], { icon, interactive: false }));
-        }
-      } else if (mapInfo) {
-        const xMin = mapInfo.X * SERVER_TILE_SIZE;
-        const xMax = xMin + mapInfo.Width * SERVER_TILE_SIZE;
-        const [lat1, lng1] = transforms.entropiaToLeaflet(xMin, snap.guideY);
-        const [lat2, lng2] = transforms.entropiaToLeaflet(xMax, snap.guideY);
-        snapGuideLayerGroup.addLayer(L.polyline([[lat1, lng1], [lat2, lng2]], guideStyle));
-      }
+    if (snap.guideY != null && mapInfo) {
+      const xMin = mapInfo.X * SERVER_TILE_SIZE;
+      const xMax = xMin + mapInfo.Width * SERVER_TILE_SIZE;
+      const [lat1, lng1] = transforms.entropiaToLeaflet(xMin, snap.guideY);
+      const [lat2, lng2] = transforms.entropiaToLeaflet(xMax, snap.guideY);
+      snapGuideLayerGroup.addLayer(L.polyline([[lat1, lng1], [lat2, lng2]], guideStyle));
     }
 
     // Bisector guide line (cyan) + connecting line to corner + distance label
@@ -877,62 +815,75 @@
       }
     }
 
-    // Edge guide: highlight the snapped-to edge + perpendicular connecting line + distance label
+    // Edge guide: solid edge segment + dashed extensions + snap point + gap connecting line
     if (snap.edge) {
-      const { ax, ay, bx, by, projX, projY, isGap } = snap.edge;
+      const { ax, ay, bx, by, projX, projY, isGap, isExtension } = snap.edge;
       const edgeColor = isGap ? '#22cc44' : '#ff8800';
-      const edgeStyle = { color: edgeColor, weight: 2.5, opacity: 0.9, interactive: false };
-      const connStyle = isGap ? connectGap : { color: '#ff8800', weight: 1, opacity: 0.6, interactive: false };
+      const EXTENSION_LEN = 400;
 
-      // Draw the snapped-to edge
-      const [eLatA, eLngA] = transforms.entropiaToLeaflet(ax, ay);
-      const [eLatB, eLngB] = transforms.entropiaToLeaflet(bx, by);
-      snapGuideLayerGroup.addLayer(L.polyline([[eLatA, eLngA], [eLatB, eLngB]], edgeStyle));
+      // Compute extension endpoints beyond both segment endpoints
+      const edx = bx - ax, edy = by - ay;
+      const eLen = Math.sqrt(edx * edx + edy * edy);
+      if (eLen > 0) {
+        const udx = edx / eLen, udy = edy / eLen;
 
-      // Draw perpendicular connecting line from snapped vertex to projection on original edge
-      // For gap snaps, compute the projection on the original edge for the connecting line
-      const perpDist = Math.round(Math.sqrt((snappedX - projX) ** 2 + (snappedY - projY) ** 2));
-      if (isGap) {
-        // Draw connecting line to the original edge (not the offset edge)
-        // projX/projY is on the offset edge; compute projection on original edge
+        // Solid line for actual edge segment
+        const edgeStyle = { color: edgeColor, weight: 2.5, opacity: 0.9, interactive: false };
+        const [eLatA, eLngA] = transforms.entropiaToLeaflet(ax, ay);
+        const [eLatB, eLngB] = transforms.entropiaToLeaflet(bx, by);
+        snapGuideLayerGroup.addLayer(L.polyline([[eLatA, eLngA], [eLatB, eLngB]], edgeStyle));
+
+        // Dashed extensions beyond both endpoints
+        const extStyle = { color: edgeColor, weight: 1.5, dashArray: '6,4', opacity: 0.6, interactive: false };
+        const extAx = ax - EXTENSION_LEN * udx, extAy = ay - EXTENSION_LEN * udy;
+        const extBx = bx + EXTENSION_LEN * udx, extBy = by + EXTENSION_LEN * udy;
+        const [extLatA, extLngA] = transforms.entropiaToLeaflet(extAx, extAy);
+        const [extLatB, extLngB] = transforms.entropiaToLeaflet(extBx, extBy);
+        snapGuideLayerGroup.addLayer(L.polyline([[extLatA, extLngA], [eLatA, eLngA]], extStyle));
+        snapGuideLayerGroup.addLayer(L.polyline([[eLatB, eLngB], [extLatB, extLngB]], extStyle));
+
+        // Snap point marker
         const [sLat, sLng] = transforms.entropiaToLeaflet(snappedX, snappedY);
-        const [pLat, pLng] = transforms.entropiaToLeaflet(projX, projY);
-        // The distance to the original edge is gap
-        const edgeDist = Math.round(gap);
-        // Draw connecting line from snapped vertex perpendicular toward the edge
-        // Use the edge normal direction: from snappedX,snappedY toward the original edge
-        const edx = bx - ax, edy = by - ay;
-        const eLen = Math.sqrt(edx * edx + edy * edy);
-        if (eLen > 0) {
+        const snapMarkerStyle = { radius: 4, color: edgeColor, fillColor: edgeColor, weight: 2, opacity: 0.9, fillOpacity: 0.5, interactive: false };
+        snapGuideLayerGroup.addLayer(L.circleMarker([sLat, sLng], snapMarkerStyle));
+
+        if (isGap) {
+          // Gap snap (bounded or extension): perpendicular connecting line to original edge/extension
           let nx = -edy / eLen, ny = edx / eLen;
           const dotToVertex = (snappedX - ax) * nx + (snappedY - ay) * ny;
           if (dotToVertex < 0) { nx = -nx; ny = -ny; }
-          // Point on original edge nearest to snapped vertex
           const origProjX = snappedX - nx * gap;
           const origProjY = snappedY - ny * gap;
           const [oLat, oLng] = transforms.entropiaToLeaflet(origProjX, origProjY);
-          snapGuideLayerGroup.addLayer(L.polyline([[sLat, sLng], [oLat, oLng]], connStyle));
+          snapGuideLayerGroup.addLayer(L.polyline([[sLat, sLng], [oLat, oLng]], connectGap));
 
-          // Distance label
+          const edgeDist = Math.round(gap);
           const midX = (snappedX + origProjX) / 2;
           const midY = (snappedY + origProjY) / 2;
           const [midLat, midLng] = transforms.entropiaToLeaflet(midX, midY);
           const cls = 'snap-dist-label snap-dist-gap';
           const icon = L.divIcon({ className: cls, html: `${edgeDist}`, iconSize: [40, 16], iconAnchor: [20, 20] });
           snapGuideLayerGroup.addLayer(L.marker([midLat, midLng], { icon, interactive: false }));
+        } else if (isExtension) {
+          // Direct extension magnetic point: connecting line + distance to nearest endpoint
+          const distA = Math.sqrt((snappedX - ax) ** 2 + (snappedY - ay) ** 2);
+          const distB = Math.sqrt((snappedX - bx) ** 2 + (snappedY - by) ** 2);
+          const nearX = distA < distB ? ax : bx;
+          const nearY = distA < distB ? ay : by;
+          const dist = Math.round(Math.min(distA, distB));
+
+          const connStyle = { color: '#ff8800', weight: 1, opacity: 0.6, interactive: false };
+          const [nLat, nLng] = transforms.entropiaToLeaflet(nearX, nearY);
+          snapGuideLayerGroup.addLayer(L.polyline([[sLat, sLng], [nLat, nLng]], connStyle));
+
+          if (dist > 0) {
+            const midX = (snappedX + nearX) / 2;
+            const midY = (snappedY + nearY) / 2;
+            const [midLat, midLng] = transforms.entropiaToLeaflet(midX, midY);
+            const icon = L.divIcon({ className: 'snap-dist-label', html: `${dist}`, iconSize: [40, 16], iconAnchor: [20, 20] });
+            snapGuideLayerGroup.addLayer(L.marker([midLat, midLng], { icon, interactive: false }));
+          }
         }
-      } else if (perpDist > 0) {
-        // Direct edge snap: show connecting line from vertex to edge
-        const [sLat, sLng] = transforms.entropiaToLeaflet(snappedX, snappedY);
-        // For direct snap, snappedX/Y IS on the edge, so the perpDist is 0 after snap.
-        // Show a small marker at the snap point on the edge
-        const snapMarkerStyle = { radius: 4, color: edgeColor, fillColor: edgeColor, weight: 2, opacity: 0.9, fillOpacity: 0.5, interactive: false };
-        snapGuideLayerGroup.addLayer(L.circleMarker([sLat, sLng], snapMarkerStyle));
-      } else {
-        // Snapped directly onto the edge — show a marker at the snap point
-        const [sLat, sLng] = transforms.entropiaToLeaflet(snappedX, snappedY);
-        const snapMarkerStyle = { radius: 4, color: edgeColor, fillColor: edgeColor, weight: 2, opacity: 0.9, fillOpacity: 0.5, interactive: false };
-        snapGuideLayerGroup.addLayer(L.circleMarker([sLat, sLng], snapMarkerStyle));
       }
     }
   }
@@ -1169,6 +1120,7 @@
               const e = transforms.leafletToEntropia(ll.lat + dLat, ll.lng + dLng);
               vertices.push(e.x, e.y);
             }
+            ensureClosedRing(vertices);
             entropiaData = {
               shape: 'Polygon',
               data: { vertices },
@@ -1283,10 +1235,28 @@
         edit: false // We use our own enableEditing(), not leaflet-draw's edit toolbar
       });
       map.addControl(drawControl);
+      map.on('draw:drawstart', () => dispatch('select', null));
     } else if (!editMode && drawControl) {
       cleanupEditing();
+      map.off('draw:drawstart');
       map.removeControl(drawControl);
       drawControl = null;
+    }
+  }
+
+  /** Ensure polygon vertex array is a closed ring (first vertex == last vertex). */
+  function ensureClosedRing(vertices) {
+    if (vertices.length < 4) return; // need at least 2 coordinate pairs
+    const EPS = 0.01; // tolerance for rounding errors
+    const fx = vertices[0], fy = vertices[1];
+    const lx = vertices[vertices.length - 2], ly = vertices[vertices.length - 1];
+    if (Math.abs(fx - lx) < EPS && Math.abs(fy - ly) < EPS) {
+      // Already closed — snap last to exactly match first (fix rounding)
+      vertices[vertices.length - 2] = fx;
+      vertices[vertices.length - 1] = fy;
+    } else {
+      // Not closed — append first vertex
+      vertices.push(fx, fy);
     }
   }
 
@@ -1314,6 +1284,7 @@
         const e = transforms.leafletToEntropia(ll.lat, ll.lng);
         vertices.push(e.x, e.y);
       }
+      ensureClosedRing(vertices);
       const center = poleOfInaccessibility(vertices);
       return { shape: 'Polygon', data: { vertices }, center };
     } else if (shapeType === 'marker') {
@@ -1537,7 +1508,7 @@
         class="snap-btn"
         class:active={snapEnabled}
         on:click={() => snapEnabled = !snapEnabled}
-      >Snap Edges</button>
+      >Snap</button>
       <button
         class="snap-btn"
         class:active={snapToGrid}

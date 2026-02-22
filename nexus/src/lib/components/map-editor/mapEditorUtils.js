@@ -227,6 +227,19 @@ export function projectPointOnSegment(px, py, ax, ay, bx, by) {
   return { projX, projY, t, distSq: dx * dx + dy * dy };
 }
 
+/** Project point onto infinite line through A-B. Same as projectPointOnSegment but t is NOT clamped. */
+export function projectPointOnLine(px, py, ax, ay, bx, by) {
+  const edx = bx - ax, edy = by - ay;
+  let t = 0;
+  if (edx !== 0 || edy !== 0) {
+    t = ((px - ax) * edx + (py - ay) * edy) / (edx * edx + edy * edy);
+  }
+  const projX = ax + t * edx;
+  const projY = ay + t * edy;
+  const dx = px - projX, dy = py - projY;
+  return { projX, projY, t, distSq: dx * dx + dy * dy };
+}
+
 /** Squared distance from point (px,py) to line segment (ax,ay)-(bx,by). */
 function segmentDistSq(px, py, ax, ay, bx, by) {
   return projectPointOnSegment(px, py, ax, ay, bx, by).distSq;
@@ -338,27 +351,40 @@ export function snapAngleToDirection(angle) {
  * @param {object} loc — location object with Properties.Shape and Properties.Data
  * @returns {Array<{ x: number, y: number }>}
  */
-export function getShapeVertices(loc) {
+/**
+ * Parse raw vertices from a location's shape data.
+ * Strips duplicate closing vertex from polygons (first == last).
+ */
+function parseShapeVertices(loc) {
   const data = loc?.Properties?.Data;
   const shape = loc?.Properties?.Shape;
   if (!data || !shape) return [];
 
-  let rawVerts;
   if (shape === 'Rectangle') {
-    rawVerts = [
+    return [
       { x: data.x, y: data.y },
       { x: data.x + data.width, y: data.y },
       { x: data.x + data.width, y: data.y + data.height },
       { x: data.x, y: data.y + data.height },
     ];
   } else if (shape === 'Polygon' && data.vertices?.length >= 6) {
-    rawVerts = [];
+    const rawVerts = [];
     for (let i = 0; i < data.vertices.length; i += 2) {
       rawVerts.push({ x: data.vertices[i], y: data.vertices[i + 1] });
     }
-  } else {
-    return [];
+    // Strip duplicate closing vertex (polygon ring: first == last)
+    if (rawVerts.length > 1) {
+      const first = rawVerts[0], last = rawVerts[rawVerts.length - 1];
+      if (first.x === last.x && first.y === last.y) rawVerts.pop();
+    }
+    return rawVerts;
   }
+  return [];
+}
+
+export function getShapeVertices(loc) {
+  const rawVerts = parseShapeVertices(loc);
+  if (rawVerts.length === 0) return [];
 
   // Include neighbor vertices for bisector computation at each corner
   const n = rawVerts.length;
@@ -375,26 +401,8 @@ export function getShapeVertices(loc) {
  * @returns {Array<{ ax: number, ay: number, bx: number, by: number }>}
  */
 export function getShapeEdges(loc) {
-  const data = loc?.Properties?.Data;
-  const shape = loc?.Properties?.Shape;
-  if (!data || !shape) return [];
-
-  let rawVerts;
-  if (shape === 'Rectangle') {
-    rawVerts = [
-      { x: data.x, y: data.y },
-      { x: data.x + data.width, y: data.y },
-      { x: data.x + data.width, y: data.y + data.height },
-      { x: data.x, y: data.y + data.height },
-    ];
-  } else if (shape === 'Polygon' && data.vertices?.length >= 6) {
-    rawVerts = [];
-    for (let i = 0; i < data.vertices.length; i += 2) {
-      rawVerts.push({ x: data.vertices[i], y: data.vertices[i + 1] });
-    }
-  } else {
-    return [];
-  }
+  const rawVerts = parseShapeVertices(loc);
+  if (rawVerts.length < 2) return [];
 
   const edges = [];
   for (let i = 0; i < rawVerts.length; i++) {
@@ -406,88 +414,138 @@ export function getShapeEdges(loc) {
 }
 
 /**
- * Compute snap offset for a single vertex against candidate vertices and grid lines.
- * Snaps X and Y independently.
+ * Compute snap offset for a single vertex against candidate edges (as infinite construction lines),
+ * grid lines, and angle bisectors. All phases compete on 2D displacement — smallest wins.
  * @param {number} vx — vertex X in Entropia coords
  * @param {number} vy — vertex Y in Entropia coords
- * @param {Array<{ x: number, y: number }>} candidateVertices — vertices from same-type areas
+ * @param {Array<{ x: number, y: number, prevX?: number, prevY?: number, nextX?: number, nextY?: number }>} candidateVertices — vertices from same-type areas (used for bisector)
  * @param {{ xLines: number[], yLines: number[] } | null} gridLines — server grid
  * @param {number} gap — desired gap (Entropia units)
  * @param {number} threshold — max snap distance (Entropia units)
  * @param {Array<{ ax: number, ay: number, bx: number, by: number }>} candidateEdges — edges from same-type areas
- * @returns {{ dx: number, dy: number, guideX: number|null, guideY: number|null, edge: object|null }}
+ * @returns {{ dx: number, dy: number, guideX: number|null, guideY: number|null, bisector: object|null, edge: object|null, gap: number }}
  */
 export function computeVertexSnap(vx, vy, candidateVertices, gridLines, gap, threshold, candidateEdges = []) {
   let bestDx = 0, bestDy = 0;
-  let bestAbsDx = threshold + 1, bestAbsDy = threshold + 1;
+  let bestDisp = Infinity;
   let guideX = null, guideY = null;
-  let matchX = null, matchY = null; // candidate vertex that triggered the X/Y snap
+  let bisector = null;
+  let edge = null;
   const proximity = threshold * 2;
-
   const proximitySq = proximity * proximity;
+  const EPS = 0.001; // endpoint skip epsilon for t values
 
-  for (const cv of candidateVertices) {
-    // Proximity filter: only snap to nearby vertices (Euclidean distance)
-    const pdx = cv.x - vx, pdy = cv.y - vy;
-    if (pdx * pdx + pdy * pdy > proximitySq) continue;
-
-    // Exact vertex coordinate match (X and Y independently)
-    const dxExact = cv.x - vx;
-    if (Math.abs(dxExact) <= threshold && Math.abs(dxExact) < bestAbsDx) {
-      bestDx = dxExact; bestAbsDx = Math.abs(dxExact); guideX = cv.x; matchX = cv;
-    }
-    const dyExact = cv.y - vy;
-    if (Math.abs(dyExact) <= threshold && Math.abs(dyExact) < bestAbsDy) {
-      bestDy = dyExact; bestAbsDy = Math.abs(dyExact); guideY = cv.y; matchY = cv;
-    }
-
-    // Gap-offset match: snap to gap distance from candidate vertex
-    if (gap > 0) {
-      const gapSignX = vx >= cv.x ? 1 : -1;
-      const gapDx = (cv.x + gapSignX * gap) - vx;
-      if (Math.abs(gapDx) <= threshold && Math.abs(gapDx) < bestAbsDx) {
-        bestDx = gapDx; bestAbsDx = Math.abs(gapDx); guideX = cv.x; matchX = cv;
-      }
-      const gapSignY = vy >= cv.y ? 1 : -1;
-      const gapDy = (cv.y + gapSignY * gap) - vy;
-      if (Math.abs(gapDy) <= threshold && Math.abs(gapDy) < bestAbsDy) {
-        bestDy = gapDy; bestAbsDy = Math.abs(gapDy); guideY = cv.y; matchY = cv;
-      }
-    }
-  }
-
-  // Grid line snapping — vertex matches take priority, so grid must be
-  // significantly closer (at least 2x) to override a vertex match
+  // --- Phase 1: Grid snap (per-axis, optional) ---
+  let bestAbsDx = threshold + 1, bestAbsDy = threshold + 1;
   if (gridLines) {
     for (const gx of gridLines.xLines) {
       const dx = gx - vx;
       const adx = Math.abs(dx);
-      const limit = matchX ? bestAbsDx * 0.5 : bestAbsDx; // grid must beat half the vertex distance
-      if (adx <= threshold && adx < limit) {
-        bestDx = dx; bestAbsDx = adx; guideX = gx; matchX = null;
+      if (adx <= threshold && adx < bestAbsDx) {
+        bestAbsDx = adx; guideX = gx;
       }
     }
     for (const gy of gridLines.yLines) {
       const dy = gy - vy;
       const ady = Math.abs(dy);
-      const limit = matchY ? bestAbsDy * 0.5 : bestAbsDy; // grid must beat half the vertex distance
-      if (ady <= threshold && ady < limit) {
-        bestDy = dy; bestAbsDy = ady; guideY = gy; matchY = null;
+      if (ady <= threshold && ady < bestAbsDy) {
+        bestAbsDy = ady; guideY = gy;
+      }
+    }
+    // Compute grid snap displacement
+    const gridDx = bestAbsDx <= threshold ? (guideX - vx) : 0;
+    const gridDy = bestAbsDy <= threshold ? (guideY - vy) : 0;
+    if (bestAbsDx <= threshold || bestAbsDy <= threshold) {
+      const gridDisp = Math.sqrt(gridDx * gridDx + gridDy * gridDy);
+      bestDx = gridDx;
+      bestDy = gridDy;
+      bestDisp = gridDisp;
+    }
+  }
+
+  // --- Phase 2a: Bounded edge snap (sliding along segment, t clamped [0,1]) ---
+  for (const e of candidateEdges) {
+    // Compute edge length early (needed for dead zone)
+    const edx = e.bx - e.ax, edy = e.by - e.ay;
+    const eLen = Math.sqrt(edx * edx + edy * edy);
+    if (eLen < 1) continue;
+
+    // Proximity filter: skip if midpoint of edge is far from vertex
+    const midX = (e.ax + e.bx) / 2, midY = (e.ay + e.by) / 2;
+    const midDist = Math.sqrt((midX - vx) ** 2 + (midY - vy) ** 2);
+    if (midDist > eLen / 2 + proximity) continue;
+
+    const proj = projectPointOnSegment(vx, vy, e.ax, e.ay, e.bx, e.by);
+    // Dead zone at endpoints — proportional to threshold/edgeLength; bisector handles corners
+    const endpointEps = threshold / eLen;
+    if (proj.t <= endpointEps || proj.t >= 1 - endpointEps) continue;
+
+    const perpDist = Math.sqrt(proj.distSq);
+    if (perpDist > threshold) continue;
+
+    // Edge normal (perpendicular, pointing toward vertex)
+    let nx = -edy / eLen, ny = edx / eLen;
+    const dotToVertex = (vx - e.ax) * nx + (vy - e.ay) * ny;
+    if (dotToVertex < 0) { nx = -nx; ny = -ny; }
+
+    // Gap-offset edge snap: project onto parallel bounded segment at gap distance
+    if (gap > 0) {
+      const offsetAx = e.ax + nx * gap, offsetAy = e.ay + ny * gap;
+      const offsetBx = e.bx + nx * gap, offsetBy = e.by + ny * gap;
+      const gapProj = projectPointOnSegment(vx, vy, offsetAx, offsetAy, offsetBx, offsetBy);
+      if (gapProj.t > endpointEps && gapProj.t < 1 - endpointEps) {
+        const gapDx = gapProj.projX - vx, gapDy = gapProj.projY - vy;
+        const gapDisp = Math.sqrt(gapDx * gapDx + gapDy * gapDy);
+        if (gapDisp <= threshold && gapDisp < bestDisp) {
+          bestDx = gapDx; bestDy = gapDy; bestDisp = gapDisp;
+          bisector = null; guideX = null; guideY = null;
+          edge = { ax: e.ax, ay: e.ay, bx: e.bx, by: e.by, projX: gapProj.projX, projY: gapProj.projY, isGap: true, isExtension: false };
+          continue;
+        }
+      }
+    }
+
+    // Direct edge snap (no gap)
+    const snapDx = proj.projX - vx, snapDy = proj.projY - vy;
+    const snapDisp = Math.sqrt(snapDx * snapDx + snapDy * snapDy);
+    if (snapDisp <= threshold && snapDisp < bestDisp) {
+      bestDx = snapDx; bestDy = snapDy; bestDisp = snapDisp;
+      bisector = null; guideX = null; guideY = null;
+      edge = { ax: e.ax, ay: e.ay, bx: e.bx, by: e.by, projX: proj.projX, projY: proj.projY, isGap: false, isExtension: false };
+    }
+  }
+
+  // --- Phase 2b: Extension magnetic snap points (gap distance from endpoints) ---
+  if (gap > 0) {
+    for (const e of candidateEdges) {
+      const edx = e.bx - e.ax, edy = e.by - e.ay;
+      const eLen = Math.sqrt(edx * edx + edy * edy);
+      if (eLen < 1) continue;
+      const udx = edx / eLen, udy = edy / eLen;
+
+      // 2 magnetic points on direct line extension (gap distance from each endpoint)
+      const magneticPoints = [
+        { x: e.ax - gap * udx, y: e.ay - gap * udy },
+        { x: e.bx + gap * udx, y: e.by + gap * udy },
+      ];
+
+      for (const mp of magneticPoints) {
+        const mpDx = mp.x - vx, mpDy = mp.y - vy;
+        const mpDisp = Math.sqrt(mpDx * mpDx + mpDy * mpDy);
+        if (mpDisp <= threshold && mpDisp < bestDisp) {
+          bestDx = mpDx; bestDy = mpDy; bestDisp = mpDisp;
+          bisector = null; guideX = null; guideY = null;
+          edge = { ax: e.ax, ay: e.ay, bx: e.bx, by: e.by, projX: mp.x, projY: mp.y, isGap: false, isExtension: true };
+        }
       }
     }
   }
 
-  // --- Bisector snap: snap to angle bisector line of nearby corner vertices ---
-  // Points on the bisector are equidistant from both edges meeting at the corner.
-  let bisector = null;
-  const hasAxisSnap = bestAbsDx <= threshold || bestAbsDy <= threshold;
-  const bestAxisDisp = hasAxisSnap ? Math.sqrt(bestDx * bestDx + bestDy * bestDy) : Infinity;
-
+  // --- Phase 3: Bisector snap (angle bisector of corner vertices) ---
   for (const cv of candidateVertices) {
-    // Need neighbor info for bisector computation
     if (cv.prevX === undefined || cv.nextX === undefined) continue;
 
-    // Proximity filter (same as above)
+    // Proximity filter
     const pdx = cv.x - vx, pdy = cv.y - vy;
     if (pdx * pdx + pdy * pdy > proximitySq) continue;
 
@@ -496,13 +554,13 @@ export function computeVertexSnap(vx, vy, candidateVertices, gridLines, gap, thr
     const e2x = cv.nextX - cv.x, e2y = cv.nextY - cv.y;
     const len1 = Math.sqrt(e1x * e1x + e1y * e1y);
     const len2 = Math.sqrt(e2x * e2x + e2y * e2y);
-    if (len1 < 1 || len2 < 1) continue; // degenerate edges
+    if (len1 < 1 || len2 < 1) continue;
 
     // Bisector direction = normalize(normalize(e1) + normalize(e2))
     const bx = e1x / len1 + e2x / len2;
     const by = e1y / len1 + e2y / len2;
     const bLen = Math.sqrt(bx * bx + by * by);
-    if (bLen < 0.01) continue; // nearly 180° angle, bisector undefined
+    if (bLen < 0.01) continue; // nearly 180° angle
 
     const bdx = bx / bLen, bdy = by / bLen;
 
@@ -523,87 +581,24 @@ export function computeVertexSnap(vx, vy, candidateVertices, gridLines, gap, thr
       const gapProjY = cv.y + tSign * gap * bdy;
       const gapSnapDx = gapProjX - vx, gapSnapDy = gapProjY - vy;
       const gapTotalDisp = Math.sqrt(gapSnapDx * gapSnapDx + gapSnapDy * gapSnapDy);
-      if (gapTotalDisp <= threshold && gapTotalDisp < bestAxisDisp) {
-        bestDx = gapSnapDx;
-        bestDy = gapSnapDy;
+      if (gapTotalDisp <= threshold && gapTotalDisp < bestDisp) {
+        bestDx = gapSnapDx; bestDy = gapSnapDy; bestDisp = gapTotalDisp;
+        edge = null; guideX = null; guideY = null;
         bisector = { cx: cv.x, cy: cv.y, dirX: bdx, dirY: bdy };
-        continue; // gap point wins for this candidate, skip raw projection
+        continue;
       }
     }
 
     const snapDx = projX - vx, snapDy = projY - vy;
     const totalDisp = Math.sqrt(snapDx * snapDx + snapDy * snapDy);
-    // Bisector only wins if total displacement is strictly less than axis snaps
-    if (totalDisp < bestAxisDisp) {
-      bestDx = snapDx;
-      bestDy = snapDy;
+    if (totalDisp < bestDisp) {
+      bestDx = snapDx; bestDy = snapDy; bestDisp = totalDisp;
+      edge = null; guideX = null; guideY = null;
       bisector = { cx: cv.x, cy: cv.y, dirX: bdx, dirY: bdy };
     }
   }
 
-  // --- Edge snap: snap to nearby edges (line segments) of candidate areas ---
-  // Edge snap is 2D (projects onto the nearest point on the edge).
-  // Only wins if total displacement is strictly less than current best.
-  let edge = null;
-  const currentBestDisp = Math.sqrt(bestDx * bestDx + bestDy * bestDy);
-  let bestDisp = (bestAbsDx <= threshold || bestAbsDy <= threshold || bisector) ? currentBestDisp : Infinity;
-
-  for (const e of candidateEdges) {
-    // Proximity filter: skip if midpoint of edge is far from vertex
-    const midX = (e.ax + e.bx) / 2, midY = (e.ay + e.by) / 2;
-    const edgeHalfLen = Math.sqrt((e.bx - e.ax) ** 2 + (e.by - e.ay) ** 2) / 2;
-    const midDist = Math.sqrt((midX - vx) ** 2 + (midY - vy) ** 2);
-    if (midDist > edgeHalfLen + proximity) continue;
-
-    // Direct edge snap: project vertex onto edge segment
-    const proj = projectPointOnSegment(vx, vy, e.ax, e.ay, e.bx, e.by);
-    // Skip endpoints (t=0 or t=1) — those are vertex snaps handled above
-    if (proj.t <= 0 || proj.t >= 1) continue;
-
-    const perpDist = Math.sqrt(proj.distSq);
-    if (perpDist > threshold) continue;
-
-    // Compute edge normal (perpendicular, pointing toward vertex)
-    const edx = e.bx - e.ax, edy = e.by - e.ay;
-    const eLen = Math.sqrt(edx * edx + edy * edy);
-    if (eLen < 1) continue;
-    // Normal candidates: (-edy, edx) and (edy, -edx); pick the one pointing toward vertex
-    let nx = -edy / eLen, ny = edx / eLen;
-    const dotToVertex = (vx - e.ax) * nx + (vy - e.ay) * ny;
-    if (dotToVertex < 0) { nx = -nx; ny = -ny; }
-
-    // Gap-offset edge snap: project onto parallel line at gap distance
-    if (gap > 0) {
-      const offsetAx = e.ax + nx * gap, offsetAy = e.ay + ny * gap;
-      const offsetBx = e.bx + nx * gap, offsetBy = e.by + ny * gap;
-      const gapProj = projectPointOnSegment(vx, vy, offsetAx, offsetAy, offsetBx, offsetBy);
-      if (gapProj.t > 0 && gapProj.t < 1) {
-        const gapDx = gapProj.projX - vx, gapDy = gapProj.projY - vy;
-        const gapDisp = Math.sqrt(gapDx * gapDx + gapDy * gapDy);
-        if (gapDisp <= threshold && gapDisp < bestDisp) {
-          bestDx = gapDx;
-          bestDy = gapDy;
-          bestDisp = gapDisp;
-          bisector = null;
-          edge = { ax: e.ax, ay: e.ay, bx: e.bx, by: e.by, projX: gapProj.projX, projY: gapProj.projY, isGap: true };
-          continue; // gap snap wins for this edge, skip direct snap
-        }
-      }
-    }
-
-    // Direct edge snap (no gap)
-    const snapDx = proj.projX - vx, snapDy = proj.projY - vy;
-    const snapDisp = Math.sqrt(snapDx * snapDx + snapDy * snapDy);
-    if (snapDisp < bestDisp) {
-      bestDx = snapDx;
-      bestDy = snapDy;
-      bestDisp = snapDisp;
-      bisector = null;
-      edge = { ax: e.ax, ay: e.ay, bx: e.bx, by: e.by, projX: proj.projX, projY: proj.projY, isGap: false };
-    }
-  }
-
-  return { dx: bestDx, dy: bestDy, guideX, guideY, matchX, matchY, bisector, edge, gap };
+  return { dx: bestDx, dy: bestDy, guideX, guideY, bisector, edge, gap };
 }
 
 // ─── Mob Area Name Generation ────────────────────────────────────────────────
