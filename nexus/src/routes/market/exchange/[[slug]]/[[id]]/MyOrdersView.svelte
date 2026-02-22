@@ -67,7 +67,8 @@
       key: 'item_name', header: 'Item', main: true, mobileWidth: '1fr', sortable: true, searchable: true,
       formatter: (val, row) => {
         const slim = itemLookup.get(row.item_id);
-        return `<a class="item-link" data-action="navigate" data-item-id="${row.item_id}">${val}${itemTypeBadge(slim?.t)}</a>`;
+        const setBadge = row.details?.is_set ? ' <span class="badge badge-subtle badge-accent">Set</span>' : '';
+        return `<a class="item-link" data-action="navigate" data-item-id="${row.item_id}">${val}${itemTypeBadge(slim?.t)}${setBadge}</a>`;
       }
     },
     {

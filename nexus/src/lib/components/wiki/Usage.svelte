@@ -94,6 +94,7 @@
         quantity: order.quantity,
         planet: order.planet,
         stale: order.state === 'stale',
+        is_set: order.is_set ?? false,
         rowLink: exchId ? `/market/exchange/listings/${exchId}` : null
       });
     }
@@ -103,7 +104,11 @@
   $: hasMarketData = marketData.length > 0;
 
   $: marketColumns = [
-    { key: 'name', header: 'Name', main: true, formatter: (v, row) => row.stale ? `<span class="stale-text">${v}</span>` : v },
+    { key: 'name', header: 'Name', main: true, formatter: (v, row) => {
+      const label = row.stale ? `<span class="stale-text">${v}</span>` : v;
+      const setBadge = row.is_set ? ' <span class="badge badge-subtle badge-accent">Set</span>' : '';
+      return label + setBadge;
+    }},
     ...(isMultiItem ? [{ key: 'item', header: 'Item' }] : []),
     { key: 'markup', header: 'Markup', sortValue: (row) => row.markupRaw, formatter: (v, row) => row.stale ? `<span class="stale-text">${v}</span>` : v },
     { key: 'quantity', header: 'Qty' },

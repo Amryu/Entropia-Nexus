@@ -1829,7 +1829,7 @@
       cols.push({ key: '_is_set', header: 'Set', width: '55px', sortable: true, searchable: false, hideOnMobile: true,
         sortValue: (row) => row?.details?.is_set ? 1 : 0,
         formatter: (v, row) => row?.details?.is_set
-          ? '<span class="badge badge-subtle badge-set-yes">Yes</span>'
+          ? '<span class="badge badge-subtle badge-accent">Yes</span>'
           : '<span class="badge badge-subtle">No</span>'
       });
     }
@@ -3485,11 +3485,6 @@
   :global(.tt-pct) {
     color: var(--text-muted);
     font-size: 0.9em;
-  }
-  :global(.badge-set-yes) {
-    background: var(--accent-color);
-    color: #fff;
-    font-weight: 600;
   }
   :global(.detail-tags) {
     display: flex;

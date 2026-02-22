@@ -746,6 +746,7 @@ export async function handlePageLoad(fetch, items, config) {
               planet: o.planet || 'Any',
               state: o.computed_state,
               item_name: name,
+              is_set: o.details?.is_set ?? false,
               _exchangeItemId: exchangeItemId
             });
           }
@@ -762,6 +763,7 @@ export async function handlePageLoad(fetch, items, config) {
               planet: o.planet || 'Any',
               state: o.computed_state,
               item_name: name,
+              is_set: o.details?.is_set ?? false,
               _exchangeItemId: exchangeItemId
             });
           }
@@ -836,7 +838,8 @@ export async function handlePageLoad(fetch, items, config) {
           unitPrice,
           quantity: o.quantity,
           planet: o.planet || 'Any',
-          state: o.computed_state
+          state: o.computed_state,
+          is_set: o.details?.is_set ?? false
         };
       });
     acquisition._exchangeItemId = exchangeItemId;
@@ -853,7 +856,8 @@ export async function handlePageLoad(fetch, items, config) {
           formattedMarkup: isPercent ? `${mu.toFixed(2)}%` : `+${mu.toFixed(2)}`,
           quantity: o.quantity,
           planet: o.planet || 'Any',
-          state: o.computed_state
+          state: o.computed_state,
+          is_set: o.details?.is_set ?? false
         };
       });
     usage._exchangeItemId = exchangeItemId;

@@ -288,9 +288,10 @@
         if (!itemName) return 'Unknown';
         const href = row?.item_type ? getTypeLink(itemName, row.item_type, row.item_sub_type || null) : null;
         const label = escapeHtml(itemName);
+        const setBadge = v?.is_set ? ' <span class="badge badge-subtle badge-accent">Set</span>' : '';
         return href
-          ? `<a class="order-item-link" href="${escapeHtml(href)}">${label}</a>`
-          : label;
+          ? `<a class="order-item-link" href="${escapeHtml(href)}">${label}</a>${setBadge}`
+          : `${label}${setBadge}`;
       }
     },
     {
