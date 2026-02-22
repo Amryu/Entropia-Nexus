@@ -65,9 +65,7 @@ export async function snapshotExchangePrices() {
       itemOffers.set(key, { item_id: row.item_id, gender, buy: [], sell: [] });
     }
     const side = row.type === 'BUY' ? 'buy' : 'sell';
-    // Armor plate sets count as 7 individual plates for price weighting
-    const isSet = row.details?.is_set === true;
-    const effectiveQty = isSet ? parseInt(row.quantity, 10) * 7 : parseInt(row.quantity, 10);
+    const effectiveQty = parseInt(row.quantity, 10);
     itemOffers.get(key)[side].push({
       markup: parseFloat(row.markup),
       quantity: effectiveQty

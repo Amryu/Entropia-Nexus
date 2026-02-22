@@ -4,6 +4,7 @@
   import { createEventDispatcher } from 'svelte';
   import { computeState } from '../../exchangeConstants.js';
   import { formatMarkupValue } from '../../orderUtils';
+  import { PLATE_SET_SIZE } from '$lib/common/itemTypes.js';
 
   /** @type {'buy'|'sell'} */
   export let side = 'sell';
@@ -126,7 +127,7 @@
       seller_name: o.seller_name || 'Unknown',
       tier: o.details?.Tier ?? o.details?.tier ?? null,
       tir: o.details?.TierIncreaseRate ?? o.details?.tir ?? null,
-      is_set: o.details?.is_set ?? false,
+      is_set: Number(o.quantity) === PLATE_SET_SIZE,
       gender: o.details?.Gender ?? null,
     }));
 

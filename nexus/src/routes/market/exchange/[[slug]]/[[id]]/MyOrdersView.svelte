@@ -4,6 +4,7 @@
   import { myOrders, enrichOrders, upsertOrder } from '../../exchangeStore.js';
   import { formatPedRaw, formatMarkupForItem, isLimited, formatPedValue, itemTypeBadge, getOrderStackValue, computeUnitPrice, getTopCategory, getCategoryOrder } from '../../orderUtils';
   import { encodeURIComponentSafe } from '$lib/util.js';
+  import { PLATE_SET_SIZE } from '$lib/common/itemTypes.js';
   import { goto } from '$app/navigation';
   import { createEventDispatcher, onMount } from 'svelte';
   import { addToast } from '$lib/stores/toasts.js';
@@ -67,7 +68,7 @@
       key: 'item_name', header: 'Item', main: true, mobileWidth: '1fr', sortable: true, searchable: true,
       formatter: (val, row) => {
         const slim = itemLookup.get(row.item_id);
-        const setBadge = row.details?.is_set ? ' <span class="badge badge-subtle badge-accent">Set</span>' : '';
+        const setBadge = slim?.t === 'ArmorPlating' && Number(row.quantity) === PLATE_SET_SIZE ? ' <span class="badge badge-subtle badge-accent">Set</span>' : '';
         return `<a class="item-link" data-action="navigate" data-item-id="${row.item_id}">${val}${itemTypeBadge(slim?.t)}${setBadge}</a>`;
       }
     },

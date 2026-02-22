@@ -9,7 +9,7 @@
   import LoadoutCompactEmbed from '$lib/components/LoadoutCompactEmbed.svelte';
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { clampDecimals, encodeURIComponentSafe, getTypeLink } from '$lib/util';
-  import { isPercentMarkupType } from '$lib/common/itemTypes.js';
+  import { isPercentMarkupType, PLATE_SET_SIZE } from '$lib/common/itemTypes.js';
   import { formatMarkupValue } from '../../market/exchange/orderUtils';
   import { getItemCategoryPath } from '$lib/market/categorize.js';
   import { loadLoadoutEntities } from '$lib/utils/entityLoader';
@@ -288,7 +288,7 @@
         if (!itemName) return 'Unknown';
         const href = row?.item_type ? getTypeLink(itemName, row.item_type, row.item_sub_type || null) : null;
         const label = escapeHtml(itemName);
-        const setBadge = v?.is_set ? ' <span class="badge badge-subtle badge-accent">Set</span>' : '';
+        const setBadge = row.item_type === 'ArmorPlating' && Number(row.quantity) === PLATE_SET_SIZE ? ' <span class="badge badge-subtle badge-accent">Set</span>' : '';
         return href
           ? `<a class="order-item-link" href="${escapeHtml(href)}">${label}</a>${setBadge}`
           : `${label}${setBadge}`;

@@ -3,7 +3,7 @@ import { loading } from "../stores";
 import { goto, invalidateAll } from "$app/navigation";
 import { browser } from "$app/environment";
 import { MAX_PENDING_CREATES } from "$lib/constants";
-import { TYPE_ID_OFFSETS, isPercentMarkupType } from "$lib/common/itemTypes.js";
+import { TYPE_ID_OFFSETS, isPercentMarkupType, PLATE_SET_SIZE } from "$lib/common/itemTypes.js";
 
 export function addItemTag(currentName, tag) {
   // Extract the base name and the existing tags
@@ -746,7 +746,7 @@ export async function handlePageLoad(fetch, items, config) {
               planet: o.planet || 'Any',
               state: o.computed_state,
               item_name: name,
-              is_set: o.details?.is_set ?? false,
+              is_set: Number(o.quantity) === PLATE_SET_SIZE,
               _exchangeItemId: exchangeItemId
             });
           }
@@ -763,7 +763,7 @@ export async function handlePageLoad(fetch, items, config) {
               planet: o.planet || 'Any',
               state: o.computed_state,
               item_name: name,
-              is_set: o.details?.is_set ?? false,
+              is_set: Number(o.quantity) === PLATE_SET_SIZE,
               _exchangeItemId: exchangeItemId
             });
           }
@@ -839,7 +839,7 @@ export async function handlePageLoad(fetch, items, config) {
           quantity: o.quantity,
           planet: o.planet || 'Any',
           state: o.computed_state,
-          is_set: o.details?.is_set ?? false
+          is_set: entityType === 'ArmorPlating' && Number(o.quantity) === PLATE_SET_SIZE
         };
       });
     acquisition._exchangeItemId = exchangeItemId;
@@ -857,7 +857,7 @@ export async function handlePageLoad(fetch, items, config) {
           quantity: o.quantity,
           planet: o.planet || 'Any',
           state: o.computed_state,
-          is_set: o.details?.is_set ?? false
+          is_set: entityType === 'ArmorPlating' && Number(o.quantity) === PLATE_SET_SIZE
         };
       });
     usage._exchangeItemId = exchangeItemId;

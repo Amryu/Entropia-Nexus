@@ -25,7 +25,7 @@
   import { page } from "$app/stores";
   import { apiCall, getItemLink, hasItemTag, encodeURIComponentSafe, decodeURIComponentSafe } from "$lib/util.js";
   import { isBlueprint, isItemTierable, isItemStackable, isLimited, itemHasCondition, isAbsoluteMarkup, getMaxTT, formatMarkupValue, formatMarkupForItem, formatPedValue, isPet, isBlueprintNonL, getUnitTT, computeUnitPrice, getPetLevel, itemTypeBadge } from '../../orderUtils';
-  import { PET_ID_OFFSET, ARMOR_SET_OFFSET, GENDERED_TYPES } from '$lib/common/itemTypes.js';
+  import { PET_ID_OFFSET, ARMOR_SET_OFFSET, GENDERED_TYPES, PLATE_SET_SIZE } from '$lib/common/itemTypes.js';
   import { PLANETS } from '../../exchangeConstants.js';
   import { showMyOrders, showInventory, showTradeList, showTrades, tradeList, addToTradeList, clearTradeList, myOrders, inventory, upsertOrder } from '../../exchangeStore.js';
   import { favourites, isFavourite, toggleFavourite, createFolder } from '../../favouritesStore.js';
@@ -1796,7 +1796,7 @@
           if (showTier && d.TierIncreaseRate != null) tags.push(`<span class="detail-tag">TiR ${d.TierIncreaseRate}</span>`);
           if (isPetItem && d.Pet?.Level != null) tags.push(`<span class="detail-tag">Lv ${d.Pet.Level}</span>`);
           if (isBpNonL && d.QualityRating != null) tags.push(`<span class="detail-tag">QR ${d.QualityRating}</span>`);
-          if (type === 'ArmorPlating' && d.is_set) tags.push(`<span class="detail-tag">Set</span>`);
+          if (type === 'ArmorPlating' && Number(row.quantity) === PLATE_SET_SIZE) tags.push(`<span class="detail-tag">Set</span>`);
           if (isGenderedDetail && d.Gender) tags.push(`<span class="detail-tag">${d.Gender}</span>`);
           return tags.length ? `<span class="detail-tags">${tags.join('')}</span>` : '';
         }
@@ -1827,8 +1827,8 @@
     // ArmorPlating: show Set column
     if (type === 'ArmorPlating') {
       cols.push({ key: '_is_set', header: 'Set', width: '55px', sortable: true, searchable: false, hideOnMobile: true,
-        sortValue: (row) => row?.details?.is_set ? 1 : 0,
-        formatter: (v, row) => row?.details?.is_set
+        sortValue: (row) => Number(row?.quantity) === PLATE_SET_SIZE ? 1 : 0,
+        formatter: (v, row) => Number(row?.quantity) === PLATE_SET_SIZE
           ? '<span class="badge badge-subtle badge-accent">Yes</span>'
           : '<span class="badge badge-subtle">No</span>'
       });
