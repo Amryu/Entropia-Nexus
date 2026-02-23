@@ -2,6 +2,7 @@
 import { resolveShortRedirect } from '$lib/server/short-url.js';
 
 let dbGetSession, getUserFromSession, updateSession, upsertUser, getUserInfo, handleRefresh, getUserById, getUserFullDetails, resolveUserGrants;
+let validateAccessToken, getGrantKeysForScopes, cleanupExpiredTokens;
 
 if (import.meta.env.SSR) {
   const db = await import('$lib/server/db');
@@ -18,6 +19,18 @@ if (import.meta.env.SSR) {
   const discord = await import('$lib/server/discord');
   getUserInfo = discord.getUserInfo;
   handleRefresh = discord.handleRefresh;
+
+  const oauth = await import('$lib/server/oauth');
+  validateAccessToken = oauth.validateAccessToken;
+  getGrantKeysForScopes = oauth.getGrantKeysForScopes;
+  cleanupExpiredTokens = oauth.cleanupExpiredTokens;
+
+  // Periodically clean up expired OAuth tokens
+  const OAUTH_CLEANUP_INTERVAL_MS = 60 * 60_000; // 1 hour
+  cleanupExpiredTokens().catch(err => console.error('[oauth] Error cleaning up tokens:', err));
+  setInterval(() => {
+    cleanupExpiredTokens().catch(err => console.error('[oauth] Error cleaning up tokens:', err));
+  }, OAUTH_CLEANUP_INTERVAL_MS).unref();
 
   // Periodically end expired auctions so they don't depend on API traffic
   const { endExpiredAuctions } = await import('$lib/server/auction.js');
@@ -110,18 +123,78 @@ export async function handle({ event, resolve }) {
     });
   }
 
-  let sessionId = event.cookies.get(import.meta.env.VITE_SESSION_COOKIE_NAME);
+  // --- CORS preflight for API paths ---
+  if (event.request.method === 'OPTIONS' && event.url.pathname.startsWith('/api/')) {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
+        'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+        'Access-Control-Max-Age': '86400'
+      }
+    });
+  }
 
-  let session = await getSessionObject(sessionId);
+  // --- OAuth Bearer token authentication ---
+  const authHeader = event.request.headers.get('authorization');
+  let isOAuthRequest = false;
+
+  if (authHeader?.startsWith('Bearer ') && event.url.pathname.startsWith('/api/')) {
+    const rawToken = authHeader.slice(7);
+    if (rawToken) {
+      try {
+        const tokenData = await validateAccessToken(rawToken);
+        if (tokenData) {
+          // Load user and resolve grants
+          const user = await getUserById(tokenData.userId);
+          if (user && user.verified && !user.banned) {
+            const userGrants = await resolveUserGrants(tokenData.userId);
+
+            // Intersect user grants with scope-allowed grants
+            const scopeGrantKeys = await getGrantKeysForScopes(tokenData.scopes);
+            const filteredGrants = [];
+            for (const grant of userGrants) {
+              // Include grants that are required by any active scope,
+              // but exclude admin grants (never delegable via OAuth)
+              if (grant.startsWith('admin.')) continue;
+              if (scopeGrantKeys.has(grant)) {
+                filteredGrants.push(grant);
+              }
+            }
+
+            user.grants = filteredGrants;
+            user.administrator = false; // Never admin via OAuth
+
+            const session = { user };
+            event.locals.session = session;
+            event.locals.isOAuth = true;
+            event.locals.oauthScopes = tokenData.scopes;
+            event.locals.oauthClientId = tokenData.clientId;
+            isOAuthRequest = true;
+          }
+        }
+      } catch (e) {
+        console.error('[oauth] Error validating access token:', e);
+        // Fall through to cookie auth
+      }
+    }
+  }
 
   // Detect initial viewport width from User-Agent or stored cookie
   const initialViewportWidth = getInitialViewportWidth(event.request, event.cookies);
   const isMobileDevice = initialViewportWidth < MOBILE_BREAKPOINT;
 
-  // Check if user is banned
-  if (session.user) {
-    try {
-      const fullUser = await getUserFullDetails(BigInt(session.user.id));
+  // --- Cookie-based session auth (skip if OAuth already authenticated) ---
+  if (!isOAuthRequest) {
+    let sessionId = event.cookies.get(import.meta.env.VITE_SESSION_COOKIE_NAME);
+
+    let session = await getSessionObject(sessionId);
+
+    // Check if user is banned
+    if (session.user) {
+      try {
+        const fullUser = await getUserFullDetails(BigInt(session.user.id));
       if (fullUser?.banned) {
         // Check if ban has expired
         if (fullUser.banned_until && new Date(fullUser.banned_until) < new Date()) {
@@ -185,14 +258,26 @@ export async function handle({ event, resolve }) {
     }
   }
 
-  event.locals.session = session;
+    event.locals.session = session;
+
+    // Set cookie refresh after resolve
+    var cookieSessionId = sessionId;
+  } // end if (!isOAuthRequest)
+
   event.locals.initialViewportWidth = initialViewportWidth;
   event.locals.isMobileDevice = isMobileDevice;
 
   const response = await resolve(event);
 
-  if (sessionId) {
-    response.headers['set-cookie'] = `${import.meta.env.VITE_SESSION_COOKIE_NAME}=${sessionId}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${SESSION_COOKIE_MAX_AGE}; Domain=${import.meta.env.VITE_DOMAIN}; Secure=${import.meta.env.MODE === 'development' ? false : true};`;
+  // Refresh session cookie for cookie-based auth
+  if (!isOAuthRequest && cookieSessionId) {
+    response.headers['set-cookie'] = `${import.meta.env.VITE_SESSION_COOKIE_NAME}=${cookieSessionId}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${SESSION_COOKIE_MAX_AGE}; Domain=${import.meta.env.VITE_DOMAIN}; Secure=${import.meta.env.MODE === 'development' ? false : true};`;
+  }
+
+  // Add CORS headers for OAuth-authenticated API responses
+  if (isOAuthRequest) {
+    response.headers.set('Access-Control-Allow-Origin', '*');
+    response.headers.set('Access-Control-Allow-Headers', 'Authorization, Content-Type');
   }
 
   return response;

@@ -5,6 +5,7 @@
 import { getResponse } from '$lib/util.js';
 import { checkRateLimitPeek, incrementRateLimit } from '$lib/server/rateLimiter.js';
 import { verifyTurnstile } from '$lib/server/turnstile.js';
+import { isOAuthRequest } from '$lib/server/auth.js';
 import { buyoutAuction, hasAcceptedDisclaimer, RATE_LIMIT_BUYOUT_PER_MIN } from '$lib/server/auction.js';
 
 export async function POST({ params, request, locals }) {
@@ -29,16 +30,18 @@ export async function POST({ params, request, locals }) {
     return getResponse({ error: 'Invalid JSON' }, 400);
   }
 
-  // Verify Turnstile token
-  const turnstileToken = body.turnstile_token;
-  if (!turnstileToken) {
-    return getResponse({ error: 'Captcha verification required' }, 400);
-  }
+  // Verify Turnstile token (skipped for OAuth-authenticated requests)
+  if (!isOAuthRequest(locals)) {
+    const turnstileToken = body.turnstile_token;
+    if (!turnstileToken) {
+      return getResponse({ error: 'Captcha verification required' }, 400);
+    }
 
-  const ip = locals.ip || request.headers.get('x-forwarded-for') || request.headers.get('cf-connecting-ip');
-  const turnstileValid = await verifyTurnstile(turnstileToken, ip);
-  if (!turnstileValid) {
-    return getResponse({ error: 'Captcha verification failed. Please try again.' }, 400);
+    const ip = locals.ip || request.headers.get('x-forwarded-for') || request.headers.get('cf-connecting-ip');
+    const turnstileValid = await verifyTurnstile(turnstileToken, ip);
+    if (!turnstileValid) {
+      return getResponse({ error: 'Captcha verification failed. Please try again.' }, 400);
+    }
   }
 
   // Check bidder disclaimer (buyout counts as bidding)

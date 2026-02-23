@@ -162,6 +162,17 @@ export function requireOwnerOrAdmin(locals, ownerId) {
   return user;
 }
 
+// --- OAuth helpers ---
+
+/**
+ * Check if the current request is authenticated via OAuth Bearer token.
+ * @param {Object} locals - Request locals
+ * @returns {boolean}
+ */
+export function isOAuthRequest(locals) {
+  return locals.isOAuth === true;
+}
+
 // --- Boolean check helpers ---
 
 /**

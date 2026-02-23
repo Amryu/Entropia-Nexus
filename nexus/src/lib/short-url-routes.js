@@ -86,6 +86,9 @@ export const SHORT_ROUTE_MAP = Object.freeze({
   vi: '/videos',
   st: '/streams',
   ai: '/account/inventory',
+  ad: '/account/developers',
+  aa: '/account/authorizations',
+  oa: '/oauth/authorize',
   se: '/search'
 });
 
@@ -151,6 +154,9 @@ export const PREFERRED_SHORT_ROUTE_BY_PREFIX = Object.freeze({
   '/videos': 'vi',
   '/streams': 'st',
   '/account/inventory': 'ai',
+  '/account/developers': 'ad',
+  '/account/authorizations': 'aa',
+  '/oauth/authorize': 'oa',
   '/search': 'se'
 });
 

@@ -9,6 +9,7 @@ import {
 import { GENDERED_TYPES } from '$lib/common/itemTypes.js';
 import { checkRateLimit } from '$lib/server/rateLimiter.js';
 import { verifyTurnstile } from '$lib/server/turnstile.js';
+import { isOAuthRequest } from '$lib/server/auth.js';
 import { invalidateOfferCounts } from '$lib/market/cache';
 
 /**
@@ -179,11 +180,13 @@ export async function PUT({ params, request, locals, fetch }) {
     return getResponse({ error: 'Invalid JSON' }, 400);
   }
 
-  // Verify Turnstile
-  const turnstileToken = body.turnstile_token;
-  if (!turnstileToken) return getResponse({ error: 'Captcha verification required' }, 400);
-  const ip = locals.ip || request.headers.get('x-forwarded-for') || request.headers.get('cf-connecting-ip');
-  if (!await verifyTurnstile(turnstileToken, ip)) return getResponse({ error: 'Captcha verification failed. Please try again.' }, 400);
+  // Verify Turnstile (skipped for OAuth-authenticated requests)
+  if (!isOAuthRequest(locals)) {
+    const turnstileToken = body.turnstile_token;
+    if (!turnstileToken) return getResponse({ error: 'Captcha verification required' }, 400);
+    const ip = locals.ip || request.headers.get('x-forwarded-for') || request.headers.get('cf-connecting-ip');
+    if (!await verifyTurnstile(turnstileToken, ip)) return getResponse({ error: 'Captcha verification failed. Please try again.' }, 400);
+  }
 
   // Validate fields
   const quantity = parseInt(body.quantity, 10);
@@ -233,13 +236,15 @@ export async function DELETE({ params, request, locals }) {
   const { user, error: authErr } = getVerifiedUser(locals);
   if (authErr) return authErr;
 
-  // Verify Turnstile
+  // Verify Turnstile (skipped for OAuth-authenticated requests)
   let body = {};
   try { body = await request.json(); } catch {}
-  const turnstileToken = body.turnstile_token;
-  if (!turnstileToken) return getResponse({ error: 'Captcha verification required' }, 400);
-  const ip = locals.ip || request.headers.get('x-forwarded-for') || request.headers.get('cf-connecting-ip');
-  if (!await verifyTurnstile(turnstileToken, ip)) return getResponse({ error: 'Captcha verification failed. Please try again.' }, 400);
+  if (!isOAuthRequest(locals)) {
+    const turnstileToken = body.turnstile_token;
+    if (!turnstileToken) return getResponse({ error: 'Captcha verification required' }, 400);
+    const ip = locals.ip || request.headers.get('x-forwarded-for') || request.headers.get('cf-connecting-ip');
+    if (!await verifyTurnstile(turnstileToken, ip)) return getResponse({ error: 'Captcha verification failed. Please try again.' }, 400);
+  }
 
   // Global close rate limit
   const closeCheck = checkRateLimit(`order:close:${user.id}`, RATE_LIMIT_CLOSE_PER_MIN, 60_000);
