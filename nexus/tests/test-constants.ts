@@ -21,3 +21,4 @@ export const TIMEOUT_INSTANT = 500;   // Client-side operations only
 export const TIMEOUT_SHORT = 1000;    // Client-side computation
 export const TIMEOUT_MEDIUM = 3000;   // API/network operations
 export const TIMEOUT_LONG = 10000;    // Complex/slow operations
+export const TIMEOUT_CACHE = 60000;   // Exchange cache build on first request

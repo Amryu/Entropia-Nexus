@@ -1,5 +1,5 @@
 import { test, expect } from '../fixtures/auth';
-import { TIMEOUT_MEDIUM, TIMEOUT_LONG } from '../test-constants';
+import { TIMEOUT_MEDIUM, TIMEOUT_LONG, TIMEOUT_CACHE } from '../test-constants';
 
 /**
  * Exchange Rate Limiting Tests
@@ -72,6 +72,10 @@ async function editOrder(
     },
   });
 }
+
+// Exchange API calls may trigger a full cache rebuild (22+ parallel endpoint fetches
+// + categorization + Brotli/Gzip compression) on first request, which can take 10-30s.
+test.setTimeout(TIMEOUT_CACHE);
 
 // ─── Authentication ──────────────────────────────────────────────
 
