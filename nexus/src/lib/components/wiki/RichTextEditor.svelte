@@ -882,11 +882,8 @@
   {/if}
 
   {#if isLinkModalOpen}
-    <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
-    <div class="link-modal-overlay" role="dialog" on:click={closeLinkModal} on:keydown={(e) => e.key === 'Escape' && closeLinkModal()}>
-      <!-- svelte-ignore a11y-click-events-have-key-events -->
-      <!-- svelte-ignore a11y-no-static-element-interactions -->
-      <div class="link-modal" on:click|stopPropagation>
+    <div class="link-modal-overlay" role="presentation" on:click={closeLinkModal} on:keydown={(e) => e.key === 'Escape' && closeLinkModal()}>
+      <div class="link-modal" role="dialog" on:click|stopPropagation>
         <h4>Insert Link</h4>
         <div class="link-field">
           <label for="link-text">Link Text</label>
@@ -921,11 +918,8 @@
   {/if}
 
   {#if showVideo && isVideoModalOpen}
-    <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
-    <div class="link-modal-overlay" role="dialog" on:click={closeVideoModal} on:keydown={(e) => e.key === 'Escape' && closeVideoModal()}>
-      <!-- svelte-ignore a11y-click-events-have-key-events -->
-      <!-- svelte-ignore a11y-no-static-element-interactions -->
-      <div class="link-modal" on:click|stopPropagation>
+    <div class="link-modal-overlay" role="presentation" on:click={closeVideoModal} on:keydown={(e) => e.key === 'Escape' && closeVideoModal()}>
+      <div class="link-modal" role="dialog" on:click|stopPropagation>
         <h4>Embed Video</h4>
         <div class="link-field">
           <label for="video-url">YouTube or Vimeo URL</label>

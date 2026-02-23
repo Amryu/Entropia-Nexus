@@ -1,6 +1,7 @@
 <script>
   // @ts-nocheck
   import { createFolder, renameFolder, deleteFolder, removeFavourite, moveToFolder } from '../../favouritesStore.js';
+  import { clickable } from '$lib/actions/clickable.js';
 
   export let favouritesData = { folders: [], items: [] };
   export let allItems = [];
@@ -126,12 +127,11 @@
 {#if hasFavourites || sortedFolders.length > 0}
   <div class="favourites-tree">
     <!-- All Favourites -->
-    <!-- svelte-ignore a11y-click-events-have-key-events -->
-    <!-- svelte-ignore a11y-no-static-element-interactions -->
     <div
       class="fav-folder-header clickable"
       class:selected={selectedFolderId === 'all'}
       on:click={() => handleFolderSelect('all', allFavItemIds)}
+      use:clickable
     >
       <span class="expand-spacer"></span>
       <span class="folder-name">All Favourites</span>
@@ -140,32 +140,30 @@
 
     <!-- Folders -->
     {#each sortedFolders as folder (folder.id)}
-      <!-- svelte-ignore a11y-no-static-element-interactions -->
       <div
         class="fav-folder"
         class:drag-over={dragOverTarget === folder.id}
         on:dragover|preventDefault={(e) => handleDragOver(e, folder.id)}
         on:dragleave={() => handleDragLeave(folder.id)}
         on:drop={(e) => handleDrop(e, folder.id)}
+        role="group"
       >
-        <!-- svelte-ignore a11y-click-events-have-key-events -->
         <div
           class="fav-folder-header clickable"
           class:selected={selectedFolderId === folder.id}
           on:click={() => handleFolderSelect(folder.id, folder.items || [])}
+          use:clickable
         >
-          <!-- svelte-ignore a11y-click-events-have-key-events -->
           <span
             class="expand-toggle"
             class:expanded={expandedFolders.has(folder.id)}
             on:click|stopPropagation={() => toggleFolder(folder.id)}
-            role="button"
-            tabindex="-1"
+            use:clickable={{ tabindex: -1 }}
           >{expandedFolders.has(folder.id) ? '▾' : '▸'}</span>
 
           {#if editingFolderId === folder.id}
-            <!-- svelte-ignore a11y-autofocus -->
-            <!-- svelte-ignore a11y-click-events-have-key-events -->
+            <!-- svelte-ignore a11y-autofocus -- intentional focus on rename activation -->
+            <!-- svelte-ignore a11y-click-events-have-key-events -- stopPropagation on input to prevent folder toggle -->
             <input
               class="folder-rename-input"
               type="text"
@@ -200,8 +198,6 @@
         {#if expandedFolders.has(folder.id)}
           <div class="fav-folder-items">
             {#each (folder.items || []) as itemId (itemId)}
-              <!-- svelte-ignore a11y-no-static-element-interactions -->
-              <!-- svelte-ignore a11y-click-events-have-key-events -->
               <div
                 class="fav-item"
                 class:dragging={dragItemId === itemId}
@@ -210,6 +206,7 @@
                 on:click={() => handleItemClick(itemId)}
                 on:dragstart={(e) => handleDragStart(e, itemId)}
                 on:dragend={handleDragEnd}
+                use:clickable
               >
                 <span class="expand-spacer"></span>
                 <span class="fav-item-name">
@@ -228,17 +225,15 @@
 
     <!-- Root (unfiled) items - also a drop target -->
     {#if rootItems.length > 0}
-      <!-- svelte-ignore a11y-no-static-element-interactions -->
       <div
         class="fav-root-items"
         class:drag-over={dragOverTarget === 'root'}
         on:dragover|preventDefault={(e) => handleDragOver(e, 'root')}
         on:dragleave={() => handleDragLeave('root')}
         on:drop={(e) => handleDrop(e, null)}
+        role="group"
       >
         {#each rootItems as itemId (itemId)}
-          <!-- svelte-ignore a11y-no-static-element-interactions -->
-          <!-- svelte-ignore a11y-click-events-have-key-events -->
           <div
             class="fav-item"
             class:dragging={dragItemId === itemId}
@@ -247,6 +242,7 @@
             on:click={() => handleItemClick(itemId)}
             on:dragstart={(e) => handleDragStart(e, itemId)}
             on:dragend={handleDragEnd}
+            use:clickable
           >
             <span class="expand-spacer"></span>
             <span class="fav-item-name">

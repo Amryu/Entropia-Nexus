@@ -3,6 +3,7 @@
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
   import { apiCall, getTypeName } from '$lib/util.js';
+  import { clickable } from '$lib/actions/clickable.js';
 
   let searchQuery = '';
   let selectedType = '';
@@ -419,9 +420,7 @@
 
     <div class="results-list">
       {#each results as item}
-        <!-- svelte-ignore a11y-click-events-have-key-events -->
-        <!-- svelte-ignore a11y-no-static-element-interactions -->
-        <div class="result-item" on:click={() => viewEntity(item)}>
+        <div class="result-item" use:clickable on:click={() => viewEntity(item)}>
           <div class="result-main">
             <div class="result-name">{item.entityName || 'Unnamed'}</div>
             <div class="result-meta">

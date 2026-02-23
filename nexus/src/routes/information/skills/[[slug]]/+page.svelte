@@ -10,7 +10,7 @@
   // @ts-nocheck
   import '$lib/style.css';
   import { onMount, onDestroy } from 'svelte';
-  import { encodeURIComponentSafe, getLatestPendingUpdate } from '$lib/util';
+  import { encodeURIComponentSafe, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
 
   // Wiki components
@@ -45,6 +45,18 @@
   import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
 
   export let data;
+
+  // Lazy-load edit dependencies when edit mode activates
+  let editDepsLoading = false;
+  $: if ($editMode && data.professions === null && !editDepsLoading) {
+    editDepsLoading = true;
+    loadEditDeps([
+      { key: 'professions', url: '/api/professions' }
+    ]).then(deps => {
+      data = { ...data, ...deps };
+      editDepsLoading = false;
+    });
+  }
 
   $: skill = data.object;
   $: user = data.session?.user;
@@ -375,6 +387,7 @@
   {canCreateNew}
   {userPendingCreates}
   {userPendingUpdates}
+  {editDepsLoading}
 >
   <!-- Pending change banner -->
   {#if $existingPendingChange && !$editMode && !data.isCreateMode}

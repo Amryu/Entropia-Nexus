@@ -88,8 +88,7 @@
 <svelte:window on:keydown={handleKeydown} />
 
 {#if open}
-  <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-  <div class="dialog-backdrop" on:click={handleBackdropClick}>
+  <div class="dialog-backdrop" role="presentation" on:click={handleBackdropClick}>
     <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="disclaimer-title">
       <div class="dialog-header">
         <h2 id="disclaimer-title">{config.title}</h2>

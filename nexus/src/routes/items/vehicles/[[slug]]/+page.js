@@ -40,13 +40,18 @@ export async function load({ fetch, params, url, parent }) {
   // Set create mode flag
   response.isCreateMode = isCreateMode;
 
-  // Fetch materials (for fuel selection) and vehicle attachment types
-  const [materialsList, vehicleAttachmentTypesList] = await Promise.all([
-    apiCall(fetch, '/materials'),
-    apiCall(fetch, '/vehicleattachmenttypes')
-  ]);
-  response.materials = materialsList || [];
-  response.vehicleAttachmentTypes = vehicleAttachmentTypesList || [];
+  // Edit-mode dependencies: only load server-side in create mode
+  if (isCreateMode) {
+    const [materialsList, vehicleAttachmentTypesList] = await Promise.all([
+      apiCall(fetch, '/materials').catch(() => []),
+      apiCall(fetch, '/vehicleattachmenttypes').catch(() => [])
+    ]);
+    response.materials = materialsList || [];
+    response.vehicleAttachmentTypes = vehicleAttachmentTypesList || [];
+  } else {
+    response.materials = null;
+    response.vehicleAttachmentTypes = null;
+  }
 
   // If a changeId is provided (editing an existing pending create), fetch that change
   if (changeId && isCreateMode) {
@@ -66,11 +71,15 @@ export async function load({ fetch, params, url, parent }) {
   const session = parentData.session;
   response.session = session;
 
+  const userGrants = session?.user?.grants || [];
+  const hasEditGrant = userGrants.some(g => g.startsWith('wiki.'));
+
   const pendingData = await loadPendingChangesData(fetch, session?.user, {
     entity: 'Vehicle',
     entityId: response.object?.Id,
     changeId,
-    isAdmin: session?.user?.grants?.includes('wiki.approve') || false
+    isAdmin: userGrants.includes('wiki.approve'),
+    hasEditGrant
   });
 
   response.pendingChange = pendingData.pendingChange;

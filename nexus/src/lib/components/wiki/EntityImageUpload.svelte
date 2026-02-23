@@ -130,6 +130,13 @@
     }
   }
 
+  function handleKeydown(event) {
+    if (canUploadImage && (event.key === 'Enter' || event.key === ' ')) {
+      event.preventDefault();
+      showUploadDialog = true;
+    }
+  }
+
   function handleImageUploaded(event) {
     if (event.detail.linked) {
       // Linked images are already approved — show directly without pending overlay
@@ -148,12 +155,12 @@
   }
 </script>
 
-<!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
 <div
   class="entity-icon-wrapper"
   class:editable={canUploadImage}
   class:create-mode={isCreateMode && isEditMode}
   on:click={handleIconClick}
+  on:keydown={handleKeydown}
   role={canUploadImage ? 'button' : undefined}
   tabindex={canUploadImage ? 0 : undefined}
   title={canUploadImage ? 'Click to upload image' : (isCreateMode && isEditMode ? 'Image upload available after entity is approved' : '')}

@@ -73,8 +73,6 @@
 <svelte:body on:mousedown={handleMouseDownOutside} />
 <div bind:this={element} class="context-menu" style="left: {contextMenuPos.x}px; top: {contextMenuPos.y}px;" class:show={visible}>
   {#each menu as item}
-    <!-- svelte-ignore a11y-click-events-have-key-events -->
-    <!-- svelte-ignore a11y-no-static-element-interactions -->
     <button on:click={() => { visible = false; item.action(payload, contextMenuPos); }}>{item.label}</button>
   {/each}
 </div>

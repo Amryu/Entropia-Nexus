@@ -243,9 +243,7 @@
 {:else if loading}
   <div class="panel-loading">Loading orders...</div>
 {:else}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="orders-table" on:click|capture={handleTableClick}>
+  <div class="orders-table" role="presentation" on:click|capture={handleTableClick}>
     <FancyTable
       columns={columns}
       data={enrichedOrders}

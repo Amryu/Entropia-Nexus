@@ -75,8 +75,7 @@
       aria-label="Close navigation"
     />
 
-    <!-- svelte-ignore a11y-click-events-have-key-events -->
-    <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
+    <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-noninteractive-element-interactions -- aside used as dialog with role="dialog" and touch handlers -->
     <aside
       class="drawer drawer-{side}"
       transition:fly={{ x: side === 'left' ? -300 : 300, duration: 250 }}

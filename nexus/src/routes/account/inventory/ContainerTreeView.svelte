@@ -1,6 +1,7 @@
 <script>
   //@ts-nocheck
   import { createEventDispatcher } from 'svelte';
+  import { clickable } from '$lib/actions/clickable.js';
   import { formatPedRaw, formatMarkupValue } from '../../market/exchange/orderUtils';
 
   export let items = [];
@@ -170,11 +171,11 @@
   {:else}
     {#each flatRows as row (row.type === 'container' ? 'c:' + row.node.path : 'i:' + row.item.id)}
       {#if row.type === 'container'}
-        <!-- svelte-ignore a11y-click-events-have-key-events -->
         <div
           class="tree-row tree-container"
           class:expanded={expandedPaths.has(row.node.path)}
           on:click={() => editingContainerPath !== row.node.path && toggleExpand(row.node.path)}
+          use:clickable
         >
           <span class="tree-indent" style="width: {row.node.depth * 12}px"></span>
           <span class="tree-arrow">
@@ -186,7 +187,7 @@
           </span>
           <span class="tree-name">
             {#if editingContainerPath === row.node.path}
-              <!-- svelte-ignore a11y-autofocus -->
+              <!-- svelte-ignore a11y-autofocus -- intentional focus on inline edit activation -->
               <input
                 type="text"
                 class="container-name-input"
@@ -210,7 +211,6 @@
                 {customName || row.node.name}
               </span>
               {#if row.node.depth > 0}
-                <!-- svelte-ignore a11y-click-events-have-key-events -->
                 <span
                   class="rename-btn"
                   role="button"
@@ -232,10 +232,10 @@
           <span class="tree-col tree-col-count">{row.node.totalCount} {row.node.totalCount === 1 ? 'item' : 'items'}</span>
         </div>
       {:else}
-        <!-- svelte-ignore a11y-click-events-have-key-events -->
         <div
           class="tree-row tree-item"
           on:click={() => handleItemClick(row.item)}
+          use:clickable
         >
           <span class="tree-indent" style="width: {row.depth * 12}px"></span>
           <span class="tree-arrow"></span>
@@ -246,7 +246,7 @@
           <span class="tree-col tree-col-qty">{row.item.quantity?.toLocaleString() ?? '-'}</span>
           <span class="tree-col tree-col-mu">
             {#if editingMarkupId === row.item.item_id}
-              <!-- svelte-ignore a11y-autofocus -->
+              <!-- svelte-ignore a11y-autofocus -- intentional focus on inline edit activation -->
               <input
                 type="number"
                 class="mu-input"
@@ -260,13 +260,13 @@
                 placeholder={row.item._isAbsolute ? '+0' : '100%'}
               />
             {:else}
-              <!-- svelte-ignore a11y-click-events-have-key-events -->
               <span
                 class="mu-cell"
                 class:has-mu={row.item._markup != null}
                 class:has-market={row.item._markup == null && row.item._marketPrice != null}
                 on:click|stopPropagation={() => row.item.item_id > 0 && startMarkupEdit(row.item)}
                 title="Click to edit markup"
+                use:clickable
               >
                 {#if row.item._markup != null}
                   {row.item._isAbsolute ? formatMarkupValue(row.item._markup, true) : formatMarkupValue(row.item._markup, false)}

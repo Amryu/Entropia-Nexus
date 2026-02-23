@@ -27,6 +27,7 @@
     computeSkillDiff
   } from '$lib/utils/skillImportUtils.js';
   import { fetchExchangeWapByName, fetchInventoryMarkups } from '$lib/markupSources.js';
+  import { clickable } from '$lib/actions/clickable.js';
 
   export let data;
 
@@ -701,8 +702,7 @@
             >
               <span class="item-name">{skill.Name}</span>
               {#if skill.IsHidden}
-                <!-- svelte-ignore a11y-click-events-have-key-events -->
-                <span class="unlock-btn sidebar-unlock" role="button" tabindex="-1" title={val > 0 ? 'Lock skill' : 'Unlock skill'} class:unlocked={val > 0} on:click|stopPropagation={() => toggleSkillUnlock(skill.Name)}>
+                <span class="unlock-btn sidebar-unlock" role="button" tabindex="-1" title={val > 0 ? 'Lock skill' : 'Unlock skill'} class:unlocked={val > 0} on:click|stopPropagation={() => toggleSkillUnlock(skill.Name)} use:clickable={{ tabindex: -1 }}>
                   {#if val > 0}
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
                   {:else}
@@ -1354,8 +1354,7 @@
                   <span class="history-expand">{expandedImportId === imp.id ? '▼' : '▶'}</span>
                 </div>
                 {#if expandedImportId === imp.id && expandedDeltas.length > 0}
-                  <!-- svelte-ignore a11y-no-static-element-interactions -->
-                  <div class="history-deltas" on:click|stopPropagation on:keydown|stopPropagation>
+                  <div class="history-deltas" on:click|stopPropagation on:keydown|stopPropagation role="presentation">
                     {#each expandedDeltas as d}
                       {@const change = Number(d.new_value) - Number(d.old_value)}
                       <div class="delta-row">

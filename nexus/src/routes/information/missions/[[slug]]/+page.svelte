@@ -8,7 +8,7 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { onDestroy } from 'svelte';
-  import { encodeURIComponentSafe, getLatestPendingUpdate } from '$lib/util';
+  import { encodeURIComponentSafe, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
   import { getPlanetNavFilter } from '$lib/mapUtil';
   import { sanitizeHtml } from '$lib/sanitize';
 
@@ -38,6 +38,22 @@
   } from '$lib/stores/wikiEditState.js';
 
   export let data;
+
+  // Lazy-load edit dependencies when edit mode activates
+  let editDepsLoading = false;
+  $: if ($editMode && data.mobMaturities === null && !editDepsLoading) {
+    editDepsLoading = true;
+    loadEditDeps([
+      { key: 'mobMaturities', url: '/api/mobmaturities' },
+      { key: 'mobSpeciesList', url: '/api/mobspecies' },
+      { key: 'locations', url: '/api/locations' },
+      { key: 'itemsList', url: '/api/items?limit=5000' },
+      { key: 'events', url: '/api/events' }
+    ]).then(deps => {
+      data = { ...data, ...deps };
+      editDepsLoading = false;
+    });
+  }
 
   $: view = data.view || 'missions';
   $: isChainView = view === 'chains';
@@ -1050,6 +1066,7 @@
   {canCreateNew}
   {userPendingCreates}
   {userPendingUpdates}
+  {editDepsLoading}
 >
   <div slot="sidebar" class="missions-sidebar">
     <WikiNavigation

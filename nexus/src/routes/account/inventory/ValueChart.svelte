@@ -79,7 +79,7 @@
 
 {#if data.length >= 2}
   <div class="chart-wrapper">
-    <!-- svelte-ignore a11y-no-static-element-interactions -->
+    <!-- svelte-ignore a11y-no-static-element-interactions -- chart hover tooltip is presentational -->
     <svg
       viewBox="0 0 {WIDTH} {HEIGHT}"
       preserveAspectRatio="xMidYMid meet"

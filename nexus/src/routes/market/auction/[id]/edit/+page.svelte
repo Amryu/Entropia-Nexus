@@ -220,8 +220,7 @@
     </div>
 
     {#if showDeleteConfirm}
-      <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-      <div class="modal-overlay" on:click|self={() => showDeleteConfirm = false}>
+      <div class="modal-overlay" role="presentation" on:click|self={() => showDeleteConfirm = false}>
         <div class="confirm-dialog" role="dialog" aria-modal="true">
           <p class="confirm-message">Delete this draft auction?</p>
           <div class="confirm-actions">
@@ -233,8 +232,7 @@
     {/if}
 
     {#if showActivateConfirm}
-      <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-      <div class="modal-overlay" on:click|self={() => showActivateConfirm = false}>
+      <div class="modal-overlay" role="presentation" on:click|self={() => showActivateConfirm = false}>
         <div class="confirm-dialog" role="dialog" aria-modal="true">
           <p class="confirm-message">Are you sure you want to activate this auction?</p>
           <p class="confirm-warning">Once a bid is placed, the auction cannot be cancelled or edited. Make sure your pricing, duration, and item set are correct before proceeding.</p>

@@ -10,6 +10,7 @@
   // @ts-nocheck
   import { onMount } from 'svelte';
   import { clampDecimals } from '$lib/util';
+  import { clickable } from '$lib/actions/clickable.js';
 
   /** @type {object} Weapon entity */
   export let weapon = null;
@@ -101,9 +102,7 @@
   {#if !compact}
     <!-- Group 3: Reload/Uses toggle + Ammo -->
     <div class="economy-row last-row">
-      <!-- svelte-ignore a11y-click-events-have-key-events -->
-      <!-- svelte-ignore a11y-no-static-element-interactions -->
-      <div class="economy-item toggleable" on:click={toggleReloadUsesMin} title="Click to toggle between Reload and Uses/min">
+      <div class="economy-item toggleable" on:click={toggleReloadUsesMin} title="Click to toggle between Reload and Uses/min" use:clickable role="button" tabindex="0">
         {#if showReload}
           <span class="economy-label">
             Reload

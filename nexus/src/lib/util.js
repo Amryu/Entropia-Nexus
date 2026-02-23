@@ -464,75 +464,84 @@ export async function loadPendingChangesData(fetch, sessionUser, config) {
     pendingCreatesCount: 0
   };
 
-  if (!sessionUser) return result;
+  if (!sessionUser || !config.hasEditGrant) return result;
 
   const { entity, entityId, changeId, isAdmin } = config;
   const userId = sessionUser.id;
 
-  // API returns 200 with null instead of 404 to avoid console spam
-  if (changeId) {
+  // Helper to safely fetch a changes list endpoint
+  async function fetchChanges(url) {
     try {
-      const changeRes = await fetch(`/api/changes/${changeId}`);
-      if (changeRes.ok) {
-        const change = await changeRes.json();
-        if (change && (change.author_id === userId || isAdmin)) {
-          result.pendingChange = change;
-        }
-      }
-    } catch (err) {
-      // Expected when no change exists - silently ignore
+      const res = await fetch(url);
+      return res.ok ? (await res.json()) || [] : [];
+    } catch {
+      return [];
     }
   }
 
-  if (entityId && !result.pendingChange) {
-    try {
-      const changeRes = await fetch(
+  // Helper for the sequential changeId → entityId fallback lookup
+  async function lookupPendingChange() {
+    if (changeId) {
+      try {
+        const changeRes = await fetch(`/api/changes/${changeId}`);
+        if (changeRes.ok) {
+          const change = await changeRes.json();
+          if (change && (change.author_id === userId || isAdmin)) {
+            return change;
+          }
+        }
+      } catch {
+        // Expected when no change exists
+      }
+    }
+    if (entityId) {
+      const changes = await fetchChanges(
         `/api/changes?entity=${entity}&entityId=${entityId}&state=Pending,Draft`
       );
-      if (changeRes.ok) {
-        const changes = await changeRes.json();
-        if (changes && changes.length > 0) {
-          const sorted = changes.sort((a, b) =>
-            new Date(b.created_at) - new Date(a.created_at)
-          );
-          result.pendingChange = sorted[0];
-        }
+      if (changes.length > 0) {
+        return changes.sort((a, b) =>
+          new Date(b.created_at) - new Date(a.created_at)
+        )[0];
       }
-    } catch (err) {
-      // Expected when no pending changes exist - silently ignore
     }
+    return null;
   }
 
-  try {
-    const createRes = await fetch(
-      `/api/changes?entity=${entity}&type=Create&authorId=${userId}&state=Pending,Draft`
-    );
-    if (createRes.ok) {
-      const creates = await createRes.json();
-      result.userPendingCreates = creates || [];
-      result.pendingCreatesCount = creates?.length || 0;
-    }
-  } catch (err) {
-    // Expected when no creates exist - silently ignore
-  }
+  // Run all three lookups in parallel — creates/updates don't depend on the change lookup
+  const [pendingChange, creates, updates] = await Promise.all([
+    lookupPendingChange(),
+    fetchChanges(`/api/changes?entity=${entity}&type=Create&authorId=${userId}&state=Pending,Draft`),
+    fetchChanges(`/api/changes?entity=${entity}&type=Update&authorId=${userId}&state=Pending,Draft`)
+  ]);
 
-  try {
-    const updateRes = await fetch(
-      `/api/changes?entity=${entity}&type=Update&authorId=${userId}&state=Pending,Draft`
-    );
-    if (updateRes.ok) {
-      const updates = await updateRes.json();
-      result.userPendingUpdates = updates || [];
-    }
-  } catch (err) {
-    // Expected when no updates exist - silently ignore
-  }
+  result.pendingChange = pendingChange;
+  result.userPendingCreates = creates;
+  result.pendingCreatesCount = creates.length;
+  result.userPendingUpdates = updates;
 
   if (!isAdmin && result.pendingCreatesCount >= MAX_PENDING_CREATES) {
     result.canCreateNew = false;
   }
 
   return result;
+}
+
+/**
+ * Lazy-load edit dependencies client-side (called from +page.svelte when edit mode activates).
+ * @param {Array<{key: string, url: string}>} deps - Dependencies to fetch
+ * @returns {Promise<Record<string, any>>} Loaded data keyed by `key`
+ */
+export async function loadEditDeps(deps) {
+  const results = {};
+  await Promise.all(deps.map(async ({ key, url }) => {
+    try {
+      const res = await fetch(url);
+      results[key] = res.ok ? await res.json() : [];
+    } catch {
+      results[key] = [];
+    }
+  }));
+  return results;
 }
 
 export function getLatestPendingUpdate(changes, entityId) {

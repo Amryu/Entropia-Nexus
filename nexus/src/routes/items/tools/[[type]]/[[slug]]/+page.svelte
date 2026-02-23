@@ -12,7 +12,7 @@
   import '$lib/style.css';
   import { page } from '$app/stores';
   import { onMount, onDestroy } from 'svelte';
-  import { hasItemTag, encodeURIComponentSafe, clampDecimals, getTypeLink, getTimeString, getLatestPendingUpdate } from '$lib/util';
+  import { hasItemTag, encodeURIComponentSafe, clampDecimals, getTypeLink, getTimeString, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
 
   // Wiki components
@@ -23,6 +23,7 @@
   import InlineEdit from '$lib/components/wiki/InlineEdit.svelte';
   import RichTextEditor from '$lib/components/wiki/RichTextEditor.svelte';
   import SearchInput from '$lib/components/wiki/SearchInput.svelte';
+  import { clickable } from '$lib/actions/clickable.js';
 
   // Wiki edit state
   import {
@@ -50,6 +51,19 @@
   import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
 
   export let data;
+
+  // Lazy-load edit dependencies when edit mode activates
+  let editDepsLoading = false;
+  $: if ($editMode && data.effects === null && !editDepsLoading) {
+    editDepsLoading = true;
+    loadEditDeps([
+      { key: 'effects', url: '/api/effects' },
+      { key: 'professions', url: '/api/professions' }
+    ]).then(deps => {
+      data = { ...data, ...deps };
+      editDepsLoading = false;
+    });
+  }
 
   $: tool = data.object;
   $: user = data.session?.user;
@@ -597,6 +611,7 @@
   {canCreateNew}
   userPendingCreates={filteredPendingCreates}
   {userPendingUpdates}
+  {editDepsLoading}
 >
   {#if tool || isCreateMode}
     <!-- Pending Change Banner -->
@@ -743,9 +758,7 @@
             </div>
           {/if}
           {#if additional.type !== 'refiners' && additional.type !== 'misctools'}
-            <!-- svelte-ignore a11y-click-events-have-key-events -->
-            <!-- svelte-ignore a11y-no-static-element-interactions -->
-            <div class="stat-row toggleable" on:click={toggleReloadUses} title="Click to toggle between Reload and Uses/min">
+            <div class="stat-row toggleable" on:click={toggleReloadUses} title="Click to toggle between Reload and Uses/min" use:clickable role="button" tabindex="0">
               {#if showReloadEffective}
                 <span class="stat-label">Reload <span class="toggle-hint">⇄</span></span>
                 <span class="stat-value">{reload != null ? `${reload.toFixed(2)}s` : 'N/A'}</span>

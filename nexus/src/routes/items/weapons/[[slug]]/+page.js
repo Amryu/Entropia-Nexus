@@ -55,13 +55,18 @@ export async function load({ fetch, params, url, parent }) {
   response.allItems = items;
   response.layoutVariant = 'A';
 
-  // Fetch effects list and vehicle attachment types for edit mode dropdowns
-  const [effectsList, attachmentTypes] = await Promise.all([
-    apiCall(fetch, '/effects'),
-    apiCall(fetch, '/vehicleattachmenttypes')
-  ]);
-  response.effects = effectsList || [];
-  response.vehicleAttachmentTypes = attachmentTypes || [];
+  // Edit-mode dependencies: only load server-side in create mode
+  if (isCreateMode) {
+    const [effectsList, attachmentTypes] = await Promise.all([
+      apiCall(fetch, '/effects').catch(() => []),
+      apiCall(fetch, '/vehicleattachmenttypes').catch(() => [])
+    ]);
+    response.effects = effectsList || [];
+    response.vehicleAttachmentTypes = attachmentTypes || [];
+  } else {
+    response.effects = null;
+    response.vehicleAttachmentTypes = null;
+  }
 
   // If a changeId is provided (editing an existing pending create), fetch that change
   if (changeId && isCreateMode) {
@@ -69,9 +74,7 @@ export async function load({ fetch, params, url, parent }) {
       const changeRes = await fetch(`/api/changes/${changeId}`);
       if (changeRes.ok) {
         const change = await changeRes.json();
-        // Store the change data so the page can use it
         response.existingChange = change;
-        // Also set pendingChange so the page knows there's a pending change
         response.pendingChange = change;
       }
     } catch (e) {
@@ -83,11 +86,15 @@ export async function load({ fetch, params, url, parent }) {
   const session = parentData.session;
   response.session = session;
 
+  const userGrants = session?.user?.grants || [];
+  const hasEditGrant = userGrants.some(g => g.startsWith('wiki.'));
+
   const pendingData = await loadPendingChangesData(fetch, session?.user, {
     entity: 'Weapon',
     entityId: response.object?.Id,
     changeId,
-    isAdmin: session?.user?.grants?.includes('wiki.approve') || false
+    isAdmin: userGrants.includes('wiki.approve'),
+    hasEditGrant
   });
 
   response.pendingChange = pendingData.pendingChange;

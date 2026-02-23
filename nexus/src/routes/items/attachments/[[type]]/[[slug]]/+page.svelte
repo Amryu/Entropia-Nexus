@@ -10,7 +10,7 @@
   import '$lib/style.css';
   import { page } from '$app/stores';
   import { onMount, onDestroy } from 'svelte';
-  import { clampDecimals, encodeURIComponentSafe, getTypeLink, getLatestPendingUpdate } from '$lib/util';
+  import { clampDecimals, encodeURIComponentSafe, getTypeLink, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
 
   // Wiki components
@@ -46,6 +46,18 @@
   import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
 
   export let data;
+
+  // Lazy-load edit dependencies when edit mode activates
+  let editDepsLoading = false;
+  $: if ($editMode && data.effects === null && !editDepsLoading) {
+    editDepsLoading = true;
+    loadEditDeps([
+      { key: 'effects', url: '/api/effects' }
+    ]).then(deps => {
+      data = { ...data, ...deps };
+      editDepsLoading = false;
+    });
+  }
 
   $: attachment = data.object;
   $: user = data.session?.user;
@@ -528,6 +540,7 @@
   {canCreateNew}
   userPendingCreates={filteredPendingCreates}
   {userPendingUpdates}
+  {editDepsLoading}
 >
   {#if attachment || isCreateMode}
     <!-- Pending Change Banner -->

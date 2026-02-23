@@ -9,7 +9,7 @@
   import '$lib/style.css';
   import { page } from '$app/stores';
   import { onMount, onDestroy } from 'svelte';
-  import { clampDecimals, encodeURIComponentSafe, getItemLink, getLatestPendingUpdate } from '$lib/util';
+  import { clampDecimals, encodeURIComponentSafe, getItemLink, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
 
   // Wiki components
@@ -42,6 +42,18 @@
   import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
 
   export let data;
+
+  // Lazy-load edit dependencies when edit mode activates
+  let editDepsLoading = false;
+  $: if ($editMode && data.allItems === null && !editDepsLoading) {
+    editDepsLoading = true;
+    loadEditDeps([
+      { key: 'allItems', url: '/api/items' }
+    ]).then(deps => {
+      data = { ...data, ...deps };
+      editDepsLoading = false;
+    });
+  }
 
   $: strongbox = data.object;
   $: user = data.session?.user;
@@ -237,6 +249,7 @@
   {canCreateNew}
   {userPendingCreates}
   {userPendingUpdates}
+  {editDepsLoading}
 >
   <!-- Pending change banner -->
   {#if $existingPendingChange && !$editMode && !data.isCreateMode}

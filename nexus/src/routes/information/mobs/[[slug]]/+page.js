@@ -74,11 +74,15 @@ export async function load({ fetch, params, url, parent }) {
   const parentData = await parent();
   response.session = parentData.session;
 
+  const userGrants = parentData.session?.user?.grants || [];
+  const hasEditGrant = userGrants.some(g => g.startsWith('wiki.'));
+
   const pendingData = await loadPendingChangesData(fetch, parentData.session?.user, {
     entity: 'Mob',
     entityId: response.object?.Id,
     changeId,
-    isAdmin: parentData.session?.user?.grants?.includes('wiki.approve') || false
+    isAdmin: userGrants.includes('wiki.approve'),
+    hasEditGrant
   });
 
   response.pendingChange = pendingData.pendingChange;
@@ -87,40 +91,23 @@ export async function load({ fetch, params, url, parent }) {
   response.canCreateNew = pendingData.canCreateNew;
   response.pendingCreatesCount = pendingData.pendingCreatesCount;
 
-  // Fetch mob species for dropdown
-  try {
-    const speciesData = await apiCall(fetch, '/mobspecies');
+  // Edit-mode dependencies: only load server-side in create mode, otherwise lazy-loaded client-side
+  if (config.mode === 'create') {
+    const [speciesData, itemsData, planetsData, skillsData] = await Promise.all([
+      apiCall(fetch, '/mobspecies').catch(() => []),
+      apiCall(fetch, '/items?limit=5000').catch(() => []),
+      apiCall(fetch, '/planets').catch(() => []),
+      apiCall(fetch, '/skills').catch(() => [])
+    ]);
     response.speciesList = speciesData || [];
-  } catch (e) {
-    console.error('Failed to load mob species:', e);
-    response.speciesList = [];
-  }
-
-  // Fetch items list for loot autocomplete (in edit mode)
-  try {
-    const itemsData = await apiCall(fetch, '/items?limit=5000');
     response.itemsList = itemsData || [];
-  } catch (e) {
-    console.error('Failed to load items list:', e);
-    response.itemsList = [];
-  }
-
-  // Fetch planets list for planet dropdown
-  try {
-    const planetsData = await apiCall(fetch, '/planets');
     response.planetsList = planetsData || [];
-  } catch (e) {
-    console.error('Failed to load planets list:', e);
-    response.planetsList = [];
-  }
-
-  // Fetch skills data for codex calculator (HP increase, looter contributions)
-  try {
-    const skillsData = await apiCall(fetch, '/skills');
     response.skillsList = skillsData || [];
-  } catch (e) {
-    console.error('Failed to load skills list:', e);
-    response.skillsList = [];
+  } else {
+    response.speciesList = null;
+    response.itemsList = null;
+    response.planetsList = null;
+    response.skillsList = null;
   }
 
   // If we have a specific mob, resolve item links for loots

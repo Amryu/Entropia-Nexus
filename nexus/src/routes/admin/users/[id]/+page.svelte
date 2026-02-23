@@ -1095,9 +1095,7 @@
 
 <!-- Lock Dialog -->
 {#if showLockDialog}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="dialog-overlay" on:click={() => showLockDialog = false}>
+  <div class="dialog-overlay" role="presentation" on:click={() => showLockDialog = false}>
     <div class="dialog" on:click|stopPropagation>
       <h3>Lock User</h3>
       <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 16px;">
@@ -1131,9 +1129,7 @@
 
 <!-- Ban Dialog -->
 {#if showBanDialog}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="dialog-overlay" on:click={() => showBanDialog = false}>
+  <div class="dialog-overlay" role="presentation" on:click={() => showBanDialog = false}>
     <div class="dialog" on:click|stopPropagation>
       <h3>Ban User</h3>
       <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 16px;">

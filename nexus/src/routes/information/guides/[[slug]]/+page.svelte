@@ -546,11 +546,8 @@
 
 <!-- CREATE/EDIT DIALOG -->
 {#if showDialog}
-  <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
   <div class="dialog-overlay" role="dialog" on:click={closeDialog} on:keydown={(e) => e.key === 'Escape' && closeDialog()}>
-    <!-- svelte-ignore a11y-click-events-have-key-events -->
-    <!-- svelte-ignore a11y-no-static-element-interactions -->
-    <div class="dialog" on:click|stopPropagation>
+    <div class="dialog" role="presentation" on:click|stopPropagation>
       <h3 class="dialog-title">{dialogTitle}</h3>
 
       {#if dialogError}

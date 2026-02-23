@@ -420,9 +420,7 @@
 </div>
 
 {#if showLoadoutPicker}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="picker-backdrop" on:click={handleLoadoutPickerBackdrop}>
+  <div class="picker-backdrop" role="presentation" on:click={handleLoadoutPickerBackdrop}>
     <div class="picker-dialog" role="dialog" aria-modal="true" aria-label="Select Loadout">
       <div class="picker-header">
         <h3>Select Loadout</h3>

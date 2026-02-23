@@ -2432,9 +2432,7 @@
 {#if bpPickerMaterial}
   {@const bpOptions = getMaterialBlueprintOptions(bpPickerMaterial)}
   {@const selectedId = getSelectedBlueprintId(bpPickerMaterial) ?? bpOptions?.[0]?.Id}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="bp-picker-backdrop" on:click={closeBpPicker}></div>
+  <div class="bp-picker-backdrop" role="presentation" on:click={closeBpPicker}></div>
   <div class="bp-picker-popover" style="top: {bpPickerPos.top}px; left: {bpPickerPos.left}px;">
     <div class="bp-picker-header">Select Blueprint</div>
     {#each bpOptions || [] as bp}
@@ -2723,10 +2721,7 @@
 {/if}
 
 {#if showConditionInfoDialog}
-<!-- svelte-ignore a11y-click-events-have-key-events -->
-<!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
-<!-- svelte-ignore a11y-no-static-element-interactions -->
-<div class="dialog-backdrop" on:click={() => showConditionInfoDialog = false} on:keydown={(e) => e.key === 'Escape' && (showConditionInfoDialog = false)}>
+<div class="dialog-backdrop" role="presentation" on:click={() => showConditionInfoDialog = false} on:keydown={(e) => e.key === 'Escape' && (showConditionInfoDialog = false)}>
   <div class="dialog condition-info-dialog" on:click|stopPropagation role="dialog" aria-modal="true" aria-labelledby="condition-info-title">
     <div class="dialog-header">
       <h3 id="condition-info-title">Condition</h3>

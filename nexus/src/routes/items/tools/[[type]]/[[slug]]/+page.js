@@ -62,13 +62,18 @@ export async function load({ fetch, params, url, parent }) {
   // Set create mode flag
   response.isCreateMode = isCreateMode;
 
-  // Fetch effects list and professions for edit mode dropdowns
-  const [effectsList, professionsList] = await Promise.all([
-    apiCall(fetch, '/effects'),
-    apiCall(fetch, '/professions')
-  ]);
-  response.effects = effectsList || [];
-  response.professions = professionsList || [];
+  // Edit-mode dependencies: only load server-side in create mode
+  if (isCreateMode) {
+    const [effectsList, professionsList] = await Promise.all([
+      apiCall(fetch, '/effects').catch(() => []),
+      apiCall(fetch, '/professions').catch(() => [])
+    ]);
+    response.effects = effectsList || [];
+    response.professions = professionsList || [];
+  } else {
+    response.effects = null;
+    response.professions = null;
+  }
 
   // Get entity type for API calls
   const entityType = getEntityType(response.additional?.type);
@@ -91,12 +96,16 @@ export async function load({ fetch, params, url, parent }) {
   const session = parentData.session;
   response.session = session;
 
+  const userGrants = session?.user?.grants || [];
+  const hasEditGrant = userGrants.some(g => g.startsWith('wiki.'));
+
   const pendingData = entityType
     ? await loadPendingChangesData(fetch, session?.user, {
       entity: entityType,
       entityId: response.object?.Id,
       changeId,
-      isAdmin: session?.user?.grants?.includes('wiki.approve') || false
+      isAdmin: userGrants.includes('wiki.approve'),
+      hasEditGrant
     })
     : {
       pendingChange: null,

@@ -31,9 +31,7 @@
 <svelte:window on:keydown={handleKeydown} />
 
 {#if show}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="modal-backdrop" on:click={handleBackdropClick}>
+  <div class="modal-backdrop" role="presentation" on:click={handleBackdropClick}>
     <div class="modal">
       <div class="modal-header">
         <h3>{title}</h3>

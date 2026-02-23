@@ -29,7 +29,7 @@
   import '$lib/style.css';
   import { page } from '$app/stores';
   import { onMount, onDestroy } from 'svelte';
-  import { encodeURIComponentSafe, clampDecimals, getTypeLink, getItemLink, getLatestPendingUpdate, hasItemTag } from '$lib/util';
+  import { encodeURIComponentSafe, clampDecimals, getTypeLink, getItemLink, getLatestPendingUpdate, hasItemTag, loadEditDeps } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
   import { CONDITION_TYPES } from '$lib/common/itemTypes.js';
 
@@ -67,6 +67,24 @@
   } from '$lib/stores/wikiEditState.js';
 
   export let data;
+
+  // Lazy-load edit dependencies when edit mode activates
+  let editDepsLoading = false;
+  $: if ($editMode && data.blueprintbooks === null && !editDepsLoading) {
+    editDepsLoading = true;
+    loadEditDeps([
+      { key: 'blueprintbooks', url: '/api/blueprintbooks' },
+      { key: 'professions', url: '/api/professions' },
+      { key: 'productItems', url: '/api/items' },
+      { key: 'materials', url: '/api/materials' },
+      { key: 'weaponItems', url: '/api/weapons' }
+    ]).then(deps => {
+      deps.professions = (deps.professions || []).filter(p => p.Category?.Name === 'Manufacturing');
+      deps.productItems = (deps.productItems || []).filter(i => i.Properties?.Type !== 'Blueprint' && i.Properties?.Type !== 'Pet');
+      data = { ...data, ...deps };
+      editDepsLoading = false;
+    });
+  }
 
   const craftDuration = 5; // seconds per craft cycle
 
@@ -589,6 +607,7 @@
   {canCreateNew}
   {userPendingCreates}
   {userPendingUpdates}
+  {editDepsLoading}
 >
   {#if activeEntity || isCreateMode}
     <!-- Pending Change Banner -->

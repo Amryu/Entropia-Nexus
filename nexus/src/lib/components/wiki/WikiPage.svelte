@@ -81,6 +81,9 @@
   /** @type {string} Optional CSS class added to the root .wiki-page element for scoping */
   export let pageClass = '';
 
+  /** @type {boolean} Whether edit dependencies are currently being loaded */
+  export let editDepsLoading = false;
+
   // Mobile drawer state - can be bound from parent
   export let drawerOpen = false;
 
@@ -434,8 +437,7 @@
                   {/if}
                 </button>
                 {#if createDropdownOpen}
-                  <!-- svelte-ignore a11y-no-static-element-interactions -->
-                  <div class="create-dropdown-backdrop" on:click={closeCreateDropdown}></div>
+                  <div class="create-dropdown-backdrop" on:click={closeCreateDropdown} on:keydown={(e) => e.key === 'Escape' && closeCreateDropdown()} role="presentation"></div>
                   <div class="create-dropdown" role="menu" on:keydown={(e) => e.key === 'Escape' && closeCreateDropdown()}>
                     {#each createCategories as category}
                       <button
@@ -483,6 +485,12 @@
 
       <!-- Main Content Slot -->
       <div class="content-body" class:editing={$editMode}>
+        {#if editDepsLoading}
+          <div class="edit-deps-loading">
+            <div class="edit-deps-spinner"></div>
+            <span>Loading editor...</span>
+          </div>
+        {/if}
         <slot {entity} {user} {isMobile} {openDrawer} />
       </div>
     </main>
@@ -592,6 +600,29 @@
     background-color: var(--primary-color);
     color: var(--text-color);
     overflow-x: hidden;
+  }
+
+  .edit-deps-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    padding: 2rem;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+  }
+
+  .edit-deps-spinner {
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--border-color);
+    border-top-color: var(--accent-color);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
   }
 
   .wiki-layout {

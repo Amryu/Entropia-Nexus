@@ -1,6 +1,7 @@
 <script>
   // @ts-nocheck
   import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
+  import { clickable } from '$lib/actions/clickable.js';
 
   /**
    * FancyTable - A modern table component with virtualization and lazy loading
@@ -1044,14 +1045,13 @@
   <div class="table-header" class:sticky={stickyHeader} class:horizontal-scroll={horizontalScroll} bind:this={headerEl}>
     <div class="header-row" style="grid-template-columns: {gridTemplateColumns};">
       {#each columns as column}
-        <!-- svelte-ignore a11y-click-events-have-key-events -->
-        <!-- svelte-ignore a11y-no-static-element-interactions -->
         <div
           class="header-cell"
           class:sortable={sortable && column.sortable !== false}
           class:sorted={sortColumn === column.key}
           class:hide-on-mobile={column.hideOnMobile}
           class:hide-on-desktop={column.hideOnDesktop}
+          use:clickable
           on:click={() => handleSort(column)}
         >
           {column.header}
@@ -1101,18 +1101,18 @@
     {:else}
       <div class="virtual-container" style="height: {virtualContainerHeight}px;">
         {#each visibleRows as { row, index, top } (index)}
-          <!-- svelte-ignore a11y-click-events-have-key-events -->
-          <!-- svelte-ignore a11y-no-static-element-interactions -->
-          <!-- svelte-ignore a11y-mouse-events-have-key-events -->
           <div
             class="table-row {rowClass ? (rowClass(row) || '') : ''}"
             class:even={index % 2 === 0}
             class:odd={index % 2 === 1}
             class:last-row={index === totalCount - 1}
             style="top: {top}px; height: {effectiveRowHeight}px; grid-template-columns: {gridTemplateColumns};"
+            use:clickable
             on:click={() => handleRowClick(row, index)}
             on:mouseover={() => handleRowHover(row, index)}
+            on:focus={() => handleRowHover(row, index)}
             on:mouseout={() => handleRowHover(null, null)}
+            on:blur={() => handleRowHover(null, null)}
           >
             {#each columns as column}
               <div class="table-cell {getCellClass(row, column)}" class:hide-on-mobile={column.hideOnMobile}

@@ -192,8 +192,7 @@
 {/if}
 
 {#if confirmAction}
-  <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-  <div class="modal-overlay" on:click|self={() => confirmAction = null}>
+  <div class="modal-overlay" role="presentation" on:click|self={() => confirmAction = null}>
     <div class="confirm-dialog" role="dialog" aria-modal="true">
       {#if confirmAction === 'bid'}
         <p class="confirm-message">Place a bid of <strong>{confirmBidAmount.toFixed(2)} PED</strong> on this auction?</p>

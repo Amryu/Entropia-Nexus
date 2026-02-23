@@ -10,7 +10,7 @@
   import '$lib/style.css';
   import { page } from '$app/stores';
   import { onMount, onDestroy } from 'svelte';
-  import { clampDecimals, encodeURIComponentSafe, getTypeLink, getLatestPendingUpdate } from '$lib/util';
+  import { clampDecimals, encodeURIComponentSafe, getTypeLink, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
 
   // Wiki components
@@ -44,6 +44,19 @@
   } from '$lib/stores/wikiEditState';
 
   export let data;
+
+  // Lazy-load edit dependencies when edit mode activates
+  let editDepsLoading = false;
+  $: if ($editMode && data.materials === null && !editDepsLoading) {
+    editDepsLoading = true;
+    loadEditDeps([
+      { key: 'materials', url: '/api/materials' },
+      { key: 'vehicleAttachmentTypes', url: '/api/vehicleattachmenttypes' }
+    ]).then(deps => {
+      data = { ...data, ...deps };
+      editDepsLoading = false;
+    });
+  }
 
   $: vehicle = data.object;
   $: user = data.session?.user;
@@ -247,6 +260,7 @@
   {canCreateNew}
   {userPendingCreates}
   {userPendingUpdates}
+  {editDepsLoading}
 >
   {#if activeVehicle || isCreateMode}
     <!-- Pending Change Banner -->

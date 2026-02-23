@@ -123,8 +123,6 @@
 <!-- Component for individual category items -->
 {#if category}
   <div class="category-item" style="padding-left: {category.level * 8}px">
-    <!-- svelte-ignore a11y-click-events-have-key-events -->
-    <!-- svelte-ignore a11y-no-static-element-interactions -->
     <div
       class="category-header clickable {selectedPath === category.path.map(formatCategoryName).join(' > ') ? 'selected' : ''}"
       on:click={() => handleCategorySelect(category)}
@@ -138,8 +136,6 @@
       tabindex="0"
     >
       {#if category.children.length > 0}
-        <!-- svelte-ignore a11y-click-events-have-key-events -->
-        <!-- svelte-ignore a11y-no-static-element-interactions -->
         <span
           class="expand-toggle {expandedNodes.has(category.id) ? 'expanded' : ''}"
           on:click|stopPropagation={() => toggleExpanded(category.id, category)}

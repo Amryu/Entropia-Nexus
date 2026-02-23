@@ -33,6 +33,7 @@
   import { createEventDispatcher, onMount, onDestroy, tick } from 'svelte';
   import { browser } from '$app/environment';
   import { scoreSearchResult } from '$lib/search.js';
+  import { clickable } from '$lib/actions/clickable.js';
 
   /** @type {string} Current value (displayed in input) */
   export let value = '';
@@ -431,11 +432,10 @@
         <div class="search-status">{emptyMessage}</div>
       {:else}
         {#each results as result, resultIndex}
-          <!-- svelte-ignore a11y-click-events-have-key-events -->
-          <!-- svelte-ignore a11y-no-static-element-interactions -->
           <div
             class="search-result"
             class:highlighted={resultIndex === highlightedIndex}
+            use:clickable
             on:click={() => selectResult(result)}
             on:mouseenter={() => highlightedIndex = resultIndex}
           >

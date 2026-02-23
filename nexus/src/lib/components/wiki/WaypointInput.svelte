@@ -29,6 +29,7 @@
   // @ts-nocheck
   import { createEventDispatcher, onMount, tick } from 'svelte';
   import { browser } from '$app/environment';
+  import { clickable } from '$lib/actions/clickable.js';
 
   const dispatch = createEventDispatcher();
 
@@ -356,13 +357,14 @@
           {#if showPlanetDropdown && filteredPlanets.length > 0}
             <div class="planet-dropdown">
               {#each filteredPlanets as planet, idx}
-                <!-- svelte-ignore a11y-click-events-have-key-events -->
-                <!-- svelte-ignore a11y-no-static-element-interactions -->
                 <div
                   class="planet-option"
                   class:highlighted={idx === highlightedPlanetIndex}
                   on:mousedown|preventDefault={() => selectPlanet(planet)}
                   on:mouseenter={() => highlightedPlanetIndex = idx}
+                  use:clickable
+                  role="button"
+                  tabindex="0"
                 >
                   {planet.Name}
                 </div>

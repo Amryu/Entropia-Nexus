@@ -62,9 +62,7 @@
       {/if}
     </div>
 
-    <!-- svelte-ignore a11y-click-events-have-key-events -->
-    <!-- svelte-ignore a11y-no-static-element-interactions -->
-    <div class="section-actions" on:click|stopPropagation>
+    <div class="section-actions" role="presentation" on:click|stopPropagation>
       <slot name="actions" />
     </div>
 

@@ -45,24 +45,29 @@ export async function load({ fetch, params, url, parent }) {
   // Set create mode flag
   response.isCreateMode = isCreateMode;
 
-  // Fetch dependent data for edit mode dropdowns
-  const [blueprintbooksList, professionsList, itemsList, materialsList, weaponsList] = await Promise.all([
-    apiCall(fetch, '/blueprintbooks'),
-    apiCall(fetch, '/professions'),
-    apiCall(fetch, '/items'),
-    apiCall(fetch, '/materials'),
-    apiCall(fetch, '/weapons')
-  ]);
-
-  // Filter professions to only Manufacturing category
-  response.blueprintbooks = blueprintbooksList || [];
-  response.professions = (professionsList || []).filter(p => p.Category?.Name === 'Manufacturing');
-  // Filter items to exclude Blueprints and Pets (they can't be products)
-  response.productItems = (itemsList || []).filter(i =>
-    i.Properties?.Type !== 'Blueprint' && i.Properties?.Type !== 'Pet'
-  );
-  response.materials = materialsList || [];
-  response.weaponItems = weaponsList || [];
+  // Edit-mode dependencies: only load server-side in create mode
+  if (isCreateMode) {
+    const [blueprintbooksList, professionsList, itemsList, materialsList, weaponsList] = await Promise.all([
+      apiCall(fetch, '/blueprintbooks').catch(() => []),
+      apiCall(fetch, '/professions').catch(() => []),
+      apiCall(fetch, '/items').catch(() => []),
+      apiCall(fetch, '/materials').catch(() => []),
+      apiCall(fetch, '/weapons').catch(() => [])
+    ]);
+    response.blueprintbooks = blueprintbooksList || [];
+    response.professions = (professionsList || []).filter(p => p.Category?.Name === 'Manufacturing');
+    response.productItems = (itemsList || []).filter(i =>
+      i.Properties?.Type !== 'Blueprint' && i.Properties?.Type !== 'Pet'
+    );
+    response.materials = materialsList || [];
+    response.weaponItems = weaponsList || [];
+  } else {
+    response.blueprintbooks = null;
+    response.professions = null;
+    response.productItems = null;
+    response.materials = null;
+    response.weaponItems = null;
+  }
 
   // If a changeId is provided (editing an existing pending create), fetch that change
   if (changeId && isCreateMode) {
@@ -82,11 +87,15 @@ export async function load({ fetch, params, url, parent }) {
   const session = parentData.session;
   response.session = session;
 
+  const userGrants = session?.user?.grants || [];
+  const hasEditGrant = userGrants.some(g => g.startsWith('wiki.'));
+
   const pendingData = await loadPendingChangesData(fetch, session?.user, {
     entity: 'Blueprint',
     entityId: response.object?.Id,
     changeId,
-    isAdmin: session?.user?.grants?.includes('wiki.approve') || false
+    isAdmin: userGrants.includes('wiki.approve'),
+    hasEditGrant
   });
 
   response.pendingChange = pendingData.pendingChange;

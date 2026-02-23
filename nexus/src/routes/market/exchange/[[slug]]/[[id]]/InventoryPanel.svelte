@@ -344,9 +344,7 @@
 {:else if loading}
   <div class="panel-loading">Loading inventory...</div>
 {:else}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="inventory-table" on:click|capture={handleTableClick}>
+  <div class="inventory-table" role="presentation" on:click|capture={handleTableClick}>
     <FancyTable
       columns={columns}
       data={sortedInventory}

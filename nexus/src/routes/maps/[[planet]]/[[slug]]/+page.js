@@ -152,12 +152,17 @@ export async function load({ fetch, params, url, parent }) {
   const entityId = entityType === 'Apartment' && Number.isFinite(numericEntityId)
     ? numericEntityId - 300000
     : rawEntityId;
+  const userGrants = session?.user?.grants || [];
+  const hasEditGrant = userGrants.some(g => g.startsWith('wiki.'));
+  const isAdmin = userGrants.includes('wiki.approve');
+
   const pendingData = entityType
     ? await loadPendingChangesData(fetch, session?.user, {
       entity: entityType,
       entityId,
       changeId,
-      isAdmin: session?.user?.grants?.includes('wiki.approve') || false
+      isAdmin,
+      hasEditGrant
     })
     : null;
 
@@ -167,19 +172,22 @@ export async function load({ fetch, params, url, parent }) {
         entity: 'Location',
         entityId: null,
         changeId: null,
-        isAdmin: session.user?.grants?.includes('wiki.approve') || false
+        isAdmin,
+        hasEditGrant
       }),
       loadPendingChangesData(fetch, session.user, {
         entity: 'Area',
         entityId: null,
         changeId: null,
-        isAdmin: session.user?.grants?.includes('wiki.approve') || false
+        isAdmin,
+        hasEditGrant
       }),
       loadPendingChangesData(fetch, session.user, {
         entity: 'Apartment',
         entityId: null,
         changeId: null,
-        isAdmin: session.user?.grants?.includes('wiki.approve') || false
+        isAdmin,
+        hasEditGrant
       })
     ])
     : [{}, {}, {}];
@@ -204,15 +212,19 @@ export async function load({ fetch, params, url, parent }) {
     (areaPending?.pendingCreatesCount || 0) +
     (apartmentPending?.pendingCreatesCount || 0);
   response.pendingCreatesCount = totalPendingCreates;
-  response.canCreateNew = session?.user?.grants?.includes('wiki.approve') ? true : totalPendingCreates < MAX_PENDING_CREATES;
+  response.canCreateNew = isAdmin ? true : totalPendingCreates < MAX_PENDING_CREATES;
 
-  // Load ALL pending changes for this planet (any author) — for map editor overlay
-  try {
-    const allPendingRes = await fetch(
-      `/api/changes?entity=Location,Area&state=Pending,Draft&planet=${encodeURIComponent(planet.Name)}&limit=100`
-    );
-    response.planetPendingChanges = allPendingRes.ok ? await allPendingRes.json() : [];
-  } catch {
+  // Load ALL pending changes for this planet (any author) — for map editor overlay (editors only)
+  if (hasEditGrant) {
+    try {
+      const allPendingRes = await fetch(
+        `/api/changes?entity=Location,Area&state=Pending,Draft&planet=${encodeURIComponent(planet.Name)}&limit=100`
+      );
+      response.planetPendingChanges = allPendingRes.ok ? await allPendingRes.json() : [];
+    } catch {
+      response.planetPendingChanges = [];
+    }
+  } else {
     response.planetPendingChanges = [];
   }
 

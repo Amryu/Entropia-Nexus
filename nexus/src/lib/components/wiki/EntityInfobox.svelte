@@ -133,7 +133,6 @@
 </script>
 
 <div class="entity-infobox" class:compact class:floating={variant === 'floating'} class:card={variant === 'card'}>
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
   <div
     class="infobox-icon"
     class:editable={canUpload}

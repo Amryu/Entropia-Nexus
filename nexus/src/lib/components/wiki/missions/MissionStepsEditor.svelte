@@ -935,10 +935,8 @@
   {@const { stepIndex, objIndex, mobIndex } = openMaturityDialog}
   {@const dialogMobId = ensureArray(getObjectivePayload(stepIndex, objIndex).mobs)[mobIndex]?.mobId}
   {@const maturitiesForMob = getMaturitiesForMob(dialogMobId)}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="dialog-overlay" on:click={closeDialog}>
-    <div class="maturity-dialog" on:click|stopPropagation>
+  <div class="dialog-overlay" role="presentation" on:click={closeDialog}>
+    <div class="maturity-dialog" role="dialog" on:click|stopPropagation>
       <div class="dialog-header">
         <h3>Configure Maturities: {getMobName(dialogMobId)}</h3>
         <button type="button" class="btn-icon" on:click={closeDialog}>×</button>

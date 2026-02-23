@@ -343,8 +343,7 @@
 <svelte:window on:keydown={handleKeydown} />
 
 {#if open}
-  <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-  <div class="dialog-backdrop" on:click={handleBackdropClick}>
+  <div class="dialog-backdrop" role="presentation" on:click={handleBackdropClick}>
     <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
       <div class="dialog-header">
         <h2 id="dialog-title">{step === 'select' && mode === 'existing' ? 'Link Existing Image' : 'Upload Image'}</h2>
@@ -411,7 +410,6 @@
               {#if searchResults.length > 0}
                 <div class="search-results">
                   {#each searchResults as result}
-                    <!-- svelte-ignore a11y-click-events-have-key-events -->
                     <div
                       class="search-result"
                       class:selected={selectedSource?.entityId === result.entityId}

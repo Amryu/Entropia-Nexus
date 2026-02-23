@@ -40,13 +40,18 @@ export async function load({ fetch, params, url, parent }) {
   // Set create mode flag
   response.isCreateMode = isCreateMode;
 
-  // Fetch effects and equipsets for edit mode
-  const [effectsList, equipsetsList] = await Promise.all([
-    apiCall(fetch, '/effects'),
-    apiCall(fetch, '/equipsets')
-  ]);
-  response.effects = effectsList || [];
-  response.equipsets = equipsetsList || [];
+  // Edit-mode dependencies: only load server-side in create mode
+  if (isCreateMode) {
+    const [effectsList, equipsetsList] = await Promise.all([
+      apiCall(fetch, '/effects').catch(() => []),
+      apiCall(fetch, '/equipsets').catch(() => [])
+    ]);
+    response.effects = effectsList || [];
+    response.equipsets = equipsetsList || [];
+  } else {
+    response.effects = null;
+    response.equipsets = null;
+  }
 
   // If a changeId is provided (editing an existing pending create), fetch that change
   if (changeId && isCreateMode) {
@@ -66,11 +71,15 @@ export async function load({ fetch, params, url, parent }) {
   const session = parentData.session;
   response.session = session;
 
+  const userGrants = session?.user?.grants || [];
+  const hasEditGrant = userGrants.some(g => g.startsWith('wiki.'));
+
   const pendingData = await loadPendingChangesData(fetch, session?.user, {
     entity: 'Clothing',
     entityId: response.object?.Id,
     changeId,
-    isAdmin: session?.user?.grants?.includes('wiki.approve') || false
+    isAdmin: userGrants.includes('wiki.approve'),
+    hasEditGrant
   });
 
   response.pendingChange = pendingData.pendingChange;

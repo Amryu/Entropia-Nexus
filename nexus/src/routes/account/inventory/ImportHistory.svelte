@@ -4,6 +4,7 @@
   import FancyTable from '$lib/components/FancyTable.svelte';
   import ValueChart from './ValueChart.svelte';
   import { formatPedRaw } from '../../market/exchange/orderUtils';
+  import { clickable } from '$lib/actions/clickable.js';
 
   const dispatch = createEventDispatcher();
 
@@ -114,10 +115,8 @@
   loadData();
 </script>
 
-<!-- svelte-ignore a11y-click-events-have-key-events -->
-<!-- svelte-ignore a11y-no-static-element-interactions -->
-<div class="modal-overlay" on:click|self={handleClose}>
-  <div class="history-modal">
+<div class="modal-overlay" role="presentation" on:click|self={handleClose} on:keydown={(e) => e.key === 'Escape' && handleClose()}>
+  <div class="history-modal" role="dialog" aria-modal="true" aria-label="Import History">
     <div class="history-header">
       <h2>Import History</h2>
       <button class="close-btn" on:click={handleClose}>&times;</button>
@@ -133,7 +132,7 @@
       <div class="import-list">
         {#each imports as imp (imp.id)}
           <div class="import-row" class:expanded={expandedId === imp.id}>
-            <div class="import-summary" on:click={() => toggleExpand(imp)}>
+            <div class="import-summary" use:clickable on:click={() => toggleExpand(imp)}>
               <div class="import-date">{formatDate(imp.imported_at)}</div>
               <div class="import-stats">
                 <span>{imp.item_count} items</span>

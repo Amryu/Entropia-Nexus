@@ -178,9 +178,7 @@
 
 <div class="admin-layout">
   <!-- Mobile overlay -->
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="sidebar-overlay" class:open={sidebarOpen} on:click={closeSidebar}></div>
+  <div class="sidebar-overlay" role="presentation" class:open={sidebarOpen} on:click={closeSidebar}></div>
 
   <nav class="admin-sidebar" class:open={sidebarOpen}>
     <div class="sidebar-header">

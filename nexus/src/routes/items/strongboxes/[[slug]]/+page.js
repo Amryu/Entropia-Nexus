@@ -39,10 +39,8 @@ export async function load({ fetch, params, url, parent }) {
   // Set create mode flag
   response.isCreateMode = isCreateMode;
 
-  // Fetch all items for loot selection dropdown
-  // Note: This fetches a comprehensive item list - may want to optimize for large datasets
-  const allItemsList = await apiCall(fetch, '/items');
-  response.allItems = allItemsList || [];
+  // Edit-mode dependency: only load server-side in create mode
+  response.allItems = isCreateMode ? ((await apiCall(fetch, '/items').catch(() => [])) || []) : null;
 
   // If a changeId is provided (editing an existing pending create), fetch that change
   if (changeId && isCreateMode) {
@@ -62,11 +60,15 @@ export async function load({ fetch, params, url, parent }) {
   const session = parentData.session;
   response.session = session;
 
+  const userGrants = session?.user?.grants || [];
+  const hasEditGrant = userGrants.some(g => g.startsWith('wiki.'));
+
   const pendingData = await loadPendingChangesData(fetch, session?.user, {
     entity: 'Strongbox',
     entityId: response.object?.Id,
     changeId,
-    isAdmin: session?.user?.grants?.includes('wiki.approve') || false
+    isAdmin: userGrants.includes('wiki.approve'),
+    hasEditGrant
   });
 
   response.pendingChange = pendingData.pendingChange;

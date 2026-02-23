@@ -5,6 +5,7 @@
   import { onMount } from 'svelte';
   import { apiCall, getTypeName, getTypeLink } from '$lib/util.js';
   import ChangeDataViewer from '$lib/components/ChangeDataViewer.svelte';
+  import { clickable } from '$lib/actions/clickable.js';
 
   $: entityType = $page.params.entityType;
   $: entityId = $page.params.entityId;
@@ -512,9 +513,7 @@
           {/if}
 
           {#each changes as change}
-            <!-- svelte-ignore a11y-click-events-have-key-events -->
-            <!-- svelte-ignore a11y-no-static-element-interactions -->
-            <div class="timeline-item" on:click={() => viewChange(change.id)}>
+            <div class="timeline-item" use:clickable on:click={() => viewChange(change.id)}>
               <div class="timeline-marker change"></div>
               <div class="timeline-content">
                 <div class="timeline-title">

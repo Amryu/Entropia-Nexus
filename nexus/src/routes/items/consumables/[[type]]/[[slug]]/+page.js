@@ -59,15 +59,21 @@ export async function load({ fetch, params, url, parent }) {
   // Set create mode flag
   response.isCreateMode = isCreateMode;
 
-  // Fetch effects (for stimulants), mobs and professions (for capsules)
-  const [effectsList, mobsList, professionsList] = await Promise.all([
-    apiCall(fetch, '/effects'),
-    apiCall(fetch, '/mobs'),
-    apiCall(fetch, '/professions')
-  ]);
-  response.effects = effectsList || [];
-  response.mobs = mobsList || [];
-  response.professions = professionsList || [];
+  // Edit-mode dependencies: only load server-side in create mode
+  if (isCreateMode) {
+    const [effectsList, mobsList, professionsList] = await Promise.all([
+      apiCall(fetch, '/effects').catch(() => []),
+      apiCall(fetch, '/mobs').catch(() => []),
+      apiCall(fetch, '/professions').catch(() => [])
+    ]);
+    response.effects = effectsList || [];
+    response.mobs = mobsList || [];
+    response.professions = professionsList || [];
+  } else {
+    response.effects = null;
+    response.mobs = null;
+    response.professions = null;
+  }
 
   // Get entity type for API calls
   const entityType = getEntityType(response.additional?.type);
@@ -90,12 +96,16 @@ export async function load({ fetch, params, url, parent }) {
   const session = parentData.session;
   response.session = session;
 
+  const userGrants = session?.user?.grants || [];
+  const hasEditGrant = userGrants.some(g => g.startsWith('wiki.'));
+
   const pendingData = entityType
     ? await loadPendingChangesData(fetch, session?.user, {
       entity: entityType,
       entityId: response.object?.Id,
       changeId,
-      isAdmin: session?.user?.grants?.includes('wiki.approve') || false
+      isAdmin: userGrants.includes('wiki.approve'),
+      hasEditGrant
     })
     : {
       pendingChange: null,

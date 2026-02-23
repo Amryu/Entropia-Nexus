@@ -113,9 +113,7 @@
 <svelte:window on:keydown={handleKeydown} />
 
 {#if show}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="dialog-overlay" on:click={close}>
+  <div class="dialog-overlay" role="presentation" on:click={close}>
     <div class="dialog" on:click|stopPropagation>
       <div class="dialog-header">
         <h3>{title}</h3>

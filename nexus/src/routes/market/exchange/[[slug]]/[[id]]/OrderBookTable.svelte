@@ -160,9 +160,7 @@
   }
 </script>
 
-<!-- svelte-ignore a11y-click-events-have-key-events -->
-<!-- svelte-ignore a11y-no-static-element-interactions -->
-<div class="order-book-table" on:click|capture={handleTableClick}>
+<div class="order-book-table" role="presentation" on:click|capture={handleTableClick}>
   <div class="table-header">
     <h3 class="table-title {side}">{side === 'buy' ? 'Buy' : 'Sell'} Orders</h3>
     {#if loading}

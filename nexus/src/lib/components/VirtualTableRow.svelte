@@ -109,8 +109,7 @@
 
 {#if typeof window !== 'undefined'}
 	{#each visible as row, rowIndex (row.index)}
-	<!-- svelte-ignore a11y-mouse-events-have-key-events -->
-	<tr on:click={() => dispatch('rowClick', row)} on:mouseover={() => dispatch('rowHover', row)} on:mouseout={() => dispatch('rowHover', null)} style={row.data.trStyle ?? ''}>
+	<tr on:click={() => dispatch('rowClick', row)} on:mouseover={() => dispatch('rowHover', row)} on:focus={() => dispatch('rowHover', row)} on:mouseout={() => dispatch('rowHover', null)} on:blur={() => dispatch('rowHover', null)} style={row.data.trStyle ?? ''}>
 		<slot item={row.data} index={rowIndex + start}>Missing template</slot>
 	</tr>
 	{/each}

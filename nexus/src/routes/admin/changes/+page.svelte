@@ -4,6 +4,7 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { encodeURIComponentSafe } from '$lib/util';
+  import { clickable } from '$lib/actions/clickable.js';
 
   let changes = [];
   let total = 0;
@@ -666,9 +667,7 @@
     <!-- Mobile card view -->
     <div class="mobile-cards">
       {#each changes as change}
-        <!-- svelte-ignore a11y-click-events-have-key-events -->
-        <!-- svelte-ignore a11y-no-static-element-interactions -->
-        <div class="mobile-card" on:click={() => goto(`/admin/changes/${change.id}`)}>
+        <div class="mobile-card" use:clickable on:click={() => goto(`/admin/changes/${change.id}`)}>
           <div class="mobile-card-header">
             <div class="mobile-card-title">
               <div class="entity-name">{change.entityName}</div>

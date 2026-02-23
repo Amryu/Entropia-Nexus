@@ -112,9 +112,7 @@
 </script>
 
 {#if open}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="dialog-backdrop" on:click={handleBackdropClick} on:keydown={handleKeydown}>
+  <div class="dialog-backdrop" role="presentation" on:click={handleBackdropClick} on:keydown={handleKeydown}>
     <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="owner-dialog-title">
       <div class="dialog-header">
         <h3 id="owner-dialog-title">Assign Shop Owner</h3>

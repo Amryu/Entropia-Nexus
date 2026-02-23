@@ -16,7 +16,7 @@
   import '$lib/style.css';
   import { page } from '$app/stores';
   import { onMount, onDestroy } from 'svelte';
-  import { encodeURIComponentSafe, clampDecimals, hasItemTag, groupBy, getLatestPendingUpdate } from '$lib/util';
+  import { encodeURIComponentSafe, clampDecimals, hasItemTag, groupBy, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
 
   // Wiki components
@@ -56,6 +56,18 @@
   } from '$lib/stores/wikiEditState.js';
 
   export let data;
+
+  // Lazy-load edit dependencies when edit mode activates
+  let editDepsLoading = false;
+  $: if ($editMode && data.effects === null && !editDepsLoading) {
+    editDepsLoading = true;
+    loadEditDeps([
+      { key: 'effects', url: '/api/effects' }
+    ]).then(deps => {
+      data = { ...data, ...deps };
+      editDepsLoading = false;
+    });
+  }
 
   $: armorSet = data.object;
   $: user = data.session?.user;
@@ -508,6 +520,7 @@
   {canCreateNew}
   {userPendingCreates}
   {userPendingUpdates}
+  {editDepsLoading}
 >
   {#if activeEntity || isCreateMode}
     <!-- Pending Change Banner -->

@@ -48,12 +48,16 @@ export async function load({ fetch, params, url, parent }) {
   const parentData = await parent();
   response.session = parentData.session;
 
+  const userGrants = parentData.session?.user?.grants || [];
+  const hasEditGrant = userGrants.some(g => g.startsWith('wiki.'));
+
   const entityType = view === 'chains' ? 'MissionChain' : 'Mission';
   const pendingData = await loadPendingChangesData(fetch, parentData.session?.user, {
     entity: entityType,
     entityId: response.object?.Id,
     changeId,
-    isAdmin: parentData.session?.user?.grants?.includes('wiki.approve') || false
+    isAdmin: userGrants.includes('wiki.approve'),
+    hasEditGrant
   });
 
   response.pendingChange = pendingData.pendingChange;
@@ -70,44 +74,26 @@ export async function load({ fetch, params, url, parent }) {
     }
   }
 
-  // Fetch mob maturities for objective target search
-  try {
-    response.mobMaturities = await apiCall(fetch, '/mobmaturities');
-  } catch (e) {
-    console.warn('Failed to load mob maturities:', e);
-    response.mobMaturities = [];
-  }
-
-  // Fetch mob species for AIKillCycle objectives
-  try {
-    response.mobSpeciesList = await apiCall(fetch, '/mobspecies');
-  } catch (e) {
-    console.warn('Failed to load mob species:', e);
-    response.mobSpeciesList = [];
-  }
-
-  // Fetch locations for dialog/interact objectives
-  try {
-    response.locations = await apiCall(fetch, '/locations');
-  } catch (e) {
-    console.warn('Failed to load locations:', e);
-    response.locations = [];
-  }
-
-  // Fetch items list for rewards + hand-in lookup (names by id)
-  try {
-    response.itemsList = await apiCall(fetch, '/items?limit=5000');
-  } catch (e) {
-    console.warn('Failed to load items list:', e);
-    response.itemsList = [];
-  }
-
-  // Fetch events for event-type mission selection
-  try {
-    response.events = await apiCall(fetch, '/events');
-  } catch (e) {
-    console.warn('Failed to load events:', e);
-    response.events = [];
+  // Edit-mode dependencies: only load server-side in create mode
+  if (isCreateMode) {
+    const [mobMaturities, mobSpeciesList, locations, itemsList, events] = await Promise.all([
+      apiCall(fetch, '/mobmaturities').catch(() => []),
+      apiCall(fetch, '/mobspecies').catch(() => []),
+      apiCall(fetch, '/locations').catch(() => []),
+      apiCall(fetch, '/items?limit=5000').catch(() => []),
+      apiCall(fetch, '/events').catch(() => [])
+    ]);
+    response.mobMaturities = mobMaturities || [];
+    response.mobSpeciesList = mobSpeciesList || [];
+    response.locations = locations || [];
+    response.itemsList = itemsList || [];
+    response.events = events || [];
+  } else {
+    response.mobMaturities = null;
+    response.mobSpeciesList = null;
+    response.locations = null;
+    response.itemsList = null;
+    response.events = null;
   }
 
   return response;

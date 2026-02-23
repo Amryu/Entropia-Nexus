@@ -208,10 +208,8 @@
 
     <!-- Deny dialog -->
     {#if showDenyDialog}
-      <!-- svelte-ignore a11y-click-events-have-key-events -->
-      <!-- svelte-ignore a11y-no-static-element-interactions -->
-      <div class="dialog-overlay" on:click={() => { showDenyDialog = false; }}>
-        <div class="dialog" on:click|stopPropagation>
+      <div class="dialog-overlay" role="presentation" on:click={() => { showDenyDialog = false; }} on:keydown={(e) => e.key === 'Escape' && (showDenyDialog = false)}>
+        <div class="dialog" on:click|stopPropagation role="dialog" aria-modal="true">
           <h3>Deny Event</h3>
           <div class="form-group">
             <label for="deny-reason">Reason (optional)</label>

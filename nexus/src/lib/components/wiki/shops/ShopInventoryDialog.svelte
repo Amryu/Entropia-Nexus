@@ -366,9 +366,7 @@
 </script>
 
 {#if open}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="dialog-backdrop" on:click={handleBackdropClick}>
+  <div class="dialog-backdrop" role="presentation" on:click={handleBackdropClick}>
     <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="inventory-dialog-title">
       <div class="dialog-header">
         <h3 id="inventory-dialog-title">Edit Shop Inventory</h3>

@@ -52,9 +52,8 @@ export async function load({ fetch, params, url, parent }) {
   // Set create mode flag
   response.isCreateMode = isCreateMode;
 
-  // Fetch effects list for edit mode dropdown
-  const effectsList = await apiCall(fetch, '/effects');
-  response.effects = effectsList || [];
+  // Edit-mode dependency: only load server-side in create mode
+  response.effects = isCreateMode ? ((await apiCall(fetch, '/effects').catch(() => [])) || []) : null;
 
   // Get entity type for API calls
   const entityType = getEntityType(response.additional?.type);
@@ -77,12 +76,16 @@ export async function load({ fetch, params, url, parent }) {
   const session = parentData.session;
   response.session = session;
 
+  const userGrants = session?.user?.grants || [];
+  const hasEditGrant = userGrants.some(g => g.startsWith('wiki.'));
+
   const pendingData = entityType
     ? await loadPendingChangesData(fetch, session?.user, {
       entity: entityType,
       entityId: response.object?.Id,
       changeId,
-      isAdmin: session?.user?.grants?.includes('wiki.approve') || false
+      isAdmin: userGrants.includes('wiki.approve'),
+      hasEditGrant
     })
     : {
       pendingChange: null,

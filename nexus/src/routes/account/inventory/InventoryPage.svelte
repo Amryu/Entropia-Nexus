@@ -3,6 +3,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
+  import { clickable } from '$lib/actions/clickable.js';
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { addToast } from '$lib/stores/toasts.js';
   import { apiCall } from '$lib/util.js';
@@ -788,8 +789,7 @@
 
         <!-- Mobile sidebar overlay -->
         {#if mobileSidebarOpen}
-          <!-- svelte-ignore a11y-click-events-have-key-events -->
-          <div class="sidebar-overlay" on:click={() => mobileSidebarOpen = false}></div>
+          <div class="sidebar-overlay" on:click={() => mobileSidebarOpen = false} use:clickable></div>
         {/if}
 
         <!-- Main content -->
@@ -860,13 +860,12 @@
             >
               <svelte:fragment slot="cell" let:column let:row>
                 {#if column.key === 'item_name'}
-                  <!-- svelte-ignore a11y-click-events-have-key-events -->
-                  <span class="item-name-link" on:click={() => openItemDialog(row)}>
+                  <span class="item-name-link" on:click={() => openItemDialog(row)} use:clickable>
                     {@html `${row.item_name}${row._slim ? itemTypeBadge(row._type) : ''}${sellBadge(row)}`}
                   </span>
                 {:else if column.key === '_markup'}
                   {#if editingMarkupId === row.item_id}
-                    <!-- svelte-ignore a11y-autofocus -->
+                    <!-- svelte-ignore a11y-autofocus -- intentional focus on inline edit activation -->
                     <input
                       type="number"
                       class="markup-input"
@@ -879,13 +878,13 @@
                       placeholder={row._isAbsolute ? '+0' : '100%'}
                     />
                   {:else}
-                    <!-- svelte-ignore a11y-click-events-have-key-events -->
                     <span
                       class="markup-cell"
                       class:has-markup={row._markup != null}
                       class:has-market={row._markup == null && row._marketPrice != null}
                       on:click={() => row.item_id > 0 && startMarkupEdit(row)}
                       title="Click to edit markup"
+                      use:clickable
                     >
                       {#if row._markup != null}
                         {row._isAbsolute ? formatMarkupValue(row._markup, true) : formatMarkupValue(row._markup, false)}
@@ -904,8 +903,7 @@
             <!-- Grid view (virtualized) -->
             <div class="grid-padding">
             <VirtualGrid items={filteredItems} minCardWidth={200} cardHeight={180} gap={12} let:item>
-              <!-- svelte-ignore a11y-click-events-have-key-events -->
-              <div class="grid-card" on:click={() => openItemDialog(item)}>
+              <div class="grid-card" on:click={() => openItemDialog(item)} use:clickable>
                 <div class="grid-card-header">
                   {#if getItemImageUrl(item, 48) && !failedImages.has(item.item_id)}
                     <img
@@ -939,7 +937,7 @@
                     <span class="grid-stat-label">MU</span>
                     <span class="grid-stat-value grid-mu-cell">
                       {#if editingMarkupId === item.item_id}
-                        <!-- svelte-ignore a11y-autofocus -->
+                        <!-- svelte-ignore a11y-autofocus -- intentional focus on inline edit activation -->
                         <input
                           type="number"
                           class="grid-mu-input"
@@ -953,13 +951,13 @@
                           placeholder={item._isAbsolute ? '+0' : '100%'}
                         />
                       {:else}
-                        <!-- svelte-ignore a11y-click-events-have-key-events -->
                         <span
                           class="markup-cell"
                           class:has-markup={item._markup != null}
                           class:has-market={item._markup == null && item._marketPrice != null}
                           on:click|stopPropagation={() => item.item_id > 0 && startMarkupEdit(item)}
                           title="Click to edit markup"
+                          use:clickable
                         >
                           {#if item._markup != null}
                             {item._isAbsolute ? formatMarkupValue(item._markup, true) : formatMarkupValue(item._markup, false)}
@@ -1059,9 +1057,7 @@
 
 <!-- Bulk markup dialog -->
 {#if showBulkMarkupDialog}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="modal-overlay" on:click|self={() => showBulkMarkupDialog = false}>
+  <div class="modal-overlay" on:click|self={() => showBulkMarkupDialog = false} use:clickable>
     <div class="modal" role="dialog" aria-modal="true">
       <div class="modal-header">
         <h3>Set Markup for {selectedItems.size} Items</h3>

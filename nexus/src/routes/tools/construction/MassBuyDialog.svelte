@@ -391,9 +391,7 @@
 </script>
 
 {#if show}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="modal-overlay" on:click|self={close}>
+  <div class="modal-overlay" role="presentation" on:click|self={close}>
     <div class="modal">
       <div class="modal-header">
         <h3>Mass Buy Orders</h3>

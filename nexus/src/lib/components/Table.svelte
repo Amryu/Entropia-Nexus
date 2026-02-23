@@ -476,8 +476,7 @@
     {:else}
       <tbody bind:this={contents} class={options.virtual ? 'virtual' : ''} style={`grid-column: span ${getColumnCount(header, filteredData)};`}>
         {#each filteredData as item, index}
-          <!-- svelte-ignore a11y-mouse-events-have-key-events -->
-          <tr on:click={() => rowClick({ index, data: item })} on:mouseover={() => rowHover({ index, data: item })} on:mouseout={() => rowHover(null)} style={item?.trStyle ?? ''} class="{options.highlightOnHover ? 'hover' : ''}">
+          <tr on:click={() => rowClick({ index, data: item })} on:mouseover={() => rowHover({ index, data: item })} on:focus={() => rowHover({ index, data: item })} on:mouseout={() => rowHover(null)} on:blur={() => rowHover(null)} style={item?.trStyle ?? ''} class="{options.highlightOnHover ? 'hover' : ''}">
             {#each item.values as value, valueIndex}
               {#if (item?.spans == null || item?.spans[valueIndex] == null) || (isSpannable(item?.spans[valueIndex]) && !spanCellMatches(valueIndex, item, filteredData[index - 1]))}
                 <td class={(item?.spans != null && isSpannable(item?.spans[valueIndex]) ? spanMap[valueIndex].indexOf(index) : index) % 2 === 0 ? 'row-color' : 'row-color-alt'} style={`${item?.spans != null && isSpannable(item?.spans[valueIndex]) && !spanCellMatches(valueIndex, item, filteredData[index - 1]) ? `grid-row: span ${getSpanLength(valueIndex, index)};` : ''}${item?.tdStyles && item?.tdStyles[valueIndex] != null ? item?.tdStyles[valueIndex] : ''}`}>

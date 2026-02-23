@@ -598,9 +598,7 @@
                                 type="button"
                               >Copy...</button>
                               {#if showCopyMenu}
-                                <!-- svelte-ignore a11y-click-events-have-key-events -->
-                                <!-- svelte-ignore a11y-no-static-element-interactions -->
-                                <div class="copy-menu" on:click|stopPropagation>
+                                  <div class="copy-menu" on:click|stopPropagation on:keydown|stopPropagation role="presentation">
                                   {#if matIndex > 0 && hasPrevData}
                                     <button type="button" on:click={() => copyComposition(matIndex - 1, attackIndex, matIndex, attackIndex)}>
                                       from Previous

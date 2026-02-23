@@ -461,8 +461,7 @@
 
       <!-- Confirmation dialog (replaces native confirm()) -->
       {#if confirmAction}
-        <!-- svelte-ignore a11y-click-events-have-key-events a11y-no-static-element-interactions -->
-        <div class="modal-overlay" on:click|self={handleConfirmNo}>
+        <div class="modal-overlay" role="presentation" on:click|self={handleConfirmNo}>
           <div class="confirm-dialog" role="dialog" aria-modal="true">
             <p class="confirm-message">{confirmMessage}</p>
             <div class="confirm-actions">

@@ -3,6 +3,7 @@
   import { createEventDispatcher, onMount } from 'svelte';
   import { generateMobAreaName } from './mapEditorUtils.js';
   import { formatMobSpawnDisplayName } from '$lib/mapUtil.js';
+  import { clickable } from '$lib/actions/clickable.js';
 
   export let mobs = [];          // All mobs from /mobs (cached by parent)
   export let location = null;    // Existing MobArea location (if editing)
@@ -674,8 +675,7 @@
       {#if mobSearchResults.length > 0}
         <div class="mob-results">
           {#each mobSearchResults as mob}
-            <!-- svelte-ignore a11y-click-events-have-key-events -->
-            <div class="mob-result" on:click={() => addMob(mob)} role="button" tabindex="0">
+            <div class="mob-result" on:click={() => addMob(mob)} use:clickable role="button" tabindex="0">
               {mob.Name}
             </div>
           {/each}
@@ -712,12 +712,8 @@
 
 <!-- Maturity Configuration Dialog -->
 {#if maturityDialog && dialogMob}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="dialog-overlay" on:click={closeMaturityDialog}>
-    <!-- svelte-ignore a11y-click-events-have-key-events -->
-    <!-- svelte-ignore a11y-no-static-element-interactions -->
-    <div class="maturity-dialog" on:click|stopPropagation>
+  <div class="dialog-overlay" role="presentation" on:click={closeMaturityDialog}>
+    <div class="maturity-dialog" role="dialog" on:click|stopPropagation>
       <div class="dialog-header">
         <h3>{dialogMob.mobName}</h3>
         <button class="dialog-close" on:click={closeMaturityDialog}>×</button>

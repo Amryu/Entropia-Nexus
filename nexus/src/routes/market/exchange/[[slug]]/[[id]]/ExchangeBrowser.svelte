@@ -2185,9 +2185,7 @@
 
 <div class="exchange-browser">
   <div class="content">
-    <!-- svelte-ignore a11y-click-events-have-key-events -->
-    <!-- svelte-ignore a11y-no-static-element-interactions -->
-    <div class="sidebar-overlay" class:visible={mobileSidebarOpen} on:click={() => mobileSidebarOpen = false}></div>
+    <div class="sidebar-overlay" role="presentation" class:visible={mobileSidebarOpen} on:click={() => mobileSidebarOpen = false}></div>
     <div class="sidebar" class:mobile-open={mobileSidebarOpen}>
       <h1 class="sidebar-title">Exchange <span class="beta-badge">BETA</span></h1>
       <div class="sidebar-tabs">
@@ -2424,13 +2422,13 @@
             on:click={handleToggleFavourite}
             title={isCurrentFavourited ? 'Remove from favourites' : 'Add to favourites'}
           >{isCurrentFavourited ? '\u2605' : '\u2606'}</button>
-          <!-- svelte-ignore a11y-missing-content -->
           <a
             class="detail-title-name"
             href={getItemLink(selectedItemDetails || selectedItem)}
             target="_blank"
             rel="noopener"
             title={selectedItem?.n || ""}
+            aria-label={selectedItem?.n || "Item details"}
           >{selectedItem?.n || ""}{@html itemTypeBadge(selectedItem?.t)}</a>
           {#if selectedItemDetails && !hasCondition(selectedItemDetails) && getMaxTT(selectedItemDetails) != null}
             <span class="detail-tt-badge">{formatPedValue(getMaxTT(selectedItemDetails))}</span>
@@ -2467,9 +2465,7 @@
               >{showPriceHistory ? "Orders" : "Chart"}</button>
             </div>
           </div>
-          <!-- svelte-ignore a11y-click-events-have-key-events -->
-          <!-- svelte-ignore a11y-no-static-element-interactions -->
-          <div class="detail-filters" class:open={showFilterDialog} on:click|self={() => showFilterDialog = false}>
+          <div class="detail-filters" role="presentation" class:open={showFilterDialog} on:click|self={() => showFilterDialog = false}>
             <div class="detail-filters-content">
               <div class="detail-filters-header">
                 <span>Filters</span>
@@ -2594,9 +2590,7 @@
             />
           </div>
         {:else}
-          <!-- svelte-ignore a11y-click-events-have-key-events -->
-          <!-- svelte-ignore a11y-no-static-element-interactions -->
-          <div class="detail-wrapper" class:single-table={tableMode !== 'both'} on:click|capture={handleDetailClick}>
+          <div class="detail-wrapper" class:single-table={tableMode !== 'both'} role="presentation" on:click|capture={handleDetailClick}>
             {#if tableMode !== "buy"}
               <div class="detail-table sell">
                 <span class="table-label sell">Sell{ordersLoading ? "..." : ""}</span>
@@ -2862,9 +2856,7 @@
 />
 
 {#if pendingTurnstileAction}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="turnstile-modal-overlay" on:click={cancelTurnstileModal}>
+  <div class="turnstile-modal-overlay" role="presentation" on:click={cancelTurnstileModal}>
     <div class="turnstile-modal" on:click|stopPropagation>
       <h3 class="turnstile-modal-title">
         {pendingTurnstileAction.type === 'bump' ? 'Bump All Orders' : 'Close Order'}

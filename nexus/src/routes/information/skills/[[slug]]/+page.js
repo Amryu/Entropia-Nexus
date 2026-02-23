@@ -59,11 +59,15 @@ export async function load({ fetch, params, url, parent }) {
   const session = parentData.session;
   response.session = session;
 
+  const userGrants = session?.user?.grants || [];
+  const hasEditGrant = userGrants.some(g => g.startsWith('wiki.'));
+
   const pendingData = await loadPendingChangesData(fetch, session?.user, {
     entity: 'Skill',
     entityId: response.object?.Id,
     changeId,
-    isAdmin: session?.user?.grants?.includes('wiki.approve') || false
+    isAdmin: userGrants.includes('wiki.approve'),
+    hasEditGrant
   });
 
   response.pendingChange = pendingData.pendingChange;
@@ -72,7 +76,8 @@ export async function load({ fetch, params, url, parent }) {
   response.canCreateNew = pendingData.canCreateNew;
   response.pendingCreatesCount = pendingData.pendingCreatesCount;
 
-  response.professions = (await apiCall(fetch, '/professions')) || [];
+  // Edit-mode dependency: only load server-side in create mode
+  response.professions = isCreateMode ? ((await apiCall(fetch, '/professions').catch(() => [])) || []) : null;
 
   return response;
 }

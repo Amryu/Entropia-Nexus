@@ -16,7 +16,7 @@
   import '$lib/style.css';
   import { page } from '$app/stores';
   import { onMount, onDestroy } from 'svelte';
-  import { clampDecimals, encodeURIComponentSafe, groupBy, getLatestPendingUpdate } from '$lib/util';
+  import { clampDecimals, encodeURIComponentSafe, groupBy, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
   import { sanitizeHtml } from '$lib/sanitize';
 
   // Wiki components
@@ -51,6 +51,19 @@
   } from '$lib/stores/wikiEditState';
 
   export let data;
+
+  // Lazy-load edit dependencies when edit mode activates
+  let editDepsLoading = false;
+  $: if ($editMode && data.effects === null && !editDepsLoading) {
+    editDepsLoading = true;
+    loadEditDeps([
+      { key: 'effects', url: '/api/effects' },
+      { key: 'equipsets', url: '/api/equipsets' }
+    ]).then(deps => {
+      data = { ...data, ...deps };
+      editDepsLoading = false;
+    });
+  }
 
   $: clothing = data.object;
   $: user = data.session?.user;
@@ -294,6 +307,7 @@
   {canCreateNew}
   {userPendingCreates}
   {userPendingUpdates}
+  {editDepsLoading}
 >
   {#if activeClothing || isCreateMode}
     <!-- Pending Change Banner -->

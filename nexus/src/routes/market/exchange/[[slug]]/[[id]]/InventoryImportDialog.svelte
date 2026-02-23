@@ -4,6 +4,7 @@
   import { slide } from 'svelte/transition';
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { hasItemTag, removeItemTag } from '$lib/util.js';
+  import { clickable } from '$lib/actions/clickable.js';
   import { myOrders, inventory, enrichOrders } from '../../exchangeStore.js';
   import { formatPedRaw } from '../../orderUtils';
 
@@ -883,10 +884,9 @@
 </script>
 
 {#if show}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
   <div
     class="modal-overlay"
+    role="presentation"
     on:click={(e) => { if (e.target.classList.contains('modal-overlay')) handleClose(); }}
     on:keydown={(e) => { if (e.key === 'Escape') handleClose(); }}
   >
@@ -923,9 +923,10 @@
         {/if}
 
         {#if inputMode === 'file'}
-          <!-- svelte-ignore a11y-no-static-element-interactions -->
           <div
             class="file-drop-zone"
+            use:clickable
+            aria-label="Choose file to upload"
             on:click={() => fileInput?.click()}
             on:dragover|preventDefault
             on:drop={handleDrop}

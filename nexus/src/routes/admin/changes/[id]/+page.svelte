@@ -6,6 +6,7 @@
   import { getTypeLink, encodeURIComponentSafe } from '$lib/util.js';
   import ChangeDataViewer from '$lib/components/ChangeDataViewer.svelte';
   import JsonCompareDialog from '$lib/components/JsonCompareDialog.svelte';
+  import { clickable } from '$lib/actions/clickable.js';
 
   const DISCORD_GUILD_ID = import.meta.env.VITE_DISCORD_GUILD_ID;
 
@@ -855,11 +856,10 @@
                     <div class="history-author">{version.subtitle} ({formatDate(version.date)})</div>
                   </div>
                 {:else}
-                  <!-- svelte-ignore a11y-click-events-have-key-events -->
-                  <!-- svelte-ignore a11y-no-static-element-interactions -->
                   <div
                     class="history-item"
                     class:selected={selectedVersionType === version.key}
+                    use:clickable
                     on:click={() => {
                       selectedVersionType = selectedVersionType === version.key ? null : version.key;
                       showDiff = selectedVersionType !== null;

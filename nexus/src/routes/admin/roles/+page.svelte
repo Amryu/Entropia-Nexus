@@ -229,8 +229,7 @@
 
 <!-- Create/Edit Dialog -->
 {#if showDialog}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <div class="dialog-overlay" on:click|self={() => showDialog = false}>
+  <div class="dialog-overlay" role="presentation" on:click|self={() => showDialog = false}>
     <div class="dialog">
       <h2>{dialogMode === 'create' ? 'Create Role' : `Edit: ${editingRole.name}`}</h2>
 

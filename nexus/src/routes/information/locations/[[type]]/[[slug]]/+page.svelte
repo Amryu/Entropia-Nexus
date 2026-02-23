@@ -7,7 +7,7 @@
   import '$lib/style.css';
   import { page } from '$app/stores';
   import { onDestroy } from 'svelte';
-  import { encodeURIComponentSafe, getLatestPendingUpdate } from '$lib/util';
+  import { encodeURIComponentSafe, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
   import { getPlanetNavFilter } from '$lib/mapUtil';
   import { sanitizeHtml } from '$lib/sanitize';
 
@@ -36,6 +36,18 @@
   } from '$lib/stores/wikiEditState.js';
 
   export let data;
+
+  // Lazy-load edit dependencies when edit mode activates
+  let editDepsLoading = false;
+  $: if ($editMode && data.mobMaturities === null && !editDepsLoading) {
+    editDepsLoading = true;
+    loadEditDeps([
+      { key: 'mobMaturities', url: '/api/mobmaturities' }
+    ]).then(deps => {
+      data = { ...data, ...deps };
+      editDepsLoading = false;
+    });
+  }
 
   $: user = data.session?.user;
   $: allLocations = data.allLocations || data.locations || [];
@@ -755,6 +767,7 @@
   {canCreateNew}
   {userPendingCreates}
   {userPendingUpdates}
+  {editDepsLoading}
 >
   <svelte:fragment slot="sidebar">
     <WikiNavigation

@@ -142,9 +142,7 @@
 </script>
 
 {#if show && item}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="modal-overlay" on:click|self={handleClose}>
+  <div class="modal-overlay" role="presentation" on:click|self={handleClose}>
     <div class="modal">
       <!-- Item identity header -->
       <div class="item-identity">

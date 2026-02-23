@@ -12,6 +12,7 @@
   import { addToast } from '$lib/stores/toasts';
   import { PREFERRED_SHORT_ROUTE_BY_PREFIX } from '$lib/short-url-routes.js';
   import { loading } from "../../actions/loading";
+  import { clickable } from '$lib/actions/clickable.js';
   import FancyTable from '$lib/components/FancyTable.svelte';
   import SearchInput from '$lib/components/SearchInput.svelte';
 
@@ -2093,8 +2094,7 @@
   <div class="menu-container">
     <a href="/" class="logo-link"><img class="website-icon" src="/favicon.png" alt="Entropia Nexus" title="Entropia Nexus" width="48px" height="48px" /></a>
     {#each Object.keys(menuItemsWiki) as menu (menu)}
-      <!-- svelte-ignore a11y-no-static-element-interactions -->
-      <div class="menu-item" class:menu-top={!!getMenuOverviewUrl(menu)} class:highlighted={highlightedMenus.has(menu)} on:mouseenter={() => handleDropdownEnter(menu)} on:mouseleave={handleDropdownLeave}>
+      <div class="menu-item" role="none" class:menu-top={!!getMenuOverviewUrl(menu)} class:highlighted={highlightedMenus.has(menu)} on:mouseenter={() => handleDropdownEnter(menu)} on:mouseleave={handleDropdownLeave}>
         {#if getMenuOverviewUrl(menu)}
           <a href={getMenuOverviewUrl(menu)} class="menu-header-link menu-header-link-full" use:loading>{menu}</a>
         {:else}
@@ -2160,8 +2160,7 @@
       </button>
     {/if}
     {#if user}
-      <!-- svelte-ignore a11y-no-static-element-interactions -->
-      <div class="menu-item notification-menu" on:mouseenter={() => handleDropdownEnter('notifications')} on:mouseleave={handleDropdownLeave}>
+      <div class="menu-item notification-menu" role="none" on:mouseenter={() => handleDropdownEnter('notifications')} on:mouseleave={handleDropdownLeave}>
         <div class="notification-icon" title="Notifications">
           <svg class="notification-bell" viewBox="0 0 24 24" aria-hidden="true">
             <path
@@ -2235,8 +2234,7 @@
         </button>
       </a>
     {:else}
-      <!-- svelte-ignore a11y-no-static-element-interactions -->
-      <div class="menu-item user" on:mouseenter={() => handleDropdownEnter('user')} on:mouseleave={handleDropdownLeave}>
+      <div class="menu-item user" role="none" on:mouseenter={() => handleDropdownEnter('user')} on:mouseleave={handleDropdownLeave}>
         {#if !isCurrentlyImpersonating && isUnverified}
           <span class="unverified-badge" title="Account not verified">!</span>
         {/if}
@@ -2378,11 +2376,9 @@
     <div class="mobile-menu-content">
       {#each Object.keys(menuItemsWiki) as menu (menu)}
           <div class="mobile-section">
-            <!-- svelte-ignore a11y-click-events-have-key-events -->
-            <!-- svelte-ignore a11y-no-static-element-interactions -->
             <!-- On mobile, clicking header just expands/collapses - no navigation -->
             <!-- This prevents menu from closing before user can see options -->
-            <div class="mobile-section-header" on:click={() => toggleSection(menu)}>
+            <div class="mobile-section-header" use:clickable on:click={() => toggleSection(menu)}>
               <span class="mobile-section-title" class:highlighted={highlightedMenus.has(menu)}>{menu}</span>
               <span class="mobile-section-chevron" class:expanded={expandedSections.has(menu)}>&#9660;</span>
             </div>
@@ -2412,9 +2408,7 @@
     <!-- User Section (at bottom, collapsible) -->
     <div class="mobile-user-section" class:expanded={mobileUserExpanded}>
       {#if user}
-        <!-- svelte-ignore a11y-click-events-have-key-events -->
-        <!-- svelte-ignore a11y-no-static-element-interactions -->
-        <div class="mobile-user-header" on:click={() => mobileUserExpanded = !mobileUserExpanded}>
+        <div class="mobile-user-header" use:clickable on:click={() => mobileUserExpanded = !mobileUserExpanded}>
           <img
             src={user.avatar ? `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png` : `https://cdn.discordapp.com/embed/avatars/${Number(user.id) % 5}.png`}
             class="mobile-user-avatar"
@@ -2556,9 +2550,7 @@
 </div>
 
 {#if showImpersonateDialog}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="dialog-overlay" on:click={resetImpersonateDialog}>
+  <div class="dialog-overlay" role="presentation" on:click={resetImpersonateDialog}>
     <div class="dialog dialog-wide" on:click|stopPropagation>
       <h3>Impersonate User</h3>
       <p class="dialog-description">Search for a user by their Discord name or EU character name.</p>
@@ -2595,9 +2587,7 @@
         {#if showUserSuggestions && userSearchResults.length > 0}
           <div class="suggestions-dropdown">
             {#each userSearchResults as result}
-              <!-- svelte-ignore a11y-click-events-have-key-events -->
-              <!-- svelte-ignore a11y-no-static-element-interactions -->
-              <div class="suggestion-item" on:click={() => selectUser(result)}>
+              <div class="suggestion-item" use:clickable on:click={() => selectUser(result)}>
                 <div class="suggestion-name">
                   {result.global_name || result.username}
                   {#if result.verified}
@@ -2637,9 +2627,7 @@
 {/if}
 
 {#if showBrowseDialog}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="dialog-overlay" on:click={() => showBrowseDialog = false}>
+  <div class="dialog-overlay" role="presentation" on:click={() => showBrowseDialog = false}>
     <div class="dialog dialog-large" on:click|stopPropagation>
       <h3>Browse Users</h3>
       <p class="dialog-description">Click on a row to select a user. Use the search boxes to filter.</p>

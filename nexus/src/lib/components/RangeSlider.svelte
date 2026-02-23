@@ -106,7 +106,6 @@
   {#if label}
     <span class="range-label">{label}: <strong style="display:inline-block;min-width:{labelWidth};text-align:right">{displayText}</strong></span>
   {/if}
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
   <div
     class="track"
     bind:this={trackEl}
@@ -115,7 +114,6 @@
   >
     <div class="track-bg"></div>
     <div class="track-fill" style="left:{pctMin}%;right:{100-pctMax}%"></div>
-    <!-- svelte-ignore a11y-no-static-element-interactions -->
     <div
       class="thumb"
       style="left:{pctMin}%"
@@ -128,7 +126,6 @@
       on:pointerdown={(e) => onPointerDown(e, 'min')}
       on:keydown={(e) => onKeydown(e, 'min')}
     ></div>
-    <!-- svelte-ignore a11y-no-static-element-interactions -->
     <div
       class="thumb"
       style="left:{pctMax}%"

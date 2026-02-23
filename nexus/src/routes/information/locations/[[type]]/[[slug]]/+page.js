@@ -70,11 +70,15 @@ export async function load({ fetch, params, url, parent }) {
   response.session = parentData.session;
 
   // Load pending changes data
+  const userGrants = parentData.session?.user?.grants || [];
+  const hasEditGrant = userGrants.some(g => g.startsWith('wiki.'));
+
   const pendingData = await loadPendingChangesData(fetch, parentData.session?.user, {
     entity: 'Location',
     entityId: response.object?.Id,
     changeId,
-    isAdmin: parentData.session?.user?.grants?.includes('wiki.approve') || false
+    isAdmin: userGrants.includes('wiki.approve'),
+    hasEditGrant
   });
 
   response.pendingChange = pendingData.pendingChange;
@@ -83,13 +87,8 @@ export async function load({ fetch, params, url, parent }) {
   response.canCreateNew = pendingData.canCreateNew;
   response.pendingCreatesCount = pendingData.pendingCreatesCount;
 
-  // Fetch mob maturities for WaveEvent wave editor
-  try {
-    response.mobMaturities = await apiCall(fetch, '/mobmaturities');
-  } catch (e) {
-    console.warn('Failed to load mob maturities:', e);
-    response.mobMaturities = [];
-  }
+  // Edit-mode dependency: only load server-side in create mode
+  response.mobMaturities = isCreateMode ? ((await apiCall(fetch, '/mobmaturities').catch(() => [])) || []) : null;
 
   // allLocations is the same as filtered locations (both are all locations minus MobAreas)
   response.allLocations = filteredLocations;

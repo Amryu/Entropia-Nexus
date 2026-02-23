@@ -10,7 +10,7 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { onMount, onDestroy, tick } from 'svelte';
-  import { encodeURIComponentSafe, getTypeLink, getLatestPendingUpdate } from '$lib/util';
+  import { encodeURIComponentSafe, getTypeLink, getLatestPendingUpdate, loadEditDeps } from '$lib/util';
   import { getPlanetNavFilter } from '$lib/mapUtil';
   import { sanitizeHtml } from '$lib/sanitize';
 
@@ -53,6 +53,21 @@
   } from '$lib/stores/wikiEditState';
 
   export let data;
+
+  // Lazy-load edit dependencies when edit mode activates
+  let editDepsLoading = false;
+  $: if ($editMode && data.speciesList === null && !editDepsLoading) {
+    editDepsLoading = true;
+    loadEditDeps([
+      { key: 'speciesList', url: '/api/mobspecies' },
+      { key: 'itemsList', url: '/api/items?limit=5000' },
+      { key: 'planetsList', url: '/api/planets' },
+      { key: 'skillsList', url: '/api/skills' }
+    ]).then(deps => {
+      data = { ...data, ...deps };
+      editDepsLoading = false;
+    });
+  }
 
   $: mob = data.object;
   $: user = data.session?.user;
@@ -916,6 +931,7 @@
   {canCreateNew}
   {userPendingCreates}
   {userPendingUpdates}
+  {editDepsLoading}
   bind:sidebarExpanded
   bind:sidebarFullWidth
 >

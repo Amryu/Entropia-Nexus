@@ -199,9 +199,7 @@
 
 </script>
 
-<!-- svelte-ignore a11y-click-events-have-key-events -->
-<!-- svelte-ignore a11y-no-static-element-interactions -->
-<div class="user-orders-panel" on:click|capture={handleClick}>
+<div class="user-orders-panel" role="presentation" on:click|capture={handleClick}>
 
   {#if loading}
     <div class="panel-loading">Loading orders...</div>

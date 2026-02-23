@@ -423,12 +423,13 @@
       {#each Object.entries(hourGroups) as [hour, slots]}
         <!-- Hour row (always visible) -->
         <div class="time-label">
-          <!-- svelte-ignore a11y-click-events-have-key-events -->
-          <!-- svelte-ignore a11y-no-static-element-interactions -->
           <span
             class="hour-label"
             class:clickable={!readonly}
+            role={readonly ? undefined : 'button'}
+            tabindex={readonly ? undefined : 0}
             on:click={() => !readonly && toggleHourRow(parseInt(hour))}
+            on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && !readonly && (e.preventDefault(), toggleHourRow(parseInt(hour)))}
             title={readonly ? '' : 'Toggle all slots in this hour'}
           >{hour.toString().padStart(2, '0')}:00</span>
           <button
@@ -449,7 +450,6 @@
           {@const hourFull = hourGroups[hour].every(s => availabilityMap.get(`${dayOfWeek}-${s.label}`) === true)}
           {@const hourPartial = hourGroups[hour].some(s => availabilityMap.get(`${dayOfWeek}-${s.label}`) === true)}
           {@const isCurrent = isCurrentHour(dayOfWeek, parseInt(hour))}
-          <!-- svelte-ignore a11y-no-static-element-interactions -->
           <div
             class="slot hour-slot"
             class:available={hourFull}
@@ -461,7 +461,7 @@
             on:mouseenter={() => handleHourMouseEnter(dayOfWeek, parseInt(hour))}
             on:touchstart={(e) => handleHourTouchStart(dayOfWeek, parseInt(hour), e)}
             on:keydown={(e) => e.key === 'Enter' && toggleHour(dayOfWeek, parseInt(hour))}
-            role={readonly ? 'cell' : 'button'}
+            role="gridcell"
             tabindex={readonly ? -1 : 0}
           >
             <span class="slot-indicator"></span>
@@ -471,12 +471,13 @@
         <!-- 15-minute slots (expanded view) -->
         {#if expandedHours.has(parseInt(hour))}
           {#each slots as slot}
-            <!-- svelte-ignore a11y-click-events-have-key-events -->
-            <!-- svelte-ignore a11y-no-static-element-interactions -->
             <div
               class="time-label sub-label"
               class:clickable={!readonly}
+              role={readonly ? undefined : 'button'}
+              tabindex={readonly ? undefined : 0}
               on:click={() => !readonly && toggleTimeSlotRow(slot.label)}
+              on:keydown={(e) => (e.key === 'Enter' || e.key === ' ') && !readonly && (e.preventDefault(), toggleTimeSlotRow(slot.label))}
               title={readonly ? '' : 'Toggle this time slot for all days'}
             >
               {slot.label}
@@ -484,7 +485,6 @@
             {#each days as _, displayIndex}
               {@const dayOfWeek = displayToDayOfWeek[displayIndex]}
               {@const isCurrentSlotNow = isCurrentSlot(dayOfWeek, slot.label)}
-              <!-- svelte-ignore a11y-no-static-element-interactions -->
               <div
                 class="slot sub-slot"
                 class:available={availabilityMap.get(`${dayOfWeek}-${slot.label}`) === true}
@@ -496,7 +496,7 @@
                 on:mouseenter={() => handleMouseEnter(dayOfWeek, slot.label)}
                 on:touchstart={(e) => handleTouchStart(dayOfWeek, slot.label, e)}
                 on:keydown={(e) => e.key === 'Enter' && toggleSlot(dayOfWeek, slot.label)}
-                role={readonly ? 'cell' : 'button'}
+                role="gridcell"
                 tabindex={readonly ? -1 : 0}
               >
                 <span class="slot-indicator"></span>

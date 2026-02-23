@@ -167,9 +167,7 @@
   </div>
 {:else}
   <!-- Desktop: table layout -->
-  <!-- svelte-ignore a11y-click-events-have-key-events -->
-  <!-- svelte-ignore a11y-no-static-element-interactions -->
-  <div class="trade-requests-panel" on:click|capture={handleClick}>
+  <div class="trade-requests-panel" role="presentation" on:click|capture={handleClick}>
     <FancyTable
       {columns}
       data={$tradeRequests}
