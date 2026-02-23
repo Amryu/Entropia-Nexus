@@ -528,17 +528,25 @@ export async function loadPendingChangesData(fetch, sessionUser, config) {
 
 /**
  * Lazy-load edit dependencies client-side (called from +page.svelte when edit mode activates).
+ * Results are cached per URL so navigating between items in the same route doesn't re-fetch.
  * @param {Array<{key: string, url: string}>} deps - Dependencies to fetch
  * @returns {Promise<Record<string, any>>} Loaded data keyed by `key`
  */
+const _editDepsCache = new Map();
 export async function loadEditDeps(deps) {
   const apiBase = getApiBase();
   const results = {};
   await Promise.all(deps.map(async ({ key, url }) => {
+    if (_editDepsCache.has(url)) {
+      results[key] = _editDepsCache.get(url);
+      return;
+    }
     try {
       const target = url.startsWith('/api/') ? (apiBase + url.slice(4)) : url;
       const res = await fetch(target);
-      results[key] = res.ok ? await res.json() : [];
+      const data = res.ok ? await res.json() : [];
+      _editDepsCache.set(url, data);
+      results[key] = data;
     } catch {
       results[key] = [];
     }

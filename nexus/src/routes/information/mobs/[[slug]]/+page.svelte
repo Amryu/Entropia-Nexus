@@ -61,8 +61,7 @@
     loadEditDeps([
       { key: 'speciesList', url: '/api/mobspecies' },
       { key: 'itemsList', url: '/api/items?limit=5000' },
-      { key: 'planetsList', url: '/api/planets' },
-      { key: 'skillsList', url: '/api/skills' }
+      { key: 'planetsList', url: '/api/planets' }
     ]).then(deps => {
       data = { ...data, ...deps };
       editDepsLoading = false;

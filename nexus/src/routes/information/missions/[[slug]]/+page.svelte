@@ -47,7 +47,6 @@
       { key: 'mobMaturities', url: '/api/mobmaturities' },
       { key: 'mobSpeciesList', url: '/api/mobspecies' },
       { key: 'locations', url: '/api/locations' },
-      { key: 'itemsList', url: '/api/items?limit=5000' },
       { key: 'events', url: '/api/events' }
     ]).then(deps => {
       data = { ...data, ...deps };

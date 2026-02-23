@@ -5,6 +5,7 @@
  * Supports full wiki editing.
  */
 let items;
+let cachedMaterials;
 
 import { redirect } from '@sveltejs/kit';
 import { decodeURIComponentSafe, handlePageLoad, resolveItemLink, encodeURIComponentSafe, apiCall, loadPendingChangesData } from '$lib/util';
@@ -45,13 +46,18 @@ export async function load({ fetch, params, url, parent }) {
   // Set create mode flag
   response.isCreateMode = isCreateMode;
 
-  // Edit-mode dependencies: only load server-side in create mode
+  // Materials always loaded (needed for enrichMaterials cost calculations in view mode), cached at module level
+  if (!cachedMaterials) {
+    cachedMaterials = await apiCall(fetch, '/materials').catch(() => []) || [];
+  }
+  response.materials = cachedMaterials;
+
+  // Other edit deps only loaded server-side in create mode, otherwise lazy-loaded client-side
   if (isCreateMode) {
-    const [blueprintbooksList, professionsList, itemsList, materialsList, weaponsList] = await Promise.all([
+    const [blueprintbooksList, professionsList, itemsList, weaponsList] = await Promise.all([
       apiCall(fetch, '/blueprintbooks').catch(() => []),
       apiCall(fetch, '/professions').catch(() => []),
       apiCall(fetch, '/items').catch(() => []),
-      apiCall(fetch, '/materials').catch(() => []),
       apiCall(fetch, '/weapons').catch(() => [])
     ]);
     response.blueprintbooks = blueprintbooksList || [];
@@ -59,13 +65,11 @@ export async function load({ fetch, params, url, parent }) {
     response.productItems = (itemsList || []).filter(i =>
       i.Properties?.Type !== 'Blueprint' && i.Properties?.Type !== 'Pet'
     );
-    response.materials = materialsList || [];
     response.weaponItems = weaponsList || [];
   } else {
     response.blueprintbooks = null;
     response.professions = null;
     response.productItems = null;
-    response.materials = null;
     response.weaponItems = null;
   }
 

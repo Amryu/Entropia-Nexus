@@ -5,6 +5,7 @@
  */
 let items;
 let itemsGrouped;
+let cachedSkills;
 
 import { handlePageLoad, getMainPlanetName, apiCall, resolveItemLink, decodeURIComponentSafe, loadPendingChangesData } from '$lib/util';
 
@@ -91,23 +92,26 @@ export async function load({ fetch, params, url, parent }) {
   response.canCreateNew = pendingData.canCreateNew;
   response.pendingCreatesCount = pendingData.pendingCreatesCount;
 
-  // Edit-mode dependencies: only load server-side in create mode, otherwise lazy-loaded client-side
+  // Skills always loaded (codex calculator needs them in view mode), cached at module level
+  if (!cachedSkills) {
+    cachedSkills = await apiCall(fetch, '/skills').catch(() => []) || [];
+  }
+  response.skillsList = cachedSkills;
+
+  // Other edit deps only loaded server-side in create mode, otherwise lazy-loaded client-side
   if (config.mode === 'create') {
-    const [speciesData, itemsData, planetsData, skillsData] = await Promise.all([
+    const [speciesData, itemsData, planetsData] = await Promise.all([
       apiCall(fetch, '/mobspecies').catch(() => []),
       apiCall(fetch, '/items?limit=5000').catch(() => []),
-      apiCall(fetch, '/planets').catch(() => []),
-      apiCall(fetch, '/skills').catch(() => [])
+      apiCall(fetch, '/planets').catch(() => [])
     ]);
     response.speciesList = speciesData || [];
     response.itemsList = itemsData || [];
     response.planetsList = planetsData || [];
-    response.skillsList = skillsData || [];
   } else {
     response.speciesList = null;
     response.itemsList = null;
     response.planetsList = null;
-    response.skillsList = null;
   }
 
   // If we have a specific mob, resolve item links for loots

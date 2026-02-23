@@ -5,6 +5,9 @@
  */
 import { apiCall, decodeURIComponentSafe, loadPendingChangesData } from '$lib/util';
 
+let cachedItems;
+let cachedMobSpecies;
+
 export async function load({ fetch, params, url, parent }) {
   const view = url.searchParams.get('view') === 'chains' ? 'chains' : 'missions';
   const isCreateMode = url.searchParams.get('mode') === 'create';
@@ -74,25 +77,31 @@ export async function load({ fetch, params, url, parent }) {
     }
   }
 
-  // Edit-mode dependencies: only load server-side in create mode
+  // Items always loaded (needed for reward display names in view mode), cached at module level
+  if (!cachedItems) {
+    cachedItems = await apiCall(fetch, '/items?limit=5000').catch(() => []) || [];
+  }
+  response.itemsList = cachedItems;
+
+  // Mob species always loaded (needed for species name display in AIKillCycle objectives), cached at module level
+  if (!cachedMobSpecies) {
+    cachedMobSpecies = await apiCall(fetch, '/mobspecies').catch(() => []) || [];
+  }
+  response.mobSpeciesList = cachedMobSpecies;
+
+  // Other edit deps only loaded server-side in create mode, otherwise lazy-loaded client-side
   if (isCreateMode) {
-    const [mobMaturities, mobSpeciesList, locations, itemsList, events] = await Promise.all([
+    const [mobMaturities, locations, events] = await Promise.all([
       apiCall(fetch, '/mobmaturities').catch(() => []),
-      apiCall(fetch, '/mobspecies').catch(() => []),
       apiCall(fetch, '/locations').catch(() => []),
-      apiCall(fetch, '/items?limit=5000').catch(() => []),
       apiCall(fetch, '/events').catch(() => [])
     ]);
     response.mobMaturities = mobMaturities || [];
-    response.mobSpeciesList = mobSpeciesList || [];
     response.locations = locations || [];
-    response.itemsList = itemsList || [];
     response.events = events || [];
   } else {
     response.mobMaturities = null;
-    response.mobSpeciesList = null;
     response.locations = null;
-    response.itemsList = null;
     response.events = null;
   }
 

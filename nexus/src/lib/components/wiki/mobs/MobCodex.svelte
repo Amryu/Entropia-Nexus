@@ -110,8 +110,8 @@
       }
     }
 
-    // Check looter profession contribution
-    if (skill?.Professions && looterProfession) {
+    // Check looter profession contribution (show for any looter profession, not just current mob type)
+    if (skill?.Professions) {
       const looterContributions = LOOTER_PROFESSIONS
         .map(profession => {
           const contrib = skill.Professions.find(p => p.Profession?.Name === profession);
@@ -120,9 +120,10 @@
         .filter(Boolean)
         .filter(c => c.weight > 0);
 
-      const current = looterContributions.find(c => c.profession === looterProfession);
-      if (current?.weight != null && current.weight > 0) {
-        const weight = current.weight;
+      if (looterContributions.length > 0) {
+        // Use current mob's looter weight for badge level, fall back to max across all
+        const current = looterProfession ? looterContributions.find(c => c.profession === looterProfession) : null;
+        const weight = current?.weight ?? Math.max(...looterContributions.map(c => c.weight));
         if (weight >= 0.8) badges.push({ label: 'Loot', level: 'high', value: weight, type: 'loot', contributions: looterContributions });
         else if (weight >= 0.4) badges.push({ label: 'Loot', level: 'medium', value: weight, type: 'loot', contributions: looterContributions });
         else badges.push({ label: 'Loot', level: 'low', value: weight, type: 'loot', contributions: looterContributions });
