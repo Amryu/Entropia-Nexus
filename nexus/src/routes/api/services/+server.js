@@ -2,6 +2,7 @@
 import { getServices, createService, upsertServiceHealingDetails, upsertServiceDpsDetails, upsertServiceTransportationDetails, addServiceEquipment, getServiceHealingDetails, getServiceDpsDetails, getServiceTransportationDetails, getServicesEquipmentBulk, getUserByEntropiaName } from "$lib/server/db.js";
 import { getResponse, apiCall } from "$lib/util.js";
 import { checkRateLimit } from '$lib/server/rateLimiter.js';
+import { requireGrantAPI } from '$lib/server/auth.js';
 import { sanitizeMarketDescription } from '$lib/server/sanitizeRichText.js';
 
 // GET all services (with optional filters)
@@ -64,14 +65,7 @@ export async function GET({ url, locals, fetch }) {
 
 // POST create new service
 export async function POST({ request, locals }) {
-  const user = locals.session?.user;
-
-  if (!user) {
-    return getResponse({ error: 'You must be logged in to create a service.' }, 401);
-  }
-  if (!user.verified) {
-    return getResponse({ error: 'You must verify your account before creating services.' }, 403);
-  }
+  const user = requireGrantAPI(locals, 'services.manage');
 
   const rateCheck = checkRateLimit(`services:create:${user.id}`, 5, 60_000);
   if (!rateCheck.allowed) {

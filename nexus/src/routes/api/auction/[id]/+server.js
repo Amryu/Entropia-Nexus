@@ -9,6 +9,7 @@ import {
   getAuction, getBidHistory, updateAuction, activateAuction, cancelAuction,
   deleteAuction, validateAuctionInput, insertAuditLog, endExpiredAuctions
 } from '$lib/server/auction.js';
+import { requireGrantAPI } from '$lib/server/auth.js';
 import { pool } from '$lib/server/db.js';
 
 export async function GET({ params }) {
@@ -28,9 +29,7 @@ export async function GET({ params }) {
 }
 
 export async function PUT({ params, request, locals }) {
-  const user = locals.session?.user;
-  if (!user) return getResponse({ error: 'Authentication required' }, 401);
-  if (!user.verified) return getResponse({ error: 'Verified account required' }, 403);
+  const user = requireGrantAPI(locals, 'auction.manage');
 
   let body;
   try {
@@ -105,9 +104,7 @@ export async function PUT({ params, request, locals }) {
 }
 
 export async function DELETE({ params, locals }) {
-  const user = locals.session?.user;
-  if (!user) return getResponse({ error: 'Authentication required' }, 401);
-  if (!user.verified) return getResponse({ error: 'Verified account required' }, 403);
+  const user = requireGrantAPI(locals, 'auction.manage');
 
   try {
     const auction = await getAuction(params.id);

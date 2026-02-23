@@ -15,15 +15,16 @@ export async function POST({ request, locals }) {
   if (!user.verified) return getResponse({ error: 'Verified account required' }, 403);
   if (!user.grants?.includes('exchange.manage')) return getResponse({ error: 'Permission denied' }, 403);
 
-  // Verify Turnstile (skipped for OAuth-authenticated requests)
+  // Block OAuth API access — bump-all always requires Turnstile
+  if (isOAuthRequest(locals)) return getResponse({ error: 'This endpoint is not available via the OAuth API' }, 403);
+
+  // Verify Turnstile
   let body = {};
   try { body = await request.json(); } catch {}
-  if (!isOAuthRequest(locals)) {
-    const turnstileToken = body.turnstile_token;
-    if (!turnstileToken) return getResponse({ error: 'Captcha verification required' }, 400);
-    const ip = locals.ip || request.headers.get('x-forwarded-for') || request.headers.get('cf-connecting-ip');
-    if (!await verifyTurnstile(turnstileToken, ip)) return getResponse({ error: 'Captcha verification failed. Please try again.' }, 400);
-  }
+  const turnstileToken = body.turnstile_token;
+  if (!turnstileToken) return getResponse({ error: 'Captcha verification required' }, 400);
+  const ip = locals.ip || request.headers.get('x-forwarded-for') || request.headers.get('cf-connecting-ip');
+  if (!await verifyTurnstile(turnstileToken, ip)) return getResponse({ error: 'Captcha verification failed. Please try again.' }, 400);
 
   const bumpCheck = checkRateLimit(`order:bump-all:${user.id}`, RATE_LIMIT_BUMP_ALL_PER_HOUR, 3_600_000);
   if (!bumpCheck.allowed) {

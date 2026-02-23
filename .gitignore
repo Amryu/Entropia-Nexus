@@ -1,6 +1,9 @@
 
 **/node_modules
 nexus-bot/config.json
+client/config.json
+client/data/nexus_client.db
+client/debug_output/
 .vscode/
 .claude/
 .mcp.json

@@ -4,6 +4,7 @@
  * POST /api/auction/disclaimer — Accept a disclaimer (verified)
  */
 import { getResponse } from '$lib/util.js';
+import { isOAuthRequest } from '$lib/server/auth.js';
 import { getDisclaimerStatus, acceptDisclaimer } from '$lib/server/auction.js';
 
 const VALID_ROLES = ['bidder', 'seller'];
@@ -23,6 +24,9 @@ export async function GET({ locals }) {
 }
 
 export async function POST({ request, locals }) {
+  // Disclaimers must be accepted through the web UI — block OAuth
+  if (isOAuthRequest(locals)) return getResponse({ error: 'Disclaimers must be accepted through the web interface' }, 403);
+
   const user = locals.session?.user;
   if (!user) return getResponse({ error: 'Authentication required' }, 401);
   if (!user.verified) return getResponse({ error: 'Verified account required' }, 403);

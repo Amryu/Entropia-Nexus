@@ -78,6 +78,60 @@
     }
   }
 
+  // URL builder state per client
+  let urlBuilderOpen = {};
+  let selectedScopes = {};
+  let selectedRedirectUri = {};
+  let copied = {};
+
+  // Group scopes by category (base name before colon)
+  $: scopeGroups = (() => {
+    const groups = new Map();
+    for (const scope of data.scopes) {
+      const [category] = scope.key.split(':');
+      if (!groups.has(category)) groups.set(category, []);
+      groups.get(category).push(scope);
+    }
+    return [...groups.entries()].map(([name, scopes]) => ({ name, scopes }));
+  })();
+
+  function toggleUrlBuilder(clientId) {
+    urlBuilderOpen[clientId] = !urlBuilderOpen[clientId];
+    if (!selectedScopes[clientId]) selectedScopes[clientId] = {};
+  }
+
+  function toggleScope(clientId, scopeKey) {
+    if (!selectedScopes[clientId]) selectedScopes[clientId] = {};
+    selectedScopes[clientId][scopeKey] = !selectedScopes[clientId][scopeKey];
+    selectedScopes = selectedScopes; // trigger reactivity
+  }
+
+  function getAuthUrl(client, scopeState, redirectState) {
+    const scopes = Object.entries(scopeState[client.id] || {})
+      .filter(([, v]) => v)
+      .map(([k]) => k)
+      .join(' ');
+    const redirectUri = redirectState[client.id] || client.redirect_uris[0] || '';
+    const params = new URLSearchParams({
+      response_type: 'code',
+      client_id: client.id,
+      redirect_uri: redirectUri,
+      scope: scopes || '<SCOPES>',
+      state: '<STATE>',
+      code_challenge: '<CODE_CHALLENGE>',
+      code_challenge_method: 'S256'
+    });
+    return `${location.origin}/oauth/authorize?${params.toString()}`;
+  }
+
+  async function copyUrl(clientId, url) {
+    try {
+      await navigator.clipboard.writeText(url);
+      copied[clientId] = true;
+      setTimeout(() => { copied[clientId] = false; copied = copied; }, 2000);
+    } catch {}
+  }
+
   function dismissNewClient() {
     newClientResult = null;
   }
@@ -203,6 +257,69 @@
               <span>{new Date(client.created_at).toLocaleDateString()}</span>
             </div>
           </div>
+          <!-- Authorization URL Builder -->
+          <div class="url-builder-section">
+            <button class="btn-url-builder" on:click={() => toggleUrlBuilder(client.id)}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+              </svg>
+              {urlBuilderOpen[client.id] ? 'Hide Authorization URL' : 'Authorization URL'}
+            </button>
+
+            {#if urlBuilderOpen[client.id]}
+              <div class="url-builder">
+                <p class="url-builder-desc">Select the scopes your application needs. Users will be asked to approve these permissions.</p>
+
+                {#if client.redirect_uris.length > 1}
+                  <div class="redirect-select">
+                    <label for="redirect-{client.id}">Redirect URI</label>
+                    <select id="redirect-{client.id}" bind:value={selectedRedirectUri[client.id]}>
+                      {#each client.redirect_uris as uri}
+                        <option value={uri}>{uri}</option>
+                      {/each}
+                    </select>
+                  </div>
+                {/if}
+
+                <div class="scope-picker">
+                  {#each scopeGroups as group}
+                    <div class="scope-group">
+                      <span class="scope-group-name">{group.name}</span>
+                      <div class="scope-group-items">
+                        {#each group.scopes as scope}
+                          <label class="scope-option" class:write={scope.key.endsWith(':write')}>
+                            <input
+                              type="checkbox"
+                              checked={selectedScopes[client.id]?.[scope.key] || false}
+                              on:change={() => toggleScope(client.id, scope.key)}
+                            />
+                            <span class="scope-key">{scope.key}</span>
+                            <span class="scope-desc">{scope.description}</span>
+                          </label>
+                        {/each}
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+
+                <div class="generated-url">
+                  <div class="url-header">
+                    <label>Generated URL</label>
+                    <button class="btn-copy" on:click={() => copyUrl(client.id, getAuthUrl(client, selectedScopes, selectedRedirectUri))}>
+                      {copied[client.id] ? 'Copied!' : 'Copy'}
+                    </button>
+                  </div>
+                  <code class="url-display">{getAuthUrl(client, selectedScopes, selectedRedirectUri)}</code>
+                </div>
+
+                <p class="url-note">
+                  Replace <code>&lt;STATE&gt;</code> with a random string and <code>&lt;CODE_CHALLENGE&gt;</code> with a Base64url-encoded SHA-256 hash of your code verifier (PKCE).
+                </p>
+              </div>
+            {/if}
+          </div>
+
           <div class="client-actions">
             <button class="btn-secondary" on:click={() => rotateSecret(client.id)} disabled={rotatingSecret === client.id}>
               {rotatingSecret === client.id ? 'Rotating...' : 'Rotate Secret'}
@@ -469,5 +586,190 @@
   .btn-secondary:disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  /* URL Builder */
+
+  .url-builder-section {
+    margin: 0.75rem 0;
+  }
+
+  .btn-url-builder {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.4rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    background: transparent;
+    border: 1px solid var(--border-color);
+    color: var(--accent-color);
+  }
+
+  .btn-url-builder:hover {
+    background: var(--hover-bg);
+  }
+
+  .url-builder {
+    margin-top: 0.75rem;
+    padding: 1rem;
+    background: var(--hover-bg);
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+  }
+
+  .url-builder-desc {
+    margin: 0 0 0.75rem;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+  }
+
+  .redirect-select {
+    margin-bottom: 0.75rem;
+  }
+
+  .redirect-select label {
+    display: block;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.25rem;
+  }
+
+  .redirect-select select {
+    width: 100%;
+    padding: 0.4rem 0.5rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--input-bg);
+    color: var(--text-primary);
+    font-size: 0.8rem;
+    font-family: monospace;
+  }
+
+  .scope-picker {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .scope-group {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .scope-group-name {
+    min-width: 80px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: capitalize;
+    padding-top: 0.25rem;
+    flex-shrink: 0;
+  }
+
+  .scope-group-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 0.75rem;
+  }
+
+  .scope-option {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.8rem;
+    cursor: pointer;
+    padding: 0.2rem 0;
+  }
+
+  .scope-option input[type="checkbox"] {
+    margin: 0;
+    cursor: pointer;
+  }
+
+  .scope-key {
+    font-family: monospace;
+    font-size: 0.75rem;
+    color: var(--text-primary);
+  }
+
+  .scope-option.write .scope-key {
+    color: var(--color-warning, #e0a000);
+  }
+
+  .scope-desc {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+  }
+
+  .generated-url {
+    margin-bottom: 0.5rem;
+  }
+
+  .url-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.25rem;
+  }
+
+  .url-header label {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+  }
+
+  .btn-copy {
+    padding: 0.2rem 0.6rem;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+  }
+
+  .btn-copy:hover {
+    background: var(--hover-bg);
+  }
+
+  .url-display {
+    display: block;
+    padding: 0.5rem;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-size: 0.75rem;
+    word-break: break-all;
+    user-select: all;
+    line-height: 1.4;
+  }
+
+  .url-note {
+    margin: 0;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    line-height: 1.4;
+  }
+
+  .url-note code {
+    font-size: 0.7rem;
+    background: var(--card-bg);
+    padding: 0.1rem 0.3rem;
+    border-radius: 3px;
+  }
+
+  @media (max-width: 600px) {
+    .scope-group {
+      flex-direction: column;
+      gap: 0.15rem;
+    }
+
+    .scope-group-name {
+      min-width: unset;
+    }
   }
 </style>

@@ -7,7 +7,8 @@
       heading: 'Developer',
       items: [
         { label: 'Applications', href: '/account/settings/developer' },
-        { label: 'Authorized Apps', href: '/account/settings/authorizations' }
+        { label: 'Authorized Apps', href: '/account/settings/authorizations' },
+        { label: 'API Reference', href: '/account/settings/api-docs' }
       ]
     }
   ];

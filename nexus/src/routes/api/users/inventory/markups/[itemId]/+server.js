@@ -2,14 +2,13 @@
 import { getResponse } from '$lib/util.js';
 import { deleteUserMarkup } from '$lib/server/inventory.js';
 import { checkRateLimit } from '$lib/server/rateLimiter.js';
+import { requireGrantAPI } from '$lib/server/auth.js';
 
 /**
  * DELETE /api/users/inventory/markups/[itemId] — Remove markup for an item
  */
 export async function DELETE({ params, locals }) {
-  const user = locals.session?.user;
-  if (!user) return getResponse({ error: 'Authentication required' }, 401);
-  if (!user.verified) return getResponse({ error: 'Verified account required' }, 403);
+  const user = requireGrantAPI(locals, 'inventory.manage');
 
   // Share rate limit bucket with markup upserts
   const rateCheck = checkRateLimit(`inv:markup:${user.id}`, 60, 60_000);

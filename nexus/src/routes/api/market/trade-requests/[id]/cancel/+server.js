@@ -1,12 +1,15 @@
 //@ts-nocheck
 import { getResponse } from '$lib/util.js';
 import { cancelTradeRequest } from '$lib/server/trade-requests.js';
+import { isOAuthRequest } from '$lib/server/auth.js';
 
 /**
  * POST /api/market/trade-requests/[id]/cancel — Cancel a trade request
  * Only the requester or target can cancel.
  */
 export async function POST({ params, locals }) {
+  if (isOAuthRequest(locals)) return getResponse({ error: 'This endpoint is not available via the OAuth API' }, 403);
+
   const user = locals.session?.user;
   if (!user) return getResponse({ error: 'Authentication required' }, 401);
 

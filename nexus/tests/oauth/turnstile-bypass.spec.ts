@@ -181,19 +181,17 @@ test.describe('Turnstile Bypass - Exchange Orders', () => {
     expect(data.error).toContain('Captcha');
   });
 
-  test('OAuth-authenticated bump-all skips Turnstile', async ({ verifiedUser }) => {
+  test('OAuth-authenticated bump-all is blocked', async ({ verifiedUser }) => {
     const { access_token } = await getOAuthTokens(verifiedUser);
 
     const res = await verifiedUser.request.post('/api/market/exchange/orders/bump-all', {
       headers: { Authorization: `Bearer ${access_token}` },
       data: {}
-      // No turnstile_token - OK for OAuth
     });
-    // Should not fail with Captcha error
-    if (res.status() === 400) {
-      const data = await res.json();
-      expect(data.error).not.toContain('Captcha');
-    }
+    // bump-all is not available via OAuth API
+    expect(res.status()).toBe(403);
+    const data = await res.json();
+    expect(data.error).toContain('not available via the OAuth API');
   });
 });
 

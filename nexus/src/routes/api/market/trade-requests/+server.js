@@ -1,6 +1,6 @@
 //@ts-nocheck
 import { getResponse } from '$lib/util.js';
-import { hasGrant } from '$lib/server/auth.js';
+import { hasGrant, isOAuthRequest } from '$lib/server/auth.js';
 import { getOrCreateTradeRequest, getUserTradeRequests } from '$lib/server/trade-requests.js';
 import { PLANETS } from '$lib/server/exchange.js';
 
@@ -32,6 +32,8 @@ export async function GET({ locals }) {
  * Requires market.trade grant.
  */
 export async function POST({ request, locals, fetch }) {
+  if (isOAuthRequest(locals)) return getResponse({ error: 'This endpoint is not available via the OAuth API' }, 403);
+
   const { user, error } = getVerifiedUser(locals);
   if (error) return error;
 

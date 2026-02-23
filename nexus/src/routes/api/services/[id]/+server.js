@@ -20,6 +20,7 @@ import {
 } from "$lib/server/db.js";
 import { getResponse } from "$lib/util.js";
 import { checkRateLimit } from '$lib/server/rateLimiter.js';
+import { requireGrantAPI } from '$lib/server/auth.js';
 import { sanitizeMarketDescription } from '$lib/server/sanitizeRichText.js';
 import { extractDiscordInviteCode, isValidDiscordCode } from '$lib/server/discordUtils.js';
 
@@ -63,14 +64,7 @@ export async function GET({ params, locals }) {
 
 // PUT update service
 export async function PUT({ params, request, locals }) {
-  const user = locals.session?.user;
-
-  if (!user) {
-    return getResponse({ error: 'You must be logged in to update a service.' }, 401);
-  }
-  if (!user.verified) {
-    return getResponse({ error: 'You must verify your account before making changes.' }, 403);
-  }
+  const user = requireGrantAPI(locals, 'services.manage');
 
   const rateCheck = checkRateLimit(`services:update:${user.id}`, 20, 60_000);
   if (!rateCheck.allowed) {
@@ -225,14 +219,7 @@ export async function PUT({ params, request, locals }) {
 
 // DELETE service (soft delete)
 export async function DELETE({ params, locals }) {
-  const user = locals.session?.user;
-
-  if (!user) {
-    return getResponse({ error: 'You must be logged in to delete a service.' }, 401);
-  }
-  if (!user.verified) {
-    return getResponse({ error: 'You must verify your account before making changes.' }, 403);
-  }
+  const user = requireGrantAPI(locals, 'services.manage');
 
   const rateCheck = checkRateLimit(`services:delete:${user.id}`, 5, 60_000);
   if (!rateCheck.allowed) {

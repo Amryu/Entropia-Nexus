@@ -2,14 +2,12 @@
 import { getRentalOfferById, getRentalBlockedDates, addRentalBlockedDate, deleteRentalBlockedDate, countRentalBlockedDates } from '$lib/server/db.js';
 import { getResponse } from '$lib/util.js';
 import { checkRateLimit } from '$lib/server/rateLimiter.js';
+import { requireGrantAPI } from '$lib/server/auth.js';
 import { validateDate, MAX_BLOCKED_RANGES } from '$lib/server/rentalUtils.js';
 
 // GET /api/rental/[id]/blocked-dates — List blocked date ranges
 export async function GET({ params, locals }) {
-  const user = locals.session?.user;
-  if (!user) {
-    return getResponse({ error: 'You must be logged in.' }, 401);
-  }
+  const user = requireGrantAPI(locals, 'rental.manage');
 
   const id = parseInt(params.id);
   if (isNaN(id)) {
@@ -35,10 +33,7 @@ export async function GET({ params, locals }) {
 
 // POST /api/rental/[id]/blocked-dates — Add blocked date range
 export async function POST({ params, request, locals }) {
-  const user = locals.session?.user;
-  if (!user) {
-    return getResponse({ error: 'You must be logged in.' }, 401);
-  }
+  const user = requireGrantAPI(locals, 'rental.manage');
 
   const id = parseInt(params.id);
   if (isNaN(id)) {
@@ -105,10 +100,7 @@ export async function POST({ params, request, locals }) {
 
 // DELETE /api/rental/[id]/blocked-dates — Remove blocked date range
 export async function DELETE({ params, request, locals }) {
-  const user = locals.session?.user;
-  if (!user) {
-    return getResponse({ error: 'You must be logged in.' }, 401);
-  }
+  const user = requireGrantAPI(locals, 'rental.manage');
 
   const offerId = parseInt(params.id);
   if (isNaN(offerId)) {

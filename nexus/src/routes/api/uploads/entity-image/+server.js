@@ -134,7 +134,25 @@ export async function POST({ request, locals }) {
       throw error(400, 'Invalid entity type format');
     }
 
-    // 8a. For item-set images, verify ownership and that set contains (C) items
+    // 8a. Block user type — profile images use /api/image/user/{userId} with ownership checks
+    if (entityType === 'user') {
+      throw error(400, 'Use /api/image/user/{userId} for profile images');
+    }
+
+    // 8b. Permission checks for auto-approved types (these bypass admin review)
+    if (entityType === 'announcement') {
+      if (!user.grants?.includes('admin.panel')) {
+        throw error(403, 'Only administrators can upload announcement images');
+      }
+    }
+
+    if (entityType === 'guide-category') {
+      if (!user.grants?.includes('guide.edit') && !user.grants?.includes('admin.panel')) {
+        throw error(403, 'Guide editing permission required to upload guide images');
+      }
+    }
+
+    // 8b. For item-set images, verify ownership and that set contains (C) items
     if (entityType === 'item-set') {
       const itemSet = await getUserItemSetById(userId, entityId);
       if (!itemSet) {
