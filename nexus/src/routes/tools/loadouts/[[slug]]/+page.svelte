@@ -5047,7 +5047,7 @@
                   {:else if getWeapon(loadout.Gear.Weapon.Name)?.Properties?.Class === 'Mindforce'}
                     <div class="form-label">Implant</div>
                     <div class="control-row">
-                      <button class="slot select-button" disabled={getWeapon(loadout.Gear.Weapon.Name)?.Properties?.Class !== 'Mindforce'} on:contextmenu={e => clearSlot(e, "weapon")} on:click={() => openPicker('implant')}>
+                      <button class="slot select-button" disabled={getWeapon(loadout.Gear.Weapon.Name)?.Properties?.Class !== 'Mindforce'} on:contextmenu={e => clearSlot(e, "implant")} on:click={() => openPicker('implant')}>
                         {#if getWeapon(loadout.Gear.Weapon.Name)?.Properties?.Class === 'Mindforce'}
                           {#if loadout?.Gear.Weapon.Implant?.Name != null}
                             {loadout.Gear.Weapon.Implant.Name}
