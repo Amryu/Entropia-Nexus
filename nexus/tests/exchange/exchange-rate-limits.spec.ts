@@ -77,6 +77,24 @@ async function editOrder(
 // + categorization + Brotli/Gzip compression) on first request, which can take 10-30s.
 test.setTimeout(TIMEOUT_CACHE);
 
+/** Clean up any stale orders in the 1000xxx/2000xxx test range from previous failed runs */
+async function cleanupStaleTestOrders(page: import('@playwright/test').Page) {
+  const res = await page.request.get(`${API_BASE}?include_closed=false`);
+  if (!res.ok()) return;
+  const orders = await res.json();
+  if (!Array.isArray(orders)) return;
+  for (const order of orders) {
+    if (order.item_id >= 1000000 && order.item_id <= 2999999 && order.state !== 'closed') {
+      await closeOrder(page, order.id);
+    }
+  }
+}
+
+// Clean up stale test orders before running any tests
+test.beforeAll(async ({ verifiedUser }) => {
+  await cleanupStaleTestOrders(verifiedUser);
+});
+
 // ─── Authentication ──────────────────────────────────────────────
 
 test.describe('Exchange Orders - Authentication', () => {
@@ -99,6 +117,10 @@ test.describe('Exchange Orders - Authentication', () => {
 
 test.describe('Exchange Orders - CRUD', () => {
   let createdOrderId: number;
+
+  test.afterAll(async ({ verifiedUser }) => {
+    if (createdOrderId) await closeOrder(verifiedUser, createdOrderId);
+  });
 
   test('can create an order', async ({ verifiedUser }) => {
     const res = await createOrder(verifiedUser, {
@@ -151,6 +173,12 @@ test.describe('Exchange Orders - CRUD', () => {
 // skipped since the in-memory rate limiter is disabled during tests.
 
 test.describe('Exchange Orders - Per-Item Fungible Cooldown', () => {
+  const createdOrderIds: number[] = [];
+
+  test.afterAll(async ({ verifiedUser }) => {
+    for (const id of createdOrderIds) await closeOrder(verifiedUser, id);
+  });
+
   test.skip('blocks second fungible order for same item within 3-minute window', async ({ verifiedUser }) => {
     // Material (fungible): only 1 order per 3 minutes per item
     const itemId = 1000004; // Material item
@@ -173,10 +201,14 @@ test.describe('Exchange Orders - Per-Item Fungible Cooldown', () => {
 
     const res1 = await createOrder(verifiedUser, { item_id: itemId1, markup: 110 });
     expect(res1.status()).toBe(201);
+    const order1 = await res1.json();
+    createdOrderIds.push(order1.id);
 
     // Different item should work
     const res2 = await createOrder(verifiedUser, { item_id: itemId2, markup: 110 });
     expect(res2.status()).toBe(201);
+    const order2 = await res2.json();
+    createdOrderIds.push(order2.id);
   });
 });
 
@@ -225,6 +257,12 @@ test.describe('Exchange Orders - Bump Rate Limit', () => {
 // ─── Side-Specific Order Caps ────────────────────────────────────
 
 test.describe('Exchange Orders - Side Caps', () => {
+  let createdOrderId: number;
+
+  test.afterAll(async ({ verifiedUser }) => {
+    if (createdOrderId) await closeOrder(verifiedUser, createdOrderId);
+  });
+
   test('buy order cap error message mentions 1000 limit', async ({ verifiedUser }) => {
     // We can't actually create 1000 orders in a test, but we can verify the
     // cap is correctly referenced. Create a buy order to confirm it works.
@@ -235,6 +273,8 @@ test.describe('Exchange Orders - Side Caps', () => {
     });
     // Should succeed (we're well under 1000)
     expect(res.status()).toBe(201);
+    const data = await res.json();
+    createdOrderId = data.id;
   });
 });
 
