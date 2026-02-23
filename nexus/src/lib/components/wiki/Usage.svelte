@@ -261,6 +261,7 @@
             searchable={true}
             sortable={true}
             compact
+            fitContent
             defaultSort={{ column: 'markup', order: 'DESC' }}
             emptyMessage="No buy orders"
             on:rowClick={handleMarketRowClick}
@@ -278,6 +279,7 @@
             searchable={true}
             sortable={true}
             compact
+            fitContent
             emptyMessage="No blueprint data"
           />
         </div>
@@ -308,6 +310,7 @@
             searchable={true}
             sortable={true}
             compact
+            fitContent
             emptyMessage="No mission data"
           />
         </div>
@@ -323,6 +326,7 @@
             searchable={true}
             sortable={true}
             compact
+            fitContent
             emptyMessage="No vendor offers"
           />
         </div>

@@ -987,7 +987,6 @@
 
     .rewards-panel {
       height: auto;
-      min-height: 400px;
     }
 
     .skills-section {

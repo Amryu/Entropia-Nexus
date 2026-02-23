@@ -46,6 +46,7 @@
       sortable={true}
       rowHeight={32}
       compact
+      fitContent
       emptyMessage="This skill is not unlocked by any profession."
     />
   {/if}
@@ -55,7 +56,6 @@
   .unlocks-table-container {
     width: 100%;
     max-width: 100%;
-    min-height: 150px;
     overflow: hidden;
   }
 

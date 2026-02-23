@@ -363,6 +363,7 @@
             searchable={true}
             sortable={true}
             compact
+            fitContent
             emptyMessage="No vendor offers"
           />
         </div>
@@ -378,6 +379,7 @@
             searchable={true}
             sortable={true}
             compact
+            fitContent
             emptyMessage="No loot data"
           />
         </div>
@@ -393,6 +395,7 @@
             searchable={true}
             sortable={true}
             compact
+            fitContent
             defaultSort={{ column: 'markup', order: 'ASC' }}
             emptyMessage="No market listings"
             on:rowClick={handleMarketRowClick}
@@ -419,6 +422,7 @@
             searchable={true}
             sortable={true}
             compact
+            fitContent
             emptyMessage="No blueprint data"
           />
         </div>
@@ -434,6 +438,7 @@
             searchable={true}
             sortable={true}
             compact
+            fitContent
             emptyMessage="No blueprint drops"
           />
         </div>

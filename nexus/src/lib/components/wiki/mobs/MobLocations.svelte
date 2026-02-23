@@ -136,6 +136,7 @@
       sortable={false}
       rowHeight={32}
       compact
+      fitContent
       emptyMessage="No location data available."
     />
   {/if}

@@ -69,6 +69,7 @@
       sortable={true}
       rowHeight={32}
       compact
+      fitContent
       emptyMessage="This skill does not contribute to any professions."
     />
   {/if}
@@ -78,7 +79,6 @@
   .professions-table-container {
     width: 100%;
     max-width: 100%;
-    min-height: 150px;
     overflow: hidden;
   }
 

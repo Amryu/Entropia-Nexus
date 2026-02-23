@@ -96,6 +96,7 @@
             sortable={true}
             rowHeight={32}
             compact
+            fitContent
             emptyMessage="No items in this section."
           />
         </div>

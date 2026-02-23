@@ -220,6 +220,7 @@
       sortable={true}
       rowHeight={32}
       compact
+      fitContent
       rowClass={getRowClass}
       emptyMessage="No maturity data available."
     />

@@ -1130,7 +1130,7 @@
 
   & .shopping-table th,
   & .shopping-table td {
-    padding: 6px 10px;
+    padding: 4px 10px;
     text-align: left;
     font-size: 13px;
     line-height: 24px;
@@ -1142,7 +1142,7 @@
 
   & .shopping-table th {
     background: var(--hover-color);
-    padding: 6px 10px;
+    padding: 4px 10px;
     font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
@@ -1163,7 +1163,7 @@
     background: var(--hover-color);
     border-top: 1px solid var(--border-color);
     border-bottom: none;
-    padding: 6px 10px;
+    padding: 4px 10px;
   }
 
   & .shopping-table .col-check {

@@ -99,6 +99,7 @@
       sortable={true}
       rowHeight={32}
       compact
+      fitContent
       emptyMessage="No loot data available."
     />
   {/if}

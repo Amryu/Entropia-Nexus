@@ -85,6 +85,7 @@
       sortable={true}
       rowHeight={32}
       compact
+      fitContent
       emptyMessage="No skill component data available."
     />
   {/if}
@@ -94,7 +95,6 @@
   .skills-table-container {
     width: 100%;
     max-width: 100%;
-    min-height: 200px;
     overflow: hidden;
   }
 

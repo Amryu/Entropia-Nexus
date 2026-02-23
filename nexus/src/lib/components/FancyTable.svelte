@@ -27,6 +27,7 @@
    * - loading: External loading state
    * - defaultWidthBasis: 'content' | 'header' | 'both' (default: 'both')
    * - horizontalScroll: Enable horizontal scrolling (default: true)
+   * - fitContent: When true, table shrinks to fit its content height instead of filling parent (default: false)
    *
    * Events:
    * - rowClick: { row, index }
@@ -47,6 +48,9 @@
   export let defaultWidthBasis = 'both';
   export let horizontalScroll = true;
   export let compact = false;
+
+  /** @type {boolean} When true, table shrinks to fit content height instead of filling parent */
+  export let fitContent = false;
 
   /** @type {{ column: string, order: 'ASC'|'DESC' }|null} Initial sort to apply */
   export let defaultSort = null;
@@ -138,8 +142,8 @@
     ? Math.max(effectiveRowHeight, Math.floor(containerHeight / effectiveRowHeight) * effectiveRowHeight)
     : 0;
   $: visibleCapacity = contentHeight > 0 ? Math.floor(contentHeight / effectiveRowHeight) : 0;
-  $: fillRowCount = totalCount > 0 ? Math.max(0, visibleCapacity - totalCount) : 0;
-  $: virtualContainerHeight = Math.max(totalHeight, contentHeight || 0);
+  $: fillRowCount = fitContent ? 0 : (totalCount > 0 ? Math.max(0, visibleCapacity - totalCount) : 0);
+  $: virtualContainerHeight = fitContent ? totalHeight : Math.max(totalHeight, contentHeight || 0);
 
   // Filter and sort data in non-lazy mode
   $: filteredSortedData = (() => {
@@ -940,6 +944,16 @@
     padding: 24px 16px;
   }
 
+  /* Fit-content mode: table shrinks to fit rows instead of filling parent */
+  .fancy-table-container.fit-content {
+    height: auto;
+  }
+
+  .fit-content .table-body {
+    flex: 0 1 auto;
+    min-height: 0;
+  }
+
   /* Desktop: hide mobile-only columns */
   @media (min-width: 769px) {
     .hide-on-desktop {
@@ -1040,7 +1054,7 @@
   }
 </style>
 
-<div class="fancy-table-container" class:compact bind:this={containerEl}>
+<div class="fancy-table-container" class:compact class:fit-content={fitContent} bind:this={containerEl}>
   <!-- Header -->
   <div class="table-header" class:sticky={stickyHeader} class:horizontal-scroll={horizontalScroll} bind:this={headerEl}>
     <div class="header-row" style="grid-template-columns: {gridTemplateColumns};">
