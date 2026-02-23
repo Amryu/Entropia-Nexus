@@ -445,6 +445,7 @@ test.describe('OAuth Consent Page', () => {
 
     const formRes = await verifiedUser.request.post('/oauth/authorize?/deny', {
       form: {
+        client_id: clientId,
         redirect_uri: REDIRECT_URI,
         state: state
       },

@@ -4,6 +4,7 @@
  * Supports grant_type=authorization_code and grant_type=refresh_token.
  */
 import { exchangeAuthorizationCode, refreshAccessToken } from '$lib/server/oauth.js';
+import { checkRateLimit } from '$lib/server/rateLimiter.js';
 
 export async function POST({ request }) {
   // OAuth spec requires application/x-www-form-urlencoded
@@ -18,6 +19,13 @@ export async function POST({ request }) {
     params = new URLSearchParams(json);
   } else {
     return tokenError('invalid_request', 'Content-Type must be application/x-www-form-urlencoded or application/json.');
+  }
+
+  // Rate limit per client_id: 20 requests per minute
+  const clientId = params.get('client_id') || 'unknown';
+  const rateCheck = checkRateLimit(`oauth:token:${clientId}`, 20, 60_000);
+  if (!rateCheck.allowed) {
+    return tokenError('rate_limited', 'Too many token requests. Please try again later.');
   }
 
   const grantType = params.get('grant_type');

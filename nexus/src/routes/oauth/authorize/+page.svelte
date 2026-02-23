@@ -80,6 +80,7 @@
           </button>
         </form>
         <form method="POST" action="?/deny">
+          <input type="hidden" name="client_id" value={client.id} />
           <input type="hidden" name="redirect_uri" value={redirectUri} />
           <input type="hidden" name="state" value={state} />
           <button type="submit" class="btn-deny">Deny</button>

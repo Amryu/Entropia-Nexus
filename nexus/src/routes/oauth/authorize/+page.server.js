@@ -114,10 +114,17 @@ export const actions = {
 
   deny: async ({ request }) => {
     const formData = await request.formData();
+    const clientId = formData.get('client_id');
     const redirectUri = formData.get('redirect_uri');
     const state = formData.get('state');
 
-    if (!redirectUri) throw error(400, 'Missing redirect_uri.');
+    if (!redirectUri || !clientId) throw error(400, 'Missing required parameters.');
+
+    // Validate redirect_uri against client's registered URIs to prevent open redirect
+    const client = await getClient(clientId);
+    if (!client || !client.redirect_uris.includes(redirectUri)) {
+      throw error(400, 'Invalid client or redirect URI.');
+    }
 
     const redirectUrl = new URL(redirectUri);
     redirectUrl.searchParams.set('error', 'access_denied');

@@ -230,7 +230,10 @@ export async function verifyClientSecret(clientId, secret) {
     [clientId]
   );
   if (!rows[0]) return false;
-  return rows[0].secret_hash === hashToken(secret);
+  const expected = Buffer.from(rows[0].secret_hash, 'hex');
+  const actual = Buffer.from(hashToken(secret), 'hex');
+  if (expected.length !== actual.length) return false;
+  return crypto.timingSafeEqual(expected, actual);
 }
 
 /**
@@ -288,23 +291,14 @@ export async function createAuthorizationCode(clientId, userId, redirectUri, sco
 export async function exchangeAuthorizationCode(rawCode, clientId, clientSecret, redirectUri, codeVerifier) {
   const codeHash = hashToken(rawCode);
 
-  // Fetch and validate the authorization code
+  // Atomically mark as used and return row (prevents race condition)
   const { rows } = await pool.query(
-    `SELECT * FROM oauth_authorization_codes WHERE code = $1`,
+    `UPDATE oauth_authorization_codes SET used = true WHERE code = $1 AND used = false RETURNING *`,
     [codeHash]
   );
 
   const authCode = rows[0];
   if (!authCode) return null;
-
-  // Mark as used immediately (single-use)
-  await pool.query(
-    'UPDATE oauth_authorization_codes SET used = true WHERE code = $1',
-    [codeHash]
-  );
-
-  // Validate
-  if (authCode.used) return null;
   if (new Date(authCode.expires_at) < new Date()) return null;
   if (authCode.client_id !== clientId) return null;
   if (authCode.redirect_uri !== redirectUri) return null;
