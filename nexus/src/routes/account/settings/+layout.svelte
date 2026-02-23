@@ -47,8 +47,7 @@
   </aside>
 
   {#if mobileSidebarOpen}
-    <!-- svelte-ignore a11y-click-events-have-key-events -->
-    <div class="sidebar-overlay" on:click={closeSidebar}></div>
+    <div class="sidebar-overlay" role="presentation" on:click={closeSidebar}></div>
   {/if}
 
   <button class="sidebar-toggle" on:click={() => mobileSidebarOpen = !mobileSidebarOpen}>
@@ -123,19 +122,20 @@
 
   .sidebar-toggle {
     display: none;
-    position: absolute;
-    top: 0.75rem;
-    left: 0.75rem;
-    z-index: 10;
-    padding: 0.4rem 0.75rem;
-    border-radius: 6px;
-    border: 1px solid var(--border-color);
-    background: var(--card-bg);
-    color: var(--text-primary);
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    z-index: 60;
+    padding: 0.5rem 1rem;
+    border-radius: 20px;
+    border: none;
+    background: var(--accent-color);
+    color: #fff;
     font-size: 0.85rem;
     cursor: pointer;
     align-items: center;
     gap: 0.375rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   }
 
   .sidebar-overlay {
@@ -156,8 +156,9 @@
       left: 0;
       bottom: 0;
       z-index: 101;
-      background: var(--card-bg);
+      background: var(--primary-color);
       box-shadow: 2px 0 12px rgba(0, 0, 0, 0.3);
+      border-right: 1px solid var(--border-color);
     }
 
     .settings-sidebar.mobile-open {
@@ -177,7 +178,7 @@
     }
 
     .settings-content {
-      padding-top: 3rem;
+      padding-top: 0;
     }
   }
 </style>

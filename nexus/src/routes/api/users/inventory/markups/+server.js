@@ -4,7 +4,7 @@ import { getUserMarkups, upsertUserMarkups } from '$lib/server/inventory.js';
 import { checkRateLimit } from '$lib/server/rateLimiter.js';
 import { requireGrantAPI } from '$lib/server/auth.js';
 
-const MAX_MARKUP_VALUE = 100_000;
+const MAX_MARKUP_VALUE = 2_147_483_647;
 
 /**
  * GET /api/users/inventory/markups — Get user's markup configurations
@@ -63,8 +63,8 @@ export async function PUT({ request, locals }) {
     if (!Number.isFinite(markup)) {
       return getResponse({ error: `items[${i}].markup must be a number` }, 400);
     }
-    if (Math.abs(markup) > MAX_MARKUP_VALUE) {
-      return getResponse({ error: `items[${i}].markup exceeds allowed range (-${MAX_MARKUP_VALUE} to ${MAX_MARKUP_VALUE})` }, 400);
+    if (markup < 0 || markup > MAX_MARKUP_VALUE) {
+      return getResponse({ error: `items[${i}].markup must be between 0 and ${MAX_MARKUP_VALUE}` }, 400);
     }
 
     validated.push({ item_id: itemId, markup });

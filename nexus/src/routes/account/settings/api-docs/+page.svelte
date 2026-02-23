@@ -1,6 +1,50 @@
 <script>
   // @ts-nocheck
+  import { onMount } from 'svelte';
+
   export let data;
+
+  let activeId = '';
+  let tocOpen = false;
+
+  function scrollTo(id) {
+    const el = document.getElementById(id);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      activeId = id;
+      tocOpen = false;
+    }
+  }
+
+  onMount(() => {
+    const headingEls = data.headings
+      .map(h => document.getElementById(h.id))
+      .filter(Boolean);
+
+    if (!headingEls.length) return;
+
+    const scrollContainer = document.querySelector('.settings-content');
+    if (!scrollContainer) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            activeId = entry.target.id;
+          }
+        }
+      },
+      {
+        root: scrollContainer,
+        rootMargin: '-5% 0px -80% 0px',
+        threshold: 0
+      }
+    );
+
+    for (const el of headingEls) observer.observe(el);
+
+    return () => observer.disconnect();
+  });
 </script>
 
 <svelte:head>
@@ -8,18 +52,181 @@
 </svelte:head>
 
 <div class="api-docs">
-  <div class="prose">
-    {@html data.html}
+  <div class="toc-mobile">
+    <button class="toc-toggle" on:click={() => tocOpen = !tocOpen}>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="3" y1="6" x2="21" y2="6" />
+        <line x1="3" y1="12" x2="15" y2="12" />
+        <line x1="3" y1="18" x2="18" y2="18" />
+      </svg>
+      Table of Contents
+      <span class="toc-arrow" class:open={tocOpen}>&#9662;</span>
+    </button>
+    {#if tocOpen}
+      <nav class="toc-dropdown">
+        {#each data.headings.filter(h => h.level === 2) as heading}
+          <button class="toc-link" class:active={activeId === heading.id} on:click={() => scrollTo(heading.id)}>
+            {heading.text}
+          </button>
+        {/each}
+      </nav>
+    {/if}
+  </div>
+
+  <div class="docs-layout">
+    <div class="prose">
+      {@html data.html}
+    </div>
+    <nav class="toc-sidebar">
+      <div class="toc-title">On this page</div>
+      {#each data.headings as heading}
+        <button
+          class="toc-item"
+          class:sub={heading.level === 3}
+          class:active={activeId === heading.id}
+          on:click={() => scrollTo(heading.id)}
+        >
+          {heading.text}
+        </button>
+      {/each}
+    </nav>
   </div>
 </div>
 
 <style>
   .api-docs {
     padding: 2rem;
+  }
+
+  .docs-layout {
+    display: flex;
+    gap: 2rem;
+    align-items: flex-start;
+  }
+
+  .prose {
+    flex: 1;
+    min-width: 0;
     max-width: 900px;
   }
 
-  /* Prose styling for rendered markdown */
+  /* ── Desktop TOC sidebar ── */
+  .toc-sidebar {
+    position: sticky;
+    top: 1rem;
+    align-self: flex-start;
+    width: 200px;
+    flex-shrink: 0;
+    max-height: calc(100vh - 6rem);
+    overflow-y: auto;
+    padding-bottom: 2rem;
+    border-left: 1px solid var(--border-color);
+    padding-left: 1rem;
+  }
+
+  .toc-title {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+  }
+
+  .toc-item {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    padding: 0.2rem 0;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    cursor: pointer;
+    line-height: 1.4;
+    transition: color 0.15s;
+    font-family: inherit;
+  }
+
+  .toc-item:hover {
+    color: var(--text-primary);
+  }
+
+  .toc-item.active {
+    color: var(--accent-color);
+  }
+
+  .toc-item.sub {
+    padding-left: 0.75rem;
+    font-size: 0.73rem;
+  }
+
+  /* ── Mobile TOC ── */
+  .toc-mobile {
+    display: none;
+    margin-bottom: 1rem;
+  }
+
+  .toc-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    background: var(--secondary-color);
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    cursor: pointer;
+    font-family: inherit;
+    width: 100%;
+  }
+
+  .toc-arrow {
+    margin-left: auto;
+    font-size: 0.7rem;
+    transition: transform 0.15s;
+  }
+
+  .toc-arrow.open {
+    transform: rotate(180deg);
+  }
+
+  .toc-dropdown {
+    display: flex;
+    flex-direction: column;
+    margin-top: 0.5rem;
+    padding: 0.5rem;
+    background: var(--secondary-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+  }
+
+  .toc-link {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: none;
+    border: none;
+    padding: 0.4rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.15s, color 0.15s;
+  }
+
+  .toc-link:hover {
+    background: var(--hover-bg);
+    color: var(--text-primary);
+  }
+
+  .toc-link.active {
+    color: var(--accent-color);
+  }
+
+  /* ── Prose styling for rendered markdown ── */
   .prose :global(h1) {
     font-size: 1.75rem;
     font-weight: 700;
@@ -33,16 +240,21 @@
     font-size: 1.35rem;
     font-weight: 600;
     color: var(--text-primary);
-    margin: 2rem 0 1rem;
+    margin: 2.5rem 0 1rem;
     padding-bottom: 0.5rem;
     border-bottom: 1px solid var(--border-color);
+  }
+
+  .prose :global(h2:first-child),
+  .prose :global(h1 + h2) {
+    margin-top: 1.5rem;
   }
 
   .prose :global(h3) {
     font-size: 1.1rem;
     font-weight: 600;
     color: var(--text-primary);
-    margin: 1.5rem 0 0.75rem;
+    margin: 1.75rem 0 0.75rem;
   }
 
   .prose :global(h4) {
@@ -157,6 +369,16 @@
   .prose :global(li) {
     margin: 0.25rem 0;
     line-height: 1.5;
+  }
+
+  @media (max-width: 1100px) {
+    .toc-sidebar {
+      display: none;
+    }
+
+    .toc-mobile {
+      display: block;
+    }
   }
 
   @media (max-width: 768px) {

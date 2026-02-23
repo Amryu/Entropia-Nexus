@@ -1,8 +1,447 @@
-# OAuth API Reference
+# API Reference
 
-## Authentication
+## Data API
 
-All API requests require a valid OAuth 2.0 Bearer token in the `Authorization` header:
+**Base URL:** `https://api.entropianexus.com`
+
+The Data API provides read-only access to the full Entropia Universe database. No authentication required. All responses are JSON. OpenAPI spec available at `/schema.json` and interactive documentation at `/docs`.
+
+### Search
+
+#### `GET /search`
+
+Search across all entity types. Returns up to 50 results (max 5 per type).
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `query` | string | **Required.** Search term |
+| `fuzzy` | string | Set to `true` or `1` for fuzzy matching |
+
+**Searchable types:** Items, ArmorSets, Mobs, Skills, Professions, Vendors, Missions, MissionChains, Locations, Users, Societies
+
+```json
+[
+  { "Id": 12345, "Name": "Adjusted HeartBeat", "Type": "Weapon", "SubType": "Shortblade", "Score": 95 }
+]
+```
+
+#### `GET /search/detailed`
+
+Same parameters as `/search`. Returns enriched results with full entity data (up to 300 results, 100 per type).
+
+#### `GET /search/items`
+
+Items-only search with optional type filtering.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `query` | string | **Required.** Search term |
+| `fuzzy` | string | Set to `true` or `1` for fuzzy matching |
+| `type` | string | Filter to a specific item type (optional) |
+| `limit` | integer | Max results (default 50) |
+
+**Valid types:** `Weapon`, `Armor`, `Clothing`, `Tool`, `Material`, `Blueprint`, `Component`, `Furniture`, `Enhancer`, `Attachment`, `ArmorSet`, `Consumable`, `Mining`, `Amplifier`, `Vehicle`
+
+### Entity Data
+
+All entity endpoints follow the pattern: `GET /{collection}` returns all entries, `GET /{collection}/{id}` returns a single entry by ID or name. Responses are cached in-memory and refreshed when underlying data changes.
+
+**Items & Equipment:**
+
+| Endpoint | Description |
+|----------|-------------|
+| `/absorbers` | Energy absorbers |
+| `/armorplatings` | Armor plating attachments |
+| `/armorsets` | Armor sets with pieces, effects, and tiers |
+| `/armors` | Individual armor pieces |
+| `/blueprints` | Blueprints with materials, books, and drops |
+| `/blueprintbooks` | Blueprint book collections |
+| `/blueprintdrops` | Blueprint drop sources |
+| `/capsules` | Creature control capsules |
+| `/clothings` | Clothing with effects and equip sets |
+| `/consumables` | Consumable items with effects |
+| `/decorations` | Decorative items |
+| `/effectchips` | Effect chips with materials and effects |
+| `/effects` | All effect definitions |
+| `/enhancers` | Enhancer attachments |
+| `/equipsets` | Equipment sets |
+| `/excavators` | Excavators with effects and tiers |
+| `/finderamplifiers` | Finder amplifiers |
+| `/finders` | Finders with effects and tiers |
+| `/furniture` | Furniture items |
+| `/items` | All items (supports `?Ids=1,2,3` for batch fetch) |
+| `/medicalchips` | Medical chips with effects |
+| `/medicaltools` | Medical tools with effects and tiers |
+| `/mindforce` | Mindforce implants |
+| `/misctools` | Miscellaneous tools |
+| `/pets` | Tamed creatures |
+| `/refiners` | Refiner tools |
+| `/refining` | Refining recipes with ingredients |
+| `/scanners` | Scanner tools |
+| `/signs` | Sign items |
+| `/storagecontainers` | Storage containers |
+| `/strongboxes` | Strongbox items |
+| `/teleportationchips` | Teleportation chips |
+| `/tiers` | Tier data with materials |
+| `/vehicles` | Vehicles |
+| `/weaponamplifiers` | Weapon amplifiers |
+| `/weaponvisionattachments` | Weapon vision attachments |
+| `/weapons` | Weapons with effects, tiers, and materials |
+
+**World & Information:**
+
+| Endpoint | Description |
+|----------|-------------|
+| `/apartments` | Apartment estates |
+| `/areas` | Geographic areas |
+| `/events` | In-game events |
+| `/locations` | All locations with facilities and wave events |
+| `/missions` | Missions with chains and events |
+| `/missionchains` | Mission chain collections |
+| `/planets` | Planet data |
+| `/professions` | Professions with skills and unlocks |
+| `/professioncategories` | Profession category groupings |
+| `/shops` | Player shops with inventory |
+| `/skills` | Skills with profession links |
+| `/skillcategories` | Skill category groupings |
+| `/teleporters` | Teleporter locations |
+| `/vendoroffers` | NPC vendor offer prices |
+| `/vendors` | NPC vendors with offers |
+
+**Mobs:**
+
+| Endpoint | Description |
+|----------|-------------|
+| `/mobs` | Creatures with species, loots, maturities, and spawns |
+| `/mobloots` | Creature loot tables |
+| `/mobmaturities` | Creature maturity levels |
+| `/mobspawns` | Creature spawn locations |
+| `/mobspecies` | Creature species |
+
+### Acquisition & Usage
+
+#### `GET /acquisition`
+
+Find where items can be obtained. Returns blueprints that craft the item, mob loot tables, vendor offers, refining recipes, shop listings, and blueprint drops.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `items` | string | **Required.** Comma-separated item names or IDs |
+
+Also available as `GET /acquisition/{item}` for a single item.
+
+#### `GET /usage`
+
+Find where items are used as ingredients. Returns blueprints, refining recipes, and vendor offers.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `items` | string | **Required.** Comma-separated item names or IDs |
+
+Also available as `GET /usage/{item}` for a single item.
+
+### Enumerations
+
+#### `GET /enumerations`
+
+Returns all available enumeration names.
+
+#### `GET /enumerations/{name}`
+
+Returns tabular data for a specific enumeration.
+
+### Audit History
+
+#### `GET /audit/types`
+
+Returns the list of entity types that support audit history.
+
+**Supported types:** Weapon, ArmorSet, Material, MedicalTool, MedicalChip, Refiner, Scanner, Finder, Excavator, TeleportChip, EffectChip, MiscTool, WeaponAmplifier, WeaponVisionAttachment, Absorber, FinderAmplifier, ArmorPlating, MindforceImplant, Blueprint, Pet, Mob, Consumable, CreatureControlCapsule, Vehicle, Furniture, Decoration, StorageContainer, Sign, Clothing, Vendor
+
+#### `GET /audit/{entityType}/{entityId}`
+
+Returns the last 100 audit records for an entity. Each record includes `Operation` (Insert/Update/Delete), `Timestamp`, `UserId`, and `Data`.
+
+#### `GET /audit/{entityType}/{entityId}/original`
+
+Returns the original INSERT version of an entity.
+
+#### `GET /audit/{entityType}/{entityId}/at`
+
+Returns the entity version at a specific point in time.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `timestamp` | string | **Required.** ISO 8601 timestamp |
+
+### Entity Changes
+
+Community-submitted changes to the wiki database.
+
+#### `GET /entity-changes/types`
+
+Returns entity types with pending change counts.
+
+#### `GET /entity-changes/search`
+
+Search for entity changes.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `q` | string | Search by name |
+| `type` | string | Filter by entity type |
+| `limit` | integer | Results per page (default 50) |
+| `offset` | integer | Pagination offset (default 0) |
+
+#### `GET /entity-changes/{entityType}/{entityIdOrName}`
+
+Returns all change requests for a specific entity (by numeric ID or name).
+
+## Public Endpoints
+
+**Base URL:** `https://entropianexus.com`
+
+These endpoints require no authentication and are read-only unless noted.
+
+### Market
+
+#### `GET /api/market/exchange`
+
+Returns the full exchange market cache. Supports `ETag`/`304 Not Modified` and pre-compressed responses (`Accept-Encoding: br, gzip`).
+
+#### `GET /api/market/search`
+
+Unified market search across exchange orders, services, auctions, rentals, and shops.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `query` | string | **Required.** Search term (2-100 chars) |
+
+Returns up to 30 scored results, each with `id`, `name`, `marketType`, `entityType`, `price`, `detail`, `url`, and `score`.
+
+#### `GET /api/market/prices/{itemId}`
+
+Price history for an item from external price sources.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `from` | string | Start date (ISO 8601) |
+| `to` | string | End date (ISO 8601) |
+| `granularity` | string | `raw`, `hour`, `day`, `week`, or `auto` |
+| `source` | string | Filter by price source |
+| `limit` | integer | Max results (1-2000, default 500) |
+
+#### `GET /api/market/prices/latest`
+
+Latest prices for multiple items at once.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `items` | string | **Required.** Comma-separated item IDs (max 100) |
+| `source` | string | Filter by price source |
+
+#### `GET /api/market/prices/exchange/{itemId}`
+
+Exchange-derived price data and statistics for an item.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `period` | string | `24h`, `7d`, `30d`, `3m`, `6m`, `1y`, `5y`, or `all` (default `7d`) |
+| `history` | string | Set to `1` to include time-series data |
+| `gender` | string | `Male` or `Female` for gendered items |
+
+#### `GET /api/market/exchange/orders/item/{itemId}`
+
+Full order book (buy and sell orders) for an item.
+
+#### `GET /api/market/exchange/orders/user/{userId}`
+
+All active exchange orders for a user.
+
+### Auctions
+
+#### `GET /api/auction`
+
+Paginated list of public auctions.
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `status` | string | `active` | `active`, `ended`, `settled`, or `cancelled` |
+| `search` | string | — | Search titles (max 100 chars) |
+| `sort` | string | `ends_at` | `ends_at`, `created_at`, `current_bid`, `bid_count`, `starting_bid` |
+| `order` | string | `asc` | `asc` or `desc` |
+| `limit` | integer | 24 | Results per page (1-100) |
+| `offset` | integer | 0 | Pagination offset |
+
+#### `GET /api/auction/{id}`
+
+Auction detail with bid history.
+
+### Services
+
+#### `GET /api/services`
+
+List active service listings.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `type` | string | Filter by service type |
+| `planet_id` | integer | Filter by planet |
+| `include_details` | string | Set to `true` for full details |
+
+**Service types:** `healing`, `dps`, `transportation`, `crafting`, `hunting`, `mining`, `custom`
+
+#### `GET /api/services/{id}`
+
+Full service detail including equipment, armor sets, and availability.
+
+#### `GET /api/services/{id}/availability`
+
+Weekly availability schedule for a service.
+
+#### `GET /api/services/{id}/flights`
+
+Flights for a warp/transportation service.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `include_completed` | string | Set to `true` to include past flights |
+| `upcoming` | string | Set to `true` for upcoming only |
+
+#### `GET /api/services/{id}/ticket-offers`
+
+Ticket offers for a service.
+
+### Rentals
+
+#### `GET /api/rental`
+
+List available rental offers.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `planet_id` | integer | Filter by planet |
+| `limit` | integer | Results per page (max 100, default 50) |
+| `page` | integer | Page number (default 1) |
+
+#### `GET /api/rental/{id}`
+
+Rental offer detail with item set data.
+
+#### `GET /api/rental/{id}/availability`
+
+Availability calendar showing accepted bookings and blocked dates.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `months` | integer | Calendar range (1-12, default 3) |
+
+### Profiles & Societies
+
+#### `GET /api/users/profiles/{identifier}`
+
+Public user profile including contribution scores, services, shops, exchange orders, rental offers, and society membership. The `identifier` can be a numeric user ID or an Entropia name (use `~` for spaces).
+
+#### `GET /api/societies`
+
+Search for societies.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `query` | string | Search term (returns all if empty) |
+
+#### `GET /api/societies/{identifier}`
+
+Society detail with members. The `identifier` can be a numeric ID or society name.
+
+### Guides & Events
+
+#### `GET /api/guides`
+
+Full guide tree with all categories, chapters, and lessons.
+
+#### `GET /api/guides/{categoryId}`
+
+Single guide category.
+
+#### `GET /api/guides/{categoryId}/chapters`
+
+Chapters within a category.
+
+#### `GET /api/guides/{categoryId}/chapters/{chapterId}`
+
+Single chapter.
+
+#### `GET /api/guides/{categoryId}/chapters/{chapterId}/lessons`
+
+Lessons within a chapter.
+
+#### `GET /api/guides/{categoryId}/chapters/{chapterId}/lessons/{lessonId}`
+
+Single lesson with paragraphs.
+
+#### `GET /api/events`
+
+Upcoming approved community events.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `limit` | integer | Max results (max 20, default 5) |
+
+### Wiki Changes
+
+#### `GET /api/changes`
+
+List community-submitted wiki changes with filtering.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `entity` | string | Comma-separated entity types |
+| `type` | string | `Create`, `Update`, or `Delete` |
+| `state` | string | Comma-separated states |
+| `authorId` | string | Filter by author |
+| `planet` | string | Filter by planet |
+| `page` | integer | Page number |
+| `limit` | integer | Results per page (max 100) |
+
+#### `GET /api/changes/{id}`
+
+Single change by ID.
+
+### Images
+
+#### `GET /api/img/{entityType}/{entityId}`
+
+Entity image (WebP). Returns the approved icon or thumbnail with optional processing.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `type` | string | `icon` or `thumb` |
+| `size` | integer | `32`, `48`, `64`, `128`, or `320` |
+| `mode` | string | `dark` or `light` |
+
+### Other
+
+#### `GET /api/tools/loadout/share/{shareCode}`
+
+Returns a publicly shared loadout by its share code.
+
+#### `POST /api/tools/skills/values`
+
+Batch skill point to PED value conversions. Rate limit: 60/min per IP.
+
+```json
+{
+  "skillPointsToPED": [1000, 5000],
+  "pedToSkillPoints": [10.00]
+}
+```
+
+At least one array must be provided. Max 200 items total.
+
+## OAuth API
+
+All OAuth API requests require a valid OAuth 2.0 Bearer token in the `Authorization` header:
 
 ```
 Authorization: Bearer <access_token>
@@ -60,9 +499,7 @@ Authorization: Bearer <access_token>
 
 > Refresh tokens are single-use. Each refresh returns a new refresh token. Reusing an old refresh token will revoke all tokens for security.
 
----
-
-## Scopes
+### Scopes
 
 | Scope | Description |
 |-------|-------------|
@@ -95,9 +532,7 @@ Authorization: Bearer <access_token>
 | `guides:write` | Create and edit guide content |
 | `uploads:write` | Upload images |
 
----
-
-## Profile
+### Profile
 
 #### `GET /api/oauth/userinfo`
 **Scope:** `profile:read`
@@ -116,9 +551,7 @@ Returns the authenticated user's profile.
 }
 ```
 
----
-
-## Inventory
+### Inventory
 
 #### `GET /api/users/inventory`
 **Scope:** `inventory:read`
@@ -206,7 +639,7 @@ Returns custom markup values set by the user.
 #### `PUT /api/users/inventory/markups`
 **Scope:** `inventory:write` | Rate limit: 60/min
 
-Set custom markup values. Max 1,000 items per request. Markup range: -100,000 to 100,000.
+Set custom markup values. Max 1,000 items per request. Markup range: 0 to 2,147,483,647.
 
 ```json
 {
@@ -221,9 +654,7 @@ Set custom markup values. Max 1,000 items per request. Markup range: -100,000 to
 
 Remove a custom markup for an item.
 
----
-
-## Loadouts
+### Loadouts
 
 #### `GET /api/tools/loadout`
 **Scope:** `loadouts:read`
@@ -274,9 +705,7 @@ Update a loadout's name, data, or public visibility.
 
 Delete a loadout. Must be the owner.
 
----
-
-## Item Sets
+### Item Sets
 
 Item sets group items together for use in auctions and rentals.
 
@@ -340,9 +769,7 @@ Update an item set. Cannot modify sets linked to active rental offers.
 
 Delete an item set. Must be the owner. Cannot delete sets linked to active rental offers.
 
----
-
-## Skills
+### Skills
 
 #### `GET /api/tools/skills`
 **Scope:** `skills:read`
@@ -380,9 +807,7 @@ Returns skill import history.
 
 Returns per-skill changes for a specific import.
 
----
-
-## Exchange
+### Exchange
 
 #### `GET /api/market/exchange/orders`
 **Scope:** `exchange:read`
@@ -498,9 +923,7 @@ Update an order's quantity, markup, planet, min_quantity, or details. Must be th
 
 Close (delete) an exchange order. Must be the owner.
 
----
-
-## Trade Requests
+### Trade Requests
 
 #### `GET /api/market/trade-requests`
 **Scope:** `trades:read`
@@ -516,9 +939,7 @@ Returns a specific trade request. Must be the requester or target.
 
 > Trade request creation and cancellation are only available through the web interface.
 
----
-
-## Auctions
+### Auctions
 
 Auction participation requires accepting disclaimers through the web interface first — sellers must accept the seller disclaimer, bidders must accept the bidder disclaimer. These cannot be accepted via the API.
 
@@ -601,9 +1022,7 @@ Buy out an auction at the listed buyout price. Requires accepted bidder disclaim
 
 Settle a completed auction. Must be the seller.
 
----
-
-## Rentals
+### Rentals
 
 #### `GET /api/rental/my`
 **Scope:** `rental:read` | Query: `type` (`offers` or `requests`)
@@ -668,9 +1087,7 @@ Add blocked dates to a rental offer.
 
 Remove blocked dates from a rental offer.
 
----
-
-## Services
+### Services
 
 #### `GET /api/services/my`
 **Scope:** `services:read`
@@ -746,9 +1163,7 @@ Returns service requests for the user.
 
 Update a service request status. Must be the provider.
 
----
-
-## Notifications
+### Notifications
 
 #### `GET /api/notifications`
 **Scope:** `notifications:read` | Query: `page` (default 1), `pageSize` (5-50, default 10)
@@ -775,9 +1190,7 @@ Mark all notifications as read.
 
 Update a single notification (mark as read).
 
----
-
-## Preferences
+### Preferences
 
 User preferences store arbitrary JSON data under namespaced keys. Each preference is a key-value pair where the value can be any JSON object up to 20KB.
 
@@ -812,9 +1225,7 @@ Set a user preference.
 
 Delete a user preference.
 
----
-
-## Societies
+### Societies
 
 #### `GET /api/societies`
 **Scope:** `societies:read` | Query: `query` (search term)
@@ -867,9 +1278,7 @@ Join a society.
 
 Disband a society. Must be the leader.
 
----
-
-## Guides
+### Guides
 
 The `guides:write` scope grants `guide.create` and `guide.edit` permissions. Deletion of guide content is not available via the API.
 
@@ -956,9 +1365,7 @@ Reorder paragraphs within a lesson.
 }
 ```
 
----
-
-## Image Uploads
+### Image Uploads
 
 Images are uploaded as `multipart/form-data`. The upload system supports multiple target types beyond database entities — including user profiles, rich text content, auction item sets, and guide banners.
 
@@ -1031,8 +1438,6 @@ Upload a profile image. You can only update your own profile image.
 
 Delete a profile image. You can only delete your own profile image.
 
----
-
 ## Error Responses
 
 All endpoints return errors in a consistent format:
@@ -1060,4 +1465,4 @@ Rate limits vary by endpoint. When rate limited, the API returns a `429` status 
 
 ## CORS
 
-All OAuth-authenticated responses include CORS headers (`Access-Control-Allow-Origin: *`), enabling direct browser-based API calls from any origin.
+All OAuth-authenticated responses include CORS headers (`Access-Control-Allow-Origin: *`), enabling direct browser-based API calls from any origin. The Data API (`api.entropianexus.com`) also supports CORS for all origins.
