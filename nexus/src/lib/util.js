@@ -532,10 +532,12 @@ export async function loadPendingChangesData(fetch, sessionUser, config) {
  * @returns {Promise<Record<string, any>>} Loaded data keyed by `key`
  */
 export async function loadEditDeps(deps) {
+  const apiBase = getApiBase();
   const results = {};
   await Promise.all(deps.map(async ({ key, url }) => {
     try {
-      const res = await fetch(url);
+      const target = url.startsWith('/api/') ? (apiBase + url.slice(4)) : url;
+      const res = await fetch(target);
       results[key] = res.ok ? await res.json() : [];
     } catch {
       results[key] = [];

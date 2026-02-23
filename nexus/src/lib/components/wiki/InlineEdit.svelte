@@ -214,6 +214,7 @@
           rows="3"
         />
       {:else if type === 'select'}
+        {#key options.length}
         <select
           bind:this={inputEl}
           value={localValue ?? ''}
@@ -225,6 +226,7 @@
             <option value={option.value}>{option.label}</option>
           {/each}
         </select>
+        {/key}
       {:else if type === 'autocomplete'}
         <input
           bind:this={inputEl}

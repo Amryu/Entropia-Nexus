@@ -1,6 +1,6 @@
 <!--
   @component CreateSpeciesDialog
-  Modal dialog for creating a new mob species inline from the Mob wiki page.
+  Modal dialog for creating or editing a mob species inline from the Mob wiki page.
   Returns the species data via 'create' event for embedding in the parent entity's change.
 -->
 <script>
@@ -9,9 +9,14 @@
 
   const dispatch = createEventDispatcher();
 
-  let name = '';
-  let codexBaseCost = '';
-  let codexType = 'Mob';
+  /** @type {{ Name: string, Properties?: { CodexBaseCost?: number, CodexType?: string } } | null} */
+  export let species = null;
+
+  $: isEdit = !!species;
+
+  let name = species?.Name || '';
+  let codexBaseCost = species?.Properties?.CodexBaseCost ?? '';
+  let codexType = species?.Properties?.CodexType || 'Mob';
 
   $: canSubmit = name.trim().length > 0;
 
@@ -51,12 +56,16 @@
   on:keydown={handleKeydown}
 >
   <div class="modal" role="dialog" aria-modal="true">
-    <h3>Create New Species</h3>
+    <h3>{isEdit ? 'Edit Species' : 'Create New Species'}</h3>
 
     <div class="form-group">
       <label for="species-name">Name <span class="required">*</span></label>
-      <input id="species-name" type="text" bind:value={name} placeholder="e.g. Calonite" autocomplete="off" maxlength="100" />
-      <span class="hint">Unique species name</span>
+      {#if isEdit}
+        <input id="species-name" type="text" value={name} disabled />
+      {:else}
+        <input id="species-name" type="text" bind:value={name} placeholder="e.g. Calonite" autocomplete="off" maxlength="100" />
+      {/if}
+      <span class="hint">{isEdit ? 'Species name cannot be changed' : 'Unique species name'}</span>
     </div>
 
     <div class="form-group">
@@ -76,7 +85,7 @@
 
     <div class="actions">
       <button class="btn-cancel" on:click={handleCancel}>Cancel</button>
-      <button class="btn-create" on:click={handleSubmit} disabled={!canSubmit}>Create</button>
+      <button class="btn-create" on:click={handleSubmit} disabled={!canSubmit}>{isEdit ? 'Save' : 'Create'}</button>
     </div>
   </div>
 </div>
@@ -140,6 +149,11 @@
     border-radius: 4px;
     color: var(--text-color);
     box-sizing: border-box;
+  }
+
+  .form-group input:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
   }
 
   .form-group input:focus,

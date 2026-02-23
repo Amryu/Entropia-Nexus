@@ -92,6 +92,7 @@
 
   // Build species options for autocomplete
   let showCreateSpeciesDialog = false;
+  let showEditSpeciesDialog = false;
   let localSpeciesList = [];
   $: localSpeciesList = [...(speciesList || [])];
   $: speciesOptions = localSpeciesList.map(s => ({ value: s.Name, label: s.Name }));
@@ -906,6 +907,16 @@
     updateField('Species', { Name, _newSpecies });
     showCreateSpeciesDialog = false;
   }
+
+  function handleEditSpecies(event) {
+    const { Name, _newSpecies } = event.detail;
+    // Update the species in the local list so the UI reflects the change
+    localSpeciesList = localSpeciesList.map(s =>
+      s.Name === Name ? { ...s, Properties: { CodexBaseCost: _newSpecies.CodexBaseCost, CodexType: _newSpecies.CodexType } } : s
+    );
+    updateField('Species', { Name, _newSpecies });
+    showEditSpeciesDialog = false;
+  }
 </script>
 
 <WikiSEO
@@ -1056,6 +1067,14 @@
                       on:change={(e) => updateField('Species.Name', e.detail.value || '')}
                       on:select={(e) => updateField('Species.Name', e.detail.value || '')}
                     />
+                    {#if activeMob?.Species?.Name}
+                      <button class="btn-create-inline" on:click={() => showEditSpeciesDialog = true} title="Edit species details">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                          <path d="M17 3a2.85 2.85 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+                        </svg>
+                        Edit
+                      </button>
+                    {/if}
                     <button class="btn-create-inline" on:click={() => showCreateSpeciesDialog = true} title="Create new species">
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <line x1="12" y1="5" x2="12" y2="19" />
@@ -1391,6 +1410,14 @@
   <CreateSpeciesDialog
     on:create={handleCreateSpecies}
     on:cancel={() => showCreateSpeciesDialog = false}
+  />
+{/if}
+
+{#if showEditSpeciesDialog}
+  <CreateSpeciesDialog
+    species={activeMob?.Species}
+    on:create={handleEditSpecies}
+    on:cancel={() => showEditSpeciesDialog = false}
   />
 {/if}
 
