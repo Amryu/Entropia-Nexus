@@ -31,7 +31,7 @@
   if (!getItemCount) {
     getItemCount = function(category) {
       if (category.items && Array.isArray(category.items)) {
-        return category.items.length;
+        return category.items.filter(i => !i.ut).length;
       }
       let count = 0;
       if (category.children) {

@@ -898,6 +898,7 @@
     ]);
 
     filteredItems = base.filter((item) => {
+      if (item.ut) return false; // Hide untradeable items from exchange listings
       const name = item?.n ?? "";
 
       // Favourites folder filter

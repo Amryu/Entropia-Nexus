@@ -629,7 +629,7 @@ function slimItem(item) {
 }
 
 function slimCategorized(obj) {
-  if (Array.isArray(obj)) return obj.map(slimItem).filter(item => item && !item.ut);
+  if (Array.isArray(obj)) return obj.map(slimItem).filter(Boolean);
   if (obj && typeof obj === 'object') {
     const out = {};
     for (const [k, v] of Object.entries(obj)) {

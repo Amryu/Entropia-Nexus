@@ -1,5 +1,5 @@
 import { test, expect } from '../fixtures/auth';
-import { TIMEOUT_SHORT, TIMEOUT_MEDIUM, TIMEOUT_LONG } from '../test-constants';
+import { TIMEOUT_SHORT, TIMEOUT_MEDIUM, TIMEOUT_LONG, TIMEOUT_CACHE } from '../test-constants';
 
 /**
  * Exchange Category & Markup Tests
@@ -9,13 +9,17 @@ import { TIMEOUT_SHORT, TIMEOUT_MEDIUM, TIMEOUT_LONG } from '../test-constants';
  * 2. Deed/Token/Share materials have absolute markup (st field in slim payload)
  * 3. Regular materials do NOT have the st field
  * 4. Financial items only appear in financial category (not in materials)
- * 5. Untradeable items are excluded from all categories
+ * 5. Untradeable items are present in data with .ut flag (for name lookups)
  */
 
 const EXCHANGE_API = '/api/market/exchange';
 
 test.describe('Exchange categories and markup types', () => {
   test.describe.configure({ mode: 'serial', retries: 1 });
+
+  // Exchange API calls may trigger a full cache rebuild (22+ parallel endpoint fetches
+  // + categorization + Brotli/Gzip compression) on first request, which can take 10-30s.
+  test.setTimeout(TIMEOUT_CACHE);
 
   function collectItems(node: unknown): Array<Record<string, unknown>> {
     if (Array.isArray(node)) return node as Array<Record<string, unknown>>;
@@ -132,16 +136,21 @@ test.describe('Exchange categories and markup types', () => {
     }
   });
 
-  test('No untradeable items exist in exchange data', async ({ page }) => {
+  test('Untradeable items are present with .ut flag for name lookups', async ({ page }) => {
     const response = await page.request.get(EXCHANGE_API);
     expect(response.ok()).toBe(true);
     const data = await response.json();
 
     const allItems = collectItems(data);
-    // Slim items don't carry descriptions, but the filter in cache.js
-    // removes them before slimming. Verify no known untradeable types leak through.
-    // This is a structural test — if untradeable items exist, they should have been filtered.
     expect(allItems.length).toBeGreaterThan(0);
+    // Untradeable items (e.g. Daily Token) should be included in the data
+    // with the .ut flag, so inventory import can resolve them by name.
+    const untradeable = allItems.filter(i => i.ut);
+    expect(untradeable.length).toBeGreaterThan(0);
+    // Every untradeable item must have the .ut flag set
+    for (const item of untradeable) {
+      expect(item.ut).toBe(true);
+    }
   });
 
   test('Deed order creation accepts low markup (absolute)', async ({ verifiedUser }) => {
@@ -181,7 +190,7 @@ test.describe('Exchange categories and markup types', () => {
 
   test('Exchange UI shows Rings category under Clothes', async ({ page }) => {
     await page.goto('/market/exchange', { waitUntil: 'domcontentloaded' });
-    await expect(page.locator('.sidebar-title')).toContainText('Exchange', { timeout: TIMEOUT_LONG });
+    await expect(page.locator('.sidebar-title')).toContainText('Exchange', { timeout: TIMEOUT_CACHE });
 
     const clothesNode = page.locator('.category-header', {
       has: page.locator('.category-name', { hasText: 'Clothes' })
