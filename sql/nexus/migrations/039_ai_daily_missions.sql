@@ -5,10 +5,11 @@
 BEGIN;
 
 -- =============================================================================
--- 0. Fix Locations audit trigger column order
+-- 0. Fix audit trigger column order
 -- =============================================================================
--- The trigger puts (operation, stamp, userid) first, but the audit table
--- (which inherits from Locations) has them last. Fix to NEW.* first.
+-- Audit tables may have (operation, stamp, userid) before or after the
+-- inherited columns depending on when they were created. Using explicit
+-- column names in the INSERT makes the trigger work regardless of order.
 
 DO $$
 DECLARE
@@ -21,25 +22,38 @@ DECLARE
     'MissionRewards'
   ];
   _t TEXT;
+  _cols TEXT;
 BEGIN
   FOREACH _t IN ARRAY _tables LOOP
+    -- Get parent table column names in ordinal order
+    SELECT string_agg('"' || column_name || '"', ', ' ORDER BY ordinal_position)
+    INTO _cols
+    FROM information_schema.columns
+    WHERE table_name = _t AND table_schema = 'public';
+
     EXECUTE format($f$
       CREATE OR REPLACE FUNCTION %I() RETURNS TRIGGER AS $trig$
       BEGIN
         IF (TG_OP = 'DELETE') THEN
-          INSERT INTO %I SELECT OLD.*, 'D', now(), current_user;
+          INSERT INTO %I (%s, "operation", "stamp", "userid")
+          SELECT OLD.*, 'D', now(), current_user;
           RETURN OLD;
         ELSIF (TG_OP = 'UPDATE') THEN
-          INSERT INTO %I SELECT NEW.*, 'U', now(), current_user;
+          INSERT INTO %I (%s, "operation", "stamp", "userid")
+          SELECT NEW.*, 'U', now(), current_user;
           RETURN NEW;
         ELSIF (TG_OP = 'INSERT') THEN
-          INSERT INTO %I SELECT NEW.*, 'I', now(), current_user;
+          INSERT INTO %I (%s, "operation", "stamp", "userid")
+          SELECT NEW.*, 'I', now(), current_user;
           RETURN NEW;
         END IF;
         RETURN NULL;
       END;
       $trig$ LANGUAGE plpgsql;
-    $f$, _t || '_audit_trigger', _t || '_audit', _t || '_audit', _t || '_audit');
+    $f$, _t || '_audit_trigger',
+         _t || '_audit', _cols,
+         _t || '_audit', _cols,
+         _t || '_audit', _cols);
   END LOOP;
 END $$;
 
