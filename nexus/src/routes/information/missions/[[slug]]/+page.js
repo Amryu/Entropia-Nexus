@@ -78,6 +78,14 @@ export async function load({ fetch, params, url, parent }) {
     response.mobMaturities = [];
   }
 
+  // Fetch mob species for AIKillCycle objectives
+  try {
+    response.mobSpeciesList = await apiCall(fetch, '/mobspecies');
+  } catch (e) {
+    console.warn('Failed to load mob species:', e);
+    response.mobSpeciesList = [];
+  }
+
   // Fetch locations for dialog/interact objectives
   try {
     response.locations = await apiCall(fetch, '/locations');

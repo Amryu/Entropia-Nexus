@@ -347,6 +347,16 @@
     return acc;
   }, {});
 
+  // Build mob species ID to name lookup
+  $: mobSpeciesIdToName = (data.mobSpeciesList || []).reduce((acc, s) => {
+    acc[s.Id] = s.Name;
+    return acc;
+  }, {});
+
+  function getSpeciesNameFromId(speciesId) {
+    return mobSpeciesIdToName[speciesId] || `Species #${speciesId}`;
+  }
+
   // Get mob name from ID
   function getMobNameFromId(mobId) {
     return mobIdToName[mobId] || `Mob #${mobId}`;
@@ -428,6 +438,40 @@
       return total ? `Accumulate ${total} mining points` : 'Accumulate mining points';
     }
 
+    if (Type === 'KillCycle') {
+      const mobs = Payload?.mobs || [];
+      const ped = Payload?.pedToCycle;
+      const mobNames = [...new Set(mobs.map(m => getMobNameFromId(m.mobId)))];
+      const mobList = mobNames.length > 0
+        ? mobNames.length > 1
+          ? mobNames.slice(0, -1).join(', ') + ' or ' + mobNames[mobNames.length - 1]
+          : mobNames[0]
+        : 'creatures';
+      return ped ? `Cycle ${ped} PED killing ${mobList}` : `Kill cycle: ${mobList}`;
+    }
+
+    if (Type === 'AIKillCycle') {
+      const species = Payload?.mobSpecies || [];
+      const ped = Payload?.pedToCycle;
+      const speciesNames = species.filter(id => id != null).map(id => getSpeciesNameFromId(id));
+      const speciesList = speciesNames.length > 0
+        ? speciesNames.length > 1
+          ? speciesNames.slice(0, -1).join(', ') + ' or ' + speciesNames[speciesNames.length - 1]
+          : speciesNames[0]
+        : 'creatures';
+      return ped ? `AI Daily: Cycle ~${ped} PED hunting ${speciesList}` : `AI Daily: Hunt ${speciesList}`;
+    }
+
+    if (Type === 'AIHandIn') {
+      const items = Payload?.items || [];
+      const itemNames = items.filter(i => i.itemId).map(i => {
+        const name = itemsIndex[i.itemId] || `Item #${i.itemId}`;
+        const range = (i.minQuantity != null && i.maxQuantity != null) ? ` (${i.minQuantity}–${i.maxQuantity})` : '';
+        return name + range;
+      });
+      return itemNames.length > 0 ? `AI Daily: Hand in ${itemNames.join(', ')}` : 'AI Daily: Hand in items';
+    }
+
     if (Type === 'Use') {
       const item = Payload?.itemName || 'an item';
       return `Use ${item}`;
@@ -475,6 +519,31 @@
             label: getMobNameFromId(mob.mobId),
             value: pointGroups.join(' | ')
           });
+        }
+      }
+    }
+
+    if (Type === 'AIKillCycle') {
+      const species = Payload?.mobSpecies || [];
+      for (const speciesId of species) {
+        if (speciesId != null) {
+          details.push({ label: 'Species', value: getSpeciesNameFromId(speciesId) });
+        }
+      }
+      if (Payload?.pedToCycle) {
+        details.push({ label: 'Est. PED to Cycle', value: `~${Payload.pedToCycle}` });
+      }
+    }
+
+    if (Type === 'AIHandIn') {
+      const items = Payload?.items || [];
+      for (const item of items) {
+        if (item.itemId) {
+          const name = itemsIndex[item.itemId] || `Item #${item.itemId}`;
+          const range = (item.minQuantity != null && item.maxQuantity != null)
+            ? `${item.minQuantity}–${item.maxQuantity}`
+            : item.minQuantity ?? item.maxQuantity ?? '?';
+          details.push({ label: name, value: `Qty: ${range}` });
         }
       }
     }
@@ -1372,6 +1441,7 @@
                 steps={activeMission?.Steps || []}
                 fieldPath="Steps"
                 mobMaturities={data.mobMaturities || []}
+                mobSpeciesList={data.mobSpeciesList || []}
                 npcOptions={npcOptions}
                 locationOptions={locationOptions}
                 itemsIndex={itemsIndex}

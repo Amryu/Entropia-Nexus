@@ -20,6 +20,9 @@
   /** Full item info map { id: { Name, Type } } for type checking */
   export let itemsMap = {};
 
+  /** Mob species list from /mobspecies API for AIKillCycle objectives */
+  export let mobSpeciesList = [];
+
   /** Mission's planet info for Explore objectives */
   export let missionPlanet = null; // { Id: number, Name: string }
 
@@ -35,7 +38,9 @@
     { value: 'CraftCycle', label: 'Craft (Cycle)' },
     { value: 'MiningCycle', label: 'Mining (Cycle)' },
     { value: 'MiningClaim', label: 'Mining (Claim)' },
-    { value: 'MiningPoints', label: 'Mining (Points)' }
+    { value: 'MiningPoints', label: 'Mining (Points)' },
+    { value: 'AIKillCycle', label: 'AI Kill Cycle' },
+    { value: 'AIHandIn', label: 'AI Hand In' }
   ];
 
   const objectiveDefaults = {
@@ -50,7 +55,9 @@
     CraftCycle: { pedToCycle: null },
     MiningCycle: { totalCountRequired: null },
     MiningClaim: { totalCountRequired: null, minClaimValue: null },
-    MiningPoints: { totalCountRequired: null }
+    MiningPoints: { totalCountRequired: null },
+    AIKillCycle: { pedToCycle: null, mobSpecies: [] },
+    AIHandIn: { items: [] }
   };
 
   let itemNameDrafts = {};
@@ -87,6 +94,21 @@
   // Get mob name from ID
   function getMobName(mobId) {
     return mobIdToName.get(mobId) || `Mob #${mobId}`;
+  }
+
+  // Build mob species options for AIKillCycle (MobSpecies IDs, not Mobs IDs)
+  $: mobSpeciesOptions = (mobSpeciesList || [])
+    .map(s => ({ value: s.Id, label: s.Name }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+
+  // Build mob species ID to name lookup
+  $: mobSpeciesIdToName = (mobSpeciesList || []).reduce((acc, s) => {
+    acc[s.Id] = s.Name;
+    return acc;
+  }, {});
+
+  function getSpeciesName(speciesId) {
+    return mobSpeciesIdToName[speciesId] || `Species #${speciesId}`;
   }
 
   // Get maturities for a specific mob by MobId, sorted by level*HP ascending, bosses after non-bosses
@@ -406,6 +428,67 @@
     updateHandInItem(stepIndex, objIndex, itemIndex, 'itemId', item?.Id ?? null);
   }
 
+  // ===== AIKillCycle Functions =====
+
+  function addAISpeciesEntry(stepIndex, objIndex) {
+    const payload = getObjectivePayload(stepIndex, objIndex);
+    const species = ensureArray(payload.mobSpecies);
+    updateObjectivePayload(stepIndex, objIndex, { mobSpecies: [...species, null] });
+  }
+
+  function removeAISpeciesEntry(stepIndex, objIndex, idx) {
+    const payload = getObjectivePayload(stepIndex, objIndex);
+    const species = ensureArray(payload.mobSpecies);
+    updateObjectivePayload(stepIndex, objIndex, { mobSpecies: species.filter((_, i) => i !== idx) });
+  }
+
+  function handleAISpeciesSelect(stepIndex, objIndex, idx, speciesId) {
+    const payload = getObjectivePayload(stepIndex, objIndex);
+    const species = ensureArray(payload.mobSpecies);
+    const newSpecies = species.map((s, i) => i === idx ? (speciesId || null) : s);
+    updateObjectivePayload(stepIndex, objIndex, { mobSpecies: newSpecies });
+  }
+
+  // ===== AIHandIn Functions =====
+
+  function addAIHandInItem(stepIndex, objIndex) {
+    const payload = getObjectivePayload(stepIndex, objIndex);
+    const items = ensureArray(payload.items);
+    updateObjectivePayload(stepIndex, objIndex, {
+      items: [...items, { itemId: null, minQuantity: null, maxQuantity: null }]
+    });
+  }
+
+  function updateAIHandInItem(stepIndex, objIndex, itemIndex, key, value) {
+    const payload = getObjectivePayload(stepIndex, objIndex);
+    const items = ensureArray(payload.items);
+    const next = items.map((item, idx) => {
+      if (idx !== itemIndex) return item;
+      return { ...item, [key]: value };
+    });
+    updateObjectivePayload(stepIndex, objIndex, { items: next });
+  }
+
+  function removeAIHandInItem(stepIndex, objIndex, itemIndex) {
+    const payload = getObjectivePayload(stepIndex, objIndex);
+    const items = ensureArray(payload.items);
+    updateObjectivePayload(stepIndex, objIndex, { items: items.filter((_, idx) => idx !== itemIndex) });
+  }
+
+  function handleAIHandInItemChange(stepIndex, objIndex, itemIndex, value) {
+    const key = getItemDraftKey(stepIndex, objIndex, itemIndex);
+    setItemDraft(key, value);
+    if (value.trim().length === 0) {
+      updateAIHandInItem(stepIndex, objIndex, itemIndex, 'itemId', null);
+    }
+  }
+
+  function handleAIHandInItemSelect(stepIndex, objIndex, itemIndex, item) {
+    const key = getItemDraftKey(stepIndex, objIndex, itemIndex);
+    setItemDraft(key, item?.Name || '');
+    updateAIHandInItem(stepIndex, objIndex, itemIndex, 'itemId', item?.Id ?? null);
+  }
+
   // ===== Explore Functions =====
 
   function getExploreWaypointValue(payload) {
@@ -685,6 +768,88 @@
                             </div>
                           {/each}
                           <button type="button" class="btn-add" on:click={() => addHandInItem(stepIndex, objIndex)}><span>+</span> Add Item</button>
+                        </div>
+                      </div>
+                    </div>
+                  {:else if objective.Type === 'AIKillCycle'}
+                    {@const species = ensureArray(payload.mobSpecies)}
+                    <div class="kill-objective">
+                      <div class="kill-header">
+                        <span class="kill-label">Mob Species Pool</span>
+                      </div>
+                      <div class="mob-list">
+                        {#each species as speciesId, idx (idx)}
+                          <div class="mob-row ai-species-row">
+                            <div class="mob-search">
+                              <SearchInput
+                                value={speciesId || ''}
+                                placeholder="Search species..."
+                                options={mobSpeciesOptions}
+                                on:select={(e) => handleAISpeciesSelect(stepIndex, objIndex, idx, e.detail.value)}
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              class="btn-icon danger"
+                              on:click={() => removeAISpeciesEntry(stepIndex, objIndex, idx)}
+                              title="Remove species"
+                            >×</button>
+                          </div>
+                        {/each}
+                        <button type="button" class="btn-add" on:click={() => addAISpeciesEntry(stepIndex, objIndex)}>
+                          <span>+</span> Add Species
+                        </button>
+                      </div>
+                      <div class="kill-options">
+                        <div class="objective-field">
+                          <label>Est. PED to Cycle</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            placeholder="0"
+                            value={payload.pedToCycle ?? ''}
+                            on:input={(e) => updateObjectivePayload(stepIndex, objIndex, { pedToCycle: toNumber(e.target.value) })}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  {:else if objective.Type === 'AIHandIn'}
+                    <div class="objective-grid">
+                      <div class="objective-field full">
+                        <label>Item Pool (min–max quantity)</label>
+                        <div class="handin-list">
+                          {#each ensureArray(payload.items) as item, itemIndex}
+                            {@const itemKey = getItemDraftKey(stepIndex, objIndex, itemIndex)}
+                            <div class="handin-row ai-handin-row">
+                              <SearchInput
+                                value={getItemDisplayName(item.itemId, itemKey)}
+                                placeholder="Search item..."
+                                apiEndpoint="/search/items"
+                                displayFn={(item) => item?.Name || ''}
+                                on:change={(e) => handleAIHandInItemChange(stepIndex, objIndex, itemIndex, e.detail.value)}
+                                on:select={(e) => handleAIHandInItemSelect(stepIndex, objIndex, itemIndex, e.detail.data)}
+                              />
+                              <input
+                                type="number"
+                                min="0"
+                                step="1"
+                                placeholder="Min"
+                                value={item.minQuantity ?? ''}
+                                on:input={(e) => updateAIHandInItem(stepIndex, objIndex, itemIndex, 'minQuantity', toNumber(e.target.value))}
+                              />
+                              <input
+                                type="number"
+                                min="0"
+                                step="1"
+                                placeholder="Max"
+                                value={item.maxQuantity ?? ''}
+                                on:input={(e) => updateAIHandInItem(stepIndex, objIndex, itemIndex, 'maxQuantity', toNumber(e.target.value))}
+                              />
+                              <button type="button" class="btn-icon danger" on:click={() => removeAIHandInItem(stepIndex, objIndex, itemIndex)} title="Remove item">×</button>
+                            </div>
+                          {/each}
+                          <button type="button" class="btn-add" on:click={() => addAIHandInItem(stepIndex, objIndex)}><span>+</span> Add Item</button>
                         </div>
                       </div>
                     </div>
@@ -1306,6 +1471,14 @@
 
   .handin-row.has-min-tt {
     grid-template-columns: minmax(180px, 2fr) repeat(3, minmax(80px, 1fr)) auto;
+  }
+
+  .ai-handin-row {
+    grid-template-columns: minmax(180px, 2fr) minmax(70px, 0.7fr) minmax(70px, 0.7fr) auto;
+  }
+
+  .ai-species-row {
+    grid-template-columns: 1fr auto;
   }
 
   .handin-row :global(.item-search),
