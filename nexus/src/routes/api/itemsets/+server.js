@@ -1,5 +1,6 @@
 //@ts-nocheck
 import { getResponse } from '$lib/util.js';
+import { requireGrantAPI } from '$lib/server/auth.js';
 import { countUserItemSets, createUserItemSet, getUserItemSets, getUserLoadoutById } from '$lib/server/db.js';
 import { sanitizeItemSetData, getPayloadSizeBytes, MAX_ITEM_SET_BYTES, MAX_ITEM_SETS_PER_USER } from '$lib/server/itemSetUtils.js';
 import { checkRateLimit } from '$lib/server/rateLimiter.js';
@@ -11,10 +12,7 @@ function sanitizeName(value, fallback = 'New Item Set') {
 }
 
 export async function GET({ locals }) {
-  const user = locals.session?.user;
-  if (!user) {
-    return getResponse({ error: 'You must be logged in.' }, 401);
-  }
+  const user = requireGrantAPI(locals, 'itemsets.read');
 
   try {
     const itemSets = await getUserItemSets(user.id);
@@ -26,10 +24,7 @@ export async function GET({ locals }) {
 }
 
 export async function POST({ request, locals }) {
-  const user = locals.session?.user;
-  if (!user) {
-    return getResponse({ error: 'You must be logged in.' }, 401);
-  }
+  const user = requireGrantAPI(locals, 'itemsets.manage');
 
   // Rate limit: 10 creates per minute
   const rateMinute = checkRateLimit(`itemset:create:${user.id}`, 10, 60_000);

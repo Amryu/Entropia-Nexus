@@ -5,11 +5,11 @@
  * DELETE /api/oauth/clients/[id] — Delete a client
  */
 import { getResponse } from '$lib/util.js';
-import { requireVerified } from '$lib/server/auth.js';
+import { requireVerifiedAPI } from '$lib/server/auth.js';
 import { getClient, updateClient, deleteClient } from '$lib/server/oauth.js';
 
 export async function GET({ params, locals }) {
-  const user = requireVerified(locals);
+  const user = requireVerifiedAPI(locals);
 
   const client = await getClient(params.id);
   if (!client || String(client.user_id) !== String(user.id)) {
@@ -20,7 +20,7 @@ export async function GET({ params, locals }) {
 }
 
 export async function PUT({ params, request, locals }) {
-  const user = requireVerified(locals);
+  const user = requireVerifiedAPI(locals);
 
   let body;
   try {
@@ -75,7 +75,7 @@ export async function PUT({ params, request, locals }) {
 }
 
 export async function DELETE({ params, locals }) {
-  const user = requireVerified(locals);
+  const user = requireVerifiedAPI(locals);
 
   const deleted = await deleteClient(params.id, BigInt(user.id));
   if (!deleted) {

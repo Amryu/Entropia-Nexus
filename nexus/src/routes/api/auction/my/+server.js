@@ -3,12 +3,11 @@
  * GET /api/auction/my — Get user's auctions and bids (verified)
  */
 import { getResponse } from '$lib/util.js';
+import { requireGrantAPI } from '$lib/server/auth.js';
 import { getUserAuctions, getUserBids, endExpiredAuctions } from '$lib/server/auction.js';
 
 export async function GET({ locals }) {
-  const user = locals.session?.user;
-  if (!user) return getResponse({ error: 'Authentication required' }, 401);
-  if (!user.verified) return getResponse({ error: 'Verified account required' }, 403);
+  const user = requireGrantAPI(locals, 'auction.read');
 
   try {
     // End any expired auctions

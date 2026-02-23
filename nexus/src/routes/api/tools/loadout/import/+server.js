@@ -1,5 +1,6 @@
 //@ts-nocheck
 import { getResponse } from '$lib/util.js';
+import { requireGrantAPI } from '$lib/server/auth.js';
 import { countUserLoadouts, createUserLoadout } from '$lib/server/db.js';
 import { sanitizeLoadoutData, getPayloadSizeBytes, MAX_LOADOUT_BYTES, MAX_IMPORT_BYTES } from '$lib/server/loadoutUtils.js';
 
@@ -12,11 +13,7 @@ function sanitizeName(value, fallback = 'New Loadout') {
 }
 
 export async function POST({ request, locals }) {
-  const user = locals.session?.user;
-
-  if (!user) {
-    return getResponse({ error: 'You must be logged in.' }, 401);
-  }
+  const user = requireGrantAPI(locals, 'loadouts.manage');
 
   let body;
   try {

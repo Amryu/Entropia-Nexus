@@ -4,18 +4,18 @@
  * POST /api/oauth/clients — Register a new OAuth client
  */
 import { getResponse } from '$lib/util.js';
-import { requireVerified } from '$lib/server/auth.js';
+import { requireVerifiedAPI } from '$lib/server/auth.js';
 import { getClientsByUser, createClient, MAX_CLIENTS_PER_USER } from '$lib/server/oauth.js';
 
 export async function GET({ locals }) {
-  const user = requireVerified(locals);
+  const user = requireVerifiedAPI(locals);
 
   const clients = await getClientsByUser(BigInt(user.id));
   return getResponse(clients, 200);
 }
 
 export async function POST({ request, locals }) {
-  const user = requireVerified(locals);
+  const user = requireVerifiedAPI(locals);
 
   let body;
   try {

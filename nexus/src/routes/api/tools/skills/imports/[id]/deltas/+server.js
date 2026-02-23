@@ -1,10 +1,10 @@
 //@ts-nocheck
 import { getResponse } from '$lib/util.js';
+import { requireGrantAPI } from '$lib/server/auth.js';
 import { getSkillImportDeltas } from '$lib/server/skillsDb.js';
 
 export async function GET({ params, locals }) {
-  const user = locals.session?.user;
-  if (!user) return getResponse({ error: 'You must be logged in.' }, 401);
+  const user = requireGrantAPI(locals, 'skills.read');
 
   const importId = parseInt(params.id, 10);
   if (!Number.isFinite(importId) || importId <= 0) {

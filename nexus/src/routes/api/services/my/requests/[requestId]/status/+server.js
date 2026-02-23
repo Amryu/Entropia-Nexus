@@ -5,6 +5,7 @@ import {
   getRequestWithContext,
   updateRequestStatus
 } from '$lib/server/db';
+import { requireGrantAPI } from '$lib/server/auth.js';
 
 // Valid status transitions for questions (simplified from old request system)
 // Questions only need: pending -> completed or cancelled
@@ -18,11 +19,7 @@ const validTransitions = {
 // The old request workflow for HPS/DPS/Custom has been removed
 // Transportation now uses the flight/check-in system instead
 export async function PUT({ params, request, locals }) {
-  const user = locals.session?.user;
-
-  if (!user) {
-    return getResponse({ error: 'You must be logged in to update request status.' }, 401);
-  }
+  const user = requireGrantAPI(locals, 'services.manage');
 
   const rateCheck = checkRateLimit(`services:req-status:${user.id}`, 20, 60_000);
   if (!rateCheck.allowed) {

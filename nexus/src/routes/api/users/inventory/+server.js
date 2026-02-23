@@ -3,6 +3,7 @@ import { getResponse } from '$lib/util.js';
 import { getUserInventory, upsertInventory, syncInventory, getUserMarkups } from '$lib/server/inventory.js';
 import { getSlimItemLookup, getSlimNameLookup } from '$lib/market/cache.js';
 import { checkRateLimit } from '$lib/server/rateLimiter.js';
+import { requireGrantAPI } from '$lib/server/auth.js';
 
 const MAX_IMPORT_ITEMS = 30000;
 const MAX_UNKNOWN_ITEMS = 500;
@@ -40,9 +41,7 @@ function validateInventoryDetails(details) {
  * GET /api/users/inventory — Get user's server inventory
  */
 export async function GET({ locals }) {
-  const user = locals.session?.user;
-  if (!user) return getResponse({ error: 'Authentication required' }, 401);
-  if (!user.verified) return getResponse({ error: 'Verified account required' }, 403);
+  const user = requireGrantAPI(locals, 'inventory.read');
 
   try {
     const items = await getUserInventory(user.id);
@@ -57,9 +56,7 @@ export async function GET({ locals }) {
  * PUT /api/users/inventory — Bulk upsert inventory (import)
  */
 export async function PUT({ request, locals }) {
-  const user = locals.session?.user;
-  if (!user) return getResponse({ error: 'Authentication required' }, 401);
-  if (!user.verified) return getResponse({ error: 'Verified account required' }, 403);
+  const user = requireGrantAPI(locals, 'inventory.manage');
 
   // Rate limit: 5 imports per minute, 20 per hour
   const rateMinute = checkRateLimit(`inv:import:${user.id}`, 5, 60_000);

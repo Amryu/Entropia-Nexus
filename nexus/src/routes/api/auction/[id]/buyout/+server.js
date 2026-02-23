@@ -5,13 +5,11 @@
 import { getResponse } from '$lib/util.js';
 import { checkRateLimitPeek, incrementRateLimit } from '$lib/server/rateLimiter.js';
 import { verifyTurnstile } from '$lib/server/turnstile.js';
-import { isOAuthRequest } from '$lib/server/auth.js';
+import { isOAuthRequest, requireGrantAPI } from '$lib/server/auth.js';
 import { buyoutAuction, hasAcceptedDisclaimer, RATE_LIMIT_BUYOUT_PER_MIN } from '$lib/server/auction.js';
 
 export async function POST({ params, request, locals }) {
-  const user = locals.session?.user;
-  if (!user) return getResponse({ error: 'Authentication required' }, 401);
-  if (!user.verified) return getResponse({ error: 'Verified account required' }, 403);
+  const user = requireGrantAPI(locals, 'auction.manage');
 
   // Rate limit
   const rateKey = `auction:buyout:${user.id}`;

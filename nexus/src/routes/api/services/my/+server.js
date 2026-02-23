@@ -1,14 +1,11 @@
 //@ts-nocheck
 import { getUserServices } from "$lib/server/db.js";
 import { getResponse } from "$lib/util.js";
+import { requireGrantAPI } from '$lib/server/auth.js';
 
 // GET user's own services
 export async function GET({ locals }) {
-  const user = locals.session?.user;
-
-  if (!user) {
-    return getResponse({ error: 'You must be logged in.' }, 401);
-  }
+  const user = requireGrantAPI(locals, 'services.manage');
 
   try {
     const services = await getUserServices(user.id);

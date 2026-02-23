@@ -1,13 +1,10 @@
 // @ts-nocheck
 import { getResponse } from '$lib/util';
 import { getProviderIncomingRequests } from '$lib/server/db';
+import { requireGrantAPI } from '$lib/server/auth.js';
 
 export async function GET({ locals, url }) {
-  const user = locals.session?.user;
-
-  if (!user) {
-    return getResponse({ error: 'You must be logged in to view requests.' }, 401);
-  }
+  const user = requireGrantAPI(locals, 'services.manage');
 
   try {
     const status = url.searchParams.get('status') || null;

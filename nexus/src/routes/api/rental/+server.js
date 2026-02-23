@@ -3,6 +3,7 @@ import { getRentalOffers, createRentalOffer, countUserRentalOffers, getUserItemS
 import { getResponse } from '$lib/util.js';
 import { checkRateLimit } from '$lib/server/rateLimiter.js';
 import { sanitizeRentalOfferData, validateItemSetForRental, MAX_RENTAL_OFFERS_PER_USER } from '$lib/server/rentalUtils.js';
+import { requireGrantAPI } from '$lib/server/auth.js';
 
 // GET /api/rental — List available rental offers
 export async function GET({ url }) {
@@ -27,14 +28,7 @@ export async function GET({ url }) {
 
 // POST /api/rental — Create new rental offer
 export async function POST({ request, locals }) {
-  const user = locals.session?.user;
-
-  if (!user) {
-    return getResponse({ error: 'You must be logged in.' }, 401);
-  }
-  if (!user.verified) {
-    return getResponse({ error: 'You must verify your account before creating rental offers.' }, 403);
-  }
+  const user = requireGrantAPI(locals, 'rental.manage');
 
   // Rate limit
   const rateCheck = checkRateLimit(`rental:create:${user.id}`, 5, 60_000);

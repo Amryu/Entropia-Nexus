@@ -3,11 +3,11 @@
  * POST /api/oauth/clients/[id]/rotate-secret — Generate a new client secret
  */
 import { getResponse } from '$lib/util.js';
-import { requireVerified } from '$lib/server/auth.js';
+import { requireVerifiedAPI } from '$lib/server/auth.js';
 import { rotateClientSecret } from '$lib/server/oauth.js';
 
 export async function POST({ params, locals }) {
-  const user = requireVerified(locals);
+  const user = requireVerifiedAPI(locals);
 
   const newSecret = await rotateClientSecret(params.id, BigInt(user.id));
   if (!newSecret) {

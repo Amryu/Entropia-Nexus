@@ -25,6 +25,7 @@ const isTestEnv = process.env.NODE_ENV === 'test';
 export async function GET({ locals }) {
   const { user, error } = getVerifiedUser(locals);
   if (error) return error;
+  if (!user.grants?.includes('exchange.read')) return getResponse({ error: 'Permission denied' }, 403);
 
   try {
     const orders = await getUserOrders(user.id);
@@ -41,6 +42,7 @@ export async function GET({ locals }) {
 export async function POST({ request, locals, fetch }) {
   const { user, error } = getVerifiedUser(locals);
   if (error) return error;
+  if (!user.grants?.includes('exchange.manage')) return getResponse({ error: 'Permission denied' }, 403);
 
   // --- Global rate limits (increment on every attempt to prevent abuse via validation errors) ---
   const globalChecks = [

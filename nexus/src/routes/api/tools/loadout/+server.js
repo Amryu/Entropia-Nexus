@@ -1,6 +1,7 @@
 //@ts-nocheck
 import crypto from 'crypto';
 import { getResponse } from '$lib/util.js';
+import { requireGrantAPI } from '$lib/server/auth.js';
 import { countUserLoadouts, createUserLoadout, getUserLoadouts } from '$lib/server/db.js';
 import { sanitizeLoadoutData, getPayloadSizeBytes, MAX_LOADOUT_BYTES } from '$lib/server/loadoutUtils.js';
 
@@ -41,11 +42,7 @@ async function createWithShareCode(userId, name, data, isPublic) {
 }
 
 export async function GET({ locals }) {
-  const user = locals.session?.user;
-
-  if (!user) {
-    return getResponse({ error: 'You must be logged in.' }, 401);
-  }
+  const user = requireGrantAPI(locals, 'loadouts.read');
 
   try {
     const loadouts = await getUserLoadouts(user.id);
@@ -57,11 +54,7 @@ export async function GET({ locals }) {
 }
 
 export async function POST({ request, locals }) {
-  const user = locals.session?.user;
-
-  if (!user) {
-    return getResponse({ error: 'You must be logged in.' }, 401);
-  }
+  const user = requireGrantAPI(locals, 'loadouts.manage');
 
   let body;
   try {

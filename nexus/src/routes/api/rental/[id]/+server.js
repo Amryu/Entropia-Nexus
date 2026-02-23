@@ -3,6 +3,7 @@ import { getRentalOfferById, updateRentalOffer, softDeleteRentalOffer, getRental
 import { getResponse } from '$lib/util.js';
 import { checkRateLimit } from '$lib/server/rateLimiter.js';
 import { sanitizeRentalOfferData, validateItemSetForRental } from '$lib/server/rentalUtils.js';
+import { requireGrantAPI } from '$lib/server/auth.js';
 
 // Valid status transitions
 const VALID_TRANSITIONS = {
@@ -53,14 +54,7 @@ export async function GET({ params, locals }) {
 
 // PUT /api/rental/[id] — Update rental offer
 export async function PUT({ params, request, locals }) {
-  const user = locals.session?.user;
-
-  if (!user) {
-    return getResponse({ error: 'You must be logged in.' }, 401);
-  }
-  if (!user.verified) {
-    return getResponse({ error: 'You must verify your account.' }, 403);
-  }
+  const user = requireGrantAPI(locals, 'rental.manage');
 
   const id = parseInt(params.id);
   if (isNaN(id)) {
@@ -152,14 +146,7 @@ export async function PUT({ params, request, locals }) {
 
 // DELETE /api/rental/[id] — Soft delete rental offer
 export async function DELETE({ params, locals }) {
-  const user = locals.session?.user;
-
-  if (!user) {
-    return getResponse({ error: 'You must be logged in.' }, 401);
-  }
-  if (!user.verified) {
-    return getResponse({ error: 'You must verify your account.' }, 403);
-  }
+  const user = requireGrantAPI(locals, 'rental.manage');
 
   const id = parseInt(params.id);
   if (isNaN(id)) {

@@ -127,6 +127,7 @@ function getVerifiedUser(locals) {
 export async function PUT({ params, request, locals, fetch }) {
   const { user, error } = getVerifiedUser(locals);
   if (error) return error;
+  if (!user.grants?.includes('exchange.manage')) return getResponse({ error: 'Permission denied' }, 403);
 
   // Global edit rate limit
   const editCheck = checkRateLimit(`order:edit:${user.id}`, RATE_LIMIT_EDIT_PER_MIN, 60_000);
@@ -235,6 +236,7 @@ export async function PUT({ params, request, locals, fetch }) {
 export async function DELETE({ params, request, locals }) {
   const { user, error: authErr } = getVerifiedUser(locals);
   if (authErr) return authErr;
+  if (!user.grants?.includes('exchange.manage')) return getResponse({ error: 'Permission denied' }, 403);
 
   // Verify Turnstile (skipped for OAuth-authenticated requests)
   let body = {};

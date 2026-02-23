@@ -1,6 +1,7 @@
 //@ts-nocheck
 import crypto from 'crypto';
 import { getResponse } from '$lib/util.js';
+import { requireGrantAPI } from '$lib/server/auth.js';
 import { getUserLoadoutById, updateUserLoadout, deleteUserLoadout, getItemSetsByLoadoutId } from '$lib/server/db.js';
 import { sanitizeLoadoutData, getPayloadSizeBytes, MAX_LOADOUT_BYTES } from '$lib/server/loadoutUtils.js';
 
@@ -44,11 +45,7 @@ async function updateWithShareCode(userId, id, name, data, isPublic, existingCod
 }
 
 export async function GET({ params, locals }) {
-  const user = locals.session?.user;
-
-  if (!user) {
-    return getResponse({ error: 'You must be logged in.' }, 401);
-  }
+  const user = requireGrantAPI(locals, 'loadouts.read');
 
   try {
     const record = await getUserLoadoutById(user.id, params.id);
@@ -63,11 +60,7 @@ export async function GET({ params, locals }) {
 }
 
 export async function PUT({ params, request, locals }) {
-  const user = locals.session?.user;
-
-  if (!user) {
-    return getResponse({ error: 'You must be logged in.' }, 401);
-  }
+  const user = requireGrantAPI(locals, 'loadouts.manage');
 
   let body;
   try {
@@ -119,11 +112,7 @@ export async function POST({ params, request, locals }) {
 }
 
 export async function DELETE({ params, locals }) {
-  const user = locals.session?.user;
-
-  if (!user) {
-    return getResponse({ error: 'You must be logged in.' }, 401);
-  }
+  const user = requireGrantAPI(locals, 'loadouts.manage');
 
   try {
     const record = await getUserLoadoutById(user.id, params.id);

@@ -3,13 +3,12 @@
  * POST /api/auction/[id]/settle — Settle an ended auction (seller)
  */
 import { getResponse } from '$lib/util.js';
+import { requireGrantAPI } from '$lib/server/auth.js';
 import { checkRateLimitPeek, incrementRateLimit } from '$lib/server/rateLimiter.js';
 import { settleAuction, RATE_LIMIT_SETTLE_PER_MIN } from '$lib/server/auction.js';
 
 export async function POST({ params, locals }) {
-  const user = locals.session?.user;
-  if (!user) return getResponse({ error: 'Authentication required' }, 401);
-  if (!user.verified) return getResponse({ error: 'Verified account required' }, 403);
+  const user = requireGrantAPI(locals, 'auction.manage');
 
   // Rate limit (peek-then-increment — only increment on success)
   const rateCheck = checkRateLimitPeek(`auction:settle:${user.id}`, RATE_LIMIT_SETTLE_PER_MIN, 60_000);

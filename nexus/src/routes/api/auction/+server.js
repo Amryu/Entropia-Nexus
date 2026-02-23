@@ -4,6 +4,7 @@
  * POST /api/auction — Create draft auction (verified)
  */
 import { getResponse } from '$lib/util.js';
+import { requireGrantAPI } from '$lib/server/auth.js';
 import { checkRateLimitPeek, incrementRateLimit } from '$lib/server/rateLimiter.js';
 import {
   listAuctions, createAuction, countUserActiveAuctions, validateAuctionInput,
@@ -34,9 +35,7 @@ export async function GET({ url }) {
 }
 
 export async function POST({ request, locals }) {
-  const user = locals.session?.user;
-  if (!user) return getResponse({ error: 'Authentication required' }, 401);
-  if (!user.verified) return getResponse({ error: 'Verified account required' }, 403);
+  const user = requireGrantAPI(locals, 'auction.manage');
 
   // Rate limit (peek-then-increment — only increment on success)
   const rateCheck = checkRateLimitPeek(`auction:create:${user.id}`, RATE_LIMIT_CREATE_PER_HOUR, 3_600_000);

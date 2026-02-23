@@ -2,6 +2,7 @@
 import { getResponse } from '$lib/util.js';
 import { deleteInventoryItem, updateInventoryItem } from '$lib/server/inventory.js';
 import { checkRateLimit } from '$lib/server/rateLimiter.js';
+import { requireGrantAPI } from '$lib/server/auth.js';
 
 /**
  * Validate and sanitize inventory item details.
@@ -43,9 +44,7 @@ function validateDetails(details) {
  * PATCH /api/users/inventory/[id] — Update an inventory item
  */
 export async function PATCH({ params, request, locals }) {
-  const user = locals.session?.user;
-  if (!user) return getResponse({ error: 'Authentication required' }, 401);
-  if (!user.verified) return getResponse({ error: 'Verified account required' }, 403);
+  const user = requireGrantAPI(locals, 'inventory.manage');
 
   // Rate limit: 30 updates per minute
   const rateCheck = checkRateLimit(`inv:item:${user.id}`, 30, 60_000);
@@ -111,9 +110,7 @@ export async function PATCH({ params, request, locals }) {
  * DELETE /api/users/inventory/[id] — Remove an inventory item
  */
 export async function DELETE({ params, locals }) {
-  const user = locals.session?.user;
-  if (!user) return getResponse({ error: 'Authentication required' }, 401);
-  if (!user.verified) return getResponse({ error: 'Verified account required' }, 403);
+  const user = requireGrantAPI(locals, 'inventory.manage');
 
   // Share rate limit bucket with item updates
   const rateCheck = checkRateLimit(`inv:item:${user.id}`, 30, 60_000);

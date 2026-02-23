@@ -28,6 +28,7 @@ const isTestEnv = process.env.NODE_ENV === 'test';
 export async function POST({ request, locals, fetch }) {
   const { user, error } = getVerifiedUser(locals);
   if (error) return error;
+  if (!user.grants?.includes('exchange.manage')) return getResponse({ error: 'Permission denied' }, 403);
 
   let body;
   try {

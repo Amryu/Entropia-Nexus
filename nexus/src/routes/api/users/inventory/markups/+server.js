@@ -2,6 +2,7 @@
 import { getResponse } from '$lib/util.js';
 import { getUserMarkups, upsertUserMarkups } from '$lib/server/inventory.js';
 import { checkRateLimit } from '$lib/server/rateLimiter.js';
+import { requireGrantAPI } from '$lib/server/auth.js';
 
 const MAX_MARKUP_VALUE = 100_000;
 
@@ -9,9 +10,7 @@ const MAX_MARKUP_VALUE = 100_000;
  * GET /api/users/inventory/markups — Get user's markup configurations
  */
 export async function GET({ locals }) {
-  const user = locals.session?.user;
-  if (!user) return getResponse({ error: 'Authentication required' }, 401);
-  if (!user.verified) return getResponse({ error: 'Verified account required' }, 403);
+  const user = requireGrantAPI(locals, 'inventory.read');
 
   try {
     const markups = await getUserMarkups(user.id);
@@ -27,9 +26,7 @@ export async function GET({ locals }) {
  * Body: { items: [{ item_id: number, markup: number }] }
  */
 export async function PUT({ request, locals }) {
-  const user = locals.session?.user;
-  if (!user) return getResponse({ error: 'Authentication required' }, 401);
-  if (!user.verified) return getResponse({ error: 'Verified account required' }, 403);
+  const user = requireGrantAPI(locals, 'inventory.manage');
 
   // Rate limit: 60 per minute (generous for debounced typing)
   const rateCheck = checkRateLimit(`inv:markup:${user.id}`, 60, 60_000);

@@ -1,5 +1,6 @@
 //@ts-nocheck
 import { getResponse } from '$lib/util.js';
+import { requireGrantAPI } from '$lib/server/auth.js';
 import {
   getUserSkills,
   upsertUserSkills,
@@ -31,8 +32,7 @@ function sanitizeSkills(skills) {
 }
 
 export async function GET({ locals }) {
-  const user = locals.session?.user;
-  if (!user) return getResponse({ error: 'You must be logged in.' }, 401);
+  const user = requireGrantAPI(locals, 'skills.read');
 
   try {
     const result = await getUserSkills(user.id);
@@ -45,8 +45,7 @@ export async function GET({ locals }) {
 }
 
 export async function PUT({ request, locals }) {
-  const user = locals.session?.user;
-  if (!user) return getResponse({ error: 'You must be logged in.' }, 401);
+  const user = requireGrantAPI(locals, 'skills.manage');
 
   let body;
   try {

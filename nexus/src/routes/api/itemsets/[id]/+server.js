@@ -1,5 +1,6 @@
 //@ts-nocheck
 import { getResponse } from '$lib/util.js';
+import { requireGrantAPI } from '$lib/server/auth.js';
 import { getUserItemSetById, updateUserItemSet, deleteUserItemSet, getItemSetRentalOffers } from '$lib/server/db.js';
 import { sanitizeItemSetData, getPayloadSizeBytes, MAX_ITEM_SET_BYTES } from '$lib/server/itemSetUtils.js';
 import { checkRateLimit } from '$lib/server/rateLimiter.js';
@@ -27,10 +28,7 @@ function itemSetHasCustomizedItems(data) {
 }
 
 export async function GET({ params, locals }) {
-  const user = locals.session?.user;
-  if (!user) {
-    return getResponse({ error: 'You must be logged in.' }, 401);
-  }
+  const user = requireGrantAPI(locals, 'itemsets.read');
 
   try {
     const record = await getUserItemSetById(user.id, params.id);
@@ -45,10 +43,7 @@ export async function GET({ params, locals }) {
 }
 
 export async function PUT({ params, request, locals }) {
-  const user = locals.session?.user;
-  if (!user) {
-    return getResponse({ error: 'You must be logged in.' }, 401);
-  }
+  const user = requireGrantAPI(locals, 'itemsets.manage');
 
   // Rate limit: 30 updates per minute
   const rateCheck = checkRateLimit(`itemset:update:${user.id}`, 30, 60_000);
@@ -104,10 +99,7 @@ export async function PUT({ params, request, locals }) {
 }
 
 export async function DELETE({ params, locals }) {
-  const user = locals.session?.user;
-  if (!user) {
-    return getResponse({ error: 'You must be logged in.' }, 401);
-  }
+  const user = requireGrantAPI(locals, 'itemsets.manage');
 
   // Rate limit: 10 deletes per minute
   const rateCheck = checkRateLimit(`itemset:delete:${user.id}`, 10, 60_000);

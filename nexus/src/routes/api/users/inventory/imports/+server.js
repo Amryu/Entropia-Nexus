@@ -1,14 +1,13 @@
 //@ts-nocheck
 import { getResponse } from '$lib/util.js';
 import { getImportHistory } from '$lib/server/inventory.js';
+import { requireGrantAPI } from '$lib/server/auth.js';
 
 /**
  * GET /api/users/inventory/imports — Get user's import history
  */
 export async function GET({ url, locals }) {
-  const user = locals.session?.user;
-  if (!user) return getResponse({ error: 'Authentication required' }, 401);
-  if (!user.verified) return getResponse({ error: 'Verified account required' }, 403);
+  const user = requireGrantAPI(locals, 'inventory.read');
 
   const limit = Math.min(parseInt(url.searchParams.get('limit') || '20', 10) || 20, 100);
   const offset = Math.max(parseInt(url.searchParams.get('offset') || '0', 10) || 0, 0);

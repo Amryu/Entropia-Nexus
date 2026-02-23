@@ -111,6 +111,35 @@ export function requireLoginAPI(locals) {
   return user;
 }
 
+/**
+ * Check if user is logged in and verified (API version).
+ * Use in +server.js endpoints instead of requireVerified.
+ * @param {Object} locals - Request locals containing session
+ * @throws {HttpError} 401 if not logged in, 403 if not verified
+ */
+export function requireVerifiedAPI(locals) {
+  const user = requireLoginAPI(locals);
+  if (!user.verified) {
+    throw error(403, 'Verified account required.');
+  }
+  return user;
+}
+
+/**
+ * Require a specific grant (API version — throws 401/403, not redirect).
+ * Use in +server.js API endpoints.
+ * @param {Object} locals - Request locals containing session
+ * @param {string} grantKey - Grant key to check (e.g. 'inventory.manage')
+ * @throws {HttpError} 401 if not logged in, 403 if not verified or lacks grant
+ */
+export function requireGrantAPI(locals, grantKey) {
+  const user = requireVerifiedAPI(locals);
+  if (!userHasGrant(user, grantKey)) {
+    throw error(403, 'Permission denied.');
+  }
+  return user;
+}
+
 // --- Admin helpers (use grants with backward compat) ---
 
 /**

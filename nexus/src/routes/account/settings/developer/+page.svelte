@@ -88,143 +88,136 @@
 </script>
 
 <svelte:head>
-  <title>Developer Applications | Entropia Nexus</title>
+  <title>Developer Applications | Settings | Entropia Nexus</title>
 </svelte:head>
 
-<div class="scroll-container">
-  <div class="page-container">
-    <div class="page-header">
-      <h1>Developer Applications</h1>
-      <p class="subtitle">Register OAuth applications that can access the Entropia Nexus API on behalf of users.</p>
+<div class="page-container">
+  <div class="page-header">
+    <h1>Developer Applications</h1>
+    <p class="subtitle">Register OAuth applications that can access the Entropia Nexus API on behalf of users.</p>
+  </div>
+
+  {#if newClientResult}
+    <div class="secret-banner">
+      <h3>Application Created</h3>
+      <p>Save your client secret now. It will not be shown again.</p>
+      <div class="secret-field">
+        <label>Client ID</label>
+        <code>{newClientResult.clientId}</code>
+      </div>
+      <div class="secret-field">
+        <label>Client Secret</label>
+        <code>{newClientResult.clientSecret}</code>
+      </div>
+      <button class="btn-secondary" on:click={dismissNewClient}>I've saved it</button>
     </div>
+  {/if}
 
-    {#if newClientResult}
-      <div class="secret-banner">
-        <h3>Application Created</h3>
-        <p>Save your client secret now. It will not be shown again.</p>
-        <div class="secret-field">
-          <label>Client ID</label>
-          <code>{newClientResult.clientId}</code>
-        </div>
-        <div class="secret-field">
-          <label>Client Secret</label>
-          <code>{newClientResult.clientSecret}</code>
-        </div>
-        <button class="btn-secondary" on:click={dismissNewClient}>I've saved it</button>
+  {#if rotatedSecret}
+    <div class="secret-banner">
+      <h3>Secret Rotated</h3>
+      <p>Save your new client secret now. It will not be shown again.</p>
+      <div class="secret-field">
+        <label>New Client Secret</label>
+        <code>{rotatedSecret.secret}</code>
       </div>
-    {/if}
-
-    {#if rotatedSecret}
-      <div class="secret-banner">
-        <h3>Secret Rotated</h3>
-        <p>Save your new client secret now. It will not be shown again.</p>
-        <div class="secret-field">
-          <label>New Client Secret</label>
-          <code>{rotatedSecret.secret}</code>
-        </div>
-        <button class="btn-secondary" on:click={dismissRotatedSecret}>I've saved it</button>
-      </div>
-    {/if}
-
-    <div class="clients-header">
-      <span class="count">{data.clients.length} / {data.maxClients} applications</span>
-      {#if data.clients.length < data.maxClients}
-        <button class="btn-primary" on:click={() => showCreateForm = !showCreateForm}>
-          {showCreateForm ? 'Cancel' : 'New Application'}
-        </button>
-      {/if}
+      <button class="btn-secondary" on:click={dismissRotatedSecret}>I've saved it</button>
     </div>
+  {/if}
 
-    {#if showCreateForm}
-      <div class="create-form">
-        <div class="form-group">
-          <label for="name">Application Name *</label>
-          <input id="name" type="text" bind:value={formName} maxlength="100" placeholder="My App" />
-        </div>
-        <div class="form-group">
-          <label for="description">Description</label>
-          <input id="description" type="text" bind:value={formDescription} maxlength="500" placeholder="What does your app do?" />
-        </div>
-        <div class="form-group">
-          <label for="website">Website URL</label>
-          <input id="website" type="url" bind:value={formWebsiteUrl} placeholder="https://example.com" />
-        </div>
-        <div class="form-group">
-          <label for="redirects">Redirect URIs * (one per line)</label>
-          <textarea id="redirects" bind:value={formRedirectUri} rows="3" placeholder="https://example.com/callback"></textarea>
-        </div>
-        {#if createError}
-          <div class="error-msg">{createError}</div>
-        {/if}
-        <button class="btn-primary" on:click={createClient} disabled={creating || !formName.trim() || !formRedirectUri.trim()}>
-          {creating ? 'Creating...' : 'Create Application'}
-        </button>
-      </div>
-    {/if}
-
-    {#if data.clients.length === 0 && !showCreateForm}
-      <div class="empty-state">
-        <p>No applications registered yet.</p>
-      </div>
-    {:else}
-      <div class="clients-list">
-        {#each data.clients as client (client.id)}
-          <div class="client-card">
-            <div class="client-header">
-              <h3>{client.name}</h3>
-              {#if client.description}
-                <p class="client-desc">{client.description}</p>
-              {/if}
-            </div>
-            <div class="client-details">
-              <div class="detail">
-                <span class="label">Client ID</span>
-                <code>{client.id}</code>
-              </div>
-              {#if client.website_url}
-                <div class="detail">
-                  <span class="label">Website</span>
-                  <a href={client.website_url} target="_blank" rel="noopener">{client.website_url}</a>
-                </div>
-              {/if}
-              <div class="detail">
-                <span class="label">Redirect URIs</span>
-                <div class="uri-list">
-                  {#each client.redirect_uris as uri}
-                    <code class="uri">{uri}</code>
-                  {/each}
-                </div>
-              </div>
-              <div class="detail">
-                <span class="label">Type</span>
-                <span>{client.is_confidential ? 'Confidential' : 'Public'}</span>
-              </div>
-              <div class="detail">
-                <span class="label">Created</span>
-                <span>{new Date(client.created_at).toLocaleDateString()}</span>
-              </div>
-            </div>
-            <div class="client-actions">
-              <button class="btn-secondary" on:click={() => rotateSecret(client.id)} disabled={rotatingSecret === client.id}>
-                {rotatingSecret === client.id ? 'Rotating...' : 'Rotate Secret'}
-              </button>
-              <button class="btn-danger" on:click={() => deleteOAuthClient(client.id)} disabled={deletingClient === client.id}>
-                {deletingClient === client.id ? 'Deleting...' : 'Delete'}
-              </button>
-            </div>
-          </div>
-        {/each}
-      </div>
+  <div class="clients-header">
+    <span class="count">{data.clients.length} / {data.maxClients} applications</span>
+    {#if data.clients.length < data.maxClients}
+      <button class="btn-primary" on:click={() => showCreateForm = !showCreateForm}>
+        {showCreateForm ? 'Cancel' : 'New Application'}
+      </button>
     {/if}
   </div>
+
+  {#if showCreateForm}
+    <div class="create-form">
+      <div class="form-group">
+        <label for="name">Application Name *</label>
+        <input id="name" type="text" bind:value={formName} maxlength="100" placeholder="My App" />
+      </div>
+      <div class="form-group">
+        <label for="description">Description</label>
+        <input id="description" type="text" bind:value={formDescription} maxlength="500" placeholder="What does your app do?" />
+      </div>
+      <div class="form-group">
+        <label for="website">Website URL</label>
+        <input id="website" type="url" bind:value={formWebsiteUrl} placeholder="https://example.com" />
+      </div>
+      <div class="form-group">
+        <label for="redirects">Redirect URIs * (one per line)</label>
+        <textarea id="redirects" bind:value={formRedirectUri} rows="3" placeholder="https://example.com/callback"></textarea>
+      </div>
+      {#if createError}
+        <div class="error-msg">{createError}</div>
+      {/if}
+      <button class="btn-primary" on:click={createClient} disabled={creating || !formName.trim() || !formRedirectUri.trim()}>
+        {creating ? 'Creating...' : 'Create Application'}
+      </button>
+    </div>
+  {/if}
+
+  {#if data.clients.length === 0 && !showCreateForm}
+    <div class="empty-state">
+      <p>No applications registered yet.</p>
+    </div>
+  {:else}
+    <div class="clients-list">
+      {#each data.clients as client (client.id)}
+        <div class="client-card">
+          <div class="client-header">
+            <h3>{client.name}</h3>
+            {#if client.description}
+              <p class="client-desc">{client.description}</p>
+            {/if}
+          </div>
+          <div class="client-details">
+            <div class="detail">
+              <span class="label">Client ID</span>
+              <code>{client.id}</code>
+            </div>
+            {#if client.website_url}
+              <div class="detail">
+                <span class="label">Website</span>
+                <a href={client.website_url} target="_blank" rel="noopener">{client.website_url}</a>
+              </div>
+            {/if}
+            <div class="detail">
+              <span class="label">Redirect URIs</span>
+              <div class="uri-list">
+                {#each client.redirect_uris as uri}
+                  <code class="uri">{uri}</code>
+                {/each}
+              </div>
+            </div>
+            <div class="detail">
+              <span class="label">Type</span>
+              <span>{client.is_confidential ? 'Confidential' : 'Public'}</span>
+            </div>
+            <div class="detail">
+              <span class="label">Created</span>
+              <span>{new Date(client.created_at).toLocaleDateString()}</span>
+            </div>
+          </div>
+          <div class="client-actions">
+            <button class="btn-secondary" on:click={() => rotateSecret(client.id)} disabled={rotatingSecret === client.id}>
+              {rotatingSecret === client.id ? 'Rotating...' : 'Rotate Secret'}
+            </button>
+            <button class="btn-danger" on:click={() => deleteOAuthClient(client.id)} disabled={deletingClient === client.id}>
+              {deletingClient === client.id ? 'Deleting...' : 'Delete'}
+            </button>
+          </div>
+        </div>
+      {/each}
+    </div>
+  {/if}
 </div>
 
 <style>
-  .scroll-container {
-    height: 100%;
-    overflow-y: auto;
-  }
-
   .page-container {
     max-width: 700px;
     margin: 0 auto;

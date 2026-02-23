@@ -1,7 +1,7 @@
 // @ts-nocheck
 import { json } from '@sveltejs/kit';
 import { getUpcomingEvents, createEvent, countPendingEventsByUser, notifyAdmins } from '$lib/server/db.js';
-import { requireVerified } from '$lib/server/auth.js';
+import { requireGrantAPI } from '$lib/server/auth.js';
 
 const MAX_PENDING_PER_USER = 5;
 
@@ -12,8 +12,8 @@ export async function GET({ url }) {
   return json(events);
 }
 
-export async function POST({ request, locals, url }) {
-  const user = requireVerified(locals, url.pathname);
+export async function POST({ request, locals }) {
+  const user = requireGrantAPI(locals, 'events.submit');
   const body = await request.json();
 
   // Validate title

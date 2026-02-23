@@ -19,64 +19,57 @@
 </script>
 
 <svelte:head>
-  <title>Authorized Applications | Entropia Nexus</title>
+  <title>Authorized Applications | Settings | Entropia Nexus</title>
 </svelte:head>
 
-<div class="scroll-container">
-  <div class="page-container">
-    <div class="page-header">
-      <h1>Authorized Applications</h1>
-      <p class="subtitle">Applications you have granted access to your Entropia Nexus account.</p>
-    </div>
+<div class="page-container">
+  <div class="page-header">
+    <h1>Authorized Applications</h1>
+    <p class="subtitle">Applications you have granted access to your Entropia Nexus account.</p>
+  </div>
 
-    {#if data.authorizations.length === 0}
-      <div class="empty-state">
-        <p>You haven't authorized any applications yet.</p>
-      </div>
-    {:else}
-      <div class="auth-list">
-        {#each data.authorizations as auth (auth.client_id)}
-          <div class="auth-card">
-            <div class="auth-info">
-              <h3>{auth.name}</h3>
-              {#if auth.description}
-                <p class="auth-desc">{auth.description}</p>
-              {/if}
-              {#if auth.website_url}
-                <a href={auth.website_url} target="_blank" rel="noopener" class="auth-url">{auth.website_url}</a>
-              {/if}
-              <div class="scopes">
-                <span class="scopes-label">Permissions:</span>
-                {#each auth.scopes as scope}
-                  <span class="scope-badge" class:write={scope.endsWith(':write')}>{scope}</span>
-                {/each}
-              </div>
-              <div class="auth-date">
-                Authorized {new Date(auth.authorized_at).toLocaleDateString()}
-              </div>
+  {#if data.authorizations.length === 0}
+    <div class="empty-state">
+      <p>You haven't authorized any applications yet.</p>
+    </div>
+  {:else}
+    <div class="auth-list">
+      {#each data.authorizations as auth (auth.client_id)}
+        <div class="auth-card">
+          <div class="auth-info">
+            <h3>{auth.name}</h3>
+            {#if auth.description}
+              <p class="auth-desc">{auth.description}</p>
+            {/if}
+            {#if auth.website_url}
+              <a href={auth.website_url} target="_blank" rel="noopener" class="auth-url">{auth.website_url}</a>
+            {/if}
+            <div class="scopes">
+              <span class="scopes-label">Permissions:</span>
+              {#each auth.scopes as scope}
+                <span class="scope-badge" class:write={scope.endsWith(':write')}>{scope}</span>
+              {/each}
             </div>
-            <div class="auth-actions">
-              <button
-                class="btn-revoke"
-                on:click={() => revokeAuthorization(auth.client_id, auth.name)}
-                disabled={revoking === auth.client_id}
-              >
-                {revoking === auth.client_id ? 'Revoking...' : 'Revoke Access'}
-              </button>
+            <div class="auth-date">
+              Authorized {new Date(auth.authorized_at).toLocaleDateString()}
             </div>
           </div>
-        {/each}
-      </div>
-    {/if}
-  </div>
+          <div class="auth-actions">
+            <button
+              class="btn-revoke"
+              on:click={() => revokeAuthorization(auth.client_id, auth.name)}
+              disabled={revoking === auth.client_id}
+            >
+              {revoking === auth.client_id ? 'Revoking...' : 'Revoke Access'}
+            </button>
+          </div>
+        </div>
+      {/each}
+    </div>
+  {/if}
 </div>
 
 <style>
-  .scroll-container {
-    height: 100%;
-    overflow-y: auto;
-  }
-
   .page-container {
     max-width: 700px;
     margin: 0 auto;

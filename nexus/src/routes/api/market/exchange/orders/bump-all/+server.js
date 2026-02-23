@@ -13,6 +13,7 @@ export async function POST({ request, locals }) {
   const user = locals.session?.user;
   if (!user) return getResponse({ error: 'Authentication required' }, 401);
   if (!user.verified) return getResponse({ error: 'Verified account required' }, 403);
+  if (!user.grants?.includes('exchange.manage')) return getResponse({ error: 'Permission denied' }, 403);
 
   // Verify Turnstile (skipped for OAuth-authenticated requests)
   let body = {};

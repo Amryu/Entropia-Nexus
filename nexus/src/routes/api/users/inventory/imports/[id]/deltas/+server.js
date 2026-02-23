@@ -1,14 +1,13 @@
 //@ts-nocheck
 import { getResponse } from '$lib/util.js';
 import { getImportDeltas } from '$lib/server/inventory.js';
+import { requireGrantAPI } from '$lib/server/auth.js';
 
 /**
  * GET /api/users/inventory/imports/[id]/deltas — Get deltas for a specific import
  */
 export async function GET({ params, locals }) {
-  const user = locals.session?.user;
-  if (!user) return getResponse({ error: 'Authentication required' }, 401);
-  if (!user.verified) return getResponse({ error: 'Verified account required' }, 403);
+  const user = requireGrantAPI(locals, 'inventory.read');
 
   const importId = parseInt(params.id, 10);
   if (!Number.isFinite(importId) || importId <= 0) {

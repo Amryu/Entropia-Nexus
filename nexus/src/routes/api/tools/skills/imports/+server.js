@@ -1,10 +1,10 @@
 //@ts-nocheck
 import { getResponse } from '$lib/util.js';
+import { requireGrantAPI } from '$lib/server/auth.js';
 import { getSkillImports } from '$lib/server/skillsDb.js';
 
 export async function GET({ url, locals }) {
-  const user = locals.session?.user;
-  if (!user) return getResponse({ error: 'You must be logged in.' }, 401);
+  const user = requireGrantAPI(locals, 'skills.read');
 
   const limit = Math.min(Math.max(parseInt(url.searchParams.get('limit'), 10) || 20, 1), 100);
   const offset = Math.max(parseInt(url.searchParams.get('offset'), 10) || 0, 0);
