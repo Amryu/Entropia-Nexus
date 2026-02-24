@@ -1,4 +1,5 @@
 import { test, expect } from '../fixtures/auth';
+import { extractFormActionRedirect } from '../fixtures/form-action';
 import { TIMEOUT_MEDIUM } from '../test-constants';
 import crypto from 'crypto';
 
@@ -40,15 +41,9 @@ async function setupTestClient(page: import('@playwright/test').Page) {
   return await res.json() as { clientId: string; clientSecret: string };
 }
 
-/** Clean up all OAuth clients for a user */
-async function cleanupClients(page: import('@playwright/test').Page) {
-  const res = await page.request.get(CLIENTS_API);
-  if (res.ok()) {
-    const clients = await res.json();
-    for (const client of clients) {
-      await page.request.delete(`${CLIENTS_API}/${client.id}`);
-    }
-  }
+/** Clean up a specific OAuth client */
+async function cleanupClient(page: import('@playwright/test').Page, id: string) {
+  if (id) await page.request.delete(`${CLIENTS_API}/${id}`);
 }
 
 test.describe('OAuth Authorization Endpoint - Validation', () => {
@@ -71,7 +66,7 @@ test.describe('OAuth Authorization Endpoint - Validation', () => {
     const page = await context.newPage();
     await page.goto('/');
     await page.request.post('/api/test/login', { data: { userId: 'verified1' } });
-    await cleanupClients(page);
+    await cleanupClient(page, clientId);
     await context.close();
   });
 
@@ -225,7 +220,7 @@ test.describe('OAuth Full Authorization Code Flow', () => {
     const page = await context.newPage();
     await page.goto('/');
     await page.request.post('/api/test/login', { data: { userId: 'verified1' } });
-    await cleanupClients(page);
+    await cleanupClient(page, clientId);
     await context.close();
   });
 
@@ -270,13 +265,11 @@ test.describe('OAuth Full Authorization Code Flow', () => {
       maxRedirects: 0
     });
 
-    // SvelteKit form actions return 303 redirect on success
-    expect([302, 303]).toContain(formRes.status());
-    const location = formRes.headers()['location'];
-    expect(location).toBeDefined();
+    // SvelteKit form actions return redirect (302/303 or JSON-wrapped)
+    const location = await extractFormActionRedirect(formRes);
 
     // Extract authorization code from redirect URL
-    const redirectUrl = new URL(location!, 'https://example.com');
+    const redirectUrl = new URL(location, 'https://example.com');
     const authCode = redirectUrl.searchParams.get('code');
     const returnedState = redirectUrl.searchParams.get('state');
     expect(authCode).toBeDefined();
@@ -415,7 +408,7 @@ test.describe('OAuth Consent Page', () => {
     const page = await context.newPage();
     await page.goto('/');
     await page.request.post('/api/test/login', { data: { userId: 'verified1' } });
-    await cleanupClients(page);
+    await cleanupClient(page, clientId);
     await context.close();
   });
 
@@ -452,8 +445,7 @@ test.describe('OAuth Consent Page', () => {
       maxRedirects: 0
     });
 
-    expect([302, 303]).toContain(formRes.status());
-    const location = formRes.headers()['location'];
+    const location = await extractFormActionRedirect(formRes);
     expect(location).toContain('error=access_denied');
     expect(location).toContain(`state=${state}`);
   });

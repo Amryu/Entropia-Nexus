@@ -1,4 +1,5 @@
 import { test, expect } from '../fixtures/auth';
+import { extractFormActionRedirect } from '../fixtures/form-action';
 import { TIMEOUT_MEDIUM } from '../test-constants';
 import crypto from 'crypto';
 
@@ -48,10 +49,8 @@ async function getTokensWithScopes(page: import('@playwright/test').Page, scopes
     },
     maxRedirects: 0
   });
-  expect([302, 303]).toContain(authRes.status());
-
-  const location = authRes.headers()['location'];
-  const redirectUrl = new URL(location!, 'https://example.com');
+  const location = await extractFormActionRedirect(authRes);
+  const redirectUrl = new URL(location, 'https://example.com');
   const authCode = redirectUrl.searchParams.get('code')!;
 
   const tokenRes = await page.request.post(TOKEN_API, {
@@ -71,23 +70,20 @@ async function getTokensWithScopes(page: import('@playwright/test').Page, scopes
   return { clientId, clientSecret, ...tokens };
 }
 
-async function cleanupClients(page: import('@playwright/test').Page) {
-  const res = await page.request.get(CLIENTS_API);
-  if (res.ok()) {
-    const clients = await res.json();
-    for (const client of clients) {
-      await page.request.delete(`${CLIENTS_API}/${client.id}`);
-    }
-  }
+async function cleanupClient(page: import('@playwright/test').Page, clientId: string) {
+  if (clientId) await page.request.delete(`${CLIENTS_API}/${clientId}`);
 }
 
 test.describe('OAuth Scope Enforcement - Profile', () => {
+  let lastClientId: string;
+
   test.afterEach(async ({ verifiedUser }) => {
-    await cleanupClients(verifiedUser);
+    await cleanupClient(verifiedUser, lastClientId);
   });
 
   test('access token with profile:read can access userinfo', async ({ verifiedUser }) => {
-    const { access_token, scope } = await getTokensWithScopes(verifiedUser, 'profile:read');
+    const { clientId, access_token, scope } = await getTokensWithScopes(verifiedUser, 'profile:read');
+    lastClientId = clientId;
     expect(scope).toContain('profile:read');
 
     const res = await verifiedUser.request.get(USERINFO_API, {
@@ -100,7 +96,8 @@ test.describe('OAuth Scope Enforcement - Profile', () => {
   });
 
   test('access token without profile:read cannot access userinfo', async ({ verifiedUser }) => {
-    const { access_token, scope } = await getTokensWithScopes(verifiedUser, 'inventory:read');
+    const { clientId, access_token, scope } = await getTokensWithScopes(verifiedUser, 'inventory:read');
+    lastClientId = clientId;
     expect(scope).not.toContain('profile:read');
 
     const res = await verifiedUser.request.get(USERINFO_API, {
@@ -113,12 +110,15 @@ test.describe('OAuth Scope Enforcement - Profile', () => {
 });
 
 test.describe('OAuth Scope Enforcement - Inventory', () => {
+  let lastClientId: string;
+
   test.afterEach(async ({ verifiedUser }) => {
-    await cleanupClients(verifiedUser);
+    await cleanupClient(verifiedUser, lastClientId);
   });
 
   test('access token with inventory:read can read inventory', async ({ verifiedUser }) => {
-    const { access_token } = await getTokensWithScopes(verifiedUser, 'inventory:read');
+    const { clientId, access_token } = await getTokensWithScopes(verifiedUser, 'inventory:read');
+    lastClientId = clientId;
 
     const res = await verifiedUser.request.get('/api/users/inventory', {
       headers: { Authorization: `Bearer ${access_token}` }
@@ -128,7 +128,8 @@ test.describe('OAuth Scope Enforcement - Inventory', () => {
   });
 
   test('access token without inventory scope cannot read inventory', async ({ verifiedUser }) => {
-    const { access_token } = await getTokensWithScopes(verifiedUser, 'profile:read');
+    const { clientId, access_token } = await getTokensWithScopes(verifiedUser, 'profile:read');
+    lastClientId = clientId;
 
     const res = await verifiedUser.request.get('/api/users/inventory', {
       headers: { Authorization: `Bearer ${access_token}` }
@@ -141,12 +142,15 @@ test.describe('OAuth Scope Enforcement - Inventory', () => {
 });
 
 test.describe('OAuth Scope Enforcement - Token Scope', () => {
+  let lastClientId: string;
+
   test.afterEach(async ({ verifiedUser }) => {
-    await cleanupClients(verifiedUser);
+    await cleanupClient(verifiedUser, lastClientId);
   });
 
   test('token scope matches authorized scopes', async ({ verifiedUser }) => {
-    const { scope } = await getTokensWithScopes(verifiedUser, 'profile:read inventory:read');
+    const { clientId, scope } = await getTokensWithScopes(verifiedUser, 'profile:read inventory:read');
+    lastClientId = clientId;
     const scopeParts = scope.split(' ');
     expect(scopeParts).toContain('profile:read');
     expect(scopeParts).toContain('inventory:read');
@@ -154,7 +158,8 @@ test.describe('OAuth Scope Enforcement - Token Scope', () => {
 
   test('scopes requiring grants are excluded for users without grants', async ({ verifiedUser }) => {
     // wiki:read requires wiki.edit grant, which verified1 may not have
-    const { scope } = await getTokensWithScopes(verifiedUser, 'profile:read wiki:read');
+    const { clientId, scope } = await getTokensWithScopes(verifiedUser, 'profile:read wiki:read');
+    lastClientId = clientId;
     const scopeParts = scope.split(' ');
     expect(scopeParts).toContain('profile:read');
     // wiki:read should be excluded if user lacks wiki.edit grant
@@ -163,7 +168,8 @@ test.describe('OAuth Scope Enforcement - Token Scope', () => {
 
   test('multiple scopes are preserved correctly', async ({ verifiedUser }) => {
     const requestedScopes = 'profile:read inventory:read loadouts:read notifications:read';
-    const { scope } = await getTokensWithScopes(verifiedUser, requestedScopes);
+    const { clientId, scope } = await getTokensWithScopes(verifiedUser, requestedScopes);
+    lastClientId = clientId;
     const scopeParts = scope.split(' ');
     // All these scopes require no special grants, so all should be present
     expect(scopeParts).toContain('profile:read');
@@ -181,21 +187,21 @@ test.describe('OAuth Scope Enforcement - Invalid Bearer Token', () => {
     expect(res.status()).toBe(401);
   });
 
-  test('expired/revoked bearer token returns 401', async ({ verifiedUser }) => {
+  test('expired/revoked bearer token returns 401', async ({ verifiedUser, request }) => {
     // Get a valid token then revoke it
-    const { access_token } = await getTokensWithScopes(verifiedUser, 'profile:read');
+    const { clientId, access_token } = await getTokensWithScopes(verifiedUser, 'profile:read');
 
     // Revoke the token
     await verifiedUser.request.post('/api/oauth/revoke', {
       data: { token: access_token }
     });
 
-    // Token should no longer work
-    const res = await verifiedUser.request.get(USERINFO_API, {
+    // Token should no longer work (cookie-free to avoid session fallback)
+    const res = await request.get(USERINFO_API, {
       headers: { Authorization: `Bearer ${access_token}` }
     });
     expect(res.status()).toBe(401);
 
-    await cleanupClients(verifiedUser);
+    await cleanupClient(verifiedUser, clientId);
   });
 });

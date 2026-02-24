@@ -1,4 +1,5 @@
 import { test, expect } from '../fixtures/auth';
+import { extractFormActionRedirect } from '../fixtures/form-action';
 import { TIMEOUT_MEDIUM, TIMEOUT_CACHE } from '../test-constants';
 import crypto from 'crypto';
 
@@ -52,10 +53,8 @@ async function getOAuthTokens(page: import('@playwright/test').Page) {
     },
     maxRedirects: 0
   });
-  expect([302, 303]).toContain(authRes.status());
-
-  const location = authRes.headers()['location'];
-  const redirectUrl = new URL(location!, 'https://example.com');
+  const location = await extractFormActionRedirect(authRes);
+  const redirectUrl = new URL(location, 'https://example.com');
   const authCode = redirectUrl.searchParams.get('code')!;
 
   const tokenRes = await page.request.post(TOKEN_API, {
@@ -75,19 +74,15 @@ async function getOAuthTokens(page: import('@playwright/test').Page) {
   return { clientId, ...tokens };
 }
 
-async function cleanupClients(page: import('@playwright/test').Page) {
-  const res = await page.request.get(CLIENTS_API);
-  if (res.ok()) {
-    const clients = await res.json();
-    for (const client of clients) {
-      await page.request.delete(`${CLIENTS_API}/${client.id}`);
-    }
-  }
+async function cleanupClient(page: import('@playwright/test').Page, clientId: string) {
+  if (clientId) await page.request.delete(`${CLIENTS_API}/${clientId}`);
 }
 
 test.describe('Turnstile Bypass - Exchange Orders', () => {
+  let lastClientId: string;
+
   test.afterEach(async ({ verifiedUser }) => {
-    await cleanupClients(verifiedUser);
+    await cleanupClient(verifiedUser, lastClientId);
   });
 
   test('session-authenticated exchange order requires Turnstile token', async ({ verifiedUser }) => {
@@ -109,7 +104,8 @@ test.describe('Turnstile Bypass - Exchange Orders', () => {
   });
 
   test('OAuth-authenticated exchange order skips Turnstile', async ({ verifiedUser }) => {
-    const { access_token } = await getOAuthTokens(verifiedUser);
+    const { clientId, access_token } = await getOAuthTokens(verifiedUser);
+    lastClientId = clientId;
 
     // Post exchange order with Bearer token (no Turnstile token needed)
     const res = await verifiedUser.request.post('/api/market/exchange/orders', {
@@ -150,7 +146,8 @@ test.describe('Turnstile Bypass - Exchange Orders', () => {
   });
 
   test('OAuth-authenticated batch orders skips Turnstile', async ({ verifiedUser }) => {
-    const { access_token } = await getOAuthTokens(verifiedUser);
+    const { clientId, access_token } = await getOAuthTokens(verifiedUser);
+    lastClientId = clientId;
 
     const res = await verifiedUser.request.post('/api/market/exchange/orders/batch', {
       headers: { Authorization: `Bearer ${access_token}` },
@@ -182,7 +179,8 @@ test.describe('Turnstile Bypass - Exchange Orders', () => {
   });
 
   test('OAuth-authenticated bump-all is blocked', async ({ verifiedUser }) => {
-    const { access_token } = await getOAuthTokens(verifiedUser);
+    const { clientId, access_token } = await getOAuthTokens(verifiedUser);
+    lastClientId = clientId;
 
     const res = await verifiedUser.request.post('/api/market/exchange/orders/bump-all', {
       headers: { Authorization: `Bearer ${access_token}` },
@@ -197,9 +195,10 @@ test.describe('Turnstile Bypass - Exchange Orders', () => {
 
 test.describe('Turnstile Bypass - Auction Endpoints', () => {
   const FAKE_AUCTION_ID = '00000000-0000-0000-0000-000000000000';
+  let lastClientId: string;
 
   test.afterEach(async ({ verifiedUser }) => {
-    await cleanupClients(verifiedUser);
+    await cleanupClient(verifiedUser, lastClientId);
   });
 
   test('session-authenticated bid requires Turnstile token', async ({ verifiedUser }) => {
@@ -213,7 +212,8 @@ test.describe('Turnstile Bypass - Auction Endpoints', () => {
   });
 
   test('OAuth-authenticated bid skips Turnstile', async ({ verifiedUser }) => {
-    const { access_token } = await getOAuthTokens(verifiedUser);
+    const { clientId, access_token } = await getOAuthTokens(verifiedUser);
+    lastClientId = clientId;
 
     const res = await verifiedUser.request.post(`/api/auction/${FAKE_AUCTION_ID}/bid`, {
       headers: { Authorization: `Bearer ${access_token}` },
@@ -238,7 +238,8 @@ test.describe('Turnstile Bypass - Auction Endpoints', () => {
   });
 
   test('OAuth-authenticated buyout skips Turnstile', async ({ verifiedUser }) => {
-    const { access_token } = await getOAuthTokens(verifiedUser);
+    const { clientId, access_token } = await getOAuthTokens(verifiedUser);
+    lastClientId = clientId;
 
     const res = await verifiedUser.request.post(`/api/auction/${FAKE_AUCTION_ID}/buyout`, {
       headers: { Authorization: `Bearer ${access_token}` },

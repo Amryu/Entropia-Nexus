@@ -1,4 +1,5 @@
 import { test, expect } from '../fixtures/auth';
+import { extractFormActionRedirect } from '../fixtures/form-action';
 import { TIMEOUT_MEDIUM } from '../test-constants';
 import crypto from 'crypto';
 
@@ -52,10 +53,8 @@ async function getTokens(page: import('@playwright/test').Page) {
     },
     maxRedirects: 0
   });
-  expect([302, 303]).toContain(authRes.status());
-
-  const location = authRes.headers()['location'];
-  const redirectUrl = new URL(location!, 'https://example.com');
+  const location = await extractFormActionRedirect(authRes);
+  const redirectUrl = new URL(location, 'https://example.com');
   const authCode = redirectUrl.searchParams.get('code')!;
 
   // Exchange code for tokens
@@ -76,23 +75,20 @@ async function getTokens(page: import('@playwright/test').Page) {
   return { clientId, clientSecret, ...tokens };
 }
 
-async function cleanupClients(page: import('@playwright/test').Page) {
-  const res = await page.request.get(CLIENTS_API);
-  if (res.ok()) {
-    const clients = await res.json();
-    for (const client of clients) {
-      await page.request.delete(`${CLIENTS_API}/${client.id}`);
-    }
-  }
+async function cleanupClient(page: import('@playwright/test').Page, clientId: string) {
+  if (clientId) await page.request.delete(`${CLIENTS_API}/${clientId}`);
 }
 
 test.describe('OAuth Token Refresh', () => {
+  let lastClientId: string;
+
   test.afterEach(async ({ verifiedUser }) => {
-    await cleanupClients(verifiedUser);
+    await cleanupClient(verifiedUser, lastClientId);
   });
 
   test('can refresh access token with valid refresh token', async ({ verifiedUser }) => {
     const { clientId, clientSecret, access_token, refresh_token } = await getTokens(verifiedUser);
+    lastClientId = clientId;
 
     // Refresh
     const refreshRes = await verifiedUser.request.post(TOKEN_API, {
@@ -125,6 +121,7 @@ test.describe('OAuth Token Refresh', () => {
 
   test('old refresh token becomes invalid after use (single-use)', async ({ verifiedUser }) => {
     const { clientId, clientSecret, refresh_token } = await getTokens(verifiedUser);
+    lastClientId = clientId;
 
     // First refresh - should succeed
     const firstRefresh = await verifiedUser.request.post(TOKEN_API, {
@@ -155,6 +152,7 @@ test.describe('OAuth Token Refresh', () => {
 
   test('rejects refresh with wrong client_id', async ({ verifiedUser }) => {
     const { clientId, clientSecret, refresh_token } = await getTokens(verifiedUser);
+    lastClientId = clientId;
 
     const res = await verifiedUser.request.post(TOKEN_API, {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -172,6 +170,7 @@ test.describe('OAuth Token Refresh', () => {
 
   test('rejects refresh with invalid refresh token', async ({ verifiedUser }) => {
     const { clientId, clientSecret } = await getTokens(verifiedUser);
+    lastClientId = clientId;
 
     const res = await verifiedUser.request.post(TOKEN_API, {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -189,15 +188,18 @@ test.describe('OAuth Token Refresh', () => {
 });
 
 test.describe('OAuth Token Revocation', () => {
+  let lastClientId: string;
+
   test.afterEach(async ({ verifiedUser }) => {
-    await cleanupClients(verifiedUser);
+    await cleanupClient(verifiedUser, lastClientId);
   });
 
-  test('can revoke access token', async ({ verifiedUser }) => {
-    const { access_token } = await getTokens(verifiedUser);
+  test('can revoke access token', async ({ verifiedUser, request }) => {
+    const { clientId, access_token } = await getTokens(verifiedUser);
+    lastClientId = clientId;
 
-    // Verify token works first
-    let res = await verifiedUser.request.get(USERINFO_API, {
+    // Verify token works first (cookie-free context to test Bearer only)
+    let res = await request.get(USERINFO_API, {
       headers: { Authorization: `Bearer ${access_token}` }
     });
     expect(res.status()).toBe(200);
@@ -208,8 +210,8 @@ test.describe('OAuth Token Revocation', () => {
     });
     expect(revokeRes.status()).toBe(200);
 
-    // Token should no longer work
-    res = await verifiedUser.request.get(USERINFO_API, {
+    // Token should no longer work (cookie-free to avoid session fallback)
+    res = await request.get(USERINFO_API, {
       headers: { Authorization: `Bearer ${access_token}` }
     });
     expect(res.status()).toBe(401);
@@ -217,6 +219,7 @@ test.describe('OAuth Token Revocation', () => {
 
   test('can revoke refresh token', async ({ verifiedUser }) => {
     const { clientId, clientSecret, refresh_token } = await getTokens(verifiedUser);
+    lastClientId = clientId;
 
     // Revoke the refresh token
     const revokeRes = await verifiedUser.request.post(REVOKE_API, {
@@ -255,13 +258,16 @@ test.describe('OAuth Token Revocation', () => {
 });
 
 test.describe('OAuth Authorization Management', () => {
+  let lastClientId: string;
+
   test.afterEach(async ({ verifiedUser }) => {
-    await cleanupClients(verifiedUser);
+    await cleanupClient(verifiedUser, lastClientId);
   });
 
   test('can list authorized apps', async ({ verifiedUser }) => {
     // Create tokens (which creates an authorization)
-    await getTokens(verifiedUser);
+    const { clientId } = await getTokens(verifiedUser);
+    lastClientId = clientId;
 
     const res = await verifiedUser.request.get(AUTHORIZATIONS_API);
     expect(res.status()).toBe(200);
@@ -279,11 +285,12 @@ test.describe('OAuth Authorization Management', () => {
     expect(res.status()).toBe(401);
   });
 
-  test('can revoke all tokens for an app', async ({ verifiedUser }) => {
+  test('can revoke all tokens for an app', async ({ verifiedUser, request }) => {
     const { clientId, access_token } = await getTokens(verifiedUser);
+    lastClientId = clientId;
 
-    // Verify token works
-    let res = await verifiedUser.request.get(USERINFO_API, {
+    // Verify token works (cookie-free context to test Bearer only)
+    let res = await request.get(USERINFO_API, {
       headers: { Authorization: `Bearer ${access_token}` }
     });
     expect(res.status()).toBe(200);
@@ -294,8 +301,8 @@ test.describe('OAuth Authorization Management', () => {
     const data = await revokeRes.json();
     expect(data.revoked).toBe(true);
 
-    // Token should no longer work
-    res = await verifiedUser.request.get(USERINFO_API, {
+    // Token should no longer work (cookie-free to avoid session fallback)
+    res = await request.get(USERINFO_API, {
       headers: { Authorization: `Bearer ${access_token}` }
     });
     expect(res.status()).toBe(401);
@@ -303,8 +310,10 @@ test.describe('OAuth Authorization Management', () => {
 });
 
 test.describe('OAuth Authorization Code Single-Use', () => {
+  let lastClientId: string;
+
   test.afterEach(async ({ verifiedUser }) => {
-    await cleanupClients(verifiedUser);
+    await cleanupClient(verifiedUser, lastClientId);
   });
 
   test('authorization code cannot be used twice', async ({ verifiedUser }) => {
@@ -313,6 +322,7 @@ test.describe('OAuth Authorization Code Single-Use', () => {
       data: { name: 'Code Reuse Test', redirect_uris: [REDIRECT_URI] }
     });
     const { clientId, clientSecret } = await clientRes.json();
+    lastClientId = clientId;
 
     // Get authorization code
     const { verifier, challenge } = generatePKCE();
@@ -326,8 +336,8 @@ test.describe('OAuth Authorization Code Single-Use', () => {
       },
       maxRedirects: 0
     });
-    const location = authRes.headers()['location'];
-    const redirectUrl = new URL(location!, 'https://example.com');
+    const location = await extractFormActionRedirect(authRes);
+    const redirectUrl = new URL(location, 'https://example.com');
     const authCode = redirectUrl.searchParams.get('code')!;
 
     // First exchange - should succeed

@@ -38,14 +38,10 @@ async function createClient(
   });
 }
 
-/** Helper to clean up all clients for a user */
-async function cleanupClients(page: import('@playwright/test').Page) {
-  const res = await page.request.get(API_BASE);
-  if (res.ok()) {
-    const clients = await res.json();
-    for (const client of clients) {
-      await page.request.delete(`${API_BASE}/${client.id}`);
-    }
+/** Helper to clean up specific clients */
+async function cleanupClientIds(page: import('@playwright/test').Page, ids: string[]) {
+  for (const id of ids) {
+    if (id) await page.request.delete(`${API_BASE}/${id}`);
   }
 }
 
@@ -67,8 +63,11 @@ test.describe('OAuth Client Management - Authentication', () => {
 });
 
 test.describe('OAuth Client Management - CRUD', () => {
+  let createdIds: string[] = [];
+
   test.afterEach(async ({ verifiedUser }) => {
-    await cleanupClients(verifiedUser);
+    await cleanupClientIds(verifiedUser, createdIds);
+    createdIds = [];
   });
 
   test('can create a client and receive client_id and secret', async ({ verifiedUser }) => {
@@ -81,6 +80,7 @@ test.describe('OAuth Client Management - CRUD', () => {
     expect(res.status()).toBe(201);
 
     const data = await res.json();
+    createdIds.push(data.clientId);
     expect(data.clientId).toBeDefined();
     expect(typeof data.clientId).toBe('string');
     expect(data.clientSecret).toBeDefined();
@@ -89,8 +89,10 @@ test.describe('OAuth Client Management - CRUD', () => {
   });
 
   test('can list own clients', async ({ verifiedUser }) => {
-    await createClient(verifiedUser, { name: 'App One' });
-    await createClient(verifiedUser, { name: 'App Two' });
+    const res1 = await createClient(verifiedUser, { name: 'App One' });
+    createdIds.push((await res1.json()).clientId);
+    const res2 = await createClient(verifiedUser, { name: 'App Two' });
+    createdIds.push((await res2.json()).clientId);
 
     const res = await verifiedUser.request.get(API_BASE);
     expect(res.status()).toBe(200);
@@ -111,6 +113,7 @@ test.describe('OAuth Client Management - CRUD', () => {
       website_url: 'https://test.example.com'
     });
     const { clientId } = await createRes.json();
+    createdIds.push(clientId);
 
     const res = await verifiedUser.request.get(`${API_BASE}/${clientId}`);
     expect(res.status()).toBe(200);
@@ -128,6 +131,7 @@ test.describe('OAuth Client Management - CRUD', () => {
   test('can update a client', async ({ verifiedUser }) => {
     const createRes = await createClient(verifiedUser, { name: 'Original Name' });
     const { clientId } = await createRes.json();
+    createdIds.push(clientId);
 
     const res = await verifiedUser.request.put(`${API_BASE}/${clientId}`, {
       data: {
@@ -149,6 +153,7 @@ test.describe('OAuth Client Management - CRUD', () => {
   test('can delete a client', async ({ verifiedUser }) => {
     const createRes = await createClient(verifiedUser, { name: 'Delete Me' });
     const { clientId } = await createRes.json();
+    // Don't add to createdIds - the test itself deletes it
 
     const res = await verifiedUser.request.delete(`${API_BASE}/${clientId}`);
     expect(res.status()).toBe(200);
@@ -162,13 +167,16 @@ test.describe('OAuth Client Management - CRUD', () => {
 });
 
 test.describe('OAuth Client Management - Secret Rotation', () => {
+  let lastClientId: string;
+
   test.afterEach(async ({ verifiedUser }) => {
-    await cleanupClients(verifiedUser);
+    if (lastClientId) await verifiedUser.request.delete(`${API_BASE}/${lastClientId}`);
   });
 
   test('can rotate client secret', async ({ verifiedUser }) => {
     const createRes = await createClient(verifiedUser, { name: 'Rotate Test' });
     const { clientId, clientSecret: oldSecret } = await createRes.json();
+    lastClientId = clientId;
 
     const res = await verifiedUser.request.post(`${API_BASE}/${clientId}/rotate-secret`);
     expect(res.status()).toBe(200);
@@ -187,9 +195,8 @@ test.describe('OAuth Client Management - Secret Rotation', () => {
 });
 
 test.describe('OAuth Client Management - Validation', () => {
-  test.afterEach(async ({ verifiedUser }) => {
-    await cleanupClients(verifiedUser);
-  });
+  // Validation tests all expect 400 responses - no clients are created
+  // No cleanup needed
 
   test('rejects empty name', async ({ verifiedUser }) => {
     const res = await createClient(verifiedUser, { name: '' });
