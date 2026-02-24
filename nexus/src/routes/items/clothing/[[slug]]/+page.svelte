@@ -181,8 +181,23 @@
   // Build navigation items
   $: navItems = allItems;
 
-  // Navigation filters - none for clothing (simple list)
-  const navFilters = [];
+  // Navigation filters
+  const navFilters = [
+    {
+      key: 'hasEffects',
+      label: 'Effects',
+      values: [
+        { value: 'yes', label: 'Has Effects' },
+        { value: 'no', label: 'No Effects' }
+      ],
+      filterFn: (item, value) => {
+        const equipCount = item?.EffectsOnEquip?.length || item?.Effects?.length || item?.Properties?.Effects?.length || item?.Properties?.EffectsOnEquip?.length || 0;
+        const setCount = item?.Set?.EffectsOnSetEquip?.length || item?.EffectsOnSetEquip?.length || item?.SetEffects?.length || item?.Properties?.SetEffects?.length || item?.Properties?.Set?.EffectsOnSetEquip?.length || 0;
+        const hasEffects = (equipCount + setCount) > 0;
+        return value === 'yes' ? hasEffects : !hasEffects;
+      }
+    }
+  ];
 
   // Full column definitions for clothing
   const columnDefs = {
