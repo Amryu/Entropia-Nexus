@@ -17,6 +17,41 @@
   let itemNameDrafts = {};
   let skillNameDrafts = {};
 
+  // Raw JSON editor state
+  let showRawJson = false;
+  let rawJsonText = '';
+  let jsonParseError = '';
+
+  function toggleRawJson() {
+    if (!showRawJson) {
+      rawJsonText = JSON.stringify(rewards || emptyPackage(), null, 2);
+      jsonParseError = '';
+    }
+    showRawJson = !showRawJson;
+  }
+
+  function applyRawJson() {
+    try {
+      const parsed = JSON.parse(rawJsonText);
+      if (Array.isArray(parsed)) {
+        // Choices format: array of packages — wrap in Items
+        for (const pkg of parsed) {
+          if (!pkg || typeof pkg !== 'object') throw new Error('Each choice must be an object');
+        }
+        updateField(fieldPath, { Items: parsed, Skills: [], Unlocks: [] });
+      } else if (parsed && typeof parsed === 'object') {
+        // Flat format or already wrapped choices
+        updateField(fieldPath, parsed);
+      } else {
+        throw new Error('Rewards must be an object or array of choices');
+      }
+      jsonParseError = '';
+      showRawJson = false;
+    } catch (e) {
+      jsonParseError = e.message;
+    }
+  }
+
   // Check if Rewards is in choices format (Items column contains choice packages)
   function isChoicesFormat(data) {
     const items = data?.Items;
@@ -306,12 +341,26 @@
 <div class="mission-rewards-editor">
   <div class="rewards-header">
     <label class="choices-toggle">
-      <input type="checkbox" checked={hasChoices} on:change={toggleChoices} />
+      <input type="checkbox" checked={hasChoices} on:change={toggleChoices} disabled={showRawJson} />
       <span>Enable Choices</span>
     </label>
+    <button type="button" class="json-toggle-btn" on:click={toggleRawJson}>
+      {showRawJson ? 'Form Editor' : 'Edit as JSON'}
+    </button>
   </div>
 
-  {#if hasChoices}
+  {#if showRawJson}
+    <div class="raw-json-editor">
+      <textarea bind:value={rawJsonText} rows="20" class="json-textarea" spellcheck="false"></textarea>
+      {#if jsonParseError}
+        <div class="json-error">{jsonParseError}</div>
+      {/if}
+      <div class="json-actions">
+        <button type="button" class="json-cancel-btn" on:click={() => { showRawJson = false; }}>Cancel</button>
+        <button type="button" class="json-apply-btn" on:click={applyRawJson}>Apply JSON</button>
+      </div>
+    </div>
+  {:else if hasChoices}
     <!-- Choices mode: array of reward packages -->
     {#each rewardsData as pkg, choiceIndex (choiceIndex)}
       <div class="choice-group">
@@ -722,6 +771,91 @@
     width: 18px;
     height: 18px;
     font-size: 11px;
+  }
+
+  .json-toggle-btn {
+    padding: 4px 10px;
+    font-size: 11px;
+    background: transparent;
+    border: 1px solid var(--border-color, #555);
+    border-radius: 4px;
+    color: var(--text-muted, #999);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .json-toggle-btn:hover {
+    border-color: var(--accent-color, #4a9eff);
+    color: var(--accent-color, #4a9eff);
+    background-color: var(--hover-color);
+  }
+
+  .raw-json-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .json-textarea {
+    width: 100%;
+    font-family: monospace;
+    font-size: 13px;
+    line-height: 1.4;
+    background: var(--input-bg, var(--bg-color));
+    color: var(--text-color);
+    border: 1px solid var(--border-color, #555);
+    border-radius: 6px;
+    padding: 12px;
+    resize: vertical;
+    box-sizing: border-box;
+    tab-size: 2;
+  }
+
+  .json-textarea:focus {
+    outline: none;
+    border-color: var(--accent-color, #4a9eff);
+  }
+
+  .json-error {
+    color: var(--error-color, #ff4444);
+    font-size: 13px;
+  }
+
+  .json-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+  }
+
+  .json-cancel-btn {
+    padding: 6px 14px;
+    font-size: 12px;
+    background: transparent;
+    border: 1px solid var(--border-color, #555);
+    border-radius: 4px;
+    color: var(--text-muted, #999);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .json-cancel-btn:hover {
+    border-color: var(--text-color);
+    color: var(--text-color);
+  }
+
+  .json-apply-btn {
+    padding: 6px 14px;
+    font-size: 12px;
+    background: var(--accent-color, #4a9eff);
+    border: 1px solid var(--accent-color, #4a9eff);
+    border-radius: 4px;
+    color: white;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .json-apply-btn:hover {
+    filter: brightness(1.1);
   }
 
   @media (max-width: 700px) {

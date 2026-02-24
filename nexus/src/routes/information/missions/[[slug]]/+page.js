@@ -89,7 +89,9 @@ export async function load({ fetch, params, url, parent }) {
   }
   response.mobSpeciesList = cachedMobSpecies;
 
-  // Other edit deps only loaded server-side in create mode, otherwise lazy-loaded client-side
+  // Edit deps: create mode loads everything up front; individual mission pages load locations
+  // (needed for mapObjectives to resolve Dialog/Interact/HandIn location coordinates in view mode);
+  // remaining deps (mobMaturities, events) are lazy-loaded client-side when edit mode activates.
   if (isCreateMode) {
     const [mobMaturities, locations, events] = await Promise.all([
       apiCall(fetch, '/mobmaturities').catch(() => []),
@@ -99,6 +101,10 @@ export async function load({ fetch, params, url, parent }) {
     response.mobMaturities = mobMaturities || [];
     response.locations = locations || [];
     response.events = events || [];
+  } else if (response.object) {
+    response.locations = await apiCall(fetch, '/locations').catch(() => []) || [];
+    response.mobMaturities = null;
+    response.events = null;
   } else {
     response.mobMaturities = null;
     response.locations = null;
