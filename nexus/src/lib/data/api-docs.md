@@ -1373,6 +1373,7 @@ Uploaded images are processed server-side: validated (magic bytes), resized, and
 - `guide-category`, `announcement` — auto-approved (requires appropriate permissions)
 - `item-set` — auto-approved (requires at least one (C) tagged item)
 - `richtext` — auto-approved if the user has `wiki.approve` or `guide.edit` grants
+- **Admin uploads** — any upload by a user with `admin.panel` grant is auto-approved
 
 Re-uploading for the same target overwrites your previous pending upload.
 

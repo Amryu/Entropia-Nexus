@@ -228,6 +228,10 @@ export async function POST({ request, locals }) {
         await approveImage(entityType, entityId);
         approved = true;
       }
+    } else if (user.grants?.includes('admin.panel')) {
+      // Admins skip the approval queue
+      await approveImage(entityType, entityId);
+      approved = true;
     }
 
     if (!approved) {

@@ -10,6 +10,11 @@ Entity images (icons) go through a staged upload process:
 3. Admin reviews and approves/denies the image
 4. Approved images are moved to public storage
 
+**Auto-approve:** Some uploads skip the approval queue:
+- `guide-category`, `announcement`, `item-set` — auto-approved by entity type
+- `richtext` — auto-approved if the user has `wiki.approve` or `guide.edit` grants
+- **Admin uploads** — any upload by a user with `admin.panel` grant is auto-approved
+
 ---
 
 ## Client-Side Components

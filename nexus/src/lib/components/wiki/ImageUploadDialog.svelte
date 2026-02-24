@@ -152,10 +152,11 @@
       dispatch('uploaded', {
         tempPath: result.tempPath,
         previewUrl: result.previewUrl,
+        approved: result.approved,
         imageUrl: entityType === 'user' ? `/api/image/user/${entityId}` : null
       });
 
-      addToast('Image uploaded — pending approval', { type: 'success' });
+      addToast(result.approved ? 'Image uploaded and approved' : 'Image uploaded — pending approval', { type: 'success' });
       handleClose();
     } catch (err) {
       console.error('Upload error:', err);

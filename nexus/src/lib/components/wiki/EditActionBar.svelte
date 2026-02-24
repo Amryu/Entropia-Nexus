@@ -7,6 +7,7 @@
   // @ts-nocheck
   import { goto, invalidateAll } from '$app/navigation';
   import { browser } from '$app/environment';
+  import { onDestroy } from 'svelte';
   import {
     editMode,
     isCreateMode,
@@ -54,6 +55,9 @@
   let deleting = false;
   let statusMessage = '';
   let statusType = ''; // success, error
+  let pollTimer = null;
+
+  onDestroy(() => { if (pollTimer) clearInterval(pollTimer); });
 
   // Admin-only: allow Direct Apply (pass-through without review)
   $: isUserAdmin = user?.grants?.includes('admin.panel') || user?.administrator;
@@ -262,29 +266,72 @@
         }
       }
 
-      if (response?.id) {
-        changeMetadata.update(m => ({ ...m, id: response.id, state: 'DirectApply' }));
+      const changeId = response?.id || $changeMetadata.id;
+      if (changeId) {
+        changeMetadata.update(m => ({ ...m, id: changeId, state: 'DirectApply' }));
         markSaved();
-        if (browser) {
-          await invalidateAll();
-          if ($isCreateMode) {
-            await goto(`${window.location.pathname}?mode=create&changeId=${response.id}`, {
-              replaceState: true,
-              noScroll: true
-            });
-          }
-        }
-      }
 
-      statusMessage = 'Submitted for direct application. Check Discord for confirmation.';
-      statusType = 'success';
+        statusMessage = 'Applying changes...';
+        statusType = 'success';
+
+        await pollForApply(changeId);
+      }
     } catch (error) {
       console.error('Direct apply error:', error);
       statusMessage = error.message || 'Failed to submit for direct application.';
       statusType = 'error';
-    } finally {
       directApplying = false;
     }
+  }
+
+  const POLL_INTERVAL = 2000;
+  const POLL_TIMEOUT = 30000;
+
+  async function pollForApply(changeId) {
+    const start = Date.now();
+
+    return new Promise((resolve) => {
+      pollTimer = setInterval(async () => {
+        if (Date.now() - start > POLL_TIMEOUT) {
+          clearInterval(pollTimer);
+          pollTimer = null;
+          statusMessage = 'Taking longer than expected. Check Discord for confirmation.';
+          statusType = 'success';
+          directApplying = false;
+          resolve();
+          return;
+        }
+
+        try {
+          const res = await fetch(`/api/changes/${changeId}`);
+          if (!res.ok) return;
+          const change = await res.json();
+
+          if (change?.state === 'Approved') {
+            clearInterval(pollTimer);
+            pollTimer = null;
+            statusMessage = 'Changes applied successfully!';
+            statusType = 'success';
+            if (browser) await invalidateAll();
+            if (!$isCreateMode) {
+              setTimeout(() => cancelEdit(), 1500);
+            }
+            directApplying = false;
+            resolve();
+          } else if (change?.state === 'ApplyFailed') {
+            clearInterval(pollTimer);
+            pollTimer = null;
+            changeMetadata.update(m => ({ ...m, state: 'ApplyFailed' }));
+            statusMessage = 'Failed to apply changes. You can retry or check Discord.';
+            statusType = 'error';
+            directApplying = false;
+            resolve();
+          }
+        } catch {
+          // Network error — retry on next tick
+        }
+      }, POLL_INTERVAL);
+    });
   }
 
   function handleCancel() {

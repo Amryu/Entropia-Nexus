@@ -55,6 +55,7 @@
   let userPendingImage = null;
   let pendingImageChecked = false;
   let lastCheckedEntityId = null;
+  let uploadAutoApproved = false;
 
   $: displayName = entity?.Name || name;
   $: displayType = entity?.Properties?.Type || type;
@@ -102,8 +103,8 @@
     (userPendingImage?.previewUrl) ||
     (!imageLoadFailed ? imageUrl : null);
 
-  // Show pending overlay for just-uploaded preview OR user's existing pending image
-  $: showPendingOverlay = pendingImagePreview || (userPendingImage?.previewUrl && displayImageUrl === userPendingImage.previewUrl);
+  // Show pending overlay for just-uploaded preview OR user's existing pending image (not for auto-approved)
+  $: showPendingOverlay = !uploadAutoApproved && (pendingImagePreview || (userPendingImage?.previewUrl && displayImageUrl === userPendingImage.previewUrl));
 
   function handleIconClick() {
     if (canUpload) {
@@ -112,8 +113,15 @@
   }
 
   function handleImageUploaded(event) {
-    const { previewUrl } = event.detail;
-    pendingImagePreview = previewUrl;
+    const { previewUrl, approved } = event.detail;
+    if (approved) {
+      // Auto-approved: show the approved image URL directly, no pending overlay
+      pendingImagePreview = `/api/img/${entityType}/${entityId}?t=${Date.now()}`;
+      uploadAutoApproved = true;
+    } else {
+      pendingImagePreview = previewUrl;
+      uploadAutoApproved = false;
+    }
     userPendingImage = null; // Clear old pending image since we just uploaded a new one
     imageLoadFailed = false;
     dispatch('imageUploaded', event.detail);

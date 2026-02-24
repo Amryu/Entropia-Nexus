@@ -95,4 +95,18 @@ test.describe('Image upload entity type validation', () => {
     const response = await uploadImage(page, 'weapon');
     expect(response.status()).toBe(401);
   });
+
+  test('admin upload is auto-approved', async ({ adminUser }) => {
+    const response = await uploadImage(adminUser, 'weapon');
+    expect(response.status()).toBe(200);
+    const body = await response.json();
+    expect(body.approved).toBe(true);
+  });
+
+  test('non-admin upload is pending approval', async ({ verifiedUser }) => {
+    const response = await uploadImage(verifiedUser, 'weapon');
+    expect(response.status()).toBe(200);
+    const body = await response.json();
+    expect(body.approved).toBe(false);
+  });
 });
