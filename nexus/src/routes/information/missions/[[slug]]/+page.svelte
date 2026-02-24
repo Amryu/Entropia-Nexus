@@ -45,7 +45,6 @@
     editDepsLoading = true;
     loadEditDeps([
       { key: 'mobMaturities', url: '/api/mobmaturities' },
-      { key: 'mobSpeciesList', url: '/api/mobspecies' },
       { key: 'locations', url: '/api/locations' },
       { key: 'events', url: '/api/events' }
     ]).then(deps => {
@@ -377,6 +376,48 @@
     return mobIdToName[mobId] || `Mob #${mobId}`;
   }
 
+  // Reward rarity display
+  const RARITY_ORDER = ['guaranteed', 'uncommon', 'rare', 'very-rare'];
+  const RARITY_LABELS = {
+    'guaranteed': 'Guaranteed',
+    'uncommon': 'Uncommon',
+    'rare': 'Rare',
+    'very-rare': 'Very Rare'
+  };
+
+  function groupItemsByRarity(items) {
+    if (!items?.length) return [];
+    const groups = {};
+    const ungrouped = [];
+    for (const item of items) {
+      const r = item.rarity;
+      if (r && RARITY_LABELS[r]) {
+        (groups[r] = groups[r] || []).push(item);
+      } else {
+        ungrouped.push(item);
+      }
+    }
+    const result = [];
+    for (const r of RARITY_ORDER) {
+      if (groups[r]) result.push({ rarity: r, label: RARITY_LABELS[r], items: groups[r] });
+    }
+    if (ungrouped.length) result.push({ rarity: null, label: null, items: ungrouped });
+    return result;
+  }
+
+  function formatRewardQuantity(item) {
+    if (item.minQuantity != null || item.maxQuantity != null) {
+      if (item.minQuantity != null && item.maxQuantity != null) {
+        return `${item.minQuantity}–${item.maxQuantity}×`;
+      } else if (item.minQuantity != null) {
+        return `${item.minQuantity}+×`;
+      } else {
+        return `up to ${item.maxQuantity}×`;
+      }
+    }
+    return `${item.quantity ?? 1}×`;
+  }
+
   // Format objective summary for display
   function formatObjectiveSummary(objective) {
     const { Type, Payload } = objective;
@@ -542,7 +583,8 @@
       const species = Payload?.mobSpecies || [];
       for (const speciesId of species) {
         if (speciesId != null) {
-          details.push({ label: 'Species', value: getSpeciesNameFromId(speciesId) });
+          const speciesName = getSpeciesNameFromId(speciesId);
+          details.push({ label: 'Species', value: speciesName, href: `/information/mobs?search=${encodeURIComponent(speciesName)}` });
         }
       }
       if (Payload?.pedToCycle) {
@@ -1333,19 +1375,25 @@
                         <div class="reward-choice-label">Choice {choiceIdx + 1}</div>
                       {/if}
                       {#if itemCount > 0}
-                        {#each pkg.Items as item}
-                          {@const itemDisplayName = item.itemName || itemsIndex[item.itemId] || `Item #${item.itemId}`}
-                          <div class="reward-row">
-                            <span class="reward-value">{item.quantity ?? 1}×</span>
-                            <span class="reward-name">
-                              {#if item.itemId}
-                                <a href="/items/{item.itemId}" class="reward-link">{itemDisplayName}</a>
-                              {:else}
-                                {itemDisplayName}
-                              {/if}
-                              {#if item.pedValue > 0}<span class="reward-ped">({formatPedValue(item.pedValue)} PED)</span>{/if}
-                            </span>
-                          </div>
+                        {@const rarityGroups = groupItemsByRarity(pkg.Items)}
+                        {#each rarityGroups as group}
+                          {#if group.label}
+                            <div class="reward-rarity-header rarity-{group.rarity}">{group.label}</div>
+                          {/if}
+                          {#each group.items as item}
+                            {@const itemDisplayName = item.itemName || itemsIndex[item.itemId] || `Item #${item.itemId}`}
+                            <div class="reward-row">
+                              <span class="reward-value">{formatRewardQuantity(item)}</span>
+                              <span class="reward-name">
+                                {#if item.itemId}
+                                  <a href="/items/{item.itemId}" class="reward-link">{itemDisplayName}</a>
+                                {:else}
+                                  {itemDisplayName}
+                                {/if}
+                                {#if item.pedValue > 0}<span class="reward-ped">({formatPedValue(item.pedValue)} PED)</span>{/if}
+                              </span>
+                            </div>
+                          {/each}
                         {/each}
                       {/if}
                       {#if skillCount > 0}
@@ -1494,7 +1542,7 @@
                                   {#each details as detail}
                                     <div class="detail-row">
                                       <span class="detail-label">{detail.label}:</span>
-                                      <span class="detail-value">{detail.value}</span>
+                                      <span class="detail-value">{#if detail.href}<a href={detail.href} class="detail-link">{detail.value}</a>{:else}{detail.value}{/if}</span>
                                     </div>
                                   {/each}
                                 </div>
@@ -2119,6 +2167,15 @@
     color: var(--text-muted, #999);
   }
 
+  .detail-link {
+    color: var(--accent-color, #4a9eff);
+    text-decoration: none;
+  }
+
+  .detail-link:hover {
+    text-decoration: underline;
+  }
+
   .dependency-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -2409,6 +2466,35 @@
     color: var(--accent-color, #4a9eff);
     text-transform: uppercase;
     margin-bottom: 6px;
+  }
+
+  .reward-rarity-header {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    margin-top: 8px;
+    margin-bottom: 2px;
+    padding: 2px 0;
+  }
+
+  .reward-rarity-header:first-child {
+    margin-top: 0;
+  }
+
+  .reward-rarity-header.rarity-guaranteed {
+    color: var(--success-color, #4ade80);
+  }
+
+  .reward-rarity-header.rarity-uncommon {
+    color: var(--accent-color, #4a9eff);
+  }
+
+  .reward-rarity-header.rarity-rare {
+    color: var(--warning-color, #fbbf24);
+  }
+
+  .reward-rarity-header.rarity-very-rare {
+    color: var(--error-color, #ff6b6b);
   }
 
   .reward-row {

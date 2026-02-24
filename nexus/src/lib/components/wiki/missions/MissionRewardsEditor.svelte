@@ -126,9 +126,17 @@
     updateRewards(rewardsData.filter((_, i) => i !== choiceIndex));
   }
 
+  const RARITY_OPTIONS = [
+    { value: '', label: '—' },
+    { value: 'guaranteed', label: 'Guaranteed' },
+    { value: 'uncommon', label: 'Uncommon' },
+    { value: 'rare', label: 'Rare' },
+    { value: 'very-rare', label: 'Very Rare' }
+  ];
+
   // --- Item functions ---
   function addItem(choiceIndex = null) {
-    const newItem = { itemId: null, quantity: null, pedValue: null };
+    const newItem = { itemId: null, rarity: null, minQuantity: null, maxQuantity: null, pedValue: null };
     if (hasChoices && choiceIndex !== null) {
       const updated = rewardsData.map((pkg, i) =>
         i === choiceIndex ? { ...pkg, Items: [...(pkg.Items || []), newItem] } : pkg
@@ -323,7 +331,7 @@
             {#each pkg.Items as item, itemIndex (itemIndex)}
               {@const draftKey = getDraftKey('item', choiceIndex, itemIndex)}
               <div class="reward-entry">
-                <div class="reward-row">
+                <div class="reward-row item-row-extended">
                   <div class="search-delete-row">
                     <SearchInput
                       value={getDisplayName(item.itemId, itemNameDrafts, draftKey)}
@@ -335,8 +343,16 @@
                     />
                     <button type="button" class="btn-icon danger" on:click={() => removeItem(choiceIndex, itemIndex)} title="Remove">×</button>
                   </div>
-                  <input type="number" min="0" step="1" placeholder="Qty" value={item.quantity ?? ''}
-                    on:input={(e) => updateItem(choiceIndex, itemIndex, 'quantity', e.target.value ? Number(e.target.value) : null)} />
+                  <select value={item.rarity || ''}
+                    on:change={(e) => updateItem(choiceIndex, itemIndex, 'rarity', e.target.value || null)}>
+                    {#each RARITY_OPTIONS as opt}
+                      <option value={opt.value}>{opt.label}</option>
+                    {/each}
+                  </select>
+                  <input type="number" min="0" step="1" placeholder="Min Qty" value={item.minQuantity ?? ''}
+                    on:input={(e) => updateItem(choiceIndex, itemIndex, 'minQuantity', e.target.value ? Number(e.target.value) : null)} />
+                  <input type="number" min="0" step="1" placeholder="Max Qty" value={item.maxQuantity ?? ''}
+                    on:input={(e) => updateItem(choiceIndex, itemIndex, 'maxQuantity', e.target.value ? Number(e.target.value) : null)} />
                   <input type="number" min="0" step="0.01" placeholder="TT (opt)" value={item.pedValue ?? ''}
                     on:input={(e) => updateItem(choiceIndex, itemIndex, 'pedValue', e.target.value ? Number(e.target.value) : null)} />
                 </div>
@@ -413,7 +429,7 @@
         {#each rewardsData.Items as item, itemIndex (itemIndex)}
           {@const draftKey = getDraftKey('item', 0, itemIndex)}
           <div class="reward-entry">
-            <div class="reward-row">
+            <div class="reward-row item-row-extended">
               <div class="search-delete-row">
                 <SearchInput
                   value={getDisplayName(item.itemId, itemNameDrafts, draftKey)}
@@ -425,9 +441,17 @@
                 />
                 <button type="button" class="btn-icon danger" on:click={() => removeItem(0, itemIndex)} title="Remove">×</button>
               </div>
-              <input type="number" min="0" step="1" placeholder="Quantity" value={item.quantity ?? ''}
-                on:input={(e) => updateItem(0, itemIndex, 'quantity', e.target.value ? Number(e.target.value) : null)} />
-              <input type="number" min="0" step="0.01" placeholder="Remaining TT (optional)" value={item.pedValue ?? ''}
+              <select value={item.rarity || ''}
+                on:change={(e) => updateItem(0, itemIndex, 'rarity', e.target.value || null)}>
+                {#each RARITY_OPTIONS as opt}
+                  <option value={opt.value}>{opt.label}</option>
+                {/each}
+              </select>
+              <input type="number" min="0" step="1" placeholder="Min Qty" value={item.minQuantity ?? ''}
+                on:input={(e) => updateItem(0, itemIndex, 'minQuantity', e.target.value ? Number(e.target.value) : null)} />
+              <input type="number" min="0" step="1" placeholder="Max Qty" value={item.maxQuantity ?? ''}
+                on:input={(e) => updateItem(0, itemIndex, 'maxQuantity', e.target.value ? Number(e.target.value) : null)} />
+              <input type="number" min="0" step="0.01" placeholder="TT (opt)" value={item.pedValue ?? ''}
                 on:input={(e) => updateItem(0, itemIndex, 'pedValue', e.target.value ? Number(e.target.value) : null)} />
             </div>
           </div>
@@ -617,6 +641,10 @@
     align-items: center;
   }
 
+  .reward-row.item-row-extended {
+    grid-template-columns: minmax(180px, 2fr) minmax(80px, auto) minmax(60px, auto) minmax(60px, auto) minmax(70px, auto);
+  }
+
   .reward-row.skill-row {
     grid-template-columns: minmax(180px, 2fr) minmax(80px, 1fr);
   }
@@ -641,7 +669,8 @@
     min-width: 0;
   }
 
-  .reward-row input {
+  .reward-row input,
+  .reward-row select {
     background: var(--input-bg, var(--bg-color));
     border: 1px solid var(--border-color, #555);
     border-radius: 4px;
@@ -713,7 +742,8 @@
       width: 100%;
     }
 
-    .reward-row input[type="number"] {
+    .reward-row input[type="number"],
+    .reward-row select {
       width: 100%;
     }
   }
