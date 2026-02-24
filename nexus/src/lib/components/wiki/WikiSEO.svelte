@@ -134,6 +134,7 @@
 
   $: sidebarFacts = buildSidebarFacts(sidebarColumns, sidebarEntity || entity);
   $: sidebarFactsText = sidebarFacts.map(fact => `${fact.label}: ${fact.value}`).join(' · ');
+  $: jsonLdFacts = buildSidebarFacts(sidebarColumns, sidebarEntity || entity, 12);
 
   $: computedOgDescription = clampText(
     ogDescription ||
@@ -142,10 +143,16 @@
         : truncatedDescription)
   );
 
-  // Generate JSON-LD structured data
-  $: jsonLd = generateJsonLd(entity, entityType, breadcrumbs, canonicalUrl);
+  /** Format entity type into readable section name: "WeaponAmplifier" → "Weapon Amplifier" */
+  function formatEntityType(type) {
+    if (!type) return 'Items';
+    return type.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, c => c.toUpperCase());
+  }
 
-  function generateJsonLd(entity, type, breadcrumbs, url) {
+  // Generate JSON-LD structured data
+  $: jsonLd = generateJsonLd(entity, entityType, breadcrumbs, canonicalUrl, jsonLdFacts);
+
+  function generateJsonLd(entity, type, breadcrumbs, url, facts) {
     const schemas = [];
 
     // Breadcrumb schema
@@ -164,30 +171,7 @@
 
     // Entity-specific schema
     if (entity) {
-      if (type === 'weapon' || type === 'armor' || type === 'tool' || type === 'material') {
-        // Item/Product schema for game items
-        schemas.push({
-          '@context': 'https://schema.org',
-          '@type': 'Product',
-          'name': entity.Name,
-          'description': stripHtml(entity.Properties?.Description) || truncatedDescription,
-          'image': imageUrl,
-          'url': url,
-          'category': type,
-          'brand': {
-            '@type': 'Brand',
-            'name': entity.Properties?.Manufacturer || 'Unknown'
-          },
-          ...(entity.Properties?.MaxTT && {
-            'offers': {
-              '@type': 'Offer',
-              'price': entity.Properties.MaxTT,
-              'priceCurrency': 'PED',
-              'availability': 'https://schema.org/InStock'
-            }
-          })
-        });
-      } else if (type === 'mob' || type === 'mission' || type === 'mission-chain') {
+      if (type === 'mob' || type === 'mission' || type === 'mission-chain') {
         // Article schema for informational content
         schemas.push({
           '@context': 'https://schema.org',
@@ -219,20 +203,38 @@
           })
         });
       } else {
-        // Generic Article for other types
-        schemas.push({
+        // Article for item types — stats-first description
+        const factsStr = facts?.length ? facts.map(f => `${f.label}: ${f.value}`).join('. ') : '';
+        const richDescription = factsStr || stripHtml(entity.Properties?.Description) || truncatedDescription;
+
+        const article = {
           '@context': 'https://schema.org',
           '@type': 'Article',
           'headline': entity.Name || title,
-          'description': stripHtml(entity.Properties?.Description) || truncatedDescription,
+          'description': richDescription,
           'image': imageUrl,
           'url': url,
+          'articleSection': formatEntityType(type),
           'publisher': {
             '@type': 'Organization',
             'name': siteName,
             'url': 'https://entropianexus.com'
           }
-        });
+        };
+
+        if (facts?.length) {
+          article['about'] = {
+            '@type': 'Thing',
+            'name': entity.Name,
+            'additionalProperty': facts.map(f => ({
+              '@type': 'PropertyValue',
+              'name': f.label,
+              'value': f.value
+            }))
+          };
+        }
+
+        schemas.push(article);
       }
     }
 
