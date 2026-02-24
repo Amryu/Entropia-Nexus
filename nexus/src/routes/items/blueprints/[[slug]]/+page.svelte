@@ -227,6 +227,7 @@
         { value: 'Metal Component', label: 'Metal Component' },
         { value: 'Electrical Component', label: 'Electrical Component' },
         { value: 'Mechanical Component', label: 'Mechanical Component' },
+        { value: 'Chemistry', label: 'Chemistry' },
       ]
     }
   ];
@@ -243,7 +244,8 @@
     { value: 'Enhancer', label: 'Enhancer' },
     { value: 'Metal Component', label: 'Metal Component' },
     { value: 'Electrical Component', label: 'Electrical Component' },
-    { value: 'Mechanical Component', label: 'Mechanical Component' }
+    { value: 'Mechanical Component', label: 'Mechanical Component' },
+    { value: 'Chemistry', label: 'Chemistry' }
   ];
 
   // Sidebar table columns for blueprints
@@ -415,6 +417,7 @@
     'Metal Component': 'Metal Engineer',
     'Electrical Component': 'Electronics Engineer',
     'Mechanical Component': 'Mechanical Engineer',
+    'Chemistry': 'Chemist',
   };
 
   const PRODUCT_TYPE_TO_BP_TYPE = {

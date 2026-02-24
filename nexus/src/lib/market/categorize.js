@@ -202,7 +202,7 @@ function makeEmptyCategories() {
     },
     blueprints: {
       mechanical_component: [], electrical_component: [], metal_component: [], textile: [], furniture: [], weapon: [],
-      attachment: [], vehicle: [], other: []
+      attachment: [], vehicle: [], chemistry: [], other: []
     },
     materials: {
       animal_oils: [], leather: [], robot_parts: [], timber: [], fragments: [], forageables: [], extractors: [],
@@ -463,6 +463,7 @@ function categorizeBlueprint(item, blueprints) {
   else if (t === 'weapon') blueprints.weapon.push(item);
   else if (t === 'attachment') blueprints.attachment.push(item);
   else if (t === 'vehicle') blueprints.vehicle.push(item);
+  else if (t === 'chemistry') blueprints.chemistry.push(item);
   else blueprints.other.push(item);
 }
 

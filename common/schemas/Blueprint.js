@@ -18,7 +18,7 @@ export const Blueprint = {
         },
         "Type": {
           "type": "string",
-          "enum": ["Weapon", "Textile", "Vehicle", "Enhancer", "Furniture", "Tool", "Armor", "Attachment", "Metal Component", "Electrical Component", "Mechanical Component"]
+          "enum": ["Weapon", "Textile", "Vehicle", "Enhancer", "Furniture", "Tool", "Armor", "Attachment", "Metal Component", "Electrical Component", "Mechanical Component", "Chemistry"]
         },
         "Level": {
           "type": ["integer", "null"],
