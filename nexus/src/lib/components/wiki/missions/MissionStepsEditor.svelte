@@ -782,7 +782,7 @@
                           <div class="mob-row ai-species-row">
                             <div class="mob-search">
                               <SearchInput
-                                value={speciesId || ''}
+                                value={getSpeciesName(speciesId)}
                                 placeholder="Search species..."
                                 options={mobSpeciesOptions}
                                 on:select={(e) => handleAISpeciesSelect(stepIndex, objIndex, idx, e.detail.value)}
