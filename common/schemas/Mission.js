@@ -157,6 +157,9 @@ export const Mission = {
                   "itemId": { "type": ["integer", "null"] },
                   "itemName": { "type": ["string", "null"] },
                   "quantity": { "type": ["integer", "null"] },
+                  "minQuantity": { "type": ["integer", "null"] },
+                  "maxQuantity": { "type": ["integer", "null"] },
+                  "rarity": { "type": ["string", "null"], "enum": ["guaranteed", "uncommon", "rare", "very-rare", null] },
                   "minPedValue": { "type": ["number", "null"] },
                   "pedValue": { "type": ["number", "null"] }
                 }
@@ -196,6 +199,9 @@ export const Mission = {
                     "itemId": { "type": ["integer", "null"] },
                     "itemName": { "type": ["string", "null"] },
                     "quantity": { "type": ["integer", "null"] },
+                    "minQuantity": { "type": ["integer", "null"] },
+                    "maxQuantity": { "type": ["integer", "null"] },
+                    "rarity": { "type": ["string", "null"], "enum": ["guaranteed", "uncommon", "rare", "very-rare", null] },
                     "minPedValue": { "type": ["number", "null"] },
                     "pedValue": { "type": ["number", "null"] }
                   }

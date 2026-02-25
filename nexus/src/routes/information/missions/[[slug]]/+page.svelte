@@ -149,16 +149,20 @@
   let lastParsedMissionId = null;
 
   // Parse existing cooldown duration only when switching to a different mission
-  $: if (activeMission?.Id !== lastParsedMissionId) {
-    lastParsedMissionId = activeMission?.Id ?? null;
-    if (activeMission?.Properties?.CooldownDuration) {
-      const parsed = parseCooldownDuration(activeMission.Properties.CooldownDuration);
-      cooldownValue = parsed.value;
-      cooldownUnit = parsed.unit;
-    } else {
-      // Default for new missions
-      cooldownValue = 1;
-      cooldownUnit = 'days';
+  // In create mode, use 'create' sentinel so the guard fires once (not on every activeMission change)
+  $: {
+    const missionIdentity = activeMission?.Id ?? (isCreateMode ? 'create' : null);
+    if (missionIdentity !== lastParsedMissionId) {
+      lastParsedMissionId = missionIdentity;
+      if (activeMission?.Properties?.CooldownDuration) {
+        const parsed = parseCooldownDuration(activeMission.Properties.CooldownDuration);
+        cooldownValue = parsed.value;
+        cooldownUnit = parsed.unit;
+      } else {
+        // Default for new missions
+        cooldownValue = 1;
+        cooldownUnit = 'days';
+      }
     }
   }
 
@@ -216,6 +220,11 @@
       isoValue = `${cooldownValue} days`;
     }
     updateField('Properties.CooldownDuration', isoValue);
+  }
+
+  // When type changes to Recurring and no cooldown is set yet, persist the default value
+  $: if ($editMode && activeMission?.Properties?.Type === 'Recurring' && !activeMission?.Properties?.CooldownDuration) {
+    updateCooldownDuration();
   }
 
   // Main planets only (excludes Space, asteroids, etc.)
