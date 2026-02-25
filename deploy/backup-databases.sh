@@ -24,7 +24,7 @@ BACKUP_DIR="${BACKUP_DIR:-/var/backups/postgres}"
 RETAIN_DAILY_DAYS="${RETAIN_DAILY_DAYS:-30}"      # Keep all dailies for this many days
 RETAIN_WEEKLY_DAYS="${RETAIN_WEEKLY_DAYS:-365}"    # Beyond daily, keep 1/week up to this many days
                                                    # Beyond weekly, keep 1/month forever
-DB_CONTAINER="${DB_CONTAINER:-}"
+DB_CONTAINER="${DB_CONTAINER:-828a6804235c_postgres-db-1}"
 DB_USER="${DB_USER:-postgres}"
 DATABASES=("nexus" "nexus_users")
 
