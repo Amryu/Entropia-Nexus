@@ -9,7 +9,16 @@ import { rotateClientSecret } from '$lib/server/oauth.js';
 export async function POST({ params, locals }) {
   const user = requireVerifiedAPI(locals);
 
-  const newSecret = await rotateClientSecret(params.id, BigInt(user.id));
+  let newSecret;
+  try {
+    newSecret = await rotateClientSecret(params.id, BigInt(user.id));
+  } catch (err) {
+    if (err.message?.includes('public client')) {
+      return getResponse({ error: 'Cannot rotate secret for a public client.' }, 400);
+    }
+    throw err;
+  }
+
   if (!newSecret) {
     return getResponse({ error: 'Client not found' }, 404);
   }

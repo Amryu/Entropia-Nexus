@@ -2,12 +2,30 @@
 
 Entropia Nexus supports OAuth 2.0 Authorization Code flow with PKCE, allowing external applications to access APIs on behalf of users.
 
+## Client Types
+
+Entropia Nexus supports two OAuth client types per [RFC 6749 Section 2.1](https://tools.ietf.org/html/rfc6749#section-2.1):
+
+**Confidential clients** (default) — Server-side applications that can securely store a client secret. The `client_secret` parameter is required when exchanging codes and refreshing tokens. Use for backend web applications, Discord bots, etc.
+
+**Public clients** — Browser-based (SPA) or native applications that cannot securely store a secret. These rely on PKCE alone for security. The `client_secret` parameter must be omitted. Use for apps where source code is accessible to users.
+
+| Feature | Confidential | Public |
+|---------|-------------|--------|
+| Client secret | Generated on creation | None |
+| Token exchange | Requires `client_secret` | PKCE only |
+| Token refresh | Requires `client_secret` | `client_id` only |
+| Secret rotation | Available | N/A |
+
+Client type is chosen at creation and cannot be changed.
+
 ## Quick Start
 
 1. Register an application at `/account/developers`
-2. Redirect users to the authorization endpoint
-3. Exchange the authorization code for tokens
-4. Use the access token to call APIs
+2. Choose your client type (confidential or public)
+3. Redirect users to the authorization endpoint
+4. Exchange the authorization code for tokens
+5. Use the access token to call APIs
 
 ## Endpoints
 
@@ -70,7 +88,7 @@ Content-Type: application/x-www-form-urlencoded
 grant_type=authorization_code&
 code=AUTH_CODE&
 client_id=YOUR_CLIENT_ID&
-client_secret=YOUR_CLIENT_SECRET&
+client_secret=YOUR_CLIENT_SECRET&    # confidential clients only
 redirect_uri=https://yourapp.com/callback&
 code_verifier=ORIGINAL_CODE_VERIFIER
 ```
@@ -104,7 +122,7 @@ Content-Type: application/x-www-form-urlencoded
 grant_type=refresh_token&
 refresh_token=REFRESH_TOKEN&
 client_id=YOUR_CLIENT_ID&
-client_secret=YOUR_CLIENT_SECRET
+client_secret=YOUR_CLIENT_SECRET    # confidential clients only
 ```
 
 Refresh tokens are single-use (rotation). Each refresh returns a new access + refresh token pair.
@@ -187,7 +205,8 @@ OAuth requests are subject to:
 
 - Maximum 10 applications per user
 - Only verified users can register applications
-- Client secrets can be rotated at `/account/developers`
+- Client type (confidential or public) is chosen at creation and cannot be changed
+- Confidential client secrets can be rotated at `/account/developers`
 - Users can view and revoke authorized apps at `/account/authorizations`
 
 ## Error Responses

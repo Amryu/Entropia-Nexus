@@ -371,3 +371,91 @@ test.describe('OAuth Authorization Code Single-Use', () => {
     expect(data.error).toBe('invalid_grant');
   });
 });
+
+/** Create a public client and perform full auth flow, returning tokens */
+async function getPublicClientTokens(page: import('@playwright/test').Page) {
+  const clientRes = await page.request.post(CLIENTS_API, {
+    data: {
+      name: 'Public Token Test',
+      redirect_uris: [REDIRECT_URI],
+      is_confidential: false
+    }
+  });
+  expect(clientRes.status()).toBe(201);
+  const { clientId } = await clientRes.json();
+
+  const { verifier, challenge } = generatePKCE();
+  const state = crypto.randomBytes(16).toString('hex');
+
+  const authRes = await page.request.post('/oauth/authorize?/authorize', {
+    form: {
+      client_id: clientId,
+      redirect_uri: REDIRECT_URI,
+      scope: 'profile:read inventory:read',
+      state,
+      code_challenge: challenge
+    },
+    maxRedirects: 0
+  });
+  const location = await extractFormActionRedirect(authRes);
+  const redirectUrl = new URL(location, 'https://example.com');
+  const authCode = redirectUrl.searchParams.get('code')!;
+
+  const tokenRes = await page.request.post(TOKEN_API, {
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    data: new URLSearchParams({
+      grant_type: 'authorization_code',
+      code: authCode,
+      client_id: clientId,
+      redirect_uri: REDIRECT_URI,
+      code_verifier: verifier
+    }).toString()
+  });
+  expect(tokenRes.status()).toBe(200);
+
+  const tokens = await tokenRes.json();
+  return { clientId, ...tokens };
+}
+
+test.describe('OAuth Public Client Token Flow', () => {
+  let lastClientId: string;
+
+  test.afterEach(async ({ verifiedUser }) => {
+    await cleanupClient(verifiedUser, lastClientId);
+  });
+
+  test('public client can exchange code without client_secret', async ({ verifiedUser }) => {
+    const { clientId, access_token, refresh_token } = await getPublicClientTokens(verifiedUser);
+    lastClientId = clientId;
+
+    expect(access_token).toBeDefined();
+    expect(refresh_token).toBeDefined();
+
+    // Access token should work
+    const userinfoRes = await verifiedUser.request.get(USERINFO_API, {
+      headers: { Authorization: `Bearer ${access_token}` }
+    });
+    expect(userinfoRes.status()).toBe(200);
+  });
+
+  test('public client can refresh token without client_secret', async ({ verifiedUser }) => {
+    const { clientId, access_token, refresh_token } = await getPublicClientTokens(verifiedUser);
+    lastClientId = clientId;
+
+    const refreshRes = await verifiedUser.request.post(TOKEN_API, {
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      data: new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: refresh_token,
+        client_id: clientId
+      }).toString()
+    });
+    expect(refreshRes.status()).toBe(200);
+
+    const newTokens = await refreshRes.json();
+    expect(newTokens.access_token).toBeDefined();
+    expect(newTokens.refresh_token).toBeDefined();
+    expect(newTokens.access_token).not.toBe(access_token);
+    expect(newTokens.refresh_token).not.toBe(refresh_token);
+  });
+});

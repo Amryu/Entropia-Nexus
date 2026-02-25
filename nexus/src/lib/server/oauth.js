@@ -125,7 +125,7 @@ export async function getGrantKeysForScopes(scopes) {
  * @param {string} [websiteUrl] - Client website URL
  * @param {string[]} redirectUris - Allowed redirect URIs
  * @param {boolean} [isConfidential=true] - Whether client is confidential
- * @returns {Promise<{ clientId: string, clientSecret: string }>}
+ * @returns {Promise<{ clientId: string, clientSecret?: string }>}
  */
 export async function createClient(userId, name, description, websiteUrl, redirectUris, isConfidential = true) {
   // Check client limit
@@ -138,16 +138,27 @@ export async function createClient(userId, name, description, websiteUrl, redire
   }
 
   const clientId = crypto.randomUUID();
-  const clientSecret = generateToken();
-  const secretHash = hashToken(clientSecret);
+
+  if (isConfidential) {
+    const clientSecret = generateToken();
+    const secretHash = hashToken(clientSecret);
+
+    await pool.query(
+      `INSERT INTO oauth_clients (id, secret_hash, user_id, name, description, website_url, redirect_uris, is_confidential)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, true)`,
+      [clientId, secretHash, userId, name, description || null, websiteUrl || null, redirectUris]
+    );
+
+    return { clientId, clientSecret };
+  }
 
   await pool.query(
     `INSERT INTO oauth_clients (id, secret_hash, user_id, name, description, website_url, redirect_uris, is_confidential)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-    [clientId, secretHash, userId, name, description || null, websiteUrl || null, redirectUris, isConfidential]
+     VALUES ($1, NULL, $2, $3, $4, $5, $6, false)`,
+    [clientId, userId, name, description || null, websiteUrl || null, redirectUris]
   );
 
-  return { clientId, clientSecret };
+  return { clientId };
 }
 
 /**
@@ -255,6 +266,7 @@ export async function verifyClientSecret(clientId, secret) {
     [clientId]
   );
   if (!rows[0]) return false;
+  if (!rows[0].secret_hash) return false; // Public client has no secret
   const expected = Buffer.from(rows[0].secret_hash, 'hex');
   const actual = Buffer.from(hashToken(secret), 'hex');
   if (expected.length !== actual.length) return false;
@@ -262,21 +274,32 @@ export async function verifyClientSecret(clientId, secret) {
 }
 
 /**
- * Rotate a client's secret (only if owned by user).
+ * Rotate a client's secret (only if owned by user and client is confidential).
  * @param {string} clientId
  * @param {bigint} userId
  * @returns {Promise<string|null>} New raw client secret, or null if not found
+ * @throws {Error} If client is public (not confidential)
  */
 export async function rotateClientSecret(clientId, userId) {
+  // Verify ownership and client type
+  const { rows: clientRows } = await pool.query(
+    'SELECT is_confidential FROM oauth_clients WHERE id = $1 AND user_id = $2',
+    [clientId, userId]
+  );
+  if (clientRows.length === 0) return null;
+  if (!clientRows[0].is_confidential) {
+    throw new Error('Cannot rotate secret for a public client.');
+  }
+
   const newSecret = generateToken();
   const newHash = hashToken(newSecret);
 
-  const { rowCount } = await pool.query(
+  await pool.query(
     'UPDATE oauth_clients SET secret_hash = $3, updated_at = now() WHERE id = $1 AND user_id = $2',
     [clientId, userId, newHash]
   );
 
-  return rowCount > 0 ? newSecret : null;
+  return newSecret;
 }
 
 // --- Authorization codes ---

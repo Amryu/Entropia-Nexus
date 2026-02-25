@@ -194,6 +194,56 @@ test.describe('OAuth Client Management - Secret Rotation', () => {
   });
 });
 
+test.describe('OAuth Client Management - Public Clients', () => {
+  let createdIds: string[] = [];
+
+  test.afterEach(async ({ verifiedUser }) => {
+    await cleanupClientIds(verifiedUser, createdIds);
+    createdIds = [];
+  });
+
+  test('can create a public client without receiving a secret', async ({ verifiedUser }) => {
+    const res = await createClient(verifiedUser, {
+      name: 'Public App',
+      is_confidential: false
+    });
+    expect(res.status()).toBe(201);
+
+    const data = await res.json();
+    createdIds.push(data.clientId);
+    expect(data.clientId).toBeDefined();
+    expect(data.clientSecret).toBeUndefined();
+  });
+
+  test('public client shows is_confidential=false in listing', async ({ verifiedUser }) => {
+    const createRes = await createClient(verifiedUser, {
+      name: 'Public List Test',
+      is_confidential: false
+    });
+    const { clientId } = await createRes.json();
+    createdIds.push(clientId);
+
+    const getRes = await verifiedUser.request.get(`${API_BASE}/${clientId}`);
+    expect(getRes.status()).toBe(200);
+    const client = await getRes.json();
+    expect(client.is_confidential).toBe(false);
+  });
+
+  test('rotate secret returns 400 for public client', async ({ verifiedUser }) => {
+    const res = await createClient(verifiedUser, {
+      name: 'Public Rotate Test',
+      is_confidential: false
+    });
+    const { clientId } = await res.json();
+    createdIds.push(clientId);
+
+    const rotateRes = await verifiedUser.request.post(`${API_BASE}/${clientId}/rotate-secret`);
+    expect(rotateRes.status()).toBe(400);
+    const data = await rotateRes.json();
+    expect(data.error).toContain('public');
+  });
+});
+
 test.describe('OAuth Client Management - Validation', () => {
   // Validation tests all expect 400 responses - no clients are created
   // No cleanup needed

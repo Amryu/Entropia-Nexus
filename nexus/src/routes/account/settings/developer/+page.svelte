@@ -17,6 +17,7 @@
   let formDescription = '';
   let formWebsiteUrl = '';
   let formRedirectUri = '';
+  let formIsConfidential = true;
 
   async function createClient() {
     if (!formName.trim() || !formRedirectUri.trim()) return;
@@ -31,7 +32,8 @@
           name: formName.trim(),
           description: formDescription.trim() || undefined,
           website_url: formWebsiteUrl.trim() || undefined,
-          redirect_uris: formRedirectUri.split('\n').map(u => u.trim()).filter(Boolean)
+          redirect_uris: formRedirectUri.split('\n').map(u => u.trim()).filter(Boolean),
+          is_confidential: formIsConfidential
         })
       });
       const result = await res.json();
@@ -45,6 +47,7 @@
       formDescription = '';
       formWebsiteUrl = '';
       formRedirectUri = '';
+      formIsConfidential = true;
       await invalidateAll();
     } catch {
       createError = 'Network error';
@@ -154,16 +157,24 @@
   {#if newClientResult}
     <div class="secret-banner">
       <h3>Application Created</h3>
-      <p>Save your client secret now. It will not be shown again.</p>
+      {#if newClientResult.clientSecret}
+        <p>Save your client secret now. It will not be shown again.</p>
+      {:else}
+        <p>Your public client has been created. No client secret is needed.</p>
+      {/if}
       <div class="secret-field">
         <label>Client ID</label>
         <code>{newClientResult.clientId}</code>
       </div>
-      <div class="secret-field">
-        <label>Client Secret</label>
-        <code>{newClientResult.clientSecret}</code>
-      </div>
-      <button class="btn-secondary" on:click={dismissNewClient}>I've saved it</button>
+      {#if newClientResult.clientSecret}
+        <div class="secret-field">
+          <label>Client Secret</label>
+          <code>{newClientResult.clientSecret}</code>
+        </div>
+      {/if}
+      <button class="btn-secondary" on:click={dismissNewClient}>
+        {newClientResult.clientSecret ? "I've saved it" : 'Done'}
+      </button>
     </div>
   {/if}
 
@@ -205,6 +216,25 @@
       <div class="form-group">
         <label for="redirects">Redirect URIs * (one per line)</label>
         <textarea id="redirects" bind:value={formRedirectUri} rows="3" placeholder="https://example.com/callback"></textarea>
+      </div>
+      <div class="form-group">
+        <label>Client Type</label>
+        <div class="type-selector">
+          <label class="type-option" class:selected={formIsConfidential}>
+            <input type="radio" bind:group={formIsConfidential} value={true} />
+            <div class="type-content">
+              <span class="type-name">Confidential</span>
+              <span class="type-desc">Server-side apps that can securely store a client secret</span>
+            </div>
+          </label>
+          <label class="type-option" class:selected={!formIsConfidential}>
+            <input type="radio" bind:group={formIsConfidential} value={false} />
+            <div class="type-content">
+              <span class="type-name">Public</span>
+              <span class="type-desc">Browser-based or native apps that cannot store a secret (PKCE only)</span>
+            </div>
+          </label>
+        </div>
       </div>
       {#if createError}
         <div class="error-msg">{createError}</div>
@@ -321,9 +351,11 @@
           </div>
 
           <div class="client-actions">
-            <button class="btn-secondary" on:click={() => rotateSecret(client.id)} disabled={rotatingSecret === client.id}>
-              {rotatingSecret === client.id ? 'Rotating...' : 'Rotate Secret'}
-            </button>
+            {#if client.is_confidential}
+              <button class="btn-secondary" on:click={() => rotateSecret(client.id)} disabled={rotatingSecret === client.id}>
+                {rotatingSecret === client.id ? 'Rotating...' : 'Rotate Secret'}
+              </button>
+            {/if}
             <button class="btn-danger" on:click={() => deleteOAuthClient(client.id)} disabled={deletingClient === client.id}>
               {deletingClient === client.id ? 'Deleting...' : 'Delete'}
             </button>
@@ -447,6 +479,55 @@
     resize: vertical;
     font-family: monospace;
     font-size: 0.85rem;
+  }
+
+  .type-selector {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .type-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: border-color 0.15s;
+  }
+
+  .type-option:hover {
+    border-color: var(--accent-color);
+  }
+
+  .type-option.selected {
+    border-color: var(--accent-color);
+    background: rgba(74, 158, 255, 0.05);
+  }
+
+  .type-option input[type="radio"] {
+    margin: 0.15rem 0 0;
+    cursor: pointer;
+  }
+
+  .type-content {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+
+  .type-name {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .type-desc {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    line-height: 1.35;
   }
 
   .error-msg {

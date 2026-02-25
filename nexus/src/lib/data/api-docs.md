@@ -454,6 +454,10 @@ Authorization: Bearer <access_token>
 
 **Base URL:** `https://entropianexus.com`
 
+### Client Types
+
+When creating an OAuth application, choose between **confidential** (server-side apps with a client secret) and **public** (browser/native apps, PKCE only). Public clients omit `client_secret` from all token requests. Client type is set at creation and cannot be changed.
+
 ### Authorization Flow (PKCE)
 
 1. Redirect the user to `/oauth/authorize` with your client credentials and a PKCE challenge
