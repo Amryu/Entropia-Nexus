@@ -852,7 +852,9 @@
                 <InlineEdit
                   value={activeEntity?.Properties?.Mindforce?.CooldownGroup}
                   path="Properties.Mindforce.CooldownGroup"
-                  type="text"
+                  type="number"
+                  min={1}
+                  step={1}
                 />
               </span>
             </div>
