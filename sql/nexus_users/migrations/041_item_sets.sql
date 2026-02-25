@@ -17,4 +17,4 @@ CREATE INDEX IF NOT EXISTS idx_item_sets_user_id ON item_sets(user_id);
 CREATE INDEX IF NOT EXISTS idx_item_sets_loadout_id ON item_sets(loadout_id) WHERE loadout_id IS NOT NULL;
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON item_sets TO nexus_users;
-GRANT SELECT ON item_sets TO "nexus-bot";
+GRANT SELECT ON item_sets TO nexus_bot;

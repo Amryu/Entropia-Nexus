@@ -130,8 +130,8 @@ GRANT USAGE, SELECT ON SEQUENCE "Enumerations_Id_seq" TO "nexus";
 GRANT SELECT ON "EnumerationValues" TO "nexus";
 GRANT SELECT ON "EnumerationValues_audit" TO "nexus";
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON "Enumerations" TO "nexus-bot";
-GRANT USAGE, SELECT ON SEQUENCE "Enumerations_Id_seq" TO "nexus-bot";
-GRANT SELECT, INSERT, UPDATE, DELETE ON "EnumerationValues" TO "nexus-bot";
+GRANT SELECT, INSERT, UPDATE, DELETE ON "Enumerations" TO nexus_bot;
+GRANT USAGE, SELECT ON SEQUENCE "Enumerations_Id_seq" TO nexus_bot;
+GRANT SELECT, INSERT, UPDATE, DELETE ON "EnumerationValues" TO nexus_bot;
 
 COMMIT;

@@ -51,5 +51,5 @@ ALTER TABLE user_preferences
 
 -- 10. Grant permissions
 GRANT SELECT, INSERT, UPDATE, DELETE ON user_preferences TO nexus_users;
-GRANT SELECT, INSERT, UPDATE, DELETE ON user_preferences TO "nexus-bot";
+GRANT SELECT, INSERT, UPDATE, DELETE ON user_preferences TO nexus_bot;
 GRANT ALL ON user_preferences TO postgres;

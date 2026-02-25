@@ -22,5 +22,5 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON flight_reschedule_notifications TO nexus
 GRANT USAGE, SELECT ON SEQUENCE flight_reschedule_notifications_id_seq TO nexus_users;
 
 -- Grant permissions to bot user
-GRANT SELECT, INSERT, UPDATE, DELETE ON flight_reschedule_notifications TO "nexus-bot";
-GRANT USAGE, SELECT ON SEQUENCE flight_reschedule_notifications_id_seq TO "nexus-bot";
+GRANT SELECT, INSERT, UPDATE, DELETE ON flight_reschedule_notifications TO nexus_bot;
+GRANT USAGE, SELECT ON SEQUENCE flight_reschedule_notifications_id_seq TO nexus_bot;

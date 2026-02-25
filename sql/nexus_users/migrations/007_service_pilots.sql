@@ -23,4 +23,4 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON service_pilots TO nexus_users;
 GRANT USAGE, SELECT ON SEQUENCE service_pilots_id_seq TO nexus_users;
 
 -- Grant bot permissions (for flight thread creation with pilot info)
-GRANT SELECT ON service_pilots TO "nexus-bot";
+GRANT SELECT ON service_pilots TO nexus_bot;

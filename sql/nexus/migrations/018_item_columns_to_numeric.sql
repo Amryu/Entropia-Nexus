@@ -121,7 +121,7 @@ ALTER TABLE public."Tools"
     OWNER TO postgres;
 
 GRANT SELECT ON TABLE public."Tools" TO nexus;
-GRANT SELECT ON TABLE public."Tools" TO "nexus-bot";
+GRANT SELECT ON TABLE public."Tools" TO nexus_bot;
 GRANT ALL ON TABLE public."Tools" TO postgres;
 
 -- =========================================================
@@ -181,7 +181,7 @@ ALTER TABLE public."Attachments"
     OWNER TO postgres;
 
 GRANT SELECT ON TABLE public."Attachments" TO nexus;
-GRANT SELECT ON TABLE public."Attachments" TO "nexus-bot";
+GRANT SELECT ON TABLE public."Attachments" TO nexus_bot;
 GRANT ALL ON TABLE public."Attachments" TO postgres;
 
 -- =========================================================
@@ -276,7 +276,7 @@ ALTER TABLE public."Items"
     OWNER TO postgres;
 
 GRANT SELECT ON TABLE public."Items" TO nexus;
-GRANT SELECT ON TABLE public."Items" TO "nexus-bot";
+GRANT SELECT ON TABLE public."Items" TO nexus_bot;
 GRANT ALL ON TABLE public."Items" TO postgres;
 
 COMMIT;

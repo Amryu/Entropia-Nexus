@@ -77,11 +77,11 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON item_price_summaries TO nexus_users;
 GRANT SELECT, UPDATE ON item_price_summary_watermarks TO nexus_users;
 GRANT USAGE, SELECT ON SEQUENCE item_price_summaries_id_seq TO nexus_users;
 
--- Permissions: nexus-bot gets insert on prices, full on summaries/watermarks
-GRANT INSERT ON item_prices TO "nexus-bot";
-GRANT USAGE, SELECT ON SEQUENCE item_prices_id_seq TO "nexus-bot";
-GRANT SELECT, INSERT, UPDATE, DELETE ON item_price_summaries TO "nexus-bot";
-GRANT USAGE, SELECT ON SEQUENCE item_price_summaries_id_seq TO "nexus-bot";
-GRANT SELECT, UPDATE ON item_price_summary_watermarks TO "nexus-bot";
+-- Permissions: nexus_bot gets insert on prices, full on summaries/watermarks
+GRANT INSERT ON item_prices TO nexus_bot;
+GRANT USAGE, SELECT ON SEQUENCE item_prices_id_seq TO nexus_bot;
+GRANT SELECT, INSERT, UPDATE, DELETE ON item_price_summaries TO nexus_bot;
+GRANT USAGE, SELECT ON SEQUENCE item_price_summaries_id_seq TO nexus_bot;
+GRANT SELECT, UPDATE ON item_price_summary_watermarks TO nexus_bot;
 
 COMMIT;

@@ -825,24 +825,24 @@ GRANT USAGE, SELECT ON SEQUENCE "Locations_Id_seq" TO "nexus";
 GRANT USAGE, SELECT ON SEQUENCE "Facilities_Id_seq" TO "nexus";
 GRANT USAGE, SELECT ON SEQUENCE "WaveEventWaves_Id_seq" TO "nexus";
 
--- Grants for nexus-bot user (CRUD access for bot operations)
-GRANT SELECT, INSERT, UPDATE, DELETE ON "Locations" TO "nexus-bot";
-GRANT SELECT, INSERT, UPDATE, DELETE ON "Locations_audit" TO "nexus-bot";
-GRANT SELECT, INSERT, UPDATE, DELETE ON "Facilities" TO "nexus-bot";
-GRANT SELECT, INSERT, UPDATE, DELETE ON "Facilities_audit" TO "nexus-bot";
-GRANT SELECT, INSERT, UPDATE, DELETE ON "LocationFacilities" TO "nexus-bot";
-GRANT SELECT, INSERT, UPDATE, DELETE ON "LocationFacilities_audit" TO "nexus-bot";
-GRANT SELECT, INSERT, UPDATE, DELETE ON "WaveEventWaves" TO "nexus-bot";
-GRANT SELECT, INSERT, UPDATE, DELETE ON "WaveEventWaves_audit" TO "nexus-bot";
-GRANT SELECT, INSERT, UPDATE, DELETE ON "Areas" TO "nexus-bot";
-GRANT SELECT, INSERT, UPDATE, DELETE ON "Areas_audit" TO "nexus-bot";
-GRANT SELECT, INSERT, UPDATE, DELETE ON "Estates" TO "nexus-bot";
-GRANT SELECT, INSERT, UPDATE, DELETE ON "Estates_audit" TO "nexus-bot";
-GRANT SELECT, INSERT, UPDATE, DELETE ON "EstateSections" TO "nexus-bot";
+-- Grants for nexus_bot user (CRUD access for bot operations)
+GRANT SELECT, INSERT, UPDATE, DELETE ON "Locations" TO nexus_bot;
+GRANT SELECT, INSERT, UPDATE, DELETE ON "Locations_audit" TO nexus_bot;
+GRANT SELECT, INSERT, UPDATE, DELETE ON "Facilities" TO nexus_bot;
+GRANT SELECT, INSERT, UPDATE, DELETE ON "Facilities_audit" TO nexus_bot;
+GRANT SELECT, INSERT, UPDATE, DELETE ON "LocationFacilities" TO nexus_bot;
+GRANT SELECT, INSERT, UPDATE, DELETE ON "LocationFacilities_audit" TO nexus_bot;
+GRANT SELECT, INSERT, UPDATE, DELETE ON "WaveEventWaves" TO nexus_bot;
+GRANT SELECT, INSERT, UPDATE, DELETE ON "WaveEventWaves_audit" TO nexus_bot;
+GRANT SELECT, INSERT, UPDATE, DELETE ON "Areas" TO nexus_bot;
+GRANT SELECT, INSERT, UPDATE, DELETE ON "Areas_audit" TO nexus_bot;
+GRANT SELECT, INSERT, UPDATE, DELETE ON "Estates" TO nexus_bot;
+GRANT SELECT, INSERT, UPDATE, DELETE ON "Estates_audit" TO nexus_bot;
+GRANT SELECT, INSERT, UPDATE, DELETE ON "EstateSections" TO nexus_bot;
 
-GRANT USAGE, SELECT ON SEQUENCE "Locations_Id_seq" TO "nexus-bot";
-GRANT USAGE, SELECT ON SEQUENCE "Facilities_Id_seq" TO "nexus-bot";
-GRANT USAGE, SELECT ON SEQUENCE "WaveEventWaves_Id_seq" TO "nexus-bot";
+GRANT USAGE, SELECT ON SEQUENCE "Locations_Id_seq" TO nexus_bot;
+GRANT USAGE, SELECT ON SEQUENCE "Facilities_Id_seq" TO nexus_bot;
+GRANT USAGE, SELECT ON SEQUENCE "WaveEventWaves_Id_seq" TO nexus_bot;
 
 -- ===========================================
 -- PHASE 11: CLEANUP MIGRATION TABLES

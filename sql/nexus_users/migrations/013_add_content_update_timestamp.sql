@@ -41,7 +41,7 @@ CREATE TRIGGER update_content_updated_at_trigger
     EXECUTE FUNCTION update_content_updated_at();
 
 -- Grant permissions to the bot user
-GRANT SELECT, UPDATE ON changes TO "nexus-bot";
+GRANT SELECT, UPDATE ON changes TO nexus_bot;
 
 -- Grant SELECT permission to the API user (for entity-changes endpoints)
 -- Note: nexus_users is the database user for the SvelteKit app

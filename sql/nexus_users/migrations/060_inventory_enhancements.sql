@@ -103,10 +103,10 @@ GRANT SELECT, INSERT, DELETE ON unknown_item_users TO nexus_users;
 GRANT SELECT, INSERT, UPDATE, DELETE ON user_item_markups TO nexus_users;
 
 -- Bot role
-GRANT SELECT ON inventory_imports TO "nexus-bot";
-GRANT SELECT ON inventory_import_deltas TO "nexus-bot";
-GRANT SELECT, INSERT, UPDATE ON unknown_items TO "nexus-bot";
-GRANT USAGE, SELECT ON SEQUENCE unknown_items_id_seq TO "nexus-bot";
-GRANT SELECT, INSERT ON unknown_item_users TO "nexus-bot";
+GRANT SELECT ON inventory_imports TO nexus_bot;
+GRANT SELECT ON inventory_import_deltas TO nexus_bot;
+GRANT SELECT, INSERT, UPDATE ON unknown_items TO nexus_bot;
+GRANT USAGE, SELECT ON SEQUENCE unknown_items_id_seq TO nexus_bot;
+GRANT SELECT, INSERT ON unknown_item_users TO nexus_bot;
 
 COMMIT;

@@ -395,139 +395,139 @@ CREATE INDEX idx_service_tickets_offer_id ON service_tickets(offer_id);
 
 -- services table
 REVOKE ALL ON TABLE public.services FROM nexus_users;
-REVOKE ALL ON TABLE public.services FROM "nexus-bot";
+REVOKE ALL ON TABLE public.services FROM nexus_bot;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.services TO nexus_users;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.services TO "nexus-bot";
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.services TO nexus_bot;
 GRANT ALL ON TABLE public.services TO postgres;
 
 -- service_healing_details table
 REVOKE ALL ON TABLE public.service_healing_details FROM nexus_users;
-REVOKE ALL ON TABLE public.service_healing_details FROM "nexus-bot";
+REVOKE ALL ON TABLE public.service_healing_details FROM nexus_bot;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_healing_details TO nexus_users;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_healing_details TO "nexus-bot";
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_healing_details TO nexus_bot;
 GRANT ALL ON TABLE public.service_healing_details TO postgres;
 
 -- service_dps_details table
 REVOKE ALL ON TABLE public.service_dps_details FROM nexus_users;
-REVOKE ALL ON TABLE public.service_dps_details FROM "nexus-bot";
+REVOKE ALL ON TABLE public.service_dps_details FROM nexus_bot;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_dps_details TO nexus_users;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_dps_details TO "nexus-bot";
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_dps_details TO nexus_bot;
 GRANT ALL ON TABLE public.service_dps_details TO postgres;
 
 -- service_transportation_details table
 REVOKE ALL ON TABLE public.service_transportation_details FROM nexus_users;
-REVOKE ALL ON TABLE public.service_transportation_details FROM "nexus-bot";
+REVOKE ALL ON TABLE public.service_transportation_details FROM nexus_bot;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_transportation_details TO nexus_users;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_transportation_details TO "nexus-bot";
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_transportation_details TO nexus_bot;
 GRANT ALL ON TABLE public.service_transportation_details TO postgres;
 
 -- service_type_tool_whitelist table
 REVOKE ALL ON TABLE public.service_type_tool_whitelist FROM nexus_users;
-REVOKE ALL ON TABLE public.service_type_tool_whitelist FROM "nexus-bot";
+REVOKE ALL ON TABLE public.service_type_tool_whitelist FROM nexus_bot;
 GRANT SELECT ON TABLE public.service_type_tool_whitelist TO nexus_users;
-GRANT SELECT ON TABLE public.service_type_tool_whitelist TO "nexus-bot";
+GRANT SELECT ON TABLE public.service_type_tool_whitelist TO nexus_bot;
 GRANT ALL ON TABLE public.service_type_tool_whitelist TO postgres;
 
 -- service_equipment table
 REVOKE ALL ON TABLE public.service_equipment FROM nexus_users;
-REVOKE ALL ON TABLE public.service_equipment FROM "nexus-bot";
+REVOKE ALL ON TABLE public.service_equipment FROM nexus_bot;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_equipment TO nexus_users;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_equipment TO "nexus-bot";
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_equipment TO nexus_bot;
 GRANT ALL ON TABLE public.service_equipment TO postgres;
 
 -- service_armor_sets table
 REVOKE ALL ON TABLE public.service_armor_sets FROM nexus_users;
-REVOKE ALL ON TABLE public.service_armor_sets FROM "nexus-bot";
+REVOKE ALL ON TABLE public.service_armor_sets FROM nexus_bot;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_armor_sets TO nexus_users;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_armor_sets TO "nexus-bot";
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_armor_sets TO nexus_bot;
 GRANT ALL ON TABLE public.service_armor_sets TO postgres;
 
 -- service_availability table
 REVOKE ALL ON TABLE public.service_availability FROM nexus_users;
-REVOKE ALL ON TABLE public.service_availability FROM "nexus-bot";
+REVOKE ALL ON TABLE public.service_availability FROM nexus_bot;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_availability TO nexus_users;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_availability TO "nexus-bot";
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_availability TO nexus_bot;
 GRANT ALL ON TABLE public.service_availability TO postgres;
 
 -- service_requests table
 REVOKE ALL ON TABLE public.service_requests FROM nexus_users;
-REVOKE ALL ON TABLE public.service_requests FROM "nexus-bot";
+REVOKE ALL ON TABLE public.service_requests FROM nexus_bot;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_requests TO nexus_users;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_requests TO "nexus-bot";
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_requests TO nexus_bot;
 GRANT ALL ON TABLE public.service_requests TO postgres;
 
 -- service_locked_slots table
 REVOKE ALL ON TABLE public.service_locked_slots FROM nexus_users;
-REVOKE ALL ON TABLE public.service_locked_slots FROM "nexus-bot";
+REVOKE ALL ON TABLE public.service_locked_slots FROM nexus_bot;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_locked_slots TO nexus_users;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_locked_slots TO "nexus-bot";
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_locked_slots TO nexus_bot;
 GRANT ALL ON TABLE public.service_locked_slots TO postgres;
 
 -- service_transportation_schedules table
 REVOKE ALL ON TABLE public.service_transportation_schedules FROM nexus_users;
-REVOKE ALL ON TABLE public.service_transportation_schedules FROM "nexus-bot";
+REVOKE ALL ON TABLE public.service_transportation_schedules FROM nexus_bot;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_transportation_schedules TO nexus_users;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_transportation_schedules TO "nexus-bot";
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_transportation_schedules TO nexus_bot;
 GRANT ALL ON TABLE public.service_transportation_schedules TO postgres;
 
 -- service_ticket_offers table
 REVOKE ALL ON TABLE public.service_ticket_offers FROM nexus_users;
-REVOKE ALL ON TABLE public.service_ticket_offers FROM "nexus-bot";
+REVOKE ALL ON TABLE public.service_ticket_offers FROM nexus_bot;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_ticket_offers TO nexus_users;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_ticket_offers TO "nexus-bot";
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_ticket_offers TO nexus_bot;
 GRANT ALL ON TABLE public.service_ticket_offers TO postgres;
 
 -- service_transport_request_details table
 REVOKE ALL ON TABLE public.service_transport_request_details FROM nexus_users;
-REVOKE ALL ON TABLE public.service_transport_request_details FROM "nexus-bot";
+REVOKE ALL ON TABLE public.service_transport_request_details FROM nexus_bot;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_transport_request_details TO nexus_users;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_transport_request_details TO "nexus-bot";
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_transport_request_details TO nexus_bot;
 GRANT ALL ON TABLE public.service_transport_request_details TO postgres;
 
 -- service_tickets table
 REVOKE ALL ON TABLE public.service_tickets FROM nexus_users;
-REVOKE ALL ON TABLE public.service_tickets FROM "nexus-bot";
+REVOKE ALL ON TABLE public.service_tickets FROM nexus_bot;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_tickets TO nexus_users;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_tickets TO "nexus-bot";
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_tickets TO nexus_bot;
 GRANT ALL ON TABLE public.service_tickets TO postgres;
 
 -- service_ticket_usage table
 REVOKE ALL ON TABLE public.service_ticket_usage FROM nexus_users;
-REVOKE ALL ON TABLE public.service_ticket_usage FROM "nexus-bot";
+REVOKE ALL ON TABLE public.service_ticket_usage FROM nexus_bot;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_ticket_usage TO nexus_users;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_ticket_usage TO "nexus-bot";
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.service_ticket_usage TO nexus_bot;
 GRANT ALL ON TABLE public.service_ticket_usage TO postgres;
 
 -- Sequence permissions for auto-increment columns
 GRANT USAGE, SELECT, UPDATE ON SEQUENCE public.services_id_seq TO nexus_users;
-GRANT USAGE, SELECT, UPDATE ON SEQUENCE public.services_id_seq TO "nexus-bot";
+GRANT USAGE, SELECT, UPDATE ON SEQUENCE public.services_id_seq TO nexus_bot;
 
 GRANT USAGE, SELECT, UPDATE ON SEQUENCE public.service_type_tool_whitelist_id_seq TO nexus_users;
-GRANT USAGE, SELECT, UPDATE ON SEQUENCE public.service_type_tool_whitelist_id_seq TO "nexus-bot";
+GRANT USAGE, SELECT, UPDATE ON SEQUENCE public.service_type_tool_whitelist_id_seq TO nexus_bot;
 
 GRANT USAGE, SELECT, UPDATE ON SEQUENCE public.service_equipment_id_seq TO nexus_users;
-GRANT USAGE, SELECT, UPDATE ON SEQUENCE public.service_equipment_id_seq TO "nexus-bot";
+GRANT USAGE, SELECT, UPDATE ON SEQUENCE public.service_equipment_id_seq TO nexus_bot;
 
 GRANT USAGE, SELECT, UPDATE ON SEQUENCE public.service_armor_sets_id_seq TO nexus_users;
-GRANT USAGE, SELECT, UPDATE ON SEQUENCE public.service_armor_sets_id_seq TO "nexus-bot";
+GRANT USAGE, SELECT, UPDATE ON SEQUENCE public.service_armor_sets_id_seq TO nexus_bot;
 
 GRANT USAGE, SELECT, UPDATE ON SEQUENCE public.service_availability_id_seq TO nexus_users;
-GRANT USAGE, SELECT, UPDATE ON SEQUENCE public.service_availability_id_seq TO "nexus-bot";
+GRANT USAGE, SELECT, UPDATE ON SEQUENCE public.service_availability_id_seq TO nexus_bot;
 
 GRANT USAGE, SELECT, UPDATE ON SEQUENCE public.service_requests_id_seq TO nexus_users;
-GRANT USAGE, SELECT, UPDATE ON SEQUENCE public.service_requests_id_seq TO "nexus-bot";
+GRANT USAGE, SELECT, UPDATE ON SEQUENCE public.service_requests_id_seq TO nexus_bot;
 
 GRANT USAGE, SELECT, UPDATE ON SEQUENCE public.service_locked_slots_id_seq TO nexus_users;
-GRANT USAGE, SELECT, UPDATE ON SEQUENCE public.service_locked_slots_id_seq TO "nexus-bot";
+GRANT USAGE, SELECT, UPDATE ON SEQUENCE public.service_locked_slots_id_seq TO nexus_bot;
 
 GRANT USAGE, SELECT, UPDATE ON SEQUENCE public.service_transportation_schedules_id_seq TO nexus_users;
-GRANT USAGE, SELECT, UPDATE ON SEQUENCE public.service_transportation_schedules_id_seq TO "nexus-bot";
+GRANT USAGE, SELECT, UPDATE ON SEQUENCE public.service_transportation_schedules_id_seq TO nexus_bot;
 
 GRANT USAGE, SELECT, UPDATE ON SEQUENCE public.service_ticket_offers_id_seq TO nexus_users;
-GRANT USAGE, SELECT, UPDATE ON SEQUENCE public.service_ticket_offers_id_seq TO "nexus-bot";
+GRANT USAGE, SELECT, UPDATE ON SEQUENCE public.service_ticket_offers_id_seq TO nexus_bot;
 
 GRANT USAGE, SELECT, UPDATE ON SEQUENCE public.service_tickets_id_seq TO nexus_users;
-GRANT USAGE, SELECT, UPDATE ON SEQUENCE public.service_tickets_id_seq TO "nexus-bot";
+GRANT USAGE, SELECT, UPDATE ON SEQUENCE public.service_tickets_id_seq TO nexus_bot;
 
 GRANT USAGE, SELECT, UPDATE ON SEQUENCE public.service_ticket_usage_id_seq TO nexus_users;
-GRANT USAGE, SELECT, UPDATE ON SEQUENCE public.service_ticket_usage_id_seq TO "nexus-bot";
+GRANT USAGE, SELECT, UPDATE ON SEQUENCE public.service_ticket_usage_id_seq TO nexus_bot;

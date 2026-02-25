@@ -104,6 +104,6 @@ WHERE NOT EXISTS (SELECT 1 FROM "Missions_audit" LIMIT 1);
 -- ===========================================
 
 GRANT SELECT ON "Missions_audit" TO "nexus";
-GRANT SELECT, INSERT, UPDATE, DELETE ON "Missions_audit" TO "nexus-bot";
+GRANT SELECT, INSERT, UPDATE, DELETE ON "Missions_audit" TO nexus_bot;
 
 COMMIT;

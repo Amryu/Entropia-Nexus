@@ -53,11 +53,11 @@ INSERT INTO exchange_price_summary_watermarks (period_type) VALUES
   ('hour'), ('day'), ('week');
 
 -- Permissions
-GRANT SELECT, INSERT ON exchange_price_snapshots TO "nexus-bot";
-GRANT SELECT, INSERT, UPDATE ON exchange_price_summaries TO "nexus-bot";
-GRANT SELECT, UPDATE ON exchange_price_summary_watermarks TO "nexus-bot";
-GRANT USAGE, SELECT ON SEQUENCE exchange_price_snapshots_id_seq TO "nexus-bot";
-GRANT USAGE, SELECT ON SEQUENCE exchange_price_summaries_id_seq TO "nexus-bot";
+GRANT SELECT, INSERT ON exchange_price_snapshots TO nexus_bot;
+GRANT SELECT, INSERT, UPDATE ON exchange_price_summaries TO nexus_bot;
+GRANT SELECT, UPDATE ON exchange_price_summary_watermarks TO nexus_bot;
+GRANT USAGE, SELECT ON SEQUENCE exchange_price_snapshots_id_seq TO nexus_bot;
+GRANT USAGE, SELECT ON SEQUENCE exchange_price_summaries_id_seq TO nexus_bot;
 GRANT SELECT ON exchange_price_snapshots TO nexus;
 GRANT SELECT ON exchange_price_summaries TO nexus;
 GRANT SELECT ON exchange_price_snapshots TO nexus_users;

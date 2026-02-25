@@ -91,9 +91,9 @@ CREATE INDEX IF NOT EXISTS idx_admin_actions_type ON admin_actions(action_type);
 -- =============================================
 
 -- Grant permissions on new tables/columns to the bot user
-GRANT SELECT, INSERT ON change_history TO "nexus-bot";
-GRANT SELECT, UPDATE ON changes TO "nexus-bot";
-GRANT SELECT, INSERT ON admin_actions TO "nexus-bot";
-GRANT SELECT, UPDATE ON users TO "nexus-bot";
-GRANT USAGE ON SEQUENCE change_history_id_seq TO "nexus-bot";
-GRANT USAGE ON SEQUENCE admin_actions_id_seq TO "nexus-bot";
+GRANT SELECT, INSERT ON change_history TO nexus_bot;
+GRANT SELECT, UPDATE ON changes TO nexus_bot;
+GRANT SELECT, INSERT ON admin_actions TO nexus_bot;
+GRANT SELECT, UPDATE ON users TO nexus_bot;
+GRANT USAGE ON SEQUENCE change_history_id_seq TO nexus_bot;
+GRANT USAGE ON SEQUENCE admin_actions_id_seq TO nexus_bot;

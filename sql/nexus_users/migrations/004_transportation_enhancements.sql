@@ -295,8 +295,8 @@ GRANT USAGE, SELECT ON SEQUENCE service_flight_state_log_id_seq TO nexus_users;
 GRANT USAGE, SELECT ON SEQUENCE service_checkins_id_seq TO nexus_users;
 
 -- Grant permissions to bot user for flight management
-GRANT SELECT, UPDATE ON service_flight_instances TO "nexus-bot";
-GRANT SELECT, UPDATE ON service_checkins TO "nexus-bot";
-GRANT SELECT ON service_flight_state_log TO "nexus-bot";
+GRANT SELECT, UPDATE ON service_flight_instances TO nexus_bot;
+GRANT SELECT, UPDATE ON service_checkins TO nexus_bot;
+GRANT SELECT ON service_flight_state_log TO nexus_bot;
 
 COMMIT;

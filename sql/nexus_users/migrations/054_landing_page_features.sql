@@ -92,21 +92,21 @@ CREATE INDEX idx_creators_active ON content_creators(display_order ASC)
 
 -- announcements
 GRANT SELECT, INSERT, UPDATE, DELETE ON announcements TO nexus_users;
-GRANT SELECT, INSERT, UPDATE, DELETE ON announcements TO "nexus-bot";
+GRANT SELECT, INSERT, UPDATE, DELETE ON announcements TO nexus_bot;
 GRANT ALL ON announcements TO postgres;
 GRANT USAGE, SELECT, UPDATE ON SEQUENCE announcements_id_seq TO nexus_users;
-GRANT USAGE, SELECT, UPDATE ON SEQUENCE announcements_id_seq TO "nexus-bot";
+GRANT USAGE, SELECT, UPDATE ON SEQUENCE announcements_id_seq TO nexus_bot;
 
 -- events
 GRANT SELECT, INSERT, UPDATE, DELETE ON events TO nexus_users;
-GRANT SELECT, INSERT, UPDATE, DELETE ON events TO "nexus-bot";
+GRANT SELECT, INSERT, UPDATE, DELETE ON events TO nexus_bot;
 GRANT ALL ON events TO postgres;
 GRANT USAGE, SELECT, UPDATE ON SEQUENCE events_id_seq TO nexus_users;
-GRANT USAGE, SELECT, UPDATE ON SEQUENCE events_id_seq TO "nexus-bot";
+GRANT USAGE, SELECT, UPDATE ON SEQUENCE events_id_seq TO nexus_bot;
 
 -- content_creators
 GRANT SELECT, INSERT, UPDATE, DELETE ON content_creators TO nexus_users;
-GRANT SELECT, INSERT, UPDATE, DELETE ON content_creators TO "nexus-bot";
+GRANT SELECT, INSERT, UPDATE, DELETE ON content_creators TO nexus_bot;
 GRANT ALL ON content_creators TO postgres;
 GRANT USAGE, SELECT, UPDATE ON SEQUENCE content_creators_id_seq TO nexus_users;
-GRANT USAGE, SELECT, UPDATE ON SEQUENCE content_creators_id_seq TO "nexus-bot";
+GRANT USAGE, SELECT, UPDATE ON SEQUENCE content_creators_id_seq TO nexus_bot;

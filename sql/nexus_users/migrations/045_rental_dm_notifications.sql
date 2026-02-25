@@ -18,4 +18,4 @@ CREATE INDEX idx_rental_dm_notifications_pending ON rental_dm_notifications(sent
 GRANT SELECT, INSERT, UPDATE ON rental_dm_notifications TO nexus_users;
 GRANT USAGE, SELECT, UPDATE ON SEQUENCE rental_dm_notifications_id_seq TO nexus_users;
 
-GRANT SELECT, UPDATE ON rental_dm_notifications TO "nexus-bot";
+GRANT SELECT, UPDATE ON rental_dm_notifications TO nexus_bot;

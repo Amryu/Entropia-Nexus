@@ -9,6 +9,6 @@ CREATE TABLE IF NOT EXISTS bot_config (
   value TEXT
 );
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON bot_config TO "nexus-bot";
+GRANT SELECT, INSERT, UPDATE, DELETE ON bot_config TO nexus_bot;
 
 COMMIT;
