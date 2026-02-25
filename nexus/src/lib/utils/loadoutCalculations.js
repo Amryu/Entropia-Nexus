@@ -315,7 +315,6 @@ export function calculateEfficiency(
   matrix
 ) {
   if (weapon == null || weapon.Properties.Economy.Efficiency === null) return null;
-  if (weaponCost == null) return null;
 
   let cost = weaponCost;
   let efficiency = weapon.Properties.Economy.Efficiency;
