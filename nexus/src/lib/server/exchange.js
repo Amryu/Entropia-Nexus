@@ -537,7 +537,7 @@ export async function countUserOrdersForItem(userId, itemId, type) {
 
 // ---------- Item Type Lookup ----------
 // Fetches item metadata via the entity API (not direct DB queries — entity tables
-// live in the nexus database, while this module's pool connects to nexus-users).
+// live in the nexus database, while this module's pool connects to nexus_users).
 
 import { apiCall } from '$lib/util.js';
 import { isPercentMarkupType, isStackableType, ARMOR_SET_OFFSET, GENDERED_TYPES } from '$lib/common/itemTypes.js';

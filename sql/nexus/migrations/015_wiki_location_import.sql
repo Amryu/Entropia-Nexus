@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS "LandAreas" (
   "LocationId" INTEGER PRIMARY KEY REFERENCES "Locations"("Id") ON DELETE CASCADE,
   "TaxRate" NUMERIC,
   "OwnerId" INTEGER
-  -- OwnerId references nexus-users "Users" table (cross-database, no FK constraint)
+  -- OwnerId references nexus_users "Users" table (cross-database, no FK constraint)
 );
 
 -- Audit table

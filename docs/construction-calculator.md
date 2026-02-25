@@ -343,14 +343,14 @@ All endpoints require authentication. The ownership endpoint stores only unowned
 
 ## Database
 
-Crafting plans and blueprint ownership are stored in the `nexus-users` database:
+Crafting plans and blueprint ownership are stored in the `nexus_users` database:
 
 | Table | Description |
 |-------|-------------|
 | `crafting_plans` | User's saved crafting plans (targets, config) |
 | `blueprint_ownership` | Per-user blueprint ownership map (JSONB) |
 
-See `sql/nexus-users/migrations/020_crafting_plans.sql` for schema.
+See `sql/nexus_users/migrations/020_crafting_plans.sql` for schema.
 
 ## File Locations
 

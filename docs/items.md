@@ -338,7 +338,7 @@ Mobile (≤900px): sidebar becomes overlay panel.
 
 Items are organized using `getTopCategory()` and sorted by `CATEGORY_ORDER` from `orderUtils.ts`. Categories include: Weapons, Armor, Tools, Mining, Medical, Materials, Blueprints, Vehicles, Clothing, Consumables, Pets, Furnishings, and more.
 
-### Database Tables (nexus-users)
+### Database Tables (nexus_users)
 
 #### `user_items` (extended)
 
@@ -421,7 +421,7 @@ Admin page at `/admin/unknown-items` for tracking unresolved item names encounte
 - Toggle to show resolved items
 - "Resolve" button to mark items as resolved
 
-### Database Tables (nexus-users)
+### Database Tables (nexus_users)
 
 #### `unknown_items`
 

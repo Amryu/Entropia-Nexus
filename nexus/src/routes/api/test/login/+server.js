@@ -44,7 +44,7 @@ export async function POST({ request, cookies }) {
     const user = await getUserById(testUserId);
     if (!user) {
       return json({
-        error: `Test user ${userId} not found in database. Please run the migration: sql/nexus-users/migrations/005_add_test_users.sql`
+        error: `Test user ${userId} not found in database. Please run the migration: sql/nexus_users/migrations/005_add_test_users.sql`
       }, { status: 404 });
     }
 

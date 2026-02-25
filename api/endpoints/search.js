@@ -376,7 +376,7 @@ async function search(query, fuzzy = false, perType = 5, totalLimit = 50){
   // Fuzzy: $1=name, $2=%name%, $3=name%  Non-fuzzy: $1=%name%, $2=name%
   const params = useFuzzy ? [searchName, `%${searchName}%`, `${searchName}%`, ...mwParams] : [`%${searchName}%`, `${searchName}%`, ...mwParams];
 
-  // Query users and societies from nexus-users DB (separate database, parallel query)
+  // Query users and societies from nexus_users DB (separate database, parallel query)
   const userMwParams = isMultiWord ? searchWords.map(w => `%${w}%`) : [];
   const userMwIdx = isMultiWord ? searchWords.map((_, i) => 3 + i) : [];
   const userMwEuName = isMultiWord ? ' OR ' + buildMultiWordLike('eu_name', userMwIdx) : '';

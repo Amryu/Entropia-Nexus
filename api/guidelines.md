@@ -321,7 +321,7 @@ NEXUS_DB_HOST=localhost
 NEXUS_DB_NAME=nexus
 NEXUS_DB_PORT=5432
 
-# Users Database (nexus-users)
+# Users Database (nexus_users)
 USERS_DB_USER=nexus_users
 USERS_DB_PASS=your_password
 USERS_DB_HOST=localhost
@@ -482,7 +482,7 @@ async function transferItems(req, res) {
   - Read-only for most operations
   - Updated by admin/bot workflows
   
-- **nexus-users**: User-generated data (accounts, shops, services)
+- **nexus_users**: User-generated data (accounts, shops, services)
   - Read-write for user operations
   - Includes change tracking tables
 

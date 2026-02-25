@@ -55,7 +55,7 @@ User edits entity
 
 ### Database Schema
 
-#### changes table (nexus-users database)
+#### changes table (nexus_users database)
 ```sql
 id              integer PRIMARY KEY
 author_id       bigint NOT NULL (FK to users)

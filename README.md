@@ -51,7 +51,7 @@ The project consists of three main components:
 The project uses two PostgreSQL databases:
 
 - **nexus**: Wiki/static game data (items, maps, mobs, NPCs, etc.)
-- **nexus-users**: User-related data (accounts, shops, inventories, change tracking, etc.)
+- **nexus_users**: User-related data (accounts, shops, inventories, change tracking, etc.)
 
 ## Prerequisites
 
@@ -98,11 +98,11 @@ NEXUS_DB_HOST=localhost
 NEXUS_DB_NAME=nexus
 NEXUS_DB_PORT=5432
 
-# Users Database (nexus-users)
+# Users Database (nexus_users)
 NEXUS_USERS_DB_USER=nexus
 NEXUS_USERS_DB_PASS=your_secure_password
 NEXUS_USERS_DB_HOST=localhost
-NEXUS_USERS_DB_NAME=nexus-users
+NEXUS_USERS_DB_NAME=nexus_users
 NEXUS_USERS_DB_PORT=5432
 ```
 
@@ -120,12 +120,12 @@ Create the PostgreSQL databases and users manually, or use your preferred databa
 ```sql
 -- Create databases
 CREATE DATABASE nexus;
-CREATE DATABASE "nexus-users";
+CREATE DATABASE "nexus_users";
 
 -- Create user and grant permissions
 CREATE USER nexus WITH PASSWORD 'your_password';
 GRANT ALL PRIVILEGES ON DATABASE nexus TO nexus;
-GRANT ALL PRIVILEGES ON DATABASE "nexus-users" TO nexus;
+GRANT ALL PRIVILEGES ON DATABASE "nexus_users" TO nexus;
 ```
 
 ### 5. Install Dependencies
@@ -201,7 +201,7 @@ NEXUS_DB_KEEPALIVE=true
 NEXUS_USERS_DB_USER=nexus
 NEXUS_USERS_DB_PASS=your_password
 NEXUS_USERS_DB_HOST=localhost
-NEXUS_USERS_DB_NAME=nexus-users
+NEXUS_USERS_DB_NAME=nexus_users
 NEXUS_USERS_DB_PORT=5432
 NEXUS_USERS_DB_MAX=10
 NEXUS_USERS_DB_IDLE_MS=30000
@@ -230,7 +230,7 @@ CLIENT_TOKEN=your_discord_bot_token
 CLIENT_ID=your_discord_client_id
 GUILD_ID=your_discord_guild_id
 API_URL=http://localhost:3000
-POSTGRES_USERS_CONNECTION_STRING=postgresql://nexus:password@localhost:5432/nexus-users
+POSTGRES_USERS_CONNECTION_STRING=postgresql://nexus:password@localhost:5432/nexus_users
 POSTGRES_NEXUS_CONNECTION_STRING=postgresql://nexus:password@localhost:5432/nexus
 ```
 
@@ -274,7 +274,7 @@ Entropia Nexus/
 │   ├── migrations/               # Database schema exports
 │   │   ├── nexus/
 │   │   │   └── schema_latest.sql
-│   │   └── nexus-users/
+│   │   └── nexus_users/
 │   │       └── schema_latest.sql
 │   └── *.sql                     # Utility SQL scripts
 ├── common/                       # Shared code/data between services

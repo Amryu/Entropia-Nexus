@@ -70,7 +70,7 @@ Additional data for Area locations with `AreaType = 'LandArea'`.
 |--------|------|-------------|
 | `LocationId` | INTEGER | PK, FK to Locations |
 | `TaxRate` | NUMERIC | Tax rate for the land area |
-| `OwnerId` | INTEGER | Owner user ID (references nexus-users) |
+| `OwnerId` | INTEGER | Owner user ID (references nexus_users) |
 
 #### LandAreaMinerals (Cross Table)
 Mineral compositions for LandArea locations.

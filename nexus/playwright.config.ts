@@ -2,7 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 /**
  * Playwright configuration for E2E testing.
- * Uses .env.test to connect to test databases (nexus-test, nexus-users-test)
+ * Uses .env.test to connect to test databases (nexus-test, nexus_users-test)
  * to avoid affecting development data.
  *
  * Test ports (offset +100 from dev):

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Database backup script for Entropia Nexus
-# Backs up nexus and nexus-users databases from the PostGIS Docker container.
+# Backs up nexus and nexus_users databases from the PostGIS Docker container.
 # Intended to run as a daily cron job with rolling retention.
 #
 # Usage:  ./backup-databases.sh [config-file]
@@ -26,7 +26,7 @@ RETAIN_WEEKLY_DAYS="${RETAIN_WEEKLY_DAYS:-365}"    # Beyond daily, keep 1/week u
                                                    # Beyond weekly, keep 1/month forever
 DB_CONTAINER="${DB_CONTAINER:-}"
 DB_USER="${DB_USER:-postgres}"
-DATABASES=("nexus" "nexus-users")
+DATABASES=("nexus" "nexus_users")
 
 DATE="$(date +%Y-%m-%d_%H%M%S)"
 LOG_PREFIX="[backup ${DATE}]"
@@ -54,7 +54,7 @@ mkdir -p "${BACKUP_DIR}"
 # --- Dump databases ---
 FAILED=0
 for DB in "${DATABASES[@]}"; do
-  SAFE_DB="${DB//-/_}"  # nexus-users -> nexus_users for filename
+  SAFE_DB="${DB//-/_}"  # safety: normalize any hyphens in DB names for filenames
   OUTFILE="${BACKUP_DIR}/${SAFE_DB}_${DATE}.sql.gz"
 
   log "Dumping ${DB} ..."

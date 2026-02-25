@@ -345,7 +345,7 @@ nexus/src/routes/api/tools/skills/
     └── [id]/deltas/+server.js   - GET per-skill deltas
 ```
 
-### Database Tables (nexus-users)
+### Database Tables (nexus_users)
 
 - `user_skills` — Current skill values per user (JSONB)
 - `skill_imports` — Import history records

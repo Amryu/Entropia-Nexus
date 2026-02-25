@@ -14,7 +14,7 @@ Add Estate support to the change workflow and UI:
 - Estates table fields: `Name`, `Description`, `Longitude`, `Latitude`, `Altitude`, `PlanetId`, `Type` (`Shop` | `Apartment`), `OwnerId`, `ItemTradeAvailable`, `MaxGuests`
 - EstateSections PK: (`EstateId`, `Name`)
 - ItemTradeAvailable: **true for shops**, **false for apartments**
-- OwnerId: **discord user id** (from nexus-users users table)
+- OwnerId: **discord user id** (from nexus_users users table)
 
 ## Phase 1 — Data + Change Pipeline
 

@@ -10,7 +10,7 @@ A comprehensive resource for Entropia Universe, including item databases, maps, 
 - **Backend API**: Express.js (separate `api/` project)
 - **Databases**:
   - `nexus` - Game data (items, mobs, locations, etc.)
-  - `nexus-users` - User data (sessions, shops, services, trades)
+  - `nexus_users` - User data (sessions, shops, services, trades)
 - **Authentication**: Discord OAuth2
 - **Testing**: Playwright E2E tests
 
@@ -56,7 +56,7 @@ Dynamic homepage with four content sections:
 
 **Creator enrichment**: `$lib/server/creator-enrichment.js` — background loop every 15 minutes refreshes stale YouTube (RSS feed for up to 6 recent videos + Data API v3 for channel info) and Twitch (Helix API for profile + live stream status with thumbnail). Kick has no API. The server processes creators into `streams` (live Twitch, sorted by display_order then viewer count) and `videos` (YouTube, evenly distributed across creators via round-robin).
 
-**Database tables** (in `nexus-users`):
+**Database tables** (in `nexus_users`):
 - `announcements` — Admin-created news posts (with optional `content_html` for on-site rich text articles)
 - `events` — Community events with state machine (pending → approved/denied)
 - `content_creators` — Whitelisted channels with `cached_data` JSONB
@@ -196,7 +196,7 @@ Player-to-player trading marketplace.
 - QR filter for blueprints
 - Order freshness indicators
 
-**Database Tables** (`nexus-users`):
+**Database Tables** (`nexus_users`):
 - `trade_offers` - Buy/sell orders
 
 **API Endpoints**:
@@ -214,7 +214,7 @@ Player shop directory with inventory management.
 - Shop owner and manager roles
 - Coordinate waypoints
 
-**Database Tables** (`nexus-users`):
+**Database Tables** (`nexus_users`):
 - `shop_inventory_groups` - Inventory categories
 - `shop_inventory_items` - Items in each group
 - `shop_managers` - Shop access permissions
@@ -256,7 +256,7 @@ Crowdsourced data corrections with review workflow.
 3. Admin reviews and approves/rejects
 4. Approved changes update the database
 
-**Database Tables** (`nexus-users`):
+**Database Tables** (`nexus_users`):
 - `changes` - Change requests with state tracking
 
 **API Endpoints**:
@@ -277,7 +277,7 @@ Discord OAuth2 integration:
 4. Session created in `sessions` table
 5. User record in `users` table
 
-**Database Tables** (`nexus-users`):
+**Database Tables** (`nexus_users`):
 - `users` - User profiles (Discord ID, avatar, roles)
 - `sessions` - Active sessions
 - `user_settings` - User preferences
@@ -357,7 +357,7 @@ Primary game data from Entropia Universe:
 - Professions and skills
 - Vendors and trade offers
 
-### nexus-users (User Data)
+### nexus_users (User Data)
 
 User-generated content and sessions:
 - User accounts and sessions
@@ -387,7 +387,7 @@ Playwright E2E tests in `nexus/tests/`:
 
 **Test Databases**:
 - `nexus-test` - Test game data
-- `nexus-users-test` - Test user data
+- `nexus_users-test` - Test user data
 
 **Run Tests**:
 ```bash

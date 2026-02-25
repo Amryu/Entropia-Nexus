@@ -275,7 +275,7 @@ Pet orders include additional metadata:
 
 ### Database
 
-**Table**: `trade_offers` (nexus-users)
+**Table**: `trade_offers` (nexus_users)
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -317,7 +317,7 @@ The bot snapshots exchange prices every 15 minutes from active trade orders. Eac
 - **Metrics**: Median, 10%, WAP update based on selected period
 - **Item name**: Clickable link to wiki page
 
-#### Database Tables (nexus-users)
+#### Database Tables (nexus_users)
 
 **`exchange_price_snapshots`**: Raw WAP observations per item per 15-min interval
 
@@ -355,7 +355,7 @@ The bot snapshots exchange prices every 15 minutes from active trade orders. Eac
 
 `GET /api/market/prices/exchange/[itemId]?period=7d&history=1&gender=Male` — Returns live order stats, period summary (median/p10/wap), and optional time series for charting. Optional `gender` param (`Male`/`Female`) filters by gender for gendered item types.
 
-**Table**: `user_items` (nexus-users)
+**Table**: `user_items` (nexus_users)
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -656,7 +656,7 @@ Centralized preference storage that abstracts localStorage vs database persisten
 - Validates keys against allowed prefixes
 - Enforces 20KB max per key, 50 keys max per user
 
-**Database**: `user_preferences` table (nexus-users)
+**Database**: `user_preferences` table (nexus_users)
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -720,7 +720,7 @@ Preview shows matched orders sorted by best markup. Confirm creates one trade re
 
 #### Database Tables
 
-**`trade_requests`** (nexus-users):
+**`trade_requests`** (nexus_users):
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -737,7 +737,7 @@ Preview shows matched orders sorted by best markup. Confirm creates one trade re
 
 Unique constraint: Only 1 open request between any pair of users, using `LEAST/GREATEST` for direction-independence.
 
-**`trade_request_items`** (nexus-users):
+**`trade_request_items`** (nexus_users):
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -837,7 +837,7 @@ Player shop directory with inventory management.
 }
 ```
 
-### Database Tables (nexus-users)
+### Database Tables (nexus_users)
 
 #### `shop_inventory_groups`
 
@@ -999,7 +999,7 @@ The availability API does NOT expose blocked date reasons (stripped for privacy)
 
 Conflict detection uses an atomic CTE (INSERT ... WHERE NOT EXISTS) to prevent TOCTOU race conditions when creating requests.
 
-### Database Tables (nexus-users)
+### Database Tables (nexus_users)
 
 #### `rental_offers`
 
@@ -1489,7 +1489,7 @@ Debounced to run at most once per 30 seconds. Finds all active auctions with `en
 
 A partial unique index (`idx_auction_bids_one_active`) enforces at most one `active` bid per auction at the database level.
 
-### Database Tables (nexus-users)
+### Database Tables (nexus_users)
 
 #### ENUM Types
 
@@ -1736,7 +1736,7 @@ Historical item price observations with pre-computed summaries for charting.
 
 The `price_value` column stores the raw number; interpretation depends on item type.
 
-### Database Tables (nexus-users)
+### Database Tables (nexus_users)
 
 #### `item_prices` — Raw observations
 

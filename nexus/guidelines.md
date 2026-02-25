@@ -578,7 +578,7 @@ Whenever you edit frontend code, create or update E2E tests alongside it. Test a
 
 Test databases are available via MCP servers:
 - `mcp__postgres-nexus-test__query` - Test nexus database
-- `mcp__postgres-nexus-users-test__query` - Test users database
+- `mcp__postgres-nexus_users-test__query` - Test users database
 
 These are read-only and clone the production schema structure.
 
@@ -602,7 +602,7 @@ These are read-only and clone the production schema structure.
 ## Database Schema Awareness
 
 - **nexus**: Static game data (items, maps, mobs, blueprints, etc.)
-- **nexus-users**: User data (accounts, shops, services, etc.)
+- **nexus_users**: User data (accounts, shops, services, etc.)
 - Join tables carefully - know which DB owns which data
 - Use proper indexes for performance
 

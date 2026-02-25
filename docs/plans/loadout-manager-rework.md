@@ -46,7 +46,7 @@
    - Display computed stats (DPS, DPP, defense, etc) in a tiered infobox layout consistent with wiki pages.
 
 ## Phase 2 � Data Model + Storage
-1. **DB migration (nexus-users)**
+1. **DB migration (nexus_users)**
    - Create new table `loadouts` with:
      - `id UUID PRIMARY KEY`
      - `user_id BIGINT NOT NULL`
@@ -56,7 +56,7 @@
      - `share_code TEXT UNIQUE`
      - `created_at TIMESTAMP NOT NULL DEFAULT now()`
      - `last_update TIMESTAMP NOT NULL DEFAULT now()`
-   - Migration file: `sql/nexus-users/migrations/015_loadouts.sql`.
+   - Migration file: `sql/nexus_users/migrations/015_loadouts.sql`.
    - Add indexes on `user_id`, `share_code`.
 
 2. **Data size / security**
@@ -119,7 +119,7 @@
 ## Deliverables Checklist
 - `docs/plans/loadout-manager-rework.md` (this plan).
 - UI refactor in `nexus/src/routes/tools/loadouts/+page.svelte` plus new components if needed.
-- New migration in `sql/nexus-users/migrations/015_loadouts.sql`.
+- New migration in `sql/nexus_users/migrations/015_loadouts.sql`.
 - API endpoints under `nexus/src/routes/api/tools/loadout/*`.
 - New share route `nexus/src/routes/tools/loadouts/[share_code]/+page.svelte`.
 - Client sync logic + import dialog.

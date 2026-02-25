@@ -116,7 +116,7 @@ function createResilientPool(config, poolName) {
 
 // Single shared pools for the whole API with error handling
 const pool = createResilientPool(credentials.nexus, 'nexus');
-const usersPool = createResilientPool(credentials['nexus-users'], 'nexus-users');
+const usersPool = createResilientPool(credentials.nexus_users, 'nexus_users');
 
 /**
  * Wrap query to add retry logic, record metrics, and optionally log SQL
@@ -187,7 +187,7 @@ function wrapPool(p, poolName) {
 }
 
 wrapPool(pool, 'nexus');
-wrapPool(usersPool, 'nexus-users');
+wrapPool(usersPool, 'nexus_users');
 
 /**
  * Health check function to verify database connectivity
@@ -207,7 +207,7 @@ async function checkHealth() {
 		await usersPool.query('SELECT 1');
 		results.users = true;
 	} catch (err) {
-		console.error('[nexus-users] Health check failed:', err.message);
+		console.error('[nexus_users] Health check failed:', err.message);
 	}
 
 	return results;
@@ -220,7 +220,7 @@ async function shutdown() {
 	console.log('[db] Shutting down connection pools...');
 	await Promise.all([
 		pool.end().catch(err => console.error('[nexus] Pool end error:', err.message)),
-		usersPool.end().catch(err => console.error('[nexus-users] Pool end error:', err.message)),
+		usersPool.end().catch(err => console.error('[nexus_users] Pool end error:', err.message)),
 	]);
 	console.log('[db] Connection pools closed');
 }

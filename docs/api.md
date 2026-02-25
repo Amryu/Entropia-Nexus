@@ -1,6 +1,6 @@
 # Frontend API Reference
 
-All SvelteKit API routes served at `/api/...`. These are called by the frontend and handle authentication, business logic, and database operations against the `nexus-users` database.
+All SvelteKit API routes served at `/api/...`. These are called by the frontend and handle authentication, business logic, and database operations against the `nexus_users` database.
 
 ## Authentication & Authorization
 

@@ -26,8 +26,8 @@ Implement full change workflow support (draft/pending/approve) for:
   - `nexus-bot/changes/util.js`
 - DB enums/migrations:
   - `sql/nexus_users_schema.sql`
-  - `sql/nexus-users/migrations/014_add_strongbox_change_type.sql`
-  - `sql/nexus-users/migrations/016_add_location_area_change_type.sql`
+  - `sql/nexus_users/migrations/014_add_strongbox_change_type.sql`
+  - `sql/nexus_users/migrations/016_add_location_area_change_type.sql`
 
 ## Change workflow recap (baseline)
 - UI edits accumulate via `wikiEditState` and `InlineEdit`.

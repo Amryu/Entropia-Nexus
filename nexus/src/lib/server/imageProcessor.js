@@ -734,7 +734,7 @@ const NEXUS_DESCRIPTION_TABLES = [
 /**
  * Scan both databases for richtext image references and compare against stored images.
  *
- * @param {*} usersPool - The nexus-users database pool (required)
+ * @param {*} usersPool - The nexus_users database pool (required)
  * @param {*} [nexusPool] - The nexus entity database pool (optional)
  * @returns {Promise<{ approved: string[], pending: string[], usedHashes: string[], unusedHashes: string[], scannedSources: string[] }>}
  */
@@ -743,7 +743,7 @@ export async function scanRichtextImageUsage(usersPool, nexusPool = null) {
   const usedHashes = new Set();
   const scannedSources = [];
 
-  // --- Scan nexus-users database ---
+  // --- Scan nexus_users database ---
 
   // 1. changes.data (JSONB containing Description and Properties.Description)
   try {

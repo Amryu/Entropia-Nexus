@@ -17,7 +17,7 @@ client/debug_output/
 # Ignore SQL folder (experimental scripts and database dumps)
 sql/stuff
 sql/nexus/dumps
-sql/nexus-users/dumps
+sql/nexus_users/dumps
 sql/experimental
 sql-util/
 api/.env.test
