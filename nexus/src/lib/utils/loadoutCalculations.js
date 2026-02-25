@@ -279,9 +279,9 @@ export function calculateAmmoBurn(weapon, damageEnhancers, economyEnhancers, amp
 }
 
 export function calculateCost(decay, ammoBurn, ammoMarkup) {
-  if (decay === null || ammoBurn === null) return null;
+  if (decay === null) return null;
 
-  return decay + (ammoBurn / 100) * (ammoMarkup ?? 100) / 100;
+  return decay + ((ammoBurn ?? 0) / 100) * (ammoMarkup ?? 100) / 100;
 }
 
 export function calculateDPP(effectiveDamage, cost) {
