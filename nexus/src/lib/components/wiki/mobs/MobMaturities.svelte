@@ -139,7 +139,8 @@
     {
       key: 'name',
       header: 'Name',
-      main: true,  // Grow to fill available space
+      main: true,
+      width: '120px',
       formatter: (value) => `<span style="font-weight: 500;">${value}</span>`
     },
     {

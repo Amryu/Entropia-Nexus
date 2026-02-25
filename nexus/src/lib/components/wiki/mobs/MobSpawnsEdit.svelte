@@ -1,12 +1,14 @@
 <!--
   @component MobSpawnsEdit
   Array editor for mob spawn locations.
-  Supports waypoint paste, shape configuration, density, and nested maturities.
-  Following the editConfig pattern from mobs-legacy.
+  Supports waypoint paste, shape configuration, density, and mob set entries
+  with maturity configuration dialog.
 -->
 <script>
   // @ts-nocheck
   import { editMode, updateField, currentEntity } from '$lib/stores/wikiEditState.js';
+  import { clickable } from '$lib/actions/clickable.js';
+  import SearchInput from '$lib/components/wiki/SearchInput.svelte';
 
   /** @type {Array} Spawns array from the mob */
   export let spawns = [];
@@ -35,6 +37,12 @@
   // Track which spawn panels are expanded
   let expandedSpawns = {};
 
+  // Maturity dialog state: { spawnIndex, mobName } or null
+  let maturityDialog = null;
+
+  // Mob search options for SearchInput (local mode)
+  $: mobSearchOptions = (allMobs || []).map(m => ({ label: m.Name, value: m.Name }));
+
   // === Spawn Constructor ===
   function createSpawn() {
     return {
@@ -53,19 +61,6 @@
         }
       },
       Maturities: []
-    };
-  }
-
-  // === Spawn Maturity Constructor ===
-  function createSpawnMaturity() {
-    return {
-      IsRare: false,
-      Maturity: {
-        Name: maturities[0]?.Name || null,
-        Mob: {
-          Name: mobName
-        }
-      }
     };
   }
 
@@ -150,68 +145,259 @@
     return `[${x}, ${y}, ${z}]`;
   }
 
-  // === Spawn Maturity Operations ===
-  function addSpawnMaturity(spawnIndex) {
-    const newList = [...spawns];
-    const mats = newList[spawnIndex].Maturities || [];
-    mats.push(createSpawnMaturity());
-    newList[spawnIndex].Maturities = mats;
-    updateField(fieldPath, newList);
-  }
+  // === Mob Entry Operations ===
 
-  function removeSpawnMaturity(spawnIndex, matIndex) {
-    const newList = [...spawns];
-    newList[spawnIndex].Maturities = newList[spawnIndex].Maturities.filter((_, i) => i !== matIndex);
-    updateField(fieldPath, newList);
-  }
-
-  function updateSpawnMaturity(spawnIndex, matIndex, field, value) {
-    const newList = [...spawns];
-    const mat = newList[spawnIndex].Maturities[matIndex];
-
-    if (field === 'Mob.Name') {
-      if (!mat.Maturity) mat.Maturity = {};
-      if (!mat.Maturity.Mob) mat.Maturity.Mob = {};
-      mat.Maturity.Mob.Name = value;
-      // Reset maturity name when mob changes
-      mat.Maturity.Name = null;
-    } else if (field === 'Maturity.Name') {
-      if (!mat.Maturity) mat.Maturity = {};
-      mat.Maturity.Name = value;
-    } else if (field === 'IsRare') {
-      mat.IsRare = value;
-    }
-
-    updateField(fieldPath, newList);
-  }
-
-  // Get maturities for a selected mob
-  function getMaturitiesForMob(selectedMobName) {
-    if (selectedMobName === mobName) {
-      return maturities;
-    }
-    const mob = allMobs?.find(m => m.Name === selectedMobName);
+  /** Get full maturities list for a mob by name */
+  function getFullMaturitiesForMob(targetMobName) {
+    if (targetMobName === mobName) return maturities;
+    const mob = allMobs?.find(m => m.Name === targetMobName);
     return mob?.Maturities || [];
   }
 
+  /** Sort maturities: non-bosses first, then by level/health */
+  function sortMaturities(mats) {
+    mats.sort((a, b) => {
+      if (a.boss !== b.boss) return a.boss ? 1 : -1;
+      const aLvl = a.level;
+      const bLvl = b.level;
+      if (aLvl != null && bLvl != null) {
+        if (aLvl !== bLvl) return aLvl - bLvl;
+        return (a.health || 0) - (b.health || 0);
+      }
+      if (aLvl != null) return -1;
+      if (bLvl != null) return 1;
+      return (a.health || 0) - (b.health || 0);
+    });
+  }
+
+  /** Build mob entries from a spawn's Maturities array */
+  function getSpawnMobEntries(spawn) {
+    const spawnMats = spawn?.Maturities || [];
+    const mobMap = new Map();
+
+    // Group existing spawn maturities by mob name
+    for (const entry of spawnMats) {
+      const entryMobName = entry.Maturity?.Mob?.Name || mobName;
+      if (!mobMap.has(entryMobName)) {
+        mobMap.set(entryMobName, new Map());
+      }
+      if (entry.Maturity?.Name) {
+        mobMap.get(entryMobName).set(entry.Maturity.Name, entry.IsRare || false);
+      }
+    }
+
+    // Build full entries with all available maturities
+    const entries = [];
+    for (const [entryMobName, selectedMap] of mobMap) {
+      const fullMats = getFullMaturitiesForMob(entryMobName);
+      const matEntries = fullMats.map(m => ({
+        name: m.Name,
+        health: m.Properties?.Health ?? 0,
+        level: m.Properties?.Level ?? null,
+        boss: m.Properties?.Boss === true,
+        selected: selectedMap.has(m.Name),
+        isRare: selectedMap.get(m.Name) || false
+      }));
+      sortMaturities(matEntries);
+      entries.push({ mobName: entryMobName, maturities: matEntries });
+    }
+    return entries;
+  }
+
+  /** Convert mob entries back to spawn.Maturities format and persist */
+  function syncSpawnMaturities(spawnIndex, mobEntries) {
+    const newMaturities = [];
+    for (const entry of mobEntries) {
+      for (const mat of entry.maturities) {
+        if (mat.selected) {
+          newMaturities.push({
+            IsRare: mat.isRare,
+            Maturity: {
+              Name: mat.name,
+              Mob: { Name: entry.mobName }
+            }
+          });
+        }
+      }
+    }
+    const newList = [...spawns];
+    newList[spawnIndex].Maturities = newMaturities;
+    updateField(fieldPath, newList);
+  }
+
+  /** Get selected maturity count for a mob at a spawn */
+  function getSelectedCount(spawn, targetMobName) {
+    return (spawn?.Maturities || []).filter(
+      m => (m.Maturity?.Mob?.Name || mobName) === targetMobName
+    ).length;
+  }
+
+  /** Get total maturity count for a mob */
+  function getTotalCount(targetMobName) {
+    return getFullMaturitiesForMob(targetMobName).length;
+  }
+
+  // === Mob Search ===
+
+  /** Build a filter function for mob search that excludes current mob and already-added mobs */
+  function getMobSearchFilter(spawn) {
+    const existingMobs = new Set(
+      (spawn?.Maturities || []).map(m => m.Maturity?.Mob?.Name || mobName)
+    );
+    existingMobs.add(mobName);
+    return (opt) => !existingMobs.has(typeof opt === 'string' ? opt : opt?.label || opt?.Name);
+  }
+
+  function addMobToSpawn(spawnIndex, targetMobName) {
+    // Open the maturity dialog immediately for configuration
+    openMaturityDialog(spawnIndex, targetMobName);
+  }
+
+  function removeMobFromSpawn(spawnIndex, targetMobName) {
+    const newList = [...spawns];
+    newList[spawnIndex].Maturities = (newList[spawnIndex].Maturities || []).filter(
+      m => (m.Maturity?.Mob?.Name || mobName) !== targetMobName
+    );
+    updateField(fieldPath, newList);
+    if (maturityDialog?.spawnIndex === spawnIndex && maturityDialog?.mobName === targetMobName) {
+      maturityDialog = null;
+    }
+  }
+
+  function addCurrentMobToSpawn(spawnIndex) {
+    // Just open the dialog for the current mob — entries will be created when user selects maturities
+    openMaturityDialog(spawnIndex, mobName);
+  }
+
+  // === Maturity Dialog ===
+  function openMaturityDialog(spawnIndex, targetMobName) {
+    maturityDialog = { spawnIndex, mobName: targetMobName };
+  }
+
+  function closeMaturityDialog() {
+    maturityDialog = null;
+  }
+
+  // Build dialog maturity entries from spawn data + full maturities
+  $: dialogEntries = (() => {
+    if (!maturityDialog) return [];
+    const spawn = spawns[maturityDialog.spawnIndex];
+    const targetMobName = maturityDialog.mobName;
+    const fullMats = getFullMaturitiesForMob(targetMobName);
+
+    // Build lookup of selected maturities
+    const selectedMap = new Map();
+    for (const entry of (spawn?.Maturities || [])) {
+      if ((entry.Maturity?.Mob?.Name || mobName) === targetMobName && entry.Maturity?.Name) {
+        selectedMap.set(entry.Maturity.Name, entry.IsRare || false);
+      }
+    }
+
+    const entries = fullMats.map(m => ({
+      name: m.Name,
+      health: m.Properties?.Health ?? 0,
+      level: m.Properties?.Level ?? null,
+      boss: m.Properties?.Boss === true,
+      selected: selectedMap.has(m.Name),
+      isRare: selectedMap.get(m.Name) || false
+    }));
+    sortMaturities(entries);
+    return entries;
+  })();
+
+  function toggleDialogMaturity(matName) {
+    if (!maturityDialog) return;
+    const { spawnIndex, mobName: targetMobName } = maturityDialog;
+    const newList = [...spawns];
+    const spawn = newList[spawnIndex];
+    const mats = spawn.Maturities || [];
+
+    const existingIdx = mats.findIndex(
+      m => (m.Maturity?.Mob?.Name || mobName) === targetMobName && m.Maturity?.Name === matName
+    );
+
+    if (existingIdx >= 0) {
+      // Remove
+      mats.splice(existingIdx, 1);
+    } else {
+      // Add
+      mats.push({
+        IsRare: false,
+        Maturity: { Name: matName, Mob: { Name: targetMobName } }
+      });
+    }
+    spawn.Maturities = mats;
+    updateField(fieldPath, newList);
+  }
+
+  function toggleDialogRare(matName) {
+    if (!maturityDialog) return;
+    const { spawnIndex, mobName: targetMobName } = maturityDialog;
+    const newList = [...spawns];
+    const spawn = newList[spawnIndex];
+    const mat = (spawn.Maturities || []).find(
+      m => (m.Maturity?.Mob?.Name || mobName) === targetMobName && m.Maturity?.Name === matName
+    );
+    if (mat) {
+      mat.IsRare = !mat.IsRare;
+      updateField(fieldPath, newList);
+    }
+  }
+
+  function selectAllDialogMaturities() {
+    if (!maturityDialog) return;
+    const { spawnIndex, mobName: targetMobName } = maturityDialog;
+    const fullMats = getFullMaturitiesForMob(targetMobName);
+    const newList = [...spawns];
+    const spawn = newList[spawnIndex];
+    const mats = spawn.Maturities || [];
+
+    // Find existing selected names for this mob
+    const existingNames = new Set(
+      mats.filter(m => (m.Maturity?.Mob?.Name || mobName) === targetMobName)
+        .map(m => m.Maturity?.Name)
+    );
+
+    // Add any missing
+    for (const m of fullMats) {
+      if (!existingNames.has(m.Name)) {
+        mats.push({
+          IsRare: false,
+          Maturity: { Name: m.Name, Mob: { Name: targetMobName } }
+        });
+      }
+    }
+    spawn.Maturities = mats;
+    updateField(fieldPath, newList);
+  }
+
+  function deselectAllDialogMaturities() {
+    if (!maturityDialog) return;
+    const { spawnIndex, mobName: targetMobName } = maturityDialog;
+    const newList = [...spawns];
+    const spawn = newList[spawnIndex];
+    spawn.Maturities = (spawn.Maturities || []).filter(
+      m => (m.Maturity?.Mob?.Name || mobName) !== targetMobName
+    );
+    updateField(fieldPath, newList);
+  }
+
+  // === Utility ===
   function toggleSpawn(index) {
     expandedSpawns[index] = !expandedSpawns[index];
     expandedSpawns = expandedSpawns;
   }
 
   function getSpawnLabel(spawn, index) {
-    // Try multiple data formats
     let data = spawn.Properties?.Data;
     if (typeof data === 'string') {
       try { data = JSON.parse(data || '{}'); } catch (e) { data = {}; }
     }
     data = data || {};
 
-    // Also check for X/Y directly on spawn or in Coordinates
     const x = data?.x ?? data?.X ?? spawn.X ?? spawn.Properties?.Coordinates?.X ?? 0;
     const y = data?.y ?? data?.Y ?? spawn.Y ?? spawn.Properties?.Coordinates?.Y ?? 0;
 
-    // Format with Math.round for cleaner display
     const displayX = Number.isFinite(x) ? Math.round(x) : 0;
     const displayY = Number.isFinite(y) ? Math.round(y) : 0;
 
@@ -221,6 +407,22 @@
   function getDensityLabel(value) {
     const opt = DENSITY_OPTIONS.find(o => o.value === value);
     return opt?.label || 'N/A';
+  }
+
+  /** Get unique mob names present in a spawn's maturities */
+  function getSpawnMobNames(spawn) {
+    const names = new Set();
+    for (const entry of (spawn?.Maturities || [])) {
+      names.add(entry.Maturity?.Mob?.Name || mobName);
+    }
+    return [...names];
+  }
+
+  /** Check if current mob has maturities at a spawn */
+  function hasCurrentMob(spawn) {
+    return (spawn?.Maturities || []).some(
+      m => (m.Maturity?.Mob?.Name || mobName) === mobName
+    );
   }
 </script>
 
@@ -395,57 +597,78 @@
               {/if}
             </div>
 
-            <!-- Maturities at Spawn -->
+            <!-- Mobs at Spawn -->
             <div class="field-group">
-              <h5 class="group-title">Maturities at Spawn ({spawn.Maturities?.length || 0})</h5>
-              <div class="spawn-maturities-list">
-                {#each spawn.Maturities || [] as spawnMat, matIndex}
-                  <div class="spawn-maturity-item" class:other-mob={spawnMat.Maturity?.Mob?.Name && spawnMat.Maturity.Mob.Name !== mobName}>
-                    <div class="spawn-mat-fields">
-                      <label class="field">
-                        <span class="field-label">Mob</span>
-                        <select
-                          value={spawnMat.Maturity?.Mob?.Name || mobName}
-                          on:change={(e) => updateSpawnMaturity(spawnIndex, matIndex, 'Mob.Name', e.target.value)}
+              <h5 class="group-title">Mobs at Spawn ({spawn.Maturities?.length || 0} maturities)</h5>
+
+              <div class="mob-entries">
+                <!-- Current mob entry (always shown if it has maturities, or as "add" prompt) -->
+                {#if hasCurrentMob(spawn)}
+                  <div class="mob-entry">
+                    <div class="mob-entry-header">
+                      <span class="mob-entry-name">{mobName} <span class="current-badge">current</span></span>
+                      <div class="mob-entry-actions">
+                        <button
+                          class="configure-btn"
+                          on:click={() => openMaturityDialog(spawnIndex, mobName)}
+                          type="button"
                         >
-                          <option value={mobName}>{mobName} (current)</option>
-                          {#each (allMobs || []).filter(m => m.Name !== mobName) as otherMob}
-                            <option value={otherMob.Name}>{otherMob.Name}</option>
-                          {/each}
-                        </select>
-                      </label>
-                      <label class="field">
-                        <span class="field-label">Maturity</span>
-                        <select
-                          value={spawnMat.Maturity?.Name || ''}
-                          on:change={(e) => updateSpawnMaturity(spawnIndex, matIndex, 'Maturity.Name', e.target.value)}
-                        >
-                          <option value="">-- Select --</option>
-                          {#each getMaturitiesForMob(spawnMat.Maturity?.Mob?.Name || mobName) as mat}
-                            <option value={mat.Name}>{mat.Name}</option>
-                          {/each}
-                        </select>
-                      </label>
-                      <label class="field checkbox-field">
-                        <input
-                          type="checkbox"
-                          checked={spawnMat.IsRare || false}
-                          on:change={(e) => updateSpawnMaturity(spawnIndex, matIndex, 'IsRare', e.target.checked)}
-                        />
-                        <span class="field-label">Rare</span>
-                      </label>
+                          Configure ({getSelectedCount(spawn, mobName)}/{getTotalCount(mobName)})
+                        </button>
+                        <button
+                          class="btn-icon danger small"
+                          on:click={() => removeMobFromSpawn(spawnIndex, mobName)}
+                          title="Remove all maturities of this mob"
+                          type="button"
+                        >×</button>
+                      </div>
                     </div>
-                    <button
-                      class="btn-icon danger small"
-                      on:click={() => removeSpawnMaturity(spawnIndex, matIndex)}
-                      title="Remove maturity"
-                      type="button"
-                    >×</button>
+                  </div>
+                {:else}
+                  <button
+                    class="btn-add-mob"
+                    on:click={() => addCurrentMobToSpawn(spawnIndex)}
+                    type="button"
+                  >
+                    <span>+</span> Add {mobName} (current mob)
+                  </button>
+                {/if}
+
+                <!-- Other mob entries -->
+                {#each getSpawnMobNames(spawn).filter(n => n !== mobName) as otherMobName}
+                  <div class="mob-entry other">
+                    <div class="mob-entry-header">
+                      <span class="mob-entry-name">{otherMobName}</span>
+                      <div class="mob-entry-actions">
+                        <button
+                          class="configure-btn"
+                          on:click={() => openMaturityDialog(spawnIndex, otherMobName)}
+                          type="button"
+                        >
+                          Configure ({getSelectedCount(spawn, otherMobName)}/{getTotalCount(otherMobName)})
+                        </button>
+                        <button
+                          class="btn-icon danger small"
+                          on:click={() => removeMobFromSpawn(spawnIndex, otherMobName)}
+                          title="Remove mob"
+                          type="button"
+                        >×</button>
+                      </div>
+                    </div>
                   </div>
                 {/each}
-                <button class="btn-add" on:click={() => addSpawnMaturity(spawnIndex)} type="button">
-                  <span>+</span> Add Maturity
-                </button>
+
+                <!-- Add other mob search -->
+                <div class="mob-search-wrap">
+                  <SearchInput
+                    value=""
+                    options={mobSearchOptions}
+                    placeholder="Search to add another mob..."
+                    clearOnSelect
+                    filterFn={getMobSearchFilter(spawn)}
+                    on:select={(e) => addMobToSpawn(spawnIndex, e.detail.value)}
+                  />
+                </div>
               </div>
             </div>
           </div>
@@ -458,6 +681,71 @@
     </button>
   </div>
 </div>
+
+<!-- Maturity Configuration Dialog -->
+{#if maturityDialog}
+  <div class="dialog-overlay" role="presentation" on:click={closeMaturityDialog}>
+    <div class="maturity-dialog" role="dialog" on:click|stopPropagation>
+      <div class="dialog-header">
+        <h3>{maturityDialog.mobName}</h3>
+        <button class="dialog-close" on:click={closeMaturityDialog} type="button">×</button>
+      </div>
+
+      <div class="dialog-actions">
+        <button on:click={selectAllDialogMaturities} type="button">All</button>
+        <button on:click={deselectAllDialogMaturities} type="button">None</button>
+      </div>
+
+      <div class="dialog-content">
+        {#if dialogEntries.length === 0}
+          <div class="dialog-empty">No maturities found for this mob.</div>
+        {:else}
+          <div class="mat-list-header">
+            <span></span>
+            <span>Maturity</span>
+            <span>Lv / HP</span>
+            <span>Rare</span>
+          </div>
+          {#each dialogEntries as mat (mat.name)}
+            <div class="mat-row" class:disabled={!mat.selected} class:boss={mat.boss}>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={mat.selected}
+                  on:change={() => toggleDialogMaturity(mat.name)}
+                />
+              </label>
+              <span class="mat-name">
+                {mat.name}
+                {#if mat.boss}
+                  <span class="boss-badge">Boss</span>
+                {/if}
+              </span>
+              <span class="mat-stats">
+                {mat.level ?? '?'} / {mat.health ?? '?'}
+              </span>
+              <div class="rare-toggle">
+                {#if mat.selected}
+                  <button
+                    class="rare-btn"
+                    class:active={mat.isRare}
+                    on:click={() => toggleDialogRare(mat.name)}
+                    title="Toggle rare spawn"
+                    type="button"
+                  >R</button>
+                {/if}
+              </div>
+            </div>
+          {/each}
+        {/if}
+      </div>
+
+      <div class="dialog-footer">
+        <button on:click={closeMaturityDialog} type="button">Done</button>
+      </div>
+    </div>
+  </div>
+{/if}
 
 <style>
   .spawns-edit {
@@ -717,48 +1005,100 @@
     font-family: monospace;
   }
 
-  /* Spawn maturities */
-  .spawn-maturities-list {
+  /* Mob entries */
+  .mob-entries {
     display: flex;
     flex-direction: column;
     gap: 4px;
   }
 
-  .spawn-maturity-item {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 8px;
-    background-color: var(--secondary-color);
+  .mob-entry {
     border: 1px solid var(--border-color, #555);
-    border-radius: 3px;
+    border-radius: 4px;
+    overflow: hidden;
   }
 
-  .spawn-maturity-item.other-mob {
-    background-color: rgba(74, 158, 255, 0.1);
+  .mob-entry.other {
+    background-color: rgba(74, 158, 255, 0.05);
     border-color: rgba(74, 158, 255, 0.3);
   }
 
-  .spawn-mat-fields {
+  .mob-entry-header {
     display: flex;
-    gap: 6px;
-    flex: 1;
-    align-items: flex-end;
-    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 8px;
+    background: var(--secondary-color);
+    gap: 8px;
   }
 
-  .spawn-mat-fields .field {
-    flex: 1;
-    min-width: 80px;
-    max-width: 150px;
+  .mob-entry-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-color);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
-  .spawn-mat-fields .checkbox-field {
-    flex: 0 0 auto;
-    min-width: auto;
-    max-width: none;
-    height: 28px;
-    margin-bottom: 0;
+  .current-badge {
+    font-size: 9px;
+    font-weight: 500;
+    color: var(--text-muted, #999);
+    padding: 1px 4px;
+    border: 1px solid var(--border-color, #555);
+    border-radius: 2px;
+    vertical-align: middle;
+  }
+
+  .mob-entry-actions {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  .configure-btn {
+    padding: 4px 10px;
+    border: 1px solid var(--accent-color, #4a9eff);
+    border-radius: 4px;
+    background: rgba(59, 130, 246, 0.1);
+    color: var(--accent-color, #4a9eff);
+    font-size: 11px;
+    cursor: pointer;
+    text-align: center;
+    white-space: nowrap;
+  }
+
+  .configure-btn:hover {
+    background: rgba(59, 130, 246, 0.2);
+  }
+
+  .btn-add-mob {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 10px;
+    background-color: transparent;
+    border: 1px dashed var(--border-color, #555);
+    border-radius: 3px;
+    color: var(--text-muted, #999);
+    font-size: 11px;
+    line-height: 1;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .btn-add-mob:hover {
+    background-color: var(--hover-color);
+    color: var(--accent-color, #4a9eff);
+    border-color: var(--accent-color, #4a9eff);
+  }
+
+  /* Mob search */
+  .mob-search-wrap {
+    position: relative;
   }
 
   /* Buttons */
@@ -820,20 +1160,220 @@
     border-color: var(--accent-color, #4a9eff);
   }
 
-  .btn-add.primary {
-    margin-top: 4px;
-    padding: 8px 12px;
-    font-size: 12px;
-    border-style: solid;
-    background-color: var(--accent-color, #4a9eff);
-    border-color: var(--accent-color, #4a9eff);
-    color: white;
+  /* Dialog styles */
+  .dialog-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
   }
 
-  .btn-add.primary:hover {
-    opacity: 0.9;
-    background-color: var(--accent-color, #4a9eff);
+  .maturity-dialog {
+    background: var(--secondary-color);
+    border: 1px solid var(--border-color, #555);
+    border-radius: 8px;
+    width: 90%;
+    max-width: 460px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  }
+
+  .dialog-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border-color, #555);
+  }
+
+  .dialog-header h3 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-color);
+  }
+
+  .dialog-close {
+    background: none;
+    border: 1px solid var(--border-color, #555);
+    border-radius: 3px;
+    color: var(--text-muted, #999);
+    cursor: pointer;
+    font-size: 16px;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+  }
+
+  .dialog-close:hover {
+    background: var(--hover-color);
+    color: var(--text-color);
+  }
+
+  .dialog-actions {
+    display: flex;
+    gap: 4px;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--border-color, #555);
+  }
+
+  .dialog-actions button {
+    font-size: 11px;
+    padding: 3px 8px;
+    border: 1px solid var(--border-color, #555);
+    border-radius: 3px;
+    background: var(--primary-color);
+    color: var(--text-muted, #999);
+    cursor: pointer;
+  }
+
+  .dialog-actions button:hover {
+    background: var(--hover-color);
+  }
+
+  .dialog-content {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+  }
+
+  .mat-list-header {
+    display: grid;
+    grid-template-columns: 40px 1fr 70px 45px;
+    gap: 6px;
+    padding: 6px 16px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    color: var(--text-muted, #999);
+    background: var(--primary-color);
+    border-bottom: 1px solid var(--border-color, #555);
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+
+  .mat-row {
+    display: grid;
+    grid-template-columns: 40px 1fr 70px 45px;
+    gap: 6px;
+    padding: 5px 16px;
+    align-items: center;
+    border-bottom: 1px solid var(--border-color, #555);
+    font-size: 12px;
+    color: var(--text-color);
+  }
+
+  .mat-row:hover {
+    background: var(--hover-color);
+  }
+
+  .mat-row.disabled {
+    opacity: 0.5;
+  }
+
+  .mat-row.boss {
+    background: rgba(255, 193, 7, 0.08);
+  }
+
+  .mat-row.boss:hover {
+    background: rgba(255, 193, 7, 0.15);
+  }
+
+  .mat-row input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    cursor: pointer;
+    margin: 0;
+  }
+
+  .mat-name {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .boss-badge {
+    font-size: 9px;
+    padding: 1px 4px;
+    background: var(--warning-color, #ffc107);
+    color: #000;
+    border-radius: 3px;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+
+  .mat-stats {
+    font-family: monospace;
+    font-size: 11px;
+    color: var(--text-muted, #999);
+  }
+
+  .rare-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .rare-btn {
+    font-size: 10px;
+    padding: 1px 5px;
+    border: 1px solid var(--border-color, #555);
+    border-radius: 3px;
+    background: transparent;
+    color: var(--text-muted, #999);
+    cursor: pointer;
+  }
+
+  .rare-btn.active {
+    background: rgba(234, 179, 8, 0.2);
+    border-color: #eab308;
+    color: #eab308;
+    font-weight: 600;
+  }
+
+  .dialog-footer {
+    padding: 10px 16px;
+    border-top: 1px solid var(--border-color, #555);
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .dialog-footer button {
+    padding: 6px 16px;
+    border: none;
+    border-radius: 4px;
+    background: var(--accent-color, #4a9eff);
     color: white;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  .dialog-footer button:hover {
+    opacity: 0.9;
+  }
+
+  .dialog-empty {
+    padding: 20px;
+    text-align: center;
+    color: var(--text-muted, #999);
+    font-size: 12px;
   }
 
   /* Mobile adjustments */
@@ -846,14 +1386,18 @@
       grid-template-columns: repeat(2, 1fr);
     }
 
-    .spawn-mat-fields {
+    .mob-entry-header {
       flex-direction: column;
-      align-items: stretch;
+      align-items: flex-start;
+      gap: 4px;
     }
 
-    .spawn-mat-fields .field {
-      max-width: none;
+    .mob-entry-actions {
       width: 100%;
+    }
+
+    .configure-btn {
+      flex: 1;
     }
   }
 </style>
