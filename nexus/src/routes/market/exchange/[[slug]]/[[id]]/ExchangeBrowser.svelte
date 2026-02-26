@@ -971,7 +971,7 @@
 
   // Columns for the main list view FancyTable
   const listColumns = [
-    { key: 'name', header: 'Item', main: true, mobileWidth: '1fr', sortable: true, searchable: true, formatter: (val, row) => val + itemTypeBadge(row._item?.t) },
+    { key: 'name', header: 'Item', main: true, width: '150px', mobileWidth: '1fr', sortable: true, searchable: true, formatter: (val, row) => val + itemTypeBadge(row._item?.t) },
     { key: 'median', header: 'Median', width: '100px', mobileWidth: '60px', sortable: true, searchable: false, formatter: (v, row) => v != null ? formatMarkupForItem(v, row?._item) : '<span style="opacity:0.35">N/A</span>' },
     { key: 'percentile10', header: '10%', width: '100px', sortable: true, searchable: false, hideOnMobile: true, formatter: (v, row) => v != null ? formatMarkupForItem(v, row?._item) : '<span style="opacity:0.35">N/A</span>' },
     { key: 'wap', header: 'Weight. Avg', width: '100px', sortable: true, searchable: false, hideOnMobile: true, formatter: (v, row) => v != null ? formatMarkupForItem(v, row?._item) : '<span style="opacity:0.35">N/A</span>' },

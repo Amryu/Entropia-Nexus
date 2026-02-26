@@ -32,7 +32,7 @@ export function buildStackMuDisplay(entry, item) {
   const stackText = stack > 0 ? `stacks: ${stack}` : '';
   let muText = '';
   if (!Number.isNaN(mu) && mu > 0) {
-    muText = isNonStackable(item) ? `+${mu}` : `${mu.toFixed(0)}%`;
+    muText = isNonStackable(item) ? `+${mu.toFixed(2)}` : `${mu.toFixed(2)}%`;
   }
   return { stackText, muText };
 }

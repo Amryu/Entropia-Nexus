@@ -2,7 +2,7 @@
 import { getResponse } from '$lib/util.js';
 import {
   getUserOrders, createOrder, countUserOrdersBySide, countUserOrdersForItem,
-  getItemType, isPercentMarkupServer, isItemFungible, formatRetryTime,
+  getItemType, isPercentMarkupServer, isItemFungible, formatRetryTime, getBestMarkupForItem,
   MAX_SELL_ORDERS, MAX_BUY_ORDERS, MAX_ORDERS_PER_ITEM, PLANETS,
   RATE_LIMIT_CREATE_PER_MIN, RATE_LIMIT_CREATE_PER_HOUR, RATE_LIMIT_CREATE_PER_DAY,
   RATE_LIMIT_ITEM_COOLDOWN_MS, RATE_LIMIT_ITEM_FUNGIBLE_COOLDOWN, RATE_LIMIT_ITEM_NONFUNGIBLE_COOLDOWN,
@@ -12,7 +12,7 @@ import { checkRateLimit, checkRateLimitPeek, incrementRateLimit } from '$lib/ser
 import { verifyTurnstile } from '$lib/server/turnstile.js';
 import { isOAuthRequest } from '$lib/server/auth.js';
 import {
-  validateOrderDetails, enforceSetConstraint, enforceGenderConstraint, getVerifiedUser
+  validateOrderDetails, enforceSetConstraint, enforceGenderConstraint, getVerifiedUser, checkUndercutEnforcement
 } from '$lib/server/exchange-order-validation.js';
 import { invalidateOfferCounts } from '$lib/market/cache';
 
@@ -158,6 +158,22 @@ export async function POST({ request, locals, fetch }) {
     return getResponse({ error: genderResult.error }, 400);
   }
   details = genderResult.details;
+
+  // Undercut enforcement: reject orders too close to the best existing offer
+  if (itemInfo) {
+    const isPercentMu = isPercentMarkupServer(itemInfo.type, itemInfo.name, itemInfo.subType);
+    const gender = details?.Gender || null;
+    try {
+      const bestMarkup = await getBestMarkupForItem(itemId, type, user.id, gender);
+      const undercutError = checkUndercutEnforcement(markup, type, bestMarkup, isPercentMu);
+      if (undercutError) {
+        return getResponse({ error: undercutError }, 409);
+      }
+    } catch (err) {
+      console.error('Error checking undercut enforcement:', err);
+      // Non-fatal: allow order if check fails
+    }
+  }
 
   // Check order limit per side (separate caps for buy/sell)
   // Bypassed in test environment to prevent cross-run interference

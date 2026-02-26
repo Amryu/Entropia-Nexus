@@ -254,6 +254,36 @@ export async function getExchangePrices(itemId, gender = null) {
 }
 
 /**
+ * Get the best (lowest sell / highest buy) markup for an item, excluding a specific user's orders.
+ * Used for undercut enforcement — ensures new orders undercut by the minimum amount.
+ * @param {number} itemId
+ * @param {'BUY'|'SELL'} type
+ * @param {number|string} excludeUserId - User whose orders to exclude (so users aren't blocked by their own orders)
+ * @param {string|null} gender - Optional gender filter for gendered items
+ * @returns {Promise<number|null>} Best markup, or null if no competing orders exist
+ */
+export async function getBestMarkupForItem(itemId, type, excludeUserId, gender = null) {
+  const agg = type === 'BUY' ? 'MAX' : 'MIN';
+  const conditions = [
+    'item_id = $1',
+    'type = $2',
+    'user_id != $3',
+    `state != 'closed'`,
+    `bumped_at >= NOW() - INTERVAL '${EXPIRED_DAYS} days'`
+  ];
+  const values = [itemId, type, excludeUserId];
+  if (gender) {
+    conditions.push(`details->>'Gender' = $${values.length + 1}`);
+    values.push(gender);
+  }
+  const { rows } = await pool.query(
+    `SELECT ${agg}(markup) AS best FROM trade_offers WHERE ${conditions.join(' AND ')}`,
+    values
+  );
+  return rows[0]?.best != null ? parseFloat(rows[0].best) : null;
+}
+
+/**
  * Get order counts and volume per item for all active (non-closed, non-terminated) orders.
  * Returns a Map of itemId -> { buys, sells, buyVol, sellVol, lastUpdate, bestBuyMarkup }.
  */

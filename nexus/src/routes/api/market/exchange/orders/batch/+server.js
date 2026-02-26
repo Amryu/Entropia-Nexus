@@ -3,7 +3,7 @@ import { getResponse } from '$lib/util.js';
 import {
   createOrder, getOrderById, updateOrder,
   countUserOrdersBySide, countUserOrdersForItem,
-  getItemType, isPercentMarkupServer, formatRetryTime,
+  getItemType, isPercentMarkupServer, formatRetryTime, getBestMarkupForItem,
   MAX_SELL_ORDERS, MAX_BUY_ORDERS, MAX_ORDERS_PER_ITEM, MAX_BATCH_SIZE, PLANETS,
   RATE_LIMIT_CREATE_PER_MIN, RATE_LIMIT_CREATE_PER_HOUR, RATE_LIMIT_CREATE_PER_DAY,
   RATE_LIMIT_ITEM_COOLDOWN_MS, RATE_LIMIT_EDIT_PER_MIN,
@@ -12,7 +12,7 @@ import { checkRateLimitPeek, incrementRateLimit } from '$lib/server/rateLimiter.
 import { verifyTurnstile } from '$lib/server/turnstile.js';
 import { isOAuthRequest } from '$lib/server/auth.js';
 import {
-  validateOrderDetails, enforceSetConstraint, enforceGenderConstraint, getVerifiedUser
+  validateOrderDetails, enforceSetConstraint, enforceGenderConstraint, getVerifiedUser, checkUndercutEnforcement
 } from '$lib/server/exchange-order-validation.js';
 import { invalidateOfferCounts } from '$lib/market/cache';
 
@@ -211,6 +211,21 @@ async function processOrderEntry(entry, user, fetch, itemInfoCache) {
     return { success: false, error: genderResult.error };
   }
   details = genderResult.details;
+
+  // Undercut enforcement: reject orders too close to the best existing offer
+  if (itemInfo) {
+    const isPercentMu = isPercentMarkupServer(itemInfo.type, itemInfo.name, itemInfo.subType);
+    const gender = details?.Gender || null;
+    try {
+      const bestMarkup = await getBestMarkupForItem(itemId, type, user.id, gender);
+      const undercutError = checkUndercutEnforcement(markup, type, bestMarkup, isPercentMu);
+      if (undercutError) {
+        return { success: false, error: undercutError };
+      }
+    } catch (err) {
+      console.error('Error checking undercut enforcement:', err);
+    }
+  }
 
   // --- Update existing order ---
   const orderId = entry.order_id ? parseInt(entry.order_id, 10) : null;

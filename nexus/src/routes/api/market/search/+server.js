@@ -93,7 +93,7 @@ function formatExchangePrice(item) {
   // median IS the markup percentage directly (e.g., 102.50 = 102.50%)
   // Exception: Deed/Token/Share materials use absolute markup despite being stackable
   if (isPercentMarkupType(item.t, item.n, subType)) {
-    return `${median.toFixed(0)}% MU`;
+    return `${median.toFixed(2)}% MU`;
   }
 
   // Absolute markup (condition items, non-L BPs, Deeds/Tokens/Shares):

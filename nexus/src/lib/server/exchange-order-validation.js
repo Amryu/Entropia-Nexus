@@ -5,6 +5,7 @@
  */
 import { getResponse } from '$lib/util.js';
 import { GENDERED_TYPES } from '$lib/common/itemTypes.js';
+import { getPercentUndercutAmount, getAbsoluteUndercutAmount } from '../../routes/market/exchange/exchangeConstants.js';
 
 /**
  * Validate and sanitize order details JSONB.
@@ -113,6 +114,45 @@ export function enforceGenderConstraint(details, itemInfo) {
   }
 
   return { details };
+}
+
+/**
+ * Check if a markup value violates undercut enforcement.
+ * Returns an error message string if rejected, or null if allowed.
+ *
+ * Rules:
+ * - SELL: markup in (bestSell - undercut, bestSell] is forbidden (too close without undercutting)
+ * - BUY: markup in [bestBuy, bestBuy + outbid) is forbidden (too close without outbidding)
+ * - Markups worse than best (higher sell / lower buy) are allowed freely
+ * - Markups better by at least the undercut amount are allowed
+ *
+ * @param {number} markup - Submitted markup value
+ * @param {'BUY'|'SELL'} type - Order side
+ * @param {number|null} bestMarkup - Best existing markup from other users (null = no orders)
+ * @param {boolean} isPercentMu - Whether this item uses percent markup
+ * @returns {string|null} Error message or null
+ */
+export function checkUndercutEnforcement(markup, type, bestMarkup, isPercentMu) {
+  if (bestMarkup == null) return null; // No competing orders
+
+  const undercutAmt = isPercentMu
+    ? getPercentUndercutAmount(bestMarkup)
+    : getAbsoluteUndercutAmount(bestMarkup);
+
+  if (type === 'SELL') {
+    const threshold = Math.round((bestMarkup - undercutAmt) * 100) / 100;
+    if (markup > threshold && markup <= bestMarkup) {
+      const unit = isPercentMu ? '%' : ' PED';
+      return `Sell markup must undercut the best offer (${bestMarkup}${unit}) by at least ${undercutAmt}${unit}, or be higher. Suggested: ${threshold}${unit}.`;
+    }
+  } else {
+    const threshold = Math.round((bestMarkup + undercutAmt) * 100) / 100;
+    if (markup >= bestMarkup && markup < threshold) {
+      const unit = isPercentMu ? '%' : ' PED';
+      return `Buy markup must outbid the best offer (${bestMarkup}${unit}) by at least ${undercutAmt}${unit}, or be lower. Suggested: ${threshold}${unit}.`;
+    }
+  }
+  return null;
 }
 
 /**

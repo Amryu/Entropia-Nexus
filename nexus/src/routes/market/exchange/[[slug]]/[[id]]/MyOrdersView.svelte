@@ -71,7 +71,7 @@
 
   $: columns = [
     {
-      key: 'item_name', header: 'Item', main: true, mobileWidth: '1fr', sortable: true, searchable: true,
+      key: 'item_name', header: 'Item', main: true, width: '150px', mobileWidth: '1fr', sortable: true, searchable: true,
       formatter: (val, row) => {
         const slim = itemLookup.get(row.item_id);
         const setBadge = slim?.t === 'ArmorPlating' && Number(row.quantity) === PLATE_SET_SIZE ? ' <span class="badge badge-subtle badge-accent">Set</span>' : '';

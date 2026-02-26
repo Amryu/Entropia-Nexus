@@ -86,6 +86,7 @@
       key: 'seller_name',
       header: side === 'buy' ? 'Buyer' : 'Seller',
       main: true,
+      width: '120px',
       sortable: true,
       searchable: false,
       formatter: (val, row) => {

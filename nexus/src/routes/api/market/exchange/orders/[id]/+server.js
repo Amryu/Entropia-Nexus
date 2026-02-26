@@ -2,10 +2,11 @@
 import { getResponse } from '$lib/util.js';
 import {
   getOrderById, updateOrder, closeOrder, getItemType, isPercentMarkupServer,
-  isItemFungible, formatRetryTime, PLANETS,
+  isItemFungible, formatRetryTime, getBestMarkupForItem, PLANETS,
   RATE_LIMIT_EDIT_PER_MIN, RATE_LIMIT_CLOSE_PER_MIN,
   RATE_LIMIT_ITEM_COOLDOWN_MS, RATE_LIMIT_ITEM_FUNGIBLE_COOLDOWN, RATE_LIMIT_ITEM_NONFUNGIBLE_COOLDOWN,
 } from '$lib/server/exchange.js';
+import { checkUndercutEnforcement } from '$lib/server/exchange-order-validation.js';
 import { GENDERED_TYPES } from '$lib/common/itemTypes.js';
 import { checkRateLimit } from '$lib/server/rateLimiter.js';
 import { verifyTurnstile } from '$lib/server/turnstile.js';
@@ -219,6 +220,21 @@ export async function PUT({ params, request, locals, fetch }) {
     return getResponse({ error: genderResult.error }, 400);
   }
   details = genderResult.details;
+
+  // Undercut enforcement: reject edits too close to the best existing offer
+  if (itemInfo) {
+    const isPercentMu = isPercentMarkupServer(itemInfo.type, itemInfo.name, itemInfo.subType);
+    const gender = details?.Gender || null;
+    try {
+      const bestMarkup = await getBestMarkupForItem(existing.item_id, existing.type, user.id, gender);
+      const undercutError = checkUndercutEnforcement(markup, existing.type, bestMarkup, isPercentMu);
+      if (undercutError) {
+        return getResponse({ error: undercutError }, 409);
+      }
+    } catch (err) {
+      console.error('Error checking undercut enforcement:', err);
+    }
+  }
 
   try {
     const updated = await updateOrder(orderId, { quantity, minQuantity, markup, planet, details });

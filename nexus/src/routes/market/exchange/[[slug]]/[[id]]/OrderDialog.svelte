@@ -304,7 +304,7 @@
       unitPrice = maxTT + mu;
     }
     totalPrice = qty * unitPrice;
-    muLabel = isPctMu ? `${Math.max(0, mu).toFixed(0)}% of Max TT` : `+${formatPedRaw(mu)} PED`;
+    muLabel = isPctMu ? `${Math.max(0, mu).toFixed(2)}% of Max TT` : `+${formatPedRaw(mu)} PED`;
     ttValueDisplay = isPctMu
       ? `Max TT: ${maxTT || 'N/A'}`
       : isBp
@@ -574,10 +574,10 @@
             id="muPct"
             type="number"
             min="100"
-            step="1"
+            step="0.01"
             bind:value={order.Markup}
             on:input={recalcPrices}
-            on:blur={() => { order.Markup = Math.max(100, Math.round(Number(order.Markup) || 100)); recalcPrices(); }}
+            on:blur={() => { order.Markup = Math.max(100, Math.round((Number(order.Markup) || 100) * 100) / 100); recalcPrices(); }}
           />
         </div>
       {:else}
@@ -601,7 +601,7 @@
             {#if order.Type === 'Sell'}
               {#if suggestions?.bestSell != null}
                 <button class="suggest-btn" on:click={() => applySuggestion(suggestions.bestSell)} title="Match the lowest sell order">
-                  Match Best ({isPercentMarkup(order.Item) ? suggestions.bestSell.toFixed(0) : formatPedRaw(suggestions.bestSell)})
+                  Match Best ({isPercentMarkup(order.Item) ? suggestions.bestSell.toFixed(2) : formatPedRaw(suggestions.bestSell)})
                 </button>
                 <button class="suggest-btn undercut" on:click={() => applySuggestion(computeUndercutValue(suggestions.bestSell, 'Sell'))} title="Undercut the lowest sell by ~2%">
                   Undercut
@@ -612,7 +612,7 @@
             {:else}
               {#if suggestions?.bestBuy != null}
                 <button class="suggest-btn" on:click={() => applySuggestion(suggestions.bestBuy)} title="Match the highest buy order">
-                  Match Best ({isPercentMarkup(order.Item) ? suggestions.bestBuy.toFixed(0) : formatPedRaw(suggestions.bestBuy)})
+                  Match Best ({isPercentMarkup(order.Item) ? suggestions.bestBuy.toFixed(2) : formatPedRaw(suggestions.bestBuy)})
                 </button>
                 <button class="suggest-btn outbid" on:click={() => applySuggestion(computeUndercutValue(suggestions.bestBuy, 'Buy'))} title="Outbid the highest buy by ~2%">
                   Outbid
@@ -623,7 +623,7 @@
             {/if}
             {#if dailyAverage != null}
               <button class="suggest-btn daily" on:click={() => applySuggestion(dailyAverage)} title="Use the daily average markup">
-                Daily Avg ({isPercentMarkup(order.Item) ? dailyAverage.toFixed(0) : formatPedRaw(dailyAverage)})
+                Daily Avg ({isPercentMarkup(order.Item) ? dailyAverage.toFixed(2) : formatPedRaw(dailyAverage)})
               </button>
             {/if}
           </div>
@@ -639,7 +639,7 @@
               {formatPedRaw(Number(order.Metadata?.QualityRating) / 100)} + {formatPedRaw(Number(order.Markup) || 0)} = {formatPedRaw(unitPrice)} PED
             {/if}
           {:else if isPercentMarkup(order.Item)}
-            {formatPedRaw(Number(order.Item.MaxTT) || 0)} &times; {(Number(order.Markup) || 0).toFixed(0)}% = {formatPedRaw(unitPrice)} PED
+            {formatPedRaw(Number(order.Item.MaxTT) || 0)} &times; {(Number(order.Markup) || 0).toFixed(2)}% = {formatPedRaw(unitPrice)} PED
           {:else if itemHasCondition(order.Item)}
             {formatPedRaw(Number(order.CurrentTT) || 0)} + {formatPedRaw(Number(order.Markup) || 0)} = {formatPedRaw(unitPrice)} PED
           {:else}
