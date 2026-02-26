@@ -1,0 +1,868 @@
+"""Dashboard page — latest news, global ticker, trade ticker."""
+
+import re
+import webbrowser
+from datetime import datetime, timezone
+from html import escape as _esc
+from urllib.parse import quote
+
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QTextEdit, QTextBrowser,
+    QGroupBox, QFrame, QScrollArea, QApplication, QToolTip, QStackedWidget,
+    QPushButton,
+)
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QUrl, QRect
+from PyQt6.QtGui import QCursor
+
+from ..theme import (
+    TEXT, TEXT_MUTED, ACCENT, BORDER, HOVER, SECONDARY, PRIMARY,
+    WARNING, SUCCESS, MAIN_DARK,
+)
+from ...chat_parser.models import GlobalType
+
+
+NEWS_REFRESH_INTERVAL_MS = 60 * 1000  # 1 minute
+NEWS_LIMIT = 500
+MAX_TICKER_LINES = 200
+
+# View indices inside the dashboard QStackedWidget
+_VIEW_LIST = 0
+_VIEW_ARTICLE = 1
+
+# Global type → (short label, color)
+_GLOBAL_TYPE_LABELS = {
+    GlobalType.KILL:      ("Hunt",  TEXT),
+    GlobalType.TEAM_KILL: ("Hunt",  TEXT),
+    GlobalType.DEPOSIT:   ("Mine",  WARNING),
+    GlobalType.CRAFT:     ("Craft", SUCCESS),
+    GlobalType.RARE_ITEM: ("Rare",  ACCENT),
+}
+
+# Item type → URL path segment (mirrors getTypeLink in nexus/src/lib/util.js)
+_TYPE_PATHS = {
+    "Weapon": "items/weapons",
+    "Armor": "items/armors",
+    "ArmorSet": "items/armorsets",
+    "Material": "items/materials",
+    "Blueprint": "items/blueprints",
+    "Vehicle": "items/vehicles",
+    "Pet": "items/pets",
+    "Clothing": "items/clothing",
+    "MedicalTool": "items/medicaltools/tools",
+    "MedicalChip": "items/medicaltools/chips",
+    "Refiner": "items/tools/refiners",
+    "Scanner": "items/tools/scanners",
+    "Finder": "items/tools/finders",
+    "Excavator": "items/tools/excavators",
+    "TeleportationChip": "items/tools/teleportationchips",
+    "EffectChip": "items/tools/effectchips",
+    "MiscTool": "items/tools/misctools",
+    "WeaponAmplifier": "items/attachments/weaponamplifiers",
+    "WeaponVisionAttachment": "items/attachments/weaponvisionattachments",
+    "Absorber": "items/attachments/absorbers",
+    "ArmorPlating": "items/attachments/armorplatings",
+    "FinderAmplifier": "items/attachments/finderamplifiers",
+    "Enhancer": "items/attachments/enhancers",
+    "MindforceImplant": "items/attachments/mindforceimplants",
+    "Consumable": "items/consumables/stimulants",
+    "Capsule": "items/consumables/capsules",
+    "Furniture": "items/furnishings/furniture",
+    "Decoration": "items/furnishings/decorations",
+    "StorageContainer": "items/furnishings/storagecontainers",
+    "Sign": "items/furnishings/signs",
+}
+
+# Regex for parsing bracketed tokens in trade chat
+_BRACKET_RE = re.compile(r'\[([^\]]+)\]')
+_WAYPOINT_RE = re.compile(r'^(.+),\s*(\d+),\s*(\d+),\s*(\d+),\s*Waypoint$')
+# Gender tag at end of item name: (M), (F), (M,L), (F,L) etc.
+_GENDER_TAG_RE = re.compile(r'\s*\(([MF])(?:,([^)]+))?\)\s*$')
+
+_LINK_STYLE = f'color:{ACCENT};text-decoration:underline'
+
+# CSS for article HTML rendering inside QTextBrowser
+_ARTICLE_CSS = f"""
+    body {{
+        background-color: {PRIMARY};
+        color: {TEXT};
+        font-family: 'Gill Sans', 'Gill Sans MT', Calibri, 'Trebuchet MS', sans-serif;
+        font-size: 14px;
+        line-height: 1.7;
+        margin: 0;
+        padding: 0 12px;
+    }}
+    h1, h2, h3, h4 {{ color: {TEXT}; }}
+    h2 {{ font-size: 18px; margin: 16px 0 6px 0; }}
+    h3 {{ font-size: 16px; margin: 12px 0 6px 0; }}
+    a {{ color: {ACCENT}; }}
+    blockquote {{
+        border-left: 3px solid {ACCENT};
+        padding-left: 12px;
+        margin: 10px 0;
+        color: {TEXT_MUTED};
+        font-style: italic;
+    }}
+    code {{
+        background-color: {MAIN_DARK};
+        padding: 2px 6px;
+        border-radius: 3px;
+    }}
+    pre {{
+        background-color: {MAIN_DARK};
+        border: 1px solid {BORDER};
+        border-radius: 4px;
+        padding: 12px;
+        overflow-x: auto;
+    }}
+    hr {{
+        border: none;
+        border-top: 1px solid {BORDER};
+        margin: 16px 0;
+    }}
+    table {{
+        border-collapse: collapse;
+        margin: 10px 0;
+    }}
+    td, th {{
+        border: 1px solid {BORDER};
+        padding: 4px 8px;
+    }}
+    th {{
+        background-color: {SECONDARY};
+    }}
+"""
+
+
+def _time_ago(iso_date: str) -> str:
+    """Format an ISO date string as a relative time ago label."""
+    try:
+        dt = datetime.fromisoformat(iso_date.replace("Z", "+00:00"))
+        now = datetime.now(timezone.utc)
+        diff = now - dt
+        minutes = int(diff.total_seconds() / 60)
+        if minutes < 60:
+            return f"{minutes}m ago"
+        hours = minutes // 60
+        if hours < 24:
+            return f"{hours}h ago"
+        days = hours // 24
+        if days < 30:
+            return f"{days}d ago"
+        return dt.strftime("%b %d, %Y")
+    except Exception:
+        return ""
+
+
+def _format_date(iso_date: str) -> str:
+    """Format an ISO date string as 'Month Day, Year'."""
+    try:
+        dt = datetime.fromisoformat(iso_date.replace("Z", "+00:00"))
+        return dt.strftime("%B %d, %Y")
+    except Exception:
+        return ""
+
+
+def _encode_slug(name: str) -> str:
+    """Mirrors encodeURIComponentSafe from nexus/src/lib/util.js."""
+    return quote(name.replace('~', '%7E'), safe='').replace('%20', '~')
+
+
+def _strip_gender(name: str) -> str | None:
+    """Strip gender tag from item name, preserving other tags.
+
+    Returns the stripped name, or None if no gender tag was present.
+    Examples:
+        "Pixie Armor Plate (M)"    → "Pixie Armor Plate"
+        "Pixie Armor Plate (M,L)"  → "Pixie Armor Plate (L)"
+        "Pixie Armor Plate (L)"    → None  (no gender tag)
+    """
+    m = _GENDER_TAG_RE.search(name)
+    if not m:
+        return None
+    base = name[:m.start()]
+    other_tags = m.group(2)
+    if other_tags:
+        return f"{base} ({other_tags})"
+    return base
+
+
+def _resolve_item(name: str, item_lookup: dict) -> tuple[str, str] | None:
+    """Look up item name in the lookup dict, trying gender-stripped variant first.
+
+    Returns (canonical_name, type) or None.
+    """
+    stripped = _strip_gender(name)
+    if stripped and stripped in item_lookup:
+        return stripped, item_lookup[stripped]
+    if name in item_lookup:
+        return name, item_lookup[name]
+    return None
+
+
+def _format_trade_message(text: str, base_url: str,
+                          item_lookup: dict) -> str:
+    """Parse [brackets] in trade message, returning HTML with links."""
+    parts = []
+    last_end = 0
+
+    for m in _BRACKET_RE.finditer(text):
+        # Escaped plain text before this match
+        if m.start() > last_end:
+            parts.append(_esc(text[last_end:m.start()]))
+
+        inner = m.group(1)
+        wm = _WAYPOINT_RE.match(inner)
+
+        if wm:
+            # Waypoint — link copies coordinates on click
+            display = _esc(m.group(0))
+            href = f"wp:{_esc(inner)}"
+            parts.append(
+                f'<a href="{href}" style="{_LINK_STYLE}">{display}</a>'
+            )
+        else:
+            # Item — resolve to wiki link
+            resolved = _resolve_item(inner, item_lookup)
+            if resolved:
+                canon_name, item_type = resolved
+                path = _TYPE_PATHS.get(item_type)
+                if path:
+                    href = f"{base_url}/{path}/{_encode_slug(canon_name)}"
+                else:
+                    href = f"{base_url}/search?q={quote(canon_name)}"
+            else:
+                href = f"{base_url}/search?q={quote(inner)}"
+            display = _esc(m.group(0))
+            parts.append(
+                f'<a href="{href}" style="{_LINK_STYLE}">{display}</a>'
+            )
+
+        last_end = m.end()
+
+    # Trailing plain text
+    if last_end < len(text):
+        parts.append(_esc(text[last_end:]))
+
+    return ''.join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Background threads
+# ---------------------------------------------------------------------------
+
+class _NewsFetcher(QThread):
+    """Background thread to fetch news from the Nexus API."""
+    finished = pyqtSignal(list)
+
+    def __init__(self, nexus_client, limit=NEWS_LIMIT):
+        super().__init__()
+        self._client = nexus_client
+        self._limit = limit
+
+    def run(self):
+        self.finished.emit(self._client.get_news(self._limit))
+
+
+class _ArticleFetcher(QThread):
+    """Background thread to fetch a single news article."""
+    finished = pyqtSignal(object)  # dict | None
+
+    def __init__(self, nexus_client, article_id: int):
+        super().__init__()
+        self._client = nexus_client
+        self._article_id = article_id
+
+    def run(self):
+        self.finished.emit(self._client.get_news_article(self._article_id))
+
+
+class _ItemLookupLoader(QThread):
+    """Background thread to build the item name→type dict."""
+    finished = pyqtSignal(dict)
+
+    def __init__(self, data_client):
+        super().__init__()
+        self._data_client = data_client
+
+    def run(self):
+        items = self._data_client.get_items()
+        lookup = {}
+        for item in items:
+            name = item.get("Name")
+            item_type = item.get("Type")
+            if name and item_type:
+                lookup[name] = item_type
+        self.finished.emit(lookup)
+
+
+# ---------------------------------------------------------------------------
+# Widgets
+# ---------------------------------------------------------------------------
+
+class _NewsRow(QFrame):
+    """Single compact clickable news row: [source] title ... date."""
+
+    clicked = pyqtSignal(dict)  # emits the full post dict
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._post: dict | None = None
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setStyleSheet(f"""
+            _NewsRow {{
+                background-color: transparent;
+                border-bottom: 1px solid {BORDER};
+                padding: 0px;
+            }}
+            _NewsRow:hover {{
+                background-color: {HOVER};
+            }}
+        """)
+
+        row = QHBoxLayout(self)
+        row.setContentsMargins(6, 4, 6, 4)
+        row.setSpacing(8)
+
+        # Source badge
+        self._source = QLabel()
+        self._source.setFixedWidth(52)
+        self._source.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        row.addWidget(self._source)
+
+        # Title
+        self._title = QLabel()
+        self._title.setStyleSheet(
+            f"font-size: 12px; color: {TEXT}; background: transparent;"
+        )
+        row.addWidget(self._title, 1)
+
+        # Date
+        self._date = QLabel()
+        self._date.setStyleSheet(
+            f"font-size: 11px; color: {TEXT_MUTED}; background: transparent;"
+        )
+        row.addWidget(self._date)
+
+    def set_data(self, post: dict):
+        self._post = post
+        self._title.setText(post.get("title", ""))
+        date = post.get("date", "")
+        self._date.setText(_time_ago(date) if date else "")
+
+        source = post.get("source", "nexus")
+        if source == "steam":
+            self._source.setText("EU News")
+            self._source.setStyleSheet(
+                "font-size: 10px; font-weight: bold; padding: 1px 4px;"
+                "border-radius: 3px; background: #1b2838; color: #66c0f4;"
+            )
+        else:
+            self._source.setText("Nexus")
+            self._source.setStyleSheet(
+                f"font-size: 10px; font-weight: bold; padding: 1px 4px;"
+                f"border-radius: 3px; background: {ACCENT}20; color: {ACCENT};"
+            )
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self._post:
+            self.clicked.emit(self._post)
+        super().mousePressEvent(event)
+
+
+class _ArticleView(QWidget):
+    """Full-page article detail view with back button."""
+
+    back_clicked = pyqtSignal()
+
+    def __init__(self, config, parent=None):
+        super().__init__(parent)
+        self._config = config
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 8, 12, 8)
+
+        # Back button
+        back_btn = QPushButton("\u2190  Back to News")
+        back_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        back_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent;
+                border: none;
+                color: {TEXT_MUTED};
+                font-size: 12px;
+                padding: 4px 0;
+                text-align: left;
+            }}
+            QPushButton:hover {{
+                color: {ACCENT};
+            }}
+        """)
+        back_btn.setFixedWidth(140)
+        back_btn.clicked.connect(self.back_clicked.emit)
+        layout.addWidget(back_btn)
+
+        # Title
+        self._title = QLabel()
+        self._title.setWordWrap(True)
+        self._title.setStyleSheet(
+            f"font-size: 20px; font-weight: bold; color: {TEXT};"
+            "background: transparent; padding: 8px 0 4px 0;"
+        )
+        layout.addWidget(self._title)
+
+        # Meta row: source badge + author + date
+        self._meta = QLabel()
+        self._meta.setStyleSheet(
+            f"font-size: 12px; color: {TEXT_MUTED}; background: transparent;"
+            "padding: 0 0 8px 0;"
+        )
+        layout.addWidget(self._meta)
+
+        # Content browser
+        self._content = QTextBrowser()
+        self._content.setOpenExternalLinks(True)
+        self._content.setStyleSheet(f"""
+            QTextBrowser {{
+                background-color: {PRIMARY};
+                border: 1px solid {BORDER};
+                border-radius: 6px;
+                padding: 8px;
+            }}
+        """)
+        layout.addWidget(self._content, 1)
+
+        # External link button
+        self._ext_link_btn = QPushButton()
+        self._ext_link_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._ext_link_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent;
+                border: none;
+                color: {ACCENT};
+                font-size: 12px;
+                padding: 6px 0;
+                text-align: left;
+            }}
+            QPushButton:hover {{
+                text-decoration: underline;
+            }}
+        """)
+        self._ext_link_btn.hide()
+        self._ext_link_btn.clicked.connect(self._open_external)
+        layout.addWidget(self._ext_link_btn)
+
+        self._external_url = ""
+
+    def show_article(self, article: dict, list_post: dict):
+        """Populate the view with article data."""
+        self._title.setText(article.get("title", list_post.get("title", "")))
+
+        # Meta
+        source = article.get("source", list_post.get("source", "nexus"))
+        source_label = "EU News" if source == "steam" else "Nexus"
+        author = article.get("author_name") or article.get("global_name", "")
+        date = _format_date(
+            article.get("created_at", list_post.get("date", ""))
+        )
+        meta_parts = [source_label]
+        if author:
+            meta_parts.append(f"By {author}")
+        if date:
+            meta_parts.append(date)
+        self._meta.setText("  \u00b7  ".join(meta_parts))
+
+        # Content
+        content_html = article.get("content_html", "")
+        if content_html:
+            # Strip <img> tags (QTextBrowser can't fetch remote images)
+            content_html = re.sub(
+                r'<img[^>]*>',
+                '',
+                content_html,
+            )
+            html = f"<html><head><style>{_ARTICLE_CSS}</style></head>"
+            html += f"<body>{content_html}</body></html>"
+        else:
+            summary = _esc(article.get("summary", list_post.get("summary", "")))
+            html = f"<html><head><style>{_ARTICLE_CSS}</style></head>"
+            html += f"<body><p>{summary}</p></body></html>"
+        self._content.setHtml(html)
+        # Scroll to top
+        self._content.verticalScrollBar().setValue(0)
+
+        # External link
+        link = article.get("link", "")
+        url = list_post.get("url", "")
+        if link:
+            self._external_url = link
+            label = "View on Steam \u2192" if source == "steam" else "View original source \u2192"
+            self._ext_link_btn.setText(label)
+            self._ext_link_btn.show()
+        elif url and url.startswith("http"):
+            self._external_url = url
+            self._ext_link_btn.setText("View in browser \u2192")
+            self._ext_link_btn.show()
+        else:
+            self._ext_link_btn.hide()
+            self._external_url = ""
+
+    def show_summary_only(self, post: dict):
+        """Show a post that has no fetchable content (external link only)."""
+        self._title.setText(post.get("title", ""))
+
+        source = post.get("source", "nexus")
+        source_label = "EU News" if source == "steam" else "Nexus"
+        date = _format_date(post.get("date", ""))
+        meta_parts = [source_label]
+        if date:
+            meta_parts.append(date)
+        self._meta.setText("  \u00b7  ".join(meta_parts))
+
+        summary = _esc(post.get("summary", ""))
+        html = f"<html><head><style>{_ARTICLE_CSS}</style></head>"
+        html += f"<body><p>{summary}</p></body></html>"
+        self._content.setHtml(html)
+        self._content.verticalScrollBar().setValue(0)
+
+        url = post.get("url", "")
+        if url:
+            full_url = url
+            if url.startswith("/"):
+                full_url = (self._config.nexus_base_url if self._config else "") + url
+            self._external_url = full_url
+            label = "View on Steam \u2192" if source == "steam" else "View in browser \u2192"
+            self._ext_link_btn.setText(label)
+            self._ext_link_btn.show()
+        else:
+            self._ext_link_btn.hide()
+            self._external_url = ""
+
+    def show_loading(self):
+        """Show loading state while article is being fetched."""
+        self._title.setText("")
+        self._meta.setText("")
+        html = f"<html><head><style>{_ARTICLE_CSS}</style></head>"
+        html += f'<body><p style="color:{TEXT_MUTED}">Loading article...</p></body></html>'
+        self._content.setHtml(html)
+        self._ext_link_btn.hide()
+
+    def _open_external(self):
+        if self._external_url:
+            webbrowser.open(self._external_url)
+
+
+# ---------------------------------------------------------------------------
+# Main dashboard page
+# ---------------------------------------------------------------------------
+
+class DashboardPage(QWidget):
+    """Dashboard showing latest news, global events ticker, and trade chat ticker."""
+
+    def __init__(self, *, signals, db, nexus_client, data_client, config):
+        super().__init__()
+        self._signals = signals
+        self._db = db
+        self._nexus_client = nexus_client
+        self._data_client = data_client
+        self._config = config
+        self._live = False
+        self._global_lines = 0
+        self._trade_lines = 0
+        self._fetcher = None
+        self._article_fetcher = None
+        self._item_lookup: dict[str, str] = {}
+        self._item_loader = None
+        self._seen_ids: set[int] | None = None  # None = first load not done yet
+        self._pending_post: dict | None = None  # post being loaded
+
+        # Root layout with stacked widget for list/article views
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+
+        self._stack = QStackedWidget()
+        root.addWidget(self._stack)
+
+        # --- View 0: News list + tickers ---
+        list_view = QWidget()
+        layout = QVBoxLayout(list_view)
+
+        # Latest News (scrollable list)
+        news_group = QGroupBox("Latest News")
+        news_group_layout = QVBoxLayout(news_group)
+        news_group_layout.setContentsMargins(4, 12, 4, 4)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setStyleSheet("QScrollArea { border: none; }")
+
+        self._news_container = QWidget()
+        self._news_layout = QVBoxLayout(self._news_container)
+        self._news_layout.setContentsMargins(0, 0, 0, 0)
+        self._news_layout.setSpacing(0)
+        self._news_layout.addStretch()
+
+        scroll.setWidget(self._news_container)
+        news_group_layout.addWidget(scroll)
+
+        self._news_rows: list[_NewsRow] = []
+        self._posts_empty = QLabel("No posts available")
+        self._posts_empty.setObjectName("mutedText")
+        self._posts_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._news_layout.insertWidget(0, self._posts_empty)
+
+        layout.addWidget(news_group, 5)
+
+        # Tickers (globals + trade)
+        ticker_row = QWidget()
+        ticker_layout = QHBoxLayout(ticker_row)
+        ticker_layout.setContentsMargins(0, 0, 0, 0)
+        ticker_layout.setSpacing(4)
+
+        # Global ticker
+        global_group = QGroupBox("Globals")
+        global_layout = QVBoxLayout(global_group)
+        global_layout.setContentsMargins(2, 2, 2, 2)
+        self._global_log = QTextEdit()
+        self._global_log.setReadOnly(True)
+        global_layout.addWidget(self._global_log)
+        ticker_layout.addWidget(global_group, 1)
+
+        # Trade ticker
+        trade_group = QGroupBox("Trade")
+        trade_layout = QVBoxLayout(trade_group)
+        trade_layout.setContentsMargins(2, 2, 2, 2)
+        self._trade_log = QTextBrowser()
+        self._trade_log.setOpenLinks(False)
+        self._trade_log.anchorClicked.connect(self._on_trade_link)
+        trade_layout.addWidget(self._trade_log)
+        ticker_layout.addWidget(trade_group, 1)
+
+        layout.addWidget(ticker_row, 2)
+
+        self._stack.addWidget(list_view)  # index 0
+
+        # --- View 1: Article detail ---
+        self._article_view = _ArticleView(config)
+        self._article_view.back_clicked.connect(self._show_list_view)
+        self._stack.addWidget(self._article_view)  # index 1
+
+        # Connect signals
+        signals.catchup_complete.connect(self._on_catchup_complete)
+        signals.global_event.connect(self._on_global)
+        signals.trade_chat.connect(self._on_trade_chat)
+
+        # News refresh timer
+        self._refresh_timer = QTimer(self)
+        self._refresh_timer.timeout.connect(self._fetch_news)
+        self._refresh_timer.start(NEWS_REFRESH_INTERVAL_MS)
+
+        # Initial fetches
+        self._fetch_news()
+        self._load_item_lookup()
+
+    # --- View switching ---
+
+    def _show_list_view(self):
+        self._stack.setCurrentIndex(_VIEW_LIST)
+
+    def _show_article_view(self):
+        self._stack.setCurrentIndex(_VIEW_ARTICLE)
+
+    # --- Item lookup ---
+
+    def _load_item_lookup(self):
+        if self._item_loader and self._item_loader.isRunning():
+            return
+        self._item_loader = _ItemLookupLoader(self._data_client)
+        self._item_loader.finished.connect(self._on_item_lookup_loaded)
+        self._item_loader.start()
+
+    def _on_item_lookup_loaded(self, lookup: dict):
+        self._item_lookup = lookup
+
+    # --- News ---
+
+    def showEvent(self, event):
+        """Refresh news immediately when the tab becomes visible."""
+        super().showEvent(event)
+        self._fetch_news()
+
+    def _fetch_news(self):
+        if self._fetcher and self._fetcher.isRunning():
+            return
+        self._fetcher = _NewsFetcher(self._nexus_client)
+        self._fetcher.finished.connect(self._on_news_loaded)
+        self._fetcher.start()
+
+    def _on_news_loaded(self, posts: list):
+        # --- Notification for new posts ---
+        current_ids = {p.get("id") for p in posts if p.get("id") is not None}
+        if self._seen_ids is None:
+            # First load — seed the set, don't notify
+            self._seen_ids = current_ids
+        else:
+            new_ids = current_ids - self._seen_ids
+            self._seen_ids = current_ids
+            # Notify for genuinely new posts (most recent first in list)
+            for post in posts:
+                pid = post.get("id")
+                if pid in new_ids:
+                    self._signals.new_news_post.emit(
+                        post.get("title", "News"),
+                        post.get("summary", ""),
+                    )
+
+        # --- Update news rows ---
+
+        # Grow the row pool as needed
+        while len(self._news_rows) < len(posts):
+            row = _NewsRow()
+            row.clicked.connect(self._on_news_row_clicked)
+            idx = len(self._news_rows)
+            self._news_layout.insertWidget(idx, row)
+            self._news_rows.append(row)
+
+        for i, row in enumerate(self._news_rows):
+            if i < len(posts):
+                row.set_data(posts[i])
+                row.show()
+            else:
+                row.hide()
+
+        self._posts_empty.setVisible(len(posts) == 0)
+
+    # --- Article navigation ---
+
+    def _on_news_row_clicked(self, post: dict):
+        """User clicked a news row — fetch full article and show detail view."""
+        article_id = post.get("id")
+        has_content = post.get("has_content", False)
+
+        if article_id and has_content:
+            # Fetch full article from API
+            self._pending_post = post
+            self._article_view.show_loading()
+            self._show_article_view()
+            self._fetch_article(article_id)
+        elif article_id:
+            # No content — show summary in detail view
+            self._article_view.show_summary_only(post)
+            self._show_article_view()
+        else:
+            # Fallback: open URL in browser
+            url = post.get("url", "")
+            if url:
+                base = self._config.nexus_base_url
+                if url.startswith("/"):
+                    url = base + url
+                webbrowser.open(url)
+
+    def _fetch_article(self, article_id: int):
+        if self._article_fetcher and self._article_fetcher.isRunning():
+            self._article_fetcher.quit()
+            self._article_fetcher.wait(1000)
+        self._article_fetcher = _ArticleFetcher(self._nexus_client, article_id)
+        self._article_fetcher.finished.connect(self._on_article_loaded)
+        self._article_fetcher.start()
+
+    def _on_article_loaded(self, article: dict | None):
+        post = self._pending_post or {}
+        if article:
+            self._article_view.show_article(article, post)
+        else:
+            # Fetch failed — show summary fallback
+            self._article_view.show_summary_only(post)
+
+    # --- Ticker helpers ---
+
+    @staticmethod
+    def _append_line(text_edit: QTextEdit, text: str, line_count: int) -> int:
+        text_edit.append(text)
+        line_count += 1
+        if line_count > MAX_TICKER_LINES:
+            cursor = text_edit.textCursor()
+            cursor.movePosition(cursor.MoveOperation.Start)
+            cursor.movePosition(cursor.MoveOperation.Down, cursor.MoveMode.KeepAnchor, 1)
+            cursor.removeSelectedText()
+            line_count -= 1
+        return line_count
+
+    def _on_catchup_complete(self, _data):
+        self._live = True
+
+    def _on_global(self, data):
+        label, label_color = _GLOBAL_TYPE_LABELS.get(
+            data.global_type, ("?", TEXT_MUTED)
+        )
+        badge = ""
+        if data.is_ath:
+            badge = f'<b style="color:{ACCENT}">ATH</b>'
+        elif data.is_hof:
+            badge = f'<b style="color:{ACCENT}">HoF</b>'
+        _td = 'white-space:nowrap;padding:1px 4px'
+        fm = self._global_log.fontMetrics()
+        vw = self._global_log.viewport().width()
+        player = _esc(fm.elidedText(
+            data.player_name, Qt.TextElideMode.ElideRight, int(vw * 0.30) - 8,
+        ))
+        target = _esc(fm.elidedText(
+            data.target_name, Qt.TextElideMode.ElideRight, int(vw * 0.32) - 8,
+        ))
+        html = (
+            f'<table width="100%" cellpadding="0" cellspacing="0"'
+            f' style="margin:0;table-layout:fixed">'
+            f'<tr>'
+            f'<td width="8%" style="{_td};color:{label_color}">{label}</td>'
+            f'<td width="30%" style="{_td}">{player}</td>'
+            f'<td width="32%" style="{_td};color:{TEXT_MUTED}">{target}</td>'
+            f'<td width="22%" style="{_td}" align="right">'
+            f'{data.value:.2f} {_esc(data.value_unit)}</td>'
+            f'<td width="8%" style="{_td}" align="right">{badge}</td>'
+            f'</tr></table>'
+        )
+        self._global_lines = self._append_line(
+            self._global_log, html, self._global_lines
+        )
+
+    def _on_trade_chat(self, data):
+        if not self._live:
+            return
+        prefix = (
+            f'<span style="color:{ACCENT}">'
+            f'[{_esc(data.channel)}:{_esc(data.username)}]</span> '
+        )
+        body = _format_trade_message(
+            data.message, self._config.nexus_base_url, self._item_lookup
+        )
+        html = prefix + body
+        self._trade_lines = self._append_line(
+            self._trade_log, html, self._trade_lines
+        )
+
+    def _on_trade_link(self, url: QUrl):
+        """Handle clicks on waypoint / item links in the trade ticker."""
+        if url.scheme() == "wp":
+            # Copy the full waypoint text to clipboard
+            coords = url.toString(QUrl.ComponentFormattingOption.FullyDecoded)
+            coords = coords.removeprefix("wp:")
+            clipboard = QApplication.clipboard()
+            clipboard.setText(f"[{coords}]")
+            QToolTip.showText(
+                QCursor.pos(), "Copied!", self._trade_log, QRect(), 1500
+            )
+        else:
+            webbrowser.open(url.toString())
+
+    def cleanup(self):
+        """Stop timers and background threads."""
+        self._refresh_timer.stop()
+        if self._fetcher and self._fetcher.isRunning():
+            self._fetcher.quit()
+            self._fetcher.wait(2000)
+        if self._article_fetcher and self._article_fetcher.isRunning():
+            self._article_fetcher.quit()
+            self._article_fetcher.wait(2000)
+        if self._item_loader and self._item_loader.isRunning():
+            self._item_loader.quit()
+            self._item_loader.wait(2000)

@@ -1,0 +1,210 @@
+[
+  {
+    "name": "Newbie",
+    "threshold": 1
+  },
+  {
+    "name": "Inept",
+    "threshold": 10
+  },
+  {
+    "name": "Poor",
+    "threshold": 20
+  },
+  {
+    "name": "Weak",
+    "threshold": 40
+  },
+  {
+    "name": "Mediocre",
+    "threshold": 67
+  },
+  {
+    "name": "Unskilled",
+    "threshold": 110
+  },
+  {
+    "name": "Green",
+    "threshold": 160
+  },
+  {
+    "name": "Beginner",
+    "threshold": 260
+  },
+  {
+    "name": "Novice",
+    "threshold": 360
+  },
+  {
+    "name": "Amateur",
+    "threshold": 460
+  },
+  {
+    "name": "Apprentice",
+    "threshold": 600
+  },
+  {
+    "name": "Initiated",
+    "threshold": 800
+  },
+  {
+    "name": "Qualified",
+    "threshold": 1000
+  },
+  {
+    "name": "Trained",
+    "threshold": 1200
+  },
+  {
+    "name": "Able",
+    "threshold": 1400
+  },
+  {
+    "name": "Competent",
+    "threshold": 1600
+  },
+  {
+    "name": "Adept",
+    "threshold": 1800
+  },
+  {
+    "name": "Capable",
+    "threshold": 2000
+  },
+  {
+    "name": "Skilled",
+    "threshold": 2200
+  },
+  {
+    "name": "Experienced",
+    "threshold": 2400
+  },
+  {
+    "name": "Proficient",
+    "threshold": 2600
+  },
+  {
+    "name": "Good",
+    "threshold": 2800
+  },
+  {
+    "name": "Great",
+    "threshold": 3000
+  },
+  {
+    "name": "Inspiring",
+    "threshold": 3200
+  },
+  {
+    "name": "Impressive",
+    "threshold": 3400
+  },
+  {
+    "name": "Veteran",
+    "threshold": 3600
+  },
+  {
+    "name": "Professional",
+    "threshold": 3800
+  },
+  {
+    "name": "Specialist",
+    "threshold": 4000
+  },
+  {
+    "name": "Advanced",
+    "threshold": 4200
+  },
+  {
+    "name": "Remarkable",
+    "threshold": 4500
+  },
+  {
+    "name": "Expert",
+    "threshold": 4800
+  },
+  {
+    "name": "Exceptional",
+    "threshold": 5100
+  },
+  {
+    "name": "Amazing",
+    "threshold": 5400
+  },
+  {
+    "name": "Incredible",
+    "threshold": 5700
+  },
+  {
+    "name": "Marvelous",
+    "threshold": 6000
+  },
+  {
+    "name": "Astonishing",
+    "threshold": 6300
+  },
+  {
+    "name": "Outstanding",
+    "threshold": 6600
+  },
+  {
+    "name": "Champion",
+    "threshold": 6900
+  },
+  {
+    "name": "Elite",
+    "threshold": 7200
+  },
+  {
+    "name": "Superior",
+    "threshold": 7500
+  },
+  {
+    "name": "Supreme",
+    "threshold": 7800
+  },
+  {
+    "name": "Master",
+    "threshold": 8100
+  },
+  {
+    "name": "Grand Master",
+    "threshold": 8400
+  },
+  {
+    "name": "Arch Master",
+    "threshold": 8700
+  },
+  {
+    "name": "Supreme Master",
+    "threshold": 9100
+  },
+  {
+    "name": "Ultimate Master",
+    "threshold": 9500
+  },
+  {
+    "name": "Great Master",
+    "threshold": 10000
+  },
+  {
+    "name": "Great Grand Master",
+    "threshold": 12000
+  },
+  {
+    "name": "Great Arch Master",
+    "threshold": 14000
+  },
+  {
+    "name": "Great Supreme Master",
+    "threshold": 16000
+  },
+  {
+    "name": "Great Ultimate Master",
+    "threshold": 18000
+  },
+  {
+    "name": "Entropia Master",
+    "threshold": 20000
+  }
+]

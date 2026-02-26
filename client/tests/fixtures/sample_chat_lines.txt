@@ -1,0 +1,41 @@
+2026-02-07 11:19:38 [System] [] You have gained 0.6347 experience in your Manufacture Mechanical Equipment skill
+2026-02-07 11:19:38 [System] [] You have gained 0.0639 experience in your Engineering skill
+2026-02-08 15:39:36 [System] [] You have gained 0.0248 Bravado
+2026-02-08 15:43:13 [System] [] You have gained 0.0384 Dexterity
+2026-02-08 15:48:05 [System] [] You have gained 0.0996 Quickness
+2026-02-08 15:38:46 [System] [] You inflicted 200.5 points of damage
+2026-02-08 15:40:33 [System] [] Critical hit - Additional damage! You inflicted 406.3 points of damage
+2026-02-08 15:42:32 [System] [] You took 17.3 points of damage
+2026-02-08 15:43:37 [System] [] You healed yourself 39.5 points
+2026-02-08 15:38:57 [System] [] Damage deflected!
+2026-02-08 15:38:46 [System] [] You Evaded the attack
+2026-02-08 15:39:42 [System] [] You Dodged the attack
+2026-02-08 15:39:49 [System] [] You Jammed the attack
+2026-02-08 15:38:53 [System] [] The attack missed you
+2026-02-08 15:39:02 [System] [] The target Jammed your attack
+2026-02-12 06:36:05 [System] [] The target Dodged your attack
+2026-02-08 15:40:10 [System] [] The target Evaded your attack
+2026-02-07 11:19:50 [System] [] You received Metal Residue x (3) Value: 0.0300 PED
+2026-02-07 11:19:50 [System] [] You received Shrapnel x (52) Value: 0.0052 PED
+2026-02-07 11:20:39 [System] [] You received Explosive Projectiles x (1166) Value: 0.1166 PED
+2026-02-07 11:20:39 [System] [] You received Metal Residue x (8) Value: 0.0800 PED
+2026-02-07 11:20:39 [System] [] You received Shrapnel x (29) Value: 0.0029 PED
+2026-02-08 15:38:56 [System] [] You received Shrapnel x (4762) Value: 0.4762 PED
+2026-02-08 15:38:56 [System] [] You received Shrapnel x (5690) Value: 0.5690 PED
+2026-02-08 15:38:56 [System] [] You received Molisk Tooth x (4) Value: 0.0400 PED
+2026-02-08 15:44:57 [System] [] Your enhancer T1 Weapon Damage Enhancer on your Mayhem Electric Attack Nanochip 15, Perfected broke. You have 60 enhancers remaining on the item. You received 0.8000 PED Shrapnel.
+2026-02-07 11:19:15 [Globals] [] Anthony Malcom Denton killed a creature (Leviathan Stalker) with a value of 85 PED!
+2026-02-07 11:22:43 [Globals] [] Balto Baltazar Zar killed a creature (Araneatrox Young) with a value of 59 PED at Takuta Plateau!
+2026-02-07 11:20:26 [Globals] [] Team &quot;(Shared Loot)&quot; killed a creature (Warrior C1-TF) with a value of 102 PED!
+2026-02-07 11:19:51 [Globals] [] joseph abouzouz gharby found a deposit (Caldorite Stone) with a value of 176 PED at F.O.M.A. - FORTUNA!
+2026-02-07 11:27:35 [Globals] [] Sleezy BLEEZY GREEEEEEZLY constructed an item (Explosive Projectiles) worth 74 PED!
+2026-02-07 11:31:40 [Globals] [] Dainius dainiusha666 Danik constructed an item (Shrapnel) worth 116 PED! A record has been added to the Hall of Fame!
+2026-02-07 11:21:27 [Globals] [] Romi impi Tinkels killed a creature (Enslaved Daudaormur Stalker) with a value of 720 PED! A record has been added to the Hall of Fame!
+2026-02-07 11:25:06 [Globals] [] Eleonora Elayne WithoutSpoon has found a rare item (Modified Hyperion Armor Catalyst) with a value of 40 PEC! A record has been added to the Hall of Fame!
+2026-02-07 11:19:24 [#arktrade] [Nark Oo Allon] Level 2,3,5,7,8,9,10,12,13 terra 6 8 9 10 D-class amps / L30 finders, depth enhancers 1-10  [Arkadia, 17268, 23076, 542, Ivi Hunt/Mine shop] !
+2026-02-07 11:19:32 [#calytrade] [Nark Oo Allon] Level 2 3 5 12 13 Terra 6 8 9 10 and D-class amps / L30 finders at PA mall floor 2/shop 3 [Calypso, 61049, 74026, 117, Waypoint]!!
+2026-02-07 11:23:23 [#trade] [Titas BigT Masiulionis] WTS [Blazar Fragment] 4.2 ped/k
+2026-02-07 11:27:15 [#trade] [Bendorian Praeterea Ius] SELLING: [Boar Harness, Adjusted (F)] tier 2.99 (20% increased dodge chance + 20% decreased critical damage) price: tt +7.5k
+2026-02-07 11:19:35 [System] [] Mindaugas minchas Kvasiakas has logged in
+2026-02-07 11:26:31 [System] [] ID Cristian Cristian has logged out
+2026-02-07 12:42:17 [Rookie] [Sec2 S2R Raider] money is fake

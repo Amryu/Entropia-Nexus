@@ -1,0 +1,121 @@
+"""Qt signals bridge — routes EventBus events to the Qt main thread."""
+
+from PyQt6.QtCore import QObject, pyqtSignal
+
+from ..core.constants import (
+    EVENT_AUTH_STATE_CHANGED,
+    EVENT_CATCHUP_COMPLETE,
+    EVENT_COMBAT,
+    EVENT_CONFIG_CHANGED,
+    EVENT_ENHANCER_BREAK,
+    EVENT_TIER_INCREASE,
+    EVENT_GLOBAL,
+    EVENT_HUNT_ENCOUNTER_ENDED,
+    EVENT_HUNT_ENCOUNTER_STARTED,
+    EVENT_HUNT_SESSION_STARTED,
+    EVENT_HUNT_SESSION_STOPPED,
+    EVENT_HUNT_SESSION_UPDATED,
+    EVENT_HUNT_STARTED,
+    EVENT_HUNT_ENDED,
+    EVENT_HUNT_SPLIT,
+    EVENT_SESSION_AUTO_TIMEOUT,
+    EVENT_LOOT_GROUP,
+    EVENT_MOB_TARGET_CHANGED,
+    EVENT_ACTIVE_TOOL_CHANGED,
+    EVENT_OCR_COMPLETE,
+    EVENT_OCR_PROGRESS,
+    EVENT_SKILL_GAIN,
+    EVENT_SKILLS_UPLOADED,
+    EVENT_SKILLS_UPLOAD_FAILED,
+    EVENT_TRADE_CHAT,
+    EVENT_HOTKEY_TRIGGERED,
+)
+
+
+class AppSignals(QObject):
+    """Qt signals that bridge EventBus events to the main thread.
+
+    Worker threads publish events via EventBus. This object re-emits them as
+    Qt signals, which Qt marshals to the main thread automatically when
+    connected to slots on widgets.
+    """
+
+    # Auth
+    auth_state_changed = pyqtSignal(object)
+
+    # Chat parser
+    skill_gain = pyqtSignal(object)
+    combat_event = pyqtSignal(object)
+    loot_group = pyqtSignal(object)
+    enhancer_break = pyqtSignal(object)
+    tier_increase = pyqtSignal(object)
+    global_event = pyqtSignal(object)
+    trade_chat = pyqtSignal(object)
+
+    # OCR
+    ocr_progress = pyqtSignal(object)
+    ocr_complete = pyqtSignal(object)
+
+    # Skills upload
+    skills_uploaded = pyqtSignal(object)
+    skills_upload_failed = pyqtSignal(object)
+
+    # Hunt
+    hunt_session_started = pyqtSignal(object)
+    hunt_session_stopped = pyqtSignal(object)
+    hunt_encounter_started = pyqtSignal(object)
+    hunt_encounter_ended = pyqtSignal(object)
+    hunt_session_updated = pyqtSignal(object)
+    hunt_started = pyqtSignal(object)
+    hunt_ended = pyqtSignal(object)
+    hunt_split = pyqtSignal(object)
+    session_auto_timeout = pyqtSignal(object)
+    mob_target_changed = pyqtSignal(object)
+    active_tool_changed = pyqtSignal(object)
+
+    # Config
+    config_changed = pyqtSignal(object)
+
+    # Hotkeys
+    hotkey_triggered = pyqtSignal(object)
+
+    # Chat watcher lifecycle
+    catchup_complete = pyqtSignal(object)
+
+    # News
+    new_news_post = pyqtSignal(str, str)  # (title, summary)
+
+
+def wire_signals(event_bus, signals: AppSignals) -> None:
+    """Subscribe EventBus events to Qt signal emissions."""
+    _WIRING = {
+        EVENT_AUTH_STATE_CHANGED: signals.auth_state_changed,
+        EVENT_SKILL_GAIN: signals.skill_gain,
+        EVENT_COMBAT: signals.combat_event,
+        EVENT_LOOT_GROUP: signals.loot_group,
+        EVENT_ENHANCER_BREAK: signals.enhancer_break,
+        EVENT_TIER_INCREASE: signals.tier_increase,
+        EVENT_GLOBAL: signals.global_event,
+        EVENT_TRADE_CHAT: signals.trade_chat,
+        EVENT_OCR_PROGRESS: signals.ocr_progress,
+        EVENT_OCR_COMPLETE: signals.ocr_complete,
+        EVENT_SKILLS_UPLOADED: signals.skills_uploaded,
+        EVENT_SKILLS_UPLOAD_FAILED: signals.skills_upload_failed,
+        EVENT_HUNT_SESSION_STARTED: signals.hunt_session_started,
+        EVENT_HUNT_SESSION_STOPPED: signals.hunt_session_stopped,
+        EVENT_HUNT_ENCOUNTER_STARTED: signals.hunt_encounter_started,
+        EVENT_HUNT_ENCOUNTER_ENDED: signals.hunt_encounter_ended,
+        EVENT_HUNT_SESSION_UPDATED: signals.hunt_session_updated,
+        EVENT_HUNT_STARTED: signals.hunt_started,
+        EVENT_HUNT_ENDED: signals.hunt_ended,
+        EVENT_HUNT_SPLIT: signals.hunt_split,
+        EVENT_SESSION_AUTO_TIMEOUT: signals.session_auto_timeout,
+        EVENT_MOB_TARGET_CHANGED: signals.mob_target_changed,
+        EVENT_ACTIVE_TOOL_CHANGED: signals.active_tool_changed,
+        EVENT_CONFIG_CHANGED: signals.config_changed,
+        EVENT_HOTKEY_TRIGGERED: signals.hotkey_triggered,
+        EVENT_CATCHUP_COMPLETE: signals.catchup_complete,
+    }
+
+    for event_name, signal in _WIRING.items():
+        event_bus.subscribe(event_name, lambda data, sig=signal: sig.emit(data))

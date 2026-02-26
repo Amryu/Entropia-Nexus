@@ -1,176 +1,1046 @@
 [
-  {"id": 1, "name": "Agility", "category": "Attributes", "hidden": false},
-  {"id": 2, "name": "Health", "category": "Attributes", "hidden": false},
-  {"id": 3, "name": "Intelligence", "category": "Attributes", "hidden": false},
-  {"id": 4, "name": "Psyche", "category": "Attributes", "hidden": false},
-  {"id": 5, "name": "Stamina", "category": "Attributes", "hidden": false},
-  {"id": 6, "name": "Strength", "category": "Attributes", "hidden": false},
-  {"id": 7, "name": "Beauty Sense", "category": "Beauty", "hidden": true},
-  {"id": 8, "name": "Body Sculpting", "category": "Beauty", "hidden": false},
-  {"id": 9, "name": "Face Sculpting", "category": "Beauty", "hidden": false},
-  {"id": 10, "name": "Hair Stylist", "category": "Beauty", "hidden": false},
-  {"id": 11, "name": "Plastic Surgery", "category": "Beauty", "hidden": false},
-  {"id": 12, "name": "Quality Sense", "category": "Beauty", "hidden": true},
-  {"id": 13, "name": "Aim", "category": "Combat", "hidden": false},
-  {"id": 14, "name": "Clubs", "category": "Combat", "hidden": false},
-  {"id": 15, "name": "Combat Reflexes", "category": "Combat", "hidden": false},
-  {"id": 16, "name": "Combat Sense", "category": "Combat", "hidden": true},
-  {"id": 17, "name": "Commando", "category": "Combat", "hidden": true},
-  {"id": 173, "name": "Fracturing", "category": "Combat", "hidden": true},
-  {"id": 18, "name": "Handgun", "category": "Combat", "hidden": false},
-  {"id": 19, "name": "Heavy Melee Weapons", "category": "Combat", "hidden": false},
-  {"id": 20, "name": "Heavy Weapons", "category": "Combat", "hidden": false},
-  {"id": 21, "name": "Inflict Melee Damage", "category": "Combat", "hidden": false},
-  {"id": 22, "name": "Inflict Ranged Damage", "category": "Combat", "hidden": false},
-  {"id": 171, "name": "Integrity Analysis", "category": "Combat", "hidden": true},
-  {"id": 23, "name": "Kill Strike", "category": "Combat", "hidden": true},
-  {"id": 24, "name": "Light Melee Weapons", "category": "Combat", "hidden": false},
-  {"id": 25, "name": "Longblades", "category": "Combat", "hidden": false},
-  {"id": 26, "name": "Marksmanship", "category": "Combat", "hidden": true},
-  {"id": 27, "name": "Martial Arts", "category": "Combat", "hidden": true},
-  {"id": 28, "name": "Melee Combat", "category": "Combat", "hidden": false},
-  {"id": 29, "name": "Melee Damage Assessment", "category": "Combat", "hidden": true},
-  {"id": 169, "name": "Mining Laser Operator", "category": "Combat", "hidden": false},
-  {"id": 30, "name": "Power Fist", "category": "Combat", "hidden": false},
-  {"id": 31, "name": "Ranged Damage Assessment", "category": "Combat", "hidden": true},
-  {"id": 32, "name": "Rifle", "category": "Combat", "hidden": false},
-  {"id": 174, "name": "Sampling", "category": "Combat", "hidden": true},
-  {"id": 33, "name": "Shortblades", "category": "Combat", "hidden": false},
-  {"id": 34, "name": "Support Weapon Systems", "category": "Combat", "hidden": false},
-  {"id": 172, "name": "Thermal Drilling", "category": "Combat", "hidden": true},
-  {"id": 35, "name": "Weapons Handling", "category": "Combat", "hidden": false},
-  {"id": 36, "name": "Whip", "category": "Combat", "hidden": false},
-  {"id": 37, "name": "Wounding", "category": "Combat", "hidden": true},
-  {"id": 38, "name": "Armor Technology", "category": "Construction", "hidden": false},
-  {"id": 39, "name": "Attachments Technology", "category": "Construction", "hidden": false},
-  {"id": 40, "name": "BLP Weaponry Technology", "category": "Construction", "hidden": false},
-  {"id": 41, "name": "Blueprint Comprehension", "category": "Construction", "hidden": true},
-  {"id": 42, "name": "Carpentry", "category": "Construction", "hidden": false},
-  {"id": 43, "name": "Enhancer Technology", "category": "Construction", "hidden": true},
-  {"id": 44, "name": "Equipment Methodology", "category": "Construction", "hidden": true},
-  {"id": 45, "name": "Explosive Projectile Weaponry Technology", "category": "Construction", "hidden": false},
-  {"id": 46, "name": "Gauss Weaponry Technology", "category": "Construction", "hidden": false},
-  {"id": 47, "name": "Industrialist", "category": "Construction", "hidden": true},
-  {"id": 48, "name": "Laser Weaponry Technology", "category": "Construction", "hidden": false},
-  {"id": 49, "name": "Machinery", "category": "Construction", "hidden": false},
-  {"id": 50, "name": "Manufacture Armor", "category": "Construction", "hidden": false},
-  {"id": 51, "name": "Manufacture Attachments", "category": "Construction", "hidden": false},
-  {"id": 52, "name": "Manufacture Electronic Equipment", "category": "Construction", "hidden": false},
-  {"id": 53, "name": "Manufacture Enhancers", "category": "Construction", "hidden": false},
-  {"id": 54, "name": "Manufacture Mechanical Equipment", "category": "Construction", "hidden": false},
-  {"id": 55, "name": "Manufacture Metal Equipment", "category": "Construction", "hidden": false},
-  {"id": 56, "name": "Manufacture Methodology", "category": "Construction", "hidden": true},
-  {"id": 57, "name": "Manufacture Tools", "category": "Construction", "hidden": false},
-  {"id": 58, "name": "Manufacture Vehicle", "category": "Construction", "hidden": false},
-  {"id": 59, "name": "Manufacture Weapons", "category": "Construction", "hidden": false},
-  {"id": 60, "name": "Material Extraction Methodology", "category": "Construction", "hidden": true},
-  {"id": 170, "name": "Mining Laser Technology", "category": "Construction", "hidden": false},
-  {"id": 61, "name": "Particle Beamer Technology", "category": "Construction", "hidden": false},
-  {"id": 62, "name": "Plasma Weaponry Technology", "category": "Construction", "hidden": false},
-  {"id": 63, "name": "Spacecraft Engineering", "category": "Construction", "hidden": false},
-  {"id": 64, "name": "Spacecraft Weaponry", "category": "Construction", "hidden": false},
-  {"id": 65, "name": "Texture Engineering", "category": "Construction", "hidden": false},
-  {"id": 66, "name": "Tier Upgrading", "category": "Construction", "hidden": false},
-  {"id": 67, "name": "Tools Technology", "category": "Construction", "hidden": false},
-  {"id": 68, "name": "Vehicle Repairing", "category": "Construction", "hidden": false},
-  {"id": 69, "name": "Vehicle Technology", "category": "Construction", "hidden": false},
-  {"id": 70, "name": "Weapon Technology", "category": "Construction", "hidden": false},
-  {"id": 71, "name": "Wood Carving", "category": "Construction", "hidden": false},
-  {"id": 72, "name": "Wood Processing", "category": "Construction", "hidden": false},
-  {"id": 73, "name": "Avoidance", "category": "Defense", "hidden": true},
-  {"id": 74, "name": "Dispense Decoy", "category": "Defense", "hidden": false},
-  {"id": 75, "name": "Dodge", "category": "Defense", "hidden": false},
-  {"id": 76, "name": "Evade", "category": "Defense", "hidden": false},
-  {"id": 77, "name": "Color Matching", "category": "Design", "hidden": false},
-  {"id": 78, "name": "Coloring", "category": "Design", "hidden": false},
-  {"id": 79, "name": "Coloring Methodology", "category": "Design", "hidden": true},
-  {"id": 80, "name": "Fashion Design", "category": "Design", "hidden": true},
-  {"id": 81, "name": "Glamor", "category": "Design", "hidden": true},
-  {"id": 82, "name": "Make Textile", "category": "Design", "hidden": false},
-  {"id": 83, "name": "Material Comprehension", "category": "Design", "hidden": true},
-  {"id": 84, "name": "Surface Composition", "category": "Design", "hidden": true},
-  {"id": 85, "name": "Tailoring", "category": "Design", "hidden": false},
-  {"id": 86, "name": "Texture Pattern Matching", "category": "Design", "hidden": false},
-  {"id": 87, "name": "Alertness", "category": "General", "hidden": false},
-  {"id": 88, "name": "Athletics", "category": "General", "hidden": false},
-  {"id": 89, "name": "Bravado", "category": "General", "hidden": false},
-  {"id": 90, "name": "Coolness", "category": "General", "hidden": true},
-  {"id": 91, "name": "Courage", "category": "General", "hidden": false},
-  {"id": 92, "name": "Dexterity", "category": "General", "hidden": false},
-  {"id": 93, "name": "Intuition", "category": "General", "hidden": true},
-  {"id": 94, "name": "Perception", "category": "General", "hidden": false},
-  {"id": 95, "name": "Quickness", "category": "General", "hidden": true},
-  {"id": 96, "name": "Serendipity", "category": "General", "hidden": true},
-  {"id": 167, "name": "Beneficiating", "category": "Information", "hidden": true},
-  {"id": 97, "name": "Butchering", "category": "Information", "hidden": true},
-  {"id": 168, "name": "Fragmentating", "category": "Information", "hidden": false},
-  {"id": 98, "name": "Mentor", "category": "Information", "hidden": false},
-  {"id": 99, "name": "Probing", "category": "Information", "hidden": false},
-  {"id": 100, "name": "Reaping", "category": "Information", "hidden": true},
-  {"id": 101, "name": "Reclaiming", "category": "Information", "hidden": false},
-  {"id": 102, "name": "Salvaging", "category": "Information", "hidden": true},
-  {"id": 103, "name": "Scan Animal", "category": "Information", "hidden": false},
-  {"id": 104, "name": "Scan Human", "category": "Information", "hidden": false},
-  {"id": 105, "name": "Scan Mutant", "category": "Information", "hidden": false},
-  {"id": 106, "name": "Scan Robot", "category": "Information", "hidden": false},
-  {"id": 107, "name": "Scan Technology", "category": "Information", "hidden": false},
-  {"id": 108, "name": "Scavenging", "category": "Information", "hidden": true},
-  {"id": 109, "name": "Scourging", "category": "Information", "hidden": false},
-  {"id": 110, "name": "Skinning", "category": "Information", "hidden": false},
-  {"id": 111, "name": "Anatomy", "category": "Medical", "hidden": false},
-  {"id": 112, "name": "Diagnosis", "category": "Medical", "hidden": false},
-  {"id": 113, "name": "Doctor", "category": "Medical", "hidden": true},
-  {"id": 114, "name": "First Aid", "category": "Medical", "hidden": false},
-  {"id": 115, "name": "Medical Therapy", "category": "Medical", "hidden": true},
-  {"id": 116, "name": "Medicine", "category": "Medical", "hidden": true},
-  {"id": 117, "name": "Treatment", "category": "Medical", "hidden": true},
-  {"id": 118, "name": "Bioregenesis", "category": "Mindforce", "hidden": false},
-  {"id": 119, "name": "Concentration", "category": "Mindforce", "hidden": false},
-  {"id": 120, "name": "Cryogenics", "category": "Mindforce", "hidden": false},
-  {"id": 121, "name": "Electrokinesis", "category": "Mindforce", "hidden": false},
-  {"id": 122, "name": "Ethereal Soul Language", "category": "Mindforce", "hidden": true},
-  {"id": 123, "name": "Force Merge", "category": "Mindforce", "hidden": true},
-  {"id": 124, "name": "Jamming", "category": "Mindforce", "hidden": false},
-  {"id": 125, "name": "Mindforce Harmony", "category": "Mindforce", "hidden": true},
-  {"id": 126, "name": "Power Catalyst", "category": "Mindforce", "hidden": true},
-  {"id": 127, "name": "Pyrokinesis", "category": "Mindforce", "hidden": false},
-  {"id": 128, "name": "Sweat Gatherer", "category": "Mindforce", "hidden": false},
-  {"id": 129, "name": "Telepathy", "category": "Mindforce", "hidden": false},
-  {"id": 130, "name": "Translocation", "category": "Mindforce", "hidden": false},
-  {"id": 131, "name": "Archaeological Lore", "category": "Mining", "hidden": true},
-  {"id": 132, "name": "Artefact Preservation", "category": "Mining", "hidden": false},
-  {"id": 133, "name": "Drilling", "category": "Mining", "hidden": false},
-  {"id": 134, "name": "Drilling Expertise", "category": "Mining", "hidden": true},
-  {"id": 135, "name": "Extraction", "category": "Mining", "hidden": true},
-  {"id": 136, "name": "Geology", "category": "Mining", "hidden": false},
-  {"id": 137, "name": "Ground Assessment", "category": "Mining", "hidden": true},
-  {"id": 138, "name": "Metallurgy", "category": "Mining", "hidden": false},
-  {"id": 139, "name": "Miner", "category": "Mining", "hidden": true},
-  {"id": 140, "name": "Mineral Sense", "category": "Mining", "hidden": true},
-  {"id": 141, "name": "Mining", "category": "Mining", "hidden": false},
-  {"id": 142, "name": "Precision Artefact Extraction", "category": "Mining", "hidden": false},
-  {"id": 143, "name": "Prospecting", "category": "Mining", "hidden": false},
-  {"id": 144, "name": "Resource Gathering", "category": "Mining", "hidden": false},
-  {"id": 145, "name": "Surveying", "category": "Mining", "hidden": false},
-  {"id": 146, "name": "Treasure Sense", "category": "Mining", "hidden": false},
-  {"id": 147, "name": "Analysis", "category": "Science", "hidden": false},
-  {"id": 148, "name": "Animal Lore", "category": "Science", "hidden": false},
-  {"id": 149, "name": "Animal Taming", "category": "Science", "hidden": true},
-  {"id": 150, "name": "Biology", "category": "Science", "hidden": false},
-  {"id": 151, "name": "Botany", "category": "Science", "hidden": false},
-  {"id": 175, "name": "Chemistry", "category": "Science", "hidden": false},
-  {"id": 152, "name": "Computer", "category": "Science", "hidden": false},
-  {"id": 153, "name": "Deep Space Knowledge", "category": "Science", "hidden": true},
-  {"id": 154, "name": "Electronics", "category": "Science", "hidden": false},
-  {"id": 155, "name": "Engineering", "category": "Science", "hidden": false},
-  {"id": 156, "name": "Genetics", "category": "Science", "hidden": false},
-  {"id": 157, "name": "Mechanics", "category": "Science", "hidden": false},
-  {"id": 158, "name": "Robotology", "category": "Science", "hidden": true},
-  {"id": 159, "name": "Scientist", "category": "Science", "hidden": true},
-  {"id": 160, "name": "Spacecraft Pilot", "category": "Science", "hidden": false},
-  {"id": 161, "name": "Spacecraft Systems", "category": "Science", "hidden": true},
-  {"id": 162, "name": "Xenobiology", "category": "Science", "hidden": true},
-  {"id": 163, "name": "Zoology", "category": "Science", "hidden": false},
-  {"id": 164, "name": "Promoter Rating", "category": "Social", "hidden": false},
-  {"id": 165, "name": "Reputation", "category": "Social", "hidden": false}
+  {
+    "id": 175,
+    "name": "Chemistry",
+    "category": "Construction",
+    "hidden": false
+  },
+  {
+    "id": 7,
+    "name": "Beauty Sense",
+    "category": "Beauty",
+    "hidden": true
+  },
+  {
+    "id": 8,
+    "name": "Body Sculpting",
+    "category": "Beauty",
+    "hidden": false
+  },
+  {
+    "id": 9,
+    "name": "Face Sculpting",
+    "category": "Beauty",
+    "hidden": false
+  },
+  {
+    "id": 10,
+    "name": "Hair Stylist",
+    "category": "Beauty",
+    "hidden": false
+  },
+  {
+    "id": 11,
+    "name": "Plastic Surgery",
+    "category": "Beauty",
+    "hidden": false
+  },
+  {
+    "id": 12,
+    "name": "Quality Sense",
+    "category": "Beauty",
+    "hidden": true
+  },
+  {
+    "id": 13,
+    "name": "Aim",
+    "category": "Combat",
+    "hidden": false
+  },
+  {
+    "id": 14,
+    "name": "Clubs",
+    "category": "Combat",
+    "hidden": false
+  },
+  {
+    "id": 15,
+    "name": "Combat Reflexes",
+    "category": "Combat",
+    "hidden": false
+  },
+  {
+    "id": 16,
+    "name": "Combat Sense",
+    "category": "Combat",
+    "hidden": true
+  },
+  {
+    "id": 17,
+    "name": "Commando",
+    "category": "Combat",
+    "hidden": true
+  },
+  {
+    "id": 18,
+    "name": "Handgun",
+    "category": "Combat",
+    "hidden": false
+  },
+  {
+    "id": 19,
+    "name": "Heavy Melee Weapons",
+    "category": "Combat",
+    "hidden": false
+  },
+  {
+    "id": 20,
+    "name": "Heavy Weapons",
+    "category": "Combat",
+    "hidden": false
+  },
+  {
+    "id": 21,
+    "name": "Inflict Melee Damage",
+    "category": "Combat",
+    "hidden": false
+  },
+  {
+    "id": 22,
+    "name": "Inflict Ranged Damage",
+    "category": "Combat",
+    "hidden": false
+  },
+  {
+    "id": 23,
+    "name": "Kill Strike",
+    "category": "Combat",
+    "hidden": true
+  },
+  {
+    "id": 24,
+    "name": "Light Melee Weapons",
+    "category": "Combat",
+    "hidden": false
+  },
+  {
+    "id": 25,
+    "name": "Longblades",
+    "category": "Combat",
+    "hidden": false
+  },
+  {
+    "id": 26,
+    "name": "Marksmanship",
+    "category": "Combat",
+    "hidden": true
+  },
+  {
+    "id": 27,
+    "name": "Martial Arts",
+    "category": "Combat",
+    "hidden": true
+  },
+  {
+    "id": 28,
+    "name": "Melee Combat",
+    "category": "Combat",
+    "hidden": false
+  },
+  {
+    "id": 29,
+    "name": "Melee Damage Assessment",
+    "category": "Combat",
+    "hidden": true
+  },
+  {
+    "id": 30,
+    "name": "Power Fist",
+    "category": "Combat",
+    "hidden": false
+  },
+  {
+    "id": 31,
+    "name": "Ranged Damage Assessment",
+    "category": "Combat",
+    "hidden": true
+  },
+  {
+    "id": 32,
+    "name": "Rifle",
+    "category": "Combat",
+    "hidden": false
+  },
+  {
+    "id": 33,
+    "name": "Shortblades",
+    "category": "Combat",
+    "hidden": false
+  },
+  {
+    "id": 34,
+    "name": "Support Weapon Systems",
+    "category": "Combat",
+    "hidden": false
+  },
+  {
+    "id": 35,
+    "name": "Weapons Handling",
+    "category": "Combat",
+    "hidden": false
+  },
+  {
+    "id": 36,
+    "name": "Whip",
+    "category": "Combat",
+    "hidden": false
+  },
+  {
+    "id": 37,
+    "name": "Wounding",
+    "category": "Combat",
+    "hidden": true
+  },
+  {
+    "id": 38,
+    "name": "Armor Technology",
+    "category": "Construction",
+    "hidden": false
+  },
+  {
+    "id": 39,
+    "name": "Attachments Technology",
+    "category": "Construction",
+    "hidden": false
+  },
+  {
+    "id": 40,
+    "name": "BLP Weaponry Technology",
+    "category": "Construction",
+    "hidden": false
+  },
+  {
+    "id": 41,
+    "name": "Blueprint Comprehension",
+    "category": "Construction",
+    "hidden": true
+  },
+  {
+    "id": 42,
+    "name": "Carpentry",
+    "category": "Construction",
+    "hidden": false
+  },
+  {
+    "id": 43,
+    "name": "Enhancer Technology",
+    "category": "Construction",
+    "hidden": true
+  },
+  {
+    "id": 44,
+    "name": "Equipment Methodology",
+    "category": "Construction",
+    "hidden": true
+  },
+  {
+    "id": 45,
+    "name": "Explosive Projectile Weaponry Technology",
+    "category": "Construction",
+    "hidden": false
+  },
+  {
+    "id": 46,
+    "name": "Gauss Weaponry Technology",
+    "category": "Construction",
+    "hidden": false
+  },
+  {
+    "id": 47,
+    "name": "Industrialist",
+    "category": "Construction",
+    "hidden": true
+  },
+  {
+    "id": 48,
+    "name": "Laser Weaponry Technology",
+    "category": "Construction",
+    "hidden": false
+  },
+  {
+    "id": 49,
+    "name": "Machinery",
+    "category": "Construction",
+    "hidden": false
+  },
+  {
+    "id": 50,
+    "name": "Manufacture Armor",
+    "category": "Construction",
+    "hidden": false
+  },
+  {
+    "id": 51,
+    "name": "Manufacture Attachments",
+    "category": "Construction",
+    "hidden": false
+  },
+  {
+    "id": 52,
+    "name": "Manufacture Electronic Equipment",
+    "category": "Construction",
+    "hidden": false
+  },
+  {
+    "id": 53,
+    "name": "Manufacture Enhancers",
+    "category": "Construction",
+    "hidden": false
+  },
+  {
+    "id": 54,
+    "name": "Manufacture Mechanical Equipment",
+    "category": "Construction",
+    "hidden": false
+  },
+  {
+    "id": 55,
+    "name": "Manufacture Metal Equipment",
+    "category": "Construction",
+    "hidden": false
+  },
+  {
+    "id": 56,
+    "name": "Manufacture Methodology",
+    "category": "Construction",
+    "hidden": true
+  },
+  {
+    "id": 57,
+    "name": "Manufacture Tools",
+    "category": "Construction",
+    "hidden": false
+  },
+  {
+    "id": 58,
+    "name": "Manufacture Vehicle",
+    "category": "Construction",
+    "hidden": false
+  },
+  {
+    "id": 59,
+    "name": "Manufacture Weapons",
+    "category": "Construction",
+    "hidden": false
+  },
+  {
+    "id": 60,
+    "name": "Material Extraction Methodology",
+    "category": "Construction",
+    "hidden": true
+  },
+  {
+    "id": 61,
+    "name": "Particle Beamer Technology",
+    "category": "Construction",
+    "hidden": false
+  },
+  {
+    "id": 62,
+    "name": "Plasma Weaponry Technology",
+    "category": "Construction",
+    "hidden": false
+  },
+  {
+    "id": 63,
+    "name": "Spacecraft Engineering",
+    "category": "Construction",
+    "hidden": false
+  },
+  {
+    "id": 64,
+    "name": "Spacecraft Weaponry",
+    "category": "Construction",
+    "hidden": false
+  },
+  {
+    "id": 65,
+    "name": "Texture Engineering",
+    "category": "Construction",
+    "hidden": false
+  },
+  {
+    "id": 66,
+    "name": "Tier Upgrading",
+    "category": "Construction",
+    "hidden": false
+  },
+  {
+    "id": 67,
+    "name": "Tools Technology",
+    "category": "Construction",
+    "hidden": false
+  },
+  {
+    "id": 68,
+    "name": "Vehicle Repairing",
+    "category": "Construction",
+    "hidden": false
+  },
+  {
+    "id": 69,
+    "name": "Vehicle Technology",
+    "category": "Construction",
+    "hidden": false
+  },
+  {
+    "id": 70,
+    "name": "Weapon Technology",
+    "category": "Construction",
+    "hidden": false
+  },
+  {
+    "id": 71,
+    "name": "Wood Carving",
+    "category": "Construction",
+    "hidden": false
+  },
+  {
+    "id": 72,
+    "name": "Wood Processing",
+    "category": "Construction",
+    "hidden": false
+  },
+  {
+    "id": 73,
+    "name": "Avoidance",
+    "category": "Defense",
+    "hidden": true
+  },
+  {
+    "id": 74,
+    "name": "Dispense Decoy",
+    "category": "Defense",
+    "hidden": false
+  },
+  {
+    "id": 129,
+    "name": "Telepathy",
+    "category": "Mindforce",
+    "hidden": false
+  },
+  {
+    "id": 130,
+    "name": "Translocation",
+    "category": "Mindforce",
+    "hidden": false
+  },
+  {
+    "id": 131,
+    "name": "Archaeological Lore",
+    "category": "Mining",
+    "hidden": true
+  },
+  {
+    "id": 132,
+    "name": "Artefact Preservation",
+    "category": "Mining",
+    "hidden": false
+  },
+  {
+    "id": 133,
+    "name": "Drilling",
+    "category": "Mining",
+    "hidden": false
+  },
+  {
+    "id": 134,
+    "name": "Drilling Expertise",
+    "category": "Mining",
+    "hidden": true
+  },
+  {
+    "id": 135,
+    "name": "Extraction",
+    "category": "Mining",
+    "hidden": true
+  },
+  {
+    "id": 75,
+    "name": "Dodge",
+    "category": "Defense",
+    "hidden": false
+  },
+  {
+    "id": 76,
+    "name": "Evade",
+    "category": "Defense",
+    "hidden": false
+  },
+  {
+    "id": 77,
+    "name": "Color Matching",
+    "category": "Design",
+    "hidden": false
+  },
+  {
+    "id": 78,
+    "name": "Coloring",
+    "category": "Design",
+    "hidden": false
+  },
+  {
+    "id": 79,
+    "name": "Coloring Methodology",
+    "category": "Design",
+    "hidden": true
+  },
+  {
+    "id": 80,
+    "name": "Fashion Design",
+    "category": "Design",
+    "hidden": true
+  },
+  {
+    "id": 81,
+    "name": "Glamor",
+    "category": "Design",
+    "hidden": true
+  },
+  {
+    "id": 82,
+    "name": "Make Textile",
+    "category": "Design",
+    "hidden": false
+  },
+  {
+    "id": 83,
+    "name": "Material Comprehension",
+    "category": "Design",
+    "hidden": true
+  },
+  {
+    "id": 84,
+    "name": "Surface Composition",
+    "category": "Design",
+    "hidden": true
+  },
+  {
+    "id": 85,
+    "name": "Tailoring",
+    "category": "Design",
+    "hidden": false
+  },
+  {
+    "id": 86,
+    "name": "Texture Pattern Matching",
+    "category": "Design",
+    "hidden": false
+  },
+  {
+    "id": 87,
+    "name": "Alertness",
+    "category": "General",
+    "hidden": false
+  },
+  {
+    "id": 88,
+    "name": "Athletics",
+    "category": "General",
+    "hidden": false
+  },
+  {
+    "id": 89,
+    "name": "Bravado",
+    "category": "General",
+    "hidden": false
+  },
+  {
+    "id": 90,
+    "name": "Coolness",
+    "category": "General",
+    "hidden": true
+  },
+  {
+    "id": 91,
+    "name": "Courage",
+    "category": "General",
+    "hidden": false
+  },
+  {
+    "id": 92,
+    "name": "Dexterity",
+    "category": "General",
+    "hidden": false
+  },
+  {
+    "id": 93,
+    "name": "Intuition",
+    "category": "General",
+    "hidden": true
+  },
+  {
+    "id": 94,
+    "name": "Perception",
+    "category": "General",
+    "hidden": false
+  },
+  {
+    "id": 95,
+    "name": "Quickness",
+    "category": "General",
+    "hidden": true
+  },
+  {
+    "id": 96,
+    "name": "Serendipity",
+    "category": "General",
+    "hidden": true
+  },
+  {
+    "id": 97,
+    "name": "Butchering",
+    "category": "Information",
+    "hidden": true
+  },
+  {
+    "id": 99,
+    "name": "Probing",
+    "category": "Information",
+    "hidden": false
+  },
+  {
+    "id": 100,
+    "name": "Reaping",
+    "category": "Information",
+    "hidden": true
+  },
+  {
+    "id": 101,
+    "name": "Reclaiming",
+    "category": "Information",
+    "hidden": false
+  },
+  {
+    "id": 102,
+    "name": "Salvaging",
+    "category": "Information",
+    "hidden": true
+  },
+  {
+    "id": 103,
+    "name": "Scan Animal",
+    "category": "Information",
+    "hidden": false
+  },
+  {
+    "id": 104,
+    "name": "Scan Human",
+    "category": "Information",
+    "hidden": false
+  },
+  {
+    "id": 105,
+    "name": "Scan Mutant",
+    "category": "Information",
+    "hidden": false
+  },
+  {
+    "id": 106,
+    "name": "Scan Robot",
+    "category": "Information",
+    "hidden": false
+  },
+  {
+    "id": 107,
+    "name": "Scan Technology",
+    "category": "Information",
+    "hidden": false
+  },
+  {
+    "id": 109,
+    "name": "Scourging",
+    "category": "Information",
+    "hidden": false
+  },
+  {
+    "id": 110,
+    "name": "Skinning",
+    "category": "Information",
+    "hidden": false
+  },
+  {
+    "id": 111,
+    "name": "Anatomy",
+    "category": "Medical",
+    "hidden": false
+  },
+  {
+    "id": 112,
+    "name": "Diagnosis",
+    "category": "Medical",
+    "hidden": false
+  },
+  {
+    "id": 113,
+    "name": "Doctor",
+    "category": "Medical",
+    "hidden": true
+  },
+  {
+    "id": 114,
+    "name": "First Aid",
+    "category": "Medical",
+    "hidden": false
+  },
+  {
+    "id": 115,
+    "name": "Medical Therapy",
+    "category": "Medical",
+    "hidden": true
+  },
+  {
+    "id": 116,
+    "name": "Medicine",
+    "category": "Medical",
+    "hidden": true
+  },
+  {
+    "id": 117,
+    "name": "Treatment",
+    "category": "Medical",
+    "hidden": true
+  },
+  {
+    "id": 118,
+    "name": "Bioregenesis",
+    "category": "Mindforce",
+    "hidden": false
+  },
+  {
+    "id": 119,
+    "name": "Concentration",
+    "category": "Mindforce",
+    "hidden": false
+  },
+  {
+    "id": 120,
+    "name": "Cryogenics",
+    "category": "Mindforce",
+    "hidden": false
+  },
+  {
+    "id": 121,
+    "name": "Electrokinesis",
+    "category": "Mindforce",
+    "hidden": false
+  },
+  {
+    "id": 122,
+    "name": "Ethereal Soul Language",
+    "category": "Mindforce",
+    "hidden": false
+  },
+  {
+    "id": 123,
+    "name": "Force Merge",
+    "category": "Mindforce",
+    "hidden": true
+  },
+  {
+    "id": 124,
+    "name": "Jamming",
+    "category": "Mindforce",
+    "hidden": false
+  },
+  {
+    "id": 125,
+    "name": "Mindforce Harmony",
+    "category": "Mindforce",
+    "hidden": true
+  },
+  {
+    "id": 126,
+    "name": "Power Catalyst",
+    "category": "Mindforce",
+    "hidden": true
+  },
+  {
+    "id": 127,
+    "name": "Pyrokinesis",
+    "category": "Mindforce",
+    "hidden": false
+  },
+  {
+    "id": 108,
+    "name": "Scavenging",
+    "category": "Information",
+    "hidden": true
+  },
+  {
+    "id": 136,
+    "name": "Geology",
+    "category": "Mining",
+    "hidden": false
+  },
+  {
+    "id": 137,
+    "name": "Ground Assessment",
+    "category": "Mining",
+    "hidden": true
+  },
+  {
+    "id": 138,
+    "name": "Metallurgy",
+    "category": "Mining",
+    "hidden": false
+  },
+  {
+    "id": 139,
+    "name": "Miner",
+    "category": "Mining",
+    "hidden": true
+  },
+  {
+    "id": 140,
+    "name": "Mineral Sense",
+    "category": "Mining",
+    "hidden": true
+  },
+  {
+    "id": 141,
+    "name": "Mining",
+    "category": "Mining",
+    "hidden": false
+  },
+  {
+    "id": 142,
+    "name": "Precision Artefact Extraction",
+    "category": "Mining",
+    "hidden": false
+  },
+  {
+    "id": 143,
+    "name": "Prospecting",
+    "category": "Mining",
+    "hidden": false
+  },
+  {
+    "id": 144,
+    "name": "Resource Gathering",
+    "category": "Mining",
+    "hidden": false
+  },
+  {
+    "id": 145,
+    "name": "Surveying",
+    "category": "Mining",
+    "hidden": false
+  },
+  {
+    "id": 146,
+    "name": "Treasure Sense",
+    "category": "Mining",
+    "hidden": false
+  },
+  {
+    "id": 147,
+    "name": "Analysis",
+    "category": "Science",
+    "hidden": false
+  },
+  {
+    "id": 148,
+    "name": "Animal Lore",
+    "category": "Science",
+    "hidden": false
+  },
+  {
+    "id": 149,
+    "name": "Animal Taming",
+    "category": "Science",
+    "hidden": true
+  },
+  {
+    "id": 150,
+    "name": "Biology",
+    "category": "Science",
+    "hidden": false
+  },
+  {
+    "id": 151,
+    "name": "Botany",
+    "category": "Science",
+    "hidden": false
+  },
+  {
+    "id": 152,
+    "name": "Computer",
+    "category": "Science",
+    "hidden": false
+  },
+  {
+    "id": 153,
+    "name": "Deep Space Knowledge",
+    "category": "Science",
+    "hidden": true
+  },
+  {
+    "id": 154,
+    "name": "Electronics",
+    "category": "Science",
+    "hidden": false
+  },
+  {
+    "id": 155,
+    "name": "Engineering",
+    "category": "Science",
+    "hidden": false
+  },
+  {
+    "id": 156,
+    "name": "Genetics",
+    "category": "Science",
+    "hidden": false
+  },
+  {
+    "id": 157,
+    "name": "Mechanics",
+    "category": "Science",
+    "hidden": false
+  },
+  {
+    "id": 158,
+    "name": "Robotology",
+    "category": "Science",
+    "hidden": true
+  },
+  {
+    "id": 159,
+    "name": "Scientist",
+    "category": "Science",
+    "hidden": true
+  },
+  {
+    "id": 160,
+    "name": "Spacecraft Pilot",
+    "category": "Science",
+    "hidden": false
+  },
+  {
+    "id": 161,
+    "name": "Spacecraft Systems",
+    "category": "Science",
+    "hidden": true
+  },
+  {
+    "id": 162,
+    "name": "Xenobiology",
+    "category": "Science",
+    "hidden": true
+  },
+  {
+    "id": 163,
+    "name": "Zoology",
+    "category": "Science",
+    "hidden": false
+  },
+  {
+    "id": 173,
+    "name": "Fracturing",
+    "category": "Combat",
+    "hidden": true
+  },
+  {
+    "id": 167,
+    "name": "Beneficiating",
+    "category": "Information",
+    "hidden": true
+  },
+  {
+    "id": 168,
+    "name": "Fragmentating",
+    "category": "Information",
+    "hidden": false
+  },
+  {
+    "id": 169,
+    "name": "Mining Laser Operator",
+    "category": "Combat",
+    "hidden": false
+  },
+  {
+    "id": 170,
+    "name": "Mining Laser Technology",
+    "category": "Construction",
+    "hidden": false
+  },
+  {
+    "id": 171,
+    "name": "Integrity Analysis",
+    "category": "Combat",
+    "hidden": true
+  },
+  {
+    "id": 172,
+    "name": "Thermal Drilling",
+    "category": "Combat",
+    "hidden": true
+  },
+  {
+    "id": 6,
+    "name": "Strength",
+    "category": "Attributes",
+    "hidden": false
+  },
+  {
+    "id": 174,
+    "name": "Sampling",
+    "category": "Combat",
+    "hidden": true
+  },
+  {
+    "id": 1,
+    "name": "Agility",
+    "category": "Attributes",
+    "hidden": false
+  },
+  {
+    "id": 2,
+    "name": "Health",
+    "category": "Attributes",
+    "hidden": false
+  },
+  {
+    "id": 3,
+    "name": "Intelligence",
+    "category": "Attributes",
+    "hidden": false
+  },
+  {
+    "id": 4,
+    "name": "Psyche",
+    "category": "Attributes",
+    "hidden": false
+  },
+  {
+    "id": 5,
+    "name": "Stamina",
+    "category": "Attributes",
+    "hidden": false
+  },
+  {
+    "id": 98,
+    "name": "Mentor",
+    "category": "Information",
+    "hidden": false
+  },
+  {
+    "id": 128,
+    "name": "Sweat Gatherer",
+    "category": "Mindforce",
+    "hidden": false
+  },
+  {
+    "id": 164,
+    "name": "Promoter Rating",
+    "category": "Social",
+    "hidden": false
+  },
+  {
+    "id": 165,
+    "name": "Reputation",
+    "category": "Social",
+    "hidden": false
+  }
 ]

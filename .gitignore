@@ -1,9 +1,18 @@
 
 **/node_modules
+**/__pycache__/
 nexus-bot/config.json
 client/config.json
 client/data/nexus_client.db
+client/data/cache/
 client/debug_output/
+client/chat.log
+client/image.png
+client/*.PNG
+screenshot.png
+screenshot.ps1
+mob-tables-check.png
+config.json
 .vscode/
 .claude/
 .mcp.json
@@ -31,4 +40,5 @@ sql/nexus_schema.sql
 sql/nexus_users_schema.sql
 /tools/
 /claude/
+/data/
 nexus-bot/config.json

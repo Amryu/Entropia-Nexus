@@ -7,7 +7,7 @@ import { getPublishedAnnouncements } from '$lib/server/db.js';
 import { formatNewsFeed } from '$lib/server/news-cache.js';
 import { getResponse } from '$lib/util.js';
 
-const MAX_LIMIT = 20;
+const MAX_LIMIT = 500;
 const DEFAULT_LIMIT = 3;
 
 export async function GET({ url }) {
