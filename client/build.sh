@@ -213,15 +213,45 @@ if [[ -d "$INTERNAL_CHECK" ]]; then
     cyan "  Stripped ~${SAVED_MB} MB of unnecessary files."
 fi
 
-# ── Post-build: generate manifest.json ──────────────────────────────────────
+# ── Post-build: resolve version ─────────────────────────────────────────────
+# Prefer git tag (e.g. "client-1.2.0"), fall back to client/VERSION file.
+# Tags must match: client-<semver>  (the "client-" prefix is stripped).
 
-VERSION_FILE="${ROOT}/client/VERSION"
-if [[ "$PLATFORM" == "windows" ]] && command -v cygpath &>/dev/null; then
-    VERSION_CHECK="$(cygpath -u "$VERSION_FILE")"
-else
-    VERSION_CHECK="$VERSION_FILE"
+VERSION=""
+if command -v git &>/dev/null && git rev-parse --git-dir &>/dev/null 2>&1; then
+    GIT_DESC="$(git describe --tags --match 'client-*' --abbrev=0 2>/dev/null || true)"
+    if [[ -n "$GIT_DESC" ]]; then
+        VERSION="${GIT_DESC#client-}"   # strip "client-" prefix
+    fi
 fi
-[[ -f "$VERSION_CHECK" ]] || die "Version file not found: $VERSION_FILE — create client/VERSION"
+
+if [[ -z "$VERSION" ]]; then
+    VERSION_FILE="${ROOT}/client/VERSION"
+    if [[ "$PLATFORM" == "windows" ]] && command -v cygpath &>/dev/null; then
+        VERSION_CHECK="$(cygpath -u "$VERSION_FILE")"
+    else
+        VERSION_CHECK="$VERSION_FILE"
+    fi
+    if [[ -f "$VERSION_CHECK" ]]; then
+        VERSION="$(cat "$VERSION_CHECK" | tr -d '[:space:]')"
+    fi
+fi
+
+[[ -n "$VERSION" ]] || die "No version found — tag with 'git tag client-X.Y.Z' or create client/VERSION"
+cyan "Version: $VERSION"
+
+# Write resolved version into the bundled VERSION file so the client reads it
+BUNDLED_VERSION="$DIST_DIR/$APP_NAME/_internal/client/VERSION"
+if [[ "$PLATFORM" == "windows" ]] && command -v cygpath &>/dev/null; then
+    BUNDLED_CHECK="$(cygpath -u "$BUNDLED_VERSION")"
+else
+    BUNDLED_CHECK="$BUNDLED_VERSION"
+fi
+if [[ -f "$BUNDLED_CHECK" ]]; then
+    echo "$VERSION" > "$BUNDLED_CHECK"
+fi
+
+# ── Post-build: generate manifest.json ──────────────────────────────────────
 
 cyan "Generating manifest.json..."
 
@@ -237,11 +267,8 @@ import hashlib, json, os, sys
 from datetime import datetime, timezone
 
 dist_dir = sys.argv[1]
-version_file = sys.argv[2]
+version = sys.argv[2]
 platform = sys.argv[3]
-
-with open(version_file) as f:
-    version = f.read().strip()
 
 files = {}
 for root, dirs, filenames in os.walk(dist_dir):
@@ -271,7 +298,7 @@ with open(out, 'w') as f:
     json.dump(manifest, f, indent=2)
 
 print(f'  Manifest: {len(files)} files, version {version}')
-" "$MANIFEST_DIST_CHECK" "$VERSION_CHECK" "$PLATFORM"
+" "$MANIFEST_DIST_CHECK" "$VERSION" "$PLATFORM"
 
 # ── Post-build: copy config template ────────────────────────────────────────
 
