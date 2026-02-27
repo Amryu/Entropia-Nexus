@@ -420,6 +420,62 @@ Entity image (WebP). Returns the approved icon or thumbnail with optional proces
 | `size` | integer | `32`, `48`, `64`, `128`, or `320` |
 | `mode` | string | `dark` or `light` |
 
+### News
+
+#### `GET /api/news`
+
+Returns latest published announcements. Ordered by pinned status first, then newest.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `limit` | integer | Max results (1–500, default 3) |
+
+```json
+[
+  {
+    "source": "steam",
+    "id": 123,
+    "title": "Update 18.5 Release Notes",
+    "summary": "Brief summary text...",
+    "url": "/news/123",
+    "image_url": "https://...",
+    "pinned": false,
+    "has_content": true,
+    "date": "2026-02-26T10:30:00.000Z"
+  }
+]
+```
+
+`url` points to `/news/:id` detail page when `has_content` is true, otherwise to an external link. `source` is `"steam"` or `"nexus"`.
+
+#### `GET /api/news/{id}`
+
+Returns a single published announcement with full content.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `id` | integer | **Required.** Announcement ID (path) |
+
+```json
+{
+  "id": 123,
+  "title": "Update 18.5 Release Notes",
+  "summary": "Brief summary",
+  "link": "https://...",
+  "image_url": "https://...",
+  "pinned": false,
+  "author_id": 456,
+  "author_name": "Author Name",
+  "created_at": "2026-02-26T10:30:00.000Z",
+  "source": "steam",
+  "has_content": true,
+  "content_html": "<p>Full HTML content...</p>",
+  "source_id": "gid123456789"
+}
+```
+
+Returns `404` if the announcement doesn't exist or isn't published.
+
 ### Other
 
 #### `GET /api/tools/loadout/share/{shareCode}`
@@ -810,6 +866,24 @@ Returns skill import history.
 **Scope:** `skills:read`
 
 Returns per-skill changes for a specific import.
+
+#### `GET /api/tools/skills/history`
+**Scope:** `skills:read`
+
+Returns per-skill value history over time. Joins import records with their deltas to show how individual skill values changed across imports.
+
+**Query parameters:**
+- `skill` (optional, repeatable) — Filter by skill name(s). Example: `?skill=Anatomy&skill=Dexterity`
+- `from` (optional) — ISO 8601 start date. Example: `?from=2026-01-01T00:00:00Z`
+- `to` (optional) — ISO 8601 end date. Example: `?to=2026-02-01T00:00:00Z`
+
+**Response:**
+```json
+[
+  { "imported_at": "2026-01-15T12:00:00Z", "skill_name": "Anatomy", "new_value": 1250 },
+  { "imported_at": "2026-01-20T18:00:00Z", "skill_name": "Anatomy", "new_value": 1280 }
+]
+```
 
 ### Exchange
 

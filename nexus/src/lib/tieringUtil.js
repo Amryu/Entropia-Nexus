@@ -239,6 +239,63 @@ export const excavatorMats = {
   ]
 }
 
+const TYPE_MATS = [
+  ['Weapon', weaponMats],
+  ['Armor Set', armorMats],
+  ['Medical Tool', medicalToolMats],
+  ['Finder', finderMats],
+  ['Excavator', excavatorMats],
+];
+
+/**
+ * Reverse lookup: given a material name, find all tiering usages.
+ * Returns [{type, slot, tiers}] where tiers is an array of tier numbers (1-10).
+ */
+export function getTieringUsage(materialName) {
+  if (!materialName) return [];
+  const results = [];
+
+  // Generic mats (used by all item types)
+  for (const [slot, mats] of Object.entries(genericMats)) {
+    const tiers = [];
+    mats.forEach((mat, i) => { if (mat === materialName) tiers.push(i + 1); });
+    if (tiers.length > 0) {
+      results.push({ type: 'All Types', slot, tiers });
+    }
+  }
+
+  // Type-specific mats
+  for (const [type, matMap] of TYPE_MATS) {
+    for (const [slot, mats] of Object.entries(matMap)) {
+      const tiers = [];
+      mats.forEach((mat, i) => { if (mat === materialName) tiers.push(i + 1); });
+      if (tiers.length > 0) {
+        results.push({ type, slot, tiers });
+      }
+    }
+  }
+
+  return results;
+}
+
+/** Format tier numbers into ranges: [1,2,3,5] → "1–3, 5" */
+export function formatTierRange(tiers) {
+  if (!tiers.length) return '';
+  const sorted = [...tiers].sort((a, b) => a - b);
+  const ranges = [];
+  let start = sorted[0], end = sorted[0];
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i] === end + 1) {
+      end = sorted[i];
+    } else {
+      ranges.push(start === end ? `${start}` : `${start}\u2013${end}`);
+      start = end = sorted[i];
+    }
+  }
+  ranges.push(start === end ? `${start}` : `${start}\u2013${end}`);
+  return ranges.join(', ');
+}
+
 export function getTierMaterial(type, tier, index) {
   let mat = type === 'Weapon'
     ? weaponMats

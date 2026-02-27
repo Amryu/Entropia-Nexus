@@ -6,6 +6,8 @@ from .base import BaseHandler
 class TradeChatHandler(BaseHandler):
     """Handles messages from trade channels (any channel with 'trade' or 'trading' in name)."""
 
+    suppress_events: bool = False  # Set during catchup to skip EventBus publish
+
     def can_handle(self, parsed_line: ParsedLine) -> bool:
         return bool(TRADE_CHANNEL_PATTERN.search(parsed_line.channel))
 
@@ -17,7 +19,8 @@ class TradeChatHandler(BaseHandler):
             message=parsed_line.message,
         )
 
-        self._event_bus.publish(EVENT_TRADE_CHAT, event)
+        if not self.suppress_events:
+            self._event_bus.publish(EVENT_TRADE_CHAT, event)
         self._db.insert_trade_message(
             timestamp=event.timestamp.isoformat(),
             channel=event.channel,

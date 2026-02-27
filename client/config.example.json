@@ -21,5 +21,6 @@
   "hotkey_manual_mob_name": "",
   "main_window_geometry": "",
   "active_loadout_id": null,
-  "js_utils_path": ""
+  "js_utils_path": "",
+  "check_for_updates": true
 }

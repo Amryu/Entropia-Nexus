@@ -107,6 +107,7 @@ class MobNameDetector:
         self._known_mobs: list[str] = []
         self._known_maturities: list[str] = []
         self._game_hwnd = None
+        self._game_geometry: tuple[int, int, int, int] | None = None
 
     def set_known_mobs(self, mob_names: list[str]):
         """Set known mob names for fuzzy matching (from Nexus API)."""
@@ -116,9 +117,11 @@ class MobNameDetector:
         """Set known maturity names for parsing."""
         self._known_maturities = maturities
 
-    def set_game_hwnd(self, hwnd: int):
-        """Set the game window handle for capture."""
+    def set_game_hwnd(self, hwnd: int,
+                      geometry: tuple[int, int, int, int] | None = None):
+        """Set the game window handle and geometry for capture."""
         self._game_hwnd = hwnd
+        self._game_geometry = geometry
 
     def start(self):
         if self._running:
@@ -203,7 +206,8 @@ class MobNameDetector:
         if not self._game_hwnd:
             return
 
-        image = self._capturer.capture_window(self._game_hwnd)
+        image = self._capturer.capture_window(self._game_hwnd,
+                                               geometry=self._game_geometry)
         if image is None:
             return
 

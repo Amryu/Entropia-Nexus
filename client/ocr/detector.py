@@ -1,6 +1,6 @@
-import ctypes
-import ctypes.wintypes
 import os
+import subprocess
+import sys
 import numpy as np
 from pathlib import Path
 from typing import Optional
@@ -10,6 +10,11 @@ try:
 except ImportError:
     cv2 = None
 
+if sys.platform == "win32":
+    import ctypes
+    import ctypes.wintypes
+    user32 = ctypes.windll.user32
+
 from .capturer import ScreenCapturer
 from ..core.logger import get_logger
 
@@ -18,9 +23,6 @@ log = get_logger("Detector")
 # Debug image output directory
 DEBUG_DIR = os.path.join(os.path.dirname(__file__), "..", "debug_output")
 SAVE_DEBUG_IMAGES = True
-
-# Win32 API for window lookup (no debugger, no attachment — just title search)
-user32 = ctypes.windll.user32
 
 GAME_WINDOW_TITLE_PREFIX = "Entropia Universe Client"
 
@@ -90,11 +92,18 @@ COL_HEADER_THRESHOLD = 0.8  # Match confidence for column header templates
 
 
 def _find_game_window() -> Optional[tuple[int, int, int, int, int]]:
-    """Find the Entropia Universe game window using Win32 EnumWindows.
+    """Find the Entropia Universe game window.
 
-    Returns (hwnd, x, y, width, height) of the game window's client area, or None.
-    This is a plain window title lookup — no process attachment or debugging.
+    Returns (window_id, x, y, width, height) of the game window's client area,
+    or None. Uses Win32 EnumWindows on Windows, xdotool on Linux.
     """
+    if sys.platform == "win32":
+        return _find_game_window_win32()
+    return _find_game_window_linux()
+
+
+def _find_game_window_win32() -> Optional[tuple[int, int, int, int, int]]:
+    """Find game window via Win32 EnumWindows."""
     result = []
 
     @ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM)
@@ -128,6 +137,57 @@ def _find_game_window() -> Optional[tuple[int, int, int, int, int]]:
     return result[0] if result else None
 
 
+def _find_game_window_linux() -> Optional[tuple[int, int, int, int, int]]:
+    """Find game window via xdotool (works with Wine/Proton windows)."""
+    try:
+        # Search for windows whose name starts with the game title prefix
+        search = subprocess.run(
+            ["xdotool", "search", "--name", GAME_WINDOW_TITLE_PREFIX],
+            capture_output=True, text=True, timeout=5,
+        )
+        if search.returncode != 0 or not search.stdout.strip():
+            log.warning("No matching window found via xdotool")
+            return None
+
+        # Take the first matching window ID
+        wid = int(search.stdout.strip().splitlines()[0])
+
+        # Get window geometry
+        geo = subprocess.run(
+            ["xdotool", "getwindowgeometry", "--shell", str(wid)],
+            capture_output=True, text=True, timeout=5,
+        )
+        if geo.returncode != 0:
+            log.warning("xdotool getwindowgeometry failed for window %s", wid)
+            return None
+
+        # Parse shell output: WINDOW=...\nX=...\nY=...\nWIDTH=...\nHEIGHT=...
+        vals = {}
+        for line in geo.stdout.strip().splitlines():
+            if "=" in line:
+                k, v = line.split("=", 1)
+                vals[k] = int(v)
+
+        x = vals.get("X", 0)
+        y = vals.get("Y", 0)
+        w = vals.get("WIDTH", 0)
+        h = vals.get("HEIGHT", 0)
+
+        if w <= 0 or h <= 0:
+            log.warning("Invalid window geometry: %sx%s", w, h)
+            return None
+
+        log.info("Found game window via xdotool: wid=%s at (%s,%s) %sx%s", wid, x, y, w, h)
+        return (wid, x, y, w, h)
+
+    except FileNotFoundError:
+        log.warning("xdotool not found — install with: sudo apt install xdotool")
+        return None
+    except Exception as e:
+        log.warning("xdotool window search failed: %s", e)
+        return None
+
+
 class SkillsWindowDetector:
     """Detects and locates the skills window on screen.
 
@@ -143,6 +203,7 @@ class SkillsWindowDetector:
         self._cached_bounds: Optional[tuple[int, int, int, int]] = None
         self._game_hwnd: Optional[int] = None
         self._game_origin: tuple[int, int] = (0, 0)
+        self._game_geometry: tuple[int, int, int, int] = (0, 0, 0, 0)  # x, y, w, h
         self._last_game_image: Optional[np.ndarray] = None
 
         # Load skills label template for template matching
@@ -203,12 +264,13 @@ class SkillsWindowDetector:
         hwnd, gx, gy, gw, gh = game_rect
         self._game_hwnd = hwnd
         self._game_origin = (gx, gy)
+        self._game_geometry = (gx, gy, gw, gh)
         log.info("Game window: (%s,%s) %sx%s hwnd=%s", gx, gy, gw, gh, hwnd)
 
-        # Step 2: Capture the game window directly via PrintWindow (ignores overlays)
-        game_image = self._capturer.capture_window(hwnd)
+        # Step 2: Capture the game window (PrintWindow on Windows, mss on Linux)
+        game_image = self._capturer.capture_window(hwnd, geometry=(gx, gy, gw, gh))
         if game_image is None:
-            log.warning("PrintWindow capture failed, falling back to mss")
+            log.warning("Window capture failed, falling back to mss region")
             game_image = self._capturer.capture_region(gx, gy, gw, gh)
 
         self._last_game_image = game_image
@@ -240,14 +302,16 @@ class SkillsWindowDetector:
         return self._cached_bounds
 
     def capture_game(self) -> np.ndarray | None:
-        """Capture the current game window image (via PrintWindow).
+        """Capture the current game window image.
 
         Returns the full game window as BGR numpy array, or None.
         Also stores the result in last_game_image.
         """
         if not self._game_hwnd:
             return None
-        image = self._capturer.capture_window(self._game_hwnd)
+        image = self._capturer.capture_window(
+            self._game_hwnd, geometry=self._game_geometry,
+        )
         if image is not None:
             self._last_game_image = image
         return image

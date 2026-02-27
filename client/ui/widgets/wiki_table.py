@@ -1,24 +1,56 @@
-"""Wiki entity table — sortable, filterable, with configurable columns."""
+"""Wiki entity table — sortable, filterable, with configurable columns.
+
+Thin adapter around FancyTable that handles wiki-specific column resolution,
+user preferences, and the column config dialog.
+"""
 
 from __future__ import annotations
 
 import re
 from typing import Callable
 
-from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QTableView,
-    QLabel, QPushButton, QLineEdit, QHeaderView, QAbstractItemView,
-)
-from PyQt6.QtCore import (
-    Qt, QTimer, QAbstractTableModel, QModelIndex, QSortFilterProxyModel,
-)
+from PyQt6.QtWidgets import QWidget, QVBoxLayout
+from PyQt6.QtCore import Qt, pyqtSignal
 
-from ..theme import TEXT_MUTED, BORDER, SECONDARY, PRIMARY
+from .fancy_table import FancyTable, ColumnDef, column_def_from_dict
 from ...data.wiki_columns import COLUMN_DEFS, DEFAULT_COLUMNS, get_item_name
 
 
 # ---------------------------------------------------------------------------
-# Filter matching
+# Cache builder — can run on any thread (used by wiki_page warmup)
+# ---------------------------------------------------------------------------
+
+def build_column_cache(items: list[dict], col_defs: list[dict]):
+    """Build (raw_value, display_text) cache for items x columns. Thread-safe.
+
+    Returns (cache, numeric) where cache[row][col] = (raw, display)
+    and numeric[col] = True if the column holds numeric data.
+    Column 0 is always the Name column.
+    """
+    cache: list[list[tuple]] = []
+    for item in items:
+        name = get_item_name(item)
+        row: list[tuple] = [(name, name)]
+        for col_def in col_defs:
+            raw = col_def["get_value"](item)
+            display = str(col_def["format"](raw))
+            row.append((raw, display))
+        cache.append(row)
+
+    num_cols = 1 + len(col_defs)
+    numeric = [False] * num_cols
+    for col in range(num_cols):
+        for row in cache:
+            raw = row[col][0]
+            if raw is not None:
+                numeric[col] = isinstance(raw, (int, float))
+                break
+
+    return cache, numeric
+
+
+# ---------------------------------------------------------------------------
+# Filter matching (kept at module level for backward compat)
 # ---------------------------------------------------------------------------
 
 _OP_RE = re.compile(r"^(>=|<=|>|<|=|!)(.+)$")
@@ -34,12 +66,11 @@ def _matches_filter(raw_value, display_text: str, filter_text: str) -> bool:
     if m:
         op, operand = m.group(1), m.group(2).strip()
 
-        # Numeric operators
         if op in (">", "<", ">=", "<="):
             try:
                 threshold = float(operand)
             except ValueError:
-                return True  # invalid number → don't filter
+                return True
             if raw_value is None or not isinstance(raw_value, (int, float)):
                 return False
             if op == ">":
@@ -51,169 +82,37 @@ def _matches_filter(raw_value, display_text: str, filter_text: str) -> bool:
             if op == "<=":
                 return raw_value <= threshold
 
-        # Exact match
         if op == "=":
             return display_text.lower() == operand.lower()
 
-        # Exclude
         if op == "!":
             return operand.lower() not in display_text.lower()
 
-    # Default: substring search
     return filter_text.lower() in display_text.lower()
 
 
 # ---------------------------------------------------------------------------
-# Table model — stores data, provides it on demand (no widget items)
+# Name column definition
 # ---------------------------------------------------------------------------
 
-class _WikiTableModel(QAbstractTableModel):
-    """Flat table model backed by a pre-computed cache of (raw, display) tuples."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._headers: list[str] = []
-        # Per-cell cache: _cache[row][col] = (raw_value, display_text)
-        self._cache: list[list[tuple]] = []
-        # Per-column flags: True if the column holds numeric data
-        self._numeric: list[bool] = []
-
-    def set_data(self, items: list[dict], col_defs: list[dict]):
-        """Rebuild the entire cache from raw entity dicts + column definitions."""
-        self.beginResetModel()
-        self._headers = ["Name"] + [d["header"] for d in col_defs]
-        self._numeric = [False] + [True] * len(col_defs)  # assume numeric; refined below
-
-        cache: list[list[tuple]] = []
-        for item in items:
-            name = get_item_name(item)
-            row: list[tuple] = [(name, name)]
-            for col_def in col_defs:
-                raw = col_def["get_value"](item)
-                display = str(col_def["format"](raw))
-                row.append((raw, display))
-            cache.append(row)
-
-        # Determine which columns are actually numeric (check first non-None value)
-        for col in range(len(self._headers)):
-            self._numeric[col] = False
-            for row in cache:
-                raw = row[col][0]
-                if raw is not None:
-                    self._numeric[col] = isinstance(raw, (int, float))
-                    break
-
-        self._cache = cache
-        self.endResetModel()
-
-    # --- QAbstractTableModel interface ---
-
-    def rowCount(self, parent=QModelIndex()):
-        return len(self._cache)
-
-    def columnCount(self, parent=QModelIndex()):
-        return len(self._headers)
-
-    def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole):
-        if not index.isValid():
-            return None
-        r, c = index.row(), index.column()
-        if r < 0 or r >= len(self._cache) or c < 0 or c >= len(self._headers):
-            return None
-
-        raw, display = self._cache[r][c]
-
-        if role == Qt.ItemDataRole.DisplayRole:
-            return display
-        if role == Qt.ItemDataRole.UserRole:
-            return raw
-        if role == Qt.ItemDataRole.TextAlignmentRole:
-            if self._numeric[c]:
-                return Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
-            return Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
-        return None
-
-    def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
-        if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.DisplayRole:
-            if 0 <= section < len(self._headers):
-                return self._headers[section]
-        return None
-
-    # --- Helpers for proxy ---
-
-    def raw_value(self, row: int, col: int):
-        if 0 <= row < len(self._cache) and 0 <= col < len(self._headers):
-            return self._cache[row][col][0]
-        return None
-
-    def display_value(self, row: int, col: int) -> str:
-        if 0 <= row < len(self._cache) and 0 <= col < len(self._headers):
-            return self._cache[row][col][1]
-        return ""
+_NAME_COLUMN = ColumnDef(
+    key="_name",
+    header="Name",
+    main=True,
+    width_basis="content",
+    get_value=get_item_name,
+    format=str,
+)
 
 
 # ---------------------------------------------------------------------------
-# Sort/filter proxy
+# WikiTableView — thin adapter around FancyTable
 # ---------------------------------------------------------------------------
-
-class _WikiSortFilterProxy(QSortFilterProxyModel):
-    """Proxy that sorts by raw values (None to bottom) and filters per-column."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self._col_filters: list[str] = []
-
-    def set_column_filters(self, filters: list[str]):
-        self._col_filters = filters
-        self.invalidateFilter()
-
-    # --- Sorting ---
-
-    def lessThan(self, left: QModelIndex, right: QModelIndex) -> bool:
-        raw_l = left.data(Qt.ItemDataRole.UserRole)
-        raw_r = right.data(Qt.ItemDataRole.UserRole)
-
-        # None → always sort to the bottom regardless of sort direction.
-        # QSortFilterProxyModel flips lessThan in descending order, so we
-        # need to check the current sort order and compensate.
-        if raw_l is None or raw_r is None:
-            if raw_l is None and raw_r is None:
-                return False
-            ascending = self.sortOrder() == Qt.SortOrder.AscendingOrder
-            if raw_l is None:
-                return not ascending  # ascending → False (bottom); desc → True (still bottom)
-            return ascending          # ascending → True (other goes bottom); desc → False
-
-        if isinstance(raw_l, (int, float)) and isinstance(raw_r, (int, float)):
-            return raw_l < raw_r
-        return str(raw_l).lower() < str(raw_r).lower()
-
-    # --- Filtering ---
-
-    def filterAcceptsRow(self, source_row: int, source_parent: QModelIndex) -> bool:
-        if not any(f.strip() for f in self._col_filters):
-            return True
-
-        model: _WikiTableModel = self.sourceModel()
-        for col, ft in enumerate(self._col_filters):
-            if not ft.strip():
-                continue
-            raw = model.raw_value(source_row, col)
-            display = model.display_value(source_row, col)
-            if not _matches_filter(raw, display, ft):
-                return False
-        return True
-
-
-# ---------------------------------------------------------------------------
-# WikiTableView
-# ---------------------------------------------------------------------------
-
-FILTER_DEBOUNCE_MS = 200
-
 
 class WikiTableView(QWidget):
     """Table view for wiki entity data with sorting, filtering, and column config."""
+
+    row_activated = pyqtSignal(dict)  # emitted on double-click with the full item dict
 
     def __init__(
         self,
@@ -227,187 +126,107 @@ class WikiTableView(QWidget):
         self._column_prefs = column_prefs or {}
         self._on_columns_changed = on_columns_changed
         self._items: list[dict] = []
-        self._active_col_keys: list[str] = []
+        self._full_col_keys: list[str] = []
+        # Pre-computed cache covering ALL columns for the page type
+        self._all_type_col_keys: list[str] = []
+        self._full_cache: list[list[tuple]] = []
+        self._full_numeric: list[bool] = []
 
         self._build_ui()
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(4)
+        layout.setSpacing(0)
 
-        # Toolbar
-        toolbar = QHBoxLayout()
-        toolbar.setContentsMargins(0, 0, 0, 4)
-        toolbar.setSpacing(8)
-
-        self._count_label = QLabel("")
-        self._count_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
-        toolbar.addWidget(self._count_label)
-
-        toolbar.addStretch()
-
-        self._config_btn = QPushButton("\u2699")  # ⚙
-        self._config_btn.setToolTip("Configure columns")
-        self._config_btn.setFixedSize(28, 28)
-        self._config_btn.setStyleSheet(
-            f"QPushButton {{ font-size: 16px; padding: 0; border: 1px solid {BORDER};"
-            f" border-radius: 4px; background: {SECONDARY}; }}"
-            f"QPushButton:hover {{ background: {PRIMARY}; }}"
-        )
-        self._config_btn.clicked.connect(self._open_column_config)
-        toolbar.addWidget(self._config_btn)
-
-        layout.addLayout(toolbar)
-
-        # Filter row
-        self._filter_container = QWidget()
-        self._filter_layout = QHBoxLayout(self._filter_container)
-        self._filter_layout.setContentsMargins(0, 0, 0, 0)
-        self._filter_layout.setSpacing(0)
-        self._filter_inputs: list[QLineEdit] = []
-        layout.addWidget(self._filter_container)
-
-        # Model / proxy
-        self._model = _WikiTableModel(self)
-        self._proxy = _WikiSortFilterProxy(self)
-        self._proxy.setSourceModel(self._model)
-
-        # Table view
-        self._table = QTableView()
-        self._table.setModel(self._proxy)
-        self._table.setAlternatingRowColors(True)
-        self._table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self._table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-        self._table.verticalHeader().setVisible(False)
-        self._table.horizontalHeader().setStretchLastSection(True)
-        self._table.horizontalHeader().setSectionsClickable(True)
-        self._table.setSortingEnabled(True)
-        self._table.setStyleSheet(
-            "QTableView { alternate-background-color: #2a2a2a; }"
-        )
-        layout.addWidget(self._table)
-
-        # Sync filter widths with column header sizes
-        header = self._table.horizontalHeader()
-        header.sectionResized.connect(self._on_section_resized)
-        header.geometriesChanged.connect(self._sync_all_filter_widths)
-
-        # Filter debounce timer
-        self._filter_timer = QTimer(self)
-        self._filter_timer.setSingleShot(True)
-        self._filter_timer.setInterval(FILTER_DEBOUNCE_MS)
-        self._filter_timer.timeout.connect(self._apply_filters)
+        # Create FancyTable with empty columns (set on first set_data)
+        self._table = FancyTable(columns=[], parent=self)
+        self._table.row_clicked.connect(self._on_row_activated)
+        self._table.config_button.clicked.connect(self._open_column_config)
+        layout.addWidget(self._table, 1)
 
     # --- Public API ---
 
-    def set_data(self, items: list[dict]):
-        """Populate the table with entity data."""
+    def set_data(self, items: list[dict], full_cache=None, full_numeric=None):
+        """Populate the table with entity data.
+
+        If *full_cache* / *full_numeric* are supplied (pre-computed on a
+        background thread) the expensive per-cell computation is skipped.
+        """
         self._items = items
         self._resolve_columns()
+
+        # Store (or compute) full cache covering ALL type columns
+        all_defs = COLUMN_DEFS.get(self._page_type_id, {})
+        self._all_type_col_keys = list(all_defs.keys())
+
+        if full_cache is not None:
+            self._full_cache = full_cache
+            self._full_numeric = full_numeric
+        else:
+            col_defs_list = [all_defs[k] for k in self._all_type_col_keys]
+            self._full_cache, self._full_numeric = build_column_cache(items, col_defs_list)
+
         self._rebuild_table()
 
     def set_loading(self):
         """Show loading state."""
-        self._count_label.setText("Loading...")
-        self._model.set_data([], [])
+        self._table.set_loading()
 
     # --- Column resolution ---
 
     def _resolve_columns(self):
         """Determine which column keys to show."""
-        # Check user prefs first
         prefs = self._column_prefs.get(self._page_type_id)
         if prefs:
-            self._active_col_keys = list(prefs)
-            return
+            self._full_col_keys = list(prefs)
+        else:
+            defaults = DEFAULT_COLUMNS.get(self._page_type_id, [])
+            self._full_col_keys = list(defaults)
 
-        # Fall back to defaults (all columns for the type)
-        defaults = DEFAULT_COLUMNS.get(self._page_type_id, [])
-        self._active_col_keys = list(defaults)
+    # --- Cache subsetting ---
 
-    def _get_column_defs(self) -> list[dict]:
-        """Get resolved column definition dicts for active keys."""
+    def _subset_cache(self):
+        """Extract active columns from the pre-computed full cache.
+
+        Returns (column_defs, cache, numeric) ready for FancyTable.
+        """
+        key_to_idx = {k: i for i, k in enumerate(self._all_type_col_keys)}
         all_defs = COLUMN_DEFS.get(self._page_type_id, {})
-        return [all_defs[k] for k in self._active_col_keys if k in all_defs]
+        active_indices = [key_to_idx[k] for k in self._full_col_keys if k in key_to_idx]
+
+        # Build ColumnDef list: Name + active data columns
+        column_defs = [_NAME_COLUMN]
+        for i in active_indices:
+            key = self._all_type_col_keys[i]
+            col_dict = all_defs[key]
+            column_defs.append(column_def_from_dict(col_dict))
+
+        numeric = [self._full_numeric[0]] + [self._full_numeric[i + 1] for i in active_indices]
+
+        # +1 offset because column 0 is always Name in the full cache
+        subset: list[list[tuple]] = []
+        for full_row in self._full_cache:
+            row = [full_row[0]]  # Name
+            for i in active_indices:
+                row.append(full_row[i + 1])
+            subset.append(row)
+
+        return column_defs, subset, numeric
 
     # --- Table rebuild ---
 
     def _rebuild_table(self):
-        """Rebuild the entire table from current items and column config."""
-        col_defs = self._get_column_defs()
+        """Rebuild the FancyTable from the pre-computed cache."""
+        column_defs, cache, numeric = self._subset_cache()
+        self._table.set_columns(column_defs)
+        self._table.set_data(self._items, cache=cache, numeric=numeric)
 
-        # Feed data into model (proxy auto-updates)
-        self._model.set_data(self._items, col_defs)
+    # --- Row activation ---
 
-        # Size columns: Name stretches, data columns fit content
-        header = self._table.horizontalHeader()
-        col_count = 1 + len(col_defs)
-        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        for i in range(1, col_count):
-            header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
-
-        # Rebuild filter inputs to match columns
-        self._rebuild_filters(col_count)
-
-        # Update count
-        self._update_count_label()
-
-        # Sync filter widths after layout settles
-        QTimer.singleShot(0, self._sync_all_filter_widths)
-
-    def _rebuild_filters(self, col_count: int):
-        """Rebuild the filter input row to match current columns."""
-        # Clear old
-        for inp in self._filter_inputs:
-            inp.deleteLater()
-        self._filter_inputs.clear()
-
-        # Create new — one filter per column
-        for i in range(col_count):
-            inp = QLineEdit()
-            inp.setPlaceholderText("Filter...")
-            inp.setFixedHeight(24)
-            inp.setStyleSheet("font-size: 11px; padding: 2px 4px;")
-            inp.textChanged.connect(self._on_filter_changed)
-            self._filter_layout.addWidget(inp)
-            self._filter_inputs.append(inp)
-
-    # --- Filter width synchronization ---
-
-    def _on_section_resized(self, logical_index: int, _old_size: int, new_size: int):
-        """Keep a single filter input in sync with its column width."""
-        if 0 <= logical_index < len(self._filter_inputs):
-            self._filter_inputs[logical_index].setFixedWidth(new_size)
-
-    def _sync_all_filter_widths(self):
-        """Resync all filter input widths with the current header section sizes."""
-        header = self._table.horizontalHeader()
-        for i, inp in enumerate(self._filter_inputs):
-            w = header.sectionSize(i)
-            if w > 0:
-                inp.setFixedWidth(w)
-
-    # --- Filtering ---
-
-    def _on_filter_changed(self):
-        """Schedule filter application with debounce."""
-        self._filter_timer.start()
-
-    def _apply_filters(self):
-        """Push current filter texts into the proxy model."""
-        filter_texts = [inp.text() for inp in self._filter_inputs]
-        self._proxy.set_column_filters(filter_texts)
-        self._update_count_label()
-
-    def _update_count_label(self):
-        total = len(self._items)
-        visible = self._proxy.rowCount()
-        if visible != total:
-            self._count_label.setText(f"{visible} / {total} items")
-        else:
-            self._count_label.setText(f"{total} items")
+    def _on_row_activated(self, item: dict, _index: int):
+        """Bridge FancyTable signal to WikiTableView signal (drop index)."""
+        self.row_activated.emit(item)
 
     # --- Column config ---
 
@@ -421,13 +240,13 @@ class WikiTableView(QWidget):
 
         dialog = ColumnConfigDialog(
             all_defs=all_defs,
-            current_keys=list(self._active_col_keys),
+            current_keys=list(self._full_col_keys),
             parent=self,
         )
         if dialog.exec():
             new_keys = dialog.selected_keys()
-            if new_keys != self._active_col_keys:
-                self._active_col_keys = new_keys
+            if new_keys != self._full_col_keys:
+                self._full_col_keys = new_keys
                 self._rebuild_table()
                 if self._on_columns_changed:
                     self._on_columns_changed(self._page_type_id, new_keys)

@@ -106,6 +106,20 @@ class DataClient:
     def get_locations(self) -> list[dict]:
         return self._get_cached("/locations")
 
+    # --- Maps ---
+
+    def get_planets(self) -> list[dict]:
+        return self._get_cached("/planets")
+
+    def get_locations_for_planet(self, planet: str) -> list[dict]:
+        return self._get_cached(f"/locations?Planet={planet}")
+
+    def get_areas_for_planet(self, planet: str) -> list[dict]:
+        return self._get_cached(f"/areas?Planet={planet}")
+
+    def get_mobspawns_for_planet(self, planet: str) -> list[dict]:
+        return self._get_cached(f"/mobspawns?Planet={planet}")
+
     def get_finder_amplifiers(self) -> list[dict]:
         return self._get_cached("/finderamplifiers")
 
@@ -153,6 +167,20 @@ class DataClient:
 
     def get_mob_loots(self, mob_name: str) -> list[dict]:
         return self._get_cached(f"/mobloots?Mob={mob_name}")
+
+    def get_acquisition(self, item_name: str) -> dict:
+        """Fetch acquisition data for an item (vendors, loot, blueprints, etc.).
+
+        Returns a dict with keys: Blueprints, Loots, VendorOffers,
+        RefiningRecipes, ShopListings, BlueprintDrops.
+        """
+        result = self._get_cached(f"/acquisition?items={item_name}")
+        return result if isinstance(result, dict) else {}
+
+    def get_tiers(self, item_id: int, is_armor_set: bool = False) -> list[dict]:
+        """Fetch tier information for an item."""
+        flag = 1 if is_armor_set else 0
+        return self._get_cached(f"/tiers?ItemId={item_id}&IsArmorSet={flag}")
 
     def search(self, query: str) -> list[dict]:
         """Search across all entities. No caching — results are ephemeral."""

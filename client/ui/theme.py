@@ -26,6 +26,7 @@ TEXT_MUTED = "#aaaaaa"      # --text-muted
 # Accent
 ACCENT = "#60b0ff"           # --accent-color
 ACCENT_HOVER = "#4a9eff"     # --accent-color-hover
+ACCENT_LIGHT = "#253545"     # subtle accent tint for badge backgrounds
 
 # Semantic
 ERROR = "#ff6b6b"
@@ -51,6 +52,24 @@ SIDEBAR_INDICATOR_WIDTH = 3
 TITLE_BAR_HEIGHT = 32
 TITLE_BAR_CLOSE_HOVER = "#c42b1c"
 STATUS_BAR_HEIGHT = TITLE_BAR_HEIGHT // 2
+
+# --- Damage type colors (mirror CSS custom properties) ---
+
+DAMAGE_COLORS = {
+    "Impact": "#94a3b8",
+    "Cut": "#e06060",
+    "Stab": "#d48840",
+    "Penetration": "#c8a830",
+    "Shrapnel": "#88a040",
+    "Burn": "#e07028",
+    "Cold": "#38a8d8",
+    "Acid": "#48b868",
+    "Electric": "#9878c8",
+}
+
+# Tier-1 stats gradient (blue theme — weapons, attachments)
+TIER1_BLUE_START = "#3a6d99"
+TIER1_BLUE_END = "#2d5577"
 
 # --- Object name constants (for targeted QSS rules) ---
 

@@ -15,6 +15,8 @@ from .base import BaseHandler
 class GlobalsHandler(BaseHandler):
     """Handles global announcement messages (kills, deposits, crafts, rare items)."""
 
+    suppress_events: bool = False  # Set during catchup to skip EventBus publish
+
     def can_handle(self, parsed_line: ParsedLine) -> bool:
         return parsed_line.channel == "Globals" and parsed_line.username == ""
 
@@ -102,7 +104,8 @@ class GlobalsHandler(BaseHandler):
                 )
 
         if event:
-            self._event_bus.publish(EVENT_GLOBAL, event)
+            if not self.suppress_events:
+                self._event_bus.publish(EVENT_GLOBAL, event)
             self._db.insert_global(
                 timestamp=event.timestamp.isoformat(),
                 global_type=event.global_type.value,

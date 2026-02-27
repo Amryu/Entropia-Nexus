@@ -137,6 +137,8 @@ class LoadoutPage(QWidget):
         self._calculator = None
         self._applying = False  # True while populating UI from loadout data
         self._dirty = False     # True when UI has unsaved changes
+        self._saved_last_update: dict[str, str] = {}  # loadout_id → last_update
+        self._save_in_flight = False
 
         # Set management
         self._active_set_indices = {"Weapon": 0, "Armor": 0, "Healing": 0, "Accessories": 0}
@@ -341,6 +343,16 @@ class LoadoutPage(QWidget):
     # Tab builders
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _scrollable_tab(tab: QWidget) -> QScrollArea:
+        """Wrap a tab content widget in a transparent scroll area."""
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+        scroll.setWidget(tab)
+        return scroll
+
     def _build_weapon_tab(self):
         tab = QWidget()
         outer = QVBoxLayout(tab)
@@ -425,7 +437,7 @@ class LoadoutPage(QWidget):
         ))
 
         outer.addStretch()
-        self._editor_tabs.addTab(tab, "Weapon")
+        self._editor_tabs.addTab(self._scrollable_tab(tab), "Weapon")
 
     def _build_armor_tab(self):
         tab = QWidget()
@@ -454,7 +466,7 @@ class LoadoutPage(QWidget):
         ))
 
         outer.addStretch()
-        self._editor_tabs.addTab(tab, "Armor")
+        self._editor_tabs.addTab(self._scrollable_tab(tab), "Armor")
 
     def _build_healing_tab(self):
         tab = QWidget()
@@ -479,7 +491,7 @@ class LoadoutPage(QWidget):
         ))
 
         outer.addStretch()
-        self._editor_tabs.addTab(tab, "Healing")
+        self._editor_tabs.addTab(self._scrollable_tab(tab), "Healing")
 
     def _build_accessories_tab(self):
         tab = QWidget()
@@ -558,7 +570,7 @@ class LoadoutPage(QWidget):
         outer.addWidget(cons_group)
 
         outer.addStretch()
-        self._editor_tabs.addTab(tab, "Accessories")
+        self._editor_tabs.addTab(self._scrollable_tab(tab), "Accessories")
 
     def _build_settings_tab(self):
         tab = QWidget()
@@ -602,7 +614,7 @@ class LoadoutPage(QWidget):
         layout.addWidget(bonus_group)
 
         layout.addStretch()
-        self._editor_tabs.addTab(tab, "Settings")
+        self._editor_tabs.addTab(self._scrollable_tab(tab), "Settings")
 
     # ------------------------------------------------------------------
     # Stats display
@@ -1946,6 +1958,8 @@ class LoadoutPage(QWidget):
         # Remove from local list
         self._dirty = False
         self._save_timer.stop()
+        if loadout_id:
+            self._saved_last_update.pop(loadout_id, None)
         if 0 <= idx < len(self._loadouts):
             self._loadouts.pop(idx)
 
@@ -2088,10 +2102,13 @@ class LoadoutPage(QWidget):
         if self._oauth.is_authenticated():
             lo = copy.deepcopy(self._current_loadout)
             payload = _wrap_for_server(lo)
+            self._save_in_flight = True
             def push():
                 try:
                     if lo.get("Id"):
-                        self._nexus_client.save_loadout(lo["Id"], payload)
+                        result = self._nexus_client.save_loadout(lo["Id"], payload)
+                        if result and "last_update" in result:
+                            self._saved_last_update[lo["Id"]] = result["last_update"]
                     else:
                         result = self._nexus_client.create_loadout(payload)
                         if result:
@@ -2100,8 +2117,12 @@ class LoadoutPage(QWidget):
                             if new_id:
                                 lo["Id"] = new_id
                                 self._current_loadout["Id"] = new_id
+                                if "last_update" in result:
+                                    self._saved_last_update[new_id] = result["last_update"]
                 except Exception as e:
                     log.error("Auto-save push failed: %s", e)
+                finally:
+                    self._save_in_flight = False
             threading.Thread(target=push, daemon=True).start()
 
     def _save_to_cache(self):
@@ -2134,6 +2155,10 @@ class LoadoutPage(QWidget):
             def fetch():
                 loadouts = self._nexus_client.get_loadouts()
                 if loadouts is not None:
+                    for rec in loadouts:
+                        lo_id = rec.get("id") or rec.get("Id")
+                        if lo_id and "last_update" in rec:
+                            self._saved_last_update[lo_id] = rec["last_update"]
                     self._loadouts = _unwrap_server_list(loadouts)
                     self._save_to_cache()
                     from PyQt6.QtCore import QMetaObject, Qt as QtConst
@@ -2242,7 +2267,13 @@ class LoadoutPage(QWidget):
             try:
                 remote = self._nexus_client.get_loadouts()
                 if remote is not None:
+                    timestamps = {}
+                    for rec in remote:
+                        lo_id = rec.get("id") or rec.get("Id")
+                        if lo_id and "last_update" in rec:
+                            timestamps[lo_id] = rec["last_update"]
                     self._pending_remote = _unwrap_server_list(remote)
+                    self._pending_remote_timestamps = timestamps
                     from PyQt6.QtCore import QMetaObject, Qt as QtConst
                     QMetaObject.invokeMethod(
                         self, "_merge_remote_loadouts",
@@ -2267,13 +2298,15 @@ class LoadoutPage(QWidget):
 
         remote_by_id = {lo["Id"]: lo for lo in remote if lo.get("Id")}
         current_id = self._current_loadout.get("Id") if self._current_loadout else None
+        remote_timestamps = getattr(self, "_pending_remote_timestamps", {})
 
-        # Detect conflict on the currently-edited loadout
+        # Detect conflict on the currently-edited loadout via last_update
         conflict_resolved_use_remote = False
         if current_id and current_id in remote_by_id:
-            local_json = json.dumps(self._current_loadout, sort_keys=True, default=str)
-            remote_json = json.dumps(remote_by_id[current_id], sort_keys=True, default=str)
-            if local_json != remote_json:
+            remote_lu = remote_timestamps.get(current_id)
+            saved_lu = self._saved_last_update.get(current_id)
+            if (saved_lu and remote_lu and remote_lu != saved_lu
+                    and not self._save_in_flight):
                 label = _get_loadout_label(self._current_loadout)
                 msg = QMessageBox(self)
                 msg.setWindowTitle("Loadout Conflict")
@@ -2285,6 +2318,9 @@ class LoadoutPage(QWidget):
                 msg.addButton("Use Server", QMessageBox.ButtonRole.DestructiveRole)
                 msg.exec()
                 conflict_resolved_use_remote = msg.clickedButton() is not keep_btn
+
+        # Update tracked timestamps to latest remote values
+        self._saved_last_update.update(remote_timestamps)
 
         # Build merged list: remote order, with conflict resolution applied
         merged: list[dict] = []

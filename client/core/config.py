@@ -1,6 +1,7 @@
 import json
 import os
 import shutil
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -10,10 +11,16 @@ from .logger import get_logger
 
 log = get_logger("Config")
 
-TESSERACT_COMMON_PATHS = [
-    r"C:\Program Files\Tesseract-OCR\tesseract.exe",
-    r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
-]
+if sys.platform == "win32":
+    TESSERACT_COMMON_PATHS = [
+        r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+        r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+    ]
+else:
+    TESSERACT_COMMON_PATHS = [
+        "/usr/bin/tesseract",
+        "/usr/local/bin/tesseract",
+    ]
 
 
 @dataclass
@@ -50,9 +57,6 @@ class AppConfig:
     hunt_split_mob_threshold: int = 10           # consecutive kills before confirming mob-type split
     hunt_split_min_remote_kills: int = 5         # kills at new location before confirming split
 
-    # Hunt markup (custom override for loot MU calculations)
-    hunt_markup_pct: float = 100.0
-
     # Open encounter auto-merge: auto-merge successive deaths to same mob
     auto_merge_deaths: bool = False
 
@@ -69,7 +73,7 @@ class AppConfig:
     hotkey_ocr_scan: str = "F7"
 
     # UI
-    main_window_geometry: str = ""
+    main_window_screen_center: list | None = None
     active_loadout_id: str | None = None
 
     # Wiki
@@ -77,6 +81,9 @@ class AppConfig:
 
     # Loadout JS bridge
     js_utils_path: str = ""
+
+    # Updates
+    check_for_updates: bool = True
 
 
 DEFAULTS = {
@@ -100,7 +107,6 @@ DEFAULTS = {
     "session_auto_timeout_ms": 3600000,
     "hunt_split_mob_threshold": 10,
     "hunt_split_min_remote_kills": 5,
-    "hunt_markup_pct": 100.0,
     "auto_merge_deaths": False,
     "loot_blacklist": [],
     "loot_blacklist_per_mob": {},
@@ -108,10 +114,11 @@ DEFAULTS = {
     "hotkey_stop_hunt": "",
     "hotkey_manual_mob_name": "",
     "hotkey_ocr_scan": "F7",
-    "main_window_geometry": "",
+    "main_window_screen_center": None,
     "active_loadout_id": None,
     "wiki_column_prefs": {},
     "js_utils_path": "",
+    "check_for_updates": True,
 }
 
 

@@ -750,11 +750,13 @@
       searchSelectedIndex = Math.min(searchSelectedIndex + 1, searchResults.length - 1);
       hoveredLocation = searchResults[searchSelectedIndex];
       scrollSearchResultIntoView(searchSelectedIndex);
+      mapRef?.panTo(searchResults[searchSelectedIndex]);
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       searchSelectedIndex = Math.max(searchSelectedIndex - 1, 0);
       hoveredLocation = searchResults[searchSelectedIndex];
       scrollSearchResultIntoView(searchSelectedIndex);
+      mapRef?.panTo(searchResults[searchSelectedIndex]);
     } else if (e.key === 'Enter' && searchSelectedIndex >= 0) {
       e.preventDefault();
       if (isMobile) searchOpen = false;
@@ -906,7 +908,7 @@
             class="search-result"
             class:active={searchSelectedIndex === index}
             on:click={() => { searchSelectedIndex = index; if (isMobile) searchOpen = false; selectLocation(result, { focus: true }); }}
-            on:mouseenter={() => { searchSelectedIndex = index; hoveredLocation = result; }}
+            on:mouseenter={() => { searchSelectedIndex = index; hoveredLocation = result; mapRef?.panTo(result); }}
             on:mouseleave={() => {}}
           >
             <span class="result-index">{index + 1}</span>

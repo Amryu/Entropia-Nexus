@@ -1,5 +1,4 @@
-import ctypes
-import ctypes.wintypes
+import sys
 import threading
 import numpy as np
 
@@ -9,13 +8,17 @@ try:
 except ImportError:
     mss = None
 
-# Win32 GDI constants for PrintWindow capture
-PW_RENDERFULLCONTENT = 0x00000002
-SRCCOPY = 0x00CC0020
-DIB_RGB_COLORS = 0
+if sys.platform == "win32":
+    import ctypes
+    import ctypes.wintypes
 
-user32 = ctypes.windll.user32
-gdi32 = ctypes.windll.gdi32
+    # Win32 GDI constants for PrintWindow capture
+    PW_RENDERFULLCONTENT = 0x00000002
+    SRCCOPY = 0x00CC0020
+    DIB_RGB_COLORS = 0
+
+    user32 = ctypes.windll.user32
+    gdi32 = ctypes.windll.gdi32
 
 
 class ScreenCapturer:
@@ -54,12 +57,26 @@ class ScreenCapturer:
         screenshot = sct.grab(region)
         return np.array(screenshot)[:, :, :3]
 
-    def capture_window(self, hwnd: int) -> np.ndarray | None:
-        """Capture a window's content directly via Win32 PrintWindow.
+    def capture_window(self, hwnd: int,
+                       geometry: tuple[int, int, int, int] | None = None,
+                       ) -> np.ndarray | None:
+        """Capture a window's content.
 
-        Returns the window's client area as a numpy array (BGR format),
-        or None if capture fails. This ignores overlays and other windows.
+        On Windows, uses PrintWindow (ignores overlays). On Linux, falls back
+        to mss region capture using the provided *geometry* (x, y, w, h).
+
+        Returns the window as a numpy array (BGR format), or None.
         """
+        if sys.platform == "win32":
+            return self._capture_window_win32(hwnd)
+        # Linux: fall back to region capture using geometry
+        if geometry is None:
+            return None
+        x, y, w, h = geometry
+        return self.capture_region(x, y, w, h)
+
+    def _capture_window_win32(self, hwnd: int) -> np.ndarray | None:
+        """Capture a window via Win32 PrintWindow (ignores overlays)."""
         # Get client area dimensions
         rect = ctypes.wintypes.RECT()
         user32.GetClientRect(hwnd, ctypes.byref(rect))

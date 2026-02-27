@@ -10,12 +10,13 @@ from ..theme import (
     SIDEBAR_WIDTH, SIDEBAR_INDICATOR_WIDTH,
     PRIMARY, SECONDARY, MAIN_DARK, HOVER, TEXT, TEXT_MUTED, ACCENT, BORDER,
 )
-from ..icons import svg_icon, svg_pixmap, DASHBOARD, SKILLS, LOADOUT, HUNT, INVENTORY, WIKI, SETTINGS, USER
+from ..icons import svg_icon, svg_pixmap, DASHBOARD, SKILLS, LOADOUT, HUNT, INVENTORY, WIKI, MAPS, SETTINGS, USER
 
 # Page definitions: (svg_data, tooltip)
 PAGE_ICONS = [
     (DASHBOARD, "Dashboard"),
     (WIKI, "Wiki"),
+    (MAPS, "Maps"),
     (SKILLS, "Skills"),
     (LOADOUT, "Loadout"),
     (HUNT, "Hunt"),
@@ -48,7 +49,7 @@ def _button_style(active=False):
         QPushButton {{
             background-color: transparent;
             border: none;
-            border-left: {SIDEBAR_INDICATOR_WIDTH}px solid transparent;
+            border-left: none;
             font-size: 18px;
             min-width: {SIDEBAR_WIDTH}px;
             max-width: {SIDEBAR_WIDTH}px;

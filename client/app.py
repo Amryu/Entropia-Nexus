@@ -16,6 +16,7 @@ import threading
 import traceback
 
 from .core.config import load_config
+from .core.constants import EVENT_AUTH_STATE_CHANGED
 from .core.event_bus import EventBus
 from .core.database import Database
 from .core.logger import init as init_logging, get_logger
@@ -92,7 +93,6 @@ def _run_gui(config, event_bus, db, config_path):
     # Init auth early (needed to decide whether to show splash)
     token_store = TokenStore()
     oauth = OAuthClient(config, event_bus, token_store)
-
     # Show splash screen if not already authenticated
     if not oauth.is_authenticated():
         if _show_splash(app, oauth, event_bus):
@@ -100,7 +100,7 @@ def _run_gui(config, event_bus, db, config_path):
             return
 
     # Init remaining services
-    nexus_client = NexusClient(config, oauth)
+    nexus_client = NexusClient(config, oauth, event_bus)
     data_client = DataClient(config)
     signals = AppSignals()
     wire_signals(event_bus, signals)
@@ -120,12 +120,24 @@ def _run_gui(config, event_bus, db, config_path):
     )
     main_window.show()
 
+    # Refresh tokens + fetch user info in background now that UI is visible.
+    # This replaces the synchronous network calls that used to block __init__
+    # for up to 20s when the server is slow or unreachable.
+    # Also serves as re-emit: the background thread will publish
+    # EVENT_AUTH_STATE_CHANGED once user info is fetched.
+    if oauth.is_authenticated():
+        oauth.refresh_in_background()
+    else:
+        # Not authenticated — still re-emit so sidebar shows logged-out state
+        event_bus.publish(EVENT_AUTH_STATE_CHANGED, oauth.auth_state)
+
     # Now start worker threads (safe — Qt platform integration is initialized)
     workers = []
     workers.extend(_start_chat_watcher(config, event_bus, db))
     # workers.extend(_start_ocr_pipeline(config, event_bus, db))  # disabled for debugging
     workers.extend(_start_hunt_tracker(config, event_bus, db, data_client))
     workers.extend(_start_hotkey_manager(config, event_bus))
+    workers.extend(_start_update_checker(config, event_bus))
 
     # Qt overlays (always-on-top, draggable, position persisted)
     try:
@@ -327,6 +339,20 @@ def _start_hotkey_manager(config, event_bus):
         log.info("Hotkey manager started")
     except Exception as e:
         log.error("Hotkey manager failed to start: %s", e)
+    return workers
+
+
+def _start_update_checker(config, event_bus):
+    """Start the background update checker. Returns list of stoppable workers."""
+    workers = []
+    try:
+        from .updater import UpdateChecker
+        checker = UpdateChecker(config, event_bus)
+        checker.start()
+        workers.append(checker)
+        log.info("Update checker started")
+    except Exception as e:
+        log.error("Update checker failed to start: %s", e)
     return workers
 
 

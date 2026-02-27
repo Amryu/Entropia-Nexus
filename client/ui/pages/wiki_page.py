@@ -3,18 +3,19 @@
 from __future__ import annotations
 
 import threading
+from urllib.parse import quote as _url_quote
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
-    QPushButton, QScrollArea, QSizePolicy, QFrame,
+    QPushButton, QScrollArea, QSizePolicy, QFrame, QApplication,
 )
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 
 from ..theme import (
     PRIMARY, SECONDARY, HOVER, BORDER, ACCENT, TEXT, TEXT_MUTED,
     MAIN_DARK, PAGE_HEADER_OBJECT_NAME,
 )
-from ...data.wiki_columns import LEAF_DATA_MAP
+from ...data.wiki_columns import LEAF_DATA_MAP, COLUMN_DEFS, get_item_name
 
 # ---------------------------------------------------------------------------
 # Category data — mirrors the website overview pages
@@ -86,6 +87,123 @@ for _cat in ITEMS_CATEGORIES:
     _SECTION_FOR_CATEGORY[_cat[1]] = "Items"
 for _cat in INFO_CATEGORIES:
     _SECTION_FOR_CATEGORY[_cat[1]] = "Information"
+
+
+# ---------------------------------------------------------------------------
+# Short URL generation — mirrors frontend Menu.svelte + short-url-routes.js
+# ---------------------------------------------------------------------------
+
+_SHORT_LINK_ORIGIN = "eunex.us"
+
+# Category title → canonical URL prefix (mirrors frontend getEntityUrl)
+_CATEGORY_URL_PREFIX: dict[str, str] = {
+    # Items — top-level
+    "Weapons": "/items/weapons",
+    "Armor Sets": "/items/armorsets",
+    "Clothing": "/items/clothing",
+    "Materials": "/items/materials",
+    "Blueprints": "/items/blueprints",
+    "Vehicles": "/items/vehicles",
+    "Pets": "/items/pets",
+    "Strongboxes": "/items/strongboxes",
+    # Attachments
+    "Weapon Amplifiers": "/items/attachments/weaponamplifiers",
+    "Sights/Scopes": "/items/attachments/weaponvisionattachments",
+    "Absorbers": "/items/attachments/absorbers",
+    "Finder Amplifiers": "/items/attachments/finderamplifiers",
+    "Armor Platings": "/items/attachments/armorplatings",
+    "Enhancers": "/items/attachments/enhancers",
+    "Mindforce Implants": "/items/attachments/mindforceimplants",
+    # Medical
+    "Medical Tools": "/items/medicaltools/tools",
+    "Medical Chips": "/items/medicaltools/chips",
+    # Tools
+    "Refiners": "/items/tools/refiners",
+    "Scanners": "/items/tools/scanners",
+    "Finders": "/items/tools/finders",
+    "Excavators": "/items/tools/excavators",
+    "Teleportation Chips": "/items/tools/teleportationchips",
+    "Effect Chips": "/items/tools/effectchips",
+    "Misc. Tools": "/items/tools/misctools",
+    # Consumables
+    "Stimulants": "/items/consumables/stimulants",
+    "Creature Control Capsules": "/items/consumables/capsules",
+    # Furnishings
+    "Furniture": "/items/furnishings/furniture",
+    "Decorations": "/items/furnishings/decorations",
+    "Storage Containers": "/items/furnishings/storagecontainers",
+    "Signs": "/items/furnishings/signs",
+    # Information
+    "Guides": "/information/guides",
+    "Mobs": "/information/mobs",
+    "Missions": "/information/missions",
+    "Professions": "/information/professions",
+    "Skills": "/information/skills",
+    "Vendors": "/information/vendors",
+    "Locations": "/information/locations",
+    "Enumerations": "/information/enumerations",
+}
+
+# Canonical prefix → preferred short code (from short-url-routes.js)
+# Sorted longest-first so prefix matching picks the most specific code.
+_SHORT_ROUTE_BY_PREFIX: list[tuple[str, str]] = sorted(
+    [
+        ("/items/weapons", "iw"),
+        ("/items/armorsets", "ia"),
+        ("/items/armors", "ir"),
+        ("/items/attachments", "ij"),
+        ("/items/blueprints", "ib"),
+        ("/items/consumables", "ic"),
+        ("/items/furnishings", "if"),
+        ("/items/clothing", "il"),
+        ("/items/materials", "im"),
+        ("/items/medicaltools", "it"),
+        ("/items/tools", "io"),
+        ("/items/pets", "ip"),
+        ("/items/vehicles", "iv"),
+        ("/items/strongboxes", "ix"),
+        ("/items", "i"),
+        ("/information/guides", "ng"),
+        ("/information/mobs", "nm"),
+        ("/information/missions", "ni"),
+        ("/information/professions", "np"),
+        ("/information/skills", "ns"),
+        ("/information/vendors", "nv"),
+        ("/information/locations", "nl"),
+        ("/information/enumerations", "ne"),
+        ("/information", "n"),
+    ],
+    key=lambda t: -len(t[0]),
+)
+
+
+def _encode_uri_safe(s: str) -> str:
+    """Port of frontend encodeURIComponentSafe — URL-encode with ~ for spaces."""
+    if not s:
+        return s
+    # Pre-escape literal ~ as %7E, URL-encode, then use ~ for spaces.
+    # safe="!*'()" matches JS encodeURIComponent which keeps those chars.
+    encoded = _url_quote(s.replace("~", "%7E"), safe="!*'()")
+    return encoded.replace("%20", "~")
+
+
+def _get_short_url(path: list[str]) -> str | None:
+    """Build a eunex.us short URL for the current wiki path, or None."""
+    if not path:
+        return None
+    # path[0] is the leaf category title (e.g. "Weapons", "Finders")
+    canonical = _CATEGORY_URL_PREFIX.get(path[0])
+    if not canonical:
+        return None
+    # Entity detail — append encoded name
+    if len(path) >= 2:
+        canonical += "/" + _encode_uri_safe(path[-1])
+    # Find longest matching short-route prefix
+    for prefix, code in _SHORT_ROUTE_BY_PREFIX:
+        if canonical.startswith(prefix):
+            remainder = canonical[len(prefix):]
+            return f"{_SHORT_LINK_ORIGIN}/{code}{remainder}"
+    return None
 
 
 def _find_category(title: str):
@@ -281,7 +399,8 @@ class WikiPage(QWidget):
     """Browsable wiki page mirroring the website's category structure."""
 
     navigation_changed = pyqtSignal(list)
-    _data_loaded = pyqtSignal(str, list)  # (leaf_title, items)
+    _data_loaded = pyqtSignal(str, list, list, list)  # title, items, cache, numeric
+    _detail_items_ready = pyqtSignal(str, str, list)  # category, entity_name, items
 
     def __init__(self, *, signals, data_client, config=None, config_path=None, nexus_client=None):
         super().__init__()
@@ -292,6 +411,10 @@ class WikiPage(QWidget):
         self._nexus_client = nexus_client
         self._path: list[str] = []
         self._current_table_view = None  # active WikiTableView (if any)
+        self._leaf_items: dict[str, list[dict]] = {}  # title → fetched items
+        self._precomputed_data: dict[str, tuple[list, list, list]] = {}  # title → (items, cache, numeric)
+        self._cached_leaf_views: dict[str, QWidget] = {}    # title → container
+        self._cached_table_refs = {}                         # title → WikiTableView
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -323,11 +446,17 @@ class WikiPage(QWidget):
         # Search results sub-view
         self._search_view = _SearchResultsView()
 
-        # Wire data-loaded signal (from background threads → main thread)
+        # Wire signals (from background threads → main thread)
         self._data_loaded.connect(self._on_data_loaded)
+        self._detail_items_ready.connect(self._on_detail_items_ready)
 
         # Build initial overview
         self._navigate_internal([])
+
+        # Warm up all tables in the background
+        threading.Thread(
+            target=self._warmup_all, daemon=True, name="wiki-warmup"
+        ).start()
 
     # --- Public API ---
 
@@ -341,17 +470,17 @@ class WikiPage(QWidget):
     def get_sub_state(self) -> list[str]:
         return list(self._path)
 
-    def set_sub_state(self, path: list[str]):
+    def set_sub_state(self, path):
         """Restore a previously saved navigation path (no signal emitted)."""
-        self._navigate_internal(path)
+        if path is not None:
+            self._navigate_internal(path)
 
     def show_search_results(self, query: str, results: list[dict]):
         """Display full search results from the title bar."""
         self._path = ["Search"]
         self._update_breadcrumbs()
         self._search_view.show_results(query, results)
-        self._scroll.setWidget(self._search_view)
-        self._content = self._search_view
+        self._swap_content(self._search_view)
         self.navigation_changed.emit(list(self._path))
 
     # --- Internal navigation ---
@@ -370,15 +499,33 @@ class WikiPage(QWidget):
             else:
                 self._show_leaf(path[0])
         elif len(path) == 2:
-            # Sub-category leaf (e.g. ["Attachments", "Weapon Amplifiers"])
-            self._show_leaf(path[-1])
+            cat = _find_category(path[0])
+            if cat and cat[3]:
+                # Has sub-categories — check if path[1] is a sub-category title
+                if any(sub[1] == path[1] for sub in cat[3]):
+                    self._show_leaf(path[1])
+                else:
+                    # Entity detail within a sub-category-parent context
+                    self._show_entity_detail(path[0], path[1])
+            else:
+                # Entity detail for top-level leaf (e.g. ["Weapons", "Vivo T20 (L)"])
+                self._show_entity_detail(path[0], path[1])
+        elif len(path) == 3:
+            # Sub-category entity detail (e.g. ["Attachments", "Weapon Amplifiers", "SomeAmp"])
+            self._show_entity_detail(path[-2], path[-1])
         else:
             self._show_leaf(path[-1])
+
+    def _swap_content(self, new_widget: QWidget):
+        """Swap scroll area content — takeWidget() prevents deletion of cached views."""
+        self._scroll.takeWidget()
+        self._scroll.setWidget(new_widget)
+        self._content = new_widget
 
     def _show_overview(self):
         container = QWidget()
         layout = QVBoxLayout(container)
-        layout.setContentsMargins(16, 12, 16, 16)
+        layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(0)
 
         # Items Database section
@@ -400,13 +547,12 @@ class WikiPage(QWidget):
         layout.addWidget(info_grid)
 
         layout.addStretch(1)
-        self._scroll.setWidget(container)
-        self._content = container
+        self._swap_content(container)
 
     def _show_sub_grid(self, parent_title: str, subtypes: list[tuple[str, str, str]]):
         container = QWidget()
         layout = QVBoxLayout(container)
-        layout.setContentsMargins(16, 12, 16, 16)
+        layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(0)
 
         grid = self._build_card_grid(
@@ -415,18 +561,50 @@ class WikiPage(QWidget):
         )
         layout.addWidget(grid)
         layout.addStretch(1)
-        self._scroll.setWidget(container)
-        self._content = container
+        self._swap_content(container)
 
     def _show_leaf(self, title: str):
+        # 1. Cached table widget — show with preserved state
+        if title in self._cached_leaf_views:
+            self._current_table_view = self._cached_table_refs.get(title)
+            self._swap_content(self._cached_leaf_views[title])
+            return
+
         mapping = LEAF_DATA_MAP.get(title)
         if not mapping:
-            # Unmapped categories (Guides, Enumerations)
             self._show_placeholder(title)
             return
 
         method_name, page_type_id = mapping
 
+        # 2. Precomputed data ready — create table instantly
+        precomputed = self._precomputed_data.get(title)
+        if precomputed:
+            items, cache, numeric = precomputed
+            self._create_and_show_table(title, page_type_id, items, cache, numeric)
+            return
+
+        # 3. Not ready yet — show loading, build cache in background
+        self._show_loading_placeholder(title)
+
+        leaf_title = title
+        ptid = page_type_id
+        prefetched = self._leaf_items.get(title)
+
+        def fetch():
+            from ..widgets.wiki_table import build_column_cache
+
+            items = prefetched if prefetched else getattr(self._data_client, method_name)()
+            all_defs = COLUMN_DEFS.get(ptid, {})
+            col_defs_list = list(all_defs.values())
+            cache, numeric = build_column_cache(items, col_defs_list)
+            self._data_loaded.emit(leaf_title, items, cache, numeric)
+
+        threading.Thread(target=fetch, daemon=True, name=f"wiki-{ptid}").start()
+
+    def _create_and_show_table(self, title: str, page_type_id: str,
+                               items: list, cache: list, numeric: list):
+        """Create a WikiTableView, populate it, cache it, and show it."""
         from ..widgets.wiki_table import WikiTableView
 
         column_prefs = {}
@@ -438,8 +616,10 @@ class WikiPage(QWidget):
             column_prefs=column_prefs,
             on_columns_changed=self._on_columns_changed,
         )
-        table_view.set_loading()
-        self._current_table_view = table_view
+        table_view.row_activated.connect(
+            lambda item, t=title: self._on_row_activated(t, item)
+        )
+        table_view.set_data(items, cache, numeric)
 
         container = QWidget()
         layout = QVBoxLayout(container)
@@ -447,23 +627,16 @@ class WikiPage(QWidget):
         layout.setSpacing(0)
         layout.addWidget(table_view, 1)
 
-        self._scroll.setWidget(container)
-        self._content = container
-
-        # Fetch data in background thread
-        leaf_title = title
-
-        def fetch():
-            items = getattr(self._data_client, method_name)()
-            self._data_loaded.emit(leaf_title, items)
-
-        threading.Thread(target=fetch, daemon=True, name=f"wiki-{page_type_id}").start()
+        self._cached_leaf_views[title] = container
+        self._cached_table_refs[title] = table_view
+        self._current_table_view = table_view
+        self._swap_content(container)
 
     def _show_placeholder(self, title: str):
         """Show 'Coming soon' for unmapped categories."""
         container = QWidget()
         layout = QVBoxLayout(container)
-        layout.setContentsMargins(16, 12, 16, 16)
+        layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(8)
 
         placeholder = QLabel("Coming soon — this section is under development.")
@@ -473,16 +646,130 @@ class WikiPage(QWidget):
         placeholder.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(placeholder, 1)
 
-        self._scroll.setWidget(container)
-        self._content = container
+        self._swap_content(container)
 
-    def _on_data_loaded(self, title: str, items: list):
-        """Handle data arriving from background fetch — populate the table."""
-        # Only populate if the user is still on the same leaf page
+    def _on_data_loaded(self, title: str, items: list, full_cache: list, full_numeric: list):
+        """Handle data arriving from background fetch or revalidation."""
+        self._leaf_items[title] = items
+        self._precomputed_data[title] = (items, full_cache, full_numeric)
+
+        # If table already exists, refresh it in-place
+        if title in self._cached_table_refs:
+            self._cached_table_refs[title].set_data(items, full_cache, full_numeric)
+            return
+
+        # Table not cached — only create if user is currently viewing this leaf
         if not self._path or self._path[-1] != title:
             return
-        if self._current_table_view:
-            self._current_table_view.set_data(items)
+
+        mapping = LEAF_DATA_MAP.get(title)
+        if not mapping:
+            return
+        _, page_type_id = mapping
+
+        self._create_and_show_table(title, page_type_id, items, full_cache, full_numeric)
+
+    def _on_row_activated(self, leaf_title: str, item: dict):
+        """Handle double-click on a table row — navigate to entity detail."""
+        entity_name = get_item_name(item)
+        if not entity_name:
+            return
+        # Build path: current path + entity name
+        # Current path is either ["Weapons"] or ["Attachments", "Weapon Amplifiers"]
+        new_path = list(self._path) + [entity_name]
+        # Defer to avoid destroying the QTableView while it's still
+        # processing the doubleClicked signal (causes C++ use-after-free).
+        QTimer.singleShot(0, lambda: self.navigate_to(new_path))
+
+    def _show_entity_detail(self, category_title: str, entity_name: str):
+        """Show the detail view for a single entity."""
+        # Find the entity in cached items
+        items = self._leaf_items.get(category_title)
+        if not items:
+            # Items not cached yet — fetch them, then signal main thread
+            mapping = LEAF_DATA_MAP.get(category_title)
+            if not mapping:
+                self._show_placeholder(entity_name)
+                return
+            method_name, _ = mapping
+
+            def fetch():
+                fetched = getattr(self._data_client, method_name)()
+                # Signal main thread — safe cross-thread communication
+                self._detail_items_ready.emit(category_title, entity_name, fetched)
+
+            threading.Thread(
+                target=fetch, daemon=True, name="wiki-detail-fetch"
+            ).start()
+            self._show_loading_placeholder(entity_name)
+            return
+
+        # Find entity by name
+        item = None
+        for i in items:
+            if get_item_name(i) == entity_name:
+                item = i
+                break
+
+        if not item:
+            self._show_placeholder(entity_name)
+            return
+
+        # Determine which detail view to use based on the LEAF_DATA_MAP page type
+        mapping = LEAF_DATA_MAP.get(category_title)
+        if not mapping:
+            self._show_placeholder(entity_name)
+            return
+
+        _, page_type_id = mapping
+        nexus_base_url = ""
+        if self._config:
+            nexus_base_url = getattr(self._config, "nexus_base_url", "")
+
+        detail_view: QWidget | None = None
+        if page_type_id == "weapons":
+            from ..widgets.weapon_detail import WeaponDetailView
+            detail_view = WeaponDetailView(
+                item, nexus_base_url=nexus_base_url,
+                data_client=self._data_client,
+            )
+
+        if not detail_view:
+            self._show_placeholder(entity_name)
+            return
+
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(0)
+        layout.addWidget(detail_view)
+        layout.addStretch(1)
+
+        self._swap_content(container)
+        self._current_table_view = None
+
+    def _show_loading_placeholder(self, title: str):
+        """Show 'Loading...' placeholder while fetching data."""
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(8)
+
+        loading = QLabel(f"Loading {title}...")
+        loading.setStyleSheet(
+            f"color: {TEXT_MUTED}; font-size: 14px; background: transparent;"
+        )
+        loading.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(loading, 1)
+
+        self._swap_content(container)
+
+    def _on_detail_items_ready(self, category_title: str, entity_name: str, items: list):
+        """Handle items arriving for entity detail — cache and show detail."""
+        self._leaf_items[category_title] = items
+        # Only proceed if user is still on the same detail path
+        if entity_name in self._path:
+            self._show_entity_detail(category_title, entity_name)
 
     def _on_columns_changed(self, page_type_id: str, keys: list[str]):
         """Persist column preferences locally and to server."""
@@ -502,6 +789,41 @@ class WikiPage(QWidget):
                 self._nexus_client.save_preference(pref_key, keys)
 
             threading.Thread(target=sync, daemon=True, name="wiki-pref-sync").start()
+
+    # --- Background warmup ---
+
+    def _warmup_all(self):
+        """Background: pre-fetch raw wiki data, then revalidate every 15 min.
+
+        Column caches are built lazily when the user navigates to a category
+        (in _show_leaf), keeping startup fast by avoiding CPU-bound work that
+        contends with the UI thread via the GIL.
+        """
+        import time
+        from ..widgets.wiki_table import build_column_cache
+
+        while True:
+            for title, (method_name, page_type_id) in LEAF_DATA_MAP.items():
+                try:
+                    items = getattr(self._data_client, method_name)()
+                    old_items = self._leaf_items.get(title)
+                    self._leaf_items[title] = items
+
+                    # Revalidation: if data changed AND table already built, rebuild cache
+                    if old_items is not None and title in self._cached_table_refs:
+                        if len(old_items) != len(items) or old_items != items:
+                            all_defs = COLUMN_DEFS.get(page_type_id, {})
+                            col_defs_list = list(all_defs.values())
+                            cache, numeric = build_column_cache(items, col_defs_list)
+                            self._precomputed_data[title] = (items, cache, numeric)
+                            self._data_loaded.emit(title, items, cache, numeric)
+                except Exception:
+                    pass
+
+            # Invalidate data_client cache so next cycle fetches fresh data
+            self._data_client.invalidate_cache()
+
+            time.sleep(900)  # 15 minutes
 
     # --- Card grid builder ---
 
@@ -575,6 +897,35 @@ class WikiPage(QWidget):
                 self._add_breadcrumb_separator()
 
         self._breadcrumb_container.addStretch()
+
+        # Short URL copy button (far right)
+        short_url = _get_short_url(self._path)
+        if short_url:
+            btn = QPushButton("Copy Link")
+            btn.setToolTip(short_url)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setFixedHeight(22)
+            btn.setStyleSheet(
+                f"QPushButton {{"
+                f"  color: {ACCENT}; background: transparent;"
+                f"  border: 1px solid {BORDER}; border-radius: 4px;"
+                f"  font-size: 11px; padding: 0 8px;"
+                f"}}"
+                f"QPushButton:hover {{ background-color: {HOVER}; }}"
+            )
+            btn.clicked.connect(lambda _, u=short_url: self._copy_short_url(u))
+            self._breadcrumb_container.addWidget(btn)
+
+    def _copy_short_url(self, url: str):
+        """Copy short URL to clipboard with brief visual feedback."""
+        QApplication.clipboard().setText(url)
+        # Find the button (last widget before any stretch)
+        sender = self.sender()
+        if isinstance(sender, QPushButton):
+            original = sender.text()
+            sender.setText("Copied!")
+            QTimer.singleShot(1500, lambda: sender.setText(original)
+                              if sender and not sender.isHidden() else None)
 
     def _add_breadcrumb_link(self, text: str, path: list[str]):
         link = QLabel(text)

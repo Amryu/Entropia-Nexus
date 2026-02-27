@@ -1,15 +1,18 @@
 """Bottom status bar for persistent info (trackers, inventory value, etc.)."""
 
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QStyleOption, QStyle
+from PyQt6.QtWidgets import QWidget, QHBoxLayout, QStyleOption, QStyle, QPushButton
 from PyQt6.QtGui import QPainter
+from PyQt6.QtCore import pyqtSignal
 
-from ..theme import STATUS_BAR_HEIGHT
+from ..theme import STATUS_BAR_HEIGHT, ACCENT, ACCENT_HOVER
 
 
 class StatusBar(QWidget):
     """Thin bar at the bottom of the main window."""
 
-    def __init__(self, parent=None):
+    update_restart_clicked = pyqtSignal()
+
+    def __init__(self, *, signals=None, parent=None):
         super().__init__(parent)
         self.setFixedHeight(STATUS_BAR_HEIGHT)
         self.setObjectName("statusBar")
@@ -17,6 +20,66 @@ class StatusBar(QWidget):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 0, 8, 0)
         layout.setSpacing(0)
+
+        layout.addStretch()
+
+        # Update notification (hidden by default)
+        self._update_btn = QPushButton()
+        self._update_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent;
+                border: none;
+                color: {ACCENT};
+                font-size: 11px;
+                padding: 0 4px;
+            }}
+            QPushButton:hover {{
+                color: {ACCENT_HOVER};
+                text-decoration: underline;
+            }}
+            QPushButton:disabled {{
+                color: #888;
+            }}
+        """)
+        self._update_btn.hide()
+        self._update_btn.clicked.connect(self.update_restart_clicked.emit)
+        layout.addWidget(self._update_btn)
+
+        if signals:
+            signals.update_available.connect(self._on_update_available)
+            signals.update_progress.connect(self._on_update_progress)
+            signals.update_ready.connect(self._on_update_ready)
+            signals.update_error.connect(self._on_update_error)
+
+    def _on_update_available(self, data):
+        size = self._format_size(data.get("download_size", 0))
+        count = data.get("file_count", 0)
+        self._update_btn.setText(f"Downloading update ({count} files, {size})...")
+        self._update_btn.setEnabled(False)
+        self._update_btn.show()
+
+    def _on_update_progress(self, data):
+        downloaded = data.get("downloaded", 0)
+        total = data.get("total", 1)
+        pct = int(100 * downloaded / total)
+        self._update_btn.setText(f"Downloading update... {pct}%")
+
+    def _on_update_ready(self, data):
+        version = data.get("version", "?")
+        self._update_btn.setText(f"Update v{version} ready \u2014 click to restart")
+        self._update_btn.setEnabled(True)
+
+    def _on_update_error(self, data):
+        self._update_btn.setText(f"Update failed: {data.get('error', 'unknown')}")
+        self._update_btn.setEnabled(False)
+
+    @staticmethod
+    def _format_size(size_bytes):
+        for unit in ("B", "KB", "MB"):
+            if abs(size_bytes) < 1024:
+                return f"{size_bytes:.0f} {unit}"
+            size_bytes /= 1024
+        return f"{size_bytes:.1f} GB"
 
     def paintEvent(self, event):
         """Required for QWidget subclasses to honour stylesheet backgrounds."""

@@ -3,6 +3,7 @@
 from PyQt6.QtCore import QObject, pyqtSignal
 
 from ..core.constants import (
+    EVENT_API_SCOPE_ERROR,
     EVENT_AUTH_STATE_CHANGED,
     EVENT_CATCHUP_COMPLETE,
     EVENT_COMBAT,
@@ -29,6 +30,10 @@ from ..core.constants import (
     EVENT_SKILLS_UPLOAD_FAILED,
     EVENT_TRADE_CHAT,
     EVENT_HOTKEY_TRIGGERED,
+    EVENT_UPDATE_AVAILABLE,
+    EVENT_UPDATE_PROGRESS,
+    EVENT_UPDATE_READY,
+    EVENT_UPDATE_ERROR,
 )
 
 
@@ -42,6 +47,7 @@ class AppSignals(QObject):
 
     # Auth
     auth_state_changed = pyqtSignal(object)
+    api_scope_error = pyqtSignal(object)
 
     # Chat parser
     skill_gain = pyqtSignal(object)
@@ -85,10 +91,20 @@ class AppSignals(QObject):
     # News
     new_news_post = pyqtSignal(str, str)  # (title, summary)
 
+    # Updates
+    update_available = pyqtSignal(object)   # {"version", "download_size", "file_count"}
+    update_progress = pyqtSignal(object)    # {"downloaded", "total", "current_file"}
+    update_ready = pyqtSignal(object)       # {"version"}
+    update_error = pyqtSignal(object)       # {"error"}
+
+    # Inventory
+    inventory_open_wiki = pyqtSignal(int, str)  # (item_id, item_type)
+
 
 def wire_signals(event_bus, signals: AppSignals) -> None:
     """Subscribe EventBus events to Qt signal emissions."""
     _WIRING = {
+        EVENT_API_SCOPE_ERROR: signals.api_scope_error,
         EVENT_AUTH_STATE_CHANGED: signals.auth_state_changed,
         EVENT_SKILL_GAIN: signals.skill_gain,
         EVENT_COMBAT: signals.combat_event,
@@ -115,6 +131,10 @@ def wire_signals(event_bus, signals: AppSignals) -> None:
         EVENT_CONFIG_CHANGED: signals.config_changed,
         EVENT_HOTKEY_TRIGGERED: signals.hotkey_triggered,
         EVENT_CATCHUP_COMPLETE: signals.catchup_complete,
+        EVENT_UPDATE_AVAILABLE: signals.update_available,
+        EVENT_UPDATE_PROGRESS: signals.update_progress,
+        EVENT_UPDATE_READY: signals.update_ready,
+        EVENT_UPDATE_ERROR: signals.update_error,
     }
 
     for event_name, signal in _WIRING.items():

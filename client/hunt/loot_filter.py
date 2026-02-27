@@ -8,6 +8,8 @@ Classification priority:
 5. Normal loot → counted
 """
 
+import threading
+
 from ..core.logger import get_logger
 
 log = get_logger("LootFilter")
@@ -35,6 +37,17 @@ class LootFilter:
         self._data_client = data_client
         self._refining_products: set[str] | None = None  # lazy-loaded
         self._mob_loot_cache: dict[str, set[str]] = {}   # mob_name_lower -> set of item names
+
+    def warmup(self):
+        """Pre-load refining products in a background thread.
+
+        Called after catchup so the first loot event doesn't block
+        the watcher thread with a synchronous API call.
+        """
+        def _load():
+            self._load_refining_products()
+
+        threading.Thread(target=_load, daemon=True, name="lootfilter-warmup").start()
 
     @property
     def global_blacklist(self) -> set[str]:

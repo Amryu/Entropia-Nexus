@@ -13,6 +13,7 @@
   import {
     calculateAllProfessionLevels,
     calculateHP,
+    buildAttributeSkillSet,
     fetchAllSkillPEDValues,
     findCheapestPath,
     findCheapestHPPath,
@@ -119,7 +120,8 @@
   $: skillCategories = [...new Set(skillsMetadata.map(s => s.Category).filter(Boolean))].sort();
   $: professionCategories = [...new Set(professionsMetadata.map(p => p.Category).filter(Boolean))].sort();
 
-  $: professionLevels = calculateAllProfessionLevels(skillValues, professionsMetadata);
+  $: attributeSkills = buildAttributeSkillSet(skillsMetadata);
+  $: professionLevels = calculateAllProfessionLevels(skillValues, professionsMetadata, skillsMetadata);
   $: totalHP = calculateHP(skillValues, skillsMetadata);
   $: nonZeroSkillCount = Object.values(skillValues).filter(v => v > 0).length;
 
@@ -275,7 +277,7 @@
       const prof = professionLookup.get(targetProfession);
       if (prof) {
         const currentLevel = professionLevels.get(targetProfession) || 0;
-        optimizerResult = findCheapestPath(skillValues, prof.Skills, currentLevel, targetLevel, optimizerMarkups, methodOverrides);
+        optimizerResult = findCheapestPath(skillValues, prof.Skills, currentLevel, targetLevel, optimizerMarkups, methodOverrides, attributeSkills);
       }
     } else if (targetType === 'hp' && targetHPValue > totalHP) {
       optimizerResult = findCheapestHPPath(skillValues, skillsMetadata, totalHP, targetHPValue, optimizerMarkups, methodOverrides);

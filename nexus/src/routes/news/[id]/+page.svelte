@@ -284,6 +284,7 @@
     overflow: hidden;
   }
 
+  .article-body :global(.video-embed-wrapper iframe),
   .article-body :global(.video-embed-iframe) {
     position: absolute;
     top: 0;

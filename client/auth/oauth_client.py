@@ -19,7 +19,7 @@ from .token_store import TokenStore
 
 log = get_logger("Auth")
 
-SCOPES = "profile:read skills:read skills:write loadouts:read loadouts:write"
+SCOPES = "profile:read skills:read skills:write loadouts:read loadouts:write inventory:read inventory:write"
 TOKEN_REFRESH_MARGIN_SECONDS = 300  # Refresh 5 min before expiry
 CALLBACK_TIMEOUT_SECONDS = 120
 DEFAULT_CLIENT_ID = "e5d3b6c4-ec01-468d-b3f2-c0b056cfe47c"
@@ -36,14 +36,12 @@ class OAuthClient:
         self._auth_state = AuthState()
         self._lock = threading.Lock()
 
-        # Try to restore tokens from storage
+        # Restore tokens from disk (fast — no network calls).
+        # Network refresh happens later via refresh_in_background().
         self._tokens = self._token_store.load()
-        if self._tokens:
-            if self._tokens.is_expired and self._tokens.refresh_token:
-                log.info("Access token expired, refreshing via refresh token...")
-                self._refresh_token()
-            if self._tokens and not self._tokens.is_expired:
-                self._refresh_user_info()
+        if self._tokens and not self._tokens.is_expired:
+            # Preliminary authenticated state (no username/avatar yet)
+            self._auth_state = AuthState(authenticated=True)
 
     @property
     def client_id(self) -> str:
@@ -67,6 +65,23 @@ class OAuthClient:
                     return None
 
             return self._tokens.access_token
+
+    def refresh_in_background(self) -> None:
+        """Refresh tokens and fetch user info in a background thread.
+
+        Called after the UI is visible so network delays don't block startup.
+        """
+        def _do_refresh():
+            if not self._tokens:
+                return
+            if self._tokens.is_expired and self._tokens.refresh_token:
+                log.info("Access token expired, refreshing via refresh token...")
+                if not self._refresh_token():
+                    return
+            if self._tokens and not self._tokens.is_expired:
+                self._refresh_user_info()
+
+        threading.Thread(target=_do_refresh, daemon=True, name="auth-refresh").start()
 
     def login(self) -> bool:
         """Start the OAuth login flow. Opens browser, waits for redirect. Returns success."""

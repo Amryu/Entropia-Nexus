@@ -9,10 +9,10 @@ from PyQt6.QtWidgets import (
     QGroupBox, QTableWidget, QTableWidgetItem, QHeaderView,
     QSplitter, QTabWidget, QSpinBox, QDoubleSpinBox,
     QTreeWidget, QTreeWidgetItem, QScrollArea, QMessageBox,
-    QTextEdit, QComboBox, QLineEdit,
+    QTextEdit, QComboBox, QLineEdit, QMenu, QInputDialog,
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QColor
+from PyQt6.QtGui import QColor, QAction
 
 from ...core.constants import (
     EVENT_HUNT_SESSION_STARTED, EVENT_HUNT_SESSION_STOPPED,
@@ -27,21 +27,23 @@ class HuntPage(QWidget):
     GLOBAL_COL = 5               # column index for Global marker in kill log
     GLOBAL_CORRELATION_WINDOW = timedelta(seconds=10)
 
-    def __init__(self, *, signals, db, event_bus, config, config_path):
+    def __init__(self, *, signals, db, event_bus, config, config_path,
+                 markup_resolver=None):
         super().__init__()
         self._signals = signals
         self._db = db
         self._event_bus = event_bus
         self._config = config
         self._config_path = config_path
+        self._markup_resolver = markup_resolver
         self._active_session_id = None
         self._session_start_time: datetime | None = None
 
         # Current Hunt tab state
         self._hunt_encounters: list[dict] = []
+        self._session_encounters: list[dict] = []  # all encounters in session
         self._hunt_is_multi_mob: bool = False
-        self._markup_pct: float = config.hunt_markup_pct
-        self._last_hunt_data: dict | None = None  # cached for markup recomputation
+        self._last_hunt_data: dict | None = None
         self._selected_encounter_id: str | None = None
 
         layout = QVBoxLayout(self)
@@ -109,7 +111,7 @@ class HuntPage(QWidget):
         summary_layout = QHBoxLayout(summary_group)
         self._summary_labels = {}
         for name in ["Kills", "Hunts", "Cost", "Loot Total",
-                      "Return %", "DPP", "Kills/h"]:
+                      "Value (MU)", "Return %", "DPP", "Kills/h"]:
             col = QVBoxLayout()
             title = QLabel(name)
             title.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -156,7 +158,30 @@ class HuntPage(QWidget):
         encounters_layout.addWidget(self._encounter_table)
         splitter.addWidget(encounters_group)
 
-        splitter.setSizes([100, 200, 300])
+        # Session loot list
+        session_loot_group = QGroupBox("Session Loot")
+        session_loot_layout = QVBoxLayout(session_loot_group)
+        self._session_loot_table = QTableWidget()
+        self._session_loot_table.setColumnCount(5)
+        self._session_loot_table.setHorizontalHeaderLabels([
+            "Item", "Qty", "TT (PED)", "MU (PED)", "MU Source"
+        ])
+        self._session_loot_table.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.Stretch
+        )
+        self._session_loot_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._session_loot_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self._session_loot_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._session_loot_table.customContextMenuRequested.connect(
+            lambda pos: self._on_loot_context_menu(self._session_loot_table, pos)
+        )
+        self._session_loot_table.setMaximumHeight(180)
+        session_loot_layout.addWidget(self._session_loot_table)
+        session_loot_layout.setContentsMargins(4, 8, 4, 4)
+
+        splitter.addWidget(session_loot_group)
+
+        splitter.setSizes([100, 200, 200, 200])
         layout.addWidget(splitter, 1)
 
         self._tabs.addTab(tab, "Current Session")
@@ -168,29 +193,6 @@ class HuntPage(QWidget):
     def _build_current_hunt_tab(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
-
-        # Markup row
-        markup_row = QHBoxLayout()
-        markup_row.addWidget(QLabel("Loot Markup:"))
-
-        self._markup_spin = QDoubleSpinBox()
-        self._markup_spin.setRange(100.0, 10000000.0)
-        self._markup_spin.setDecimals(2)
-        self._markup_spin.setValue(self._markup_pct)
-        self._markup_spin.setSuffix(" %")
-        self._markup_spin.setToolTip(
-            "Markup applied to loot TT values.\n"
-            "100% = no markup (TT value only).\n"
-            "e.g. 135% means loot is worth 35% above TT."
-        )
-        self._markup_spin.valueChanged.connect(self._on_markup_changed)
-        markup_row.addWidget(self._markup_spin)
-
-        self._markup_source_label = QLabel("Custom" if self._markup_pct != 100.0 else "Default")
-        self._markup_source_label.setObjectName("mutedText")
-        markup_row.addWidget(self._markup_source_label)
-        markup_row.addStretch()
-        layout.addLayout(markup_row)
 
         # Hunt summary cards
         hunt_summary_group = QGroupBox("Hunt Summary")
@@ -211,22 +213,28 @@ class HuntPage(QWidget):
             self._hunt_summary_labels[name] = val
         layout.addWidget(hunt_summary_group)
 
-        # Last kill section
-        last_kill_group = QGroupBox("Last Kill")
-        last_kill_layout = QHBoxLayout(last_kill_group)
-        self._last_kill_labels = {}
-        for name in ["Mob", "Cost", "Loot (TT)", "Loot (MU)", "Multiplier"]:
-            col = QVBoxLayout()
-            title = QLabel(name)
-            title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            col.addWidget(title)
-            val = QLabel("-")
-            val.setObjectName("summaryValue")
-            val.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            col.addWidget(val)
-            last_kill_layout.addLayout(col)
-            self._last_kill_labels[name] = val
-        layout.addWidget(last_kill_group)
+        # Loot list table
+        loot_group = QGroupBox("Loot")
+        loot_layout = QVBoxLayout(loot_group)
+        self._hunt_loot_table = QTableWidget()
+        self._hunt_loot_table.setColumnCount(5)
+        self._hunt_loot_table.setHorizontalHeaderLabels([
+            "Item", "Qty", "TT (PED)", "MU (PED)", "MU Source"
+        ])
+        self._hunt_loot_table.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.Stretch
+        )
+        self._hunt_loot_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._hunt_loot_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self._hunt_loot_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._hunt_loot_table.customContextMenuRequested.connect(
+            lambda pos: self._on_loot_context_menu(self._hunt_loot_table, pos)
+        )
+        self._hunt_loot_table.setMaximumHeight(180)
+        loot_layout.addWidget(self._hunt_loot_table)
+        loot_layout.setContentsMargins(4, 8, 4, 4)
+
+        layout.addWidget(loot_group)
 
         # Kill log table
         kill_log_group = QGroupBox("Kill Log")
@@ -573,6 +581,10 @@ class HuntPage(QWidget):
         for label in self._summary_labels.values():
             label.setText("0")
 
+        # Reset session loot
+        self._session_encounters.clear()
+        self._session_loot_table.setRowCount(0)
+
         # Reset current hunt tab
         self._reset_current_hunt()
 
@@ -596,6 +608,10 @@ class HuntPage(QWidget):
         self._summary_labels["Hunts"].setText(str(data.get("hunt_count", 0)))
         self._summary_labels["Cost"].setText(f"{cost:.2f}" if cost > 0 else "-")
         self._summary_labels["Loot Total"].setText(f"{loot:.2f}")
+        loot_mu = self._get_session_loot_mu_total()
+        self._summary_labels["Value (MU)"].setText(
+            f"{loot_mu:.2f}" if loot_mu > 0 else "-"
+        )
         self._summary_labels["Return %"].setText(
             f"{(loot / cost) * 100:.1f}%" if cost > 0 else "-"
         )
@@ -659,9 +675,11 @@ class HuntPage(QWidget):
 
         # Current Hunt tab — accumulate encounter
         self._hunt_encounters.append(encounter)
+        self._session_encounters.append(encounter)
         self._check_multi_mob()
-        self._update_last_kill(encounter)
         self._update_kill_log()
+        self._rebuild_hunt_loot_table()
+        self._rebuild_session_loot_table()
 
     def _on_hunt_started(self, data):
         if isinstance(data, dict):
@@ -702,9 +720,8 @@ class HuntPage(QWidget):
 
         for label in self._hunt_summary_labels.values():
             label.setText("-")
-        for label in self._last_kill_labels.values():
-            label.setText("-")
         self._kill_log_table.setRowCount(0)
+        self._hunt_loot_table.setRowCount(0)
 
         # Restore multiplier column visibility
         self._kill_log_table.setColumnHidden(self.MULTI_MOB_MULTIPLIER_COL, False)
@@ -723,15 +740,16 @@ class HuntPage(QWidget):
         cost = hunt.get("cost", 0)
         damage_dealt = hunt.get("damage_dealt", 0)
 
-        loot_mu = loot_tt * (self._markup_pct / 100)
+        # Compute MU total from loot table aggregate
+        loot_mu = self._get_hunt_loot_mu_total()
         tt_return = (loot_tt / cost * 100) if cost > 0 else None
-        mu_return = (loot_mu / cost * 100) if cost > 0 else None
+        mu_return = (loot_mu / cost * 100) if cost > 0 and loot_mu > 0 else None
         dpp = (damage_dealt / cost) if cost > 0 else None
 
         self._hunt_summary_labels["Kills"].setText(str(kills))
         self._hunt_summary_labels["Cost"].setText(f"{cost:.2f}" if cost > 0 else "-")
         self._hunt_summary_labels["Loot (TT)"].setText(f"{loot_tt:.2f}")
-        self._hunt_summary_labels["Loot (MU)"].setText(f"{loot_mu:.2f}")
+        self._hunt_summary_labels["Loot (MU)"].setText(f"{loot_mu:.2f}" if loot_mu > 0 else "-")
         self._hunt_summary_labels["TT Return"].setText(
             f"{tt_return:.1f}%" if tt_return is not None else "-"
         )
@@ -759,25 +777,152 @@ class HuntPage(QWidget):
         self._hunt_summary_labels["Globals"].setText(str(hunt.get("global_count", 0)))
         self._hunt_summary_labels["HoFs"].setText(str(hunt.get("hof_count", 0)))
 
-    def _update_last_kill(self, encounter: dict):
-        """Update the last kill section from the most recent encounter."""
-        mob = encounter.get("mob_name", "?")
-        cost = encounter.get("cost", 0)
-        loot_tt = encounter.get("loot_total_ped", 0)
-        loot_mu = loot_tt * (self._markup_pct / 100)
-        multiplier = (loot_tt / cost) if cost > 0 else None
+    def _rebuild_hunt_loot_table(self):
+        """Rebuild the hunt loot list from accumulated encounters."""
+        self._rebuild_loot_table(self._hunt_encounters, self._hunt_loot_table)
 
-        self._last_kill_labels["Mob"].setText(mob)
-        self._last_kill_labels["Cost"].setText(f"{cost:.4f}" if cost > 0 else "-")
-        self._last_kill_labels["Loot (TT)"].setText(f"{loot_tt:.2f}")
-        self._last_kill_labels["Loot (MU)"].setText(f"{loot_mu:.2f}")
+    def _rebuild_session_loot_table(self):
+        """Rebuild the session loot list from all session encounters."""
+        self._rebuild_loot_table(self._session_encounters, self._session_loot_table)
 
-        if self._hunt_is_multi_mob:
-            self._last_kill_labels["Multiplier"].setText("-")
-        elif multiplier is not None:
-            self._last_kill_labels["Multiplier"].setText(f"{multiplier:.2f}x")
+    def _rebuild_loot_table(self, encounters: list[dict], table: QTableWidget):
+        """Rebuild a loot table from encounter data."""
+        from ...hunt.session import MobEncounter, EncounterLootItem
+        from ...hunt.stats import aggregate_loot
+
+        # Convert encounter dicts to temporary MobEncounter objects for aggregation
+        temp_encounters = []
+        for enc in encounters:
+            loot_items = []
+            for li_dict in enc.get("loot_items", []):
+                loot_items.append(EncounterLootItem(
+                    item_name=li_dict.get("item_name", ""),
+                    quantity=li_dict.get("quantity", 0),
+                    value_ped=li_dict.get("value_ped", 0),
+                    is_blacklisted=li_dict.get("is_blacklisted", False),
+                    is_refining_output=li_dict.get("is_refining_output", False),
+                    is_in_loot_table=li_dict.get("is_in_loot_table", True),
+                ))
+            temp_enc = MobEncounter(
+                id=enc.get("id", ""),
+                session_id=enc.get("session_id", ""),
+                mob_name=enc.get("mob_name", ""),
+                mob_name_source=enc.get("mob_name_source", ""),
+                start_time=datetime.utcnow(),
+                loot_items=loot_items,
+            )
+            temp_encounters.append(temp_enc)
+
+        agg = aggregate_loot(temp_encounters, self._markup_resolver)
+
+        table.setRowCount(0)
+
+        for entry in agg:
+            row = table.rowCount()
+            table.insertRow(row)
+
+            item_name = entry["item_name"]
+            tt_val = entry["tt_value"]
+            mu_val = entry["mu_value"]
+            source = entry["markup_source"]
+            is_custom = entry["is_custom"]
+
+            name_item = QTableWidgetItem(item_name)
+            qty_item = QTableWidgetItem(str(entry["total_quantity"]))
+            tt_item = QTableWidgetItem(f"{tt_val:.2f}")
+            mu_item = QTableWidgetItem(f"{mu_val:.2f}")
+            source_item = QTableWidgetItem(source.capitalize())
+
+            # Highlight custom markup items with accent color
+            if is_custom:
+                accent = QColor("#4FC3F7")  # light blue accent
+                for item in (name_item, qty_item, tt_item, mu_item, source_item):
+                    item.setForeground(accent)
+
+            table.setItem(row, 0, name_item)
+            table.setItem(row, 1, qty_item)
+            table.setItem(row, 2, tt_item)
+            table.setItem(row, 3, mu_item)
+            table.setItem(row, 4, source_item)
+
+    def _get_hunt_loot_mu_total(self) -> float:
+        """Get the total MU value from the hunt loot table."""
+        return self._sum_table_column(self._hunt_loot_table, 3)
+
+    def _get_session_loot_mu_total(self) -> float:
+        """Get the total MU value from the session loot table."""
+        return self._sum_table_column(self._session_loot_table, 3)
+
+    @staticmethod
+    def _sum_table_column(table: QTableWidget, col: int) -> float:
+        """Sum numeric values in a table column."""
+        total = 0.0
+        for row in range(table.rowCount()):
+            item = table.item(row, col)
+            if item:
+                try:
+                    total += float(item.text())
+                except ValueError:
+                    pass
+        return total
+
+    def _on_loot_context_menu(self, table: QTableWidget, pos):
+        """Show context menu for loot items — set/remove custom markup."""
+        row = table.rowAt(pos.y())
+        if row < 0:
+            return
+
+        item_name_widget = table.item(row, 0)
+        if not item_name_widget:
+            return
+        item_name = item_name_widget.text()
+
+        menu = QMenu(self)
+
+        set_action = menu.addAction("Set Custom Markup...")
+        remove_action = menu.addAction("Remove Custom Markup")
+
+        action = menu.exec(table.viewport().mapToGlobal(pos))
+        if action == set_action:
+            self._show_set_markup_dialog(item_name)
+        elif action == remove_action:
+            if self._markup_resolver:
+                self._markup_resolver.remove_custom_markup(item_name)
+                self._rebuild_hunt_loot_table()
+                self._rebuild_session_loot_table()
+                if self._last_hunt_data:
+                    self._update_hunt_summary(self._last_hunt_data)
+
+    def _show_set_markup_dialog(self, item_name: str):
+        """Show dialog to set custom markup for an item."""
+        if not self._markup_resolver:
+            return
+
+        # Determine current markup type
+        current = self._markup_resolver.resolve(item_name)
+
+        if current.markup_type == "percentage":
+            value, ok = QInputDialog.getDouble(
+                self, "Set Custom Markup",
+                f"Markup for '{item_name}' (%, min 100):",
+                current.markup_value, 100.0, 10000000.0, 2,
+            )
+            if ok:
+                self._markup_resolver.set_custom_markup(item_name, value, "percentage")
         else:
-            self._last_kill_labels["Multiplier"].setText("-")
+            value, ok = QInputDialog.getDouble(
+                self, "Set Custom Markup",
+                f"Markup for '{item_name}' (+PED, min 0):",
+                current.markup_value, 0.0, 10000000.0, 2,
+            )
+            if ok:
+                self._markup_resolver.set_custom_markup(item_name, value, "absolute")
+
+        if ok:
+            self._rebuild_hunt_loot_table()
+            self._rebuild_session_loot_table()
+            if self._last_hunt_data:
+                self._update_hunt_summary(self._last_hunt_data)
 
     def _update_kill_log(self):
         """Rebuild the kill log table from accumulated encounters (newest first)."""
@@ -821,25 +966,6 @@ class HuntPage(QWidget):
             self._kill_log_table.setColumnHidden(
                 self.MULTI_MOB_MULTIPLIER_COL, self._hunt_is_multi_mob
             )
-
-    def _on_markup_changed(self, value):
-        """Handle markup spinbox change — recompute all MU values."""
-        self._markup_pct = value
-        self._config.hunt_markup_pct = value
-        self._save_config()
-
-        # Update source label
-        self._markup_source_label.setText(
-            "Custom" if value != 100.0 else "Default"
-        )
-
-        # Recompute hunt summary with new markup
-        if self._last_hunt_data:
-            self._update_hunt_summary(self._last_hunt_data)
-
-        # Recompute last kill MU values
-        if self._hunt_encounters:
-            self._update_last_kill(self._hunt_encounters[-1])
 
     @staticmethod
     def _global_marker_text(enc: dict) -> str:

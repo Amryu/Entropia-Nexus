@@ -1,0 +1,1153 @@
+"""FancyTable — virtualised, sortable, filterable table widget.
+
+Feature parity with the website's FancyTable.svelte: content-based auto-width,
+multi-phase sort, per-column filters with operator syntax, row recycling for
+fast scrolling, optional footer, and responsive compact mode.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+from typing import Any, Callable
+
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QLineEdit, QScrollArea, QSizePolicy, QFrame,
+)
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QFontMetrics
+
+from ..theme import (
+    TEXT, TEXT_MUTED, BORDER, SECONDARY, PRIMARY, HOVER, ACCENT,
+    TABLE_HEADER, TABLE_ROW, TABLE_ROW_ALT, MAIN_DARK,
+)
+
+# Blue-tinted hover — matches website rgba(59, 130, 246, 0.15) over PRIMARY
+_ROW_HOVER_COLOR = "#263042"
+
+
+# ---------------------------------------------------------------------------
+# Data types
+# ---------------------------------------------------------------------------
+
+@dataclass
+class SortPhase:
+    """One phase in a multi-phase sort cycle."""
+    sort_value: Callable[[dict], Any]
+    order: str = "ASC"           # "ASC" | "DESC"
+    color: str | None = None     # optional indicator color
+
+
+@dataclass
+class ColumnDef:
+    """Column definition — mirrors the website's FancyTable column config."""
+    key: str
+    header: str
+    width: str | None = None             # "60px", "1fr", or None=auto
+    width_basis: str = "both"            # "content" | "header" | "both"
+    main: bool = False                   # grows to fill remaining space
+    sortable: bool = True
+    searchable: bool = True
+
+    # Value extraction
+    get_value: Callable[[dict], Any] | None = None
+    format: Callable[[Any], str] | None = None
+    sort_value: Callable[[dict], Any] | None = None
+    sort_fn: Callable[[Any, Any], int] | None = None
+    sort_phases: list[SortPhase] | None = None
+
+    # Appearance
+    alignment: Qt.AlignmentFlag = Qt.AlignmentFlag.AlignLeft
+    cell_class: Callable[[Any, dict], str] | None = None
+
+
+def column_def_from_dict(d: dict) -> ColumnDef:
+    """Convert a legacy wiki_columns dict to a ColumnDef."""
+    fields = {f for f in ColumnDef.__dataclass_fields__}
+    return ColumnDef(**{k: v for k, v in d.items() if k in fields})
+
+
+# ---------------------------------------------------------------------------
+# Filter matching (reuse from wiki_table)
+# ---------------------------------------------------------------------------
+
+_OP_RE = re.compile(r"^(>=|<=|>|<|=|!)(.+)$")
+
+
+def _matches_filter(raw_value, display_text: str, filter_text: str) -> bool:
+    """Check if a cell value matches a filter expression."""
+    filter_text = filter_text.strip()
+    if not filter_text:
+        return True
+
+    m = _OP_RE.match(filter_text)
+    if m:
+        op, operand = m.group(1), m.group(2).strip()
+
+        if op in (">", "<", ">=", "<="):
+            try:
+                threshold = float(operand)
+            except ValueError:
+                return True
+            if raw_value is None or not isinstance(raw_value, (int, float)):
+                return False
+            if op == ">":
+                return raw_value > threshold
+            if op == "<":
+                return raw_value < threshold
+            if op == ">=":
+                return raw_value >= threshold
+            if op == "<=":
+                return raw_value <= threshold
+
+        if op == "=":
+            return display_text.lower() == operand.lower()
+
+        if op == "!":
+            return operand.lower() not in display_text.lower()
+
+    return filter_text.lower() in display_text.lower()
+
+
+# ---------------------------------------------------------------------------
+# Cache builder
+# ---------------------------------------------------------------------------
+
+def build_fancy_cache(
+    items: list[dict],
+    columns: list[ColumnDef],
+) -> tuple[list[list[tuple]], list[bool]]:
+    """Build (raw, display) cache for items x columns. Thread-safe.
+
+    Returns (cache, numeric) where cache[row][col] = (raw, display)
+    and numeric[col] = True if the column holds numeric data.
+    """
+    cache: list[list[tuple]] = []
+    for item in items:
+        row: list[tuple] = []
+        for col in columns:
+            if col.get_value is not None:
+                raw = col.get_value(item)
+            else:
+                raw = item.get(col.key)
+            if col.format is not None:
+                display = str(col.format(raw))
+            else:
+                display = str(raw) if raw is not None else ""
+            row.append((raw, display))
+        cache.append(row)
+
+    num_cols = len(columns)
+    numeric = [False] * num_cols
+    for col_idx in range(num_cols):
+        for row in cache:
+            raw = row[col_idx][0]
+            if raw is not None:
+                numeric[col_idx] = isinstance(raw, (int, float))
+                break
+
+    return cache, numeric
+
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+ROW_HEIGHT_DEFAULT = 28
+FILTER_HEIGHT = 26
+FILTER_DEBOUNCE_MS = 200
+COMPACT_COLUMN_COUNT = 5
+COMPACT_HYSTERESIS = 20
+COLUMN_WIDTH_PADDING = 32
+MIN_COLUMN_WIDTH = 50
+SCROLL_BUFFER_ROWS = 10
+
+_SORT_ASC = "\u25B2"   # ▲
+_SORT_DESC = "\u25BC"  # ▼
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _make_hidden_scroll_area(fixed_height: int | None = None) -> QScrollArea:
+    """Create a QScrollArea with no visible scrollbars."""
+    sa = QScrollArea()
+    sa.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    sa.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    sa.setWidgetResizable(False)
+    sa.setFrameShape(QFrame.Shape.NoFrame)
+    sa.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+    if fixed_height is not None:
+        sa.setFixedHeight(fixed_height)
+    return sa
+
+
+# ---------------------------------------------------------------------------
+# Internal widgets
+# ---------------------------------------------------------------------------
+
+class _HeaderCell(QWidget):
+    """Clickable header cell with sort indicator."""
+
+    clicked = pyqtSignal(int)  # column index
+
+    def __init__(self, col_idx: int, text: str, sortable: bool, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self._col_idx = col_idx
+        self._sortable = sortable
+        if sortable:
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(8, 0, 8, 0)
+        layout.setSpacing(4)
+
+        self._label = QLabel(text)
+        self._label.setStyleSheet(
+            f"color: {TEXT}; font-size: 12px; font-weight: bold;"
+            " background: transparent;"
+        )
+        layout.addWidget(self._label, 1)
+
+        self._indicator = QLabel("")
+        self._indicator.setStyleSheet(
+            f"color: {ACCENT}; font-size: 10px; background: transparent;"
+        )
+        self._indicator.setFixedWidth(14)
+        layout.addWidget(self._indicator)
+
+    def set_sort_indicator(self, direction: str | None, color: str | None = None):
+        """Set the sort indicator. direction: 'ASC', 'DESC', or None."""
+        if direction is None:
+            self._indicator.setText("")
+            return
+        arrow = _SORT_ASC if direction == "ASC" else _SORT_DESC
+        self._indicator.setText(arrow)
+        c = color or ACCENT
+        self._indicator.setStyleSheet(
+            f"color: {c}; font-size: 10px; background: transparent;"
+        )
+
+    def mousePressEvent(self, event):
+        if self._sortable and event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit(self._col_idx)
+        super().mousePressEvent(event)
+
+
+class _TableRow(QWidget):
+    """Recyclable row widget with pre-created cell labels."""
+
+    def __init__(self, col_count: int, row_height: int, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.setFixedHeight(row_height)
+
+        self._layout = QHBoxLayout(self)
+        self._layout.setContentsMargins(0, 0, 0, 0)
+        self._layout.setSpacing(0)
+
+        self._cells: list[QLabel] = []
+        for _ in range(col_count):
+            lbl = QLabel("")
+            lbl.setStyleSheet(
+                f"color: {TEXT}; font-size: 12px; padding: 0 8px;"
+                " background: transparent;"
+            )
+            lbl.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+            self._layout.addWidget(lbl)
+            self._cells.append(lbl)
+
+        self._layout.addStretch()
+
+        self._display_index: int = -1
+        self._data_index: int = -1
+
+    def configure_columns(self, widths: list[int], alignments: list[Qt.AlignmentFlag]):
+        """Set column widths and alignments."""
+        total = 0
+        for i, lbl in enumerate(self._cells):
+            if i < len(widths):
+                lbl.setFixedWidth(widths[i])
+                total += widths[i]
+                alignment = alignments[i] if i < len(alignments) else Qt.AlignmentFlag.AlignLeft
+                lbl.setAlignment(Qt.AlignmentFlag.AlignVCenter | alignment)
+        self.setFixedWidth(total)
+
+    def set_data(
+        self,
+        display_index: int,
+        data_index: int,
+        texts: list[str],
+        bg_color: str,
+    ):
+        """Fill cell contents and position."""
+        self._display_index = display_index
+        self._data_index = data_index
+        for i, lbl in enumerate(self._cells):
+            if i < len(texts):
+                lbl.setText(texts[i])
+            else:
+                lbl.setText("")
+        self.setStyleSheet(f"background-color: {bg_color};")
+
+    @property
+    def display_index(self) -> int:
+        return self._display_index
+
+    @property
+    def data_index(self) -> int:
+        return self._data_index
+
+
+# ---------------------------------------------------------------------------
+# FancyTable
+# ---------------------------------------------------------------------------
+
+class FancyTable(QWidget):
+    """Virtualised, sortable, filterable table with content-based column sizing."""
+
+    row_clicked = pyqtSignal(dict, int)      # (row_data, row_index)
+    row_hover = pyqtSignal(object)           # dict or None
+    row_activated = pyqtSignal(dict, int)    # double-click (row_data, row_index)
+    sort_changed = pyqtSignal(str, str)      # (column_key, direction)
+
+    def __init__(
+        self,
+        columns: list[ColumnDef],
+        row_height: int = ROW_HEIGHT_DEFAULT,
+        sortable: bool = True,
+        searchable: bool = True,
+        compact_threshold: int = COMPACT_COLUMN_COUNT,
+        default_sort: tuple[str, str] | None = None,
+        row_class: Callable[[dict], str | None] | None = None,
+        empty_message: str = "No data available",
+        parent=None,
+    ):
+        super().__init__(parent)
+        self._all_columns = list(columns)
+        self._active_columns = list(columns)
+        self._row_height = row_height
+        self._sortable = sortable
+        self._searchable = searchable
+        self._compact_threshold = compact_threshold
+        self._default_sort = default_sort
+        self._row_class_fn = row_class
+        self._empty_message = empty_message
+
+        # Data
+        self._items: list[dict] = []
+        self._cache: list[list[tuple]] = []
+        self._numeric: list[bool] = []
+        self._col_widths: list[int] = []
+        self._col_alignments: list[Qt.AlignmentFlag] = []
+
+        # Sort state
+        self._sort_col_idx: int | None = None
+        self._sort_direction: str = "ASC"
+        self._sort_phase_idx: int = 0
+
+        # Index pipeline
+        self._sorted_indices: list[int] = []
+        self._filtered_indices: list[int] = []  # = display_indices
+        self._col_filters: list[str] = []
+
+        # Compact mode
+        self._compact = False
+        self._full_col_keys: list[str] = [c.key for c in columns]
+
+        # Virtualisation
+        self._row_pool: list[_TableRow] = []
+        self._active_rows: dict[int, _TableRow] = {}
+        self._last_render_range: tuple[int, int] = (-1, -1)
+
+        self._build_ui()
+
+        # Debounce timers
+        self._filter_timer = QTimer(self)
+        self._filter_timer.setSingleShot(True)
+        self._filter_timer.setInterval(FILTER_DEBOUNCE_MS)
+        self._filter_timer.timeout.connect(self._apply_filters)
+
+        self._compact_timer = QTimer(self)
+        self._compact_timer.setSingleShot(True)
+        self._compact_timer.setInterval(150)
+        self._compact_timer.timeout.connect(self._check_compact_mode)
+
+    # -----------------------------------------------------------------------
+    # UI construction
+    # -----------------------------------------------------------------------
+
+    def _build_ui(self):
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
+
+        # -- Toolbar --
+        toolbar = QHBoxLayout()
+        toolbar.setContentsMargins(0, 0, 0, 4)
+        toolbar.setSpacing(8)
+
+        self._count_label = QLabel("")
+        self._count_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
+        toolbar.addWidget(self._count_label)
+        toolbar.addStretch()
+
+        self._config_btn = QPushButton("\u2699")
+        self._config_btn.setToolTip("Configure columns")
+        self._config_btn.setFixedSize(28, 28)
+        self._config_btn.setStyleSheet(
+            f"QPushButton {{ font-size: 16px; padding: 0; border: 1px solid {BORDER};"
+            f" border-radius: 4px; background: {SECONDARY}; }}"
+            f"QPushButton:hover {{ background: {PRIMARY}; }}"
+        )
+        toolbar.addWidget(self._config_btn)
+
+        root.addLayout(toolbar)
+
+        # -- Header scroll area (no visible scrollbars) --
+        self._header_scroll = _make_hidden_scroll_area(fixed_height=self._row_height)
+        self._header_inner = QWidget()
+        self._header_inner.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self._header_inner.setStyleSheet(
+            f"background-color: {TABLE_HEADER};"
+        )
+        self._header_inner.setFixedHeight(self._row_height)
+        self._header_layout = QHBoxLayout(self._header_inner)
+        self._header_layout.setContentsMargins(0, 0, 0, 0)
+        self._header_layout.setSpacing(0)
+        self._header_cells: list[_HeaderCell] = []
+        self._header_scroll.setWidget(self._header_inner)
+        root.addWidget(self._header_scroll)
+
+        # Separator below header
+        header_sep = QFrame()
+        header_sep.setFrameShape(QFrame.Shape.HLine)
+        header_sep.setFixedHeight(1)
+        header_sep.setStyleSheet(f"background-color: {BORDER}; border: none;")
+        root.addWidget(header_sep)
+
+        # -- Filter scroll area (no visible scrollbars) --
+        self._filter_scroll = _make_hidden_scroll_area(fixed_height=FILTER_HEIGHT)
+        self._filter_inner = QWidget()
+        self._filter_inner.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self._filter_inner.setStyleSheet(f"background-color: {MAIN_DARK};")
+        self._filter_inner.setFixedHeight(FILTER_HEIGHT)
+        self._filter_layout = QHBoxLayout(self._filter_inner)
+        self._filter_layout.setContentsMargins(0, 0, 0, 0)
+        self._filter_layout.setSpacing(0)
+        self._filter_inputs: list[QLineEdit] = []
+        self._filter_scroll.setWidget(self._filter_inner)
+
+        if self._searchable:
+            root.addWidget(self._filter_scroll)
+
+            filter_sep = QFrame()
+            filter_sep.setFrameShape(QFrame.Shape.HLine)
+            filter_sep.setFixedHeight(1)
+            filter_sep.setStyleSheet(f"background-color: {BORDER}; border: none;")
+            root.addWidget(filter_sep)
+
+        # -- Body scroll area (both H and V scrollbars) --
+        self._body_scroll = QScrollArea()
+        self._body_scroll.setWidgetResizable(False)
+        self._body_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._body_scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self._body_scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._body_scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+
+        self._virtual_container = QWidget()
+        self._virtual_container.setStyleSheet(f"background-color: {PRIMARY};")
+        self._body_scroll.setWidget(self._virtual_container)
+
+        root.addWidget(self._body_scroll, 1)
+
+        # -- Empty message (overlaid when no rows) --
+        self._empty_label = QLabel(self._empty_message)
+        self._empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._empty_label.setStyleSheet(
+            f"color: {TEXT_MUTED}; font-size: 13px; padding: 32px;"
+        )
+        self._empty_label.hide()
+        root.addWidget(self._empty_label)
+
+        # -- Footer scroll area (no visible scrollbars, hidden by default) --
+        self._footer_scroll = _make_hidden_scroll_area()
+        self._footer_inner = QWidget()
+        self._footer_inner.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self._footer_inner.setStyleSheet(f"background-color: {TABLE_HEADER};")
+        self._footer_layout = QVBoxLayout(self._footer_inner)
+        self._footer_layout.setContentsMargins(0, 0, 0, 0)
+        self._footer_layout.setSpacing(0)
+        self._footer_scroll.setWidget(self._footer_inner)
+        self._footer_scroll.hide()
+        root.addWidget(self._footer_scroll)
+
+        # -- Reserve right margin for the body's vertical scrollbar --
+        _SB_W = 10  # matches QScrollBar:vertical { width: 10px } in theme
+        self._header_scroll.setViewportMargins(0, 0, _SB_W, 0)
+        self._filter_scroll.setViewportMargins(0, 0, _SB_W, 0)
+        self._footer_scroll.setViewportMargins(0, 0, _SB_W, 0)
+
+        # -- Sync horizontal scroll: body drives header + filter + footer --
+        self._body_scroll.horizontalScrollBar().valueChanged.connect(self._on_h_scroll)
+
+        # -- Vertical scroll drives row rendering --
+        self._body_scroll.verticalScrollBar().valueChanged.connect(self._on_v_scroll)
+
+    def _on_h_scroll(self, value: int):
+        """Sync header, filter, and footer with body horizontal scroll."""
+        self._header_scroll.horizontalScrollBar().setValue(value)
+        self._filter_scroll.horizontalScrollBar().setValue(value)
+        self._footer_scroll.horizontalScrollBar().setValue(value)
+
+    def _on_v_scroll(self):
+        """Handle vertical scroll — re-render visible rows."""
+        self._render_visible()
+
+    # -----------------------------------------------------------------------
+    # Public API
+    # -----------------------------------------------------------------------
+
+    def set_data(
+        self,
+        items: list[dict],
+        cache: list[list[tuple]] | None = None,
+        numeric: list[bool] | None = None,
+    ):
+        """Populate the table with data.
+
+        If *cache*/*numeric* are supplied (pre-computed on a background
+        thread), the per-cell computation is skipped.
+        """
+        self._items = items
+
+        if cache is not None and numeric is not None:
+            self._cache = cache
+            self._numeric = numeric
+        else:
+            self._cache, self._numeric = build_fancy_cache(items, self._active_columns)
+
+        # Init index pipeline
+        self._sorted_indices = list(range(len(self._cache)))
+        self._col_filters = [""] * len(self._active_columns)
+
+        # Apply default sort
+        if self._default_sort:
+            key, direction = self._default_sort
+            for i, col in enumerate(self._active_columns):
+                if col.key == key:
+                    self._sort_col_idx = i
+                    self._sort_direction = direction
+                    self._sort_phase_idx = 0
+                    break
+            self._sort()
+        else:
+            self._sort_col_idx = None
+
+        self._filter()
+
+        # Auto-size columns
+        self._auto_size_columns()
+
+        # Build headers and filters
+        self._rebuild_header()
+        self._rebuild_filters()
+
+        # Check compact after layout settles
+        self._compact = False
+        QTimer.singleShot(0, self._check_compact_mode)
+
+        # Render
+        self._recycle_all_rows()
+        self._update_virtual_size()
+        self._render_visible()
+        self._update_count_label()
+
+    def set_loading(self):
+        """Show loading state."""
+        self._count_label.setText("Loading...")
+        self._items = []
+        self._cache = []
+        self._filtered_indices = []
+        self._recycle_all_rows()
+        self._update_virtual_size()
+        self._empty_label.setText("Loading...")
+        self._empty_label.show()
+
+    def set_columns(self, columns: list[ColumnDef]):
+        """Replace the column definitions and re-render if data is loaded."""
+        self._all_columns = list(columns)
+        self._active_columns = list(columns)
+        self._full_col_keys = [c.key for c in columns]
+        self._compact = False
+        if self._items:
+            self.set_data(self._items)
+
+    def set_footer(self, rows: list[dict], label_key: str | None = None):
+        """Set footer aggregate rows."""
+        # Clear old
+        while self._footer_layout.count():
+            item = self._footer_layout.takeAt(0)
+            w = item.widget()
+            if w:
+                w.deleteLater()
+
+        if not rows:
+            self._footer_scroll.hide()
+            return
+
+        total_w = self._total_column_width()
+        for row_data in rows:
+            row_widget = QWidget()
+            row_widget.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+            row_widget.setFixedHeight(self._row_height)
+            row_layout = QHBoxLayout(row_widget)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.setSpacing(0)
+
+            for i, col in enumerate(self._active_columns):
+                if col.get_value is not None:
+                    raw = col.get_value(row_data)
+                else:
+                    raw = row_data.get(col.key)
+                if col.format is not None:
+                    text = str(col.format(raw))
+                else:
+                    text = str(raw) if raw is not None else ""
+
+                lbl = QLabel(text)
+                is_label = label_key and col.key == label_key
+                color = TEXT_MUTED if is_label else TEXT
+                lbl.setStyleSheet(
+                    f"color: {color}; font-size: 12px; font-weight: bold;"
+                    f" padding: 0 8px; background: transparent;"
+                )
+                width = self._col_widths[i] if i < len(self._col_widths) else MIN_COLUMN_WIDTH
+                lbl.setFixedWidth(width)
+                alignment = self._col_alignments[i] if i < len(self._col_alignments) else Qt.AlignmentFlag.AlignLeft
+                lbl.setAlignment(Qt.AlignmentFlag.AlignVCenter | alignment)
+                row_layout.addWidget(lbl)
+
+            row_layout.addStretch()
+            self._footer_layout.addWidget(row_widget)
+
+        footer_h = self._row_height * len(rows)
+        self._footer_inner.setFixedSize(total_w, footer_h)
+        self._footer_scroll.setFixedHeight(footer_h)
+        self._footer_scroll.show()
+
+    def get_active_column_keys(self) -> list[str]:
+        """Return the list of currently active column keys."""
+        return [c.key for c in self._active_columns]
+
+    def display_count(self) -> int:
+        """Number of rows after filtering."""
+        return len(self._filtered_indices)
+
+    def total_count(self) -> int:
+        """Total number of rows."""
+        return len(self._cache)
+
+    @property
+    def config_button(self) -> QPushButton:
+        """Expose the config button so callers can connect to it."""
+        return self._config_btn
+
+    # -----------------------------------------------------------------------
+    # Column auto-sizing
+    # -----------------------------------------------------------------------
+
+    def _auto_size_columns(self):
+        """Calculate column widths by sampling content."""
+        fm = QFontMetrics(self.font())
+        col_count = len(self._active_columns)
+        self._col_widths = [0] * col_count
+        self._col_alignments = [Qt.AlignmentFlag.AlignLeft] * col_count
+
+        sample_rows = self._cache[:200]
+
+        for col_idx, col_def in enumerate(self._active_columns):
+            # Alignment
+            if col_def.alignment != Qt.AlignmentFlag.AlignLeft:
+                self._col_alignments[col_idx] = col_def.alignment
+            elif self._numeric[col_idx] if col_idx < len(self._numeric) else False:
+                self._col_alignments[col_idx] = Qt.AlignmentFlag.AlignRight
+
+            # Fixed width
+            if col_def.width and col_def.width.endswith("px"):
+                try:
+                    self._col_widths[col_idx] = int(col_def.width[:-2])
+                    continue
+                except ValueError:
+                    pass
+
+            basis = col_def.width_basis
+            max_chars = 4  # minimum
+
+            if basis in ("header", "both"):
+                max_chars = max(max_chars, len(col_def.header))
+
+            if basis in ("content", "both"):
+                for row in sample_rows:
+                    if col_idx < len(row):
+                        display = row[col_idx][1]
+                        max_chars = max(max_chars, len(display))
+
+            self._col_widths[col_idx] = fm.horizontalAdvance("x" * min(max_chars, 40)) + COLUMN_WIDTH_PADDING
+
+        # Enforce minimum
+        for i in range(col_count):
+            if self._col_widths[i] < MIN_COLUMN_WIDTH:
+                self._col_widths[i] = MIN_COLUMN_WIDTH
+
+        # Expand main column to fill remaining viewport space
+        self._expand_main_column()
+
+    def _expand_main_column(self):
+        """If a main column exists and there's extra space, expand it."""
+        viewport_w = self._body_scroll.viewport().width()
+        if viewport_w <= 0:
+            return
+        total = sum(self._col_widths)
+        if total >= viewport_w:
+            return
+        for i, col in enumerate(self._active_columns):
+            if col.main:
+                self._col_widths[i] += viewport_w - total
+                break
+
+    def _total_column_width(self) -> int:
+        """Sum of all column widths."""
+        return sum(self._col_widths)
+
+    # -----------------------------------------------------------------------
+    # Header / filter rebuild
+    # -----------------------------------------------------------------------
+
+    def _rebuild_header(self):
+        """Rebuild header cells to match active columns."""
+        for cell in self._header_cells:
+            cell.deleteLater()
+        self._header_cells.clear()
+        # Remove old stretch item if present
+        while self._header_layout.count():
+            item = self._header_layout.takeAt(0)
+
+        total_w = self._total_column_width()
+
+        for i, col in enumerate(self._active_columns):
+            cell = _HeaderCell(i, col.header, col.sortable and self._sortable)
+            cell.setFixedWidth(self._col_widths[i] if i < len(self._col_widths) else MIN_COLUMN_WIDTH)
+            cell.setFixedHeight(self._row_height)
+            cell.clicked.connect(self._on_header_clicked)
+            self._header_layout.addWidget(cell)
+            self._header_cells.append(cell)
+
+        self._header_layout.addStretch()
+        self._update_sort_indicators()
+
+        # Set inner widget to exact total column width
+        self._header_inner.setFixedWidth(total_w)
+
+    def _rebuild_filters(self):
+        """Rebuild filter inputs to match active columns."""
+        for inp in self._filter_inputs:
+            inp.deleteLater()
+        self._filter_inputs.clear()
+        while self._filter_layout.count():
+            self._filter_layout.takeAt(0)
+
+        total_w = self._total_column_width()
+
+        for i, col in enumerate(self._active_columns):
+            inp = QLineEdit()
+            inp.setPlaceholderText("Filter...")
+            inp.setFixedHeight(FILTER_HEIGHT - 2)
+            inp.setFixedWidth(self._col_widths[i] if i < len(self._col_widths) else MIN_COLUMN_WIDTH)
+            inp.setTextMargins(4, 0, 4, 0)
+            inp.setStyleSheet(
+                f"font-size: 11px;"
+                f" background-color: {MAIN_DARK}; color: {TEXT};"
+                f" border: none; border-right: 1px solid {BORDER};"
+            )
+            if not (col.searchable and self._searchable):
+                inp.setEnabled(False)
+                inp.setPlaceholderText("")
+            inp.textChanged.connect(self._on_filter_changed)
+            self._filter_layout.addWidget(inp)
+            self._filter_inputs.append(inp)
+
+        self._filter_layout.addStretch()
+        self._filter_inner.setFixedWidth(total_w)
+
+    # -----------------------------------------------------------------------
+    # Sorting
+    # -----------------------------------------------------------------------
+
+    def _on_header_clicked(self, col_idx: int):
+        """Handle header click — toggle sort or cycle phase."""
+        col = self._active_columns[col_idx]
+        if not col.sortable or not self._sortable:
+            return
+
+        if col.sort_phases:
+            if self._sort_col_idx == col_idx:
+                self._sort_phase_idx = (self._sort_phase_idx + 1) % len(col.sort_phases)
+            else:
+                self._sort_col_idx = col_idx
+                self._sort_phase_idx = 0
+            phase = col.sort_phases[self._sort_phase_idx]
+            self._sort_direction = phase.order
+        else:
+            if self._sort_col_idx == col_idx:
+                self._sort_direction = "DESC" if self._sort_direction == "ASC" else "ASC"
+            else:
+                self._sort_col_idx = col_idx
+                self._sort_direction = "ASC"
+                self._sort_phase_idx = 0
+
+        self._sort()
+        self._filter()
+        self._update_sort_indicators()
+        self._recycle_all_rows()
+        self._update_virtual_size()
+        self._render_visible()
+        self._update_count_label()
+
+        if self._sort_col_idx is not None:
+            self.sort_changed.emit(
+                self._active_columns[self._sort_col_idx].key,
+                self._sort_direction,
+            )
+
+    def _sort(self):
+        """Sort the data by current sort column."""
+        if self._sort_col_idx is None:
+            self._sorted_indices = list(range(len(self._cache)))
+            return
+
+        col_idx = self._sort_col_idx
+        col = self._active_columns[col_idx]
+
+        # Determine sort key function
+        if col.sort_phases and self._sort_phase_idx < len(col.sort_phases):
+            phase = col.sort_phases[self._sort_phase_idx]
+            raw_key = phase.sort_value
+        elif col.sort_value:
+            raw_key = col.sort_value
+        else:
+            raw_key = None
+
+        def safe_key(row_idx):
+            if raw_key:
+                v = raw_key(self._items[row_idx])
+            else:
+                v = self._cache[row_idx][col_idx][0]
+            # None sorts to bottom regardless of direction
+            return (v is None, v if v is not None else 0)
+
+        if col.sort_fn:
+            import functools
+            def cmp_wrapper(a, b):
+                va = raw_key(self._items[a]) if raw_key else self._cache[a][col_idx][0]
+                vb = raw_key(self._items[b]) if raw_key else self._cache[b][col_idx][0]
+                if va is None and vb is None:
+                    return 0
+                if va is None:
+                    return 1
+                if vb is None:
+                    return -1
+                return col.sort_fn(va, vb)
+            self._sorted_indices = sorted(
+                range(len(self._cache)),
+                key=functools.cmp_to_key(cmp_wrapper),
+                reverse=(self._sort_direction == "DESC"),
+            )
+        else:
+            self._sorted_indices = sorted(
+                range(len(self._cache)),
+                key=safe_key,
+                reverse=(self._sort_direction == "DESC"),
+            )
+
+    def _update_sort_indicators(self):
+        """Update all header cell sort indicators."""
+        for i, cell in enumerate(self._header_cells):
+            if i == self._sort_col_idx:
+                col = self._active_columns[i]
+                color = None
+                if col.sort_phases and self._sort_phase_idx < len(col.sort_phases):
+                    color = col.sort_phases[self._sort_phase_idx].color
+                cell.set_sort_indicator(self._sort_direction, color)
+            else:
+                cell.set_sort_indicator(None)
+
+    # -----------------------------------------------------------------------
+    # Filtering
+    # -----------------------------------------------------------------------
+
+    def _on_filter_changed(self):
+        """Schedule filter application with debounce."""
+        self._filter_timer.start()
+
+    def _apply_filters(self):
+        """Push current filter texts into the pipeline."""
+        self._col_filters = [inp.text() for inp in self._filter_inputs]
+        self._filter()
+        self._recycle_all_rows()
+        self._update_virtual_size()
+        self._render_visible()
+        self._update_count_label()
+
+    def _filter(self):
+        """Filter sorted indices by column filters."""
+        if not any(f.strip() for f in self._col_filters):
+            self._filtered_indices = list(self._sorted_indices)
+            return
+
+        result = []
+        for row_idx in self._sorted_indices:
+            if self._row_matches_filters(row_idx):
+                result.append(row_idx)
+        self._filtered_indices = result
+
+    def _row_matches_filters(self, row_idx: int) -> bool:
+        """Check if a row matches all active column filters."""
+        for col_idx, ft in enumerate(self._col_filters):
+            if not ft.strip():
+                continue
+            if col_idx >= len(self._cache[row_idx]):
+                continue
+            raw, display = self._cache[row_idx][col_idx]
+            if not _matches_filter(raw, display, ft):
+                return False
+        return True
+
+    # -----------------------------------------------------------------------
+    # Virtualisation
+    # -----------------------------------------------------------------------
+
+    def _update_virtual_size(self):
+        """Set the virtual container size to accommodate all filtered rows."""
+        count = len(self._filtered_indices)
+        total_w = self._total_column_width()
+        h = max(count * self._row_height, 1)
+        self._virtual_container.setFixedSize(total_w, h)
+
+        # Show/hide empty message
+        if count == 0 and self._items:
+            self._empty_label.setText("No results matching filters")
+            self._empty_label.show()
+        elif count == 0:
+            self._empty_label.setText(self._empty_message)
+            self._empty_label.show()
+        else:
+            self._empty_label.hide()
+
+    def _render_visible(self):
+        """Render only the rows visible in the viewport + buffer."""
+        if not self._filtered_indices:
+            self._recycle_all_rows()
+            return
+
+        scroll_top = self._body_scroll.verticalScrollBar().value()
+        viewport_height = self._body_scroll.viewport().height()
+        if viewport_height <= 0:
+            return
+
+        first_visible = scroll_top // self._row_height
+        last_visible = (scroll_top + viewport_height) // self._row_height
+
+        render_start = max(0, first_visible - SCROLL_BUFFER_ROWS)
+        render_end = min(len(self._filtered_indices), last_visible + SCROLL_BUFFER_ROWS + 1)
+
+        if (render_start, render_end) == self._last_render_range:
+            return
+        self._last_render_range = (render_start, render_end)
+
+        needed = set(range(render_start, render_end))
+        current = set(self._active_rows.keys())
+
+        # Recycle rows no longer needed
+        to_recycle = current - needed
+        for di in to_recycle:
+            row = self._active_rows.pop(di)
+            row.hide()
+            self._row_pool.append(row)
+
+        # Assign rows for new indices
+        col_count = len(self._active_columns)
+        for di in sorted(needed - current):
+            row = self._get_or_create_row(col_count)
+            data_idx = self._filtered_indices[di]
+
+            # Get display texts
+            texts = []
+            for ci in range(col_count):
+                if ci < len(self._cache[data_idx]):
+                    texts.append(self._cache[data_idx][ci][1])
+                else:
+                    texts.append("")
+
+            # Alternating row color
+            bg = TABLE_ROW_ALT if (di % 2 == 1) else PRIMARY
+
+            row.configure_columns(self._col_widths, self._col_alignments)
+            row.set_data(di, data_idx, texts, bg)
+            row.move(0, di * self._row_height)
+            row.show()
+            self._active_rows[di] = row
+
+    def _get_or_create_row(self, col_count: int) -> _TableRow:
+        """Get a row from the pool or create a new one."""
+        if self._row_pool:
+            row = self._row_pool.pop()
+            if len(row._cells) != col_count:
+                row.deleteLater()
+                return self._create_row(col_count)
+            return row
+        return self._create_row(col_count)
+
+    def _create_row(self, col_count: int) -> _TableRow:
+        """Create a new row widget parented to the virtual container."""
+        row = _TableRow(col_count, self._row_height, self._virtual_container)
+        row.setCursor(Qt.CursorShape.PointingHandCursor)
+        row.mousePressEvent = lambda event, r=row: self._on_row_mouse_press(event, r)
+        row.mouseDoubleClickEvent = lambda event, r=row: self._on_row_double_click(event, r)
+        row.enterEvent = lambda event, r=row: self._on_row_enter(event, r)
+        row.leaveEvent = lambda event, r=row: self._on_row_leave(event, r)
+        return row
+
+    def _recycle_all_rows(self):
+        """Return all active rows to the pool."""
+        for row in self._active_rows.values():
+            row.hide()
+            self._row_pool.append(row)
+        self._active_rows.clear()
+        self._last_render_range = (-1, -1)
+
+    # -----------------------------------------------------------------------
+    # Row interaction
+    # -----------------------------------------------------------------------
+
+    def _on_row_mouse_press(self, event, row: _TableRow):
+        if event.button() == Qt.MouseButton.LeftButton:
+            data_idx = row.data_index
+            if 0 <= data_idx < len(self._items):
+                self.row_clicked.emit(self._items[data_idx], data_idx)
+
+    def _on_row_double_click(self, event, row: _TableRow):
+        if event.button() == Qt.MouseButton.LeftButton:
+            data_idx = row.data_index
+            if 0 <= data_idx < len(self._items):
+                self.row_activated.emit(self._items[data_idx], data_idx)
+
+    def _on_row_enter(self, event, row: _TableRow):
+        row.setStyleSheet(f"background-color: {_ROW_HOVER_COLOR};")
+        data_idx = row.data_index
+        if 0 <= data_idx < len(self._items):
+            self.row_hover.emit(self._items[data_idx])
+
+    def _on_row_leave(self, event, row: _TableRow):
+        bg = TABLE_ROW_ALT if (row.display_index % 2 == 1) else PRIMARY
+        row.setStyleSheet(f"background-color: {bg};")
+        self.row_hover.emit(None)
+
+    # -----------------------------------------------------------------------
+    # Compact mode
+    # -----------------------------------------------------------------------
+
+    def _estimate_full_width(self) -> int:
+        """Estimate total width if all columns were shown."""
+        fm = QFontMetrics(self.font())
+        total = 0
+        for col in self._all_columns:
+            if col.width and col.width.endswith("px"):
+                try:
+                    total += int(col.width[:-2])
+                    continue
+                except ValueError:
+                    pass
+            total += fm.horizontalAdvance("x" * len(col.header)) + COLUMN_WIDTH_PADDING
+        return total
+
+    def _check_compact_mode(self):
+        """Auto-compact columns if they overflow the viewport."""
+        if not self._items or len(self._all_columns) <= self._compact_threshold:
+            return
+
+        vw = self._body_scroll.viewport().width()
+        if vw <= 0:
+            return
+
+        full_width = self._estimate_full_width()
+
+        if self._compact:
+            if full_width + COMPACT_HYSTERESIS <= vw:
+                self._compact = False
+                self._active_columns = list(self._all_columns)
+                self._rebuild_after_column_change()
+        else:
+            if full_width > vw:
+                self._compact = True
+                self._active_columns = self._all_columns[:self._compact_threshold]
+                self._rebuild_after_column_change()
+
+    def _rebuild_after_column_change(self):
+        """Re-cache and re-render after the active column set changes."""
+        self._cache, self._numeric = build_fancy_cache(self._items, self._active_columns)
+
+        if self._sort_col_idx is not None:
+            if self._sort_col_idx >= len(self._active_columns):
+                self._sort_col_idx = None
+
+        self._sorted_indices = list(range(len(self._cache)))
+        self._col_filters = [""] * len(self._active_columns)
+
+        if self._sort_col_idx is not None:
+            self._sort()
+        self._filter()
+
+        self._auto_size_columns()
+        self._rebuild_header()
+        self._rebuild_filters()
+        self._recycle_all_rows()
+        self._update_virtual_size()
+        self._render_visible()
+        self._update_count_label()
+
+    def resizeEvent(self, event):
+        """Re-check compact mode and re-expand main column on resize."""
+        super().resizeEvent(event)
+        if self._items:
+            self._compact_timer.start()
+            # Recalculate main column expansion
+            self._expand_main_column()
+            self._rebuild_header()
+            self._rebuild_filters()
+            self._recycle_all_rows()
+            self._update_virtual_size()
+        self._last_render_range = (-1, -1)
+        QTimer.singleShot(0, self._render_visible)
+
+    # -----------------------------------------------------------------------
+    # Count label
+    # -----------------------------------------------------------------------
+
+    def _update_count_label(self):
+        total = len(self._items)
+        visible = len(self._filtered_indices)
+        parts = []
+        if visible != total:
+            parts.append(f"{visible} / {total} items")
+        else:
+            parts.append(f"{total} items")
+        if self._compact:
+            parts.append(
+                f"{len(self._active_columns)} of "
+                f"{len(self._all_columns)} columns"
+            )
+        self._count_label.setText(" \u00b7 ".join(parts))

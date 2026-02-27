@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton, QLineEdit, QStyleOption, QStyle
+from PyQt6.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton, QLineEdit, QStyleOption, QStyle, QApplication
 from PyQt6.QtCore import Qt, QPoint, QTimer, pyqtSignal, QEvent
 from PyQt6.QtGui import QCursor, QPainter
 
@@ -13,6 +13,8 @@ from ..theme import (
 from ..icons import nexus_logo_pixmap
 from .search_popup import SearchResultsPopup
 from .fuzzy_line_edit import score_search
+
+SNAP_THRESHOLD = 8  # pixels from screen edge to trigger snap
 
 
 class CustomTitleBar(QWidget):
@@ -27,6 +29,7 @@ class CustomTitleBar(QWidget):
         self._window = parent_window
         self._data_client = data_client
         self._drag_pos = None
+        self._pre_snap_geometry = None  # saved geometry before side-snapping
         self._search_version = 0
 
         self.setFixedHeight(TITLE_BAR_HEIGHT)
@@ -270,7 +273,15 @@ class CustomTitleBar(QWidget):
     def _position_popup(self):
         pos = self._search.mapToGlobal(QPoint(0, self._search.height() + 2))
         self._search_popup.setFixedWidth(self._search.width())
-        self._search_popup.setFixedHeight(400)
+        # Auto-size height: use content size, capped to available screen space
+        content_h = self._search_popup._inner.sizeHint().height() + 4
+        screen = self._search.screen()
+        if screen:
+            screen_bottom = screen.availableGeometry().bottom()
+            max_h = screen_bottom - pos.y() - 8
+        else:
+            max_h = 400
+        self._search_popup.setFixedHeight(max(60, min(content_h, max_h)))
         self._search_popup.move(pos.x(), pos.y())
 
     def _on_search_enter(self, query: str):
@@ -306,9 +317,10 @@ class CustomTitleBar(QWidget):
             elif etype == QEvent.Type.FocusOut:
                 QTimer.singleShot(200, self._maybe_hide_popup)
 
-        # Close popup on window move/resize
+        # Close popup on window move/resize/deactivation
         if obj is self._watched_window and etype in (
             QEvent.Type.Move, QEvent.Type.Resize, QEvent.Type.WindowStateChange,
+            QEvent.Type.WindowDeactivate,
         ):
             self._search_popup.hide()
 
@@ -322,7 +334,7 @@ class CustomTitleBar(QWidget):
         else:
             self._window.showMaximized()
 
-    # --- Drag handling ---
+    # --- Drag handling + Aero Snap ---
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -341,6 +353,10 @@ class CustomTitleBar(QWidget):
             # Proportional unmaximize: cursor stays at same relative X position
             proportion = event.position().x() / self.width() if self.width() > 0 else 0.5
             self._window.showNormal()
+            # Restore pre-snap size if we had one
+            if self._pre_snap_geometry is not None:
+                self._window.resize(self._pre_snap_geometry.size())
+                self._pre_snap_geometry = None
             new_x = int(event.globalPosition().toPoint().x() - self._window.width() * proportion)
             new_y = event.globalPosition().toPoint().y() - self._drag_pos.y()
             self._window.move(new_x, new_y)
@@ -351,6 +367,8 @@ class CustomTitleBar(QWidget):
         event.accept()
 
     def mouseReleaseEvent(self, event):
+        if self._drag_pos is not None:
+            self._try_snap(event.globalPosition().toPoint())
         self._drag_pos = None
         event.accept()
 
@@ -362,6 +380,31 @@ class CustomTitleBar(QWidget):
                 return
             self._toggle_maximize()
             event.accept()
+
+    def _try_snap(self, global_pos):
+        """Check if cursor is at a screen edge and snap the window."""
+        screen = QApplication.screenAt(global_pos)
+        if not screen or self._window.isMaximized():
+            return
+        avail = screen.availableGeometry()
+        # Top edge → maximize
+        if global_pos.y() <= avail.top() + SNAP_THRESHOLD:
+            self._pre_snap_geometry = self._window.geometry()
+            self._window.showMaximized()
+        # Left edge → tile left half
+        elif global_pos.x() <= avail.left() + SNAP_THRESHOLD:
+            self._pre_snap_geometry = self._window.geometry()
+            self._window.setGeometry(
+                avail.left(), avail.top(),
+                avail.width() // 2, avail.height(),
+            )
+        # Right edge → tile right half
+        elif global_pos.x() >= avail.right() - SNAP_THRESHOLD:
+            self._pre_snap_geometry = self._window.geometry()
+            self._window.setGeometry(
+                avail.left() + avail.width() // 2, avail.top(),
+                avail.width() // 2, avail.height(),
+            )
 
     def paintEvent(self, event):
         """Required for QWidget subclasses to honour stylesheet backgrounds/borders."""

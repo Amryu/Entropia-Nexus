@@ -59,6 +59,12 @@ WIKI = (
     'A2.5 2.5 0 0 1 4 19.5z" opacity="0.5"/>'
 )
 
+# Map pin
+MAPS = (
+    '<path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z'
+    'm0 9.5a2.5 2.5 0 1 1 0-5 2.5 2.5 0 0 1 0 5z"/>'
+)
+
 # Person silhouette (user avatar fallback)
 USER = (
     '<circle cx="12" cy="8" r="4"/>'

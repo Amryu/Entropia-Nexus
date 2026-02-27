@@ -169,6 +169,45 @@ export async function getSkillValueHistory(userId) {
 }
 
 /**
+ * Get per-skill value history over time (for progression charts).
+ * Joins skill_imports with skill_import_deltas to get per-skill snapshots.
+ * @param {number} userId
+ * @param {{skills?: string[]|null, from?: string|null, to?: string|null}} options
+ * @returns {Promise<Array<{imported_at: string, skill_name: string, new_value: number}>>}
+ */
+export async function getSkillHistory(userId, { skills = null, from = null, to = null } = {}) {
+  const params = [userId];
+  const conditions = ['i.user_id = $1'];
+  let idx = 2;
+
+  if (skills && skills.length > 0) {
+    conditions.push(`d.skill_name = ANY($${idx})`);
+    params.push(skills);
+    idx++;
+  }
+  if (from) {
+    conditions.push(`i.imported_at >= $${idx}::timestamptz`);
+    params.push(from);
+    idx++;
+  }
+  if (to) {
+    conditions.push(`i.imported_at <= $${idx}::timestamptz`);
+    params.push(to);
+    idx++;
+  }
+
+  const { rows } = await pool.query(
+    `SELECT i.imported_at, d.skill_name, d.new_value
+     FROM skill_imports i
+     JOIN skill_import_deltas d ON d.import_id = i.id
+     WHERE ${conditions.join(' AND ')}
+     ORDER BY i.imported_at ASC, d.skill_name ASC`,
+    params
+  );
+  return rows;
+}
+
+/**
  * Check rate limits for skill imports.
  * @param {number} userId
  * @returns {Promise<{allowed: boolean, reason?: string}>}

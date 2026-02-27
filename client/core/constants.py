@@ -16,6 +16,7 @@ EVENT_OCR_COMPLETE = "ocr_complete"
 
 # Event names — Auth
 EVENT_AUTH_STATE_CHANGED = "auth_state_changed"
+EVENT_API_SCOPE_ERROR = "api_scope_error"
 
 # Event names — Hunt tracking
 EVENT_HUNT_SESSION_STARTED = "hunt_session_started"
@@ -47,6 +48,13 @@ EVENT_SKILLS_UPLOAD_FAILED = "skills_upload_failed"
 EVENT_CONFIG_CHANGED = "config_changed"
 EVENT_HOTKEY_TRIGGERED = "hotkey_triggered"
 EVENT_CATCHUP_COMPLETE = "catchup_complete"
+
+# Event names — Updates
+EVENT_UPDATE_AVAILABLE = "update_available"
+EVENT_UPDATE_PROGRESS = "update_progress"
+EVENT_UPDATE_READY = "update_ready"
+EVENT_UPDATE_ERROR = "update_error"
+EVENT_UPDATE_APPLY = "update_apply"
 
 # Debug events
 EVENT_DEBUG_REGIONS = "debug_regions"      # Window/sidebar/table/pagination bounds

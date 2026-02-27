@@ -45,6 +45,7 @@ class WeaponSignature:
     damage_max: float
     total_damage: float
     cost_per_shot: float  # decay + ammo burn
+    crit_damage: float = 1.0  # multiplier: 1 + (BonusCritDamage% / 100)
 
 
 @dataclass
@@ -58,6 +59,7 @@ class SessionLoadoutEntry:
     cost_per_shot: float = 0.0
     damage_min: float = 0.0
     damage_max: float = 0.0
+    crit_damage: float = 1.0      # crit multiplier: 1 + (BonusCritDamage% / 100)
     source: str = "snapshot"       # 'snapshot', 'user_edit', 'external_update', 'auto_detected'
 
 
@@ -224,6 +226,16 @@ class Hunt:
     def hof_count(self) -> int:
         return sum(1 for e in self.encounters if e.is_hof)
 
+    @property
+    def all_loot_items(self) -> list[EncounterLootItem]:
+        """Flat list of non-blacklisted, non-refining loot items across encounters."""
+        items = []
+        for enc in self.encounters:
+            for li in enc.loot_items:
+                if not li.is_blacklisted and not li.is_refining_output:
+                    items.append(li)
+        return items
+
     def to_dict(self) -> dict:
         return {
             "id": self.id,
@@ -285,6 +297,16 @@ class HuntSession:
     @property
     def death_count(self) -> int:
         return sum(e.death_count for e in self.encounters)
+
+    @property
+    def all_loot_items(self) -> list[EncounterLootItem]:
+        """Flat list of non-blacklisted, non-refining loot items across encounters."""
+        items = []
+        for enc in self.encounters:
+            for li in enc.loot_items:
+                if not li.is_blacklisted and not li.is_refining_output:
+                    items.append(li)
+        return items
 
     def to_summary(self) -> dict:
         hunt_summaries = [h.to_dict() for h in self.hunts]

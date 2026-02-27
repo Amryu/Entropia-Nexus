@@ -196,6 +196,13 @@ CREATE INDEX IF NOT EXISTS idx_combat_event_details_encounter ON combat_event_de
 CREATE INDEX IF NOT EXISTS idx_combat_event_details_timestamp ON combat_event_details(timestamp);
 CREATE INDEX IF NOT EXISTS idx_encounter_loot_items_encounter ON encounter_loot_items(encounter_id);
 CREATE INDEX IF NOT EXISTS idx_session_loadouts_session ON session_loadouts(session_id);
+
+CREATE TABLE IF NOT EXISTS custom_item_markups (
+    item_name TEXT PRIMARY KEY,
+    markup_value REAL NOT NULL,
+    markup_type TEXT NOT NULL DEFAULT 'percentage',
+    updated_at TEXT NOT NULL
+);
 """
 
 # Indexes that depend on columns added by _migrate()
@@ -243,6 +250,7 @@ class Database:
             ("mob_encounters", "is_open_ended", "INTEGER DEFAULT 0"),
             ("mob_encounters", "merged_into", "TEXT"),
             ("mob_encounters", "merged_from", "TEXT"),  # JSON array of encounter IDs
+            ("session_loadouts", "crit_damage", "REAL DEFAULT 1.0"),
         ]
         for table, column, col_def in migrations:
             try:
@@ -695,16 +703,17 @@ class Database:
     def insert_session_loadout(self, session_id: str, timestamp: str,
                                loadout_data_json: str, weapon_name: str = None,
                                cost_per_shot: float = 0, damage_min: float = 0,
-                               damage_max: float = 0, source: str = "snapshot") -> int:
+                               damage_max: float = 0, source: str = "snapshot",
+                               crit_damage: float = 1.0) -> int:
         """Insert a session loadout snapshot. Returns the auto-increment ID."""
         with self._lock:
             cur = self._conn.execute(
                 "INSERT INTO session_loadouts "
                 "(session_id, timestamp, loadout_data, weapon_name, "
-                "cost_per_shot, damage_min, damage_max, source) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                "cost_per_shot, damage_min, damage_max, source, crit_damage) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (session_id, timestamp, loadout_data_json, weapon_name,
-                 cost_per_shot, damage_min, damage_max, source)
+                 cost_per_shot, damage_min, damage_max, source, crit_damage)
             )
             self._auto_commit()
             return cur.lastrowid
@@ -747,3 +756,51 @@ class Database:
             row = cur.fetchone()
             self._conn.row_factory = None
             return dict(row) if row else None
+
+    # Custom item markups
+    def get_custom_markup(self, item_name: str) -> dict | None:
+        """Get a custom markup for an item by name."""
+        with self._lock:
+            self._conn.row_factory = sqlite3.Row
+            cur = self._conn.execute(
+                "SELECT * FROM custom_item_markups WHERE item_name = ?",
+                (item_name,)
+            )
+            row = cur.fetchone()
+            self._conn.row_factory = None
+            return dict(row) if row else None
+
+    def set_custom_markup(self, item_name: str, markup_value: float,
+                          markup_type: str, updated_at: str) -> None:
+        """Set or update a custom markup for an item."""
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO custom_item_markups (item_name, markup_value, markup_type, updated_at) "
+                "VALUES (?, ?, ?, ?) "
+                "ON CONFLICT(item_name) DO UPDATE SET "
+                "markup_value = excluded.markup_value, "
+                "markup_type = excluded.markup_type, "
+                "updated_at = excluded.updated_at",
+                (item_name, markup_value, markup_type, updated_at)
+            )
+            self._auto_commit()
+
+    def remove_custom_markup(self, item_name: str) -> None:
+        """Remove a custom markup for an item."""
+        with self._lock:
+            self._conn.execute(
+                "DELETE FROM custom_item_markups WHERE item_name = ?",
+                (item_name,)
+            )
+            self._auto_commit()
+
+    def get_all_custom_markups(self) -> list[dict]:
+        """Get all custom markups."""
+        with self._lock:
+            self._conn.row_factory = sqlite3.Row
+            cur = self._conn.execute(
+                "SELECT * FROM custom_item_markups ORDER BY item_name"
+            )
+            rows = [dict(r) for r in cur.fetchall()]
+            self._conn.row_factory = None
+            return rows

@@ -1,6 +1,7 @@
 """Session loadout manager — snapshots loadouts per session for cost tracking."""
 
 import json
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -36,6 +37,8 @@ class SessionLoadoutManager:
         self._session = None             # Current session reference
         self._combat_since_last_snapshot = False
         self._loot_since_last_snapshot = False
+        self._calculator_ready = threading.Event()  # Signalled when init completes
+        self._warmup_started = False
 
         # Auto-detect unknown weapons
         self._unmatched_damage_values: list[float] = []
@@ -48,8 +51,29 @@ class SessionLoadoutManager:
     def active_stats(self):
         return self._active_stats
 
-    def _ensure_calculator(self):
-        """Lazy-init calculator + entity data (heavy: V8 context + API calls)."""
+    def warmup(self):
+        """Pre-initialize the calculator in a background thread.
+
+        Called after catchup completes so V8 + entity data loading
+        doesn't block the watcher thread during a hunt session.
+        """
+        if self._warmup_started:
+            return
+        self._warmup_started = True
+
+        def _init():
+            try:
+                self._do_init_calculator()
+                log.info("Calculator pre-warmed")
+            except Exception as e:
+                log.error("Calculator warmup failed: %s", e)
+            finally:
+                self._calculator_ready.set()
+
+        threading.Thread(target=_init, daemon=True, name="loadout-warmup").start()
+
+    def _do_init_calculator(self):
+        """Initialize V8 calculator + entity data (heavy work)."""
         if self._calculator is None:
             from ..loadout.calculator import LoadoutCalculator
             self._calculator = LoadoutCalculator(self._config.js_utils_path or None)
@@ -62,8 +86,24 @@ class SessionLoadoutManager:
                 "implants": self._data_client.get_implants() or [],
                 "armors": self._data_client.get_armors() or [],
                 "armor_platings": self._data_client.get_armor_platings() or [],
+                "armor_sets": self._data_client.get_armor_sets() or [],
+                "clothing": self._data_client.get_clothing() or [],
+                "pets": self._data_client.get_pets() or [],
+                "stimulants": self._data_client.get_stimulants() or [],
                 "medical_tools": self._data_client.get_medical_tools() or [],
+                "effects": self._data_client.get_effects() or [],
             }
+
+    def _ensure_calculator(self):
+        """Ensure calculator is ready, waiting for background warmup if needed."""
+        if self._calculator is not None and self._entity_data is not None:
+            return
+        # If warmup is running, wait for it instead of doing double work
+        if self._warmup_started:
+            self._calculator_ready.wait(timeout=30)
+        else:
+            self._do_init_calculator()
+            self._calculator_ready.set()
 
     def _evaluate(self, loadout: dict):
         """Evaluate a loadout. Returns (weapon_name, stats) or (None, None)."""
@@ -148,6 +188,7 @@ class SessionLoadoutManager:
                     latest.damage_max,
                     (latest.damage_min + latest.damage_max) / 2,
                     latest.cost_per_shot,
+                    latest.crit_damage,
                 )
             if latest.loadout_data:
                 self._active_loadout = latest.loadout_data
@@ -194,12 +235,14 @@ class SessionLoadoutManager:
             cost_per_shot=stats.cost if stats else 0,
             damage_min=stats.damage_interval_min if stats else 0,
             damage_max=stats.damage_interval_max if stats else 0,
+            crit_damage=stats.crit_damage if stats else 1.0,
             source=source,
         )
         entry.id = self._db.insert_session_loadout(
             self._session.id, entry.timestamp.isoformat(),
             json.dumps(entry.loadout_data), weapon_name,
-            entry.cost_per_shot, entry.damage_min, entry.damage_max, source,
+            entry.cost_per_shot, entry.damage_min, entry.damage_max,
+            source, entry.crit_damage,
         )
         self._session.loadout_entries.append(entry)
         self._combat_since_last_snapshot = False

@@ -8,6 +8,7 @@
 
   import FancyTable from '../FancyTable.svelte';
   import RefiningRecipesDisplay from './RefiningRecipesDisplay.svelte';
+  import { getTieringUsage, formatTierRange } from '$lib/tieringUtil.js';
 
   export let item;
   export let usage;
@@ -120,14 +121,17 @@
     if (row.rowLink) goto(row.rowLink);
   }
 
+  // Tiering usage (static, client-side lookup)
+  $: tieringData = getTieringUsage(item?.Name);
+
   // Check if there's any usage data
-  $: hasUsageData = usage != null && (
+  $: hasUsageData = (usage != null && (
     hasMarketData ||
     (usage.Blueprints?.length > 0) ||
     (usage.RefiningRecipes?.length > 0) ||
     (usage.Missions?.length > 0) ||
     (usage.VendorOffers?.length > 0 && usage.VendorOffers.some(vo => vo.Prices?.length > 0))
-  );
+  )) || tieringData.length > 0;
 </script>
 
 <style>
@@ -177,6 +181,35 @@
 
   .recipe-wrapper :global(.recipes-display) {
     width: 100%;
+  }
+
+  .tiering-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .tiering-card {
+    padding: 12px 14px;
+    background-color: var(--bg-color, var(--primary-color));
+    border-radius: 6px;
+    border-left: 3px solid var(--accent-color, #4a9eff);
+  }
+
+  .tiering-type {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text-color);
+    margin-bottom: 4px;
+  }
+
+  .tiering-detail {
+    font-size: 13px;
+    color: var(--text-muted, #999);
+  }
+
+  .tiering-separator {
+    margin: 0 6px;
   }
 
   .no-data {
@@ -296,6 +329,26 @@
               linkIngredients={true}
               currentEntityName={item?.Name || null}
             />
+          </div>
+        </div>
+      {/if}
+
+      {#if tieringData.length > 0}
+        <div class="usage-section">
+          <h4 class="section-title">Tiering</h4>
+          <div class="tiering-list">
+            {#each tieringData as entry}
+              <div class="tiering-card">
+                <div class="tiering-type">{entry.type}</div>
+                <div class="tiering-detail">
+                  <span class="tiering-label">
+                    {entry.tiers.length === 1 ? 'Tier' : 'Tiers'} {formatTierRange(entry.tiers)}
+                  </span>
+                  <span class="tiering-separator">&mdash;</span>
+                  <span class="tiering-slot">{entry.slot}</span>
+                </div>
+              </div>
+            {/each}
           </div>
         </div>
       {/if}

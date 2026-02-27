@@ -12,7 +12,9 @@ from PyQt6.QtWidgets import (
     QPushButton,
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QUrl, QRect
-from PyQt6.QtGui import QCursor
+from PyQt6.QtGui import QColor, QCursor
+from PyQt6.QtWebEngineWidgets import QWebEngineView
+from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
 
 from ..theme import (
     TEXT, TEXT_MUTED, ACCENT, BORDER, HOVER, SECONDARY, PRIMARY,
@@ -80,7 +82,7 @@ _GENDER_TAG_RE = re.compile(r'\s*\(([MF])(?:,([^)]+))?\)\s*$')
 
 _LINK_STYLE = f'color:{ACCENT};text-decoration:underline'
 
-# CSS for article HTML rendering inside QTextBrowser
+# CSS for article HTML rendering
 _ARTICLE_CSS = f"""
     body {{
         background-color: {PRIMARY};
@@ -129,6 +131,28 @@ _ARTICLE_CSS = f"""
     }}
     th {{
         background-color: {SECONDARY};
+    }}
+    .video-embed-wrapper {{
+        position: relative;
+        width: 60%;
+        aspect-ratio: 16 / 9;
+        margin: 8px 0;
+        border-radius: 8px;
+        overflow: hidden;
+    }}
+    .video-embed-wrapper iframe,
+    .video-embed-iframe {{
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        border: none;
+    }}
+    img {{
+        max-width: 100%;
+        height: auto;
+        border-radius: 4px;
     }}
 """
 
@@ -369,6 +393,16 @@ class _NewsRow(QFrame):
         super().mousePressEvent(event)
 
 
+class _ArticlePage(QWebEnginePage):
+    """Custom page that opens link clicks in the system browser."""
+
+    def acceptNavigationRequest(self, url, nav_type, is_main_frame):
+        if nav_type == QWebEnginePage.NavigationType.NavigationTypeLinkClicked:
+            webbrowser.open(url.toString())
+            return False
+        return super().acceptNavigationRequest(url, nav_type, is_main_frame)
+
+
 class _ArticleView(QWidget):
     """Full-page article detail view with back button."""
 
@@ -418,18 +452,39 @@ class _ArticleView(QWidget):
         )
         layout.addWidget(self._meta)
 
-        # Content browser
-        self._content = QTextBrowser()
-        self._content.setOpenExternalLinks(True)
-        self._content.setStyleSheet(f"""
-            QTextBrowser {{
+        # Content browser (Chromium-based for YouTube iframe support)
+        content_wrapper = QFrame()
+        content_wrapper.setStyleSheet(f"""
+            QFrame {{
                 background-color: {PRIMARY};
                 border: 1px solid {BORDER};
                 border-radius: 6px;
-                padding: 8px;
             }}
         """)
-        layout.addWidget(self._content, 1)
+        wrapper_layout = QVBoxLayout(content_wrapper)
+        wrapper_layout.setContentsMargins(1, 1, 1, 1)
+
+        self._content = QWebEngineView()
+        page = _ArticlePage(self._content)
+        self._content.setPage(page)
+        page.setBackgroundColor(QColor(PRIMARY))
+        # Enable fullscreen so YouTube's fullscreen button works.
+        page.settings().setAttribute(
+            QWebEngineSettings.WebAttribute.FullScreenSupportEnabled, True,
+        )
+        page.fullScreenRequested.connect(self._on_fullscreen_requested)
+        # Pre-initialize Chromium render process so the first real setHtml()
+        # doesn't trigger DPI-awareness changes / window resize on Windows.
+        self._content.setHtml(
+            f"<html><head><style>{_ARTICLE_CSS}</style></head><body></body></html>",
+            QUrl("https://www.entropianexus.com/"),
+        )
+        self._content_wrapper = content_wrapper
+        self._content_wrapper_layout = wrapper_layout
+        self._fullscreen_window = None
+        wrapper_layout.addWidget(self._content)
+
+        layout.addWidget(content_wrapper, 1)
 
         # External link button
         self._ext_link_btn = QPushButton()
@@ -474,21 +529,13 @@ class _ArticleView(QWidget):
         # Content
         content_html = article.get("content_html", "")
         if content_html:
-            # Strip <img> tags (QTextBrowser can't fetch remote images)
-            content_html = re.sub(
-                r'<img[^>]*>',
-                '',
-                content_html,
-            )
             html = f"<html><head><style>{_ARTICLE_CSS}</style></head>"
             html += f"<body>{content_html}</body></html>"
         else:
             summary = _esc(article.get("summary", list_post.get("summary", "")))
             html = f"<html><head><style>{_ARTICLE_CSS}</style></head>"
             html += f"<body><p>{summary}</p></body></html>"
-        self._content.setHtml(html)
-        # Scroll to top
-        self._content.verticalScrollBar().setValue(0)
+        self._content.setHtml(html, QUrl("https://www.entropianexus.com/"))
 
         # External link
         link = article.get("link", "")
@@ -521,8 +568,7 @@ class _ArticleView(QWidget):
         summary = _esc(post.get("summary", ""))
         html = f"<html><head><style>{_ARTICLE_CSS}</style></head>"
         html += f"<body><p>{summary}</p></body></html>"
-        self._content.setHtml(html)
-        self._content.verticalScrollBar().setValue(0)
+        self._content.setHtml(html, QUrl("https://www.entropianexus.com/"))
 
         url = post.get("url", "")
         if url:
@@ -543,12 +589,29 @@ class _ArticleView(QWidget):
         self._meta.setText("")
         html = f"<html><head><style>{_ARTICLE_CSS}</style></head>"
         html += f'<body><p style="color:{TEXT_MUTED}">Loading article...</p></body></html>'
-        self._content.setHtml(html)
+        self._content.setHtml(html, QUrl("https://www.entropianexus.com/"))
         self._ext_link_btn.hide()
 
     def _open_external(self):
         if self._external_url:
             webbrowser.open(self._external_url)
+
+    def _on_fullscreen_requested(self, request):
+        """Handle YouTube fullscreen enter/exit by reparenting the web view."""
+        if request.toggleOn():
+            request.accept()
+            self._fullscreen_window = QWidget()
+            self._fullscreen_window.setWindowFlags(Qt.WindowType.Window)
+            fs_layout = QVBoxLayout(self._fullscreen_window)
+            fs_layout.setContentsMargins(0, 0, 0, 0)
+            fs_layout.addWidget(self._content)
+            self._fullscreen_window.showFullScreen()
+        else:
+            request.accept()
+            self._content_wrapper_layout.addWidget(self._content)
+            if self._fullscreen_window:
+                self._fullscreen_window.close()
+                self._fullscreen_window = None
 
 
 # ---------------------------------------------------------------------------
@@ -557,6 +620,10 @@ class _ArticleView(QWidget):
 
 class DashboardPage(QWidget):
     """Dashboard showing latest news, global events ticker, and trade chat ticker."""
+
+    # Emitted when the user navigates into/out of an article view.
+    # sub_state: "article" when viewing an article, None when on the list.
+    navigation_changed = pyqtSignal(object)  # str | None
 
     def __init__(self, *, signals, db, nexus_client, data_client, config):
         super().__init__()
@@ -611,7 +678,7 @@ class DashboardPage(QWidget):
         self._posts_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._news_layout.insertWidget(0, self._posts_empty)
 
-        layout.addWidget(news_group, 5)
+        layout.addWidget(news_group, 3)
 
         # Tickers (globals + trade)
         ticker_row = QWidget()
@@ -625,6 +692,8 @@ class DashboardPage(QWidget):
         global_layout.setContentsMargins(2, 2, 2, 2)
         self._global_log = QTextEdit()
         self._global_log.setReadOnly(True)
+        self._global_log.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         global_layout.addWidget(self._global_log)
         ticker_layout.addWidget(global_group, 1)
 
@@ -634,6 +703,8 @@ class DashboardPage(QWidget):
         trade_layout.setContentsMargins(2, 2, 2, 2)
         self._trade_log = QTextBrowser()
         self._trade_log.setOpenLinks(False)
+        self._trade_log.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._trade_log.anchorClicked.connect(self._on_trade_link)
         trade_layout.addWidget(self._trade_log)
         ticker_layout.addWidget(trade_group, 1)
@@ -665,9 +736,18 @@ class DashboardPage(QWidget):
 
     def _show_list_view(self):
         self._stack.setCurrentIndex(_VIEW_LIST)
+        self.navigation_changed.emit(None)
 
     def _show_article_view(self):
         self._stack.setCurrentIndex(_VIEW_ARTICLE)
+        self.navigation_changed.emit("article")
+
+    def set_sub_state(self, state):
+        """Restore view from navigation history."""
+        if state == "article":
+            self._stack.setCurrentIndex(_VIEW_ARTICLE)
+        else:
+            self._stack.setCurrentIndex(_VIEW_LIST)
 
     # --- Item lookup ---
 
@@ -740,10 +820,10 @@ class DashboardPage(QWidget):
         has_content = post.get("has_content", False)
 
         if article_id and has_content:
-            # Fetch full article from API
+            # Fetch full article — defer view switch to _on_article_loaded
+            # to avoid a loading flash (double setHtml on QWebEngineView).
             self._pending_post = post
-            self._article_view.show_loading()
-            self._show_article_view()
+            self.setCursor(Qt.CursorShape.WaitCursor)
             self._fetch_article(article_id)
         elif article_id:
             # No content — show summary in detail view
@@ -767,12 +847,14 @@ class DashboardPage(QWidget):
         self._article_fetcher.start()
 
     def _on_article_loaded(self, article: dict | None):
+        self.setCursor(Qt.CursorShape.ArrowCursor)
         post = self._pending_post or {}
         if article:
             self._article_view.show_article(article, post)
         else:
             # Fetch failed — show summary fallback
             self._article_view.show_summary_only(post)
+        self._show_article_view()
 
     # --- Ticker helpers ---
 

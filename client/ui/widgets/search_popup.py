@@ -85,25 +85,57 @@ _POPUP_STYLE = f"""
 _CATEGORY_STYLE = (
     f"color: {TEXT_MUTED}; font-size: 11px; font-weight: bold;"
     f" letter-spacing: 0.5px; text-transform: uppercase;"
-    f" padding: 8px 12px; background-color: {HOVER};"
+    f" padding: 4px 10px; background-color: {HOVER};"
     f" border-bottom: 1px solid {BORDER};"
 )
 
 _ROW_STYLE = (
-    f"padding: 8px 12px; border-bottom: 1px solid {BORDER};"
+    f"padding: 0px 8px;"
+    f" border: 2px solid transparent;"
     f" background-color: transparent;"
 )
 
-_ROW_HIGHLIGHT_STYLE = (
-    f"padding: 8px 12px; border-bottom: 1px solid {BORDER};"
+_ROW_HOVER_STYLE = (
+    f"padding: 0px 8px;"
+    f" border: 2px solid transparent;"
     f" background-color: {HOVER};"
-    f" outline: 2px solid {ACCENT}; outline-offset: -2px;"
+)
+
+_ROW_HIGHLIGHT_STYLE = (
+    f"padding: 0px 8px;"
+    f" border: 2px solid {ACCENT};"
+    f" background-color: {HOVER};"
 )
 
 
 # ---------------------------------------------------------------------------
 # Popup widget
 # ---------------------------------------------------------------------------
+
+class _ClickableRow(QWidget):
+    """A result row that supports click and hover."""
+
+    def __init__(self, item: dict, popup: "SearchResultsPopup"):
+        super().__init__()
+        self._item = item
+        self._popup = popup
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._popup.result_selected.emit(self._item)
+        super().mousePressEvent(event)
+
+    def enterEvent(self, event):
+        if self.styleSheet() != _ROW_HIGHLIGHT_STYLE:
+            self.setStyleSheet(_ROW_HOVER_STYLE)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        if self.styleSheet() != _ROW_HIGHLIGHT_STYLE:
+            self.setStyleSheet(_ROW_STYLE)
+        super().leaveEvent(event)
+
 
 class SearchResultsPopup(QWidget):
     """Categorised search results dropdown positioned below the search bar."""
@@ -234,22 +266,27 @@ class SearchResultsPopup(QWidget):
     # --- Internal ---
 
     def _make_row(self, item: dict) -> QWidget:
-        row = QWidget()
+        row = _ClickableRow(item, self)
         row.setStyleSheet(_ROW_STYLE)
         layout = QHBoxLayout(row)
-        layout.setContentsMargins(12, 8, 12, 8)
-        layout.setSpacing(8)
+        layout.setContentsMargins(10, 2, 10, 2)
+        layout.setSpacing(6)
 
         name = QLabel(item.get("DisplayName") or item.get("Name", ""))
-        name.setStyleSheet(f"color: {TEXT}; font-size: 13px; background: transparent;")
+        name.setStyleSheet(
+            f"color: {TEXT}; font-size: 12px; background: transparent;"
+            " border: none; text-decoration: none;"
+        )
+        name.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         layout.addWidget(name, 1)
 
         type_badge = QLabel(get_type_name(item.get("Type", "")))
         type_badge.setStyleSheet(
-            f"color: {TEXT_MUTED}; font-size: 11px;"
+            f"color: {TEXT_MUTED}; font-size: 10px;"
             f" background-color: {PRIMARY}; border-radius: 3px;"
-            f" padding: 2px 6px;"
+            f" padding: 1px 5px; border: none; text-decoration: none;"
         )
+        type_badge.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         layout.addWidget(type_badge)
 
         return row

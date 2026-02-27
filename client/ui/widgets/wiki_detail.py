@@ -1,0 +1,674 @@
+"""Reusable components for wiki entity detail pages (Wikipedia-style infobox layout)."""
+
+from __future__ import annotations
+
+import re
+import threading
+
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel,
+    QTextBrowser, QSizePolicy, QFrame,
+)
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QPixmap, QPainter, QLinearGradient, QColor
+
+import requests
+
+from ..theme import (
+    PRIMARY, SECONDARY, BORDER, TEXT, TEXT_MUTED, ACCENT,
+    HOVER, DAMAGE_COLORS, TIER1_BLUE_START, TIER1_BLUE_END, SUCCESS,
+)
+from ...data.wiki_columns import _DAMAGE_TYPES, deep_get
+
+
+# ---------------------------------------------------------------------------
+# StatRow — single key-value pair
+# ---------------------------------------------------------------------------
+
+class StatRow(QWidget):
+    """A single label: value stat row, matching the web frontend's .stat-row."""
+
+    clicked = pyqtSignal()
+
+    def __init__(
+        self,
+        label: str,
+        value: str,
+        *,
+        highlight: bool = False,
+        muted_value: bool = False,
+        toggleable: bool = False,
+        indent: bool = False,
+        label_color: str | None = None,
+        parent=None,
+    ):
+        super().__init__(parent)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 4, 0, 4)
+        layout.setSpacing(4)
+
+        if indent:
+            layout.setContentsMargins(12, 4, 0, 4)
+
+        lc = label_color or TEXT_MUTED
+        lbl = QLabel(label)
+        lbl.setStyleSheet(
+            f"color: {lc}; font-size: 13px; background: transparent;"
+        )
+        layout.addWidget(lbl)
+
+        layout.addStretch()
+
+        value_color = TEXT
+        if highlight:
+            value_color = SUCCESS
+        elif muted_value:
+            value_color = TEXT_MUTED
+
+        self._value_label = QLabel(value)
+        self._value_label.setStyleSheet(
+            f"color: {value_color}; font-size: 13px; font-weight: 500;"
+            " background: transparent;"
+        )
+        self._value_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        layout.addWidget(self._value_label)
+
+        if toggleable:
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.setStyleSheet(
+                f"StatRow {{ border-radius: 4px; padding: 0 6px; }}"
+                f"StatRow:hover {{ background-color: {HOVER}; }}"
+            )
+
+    def set_value(self, text: str):
+        self._value_label.setText(text)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit()
+        super().mousePressEvent(event)
+
+
+# ---------------------------------------------------------------------------
+# InfoboxSection — titled group of stat rows
+# ---------------------------------------------------------------------------
+
+class InfoboxSection(QWidget):
+    """A titled section inside the infobox, matching .stats-section."""
+
+    def __init__(self, title: str | None = None, *, tier1: bool = False, parent=None):
+        super().__init__(parent)
+        self._tier1 = tier1
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(12, 12, 12, 12)
+        self._layout.setSpacing(0)
+
+        if not tier1:
+            self.setStyleSheet(
+                f"InfoboxSection {{"
+                f"  background-color: {PRIMARY};"
+                f"  border-radius: 6px;"
+                f"}}"
+            )
+
+        if title:
+            title_label = QLabel(title.upper())
+            title_label.setStyleSheet(
+                f"color: {TEXT_MUTED}; font-size: 12px; font-weight: 600;"
+                " letter-spacing: 0.5px; background: transparent;"
+                " margin-bottom: 10px;"
+            )
+            self._layout.addWidget(title_label)
+
+    def add_row(self, row: StatRow):
+        self._layout.addWidget(row)
+
+    def add_widget(self, widget: QWidget):
+        self._layout.addWidget(widget)
+
+    def paintEvent(self, event):
+        """Draw gradient background for tier-1 sections."""
+        if self._tier1:
+            painter = QPainter(self)
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            gradient = QLinearGradient(0, 0, self.width(), self.height())
+            gradient.setColorAt(0.0, QColor(TIER1_BLUE_START))
+            gradient.setColorAt(1.0, QColor(TIER1_BLUE_END))
+            painter.setBrush(gradient)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawRoundedRect(self.rect(), 6, 6)
+            painter.end()
+        else:
+            super().paintEvent(event)
+
+
+# ---------------------------------------------------------------------------
+# Tier1StatRow — large-value stat row for the highlighted tier-1 section
+# ---------------------------------------------------------------------------
+
+class Tier1StatRow(QWidget):
+    """Prominent stat row for the tier-1 (gradient) section."""
+
+    def __init__(self, label: str, value: str, parent=None):
+        super().__init__(parent)
+        self.setStyleSheet(
+            f"background-color: rgba(255, 255, 255, 0.1);"
+            f" border-radius: 4px;"
+        )
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(12, 8, 12, 8)
+        layout.setSpacing(4)
+
+        lbl = QLabel(label.upper())
+        lbl.setStyleSheet(
+            "color: rgba(255, 255, 255, 0.9); font-size: 13px;"
+            " font-weight: 500; background: transparent;"
+        )
+        layout.addWidget(lbl)
+
+        layout.addStretch()
+
+        self._value_label = QLabel(value)
+        self._value_label.setStyleSheet(
+            "color: #e8f4ff; font-size: 18px; font-weight: 700;"
+            " background: transparent;"
+        )
+        self._value_label.setAlignment(Qt.AlignmentFlag.AlignRight)
+        layout.addWidget(self._value_label)
+
+
+# ---------------------------------------------------------------------------
+# DamageBreakdownWidget — colored horizontal bars per damage type
+# ---------------------------------------------------------------------------
+
+class DamageBreakdownWidget(QWidget):
+    """Damage breakdown with colored horizontal bars for each non-zero type."""
+
+    def __init__(self, damage: dict | None, parent=None):
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+
+        if not damage:
+            muted = QLabel("No damage data")
+            muted.setStyleSheet(
+                f"color: {TEXT_MUTED}; font-size: 12px;"
+                " font-style: italic; background: transparent;"
+            )
+            layout.addWidget(muted)
+            return
+
+        # Find non-zero types and max value for bar scaling
+        entries = []
+        for dtype in _DAMAGE_TYPES:
+            val = damage.get(dtype) or 0
+            if val > 0:
+                entries.append((dtype, val))
+
+        if not entries:
+            muted = QLabel("No damage")
+            muted.setStyleSheet(
+                f"color: {TEXT_MUTED}; font-size: 12px;"
+                " font-style: italic; background: transparent;"
+            )
+            layout.addWidget(muted)
+            return
+
+        total = sum(v for _, v in entries)
+        max_val = max(v for _, v in entries)
+
+        # Total row
+        total_row = QHBoxLayout()
+        total_row.setContentsMargins(0, 0, 0, 4)
+        total_lbl = QLabel("Total")
+        total_lbl.setStyleSheet(
+            f"color: {TEXT_MUTED}; font-size: 12px; background: transparent;"
+        )
+        total_row.addWidget(total_lbl)
+        total_row.addStretch()
+        total_val = QLabel(f"{total:.1f}")
+        total_val.setStyleSheet(
+            f"color: {TEXT}; font-size: 13px; font-weight: 600;"
+            " background: transparent;"
+        )
+        total_row.addWidget(total_val)
+        layout.addLayout(total_row)
+
+        # Per-type bar rows
+        for dtype, val in entries:
+            color = DAMAGE_COLORS.get(dtype, TEXT_MUTED)
+            bar_pct = (val / max_val * 100) if max_val > 0 else 0
+
+            row = QHBoxLayout()
+            row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(8)
+
+            name_lbl = QLabel(dtype)
+            name_lbl.setFixedWidth(80)
+            name_lbl.setStyleSheet(
+                f"color: {TEXT_MUTED}; font-size: 12px; background: transparent;"
+            )
+            row.addWidget(name_lbl)
+
+            # Bar container
+            bar_container = QWidget()
+            bar_container.setFixedHeight(14)
+            bar_container.setSizePolicy(
+                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
+            )
+            bar_container.setStyleSheet(
+                f"background-color: {PRIMARY}; border-radius: 3px;"
+            )
+
+            bar = QWidget(bar_container)
+            bar.setStyleSheet(
+                f"background-color: {color}; border-radius: 3px;"
+            )
+            # Bar width set on first layout via a timer
+            bar._target_pct = bar_pct
+            bar._color = color
+            bar.setFixedHeight(14)
+
+            row.addWidget(bar_container)
+
+            val_lbl = QLabel(f"{val:.1f}")
+            val_lbl.setFixedWidth(40)
+            val_lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
+            val_lbl.setStyleSheet(
+                f"color: {TEXT}; font-size: 12px; background: transparent;"
+            )
+            row.addWidget(val_lbl)
+
+            layout.addLayout(row)
+
+            # Store reference for resize
+            bar._bar_container = bar_container
+
+        # Keep references for resize recalc
+        self._entries = entries
+        self._max_val = max_val
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_bar_widths()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        self._update_bar_widths()
+
+    def _update_bar_widths(self):
+        """Recalculate bar widths based on container width."""
+        for child in self.findChildren(QWidget):
+            if hasattr(child, '_target_pct') and hasattr(child, '_bar_container'):
+                container_w = child._bar_container.width()
+                if container_w > 0:
+                    bar_w = max(2, int(container_w * child._target_pct / 100))
+                    child.setFixedWidth(bar_w)
+
+
+# ---------------------------------------------------------------------------
+# ImagePlaceholder — shown while image loads (or if no image)
+# ---------------------------------------------------------------------------
+
+class ImagePlaceholder(QLabel):
+    """Rounded placeholder with centered abbreviation text."""
+
+    def __init__(self, text: str, size: int = 160, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(size, size)
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setText(text[:3].upper())
+        self.setStyleSheet(
+            f"background-color: {PRIMARY}; border-radius: 8px;"
+            f" color: {TEXT_MUTED}; font-size: 24px; font-weight: bold;"
+            f" border: 1px solid {BORDER};"
+        )
+
+
+# ---------------------------------------------------------------------------
+# DataSection — collapsible panel for the article area
+# ---------------------------------------------------------------------------
+
+class DataSection(QWidget):
+    """Collapsible content section matching the website's DataSection.svelte."""
+
+    def __init__(self, title: str, *, subtitle: str = "", expanded: bool = True, parent=None):
+        super().__init__(parent)
+        self._expanded = expanded
+        self._subtitle_text = subtitle
+        self._title_text = title
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        self._frame = QFrame()
+        self._frame.setStyleSheet(
+            f"QFrame#dataSection {{"
+            f"  background-color: {SECONDARY};"
+            f"  border: 1px solid {BORDER};"
+            f"  border-radius: 8px;"
+            f"}}"
+        )
+        self._frame.setObjectName("dataSection")
+        frame_layout = QVBoxLayout(self._frame)
+        frame_layout.setContentsMargins(0, 0, 0, 0)
+        frame_layout.setSpacing(0)
+
+        # --- Header (clickable) ---
+        self._header = QWidget()
+        self._header.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._header.setObjectName("dataSectionHeader")
+        header_layout = QHBoxLayout(self._header)
+        header_layout.setContentsMargins(16, 12, 16, 12)
+        header_layout.setSpacing(8)
+
+        self._title_label = QLabel(title)
+        self._title_label.setStyleSheet(
+            f"color: {TEXT}; font-size: 16px; font-weight: 600;"
+            " background: transparent;"
+        )
+        header_layout.addWidget(self._title_label)
+
+        self._subtitle_label = QLabel(subtitle)
+        self._subtitle_label.setStyleSheet(
+            f"color: {TEXT_MUTED}; font-size: 13px; background: transparent;"
+        )
+        header_layout.addWidget(self._subtitle_label, 1)
+
+        self._chevron = QLabel("\u25be")  # ▾
+        self._chevron.setStyleSheet(
+            f"color: {TEXT_MUTED}; font-size: 14px; background: transparent;"
+        )
+        self._chevron.setFixedWidth(20)
+        self._chevron.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        header_layout.addWidget(self._chevron)
+
+        self._header.mousePressEvent = lambda e: self.toggle()
+        frame_layout.addWidget(self._header)
+
+        # --- Separator (visible when expanded) ---
+        self._separator = QFrame()
+        self._separator.setFrameShape(QFrame.Shape.HLine)
+        self._separator.setFixedHeight(1)
+        self._separator.setStyleSheet(f"background-color: {BORDER};")
+        frame_layout.addWidget(self._separator)
+
+        # --- Content ---
+        self._content = QWidget()
+        self._content.setObjectName("dataSectionContent")
+        self._content.setStyleSheet(
+            "#dataSectionContent { background: transparent; }"
+        )
+        self._content_layout = QVBoxLayout(self._content)
+        self._content_layout.setContentsMargins(16, 16, 16, 16)
+        self._content_layout.setSpacing(12)
+        frame_layout.addWidget(self._content)
+
+        outer.addWidget(self._frame)
+
+        self._update_state()
+
+    def toggle(self):
+        self._expanded = not self._expanded
+        self._update_state()
+
+    def set_subtitle(self, text: str):
+        self._subtitle_text = text
+        self._subtitle_label.setText(text)
+
+    def set_loading(self):
+        """Show a loading placeholder in the content area."""
+        loading = QLabel("Loading...")
+        loading.setStyleSheet(
+            f"color: {TEXT_MUTED}; font-size: 13px; background: transparent;"
+        )
+        loading.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._content_layout.addWidget(loading)
+
+    def set_content(self, widget: QWidget):
+        """Replace content with the given widget."""
+        # Clear existing content
+        while self._content_layout.count():
+            item = self._content_layout.takeAt(0)
+            w = item.widget()
+            if w:
+                w.deleteLater()
+        self._content_layout.addWidget(widget)
+
+    def add_content_widget(self, widget: QWidget):
+        """Add a widget to the content area."""
+        self._content_layout.addWidget(widget)
+
+    def _update_state(self):
+        self._content.setVisible(self._expanded)
+        self._separator.setVisible(self._expanded)
+        self._chevron.setText("\u25be" if self._expanded else "\u25b8")  # ▾ / ▸
+        self._subtitle_label.setVisible(not self._expanded and bool(self._subtitle_text))
+        # Header hover style
+        if self._expanded:
+            self._header.setStyleSheet(
+                f"#dataSectionHeader {{ background: transparent; }}"
+                f"#dataSectionHeader:hover {{ background-color: {HOVER}; }}"
+            )
+        else:
+            self._header.setStyleSheet(
+                f"#dataSectionHeader {{ background: transparent; }}"
+                f"#dataSectionHeader:hover {{ background-color: {HOVER}; }}"
+            )
+
+
+# ---------------------------------------------------------------------------
+# WikiDetailView — base class for entity detail pages
+# ---------------------------------------------------------------------------
+
+class WikiDetailView(QWidget):
+    """Single-column detail page: infobox panel at top, article below.
+
+    Subclasses should call ``_build(item)`` to populate the layout.
+    """
+
+    _image_loaded = pyqtSignal(bytes)  # raw image bytes from background thread
+
+    IMAGE_SIZE = 100
+    TIER1_WIDTH = 220
+
+    def __init__(self, item: dict, *, nexus_base_url: str = "", data_client=None, parent=None):
+        super().__init__(parent)
+        self._item = item
+        self._nexus_base_url = nexus_base_url
+        self._data_client = data_client
+        self._image_loaded.connect(self._on_image_loaded)
+
+        # Main vertical layout: infobox panel → description → article sections
+        self._main_layout = QVBoxLayout(self)
+        self._main_layout.setContentsMargins(0, 0, 0, 0)
+        self._main_layout.setSpacing(12)
+
+        # --- Infobox panel (full width) ---
+        self._infobox = QWidget()
+        self._infobox.setStyleSheet(
+            f"#wikiInfobox {{"
+            f"  background-color: {SECONDARY};"
+            f"  border: 1px solid {BORDER};"
+            f"  border-radius: 8px;"
+            f"}}"
+        )
+        self._infobox.setObjectName("wikiInfobox")
+
+        self._infobox_layout = QVBoxLayout(self._infobox)
+        self._infobox_layout.setContentsMargins(16, 16, 16, 16)
+        self._infobox_layout.setSpacing(12)
+
+        # Header row: image | title+badges | stretch | tier1
+        self._header_row = QHBoxLayout()
+        self._header_row.setSpacing(16)
+        self._infobox_layout.addLayout(self._header_row)
+
+        # Sections row: stat sections laid out horizontally
+        self._sections_row = QHBoxLayout()
+        self._sections_row.setSpacing(8)
+        self._infobox_layout.addLayout(self._sections_row)
+
+        self._main_layout.addWidget(self._infobox)
+
+        # --- Description browser (below infobox) ---
+        self._description_browser = QTextBrowser()
+        self._description_browser.setOpenExternalLinks(True)
+        self._description_browser.setStyleSheet(
+            f"QTextBrowser {{"
+            f"  background-color: {SECONDARY};"
+            f"  color: {TEXT};"
+            f"  font-size: 13px;"
+            f"  border: 1px solid {BORDER};"
+            f"  border-radius: 8px;"
+            f"  padding: 16px;"
+            f"}}"
+            f"QTextBrowser a {{ color: {ACCENT}; }}"
+        )
+        self._description_browser.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        self._description_browser.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum
+        )
+        self._main_layout.addWidget(self._description_browser)
+
+        # Article sections will be appended below by subclasses
+
+    # --- Infobox header helpers ---
+
+    def _add_image_placeholder(self, text: str):
+        """Add image placeholder to the infobox header row (left)."""
+        self._image_label = ImagePlaceholder(text, self.IMAGE_SIZE)
+        self._header_row.addWidget(
+            self._image_label, 0, Qt.AlignmentFlag.AlignTop
+        )
+
+    def _add_infobox_title(self, name: str, subtitle_widgets: list[QWidget] | None = None):
+        """Add name + subtitle to the infobox header row (left-aligned)."""
+        title_area = QWidget()
+        title_area.setStyleSheet("background: transparent;")
+        tl = QVBoxLayout(title_area)
+        tl.setContentsMargins(0, 4, 0, 0)
+        tl.setSpacing(6)
+
+        title = QLabel(name)
+        title.setWordWrap(True)
+        title.setStyleSheet(
+            f"color: {TEXT}; font-size: 18px; font-weight: 600;"
+            " background: transparent; border: none;"
+        )
+        tl.addWidget(title)
+
+        if subtitle_widgets:
+            sub_row = QWidget()
+            sub_row.setStyleSheet("background: transparent; border: none;")
+            sr_layout = QHBoxLayout(sub_row)
+            sr_layout.setContentsMargins(0, 0, 0, 0)
+            sr_layout.setSpacing(8)
+            for w in subtitle_widgets:
+                sr_layout.addWidget(w, 0, Qt.AlignmentFlag.AlignVCenter)
+            sr_layout.addStretch()
+            tl.addWidget(sub_row)
+
+        tl.addStretch()
+        self._header_row.addWidget(title_area, 0, Qt.AlignmentFlag.AlignTop)
+        self._header_row.addStretch()
+
+    def _make_badge(self, text: str) -> QLabel:
+        """Create a small accent-colored badge label."""
+        badge = QLabel(text.upper())
+        badge.setStyleSheet(
+            f"background-color: {ACCENT}; color: white;"
+            f" font-size: 10px; font-weight: 600;"
+            f" border-radius: 4px; padding: 2px 8px;"
+        )
+        return badge
+
+    def _make_subtitle_text(self, text: str) -> QLabel:
+        lbl = QLabel(text)
+        lbl.setStyleSheet(
+            f"color: {TEXT_MUTED}; font-size: 12px;"
+            " background: transparent; border: none;"
+        )
+        return lbl
+
+    # --- Section helpers ---
+
+    def _add_section(self, section: InfoboxSection):
+        """Add section: tier1 goes in header row (right), others in sections row."""
+        if section._tier1:
+            section.setFixedWidth(self.TIER1_WIDTH)
+            self._header_row.addWidget(section, 0, Qt.AlignmentFlag.AlignTop)
+        else:
+            self._sections_row.addWidget(section, 1, Qt.AlignmentFlag.AlignTop)
+
+    def _add_infobox_stretch(self):
+        """No-op — horizontal sections row doesn't need a bottom stretch."""
+        pass
+
+    # --- Article helpers ---
+
+    def _set_article_title(self, title: str):
+        """No-op — title is now in the infobox header row."""
+        pass
+
+    def _set_description_html(self, html: str):
+        stripped = html.strip() if html else ""
+        # Check for effectively empty HTML (just tags, no visible text)
+        text_only = re.sub(r"<[^>]+>", "", stripped).strip()
+        if not text_only:
+            self._description_browser.hide()
+            return
+
+        self._description_browser.show()
+        self._description_browser.setHtml(
+            f'<div style="color: {TEXT}; font-size: 13px;">{stripped}</div>'
+        )
+        # Auto-size height to content
+        doc = self._description_browser.document()
+        doc.setTextWidth(self._description_browser.viewport().width())
+        self._description_browser.setMinimumHeight(int(doc.size().height()) + 8)
+
+    def _add_article_section(self, section: QWidget):
+        """Add a widget to the bottom of the main layout."""
+        self._main_layout.addWidget(section)
+
+    # --- Async image loading ---
+
+    def _load_image_async(self, url: str):
+        """Fetch image from URL in a background thread."""
+        def fetch():
+            try:
+                resp = requests.get(url, timeout=10)
+                if resp.status_code == 200 and resp.content:
+                    self._image_loaded.emit(resp.content)
+            except Exception:
+                pass  # Keep placeholder
+
+        threading.Thread(target=fetch, daemon=True, name="img-load").start()
+
+    def _on_image_loaded(self, data: bytes):
+        """Replace image placeholder with the loaded image (main thread)."""
+        if not hasattr(self, '_image_label'):
+            return
+        pm = QPixmap()
+        pm.loadFromData(data)
+        if pm.isNull():
+            return
+        scaled = pm.scaled(
+            self.IMAGE_SIZE, self.IMAGE_SIZE,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        self._image_label.setPixmap(scaled)
+        self._image_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._image_label.setText("")
+        self._image_label.setStyleSheet(
+            f"background-color: {PRIMARY}; border-radius: 8px;"
+            f" border: 1px solid {BORDER};"
+        )

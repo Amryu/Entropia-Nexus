@@ -18,11 +18,15 @@ class MessageClassifier:
     System messages are checked against handlers in priority order.
     Globals and trade channels are routed directly.
     The loot handler is notified of timestamp advances to flush pending groups.
+
+    During catchup, global/trade events are stored in DB but not published
+    to EventBus to avoid flooding the Qt signal queue with hundreds of events.
     """
 
     def __init__(self, event_bus: EventBus, db: Database):
         self._event_bus = event_bus
         self._db = db
+        self._catching_up = False
 
         # Create handlers
         self._skill_gain = SkillGainHandler(event_bus, db)
@@ -44,6 +48,13 @@ class MessageClassifier:
             self._death_revival,
             self._combat,
         ]
+
+    def set_catching_up(self, catching_up: bool) -> None:
+        """Toggle catchup mode. During catchup, global/trade events are
+        stored in DB but not published to EventBus."""
+        self._catching_up = catching_up
+        self._globals.suppress_events = catching_up
+        self._trade.suppress_events = catching_up
 
     def classify_and_handle(self, parsed_line: ParsedLine) -> None:
         """Route a parsed line to the appropriate handler."""

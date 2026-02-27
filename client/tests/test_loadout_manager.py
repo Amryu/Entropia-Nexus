@@ -33,13 +33,15 @@ def _make_loadout(weapon_name="Armatrix LR-35 (L)", loadout_id="loadout-1"):
     }
 
 
-def _make_stats(cost=0.15, damage_min=30.0, damage_max=60.0, total_damage=50.0):
+def _make_stats(cost=0.15, damage_min=30.0, damage_max=60.0, total_damage=50.0,
+                crit_damage=1.0):
     """Create a mock LoadoutStats object."""
     stats = MagicMock()
     stats.cost = cost
     stats.damage_interval_min = damage_min
     stats.damage_interval_max = damage_max
     stats.total_damage = total_damage
+    stats.crit_damage = crit_damage
     return stats
 
 
@@ -61,6 +63,7 @@ class TestSessionLoadoutEntry(unittest.TestCase):
         self.assertAlmostEqual(entry.cost_per_shot, 0.0)
         self.assertAlmostEqual(entry.damage_min, 0.0)
         self.assertAlmostEqual(entry.damage_max, 0.0)
+        self.assertAlmostEqual(entry.crit_damage, 1.0)
         self.assertEqual(entry.source, "snapshot")
         self.assertEqual(entry.loadout_data, {})
 
@@ -193,6 +196,20 @@ class TestSessionLoadoutManager(unittest.TestCase):
         self.assertAlmostEqual(args[5], 30.0)           # damage_min
         self.assertAlmostEqual(args[6], 60.0)           # damage_max
         self.assertEqual(args[7], "snapshot")            # source
+        self.assertAlmostEqual(args[8], 1.0)             # crit_damage
+
+    def test_snapshot_stores_crit_damage(self):
+        self.stats = _make_stats(crit_damage=1.5)
+        self.mgr._active_stats = self.stats
+        with self._patch_evaluate():
+            # Override _evaluate to return stats with crit_damage
+            self.mgr._evaluate = MagicMock(
+                return_value=("Armatrix LR-35 (L)", self.stats)
+            )
+            self.mgr.start_session(self.session)
+        call_args = self.db.insert_session_loadout.call_args
+        args = call_args[0]
+        self.assertAlmostEqual(args[8], 1.5)             # crit_damage from effects
 
     def test_snapshot_loads_signature_into_inference(self):
         with self._patch_evaluate():
@@ -236,6 +253,72 @@ class TestSessionLoadoutManager(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# Crit-aware tool inference tests
+# ---------------------------------------------------------------------------
+
+class TestCritToolInference(unittest.TestCase):
+    """Tests for crit-aware damage matching in ToolInferenceEngine."""
+
+    def setUp(self):
+        self.engine = ToolInferenceEngine()
+
+    def test_normal_hit_matches(self):
+        self.engine.load_signature("Gun", 30.0, 60.0, 50.0, 0.15, crit_damage=1.5)
+        name, conf, cost = self.engine.infer_tool(45.0, is_crit=False)
+        self.assertEqual(name, "Gun")
+        self.assertGreater(conf, 0)
+        self.assertAlmostEqual(cost, 0.15)
+
+    def test_crit_hit_outside_normal_range_matches(self):
+        # crit_damage=1.5, damage_max=60 → crit range = [30+60*1.5, 60+60*1.5] = [120, 150]
+        self.engine.load_signature("Gun", 30.0, 60.0, 50.0, 0.15, crit_damage=1.5)
+        name, conf, cost = self.engine.infer_tool(135.0, is_crit=True)
+        self.assertEqual(name, "Gun")
+        self.assertGreater(conf, 0)
+        self.assertAlmostEqual(cost, 0.15)
+
+    def test_crit_hit_not_matched_as_normal(self):
+        # Damage of 135 is outside normal range [30, 60]
+        self.engine.load_signature("Gun", 30.0, 60.0, 50.0, 0.15, crit_damage=1.5)
+        name, conf, cost = self.engine.infer_tool(135.0, is_crit=False)
+        self.assertIsNone(name)
+
+    def test_normal_hit_not_matched_as_crit(self):
+        # Damage of 45 is outside crit range [120, 150]
+        self.engine.load_signature("Gun", 30.0, 60.0, 50.0, 0.15, crit_damage=1.5)
+        name, conf, cost = self.engine.infer_tool(45.0, is_crit=True)
+        self.assertIsNone(name)
+
+    def test_default_crit_damage_multiplier(self):
+        # Default crit_damage=1.0: crit range = [30+60*1.0, 60+60*1.0] = [90, 120]
+        self.engine.load_signature("Gun", 30.0, 60.0, 50.0, 0.15)
+        name, conf, cost = self.engine.infer_tool(100.0, is_crit=True)
+        self.assertEqual(name, "Gun")
+
+    def test_crit_boundary_min(self):
+        # Exactly at crit_min: 30 + 60*1.5 = 120.0
+        self.engine.load_signature("Gun", 30.0, 60.0, 50.0, 0.15, crit_damage=1.5)
+        name, conf, cost = self.engine.infer_tool(120.0, is_crit=True)
+        self.assertEqual(name, "Gun")
+
+    def test_crit_boundary_max(self):
+        # Exactly at crit_max: 60 + 60*1.5 = 150.0
+        self.engine.load_signature("Gun", 30.0, 60.0, 50.0, 0.15, crit_damage=1.5)
+        name, conf, cost = self.engine.infer_tool(150.0, is_crit=True)
+        self.assertEqual(name, "Gun")
+
+    def test_load_from_loadout_stats_passes_crit_damage(self):
+        stats = _make_stats(crit_damage=1.3)
+        self.engine.load_from_loadout_stats("CritGun", stats)
+        # Crit range: [30+60*1.3, 60+60*1.3] = [108, 138]
+        name, conf, cost = self.engine.infer_tool(120.0, is_crit=True)
+        self.assertEqual(name, "CritGun")
+        # Normal range should still work
+        name2, _, _ = self.engine.infer_tool(45.0, is_crit=False)
+        self.assertEqual(name2, "CritGun")
+
+
+# ---------------------------------------------------------------------------
 # Database CRUD tests (real in-memory SQLite)
 # ---------------------------------------------------------------------------
 
@@ -257,6 +340,23 @@ class TestDatabaseSessionLoadouts(unittest.TestCase):
         )
         self.assertIsInstance(row_id, int)
         self.assertGreater(row_id, 0)
+
+    def test_insert_session_loadout_with_crit_damage(self):
+        row_id = self.db.insert_session_loadout(
+            "session-1", "2026-02-26T12:00:00", '{"Id": "lo-1"}',
+            "WeaponA", 0.15, 30.0, 60.0, "snapshot", crit_damage=1.5,
+        )
+        row = self.db.get_latest_session_loadout("session-1")
+        self.assertIsNotNone(row)
+        self.assertAlmostEqual(row["crit_damage"], 1.5)
+
+    def test_insert_session_loadout_default_crit_damage(self):
+        self.db.insert_session_loadout(
+            "session-1", "2026-02-26T12:00:00", '{}',
+            "WeaponA", 0.15, 30.0, 60.0, "snapshot",
+        )
+        row = self.db.get_latest_session_loadout("session-1")
+        self.assertAlmostEqual(row["crit_damage"], 1.0)
 
     def test_get_session_loadouts(self):
         self.db.insert_session_loadout(
@@ -461,10 +561,10 @@ class TestSessionRestore(unittest.TestCase):
             loot_total_ped=3.0, cost=0.45, shots_fired=3,
         )
 
-        # Insert loadout snapshot
+        # Insert loadout snapshot with crit_damage
         self.db.insert_session_loadout(
             "s1", "2026-02-26T12:00:00", '{"Id": "lo-1"}',
-            "TestGun", 0.15, 30.0, 60.0, "snapshot",
+            "TestGun", 0.15, 30.0, 60.0, "snapshot", crit_damage=1.3,
         )
 
     def test_restore_incomplete_session(self):
@@ -511,6 +611,19 @@ class TestSessionRestore(unittest.TestCase):
         name, _conf, cost = tracker._tool_inference.infer_tool(45.0)
         self.assertEqual(name, "TestGun")
         self.assertAlmostEqual(cost, 0.15)
+
+    def test_restore_loads_crit_damage_from_db(self):
+        self._insert_full_session()
+        tracker = self._make_tracker()
+        tracker._try_restore_session()
+
+        # Loadout was inserted with crit_damage=1.3 in _insert_full_session
+        # Crit range: [30+60*1.3, 60+60*1.3] = [108, 138]
+        name, _conf, _cost = tracker._tool_inference.infer_tool(120.0, is_crit=True)
+        self.assertEqual(name, "TestGun")
+        # Damage outside crit range should NOT match as crit
+        name2, _, _ = tracker._tool_inference.infer_tool(45.0, is_crit=True)
+        self.assertIsNone(name2)
 
     def test_restore_publishes_events(self):
         self._insert_full_session()
@@ -597,6 +710,28 @@ class TestLoadoutManagerRestore(unittest.TestCase):
         self.assertEqual(name, "TestGun")
         self.assertAlmostEqual(cost, 0.15)
         self.assertEqual(self.mgr._active_loadout, {"Id": "lo-1"})
+
+    def test_restore_loads_crit_damage(self):
+        session = _make_session()
+        session.loadout_entries.append(SessionLoadoutEntry(
+            id=1, session_id="session-1",
+            weapon_name="CritGun", cost_per_shot=0.20,
+            damage_min=30.0, damage_max=60.0,
+            crit_damage=1.5,
+            loadout_data={"Id": "lo-2"},
+            source="snapshot",
+        ))
+        self.mgr.restore_session(session)
+
+        # Normal hit should match
+        name, _, _ = self.tool_inference.infer_tool(45.0)
+        self.assertEqual(name, "CritGun")
+        # Crit hit should match in crit range [120, 150]
+        name, _, _ = self.tool_inference.infer_tool(135.0, is_crit=True)
+        self.assertEqual(name, "CritGun")
+        # Crit hit outside crit range should NOT match
+        name, _, _ = self.tool_inference.infer_tool(45.0, is_crit=True)
+        self.assertIsNone(name)
 
     def test_restore_no_loadout_entries(self):
         session = _make_session()

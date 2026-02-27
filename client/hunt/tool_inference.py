@@ -30,7 +30,7 @@ class ToolInferenceEngine:
 
     def load_signature(self, weapon_name: str, damage_min: float,
                        damage_max: float, total_damage: float,
-                       cost_per_shot: float):
+                       cost_per_shot: float, crit_damage: float = 1.0):
         """Register a weapon signature for matching."""
         sig = WeaponSignature(
             weapon_name=weapon_name,
@@ -38,12 +38,13 @@ class ToolInferenceEngine:
             damage_max=damage_max,
             total_damage=total_damage,
             cost_per_shot=cost_per_shot,
+            crit_damage=crit_damage,
         )
         # Avoid duplicates
         self._signatures = [s for s in self._signatures if s.weapon_name != weapon_name]
         self._signatures.append(sig)
-        log.info("Loaded signature: %s (%.1f - %.1f dmg, %.4f cost/shot)",
-                 weapon_name, damage_min, damage_max, cost_per_shot)
+        log.info("Loaded signature: %s (%.1f - %.1f dmg, crit_dmg=%.2f, %.4f cost/shot)",
+                 weapon_name, damage_min, damage_max, crit_damage, cost_per_shot)
 
     def load_from_loadout_stats(self, weapon_name: str, stats) -> None:
         """Load a signature from a LoadoutStats object."""
@@ -55,10 +56,15 @@ class ToolInferenceEngine:
             damage_max=stats.damage_interval_max,
             total_damage=stats.total_damage,
             cost_per_shot=stats.cost,
+            crit_damage=getattr(stats, 'crit_damage', 1.0),
         )
 
-    def infer_tool(self, damage: float) -> tuple[str | None, float, float]:
+    def infer_tool(self, damage: float, is_crit: bool = False) -> tuple[str | None, float, float]:
         """Match a damage value to known signatures.
+
+        For critical hits, the damage interval is extended:
+        crit_min = damage_min + damage_max * crit_damage
+        crit_max = damage_max + damage_max * crit_damage
 
         Returns (weapon_name, confidence, cost_per_shot).
         If no match, returns (None, 0, 0).
@@ -71,12 +77,17 @@ class ToolInferenceEngine:
         best_cost = 0.0
 
         for sig in self._signatures:
-            if sig.damage_min <= damage <= sig.damage_max:
-                # Within damage interval — high confidence
-                # Tighter intervals give higher confidence
-                interval_width = sig.damage_max - sig.damage_min
+            if is_crit:
+                # Crit adds damage_max * crit_damage on top of the base damage
+                check_min = sig.damage_min + sig.damage_max * sig.crit_damage
+                check_max = sig.damage_max + sig.damage_max * sig.crit_damage
+            else:
+                check_min = sig.damage_min
+                check_max = sig.damage_max
+
+            if check_min <= damage <= check_max:
+                interval_width = check_max - check_min
                 if interval_width > 0:
-                    # Narrower intervals → higher confidence
                     confidence = min(0.95, 0.7 + 0.25 * (1.0 - interval_width / sig.total_damage))
                 else:
                     confidence = 0.95

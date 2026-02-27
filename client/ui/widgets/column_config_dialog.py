@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
-    QPushButton, QAbstractItemView,
+    QPushButton, QAbstractItemView, QWidget,
 )
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QColor
 
 from ..theme import TEXT, TEXT_MUTED, ACCENT, BORDER, SECONDARY, PRIMARY
+
+CONDENSED_COLUMN_COUNT = 5
 
 
 class ColumnConfigDialog(QDialog):
@@ -65,25 +68,28 @@ class ColumnConfigDialog(QDialog):
         right_label.setStyleSheet(f"color: {TEXT}; font-weight: bold; font-size: 12px;")
         right_col.addWidget(right_label)
 
+        hint = QLabel(f"First {CONDENSED_COLUMN_COUNT} columns are shown in condensed view.")
+        hint.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+        right_col.addWidget(hint)
+
         self._selected_list = QListWidget()
         self._selected_list.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self._selected_list.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
+        self._selected_list.model().rowsMoved.connect(self._refresh_badges)
         right_col.addWidget(self._selected_list)
 
         btn_row = QHBoxLayout()
         remove_btn = QPushButton("\u2190 Remove")
         remove_btn.clicked.connect(self._remove_column)
-        btn_row.addWidget(remove_btn)
+        btn_row.addWidget(remove_btn, 1)
 
         up_btn = QPushButton("\u2191 Up")
-        up_btn.setFixedWidth(60)
         up_btn.clicked.connect(self._move_up)
-        btn_row.addWidget(up_btn)
+        btn_row.addWidget(up_btn, 1)
 
         down_btn = QPushButton("\u2193 Down")
-        down_btn.setFixedWidth(60)
         down_btn.clicked.connect(self._move_down)
-        btn_row.addWidget(down_btn)
+        btn_row.addWidget(down_btn, 1)
 
         right_col.addLayout(btn_row)
         panels.addLayout(right_col)
@@ -126,6 +132,40 @@ class ColumnConfigDialog(QDialog):
                 item.setData(Qt.ItemDataRole.UserRole, key)
                 self._available_list.addItem(item)
 
+        self._refresh_badges()
+
+    def _refresh_badges(self):
+        """Update display — first N items get a styled 'E' badge."""
+        for i in range(self._selected_list.count()):
+            item = self._selected_list.item(i)
+            key = item.data(Qt.ItemDataRole.UserRole)
+            header = self._all_defs.get(key, {}).get("header", key)
+
+            row_widget = QWidget()
+            row_widget.setStyleSheet("background: transparent;")
+            row_layout = QHBoxLayout(row_widget)
+            row_layout.setContentsMargins(4, 0, 4, 0)
+            row_layout.setSpacing(6)
+
+            name_label = QLabel(header)
+            if i < CONDENSED_COLUMN_COUNT:
+                name_label.setStyleSheet(f"color: {ACCENT}; background: transparent;")
+            else:
+                name_label.setStyleSheet(f"color: {TEXT}; background: transparent;")
+            row_layout.addWidget(name_label, 1)
+
+            if i < CONDENSED_COLUMN_COUNT:
+                badge = QLabel("E")
+                badge.setStyleSheet(
+                    f"background-color: {ACCENT}; color: white;"
+                    " font-size: 9px; font-weight: 600;"
+                    " padding: 1px 4px; border-radius: 3px;"
+                )
+                badge.setFixedHeight(14)
+                row_layout.addWidget(badge)
+
+            self._selected_list.setItemWidget(item, row_widget)
+
     def _add_column(self):
         """Move selected available column to selected list."""
         current = self._available_list.currentItem()
@@ -134,6 +174,7 @@ class ColumnConfigDialog(QDialog):
         row = self._available_list.row(current)
         taken = self._available_list.takeItem(row)
         self._selected_list.addItem(taken)
+        self._refresh_badges()
 
     def _remove_column(self):
         """Move selected column back to available list."""
@@ -142,7 +183,11 @@ class ColumnConfigDialog(QDialog):
             return
         row = self._selected_list.row(current)
         taken = self._selected_list.takeItem(row)
+        key = taken.data(Qt.ItemDataRole.UserRole)
+        taken.setText(self._all_defs.get(key, {}).get("header", key))
+        taken.setForeground(QColor(TEXT))
         self._available_list.addItem(taken)
+        self._refresh_badges()
 
     def _move_up(self):
         """Move selected column up in the order."""
@@ -152,6 +197,7 @@ class ColumnConfigDialog(QDialog):
         item = self._selected_list.takeItem(row)
         self._selected_list.insertItem(row - 1, item)
         self._selected_list.setCurrentRow(row - 1)
+        self._refresh_badges()
 
     def _move_down(self):
         """Move selected column down in the order."""
@@ -161,6 +207,7 @@ class ColumnConfigDialog(QDialog):
         item = self._selected_list.takeItem(row)
         self._selected_list.insertItem(row + 1, item)
         self._selected_list.setCurrentRow(row + 1)
+        self._refresh_badges()
 
     def selected_keys(self) -> list[str]:
         """Return the ordered list of selected column keys."""

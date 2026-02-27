@@ -1,6 +1,13 @@
 """Hunt session statistics aggregation."""
 
-from .session import HuntSession, MobEncounter
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+from .session import HuntSession, Hunt, MobEncounter
+
+if TYPE_CHECKING:
+    from .markup_resolver import MarkupResolver
 
 
 def aggregate_by_mob(session: HuntSession) -> dict[str, dict]:
@@ -86,6 +93,72 @@ def aggregate_by_tool(session: HuntSession) -> dict[str, dict]:
             stats["crit_rate"] = 0
 
     return tools
+
+
+def aggregate_loot(encounters: list[MobEncounter],
+                   markup_resolver: MarkupResolver | None = None) -> list[dict]:
+    """Aggregate loot items across encounters, grouped by item name.
+
+    Returns list of dicts sorted by TT value descending:
+    [{
+        "item_name": str,
+        "total_quantity": int,
+        "tt_value": float,
+        "mu_value": float,
+        "markup_source": str,     # "custom", "inventory", "market", "default"
+        "is_custom": bool,
+    }]
+
+    Excludes blacklisted and refining output items.
+    """
+    # Accumulate by item name
+    items: dict[str, dict] = {}
+
+    for enc in encounters:
+        for li in enc.loot_items:
+            if li.is_blacklisted or li.is_refining_output:
+                continue
+            name = li.item_name
+            if name not in items:
+                items[name] = {
+                    "item_name": name,
+                    "total_quantity": 0,
+                    "tt_value": 0.0,
+                }
+            items[name]["total_quantity"] += li.quantity
+            items[name]["tt_value"] += li.value_ped
+
+    # Compute MU values
+    result = []
+    for entry in items.values():
+        if markup_resolver:
+            mu_value, source = markup_resolver.compute_mu_value(
+                entry["item_name"], entry["tt_value"]
+            )
+        else:
+            mu_value = entry["tt_value"]
+            source = "default"
+
+        entry["mu_value"] = mu_value
+        entry["markup_source"] = source
+        entry["is_custom"] = source == "custom"
+        result.append(entry)
+
+    # Sort by TT value descending
+    result.sort(key=lambda x: x["tt_value"], reverse=True)
+    return result
+
+
+def aggregate_loot_for_hunt(hunt: Hunt,
+                            markup_resolver: MarkupResolver | None = None) -> list[dict]:
+    """Aggregate loot items across all encounters in a hunt."""
+    return aggregate_loot(hunt.encounters, markup_resolver)
+
+
+def aggregate_loot_for_session(session: HuntSession,
+                               markup_resolver: MarkupResolver | None = None) -> list[dict]:
+    """Aggregate loot items across all encounters in a session."""
+    return aggregate_loot(session.encounters, markup_resolver)
 
 
 def session_economy(session: HuntSession, cost_per_use: float = 0) -> dict:

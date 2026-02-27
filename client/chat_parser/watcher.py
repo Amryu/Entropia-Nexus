@@ -76,15 +76,19 @@ class ChatLogWatcher:
 
         log.info("Watching %s", self._file_path)
 
-        # Read any new content in a background thread so we don't block startup
+        # Read any new content in a background thread so we don't block startup.
+        # Global/trade events are suppressed during catchup to avoid flooding
+        # the Qt signal queue with hundreds of events from old chat lines.
         def catch_up():
             log.info("Catching up on new lines...")
+            self._classifier.set_catching_up(True)
             self._db.begin_batch()
             try:
                 with self._lock:
                     self._read_new_lines()
             finally:
                 self._db.end_batch()
+                self._classifier.set_catching_up(False)
             log.info("Catch-up complete (line %s, offset %s)", self._line_number, self._byte_offset)
             self._event_bus.publish(EVENT_CATCHUP_COMPLETE, None)
 

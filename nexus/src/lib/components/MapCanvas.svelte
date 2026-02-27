@@ -353,6 +353,16 @@
     }
   }
 
+  export async function panTo(location) {
+    if (typeof window === 'undefined' || !location || !location.Properties?.Coordinates) return;
+    await mapLoaded;
+    const target = entropiaCoordsToImageCoords(
+      location.Properties.Coordinates.Longitude,
+      location.Properties.Coordinates.Latitude
+    );
+    moveTo(target, 250);
+  }
+
   // --- React to selection from outside (e.g. MapList) ---
   // No auto-centering, only visual highlight
 

@@ -89,6 +89,7 @@ def _loadout_entry_from_row(row: dict) -> SessionLoadoutEntry:
         cost_per_shot=row.get("cost_per_shot", 0),
         damage_min=row.get("damage_min", 0),
         damage_max=row.get("damage_max", 0),
+        crit_damage=row.get("crit_damage", 1.0),
         source=row.get("source", "snapshot"),
     )
 
@@ -157,6 +158,10 @@ class HuntTracker:
         """Chat log watcher finished replaying old lines — safe to track now."""
         self._live = True
         self._try_restore_session()
+        # Pre-warm heavy subsystems in background threads so they're
+        # ready before the next session starts, without blocking the watcher.
+        self._loadout_mgr.warmup()
+        self._loot_filter.warmup()
         log.info("Catchup complete, hunt tracking active")
 
     def _try_restore_session(self):
@@ -452,7 +457,7 @@ class HuntTracker:
         cost_per_shot = 0.0
 
         if not tool_name and self._tool_inference.has_signatures:
-            inferred, confidence, cost = self._tool_inference.infer_tool(amount)
+            inferred, confidence, cost = self._tool_inference.infer_tool(amount, is_crit=is_crit)
             if inferred:
                 tool_name = inferred
                 tool_source = "inferred"

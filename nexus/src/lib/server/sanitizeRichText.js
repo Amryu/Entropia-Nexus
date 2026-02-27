@@ -20,8 +20,8 @@ const SANITIZE_CONFIG = {
   ],
   allowedAttributes: {
     'a': ['href', 'target', 'rel'],
-    'div': ['data-type', 'data-provider', 'data-src', 'data-width', 'data-pending', 'data-alt', 'class', 'style'],
-    'iframe': ['src', 'width', 'height', 'frameborder', 'allow', 'allowfullscreen'],
+    'div': ['data-type', 'data-provider', 'data-src', 'data-width', 'data-pending', 'data-alt', 'data-video-embed', 'class', 'style'],
+    'iframe': ['src', 'width', 'height', 'frameborder', 'allow', 'allowfullscreen', 'class'],
     'img': ['src', 'alt', 'data-width', 'data-pending', 'style']
   },
   allowedStyles: {

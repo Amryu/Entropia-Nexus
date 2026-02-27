@@ -1,4 +1,5 @@
-import ctypes
+import subprocess
+import sys
 import threading
 import tkinter as tk
 from typing import Optional
@@ -18,18 +19,19 @@ from ..core.constants import (
     EVENT_DEBUG_ROW, EVENT_DEBUG_REGIONS, EVENT_OCR_PAGE_CHANGED,
 )
 
-# Win32 extended window styles for click-through
-GWL_EXSTYLE = -20
-WS_EX_LAYERED = 0x00080000
-WS_EX_TRANSPARENT = 0x00000020
+if sys.platform == "win32":
+    import ctypes
+    # Win32 extended window styles for click-through
+    GWL_EXSTYLE = -20
+    WS_EX_LAYERED = 0x00080000
+    WS_EX_TRANSPARENT = 0x00000020
+    user32 = ctypes.windll.user32
 
 # Focus check interval (ms)
 FOCUS_POLL_INTERVAL = 500
 GAME_TITLE_PREFIX = "Entropia Universe Client"
 
 log = get_logger("ScanOverlay")
-
-user32 = ctypes.windll.user32
 
 # Checkmark appearance
 CHECKMARK = "\u2713"
@@ -158,7 +160,9 @@ class ScanOverlay:
         self._root.after(FOCUS_POLL_INTERVAL, self._check_focus)
 
     def _make_click_through(self) -> None:
-        """Set WS_EX_TRANSPARENT + WS_EX_LAYERED to pass clicks through."""
+        """Make the overlay window click-through (pass clicks to windows below)."""
+        if sys.platform != "win32":
+            return  # Tkinter -alpha transparency is sufficient on Linux/X11
         try:
             # Get the HWND from tkinter's frame
             hwnd = int(self._root.frame(), 16)
@@ -174,15 +178,7 @@ class ScanOverlay:
             return
 
         try:
-            fg_hwnd = user32.GetForegroundWindow()
-            length = user32.GetWindowTextLengthW(fg_hwnd)
-            if length > 0:
-                buf = ctypes.create_unicode_buffer(length + 1)
-                user32.GetWindowTextW(fg_hwnd, buf, length + 1)
-                title = buf.value
-            else:
-                title = ""
-
+            title = self._get_foreground_title()
             game_focused = title.startswith(GAME_TITLE_PREFIX)
 
             if game_focused and not self._game_focused:
@@ -201,6 +197,27 @@ class ScanOverlay:
             pass
 
         self._root.after(FOCUS_POLL_INTERVAL, self._check_focus)
+
+    @staticmethod
+    def _get_foreground_title() -> str:
+        """Get the title of the currently focused window."""
+        if sys.platform == "win32":
+            fg_hwnd = user32.GetForegroundWindow()
+            length = user32.GetWindowTextLengthW(fg_hwnd)
+            if length > 0:
+                buf = ctypes.create_unicode_buffer(length + 1)
+                user32.GetWindowTextW(fg_hwnd, buf, length + 1)
+                return buf.value
+            return ""
+        # Linux: use xdotool
+        try:
+            result = subprocess.run(
+                ["xdotool", "getactivewindow", "getwindowname"],
+                capture_output=True, text=True, timeout=2,
+            )
+            return result.stdout.strip() if result.returncode == 0 else ""
+        except Exception:
+            return ""
 
     # --- Event handlers ---
 
