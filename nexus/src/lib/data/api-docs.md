@@ -529,6 +529,22 @@ Player-specific global event breakdown. Cached for 60 seconds.
 
 Returns `summary`, `hunting` (per-mob with maturity breakdown), `mining` (per-resource), `crafting` (per-item), `activity` timeline, `recent` globals, and `achievements` (discovery/tier).
 
+#### `GET /api/globals/target/{name}`
+
+Target-specific global event breakdown. Cached for 60 seconds.
+
+Returns `summary` (total count, value, HoF/ATH counts, first/last seen), `top_players` (by total value), `activity` timeline, and `recent` globals.
+
+#### `GET /api/globals/search`
+
+Search for players, teams, and targets across confirmed globals. Cached for 30 seconds.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `query` | string | **Required.** Search term (min 2 chars) |
+
+Returns an array of results with `Id`, `Name`, `Type` (Player, Team, Hunting, Mining, Crafting, Rare Find, Discovery, Tier), and `Score`.
+
 ### Other
 
 #### `GET /api/tools/loadout/share/{shareCode}`

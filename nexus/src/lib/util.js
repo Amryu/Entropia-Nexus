@@ -328,6 +328,16 @@ export function getTypeLink(name, type, subType = null, id = null) {
         return `/users/${encodeURIComponentSafe(name)}`;
       case 'Society':
         return `/societies/${encodeURIComponentSafe(name)}`;
+      case 'Player':
+      case 'Team':
+        return `/globals/player/${encodeURIComponentSafe(name)}`;
+      case 'Hunting':
+      case 'Mining':
+      case 'Crafting':
+      case 'Rare Find':
+      case 'Discovery':
+      case 'Tier':
+        return `/globals/target/${encodeURIComponentSafe(name)}`;
       default:
         return null;
     }
@@ -419,6 +429,22 @@ export function getTypeName(type) {
         return 'User';
       case 'Society':
         return 'Society';
+      case 'Player':
+        return 'Player';
+      case 'Team':
+        return 'Team';
+      case 'Hunting':
+        return 'Hunting';
+      case 'Mining':
+        return 'Mining';
+      case 'Crafting':
+        return 'Crafting';
+      case 'Rare Find':
+        return 'Rare Find';
+      case 'Discovery':
+        return 'Discovery';
+      case 'Tier':
+        return 'Tier';
       default:
         return 'N/A';
   }

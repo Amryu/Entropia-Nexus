@@ -15,20 +15,23 @@
                  Tooltip, Filler, BarController, BarElement, CategoryScale,
                  ArcElement, DoughnutController, Legend);
 
-  import { afterNavigate } from '$app/navigation';
+  import { afterNavigate, goto } from '$app/navigation';
+  import SearchInput from '$lib/components/SearchInput.svelte';
 
   export let data;
 
   const EMPTY_SUMMARY = { total_count: 0, total_value: 0, hof_count: 0, ath_count: 0 };
 
   const TYPE_CONFIG = {
-    kill:       { label: 'Hunting',    cssClass: 'type-kill',      color: '#ef4444' },
-    team_kill:  { label: 'Team Hunt',  cssClass: 'type-kill',      color: '#ef4444' },
-    deposit:    { label: 'Mining',     cssClass: 'type-deposit',   color: '#60b0ff' },
-    craft:      { label: 'Crafting',   cssClass: 'type-craft',     color: '#f97316' },
-    rare_item:  { label: 'Rare Find',  cssClass: 'type-rare',      color: '#60b0ff' },
-    discovery:  { label: 'Discovery',  cssClass: 'type-discovery', color: '#9b59b6' },
-    tier:       { label: 'Tier Record', cssClass: 'type-tier',     color: '#f1c40f' },
+    kill:       { label: 'Hunting',     cssClass: 'type-kill',      color: '#ef4444' },
+    team_kill:  { label: 'Team Hunt',   cssClass: 'type-kill',      color: '#ef4444' },
+    deposit:    { label: 'Mining',      cssClass: 'type-deposit',   color: '#60b0ff' },
+    craft:      { label: 'Crafting',    cssClass: 'type-craft',     color: '#f97316' },
+    rare_item:  { label: 'Rare Find',   cssClass: 'type-rare',      color: '#60b0ff' },
+    discovery:  { label: 'Discovery',   cssClass: 'type-discovery', color: '#9b59b6' },
+    tier:       { label: 'Tier Record', cssClass: 'type-tier',      color: '#f1c40f' },
+    examine:    { label: 'Examined',    cssClass: 'type-examine',   color: '#2ecc71' },
+    pvp:        { label: 'PvP',         cssClass: 'type-pvp',       color: '#e74c3c' },
   };
 
   const TYPE_FILTERS = [
@@ -39,6 +42,8 @@
     { value: 'rare_item', label: 'Rare Find' },
     { value: 'discovery', label: 'Discovery' },
     { value: 'tier', label: 'Tier Record' },
+    { value: 'examine', label: 'Examined' },
+    { value: 'pvp', label: 'PvP' },
   ];
 
   const PERIOD_OPTIONS = [
@@ -100,6 +105,7 @@
   function formatValue(value, unit, type) {
     if (type === 'discovery') return '';
     if (type === 'tier' && unit === 'TIER') return `Tier ${value}`;
+    if (type === 'pvp') return `${value} kills`;
     if (value >= 1000) return `${(value / 1000).toFixed(1)}K PED`;
     return `${value.toFixed(2)} PED`;
   }
@@ -413,6 +419,15 @@
   function getTypeConfig(type) {
     return TYPE_CONFIG[type] || { label: type, cssClass: '', color: '#888' };
   }
+
+  function handleSearchSelect(e) {
+    const { name, type } = e.detail;
+    if (type === 'Player' || type === 'Team') {
+      goto(`/globals/player/${encodeURIComponent(name)}`);
+    } else {
+      goto(`/globals/target/${encodeURIComponent(name)}`);
+    }
+  }
 </script>
 
 <svelte:head>
@@ -425,6 +440,13 @@
     <div class="breadcrumbs"><a href="/">Home</a> / Globals</div>
     <h1>Globals</h1>
     <p class="page-subtitle">Live global events from Entropia Universe</p>
+    <div class="globals-search">
+      <SearchInput
+        placeholder="Search players, teams, mobs, resources..."
+        endpoint="/api/globals/search"
+        on:select={handleSearchSelect}
+      />
+    </div>
   </div>
 
   <!-- Filters -->
@@ -633,6 +655,11 @@
     margin: 0;
     color: var(--text-muted);
     font-size: 0.875rem;
+  }
+
+  .globals-search {
+    margin-top: 12px;
+    max-width: 400px;
   }
 
   /* Filters */
@@ -919,7 +946,11 @@
     border-bottom: none;
   }
 
-  .globals-table tr:hover {
+  .globals-table tbody tr:nth-child(even) {
+    background-color: var(--table-alt-row, rgba(255, 255, 255, 0.02));
+  }
+
+  .globals-table tbody tr:hover {
     background-color: var(--hover-color);
   }
 
@@ -954,6 +985,8 @@
   .type-rare     { background: rgba(96, 176, 255, 0.15); color: var(--accent-color); }
   .type-discovery { background: rgba(155, 89, 182, 0.15); color: #9b59b6; }
   .type-tier     { background: rgba(241, 196, 15, 0.15); color: #f1c40f; }
+  .type-examine  { background: rgba(46, 204, 113, 0.15); color: #2ecc71; }
+  .type-pvp      { background: rgba(231, 76, 60, 0.15);  color: #e74c3c; }
 
   .player-link {
     color: var(--text-color);

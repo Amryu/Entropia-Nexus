@@ -25,13 +25,15 @@
   $: achievements = playerData?.achievements || [];
 
   const TYPE_CONFIG = {
-    kill:       { label: 'Hunting',    cssClass: 'type-kill' },
-    team_kill:  { label: 'Team Hunt',  cssClass: 'type-kill' },
-    deposit:    { label: 'Mining',     cssClass: 'type-deposit' },
-    craft:      { label: 'Crafting',   cssClass: 'type-craft' },
-    rare_item:  { label: 'Rare Find',  cssClass: 'type-rare' },
-    discovery:  { label: 'Discovery',  cssClass: 'type-discovery' },
+    kill:       { label: 'Hunting',     cssClass: 'type-kill' },
+    team_kill:  { label: 'Team Hunt',   cssClass: 'type-kill' },
+    deposit:    { label: 'Mining',      cssClass: 'type-deposit' },
+    craft:      { label: 'Crafting',    cssClass: 'type-craft' },
+    rare_item:  { label: 'Rare Find',   cssClass: 'type-rare' },
+    discovery:  { label: 'Discovery',   cssClass: 'type-discovery' },
     tier:       { label: 'Tier Record', cssClass: 'type-tier' },
+    examine:    { label: 'Examined',    cssClass: 'type-examine' },
+    pvp:        { label: 'PvP',         cssClass: 'type-pvp' },
   };
 
   // Expanded mobs (for maturity detail rows)
@@ -160,6 +162,7 @@
   function formatValue(value, unit, type) {
     if (type === 'discovery') return '';
     if (type === 'tier' && unit === 'TIER') return `Tier ${value}`;
+    if (type === 'pvp') return `${value} kills`;
     if (value >= 1000) return `${(value / 1000).toFixed(1)}K PED`;
     return `${value.toFixed(2)} PED`;
   }
@@ -618,6 +621,8 @@
   .type-rare     { background: rgba(96, 176, 255, 0.15); color: var(--accent-color); }
   .type-discovery { background: rgba(155, 89, 182, 0.15); color: #9b59b6; }
   .type-tier     { background: rgba(241, 196, 15, 0.15); color: #f1c40f; }
+  .type-examine  { background: rgba(46, 204, 113, 0.15); color: #2ecc71; }
+  .type-pvp      { background: rgba(231, 76, 60, 0.15);  color: #e74c3c; }
 
   .badge-hof, .badge-ath {
     padding: 1px 6px;
