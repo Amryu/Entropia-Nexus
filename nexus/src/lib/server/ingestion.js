@@ -170,7 +170,7 @@ export async function getTradeChannels() {
   const { rows } = await pool.query(
     `SELECT tc.*, u.username AS added_by_name
      FROM ingestion_trade_channels tc
-     JOIN ONLY users u ON u.id = tc.added_by
+     LEFT JOIN ONLY users u ON u.id = tc.added_by
      ORDER BY tc.channel_name`,
   );
   return rows;

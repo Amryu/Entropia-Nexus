@@ -316,12 +316,7 @@
   <div class="stats-grid">
     <div class="stat-card">
       <h3>Globals Ingested</h3>
-      <p class="stat-value">{formatNumber(stats.total_globals)}</p>
-      <p class="stat-detail">{formatPercent(stats.confirmed_globals, stats.total_globals)} confirmed</p>
-    </div>
-    <div class="stat-card">
-      <h3>Confirmed Globals</h3>
-      <p class="stat-value stat-approved">{formatNumber(stats.confirmed_globals)}</p>
+      <p class="stat-value">{formatNumber(stats.total_globals)} <span class="stat-inline-detail">({formatPercent(stats.confirmed_globals, stats.total_globals)} confirmed)</span></p>
     </div>
     <div class="stat-card">
       <h3>Trade Messages</h3>
@@ -880,10 +875,10 @@
     color: var(--text-color);
   }
 
-  .stat-detail {
-    font-size: 12px;
+  .stat-inline-detail {
+    font-size: 14px;
+    font-weight: 400;
     color: var(--text-muted);
-    margin: 4px 0 0;
   }
 
   .stat-pending { color: var(--warning-color); }
@@ -1220,7 +1215,8 @@
     max-width: 520px;
   }
 
-  .form-group input[type="text"] {
+  .form-group input[type="text"],
+  .form-group select {
     width: 100%;
     padding: 10px 12px;
     border: 1px solid var(--border-color);
@@ -1230,6 +1226,11 @@
     font-size: 14px;
     box-sizing: border-box;
     font-family: inherit;
+  }
+
+  .form-group select option {
+    background-color: var(--secondary-color);
+    color: var(--text-color);
   }
 
   .search-status {
