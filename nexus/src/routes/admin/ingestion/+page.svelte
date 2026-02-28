@@ -374,7 +374,7 @@
             {#each users as user}
               <tr>
                 <td>
-                  <a href="/admin/users/{user.user_id}">{user.name || `User ${user.user_id}`}</a>
+                  <a href="/admin/users/{user.user_id}">{user.username || `User ${user.user_id}`}</a>
                 </td>
                 <td>{formatNumber(user.submission_count)}</td>
                 <td>{formatNumber(user.conflict_count)}</td>
@@ -392,11 +392,11 @@
                       Unban
                     </button>
                   {:else}
-                    <button class="btn btn-small btn-danger" on:click={() => openBan(user.user_id, user.name)}>
+                    <button class="btn btn-small btn-danger" on:click={() => openBan(user.user_id, user.username)}>
                       Ban
                     </button>
                   {/if}
-                  <button class="btn btn-small btn-warning" on:click={() => openPurge(user.user_id, user.name)}>
+                  <button class="btn btn-small btn-warning" on:click={() => openPurge(user.user_id, user.username)}>
                     Purge
                   </button>
                 </td>

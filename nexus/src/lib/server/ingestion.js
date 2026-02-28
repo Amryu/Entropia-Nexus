@@ -403,7 +403,7 @@ export async function getIngestionStats() {
 export async function getAlerts(page = 1, limit = 20) {
   const offset = (page - 1) * limit;
   const { rows } = await pool.query(
-    `SELECT a.*, array_agg(u.name) AS user_names
+    `SELECT a.*, array_agg(u.username) AS user_names
      FROM ingestion_alerts a
      LEFT JOIN ONLY users u ON u.id = ANY(a.user_ids)
      WHERE NOT a.resolved
@@ -448,7 +448,7 @@ export async function getIngestionUsers(page = 1, limit = 50) {
        FROM ingestion_conflicts
        GROUP BY user_id
      )
-     SELECT us.user_id, u.name, us.submission_count, us.total_weight,
+     SELECT us.user_id, u.username, us.submission_count, us.total_weight,
             COALESCE(cs.conflict_count, 0) AS conflict_count,
             CASE WHEN ib.id IS NOT NULL THEN true ELSE false END AS banned
      FROM user_stats us
@@ -515,7 +515,7 @@ export async function getAllowedClients(page = 1, limit = 50) {
     `SELECT ac.id, ac.client_id, ac.allowed_at, ac.notes,
             oc.name AS client_name, oc.description AS client_description,
             oc.website_url, oc.is_confidential,
-            ab.name AS allowed_by_name
+            ab.username AS allowed_by_name
      FROM ingestion_allowed_clients ac
      JOIN oauth_clients oc ON oc.id = ac.client_id
      JOIN ONLY users ab ON ab.id = ac.allowed_by
@@ -679,7 +679,7 @@ export async function getConflicts(page = 1, limit = 50, userId = null) {
   }
 
   const { rows } = await pool.query(
-    `SELECT c.*, u.name AS user_name
+    `SELECT c.*, u.username AS user_name
      FROM ingestion_conflicts c
      JOIN ONLY users u ON u.id = c.user_id
      ${whereClause}
