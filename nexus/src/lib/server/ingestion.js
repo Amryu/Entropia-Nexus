@@ -218,7 +218,7 @@ export function validateGlobalEvent(event) {
   } else {
     if (typeof event.value !== 'number' || !Number.isFinite(event.value) || event.value <= 0) return 'Invalid value';
   }
-  if (event.unit && event.unit !== 'PED' && event.unit !== 'PEC' && event.unit !== 'TIER') return 'Invalid unit';
+  if (event.unit && !['PED', 'PEC', 'TIER', 'kills'].includes(event.unit)) return 'Invalid unit';
   if (event.hof != null && typeof event.hof !== 'boolean') return 'hof must be a boolean';
   if (event.ath != null && typeof event.ath !== 'boolean') return 'ath must be a boolean';
   if (event.occurrence != null) {
