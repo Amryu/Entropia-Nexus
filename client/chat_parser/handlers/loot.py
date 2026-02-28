@@ -61,7 +61,8 @@ class LootHandler(BaseHandler):
         group = self._pending_group
         self._pending_group = None
 
-        self._event_bus.publish(EVENT_LOOT_GROUP, group)
+        if not self.suppress_events:
+            self._event_bus.publish(EVENT_LOOT_GROUP, group)
         self._db.insert_loot_group(
             timestamp=group.timestamp.isoformat(),
             total_value=group.total_value_ped,

@@ -292,40 +292,24 @@ function levenshteinBounded(a, b, maxDist) {
 
 // --- Intra-batch Dedup ---
 
-const SUSPICIOUS_REPEAT_THRESHOLD = 5;
-
 /**
- * Check a batch for intra-batch duplicates. Rejects if any key appears
- * 5+ times. Returns deduplicated events (first of each key kept).
+ * Collapse exact intra-batch duplicates (first of each key kept).
+ * Per-event dedup with ±5min windows handles real duplicate detection.
  *
  * @param {object[]} events
  * @param {function} hashFn - Content hash function
  * @param {function} [keyFn] - Optional custom key function (event, hash) => string.
- *   Defaults to hash + '|' + timestamp (used for trades).
+ *   Defaults to hash + '|' + timestamp.
  */
-function checkBatchDuplicates(events, hashFn, keyFn) {
-  const keyCounts = new Map();
-  for (const event of events) {
+function deduplicateBatch(events, hashFn, keyFn) {
+  const seen = new Set();
+  return events.filter(event => {
     const hash = hashFn(event);
     const key = keyFn ? keyFn(event, hash) : hash + '|' + event.timestamp;
-    keyCounts.set(key, (keyCounts.get(key) || 0) + 1);
-  }
-
-  const maxRepeats = keyCounts.size > 0 ? Math.max(...keyCounts.values()) : 0;
-  if (maxRepeats >= SUSPICIOUS_REPEAT_THRESHOLD) {
-    return { rejected: true, maxRepeats };
-  }
-
-  const seen = new Set();
-  const deduped = events.filter(e => {
-    const hash = hashFn(e);
-    const key = keyFn ? keyFn(e, hash) : hash + '|' + e.timestamp;
     if (seen.has(key)) return false;
     seen.add(key);
     return true;
   });
-
-  return { rejected: false, deduped };
 }
 
 // --- Global Ingestion ---
@@ -343,19 +327,16 @@ function checkBatchDuplicates(events, hashFn, keyFn) {
  * @returns {Promise<{ accepted: number, duplicates: number, conflicts: number, rejected?: boolean, reason?: string }>}
  */
 export async function ingestGlobals(userId, events) {
-  // Intra-batch dedup: key on hash|occurrence; reject if 5+ identical
-  const batchCheck = checkBatchDuplicates(events, computeGlobalContentHash, (e, h) => h + '|' + (e.occurrence ?? 1));
-  if (batchCheck.rejected) {
-    console.warn('[ingestion] Suspicious global batch from user %s: %d repeats of same event', userId, batchCheck.maxRepeats);
-    return { accepted: 0, duplicates: 0, conflicts: 0, rejected: true, reason: 'Duplicate events in batch' };
-  }
+  // Collapse exact intra-batch duplicates (same hash+occurrence+timestamp).
+  // Per-event ±5min window dedup handles real duplicate detection.
+  const deduped = deduplicateBatch(events, computeGlobalContentHash, (e, h) => h + '|' + (e.occurrence ?? 1) + '|' + e.timestamp);
 
   const weight = await getSubmissionWeight(userId);
   let accepted = 0, duplicates = 0, conflicts = 0;
 
   const client = await pool.connect();
   try {
-    for (const event of batchCheck.deduped) {
+    for (const event of deduped) {
       const contentHash = computeGlobalContentHash(event);
       const occurrence = event.occurrence ?? 1;
       const eventTs = new Date(event.timestamp);
@@ -510,19 +491,16 @@ export async function ingestGlobals(userId, events) {
  * @returns {Promise<{ accepted: number, duplicates: number, conflicts: number, rejected?: boolean, reason?: string }>}
  */
 export async function ingestTrades(userId, messages) {
-  // Intra-batch dedup: reject if same message appears 3+ times (suspicious)
-  const batchCheck = checkBatchDuplicates(messages, computeTradeContentHash);
-  if (batchCheck.rejected) {
-    console.warn('[ingestion] Suspicious trade batch from user %s: %d repeats of same message', userId, batchCheck.maxRepeats);
-    return { accepted: 0, duplicates: 0, conflicts: 0, rejected: true, reason: 'Duplicate messages in batch' };
-  }
+  // Collapse exact intra-batch duplicates (same hash+timestamp).
+  // Per-event dedup handles real duplicates safely.
+  const deduped = deduplicateBatch(messages, computeTradeContentHash);
 
   const weight = await getSubmissionWeight(userId);
   let accepted = 0, duplicates = 0, conflicts = 0;
 
   const client = await pool.connect();
   try {
-    for (const msg of batchCheck.deduped) {
+    for (const msg of deduped) {
       const contentHash = computeTradeContentHash(msg);
       const eventTs = new Date(msg.timestamp);
       const windowLo = new Date(eventTs.getTime() - TIMESTAMP_WINDOW_MS);

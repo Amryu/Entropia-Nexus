@@ -25,7 +25,8 @@ class TierHandler(BaseHandler):
             tier=float(match.group(2)),
         )
 
-        self._event_bus.publish(EVENT_TIER_INCREASE, event)
+        if not self.suppress_events:
+            self._event_bus.publish(EVENT_TIER_INCREASE, event)
         self._db.insert_tier_increase(
             timestamp=event.timestamp.isoformat(),
             item_name=event.item_name,

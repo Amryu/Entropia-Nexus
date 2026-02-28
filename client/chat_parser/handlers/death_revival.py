@@ -28,10 +28,12 @@ class DeathRevivalHandler(BaseHandler):
                 timestamp=parsed_line.timestamp,
                 mob_name=mob_name,
             )
-            self._event_bus.publish(EVENT_PLAYER_DEATH, event)
+            if not self.suppress_events:
+                self._event_bus.publish(EVENT_PLAYER_DEATH, event)
             return
 
         # Revival: "You have been revived"
         if REVIVAL_PATTERN.match(msg):
             event = PlayerRevivedEvent(timestamp=parsed_line.timestamp)
-            self._event_bus.publish(EVENT_PLAYER_REVIVED, event)
+            if not self.suppress_events:
+                self._event_bus.publish(EVENT_PLAYER_REVIVED, event)

@@ -11,6 +11,7 @@ class BaseHandler(ABC):
     def __init__(self, event_bus: EventBus, db: Database):
         self._event_bus = event_bus
         self._db = db
+        self.suppress_events = False
 
     @abstractmethod
     def can_handle(self, parsed_line: ParsedLine) -> bool:

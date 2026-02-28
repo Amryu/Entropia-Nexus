@@ -83,7 +83,14 @@ CREATE TABLE IF NOT EXISTS parser_state (
     file_path TEXT NOT NULL,
     byte_offset INTEGER NOT NULL,
     last_line_number INTEGER NOT NULL,
-    last_timestamp TEXT
+    last_timestamp TEXT,
+    file_hash TEXT
+);
+
+CREATE TABLE IF NOT EXISTS pending_ingestion (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    type TEXT NOT NULL,
+    data TEXT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_skill_gains_timestamp ON skill_gains(timestamp);
@@ -251,6 +258,7 @@ class Database:
             ("mob_encounters", "merged_into", "TEXT"),
             ("mob_encounters", "merged_from", "TEXT"),  # JSON array of encounter IDs
             ("session_loadouts", "crit_damage", "REAL DEFAULT 1.0"),
+            ("parser_state", "file_hash", "TEXT"),
         ]
         for table, column, col_def in migrations:
             try:
@@ -260,6 +268,26 @@ class Database:
                 self._conn.commit()
             except sqlite3.OperationalError:
                 pass  # Column already exists
+
+        # Dedup indexes — remove duplicates first (keep lowest rowid), then create unique index
+        dedup_indexes = [
+            ("idx_globals_dedup", "globals",
+             "timestamp, global_type, player_name, target_name, value"),
+            ("idx_trade_messages_dedup", "trade_messages",
+             "timestamp, channel, username, message"),
+        ]
+        for idx_name, table, columns in dedup_indexes:
+            try:
+                self._conn.execute(
+                    f"DELETE FROM {table} WHERE rowid NOT IN "
+                    f"(SELECT MIN(rowid) FROM {table} GROUP BY {columns})"
+                )
+                self._conn.execute(
+                    f"CREATE UNIQUE INDEX IF NOT EXISTS {idx_name} ON {table} ({columns})"
+                )
+                self._conn.commit()
+            except sqlite3.OperationalError:
+                pass  # Index already exists
 
     def execute(self, sql: str, params: tuple = ()) -> sqlite3.Cursor:
         with self._lock:
@@ -293,29 +321,59 @@ class Database:
         self._batch_mode = False
 
     # Parser state management
-    def get_parser_state(self, file_path: str) -> tuple[int, int] | None:
-        """Returns (byte_offset, last_line_number) or None if no state exists."""
+    def get_parser_state(self, file_path: str) -> tuple[int, int, str | None] | None:
+        """Returns (byte_offset, last_line_number, file_hash) or None if no state exists."""
         with self._lock:
             cur = self._conn.execute(
-                "SELECT byte_offset, last_line_number FROM parser_state WHERE id = 1 AND file_path = ?",
+                "SELECT byte_offset, last_line_number, file_hash FROM parser_state WHERE id = 1 AND file_path = ?",
                 (file_path,)
             )
             row = cur.fetchone()
-            return (row[0], row[1]) if row else None
+            return (row[0], row[1], row[2]) if row else None
 
-    def save_parser_state(self, file_path: str, byte_offset: int, last_line_number: int, last_timestamp: str = None):
+    def save_parser_state(self, file_path: str, byte_offset: int, last_line_number: int,
+                          last_timestamp: str = None, file_hash: str = None):
         with self._lock:
             self._conn.execute(
-                """INSERT INTO parser_state (id, file_path, byte_offset, last_line_number, last_timestamp)
-                   VALUES (1, ?, ?, ?, ?)
+                """INSERT INTO parser_state (id, file_path, byte_offset, last_line_number, last_timestamp, file_hash)
+                   VALUES (1, ?, ?, ?, ?, ?)
                    ON CONFLICT(id) DO UPDATE SET
                        file_path = excluded.file_path,
                        byte_offset = excluded.byte_offset,
                        last_line_number = excluded.last_line_number,
-                       last_timestamp = excluded.last_timestamp""",
-                (file_path, byte_offset, last_line_number, last_timestamp)
+                       last_timestamp = excluded.last_timestamp,
+                       file_hash = excluded.file_hash""",
+                (file_path, byte_offset, last_line_number, last_timestamp, file_hash)
             )
             self._auto_commit()
+
+    # Pending ingestion (crash recovery)
+    def save_pending_ingestion(self, event_type: str, items: list[dict]):
+        """Persist pending ingestion items so they survive a crash."""
+        import json
+        with self._lock:
+            self._conn.execute("DELETE FROM pending_ingestion WHERE type = ?", (event_type,))
+            for item in items:
+                self._conn.execute(
+                    "INSERT INTO pending_ingestion (type, data) VALUES (?, ?)",
+                    (event_type, json.dumps(item))
+                )
+            self._conn.commit()
+
+    def load_pending_ingestion(self, event_type: str) -> list[dict]:
+        """Load pending ingestion items from a previous session."""
+        import json
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT data FROM pending_ingestion WHERE type = ? ORDER BY id", (event_type,)
+            )
+            return [json.loads(row[0]) for row in cur.fetchall()]
+
+    def clear_pending_ingestion(self, event_type: str):
+        """Clear pending ingestion items after successful upload."""
+        with self._lock:
+            self._conn.execute("DELETE FROM pending_ingestion WHERE type = ?", (event_type,))
+            self._conn.commit()
 
     # Skill gains
     def insert_skill_gain(self, timestamp: str, skill_name: str, amount: float, is_attribute: bool, session_id: str = None):
@@ -376,16 +434,63 @@ class Database:
                       is_hof: bool = False, is_ath: bool = False):
         with self._lock:
             self._conn.execute(
-                "INSERT INTO globals (timestamp, global_type, player_name, target_name, value, value_unit, location, is_hof, is_ath) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT OR IGNORE INTO globals (timestamp, global_type, player_name, target_name, value, value_unit, location, is_hof, is_ath) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (timestamp, global_type, player_name, target_name, value, value_unit, location, int(is_hof), int(is_ath))
             )
             self._auto_commit()
+
+    def get_recent_globals(self, minutes: int = 5) -> list[dict]:
+        """Get globals from the last N minutes for occurrence tracker seeding."""
+        from datetime import datetime, timedelta
+        cutoff = (datetime.now() - timedelta(minutes=minutes)).isoformat()
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT timestamp, global_type, player_name, target_name, "
+                "value, value_unit, location, is_hof, is_ath "
+                "FROM globals WHERE timestamp > ? ORDER BY timestamp",
+                (cutoff,)
+            )
+            return [
+                {
+                    "timestamp": r[0], "type": r[1], "player": r[2], "target": r[3],
+                    "value": r[4], "unit": r[5], "location": r[6],
+                    "hof": bool(r[7]), "ath": bool(r[8]),
+                }
+                for r in cur.fetchall()
+            ]
+
+    def get_all_globals(self) -> list[dict]:
+        """Read all globals from the local DB (for ingestion re-submission)."""
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT timestamp, global_type, player_name, target_name, "
+                "value, value_unit, location, is_hof, is_ath FROM globals ORDER BY id"
+            )
+            return [
+                {
+                    "timestamp": r[0], "type": r[1], "player": r[2], "target": r[3],
+                    "value": r[4], "unit": r[5], "location": r[6],
+                    "hof": bool(r[7]), "ath": bool(r[8]),
+                }
+                for r in cur.fetchall()
+            ]
+
+    def get_all_trades(self) -> list[dict]:
+        """Read all trade messages from the local DB (for ingestion re-submission)."""
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT timestamp, channel, username, message FROM trade_messages ORDER BY id"
+            )
+            return [
+                {"timestamp": r[0], "channel": r[1], "username": r[2], "message": r[3]}
+                for r in cur.fetchall()
+            ]
 
     # Trade messages
     def insert_trade_message(self, timestamp: str, channel: str, username: str, message: str):
         with self._lock:
             self._conn.execute(
-                "INSERT INTO trade_messages (timestamp, channel, username, message) VALUES (?, ?, ?, ?)",
+                "INSERT OR IGNORE INTO trade_messages (timestamp, channel, username, message) VALUES (?, ?, ?, ?)",
                 (timestamp, channel, username, message)
             )
             self._auto_commit()
@@ -793,6 +898,34 @@ class Database:
                 (item_name,)
             )
             self._auto_commit()
+
+    def clear_parsed_data(self) -> None:
+        """Delete all chat-parsed data before a full reparse.
+
+        Clears everything including deduped tables (globals, trade_messages)
+        because changes to parsing (e.g. HTML entity decoding) can alter
+        the values used in unique constraints, causing duplicates.
+        """
+        with self._lock:
+            # Child tables first (foreign key dependencies)
+            self._conn.execute("DELETE FROM encounter_loot_items")
+            self._conn.execute("DELETE FROM combat_event_details")
+            self._conn.execute("DELETE FROM encounter_tool_stats")
+            self._conn.execute("DELETE FROM session_loadouts")
+            self._conn.execute("DELETE FROM mob_encounters")
+            self._conn.execute("DELETE FROM hunts")
+            self._conn.execute("DELETE FROM hunt_sessions")
+            # Standalone parsed-data tables
+            self._conn.execute("DELETE FROM loot_items")
+            self._conn.execute("DELETE FROM loot_groups")
+            self._conn.execute("DELETE FROM combat_events")
+            self._conn.execute("DELETE FROM skill_gains")
+            self._conn.execute("DELETE FROM enhancer_breaks")
+            self._conn.execute("DELETE FROM tier_increases")
+            # Deduped tables — also cleared to avoid stale/misencoded rows
+            self._conn.execute("DELETE FROM globals")
+            self._conn.execute("DELETE FROM trade_messages")
+            self._conn.commit()
 
     def get_all_custom_markups(self) -> list[dict]:
         """Get all custom markups."""

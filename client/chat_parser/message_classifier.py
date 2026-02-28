@@ -50,11 +50,13 @@ class MessageClassifier:
         ]
 
     def set_catching_up(self, catching_up: bool) -> None:
-        """Toggle catchup mode. During catchup, global/trade events are
-        stored in DB but not published to EventBus."""
+        """Toggle catchup mode. During catchup, data is stored in DB
+        but EventBus events are suppressed to avoid flooding Qt."""
         self._catching_up = catching_up
         self._globals.suppress_events = catching_up
         self._trade.suppress_events = catching_up
+        for handler in self._system_handlers:
+            handler.suppress_events = catching_up
 
     def classify_and_handle(self, parsed_line: ParsedLine) -> None:
         """Route a parsed line to the appropriate handler."""

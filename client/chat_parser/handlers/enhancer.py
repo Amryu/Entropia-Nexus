@@ -24,7 +24,8 @@ class EnhancerBreakHandler(BaseHandler):
             shrapnel_ped=float(match.group(4)),
         )
 
-        self._event_bus.publish(EVENT_ENHANCER_BREAK, event)
+        if not self.suppress_events:
+            self._event_bus.publish(EVENT_ENHANCER_BREAK, event)
         self._db.insert_enhancer_break(
             timestamp=event.timestamp.isoformat(),
             enhancer_name=event.enhancer_name,

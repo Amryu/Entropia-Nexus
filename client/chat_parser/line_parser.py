@@ -1,7 +1,8 @@
 from datetime import datetime
+from html import unescape
 from typing import Optional
 
-from ..core.constants import HTML_ENTITIES, LINE_PATTERN, TIMESTAMP_FORMAT
+from ..core.constants import LINE_PATTERN
 from .models import ParsedLine
 
 
@@ -19,13 +20,23 @@ class LineParser:
 
         timestamp_str, channel, username, message = match.groups()
 
+        # Manual timestamp parsing — ~10x faster than datetime.strptime.
+        # Format is fixed: "YYYY-MM-DD HH:MM:SS" (19 chars).
         try:
-            timestamp = datetime.strptime(timestamp_str, TIMESTAMP_FORMAT)
-        except ValueError:
+            timestamp = datetime(
+                int(timestamp_str[0:4]),    # year
+                int(timestamp_str[5:7]),    # month
+                int(timestamp_str[8:10]),   # day
+                int(timestamp_str[11:13]),  # hour
+                int(timestamp_str[14:16]),  # minute
+                int(timestamp_str[17:19]),  # second
+            )
+        except (ValueError, IndexError):
             return None
 
-        # Decode HTML entities in the message
-        message = self._decode_html_entities(message)
+        # Chat.log uses HTML entities in message text (e.g. &quot; for ")
+        if '&' in message:
+            message = unescape(message)
 
         return ParsedLine(
             timestamp=timestamp,
@@ -35,9 +46,3 @@ class LineParser:
             raw_line=raw_line,
             line_number=line_number,
         )
-
-    @staticmethod
-    def _decode_html_entities(text: str) -> str:
-        for entity, char in HTML_ENTITIES.items():
-            text = text.replace(entity, char)
-        return text

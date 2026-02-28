@@ -45,7 +45,8 @@ class SkillGainHandler(BaseHandler):
             self._emit(event)
 
     def _emit(self, event: SkillGainEvent):
-        self._event_bus.publish(EVENT_SKILL_GAIN, event)
+        if not self.suppress_events:
+            self._event_bus.publish(EVENT_SKILL_GAIN, event)
         self._db.insert_skill_gain(
             timestamp=event.timestamp.isoformat(),
             skill_name=event.skill_name,
