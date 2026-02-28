@@ -50,6 +50,30 @@ export async function GET({ url }) {
     }
   }
 
+  // Target filter
+  const targetFilter = url.searchParams.get('target');
+  if (targetFilter) {
+    conditions.push(`target_name ILIKE $${paramIdx}`);
+    params.push(`%${escapeLike(targetFilter)}%`);
+    paramIdx++;
+  }
+
+  // Min value filter
+  const minValueParam = url.searchParams.get('min_value');
+  if (minValueParam) {
+    const minVal = parseFloat(minValueParam);
+    if (!isNaN(minVal) && minVal > 0) {
+      conditions.push(`value >= $${paramIdx}`);
+      params.push(minVal);
+      paramIdx++;
+    }
+  }
+
+  // HoF only filter
+  if (url.searchParams.get('hof') === 'true') {
+    conditions.push('is_hof = true');
+  }
+
   const whereClause = `WHERE ${conditions.join(' AND ')}`;
 
   try {

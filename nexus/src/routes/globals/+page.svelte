@@ -75,6 +75,7 @@
   let pollTimer = null;
   let latestTimestamp = globals.length > 0 ? globals[0].timestamp : null;
   let loadingMore = false;
+  let tableLoading = false;
   let hasMore = globals.length >= 50;
   let newIds = new Set();
 
@@ -128,6 +129,7 @@
 
   // Fetch filtered globals
   async function fetchGlobals() {
+    tableLoading = true;
     try {
       const params = buildParams({ limit: 50 });
       const res = await fetch(`/api/globals?${params}`);
@@ -137,6 +139,7 @@
       hasMore = data.has_more;
       latestTimestamp = globals.length > 0 ? globals[0].timestamp : null;
     } catch { /* ignore */ }
+    tableLoading = false;
   }
 
   // Fetch stats
@@ -146,9 +149,13 @@
       const params = new URLSearchParams({ period });
       if (typeFilter) params.set('type', typeFilter);
       if (playerFilter) params.set('player', playerFilter);
+      if (targetFilter) params.set('target', targetFilter);
+      if (minValue) params.set('min_value', minValue);
+      if (hofOnly) params.set('hof', 'true');
       const res = await fetch(`/api/globals/stats?${params}`);
       if (!res.ok) return;
       stats = await res.json();
+      summary = stats.summary;
       buildCharts();
     } catch { /* ignore */ }
     statsLoading = false;
@@ -211,6 +218,10 @@
     fetchStats();
   }
 
+  // Filter relevance helpers
+  $: showTypeChart = !typeFilter;
+  $: showTopTargets = !typeFilter || typeFilter.split(',').some(t => t === 'kill' || t === 'team_kill');
+
   // Charts
   function buildCharts() {
     if (!stats) return;
@@ -218,9 +229,22 @@
     const borderColor = getComputedCssVar('--border-color') || '#555';
 
     buildActivityChart(textMuted, borderColor);
-    buildTypeChart();
+
+    if (showTypeChart) {
+      buildTypeChart();
+    } else if (typeChart) {
+      typeChart.destroy();
+      typeChart = null;
+    }
+
     buildTopPlayersChart(textMuted, borderColor);
-    buildTopTargetsChart(textMuted, borderColor);
+
+    if (showTopTargets) {
+      buildTopTargetsChart(textMuted, borderColor);
+    } else if (topTargetsChart) {
+      topTargetsChart.destroy();
+      topTargetsChart = null;
+    }
   }
 
   function buildActivityChart(textMuted, borderColor) {
@@ -415,7 +439,7 @@
   </div>
 
   <!-- Stats Cards -->
-  <div class="stats-row">
+  <div class="stats-row" class:stats-loading={statsLoading}>
     <div class="stat-card">
       <span class="stat-value">{summary.total_count.toLocaleString()}</span>
       <span class="stat-label">Total Globals</span>
@@ -455,28 +479,48 @@
       <div class="chart-card chart-wide">
         <h3>Activity Timeline</h3>
         <div class="chart-container">
-          <canvas bind:this={activityCanvas}></canvas>
+          {#if statsLoading && !stats}
+            <div class="chart-loading"><span class="spinner"></span></div>
+          {:else}
+            <canvas bind:this={activityCanvas}></canvas>
+          {/if}
         </div>
       </div>
 
       <div class="chart-card">
         <h3>Type Distribution</h3>
         <div class="chart-container chart-square">
-          <canvas bind:this={typeCanvas}></canvas>
+          {#if typeFilter}
+            <div class="chart-placeholder">Type distribution is available when viewing all types</div>
+          {:else if statsLoading && !stats}
+            <div class="chart-loading"><span class="spinner"></span></div>
+          {:else}
+            <canvas bind:this={typeCanvas}></canvas>
+          {/if}
         </div>
       </div>
 
       <div class="chart-card">
         <h3>Top Players (by Value)</h3>
         <div class="chart-container">
-          <canvas bind:this={topPlayersCanvas}></canvas>
+          {#if statsLoading && !stats}
+            <div class="chart-loading"><span class="spinner"></span></div>
+          {:else}
+            <canvas bind:this={topPlayersCanvas}></canvas>
+          {/if}
         </div>
       </div>
 
       <div class="chart-card">
         <h3>Top Targets (by Count)</h3>
         <div class="chart-container">
-          <canvas bind:this={topTargetsCanvas}></canvas>
+          {#if !showTopTargets}
+            <div class="chart-placeholder">Top targets is available for hunting globals</div>
+          {:else if statsLoading && !stats}
+            <div class="chart-loading"><span class="spinner"></span></div>
+          {:else}
+            <canvas bind:this={topTargetsCanvas}></canvas>
+          {/if}
         </div>
       </div>
     </div>
@@ -486,7 +530,9 @@
   <div class="table-section">
     <h2>Recent Globals</h2>
 
-    {#if globals.length === 0}
+    {#if tableLoading}
+      <div class="table-loading"><span class="spinner"></span></div>
+    {:else if globals.length === 0}
       <p class="empty-state">No globals match your filters</p>
     {:else}
       <div class="table-wrapper">
@@ -689,6 +735,11 @@
     letter-spacing: 0.3px;
   }
 
+  .stats-loading .stat-value {
+    opacity: 0.4;
+    transition: opacity 0.2s ease;
+  }
+
   /* Charts */
   .charts-section {
     margin-bottom: 24px;
@@ -764,6 +815,38 @@
 
   .chart-container.chart-square {
     height: 220px;
+  }
+
+  .chart-loading, .table-loading {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 120px;
+  }
+
+  .chart-placeholder {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100%;
+    min-height: 120px;
+    color: var(--text-muted);
+    font-size: 0.8125rem;
+    font-style: italic;
+  }
+
+  .spinner {
+    display: inline-block;
+    width: 24px;
+    height: 24px;
+    border: 2px solid var(--border-color);
+    border-top-color: var(--accent-color);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
   }
 
   /* Table */
