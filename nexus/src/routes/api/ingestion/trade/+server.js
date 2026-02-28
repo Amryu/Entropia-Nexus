@@ -9,7 +9,7 @@ import {
   ingestTrades,
   getTradesSince,
   parseRequestBody,
-  maybeAnalyzeConflicts,
+  maybeRunFraudDetection,
 } from '$lib/server/ingestion.js';
 
 const MAX_BATCH_SIZE = 500;
@@ -87,7 +87,7 @@ export async function POST({ request, locals }) {
     if (result.rejected) {
       return getResponse({ error: result.reason }, 400);
     }
-    maybeAnalyzeConflicts();
+    maybeRunFraudDetection();
     const response = {
       ...result,
       total: messages.length,

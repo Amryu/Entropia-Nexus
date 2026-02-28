@@ -5,7 +5,6 @@
   let stats = data.stats;
   let alerts = data.alerts;
   let users = data.users;
-  let conflicts = data.conflicts;
   let allowedClients = data.allowedClients || [];
   let tradeChannels = data.tradeChannels || [];
 
@@ -47,11 +46,6 @@
   function formatPercent(part, total) {
     if (!total || total === '0') return '0%';
     return Math.round((parseInt(part) / parseInt(total)) * 100) + '%';
-  }
-
-  function conflictRate(user) {
-    if (!user.submission_count || user.submission_count === '0') return '0%';
-    return (parseInt(user.conflict_count) / parseInt(user.submission_count) * 100).toFixed(1) + '%';
   }
 
   // --- Actions ---
@@ -164,11 +158,10 @@
 
   async function reloadData() {
     try {
-      const [statsRes, alertsRes, usersRes, conflictsRes, allowedRes, channelsRes] = await Promise.all([
+      const [statsRes, alertsRes, usersRes, allowedRes, channelsRes] = await Promise.all([
         fetch('/api/admin/ingestion/stats'),
         fetch('/api/admin/ingestion/alerts?limit=10'),
         fetch('/api/admin/ingestion/users?limit=20'),
-        fetch('/api/admin/ingestion/conflicts?limit=20'),
         fetch('/api/admin/ingestion/allowed?limit=50'),
         fetch('/api/admin/ingestion/channels'),
       ]);
@@ -176,7 +169,6 @@
       const alertData = await alertsRes.json();
       alerts = alertData.rows;
       users = await usersRes.json();
-      conflicts = await conflictsRes.json();
       const allowedData = await allowedRes.json();
       allowedClients = allowedData.rows || [];
       const channelData = await channelsRes.json();
@@ -339,10 +331,6 @@
       </p>
     </div>
     <div class="stat-card">
-      <h3>Total Conflicts</h3>
-      <p class="stat-value">{formatNumber(stats.total_conflicts)}</p>
-    </div>
-    <div class="stat-card">
       <h3>Allowed Clients</h3>
       <p class="stat-value">{formatNumber(stats.allowed_clients)}</p>
     </div>
@@ -359,9 +347,6 @@
     </button>
     <button class="tab" class:active={activeTab === 'users'} on:click={() => activeTab = 'users'}>
       Contributors
-    </button>
-    <button class="tab" class:active={activeTab === 'conflicts'} on:click={() => activeTab = 'conflicts'}>
-      Conflicts
     </button>
     <button class="tab" class:active={activeTab === 'allowed'} on:click={() => activeTab = 'allowed'}>
       Allowed Clients ({formatNumber(stats.allowed_clients)})
@@ -381,8 +366,6 @@
           <div class="alert-card">
             <div class="alert-header">
               <span class="alert-type"
-                class:badge-warning={alert.type === 'conflict_pattern'}
-                class:badge-info={alert.type === 'majority_swap'}
                 class:badge-danger={alert.type === 'collusion_pattern' || alert.type === 'solo_fabrication'}>
                 {alert.type.replace(/_/g, ' ')}
               </span>
@@ -392,26 +375,6 @@
               <p><strong>Users:</strong> {(alert.user_names || []).filter(Boolean).join(', ') || 'Unknown'}</p>
               {#if alert.details}
                 <div class="alert-details">
-                  <!-- conflict_pattern -->
-                  {#if alert.details.conflict_count}
-                    <span>Conflicts: {alert.details.conflict_count}</span>
-                  {/if}
-                  {#if alert.details.minority_rate}
-                    <span>Minority rate: {alert.details.minority_rate}%</span>
-                  {/if}
-                  {#if alert.details.counterpart_count}
-                    <span>Counterparts: {alert.details.counterpart_count}</span>
-                  {/if}
-
-                  <!-- majority_swap -->
-                  {#if alert.type === 'majority_swap'}
-                    <span>Global #{alert.details.global_id}</span>
-                    <span>{alert.details.old_submitter_count} → {alert.details.new_submitter_count} submitters</span>
-                    <span class="hash-preview" title="{alert.details.old_hash} → {alert.details.new_hash}">
-                      {alert.details.old_hash?.slice(0, 12)}… → {alert.details.new_hash?.slice(0, 12)}…
-                    </span>
-                  {/if}
-
                   <!-- collusion_pattern -->
                   {#if alert.type === 'collusion_pattern'}
                     <span>Shared: {alert.details.shared_count}</span>
@@ -464,8 +427,6 @@
             <tr>
               <th>User</th>
               <th>Submissions</th>
-              <th>Conflicts</th>
-              <th>Conflict Rate</th>
               <th>Status</th>
               <th>Actions</th>
             </tr>
@@ -477,8 +438,6 @@
                   <a href="/admin/users/{user.user_id}">{user.username || `User ${user.user_id}`}</a>
                 </td>
                 <td>{formatNumber(user.submission_count)}</td>
-                <td>{formatNumber(user.conflict_count)}</td>
-                <td>{conflictRate(user)}</td>
                 <td>
                   {#if user.banned}
                     <span class="status-badge status-banned">Banned</span>
@@ -500,40 +459,6 @@
                     Purge
                   </button>
                 </td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      {/if}
-    </div>
-  {/if}
-
-  <!-- Conflicts Tab -->
-  {#if activeTab === 'conflicts'}
-    <div class="section">
-      {#if conflicts.length === 0}
-        <p class="empty-state">No conflicts recorded</p>
-      {:else}
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th>Type</th>
-              <th>User</th>
-              <th>Existing Hash</th>
-              <th>Conflicting Hash</th>
-              <th>Date</th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each conflicts as conflict}
-              <tr>
-                <td><span class="badge">{conflict.type}</span></td>
-                <td>
-                  <a href="/admin/users/{conflict.user_id}">{conflict.user_name || conflict.user_id}</a>
-                </td>
-                <td class="hash-cell" title={conflict.existing_hash}>{conflict.existing_hash.slice(0, 12)}...</td>
-                <td class="hash-cell" title={conflict.conflicting_hash}>{conflict.conflicting_hash.slice(0, 12)}...</td>
-                <td>{formatDate(conflict.created_at)}</td>
               </tr>
             {/each}
           </tbody>
@@ -950,24 +875,9 @@
     text-transform: capitalize;
   }
 
-  .badge-warning {
-    background-color: rgba(245, 158, 11, 0.2);
-    color: var(--warning-color);
-  }
-
   .badge-danger {
     background-color: rgba(239, 68, 68, 0.2);
     color: var(--error-color);
-  }
-
-  .badge-info {
-    background-color: rgba(59, 130, 246, 0.2);
-    color: var(--accent-color);
-  }
-
-  .hash-preview {
-    font-family: monospace;
-    font-size: 11px;
   }
 
   .alert-date {

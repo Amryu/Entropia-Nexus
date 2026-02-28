@@ -1644,7 +1644,7 @@ Submit a batch of global events (kills, deposits, crafts, rare items). Supports 
 
 **Limits:** Max 500 entries per batch, timestamps within last 24 hours, 20 requests per 60 seconds.
 
-**Response:** `{ "accepted": 5, "duplicates": 2, "conflicts": 0, "total": 7, "invalid": 0 }`
+**Response:** `{ "accepted": 5, "duplicates": 2, "total": 7, "invalid": 0 }`
 
 #### `POST /api/ingestion/trade`
 

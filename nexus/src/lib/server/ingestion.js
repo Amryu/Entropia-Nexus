@@ -9,7 +9,6 @@ import { resolveMob } from './mobResolver.js';
 const GLOBAL_CONFIRM_THRESHOLD = 5;
 const TIMESTAMP_WINDOW_MS = 60_000; // ±60 seconds for matching (trades)
 const GLOBAL_DEDUP_WINDOW_MS = 5 * 60 * 1000; // ±5 min for occurrence-based dedup (globals)
-const TRADE_SLOT_WINDOW_MS = 10_000; // ±10 seconds for trade slot conflicts
 const MAX_OCCURRENCE = 3;
 const VALID_GLOBAL_TYPES = new Set(['kill', 'team_kill', 'deposit', 'craft', 'rare_item', 'discovery', 'tier', 'examine', 'pvp']);
 const VALUE_OPTIONAL_TYPES = new Set(['discovery', 'tier', 'rare_item', 'pvp']);
@@ -25,7 +24,6 @@ const MAX_DECOMPRESSED_SIZE = 10_485_760; // 10 MB decompressed
 
 // --- Fraud Detection Thresholds ---
 const MIN_ACTIVE_CONTRIBUTORS = 10;         // Skip collusion/solo checks if fewer contributors
-const MAJORITY_SWAP_MIN_USERS = 3;          // Minimum conflict users to trigger swap
 const COLLUSION_MIN_EXCLUSIVE = 10;         // Minimum exclusive shared events
 const COLLUSION_MIN_EXCLUSIVE_RATE = 0.7;   // 70% exclusive overlap threshold
 const SOLO_MIN_SUBMISSIONS = 50;            // Minimum total submissions to evaluate
@@ -73,25 +71,6 @@ export function computeTradeContentHash(msg) {
     msg.message,
   ];
   return crypto.createHash('sha256').update(parts.join('|')).digest('hex');
-}
-
-// --- Data Sanitization ---
-
-/** Strip event/message to only known fields before storing as conflict data. */
-function sanitizeGlobalEvent(event) {
-  return {
-    type: event.type, player: event.player, target: event.target,
-    value: event.value, unit: event.unit, location: event.location,
-    hof: event.hof, ath: event.ath, timestamp: event.timestamp,
-    occurrence: event.occurrence ?? 1,
-  };
-}
-
-function sanitizeTradeMessage(msg) {
-  return {
-    channel: msg.channel, username: msg.username,
-    message: msg.message, timestamp: msg.timestamp,
-  };
 }
 
 // --- Confirmation Weight ---
@@ -317,14 +296,14 @@ function deduplicateBatch(events, hashFn, keyFn) {
 /**
  * Process a batch of global events from a single user.
  * Deduplicates by content hash + occurrence within a ±5min window,
- * detects slot conflicts, and tracks confirmations.
+ * deduplicates by content hash + occurrence, and tracks confirmations.
  *
  * Uses per-event transactions with advisory locks to prevent concurrent
  * requests from creating duplicate canonical rows for the same event.
  *
  * @param {bigint|string} userId
  * @param {object[]} events - Array of global event objects
- * @returns {Promise<{ accepted: number, duplicates: number, conflicts: number, rejected?: boolean, reason?: string }>}
+ * @returns {Promise<{ accepted: number, duplicates: number, rejected?: boolean, reason?: string }>}
  */
 export async function ingestGlobals(userId, events) {
   // Collapse exact intra-batch duplicates (same hash+occurrence+timestamp).
@@ -332,7 +311,7 @@ export async function ingestGlobals(userId, events) {
   const deduped = deduplicateBatch(events, computeGlobalContentHash, (e, h) => h + '|' + (e.occurrence ?? 1) + '|' + e.timestamp);
 
   const weight = await getSubmissionWeight(userId);
-  let accepted = 0, duplicates = 0, conflicts = 0;
+  let accepted = 0, duplicates = 0;
 
   const client = await pool.connect();
   try {
@@ -394,38 +373,7 @@ export async function ingestGlobals(userId, events) {
           continue;
         }
 
-        // 2. Check for slot conflict (same type + player + target within tight window, different hash).
-        //    Uses a tight ±10s window. Identical events (same hash) with different occurrences
-        //    won't trigger this since their content_hash matches — they fall through to step 3.
-        const slotLo = new Date(eventTs.getTime() - TRADE_SLOT_WINDOW_MS);
-        const slotHi = new Date(eventTs.getTime() + TRADE_SLOT_WINDOW_MS);
-        const { rows: slotMatches } = await client.query(
-          `SELECT id, content_hash FROM ingested_globals
-           WHERE global_type = $1
-             AND player_name = $2
-             AND target_name = $3
-             AND event_timestamp BETWEEN $4 AND $5
-           LIMIT 1`,
-          [event.type, event.player, event.target, slotLo.toISOString(), slotHi.toISOString()]
-        );
-
-        if (slotMatches.length > 0) {
-          const existing = slotMatches[0];
-          if (existing.content_hash !== contentHash) {
-            // Actual conflict: same slot, different content
-            await client.query(
-              `INSERT INTO ingestion_conflicts (type, existing_id, existing_hash, conflicting_hash, conflicting_data, user_id)
-               VALUES ('global', $1, $2, $3, $4, $5)`,
-              [existing.id, existing.content_hash, contentHash, JSON.stringify(sanitizeGlobalEvent(event)), userId]
-            );
-            await client.query('COMMIT');
-            conflicts++;
-            continue;
-          }
-          // Same hash, different occurrence — fall through to step 3 (new entry)
-        }
-
-        // 3. New event — resolve mob/maturity and insert canonical entry + first submission
+        // 2. New event — resolve mob/maturity and insert canonical entry + first submission
         const confirmed = weight >= GLOBAL_CONFIRM_THRESHOLD;
 
         const mobMatch = (event.type === 'kill' || event.type === 'team_kill')
@@ -474,7 +422,7 @@ export async function ingestGlobals(userId, events) {
     client.release();
   }
 
-  return { accepted, duplicates, conflicts };
+  return { accepted, duplicates };
 }
 
 // --- Trade Message Ingestion ---
@@ -488,7 +436,7 @@ export async function ingestGlobals(userId, events) {
  *
  * @param {bigint|string} userId
  * @param {object[]} messages - Array of trade message objects
- * @returns {Promise<{ accepted: number, duplicates: number, conflicts: number, rejected?: boolean, reason?: string }>}
+ * @returns {Promise<{ accepted: number, duplicates: number, rejected?: boolean, reason?: string }>}
  */
 export async function ingestTrades(userId, messages) {
   // Collapse exact intra-batch duplicates (same hash+timestamp).
@@ -496,7 +444,7 @@ export async function ingestTrades(userId, messages) {
   const deduped = deduplicateBatch(messages, computeTradeContentHash);
 
   const weight = await getSubmissionWeight(userId);
-  let accepted = 0, duplicates = 0, conflicts = 0;
+  let accepted = 0, duplicates = 0;
 
   const client = await pool.connect();
   try {
@@ -539,32 +487,7 @@ export async function ingestTrades(userId, messages) {
           continue;
         }
 
-        // 2. Slot conflict (same channel + username within ±10s, different content)
-        const slotWindowLo = new Date(eventTs.getTime() - TRADE_SLOT_WINDOW_MS);
-        const slotWindowHi = new Date(eventTs.getTime() + TRADE_SLOT_WINDOW_MS);
-
-        const { rows: slotMatches } = await client.query(
-          `SELECT id, content_hash FROM ingested_trade_messages
-           WHERE channel = $1
-             AND username = $2
-             AND event_timestamp BETWEEN $3 AND $4
-           LIMIT 1`,
-          [msg.channel, msg.username, slotWindowLo.toISOString(), slotWindowHi.toISOString()]
-        );
-
-        if (slotMatches.length > 0) {
-          const existing = slotMatches[0];
-          await client.query(
-            `INSERT INTO ingestion_conflicts (type, existing_id, existing_hash, conflicting_hash, conflicting_data, user_id)
-             VALUES ('trade', $1, $2, $3, $4, $5)`,
-            [existing.id, existing.content_hash, contentHash, JSON.stringify(sanitizeTradeMessage(msg)), userId]
-          );
-          await client.query('COMMIT');
-          conflicts++;
-          continue;
-        }
-
-        // 2.5 Repost dedup: check for similar messages from same user in last 15 min
+        // 2. Repost dedup: check for similar messages from same user in last 15 min
         const repostLo = new Date(eventTs.getTime() - REPOST_WINDOW_MS);
         const { rows: recentMsgs } = await client.query(
           `SELECT message FROM ingested_trade_messages
@@ -618,7 +541,7 @@ export async function ingestTrades(userId, messages) {
     client.release();
   }
 
-  return { accepted, duplicates, conflicts };
+  return { accepted, duplicates };
 }
 
 // --- Distribution ---
@@ -672,7 +595,6 @@ export async function getIngestionStats() {
       ) all_users) AS active_contributors,
       (SELECT count(*) FROM ingestion_bans) AS active_bans,
       (SELECT count(*) FROM ingestion_alerts WHERE NOT resolved) AS pending_alerts,
-      (SELECT count(*) FROM ingestion_conflicts) AS total_conflicts,
       (SELECT count(*) FROM ingestion_allowed_clients) AS allowed_clients,
       (SELECT count(*) FROM ingestion_trade_channels) AS configured_channels
   `);
@@ -723,18 +645,11 @@ export async function getIngestionUsers(page = 1, limit = 50) {
          SELECT user_id, weight FROM ingested_trade_submissions
        ) all_subs
        GROUP BY user_id
-     ),
-     conflict_stats AS (
-       SELECT user_id, count(*) AS conflict_count
-       FROM ingestion_conflicts
-       GROUP BY user_id
      )
      SELECT us.user_id, u.username, us.submission_count, us.total_weight,
-            COALESCE(cs.conflict_count, 0) AS conflict_count,
             CASE WHEN ib.id IS NOT NULL THEN true ELSE false END AS banned
      FROM user_stats us
      JOIN ONLY users u ON u.id = us.user_id
-     LEFT JOIN conflict_stats cs ON cs.user_id = us.user_id
      LEFT JOIN ingestion_bans ib ON ib.user_id = us.user_id
      ORDER BY us.submission_count DESC
      LIMIT $1 OFFSET $2`,
@@ -923,13 +838,7 @@ export async function purgeUserData(userId, purgedBy) {
       );
     }
 
-    // 5. Delete conflicts by this user
-    await client.query(
-      'DELETE FROM ingestion_conflicts WHERE user_id = $1',
-      [userId]
-    );
-
-    // 6. Update ban record with purge metadata
+    // 5. Update ban record with purge metadata
     await client.query(
       `UPDATE ingestion_bans
        SET data_purged = true, data_purged_at = now(), data_purged_by = $2
@@ -948,348 +857,7 @@ export async function purgeUserData(userId, purgedBy) {
   return { purgedGlobals: globalIds.length, purgedTrades: tradeIds.length };
 }
 
-// --- Admin: Conflicts ---
-
-export async function getConflicts(page = 1, limit = 50, userId = null) {
-  const offset = (page - 1) * limit;
-  const params = [limit, offset];
-  let whereClause = '';
-
-  if (userId) {
-    whereClause = 'WHERE c.user_id = $3';
-    params.push(userId);
-  }
-
-  const { rows } = await pool.query(
-    `SELECT c.*, u.username AS user_name
-     FROM ingestion_conflicts c
-     JOIN ONLY users u ON u.id = c.user_id
-     ${whereClause}
-     ORDER BY c.created_at DESC
-     LIMIT $1 OFFSET $2`,
-    params
-  );
-  return rows;
-}
-
-// --- Background: Conflict Analysis ---
-
-/**
- * Analyze conflict patterns and generate alerts for suspicious users.
- * Should be called periodically (e.g., every 15 minutes).
- *
- * Criteria for alerting:
- * - User has >= 10 conflicts in last 7 days
- * - User is in the minority (their version has fewer confirmations) >= 80% of the time
- * - User has conflicts with >= 3 different counterpart users
- * - No existing unresolved alert for this user
- */
-export async function analyzeConflicts() {
-  // Find users with significant conflict counts in the last 7 days
-  const { rows: conflictUsers } = await pool.query(
-    `SELECT user_id, count(*) AS conflict_count
-     FROM ingestion_conflicts
-     WHERE created_at > now() - interval '7 days'
-     GROUP BY user_id
-     HAVING count(*) >= 10`
-  );
-
-  for (const { user_id: userId, conflict_count: conflictCount } of conflictUsers) {
-    // Check if there's already an unresolved alert for this user
-    const { rows: existingAlerts } = await pool.query(
-      `SELECT 1 FROM ingestion_alerts
-       WHERE NOT resolved AND $1 = ANY(user_ids)
-       LIMIT 1`,
-      [userId]
-    );
-    if (existingAlerts.length > 0) continue;
-
-    // Get this user's conflicts to analyze minority status
-    const { rows: userConflicts } = await pool.query(
-      `SELECT c.type, c.existing_id, c.existing_hash, c.conflicting_hash
-       FROM ingestion_conflicts c
-       WHERE c.user_id = $1 AND c.created_at > now() - interval '7 days'`,
-      [userId]
-    );
-
-    let minorityCount = 0;
-    const counterpartUsers = new Set();
-
-    // Batch-fetch other submitters for all conflicted entries to avoid N+1 queries
-    const globalConflictIds = userConflicts.filter(c => c.type === 'global').map(c => c.existing_id);
-    const tradeConflictIds = userConflicts.filter(c => c.type !== 'global').map(c => c.existing_id);
-
-    // Map existing_id → set of other user_ids who confirmed the canonical entry
-    const confirmersMap = new Map();
-
-    if (globalConflictIds.length > 0) {
-      const { rows } = await pool.query(
-        `SELECT global_id, user_id FROM ingested_global_submissions
-         WHERE global_id = ANY($1) AND user_id != $2`,
-        [globalConflictIds, userId]
-      );
-      for (const r of rows) {
-        if (!confirmersMap.has(r.global_id)) confirmersMap.set(r.global_id, new Set());
-        confirmersMap.get(r.global_id).add(String(r.user_id));
-      }
-    }
-    if (tradeConflictIds.length > 0) {
-      const { rows } = await pool.query(
-        `SELECT trade_message_id, user_id FROM ingested_trade_submissions
-         WHERE trade_message_id = ANY($1) AND user_id != $2`,
-        [tradeConflictIds, userId]
-      );
-      for (const r of rows) {
-        if (!confirmersMap.has(r.trade_message_id)) confirmersMap.set(r.trade_message_id, new Set());
-        confirmersMap.get(r.trade_message_id).add(String(r.user_id));
-      }
-    }
-
-    for (const conflict of userConflicts) {
-      const others = confirmersMap.get(conflict.existing_id);
-      if (others && others.size > 0) {
-        // User is in the minority: at least one other user confirmed the canonical version
-        minorityCount++;
-        for (const uid of others) counterpartUsers.add(uid);
-      }
-    }
-
-    const minorityRate = minorityCount / userConflicts.length;
-
-    // Alert conditions: high minority rate AND multiple counterpart users
-    if (minorityRate >= 0.8 && counterpartUsers.size >= 3) {
-      await pool.query(
-        `INSERT INTO ingestion_alerts (type, user_ids, details)
-         VALUES ('conflict_pattern', $1, $2)`,
-        [
-          [userId],
-          JSON.stringify({
-            conflict_count: parseInt(conflictCount),
-            minority_rate: Math.round(minorityRate * 100),
-            counterpart_count: counterpartUsers.size,
-            period: '7 days',
-          }),
-        ]
-      );
-    }
-  }
-
-  // --- Additional fraud analyses ---
-
-  // Majority swap: always runs (requires 3+ conflict users, self-gating)
-  try { await resolveMajorityConflicts(); }
-  catch (err) { console.error('[ingestion] Majority conflict resolution failed:', err); }
-
-  // Statistical analyses: only meaningful with enough active contributors
-  const { rows: [{ count: activeCount }] } = await pool.query(
-    `SELECT count(DISTINCT user_id) FROM ingested_global_submissions
-     WHERE submitted_at > now() - interval '7 days'`
-  );
-  if (parseInt(activeCount) >= MIN_ACTIVE_CONTRIBUTORS) {
-    try { await detectCollusion(); }
-    catch (err) { console.error('[ingestion] Collusion detection failed:', err); }
-
-    try { await detectSoloFabrication(); }
-    catch (err) { console.error('[ingestion] Solo fabrication detection failed:', err); }
-  }
-}
-
-// --- Majority Conflict Resolution ---
-
-/**
- * When a conflicting version of a global event has more supporters than the
- * canonical entry, swap them. The original submitter becomes the conflict,
- * the majority version becomes canonical.
- *
- * Only processes 'global' type conflicts (trade messages don't have confirmation
- * thresholds). Requires at least MAJORITY_SWAP_MIN_USERS (3) conflict users
- * AND strictly more than the existing entry's confirmation count.
- */
-async function resolveMajorityConflicts() {
-  const { rows: candidates } = await pool.query(`
-    SELECT
-      c.existing_id,
-      c.conflicting_hash,
-      ig.confirmation_count AS existing_confirmations,
-      ig.content_hash AS existing_hash,
-      count(DISTINCT c.user_id) AS conflict_user_count,
-      array_agg(DISTINCT c.user_id) AS conflict_user_ids,
-      (array_agg(c.conflicting_data ORDER BY c.created_at ASC))[1] AS conflicting_data
-    FROM ingestion_conflicts c
-    JOIN ingested_globals ig ON ig.id = c.existing_id
-    WHERE c.type = 'global'
-      AND c.created_at > now() - interval '7 days'
-      -- Cooldown: skip globals that were already swapped in the last 24h to prevent ping-pong
-      AND NOT EXISTS (
-        SELECT 1 FROM ingestion_alerts
-        WHERE type = 'majority_swap'
-          AND (details->>'global_id')::int = c.existing_id
-          AND created_at > now() - interval '24 hours'
-      )
-    GROUP BY c.existing_id, c.conflicting_hash, ig.confirmation_count, ig.content_hash
-    HAVING count(DISTINCT c.user_id) >= $1
-       AND count(DISTINCT c.user_id) > ig.confirmation_count
-    LIMIT 50
-  `, [MAJORITY_SWAP_MIN_USERS]);
-
-  // Pre-fetch all submission weights to avoid N+1 queries inside the transaction.
-  // getSubmissionWeight() uses pool.query() internally — calling it inside a
-  // startTransaction() block would acquire separate connections and risk leaks.
-  const allUserIds = new Set();
-  for (const c of candidates) {
-    for (const uid of c.conflict_user_ids) allUserIds.add(String(uid));
-  }
-  const weightMap = new Map();
-  for (const uid of allUserIds) {
-    weightMap.set(uid, await getSubmissionWeight(uid));
-  }
-
-  for (const candidate of candidates) {
-    const client = await startTransaction();
-    try {
-      const newData = typeof candidate.conflicting_data === 'string'
-        ? JSON.parse(candidate.conflicting_data)
-        : candidate.conflicting_data;
-
-      // 1. Snapshot the current canonical entry for the reverse conflict record
-      const { rows: [oldEntry] } = await client.query(
-        `SELECT global_type, player_name, target_name, value, value_unit,
-                location, is_hof, is_ath, event_timestamp
-         FROM ingested_globals WHERE id = $1`,
-        [candidate.existing_id]
-      );
-
-      const oldData = {
-        type: oldEntry.global_type,
-        player: oldEntry.player_name,
-        target: oldEntry.target_name,
-        value: oldEntry.value != null ? parseFloat(oldEntry.value) : null,
-        unit: oldEntry.value_unit,
-        location: oldEntry.location,
-        hof: oldEntry.is_hof,
-        ath: oldEntry.is_ath,
-        timestamp: oldEntry.event_timestamp,
-      };
-
-      // 2. Get existing submitters (will become conflict users)
-      const { rows: existingSubs } = await client.query(
-        'SELECT user_id FROM ingested_global_submissions WHERE global_id = $1',
-        [candidate.existing_id]
-      );
-
-      // 3. Update canonical entry with the majority version
-      await client.query(
-        `UPDATE ingested_globals SET
-           content_hash = $1,
-           global_type = $2,
-           player_name = $3,
-           target_name = $4,
-           value = $5,
-           value_unit = COALESCE($6, 'PED'),
-           location = $7,
-           is_hof = COALESCE($8, false),
-           is_ath = COALESCE($9, false)
-         WHERE id = $10`,
-        [
-          candidate.conflicting_hash,
-          newData.type, newData.player, newData.target,
-          newData.value, newData.unit || 'PED',
-          newData.location || null,
-          newData.hof ?? false, newData.ath ?? false,
-          candidate.existing_id,
-        ]
-      );
-
-      // 4. Delete old submissions
-      await client.query(
-        'DELETE FROM ingested_global_submissions WHERE global_id = $1',
-        [candidate.existing_id]
-      );
-
-      // 5. Insert submissions for the conflict users (with pre-fetched weights)
-      const swapTs = newData.timestamp || new Date().toISOString();
-      for (const userId of candidate.conflict_user_ids) {
-        const weight = weightMap.get(String(userId)) || 1;
-        await client.query(
-          `INSERT INTO ingested_global_submissions (global_id, user_id, weight, event_timestamp)
-           VALUES ($1, $2, $3, $4)
-           ON CONFLICT (global_id, user_id) DO NOTHING`,
-          [candidate.existing_id, userId, weight, swapTs]
-        );
-      }
-
-      // 6. Recalculate confirmation_count from actual submissions
-      const { rows: [{ total_weight: newWeight }] } = await client.query(
-        `SELECT COALESCE(SUM(weight), 0) AS total_weight
-         FROM ingested_global_submissions WHERE global_id = $1`,
-        [candidate.existing_id]
-      );
-      const newCount = parseInt(newWeight);
-      const nowConfirmed = newCount >= GLOBAL_CONFIRM_THRESHOLD;
-
-      await client.query(
-        `UPDATE ingested_globals
-         SET confirmation_count = $1,
-             confirmed = $2,
-             confirmed_at = CASE WHEN $2 AND confirmed_at IS NULL THEN now() ELSE confirmed_at END
-         WHERE id = $3`,
-        [newCount, nowConfirmed, candidate.existing_id]
-      );
-
-      // 7. Create conflict records for original submitters
-      for (const oldSub of existingSubs) {
-        await client.query(
-          `INSERT INTO ingestion_conflicts (type, existing_id, existing_hash, conflicting_hash, conflicting_data, user_id)
-           VALUES ('global', $1, $2, $3, $4, $5)`,
-          [
-            candidate.existing_id,
-            candidate.conflicting_hash,
-            candidate.existing_hash,
-            JSON.stringify(oldData),
-            oldSub.user_id,
-          ]
-        );
-      }
-
-      // 8. Delete the old conflict records that triggered this swap
-      await client.query(
-        `DELETE FROM ingestion_conflicts
-         WHERE type = 'global'
-           AND existing_id = $1
-           AND conflicting_hash = $2`,
-        [candidate.existing_id, candidate.conflicting_hash]
-      );
-
-      // 9. Create audit alert
-      await client.query(
-        `INSERT INTO ingestion_alerts (type, user_ids, details)
-         VALUES ('majority_swap', $1, $2)`,
-        [
-          [
-            ...existingSubs.map(s => s.user_id),
-            ...candidate.conflict_user_ids,
-          ],
-          JSON.stringify({
-            global_id: candidate.existing_id,
-            old_hash: candidate.existing_hash,
-            new_hash: candidate.conflicting_hash,
-            old_submitter_count: existingSubs.length,
-            new_submitter_count: parseInt(candidate.conflict_user_count),
-          }),
-        ]
-      );
-
-      await client.query('COMMIT');
-      console.log('[ingestion] Majority swap for global %d: %d→%d submitters',
-        candidate.existing_id, existingSubs.length, parseInt(candidate.conflict_user_count));
-    } catch (err) {
-      await client.query('ROLLBACK');
-      console.error('[ingestion] Majority swap failed for global', candidate.existing_id, err);
-    } finally {
-      client.release();
-    }
-  }
-}
+// --- Background: Fraud Detection ---
 
 // --- Collusion Detection ---
 
@@ -1538,31 +1106,35 @@ export async function parseRequestBody(request) {
   return await request.json();
 }
 
-// --- Throttled Conflict Analysis Trigger ---
+// --- Throttled Fraud Detection Trigger ---
 
-const CONFLICT_ANALYSIS_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
-let _lastConflictAnalysis = 0;
-let _conflictAnalysisRunning = false;
+const FRAUD_DETECTION_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
+let _lastFraudDetection = 0;
+let _fraudDetectionRunning = false;
 
 /**
- * Fire-and-forget conflict analysis, throttled to at most once per 15 minutes.
+ * Fire-and-forget fraud detection, throttled to at most once per 15 minutes.
+ * Runs collusion and solo fabrication checks when enough active contributors exist.
  * Safe to call from hot paths (POST endpoints) — returns immediately.
- *
- * Race-condition safe: Node.js runs JS on a single event-loop thread, so the
- * synchronous guard checks (_conflictAnalysisRunning, timestamp comparison)
- * and flag assignments cannot interleave between concurrent requests.
- * The async work only begins after the guards have been set.
  */
-export function maybeAnalyzeConflicts() {
+export function maybeRunFraudDetection() {
   const now = Date.now();
-  if (_conflictAnalysisRunning || now - _lastConflictAnalysis < CONFLICT_ANALYSIS_INTERVAL_MS) {
+  if (_fraudDetectionRunning || now - _lastFraudDetection < FRAUD_DETECTION_INTERVAL_MS) {
     return;
   }
-  _lastConflictAnalysis = now;
-  _conflictAnalysisRunning = true;
+  _lastFraudDetection = now;
+  _fraudDetectionRunning = true;
 
-  // Intentional fire-and-forget — result is deliberately discarded.
-  void analyzeConflicts()
-    .catch(err => console.error('[ingestion] Conflict analysis failed:', err))
-    .finally(() => { _conflictAnalysisRunning = false; });
+  void (async () => {
+    const { rows: [{ count: activeCount }] } = await pool.query(
+      `SELECT count(DISTINCT user_id) FROM ingested_global_submissions
+       WHERE submitted_at > now() - interval '7 days'`
+    );
+    if (parseInt(activeCount) >= MIN_ACTIVE_CONTRIBUTORS) {
+      await detectCollusion();
+      await detectSoloFabrication();
+    }
+  })()
+    .catch(err => console.error('[ingestion] Fraud detection failed:', err))
+    .finally(() => { _fraudDetectionRunning = false; });
 }
