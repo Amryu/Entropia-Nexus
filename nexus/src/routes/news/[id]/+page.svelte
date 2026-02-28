@@ -1,11 +1,26 @@
 <script>
   // @ts-nocheck
   import { sanitizeHtml } from '$lib/sanitize';
+  import { page } from '$app/stores';
+  import { onMount } from 'svelte';
 
   /** @type {import('./$types').PageData} */
   export let data;
 
   $: announcement = data.announcement;
+
+  onMount(() => {
+    const autoplayId = ($page.url.searchParams.get('autoplay') || '').replace(/[^a-zA-Z0-9_-]/g, '');
+    if (autoplayId) {
+      const iframe = document.querySelector(`.article-body iframe[src*="/embed/${autoplayId}"]`);
+      if (iframe) {
+        const url = new URL(iframe.src);
+        url.searchParams.set('autoplay', '1');
+        iframe.src = url.toString();
+        iframe.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+  });
 
   function formatDate(dateStr) {
     return new Date(dateStr).toLocaleDateString('en-US', {
