@@ -3,6 +3,7 @@ import { getResponse } from '$lib/util.js';
 import { requireVerifiedAPI } from '$lib/server/auth.js';
 import { checkRateLimit } from '$lib/server/rateLimiter.js';
 import {
+  isIngestionAllowed,
   isIngestionBanned,
   validateTradeMessage,
   ingestTrades,
@@ -29,6 +30,10 @@ export async function POST({ request, locals }) {
     );
   }
 
+  // Allowlist check (OAuth client application must be approved)
+  if (!(await isIngestionAllowed(locals.oauthClientId || null))) {
+    return getResponse({ error: 'This application is not authorized for ingestion' }, 403);
+  }
   if (await isIngestionBanned(user.id)) {
     return getResponse({ error: 'Ingestion access revoked' }, 403);
   }

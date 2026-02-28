@@ -74,6 +74,23 @@ export async function isIngestionBanned(userId) {
   return rows.length > 0;
 }
 
+// --- Allowlist Check ---
+
+/**
+ * Check if an OAuth client application is allowed to submit ingestion data.
+ * Non-OAuth requests (e.g. cookie-based admin sessions) are always allowed.
+ * @param {string|null} oauthClientId - The OAuth client_id from the request, or null for non-OAuth requests
+ * @returns {Promise<boolean>}
+ */
+export async function isIngestionAllowed(oauthClientId) {
+  if (!oauthClientId) return true; // Non-OAuth (admin web session)
+  const { rows } = await pool.query(
+    'SELECT 1 FROM ingestion_allowed_clients WHERE client_id = $1 LIMIT 1',
+    [oauthClientId]
+  );
+  return rows.length > 0;
+}
+
 // --- Validation ---
 
 /**
@@ -375,7 +392,8 @@ export async function getIngestionStats() {
         (SELECT count(DISTINCT user_id) FROM ingested_trade_submissions) AS active_contributors,
       (SELECT count(*) FROM ingestion_bans) AS active_bans,
       (SELECT count(*) FROM ingestion_alerts WHERE NOT resolved) AS pending_alerts,
-      (SELECT count(*) FROM ingestion_conflicts) AS total_conflicts
+      (SELECT count(*) FROM ingestion_conflicts) AS total_conflicts,
+      (SELECT count(*) FROM ingestion_allowed_clients) AS allowed_clients
   `);
   return rows[0];
 }
@@ -487,6 +505,47 @@ export async function banUser(userId, reason, bannedBy) {
 
 export async function unbanUser(userId) {
   await pool.query('DELETE FROM ingestion_bans WHERE user_id = $1', [userId]);
+}
+
+// --- Admin: Allowed Clients (OAuth Applications) ---
+
+export async function getAllowedClients(page = 1, limit = 50) {
+  const offset = (page - 1) * limit;
+  const { rows } = await pool.query(
+    `SELECT ac.id, ac.client_id, ac.allowed_at, ac.notes,
+            oc.name AS client_name, oc.description AS client_description,
+            oc.website_url, oc.is_confidential,
+            ab.name AS allowed_by_name
+     FROM ingestion_allowed_clients ac
+     JOIN oauth_clients oc ON oc.id = ac.client_id
+     JOIN ONLY users ab ON ab.id = ac.allowed_by
+     ORDER BY ac.allowed_at DESC
+     LIMIT $1 OFFSET $2`,
+    [limit, offset]
+  );
+  const { rows: countRows } = await pool.query(
+    'SELECT count(*) AS total FROM ingestion_allowed_clients'
+  );
+  return { rows, total: parseInt(countRows[0].total) };
+}
+
+export async function addAllowedClient(clientId, allowedBy, notes = null) {
+  const { rows } = await pool.query(
+    `INSERT INTO ingestion_allowed_clients (client_id, allowed_by, notes)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (client_id) DO NOTHING
+     RETURNING id`,
+    [clientId, allowedBy, notes]
+  );
+  return rows.length > 0;
+}
+
+export async function removeAllowedClient(clientId) {
+  const { rowCount } = await pool.query(
+    'DELETE FROM ingestion_allowed_clients WHERE client_id = $1',
+    [clientId]
+  );
+  return rowCount > 0;
 }
 
 // --- Admin: Purge ---

@@ -6,10 +6,12 @@
   let alerts = data.alerts;
   let users = data.users;
   let conflicts = data.conflicts;
+  let allowedClients = data.allowedClients || [];
 
   let showBanDialog = false;
   let showPurgeDialog = false;
   let showResolveDialog = false;
+  let showAddClientDialog = false;
   let selectedUserId = null;
   let selectedUserName = '';
   let selectedAlertId = null;
@@ -17,6 +19,11 @@
   let resolveNotes = '';
   let actionError = '';
   let actionLoading = false;
+
+  // Add client dialog state
+  let oauthClients = []; // All registered OAuth apps (fetched on demand)
+  let oauthClientsLoaded = false;
+  let addClientNotes = '';
 
   // Active section tab
   let activeTab = 'alerts';
@@ -150,19 +157,87 @@
 
   async function reloadData() {
     try {
-      const [statsRes, alertsRes, usersRes, conflictsRes] = await Promise.all([
+      const [statsRes, alertsRes, usersRes, conflictsRes, allowedRes] = await Promise.all([
         fetch('/api/admin/ingestion/stats'),
         fetch('/api/admin/ingestion/alerts?limit=10'),
         fetch('/api/admin/ingestion/users?limit=20'),
         fetch('/api/admin/ingestion/conflicts?limit=20'),
+        fetch('/api/admin/ingestion/allowed?limit=50'),
       ]);
       stats = await statsRes.json();
       const alertData = await alertsRes.json();
       alerts = alertData.rows;
       users = await usersRes.json();
       conflicts = await conflictsRes.json();
+      const allowedData = await allowedRes.json();
+      allowedClients = allowedData.rows || [];
     } catch (e) {
       console.error('Failed to reload:', e);
+    }
+  }
+
+  // --- Allowed Clients (OAuth Applications) ---
+
+  async function openAddClient() {
+    addClientNotes = '';
+    actionError = '';
+    if (!oauthClientsLoaded) {
+      try {
+        const res = await fetch('/api/admin/oauth/clients');
+        if (res.ok) {
+          const data = await res.json();
+          oauthClients = data.clients || [];
+        }
+      } catch (e) {
+        console.error('Failed to load OAuth clients:', e);
+      }
+      oauthClientsLoaded = true;
+    }
+    showAddClientDialog = true;
+  }
+
+  function availableOAuthClients() {
+    const allowedIds = new Set(allowedClients.map(c => c.client_id));
+    return oauthClients.filter(c => !allowedIds.has(c.id));
+  }
+
+  async function handleAddClient(clientId) {
+    actionLoading = true;
+    actionError = '';
+    try {
+      const res = await fetch('/api/admin/ingestion/allowed', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId, notes: addClientNotes.trim() || null }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        actionError = data.error || 'Failed to add application';
+        return;
+      }
+      showAddClientDialog = false;
+      oauthClientsLoaded = false; // refresh on next open
+      await reloadData();
+    } catch (e) {
+      actionError = 'Network error';
+    } finally {
+      actionLoading = false;
+    }
+  }
+
+  async function handleRemoveClient(clientId) {
+    try {
+      const res = await fetch('/api/admin/ingestion/allowed', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId }),
+      });
+      if (res.ok) {
+        oauthClientsLoaded = false;
+        await reloadData();
+      }
+    } catch (e) {
+      console.error('Failed to remove client:', e);
     }
   }
 </script>
@@ -212,6 +287,10 @@
       <h3>Total Conflicts</h3>
       <p class="stat-value">{formatNumber(stats.total_conflicts)}</p>
     </div>
+    <div class="stat-card">
+      <h3>Allowed Clients</h3>
+      <p class="stat-value">{formatNumber(stats.allowed_clients)}</p>
+    </div>
   </div>
 
   <!-- Tabs -->
@@ -224,6 +303,9 @@
     </button>
     <button class="tab" class:active={activeTab === 'conflicts'} on:click={() => activeTab = 'conflicts'}>
       Conflicts
+    </button>
+    <button class="tab" class:active={activeTab === 'allowed'} on:click={() => activeTab = 'allowed'}>
+      Allowed Clients ({formatNumber(stats.allowed_clients)})
     </button>
   </div>
 
@@ -359,6 +441,49 @@
       {/if}
     </div>
   {/if}
+
+  <!-- Allowed Clients Tab -->
+  {#if activeTab === 'allowed'}
+    <div class="section">
+      <div class="section-header">
+        <p class="section-description">Only approved OAuth applications can submit ingestion data. Distribution endpoints remain open to all verified users.</p>
+        <button class="btn btn-primary" on:click={openAddClient}>Add Application</button>
+      </div>
+
+      {#if allowedClients.length === 0}
+        <p class="empty-state">No applications configured — ingestion submissions are blocked for all clients</p>
+      {:else}
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Application</th>
+              <th>Client ID</th>
+              <th>Approved By</th>
+              <th>Date</th>
+              <th>Notes</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each allowedClients as client}
+              <tr>
+                <td>{client.client_name}</td>
+                <td class="hash-cell">{client.client_id}</td>
+                <td>{client.allowed_by_name || '-'}</td>
+                <td>{formatDate(client.allowed_at)}</td>
+                <td class="notes-cell">{client.notes || '-'}</td>
+                <td>
+                  <button class="btn btn-small btn-danger" on:click={() => handleRemoveClient(client.client_id)}>
+                    Remove
+                  </button>
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      {/if}
+    </div>
+  {/if}
 </div>
 
 <!-- Ban Dialog -->
@@ -443,6 +568,58 @@
         <button class="btn btn-success" on:click={handleResolve} disabled={actionLoading}>
           {actionLoading ? 'Resolving...' : 'Mark Resolved'}
         </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Add Application Dialog -->
+{#if showAddClientDialog}
+  <div class="dialog-overlay" role="presentation" on:click={() => showAddClientDialog = false}>
+    <div class="dialog dialog-wide" on:click|stopPropagation>
+      <h3>Allow Application</h3>
+      <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 16px;">
+        Select a registered OAuth application to grant ingestion access.
+      </p>
+
+      {#if actionError}
+        <div class="error-message">{actionError}</div>
+      {/if}
+
+      {#if availableOAuthClients().length > 0}
+        <div class="search-results">
+          {#each availableOAuthClients() as app}
+            <button
+              class="search-result-item"
+              on:click={() => handleAddClient(app.id)}
+              disabled={actionLoading}
+            >
+              <div>
+                <div class="search-result-name">{app.name}</div>
+                {#if app.description}
+                  <div class="search-result-eu">{app.description}</div>
+                {/if}
+              </div>
+              <span class="badge">{app.is_confidential ? 'Confidential' : 'Public'}</span>
+            </button>
+          {/each}
+        </div>
+      {:else}
+        <p class="search-status">No unregistered OAuth applications available</p>
+      {/if}
+
+      <div class="form-group" style="margin-top: 12px;">
+        <label for="client-notes">Notes (optional)</label>
+        <input
+          id="client-notes"
+          type="text"
+          bind:value={addClientNotes}
+          placeholder="e.g. Official desktop client"
+        />
+      </div>
+
+      <div class="dialog-buttons">
+        <button class="btn btn-secondary" on:click={() => showAddClientDialog = false}>Close</button>
       </div>
     </div>
   </div>
@@ -801,6 +978,105 @@
     border-radius: 4px;
     margin-bottom: 16px;
     font-size: 14px;
+  }
+
+  /* Section Header */
+  .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 16px;
+    gap: 16px;
+  }
+
+  .section-description {
+    color: var(--text-muted);
+    font-size: 13px;
+    margin: 0;
+  }
+
+  .btn-primary {
+    background-color: var(--accent-color);
+    color: white;
+    white-space: nowrap;
+  }
+
+  .notes-cell {
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-muted);
+    font-size: 13px;
+  }
+
+  /* Add Application Dialog */
+  .dialog-wide {
+    max-width: 520px;
+  }
+
+  .form-group input[type="text"] {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    font-size: 14px;
+    box-sizing: border-box;
+    font-family: inherit;
+  }
+
+  .search-status {
+    color: var(--text-muted);
+    font-size: 13px;
+    margin: 8px 0;
+  }
+
+  .search-results {
+    max-height: 300px;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+  }
+
+  .search-result-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    padding: 10px 12px;
+    border: none;
+    border-bottom: 1px solid var(--border-color);
+    background: none;
+    color: var(--text-color);
+    cursor: pointer;
+    font-size: 14px;
+    text-align: left;
+    font-family: inherit;
+  }
+
+  .search-result-item:last-child {
+    border-bottom: none;
+  }
+
+  .search-result-item:hover {
+    background-color: var(--hover-color);
+  }
+
+  .search-result-item:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .search-result-name {
+    font-weight: 500;
+  }
+
+  .search-result-eu {
+    color: var(--text-muted);
+    font-size: 12px;
+    margin-top: 2px;
   }
 
   @media (max-width: 768px) {
