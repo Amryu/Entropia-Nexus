@@ -5,7 +5,7 @@
 -->
 <script>
   // @ts-nocheck
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
   import { Chart, LineController, LinearScale, PointElement, LineElement, TimeScale,
            Tooltip, Filler, BarController, BarElement, CategoryScale,
            ArcElement, DoughnutController, Legend } from 'chart.js';
@@ -14,6 +14,8 @@
   Chart.register(LineController, LinearScale, PointElement, LineElement, TimeScale,
                  Tooltip, Filler, BarController, BarElement, CategoryScale,
                  ArcElement, DoughnutController, Legend);
+
+  import { afterNavigate } from '$app/navigation';
 
   export let data;
 
@@ -156,9 +158,10 @@
       if (!res.ok) return;
       stats = await res.json();
       summary = stats.summary;
-      buildCharts();
     } catch { /* ignore */ }
     statsLoading = false;
+    await tick();
+    if (stats) buildCharts();
   }
 
   // Load more (cursor pagination)
@@ -384,8 +387,18 @@
     });
   }
 
-  onMount(() => {
+  afterNavigate(() => {
+    // Reinitialize from SSR data on every navigation (including initial)
+    globals = [...(data.globals || [])];
+    summary = { ...EMPTY_SUMMARY, ...(data.summary || {}) };
+    latestTimestamp = globals.length > 0 ? globals[0].timestamp : null;
+    hasMore = globals.length >= 50;
+    newIds = new Set();
+    stats = null;
     fetchStats();
+  });
+
+  onMount(() => {
     pollTimer = setInterval(poll, POLL_INTERVAL);
   });
 
