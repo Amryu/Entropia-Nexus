@@ -1,7 +1,7 @@
 //@ts-nocheck
 import { getResponse } from '$lib/util.js';
 import { requireVerifiedAPI } from '$lib/server/auth.js';
-import { checkRateLimit, getRateLimitHeaders } from '$lib/server/rateLimiter.js';
+import { checkRateLimit, getRateLimitHeaders, checkConcurrentUploads, startUpload, endUpload } from '$lib/server/rateLimiter.js';
 import {
   isIngestionAllowed,
   isIngestionBanned,
@@ -25,57 +25,67 @@ const RATE_LIMIT_WINDOW = 60_000; // 20 requests per 60 seconds
 export async function POST({ request, locals }) {
   const user = requireVerifiedAPI(locals);
 
-  // Rate limit
-  const rl = checkRateLimit(`ingest-globals:${user.id}`, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW);
-  if (!rl.allowed) {
-    return getResponse(
-      { error: 'Rate limited', retryAfter: Math.ceil(rl.resetIn / 1000) },
-      429
-    );
-  }
-
-  // Allowlist check (OAuth client application must be approved)
-  if (!(await isIngestionAllowed(locals.oauthClientId || null))) {
-    return getResponse({ error: 'This application is not authorized for ingestion' }, 403);
-  }
-  if (await isIngestionBanned(user.id)) {
-    return getResponse({ error: 'Ingestion access revoked' }, 403);
-  }
-
-  // Parse body (supports gzip)
-  let body;
-  try {
-    body = await parseRequestBody(request);
-  } catch (e) {
-    return getResponse({ error: 'Invalid request body' }, 400);
-  }
-
-  const events = body?.globals;
-  if (!Array.isArray(events) || events.length === 0) {
-    return getResponse({ error: 'Missing or empty globals array' }, 400);
-  }
-  if (events.length > MAX_BATCH_SIZE) {
-    return getResponse({ error: `Batch too large (max ${MAX_BATCH_SIZE})` }, 400);
-  }
-
-  // Validate each event
-  const validEvents = [];
-  const errors = [];
-  for (let i = 0; i < events.length; i++) {
-    const err = validateGlobalEvent(events[i]);
-    if (err) {
-      errors.push({ index: i, error: err });
-    } else {
-      validEvents.push(events[i]);
+  // Rate limit (admins bypass)
+  const isAdmin = user.grants?.includes('admin.panel');
+  if (!isAdmin) {
+    const rl = checkRateLimit(`ingest-globals:${user.id}`, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW);
+    if (!rl.allowed) {
+      return getResponse(
+        { error: 'Rate limited', retryAfter: Math.ceil(rl.resetIn / 1000) },
+        429
+      );
     }
   }
 
-  if (validEvents.length === 0) {
-    return getResponse({ error: 'No valid events in batch', details: errors }, 400);
+  // Concurrent upload guard (1 per user per endpoint)
+  const uploadKey = `ingest-globals:${user.id}`;
+  if (!checkConcurrentUploads(uploadKey, 1)) {
+    return getResponse({ error: 'Concurrent ingestion in progress' }, 409);
   }
+  startUpload(uploadKey);
 
-  // Process
   try {
+    // Allowlist check (OAuth client application must be approved)
+    if (!(await isIngestionAllowed(locals.oauthClientId || null))) {
+      return getResponse({ error: 'This application is not authorized for ingestion' }, 403);
+    }
+    if (await isIngestionBanned(user.id)) {
+      return getResponse({ error: 'Ingestion access revoked' }, 403);
+    }
+
+    // Parse body (supports gzip)
+    let body;
+    try {
+      body = await parseRequestBody(request);
+    } catch (e) {
+      return getResponse({ error: 'Invalid request body' }, 400);
+    }
+
+    const events = body?.globals;
+    if (!Array.isArray(events) || events.length === 0) {
+      return getResponse({ error: 'Missing or empty globals array' }, 400);
+    }
+    if (events.length > MAX_BATCH_SIZE) {
+      return getResponse({ error: `Batch too large (max ${MAX_BATCH_SIZE})` }, 400);
+    }
+
+    // Validate each event
+    const validEvents = [];
+    const errors = [];
+    for (let i = 0; i < events.length; i++) {
+      const err = validateGlobalEvent(events[i]);
+      if (err) {
+        errors.push({ index: i, error: err });
+      } else {
+        validEvents.push(events[i]);
+      }
+    }
+
+    if (validEvents.length === 0) {
+      return getResponse({ error: 'No valid events in batch', details: errors }, 400);
+    }
+
+    // Process
     const result = await ingestGlobals(user.id, validEvents);
     if (result.rejected) {
       return getResponse({ error: result.reason }, 400);
@@ -91,6 +101,8 @@ export async function POST({ request, locals }) {
   } catch (e) {
     console.error('[ingestion] Failed to ingest globals:', e);
     return getResponse({ error: 'Internal server error' }, 500);
+  } finally {
+    endUpload(uploadKey);
   }
 }
 
