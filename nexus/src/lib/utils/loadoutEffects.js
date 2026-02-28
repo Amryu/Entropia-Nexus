@@ -273,7 +273,7 @@ export function summarizeEffects({ itemEffects = [], actionEffects = [], bonusEf
 export function getOffensiveTotals(allEffects) {
   const list = Array.isArray(allEffects) ? allEffects : [];
   return {
-    damage: (list.find(effect => effect?.prefix?.type === 'mult' && effect?.prefix?.base === 'Damage')?.signedTotal) ?? 0,
+    damage: (list.find(effect => effect?.prefix?.type === 'mult' && effect?.prefix?.base === 'Damage Done')?.signedTotal) ?? 0,
     reload: (list.find(effect => effect?.prefix?.type === 'mult' && effect?.prefix?.base === 'Reload Speed')?.signedTotal) ?? 0,
     critChance: (list.find(effect => effect?.prefix?.type === 'add' && effect?.prefix?.base === 'Critical Chance')?.signedTotal) ?? 0,
     critDamage: (list.find(effect => effect?.prefix?.type === 'add' && effect?.prefix?.base === 'Critical Damage')?.signedTotal) ?? 0
