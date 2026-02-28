@@ -749,14 +749,16 @@ export const UpsertConfigs = {
     table: "Mobs",
     relationChangeFunc: async (client, id, x) => {
       // Update MobSpecies.CodexType and CodexBaseCost based on selection and Mob Type
+      // _newSpecies comes from the inline species dialog; Properties from normal mob edits
       try {
         if (x.Species?.Name) {
+          const speciesProps = x.Species?._newSpecies || x.Species?.Properties;
           const desiredType = x.Type === 'Asteroid'
             ? 'Asteroid'
-            : ((x.Species?.Properties?.CodexType === 'MobLooter') ? 'MobLooter' : 'Mob');
+            : ((speciesProps?.CodexType === 'MobLooter') ? 'MobLooter' : 'Mob');
           await client.query(`UPDATE ONLY "MobSpecies" SET "CodexType" = $2 WHERE "Name" = $1`, [x.Species.Name, desiredType]);
 
-          const baseCost = x.Species?.Properties?.CodexBaseCost;
+          const baseCost = speciesProps?.CodexBaseCost;
           if (baseCost != null && !Number.isNaN(Number(baseCost))) {
             await client.query(`UPDATE ONLY "MobSpecies" SET "CodexBaseCost" = $2 WHERE "Name" = $1`, [x.Species.Name, Number(baseCost)]);
           }
