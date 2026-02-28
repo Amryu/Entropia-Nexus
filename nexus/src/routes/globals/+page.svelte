@@ -17,7 +17,7 @@
 
   export let data;
 
-  $: ({ globals: initialGlobals, summary: initialSummary } = data);
+  const EMPTY_SUMMARY = { total_count: 0, total_value: 0, hof_count: 0, ath_count: 0 };
 
   const TYPE_CONFIG = {
     kill:       { label: 'Hunting',    cssClass: 'type-kill',      color: '#ef4444' },
@@ -46,13 +46,12 @@
     { value: 'all', label: 'All Time' },
   ];
 
-  let globals = [...initialGlobals];
-  let summary = { ...initialSummary };
+  let globals = [...(data.globals || [])];
+  let summary = { ...EMPTY_SUMMARY, ...(data.summary || {}) };
 
   // Filters
   let typeFilter = '';
   let playerFilter = '';
-  let teamFilter = '';
   let targetFilter = '';
   let minValue = '';
   let hofOnly = false;
@@ -118,7 +117,6 @@
     const params = new URLSearchParams();
     if (typeFilter) params.set('type', typeFilter);
     if (playerFilter) params.set('player', playerFilter);
-    if (teamFilter) params.set('team', teamFilter);
     if (targetFilter) params.set('target', targetFilter);
     if (minValue) params.set('min_value', minValue);
     if (hofOnly) params.set('hof', 'true');
@@ -406,8 +404,7 @@
       {/each}
     </div>
     <div class="text-filters">
-      <input type="text" placeholder="Player name..." bind:value={playerFilter} on:input={onFilterChange} class="filter-input" />
-      <input type="text" placeholder="Team name..." bind:value={teamFilter} on:input={onFilterChange} class="filter-input" />
+      <input type="text" placeholder="Player / Team..." bind:value={playerFilter} on:input={onFilterChange} class="filter-input" />
       <input type="text" placeholder="Target..." bind:value={targetFilter} on:input={onFilterChange} class="filter-input" />
       <input type="number" placeholder="Min PED" bind:value={minValue} on:input={onFilterChange} class="filter-input filter-input-short" />
       <label class="hof-toggle">
