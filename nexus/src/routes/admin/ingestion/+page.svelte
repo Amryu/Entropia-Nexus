@@ -1,0 +1,823 @@
+<script>
+  // @ts-nocheck
+  export let data;
+
+  let stats = data.stats;
+  let alerts = data.alerts;
+  let users = data.users;
+  let conflicts = data.conflicts;
+
+  let showBanDialog = false;
+  let showPurgeDialog = false;
+  let showResolveDialog = false;
+  let selectedUserId = null;
+  let selectedUserName = '';
+  let selectedAlertId = null;
+  let banReason = '';
+  let resolveNotes = '';
+  let actionError = '';
+  let actionLoading = false;
+
+  // Active section tab
+  let activeTab = 'alerts';
+
+  function formatNumber(n) {
+    return parseInt(n || 0).toLocaleString();
+  }
+
+  function formatDate(d) {
+    if (!d) return '-';
+    return new Date(d).toLocaleString();
+  }
+
+  function formatPercent(part, total) {
+    if (!total || total === '0') return '0%';
+    return Math.round((parseInt(part) / parseInt(total)) * 100) + '%';
+  }
+
+  function conflictRate(user) {
+    if (!user.submission_count || user.submission_count === '0') return '0%';
+    return (parseInt(user.conflict_count) / parseInt(user.submission_count) * 100).toFixed(1) + '%';
+  }
+
+  // --- Actions ---
+
+  function openBan(userId, userName) {
+    selectedUserId = userId;
+    selectedUserName = userName;
+    banReason = '';
+    actionError = '';
+    showBanDialog = true;
+  }
+
+  async function handleBan() {
+    if (!banReason.trim()) {
+      actionError = 'Reason is required';
+      return;
+    }
+    actionLoading = true;
+    actionError = '';
+    try {
+      const res = await fetch('/api/admin/ingestion/ban', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: selectedUserId, reason: banReason.trim() }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        actionError = data.error || 'Failed to ban user';
+        return;
+      }
+      showBanDialog = false;
+      await reloadData();
+    } catch (e) {
+      actionError = 'Network error';
+    } finally {
+      actionLoading = false;
+    }
+  }
+
+  async function handleUnban(userId) {
+    try {
+      const res = await fetch('/api/admin/ingestion/ban', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }),
+      });
+      if (res.ok) await reloadData();
+    } catch (e) {
+      console.error('Failed to unban:', e);
+    }
+  }
+
+  function openPurge(userId, userName) {
+    selectedUserId = userId;
+    selectedUserName = userName;
+    actionError = '';
+    showPurgeDialog = true;
+  }
+
+  async function handlePurge() {
+    actionLoading = true;
+    actionError = '';
+    try {
+      const res = await fetch(`/api/admin/ingestion/purge/${selectedUserId}`, {
+        method: 'POST',
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        actionError = data.error || 'Failed to purge data';
+        return;
+      }
+      showPurgeDialog = false;
+      await reloadData();
+    } catch (e) {
+      actionError = 'Network error';
+    } finally {
+      actionLoading = false;
+    }
+  }
+
+  function openResolve(alertId) {
+    selectedAlertId = alertId;
+    resolveNotes = '';
+    actionError = '';
+    showResolveDialog = true;
+  }
+
+  async function handleResolve() {
+    actionLoading = true;
+    actionError = '';
+    try {
+      const res = await fetch(`/api/admin/ingestion/alerts/${selectedAlertId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resolved: true, notes: resolveNotes.trim() || null }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        actionError = data.error || 'Failed to resolve alert';
+        return;
+      }
+      showResolveDialog = false;
+      await reloadData();
+    } catch (e) {
+      actionError = 'Network error';
+    } finally {
+      actionLoading = false;
+    }
+  }
+
+  async function reloadData() {
+    try {
+      const [statsRes, alertsRes, usersRes, conflictsRes] = await Promise.all([
+        fetch('/api/admin/ingestion/stats'),
+        fetch('/api/admin/ingestion/alerts?limit=10'),
+        fetch('/api/admin/ingestion/users?limit=20'),
+        fetch('/api/admin/ingestion/conflicts?limit=20'),
+      ]);
+      stats = await statsRes.json();
+      const alertData = await alertsRes.json();
+      alerts = alertData.rows;
+      users = await usersRes.json();
+      conflicts = await conflictsRes.json();
+    } catch (e) {
+      console.error('Failed to reload:', e);
+    }
+  }
+</script>
+
+<div class="ingestion-page">
+  <div class="breadcrumb">
+    <a href="/admin">Admin</a>
+    <span>/</span>
+    <span>Ingestion</span>
+  </div>
+
+  <h1>Data Ingestion</h1>
+  <p class="subtitle">Crowdsourced trade messages and global events from desktop clients</p>
+
+  <!-- Stats Grid -->
+  <div class="stats-grid">
+    <div class="stat-card">
+      <h3>Globals Ingested</h3>
+      <p class="stat-value">{formatNumber(stats.total_globals)}</p>
+      <p class="stat-detail">{formatPercent(stats.confirmed_globals, stats.total_globals)} confirmed</p>
+    </div>
+    <div class="stat-card">
+      <h3>Confirmed Globals</h3>
+      <p class="stat-value stat-approved">{formatNumber(stats.confirmed_globals)}</p>
+    </div>
+    <div class="stat-card">
+      <h3>Trade Messages</h3>
+      <p class="stat-value">{formatNumber(stats.total_trades)}</p>
+    </div>
+    <div class="stat-card">
+      <h3>Active Contributors</h3>
+      <p class="stat-value">{formatNumber(stats.active_contributors)}</p>
+    </div>
+    <div class="stat-card">
+      <h3>Pending Alerts</h3>
+      <p class="stat-value" class:stat-pending={parseInt(stats.pending_alerts) > 0}>
+        {formatNumber(stats.pending_alerts)}
+      </p>
+    </div>
+    <div class="stat-card">
+      <h3>Active Bans</h3>
+      <p class="stat-value" class:stat-denied={parseInt(stats.active_bans) > 0}>
+        {formatNumber(stats.active_bans)}
+      </p>
+    </div>
+    <div class="stat-card">
+      <h3>Total Conflicts</h3>
+      <p class="stat-value">{formatNumber(stats.total_conflicts)}</p>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab" class:active={activeTab === 'alerts'} on:click={() => activeTab = 'alerts'}>
+      Alerts {parseInt(stats.pending_alerts) > 0 ? `(${stats.pending_alerts})` : ''}
+    </button>
+    <button class="tab" class:active={activeTab === 'users'} on:click={() => activeTab = 'users'}>
+      Contributors
+    </button>
+    <button class="tab" class:active={activeTab === 'conflicts'} on:click={() => activeTab = 'conflicts'}>
+      Conflicts
+    </button>
+  </div>
+
+  <!-- Alerts Tab -->
+  {#if activeTab === 'alerts'}
+    <div class="section">
+      {#if alerts.length === 0}
+        <p class="empty-state">No pending alerts</p>
+      {:else}
+        {#each alerts as alert}
+          <div class="alert-card">
+            <div class="alert-header">
+              <span class="alert-type badge-warning">{alert.type.replace('_', ' ')}</span>
+              <span class="alert-date">{formatDate(alert.created_at)}</span>
+            </div>
+            <div class="alert-body">
+              <p><strong>Users:</strong> {(alert.user_names || []).filter(Boolean).join(', ') || 'Unknown'}</p>
+              {#if alert.details}
+                <div class="alert-details">
+                  {#if alert.details.conflict_count}
+                    <span>Conflicts: {alert.details.conflict_count}</span>
+                  {/if}
+                  {#if alert.details.minority_rate}
+                    <span>Minority rate: {alert.details.minority_rate}%</span>
+                  {/if}
+                  {#if alert.details.counterpart_count}
+                    <span>Counterparts: {alert.details.counterpart_count}</span>
+                  {/if}
+                </div>
+              {/if}
+            </div>
+            <div class="alert-actions">
+              <button class="btn btn-small btn-secondary" on:click={() => openResolve(alert.id)}>
+                Resolve
+              </button>
+              {#each (alert.user_ids || []) as uid}
+                <button class="btn btn-small btn-danger" on:click={() => openBan(uid, '')}>
+                  Ban User {uid}
+                </button>
+              {/each}
+            </div>
+          </div>
+        {/each}
+      {/if}
+    </div>
+  {/if}
+
+  <!-- Users Tab -->
+  {#if activeTab === 'users'}
+    <div class="section">
+      {#if users.length === 0}
+        <p class="empty-state">No contributors yet</p>
+      {:else}
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>User</th>
+              <th>Submissions</th>
+              <th>Conflicts</th>
+              <th>Conflict Rate</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each users as user}
+              <tr>
+                <td>
+                  <a href="/admin/users/{user.user_id}">{user.name || `User ${user.user_id}`}</a>
+                </td>
+                <td>{formatNumber(user.submission_count)}</td>
+                <td>{formatNumber(user.conflict_count)}</td>
+                <td>{conflictRate(user)}</td>
+                <td>
+                  {#if user.banned}
+                    <span class="status-badge status-banned">Banned</span>
+                  {:else}
+                    <span class="status-badge status-active">Active</span>
+                  {/if}
+                </td>
+                <td class="actions-cell">
+                  {#if user.banned}
+                    <button class="btn btn-small btn-success" on:click={() => handleUnban(user.user_id)}>
+                      Unban
+                    </button>
+                  {:else}
+                    <button class="btn btn-small btn-danger" on:click={() => openBan(user.user_id, user.name)}>
+                      Ban
+                    </button>
+                  {/if}
+                  <button class="btn btn-small btn-warning" on:click={() => openPurge(user.user_id, user.name)}>
+                    Purge
+                  </button>
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      {/if}
+    </div>
+  {/if}
+
+  <!-- Conflicts Tab -->
+  {#if activeTab === 'conflicts'}
+    <div class="section">
+      {#if conflicts.length === 0}
+        <p class="empty-state">No conflicts recorded</p>
+      {:else}
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>User</th>
+              <th>Existing Hash</th>
+              <th>Conflicting Hash</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each conflicts as conflict}
+              <tr>
+                <td><span class="badge">{conflict.type}</span></td>
+                <td>
+                  <a href="/admin/users/{conflict.user_id}">{conflict.user_name || conflict.user_id}</a>
+                </td>
+                <td class="hash-cell" title={conflict.existing_hash}>{conflict.existing_hash.slice(0, 12)}...</td>
+                <td class="hash-cell" title={conflict.conflicting_hash}>{conflict.conflicting_hash.slice(0, 12)}...</td>
+                <td>{formatDate(conflict.created_at)}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      {/if}
+    </div>
+  {/if}
+</div>
+
+<!-- Ban Dialog -->
+{#if showBanDialog}
+  <div class="dialog-overlay" role="presentation" on:click={() => showBanDialog = false}>
+    <div class="dialog" on:click|stopPropagation>
+      <h3>Ban from Ingestion</h3>
+      <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 16px;">
+        This will block the user from submitting and receiving ingestion data.
+        {selectedUserName ? `User: ${selectedUserName}` : ''}
+      </p>
+
+      {#if actionError}
+        <div class="error-message">{actionError}</div>
+      {/if}
+
+      <div class="form-group">
+        <label for="ban-reason">Reason *</label>
+        <textarea
+          id="ban-reason"
+          bind:value={banReason}
+          placeholder="Describe why this user is being banned from ingestion..."
+        ></textarea>
+      </div>
+
+      <div class="dialog-buttons">
+        <button class="btn btn-secondary" on:click={() => showBanDialog = false}>Cancel</button>
+        <button class="btn btn-danger" on:click={handleBan} disabled={actionLoading}>
+          {actionLoading ? 'Banning...' : 'Ban User'}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Purge Dialog -->
+{#if showPurgeDialog}
+  <div class="dialog-overlay" role="presentation" on:click={() => showPurgeDialog = false}>
+    <div class="dialog" on:click|stopPropagation>
+      <h3>Purge User Data</h3>
+      <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 16px;">
+        This will permanently delete all ingested data from this user and recalculate
+        confirmation counts for all affected entries. This action cannot be undone.
+        {selectedUserName ? `User: ${selectedUserName}` : ''}
+      </p>
+
+      {#if actionError}
+        <div class="error-message">{actionError}</div>
+      {/if}
+
+      <div class="dialog-buttons">
+        <button class="btn btn-secondary" on:click={() => showPurgeDialog = false}>Cancel</button>
+        <button class="btn btn-danger" on:click={handlePurge} disabled={actionLoading}>
+          {actionLoading ? 'Purging...' : 'Purge All Data'}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Resolve Alert Dialog -->
+{#if showResolveDialog}
+  <div class="dialog-overlay" role="presentation" on:click={() => showResolveDialog = false}>
+    <div class="dialog" on:click|stopPropagation>
+      <h3>Resolve Alert</h3>
+
+      {#if actionError}
+        <div class="error-message">{actionError}</div>
+      {/if}
+
+      <div class="form-group">
+        <label for="resolve-notes">Resolution Notes (optional)</label>
+        <textarea
+          id="resolve-notes"
+          bind:value={resolveNotes}
+          placeholder="Describe the resolution..."
+        ></textarea>
+      </div>
+
+      <div class="dialog-buttons">
+        <button class="btn btn-secondary" on:click={() => showResolveDialog = false}>Cancel</button>
+        <button class="btn btn-success" on:click={handleResolve} disabled={actionLoading}>
+          {actionLoading ? 'Resolving...' : 'Mark Resolved'}
+        </button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<style>
+  .ingestion-page {
+    max-width: 1400px;
+    padding: 0 0 2rem;
+  }
+
+  .breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+    font-size: 14px;
+  }
+
+  .breadcrumb a {
+    color: var(--accent-color);
+    text-decoration: none;
+  }
+
+  .breadcrumb a:hover {
+    text-decoration: underline;
+  }
+
+  .breadcrumb span {
+    color: var(--text-muted);
+  }
+
+  h1 {
+    margin: 0 0 4px;
+  }
+
+  .subtitle {
+    color: var(--text-muted);
+    margin: 0 0 24px;
+    font-size: 14px;
+  }
+
+  /* Stats Grid */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+  }
+
+  .stat-card {
+    background-color: var(--secondary-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 16px;
+  }
+
+  .stat-card h3 {
+    margin: 0 0 8px;
+    font-size: 13px;
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+
+  .stat-value {
+    font-size: 28px;
+    font-weight: 700;
+    margin: 0;
+    color: var(--text-color);
+  }
+
+  .stat-detail {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin: 4px 0 0;
+  }
+
+  .stat-pending { color: var(--warning-color); }
+  .stat-approved { color: var(--success-color); }
+  .stat-denied { color: var(--error-color); }
+
+  /* Tabs */
+  .tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 16px;
+  }
+
+  .tab {
+    padding: 10px 20px;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+  }
+
+  .tab:hover {
+    color: var(--text-color);
+  }
+
+  .tab.active {
+    color: var(--accent-color);
+    border-bottom-color: var(--accent-color);
+  }
+
+  /* Section */
+  .section {
+    min-height: 200px;
+  }
+
+  .empty-state {
+    color: var(--text-muted);
+    text-align: center;
+    padding: 40px 0;
+    font-size: 14px;
+  }
+
+  /* Alert Cards */
+  .alert-card {
+    background-color: var(--secondary-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+
+  .alert-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+
+  .alert-type {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+    text-transform: capitalize;
+  }
+
+  .badge-warning {
+    background-color: rgba(245, 158, 11, 0.2);
+    color: var(--warning-color);
+  }
+
+  .alert-date {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .alert-body p {
+    margin: 4px 0;
+    font-size: 14px;
+  }
+
+  .alert-details {
+    display: flex;
+    gap: 16px;
+    margin-top: 8px;
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+
+  .alert-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  /* Data Table */
+  .data-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+
+  .data-table th {
+    text-align: left;
+    padding: 10px 12px;
+    border-bottom: 2px solid var(--border-color);
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+    color: var(--text-muted);
+  }
+
+  .data-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .data-table tr:hover {
+    background-color: var(--hover-color);
+  }
+
+  .data-table a {
+    color: var(--accent-color);
+    text-decoration: none;
+  }
+
+  .data-table a:hover {
+    text-decoration: underline;
+  }
+
+  .hash-cell {
+    font-family: monospace;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+
+  .actions-cell {
+    display: flex;
+    gap: 6px;
+    flex-wrap: nowrap;
+  }
+
+  /* Status Badges */
+  .status-badge {
+    display: inline-block;
+    padding: 3px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 500;
+  }
+
+  .status-banned {
+    background-color: rgba(239, 68, 68, 0.2);
+    color: var(--error-color);
+  }
+
+  .status-active {
+    background-color: rgba(34, 197, 94, 0.2);
+    color: var(--success-color);
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    background-color: var(--hover-color);
+    color: var(--text-color);
+  }
+
+  /* Buttons */
+  .btn {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+  }
+
+  .btn-small {
+    padding: 4px 10px;
+    font-size: 12px;
+    border-radius: 4px;
+  }
+
+  .btn-secondary {
+    background-color: var(--hover-color);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+  }
+
+  .btn-danger {
+    background-color: var(--error-color);
+    color: white;
+  }
+
+  .btn-warning {
+    background-color: var(--warning-color);
+    color: white;
+  }
+
+  .btn-success {
+    background-color: var(--success-color);
+    color: white;
+  }
+
+  .btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  /* Dialogs */
+  .dialog-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+
+  .dialog {
+    background-color: var(--secondary-color);
+    padding: 24px;
+    border-radius: 8px;
+    max-width: 450px;
+    width: 90%;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  }
+
+  .dialog h3 {
+    margin: 0 0 8px;
+  }
+
+  .form-group {
+    margin-bottom: 16px;
+  }
+
+  .form-group label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 13px;
+    font-weight: 500;
+  }
+
+  .form-group textarea {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    font-size: 14px;
+    box-sizing: border-box;
+    min-height: 80px;
+    resize: vertical;
+    font-family: inherit;
+  }
+
+  .dialog-buttons {
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+    margin-top: 20px;
+  }
+
+  .error-message {
+    background-color: rgba(239, 68, 68, 0.1);
+    color: var(--error-color);
+    padding: 10px 12px;
+    border-radius: 4px;
+    margin-bottom: 16px;
+    font-size: 14px;
+  }
+
+  @media (max-width: 768px) {
+    .stats-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+
+    .data-table {
+      font-size: 12px;
+    }
+
+    .data-table th, .data-table td {
+      padding: 8px 6px;
+    }
+
+    .actions-cell {
+      flex-direction: column;
+    }
+  }
+</style>

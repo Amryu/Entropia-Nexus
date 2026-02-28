@@ -1268,6 +1268,31 @@ Mark all notifications as read.
 
 Update a single notification (mark as read).
 
+### Streams
+
+#### `GET /api/streams`
+**Public** (no authentication required)
+
+Returns all active content creators with their current live status.
+
+```json
+{
+  "creators": [
+    {
+      "id": 1,
+      "name": "StreamerName",
+      "platform": "twitch",
+      "channel_url": "https://twitch.tv/...",
+      "avatar_url": "https://...",
+      "is_live": true,
+      "stream_title": "Hunting Atrox!",
+      "game_name": "Entropia Universe",
+      "viewer_count": 42
+    }
+  ]
+}
+```
+
 ### Preferences
 
 User preferences store arbitrary JSON data under namespaced keys. Each preference is a key-value pair where the value can be any JSON object up to 20KB.
@@ -1516,6 +1541,83 @@ Upload a profile image. You can only update your own profile image.
 **Scope:** `uploads:write`
 
 Delete a profile image. You can only delete your own profile image.
+
+### Ingestion
+
+Crowdsourced trade messages and global events. Submit data from your chat log and receive confirmed data from other players. **No specific scopes required** — any verified OAuth-authenticated user can access these endpoints.
+
+#### `POST /api/ingestion/globals`
+
+Submit a batch of global events (kills, deposits, crafts, rare items). Supports gzip-compressed request bodies (`Content-Encoding: gzip`).
+
+**Body:**
+```json
+{
+  "globals": [
+    {
+      "timestamp": "2026-02-28T15:30:45",
+      "type": "kill",
+      "player": "PlayerName",
+      "target": "MobName",
+      "value": 100.00,
+      "unit": "PED",
+      "location": "Takuta Plateau",
+      "hof": false,
+      "ath": false
+    }
+  ]
+}
+```
+
+**Limits:** Max 500 entries per batch, timestamps within last 24 hours, 6 requests per 60 seconds.
+
+**Response:** `{ "accepted": 5, "duplicates": 2, "conflicts": 0, "total": 7, "invalid": 0 }`
+
+#### `POST /api/ingestion/trade`
+
+Submit a batch of trade chat messages. Same compression and rate limit rules.
+
+**Body:**
+```json
+{
+  "trades": [
+    {
+      "timestamp": "2026-02-28T15:30:45",
+      "channel": "Local Trade",
+      "username": "TraderJohn",
+      "message": "WTS [Item Name] +50"
+    }
+  ]
+}
+```
+
+#### `GET /api/ingestion/globals`
+
+Fetch global events newer than a timestamp (distribution endpoint).
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `since` | string | **Required.** ISO timestamp cursor |
+| `limit` | integer | Max results (default 200, max 1000) |
+
+**Response:** `{ "globals": [...], "cursor": "2026-02-28T15:31:00Z" }`
+
+Each global includes a `confirmed` boolean (true when confirmation threshold is met) and `confirmations` count.
+
+#### `GET /api/ingestion/trade`
+
+Fetch trade messages newer than a timestamp.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `since` | string | **Required.** ISO timestamp cursor |
+| `limit` | integer | Max results (default 200, max 1000) |
+
+**Response:** `{ "trades": [...], "cursor": "2026-02-28T15:31:00Z" }`
+
+Each trade includes a `confirmations` count.
+
+---
 
 ## Error Responses
 
