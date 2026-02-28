@@ -9,12 +9,23 @@
 import { pool } from '$lib/server/db.js';
 import { getResponse } from '$lib/util.js';
 
-export async function GET({ params }) {
+const PERIOD_INTERVALS = {
+  '24h': "interval '24 hours'",
+  '7d': "interval '7 days'",
+  '30d': "interval '30 days'",
+};
+
+export async function GET({ params, url }) {
   const playerName = decodeURIComponent(params.name);
 
   if (!playerName || playerName.length > 200) {
     return getResponse({ error: 'Invalid player name' }, 400);
   }
+
+  // Period filter (same pattern as /api/globals/stats)
+  const period = url.searchParams.get('period') || 'all';
+  const intervalSql = PERIOD_INTERVALS[period];
+  const periodCond = intervalSql ? ` AND event_timestamp > now() - ${intervalSql}` : '';
 
   try {
     // Run all queries in parallel
@@ -41,19 +52,21 @@ export async function GET({ params }) {
                 count(*) FILTER (WHERE global_type = 'discovery') AS discovery_count,
                 count(*) FILTER (WHERE global_type = 'tier') AS tier_count
          FROM ingested_globals
-         WHERE confirmed = true AND lower(player_name) = lower($1)`,
+         WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}`,
         [playerName]
       ),
 
-      // Hunting: per-mob breakdown with maturity details
+      // Hunting: per-mob breakdown (group by target_name only to avoid
+      // duplicates when mob_id is inconsistently NULL for the same target)
       pool.query(
-        `SELECT target_name, mob_id, maturity_id,
+        `SELECT target_name,
+                MAX(mob_id) AS mob_id, MAX(maturity_id) AS maturity_id,
                 count(*) AS kills, COALESCE(sum(value), 0) AS total_value,
                 COALESCE(avg(value), 0) AS avg_value, COALESCE(max(value), 0) AS best_value
          FROM ingested_globals
-         WHERE confirmed = true AND lower(player_name) = lower($1)
+         WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
            AND global_type IN ('kill', 'team_kill')
-         GROUP BY target_name, mob_id, maturity_id
+         GROUP BY target_name
          ORDER BY total_value DESC`,
         [playerName]
       ),
@@ -64,7 +77,7 @@ export async function GET({ params }) {
                 COALESCE(sum(value), 0) AS total_value,
                 COALESCE(avg(value), 0) AS avg_value, COALESCE(max(value), 0) AS best_value
          FROM ingested_globals
-         WHERE confirmed = true AND lower(player_name) = lower($1)
+         WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
            AND global_type = 'deposit'
          GROUP BY target_name
          ORDER BY total_value DESC`,
@@ -77,19 +90,19 @@ export async function GET({ params }) {
                 COALESCE(sum(value), 0) AS total_value,
                 COALESCE(avg(value), 0) AS avg_value, COALESCE(max(value), 0) AS best_value
          FROM ingested_globals
-         WHERE confirmed = true AND lower(player_name) = lower($1)
+         WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
            AND global_type = 'craft'
          GROUP BY target_name
          ORDER BY total_value DESC`,
         [playerName]
       ),
 
-      // Activity (daily buckets, last 365 days max)
+      // Activity (daily buckets)
       pool.query(
         `SELECT date_trunc('day', event_timestamp) AS bucket,
                 global_type AS type, count(*) AS count
          FROM ingested_globals
-         WHERE confirmed = true AND lower(player_name) = lower($1)
+         WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
          GROUP BY bucket, global_type
          ORDER BY bucket
          LIMIT 2555`,
@@ -102,7 +115,7 @@ export async function GET({ params }) {
                 location, is_hof, is_ath, event_timestamp,
                 mob_id, maturity_id, extra
          FROM ingested_globals
-         WHERE confirmed = true AND lower(player_name) = lower($1)
+         WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
          ORDER BY event_timestamp DESC
          LIMIT 20`,
         [playerName]
@@ -112,7 +125,7 @@ export async function GET({ params }) {
       pool.query(
         `SELECT global_type, target_name, value, extra, event_timestamp, is_hof, is_ath
          FROM ingested_globals
-         WHERE confirmed = true AND lower(player_name) = lower($1)
+         WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
            AND global_type IN ('discovery', 'tier')
          ORDER BY event_timestamp DESC`,
         [playerName]
@@ -120,6 +133,10 @@ export async function GET({ params }) {
     ]);
 
     const summary = summaryResult.rows[0];
+
+    if (parseInt(summary.total_count) === 0) {
+      return getResponse({ error: 'Player not found' }, 404);
+    }
 
     // Group hunting results by mob (aggregate maturities under each mob)
     const mobMap = new Map();

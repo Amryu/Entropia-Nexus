@@ -11,7 +11,7 @@ const PERIOD_INTERVALS = {
   '7d': "interval '7 days'",
   '30d': "interval '30 days'",
 };
-const VALID_GLOBAL_TYPES = new Set(['kill', 'team_kill', 'deposit', 'craft', 'rare_item', 'discovery', 'tier']);
+const VALID_GLOBAL_TYPES = new Set(['kill', 'team_kill', 'deposit', 'craft', 'rare_item', 'discovery', 'tier', 'examine', 'pvp']);
 const MAX_ACTIVITY_BUCKETS = 365;
 
 function escapeLike(str) {
@@ -55,6 +55,14 @@ export async function GET({ url }) {
   if (targetFilter) {
     conditions.push(`target_name ILIKE $${paramIdx}`);
     params.push(`%${escapeLike(targetFilter)}%`);
+    paramIdx++;
+  }
+
+  // Location filter (exact match)
+  const locationFilter = url.searchParams.get('location');
+  if (locationFilter) {
+    conditions.push(`location = $${paramIdx}`);
+    params.push(locationFilter);
     paramIdx++;
   }
 

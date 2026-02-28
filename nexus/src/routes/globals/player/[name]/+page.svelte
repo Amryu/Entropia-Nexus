@@ -5,7 +5,7 @@
 -->
 <script>
   // @ts-nocheck
-  import { onMount, onDestroy } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
   import { Chart, LineController, LinearScale, PointElement, LineElement, TimeScale,
            Tooltip, Filler, CategoryScale } from 'chart.js';
   import 'chartjs-adapter-date-fns';
@@ -13,9 +13,13 @@
   Chart.register(LineController, LinearScale, PointElement, LineElement, TimeScale,
                  Tooltip, Filler, CategoryScale);
 
+  import { goto } from '$app/navigation';
+  import SearchInput from '$lib/components/SearchInput.svelte';
+
   export let data;
 
-  $: ({ playerData, playerName } = data);
+  let playerData = data.playerData;
+  let playerName = data.playerName;
   $: summary = playerData?.summary;
   $: hunting = playerData?.hunting || [];
   $: mining = playerData?.mining?.resources || [];
@@ -23,6 +27,32 @@
   $: activity = playerData?.activity || [];
   $: recent = playerData?.recent || [];
   $: achievements = playerData?.achievements || [];
+
+  const PERIOD_OPTIONS = [
+    { value: '24h', label: '24 Hours' },
+    { value: '7d', label: '7 Days' },
+    { value: '30d', label: '30 Days' },
+    { value: 'all', label: 'All Time' },
+  ];
+
+  let period = 'all';
+  let loading = false;
+
+  async function fetchData() {
+    loading = true;
+    try {
+      const params = new URLSearchParams();
+      if (period !== 'all') params.set('period', period);
+      const qs = params.toString();
+      const res = await fetch(`/api/globals/player/${encodeURIComponent(playerName)}${qs ? '?' + qs : ''}`);
+      if (res.ok) {
+        playerData = await res.json();
+      }
+    } catch { /* ignore */ }
+    loading = false;
+    await tick();
+    buildActivityChart();
+  }
 
   const TYPE_CONFIG = {
     kill:       { label: 'Hunting',     cssClass: 'type-kill' },
@@ -176,6 +206,15 @@
     if (sortState.col !== col) return '';
     return sortState.asc ? ' \u25B2' : ' \u25BC';
   }
+
+  function handleSearchSelect(e) {
+    const { name, type } = e.detail;
+    if (type === 'Player' || type === 'Team') {
+      goto(`/globals/player/${encodeURIComponent(name)}`);
+    } else {
+      goto(`/globals/target/${encodeURIComponent(name)}`);
+    }
+  }
 </script>
 
 <svelte:head>
@@ -185,16 +224,42 @@
 
 <div class="player-page">
   <div class="page-header">
-    <div class="breadcrumbs">
-      <a href="/">Home</a> / <a href="/globals">Globals</a> / {playerName}
+    <div class="header-top">
+      <div>
+        <div class="breadcrumbs">
+          <a href="/">Home</a> / <a href="/globals">Globals</a> / {playerName}
+        </div>
+        <h1>{playerName}</h1>
+        <p class="page-subtitle">Global event statistics</p>
+      </div>
+      <div class="globals-search">
+        <SearchInput
+          placeholder="Search players, teams, mobs, resources..."
+          endpoint="/api/globals/search"
+          apiPrefix={false}
+          on:select={handleSearchSelect}
+        />
+      </div>
     </div>
-    <h1>{playerName}</h1>
-    <p class="page-subtitle">Global event statistics</p>
   </div>
 
   {#if !playerData || !summary}
     <p class="empty-state">No globals recorded for this player</p>
   {:else}
+    <!-- Period Selector -->
+    <div class="period-selector">
+      {#each PERIOD_OPTIONS as p}
+        <button
+          class="period-btn"
+          class:active={period === p.value}
+          disabled={loading}
+          on:click={() => { period = p.value; fetchData(); }}
+        >
+          {p.label}
+        </button>
+      {/each}
+    </div>
+
     <!-- Summary Cards -->
     <div class="stats-row">
       <div class="stat-card">
@@ -428,6 +493,38 @@
 </div>
 
 <style>
+  .period-selector {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 16px;
+  }
+
+  .period-btn {
+    padding: 4px 12px;
+    font-size: 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+
+  .period-btn:hover {
+    border-color: var(--accent-color);
+    color: var(--text-color);
+  }
+
+  .period-btn.active {
+    background: var(--accent-color);
+    border-color: var(--accent-color);
+    color: #fff;
+  }
+
+  .period-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
   .player-page {
     max-width: 1200px;
     margin: 0 auto;
@@ -437,6 +534,28 @@
 
   .page-header {
     margin-bottom: 24px;
+  }
+
+  .header-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+  }
+
+  .globals-search {
+    flex-shrink: 0;
+    width: 300px;
+    padding-top: 4px;
+  }
+
+  @media (max-width: 600px) {
+    .header-top {
+      flex-direction: column;
+    }
+    .globals-search {
+      width: 100%;
+    }
   }
 
   .breadcrumbs {
@@ -570,6 +689,10 @@
 
   .data-table tr:last-child td {
     border-bottom: none;
+  }
+
+  .data-table tbody tr:nth-child(even) {
+    background-color: var(--table-alt-row, rgba(255, 255, 255, 0.02));
   }
 
   .data-table tr:hover {

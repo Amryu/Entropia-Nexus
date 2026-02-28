@@ -60,6 +60,7 @@
   let typeFilter = '';
   let playerFilter = '';
   let targetFilter = '';
+  let locationFilter = '';
   let minValue = '';
   let hofOnly = false;
   let period = '7d';
@@ -127,6 +128,7 @@
     if (typeFilter) params.set('type', typeFilter);
     if (playerFilter) params.set('player', playerFilter);
     if (targetFilter) params.set('target', targetFilter);
+    if (locationFilter) params.set('location', locationFilter);
     if (minValue) params.set('min_value', minValue);
     if (hofOnly) params.set('hof', 'true');
     for (const [k, v] of Object.entries(extra)) {
@@ -428,6 +430,19 @@
       goto(`/globals/target/${encodeURIComponent(name)}`);
     }
   }
+
+  let locationSearchInput;
+
+  function handleLocationSelect(e) {
+    locationFilter = e.detail.name;
+    onFilterChange();
+  }
+
+  function clearLocationFilter() {
+    locationFilter = '';
+    if (locationSearchInput) locationSearchInput.clear();
+    onFilterChange();
+  }
 </script>
 
 <svelte:head>
@@ -437,15 +452,20 @@
 
 <div class="globals-page">
   <div class="page-header">
-    <div class="breadcrumbs"><a href="/">Home</a> / Globals</div>
-    <h1>Globals</h1>
-    <p class="page-subtitle">Live global events from Entropia Universe</p>
-    <div class="globals-search">
-      <SearchInput
-        placeholder="Search players, teams, mobs, resources..."
-        endpoint="/api/globals/search"
-        on:select={handleSearchSelect}
-      />
+    <div class="header-top">
+      <div>
+        <div class="breadcrumbs"><a href="/">Home</a> / Globals</div>
+        <h1>Globals</h1>
+        <p class="page-subtitle">Live global events from Entropia Universe</p>
+      </div>
+      <div class="globals-search">
+        <SearchInput
+          placeholder="Search players, teams, mobs, resources..."
+          endpoint="/api/globals/search"
+          apiPrefix={false}
+          on:select={handleSearchSelect}
+        />
+      </div>
     </div>
   </div>
 
@@ -465,6 +485,25 @@
     <div class="text-filters">
       <input type="text" placeholder="Player / Team..." bind:value={playerFilter} on:input={onFilterChange} class="filter-input" />
       <input type="text" placeholder="Target..." bind:value={targetFilter} on:input={onFilterChange} class="filter-input" />
+      <div class="location-filter">
+        {#if locationFilter}
+          <div class="location-chip">
+            <span>{locationFilter}</span>
+            <button class="chip-clear" on:click={clearLocationFilter}>&times;</button>
+          </div>
+        {:else}
+          <SearchInput
+            bind:this={locationSearchInput}
+            placeholder="Location..."
+            endpoint="/api/globals/locations"
+            apiPrefix={false}
+            maxPerCategory={10}
+            maxTotal={15}
+            on:select={handleLocationSelect}
+            containerClass="location-search"
+          />
+        {/if}
+      </div>
       <input type="number" placeholder="Min PED" bind:value={minValue} on:input={onFilterChange} class="filter-input filter-input-short" />
       <label class="hof-toggle">
         <input type="checkbox" bind:checked={hofOnly} on:change={onFilterChange} />
@@ -657,9 +696,26 @@
     font-size: 0.875rem;
   }
 
+  .header-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+  }
+
   .globals-search {
-    margin-top: 12px;
-    max-width: 400px;
+    flex-shrink: 0;
+    width: 300px;
+    padding-top: 4px;
+  }
+
+  @media (max-width: 600px) {
+    .header-top {
+      flex-direction: column;
+    }
+    .globals-search {
+      width: 100%;
+    }
   }
 
   /* Filters */
@@ -740,6 +796,47 @@
 
   .hof-toggle input {
     cursor: pointer;
+  }
+
+  .location-filter {
+    min-width: 140px;
+  }
+
+  .location-filter :global(.location-search .search-input) {
+    padding: 6px 10px;
+    font-size: 0.8125rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--primary-color);
+    min-width: 140px;
+  }
+
+  .location-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px 4px 10px;
+    font-size: 0.8125rem;
+    background: var(--accent-color-alpha, rgba(96, 176, 255, 0.15));
+    color: var(--accent-color);
+    border-radius: 6px;
+    border: 1px solid var(--accent-color);
+    white-space: nowrap;
+  }
+
+  .chip-clear {
+    background: none;
+    border: none;
+    color: var(--accent-color);
+    cursor: pointer;
+    font-size: 1rem;
+    line-height: 1;
+    padding: 0 2px;
+    opacity: 0.7;
+  }
+
+  .chip-clear:hover {
+    opacity: 1;
   }
 
   /* Stats Cards */

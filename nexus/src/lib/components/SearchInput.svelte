@@ -55,6 +55,9 @@
   /** @type {string} Search API endpoint (default: /search, use /search/items for items-only) */
   export let endpoint = '/search';
 
+  /** @type {boolean} Whether to prepend VITE_API_URL to the endpoint (false for SvelteKit routes) */
+  export let apiPrefix = true;
+
   /** @type {boolean} Whether to show results area on focus (useful for mobile) */
   export let showOnFocus = false;
 
@@ -165,7 +168,8 @@
     showResults = true;
 
     try {
-      const response = await fetch(import.meta.env.VITE_API_URL + `${endpoint}?query=${encodeURIComponent(value)}&fuzzy=true`);
+      const base = apiPrefix ? import.meta.env.VITE_API_URL : '';
+      const response = await fetch(base + `${endpoint}?query=${encodeURIComponent(value)}&fuzzy=true`);
       const data = await response.json();
       // Ensure data is an array before processing
       const resultsArray = Array.isArray(data) ? data : [];

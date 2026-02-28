@@ -8,7 +8,7 @@ import { getResponse } from '$lib/util.js';
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
-const VALID_GLOBAL_TYPES = new Set(['kill', 'team_kill', 'deposit', 'craft', 'rare_item', 'discovery', 'tier']);
+const VALID_GLOBAL_TYPES = new Set(['kill', 'team_kill', 'deposit', 'craft', 'rare_item', 'discovery', 'tier', 'examine', 'pvp']);
 const MAX_TYPE_FILTERS = 10;
 
 function escapeLike(str) {
@@ -67,6 +67,14 @@ export async function GET({ url }) {
       params.push(mobId);
       paramIdx++;
     }
+  }
+
+  // Location filter (exact match — selected from autocomplete)
+  const locationFilter = url.searchParams.get('location');
+  if (locationFilter) {
+    conditions.push(`location = $${paramIdx}`);
+    params.push(locationFilter);
+    paramIdx++;
   }
 
   // Min value filter

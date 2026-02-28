@@ -13,6 +13,9 @@
   Chart.register(LineController, LinearScale, PointElement, LineElement, TimeScale,
                  Tooltip, Filler, BarController, BarElement, CategoryScale);
 
+  import { goto } from '$app/navigation';
+  import SearchInput from '$lib/components/SearchInput.svelte';
+
   export let data;
 
   $: ({ targetData, targetName } = data);
@@ -189,6 +192,15 @@
     if (sortState.col !== col) return '';
     return sortState.asc ? ' \u25B2' : ' \u25BC';
   }
+
+  function handleSearchSelect(e) {
+    const { name, type } = e.detail;
+    if (type === 'Player' || type === 'Team') {
+      goto(`/globals/player/${encodeURIComponent(name)}`);
+    } else {
+      goto(`/globals/target/${encodeURIComponent(name)}`);
+    }
+  }
 </script>
 
 <svelte:head>
@@ -198,19 +210,31 @@
 
 <div class="target-page">
   <div class="page-header">
-    <div class="breadcrumbs">
-      <a href="/">Home</a> / <a href="/globals">Globals</a> / {targetName}
+    <div class="header-top">
+      <div>
+        <div class="breadcrumbs">
+          <a href="/">Home</a> / <a href="/globals">Globals</a> / {targetName}
+        </div>
+        <div class="title-row">
+          <h1>{targetName}</h1>
+          {#if primaryType}
+            {@const tc = TYPE_CONFIG[primaryType]}
+            {#if tc}
+              <span class="type-badge {tc.cssClass}">{tc.label}</span>
+            {/if}
+          {/if}
+        </div>
+        <p class="page-subtitle">Global event statistics</p>
+      </div>
+      <div class="globals-search">
+        <SearchInput
+          placeholder="Search players, teams, mobs, resources..."
+          endpoint="/api/globals/search"
+          apiPrefix={false}
+          on:select={handleSearchSelect}
+        />
+      </div>
     </div>
-    <div class="title-row">
-      <h1>{targetName}</h1>
-      {#if primaryType}
-        {@const tc = TYPE_CONFIG[primaryType]}
-        {#if tc}
-          <span class="type-badge {tc.cssClass}">{tc.label}</span>
-        {/if}
-      {/if}
-    </div>
-    <p class="page-subtitle">Global event statistics</p>
   </div>
 
   {#if !targetData || !summary}
@@ -346,6 +370,28 @@
 
   .page-header {
     margin-bottom: 24px;
+  }
+
+  .header-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+  }
+
+  .globals-search {
+    flex-shrink: 0;
+    width: 300px;
+    padding-top: 4px;
+  }
+
+  @media (max-width: 600px) {
+    .header-top {
+      flex-direction: column;
+    }
+    .globals-search {
+      width: 100%;
+    }
   }
 
   .breadcrumbs {
