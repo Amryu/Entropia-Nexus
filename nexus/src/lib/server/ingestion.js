@@ -228,9 +228,7 @@ export function validateGlobalEvent(event) {
 
   const ts = new Date(event.timestamp);
   if (isNaN(ts.getTime())) return 'Invalid timestamp';
-  const age = Date.now() - ts.getTime();
-  if (age > MAX_EVENT_AGE_MS) return 'Timestamp too old (>24h)';
-  if (age < -TIMESTAMP_WINDOW_MS) return 'Timestamp in the future';
+  if (Date.now() - ts.getTime() < -TIMESTAMP_WINDOW_MS) return 'Timestamp in the future';
 
   return null;
 }

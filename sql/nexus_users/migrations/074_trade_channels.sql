@@ -19,6 +19,10 @@ INSERT INTO ingestion_trade_channels (channel_name, planet, added_by) VALUES
   ('#touchtrade', 'Toulan', 1),
   ('#nixtrade', 'Next Island', 1);
 
+-- Permissions (matches ingestion_allowed_clients pattern)
+GRANT SELECT, INSERT, DELETE ON ingestion_trade_channels TO nexus_users;
+GRANT USAGE, SELECT ON SEQUENCE ingestion_trade_channels_id_seq TO nexus_users;
+
 -- Index for repost dedup: find recent messages by same user in same channel
 CREATE INDEX idx_ingested_trades_repost
   ON ingested_trade_messages (username, channel, event_timestamp DESC);
