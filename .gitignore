@@ -45,3 +45,5 @@ nexus-bot/config.json
 client/build/
 client/dist/
 client/entropia-nexus.spec
+/build/
+/dist/

@@ -43,6 +43,8 @@ class MessageType(Enum):
     GLOBAL_DEPOSIT = "global_deposit"
     GLOBAL_CRAFT = "global_craft"
     GLOBAL_RARE_ITEM = "global_rare_item"
+    GLOBAL_DISCOVERY = "global_discovery"
+    GLOBAL_TIER = "global_tier"
 
     # Chat
     TRADE_CHAT = "trade_chat"
@@ -107,6 +109,10 @@ class GlobalType(Enum):
     DEPOSIT = "deposit"
     CRAFT = "craft"
     RARE_ITEM = "rare_item"
+    DISCOVERY = "discovery"
+    TIER = "tier"
+    EXAMINE = "examine"
+    PVP = "pvp"
 
 
 @dataclass

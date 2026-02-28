@@ -30,8 +30,6 @@ BUNDLE_FILES=(
 # Hidden imports that PyInstaller may miss (conditional / lazy imports)
 HIDDEN_IMPORTS=(
     PyQt6.QtSvg
-    PyQt6.QtWebEngineWidgets
-    PyQt6.QtWebEngineCore
     keyring.backends
     keyring.backends.Windows
     keyring.backends.SecretService
@@ -145,7 +143,7 @@ fi
 
 if [[ -d "$DIST_DIR/$APP_NAME" ]]; then
     cyan "Removing previous build..."
-    rm -rf "$DIST_DIR/$APP_NAME"
+    rm -rf "$DIST_DIR/$APP_NAME" 2>/dev/null || true
 fi
 
 # ── Run PyInstaller ──────────────────────────────────────────────────────────
@@ -178,36 +176,64 @@ if [[ -d "$INTERNAL_CHECK" ]]; then
     cyan "Stripping unnecessary files..."
     SAVED=0
 
-    # 1. Debug .pak / .bin files (~83 MB)
-    while IFS= read -r f; do
-        sz=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f" 2>/dev/null || echo 0)
-        SAVED=$((SAVED + sz))
-        rm -f "$f"
-    done < <(find "$INTERNAL_CHECK" \( -name '*.debug.pak' -o -name '*.debug.bin' \) -type f)
-
-    # 2. DevTools resources (~11 MB)
-    while IFS= read -r f; do
-        sz=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f" 2>/dev/null || echo 0)
-        SAVED=$((SAVED + sz))
-        rm -f "$f"
-    done < <(find "$INTERNAL_CHECK" -name 'qtwebengine_devtools_resources.pak' -type f)
-
-    # 3. Non-en-US WebEngine locales (~40 MB)
-    while IFS= read -r f; do
-        base="$(basename "$f")"
-        if [[ "$base" != "en-US.pak" ]]; then
+    # Helper: delete matching files and tally saved bytes
+    strip_files() {
+        while IFS= read -r f; do
             sz=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f" 2>/dev/null || echo 0)
             SAVED=$((SAVED + sz))
             rm -f "$f"
-        fi
-    done < <(find "$INTERNAL_CHECK" -path '*/qtwebengine_locales/*.pak' -type f)
+        done
+    }
 
-    # 4. Qt Quick 3D DLLs — not used (~14 MB)
-    while IFS= read -r f; do
-        sz=$(stat -c%s "$f" 2>/dev/null || stat -f%z "$f" 2>/dev/null || echo 0)
-        SAVED=$((SAVED + sz))
-        rm -f "$f"
-    done < <(find "$INTERNAL_CHECK" -name 'Qt6Quick3D*' -type f)
+    # Helper: delete matching directories and tally saved bytes
+    strip_dirs() {
+        while IFS= read -r d; do
+            sz=$(du -sb "$d" 2>/dev/null | cut -f1 || echo 0)
+            SAVED=$((SAVED + sz))
+            rm -rf "$d"
+        done
+    }
+
+    # 1. Unused Qt module DLLs
+    #    Keep: QtWidgets, QtCore, QtGui, QtSvg, QtMultimedia, QtNetwork
+    find "$INTERNAL_CHECK" -type f \( \
+        -name 'Qt6Quick*' -o -name 'Qt6Qml*' \
+        -o -name 'Qt6Positioning*' -o -name 'Qt6WebChannel*' \
+        -o -name 'Qt6OpenGL*' \
+        -o -name 'Qt6Quick3D*' \
+        -o -name 'Qt6RemoteObjects*' -o -name 'Qt6PrintSupport*' \
+        -o -name 'Qt6Pdf*' -o -name 'Qt6ShaderTools*' \
+        -o -name 'Qt6Sensors*' -o -name 'Qt6TextToSpeech*' \
+        -o -name 'Qt6WebSockets*' -o -name 'Qt6SpatialAudio*' \
+        \) | strip_files
+
+    # 2. Unused PyQt6 Python bindings (.pyd)
+    find "$INTERNAL_CHECK" -type f \( \
+        -name 'QtPrintSupport.pyd' -o -name 'QtRemoteObjects.pyd' \
+        -o -name 'QtQuick.pyd' -o -name 'QtQml.pyd' \
+        -o -name 'QtPositioning.pyd' -o -name 'QtOpenGL.pyd' \
+        \) | strip_files
+
+    # 3. Software OpenGL fallback — not needed on Windows 10+
+    find "$INTERNAL_CHECK" -name 'opengl32sw.dll' -type f | strip_files
+
+    # 4. FFmpeg codecs — QSoundEffect plays WAV via wasapi, not FFmpeg
+    find "$INTERNAL_CHECK" -type f \( \
+        -name 'avcodec-*.dll' -o -name 'avformat-*.dll' \
+        -o -name 'avutil-*.dll' -o -name 'swresample-*.dll' \
+        \) | strip_files
+
+    # 5. OpenCV video I/O FFmpeg — OCR uses image ops only
+    find "$INTERNAL_CHECK" -name 'opencv_videoio_ffmpeg*' -type f | strip_files
+
+    # 6. Qt translations — English-only app
+    find "$INTERNAL_CHECK" -path '*/Qt6/translations' -type d | strip_dirs
+
+    # 7. QML directory — pure QWidgets app, no QML files used
+    find "$INTERNAL_CHECK" -path '*/Qt6/qml' -type d | strip_dirs
+
+    # 8. Qt positioning plugin
+    find "$INTERNAL_CHECK" -path '*/plugins/position' -type d | strip_dirs
 
     SAVED_MB=$((SAVED / 1048576))
     cyan "  Stripped ~${SAVED_MB} MB of unnecessary files."

@@ -11,10 +11,9 @@ from PyQt6.QtWidgets import (
     QGroupBox, QFrame, QScrollArea, QApplication, QToolTip, QStackedWidget,
     QPushButton,
 )
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QUrl, QRect
-from PyQt6.QtGui import QColor, QCursor
-from PyQt6.QtWebEngineWidgets import QWebEngineView
-from PyQt6.QtWebEngineCore import QWebEnginePage, QWebEngineSettings
+from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QUrl, QRect, QPointF
+from PyQt6.QtGui import QColor, QCursor, QPainter, QPixmap, QPolygonF, QTextDocument
+from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 
 from ..theme import (
     TEXT, TEXT_MUTED, ACCENT, BORDER, HOVER, SECONDARY, PRIMARY,
@@ -82,48 +81,47 @@ _GENDER_TAG_RE = re.compile(r'\s*\(([MF])(?:,([^)]+))?\)\s*$')
 
 _LINK_STYLE = f'color:{ACCENT};text-decoration:underline'
 
-# CSS for article HTML rendering
+# CSS for article HTML rendering (QTextBrowser supports CSS 2.1 subset)
 _ARTICLE_CSS = f"""
     body {{
         background-color: {PRIMARY};
         color: {TEXT};
         font-family: 'Gill Sans', 'Gill Sans MT', Calibri, 'Trebuchet MS', sans-serif;
         font-size: 14px;
-        line-height: 1.7;
         margin: 0;
         padding: 0 12px;
     }}
     h1, h2, h3, h4 {{ color: {TEXT}; }}
-    h2 {{ font-size: 18px; margin: 16px 0 6px 0; }}
-    h3 {{ font-size: 16px; margin: 12px 0 6px 0; }}
+    h2 {{ font-size: 18px; margin-top: 16px; margin-bottom: 6px; }}
+    h3 {{ font-size: 16px; margin-top: 12px; margin-bottom: 6px; }}
     a {{ color: {ACCENT}; }}
     blockquote {{
         border-left: 3px solid {ACCENT};
         padding-left: 12px;
-        margin: 10px 0;
+        margin-top: 10px;
+        margin-bottom: 10px;
         color: {TEXT_MUTED};
         font-style: italic;
     }}
     code {{
         background-color: {MAIN_DARK};
         padding: 2px 6px;
-        border-radius: 3px;
     }}
     pre {{
         background-color: {MAIN_DARK};
         border: 1px solid {BORDER};
-        border-radius: 4px;
         padding: 12px;
-        overflow-x: auto;
     }}
     hr {{
         border: none;
         border-top: 1px solid {BORDER};
-        margin: 16px 0;
+        margin-top: 16px;
+        margin-bottom: 16px;
     }}
     table {{
         border-collapse: collapse;
-        margin: 10px 0;
+        margin-top: 10px;
+        margin-bottom: 10px;
     }}
     td, th {{
         border: 1px solid {BORDER};
@@ -132,29 +130,112 @@ _ARTICLE_CSS = f"""
     th {{
         background-color: {SECONDARY};
     }}
-    .video-embed-wrapper {{
-        position: relative;
-        width: 60%;
-        aspect-ratio: 16 / 9;
-        margin: 8px 0;
-        border-radius: 8px;
-        overflow: hidden;
-    }}
-    .video-embed-wrapper iframe,
-    .video-embed-iframe {{
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        border: none;
-    }}
-    img {{
-        max-width: 100%;
-        height: auto;
-        border-radius: 4px;
-    }}
 """
+
+
+# Regex patterns for converting iframes to QTextBrowser-compatible HTML
+_YT_IFRAME_WRAPPED_RE = re.compile(
+    r'<div[^>]*class="video-embed-wrapper"[^>]*>\s*'
+    r'<iframe[^>]*src="https?://(?:www\.)?youtube\.com/embed/([^"?\s]+)[^"]*"[^>]*>'
+    r'\s*</iframe>\s*</div>',
+    re.IGNORECASE | re.DOTALL,
+)
+_YT_IFRAME_BARE_RE = re.compile(
+    r'<iframe[^>]*src="https?://(?:www\.)?youtube\.com/embed/([^"?\s]+)[^"]*"[^>]*>'
+    r'\s*</iframe>',
+    re.IGNORECASE | re.DOTALL,
+)
+_VIMEO_IFRAME_RE = re.compile(
+    r'<iframe[^>]*src="https?://(?:player\.)?vimeo\.com/video/(\d+)[^"]*"[^>]*>'
+    r'\s*</iframe>',
+    re.IGNORECASE | re.DOTALL,
+)
+_RELATIVE_IMG_RE = re.compile(r'(<img[^>]*src=")(/[^"]+)(")', re.IGNORECASE)
+_LEFTOVER_IFRAME_RE = re.compile(r'<iframe[^>]*>.*?</iframe>', re.IGNORECASE | re.DOTALL)
+_EMPTY_VIDEO_DIV_RE = re.compile(
+    r'<div[^>]*class="video-embed-wrapper"[^>]*>\s*</div>',
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+_YT_THUMB_MARKER = "img.youtube.com/vi/"
+
+
+def _add_play_overlay(pixmap: QPixmap) -> QPixmap:
+    """Composite a YouTube-style play button onto a video thumbnail."""
+    # Create a fresh ARGB32 pixmap — downloaded images may use a format
+    # that QPainter cannot composite onto (e.g. indexed-color JPEG decode).
+    result = QPixmap(pixmap.size())
+    result.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(result)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+    # Draw original thumbnail
+    painter.drawPixmap(0, 0, pixmap)
+
+    cx = result.width() / 2.0
+    cy = result.height() / 2.0
+    radius = min(cx, cy) * 0.28
+
+    # Semi-transparent dark circle
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QColor(0, 0, 0, 180))
+    painter.drawEllipse(QPointF(cx, cy), radius, radius)
+
+    # White play triangle
+    painter.setBrush(QColor(255, 255, 255))
+    half = radius * 0.45
+    painter.drawPolygon(QPolygonF([
+        QPointF(cx - half * 0.7, cy - half),
+        QPointF(cx - half * 0.7, cy + half),
+        QPointF(cx + half, cy),
+    ]))
+
+    painter.end()
+    return result
+
+
+def _yt_thumbnail_html(video_id: str, article_url: str | None) -> str:
+    """Generate clickable YouTube thumbnail HTML."""
+    thumb_url = f"https://img.youtube.com/vi/{video_id}/hqdefault.jpg"
+    if article_url:
+        href = f"{article_url}?autoplay={video_id}"
+    else:
+        href = f"https://www.youtube.com/watch?v={video_id}"
+    return f'<a href="{href}"><img src="{thumb_url}" width="480" style="border:none"/></a>'
+
+
+def _prepare_html_for_textbrowser(html: str, base_url: str,
+                                   article_id: int | None = None) -> str:
+    """Transform article HTML for QTextBrowser rendering.
+
+    - Converts YouTube iframes to clickable thumbnail images
+    - Converts Vimeo iframes to text links
+    - Makes relative image URLs absolute
+    - Strips leftover iframes and empty wrapper divs
+    """
+    article_url = f"{base_url}/news/{article_id}" if article_id else None
+    # YouTube iframes (wrapped in video-embed-wrapper div)
+    html = _YT_IFRAME_WRAPPED_RE.sub(
+        lambda m: _yt_thumbnail_html(m.group(1), article_url), html,
+    )
+    # Bare YouTube iframes (not wrapped)
+    html = _YT_IFRAME_BARE_RE.sub(
+        lambda m: _yt_thumbnail_html(m.group(1), article_url), html,
+    )
+    # Vimeo iframes → text link
+    html = _VIMEO_IFRAME_RE.sub(
+        lambda m: f'<a href="https://vimeo.com/{m.group(1)}">\u25b6 Watch on Vimeo</a>',
+        html,
+    )
+    # Relative image URLs → absolute
+    html = _RELATIVE_IMG_RE.sub(
+        lambda m: f'{m.group(1)}{base_url}{m.group(2)}{m.group(3)}', html,
+    )
+    # Strip leftover iframes and empty video wrapper divs
+    html = _LEFTOVER_IFRAME_RE.sub('', html)
+    html = _EMPTY_VIDEO_DIV_RE.sub('', html)
+    return html
 
 
 def _time_ago(iso_date: str) -> str:
@@ -393,14 +474,60 @@ class _NewsRow(QFrame):
         super().mousePressEvent(event)
 
 
-class _ArticlePage(QWebEnginePage):
-    """Custom page that opens link clicks in the system browser."""
+class _ArticleBrowser(QTextBrowser):
+    """QTextBrowser that loads HTTP images asynchronously and opens links externally."""
 
-    def acceptNavigationRequest(self, url, nav_type, is_main_frame):
-        if nav_type == QWebEnginePage.NavigationType.NavigationTypeLinkClicked:
-            webbrowser.open(url.toString())
-            return False
-        return super().acceptNavigationRequest(url, nav_type, is_main_frame)
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._nam = QNetworkAccessManager(self)
+        self._image_cache: dict[str, QPixmap] = {}
+        self._pending: set[str] = set()
+        self._current_html = ""
+        self.setOpenLinks(False)
+        self.setOpenExternalLinks(False)
+
+    def setArticleHtml(self, html: str):
+        """Set article HTML, resetting pending image state."""
+        self._pending.clear()
+        self._current_html = html
+        self.setHtml(html)
+
+    def loadResource(self, type_: int, url: QUrl):
+        if type_ == QTextDocument.ResourceType.ImageResource:
+            url_str = url.toString()
+            if url_str in self._image_cache:
+                return self._image_cache[url_str]
+            if url.scheme() in ("http", "https") and url_str not in self._pending:
+                self._pending.add(url_str)
+                reply = self._nam.get(QNetworkRequest(url))
+                reply.finished.connect(lambda r=reply, u=url: self._on_image_loaded(r, u))
+                return QPixmap()
+        return super().loadResource(type_, url)
+
+    def _on_image_loaded(self, reply: QNetworkReply, url: QUrl):
+        url_str = url.toString()
+        self._pending.discard(url_str)
+        if reply.error() == QNetworkReply.NetworkError.NoError:
+            data = reply.readAll()
+            pixmap = QPixmap()
+            pixmap.loadFromData(data)
+            if not pixmap.isNull():
+                if _YT_THUMB_MARKER in url_str:
+                    pixmap = _add_play_overlay(pixmap)
+                self._image_cache[url_str] = pixmap
+                self.document().addResource(
+                    QTextDocument.ResourceType.ImageResource, url, pixmap,
+                )
+            else:
+                self._image_cache[url_str] = QPixmap()
+        else:
+            self._image_cache[url_str] = QPixmap()
+        reply.deleteLater()
+        # Re-render once all pending images have loaded
+        if not self._pending and self._current_html:
+            scroll_pos = self.verticalScrollBar().value()
+            self.setHtml(self._current_html)
+            self.verticalScrollBar().setValue(scroll_pos)
 
 
 class _ArticleView(QWidget):
@@ -452,7 +579,7 @@ class _ArticleView(QWidget):
         )
         layout.addWidget(self._meta)
 
-        # Content browser (Chromium-based for YouTube iframe support)
+        # Content browser (lightweight QTextBrowser with async image loading)
         content_wrapper = QFrame()
         content_wrapper.setStyleSheet(f"""
             QFrame {{
@@ -464,24 +591,15 @@ class _ArticleView(QWidget):
         wrapper_layout = QVBoxLayout(content_wrapper)
         wrapper_layout.setContentsMargins(1, 1, 1, 1)
 
-        self._content = QWebEngineView()
-        page = _ArticlePage(self._content)
-        self._content.setPage(page)
-        page.setBackgroundColor(QColor(PRIMARY))
-        # Enable fullscreen so YouTube's fullscreen button works.
-        page.settings().setAttribute(
-            QWebEngineSettings.WebAttribute.FullScreenSupportEnabled, True,
-        )
-        page.fullScreenRequested.connect(self._on_fullscreen_requested)
-        # Pre-initialize Chromium render process so the first real setHtml()
-        # doesn't trigger DPI-awareness changes / window resize on Windows.
-        self._content.setHtml(
-            f"<html><head><style>{_ARTICLE_CSS}</style></head><body></body></html>",
-            QUrl("https://www.entropianexus.com/"),
-        )
-        self._content_wrapper = content_wrapper
-        self._content_wrapper_layout = wrapper_layout
-        self._fullscreen_window = None
+        self._content = _ArticleBrowser()
+        self._content.setStyleSheet(f"""
+            QTextBrowser {{
+                background-color: {PRIMARY};
+                color: {TEXT};
+                border: none;
+            }}
+        """)
+        self._content.anchorClicked.connect(self._on_link_clicked)
         wrapper_layout.addWidget(self._content)
 
         layout.addWidget(content_wrapper, 1)
@@ -527,15 +645,16 @@ class _ArticleView(QWidget):
         self._meta.setText("  \u00b7  ".join(meta_parts))
 
         # Content
+        base_url = self._config.nexus_base_url if self._config else "https://www.entropianexus.com"
         content_html = article.get("content_html", "")
         if content_html:
-            html = f"<html><head><style>{_ARTICLE_CSS}</style></head>"
-            html += f"<body>{content_html}</body></html>"
+            body = _prepare_html_for_textbrowser(
+                content_html, base_url, article_id=article.get("id"),
+            )
         else:
-            summary = _esc(article.get("summary", list_post.get("summary", "")))
-            html = f"<html><head><style>{_ARTICLE_CSS}</style></head>"
-            html += f"<body><p>{summary}</p></body></html>"
-        self._content.setHtml(html, QUrl("https://www.entropianexus.com/"))
+            body = f"<p>{_esc(article.get('summary', list_post.get('summary', '')))}</p>"
+        html = f"<html><head><style>{_ARTICLE_CSS}</style></head><body>{body}</body></html>"
+        self._content.setArticleHtml(html)
 
         # External link
         link = article.get("link", "")
@@ -566,9 +685,8 @@ class _ArticleView(QWidget):
         self._meta.setText("  \u00b7  ".join(meta_parts))
 
         summary = _esc(post.get("summary", ""))
-        html = f"<html><head><style>{_ARTICLE_CSS}</style></head>"
-        html += f"<body><p>{summary}</p></body></html>"
-        self._content.setHtml(html, QUrl("https://www.entropianexus.com/"))
+        html = f"<html><head><style>{_ARTICLE_CSS}</style></head><body><p>{summary}</p></body></html>"
+        self._content.setArticleHtml(html)
 
         url = post.get("url", "")
         if url:
@@ -587,31 +705,18 @@ class _ArticleView(QWidget):
         """Show loading state while article is being fetched."""
         self._title.setText("")
         self._meta.setText("")
-        html = f"<html><head><style>{_ARTICLE_CSS}</style></head>"
+        html = f'<html><head><style>{_ARTICLE_CSS}</style></head>'
         html += f'<body><p style="color:{TEXT_MUTED}">Loading article...</p></body></html>'
-        self._content.setHtml(html, QUrl("https://www.entropianexus.com/"))
+        self._content.setArticleHtml(html)
         self._ext_link_btn.hide()
 
     def _open_external(self):
         if self._external_url:
             webbrowser.open(self._external_url)
 
-    def _on_fullscreen_requested(self, request):
-        """Handle YouTube fullscreen enter/exit by reparenting the web view."""
-        if request.toggleOn():
-            request.accept()
-            self._fullscreen_window = QWidget()
-            self._fullscreen_window.setWindowFlags(Qt.WindowType.Window)
-            fs_layout = QVBoxLayout(self._fullscreen_window)
-            fs_layout.setContentsMargins(0, 0, 0, 0)
-            fs_layout.addWidget(self._content)
-            self._fullscreen_window.showFullScreen()
-        else:
-            request.accept()
-            self._content_wrapper_layout.addWidget(self._content)
-            if self._fullscreen_window:
-                self._fullscreen_window.close()
-                self._fullscreen_window = None
+    def _on_link_clicked(self, url: QUrl):
+        """Open all article links in the system browser."""
+        webbrowser.open(url.toString())
 
 
 # ---------------------------------------------------------------------------
@@ -820,8 +925,7 @@ class DashboardPage(QWidget):
         has_content = post.get("has_content", False)
 
         if article_id and has_content:
-            # Fetch full article — defer view switch to _on_article_loaded
-            # to avoid a loading flash (double setHtml on QWebEngineView).
+            # Fetch full article — defer view switch to _on_article_loaded.
             self._pending_post = post
             self.setCursor(Qt.CursorShape.WaitCursor)
             self._fetch_article(article_id)

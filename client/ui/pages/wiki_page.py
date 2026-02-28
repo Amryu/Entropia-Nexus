@@ -733,6 +733,12 @@ class WikiPage(QWidget):
                 item, nexus_base_url=nexus_base_url,
                 data_client=self._data_client,
             )
+        elif page_type_id == "blueprints":
+            from ..widgets.blueprint_detail import BlueprintDetailView
+            detail_view = BlueprintDetailView(
+                item, nexus_base_url=nexus_base_url,
+                data_client=self._data_client,
+            )
 
         if not detail_view:
             self._show_placeholder(entity_name)

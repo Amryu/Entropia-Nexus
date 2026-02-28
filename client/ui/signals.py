@@ -6,6 +6,7 @@ from ..core.constants import (
     EVENT_API_SCOPE_ERROR,
     EVENT_AUTH_STATE_CHANGED,
     EVENT_CATCHUP_COMPLETE,
+    EVENT_CATCHUP_PROGRESS,
     EVENT_COMBAT,
     EVENT_CONFIG_CHANGED,
     EVENT_ENHANCER_BREAK,
@@ -20,9 +21,13 @@ from ..core.constants import (
     EVENT_HUNT_ENDED,
     EVENT_HUNT_SPLIT,
     EVENT_SESSION_AUTO_TIMEOUT,
+    EVENT_INGESTED_GLOBAL,
+    EVENT_INGESTED_TRADE,
+    EVENT_INGESTION_STATUS,
     EVENT_LOOT_GROUP,
     EVENT_MOB_TARGET_CHANGED,
     EVENT_ACTIVE_TOOL_CHANGED,
+    EVENT_NOTIFICATION,
     EVENT_OCR_COMPLETE,
     EVENT_OCR_PROGRESS,
     EVENT_SKILL_GAIN,
@@ -87,6 +92,7 @@ class AppSignals(QObject):
 
     # Chat watcher lifecycle
     catchup_complete = pyqtSignal(object)
+    catchup_progress = pyqtSignal(object)   # {"parsed": N, "total": N}
 
     # News
     new_news_post = pyqtSignal(str, str)  # (title, summary)
@@ -96,6 +102,14 @@ class AppSignals(QObject):
     update_progress = pyqtSignal(object)    # {"downloaded", "total", "current_file"}
     update_ready = pyqtSignal(object)       # {"version"}
     update_error = pyqtSignal(object)       # {"error"}
+
+    # Notifications
+    notification = pyqtSignal(object)  # Notification dataclass
+
+    # Ingestion (server-distributed data)
+    ingested_global = pyqtSignal(object)   # dict from server
+    ingested_trade = pyqtSignal(object)    # dict from server
+    ingestion_status = pyqtSignal(object)  # {"pending": N}
 
     # Inventory
     inventory_open_wiki = pyqtSignal(int, str)  # (item_id, item_type)
@@ -131,10 +145,15 @@ def wire_signals(event_bus, signals: AppSignals) -> None:
         EVENT_CONFIG_CHANGED: signals.config_changed,
         EVENT_HOTKEY_TRIGGERED: signals.hotkey_triggered,
         EVENT_CATCHUP_COMPLETE: signals.catchup_complete,
+        EVENT_CATCHUP_PROGRESS: signals.catchup_progress,
         EVENT_UPDATE_AVAILABLE: signals.update_available,
         EVENT_UPDATE_PROGRESS: signals.update_progress,
         EVENT_UPDATE_READY: signals.update_ready,
         EVENT_UPDATE_ERROR: signals.update_error,
+        EVENT_NOTIFICATION: signals.notification,
+        EVENT_INGESTED_GLOBAL: signals.ingested_global,
+        EVENT_INGESTED_TRADE: signals.ingested_trade,
+        EVENT_INGESTION_STATUS: signals.ingestion_status,
     }
 
     for event_name, signal in _WIRING.items():

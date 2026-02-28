@@ -59,12 +59,13 @@ class ChatLogWatcher:
     SHA-256 fingerprint of the first 50 lines.
     """
 
-    def __init__(self, config: AppConfig, event_bus: EventBus, db: Database):
+    def __init__(self, config: AppConfig, event_bus: EventBus, db: Database, *,
+                 authenticated: bool = False):
         self._config = config
         self._event_bus = event_bus
         self._db = db
         self._parser = LineParser()
-        self._classifier = MessageClassifier(event_bus, db)
+        self._classifier = MessageClassifier(event_bus, db, authenticated=authenticated)
         self._observer = None
         self._running = False
         self._catching_up = False

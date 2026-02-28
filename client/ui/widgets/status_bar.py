@@ -1,10 +1,10 @@
 """Bottom status bar for persistent info (trackers, inventory value, etc.)."""
 
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QStyleOption, QStyle, QPushButton
+from PyQt6.QtWidgets import QWidget, QHBoxLayout, QStyleOption, QStyle, QPushButton, QLabel
 from PyQt6.QtGui import QPainter
 from PyQt6.QtCore import pyqtSignal
 
-from ..theme import STATUS_BAR_HEIGHT, ACCENT, ACCENT_HOVER
+from ..theme import STATUS_BAR_HEIGHT, ACCENT, ACCENT_HOVER, TEXT_MUTED
 
 
 class StatusBar(QWidget):
@@ -19,7 +19,19 @@ class StatusBar(QWidget):
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(8, 0, 8, 0)
-        layout.setSpacing(0)
+        layout.setSpacing(12)
+
+        # Catchup progress (hidden by default)
+        self._catchup_label = QLabel()
+        self._catchup_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+        self._catchup_label.hide()
+        layout.addWidget(self._catchup_label)
+
+        # Pending ingestion uploads (hidden by default)
+        self._ingestion_label = QLabel()
+        self._ingestion_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+        self._ingestion_label.hide()
+        layout.addWidget(self._ingestion_label)
 
         layout.addStretch()
 
@@ -50,6 +62,35 @@ class StatusBar(QWidget):
             signals.update_progress.connect(self._on_update_progress)
             signals.update_ready.connect(self._on_update_ready)
             signals.update_error.connect(self._on_update_error)
+            signals.catchup_progress.connect(self._on_catchup_progress)
+            signals.catchup_complete.connect(self._on_catchup_complete)
+            signals.ingestion_status.connect(self._on_ingestion_status)
+
+    # ------------------------------------------------------------------
+    # Catchup & ingestion status
+    # ------------------------------------------------------------------
+
+    def _on_catchup_progress(self, data):
+        parsed = data.get("parsed", 0)
+        total = data.get("total", 1)
+        pct = int(100 * parsed / total)
+        self._catchup_label.setText(f"Catching up... {pct}%")
+        self._catchup_label.show()
+
+    def _on_catchup_complete(self, _data):
+        self._catchup_label.hide()
+
+    def _on_ingestion_status(self, data):
+        pending = data.get("pending", 0)
+        if pending > 0:
+            self._ingestion_label.setText(f"{pending} pending")
+            self._ingestion_label.show()
+        else:
+            self._ingestion_label.hide()
+
+    # ------------------------------------------------------------------
+    # Update notifications
+    # ------------------------------------------------------------------
 
     def _on_update_available(self, data):
         size = self._format_size(data.get("download_size", 0))

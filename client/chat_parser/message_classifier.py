@@ -8,6 +8,7 @@ from .handlers.skill_gain import SkillGainHandler
 from .handlers.tier import TierHandler
 from .handlers.trade_chat import TradeChatHandler
 from .models import ParsedLine
+from ..core.constants import EVENT_AUTH_STATE_CHANGED
 from ..core.event_bus import EventBus
 from ..core.database import Database
 
@@ -23,7 +24,7 @@ class MessageClassifier:
     to EventBus to avoid flooding the Qt signal queue with hundreds of events.
     """
 
-    def __init__(self, event_bus: EventBus, db: Database):
+    def __init__(self, event_bus: EventBus, db: Database, *, authenticated: bool = False):
         self._event_bus = event_bus
         self._db = db
         self._catching_up = False
@@ -48,6 +49,13 @@ class MessageClassifier:
             self._death_revival,
             self._combat,
         ]
+
+        # Gate ingestion DB writes on auth state — unauthenticated users
+        # can't ingest so there's no point accumulating data they can't send.
+        # Set initial state from constructor arg (based on stored tokens)
+        # and subscribe to auth events for subsequent changes.
+        self._set_ingestion_enabled(authenticated)
+        event_bus.subscribe(EVENT_AUTH_STATE_CHANGED, self._on_auth_changed)
 
     def set_catching_up(self, catching_up: bool) -> None:
         """Toggle catchup mode. During catchup, data is stored in DB
@@ -79,6 +87,14 @@ class MessageClassifier:
                 if handler.can_handle(parsed_line):
                     handler.handle(parsed_line)
                     return
+
+    def _on_auth_changed(self, auth_state) -> None:
+        """Toggle ingestion DB writes based on authentication state."""
+        self._set_ingestion_enabled(getattr(auth_state, "authenticated", False))
+
+    def _set_ingestion_enabled(self, enabled: bool) -> None:
+        self._globals.ingestion_enabled = enabled
+        self._trade.ingestion_enabled = enabled
 
     def flush(self) -> None:
         """Flush any pending state in handlers (call on shutdown/EOF)."""

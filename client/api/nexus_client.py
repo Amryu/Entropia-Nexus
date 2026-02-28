@@ -1,11 +1,27 @@
 """Authenticated API client for the Entropia Nexus backend."""
 
+import gzip
+import json
+
 import requests
 
 from ..core.constants import EVENT_API_SCOPE_ERROR
 from ..core.logger import get_logger
 
 log = get_logger("API")
+
+
+class RateLimitError(Exception):
+    """Raised when the server responds with 429 Too Many Requests."""
+
+    def __init__(self, retry_after: int):
+        self.retry_after = retry_after
+        super().__init__(f"Rate limited, retry after {retry_after}s")
+
+
+class ServerError(Exception):
+    """Raised on 5xx or network errors — caller should retry."""
+    pass
 
 
 class NexusClient:
@@ -40,7 +56,14 @@ class NexusClient:
                 and self._event_bus):
             self._scope_error_fired = True
             self._event_bus.publish(EVENT_API_SCOPE_ERROR, {"endpoint": context})
-        log.error("Failed to %s: %s", context, e)
+        if isinstance(e, requests.HTTPError) and e.response is not None:
+            try:
+                body = e.response.json()
+                log.error("Failed to %s: %s — %s", context, e, body.get("error", ""))
+            except Exception:
+                log.error("Failed to %s: %s", context, e)
+        else:
+            log.error("Failed to %s: %s", context, e)
 
     def is_authenticated(self) -> bool:
         return self._oauth.is_authenticated()
@@ -347,4 +370,165 @@ class NexusClient:
             return resp.json()
         except Exception as e:
             log.error("Failed to get shared loadout %s: %s", share_code, e)
+            return None
+
+    # Notifications
+
+    def get_notifications(self, page: int = 1, page_size: int = 20) -> dict | None:
+        """GET /api/notifications — {rows, total, unread, page, pageSize}."""
+        try:
+            resp = self._session.get(
+                self._url("/notifications"),
+                headers=self._headers(),
+                params={"page": page, "pageSize": page_size},
+                timeout=10,
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            self._handle_error(e, "get notifications")
+            return None
+
+    def mark_notification_read(self, notification_id: int) -> bool:
+        """PATCH /api/notifications/:id — mark single notification as read."""
+        try:
+            resp = self._session.patch(
+                self._url(f"/notifications/{notification_id}"),
+                headers=self._headers(),
+                timeout=10,
+            )
+            resp.raise_for_status()
+            return True
+        except Exception as e:
+            self._handle_error(e, f"mark notification {notification_id} read")
+            return False
+
+    def mark_all_notifications_read(self) -> bool:
+        """POST /api/notifications/read-all."""
+        try:
+            resp = self._session.post(
+                self._url("/notifications/read-all"),
+                headers=self._headers(),
+                timeout=10,
+            )
+            resp.raise_for_status()
+            return True
+        except Exception as e:
+            self._handle_error(e, "mark all notifications read")
+            return False
+
+    # Ingestion
+
+    def ingest_globals(self, batch: list[dict]) -> dict | None:
+        """POST /api/ingestion/globals — submit a gzip-compressed batch of global events.
+
+        Raises RateLimitError on 429, ServerError on 5xx/network errors.
+        Returns None on 4xx client errors (data is bad, no point retrying).
+        """
+        payload = gzip.compress(json.dumps({"globals": batch}).encode())
+        headers = self._headers()
+        headers["Content-Encoding"] = "gzip"
+        headers["Content-Type"] = "application/json"
+        try:
+            resp = self._session.post(
+                self._url("/ingestion/globals"),
+                headers=headers,
+                data=payload,
+                timeout=15,
+            )
+            if resp.status_code == 429:
+                retry_after = resp.json().get("retryAfter", 60)
+                raise RateLimitError(retry_after)
+            if resp.status_code >= 500:
+                raise ServerError(f"{resp.status_code} {resp.reason}")
+            resp.raise_for_status()
+            return resp.json()
+        except (RateLimitError, ServerError):
+            raise
+        except requests.ConnectionError as e:
+            raise ServerError(str(e)) from e
+        except requests.Timeout as e:
+            raise ServerError(str(e)) from e
+        except Exception as e:
+            self._handle_error(e, "ingest globals")
+            return None
+
+    def ingest_trades(self, batch: list[dict]) -> dict | None:
+        """POST /api/ingestion/trade — submit a gzip-compressed batch of trade messages.
+
+        Raises RateLimitError on 429, ServerError on 5xx/network errors.
+        Returns None on 4xx client errors (data is bad, no point retrying).
+        """
+        payload = gzip.compress(json.dumps({"trades": batch}).encode())
+        headers = self._headers()
+        headers["Content-Encoding"] = "gzip"
+        headers["Content-Type"] = "application/json"
+        try:
+            resp = self._session.post(
+                self._url("/ingestion/trade"),
+                headers=headers,
+                data=payload,
+                timeout=15,
+            )
+            if resp.status_code == 429:
+                retry_after = resp.json().get("retryAfter", 60)
+                raise RateLimitError(retry_after)
+            if resp.status_code >= 500:
+                raise ServerError(f"{resp.status_code} {resp.reason}")
+            resp.raise_for_status()
+            return resp.json()
+        except (RateLimitError, ServerError):
+            raise
+        except requests.ConnectionError as e:
+            raise ServerError(str(e)) from e
+        except requests.Timeout as e:
+            raise ServerError(str(e)) from e
+        except Exception as e:
+            self._handle_error(e, "ingest trades")
+            return None
+
+    def get_ingested_globals(self, since: str, limit: int = 200) -> dict | None:
+        """GET /api/ingestion/globals — fetch globals since a timestamp."""
+        try:
+            resp = self._session.get(
+                self._url("/ingestion/globals"),
+                headers=self._headers(),
+                params={"since": since, "limit": limit},
+                timeout=15,
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            self._handle_error(e, "get ingested globals")
+            return None
+
+    def get_ingested_trades(self, since: str, limit: int = 200) -> dict | None:
+        """GET /api/ingestion/trade — fetch trades since a timestamp."""
+        try:
+            resp = self._session.get(
+                self._url("/ingestion/trade"),
+                headers=self._headers(),
+                params={"since": since, "limit": limit},
+                timeout=15,
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            self._handle_error(e, "get ingested trades")
+            return None
+
+    # Streams
+
+    def get_streams(self) -> list[dict] | None:
+        """GET /api/streams — returns list of creators with live status."""
+        try:
+            resp = self._session.get(
+                self._url("/streams"),
+                timeout=10,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return data.get("creators", [])
+        except Exception as e:
+            log.debug("Failed to get streams: %s", e)
             return None

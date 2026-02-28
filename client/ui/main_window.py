@@ -10,7 +10,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QMessageBox,
 )
 from PyQt6.QtGui import QAction
-from PyQt6.QtCore import Qt, QPoint, QEvent, QObject
+from PyQt6.QtCore import Qt, QPoint, QEvent, QObject, QTimer
 
 from .signals import AppSignals
 from .icons import nexus_logo_icon
@@ -179,6 +179,9 @@ class MainWindow(QWidget):
         # Inventory → Wiki navigation
         signals.inventory_open_wiki.connect(self._on_inventory_open_wiki)
 
+        # --- Notification system ---
+        self._setup_notifications()
+
         self._create_resize_grips()
 
     def _refresh_markup_caches(self):
@@ -287,6 +290,127 @@ class MainWindow(QWidget):
         if result == QMessageBox.StandardButton.Ok:
             self._oauth.logout()
             self._oauth.login()
+
+    # --- Notification system ---
+
+    def _setup_notifications(self):
+        from ..notifications.manager import NotificationManager
+        from .widgets.notification_center import NotificationCenter
+
+        self._notif_manager = NotificationManager(
+            config=self._config,
+            event_bus=self._event_bus,
+            nexus_client=self._nexus_client,
+        )
+
+        # Floating panel (child of this window, hidden by default)
+        self._notification_center = NotificationCenter(
+            manager=self._notif_manager,
+            config=self._config,
+            parent=self,
+        )
+        self._notification_center.hide()
+
+        # Sidebar bell → toggle panel
+        self._sidebar.notification_clicked.connect(self._toggle_notification_center)
+
+        # Enable notification processing after chat-log catchup
+        self._signals.catchup_complete.connect(self._notif_manager.set_live)
+
+        # Bridge: manager callback → EventBus → Qt signal (thread-safe)
+        from ..core.constants import EVENT_NOTIFICATION
+        self._notif_manager.on_notification(
+            lambda notif: self._event_bus.publish(EVENT_NOTIFICATION, notif)
+        )
+        self._signals.notification.connect(self._on_new_notification)
+
+        # Badge updates when read state changes in the notification center
+        self._notification_center.read_state_changed.connect(self._update_badge)
+
+        # Server notification poll timer (every 2 minutes)
+        self._notif_poll_timer = QTimer(self)
+        self._notif_poll_timer.timeout.connect(self._poll_server_notifications)
+        self._notif_poll_timer.start(120_000)
+
+        # Stream poll timer (every 3 minutes)
+        self._stream_poll_timer = QTimer(self)
+        self._stream_poll_timer.timeout.connect(self._poll_streams)
+        self._stream_poll_timer.start(180_000)
+
+    def _toggle_notification_center(self):
+        if self._notification_center.isVisible():
+            self._notification_center.hide()
+            return
+        # Position: bottom-left of content area, flush with sidebar right edge
+        from .theme import SIDEBAR_WIDTH, STATUS_BAR_HEIGHT, TITLE_BAR_HEIGHT
+        panel_h = self._notification_center.height()
+        x = SIDEBAR_WIDTH
+        y = self.height() - STATUS_BAR_HEIGHT - panel_h
+        y = max(TITLE_BAR_HEIGHT, y)
+        self._notification_center.move(x, y)
+        self._notification_center.show()
+        self._notification_center.raise_()
+
+    def _update_badge(self):
+        """Update the sidebar bell badge with the current unread count."""
+        count = self._notif_manager.get_unread_count()
+        self._sidebar.set_unread_count(count)
+
+    def _on_new_notification(self, notif):
+        self._update_badge()
+
+        # Refresh panel if visible
+        self._notification_center.refresh()
+
+        # System toast
+        if getattr(self._config, "notification_toast_enabled", True):
+            if hasattr(self, "_tray"):
+                self._tray.showMessage(
+                    notif.title,
+                    notif.body[:200] if notif.body else "",
+                    QSystemTrayIcon.MessageIcon.Information,
+                    5000,
+                )
+
+        # Notification sound
+        if getattr(self._config, "notification_sound_enabled", True):
+            self._play_notification_sound()
+
+    def _play_notification_sound(self):
+        if not hasattr(self, "_sound_effect"):
+            try:
+                from PyQt6.QtMultimedia import QSoundEffect
+                from PyQt6.QtCore import QUrl
+                import os
+                sound_path = os.path.join(
+                    os.path.dirname(__file__), "..", "assets", "notification.wav"
+                )
+                sound_path = os.path.abspath(sound_path)
+                if not os.path.exists(sound_path):
+                    self._sound_effect = None
+                    return
+                self._sound_effect = QSoundEffect()
+                self._sound_effect.setSource(QUrl.fromLocalFile(sound_path))
+                self._sound_effect.setVolume(0.5)
+            except ImportError:
+                self._sound_effect = None
+                return
+        if self._sound_effect:
+            self._sound_effect.play()
+
+    def _poll_server_notifications(self):
+        import threading
+        threading.Thread(
+            target=self._notif_manager.poll_server_notifications,
+            daemon=True,
+        ).start()
+
+    def _poll_streams(self):
+        import threading
+        threading.Thread(
+            target=self._notif_manager.poll_streams,
+            daemon=True,
+        ).start()
 
     # Item type → wiki category path mapping
     _WIKI_PATHS: dict[str, list[str]] = {
@@ -441,6 +565,8 @@ class MainWindow(QWidget):
             page = self._pages.widget(i)
             if hasattr(page, "cleanup"):
                 page.cleanup()
+        if hasattr(self, "_notif_manager"):
+            self._notif_manager.cleanup()
         QApplication.quit()
 
     def _on_tray_activated(self, reason):
@@ -517,6 +643,13 @@ class MainWindow(QWidget):
         super().resizeEvent(event)
         if hasattr(self, '_grips'):
             self._update_grip_positions()
+        # Reposition floating notification center if visible
+        if hasattr(self, '_notification_center') and self._notification_center.isVisible():
+            from .theme import SIDEBAR_WIDTH, STATUS_BAR_HEIGHT, TITLE_BAR_HEIGHT
+            panel_h = self._notification_center.height()
+            x = SIDEBAR_WIDTH
+            y = self.height() - STATUS_BAR_HEIGHT - panel_h
+            self._notification_center.move(x, max(TITLE_BAR_HEIGHT, y))
 
     def _enable_shadow(self):
         """Use DWM to add a drop shadow to the frameless window."""
@@ -584,11 +717,22 @@ class MainWindow(QWidget):
     # --- Application event filter ---
 
     def eventFilter(self, obj: QObject, event: QEvent) -> bool:
-        """Handle back/forward mouse button navigation."""
+        """Handle back/forward mouse button navigation and notification panel dismiss."""
         if event.type() == QEvent.Type.MouseButtonPress:
             # Only handle events from this window's widget tree
             if not isinstance(obj, QWidget) or (obj is not self and not self.isAncestorOf(obj)):
                 return False
+
+            # Dismiss notification center when clicking outside it
+            if (hasattr(self, "_notification_center")
+                    and self._notification_center.isVisible()
+                    and not self._notification_center.isAncestorOf(obj)
+                    and obj is not self._notification_center):
+                # Don't close if clicking the bell button (toggle handles it)
+                bell = getattr(self._sidebar, "_bell_btn", None)
+                if obj is not bell and (bell is None or not bell.isAncestorOf(obj)):
+                    self._notification_center.hide()
+
             if event.button() == Qt.MouseButton.BackButton:
                 self._navigate_back()
                 return True

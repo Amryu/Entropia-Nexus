@@ -156,6 +156,8 @@ class HuntTracker:
 
     def _on_catchup_complete(self, _data):
         """Chat log watcher finished replaying old lines — safe to track now."""
+        if self._live:
+            return  # Already live; ignore reparse completions
         self._live = True
         self._try_restore_session()
         # Pre-warm heavy subsystems in background threads so they're

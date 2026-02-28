@@ -8,9 +8,9 @@ from PyQt6.QtGui import QPixmap, QPainter, QPainterPath
 
 from ..theme import (
     SIDEBAR_WIDTH, SIDEBAR_INDICATOR_WIDTH,
-    PRIMARY, SECONDARY, MAIN_DARK, HOVER, TEXT, TEXT_MUTED, ACCENT, BORDER,
+    PRIMARY, SECONDARY, MAIN_DARK, HOVER, TEXT, TEXT_MUTED, ACCENT, BORDER, ERROR,
 )
-from ..icons import svg_icon, svg_pixmap, DASHBOARD, SKILLS, LOADOUT, HUNT, INVENTORY, WIKI, MAPS, SETTINGS, USER
+from ..icons import svg_icon, svg_pixmap, DASHBOARD, SKILLS, LOADOUT, HUNT, INVENTORY, WIKI, MAPS, BELL, SETTINGS, USER
 
 # Page definitions: (svg_data, tooltip)
 PAGE_ICONS = [
@@ -86,6 +86,48 @@ def _make_round_pixmap(source: QPixmap, size: int) -> QPixmap:
     return result
 
 
+class _BellButton(QPushButton):
+    """Bell icon button with an unread-count badge overlay."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._unread = 0
+        self.setToolTip("Notifications")
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setIconSize(QSize(ICON_SIZE, ICON_SIZE))
+        self.setStyleSheet(_button_style(active=False))
+        self.setIcon(svg_icon(BELL, TEXT_MUTED, ICON_SIZE))
+
+    def set_unread_count(self, count: int):
+        if count != self._unread:
+            self._unread = count
+            self.update()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if self._unread <= 0:
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        badge_size = 16
+        x = self.width() - badge_size - 6
+        y = 6
+        from PyQt6.QtGui import QColor, QFont
+        from PyQt6.QtCore import QRect
+        painter.setBrush(QColor(ERROR))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawEllipse(x, y, badge_size, badge_size)
+        painter.setPen(QColor(TEXT))
+        font = QFont()
+        font.setPixelSize(10)
+        font.setBold(True)
+        painter.setFont(font)
+        text = str(self._unread) if self._unread < 100 else "99+"
+        painter.drawText(QRect(x, y, badge_size, badge_size),
+                         Qt.AlignmentFlag.AlignCenter, text)
+        painter.end()
+
+
 class _AvatarLoader(QThread):
     """Background thread to download user avatar image."""
     finished = pyqtSignal(QPixmap)
@@ -141,6 +183,7 @@ class IconSidebar(QWidget):
     """Narrow icon sidebar for switching between pages."""
 
     page_changed = pyqtSignal(int)
+    notification_clicked = pyqtSignal()
 
     def __init__(self, *, signals=None, config=None, parent=None):
         super().__init__(parent)
@@ -167,6 +210,11 @@ class IconSidebar(QWidget):
             self._icon_data.append(svg_data)
 
         layout.addStretch()
+
+        # Notification bell (above settings)
+        self._bell_btn = _BellButton()
+        self._bell_btn.clicked.connect(lambda: self.notification_clicked.emit())
+        layout.addWidget(self._bell_btn)
 
         # Settings at bottom
         settings_btn = self._create_button(
@@ -212,6 +260,10 @@ class IconSidebar(QWidget):
         """Update visual active state without emitting page_changed."""
         self._active_index = index
         self._apply_styles()
+
+    def set_unread_count(self, count: int):
+        """Update the notification bell badge."""
+        self._bell_btn.set_unread_count(count)
 
     def _apply_styles(self):
         for i, btn in enumerate(self._buttons):

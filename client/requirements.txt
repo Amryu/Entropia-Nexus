@@ -5,7 +5,6 @@ opencv-python>=4.9.0
 pyautogui>=0.9.54
 Pillow>=10.0.0
 PyQt6>=6.6.0
-PyQt6-WebEngine>=6.6.0
 requests>=2.31.0
 keyring>=24.0.0
 py-mini-racer>=0.6.0

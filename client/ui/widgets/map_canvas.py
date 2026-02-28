@@ -508,19 +508,21 @@ class MapCanvas(QWidget):
         """Draw the geometric shape for a location."""
         if shape == "Circle":
             data = props.get("Data", {})
-            cx, cy = self._entropia_to_widget(data.get("x", 0), data.get("y", 0))
-            ox, _ = self._entropia_to_widget(
-                data.get("x", 0) + data.get("radius", 0), data.get("y", 0)
-            )
+            dx = data.get("x") or 0
+            dy = data.get("y") or 0
+            dr = data.get("radius") or 0
+            cx, cy = self._entropia_to_widget(dx, dy)
+            ox, _ = self._entropia_to_widget(dx + dr, dy)
             r = abs(ox - cx) + glow_extra
             painter.drawEllipse(QPointF(cx, cy), r, r)
         elif shape == "Rectangle":
             data = props.get("Data", {})
-            sx, sy = self._entropia_to_widget(data.get("x", 0), data.get("y", 0))
-            ex, ey = self._entropia_to_widget(
-                data.get("x", 0) + data.get("width", 0),
-                data.get("y", 0) + data.get("height", 0),
-            )
+            dx = data.get("x") or 0
+            dy = data.get("y") or 0
+            dw = data.get("width") or 0
+            dh = data.get("height") or 0
+            sx, sy = self._entropia_to_widget(dx, dy)
+            ex, ey = self._entropia_to_widget(dx + dw, dy + dh)
             w = ex - sx
             h = sy - ey  # Y is inverted
             rect = QRectF(sx - glow_extra, sy - h - glow_extra,
@@ -531,7 +533,10 @@ class MapCanvas(QWidget):
             verts_raw = data.get("vertices", [])
             points = []
             for i in range(0, len(verts_raw) - 1, 2):
-                wx, wy = self._entropia_to_widget(verts_raw[i], verts_raw[i + 1])
+                vx, vy = verts_raw[i], verts_raw[i + 1]
+                if vx is None or vy is None:
+                    continue
+                wx, wy = self._entropia_to_widget(vx, vy)
                 points.append(QPointF(wx, wy))
             if points:
                 painter.drawPolygon(QPolygonF(points))
@@ -571,10 +576,11 @@ class MapCanvas(QWidget):
 
             if shape == "Circle":
                 data = props.get("Data", {})
-                cx, cy = self._entropia_to_widget(data.get("x", 0), data.get("y", 0))
-                ox, _ = self._entropia_to_widget(
-                    data.get("x", 0) + data.get("radius", 0), data.get("y", 0)
-                )
+                dx = data.get("x") or 0
+                dy = data.get("y") or 0
+                dr = data.get("radius") or 0
+                cx, cy = self._entropia_to_widget(dx, dy)
+                ox, _ = self._entropia_to_widget(dx + dr, dy)
                 r = abs(ox - cx)
                 d = math.hypot(wx - cx, wy - cy)
                 if d <= r and r < best_dist:
@@ -582,11 +588,12 @@ class MapCanvas(QWidget):
 
             elif shape == "Rectangle":
                 data = props.get("Data", {})
-                sx, sy = self._entropia_to_widget(data.get("x", 0), data.get("y", 0))
-                ex, ey = self._entropia_to_widget(
-                    data.get("x", 0) + data.get("width", 0),
-                    data.get("y", 0) + data.get("height", 0),
-                )
+                dx = data.get("x") or 0
+                dy = data.get("y") or 0
+                dw = data.get("width") or 0
+                dh = data.get("height") or 0
+                sx, sy = self._entropia_to_widget(dx, dy)
+                ex, ey = self._entropia_to_widget(dx + dw, dy + dh)
                 w_r = ex - sx
                 h_r = sy - ey
                 if sx <= wx <= sx + w_r and sy - h_r <= wy <= sy:
@@ -599,7 +606,10 @@ class MapCanvas(QWidget):
                 verts_raw = data.get("vertices", [])
                 points = []
                 for i in range(0, len(verts_raw) - 1, 2):
-                    px, py = self._entropia_to_widget(verts_raw[i], verts_raw[i + 1])
+                    vx, vy = verts_raw[i], verts_raw[i + 1]
+                    if vx is None or vy is None:
+                        continue
+                    px, py = self._entropia_to_widget(vx, vy)
                     points.append((px, py))
                 if self._point_in_polygon(wx, wy, points):
                     area = self._polygon_area(points)

@@ -8,6 +8,7 @@ import threading
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
     QTextBrowser, QSizePolicy, QFrame,
+    QTableWidget, QTableWidgetItem, QHeaderView,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QPixmap, QPainter, QLinearGradient, QColor
@@ -19,6 +20,194 @@ from ..theme import (
     HOVER, DAMAGE_COLORS, TIER1_BLUE_START, TIER1_BLUE_END, SUCCESS,
 )
 from ...data.wiki_columns import _DAMAGE_TYPES, deep_get
+
+
+# ---------------------------------------------------------------------------
+# Shared table / label helpers (used by weapon, blueprint, and other detail views)
+# ---------------------------------------------------------------------------
+
+_TABLE_MAX_HEIGHT = 400
+_TABLE_ROW_HEIGHT = 32
+
+
+def section_title_label(text: str) -> QLabel:
+    """Uppercase section title matching the website's .section-title."""
+    lbl = QLabel(text.upper())
+    lbl.setStyleSheet(
+        f"color: {TEXT_MUTED}; font-size: 13px; font-weight: 600;"
+        f" letter-spacing: 0.5px; background: transparent;"
+        f" margin: 0 0 8px 0; padding: 0;"
+    )
+    return lbl
+
+
+def no_data_label(text: str) -> QLabel:
+    """Centered muted label for empty-data states."""
+    lbl = QLabel(text)
+    lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+    lbl.setStyleSheet(
+        f"color: {TEXT_MUTED}; font-size: 14px;"
+        f" background-color: {PRIMARY}; border-radius: 6px;"
+        f" padding: 16px;"
+    )
+    return lbl
+
+
+def make_compact_table(headers: list[str], rows: list[list[str]]) -> QTableWidget:
+    """Styled read-only table matching the website's FancyTable compact style."""
+    table = QTableWidget(len(rows), len(headers))
+    table.setHorizontalHeaderLabels(headers)
+    table.verticalHeader().setVisible(False)
+    table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+    table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+    table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+    table.setShowGrid(False)
+    table.setAlternatingRowColors(True)
+    table.setStyleSheet(f"""
+        QTableWidget {{
+            background-color: {SECONDARY};
+            alternate-background-color: {PRIMARY};
+            border: 1px solid {BORDER};
+            border-radius: 6px;
+            font-size: 13px;
+            color: {TEXT};
+        }}
+        QTableWidget::item {{
+            padding: 4px 10px;
+            border-bottom: 1px solid {BORDER};
+        }}
+        QHeaderView::section {{
+            background-color: {HOVER};
+            color: {TEXT_MUTED};
+            border: none;
+            border-right: 1px solid {BORDER};
+            border-bottom: 1px solid {BORDER};
+            padding: 6px 10px;
+            font-weight: 600;
+            font-size: 11px;
+        }}
+    """)
+
+    for r, row_data in enumerate(rows):
+        for c, cell_text in enumerate(row_data):
+            table.setItem(r, c, QTableWidgetItem(str(cell_text)))
+
+    # Column sizing: first column stretches, others fit content
+    header = table.horizontalHeader()
+    header.setStretchLastSection(True)
+    if len(headers) > 1:
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        for i in range(1, len(headers)):
+            header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
+    else:
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+
+    for r in range(len(rows)):
+        table.setRowHeight(r, _TABLE_ROW_HEIGHT)
+
+    # Size to fit: header + rows + small border allowance
+    content_height = _TABLE_ROW_HEIGHT + len(rows) * _TABLE_ROW_HEIGHT + 4
+    table.setFixedHeight(min(content_height, _TABLE_MAX_HEIGHT))
+
+    return table
+
+
+def build_acquisition_content(data: dict) -> QWidget:
+    """Build the acquisition panel content from API data.
+
+    Shared by all entity detail views (weapons, blueprints, etc.).
+    """
+    container = QWidget()
+    container.setStyleSheet("background: transparent;")
+    layout = QVBoxLayout(container)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(16)
+
+    has_any = False
+
+    # --- Vendor Offers ---
+    vendor_offers = data.get("VendorOffers") or []
+    if vendor_offers:
+        has_any = True
+        layout.addWidget(section_title_label("Vendor"))
+        headers = ["Name", "Price", "Planet", "Limited"]
+        rows = []
+        for offer in vendor_offers:
+            v_name = deep_get(offer, "Vendor", "Name") or "N/A"
+            value = deep_get(offer, "Item", "Properties", "Economy", "Value")
+            price = f"{value} PED" if value is not None else "N/A"
+            planet = deep_get(offer, "Vendor", "Planet", "Name") or "N/A"
+            limited = "Yes" if offer.get("IsLimited") else "No"
+            rows.append([v_name, price, planet, limited])
+        layout.addWidget(make_compact_table(headers, rows))
+
+    # --- Looted ---
+    loots = data.get("Loots") or []
+    if loots:
+        has_any = True
+        layout.addWidget(section_title_label("Looted"))
+        headers = ["Mob", "Planet", "Maturity", "Frequency"]
+        rows = []
+        for loot in loots:
+            mob = deep_get(loot, "Mob", "Name") or "N/A"
+            planet = deep_get(loot, "Mob", "Planet", "Name") or "N/A"
+            maturity = deep_get(loot, "Maturity", "Name") or "N/A"
+            frequency = loot.get("Frequency", "N/A")
+            rows.append([mob, planet, maturity, frequency])
+        layout.addWidget(make_compact_table(headers, rows))
+
+    # --- Shop Listings (Market) ---
+    shop_listings = data.get("ShopListings") or []
+    if shop_listings:
+        has_any = True
+        layout.addWidget(section_title_label("Market"))
+        headers = ["Shop", "Markup", "Qty", "Planet"]
+        rows = []
+        for listing in shop_listings:
+            shop_name = deep_get(listing, "Shop", "Name") or "N/A"
+            markup = listing.get("Markup")
+            markup_str = f"{markup:.2f}%" if markup is not None else "N/A"
+            qty = listing.get("StackSize")
+            qty_str = str(qty) if qty is not None else "N/A"
+            planet = deep_get(listing, "Shop", "Planet", "Name") or "N/A"
+            rows.append([shop_name, markup_str, qty_str, planet])
+        layout.addWidget(make_compact_table(headers, rows))
+
+    # --- Crafted (Blueprints) ---
+    blueprints = data.get("Blueprints") or []
+    if blueprints:
+        has_any = True
+        layout.addWidget(section_title_label("Crafted"))
+        headers = ["Blueprint", "Level", "Profession"]
+        rows = []
+        for bp in blueprints:
+            bp_name = bp.get("Name", "N/A")
+            level = deep_get(bp, "Properties", "Level")
+            level_str = str(level) if level is not None else "N/A"
+            profession = deep_get(bp, "Profession", "Name") or "N/A"
+            rows.append([bp_name, level_str, profession])
+        layout.addWidget(make_compact_table(headers, rows))
+
+    # --- Blueprint Discovery ---
+    bp_drops = data.get("BlueprintDrops") or []
+    if bp_drops:
+        has_any = True
+        layout.addWidget(section_title_label("Blueprint Discovery"))
+        headers = ["Name", "Level"]
+        rows = []
+        for bp in bp_drops:
+            bp_name = bp.get("Name", "N/A")
+            level = deep_get(bp, "Properties", "Level")
+            level_str = str(level) if level is not None else "N/A"
+            rows.append([bp_name, level_str])
+        layout.addWidget(make_compact_table(headers, rows))
+
+    if not has_any:
+        layout.addWidget(
+            no_data_label("No acquisition data available for this item.")
+        )
+
+    return container
 
 
 # ---------------------------------------------------------------------------

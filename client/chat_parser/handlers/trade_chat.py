@@ -21,9 +21,10 @@ class TradeChatHandler(BaseHandler):
 
         if not self.suppress_events:
             self._event_bus.publish(EVENT_TRADE_CHAT, event)
-        self._db.insert_trade_message(
-            timestamp=event.timestamp.isoformat(),
-            channel=event.channel,
-            username=event.username,
-            message=event.message,
-        )
+        if self.ingestion_enabled:
+            self._db.insert_trade_message(
+                timestamp=event.timestamp.isoformat(),
+                channel=event.channel,
+                username=event.username,
+                message=event.message,
+            )

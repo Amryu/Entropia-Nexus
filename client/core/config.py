@@ -85,6 +85,23 @@ class AppConfig:
     # Updates
     check_for_updates: bool = True
 
+    # Notifications
+    notification_sound_enabled: bool = True
+    notification_toast_enabled: bool = True
+    notification_rules: list[dict] = field(default_factory=list)
+    trade_chat_notifications_enabled: bool = False
+    trade_chat_ignore_list: list[str] = field(default_factory=list)
+    trade_chat_cooldown_seconds: int = 300
+
+    # Streams
+    stream_notifications_enabled: bool = True
+    stream_exclude_list: list[str] = field(default_factory=list)
+
+    # Ingestion (crowdsourced data upload/download)
+    ingestion_enabled: bool = True
+    ingestion_upload_interval_seconds: int = 30
+    ingestion_receive_interval_seconds: int = 60
+
 
 DEFAULTS = {
     "chat_log_path": str(Path(DEFAULT_CHAT_LOG_PATH).expanduser()),
@@ -119,6 +136,17 @@ DEFAULTS = {
     "wiki_column_prefs": {},
     "js_utils_path": "",
     "check_for_updates": True,
+    "notification_sound_enabled": True,
+    "notification_toast_enabled": True,
+    "notification_rules": [],
+    "trade_chat_notifications_enabled": False,
+    "trade_chat_ignore_list": [],
+    "trade_chat_cooldown_seconds": 300,
+    "stream_notifications_enabled": True,
+    "stream_exclude_list": [],
+    "ingestion_enabled": True,
+    "ingestion_upload_interval_seconds": 30,
+    "ingestion_receive_interval_seconds": 60,
 }
 
 

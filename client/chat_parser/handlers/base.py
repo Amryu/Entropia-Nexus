@@ -12,6 +12,7 @@ class BaseHandler(ABC):
         self._event_bus = event_bus
         self._db = db
         self.suppress_events = False
+        self.ingestion_enabled = False  # Set True when authenticated; gates globals/trade DB writes
 
     @abstractmethod
     def can_handle(self, parsed_line: ParsedLine) -> bool:

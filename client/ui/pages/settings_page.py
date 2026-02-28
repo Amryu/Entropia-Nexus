@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 
 from ...core.config import save_config
-from ...core.constants import EVENT_CONFIG_CHANGED
+from ...core.constants import EVENT_CONFIG_CHANGED, EVENT_REPARSE_REQUESTED
 from ...core.logger import get_logger
 
 log = get_logger("Settings")
@@ -125,7 +125,34 @@ class SettingsPage(QWidget):
         poll_row.addStretch()
         layout.addLayout(poll_row)
 
+        # Re-parse button
+        reparse_row = QHBoxLayout()
+        self._reparse_btn = QPushButton("Re-parse Chat Log")
+        self._reparse_btn.setToolTip(
+            "Re-read the entire chat.log from the beginning.\n"
+            "Globals and trade messages will be re-submitted to the server.\n"
+            "Hunt tracking and other trackers are not affected."
+        )
+        self._reparse_btn.clicked.connect(self._on_reparse)
+        reparse_row.addWidget(self._reparse_btn)
+        reparse_row.addStretch()
+        layout.addLayout(reparse_row)
+
         self._layout.addWidget(group)
+
+    def _on_reparse(self):
+        self._reparse_btn.setEnabled(False)
+        self._reparse_btn.setText("Re-parsing...")
+        self._event_bus.publish(EVENT_REPARSE_REQUESTED, None)
+
+        # Use Qt signal (thread-safe) instead of EventBus callback which
+        # would run on the background reparse thread and crash Qt.
+        self._signals.catchup_complete.connect(self._on_reparse_done)
+
+    def _on_reparse_done(self, _data):
+        self._reparse_btn.setEnabled(True)
+        self._reparse_btn.setText("Re-parse Chat Log")
+        self._signals.catchup_complete.disconnect(self._on_reparse_done)
 
     def _browse_chat_path(self):
         path, _ = QFileDialog.getOpenFileName(self, "Select chat.log", "", "Log files (*.log);;All files (*)")

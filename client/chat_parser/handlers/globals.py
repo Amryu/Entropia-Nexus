@@ -3,10 +3,14 @@ from ...core.constants import (
     GLOBAL_ATH_KEYWORD,
     GLOBAL_CRAFT_PATTERN,
     GLOBAL_DEPOSIT_PATTERN,
+    GLOBAL_DISCOVERY_PATTERN,
+    GLOBAL_EXAMINE_PATTERN,
     GLOBAL_HOF_SUFFIX,
     GLOBAL_KILL_PATTERN,
+    GLOBAL_PVP_PATTERN,
     GLOBAL_RARE_PATTERN,
     GLOBAL_TEAM_KILL_PATTERN,
+    GLOBAL_TIER_PATTERN,
 )
 from ..models import GlobalEvent, GlobalType, ParsedLine
 from .base import BaseHandler
@@ -57,6 +61,34 @@ class GlobalsHandler(BaseHandler):
                     is_ath=is_ath,
                 )
         if not event:
+            # First to tier (check before discovery — more specific pattern)
+            match = GLOBAL_TIER_PATTERN.search(msg)
+            if match:
+                event = GlobalEvent(
+                    timestamp=parsed_line.timestamp,
+                    global_type=GlobalType.TIER,
+                    player_name=match.group(1),
+                    target_name=match.group(3),
+                    value=float(match.group(2)),  # tier level
+                    value_unit="TIER",
+                    is_hof=is_hof,
+                    is_ath=is_ath,
+                )
+        if not event:
+            # Discovery
+            match = GLOBAL_DISCOVERY_PATTERN.search(msg)
+            if match:
+                event = GlobalEvent(
+                    timestamp=parsed_line.timestamp,
+                    global_type=GlobalType.DISCOVERY,
+                    player_name=match.group(1),
+                    target_name=match.group(2),
+                    value=0,
+                    value_unit="PED",
+                    is_hof=is_hof,
+                    is_ath=is_ath,
+                )
+        if not event:
             # Deposit
             match = GLOBAL_DEPOSIT_PATTERN.search(msg)
             if match:
@@ -87,6 +119,35 @@ class GlobalsHandler(BaseHandler):
                     is_ath=is_ath,
                 )
         if not event:
+            # Container/idol examination
+            match = GLOBAL_EXAMINE_PATTERN.search(msg)
+            if match:
+                event = GlobalEvent(
+                    timestamp=parsed_line.timestamp,
+                    global_type=GlobalType.EXAMINE,
+                    player_name=match.group(1),
+                    target_name=match.group(2),
+                    value=float(match.group(4)),
+                    value_unit="PED",
+                    location=match.group(3),
+                    is_hof=is_hof,
+                    is_ath=is_ath,
+                )
+        if not event:
+            # PvP kill streak
+            match = GLOBAL_PVP_PATTERN.search(msg)
+            if match:
+                event = GlobalEvent(
+                    timestamp=parsed_line.timestamp,
+                    global_type=GlobalType.PVP,
+                    player_name=match.group(1),
+                    target_name="PvP",
+                    value=float(match.group(2)),
+                    value_unit="kills",
+                    is_hof=is_hof,
+                    is_ath=is_ath,
+                )
+        if not event:
             # Regular kill
             match = GLOBAL_KILL_PATTERN.search(msg)
             if match:
@@ -106,17 +167,18 @@ class GlobalsHandler(BaseHandler):
         if event:
             if not self.suppress_events:
                 self._event_bus.publish(EVENT_GLOBAL, event)
-            self._db.insert_global(
-                timestamp=event.timestamp.isoformat(),
-                global_type=event.global_type.value,
-                player_name=event.player_name,
-                target_name=event.target_name,
-                value=event.value,
-                value_unit=event.value_unit,
-                location=event.location,
-                is_hof=event.is_hof,
-                is_ath=event.is_ath,
-            )
+            if self.ingestion_enabled:
+                self._db.insert_global(
+                    timestamp=event.timestamp.isoformat(),
+                    global_type=event.global_type.value,
+                    player_name=event.player_name,
+                    target_name=event.target_name,
+                    value=event.value,
+                    value_unit=event.value_unit,
+                    location=event.location,
+                    is_hof=event.is_hof,
+                    is_ath=event.is_ath,
+                )
 
     @staticmethod
     def _extract_location(msg: str, after_pos: int) -> str | None:

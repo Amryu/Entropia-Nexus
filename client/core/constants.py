@@ -48,6 +48,17 @@ EVENT_SKILLS_UPLOAD_FAILED = "skills_upload_failed"
 EVENT_CONFIG_CHANGED = "config_changed"
 EVENT_HOTKEY_TRIGGERED = "hotkey_triggered"
 EVENT_CATCHUP_COMPLETE = "catchup_complete"
+EVENT_CATCHUP_PROGRESS = "catchup_progress"
+EVENT_REPARSE_REQUESTED = "reparse_requested"
+EVENT_REPARSE_COMPLETE = "reparse_complete"
+
+# Event names — Notifications
+EVENT_NOTIFICATION = "notification"
+
+# Event names — Ingestion (server-distributed data)
+EVENT_INGESTED_GLOBAL = "ingested_global"
+EVENT_INGESTED_TRADE = "ingested_trade"
+EVENT_INGESTION_STATUS = "ingestion_status"
 
 # Event names — Updates
 EVENT_UPDATE_AVAILABLE = "update_available"
@@ -148,6 +159,19 @@ GLOBAL_CRAFT_PATTERN = re.compile(
 )
 GLOBAL_RARE_PATTERN = re.compile(
     r'^(.+?) has found a rare item \((.+?)\) with a value of ([\d.]+) (PED|PEC)!'
+)
+
+GLOBAL_DISCOVERY_PATTERN = re.compile(
+    r'^(.+?) is the first colonist to discover (.+?)!'
+)
+GLOBAL_TIER_PATTERN = re.compile(
+    r'^(.+?) is the first colonist to reach tier (\d+) for (.+?)!'
+)
+GLOBAL_EXAMINE_PATTERN = re.compile(
+    r'^(.+?) examined (.+?) in (.+?) and found something with a value of ([\d.]+) PED'
+)
+GLOBAL_PVP_PATTERN = re.compile(
+    r'^(.+?) defeated (\d+) others'
 )
 
 GLOBAL_HOF_SUFFIX = "A record has been added to the Hall of Fame"

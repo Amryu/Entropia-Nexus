@@ -899,6 +899,44 @@ class Database:
             )
             self._auto_commit()
 
+    def delete_ingested_globals(self, items: list[dict]) -> int:
+        """Delete specific globals confirmed processed by the server.
+
+        Uses the dedup key (timestamp, global_type, player_name, target_name, value)
+        to identify rows. Returns number of rows deleted.
+        """
+        deleted = 0
+        with self._lock:
+            for item in items:
+                cur = self._conn.execute(
+                    "DELETE FROM globals WHERE timestamp = ? AND global_type = ? "
+                    "AND player_name = ? AND target_name = ? AND value = ?",
+                    (item["timestamp"], item["type"], item["player"],
+                     item["target"], item["value"]),
+                )
+                deleted += cur.rowcount
+            self._conn.commit()
+        return deleted
+
+    def delete_ingested_trades(self, items: list[dict]) -> int:
+        """Delete specific trade messages confirmed processed by the server.
+
+        Uses the dedup key (timestamp, channel, username, message)
+        to identify rows. Returns number of rows deleted.
+        """
+        deleted = 0
+        with self._lock:
+            for item in items:
+                cur = self._conn.execute(
+                    "DELETE FROM trade_messages WHERE timestamp = ? AND channel = ? "
+                    "AND username = ? AND message = ?",
+                    (item["timestamp"], item["channel"], item["username"],
+                     item["message"]),
+                )
+                deleted += cur.rowcount
+            self._conn.commit()
+        return deleted
+
     def clear_parsed_data(self) -> None:
         """Delete all chat-parsed data before a full reparse.
 

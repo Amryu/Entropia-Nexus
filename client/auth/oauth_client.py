@@ -19,7 +19,7 @@ from .token_store import TokenStore
 
 log = get_logger("Auth")
 
-SCOPES = "profile:read skills:read skills:write loadouts:read loadouts:write inventory:read inventory:write"
+SCOPES = "profile:read skills:read skills:write loadouts:read loadouts:write inventory:read inventory:write notifications:read notifications:write"
 TOKEN_REFRESH_MARGIN_SECONDS = 300  # Refresh 5 min before expiry
 CALLBACK_TIMEOUT_SECONDS = 120
 DEFAULT_CLIENT_ID = "e5d3b6c4-ec01-468d-b3f2-c0b056cfe47c"
@@ -39,8 +39,10 @@ class OAuthClient:
         # Restore tokens from disk (fast — no network calls).
         # Network refresh happens later via refresh_in_background().
         self._tokens = self._token_store.load()
-        if self._tokens and not self._tokens.is_expired:
-            # Preliminary authenticated state (no username/avatar yet)
+        if self._tokens and (not self._tokens.is_expired or self._tokens.refresh_token):
+            # Preliminary authenticated state (no username/avatar yet).
+            # If access token is expired but refresh token exists,
+            # refresh_in_background() will refresh it.
             self._auth_state = AuthState(authenticated=True)
 
     @property
@@ -77,6 +79,12 @@ class OAuthClient:
             if self._tokens.is_expired and self._tokens.refresh_token:
                 log.info("Access token expired, refreshing via refresh token...")
                 if not self._refresh_token():
+                    # Refresh failed. If tokens were cleared (auth rejection),
+                    # _refresh_token already published unauthenticated state.
+                    # If tokens still exist (network error), re-publish so
+                    # the UI shows the preliminary authenticated state.
+                    if self._tokens:
+                        self._update_auth_state(AuthState(authenticated=True))
                     return
             if self._tokens and not self._tokens.is_expired:
                 self._refresh_user_info()
@@ -247,11 +255,22 @@ class OAuthClient:
             self._token_store.save(tokens)
             return True
 
+        except requests.HTTPError as e:
+            if e.response is not None and e.response.status_code in (401, 403):
+                # Refresh token rejected by server — truly logged out
+                log.error("Refresh token rejected (HTTP %d), clearing session",
+                          e.response.status_code)
+                self._tokens = None
+                self._token_store.clear()
+                self._update_auth_state(AuthState())
+            else:
+                # Server error (5xx) — keep tokens, retry later
+                log.warning("Token refresh failed (HTTP %d), will retry",
+                            e.response.status_code if e.response is not None else 0)
+            return False
         except Exception as e:
-            log.error("Token refresh failed: %s", e)
-            self._tokens = None
-            self._token_store.clear()
-            self._update_auth_state(AuthState())
+            # Network error (timeout, DNS, connection refused) — keep tokens
+            log.warning("Token refresh failed (network): %s", e)
             return False
 
     def _revoke_token(self, token: str) -> None:

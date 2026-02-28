@@ -112,6 +112,74 @@ class TestGlobalsHandler(unittest.TestCase):
         self.assertTrue(event.is_hof)
         self.assertEqual(event.target_name, "Lysterium Stone")
 
+    def test_examine_storage_container(self):
+        line = _make_global_line("Zal Mitchos Gaal examined Storage Container in Akbal - Sector 3 and found something with a value of 78 PED!")
+        self.handler.handle(line)
+        event = self.bus.publish.call_args[0][1]
+        self.assertEqual(event.global_type, GlobalType.EXAMINE)
+        self.assertEqual(event.player_name, "Zal Mitchos Gaal")
+        self.assertEqual(event.target_name, "Storage Container")
+        self.assertAlmostEqual(event.value, 78.0)
+        self.assertEqual(event.value_unit, "PED")
+        self.assertEqual(event.location, "Akbal - Sector 3")
+
+    def test_examine_container_with_hof(self):
+        line = _make_global_line("Atrox Atrox Killer examined Container in Lotus Gold Solo and found something with a value of 1138 PED! A record has been added to the Hall of Fame!")
+        self.handler.handle(line)
+        event = self.bus.publish.call_args[0][1]
+        self.assertEqual(event.global_type, GlobalType.EXAMINE)
+        self.assertEqual(event.target_name, "Container")
+        self.assertEqual(event.location, "Lotus Gold Solo")
+        self.assertAlmostEqual(event.value, 1138.0)
+        self.assertTrue(event.is_hof)
+
+    def test_examine_sacred_idol(self):
+        line = _make_global_line("danka soul needue examined Sacred Idol in The Fire Temple and found something with a value of 379 PED!")
+        self.handler.handle(line)
+        event = self.bus.publish.call_args[0][1]
+        self.assertEqual(event.global_type, GlobalType.EXAMINE)
+        self.assertEqual(event.target_name, "Sacred Idol")
+        self.assertEqual(event.location, "The Fire Temple")
+
+    def test_pvp_defeated_in_a_row(self):
+        line = _make_global_line("Big Bob Rollo defeated 12 others in a row before succumbing! A record has been added to the Hall of Fame!")
+        self.handler.handle(line)
+        event = self.bus.publish.call_args[0][1]
+        self.assertEqual(event.global_type, GlobalType.PVP)
+        self.assertEqual(event.player_name, "Big Bob Rollo")
+        self.assertEqual(event.target_name, "PvP")
+        self.assertAlmostEqual(event.value, 12.0)
+        self.assertEqual(event.value_unit, "kills")
+        self.assertTrue(event.is_hof)
+
+    def test_pvp_defeated_as_mob(self):
+        line = _make_global_line("Mega Voltage  Jak defeated 19 others as a Yule Daudaormur ! A record has been added to the Hall of Fame!")
+        self.handler.handle(line)
+        event = self.bus.publish.call_args[0][1]
+        self.assertEqual(event.global_type, GlobalType.PVP)
+        self.assertEqual(event.player_name, "Mega Voltage  Jak")
+        self.assertAlmostEqual(event.value, 19.0)
+        self.assertTrue(event.is_hof)
+
+    def test_discovery(self):
+        line = _make_global_line("Jessica aJK Eschweiler is the first colonist to discover Hyperion Arm Guards, Perfected (F)!")
+        self.handler.handle(line)
+        event = self.bus.publish.call_args[0][1]
+        self.assertEqual(event.global_type, GlobalType.DISCOVERY)
+        self.assertEqual(event.player_name, "Jessica aJK Eschweiler")
+        self.assertEqual(event.target_name, "Hyperion Arm Guards, Perfected (F)")
+        self.assertAlmostEqual(event.value, 0)
+
+    def test_tier_record(self):
+        line = _make_global_line("Geir MrGersh Mathiesen is the first colonist to reach tier 7 for A.R.C. Adept Leg Guards (M,L)!")
+        self.handler.handle(line)
+        event = self.bus.publish.call_args[0][1]
+        self.assertEqual(event.global_type, GlobalType.TIER)
+        self.assertEqual(event.player_name, "Geir MrGersh Mathiesen")
+        self.assertEqual(event.target_name, "A.R.C. Adept Leg Guards (M,L)")
+        self.assertAlmostEqual(event.value, 7.0)
+        self.assertEqual(event.value_unit, "TIER")
+
 
 if __name__ == "__main__":
     unittest.main()

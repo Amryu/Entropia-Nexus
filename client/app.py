@@ -132,8 +132,12 @@ def _run_gui(config, event_bus, db, config_path):
         event_bus.publish(EVENT_AUTH_STATE_CHANGED, oauth.auth_state)
 
     # Now start worker threads (safe — Qt platform integration is initialized)
+    # Ingestion uploader must subscribe to EVENT_CATCHUP_COMPLETE BEFORE
+    # the chat watcher starts its catchup thread, to avoid a race condition
+    # where catchup finishes before the uploader exists.
     workers = []
-    workers.extend(_start_chat_watcher(config, event_bus, db))
+    workers.extend(_start_ingestion(config, event_bus, nexus_client, db))
+    workers.extend(_start_chat_watcher(config, event_bus, db, authenticated=oauth.is_authenticated()))
     # workers.extend(_start_ocr_pipeline(config, event_bus, db))  # disabled for debugging
     workers.extend(_start_hunt_tracker(config, event_bus, db, data_client))
     workers.extend(_start_hotkey_manager(config, event_bus))
@@ -161,12 +165,21 @@ def _run_gui(config, event_bus, db, config_path):
 
     exit_code = app.exec()
 
-    # Cleanup — close HTTP sessions first to unblock any in-flight requests
-    # on daemon threads, then stop workers.
+    # Cleanup with hard deadline — if a reparse is running and holds the lock,
+    # stop() will signal it to break out, but we don't wait forever.
+    def force_exit():
+        log.error("Shutdown timed out, forcing exit")
+        os._exit(exit_code or 1)
+
+    kill_timer = threading.Timer(5.0, force_exit)
+    kill_timer.daemon = True
+    kill_timer.start()
+
     nexus_client.close()
     data_client.close()
     _cleanup_workers(workers)
     db.close()
+    kill_timer.cancel()
     sys.exit(exit_code)
 
 
@@ -274,12 +287,12 @@ def _run_headless(config, event_bus, db):
     log.info("Goodbye")
 
 
-def _start_chat_watcher(config, event_bus, db):
+def _start_chat_watcher(config, event_bus, db, *, authenticated=False):
     """Start the chat log watcher. Returns list of stoppable workers."""
     workers = []
     try:
         from .chat_parser.watcher import ChatLogWatcher
-        watcher = ChatLogWatcher(config, event_bus, db)
+        watcher = ChatLogWatcher(config, event_bus, db, authenticated=authenticated)
         watcher.start()
         workers.append(watcher)
         log.info("Chat watcher started: %s", config.chat_log_path)
@@ -353,6 +366,32 @@ def _start_update_checker(config, event_bus):
         log.info("Update checker started")
     except Exception as e:
         log.error("Update checker failed to start: %s", e)
+    return workers
+
+
+def _start_ingestion(config, event_bus, nexus_client, db=None):
+    """Start the ingestion uploader and receiver. Returns list of stoppable workers."""
+    workers = []
+    if not getattr(config, "ingestion_enabled", True):
+        return workers
+    try:
+        from .ingestion.uploader import IngestionUploader
+        uploader = IngestionUploader(
+            event_bus=event_bus, nexus_client=nexus_client, config=config, db=db,
+        )
+        uploader.start()
+        workers.append(uploader)
+    except Exception as e:
+        log.error("Ingestion uploader failed to start: %s", e)
+    try:
+        from .ingestion.receiver import IngestionReceiver
+        receiver = IngestionReceiver(
+            event_bus=event_bus, nexus_client=nexus_client, config=config,
+        )
+        receiver.start()
+        workers.append(receiver)
+    except Exception as e:
+        log.error("Ingestion receiver failed to start: %s", e)
     return workers
 
 
