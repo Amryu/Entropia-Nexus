@@ -141,6 +141,7 @@
     const navMode = navigation?.to?.url?.searchParams?.get('mode');
     const changeIdFromNav = navigation?.to?.url?.searchParams?.get('changeId');
     const isCreateView = navMode === 'create';
+    const isEditView = navMode === 'edit';
 
     // Handle drawer state immediately (doesn't depend on data props)
     if (isMobileAfterNav && !entity && !isCreateView) {
@@ -172,9 +173,9 @@
         return;
       }
 
-      if (hasPendingChange && !$editMode) {
+      if ((hasPendingChange || isEditView) && !$editMode) {
         startEdit(entity);
-      } else if (!hasPendingChange && $editMode) {
+      } else if (!hasPendingChange && !isEditView && $editMode) {
         cancelEdit();
       }
     });
@@ -312,6 +313,7 @@
       return;
     }
 
+    const initialMode = $page.url.searchParams.get('mode');
     const hasPendingChange = checkHasUserPendingChange(entity, currentChangeId, userPendingUpdates, userPendingCreates);
     if (!entity) {
       if ($editMode) {
@@ -320,7 +322,7 @@
       return;
     }
 
-    if (hasPendingChange && !$editMode) {
+    if ((hasPendingChange || initialMode === 'edit') && !$editMode) {
       startEdit(entity);
     }
   });

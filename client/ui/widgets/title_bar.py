@@ -15,6 +15,8 @@ from .search_popup import SearchResultsPopup
 from .fuzzy_line_edit import score_search
 
 SNAP_THRESHOLD = 8  # pixels from screen edge to trigger snap
+SEARCH_MIN_WIDTH = 300
+SEARCH_WIDTH_RATIO = 0.3  # 30% of window width
 
 
 class CustomTitleBar(QWidget):
@@ -23,6 +25,7 @@ class CustomTitleBar(QWidget):
     back_clicked = pyqtSignal()
     forward_clicked = pyqtSignal()
     search_submitted = pyqtSignal(str, list)  # query, scored results
+    result_selected = pyqtSignal(dict)        # individual search result picked
 
     def __init__(self, parent_window, *, data_client=None):
         super().__init__(parent_window)
@@ -104,7 +107,7 @@ class CustomTitleBar(QWidget):
         self._search = QLineEdit()
         self._search.setPlaceholderText("Search Entropia Nexus...")
         self._search.setFixedHeight(22)
-        self._search.setFixedWidth(300)
+        self._search.setMinimumWidth(SEARCH_MIN_WIDTH)
         self._search.setStyleSheet(f"""
             QLineEdit {{
                 background-color: {SECONDARY};
@@ -122,8 +125,9 @@ class CustomTitleBar(QWidget):
         self._watched_window = None
         self._search_popup = SearchResultsPopup()
         self._search_popup.search_submitted.connect(self._on_search_enter)
-        self._search_popup.result_selected.connect(lambda _: self._search_popup.hide())
+        self._search_popup.result_selected.connect(self._on_result_selected)
         self._last_scored: list[dict] = []
+        self._suppress_reshow = False
         self._search.installEventFilter(self)
         layout.addWidget(self._search)
 
@@ -199,6 +203,15 @@ class CustomTitleBar(QWidget):
         """Enable or disable the navigation buttons."""
         self._back_btn.setEnabled(back)
         self._fwd_btn.setEnabled(forward)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._update_search_width()
+
+    def _update_search_width(self):
+        """Set search bar to 30% of window width, with a minimum of 300px."""
+        w = max(SEARCH_MIN_WIDTH, int(self._window.width() * SEARCH_WIDTH_RATIO))
+        self._search.setFixedWidth(w)
 
     def update_maximize_icon(self):
         """Sync the maximize button icon with the window state."""
@@ -281,13 +294,21 @@ class CustomTitleBar(QWidget):
             max_h = screen_bottom - pos.y() - 8
         else:
             max_h = 400
+        max_h = min(max_h, int(self._window.height() * 0.6))
         self._search_popup.setFixedHeight(max(60, min(content_h, max_h)))
         self._search_popup.move(pos.x(), pos.y())
 
     def _on_search_enter(self, query: str):
         """User pressed Enter in search — open full results in wiki."""
+        self._suppress_reshow = True
         self._search_popup.hide()
         self.search_submitted.emit(query, self._last_scored)
+
+    def _on_result_selected(self, item: dict):
+        """User clicked or pressed Enter on a specific result."""
+        self._suppress_reshow = True
+        self._search_popup.hide()
+        self.result_selected.emit(item)
 
     # --- Event filter ---
 
@@ -309,7 +330,9 @@ class CustomTitleBar(QWidget):
                         return True
             # Re-show popup when search bar regains focus with results
             elif etype == QEvent.Type.FocusIn:
-                if self._last_scored and len(self._search.text().strip()) >= 2:
+                if self._suppress_reshow:
+                    self._suppress_reshow = False
+                elif self._last_scored and len(self._search.text().strip()) >= 2:
                     self._position_popup()
                     self._search_popup.show()
                     self._search_popup.raise_()

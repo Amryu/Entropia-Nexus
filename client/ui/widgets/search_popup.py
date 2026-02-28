@@ -68,6 +68,56 @@ def get_type_name(type_key: str) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Type → wiki navigation path mapping (shared by main_window + wiki_page)
+# ---------------------------------------------------------------------------
+
+WIKI_PATHS: dict[str, list[str]] = {
+    # Item types
+    'Weapon': ['Weapons'],
+    'Armor': ['Armor Sets'],
+    'ArmorSet': ['Armor Sets'],
+    'Clothing': ['Clothing'],
+    'WeaponAmplifier': ['Attachments', 'Weapon Amplifiers'],
+    'WeaponVisionAttachment': ['Attachments', 'Sights/Scopes'],
+    'Absorber': ['Attachments', 'Absorbers'],
+    'FinderAmplifier': ['Attachments', 'Finder Amplifiers'],
+    'ArmorPlating': ['Attachments', 'Armor Platings'],
+    'Enhancer': ['Attachments', 'Enhancers'],
+    'MindforceImplant': ['Attachments', 'Mindforce Implants'],
+    'MedicalTool': ['Medical Tools', 'Medical Tools'],
+    'MedicalChip': ['Medical Tools', 'Medical Chips'],
+    'Refiner': ['Tools', 'Refiners'],
+    'Scanner': ['Tools', 'Scanners'],
+    'Finder': ['Tools', 'Finders'],
+    'Excavator': ['Tools', 'Excavators'],
+    'TeleportationChip': ['Tools', 'Teleportation Chips'],
+    'EffectChip': ['Tools', 'Effect Chips'],
+    'MiscTool': ['Tools', 'Misc. Tools'],
+    'Material': ['Materials'],
+    'Blueprint': ['Blueprints'],
+    'BlueprintBook': ['Blueprints'],
+    'Consumable': ['Consumables', 'Stimulants'],
+    'Capsule': ['Consumables', 'Creature Control Capsules'],
+    'Vehicle': ['Vehicles'],
+    'Pet': ['Pets'],
+    'Furniture': ['Furnishings', 'Furniture'],
+    'Decoration': ['Furnishings', 'Decorations'],
+    'StorageContainer': ['Furnishings', 'Storage Containers'],
+    'Sign': ['Furnishings', 'Signs'],
+    'Strongbox': ['Strongboxes'],
+    # Information types
+    'Mob': ['Mobs'],
+    'Skill': ['Skills'],
+    'Profession': ['Professions'],
+    'Vendor': ['Vendors'],
+    'Location': ['Locations'],
+    'Area': ['Locations'],
+    'Mission': ['Missions'],
+    'MissionChain': ['Missions'],
+}
+
+
+# ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
@@ -85,24 +135,24 @@ _POPUP_STYLE = f"""
 _CATEGORY_STYLE = (
     f"color: {TEXT_MUTED}; font-size: 11px; font-weight: bold;"
     f" letter-spacing: 0.5px; text-transform: uppercase;"
-    f" padding: 4px 10px; background-color: {HOVER};"
+    f" padding: 6px 10px; background-color: {HOVER};"
     f" border-bottom: 1px solid {BORDER};"
 )
 
 _ROW_STYLE = (
-    f"padding: 0px 8px;"
+    f"padding: 2px 8px;"
     f" border: 2px solid transparent;"
     f" background-color: transparent;"
 )
 
 _ROW_HOVER_STYLE = (
-    f"padding: 0px 8px;"
+    f"padding: 2px 8px;"
     f" border: 2px solid transparent;"
     f" background-color: {HOVER};"
 )
 
 _ROW_HIGHLIGHT_STYLE = (
-    f"padding: 0px 8px;"
+    f"padding: 2px 8px;"
     f" border: 2px solid {ACCENT};"
     f" background-color: {HOVER};"
 )
@@ -117,6 +167,7 @@ class _ClickableRow(QWidget):
 
     def __init__(self, item: dict, popup: "SearchResultsPopup"):
         super().__init__()
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self._item = item
         self._popup = popup
         self.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -269,12 +320,12 @@ class SearchResultsPopup(QWidget):
         row = _ClickableRow(item, self)
         row.setStyleSheet(_ROW_STYLE)
         layout = QHBoxLayout(row)
-        layout.setContentsMargins(10, 2, 10, 2)
+        layout.setContentsMargins(10, 4, 10, 4)
         layout.setSpacing(6)
 
         name = QLabel(item.get("DisplayName") or item.get("Name", ""))
         name.setStyleSheet(
-            f"color: {TEXT}; font-size: 12px; background: transparent;"
+            f"color: {TEXT}; font-size: 13px; background: transparent;"
             " border: none; text-decoration: none;"
         )
         name.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
