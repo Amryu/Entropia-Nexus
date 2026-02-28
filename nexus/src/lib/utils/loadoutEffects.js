@@ -13,7 +13,7 @@ export const OFFENSIVE_EFFECTS = [
   { key: 'reload', type: 'mult', base: 'Reload Speed', name: 'Reload Speed Increased' },
   { key: 'critChance', type: 'add', base: 'Critical Chance', name: 'Critical Chance Added' },
   { key: 'critDamage', type: 'add', base: 'Critical Damage', name: 'Critical Damage Added' },
-  { key: 'damage', type: 'mult', base: 'Damage', name: 'Damage Increased' }
+  { key: 'damage', type: 'mult', base: 'Damage Done', name: 'Damage Done Increased' }
 ];
 
 export const DEFENSIVE_EFFECT_NAMES = new Set([

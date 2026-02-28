@@ -421,7 +421,7 @@ export function getDPSDamageBonus(service, consumables, pets, enabledConsumables
       const consumable = consumables.find(item => item.Name === equip.item_name);
       if (consumable?.EffectsOnConsume) {
         for (const effect of consumable.EffectsOnConsume) {
-          if (effect.Name === 'Damage Increased') {
+          if (effect.Name === 'Damage Done Increased') {
             const effectStrength = parseFloat(effect.Values?.Strength) || 0;
             strongestConsumableBonus = Math.max(strongestConsumableBonus, effectStrength);
           }
@@ -441,7 +441,7 @@ export function getDPSDamageBonus(service, consumables, pets, enabledConsumables
           const key = `${e.Id}-${e.Properties?.Strength || 0}-${i}`;
           return key === activeAbilityKey;
         });
-        if (activeEffect && (activeEffect.Name === 'Damage Increased' || activeEffect.Name === 'Damage Added')) {
+        if (activeEffect && (activeEffect.Name === 'Damage Done Increased' || activeEffect.Name === 'Damage Added')) {
           petBonus += parseFloat(activeEffect.Properties?.Strength) || 0;
         }
       }

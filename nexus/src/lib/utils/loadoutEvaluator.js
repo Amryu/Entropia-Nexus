@@ -309,7 +309,7 @@ export function evaluateLoadout(loadout, context = {}, options = {}) {
 
   // Bonus stats: count toward Total cap only (ignore Item/Action caps).
   const bonusEffects = [
-    { Name: 'Damage Increased', Values: { Strength: Number(loadout?.Properties?.BonusDamage ?? 0) || 0 } },
+    { Name: 'Damage Done Increased', Values: { Strength: Number(loadout?.Properties?.BonusDamage ?? 0) || 0 } },
     { Name: 'Critical Chance Added', Values: { Strength: Number(loadout?.Properties?.BonusCritChance ?? 0) || 0 } },
     { Name: 'Critical Damage Added', Values: { Strength: Number(loadout?.Properties?.BonusCritDamage ?? 0) || 0 } },
     { Name: 'Reload Speed Increased', Values: { Strength: Number(loadout?.Properties?.BonusReload ?? 0) || 0 } }
