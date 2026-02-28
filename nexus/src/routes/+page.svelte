@@ -1052,6 +1052,7 @@
 
     .discord-btn {
       width: 100%;
+      box-sizing: border-box;
       justify-content: center;
     }
 

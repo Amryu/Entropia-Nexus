@@ -8,6 +8,7 @@
  */
 import { pool } from '$lib/server/db.js';
 import { getResponse } from '$lib/util.js';
+import { initMobResolver, resolveMob } from '$lib/server/mobResolver.js';
 
 const PERIOD_INTERVALS = {
   '24h': "interval '24 hours'",
@@ -138,16 +139,20 @@ export async function GET({ params, url }) {
       return getResponse({ error: 'Player not found' }, 404);
     }
 
+    // Ensure mob resolver is loaded for proper name splitting
+    await initMobResolver();
+
     // Group hunting results by mob (aggregate maturities under each mob)
     const mobMap = new Map();
     for (const row of huntingResult.rows) {
-      // Extract mob name from target_name by removing maturity suffix
-      // If mob_id is available, group by that; otherwise group by target_name
+      // Use resolveMob to get the proper mob name from the entity database
+      const resolved = resolveMob(row.target_name);
+      const mobName = resolved?.mobName || row.target_name;
       const key = row.mob_id ?? row.target_name;
       if (!mobMap.has(key)) {
         mobMap.set(key, {
           mob_id: row.mob_id,
-          target: row.target_name, // Will be overridden with mob-only name if we have mob_id
+          target: mobName,
           kills: 0,
           total_value: 0,
           best_value: 0,

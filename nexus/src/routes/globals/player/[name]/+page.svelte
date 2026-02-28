@@ -27,6 +27,7 @@
   $: activity = playerData?.activity || [];
   $: recent = playerData?.recent || [];
   $: achievements = playerData?.achievements || [];
+  $: isTeam = summary && summary.team_kill_count > 0 && summary.total_count === summary.team_kill_count;
 
   const PERIOD_OPTIONS = [
     { value: '24h', label: '24 Hours' },
@@ -62,7 +63,7 @@
     rare_item:  { label: 'Rare Find',   cssClass: 'type-rare' },
     discovery:  { label: 'Discovery',   cssClass: 'type-discovery' },
     tier:       { label: 'Tier Record', cssClass: 'type-tier' },
-    examine:    { label: 'Examined',    cssClass: 'type-examine' },
+    examine:    { label: 'Instance',    cssClass: 'type-examine' },
     pvp:        { label: 'PvP',         cssClass: 'type-pvp' },
   };
 
@@ -229,7 +230,12 @@
         <div class="breadcrumbs">
           <a href="/">Home</a> / <a href="/globals">Globals</a> / {playerName}
         </div>
-        <h1>{playerName}</h1>
+        <div class="title-row">
+          <h1>{playerName}</h1>
+          {#if isTeam}
+            <span class="badge-team-header">Team</span>
+          {/if}
+        </div>
         <p class="page-subtitle">Global event statistics</p>
       </div>
       <div class="globals-search">
@@ -323,6 +329,7 @@
               {#each sortedHunting as mob, i}
                 {@const mobKey = mob.mob_id || mob.target || i}
                 {@const hasDetails = mob.maturities && mob.maturities.length > 1}
+                {@const displayName = hasDetails ? mob.target : (mob.maturities?.[0]?.target || mob.target)}
                 <tr
                   class="mob-row"
                   class:expandable={hasDetails}
@@ -332,7 +339,7 @@
                     {#if hasDetails}
                       <span class="expand-icon">{expandedMobs.has(mobKey) ? '\u25BC' : '\u25B6'}</span>
                     {/if}
-                    {mob.target}
+                    <a href="/globals/target/{encodeURIComponent(displayName)}" class="target-link" on:click|stopPropagation>{displayName}</a>
                   </td>
                   <td class="right">{mob.kills}</td>
                   <td class="right">{formatPed(mob.total_value)}</td>
@@ -342,7 +349,7 @@
                 {#if hasDetails && expandedMobs.has(mobKey)}
                   {#each mob.maturities as mat}
                     <tr class="maturity-row">
-                      <td class="indent">{mat.target}</td>
+                      <td class="indent"><a href="/globals/target/{encodeURIComponent(mat.target)}" class="target-link">{mat.target}</a></td>
                       <td class="right">{mat.kills}</td>
                       <td class="right">{formatPed(mat.total_value)}</td>
                       <td class="right">{formatPed(mat.avg_value)}</td>
@@ -381,7 +388,7 @@
             <tbody>
               {#each sortedMining as res}
                 <tr>
-                  <td>{res.target}</td>
+                  <td><a href="/globals/target/{encodeURIComponent(res.target)}" class="target-link">{res.target}</a></td>
                   <td class="right">{res.finds}</td>
                   <td class="right">{formatPed(res.total_value)}</td>
                   <td class="right">{formatPed(res.avg_value)}</td>
@@ -418,7 +425,7 @@
             <tbody>
               {#each sortedCrafting as item}
                 <tr>
-                  <td>{item.target}</td>
+                  <td><a href="/globals/target/{encodeURIComponent(item.target)}" class="target-link">{item.target}</a></td>
                   <td class="right">{item.crafts}</td>
                   <td class="right">{formatPed(item.total_value)}</td>
                   <td class="right">{formatPed(item.avg_value)}</td>
@@ -473,7 +480,7 @@
                 <tr>
                   <td class="text-muted" title={new Date(g.timestamp).toLocaleString()}>{timeAgo(g.timestamp)}</td>
                   <td><span class="type-badge {tc.cssClass}">{tc.label}</span></td>
-                  <td>{g.target}</td>
+                  <td><a href="/globals/target/{encodeURIComponent(g.target)}" class="target-link">{g.target}</a></td>
                   <td class="right font-weight-bold">{formatValue(g.value, g.unit, g.type)}</td>
                   <td>
                     {#if g.ath}
@@ -573,10 +580,28 @@
     text-decoration: underline;
   }
 
+  .title-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 4px;
+  }
+
   h1 {
-    margin: 0 0 4px 0;
+    margin: 0;
     font-size: 1.5rem;
     font-weight: 600;
+  }
+
+  .badge-team-header {
+    padding: 2px 10px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+    background: rgba(96, 176, 255, 0.15);
+    color: var(--accent-color);
   }
 
   .page-subtitle {
@@ -697,6 +722,8 @@
 
   .data-table tr:hover {
     background-color: var(--hover-color);
+    outline: 2px solid var(--accent-color, #4a9eff);
+    outline-offset: -2px;
   }
 
   .mob-row.expandable {
@@ -716,6 +743,16 @@
 
   .indent {
     padding-left: 28px !important;
+  }
+
+  .target-link {
+    color: var(--text-color);
+    text-decoration: none;
+  }
+
+  .target-link:hover {
+    color: var(--accent-color);
+    text-decoration: underline;
   }
 
   .text-muted {

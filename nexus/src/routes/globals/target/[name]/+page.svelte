@@ -18,12 +18,85 @@
 
   export let data;
 
-  $: ({ targetData, targetName } = data);
-  $: summary = targetData?.summary;
-  $: topPlayers = targetData?.top_players || [];
-  $: activity = targetData?.activity || [];
-  $: recent = targetData?.recent || [];
-  $: primaryType = targetData?.primary_type;
+  $: ({ targetData: initialData, targetName } = data);
+
+  let summary = null;
+  let topPlayers = [];
+  let activity = [];
+  let recent = [];
+  let primaryType = null;
+  let maturities = [];
+  let wikiUrl = null;
+
+  // Period selector
+  const PERIOD_OPTIONS = [
+    { value: '24h', label: '24 Hours' },
+    { value: '7d', label: '7 Days' },
+    { value: '30d', label: '30 Days' },
+    { value: 'all', label: 'All Time' },
+  ];
+
+  let period = 'all';
+  let loading = false;
+
+  // Selected maturity filter
+  let selectedMaturities = [];
+  let maturityDropdownOpen = false;
+
+  // Top Players chart sort toggle
+  let playerChartSortBy = 'value';
+
+  function applyData(d) {
+    summary = d?.summary;
+    topPlayers = d?.top_players || [];
+    activity = d?.activity || [];
+    recent = d?.recent || [];
+    primaryType = d?.primary_type;
+    maturities = d?.maturities || [];
+    wikiUrl = d?.wiki_url || null;
+  }
+
+  // Apply initial SSR data
+  $: if (initialData) {
+    applyData(initialData);
+  }
+
+  async function refetchData() {
+    loading = true;
+    try {
+      const params = new URLSearchParams();
+      if (selectedMaturities.length > 0) {
+        params.set('maturities', selectedMaturities.join(','));
+      }
+      if (period !== 'all') params.set('period', period);
+      const res = await fetch(`/api/globals/target/${encodeURIComponent(targetName)}?${params}`);
+      if (!res.ok) return;
+      const d = await res.json();
+      // Preserve the full maturities list and wiki URL from initial load
+      const fullMaturities = maturities;
+      const fullWikiUrl = wikiUrl;
+      applyData(d);
+      maturities = fullMaturities;
+      wikiUrl = fullWikiUrl;
+      await tick();
+      buildCharts();
+    } catch { /* ignore */ }
+    loading = false;
+  }
+
+  function toggleMaturity(target) {
+    if (selectedMaturities.includes(target)) {
+      selectedMaturities = selectedMaturities.filter(m => m !== target);
+    } else {
+      selectedMaturities = [...selectedMaturities, target];
+    }
+    refetchData();
+  }
+
+  function clearMaturityFilter() {
+    selectedMaturities = [];
+    refetchData();
+  }
 
   const TYPE_CONFIG = {
     kill:       { label: 'Hunting',     cssClass: 'type-kill' },
@@ -33,6 +106,8 @@
     rare_item:  { label: 'Rare Find',   cssClass: 'type-rare' },
     discovery:  { label: 'Discovery',   cssClass: 'type-discovery' },
     tier:       { label: 'Tier Record', cssClass: 'type-tier' },
+    examine:    { label: 'Instance',    cssClass: 'type-examine' },
+    pvp:        { label: 'PvP',         cssClass: 'type-pvp' },
   };
 
   // Sorting
@@ -99,7 +174,7 @@
         scales: {
           x: {
             type: 'time',
-            time: { unit: 'day' },
+            time: { unit: period === '24h' ? 'hour' : 'day' },
             ticks: { color: textMuted, maxTicksLimit: 10, font: { size: 11 } },
             grid: { color: borderColor + '30' },
           },
@@ -122,15 +197,21 @@
     const textMuted = getComputedCssVar('--text-muted') || '#aaa';
     const borderColor = getComputedCssVar('--border-color') || '#555';
 
-    const players = topPlayers.slice(0, 8);
+    const sorted = [...topPlayers].sort((a, b) => b[playerChartSortBy] - a[playerChartSortBy]);
+    const players = sorted.slice(0, 8);
+    const label = playerChartSortBy === 'count' ? 'Count' : 'Total Value (PED)';
 
     topPlayersChart = new Chart(topPlayersCanvas, {
       type: 'bar',
       data: {
-        labels: players.map(p => p.player.length > 18 ? p.player.slice(0, 16) + '...' : p.player),
+        labels: players.map(p => {
+          const maxLen = p.is_team ? 14 : 18;
+          const name = p.player.length > maxLen ? p.player.slice(0, maxLen - 2) + '...' : p.player;
+          return p.is_team ? '[T] ' + name : name;
+        }),
         datasets: [{
-          label: 'Total Value (PED)',
-          data: players.map(p => p.value),
+          label,
+          data: players.map(p => p[playerChartSortBy]),
           backgroundColor: accentColor + '40',
           borderColor: accentColor,
           borderWidth: 1,
@@ -156,7 +237,7 @@
   }
 
   onMount(() => {
-    if (targetData) buildCharts();
+    if (initialData) buildCharts();
   });
 
   onDestroy(() => {
@@ -223,6 +304,9 @@
               <span class="type-badge {tc.cssClass}">{tc.label}</span>
             {/if}
           {/if}
+          {#if wikiUrl}
+            <a href={wikiUrl} class="wiki-link">View on Wiki &rarr;</a>
+          {/if}
         </div>
         <p class="page-subtitle">Global event statistics</p>
       </div>
@@ -237,9 +321,47 @@
     </div>
   </div>
 
-  {#if !targetData || !summary}
+  {#if !initialData || !summary}
     <p class="empty-state">No globals recorded for this target</p>
   {:else}
+    <!-- Maturity Filter -->
+    {#if maturities.length > 0}
+      <div class="maturity-filter">
+        <div class="maturity-header">
+          <span class="maturity-label">Filter by maturity</span>
+          {#if selectedMaturities.length > 0}
+            <button class="maturity-clear" on:click={clearMaturityFilter}>Clear filter</button>
+          {/if}
+        </div>
+        <div class="maturity-chips">
+          {#each maturities as m}
+            <button
+              class="maturity-chip"
+              class:selected={selectedMaturities.includes(m.target)}
+              on:click={() => toggleMaturity(m.target)}
+            >
+              {m.target}
+              <span class="maturity-count">({m.count})</span>
+            </button>
+          {/each}
+        </div>
+      </div>
+    {/if}
+
+    <!-- Period Selector -->
+    <div class="period-selector">
+      {#each PERIOD_OPTIONS as p}
+        <button
+          class="period-btn"
+          class:active={period === p.value}
+          disabled={loading}
+          on:click={() => { period = p.value; refetchData(); }}
+        >
+          {p.label}
+        </button>
+      {/each}
+    </div>
+
     <!-- Summary Cards -->
     <div class="stats-row">
       <div class="stat-card">
@@ -273,7 +395,13 @@
 
       {#if topPlayers.length > 0}
         <div class="section-card">
-          <h2>Top Players (by Value)</h2>
+          <div class="chart-card-header">
+            <h2>Top Players</h2>
+            <div class="sort-toggle">
+              <button class="sort-btn" class:active={playerChartSortBy === 'value'} on:click={() => { playerChartSortBy = 'value'; buildTopPlayersChart(); }}>Value</button>
+              <button class="sort-btn" class:active={playerChartSortBy === 'count'} on:click={() => { playerChartSortBy = 'count'; buildTopPlayersChart(); }}>Count</button>
+            </div>
+          </div>
           <div class="chart-container">
             <canvas bind:this={topPlayersCanvas}></canvas>
           </div>
@@ -305,6 +433,9 @@
               {#each sortedPlayers as p}
                 <tr>
                   <td>
+                    {#if p.is_team}
+                      <span class="badge-team">Team</span>
+                    {/if}
                     <a href="/globals/player/{encodeURIComponent(p.player)}" class="player-link">{p.player}</a>
                   </td>
                   <td class="right">{p.count}</td>
@@ -329,6 +460,9 @@
                 <th>Time</th>
                 <th>Type</th>
                 <th>Player</th>
+                {#if maturities.length > 0}
+                  <th>Target</th>
+                {/if}
                 <th class="right">Value</th>
                 <th></th>
               </tr>
@@ -340,8 +474,16 @@
                   <td class="text-muted" title={new Date(g.timestamp).toLocaleString()}>{timeAgo(g.timestamp)}</td>
                   <td><span class="type-badge {tc.cssClass}">{tc.label}</span></td>
                   <td>
+                    {#if g.type === 'team_kill'}
+                      <span class="badge-team">Team</span>
+                    {/if}
                     <a href="/globals/player/{encodeURIComponent(g.player)}" class="player-link">{g.player}</a>
                   </td>
+                  {#if maturities.length > 0}
+                    <td>
+                      <a href="/globals/target/{encodeURIComponent(g.target)}" class="target-link">{g.target}</a>
+                    </td>
+                  {/if}
                   <td class="right font-weight-bold">{formatValue(g.value, g.unit, g.type)}</td>
                   <td>
                     {#if g.ath}
@@ -426,6 +568,161 @@
     margin: 0;
     color: var(--text-muted);
     font-size: 0.875rem;
+  }
+
+  .wiki-link {
+    font-size: 0.8125rem;
+    color: var(--accent-color);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .wiki-link:hover {
+    text-decoration: underline;
+  }
+
+  /* Maturity filter */
+  .maturity-filter {
+    margin-bottom: 20px;
+    padding: 12px 16px;
+    background: var(--secondary-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+  }
+
+  .maturity-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+
+  .maturity-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    font-weight: 600;
+  }
+
+  .maturity-clear {
+    font-size: 0.75rem;
+    color: var(--accent-color);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+  }
+
+  .maturity-clear:hover {
+    text-decoration: underline;
+  }
+
+  .maturity-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .maturity-chip {
+    padding: 4px 10px;
+    font-size: 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .maturity-chip:hover {
+    border-color: var(--accent-color);
+    color: var(--text-color);
+  }
+
+  .maturity-chip.selected {
+    background: var(--accent-color);
+    border-color: var(--accent-color);
+    color: #fff;
+  }
+
+  .maturity-count {
+    opacity: 0.7;
+    margin-left: 2px;
+  }
+
+  /* Period selector */
+  .period-selector {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 16px;
+  }
+
+  .period-btn {
+    padding: 4px 12px;
+    font-size: 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+
+  .period-btn:hover {
+    border-color: var(--accent-color);
+    color: var(--text-color);
+  }
+
+  .period-btn.active {
+    background: var(--accent-color);
+    border-color: var(--accent-color);
+    color: #fff;
+  }
+
+  .period-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  /* Chart card header with sort toggle */
+  .chart-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+  }
+
+  .chart-card-header h2 {
+    margin: 0;
+    font-size: 1.125rem;
+    font-weight: 600;
+  }
+
+  .sort-toggle {
+    display: flex;
+    gap: 2px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .sort-btn {
+    padding: 2px 10px;
+    font-size: 0.6875rem;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .sort-btn.active {
+    background: var(--accent-color);
+    color: #fff;
+  }
+
+  .sort-btn:hover:not(.active) {
+    color: var(--text-color);
   }
 
   .empty-state {
@@ -552,6 +849,8 @@
 
   .data-table tr:hover {
     background-color: var(--hover-color);
+    outline: 2px solid var(--accent-color, #4a9eff);
+    outline-offset: -2px;
   }
 
   .text-muted {
@@ -563,13 +862,13 @@
     font-variant-numeric: tabular-nums;
   }
 
-  .player-link {
+  .player-link, .target-link {
     color: var(--text-color);
     text-decoration: none;
     font-weight: 600;
   }
 
-  .player-link:hover {
+  .player-link:hover, .target-link:hover {
     color: var(--accent-color);
     text-decoration: underline;
   }
@@ -591,8 +890,10 @@
   .type-rare     { background: rgba(96, 176, 255, 0.15); color: var(--accent-color); }
   .type-discovery { background: rgba(155, 89, 182, 0.15); color: #9b59b6; }
   .type-tier     { background: rgba(241, 196, 15, 0.15); color: #f1c40f; }
+  .type-examine  { background: rgba(46, 204, 113, 0.15); color: #2ecc71; }
+  .type-pvp      { background: rgba(231, 76, 60, 0.15);  color: #e74c3c; }
 
-  .badge-hof, .badge-ath {
+  .badge-hof, .badge-ath, .badge-team {
     padding: 1px 6px;
     border-radius: 3px;
     font-size: 0.625rem;
@@ -602,6 +903,12 @@
 
   .badge-hof { background: rgba(234, 179, 8, 0.15); color: #eab308; }
   .badge-ath { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+
+  .badge-team {
+    background: rgba(96, 176, 255, 0.15);
+    color: var(--accent-color);
+    margin-right: 4px;
+  }
 
   /* Responsive */
   @media (max-width: 899px) {

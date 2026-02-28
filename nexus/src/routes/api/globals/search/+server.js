@@ -13,6 +13,7 @@ import { pool } from '$lib/server/db.js';
 import { getResponse } from '$lib/util.js';
 
 const MAX_RESULTS_PER_CATEGORY = 10;
+const MAX_RAW_TARGETS = 80;
 
 const GLOBAL_TYPE_LABELS = {
   kill: 'Hunting',
@@ -22,7 +23,31 @@ const GLOBAL_TYPE_LABELS = {
   rare_item: 'Rare Find',
   discovery: 'Discovery',
   tier: 'Tier',
+  examine: 'Instance',
+  pvp: 'PvP',
 };
+
+/**
+ * Extract the mob base name by stripping the maturity suffix.
+ * Handles "Gen XX" multi-word maturities and single-word maturities.
+ */
+function extractMobName(targetName) {
+  const parts = targetName.split(' ');
+  if (parts.length < 2) return null;
+
+  // Handle "Elite Gen XX" pattern (e.g., "Defender Elite Gen 02" → "Defender")
+  if (parts.length >= 4 && /^Gen$/i.test(parts[parts.length - 2]) && /^Elite$/i.test(parts[parts.length - 3])) {
+    return parts.slice(0, -3).join(' ');
+  }
+
+  // Handle "Gen XX" pattern (e.g., "Big Bulk Gen 10" → "Big Bulk")
+  if (parts.length >= 3 && /^Gen$/i.test(parts[parts.length - 2])) {
+    return parts.slice(0, -2).join(' ');
+  }
+
+  // Strip last word (single-word maturity like Young, Mature, Stalker, etc.)
+  return parts.slice(0, -1).join(' ');
+}
 
 function escapeLike(str) {
   return str.replace(/[%_\\]/g, '\\$&');
@@ -81,6 +106,7 @@ export async function GET({ url }) {
       ),
 
       // Targets — grouped by target_name with most common type
+      // Fetch more than needed to build mob groups
       pool.query(
         `SELECT target_name AS name,
                 mode() WITHIN GROUP (ORDER BY global_type) AS primary_type,
@@ -90,7 +116,7 @@ export async function GET({ url }) {
          GROUP BY target_name
          ORDER BY count(*) DESC
          LIMIT $2`,
-        [escaped, MAX_RESULTS_PER_CATEGORY]
+        [escaped, MAX_RAW_TARGETS]
       ),
     ]);
 
@@ -109,8 +135,38 @@ export async function GET({ url }) {
       });
     }
 
-    // Targets
+    // Build mob group results by extracting base names from hunting targets
+    const queryLower = query.toLowerCase();
+    const mobGroups = {};
     for (const row of targetsResult.rows) {
+      if (row.primary_type === 'kill' || row.primary_type === 'team_kill') {
+        const baseName = extractMobName(row.name);
+        if (!baseName || baseName.length < 2) continue;
+        if (!mobGroups[baseName]) mobGroups[baseName] = { cnt: 0, variants: 0 };
+        mobGroups[baseName].cnt += parseInt(row.cnt);
+        mobGroups[baseName].variants++;
+      }
+    }
+
+    const addedNames = new Set();
+
+    // Add mob group results (only if >1 maturity variant and name matches query)
+    for (const [name, group] of Object.entries(mobGroups)) {
+      if (group.variants > 1 && name.toLowerCase().includes(queryLower)) {
+        results.push({
+          Id: id++,
+          Name: name,
+          Type: 'Mob',
+          SubType: null,
+          Score: scoreMatch(name, query) + 50,
+        });
+        addedNames.add(name);
+      }
+    }
+
+    // Targets (skip if identical to a mob group)
+    for (const row of targetsResult.rows) {
+      if (addedNames.has(row.name)) continue;
       results.push({
         Id: id++,
         Name: row.name,

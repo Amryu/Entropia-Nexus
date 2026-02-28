@@ -21,7 +21,7 @@
     rare_item:  { label: 'Rare Find',  cssClass: 'type-rare' },
     discovery:  { label: 'Discovery',  cssClass: 'type-discovery' },
     tier:       { label: 'Tier Record', cssClass: 'type-tier' },
-    examine:    { label: 'Examined',   cssClass: 'type-examine' },
+    examine:    { label: 'Instance',   cssClass: 'type-examine' },
     pvp:        { label: 'PvP',        cssClass: 'type-pvp' },
   };
 

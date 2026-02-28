@@ -16,6 +16,7 @@
                  ArcElement, DoughnutController, Legend);
 
   import { afterNavigate, goto } from '$app/navigation';
+  import { page } from '$app/stores';
   import SearchInput from '$lib/components/SearchInput.svelte';
 
   export let data;
@@ -30,7 +31,7 @@
     rare_item:  { label: 'Rare Find',   cssClass: 'type-rare',      color: '#60b0ff' },
     discovery:  { label: 'Discovery',   cssClass: 'type-discovery', color: '#9b59b6' },
     tier:       { label: 'Tier Record', cssClass: 'type-tier',      color: '#f1c40f' },
-    examine:    { label: 'Examined',    cssClass: 'type-examine',   color: '#2ecc71' },
+    examine:    { label: 'Instance',    cssClass: 'type-examine',   color: '#2ecc71' },
     pvp:        { label: 'PvP',         cssClass: 'type-pvp',       color: '#e74c3c' },
   };
 
@@ -42,7 +43,7 @@
     { value: 'rare_item', label: 'Rare Find' },
     { value: 'discovery', label: 'Discovery' },
     { value: 'tier', label: 'Tier Record' },
-    { value: 'examine', label: 'Examined' },
+    { value: 'examine', label: 'Instance' },
     { value: 'pvp', label: 'PvP' },
   ];
 
@@ -64,6 +65,10 @@
   let minValue = '';
   let hofOnly = false;
   let period = '7d';
+
+  // Sort toggles for charts
+  let playersSortBy = 'value';
+  let targetsSortBy = 'count';
 
   // Charts
   let activityCanvas;
@@ -156,7 +161,7 @@
   async function fetchStats() {
     statsLoading = true;
     try {
-      const params = buildParams({ period });
+      const params = buildParams({ period, players_sort: playersSortBy, targets_sort: targetsSortBy });
       const res = await fetch(`/api/globals/stats?${params}`);
       if (!res.ok) return;
       stats = await res.json();
@@ -222,6 +227,22 @@
 
   function onPeriodChange() {
     fetchStats();
+  }
+
+  function onPlayersSortChange(sortBy) {
+    playersSortBy = sortBy;
+    fetchStats();
+  }
+
+  function onTargetsSortChange(sortBy) {
+    targetsSortBy = sortBy;
+    fetchStats();
+  }
+
+  function buildFilterUrl(basePath) {
+    const params = buildParams({ period });
+    const qs = params.toString();
+    return qs ? `${basePath}?${qs}` : basePath;
   }
 
   // Filter relevance helpers
@@ -333,14 +354,19 @@
 
     const accentColor = getComputedCssVar('--accent-color') || '#60b0ff';
     const players = stats.top_players.slice(0, 8);
+    const label = playersSortBy === 'count' ? 'Count' : 'Total Value (PED)';
 
     topPlayersChart = new Chart(topPlayersCanvas, {
       type: 'bar',
       data: {
-        labels: players.map(p => p.player.length > 18 ? p.player.slice(0, 16) + '...' : p.player),
+        labels: players.map(p => {
+          const maxLen = p.is_team ? 14 : 18;
+          const name = p.player.length > maxLen ? p.player.slice(0, maxLen - 2) + '...' : p.player;
+          return p.is_team ? '[T] ' + name : name;
+        }),
         datasets: [{
-          label: 'Total Value (PED)',
-          data: players.map(p => p.value),
+          label,
+          data: players.map(p => p[playersSortBy]),
           backgroundColor: accentColor + '40',
           borderColor: accentColor,
           borderWidth: 1,
@@ -364,14 +390,15 @@
     if (topTargetsChart) topTargetsChart.destroy();
 
     const targets = stats.top_targets.slice(0, 8);
+    const label = targetsSortBy === 'value' ? 'Total Value (PED)' : 'Kill Count';
 
     topTargetsChart = new Chart(topTargetsCanvas, {
       type: 'bar',
       data: {
         labels: targets.map(t => t.target.length > 18 ? t.target.slice(0, 16) + '...' : t.target),
         datasets: [{
-          label: 'Kill Count',
-          data: targets.map(t => t.count),
+          label,
+          data: targets.map(t => t[targetsSortBy]),
           backgroundColor: '#ef444440',
           borderColor: '#ef4444',
           borderWidth: 1,
@@ -617,20 +644,16 @@
       </div>
 
       <div class="chart-card">
-        <h3>Type Distribution</h3>
-        <div class="chart-container chart-square">
-          {#if typeFilter}
-            <div class="chart-placeholder">Type distribution is available when viewing all types</div>
-          {:else if statsLoading && !stats}
-            <div class="chart-loading"><span class="spinner"></span></div>
-          {:else}
-            <canvas bind:this={typeCanvas}></canvas>
-          {/if}
+        <div class="chart-card-header">
+          <h3>Top Players</h3>
+          <div class="chart-controls">
+            <div class="sort-toggle">
+              <button class="sort-btn" class:active={playersSortBy === 'value'} on:click={() => onPlayersSortChange('value')}>Value</button>
+              <button class="sort-btn" class:active={playersSortBy === 'count'} on:click={() => onPlayersSortChange('count')}>Count</button>
+            </div>
+            <a href={buildFilterUrl('/globals/players')} class="view-all-link">View all &rarr;</a>
+          </div>
         </div>
-      </div>
-
-      <div class="chart-card">
-        <h3>Top Players (by Value)</h3>
         <div class="chart-container">
           {#if statsLoading && !stats}
             <div class="chart-loading"><span class="spinner"></span></div>
@@ -641,7 +664,16 @@
       </div>
 
       <div class="chart-card">
-        <h3>Top Targets (by Count)</h3>
+        <div class="chart-card-header">
+          <h3>Top Targets</h3>
+          <div class="chart-controls">
+            <div class="sort-toggle">
+              <button class="sort-btn" class:active={targetsSortBy === 'count'} on:click={() => onTargetsSortChange('count')}>Count</button>
+              <button class="sort-btn" class:active={targetsSortBy === 'value'} on:click={() => onTargetsSortChange('value')}>Value</button>
+            </div>
+            <a href={buildFilterUrl('/globals/targets')} class="view-all-link">View all &rarr;</a>
+          </div>
+        </div>
         <div class="chart-container">
           {#if !showTopTargets}
             <div class="chart-placeholder">Top targets is available for hunting globals</div>
@@ -649,6 +681,19 @@
             <div class="chart-loading"><span class="spinner"></span></div>
           {:else}
             <canvas bind:this={topTargetsCanvas}></canvas>
+          {/if}
+        </div>
+      </div>
+
+      <div class="chart-card">
+        <h3>Type Distribution</h3>
+        <div class="chart-container chart-square">
+          {#if typeFilter}
+            <div class="chart-placeholder">Type distribution is available when viewing all types</div>
+          {:else if statsLoading && !stats}
+            <div class="chart-loading"><span class="spinner"></span></div>
+          {:else}
+            <canvas bind:this={typeCanvas}></canvas>
           {/if}
         </div>
       </div>
@@ -684,9 +729,16 @@
                 <td class="col-time" title={new Date(g.timestamp).toLocaleString()}>{timeAgo(g.timestamp)}</td>
                 <td><span class="type-badge {tc.cssClass}">{tc.label}</span></td>
                 <td>
+                  {#if g.type === 'team_kill'}
+                    <span class="badge-team">Team</span>
+                  {/if}
                   <a href="/globals/player/{encodeURIComponent(g.player)}" class="player-link">{g.player}</a>
                 </td>
-                <td class="col-target">{g.target}</td>
+                <td class="col-target">
+                  {#if g.target}
+                    <a href="/globals/target/{encodeURIComponent(g.target)}" class="target-link">{g.target}</a>
+                  {/if}
+                </td>
                 <td class="right col-value">{formatValue(g.value, g.unit, g.type)}</td>
                 <td class="col-location">{g.location || ''}</td>
                 <td class="col-badges">
@@ -1000,6 +1052,62 @@
     color: var(--text-muted);
   }
 
+  .chart-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    gap: 8px;
+  }
+
+  .chart-card-header h3 {
+    margin: 0;
+  }
+
+  .chart-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .sort-toggle {
+    display: flex;
+    gap: 2px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  .sort-btn {
+    padding: 2px 10px;
+    font-size: 0.6875rem;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .sort-btn.active {
+    background: var(--accent-color);
+    color: #fff;
+  }
+
+  .sort-btn:hover:not(.active) {
+    color: var(--text-color);
+  }
+
+  .view-all-link {
+    font-size: 0.75rem;
+    color: var(--accent-color);
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .view-all-link:hover {
+    text-decoration: underline;
+  }
+
   .chart-container {
     position: relative;
     height: 200px;
@@ -1104,6 +1212,8 @@
 
   .globals-table tbody tr:hover {
     background-color: var(--hover-color);
+    outline: 2px solid var(--accent-color, #4a9eff);
+    outline-offset: -2px;
   }
 
   .globals-table tr.row-new {
@@ -1157,6 +1267,16 @@
     text-overflow: ellipsis;
   }
 
+  .target-link {
+    color: var(--text-color);
+    text-decoration: none;
+  }
+
+  .target-link:hover {
+    color: var(--accent-color);
+    text-decoration: underline;
+  }
+
   .col-value {
     font-weight: 600;
     font-variant-numeric: tabular-nums;
@@ -1177,7 +1297,7 @@
     min-width: 32px;
   }
 
-  .badge-hof, .badge-ath {
+  .badge-hof, .badge-ath, .badge-team {
     padding: 1px 6px;
     border-radius: 3px;
     font-size: 0.625rem;
@@ -1193,6 +1313,12 @@
   .badge-ath {
     background: rgba(239, 68, 68, 0.2);
     color: #ef4444;
+  }
+
+  .badge-team {
+    background: rgba(96, 176, 255, 0.15);
+    color: var(--accent-color);
+    margin-right: 4px;
   }
 
   .load-more {
