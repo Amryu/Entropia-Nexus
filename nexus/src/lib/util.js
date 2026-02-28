@@ -312,8 +312,11 @@ export function getTypeLink(name, type, subType = null, id = null) {
     case 'Mob':
       return `/information/mobs/${encodeURIComponentSafe(name)}`;
     case 'Location':
-    case 'Area':
-      return `/maps/${getMainPlanetName(subType).replace(/[^0-9a-zA-Z]/g, '').toLowerCase()}/${id != null ? id : encodeURIComponentSafe(name)}`;
+    case 'Area': {
+      const planet = getMainPlanetName(subType);
+      if (!planet) return null;
+      return `/maps/${planet.replace(/[^0-9a-zA-Z]/g, '').toLowerCase()}/${id != null ? id : encodeURIComponentSafe(name)}`;
+    }
     case 'Skill':
       return `/information/skills/${encodeURIComponentSafe(name)}`;
     case 'Profession':
@@ -445,6 +448,8 @@ export function getTypeName(type) {
         return 'Discovery';
       case 'Tier':
         return 'Tier';
+      case 'Target':
+        return 'Target';
       default:
         return 'N/A';
   }

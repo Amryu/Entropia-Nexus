@@ -156,12 +156,7 @@
   async function fetchStats() {
     statsLoading = true;
     try {
-      const params = new URLSearchParams({ period });
-      if (typeFilter) params.set('type', typeFilter);
-      if (playerFilter) params.set('player', playerFilter);
-      if (targetFilter) params.set('target', targetFilter);
-      if (minValue) params.set('min_value', minValue);
-      if (hofOnly) params.set('hof', 'true');
+      const params = buildParams({ period });
       const res = await fetch(`/api/globals/stats?${params}`);
       if (!res.ok) return;
       stats = await res.json();
@@ -431,7 +426,31 @@
     }
   }
 
+  let playerSearchInput;
+  let targetSearchInput;
   let locationSearchInput;
+
+  function handlePlayerSelect(e) {
+    playerFilter = e.detail.name;
+    onFilterChange();
+  }
+
+  function clearPlayerFilter() {
+    playerFilter = '';
+    if (playerSearchInput) playerSearchInput.clear();
+    onFilterChange();
+  }
+
+  function handleTargetSelect(e) {
+    targetFilter = e.detail.name;
+    onFilterChange();
+  }
+
+  function clearTargetFilter() {
+    targetFilter = '';
+    if (targetSearchInput) targetSearchInput.clear();
+    onFilterChange();
+  }
 
   function handleLocationSelect(e) {
     locationFilter = e.detail.name;
@@ -483,11 +502,47 @@
       {/each}
     </div>
     <div class="text-filters">
-      <input type="text" placeholder="Player / Team..." bind:value={playerFilter} on:input={onFilterChange} class="filter-input" />
-      <input type="text" placeholder="Target..." bind:value={targetFilter} on:input={onFilterChange} class="filter-input" />
-      <div class="location-filter">
+      <div class="filter-search">
+        {#if playerFilter}
+          <div class="filter-chip">
+            <span>{playerFilter}</span>
+            <button class="chip-clear" on:click={clearPlayerFilter}>&times;</button>
+          </div>
+        {:else}
+          <SearchInput
+            bind:this={playerSearchInput}
+            placeholder="Player / Team..."
+            endpoint="/api/globals/players"
+            apiPrefix={false}
+            maxPerCategory={10}
+            maxTotal={15}
+            on:select={handlePlayerSelect}
+            containerClass="filter-search-input"
+          />
+        {/if}
+      </div>
+      <div class="filter-search">
+        {#if targetFilter}
+          <div class="filter-chip">
+            <span>{targetFilter}</span>
+            <button class="chip-clear" on:click={clearTargetFilter}>&times;</button>
+          </div>
+        {:else}
+          <SearchInput
+            bind:this={targetSearchInput}
+            placeholder="Target..."
+            endpoint="/api/globals/targets"
+            apiPrefix={false}
+            maxPerCategory={10}
+            maxTotal={15}
+            on:select={handleTargetSelect}
+            containerClass="filter-search-input"
+          />
+        {/if}
+      </div>
+      <div class="filter-search">
         {#if locationFilter}
-          <div class="location-chip">
+          <div class="filter-chip">
             <span>{locationFilter}</span>
             <button class="chip-clear" on:click={clearLocationFilter}>&times;</button>
           </div>
@@ -500,7 +555,7 @@
             maxPerCategory={10}
             maxTotal={15}
             on:select={handleLocationSelect}
-            containerClass="location-search"
+            containerClass="filter-search-input"
           />
         {/if}
       </div>
@@ -798,11 +853,11 @@
     cursor: pointer;
   }
 
-  .location-filter {
+  .filter-search {
     min-width: 140px;
   }
 
-  .location-filter :global(.location-search .search-input) {
+  .filter-search :global(.filter-search-input .search-input) {
     padding: 6px 10px;
     font-size: 0.8125rem;
     border: 1px solid var(--border-color);
@@ -811,7 +866,7 @@
     min-width: 140px;
   }
 
-  .location-chip {
+  .filter-chip {
     display: flex;
     align-items: center;
     gap: 6px;
