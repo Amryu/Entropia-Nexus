@@ -476,6 +476,59 @@ Returns a single published announcement with full content.
 
 Returns `404` if the announcement doesn't exist or isn't published.
 
+### Globals
+
+#### `GET /api/globals`
+
+Paginated list of confirmed global events. Supports filtering and cursor-based pagination. Cached for 5 seconds.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `type` | string | Filter by type (comma-separated): `kill`, `team_kill`, `deposit`, `craft`, `rare_item`, `discovery`, `tier` |
+| `player` | string | Player name (case-insensitive substring) |
+| `team` | string | Team name for team_kill globals (case-insensitive substring) |
+| `target` | string | Target name (case-insensitive substring) |
+| `mob_id` | integer | Filter by resolved mob ID |
+| `min_value` | number | Minimum PED value |
+| `hof` | boolean | Only Hall of Fame globals |
+| `ath` | boolean | Only All-Time High globals |
+| `since` | string | ISO timestamp — only globals after this time (for polling) |
+| `before` | string | ISO timestamp — only globals before this time (cursor pagination) |
+| `limit` | integer | Page size (1–200, default 50) |
+
+```json
+{
+  "globals": [
+    {
+      "id": 1, "type": "kill", "player": "PlayerName", "target": "Atrox Young",
+      "value": 1234.56, "unit": "PED", "location": "Cape Corinth",
+      "hof": true, "ath": false, "timestamp": "2026-02-28T12:34:56Z",
+      "mob_id": 42, "maturity_id": 123, "extra": null
+    }
+  ],
+  "cursor": "2026-02-28T12:34:56Z",
+  "has_more": true
+}
+```
+
+#### `GET /api/globals/stats`
+
+Aggregated global event statistics. Cached for 60 seconds.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `period` | string | Time period: `24h`, `7d`, `30d`, `all` (default `all`) |
+| `player` | string | Filter by player name |
+| `type` | string | Filter by type (comma-separated) |
+
+Returns `summary` (counts, values), `by_type`, `top_players`, `top_targets`, and `activity` timeline buckets.
+
+#### `GET /api/globals/player/{name}`
+
+Player-specific global event breakdown. Cached for 60 seconds.
+
+Returns `summary`, `hunting` (per-mob with maturity breakdown), `mining` (per-resource), `crafting` (per-item), `activity` timeline, `recent` globals, and `achievements` (discovery/tier).
+
 ### Other
 
 #### `GET /api/tools/loadout/share/{shareCode}`
@@ -1563,13 +1616,17 @@ Submit a batch of global events (kills, deposits, crafts, rare items). Supports 
       "unit": "PED",
       "location": "Takuta Plateau",
       "hof": false,
-      "ath": false
+      "ath": false,
+      "occurrence": 1
     }
   ]
 }
 ```
 
-**Limits:** Max 500 entries per batch, timestamps within last 24 hours, 6 requests per 60 seconds.
+**Fields:**
+- `occurrence` *(optional, integer 1-3, default 1)* — Distinguishes identical events within a 5-minute window. When a player gets multiple identical globals in quick succession (same mob, same value), the client marks them as occurrence 1, 2, 3. Events without this field default to occurrence 1.
+
+**Limits:** Max 500 entries per batch, timestamps within last 24 hours, 20 requests per 60 seconds.
 
 **Response:** `{ "accepted": 5, "duplicates": 2, "conflicts": 0, "total": 7, "invalid": 0 }`
 
@@ -1593,7 +1650,7 @@ Submit a batch of trade chat messages. Same compression and rate limit rules.
 
 #### `GET /api/ingestion/globals`
 
-Fetch global events newer than a timestamp (distribution endpoint).
+Fetch global events newer than a timestamp (distribution endpoint). Rate limited to 30 requests per 60 seconds.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
@@ -1602,11 +1659,11 @@ Fetch global events newer than a timestamp (distribution endpoint).
 
 **Response:** `{ "globals": [...], "cursor": "2026-02-28T15:31:00Z" }`
 
-Each global includes a `confirmed` boolean (true when confirmation threshold is met) and `confirmations` count.
+Each global includes a `confirmed` boolean (true when confirmation threshold is met), `confirmations` count, and `occurrence` (integer 1-3).
 
 #### `GET /api/ingestion/trade`
 
-Fetch trade messages newer than a timestamp.
+Fetch trade messages newer than a timestamp. Rate limited to 30 requests per 60 seconds.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|

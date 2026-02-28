@@ -7,6 +7,7 @@
   let users = data.users;
   let conflicts = data.conflicts;
   let allowedClients = data.allowedClients || [];
+  let tradeChannels = data.tradeChannels || [];
 
   let showBanDialog = false;
   let showPurgeDialog = false;
@@ -24,6 +25,12 @@
   let oauthClients = []; // All registered OAuth apps (fetched on demand)
   let oauthClientsLoaded = false;
   let addClientNotes = '';
+
+  // Add channel dialog state
+  let showAddChannelDialog = false;
+  let newChannelName = '';
+  let newChannelPlanet = '';
+  const KNOWN_PLANETS = ['Calypso', 'Arkadia', 'Cyrene', 'Rocktropia', 'Toulan', 'Next Island', 'Monria', 'FOMA'];
 
   // Active section tab
   let activeTab = 'alerts';
@@ -157,12 +164,13 @@
 
   async function reloadData() {
     try {
-      const [statsRes, alertsRes, usersRes, conflictsRes, allowedRes] = await Promise.all([
+      const [statsRes, alertsRes, usersRes, conflictsRes, allowedRes, channelsRes] = await Promise.all([
         fetch('/api/admin/ingestion/stats'),
         fetch('/api/admin/ingestion/alerts?limit=10'),
         fetch('/api/admin/ingestion/users?limit=20'),
         fetch('/api/admin/ingestion/conflicts?limit=20'),
         fetch('/api/admin/ingestion/allowed?limit=50'),
+        fetch('/api/admin/ingestion/channels'),
       ]);
       stats = await statsRes.json();
       const alertData = await alertsRes.json();
@@ -171,6 +179,8 @@
       conflicts = await conflictsRes.json();
       const allowedData = await allowedRes.json();
       allowedClients = allowedData.rows || [];
+      const channelData = await channelsRes.json();
+      tradeChannels = channelData.rows || [];
     } catch (e) {
       console.error('Failed to reload:', e);
     }
@@ -240,6 +250,56 @@
       console.error('Failed to remove client:', e);
     }
   }
+
+  // --- Trade Channels ---
+
+  function openAddChannel() {
+    newChannelName = '';
+    newChannelPlanet = '';
+    actionError = '';
+    showAddChannelDialog = true;
+  }
+
+  async function handleAddChannel() {
+    const name = newChannelName.trim().toLowerCase();
+    if (!name) {
+      actionError = 'Channel name is required';
+      return;
+    }
+    actionLoading = true;
+    actionError = '';
+    try {
+      const res = await fetch('/api/admin/ingestion/channels', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channelName: name, planet: newChannelPlanet || null }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        actionError = data.error || 'Failed to add channel';
+        return;
+      }
+      showAddChannelDialog = false;
+      await reloadData();
+    } catch (e) {
+      actionError = 'Network error';
+    } finally {
+      actionLoading = false;
+    }
+  }
+
+  async function handleRemoveChannel(channelName) {
+    try {
+      const res = await fetch('/api/admin/ingestion/channels', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channelName }),
+      });
+      if (res.ok) await reloadData();
+    } catch (e) {
+      console.error('Failed to remove channel:', e);
+    }
+  }
 </script>
 
 <div class="ingestion-page">
@@ -291,6 +351,10 @@
       <h3>Allowed Clients</h3>
       <p class="stat-value">{formatNumber(stats.allowed_clients)}</p>
     </div>
+    <div class="stat-card">
+      <h3>Trade Channels</h3>
+      <p class="stat-value">{formatNumber(stats.configured_channels)}</p>
+    </div>
   </div>
 
   <!-- Tabs -->
@@ -307,6 +371,9 @@
     <button class="tab" class:active={activeTab === 'allowed'} on:click={() => activeTab = 'allowed'}>
       Allowed Clients ({formatNumber(stats.allowed_clients)})
     </button>
+    <button class="tab" class:active={activeTab === 'channels'} on:click={() => activeTab = 'channels'}>
+      Trade Channels ({formatNumber(stats.configured_channels)})
+    </button>
   </div>
 
   <!-- Alerts Tab -->
@@ -318,13 +385,19 @@
         {#each alerts as alert}
           <div class="alert-card">
             <div class="alert-header">
-              <span class="alert-type badge-warning">{alert.type.replace('_', ' ')}</span>
+              <span class="alert-type"
+                class:badge-warning={alert.type === 'conflict_pattern'}
+                class:badge-info={alert.type === 'majority_swap'}
+                class:badge-danger={alert.type === 'collusion_pattern' || alert.type === 'solo_fabrication'}>
+                {alert.type.replace(/_/g, ' ')}
+              </span>
               <span class="alert-date">{formatDate(alert.created_at)}</span>
             </div>
             <div class="alert-body">
               <p><strong>Users:</strong> {(alert.user_names || []).filter(Boolean).join(', ') || 'Unknown'}</p>
               {#if alert.details}
                 <div class="alert-details">
+                  <!-- conflict_pattern -->
                   {#if alert.details.conflict_count}
                     <span>Conflicts: {alert.details.conflict_count}</span>
                   {/if}
@@ -333,6 +406,38 @@
                   {/if}
                   {#if alert.details.counterpart_count}
                     <span>Counterparts: {alert.details.counterpart_count}</span>
+                  {/if}
+
+                  <!-- majority_swap -->
+                  {#if alert.type === 'majority_swap'}
+                    <span>Global #{alert.details.global_id}</span>
+                    <span>{alert.details.old_submitter_count} → {alert.details.new_submitter_count} submitters</span>
+                    <span class="hash-preview" title="{alert.details.old_hash} → {alert.details.new_hash}">
+                      {alert.details.old_hash?.slice(0, 12)}… → {alert.details.new_hash?.slice(0, 12)}…
+                    </span>
+                  {/if}
+
+                  <!-- collusion_pattern -->
+                  {#if alert.type === 'collusion_pattern'}
+                    <span>Shared: {alert.details.shared_count}</span>
+                    <span>Exclusive: {alert.details.exclusive_count} ({alert.details.exclusive_rate}%)</span>
+                    {#if alert.details.exclusive_hofs > 0}
+                      <span class="stat-denied">Exclusive HoFs: {alert.details.exclusive_hofs}</span>
+                    {/if}
+                    <span>Suspicion: {alert.details.suspicion_level}</span>
+                    {#if alert.details.top_locations?.length > 0}
+                      <span>Locations: {alert.details.top_locations.map(l => l.location).join(', ')}</span>
+                    {/if}
+                  {/if}
+
+                  <!-- solo_fabrication -->
+                  {#if alert.type === 'solo_fabrication'}
+                    <span>Submissions: {alert.details.submission_count}</span>
+                    <span>Solo: {alert.details.solo_count} ({alert.details.solo_rate}%)</span>
+                    {#if alert.details.solo_hof_count > 0}
+                      <span class="stat-denied">Solo HoFs: {alert.details.solo_hof_count}</span>
+                    {/if}
+                    <span>Avg solo rate: {alert.details.avg_solo_rate}%</span>
                   {/if}
                 </div>
               {/if}
@@ -484,6 +589,47 @@
       {/if}
     </div>
   {/if}
+
+  <!-- Trade Channels Tab -->
+  {#if activeTab === 'channels'}
+    <div class="section">
+      <div class="section-header">
+        <p class="section-description">Configure which trade channels are accepted for ingestion. Only messages from listed channels will be processed.</p>
+        <button class="btn btn-primary" on:click={openAddChannel}>Add Channel</button>
+      </div>
+
+      {#if tradeChannels.length === 0}
+        <p class="empty-state">No channels configured — all trade messages will be rejected</p>
+      {:else}
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Channel</th>
+              <th>Planet</th>
+              <th>Added By</th>
+              <th>Date</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each tradeChannels as ch}
+              <tr>
+                <td><code>{ch.channel_name}</code></td>
+                <td>{ch.planet || 'Global'}</td>
+                <td>{ch.added_by_name || '-'}</td>
+                <td>{formatDate(ch.added_at)}</td>
+                <td>
+                  <button class="btn btn-small btn-danger" on:click={() => handleRemoveChannel(ch.channel_name)}>
+                    Remove
+                  </button>
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      {/if}
+    </div>
+  {/if}
 </div>
 
 <!-- Ban Dialog -->
@@ -620,6 +766,49 @@
 
       <div class="dialog-buttons">
         <button class="btn btn-secondary" on:click={() => showAddClientDialog = false}>Close</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Add Trade Channel Dialog -->
+{#if showAddChannelDialog}
+  <div class="dialog-overlay" role="presentation" on:click={() => showAddChannelDialog = false}>
+    <div class="dialog" on:click|stopPropagation>
+      <h3>Add Trade Channel</h3>
+      <p style="color: var(--text-muted); font-size: 14px; margin-bottom: 16px;">
+        Add a trade channel that clients are allowed to submit messages from.
+      </p>
+
+      {#if actionError}
+        <div class="error-message">{actionError}</div>
+      {/if}
+
+      <div class="form-group">
+        <label for="channel-name">Channel Name *</label>
+        <input
+          id="channel-name"
+          type="text"
+          bind:value={newChannelName}
+          placeholder="e.g. #trade, #arktrade"
+        />
+      </div>
+
+      <div class="form-group">
+        <label for="channel-planet">Planet</label>
+        <select id="channel-planet" bind:value={newChannelPlanet}>
+          <option value="">Global</option>
+          {#each KNOWN_PLANETS as planet}
+            <option value={planet}>{planet}</option>
+          {/each}
+        </select>
+      </div>
+
+      <div class="dialog-buttons">
+        <button class="btn btn-secondary" on:click={() => showAddChannelDialog = false}>Cancel</button>
+        <button class="btn btn-primary" on:click={handleAddChannel} disabled={actionLoading}>
+          {actionLoading ? 'Adding...' : 'Add Channel'}
+        </button>
       </div>
     </div>
   </div>
@@ -771,6 +960,21 @@
     color: var(--warning-color);
   }
 
+  .badge-danger {
+    background-color: rgba(239, 68, 68, 0.2);
+    color: var(--error-color);
+  }
+
+  .badge-info {
+    background-color: rgba(59, 130, 246, 0.2);
+    color: var(--accent-color);
+  }
+
+  .hash-preview {
+    font-family: monospace;
+    font-size: 11px;
+  }
+
   .alert-date {
     font-size: 12px;
     color: var(--text-muted);
@@ -783,7 +987,8 @@
 
   .alert-details {
     display: flex;
-    gap: 16px;
+    flex-wrap: wrap;
+    gap: 8px 16px;
     margin-top: 8px;
     font-size: 13px;
     color: var(--text-muted);

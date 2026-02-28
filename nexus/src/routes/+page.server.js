@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { getPublishedAnnouncements, getUpcomingEvents, getActiveCreators } from '$lib/server/db.js';
+import { getPublishedAnnouncements, getUpcomingEvents, getActiveCreators, pool } from '$lib/server/db.js';
 import { formatNewsFeed } from '$lib/server/news-cache.js';
 
 const MAX_STREAMS = 6;
@@ -112,11 +112,44 @@ function processCreators(creators) {
   };
 }
 
+async function getRecentGlobals(limit = 15) {
+  try {
+    const { rows } = await pool.query(
+      `SELECT id, global_type, player_name, target_name, value, value_unit,
+              location, is_hof, is_ath, event_timestamp,
+              mob_id, maturity_id, extra
+       FROM ingested_globals
+       WHERE confirmed = true
+       ORDER BY event_timestamp DESC
+       LIMIT $1`,
+      [limit]
+    );
+    return rows.map(r => ({
+      id: r.id,
+      type: r.global_type,
+      player: r.player_name,
+      target: r.target_name,
+      value: parseFloat(r.value),
+      unit: r.value_unit,
+      location: r.location,
+      hof: r.is_hof,
+      ath: r.is_ath,
+      timestamp: r.event_timestamp,
+      mob_id: r.mob_id,
+      maturity_id: r.maturity_id,
+      extra: r.extra,
+    }));
+  } catch {
+    return [];
+  }
+}
+
 export async function load() {
-  const [announcements, events, creators] = await Promise.all([
+  const [announcements, events, creators, globals] = await Promise.all([
     getPublishedAnnouncements(6),
     getUpcomingEvents(5),
-    getActiveCreators()
+    getActiveCreators(),
+    getRecentGlobals(15)
   ]);
 
   const news = formatNewsFeed(announcements);
@@ -126,6 +159,7 @@ export async function load() {
     news,
     events,
     streams,
-    videos
+    videos,
+    globals
   };
 }

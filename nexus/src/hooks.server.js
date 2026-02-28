@@ -55,6 +55,10 @@ if (import.meta.env.SSR) {
   setInterval(() => {
     syncSteamNews().catch(err => console.error('[news-sync] Error syncing Steam news:', err));
   }, STEAM_SYNC_INTERVAL_MS).unref();
+
+  // Initialize mob/maturity resolver for global event ingestion (hourly refresh)
+  const { initMobResolver } = await import('$lib/server/mobResolver.js');
+  initMobResolver().catch(err => console.error('[mobResolver] Error initializing mob resolver:', err));
 }
 
 const IMPERSONATE_COOKIE = 'nexus_impersonate';

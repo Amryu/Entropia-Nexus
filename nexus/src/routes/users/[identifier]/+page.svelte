@@ -120,6 +120,10 @@
     referenceError = '';
     isHydratingShowcase = false;
     expandedEffectKeys = new Set();
+    globalsData = null;
+    globalsLoading = false;
+    globalsLoaded = false;
+    globalsExpandedMobs = new Set();
     // Reset form to new profile data
     form = {
       biographyHtml: profile?.biographyHtml || '',
@@ -133,6 +137,43 @@
   $: hasShops = shops.length > 0;
   $: hasOrders = orders.length > 0;
   $: hasRentals = rentals.length > 0;
+
+  // Globals tab state (lazy-loaded)
+  let globalsData = null;
+  let globalsLoading = false;
+  let globalsLoaded = false;
+  let globalsExpandedMobs = new Set();
+
+  async function loadGlobalsData() {
+    if (globalsLoaded || globalsLoading || !profile.euName) return;
+    globalsLoading = true;
+    try {
+      const res = await fetch(`/api/globals/player/${encodeURIComponent(profile.euName)}`);
+      if (res.ok) {
+        globalsData = await res.json();
+      }
+    } catch { /* ignore */ }
+    globalsLoading = false;
+    globalsLoaded = true;
+  }
+
+  function toggleGlobalsMob(key) {
+    if (globalsExpandedMobs.has(key)) {
+      globalsExpandedMobs.delete(key);
+    } else {
+      globalsExpandedMobs.add(key);
+    }
+    globalsExpandedMobs = new Set(globalsExpandedMobs);
+  }
+
+  function formatPedGlobals(v) {
+    if (v >= 1000) return `${(v / 1000).toFixed(1)}K`;
+    return v.toFixed(2);
+  }
+
+  $: if (activeTab === 'Globals' && !globalsLoaded) {
+    loadGlobalsData();
+  }
   function sortOrdersByCategory(orderList) {
     return orderList
       .map(o => ({ ...o, category: getItemCategoryPath(o.item_type, o.item_sub_type) }))
@@ -170,6 +211,7 @@
   $: availableTabs = [
     { id: 'General', label: 'General', available: true },
     { id: 'Avatar', label: 'Avatar', available: hasAvatarData || (isOwner && isEditing) },
+    { id: 'Globals', label: 'Globals', available: !!profile.euName },
     { id: 'Services', label: 'Services', available: hasServices },
     { id: 'Rentals', label: 'Rentals', available: hasRentals },
     { id: 'Shops', label: 'Shops', available: hasShops },
@@ -1303,6 +1345,96 @@
       </section>
     {/if}
 
+    {#if activeTab === 'Globals'}
+      <section class="panel-section">
+        {#if globalsLoading}
+          <div class="empty-state">Loading globals...</div>
+        {:else if !globalsData || globalsData.summary?.total_count === 0}
+          <div class="empty-state">No globals recorded yet</div>
+        {:else}
+          <div class="globals-tab-summary">
+            <div class="globals-stat"><strong>{globalsData.summary.total_count}</strong> <span>Globals</span></div>
+            <div class="globals-stat"><strong>{formatPedGlobals(globalsData.summary.total_value)} PED</strong> <span>Total</span></div>
+            <div class="globals-stat"><strong>{globalsData.summary.hof_count}</strong> <span>HoF</span></div>
+            <div class="globals-stat"><strong>{globalsData.summary.kill_count + globalsData.summary.team_kill_count}</strong> <span>Hunting</span></div>
+            <div class="globals-stat"><strong>{globalsData.summary.deposit_count}</strong> <span>Mining</span></div>
+            <div class="globals-stat"><strong>{globalsData.summary.craft_count}</strong> <span>Crafting</span></div>
+          </div>
+
+          {#if globalsData.hunting?.length > 0}
+            <div class="globals-section">
+              <h3>Hunting</h3>
+              <table class="globals-detail-table">
+                <thead><tr><th>Target</th><th class="right">Kills</th><th class="right">Total</th><th class="right">Best</th></tr></thead>
+                <tbody>
+                  {#each globalsData.hunting as mob, i}
+                    {@const key = mob.mob_id || mob.target || i}
+                    {@const multi = mob.maturities?.length > 1}
+                    <tr class:expandable-row={multi} on:click={() => multi && toggleGlobalsMob(key)}>
+                      <td>{#if multi}<span class="expand-icon">{globalsExpandedMobs.has(key) ? '\u25BC' : '\u25B6'}</span>{/if}{mob.target}</td>
+                      <td class="right">{mob.kills}</td>
+                      <td class="right">{formatPedGlobals(mob.total_value)}</td>
+                      <td class="right">{formatPedGlobals(mob.best_value)}</td>
+                    </tr>
+                    {#if multi && globalsExpandedMobs.has(key)}
+                      {#each mob.maturities as mat}
+                        <tr class="maturity-row"><td class="indent-cell">{mat.target}</td><td class="right">{mat.kills}</td><td class="right">{formatPedGlobals(mat.total_value)}</td><td class="right">{formatPedGlobals(mat.best_value)}</td></tr>
+                      {/each}
+                    {/if}
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+          {/if}
+
+          {#if globalsData.mining?.resources?.length > 0}
+            <div class="globals-section">
+              <h3>Mining</h3>
+              <table class="globals-detail-table">
+                <thead><tr><th>Resource</th><th class="right">Finds</th><th class="right">Total</th><th class="right">Best</th></tr></thead>
+                <tbody>
+                  {#each globalsData.mining.resources as res}
+                    <tr><td>{res.target}</td><td class="right">{res.finds}</td><td class="right">{formatPedGlobals(res.total_value)}</td><td class="right">{formatPedGlobals(res.best_value)}</td></tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+          {/if}
+
+          {#if globalsData.crafting?.items?.length > 0}
+            <div class="globals-section">
+              <h3>Crafting</h3>
+              <table class="globals-detail-table">
+                <thead><tr><th>Item</th><th class="right">Crafts</th><th class="right">Total</th><th class="right">Best</th></tr></thead>
+                <tbody>
+                  {#each globalsData.crafting.items as item}
+                    <tr><td>{item.target}</td><td class="right">{item.crafts}</td><td class="right">{formatPedGlobals(item.total_value)}</td><td class="right">{formatPedGlobals(item.best_value)}</td></tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+          {/if}
+
+          {#if globalsData.achievements?.length > 0}
+            <div class="globals-section">
+              <h3>Achievements</h3>
+              <div class="achievements-compact">
+                {#each globalsData.achievements as ach}
+                  <div class="achievement-row">
+                    <span class="ach-type">{ach.type === 'discovery' ? 'Discovery' : 'Tier Record'}</span>
+                    <span class="ach-target">{ach.target}</span>
+                    {#if ach.extra?.tier}<span class="ach-detail">Tier {ach.extra.tier}</span>{/if}
+                  </div>
+                {/each}
+              </div>
+            </div>
+          {/if}
+
+          <a href="/globals/player/{encodeURIComponent(profile.euName)}" class="globals-detail-link">View full details</a>
+        {/if}
+      </section>
+    {/if}
+
     {#if activeTab === 'Orders'}
       <section class="panel-section">
         {#if ordersPageUrl}
@@ -2403,5 +2535,147 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  /* Globals tab */
+  .globals-tab-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+
+  .globals-stat {
+    padding: 10px 16px;
+    background: var(--primary-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    text-align: center;
+    font-size: 0.8125rem;
+  }
+
+  .globals-stat strong {
+    display: block;
+    font-size: 1.125rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .globals-stat span {
+    color: var(--text-muted);
+    font-size: 0.6875rem;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+  }
+
+  .globals-section {
+    margin-bottom: 16px;
+  }
+
+  .globals-section h3 {
+    margin: 0 0 8px 0;
+    font-size: 0.9375rem;
+    font-weight: 600;
+  }
+
+  .globals-detail-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8125rem;
+  }
+
+  .globals-detail-table th {
+    padding: 6px 10px;
+    text-align: left;
+    font-weight: 600;
+    color: var(--text-muted);
+    border-bottom: 1px solid var(--border-color);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+  }
+
+  .globals-detail-table td {
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border-color);
+    white-space: nowrap;
+  }
+
+  .globals-detail-table th.right,
+  .globals-detail-table td.right {
+    text-align: right;
+  }
+
+  .globals-detail-table tr:hover {
+    background-color: var(--hover-color);
+  }
+
+  .globals-detail-table tr:last-child td {
+    border-bottom: none;
+  }
+
+  .expandable-row {
+    cursor: pointer;
+  }
+
+  .expand-icon {
+    font-size: 0.625rem;
+    margin-right: 6px;
+    color: var(--text-muted);
+  }
+
+  .maturity-row td {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+  }
+
+  .indent-cell {
+    padding-left: 26px !important;
+  }
+
+  .globals-detail-link {
+    display: inline-block;
+    margin-top: 12px;
+    font-size: 0.8125rem;
+    color: var(--accent-color);
+    text-decoration: none;
+  }
+
+  .globals-detail-link:hover {
+    text-decoration: underline;
+  }
+
+  .achievements-compact {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .achievement-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-size: 0.8125rem;
+  }
+
+  .ach-type {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    min-width: 80px;
+  }
+
+  .ach-target {
+    flex: 1;
+    font-weight: 600;
+  }
+
+  .ach-detail {
+    color: var(--text-muted);
+    font-size: 0.75rem;
   }
 </style>

@@ -90,7 +90,8 @@ export const SHORT_ROUTE_MAP = Object.freeze({
   ad: '/account/settings/developer',
   aa: '/account/settings/authorizations',
   oa: '/oauth/authorize',
-  se: '/search'
+  se: '/search',
+  gl: '/globals'
 });
 
 /**
@@ -159,7 +160,8 @@ export const PREFERRED_SHORT_ROUTE_BY_PREFIX = Object.freeze({
   '/account/settings/developer': 'ad',
   '/account/settings/authorizations': 'aa',
   '/oauth/authorize': 'oa',
-  '/search': 'se'
+  '/search': 'se',
+  '/globals': 'gl'
 });
 
 /**

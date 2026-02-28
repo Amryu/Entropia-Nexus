@@ -48,6 +48,13 @@
   let notificationsTotal = 0;
   let notificationsUnread = 0;
   let notificationsLastLoaded = 0;
+  let expandedNotificationId = null;
+
+  const notificationActionMap = {
+    Society: { label: 'View Societies', href: '/societies' },
+    Rental: { label: 'View Rentals', href: '/rental' },
+    Admin: { label: 'Review', href: '/admin/review' },
+  };
 
   $: notificationsTotalPages = Math.max(1, Math.ceil(notificationsTotal / notificationsPageSize));
   $: shortLinkUrl = getShortLinkForCurrentPage($page.url);
@@ -304,6 +311,17 @@
       notificationsUnread = Math.max(0, notificationsUnread - 1);
     } catch (err) {
       notificationsError = err.message || 'Failed to mark notification as read.';
+    }
+  }
+
+  function toggleNotification(notification) {
+    if (expandedNotificationId === notification.id) {
+      expandedNotificationId = null;
+    } else {
+      expandedNotificationId = notification.id;
+      if (!notification.read) {
+        markNotificationRead(notification);
+      }
     }
   }
 
@@ -995,12 +1013,37 @@
   .notification-message {
     font-size: 13px;
     line-height: 1.3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .notification-item.expanded .notification-message {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
   }
 
   .notification-meta {
     font-size: 11px;
     color: var(--text-muted);
     margin-top: 4px;
+  }
+
+  .notification-action {
+    display: inline-block;
+    margin-top: 6px;
+    font-size: 12px;
+    color: var(--accent);
+    text-decoration: none;
+    padding: 3px 10px;
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    transition: background 0.15s;
+  }
+  .notification-action:hover {
+    background: var(--accent);
+    color: var(--text-light);
   }
 
   .notification-footer {
@@ -2163,11 +2206,8 @@
       <div class="menu-item notification-menu" role="none" on:mouseenter={() => handleDropdownEnter('notifications')} on:mouseleave={handleDropdownLeave}>
         <div class="notification-icon" title="Notifications">
           <svg class="notification-bell" viewBox="0 0 24 24" aria-hidden="true">
-            <path
-              fill="currentColor"
-              d="M12 3a6 6 0 0 0-6 6v1.4c0 1-.4 2-1.1 2.7l-1.4 1.4A2.6 2.6 0 0 0 2.8 16H2.5a.5.5 0 0 0 0 1H3v1.5A2.5 2.5 0 0 0 5.5 21h13a2.5 2.5 0 0 0 2.5-2.5V17h.5a.5.5 0 0 0 0-1h-.3a2.6 2.6 0 0 0-.7-1.5l-1.4-1.4A3.8 3.8 0 0 1 18 10.4V9a6 6 0 0 0-6-6Zm0 19a2.75 2.75 0 0 0 2.7-2.2h-5.4A2.75 2.75 0 0 0 12 22Z"
-            />
-            <circle cx="12" cy="18.2" r="1.4" fill="currentColor" />
+            <path fill="currentColor" d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2z"/>
+            <path fill="currentColor" d="M18 16v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.93 6 11v5l-2 2v1h16v-1l-2-2z"/>
           </svg>
           {#if notificationsUnread > 0}
             <span class="notification-badge">{notificationsUnread > 99 ? '99+' : notificationsUnread}</span>
@@ -2197,10 +2237,18 @@
                 <button
                   class="notification-item"
                   class:unread={!notification.read}
-                  on:click={() => markNotificationRead(notification)}
+                  class:expanded={expandedNotificationId === notification.id}
+                  on:click={() => toggleNotification(notification)}
                 >
                   <div class="notification-message">{notification.message}</div>
                   <div class="notification-meta">{formatNotificationDate(notification.date)} &bull; {notification.type}</div>
+                  {#if expandedNotificationId === notification.id && notificationActionMap[notification.type]}
+                    <a
+                      class="notification-action"
+                      href={notificationActionMap[notification.type].href}
+                      on:click|stopPropagation
+                    >{notificationActionMap[notification.type].label}</a>
+                  {/if}
                 </button>
               {/each}
             </div>

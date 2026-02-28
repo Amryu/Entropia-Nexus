@@ -9,11 +9,14 @@ import {
   ingestTrades,
   getTradesSince,
   parseRequestBody,
+  maybeAnalyzeConflicts,
 } from '$lib/server/ingestion.js';
 
 const MAX_BATCH_SIZE = 500;
-const RATE_LIMIT_MAX = 6;
-const RATE_LIMIT_WINDOW = 60_000; // 6 requests per 60 seconds
+const GET_RATE_LIMIT_MAX = 30;
+const GET_RATE_LIMIT_WINDOW = 60_000; // 30 requests per 60 seconds
+const RATE_LIMIT_MAX = 20;
+const RATE_LIMIT_WINDOW = 60_000; // 20 requests per 60 seconds
 
 /**
  * POST /api/ingestion/trade — Submit a batch of trade messages.
@@ -56,7 +59,7 @@ export async function POST({ request, locals }) {
   const validMessages = [];
   const errors = [];
   for (let i = 0; i < messages.length; i++) {
-    const err = validateTradeMessage(messages[i]);
+    const err = await validateTradeMessage(messages[i]);
     if (err) {
       errors.push({ index: i, error: err });
     } else {
@@ -70,6 +73,10 @@ export async function POST({ request, locals }) {
 
   try {
     const result = await ingestTrades(user.id, validMessages);
+    if (result.rejected) {
+      return getResponse({ error: result.reason }, 400);
+    }
+    maybeAnalyzeConflicts();
     const response = {
       ...result,
       total: messages.length,
@@ -90,6 +97,14 @@ export async function POST({ request, locals }) {
 export async function GET({ url, locals }) {
   const user = requireVerifiedAPI(locals);
 
+  const rl = checkRateLimit(`ingest-get-trade:${user.id}`, GET_RATE_LIMIT_MAX, GET_RATE_LIMIT_WINDOW);
+  if (!rl.allowed) {
+    return getResponse(
+      { error: 'Rate limited', retryAfter: Math.ceil(rl.resetIn / 1000) },
+      429
+    );
+  }
+
   if (await isIngestionBanned(user.id)) {
     return getResponse({ error: 'Ingestion access revoked' }, 403);
   }
@@ -104,7 +119,7 @@ export async function GET({ url, locals }) {
     return getResponse({ error: 'Invalid since timestamp' }, 400);
   }
 
-  const limit = Math.min(parseInt(url.searchParams.get('limit') || '200'), 1000);
+  const limit = Math.min(parseInt(url.searchParams.get('limit') || '200') || 200, 1000);
 
   try {
     const rows = await getTradesSince(sinceDate.toISOString(), limit);
@@ -119,7 +134,7 @@ export async function GET({ url, locals }) {
     }));
 
     const cursor = rows.length > 0
-      ? rows[rows.length - 1].event_timestamp
+      ? rows[rows.length - 1].first_seen_at
       : since;
 
     return getResponse({ trades, cursor }, 200);

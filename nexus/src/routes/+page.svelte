@@ -6,10 +6,11 @@
 <script>
   // @ts-nocheck
   import '$lib/style.css';
+  import GlobalsFeed from '$lib/components/globals/GlobalsFeed.svelte';
 
   export let data;
 
-  $: ({ news, events, streams, videos } = data);
+  $: ({ news, events, streams, videos, globals } = data);
 
   const features = [
     { name: 'Items Database', href: '/items', icon: 'ITM', description: 'Weapons, armor, tools, materials, blueprints and more' },
@@ -141,6 +142,15 @@
         </div>
       </section>
     {/if}
+
+    <!-- Globals Feed -->
+    <section class="section">
+      <div class="section-header">
+        <h2 class="section-title">Globals</h2>
+        <a href="/globals" class="section-action">View all</a>
+      </div>
+      <GlobalsFeed initialGlobals={globals} />
+    </section>
 
     <!-- Events -->
     {#if events && events.length > 0}
