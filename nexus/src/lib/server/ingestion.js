@@ -9,7 +9,6 @@ import { resolveMob } from './mobResolver.js';
 const GLOBAL_CONFIRM_THRESHOLD = 5;
 const TIMESTAMP_WINDOW_MS = 60_000; // ±60 seconds for matching (trades)
 const GLOBAL_DEDUP_WINDOW_MS = 5 * 60 * 1000; // ±5 min for occurrence-based dedup (globals)
-const MAX_OCCURRENCE = 3;
 const VALID_GLOBAL_TYPES = new Set(['kill', 'team_kill', 'deposit', 'craft', 'rare_item', 'discovery', 'tier', 'examine', 'pvp']);
 const VALUE_OPTIONAL_TYPES = new Set(['discovery', 'tier', 'rare_item', 'pvp']);
 const MAX_BATCH_SIZE = 500;
@@ -201,8 +200,8 @@ export function validateGlobalEvent(event) {
   if (event.hof != null && typeof event.hof !== 'boolean') return 'hof must be a boolean';
   if (event.ath != null && typeof event.ath !== 'boolean') return 'ath must be a boolean';
   if (event.occurrence != null) {
-    if (!Number.isInteger(event.occurrence) || event.occurrence < 1 || event.occurrence > MAX_OCCURRENCE)
-      return `Invalid occurrence: must be integer 1-${MAX_OCCURRENCE}`;
+    if (!Number.isInteger(event.occurrence) || event.occurrence < 1)
+      return 'Invalid occurrence: must be a positive integer';
   }
 
   const ts = new Date(event.timestamp);

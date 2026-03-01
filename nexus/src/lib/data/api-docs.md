@@ -1640,7 +1640,7 @@ Submit a batch of global events (kills, deposits, crafts, rare items). Supports 
 ```
 
 **Fields:**
-- `occurrence` *(optional, integer 1-3, default 1)* — Distinguishes identical events within a 5-minute window. When a player gets multiple identical globals in quick succession (same mob, same value), the client marks them as occurrence 1, 2, 3. Events without this field default to occurrence 1.
+- `occurrence` *(optional, positive integer, default 1)* — Distinguishes identical events within a 5-minute window. When a player gets multiple identical globals in quick succession (same mob, same value), the client marks them as occurrence 1, 2, 3, etc. Events without this field default to occurrence 1.
 
 **Limits:** Max 500 entries per batch, timestamps within last 24 hours, 20 requests per 60 seconds.
 
@@ -1675,7 +1675,7 @@ Fetch global events newer than a timestamp (distribution endpoint). Rate limited
 
 **Response:** `{ "globals": [...], "cursor": "2026-02-28T15:31:00Z" }`
 
-Each global includes a `confirmed` boolean (true when confirmation threshold is met), `confirmations` count, and `occurrence` (integer 1-3).
+Each global includes a `confirmed` boolean (true when confirmation threshold is met), `confirmations` count, and `occurrence` (positive integer).
 
 #### `GET /api/ingestion/trade`
 
