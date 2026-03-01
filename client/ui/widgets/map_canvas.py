@@ -99,6 +99,9 @@ class MapCanvas(QWidget):
         # Search results (empty = no search active)
         self._search_ids: set[int] = set()
 
+        # Cached view transform params (sx, sy, xscale, yscale)
+        self._vt: tuple[float, float, float, float] = (0.0, 0.0, 1.0, 1.0)
+
         # Animation
         self._anim: QTimeLine | None = None
         self._anim_start: tuple[float, float, float] = (0, 0, 0)  # cx, cy, zoom
@@ -132,6 +135,9 @@ class MapCanvas(QWidget):
         self._eu_ratio = _EU_PER_TILE / self._img_tile_size
         self._eu_tile_size = self._img_tile_size * self._eu_ratio
 
+        # Pre-cache image coordinates for all locations (perf: avoids per-frame conversion)
+        self._precompute_image_coords(pmap)
+
         # Initial view: fit entire image
         self._center_x = image.width() / 2
         self._center_y = image.height() / 2
@@ -139,6 +145,67 @@ class MapCanvas(QWidget):
         self._zoom = self._min_zoom
 
         self.update()
+
+    def _precompute_image_coords(self, pmap: dict):
+        """Pre-compute image-space coordinates and bounding boxes for all locations."""
+        px = pmap.get("X", 0) * self._eu_tile_size
+        py = pmap.get("Y", 0) * self._eu_tile_size
+        ph = pmap.get("Height", 0) * self._eu_tile_size
+        eu_ratio = self._eu_ratio
+
+        for loc in self._locations:
+            props = loc.get("Properties", {})
+            shape = props.get("Shape")
+            coords = props.get("Coordinates", {})
+            data = props.get("Data", {})
+
+            if shape == "Polygon":
+                verts_raw = data.get("vertices", [])
+                img_pts = []
+                for j in range(0, len(verts_raw) - 1, 2):
+                    vx, vy = verts_raw[j], verts_raw[j + 1]
+                    if vx is None or vy is None:
+                        continue
+                    ix = (vx - px) / eu_ratio
+                    iy = (ph - (vy - py)) / eu_ratio
+                    img_pts.append((ix, iy))
+                loc["_img_polygon"] = img_pts
+                if img_pts:
+                    xs = [p[0] for p in img_pts]
+                    ys = [p[1] for p in img_pts]
+                    loc["_img_bbox"] = (min(xs), min(ys), max(xs), max(ys))
+                else:
+                    loc["_img_bbox"] = None
+            elif shape == "Circle":
+                dx = data.get("x") or 0
+                dy = data.get("y") or 0
+                dr = data.get("radius") or 0
+                cx = (dx - px) / eu_ratio
+                cy = (ph - (dy - py)) / eu_ratio
+                rx = dr / eu_ratio
+                loc["_img_center"] = (cx, cy)
+                loc["_img_radius"] = rx
+                loc["_img_bbox"] = (cx - rx, cy - rx, cx + rx, cy + rx)
+            elif shape == "Rectangle":
+                dx = data.get("x") or 0
+                dy = data.get("y") or 0
+                dw = data.get("width") or 0
+                dh = data.get("height") or 0
+                sx = (dx - px) / eu_ratio
+                sy = (ph - (dy - py)) / eu_ratio
+                ex = (dx + dw - px) / eu_ratio
+                ey = (ph - (dy + dh - py)) / eu_ratio
+                loc["_img_bbox"] = (min(sx, ex), min(sy, ey), max(sx, ex), max(sy, ey))
+                loc["_img_rect"] = (sx, ey, ex - sx, sy - ey)  # x, y, w, h
+            else:
+                # Point location
+                lon = coords.get("Longitude")
+                lat = coords.get("Latitude")
+                if lon is not None and lat is not None:
+                    ix = (lon - px) / eu_ratio
+                    iy = (ph - (lat - py)) / eu_ratio
+                    loc["_img_pt"] = (ix, iy)
+                    loc["_img_bbox"] = (ix - 10, iy - 10, ix + 10, iy + 10)
 
     def set_selected(self, location_id: int | None):
         loc = self._find_by_id(location_id) if location_id is not None else None
@@ -294,9 +361,19 @@ class MapCanvas(QWidget):
     # --- Filtered locations ---
 
     def _filtered_locations(self) -> list[dict]:
-        """Locations passing the current layer filter."""
+        """Locations passing the current layer filter or matching search/selection."""
         result = []
+        selected_id = self._selected.get("Id") if self._selected else None
         for loc in self._locations:
+            loc_id = loc.get("Id")
+            # Always show selected location regardless of layer filter
+            if selected_id is not None and loc_id == selected_id:
+                result.append(loc)
+                continue
+            # Always show search results regardless of layer filter
+            if self._search_ids and loc_id in self._search_ids:
+                result.append(loc)
+                continue
             t = loc.get("Properties", {}).get("Type", "")
             shape = loc.get("Properties", {}).get("Shape")
             # Map area type categories
@@ -341,6 +418,30 @@ class MapCanvas(QWidget):
         dest = QRectF(0, 0, self.width(), self.height())
         painter.drawPixmap(dest, self._pixmap, src)
 
+        # Pre-compute view transform for this frame (avoids recalc per location)
+        w, h = self.width(), self.height()
+        if h == 0:
+            painter.end()
+            return
+        vis_h = self._img_tile_size / self._zoom
+        vis_w = (w / h) * vis_h
+        vt_sx = self._center_x - vis_w / 2
+        vt_sy = self._center_y - vis_h / 2
+        vt_xscale = w / vis_w
+        vt_yscale = h / vis_h
+        self._vt = (vt_sx, vt_sy, vt_xscale, vt_yscale)
+
+        # Viewport bbox in image coords (for culling) with margin
+        margin_img = 20 / vt_xscale  # ~20 widget pixels of margin
+        vp_x0 = vt_sx - margin_img
+        vp_y0 = vt_sy - margin_img
+        vp_x1 = vt_sx + vis_w + margin_img
+        vp_y1 = vt_sy + vis_h + margin_img
+
+        # Clear cached widget polygons (stale after pan/zoom)
+        for loc in self._locations:
+            loc.pop("_wgt_polygon", None)
+
         # Draw locations
         filtered = self._filtered_locations()
         has_search = len(self._search_ids) > 0
@@ -349,11 +450,18 @@ class MapCanvas(QWidget):
         for loc in filtered:
             if loc.get("Properties", {}).get("Shape") not in _SHAPE_TYPES:
                 continue
+            # Viewport culling
+            bbox = loc.get("_img_bbox")
+            if bbox and (bbox[2] < vp_x0 or bbox[0] > vp_x1 or bbox[3] < vp_y0 or bbox[1] > vp_y1):
+                continue
             self._draw_location(painter, loc, has_search)
 
         # Second pass: point locations (on top)
         for loc in filtered:
             if loc.get("Properties", {}).get("Shape") in _SHAPE_TYPES:
+                continue
+            bbox = loc.get("_img_bbox")
+            if bbox and (bbox[2] < vp_x0 or bbox[0] > vp_x1 or bbox[3] < vp_y0 or bbox[1] > vp_y1):
                 continue
             self._draw_location(painter, loc, has_search)
 
@@ -369,8 +477,8 @@ class MapCanvas(QWidget):
         is_area = shape in _SHAPE_TYPES
         is_tp = loc_type == "Teleporter"
 
-        # Search filtering: dim non-results
-        if has_search and loc_id not in self._search_ids and not is_hovered and not is_selected:
+        # Search filtering: dim non-results (except teleporters)
+        if has_search and loc_id not in self._search_ids and not is_hovered and not is_selected and not is_tp:
             painter.setOpacity(0.25)
             painter.setPen(QPen(QColor(0xAA, 0xAA, 0xAA), 1.5))
             painter.setBrush(QBrush(QColor(0x88, 0x88, 0x88)))
@@ -388,7 +496,12 @@ class MapCanvas(QWidget):
     def _draw_area(self, painter: QPainter, loc: dict, props: dict,
                    shape: str, loc_type: str, is_hovered: bool, is_selected: bool):
         """Draw an area shape matching the website's MapCanvas.svelte drawShape()."""
-        base_color = _TYPE_COLORS.get(loc_type, _DEFAULT_COLOR)
+        # Use pre-computed difficulty color for MobAreas, fallback to type color
+        mob_rgb = loc.get("_mob_color")
+        if mob_rgb and loc_type == "MobArea":
+            base_color = QColor(mob_rgb[0], mob_rgb[1], mob_rgb[2])
+        else:
+            base_color = _TYPE_COLORS.get(loc_type, _DEFAULT_COLOR)
 
         # Glow halo for selected/hovered (simulates canvas shadowBlur)
         if is_selected or is_hovered:
@@ -432,11 +545,10 @@ class MapCanvas(QWidget):
     def _draw_teleporter(self, painter: QPainter, loc: dict, props: dict,
                          is_hovered: bool, is_selected: bool):
         """Draw a teleporter point matching the website's styling."""
-        coords = props.get("Coordinates", {})
-        lon, lat = coords.get("Longitude"), coords.get("Latitude")
-        if lon is None or lat is None:
+        cached = loc.get("_img_pt")
+        if not cached:
             return
-        wx, wy = self._entropia_to_widget(lon, lat)
+        wx, wy = self._img_to_wgt(cached[0], cached[1])
         active = is_hovered or is_selected
         r = _TP_RADIUS_ACTIVE if active else _TP_RADIUS
 
@@ -469,11 +581,10 @@ class MapCanvas(QWidget):
     def _draw_point(self, painter: QPainter, loc: dict, props: dict,
                     is_hovered: bool, is_selected: bool):
         """Draw a non-teleporter point location matching the website's styling."""
-        coords = props.get("Coordinates", {})
-        lon, lat = coords.get("Longitude"), coords.get("Latitude")
-        if lon is None or lat is None:
+        cached = loc.get("_img_pt")
+        if not cached:
             return
-        wx, wy = self._entropia_to_widget(lon, lat)
+        wx, wy = self._img_to_wgt(cached[0], cached[1])
         half = _LOC_HALF
 
         if is_selected:
@@ -503,51 +614,55 @@ class MapCanvas(QWidget):
         painter.setPen(QPen(stroke_color, line_w))
         painter.drawRect(rect)
 
+    def _img_to_wgt(self, ix: float, iy: float) -> tuple[float, float]:
+        """Fast image-to-widget transform using cached view params."""
+        sx, sy, xs, ys = self._vt
+        return ((ix - sx) * xs, (iy - sy) * ys)
+
     def _draw_shape(self, painter: QPainter, loc: dict, props: dict,
                     shape: str | None, loc_type: str, glow_extra: float = 0):
-        """Draw the geometric shape for a location."""
+        """Draw the geometric shape for a location using pre-computed image coords."""
         if shape == "Circle":
-            data = props.get("Data", {})
-            dx = data.get("x") or 0
-            dy = data.get("y") or 0
-            dr = data.get("radius") or 0
-            cx, cy = self._entropia_to_widget(dx, dy)
-            ox, _ = self._entropia_to_widget(dx + dr, dy)
-            r = abs(ox - cx) + glow_extra
-            painter.drawEllipse(QPointF(cx, cy), r, r)
+            cached = loc.get("_img_center")
+            if cached:
+                cx, cy = self._img_to_wgt(cached[0], cached[1])
+                r_img = loc.get("_img_radius", 0)
+                # Convert radius from image to widget scale
+                r = r_img * self._vt[2] + glow_extra
+                painter.drawEllipse(QPointF(cx, cy), r, r)
         elif shape == "Rectangle":
-            data = props.get("Data", {})
-            dx = data.get("x") or 0
-            dy = data.get("y") or 0
-            dw = data.get("width") or 0
-            dh = data.get("height") or 0
-            sx, sy = self._entropia_to_widget(dx, dy)
-            ex, ey = self._entropia_to_widget(dx + dw, dy + dh)
-            w = ex - sx
-            h = sy - ey  # Y is inverted
-            rect = QRectF(sx - glow_extra, sy - h - glow_extra,
-                          w + glow_extra * 2, h + glow_extra * 2)
-            painter.drawRect(rect)
+            cached = loc.get("_img_rect")
+            if cached:
+                rx, ry, rw, rh = cached
+                sx, sy = self._img_to_wgt(rx, ry)
+                ex, ey = self._img_to_wgt(rx + rw, ry + rh)
+                w = ex - sx
+                h = ey - sy
+                rect = QRectF(sx - glow_extra, sy - glow_extra,
+                              w + glow_extra * 2, h + glow_extra * 2)
+                painter.drawRect(rect)
         elif shape == "Polygon":
-            data = props.get("Data", {})
-            verts_raw = data.get("vertices", [])
-            points = []
-            for i in range(0, len(verts_raw) - 1, 2):
-                vx, vy = verts_raw[i], verts_raw[i + 1]
-                if vx is None or vy is None:
-                    continue
-                wx, wy = self._entropia_to_widget(vx, vy)
-                points.append(QPointF(wx, wy))
-            if points:
-                painter.drawPolygon(QPolygonF(points))
+            # Use cached widget polygon if available (built once per frame)
+            cached_poly = loc.get("_wgt_polygon")
+            if cached_poly is None:
+                img_pts = loc.get("_img_polygon", [])
+                if not img_pts:
+                    return
+                points = []
+                i2w = self._img_to_wgt
+                for ix, iy in img_pts:
+                    wx, wy = i2w(ix, iy)
+                    points.append(QPointF(wx, wy))
+                cached_poly = QPolygonF(points)
+                loc["_wgt_polygon"] = cached_poly
+            if cached_poly:
+                painter.drawPolygon(cached_poly)
         else:
             # Point location
-            coords = props.get("Coordinates", {})
-            lon = coords.get("Longitude")
-            lat = coords.get("Latitude")
-            if lon is None or lat is None:
+            cached = loc.get("_img_pt")
+            if not cached:
                 return
-            wx, wy = self._entropia_to_widget(lon, lat)
+            wx, wy = self._img_to_wgt(cached[0], cached[1])
             if loc_type == "Teleporter":
                 r = _TP_RADIUS + glow_extra
                 painter.drawEllipse(QPointF(wx, wy), r, r)
@@ -566,68 +681,65 @@ class MapCanvas(QWidget):
 
     def _hit_test(self, wx: float, wy: float) -> dict | None:
         """Find the location under the widget position *wx, wy*."""
+        # Ensure view transform is fresh for _img_to_wgt
+        w, h = self.width(), self.height()
+        if h == 0:
+            return None
+        vis_h = self._img_tile_size / self._zoom
+        vis_w = (w / h) * vis_h
+        vt_sx = self._center_x - vis_w / 2
+        vt_sy = self._center_y - vis_h / 2
+        self._vt = (vt_sx, vt_sy, w / vis_w, h / vis_h)
+
         filtered = self._filtered_locations()
         best: dict | None = None
         best_dist = float("inf")
+        i2w = self._img_to_wgt
 
         for loc in filtered:
             props = loc.get("Properties", {})
             shape = props.get("Shape")
 
             if shape == "Circle":
-                data = props.get("Data", {})
-                dx = data.get("x") or 0
-                dy = data.get("y") or 0
-                dr = data.get("radius") or 0
-                cx, cy = self._entropia_to_widget(dx, dy)
-                ox, _ = self._entropia_to_widget(dx + dr, dy)
-                r = abs(ox - cx)
+                cached = loc.get("_img_center")
+                if not cached:
+                    continue
+                cx, cy = i2w(cached[0], cached[1])
+                r = loc.get("_img_radius", 0) * self._vt[2]
                 d = math.hypot(wx - cx, wy - cy)
                 if d <= r and r < best_dist:
                     best, best_dist = loc, r
 
             elif shape == "Rectangle":
-                data = props.get("Data", {})
-                dx = data.get("x") or 0
-                dy = data.get("y") or 0
-                dw = data.get("width") or 0
-                dh = data.get("height") or 0
-                sx, sy = self._entropia_to_widget(dx, dy)
-                ex, ey = self._entropia_to_widget(dx + dw, dy + dh)
-                w_r = ex - sx
-                h_r = sy - ey
-                if sx <= wx <= sx + w_r and sy - h_r <= wy <= sy:
-                    area = abs(w_r * h_r)
+                cached = loc.get("_img_rect")
+                if not cached:
+                    continue
+                rx, ry, rw, rh = cached
+                sx, sy = i2w(rx, ry)
+                ex, ey = i2w(rx + rw, ry + rh)
+                if min(sx, ex) <= wx <= max(sx, ex) and min(sy, ey) <= wy <= max(sy, ey):
+                    area = abs((ex - sx) * (ey - sy))
                     if area < best_dist:
                         best, best_dist = loc, area
 
             elif shape == "Polygon":
-                data = props.get("Data", {})
-                verts_raw = data.get("vertices", [])
-                points = []
-                for i in range(0, len(verts_raw) - 1, 2):
-                    vx, vy = verts_raw[i], verts_raw[i + 1]
-                    if vx is None or vy is None:
-                        continue
-                    px, py = self._entropia_to_widget(vx, vy)
-                    points.append((px, py))
+                img_pts = loc.get("_img_polygon", [])
+                if not img_pts:
+                    continue
+                points = [(i2w(ix, iy)) for ix, iy in img_pts]
                 if self._point_in_polygon(wx, wy, points):
                     area = self._polygon_area(points)
                     if area < best_dist:
                         best, best_dist = loc, area
 
             else:
-                # Point location
-                coords = props.get("Coordinates", {})
-                lon = coords.get("Longitude")
-                lat = coords.get("Latitude")
-                if lon is None or lat is None:
+                cached = loc.get("_img_pt")
+                if not cached:
                     continue
-                px, py = self._entropia_to_widget(lon, lat)
+                px, py = i2w(cached[0], cached[1])
                 buf = _HIT_BUFFER_TP if props.get("Type") == "Teleporter" else _HIT_BUFFER_OTHER
                 d = math.hypot(wx - px, wy - py)
                 if d <= buf:
-                    # Point locations get priority over areas — use negative dist
                     priority = -(1000 - d)
                     if priority < best_dist:
                         best, best_dist = loc, priority
@@ -758,7 +870,7 @@ class MapCanvas(QWidget):
     # --- Tooltip ---
 
     def _show_tooltip(self, loc: dict, pos: QPointF):
-        name = loc.get("Name", "")
+        name = loc.get("_mob_display_name") or loc.get("Name", "")
         loc_type = loc.get("Properties", {}).get("Type", "")
         label = f"{name}" if name else loc_type
         if name and loc_type:

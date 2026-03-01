@@ -71,6 +71,7 @@ class NavState:
     """A single point in the navigation history."""
     page: int
     sub_state: Any = None
+    scroll_pos: int = 0
 
     def __eq__(self, other):
         if not isinstance(other, NavState):
@@ -127,6 +128,8 @@ class MainWindow(QWidget):
         self._title_bar.back_clicked.connect(self._navigate_back)
         self._title_bar.forward_clicked.connect(self._navigate_forward)
         self._title_bar.search_submitted.connect(self._on_search_submitted)
+        self._title_bar.result_selected.connect(self._on_search_result_selected)
+        self._title_bar.create_requested.connect(self._on_create_requested)
         outer.addWidget(self._title_bar)
 
         # Middle row: sidebar + pages (direct children of outer)
@@ -254,7 +257,9 @@ class MainWindow(QWidget):
     def _create_inventory_page(self):
         from .pages.inventory_page import InventoryPage
         return InventoryPage(signals=self._signals, oauth=self._oauth,
-                             nexus_client=self._nexus_client)
+                             nexus_client=self._nexus_client, db=self._db,
+                             config=self._config,
+                             config_path=self._config_path)
 
     def _create_settings_page(self):
         from .pages.settings_page import SettingsPage
@@ -412,45 +417,11 @@ class MainWindow(QWidget):
             daemon=True,
         ).start()
 
-    # Item type → wiki category path mapping
-    _WIKI_PATHS: dict[str, list[str]] = {
-        'Weapon': ['Weapons'],
-        'Armor': ['Armor Sets'],
-        'ArmorSet': ['Armor Sets'],
-        'Clothing': ['Clothing'],
-        'WeaponAmplifier': ['Attachments', 'Weapon Amplifiers'],
-        'WeaponVisionAttachment': ['Attachments', 'Sights/Scopes'],
-        'Absorber': ['Attachments', 'Absorbers'],
-        'FinderAmplifier': ['Attachments', 'Finder Amplifiers'],
-        'ArmorPlating': ['Attachments', 'Armor Platings'],
-        'Enhancer': ['Attachments', 'Enhancers'],
-        'MindforceImplant': ['Attachments', 'Mindforce Implants'],
-        'MedicalTool': ['Medical Tools', 'Medical Tools'],
-        'MedicalChip': ['Medical Tools', 'Medical Chips'],
-        'Refiner': ['Tools', 'Refiners'],
-        'Scanner': ['Tools', 'Scanners'],
-        'Finder': ['Tools', 'Finders'],
-        'Excavator': ['Tools', 'Excavators'],
-        'TeleportationChip': ['Tools', 'Teleportation Chips'],
-        'EffectChip': ['Tools', 'Effect Chips'],
-        'MiscTool': ['Tools', 'Misc. Tools'],
-        'Material': ['Materials'],
-        'Blueprint': ['Blueprints'],
-        'BlueprintBook': ['Blueprints'],
-        'Consumable': ['Consumables', 'Stimulants'],
-        'Capsule': ['Consumables', 'Creature Control Capsules'],
-        'Vehicle': ['Vehicles'],
-        'Pet': ['Pets'],
-        'Furniture': ['Furnishings', 'Furniture'],
-        'Decoration': ['Furnishings', 'Decorations'],
-        'StorageContainer': ['Furnishings', 'Storage Containers'],
-        'Sign': ['Furnishings', 'Signs'],
-        'Strongbox': ['Strongboxes'],
-    }
-
-    def _on_inventory_open_wiki(self, item_id: int, item_type: str):
-        """Navigate to the wiki category page for the given item type."""
-        path = self._WIKI_PATHS.get(item_type, [])
+    def _on_inventory_open_wiki(self, item_id: int, item_type: str,
+                                item_name: str):
+        """Navigate to the wiki page for the given item."""
+        from .widgets.search_popup import WIKI_PATHS
+        path = WIKI_PATHS.get(item_type, [])
         if not path:
             return
         self._applying_nav = True
@@ -458,7 +429,10 @@ class MainWindow(QWidget):
         self._sidebar.set_active_no_emit(PAGE_WIKI)
         self._pages.setCurrentIndex(PAGE_WIKI)
         self._applying_nav = False
-        self._wiki_page.navigate_to(list(path))
+        nav_path = list(path)
+        if item_name:
+            nav_path.append(item_name)
+        self._wiki_page.navigate_to(nav_path)
 
     # --- Page navigation ---
 
@@ -485,11 +459,50 @@ class MainWindow(QWidget):
         self._applying_nav = False
         self._wiki_page.show_search_results(query, results)
 
+    def _on_search_result_selected(self, item: dict):
+        """Title bar search result clicked → navigate wiki or open browser."""
+        import webbrowser
+        from urllib.parse import quote as url_quote
+        from .widgets.search_popup import WIKI_PATHS
+
+        item_type = item.get("Type", "")
+        item_name = item.get("Name", "")
+        if not item_name:
+            return
+
+        if item_type in ("User", "Society"):
+            prefix = "/users/" if item_type == "User" else "/societies/"
+            url = self._config.nexus_base_url + prefix + url_quote(item_name)
+            webbrowser.open(url)
+            return
+
+        path = WIKI_PATHS.get(item_type)
+        if path:
+            self._applying_nav = True
+            self._ensure_page(PAGE_WIKI)
+            self._sidebar.set_active_no_emit(PAGE_WIKI)
+            self._pages.setCurrentIndex(PAGE_WIKI)
+            self._applying_nav = False
+            self._wiki_page.navigate_to(list(path) + [item_name])
+
+    def _on_create_requested(self, url_path: str):
+        """Title bar 'add to wiki' category picked → open browser with ?mode=create."""
+        import webbrowser
+        webbrowser.open(self._config.nexus_base_url + url_path + "?mode=create")
+
     # --- Navigation history ---
+
+    def _capture_scroll_pos(self) -> int:
+        """Read the scroll position from the current page (if it supports it)."""
+        page = self._pages.widget(self._nav_current.page)
+        if hasattr(page, 'get_scroll_position'):
+            return page.get_scroll_position()
+        return 0
 
     def _push_navigation(self, new_state: NavState):
         if new_state == self._nav_current:
             return
+        self._nav_current.scroll_pos = self._capture_scroll_pos()
         self._nav_back.append(self._nav_current)
         self._nav_current = new_state
         self._nav_forward.clear()
@@ -498,6 +511,7 @@ class MainWindow(QWidget):
     def _navigate_back(self):
         if not self._nav_back:
             return
+        self._nav_current.scroll_pos = self._capture_scroll_pos()
         self._nav_forward.append(self._nav_current)
         self._nav_current = self._nav_back.pop()
         self._apply_nav_state(self._nav_current)
@@ -506,6 +520,7 @@ class MainWindow(QWidget):
     def _navigate_forward(self):
         if not self._nav_forward:
             return
+        self._nav_current.scroll_pos = self._capture_scroll_pos()
         self._nav_back.append(self._nav_current)
         self._nav_current = self._nav_forward.pop()
         self._apply_nav_state(self._nav_current)
@@ -519,6 +534,8 @@ class MainWindow(QWidget):
         page_widget = self._pages.widget(state.page)
         if hasattr(page_widget, 'set_sub_state'):
             page_widget.set_sub_state(state.sub_state)
+        if state.scroll_pos and hasattr(page_widget, 'set_scroll_position'):
+            QTimer.singleShot(0, lambda: page_widget.set_scroll_position(state.scroll_pos))
         self._applying_nav = False
 
     def _update_nav_buttons(self):
@@ -557,6 +574,16 @@ class MainWindow(QWidget):
     def _show_window(self):
         self.showNormal()
         self.activateWindow()
+
+    def bring_to_front(self):
+        """Bring window to foreground (called by single-instance IPC)."""
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+        if sys.platform == "win32":
+            import ctypes
+            hwnd = int(self.winId())
+            ctypes.windll.user32.SetForegroundWindow(hwnd)
 
     def _quit(self):
         self._save_geometry()

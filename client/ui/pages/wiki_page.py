@@ -317,8 +317,37 @@ def _section_title(text: str) -> QLabel:
 # Search results view (shown when user presses Enter in title-bar search)
 # ---------------------------------------------------------------------------
 
+class _ClickableSearchRow(QWidget):
+    """A clickable result row for the full search results page."""
+
+    _STYLE = f"background-color: {SECONDARY}; border-radius: 4px;"
+    _HOVER_STYLE = f"background-color: {HOVER}; border-radius: 4px;"
+
+    def __init__(self, item: dict, view: "_SearchResultsView"):
+        super().__init__()
+        self._item = item
+        self._view = view
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setStyleSheet(self._STYLE)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._view.result_selected.emit(self._item)
+        super().mousePressEvent(event)
+
+    def enterEvent(self, event):
+        self.setStyleSheet(self._HOVER_STYLE)
+        super().enterEvent(event)
+
+    def leaveEvent(self, event):
+        self.setStyleSheet(self._STYLE)
+        super().leaveEvent(event)
+
+
 class _SearchResultsView(QWidget):
     """Full search results page displayed inside the wiki."""
+
+    result_selected = pyqtSignal(dict)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -367,15 +396,13 @@ class _SearchResultsView(QWidget):
             self._layout.addWidget(cat_label)
 
             for item in items:
-                row = QWidget()
-                row.setStyleSheet(
-                    f"background-color: {SECONDARY}; border-radius: 4px;"
-                )
+                row = _ClickableSearchRow(item, self)
                 row_layout = QHBoxLayout(row)
                 row_layout.setContentsMargins(12, 6, 12, 6)
 
                 name = QLabel(item.get("DisplayName") or item.get("Name", ""))
                 name.setStyleSheet(f"color: {TEXT}; font-size: 13px; background: transparent;")
+                name.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
                 row_layout.addWidget(name, 1)
 
                 type_badge = QLabel(get_type_name(item.get("Type", "")))
@@ -384,6 +411,7 @@ class _SearchResultsView(QWidget):
                     f" background-color: {PRIMARY}; border-radius: 3px;"
                     f" padding: 2px 6px;"
                 )
+                type_badge.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
                 row_layout.addWidget(type_badge)
 
                 self._layout.addWidget(row)
@@ -445,6 +473,7 @@ class WikiPage(QWidget):
 
         # Search results sub-view
         self._search_view = _SearchResultsView()
+        self._search_view.result_selected.connect(self._on_search_result_clicked)
 
         # Wire signals (from background threads → main thread)
         self._data_loaded.connect(self._on_data_loaded)
@@ -452,6 +481,9 @@ class WikiPage(QWidget):
 
         # Build initial overview
         self._navigate_internal([])
+
+        # Sync column preferences from server (account wins on conflict)
+        self._sync_column_prefs_from_server()
 
         # Warm up all tables in the background
         threading.Thread(
@@ -475,6 +507,12 @@ class WikiPage(QWidget):
         if path is not None:
             self._navigate_internal(path)
 
+    def get_scroll_position(self) -> int:
+        return self._scroll.verticalScrollBar().value()
+
+    def set_scroll_position(self, pos: int):
+        self._scroll.verticalScrollBar().setValue(pos)
+
     def show_search_results(self, query: str, results: list[dict]):
         """Display full search results from the title bar."""
         self._path = ["Search"]
@@ -482,6 +520,29 @@ class WikiPage(QWidget):
         self._search_view.show_results(query, results)
         self._swap_content(self._search_view)
         self.navigation_changed.emit(list(self._path))
+
+    def _on_search_result_clicked(self, item: dict):
+        """Handle click on a search result row (full results page)."""
+        import webbrowser
+        from urllib.parse import quote as url_quote
+        from ..widgets.search_popup import WIKI_PATHS
+
+        item_type = item.get("Type", "")
+        item_name = item.get("Name", "")
+        if not item_name:
+            return
+
+        # User/Society → open in system browser
+        if item_type in ("User", "Society"):
+            prefix = "/users/" if item_type == "User" else "/societies/"
+            url = self._config.nexus_base_url + prefix + url_quote(item_name)
+            webbrowser.open(url)
+            return
+
+        # Wiki-navigable types → navigate in-app
+        path = WIKI_PATHS.get(item_type)
+        if path:
+            self.navigate_to(list(path) + [item_name])
 
     # --- Internal navigation ---
 
@@ -619,6 +680,9 @@ class WikiPage(QWidget):
         table_view.row_activated.connect(
             lambda item, t=title: self._on_row_activated(t, item)
         )
+        table_view.new_clicked.connect(
+            lambda t=title: self._on_new_clicked(t)
+        )
         table_view.set_data(items, cache, numeric)
 
         container = QWidget()
@@ -668,6 +732,14 @@ class WikiPage(QWidget):
         _, page_type_id = mapping
 
         self._create_and_show_table(title, page_type_id, items, full_cache, full_numeric)
+
+    def _on_new_clicked(self, category_title: str):
+        """Open the create-new-entity page in the system browser."""
+        url_prefix = _CATEGORY_URL_PREFIX.get(category_title)
+        if not url_prefix or not self._config:
+            return
+        import webbrowser
+        webbrowser.open(self._config.nexus_base_url + url_prefix + "?mode=create")
 
     def _on_row_activated(self, leaf_title: str, item: dict):
         """Handle double-click on a table row — navigate to entity detail."""
@@ -732,17 +804,110 @@ class WikiPage(QWidget):
             detail_view = WeaponDetailView(
                 item, nexus_base_url=nexus_base_url,
                 data_client=self._data_client,
+                nexus_client=self._nexus_client,
             )
         elif page_type_id == "blueprints":
             from ..widgets.blueprint_detail import BlueprintDetailView
             detail_view = BlueprintDetailView(
                 item, nexus_base_url=nexus_base_url,
                 data_client=self._data_client,
+                nexus_client=self._nexus_client,
+            )
+        elif page_type_id == "armorsets":
+            from ..widgets.armor_detail import ArmorSetDetailView
+            detail_view = ArmorSetDetailView(
+                item, nexus_base_url=nexus_base_url,
+                data_client=self._data_client,
+                nexus_client=self._nexus_client,
+            )
+        elif page_type_id == "vehicles":
+            from ..widgets.vehicle_detail import VehicleDetailView
+            detail_view = VehicleDetailView(
+                item, nexus_base_url=nexus_base_url,
+                data_client=self._data_client,
+            )
+        elif page_type_id == "pets":
+            from ..widgets.pet_detail import PetDetailView
+            detail_view = PetDetailView(
+                item, nexus_base_url=nexus_base_url,
+                data_client=self._data_client,
+            )
+        elif page_type_id in ("medicaltools", "medicalchips"):
+            from ..widgets.medical_detail import MedicalDetailView
+            detail_view = MedicalDetailView(
+                item, page_type_id=page_type_id,
+                nexus_base_url=nexus_base_url,
+                data_client=self._data_client,
+                nexus_client=self._nexus_client,
+            )
+        elif page_type_id in ("finders", "excavators", "scanners", "refiners",
+                               "teleportationchips", "misctools"):
+            from ..widgets.tool_detail import ToolDetailView
+            detail_view = ToolDetailView(
+                item, page_type_id=page_type_id,
+                nexus_base_url=nexus_base_url,
+                data_client=self._data_client,
+                nexus_client=self._nexus_client,
+            )
+        elif page_type_id == "weaponamplifiers":
+            from ..widgets.amplifier_detail import AmplifierDetailView
+            detail_view = AmplifierDetailView(
+                item, nexus_base_url=nexus_base_url,
+                data_client=self._data_client,
+                nexus_client=self._nexus_client,
+            )
+        elif page_type_id == "mobs":
+            from ..widgets.mob_detail import MobDetailView
+            detail_view = MobDetailView(
+                item, nexus_base_url=nexus_base_url,
+                data_client=self._data_client,
+            )
+        elif page_type_id == "skills":
+            from ..widgets.skill_detail import SkillDetailView
+            detail_view = SkillDetailView(
+                item, nexus_base_url=nexus_base_url,
+                data_client=self._data_client,
+            )
+        elif page_type_id == "professions":
+            from ..widgets.profession_detail import ProfessionDetailView
+            detail_view = ProfessionDetailView(
+                item, nexus_base_url=nexus_base_url,
+                data_client=self._data_client,
+            )
+        elif page_type_id == "vendors":
+            from ..widgets.vendor_detail import VendorDetailView
+            detail_view = VendorDetailView(
+                item, nexus_base_url=nexus_base_url,
+                data_client=self._data_client,
+            )
+        elif page_type_id == "missions":
+            from ..widgets.mission_detail import MissionDetailView
+            detail_view = MissionDetailView(
+                item, nexus_base_url=nexus_base_url,
+                data_client=self._data_client,
+            )
+        elif page_type_id == "locations":
+            from ..widgets.location_detail import LocationDetailView
+            detail_view = LocationDetailView(
+                item, nexus_base_url=nexus_base_url,
+                data_client=self._data_client,
+            )
+        else:
+            from ..widgets.generic_detail import GenericItemDetailView
+            detail_view = GenericItemDetailView(
+                item, page_type_id=page_type_id,
+                nexus_base_url=nexus_base_url,
+                data_client=self._data_client,
             )
 
-        if not detail_view:
-            self._show_placeholder(entity_name)
-            return
+        # Add edit button if URL is available
+        url_prefix = _CATEGORY_URL_PREFIX.get(category_title)
+        if url_prefix and nexus_base_url and hasattr(detail_view, "set_edit_url"):
+            edit_url = (
+                nexus_base_url + url_prefix + "/"
+                + _encode_uri_safe(entity_name) + "?mode=edit"
+            )
+            detail_view.set_edit_url(edit_url)
 
         container = QWidget()
         layout = QVBoxLayout(container)
@@ -776,6 +941,43 @@ class WikiPage(QWidget):
         # Only proceed if user is still on the same detail path
         if entity_name in self._path:
             self._show_entity_detail(category_title, entity_name)
+
+    def _sync_column_prefs_from_server(self):
+        """Fetch column preferences from the server and merge into local config.
+
+        Account preferences win on conflict so that switching machines
+        preserves the user's layout.
+        """
+        if not self._nexus_client or not self._nexus_client.is_authenticated():
+            return
+        if not self._config:
+            return
+
+        _PREFIX = "wiki.nav-columns-"
+
+        def _sync():
+            prefs = self._nexus_client.get_preferences()
+            if not prefs:
+                return
+            local = self._config.wiki_column_prefs or {}
+            changed = False
+            for key, data in prefs.items():
+                if not key.startswith(_PREFIX):
+                    continue
+                page_type_id = key[len(_PREFIX):]
+                if not isinstance(data, list):
+                    continue
+                # Account configuration wins over local
+                if local.get(page_type_id) != data:
+                    local[page_type_id] = data
+                    changed = True
+            if changed:
+                self._config.wiki_column_prefs = local
+                if self._config_path:
+                    from ...core.config import save_config
+                    save_config(self._config, self._config_path)
+
+        threading.Thread(target=_sync, daemon=True, name="wiki-pref-dl").start()
 
     def _on_columns_changed(self, page_type_id: str, keys: list[str]):
         """Persist column preferences locally and to server."""

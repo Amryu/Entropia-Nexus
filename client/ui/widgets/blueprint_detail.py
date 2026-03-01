@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import json
 import threading
+from pathlib import Path
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QTableWidget, QTableWidgetItem, QHeaderView, QSpinBox,
+    QTableWidget, QTableWidgetItem, QHeaderView, QDoubleSpinBox,
 )
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 
 from .wiki_detail import (
     WikiDetailView, InfoboxSection, Tier1StatRow, StatRow, DataSection,
@@ -23,6 +25,24 @@ from ...data.wiki_columns import (
     deep_get, get_item_name, _blueprint_cost, fmt_int, fmt_bool,
 )
 
+
+# ---------------------------------------------------------------------------
+# Persistence
+# ---------------------------------------------------------------------------
+
+_BP_PREF_KEY = "wiki.bpMarkups"
+_LOCAL_BP_MARKUPS_PATH = Path(__file__).parent.parent.parent / "data" / "bp_markups.json"
+_SAVE_DEBOUNCE_MS = 500
+
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+LEVEL_TO_MIN_PROFESSION = {
+    1: 0, 2: 2.5, 3: 5, 4: 7.5, 5: 10, 6: 12.5, 7: 15, 8: 17.5, 9: 20, 10: 22.5,
+    11: 30, 12: 44, 13: 57, 14: 71, 15: 85,
+}
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -55,11 +75,18 @@ class _MaterialsWidget(QWidget):
         f" background: transparent; font-family: monospace;"
     )
 
-    def __init__(self, materials: list[dict], parent=None):
+    def __init__(self, materials: list[dict], *, nexus_client=None, parent=None):
         super().__init__(parent)
         self.setStyleSheet("background: transparent;")
         self._materials = materials
-        self._markups: dict[int, float] = {}  # idx → markup %
+        self._nexus_client = nexus_client
+        self._markups: dict[int, int] = {}  # idx → markup %
+
+        # Debounce save timer
+        self._save_timer = QTimer()
+        self._save_timer.setSingleShot(True)
+        self._save_timer.setInterval(_SAVE_DEBOUNCE_MS)
+        self._save_timer.timeout.connect(self._persist_markups)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -82,6 +109,13 @@ class _MaterialsWidget(QWidget):
                 "tt": tt,
                 "amount": amount,
             })
+
+        # Load saved markups by material name
+        self._all_saved: dict[str, int] = self._load_all_markups()
+        for entry in self._entries:
+            saved = self._all_saved.get(entry["name"])
+            if saved is not None and saved != 100:
+                self._markups[entry["idx"]] = saved
 
         # Build table: Ingredient | Amount | TT | MU % | Cost
         headers = ["Ingredient", "Amount", "TT", "MU %", "Cost"]
@@ -106,6 +140,11 @@ class _MaterialsWidget(QWidget):
             QTableWidget::item {{
                 padding: 4px 10px;
                 border-bottom: 1px solid {BORDER};
+                border-left: 2px solid transparent;
+            }}
+            QTableWidget::item:hover {{
+                background-color: rgba(96, 176, 255, 0.15);
+                border-left: 2px solid {ACCENT};
             }}
             QHeaderView::section {{
                 background-color: {HOVER};
@@ -119,7 +158,7 @@ class _MaterialsWidget(QWidget):
             }}
         """)
 
-        self._mu_spinboxes: list[tuple[int, QSpinBox]] = []
+        self._mu_spinboxes: list[tuple[int, QDoubleSpinBox]] = []
 
         for row, entry in enumerate(self._entries):
             mu = self._markups.get(entry["idx"], 100)
@@ -131,19 +170,27 @@ class _MaterialsWidget(QWidget):
             table.setItem(row, 2, QTableWidgetItem(f"{line_tt:.4f}"))
 
             # MU % — editable spinbox
-            spinbox = QSpinBox()
+            spinbox = QDoubleSpinBox()
+            spinbox.setDecimals(2)
             spinbox.setMinimum(100)
-            spinbox.setMaximum(99999)
-            spinbox.setValue(int(mu))
+            spinbox.setMaximum(9999999.99)
+            spinbox.setValue(mu)
             spinbox.setSuffix("%")
+            spinbox.setFixedHeight(_TABLE_ROW_HEIGHT - 4)
             spinbox.setStyleSheet(
-                f"QSpinBox {{"
+                f"QDoubleSpinBox {{"
                 f"  background-color: {PRIMARY}; color: {TEXT};"
                 f"  border: 1px solid {BORDER}; border-radius: 3px;"
-                f"  padding: 2px 4px; font-size: 12px;"
+                f"  padding: 2px 6px; font-size: 12px;"
                 f"}}"
-                f"QSpinBox:focus {{"
+                f"QDoubleSpinBox:focus {{"
                 f"  border-color: {ACCENT};"
+                f"}}"
+                f"QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {{"
+                f"  width: 0; height: 0; border: none;"
+                f"}}"
+                f"QDoubleSpinBox::up-arrow, QDoubleSpinBox::down-arrow {{"
+                f"  image: none;"
                 f"}}"
             )
             spinbox.valueChanged.connect(
@@ -159,7 +206,14 @@ class _MaterialsWidget(QWidget):
         header = table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         for i in range(1, len(headers)):
-            header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
+            if i == 3:  # MU % — fixed width for padding around input
+                header.setSectionResizeMode(i, QHeaderView.ResizeMode.Fixed)
+                header.resizeSection(i, 120)
+            elif i == 4:  # Cost — fixed width to avoid resizing on value changes
+                header.setSectionResizeMode(i, QHeaderView.ResizeMode.Fixed)
+                header.resizeSection(i, 120)
+            else:
+                header.setSectionResizeMode(i, QHeaderView.ResizeMode.ResizeToContents)
 
         # Right-align numeric columns
         for row in range(num_rows):
@@ -214,9 +268,64 @@ class _MaterialsWidget(QWidget):
         layout.addLayout(footer)
         self._recalculate()
 
-    def _on_markup_changed(self, idx: int, value: int):
+    def _on_markup_changed(self, idx: int, value: float):
         self._markups[idx] = value
+        # Track by material name for persistence
+        for entry in self._entries:
+            if entry["idx"] == idx:
+                if value == 100:
+                    self._all_saved.pop(entry["name"], None)
+                else:
+                    self._all_saved[entry["name"]] = value
+                break
         self._recalculate()
+        self._save_timer.start()
+
+    # --- Markup persistence ---
+
+    def _load_all_markups(self) -> dict[str, float]:
+        """Load material markups from server (if authenticated) or local file."""
+        stored = None
+        if self._nexus_client and self._nexus_client.is_authenticated():
+            try:
+                prefs = self._nexus_client.get_preferences()
+                if prefs and _BP_PREF_KEY in prefs:
+                    stored = prefs[_BP_PREF_KEY]
+            except Exception:
+                pass
+        if stored is None:
+            try:
+                if _LOCAL_BP_MARKUPS_PATH.exists():
+                    stored = json.loads(
+                        _LOCAL_BP_MARKUPS_PATH.read_text(encoding="utf-8")
+                    )
+            except Exception:
+                pass
+        if not stored or not isinstance(stored, dict):
+            return {}
+        return {k: float(v) for k, v in stored.items()
+                if isinstance(v, (int, float))}
+
+    def _persist_markups(self):
+        """Persist markups to local file and server."""
+        data = {k: v for k, v in self._all_saved.items() if v != 100}
+        try:
+            _LOCAL_BP_MARKUPS_PATH.parent.mkdir(parents=True, exist_ok=True)
+            _LOCAL_BP_MARKUPS_PATH.write_text(
+                json.dumps(data, indent=2), encoding="utf-8"
+            )
+        except Exception:
+            pass
+
+        if self._nexus_client and self._nexus_client.is_authenticated():
+            def _push(d=data):
+                try:
+                    self._nexus_client.save_preference(_BP_PREF_KEY, d)
+                except Exception:
+                    pass
+            threading.Thread(
+                target=_push, daemon=True, name="bp-mu-save"
+            ).start()
 
     def _recalculate(self):
         if not hasattr(self, "_table") or not self._entries:
@@ -252,11 +361,12 @@ class BlueprintDetailView(WikiDetailView):
     _acquisition_loaded = pyqtSignal(dict)
 
     def __init__(self, item: dict, *, nexus_base_url: str = "",
-                 data_client=None, parent=None):
+                 data_client=None, nexus_client=None, parent=None):
         super().__init__(
             item, nexus_base_url=nexus_base_url,
             data_client=data_client, parent=parent,
         )
+        self._nexus_client = nexus_client
         self._acquisition_loaded.connect(self._on_acquisition_loaded)
         self._build(item)
 
@@ -335,13 +445,23 @@ class BlueprintDetailView(WikiDetailView):
         level_start = deep_get(item, "Properties", "Skill", "LearningIntervalStart")
         level_end = deep_get(item, "Properties", "Skill", "LearningIntervalEnd")
 
+        # Fall back to computed interval from blueprint level.
+        # End is inferred as start + 5 only when the start matches the expected
+        # value for the level.
+        if level_start is None and level is not None:
+            level_start = LEVEL_TO_MIN_PROFESSION.get(level)
+        if level_end is None and level_start is not None:
+            expected = LEVEL_TO_MIN_PROFESSION.get(level)
+            if expected is not None and level_start == expected:
+                level_end = level_start + 5
+
         skill = InfoboxSection("Skill")
         skill.add_row(StatRow(
             "SiB", fmt_bool(is_sib),
             highlight=(is_sib is True or is_sib == 1),
         ))
         skill.add_row(StatRow("Profession", profession_name))
-        if is_sib and (level_start is not None or level_end is not None):
+        if level_start is not None or level_end is not None:
             skill.add_row(StatRow(
                 "Level Range",
                 f"{fmt_int(level_start)} - {fmt_int(level_end)}",
@@ -362,7 +482,9 @@ class BlueprintDetailView(WikiDetailView):
         construction_section = DataSection("Construction", expanded=True)
         if materials:
             construction_section.set_subtitle(f"{len(materials)} materials")
-            construction_section.set_content(_MaterialsWidget(materials))
+            construction_section.set_content(
+                _MaterialsWidget(materials, nexus_client=self._nexus_client)
+            )
         else:
             construction_section.set_content(
                 no_data_label("No material information available.")

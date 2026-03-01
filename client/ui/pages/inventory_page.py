@@ -16,6 +16,9 @@ from ..theme import (
     TEXT, TEXT_MUTED, ERROR, TABLE_HEADER, TABLE_ROW_ALT,
     PAGE_HEADER_OBJECT_NAME,
 )
+import threading
+
+from ...core.config import save_config
 from ...core.inventory_utils import (
     enrich_item, get_top_category, format_ped, format_markup,
     is_absolute_markup, ALL_CATEGORIES, PLANETS,
@@ -23,6 +26,15 @@ from ...core.inventory_utils import (
 from ...core.logger import get_logger
 
 log = get_logger("Inventory")
+
+
+def _display_name(segment: str) -> str:
+    """Strip '#refID' suffix from a container path segment for display."""
+    idx = segment.rfind('#')
+    if idx > 0 and segment[idx + 1:].isdigit():
+        return segment[:idx]
+    return segment
+
 
 # ---------------------------------------------------------------------------
 # Column indices for the list table
@@ -100,9 +112,28 @@ class _MarkupSaver(QThread):
 # ---------------------------------------------------------------------------
 
 class _NumericItem(QTreeWidgetItem):
-    """QTreeWidgetItem that sorts numerically when a UserRole value is set."""
+    """QTreeWidgetItem that sorts numerically when a UserRole value is set.
+
+    Container nodes (column 0 UserRole starts with "0:") always sort
+    before item leaves ("1:") regardless of sort column or direction.
+    """
+
+    def _is_container(self) -> bool:
+        v = self.data(0, Qt.ItemDataRole.UserRole)
+        return isinstance(v, str) and v.startswith("0:")
 
     def __lt__(self, other):
+        # Containers always sort to the top of their parent node
+        self_cont = self._is_container()
+        other_cont = other._is_container() if isinstance(other, _NumericItem) else False
+        if self_cont != other_cont:
+            tw = self.treeWidget()
+            is_asc = True
+            if tw:
+                is_asc = tw.header().sortIndicatorOrder() == Qt.SortOrder.AscendingOrder
+            # In ASC: container < item (True). In DESC: reversed so use False.
+            return self_cont == is_asc
+
         col = self.treeWidget().sortColumn() if self.treeWidget() else 0
         lv = self.data(col, Qt.ItemDataRole.UserRole)
         rv = other.data(col, Qt.ItemDataRole.UserRole)
@@ -110,7 +141,10 @@ class _NumericItem(QTreeWidgetItem):
             try:
                 return float(lv) < float(rv)
             except (TypeError, ValueError):
-                pass
+                try:
+                    return str(lv) < str(rv)
+                except TypeError:
+                    pass
         return super().__lt__(other)
 
 
@@ -121,7 +155,7 @@ class _NumericItem(QTreeWidgetItem):
 class _ItemDetailDialog(QDialog):
     """Modal dialog showing detailed info about an inventory item."""
 
-    open_wiki = pyqtSignal(int, str)  # item_id, item_type
+    open_wiki = pyqtSignal(int, str, str)  # item_id, item_type, item_name
 
     def __init__(self, enriched: dict, parent=None):
         super().__init__(parent)
@@ -226,7 +260,8 @@ class _ItemDetailDialog(QDialog):
         layout.addLayout(btn_row)
 
     def _on_wiki(self, item_id, item_type):
-        self.open_wiki.emit(item_id, item_type or '')
+        item_name = self._item.get('item_name', '')
+        self.open_wiki.emit(item_id, item_type or '', item_name)
         self.accept()
 
 
@@ -234,14 +269,21 @@ class _ItemDetailDialog(QDialog):
 # Main inventory page
 # ---------------------------------------------------------------------------
 
+_INV_PREF_KEY = "inventory.viewPrefs"
+
+
 class InventoryPage(QWidget):
     """Inventory viewer with list and tree views, filtering, and markup editing."""
 
-    def __init__(self, *, signals, oauth, nexus_client):
+    def __init__(self, *, signals, oauth, nexus_client, db=None,
+                 config=None, config_path=None):
         super().__init__()
         self._signals = signals
         self._oauth = oauth
         self._nexus_client = nexus_client
+        self._db = db
+        self._config = config
+        self._config_path = config_path
 
         # Data
         self._raw_items: list[dict] = []
@@ -264,11 +306,26 @@ class InventoryPage(QWidget):
         self._markup_save_timer.timeout.connect(self._save_pending_markup)
         self._pending_markup_value: str = ''
 
-        # View mode
-        self._view_mode = _VIEW_LIST
+        # Load saved preferences
+        prefs = self._load_prefs()
+        self._view_mode = prefs.get("view_mode", _VIEW_LIST)
+        self._saved_planet = prefs.get("planet", "all")
+        self._saved_category = prefs.get("category", "all")
+        self._saved_markup_filter = prefs.get("markup_filter", "all")
+
+        # Suppress pref save during initial UI construction
+        self._suppress_pref_save = True
+
+        # Debounce pref save timer
+        self._pref_save_timer = QTimer()
+        self._pref_save_timer.setSingleShot(True)
+        self._pref_save_timer.setInterval(500)
+        self._pref_save_timer.timeout.connect(self._persist_prefs)
 
         self._build_ui()
         self._connect_signals()
+        self._apply_saved_filters()
+        self._suppress_pref_save = False
 
     # ------------------------------------------------------------------
     # UI construction
@@ -441,7 +498,8 @@ class InventoryPage(QWidget):
                 min-height: 24px;
             }}
             QTreeWidget::item:selected {{
-                background-color: {HOVER};
+                background-color: {ACCENT};
+                color: white;
             }}
             QTreeWidget::item:hover {{
                 background-color: {HOVER};
@@ -475,7 +533,8 @@ class InventoryPage(QWidget):
                 min-height: 24px;
             }}
             QTreeWidget::item:selected {{
-                background-color: {HOVER};
+                background-color: {ACCENT};
+                color: white;
             }}
             QTreeWidget::item:hover {{
                 background-color: {HOVER};
@@ -537,6 +596,7 @@ class InventoryPage(QWidget):
         self._btn_list.setStyleSheet(active_style if mode == _VIEW_LIST else toggle_style)
         self._btn_tree.setStyleSheet(active_style if mode == _VIEW_TREE else toggle_style)
         self._refresh_display()
+        self._schedule_pref_save()
 
     # ------------------------------------------------------------------
     # Data loading
@@ -598,6 +658,14 @@ class InventoryPage(QWidget):
         # Populate planet filter
         self._update_planet_filter()
 
+        # Restore saved planet selection (after combo is populated)
+        if self._saved_planet and self._saved_planet != "all":
+            self._suppress_pref_save = True
+            idx = self._planet_combo.findData(self._saved_planet)
+            if idx >= 0:
+                self._planet_combo.setCurrentIndex(idx)
+            self._suppress_pref_save = False
+
         # Apply filters and display
         self._on_filter_changed()
         self._hide_status()
@@ -607,6 +675,8 @@ class InventoryPage(QWidget):
             self._data_loaded = False
             if self.isVisible():
                 self._load_data()
+            # Check for pending offline imports
+            QTimer.singleShot(500, self._check_pending_imports)
         else:
             self._raw_items = []
             self._enriched = []
@@ -616,6 +686,66 @@ class InventoryPage(QWidget):
             self._tree.clear()
             self._update_summary()
             self._show_status("Log in to view your inventory.")
+
+    def _check_pending_imports(self):
+        """Check for unsynced offline imports and show conflict dialog if needed."""
+        if not self._db or not self._oauth.is_authenticated():
+            return
+        scopes = self._oauth.auth_state.scopes
+        if 'inventory:write' not in scopes:
+            return
+
+        pending = self._db.get_pending_inventory_imports()
+        if not pending:
+            return
+
+        # Use the most recent pending import
+        latest = pending[0]
+        offline_count = latest['raw_count']
+        offline_date = latest['imported_at'][:16].replace('T', ' ')
+
+        # Check if server has an existing inventory
+        server_items = self._nexus_client.get_inventory()
+        online_count = len(server_items) if server_items else 0
+
+        if online_count == 0:
+            # No server inventory — auto-sync without prompting
+            self._sync_pending_import(latest)
+            return
+
+        # Show conflict dialog
+        from ..dialogs.inventory_conflict import (
+            InventoryConflictDialog, USE_OFFLINE, USE_ONLINE,
+        )
+        dlg = InventoryConflictDialog(
+            offline_count=offline_count,
+            offline_date=offline_date,
+            online_count=online_count,
+            parent=self,
+        )
+        if dlg.exec():
+            if dlg.result_code == USE_OFFLINE:
+                self._sync_pending_import(latest)
+            elif dlg.result_code == USE_ONLINE:
+                # Discard all pending imports, keep server data
+                self._db.discard_pending_inventory_imports()
+                log.info("Discarded pending offline imports, keeping server inventory.")
+
+    def _sync_pending_import(self, pending: dict):
+        """Upload a pending offline import to the server."""
+        all_items = pending['items'] + pending['unresolved']
+        try:
+            result = self._nexus_client.import_inventory(all_items, sync=True)
+            if result:
+                self._db.mark_pending_inventory_synced(pending['id'])
+                log.info("Synced offline import #%d: %s", pending['id'], result)
+                # Refresh inventory display
+                self._data_loaded = False
+                self._load_data()
+            else:
+                log.warning("Sync of offline import #%d returned no result.", pending['id'])
+        except Exception as e:
+            log.error("Failed to sync offline import #%d: %s", pending['id'], e)
 
     # ------------------------------------------------------------------
     # Filtering
@@ -666,6 +796,8 @@ class InventoryPage(QWidget):
         self._filtered = filtered
         self._update_summary()
         self._refresh_display()
+        # Save filter prefs (but not the search text — that's ephemeral)
+        self._schedule_pref_save()
 
     def _update_summary(self):
         items = self._filtered
@@ -755,38 +887,45 @@ class InventoryPage(QWidget):
         self._tree.setSortingEnabled(False)
         self._tree.clear()
 
-        # Build tree: container_path → items
-        tree_data: dict[str, list[dict]] = {}
+        # Resolve each item's full container path (matches web buildTree):
+        #   container_path > STORAGE ({container}) > Unknown
+        path_groups: dict[str, list[dict]] = {}
         for item in self._filtered:
-            path = item.get('container_path') or item.get('container') or 'Carried'
-            tree_data.setdefault(path, []).append(item)
+            path = item.get('container_path')
+            if not path and item.get('container'):
+                path = f"STORAGE ({item['container']})"
+            if not path:
+                path = "Unknown"
+            path_groups.setdefault(path, []).append(item)
 
-        # Group by top-level container (first segment)
-        roots: dict[str, dict] = {}  # root_name → {children: {subpath: items}, items: []}
-        for path, items in sorted(tree_data.items()):
+        # Split each path on " > " and build a shared tree via _build_sub_tree.
+        # First pass: group by root segment to create top-level nodes.
+        roots: dict[str, dict] = {}  # root_seg → {children: {sub: items}, direct: []}
+        for path, items in sorted(path_groups.items()):
             segments = [s.strip() for s in path.split(" > ")]
-            root = segments[0] if segments else 'Carried'
+            root = segments[0]
             if root not in roots:
                 roots[root] = {'children': {}, 'direct_items': []}
             if len(segments) > 1:
-                sub_path = " > ".join(segments[1:])
-                roots[root]['children'].setdefault(sub_path, []).extend(items)
+                sub = " > ".join(segments[1:])
+                roots[root]['children'].setdefault(sub, []).extend(items)
             else:
                 roots[root]['direct_items'].extend(items)
 
         # Create tree nodes
-        for root_name in sorted(roots.keys(), key=lambda r: (r == 'Carried', r)):
+        for root_name in sorted(roots.keys()):
             root_info = roots[root_name]
-            all_items_in_root = root_info['direct_items'][:]
+            all_items = root_info['direct_items'][:]
             for child_items in root_info['children'].values():
-                all_items_in_root.extend(child_items)
+                all_items.extend(child_items)
 
-            root_count = len(all_items_in_root)
-            root_tt = sum(i.get('_tt_value') or 0 for i in all_items_in_root)
-            root_est = sum(i.get('_total_value') or 0 for i in all_items_in_root)
+            root_count = len(all_items)
+            root_tt = sum(i.get('_tt_value') or 0 for i in all_items)
+            root_est = sum(i.get('_total_value') or 0 for i in all_items)
 
-            root_node = QTreeWidgetItem()
-            root_node.setText(0, root_name)
+            root_node = _NumericItem()
+            root_node.setText(0, _display_name(root_name))
+            root_node.setData(0, Qt.ItemDataRole.UserRole, f"0:{root_name.lower()}")
             root_node.setText(1, str(root_count))
             root_node.setData(1, Qt.ItemDataRole.UserRole, root_count)
             root_node.setText(2, f"{format_ped(root_tt)} PED")
@@ -798,17 +937,16 @@ class InventoryPage(QWidget):
             font.setBold(True)
             root_node.setFont(0, font)
 
-            # Direct items under root
-            for item in sorted(root_info['direct_items'], key=lambda i: (i.get('item_name') or '').lower()):
-                self._add_tree_leaf(root_node, item)
-
             # Sub-containers
             for sub_path in sorted(root_info['children'].keys()):
                 child_items = root_info['children'][sub_path]
                 sub_segments = [s.strip() for s in sub_path.split(" > ")]
-                parent = root_node
-                # Build intermediate nodes
-                self._build_sub_tree(parent, sub_segments, child_items)
+                self._build_sub_tree(root_node, sub_segments, child_items)
+
+            # Direct items at root level
+            for item in sorted(root_info['direct_items'],
+                               key=lambda i: (i.get('item_name') or '').lower()):
+                self._add_tree_leaf(root_node, item)
 
             self._tree.addTopLevelItem(root_node)
             root_node.setExpanded(True)
@@ -816,38 +954,57 @@ class InventoryPage(QWidget):
         self._tree.setSortingEnabled(True)
 
     def _build_sub_tree(self, parent: QTreeWidgetItem, segments: list[str], items: list[dict]):
-        """Recursively build sub-container nodes."""
+        """Recursively build sub-container nodes.
+
+        Stats (count, TT, Est) are accumulated on every container level,
+        so intermediate nodes show aggregate values from all descendants.
+        """
         if not segments:
             for item in sorted(items, key=lambda i: (i.get('item_name') or '').lower()):
                 self._add_tree_leaf(parent, item)
             return
 
         # Find or create the container node for segments[0]
-        container_name = segments[0]
+        # Use the full segment (with #refID) as identity key stored in UserRole+2
+        container_key = segments[0]
+        display = _display_name(container_key)
         container_node = None
         for i in range(parent.childCount()):
             child = parent.child(i)
-            if child.text(0) == container_name and child.data(0, Qt.ItemDataRole.UserRole + 1) is None:
+            if child.data(0, Qt.ItemDataRole.UserRole + 2) == container_key:
                 container_node = child
                 break
 
         if container_node is None:
-            container_node = QTreeWidgetItem()
-            container_node.setText(0, container_name)
+            container_node = _NumericItem()
+            container_node.setText(0, display)
+            container_node.setData(0, Qt.ItemDataRole.UserRole, f"0:{display.lower()}")
+            container_node.setData(0, Qt.ItemDataRole.UserRole + 2, container_key)
             container_node.setForeground(0, QColor(TEXT_MUTED))
             parent.addChild(container_node)
 
+        # Accumulate stats for this container (items may arrive from
+        # multiple paths, e.g. "Storage > Box1" and "Storage > Box2")
+        batch_count = len(items)
+        batch_tt = sum(i.get('_tt_value') or 0 for i in items)
+        batch_est = sum(i.get('_total_value') or 0 for i in items)
+
+        prev_count = container_node.data(1, Qt.ItemDataRole.UserRole) or 0
+        prev_tt = container_node.data(2, Qt.ItemDataRole.UserRole) or 0
+        prev_est = container_node.data(3, Qt.ItemDataRole.UserRole) or 0
+
+        total_count = prev_count + batch_count
+        total_tt = prev_tt + batch_tt
+        total_est = prev_est + batch_est
+
+        container_node.setText(1, str(total_count))
+        container_node.setData(1, Qt.ItemDataRole.UserRole, total_count)
+        container_node.setText(2, f"{format_ped(total_tt)} PED")
+        container_node.setData(2, Qt.ItemDataRole.UserRole, total_tt)
+        container_node.setText(3, f"{format_ped(total_est)} PED")
+        container_node.setData(3, Qt.ItemDataRole.UserRole, total_est)
+
         if len(segments) == 1:
-            # Leaf container — add items
-            count = len(items)
-            tt = sum(i.get('_tt_value') or 0 for i in items)
-            est = sum(i.get('_total_value') or 0 for i in items)
-            container_node.setText(1, str(count))
-            container_node.setData(1, Qt.ItemDataRole.UserRole, count)
-            container_node.setText(2, f"{format_ped(tt)} PED")
-            container_node.setData(2, Qt.ItemDataRole.UserRole, tt)
-            container_node.setText(3, f"{format_ped(est)} PED")
-            container_node.setData(3, Qt.ItemDataRole.UserRole, est)
             for item in sorted(items, key=lambda i: (i.get('item_name') or '').lower()):
                 self._add_tree_leaf(container_node, item)
         else:
@@ -863,7 +1020,7 @@ class InventoryPage(QWidget):
 
         display_name = f"{name} (x{qty:,})" if qty > 1 else name
         leaf.setText(0, display_name)
-        leaf.setData(0, Qt.ItemDataRole.UserRole, name.lower())
+        leaf.setData(0, Qt.ItemDataRole.UserRole, f"1:{name.lower()}")
         leaf.setText(1, "")  # No count for leaf
         if tt is not None:
             leaf.setText(2, f"{format_ped(tt)} PED")
@@ -1026,31 +1183,43 @@ class InventoryPage(QWidget):
     # ------------------------------------------------------------------
 
     def _on_import_clicked(self):
-        """Open the inventory import dialog."""
-        if not self._oauth.is_authenticated():
-            QMessageBox.information(self, "Login Required", "Please log in to import inventory.")
-            return
+        """Open the inventory import dialog. Falls back to offline mode if not authenticated."""
+        is_online = False
+        if self._oauth.is_authenticated():
+            scopes = self._oauth.auth_state.scopes
+            if 'inventory:write' in scopes:
+                is_online = True
+            else:
+                QMessageBox.information(
+                    self, "Permission Required",
+                    "Online import requires the 'inventory:write' permission.\n"
+                    "You can still save imports locally for later sync,\n"
+                    "or log out and back in to grant this permission.",
+                )
 
-        scopes = self._oauth.auth_state.scopes
-        if 'inventory:write' not in scopes:
-            QMessageBox.information(
-                self, "Permission Required",
-                "Inventory import requires the 'inventory:write' permission.\n"
-                "Please log out and log back in to grant this permission.",
-            )
-            return
+        # Ensure slim items are available for name resolution (public API, no auth needed)
+        slim = self._slim_lookup
+        if not slim:
+            slims = self._nexus_client.get_exchange_items()
+            for s in (slims or []):
+                if s and s.get('i') is not None:
+                    slim[s['i']] = s
+            self._slim_lookup = slim
 
         from ..dialogs.inventory_import import InventoryImportDialog
         dlg = InventoryImportDialog(
-            nexus_client=self._nexus_client,
-            current_items=self._enriched,
-            slim_lookup=self._slim_lookup,
+            nexus_client=self._nexus_client if is_online else None,
+            current_items=self._enriched if is_online else None,
+            slim_lookup=slim,
+            db=self._db,
+            is_online=is_online,
             parent=self,
         )
         if dlg.exec():
-            # Successful import — refresh data
-            self._data_loaded = False
-            self._load_data()
+            if is_online:
+                # Successful online import — refresh data
+                self._data_loaded = False
+                self._load_data()
 
     def _on_history_clicked(self):
         """Open the import history dialog."""
@@ -1081,12 +1250,91 @@ class InventoryPage(QWidget):
         self._summary.show()
 
     # ------------------------------------------------------------------
+    # Preference persistence
+    # ------------------------------------------------------------------
+
+    def _load_prefs(self) -> dict:
+        """Load inventory view preferences from server or local config."""
+        # Try server first
+        if (self._nexus_client
+                and self._oauth and self._oauth.is_authenticated()):
+            try:
+                prefs = self._nexus_client.get_preferences()
+                if prefs and _INV_PREF_KEY in prefs:
+                    server_data = prefs[_INV_PREF_KEY]
+                    if isinstance(server_data, dict):
+                        # Server wins — update local
+                        if self._config:
+                            self._config.inventory_prefs = server_data
+                            if self._config_path:
+                                save_config(self._config, self._config_path)
+                        return server_data
+            except Exception:
+                pass
+        # Fall back to local config
+        if self._config:
+            return self._config.inventory_prefs or {}
+        return {}
+
+    def _apply_saved_filters(self):
+        """Apply saved filter preferences to combo boxes after UI is built."""
+        self._suppress_pref_save = True
+        # View mode
+        if self._view_mode == _VIEW_TREE:
+            self._set_view(_VIEW_TREE)
+        # Category
+        idx = self._category_combo.findData(self._saved_category)
+        if idx >= 0:
+            self._category_combo.setCurrentIndex(idx)
+        # Markup filter
+        idx = self._markup_combo.findData(self._saved_markup_filter)
+        if idx >= 0:
+            self._markup_combo.setCurrentIndex(idx)
+        # Planet is applied after data loads (combo is populated then)
+        self._suppress_pref_save = False
+
+    def _schedule_pref_save(self):
+        """Restart the debounce timer for preference persistence."""
+        if self._suppress_pref_save:
+            return
+        self._pref_save_timer.start()
+
+    def _persist_prefs(self):
+        """Save inventory view preferences to local config and server."""
+        data = {
+            "view_mode": self._view_mode,
+            "planet": self._planet_combo.currentData() or "all",
+            "category": self._category_combo.currentData() or "all",
+            "markup_filter": self._markup_combo.currentData() or "all",
+        }
+        # Save locally
+        if self._config:
+            self._config.inventory_prefs = data
+            if self._config_path:
+                try:
+                    save_config(self._config, self._config_path)
+                except Exception:
+                    pass
+        # Push to server
+        if (self._nexus_client
+                and self._oauth and self._oauth.is_authenticated()):
+            def _push(d=data):
+                try:
+                    self._nexus_client.save_preference(_INV_PREF_KEY, d)
+                except Exception:
+                    pass
+            threading.Thread(
+                target=_push, daemon=True, name="inv-pref-save"
+            ).start()
+
+    # ------------------------------------------------------------------
     # Cleanup
     # ------------------------------------------------------------------
 
     def cleanup(self):
         """Stop background threads."""
         self._markup_save_timer.stop()
+        self._pref_save_timer.stop()
         if self._loader and self._loader.isRunning():
             self._loader.quit()
             self._loader.wait(2000)

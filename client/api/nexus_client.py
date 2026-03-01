@@ -172,6 +172,22 @@ class NexusClient:
             self._handle_error(e, f"delete loadout {loadout_id}")
             return False
 
+    # Globals (public, no auth)
+    def get_globals(self, since: str | None = None, limit: int = 200) -> dict | None:
+        """GET /api/globals — public confirmed globals feed."""
+        try:
+            params: dict = {"limit": limit}
+            if since:
+                params["since"] = since
+            resp = self._session.get(
+                self._url("/globals"), params=params, timeout=15,
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            self._handle_error(e, "get globals")
+            return None
+
     # News (public, no auth)
     def get_news(self, limit: int = 500) -> list[dict]:
         """GET /api/news — returns latest published announcements (no auth)."""
@@ -281,13 +297,17 @@ class NexusClient:
             self._handle_error(e, "import inventory")
             return None
 
-    def get_import_history(self, limit: int = 20, offset: int = 0) -> list[dict] | None:
+    def get_import_history(self, limit: int = 20, offset: int = 0,
+                           since: str | None = None) -> list[dict] | None:
         """GET /api/users/inventory/imports — Paginated import history."""
         try:
+            params: dict = {"limit": limit, "offset": offset}
+            if since:
+                params["since"] = since
             resp = self._session.get(
                 self._url("/users/inventory/imports"),
                 headers=self._headers(),
-                params={"limit": limit, "offset": offset},
+                params=params,
                 timeout=10)
             resp.raise_for_status()
             return resp.json()
@@ -308,12 +328,16 @@ class NexusClient:
             self._handle_error(e, f"get import deltas {import_id}")
             return None
 
-    def get_value_history(self) -> list[dict] | None:
+    def get_value_history(self, since: str | None = None) -> list[dict] | None:
         """GET /api/users/inventory/imports/value-history — Portfolio value timeline."""
         try:
+            params: dict = {}
+            if since:
+                params["since"] = since
             resp = self._session.get(
                 self._url("/users/inventory/imports/value-history"),
                 headers=self._headers(),
+                params=params,
                 timeout=10)
             resp.raise_for_status()
             return resp.json()

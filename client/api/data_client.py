@@ -177,6 +177,14 @@ class DataClient:
         result = self._get_cached(f"/acquisition?items={item_name}")
         return result if isinstance(result, dict) else {}
 
+    def get_usage(self, item_name: str) -> dict:
+        """Fetch usage data — where an item is used (blueprints, missions, vendors, refining).
+
+        Returns a dict with keys: Blueprints, Missions, VendorOffers, RefiningRecipes.
+        """
+        result = self._get_cached(f"/usage/{item_name}")
+        return result if isinstance(result, dict) else {}
+
     def get_tiers(self, item_id: int, is_armor_set: bool = False) -> list[dict]:
         """Fetch tier information for an item."""
         flag = 1 if is_armor_set else 0

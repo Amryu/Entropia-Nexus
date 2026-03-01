@@ -186,3 +186,8 @@ TRADE_CHANNEL_PATTERN = re.compile(r'trade|trading', re.IGNORECASE)
 
 # Default chat.log path
 DEFAULT_CHAT_LOG_PATH = "~/Documents/Entropia Universe/chat.log"
+
+# Overlay system
+GAME_TITLE_PREFIX = "Entropia Universe Client"
+OVERLAY_SNAP_THRESHOLD = 12       # pixels — edge snap distance during drag
+OVERLAY_FOCUS_POLL_MS = 500       # focus detection polling interval

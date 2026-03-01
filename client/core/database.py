@@ -210,6 +210,15 @@ CREATE TABLE IF NOT EXISTS custom_item_markups (
     markup_type TEXT NOT NULL DEFAULT 'percentage',
     updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS pending_inventory_import (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    items TEXT NOT NULL,
+    unresolved TEXT NOT NULL,
+    raw_count INTEGER NOT NULL,
+    imported_at TEXT NOT NULL,
+    synced INTEGER DEFAULT 0
+);
 """
 
 # Indexes that depend on columns added by _migrate()
@@ -896,6 +905,57 @@ class Database:
             self._conn.execute(
                 "DELETE FROM custom_item_markups WHERE item_name = ?",
                 (item_name,)
+            )
+            self._auto_commit()
+
+    # Pending inventory imports (offline fallback)
+    def save_pending_inventory_import(self, items: list[dict], unresolved: list[dict],
+                                       raw_count: int) -> int:
+        """Save a pending inventory import for later sync. Returns the row ID."""
+        import json
+        from datetime import datetime
+        with self._lock:
+            cur = self._conn.execute(
+                "INSERT INTO pending_inventory_import (items, unresolved, raw_count, imported_at) "
+                "VALUES (?, ?, ?, ?)",
+                (json.dumps(items), json.dumps(unresolved), raw_count,
+                 datetime.now().isoformat())
+            )
+            self._auto_commit()
+            return cur.lastrowid
+
+    def get_pending_inventory_imports(self) -> list[dict]:
+        """Get all unsynced pending inventory imports."""
+        import json
+        with self._lock:
+            self._conn.row_factory = sqlite3.Row
+            cur = self._conn.execute(
+                "SELECT * FROM pending_inventory_import WHERE synced = 0 "
+                "ORDER BY imported_at DESC"
+            )
+            rows = []
+            for r in cur.fetchall():
+                d = dict(r)
+                d['items'] = json.loads(d['items'])
+                d['unresolved'] = json.loads(d['unresolved'])
+                rows.append(d)
+            self._conn.row_factory = None
+            return rows
+
+    def mark_pending_inventory_synced(self, import_id: int):
+        """Mark a pending import as synced."""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE pending_inventory_import SET synced = 1 WHERE id = ?",
+                (import_id,)
+            )
+            self._auto_commit()
+
+    def discard_pending_inventory_imports(self):
+        """Discard all unsynced pending imports."""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE pending_inventory_import SET synced = 1 WHERE synced = 0"
             )
             self._auto_commit()
 

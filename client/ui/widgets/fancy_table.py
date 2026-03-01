@@ -158,9 +158,11 @@ ROW_HEIGHT_DEFAULT = 28
 FILTER_HEIGHT = 26
 FILTER_DEBOUNCE_MS = 200
 COMPACT_COLUMN_COUNT = 5
+COMPACT_WIDTH_BREAKPOINT = 1200  # window width below which condensed columns are used
 COMPACT_HYSTERESIS = 20
-COLUMN_WIDTH_PADDING = 32
+COLUMN_WIDTH_PADDING = 38  # cell padding (16) + sort indicator (14) + spacing (4) + margin (4)
 MIN_COLUMN_WIDTH = 50
+MIN_MAIN_COLUMN_WIDTH = 150
 SCROLL_BUFFER_ROWS = 10
 
 _SORT_ASC = "\u25B2"   # ▲
@@ -395,14 +397,30 @@ class FancyTable(QWidget):
         toolbar.addWidget(self._count_label)
         toolbar.addStretch()
 
-        self._config_btn = QPushButton("\u2699")
-        self._config_btn.setToolTip("Configure columns")
-        self._config_btn.setFixedSize(28, 28)
-        self._config_btn.setStyleSheet(
+        _toolbar_btn_style = (
             f"QPushButton {{ font-size: 16px; padding: 0; border: 1px solid {BORDER};"
             f" border-radius: 4px; background: {SECONDARY}; }}"
             f"QPushButton:hover {{ background: {PRIMARY}; }}"
         )
+
+        self._compact_hint = QLabel("Widen window to show more columns")
+        self._compact_hint.setStyleSheet(
+            f"color: {TEXT_MUTED}; font-size: 11px; font-style: italic;"
+        )
+        self._compact_hint.hide()
+        toolbar.addWidget(self._compact_hint)
+
+        self._new_btn = QPushButton("+")
+        self._new_btn.setToolTip("Create new entry")
+        self._new_btn.setFixedSize(28, 28)
+        self._new_btn.setStyleSheet(_toolbar_btn_style)
+        self._new_btn.hide()
+        toolbar.addWidget(self._new_btn)
+
+        self._config_btn = QPushButton("\u2699")
+        self._config_btn.setToolTip("Configure columns")
+        self._config_btn.setFixedSize(28, 28)
+        self._config_btn.setStyleSheet(_toolbar_btn_style)
         toolbar.addWidget(self._config_btn)
 
         root.addLayout(toolbar)
@@ -566,6 +584,11 @@ class FancyTable(QWidget):
         self._render_visible()
         self._update_count_label()
 
+        # Deferred layout pass: viewport width is 0 during initial set_data()
+        # because the widget hasn't been shown yet.  Re-expand the main
+        # column once Qt has processed the layout so it fills the viewport.
+        QTimer.singleShot(0, self._deferred_layout)
+
     def set_loading(self):
         """Show loading state."""
         self._count_label.setText("Loading...")
@@ -656,6 +679,11 @@ class FancyTable(QWidget):
         """Expose the config button so callers can connect to it."""
         return self._config_btn
 
+    @property
+    def new_button(self) -> QPushButton:
+        """Expose the new-entry button (hidden by default)."""
+        return self._new_btn
+
     # -----------------------------------------------------------------------
     # Column auto-sizing
     # -----------------------------------------------------------------------
@@ -698,26 +726,49 @@ class FancyTable(QWidget):
 
             self._col_widths[col_idx] = fm.horizontalAdvance("x" * min(max_chars, 40)) + COLUMN_WIDTH_PADDING
 
-        # Enforce minimum
+        # Enforce minimum (higher minimum for the main/name column)
         for i in range(col_count):
-            if self._col_widths[i] < MIN_COLUMN_WIDTH:
-                self._col_widths[i] = MIN_COLUMN_WIDTH
+            min_w = MIN_MAIN_COLUMN_WIDTH if self._active_columns[i].main else MIN_COLUMN_WIDTH
+            if self._col_widths[i] < min_w:
+                self._col_widths[i] = min_w
 
         # Expand main column to fill remaining viewport space
         self._expand_main_column()
 
     def _expand_main_column(self):
-        """If a main column exists and there's extra space, expand it."""
+        """Adjust main column width so total columns fill the viewport.
+
+        Grows when there's extra space, shrinks (down to its content-based
+        minimum) when the viewport is narrower than the total.
+        """
         viewport_w = self._body_scroll.viewport().width()
         if viewport_w <= 0:
             return
-        total = sum(self._col_widths)
-        if total >= viewport_w:
-            return
+        main_idx = None
         for i, col in enumerate(self._active_columns):
             if col.main:
-                self._col_widths[i] += viewport_w - total
+                main_idx = i
                 break
+        if main_idx is None:
+            return
+        total = sum(self._col_widths)
+        delta = viewport_w - total
+        if delta == 0:
+            return
+        new_w = self._col_widths[main_idx] + delta
+        # Never shrink below the main column minimum
+        self._col_widths[main_idx] = max(new_w, MIN_MAIN_COLUMN_WIDTH)
+
+    def _deferred_layout(self):
+        """Re-expand columns after the viewport has its real dimensions."""
+        if not self._items:
+            return
+        self._expand_main_column()
+        self._rebuild_header()
+        self._rebuild_filters()
+        self._recycle_all_rows()
+        self._update_virtual_size()
+        self._render_visible()
 
     def _total_column_width(self) -> int:
         """Sum of all column widths."""
@@ -749,8 +800,9 @@ class FancyTable(QWidget):
         self._header_layout.addStretch()
         self._update_sort_indicators()
 
-        # Set inner widget to exact total column width
-        self._header_inner.setFixedWidth(total_w)
+        # Set inner widget to at least viewport width
+        viewport_w = self._body_scroll.viewport().width()
+        self._header_inner.setFixedWidth(max(total_w, viewport_w))
 
     def _rebuild_filters(self):
         """Rebuild filter inputs to match active columns."""
@@ -781,7 +833,8 @@ class FancyTable(QWidget):
             self._filter_inputs.append(inp)
 
         self._filter_layout.addStretch()
-        self._filter_inner.setFixedWidth(total_w)
+        viewport_w = self._body_scroll.viewport().width()
+        self._filter_inner.setFixedWidth(max(total_w, viewport_w))
 
     # -----------------------------------------------------------------------
     # Sorting
@@ -841,24 +894,35 @@ class FancyTable(QWidget):
         else:
             raw_key = None
 
+        is_desc = self._sort_direction == "DESC"
+
         def safe_key(row_idx):
             if raw_key:
                 v = raw_key(self._items[row_idx])
             else:
                 v = self._cache[row_idx][col_idx][0]
-            # None sorts to bottom regardless of direction
-            return (v is None, v if v is not None else 0)
+            # None/empty always sorts to bottom regardless of direction.
+            # For DESC (reverse=True), we need (False, ...) for None so
+            # it ends up at the end after reversal.
+            is_empty = v is None or v == "" or v == "-"
+            if is_desc:
+                return (not is_empty, v if not is_empty else 0)
+            return (is_empty, v if not is_empty else 0)
 
         if col.sort_fn:
             import functools
+            def _is_empty(v):
+                return v is None or v == "" or v == "-"
+
             def cmp_wrapper(a, b):
                 va = raw_key(self._items[a]) if raw_key else self._cache[a][col_idx][0]
                 vb = raw_key(self._items[b]) if raw_key else self._cache[b][col_idx][0]
-                if va is None and vb is None:
+                a_empty, b_empty = _is_empty(va), _is_empty(vb)
+                if a_empty and b_empty:
                     return 0
-                if va is None:
+                if a_empty:
                     return 1
-                if vb is None:
+                if b_empty:
                     return -1
                 return col.sort_fn(va, vb)
             self._sorted_indices = sorted(
@@ -934,8 +998,9 @@ class FancyTable(QWidget):
         """Set the virtual container size to accommodate all filtered rows."""
         count = len(self._filtered_indices)
         total_w = self._total_column_width()
+        viewport_w = self._body_scroll.viewport().width()
         h = max(count * self._row_height, 1)
-        self._virtual_container.setFixedSize(total_w, h)
+        self._virtual_container.setFixedSize(max(total_w, viewport_w), h)
 
         # Show/hide empty message
         if count == 0 and self._items:
@@ -1075,23 +1140,22 @@ class FancyTable(QWidget):
         return total
 
     def _check_compact_mode(self):
-        """Auto-compact columns if they overflow the viewport."""
+        """Auto-compact columns when the window is narrower than the breakpoint."""
         if not self._items or len(self._all_columns) <= self._compact_threshold:
             return
 
-        vw = self._body_scroll.viewport().width()
-        if vw <= 0:
+        window = self.window()
+        if not window:
             return
-
-        full_width = self._estimate_full_width()
+        ww = window.width()
 
         if self._compact:
-            if full_width + COMPACT_HYSTERESIS <= vw:
+            if ww >= COMPACT_WIDTH_BREAKPOINT + COMPACT_HYSTERESIS:
                 self._compact = False
                 self._active_columns = list(self._all_columns)
                 self._rebuild_after_column_change()
         else:
-            if full_width > vw:
+            if ww < COMPACT_WIDTH_BREAKPOINT:
                 self._compact = True
                 self._active_columns = self._all_columns[:self._compact_threshold]
                 self._rebuild_after_column_change()
@@ -1151,3 +1215,4 @@ class FancyTable(QWidget):
                 f"{len(self._all_columns)} columns"
             )
         self._count_label.setText(" \u00b7 ".join(parts))
+        self._compact_hint.setVisible(self._compact)

@@ -1,11 +1,12 @@
 """Entropia Nexus Desktop Client - Entry Point.
 
 Usage:
-    python -m client              # Run with GUI
-    python -m client --parse      # Batch parse existing chat.log, then exit
-    python -m client --headless   # Run without GUI (chat watcher + OCR only)
-    python -m client --config X   # Use custom config file
-    python -m client --verbose    # Enable verbose logging
+    python -m client                  # Run with GUI
+    python -m client --parse          # Batch parse existing chat.log, then exit
+    python -m client --headless       # Run without GUI (chat watcher + OCR only)
+    python -m client --config X       # Use custom config file
+    python -m client --verbose        # Enable verbose logging
+    python -m client --allow-multiple # Allow multiple instances
 """
 
 import argparse
@@ -30,6 +31,7 @@ def main():
     parser.add_argument("--headless", action="store_true", help="Run without GUI")
     parser.add_argument("--config", default="config.json", help="Path to config file")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging")
+    parser.add_argument("--allow-multiple", action="store_true", help="Allow multiple instances")
     args = parser.parse_args()
 
     init_logging(verbose=args.verbose)
@@ -56,12 +58,16 @@ def main():
     if args.headless:
         _run_headless(config, event_bus, db)
     else:
-        _run_gui(config, event_bus, db, args.config)
+        _run_gui(config, event_bus, db, args.config, allow_multiple=args.allow_multiple)
 
 
-def _run_gui(config, event_bus, db, config_path):
+_SINGLE_INSTANCE_SERVER_NAME = "EntropiaNexus-SingleInstance"
+
+
+def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     """Run the full GUI application with Qt event loop."""
     from PyQt6.QtWidgets import QApplication
+    from PyQt6.QtNetwork import QLocalServer, QLocalSocket
     from .ui.signals import AppSignals, wire_signals
     from .ui.main_window import MainWindow
     from .auth.oauth_client import OAuthClient
@@ -80,6 +86,25 @@ def _run_gui(config, event_bus, db, config_path):
     app = QApplication(sys.argv)
     app.setApplicationName("Entropia Nexus")
     app.setQuitOnLastWindowClosed(False)  # Keep running in system tray
+
+    # Single-instance enforcement: try to reach an existing instance
+    if not allow_multiple:
+        sock = QLocalSocket()
+        sock.connectToServer(_SINGLE_INSTANCE_SERVER_NAME)
+        if sock.waitForConnected(500):
+            # Another instance is running — ask it to foreground, then exit
+            sock.write(b"show")
+            sock.waitForBytesWritten(1000)
+            sock.disconnectFromServer()
+            log.info("Another instance is running — requesting foreground")
+            db.close()
+            return
+        sock.close()
+
+    # Create the local server so future instances can find us
+    local_server = QLocalServer()
+    QLocalServer.removeServer(_SINGLE_INSTANCE_SERVER_NAME)  # clean stale socket from crash
+    local_server.listen(_SINGLE_INSTANCE_SERVER_NAME)
 
     from .ui.icons import nexus_logo_icon
     app.setWindowIcon(nexus_logo_icon(32))
@@ -120,6 +145,16 @@ def _run_gui(config, event_bus, db, config_path):
     )
     main_window.show()
 
+    # Wire single-instance IPC: when another instance connects, bring window to front
+    def _handle_ipc_connection():
+        conn = local_server.nextPendingConnection()
+        if conn:
+            conn.waitForReadyRead(1000)
+            conn.close()
+            main_window.bring_to_front()
+
+    local_server.newConnection.connect(_handle_ipc_connection)
+
     # Refresh tokens + fetch user info in background now that UI is visible.
     # This replaces the synchronous network calls that used to block __init__
     # for up to 20s when the server is slow or unreachable.
@@ -143,11 +178,16 @@ def _run_gui(config, event_bus, db, config_path):
     workers.extend(_start_hotkey_manager(config, event_bus))
     workers.extend(_start_update_checker(config, event_bus))
 
+    # Overlay manager (focus detection, widget registry, snap)
+    from .overlay.overlay_manager import OverlayManager
+    overlay_manager = OverlayManager(config=config)
+
     # Qt overlays (always-on-top, draggable, position persisted)
     try:
         from .overlay.hunt_overlay import HuntOverlay
         hunt_overlay = HuntOverlay(
             signals=signals, config=config, config_path=config_path,
+            manager=overlay_manager,
         )
     except Exception as e:
         log.warning("Hunt overlay failed: %s", e)
@@ -156,14 +196,66 @@ def _run_gui(config, event_bus, db, config_path):
         from .overlay.progress_overlay import ProgressOverlay
         progress_overlay = ProgressOverlay(
             config=config, config_path=config_path, event_bus=event_bus,
+            manager=overlay_manager,
         )
     except Exception as e:
         log.warning("Progress overlay failed: %s", e)
+
+    try:
+        from .overlay.search_overlay import SearchOverlayWidget
+        search_overlay = SearchOverlayWidget(
+            config=config, config_path=config_path,
+            data_client=data_client, manager=overlay_manager,
+        )
+    except Exception as e:
+        search_overlay = None
+        log.warning("Search overlay failed: %s", e)
+
+    # Detail overlay: opened when a search result is selected
+    _current_detail_overlay = None
+    _detail_overlays: list = []   # all open overlays (for offset stacking)
+
+    def _on_overlay_result_selected(item):
+        nonlocal _current_detail_overlay
+        from .overlay.detail_overlay import DetailOverlayWidget, STACK_OFFSET
+
+        # Close current unpinned overlay
+        if _current_detail_overlay and not _current_detail_overlay.pinned:
+            _current_detail_overlay.close()
+
+        # Prune closed overlays from the list
+        _detail_overlays[:] = [o for o in _detail_overlays if o.isVisible()]
+
+        overlay = DetailOverlayWidget(
+            item,
+            config=config,
+            config_path=config_path,
+            data_client=data_client,
+            manager=overlay_manager,
+        )
+        if config.auto_pin_detail_overlay:
+            overlay.set_pinned(True)
+        overlay.open_in_wiki.connect(main_window._on_search_result_selected)
+        overlay.open_entity.connect(_on_overlay_result_selected)
+
+        # Offset from existing open overlays so they don't perfectly stack
+        if _detail_overlays:
+            count = len(_detail_overlays)
+            pos = overlay.pos()
+            overlay.move(pos.x() + STACK_OFFSET * count, pos.y() + STACK_OFFSET * count)
+
+        _detail_overlays.append(overlay)
+        _current_detail_overlay = overlay
+
+    if search_overlay:
+        search_overlay.result_selected.connect(_on_overlay_result_selected)
 
     # Start legacy tkinter overlays in daemon threads (ScanOverlay only)
     _start_legacy_overlays(config, event_bus)
 
     exit_code = app.exec()
+
+    local_server.close()
 
     # Cleanup with hard deadline — if a reparse is running and holds the lock,
     # stop() will signal it to break out, but we don't wait forever.
@@ -175,6 +267,7 @@ def _run_gui(config, event_bus, db, config_path):
     kill_timer.daemon = True
     kill_timer.start()
 
+    overlay_manager.stop()
     nexus_client.close()
     data_client.close()
     _cleanup_workers(workers)

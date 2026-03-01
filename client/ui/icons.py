@@ -26,13 +26,15 @@ SKILLS = (
     '<rect x="16" y="4" width="4" height="17" rx="0.5"/>'
 )
 
-# Crossed swords
+# Kite shield with border (evenodd: outer = border, inner = hollow)
 LOADOUT = (
-    '<path d="M6.5 2 L8 3.5 L4.5 7 L6 8.5 L2.5 12 L2 11.5 L2 9 L5.5 5.5 L4 4z"/>'
-    '<path d="M17.5 2 L16 3.5 L19.5 7 L18 8.5 L21.5 12 L22 11.5 L22 9 L18.5 5.5 L20 4z"/>'
-    '<path d="M7 15 L12 10 L17 15 L15.5 16.5 L12 13 L8.5 16.5z"/>'
-    '<rect x="10.5" y="16" width="3" height="4" rx="0.5"/>'
-    '<rect x="9" y="20" width="6" height="2" rx="0.5"/>'
+    '<path fill-rule="evenodd" d="'
+    # Outer edge
+    'M12 2L4 6V12C4 16.5 7 20 12 22.5C17 20 20 16.5 20 12V6Z'
+    # Inner cutout (slightly smaller, creates the border)
+    'M12 4.5L6.5 7.5V12C6.5 15.5 8.8 18.5 12 20.3'
+    'C15.2 18.5 17.5 15.5 17.5 12V7.5Z'
+    '"/>'
 )
 
 # Rifle silhouette
@@ -92,6 +94,16 @@ SETTINGS = (
     'a.8.8 0 0 0 0-1.1l-1.1-1.1a7.5 7.5 0 0 0 .6-1.5h1.5a.8.8 0 0 0 .8-.8v-3.2'
     'a.8.8 0 0 0-.8-.8z"/>'
 )
+
+# Clipboard (copy)
+COPY = (
+    '<path d="M16 1H4C2.9 1 2 1.9 2 3v14h2V3h12V1z"/>'
+    '<path d="M19 5H8C6.9 5 6 5.9 6 7v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7'
+    'c0-1.1-.9-2-2-2z"/>'
+)
+
+# Checkmark (confirmation feedback)
+CHECK = '<path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>'
 
 
 def svg_icon(svg_elements: str, color: str, size: int = 24) -> QIcon:

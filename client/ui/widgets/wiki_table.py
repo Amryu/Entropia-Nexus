@@ -113,6 +113,7 @@ class WikiTableView(QWidget):
     """Table view for wiki entity data with sorting, filtering, and column config."""
 
     row_activated = pyqtSignal(dict)  # emitted on double-click with the full item dict
+    new_clicked = pyqtSignal()       # emitted when the "+" button is clicked
 
     def __init__(
         self,
@@ -143,6 +144,8 @@ class WikiTableView(QWidget):
         self._table = FancyTable(columns=[], parent=self)
         self._table.row_clicked.connect(self._on_row_activated)
         self._table.config_button.clicked.connect(self._open_column_config)
+        self._table.new_button.clicked.connect(self.new_clicked.emit)
+        self._table.new_button.show()
         layout.addWidget(self._table, 1)
 
     # --- Public API ---

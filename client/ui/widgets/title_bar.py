@@ -26,6 +26,7 @@ class CustomTitleBar(QWidget):
     forward_clicked = pyqtSignal()
     search_submitted = pyqtSignal(str, list)  # query, scored results
     result_selected = pyqtSignal(dict)        # individual search result picked
+    create_requested = pyqtSignal(str)        # URL path for create mode
 
     def __init__(self, parent_window, *, data_client=None):
         super().__init__(parent_window)
@@ -126,6 +127,7 @@ class CustomTitleBar(QWidget):
         self._search_popup = SearchResultsPopup()
         self._search_popup.search_submitted.connect(self._on_search_enter)
         self._search_popup.result_selected.connect(self._on_result_selected)
+        self._search_popup.create_requested.connect(self._on_create_requested)
         self._last_scored: list[dict] = []
         self._suppress_reshow = False
         self._search.installEventFilter(self)
@@ -272,8 +274,6 @@ class CustomTitleBar(QWidget):
         self._last_scored = scored
         self._search_popup.set_results(scored, query)
         self._position_popup()
-        self._search_popup.show()
-        self._search_popup.raise_()
 
         # Watch window for move/resize
         win = self._window
@@ -285,9 +285,10 @@ class CustomTitleBar(QWidget):
 
     def _position_popup(self):
         pos = self._search.mapToGlobal(QPoint(0, self._search.height() + 2))
-        self._search_popup.setFixedWidth(self._search.width())
-        # Auto-size height: use content size, capped to available screen space
-        content_h = self._search_popup._inner.sizeHint().height() + 4
+        popup_w = self._search.width()
+        self._search_popup.setFixedWidth(popup_w)
+        self._search_popup.move(pos.x(), pos.y())
+        # Compute max height, then let the popup show + defer height fitting
         screen = self._search.screen()
         if screen:
             screen_bottom = screen.availableGeometry().bottom()
@@ -295,8 +296,7 @@ class CustomTitleBar(QWidget):
         else:
             max_h = 400
         max_h = min(max_h, int(self._window.height() * 0.6))
-        self._search_popup.setFixedHeight(max(60, min(content_h, max_h)))
-        self._search_popup.move(pos.x(), pos.y())
+        self._search_popup.fit_height(max_h)
 
     def _on_search_enter(self, query: str):
         """User pressed Enter in search — open full results in wiki."""
@@ -309,6 +309,12 @@ class CustomTitleBar(QWidget):
         self._suppress_reshow = True
         self._search_popup.hide()
         self.result_selected.emit(item)
+
+    def _on_create_requested(self, url_path: str):
+        """User picked a category from the 'add to wiki' picker."""
+        self._suppress_reshow = True
+        self._search_popup.hide()
+        self.create_requested.emit(url_path)
 
     # --- Event filter ---
 
@@ -330,12 +336,11 @@ class CustomTitleBar(QWidget):
                         return True
             # Re-show popup when search bar regains focus with results
             elif etype == QEvent.Type.FocusIn:
+                self._search.selectAll()
                 if self._suppress_reshow:
                     self._suppress_reshow = False
                 elif self._last_scored and len(self._search.text().strip()) >= 2:
                     self._position_popup()
-                    self._search_popup.show()
-                    self._search_popup.raise_()
             # Hide popup when search bar loses focus
             elif etype == QEvent.Type.FocusOut:
                 QTimer.singleShot(200, self._maybe_hide_popup)

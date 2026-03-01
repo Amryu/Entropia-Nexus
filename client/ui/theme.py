@@ -283,7 +283,8 @@ QTableWidget::item:selected {{
 }}
 
 QTableWidget::item:hover {{
-    background-color: {TABLE_ROW_HOVER};
+    background-color: rgba(96, 176, 255, 0.15);
+    border-left: 2px solid {ACCENT};
 }}
 
 QHeaderView::section {{

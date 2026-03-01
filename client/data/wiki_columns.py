@@ -64,6 +64,21 @@ def _fmt_nutrio(v):
         return "-"
     return f"{v / 100:.2f} PED"
 
+def _fmt_percent(v):
+    if v is None:
+        return "-"
+    return f"{v * 100:.0f}%"
+
+def _fmt_zoom(v):
+    if v is None:
+        return "-"
+    return f"{v:.1f}x"
+
+def _fmt_skill_pct(v):
+    if v is None:
+        return "-"
+    return f"{v}%"
+
 
 # ---------------------------------------------------------------------------
 # Weapon calculation helpers
@@ -567,6 +582,52 @@ COLUMN_DEFS: dict[str, dict[str, dict]] = {
         "value":  {"key": "value",  "header": "Value",  "get_value": lambda i: deep_get(i, "Properties", "Economy", "Value"), "format": fmt(2)},
     },
 
+    "mindforceimplants": {
+        "abs":      {"key": "abs",      "header": "Absorption", "get_value": lambda i: deep_get(i, "Properties", "Economy", "Absorption"), "format": _fmt_percent},
+        "maxLevel": {"key": "maxLevel", "header": "Max Lvl",    "get_value": lambda i: deep_get(i, "Properties", "MaxProfessionLevel"), "format": fmt_int},
+        "lvl":      {"key": "lvl",      "header": "Level",      "get_value": lambda i: deep_get(i, "Properties", "Mindforce", "Level") or deep_get(i, "Properties", "Level"), "format": fmt_int},
+        "maxTT":    {"key": "maxTT",    "header": "Max TT",     "get_value": lambda i: deep_get(i, "Properties", "Economy", "MaxTT"), "format": fmt(2)},
+        "minTT":    {"key": "minTT",    "header": "Min TT",     "get_value": lambda i: deep_get(i, "Properties", "Economy", "MinTT"), "format": fmt(2)},
+        "weight":   {"key": "weight",   "header": "Weight",     "get_value": lambda i: deep_get(i, "Properties", "Weight"), "format": fmt_int},
+    },
+
+    "sightsscopes": {
+        "type":       {"key": "type",       "header": "Type",        "get_value": lambda i: deep_get(i, "Properties", "Type"), "format": fmt_str},
+        "eff":        {"key": "eff",        "header": "Efficiency",  "get_value": lambda i: deep_get(i, "Properties", "Economy", "Efficiency"), "format": fmt(1)},
+        "zoom":       {"key": "zoom",       "header": "Zoom",        "get_value": lambda i: deep_get(i, "Properties", "Zoom"), "format": _fmt_zoom},
+        "decay":      {"key": "decay",      "header": "Decay",       "get_value": lambda i: deep_get(i, "Properties", "Economy", "Decay"), "format": fmt(2)},
+        "skillMod":   {"key": "skillMod",   "header": "Skill Mod",   "get_value": lambda i: deep_get(i, "Properties", "SkillModification"), "format": _fmt_skill_pct},
+        "skillBonus": {"key": "skillBonus", "header": "Skill Bonus", "get_value": lambda i: deep_get(i, "Properties", "SkillBonus"), "format": _fmt_skill_pct},
+        "maxTT":      {"key": "maxTT",      "header": "Max TT",      "get_value": lambda i: deep_get(i, "Properties", "Economy", "MaxTT"), "format": fmt(2)},
+        "weight":     {"key": "weight",     "header": "Weight",      "get_value": lambda i: deep_get(i, "Properties", "Weight"), "format": fmt_int},
+    },
+
+    "absorbers": {
+        "abs":    {"key": "abs",    "header": "Absorption",  "get_value": lambda i: deep_get(i, "Properties", "Economy", "Absorption"), "format": _fmt_percent},
+        "eff":    {"key": "eff",    "header": "Efficiency",  "get_value": lambda i: deep_get(i, "Properties", "Economy", "Efficiency"), "format": fmt(1)},
+        "maxTT":  {"key": "maxTT",  "header": "Max TT",      "get_value": lambda i: deep_get(i, "Properties", "Economy", "MaxTT"), "format": fmt(2)},
+        "minTT":  {"key": "minTT",  "header": "Min TT",      "get_value": lambda i: deep_get(i, "Properties", "Economy", "MinTT"), "format": fmt(2)},
+        "weight": {"key": "weight", "header": "Weight",      "get_value": lambda i: deep_get(i, "Properties", "Weight"), "format": fmt_int},
+    },
+
+    "finderamplifiers": {
+        "decay":     {"key": "decay",     "header": "Decay",      "get_value": lambda i: deep_get(i, "Properties", "Economy", "Decay"), "format": fmt(2)},
+        "finderEff": {"key": "finderEff", "header": "Efficiency", "get_value": lambda i: deep_get(i, "Properties", "Efficiency"), "format": fmt(1)},
+        "minLevel":  {"key": "minLevel",  "header": "Min Lvl",    "get_value": lambda i: deep_get(i, "Properties", "MinProfessionLevel"), "format": fmt_int},
+        "maxTT":     {"key": "maxTT",     "header": "Max TT",     "get_value": lambda i: deep_get(i, "Properties", "Economy", "MaxTT"), "format": fmt(2)},
+        "minTT":     {"key": "minTT",     "header": "Min TT",     "get_value": lambda i: deep_get(i, "Properties", "Economy", "MinTT"), "format": fmt(2)},
+        "totalUses": {"key": "totalUses", "header": "Uses",       "get_value": weapon_total_uses, "format": fmt_int},
+        "weight":    {"key": "weight",    "header": "Weight",     "get_value": lambda i: deep_get(i, "Properties", "Weight"), "format": fmt_int},
+    },
+
+    "armorplatings": {
+        "defense":    {"key": "defense",    "header": "Total Def",  "get_value": armor_total_defense, "format": fmt(1)},
+        "durability": {"key": "durability", "header": "Durability", "get_value": lambda i: deep_get(i, "Properties", "Economy", "Durability"), "format": fmt_int},
+        "maxTT":      {"key": "maxTT",      "header": "Max TT",     "get_value": lambda i: deep_get(i, "Properties", "Economy", "MaxTT"), "format": fmt(2)},
+        "minTT":      {"key": "minTT",      "header": "Min TT",     "get_value": lambda i: deep_get(i, "Properties", "Economy", "MinTT"), "format": fmt(2)},
+        "weight":     {"key": "weight",     "header": "Weight",     "get_value": lambda i: deep_get(i, "Properties", "Weight"), "format": fmt_int},
+    },
+
     # --- Consumables ---
 
     "stimulants": {
@@ -645,6 +706,11 @@ DEFAULT_COLUMNS: dict[str, list[str]] = {
     "teleportationchips": ["upm", "decay", "cost", "range", "ammoBurn", "maxtt", "sib", "minLevel", "maxLevel", "cooldown", "cooldownGroup"],
     "misctools":          ["upm", "decay", "maxtt", "mintt", "totalUses", "sib", "minLevel", "maxLevel", "weight"],
     "enhancers":          ["type", "tier", "tool", "socket", "maxtt", "weight"],
+    "mindforceimplants":  ["abs", "maxLevel", "lvl", "maxTT", "minTT", "weight"],
+    "sightsscopes":       ["type", "eff", "zoom", "decay", "skillMod", "skillBonus", "maxTT", "weight"],
+    "absorbers":          ["abs", "eff", "maxTT", "minTT", "weight"],
+    "finderamplifiers":   ["decay", "finderEff", "minLevel", "maxTT", "minTT", "totalUses", "weight"],
+    "armorplatings":      ["defense", "durability", "maxTT", "minTT", "weight"],
     "stimulants":         ["type", "effects", "weight", "maxtt"],
     "capsules":           ["mob", "mobType", "profession", "minLevel", "maxtt"],
     "furniture":          ["type", "tt", "mintt", "weight"],
@@ -669,12 +735,12 @@ LEAF_DATA_MAP: dict[str, tuple[str, str]] = {
     "Strongboxes":               ("get_strongboxes",          "items"),
     # Attachments
     "Weapon Amplifiers":         ("get_amplifiers",           "weaponamplifiers"),
-    "Sights/Scopes":             ("get_scopes_and_sights",    "items"),
-    "Absorbers":                 ("get_absorbers",            "items"),
-    "Finder Amplifiers":         ("get_finder_amplifiers",    "items"),
-    "Armor Platings":            ("get_armor_platings",       "items"),
+    "Sights/Scopes":             ("get_scopes_and_sights",    "sightsscopes"),
+    "Absorbers":                 ("get_absorbers",            "absorbers"),
+    "Finder Amplifiers":         ("get_finder_amplifiers",    "finderamplifiers"),
+    "Armor Platings":            ("get_armor_platings",       "armorplatings"),
     "Enhancers":                 ("get_enhancers",            "enhancers"),
-    "Mindforce Implants":        ("get_implants",             "items"),
+    "Mindforce Implants":        ("get_implants",             "mindforceimplants"),
     # Medical
     "Medical Tools":             ("get_medical_tools",        "medicaltools"),
     "Medical Chips":             ("get_medical_chips",        "medicalchips"),

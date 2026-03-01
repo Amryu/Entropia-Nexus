@@ -1,23 +1,38 @@
 """Real-time hunt stats overlay — always-on-top, draggable, position persisted."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from PyQt6.QtWidgets import QVBoxLayout, QLabel, QHBoxLayout
 from PyQt6.QtCore import Qt
 
-from .base_overlay import BaseOverlay
+from .overlay_widget import OverlayWidget
 from ..ui.signals import AppSignals
 
+if TYPE_CHECKING:
+    from .overlay_manager import OverlayManager
 
-class HuntOverlay(BaseOverlay):
+
+class HuntOverlay(OverlayWidget):
     """Compact always-on-top overlay showing live hunt stats.
 
     Displays: current mob, kills, damage dealt, loot total, return %.
     """
 
-    def __init__(self, *, signals: AppSignals, config, config_path: str):
+    def __init__(
+        self,
+        *,
+        signals: AppSignals,
+        config,
+        config_path: str,
+        manager: OverlayManager | None = None,
+    ):
         super().__init__(
             config=config,
             config_path=config_path,
             position_key="hunt_overlay_position",
+            manager=manager,
         )
         self._signals = signals
         self.setMinimumWidth(220)
@@ -63,8 +78,8 @@ class HuntOverlay(BaseOverlay):
         # Connect signals
         signals.hunt_session_updated.connect(self._on_session_updated)
         signals.mob_target_changed.connect(self._on_mob_changed)
-        signals.hunt_session_started.connect(lambda _: self.show())
-        signals.hunt_session_stopped.connect(lambda _: self.hide())
+        signals.hunt_session_started.connect(lambda _: self.set_wants_visible(True))
+        signals.hunt_session_stopped.connect(lambda _: self.set_wants_visible(False))
 
         self.hide()  # Hidden until a hunt session starts
 

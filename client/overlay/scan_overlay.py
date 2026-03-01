@@ -17,6 +17,7 @@ from ..core.event_bus import EventBus
 from ..core.logger import get_logger
 from ..core.constants import (
     EVENT_DEBUG_ROW, EVENT_DEBUG_REGIONS, EVENT_OCR_PAGE_CHANGED,
+    GAME_TITLE_PREFIX,
 )
 
 if sys.platform == "win32":
@@ -29,7 +30,6 @@ if sys.platform == "win32":
 
 # Focus check interval (ms)
 FOCUS_POLL_INTERVAL = 500
-GAME_TITLE_PREFIX = "Entropia Universe Client"
 
 log = get_logger("ScanOverlay")
 

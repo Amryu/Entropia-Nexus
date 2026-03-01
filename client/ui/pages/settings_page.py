@@ -3,7 +3,7 @@
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QSlider, QSpinBox, QGroupBox, QFileDialog, QScrollArea, QKeySequenceEdit,
-    QDoubleSpinBox, QFrame,
+    QDoubleSpinBox, QFrame, QCheckBox,
 )
 from PyQt6.QtCore import Qt
 
@@ -297,6 +297,15 @@ class SettingsPage(QWidget):
         opacity_row.addWidget(self._opacity_label)
         layout.addLayout(opacity_row)
 
+        # Auto-pin detail overlays
+        self._auto_pin_cb = QCheckBox("Auto-pin detail overlays")
+        self._auto_pin_cb.setToolTip(
+            "New detail overlays opened from search will start pinned,\n"
+            "so they stay open when selecting another item."
+        )
+        self._auto_pin_cb.setChecked(self._config.auto_pin_detail_overlay)
+        layout.addWidget(self._auto_pin_cb)
+
         self._layout.addWidget(group)
 
     # --- Advanced ---
@@ -353,6 +362,7 @@ class SettingsPage(QWidget):
         self._config.attribution_window_ms = self._attribution_window.value()
         self._config.encounter_close_timeout_ms = self._encounter_timeout.value()
         self._config.overlay_opacity = self._opacity_slider.value() / 100.0
+        self._config.auto_pin_detail_overlay = self._auto_pin_cb.isChecked()
         self._config.js_utils_path = self._js_path.text()
         self._config.oauth_client_id = self._oauth_client_id.text()
 

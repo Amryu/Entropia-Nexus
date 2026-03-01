@@ -24,6 +24,14 @@ log = get_logger("InventoryImport")
 
 MAX_IMPORT_ITEMS = 30_000
 
+# Item ID ranges for stackability checks (must match web frontend)
+_MATERIAL_MIN = 1_000_000
+_MATERIAL_MAX = 2_000_000
+_BLUEPRINT_MIN = 6_000_000
+_BLUEPRINT_MAX = 7_000_000
+_CONSUMABLE_MIN = 10_000_000
+_CONSUMABLE_MAX = 10_200_000
+
 # Colours for diff status badges
 _CLR_ADDED = "#48b868"
 _CLR_CHANGED = "#d4a030"
@@ -92,6 +100,32 @@ def _build_name_lookup(slim_items: list[dict]) -> dict[str, int]:
     return lookup
 
 
+def _has_item_tag(name: str, tag: str) -> bool:
+    """Check if an item name has a specific tag, e.g. (L) in 'Blueprint (L)'."""
+    if not name:
+        return False
+    m = re.match(r'^(.*) \((.*)\)$', name)
+    if not m:
+        return False
+    return tag in m.group(2).split(',')
+
+
+def _is_stackable(item_id: int, item_name: str) -> bool:
+    """Only Materials, (L) Blueprints, and Consumables/Capsules are stackable.
+
+    Must match the web frontend's isStackable() in InventoryImportDialog.svelte.
+    """
+    if item_id <= 0:
+        return False
+    if _MATERIAL_MIN <= item_id < _MATERIAL_MAX:
+        return True
+    if _BLUEPRINT_MIN <= item_id < _BLUEPRINT_MAX:
+        return _has_item_tag(item_name, 'L')
+    if _CONSUMABLE_MIN <= item_id < _CONSUMABLE_MAX:
+        return True
+    return False
+
+
 def _resolve_item_id(name: str, name_lookup: dict[str, int]) -> int:
     """Resolve an item name to its ID using the slim name lookup."""
     norm = _normalize_name(name)
@@ -154,7 +188,7 @@ def _build_container_path(item_id, container_map: dict, raw_data: list[dict]) ->
         )
         name = re.sub(r'\s+', ' ', name).strip()
         if name:
-            segments.insert(0, name)
+            segments.insert(0, f"{name}#{current}")
         current = entry.get('ref')
 
     return ' > '.join(segments) if segments else None
@@ -339,13 +373,20 @@ def _process_items(
 
         if item_id > 0:
             key = f"{item_id}::{item.get('container') or ''}"
+            stackable = _is_stackable(item_id, item['item_name'])
             if key in stack_map:
                 existing = stack_map[key]
                 existing['quantity'] += item['quantity'] or 1
                 if item['value'] is not None:
                     existing['value'] = (existing['value'] or 0) + item['value']
             else:
-                stack_map[key] = {**item, '_item_id': item_id, 'quantity': item['quantity'] or 1}
+                stack_map[key] = {
+                    **item,
+                    '_item_id': item_id,
+                    'quantity': item['quantity'] or 1,
+                    # Non-stackable items get a planet-based instance_key for DB uniqueness
+                    'instance_key': None if stackable else f"stack:{item.get('container') or 'inventory'}",
+                }
         else:
             individuals.append({**item, '_item_id': item_id})
 
@@ -429,14 +470,18 @@ class InventoryImportDialog(QDialog):
     def __init__(
         self,
         *,
-        nexus_client,
-        current_items: list[dict],
+        nexus_client=None,
+        current_items: list[dict] | None = None,
         slim_lookup: dict[int, dict],
+        db=None,
+        is_online: bool = True,
         parent=None,
     ):
         super().__init__(parent)
         self._nc = nexus_client
-        self._current_items = current_items
+        self._current_items = current_items or []
+        self._db = db
+        self._is_online = is_online
         # Flatten slim lookup back to list for name resolution
         self._slim_items = list(slim_lookup.values())
         self._worker: _ImportWorker | None = None
@@ -498,33 +543,36 @@ class InventoryImportDialog(QDialog):
         mode_row.addWidget(self._btn_file)
 
         mode_row.addStretch()
-
-        # Help toggle
-        help_btn = QPushButton("?")
-        help_btn.setFixedSize(24, 24)
-        help_btn.setToolTip("Supported formats")
-        help_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: {PRIMARY}; color: {TEXT_MUTED};
-                border: 1px solid {BORDER}; border-radius: 12px;
-                font-weight: bold; font-size: 12px;
-            }}
-            QPushButton:hover {{ background: {HOVER}; color: {TEXT}; }}
-        """)
-        help_btn.clicked.connect(self._toggle_help)
-        mode_row.addWidget(help_btn)
-
         page.addLayout(mode_row)
 
-        # Help text (hidden by default)
+        # Help toggle
+        self._help_btn = QPushButton("\u25b6 How do I get my items?")
+        self._help_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._help_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent; color: {TEXT_MUTED};
+                border: none; font-size: 12px; text-align: left;
+                padding: 4px 0;
+            }}
+            QPushButton:hover {{ color: {TEXT}; }}
+        """)
+        self._help_btn.clicked.connect(self._toggle_help)
+        page.addWidget(self._help_btn)
+
+        # Help panel (hidden by default)
         self._help_label = QLabel(
-            "Supported formats:\n"
-            "  - TSV (tab-separated) with header: Name, Quantity, Id, Value, Container\n"
-            "  - JSON array of items or {items: [...]}\n"
-            "  - Each item needs at least a name field"
+            '<ol style="margin: 4px 0; padding-left: 20px;">'
+            '<li>Go to <a href="https://account.entropiauniverse.com/account/inventory"'
+            f' style="color: {ACCENT};">account.entropiauniverse.com/account/inventory</a>'
+            ' and log in</li>'
+            '<li>Click the <b>"Copy to CSV"</b> button</li>'
+            '<li>Paste the copied data into the text box below</li>'
+            '</ol>'
         )
+        self._help_label.setOpenExternalLinks(True)
+        self._help_label.setTextFormat(Qt.TextFormat.RichText)
         self._help_label.setStyleSheet(
-            f"color: {TEXT_MUTED}; font-size: 11px; background: {PRIMARY};"
+            f"color: {TEXT_MUTED}; font-size: 12px; background: {PRIMARY};"
             f" border: 1px solid {BORDER}; border-radius: 4px; padding: 8px;"
         )
         self._help_label.setWordWrap(True)
@@ -631,6 +679,18 @@ class InventoryImportDialog(QDialog):
         hdr.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         page.addWidget(self._preview_tree, 1)
 
+        # Offline notice
+        self._offline_notice = QLabel(
+            "Offline import — will sync when you log in."
+        )
+        self._offline_notice.setStyleSheet(
+            f"color: {TEXT_MUTED}; font-size: 12px; font-style: italic;"
+            f" background: {SECONDARY}; border: 1px solid {BORDER};"
+            f" border-radius: 4px; padding: 6px;"
+        )
+        self._offline_notice.hide()
+        page.addWidget(self._offline_notice)
+
         # Unresolved section
         self._unresolved_label = QLabel()
         self._unresolved_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
@@ -700,7 +760,10 @@ class InventoryImportDialog(QDialog):
             self._btn_file.setStyleSheet(_active_btn_css())
 
     def _toggle_help(self):
-        self._help_label.setVisible(not self._help_label.isVisible())
+        showing = not self._help_label.isVisible()
+        self._help_label.setVisible(showing)
+        arrow = "\u25bc" if showing else "\u25b6"
+        self._help_btn.setText(f"{arrow} How do I get my items?")
 
     def _pick_file(self):
         path, _ = QFileDialog.getOpenFileName(
@@ -767,8 +830,12 @@ class InventoryImportDialog(QDialog):
         self._parsed = resolved
         self._unresolved = unresolved
 
-        # Compute diff
-        self._diff = _compute_diff(resolved, unresolved, self._current_items)
+        # Compute diff (only meaningful when online with existing server data)
+        if self._is_online and self._current_items:
+            self._diff = _compute_diff(resolved, unresolved, self._current_items)
+        else:
+            total = len(resolved) + len(unresolved)
+            self._diff = {'added': total, 'changed': 0, 'removed': 0, 'unchanged': 0}
         self._show_preview()
 
     def _show_parse_error(self, msg: str):
@@ -784,10 +851,26 @@ class InventoryImportDialog(QDialog):
         self._preview_summary.setText(f"{total:,} items parsed")
 
         d = self._diff
-        self._badge_added.setText(f"+{d['added']} added")
-        self._badge_changed.setText(f"~{d['changed']} updated")
-        self._badge_removed.setText(f"-{d['removed']} removed")
-        self._badge_same.setText(f"{d['unchanged']} unchanged")
+        if self._is_online and self._current_items:
+            self._badge_added.setText(f"+{d['added']} added")
+            self._badge_changed.setText(f"~{d['changed']} updated")
+            self._badge_removed.setText(f"-{d['removed']} removed")
+            self._badge_same.setText(f"{d['unchanged']} unchanged")
+            self._badge_added.show()
+            self._badge_changed.show()
+            self._badge_removed.show()
+            self._badge_same.show()
+            self._offline_notice.hide()
+        else:
+            # Hide diff badges in offline mode — we can't compare
+            self._badge_added.hide()
+            self._badge_changed.hide()
+            self._badge_removed.hide()
+            self._badge_same.hide()
+            if not self._is_online:
+                self._offline_notice.show()
+
+        self._import_btn.setText("Save Locally" if not self._is_online else "Import")
 
         # Populate preview tree
         self._preview_tree.clear()
@@ -836,13 +919,43 @@ class InventoryImportDialog(QDialog):
 
     def _on_import(self):
         self._import_btn.setEnabled(False)
-        self._import_btn.setText("Importing...")
         self._import_error.hide()
 
-        all_items = self._parsed + self._unresolved
-        self._worker = _ImportWorker(self._nc, all_items)
-        self._worker.finished.connect(self._on_import_finished)
-        self._worker.start()
+        if self._is_online:
+            self._import_btn.setText("Importing...")
+            all_items = self._parsed + self._unresolved
+            self._worker = _ImportWorker(self._nc, all_items)
+            self._worker.finished.connect(self._on_import_finished)
+            self._worker.start()
+        else:
+            self._import_btn.setText("Saving...")
+            self._save_offline()
+
+    def _save_offline(self):
+        """Save import to local database for later sync."""
+        if not self._db:
+            self._import_error.setText("No local database available.")
+            self._import_error.show()
+            self._import_btn.setEnabled(True)
+            self._import_btn.setText("Save Locally")
+            return
+        try:
+            total = len(self._parsed) + len(self._unresolved)
+            self._db.save_pending_inventory_import(
+                self._parsed, self._unresolved, total,
+            )
+            self._done_label.setText(
+                f"Saved locally!\n\n"
+                f"{total:,} items stored.\n"
+                f"Will sync when you log in."
+            )
+            self._stack.setCurrentIndex(2)
+        except Exception as e:
+            log.error("Offline save error: %s", e)
+            self._import_error.setText(f"Failed to save locally: {e}")
+            self._import_error.show()
+            self._import_btn.setEnabled(True)
+            self._import_btn.setText("Save Locally")
 
     def _on_import_finished(self, result: dict | None, error: str):
         self._worker = None

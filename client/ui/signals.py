@@ -112,7 +112,7 @@ class AppSignals(QObject):
     ingestion_status = pyqtSignal(object)  # {"pending": N}
 
     # Inventory
-    inventory_open_wiki = pyqtSignal(int, str)  # (item_id, item_type)
+    inventory_open_wiki = pyqtSignal(int, str, str)  # (item_id, item_type, item_name)
 
 
 def wire_signals(event_bus, signals: AppSignals) -> None:

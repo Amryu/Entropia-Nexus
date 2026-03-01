@@ -1,0 +1,495 @@
+"""Centralized overlay manager — occlusion detection, widget registry, and snap calculations."""
+
+from __future__ import annotations
+
+import os
+import sys
+from typing import TYPE_CHECKING
+
+from PyQt6.QtCore import QObject, QPoint, QRect, Qt, QTimer, pyqtSignal
+
+from ..core.constants import (
+    GAME_TITLE_PREFIX,
+    OVERLAY_FOCUS_POLL_MS,
+    OVERLAY_SNAP_THRESHOLD,
+)
+from ..core.logger import get_logger
+
+if TYPE_CHECKING:
+    from .overlay_widget import OverlayWidget
+
+if sys.platform == "win32":
+    import ctypes
+    import ctypes.wintypes
+    _user32 = ctypes.windll.user32
+    _dwmapi = ctypes.windll.dwmapi
+
+log = get_logger("OverlayManager")
+
+# --- Win32 constants for z-order / style queries ---
+
+_GWL_EXSTYLE = -20
+_GW_HWNDNEXT = 2
+_WS_EX_TOOLWINDOW = 0x00000080
+_WS_EX_NOACTIVATE = 0x08000000
+_DWMWA_CLOAKED = 14
+
+# System window classes that should never count as occluders
+_SYSTEM_CLASSES = frozenset({
+    "Progman", "WorkerW", "Shell_TrayWnd",
+    "Shell_SecondaryTrayWnd", "DV2ControlHost",
+})
+
+# Minimum dimensions for a window to count as a "full" occluder
+_OCCLUDER_MIN_SIZE = 200
+
+# Minimum overlap (pixels) on each axis for a window to count as occluding.
+# Prevents false positives from 1-2px edge overlaps on adjacent monitors.
+_OCCLUDER_MIN_OVERLAP = 50
+
+# Windows messages for mouse scroll events (used by scroll hook)
+_WM_MOUSEWHEEL = 0x020A
+_WM_MOUSEHWHEEL = 0x020E
+
+
+def _get_foreground_hwnd() -> int:
+    """Return the HWND of the foreground window (Windows only)."""
+    if sys.platform == "win32":
+        return _user32.GetForegroundWindow()
+    return 0
+
+
+def _get_window_title(hwnd: int) -> str:
+    """Return the window title for the given HWND."""
+    if sys.platform != "win32" or not hwnd:
+        return ""
+    length = _user32.GetWindowTextLengthW(hwnd)
+    if length <= 0:
+        return ""
+    buf = ctypes.create_unicode_buffer(length + 1)
+    _user32.GetWindowTextW(hwnd, buf, length + 1)
+    return buf.value
+
+
+def _find_game_hwnd() -> int:
+    """Find the game window HWND by walking the z-order (Windows only)."""
+    if sys.platform != "win32":
+        return 0
+    hwnd = _user32.GetTopWindow(None)
+    while hwnd:
+        if _user32.IsWindowVisible(hwnd):
+            title = _get_window_title(hwnd)
+            if title.startswith(GAME_TITLE_PREFIX):
+                return hwnd
+        hwnd = _user32.GetWindow(hwnd, _GW_HWNDNEXT)
+    return 0
+
+
+def _get_window_pid(hwnd: int) -> int:
+    """Return the process ID that owns *hwnd*."""
+    pid = ctypes.wintypes.DWORD(0)
+    _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+    return pid.value
+
+
+# Cache our own PID (never changes)
+_OWN_PID = os.getpid()
+
+
+def _is_occluding_window(hwnd: int, game_rect: ctypes.wintypes.RECT) -> bool:
+    """Return True if *hwnd* is a real application window overlapping *game_rect*."""
+    if not _user32.IsWindowVisible(hwnd):
+        return False
+    # Minimized windows are still "visible" in the z-order but not on screen
+    if _user32.IsIconic(hwnd):
+        return False
+    # Never count our own application's windows as occluders
+    if _get_window_pid(hwnd) == _OWN_PID:
+        return False
+    # Cloaked windows (virtual desktops, suspended UWP apps) pass
+    # IsWindowVisible but aren't actually rendered on screen
+    cloaked = ctypes.wintypes.DWORD(0)
+    _dwmapi.DwmGetWindowAttribute(
+        hwnd, _DWMWA_CLOAKED, ctypes.byref(cloaked), ctypes.sizeof(cloaked)
+    )
+    if cloaked.value:
+        return False
+    # Must have a title (unnamed windows are usually internal/helper)
+    if _user32.GetWindowTextLengthW(hwnd) == 0:
+        return False
+    # Filter out tool windows and no-activate overlays
+    ex_style = _user32.GetWindowLongW(hwnd, _GWL_EXSTYLE)
+    if ex_style & (_WS_EX_TOOLWINDOW | _WS_EX_NOACTIVATE):
+        return False
+    # Filter system classes (taskbar, desktop shell)
+    cls_buf = ctypes.create_unicode_buffer(64)
+    _user32.GetClassNameW(hwnd, cls_buf, 64)
+    if cls_buf.value in _SYSTEM_CLASSES:
+        return False
+    # Too small — likely a tooltip or popup, not a full window
+    rect = ctypes.wintypes.RECT()
+    _user32.GetWindowRect(hwnd, ctypes.byref(rect))
+    if (rect.right - rect.left) < _OCCLUDER_MIN_SIZE or \
+       (rect.bottom - rect.top) < _OCCLUDER_MIN_SIZE:
+        return False
+    # Require substantial overlap — not just 1-2px edge touching
+    # (prevents false positives from windows on adjacent monitors)
+    overlap_x = min(rect.right, game_rect.right) - max(rect.left, game_rect.left)
+    overlap_y = min(rect.bottom, game_rect.bottom) - max(rect.top, game_rect.top)
+    return overlap_x >= _OCCLUDER_MIN_OVERLAP and overlap_y >= _OCCLUDER_MIN_OVERLAP
+
+
+def _is_game_occluded(game_hwnd: int, overlay_hwnds: set[int]) -> bool:
+    """Walk z-order above *game_hwnd*. Return True if a full app window overlaps it."""
+    game_rect = ctypes.wintypes.RECT()
+    _user32.GetWindowRect(game_hwnd, ctypes.byref(game_rect))
+
+    hwnd = _user32.GetTopWindow(None)
+    while hwnd:
+        if hwnd == game_hwnd:
+            return False  # Reached the game without finding an occluder
+        if hwnd not in overlay_hwnds:
+            if _is_occluding_window(hwnd, game_rect):
+                return True
+        hwnd = _user32.GetWindow(hwnd, _GW_HWNDNEXT)
+    return False  # Game window not found in z-order (edge case)
+
+
+class OverlayManager(QObject):
+    """Manages overlay visibility, occlusion detection, and snap targets.
+
+    - Polls every 500ms to detect whether the game window is occluded by
+      a full application window (z-order walk).  Overlays stay visible
+      when only small popups, tool windows, or our own overlays are in front.
+    - Registered overlay widgets that have ``wants_visible`` set are
+      shown/hidden automatically when visibility changes.
+    - Provides snap target rectangles for drag-snap alignment.
+    - Registers a global Ctrl+F hotkey (active only while overlays are shown).
+    """
+
+    search_hotkey_pressed = pyqtSignal()
+    _scroll_intercepted = pyqtSignal(int, int, int, int, int)  # hwnd, cx, cy, delta, msg
+
+    def __init__(self, *, config, parent: QObject | None = None):
+        super().__init__(parent)
+        self._config = config
+        self._widgets: list[OverlayWidget] = []
+        self._game_focused = False
+        self._game_hwnd = 0
+        self._hotkey_registered = False
+        self._scroll_listener = None
+        self._overlay_hwnds: dict[int, OverlayWidget] = {}  # hwnd → widget
+
+        self._scroll_intercepted.connect(
+            self._on_scroll_intercepted, Qt.ConnectionType.QueuedConnection,
+        )
+
+        self._timer = QTimer(self)
+        self._timer.setInterval(OVERLAY_FOCUS_POLL_MS)
+        self._timer.timeout.connect(self._poll_focus)
+
+        if getattr(config, "overlay_enabled", True):
+            self._timer.start()
+
+    # --- Widget registry ---
+
+    def register(self, widget: OverlayWidget) -> None:
+        if widget not in self._widgets:
+            self._widgets.append(widget)
+            hwnd = int(widget.winId())
+            if hwnd:
+                self._overlay_hwnds[hwnd] = widget
+
+    def unregister(self, widget: OverlayWidget) -> None:
+        try:
+            self._widgets.remove(widget)
+        except ValueError:
+            pass
+        hwnd = int(widget.winId())
+        self._overlay_hwnds.pop(hwnd, None)
+
+    @property
+    def game_focused(self) -> bool:
+        return self._game_focused
+
+    # --- Snap targets ---
+
+    def get_snap_targets(self, exclude: OverlayWidget) -> list[QRect]:
+        """Return geometries of all visible registered widgets except *exclude*."""
+        return [
+            w.geometry()
+            for w in self._widgets
+            if w is not exclude and w.isVisible()
+        ]
+
+    @staticmethod
+    def snap_position(pos_x: int, pos_y: int, size_w: int, size_h: int,
+                      targets: list[QRect]) -> tuple[int, int]:
+        """Adjust (pos_x, pos_y) to snap edges to nearby *targets*.
+
+        Only snaps to a target on one axis if the widgets are close or
+        overlapping on the other axis (prevents snapping to far-away widgets).
+
+        Returns the (possibly adjusted) (x, y) position.
+        """
+        threshold = OVERLAY_SNAP_THRESHOLD
+
+        for rect in targets:
+            # Check proximity on each axis: do the ranges overlap or nearly
+            # touch?  "Nearly touch" = gap <= threshold.
+            h_close = (pos_x - threshold <= rect.right()
+                       and pos_x + size_w + threshold >= rect.left())
+            v_close = (pos_y - threshold <= rect.bottom()
+                       and pos_y + size_h + threshold >= rect.top())
+
+            # Horizontal snaps — only if vertically close
+            if v_close:
+                # Left edge to left edge
+                if abs(pos_x - rect.left()) < threshold:
+                    pos_x = rect.left()
+                # Right edge to right edge
+                elif abs((pos_x + size_w) - rect.right()) < threshold:
+                    pos_x = rect.right() - size_w
+                # Left edge to right edge
+                elif abs(pos_x - rect.right()) < threshold:
+                    pos_x = rect.right()
+                # Right edge to left edge
+                elif abs((pos_x + size_w) - rect.left()) < threshold:
+                    pos_x = rect.left() - size_w
+
+            # Vertical snaps — only if horizontally close
+            if h_close:
+                # Top to top
+                if abs(pos_y - rect.top()) < threshold:
+                    pos_y = rect.top()
+                # Bottom to bottom
+                elif abs((pos_y + size_h) - rect.bottom()) < threshold:
+                    pos_y = rect.bottom() - size_h
+                # Top to bottom
+                elif abs(pos_y - rect.bottom()) < threshold:
+                    pos_y = rect.bottom()
+                # Bottom to top
+                elif abs((pos_y + size_h) - rect.top()) < threshold:
+                    pos_y = rect.top() - size_h
+
+        return pos_x, pos_y
+
+    # --- Occlusion detection ---
+
+    def _poll_focus(self) -> None:
+        """Check whether the game is visible (not occluded by a full window)."""
+        try:
+            fg_hwnd = _get_foreground_hwnd()
+            if not fg_hwnd:
+                return
+
+            # Build set of our overlay HWNDs (used for both checks)
+            overlay_hwnds: set[int] = set()
+            for w in self._widgets:
+                if w.isVisible():
+                    overlay_hwnds.add(int(w.winId()))
+
+            # Fast path: one of our overlays has focus — stay visible
+            if fg_hwnd in overlay_hwnds:
+                if not self._game_focused:
+                    self._game_focused = True
+                    self._show_all()
+                return
+
+            # Find / validate the cached game HWND
+            game_hwnd = self._game_hwnd
+            if not game_hwnd or not _user32.IsWindowVisible(game_hwnd):
+                game_hwnd = _find_game_hwnd()
+                self._game_hwnd = game_hwnd
+            if not game_hwnd:
+                # Game not running — hide overlays
+                if self._game_focused:
+                    self._game_focused = False
+                    self._hide_all()
+                return
+
+            # Game has focus → always visible
+            title = _get_window_title(fg_hwnd)
+            if title.startswith(GAME_TITLE_PREFIX):
+                visible = True
+            else:
+                # Game doesn't have focus — check if a full window occludes it
+                visible = not _is_game_occluded(game_hwnd, overlay_hwnds)
+
+            if visible and not self._game_focused:
+                self._game_focused = True
+                self._show_all()
+            elif not visible and self._game_focused:
+                self._game_focused = False
+                self._hide_all()
+        except Exception:
+            pass
+
+    def _show_all(self) -> None:
+        for w in self._widgets:
+            if w.wants_visible:
+                w.show()
+        self._register_hotkey()
+        self._install_scroll_hook()
+
+    def _hide_all(self) -> None:
+        self._unregister_hotkey()
+        self._uninstall_scroll_hook()
+        for w in self._widgets:
+            if w.isVisible():
+                w.hide()
+
+    # --- Global Ctrl+F hotkey (only while overlays are active) ---
+
+    def _register_hotkey(self) -> None:
+        if self._hotkey_registered:
+            return
+        try:
+            import keyboard
+            keyboard.add_hotkey("ctrl+f", self._on_search_hotkey)
+            self._hotkey_registered = True
+        except ImportError:
+            pass
+        except Exception as e:
+            log.warning("Failed to register Ctrl+F hotkey: %s", e)
+
+    def _unregister_hotkey(self) -> None:
+        if not self._hotkey_registered:
+            return
+        try:
+            import keyboard
+            keyboard.remove_hotkey("ctrl+f")
+        except Exception:
+            pass
+        self._hotkey_registered = False
+
+    def _on_search_hotkey(self) -> None:
+        """Called from keyboard hook thread — emit signal for Qt main thread."""
+        if self._game_focused:
+            self.search_hotkey_pressed.emit()
+
+    # --- Scroll hook (pynput) — blocks scroll over overlays ---
+
+    def _install_scroll_hook(self) -> None:
+        """Install a low-level mouse hook via pynput to block scroll over overlays."""
+        if sys.platform != "win32" or self._scroll_listener is not None:
+            return
+        try:
+            from pynput import mouse
+
+            overlay_hwnds = self._overlay_hwnds
+            signal = self._scroll_intercepted
+            listener_ref: list = [None]
+
+            def _scroll_filter(msg, data):
+                """Called on pynput's hook thread for every mouse event."""
+                try:
+                    listener = listener_ref[0]
+                    if listener is None:
+                        return True
+
+                    # Only intercept scroll events
+                    if msg not in (_WM_MOUSEWHEEL, _WM_MOUSEHWHEEL):
+                        listener._suppress = False
+                        return True
+
+                    cx, cy = data.pt.x, data.pt.y
+
+                    # Hit-test against registered overlay HWNDs
+                    for hwnd in list(overlay_hwnds):
+                        if not _user32.IsWindowVisible(hwnd):
+                            continue
+                        rect = ctypes.wintypes.RECT()
+                        if not _user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+                            continue
+                        if (rect.left <= cx < rect.right
+                                and rect.top <= cy < rect.bottom):
+                            # Extract signed scroll delta from mouseData high word
+                            delta = ctypes.c_short(
+                                (data.mouseData >> 16) & 0xFFFF
+                            ).value
+                            # Emit signal for Qt thread to forward the scroll
+                            signal.emit(hwnd, cx, cy, delta, int(msg))
+                            # Tell pynput to suppress (block) this event
+                            listener._suppress = True
+                            return False
+
+                    # Scroll not over any overlay — let it through
+                    listener._suppress = False
+                    return True
+                except Exception:
+                    log.debug("Scroll filter error", exc_info=True)
+                    return True
+
+            self._scroll_listener = mouse.Listener(
+                event_filter=_scroll_filter,
+            )
+            listener_ref[0] = self._scroll_listener
+            self._scroll_listener.start()
+            log.debug("Scroll hook installed (pynput)")
+        except ImportError:
+            log.debug("pynput not available — scroll hook disabled")
+        except Exception as e:
+            log.warning("Failed to install scroll hook: %s", e)
+            self._scroll_listener = None
+
+    def _uninstall_scroll_hook(self) -> None:
+        if self._scroll_listener is not None:
+            try:
+                self._scroll_listener.stop()
+            except Exception:
+                pass
+            self._scroll_listener = None
+            log.debug("Scroll hook removed")
+
+    def _on_scroll_intercepted(self, hwnd: int, cx: int, cy: int,
+                               delta: int, msg: int) -> None:
+        """Handle intercepted scroll on the Qt main thread — forward as QWheelEvent."""
+        widget = self._overlay_hwnds.get(hwnd)
+        if widget is None or not widget.isVisible():
+            return
+        self._forward_scroll(widget, cx, cy, delta, msg)
+
+    @staticmethod
+    def _forward_scroll(widget, cx: int, cy: int, delta: int, msg: int) -> None:
+        """Post a synthetic QWheelEvent to the child widget under the cursor.
+
+        If no child is found, posts to *widget* itself (caught by the
+        OverlayWidget.wheelEvent catch-all).
+        """
+        from PyQt6.QtGui import QWheelEvent
+        from PyQt6.QtWidgets import QApplication
+
+        global_pos = QPoint(cx, cy)
+
+        # Find the deepest child under the cursor so QScrollArea etc. receive it
+        local_pos = widget.mapFromGlobal(global_pos)
+        target = widget.childAt(local_pos)
+        if target is None:
+            target = widget
+
+        target_local = target.mapFromGlobal(global_pos)
+
+        if msg == _WM_MOUSEHWHEEL:
+            angle_delta = QPoint(delta, 0)
+        else:
+            angle_delta = QPoint(0, delta)
+
+        event = QWheelEvent(
+            target_local.toPointF(),
+            global_pos.toPointF(),
+            QPoint(0, 0),       # pixelDelta
+            angle_delta,
+            Qt.MouseButton.NoButton,
+            Qt.KeyboardModifier.NoModifier,
+            Qt.ScrollPhase.NoScrollPhase,
+            False,               # inverted
+        )
+        QApplication.postEvent(target, event)
+
+    # --- Cleanup ---
+
+    def stop(self) -> None:
+        self._timer.stop()
+        self._unregister_hotkey()
+        self._uninstall_scroll_hook()

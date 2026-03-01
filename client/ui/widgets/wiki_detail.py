@@ -6,11 +6,11 @@ import re
 import threading
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel,
-    QTextBrowser, QSizePolicy, QFrame,
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
+    QTextBrowser, QSizePolicy, QFrame, QApplication,
     QTableWidget, QTableWidgetItem, QHeaderView,
 )
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, QEvent, QTimer, pyqtSignal
 from PyQt6.QtGui import QPixmap, QPainter, QLinearGradient, QColor
 
 import requests
@@ -20,6 +20,9 @@ from ..theme import (
     HOVER, DAMAGE_COLORS, TIER1_BLUE_START, TIER1_BLUE_END, SUCCESS,
 )
 from ...data.wiki_columns import _DAMAGE_TYPES, deep_get
+
+# Defense types share the same 9 names as damage types
+_DEFENSE_TYPES = _DAMAGE_TYPES
 
 
 # ---------------------------------------------------------------------------
@@ -75,6 +78,11 @@ def make_compact_table(headers: list[str], rows: list[list[str]]) -> QTableWidge
         QTableWidget::item {{
             padding: 4px 10px;
             border-bottom: 1px solid {BORDER};
+            border-left: 2px solid transparent;
+        }}
+        QTableWidget::item:hover {{
+            background-color: rgba(96, 176, 255, 0.15);
+            border-left: 2px solid {ACCENT};
         }}
         QHeaderView::section {{
             background-color: {HOVER};
@@ -279,6 +287,74 @@ class StatRow(QWidget):
 
 
 # ---------------------------------------------------------------------------
+# WaypointCopyButton — click-to-copy waypoint matching web WaypointCopyButton
+# ---------------------------------------------------------------------------
+
+_WP_COPIED_MS = 2000
+
+class WaypointCopyButton(QPushButton):
+    """Button that displays a waypoint and copies it to clipboard on click.
+
+    Matches the web's WaypointCopyButton.svelte — shows `/wp [Planet, X, Y, Z, Name]`,
+    copies on click, and flashes green "Copied!" feedback for 2 seconds.
+    """
+
+    _STYLE_NORMAL = (
+        f"WaypointCopyButton {{"
+        f"  background-color: {PRIMARY};"
+        f"  border: 1px solid {BORDER};"
+        f"  border-radius: 4px;"
+        f"  color: {TEXT};"
+        f"  font-family: monospace;"
+        f"  font-size: 12px;"
+        f"  padding: 6px 10px;"
+        f"  text-align: left;"
+        f"}}"
+        f"WaypointCopyButton:hover {{"
+        f"  background-color: {ACCENT};"
+        f"  border-color: {ACCENT};"
+        f"  color: white;"
+        f"}}"
+    )
+
+    _STYLE_COPIED = (
+        f"WaypointCopyButton {{"
+        f"  background-color: {SUCCESS};"
+        f"  border: 1px solid {SUCCESS};"
+        f"  border-radius: 4px;"
+        f"  color: white;"
+        f"  font-family: monospace;"
+        f"  font-size: 12px;"
+        f"  padding: 6px 10px;"
+        f"  text-align: left;"
+        f"}}"
+    )
+
+    def __init__(self, planet: str, coords: dict, name: str, parent=None):
+        super().__init__(parent)
+        lon = coords.get("Longitude")
+        lat = coords.get("Latitude")
+        alt = coords.get("Altitude", 100)
+        self._waypoint = f"[{planet}, {lon}, {lat}, {alt}, {name}]"
+        self.setText(f"/wp {self._waypoint}")
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setStyleSheet(self._STYLE_NORMAL)
+        self.clicked.connect(self._copy)
+
+    def _copy(self):
+        clipboard = QApplication.clipboard()
+        if clipboard:
+            clipboard.setText(f"/wp {self._waypoint}")
+        self.setText("\u2713 Copied!")
+        self.setStyleSheet(self._STYLE_COPIED)
+        QTimer.singleShot(_WP_COPIED_MS, self._reset)
+
+    def _reset(self):
+        self.setText(f"/wp {self._waypoint}")
+        self.setStyleSheet(self._STYLE_NORMAL)
+
+
+# ---------------------------------------------------------------------------
 # InfoboxSection — titled group of stat rows
 # ---------------------------------------------------------------------------
 
@@ -368,20 +444,38 @@ class Tier1StatRow(QWidget):
         layout.addWidget(self._value_label)
 
 
+
 # ---------------------------------------------------------------------------
-# DamageBreakdownWidget — colored horizontal bars per damage type
+# MobDamageGridWidget — horizontal bar display for mob damage composition
 # ---------------------------------------------------------------------------
 
-class DamageBreakdownWidget(QWidget):
-    """Damage breakdown with colored horizontal bars for each non-zero type."""
+_BAR_HEIGHT = 8
 
-    def __init__(self, damage: dict | None, parent=None):
+class MobDamageGridWidget(QWidget):
+    """Horizontal-bar damage display matching the website's MobDamageGrid.
+
+    Renders one group: an optional label, then one row per non-zero damage
+    type with [TypeName] [===bar===] [value%].
+    """
+
+    def __init__(self, damage_spread: dict, label: str = "", parent=None):
         super().__init__(parent)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
 
-        if not damage:
+        if label:
+            lbl = QLabel(label)
+            lbl.setStyleSheet(
+                f"color: {TEXT_MUTED}; font-size: 11px; font-weight: 600;"
+                " background: transparent; letter-spacing: 0.5px;"
+            )
+            layout.addWidget(lbl)
+
+        active = [(dt, damage_spread.get(dt) or 0)
+                  for dt in _DAMAGE_TYPES if (damage_spread.get(dt) or 0) > 0]
+
+        if not active:
             muted = QLabel("No damage data")
             muted.setStyleSheet(
                 f"color: {TEXT_MUTED}; font-size: 12px;"
@@ -390,15 +484,93 @@ class DamageBreakdownWidget(QWidget):
             layout.addWidget(muted)
             return
 
-        # Find non-zero types and max value for bar scaling
-        entries = []
-        for dtype in _DAMAGE_TYPES:
-            val = damage.get(dtype) or 0
-            if val > 0:
-                entries.append((dtype, val))
+        max_val = max(v for _, v in active)
 
+        for dtype, val in active:
+            color = DAMAGE_COLORS.get(dtype, TEXT_MUTED)
+            pct = (val / max_val * 100) if max_val > 0 else 0
+
+            row = QWidget()
+            row.setStyleSheet("background: transparent;")
+            rl = QHBoxLayout(row)
+            rl.setContentsMargins(0, 0, 0, 0)
+            rl.setSpacing(8)
+
+            type_lbl = QLabel(dtype)
+            type_lbl.setFixedWidth(70)
+            type_lbl.setStyleSheet(
+                f"color: {color}; font-size: 11px; font-weight: 500;"
+                " background: transparent;"
+            )
+            rl.addWidget(type_lbl)
+
+            # Bar container + filled bar
+            bar_container = QWidget()
+            bar_container.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+            bar_container.setFixedHeight(_BAR_HEIGHT)
+            bar_container.setStyleSheet(
+                f"background-color: rgba(0, 0, 0, 0.2);"
+                f" border-radius: {_BAR_HEIGHT // 2}px;"
+            )
+            bar_layout = QHBoxLayout(bar_container)
+            bar_layout.setContentsMargins(0, 0, 0, 0)
+            bar_layout.setSpacing(0)
+
+            bar_fill = QWidget()
+            bar_fill.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+            bar_fill.setFixedHeight(_BAR_HEIGHT)
+            bar_fill.setStyleSheet(
+                f"background-color: {color};"
+                f" border-radius: {_BAR_HEIGHT // 2}px;"
+            )
+            # Use stretch factors to represent percentage
+            fill_stretch = max(int(pct), 1)
+            empty_stretch = max(100 - fill_stretch, 0)
+            bar_layout.addWidget(bar_fill, fill_stretch)
+            if empty_stretch > 0:
+                spacer = QWidget()
+                spacer.setStyleSheet("background: transparent;")
+                bar_layout.addWidget(spacer, empty_stretch)
+
+            rl.addWidget(bar_container, 1)
+
+            val_lbl = QLabel(f"{val:.1f}%")
+            val_lbl.setFixedWidth(45)
+            val_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            val_lbl.setStyleSheet(
+                f"color: {TEXT_MUTED}; font-size: 11px;"
+                " background: transparent;"
+            )
+            rl.addWidget(val_lbl)
+
+            layout.addWidget(row)
+
+
+# ---------------------------------------------------------------------------
+# DefenseBreakdownWidget — colored stat rows per defense type
+# ---------------------------------------------------------------------------
+
+class DefenseBreakdownWidget(QWidget):
+    """Defense breakdown using colored stat rows for each non-zero type."""
+
+    def __init__(self, defense: dict | None, parent=None):
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        if not defense:
+            muted = QLabel("No defense data")
+            muted.setStyleSheet(
+                f"color: {TEXT_MUTED}; font-size: 12px;"
+                " font-style: italic; background: transparent;"
+            )
+            layout.addWidget(muted)
+            return
+
+        entries = [(dt, defense.get(dt) or 0) for dt in _DEFENSE_TYPES if (defense.get(dt) or 0) > 0]
         if not entries:
-            muted = QLabel("No damage")
+            muted = QLabel("No defense")
             muted.setStyleSheet(
                 f"color: {TEXT_MUTED}; font-size: 12px;"
                 " font-style: italic; background: transparent;"
@@ -407,95 +579,16 @@ class DamageBreakdownWidget(QWidget):
             return
 
         total = sum(v for _, v in entries)
-        max_val = max(v for _, v in entries)
+        layout.addWidget(StatRow("Total", f"{total:.1f}"))
 
-        # Total row
-        total_row = QHBoxLayout()
-        total_row.setContentsMargins(0, 0, 0, 4)
-        total_lbl = QLabel("Total")
-        total_lbl.setStyleSheet(
-            f"color: {TEXT_MUTED}; font-size: 12px; background: transparent;"
-        )
-        total_row.addWidget(total_lbl)
-        total_row.addStretch()
-        total_val = QLabel(f"{total:.1f}")
-        total_val.setStyleSheet(
-            f"color: {TEXT}; font-size: 13px; font-weight: 600;"
-            " background: transparent;"
-        )
-        total_row.addWidget(total_val)
-        layout.addLayout(total_row)
+        sep = QWidget()
+        sep.setFixedHeight(1)
+        sep.setStyleSheet(f"background-color: {BORDER};")
+        layout.addWidget(sep)
 
-        # Per-type bar rows
         for dtype, val in entries:
             color = DAMAGE_COLORS.get(dtype, TEXT_MUTED)
-            bar_pct = (val / max_val * 100) if max_val > 0 else 0
-
-            row = QHBoxLayout()
-            row.setContentsMargins(0, 0, 0, 0)
-            row.setSpacing(8)
-
-            name_lbl = QLabel(dtype)
-            name_lbl.setFixedWidth(80)
-            name_lbl.setStyleSheet(
-                f"color: {TEXT_MUTED}; font-size: 12px; background: transparent;"
-            )
-            row.addWidget(name_lbl)
-
-            # Bar container
-            bar_container = QWidget()
-            bar_container.setFixedHeight(14)
-            bar_container.setSizePolicy(
-                QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
-            )
-            bar_container.setStyleSheet(
-                f"background-color: {PRIMARY}; border-radius: 3px;"
-            )
-
-            bar = QWidget(bar_container)
-            bar.setStyleSheet(
-                f"background-color: {color}; border-radius: 3px;"
-            )
-            # Bar width set on first layout via a timer
-            bar._target_pct = bar_pct
-            bar._color = color
-            bar.setFixedHeight(14)
-
-            row.addWidget(bar_container)
-
-            val_lbl = QLabel(f"{val:.1f}")
-            val_lbl.setFixedWidth(40)
-            val_lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
-            val_lbl.setStyleSheet(
-                f"color: {TEXT}; font-size: 12px; background: transparent;"
-            )
-            row.addWidget(val_lbl)
-
-            layout.addLayout(row)
-
-            # Store reference for resize
-            bar._bar_container = bar_container
-
-        # Keep references for resize recalc
-        self._entries = entries
-        self._max_val = max_val
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        self._update_bar_widths()
-
-    def showEvent(self, event):
-        super().showEvent(event)
-        self._update_bar_widths()
-
-    def _update_bar_widths(self):
-        """Recalculate bar widths based on container width."""
-        for child in self.findChildren(QWidget):
-            if hasattr(child, '_target_pct') and hasattr(child, '_bar_container'):
-                container_w = child._bar_container.width()
-                if container_w > 0:
-                    bar_w = max(2, int(container_w * child._target_pct / 100))
-                    child.setFixedWidth(bar_w)
+            layout.addWidget(StatRow(dtype, f"{val:.1f}", label_color=color))
 
 
 # ---------------------------------------------------------------------------
@@ -581,7 +674,7 @@ class DataSection(QWidget):
 
         # --- Separator (visible when expanded) ---
         self._separator = QFrame()
-        self._separator.setFrameShape(QFrame.Shape.HLine)
+        self._separator.setFrameShape(QFrame.Shape.NoFrame)
         self._separator.setFixedHeight(1)
         self._separator.setStyleSheet(f"background-color: {BORDER};")
         frame_layout.addWidget(self._separator)
@@ -664,6 +757,7 @@ class WikiDetailView(QWidget):
 
     IMAGE_SIZE = 100
     TIER1_WIDTH = 220
+    SECTION_MAX_WIDTH = 400
 
     def __init__(self, item: dict, *, nexus_base_url: str = "", data_client=None, parent=None):
         super().__init__(parent)
@@ -714,13 +808,18 @@ class WikiDetailView(QWidget):
             f"  font-size: 13px;"
             f"  border: 1px solid {BORDER};"
             f"  border-radius: 8px;"
-            f"  padding: 16px;"
+            f"  padding: 8px 12px;"
             f"}}"
             f"QTextBrowser a {{ color: {ACCENT}; }}"
         )
         self._description_browser.setVerticalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff
         )
+        self._description_browser.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+        )
+        # Prevent mouse-wheel scrolling inside the description
+        self._description_browser.viewport().installEventFilter(self)
         self._description_browser.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum
         )
@@ -786,14 +885,60 @@ class WikiDetailView(QWidget):
         )
         return lbl
 
+    def set_edit_url(self, url: str):
+        """Add an edit icon button to the header row, positioned before Tier1."""
+        import webbrowser
+        from PyQt6.QtGui import QIcon
+        from PyQt6.QtSvg import QSvgRenderer
+        from PyQt6.QtCore import QByteArray
+
+        _EDIT_SVG = (
+            b'<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"'
+            b' viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2"'
+            b' stroke-linecap="round" stroke-linejoin="round">'
+            b'<path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>'
+            b'<path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>'
+            b'</svg>'
+        )
+
+        renderer = QSvgRenderer(QByteArray(_EDIT_SVG))
+        pixmap = QPixmap(20, 20)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(pixmap)
+        renderer.render(painter)
+        painter.end()
+
+        btn = QPushButton()
+        btn.setIcon(QIcon(pixmap))
+        btn.setFixedSize(32, 32)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setToolTip("Edit on website")
+        btn.setStyleSheet(
+            f"QPushButton {{ background-color: {SECONDARY}; border: 1px solid {BORDER};"
+            f" border-radius: 4px; padding: 4px; }}"
+            f"QPushButton:hover {{ background-color: {HOVER}; }}"
+        )
+        btn.clicked.connect(lambda: webbrowser.open(url))
+
+        # Insert after the stretch spacer, before any Tier1 sections
+        insert_idx = self._header_row.count()
+        for i in range(self._header_row.count()):
+            item = self._header_row.itemAt(i)
+            if item and item.spacerItem():
+                insert_idx = i + 1
+                break
+        self._header_row.insertWidget(insert_idx, btn, 0, Qt.AlignmentFlag.AlignTop)
+
     # --- Section helpers ---
 
     def _add_section(self, section: InfoboxSection):
         """Add section: tier1 goes in header row (right), others in sections row."""
         if section._tier1:
-            section.setFixedWidth(self.TIER1_WIDTH)
+            section.setMinimumWidth(self.TIER1_WIDTH)
+            section.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Preferred)
             self._header_row.addWidget(section, 0, Qt.AlignmentFlag.AlignTop)
         else:
+            section.setMaximumWidth(self.SECTION_MAX_WIDTH)
             self._sections_row.addWidget(section, 1, Qt.AlignmentFlag.AlignTop)
 
     def _add_infobox_stretch(self):
@@ -818,10 +963,17 @@ class WikiDetailView(QWidget):
         self._description_browser.setHtml(
             f'<div style="color: {TEXT}; font-size: 13px;">{stripped}</div>'
         )
-        # Auto-size height to content
+        # Size exactly to content — no wasted space
         doc = self._description_browser.document()
         doc.setTextWidth(self._description_browser.viewport().width())
-        self._description_browser.setMinimumHeight(int(doc.size().height()) + 8)
+        # +20 accounts for QSS padding (8px top + 8px bottom) and border (1px + 1px)
+        self._description_browser.setFixedHeight(int(doc.size().height()) + 20)
+
+    def eventFilter(self, obj, event):
+        """Block wheel events on the description browser viewport."""
+        if obj is self._description_browser.viewport() and event.type() == QEvent.Type.Wheel:
+            return True  # consumed — don't scroll
+        return super().eventFilter(obj, event)
 
     def _add_article_section(self, section: QWidget):
         """Add a widget to the bottom of the main layout."""

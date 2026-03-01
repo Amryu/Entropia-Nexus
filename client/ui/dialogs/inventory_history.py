@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
@@ -30,6 +30,18 @@ _CLR_ADDED = "#48b868"
 _CLR_CHANGED = "#d4a030"
 _CLR_REMOVED = "#e06060"
 
+# Time span filters: (label, timedelta or None for "all time")
+_TIME_FILTERS: list[tuple[str, timedelta | None]] = [
+    ("24h", timedelta(hours=24)),
+    ("7d", timedelta(days=7)),
+    ("30d", timedelta(days=30)),
+    ("90d", timedelta(days=90)),
+    ("1y", timedelta(days=365)),
+    ("5y", timedelta(days=5 * 365)),
+    ("10y", timedelta(days=10 * 365)),
+    ("All", None),
+]
+
 
 # ---------------------------------------------------------------------------
 # Background workers
@@ -39,19 +51,22 @@ class _HistoryLoader(QThread):
     """Load import history and value history in parallel."""
     finished = pyqtSignal(object, object, str)  # imports, value_history, error
 
-    def __init__(self, nexus_client, limit: int, offset: int, load_value: bool = True):
+    def __init__(self, nexus_client, limit: int, offset: int,
+                 load_value: bool = True, since: str | None = None):
         super().__init__()
         self._nc = nexus_client
         self._limit = limit
         self._offset = offset
         self._load_value = load_value
+        self._since = since
 
     def run(self):
         try:
-            imports = self._nc.get_import_history(self._limit, self._offset)
+            imports = self._nc.get_import_history(
+                self._limit, self._offset, since=self._since)
             value_history = None
             if self._load_value:
-                value_history = self._nc.get_value_history()
+                value_history = self._nc.get_value_history(since=self._since)
             if imports is None:
                 self.finished.emit(None, None, "Failed to load history.")
             else:
@@ -378,6 +393,7 @@ class _ImportRow(QWidget):
         self._delta_tree.setHeaderLabels(["Status", "Item", "Old Qty", "New Qty", "Container"])
         self._delta_tree.setRootIsDecorated(False)
         self._delta_tree.setAlternatingRowColors(True)
+        self._delta_tree.setMinimumHeight(120)
         self._delta_tree.setMaximumHeight(250)
         self._delta_tree.setStyleSheet(f"""
             QTreeWidget {{
@@ -484,6 +500,8 @@ class InventoryHistoryDialog(QDialog):
         self._imports: list[dict] = []
         self._import_rows: list[_ImportRow] = []
         self._has_more = False
+        self._active_filter: int = len(_TIME_FILTERS) - 1  # default "All"
+        self._filter_btns: list[QPushButton] = []
 
         self.setWindowTitle("Import History")
         self.setMinimumSize(600, 450)
@@ -513,6 +531,21 @@ class InventoryHistoryDialog(QDialog):
         self._chart = _ValueChart()
         self._chart.hide()
         outer.addWidget(self._chart)
+
+        # Time filter row
+        filter_row = QHBoxLayout()
+        filter_row.setSpacing(4)
+        filter_row.setContentsMargins(0, 0, 0, 0)
+        for idx, (label, _td) in enumerate(_TIME_FILTERS):
+            btn = QPushButton(label)
+            btn.setFixedHeight(26)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(lambda _=False, i=idx: self._on_filter_clicked(i))
+            self._filter_btns.append(btn)
+            filter_row.addWidget(btn)
+        filter_row.addStretch()
+        self._update_filter_styles()
+        outer.addLayout(filter_row)
 
         # Scroll area for imports
         scroll = QScrollArea()
@@ -558,10 +591,19 @@ class InventoryHistoryDialog(QDialog):
         self._load_more_btn.hide()
         outer.addWidget(self._load_more_btn, 0, Qt.AlignmentFlag.AlignCenter)
 
+    def _get_since_iso(self) -> str | None:
+        """Return ISO date string for the active filter, or None for all time."""
+        _label, td = _TIME_FILTERS[self._active_filter]
+        if td is None:
+            return None
+        return (datetime.now(timezone.utc) - td).isoformat()
+
     def _load_initial(self):
         self._status.setText("Loading...")
         self._status.show()
-        self._loader = _HistoryLoader(self._nc, PAGE_SIZE, 0, load_value=True)
+        self._loader = _HistoryLoader(
+            self._nc, PAGE_SIZE, 0, load_value=True,
+            since=self._get_since_iso())
         self._loader.finished.connect(self._on_initial_loaded)
         self._loader.start()
 
@@ -605,7 +647,9 @@ class InventoryHistoryDialog(QDialog):
         self._load_more_btn.setEnabled(False)
         self._load_more_btn.setText("Loading...")
         offset = len(self._imports)
-        self._loader = _HistoryLoader(self._nc, PAGE_SIZE, offset, load_value=False)
+        self._loader = _HistoryLoader(
+            self._nc, PAGE_SIZE, offset, load_value=False,
+            since=self._get_since_iso())
         self._loader.finished.connect(self._on_more_loaded)
         self._loader.start()
 
@@ -628,6 +672,48 @@ class InventoryHistoryDialog(QDialog):
 
         if not self._has_more:
             self._load_more_btn.hide()
+
+    def _on_filter_clicked(self, idx: int):
+        if idx == self._active_filter:
+            return
+        self._active_filter = idx
+        self._update_filter_styles()
+        self._clear_imports()
+        self._load_initial()
+
+    def _update_filter_styles(self):
+        for i, btn in enumerate(self._filter_btns):
+            if i == self._active_filter:
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: {ACCENT}; color: white;
+                        border: none; border-radius: 4px;
+                        padding: 2px 10px; font-size: 12px; font-weight: 600;
+                    }}
+                """)
+            else:
+                btn.setStyleSheet(f"""
+                    QPushButton {{
+                        background-color: transparent; color: {TEXT_MUTED};
+                        border: 1px solid {BORDER}; border-radius: 4px;
+                        padding: 2px 10px; font-size: 12px;
+                    }}
+                    QPushButton:hover {{
+                        background-color: {HOVER}; color: {TEXT};
+                    }}
+                """)
+
+    def _clear_imports(self):
+        """Remove all current import rows from the scroll area."""
+        for row in self._import_rows:
+            row.cleanup()
+            row.setParent(None)
+            row.deleteLater()
+        self._import_rows.clear()
+        self._imports.clear()
+        self._has_more = False
+        self._load_more_btn.hide()
+        self._chart.hide()
 
     def closeEvent(self, event):
         if self._loader and self._loader.isRunning():

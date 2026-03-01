@@ -2,7 +2,8 @@
 
 import re
 import webbrowser
-from datetime import datetime, timezone
+from collections import deque
+from datetime import datetime, timedelta, timezone
 from html import escape as _esc
 from urllib.parse import quote
 
@@ -12,14 +13,14 @@ from PyQt6.QtWidgets import (
     QPushButton,
 )
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QTimer, QUrl, QRect, QPointF
-from PyQt6.QtGui import QColor, QCursor, QPainter, QPixmap, QPolygonF, QTextDocument
+from PyQt6.QtGui import QColor, QCursor, QFontMetrics, QPainter, QPixmap, QPolygonF, QTextDocument
 from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 
 from ..theme import (
     TEXT, TEXT_MUTED, ACCENT, BORDER, HOVER, SECONDARY, PRIMARY,
     WARNING, SUCCESS, MAIN_DARK,
 )
-from ...chat_parser.models import GlobalType
+from ...chat_parser.models import GlobalEvent, GlobalType, TradeChatMessage
 
 
 NEWS_REFRESH_INTERVAL_MS = 60 * 1000  # 1 minute
@@ -80,6 +81,25 @@ _WAYPOINT_RE = re.compile(r'^(.+),\s*(\d+),\s*(\d+),\s*(\d+),\s*Waypoint$')
 _GENDER_TAG_RE = re.compile(r'\s*\(([MF])(?:,([^)]+))?\)\s*$')
 
 _LINK_STYLE = f'color:{ACCENT};text-decoration:underline'
+
+
+def _elide(text: str, max_chars: int) -> str:
+    """Truncate *text* to at most *max_chars*, adding '…' if shortened."""
+    if len(text) <= max_chars:
+        return text
+    return text[: max_chars - 1] + "\u2026"
+
+
+def _elide_px(text: str, max_px: int, fm: QFontMetrics) -> str:
+    """Truncate *text* so it fits within *max_px* pixels, adding '…'."""
+    if fm.horizontalAdvance(text) <= max_px:
+        return text
+    ellipsis = "\u2026"
+    ew = fm.horizontalAdvance(ellipsis)
+    for i in range(len(text) - 1, 0, -1):
+        if fm.horizontalAdvance(text[:i]) + ew <= max_px:
+            return text[:i] + ellipsis
+    return ellipsis
 
 # CSS for article HTML rendering (QTextBrowser supports CSS 2.1 subset)
 _ARTICLE_CSS = f"""
@@ -398,6 +418,41 @@ class _ItemLookupLoader(QThread):
             if name and item_type:
                 lookup[name] = item_type
         self.finished.emit(lookup)
+
+
+_TICKER_HISTORY_MINUTES = 5
+
+
+class _TickerHistoryLoader(QThread):
+    """Fetch recent globals and trade messages to pre-populate tickers."""
+
+    finished = pyqtSignal(dict)  # {"globals": [...], "trades": [...]}
+
+    def __init__(self, nexus_client):
+        super().__init__()
+        self._client = nexus_client
+
+    def run(self):
+        since = (
+            datetime.now(timezone.utc) - timedelta(minutes=_TICKER_HISTORY_MINUTES)
+        ).isoformat()
+        result: dict = {"globals": [], "trades": []}
+        # Globals — public endpoint, always available
+        try:
+            data = self._client.get_globals(since=since, limit=200)
+            if data and data.get("globals"):
+                result["globals"] = data["globals"]
+        except Exception:
+            pass
+        # Trades — requires auth
+        if self._client.is_authenticated():
+            try:
+                data = self._client.get_ingested_trades(since=since, limit=200)
+                if data and data.get("trades"):
+                    result["trades"] = data["trades"]
+            except Exception:
+                pass
+        self.finished.emit(result)
 
 
 # ---------------------------------------------------------------------------
@@ -739,6 +794,7 @@ class DashboardPage(QWidget):
         self._config = config
         self._live = False
         self._global_lines = 0
+        self._global_events: deque[GlobalEvent] = deque(maxlen=MAX_TICKER_LINES)
         self._trade_lines = 0
         self._fetcher = None
         self._article_fetcher = None
@@ -836,6 +892,14 @@ class DashboardPage(QWidget):
         # Initial fetches
         self._fetch_news()
         self._load_item_lookup()
+        self._ticker_loader = None
+        self._load_ticker_history()
+
+        # Debounce timer for re-rendering globals on resize
+        self._resize_timer = QTimer(self)
+        self._resize_timer.setSingleShot(True)
+        self._resize_timer.setInterval(100)
+        self._resize_timer.timeout.connect(self._rebuild_globals)
 
     # --- View switching ---
 
@@ -977,7 +1041,45 @@ class DashboardPage(QWidget):
     def _on_catchup_complete(self, _data):
         self._live = True
 
+    # --- Ticker history (pre-populate on startup) ---
+
+    def _load_ticker_history(self):
+        self._ticker_loader = _TickerHistoryLoader(self._nexus_client)
+        self._ticker_loader.finished.connect(self._on_ticker_history)
+        self._ticker_loader.start()
+
+    def _on_ticker_history(self, data: dict):
+        """Populate tickers with recent server data, oldest first."""
+        for g in sorted(data["globals"], key=lambda x: x.get("timestamp", "")):
+            try:
+                gt = GlobalType(g["type"])
+            except ValueError:
+                continue
+            self._on_global(GlobalEvent(
+                timestamp=datetime.fromisoformat(g["timestamp"]),
+                global_type=gt,
+                player_name=g.get("player", ""),
+                target_name=g.get("target", ""),
+                value=float(g.get("value", 0)),
+                value_unit=g.get("unit", "PED"),
+                is_hof=bool(g.get("hof")),
+                is_ath=bool(g.get("ath")),
+            ))
+
+        for t in sorted(data["trades"], key=lambda x: x.get("timestamp", "")):
+            self._render_trade(TradeChatMessage(
+                timestamp=datetime.fromisoformat(t["timestamp"]),
+                channel=t.get("channel", "Trade"),
+                username=t.get("username", ""),
+                message=t.get("message", ""),
+            ))
+
     def _on_global(self, data):
+        self._global_events.append(data)
+        self._render_global(data)
+
+    def _render_global(self, data):
+        """Render a single GlobalEvent into the globals ticker."""
         label, label_color = _GLOBAL_TYPE_LABELS.get(
             data.global_type, ("?", TEXT_MUTED)
         )
@@ -987,21 +1089,20 @@ class DashboardPage(QWidget):
         elif data.is_hof:
             badge = f'<b style="color:{ACCENT}">HoF</b>'
         _td = 'white-space:nowrap;padding:1px 4px'
-        fm = self._global_log.fontMetrics()
+        # Truncate using per-name pixel measurement so the ellipsis
+        # point is accurate regardless of character widths.
+        fm = QFontMetrics(self._global_log.document().defaultFont())
         vw = self._global_log.viewport().width()
-        player = _esc(fm.elidedText(
-            data.player_name, Qt.TextElideMode.ElideRight, int(vw * 0.30) - 8,
-        ))
-        target = _esc(fm.elidedText(
-            data.target_name, Qt.TextElideMode.ElideRight, int(vw * 0.32) - 8,
-        ))
+        pad = 8  # td padding (4px each side)
+        player = _esc(_elide_px(data.player_name, int(vw * 0.27 * 0.95) - pad, fm))
+        target = _esc(_elide_px(data.target_name, int(vw * 0.35 * 0.95) - pad, fm))
         html = (
             f'<table width="100%" cellpadding="0" cellspacing="0"'
             f' style="margin:0;table-layout:fixed">'
             f'<tr>'
             f'<td width="8%" style="{_td};color:{label_color}">{label}</td>'
-            f'<td width="30%" style="{_td}">{player}</td>'
-            f'<td width="32%" style="{_td};color:{TEXT_MUTED}">{target}</td>'
+            f'<td width="27%" style="{_td}">{player}</td>'
+            f'<td width="35%" style="{_td};color:{TEXT_MUTED}">{target}</td>'
             f'<td width="22%" style="{_td}" align="right">'
             f'{data.value:.2f} {_esc(data.value_unit)}</td>'
             f'<td width="8%" style="{_td}" align="right">{badge}</td>'
@@ -1011,9 +1112,24 @@ class DashboardPage(QWidget):
             self._global_log, html, self._global_lines
         )
 
+    def _rebuild_globals(self):
+        """Re-render all stored globals with current viewport width."""
+        self._global_log.clear()
+        self._global_lines = 0
+        for event in self._global_events:
+            self._render_global(event)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._resize_timer.start()
+
     def _on_trade_chat(self, data):
         if not self._live:
             return
+        self._render_trade(data)
+
+    def _render_trade(self, data):
+        """Render a single trade message into the trade ticker."""
         prefix = (
             f'<span style="color:{ACCENT}">'
             f'[{_esc(data.channel)}:{_esc(data.username)}]</span> '

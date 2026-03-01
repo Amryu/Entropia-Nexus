@@ -31,7 +31,6 @@ from ..theme import (
 # ── Constants ──────────────────────────────────────────────────────────────
 CARD_MIN_WIDTH = 180
 CARD_MAX_WIDTH = 260
-CARD_HEIGHT = 100
 
 # badge_type → level → (background, text_color, border_or_none)
 BADGE_STYLES = {
@@ -79,7 +78,6 @@ class SkillCard(QFrame):
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.setMinimumWidth(CARD_MIN_WIDTH)
         self.setMaximumWidth(CARD_MAX_WIDTH)
-        self.setFixedHeight(CARD_HEIGHT)
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.setToolTip("Click to see related professions. Double-click value to edit.")
         self.setStyleSheet(f"""
@@ -143,8 +141,6 @@ class SkillCard(QFrame):
         bar.setFixedHeight(6)
         layout.addWidget(bar)
 
-        layout.addStretch()
-
     @staticmethod
     def _badge_style(badge: Badge) -> str:
         """Build QSS for a badge label based on type and level."""
@@ -202,7 +198,7 @@ class SkillCard(QFrame):
 
 
 class ProfessionCard(QFrame):
-    """Compact profession card for grid view."""
+    """Compact profession card for grid view — matches SkillCard layout."""
 
     clicked = pyqtSignal(str)
 
@@ -211,38 +207,58 @@ class ProfessionCard(QFrame):
         super().__init__(parent)
         self._prof_name = prof_name
 
-        self.setFrameShape(QFrame.Shape.StyledPanel)
+        self.setFrameShape(QFrame.Shape.NoFrame)
         self.setMinimumWidth(CARD_MIN_WIDTH)
         self.setMaximumWidth(CARD_MAX_WIDTH)
-        self.setFixedHeight(70)
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.setToolTip("Click to see contributing skills.")
+        self.setStyleSheet(f"""
+            ProfessionCard {{
+                background-color: {SECONDARY};
+                border: 1px solid {BORDER};
+                border-radius: 8px;
+            }}
+            ProfessionCard:hover {{
+                border-color: {BORDER_HOVER};
+            }}
+        """)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(6, 4, 6, 4)
         layout.setSpacing(2)
 
+        # Row 1: Name
         name_label = QLabel(prof_name)
-        name_label.setStyleSheet("font-weight: bold; font-size: 11px;")
+        name_label.setStyleSheet(
+            "font-weight: bold; font-size: 11px; background: transparent; border: none;"
+        )
         name_label.setWordWrap(True)
         layout.addWidget(name_label)
 
+        # Row 2: "Level N" (left) + level value (right)
         info_row = QHBoxLayout()
-        level_label = QLabel(f"Level {level:.4f}")
-        level_label.setStyleSheet("font-size: 10px;")
-        info_row.addWidget(level_label)
+        info_row.setSpacing(4)
+        level_int = int(level)
+        rank_label = QLabel(f"Level {level_int}")
+        rank_label.setStyleSheet(
+            f"font-size: 10px; color: {TEXT_MUTED}; background: transparent; border: none;"
+        )
+        info_row.addWidget(rank_label)
         info_row.addStretch()
-        count_label = QLabel(f"{skill_count} skills")
-        count_label.setStyleSheet("font-size: 10px; color: #aaa;")
-        info_row.addWidget(count_label)
+        level_label = QLabel(f"{level:.4f}")
+        level_label.setStyleSheet(
+            "font-size: 10px; background: transparent; border: none;"
+        )
+        info_row.addWidget(level_label)
         layout.addLayout(info_row)
 
-        if category:
-            cat_label = QLabel(category)
-            cat_label.setStyleSheet("font-size: 9px; color: #888;")
-            layout.addWidget(cat_label)
-
-        layout.addStretch()
+        # Row 3: Progress bar (fractional part of level)
+        bar = QProgressBar()
+        bar.setMaximum(1000)
+        bar.setValue(int((level - level_int) * 1000))
+        bar.setTextVisible(False)
+        bar.setFixedHeight(6)
+        layout.addWidget(bar)
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -340,6 +356,10 @@ class SkillsPage(QWidget):
         self._skills_grid_container = QWidget()
         self._skills_grid_layout = QGridLayout(self._skills_grid_container)
         self._skills_grid_layout.setSpacing(6)
+        self._skills_loading_label = QLabel("Loading...")
+        self._skills_loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._skills_loading_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 13px;")
+        self._skills_grid_layout.addWidget(self._skills_loading_label, 0, 0)
         self._skills_scroll.setWidget(self._skills_grid_container)
         layout.addWidget(self._skills_scroll)
 
@@ -398,6 +418,10 @@ class SkillsPage(QWidget):
         self._prof_grid_container = QWidget()
         self._prof_grid_layout = QGridLayout(self._prof_grid_container)
         self._prof_grid_layout.setSpacing(6)
+        self._prof_loading_label = QLabel("Loading...")
+        self._prof_loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._prof_loading_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 13px;")
+        self._prof_grid_layout.addWidget(self._prof_loading_label, 0, 0)
         self._prof_scroll.setWidget(self._prof_grid_container)
         layout.addWidget(self._prof_scroll)
 
@@ -1004,6 +1028,10 @@ class SkillsPage(QWidget):
             if item.widget():
                 item.widget().deleteLater()
 
+        self._prof_grid_layout.setAlignment(
+            Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
+        )
+
         if not profs:
             lbl = QLabel("No professions to display.")
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1013,17 +1041,45 @@ class SkillsPage(QWidget):
         available = self._prof_scroll.viewport().width() - 20
         cols = max(1, available // (CARD_MIN_WIDTH + 6))
 
-        for i, prof in enumerate(profs):
+        sort_by_category = self._prof_sort.currentIndex() == 0
+        current_category = None
+        grid_row = 0
+        col_idx = 0
+
+        for prof in profs:
+            # Insert category header when category changes
+            if sort_by_category:
+                cat = prof.get("Category") or "Uncategorized"
+                if cat != current_category:
+                    current_category = cat
+                    if col_idx > 0:
+                        grid_row += 1
+                        col_idx = 0
+                    header = QLabel(cat)
+                    header.setStyleSheet(
+                        f"font-weight: bold; font-size: 13px; color: {TEXT_MUTED}; "
+                        f"border-bottom: 1px solid {BORDER}; padding: 6px 0 2px 0; "
+                        f"background: transparent;"
+                    )
+                    self._prof_grid_layout.addWidget(
+                        header, grid_row, 0, 1, cols,
+                    )
+                    grid_row += 1
+
             card = ProfessionCard(
                 prof["Name"],
                 prof["_level"],
                 len(prof.get("Skills", [])),
-                prof.get("Category") or "",
             )
             card.clicked.connect(self._on_prof_card_clicked)
-            row = i // cols
-            col = i % cols
-            self._prof_grid_layout.addWidget(card, row, col)
+            self._prof_grid_layout.addWidget(
+                card, grid_row, col_idx,
+                alignment=Qt.AlignmentFlag.AlignTop,
+            )
+            col_idx += 1
+            if col_idx >= cols:
+                col_idx = 0
+                grid_row += 1
 
     def _populate_prof_table(self, profs: list[dict]):
         self._prof_table.setRowCount(len(profs))

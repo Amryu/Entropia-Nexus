@@ -42,7 +42,11 @@ class AppConfig:
     # Overlay
     hunt_overlay_position: tuple[int, int] = (50, 50)
     progress_overlay_position: tuple[int, int] = (50, 50)
+    search_overlay_position: tuple[int, int] = (50, 50)
+    detail_overlay_position: tuple[int, int] = (400, 50)
     overlay_opacity: float = 0.85
+    overlay_enabled: bool = True
+    auto_pin_detail_overlay: bool = False
 
     # Auth
     nexus_base_url: str = "https://entropianexus.com"
@@ -79,6 +83,9 @@ class AppConfig:
     # Wiki
     wiki_column_prefs: dict = field(default_factory=dict)
 
+    # Inventory
+    inventory_prefs: dict = field(default_factory=dict)
+
     # Loadout JS bridge
     js_utils_path: str = ""
 
@@ -114,7 +121,11 @@ DEFAULTS = {
     "tool_name_region": None,
     "hunt_overlay_position": [50, 50],
     "progress_overlay_position": [50, 50],
+    "search_overlay_position": [50, 50],
+    "detail_overlay_position": [400, 50],
     "overlay_opacity": 0.85,
+    "overlay_enabled": True,
+    "auto_pin_detail_overlay": False,
     "nexus_base_url": "https://entropianexus.com",
     "api_base_url": "https://api.entropianexus.com",
     "oauth_client_id": "",
@@ -134,6 +145,7 @@ DEFAULTS = {
     "main_window_screen_center": None,
     "active_loadout_id": None,
     "wiki_column_prefs": {},
+    "inventory_prefs": {},
     "js_utils_path": "",
     "check_for_updates": True,
     "notification_sound_enabled": True,
@@ -150,14 +162,43 @@ DEFAULTS = {
 }
 
 
+def _try_load_json(path: str) -> dict | None:
+    """Try to load a JSON file, returning None on any failure."""
+    try:
+        with open(path, "r") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            return data
+        log.warning("Config file %s is not a JSON object", path)
+        return None
+    except (json.JSONDecodeError, OSError) as e:
+        log.warning("Failed to read %s: %s", path, e)
+        return None
+
+
 def load_config(config_path: str = "config.json") -> AppConfig:
     """Load config from JSON file, merging with defaults."""
     merged = dict(DEFAULTS)
     user_config = {}
 
+    backup_path = config_path + ".bak"
+
     if os.path.exists(config_path):
-        with open(config_path, "r") as f:
-            user_config = json.load(f)
+        user_config = _try_load_json(config_path)
+
+        if user_config is None and os.path.exists(backup_path):
+            log.warning("Config corrupted, restoring from backup")
+            user_config = _try_load_json(backup_path)
+            if user_config is not None:
+                try:
+                    shutil.copy2(backup_path, config_path)
+                except OSError as e:
+                    log.error("Failed to restore backup: %s", e)
+
+        if user_config is None:
+            log.error("Config and backup both unreadable, using defaults")
+            user_config = {}
+
         merged.update(user_config)
 
     # Migrate legacy overlay_position → per-overlay keys
@@ -171,6 +212,7 @@ def load_config(config_path: str = "config.json") -> AppConfig:
     # Convert list fields to tuples
     for key in (
         "hunt_overlay_position", "progress_overlay_position",
+        "search_overlay_position", "detail_overlay_position",
         "mob_name_region", "tool_name_region",
     ):
         val = merged.get(key)
@@ -195,17 +237,36 @@ def load_config(config_path: str = "config.json") -> AppConfig:
 
 
 def save_config(config: AppConfig, config_path: str = "config.json") -> None:
-    """Save current config to JSON file."""
+    """Save current config to JSON file (atomic write with backup)."""
     data = {}
     for key, default_val in DEFAULTS.items():
         val = getattr(config, key, default_val)
-        # Convert tuples to lists for JSON
         if isinstance(val, tuple):
             val = list(val)
         data[key] = val
 
-    with open(config_path, "w") as f:
-        json.dump(data, f, indent=2)
+    tmp_path = config_path + ".tmp"
+    backup_path = config_path + ".bak"
+
+    try:
+        # Backup current config (if it exists and has content)
+        if os.path.isfile(config_path) and os.path.getsize(config_path) > 0:
+            shutil.copy2(config_path, backup_path)
+
+        # Write to temp file, then atomic rename
+        with open(tmp_path, "w") as f:
+            json.dump(data, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+
+        os.replace(tmp_path, config_path)
+    except Exception as e:
+        log.error("Failed to save config: %s", e)
+        try:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except OSError:
+            pass
 
 
 def _find_tesseract() -> str | None:

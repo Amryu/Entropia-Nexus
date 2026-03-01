@@ -68,7 +68,7 @@ class ColumnConfigDialog(QDialog):
         right_label.setStyleSheet(f"color: {TEXT}; font-weight: bold; font-size: 12px;")
         right_col.addWidget(right_label)
 
-        hint = QLabel(f"First {CONDENSED_COLUMN_COUNT} columns are shown in condensed view.")
+        hint = QLabel(f"First {CONDENSED_COLUMN_COUNT} columns are shown when the window is narrow.")
         hint.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
         right_col.addWidget(hint)
 

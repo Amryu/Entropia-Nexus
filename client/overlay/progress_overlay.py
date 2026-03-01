@@ -1,9 +1,13 @@
 """OCR scan progress overlay — Qt-based, always-on-top, draggable, position persisted."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 from PyQt6.QtWidgets import QVBoxLayout, QHBoxLayout, QLabel
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 
-from .base_overlay import BaseOverlay
+from .overlay_widget import OverlayWidget
 from ..core.event_bus import EventBus
 from ..core.constants import (
     EVENT_OCR_PROGRESS, EVENT_OCR_COMPLETE,
@@ -11,6 +15,9 @@ from ..core.constants import (
     EVENT_DEBUG_REGIONS,
 )
 from ..ocr.models import ScanProgress, SkillScanResult
+
+if TYPE_CHECKING:
+    from .overlay_manager import OverlayManager
 
 
 AUTO_HIDE_DELAY_MS = 5000
@@ -20,7 +27,7 @@ FG_COLOR = "#e0e0e0"
 DIM_COLOR = "#888888"
 
 
-class ProgressOverlay(BaseOverlay):
+class ProgressOverlay(OverlayWidget):
     """Small always-on-top overlay that shows OCR scan progress.
 
     Displays:
@@ -39,11 +46,19 @@ class ProgressOverlay(BaseOverlay):
     _show_signal = pyqtSignal()
     _regions_signal = pyqtSignal(object)
 
-    def __init__(self, *, config, config_path: str, event_bus: EventBus):
+    def __init__(
+        self,
+        *,
+        config,
+        config_path: str,
+        event_bus: EventBus,
+        manager: OverlayManager | None = None,
+    ):
         super().__init__(
             config=config,
             config_path=config_path,
             position_key="progress_overlay_position",
+            manager=manager,
         )
         self._event_bus = event_bus
         self._was_visible_before_hide = False
@@ -151,7 +166,7 @@ class ProgressOverlay(BaseOverlay):
     def _update_progress(self, progress: ScanProgress):
         """Update UI with current progress."""
         if not self.isVisible():
-            self.show()
+            self.set_wants_visible(True)
 
         # Cancel any pending auto-hide
         if self._hide_timer is not None:
@@ -185,7 +200,7 @@ class ProgressOverlay(BaseOverlay):
         # Auto-hide after delay
         self._hide_timer = QTimer(self)
         self._hide_timer.setSingleShot(True)
-        self._hide_timer.timeout.connect(self.hide)
+        self._hide_timer.timeout.connect(lambda: self.set_wants_visible(False))
         self._hide_timer.start(AUTO_HIDE_DELAY_MS)
 
     def _do_hide_for_capture(self, done_callback):
