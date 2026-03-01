@@ -1,12 +1,14 @@
-const { getObjects, getObjectByIdOrName } = require('./utils');
+const { pool } = require('./dbClient');
+const { getObjectByIdOrName, loadClassIds } = require('./utils');
 const { idOffsets } = require('./constants');
 const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = { Signs: 'SELECT * FROM ONLY "Signs"' };
 
-function formatSign(x){
+function formatSign(x, classIds){
   return {
     Id: x.Id,
+    ClassId: classIds[x.Id] || null,
     ItemId: x.Id + idOffsets.Signs,
     Name: x.Name,
     Properties: {
@@ -27,8 +29,12 @@ function formatSign(x){
   };
 }
 
-const getSigns = () => getObjects(queries.Signs, formatSign);
-const getSign = async(idOrName) => { const row = await getObjectByIdOrName(queries.Signs,'Signs',idOrName); return row ? formatSign(row) : null; };
+async function getSigns() {
+  const { rows } = await pool.query(queries.Signs);
+  const classIds = await loadClassIds('Sign', rows.map(r => r.Id));
+  return rows.map(r => formatSign(r, classIds));
+}
+const getSign = async(idOrName) => { const row = await getObjectByIdOrName(queries.Signs,'Signs',idOrName); if (!row) return null; const classIds = await loadClassIds('Sign', [row.Id]); return formatSign(row, classIds); };
 
 function register(app){
   /**
@@ -40,7 +46,7 @@ function register(app){
    *      '200':
    *        description: A list of signs
    */
-  app.get('/signs', async (req,res)=>{ res.json(await withCache('/signs', ['Signs'], getSigns)); });
+  app.get('/signs', async (req,res)=>{ res.json(await withCache('/signs', ['Signs', 'ClassIds'], getSigns)); });
   /**
    * @swagger
    * /signs/{sign}:
@@ -59,7 +65,7 @@ function register(app){
    *      '404':
    *        description: Sign not found
    */
-  app.get('/signs/:sign', async (req,res)=>{ const r = await withCachedLookup('/signs', ['Signs'], getSigns, req.params.sign); if(r) res.json(r); else res.status(404).send(); });
+  app.get('/signs/:sign', async (req,res)=>{ const r = await withCachedLookup('/signs', ['Signs', 'ClassIds'], getSigns, req.params.sign); if(r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getSigns, getSign, formatSign };

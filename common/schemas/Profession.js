@@ -6,6 +6,10 @@ export const Profession = {
     "Id": {
       "type": ["integer", "null"]
     },
+    "ClassId": {
+      "type": ["string", "null"],
+      "default": null
+    },
     "Name": {
       "type": "string"
     },

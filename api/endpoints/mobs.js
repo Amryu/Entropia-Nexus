@@ -1,5 +1,5 @@
 const { pool } = require('./dbClient');
-const { getObjectByIdOrName } = require('./utils');
+const { getObjectByIdOrName, loadClassIds } = require('./utils');
 const { getMobLoots, formatMobLoot } = require('./mobloots');
 const { getMobMaturities, formatMobMaturity } = require('./mobmaturities');
 const { getMobSpawns } = require('./mobspawns');
@@ -42,12 +42,13 @@ function getScanningProfessionFromType(type) {
   return null; // Unknown types do not map to a scanning profession
 }
 
-function formatMob(m, rel){
+function formatMob(m, rel, classIds){
   const scanningName = getScanningProfessionFromType(m.Type);
   const investigators = investigatorCache || {};
   const investigator = scanningName ? investigators[scanningName] : null;
   return {
     Id: m.Id,
+    ClassId: classIds[m.Id] || null,
     Name: m.Name,
     Type: m.Type ?? null,
     Properties: {
@@ -96,8 +97,8 @@ function formatMob(m, rel){
   };
 }
 
-async function getMobs(){ await ensureInvestigatorCache(); const { rows } = await pool.query(baseQuery); const rel = await loadRelated(rows); return rows.map(r=>formatMob(r,rel)); }
-async function getMob(idOrName){ await ensureInvestigatorCache(); const row = await getObjectByIdOrName(baseQuery,'Mobs',idOrName); if(!row) return null; const rel = await loadRelated([row]); return formatMob(row,rel); }
+async function getMobs(){ await ensureInvestigatorCache(); const { rows } = await pool.query(baseQuery); const [rel, classIds] = await Promise.all([loadRelated(rows), loadClassIds('Mob', rows.map(r=>r.Id))]); return rows.map(r=>formatMob(r,rel,classIds)); }
+async function getMob(idOrName){ await ensureInvestigatorCache(); const row = await getObjectByIdOrName(baseQuery,'Mobs',idOrName); if(!row) return null; const [rel, classIds] = await Promise.all([loadRelated([row]), loadClassIds('Mob', [row.Id])]); return formatMob(row,rel,classIds); }
 function register(app){
   /**
    * @swagger
@@ -111,7 +112,7 @@ function register(app){
   app.get('/mobs', async (req,res)=>{
     try {
       if (res.headersSent || res.writableEnded) return;
-      const data = await withCache('/mobs', ['Mobs', 'MobSpecies', 'Planets', 'Professions', 'MobLoots', 'MobMaturities', 'MobSpawns', ...ITEM_TABLES], getMobs);
+      const data = await withCache('/mobs', ['Mobs', 'MobSpecies', 'Planets', 'Professions', 'MobLoots', 'MobMaturities', 'MobSpawns', 'ClassIds', ...ITEM_TABLES], getMobs);
       if (!res.headersSent) res.json(data);
     } catch (e) {
       if (!res.headersSent) res.status(500).json({ error: 'Failed to fetch mobs' });
@@ -137,7 +138,7 @@ function register(app){
   app.get('/mobs/:mob', async (req,res)=>{
     try {
       if (res.headersSent || res.writableEnded) return;
-      const r = await withCachedLookup('/mobs', ['Mobs', 'MobSpecies', 'Planets', 'Professions', 'MobLoots', 'MobMaturities', 'MobSpawns', ...ITEM_TABLES], getMobs, req.params.mob);
+      const r = await withCachedLookup('/mobs', ['Mobs', 'MobSpecies', 'Planets', 'Professions', 'MobLoots', 'MobMaturities', 'MobSpawns', 'ClassIds', ...ITEM_TABLES], getMobs, req.params.mob);
       if (r) {
         if (!res.headersSent) res.json(r);
       } else {

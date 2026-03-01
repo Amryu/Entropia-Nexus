@@ -1,12 +1,14 @@
-const { getObjects, getObjectByIdOrName } = require('./utils');
+const { pool } = require('./dbClient');
+const { getObjectByIdOrName, loadClassIds } = require('./utils');
 const { idOffsets } = require('./constants');
 const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = { MiscTools: 'SELECT "MiscTools".*, "Professions"."Name" AS "Profession" FROM ONLY "MiscTools" LEFT JOIN ONLY "Professions" ON "MiscTools"."ProfessionId" = "Professions"."Id"' };
 
-function formatMiscTool(x){
+function formatMiscTool(x, classIds){
   return {
     Id: x.Id,
+    ClassId: classIds[x.Id] || null,
     ItemId: x.Id + idOffsets.MiscTools,
     Name: x.Name,
     Properties: {
@@ -32,8 +34,12 @@ function formatMiscTool(x){
   };
 }
 
-const getMiscTools = () => getObjects(queries.MiscTools, formatMiscTool);
-const getMiscTool = async(idOrName) => { const row = await getObjectByIdOrName(queries.MiscTools,'MiscTools',idOrName); return row ? formatMiscTool(row) : null; };
+async function getMiscTools() {
+  const { rows } = await pool.query(queries.MiscTools);
+  const classIds = await loadClassIds('MiscTool', rows.map(r => r.Id));
+  return rows.map(r => formatMiscTool(r, classIds));
+}
+const getMiscTool = async(idOrName) => { const row = await getObjectByIdOrName(queries.MiscTools,'MiscTools',idOrName); if (!row) return null; const classIds = await loadClassIds('MiscTool', [row.Id]); return formatMiscTool(row, classIds); };
 
 function register(app){
   /**
@@ -45,7 +51,7 @@ function register(app){
    *      '200':
    *        description: A list of misc. tools
    */
-  app.get('/misctools', async (req,res)=>{ res.json(await withCache('/misctools', ['MiscTools'], getMiscTools)); });
+  app.get('/misctools', async (req,res)=>{ res.json(await withCache('/misctools', ['MiscTools', 'ClassIds'], getMiscTools)); });
   /**
    * @swagger
    * /misctools/{miscTool}:
@@ -64,7 +70,7 @@ function register(app){
    *      '404':
    *        description: Misc. tool not found
    */
-  app.get('/misctools/:miscTool', async (req,res)=>{ const r = await withCachedLookup('/misctools', ['MiscTools'], getMiscTools, req.params.miscTool); if(r) res.json(r); else res.status(404).send(); });
+  app.get('/misctools/:miscTool', async (req,res)=>{ const r = await withCachedLookup('/misctools', ['MiscTools', 'ClassIds'], getMiscTools, req.params.miscTool); if(r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getMiscTools, getMiscTool, formatMiscTool };

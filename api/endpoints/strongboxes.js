@@ -1,4 +1,4 @@
-const { getObjects, getObjectByIdOrName } = require('./utils');
+const { getObjectByIdOrName, loadClassIds } = require('./utils');
 const { idOffsets } = require('./constants');
 const { pool } = require('./dbClient');
 const { withCache, withCachedLookup } = require('./responseCache');
@@ -16,6 +16,7 @@ function formatStrongbox(x,data){
   const loots = (data.Loots[x.Id]||[]).map(formatLoot);
   return {
     Id: x.Id,
+    ClassId: data.ClassIds[x.Id] || null,
     ItemId: x.Id + idOffsets.Strongboxes,
     Name: x.Name,
     Properties: { Description: x.Description },
@@ -23,8 +24,8 @@ function formatStrongbox(x,data){
     Links: { "$Url": `/strongboxes/${x.Id}` },
   };
 }
-async function getStrongboxes(){ return getObjects(queries.Strongboxes,x=>x).then(async rows=>{ const data = await getLoots(rows.map(r=>r.Id)); return rows.map(r=>formatStrongbox(r,data)); }); }
-async function getStrongbox(idOrName){ const row = await getObjectByIdOrName(queries.Strongboxes,'Strongboxes',idOrName); if(!row) return null; const data = await getLoots([row.Id]); return formatStrongbox(row,data); }
+async function getStrongboxes(){ const { rows } = await pool.query(queries.Strongboxes); const [loots, classIds] = await Promise.all([getLoots(rows.map(r=>r.Id)), loadClassIds('Strongbox', rows.map(r=>r.Id))]); const data = { ...loots, ClassIds: classIds }; return rows.map(r=>formatStrongbox(r,data)); }
+async function getStrongbox(idOrName){ const row = await getObjectByIdOrName(queries.Strongboxes,'Strongboxes',idOrName); if(!row) return null; const [loots, classIds] = await Promise.all([getLoots([row.Id]), loadClassIds('Strongbox', [row.Id])]); const data = { ...loots, ClassIds: classIds }; return formatStrongbox(row,data); }
 function register(app){
   /**
    * @swagger
@@ -35,7 +36,7 @@ function register(app){
    *      '200':
    *        description: A list of strongboxes
    */
-  app.get('/strongboxes', async (req,res)=>{ res.json(await withCache('/strongboxes', ['Strongboxes'], getStrongboxes)); });
+  app.get('/strongboxes', async (req,res)=>{ res.json(await withCache('/strongboxes', ['Strongboxes', 'ClassIds'], getStrongboxes)); });
   /**
    * @swagger
    * /strongboxes/{strongbox}:
@@ -54,6 +55,6 @@ function register(app){
    *      '404':
    *        description: Strongbox not found
    */
-  app.get('/strongboxes/:strongbox', async (req,res)=>{ const r = await withCachedLookup('/strongboxes', ['Strongboxes'], getStrongboxes, req.params.strongbox); if(r) res.json(r); else res.status(404).send(); });
+  app.get('/strongboxes/:strongbox', async (req,res)=>{ const r = await withCachedLookup('/strongboxes', ['Strongboxes', 'ClassIds'], getStrongboxes, req.params.strongbox); if(r) res.json(r); else res.status(404).send(); });
 }
 module.exports = { register, getStrongboxes, getStrongbox };

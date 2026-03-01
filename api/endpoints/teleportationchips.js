@@ -1,4 +1,4 @@
-const { getObjectByIdOrName } = require('./utils');
+const { getObjectByIdOrName, loadClassIds } = require('./utils');
 const { idOffsets } = require('./constants');
 const { pool } = require('./dbClient');
 const { withCache, withCachedLookup } = require('./responseCache');
@@ -14,9 +14,10 @@ const queries = {
   LEFT JOIN ONLY "Materials"   ON "TeleportationChips"."AmmoId" = "Materials"."Id"',
 };
 
-function formatTeleportationChip(x){
+function formatTeleportationChip(x, classIds){
   return {
     Id: x.Id,
+    ClassId: classIds[x.Id] || null,
     ItemId: x.Id + idOffsets.TeleportationChips,
     Name: x.Name,
     Properties: {
@@ -55,12 +56,15 @@ function formatTeleportationChip(x){
 
 async function getTeleportationChips(){
   const { rows } = await pool.query(queries.TeleportationChips);
-  return rows.map(formatTeleportationChip);
+  const classIds = await loadClassIds('TeleportationChip', rows.map(r => r.Id));
+  return rows.map(r => formatTeleportationChip(r, classIds));
 }
 
 async function getTeleportationChip(idOrName){
   const row = await getObjectByIdOrName(queries.TeleportationChips, 'TeleportationChips', idOrName);
-  return row ? formatTeleportationChip(row) : null;
+  if (!row) return null;
+  const classIds = await loadClassIds('TeleportationChip', [row.Id]);
+  return formatTeleportationChip(row, classIds);
 }
 
 function register(app){
@@ -74,7 +78,7 @@ function register(app){
    *        description: A list of teleportation chips
    */
   app.get('/teleportationchips', async (req,res) => {
-    res.json(await withCache('/teleportationchips', ['TeleportationChips', 'Professions', 'Materials'], getTeleportationChips));
+    res.json(await withCache('/teleportationchips', ['TeleportationChips', 'Professions', 'Materials', 'ClassIds'], getTeleportationChips));
   });
   /**
    * @swagger
@@ -95,7 +99,7 @@ function register(app){
    *        description: Teleportation chip not found
    */
   app.get('/teleportationchips/:teleportationChip', async (req,res) => {
-    const r = await withCachedLookup('/teleportationchips', ['TeleportationChips', 'Professions', 'Materials'], getTeleportationChips, req.params.teleportationChip);
+    const r = await withCachedLookup('/teleportationchips', ['TeleportationChips', 'Professions', 'Materials', 'ClassIds'], getTeleportationChips, req.params.teleportationChip);
     if (r) res.json(r); else res.status(404).send();
   });
 }

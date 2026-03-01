@@ -1,6 +1,6 @@
 const { pool } = require('./dbClient');
 const { idOffsets } = require('./constants');
-const { getObjectByIdOrName, generateGenderAliases } = require('./utils');
+const { getObjectByIdOrName, generateGenderAliases, loadClassIds } = require('./utils');
 const { loadEffectsOnEquipByItemIds, loadSetEffectsByItemIdsFromEquipSets, formatEffectOnSetEquip } = require('./effects-utils');
 const { withCache, withCachedLookup } = require('./responseCache');
 
@@ -8,7 +8,7 @@ const queries = { Clothings: 'SELECT * FROM ONLY "Clothes"' };
 
 function toNumberOrNull(v){ return v === null || v === undefined ? null : Number(v); }
 
-function formatClothing(x, effectsByItemId, setEffectsByItemId){
+function formatClothing(x, effectsByItemId, setEffectsByItemId, classIds){
   const itemId = x.Id + idOffsets.Clothings;
   const onEquip = effectsByItemId[itemId] || [];
   const onSetRaw = setEffectsByItemId[itemId] || [];
@@ -21,6 +21,7 @@ function formatClothing(x, effectsByItemId, setEffectsByItemId){
 
   return {
     Id: x.Id,
+    ClassId: classIds[x.Id] || null,
     ItemId: itemId,
     Name: x.Name,
     Aliases: aliases.length > 0 ? aliases : undefined,
@@ -44,22 +45,24 @@ function formatClothing(x, effectsByItemId, setEffectsByItemId){
 async function getClothings(){
   const { rows } = await pool.query(queries.Clothings);
   const itemIds = rows.map(r => r.Id + idOffsets.Clothings);
-  const [effectsByItemId, setEffectsByItemId] = await Promise.all([
+  const [effectsByItemId, setEffectsByItemId, classIds] = await Promise.all([
     loadEffectsOnEquipByItemIds(itemIds),
-    loadSetEffectsByItemIdsFromEquipSets(itemIds)
+    loadSetEffectsByItemIdsFromEquipSets(itemIds),
+    loadClassIds('Clothing', rows.map(r => r.Id))
   ]);
-  return rows.map(r => formatClothing(r, effectsByItemId, setEffectsByItemId));
+  return rows.map(r => formatClothing(r, effectsByItemId, setEffectsByItemId, classIds));
 }
 
 async function getClothing(idOrName){
   const row = await getObjectByIdOrName(queries.Clothings, 'Clothes', idOrName);
   if (!row) return null;
   const itemId = row.Id + idOffsets.Clothings;
-  const [effectsByItemId, setEffectsByItemId] = await Promise.all([
+  const [effectsByItemId, setEffectsByItemId, classIds] = await Promise.all([
     loadEffectsOnEquipByItemIds([itemId]),
-    loadSetEffectsByItemIdsFromEquipSets([itemId])
+    loadSetEffectsByItemIdsFromEquipSets([itemId]),
+    loadClassIds('Clothing', [row.Id])
   ]);
-  return formatClothing(row, effectsByItemId, setEffectsByItemId);
+  return formatClothing(row, effectsByItemId, setEffectsByItemId, classIds);
 }
 
 function register(app){
@@ -72,7 +75,7 @@ function register(app){
    *      '200':
    *        description: A list of clothings
    */
-  app.get('/clothings', async (req,res) => { res.json(await withCache('/clothings', ['Clothes', 'EffectsOnEquip', 'EffectsOnSetEquip', 'Effects', 'EquipSets'], getClothings)); });
+  app.get('/clothings', async (req,res) => { res.json(await withCache('/clothings', ['Clothes', 'EffectsOnEquip', 'EffectsOnSetEquip', 'Effects', 'EquipSets', 'ClassIds'], getClothings)); });
   /**
    * @swagger
    * /clothings/{clothing}:
@@ -91,7 +94,7 @@ function register(app){
    *      '404':
    *        description: Clothing not found
    */
-  app.get('/clothings/:clothing', async (req,res) => { const r = await withCachedLookup('/clothings', ['Clothes', 'EffectsOnEquip', 'EffectsOnSetEquip', 'Effects', 'EquipSets'], getClothings, req.params.clothing); if (r) res.json(r); else res.status(404).send(); });
+  app.get('/clothings/:clothing', async (req,res) => { const r = await withCachedLookup('/clothings', ['Clothes', 'EffectsOnEquip', 'EffectsOnSetEquip', 'Effects', 'EquipSets', 'ClassIds'], getClothings, req.params.clothing); if (r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getClothings, getClothing, formatClothing };

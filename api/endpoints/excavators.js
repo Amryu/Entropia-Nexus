@@ -1,6 +1,6 @@
 const pgp = require('pg-promise')();
 const { pool } = require('./dbClient');
-const { getObjectByIdOrName } = require('./utils');
+const { getObjectByIdOrName, loadClassIds } = require('./utils');
 const { idOffsets } = require('./constants');
 const { loadEffectsOnEquipByItemIds } = require('./effects-utils');
 const { getTiersByItemIds } = require('./tiers');
@@ -21,12 +21,13 @@ async function getTiers(ids) {
   return await getTiersByItemIds(itemIds, 0);
 }
 
-function formatExcavator(x, effectsMap, tiersMap){
+function formatExcavator(x, effectsMap, tiersMap, classIds){
   const itemId = x.Id + idOffsets.Excavators;
   const effects = effectsMap[itemId] ?? [];
   const tiers = tiersMap[itemId] ?? [];
   return {
     Id: x.Id,
+    ClassId: classIds[x.Id] || null,
     ItemId: itemId,
     Name: x.Name,
     Properties: {
@@ -45,20 +46,22 @@ function formatExcavator(x, effectsMap, tiersMap){
 
 async function getExcavators(){
   const { rows } = await pool.query(queries.Excavators);
-  const [effects, tiers] = await Promise.all([
+  const [effects, tiers, classIds] = await Promise.all([
     getEffectsOnEquip(rows.map(r=>r.Id)),
-    getTiers(rows.map(r=>r.Id))
+    getTiers(rows.map(r=>r.Id)),
+    loadClassIds('Excavator', rows.map(r => r.Id))
   ]);
-  return rows.map(r => formatExcavator(r, effects, tiers));
+  return rows.map(r => formatExcavator(r, effects, tiers, classIds));
 }
 async function getExcavator(idOrName){
   const row = await getObjectByIdOrName(queries.Excavators, 'Excavators', idOrName);
   if (!row) return null;
-  const [effects, tiers] = await Promise.all([
+  const [effects, tiers, classIds] = await Promise.all([
     getEffectsOnEquip([row.Id]),
-    getTiers([row.Id])
+    getTiers([row.Id]),
+    loadClassIds('Excavator', [row.Id])
   ]);
-  return formatExcavator(row, effects, tiers);
+  return formatExcavator(row, effects, tiers, classIds);
 }
 
 function register(app){
@@ -71,7 +74,7 @@ function register(app){
    *      '200':
    *        description: A list of excavators
    */
-  app.get('/excavators', async (req,res) => { res.json(await withCache('/excavators', ['Excavators', 'EffectsOnEquip', 'Effects', 'Tiers', 'TierMaterials'], getExcavators)); });
+  app.get('/excavators', async (req,res) => { res.json(await withCache('/excavators', ['Excavators', 'EffectsOnEquip', 'Effects', 'Tiers', 'TierMaterials', 'ClassIds'], getExcavators)); });
   /**
    * @swagger
    * /excavators/{excavator}:
@@ -90,7 +93,7 @@ function register(app){
    *      '404':
    *        description: Excavator not found
    */
-  app.get('/excavators/:excavator', async (req,res) => { const r = await withCachedLookup('/excavators', ['Excavators', 'EffectsOnEquip', 'Effects', 'Tiers', 'TierMaterials'], getExcavators, req.params.excavator); if (r) res.json(r); else res.status(404).send(); });
+  app.get('/excavators/:excavator', async (req,res) => { const r = await withCachedLookup('/excavators', ['Excavators', 'EffectsOnEquip', 'Effects', 'Tiers', 'TierMaterials', 'ClassIds'], getExcavators, req.params.excavator); if (r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getExcavators, getExcavator, formatExcavator };

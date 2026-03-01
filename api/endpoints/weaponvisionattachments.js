@@ -1,16 +1,17 @@
 const { pool } = require('./dbClient');
 const { idOffsets } = require('./constants');
-const { getObjectByIdOrName } = require('./utils');
+const { getObjectByIdOrName, loadClassIds } = require('./utils');
 const { loadEffectsOnEquipByItemIds } = require('./effects-utils');
 const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = { WeaponVisionAttachments: 'SELECT * FROM ONLY "WeaponVisionAttachments"' };
 
-function formatWeaponVisionAttachment(x, effectsMap){
+function formatWeaponVisionAttachment(x, effectsMap, classIds){
   const itemId = x.Id + idOffsets.WeaponVisionAttachments;
   const effects = effectsMap[itemId] ?? [];
   return {
     Id: x.Id,
+    ClassId: classIds[x.Id] || null,
     ItemId: itemId,
     Name: x.Name,
     Properties: {
@@ -35,16 +36,22 @@ function formatWeaponVisionAttachment(x, effectsMap){
 async function getWeaponVisionAttachments(){
   const { rows } = await pool.query(queries.WeaponVisionAttachments);
   const itemIds = rows.map(r => r.Id + idOffsets.WeaponVisionAttachments);
-  const effects = await loadEffectsOnEquipByItemIds(itemIds);
-  return rows.map(r => formatWeaponVisionAttachment(r, effects));
+  const [effects, classIds] = await Promise.all([
+    loadEffectsOnEquipByItemIds(itemIds),
+    loadClassIds('WeaponVisionAttachment', rows.map(r => r.Id))
+  ]);
+  return rows.map(r => formatWeaponVisionAttachment(r, effects, classIds));
 }
 
 async function getWeaponVisionAttachment(idOrName){
   const row = await getObjectByIdOrName(queries.WeaponVisionAttachments,'WeaponVisionAttachments',idOrName);
   if(!row) return null;
   const itemId = row.Id + idOffsets.WeaponVisionAttachments;
-  const effects = await loadEffectsOnEquipByItemIds([itemId]);
-  return formatWeaponVisionAttachment(row, effects);
+  const [effects, classIds] = await Promise.all([
+    loadEffectsOnEquipByItemIds([itemId]),
+    loadClassIds('WeaponVisionAttachment', [row.Id])
+  ]);
+  return formatWeaponVisionAttachment(row, effects, classIds);
 }
 
 function register(app){
@@ -58,7 +65,7 @@ function register(app){
    *        description: A list of weapon vision attachments
    */
   app.get('/weaponvisionattachments', async (req,res)=>{
-    res.json(await withCache('/weaponvisionattachments', ['WeaponVisionAttachments'], getWeaponVisionAttachments));
+    res.json(await withCache('/weaponvisionattachments', ['WeaponVisionAttachments', 'ClassIds'], getWeaponVisionAttachments));
   });
   /**
    * @swagger
@@ -79,7 +86,7 @@ function register(app){
    *        description: Weapon vision attachment not found
    */
   app.get('/weaponvisionattachments/:weaponVisionAttachment', async (req,res)=>{
-    const r = await withCachedLookup('/weaponvisionattachments', ['WeaponVisionAttachments'], getWeaponVisionAttachments, req.params.weaponVisionAttachment);
+    const r = await withCachedLookup('/weaponvisionattachments', ['WeaponVisionAttachments', 'ClassIds'], getWeaponVisionAttachments, req.params.weaponVisionAttachment);
     if(r) res.json(r); else res.status(404).send();
   });
 }

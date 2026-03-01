@@ -1,6 +1,6 @@
 const { pool } = require('./dbClient');
 const { idOffsets } = require('./constants');
-const { getObjectByIdOrName } = require('./utils');
+const { getObjectByIdOrName, loadClassIds } = require('./utils');
 const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = { Vehicles: 'SELECT "Vehicles".*, "Materials"."Name" AS "Fuel" FROM ONLY "Vehicles" LEFT JOIN ONLY "Materials" ON "Vehicles"."FuelMaterialId" = "Materials"."Id"' };
@@ -12,9 +12,10 @@ async function getAttachmentSlots(ids){ if(ids.length===0) return {}; const { ro
 function formatAttachmentSlot(x){ return { Name: x.Type, Links: { "$Url": `/vehicleattachmenttypes/${x.AttachmentId}` } }; }
 
 function formatVehicle(x,data){
-  const slots = (data[x.Id]||[]).map(formatAttachmentSlot);
+  const slots = (data.Slots[x.Id]||[]).map(formatAttachmentSlot);
   return {
     Id: x.Id,
+    ClassId: data.ClassIds[x.Id] || null,
     ItemId: x.Id + idOffsets.Vehicles,
     Name: x.Name,
     Properties: {
@@ -55,8 +56,8 @@ function formatVehicle(x,data){
   };
 }
 
-async function getVehicles(){ const { rows } = await pool.query(queries.Vehicles); const slots = await getAttachmentSlots(rows.map(r=>r.Id)); return rows.map(r=>formatVehicle(r,slots)); }
-async function getVehicle(idOrName){ const row = await getObjectByIdOrName(queries.Vehicles,'Vehicles',idOrName); if(!row) return null; const slots = await getAttachmentSlots([row.Id]); return formatVehicle(row,slots); }
+async function getVehicles(){ const { rows } = await pool.query(queries.Vehicles); const [slots, classIds] = await Promise.all([getAttachmentSlots(rows.map(r=>r.Id)), loadClassIds('Vehicle', rows.map(r=>r.Id))]); const data = { Slots: slots, ClassIds: classIds }; return rows.map(r=>formatVehicle(r,data)); }
+async function getVehicle(idOrName){ const row = await getObjectByIdOrName(queries.Vehicles,'Vehicles',idOrName); if(!row) return null; const [slots, classIds] = await Promise.all([getAttachmentSlots([row.Id]), loadClassIds('Vehicle', [row.Id])]); const data = { Slots: slots, ClassIds: classIds }; return formatVehicle(row,data); }
 
 function register(app){
   /**
@@ -68,7 +69,7 @@ function register(app){
    *      '200':
    *        description: A list of vehicles
    */
-  app.get('/vehicles', async (req,res)=>{ res.json(await withCache('/vehicles', ['Vehicles'], getVehicles)); });
+  app.get('/vehicles', async (req,res)=>{ res.json(await withCache('/vehicles', ['Vehicles', 'ClassIds'], getVehicles)); });
   /**
    * @swagger
    * /vehicles/{vehicle}:
@@ -87,7 +88,7 @@ function register(app){
    *      '404':
    *        description: Vehicle not found
    */
-  app.get('/vehicles/:vehicle', async (req,res)=>{ const r = await withCachedLookup('/vehicles', ['Vehicles'], getVehicles, req.params.vehicle); if(r) res.json(r); else res.status(404).send(); });
+  app.get('/vehicles/:vehicle', async (req,res)=>{ const r = await withCachedLookup('/vehicles', ['Vehicles', 'ClassIds'], getVehicles, req.params.vehicle); if(r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getVehicles, getVehicle, formatVehicle };

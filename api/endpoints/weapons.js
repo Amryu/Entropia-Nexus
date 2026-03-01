@@ -1,6 +1,6 @@
 const { pool } = require('./dbClient');
 const { idOffsets } = require('./constants');
-const { getObjectByIdOrName } = require('./utils');
+const { getObjectByIdOrName, loadClassIds } = require('./utils');
 const { loadEffectsOnEquipByItemIds, loadEffectsOnUseByItemIds } = require('./effects-utils');
 const { getTiersByItemIds } = require('./tiers');
 const { withCache, withCachedLookup } = require('./responseCache');
@@ -14,6 +14,7 @@ function formatWeapon(x,data){
   const tiers = data.Tiers[itemId] || [];
   return {
     Id: x.Id,
+    ClassId: data.ClassIds[x.Id] || null,
     ItemId: itemId,
     Name: x.Name,
     Properties: {
@@ -68,23 +69,25 @@ function formatWeapon(x,data){
 async function getWeapons(){
   const { rows } = await pool.query(queries.Weapons);
   const itemIds = rows.map(r => r.Id + idOffsets.Weapons);
-  const [equip, use, tiers] = await Promise.all([
+  const [equip, use, tiers, classIds] = await Promise.all([
     loadEffectsOnEquipByItemIds(itemIds),
     loadEffectsOnUseByItemIds(itemIds),
-    getTiersByItemIds(itemIds, 0)
+    getTiersByItemIds(itemIds, 0),
+    loadClassIds('Weapon', rows.map(r => r.Id))
   ]);
-  const data = { EffectsOnEquip: equip, EffectsOnUse: use, Tiers: tiers };
+  const data = { EffectsOnEquip: equip, EffectsOnUse: use, Tiers: tiers, ClassIds: classIds };
   return rows.map(r=>formatWeapon(r,data));
 }
 async function getWeapon(idOrName){
   const row = await getObjectByIdOrName(queries.Weapons,'Weapons',idOrName); if(!row) return null;
   const itemId = row.Id + idOffsets.Weapons;
-  const [equip, use, tiers] = await Promise.all([
+  const [equip, use, tiers, classIds] = await Promise.all([
     loadEffectsOnEquipByItemIds([itemId]),
     loadEffectsOnUseByItemIds([itemId]),
-    getTiersByItemIds([itemId], 0)
+    getTiersByItemIds([itemId], 0),
+    loadClassIds('Weapon', [row.Id])
   ]);
-  const data = { EffectsOnEquip: equip, EffectsOnUse: use, Tiers: tiers };
+  const data = { EffectsOnEquip: equip, EffectsOnUse: use, Tiers: tiers, ClassIds: classIds };
   return formatWeapon(row,data);
 }
 function register(app){
@@ -97,7 +100,7 @@ function register(app){
    *      '200':
    *        description: A list of weapons
    */
-  app.get('/weapons', async (req,res)=>{ res.json(await withCache('/weapons', ['Weapons', 'VehicleAttachmentTypes', 'Materials', 'Professions', 'EffectsOnEquip', 'EffectsOnUse', 'Effects', 'Tiers', 'TierMaterials'], getWeapons)); });
+  app.get('/weapons', async (req,res)=>{ res.json(await withCache('/weapons', ['Weapons', 'VehicleAttachmentTypes', 'Materials', 'Professions', 'EffectsOnEquip', 'EffectsOnUse', 'Effects', 'Tiers', 'TierMaterials', 'ClassIds'], getWeapons)); });
   /**
    * @swagger
    * /weapons/{weapon}:
@@ -116,6 +119,6 @@ function register(app){
    *      '404':
    *        description: Weapon not found
    */
-  app.get('/weapons/:weapon', async (req,res)=>{ const r = await withCachedLookup('/weapons', ['Weapons', 'VehicleAttachmentTypes', 'Materials', 'Professions', 'EffectsOnEquip', 'EffectsOnUse', 'Effects', 'Tiers', 'TierMaterials'], getWeapons, req.params.weapon); if(r) res.json(r); else res.status(404).send(); });
+  app.get('/weapons/:weapon', async (req,res)=>{ const r = await withCachedLookup('/weapons', ['Weapons', 'VehicleAttachmentTypes', 'Materials', 'Professions', 'EffectsOnEquip', 'EffectsOnUse', 'Effects', 'Tiers', 'TierMaterials', 'ClassIds'], getWeapons, req.params.weapon); if(r) res.json(r); else res.status(404).send(); });
 }
 module.exports = { register, getWeapons, getWeapon, formatWeapon, queries };

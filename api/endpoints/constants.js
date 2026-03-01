@@ -56,4 +56,44 @@ const ITEM_TABLES = [
   'Furniture', 'Decorations', 'StorageContainers', 'Signs',
 ];
 
-module.exports = { idOffsets, ITEM_TABLES };
+// Maps DB table names (or view names) to the EntityType string used in the ClassIds lookup table.
+// EntityType strings match the entity type names used in the Items VIEW, search results, and wiki changes.
+const TABLE_TO_ENTITY_TYPE = {
+  Materials:                'Material',
+  Weapons:                  'Weapon',
+  Armors:                   'Armor',
+  Blueprints:               'Blueprint',
+  Vehicles:                 'Vehicle',
+  Clothes:                  'Clothing',
+  Consumables:              'Consumable',
+  CreatureControlCapsules:  'Capsule',
+  Pets:                     'Pet',
+  Strongboxes:              'Strongbox',
+  ArmorSets:                'ArmorSet',
+  MedicalTools:             'MedicalTool',
+  MiscTools:                'MiscTool',
+  Refiners:                 'Refiner',
+  Scanners:                 'Scanner',
+  Finders:                  'Finder',
+  Excavators:               'Excavator',
+  BlueprintBooks:           'BlueprintBook',
+  MedicalChips:             'MedicalChip',
+  TeleportationChips:       'TeleportationChip',
+  EffectChips:              'EffectChip',
+  WeaponAmplifiers:         'WeaponAmplifier',
+  WeaponVisionAttachments:  'WeaponVisionAttachment',
+  Absorbers:                'Absorber',
+  FinderAmplifiers:         'FinderAmplifier',
+  ArmorPlatings:            'ArmorPlating',
+  Enhancers:                'Enhancer',
+  MindforceImplants:        'MindforceImplant',
+  Furniture:                'Furniture',
+  Decorations:              'Decoration',
+  StorageContainers:        'StorageContainer',
+  Signs:                    'Sign',
+  Mobs:                     'Mob',
+  Skills:                   'Skill',
+  Professions:              'Profession',
+};
+
+module.exports = { idOffsets, ITEM_TABLES, TABLE_TO_ENTITY_TYPE };

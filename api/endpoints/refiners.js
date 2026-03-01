@@ -1,12 +1,14 @@
-const { getObjects, getObjectByIdOrName } = require('./utils');
+const { pool } = require('./dbClient');
+const { getObjectByIdOrName, loadClassIds } = require('./utils');
 const { idOffsets } = require('./constants');
 const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = { Refiners: 'SELECT * FROM ONLY "Refiners"' };
 
-function formatRefiner(x){
+function formatRefiner(x, classIds){
   return {
     Id: x.Id,
+    ClassId: classIds[x.Id] || null,
     ItemId: x.Id + idOffsets.Refiners,
     Name: x.Name,
     Properties: {
@@ -23,8 +25,12 @@ function formatRefiner(x){
   };
 }
 
-const getRefiners = () => getObjects(queries.Refiners, formatRefiner);
-const getRefiner = async (idOrName) => { const row = await getObjectByIdOrName(queries.Refiners, 'Refiners', idOrName); return row ? formatRefiner(row) : null; };
+async function getRefiners() {
+  const { rows } = await pool.query(queries.Refiners);
+  const classIds = await loadClassIds('Refiner', rows.map(r => r.Id));
+  return rows.map(r => formatRefiner(r, classIds));
+}
+const getRefiner = async (idOrName) => { const row = await getObjectByIdOrName(queries.Refiners, 'Refiners', idOrName); if (!row) return null; const classIds = await loadClassIds('Refiner', [row.Id]); return formatRefiner(row, classIds); };
 
 function register(app){
   /**
@@ -37,7 +43,7 @@ function register(app){
    *        description: A list of refiners
    */
   app.get('/refiners', async (req,res) => {
-    res.json(await withCache('/refiners', ['Refiners'], getRefiners));
+    res.json(await withCache('/refiners', ['Refiners', 'ClassIds'], getRefiners));
   });
   /**
    * @swagger
@@ -58,7 +64,7 @@ function register(app){
    *        description: Refiner not found
    */
   app.get('/refiners/:refiner', async (req,res) => {
-    const r = await withCachedLookup('/refiners', ['Refiners'], getRefiners, req.params.refiner);
+    const r = await withCachedLookup('/refiners', ['Refiners', 'ClassIds'], getRefiners, req.params.refiner);
     if (r) res.json(r); else res.status(404).send();
   });
 }

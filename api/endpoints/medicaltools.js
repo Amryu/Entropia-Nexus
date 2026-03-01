@@ -1,5 +1,5 @@
 const { pool } = require('./dbClient');
-const { getObjectByIdOrName } = require('./utils');
+const { getObjectByIdOrName, loadClassIds } = require('./utils');
 const { idOffsets } = require('./constants');
 const {
   loadEffectsOnEquipByItemIds,
@@ -19,6 +19,7 @@ function formatMedicalTool(x, data){
   const tiers = data.Tiers[itemId] || [];
   return {
     Id: x.Id,
+    ClassId: data.ClassIds[x.Id] || null,
     ItemId: itemId,
     Name: x.Name,
     Properties: {
@@ -49,11 +50,13 @@ async function getMedicalTools(){
   const { rows } = await pool.query(queries.MedicalTools);
   const ids = rows.map(r=>r.Id);
   const itemIds = ids.map(id => id + idOffsets.MedicalTools);
-  const data = {
-    EffectsOnUse: await loadEffectsOnUseByItemIds(itemIds),
-    EffectsOnEquip: await loadEffectsOnEquipByItemIds(itemIds),
-    Tiers: await getTiersByItemIds(itemIds, 0)
-  };
+  const [effectsOnUse, effectsOnEquip, tiers, classIds] = await Promise.all([
+    loadEffectsOnUseByItemIds(itemIds),
+    loadEffectsOnEquipByItemIds(itemIds),
+    getTiersByItemIds(itemIds, 0),
+    loadClassIds('MedicalTool', rows.map(r => r.Id))
+  ]);
+  const data = { EffectsOnUse: effectsOnUse, EffectsOnEquip: effectsOnEquip, Tiers: tiers, ClassIds: classIds };
   return rows.map(r => formatMedicalTool(r, data));
 }
 async function getMedicalTool(idOrName){
@@ -61,11 +64,13 @@ async function getMedicalTool(idOrName){
   if (!row) return null;
   const id = row.Id;
   const itemIds = [id + idOffsets.MedicalTools];
-  const data = {
-    EffectsOnUse: await loadEffectsOnUseByItemIds(itemIds),
-    EffectsOnEquip: await loadEffectsOnEquipByItemIds(itemIds),
-    Tiers: await getTiersByItemIds(itemIds, 0)
-  };
+  const [effectsOnUse, effectsOnEquip, tiers, classIds] = await Promise.all([
+    loadEffectsOnUseByItemIds(itemIds),
+    loadEffectsOnEquipByItemIds(itemIds),
+    getTiersByItemIds(itemIds, 0),
+    loadClassIds('MedicalTool', [row.Id])
+  ]);
+  const data = { EffectsOnUse: effectsOnUse, EffectsOnEquip: effectsOnEquip, Tiers: tiers, ClassIds: classIds };
   return formatMedicalTool(row, data);
 }
 
@@ -79,7 +84,7 @@ function register(app){
    *      '200':
    *        description: A list of medical tools
    */
-  app.get('/medicaltools', async (req,res) => { res.json(await withCache('/medicaltools', ['MedicalTools', 'EffectsOnEquip', 'EffectsOnUse', 'Effects', 'Tiers', 'TierMaterials'], getMedicalTools)); });
+  app.get('/medicaltools', async (req,res) => { res.json(await withCache('/medicaltools', ['MedicalTools', 'EffectsOnEquip', 'EffectsOnUse', 'Effects', 'Tiers', 'TierMaterials', 'ClassIds'], getMedicalTools)); });
   /**
    * @swagger
    * /medicaltools/{medicalTool}:
@@ -98,7 +103,7 @@ function register(app){
    *      '404':
    *        description: Medical tool not found
    */
-  app.get('/medicaltools/:medicalTool', async (req,res) => { const r = await withCachedLookup('/medicaltools', ['MedicalTools', 'EffectsOnEquip', 'EffectsOnUse', 'Effects', 'Tiers', 'TierMaterials'], getMedicalTools, req.params.medicalTool); if (r) res.json(r); else res.status(404).send(); });
+  app.get('/medicaltools/:medicalTool', async (req,res) => { const r = await withCachedLookup('/medicaltools', ['MedicalTools', 'EffectsOnEquip', 'EffectsOnUse', 'Effects', 'Tiers', 'TierMaterials', 'ClassIds'], getMedicalTools, req.params.medicalTool); if (r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getMedicalTools, getMedicalTool, formatMedicalTool };

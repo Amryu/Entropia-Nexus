@@ -1,5 +1,5 @@
 const { pool } = require('./dbClient');
-const { getObjectByIdOrName } = require('./utils');
+const { getObjectByIdOrName, loadClassIds } = require('./utils');
 const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = {
@@ -22,14 +22,14 @@ async function _getProfessionSkillsAndUnlocks(ids){
   return { ProfessionSkills: _groupBy(professionSkills, 'ProfessionId'), SkillUnlocks: _groupBy(skillUnlocks, 'ProfessionId') };
 }
 
-function formatProfession(x, data){
+function formatProfession(x, data, classIds){
   const skills = (data.ProfessionSkills[x.Id] ?? []).map(_formatProfessionSkill);
   const unlocks = (data.SkillUnlocks[x.Id] ?? []).map(_formatProfessionSkillUnlock);
-  return { Id: x.Id, Name: x.Name, Category: { Name: x.Category, Links: { "$Url": `/professioncategories/${x.CategoryId}` } }, Skills: skills, Unlocks: unlocks, Links: { "$Url": `/professions/${x.Id}` } };
+  return { Id: x.Id, ClassId: classIds[x.Id] || null, Name: x.Name, Category: { Name: x.Category, Links: { "$Url": `/professioncategories/${x.CategoryId}` } }, Skills: skills, Unlocks: unlocks, Links: { "$Url": `/professions/${x.Id}` } };
 }
 
-async function getProfessions(){ const { rows } = await pool.query(queries.Professions); const data = await _getProfessionSkillsAndUnlocks(rows.map(r=>r.Id)); return rows.map(r => formatProfession(r, data)); }
-async function getProfession(idOrName){ const row = await getObjectByIdOrName(queries.Professions, 'Professions', idOrName); if (!row) return null; const data = await _getProfessionSkillsAndUnlocks([row.Id]); return formatProfession(row, data); }
+async function getProfessions(){ const { rows } = await pool.query(queries.Professions); const ids = rows.map(r=>r.Id); const [data, classIds] = await Promise.all([_getProfessionSkillsAndUnlocks(ids), loadClassIds('Profession', ids)]); return rows.map(r => formatProfession(r, data, classIds)); }
+async function getProfession(idOrName){ const row = await getObjectByIdOrName(queries.Professions, 'Professions', idOrName); if (!row) return null; const [data, classIds] = await Promise.all([_getProfessionSkillsAndUnlocks([row.Id]), loadClassIds('Profession', [row.Id])]); return formatProfession(row, data, classIds); }
 
 function register(app){
   /**
@@ -41,7 +41,7 @@ function register(app){
    *      '200':
    *        description: A list of professions
    */
-  app.get('/professions', async (req,res) => { res.json(await withCache('/professions', ['Professions', 'ProfessionCategories', 'ProfessionSkills', 'SkillUnlocks', 'Skills'], getProfessions)); });
+  app.get('/professions', async (req,res) => { res.json(await withCache('/professions', ['Professions', 'ProfessionCategories', 'ProfessionSkills', 'SkillUnlocks', 'Skills', 'ClassIds'], getProfessions)); });
   /**
    * @swagger
    * /professions/{profession}:
@@ -60,6 +60,6 @@ function register(app){
    *      '404':
    *        description: Profession not found
    */
-  app.get('/professions/:profession', async (req,res) => { const r = await withCachedLookup('/professions', ['Professions', 'ProfessionCategories', 'ProfessionSkills', 'SkillUnlocks', 'Skills'], getProfessions, req.params.profession); if (r) res.json(r); else res.status(404).send(); });
+  app.get('/professions/:profession', async (req,res) => { const r = await withCachedLookup('/professions', ['Professions', 'ProfessionCategories', 'ProfessionSkills', 'SkillUnlocks', 'Skills', 'ClassIds'], getProfessions, req.params.profession); if (r) res.json(r); else res.status(404).send(); });
 }
 module.exports = { register, getProfessions, getProfession };

@@ -1,6 +1,6 @@
 const { pool } = require('./dbClient');
 const { idOffsets } = require('./constants');
-const { getObjectByIdOrName } = require('./utils');
+const { getObjectByIdOrName, loadClassIds } = require('./utils');
 const { loadEffectsOnEquipByItemIds } = require('./effects-utils');
 const { withCache, withCachedLookup } = require('./responseCache');
 
@@ -8,11 +8,12 @@ const queries = {
   WeaponAmplifiers: 'SELECT * FROM ONLY "WeaponAmplifiers"',
 };
 
-function formatWeaponAmplifier(x, effectsMap){
+function formatWeaponAmplifier(x, effectsMap, classIds){
   const itemId = x.Id + idOffsets.WeaponAmplifiers;
   const effects = effectsMap[itemId] ?? [];
   return {
     Id: x.Id,
+    ClassId: classIds[x.Id] || null,
     ItemId: itemId,
     Name: x.Name,
     Properties: {
@@ -46,16 +47,22 @@ function formatWeaponAmplifier(x, effectsMap){
 async function getWeaponAmplifiers(){
   const { rows } = await pool.query(queries.WeaponAmplifiers);
   const itemIds = rows.map(r => r.Id + idOffsets.WeaponAmplifiers);
-  const effects = await loadEffectsOnEquipByItemIds(itemIds);
-  return rows.map(r => formatWeaponAmplifier(r, effects));
+  const [effects, classIds] = await Promise.all([
+    loadEffectsOnEquipByItemIds(itemIds),
+    loadClassIds('WeaponAmplifier', rows.map(r => r.Id))
+  ]);
+  return rows.map(r => formatWeaponAmplifier(r, effects, classIds));
 }
 
 async function getWeaponAmplifier(idOrName){
   const row = await getObjectByIdOrName(queries.WeaponAmplifiers, 'WeaponAmplifiers', idOrName);
   if (!row) return null;
   const itemId = row.Id + idOffsets.WeaponAmplifiers;
-  const effects = await loadEffectsOnEquipByItemIds([itemId]);
-  return formatWeaponAmplifier(row, effects);
+  const [effects, classIds] = await Promise.all([
+    loadEffectsOnEquipByItemIds([itemId]),
+    loadClassIds('WeaponAmplifier', [row.Id])
+  ]);
+  return formatWeaponAmplifier(row, effects, classIds);
 }
 
 function register(app){
@@ -69,7 +76,7 @@ function register(app){
    *        description: A list of weapon amplifiers
    */
   app.get('/weaponamplifiers', async (req,res) => {
-    res.json(await withCache('/weaponamplifiers', ['WeaponAmplifiers'], getWeaponAmplifiers));
+    res.json(await withCache('/weaponamplifiers', ['WeaponAmplifiers', 'ClassIds'], getWeaponAmplifiers));
   });
   /**
    * @swagger
@@ -90,7 +97,7 @@ function register(app){
    *        description: Weapon amplifier not found
    */
   app.get('/weaponamplifiers/:weaponAmplifier', async (req,res) => {
-    const r = await withCachedLookup('/weaponamplifiers', ['WeaponAmplifiers'], getWeaponAmplifiers, req.params.weaponAmplifier);
+    const r = await withCachedLookup('/weaponamplifiers', ['WeaponAmplifiers', 'ClassIds'], getWeaponAmplifiers, req.params.weaponAmplifier);
     if (r) res.json(r); else res.status(404).send();
   });
 }

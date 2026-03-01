@@ -1,14 +1,16 @@
-const { getObjects, getObjectByIdOrName } = require('./utils');
+const { pool } = require('./dbClient');
+const { getObjectByIdOrName, loadClassIds } = require('./utils');
 const { idOffsets } = require('./constants');
 const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = { Absorbers: 'SELECT * FROM ONLY "Absorbers"' };
 
-function formatAbsorber(x) {
+function formatAbsorber(x, classIds) {
   // Parity with legacy db.js formatAbsorber (field names, numeric coercion, Link path)
   return {
     Id: x.Id,
-  ItemId: x.Id + idOffsets.Absorbers,
+    ClassId: classIds[x.Id] || null,
+    ItemId: x.Id + idOffsets.Absorbers,
     Name: x.Name,
     Properties: {
       Description: x.Description,
@@ -24,8 +26,12 @@ function formatAbsorber(x) {
   };
 }
 
-const getAbsorbers = () => getObjects(queries.Absorbers, formatAbsorber);
-const getAbsorber = async(idOrName) => { const row = await getObjectByIdOrName(queries.Absorbers,'Absorbers',idOrName); return row ? formatAbsorber(row) : null; };
+async function getAbsorbers() {
+  const { rows } = await pool.query(queries.Absorbers);
+  const classIds = await loadClassIds('Absorber', rows.map(r => r.Id));
+  return rows.map(r => formatAbsorber(r, classIds));
+}
+const getAbsorber = async(idOrName) => { const row = await getObjectByIdOrName(queries.Absorbers,'Absorbers',idOrName); if (!row) return null; const classIds = await loadClassIds('Absorber', [row.Id]); return formatAbsorber(row, classIds); };
 
 function register(app){
   /**
@@ -37,7 +43,7 @@ function register(app){
    *      '200':
    *        description: A list of absorbers
    */
-  app.get('/absorbers', async (req,res)=>{ res.json(await withCache('/absorbers', ['Absorbers'], getAbsorbers)); });
+  app.get('/absorbers', async (req,res)=>{ res.json(await withCache('/absorbers', ['Absorbers', 'ClassIds'], getAbsorbers)); });
   /**
    * @swagger
    * /absorbers/{absorber}:
@@ -56,7 +62,7 @@ function register(app){
    *      '404':
    *        description: Absorber not found
    */
-  app.get('/absorbers/:absorber', async (req,res)=>{ const r = await withCachedLookup('/absorbers', ['Absorbers'], getAbsorbers, req.params.absorber); if(r) res.json(r); else res.status(404).send(); });
+  app.get('/absorbers/:absorber', async (req,res)=>{ const r = await withCachedLookup('/absorbers', ['Absorbers', 'ClassIds'], getAbsorbers, req.params.absorber); if(r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getAbsorbers, getAbsorber, formatAbsorber };

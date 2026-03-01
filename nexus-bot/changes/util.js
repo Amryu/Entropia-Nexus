@@ -36,6 +36,21 @@ export async function applyChange(change) {
       await config.relationChangeFunc(client, (config.offset ?? 0) + object.Id, object);
     }
 
+    // Upsert or remove ClassId in the centralized lookup table
+    if (object.ClassId != null && object.ClassId !== undefined) {
+      await client.query(
+        `INSERT INTO "ClassIds" ("EntityType", "EntityId", "ClassId")
+         VALUES ($1, $2, $3)
+         ON CONFLICT ("EntityType", "EntityId") DO UPDATE SET "ClassId" = $3`,
+        [change.entity, object.Id, object.ClassId]
+      );
+    } else if (object.ClassId === null) {
+      await client.query(
+        'DELETE FROM ONLY "ClassIds" WHERE "EntityType" = $1 AND "EntityId" = $2',
+        [change.entity, object.Id]
+      );
+    }
+
     await commitTransaction(client);
 
     return true;

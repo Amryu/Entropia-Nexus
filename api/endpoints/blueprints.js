@@ -1,6 +1,6 @@
 const pgp = require('pg-promise')();
 const { idOffsets, ITEM_TABLES } = require('./constants');
-const { parseItemList } = require('./utils');
+const { parseItemList, loadClassIds } = require('./utils');
 const { pool } = require('./dbClient');
 const { withCache, withCachedLookup } = require('./responseCache');
 
@@ -22,7 +22,7 @@ function _formatBlueprintMaterial(x){
   };
 }
 
-function formatBlueprint(x, materials, dropsBySource){
+function formatBlueprint(x, materials, dropsBySource, classIds){
   const mats = (materials[x.Id] ?? []).map(_formatBlueprintMaterial);
   const drops = (dropsBySource?.[x.Id] ?? []).map(d => ({
     Id: d.DropId,
@@ -32,6 +32,7 @@ function formatBlueprint(x, materials, dropsBySource){
   }));
   return {
     Id: x.Id,
+    ClassId: classIds[x.Id] || null,
     ItemId: x.Id + idOffsets.Blueprints,
     Name: x.Name,
     Properties: {
@@ -124,8 +125,11 @@ async function getBlueprints(products = null, materials = null){
   const { pool } = require('./dbClient');
   const { rows } = await pool.query(combinedSql);
   const { uniqueRows, materialsMap } = reduceBlueprintJoinRows(rows);
-  const dropsBySource = await getDropsForBlueprintIds(uniqueRows.map(r => r.Id));
-  return uniqueRows.map(r => formatBlueprint(r, materialsMap, dropsBySource));
+  const [dropsBySource, classIds] = await Promise.all([
+    getDropsForBlueprintIds(uniqueRows.map(r => r.Id)),
+    loadClassIds('Blueprint', uniqueRows.map(r => r.Id))
+  ]);
+  return uniqueRows.map(r => formatBlueprint(r, materialsMap, dropsBySource, classIds));
 }
 
 async function getBlueprint(idOrName){
@@ -145,8 +149,11 @@ async function getBlueprint(idOrName){
   const { rows } = await pool.query(combinedSql);
   if (!rows || rows.length === 0) return null;
   const { uniqueRows, materialsMap } = reduceBlueprintJoinRows(rows);
-  const dropsBySource = await getDropsForBlueprintIds([uniqueRows[0].Id]);
-  return formatBlueprint(uniqueRows[0], materialsMap, dropsBySource);
+  const [dropsBySource, classIds] = await Promise.all([
+    getDropsForBlueprintIds([uniqueRows[0].Id]),
+    loadClassIds('Blueprint', [uniqueRows[0].Id])
+  ]);
+  return formatBlueprint(uniqueRows[0], materialsMap, dropsBySource, classIds);
 }
 
 // Fetch drops mapping for a set of blueprint Ids
@@ -195,7 +202,7 @@ function register(app){
         if (products.length === 0) return res.status(400).send('Products cannot be empty');
         res.json(await getBlueprints(products));
       } else {
-        res.json(await withCache('/blueprints', ['Blueprints', 'BlueprintBooks', ...ITEM_TABLES, 'Professions', 'BlueprintMaterials', 'BlueprintDrops'], getBlueprints));
+        res.json(await withCache('/blueprints', ['Blueprints', 'BlueprintBooks', ...ITEM_TABLES, 'Professions', 'BlueprintMaterials', 'BlueprintDrops', 'ClassIds'], getBlueprints));
       }
     } catch (e){ next(e); }
   });
@@ -219,7 +226,7 @@ function register(app){
    *        description: Blueprint not found
    */
   app.get('/blueprints/:blueprint', async (req,res) => {
-    const result = await withCachedLookup('/blueprints', ['Blueprints', 'BlueprintBooks', ...ITEM_TABLES, 'Professions', 'BlueprintMaterials', 'BlueprintDrops'], getBlueprints, req.params.blueprint);
+    const result = await withCachedLookup('/blueprints', ['Blueprints', 'BlueprintBooks', ...ITEM_TABLES, 'Professions', 'BlueprintMaterials', 'BlueprintDrops', 'ClassIds'], getBlueprints, req.params.blueprint);
     if (result) res.json(result); else res.status(404).send('Blueprint not found');
   });
 }

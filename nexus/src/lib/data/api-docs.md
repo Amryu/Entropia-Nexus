@@ -46,6 +46,8 @@ Items-only search with optional type filtering.
 
 All entity endpoints follow the pattern: `GET /{collection}` returns all entries, `GET /{collection}/{id}` returns a single entry by ID or name. Responses are cached in-memory and refreshed when underlying data changes.
 
+**ClassId:** All entity responses include a `ClassId` field (string or `null`) representing the in-game object class identifier. You can look up entities by ClassId by prefixing with `C` (case-insensitive): `GET /{collection}/C{classId}` — for example, `GET /weapons/C12345`.
+
 **Items & Equipment:**
 
 | Endpoint | Description |

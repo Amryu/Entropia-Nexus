@@ -1,7 +1,7 @@
 const { pool } = require('./dbClient');
 const pgp = require('pg-promise')();
 const { idOffsets } = require('./constants');
-const { getObjectByIdOrName } = require('./utils');
+const { getObjectByIdOrName, loadClassIds } = require('./utils');
 const { loadEffectsOnUseByItemIds } = require('./effects-utils');
 const { withCache, withCachedLookup } = require('./responseCache');
 
@@ -16,11 +16,12 @@ const queries = {
   // EffectsOnUse loaded via shared helper
 };
 
-function formatEffectChip(x, effectsMap){
+function formatEffectChip(x, effectsMap, classIds){
   const itemId = x.Id + idOffsets.EffectChips;
   const effects = effectsMap[itemId] ?? [];
   return {
     Id: x.Id,
+    ClassId: classIds[x.Id] || null,
     ItemId: itemId,
     Name: x.Name,
     Properties: {
@@ -57,16 +58,22 @@ function formatEffectChip(x, effectsMap){
 async function getEffectChips(){
   const { rows } = await pool.query(queries.EffectChips);
   const itemIds = rows.map(r => r.Id + idOffsets.EffectChips);
-  const effects = await loadEffectsOnUseByItemIds(itemIds);
-  return rows.map(r => formatEffectChip(r, effects));
+  const [effects, classIds] = await Promise.all([
+    loadEffectsOnUseByItemIds(itemIds),
+    loadClassIds('EffectChip', rows.map(r => r.Id))
+  ]);
+  return rows.map(r => formatEffectChip(r, effects, classIds));
 }
 
 async function getEffectChip(idOrName){
   const row = await getObjectByIdOrName(queries.EffectChips, 'EffectChips', idOrName);
   if (!row) return null;
   const itemIds = [row.Id + idOffsets.EffectChips];
-  const effects = await loadEffectsOnUseByItemIds(itemIds);
-  return formatEffectChip(row, effects);
+  const [effects, classIds] = await Promise.all([
+    loadEffectsOnUseByItemIds(itemIds),
+    loadClassIds('EffectChip', [row.Id])
+  ]);
+  return formatEffectChip(row, effects, classIds);
 }
 
 function register(app){
@@ -79,7 +86,7 @@ function register(app){
    *      '200':
    *        description: A list of effect chips
    */
-  app.get('/effectchips', async (req,res) => { res.json(await withCache('/effectchips', ['EffectChips', 'Professions', 'Materials', 'EffectsOnUse', 'Effects'], getEffectChips)); });
+  app.get('/effectchips', async (req,res) => { res.json(await withCache('/effectchips', ['EffectChips', 'Professions', 'Materials', 'EffectsOnUse', 'Effects', 'ClassIds'], getEffectChips)); });
   /**
    * @swagger
    * /effectchips/{effectChip}:
@@ -98,7 +105,7 @@ function register(app){
    *      '404':
    *        description: Effect chip not found
    */
-  app.get('/effectchips/:effectChip', async (req,res) => { const r = await withCachedLookup('/effectchips', ['EffectChips', 'Professions', 'Materials', 'EffectsOnUse', 'Effects'], getEffectChips, req.params.effectChip); if (r) res.json(r); else res.status(404).send(); });
+  app.get('/effectchips/:effectChip', async (req,res) => { const r = await withCachedLookup('/effectchips', ['EffectChips', 'Professions', 'Materials', 'EffectsOnUse', 'Effects', 'ClassIds'], getEffectChips, req.params.effectChip); if (r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getEffectChips, getEffectChip, formatEffectChip };

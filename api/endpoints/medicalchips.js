@@ -1,5 +1,5 @@
 const { pool } = require('./dbClient');
-const { getObjectByIdOrName } = require('./utils');
+const { getObjectByIdOrName, loadClassIds } = require('./utils');
 const { idOffsets } = require('./constants');
 const {
   loadEffectsOnEquipByItemIds,
@@ -19,6 +19,7 @@ function formatMedicalChip(x, data){
   const effectsOnEquip = data.EffectsOnEquip[itemId] || [];
   return {
     Id: x.Id,
+    ClassId: data.ClassIds[x.Id] || null,
     ItemId: itemId,
     Name: x.Name,
     Properties: {
@@ -57,7 +58,12 @@ async function getMedicalChips(){
   const { rows } = await pool.query(queries.MedicalChips);
   const ids = rows.map(r=>r.Id);
   const itemIds = ids.map(id => id + idOffsets.MedicalChips);
-  const data = { EffectsOnUse: await loadEffectsOnUseByItemIds(itemIds), EffectsOnEquip: await loadEffectsOnEquipByItemIds(itemIds) };
+  const [effectsOnUse, effectsOnEquip, classIds] = await Promise.all([
+    loadEffectsOnUseByItemIds(itemIds),
+    loadEffectsOnEquipByItemIds(itemIds),
+    loadClassIds('MedicalChip', rows.map(r => r.Id))
+  ]);
+  const data = { EffectsOnUse: effectsOnUse, EffectsOnEquip: effectsOnEquip, ClassIds: classIds };
   return rows.map(r => formatMedicalChip(r, data));
 }
 
@@ -66,7 +72,12 @@ async function getMedicalChip(idOrName){
   if (!row) return null;
   const id = row.Id;
   const itemIds = [id + idOffsets.MedicalChips];
-  const data = { EffectsOnUse: await loadEffectsOnUseByItemIds(itemIds), EffectsOnEquip: await loadEffectsOnEquipByItemIds(itemIds) };
+  const [effectsOnUse, effectsOnEquip, classIds] = await Promise.all([
+    loadEffectsOnUseByItemIds(itemIds),
+    loadEffectsOnEquipByItemIds(itemIds),
+    loadClassIds('MedicalChip', [row.Id])
+  ]);
+  const data = { EffectsOnUse: effectsOnUse, EffectsOnEquip: effectsOnEquip, ClassIds: classIds };
   return formatMedicalChip(row, data);
 }
 
@@ -80,7 +91,7 @@ function register(app){
    *      '200':
    *        description: A list of medical chips
    */
-  app.get('/medicalchips', async (req,res) => { res.json(await withCache('/medicalchips', ['MedicalChips', 'Materials', 'EffectsOnEquip', 'EffectsOnUse', 'Effects'], getMedicalChips)); });
+  app.get('/medicalchips', async (req,res) => { res.json(await withCache('/medicalchips', ['MedicalChips', 'Materials', 'EffectsOnEquip', 'EffectsOnUse', 'Effects', 'ClassIds'], getMedicalChips)); });
   /**
    * @swagger
    * /medicalchips/{medicalChip}:
@@ -99,7 +110,7 @@ function register(app){
    *      '404':
    *        description: Medical chip not found
    */
-  app.get('/medicalchips/:medicalChip', async (req,res) => { const r = await withCachedLookup('/medicalchips', ['MedicalChips', 'Materials', 'EffectsOnEquip', 'EffectsOnUse', 'Effects'], getMedicalChips, req.params.medicalChip); if (r) res.json(r); else res.status(404).send(); });
+  app.get('/medicalchips/:medicalChip', async (req,res) => { const r = await withCachedLookup('/medicalchips', ['MedicalChips', 'Materials', 'EffectsOnEquip', 'EffectsOnUse', 'Effects', 'ClassIds'], getMedicalChips, req.params.medicalChip); if (r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getMedicalChips, getMedicalChip, formatMedicalChip };

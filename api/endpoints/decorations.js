@@ -1,5 +1,5 @@
 const { pool } = require('./dbClient');
-const { getObjectByIdOrName } = require('./utils');
+const { getObjectByIdOrName, loadClassIds } = require('./utils');
 const { idOffsets } = require('./constants');
 const { withCache, withCachedLookup } = require('./responseCache');
 
@@ -7,12 +7,12 @@ const queries = {
   Decorations: 'SELECT * FROM ONLY "Decorations"',
 };
 
-function formatDecoration(x){
-  return { Id: x.Id, ItemId: x.Id + idOffsets.Decorations, Name: x.Name, Properties: { Description: x.Description, Weight: x.Weight !== null ? Number(x.Weight) : null, Economy: { MaxTT: x.MaxTT !== null ? Number(x.MaxTT) : null } }, Links: { "$Url": `/decorations/${x.Id}` } };
+function formatDecoration(x, classIds){
+  return { Id: x.Id, ClassId: classIds[x.Id] || null, ItemId: x.Id + idOffsets.Decorations, Name: x.Name, Properties: { Description: x.Description, Weight: x.Weight !== null ? Number(x.Weight) : null, Economy: { MaxTT: x.MaxTT !== null ? Number(x.MaxTT) : null } }, Links: { "$Url": `/decorations/${x.Id}` } };
 }
 
-async function getDecorations(){ const { rows } = await pool.query(queries.Decorations); return rows.map(formatDecoration); }
-async function getDecoration(idOrName){ const row = await getObjectByIdOrName(queries.Decorations, 'Decorations', idOrName); return row ? formatDecoration(row) : null; }
+async function getDecorations(){ const { rows } = await pool.query(queries.Decorations); const classIds = await loadClassIds('Decoration', rows.map(r => r.Id)); return rows.map(r => formatDecoration(r, classIds)); }
+async function getDecoration(idOrName){ const row = await getObjectByIdOrName(queries.Decorations, 'Decorations', idOrName); if (!row) return null; const classIds = await loadClassIds('Decoration', [row.Id]); return formatDecoration(row, classIds); }
 
 function register(app){
   /**
@@ -24,7 +24,7 @@ function register(app){
    *      '200':
    *        description: A list of decorations
    */
-  app.get('/decorations', async (req,res) => { res.json(await withCache('/decorations', ['Decorations'], getDecorations)); });
+  app.get('/decorations', async (req,res) => { res.json(await withCache('/decorations', ['Decorations', 'ClassIds'], getDecorations)); });
   /**
    * @swagger
    * /decorations/{decoration}:
@@ -43,7 +43,7 @@ function register(app){
    *      '404':
    *        description: Decoration not found
    */
-  app.get('/decorations/:decoration', async (req,res) => { const r = await withCachedLookup('/decorations', ['Decorations'], getDecorations, req.params.decoration); if (r) res.json(r); else res.status(404).send(); });
+  app.get('/decorations/:decoration', async (req,res) => { const r = await withCachedLookup('/decorations', ['Decorations', 'ClassIds'], getDecorations, req.params.decoration); if (r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getDecorations, getDecoration, formatDecoration };

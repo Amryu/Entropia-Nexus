@@ -1,6 +1,8 @@
 const { pool } = require('./dbClient');
+const { TABLE_TO_ENTITY_TYPE } = require('./constants');
 
 function isId(value){ return /^(\d+)$/.test(String(value)); }
+function isClassId(value){ return /^[Cc]\d+$/.test(String(value)); }
 
 async function getObjects(query, formatFn){
   const { rows } = await pool.query(query);
@@ -21,11 +23,31 @@ function resolveQualifier(query, table){
 
 async function getObjectByIdOrName(query, table, idOrName){
   const qualifier = resolveQualifier(query, table);
+
+  if (isClassId(idOrName)) {
+    const classIdValue = String(idOrName).substring(1);
+    const entityType = TABLE_TO_ENTITY_TYPE[table] || table;
+    const sql = `${query} WHERE ${table ? qualifier : ''}"Id" = (SELECT "EntityId" FROM ONLY "ClassIds" WHERE "ClassId" = $1 AND "EntityType" = $2)`;
+    const { rows } = await pool.query(sql, [classIdValue, entityType]);
+    return rows.length === 1 ? rows[0] : null;
+  }
+
   const sql = isId(idOrName)
     ? `${query} WHERE ${table ? qualifier: ''}"Id" = $1`
     : `${query} WHERE ${table ? qualifier: ''}"Name" = $1`;
   const { rows } = await pool.query(sql, [idOrName]);
   return rows.length === 1 ? rows[0] : null;
+}
+
+async function loadClassIds(entityType, entityIds) {
+  if (!entityIds.length) return {};
+  const { rows } = await pool.query(
+    'SELECT "EntityId", "ClassId" FROM ONLY "ClassIds" WHERE "EntityType" = $1 AND "EntityId" = ANY($2)',
+    [entityType, entityIds]
+  );
+  const map = {};
+  for (const r of rows) map[r.EntityId] = String(r.ClassId);
+  return map;
 }
 
 // Parse a CSV-like list supporting quoted items and ignoring commas inside parentheses
@@ -111,4 +133,4 @@ function generateGenderAliases(name, gender) {
   }
 }
 
-module.exports = { isId, getObjects, getObjectByIdOrName, parseItemList, generateGenderAliases };
+module.exports = { isId, isClassId, getObjects, getObjectByIdOrName, loadClassIds, parseItemList, generateGenderAliases };

@@ -1,4 +1,5 @@
-const { getObjects, getObjectByIdOrName } = require('./utils');
+const { pool } = require('./dbClient');
+const { getObjectByIdOrName, loadClassIds } = require('./utils');
 const { idOffsets } = require('./constants');
 const { withCache, withCachedLookup } = require('./responseCache');
 
@@ -10,9 +11,10 @@ function toNumberOrNull(v) {
   return v === null || v === undefined ? null : Number(v);
 }
 
-function formatArmorPlating(x){
+function formatArmorPlating(x, classIds){
   return {
     Id: x.Id,
+    ClassId: classIds[x.Id] || null,
     ItemId: x.Id + idOffsets.ArmorPlatings,
     Name: x.Name,
     Properties: {
@@ -40,8 +42,12 @@ function formatArmorPlating(x){
   };
 }
 
-const getArmorPlatings = () => getObjects(queries.ArmorPlatings, formatArmorPlating);
-const getArmorPlating = async (idOrName) => { const row = await getObjectByIdOrName(queries.ArmorPlatings, 'ArmorPlatings', idOrName); return row ? formatArmorPlating(row) : null; };
+async function getArmorPlatings() {
+  const { rows } = await pool.query(queries.ArmorPlatings);
+  const classIds = await loadClassIds('ArmorPlating', rows.map(r => r.Id));
+  return rows.map(r => formatArmorPlating(r, classIds));
+}
+const getArmorPlating = async (idOrName) => { const row = await getObjectByIdOrName(queries.ArmorPlatings, 'ArmorPlatings', idOrName); if (!row) return null; const classIds = await loadClassIds('ArmorPlating', [row.Id]); return formatArmorPlating(row, classIds); };
 
 function register(app){
   /**
@@ -53,7 +59,7 @@ function register(app){
    *      '200':
    *        description: A list of armor platings
    */
-  app.get('/armorplatings', async (req,res) => { res.json(await withCache('/armorplatings', ['ArmorPlatings'], getArmorPlatings)); });
+  app.get('/armorplatings', async (req,res) => { res.json(await withCache('/armorplatings', ['ArmorPlatings', 'ClassIds'], getArmorPlatings)); });
   /**
    * @swagger
    * /armorplatings/{armorPlating}:
@@ -72,7 +78,7 @@ function register(app){
    *      '404':
    *        description: Armor plating not found
    */
-  app.get('/armorplatings/:armorPlating', async (req,res) => { const r = await withCachedLookup('/armorplatings', ['ArmorPlatings'], getArmorPlatings, req.params.armorPlating); if (r) res.json(r); else res.status(404).send(); });
+  app.get('/armorplatings/:armorPlating', async (req,res) => { const r = await withCachedLookup('/armorplatings', ['ArmorPlatings', 'ClassIds'], getArmorPlatings, req.params.armorPlating); if (r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getArmorPlatings, getArmorPlating, formatArmorPlating };

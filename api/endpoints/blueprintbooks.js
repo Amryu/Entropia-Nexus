@@ -1,14 +1,16 @@
+const { pool } = require('./dbClient');
 const { idOffsets } = require('./constants');
-const { getObjects, getObjectByIdOrName } = require('./utils');
+const { getObjectByIdOrName, loadClassIds } = require('./utils');
 const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = {
   BlueprintBooks: 'SELECT "BlueprintBooks"."Id", "BlueprintBooks"."Name", "BlueprintBooks"."Description", "PlanetId", "Planets"."Name" AS "Planet", "Weight", "Value" FROM ONLY "BlueprintBooks" LEFT JOIN ONLY "Planets" ON "BlueprintBooks"."PlanetId" = "Planets"."Id"',
 };
 
-function formatBlueprintBook(x){
+function formatBlueprintBook(x, classIds){
   return {
     Id: x.Id,
+    ClassId: classIds[x.Id] || null,
     ItemId: x.Id + idOffsets.BlueprintBooks,
     Name: x.Name,
     Properties: {
@@ -22,8 +24,12 @@ function formatBlueprintBook(x){
 }
 
 // DB methods
-const getBlueprintBooks = () => getObjects(queries.BlueprintBooks, formatBlueprintBook);
-const getBlueprintBook = async (idOrName) => { const row = await getObjectByIdOrName(queries.BlueprintBooks, 'BlueprintBooks', idOrName); return row ? formatBlueprintBook(row) : null; };
+async function getBlueprintBooks() {
+  const { rows } = await pool.query(queries.BlueprintBooks);
+  const classIds = await loadClassIds('BlueprintBook', rows.map(r => r.Id));
+  return rows.map(r => formatBlueprintBook(r, classIds));
+}
+const getBlueprintBook = async (idOrName) => { const row = await getObjectByIdOrName(queries.BlueprintBooks, 'BlueprintBooks', idOrName); if (!row) return null; const classIds = await loadClassIds('BlueprintBook', [row.Id]); return formatBlueprintBook(row, classIds); };
 
 // Endpoints
 function register(app){
@@ -36,7 +42,7 @@ function register(app){
    *      '200':
    *        description: A list of blueprint books
    */
-  app.get('/blueprintbooks', async (req,res) => { res.json(await withCache('/blueprintbooks', ['BlueprintBooks', 'Planets'], getBlueprintBooks)); });
+  app.get('/blueprintbooks', async (req,res) => { res.json(await withCache('/blueprintbooks', ['BlueprintBooks', 'Planets', 'ClassIds'], getBlueprintBooks)); });
   /**
    * @swagger
    * /blueprintbooks/{blueprintBook}:
@@ -56,7 +62,7 @@ function register(app){
    *        description: Blueprint book not found
    */
   app.get('/blueprintbooks/:blueprintBook', async (req,res) => {
-    const result = await withCachedLookup('/blueprintbooks', ['BlueprintBooks', 'Planets'], getBlueprintBooks, req.params.blueprintBook);
+    const result = await withCachedLookup('/blueprintbooks', ['BlueprintBooks', 'Planets', 'ClassIds'], getBlueprintBooks, req.params.blueprintBook);
     if (result) res.json(result); else res.status(404).send();
   });
 }

@@ -1,7 +1,7 @@
 const { loadEffectsOnEquipByItemIds } = require('./effects-utils');
 const { getTiersByItemIds } = require('./tiers');
 const { pool } = require('./dbClient');
-const { getObjectByIdOrName } = require('./utils');
+const { getObjectByIdOrName, loadClassIds } = require('./utils');
 const { idOffsets } = require('./constants');
 const { withCache, withCachedLookup } = require('./responseCache');
 
@@ -19,12 +19,13 @@ async function getTiers(ids) {
   return await getTiersByItemIds(itemIds, 0);
 }
 
-function formatFinder(x, effectsMap, tiersMap){
+function formatFinder(x, effectsMap, tiersMap, classIds){
   const itemId = x.Id + idOffsets.Finders;
   const effects = effectsMap[itemId] ?? [];
   const tiers = tiersMap[itemId] ?? [];
   return {
     Id: x.Id,
+    ClassId: classIds[x.Id] || null,
     ItemId: itemId,
     Name: x.Name,
     Properties: {
@@ -44,21 +45,23 @@ function formatFinder(x, effectsMap, tiersMap){
 
 async function getFinders(){
   const { rows } = await pool.query(queries.Finders);
-  const [effects, tiers] = await Promise.all([
+  const [effects, tiers, classIds] = await Promise.all([
     getEffectsOnEquip(rows.map(r=>r.Id)),
-    getTiers(rows.map(r=>r.Id))
+    getTiers(rows.map(r=>r.Id)),
+    loadClassIds('Finder', rows.map(r => r.Id))
   ]);
-  return rows.map(r => formatFinder(r, effects, tiers));
+  return rows.map(r => formatFinder(r, effects, tiers, classIds));
 }
 
 async function getFinder(idOrName){
   const row = await getObjectByIdOrName(queries.Finders, 'Finders', idOrName);
   if (!row) return null;
-  const [effects, tiers] = await Promise.all([
+  const [effects, tiers, classIds] = await Promise.all([
     getEffectsOnEquip([row.Id]),
-    getTiers([row.Id])
+    getTiers([row.Id]),
+    loadClassIds('Finder', [row.Id])
   ]);
-  return formatFinder(row, effects, tiers);
+  return formatFinder(row, effects, tiers, classIds);
 }
 
 function register(app){
@@ -71,7 +74,7 @@ function register(app){
    *      '200':
    *        description: A list of finders
    */
-  app.get('/finders', async (req,res) => { res.json(await withCache('/finders', ['Finders', 'EffectsOnEquip', 'Effects', 'Tiers', 'TierMaterials'], getFinders)); });
+  app.get('/finders', async (req,res) => { res.json(await withCache('/finders', ['Finders', 'EffectsOnEquip', 'Effects', 'Tiers', 'TierMaterials', 'ClassIds'], getFinders)); });
   /**
    * @swagger
    * /finders/{finder}:
@@ -90,7 +93,7 @@ function register(app){
    *      '404':
    *        description: Finder not found
    */
-  app.get('/finders/:finder', async (req,res) => { const r = await withCachedLookup('/finders', ['Finders', 'EffectsOnEquip', 'Effects', 'Tiers', 'TierMaterials'], getFinders, req.params.finder); if (r) res.json(r); else res.status(404).send(); });
+  app.get('/finders/:finder', async (req,res) => { const r = await withCachedLookup('/finders', ['Finders', 'EffectsOnEquip', 'Effects', 'Tiers', 'TierMaterials', 'ClassIds'], getFinders, req.params.finder); if (r) res.json(r); else res.status(404).send(); });
 }
 
 module.exports = { register, getFinders, getFinder, formatFinder };

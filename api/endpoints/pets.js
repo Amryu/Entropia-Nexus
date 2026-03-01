@@ -1,6 +1,6 @@
 const { pool } = require('./dbClient');
 const { idOffsets } = require('./constants');
-const { getObjectByIdOrName } = require('./utils');
+const { getObjectByIdOrName, loadClassIds } = require('./utils');
 const { withCache, withCachedLookup } = require('./responseCache');
 
 // Use legacy query fields (Planet join); Mount mission isn't in legacy, so omit it for now
@@ -14,6 +14,7 @@ function formatPet(p, data){
   const effects = (data.Effects[p.Id]||[]).map(formatEffect);
   return {
     Id: p.Id,
+    ClassId: data.ClassIds[p.Id] || null,
     ItemId: p.Id + idOffsets.Pets,
     Name: p.Name,
     Properties: {
@@ -32,8 +33,8 @@ function formatPet(p, data){
   };
 }
 
-async function getPets(){ const { rows } = await pool.query(query); const data = { Effects: await getEffects(rows.map(r=>r.Id)) }; return rows.map(r=>formatPet(r,data)); }
-async function getPet(idOrName){ const row = await getObjectByIdOrName(query,'Pets',idOrName); if(!row) return null; const data = { Effects: await getEffects([row.Id]) }; return formatPet(row,data); }
+async function getPets(){ const { rows } = await pool.query(query); const [effects, classIds] = await Promise.all([getEffects(rows.map(r=>r.Id)), loadClassIds('Pet', rows.map(r=>r.Id))]); const data = { Effects: effects, ClassIds: classIds }; return rows.map(r=>formatPet(r,data)); }
+async function getPet(idOrName){ const row = await getObjectByIdOrName(query,'Pets',idOrName); if(!row) return null; const [effects, classIds] = await Promise.all([getEffects([row.Id]), loadClassIds('Pet', [row.Id])]); const data = { Effects: effects, ClassIds: classIds }; return formatPet(row,data); }
 function register(app){
   /**
    * @swagger
@@ -44,7 +45,7 @@ function register(app){
    *      '200':
    *        description: A list of pets
    */
-  app.get('/pets', async (req,res)=>{ res.json(await withCache('/pets', ['Pets'], getPets)); });
+  app.get('/pets', async (req,res)=>{ res.json(await withCache('/pets', ['Pets', 'ClassIds'], getPets)); });
   /**
    * @swagger
    * /pets/{pet}:
@@ -63,6 +64,6 @@ function register(app){
    *      '404':
    *        description: Pet not found
    */
-  app.get('/pets/:pet', async (req,res)=>{ const r = await withCachedLookup('/pets', ['Pets'], getPets, req.params.pet); if(r) res.json(r); else res.status(404).send(); });
+  app.get('/pets/:pet', async (req,res)=>{ const r = await withCachedLookup('/pets', ['Pets', 'ClassIds'], getPets, req.params.pet); if(r) res.json(r); else res.status(404).send(); });
 }
 module.exports = { register, getPets, getPet, formatPet };

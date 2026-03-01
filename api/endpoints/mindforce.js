@@ -1,16 +1,17 @@
 const { pool } = require('./dbClient');
-const { getObjectByIdOrName } = require('./utils');
+const { getObjectByIdOrName, loadClassIds } = require('./utils');
 const { idOffsets } = require('./constants');
 const { loadEffectsOnEquipByItemIds } = require('./effects-utils');
 const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = { MindforceImplants: 'SELECT * FROM ONLY "MindforceImplants"' };
 
-function formatMindforceImplant(x, effectsMap){
+function formatMindforceImplant(x, effectsMap, classIds){
   const itemId = x.Id + idOffsets.MindforceImplants;
   const effects = effectsMap?.[itemId] ?? [];
   return {
     Id: x.Id,
+    ClassId: classIds[x.Id] || null,
     ItemId: itemId,
     Name: x.Name,
     Properties: {
@@ -31,16 +32,22 @@ function formatMindforceImplant(x, effectsMap){
 async function getMindforceImplants(){
   const { rows } = await pool.query(queries.MindforceImplants);
   const itemIds = rows.map(r => r.Id + idOffsets.MindforceImplants);
-  const effects = await loadEffectsOnEquipByItemIds(itemIds);
-  return rows.map(r => formatMindforceImplant(r, effects));
+  const [effects, classIds] = await Promise.all([
+    loadEffectsOnEquipByItemIds(itemIds),
+    loadClassIds('MindforceImplant', rows.map(r => r.Id))
+  ]);
+  return rows.map(r => formatMindforceImplant(r, effects, classIds));
 }
 
 async function getMindforceImplant(idOrName){
   const row = await getObjectByIdOrName(queries.MindforceImplants, 'MindforceImplants', idOrName);
   if (!row) return null;
   const itemId = row.Id + idOffsets.MindforceImplants;
-  const effects = await loadEffectsOnEquipByItemIds([itemId]);
-  return formatMindforceImplant(row, effects);
+  const [effects, classIds] = await Promise.all([
+    loadEffectsOnEquipByItemIds([itemId]),
+    loadClassIds('MindforceImplant', [row.Id])
+  ]);
+  return formatMindforceImplant(row, effects, classIds);
 }
 
 function register(app){
@@ -53,7 +60,7 @@ function register(app){
    *      '200':
    *        description: A list of Mindforce implants
    */
-  app.get('/mindforceimplants', async (req,res) => { res.json(await withCache('/mindforce', ['MindforceImplants', 'EffectsOnEquip'], getMindforceImplants)); });
+  app.get('/mindforceimplants', async (req,res) => { res.json(await withCache('/mindforce', ['MindforceImplants', 'EffectsOnEquip', 'ClassIds'], getMindforceImplants)); });
 
   /**
    * @swagger
@@ -74,7 +81,7 @@ function register(app){
    *        description: Mindforce implant not found
    */
   app.get('/mindforceimplants/:mindforceImplant', async (req,res) => {
-    const r = await withCachedLookup('/mindforce', ['MindforceImplants', 'EffectsOnEquip'], getMindforceImplants, req.params.mindforceImplant);
+    const r = await withCachedLookup('/mindforce', ['MindforceImplants', 'EffectsOnEquip', 'ClassIds'], getMindforceImplants, req.params.mindforceImplant);
     if (r) res.json(r); else res.status(404).send();
   });
 }

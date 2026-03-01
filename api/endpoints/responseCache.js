@@ -121,18 +121,25 @@ async function withCachedLookup(route, tables, listFn, idOrName) {
   if (!entry._byId) {
     const byId = new Map();
     const byName = new Map();
+    const byClassId = new Map();
     for (const item of entry.data) {
       if (item.Id != null) byId.set(item.Id, item);
       if (item.Name) byName.set(item.Name, item);
+      if (item.ClassId != null) byClassId.set(String(item.ClassId), item);
     }
     entry._byId = byId;
     entry._byName = byName;
+    entry._byClassId = byClassId;
   }
 
-  if (/^\d+$/.test(String(idOrName))) {
-    return entry._byId.get(Number(idOrName)) || null;
+  const str = String(idOrName);
+  if (/^[Cc]\d+$/.test(str)) {
+    return entry._byClassId.get(str.substring(1)) || null;
   }
-  return entry._byName.get(String(idOrName)) || null;
+  if (/^\d+$/.test(str)) {
+    return entry._byId.get(Number(str)) || null;
+  }
+  return entry._byName.get(str) || null;
 }
 
 /**

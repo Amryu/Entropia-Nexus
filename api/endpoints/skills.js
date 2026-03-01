@@ -1,5 +1,5 @@
 const { pool } = require("./dbClient");
-const { getObjectByIdOrName } = require("./utils");
+const { getObjectByIdOrName, loadClassIds } = require("./utils");
 const { withCache, withCachedLookup } = require('./responseCache');
 
 const queries = {
@@ -50,13 +50,14 @@ async function _getSkillUnlocks(ids) {
   };
 }
 
-function formatSkill(x, data) {
+function formatSkill(x, data, classIds) {
   const professionSkills = (data.SkillProfessions[x.Id] ?? []).map(
     _formatSkillProfession
   );
   const unlocks = (data.SkillUnlocks[x.Id] ?? []).map(_formatSkillUnlock);
   return {
     Id: x.Id,
+    ClassId: classIds[x.Id] || null,
     Name: x.Name,
     Properties: {
       Description: x.Description,
@@ -76,14 +77,15 @@ function formatSkill(x, data) {
 
 async function getSkills() {
   const { rows } = await pool.query(queries.Skills);
-  const data = await _getSkillUnlocks(rows.map((r) => r.Id));
-  return rows.map((r) => formatSkill(r, data));
+  const ids = rows.map((r) => r.Id);
+  const [data, classIds] = await Promise.all([_getSkillUnlocks(ids), loadClassIds('Skill', ids)]);
+  return rows.map((r) => formatSkill(r, data, classIds));
 }
 async function getSkill(idOrName) {
   const row = await getObjectByIdOrName(queries.Skills, "Skills", idOrName);
   if (!row) return null;
-  const data = await _getSkillUnlocks([row.Id]);
-  return formatSkill(row, data);
+  const [data, classIds] = await Promise.all([_getSkillUnlocks([row.Id]), loadClassIds('Skill', [row.Id])]);
+  return formatSkill(row, data, classIds);
 }
 
 function register(app) {
@@ -97,7 +99,7 @@ function register(app) {
    *        description: A list of skills
    */
   app.get("/skills", async (req, res) => {
-    res.json(await withCache('/skills', ['Skills', 'SkillCategories', 'ProfessionSkills', 'SkillUnlocks', 'Professions', 'ProfessionCategories'], getSkills));
+    res.json(await withCache('/skills', ['Skills', 'SkillCategories', 'ProfessionSkills', 'SkillUnlocks', 'Professions', 'ProfessionCategories', 'ClassIds'], getSkills));
   });
   /**
    * @swagger
@@ -118,7 +120,7 @@ function register(app) {
    *        description: Skill not found
    */
   app.get("/skills/:skill", async (req, res) => {
-    const r = await withCachedLookup('/skills', ['Skills', 'SkillCategories', 'ProfessionSkills', 'SkillUnlocks', 'Professions', 'ProfessionCategories'], getSkills, req.params.skill);
+    const r = await withCachedLookup('/skills', ['Skills', 'SkillCategories', 'ProfessionSkills', 'SkillUnlocks', 'Professions', 'ProfessionCategories', 'ClassIds'], getSkills, req.params.skill);
     if (r) res.json(r);
     else res.status(404).send();
   });
