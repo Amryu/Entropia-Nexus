@@ -11,9 +11,12 @@ export async function GET({ url, locals }) {
 
   const limit = Math.min(parseInt(url.searchParams.get('limit') || '20', 10) || 20, 100);
   const offset = Math.max(parseInt(url.searchParams.get('offset') || '0', 10) || 0, 0);
+  const sinceParam = url.searchParams.get('since');
+  const since = sinceParam ? new Date(sinceParam) : null;
+  if (since && isNaN(since.getTime())) return getResponse({ error: 'Invalid since date' }, 400);
 
   try {
-    const imports = await getImportHistory(user.id, limit, offset);
+    const imports = await getImportHistory(user.id, limit, offset, since);
     return getResponse(imports, 200);
   } catch (err) {
     console.error('Error fetching import history:', err);

@@ -13,12 +13,14 @@
     getPlanetGroupByType,
     normalizePlanetSlug,
     getWaypointFromLocation,
+    getMobAreaShortName,
+    getMobAreaDifficulty,
+    formatMobAreaMaturities,
     planetGroups
   } from '$lib/mapUtil';
 
   import MapCanvas from '$lib/components/MapCanvas.svelte';
   import InlineEdit from '$lib/components/wiki/InlineEdit.svelte';
-  import EntityImageUpload from '$lib/components/wiki/EntityImageUpload.svelte';
   import WaypointCopyButton from '$lib/components/wiki/WaypointCopyButton.svelte';
   import EditActionBar from '$lib/components/wiki/EditActionBar.svelte';
   import PendingChangeBanner from '$lib/components/wiki/PendingChangeBanner.svelte';
@@ -132,6 +134,14 @@
   $: canUsePendingChange = !!(resolvedPendingChange && user && (resolvedPendingChange.author_id === user.id || user?.grants?.includes('wiki.approve')));
 
   $: locations = data?.additional?.locations || [];
+  // Pre-compute difficulty for MobArea locations
+  $: if (locations.length) {
+    for (const loc of locations) {
+      if (loc.Properties?.Type === 'MobArea' && !loc._difficulty) {
+        loc._difficulty = getMobAreaDifficulty(loc.Maturities);
+      }
+    }
+  }
   $: error = data.error;
   $: currentPlanet = data?.additional?.planet;
   $: isCreateMode = data.isCreateMode || false;
@@ -359,9 +369,6 @@
     : getEntityTypeForLocation(selectedLocation);
 
   $: activeEntityType = selectedEntityType;
-  $: imageEntityType = activeEntityType === 'Apartment'
-    ? 'location'
-    : (activeEntityType || 'location').toLowerCase();
   $: isAreaEntity = !!activeLocation?.Properties?.Shape || isAreaType(activeLocation?.Properties?.Type);
   $: isApartmentEntity = isApartmentType(activeLocation?.Properties?.Type) || activeEntityType === 'Apartment';
   $: hasLocationContent = $editMode || (!isMobile && !!activeLocation?.Properties?.Coordinates);
@@ -456,6 +463,11 @@
     selectedSubArea = subAreas[0]?._type || '';
   }
 
+  function getDisplayName(loc) {
+    if (loc.Properties?.Type === 'MobArea') return getMobAreaShortName(loc.Name);
+    return loc.Name;
+  }
+
   $: searchResults = (() => {
     const query = searchQuery.trim();
     if (!query) return [];
@@ -464,6 +476,7 @@
         item,
         score: Math.max(
           fuzzyScore(item.Name, query),
+          item.Properties?.Type === 'MobArea' ? fuzzyScore(getMobAreaShortName(item.Name), query) : 0,
           fuzzyScore(item.Properties?.Type, query) * 0.4
         )
       }))
@@ -912,7 +925,7 @@
             on:mouseleave={() => {}}
           >
             <span class="result-index">{index + 1}</span>
-            <span class="result-name">{result.Name}</span>
+            <span class="result-name" style={result._difficulty?.color ? `color: ${result._difficulty.color}` : ''}>{getDisplayName(result)}</span>
             <span class="result-type">{result.Properties?.Type || 'Location'}</span>
           </button>
         {/each}
@@ -950,19 +963,11 @@
           </button>
         {/if}
         <div class="header-main">
-            <EntityImageUpload
-              entityId={activeLocation?.Id}
-              entityName={activeLocation?.Name}
-              entityType={imageEntityType}
-              {user}
-              isEditMode={$editMode && isEditAllowed}
-              isCreateMode={effectiveCreateMode}
-            />
           <div class="header-text">
             <div class="info-title-row">
-              <div class="info-title">
+              <div class="info-title" style={activeLocation?._difficulty?.color ? `color: ${activeLocation._difficulty.color}` : ''}>
                 <InlineEdit
-                  value={activeLocation?.Name || ''}
+                  value={$editMode ? (activeLocation?.Name || '') : getDisplayName(activeLocation)}
                   path="Name"
                   type="text"
                   placeholder="Location name"
@@ -1153,7 +1158,11 @@
                 {:else}
                   <div class="teleporter-list">
                     {#each closestTeleporters as teleporter}
-                      <button class="teleporter-item" on:click={() => selectLocation(teleporter, { focus: true })}>
+                      <button class="teleporter-item"
+                        on:click={() => selectLocation(teleporter, { focus: true })}
+                        on:mouseenter={() => { hoveredLocation = teleporter; mapRef?.panTo(teleporter); }}
+                        on:mouseleave={() => { hoveredLocation = null; if (selectedLocation) mapRef?.panTo(selectedLocation); }}
+                      >
                         <span>{teleporter.Name}</span>
                         <span class="teleporter-distance">{teleporter._distance?.toFixed(0)} m</span>
                       </button>
@@ -1166,6 +1175,12 @@
           {#if activeLocation?.Properties?.Type === 'MobArea'}
             <div class="info-section">
               <h4>Mob Area</h4>
+              {#if activeLocation._difficulty}
+                <div class="stat-row">
+                  <span class="stat-label">Difficulty</span>
+                  <span class="stat-value" style="color: {activeLocation._difficulty.color}; font-weight: 600">{activeLocation._difficulty.label}</span>
+                </div>
+              {/if}
               <div class="stat-row">
                 <span class="stat-label">Density</span>
                 <span class="stat-value">{formatDensity(activeLocation?.Properties?.Density)}</span>
@@ -1178,6 +1193,21 @@
                 <span class="stat-label">Event</span>
                 <span class="stat-value">{activeLocation?.Properties?.IsEvent ? 'Yes' : 'No'}</span>
               </div>
+              {#if activeLocation?.Maturities?.length}
+                {@const mobEntries = formatMobAreaMaturities(activeLocation.Maturities)}
+                {#if mobEntries.length}
+                  <div class="mob-types-list">
+                    {#each mobEntries as entry}
+                      <div class="mob-type-row">
+                        <a class="mob-name-link" href="/information/mobs/{entry.mobSlug || ''}">{entry.mob}</a>
+                        {#if entry.display}
+                          <span class="mob-mat-range">- {entry.display}</span>
+                        {/if}
+                      </div>
+                    {/each}
+                  </div>
+                {/if}
+              {/if}
               {#if activeLocation?.Properties?.Notes}
                 <div class="description-text">{activeLocation.Properties.Notes}</div>
               {/if}
@@ -1516,7 +1546,7 @@
   }
 
   .map-info-panel:not(.mobile) :global(.entity-icon-wrapper) {
-    max-width: min(320px, 30vh);
+    max-width: min(160px, 20vh);
     margin-left: auto;
     margin-right: auto;
   }
@@ -1792,12 +1822,6 @@
     width: 100%;
   }
 
-  .map-info-panel :global(.entity-image),
-  .map-info-panel :global(.icon-placeholder) {
-    box-sizing: border-box;
-    max-width: 100%;
-  }
-
   .stat-label {
     color: var(--text-muted, #999);
   }
@@ -1933,6 +1957,12 @@
     border-radius: 6px;
     color: var(--text-color);
     cursor: pointer;
+    transition: border-color 0.15s, background-color 0.15s;
+  }
+
+  .teleporter-item:hover {
+    border-color: var(--accent-color, #4dabf7);
+    background-color: var(--hover-color, rgba(255, 255, 255, 0.05));
   }
 
   .teleporter-distance {
@@ -1944,6 +1974,32 @@
     font-size: 13px;
     line-height: 1.5;
     color: var(--text-color);
+  }
+
+  .mob-types-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 8px;
+  }
+
+  .mob-type-row {
+    font-size: 12px;
+    line-height: 1.4;
+  }
+
+  .mob-name-link {
+    color: var(--accent-color, #4a9eff);
+    text-decoration: none;
+    font-weight: 500;
+  }
+
+  .mob-name-link:hover {
+    text-decoration: underline;
+  }
+
+  .mob-mat-range {
+    color: var(--text-muted, #999);
   }
 
   .dialog-backdrop {

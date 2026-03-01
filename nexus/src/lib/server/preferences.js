@@ -15,6 +15,7 @@ const ALLOWED_KEY_PREFIXES = [
   'loadouts',
   'wiki.',
   'services.',
+  'inventory.',
 ];
 
 /**

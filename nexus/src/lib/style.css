@@ -186,6 +186,9 @@ button {
 .badge-freq-extremelyrare { color: #a855f7; }
 .badge-freq-extremelyrare.badge-subtle { background-color: rgba(147, 51, 234, 0.25); }
 
+.badge-freq-discontinued { color: #6b7280; }
+.badge-freq-discontinued.badge-subtle { background-color: rgba(107, 114, 128, 0.25); }
+
 /* Density-specific badge colors */
 .badge-density-low { color: #eab308; }
 .badge-density-low.badge-subtle { background-color: rgba(202, 138, 4, 0.25); }
@@ -225,6 +228,9 @@ button {
 
 .light-mode .badge-freq-extremelyrare { color: #7e22ce; }
 .light-mode .badge-freq-extremelyrare.badge-subtle { background-color: rgba(147, 51, 234, 0.2); }
+
+.light-mode .badge-freq-discontinued { color: #4b5563; }
+.light-mode .badge-freq-discontinued.badge-subtle { background-color: rgba(107, 114, 128, 0.2); }
 
 .light-mode .badge-density-low { color: #854d0e; }
 .light-mode .badge-density-low.badge-subtle { background-color: rgba(202, 138, 4, 0.2); }

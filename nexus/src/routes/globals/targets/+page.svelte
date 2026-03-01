@@ -50,6 +50,7 @@
   let hofOnly = sp.get('hof') === 'true';
   let period = sp.get('period') || '7d';
   let sortBy = sp.get('sort') || 'count';
+  let groupBy = 'maturity';
   let currentPage = 1;
 
   let data = null;
@@ -79,7 +80,7 @@
   async function fetchData() {
     loading = true;
     try {
-      const params = buildParams({ sort: sortBy, page: currentPage, period });
+      const params = buildParams({ sort: sortBy, page: currentPage, period, group: groupBy });
       const res = await fetch(`/api/globals/stats/targets?${params}`);
       if (!res.ok) return;
       data = await res.json();
@@ -96,6 +97,10 @@
 
   function onTypeFilter(val) {
     typeFilter = val;
+    // Reset mob grouping when switching away from hunting
+    if (val && !val.split(',').some(t => t === 'kill' || t === 'team_kill')) {
+      groupBy = 'maturity';
+    }
     onFilterChange();
   }
 
@@ -104,6 +109,14 @@
     currentPage = 1;
     fetchData();
   }
+
+  function onGroupChange(val) {
+    groupBy = val;
+    currentPage = 1;
+    fetchData();
+  }
+
+  $: isHuntingFilter = !typeFilter || typeFilter.split(',').some(t => t === 'kill' || t === 'team_kill');
 
   function goToPage(p) {
     currentPage = p;
@@ -248,9 +261,17 @@
         </button>
       {/each}
     </div>
-    <div class="sort-toggle">
-      <button class="sort-btn" class:active={sortBy === 'count'} on:click={() => onSortChange('count')}>By Count</button>
-      <button class="sort-btn" class:active={sortBy === 'value'} on:click={() => onSortChange('value')}>By Value</button>
+    <div class="sort-toggles">
+      {#if isHuntingFilter}
+        <div class="sort-toggle">
+          <button class="sort-btn" class:active={groupBy === 'maturity'} on:click={() => onGroupChange('maturity')}>Maturities</button>
+          <button class="sort-btn" class:active={groupBy === 'mob'} on:click={() => onGroupChange('mob')}>Mobs</button>
+        </div>
+      {/if}
+      <div class="sort-toggle">
+        <button class="sort-btn" class:active={sortBy === 'count'} on:click={() => onSortChange('count')}>By Count</button>
+        <button class="sort-btn" class:active={sortBy === 'value'} on:click={() => onSortChange('value')}>By Value</button>
+      </div>
     </div>
   </div>
 
@@ -495,6 +516,12 @@
     background: var(--accent-color);
     border-color: var(--accent-color);
     color: #fff;
+  }
+
+  .sort-toggles {
+    display: flex;
+    gap: 8px;
+    align-items: center;
   }
 
   .sort-toggle {

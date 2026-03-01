@@ -1,10 +1,11 @@
 //@ts-nocheck
 import { apiCall } from '$lib/util.js';
-import { ARMOR_SET_OFFSET } from '$lib/common/itemTypes.js';
+import { ARMOR_SET_OFFSET, STRONGBOX_OFFSET } from '$lib/common/itemTypes.js';
 
 // Match market cache refresh cadence for item catalog data.
 const ITEMS_REFRESH_MS = 15 * 60 * 1000; // 15m
 const ARMOR_SET_MAX_ID = ARMOR_SET_OFFSET + 999999;
+const STRONGBOX_MAX_ID = STRONGBOX_OFFSET + 999999;
 
 let itemTypeCache = {
   expiresAt: 0,
@@ -86,6 +87,8 @@ export async function resolveItemTypesByItemId(itemIds, fetch) {
   for (const itemId of itemIds) {
     if (itemId >= ARMOR_SET_OFFSET && itemId <= ARMOR_SET_MAX_ID) {
       map[itemId] = { type: 'ArmorSet', subType: null };
+    } else if (itemId >= STRONGBOX_OFFSET && itemId <= STRONGBOX_MAX_ID) {
+      map[itemId] = { type: 'Strongbox', subType: null };
     } else {
       unresolved.push(itemId);
     }
@@ -123,6 +126,8 @@ export async function resolveItemDataByItemId(itemIds, fetch) {
   for (const itemId of itemIds) {
     if (itemId >= ARMOR_SET_OFFSET && itemId <= ARMOR_SET_MAX_ID) {
       map[itemId] = { type: 'ArmorSet', subType: null, item: null };
+    } else if (itemId >= STRONGBOX_OFFSET && itemId <= STRONGBOX_MAX_ID) {
+      map[itemId] = { type: 'Strongbox', subType: null, item: null };
     } else {
       unresolved.push(itemId);
     }

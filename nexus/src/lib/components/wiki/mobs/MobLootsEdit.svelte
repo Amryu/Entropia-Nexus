@@ -30,7 +30,8 @@
     'Uncommon',
     'Rare',
     'Very rare',
-    'Extremely rare'
+    'Extremely rare',
+    'Discontinued'
   ];
 
   // Color mapping for frequencies
@@ -42,7 +43,8 @@
     'Uncommon': { bg: 'rgba(234, 88, 12, 0.25)', color: '#f97316' },
     'Rare': { bg: 'rgba(220, 38, 38, 0.25)', color: '#ef4444' },
     'Very rare': { bg: 'rgba(190, 18, 60, 0.25)', color: '#f43f5e' },
-    'Extremely rare': { bg: 'rgba(147, 51, 234, 0.25)', color: '#a855f7' }
+    'Extremely rare': { bg: 'rgba(147, 51, 234, 0.25)', color: '#a855f7' },
+    'Discontinued': { bg: 'rgba(107, 114, 128, 0.25)', color: '#6b7280' }
   };
 
   // Item name lookup set for validation

@@ -374,7 +374,7 @@ export const Mob = {
         "properties": {
           "Frequency": {
             "type": "string",
-            "enum": ["Always", "Very often", "Often", "Common", "Uncommon", "Rare", "Very rare", "Extremely rare"] 
+            "enum": ["Always", "Very often", "Often", "Common", "Uncommon", "Rare", "Very rare", "Extremely rare", "Discontinued"]
           },
           "IsEvent": {
             "type": "boolean",

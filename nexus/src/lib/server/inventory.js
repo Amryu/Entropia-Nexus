@@ -434,15 +434,22 @@ export async function deleteInventoryItem(itemRowId, userId) {
 
 /**
  * Get user's import history (paginated, most recent first).
+ * @param {Date|null} since - Optional lower bound for imported_at
  */
-export async function getImportHistory(userId, limit = 20, offset = 0) {
+export async function getImportHistory(userId, limit = 20, offset = 0, since = null) {
+  const params = [userId, limit, offset];
+  let sinceClause = '';
+  if (since) {
+    params.push(since);
+    sinceClause = ` AND imported_at >= $${params.length}`;
+  }
   const { rows } = await pool.query(
     `SELECT id, user_id, imported_at, item_count, total_value, estimated_value, unknown_value, summary
      FROM inventory_imports
-     WHERE user_id = $1
+     WHERE user_id = $1${sinceClause}
      ORDER BY imported_at DESC
      LIMIT $2 OFFSET $3`,
-    [userId, limit, offset]
+    params
   );
   return rows;
 }
@@ -471,14 +478,21 @@ export async function getImportDeltas(importId, userId) {
 
 /**
  * Get portfolio value history (all imports with non-null total_value).
+ * @param {Date|null} since - Optional lower bound for imported_at
  */
-export async function getValueHistory(userId) {
+export async function getValueHistory(userId, since = null) {
+  const params = [userId];
+  let sinceClause = '';
+  if (since) {
+    params.push(since);
+    sinceClause = ` AND imported_at >= $${params.length}`;
+  }
   const { rows } = await pool.query(
     `SELECT imported_at, total_value, estimated_value, unknown_value, item_count
      FROM inventory_imports
-     WHERE user_id = $1 AND (total_value IS NOT NULL OR estimated_value IS NOT NULL)
+     WHERE user_id = $1 AND (total_value IS NOT NULL OR estimated_value IS NOT NULL)${sinceClause}
      ORDER BY imported_at ASC`,
-    [userId]
+    params
   );
   return rows;
 }

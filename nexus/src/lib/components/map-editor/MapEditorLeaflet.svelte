@@ -1458,12 +1458,14 @@
     padding-left: 4px;
   }
 
-  /* Vertex editing handles: smaller and round */
+  /* Vertex editing handles: smaller and round.
+     Total visual size = 8px content + 2×2px border = 12px.
+     Margins must be half of total (−6px) to center on the vertex. */
   .map-container :global(.leaflet-editing-icon) {
     width: 8px !important;
     height: 8px !important;
-    margin-left: -4px !important;
-    margin-top: -4px !important;
+    margin-left: -6px !important;
+    margin-top: -6px !important;
     border-radius: 50%;
     border: 2px solid white;
     background: var(--accent-color, #3b82f6);

@@ -402,7 +402,7 @@ List community-submitted wiki changes with filtering.
 | `authorId` | string | Filter by author |
 | `planet` | string | Filter by planet |
 | `page` | integer | Page number |
-| `limit` | integer | Results per page (max 100) |
+| `limit` | integer | Results per page (default 50, max 100) |
 
 #### `GET /api/changes/{id}`
 
@@ -484,11 +484,12 @@ Paginated list of confirmed global events. Supports filtering and cursor-based p
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `type` | string | Filter by type (comma-separated): `kill`, `team_kill`, `deposit`, `craft`, `rare_item`, `discovery`, `tier` |
+| `type` | string | Filter by type (comma-separated): `kill`, `team_kill`, `deposit`, `craft`, `rare_item`, `discovery`, `tier`, `examine`, `pvp` |
 | `player` | string | Player name (case-insensitive substring) |
 | `team` | string | Team name for team_kill globals (case-insensitive substring) |
 | `target` | string | Target name (case-insensitive substring) |
 | `mob_id` | integer | Filter by resolved mob ID |
+| `location` | string | Location name (exact match) |
 | `min_value` | number | Minimum PED value |
 | `hof` | boolean | Only Hall of Fame globals |
 | `ath` | boolean | Only All-Time High globals |
@@ -518,22 +519,84 @@ Aggregated global event statistics. Cached for 60 seconds.
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `period` | string | Time period: `24h`, `7d`, `30d`, `all` (default `all`) |
-| `player` | string | Filter by player name |
-| `type` | string | Filter by type (comma-separated) |
+| `player` | string | Filter by player name (partial match, case-insensitive) |
+| `type` | string | Filter by global type (comma-separated). Valid types: `kill`, `team_kill`, `deposit`, `craft`, `rare_item`, `discovery`, `tier`, `examine`, `pvp` |
+| `target` | string | Filter by target name (partial match, case-insensitive) |
+| `location` | string | Filter by location (exact match) |
+| `min_value` | number | Minimum PED value |
+| `hof` | `true` | Only include Hall of Fame globals |
+| `players_sort` | string | Sort top players by `count` or `value` (default `value`) |
+| `targets_sort` | string | Sort top targets by `count` or `value` (default `count`) |
+| `targets_group` | string | Group top targets by `maturity` or `mob` (default `maturity`). When `mob`, maturities of the same creature are combined and the maturity suffix is stripped (e.g. "Atrox Young", "Atrox Old" → "Atrox"). Only affects the `top_targets` array. Top targets are limited to hunting types (`kill`, `team_kill`). |
 
-Returns `summary` (counts, values), `by_type`, `top_players`, `top_targets`, and `activity` timeline buckets.
+Returns:
+- `summary` — `total_count`, `total_value`, `hof_count`, `ath_count`
+- `by_type` — array of `{ type, count, value }` per global type
+- `top_players` — top 10 players by chosen sort, each with `player`, `count`, `value`, `is_team`
+- `top_targets` — top 10 hunting targets by chosen sort, each with `target`, `mob_id`, `count`, `value`
+- `activity` — timeline buckets (`{ bucket, count }`), hourly for `24h` period, daily otherwise
+
+#### `GET /api/globals/stats/targets`
+
+Paginated ranked list of targets by globals. Unlike the main stats endpoint, this shows **all target types** (not just hunting) unless a type filter is set. Cached for 60 seconds.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `period` | string | Time period: `24h`, `7d`, `30d`, `all` (default `all`) |
+| `player` | string | Filter by player name (partial match, case-insensitive) |
+| `type` | string | Filter by global type (comma-separated). Valid types: `kill`, `team_kill`, `deposit`, `craft`, `rare_item`, `discovery`, `tier`, `examine`, `pvp` |
+| `target` | string | Filter by target name (partial match, case-insensitive) |
+| `location` | string | Filter by location (exact match) |
+| `min_value` | number | Minimum PED value |
+| `hof` | `true` | Only include Hall of Fame globals |
+| `sort` | string | Sort by `count` or `value` (default `count`) |
+| `group` | string | Group by `maturity` or `mob` (default `maturity`). When `mob`, all maturities of the same creature are combined into a single row and the maturity suffix is stripped from the name. Targets without a resolved `mob_id` remain grouped by their original name. |
+| `page` | number | Page number (default `1`) |
+| `limit` | number | Results per page, 1–100 (default `50`) |
+
+Returns:
+- `targets` — array of `{ target, mob_id, count, value, primary_type }`
+- `total` — total number of matching target groups
+- `page` — current page number
+- `pages` — total page count
 
 #### `GET /api/globals/player/{name}`
 
-Player-specific global event breakdown. Cached for 60 seconds.
+Player-specific global event breakdown. Cached for 60 seconds. Returns 404 if the player has no globals.
 
-Returns `summary`, `hunting` (per-mob with maturity breakdown), `mining` (per-resource), `crafting` (per-item), `activity` timeline, `recent` globals, and `achievements` (discovery/tier).
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `period` | string | Time period: `24h`, `7d`, `30d`, `all` (default `all`) |
+
+Returns:
+- `player` — the player name
+- `summary` — `total_count`, `total_value`, `hof_count`, `ath_count`, plus per-type counts (`kill_count`, `team_kill_count`, `deposit_count`, `craft_count`, `rare_count`, `discovery_count`, `tier_count`)
+- `hunting` — array of `{ mob_id, target, kills, total_value, best_value, avg_value, maturities: [{ target, maturity_id, kills, total_value, avg_value, best_value }] }`
+- `mining` — `{ resources: [{ target, finds, total_value, avg_value, best_value }] }`
+- `crafting` — `{ items: [{ target, crafts, total_value, avg_value, best_value }] }`
+- `activity` — timeline buckets with `{ bucket, type, count }` (broken down by global type)
+- `recent` — up to 20 recent globals
+- `achievements` — discovery and tier globals with `{ type, target, value, extra, timestamp, hof, ath }`
 
 #### `GET /api/globals/target/{name}`
 
-Target-specific global event breakdown. Cached for 60 seconds.
+Target-specific global event breakdown. Cached for 60 seconds. Returns 404 if no globals match the target.
 
-Returns `summary` (total count, value, HoF/ATH counts, first/last seen), `top_players` (by total value), `activity` timeline, and `recent` globals.
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `period` | string | Time period: `24h`, `7d`, `30d`, `all` (default `all`) |
+| `maturities` | string | Comma-separated target names to filter by specific maturity variants (max 50) |
+
+Returns:
+- `target` — the target name
+- `primary_type` — the most common global type for this target
+- `mob_id` — resolved mob ID (if available)
+- `wiki_url` — link to the mob's wiki page (hunting targets with a mob_id only)
+- `summary` — `total_count`, `total_value`, `hof_count`, `ath_count`, `first_seen`, `last_seen`
+- `maturities` — array of `{ target, count, value }` for all maturity variants (only when >1 variant exists)
+- `top_players` — top players by total value, each with `player`, `count`, `value`, `best_value`, `is_team`
+- `activity` — timeline buckets (`{ bucket, count }`)
+- `recent` — recent globals for this target
 
 #### `GET /api/globals/search`
 
@@ -543,7 +606,7 @@ Search for players, teams, and targets across confirmed globals. Cached for 30 s
 |---|---|---|
 | `query` | string | **Required.** Search term (min 2 chars) |
 
-Returns an array of results with `Id`, `Name`, `Type` (Player, Team, Hunting, Mining, Crafting, Rare Find, Discovery, Tier), and `Score`.
+Returns an array of results with `Id`, `Name`, `SubType`, `Type` (Player, Team, Hunting, Mining, Crafting, Rare Find, Discovery, Tier, Mob, Instance, PvP), and `Score`.
 
 ### Other
 
@@ -674,11 +737,13 @@ Returns the authenticated user's profile.
   "username": "player1",
   "global_name": "Player One",
   "discriminator": "0",
-  "avatar": "https://cdn.discordapp.com/avatars/...",
+  "avatar": "a1b2c3d4e5f6",
   "eu_name": "Player One Calypso",
   "verified": true
 }
 ```
+
+> `avatar` is the raw Discord avatar hash. Construct the CDN URL as `https://cdn.discordapp.com/avatars/{id}/{avatar}.png`.
 
 ### Inventory
 
@@ -733,7 +798,7 @@ Import inventory items. Max 30,000 items per import, max 500 unknown items (item
 | `TierIncreaseRate` | integer | Tier increase rate (1-4000) |
 | `QualityRating` | float | Blueprint quality rating (0-100) |
 
-When `sync` is `true`, items not in the import are marked as removed.
+The `sync` field defaults to `true`. When `sync` is `true`, items not in the import are marked as removed. Set `sync: false` to add/update items without affecting existing inventory.
 
 #### `PATCH /api/users/inventory/{id}`
 **Scope:** `inventory:write`
@@ -746,9 +811,9 @@ Update a single inventory item's quantity, value, or details.
 Remove a single inventory item.
 
 #### `GET /api/users/inventory/imports`
-**Scope:** `inventory:read` | Query: `limit` (max 100), `offset`
+**Scope:** `inventory:read` | Query: `limit` (max 100), `offset`, `since` (ISO date)
 
-Returns import history with summaries.
+Returns import history with summaries. Optional `since` parameter filters to imports after the given date.
 
 #### `GET /api/users/inventory/imports/{id}/deltas`
 **Scope:** `inventory:read`
@@ -756,9 +821,9 @@ Returns import history with summaries.
 Returns per-item changes (added, updated, removed) for a specific import.
 
 #### `GET /api/users/inventory/imports/value-history`
-**Scope:** `inventory:read`
+**Scope:** `inventory:read` | Query: `since` (ISO date)
 
-Returns total inventory value over time.
+Returns total inventory value over time. Optional `since` parameter filters to data points after the given date.
 
 #### `GET /api/users/inventory/markups`
 **Scope:** `inventory:read`
@@ -796,12 +861,11 @@ Returns all loadouts owned by the user.
 Returns a specific loadout. Must be the owner.
 
 #### `GET /api/tools/loadout/share/{shareCode}`
-**Scope:** `loadouts:read`
 
-Returns a public loadout by its share code.
+Returns a public loadout by its share code. No authentication required.
 
 #### `POST /api/tools/loadout`
-**Scope:** `loadouts:write` | Max: 500 per user, 20KB per loadout
+**Scope:** `loadouts:write` | Max: 500 per user, 50KB per loadout
 
 Create a new loadout.
 
@@ -924,7 +988,7 @@ Import skill data.
 }
 ```
 
-When `trackImport` is `true`, a diff is calculated and stored.
+`trackImport` defaults to `true`. When enabled, a diff is calculated and stored. Set `trackImport: false` to import without tracking changes.
 
 #### `GET /api/tools/skills/imports`
 **Scope:** `skills:read`
@@ -997,8 +1061,8 @@ Create an exchange order.
 **Planets:** `Calypso`, `Arkadia`, `Cyrene`, `Rocktropia`, `Next Island`, `Monria`, `Toulan`, `Howling Mine (Space)`
 
 **Markup types:**
-- **Percentage markup** (min 100%): Material, Consumable, Capsule, Enhancer, Strongbox, and stackable financial items (Deed, Token, Share)
-- **Absolute markup** (PED): all other item types
+- **Percentage markup** (min 100%): Material, Consumable, Capsule, Enhancer, Strongbox — excluding Deed, Token, and Share subtypes
+- **Absolute markup** (PED): all other item types, including Deed, Token, and Share
 
 **Order details fields** (all optional):
 
@@ -1017,7 +1081,7 @@ Create an exchange order.
 **Limits:** 1,000 buy + 1,000 sell orders per user; 5 per item per side; 3-minute per-item cooldown between creates/edits.
 
 #### `POST /api/market/exchange/orders/batch`
-**Scope:** `exchange:write` | Rate limit: 100/min (creates), 60/min (edits) | Max: 50 orders per batch
+**Scope:** `exchange:write` | Rate limit: 100/min, 500/hour, 3000/day (creates), 60/min (edits) | Max: 50 orders per batch
 
 Create or update multiple orders in a single request. Supports partial success — each order in the batch is processed independently.
 
@@ -1066,7 +1130,7 @@ Returns HTTP 200 if any orders succeeded, 400 if all failed.
 Update an order's quantity, markup, planet, min_quantity, or details. Must be the owner.
 
 #### `DELETE /api/market/exchange/orders/{id}`
-**Scope:** `exchange:write`
+**Scope:** `exchange:write` | Rate limit: 100/min
 
 Close (delete) an exchange order. Must be the owner.
 
@@ -1210,14 +1274,14 @@ Create a rental offer.
 
 **Discount tiers:** Each tier has `minDays` (2-365) and `percent` (1-99%). Tiers are auto-sorted by minDays ascending.
 
-**Rental statuses:** `draft`, `available`, `unlisted`
+**Rental statuses:** `draft`, `available`, `rented`, `unlisted`, `deleted`
 
-**Status transitions:** `draft` → `available`, `available` → `draft` / `unlisted`, `unlisted` → `available`
+**Status transitions:** `draft` → `available`, `available` → `draft` / `unlisted` / `deleted`, `rented` → `unlisted` / `deleted`, `unlisted` → `available`
 
 #### `PUT /api/rental/{id}`
 **Scope:** `rental:write` | Rate limit: 20/min
 
-Update a rental offer. Only drafts allow full field changes. For non-draft offers, only status, description, location, and pricing can be updated.
+Update a rental offer. Only drafts allow full field changes (item set, title, description, pricing, discounts, deposit, planet, location). Non-draft offers can only change status.
 
 #### `DELETE /api/rental/{id}`
 **Scope:** `rental:write` | Rate limit: 10/min
@@ -1452,7 +1516,7 @@ Disband a society. Must be the leader.
 
 ### Guides
 
-The `guides:write` scope grants `guide.create` and `guide.edit` permissions. Deletion of guide content is not available via the API.
+The `guides:write` scope grants `guide.create` and `guide.edit` permissions. Deletion of guide content requires a separate `guide.delete` permission not included in the `guides:write` scope.
 
 Guide content uses sanitized rich text (HTML) for descriptions and paragraph content.
 
@@ -1558,7 +1622,7 @@ Re-uploading for the same target overwrites your previous pending upload.
 | Item sets | 320×480 max (fit, portrait) |
 | Rich text | Preserves aspect ratio |
 
-**Constraints:** Max 2MB file, max 8192×8192 pixels, min 32×32 pixels. Allowed formats: JPEG, PNG, WebP, GIF (verified via magic bytes).
+**Constraints:** Max 3MB file, max 8192×8192 pixels, min 32×32 pixels. Allowed formats: JPEG, PNG, WebP, GIF (verified via magic bytes).
 
 #### `POST /api/uploads/entity-image`
 **Scope:** `uploads:write` | Rate limit: 50/5min | Max: 3MB

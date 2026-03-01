@@ -7,7 +7,7 @@
   function drawShape(ctx, loc, isHovered, isSelected) {
     const type = loc.Properties.Shape;
     ctx.save();
-    let baseColor = getColorByType(loc.Properties.Type)?.color || 'white';
+    let baseColor = getColorByType(loc.Properties.Type, loc)?.color || 'white';
     // Enhanced highlight for selected
     if (isSelected) {
       ctx.shadowColor = 'yellow';
@@ -92,14 +92,16 @@
   }
 
   function drawSearchResult(ctx, loc, index) {
+    // Draw shape with its actual color at reduced opacity, plus a numbered label
     const shape = loc.Properties.Shape;
     const isArea = ['Circle', 'Rectangle', 'Polygon'].includes(shape);
+    const baseColor = getColorByType(loc.Properties.Type, loc)?.color || 'yellow';
     ctx.save();
     ctx.shadowBlur = 0;
     ctx.lineWidth = 1.5;
-    ctx.globalAlpha = 0.25;
-    ctx.strokeStyle = '#aaa';
-    ctx.fillStyle = '#888';
+    ctx.globalAlpha = 0.35;
+    ctx.strokeStyle = baseColor;
+    ctx.fillStyle = baseColor;
 
     if (shape === 'Circle') {
       const center = entropiaCoordsToCanvasCoords(loc.Properties.Data.x, loc.Properties.Data.y);
@@ -108,7 +110,7 @@
       ctx.beginPath();
       ctx.arc(center.x, center.y, radius, 0, 2 * Math.PI);
       ctx.fill();
-      ctx.globalAlpha = 0.5;
+      ctx.globalAlpha = 0.7;
       ctx.stroke();
     } else if (shape === 'Rectangle') {
       const start = entropiaCoordsToCanvasCoords(loc.Properties.Data.x, loc.Properties.Data.y);
@@ -118,7 +120,7 @@
       ctx.beginPath();
       ctx.rect(start.x, start.y - height, width, height);
       ctx.fill();
-      ctx.globalAlpha = 0.5;
+      ctx.globalAlpha = 0.7;
       ctx.stroke();
     } else if (shape === 'Polygon') {
       const verts = (loc.Properties.Data.vertices ?? []).reduce((result, value, idx, arr) => {
@@ -131,18 +133,17 @@
         for (let i = 1; i < verts.length; i++) ctx.lineTo(verts[i].x, verts[i].y);
         ctx.closePath();
         ctx.fill();
-        ctx.globalAlpha = 0.5;
+        ctx.globalAlpha = 0.7;
         ctx.stroke();
       }
     } else {
       // Point location
       const pt = entropiaCoordsToCanvasCoords(loc.Properties.Coordinates.Longitude, loc.Properties.Coordinates.Latitude);
-      ctx.globalAlpha = 0.4;
+      ctx.globalAlpha = 0.5;
       ctx.beginPath();
       ctx.arc(pt.x, pt.y, 5, 0, 2 * Math.PI);
-      ctx.fillStyle = '#bbb';
       ctx.fill();
-      ctx.strokeStyle = '#666';
+      ctx.globalAlpha = 0.8;
       ctx.stroke();
     }
 
@@ -175,6 +176,60 @@
     ctx.restore();
   }
 
+  function drawDesaturated(ctx, loc) {
+    // Draw non-matching areas with reduced opacity and gray color during search
+    const shape = loc.Properties.Shape;
+    ctx.save();
+    ctx.shadowBlur = 0;
+    ctx.lineWidth = 1;
+    ctx.globalAlpha = 0.12;
+    ctx.strokeStyle = '#888';
+    ctx.fillStyle = '#666';
+
+    if (shape === 'Circle') {
+      const center = entropiaCoordsToCanvasCoords(loc.Properties.Data.x, loc.Properties.Data.y);
+      const outer = entropiaCoordsToCanvasCoords(loc.Properties.Data.x + loc.Properties.Data.radius, loc.Properties.Data.y);
+      const radius = outer.x - center.x;
+      ctx.beginPath();
+      ctx.arc(center.x, center.y, radius, 0, 2 * Math.PI);
+      ctx.fill();
+      ctx.globalAlpha = 0.25;
+      ctx.stroke();
+    } else if (shape === 'Rectangle') {
+      const start = entropiaCoordsToCanvasCoords(loc.Properties.Data.x, loc.Properties.Data.y);
+      const end = entropiaCoordsToCanvasCoords(loc.Properties.Data.x + loc.Properties.Data.width, loc.Properties.Data.y + loc.Properties.Data.height);
+      const width = end.x - start.x;
+      const height = start.y - end.y;
+      ctx.beginPath();
+      ctx.rect(start.x, start.y - height, width, height);
+      ctx.fill();
+      ctx.globalAlpha = 0.25;
+      ctx.stroke();
+    } else if (shape === 'Polygon') {
+      const verts = (loc.Properties.Data.vertices ?? []).reduce((result, value, idx, arr) => {
+        if (idx % 2 === 0) result.push([value, arr[idx + 1]]);
+        return result;
+      }, []).map(v => entropiaCoordsToCanvasCoords(v[0], v[1]));
+      if (verts.length > 1) {
+        ctx.beginPath();
+        ctx.moveTo(verts[0].x, verts[0].y);
+        for (let i = 1; i < verts.length; i++) ctx.lineTo(verts[i].x, verts[i].y);
+        ctx.closePath();
+        ctx.fill();
+        ctx.globalAlpha = 0.25;
+        ctx.stroke();
+      }
+    } else {
+      // Point locations — very faint
+      const pt = entropiaCoordsToCanvasCoords(loc.Properties.Coordinates.Longitude, loc.Properties.Coordinates.Latitude);
+      ctx.globalAlpha = 0.15;
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, 3, 0, 2 * Math.PI);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
   import { writable } from 'svelte/store';
   import { onMount, onDestroy } from 'svelte';
   import { browser } from '$app/environment';
@@ -184,7 +239,7 @@
   import ContextMenu from './ContextMenu.svelte';
   import { contextmenu } from './ContextMenu';
 
-  import { copyLocation, getTooltipText, getWaypoint } from '$lib/mapUtil';
+  import { copyLocation, getTooltipText, getWaypoint, getMobAreaDifficulty } from '$lib/mapUtil';
 
   export let mapName = '';
   export let planet = null;
@@ -285,6 +340,15 @@
   $: if (mapName) reloadImage(mapName);
 
 
+
+  // Pre-compute difficulty colors for MobArea locations
+  $: if (locations) {
+    for (const loc of locations) {
+      if (loc.Properties?.Type === 'MobArea' && !loc._difficulty) {
+        loc._difficulty = getMobAreaDifficulty(loc.Maturities);
+      }
+    }
+  }
 
   // Filter locations based on layer toggles
   // Note: explicitly reference toggle vars before filter to ensure Svelte tracks them as dependencies
@@ -822,9 +886,12 @@
       if (!isAreaType(loc)) continue;
       const isHovered = !!hovered && !!loc && hovered.Id === loc.Id;
       const isSelected = !!selected && !!loc && selected.Id === loc.Id;
-      // Search results that aren't hovered/selected draw desaturated
       if (hasSearch && searchResultMap.has(loc.Id) && !isHovered && !isSelected) {
+        // Search result: draw numbered label with its color
         drawSearchResult(ctx, loc, searchResultMap.get(loc.Id));
+      } else if (hasSearch && !searchResultMap.has(loc.Id) && !isHovered && !isSelected) {
+        // Non-result during search: desaturate
+        drawDesaturated(ctx, loc);
       } else {
         drawShape(ctx, loc, isHovered, isSelected);
       }
@@ -835,8 +902,11 @@
       if (isAreaType(loc)) continue;
       const isHovered = !!hovered && !!loc && hovered.Id === loc.Id;
       const isSelected = !!selected && !!loc && selected.Id === loc.Id;
+      const isTeleporter = loc.Properties?.Type === 'Teleporter';
       if (hasSearch && searchResultMap.has(loc.Id) && !isHovered && !isSelected) {
         drawSearchResult(ctx, loc, searchResultMap.get(loc.Id));
+      } else if (hasSearch && !searchResultMap.has(loc.Id) && !isHovered && !isSelected && !isTeleporter) {
+        drawDesaturated(ctx, loc);
       } else {
         drawShape(ctx, loc, isHovered, isSelected);
       }
@@ -1273,7 +1343,7 @@
     return locations.filter(x => x.Properties?.Type?.endsWith('Area') === true);
   }
 
-  function getColorByType(type) {
+  function getColorByType(type, loc) {
     switch (type) {
       case 'Teleporter':
         return { color: 'aqua', pattern: null };
@@ -1291,10 +1361,13 @@
         return { color: 'white', pattern: null };
       case 'WaveEventArea':
         return { color: 'purple', pattern: null };
-      case 'MobArea':
-        return { color: 'yellow', pattern: null };
+      case 'MobArea': {
+        // Use difficulty color if available, otherwise yellow
+        const diff = loc?._difficulty;
+        return { color: diff?.color || 'yellow', pattern: null };
+      }
       default:
-        return 'white';
+        return { color: 'white', pattern: null };
     }
   }
 

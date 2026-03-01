@@ -13,6 +13,20 @@ import { buildGlobalsFilter } from '../filter-utils.js';
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
 const VALID_SORT_FIELDS = new Set(['count', 'value']);
+const VALID_GROUP_FIELDS = new Set(['maturity', 'mob']);
+
+/** Strip maturity suffix from a target name to get the base mob name. */
+function extractMobName(targetName) {
+  const parts = targetName.split(' ');
+  if (parts.length < 2) return targetName;
+  if (parts.length >= 3 && /^Gen$/i.test(parts[parts.length - 2])) {
+    return parts.slice(0, -2).join(' ');
+  }
+  if (parts.length >= 4 && /^Gen$/i.test(parts[parts.length - 2]) && /^Elite$/i.test(parts[parts.length - 3])) {
+    return parts.slice(0, -3).join(' ');
+  }
+  return parts.slice(0, -1).join(' ');
+}
 
 export async function GET({ url }) {
   const { conditions, params, paramIdx: nextIdx } = buildGlobalsFilter(url);
@@ -26,6 +40,14 @@ export async function GET({ url }) {
   const sortBy = VALID_SORT_FIELDS.has(sortParam) ? sortParam : 'count';
   const sortCol = sortBy === 'count' ? 'count(*)' : 'COALESCE(sum(value), 0)';
 
+  const groupParam = url.searchParams.get('group');
+  const groupByMob = VALID_GROUP_FIELDS.has(groupParam) ? groupParam === 'mob' : false;
+
+  const groupByClause = groupByMob
+    ? 'GROUP BY mob_id, CASE WHEN mob_id IS NULL THEN target_name END'
+    : 'GROUP BY target_name, mob_id';
+  const selectTarget = groupByMob ? 'min(target_name)' : 'target_name';
+
   const pageNum = Math.max(1, parseInt(url.searchParams.get('page')) || 1);
   const limit = Math.min(Math.max(1, parseInt(url.searchParams.get('limit')) || DEFAULT_LIMIT), MAX_LIMIT);
   const offset = (pageNum - 1) * limit;
@@ -36,12 +58,12 @@ export async function GET({ url }) {
   try {
     const [dataResult, countResult] = await Promise.all([
       pool.query(
-        `SELECT target_name AS target, mob_id, count(*) AS count,
+        `SELECT ${selectTarget} AS target, mob_id, count(*) AS count,
                 COALESCE(sum(value), 0) AS value,
                 mode() WITHIN GROUP (ORDER BY global_type) AS primary_type
          FROM ingested_globals
          ${whereClause}
-         GROUP BY target_name, mob_id
+         ${groupByClause}
          ORDER BY ${sortCol} DESC
          LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`,
         limitParams
@@ -50,7 +72,7 @@ export async function GET({ url }) {
         `SELECT count(*) AS total FROM (
            SELECT 1 FROM ingested_globals
            ${whereClause}
-           GROUP BY target_name, mob_id
+           ${groupByClause}
          ) sub`,
         params
       ),
@@ -61,7 +83,7 @@ export async function GET({ url }) {
 
     return new Response(JSON.stringify({
       targets: dataResult.rows.map(r => ({
-        target: r.target,
+        target: groupByMob && r.mob_id ? extractMobName(r.target) : r.target,
         mob_id: r.mob_id,
         count: parseInt(r.count),
         value: parseFloat(r.value),

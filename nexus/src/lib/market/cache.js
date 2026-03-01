@@ -154,6 +154,12 @@ function enrichWithItemIds(items, detailed) {
         // Copy base type so detailed items (whose Properties.Type is a sub-type) retain the top-level type
         const baseType = base.Properties?.Type ?? base.Type;
         if (baseType && !entry.Type) entry.Type = baseType;
+        // Copy value for items that lack economy data (e.g. strongboxes from /strongboxes)
+        const baseEconValue = base.Properties?.Economy?.Value ?? base.Properties?.Economy?.MaxTT;
+        if (baseEconValue != null && entry.Value == null && entry.MaxTT == null
+            && !entry.Properties?.Economy?.Value && !entry.Properties?.Economy?.MaxTT) {
+          entry.Value = baseEconValue;
+        }
       }
     }
   }

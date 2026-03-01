@@ -406,6 +406,16 @@
   $: cost = getCost(activeEntity);
   $: cyclePerHour = getCyclePerHour(activeEntity);
 
+  // Skill interval: use stored values, fall back to computed from blueprint level.
+  // End is inferred as start + 5 only when the start matches the expected value for the level.
+  $: displayLearningIntervalStart = activeEntity?.Properties?.Skill?.LearningIntervalStart
+    ?? LEVEL_TO_MIN_PROFESSION[activeEntity?.Properties?.Level] ?? null;
+  $: displayLearningIntervalEnd = activeEntity?.Properties?.Skill?.LearningIntervalEnd
+    ?? (displayLearningIntervalStart != null
+        && displayLearningIntervalStart === LEVEL_TO_MIN_PROFESSION[activeEntity?.Properties?.Level]
+      ? displayLearningIntervalStart + 5
+      : null);
+
   // ========== AUTO-FILL MAPPINGS ==========
   const TYPE_TO_PROFESSION = {
     'Armor': 'Armor Engineer',
@@ -786,7 +796,7 @@
               />
             </span>
           </div>
-          {#if activeEntity?.Profession?.Name || $editMode}
+          {#if activeEntity?.Profession?.Name || displayLearningIntervalStart != null || $editMode}
             <div class="stat-row">
               <span class="stat-label">Profession</span>
               <span class="stat-value">
@@ -809,14 +819,14 @@
               <span class="stat-label">Level Range</span>
               <span class="stat-value">
                 <InlineEdit
-                  value={activeEntity?.Properties?.Skill?.LearningIntervalStart}
+                  value={$editMode ? activeEntity?.Properties?.Skill?.LearningIntervalStart : displayLearningIntervalStart}
                   path="Properties.Skill.LearningIntervalStart"
                   type="number"
                   min={0}
                 />
                 -
                 <InlineEdit
-                  value={activeEntity?.Properties?.Skill?.LearningIntervalEnd}
+                  value={$editMode ? activeEntity?.Properties?.Skill?.LearningIntervalEnd : displayLearningIntervalEnd}
                   path="Properties.Skill.LearningIntervalEnd"
                   type="number"
                   min={0}

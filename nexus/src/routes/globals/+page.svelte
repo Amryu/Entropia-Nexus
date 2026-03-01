@@ -69,6 +69,7 @@
   // Sort toggles for charts
   let playersSortBy = 'value';
   let targetsSortBy = 'count';
+  let targetsGroupBy = 'maturity';
 
   // Charts
   let activityCanvas;
@@ -161,7 +162,7 @@
   async function fetchStats() {
     statsLoading = true;
     try {
-      const params = buildParams({ period, players_sort: playersSortBy, targets_sort: targetsSortBy });
+      const params = buildParams({ period, players_sort: playersSortBy, targets_sort: targetsSortBy, targets_group: targetsGroupBy });
       const res = await fetch(`/api/globals/stats?${params}`);
       if (!res.ok) return;
       stats = await res.json();
@@ -222,6 +223,9 @@
 
   function onTypeFilter(val) {
     typeFilter = val;
+    if (val && !val.split(',').some(t => t === 'kill' || t === 'team_kill')) {
+      targetsGroupBy = 'maturity';
+    }
     onFilterChange();
   }
 
@@ -236,6 +240,11 @@
 
   function onTargetsSortChange(sortBy) {
     targetsSortBy = sortBy;
+    fetchStats();
+  }
+
+  function onTargetsGroupChange(group) {
+    targetsGroupBy = group;
     fetchStats();
   }
 
@@ -667,6 +676,12 @@
         <div class="chart-card-header">
           <h3>Top Targets</h3>
           <div class="chart-controls">
+            {#if showTopTargets}
+              <div class="sort-toggle">
+                <button class="sort-btn" class:active={targetsGroupBy === 'maturity'} on:click={() => onTargetsGroupChange('maturity')}>Maturities</button>
+                <button class="sort-btn" class:active={targetsGroupBy === 'mob'} on:click={() => onTargetsGroupChange('mob')}>Mobs</button>
+              </div>
+            {/if}
             <div class="sort-toggle">
               <button class="sort-btn" class:active={targetsSortBy === 'count'} on:click={() => onTargetsSortChange('count')}>Count</button>
               <button class="sort-btn" class:active={targetsSortBy === 'value'} on:click={() => onTargetsSortChange('value')}>Value</button>

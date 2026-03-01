@@ -1034,7 +1034,7 @@
         <!-- Key Stats -->
         <div class="stats-section tier-1 tier-blue">
           <div class="stat-row primary">
-            <span class="stat-label">HP/Level</span>
+            <span class="stat-label">Avg HP/Lvl</span>
             <span class="stat-value">{lowestHpPerLevel ? lowestHpPerLevel.toFixed(2) : 'N/A'}</span>
           </div>
           {#if levelRange}

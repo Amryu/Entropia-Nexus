@@ -9,6 +9,7 @@
   import WaypointCopyButton from '$lib/components/wiki/WaypointCopyButton.svelte';
   import MapLinkButton from './MapLinkButton.svelte';
   import { encodeURIComponentSafe } from '$lib/util';
+  import { getMobAreaDifficulty } from '$lib/mapUtil.js';
 
   export let mobName = '';
   export let mobSpawns = [];
@@ -77,6 +78,7 @@
     const waypoint = getWaypoint(spawn.Planet, x, y, z, mobName);
     const density = spawn.Properties?.Density;
     const otherMobs = [...new Set(spawn.Maturities?.map(sm => sm.Maturity?.Mob?.Name).filter(n => n && n !== mobName) || [])];
+    const difficulty = getMobAreaDifficulty(spawn.Maturities);
 
     return {
       id: spawn.Id,
@@ -89,6 +91,8 @@
       density: density,
       densityLabel: density ? densityLabels[density] || 'N/A' : 'N/A',
       densityStyle: getDensityStyle(density),
+      difficulty: difficulty,
+      difficultyLabel: difficulty ? difficulty.label : 'N/A',
       mapLink: `/maps/${(spawn.Planet?.Name || 'calypso').toLowerCase()}/${spawn.Id}`
     };
   });
@@ -116,6 +120,13 @@
       header: 'Density',
       formatter: (value, row) => row.density
         ? `<span style="display: inline-block; padding: 2px 8px; font-size: 11px; border-radius: 4px; font-weight: 500; ${row.densityStyle}">${value}</span>`
+        : 'N/A'
+    },
+    {
+      key: 'difficultyLabel',
+      header: 'Difficulty',
+      formatter: (value, row) => row.difficulty
+        ? `<span style="display: inline-block; padding: 2px 8px; font-size: 11px; border-radius: 4px; font-weight: 500; background-color: ${row.difficulty.color.replace('rgb(', 'rgba(').replace(')', ', 0.25)')}; color: ${row.difficulty.color};">${value}</span>`
         : 'N/A'
     },
     {

@@ -21,6 +21,15 @@
   // Build tree from items' container_path
   $: tree = buildTree(items);
 
+  /** Strip '#refID' suffix from a container path segment for display. */
+  function stripContainerRef(segment) {
+    const idx = segment.lastIndexOf('#');
+    if (idx > 0 && /^\d+$/.test(segment.substring(idx + 1))) {
+      return segment.substring(0, idx);
+    }
+    return segment;
+  }
+
   function buildTree(items) {
     const root = { children: {}, items: [], totalCount: 0, totalValue: 0 };
 
@@ -38,7 +47,7 @@
         const seg = segments[i];
         if (!node.children[seg]) {
           node.children[seg] = {
-            name: seg,
+            name: stripContainerRef(seg),
             path: segments.slice(0, i + 1).join(' > '),
             depth: i,
             children: {},

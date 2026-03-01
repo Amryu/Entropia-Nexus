@@ -6,7 +6,7 @@ import { resolveMob } from './mobResolver.js';
 
 // --- Constants ---
 
-const GLOBAL_CONFIRM_THRESHOLD = 5;
+const GLOBAL_CONFIRM_THRESHOLD = 3;
 const TIMESTAMP_WINDOW_MS = 60_000; // ±60 seconds for matching (trades)
 const GLOBAL_DEDUP_WINDOW_MS = 5 * 60 * 1000; // ±5 min for occurrence-based dedup (globals)
 const VALID_GLOBAL_TYPES = new Set(['kill', 'team_kill', 'deposit', 'craft', 'rare_item', 'discovery', 'tier', 'examine', 'pvp']);
@@ -345,7 +345,29 @@ export async function ingestGlobals(userId, events) {
         if (exactMatches.length > 0) {
           const match = exactMatches[0];
           if (match.already_submitted) {
-            // User already confirmed this exact event+occurrence — duplicate
+            // User already confirmed — but check if their weight has increased
+            // (e.g. gained ingestion.trusted grant since original submission)
+            const { rows: [existingSub] } = await client.query(
+              `SELECT weight FROM ingested_global_submissions
+               WHERE global_id = $1 AND user_id = $2`,
+              [match.id, userId]
+            );
+            if (existingSub && weight > existingSub.weight) {
+              const delta = weight - existingSub.weight;
+              await client.query(
+                `UPDATE ingested_global_submissions SET weight = $1
+                 WHERE global_id = $2 AND user_id = $3`,
+                [weight, match.id, userId]
+              );
+              await client.query(
+                `UPDATE ingested_globals
+                 SET confirmation_count = confirmation_count + $1,
+                     confirmed = (confirmation_count + $1) >= $2,
+                     confirmed_at = CASE WHEN (confirmation_count + $1) >= $2 AND NOT confirmed THEN now() ELSE confirmed_at END
+                 WHERE id = $3`,
+                [delta, GLOBAL_CONFIRM_THRESHOLD, match.id]
+              );
+            }
             await client.query('COMMIT');
             duplicates++;
             continue;
@@ -470,6 +492,35 @@ export async function ingestTrades(userId, messages) {
         if (exactMatches.length > 0) {
           const existing = exactMatches[0];
 
+          // Check if user already submitted for this trade message
+          const { rows: [existingSub] } = await client.query(
+            `SELECT weight FROM ingested_trade_submissions
+             WHERE trade_message_id = $1 AND user_id = $2`,
+            [existing.id, userId]
+          );
+
+          if (existingSub) {
+            // Already submitted — update weight if increased
+            if (weight > existingSub.weight) {
+              const delta = weight - existingSub.weight;
+              await client.query(
+                `UPDATE ingested_trade_submissions SET weight = $1
+                 WHERE trade_message_id = $2 AND user_id = $3`,
+                [weight, existing.id, userId]
+              );
+              await client.query(
+                `UPDATE ingested_trade_messages
+                 SET confirmation_count = confirmation_count + $1
+                 WHERE id = $2`,
+                [delta, existing.id]
+              );
+            }
+            await client.query('COMMIT');
+            duplicates++;
+            continue;
+          }
+
+          // New submission for existing trade message
           await client.query(
             `INSERT INTO ingested_trade_submissions (trade_message_id, user_id, weight, event_timestamp)
              VALUES ($1, $2, $3, $4)`,

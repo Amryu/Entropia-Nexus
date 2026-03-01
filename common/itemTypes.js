@@ -24,6 +24,9 @@ export const CONDITION_TYPES = new Set([
 /** ID offset for pet items (Items.Id = Pets.Id + PET_ID_OFFSET) */
 export const PET_ID_OFFSET = 11000000;
 
+/** ID offset for strongbox items (ItemId = Strongboxes.Id + STRONGBOX_OFFSET) */
+export const STRONGBOX_OFFSET = 12000000;
+
 /** ID offset for armor set items (ItemId = ArmorSets.Id + ARMOR_SET_OFFSET) */
 export const ARMOR_SET_OFFSET = 13000000;
 

@@ -150,7 +150,7 @@ export function categorizeItems(items, {
   });
   (vehicles || []).forEach(v => categorizeVehicle(v, categorized.vehicles));
 
-  (strongboxes || []).forEach(s => categorized.strongboxes.push(s));
+  (strongboxes || []).forEach(s => { s.Type = 'Strongbox'; categorized.strongboxes.push(s); });
 
   return categorized;
 }

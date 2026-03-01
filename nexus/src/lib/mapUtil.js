@@ -58,6 +58,145 @@ export function formatMobSpawnDisplayName(name, maturities) {
   return `${mob} (${mats[0]}-${mats[mats.length - 1]})`;
 }
 
+/**
+ * Extract just the mob names from a MobArea name string.
+ * "Mob1 - Mat1/Mat2, Mob2 - Mat3" → "Mob1, Mob2"
+ */
+export function getMobAreaShortName(name) {
+  if (!name) return '';
+  const groups = name.split(',').map(g => g.trim()).filter(Boolean);
+  const mobs = groups.map(g => {
+    const dash = g.indexOf(' - ');
+    return dash !== -1 ? g.substring(0, dash).trim() : g.trim();
+  });
+  return mobs.join(', ');
+}
+
+/**
+ * Compute difficulty band and color for a mob area from its Maturities array.
+ * @param {Array} maturities - MobSpawn.Maturities array
+ * @returns {{ band: number, label: string, color: string } | null}
+ *   band 0-4 = Very Low → Very High, band 5 = Boss
+ */
+export function getMobAreaDifficulty(maturities) {
+  if (!maturities?.length) return null;
+
+  let levels = [];
+  let bossCount = 0;
+  let total = 0;
+
+  for (const entry of maturities) {
+    const props = entry.Maturity?.Properties;
+    if (!props) continue;
+    total++;
+    if (props.Boss) bossCount++;
+    if (props.Level != null) levels.push(props.Level);
+  }
+
+  if (total === 0) return null;
+  if (bossCount === total) return { band: 5, label: 'Boss', color: 'rgb(180, 80, 220)' };
+  if (levels.length === 0) return null;
+
+  const avg = levels.reduce((s, v) => s + v, 0) / levels.length;
+  const bands = [
+    { max: 5,  label: 'Very Low', color: 'rgb(100, 230, 50)' },
+    { max: 15, label: 'Low',      color: 'rgb(200, 230, 0)' },
+    { max: 35, label: 'Medium',   color: 'rgb(255, 200, 0)' },
+    { max: 70, label: 'High',     color: 'rgb(255, 120, 0)' },
+    { max: Infinity, label: 'Very High', color: 'rgb(255, 50, 30)' },
+  ];
+  for (let i = 0; i < bands.length; i++) {
+    if (avg <= bands[i].max) return { band: i, label: bands[i].label, color: bands[i].color };
+  }
+  return null;
+}
+
+/**
+ * Format mob maturity listings for a mob area's info panel.
+ * Groups by mob, shows maturity ranges when consecutive by level.
+ * Returns array of { mob: string, display: string, mobSlug: string|null }
+ *
+ * Example output: [{ mob: "Atrox", display: "Young-Old Alpha, Stalker", mobSlug: "atrox" }]
+ */
+export function formatMobAreaMaturities(maturities) {
+  if (!maturities?.length) return [];
+
+  // Group maturities by mob name
+  const byMob = new Map();
+  for (const entry of maturities) {
+    const mat = entry.Maturity;
+    if (!mat) continue;
+    const mobName = mat.Mob?.Name || 'Unknown';
+    if (!byMob.has(mobName)) {
+      byMob.set(mobName, { mob: mobName, mats: [], mobSlug: null });
+    }
+    const group = byMob.get(mobName);
+    group.mats.push({
+      name: mat.Name,
+      level: mat.Properties?.Level ?? null,
+      health: mat.Properties?.Health ?? 0,
+      boss: mat.Properties?.Boss === true,
+      isRare: entry.IsRare || false,
+    });
+    // Build slug from mob Links URL if available
+    if (!group.mobSlug && mat.Mob?.Links?.['$Url']) {
+      const url = mat.Mob.Links['$Url'];
+      const match = url.match(/\/mobs\/(.+)/);
+      if (match) group.mobSlug = match[1];
+    }
+  }
+
+  const result = [];
+  for (const [, group] of byMob) {
+    // Sort maturities by level (then health as tiebreaker)
+    group.mats.sort((a, b) => {
+      const la = a.level ?? Infinity;
+      const lb = b.level ?? Infinity;
+      if (la !== lb) return la - lb;
+      return a.health - b.health;
+    });
+
+    // Build display string using ranges for consecutive maturities
+    const display = _formatMaturityRange(group.mats);
+    result.push({ mob: group.mob, display, mobSlug: group.mobSlug });
+  }
+  return result;
+}
+
+/**
+ * Format a sorted list of maturities into ranges.
+ * Consecutive maturities (adjacent indices in sorted order) become "First-Last".
+ * Non-consecutive ones are listed individually.
+ */
+function _formatMaturityRange(sortedMats) {
+  if (sortedMats.length === 0) return '';
+  if (sortedMats.length === 1) return sortedMats[0].name;
+
+  // Build ranges: group consecutive indices
+  const ranges = [];
+  let rangeStart = 0;
+
+  for (let i = 1; i <= sortedMats.length; i++) {
+    // Check if this maturity is consecutive to the previous
+    // "Consecutive" means adjacent in the sorted order — we treat all sorted entries as consecutive
+    // since they're already ordered by level. We break ranges only at boss maturities.
+    const isBossBreak = i < sortedMats.length && sortedMats[i].boss !== sortedMats[i - 1].boss;
+    if (i === sortedMats.length || isBossBreak) {
+      const rangeLen = i - rangeStart;
+      if (rangeLen >= 3) {
+        ranges.push(`${sortedMats[rangeStart].name}-${sortedMats[i - 1].name}`);
+      } else {
+        for (let j = rangeStart; j < i; j++) {
+          ranges.push(sortedMats[j].name);
+        }
+      }
+      rangeStart = i;
+    }
+  }
+
+  return ranges.join(', ');
+}
+
 export function getTooltipText(location) {
   let name;
 

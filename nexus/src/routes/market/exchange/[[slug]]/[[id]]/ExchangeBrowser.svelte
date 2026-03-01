@@ -25,7 +25,7 @@
   import { page } from "$app/stores";
   import { apiCall, getItemLink, hasItemTag, encodeURIComponentSafe, decodeURIComponentSafe } from "$lib/util.js";
   import { isBlueprint, isItemTierable, isItemStackable, isLimited, itemHasCondition, isAbsoluteMarkup, getMaxTT, formatMarkupValue, formatMarkupForItem, formatPedValue, isPet, isBlueprintNonL, getUnitTT, computeUnitPrice, getPetLevel, itemTypeBadge } from '../../orderUtils';
-  import { PET_ID_OFFSET, ARMOR_SET_OFFSET, GENDERED_TYPES, PLATE_SET_SIZE } from '$lib/common/itemTypes.js';
+  import { PET_ID_OFFSET, ARMOR_SET_OFFSET, STRONGBOX_OFFSET, GENDERED_TYPES, PLATE_SET_SIZE } from '$lib/common/itemTypes.js';
   import { PLANETS } from '../../exchangeConstants.js';
   import { showMyOrders, showInventory, showTradeList, showTrades, tradeList, addToTradeList, clearTradeList, myOrders, inventory, upsertOrder } from '../../exchangeStore.js';
   import { favourites, isFavourite, toggleFavourite, createFolder } from '../../favouritesStore.js';
@@ -212,6 +212,15 @@
         set.Properties.Type = 'ArmorSet';
       }
       return set;
+    }
+    if (itemType === 'Strongbox') {
+      const sb = await apiCall(window.fetch, `/strongboxes/${itemId - STRONGBOX_OFFSET}`);
+      if (sb) {
+        sb.Id = sb.ItemId ?? itemId;
+        sb.Properties = sb.Properties || {};
+        sb.Properties.Type = 'Strongbox';
+      }
+      return sb;
     }
     return apiCall(window.fetch, `/items/${itemId}`);
   }

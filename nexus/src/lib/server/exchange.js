@@ -570,7 +570,7 @@ export async function countUserOrdersForItem(userId, itemId, type) {
 // live in the nexus database, while this module's pool connects to nexus_users).
 
 import { apiCall } from '$lib/util.js';
-import { isPercentMarkupType, isStackableType, ARMOR_SET_OFFSET, GENDERED_TYPES } from '$lib/common/itemTypes.js';
+import { isPercentMarkupType, isStackableType, ARMOR_SET_OFFSET, STRONGBOX_OFFSET, GENDERED_TYPES } from '$lib/common/itemTypes.js';
 import { resolveItemTypesByItemId } from '$lib/server/item-type-cache.js';
 
 // Material ID offset for sub-type lookup (mirrors api/endpoints/constants.js)
@@ -590,6 +590,11 @@ export async function getItemType(itemId, fetch) {
   // ArmorSet IDs live in the 13000000–13999999 range (not in Items table)
   if (itemId >= ARMOR_SET_OFFSET && itemId < ARMOR_SET_OFFSET + 1000000) {
     return { type: 'ArmorSet', name: null, gender: 'Both' };
+  }
+
+  // Strongbox IDs live in the 12000000–12999999 range (not in Items table)
+  if (itemId >= STRONGBOX_OFFSET && itemId < STRONGBOX_OFFSET + 1000000) {
+    return { type: 'Strongbox', name: null };
   }
 
   const item = await apiCall(fetch, `/items/${itemId}`);

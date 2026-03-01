@@ -9,6 +9,20 @@ import { buildGlobalsFilter } from './filter-utils.js';
 
 const MAX_ACTIVITY_BUCKETS = 365;
 const VALID_SORT_FIELDS = new Set(['count', 'value']);
+const VALID_GROUP_FIELDS = new Set(['maturity', 'mob']);
+
+/** Strip maturity suffix from a target name to get the base mob name. */
+function extractMobName(targetName) {
+  const parts = targetName.split(' ');
+  if (parts.length < 2) return targetName;
+  if (parts.length >= 3 && /^Gen$/i.test(parts[parts.length - 2])) {
+    return parts.slice(0, -2).join(' ');
+  }
+  if (parts.length >= 4 && /^Gen$/i.test(parts[parts.length - 2]) && /^Elite$/i.test(parts[parts.length - 3])) {
+    return parts.slice(0, -3).join(' ');
+  }
+  return parts.slice(0, -1).join(' ');
+}
 
 export async function GET({ url }) {
   const period = url.searchParams.get('period') || 'all';
@@ -23,6 +37,10 @@ export async function GET({ url }) {
   const targetsSortParam = url.searchParams.get('targets_sort');
   const targetsSortBy = VALID_SORT_FIELDS.has(targetsSortParam) ? targetsSortParam : 'count';
   const targetsSortCol = targetsSortBy === 'count' ? 'count(*)' : 'COALESCE(sum(value), 0)';
+
+  const targetsGroupParam = url.searchParams.get('targets_group');
+  const targetsGroupBy = VALID_GROUP_FIELDS.has(targetsGroupParam) ? targetsGroupParam : 'maturity';
+  const groupByMob = targetsGroupBy === 'mob';
 
   try {
     const [summaryResult, byTypeResult, topPlayersResult, topTargetsResult, activityResult] = await Promise.all([
@@ -62,12 +80,19 @@ export async function GET({ url }) {
 
       // Top targets (kill/team_kill only)
       pool.query(
-        `SELECT target_name AS target, mob_id, count(*) AS count, COALESCE(sum(value), 0) AS value
-         FROM ingested_globals
-         ${whereClause} AND global_type IN ('kill', 'team_kill')
-         GROUP BY target_name, mob_id
-         ORDER BY ${targetsSortCol} DESC
-         LIMIT 10`,
+        groupByMob
+          ? `SELECT min(target_name) AS target, mob_id, count(*) AS count, COALESCE(sum(value), 0) AS value
+             FROM ingested_globals
+             ${whereClause} AND global_type IN ('kill', 'team_kill')
+             GROUP BY mob_id, CASE WHEN mob_id IS NULL THEN target_name END
+             ORDER BY ${targetsSortCol} DESC
+             LIMIT 10`
+          : `SELECT target_name AS target, mob_id, count(*) AS count, COALESCE(sum(value), 0) AS value
+             FROM ingested_globals
+             ${whereClause} AND global_type IN ('kill', 'team_kill')
+             GROUP BY target_name, mob_id
+             ORDER BY ${targetsSortCol} DESC
+             LIMIT 10`,
         params
       ),
 
@@ -111,7 +136,7 @@ export async function GET({ url }) {
         is_team: r.has_team && !r.has_solo,
       })),
       top_targets: topTargetsResult.rows.map(r => ({
-        target: r.target,
+        target: groupByMob && r.mob_id ? extractMobName(r.target) : r.target,
         mob_id: r.mob_id,
         count: parseInt(r.count),
         value: parseFloat(r.value),

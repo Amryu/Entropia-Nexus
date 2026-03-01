@@ -20,7 +20,8 @@
     'Rare': 5,
     'Very Rare': 6,
     'Very rare': 6,
-    'Extremely rare': 7
+    'Extremely rare': 7,
+    'Discontinued': 8
   };
 
   // Map frequency to color
@@ -33,7 +34,8 @@
     'Rare': { bg: 'rgba(220, 38, 38, 0.25)', color: '#ef4444' },
     'Very Rare': { bg: 'rgba(190, 18, 60, 0.25)', color: '#f43f5e' },
     'Very rare': { bg: 'rgba(190, 18, 60, 0.25)', color: '#f43f5e' },
-    'Extremely rare': { bg: 'rgba(147, 51, 234, 0.25)', color: '#a855f7' }
+    'Extremely rare': { bg: 'rgba(147, 51, 234, 0.25)', color: '#a855f7' },
+    'Discontinued': { bg: 'rgba(107, 114, 128, 0.25)', color: '#6b7280' }
   };
 
   function getFrequencyStyle(frequency) {
