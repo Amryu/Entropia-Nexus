@@ -246,9 +246,9 @@
                       >
                         <td class="col-name">
                           {#if link}
-                            <a href={link}>{result.Name}{@html itemTypeBadge(result.Type)}</a>
+                            <a href={link}>{result.DisplayName || result.Name}{@html itemTypeBadge(result.Type)}</a>
                           {:else}
-                            {result.Name}{@html itemTypeBadge(result.Type)}
+                            {result.DisplayName || result.Name}{@html itemTypeBadge(result.Type)}
                           {/if}
                         </td>
                         {#each columns as col}

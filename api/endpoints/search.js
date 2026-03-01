@@ -201,6 +201,7 @@ function buildMultiWordLike(column, paramIndices) {
 function formatSearchResult(x, score){
   const result = { Id: x.Id, Name: x.Name, Type: x.Type, SubType: x.SubType, Score: score };
   if (x.DisplayName) result.DisplayName = x.DisplayName;
+  if (x.LocationType) result.LocationType = x.LocationType;
   return result;
 }
 
@@ -230,6 +231,20 @@ function generateAliasedName(originalName, gender) {
     return `${baseName} (${gender}, ${existingTag})`;
   }
   return `${originalName} (${gender})`;
+}
+
+// Extract just the mob names from a MobArea name string.
+// "Mob1 - Mat1/Mat2, Mob2 - Mat3" → "Mob1, Mob2"
+// Duplicated from nexus/src/lib/mapUtil.js (different module system)
+function getMobAreaShortName(name) {
+  if (!name) return null;
+  const groups = name.split(',').map(g => g.trim()).filter(Boolean);
+  const mobs = groups.map(g => {
+    const dash = g.indexOf(' - ');
+    return dash !== -1 ? g.substring(0, dash).trim() : g.trim();
+  });
+  const short = mobs.join(', ');
+  return short !== name ? short : null;
 }
 
 // Check if pg_trgm extension is available (cached)
@@ -340,7 +355,14 @@ async function search(query, fuzzy = false, perType = 5, totalLimit = 50){
     : `(SELECT "Armors"."Name" FROM ONLY "Armors" WHERE "Armors"."SetId" = "ArmorSets"."Id" AND ("Armors"."Name" ILIKE $1${mwArmor}) LIMIT 1)`;
 
   const sql = `
-    SELECT * FROM (
+    SELECT x.*,
+      CASE WHEN x."Type" = 'Location'
+        THEN (SELECT a."Type"::text FROM ONLY "Areas" a WHERE a."LocationId" = x."Id" - 8000000000 LIMIT 1)
+        ELSE NULL END AS "AreaType",
+      CASE WHEN x."Type" = 'Location'
+        THEN (SELECT l."Type"::text FROM ONLY "Locations" l WHERE l."Id" = x."Id" - 8000000000 LIMIT 1)
+        ELSE NULL END AS "LocationType"
+    FROM (
       SELECT *, ROW_NUMBER() OVER (PARTITION BY "Type" ${orderClause}) as rn
       FROM (
         SELECT "Items"."Id" AS "Id", "Items"."Name" AS "Name", "Items"."Type" AS "Type",
@@ -424,6 +446,10 @@ async function search(query, fuzzy = false, perType = 5, totalLimit = 50){
       if (!/\((M|F)\)/.test(row.Name) && !/\(M,/.test(row.Name) && !/,\s*M\)/.test(row.Name) && !/\(F,/.test(row.Name) && !/,\s*F\)/.test(row.Name)) {
         displayName = generateAliasedName(row.Name, genderedQuery.gender);
       }
+    }
+    // For MobArea locations, show only mob names (strip maturity suffixes)
+    if (row.Type === 'Location' && row.AreaType === 'MobArea') {
+      displayName = getMobAreaShortName(row.Name);
     }
     // Score using MatchedName if available (e.g., armor sets matched via piece name)
     const nameToScore = row.MatchedName || row.Name;
