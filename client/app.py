@@ -94,6 +94,20 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     from .core.crash_handler import set_qt_app
     set_qt_app(app)
 
+    # Ctrl+C in the console: on Windows, KeyboardInterrupt raised inside Qt's
+    # C++ event loop is caught by SIP and swallowed.  Route SIGINT directly
+    # to QApplication.quit().  Second Ctrl+C force-kills immediately.
+    _sigint_count = 0
+
+    def _on_sigint(*_):
+        nonlocal _sigint_count
+        _sigint_count += 1
+        if _sigint_count >= 2:
+            os._exit(1)
+        app.quit()
+
+    signal.signal(signal.SIGINT, _on_sigint)
+
     # Single-instance enforcement: try to reach an existing instance
     if not allow_multiple:
         sock = QLocalSocket()
@@ -181,7 +195,7 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     workers.extend(_start_ingestion(config, event_bus, nexus_client, db))
     workers.extend(_start_chat_watcher(config, event_bus, db, authenticated=oauth.is_authenticated()))
     # workers.extend(_start_ocr_pipeline(config, event_bus, db))  # disabled for debugging
-    workers.extend(_start_hunt_tracker(config, event_bus, db, data_client))
+    # workers.extend(_start_hunt_tracker(config, event_bus, db, data_client))  # hunt disabled
     workers.extend(_start_hotkey_manager(config, event_bus))
     workers.extend(_start_update_checker(config, event_bus))
 
@@ -194,14 +208,15 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     # overlay widgets are heavy (Qt windows, stylesheets, layouts).
     def _create_overlays():
         # Qt overlays (always-on-top, draggable, position persisted)
-        try:
-            from .overlay.hunt_overlay import HuntOverlay
-            HuntOverlay(
-                signals=signals, config=config, config_path=config_path,
-                manager=overlay_manager,
-            )
-        except Exception as e:
-            log.warning("Hunt overlay failed: %s", e)
+        # Hunt overlay disabled
+        # try:
+        #     from .overlay.hunt_overlay import HuntOverlay
+        #     HuntOverlay(
+        #         signals=signals, config=config, config_path=config_path,
+        #         manager=overlay_manager,
+        #     )
+        # except Exception as e:
+        #     log.warning("Hunt overlay failed: %s", e)
 
         try:
             from .overlay.progress_overlay import ProgressOverlay
@@ -306,22 +321,19 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
 
     exit_code = app.exec()
 
-    local_server.close()
-
-    # Tear down system-wide hooks immediately so mouse/keyboard input
-    # is no longer gated on the Python GIL during cleanup.
-    overlay_manager.stop()
-
-    # Hard deadline for remaining cleanup — daemon threads are killed
-    # automatically on exit, so this only guards against blocking I/O.
+    # Hard deadline — start BEFORE any cleanup so a blocking stop()
+    # (e.g. keyboard library lock contention) can never hang the process.
     def force_exit():
         log.error("Shutdown timed out, forcing exit")
         os._exit(exit_code or 1)
 
-    kill_timer = threading.Timer(3.0, force_exit)
+    kill_timer = threading.Timer(5.0, force_exit)
     kill_timer.daemon = True
     kill_timer.start()
 
+    local_server.close()
+    main_window.cleanup()
+    overlay_manager.stop()
     nexus_client.close()
     data_client.close()
     _cleanup_workers(workers)
@@ -405,7 +417,7 @@ def _run_headless(config, event_bus, db):
     workers = []
     workers.extend(_start_chat_watcher(config, event_bus, db))
     workers.extend(_start_ocr_pipeline(config, event_bus, db))
-    workers.extend(_start_hunt_tracker(config, event_bus, db, data_client))
+    # workers.extend(_start_hunt_tracker(config, event_bus, db, data_client))  # hunt disabled
     workers.extend(_start_hotkey_manager(config, event_bus))
     _start_legacy_overlays(config, event_bus)
 

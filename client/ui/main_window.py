@@ -61,9 +61,8 @@ PAGE_WIKI = 1
 PAGE_MAPS = 2
 PAGE_SKILLS = 3
 PAGE_LOADOUT = 4
-PAGE_HUNT = 5
-PAGE_INVENTORY = 6
-PAGE_SETTINGS = 7
+PAGE_INVENTORY = 5
+PAGE_SETTINGS = 6
 
 
 @dataclass
@@ -171,7 +170,6 @@ class MainWindow(QWidget):
             PAGE_MAPS: self._create_maps_page,
             PAGE_SKILLS: self._create_skills_page,
             PAGE_LOADOUT: self._create_loadout_page,
-            PAGE_HUNT: self._create_hunt_page,
             PAGE_INVENTORY: self._create_inventory_page,
             PAGE_SETTINGS: self._create_settings_page,
         }
@@ -587,14 +585,19 @@ class MainWindow(QWidget):
 
     def _quit(self):
         self._save_geometry()
-        # Stop page timers so background threads finish promptly
+        # Defer quit so it runs after the tray context menu's nested event
+        # loop closes — QApplication.quit() called inside the menu handler
+        # only exits the menu's loop, not the outer app.exec().
+        QTimer.singleShot(0, QApplication.quit)
+
+    def cleanup(self):
+        """Stop page timers and background threads. Called during shutdown."""
         for i in self._page_created:
             page = self._pages.widget(i)
             if hasattr(page, "cleanup"):
                 page.cleanup()
         if hasattr(self, "_notif_manager"):
             self._notif_manager.cleanup()
-        QApplication.quit()
 
     def _on_tray_activated(self, reason):
         if reason == QSystemTrayIcon.ActivationReason.Trigger:

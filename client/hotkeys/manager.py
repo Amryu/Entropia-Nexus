@@ -7,10 +7,11 @@ log = get_logger("Hotkeys")
 
 # Maps config field names to action identifiers
 HOTKEY_ACTIONS = {
-    "hotkey_start_hunt": "start_hunt",
-    "hotkey_stop_hunt": "stop_hunt",
-    "hotkey_manual_mob_name": "manual_mob_name",
-    "hotkey_ocr_scan": "ocr_scan",
+    # Hunt hotkeys disabled
+    # "hotkey_start_hunt": "start_hunt",
+    # "hotkey_stop_hunt": "stop_hunt",
+    # "hotkey_manual_mob_name": "manual_mob_name",
+    # "hotkey_ocr_scan": "ocr_scan",
 }
 
 
