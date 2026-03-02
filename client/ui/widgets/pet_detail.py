@@ -9,7 +9,7 @@ from PyQt6.QtCore import pyqtSignal
 
 from .wiki_detail import (
     WikiDetailView, InfoboxSection, Tier1StatRow, StatRow, DataSection,
-    build_acquisition_content,
+    build_acquisition_content, build_usage_content, exchange_url,
 )
 from ..theme import TEXT_MUTED
 from ...data.wiki_columns import deep_get, get_item_name, fmt_int
@@ -37,6 +37,7 @@ class PetDetailView(WikiDetailView):
     """Detail view for a single pet entity."""
 
     _acquisition_loaded = pyqtSignal(dict)
+    _usage_loaded = pyqtSignal(dict)
 
     def __init__(self, item: dict, *, nexus_base_url: str = "",
                  data_client=None, parent=None):
@@ -45,6 +46,7 @@ class PetDetailView(WikiDetailView):
             data_client=data_client, parent=parent,
         )
         self._acquisition_loaded.connect(self._on_acquisition_loaded)
+        self._usage_loaded.connect(self._on_usage_loaded)
         self._build(item)
 
     def _build(self, item: dict):
@@ -137,17 +139,30 @@ class PetDetailView(WikiDetailView):
         self._acquisition_section.set_loading()
         self._add_article_section(self._acquisition_section)
 
+        # --- Usage panel ---
+        self._usage_section = DataSection("Usage", expanded=True)
+        self._usage_section.set_loading()
+        self._add_article_section(self._usage_section)
+
         if self._data_client and name:
-            def fetch_acq(item_name=name):
-                data = self._data_client.get_acquisition(item_name)
-                self._acquisition_loaded.emit(data)
+            def fetch_data(item_name=name):
+                acq_data = self._data_client.get_acquisition(item_name)
+                self._acquisition_loaded.emit(acq_data)
+                usage_data = self._data_client.get_usage(item_name)
+                self._usage_loaded.emit(usage_data)
 
             threading.Thread(
-                target=fetch_acq, daemon=True, name="pet-acq-fetch"
+                target=fetch_data, daemon=True, name="pet-data-fetch"
             ).start()
 
     def _on_acquisition_loaded(self, data: dict):
         if not hasattr(self, "_acquisition_section"):
             return
-        content = build_acquisition_content(data)
-        self._acquisition_section.set_content(content)
+        url = exchange_url(self._item, self._nexus_base_url, "Pet")
+        self._acquisition_section.set_content(build_acquisition_content(data, exchange_link=url))
+
+    def _on_usage_loaded(self, data: dict):
+        if not hasattr(self, "_usage_section"):
+            return
+        url = exchange_url(self._item, self._nexus_base_url, "Pet")
+        self._usage_section.set_content(build_usage_content(data, exchange_link=url))

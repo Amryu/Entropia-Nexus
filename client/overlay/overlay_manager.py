@@ -47,10 +47,6 @@ _OCCLUDER_MIN_SIZE = 200
 # Prevents false positives from 1-2px edge overlaps on adjacent monitors.
 _OCCLUDER_MIN_OVERLAP = 50
 
-# Windows messages for mouse scroll events (used by scroll hook)
-_WM_MOUSEWHEEL = 0x020A
-_WM_MOUSEHWHEEL = 0x020E
-
 
 def _get_foreground_hwnd() -> int:
     """Return the HWND of the foreground window (Windows only)."""
@@ -168,7 +164,7 @@ class OverlayManager(QObject):
     """
 
     search_hotkey_pressed = pyqtSignal()
-    _scroll_intercepted = pyqtSignal(int, int, int, int, int)  # hwnd, cx, cy, delta, msg
+    map_hotkey_pressed = pyqtSignal()
 
     def __init__(self, *, config, parent: QObject | None = None):
         super().__init__(parent)
@@ -177,12 +173,7 @@ class OverlayManager(QObject):
         self._game_focused = False
         self._game_hwnd = 0
         self._hotkey_registered = False
-        self._scroll_listener = None
         self._overlay_hwnds: dict[int, OverlayWidget] = {}  # hwnd → widget
-
-        self._scroll_intercepted.connect(
-            self._on_scroll_intercepted, Qt.ConnectionType.QueuedConnection,
-        )
 
         self._timer = QTimer(self)
         self._timer.setInterval(OVERLAY_FOCUS_POLL_MS)
@@ -330,11 +321,9 @@ class OverlayManager(QObject):
             if w.wants_visible:
                 w.show()
         self._register_hotkey()
-        self._install_scroll_hook()
 
     def _hide_all(self) -> None:
         self._unregister_hotkey()
-        self._uninstall_scroll_hook()
         for w in self._widgets:
             if w.isVisible():
                 w.hide()
@@ -346,12 +335,13 @@ class OverlayManager(QObject):
             return
         try:
             import keyboard
-            keyboard.add_hotkey("ctrl+f", self._on_search_hotkey)
+            keyboard.add_hotkey("ctrl+f", self._on_search_hotkey, suppress=True)
+            keyboard.add_hotkey("ctrl+m", self._on_map_hotkey, suppress=True)
             self._hotkey_registered = True
         except ImportError:
             pass
         except Exception as e:
-            log.warning("Failed to register Ctrl+F hotkey: %s", e)
+            log.warning("Failed to register hotkeys: %s", e)
 
     def _unregister_hotkey(self) -> None:
         if not self._hotkey_registered:
@@ -359,6 +349,7 @@ class OverlayManager(QObject):
         try:
             import keyboard
             keyboard.remove_hotkey("ctrl+f")
+            keyboard.remove_hotkey("ctrl+m")
         except Exception:
             pass
         self._hotkey_registered = False
@@ -368,128 +359,13 @@ class OverlayManager(QObject):
         if self._game_focused:
             self.search_hotkey_pressed.emit()
 
-    # --- Scroll hook (pynput) — blocks scroll over overlays ---
-
-    def _install_scroll_hook(self) -> None:
-        """Install a low-level mouse hook via pynput to block scroll over overlays."""
-        if sys.platform != "win32" or self._scroll_listener is not None:
-            return
-        try:
-            from pynput import mouse
-
-            overlay_hwnds = self._overlay_hwnds
-            signal = self._scroll_intercepted
-            listener_ref: list = [None]
-
-            def _scroll_filter(msg, data):
-                """Called on pynput's hook thread for every mouse event."""
-                try:
-                    listener = listener_ref[0]
-                    if listener is None:
-                        return True
-
-                    # Only intercept scroll events
-                    if msg not in (_WM_MOUSEWHEEL, _WM_MOUSEHWHEEL):
-                        listener._suppress = False
-                        return True
-
-                    cx, cy = data.pt.x, data.pt.y
-
-                    # Hit-test against registered overlay HWNDs
-                    for hwnd in list(overlay_hwnds):
-                        if not _user32.IsWindowVisible(hwnd):
-                            continue
-                        rect = ctypes.wintypes.RECT()
-                        if not _user32.GetWindowRect(hwnd, ctypes.byref(rect)):
-                            continue
-                        if (rect.left <= cx < rect.right
-                                and rect.top <= cy < rect.bottom):
-                            # Extract signed scroll delta from mouseData high word
-                            delta = ctypes.c_short(
-                                (data.mouseData >> 16) & 0xFFFF
-                            ).value
-                            # Emit signal for Qt thread to forward the scroll
-                            signal.emit(hwnd, cx, cy, delta, int(msg))
-                            # Tell pynput to suppress (block) this event
-                            listener._suppress = True
-                            return False
-
-                    # Scroll not over any overlay — let it through
-                    listener._suppress = False
-                    return True
-                except Exception:
-                    log.debug("Scroll filter error", exc_info=True)
-                    return True
-
-            self._scroll_listener = mouse.Listener(
-                event_filter=_scroll_filter,
-            )
-            listener_ref[0] = self._scroll_listener
-            self._scroll_listener.start()
-            log.debug("Scroll hook installed (pynput)")
-        except ImportError:
-            log.debug("pynput not available — scroll hook disabled")
-        except Exception as e:
-            log.warning("Failed to install scroll hook: %s", e)
-            self._scroll_listener = None
-
-    def _uninstall_scroll_hook(self) -> None:
-        if self._scroll_listener is not None:
-            try:
-                self._scroll_listener.stop()
-            except Exception:
-                pass
-            self._scroll_listener = None
-            log.debug("Scroll hook removed")
-
-    def _on_scroll_intercepted(self, hwnd: int, cx: int, cy: int,
-                               delta: int, msg: int) -> None:
-        """Handle intercepted scroll on the Qt main thread — forward as QWheelEvent."""
-        widget = self._overlay_hwnds.get(hwnd)
-        if widget is None or not widget.isVisible():
-            return
-        self._forward_scroll(widget, cx, cy, delta, msg)
-
-    @staticmethod
-    def _forward_scroll(widget, cx: int, cy: int, delta: int, msg: int) -> None:
-        """Post a synthetic QWheelEvent to the child widget under the cursor.
-
-        If no child is found, posts to *widget* itself (caught by the
-        OverlayWidget.wheelEvent catch-all).
-        """
-        from PyQt6.QtGui import QWheelEvent
-        from PyQt6.QtWidgets import QApplication
-
-        global_pos = QPoint(cx, cy)
-
-        # Find the deepest child under the cursor so QScrollArea etc. receive it
-        local_pos = widget.mapFromGlobal(global_pos)
-        target = widget.childAt(local_pos)
-        if target is None:
-            target = widget
-
-        target_local = target.mapFromGlobal(global_pos)
-
-        if msg == _WM_MOUSEHWHEEL:
-            angle_delta = QPoint(delta, 0)
-        else:
-            angle_delta = QPoint(0, delta)
-
-        event = QWheelEvent(
-            target_local.toPointF(),
-            global_pos.toPointF(),
-            QPoint(0, 0),       # pixelDelta
-            angle_delta,
-            Qt.MouseButton.NoButton,
-            Qt.KeyboardModifier.NoModifier,
-            Qt.ScrollPhase.NoScrollPhase,
-            False,               # inverted
-        )
-        QApplication.postEvent(target, event)
+    def _on_map_hotkey(self) -> None:
+        """Called from keyboard hook thread — emit signal for Qt main thread."""
+        if self._game_focused:
+            self.map_hotkey_pressed.emit()
 
     # --- Cleanup ---
 
     def stop(self) -> None:
         self._timer.stop()
         self._unregister_hotkey()
-        self._uninstall_scroll_hook()

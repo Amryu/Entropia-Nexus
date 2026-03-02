@@ -861,6 +861,10 @@ export async function handlePageLoad(fetch, items, config) {
   const exSubType = object?.Properties?.Type; // Material sub-type (Deed, Token, Share)
   const isPercent = isPercentMarkupType(entityType, exItemName, exSubType);
 
+  // Always attach the exchange item ID so empty-state views can link to it
+  if (exchangeItemId && acquisition) acquisition._exchangeItemId = exchangeItemId;
+  if (exchangeItemId && usage) usage._exchangeItemId = exchangeItemId;
+
   if (exchangeOrders?.sell?.length > 0 && acquisition) {
     const isBpNonL = entityType === 'Blueprint' && !hasItemTag(exItemName, 'L');
     const maxTT = object?.Properties?.Economy?.MaxTT ?? object?.Value ?? null;
@@ -896,7 +900,6 @@ export async function handlePageLoad(fetch, items, config) {
           is_set: entityType === 'ArmorPlating' && Number(o.quantity) === PLATE_SET_SIZE
         };
       });
-    acquisition._exchangeItemId = exchangeItemId;
   }
 
   if (exchangeOrders?.buy?.length > 0 && usage) {
@@ -914,7 +917,6 @@ export async function handlePageLoad(fetch, items, config) {
           is_set: entityType === 'ArmorPlating' && Number(o.quantity) === PLATE_SET_SIZE
         };
       });
-    usage._exchangeItemId = exchangeItemId;
   }
 
   return { items: items, response: pageResponse(items, object, { type: config.type, tierInfo, acquisition, usage }) };

@@ -17,7 +17,7 @@ from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 from .wiki_detail import (
     WikiDetailView, InfoboxSection, Tier1StatRow, StatRow, DataSection,
     section_title_label, no_data_label, make_compact_table,
-    build_acquisition_content,
+    build_acquisition_content, build_usage_content, exchange_url,
     _TABLE_MAX_HEIGHT, _TABLE_ROW_HEIGHT,
 )
 from ..theme import (
@@ -1028,6 +1028,7 @@ class WeaponDetailView(WikiDetailView):
     """Detail view for a single weapon entity."""
 
     _acquisition_loaded = pyqtSignal(dict)
+    _usage_loaded = pyqtSignal(dict)
 
     def __init__(self, item: dict, *, nexus_base_url: str = "",
                  data_client=None, nexus_client=None, parent=None):
@@ -1038,6 +1039,7 @@ class WeaponDetailView(WikiDetailView):
         )
         self._show_reload = True  # toggle: True = reload, False = uses/min
         self._acquisition_loaded.connect(self._on_acquisition_loaded)
+        self._usage_loaded.connect(self._on_usage_loaded)
         self._build(item)
 
     def _build(self, item: dict):
@@ -1189,19 +1191,19 @@ class WeaponDetailView(WikiDetailView):
         mf = deep_get(item, "Properties", "Mindforce")
         if weapon_class == "Mindforce" and mf:
             mf_section = InfoboxSection("Mindforce")
-            mf_level = mf.get("Level") or deep_get(item, "Properties", "Level")
-            mf_conc = mf.get("Concentration")
-            mf_cd = mf.get("Cooldown")
-            mf_grp = mf.get("CooldownGroup")
-
-            if mf_level is not None:
-                mf_section.add_row(StatRow("Level", fmt_int(mf_level)))
-            if mf_conc is not None:
-                mf_section.add_row(StatRow("Concentration", f"{mf_conc}s"))
-            if mf_cd is not None:
-                mf_section.add_row(StatRow("Cooldown", f"{mf_cd}s"))
-            if mf_grp is not None:
-                mf_section.add_row(StatRow("Cooldown Group", str(mf_grp)))
+            mf_section.add_row(StatRow("Level", fmt_int(mf.get("Level"))))
+            mf_section.add_row(StatRow(
+                "Concentration",
+                f"{mf.get('Concentration')}s" if mf.get("Concentration") is not None else "-",
+            ))
+            mf_section.add_row(StatRow(
+                "Cooldown",
+                f"{mf.get('Cooldown')}s" if mf.get("Cooldown") is not None else "-",
+            ))
+            mf_section.add_row(StatRow(
+                "CD Group",
+                str(mf.get("CooldownGroup")) if mf.get("CooldownGroup") is not None else "-",
+            ))
             self._add_section(mf_section)
 
         # --- Damage Breakdown ---
@@ -1283,13 +1285,20 @@ class WeaponDetailView(WikiDetailView):
         self._acquisition_section.set_loading()
         self._add_article_section(self._acquisition_section)
 
+        # --- Usage panel ---
+        self._usage_section = DataSection("Usage", expanded=True)
+        self._usage_section.set_loading()
+        self._add_article_section(self._usage_section)
+
         if self._data_client and name:
-            def fetch_acq(item_name=name):
-                data = self._data_client.get_acquisition(item_name)
-                self._acquisition_loaded.emit(data)
+            def fetch_data(item_name=name):
+                acq_data = self._data_client.get_acquisition(item_name)
+                self._acquisition_loaded.emit(acq_data)
+                usage_data = self._data_client.get_usage(item_name)
+                self._usage_loaded.emit(usage_data)
 
             threading.Thread(
-                target=fetch_acq, daemon=True, name="acq-fetch"
+                target=fetch_data, daemon=True, name="weapon-data-fetch"
             ).start()
 
     # --- Toggle reload / uses per min ---
@@ -1314,10 +1323,11 @@ class WeaponDetailView(WikiDetailView):
         """Handle acquisition data arriving from background thread."""
         if not hasattr(self, "_acquisition_section"):
             return
+        url = exchange_url(self._item, self._nexus_base_url, "Weapon")
+        self._acquisition_section.set_content(build_acquisition_content(data, exchange_link=url))
 
-        content = self._build_acquisition_content(data)
-        self._acquisition_section.set_content(content)
-
-    def _build_acquisition_content(self, data: dict) -> QWidget:
-        """Build the acquisition panel content from API data."""
-        return build_acquisition_content(data)
+    def _on_usage_loaded(self, data: dict):
+        if not hasattr(self, "_usage_section"):
+            return
+        url = exchange_url(self._item, self._nexus_base_url, "Weapon")
+        self._usage_section.set_content(build_usage_content(data, exchange_link=url))

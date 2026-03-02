@@ -9,4 +9,3 @@ requests>=2.31.0
 keyring>=24.0.0
 py-mini-racer>=0.6.0
 keyboard>=0.13.5
-pynput>=1.7.6

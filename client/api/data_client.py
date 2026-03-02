@@ -103,6 +103,23 @@ class DataClient:
     def get_missions(self) -> list[dict]:
         return self._get_cached("/missions")
 
+    def get_mission_chains(self) -> list[dict]:
+        return self._get_cached("/missionchains")
+
+    def get_mission_chain_detail(self, name: str) -> dict | None:
+        """Fetch a single mission chain with its missions and dependency graph."""
+        from urllib.parse import quote
+        try:
+            resp = self._session.get(
+                f"{self._base_url}/missionchains/{quote(name, safe='')}",
+                timeout=15,
+            )
+            if resp.ok:
+                return resp.json()
+        except Exception as e:
+            log.error("Failed to fetch mission chain '%s': %s", name, e)
+        return None
+
     def get_locations(self) -> list[dict]:
         return self._get_cached("/locations")
 

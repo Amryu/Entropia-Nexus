@@ -14,10 +14,11 @@ from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 
 from .wiki_detail import (
     WikiDetailView, InfoboxSection, Tier1StatRow, StatRow, DataSection,
-    section_title_label, no_data_label, make_compact_table,
-    build_acquisition_content,
+    section_title_label, no_data_label, make_section_table,
+    build_acquisition_content, build_usage_content, exchange_url,
     _TABLE_MAX_HEIGHT, _TABLE_ROW_HEIGHT,
 )
+from .fancy_table import ColumnDef
 from ..theme import (
     PRIMARY, SECONDARY, BORDER, HOVER, TEXT, TEXT_MUTED, ACCENT,
 )
@@ -359,6 +360,7 @@ class BlueprintDetailView(WikiDetailView):
     """Detail view for a single blueprint entity."""
 
     _acquisition_loaded = pyqtSignal(dict)
+    _usage_loaded = pyqtSignal(dict)
 
     def __init__(self, item: dict, *, nexus_base_url: str = "",
                  data_client=None, nexus_client=None, parent=None):
@@ -368,6 +370,7 @@ class BlueprintDetailView(WikiDetailView):
         )
         self._nexus_client = nexus_client
         self._acquisition_loaded.connect(self._on_acquisition_loaded)
+        self._usage_loaded.connect(self._on_usage_loaded)
         self._build(item)
 
     def _build(self, item: dict):
@@ -497,13 +500,20 @@ class BlueprintDetailView(WikiDetailView):
         self._acquisition_section.set_loading()
         self._add_article_section(self._acquisition_section)
 
+        # --- Usage panel ---
+        self._usage_section = DataSection("Usage", expanded=True)
+        self._usage_section.set_loading()
+        self._add_article_section(self._usage_section)
+
         if self._data_client and name:
-            def fetch_acq(item_name=name):
-                data = self._data_client.get_acquisition(item_name)
-                self._acquisition_loaded.emit(data)
+            def fetch_data(item_name=name):
+                acq_data = self._data_client.get_acquisition(item_name)
+                self._acquisition_loaded.emit(acq_data)
+                usage_data = self._data_client.get_usage(item_name)
+                self._usage_loaded.emit(usage_data)
 
             threading.Thread(
-                target=fetch_acq, daemon=True, name="bp-acq-fetch"
+                target=fetch_data, daemon=True, name="bp-data-fetch"
             ).start()
 
         # --- Drops panel ---
@@ -511,9 +521,11 @@ class BlueprintDetailView(WikiDetailView):
         drops_section = DataSection("Drops", expanded=True)
         if drops:
             drops_section.set_subtitle(f"{len(drops)} blueprints")
-            headers = ["Blueprint"]
-            rows = [[d.get("Name", "Unknown")] for d in drops]
-            drops_section.set_content(make_compact_table(headers, rows))
+            flat = [{"name": d.get("Name", "")} for d in drops]
+            drops_section.set_content(make_section_table(
+                [ColumnDef("name", "Blueprint", main=True)],
+                flat,
+            ))
         else:
             drops_section.set_content(
                 no_data_label("No blueprint drops available.")
@@ -527,5 +539,11 @@ class BlueprintDetailView(WikiDetailView):
         """Handle acquisition data arriving from background thread."""
         if not hasattr(self, "_acquisition_section"):
             return
-        content = build_acquisition_content(data)
-        self._acquisition_section.set_content(content)
+        url = exchange_url(self._item, self._nexus_base_url, "Blueprint")
+        self._acquisition_section.set_content(build_acquisition_content(data, exchange_link=url))
+
+    def _on_usage_loaded(self, data: dict):
+        if not hasattr(self, "_usage_section"):
+            return
+        url = exchange_url(self._item, self._nexus_base_url, "Blueprint")
+        self._usage_section.set_content(build_usage_content(data, exchange_link=url))

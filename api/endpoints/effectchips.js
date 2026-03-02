@@ -33,7 +33,7 @@ function formatEffectChip(x, effectsMap, classIds){
       Mindforce: {
         Level: x.Level !== null ? Number(x.Level) : null,
         Concentration: x.Concentration !== null ? Number(x.Concentration) : null,
-        Cooldown: null,
+        Cooldown: x.Cooldown !== null ? Number(x.Cooldown) : null,
         CooldownGroup: x.CooldownGroup !== null ? Number(x.CooldownGroup) : null,
       },
       Economy: {

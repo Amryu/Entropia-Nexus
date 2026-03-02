@@ -336,7 +336,7 @@ class SearchOverlayWidget(OverlayWidget):
 
     def _on_text_changed(self, text: str):
         if len(text.strip()) < 2:
-            self._hide_results()
+            self._clear_results()
             self._debounce.stop()
             return
         self._debounce.start()
@@ -429,10 +429,24 @@ class SearchOverlayWidget(OverlayWidget):
         self._results_area.setVisible(True)
 
     def _hide_results(self):
+        """Soft hide — keep data so FocusIn can re-show the same results."""
+        if 0 <= self._highlighted_index < len(self._row_widgets):
+            self._row_widgets[self._highlighted_index].setStyleSheet(_ROW_STYLE)
+        self._results_area.setVisible(False)
+        self._highlighted_index = -1
+
+    def _clear_results(self):
+        """Full clear — hide and discard all result data (Escape, empty text)."""
         self._results_area.setVisible(False)
         self._flat_results.clear()
         self._row_widgets.clear()
         self._highlighted_index = -1
+        # Remove widgets from layout so FocusIn won't re-show stale rows
+        while self._results_layout.count():
+            item = self._results_layout.takeAt(0)
+            w = item.widget()
+            if w:
+                w.deleteLater()
 
     def _make_row(self, item: dict) -> QWidget:
         row = _ResultRow(item, self)
@@ -488,8 +502,8 @@ class SearchOverlayWidget(OverlayWidget):
 
         if etype == event.Type.FocusIn:
             self._search.selectAll()
-            # Reshow results if we have any
-            if self._flat_results and not self._results_area.isVisible():
+            # Reshow results (or empty state) if the area has content
+            if self._results_layout.count() > 0 and not self._results_area.isVisible():
                 self._results_area.setVisible(True)
             return False
 
@@ -524,7 +538,7 @@ class SearchOverlayWidget(OverlayWidget):
                 return True
 
             if key == Qt.Key.Key_Escape:
-                self._hide_results()
+                self._clear_results()
                 self._search.clear()
                 self._release_focus()
                 return True

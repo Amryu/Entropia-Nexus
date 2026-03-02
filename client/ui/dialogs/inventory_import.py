@@ -432,7 +432,10 @@ def _compute_diff(
         ik = item.get('instance_key')
         if ik:
             return f"{item.get('item_id', 0)}::{ik}"
-        return f"{item.get('item_id', 0)}::{item.get('container') or ''}"
+        c = item.get('container') or ''
+        if c == 'Carried':
+            c = ''
+        return f"{item.get('item_id', 0)}::{c}"
 
     current_map: dict[str, dict] = {}
     for item in current_items:

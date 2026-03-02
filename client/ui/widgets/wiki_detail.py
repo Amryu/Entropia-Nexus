@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import threading
+import webbrowser
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
@@ -20,6 +21,7 @@ from ..theme import (
     HOVER, DAMAGE_COLORS, TIER1_BLUE_START, TIER1_BLUE_END, SUCCESS,
 )
 from ...data.wiki_columns import _DAMAGE_TYPES, deep_get
+from .fancy_table import FancyTable, ColumnDef
 
 # Defense types share the same 9 names as damage types
 _DEFENSE_TYPES = _DAMAGE_TYPES
@@ -54,6 +56,75 @@ def no_data_label(text: str) -> QLabel:
         f" padding: 16px;"
     )
     return lbl
+
+
+# --- Exchange link helpers (mirrors TYPE_ID_OFFSETS from itemTypes.js) ---
+
+_TYPE_ID_OFFSETS = {
+    "Material": 1_000_000, "Weapon": 2_000_000, "Armor": 3_000_000,
+    "Tool": 4_000_000, "MedicalTool": 4_100_000, "MiscTool": 4_200_000,
+    "Refiner": 4_300_000, "Scanner": 4_400_000, "Finder": 4_500_000,
+    "Excavator": 4_600_000, "BlueprintBook": 4_700_000,
+    "MedicalChip": 4_800_000, "TeleportationChip": 4_810_000,
+    "EffectChip": 4_820_000, "Attachment": 5_000_000,
+    "WeaponAmplifier": 5_100_000, "WeaponVisionAttachment": 5_200_000,
+    "Absorber": 5_300_000, "FinderAmplifier": 5_400_000,
+    "ArmorPlating": 5_500_000, "Enhancer": 5_600_000,
+    "MindforceImplant": 5_700_000, "Blueprint": 6_000_000,
+    "Vehicle": 7_000_000, "Clothing": 8_000_000,
+    "Furniture": 9_100_000, "Decoration": 9_200_000,
+    "StorageContainer": 9_300_000, "Sign": 9_400_000,
+    "Consumable": 10_000_000, "Capsule": 10_100_000,
+    "Pet": 11_000_000, "Strongbox": 12_000_000, "ArmorSet": 13_000_000,
+}
+
+# Map page_type_id (used by detail views) → TYPE_ID_OFFSETS key
+PAGE_TYPE_TO_ENTITY: dict[str, str] = {
+    "weapons": "Weapon", "materials": "Material", "blueprints": "Blueprint",
+    "clothing": "Clothing", "vehicles": "Vehicle", "pets": "Pet",
+    "armorsets": "ArmorSet", "strongboxes": "Strongbox",
+    "amplifiers": "WeaponAmplifier", "armor": "Armor",
+    # Tools
+    "finders": "Finder", "excavators": "Excavator", "scanners": "Scanner",
+    "refiners": "Refiner", "misctools": "MiscTool",
+    "teleportationchips": "TeleportationChip",
+    # Medical
+    "medicaltools": "MedicalTool", "medicalchips": "MedicalChip",
+    "effectchips": "EffectChip",
+    # Generic
+    "enhancers": "Enhancer", "stimulants": "Consumable",
+    "capsules": "Capsule", "furniture": "Furniture",
+    "storagecontainers": "StorageContainer", "signs": "Sign",
+    "sightsscopes": "WeaponVisionAttachment", "absorbers": "Absorber",
+    "finderamplifiers": "FinderAmplifier", "armorplatings": "ArmorPlating",
+    "mindforceimplants": "MindforceImplant",
+}
+
+
+def exchange_url(item: dict, base_url: str, entity_type: str = "") -> str | None:
+    """Build the exchange detail URL for an item, or None if type is unknown.
+
+    *entity_type* overrides the item's own ``Type`` field when provided.
+    """
+    item_id = item.get("Id")
+    item_type = entity_type or item.get("Type", "")
+    offset = _TYPE_ID_OFFSETS.get(item_type)
+    if item_id is not None and offset is not None:
+        return f"{base_url}/market/exchange/listings/{item_id + offset}"
+    return None
+
+
+def _exchange_link_label(text: str, url: str) -> QPushButton:
+    """Centered accent-colored link button that opens *url* in the browser."""
+    btn = QPushButton(text)
+    btn.setCursor(Qt.CursorShape.PointingHandCursor)
+    btn.setStyleSheet(
+        f"QPushButton {{ background: transparent; border: none;"
+        f" color: {ACCENT}; font-size: 13px; padding: 4px 0px; }}"
+        f"QPushButton:hover {{ color: {ACCENT}; }}"
+    )
+    btn.clicked.connect(lambda: webbrowser.open(url))
+    return btn
 
 
 def make_compact_table(headers: list[str], rows: list[list[str]]) -> QTableWidget:
@@ -120,10 +191,42 @@ def make_compact_table(headers: list[str], rows: list[list[str]]) -> QTableWidge
     return table
 
 
-def build_acquisition_content(data: dict) -> QWidget:
+# Max rows visible in section panel tables before scrolling
+_SECTION_TABLE_MAX_ROWS = 12
+
+
+def make_section_table(
+    columns: list[ColumnDef],
+    data: list[dict],
+    *,
+    max_visible_rows: int = _SECTION_TABLE_MAX_ROWS,
+    searchable: bool = True,
+    default_sort: tuple[str, str] | None = None,
+) -> FancyTable:
+    """Create a FancyTable sized for use inside a DataSection panel.
+
+    Provides sorting, filtering, and bounded height — replaces
+    make_compact_table() for new section panel tables.
+    """
+    table = FancyTable(
+        columns,
+        sortable=True,
+        searchable=searchable,
+        default_sort=default_sort,
+        max_visible_rows=max_visible_rows,
+        show_toolbar=False,
+        compact_threshold=99,  # disable compact mode in embedded tables
+    )
+    table.set_data(data)
+    return table
+
+
+def build_acquisition_content(data: dict, *, exchange_link: str | None = None) -> QWidget:
     """Build the acquisition panel content from API data.
 
     Shared by all entity detail views (weapons, blueprints, etc.).
+    ``exchange_link`` — full URL to the exchange item page (shown as
+    a "create sell order" prompt when there is no acquisition data).
     """
     container = QWidget()
     container.setStyleSheet("background: transparent;")
@@ -138,82 +241,251 @@ def build_acquisition_content(data: dict) -> QWidget:
     if vendor_offers:
         has_any = True
         layout.addWidget(section_title_label("Vendor"))
-        headers = ["Name", "Price", "Planet", "Limited"]
-        rows = []
+        flat = []
         for offer in vendor_offers:
-            v_name = deep_get(offer, "Vendor", "Name") or "N/A"
             value = deep_get(offer, "Item", "Properties", "Economy", "Value")
-            price = f"{value} PED" if value is not None else "N/A"
-            planet = deep_get(offer, "Vendor", "Planet", "Name") or "N/A"
-            limited = "Yes" if offer.get("IsLimited") else "No"
-            rows.append([v_name, price, planet, limited])
-        layout.addWidget(make_compact_table(headers, rows))
+            flat.append({
+                "name": deep_get(offer, "Vendor", "Name") or "",
+                "price": value,
+                "planet": deep_get(offer, "Vendor", "Planet", "Name") or "",
+                "limited": "Yes" if offer.get("IsLimited") else "No",
+            })
+        layout.addWidget(make_section_table(
+            [
+                ColumnDef("name", "Name", main=True),
+                ColumnDef("price", "Price", format=lambda v: f"{v} PED" if v is not None else ""),
+                ColumnDef("planet", "Planet"),
+                ColumnDef("limited", "Limited"),
+            ],
+            flat,
+        ))
 
     # --- Looted ---
     loots = data.get("Loots") or []
     if loots:
         has_any = True
         layout.addWidget(section_title_label("Looted"))
-        headers = ["Mob", "Planet", "Maturity", "Frequency"]
-        rows = []
+        flat = []
         for loot in loots:
-            mob = deep_get(loot, "Mob", "Name") or "N/A"
-            planet = deep_get(loot, "Mob", "Planet", "Name") or "N/A"
-            maturity = deep_get(loot, "Maturity", "Name") or "N/A"
-            frequency = loot.get("Frequency", "N/A")
-            rows.append([mob, planet, maturity, frequency])
-        layout.addWidget(make_compact_table(headers, rows))
+            flat.append({
+                "mob": deep_get(loot, "Mob", "Name") or "",
+                "planet": deep_get(loot, "Mob", "Planet", "Name") or "",
+                "maturity": deep_get(loot, "Maturity", "Name") or "",
+                "frequency": loot.get("Frequency") or "",
+            })
+        layout.addWidget(make_section_table(
+            [
+                ColumnDef("mob", "Mob", main=True),
+                ColumnDef("planet", "Planet"),
+                ColumnDef("maturity", "Maturity"),
+                ColumnDef("frequency", "Frequency"),
+            ],
+            flat,
+        ))
 
     # --- Shop Listings (Market) ---
     shop_listings = data.get("ShopListings") or []
     if shop_listings:
         has_any = True
         layout.addWidget(section_title_label("Market"))
-        headers = ["Shop", "Markup", "Qty", "Planet"]
-        rows = []
+        flat = []
         for listing in shop_listings:
-            shop_name = deep_get(listing, "Shop", "Name") or "N/A"
             markup = listing.get("Markup")
-            markup_str = f"{markup:.2f}%" if markup is not None else "N/A"
             qty = listing.get("StackSize")
-            qty_str = str(qty) if qty is not None else "N/A"
-            planet = deep_get(listing, "Shop", "Planet", "Name") or "N/A"
-            rows.append([shop_name, markup_str, qty_str, planet])
-        layout.addWidget(make_compact_table(headers, rows))
+            flat.append({
+                "shop": deep_get(listing, "Shop", "Name") or "",
+                "markup": markup,
+                "qty": qty,
+                "planet": deep_get(listing, "Shop", "Planet", "Name") or "",
+            })
+        layout.addWidget(make_section_table(
+            [
+                ColumnDef("shop", "Shop", main=True),
+                ColumnDef("markup", "Markup", format=lambda v: f"{v:.2f}%" if v is not None else ""),
+                ColumnDef("qty", "Qty", format=lambda v: str(v) if v is not None else ""),
+                ColumnDef("planet", "Planet"),
+            ],
+            flat,
+        ))
 
     # --- Crafted (Blueprints) ---
     blueprints = data.get("Blueprints") or []
     if blueprints:
         has_any = True
         layout.addWidget(section_title_label("Crafted"))
-        headers = ["Blueprint", "Level", "Profession"]
-        rows = []
+        flat = []
         for bp in blueprints:
-            bp_name = bp.get("Name", "N/A")
-            level = deep_get(bp, "Properties", "Level")
-            level_str = str(level) if level is not None else "N/A"
-            profession = deep_get(bp, "Profession", "Name") or "N/A"
-            rows.append([bp_name, level_str, profession])
-        layout.addWidget(make_compact_table(headers, rows))
+            flat.append({
+                "blueprint": bp.get("Name", ""),
+                "level": deep_get(bp, "Properties", "Level"),
+                "profession": deep_get(bp, "Profession", "Name") or "",
+            })
+        layout.addWidget(make_section_table(
+            [
+                ColumnDef("blueprint", "Blueprint", main=True),
+                ColumnDef("level", "Level", format=lambda v: str(v) if v is not None else ""),
+                ColumnDef("profession", "Profession"),
+            ],
+            flat,
+        ))
 
     # --- Blueprint Discovery ---
     bp_drops = data.get("BlueprintDrops") or []
     if bp_drops:
         has_any = True
         layout.addWidget(section_title_label("Blueprint Discovery"))
-        headers = ["Name", "Level"]
-        rows = []
+        flat = []
         for bp in bp_drops:
-            bp_name = bp.get("Name", "N/A")
-            level = deep_get(bp, "Properties", "Level")
-            level_str = str(level) if level is not None else "N/A"
-            rows.append([bp_name, level_str])
-        layout.addWidget(make_compact_table(headers, rows))
+            flat.append({
+                "name": bp.get("Name", ""),
+                "level": deep_get(bp, "Properties", "Level"),
+            })
+        layout.addWidget(make_section_table(
+            [
+                ColumnDef("name", "Name", main=True),
+                ColumnDef("level", "Level", format=lambda v: str(v) if v is not None else ""),
+            ],
+            flat,
+        ))
 
     if not has_any:
         layout.addWidget(
             no_data_label("No acquisition data available for this item.")
         )
+        if exchange_link:
+            layout.addWidget(
+                _exchange_link_label("Create a sell order on the Exchange", exchange_link)
+            )
+
+    return container
+
+
+def build_usage_content(data: dict, *, exchange_link: str | None = None) -> QWidget:
+    """Build the usage panel content from API data.
+
+    Shared by all entity detail views — shows where this item is used
+    (blueprints, refining, missions, vendor currency).
+    """
+    container = QWidget()
+    container.setStyleSheet("background: transparent;")
+    layout = QVBoxLayout(container)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(16)
+
+    has_any = False
+
+    # --- Blueprints (this item is used as material) ---
+    blueprints = data.get("Blueprints") or []
+    if blueprints:
+        has_any = True
+        layout.addWidget(section_title_label("Blueprints"))
+        flat = []
+        for bp in blueprints:
+            flat.append({
+                "blueprint": bp.get("Name", ""),
+                "type": deep_get(bp, "Properties", "Type") or "",
+                "amount": bp.get("MaterialAmount"),
+            })
+        layout.addWidget(make_section_table(
+            [
+                ColumnDef("blueprint", "Blueprint", main=True),
+                ColumnDef("type", "Type"),
+                ColumnDef("amount", "Amount", format=lambda v: str(v) if v is not None else ""),
+            ],
+            flat,
+        ))
+
+    # --- Refining Recipes (this item is an ingredient) ---
+    recipes = data.get("RefiningRecipes") or []
+    if recipes:
+        has_any = True
+        layout.addWidget(section_title_label("Refining Recipes"))
+        flat = []
+        for recipe in recipes:
+            ingredients = recipe.get("Ingredients") or []
+            ing_parts = []
+            for ing in ingredients:
+                ing_name = deep_get(ing, "Item", "Name") or "?"
+                ing_amount = ing.get("Amount")
+                if ing_amount is not None:
+                    ing_parts.append(f"{ing_name} x{ing_amount}")
+                else:
+                    ing_parts.append(ing_name)
+            flat.append({
+                "product": deep_get(recipe, "Product", "Name") or "",
+                "amount": recipe.get("Amount"),
+                "ingredients": ", ".join(ing_parts) if ing_parts else "",
+            })
+        layout.addWidget(make_section_table(
+            [
+                ColumnDef("product", "Product", main=True),
+                ColumnDef("amount", "Amount", format=lambda v: str(v) if v is not None else ""),
+                ColumnDef("ingredients", "Ingredients"),
+            ],
+            flat,
+        ))
+
+    # --- Missions (this item is a hand-in) ---
+    missions = data.get("Missions") or []
+    if missions:
+        has_any = True
+        layout.addWidget(section_title_label("Missions"))
+        flat = []
+        for mission in missions:
+            flat.append({
+                "mission": mission.get("Name", ""),
+                "type": mission.get("Type", ""),
+                "location": mission.get("Location", ""),
+                "handins": mission.get("HandIns"),
+            })
+        layout.addWidget(make_section_table(
+            [
+                ColumnDef("mission", "Mission", main=True),
+                ColumnDef("type", "Type"),
+                ColumnDef("location", "Location"),
+                ColumnDef("handins", "Hand-ins", format=lambda v: str(v) if v is not None else ""),
+            ],
+            flat,
+        ))
+
+    # --- Vendor Currency (this item is accepted as payment) ---
+    vendor_offers = data.get("VendorOffers") or []
+    vendor_flat = []
+    for offer in vendor_offers:
+        prices = offer.get("Prices") or []
+        if not prices:
+            continue
+        v_name = deep_get(offer, "Vendor", "Name") or ""
+        v_planet = deep_get(offer, "Vendor", "Planet", "Name") or ""
+        item_name = deep_get(offer, "Item", "Name") or ""
+        for price in prices:
+            vendor_flat.append({
+                "vendor": v_name,
+                "planet": v_planet,
+                "item": item_name,
+                "amount": price.get("Amount"),
+            })
+    if vendor_flat:
+        has_any = True
+        layout.addWidget(section_title_label("Vendor Currency"))
+        layout.addWidget(make_section_table(
+            [
+                ColumnDef("vendor", "Vendor", main=True),
+                ColumnDef("planet", "Planet"),
+                ColumnDef("item", "Item"),
+                ColumnDef("amount", "Amount", format=lambda v: str(v) if v is not None else ""),
+            ],
+            vendor_flat,
+        ))
+
+    if not has_any:
+        layout.addWidget(
+            no_data_label("No usage data available for this item.")
+        )
+        if exchange_link:
+            layout.addWidget(
+                _exchange_link_label("Create a buy order on the Exchange", exchange_link)
+            )
 
     return container
 
@@ -791,9 +1063,10 @@ class WikiDetailView(QWidget):
         self._header_row.setSpacing(16)
         self._infobox_layout.addLayout(self._header_row)
 
-        # Sections row: stat sections laid out horizontally
+        # Sections row: stat sections laid out horizontally, left-aligned
         self._sections_row = QHBoxLayout()
         self._sections_row.setSpacing(8)
+        self._sections_row.setAlignment(Qt.AlignmentFlag.AlignLeft)
         self._infobox_layout.addLayout(self._sections_row)
 
         self._main_layout.addWidget(self._infobox)

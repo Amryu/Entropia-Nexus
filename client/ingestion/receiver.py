@@ -9,6 +9,7 @@ server-provided IDs (globals) or content hashes (trades).
 from __future__ import annotations
 
 import hashlib
+import time
 import threading
 from datetime import datetime, timezone
 
@@ -20,6 +21,9 @@ log = get_logger("Ingestion.Receive")
 # Max seen IDs/hashes to keep before pruning (prevents unbounded memory growth)
 _MAX_SEEN_SIZE = 10_000
 _PRUNE_KEEP = 5_000
+
+# How long to keep re-checking unconfirmed globals before dropping them
+_PENDING_MAX_AGE = 300  # 5 minutes
 
 
 def _content_hash_trade(t: dict) -> str:
@@ -52,6 +56,9 @@ class IngestionReceiver:
         # Trades use content hashes (no occurrence concept).
         self._seen_global_ids: set[int] = set()
         self._seen_trade_hashes: set[str] = set()
+
+        # Unconfirmed globals awaiting re-check (id → monotonic first_seen time)
+        self._pending_globals: dict[int, float] = {}
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -105,23 +112,48 @@ class IngestionReceiver:
             if not data:
                 return
 
-            for g in data.get("globals", []):
-                gid = g.get("id")
-                if gid is None:
-                    continue
-                if gid in self._seen_global_ids:
-                    continue
-                self._seen_global_ids.add(gid)
-                self._event_bus.publish(EVENT_INGESTED_GLOBAL, g)
+            now = time.monotonic()
+            fresh = {
+                g["id"]: g
+                for g in data.get("globals", [])
+                if g.get("id") is not None
+            }
 
-            # Prune to prevent unbounded growth (IDs are monotonically increasing)
+            # Re-check pending unconfirmed globals against fresh data
+            expired = []
+            for gid, first_seen in list(self._pending_globals.items()):
+                if gid in fresh and fresh[gid].get("confirmed"):
+                    # Now confirmed — publish
+                    if gid not in self._seen_global_ids:
+                        self._seen_global_ids.add(gid)
+                        self._event_bus.publish(EVENT_INGESTED_GLOBAL, fresh[gid])
+                    expired.append(gid)
+                elif now - first_seen > _PENDING_MAX_AGE:
+                    expired.append(gid)
+            for gid in expired:
+                self._pending_globals.pop(gid, None)
+
+            # Process new entries from this poll
+            for gid, g in fresh.items():
+                if gid in self._seen_global_ids or gid in self._pending_globals:
+                    continue
+                if g.get("confirmed"):
+                    self._seen_global_ids.add(gid)
+                    self._event_bus.publish(EVENT_INGESTED_GLOBAL, g)
+                else:
+                    self._pending_globals[gid] = now
+
+            # Prune seen IDs to prevent unbounded growth
             if len(self._seen_global_ids) > _MAX_SEEN_SIZE:
                 sorted_ids = sorted(self._seen_global_ids)
                 self._seen_global_ids = set(sorted_ids[_PRUNE_KEEP:])
 
-            cursor = data.get("cursor")
-            if cursor:
-                self._global_cursor = cursor
+            # Hold cursor if there are pending unconfirmed entries so they
+            # reappear in the next poll; otherwise advance normally.
+            if not self._pending_globals:
+                cursor = data.get("cursor")
+                if cursor:
+                    self._global_cursor = cursor
 
         except Exception as e:
             log.debug("Global poll failed: %s", e)

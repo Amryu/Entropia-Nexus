@@ -47,7 +47,6 @@ class StatusBar(QWidget):
             }}
             QPushButton:hover {{
                 color: {ACCENT_HOVER};
-                text-decoration: underline;
             }}
             QPushButton:disabled {{
                 color: #888;

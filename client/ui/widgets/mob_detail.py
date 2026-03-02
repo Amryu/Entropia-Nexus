@@ -11,9 +11,10 @@ from PyQt6.QtWidgets import (
 from ..icons import svg_icon, MAPS as MAPS_ICON, COPY as COPY_ICON, CHECK as CHECK_ICON
 from .wiki_detail import (
     WikiDetailView, InfoboxSection, Tier1StatRow, StatRow, DataSection,
-    MobDamageGridWidget, make_compact_table,
+    MobDamageGridWidget, make_section_table,
     _TABLE_ROW_HEIGHT, _TABLE_MAX_HEIGHT,
 )
+from .fancy_table import ColumnDef
 from ...data.wiki_columns import _DAMAGE_TYPES, deep_get, get_item_name, fmt_int, fmt_bool
 from ..theme import (
     PRIMARY, SECONDARY, BORDER, HOVER, TEXT, TEXT_MUTED, ACCENT, SUCCESS,
@@ -548,19 +549,14 @@ class MobDetailView(WikiDetailView):
 
         # --- Maturities table (pre-sorted by level then health) ---
         if maturities:
-            sorted_mats = sorted(maturities, key=lambda m: (
-                deep_get(m, "Properties", "Level") or 0,
-                deep_get(m, "Properties", "Health") or 0,
-            ))
             mat_section = DataSection("Maturities", expanded=True)
-            mat_section.set_subtitle(f"{len(sorted_mats)} maturities")
-            headers = ["Name", "Level", "HP", "HP/Lvl", "Damage", "Defense"]
-            rows = []
-            for m in sorted_mats:
+            mat_section.set_subtitle(f"{len(maturities)} maturities")
+            flat = []
+            for m in maturities:
                 m_name = m.get("Name") or "Single Maturity"
                 level = deep_get(m, "Properties", "Level")
                 hp = deep_get(m, "Properties", "Health")
-                hpl = f"{hp / level:.2f}" if hp and level and level > 0 else "-"
+                hpl = hp / level if hp and level and level > 0 else None
                 primary = None
                 for a in (m.get("Attacks") or []):
                     if a.get("Name") == "Primary" or primary is None:
@@ -574,15 +570,26 @@ class MobDetailView(WikiDetailView):
                         v for v in defense.values()
                         if isinstance(v, (int, float))
                     )
-                rows.append([
-                    m_name,
-                    fmt_int(level),
-                    fmt_int(hp),
-                    hpl,
-                    _fv(primary, 1) if primary else "-",
-                    _fv(total_def, 1) if total_def > 0 else "-",
-                ])
-            mat_section.set_content(make_compact_table(headers, rows))
+                flat.append({
+                    "name": m_name,
+                    "level": level,
+                    "hp": hp,
+                    "hpl": hpl,
+                    "damage": primary,
+                    "defense": total_def if total_def > 0 else None,
+                })
+            mat_section.set_content(make_section_table(
+                [
+                    ColumnDef("name", "Name", main=True),
+                    ColumnDef("level", "Level", format=lambda v: fmt_int(v)),
+                    ColumnDef("hp", "HP", format=lambda v: fmt_int(v)),
+                    ColumnDef("hpl", "HP/Lvl", format=lambda v: f"{v:.2f}" if v else "-"),
+                    ColumnDef("damage", "Damage", format=lambda v: _fv(v, 1) if v else "-"),
+                    ColumnDef("defense", "Defense", format=lambda v: _fv(v, 1) if v else "-"),
+                ],
+                flat,
+                default_sort=("level", "ASC"),
+            ))
             self._add_article_section(mat_section)
 
         # --- Locations / Spawns table ---

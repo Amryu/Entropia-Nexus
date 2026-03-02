@@ -36,6 +36,9 @@ def main():
 
     init_logging(verbose=args.verbose)
 
+    from .core import crash_handler
+    crash_handler.install()
+
     # Load config
     try:
         config = load_config(args.config)
@@ -67,6 +70,7 @@ _SINGLE_INSTANCE_SERVER_NAME = "EntropiaNexus-SingleInstance"
 def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     """Run the full GUI application with Qt event loop."""
     from PyQt6.QtWidgets import QApplication
+    from PyQt6.QtCore import QTimer
     from PyQt6.QtNetwork import QLocalServer, QLocalSocket
     from .ui.signals import AppSignals, wire_signals
     from .ui.main_window import MainWindow
@@ -86,6 +90,9 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     app = QApplication(sys.argv)
     app.setApplicationName("Entropia Nexus")
     app.setQuitOnLastWindowClosed(False)  # Keep running in system tray
+
+    from .core.crash_handler import set_qt_app
+    set_qt_app(app)
 
     # Single-instance enforcement: try to reach an existing instance
     if not allow_multiple:
@@ -182,92 +189,139 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     from .overlay.overlay_manager import OverlayManager
     overlay_manager = OverlayManager(config=config)
 
-    # Qt overlays (always-on-top, draggable, position persisted)
-    try:
-        from .overlay.hunt_overlay import HuntOverlay
-        hunt_overlay = HuntOverlay(
-            signals=signals, config=config, config_path=config_path,
-            manager=overlay_manager,
-        )
-    except Exception as e:
-        log.warning("Hunt overlay failed: %s", e)
+    # Defer overlay widget creation so the main window renders first.
+    # The OverlayManager itself is lightweight (timer + state); the actual
+    # overlay widgets are heavy (Qt windows, stylesheets, layouts).
+    def _create_overlays():
+        # Qt overlays (always-on-top, draggable, position persisted)
+        try:
+            from .overlay.hunt_overlay import HuntOverlay
+            HuntOverlay(
+                signals=signals, config=config, config_path=config_path,
+                manager=overlay_manager,
+            )
+        except Exception as e:
+            log.warning("Hunt overlay failed: %s", e)
 
-    try:
-        from .overlay.progress_overlay import ProgressOverlay
-        progress_overlay = ProgressOverlay(
-            config=config, config_path=config_path, event_bus=event_bus,
-            manager=overlay_manager,
-        )
-    except Exception as e:
-        log.warning("Progress overlay failed: %s", e)
+        try:
+            from .overlay.progress_overlay import ProgressOverlay
+            ProgressOverlay(
+                config=config, config_path=config_path, event_bus=event_bus,
+                manager=overlay_manager,
+            )
+        except Exception as e:
+            log.warning("Progress overlay failed: %s", e)
 
-    try:
-        from .overlay.search_overlay import SearchOverlayWidget
-        search_overlay = SearchOverlayWidget(
-            config=config, config_path=config_path,
-            data_client=data_client, manager=overlay_manager,
-        )
-    except Exception as e:
         search_overlay = None
-        log.warning("Search overlay failed: %s", e)
+        try:
+            from .overlay.search_overlay import SearchOverlayWidget
+            search_overlay = SearchOverlayWidget(
+                config=config, config_path=config_path,
+                data_client=data_client, manager=overlay_manager,
+            )
+        except Exception as e:
+            log.warning("Search overlay failed: %s", e)
 
-    # Detail overlay: opened when a search result is selected
-    _current_detail_overlay = None
-    _detail_overlays: list = []   # all open overlays (for offset stacking)
+        # Map overlay (singleton)
+        _map_overlay = None
 
-    def _on_overlay_result_selected(item):
-        nonlocal _current_detail_overlay
-        from .overlay.detail_overlay import DetailOverlayWidget, STACK_OFFSET
+        def _toggle_map_overlay():
+            nonlocal _map_overlay
+            from .overlay.map_overlay import MapOverlay
+            if _map_overlay is None or not _map_overlay.isVisible():
+                if _map_overlay is None:
+                    _map_overlay = MapOverlay(
+                        config=config,
+                        config_path=config_path,
+                        data_client=data_client,
+                        manager=overlay_manager,
+                    )
+                _map_overlay.set_wants_visible(True)
+                _map_overlay.raise_()
+            else:
+                _map_overlay.set_wants_visible(False)
 
-        # Close current unpinned overlay
-        if _current_detail_overlay and not _current_detail_overlay.pinned:
-            _current_detail_overlay.close()
+        def _open_map_overlay_at(planet_name: str, location_id: int):
+            nonlocal _map_overlay
+            from .overlay.map_overlay import MapOverlay
+            if _map_overlay is None:
+                _map_overlay = MapOverlay(
+                    config=config,
+                    config_path=config_path,
+                    data_client=data_client,
+                    manager=overlay_manager,
+                )
+            _map_overlay.open_at_location(planet_name, location_id)
 
-        # Prune closed overlays from the list
-        _detail_overlays[:] = [o for o in _detail_overlays if o.isVisible()]
+        overlay_manager.map_hotkey_pressed.connect(_toggle_map_overlay)
 
-        overlay = DetailOverlayWidget(
-            item,
-            config=config,
-            config_path=config_path,
-            data_client=data_client,
-            manager=overlay_manager,
-        )
-        if config.auto_pin_detail_overlay:
-            overlay.set_pinned(True)
-        overlay.open_in_wiki.connect(main_window._on_search_result_selected)
-        overlay.open_entity.connect(_on_overlay_result_selected)
+        # Expose map overlay opener for detail overlay map buttons
+        from .overlay import detail_overlay as _detail_overlay_mod
+        _detail_overlay_mod._map_overlay_callback = _open_map_overlay_at
 
-        # Offset from existing open overlays so they don't perfectly stack
-        if _detail_overlays:
-            count = len(_detail_overlays)
-            pos = overlay.pos()
-            overlay.move(pos.x() + STACK_OFFSET * count, pos.y() + STACK_OFFSET * count)
+        # Detail overlay: opened when a search result is selected
+        _current_detail_overlay = None
+        _detail_overlays: list = []   # all open overlays (for offset stacking)
 
-        _detail_overlays.append(overlay)
-        _current_detail_overlay = overlay
+        def _on_overlay_result_selected(item):
+            nonlocal _current_detail_overlay
+            from .overlay.detail_overlay import DetailOverlayWidget, STACK_OFFSET
 
-    if search_overlay:
-        search_overlay.result_selected.connect(_on_overlay_result_selected)
+            # Close current unpinned overlay
+            if _current_detail_overlay and not _current_detail_overlay.pinned:
+                _current_detail_overlay.close()
 
-    # Start legacy tkinter overlays in daemon threads (ScanOverlay only)
-    _start_legacy_overlays(config, event_bus)
+            # Prune closed overlays from the list
+            _detail_overlays[:] = [o for o in _detail_overlays if o.isVisible()]
+
+            overlay = DetailOverlayWidget(
+                item,
+                config=config,
+                config_path=config_path,
+                data_client=data_client,
+                manager=overlay_manager,
+            )
+            if config.auto_pin_detail_overlay:
+                overlay.set_pinned(True)
+            overlay.open_in_wiki.connect(main_window._on_search_result_selected)
+            overlay.open_entity.connect(_on_overlay_result_selected)
+            overlay.create_loadout.connect(lambda data: nexus_client.create_loadout(data))
+
+            # Offset from existing open overlays so they don't perfectly stack
+            if _detail_overlays:
+                count = len(_detail_overlays)
+                pos = overlay.pos()
+                overlay.move(pos.x() + STACK_OFFSET * count, pos.y() + STACK_OFFSET * count)
+
+            _detail_overlays.append(overlay)
+            _current_detail_overlay = overlay
+
+        if search_overlay:
+            search_overlay.result_selected.connect(_on_overlay_result_selected)
+
+        # Start legacy tkinter overlays in daemon threads (ScanOverlay only)
+        _start_legacy_overlays(config, event_bus)
+
+    QTimer.singleShot(0, _create_overlays)
 
     exit_code = app.exec()
 
     local_server.close()
 
-    # Cleanup with hard deadline — if a reparse is running and holds the lock,
-    # stop() will signal it to break out, but we don't wait forever.
+    # Tear down system-wide hooks immediately so mouse/keyboard input
+    # is no longer gated on the Python GIL during cleanup.
+    overlay_manager.stop()
+
+    # Hard deadline for remaining cleanup — daemon threads are killed
+    # automatically on exit, so this only guards against blocking I/O.
     def force_exit():
         log.error("Shutdown timed out, forcing exit")
         os._exit(exit_code or 1)
 
-    kill_timer = threading.Timer(5.0, force_exit)
+    kill_timer = threading.Timer(3.0, force_exit)
     kill_timer.daemon = True
     kill_timer.start()
 
-    overlay_manager.stop()
     nexus_client.close()
     data_client.close()
     _cleanup_workers(workers)

@@ -286,7 +286,6 @@ class CustomTitleBar(QWidget):
     def _position_popup(self):
         pos = self._search.mapToGlobal(QPoint(0, self._search.height() + 2))
         popup_w = self._search.width()
-        self._search_popup.setFixedWidth(popup_w)
         self._search_popup.move(pos.x(), pos.y())
         # Compute max height, then let the popup show + defer height fitting
         screen = self._search.screen()
@@ -296,7 +295,7 @@ class CustomTitleBar(QWidget):
         else:
             max_h = 400
         max_h = min(max_h, int(self._window.height() * 0.6))
-        self._search_popup.fit_height(max_h)
+        self._search_popup.show_popup(max_h, popup_w)
 
     def _on_search_enter(self, query: str):
         """User pressed Enter in search — open full results in wiki."""
@@ -351,6 +350,8 @@ class CustomTitleBar(QWidget):
             QEvent.Type.WindowDeactivate,
         ):
             self._search_popup.hide()
+            if etype == QEvent.Type.WindowDeactivate:
+                self._search.clearFocus()
 
         return super().eventFilter(obj, event)
 

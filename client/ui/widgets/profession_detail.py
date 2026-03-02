@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from .wiki_detail import (
     WikiDetailView, InfoboxSection, Tier1StatRow, StatRow, DataSection,
-    no_data_label, make_compact_table,
+    no_data_label, make_section_table,
 )
+from .fancy_table import ColumnDef
 from ...data.wiki_columns import deep_get, get_item_name, fmt_int
 
 
@@ -73,17 +74,24 @@ class ProfessionDetailView(WikiDetailView):
         # --- Skills table ---
         skills_section = DataSection("Skill Components", expanded=True)
         if skills:
-            # Sort by weight descending
-            sorted_skills = sorted(skills, key=lambda s: s.get("Weight") or 0, reverse=True)
-            skills_section.set_subtitle(f"{len(sorted_skills)} skills")
-            headers = ["Skill", "Weight", "%"]
-            rows = []
-            for s in sorted_skills:
-                s_name = deep_get(s, "Skill", "Name") or s.get("Name") or "-"
+            skills_section.set_subtitle(f"{len(skills)} skills")
+            flat = []
+            for s in skills:
                 weight = s.get("Weight") or 0
-                pct = f"{weight / total_weight * 100:.1f}%" if total_weight > 0 else "-"
-                rows.append([str(s_name), fmt_int(weight), pct])
-            skills_section.set_content(make_compact_table(headers, rows))
+                flat.append({
+                    "skill": deep_get(s, "Skill", "Name") or s.get("Name") or "",
+                    "weight": weight,
+                    "pct": weight / total_weight * 100 if total_weight > 0 else 0,
+                })
+            skills_section.set_content(make_section_table(
+                [
+                    ColumnDef("skill", "Skill", main=True),
+                    ColumnDef("weight", "Weight", format=lambda v: fmt_int(v)),
+                    ColumnDef("pct", "%", format=lambda v: f"{v:.1f}%" if v else ""),
+                ],
+                flat,
+                default_sort=("weight", "DESC"),
+            ))
         else:
             skills_section.set_content(no_data_label("No skill data available."))
             skills_section.set_subtitle("No data")
@@ -93,11 +101,18 @@ class ProfessionDetailView(WikiDetailView):
         if unlocks:
             unlock_section = DataSection("Skill Unlocks", expanded=True)
             unlock_section.set_subtitle(f"{len(unlocks)} unlocks")
-            headers = ["Skill", "Required Level"]
-            rows = []
+            flat = []
             for u in unlocks:
-                u_name = deep_get(u, "Skill", "Name") or u.get("Name") or "-"
-                level = u.get("Level")
-                rows.append([str(u_name), fmt_int(level)])
-            unlock_section.set_content(make_compact_table(headers, rows))
+                flat.append({
+                    "skill": deep_get(u, "Skill", "Name") or u.get("Name") or "",
+                    "level": u.get("Level"),
+                })
+            unlock_section.set_content(make_section_table(
+                [
+                    ColumnDef("skill", "Skill", main=True),
+                    ColumnDef("level", "Required Level", format=lambda v: fmt_int(v)),
+                ],
+                flat,
+                default_sort=("level", "ASC"),
+            ))
             self._add_article_section(unlock_section)

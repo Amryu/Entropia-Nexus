@@ -8,6 +8,8 @@ class LoadoutStats:
     """Calculated stats from the loadout evaluator."""
     # Offensive
     total_damage: float = 0
+    offensive_totals: dict = field(default_factory=dict)
+    active_effects: list = field(default_factory=list)
     effective_damage: float = 0
     damage_interval_min: float = 0
     damage_interval_max: float = 0

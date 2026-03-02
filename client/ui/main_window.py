@@ -760,6 +760,11 @@ class MainWindow(QWidget):
                 if obj is not bell and (bell is None or not bell.isAncestorOf(obj)):
                     self._notification_center.hide()
 
+            # Unfocus search bar when clicking outside it
+            search = self._title_bar._search
+            if search.hasFocus() and obj is not search:
+                search.clearFocus()
+
             if event.button() == Qt.MouseButton.BackButton:
                 self._navigate_back()
                 return True

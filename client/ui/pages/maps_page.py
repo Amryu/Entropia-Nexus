@@ -17,7 +17,7 @@ from PyQt6.QtGui import QPixmap
 import requests
 
 from ..widgets.map_canvas import MapCanvas
-from ..theme import PRIMARY, SECONDARY, BORDER, HOVER, ACCENT, TEXT, TEXT_MUTED, MAIN_DARK
+from ..theme import PRIMARY, SECONDARY, BORDER, HOVER, ACCENT, ACCENT_HOVER, TEXT, TEXT_MUTED, MAIN_DARK
 from ...core.logger import get_logger
 
 log = get_logger("MapsPage")
@@ -361,12 +361,6 @@ class _SearchResultRow(QWidget):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(6, 0, 6, 0)
         layout.setSpacing(6)
-
-        idx_lbl = QLabel(str(index + 1))
-        idx_lbl.setFixedWidth(20)
-        idx_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        idx_lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px; background: transparent;")
-        layout.addWidget(idx_lbl)
 
         color = name_color or TEXT
         name_lbl = QLabel(name)
@@ -808,7 +802,7 @@ class _LocationInfoPanel(QWidget):
                         f"QPushButton {{ color: {ACCENT}; font-size: 12px;"
                         f" background: transparent; border: none; padding: 0;"
                         f" text-align: left; }}"
-                        f"QPushButton:hover {{ text-decoration: underline; }}"
+                        f"QPushButton:hover {{ color: {ACCENT_HOVER}; }}"
                     )
                     mob_link.clicked.connect(
                         lambda _, m=entry["mob"]: self._navigate_to_mob(m)

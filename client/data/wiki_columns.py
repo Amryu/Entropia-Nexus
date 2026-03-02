@@ -207,6 +207,71 @@ def _is_cat4_mob(item: dict):
     return 1 if deep_get(item, "Species", "Properties", "CodexType") == "MobLooter" else 0
 
 
+def flatten_mobs_to_maturities(mobs: list[dict]) -> list[dict]:
+    """FlatMap mob entities into individual maturity rows for the maturities table.
+
+    Each row has flat keys for direct column access plus ``_parent_mob_name``
+    for navigation back to the parent mob detail on double-click.
+    Mirrors the website's ``maturityNavItems`` reactive variable.
+    """
+    rows: list[dict] = []
+    for mob in mobs:
+        mob_name = mob.get("Name") or ""
+        if not mob_name:
+            continue
+        maturities = mob.get("Maturities")
+        if not isinstance(maturities, list):
+            continue
+
+        for m in maturities:
+            mat_id = m.get("Id")
+            if mat_id is None:
+                continue
+
+            mat_name = (m.get("Name") or "").strip() or "Single Maturity"
+            level = deep_get(m, "Properties", "Level")
+            hp = deep_get(m, "Properties", "Health")
+            hp_per_level = (hp / level) if hp and level and level > 0 else None
+
+            primary_damage = None
+            for a in (m.get("Attacks") or []):
+                if a.get("Name") == "Primary" or primary_damage is None:
+                    td = a.get("TotalDamage")
+                    if td is not None:
+                        primary_damage = td
+
+            defense_dict = deep_get(m, "Properties", "Defense")
+            total_defense = None
+            if defense_dict and isinstance(defense_dict, dict):
+                total_defense = sum(
+                    v for v in defense_dict.values()
+                    if isinstance(v, (int, float))
+                )
+                if total_defense == 0:
+                    total_defense = None
+
+            rows.append({
+                "Id": mat_id,
+                "Name": f"{mob_name} - {mat_name}",
+                "DisplayName": f"{mob_name} - {mat_name}",
+                "MobName": mob_name,
+                "MaturityName": mat_name,
+                "Level": level,
+                "HP": hp,
+                "HpPerLevel": hp_per_level,
+                "PrimaryDamage": primary_damage,
+                "Defense": total_defense,
+                "Boss": deep_get(m, "Properties", "Boss") is True,
+                "Type": mob.get("EntityType") or mob.get("Type"),
+                "Planet": deep_get(mob, "Planet", "Name"),
+                "Sweatable": deep_get(mob, "Properties", "IsSweatable"),
+                "APM": deep_get(mob, "Properties", "AttacksPerMinute"),
+                "AttackRange": deep_get(mob, "Properties", "AttackRange"),
+                "_parent_mob_name": mob_name,
+            })
+    return rows
+
+
 # ---------------------------------------------------------------------------
 # Skill level helpers (shared by weapons, tools, medical)
 # ---------------------------------------------------------------------------
@@ -422,10 +487,32 @@ COLUMN_DEFS: dict[str, dict[str, dict]] = {
         "limited":  {"key": "limited",  "header": "Limited",  "get_value": lambda i: sum(1 for o in (i.get("Offers") or []) if o.get("IsLimited")), "format": fmt_int},
     },
 
+    "mobs-maturities": {
+        "mob":       {"key": "mob",       "header": "Mob",      "get_value": lambda i: i.get("MobName"),       "format": fmt_str},
+        "maturity":  {"key": "maturity",  "header": "Maturity", "get_value": lambda i: i.get("MaturityName"),  "format": fmt_str},
+        "level":     {"key": "level",     "header": "Level",    "get_value": lambda i: i.get("Level"),         "format": fmt_int},
+        "hp":        {"key": "hp",        "header": "HP",       "get_value": lambda i: i.get("HP"),            "format": fmt_int},
+        "hpPerLevel":{"key": "hpPerLevel","header": "HP/Lvl",   "get_value": lambda i: i.get("HpPerLevel"),    "format": fmt(2)},
+        "damage":    {"key": "damage",    "header": "Damage",   "get_value": lambda i: i.get("PrimaryDamage"), "format": fmt(1)},
+        "defense":   {"key": "defense",   "header": "Defense",  "get_value": lambda i: i.get("Defense"),       "format": fmt(1)},
+        "boss":      {"key": "boss",      "header": "Boss",     "get_value": lambda i: 1 if i.get("Boss") else 0, "format": fmt_bool},
+        "type":      {"key": "type",      "header": "Type",     "get_value": lambda i: i.get("Type"),          "format": fmt_str},
+        "planet":    {"key": "planet",    "header": "Planet",   "get_value": lambda i: i.get("Planet"),        "format": fmt_str},
+        "sweatable": {"key": "sweatable", "header": "Sweat",    "get_value": lambda i: 1 if i.get("Sweatable") else 0, "format": fmt_bool},
+        "apm":       {"key": "apm",       "header": "APM",      "get_value": lambda i: i.get("APM"),           "format": fmt(1)},
+        "atkRange":  {"key": "atkRange",  "header": "Range",    "get_value": lambda i: i.get("AttackRange"),   "format": fmt(1)},
+    },
+
     "missions": {
         "type":   {"key": "type",   "header": "Type",   "get_value": lambda i: deep_get(i, "Properties", "Type"), "format": fmt_str},
         "planet": {"key": "planet", "header": "Planet", "get_value": lambda i: deep_get(i, "Planet", "Name"), "format": fmt_str},
         "chain":  {"key": "chain",  "header": "Chain",  "get_value": lambda i: deep_get(i, "MissionChain", "Name"), "format": fmt_str},
+    },
+
+    "missionchains": {
+        "type":         {"key": "type",         "header": "Type",     "get_value": lambda i: deep_get(i, "Properties", "Type"), "format": fmt_str},
+        "planet":       {"key": "planet",       "header": "Planet",   "get_value": lambda i: deep_get(i, "Planet", "Name"),     "format": fmt_str},
+        "missionCount": {"key": "missionCount", "header": "Missions", "get_value": lambda i: len(i.get("Missions") or []),      "format": fmt_int},
     },
 
     "locations": {
@@ -716,6 +803,9 @@ DEFAULT_COLUMNS: dict[str, list[str]] = {
     "furniture":          ["type", "tt", "mintt", "weight"],
     "storagecontainers":  ["cap", "weightCap", "tt", "mintt", "weight"],
     "signs":              ["ratio", "itemPoints", "tt", "mintt", "cost", "weight"],
+    # Toggle views
+    "mobs-maturities":    ["mob", "maturity", "level", "hp", "hpPerLevel", "damage", "defense", "type", "planet"],
+    "missionchains":      ["type", "planet", "missionCount"],
 }
 
 
@@ -767,6 +857,30 @@ LEAF_DATA_MAP: dict[str, tuple[str, str]] = {
     "Vendors":                   ("get_vendors",              "vendors"),
     "Missions":                  ("get_missions",             "missions"),
     "Locations":                 ("get_locations",            "locations"),
+}
+
+
+# ---------------------------------------------------------------------------
+# Toggle views — alternate table modes for certain leaves
+# ---------------------------------------------------------------------------
+
+LEAF_TOGGLE_MAP: dict[str, dict] = {
+    "Mobs": {
+        "label_a": "Mobs",
+        "label_b": "Maturities",
+        "method_name": None,           # Derived from mob data
+        "page_type_id": "mobs-maturities",
+        "derive_fn": flatten_mobs_to_maturities,
+        "parent_key": "_parent_mob_name",
+    },
+    "Missions": {
+        "label_a": "Missions",
+        "label_b": "Mission Chains",
+        "method_name": "get_mission_chains",
+        "page_type_id": "missionchains",
+        "derive_fn": None,
+        "parent_key": None,
+    },
 }
 
 

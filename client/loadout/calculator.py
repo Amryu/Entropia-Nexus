@@ -118,4 +118,8 @@ class LoadoutCalculator:
         stats.heal_reload = js_stats.get("healReload") or 0
         stats.heal_total_uses = js_stats.get("healTotalUses") or 0
 
+        # Effects data (for calculator overlay)
+        stats.offensive_totals = result.get("offensiveTotals") or {}
+        stats.active_effects = (result.get("effects", {}).get("all")) or []
+
         return stats

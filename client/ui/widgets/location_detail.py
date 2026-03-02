@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from .wiki_detail import (
     WikiDetailView, InfoboxSection, Tier1StatRow, StatRow, DataSection,
-    WaypointCopyButton, no_data_label, make_compact_table,
+    WaypointCopyButton, no_data_label, make_section_table,
 )
+from .fancy_table import ColumnDef
 from ...data.wiki_columns import deep_get, get_item_name, fmt_int
 
 
@@ -119,9 +120,12 @@ class LocationDetailView(WikiDetailView):
             if facilities and len(facilities) > 3:
                 fac_section = DataSection("Facilities", expanded=True)
                 fac_section.set_subtitle(f"{len(facilities)} facilities")
-                headers = ["Facility"]
-                rows = [[f.get("Name") or str(f)] for f in facilities]
-                fac_section.set_content(make_compact_table(headers, rows))
+                flat = [{"facility": f.get("Name") or str(f)} for f in facilities]
+                fac_section.set_content(make_section_table(
+                    [ColumnDef("facility", "Facility", main=True)],
+                    flat,
+                    searchable=False,
+                ))
                 self._add_article_section(fac_section)
 
         # --- Waves table (for wave events) ---
@@ -130,18 +134,25 @@ class LocationDetailView(WikiDetailView):
             if waves:
                 wave_section = DataSection("Waves", expanded=True)
                 wave_section.set_subtitle(f"{len(waves)} waves")
-                headers = ["Wave", "Mobs", "Notes"]
-                rows = []
+                flat = []
                 for i, w in enumerate(waves, 1):
                     mob_names = []
                     for m in (w.get("Mobs") or []):
                         mob_names.append(
                             deep_get(m, "Mob", "Name") or m.get("Name") or "Unknown"
                         )
-                    rows.append([
-                        str(i),
-                        ", ".join(mob_names) if mob_names else "-",
-                        w.get("Notes") or "-",
-                    ])
-                wave_section.set_content(make_compact_table(headers, rows))
+                    flat.append({
+                        "wave": i,
+                        "mobs": ", ".join(mob_names) if mob_names else "-",
+                        "notes": w.get("Notes") or "-",
+                    })
+                wave_section.set_content(make_section_table(
+                    [
+                        ColumnDef("wave", "Wave", format=lambda v: str(v)),
+                        ColumnDef("mobs", "Mobs", main=True),
+                        ColumnDef("notes", "Notes"),
+                    ],
+                    flat,
+                    searchable=False,
+                ))
                 self._add_article_section(wave_section)

@@ -326,6 +326,8 @@ class FancyTable(QWidget):
         default_sort: tuple[str, str] | None = None,
         row_class: Callable[[dict], str | None] | None = None,
         empty_message: str = "No data available",
+        max_visible_rows: int | None = None,
+        show_toolbar: bool = True,
         parent=None,
     ):
         super().__init__(parent)
@@ -338,6 +340,8 @@ class FancyTable(QWidget):
         self._default_sort = default_sort
         self._row_class_fn = row_class
         self._empty_message = empty_message
+        self._max_visible_rows = max_visible_rows
+        self._show_toolbar = show_toolbar
 
         # Data
         self._items: list[dict] = []
@@ -423,7 +427,11 @@ class FancyTable(QWidget):
         self._config_btn.setStyleSheet(_toolbar_btn_style)
         toolbar.addWidget(self._config_btn)
 
-        root.addLayout(toolbar)
+        self._toolbar_widget = QWidget()
+        self._toolbar_widget.setLayout(toolbar)
+        if not self._show_toolbar:
+            self._toolbar_widget.hide()
+        root.addWidget(self._toolbar_widget)
 
         # -- Header scroll area (no visible scrollbars) --
         self._header_scroll = _make_hidden_scroll_area(fixed_height=self._row_height)
@@ -1001,6 +1009,13 @@ class FancyTable(QWidget):
         viewport_w = self._body_scroll.viewport().width()
         h = max(count * self._row_height, 1)
         self._virtual_container.setFixedSize(max(total_w, viewport_w), h)
+
+        # Cap body scroll area height when max_visible_rows is set
+        if self._max_visible_rows is not None:
+            max_h = self._max_visible_rows * self._row_height
+            actual_h = min(count * self._row_height, max_h) if count > 0 else self._row_height
+            # +2 for border allowance
+            self._body_scroll.setFixedHeight(actual_h + 2)
 
         # Show/hide empty message
         if count == 0 and self._items:

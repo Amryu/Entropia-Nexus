@@ -2,14 +2,11 @@
 
 from __future__ import annotations
 
-from PyQt6.QtWidgets import QLabel, QVBoxLayout, QWidget
-from PyQt6.QtCore import Qt
-
 from .wiki_detail import (
     WikiDetailView, InfoboxSection, Tier1StatRow, StatRow, DataSection,
-    no_data_label, make_compact_table,
+    no_data_label, make_section_table,
 )
-from ..theme import TEXT_MUTED
+from .fancy_table import ColumnDef
 from ...data.wiki_columns import deep_get, get_item_name, fmt_int
 
 
@@ -77,19 +74,24 @@ class MissionDetailView(WikiDetailView):
         steps_section = DataSection("Steps", expanded=True)
         if steps:
             steps_section.set_subtitle(f"{len(steps)} steps")
-            headers = ["#", "Objective", "Target", "Amount"]
-            rows = []
+            flat = []
             for i, step in enumerate(steps, 1):
-                objective = step.get("Objective") or step.get("Type") or "-"
-                target = deep_get(step, "Target", "Name") or step.get("Target") or "-"
-                amount = step.get("Amount")
-                rows.append([
-                    str(i),
-                    str(objective),
-                    str(target),
-                    fmt_int(amount) if amount else "-",
-                ])
-            steps_section.set_content(make_compact_table(headers, rows))
+                flat.append({
+                    "num": i,
+                    "objective": step.get("Objective") or step.get("Type") or "-",
+                    "target": deep_get(step, "Target", "Name") or step.get("Target") or "-",
+                    "amount": step.get("Amount"),
+                })
+            steps_section.set_content(make_section_table(
+                [
+                    ColumnDef("num", "#", format=lambda v: str(v)),
+                    ColumnDef("objective", "Objective", main=True),
+                    ColumnDef("target", "Target"),
+                    ColumnDef("amount", "Amount", format=lambda v: fmt_int(v) if v else "-"),
+                ],
+                flat,
+                searchable=False,
+            ))
         else:
             steps_section.set_content(no_data_label("No step information available."))
             steps_section.set_subtitle("No data")
@@ -104,22 +106,35 @@ class MissionDetailView(WikiDetailView):
 
         rewards_section = DataSection("Rewards", expanded=True)
         if has_rewards:
-            reward_rows = []
+            flat = []
             for r in reward_items:
-                r_name = deep_get(r, "Item", "Name") or r.get("Name") or "Unknown"
-                qty = r.get("Amount") or r.get("Quantity")
-                reward_rows.append([r_name, fmt_int(qty) if qty else "-", "Item"])
+                flat.append({
+                    "reward": deep_get(r, "Item", "Name") or r.get("Name") or "Unknown",
+                    "amount": r.get("Amount") or r.get("Quantity"),
+                    "type": "Item",
+                })
             for r in reward_skills:
-                r_name = deep_get(r, "Skill", "Name") or r.get("Name") or "Unknown"
-                amount = r.get("Amount")
-                reward_rows.append([r_name, fmt_int(amount) if amount else "-", "Skill"])
+                flat.append({
+                    "reward": deep_get(r, "Skill", "Name") or r.get("Name") or "Unknown",
+                    "amount": r.get("Amount"),
+                    "type": "Skill",
+                })
             for r in reward_unlocks:
-                r_name = r.get("Name") or "Unknown"
-                reward_rows.append([r_name, "-", "Unlock"])
+                flat.append({
+                    "reward": r.get("Name") or "Unknown",
+                    "amount": None,
+                    "type": "Unlock",
+                })
 
-            rewards_section.set_subtitle(f"{len(reward_rows)} rewards")
-            headers = ["Reward", "Amount", "Type"]
-            rewards_section.set_content(make_compact_table(headers, reward_rows))
+            rewards_section.set_subtitle(f"{len(flat)} rewards")
+            rewards_section.set_content(make_section_table(
+                [
+                    ColumnDef("reward", "Reward", main=True),
+                    ColumnDef("amount", "Amount", format=lambda v: fmt_int(v) if v else "-"),
+                    ColumnDef("type", "Type"),
+                ],
+                flat,
+            ))
         else:
             rewards_section.set_content(no_data_label("No reward information available."))
             rewards_section.set_subtitle("No data")
@@ -131,13 +146,23 @@ class MissionDetailView(WikiDetailView):
         dependents = deps.get("Dependents") or []
         if prereqs or dependents:
             dep_section = DataSection("Dependencies", expanded=False)
-            rows = []
+            flat = []
             for p in prereqs:
-                p_name = deep_get(p, "Mission", "Name") or p.get("Name") or "Unknown"
-                rows.append([p_name, "Prerequisite"])
+                flat.append({
+                    "mission": deep_get(p, "Mission", "Name") or p.get("Name") or "Unknown",
+                    "relation": "Prerequisite",
+                })
             for d in dependents:
-                d_name = deep_get(d, "Mission", "Name") or d.get("Name") or "Unknown"
-                rows.append([d_name, "Dependent"])
-            dep_section.set_subtitle(f"{len(rows)} links")
-            dep_section.set_content(make_compact_table(["Mission", "Relation"], rows))
+                flat.append({
+                    "mission": deep_get(d, "Mission", "Name") or d.get("Name") or "Unknown",
+                    "relation": "Dependent",
+                })
+            dep_section.set_subtitle(f"{len(flat)} links")
+            dep_section.set_content(make_section_table(
+                [
+                    ColumnDef("mission", "Mission", main=True),
+                    ColumnDef("relation", "Relation"),
+                ],
+                flat,
+            ))
             self._add_article_section(dep_section)

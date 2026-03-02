@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from .wiki_detail import (
     WikiDetailView, InfoboxSection, Tier1StatRow, StatRow, DataSection,
-    no_data_label, make_compact_table,
+    no_data_label, make_section_table,
 )
+from .fancy_table import ColumnDef
 from ...data.wiki_columns import deep_get, get_item_name, fmt_int
 
 
@@ -84,13 +85,20 @@ class SkillDetailView(WikiDetailView):
         prof_section = DataSection("Affected Professions", expanded=True)
         if professions:
             prof_section.set_subtitle(f"{len(professions)} professions")
-            headers = ["Profession", "Weight"]
-            rows = []
+            flat = []
             for p in professions:
-                p_name = deep_get(p, "Profession", "Name") or p.get("Name") or "-"
-                weight = p.get("Weight")
-                rows.append([str(p_name), fmt_int(weight)])
-            prof_section.set_content(make_compact_table(headers, rows))
+                flat.append({
+                    "profession": deep_get(p, "Profession", "Name") or p.get("Name") or "",
+                    "weight": p.get("Weight"),
+                })
+            prof_section.set_content(make_section_table(
+                [
+                    ColumnDef("profession", "Profession", main=True),
+                    ColumnDef("weight", "Weight", format=lambda v: fmt_int(v)),
+                ],
+                flat,
+                default_sort=("weight", "DESC"),
+            ))
         else:
             prof_section.set_content(no_data_label("No profession data available."))
             prof_section.set_subtitle("No data")
@@ -100,11 +108,18 @@ class SkillDetailView(WikiDetailView):
         if unlocks:
             unlock_section = DataSection("Unlocked By", expanded=True)
             unlock_section.set_subtitle(f"{len(unlocks)} unlocks")
-            headers = ["Profession", "Level"]
-            rows = []
+            flat = []
             for u in unlocks:
-                u_name = deep_get(u, "Profession", "Name") or u.get("Name") or "-"
-                level = u.get("Level")
-                rows.append([str(u_name), fmt_int(level)])
-            unlock_section.set_content(make_compact_table(headers, rows))
+                flat.append({
+                    "profession": deep_get(u, "Profession", "Name") or u.get("Name") or "",
+                    "level": u.get("Level"),
+                })
+            unlock_section.set_content(make_section_table(
+                [
+                    ColumnDef("profession", "Profession", main=True),
+                    ColumnDef("level", "Level", format=lambda v: fmt_int(v)),
+                ],
+                flat,
+                default_sort=("level", "ASC"),
+            ))
             self._add_article_section(unlock_section)

@@ -221,6 +221,15 @@
     border-radius: 6px;
   }
 
+  .exchange-link {
+    color: var(--accent-color, #4a9eff);
+    font-size: 13px;
+  }
+
+  .exchange-link:hover {
+    text-decoration: underline;
+  }
+
   .no-data.edit-mode-notice {
     display: flex;
     align-items: center;
@@ -280,7 +289,12 @@
     <span>This information is inferred from other sources and cannot be edited directly.</span>
   </div>
 {:else if !hasUsageData}
-  <div class="no-data">No usage data available for this item.</div>
+  <div class="no-data">
+    No usage data available for this item.
+    {#if usage?._exchangeItemId}
+      <br><a href="/market/exchange/listings/{usage._exchangeItemId}" class="exchange-link">Create a buy order on the Exchange</a>
+    {/if}
+  </div>
 {:else}
   <div class="usage-container">
     <div class="usage-grid">

@@ -2,20 +2,23 @@
 
 from __future__ import annotations
 
+import os
+import re
 import threading
+import webbrowser
 from typing import TYPE_CHECKING
 
 from PyQt6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QLabel, QWidget, QPushButton,
     QScrollArea, QStackedWidget,
 )
-from PyQt6.QtCore import Qt, QPoint, pyqtSignal
+from PyQt6.QtCore import Qt, QPoint, QTimer, pyqtSignal
 
-from PyQt6.QtGui import QFontMetrics
+from PyQt6.QtGui import QFontMetrics, QPixmap
 
 from .overlay_widget import OverlayWidget
 from ..ui.icons import svg_icon
-from ..ui.widgets.search_popup import WIKI_PATHS, get_type_name, get_display_type
+from ..ui.widgets.search_popup import WIKI_PATHS, ITEM_TYPES, get_type_name, get_display_type
 from ..data.wiki_columns import (
     deep_get, _DAMAGE_TYPES, LEAF_DATA_MAP, get_item_name,
     weapon_total_damage, weapon_effective_damage, weapon_dps, weapon_dpp,
@@ -25,8 +28,10 @@ from ..data.wiki_columns import (
     _excavator_eff_per_ped, _blueprint_cost,
     fmt_int, fmt_bool,
 )
+from ..ui.widgets.wiki_detail import _TYPE_ID_OFFSETS
 from ..ui.widgets.mob_detail import (
     _maturity_stats, _get_damage_groups, _format_maturity_label,
+    _spawn_maturities_for_mob,
 )
 from ..ui.theme import DAMAGE_COLORS
 
@@ -108,6 +113,119 @@ _TAB_USAGE_SVG = (
 _EXPAND_SVG = '<path d="M7 10l5 5 5-5z"/>'
 _COLLAPSE_SVG = '<path d="M7 14l5-5 5 5z"/>'
 
+# Mob: maturities (stacked bars)
+_TAB_MATURITY_SVG = (
+    '<path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7'
+    'v2zM7 7v2h14V7H7z"/>'
+)
+# Loot (gift/drop)
+_TAB_LOOT_SVG = (
+    '<path d="M20 6h-2.18c.11-.31.18-.65.18-1a2.996 2.996 0 0 0-5.5-1.65l-.5.67-.5-.68'
+    'C10.96 2.54 10.05 2 9 2 7.34 2 6 3.34 6 5c0 .35.07.69.18 1H4c-1.11 0-1.99.89-1.99'
+    ' 2L2 19c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2z"/>'
+)
+# Map pin (locations tab)
+_TAB_LOCATION_SVG = (
+    '<path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z'
+    'm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>'
+)
+# Checkmark list (steps)
+_TAB_STEPS_SVG = (
+    '<path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7'
+    'v2zM7 7v2h14V7H7z"/>'
+)
+# Star (rewards)
+_TAB_REWARDS_SVG = (
+    '<path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24'
+    'l5.46 4.73L5.82 21z"/>'
+)
+# Storefront (offers)
+_TAB_OFFERS_SVG = (
+    '<path d="M20 4H4v2h16V4zm1 10v-2l-1-5H4l-1 5v2h1v6h10v-6h4v6h2v-6h1zm-9 4H6v-4h6v4z"/>'
+)
+# Map (embedded map tab)
+_TAB_MAP_SVG = (
+    '<path d="M20.5 3l-.16.03L15 5.1 9 3 3.36 4.9c-.21.07-.36.25-.36.48V20.5c0 .28.22.5'
+    '.5.5l.16-.03L9 18.9l6 2.1 5.64-1.9c.21-.07.36-.25.36-.48V3.5c0-.28-.22-.5-.5-.5z'
+    'M15 19l-6-2.11V5l6 2.11V19z"/>'
+)
+# Copy (waypoint)
+_COPY_SVG = (
+    '<path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2'
+    ' 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>'
+)
+_CHECK_SVG = '<path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>'
+SUCCESS_COLOR = "#16a34a"
+
+# Calculator (sigma symbol)
+_TAB_CALC_SVG = (
+    '<path d="M18 4H6v2l6.5 6L6 18v2h12v-3h-7l5-5-5-5h7V4z"/>'
+)
+
+# Module-level callback set by app.py to open the map overlay.
+# Signature: (planet_name: str, location_id: int) -> None
+_map_overlay_callback = None
+
+# --- Tab IDs ---
+TAB_DETAILS = "details"
+TAB_ACQUISITION = "acquisition"
+TAB_USAGE = "usage"
+TAB_DESCRIPTION = "description"
+TAB_MATURITIES = "maturities"
+TAB_LOOTS = "loots"
+TAB_LOCATIONS = "locations"
+TAB_STEPS = "steps"
+TAB_REWARDS = "rewards"
+TAB_OFFERS = "offers"
+TAB_MAP = "map"
+TAB_CALCULATOR = "calculator"
+
+
+def _get_tab_defs(entity_type: str) -> list[tuple[str, str, str]]:
+    """Return (svg_path, tooltip, tab_id) for each tab based on entity type."""
+    if entity_type == "Mob":
+        return [
+            (_TAB_INFO_SVG, "Details", TAB_DETAILS),
+            (_TAB_MATURITY_SVG, "Maturities", TAB_MATURITIES),
+            (_TAB_LOOT_SVG, "Loots", TAB_LOOTS),
+            (_TAB_LOCATION_SVG, "Locations", TAB_LOCATIONS),
+            (_TAB_DESC_SVG, "Description", TAB_DESCRIPTION),
+        ]
+    if entity_type in ("Mission", "MissionChain"):
+        return [
+            (_TAB_INFO_SVG, "Details", TAB_DETAILS),
+            (_TAB_STEPS_SVG, "Steps", TAB_STEPS),
+            (_TAB_REWARDS_SVG, "Rewards", TAB_REWARDS),
+            (_TAB_DESC_SVG, "Description", TAB_DESCRIPTION),
+        ]
+    if entity_type == "Vendor":
+        return [
+            (_TAB_INFO_SVG, "Details", TAB_DETAILS),
+            (_TAB_OFFERS_SVG, "Offers", TAB_OFFERS),
+            (_TAB_DESC_SVG, "Description", TAB_DESCRIPTION),
+        ]
+    if entity_type in ("Location", "Area"):
+        return [
+            (_TAB_INFO_SVG, "Details", TAB_DETAILS),
+            (_TAB_MAP_SVG, "Map", TAB_MAP),
+            (_TAB_DESC_SVG, "Description", TAB_DESCRIPTION),
+        ]
+    if entity_type in ITEM_TYPES:
+        tabs = [
+            (_TAB_INFO_SVG, "Details", TAB_DETAILS),
+            (_TAB_ACQUIRE_SVG, "Acquisition", TAB_ACQUISITION),
+            (_TAB_USAGE_SVG, "Usage", TAB_USAGE),
+            (_TAB_DESC_SVG, "Description", TAB_DESCRIPTION),
+        ]
+        if entity_type == "Weapon":
+            tabs.append((_TAB_CALC_SVG, "Calculator", TAB_CALCULATOR))
+        return tabs
+    # Skill, Profession, etc.
+    return [
+        (_TAB_INFO_SVG, "Details", TAB_DETAILS),
+        (_TAB_DESC_SVG, "Description", TAB_DESCRIPTION),
+    ]
+
 # --- Button stylesheets ---
 _BTN_STYLE = (
     "QPushButton {"
@@ -162,9 +280,11 @@ class DetailOverlayWidget(OverlayWidget):
 
     open_in_wiki = pyqtSignal(dict)
     open_entity = pyqtSignal(dict)   # open a referenced entity in a new overlay
+    create_loadout = pyqtSignal(dict)  # calculator tab → create loadout
     _entity_loaded = pyqtSignal(dict, str)  # (entity, page_type_id)
     _acquisition_loaded = pyqtSignal(dict)
     _usage_loaded = pyqtSignal(dict)
+    _map_data_ready = pyqtSignal(dict, object, list)  # (planet, pixmap, locations)
 
     def __init__(
         self,
@@ -221,12 +341,8 @@ class DetailOverlayWidget(OverlayWidget):
 
         # Tab strip (left)
         self._tab_buttons: list[QPushButton] = []
-        self._tab_defs = [
-            (_TAB_INFO_SVG, "Details"),
-            (_TAB_ACQUIRE_SVG, "Acquisition"),
-            (_TAB_USAGE_SVG, "Usage"),
-            (_TAB_DESC_SVG, "Description"),
-        ]
+        self._tab_defs = _get_tab_defs(item.get("Type", ""))
+        self._tab_ids = [td[2] for td in self._tab_defs]
         tab_strip = QWidget()
         tab_strip.setFixedWidth(TAB_STRIP_W)
         tab_strip.setStyleSheet(
@@ -238,7 +354,7 @@ class DetailOverlayWidget(OverlayWidget):
         ts_layout.setSpacing(2)
         ts_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
 
-        for i, (svg_path, tooltip) in enumerate(self._tab_defs):
+        for i, (svg_path, tooltip, _tab_id) in enumerate(self._tab_defs):
             btn = QPushButton()
             btn.setFixedSize(TAB_BTN_SIZE, TAB_BTN_SIZE)
             btn.setIcon(svg_icon(svg_path, TEXT_DIM, 16))
@@ -300,9 +416,12 @@ class DetailOverlayWidget(OverlayWidget):
         self._entity_loaded.connect(self._on_entity_loaded)
         self._acquisition_loaded.connect(self._on_acquisition_loaded)
         self._usage_loaded.connect(self._on_usage_loaded)
+        self._map_data_ready.connect(self._on_map_data_ready)
+        self._map_canvas = None
 
-        # Start visible
+        # Start visible and activate so Windows sends mouse hover events
         self.set_wants_visible(True)
+        self.activateWindow()
 
         # Fetch full entity data in background
         self._fetch_entity()
@@ -402,6 +521,11 @@ class DetailOverlayWidget(OverlayWidget):
             self._title_bar.setStyleSheet(
                 f"background-color: {TITLE_BG}; border-radius: 8px;"
             )
+        # Hide stats panel when minified
+        if hasattr(self, "_calc_stats_panel"):
+            self._calc_stats_panel.set_wants_visible(
+                expanding and self._tab_ids[self._content_stack.currentIndex()] == TAB_CALCULATOR
+            )
 
     # --- Expand / collapse ---
 
@@ -412,6 +536,46 @@ class DetailOverlayWidget(OverlayWidget):
         svg = _COLLAPSE_SVG if self._expanded else _EXPAND_SVG
         self._expand_btn.setIcon(svg_icon(svg, TEXT_DIM, 16))
         self._expand_btn.setToolTip("Collapse" if self._expanded else "Expand")
+        # Update stats panel max height after body resize
+        if hasattr(self, "_calc_stats_panel"):
+            QTimer.singleShot(0, self._position_calc_stats_panel)
+
+    # --- Calculator tab ---
+
+    def _init_calculator(self):
+        from .calc_tab import CalcTab
+        from .calc_stats_panel import CalcStatsPanel
+
+        self._calc_tab = CalcTab(
+            data_client=self._data_client,
+            weapon_item=self._item,
+        )
+        self._calc_stats_panel = CalcStatsPanel(config=self._config)
+
+        # Replace placeholder in the content stack
+        calc_idx = self._tab_ids.index(TAB_CALCULATOR)
+        old_widget = self._content_stack.widget(calc_idx)
+        self._content_stack.removeWidget(old_widget)
+        old_widget.deleteLater()
+        self._content_stack.insertWidget(calc_idx, self._calc_tab)
+        self._content_stack.setCurrentIndex(calc_idx)
+
+        # Wire signals
+        self._calc_tab.stats_updated.connect(self._calc_stats_panel.update_stats)
+        self._calc_tab.create_loadout.connect(self.create_loadout.emit)
+
+        # Show stats panel
+        self._position_calc_stats_panel()
+        self._calc_stats_panel.show()
+
+    def _position_calc_stats_panel(self):
+        if not hasattr(self, "_calc_stats_panel"):
+            return
+        self._calc_stats_panel.set_max_height(self.height())
+        self._calc_stats_panel.move(
+            self.x() + self.width() + 4,
+            self.y(),
+        )
 
     # --- Tab switching ---
 
@@ -426,12 +590,19 @@ class DetailOverlayWidget(OverlayWidget):
             ))
         self._content_stack.setCurrentIndex(index)
 
+        tab_id = self._tab_ids[index] if index < len(self._tab_ids) else ""
         # Lazy-load acquisition data on first tab switch
-        if index == 1 and self._acq_data is None:
+        if tab_id == TAB_ACQUISITION and self._acq_data is None:
             self._fetch_acquisition()
         # Lazy-load usage data on first tab switch
-        if index == 2 and self._usage_data is None:
+        if tab_id == TAB_USAGE and self._usage_data is None:
             self._fetch_usage()
+        # Lazy-init calculator tab
+        if tab_id == TAB_CALCULATOR and not hasattr(self, "_calc_tab"):
+            self._init_calculator()
+        # Show/hide stats panel based on active tab
+        if hasattr(self, "_calc_stats_panel"):
+            self._calc_stats_panel.set_wants_visible(tab_id == TAB_CALCULATOR)
 
     # --- Data loading ---
 
@@ -468,6 +639,12 @@ class DetailOverlayWidget(OverlayWidget):
         self._page_type_id = page_type_id
         self._rebuild_details_tab()
         self._rebuild_description_tab()
+        # Rebuild type-specific tabs from full item data
+        for tab_id in self._tab_ids:
+            if tab_id in (TAB_DETAILS, TAB_DESCRIPTION,
+                          TAB_ACQUISITION, TAB_USAGE):
+                continue  # handled separately
+            self._rebuild_entity_tab(tab_id)
 
     def _fetch_acquisition(self):
         item_name = self._item.get("Name", "")
@@ -503,49 +680,76 @@ class DetailOverlayWidget(OverlayWidget):
         self._usage_data = data
         self._rebuild_usage_tab()
 
+    def _get_exchange_url(self) -> str | None:
+        """Compute the exchange detail URL from the loaded entity data."""
+        full = self._full_item
+        if not full:
+            return None
+        entity_id = full.get("Id")
+        entity_type = self._item.get("Type", "")
+        offset = _TYPE_ID_OFFSETS.get(entity_type)
+        if entity_id is not None and offset is not None:
+            base = getattr(self._config, "nexus_base_url", "https://entropianexus.com")
+            return f"{base}/market/exchange/listings/{entity_id + offset}"
+        return None
+
     # --- Tab initialization ---
 
     def _init_tabs(self):
-        # Details — loading state
-        self._details_scroll = self._make_scroll(_make_centered_label("Loading..."))
-        self._content_stack.addWidget(self._details_scroll)
-
-        # Acquisition — placeholder
-        self._acq_scroll = self._make_scroll(
-            _make_centered_label("Loading item data..."),
-        )
-        self._content_stack.addWidget(self._acq_scroll)
-
-        # Usage — placeholder
-        self._usage_scroll = self._make_scroll(
-            _make_centered_label("Loading usage data..."),
-        )
-        self._content_stack.addWidget(self._usage_scroll)
-
-        # Description — placeholder
-        self._desc_scroll = self._make_scroll(
-            _make_centered_label("No description"),
-        )
-        self._content_stack.addWidget(self._desc_scroll)
+        self._tab_scrolls: dict[str, QScrollArea] = {}
+        _placeholders = {
+            TAB_DETAILS: "Loading...",
+            TAB_ACQUISITION: "Loading item data...",
+            TAB_USAGE: "Loading usage data...",
+            TAB_DESCRIPTION: "No description",
+            TAB_MATURITIES: "Loading...",
+            TAB_LOOTS: "Loading...",
+            TAB_LOCATIONS: "Loading...",
+            TAB_STEPS: "Loading...",
+            TAB_REWARDS: "Loading...",
+            TAB_OFFERS: "Loading...",
+            TAB_MAP: "Loading map...",
+            TAB_CALCULATOR: "Loading...",
+        }
+        for tab_id in self._tab_ids:
+            scroll = self._make_scroll(
+                _make_centered_label(_placeholders.get(tab_id, "Loading...")),
+            )
+            self._tab_scrolls[tab_id] = scroll
+            self._content_stack.addWidget(scroll)
 
     def _rebuild_details_tab(self):
         item = self._full_item
         if not item:
             return
-        builder = _TYPE_BUILDERS.get(self._page_type_id, _build_generic_details)
-        self._details_scroll.setWidget(builder(item, self._page_type_id))
+        scroll = self._tab_scrolls.get(TAB_DETAILS)
+        if scroll:
+            builder = _TYPE_BUILDERS.get(self._page_type_id, _build_generic_details)
+            widget = builder(item, self._page_type_id)
+            # Connect deferred chain link click handlers
+            for lbl in widget.findChildren(QLabel, "chain_link"):
+                entity = lbl.property("chain_entity")
+                if entity:
+                    lbl.mousePressEvent = (
+                        lambda _e, e=entity: self.open_entity.emit(e)
+                    )
+            scroll.setWidget(widget)
 
     def _rebuild_acquisition_tab(self):
         data = self._acq_data
         if not data:
             return
-        self._acq_scroll.setWidget(self._build_acquisition_content(data))
+        scroll = self._tab_scrolls.get(TAB_ACQUISITION)
+        if scroll:
+            scroll.setWidget(self._build_acquisition_content(data))
 
     def _rebuild_usage_tab(self):
         data = self._usage_data
         if not data:
             return
-        self._usage_scroll.setWidget(self._build_usage_content(data))
+        scroll = self._tab_scrolls.get(TAB_USAGE)
+        if scroll:
+            scroll.setWidget(self._build_usage_content(data))
 
     def _rebuild_description_tab(self):
         item = self._full_item
@@ -560,9 +764,521 @@ class DetailOverlayWidget(OverlayWidget):
             widget = self._build_description_content(desc)
         else:
             widget = _make_centered_label("No description available")
-        self._desc_scroll.setWidget(widget)
+        scroll = self._tab_scrolls.get(TAB_DESCRIPTION)
+        if scroll:
+            scroll.setWidget(widget)
 
-    # --- Content builders ---
+    def _rebuild_entity_tab(self, tab_id: str):
+        """Rebuild a type-specific tab from full item data."""
+        item = self._full_item
+        if not item:
+            return
+        scroll = self._tab_scrolls.get(tab_id)
+        if not scroll:
+            return
+        builder = {
+            TAB_MATURITIES: self._build_maturities_content,
+            TAB_LOOTS: self._build_loots_content,
+            TAB_LOCATIONS: self._build_locations_content,
+            TAB_STEPS: self._build_steps_content,
+            TAB_REWARDS: self._build_rewards_content,
+            TAB_OFFERS: self._build_offers_content,
+            TAB_MAP: self._build_map_content,
+        }.get(tab_id)
+        if builder:
+            scroll.setWidget(builder(item))
+
+    # ----- Mob: Maturities tab -----
+
+    def _build_maturities_content(self, item: dict) -> QWidget:
+        maturities = item.get("Maturities") or []
+        if not maturities:
+            return _make_centered_label("No maturity data")
+        widget, layout = _details_container()
+        # Sort by level then HP
+        sorted_mats = sorted(maturities, key=lambda m: (
+            deep_get(m, "Properties", "Boss") is True,
+            deep_get(m, "Properties", "Level") or 0,
+            deep_get(m, "Properties", "Health") or 0,
+        ))
+        # Header
+        hdr = QWidget()
+        hdr.setStyleSheet("background: transparent;")
+        hl = QHBoxLayout(hdr)
+        hl.setContentsMargins(0, 0, 0, 2)
+        hl.setSpacing(0)
+        for text, w in [("Name", 80), ("Lvl", 35), ("HP", 45),
+                        ("HP/L", 38), ("Dmg", 40), ("Def", 40)]:
+            lbl = QLabel(text)
+            lbl.setFixedWidth(w)
+            lbl.setStyleSheet(
+                f"color: {TEXT_DIM}; font-size: 9px; font-weight: 600;"
+                " background: transparent; letter-spacing: 0.3px;"
+            )
+            hl.addWidget(lbl)
+        layout.addWidget(hdr)
+        sep = QWidget()
+        sep.setFixedHeight(1)
+        sep.setStyleSheet("background-color: rgba(100, 100, 120, 80);")
+        layout.addWidget(sep)
+        for m in sorted_mats:
+            lvl = deep_get(m, "Properties", "Level")
+            hp = deep_get(m, "Properties", "Health")
+            hpl = (hp / lvl) if (hp and lvl and lvl > 0) else None
+            attacks = m.get("Attacks") or []
+            primary = next((a for a in attacks if a.get("Name") == "Primary"), None)
+            dmg = primary.get("TotalDamage") if primary else None
+            defense = deep_get(m, "Properties", "Defense") or {}
+            total_def = sum(defense.get(dt) or 0 for dt in _DAMAGE_TYPES) or None
+            boss = deep_get(m, "Properties", "Boss")
+            row = QWidget()
+            row.setStyleSheet("background: transparent;")
+            rl = QHBoxLayout(row)
+            rl.setContentsMargins(0, 1, 0, 1)
+            rl.setSpacing(0)
+            name_lbl = QLabel(m.get("Name", "?"))
+            name_lbl.setFixedWidth(80)
+            name_color = "#fbbf24" if boss else TEXT_COLOR
+            name_lbl.setStyleSheet(
+                f"color: {name_color}; font-size: 10px; background: transparent;"
+            )
+            rl.addWidget(name_lbl)
+            for val, w in [(fmt_int(lvl), 35), (fmt_int(hp), 45),
+                           (_fv(hpl, 1) if hpl else "-", 38),
+                           (_fv(dmg, 1) if dmg else "-", 40),
+                           (_fv(total_def, 1) if total_def else "-", 40)]:
+                cell = QLabel(str(val) if val is not None else "-")
+                cell.setFixedWidth(w)
+                cell.setStyleSheet(
+                    f"color: {TEXT_DIM}; font-size: 10px; background: transparent;"
+                )
+                rl.addWidget(cell)
+            layout.addWidget(row)
+        layout.addStretch(1)
+        return widget
+
+    # ----- Mob: Loots tab -----
+
+    _FREQ_COLORS = {
+        "Always": "#4ade80",
+        "Very often": "#22d3ee",
+        "Often": "#60a5fa",
+        "Common": "#818cf8",
+        "Uncommon": "#a78bfa",
+        "Rare": "#c084fc",
+        "Very rare": "#e879f9",
+        "Extremely rare": "#f472b6",
+        "Discontinued": "#6b7280",
+    }
+
+    def _build_loots_content(self, item: dict) -> QWidget:
+        loots = item.get("Loots") or []
+        if not loots:
+            return _make_centered_label("No loot data")
+        widget, layout = _details_container()
+        emit = self.open_entity.emit
+        # Sort by frequency order
+        freq_order = list(self._FREQ_COLORS.keys())
+        sorted_loots = sorted(loots, key=lambda l: (
+            freq_order.index(l.get("Frequency", ""))
+            if l.get("Frequency", "") in freq_order else 99
+        ))
+        for loot in sorted_loots:
+            item_data = loot.get("Item") or {}
+            item_name = item_data.get("Name") or "?"
+            freq = loot.get("Frequency") or ""
+            maturity = deep_get(loot, "Maturity", "Name") or ""
+            info_parts = [freq] if freq else []
+            if maturity:
+                info_parts.append(maturity + "+")
+            info = "  ".join(info_parts)
+            color = self._FREQ_COLORS.get(freq, TEXT_DIM)
+            entity = {"Name": item_name, "Type": "Material"}
+            row = _acq_row(item_name, info, entity, emit, freq_color=color)
+            layout.addWidget(row)
+        layout.addStretch(1)
+        return widget
+
+    # ----- Mob: Locations tab -----
+
+    def _build_locations_content(self, item: dict) -> QWidget:
+        from ..ui.pages.maps_page import _mob_area_difficulty, _difficulty_color
+
+        spawns = item.get("Spawns") or []
+        if not spawns:
+            return _make_centered_label("No location data")
+        widget, layout = _details_container()
+        mob_name = item.get("Name", "")
+        for spawn in spawns:
+            spawn_name = spawn.get("Name") or "?"
+            planet = deep_get(spawn, "Planet", "Name") or ""
+            coords = deep_get(spawn, "Properties", "Coordinates") or {}
+            density = deep_get(spawn, "Properties", "Density")
+            mats = spawn.get("Maturities") or []
+
+            # Maturity range for this mob (level-sorted, boss-aware)
+            mat_str = _spawn_maturities_for_mob(spawn, mob_name)
+
+            # Other mob names present at this spawn
+            other_mobs: list[str] = []
+            seen: set[str] = set()
+            for m in mats:
+                mob_raw = deep_get(m, "Maturity", "Mob")
+                other = (mob_raw.get("Name", "") if isinstance(mob_raw, dict)
+                         else mob_raw or "")
+                if other and other != mob_name and other not in seen:
+                    seen.add(other)
+                    other_mobs.append(other)
+
+            # Difficulty
+            diff = _mob_area_difficulty(spawn)
+
+            # --- Render ---
+            box = QWidget()
+            box.setStyleSheet("background: transparent;")
+            bl = QVBoxLayout(box)
+            bl.setContentsMargins(0, 2, 0, 2)
+            bl.setSpacing(1)
+
+            # Title: maturity range + difficulty badge
+            title_row = QWidget()
+            title_row.setStyleSheet("background: transparent;")
+            trl = QHBoxLayout(title_row)
+            trl.setContentsMargins(0, 0, 0, 0)
+            trl.setSpacing(4)
+            mat_lbl = QLabel(mat_str or "All")
+            mat_lbl.setStyleSheet(
+                f"color: {TEXT_COLOR}; font-size: 12px; font-weight: 500;"
+                " background: transparent;"
+            )
+            mat_lbl.setWordWrap(True)
+            trl.addWidget(mat_lbl, 1)
+            if diff:
+                band, label = diff
+                r, g, b = _difficulty_color(band)
+                diff_badge = QLabel(label)
+                diff_badge.setStyleSheet(
+                    f"color: rgb({r},{g},{b}); font-size: 10px;"
+                    f" background-color: rgba({r},{g},{b},30);"
+                    " border-radius: 2px; padding: 0px 3px;"
+                )
+                trl.addWidget(diff_badge)
+            bl.addWidget(title_row)
+
+            # Info line: others + density
+            info_parts = []
+            if other_mobs:
+                info_parts.append("Also: " + ", ".join(other_mobs))
+            if density:
+                density_labels = {1: "Low", 2: "Med", 3: "High"}
+                info_parts.append(
+                    f"Density: {density_labels.get(density, density)}"
+                )
+            if info_parts:
+                info_lbl = QLabel(" | ".join(info_parts))
+                info_lbl.setStyleSheet(
+                    f"color: {TEXT_DIM}; font-size: 11px;"
+                    " background: transparent;"
+                )
+                info_lbl.setWordWrap(True)
+                bl.addWidget(info_lbl)
+
+            # Button row: waypoint + map
+            lon = coords.get("Longitude")
+            lat = coords.get("Latitude")
+            if lon is not None and lat is not None:
+                btn_row = QWidget()
+                btn_row.setStyleSheet("background: transparent;")
+                brl = QHBoxLayout(btn_row)
+                brl.setContentsMargins(0, 0, 0, 0)
+                brl.setSpacing(4)
+                brl.addWidget(_overlay_waypoint_btn(planet, coords, spawn_name))
+                brl.addWidget(_overlay_map_btn(planet, spawn.get("Id")))
+                brl.addStretch(1)
+                bl.addWidget(btn_row)
+            layout.addWidget(box)
+            # Separator
+            sep = QWidget()
+            sep.setFixedHeight(1)
+            sep.setStyleSheet("background-color: rgba(100, 100, 120, 40);")
+            layout.addWidget(sep)
+        layout.addStretch(1)
+        return widget
+
+    # ----- Mission: Steps tab -----
+
+    def _build_steps_content(self, item: dict) -> QWidget:
+        steps = item.get("Steps") or item.get("Objectives") or []
+        if not steps:
+            return _make_centered_label("No step information")
+        widget, layout = _details_container()
+        for i, step in enumerate(steps):
+            idx = step.get("Index", i + 1)
+            title = step.get("Title") or step.get("Objective") or step.get("Type") or ""
+            desc = step.get("Description") or ""
+            objectives = step.get("Objectives") or []
+            box = QWidget()
+            box.setStyleSheet("background: transparent;")
+            bl = QVBoxLayout(box)
+            bl.setContentsMargins(0, 2, 0, 2)
+            bl.setSpacing(1)
+            # Step header
+            hdr_text = f"#{idx}"
+            if title:
+                hdr_text += f"  {title}"
+            hdr = QLabel(hdr_text)
+            hdr.setStyleSheet(
+                f"color: {TEXT_COLOR}; font-size: 11px; font-weight: 500;"
+                " background: transparent;"
+            )
+            hdr.setWordWrap(True)
+            bl.addWidget(hdr)
+            # Objectives
+            for obj in objectives:
+                obj_type = obj.get("Type") or ""
+                payload = obj.get("Payload") or {}
+                target = payload.get("TargetName") or payload.get("Target") or ""
+                amount = payload.get("Amount") or payload.get("Quantity") or ""
+                parts = [p for p in [obj_type, target,
+                                     str(amount) if amount else ""] if p]
+                if parts:
+                    obj_lbl = QLabel("  " + " - ".join(parts))
+                    obj_lbl.setStyleSheet(
+                        f"color: {TEXT_DIM}; font-size: 10px;"
+                        " background: transparent;"
+                    )
+                    obj_lbl.setWordWrap(True)
+                    bl.addWidget(obj_lbl)
+            if desc and not objectives:
+                d_lbl = QLabel(f"  {desc}")
+                d_lbl.setStyleSheet(
+                    f"color: {TEXT_DIM}; font-size: 10px;"
+                    " background: transparent;"
+                )
+                d_lbl.setWordWrap(True)
+                bl.addWidget(d_lbl)
+            layout.addWidget(box)
+        layout.addStretch(1)
+        return widget
+
+    # ----- Mission: Rewards tab -----
+
+    def _build_rewards_content(self, item: dict) -> QWidget:
+        rewards = item.get("Rewards")
+        if not rewards:
+            return _make_centered_label("No reward information")
+        widget, layout = _details_container()
+        emit = self.open_entity.emit
+        # Rewards can be a dict (single package) or list (choices)
+        packages = rewards if isinstance(rewards, list) else [rewards]
+        for pkg_idx, pkg in enumerate(packages):
+            if isinstance(pkg, dict):
+                if len(packages) > 1:
+                    layout.addWidget(_section_label(f"Choice {pkg_idx + 1}"))
+                items = pkg.get("Items") or []
+                skills = pkg.get("Skills") or []
+                unlocks = pkg.get("Unlocks") or []
+                for ri in items:
+                    name = ri.get("itemName") or ri.get("Name") or "?"
+                    qty = ri.get("quantity") or ri.get("Amount")
+                    rarity = ri.get("rarity") or ""
+                    info = fmt_int(qty) if qty else ""
+                    if rarity and rarity != "guaranteed":
+                        info = f"{info} ({rarity})" if info else rarity
+                    entity = {"Name": name, "Type": "Material"}
+                    layout.addWidget(_acq_row(name, info, entity, emit))
+                for si in skills:
+                    name = si.get("skillName") or si.get("Name") or "?"
+                    ped = si.get("pedValue")
+                    info = f"{_fv(ped, 2)} PED" if ped else ""
+                    entity = {"Name": name, "Type": "Skill"}
+                    layout.addWidget(_acq_row(name, info, entity, emit))
+                for u in unlocks:
+                    layout.addWidget(_acq_row(
+                        str(u), "Unlock", None, emit))
+        layout.addStretch(1)
+        return widget
+
+    # ----- Vendor: Offers tab -----
+
+    def _build_offers_content(self, item: dict) -> QWidget:
+        offers = item.get("Offers") or []
+        if not offers:
+            return _make_centered_label("No offers available")
+        widget, layout = _details_container()
+        emit = self.open_entity.emit
+        for offer in offers:
+            offer_item = offer.get("Item") or {}
+            name = offer_item.get("Name") or "?"
+            item_type = deep_get(offer_item, "Properties", "Type") or "Material"
+            is_limited = offer.get("IsLimited")
+            prices = offer.get("Prices") or []
+            # Price summary
+            price_parts = []
+            for p in prices:
+                p_item = p.get("Item") or {}
+                p_name = p_item.get("Name") or "?"
+                p_amount = p.get("Amount")
+                if p_amount:
+                    price_parts.append(f"{fmt_int(p_amount)} {p_name}")
+                else:
+                    price_parts.append(p_name)
+            info = ", ".join(price_parts) if price_parts else ""
+            if is_limited:
+                info = f"[L] {info}" if info else "[Limited]"
+            entity = {"Name": name, "Type": item_type}
+            layout.addWidget(_acq_row(name, info, entity, emit))
+        layout.addStretch(1)
+        return widget
+
+    # ----- Location: Map tab -----
+
+    def _build_map_content(self, item: dict) -> QWidget:
+        """Embedded map showing the location with interactive MapCanvas."""
+        from ..ui.widgets.map_canvas import MapCanvas
+
+        container = QWidget()
+        container.setStyleSheet("background: transparent;")
+        vl = QVBoxLayout(container)
+        vl.setContentsMargins(0, 0, 0, 0)
+        vl.setSpacing(0)
+
+        coords = deep_get(item, "Properties", "Coordinates") or {}
+        planet = deep_get(item, "Planet", "Name") or ""
+        name = item.get("Name") or ""
+        lon = coords.get("Longitude")
+        lat = coords.get("Latitude")
+
+        # Compact header with coordinate info + buttons
+        if lon is not None and lat is not None:
+            hdr = QWidget()
+            hdr.setStyleSheet("background: transparent;")
+            hl = QHBoxLayout(hdr)
+            hl.setContentsMargins(6, 2, 6, 2)
+            hl.setSpacing(4)
+            coord_lbl = QLabel(f"{planet}  {lon:.0f}, {lat:.0f}")
+            coord_lbl.setStyleSheet(
+                f"color: {TEXT_DIM}; font-size: 10px; background: transparent;"
+            )
+            hl.addWidget(coord_lbl)
+            hl.addWidget(_overlay_waypoint_btn(planet, coords, name))
+            hl.addWidget(_overlay_map_btn(planet, item.get("Id")))
+            hl.addStretch(1)
+            vl.addWidget(hdr)
+
+        # MapCanvas
+        canvas = MapCanvas(parent=container)
+        canvas.setMinimumHeight(200)
+        canvas.hide()
+        vl.addWidget(canvas, 1)
+        self._map_canvas = canvas
+
+        # Loading label (shown until map data arrives)
+        loading = QLabel("Loading map...")
+        loading.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        loading.setStyleSheet(
+            f"color: {TEXT_DIM}; font-size: 11px; background: transparent;"
+        )
+        vl.addWidget(loading, 1)
+        self._map_loading = loading
+
+        # Connect canvas click to open entity
+        canvas.location_clicked.connect(self._on_map_location_clicked)
+
+        # Start background fetch
+        if planet:
+            self._fetch_map_data(planet, item)
+        else:
+            loading.setText("No planet data")
+
+        return container
+
+    def _fetch_map_data(self, planet_name: str, item: dict):
+        """Background: fetch planet dict, locations, and map image."""
+        dc = self._data_client
+        base_url = getattr(self._config, "nexus_base_url", "https://entropianexus.com")
+
+        def fetch():
+            try:
+                planets = dc.get_planets()
+                planet = next(
+                    (p for p in planets if p.get("Name") == planet_name), None,
+                )
+                if not planet:
+                    return
+
+                locations = dc.get_locations_for_planet(planet_name)
+                areas = dc.get_areas_for_planet(planet_name)
+                mobspawns = dc.get_mobspawns_for_planet(planet_name)
+
+                # Merge by ID (same logic as maps_page)
+                by_id: dict[int, dict] = {}
+                for loc in locations:
+                    by_id[loc["Id"]] = loc
+                for area in areas:
+                    by_id[area["Id"]] = area
+                for mob in mobspawns:
+                    by_id[mob["Id"]] = mob
+                merged = list(by_id.values())
+
+                # Load planet image
+                slug = re.sub(r"[^0-9a-zA-Z]", "", planet_name).lower()
+                cache_dir = os.path.join(
+                    os.path.dirname(__file__), "..", "data", "cache", "maps",
+                )
+                os.makedirs(cache_dir, exist_ok=True)
+                cache_path = os.path.join(cache_dir, f"{slug}.jpg")
+
+                if os.path.exists(cache_path):
+                    pm = QPixmap(cache_path)
+                    if not pm.isNull():
+                        self._map_data_ready.emit(planet, pm, merged)
+                        return
+
+                import requests
+                url = f"{base_url}/{slug}.jpg"
+                resp = requests.get(url, timeout=30)
+                resp.raise_for_status()
+                with open(cache_path, "wb") as f:
+                    f.write(resp.content)
+                pm = QPixmap(cache_path)
+                if not pm.isNull():
+                    self._map_data_ready.emit(planet, pm, merged)
+            except Exception:
+                pass
+
+        threading.Thread(
+            target=fetch, daemon=True, name="detail-overlay-map",
+        ).start()
+
+    def _on_map_data_ready(self, planet: dict, pixmap: QPixmap, locations: list):
+        """Main thread: set planet data on the embedded MapCanvas."""
+        canvas = self._map_canvas
+        if not canvas:
+            return
+        canvas.set_planet(planet, pixmap, locations)
+        # Center on the current location
+        item = self._full_item
+        if item:
+            canvas.center_on(item, zoom=1.5)
+            loc_id = item.get("Id")
+            if loc_id:
+                canvas.set_selected(loc_id)
+        # Show canvas, hide loading
+        canvas.show()
+        if hasattr(self, "_map_loading") and self._map_loading:
+            self._map_loading.hide()
+
+    def _on_map_location_clicked(self, location: dict | None):
+        """Handle click on a map location — open as entity."""
+        if not location:
+            return
+        name = location.get("Name") or ""
+        loc_type = location.get("Type") or "Location"
+        if name:
+            self.open_entity.emit({"Name": name, "Type": loc_type})
+
+    # --- Content builders (Acquisition / Usage) ---
 
     def _build_acquisition_content(self, data: dict) -> QWidget:
         widget = QWidget()
@@ -715,6 +1431,11 @@ class DetailOverlayWidget(OverlayWidget):
 
         if not pills:
             layout.addWidget(_make_centered_label("No acquisition data"))
+            url = self._get_exchange_url()
+            if url:
+                layout.addWidget(_make_exchange_link(
+                    "Create a sell order on the Exchange", url,
+                ))
 
         layout.addStretch(1)
         return widget
@@ -845,6 +1566,11 @@ class DetailOverlayWidget(OverlayWidget):
 
         if not pills:
             layout.addWidget(_make_centered_label("No usage data"))
+            url = self._get_exchange_url()
+            if url:
+                layout.addWidget(_make_exchange_link(
+                    "Create a buy order on the Exchange", url,
+                ))
 
         layout.addStretch(1)
         return widget
@@ -912,6 +1638,34 @@ class DetailOverlayWidget(OverlayWidget):
                 ).y()
                 if click_local.y() <= title_bottom:
                     self._toggle_minify()
+
+    def moveEvent(self, event):
+        super().moveEvent(event)
+        if hasattr(self, "_calc_stats_panel"):
+            self._position_calc_stats_panel()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        if hasattr(self, "_calc_stats_panel"):
+            self._position_calc_stats_panel()
+
+    def closeEvent(self, event):
+        if hasattr(self, "_calc_stats_panel"):
+            self._calc_stats_panel.close()
+        super().closeEvent(event)
+
+    def hideEvent(self, event):
+        super().hideEvent(event)
+        if hasattr(self, "_calc_stats_panel"):
+            self._calc_stats_panel.hide()
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if hasattr(self, "_calc_stats_panel") and self._body.isVisible():
+            idx = self._content_stack.currentIndex()
+            if idx < len(self._tab_ids) and self._tab_ids[idx] == TAB_CALCULATOR:
+                self._calc_stats_panel.show()
+                self._position_calc_stats_panel()
 
 
 # ---------------------------------------------------------------------------
@@ -1012,6 +1766,19 @@ def _make_centered_label(text: str) -> QWidget:
     return widget
 
 
+def _make_exchange_link(text: str, url: str) -> QPushButton:
+    """Centered accent link that opens the exchange item page in the browser."""
+    btn = QPushButton(text)
+    btn.setCursor(Qt.CursorShape.PointingHandCursor)
+    btn.setStyleSheet(
+        f"QPushButton {{ background: transparent; border: none;"
+        f" color: {ACCENT}; font-size: 11px; padding: 2px 0px; }}"
+        f"QPushButton:hover {{ color: {ACCENT}; }}"
+    )
+    btn.clicked.connect(lambda: webbrowser.open(url))
+    return btn
+
+
 def _details_container() -> tuple[QWidget, QVBoxLayout]:
     """Create a standard container widget+layout for detail content."""
     widget = QWidget()
@@ -1027,11 +1794,13 @@ def _acq_row(
     info: str,
     entity: dict | None,
     on_click,
+    freq_color: str | None = None,
 ) -> QWidget:
     """Acquisition row with optional clickable entity name.
 
     *entity* is an item dict ``{"Name": ..., "Type": ...}``; if provided the
     name label becomes accent-colored and clickable, emitting *on_click(entity)*.
+    *freq_color* overrides the info label color (for frequency badges).
     """
     row = QWidget()
     row.setStyleSheet("background: transparent;")
@@ -1055,15 +1824,85 @@ def _acq_row(
     hl.addWidget(name_lbl)
 
     if info:
+        info_c = freq_color or TEXT_DIM
         info_lbl = QLabel(info)
         info_lbl.setStyleSheet(
-            f"color: {TEXT_DIM}; font-size: 11px; background: transparent;"
+            f"color: {info_c}; font-size: 11px; background: transparent;"
             " padding: 0;"
         )
         hl.addWidget(info_lbl)
 
     hl.addStretch(1)
     return row
+
+
+def _overlay_waypoint_btn(planet: str, coords: dict, name: str) -> QPushButton:
+    """Compact waypoint copy button for the overlay."""
+    from PyQt6.QtWidgets import QApplication
+
+    lon = coords.get("Longitude", 0)
+    lat = coords.get("Latitude", 0)
+    alt = coords.get("Altitude", 100)
+    wp = f"/wp [{planet}, {lon:.0f}, {lat:.0f}, {alt:.0f}, {name}]"
+    btn = QPushButton()
+    btn.setFixedSize(20, 18)
+    btn.setIcon(svg_icon(_COPY_SVG, TEXT_DIM, 14))
+    btn.setCursor(Qt.CursorShape.PointingHandCursor)
+    btn.setToolTip(wp)
+    btn.setStyleSheet(
+        "QPushButton { background: transparent; border: none;"
+        " border-radius: 3px; padding: 0; }"
+        f"QPushButton:hover {{ background-color: {TAB_HOVER_BG}; }}"
+    )
+
+    def _copy():
+        clipboard = QApplication.clipboard()
+        if clipboard:
+            clipboard.setText(wp)
+        btn.setIcon(svg_icon(_CHECK_SVG, SUCCESS_COLOR, 14))
+        QTimer.singleShot(1500, lambda: btn.setIcon(svg_icon(_COPY_SVG, TEXT_DIM, 14)))
+
+    btn.clicked.connect(_copy)
+    return btn
+
+
+def _overlay_map_btn(planet: str, location_id: int | None) -> QPushButton:
+    """Small map button that navigates to the maps page."""
+    from PyQt6.QtWidgets import QApplication
+
+    btn = QPushButton()
+    btn.setFixedSize(20, 18)
+    btn.setIcon(svg_icon(_TAB_MAP_SVG, TEXT_DIM, 14))
+    btn.setCursor(Qt.CursorShape.PointingHandCursor)
+    btn.setToolTip("Open on map")
+    btn.setStyleSheet(
+        "QPushButton { background: transparent; border: none;"
+        " border-radius: 3px; padding: 0; }"
+        f"QPushButton:hover {{ background-color: {TAB_HOVER_BG}; }}"
+    )
+
+    def _open():
+        if not planet or not location_id:
+            return
+        # Prefer map overlay if available
+        if _map_overlay_callback is not None:
+            _map_overlay_callback(planet, location_id)
+            return
+        # Fallback: navigate to Maps tab
+        app = QApplication.instance()
+        if not app:
+            return
+        for w in app.topLevelWidgets():
+            if hasattr(w, "_ensure_page"):
+                from ..ui.main_window import PAGE_MAPS
+                w._sidebar.set_active(PAGE_MAPS)
+                maps_page = w._ensure_page(PAGE_MAPS)
+                if hasattr(maps_page, "navigate_to_location"):
+                    maps_page.navigate_to_location(planet, location_id)
+                break
+
+    btn.clicked.connect(_open)
+    return btn
 
 
 # ---------------------------------------------------------------------------
@@ -1791,8 +2630,9 @@ def _build_location_details(item: dict, page_type: str) -> QWidget:
     widget, layout = _details_container()
 
     loc_type = deep_get(item, "Properties", "Type") or "-"
-    planet = deep_get(item, "Planet", "Name")
+    planet = deep_get(item, "Planet", "Name") or ""
     coords = deep_get(item, "Properties", "Coordinates") or {}
+    name = item.get("Name") or ""
 
     layout.addWidget(_section_label("General"))
     layout.addWidget(_stat_row("Type", loc_type))
@@ -1802,14 +2642,35 @@ def _build_location_details(item: dict, page_type: str) -> QWidget:
     lon = coords.get("Longitude")
     lat = coords.get("Latitude")
     if lon is not None and lat is not None:
-        layout.addWidget(_stat_row("Coordinates", f"{lon}, {lat}"))
+        layout.addWidget(_stat_row("Coordinates", f"{lon:.0f}, {lat:.0f}"))
+        # Waypoint + Map buttons
+        btn_row = QWidget()
+        btn_row.setStyleSheet("background: transparent;")
+        brl = QHBoxLayout(btn_row)
+        brl.setContentsMargins(0, 2, 0, 2)
+        brl.setSpacing(4)
+        brl.addWidget(_overlay_waypoint_btn(planet, coords, name))
+        brl.addWidget(_overlay_map_btn(planet, item.get("Id")))
+        brl.addStretch(1)
+        layout.addWidget(btn_row)
+
+    # Parent location
+    parent = deep_get(item, "ParentLocation", "Name")
+    if parent:
+        layout.addWidget(_stat_row("Parent", parent))
 
     # Type-specific
     if loc_type == "Teleporter":
+        dest = deep_get(item, "Properties", "Destination", "Name")
+        if dest:
+            layout.addWidget(_stat_row("Destination", dest))
         fee = deep_get(item, "Properties", "Fee")
         if fee is not None:
             layout.addWidget(_stat_row("Fee", f"{_fv(fee, 2)} PED"))
     elif loc_type == "Estate":
+        estate_type = deep_get(item, "Properties", "EstateType")
+        if estate_type:
+            layout.addWidget(_stat_row("Estate Type", estate_type))
         owner = deep_get(item, "Owner", "Name")
         if owner:
             layout.addWidget(_stat_row("Owner", owner))
@@ -1818,12 +2679,45 @@ def _build_location_details(item: dict, page_type: str) -> QWidget:
         if waves:
             layout.addWidget(_stat_row("Waves", str(len(waves))))
     elif loc_type == "Area":
-        facilities = item.get("Facilities") or []
-        if facilities:
-            layout.addWidget(_section_label("Facilities"))
-            for f in facilities[:8]:
-                f_name = f.get("Name") or f.get("Type", "?")
-                layout.addWidget(_stat_row(f_name, ""))
+        area_type = deep_get(item, "Properties", "AreaType")
+        if area_type:
+            layout.addWidget(_stat_row("Area Type", area_type))
+
+    # Facilities
+    facilities = item.get("Facilities") or []
+    if facilities:
+        layout.addWidget(_section_label("Facilities"))
+        for f in facilities[:8]:
+            f_name = f.get("Name") or f.get("Type", "?")
+            layout.addWidget(_stat_row(f_name, ""))
+
+    # MobArea: show mobs + maturity range + difficulty
+    area_type = deep_get(item, "Properties", "AreaType")
+    if area_type == "MobArea":
+        from ..ui.pages.maps_page import (
+            _mob_area_difficulty, _difficulty_color, _format_mob_area_maturities,
+        )
+
+        maturities = item.get("Maturities") or item.get("Spawns") or []
+        if maturities:
+            # Difficulty badge
+            diff = _mob_area_difficulty(item)
+            if diff:
+                band, label = diff
+                r, g, b = _difficulty_color(band)
+                layout.addWidget(_section_label("Mobs"))
+                diff_badge = QLabel(label)
+                diff_badge.setStyleSheet(
+                    f"color: rgb({r},{g},{b}); font-size: 10px;"
+                    f" background-color: rgba({r},{g},{b},30);"
+                    " border-radius: 2px; padding: 1px 4px;"
+                )
+                layout.addWidget(diff_badge)
+            else:
+                layout.addWidget(_section_label("Mobs"))
+
+            for entry in _format_mob_area_maturities(item):
+                layout.addWidget(_stat_row(entry["mob"], entry["display"]))
 
     layout.addStretch(1)
     return widget
@@ -1897,8 +2791,10 @@ def _build_skill_details(item: dict, page_type: str) -> QWidget:
 def _build_vendor_details(item: dict, page_type: str) -> QWidget:
     widget, layout = _details_container()
 
-    planet = deep_get(item, "Planet", "Name")
+    planet = deep_get(item, "Planet", "Name") or ""
     location = deep_get(item, "Location", "Name")
+    coords = deep_get(item, "Properties", "Coordinates") or {}
+    name = item.get("Name") or ""
     offers = item.get("Offers") or []
     limited_count = sum(1 for o in offers if o.get("IsLimited"))
 
@@ -1911,6 +2807,21 @@ def _build_vendor_details(item: dict, page_type: str) -> QWidget:
     if limited_count:
         layout.addWidget(_stat_row("Limited", str(limited_count)))
 
+    # Coordinates + waypoint/map buttons
+    lon = coords.get("Longitude")
+    lat = coords.get("Latitude")
+    if lon is not None and lat is not None:
+        layout.addWidget(_stat_row("Coordinates", f"{lon:.0f}, {lat:.0f}"))
+        btn_row = QWidget()
+        btn_row.setStyleSheet("background: transparent;")
+        brl = QHBoxLayout(btn_row)
+        brl.setContentsMargins(0, 2, 0, 2)
+        brl.setSpacing(4)
+        brl.addWidget(_overlay_waypoint_btn(planet, coords, name))
+        brl.addWidget(_overlay_map_btn(planet, item.get("Id")))
+        brl.addStretch(1)
+        layout.addWidget(btn_row)
+
     layout.addStretch(1)
     return widget
 
@@ -1919,7 +2830,7 @@ def _build_mission_details(item: dict, page_type: str) -> QWidget:
     widget, layout = _details_container()
 
     mission_type = deep_get(item, "Properties", "Type") or "-"
-    planet = deep_get(item, "Planet", "Name")
+    planet = deep_get(item, "Planet", "Name") or ""
     area = deep_get(item, "Area", "Name")
     steps = item.get("Steps") or item.get("Objectives") or []
     rewards = item.get("Rewards") or []
@@ -1933,13 +2844,49 @@ def _build_mission_details(item: dict, page_type: str) -> QWidget:
     if steps:
         layout.addWidget(_stat_row("Steps", str(len(steps))))
 
-    if rewards:
-        layout.addWidget(_section_label("Rewards"))
-        for r in rewards[:5]:
-            r_name = r.get("Name") or deep_get(r, "Item", "Name") or "?"
-            r_amount = r.get("Amount")
-            val_str = str(r_amount) if r_amount else ""
-            layout.addWidget(_stat_row(r_name, val_str))
+    # Mission chain link (click handler connected by _rebuild_details_tab)
+    chain = item.get("MissionChain")
+    if chain:
+        chain_name = chain.get("Name") or ""
+        if chain_name:
+            chain_label = QLabel(f"Chain: {chain_name}")
+            chain_label.setCursor(Qt.CursorShape.PointingHandCursor)
+            chain_label.setStyleSheet(
+                f"color: {ACCENT}; font-size: 11px; padding: 2px 6px;"
+                " background: transparent;"
+            )
+            chain_label.setObjectName("chain_link")
+            chain_label.setProperty(
+                "chain_entity", {"Name": chain_name, "Type": "MissionChain"},
+            )
+            layout.addWidget(chain_label)
+
+    # Start location coordinates
+    start_loc = item.get("StartLocation") or {}
+    start_coords = deep_get(start_loc, "Coordinates") or deep_get(
+        start_loc, "Properties", "Coordinates"
+    ) or {}
+    start_name = start_loc.get("Name") or ""
+    lon = start_coords.get("Longitude")
+    lat = start_coords.get("Latitude")
+    if lon is not None and lat is not None:
+        layout.addWidget(_section_label("Start Location"))
+        if start_name:
+            layout.addWidget(_stat_row("Location", start_name))
+        layout.addWidget(_stat_row("Coordinates", f"{lon:.0f}, {lat:.0f}"))
+        btn_row = QWidget()
+        btn_row.setStyleSheet("background: transparent;")
+        brl = QHBoxLayout(btn_row)
+        brl.setContentsMargins(0, 2, 0, 2)
+        brl.setSpacing(4)
+        brl.addWidget(_overlay_waypoint_btn(
+            planet, start_coords, start_name or item.get("Name", ""),
+        ))
+        loc_id = start_loc.get("Id")
+        if loc_id:
+            brl.addWidget(_overlay_map_btn(planet, loc_id))
+        brl.addStretch(1)
+        layout.addWidget(btn_row)
 
     layout.addStretch(1)
     return widget

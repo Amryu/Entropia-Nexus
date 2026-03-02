@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea,
+    QWidget, QVBoxLayout, QHBoxLayout, QLabel,
 )
-from PyQt6.QtCore import Qt, pyqtSignal, QTimer
+from PyQt6.QtCore import Qt, pyqtSignal
 
 from ..theme import (
     SECONDARY, HOVER, BORDER, PRIMARY, ACCENT, TEXT, TEXT_MUTED, MAIN_DARK,
@@ -65,6 +65,20 @@ TYPE_NAMES: dict[str, str] = {
 def get_type_name(type_key: str) -> str:
     """Return a human-readable display name for an API entity type."""
     return TYPE_NAMES.get(type_key, type_key or "Other")
+
+
+# Entity types that represent tradeable/craftable items (have Acquisition + Usage)
+ITEM_TYPES: set[str] = {
+    "Weapon", "Armor", "ArmorSet", "Clothing",
+    "WeaponAmplifier", "WeaponVisionAttachment", "Absorber",
+    "FinderAmplifier", "ArmorPlating", "Enhancer", "MindforceImplant",
+    "MedicalTool", "MedicalChip",
+    "Refiner", "Scanner", "Finder", "Excavator",
+    "TeleportationChip", "EffectChip", "MiscTool",
+    "Material", "Blueprint", "BlueprintBook",
+    "Consumable", "Capsule", "Vehicle", "Pet",
+    "Furniture", "Decoration", "StorageContainer", "Sign", "Strongbox",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -286,22 +300,19 @@ class SearchResultsPopup(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
+        # Let the layout auto-resize the window to match content
+        layout.setSizeConstraint(QVBoxLayout.SizeConstraint.SetFixedSize)
 
-        self._scroll = QScrollArea()
-        self._scroll.setWidgetResizable(True)
-        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._scroll.setStyleSheet(
-            "QScrollArea { border: none; background: transparent; }"
-        )
-        layout.addWidget(self._scroll)
+        # Results container (hidden until populated)
+        self._results_area = QWidget()
+        self._results_area.setStyleSheet("background: transparent;")
+        self._results_area.setVisible(False)
+        layout.addWidget(self._results_area)
 
-        self._inner = QWidget()
-        self._inner.setStyleSheet("background: transparent;")
-        self._inner_layout = QVBoxLayout(self._inner)
+        self._inner_layout = QVBoxLayout(self._results_area)
         self._inner_layout.setContentsMargins(0, 0, 0, 0)
         self._inner_layout.setSpacing(0)
         self._inner_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        self._scroll.setWidget(self._inner)
 
         self._flat_results: list[dict] = []
         self._row_widgets: list[QWidget] = []
@@ -319,13 +330,15 @@ class SearchResultsPopup(QWidget):
         self._flat_results.clear()
         self._row_widgets.clear()
 
-        # Fresh inner widget — avoids stale layout geometry cache
-        self._inner = QWidget()
-        self._inner.setStyleSheet("background: transparent;")
-        self._inner_layout = QVBoxLayout(self._inner)
-        self._inner_layout.setContentsMargins(0, 0, 0, 0)
-        self._inner_layout.setSpacing(0)
-        self._inner_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+        # Hide during rebuild to batch layout changes into a single resize
+        self._results_area.setVisible(False)
+
+        # Clear previous widgets
+        while self._inner_layout.count():
+            item = self._inner_layout.takeAt(0)
+            w = item.widget()
+            if w:
+                w.deleteLater()
 
         # Categorise
         categories: dict[str, list[dict]] = {}
@@ -363,35 +376,15 @@ class SearchResultsPopup(QWidget):
         if total == 0:
             self._build_empty_state(query)
 
-        # setWidget deletes the old inner widget automatically
-        self._scroll.setWidget(self._inner)
+        self._results_area.setVisible(True)
 
-    def fit_height(self, max_h: int):
-        """Size the popup to its content, then show it."""
-        self._max_h = max_h
-        self._inner_layout.activate()
-        h = min(self._content_height(), max_h)
-        # Destroy the native OS window handle; show() will create a
-        # fresh one at the new size.  Required on Windows where
-        # setFixedHeight() doesn't shrink a visible frameless window.
-        win = self.windowHandle()
-        if win:
-            win.destroy()
-        self.setFixedHeight(h)
-        QTimer.singleShot(0, self._show_popup)
-
-    def _show_popup(self):
-        self.show()
+    def show_popup(self, max_h: int, width: int):
+        """Cap height, fix width, and show. Sizing is handled by SetFixedSize layout."""
+        self._results_area.setFixedWidth(width)
+        self.setMaximumHeight(max_h)
+        if not self.isVisible():
+            self.show()
         self.raise_()
-
-    def _content_height(self) -> int:
-        """Sum child widget sizeHints (skip isVisible — parent is hidden)."""
-        h = 0
-        for i in range(self._inner_layout.count()):
-            w = self._inner_layout.itemAt(i).widget()
-            if w:
-                h += w.sizeHint().height()
-        return h + 4
 
     def handle_key(self, key: int) -> bool:
         """Process a key press. Returns True if consumed."""
@@ -499,5 +492,3 @@ class SearchResultsPopup(QWidget):
         if 0 <= index < len(self._row_widgets):
             self._row_widgets[index].setStyleSheet(_ROW_HIGHLIGHT_STYLE)
             self._row_widgets[index].ensurePolished()
-            # Scroll into view
-            self._scroll.ensureWidgetVisible(self._row_widgets[index])

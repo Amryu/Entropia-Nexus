@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 import uuid
 import threading
-from collections import deque
+from collections import deque, OrderedDict
 from datetime import datetime, timedelta
 
 from ..core.logger import get_logger
@@ -27,6 +27,7 @@ from .rules_engine import RulesEngine
 log = get_logger("Notifications")
 
 MAX_NOTIFICATIONS = 200
+_MAX_GLOBAL_FPS = 500
 _BRACKET_RE = re.compile(r"\[([^\[\]]+)\]")
 
 
@@ -44,6 +45,9 @@ class NotificationManager:
 
         # Rules engine
         self._rules_engine = RulesEngine(self._load_rules())
+
+        # Global dedup: fingerprints of recently seen globals (local + server)
+        self._recent_global_fps: OrderedDict[tuple, None] = OrderedDict()
 
         # Trade chat cooldown: {(username_lower, item_lower): last_time}
         self._trade_cooldowns: dict[tuple[str, str], datetime] = {}
@@ -130,9 +134,28 @@ class NotificationManager:
     # Event handlers
     # ------------------------------------------------------------------
 
+    def _global_fp(self, event) -> tuple:
+        """Fingerprint for dedup between local and server globals."""
+        return (
+            event.global_type.value,
+            event.player_name.lower(),
+            event.target_name.lower(),
+            round(event.value, 2),
+        )
+
+    def _record_fp(self, fp: tuple) -> None:
+        """Record a global fingerprint, pruning if necessary."""
+        self._recent_global_fps[fp] = None
+        if len(self._recent_global_fps) > _MAX_GLOBAL_FPS:
+            self._recent_global_fps.popitem(last=False)
+
     def _on_global_event(self, event):
         if not self._live:
             return
+
+        # Record fingerprint so the server echo is suppressed
+        self._record_fp(self._global_fp(event))
+
         should_notify, _rule = self._rules_engine.evaluate(event)
         if not should_notify:
             return
@@ -181,6 +204,12 @@ class NotificationManager:
         event.is_hof = data.get("hof", False)
         event.is_ath = data.get("ath", False)
         event.location = data.get("location")
+
+        # Skip if already seen from local chat log
+        fp = self._global_fp(event)
+        if fp in self._recent_global_fps:
+            return
+        self._record_fp(fp)
 
         should_notify, _rule = self._rules_engine.evaluate(event)
         if not should_notify:

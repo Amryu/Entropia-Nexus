@@ -44,6 +44,8 @@ class AppConfig:
     progress_overlay_position: tuple[int, int] = (50, 50)
     search_overlay_position: tuple[int, int] = (50, 50)
     detail_overlay_position: tuple[int, int] = (400, 50)
+    map_overlay_position: tuple[int, int] = (100, 100)
+    map_overlay_size: int = 1  # 0=Small, 1=Medium, 2=Large
     overlay_opacity: float = 0.85
     overlay_enabled: bool = True
     auto_pin_detail_overlay: bool = False
@@ -123,6 +125,8 @@ DEFAULTS = {
     "progress_overlay_position": [50, 50],
     "search_overlay_position": [50, 50],
     "detail_overlay_position": [400, 50],
+    "map_overlay_position": [100, 100],
+    "map_overlay_size": 1,
     "overlay_opacity": 0.85,
     "overlay_enabled": True,
     "auto_pin_detail_overlay": False,
@@ -213,6 +217,7 @@ def load_config(config_path: str = "config.json") -> AppConfig:
     for key in (
         "hunt_overlay_position", "progress_overlay_position",
         "search_overlay_position", "detail_overlay_position",
+        "map_overlay_position",
         "mob_name_region", "tool_name_region",
     ):
         val = merged.get(key)

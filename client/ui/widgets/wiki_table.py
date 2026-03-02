@@ -20,6 +20,9 @@ from ...data.wiki_columns import COLUMN_DEFS, DEFAULT_COLUMNS, get_item_name
 # Cache builder — can run on any thread (used by wiki_page warmup)
 # ---------------------------------------------------------------------------
 
+_GIL_YIELD_BATCH = 100  # yield GIL every N items to avoid starving global hooks
+
+
 def build_column_cache(items: list[dict], col_defs: list[dict]):
     """Build (raw_value, display_text) cache for items x columns. Thread-safe.
 
@@ -27,8 +30,10 @@ def build_column_cache(items: list[dict], col_defs: list[dict]):
     and numeric[col] = True if the column holds numeric data.
     Column 0 is always the Name column.
     """
+    import time
+
     cache: list[list[tuple]] = []
-    for item in items:
+    for i, item in enumerate(items):
         name = get_item_name(item)
         row: list[tuple] = [(name, name)]
         for col_def in col_defs:
@@ -36,6 +41,10 @@ def build_column_cache(items: list[dict], col_defs: list[dict]):
             display = str(col_def["format"](raw))
             row.append((raw, display))
         cache.append(row)
+        # Periodically yield the GIL so global input hooks (keyboard library)
+        # can process events without stalling the system's input pipeline.
+        if (i + 1) % _GIL_YIELD_BATCH == 0:
+            time.sleep(0)
 
     num_cols = 1 + len(col_defs)
     numeric = [False] * num_cols

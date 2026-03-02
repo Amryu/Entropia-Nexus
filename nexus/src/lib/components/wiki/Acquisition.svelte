@@ -273,6 +273,15 @@
     border-radius: 6px;
   }
 
+  .exchange-link {
+    color: var(--accent-color, #4a9eff);
+    font-size: 13px;
+  }
+
+  .exchange-link:hover {
+    text-decoration: underline;
+  }
+
   .no-data.edit-mode-notice {
     display: flex;
     align-items: center;
@@ -349,7 +358,12 @@
   && !hasMarketData
   && (!acquisition.Upgrades || acquisition.Upgrades.length === 0)
   && (!acquisition.Events || acquisition.Events.length === 0)))}
-<div class="no-data">No acquisition data available for this item.</div>
+<div class="no-data">
+  No acquisition data available for this item.
+  {#if acquisition?._exchangeItemId}
+    <br><a href="/market/exchange/listings/{acquisition._exchangeItemId}" class="exchange-link">Create a sell order on the Exchange</a>
+  {/if}
+</div>
 {:else}
   <div class="acquisition-container">
     <div class="acquisition-grid">

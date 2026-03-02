@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from .wiki_detail import (
     WikiDetailView, InfoboxSection, Tier1StatRow, StatRow, DataSection,
-    WaypointCopyButton, no_data_label, make_compact_table,
+    WaypointCopyButton, no_data_label, make_section_table,
 )
-from ...data.wiki_columns import deep_get, get_item_name, fmt_int, fmt_bool
+from .fancy_table import ColumnDef
+from ...data.wiki_columns import deep_get, get_item_name, fmt_int
 
 
 class VendorDetailView(WikiDetailView):
@@ -67,18 +68,21 @@ class VendorDetailView(WikiDetailView):
         offers_section = DataSection("Offers", expanded=True)
         if offers:
             offers_section.set_subtitle(f"{len(offers)} offers")
-            headers = ["Item", "Quantity", "Limited"]
-            rows = []
+            flat = []
             for o in offers:
-                o_name = deep_get(o, "Item", "Name") or o.get("Name") or "-"
-                qty = o.get("Quantity")
-                is_limited = o.get("IsLimited")
-                rows.append([
-                    str(o_name),
-                    fmt_int(qty) if qty else "-",
-                    "Yes" if is_limited else "No",
-                ])
-            offers_section.set_content(make_compact_table(headers, rows))
+                flat.append({
+                    "item": deep_get(o, "Item", "Name") or o.get("Name") or "-",
+                    "quantity": o.get("Quantity"),
+                    "limited": o.get("IsLimited"),
+                })
+            offers_section.set_content(make_section_table(
+                [
+                    ColumnDef("item", "Item", main=True),
+                    ColumnDef("quantity", "Quantity", format=lambda v: fmt_int(v) if v else "-"),
+                    ColumnDef("limited", "Limited", format=lambda v: "Yes" if v else "No"),
+                ],
+                flat,
+            ))
         else:
             offers_section.set_content(no_data_label("No offers available."))
             offers_section.set_subtitle("No data")

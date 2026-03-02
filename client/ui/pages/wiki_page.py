@@ -15,7 +15,7 @@ from ..theme import (
     PRIMARY, SECONDARY, HOVER, BORDER, ACCENT, TEXT, TEXT_MUTED,
     MAIN_DARK, PAGE_HEADER_OBJECT_NAME,
 )
-from ...data.wiki_columns import LEAF_DATA_MAP, COLUMN_DEFS, get_item_name
+from ...data.wiki_columns import LEAF_DATA_MAP, LEAF_TOGGLE_MAP, COLUMN_DEFS, get_item_name
 
 # ---------------------------------------------------------------------------
 # Category data — mirrors the website overview pages
@@ -428,6 +428,7 @@ class WikiPage(QWidget):
 
     navigation_changed = pyqtSignal(list)
     _data_loaded = pyqtSignal(str, list, list, list)  # title, items, cache, numeric
+    _alt_data_loaded = pyqtSignal(str, list, list, list)  # title, items, cache, numeric
     _detail_items_ready = pyqtSignal(str, str, list)  # category, entity_name, items
 
     def __init__(self, *, signals, data_client, config=None, config_path=None, nexus_client=None):
@@ -443,6 +444,9 @@ class WikiPage(QWidget):
         self._precomputed_data: dict[str, tuple[list, list, list]] = {}  # title → (items, cache, numeric)
         self._cached_leaf_views: dict[str, QWidget] = {}    # title → container
         self._cached_table_refs = {}                         # title → WikiTableView
+        self._toggle_states: dict[str, str] = {}             # title → "a" or "b"
+        self._alt_table_refs: dict[str, object] = {}         # title → alt WikiTableView
+        self._alt_items: dict[str, list[dict]] = {}          # title → alt items
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -477,6 +481,7 @@ class WikiPage(QWidget):
 
         # Wire signals (from background threads → main thread)
         self._data_loaded.connect(self._on_data_loaded)
+        self._alt_data_loaded.connect(self._on_alt_data_loaded)
         self._detail_items_ready.connect(self._on_detail_items_ready)
 
         # Build initial overview
@@ -627,7 +632,11 @@ class WikiPage(QWidget):
     def _show_leaf(self, title: str):
         # 1. Cached table widget — show with preserved state
         if title in self._cached_leaf_views:
-            self._current_table_view = self._cached_table_refs.get(title)
+            # Restore correct _current_table_view based on toggle state
+            if self._toggle_states.get(title) == "b" and title in self._alt_table_refs:
+                self._current_table_view = self._alt_table_refs[title]
+            else:
+                self._current_table_view = self._cached_table_refs.get(title)
             self._swap_content(self._cached_leaf_views[title])
             return
 
@@ -689,6 +698,17 @@ class WikiPage(QWidget):
         layout = QVBoxLayout(container)
         layout.setContentsMargins(16, 8, 16, 16)
         layout.setSpacing(0)
+
+        # Toggle UI for categories with alternate views (Mobs↔Maturities, etc.)
+        toggle_config = LEAF_TOGGLE_MAP.get(title)
+        if toggle_config:
+            toggle_widget, alt_table = self._build_toggle_ui(
+                title, toggle_config, table_view, items, column_prefs,
+            )
+            layout.addWidget(toggle_widget)
+            layout.addWidget(alt_table, 1)
+            self._alt_table_refs[title] = alt_table
+
         layout.addWidget(table_view, 1)
 
         self._cached_leaf_views[title] = container
@@ -720,6 +740,10 @@ class WikiPage(QWidget):
         # If table already exists, refresh it in-place
         if title in self._cached_table_refs:
             self._cached_table_refs[title].set_data(items, full_cache, full_numeric)
+            # Also refresh the alternate table if it was populated (e.g. re-derive maturities)
+            toggle_config = LEAF_TOGGLE_MAP.get(title)
+            if toggle_config and title in self._alt_table_refs and title in self._alt_items:
+                self._load_alternate_data(title, toggle_config, items)
             return
 
         # Table not cached — only create if user is currently viewing this leaf
@@ -740,6 +764,129 @@ class WikiPage(QWidget):
             return
         import webbrowser
         webbrowser.open(self._config.nexus_base_url + url_prefix + "?mode=create")
+
+    # --- Toggle view (Mobs↔Maturities, Missions↔Mission Chains) ---
+
+    def _build_toggle_ui(self, title, toggle_config, primary_table, items, column_prefs):
+        """Create toggle buttons and the alternate table for a leaf with two views.
+
+        Returns ``(toggle_widget, alt_table)``.  The alt table starts hidden.
+        """
+        from ..widgets.wiki_table import WikiTableView
+
+        # Toggle bar
+        toggle_widget = QWidget()
+        toggle_widget.setStyleSheet("background: transparent;")
+        toggle_layout = QHBoxLayout(toggle_widget)
+        toggle_layout.setContentsMargins(0, 0, 0, 8)
+        toggle_layout.setSpacing(8)
+
+        btn_a = QPushButton(toggle_config["label_a"])
+        btn_b = QPushButton(toggle_config["label_b"])
+
+        active_style = (
+            f"QPushButton {{ background-color: {ACCENT}; color: white;"
+            f" border: 1px solid {ACCENT}; border-radius: 4px;"
+            f" padding: 6px 8px; font-size: 12px; }}"
+        )
+        inactive_style = (
+            f"QPushButton {{ background-color: {SECONDARY}; color: {TEXT};"
+            f" border: 1px solid {BORDER}; border-radius: 4px;"
+            f" padding: 6px 8px; font-size: 12px; }}"
+            f"QPushButton:hover {{ background-color: {HOVER}; }}"
+        )
+
+        btn_a.setStyleSheet(active_style)
+        btn_b.setStyleSheet(inactive_style)
+        btn_a.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_b.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        toggle_layout.addWidget(btn_a)
+        toggle_layout.addWidget(btn_b)
+        toggle_layout.addStretch()
+
+        # Alternate table (hidden, same container)
+        alt_page_type_id = toggle_config["page_type_id"]
+        alt_table = WikiTableView(
+            page_type_id=alt_page_type_id,
+            column_prefs=column_prefs,
+            on_columns_changed=self._on_columns_changed,
+        )
+        alt_table.row_activated.connect(
+            lambda item, t=title, tc=toggle_config: self._on_toggle_row_activated(t, item, tc)
+        )
+        alt_table.hide()
+
+        def switch_to_a():
+            self._toggle_states[title] = "a"
+            btn_a.setStyleSheet(active_style)
+            btn_b.setStyleSheet(inactive_style)
+            alt_table.hide()
+            primary_table.show()
+            self._current_table_view = primary_table
+
+        def switch_to_b():
+            self._toggle_states[title] = "b"
+            btn_b.setStyleSheet(active_style)
+            btn_a.setStyleSheet(inactive_style)
+            primary_table.hide()
+            alt_table.show()
+            self._current_table_view = alt_table
+            # Lazy-load alternate data on first toggle
+            if title not in self._alt_items:
+                self._load_alternate_data(title, toggle_config, items)
+
+        btn_a.clicked.connect(switch_to_a)
+        btn_b.clicked.connect(switch_to_b)
+
+        return toggle_widget, alt_table
+
+    def _load_alternate_data(self, title, toggle_config, primary_items):
+        """Fetch or derive alternate-view data in a background thread."""
+        alt_ptid = toggle_config["page_type_id"]
+
+        def fetch():
+            from ..widgets.wiki_table import build_column_cache
+
+            derive_fn = toggle_config.get("derive_fn")
+            method_name = toggle_config.get("method_name")
+
+            if derive_fn:
+                alt_items = derive_fn(primary_items)
+            elif method_name:
+                alt_items = getattr(self._data_client, method_name)()
+            else:
+                return
+
+            all_defs = COLUMN_DEFS.get(alt_ptid, {})
+            col_defs_list = list(all_defs.values())
+            cache, numeric = build_column_cache(alt_items, col_defs_list)
+            self._alt_data_loaded.emit(title, alt_items, cache, numeric)
+
+        threading.Thread(target=fetch, daemon=True, name=f"wiki-alt-{alt_ptid}").start()
+
+    def _on_alt_data_loaded(self, title, items, cache, numeric):
+        """Handle alternate-view data arriving from background thread."""
+        self._alt_items[title] = items
+        alt_table = self._alt_table_refs.get(title)
+        if alt_table:
+            alt_table.set_data(items, cache, numeric)
+
+    def _on_toggle_row_activated(self, leaf_title, item, toggle_config):
+        """Handle double-click on an alternate table row."""
+        parent_key = toggle_config.get("parent_key")
+        if parent_key and item.get(parent_key):
+            # Navigate to the parent entity (e.g. maturity → parent mob)
+            parent_name = item[parent_key]
+            new_path = list(self._path) + [parent_name]
+            QTimer.singleShot(0, lambda: self.navigate_to(new_path))
+            return
+
+        # No parent navigation — fall back to standard row activation
+        entity_name = get_item_name(item)
+        if entity_name:
+            new_path = list(self._path) + [entity_name]
+            QTimer.singleShot(0, lambda: self.navigate_to(new_path))
 
     def _on_row_activated(self, leaf_title: str, item: dict):
         """Handle double-click on a table row — navigate to entity detail."""
@@ -776,24 +923,36 @@ class WikiPage(QWidget):
             self._show_loading_placeholder(entity_name)
             return
 
-        # Find entity by name
+        # Find entity by name in primary items
         item = None
         for i in items:
             if get_item_name(i) == entity_name:
                 item = i
                 break
 
+        # Not in primary items — check alternate (toggle) items
+        page_type_id = None
+        if not item:
+            toggle_config = LEAF_TOGGLE_MAP.get(category_title)
+            if toggle_config:
+                alt_items = self._alt_items.get(category_title, [])
+                for i in alt_items:
+                    if get_item_name(i) == entity_name:
+                        item = i
+                        page_type_id = toggle_config["page_type_id"]
+                        break
+
         if not item:
             self._show_placeholder(entity_name)
             return
 
-        # Determine which detail view to use based on the LEAF_DATA_MAP page type
-        mapping = LEAF_DATA_MAP.get(category_title)
-        if not mapping:
-            self._show_placeholder(entity_name)
-            return
-
-        _, page_type_id = mapping
+        # Determine which detail view to use
+        if page_type_id is None:
+            mapping = LEAF_DATA_MAP.get(category_title)
+            if not mapping:
+                self._show_placeholder(entity_name)
+                return
+            _, page_type_id = mapping
         nexus_base_url = ""
         if self._config:
             nexus_base_url = getattr(self._config, "nexus_base_url", "")
@@ -886,6 +1045,12 @@ class WikiPage(QWidget):
                 item, nexus_base_url=nexus_base_url,
                 data_client=self._data_client,
             )
+        elif page_type_id == "missionchains":
+            from ..widgets.mission_chain_detail import MissionChainDetailView
+            detail_view = MissionChainDetailView(
+                item, nexus_base_url=nexus_base_url,
+                data_client=self._data_client,
+            )
         elif page_type_id == "locations":
             from ..widgets.location_detail import LocationDetailView
             detail_view = LocationDetailView(
@@ -903,9 +1068,12 @@ class WikiPage(QWidget):
         # Add edit button if URL is available
         url_prefix = _CATEGORY_URL_PREFIX.get(category_title)
         if url_prefix and nexus_base_url and hasattr(detail_view, "set_edit_url"):
+            view_param = ""
+            if page_type_id == "missionchains":
+                view_param = "&view=chains"
             edit_url = (
                 nexus_base_url + url_prefix + "/"
-                + _encode_uri_safe(entity_name) + "?mode=edit"
+                + _encode_uri_safe(entity_name) + "?mode=edit" + view_param
             )
             detail_view.set_edit_url(edit_url)
 

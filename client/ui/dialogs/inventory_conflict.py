@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt
 
 from ..theme import (
-    PRIMARY, SECONDARY, HOVER, BORDER, ACCENT,
+    PRIMARY, SECONDARY, HOVER, BORDER, ACCENT, ACCENT_HOVER,
     TEXT, TEXT_MUTED, MAIN_DARK,
 )
 from ...core.logger import get_logger
@@ -122,7 +122,7 @@ class InventoryConflictDialog(QDialog):
                 font-size: 13px; font-weight: bold; min-height: 20px;
             }}
             QPushButton:hover {{
-                opacity: 0.9;
+                background-color: {ACCENT_HOVER};
             }}
         """)
         offline_btn.setToolTip("Upload local import to replace server inventory")

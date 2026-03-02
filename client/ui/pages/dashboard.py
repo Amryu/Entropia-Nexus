@@ -2,7 +2,7 @@
 
 import re
 import webbrowser
-from collections import deque
+from collections import deque, OrderedDict
 from datetime import datetime, timedelta, timezone
 from html import escape as _esc
 from urllib.parse import quote
@@ -17,7 +17,7 @@ from PyQt6.QtGui import QColor, QCursor, QFontMetrics, QPainter, QPixmap, QPolyg
 from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkReply
 
 from ..theme import (
-    TEXT, TEXT_MUTED, ACCENT, BORDER, HOVER, SECONDARY, PRIMARY,
+    TEXT, TEXT_MUTED, ACCENT, ACCENT_HOVER, BORDER, HOVER, SECONDARY, PRIMARY,
     WARNING, SUCCESS, MAIN_DARK,
 )
 from ...chat_parser.models import GlobalEvent, GlobalType, TradeChatMessage
@@ -26,6 +26,17 @@ from ...chat_parser.models import GlobalEvent, GlobalType, TradeChatMessage
 NEWS_REFRESH_INTERVAL_MS = 60 * 1000  # 1 minute
 NEWS_LIMIT = 500
 MAX_TICKER_LINES = 200
+_MAX_GLOBAL_FINGERPRINTS = 500
+
+
+def _global_fingerprint(event: GlobalEvent) -> tuple:
+    """Fingerprint for dedup between local, history, and ingested globals."""
+    return (
+        event.global_type.value,
+        event.player_name.lower(),
+        event.target_name.lower(),
+        round(event.value, 2),
+    )
 
 # View indices inside the dashboard QStackedWidget
 _VIEW_LIST = 0
@@ -672,7 +683,7 @@ class _ArticleView(QWidget):
                 text-align: left;
             }}
             QPushButton:hover {{
-                text-decoration: underline;
+                color: {ACCENT_HOVER};
             }}
         """)
         self._ext_link_btn.hide()
@@ -795,6 +806,7 @@ class DashboardPage(QWidget):
         self._live = False
         self._global_lines = 0
         self._global_events: deque[GlobalEvent] = deque(maxlen=MAX_TICKER_LINES)
+        self._global_fingerprints: OrderedDict[tuple, None] = OrderedDict()
         self._trade_lines = 0
         self._fetcher = None
         self._article_fetcher = None
@@ -882,6 +894,7 @@ class DashboardPage(QWidget):
         # Connect signals
         signals.catchup_complete.connect(self._on_catchup_complete)
         signals.global_event.connect(self._on_global)
+        signals.ingested_global.connect(self._on_ingested_global)
         signals.trade_chat.connect(self._on_trade_chat)
 
         # News refresh timer
@@ -1075,8 +1088,33 @@ class DashboardPage(QWidget):
             ))
 
     def _on_global(self, data):
+        fp = _global_fingerprint(data)
+        if fp in self._global_fingerprints:
+            return
+        self._global_fingerprints[fp] = None
+        if len(self._global_fingerprints) > _MAX_GLOBAL_FINGERPRINTS:
+            self._global_fingerprints.popitem(last=False)
         self._global_events.append(data)
         self._render_global(data)
+
+    def _on_ingested_global(self, data: dict):
+        """Convert server dict to GlobalEvent and display in ticker."""
+        try:
+            gt = GlobalType(data.get("type", ""))
+        except ValueError:
+            return
+        event = GlobalEvent(
+            timestamp=datetime.fromisoformat(data["timestamp"]),
+            global_type=gt,
+            player_name=data.get("player", ""),
+            target_name=data.get("target", ""),
+            value=float(data.get("value", 0)),
+            value_unit=data.get("unit", "PED"),
+            location=data.get("location"),
+            is_hof=bool(data.get("hof")),
+            is_ath=bool(data.get("ath")),
+        )
+        self._on_global(event)
 
     def _render_global(self, data):
         """Render a single GlobalEvent into the globals ticker."""
