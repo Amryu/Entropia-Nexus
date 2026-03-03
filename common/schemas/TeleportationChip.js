@@ -126,7 +126,6 @@ export const TeleportationChip = {
   },
   "required": [
     "Name",
-    "Properties",
-    "Tiers"
+    "Properties"
   ]
 }
