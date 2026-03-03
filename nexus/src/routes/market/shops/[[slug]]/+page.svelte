@@ -538,8 +538,23 @@
   }
 
   function handleInventorySaved(event) {
-    // Reload the page to get fresh data
-    window.location.reload();
+    const { inventoryGroups } = event.detail;
+    if (shop && inventoryGroups) {
+      // Update the shop object directly — the external API cache may still
+      // serve stale data, so a page reload would show old inventory.
+      shop.InventoryGroups = inventoryGroups.map(g => ({
+        Name: g.Name,
+        Items: g.Items.map((item, idx) => ({
+          ItemId: item.ItemId,
+          ItemName: item.ItemName,
+          StackSize: item.StackSize,
+          Markup: item.Markup,
+          SortOrder: idx
+        }))
+      }));
+      shop = shop;
+      fetchItemDetails();
+    }
   }
 </script>
 
@@ -886,6 +901,16 @@
               </button>
             {/if}
           </svelte:fragment>
+          {#if $editMode}
+            <div class="inventory-edit-notice">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="16" x2="12" y2="12"></line>
+                <line x1="12" y1="8" x2="12.01" y2="8"></line>
+              </svg>
+              <span>Inventory can only be edited by the shop owner. To manage inventory, set yourself as the owner in the <strong>Owner</strong> field above and submit your change for approval. Once approved, you'll see an <strong>Edit</strong> button here when viewing the page.</span>
+            </div>
+          {/if}
           {#if itemsLoading}
             <div class="loading-indicator">Loading inventory...</div>
           {:else}
@@ -1304,6 +1329,26 @@
     color: var(--text-muted, #999);
   }
 
+
+  .inventory-edit-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 12px 14px;
+    margin-bottom: 16px;
+    background-color: rgba(74, 158, 255, 0.1);
+    border: 1px solid var(--accent-color, #4a9eff);
+    border-radius: 6px;
+    font-size: 13px;
+    color: var(--text-muted, #999);
+    line-height: 1.5;
+  }
+
+  .inventory-edit-notice svg {
+    flex-shrink: 0;
+    margin-top: 1px;
+    color: var(--accent-color, #4a9eff);
+  }
 
   /* Mobile adjustments */
   @media (max-width: 899px) {

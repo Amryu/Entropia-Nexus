@@ -1,5 +1,5 @@
 const { pool, usersPool } = require('./dbClient');
-const { withCache, withCachedLookup } = require('./responseCache');
+const { withCache } = require('./responseCache');
 
 const queries = {
   Shops: `
@@ -208,7 +208,10 @@ function register(app) {
      *      '404':
      *        description: Shop not found
      */
-    const shop = await withCachedLookup('/shops', ['Locations', 'Planets', 'Estates', 'EstateSections'], getShops, req.params.shop);
+    // Use getShop directly — withCachedLookup serves from the list cache which
+    // can't track inventory table changes (they live in the users DB, outside
+    // the nexus TableChanges mechanism), so inventory would appear stale.
+    const shop = await getShop(req.params.shop);
     if (shop) res.json(shop); else res.status(404).send();
   });
 }
