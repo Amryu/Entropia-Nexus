@@ -1,5 +1,15 @@
 [
   {
+    "version": "0.1.2",
+    "date": "2026-03-03",
+    "changes": [
+      {"type": "fix", "text": "Updater compatibility for 0.1.0 clients (legacy URL redirect)"},
+      {"type": "fix", "text": "Update dialog now shows download progress (file count and current file)"},
+      {"type": "fix", "text": "Critical updater failures notify the user with manual download instructions"},
+      {"type": "fix", "text": "Changelog 'What's new' section now correctly shows entries for the latest version"}
+    ]
+  },
+  {
     "version": "0.1.1",
     "date": "2026-03-03",
     "changes": [
