@@ -827,6 +827,11 @@ class DetailOverlayWidget(OverlayWidget):
         )
         self._calc_stats_panel = CalcStatsPanel(config=self._config)
 
+        if self._manager:
+            self._manager.opacity_changed.connect(
+                self._calc_stats_panel.setWindowOpacity
+            )
+
         # Replace placeholder in the content stack
         calc_idx = self._tab_ids.index(TAB_CALCULATOR)
         old_widget = self._content_stack.widget(calc_idx)

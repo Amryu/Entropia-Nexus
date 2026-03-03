@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
     QSlider, QSpinBox, QGroupBox, QFileDialog, QScrollArea,
     QFrame, QCheckBox,
 )
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QCursor
 
 from ...core.config import save_config
@@ -37,6 +37,12 @@ class SettingsPage(QWidget):
         self._oauth = oauth
         self._on_show_changelog = on_show_changelog
 
+        # Debounce timer for auto-saving settings
+        self._save_timer = QTimer(self)
+        self._save_timer.setSingleShot(True)
+        self._save_timer.setInterval(300)
+        self._save_timer.timeout.connect(self._do_save)
+
         # Scroll area for all settings
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -56,15 +62,17 @@ class SettingsPage(QWidget):
 
         self._layout.addStretch()
 
-        # Save button (always visible, outside Advanced)
-        save_row = QHBoxLayout()
-        save_row.addStretch()
-        save_btn = QPushButton("Save Settings")
-        save_btn.clicked.connect(self._save_settings)
-        save_row.addWidget(save_btn)
-        self._layout.addLayout(save_row)
-
         scroll.setWidget(content)
+
+        # Connect change signals for realtime auto-save
+        self._chat_path.editingFinished.connect(self._schedule_save)
+        self._poll_interval.valueChanged.connect(self._schedule_save)
+        self._opacity_slider.valueChanged.connect(self._schedule_save)
+        self._auto_pin_cb.stateChanged.connect(self._schedule_save)
+        self._skill_scanner_cb.stateChanged.connect(self._schedule_save)
+        self._updates_cb.stateChanged.connect(self._schedule_save)
+        self._js_path.editingFinished.connect(self._schedule_save)
+        self._oauth_client_id.editingFinished.connect(self._schedule_save)
 
         outer = QVBoxLayout(self)
         header = QLabel("Settings")
@@ -179,6 +187,7 @@ class SettingsPage(QWidget):
         path, _ = QFileDialog.getOpenFileName(self, "Select chat.log", "", "Log files (*.log);;All files (*)")
         if path:
             self._chat_path.setText(path)
+            self._schedule_save()
 
     # --- OCR ---
     def _build_ocr_section(self):
@@ -384,8 +393,13 @@ class SettingsPage(QWidget):
         path = QFileDialog.getExistingDirectory(self, "Select JS utils directory")
         if path:
             self._js_path.setText(path)
+            self._schedule_save()
 
-    def _save_settings(self):
+    def _schedule_save(self, *_args):
+        """Schedule a debounced save (restarts the 300ms timer on each call)."""
+        self._save_timer.start()
+
+    def _do_save(self):
         """Apply all settings from the UI to config and persist."""
         self._config.chat_log_path = self._chat_path.text()
         self._config.poll_interval_ms = self._poll_interval.value()
@@ -398,4 +412,3 @@ class SettingsPage(QWidget):
 
         save_config(self._config, self._config_path)
         self._event_bus.publish(EVENT_CONFIG_CHANGED, self._config)
-        log.info("Saved")

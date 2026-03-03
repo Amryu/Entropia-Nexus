@@ -289,6 +289,9 @@ class MapOverlay(OverlayWidget):
         )
         self._info_showing = False
 
+        if manager:
+            manager.opacity_changed.connect(self._info_wrapper.setWindowOpacity)
+
         # Loading label
         self._loading_label = QLabel("Loading map...", self._map_area)
         self._loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)

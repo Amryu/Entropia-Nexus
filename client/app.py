@@ -219,7 +219,7 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
 
     # Overlay manager (focus detection, widget registry, snap)
     from .overlay.overlay_manager import OverlayManager
-    overlay_manager = OverlayManager(config=config)
+    overlay_manager = OverlayManager(config=config, event_bus=event_bus)
 
     # Defer overlay widget creation so the main window renders first.
     # The OverlayManager itself is lightweight (timer + state); the actual

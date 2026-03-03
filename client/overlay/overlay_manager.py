@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from PyQt6.QtCore import QObject, QPoint, QRect, Qt, QTimer, pyqtSignal
 
 from ..core.constants import (
+    EVENT_CONFIG_CHANGED,
     GAME_TITLE_PREFIX,
     OVERLAY_FOCUS_POLL_MS,
     OVERLAY_SNAP_THRESHOLD,
@@ -37,8 +38,9 @@ class OverlayManager(QObject):
     exchange_hotkey_pressed = pyqtSignal()
     notifications_hotkey_pressed = pyqtSignal()
     game_focus_changed = pyqtSignal(bool)  # True when game is focused/visible
+    opacity_changed = pyqtSignal(float)
 
-    def __init__(self, *, config, parent: QObject | None = None):
+    def __init__(self, *, config, event_bus=None, parent: QObject | None = None):
         super().__init__(parent)
         self._config = config
         self._widgets: list[OverlayWidget] = []
@@ -53,6 +55,10 @@ class OverlayManager(QObject):
 
         if _platform.supports_focus_detection() and getattr(config, "overlay_enabled", True):
             self._timer.start()
+
+        if event_bus:
+            self._event_bus = event_bus
+            event_bus.subscribe(EVENT_CONFIG_CHANGED, self._on_config_changed)
 
     # --- Widget registry ---
 
@@ -295,6 +301,14 @@ class OverlayManager(QObject):
             self._suppressed_scancodes.discard(event.scan_code)
             return False
         return True
+
+    # --- Config changes ---
+
+    def _on_config_changed(self, config) -> None:
+        opacity = config.overlay_opacity
+        for w in self._widgets:
+            w.setWindowOpacity(opacity)
+        self.opacity_changed.emit(opacity)
 
     # --- Cleanup ---
 
