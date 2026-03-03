@@ -295,12 +295,62 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
                         favourites=_favourites_store,
                         manager=overlay_manager,
                     )
+                    _exchange_overlay.open_entity.connect(_on_overlay_result_selected)
                 _exchange_overlay.set_wants_visible(True)
                 _exchange_overlay.raise_()
             else:
                 _exchange_overlay.set_wants_visible(False)
 
         overlay_manager.exchange_hotkey_pressed.connect(_toggle_exchange_overlay)
+
+        # --- Toast manager (in-game toasts) ---
+        from .overlay.toast_widget import ToastManager
+        toast_manager = ToastManager(config=config)
+        main_window.set_overlay_manager(overlay_manager)
+        main_window.set_toast_manager(toast_manager)
+        overlay_manager.game_focus_changed.connect(toast_manager.set_visible)
+
+        # --- Notifications overlay (singleton) ---
+        _notifications_overlay = None
+
+        def _toggle_notifications_overlay():
+            nonlocal _notifications_overlay
+            from .overlay.notifications_overlay import NotificationsOverlay
+            if _notifications_overlay is None or not _notifications_overlay.isVisible():
+                if _notifications_overlay is None:
+                    _notifications_overlay = NotificationsOverlay(
+                        config=config,
+                        config_path=config_path,
+                        notif_manager=main_window._notif_manager,
+                        manager=overlay_manager,
+                    )
+                    _notifications_overlay.read_state_changed.connect(
+                        main_window._update_badge
+                    )
+                _notifications_overlay.set_wants_visible(True)
+                _notifications_overlay.raise_()
+            else:
+                _notifications_overlay.set_wants_visible(False)
+
+        overlay_manager.notifications_hotkey_pressed.connect(
+            _toggle_notifications_overlay
+        )
+
+        # Toast action routing (url → browser, overlay → toggle)
+        def _on_toast_action(action_type, action_data):
+            if action_type == "url":
+                from PyQt6.QtGui import QDesktopServices
+                from PyQt6.QtCore import QUrl
+                QDesktopServices.openUrl(QUrl(action_data))
+            elif action_type == "overlay":
+                if action_data == "exchange":
+                    _toggle_exchange_overlay()
+                elif action_data == "map":
+                    _toggle_map_overlay()
+                elif action_data == "notifications":
+                    _toggle_notifications_overlay()
+
+        toast_manager.toast_action_triggered.connect(_on_toast_action)
 
         # Expose map overlay opener for detail overlay map buttons
         from .overlay import detail_overlay as _detail_overlay_mod
@@ -311,12 +361,34 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
         _current_profile_overlay = None
         _detail_overlays: list = []   # all open overlays (for offset stacking)
 
+        _current_society_overlay = None
+
         def _on_overlay_result_selected(item):
             nonlocal _current_detail_overlay, _current_profile_overlay
+            nonlocal _current_society_overlay
             from .overlay.detail_overlay import DetailOverlayWidget, STACK_OFFSET
 
             # Middle-click sets _force_new to always open a new window
             force_new = item.pop("_force_new", False)
+
+            # Route Society type to society overlay
+            if item.get("Type") == "Society":
+                from .overlay.society_overlay import SocietyOverlayWidget
+                if (not force_new
+                        and _current_society_overlay
+                        and _current_society_overlay.isVisible()
+                        and not _current_society_overlay.pinned):
+                    _current_society_overlay.close()
+                overlay = SocietyOverlayWidget(
+                    society_name=item.get("Name", ""),
+                    config=config,
+                    config_path=config_path,
+                    nexus_client=nexus_client,
+                    manager=overlay_manager,
+                )
+                overlay.open_entity.connect(_on_overlay_result_selected)
+                _current_society_overlay = overlay
+                return
 
             # Route User type to profile overlay
             if item.get("Type") == "User":
@@ -334,6 +406,7 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
                     manager=overlay_manager,
                 )
                 overlay.open_profile_web.connect(main_window._on_search_result_selected)
+                overlay.open_entity.connect(_on_overlay_result_selected)
                 _current_profile_overlay = overlay
                 return
 
@@ -375,6 +448,9 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
         from .overlay import map_overlay as _map_overlay_mod
         _map_overlay_mod._open_entity_callback = _on_overlay_result_selected
 
+        # Allow any page to open entity detail overlays via signals
+        signals.open_entity_overlay.connect(_on_overlay_result_selected)
+
         if search_overlay:
             search_overlay.result_selected.connect(_on_overlay_result_selected)
 
@@ -392,6 +468,8 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
                     _toggle_map_overlay()
                 elif action == "exchange":
                     _toggle_exchange_overlay()
+                elif action == "notifications":
+                    _toggle_notifications_overlay()
 
             search_overlay.menu_action.connect(_on_search_menu_action)
 

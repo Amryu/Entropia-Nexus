@@ -2,16 +2,26 @@
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-    QSlider, QSpinBox, QGroupBox, QFileDialog, QScrollArea, QKeySequenceEdit,
-    QDoubleSpinBox, QFrame, QCheckBox,
+    QSlider, QSpinBox, QGroupBox, QFileDialog, QScrollArea,
+    QFrame, QCheckBox,
 )
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QCursor
 
 from ...core.config import save_config
 from ...core.constants import EVENT_CONFIG_CHANGED, EVENT_REPARSE_REQUESTED
 from ...core.logger import get_logger
+from ..theme import TEXT_MUTED, BORDER, ACCENT
 
 log = get_logger("Settings")
+
+# Overlay shortcut definitions: (display label, _HOTKEY_MAP key, description)
+_OVERLAY_SHORTCUTS = [
+    ("Search", "f", "Ctrl+F", "Open the search overlay"),
+    ("Map", "m", "Ctrl+M", "Open the map overlay"),
+    ("Exchange", "e", "Ctrl+E", "Open the exchange overlay"),
+    ("Notifications", "n", "Ctrl+N", "Open the notifications overlay"),
+]
 
 
 class SettingsPage(QWidget):
@@ -38,14 +48,22 @@ class SettingsPage(QWidget):
         self._build_account_section()
         self._build_chat_section()
         self._build_ocr_section()
-        self._build_hunt_section()
-        self._build_hotkeys_section()
         self._build_overlay_section()
+        self._build_overlay_shortcuts_section()
         self._build_about_section()
         self._build_legal_section()
         self._build_advanced_section()
 
         self._layout.addStretch()
+
+        # Save button (always visible, outside Advanced)
+        save_row = QHBoxLayout()
+        save_row.addStretch()
+        save_btn = QPushButton("Save Settings")
+        save_btn.clicked.connect(self._save_settings)
+        save_row.addWidget(save_btn)
+        self._layout.addLayout(save_row)
+
         scroll.setWidget(content)
 
         outer = QVBoxLayout(self)
@@ -134,8 +152,7 @@ class SettingsPage(QWidget):
         self._reparse_btn = QPushButton("Re-parse Chat Log")
         self._reparse_btn.setToolTip(
             "Re-read the entire chat.log from the beginning.\n"
-            "Globals and trade messages will be re-submitted to the server.\n"
-            "Hunt tracking and other trackers are not affected."
+            "Globals and trade messages will be re-submitted to the server."
         )
         self._reparse_btn.clicked.connect(self._on_reparse)
         reparse_row.addWidget(self._reparse_btn)
@@ -168,33 +185,17 @@ class SettingsPage(QWidget):
         group = QGroupBox("OCR")
         layout = QVBoxLayout(group)
 
-        # Confidence threshold
-        conf_row = QHBoxLayout()
-        conf_row.addWidget(QLabel("Confidence threshold:"))
-        self._ocr_confidence = QDoubleSpinBox()
-        self._ocr_confidence.setRange(0.5, 1.0)
-        self._ocr_confidence.setSingleStep(0.05)
-        self._ocr_confidence.setValue(self._config.ocr_confidence_threshold)
-        conf_row.addWidget(self._ocr_confidence)
-        conf_row.addStretch()
-        layout.addLayout(conf_row)
+        desc = QLabel("Configure which OCR functions are active.")
+        desc.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+        layout.addWidget(desc)
 
-        # Mob detection info
-        mob_info = QLabel("Mob name detection: automatic (nameplate scanning)")
-        mob_info.setObjectName("mutedText")
-        layout.addWidget(mob_info)
-
-        # Tool name region calibration
-        region_row = QHBoxLayout()
-        self._calibrate_tool_btn = QPushButton("Calibrate Tool Name Region")
-        self._calibrate_tool_btn.setToolTip("Draw a rectangle over the active tool name area")
-        region_row.addWidget(self._calibrate_tool_btn)
-        region_row.addStretch()
-        layout.addLayout(region_row)
-
-        tool_region_text = self._format_region(self._config.tool_name_region)
-        self._tool_region_label = QLabel(f"Tool name region: {tool_region_text}")
-        layout.addWidget(self._tool_region_label)
+        self._skill_scanner_cb = QCheckBox("Skill scanner")
+        self._skill_scanner_cb.setToolTip(
+            "Automatically scan the in-game Skills window to read\n"
+            "skill values via screen capture and OCR."
+        )
+        self._skill_scanner_cb.setChecked(self._config.overlay_enabled)
+        layout.addWidget(self._skill_scanner_cb)
 
         # Scan ROI configuration
         roi_row = QHBoxLayout()
@@ -216,72 +217,6 @@ class SettingsPage(QWidget):
             parent=self,
         )
         dlg.exec()
-
-    @staticmethod
-    def _format_region(region):
-        if region:
-            return f"({region[0]}, {region[1]}, {region[2]}x{region[3]})"
-        return "Not configured"
-
-    # --- Hunt Tracking ---
-    def _build_hunt_section(self):
-        group = QGroupBox("Hunt Tracking")
-        layout = QVBoxLayout(group)
-
-        # Attribution window
-        attr_row = QHBoxLayout()
-        attr_row.addWidget(QLabel("Attribution window (ms):"))
-        self._attribution_window = QSpinBox()
-        self._attribution_window.setRange(500, 10000)
-        self._attribution_window.setValue(self._config.attribution_window_ms)
-        attr_row.addWidget(self._attribution_window)
-        attr_row.addStretch()
-        layout.addLayout(attr_row)
-
-        # Encounter close timeout
-        timeout_row = QHBoxLayout()
-        timeout_row.addWidget(QLabel("Encounter close timeout (ms):"))
-        self._encounter_timeout = QSpinBox()
-        self._encounter_timeout.setRange(5000, 60000)
-        self._encounter_timeout.setSingleStep(1000)
-        self._encounter_timeout.setValue(self._config.encounter_close_timeout_ms)
-        timeout_row.addWidget(self._encounter_timeout)
-        timeout_row.addStretch()
-        layout.addLayout(timeout_row)
-
-        self._layout.addWidget(group)
-
-    # --- Hotkeys ---
-    def _build_hotkeys_section(self):
-        group = QGroupBox("Hotkeys")
-        layout = QVBoxLayout(group)
-
-        self._hotkey_inputs = {}
-        hotkey_defs = [
-            ("OCR Scan", "hotkey_ocr_scan"),
-            ("Start Hunt", "hotkey_start_hunt"),
-            ("Stop Hunt", "hotkey_stop_hunt"),
-            ("Manual Mob Name", "hotkey_manual_mob_name"),
-        ]
-
-        for label_text, config_key in hotkey_defs:
-            row = QHBoxLayout()
-            row.addWidget(QLabel(f"{label_text}:"))
-            key_edit = QKeySequenceEdit()
-            current = getattr(self._config, config_key, "")
-            if current:
-                from PyQt6.QtGui import QKeySequence
-                key_edit.setKeySequence(QKeySequence(current))
-            row.addWidget(key_edit)
-
-            clear_btn = QPushButton("Clear")
-            clear_btn.clicked.connect(lambda checked, ke=key_edit: ke.clear())
-            row.addWidget(clear_btn)
-            row.addStretch()
-            layout.addLayout(row)
-            self._hotkey_inputs[config_key] = key_edit
-
-        self._layout.addWidget(group)
 
     # --- Overlay ---
     def _build_overlay_section(self):
@@ -313,6 +248,34 @@ class SettingsPage(QWidget):
 
         self._layout.addWidget(group)
 
+    # --- Overlay Shortcuts ---
+    def _build_overlay_shortcuts_section(self):
+        group = QGroupBox("Overlay Shortcuts")
+        layout = QVBoxLayout(group)
+
+        desc = QLabel(
+            "These shortcuts are active while the game or an overlay has focus."
+        )
+        desc.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+        desc.setWordWrap(True)
+        layout.addWidget(desc)
+
+        for name, _key, combo, tooltip in _OVERLAY_SHORTCUTS:
+            row = QHBoxLayout()
+            lbl = QLabel(f"{name}:")
+            lbl.setMinimumWidth(100)
+            row.addWidget(lbl)
+            shortcut_label = QLabel(combo)
+            shortcut_label.setStyleSheet(
+                f"color: {ACCENT}; font-weight: bold; font-size: 12px;"
+            )
+            shortcut_label.setToolTip(tooltip)
+            row.addWidget(shortcut_label)
+            row.addStretch()
+            layout.addLayout(row)
+
+        self._layout.addWidget(group)
+
     # --- About ---
     def _build_about_section(self):
         group = QGroupBox("About")
@@ -330,7 +293,7 @@ class SettingsPage(QWidget):
 
         kofi_btn = QPushButton("Support on Ko-fi")
         kofi_btn.setToolTip("https://ko-fi.com/C0C21JO3B1")
-        kofi_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        kofi_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         kofi_btn.clicked.connect(self._open_kofi)
         btn_row.addWidget(kofi_btn)
 
@@ -354,7 +317,7 @@ class SettingsPage(QWidget):
         layout = QVBoxLayout(group)
 
         btn = QPushButton("View Terms of Use & Privacy Policy")
-        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         btn.clicked.connect(self._show_tos)
         layout.addWidget(btn)
 
@@ -365,10 +328,10 @@ class SettingsPage(QWidget):
         dlg = TosDialog(read_only=True, parent=self)
         dlg.exec()
 
-    # --- Advanced ---
+    # --- Advanced (hidden by default) ---
     def _build_advanced_section(self):
-        group = QGroupBox("Advanced")
-        layout = QVBoxLayout(group)
+        self._advanced_group = QGroupBox("Advanced")
+        layout = QVBoxLayout(self._advanced_group)
 
         # Database path
         db_row = QHBoxLayout()
@@ -395,15 +358,27 @@ class SettingsPage(QWidget):
         oauth_row.addWidget(self._oauth_client_id)
         layout.addLayout(oauth_row)
 
-        self._layout.addWidget(group)
+        self._advanced_group.setVisible(False)
+        self._layout.addWidget(self._advanced_group)
 
-        # Save button
-        save_row = QHBoxLayout()
-        save_row.addStretch()
-        save_btn = QPushButton("Save Settings")
-        save_btn.clicked.connect(self._save_settings)
-        save_row.addWidget(save_btn)
-        self._layout.addLayout(save_row)
+        # Toggle button to show/hide
+        toggle_btn = QPushButton("Show Advanced Settings")
+        toggle_btn.setFlat(True)
+        toggle_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        toggle_btn.setStyleSheet(
+            f"color: {TEXT_MUTED}; font-size: 11px; text-decoration: underline;"
+            f" border: none; padding: 2px;"
+        )
+
+        def _toggle():
+            visible = not self._advanced_group.isVisible()
+            self._advanced_group.setVisible(visible)
+            toggle_btn.setText(
+                "Hide Advanced Settings" if visible else "Show Advanced Settings"
+            )
+
+        toggle_btn.clicked.connect(_toggle)
+        self._layout.addWidget(toggle_btn, alignment=Qt.AlignmentFlag.AlignLeft)
 
     def _browse_js_path(self):
         path = QFileDialog.getExistingDirectory(self, "Select JS utils directory")
@@ -414,19 +389,12 @@ class SettingsPage(QWidget):
         """Apply all settings from the UI to config and persist."""
         self._config.chat_log_path = self._chat_path.text()
         self._config.poll_interval_ms = self._poll_interval.value()
-        self._config.ocr_confidence_threshold = self._ocr_confidence.value()
-        self._config.attribution_window_ms = self._attribution_window.value()
-        self._config.encounter_close_timeout_ms = self._encounter_timeout.value()
         self._config.overlay_opacity = self._opacity_slider.value() / 100.0
         self._config.auto_pin_detail_overlay = self._auto_pin_cb.isChecked()
+        self._config.overlay_enabled = self._skill_scanner_cb.isChecked()
         self._config.check_for_updates = self._updates_cb.isChecked()
         self._config.js_utils_path = self._js_path.text()
         self._config.oauth_client_id = self._oauth_client_id.text()
-
-        # Hotkeys
-        for config_key, key_edit in self._hotkey_inputs.items():
-            seq = key_edit.keySequence().toString()
-            setattr(self._config, config_key, seq)
 
         save_config(self._config, self._config_path)
         self._event_bus.publish(EVENT_CONFIG_CHANGED, self._config)

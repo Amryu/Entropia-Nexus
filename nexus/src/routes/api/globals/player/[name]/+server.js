@@ -7,7 +7,7 @@
  * mining (per-resource), crafting (per-item), and activity timeline.
  */
 import { pool } from '$lib/server/db.js';
-import { getResponse } from '$lib/util.js';
+import { getResponse, decodeURIComponentSafe } from '$lib/util.js';
 import { initMobResolver, resolveMob } from '$lib/server/mobResolver.js';
 
 const PERIOD_INTERVALS = {
@@ -17,7 +17,7 @@ const PERIOD_INTERVALS = {
 };
 
 export async function GET({ params, url }) {
-  const playerName = decodeURIComponent(params.name);
+  const playerName = decodeURIComponentSafe(params.name);
 
   if (!playerName || playerName.length > 200) {
     return getResponse({ error: 'Invalid player name' }, 400);

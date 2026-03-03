@@ -19,8 +19,8 @@ if TYPE_CHECKING:
 DIALOG_WIDTH = 380
 
 # --- Colors (matching scan_summary dark theme) ---
-BG_COLOR = "rgba(20, 20, 30, 200)"
-TITLE_BG = "rgba(30, 30, 45, 220)"
+BG_COLOR = "rgba(20, 20, 30, 180)"
+TITLE_BG = "rgba(30, 30, 45, 200)"
 TEXT_COLOR = "#e0e0e0"
 TEXT_DIM = "#999999"
 WARNING_COLOR = "#f59e0b"

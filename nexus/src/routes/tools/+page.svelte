@@ -21,6 +21,12 @@
       description: 'Calculate crafting requirements, materials, and costs for blueprints'
     },
     {
+      name: 'Client',
+      href: '/tools/client',
+      icon: 'CL',
+      description: 'Desktop companion app with OCR skill scanner, in-game overlays, and auto-updates'
+    },
+    {
       name: 'Skills Calculator',
       href: '/tools/skills',
       icon: 'SC',

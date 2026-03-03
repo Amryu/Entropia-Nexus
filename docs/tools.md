@@ -226,6 +226,58 @@ Compare mode allows side-by-side comparison of two loadouts:
 
 ---
 
+## Client
+
+Desktop companion app for Entropia Universe that runs alongside the game.
+
+### Route
+
+```
+/tools/client
+```
+
+### Features
+
+- **OCR Skill Scanner**: Reads the in-game Skills window using computer vision, extracts skill names, ranks, points, and progress bars, then imports to the user's Nexus account
+- **In-Game Overlays**: Transparent always-on-top overlays for exchange market, player profiles, search, and scan results
+- **Exchange Market**: Browse items, view orders, and place buy/sell offers from an overlay without leaving the game
+- **Auto-Updates**: Delta update system — only changed files are downloaded; checks hourly and applies with one click
+
+### Distribution
+
+Built with PyInstaller. Available for Windows and Linux.
+
+- Downloads served from `/static/client/{platform}/`
+- Delta updates via `manifest.json` (SHA256 hashes per file)
+- Changelog at `/static/client/changelog.json`
+
+### Release Process
+
+1. Update `client/data/changelog.json`
+2. Tag: `git tag client-X.Y.Z`
+3. Build: `./client/build.sh` (per platform)
+4. Upload dist files + zip archive to `/static/client/{platform}/`
+5. Upload `changelog.json` to `/static/client/`
+
+### Components & Files
+
+```
+client/                     - Python client source
+├── build.sh                - PyInstaller build script
+├── VERSION                 - Fallback version file
+├── data/changelog.json     - Changelog data
+├── updater.py              - Delta update system
+├── ocr/                    - OCR skill scanning pipeline
+├── overlay/                - In-game overlay widgets
+└── ui/                     - Main application UI
+
+nexus/src/routes/tools/client/
+├── +page.js                - Loads changelog from static
+└── +page.svelte            - Client page (features, downloads, changelog)
+```
+
+---
+
 ## Skills Calculator
 
 Import skill data, calculate profession levels and HP, and optimize skill progression costs.

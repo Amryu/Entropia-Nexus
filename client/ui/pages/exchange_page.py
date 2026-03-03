@@ -2,21 +2,21 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QStackedWidget, QTreeWidget, QTreeWidgetItem, QLineEdit,
     QComboBox, QHeaderView, QSpinBox, QDoubleSpinBox, QCheckBox,
-    QFormLayout, QSizePolicy,
+    QFormLayout, QSizePolicy, QMenu,
 )
-from PyQt6.QtCore import Qt, QSize, pyqtSignal
+from PyQt6.QtCore import Qt, QSize, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QCursor
 
 from ..theme import (
     PRIMARY, SECONDARY, MAIN_DARK, HOVER, BORDER, ACCENT,
     TEXT, TEXT_MUTED, ERROR, TABLE_HEADER, TABLE_ROW_ALT,
-    PAGE_HEADER_OBJECT_NAME,
 )
 from ...exchange.constants import (
     PLANETS, STATUS_COLORS, DEFAULT_PARTIAL_RATIO,
@@ -106,6 +106,52 @@ def _action_btn(text: str, accent: bool = False) -> QPushButton:
     return btn
 
 
+_TREE_STYLE = f"""
+    QTreeWidget {{
+        background-color: {PRIMARY};
+        alternate-background-color: {TABLE_ROW_ALT};
+        color: {TEXT};
+        border: 1px solid {BORDER};
+        border-radius: 4px;
+    }}
+    QTreeWidget::item {{
+        padding: 2px 4px;
+        min-height: 24px;
+    }}
+    QTreeWidget::item:selected {{
+        background-color: {ACCENT};
+        color: white;
+    }}
+    QTreeWidget::item:hover {{
+        background-color: {HOVER};
+    }}
+    QHeaderView::section {{
+        background-color: {TABLE_HEADER};
+        color: {TEXT};
+        border: none;
+        border-right: 1px solid {BORDER};
+        border-bottom: 1px solid {BORDER};
+        padding: 4px 8px;
+        font-weight: bold;
+    }}
+"""
+
+
+class _SortableItem(QTreeWidgetItem):
+    """Tree item that sorts numerically for columns with numeric sort keys."""
+
+    def __lt__(self, other):
+        tree = self.treeWidget()
+        if tree is None:
+            return super().__lt__(other)
+        col = tree.sortColumn()
+        a = self.data(col, Qt.ItemDataRole.UserRole + 10)
+        b = other.data(col, Qt.ItemDataRole.UserRole + 10)
+        if a is not None and b is not None:
+            return a < b
+        return super().__lt__(other)
+
+
 class ExchangePage(QWidget):
     """Main client page for the Exchange market."""
 
@@ -144,11 +190,6 @@ class ExchangePage(QWidget):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
-
-        # Header
-        header = QLabel("Exchange")
-        header.setObjectName(PAGE_HEADER_OBJECT_NAME)
-        outer.addWidget(header)
 
         # Tab bar
         tab_bar = QWidget()
@@ -237,6 +278,8 @@ class ExchangePage(QWidget):
         self._browse_category.addItem("All Categories")
         for cat in CATEGORY_ORDER:
             self._browse_category.addItem(cat)
+        self._browse_category.setMinimumContentsLength(15)
+        self._browse_category.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         self._browse_category.currentIndexChanged.connect(self._filter_items)
         fr_layout.addWidget(self._browse_category)
 
@@ -244,11 +287,14 @@ class ExchangePage(QWidget):
 
         # Item tree
         self._item_tree = QTreeWidget()
+        self._item_tree.setStyleSheet(_TREE_STYLE)
         self._item_tree.setHeaderLabels(["Name", "Type", "Sell", "Buy", "Markup", "Updated"])
         self._item_tree.setColumnCount(6)
         self._item_tree.setRootIsDecorated(False)
         self._item_tree.setAlternatingRowColors(True)
         self._item_tree.setSelectionMode(QTreeWidget.SelectionMode.SingleSelection)
+        self._item_tree.setSortingEnabled(True)
+        self._item_tree.sortByColumn(5, Qt.SortOrder.DescendingOrder)
         header = self._item_tree.header()
         header.setStretchLastSection(False)
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
@@ -285,6 +331,17 @@ class ExchangePage(QWidget):
         self._book_item_label.setStyleSheet(f"color: {TEXT}; font-size: 14px; font-weight: bold;")
         hdr_layout.addWidget(self._book_item_label, 1)
 
+        # View item details button
+        _INFO_SVG = '<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>'
+        detail_btn = QPushButton()
+        detail_btn.setFixedSize(28, 28)
+        detail_btn.setIcon(svg_icon(_INFO_SVG, TEXT_MUTED, 18))
+        detail_btn.setStyleSheet(f"background: transparent; border: none; border-radius: 4px;")
+        detail_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        detail_btn.setToolTip("View item details")
+        detail_btn.clicked.connect(self._open_item_detail)
+        hdr_layout.addWidget(detail_btn)
+
         self._book_star_btn = QPushButton()
         self._book_star_btn.setFixedSize(28, 28)
         self._book_star_btn.setStyleSheet("background: transparent; border: none;")
@@ -300,6 +357,7 @@ class ExchangePage(QWidget):
         layout.addWidget(sell_label)
 
         self._sell_tree = QTreeWidget()
+        self._sell_tree.setStyleSheet(_TREE_STYLE)
         self._sell_tree.setRootIsDecorated(False)
         self._sell_tree.setAlternatingRowColors(True)
         layout.addWidget(self._sell_tree, 1)
@@ -310,6 +368,7 @@ class ExchangePage(QWidget):
         layout.addWidget(buy_label)
 
         self._buy_tree = QTreeWidget()
+        self._buy_tree.setStyleSheet(_TREE_STYLE)
         self._buy_tree.setRootIsDecorated(False)
         self._buy_tree.setAlternatingRowColors(True)
         layout.addWidget(self._buy_tree, 1)
@@ -379,6 +438,7 @@ class ExchangePage(QWidget):
 
         # Orders tree
         self._orders_tree = QTreeWidget()
+        self._orders_tree.setStyleSheet(_TREE_STYLE)
         self._orders_tree.setHeaderLabels(
             ["Item", "Side", "Qty", "Markup", "Planet", "Status", "Updated"]
         )
@@ -391,6 +451,7 @@ class ExchangePage(QWidget):
         for i, width in [(1, 50), (2, 60), (3, 100), (4, 80), (5, 80), (6, 80)]:
             header.setSectionResizeMode(i, QHeaderView.ResizeMode.Fixed)
             header.resizeSection(i, width)
+        self._orders_tree.itemDoubleClicked.connect(self._on_order_double_clicked)
         layout.addWidget(self._orders_tree, 1)
 
         # Auth message
@@ -413,20 +474,28 @@ class ExchangePage(QWidget):
 
         self._inv_search = QLineEdit()
         self._inv_search.setPlaceholderText("Search inventory...")
-        self._inv_search.textChanged.connect(self._filter_inventory)
+        self._inv_search_timer = QTimer()
+        self._inv_search_timer.setSingleShot(True)
+        self._inv_search_timer.setInterval(300)
+        self._inv_search_timer.timeout.connect(self._filter_inventory)
+        self._inv_search.textChanged.connect(lambda: self._inv_search_timer.start())
         layout.addWidget(self._inv_search)
 
         self._inv_tree = QTreeWidget()
-        self._inv_tree.setHeaderLabels(["Name", "Type", "Qty", "TT Value", "Orders"])
+        self._inv_tree.setStyleSheet(_TREE_STYLE)
+        self._inv_tree.setHeaderLabels(["Name", "Type", "Qty", "TT Value", "Demand"])
         self._inv_tree.setColumnCount(5)
         self._inv_tree.setRootIsDecorated(False)
         self._inv_tree.setAlternatingRowColors(True)
+        self._inv_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._inv_tree.customContextMenuRequested.connect(self._on_inv_context_menu)
         header = self._inv_tree.header()
         header.setStretchLastSection(False)
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        for i, width in [(1, 90), (2, 60), (3, 90), (4, 60)]:
+        for i, width in [(1, 90), (2, 60), (3, 90), (4, 90)]:
             header.setSectionResizeMode(i, QHeaderView.ResizeMode.Fixed)
             header.resizeSection(i, width)
+        self._inv_tree.itemDoubleClicked.connect(self._on_inv_double_clicked)
         layout.addWidget(self._inv_tree, 1)
 
         # Auth message
@@ -448,6 +517,7 @@ class ExchangePage(QWidget):
         layout.setSpacing(8)
 
         self._trades_tree = QTreeWidget()
+        self._trades_tree.setStyleSheet(_TREE_STYLE)
         self._trades_tree.setHeaderLabels(["Partner", "Items", "Status", "Created"])
         self._trades_tree.setColumnCount(4)
         self._trades_tree.setRootIsDecorated(False)
@@ -520,6 +590,8 @@ class ExchangePage(QWidget):
         cat_idx = self._browse_category.currentIndex()
         selected_cat = CATEGORY_ORDER[cat_idx - 1] if cat_idx > 0 else None
 
+        self._item_tree.setSortingEnabled(False)
+        self._item_tree.setUpdatesEnabled(False)
         self._item_tree.clear()
         for item in self._store.items:
             name = item.get('n', '')
@@ -531,30 +603,57 @@ class ExchangePage(QWidget):
             if selected_cat and category != selected_cat:
                 continue
 
-            row = QTreeWidgetItem()
+            row = _SortableItem()
             row.setText(0, name)
             row.setText(1, item_type)
 
             s_count = item.get('s', 0) or 0
             b_count = item.get('b', 0) or 0
             row.setText(2, str(s_count) if s_count else "")
+            row.setData(2, Qt.ItemDataRole.UserRole + 10, s_count)
+            if s_count:
+                row.setForeground(2, QColor("#ef4444"))
             row.setText(3, str(b_count) if b_count else "")
+            row.setData(3, Qt.ItemDataRole.UserRole + 10, b_count)
+            if b_count:
+                row.setForeground(3, QColor("#4ade80"))
 
-            # Best markup
-            sell_mu = item.get('sv')
-            buy_mu = item.get('bv')
+            # Markup fallback: median → best buy → best sell
+            mu_val = item.get('m')  # median from price snapshots
+            if mu_val is None:
+                mu_val = item.get('bb')  # best buy markup
+            if mu_val is None:
+                mu_val = item.get('bs')  # best sell markup
             mu_text = ''
-            if sell_mu is not None:
-                mu_text = format_markup(sell_mu, is_absolute_markup(item))
-            elif buy_mu is not None:
-                mu_text = format_markup(buy_mu, is_absolute_markup(item))
+            mu_sort = 0.0
+            if mu_val is not None:
+                mu_text = format_markup(mu_val, is_absolute_markup(item))
+                try:
+                    mu_sort = float(mu_val)
+                except (TypeError, ValueError):
+                    pass
             row.setText(4, mu_text)
+            row.setData(4, Qt.ItemDataRole.UserRole + 10, mu_sort)
 
-            # Updated
-            row.setText(5, format_age(item.get('ut')))
+            # Updated — composite sort key: items with orders first, then by recency
+            u = item.get('u')
+            row.setText(5, format_age(u))
+            ts = 0.0
+            if u and isinstance(u, str):
+                try:
+                    ts = datetime.fromisoformat(
+                        u.replace('Z', '+00:00')
+                    ).timestamp()
+                except (ValueError, OSError):
+                    pass
+            has_orders = 1 if (s_count + b_count) > 0 else 0
+            row.setData(5, Qt.ItemDataRole.UserRole + 10, (has_orders, ts))
 
             row.setData(0, Qt.ItemDataRole.UserRole, item.get('i'))
             self._item_tree.addTopLevelItem(row)
+
+        self._item_tree.setUpdatesEnabled(True)
+        self._item_tree.setSortingEnabled(True)
 
     def _on_item_double_clicked(self, item: QTreeWidgetItem, column: int):
         item_id = item.data(0, Qt.ItemDataRole.UserRole)
@@ -596,6 +695,18 @@ class ExchangePage(QWidget):
         if self._current_item_id:
             self._favourites.toggle_favourite(self._current_item_id)
             self._update_star_button()
+
+    def _open_item_detail(self):
+        """Open the current order book item in a detail overlay."""
+        if not self._current_item_id:
+            return
+        slim = self._store.item_lookup.get(self._current_item_id)
+        if not slim:
+            return
+        self._signals.open_entity_overlay.emit({
+            "Name": slim.get('n', ''),
+            "Type": slim.get('t', ''),
+        })
 
     def _populate_order_book(self):
         if not self._current_item_id:
@@ -772,6 +883,15 @@ class ExchangePage(QWidget):
 
         self._store.bump_all_orders(callback=cb)
 
+    def _on_order_double_clicked(self, item: QTreeWidgetItem, column: int):
+        """Navigate to order book for the double-clicked order's item."""
+        order = item.data(0, Qt.ItemDataRole.UserRole + 1)
+        if order:
+            item_id = order.get('item_id')
+            if item_id:
+                self._set_tab(_TAB_BROWSE)
+                self._show_order_book(item_id)
+
     # ------------------------------------------------------------------
     # Populate: Inventory
     # ------------------------------------------------------------------
@@ -785,6 +905,7 @@ class ExchangePage(QWidget):
             return
 
         search = self._inv_search.text().strip().lower()
+        self._inv_tree.setUpdatesEnabled(False)
         self._inv_tree.clear()
 
         for inv_item in self._store.inventory:
@@ -801,14 +922,59 @@ class ExchangePage(QWidget):
             row.setText(1, item_type)
             row.setText(2, str(inv_item.get('quantity', 1)))
             value = inv_item.get('value')
+            try:
+                value = float(value) if value is not None else None
+            except (TypeError, ValueError):
+                value = None
             row.setText(3, format_ped(value) if value is not None else '')
 
-            sell_count = slim.get('s', 0) if slim else 0
-            row.setText(4, str(sell_count) if sell_count else '')
+            # Buy demand: best buy markup + count
+            buy_count = slim.get('b', 0) if slim else 0
+            if buy_count:
+                best_buy = slim.get('bb')
+                if best_buy is not None:
+                    demand_text = f"{format_markup(best_buy, is_absolute_markup(slim))} ({buy_count})"
+                else:
+                    demand_text = str(buy_count)
+                row.setText(4, demand_text)
+                row.setForeground(4, QColor("#4ade80"))
 
             row.setData(0, Qt.ItemDataRole.UserRole, item_id)
             row.setData(0, Qt.ItemDataRole.UserRole + 1, inv_item)
             self._inv_tree.addTopLevelItem(row)
+
+        self._inv_tree.setUpdatesEnabled(True)
+
+    def _on_inv_double_clicked(self, item: QTreeWidgetItem, column: int):
+        """Navigate to order book for the inventory item."""
+        item_id = item.data(0, Qt.ItemDataRole.UserRole)
+        if item_id:
+            self._set_tab(_TAB_BROWSE)
+            self._show_order_book(item_id)
+
+    def _sell_inventory_item(self, item_id: int):
+        """Open order dialog to create a sell order for an inventory item."""
+        self._open_order_dialog("SELL", item_id=item_id)
+
+    def _on_inv_context_menu(self, pos):
+        """Show right-click context menu for inventory items."""
+        item = self._inv_tree.itemAt(pos)
+        if not item:
+            return
+        item_id = item.data(0, Qt.ItemDataRole.UserRole)
+        if not item_id:
+            return
+
+        menu = QMenu(self)
+        sell_action = menu.addAction("Sell")
+        view_action = menu.addAction("View Order Book")
+
+        action = menu.exec(self._inv_tree.viewport().mapToGlobal(pos))
+        if action == sell_action:
+            self._sell_inventory_item(item_id)
+        elif action == view_action:
+            self._set_tab(_TAB_BROWSE)
+            self._show_order_book(item_id)
 
     # ------------------------------------------------------------------
     # Populate: Trade Requests
@@ -834,13 +1000,14 @@ class ExchangePage(QWidget):
     # Order Dialog
     # ------------------------------------------------------------------
 
-    def _open_order_dialog(self, side: str, order: dict | None = None):
+    def _open_order_dialog(self, side: str, order: dict | None = None, item_id: int | None = None):
         if not self._store._client.is_authenticated():
             return
-        if not self._current_item_id:
+        target_id = item_id or self._current_item_id
+        if not target_id:
             return
 
-        slim = self._store.item_lookup.get(self._current_item_id)
+        slim = self._store.item_lookup.get(target_id)
         if not slim:
             return
 
@@ -870,6 +1037,8 @@ class ExchangePage(QWidget):
         self._store.start_polling()
         if not self._store.items:
             self._store.load_items()
+        else:
+            self._populate_item_tree()
         if self._store._client.is_authenticated():
             self._store.load_my_orders()
         self._favourites.load_from_server()

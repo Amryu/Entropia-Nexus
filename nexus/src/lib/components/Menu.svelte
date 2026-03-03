@@ -544,7 +544,7 @@
   }
 
   interface MenuItems {
-    [key: string]: { label: string; url: string; disabled?: boolean; highlighted?: boolean }[];
+    [key: string]: { label: string; url: string; disabled?: boolean; highlighted?: boolean; badge?: string }[];
   }
   const menuItemsWiki: MenuItems = {
     'Home': [
@@ -587,6 +587,7 @@
       { label: 'Space', url: 'space' },
     ],
     'Tools': [
+      { label: 'Client', url: 'client', badge: 'New' },
       { label: 'Loadout Manager', url: 'loadouts' },
       { label: 'Construction Calculator', url: 'construction' },
       { label: 'Skills Calculator', url: 'skills', disabled: true },
@@ -874,6 +875,19 @@
     opacity: 0.4;
     cursor: default;
     pointer-events: none;
+  }
+
+  .menu-badge {
+    font-size: 9px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    background-color: var(--accent-color);
+    color: #000;
+    padding: 1px 5px;
+    border-radius: 3px;
+    margin-left: 6px;
+    vertical-align: middle;
   }
 
   .coming-soon {
@@ -2150,7 +2164,7 @@
                 {:else if isExternalLink(item)}
                   <a href={getMenuItemUrl(menu, item)} target="_blank"><div class="menu-dropdown-item" class:highlighted={item.highlighted}>{item.label}</div></a>
                 {:else}
-                  <a use:loading href={getMenuItemUrl(menu, item)}><div class="menu-dropdown-item" class:highlighted={item.highlighted}>{item.label}</div></a>
+                  <a use:loading href={getMenuItemUrl(menu, item)}><div class="menu-dropdown-item" class:highlighted={item.highlighted}>{item.label}{#if item.badge}<span class="menu-badge">{item.badge}</span>{/if}</div></a>
                 {/if}
               {/each}
           </div>
@@ -2437,7 +2451,7 @@
                 {:else if isExternalLink(item)}
                   <a href={getMenuItemUrl(menu, item)} target="_blank" class="mobile-menu-item" class:highlighted={item.highlighted} on:click={closeMobileMenu}>{item.label}</a>
                 {:else}
-                  <a use:loading href={getMenuItemUrl(menu, item)} class="mobile-menu-item" class:highlighted={item.highlighted} on:click={closeMobileMenu}>{item.label}</a>
+                  <a use:loading href={getMenuItemUrl(menu, item)} class="mobile-menu-item" class:highlighted={item.highlighted} on:click={closeMobileMenu}>{item.label}{#if item.badge}<span class="menu-badge">{item.badge}</span>{/if}</a>
                 {/if}
               {/each}
             </div>

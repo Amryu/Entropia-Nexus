@@ -166,6 +166,8 @@ class OverlayManager(QObject):
     search_hotkey_pressed = pyqtSignal()
     map_hotkey_pressed = pyqtSignal()
     exchange_hotkey_pressed = pyqtSignal()
+    notifications_hotkey_pressed = pyqtSignal()
+    game_focus_changed = pyqtSignal(bool)  # True when game is focused/visible
 
     def __init__(self, *, config, parent: QObject | None = None):
         super().__init__(parent)
@@ -286,6 +288,8 @@ class OverlayManager(QObject):
                 if not self._game_focused:
                     self._game_focused = True
                     self._show_all()
+                    self.game_focus_changed.emit(True)
+                self._set_hotkeys_active(True)
                 return
 
             # Find / validate the cached game HWND
@@ -298,11 +302,14 @@ class OverlayManager(QObject):
                 if self._game_focused:
                     self._game_focused = False
                     self._hide_all()
+                    self.game_focus_changed.emit(False)
+                self._set_hotkeys_active(False)
                 return
 
             # Game has focus → always visible
             title = _get_window_title(fg_hwnd)
-            if title.startswith(GAME_TITLE_PREFIX):
+            game_is_fg = title.startswith(GAME_TITLE_PREFIX)
+            if game_is_fg:
                 visible = True
             else:
                 # Game doesn't have focus — check if a full window occludes it
@@ -311,9 +318,14 @@ class OverlayManager(QObject):
             if visible and not self._game_focused:
                 self._game_focused = True
                 self._show_all()
+                self.game_focus_changed.emit(True)
             elif not visible and self._game_focused:
                 self._game_focused = False
                 self._hide_all()
+                self.game_focus_changed.emit(False)
+
+            # Hotkeys only when game has actual input focus
+            self._set_hotkeys_active(game_is_fg)
         except Exception:
             pass
 
@@ -321,24 +333,45 @@ class OverlayManager(QObject):
         for w in self._widgets:
             if w.wants_visible:
                 w.show()
-        self._register_hotkey()
 
     def _hide_all(self) -> None:
-        self._unregister_hotkey()
         for w in self._widgets:
             if w.isVisible():
                 w.hide()
 
-    # --- Global Ctrl+F hotkey (only while overlays are active) ---
+    # --- Global hotkeys (only while game/overlay has input focus) ---
+    #
+    # Uses keyboard.hook(suppress=True) instead of add_hotkey(suppress=True).
+    # add_hotkey's suppress buffers modifier keys (Ctrl) through a state machine
+    # while it waits for the next key to determine if a hotkey matches.  This
+    # causes non-matching Ctrl combos like Ctrl+V to be delayed, requiring a
+    # double-press in-game.
+    #
+    # With hook(suppress=True), we get per-event control: Ctrl passes through
+    # immediately (return True), and only the specific letter key is suppressed
+    # (return False) when Ctrl is held.
+
+    def _set_hotkeys_active(self, active: bool) -> None:
+        """Register/unregister keyboard hook based on input focus."""
+        if active and not self._hotkey_registered:
+            self._register_hotkey()
+        elif not active and self._hotkey_registered:
+            self._unregister_hotkey()
+
+    _HOTKEY_MAP = {
+        "f": "search_hotkey_pressed",
+        "m": "map_hotkey_pressed",
+        "e": "exchange_hotkey_pressed",
+        "n": "notifications_hotkey_pressed",
+    }
 
     def _register_hotkey(self) -> None:
         if self._hotkey_registered:
             return
         try:
             import keyboard
-            keyboard.add_hotkey("ctrl+f", self._on_search_hotkey, suppress=True)
-            keyboard.add_hotkey("ctrl+m", self._on_map_hotkey, suppress=True)
-            keyboard.add_hotkey("ctrl+e", self._on_exchange_hotkey, suppress=True)
+            self._suppressed_scancodes: set[int] = set()
+            keyboard.hook(self._key_hook, suppress=True)
             self._hotkey_registered = True
         except ImportError:
             pass
@@ -350,27 +383,41 @@ class OverlayManager(QObject):
             return
         try:
             import keyboard
-            keyboard.remove_hotkey("ctrl+f")
-            keyboard.remove_hotkey("ctrl+m")
-            keyboard.remove_hotkey("ctrl+e")
+            keyboard.unhook(self._key_hook)
         except Exception:
             pass
         self._hotkey_registered = False
 
-    def _on_search_hotkey(self) -> None:
-        """Called from keyboard hook thread — emit signal for Qt main thread."""
-        if self._game_focused:
-            self.search_hotkey_pressed.emit()
+    def _key_hook(self, event) -> bool:
+        """Low-level keyboard hook — runs synchronously on the hook thread.
 
-    def _on_map_hotkey(self) -> None:
-        """Called from keyboard hook thread — emit signal for Qt main thread."""
-        if self._game_focused:
-            self.map_hotkey_pressed.emit()
+        Returns True to pass the event through, False to suppress it.
+        Only suppresses the letter key of our hotkey combos; Ctrl itself
+        always passes through immediately.
+        """
+        import keyboard as _kb
 
-    def _on_exchange_hotkey(self) -> None:
-        """Called from keyboard hook thread — emit signal for Qt main thread."""
-        if self._game_focused:
-            self.exchange_hotkey_pressed.emit()
+        name = event.name
+        if name not in self._HOTKEY_MAP:
+            return True  # not a hotkey letter — pass through
+
+        if event.event_type == _kb.KEY_DOWN:
+            if _kb.is_pressed("ctrl"):
+                # Real-time focus check — guard against poll lag after alt-tab
+                fg = _get_foreground_hwnd()
+                if fg in self._overlay_hwnds or \
+                        _get_window_title(fg).startswith(GAME_TITLE_PREFIX):
+                    self._suppressed_scancodes.add(event.scan_code)
+                    signal = getattr(self, self._HOTKEY_MAP[name])
+                    signal.emit()
+                    return False  # suppress the letter key
+            return True
+
+        # KEY_UP: suppress if we suppressed the matching key-down
+        if event.scan_code in self._suppressed_scancodes:
+            self._suppressed_scancodes.discard(event.scan_code)
+            return False
+        return True
 
     # --- Cleanup ---
 

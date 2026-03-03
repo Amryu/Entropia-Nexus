@@ -380,6 +380,14 @@ class MainWindow(QWidget):
         """Store reference to the search overlay for notification badge updates."""
         self._search_overlay = overlay
 
+    def set_overlay_manager(self, manager):
+        """Store reference to overlay manager for game-focus checks."""
+        self._overlay_manager = manager
+
+    def set_toast_manager(self, toast_manager):
+        """Store reference to toast manager for in-game notifications."""
+        self._toast_manager = toast_manager
+
     def _update_badge(self):
         """Update the sidebar bell badge and search overlay with the current unread count."""
         count = self._notif_manager.get_unread_count()
@@ -397,9 +405,13 @@ class MainWindow(QWidget):
         if not self.isActiveWindow():
             self._flash_taskbar()
 
-        # System toast
+        # Toast routing: in-game overlay toast or OS system tray toast
         if getattr(self._config, "notification_toast_enabled", True):
-            if hasattr(self, "_tray"):
+            overlay_mgr = getattr(self, "_overlay_manager", None)
+            toast_mgr = getattr(self, "_toast_manager", None)
+            if overlay_mgr and overlay_mgr.game_focused and toast_mgr:
+                toast_mgr.show_toast(notif)
+            elif hasattr(self, "_tray"):
                 self._tray.showMessage(
                     notif.title,
                     notif.body[:200] if notif.body else "",

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from PyQt6.QtWidgets import QWidget, QVBoxLayout
+from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout
 from PyQt6.QtCore import Qt
 
 from ..core.config import save_config
@@ -51,7 +51,7 @@ class OverlayWidget(QWidget):
         # Background container — subclasses add their layout here
         self._container = QWidget(self)
         self._container.setStyleSheet(
-            "background-color: rgba(20, 20, 30, 200); "
+            "background-color: rgba(20, 20, 30, 180); "
             "border-radius: 8px; padding: 8px;"
         )
 
@@ -59,10 +59,11 @@ class OverlayWidget(QWidget):
         outer.setContentsMargins(0, 0, 0, 0)
         outer.addWidget(self._container)
 
-        # Restore saved position
+        # Restore saved position (clamped to visible screens)
         pos = getattr(config, position_key, (50, 50))
         if pos:
-            self.move(pos[0], pos[1])
+            x, y = self._clamp_to_screens(pos[0], pos[1])
+            self.move(x, y)
 
         # Register with manager
         if self._manager:
@@ -105,6 +106,7 @@ class OverlayWidget(QWidget):
                     x, y, self.width(), self.height(), targets,
                 )
 
+            x, y = self._clamp_to_screens(x, y)
             self.move(x, y)
 
     def mouseReleaseEvent(self, event):
@@ -117,6 +119,31 @@ class OverlayWidget(QWidget):
     def wheelEvent(self, event):
         """Accept wheel events so they never propagate to the game window."""
         event.accept()
+
+    # --- Screen bounds clamping ---
+
+    # Minimum pixels of the widget that must remain on-screen (keeps title bar grabbable)
+    _SCREEN_MARGIN = 50
+
+    def _clamp_to_screens(self, x: int, y: int) -> tuple[int, int]:
+        """Clamp (x, y) so the widget stays within the visible monitor space."""
+        screens = QApplication.screens()
+        if not screens:
+            return x, y
+
+        w, h = self.width() or 200, self.height() or 100
+
+        # Build union rect of all screen available geometries
+        union = screens[0].availableGeometry()
+        for s in screens[1:]:
+            union = union.united(s.availableGeometry())
+
+        margin = self._SCREEN_MARGIN
+        # Ensure at least `margin` px of the widget is visible
+        x = max(union.left() - w + margin, min(x, union.right() - margin))
+        y = max(union.top(), min(y, union.bottom() - margin))
+
+        return x, y
 
     # --- Position persistence ---
 

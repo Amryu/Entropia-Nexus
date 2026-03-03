@@ -1136,6 +1136,13 @@ Update an order's quantity, markup, planet, min_quantity, or details. Must be th
 
 Close (delete) an exchange order. Must be the owner.
 
+#### `POST /api/market/exchange/orders/bump-all`
+**Scope:** `exchange:write` | Rate limit: 1/hour
+
+Bump all eligible orders for the current user, resetting their `bumped_at` timestamp to now and setting state to `active`. Orders that are already closed or terminated (older than 30 days) are excluded.
+
+**Response:** `{ orders: [...], count: number }`
+
 ### Trade Requests
 
 #### `GET /api/market/trade-requests`

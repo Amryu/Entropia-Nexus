@@ -37,8 +37,10 @@ class AppConfig:
     scan_summary_overlay_position: tuple[int, int] = (100, 200)
     confirm_overlay_position: tuple[int, int] = (100, 200)
     profile_overlay_position: tuple[int, int] = (450, 50)
+    society_overlay_position: tuple[int, int] = (450, 50)
     exchange_overlay_position: tuple[int, int] = (100, 100)
     exchange_overlay_size: tuple[int, int] = (700, 500)
+    notifications_overlay_position: tuple[int, int] = (100, 100)
     map_overlay_size: int = 1  # 0=Small, 1=Medium, 2=Large
     overlay_opacity: float = 0.85
     overlay_enabled: bool = True
@@ -96,6 +98,7 @@ class AppConfig:
     # Notifications
     notification_sound_enabled: bool = True
     notification_toast_enabled: bool = True
+    notification_toast_corner: str = "bottom_right"
     notification_rules: list[dict] = field(default_factory=list)
     trade_chat_notifications_enabled: bool = False
     trade_chat_ignore_list: list[str] = field(default_factory=list)
@@ -127,10 +130,12 @@ DEFAULTS = {
     "detail_overlay_position": [400, 50],
     "exchange_overlay_position": [100, 100],
     "exchange_overlay_size": [700, 500],
+    "notifications_overlay_position": [100, 100],
     "map_overlay_position": [100, 100],
     "scan_summary_overlay_position": [100, 200],
     "confirm_overlay_position": [100, 200],
     "profile_overlay_position": [450, 50],
+    "society_overlay_position": [450, 50],
     "map_overlay_size": 1,
     "overlay_opacity": 0.85,
     "overlay_enabled": True,
@@ -162,6 +167,7 @@ DEFAULTS = {
     "update_remind_at": "",
     "notification_sound_enabled": True,
     "notification_toast_enabled": True,
+    "notification_toast_corner": "bottom_right",
     "notification_rules": [],
     "trade_chat_notifications_enabled": False,
     "trade_chat_ignore_list": [],
@@ -226,8 +232,10 @@ def load_config(config_path: str = "config.json") -> AppConfig:
         "hunt_overlay_position", "progress_overlay_position",
         "search_overlay_position", "detail_overlay_position",
         "exchange_overlay_position", "exchange_overlay_size",
+        "notifications_overlay_position",
         "map_overlay_position", "scan_summary_overlay_position",
         "confirm_overlay_position", "profile_overlay_position",
+        "society_overlay_position",
         "mob_name_region", "tool_name_region",
     ):
         val = merged.get(key)

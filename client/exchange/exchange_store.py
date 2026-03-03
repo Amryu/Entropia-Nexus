@@ -103,6 +103,14 @@ class ExchangeStore(QObject):
                 self._item_lookup = {item['i']: item for item in self._items if 'i' in item}
                 self._set_loading("items", False)
                 self.items_changed.emit()
+                # Re-enrich orders that were loaded before items were available
+                if self._my_orders:
+                    raw = [{k: v for k, v in o.items() if not k.startswith('_')} for o in self._my_orders]
+                    self._my_orders = enrich_orders(raw, self._item_lookup)
+                    self.my_orders_changed.emit()
+                # Re-emit inventory_changed so names resolve now that items are available
+                if self._inventory:
+                    self.inventory_changed.emit()
             except Exception as e:
                 log.error("Failed to load exchange items: %s", e)
                 self._set_loading("items", False)

@@ -212,7 +212,7 @@ def format_ped_value(value: float | None) -> str:
 
 def format_age(iso_str: str | None) -> str:
     """Format an ISO timestamp as a human-readable age string (e.g. '5m', '2h', '3d')."""
-    if not iso_str:
+    if not iso_str or not isinstance(iso_str, str):
         return ''
     try:
         s = iso_str.replace('Z', '+00:00')
@@ -279,14 +279,18 @@ def enrich_orders(
 
         category = get_top_category(_get_type(slim))
         value = get_order_value(slim, order)
-        markup = order.get('markup')
+        raw_markup = order.get('markup')
+        try:
+            markup = float(raw_markup) if raw_markup is not None else None
+        except (TypeError, ValueError):
+            markup = None
         unit_price = compute_order_unit_price(slim, markup, order) if markup is not None else None
         qty = order.get('quantity', 1) or 1
         total = None
         if unit_price is not None:
             total = unit_price * qty if is_stackable(slim) else unit_price
 
-        result.append({
+        enriched = {
             **order,
             '_state': computed_state,
             '_slim': slim,
@@ -297,5 +301,9 @@ def enrich_orders(
             '_total': total,
             '_is_absolute': is_absolute_markup(slim) if slim else True,
             '_item_name': slim.get('n', f'Item #{item_id}') if slim else f'Item #{item_id}',
-        })
+        }
+        # Overwrite raw string markup with coerced float
+        if markup is not None:
+            enriched['markup'] = markup
+        result.append(enriched)
     return result

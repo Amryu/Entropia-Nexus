@@ -1,26 +1,29 @@
 """Skills page — 6-tab interface for skill management, progression, and optimization."""
 
+import csv
+import io
+import json
 import threading
 from datetime import datetime, timedelta, timezone
 from functools import partial
+from pathlib import Path
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QGroupBox, QTableWidget, QTableWidgetItem, QHeaderView,
     QTabWidget, QScrollArea, QComboBox, QCheckBox,
     QProgressBar, QLineEdit, QDoubleSpinBox, QFrame,
-    QGridLayout, QSizePolicy,
+    QGridLayout, QSizePolicy, QFileDialog, QMessageBox,
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 from PyQt6.QtGui import QCursor
 from PyQt6.QtWidgets import QGraphicsOpacityEffect
 
 from ...skills.calculations import (
-    calculate_profession_level, calculate_all_profession_levels,
-    calculate_hp, build_attribute_skill_set,
-    find_cheapest_profession_path, find_cheapest_hp_path,
+    calculate_all_profession_levels, build_attribute_skill_set,
 )
 from ...skills.badges import get_skill_badges, Badge
+from ...core.logger import get_logger
 from ...skills.sync import SkillDataManager
 from ..theme import (
     SECONDARY, BORDER, BORDER_HOVER, TEXT_MUTED,
@@ -28,6 +31,8 @@ from ..theme import (
     ACCENT, ACCENT_LIGHT,
 )
 
+
+log = get_logger("SkillsPage")
 
 # ── Constants ──────────────────────────────────────────────────────────────
 CARD_MIN_WIDTH = 180
@@ -71,11 +76,13 @@ class SkillCard(QFrame):
 
     def __init__(self, skill_name: str, points: float, rank: str,
                  progress: float, badges: list[Badge],
-                 dimmed: bool = False, parent=None):
+                 dimmed: bool = False, weight: int | None = None,
+                 parent=None):
         super().__init__(parent)
         self._skill_name = skill_name
         self._points = points
         self._editing = False
+        self._weight = weight
 
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.setMinimumWidth(CARD_MIN_WIDTH)
@@ -117,20 +124,24 @@ class SkillCard(QFrame):
                 top_row.addWidget(bl)
         layout.addLayout(top_row)
 
-        # Row 2: Rank + Points
+        # Row 2: Rank + Weight + Points
         info_row = QHBoxLayout()
         info_row.setSpacing(4)
         rank_label = QLabel(rank)
         rank_label.setStyleSheet(f"font-size: 10px; color: {TEXT_MUTED}; background: transparent; border: none;")
         info_row.addWidget(rank_label)
+        if weight is not None:
+            weight_label = QLabel(f"w:{weight}")
+            weight_label.setStyleSheet(f"font-size: 9px; color: {ACCENT}; background: transparent; border: none;")
+            info_row.addWidget(weight_label)
         info_row.addStretch()
 
-        self._points_label = QLabel(f"{points:.4f}")
+        self._points_label = QLabel(f"{points:.2f}")
         self._points_label.setStyleSheet("font-size: 10px; background: transparent; border: none;")
         info_row.addWidget(self._points_label)
 
         self._edit_input = QDoubleSpinBox()
-        self._edit_input.setDecimals(4)
+        self._edit_input.setDecimals(2)
         self._edit_input.setMaximum(999999)
         self._edit_input.setMinimumWidth(80)
         self._edit_input.setVisible(False)
@@ -199,7 +210,7 @@ class SkillCard(QFrame):
         self._points_label.setVisible(True)
         if abs(new_val - self._points) > 0.00001:
             self._points = new_val
-            self._points_label.setText(f"{new_val:.4f}")
+            self._points_label.setText(f"{new_val:.2f}")
             self.value_edited.emit(self._skill_name, new_val)
 
 
@@ -209,7 +220,8 @@ class ProfessionCard(QFrame):
     clicked = pyqtSignal(str)
 
     def __init__(self, prof_name: str, level: float, skill_count: int,
-                 category: str = "", parent=None):
+                 category: str = "", weight: int | None = None,
+                 parent=None):
         super().__init__(parent)
         self._prof_name = prof_name
 
@@ -241,7 +253,7 @@ class ProfessionCard(QFrame):
         name_label.setWordWrap(True)
         layout.addWidget(name_label)
 
-        # Row 2: "Level N" (left) + level value (right)
+        # Row 2: "Level N" + weight + level value
         info_row = QHBoxLayout()
         info_row.setSpacing(4)
         level_int = int(level)
@@ -250,8 +262,12 @@ class ProfessionCard(QFrame):
             f"font-size: 10px; color: {TEXT_MUTED}; background: transparent; border: none;"
         )
         info_row.addWidget(rank_label)
+        if weight is not None:
+            weight_label = QLabel(f"w:{weight}")
+            weight_label.setStyleSheet(f"font-size: 9px; color: {ACCENT}; background: transparent; border: none;")
+            info_row.addWidget(weight_label)
         info_row.addStretch()
-        level_label = QLabel(f"{level:.4f}")
+        level_label = QLabel(f"{level:.2f}")
         level_label.setStyleSheet(
             "font-size: 10px; background: transparent; border: none;"
         )
@@ -542,55 +558,12 @@ class SkillsPage(QWidget):
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(4, 4, 4, 4)
 
-        # Mode selector
-        mode_row = QHBoxLayout()
-        mode_row.addWidget(QLabel("Target:"))
-        self._opt_mode = QComboBox()
-        self._opt_mode.addItems(["Profession Level", "HP"])
-        self._opt_mode.currentIndexChanged.connect(self._on_opt_mode_changed)
-        mode_row.addWidget(self._opt_mode)
-
-        # Profession selector (for profession mode)
-        self._opt_prof_label = QLabel("Profession:")
-        mode_row.addWidget(self._opt_prof_label)
-        self._opt_prof_combo = QComboBox()
-        self._opt_prof_combo.setMinimumWidth(150)
-        mode_row.addWidget(self._opt_prof_combo)
-
-        mode_row.addWidget(QLabel("Current:"))
-        self._opt_current = QLabel("-")
-        self._opt_current.setMinimumWidth(60)
-        mode_row.addWidget(self._opt_current)
-
-        mode_row.addWidget(QLabel("Target:"))
-        self._opt_target = QDoubleSpinBox()
-        self._opt_target.setDecimals(4)
-        self._opt_target.setMaximum(999999)
-        self._opt_target.setMinimumWidth(80)
-        mode_row.addWidget(self._opt_target)
-
-        self._opt_calc_btn = QPushButton("Calculate")
-        self._opt_calc_btn.clicked.connect(self._run_optimizer)
-        mode_row.addWidget(self._opt_calc_btn)
-
-        mode_row.addStretch()
-        layout.addLayout(mode_row)
-
-        # Results
-        self._opt_total_label = QLabel("")
-        self._opt_total_label.setStyleSheet("font-size: 13px; font-weight: bold;")
-        layout.addWidget(self._opt_total_label)
-
-        self._opt_table = QTableWidget()
-        self._opt_table.setColumnCount(6)
-        self._opt_table.setHorizontalHeaderLabels(
-            ["Skill", "Current", "Added", "Method", "Cost (PED)", "Gain"]
-        )
-        self._opt_table.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.ResizeMode.Stretch
-        )
-        self._opt_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        layout.addWidget(self._opt_table)
+        layout.addStretch()
+        coming_soon = QLabel("Coming Soon")
+        coming_soon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        coming_soon.setStyleSheet("font-size: 18px; font-weight: bold; color: gray;")
+        layout.addWidget(coming_soon)
+        layout.addStretch()
 
         self._tabs.addTab(tab, "Optimizer")
 
@@ -602,10 +575,6 @@ class SkillsPage(QWidget):
         # Auto-scan toggle
         scan_group = QGroupBox("Scan Settings")
         scan_layout = QVBoxLayout(scan_group)
-
-        self._auto_scan_check = QCheckBox("Enable automated scanning (F7 hotkey)")
-        self._auto_scan_check.setChecked(True)
-        scan_layout.addWidget(self._auto_scan_check)
 
         self._debug_overlay_check = QCheckBox("Debug overlay (show detected regions)")
         self._debug_overlay_check.setChecked(self._config.scan_overlay_debug)
@@ -620,6 +589,28 @@ class SkillsPage(QWidget):
         scan_layout.addLayout(btn_row)
 
         layout.addWidget(scan_group)
+
+        # Import / Export
+        io_group = QGroupBox("Import / Export")
+        io_layout = QVBoxLayout(io_group)
+
+        io_desc = QLabel("Export or import skill values as CSV, TSV, or JSON.")
+        io_desc.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+        io_layout.addWidget(io_desc)
+
+        io_btn_row = QHBoxLayout()
+        self._export_btn = QPushButton("Export Skills")
+        self._export_btn.clicked.connect(self._on_export_skills)
+        io_btn_row.addWidget(self._export_btn)
+
+        self._import_btn = QPushButton("Import Skills")
+        self._import_btn.clicked.connect(self._on_import_skills)
+        io_btn_row.addWidget(self._import_btn)
+
+        io_btn_row.addStretch()
+        io_layout.addLayout(io_btn_row)
+
+        layout.addWidget(io_group)
 
         # Last scan results table
         self._scan_results_group = QGroupBox("Scan Results")
@@ -736,17 +727,9 @@ class SkillsPage(QWidget):
                 self._prog_skill_picker.addItem(s["Name"])
         self._prog_skill_picker.blockSignals(False)
 
-        # Populate optimizer profession list
-        self._opt_prof_combo.blockSignals(True)
-        self._opt_prof_combo.clear()
-        for p in sorted(profs, key=lambda x: x.get("Name", "")):
-            self._opt_prof_combo.addItem(p["Name"])
-        self._opt_prof_combo.blockSignals(False)
-
         # Refresh displays
         self._refresh_skills_display()
         self._refresh_prof_display()
-        self._update_optimizer_current()
 
     # ── Skills Tab ────────────────────────────────────────────────────────
 
@@ -769,6 +752,7 @@ class SkillsPage(QWidget):
         else:
             self._skill_filter_profession = text
         self._refresh_skills_display()
+        self._emit_nav()
 
     def _clear_skills_filters(self):
         self._skill_filter_profession = None
@@ -881,8 +865,16 @@ class SkillsPage(QWidget):
             rank, progress = self._get_rank_and_progress(points)
             badges = get_skill_badges(name, all_meta)
 
+            # Look up weight when filtering by profession or skill
+            weight = None
+            if self._skill_filter_profession:
+                for p in skill.get("Professions", []):
+                    if p.get("Name") == self._skill_filter_profession:
+                        weight = p.get("Weight", 0)
+                        break
+
             card = SkillCard(name, points, rank, progress, badges,
-                            dimmed=(points == 0))
+                            dimmed=(points == 0), weight=weight)
             card.clicked.connect(self._on_skill_card_clicked)
             card.value_edited.connect(self._on_skill_value_edited)
 
@@ -913,7 +905,7 @@ class SkillsPage(QWidget):
             items.append(QTableWidgetItem(skill.get("Category") or ""))
             items.append(QTableWidgetItem(rank))
 
-            pts_item = QTableWidgetItem(f"{points:.4f}")
+            pts_item = QTableWidgetItem(f"{points:.2f}")
             pts_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             items.append(pts_item)
 
@@ -996,9 +988,13 @@ class SkillsPage(QWidget):
 
     def _navigate_to_professions_for_skill(self, skill_name: str):
         """Switch to Professions tab filtered by a skill."""
-        self._prof_filter_skill = skill_name
-        self._prof_skill_filter.setCurrentText(skill_name)
-        self._tabs.setCurrentIndex(1)  # Professions tab
+        self._applying_sub_state = True
+        try:
+            self._prof_filter_skill = skill_name
+            self._prof_skill_filter.setCurrentText(skill_name)
+            self._tabs.setCurrentIndex(1)  # Professions tab
+        finally:
+            self._applying_sub_state = False
         self._emit_nav()
 
     # ── Professions Tab ───────────────────────────────────────────────────
@@ -1022,6 +1018,7 @@ class SkillsPage(QWidget):
         else:
             self._prof_filter_skill = text
         self._refresh_prof_display()
+        self._emit_nav()
 
     def _clear_prof_filters(self):
         self._prof_filter_skill = None
@@ -1113,10 +1110,19 @@ class SkillsPage(QWidget):
                     )
                     grid_row += 1
 
+            # Look up weight when filtering by skill
+            weight = None
+            if self._prof_filter_skill:
+                for s in prof.get("Skills", []):
+                    if s.get("Name") == self._prof_filter_skill:
+                        weight = s.get("Weight", 0)
+                        break
+
             card = ProfessionCard(
                 prof["Name"],
                 prof["_level"],
                 len(prof.get("Skills", [])),
+                weight=weight,
             )
             card.clicked.connect(self._on_prof_card_clicked)
             self._prof_grid_layout.addWidget(
@@ -1134,7 +1140,7 @@ class SkillsPage(QWidget):
             self._prof_table.setItem(i, 0, QTableWidgetItem(prof["Name"]))
             self._prof_table.setItem(i, 1, QTableWidgetItem(prof.get("Category") or ""))
 
-            level_item = QTableWidgetItem(f"{prof['_level']:.4f}")
+            level_item = QTableWidgetItem(f"{prof['_level']:.2f}")
             level_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             self._prof_table.setItem(i, 2, level_item)
 
@@ -1152,9 +1158,13 @@ class SkillsPage(QWidget):
 
     def _navigate_to_skills_for_profession(self, prof_name: str):
         """Switch to Skills tab filtered by a profession."""
-        self._skill_filter_profession = prof_name
-        self._skills_prof_filter.setCurrentText(prof_name)
-        self._tabs.setCurrentIndex(0)  # Skills tab
+        self._applying_sub_state = True
+        try:
+            self._skill_filter_profession = prof_name
+            self._skills_prof_filter.setCurrentText(prof_name)
+            self._tabs.setCurrentIndex(0)  # Skills tab
+        finally:
+            self._applying_sub_state = False
         self._emit_nav()
 
     # ── Progression Tab ───────────────────────────────────────────────────
@@ -1205,7 +1215,7 @@ class SkillsPage(QWidget):
             self._prog_table.setItem(i, 0, QTableWidgetItem(date_str))
             self._prog_table.setItem(i, 1, QTableWidgetItem(entry.get("skill_name", "")))
             val = float(entry.get("new_value", 0))
-            val_item = QTableWidgetItem(f"{val:.4f}")
+            val_item = QTableWidgetItem(f"{val:.2f}")
             val_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             self._prog_table.setItem(i, 2, val_item)
 
@@ -1214,103 +1224,6 @@ class SkillsPage(QWidget):
         self._prog_stats_label.setText(
             f"Loaded {len(history)} records across {len(skills_in_data)} skills."
         )
-
-    # ── Optimizer Tab ─────────────────────────────────────────────────────
-
-    def _on_opt_mode_changed(self, idx):
-        is_prof = idx == 0
-        self._opt_prof_label.setVisible(is_prof)
-        self._opt_prof_combo.setVisible(is_prof)
-        self._update_optimizer_current()
-
-    def _update_optimizer_current(self):
-        values = self._manager.skill_values
-        meta = self._manager.skill_metadata
-        profs = self._manager.professions
-
-        if self._opt_mode.currentIndex() == 0:
-            # Profession mode
-            prof_name = self._opt_prof_combo.currentText()
-            if prof_name:
-                levels = calculate_all_profession_levels(values, profs, meta)
-                current = levels.get(prof_name, 0)
-                self._opt_current.setText(f"{current:.4f}")
-            else:
-                self._opt_current.setText("-")
-        else:
-            # HP mode
-            hp = calculate_hp(values, meta)
-            self._opt_current.setText(f"{hp:.1f}")
-
-    def _run_optimizer(self):
-        values = self._manager.skill_values
-        meta = self._manager.skill_metadata
-        profs = self._manager.professions
-        attr_skills = build_attribute_skill_set(meta)
-
-        if self._opt_mode.currentIndex() == 0:
-            # Profession path
-            prof_name = self._opt_prof_combo.currentText()
-            prof = None
-            for p in profs:
-                if p["Name"] == prof_name:
-                    prof = p
-                    break
-            if not prof:
-                return
-
-            levels = calculate_all_profession_levels(values, profs, meta)
-            current_level = levels.get(prof_name, 0)
-            target_level = self._opt_target.value()
-
-            result = find_cheapest_profession_path(
-                values, prof.get("Skills", []),
-                current_level, target_level,
-                attribute_skills=attr_skills,
-            )
-            gain_key = "levelGain"
-        else:
-            # HP path
-            current_hp = calculate_hp(values, meta)
-            target_hp = self._opt_target.value()
-
-            result = find_cheapest_hp_path(
-                values, meta, current_hp, target_hp,
-            )
-            gain_key = "hpGain"
-
-        # Display results
-        allocs = result.get("allocations", [])
-        total_cost = result.get("totalCost", 0)
-        feasible = result.get("feasible", False)
-
-        status = f"Total cost: {total_cost:.2f} PED"
-        if not feasible:
-            status += " (may not be fully achievable)"
-        self._opt_total_label.setText(status)
-
-        self._opt_table.setRowCount(len(allocs))
-        for i, alloc in enumerate(allocs):
-            self._opt_table.setItem(i, 0, QTableWidgetItem(alloc.get("skill", "")))
-
-            cur_item = QTableWidgetItem(f"{alloc.get('currentPoints', 0):.4f}")
-            cur_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            self._opt_table.setItem(i, 1, cur_item)
-
-            add_item = QTableWidgetItem(f"{alloc.get('addedPoints', 0):.4f}")
-            add_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            self._opt_table.setItem(i, 2, add_item)
-
-            self._opt_table.setItem(i, 3, QTableWidgetItem(alloc.get("method", "")))
-
-            cost_item = QTableWidgetItem(f"{alloc.get('cost', 0):.2f}")
-            cost_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            self._opt_table.setItem(i, 4, cost_item)
-
-            gain = alloc.get(gain_key, 0)
-            gain_item = QTableWidgetItem(f"{gain:.4f}")
-            gain_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            self._opt_table.setItem(i, 5, gain_item)
 
     # ── Scanning Tab ──────────────────────────────────────────────────────
 
@@ -1359,7 +1272,7 @@ class SkillsPage(QWidget):
             row, 2, QTableWidgetItem(str(reading.rank_threshold))
         )
         self._scan_results_table.setItem(
-            row, 3, QTableWidgetItem(f"{reading.current_points:.0f}")
+            row, 3, QTableWidgetItem(f"{reading.current_points:.2f}")
         )
 
         # Highlight mismatch rows in amber
@@ -1405,7 +1318,127 @@ class SkillsPage(QWidget):
         if self._scan_skill_rows:
             self._refresh_skills_display()
             self._refresh_prof_display()
-            self._update_optimizer_current()
+
+    # ── Import / Export ─────────────────────────────────────────────────
+
+    _EXPORT_FILTER = (
+        "CSV files (*.csv);;TSV files (*.tsv);;JSON files (*.json);;All files (*)"
+    )
+    _IMPORT_FILTER = (
+        "Skill files (*.csv *.tsv *.json);;CSV files (*.csv);;TSV files (*.tsv)"
+        ";;JSON files (*.json);;All files (*)"
+    )
+
+    def _on_export_skills(self):
+        values = self._manager.get_all_values()
+        if not values:
+            QMessageBox.information(self, "Export Skills", "No skill data to export.")
+            return
+
+        path, chosen = QFileDialog.getSaveFileName(
+            self, "Export Skills", "skills", self._EXPORT_FILTER,
+        )
+        if not path:
+            return
+
+        ext = Path(path).suffix.lower()
+        try:
+            if ext == ".json":
+                text = json.dumps(
+                    {k: v for k, v in sorted(values.items())},
+                    indent=2,
+                )
+            elif ext == ".tsv":
+                buf = io.StringIO()
+                writer = csv.writer(buf, delimiter="\t")
+                writer.writerow(["Skill", "Value"])
+                for name, val in sorted(values.items()):
+                    writer.writerow([name, val])
+                text = buf.getvalue()
+            else:  # default csv
+                buf = io.StringIO()
+                writer = csv.writer(buf)
+                writer.writerow(["Skill", "Value"])
+                for name, val in sorted(values.items()):
+                    writer.writerow([name, val])
+                text = buf.getvalue()
+            Path(path).write_text(text, encoding="utf-8")
+            QMessageBox.information(
+                self, "Export Skills",
+                f"Exported {len(values)} skills to {Path(path).name}",
+            )
+        except Exception as e:
+            QMessageBox.critical(self, "Export Failed", str(e))
+
+    def _on_import_skills(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Import Skills", "", self._IMPORT_FILTER,
+        )
+        if not path:
+            return
+
+        ext = Path(path).suffix.lower()
+        try:
+            raw = Path(path).read_text(encoding="utf-8")
+            imported: dict[str, float] = {}
+
+            if ext == ".json":
+                data = json.loads(raw)
+                if not isinstance(data, dict):
+                    raise ValueError("JSON must be an object mapping skill names to values")
+                for k, v in data.items():
+                    imported[str(k)] = float(v)
+            elif ext in (".csv", ".tsv"):
+                delimiter = "\t" if ext == ".tsv" else ","
+                reader = csv.reader(io.StringIO(raw), delimiter=delimiter)
+                header = next(reader, None)
+                if not header or len(header) < 2:
+                    raise ValueError("File must have at least two columns (Skill, Value)")
+                for row in reader:
+                    if len(row) >= 2 and row[0].strip() and row[1].strip():
+                        imported[row[0].strip()] = float(row[1].strip())
+            else:
+                raise ValueError(f"Unsupported file type: {ext}")
+
+            if not imported:
+                QMessageBox.warning(self, "Import Skills", "No valid skills found in file.")
+                return
+
+            # Confirm before overwriting
+            answer = QMessageBox.question(
+                self, "Import Skills",
+                f"Import {len(imported)} skills from {Path(path).name}?\n\n"
+                "This will overwrite current values for matching skills.",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+
+            # Apply values through the manager
+            for name, val in imported.items():
+                self._manager._skill_values[name] = val
+
+            # Upload if connected
+            if self._manager._nexus_client:
+                try:
+                    self._manager._nexus_client.upload_skills(
+                        self._manager._skill_values, track_import=True,
+                    )
+                except Exception as e:
+                    log.error("Failed to upload imported skills: %s", e)
+
+            # Refresh all displays
+            self._refresh_skills_display()
+            self._refresh_prof_display()
+
+            QMessageBox.information(
+                self, "Import Skills",
+                f"Imported {len(imported)} skills from {Path(path).name}",
+            )
+        except (ValueError, json.JSONDecodeError) as e:
+            QMessageBox.critical(self, "Import Failed", f"Invalid file format:\n{e}")
+        except Exception as e:
+            QMessageBox.critical(self, "Import Failed", str(e))
 
     # ── Auth ──────────────────────────────────────────────────────────────
 
@@ -1427,6 +1460,7 @@ class SkillsPage(QWidget):
             self._refresh_skills_display()
         elif index == 1 and self._prof_view_mode == "grid":
             self._refresh_prof_display()
+        self._emit_nav()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

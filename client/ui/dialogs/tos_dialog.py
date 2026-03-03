@@ -49,9 +49,9 @@ TOS_HTML = """\
 <ul>
   <li>Configuration and preferences (<code>config.json</code>)</li>
   <li>Cached reference data (skill names, rank thresholds, item data, font calibration)</li>
-  <li>Authentication tokens from Discord OAuth</li>
+  <li>Authentication tokens from Entropia Nexus OAuth</li>
 </ul>
-<p>No personal data beyond your Discord login information (user ID, username, avatar) is stored.</p>
+<p>No personal data beyond your Entropia Nexus account information is stored locally.</p>
 
 <h3>4. Data Sent to Servers</h3>
 <p>The Software communicates with <code>api.entropianexus.com</code> for:</p>
@@ -60,8 +60,8 @@ TOS_HTML = """\
   <li>Storing and retrieving user preferences (e.g. custom markup values) when logged in</li>
   <li>Checking for software updates</li>
 </ul>
-<p>Authentication uses Discord OAuth (same as the website). We receive your Discord user ID,
-  username, and avatar. We do <b>not</b> receive your email address or Discord password.</p>
+<p>Authentication uses Entropia Nexus OAuth (PKCE). The client does <b>not</b> handle or store
+  any passwords — authentication is managed entirely through the Nexus website.</p>
 <p>We do not sell or share your data with third parties, except as required by law or to protect
   the integrity of the service.</p>
 

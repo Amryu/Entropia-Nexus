@@ -10,7 +10,7 @@
  *   maturities — comma-separated target names to filter by specific maturities
  */
 import { pool } from '$lib/server/db.js';
-import { getResponse, encodeURIComponentSafe } from '$lib/util.js';
+import { getResponse, encodeURIComponentSafe, decodeURIComponentSafe } from '$lib/util.js';
 
 const PERIOD_INTERVALS = {
   '24h': "interval '24 hours'",
@@ -35,7 +35,7 @@ function extractMobName(targetName) {
 }
 
 export async function GET({ params, url }) {
-  const targetName = decodeURIComponent(params.name);
+  const targetName = decodeURIComponentSafe(params.name);
 
   if (!targetName || targetName.length > 300) {
     return getResponse({ error: 'Invalid target name' }, 400);

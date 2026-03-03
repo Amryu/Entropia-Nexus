@@ -281,22 +281,29 @@ def _format_num(v: float, use_precision: bool) -> str:
     return f"{v:,.{d}f}"
 
 
-def format_ped(value: float | None) -> str:
+def format_ped(value) -> str:
     """Format a PED value for display (no suffix)."""
-    if value is None or not math.isfinite(value):
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
         return 'N/A'
-    return _format_num(float(value), abs(float(value)) < 5)
+    if not math.isfinite(v):
+        return 'N/A'
+    return _format_num(v, abs(v) < 5)
 
 
-def format_markup(value: float | None, absolute: bool) -> str:
+def format_markup(value, absolute: bool) -> str:
     """Format a markup value for display.
 
     Absolute: "+X.XX"
     Percent:  "X.XX%"
     """
-    if value is None or not math.isfinite(value):
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
         return 'N/A'
-    v = float(value)
+    if not math.isfinite(v):
+        return 'N/A'
     if absolute:
         return f"+{_format_num(v, v < 5)}"
     if v >= 10_000_000:

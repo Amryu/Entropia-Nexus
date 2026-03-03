@@ -19,7 +19,7 @@ from .token_store import TokenStore
 
 log = get_logger("Auth")
 
-SCOPES = "profile:read skills:read skills:write loadouts:read loadouts:write inventory:read inventory:write notifications:read notifications:write"
+SCOPES = "profile:read skills:read skills:write loadouts:read loadouts:write inventory:read inventory:write notifications:read notifications:write exchange:read exchange:write"
 TOKEN_REFRESH_MARGIN_SECONDS = 300  # Refresh 5 min before expiry
 CALLBACK_TIMEOUT_SECONDS = 120
 DEFAULT_CLIENT_ID = "e5d3b6c4-ec01-468d-b3f2-c0b056cfe47c"

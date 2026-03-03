@@ -630,7 +630,8 @@ function slimItem(item) {
     p: ep?.p10 ?? null,
     w: ep?.wap ?? null,
     pl: planets || null,
-    bb: counts?.bestBuyMarkup ?? null
+    bb: counts?.bestBuyMarkup ?? null,
+    bs: counts?.bestSellMarkup ?? null
   };
 }
 

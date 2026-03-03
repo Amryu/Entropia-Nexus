@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 import math
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 from PyQt6.QtWidgets import (
-    QVBoxLayout, QHBoxLayout, QLabel, QWidget, QPushButton,
+    QApplication, QVBoxLayout, QHBoxLayout, QLabel, QWidget, QPushButton,
     QScrollArea, QStackedWidget, QTreeWidget, QTreeWidgetItem,
     QLineEdit, QComboBox, QHeaderView, QSpinBox, QDoubleSpinBox,
-    QCheckBox, QSizePolicy, QDialog, QFormLayout,
+    QCheckBox, QSizePolicy, QDialog, QFormLayout, QMenu,
+    QStyledItemDelegate, QStyleOptionViewItem, QStyle,
 )
-from PyQt6.QtCore import Qt, QSize, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QCursor
+from PyQt6.QtCore import Qt, QSize, QTimer, QModelIndex, QRect, QPoint, pyqtSignal
+from PyQt6.QtGui import QColor, QFont, QCursor, QPainter, QFontMetrics
 
 from .overlay_widget import OverlayWidget
 from ..ui.icons import svg_icon, svg_pixmap
@@ -39,22 +41,33 @@ if TYPE_CHECKING:
 # --- Layout constants ---
 MIN_WIDTH = 500
 MIN_HEIGHT = 400
-TITLE_H = 24
+TITLE_H = 28
 TAB_STRIP_W = 28
 TAB_BTN_SIZE = 22
 
-# --- Colors (reuse detail overlay palette) ---
-BG_COLOR = "rgba(20, 20, 30, 200)"
-TITLE_BG = "rgba(30, 30, 45, 220)"
-TAB_BG = "rgba(25, 25, 40, 200)"
+# --- Colors (match detail overlay palette) ---
+BG_COLOR = "rgba(20, 20, 30, 180)"
+TITLE_BG = "rgba(30, 30, 45, 200)"
+TAB_BG = "rgba(25, 25, 40, 180)"
 TAB_ACTIVE_BG = "rgba(60, 60, 90, 200)"
 TAB_HOVER_BG = "rgba(50, 50, 70, 180)"
-CONTENT_BG = "rgba(30, 30, 45, 180)"
+CONTENT_BG = "rgba(30, 30, 45, 160)"
 TEXT_COLOR = "#e0e0e0"
 TEXT_DIM = "#999999"
 ACCENT = "#00ccff"
 BADGE_BG = "rgba(50, 50, 70, 160)"
 ROW_HOVER = "rgba(50, 50, 80, 120)"
+
+# Button style matching detail overlay
+_TITLE_BTN_STYLE = (
+    "QPushButton {"
+    "  background: transparent; border: none; border-radius: 3px;"
+    "  padding: 0px; margin: 0px;"
+    "}"
+    "QPushButton:hover {"
+    f"  background-color: {TAB_HOVER_BG};"
+    "}"
+)
 
 # Status badge colors
 _STATUS_LABELS = {
@@ -92,10 +105,19 @@ _CLOSE_SVG = (
     ' 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>'
 )
 _MINIMIZE_SVG = '<path d="M6 19h12v2H6z"/>'
+_CHEVRON_DOWN_SVG = '<path d="M7.41 8.59L12 13.17l4.59-4.58L18 10l-6 6-6-6z"/>'
+_CHEVRON_RIGHT_SVG = '<path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/>'
 
 _STAR_FILLED = '<path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z"/>'
 _STAR_OUTLINE = '<path d="M22 9.24l-7.19-.62L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21 12 17.27 18.18 21l-1.64-7.03L22 9.24zM12 15.4l-3.76 2.27 1-4.28-3.32-2.88 4.38-.38L12 6.1l1.71 4.04 4.38.38-3.32 2.88 1 4.28L12 15.4z"/>'
 
+_EXCHANGE_SVG = (
+    '<path d="M4 6h16v2H4z"/>'
+    '<path d="M2 8l2-2h16l2 2v1H2z"/>'
+    '<path d="M4 9v10h16V9h-2v6H6V9z" opacity="0.8"/>'
+    '<path d="M8 12h3v3H8z"/>'
+    '<path d="M14 9h4v2h-4z" opacity="0.6"/>'
+)
 _BACK_SVG = '<path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/>'
 
 # Resize grip SVG (diagonal lines)
@@ -104,6 +126,86 @@ _RESIZE_SVG = (
     '<line x1="14" y1="7" x2="7" y2="14" stroke="{color}" stroke-width="1.5"/>'
     '<line x1="14" y1="12" x2="12" y2="14" stroke="{color}" stroke-width="1.5"/>'
 )
+
+
+# Colors matching the web exchange S/B display
+_SELL_COLOR = QColor("#ef4444")   # red for sell count
+_BUY_COLOR = QColor("#4ade80")    # green for buy count
+_DIM_ALPHA = 77                   # ~0.3 opacity when count is 0
+_SLASH_COLOR = QColor(TEXT_DIM)
+
+
+class _SellBuyDelegate(QStyledItemDelegate):
+    """Custom delegate to paint S/B column with colored sell (red) / buy (green) counts."""
+
+    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex):
+        # Let the style draw the default item background (hover, selection, alternating rows)
+        self.initStyleOption(option, index)
+        style = option.widget.style() if option.widget else QApplication.style()
+        option.text = ""
+        style.drawControl(QStyle.ControlElement.CE_ItemViewItem, option, painter, option.widget)
+
+        text = index.data(Qt.ItemDataRole.DisplayRole) or ""
+        if "/" not in text:
+            return
+
+        parts = text.split("/", 1)
+        s_text = parts[0].strip()
+        b_text = parts[1].strip() if len(parts) > 1 else "0"
+
+        try:
+            s_val = int(s_text)
+            b_val = int(b_text)
+        except ValueError:
+            return
+
+        painter.save()
+        painter.setFont(option.font)
+        fm = QFontMetrics(option.font)
+
+        rect = option.rect
+        slash_w = fm.horizontalAdvance("/")
+        s_w = fm.horizontalAdvance(s_text)
+        b_w = fm.horizontalAdvance(b_text)
+        total_w = s_w + slash_w + b_w
+        x_start = rect.left() + (rect.width() - total_w) // 2
+        y = rect.top() + (rect.height() + fm.ascent() - fm.descent()) // 2
+
+        # Sell count (red, dim if 0)
+        sc = QColor(_SELL_COLOR)
+        if s_val == 0:
+            sc.setAlpha(_DIM_ALPHA)
+        painter.setPen(sc)
+        painter.drawText(x_start, y, s_text)
+
+        # Slash
+        painter.setPen(_SLASH_COLOR)
+        painter.drawText(x_start + s_w, y, "/")
+
+        # Buy count (green, dim if 0)
+        bc = QColor(_BUY_COLOR)
+        if b_val == 0:
+            bc.setAlpha(_DIM_ALPHA)
+        painter.setPen(bc)
+        painter.drawText(x_start + s_w + slash_w, y, b_text)
+
+        painter.restore()
+
+
+class _SortableItem(QTreeWidgetItem):
+    """Tree item that sorts numerically for columns with numeric UserRole data."""
+
+    def __lt__(self, other):
+        tree = self.treeWidget()
+        if tree is None:
+            return super().__lt__(other)
+        col = tree.sortColumn()
+        # Try numeric sort via UserRole+10 (sort key)
+        a = self.data(col, Qt.ItemDataRole.UserRole + 10)
+        b = other.data(col, Qt.ItemDataRole.UserRole + 10)
+        if a is not None and b is not None:
+            return a < b
+        return super().__lt__(other)
 
 
 def _make_tree_style() -> str:
@@ -124,13 +226,16 @@ def _make_tree_style() -> str:
         }}
         QTreeWidget::item:selected {{
             background: {TAB_ACTIVE_BG};
+            color: #ffffff;
         }}
         QHeaderView::section {{
             background: {TAB_BG};
             color: {TEXT_DIM};
             border: none;
-            padding: 2px 4px;
-            font-size: 10px;
+            border-right: 1px solid rgba(80, 80, 120, 80);
+            padding: 4px 8px;
+            font-size: 11px;
+            min-height: 22px;
         }}
     """
 
@@ -266,8 +371,13 @@ class _ResizeGrip(QWidget):
 # ======================================================================
 
 
+_INFO_SVG = '<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/>'
+
+
 class ExchangeOverlay(OverlayWidget):
     """Resizable exchange overlay with tabbed sidebar."""
+
+    open_entity = pyqtSignal(dict)  # open item in detail overlay
 
     def __init__(
         self,
@@ -296,6 +406,12 @@ class ExchangeOverlay(OverlayWidget):
 
         # Override size constraint to allow resize
         self.layout().setSizeConstraint(QVBoxLayout.SizeConstraint.SetDefaultConstraint)
+
+        # Override base class container: remove padding, match detail overlay alpha
+        self._container.setStyleSheet(
+            "background-color: rgba(20, 20, 30, 180); "
+            "border-radius: 8px; padding: 0px;"
+        )
 
         # Build UI inside _container
         self._build_ui()
@@ -328,8 +444,8 @@ class ExchangeOverlay(OverlayWidget):
         layout.addWidget(title_bar)
 
         # Main area: tab strip + content
-        body = QWidget()
-        body_layout = QHBoxLayout(body)
+        self._body = QWidget()
+        body_layout = QHBoxLayout(self._body)
         body_layout.setContentsMargins(0, 0, 0, 0)
         body_layout.setSpacing(0)
 
@@ -358,40 +474,41 @@ class ExchangeOverlay(OverlayWidget):
         self._content_stack.addWidget(self._trades_widget)
 
         body_layout.addWidget(self._content_stack)
-        layout.addWidget(body, 1)
+        layout.addWidget(self._body, 1)
 
     def _build_title_bar(self) -> QWidget:
         bar = QWidget()
         bar.setFixedHeight(TITLE_H)
-        bar.setStyleSheet(f"background: {TITLE_BG}; border-radius: 8px 8px 0 0;")
+        bar.setStyleSheet(
+            f"background-color: {TITLE_BG};"
+            " border-top-left-radius: 8px; border-top-right-radius: 8px;"
+        )
         h = QHBoxLayout(bar)
-        h.setContentsMargins(8, 0, 4, 0)
+        h.setContentsMargins(4, 0, 4, 0)
         h.setSpacing(4)
 
-        title = QLabel("Exchange")
-        title.setStyleSheet(f"color: {ACCENT}; font-size: 12px; font-weight: bold; background: transparent;")
-        h.addWidget(title)
-        h.addStretch()
+        icon_lbl = QLabel()
+        icon_lbl.setPixmap(svg_icon(_EXCHANGE_SVG, ACCENT, 14).pixmap(14, 14))
+        icon_lbl.setStyleSheet("background: transparent;")
+        icon_lbl.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        h.addWidget(icon_lbl, 0, Qt.AlignmentFlag.AlignVCenter)
 
-        # Minimize button
-        min_btn = QPushButton()
-        min_btn.setFixedSize(18, 18)
-        min_btn.setIcon(svg_icon(_MINIMIZE_SVG, TEXT_DIM, 14))
-        min_btn.setStyleSheet("background: transparent; border: none;")
-        min_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        min_btn.setToolTip("Minimize")
-        min_btn.clicked.connect(self._on_minimize)
-        h.addWidget(min_btn)
+        title = QLabel("Exchange")
+        title.setStyleSheet(
+            f"color: {ACCENT}; font-size: 13px; font-weight: bold; background: transparent;"
+        )
+        title.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        h.addWidget(title, 1, Qt.AlignmentFlag.AlignVCenter)
 
         # Close button
         close_btn = QPushButton()
         close_btn.setFixedSize(18, 18)
         close_btn.setIcon(svg_icon(_CLOSE_SVG, TEXT_DIM, 14))
-        close_btn.setStyleSheet("background: transparent; border: none;")
+        close_btn.setStyleSheet(_TITLE_BTN_STYLE)
         close_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         close_btn.setToolTip("Close")
         close_btn.clicked.connect(self._on_close)
-        h.addWidget(close_btn)
+        h.addWidget(close_btn, 0, Qt.AlignmentFlag.AlignVCenter)
 
         self._title_bar = bar
         return bar
@@ -399,10 +516,10 @@ class ExchangeOverlay(OverlayWidget):
     def _build_tab_strip(self) -> QWidget:
         strip = QWidget()
         strip.setFixedWidth(TAB_STRIP_W)
-        strip.setStyleSheet(f"background: {TAB_BG};")
+        strip.setStyleSheet(f"background: {TAB_BG}; border-bottom-left-radius: 8px;")
         v = QVBoxLayout(strip)
         v.setContentsMargins(3, 4, 3, 4)
-        v.setSpacing(4)
+        v.setSpacing(2)
 
         self._tab_btns: list[QPushButton] = []
         tabs = [
@@ -419,7 +536,6 @@ class ExchangeOverlay(OverlayWidget):
             btn.clicked.connect(lambda _, idx=i: self._set_tab(idx))
             v.addWidget(btn)
             self._tab_btns.append(btn)
-
         v.addStretch()
         self._update_tab_styles()
         return strip
@@ -498,6 +614,8 @@ class ExchangeOverlay(OverlayWidget):
         for cat in CATEGORY_ORDER:
             self._browse_category.addItem(cat)
         self._browse_category.setStyleSheet(_make_input_style())
+        self._browse_category.setMinimumContentsLength(15)
+        self._browse_category.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         self._browse_category.currentIndexChanged.connect(self._filter_items)
         fr_layout.addWidget(self._browse_category)
 
@@ -505,20 +623,25 @@ class ExchangeOverlay(OverlayWidget):
 
         # Item tree
         self._item_tree = QTreeWidget()
-        self._item_tree.setHeaderLabels(["Name", "Type", "S/B", "Markup"])
-        self._item_tree.setColumnCount(4)
+        self._item_tree.setHeaderLabels(["Name", "Type", "S/B", "Markup", "Updated"])
+        self._item_tree.setColumnCount(5)
         self._item_tree.setRootIsDecorated(False)
         self._item_tree.setStyleSheet(_make_tree_style())
         self._item_tree.setSelectionMode(QTreeWidget.SelectionMode.SingleSelection)
+        self._item_tree.setSortingEnabled(True)
+        self._item_tree.sortByColumn(4, Qt.SortOrder.DescendingOrder)
+        self._item_tree.setItemDelegateForColumn(2, _SellBuyDelegate(self._item_tree))
         header = self._item_tree.header()
         header.setStretchLastSection(False)
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
-        header.resizeSection(1, 70)
-        header.resizeSection(2, 50)
-        header.resizeSection(3, 80)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
+        header.resizeSection(1, 120)
+        header.resizeSection(2, 70)
+        header.resizeSection(3, 105)
+        header.resizeSection(4, 60)
         self._item_tree.itemDoubleClicked.connect(self._on_item_double_clicked)
         layout.addWidget(self._item_tree, 1)
 
@@ -549,6 +672,16 @@ class ExchangeOverlay(OverlayWidget):
         self._book_item_label.setStyleSheet(f"color: {TEXT_COLOR}; font-size: 12px; font-weight: bold; background: transparent;")
         hdr_layout.addWidget(self._book_item_label, 1)
 
+        # View details button (opens detail overlay)
+        detail_btn = QPushButton()
+        detail_btn.setFixedSize(22, 22)
+        detail_btn.setIcon(svg_icon(_INFO_SVG, TEXT_DIM, 16))
+        detail_btn.setStyleSheet(_TITLE_BTN_STYLE)
+        detail_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        detail_btn.setToolTip("View item details")
+        detail_btn.clicked.connect(self._open_item_detail)
+        hdr_layout.addWidget(detail_btn)
+
         self._book_star_btn = QPushButton()
         self._book_star_btn.setFixedSize(22, 22)
         self._book_star_btn.setStyleSheet("background: transparent; border: none;")
@@ -559,23 +692,23 @@ class ExchangeOverlay(OverlayWidget):
         layout.addWidget(header)
 
         # Sell orders
-        sell_label = QLabel("Sell Orders")
-        sell_label.setStyleSheet(f"color: {ACCENT}; font-size: 11px; font-weight: bold; background: transparent; padding: 2px 0;")
-        layout.addWidget(sell_label)
+        self._sell_header = self._make_section_header("Sell Orders", "_sell_tree")
+        layout.addWidget(self._sell_header)
 
         self._sell_tree = QTreeWidget()
         self._sell_tree.setRootIsDecorated(False)
         self._sell_tree.setStyleSheet(_make_tree_style())
+        self._sell_tree.itemClicked.connect(self._on_order_tree_clicked)
         layout.addWidget(self._sell_tree, 1)
 
         # Buy orders
-        buy_label = QLabel("Buy Orders")
-        buy_label.setStyleSheet(f"color: {ACCENT}; font-size: 11px; font-weight: bold; background: transparent; padding: 2px 0;")
-        layout.addWidget(buy_label)
+        self._buy_header = self._make_section_header("Buy Orders", "_buy_tree")
+        layout.addWidget(self._buy_header)
 
         self._buy_tree = QTreeWidget()
         self._buy_tree.setRootIsDecorated(False)
         self._buy_tree.setStyleSheet(_make_tree_style())
+        self._buy_tree.itemClicked.connect(self._on_order_tree_clicked)
         layout.addWidget(self._buy_tree, 1)
 
         # Action buttons
@@ -646,17 +779,20 @@ class ExchangeOverlay(OverlayWidget):
         self._orders_tree.setColumnCount(7)
         self._orders_tree.setRootIsDecorated(False)
         self._orders_tree.setStyleSheet(_make_tree_style())
+        self._orders_tree.setSortingEnabled(True)
+        self._orders_tree.sortByColumn(6, Qt.SortOrder.DescendingOrder)
         header = self._orders_tree.header()
         header.setStretchLastSection(False)
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         for i in range(1, 7):
             header.setSectionResizeMode(i, QHeaderView.ResizeMode.Fixed)
         header.resizeSection(1, 40)
-        header.resizeSection(2, 40)
-        header.resizeSection(3, 70)
-        header.resizeSection(4, 60)
+        header.resizeSection(2, 55)
+        header.resizeSection(3, 85)
+        header.resizeSection(4, 70)
         header.resizeSection(5, 60)
-        header.resizeSection(6, 50)
+        header.resizeSection(6, 55)
+        self._orders_tree.itemDoubleClicked.connect(self._on_order_double_clicked)
         layout.addWidget(self._orders_tree, 1)
 
         # Auth message
@@ -677,19 +813,25 @@ class ExchangeOverlay(OverlayWidget):
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(4)
 
-        # Search
+        # Search (debounced)
         self._inv_search = QLineEdit()
         self._inv_search.setPlaceholderText("Search inventory...")
         self._inv_search.setStyleSheet(_make_input_style())
-        self._inv_search.textChanged.connect(self._filter_inventory)
+        self._inv_search_timer = QTimer()
+        self._inv_search_timer.setSingleShot(True)
+        self._inv_search_timer.setInterval(300)
+        self._inv_search_timer.timeout.connect(self._filter_inventory)
+        self._inv_search.textChanged.connect(lambda: self._inv_search_timer.start())
         layout.addWidget(self._inv_search)
 
         # Inventory tree
         self._inv_tree = QTreeWidget()
-        self._inv_tree.setHeaderLabels(["Name", "Type", "Qty", "TT Value", "Orders"])
+        self._inv_tree.setHeaderLabels(["Name", "Type", "Qty", "TT Value", "Demand"])
         self._inv_tree.setColumnCount(5)
         self._inv_tree.setRootIsDecorated(False)
         self._inv_tree.setStyleSheet(_make_tree_style())
+        self._inv_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._inv_tree.customContextMenuRequested.connect(self._on_inv_context_menu)
         header = self._inv_tree.header()
         header.setStretchLastSection(False)
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
@@ -698,7 +840,8 @@ class ExchangeOverlay(OverlayWidget):
         header.resizeSection(1, 70)
         header.resizeSection(2, 40)
         header.resizeSection(3, 70)
-        header.resizeSection(4, 50)
+        header.resizeSection(4, 70)
+        self._inv_tree.itemDoubleClicked.connect(self._on_inv_double_clicked)
         layout.addWidget(self._inv_tree, 1)
 
         # Auth message
@@ -799,6 +942,8 @@ class ExchangeOverlay(OverlayWidget):
         cat_idx = self._browse_category.currentIndex()
         selected_cat = CATEGORY_ORDER[cat_idx - 1] if cat_idx > 0 else None
 
+        self._item_tree.setSortingEnabled(False)
+        self._item_tree.setUpdatesEnabled(False)
         self._item_tree.clear()
         for item in self._store.items:
             name = item.get('n', '')
@@ -810,27 +955,54 @@ class ExchangeOverlay(OverlayWidget):
             if selected_cat and category != selected_cat:
                 continue
 
-            row = QTreeWidgetItem()
+            row = _SortableItem()
             row.setText(0, name)
             row.setText(1, item_type)
 
-            # Sell/Buy counts
+            # Sell/Buy counts (display text for delegate, sort key for sorting)
             s_count = item.get('s', 0) or 0
             b_count = item.get('b', 0) or 0
             row.setText(2, f"{s_count}/{b_count}")
+            row.setData(2, Qt.ItemDataRole.UserRole + 10, s_count + b_count)
+            row.setTextAlignment(2, Qt.AlignmentFlag.AlignCenter)
 
-            # Best markup
-            sell_mu = item.get('sv')
-            buy_mu = item.get('bv')
+            # Markup fallback: median → best buy → best sell
+            mu_val = item.get('m')  # median from price snapshots
+            if mu_val is None:
+                mu_val = item.get('bb')  # best buy markup
+            if mu_val is None:
+                mu_val = item.get('bs')  # best sell markup
             mu_text = ''
-            if sell_mu is not None:
-                mu_text = format_markup(sell_mu, is_absolute_markup(item))
-            elif buy_mu is not None:
-                mu_text = format_markup(buy_mu, is_absolute_markup(item))
+            mu_sort = 0.0
+            if mu_val is not None:
+                mu_text = format_markup(mu_val, is_absolute_markup(item))
+                try:
+                    mu_sort = float(mu_val)
+                except (TypeError, ValueError):
+                    pass
             row.setText(3, mu_text)
+            row.setData(3, Qt.ItemDataRole.UserRole + 10, mu_sort)
+            row.setTextAlignment(3, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
+            # Updated — composite sort key: items with orders first, then by recency
+            u = item.get('u')
+            row.setText(4, format_age(u))
+            ts = 0.0
+            if u and isinstance(u, str):
+                try:
+                    ts = datetime.fromisoformat(
+                        u.replace('Z', '+00:00')
+                    ).timestamp()
+                except (ValueError, OSError):
+                    pass
+            has_orders = 1 if (s_count + b_count) > 0 else 0
+            row.setData(4, Qt.ItemDataRole.UserRole + 10, (has_orders, ts))
 
             row.setData(0, Qt.ItemDataRole.UserRole, item.get('i'))
             self._item_tree.addTopLevelItem(row)
+
+        self._item_tree.setUpdatesEnabled(True)
+        self._item_tree.setSortingEnabled(True)
 
     def _on_item_double_clicked(self, item: QTreeWidgetItem, column: int):
         item_id = item.data(0, Qt.ItemDataRole.UserRole)
@@ -840,6 +1012,52 @@ class ExchangeOverlay(OverlayWidget):
     # ------------------------------------------------------------------
     # Order book view
     # ------------------------------------------------------------------
+
+    def _make_section_header(self, text: str, tree_attr: str) -> QWidget:
+        """Create a clickable section header with chevron for collapsing a tree."""
+        header = QWidget()
+        header.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        header.setStyleSheet(
+            f"background: transparent; border-radius: 3px;"
+        )
+        h = QHBoxLayout(header)
+        h.setContentsMargins(4, 2, 4, 2)
+        h.setSpacing(4)
+
+        label = QLabel(text)
+        label.setStyleSheet(f"color: {ACCENT}; font-size: 11px; font-weight: bold; background: transparent;")
+        label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        h.addWidget(label, 1)
+
+        chevron = QLabel()
+        chevron.setPixmap(svg_icon(_CHEVRON_DOWN_SVG, TEXT_DIM, 12).pixmap(12, 12))
+        chevron.setStyleSheet("background: transparent;")
+        chevron.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        h.addWidget(chevron, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        header.setProperty('_tree_attr', tree_attr)
+        header.setProperty('_chevron', chevron)
+        header.setProperty('_expanded', True)
+        header.mousePressEvent = lambda _e, h=header: self._toggle_section(h)
+        header.enterEvent = lambda _e, h=header: h.setStyleSheet(
+            f"background: {ROW_HOVER}; border-radius: 3px;"
+        )
+        header.leaveEvent = lambda _e, h=header: h.setStyleSheet(
+            f"background: transparent; border-radius: 3px;"
+        )
+        return header
+
+    def _toggle_section(self, header: QWidget):
+        tree_attr = header.property('_tree_attr')
+        chevron = header.property('_chevron')
+        expanded = header.property('_expanded')
+        tree: QTreeWidget = getattr(self, tree_attr)
+        expanded = not expanded
+        tree.setVisible(expanded)
+        chevron.setPixmap(svg_icon(
+            _CHEVRON_DOWN_SVG if expanded else _CHEVRON_RIGHT_SVG, TEXT_DIM, 12
+        ).pixmap(12, 12))
+        header.setProperty('_expanded', expanded)
 
     def _show_order_book(self, item_id: int):
         self._current_item_id = item_id
@@ -873,6 +1091,18 @@ class ExchangeOverlay(OverlayWidget):
             self._favourites.toggle_favourite(self._current_item_id)
             self._update_star_button()
 
+    def _open_item_detail(self):
+        """Emit open_entity to open the current order book item in a detail overlay."""
+        if not self._current_item_id:
+            return
+        slim = self._store.item_lookup.get(self._current_item_id)
+        if not slim:
+            return
+        self.open_entity.emit({
+            "Name": slim.get('n', ''),
+            "Type": slim.get('t', ''),
+        })
+
     def _populate_order_book(self):
         if not self._current_item_id:
             return
@@ -885,6 +1115,14 @@ class ExchangeOverlay(OverlayWidget):
         self._populate_order_table(self._sell_tree, data.get('sell', []), slim)
         self._populate_order_table(self._buy_tree, data.get('buy', []), slim)
 
+    def _on_order_tree_clicked(self, item: QTreeWidgetItem, column: int):
+        tree = item.treeWidget()
+        seller_col = tree.property('_seller_col')
+        if seller_col is not None and column == seller_col:
+            seller_name = item.data(column, Qt.ItemDataRole.UserRole)
+            if seller_name and seller_name != 'Unknown':
+                self.open_entity.emit({"Type": "User", "Name": seller_name})
+
     def _populate_order_table(self, tree: QTreeWidget, orders: list[dict], slim: dict | None):
         tree.clear()
 
@@ -892,6 +1130,10 @@ class ExchangeOverlay(OverlayWidget):
         columns = self._get_order_columns(slim)
         tree.setHeaderLabels([c[0] for c in columns])
         tree.setColumnCount(len(columns))
+
+        # Find seller column index for click handling
+        seller_col = next((i for i, (n, _) in enumerate(columns) if n == 'Seller'), -1)
+        tree.setProperty('_seller_col', seller_col)
 
         header = tree.header()
         header.setStretchLastSection(False)
@@ -930,13 +1172,14 @@ class ExchangeOverlay(OverlayWidget):
         if is_blueprint_non_l(slim):
             cols.append(("QR", 30))
 
-        cols.append(("Value", 55))
-        cols.append(("Markup", 65))
-        cols.append(("Total", 60))
-        cols.append(("Planet", 50))
+        cols.append(("Value", 65))
+        mu_header = "MU (+PED)" if is_absolute_markup(slim) else "MU (%)"
+        cols.append((mu_header, 80))
+        cols.append(("Total", 75))
+        cols.append(("Planet", 60))
         cols.append(("Seller", 0))  # stretch
         cols.append(("Status", 50))
-        cols.append(("Updated", 45))
+        cols.append(("Updated", 50))
         return cols
 
     def _fill_order_row(self, row: QTreeWidgetItem, order: dict,
@@ -963,7 +1206,7 @@ class ExchangeOverlay(OverlayWidget):
             elif name == 'Value':
                 v = order.get('_value')
                 text = format_ped(v) if v is not None else ''
-            elif name == 'Markup':
+            elif name.startswith('MU'):
                 mu = order.get('markup')
                 if mu is not None:
                     text = format_markup(mu, order.get('_is_absolute', True))
@@ -973,7 +1216,9 @@ class ExchangeOverlay(OverlayWidget):
             elif name == 'Planet':
                 text = order.get('planet') or 'Any'
             elif name == 'Seller':
-                text = order.get('username') or str(order.get('user_id', ''))
+                text = order.get('seller_name') or order.get('username') or 'Unknown'
+                row.setData(col, Qt.ItemDataRole.UserRole, text)  # store for click
+                row.setForeground(col, QColor(ACCENT))
             elif name == 'Status':
                 text = (order.get('_state') or '').capitalize()
             elif name == 'Updated':
@@ -1010,38 +1255,53 @@ class ExchangeOverlay(OverlayWidget):
         elif self._orders_filter == "SELL":
             orders = [o for o in orders if o.get('type') == 'SELL']
 
-        # Sort: status priority, then category
-        state_priority = {'active': 0, 'stale': 1, 'expired': 2, 'terminated': 3, 'closed': 4}
-        orders.sort(key=lambda o: (
-            state_priority.get(o.get('_state', ''), 5),
-            o.get('_category_order', 99),
-        ))
+        # Initial sort handled by tree widget (default: Updated descending)
 
         # Summary
         sell_count = sum(1 for o in self._store.my_orders if o.get('type') == 'SELL' and o.get('_state') != 'closed')
         buy_count = sum(1 for o in self._store.my_orders if o.get('type') == 'BUY' and o.get('_state') != 'closed')
         self._orders_summary.setText(f"{sell_count} sell · {buy_count} buy orders")
 
+        self._orders_tree.setSortingEnabled(False)
         for order in orders:
-            row = QTreeWidgetItem()
+            row = _SortableItem()
             row.setText(0, order.get('_item_name', ''))
             row.setText(1, order.get('type', ''))
-            row.setText(2, str(order.get('quantity', 1)))
+            qty = order.get('quantity', 1)
+            row.setText(2, str(qty))
+            row.setData(2, Qt.ItemDataRole.UserRole + 10, qty)
             mu = order.get('markup')
             if mu is not None:
                 row.setText(3, format_markup(mu, order.get('_is_absolute', True)))
+                try:
+                    row.setData(3, Qt.ItemDataRole.UserRole + 10, float(mu))
+                except (TypeError, ValueError):
+                    pass
             row.setText(4, order.get('planet') or 'Any')
 
             state = order.get('_state', '')
             row.setText(5, state.capitalize())
+            state_priority = {'active': 0, 'stale': 1, 'expired': 2, 'terminated': 3, 'closed': 4}
+            row.setData(5, Qt.ItemDataRole.UserRole + 10, state_priority.get(state, 5))
             color = STATUS_COLORS.get(state, '#666')
             row.setForeground(5, QColor(color))
 
-            row.setText(6, format_age(order.get('bumped_at') or order.get('updated')))
+            updated_str = order.get('bumped_at') or order.get('updated')
+            row.setText(6, format_age(updated_str))
+            ts = 0.0
+            if updated_str and isinstance(updated_str, str):
+                try:
+                    ts = datetime.fromisoformat(
+                        updated_str.replace('Z', '+00:00')
+                    ).timestamp()
+                except (ValueError, OSError):
+                    pass
+            row.setData(6, Qt.ItemDataRole.UserRole + 10, ts)
 
             row.setData(0, Qt.ItemDataRole.UserRole, order.get('id'))
             row.setData(0, Qt.ItemDataRole.UserRole + 1, order)
             self._orders_tree.addTopLevelItem(row)
+        self._orders_tree.setSortingEnabled(True)
 
     def _on_bump_all(self):
         self._bump_all_btn.setEnabled(False)
@@ -1052,6 +1312,15 @@ class ExchangeOverlay(OverlayWidget):
             self._bump_all_btn.setText("Bump All")
 
         self._store.bump_all_orders(callback=cb)
+
+    def _on_order_double_clicked(self, item: QTreeWidgetItem, column: int):
+        """Navigate to the order book for the double-clicked order's item."""
+        order = item.data(0, Qt.ItemDataRole.UserRole + 1)
+        if order:
+            item_id = order.get('item_id')
+            if item_id:
+                self._set_tab(0)  # Switch to Browse tab
+                self._show_order_book(item_id)
 
     # ------------------------------------------------------------------
     # Populate: Inventory
@@ -1066,6 +1335,7 @@ class ExchangeOverlay(OverlayWidget):
             return
 
         search = self._inv_search.text().strip().lower()
+        self._inv_tree.setUpdatesEnabled(False)
         self._inv_tree.clear()
 
         for inv_item in self._store.inventory:
@@ -1082,15 +1352,67 @@ class ExchangeOverlay(OverlayWidget):
             row.setText(1, item_type)
             row.setText(2, str(inv_item.get('quantity', 1)))
             value = inv_item.get('value')
+            try:
+                value = float(value) if value is not None else None
+            except (TypeError, ValueError):
+                value = None
             row.setText(3, format_ped(value) if value is not None else '')
 
-            # Existing sell order count for this item
-            sell_count = slim.get('s', 0) if slim else 0
-            row.setText(4, str(sell_count) if sell_count else '')
+            # Buy demand: best buy markup + count
+            buy_count = slim.get('b', 0) if slim else 0
+            if buy_count:
+                best_buy = slim.get('bb')
+                if best_buy is not None:
+                    demand_text = f"{format_markup(best_buy, is_absolute_markup(slim))} ({buy_count})"
+                else:
+                    demand_text = str(buy_count)
+                row.setText(4, demand_text)
+                row.setForeground(4, QColor("#4ade80"))
 
             row.setData(0, Qt.ItemDataRole.UserRole, item_id)
             row.setData(0, Qt.ItemDataRole.UserRole + 1, inv_item)
             self._inv_tree.addTopLevelItem(row)
+
+        self._inv_tree.setUpdatesEnabled(True)
+
+    def _on_inv_double_clicked(self, item: QTreeWidgetItem, column: int):
+        """Navigate to order book for the inventory item."""
+        item_id = item.data(0, Qt.ItemDataRole.UserRole)
+        if item_id:
+            self._set_tab(0)  # Switch to Browse tab
+            self._show_order_book(item_id)
+
+    def _sell_inventory_item(self, item_id: int):
+        """Open order dialog to create a sell order for an inventory item."""
+        self._open_order_dialog("SELL", item_id=item_id)
+
+    def _on_inv_context_menu(self, pos):
+        """Show right-click context menu for inventory items."""
+        item = self._inv_tree.itemAt(pos)
+        if not item:
+            return
+        item_id = item.data(0, Qt.ItemDataRole.UserRole)
+        if not item_id:
+            return
+
+        menu = QMenu(self)
+        menu.setStyleSheet(f"""
+            QMenu {{
+                background: rgba(30, 30, 45, 240); color: {TEXT_COLOR};
+                border: 1px solid rgba(80, 80, 120, 150); padding: 4px;
+            }}
+            QMenu::item {{ padding: 4px 16px; }}
+            QMenu::item:selected {{ background: {TAB_ACTIVE_BG}; }}
+        """)
+        sell_action = menu.addAction("Sell")
+        view_action = menu.addAction("View Order Book")
+
+        action = menu.exec(self._inv_tree.viewport().mapToGlobal(pos))
+        if action == sell_action:
+            self._sell_inventory_item(item_id)
+        elif action == view_action:
+            self._set_tab(0)
+            self._show_order_book(item_id)
 
     # ------------------------------------------------------------------
     # Populate: Trade Requests
@@ -1116,14 +1438,15 @@ class ExchangeOverlay(OverlayWidget):
     # Order Dialog
     # ------------------------------------------------------------------
 
-    def _open_order_dialog(self, side: str, order: dict | None = None):
+    def _open_order_dialog(self, side: str, order: dict | None = None, item_id: int | None = None):
         """Open order creation/edit dialog."""
         if not self._store._client.is_authenticated():
             return
-        if not self._current_item_id:
+        target_id = item_id or self._current_item_id
+        if not target_id:
             return
 
-        slim = self._store.item_lookup.get(self._current_item_id)
+        slim = self._store.item_lookup.get(target_id)
         if not slim:
             return
 
@@ -1150,6 +1473,7 @@ class ExchangeOverlay(OverlayWidget):
     def mousePressEvent(self, event):
         # Only allow drag from title bar region
         if event.button() == Qt.MouseButton.LeftButton:
+            self._click_origin = event.globalPosition().toPoint()
             local_y = event.position().y()
             if local_y <= TITLE_H:
                 self._drag_pos = (
@@ -1157,6 +1481,18 @@ class ExchangeOverlay(OverlayWidget):
                 )
             else:
                 self._drag_pos = None
+
+    def mouseReleaseEvent(self, event):
+        click_origin = getattr(self, '_click_origin', None)
+        self._click_origin = None
+        super().mouseReleaseEvent(event)
+        if click_origin and event.button() == Qt.MouseButton.LeftButton:
+            delta = (event.globalPosition().toPoint() - click_origin).manhattanLength()
+            if delta < 5:
+                click_local = self.mapFromGlobal(click_origin)
+                if click_local.y() <= TITLE_H:
+                    self._body.setVisible(not self._body.isVisible())
+                    self._position_resize_grip()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -1190,13 +1526,22 @@ class ExchangeOverlay(OverlayWidget):
             self._store.start_polling()
             if not self._store.items:
                 self._store.load_items()
+            else:
+                # Items already cached — populate tree immediately
+                self._populate_item_tree()
             if self._store._client.is_authenticated():
                 self._store.load_my_orders()
                 self._store.load_inventory()
                 self._store.load_trade_requests()
             self._favourites.load_from_server()
+            # Restore order dialog if it was open
+            if self._order_dialog and not self._order_dialog.isVisible():
+                self._order_dialog.show()
         else:
             self._store.stop_polling()
+            # Hide order dialog along with overlay
+            if self._order_dialog and self._order_dialog.isVisible():
+                self._order_dialog.hide()
 
 
 # ======================================================================
@@ -1218,6 +1563,7 @@ class _OrderDialog(QWidget):
         self._side = side
         self._order = order  # None for create, dict for edit
         self._store = store
+        self._drag_pos = None
 
         self._build_ui()
         self._load_suggestions()
@@ -1226,6 +1572,19 @@ class _OrderDialog(QWidget):
         if parent:
             pos = parent.pos()
             self.move(pos.x() + 30, pos.y() + 40)
+
+    # --- Dragging ---
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+
+    def mouseMoveEvent(self, event):
+        if self._drag_pos and event.buttons() & Qt.MouseButton.LeftButton:
+            self.move(event.globalPosition().toPoint() - self._drag_pos)
+
+    def mouseReleaseEvent(self, event):
+        self._drag_pos = None
 
     def _build_ui(self):
         container = QWidget(self)
@@ -1293,16 +1652,18 @@ class _OrderDialog(QWidget):
         self._partial_check.setVisible(stackable)
         self._partial_lbl.setVisible(stackable)
 
-        # Min Quantity
+        # Min Quantity (always visible for stackables, enabled/disabled by checkbox)
         self._min_qty_spin = QSpinBox()
         self._min_qty_spin.setRange(1, 999999)
+        self._min_qty_spin.setEnabled(False)
         self._min_qty_lbl = QLabel("Min Qty:")
         self._min_qty_lbl.setStyleSheet(label_style)
         fl.addRow(self._min_qty_lbl, self._min_qty_spin)
-        self._min_qty_spin.setVisible(False)
-        self._min_qty_lbl.setVisible(False)
+        self._min_qty_spin.setVisible(stackable)
+        self._min_qty_lbl.setVisible(stackable)
         self._partial_check.toggled.connect(self._on_partial_toggled)
         self._qty_spin.valueChanged.connect(self._update_min_qty_range)
+        self._qty_spin.valueChanged.connect(self._update_price_preview)
 
         # Gender (gendered only)
         self._gender_combo = QComboBox()
@@ -1507,8 +1868,7 @@ class _OrderDialog(QWidget):
             self._pet_spin.setValue(int(pet['Level']))
 
     def _on_partial_toggled(self, checked):
-        self._min_qty_spin.setVisible(checked)
-        self._min_qty_lbl.setVisible(checked)
+        self._min_qty_spin.setEnabled(checked)
         if checked:
             qty = self._qty_spin.value()
             self._min_qty_spin.setValue(max(1, int(qty * DEFAULT_PARTIAL_RATIO)))
@@ -1655,7 +2015,7 @@ class _OrderDialog(QWidget):
             'details': self._build_details(),
         }
 
-        if self._partial_check.isChecked() and self._min_qty_spin.isVisible():
+        if self._partial_check.isChecked() and self._min_qty_spin.isEnabled():
             data['min_quantity'] = self._min_qty_spin.value()
 
         if self._order:

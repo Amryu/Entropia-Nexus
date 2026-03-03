@@ -1,7 +1,8 @@
 // @ts-nocheck
+import { decodeURIComponentSafe } from '$lib/util.js';
 
 export async function load({ params, fetch }) {
-  const targetName = decodeURIComponent(params.name);
+  const targetName = decodeURIComponentSafe(params.name);
 
   try {
     const res = await fetch(`/api/globals/target/${encodeURIComponent(targetName)}`);

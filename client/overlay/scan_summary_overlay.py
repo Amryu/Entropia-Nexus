@@ -343,8 +343,7 @@ class ScanSummaryOverlay(OverlayWidget):
             self.set_wants_visible(True)
 
     def _on_overlays_hide(self, _data):
-        """Skills window closed or lost — dismiss overlay."""
-        self._dismissed = True
+        """Skills window closed or lost — hide overlay (re-shows when scan resumes)."""
         self.set_wants_visible(False)
 
     def _on_page_changed(self, _data):

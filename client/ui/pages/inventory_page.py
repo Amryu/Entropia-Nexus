@@ -14,7 +14,6 @@ from PyQt6.QtGui import QColor
 from ..theme import (
     PRIMARY, SECONDARY, MAIN_DARK, HOVER, BORDER, ACCENT,
     TEXT, TEXT_MUTED, ERROR, TABLE_HEADER, TABLE_ROW_ALT,
-    PAGE_HEADER_OBJECT_NAME,
 )
 import threading
 
@@ -340,9 +339,6 @@ class InventoryPage(QWidget):
         header_row = QHBoxLayout()
         header_row.setSpacing(12)
 
-        header = QLabel("Inventory")
-        header.setObjectName(PAGE_HEADER_OBJECT_NAME)
-        header_row.addWidget(header)
         header_row.addStretch()
 
         # View toggle buttons

@@ -7,11 +7,11 @@ import webbrowser
 from typing import TYPE_CHECKING
 
 from PyQt6.QtWidgets import (
-    QVBoxLayout, QHBoxLayout, QLabel, QWidget, QPushButton,
-    QScrollArea, QStackedWidget, QTextEdit, QComboBox, QLineEdit,
+    QApplication, QVBoxLayout, QHBoxLayout, QLabel, QWidget, QPushButton,
+    QScrollArea, QStackedWidget, QTextEdit, QTextBrowser, QComboBox, QLineEdit,
     QFileDialog,
 )
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, QPoint, QTimer, pyqtSignal
 from PyQt6.QtGui import QPixmap, QPainter, QPainterPath, QBrush
 
 from .overlay_widget import OverlayWidget
@@ -99,12 +99,28 @@ _LINK_SVG = (
     ' 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/>'
 )
 
+_COPY_SVG = (
+    '<path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2'
+    ' 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/>'
+)
+
+_CHECK_SVG = '<path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>'
+
+# Globals tab icon (trophy)
+_TAB_GLOBALS_SVG = (
+    '<path d="M19 5h-2V3H7v2H5c-1.1 0-2 .9-2 2v1c0 2.55 1.92 4.63 4.39 4.94'
+    '.63 1.5 1.67 2.71 3.11 3.36V19H8v2h8v-2h-2.5v-2.7c1.44-.65 2.48-1.86'
+    ' 3.11-3.36C19.08 12.63 21 10.55 21 8V7c0-1.1-.9-2-2-2zM5 8V7h2v3.82'
+    'C5.84 10.4 5 9.3 5 8zm14 0c0 1.3-.84 2.4-2 2.82V7h2v1z"/>'
+)
+
 # --- Tab IDs ---
 TAB_GENERAL = "general"
 TAB_SERVICES = "services"
 TAB_SHOPS = "shops"
 TAB_ORDERS = "orders"
 TAB_RENTALS = "rentals"
+TAB_GLOBALS = "globals"
 TAB_SETTINGS = "settings"
 
 # Map website defaultTab values to our tab IDs
@@ -262,6 +278,10 @@ def _get_profile_tabs(data: dict) -> list[tuple[str, str, str]]:
         tabs.append((_TAB_ORDERS_SVG, "Exchange Orders", TAB_ORDERS))
     if data.get("rentals"):
         tabs.append((_TAB_RENTALS_SVG, "Rentals", TAB_RENTALS))
+    # Globals tab shown if user has EU name (data loaded lazily)
+    profile = data.get("profile", {})
+    if profile.get("euName"):
+        tabs.append((_TAB_GLOBALS_SVG, "Globals", TAB_GLOBALS))
     if data.get("permissions", {}).get("isOwner"):
         tabs.append((_TAB_SETTINGS_SVG, "Settings", TAB_SETTINGS))
     return tabs
@@ -271,8 +291,10 @@ class ProfileOverlayWidget(OverlayWidget):
     """Always-on-top overlay showing a user's Nexus profile."""
 
     open_profile_web = pyqtSignal(dict)
+    open_entity = pyqtSignal(dict)
     _profile_loaded = pyqtSignal(object)       # dict or None
     _avatar_loaded = pyqtSignal(object)         # QPixmap or None
+    _globals_loaded = pyqtSignal(object)        # dict or None
     _save_result = pyqtSignal(bool, str)        # (success, error_msg)
     _upload_result = pyqtSignal(bool, str)       # (success, error_msg)
 
@@ -295,7 +317,11 @@ class ProfileOverlayWidget(OverlayWidget):
         self._nexus_client = nexus_client
         self._profile_data: dict | None = None
         self._pinned = False
+        self._click_origin = None
         self._load_gen = 0
+        self._globals_data: dict | None = None
+        self._globals_fetched = False
+        self._globals_loading = False
 
         # Auto-resize to content
         self.layout().setSizeConstraint(QVBoxLayout.SizeConstraint.SetFixedSize)
@@ -351,6 +377,7 @@ class ProfileOverlayWidget(OverlayWidget):
         # Connect cross-thread signals
         self._profile_loaded.connect(self._on_profile_loaded)
         self._avatar_loaded.connect(self._on_avatar_loaded)
+        self._globals_loaded.connect(self._on_globals_loaded)
         self._save_result.connect(self._on_save_result)
         self._upload_result.connect(self._on_upload_result)
 
@@ -402,6 +429,16 @@ class ProfileOverlayWidget(OverlayWidget):
         self._name_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         layout.addWidget(self._name_label, 1, Qt.AlignmentFlag.AlignVCenter)
 
+        # Copy EU name button
+        self._copy_btn = QPushButton()
+        self._copy_btn.setFixedSize(18, 18)
+        self._copy_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._copy_btn.setIcon(svg_icon(_COPY_SVG, TEXT_DIM, 14))
+        self._copy_btn.setStyleSheet(_BTN_STYLE)
+        self._copy_btn.setToolTip("Copy EU name")
+        self._copy_btn.clicked.connect(self._copy_eu_name)
+        layout.addWidget(self._copy_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+
         # Type badge
         badge = QLabel("User")
         badge.setStyleSheet(
@@ -421,14 +458,31 @@ class ProfileOverlayWidget(OverlayWidget):
         close_btn.clicked.connect(self.close)
         layout.addWidget(close_btn, 0, Qt.AlignmentFlag.AlignVCenter)
 
-        # Title bar click to minify
-        bar.mousePressEvent = self._on_title_click
-
         return bar
 
-    def _on_title_click(self, event):
+    # --- Mouse events: click-vs-drag on title bar ---
+
+    def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
-            self._body.setVisible(not self._body.isVisible())
+            self._click_origin = event.globalPosition().toPoint()
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        click_origin = self._click_origin
+        self._click_origin = None
+        super().mouseReleaseEvent(event)
+
+        if click_origin and event.button() == Qt.MouseButton.LeftButton:
+            delta = (
+                event.globalPosition().toPoint() - click_origin
+            ).manhattanLength()
+            if delta < 5:
+                click_local = self.mapFromGlobal(click_origin)
+                title_bottom = self._title_bar.mapTo(
+                    self, QPoint(0, self._title_bar.height()),
+                ).y()
+                if click_local.y() <= title_bottom:
+                    self._body.setVisible(not self._body.isVisible())
 
     def _toggle_pin(self):
         self._pinned = not self._pinned
@@ -438,6 +492,15 @@ class ProfileOverlayWidget(OverlayWidget):
         color = ACCENT if self._pinned else TEXT_DIM
         self._pin_btn.setIcon(svg_icon(_PIN_SVG, color, 14))
         self._pin_btn.setToolTip("Unpin" if self._pinned else "Pin")
+
+    def _copy_eu_name(self):
+        clipboard = QApplication.clipboard()
+        if clipboard:
+            clipboard.setText(self._user_name)
+        self._copy_btn.setIcon(svg_icon(_CHECK_SVG, SUCCESS_COLOR, 14))
+        QTimer.singleShot(
+            1500, lambda: self._copy_btn.setIcon(svg_icon(_COPY_SVG, TEXT_DIM, 14))
+        )
 
     # --- Tab strip ---
 
@@ -531,6 +594,13 @@ class ProfileOverlayWidget(OverlayWidget):
             color = ACCENT if active else TEXT_DIM
             btn.setIcon(svg_icon(svg_path, color, 16))
 
+        # Lazy-load globals when tab is first selected
+        if (index < len(self._tab_defs)
+                and self._tab_defs[index][2] == TAB_GLOBALS
+                and not self._globals_fetched
+                and not self._globals_loading):
+            self._fetch_globals()
+
     # --- Loading state ---
 
     def _init_loading_tab(self):
@@ -612,6 +682,8 @@ class ProfileOverlayWidget(OverlayWidget):
             self._build_orders_tab(data.get("orders", []))
         if TAB_RENTALS in self._tab_ids:
             self._build_rentals_tab(data.get("rentals", []))
+        if TAB_GLOBALS in self._tab_ids:
+            self._build_globals_placeholder()
         if TAB_SETTINGS in self._tab_ids:
             self._build_settings_tab(data)
 
@@ -758,11 +830,16 @@ class ProfileOverlayWidget(OverlayWidget):
             soc_name = society.get("name", "")
             soc_abbr = society.get("abbreviation", "")
             soc_text = f"{soc_name} [{soc_abbr}]" if soc_abbr else soc_name
-            s_lbl = QLabel(soc_text)
-            s_lbl.setStyleSheet(
+            s_btn = QPushButton(soc_text)
+            s_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            s_btn.setStyleSheet(
                 f"color: {ACCENT}; font-size: 11px; background: transparent;"
+                " border: none; padding: 0; text-align: left;"
             )
-            n_layout.addWidget(s_lbl)
+            s_btn.clicked.connect(
+                lambda _, n=soc_name: self.open_entity.emit({"Name": n, "Type": "Society"})
+            )
+            n_layout.addWidget(s_btn)
 
         n_layout.addStretch()
         h_layout.addWidget(names, 1)
@@ -790,15 +867,34 @@ class ProfileOverlayWidget(OverlayWidget):
         if bio and bio.strip():
             layout.addWidget(_separator())
             layout.addWidget(_section_label("BIOGRAPHY"))
-            bio_lbl = QLabel(bio)
-            bio_lbl.setTextFormat(Qt.TextFormat.RichText)
-            bio_lbl.setWordWrap(True)
-            bio_lbl.setOpenExternalLinks(True)
-            bio_lbl.setStyleSheet(
-                f"color: {TEXT_COLOR}; font-size: 12px; background: transparent;"
-                " line-height: 1.4;"
+            bio_browser = QTextBrowser()
+            bio_browser.setOpenExternalLinks(True)
+            bio_browser.setHtml(
+                f'<body style="color:{TEXT_COLOR}; font-size:12px; font-family:sans-serif;">'
+                f"<style>"
+                f"  a {{ color: {ACCENT}; text-decoration: none; }}"
+                f"  a:hover {{ text-decoration: underline; }}"
+                f"  p {{ margin: 4px 0; }}"
+                f"  blockquote {{ margin: 4px 0 4px 8px; padding-left: 6px;"
+                f"    border-left: 2px solid {TEXT_DIM}; color: {TEXT_DIM}; }}"
+                f"  code {{ background: rgba(60,60,80,120); padding: 1px 3px;"
+                f"    border-radius: 2px; }}"
+                f"</style>"
+                f"{bio}</body>"
             )
-            layout.addWidget(bio_lbl)
+            bio_browser.setStyleSheet(
+                "QTextBrowser { background: transparent; border: none;"
+                f" color: {TEXT_COLOR}; }}"
+                " QScrollBar { width: 0px; }"
+            )
+            bio_browser.setVerticalScrollBarPolicy(
+                Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+            )
+            # Size to content (up to a reasonable max)
+            bio_browser.document().setDocumentMargin(0)
+            doc_height = int(bio_browser.document().size().height()) + 4
+            bio_browser.setFixedHeight(min(doc_height, 200))
+            layout.addWidget(bio_browser)
 
         layout.addStretch()
         self._content_stack.addWidget(scroll)
@@ -855,36 +951,158 @@ class ProfileOverlayWidget(OverlayWidget):
     # --- Orders tab ---
 
     def _build_orders_tab(self, orders: list[dict]):
-        scroll = self._make_scroll()
-        layout = scroll.widget().layout()
+        container = QWidget()
+        container.setStyleSheet("background: transparent;")
+        outer = QVBoxLayout(container)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
 
         buy_orders = [o for o in orders if o.get("type") == "BUY"]
         sell_orders = [o for o in orders if o.get("type") == "SELL"]
 
-        if buy_orders:
-            layout.addWidget(_section_label("BUY ORDERS"))
-            for order in buy_orders:
-                name = order.get("item_name", "")
-                markup = order.get("markup", 100)
-                qty = order.get("quantity", 0)
-                sub = f"{markup}%"
-                if qty > 1:
-                    sub = f"x{qty}  {sub}"
-                layout.addWidget(_clickable_row(name, sub=sub))
+        # Toggle bar — full-width BUY / SELL switch
+        toggle_bar = QWidget()
+        toggle_bar.setFixedHeight(20)
+        toggle_bar.setStyleSheet(f"background-color: {TAB_BG};")
+        toggle_layout = QHBoxLayout(toggle_bar)
+        toggle_layout.setContentsMargins(0, 0, 0, 0)
+        toggle_layout.setSpacing(0)
 
-        if sell_orders:
-            layout.addWidget(_section_label("SELL ORDERS"))
-            for order in sell_orders:
-                name = order.get("item_name", "")
-                markup = order.get("markup", 100)
-                qty = order.get("quantity", 0)
-                sub = f"{markup}%"
-                if qty > 1:
-                    sub = f"x{qty}  {sub}"
-                layout.addWidget(_clickable_row(name, sub=sub))
+        sell_btn = QPushButton(f"Sell Orders ({len(sell_orders)})")
+        buy_btn = QPushButton(f"Buy Orders ({len(buy_orders)})")
+        for btn in (sell_btn, buy_btn):
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setFixedHeight(20)
+        toggle_layout.addWidget(sell_btn)
+        toggle_layout.addWidget(buy_btn)
+        outer.addWidget(toggle_bar)
 
-        layout.addStretch()
-        self._content_stack.addWidget(scroll)
+        # Stacked lists
+        order_stack = QStackedWidget()
+
+        base = self._nexus_client._config.nexus_base_url.rstrip("/")
+
+        for order_list in (sell_orders, buy_orders):
+            scroll = self._make_scroll()
+            layout = scroll.widget().layout()
+            for order in order_list:
+                layout.addWidget(self._build_order_row(order, base))
+            if not order_list:
+                empty = QLabel("No orders")
+                empty.setStyleSheet(
+                    f"color: {TEXT_DIM}; font-size: 11px; background: transparent;"
+                    " padding: 8px;"
+                )
+                empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                layout.addWidget(empty)
+            layout.addStretch()
+            order_stack.addWidget(scroll)
+
+        outer.addWidget(order_stack, 1)
+
+        # Toggle button styling and connection
+        active_style = (
+            f"QPushButton {{ background-color: #0077aa; color: #fff;"
+            f" font-size: 11px; font-weight: bold; border: none; padding-bottom: 2px; }}"
+        )
+        inactive_style = (
+            f"QPushButton {{ background-color: {TAB_BG}; color: {TEXT_DIM};"
+            f" font-size: 11px; border: none; }}"
+            f"QPushButton:hover {{ background-color: {TAB_HOVER_BG}; }}"
+        )
+
+        def _switch(idx):
+            order_stack.setCurrentIndex(idx)
+            sell_btn.setStyleSheet(active_style if idx == 0 else inactive_style)
+            buy_btn.setStyleSheet(active_style if idx == 1 else inactive_style)
+
+        sell_btn.clicked.connect(lambda: _switch(0))
+        buy_btn.clicked.connect(lambda: _switch(1))
+
+        # Default to Sell if any exist, else Buy
+        _switch(0 if sell_orders else 1)
+
+        self._content_stack.addWidget(container)
+
+    def _build_order_row(self, order: dict, base_url: str) -> QWidget:
+        """Build a single order row with item name, details, and exchange link."""
+        details = order.get("details") or {}
+        name = details.get("item_name", "") or order.get("item_name", "Unknown")
+        markup = order.get("markup", 100)
+        qty = order.get("quantity", 0)
+        item_type = order.get("item_type", "")
+        planet = order.get("planet") or ""
+        state = order.get("computed_state", "active")
+        item_id = order.get("item_id")
+
+        # Exchange URL for the item
+        url = ""
+        if item_id and item_type:
+            type_slug = item_type.lower().replace(" ", "-")
+            url = f"{base_url}/market/exchange/{type_slug}/{item_id}"
+
+        row = QWidget()
+        row.setStyleSheet("background: transparent;")
+        layout = QVBoxLayout(row)
+        layout.setContentsMargins(4, 3, 4, 3)
+        layout.setSpacing(1)
+
+        # Top line: item name + markup
+        top = QHBoxLayout()
+        top.setSpacing(6)
+        name_lbl = QLabel(name)
+        color = ACCENT if url else TEXT_COLOR
+        name_lbl.setStyleSheet(
+            f"color: {color}; font-size: 12px; background: transparent;"
+        )
+        if url:
+            name_lbl.setCursor(Qt.CursorShape.PointingHandCursor)
+            name_lbl.mousePressEvent = lambda _ev, u=url: webbrowser.open(u)
+        top.addWidget(name_lbl, 1)
+
+        # Right side: quantity + markup
+        right_parts = []
+        if qty > 1:
+            right_parts.append(f"x{qty}")
+        right_parts.append(f"{markup}%")
+        right_lbl = QLabel("  ".join(right_parts))
+        right_lbl.setStyleSheet(
+            f"color: {TEXT_COLOR}; font-size: 11px; background: transparent;"
+        )
+        right_lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
+        top.addWidget(right_lbl)
+        layout.addLayout(top)
+
+        # Bottom line: type + planet + status
+        sub_parts = []
+        if item_type:
+            sub_parts.append(item_type)
+        if planet:
+            sub_parts.append(planet)
+        sub_text = " · ".join(sub_parts)
+
+        if sub_text or state != "active":
+            bottom = QHBoxLayout()
+            bottom.setSpacing(4)
+            if sub_text:
+                sub_lbl = QLabel(sub_text)
+                sub_lbl.setStyleSheet(
+                    f"color: {TEXT_DIM}; font-size: 10px; background: transparent;"
+                )
+                bottom.addWidget(sub_lbl, 1)
+            else:
+                bottom.addStretch(1)
+            if state and state != "active":
+                state_color = "#f59e0b" if state == "stale" else ERROR_COLOR
+                state_lbl = QLabel(state.capitalize())
+                state_lbl.setStyleSheet(
+                    f"color: {state_color}; font-size: 10px; background: transparent;"
+                )
+                state_lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
+                bottom.addWidget(state_lbl)
+            layout.addLayout(bottom)
+
+        return row
 
     # --- Rentals tab ---
 
@@ -896,7 +1114,7 @@ class ProfileOverlayWidget(OverlayWidget):
         base = self._nexus_client._config.nexus_base_url.rstrip("/")
         for rental in rentals:
             title = rental.get("title", "")
-            ppd = rental.get("price_per_day", 0)
+            ppd = float(rental.get("price_per_day", 0))
             url = f"{base}/services/rentals/{rental.get('id', '')}"
             layout.addWidget(_clickable_row(
                 title,
@@ -906,6 +1124,155 @@ class ProfileOverlayWidget(OverlayWidget):
 
         layout.addStretch()
         self._content_stack.addWidget(scroll)
+
+    # --- Globals tab (lazy-loaded) ---
+
+    def _build_globals_placeholder(self):
+        """Add a loading placeholder for the Globals tab."""
+        scroll = self._make_scroll()
+        layout = scroll.widget().layout()
+        lbl = QLabel("Loading...")
+        lbl.setStyleSheet(
+            f"color: {TEXT_DIM}; font-size: 12px; background: transparent;"
+        )
+        lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(lbl)
+        layout.addStretch()
+        self._content_stack.addWidget(scroll)
+        self._globals_stack_index = self._content_stack.count() - 1
+
+    def _fetch_globals(self):
+        """Fetch globals data in background thread."""
+        self._globals_loading = True
+        profile = self._profile_data.get("profile", {}) if self._profile_data else {}
+        eu_name = profile.get("euName", self._user_name)
+
+        def _do():
+            data = self._nexus_client.get_player_globals(eu_name)
+            self._globals_loaded.emit(data)
+
+        threading.Thread(target=_do, daemon=True).start()
+
+    def _on_globals_loaded(self, data):
+        """Replace the globals placeholder with actual content."""
+        self._globals_loading = False
+        self._globals_fetched = True
+
+        if not hasattr(self, "_globals_stack_index"):
+            return
+
+        idx = self._globals_stack_index
+
+        # Remove old placeholder
+        old = self._content_stack.widget(idx)
+        if old:
+            # Build new content
+            new_widget = self._build_globals_content(data)
+            self._content_stack.insertWidget(idx, new_widget)
+            self._content_stack.removeWidget(old)
+            old.deleteLater()
+
+            # Re-select if globals tab is currently active
+            if self._content_stack.currentIndex() == idx:
+                self._content_stack.setCurrentIndex(idx)
+
+    def _build_globals_content(self, data: dict | None) -> QWidget:
+        """Build the globals tab content widget."""
+        scroll = self._make_scroll()
+        layout = scroll.widget().layout()
+
+        if not data or "summary" not in data:
+            lbl = QLabel("No globals recorded")
+            lbl.setStyleSheet(
+                f"color: {TEXT_DIM}; font-size: 12px; background: transparent;"
+            )
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(lbl)
+            layout.addStretch()
+            return scroll
+
+        summary = data["summary"]
+
+        # Summary section
+        layout.addWidget(_section_label("SUMMARY"))
+        total = summary.get("total_count", 0)
+        total_value = summary.get("total_value", 0)
+        hof_count = summary.get("hof_count", 0)
+        layout.addWidget(_stat_row("Globals", str(total)))
+        layout.addWidget(_stat_row("HoFs", str(hof_count)))
+        layout.addWidget(_stat_row("Total Value", f"{total_value:,.0f} PED"))
+
+        kill_count = summary.get("kill_count", 0) + summary.get("team_kill_count", 0)
+        deposit_count = summary.get("deposit_count", 0)
+        craft_count = summary.get("craft_count", 0)
+        layout.addWidget(_stat_row("Hunting", str(kill_count)))
+        layout.addWidget(_stat_row("Mining", str(deposit_count)))
+        layout.addWidget(_stat_row("Crafting", str(craft_count)))
+
+        # Top hunting
+        hunting = data.get("hunting", [])
+        if hunting:
+            layout.addWidget(_separator())
+            layout.addWidget(_section_label("TOP HUNTING"))
+            for mob in hunting[:5]:
+                name = mob.get("target", "Unknown")
+                kills = mob.get("kills", 0)
+                value = mob.get("total_value", 0)
+                layout.addWidget(_clickable_row(
+                    name,
+                    sub=f"{kills} kills · {value:,.0f} PED",
+                ))
+
+        # Top mining
+        resources = data.get("mining", {}).get("resources", [])
+        if resources:
+            layout.addWidget(_separator())
+            layout.addWidget(_section_label("TOP MINING"))
+            for res in resources[:5]:
+                name = res.get("target", "Unknown")
+                finds = res.get("finds", 0)
+                value = res.get("total_value", 0)
+                layout.addWidget(_clickable_row(
+                    name,
+                    sub=f"{finds} finds · {value:,.0f} PED",
+                ))
+
+        # Top crafting
+        crafts = data.get("crafting", {}).get("items", [])
+        if crafts:
+            layout.addWidget(_separator())
+            layout.addWidget(_section_label("TOP CRAFTING"))
+            for item in crafts[:5]:
+                name = item.get("target", "Unknown")
+                count = item.get("crafts", 0)
+                value = item.get("total_value", 0)
+                layout.addWidget(_clickable_row(
+                    name,
+                    sub=f"{count} crafts · {value:,.0f} PED",
+                ))
+
+        # View all link
+        layout.addWidget(_separator())
+        base = self._nexus_client._config.nexus_base_url.rstrip("/")
+        profile = self._profile_data.get("profile", {}) if self._profile_data else {}
+        eu_name = profile.get("euName", self._user_name)
+        url = f"{base}/globals/player/{eu_name.replace(' ', '~')}"
+        view_btn = QPushButton("View All Globals")
+        view_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        view_btn.setStyleSheet(
+            f"color: {ACCENT}; font-size: 11px;"
+            " background: transparent; border: 1px solid rgba(100,100,120,150);"
+            " border-radius: 3px; padding: 4px 8px;"
+        )
+        view_btn.clicked.connect(lambda _=None, u=url: webbrowser.open(u))
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        btn_row.addWidget(view_btn)
+        btn_row.addStretch()
+        layout.addLayout(btn_row)
+
+        layout.addStretch()
+        return scroll
 
     # --- Settings tab (owner only) ---
 
@@ -1013,6 +1380,69 @@ class ProfileOverlayWidget(OverlayWidget):
             " border-radius: 3px; padding: 4px 6px;"
         )
         layout.addWidget(self._showcase_input)
+
+        layout.addWidget(_separator())
+
+        # Society
+        layout.addWidget(_section_label("SOCIETY"))
+        society = profile.get("society")
+        society_id = profile.get("societyId")
+        base = self._nexus_client._config.nexus_base_url.rstrip("/")
+
+        if society and society_id and society_id > 0:
+            # Member of a society
+            soc_name = society.get("name", "")
+            soc_abbr = society.get("abbreviation", "")
+            soc_text = f"{soc_name} [{soc_abbr}]" if soc_abbr else soc_name
+            soc_lbl = QLabel(soc_text)
+            soc_lbl.setStyleSheet(
+                f"color: {ACCENT}; font-size: 12px; background: transparent;"
+            )
+            layout.addWidget(soc_lbl)
+            view_soc_btn = QPushButton("View Society")
+            view_soc_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            view_soc_btn.setStyleSheet(
+                f"color: {TEXT_COLOR}; font-size: 11px;"
+                " background: rgba(50, 50, 70, 180); border: 1px solid rgba(100,100,120,150);"
+                " border-radius: 3px; padding: 4px 8px;"
+            )
+            soc_url = f"{base}/societies/{soc_name.replace(' ', '~')}"
+            view_soc_btn.clicked.connect(lambda _=None, u=soc_url: webbrowser.open(u))
+            soc_btn_row = QHBoxLayout()
+            soc_btn_row.addWidget(view_soc_btn)
+            soc_btn_row.addStretch()
+            layout.addLayout(soc_btn_row)
+        elif society_id == -1:
+            # Pending join request
+            pending_soc = profile.get("pendingSocietyRequest")
+            pending_name = society.get("name", "Unknown") if society else "Unknown"
+            pending_lbl = QLabel(f"Pending: {pending_name}")
+            pending_lbl.setStyleSheet(
+                f"color: {TEXT_DIM}; font-size: 12px; background: transparent;"
+                " font-style: italic;"
+            )
+            layout.addWidget(pending_lbl)
+        else:
+            # No society
+            no_soc_lbl = QLabel("No society")
+            no_soc_lbl.setStyleSheet(
+                f"color: {TEXT_DIM}; font-size: 12px; background: transparent;"
+            )
+            layout.addWidget(no_soc_lbl)
+            join_btn = QPushButton("Join / Create")
+            join_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            join_btn.setStyleSheet(
+                f"color: {TEXT_COLOR}; font-size: 11px;"
+                " background: rgba(50, 50, 70, 180); border: 1px solid rgba(100,100,120,150);"
+                " border-radius: 3px; padding: 4px 8px;"
+            )
+            eu_name = profile.get("euName", self._user_name)
+            profile_url = f"{base}/users/{eu_name.replace(' ', '~')}"
+            join_btn.clicked.connect(lambda _=None, u=profile_url: webbrowser.open(u))
+            join_row = QHBoxLayout()
+            join_row.addWidget(join_btn)
+            join_row.addStretch()
+            layout.addLayout(join_row)
 
         # Save button
         layout.addSpacing(8)

@@ -134,8 +134,8 @@ Close (soft-delete) an order.
 
 Bump all of the current user's active orders (refreshes `bumped_at` timestamp).
 
-- **Auth**: Verified + Turnstile
-- **Rate Limits**: 1 per minute
+- **Auth**: Verified + Turnstile (or OAuth `exchange:write`)
+- **Rate Limits**: 1 per hour
 - **Body**: `{ turnstile_token }`
 - **Response** `200`: `{ orders: [...], count: number }`
 

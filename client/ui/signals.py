@@ -118,6 +118,9 @@ class AppSignals(QObject):
     # Inventory
     inventory_open_wiki = pyqtSignal(int, str, str)  # (item_id, item_type, item_name)
 
+    # Open entity in detail overlay (dict with Name, Type)
+    open_entity_overlay = pyqtSignal(dict)
+
 
 def wire_signals(event_bus, signals: AppSignals) -> None:
     """Subscribe EventBus events to Qt signal emissions."""

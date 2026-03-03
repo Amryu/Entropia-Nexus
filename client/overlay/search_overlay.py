@@ -53,6 +53,7 @@ _HAMBURGER_SVG = (
 _MENU_ITEMS = [
     {"label": "Map", "shortcut": "Ctrl+M", "action": "map"},
     {"label": "Exchange", "shortcut": "Ctrl+E", "action": "exchange"},
+    {"label": "Notifications", "shortcut": "Ctrl+N", "action": "notifications"},
 ]
 
 _ROW_STYLE = (

@@ -236,6 +236,9 @@ if [[ -d "$INTERNAL_CHECK" ]]; then
     # 8. Qt positioning plugin
     find "$INTERNAL_CHECK" -path '*/plugins/position' -type d | strip_dirs
 
+    # 9. Font files — not licensed for distribution; STPK templates provide OCR matching
+    find "$INTERNAL_CHECK" -name '*.ttf' -type f | strip_files
+
     SAVED_MB=$((SAVED / 1048576))
     cyan "  Stripped ~${SAVED_MB} MB of unnecessary files."
 fi

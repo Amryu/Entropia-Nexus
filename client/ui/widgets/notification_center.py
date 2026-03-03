@@ -756,10 +756,32 @@ class _RulesTab(QWidget):
         delivery_group.setStyleSheet(self._group_style())
         delivery_layout = QVBoxLayout(delivery_group)
 
-        self._toast_cb = QCheckBox("System toasts (Windows/Linux notifications)")
+        self._toast_cb = QCheckBox("Toast notifications (in-game when overlay active, OS otherwise)")
         self._toast_cb.setChecked(getattr(config, "notification_toast_enabled", True))
         self._toast_cb.setStyleSheet(f"color: {TEXT}; font-size: 12px;")
         delivery_layout.addWidget(self._toast_cb)
+
+        # Toast corner position
+        toast_corner_row = QHBoxLayout()
+        toast_corner_row.setContentsMargins(20, 0, 0, 0)
+        toast_corner_lbl = QLabel("In-game toast position:")
+        toast_corner_lbl.setStyleSheet(
+            f"color: {TEXT_MUTED}; font-size: 12px; border: none;"
+        )
+        toast_corner_row.addWidget(toast_corner_lbl)
+        self._toast_corner_combo = QComboBox()
+        self._toast_corner_combo.addItems([
+            "Bottom Right", "Bottom Left", "Top Right", "Top Left",
+        ])
+        _corner_index = {
+            "bottom_right": 0, "bottom_left": 1, "top_right": 2, "top_left": 3,
+        }
+        current_corner = getattr(config, "notification_toast_corner", "bottom_right")
+        self._toast_corner_combo.setCurrentIndex(_corner_index.get(current_corner, 0))
+        self._toast_corner_combo.setFixedWidth(120)
+        toast_corner_row.addWidget(self._toast_corner_combo)
+        toast_corner_row.addStretch()
+        delivery_layout.addLayout(toast_corner_row)
 
         self._sound_cb = QCheckBox("Notification sound")
         self._sound_cb.setChecked(getattr(config, "notification_sound_enabled", True))
@@ -847,6 +869,10 @@ class _RulesTab(QWidget):
 
         # Delivery
         self._config.notification_toast_enabled = self._toast_cb.isChecked()
+        _corner_values = ["bottom_right", "bottom_left", "top_right", "top_left"]
+        self._config.notification_toast_corner = _corner_values[
+            self._toast_corner_combo.currentIndex()
+        ]
         self._config.notification_sound_enabled = self._sound_cb.isChecked()
 
         save_config(self._config)

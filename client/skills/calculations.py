@@ -6,7 +6,7 @@ Port of nexus/src/lib/utils/skillCalculations.js and codexUtils.js.
 from __future__ import annotations
 
 BASE_HP = 80
-ATTRIBUTE_MULTIPLIER = 100
+ATTRIBUTE_MULTIPLIER = 20
 
 # Codex reward divisors: PED cycle cost per PED of skill gained
 CODEX_REWARD_DIVISORS = {"cat1": 200, "cat2": 320, "cat3": 640, "cat4": 1000}
@@ -64,7 +64,7 @@ def build_attribute_skill_set(skill_metadata: list[dict]) -> set[str]:
 def effective_points(
     points: float, skill_name: str, attribute_skills: set[str]
 ) -> float:
-    """Get effective skill points, applying ×100 for attribute skills."""
+    """Get effective skill points, applying ×20 for attribute skills."""
     if skill_name in attribute_skills:
         return points * ATTRIBUTE_MULTIPLIER
     return points
@@ -82,7 +82,7 @@ def calculate_profession_level(
     Args:
         skill_values: {skill_name: raw_points}
         profession_skills: list of {Name, Weight}
-        attribute_skills: set of attribute skill names (for ×100 multiplier)
+        attribute_skills: set of attribute skill names (for ×20 multiplier)
     """
     if attribute_skills is None:
         attribute_skills = set()
@@ -90,7 +90,7 @@ def calculate_profession_level(
     for skill in profession_skills:
         name = skill.get("Name", "")
         weight = skill.get("Weight", 0) or 0
-        points = skill_values.get(name, 0)
+        points = int(skill_values.get(name, 0))
         eff = effective_points(points, name, attribute_skills)
         total += eff * weight
     return total / 10000

@@ -10,7 +10,7 @@ from __future__ import annotations
 from .models import SkillReading
 
 # Tolerance: allow |estimated - current_points| <= max(ABS, REL * estimated)
-VALIDATION_ABS_TOLERANCE = 5
+VALIDATION_ABS_TOLERANCE = 7
 VALIDATION_REL_TOLERANCE = 0.01
 
 # From "Great Master" (10000) onward the rank progress bar is always empty,
@@ -65,8 +65,7 @@ def enrich_skill_reading(
     else:
         reading.estimated_points = float(current_threshold)
 
-    # Flag mismatch only when points fall entirely outside the rank range
+    # Flag mismatch when estimated and OCR'd points diverge beyond tolerance
     reading.is_mismatch = (
-        reading.current_points < current_threshold
-        or (rank_range > 0 and reading.current_points >= next_threshold)
+        abs(reading.estimated_points - reading.current_points) > VALIDATION_ABS_TOLERANCE
     )

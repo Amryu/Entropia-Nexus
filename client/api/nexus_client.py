@@ -360,28 +360,35 @@ class NexusClient:
     def get_exchange_items(self) -> list[dict]:
         """GET /api/market/exchange — returns categorized exchange slim items (no auth).
 
-        Flattens the categorized tree [{name, items: [...]}] into a single
-        list of slim item dicts with keys: i, n, t, v, st, w, m, p, b, s, etc.
+        The API returns a deeply nested dict of categories (e.g.
+        ``{"weapons": {"melee": {"sword": [...items]}}, ...}``).  We recursively
+        traverse it and collect every leaf array into a single flat list of slim
+        item dicts with keys: i, n, t, v, st, w, m, p, b, s, etc.
         """
         try:
-            resp = self._session.get(self._url("/market/exchange"), timeout=30)
+            # Explicitly request gzip — server serves brotli first, but the
+            # brotli Python package is not installed so requests can't decode it.
+            resp = self._session.get(
+                self._url("/market/exchange"),
+                headers={"Accept-Encoding": "gzip, deflate"},
+                timeout=30,
+            )
             resp.raise_for_status()
             data = resp.json()
         except Exception as e:
             log.error("Failed to fetch exchange items: %s", e)
             return []
 
-        flat = []
-        if isinstance(data, list):
-            for category in data:
-                if isinstance(category, dict):
-                    items = category.get("items", [])
-                    if isinstance(items, list):
-                        flat.extend(items)
-        elif isinstance(data, dict):
-            items = data.get("items", [])
-            if isinstance(items, list):
-                flat.extend(items)
+        flat: list[dict] = []
+
+        def _traverse(node):
+            if isinstance(node, list):
+                flat.extend(node)
+            elif isinstance(node, dict):
+                for v in node.values():
+                    _traverse(v)
+
+        _traverse(data)
         return flat
 
     # Exchange — Orders
@@ -755,6 +762,66 @@ class NexusClient:
         except Exception as e:
             self._handle_error(e, f"delete profile image {user_id}")
             return False
+
+    # Societies
+
+    def get_society(self, identifier: str) -> dict | None:
+        """GET /api/societies/{identifier} — society details + members."""
+        try:
+            encoded = identifier.replace(" ", "~")
+            resp = self._session.get(
+                self._url(f"/societies/{encoded}"),
+                headers=self._headers(), timeout=10)
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            self._handle_error(e, f"get society '{identifier}'")
+            return None
+
+    def update_society(self, identifier: str, data: dict) -> dict | None:
+        """PATCH /api/societies/{identifier} — update description, discord, discordPublic."""
+        try:
+            encoded = identifier.replace(" ", "~")
+            resp = self._session.patch(
+                self._url(f"/societies/{encoded}"),
+                headers=self._headers(), json=data, timeout=10)
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            self._handle_error(e, f"update society '{identifier}'")
+            return None
+
+    def handle_join_request(self, request_id: int, action: str) -> dict | None:
+        """PATCH /api/societies/requests/{request_id} — approve or reject."""
+        try:
+            resp = self._session.patch(
+                self._url(f"/societies/requests/{request_id}"),
+                headers=self._headers(),
+                json={"action": action},
+                timeout=10)
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            self._handle_error(e, f"{action} join request {request_id}")
+            return None
+
+    # Globals
+
+    def get_player_globals(self, eu_name: str) -> dict | None:
+        """GET /api/globals/player/{name} — player global event statistics."""
+        try:
+            encoded = eu_name.replace(" ", "~")
+            resp = self._session.get(
+                self._url(f"/globals/player/{encoded}"),
+                timeout=15,
+            )
+            if resp.status_code == 404:
+                return None
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            self._handle_error(e, f"fetch globals for {eu_name}")
+            return None
 
     # Streams
 

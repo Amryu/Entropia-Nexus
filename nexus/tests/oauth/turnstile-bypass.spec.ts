@@ -178,7 +178,7 @@ test.describe('Turnstile Bypass - Exchange Orders', () => {
     expect(data.error).toContain('Captcha');
   });
 
-  test('OAuth-authenticated bump-all is blocked', async ({ verifiedUser }) => {
+  test('OAuth-authenticated bump-all skips Turnstile', async ({ verifiedUser }) => {
     const { clientId, access_token } = await getOAuthTokens(verifiedUser);
     lastClientId = clientId;
 
@@ -186,10 +186,9 @@ test.describe('Turnstile Bypass - Exchange Orders', () => {
       headers: { Authorization: `Bearer ${access_token}` },
       data: {}
     });
-    // bump-all is not available via OAuth API
-    expect(res.status()).toBe(403);
-    const data = await res.json();
-    expect(data.error).toContain('not available via the OAuth API');
+    // Should not fail with Captcha or OAuth-blocked error
+    // May get 200 (success) or 429 (rate limit) — both are valid
+    expect([200, 429]).toContain(res.status());
   });
 });
 

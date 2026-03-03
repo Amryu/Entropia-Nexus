@@ -285,13 +285,14 @@ export async function getBestMarkupForItem(itemId, type, excludeUserId, gender =
 
 /**
  * Get order counts and volume per item for all active (non-closed, non-terminated) orders.
- * Returns a Map of itemId -> { buys, sells, buyVol, sellVol, lastUpdate, bestBuyMarkup }.
+ * Returns a Map of itemId -> { buys, sells, buyVol, sellVol, lastUpdate, bestBuyMarkup, bestSellMarkup }.
  */
 export async function getAllOrderCounts() {
   const query = `
     SELECT item_id, type, COUNT(*) AS cnt, COALESCE(SUM(quantity), 0) AS vol,
       MAX(bumped_at) AS last_update,
-      CASE WHEN type = 'BUY' THEN MAX(markup) ELSE NULL END AS best_markup
+      CASE WHEN type = 'BUY' THEN MAX(markup) ELSE NULL END AS best_buy_markup,
+      CASE WHEN type = 'SELL' THEN MIN(markup) ELSE NULL END AS best_sell_markup
     FROM trade_offers
     WHERE state != 'closed'
       AND bumped_at >= NOW() - INTERVAL '${TERMINATED_DAYS} days'
@@ -301,15 +302,16 @@ export async function getAllOrderCounts() {
   const counts = new Map();
   for (const row of rows) {
     const id = row.item_id;
-    if (!counts.has(id)) counts.set(id, { buys: 0, sells: 0, buyVol: 0, sellVol: 0, lastUpdate: null, bestBuyMarkup: null });
+    if (!counts.has(id)) counts.set(id, { buys: 0, sells: 0, buyVol: 0, sellVol: 0, lastUpdate: null, bestBuyMarkup: null, bestSellMarkup: null });
     const entry = counts.get(id);
     if (row.type === 'BUY') {
       entry.buys = parseInt(row.cnt, 10);
       entry.buyVol = parseInt(row.vol, 10);
-      entry.bestBuyMarkup = row.best_markup != null ? parseFloat(row.best_markup) : null;
+      entry.bestBuyMarkup = row.best_buy_markup != null ? parseFloat(row.best_buy_markup) : null;
     } else {
       entry.sells = parseInt(row.cnt, 10);
       entry.sellVol = parseInt(row.vol, 10);
+      entry.bestSellMarkup = row.best_sell_markup != null ? parseFloat(row.best_sell_markup) : null;
     }
     const ts = row.last_update ? new Date(row.last_update) : null;
     if (ts && (!entry.lastUpdate || ts > entry.lastUpdate)) entry.lastUpdate = ts;
@@ -465,29 +467,54 @@ export async function getExchangePriceHistory(itemId, period = '7d', gender = nu
 }
 
 /**
- * Get price stats for all items from the latest hourly exchange price summaries
+ * Get price stats for all items from the latest exchange price summaries
  * (pre-computed by the bot every 15 minutes with IQR outlier filtering).
- * Falls back to raw snapshots if no summaries exist yet.
+ * Prefers non-gendered (gender='') rows; falls back to gendered aggregates.
+ * Falls back to raw snapshots for items with no summaries yet.
  * Returns a Map of itemId -> { wap, median, p10 }.
  */
 export async function getLatestExchangePriceMap() {
   const map = new Map();
 
-  // Base: daily summaries within 7 days (aligned with snapshot staleness window)
+  function parseRow(r) {
+    return {
+      median: r.price_median != null ? parseFloat(r.price_median) : null,
+      p10: r.price_p10 != null ? parseFloat(r.price_p10) : null,
+      wap: r.price_wap != null ? parseFloat(r.price_wap) : null
+    };
+  }
+
+  // Base: daily summaries within 7 days — prefer non-gendered rows
   const { rows: dailyRows } = await pool.query(`
     SELECT DISTINCT ON (item_id)
       item_id, price_median, price_p10, price_wap
     FROM exchange_price_summaries
     WHERE period_type = 'day'
       AND period_start >= NOW() - INTERVAL '7 days'
+      AND gender = ''
     ORDER BY item_id, period_start DESC
   `);
-  for (const r of dailyRows) {
-    map.set(r.item_id, {
-      median: r.price_median != null ? parseFloat(r.price_median) : null,
-      p10: r.price_p10 != null ? parseFloat(r.price_p10) : null,
-      wap: r.price_wap != null ? parseFloat(r.price_wap) : null
-    });
+  for (const r of dailyRows) map.set(r.item_id, parseRow(r));
+
+  // Daily fallback: gendered items that have no gender='' row — aggregate across variants
+  const { rows: dailyGendered } = await pool.query(`
+    SELECT item_id,
+      PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY price_median) AS price_median,
+      PERCENTILE_CONT(0.1) WITHIN GROUP (ORDER BY price_p10) AS price_p10,
+      SUM(price_wap * volume) / NULLIF(SUM(volume), 0) AS price_wap
+    FROM (
+      SELECT DISTINCT ON (item_id, gender)
+        item_id, gender, price_median, price_p10, price_wap, volume
+      FROM exchange_price_summaries
+      WHERE period_type = 'day'
+        AND period_start >= NOW() - INTERVAL '7 days'
+        AND gender != ''
+      ORDER BY item_id, gender, period_start DESC
+    ) sub
+    GROUP BY item_id
+  `);
+  for (const r of dailyGendered) {
+    if (!map.has(r.item_id)) map.set(r.item_id, parseRow(r));
   }
 
   // Overlay: fresh hourly summaries override daily where available
@@ -497,26 +524,43 @@ export async function getLatestExchangePriceMap() {
     FROM exchange_price_summaries
     WHERE period_type = 'hour'
       AND period_start >= NOW() - INTERVAL '24 hours'
+      AND gender = ''
     ORDER BY item_id, period_start DESC
   `);
-  for (const r of hourlyRows) {
-    map.set(r.item_id, {
-      median: r.price_median != null ? parseFloat(r.price_median) : null,
-      p10: r.price_p10 != null ? parseFloat(r.price_p10) : null,
-      wap: r.price_wap != null ? parseFloat(r.price_wap) : null
-    });
+  for (const r of hourlyRows) map.set(r.item_id, parseRow(r));
+
+  // Hourly fallback for gendered items
+  const { rows: hourlyGendered } = await pool.query(`
+    SELECT item_id,
+      PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY price_median) AS price_median,
+      PERCENTILE_CONT(0.1) WITHIN GROUP (ORDER BY price_p10) AS price_p10,
+      SUM(price_wap * volume) / NULLIF(SUM(volume), 0) AS price_wap
+    FROM (
+      SELECT DISTINCT ON (item_id, gender)
+        item_id, gender, price_median, price_p10, price_wap, volume
+      FROM exchange_price_summaries
+      WHERE period_type = 'hour'
+        AND period_start >= NOW() - INTERVAL '24 hours'
+        AND gender != ''
+      ORDER BY item_id, gender, period_start DESC
+    ) sub
+    GROUP BY item_id
+  `);
+  for (const r of hourlyGendered) {
+    if (!map.has(r.item_id)) map.set(r.item_id, parseRow(r));
   }
 
-  // Fallback: raw snapshots for items with no summaries yet
-  if (map.size === 0) {
-    const { rows: snaps } = await pool.query(`
-      SELECT DISTINCT ON (item_id)
-        item_id, markup_value
-      FROM exchange_price_snapshots
-      WHERE recorded_at >= NOW() - INTERVAL '7 days'
-      ORDER BY item_id, recorded_at DESC
-    `);
-    for (const r of snaps) {
+  // Per-item fallback: raw snapshots for items with snapshots but no summaries yet
+  const { rows: snaps } = await pool.query(`
+    SELECT DISTINCT ON (item_id)
+      item_id, markup_value
+    FROM exchange_price_snapshots
+    WHERE recorded_at >= NOW() - INTERVAL '7 days'
+      AND gender = ''
+    ORDER BY item_id, recorded_at DESC
+  `);
+  for (const r of snaps) {
+    if (!map.has(r.item_id)) {
       const wap = r.markup_value != null ? parseFloat(r.markup_value) : null;
       map.set(r.item_id, { median: wap, p10: wap, wap });
     }

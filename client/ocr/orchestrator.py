@@ -387,7 +387,6 @@ class ScanOrchestrator:
             "bars": bars,
             "row_height": L["row_height"],
             "text_split": WINDOW_LAYOUT["row_text_ratio"],
-            "font_path": self._font_matcher.font_path,
             "font_size": self._font_matcher.font_size,
         })
 
@@ -430,9 +429,6 @@ class ScanOrchestrator:
 
             # Calibrate font matcher for the detected panel size
             self._font_matcher.calibrate(wh)
-
-            self._calibration_cells: list[np.ndarray] = []  # for auto-calibration
-            self._auto_calibrated = False
 
             log.debug("Layout: table=(%d,%d) %dx%d, cols=%s",
                       L['table_lx'], L['table_ly'], L['table_lw'], L['table_lh'],
@@ -490,7 +486,6 @@ class ScanOrchestrator:
             window_closed=False → user cancelled via stop_event
         """
         anchor_skill: Optional[str] = None
-        anchor_key: Optional[bytes] = None
         verify_fail_count = 0
         last_frame_hash: int = 0  # hash of last table region for stale detection
         stale_frame_count = 0
@@ -526,7 +521,6 @@ class ScanOrchestrator:
                 verify_fail_count = 0
                 self._event_bus.publish(EVENT_OCR_OVERLAYS_HIDE, lambda: None)
                 anchor_skill = None
-                anchor_key = None
                 redetect_start = time.monotonic()
 
                 # Fast path: try to relocate the panel within the current capture
@@ -582,8 +576,6 @@ class ScanOrchestrator:
 
                 self._font_matcher.calibrate(wh)
 
-                self._calibration_cells = []
-                self._auto_calibrated = False
                 self._publish_debug_regions(L)
                 # Save detection debug image with new position
                 if game_image is not None:
@@ -610,45 +602,43 @@ class ScanOrchestrator:
             table_image = game_image[crop_y:crop_y2, crop_x:crop_x2]
 
             # Stale frame detection: PrintWindow on focused DirectX games may
-            # return cached frames.  Track a hash of the table region — if it
-            # hasn't changed for STALE_FRAME_THRESHOLD consecutive captures,
-            # clear the anchor so the next *fresh* frame triggers a re-scan.
+            # return cached frames.  Track consecutive identical captures for
+            # diagnostics.  Page-change detection now uses font-matched skill
+            # names (robust to background transparency), so stale frames no
+            # longer need to clear the anchor.
             frame_hash = hash(table_image.data.tobytes()[:4096])
             if frame_hash == last_frame_hash:
                 stale_frame_count += 1
-                if (stale_frame_count >= STALE_FRAME_THRESHOLD
-                        and anchor_key is not None):
-                    log.debug("Stale frames detected (%d identical captures), "
-                              "clearing anchor to detect page changes",
+                if stale_frame_count == STALE_FRAME_THRESHOLD:
+                    log.debug("Stale frames detected (%d identical captures)",
                               stale_frame_count)
-                    anchor_key = None
-                    anchor_skill = None
-                    stale_frame_count = 0
             else:
                 stale_frame_count = 0
             last_frame_hash = frame_hash
 
-            # Fast page-change detection: binarize the first row's name cell
-            # and compare its hash against the anchor from the last scan.
-            # Only the skill name text matters — value/bar changes on the same
-            # page don't warrant a re-scan.
-            if anchor_key is not None:
-                _, _, _, wh_check = window_bounds
-                rh = self._detector.get_row_height(wh_check)
-                ns = L["col_ranges"]["name"][0]
-                ne_local = L["col_ranges"]["name"][1] - ns
-                th, tw = table_image.shape[:2]
-                if rh <= th and ne_local <= tw:
-                    first_name = table_image[0:rh, 0:ne_local]
-                    first_gray = (cv2.cvtColor(first_name, cv2.COLOR_BGR2GRAY)
-                                  if len(first_name.shape) == 3 else first_name)
-                    current_key = self._font_matcher._to_lookup_key(first_gray)
-                    if current_key == anchor_key:
-                        # Same page — no change detected
-                        self._stop_event.wait(timeout=MONITOR_INTERVAL)
-                        continue
-                log.debug("Page change detected (anchor '%s' no longer matches)",
-                          anchor_skill)
+            # Fast page-change detection: read the first row's skill name
+            # via font matcher and compare against the last scanned page.
+            # This is robust to semi-transparent backgrounds (unlike pixel
+            # hashing) and survives anchor clears from stale-frame detection.
+            _, _, _, wh_check = window_bounds
+            rh = self._detector.get_row_height(wh_check)
+            ns = L["col_ranges"]["name"][0]
+            ne_local = L["col_ranges"]["name"][1] - ns
+            th, tw = table_image.shape[:2]
+            if rh <= th and ne_local <= tw:
+                first_cell = table_image[0:rh, 0:ne_local]
+                first_gray = (cv2.cvtColor(first_cell, cv2.COLOR_BGR2GRAY)
+                              if len(first_cell.shape) == 3 else first_cell)
+                match = self._font_matcher.match_skill_name(first_gray)
+                current_name = match[0] if match else None
+                if (current_name is not None
+                        and current_name == anchor_skill):
+                    # Same first skill — page hasn't changed
+                    self._stop_event.wait(timeout=MONITOR_INTERVAL)
+                    continue
+                if anchor_skill is not None:
+                    log.debug("Page change detected (first skill: '%s' → '%s')",
+                              anchor_skill, current_name)
 
             # Page changed — clear old checkmarks
             self._event_bus.publish(EVENT_OCR_PAGE_CHANGED, None)
@@ -663,42 +653,15 @@ class ScanOrchestrator:
                 # Bad scan — window likely moved.  Reset anchor so the next
                 # capture is treated as fresh.
                 anchor_skill = None
-                anchor_key = None
                 self._stop_event.wait(timeout=MONITOR_INTERVAL)
                 continue
 
             # Update anchor from the first matched skill for next poll
             if page_skills:
                 anchor_skill = page_skills[0].skill_name
-                # Hash the first row's name cell (matching the comparison above)
-                _, _, _, wh_anchor = window_bounds
-                rh = self._detector.get_row_height(wh_anchor)
-                ns = L["col_ranges"]["name"][0]
-                ne_local = L["col_ranges"]["name"][1] - ns
-                th, tw = table_image.shape[:2]
-                if rh <= th and ne_local <= tw:
-                    first_name = table_image[0:rh, 0:ne_local]
-                    first_gray = (cv2.cvtColor(first_name, cv2.COLOR_BGR2GRAY)
-                                  if len(first_name.shape) == 3 else first_name)
-                    anchor_key = self._font_matcher._to_lookup_key(first_gray)
-                else:
-                    anchor_key = None
             else:
                 anchor_skill = None
-                anchor_key = None
-
             result.skills.extend(page_skills)
-
-            # Auto-calibrate after first page: test font sizes and modes
-            if (scan_count == 1 and not self._auto_calibrated
-                    and hasattr(self, '_calibration_cells')
-                    and self._calibration_cells):
-                self._auto_calibrated = True
-                log.info("Auto-calibrating with %d sample cells...",
-                         len(self._calibration_cells))
-                self._font_matcher.auto_calibrate(self._calibration_cells)
-
-                self._calibration_cells.clear()
 
             # Read pagination from cropped game image
             pcx = L["panel_ix"] + L["pag_lx"]
@@ -981,11 +944,6 @@ class ScanOrchestrator:
         points_gray = cv2.cvtColor(points_text_zone, cv2.COLOR_BGR2GRAY) \
             if len(points_text_zone.shape) == 3 else points_text_zone
 
-        # Collect sample cells for auto-calibration (first page only)
-        if hasattr(self, '_calibration_cells') and not self._auto_calibrated:
-            if len(self._calibration_cells) < 12:
-                self._calibration_cells.append(name_gray.copy())
-
         # Match skill name via font templates
         matched_name = None
         name_text = ""
@@ -1039,9 +997,12 @@ class ScanOrchestrator:
                 rank_text, rank_score = rank_match[0], rank_match[1]
 
         # Read points via font templates (can now use freshly captured templates)
+        # Pass BGR cell for orange/white text detection in 4-bit pipeline
         points_text = None
         if fm.calibrated:
-            points_text = fm.read_points(points_gray)
+            points_bgr = points_text_zone if len(points_text_zone.shape) == 3 \
+                else None
+            points_text = fm.read_points(points_gray, points_bgr)
 
         # Defer skill name template capture — needs post-capture verification
         # and window-movement validation from _scan_table_image.
@@ -1084,16 +1045,6 @@ class ScanOrchestrator:
                     "rank_progress": rank_progress,
                     "points_progress": progress,
                 })
-            debug_row_dir = os.path.join(DEBUG_DIR, "rows")
-            self._font_matcher.save_overlay_debug(
-                f"row_{row_idx:02d}_skill", name_gray,
-                matched_name, "skill", debug_row_dir)
-            self._font_matcher.save_overlay_debug(
-                f"row_{row_idx:02d}_rank", rank_gray,
-                rank_text, "rank", debug_row_dir)
-            self._font_matcher.save_digit_overlay_debug(
-                f"row_{row_idx:02d}", points_gray, debug_row_dir)
-
         # Cross-verify rank + points against known rank thresholds
         verification = self._rank_verifier.verify(
             rank_text or "", points_value, rank_progress)
@@ -1150,7 +1101,8 @@ class ScanOrchestrator:
         gray = cv2.cvtColor(pag_image, cv2.COLOR_BGR2GRAY) \
             if len(pag_image.shape) == 3 else pag_image
 
-        left = self._font_matcher.read_points(gray)
+        pag_bgr = pag_image if len(pag_image.shape) == 3 else None
+        left = self._font_matcher.read_points(gray, pag_bgr)
         if not left:
             return None
 
@@ -1187,7 +1139,8 @@ class ScanOrchestrator:
             return left
 
         right_region = gray[:, second_start:]
-        right = self._font_matcher.read_points(right_region)
+        right_bgr = pag_bgr[:, second_start:] if pag_bgr is not None else None
+        right = self._font_matcher.read_points(right_region, right_bgr)
         if not right:
             return left
 
@@ -1220,8 +1173,10 @@ class ScanOrchestrator:
         gray = cv2.cvtColor(total_img, cv2.COLOR_BGR2GRAY) \
             if len(total_img.shape) == 3 else total_img
         gray = gray[:, cw // 2:]
+        total_bgr = total_img[:, cw // 2:] \
+            if len(total_img.shape) == 3 else None
 
-        text = self._font_matcher.read_points(gray)
+        text = self._font_matcher.read_points(gray, total_bgr)
         if not text:
             log.debug("Total value not readable via FontMatcher")
             return None
