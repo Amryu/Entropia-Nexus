@@ -139,6 +139,7 @@ class MainWindow(QWidget):
         self._update_download_progress: dict | None = None  # last progress event
         self._update_download_ready: dict | None = None     # set when download completes
         self._update_download_error: dict | None = None     # set on download failure
+        self._user_wants_update = False                     # user clicked "Update Now"
 
         # Middle row: sidebar + pages (direct children of outer)
         middle = QHBoxLayout()
@@ -799,10 +800,10 @@ class MainWindow(QWidget):
         self._update_download_ready = data
         if self._update_dialog and self._update_dialog.isVisible():
             self._update_dialog.on_update_ready(data)
-        else:
-            # Auto-apply if the dialog isn't open (user didn't interact)
+        # Auto-apply only if user already clicked "Update Now"
+        if self._user_wants_update:
             from ..core.constants import EVENT_UPDATE_APPLY
-            QTimer.singleShot(1500, lambda: self._event_bus.publish(EVENT_UPDATE_APPLY, None))
+            QTimer.singleShot(500, lambda: self._event_bus.publish(EVENT_UPDATE_APPLY, None))
 
     def _on_update_error(self, data):
         self._update_download_error = data
@@ -853,12 +854,12 @@ class MainWindow(QWidget):
         self._open_update_dialog(changelog_only=True)
 
     def _on_dialog_update(self):
-        """User clicked 'Update Now' — apply if ready, otherwise wait for download."""
+        """User clicked 'Update Now' — apply if ready, otherwise apply when download finishes."""
+        self._user_wants_update = True
         from ..core.constants import EVENT_UPDATE_APPLY
         if self._update_download_ready:
             # Download already done — apply immediately
             QTimer.singleShot(500, lambda: self._event_bus.publish(EVENT_UPDATE_APPLY, None))
-        # If not ready yet, auto-apply will trigger when _on_update_ready fires
 
     def _on_dialog_remind(self):
         """User clicked 'Remind Later' — schedule toast in 6 hours."""

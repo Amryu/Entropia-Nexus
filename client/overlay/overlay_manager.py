@@ -182,7 +182,7 @@ class OverlayManager(QObject):
         self._timer.setInterval(OVERLAY_FOCUS_POLL_MS)
         self._timer.timeout.connect(self._poll_focus)
 
-        if getattr(config, "overlay_enabled", True):
+        if sys.platform == "win32" and getattr(config, "overlay_enabled", True):
             self._timer.start()
 
     # --- Widget registry ---
@@ -366,7 +366,7 @@ class OverlayManager(QObject):
     }
 
     def _register_hotkey(self) -> None:
-        if self._hotkey_registered:
+        if sys.platform != "win32" or self._hotkey_registered:
             return
         try:
             import keyboard

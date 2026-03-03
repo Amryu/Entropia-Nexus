@@ -172,6 +172,11 @@ class UpdateChecker:
         if not self._app_dir:
             log.info("Not running from frozen app — skipping update checks")
             return
+
+        # Post-update cleanup: if _update.log exists, the previous update
+        # apply script ran.  Log its contents for diagnostics, then delete.
+        self._cleanup_update_log()
+
         if not self._config.check_for_updates:
             log.info("Update checks disabled in config")
             return
@@ -195,6 +200,31 @@ class UpdateChecker:
         if self._thread:
             self._thread.join(timeout=3)
             self._thread = None
+
+    def _cleanup_update_log(self):
+        """Read and remove _update.log left by a previous apply script."""
+        log_path = self._app_dir / "_update.log"
+        if not log_path.exists():
+            return
+        try:
+            contents = log_path.read_text(encoding="utf-8", errors="replace").strip()
+            if contents:
+                log.info("Previous update log:\n%s", contents)
+            log_path.unlink()
+            log.info("Cleaned up _update.log")
+        except OSError as e:
+            log.warning("Failed to clean up _update.log: %s", e)
+
+        # Also clean up leftover staging dir or apply script
+        for leftover in ("_update", "_apply_update.cmd", "_apply_update.sh"):
+            p = self._app_dir / leftover
+            try:
+                if p.is_dir():
+                    shutil.rmtree(p, ignore_errors=True)
+                elif p.exists():
+                    p.unlink()
+            except OSError:
+                pass
 
     # --- Background loop ---
 
@@ -415,45 +445,56 @@ class UpdateChecker:
                     safe = rel.replace("/", "\\")
                     removals_cmds += f'if exist "{safe}" del /f /q "{safe}"\n'
 
+        log_path = app_dir / "_update.log"
+
         script = f'''@echo off
-setlocal
+setlocal EnableDelayedExpansion
 :: Entropia Nexus update apply script (auto-generated, safe to delete)
 set "EXE={exe_name}"
 set "APP_DIR={app_dir}"
 set "STAGING={staging_dir}"
+set "LOG={log_path}"
 
-echo Waiting for Entropia Nexus to close...
+echo [%date% %time%] Update apply script started > "%LOG%"
+echo [%date% %time%] EXE=%EXE% >> "%LOG%"
+echo [%date% %time%] APP_DIR=%APP_DIR% >> "%LOG%"
+echo [%date% %time%] STAGING=%STAGING% >> "%LOG%"
+
+echo [%date% %time%] Waiting for process to close... >> "%LOG%"
 :wait_loop
-tasklist /FI "IMAGENAME eq %EXE%" 2>NUL | find /I /N "%EXE%" >NUL
-if "%ERRORLEVEL%"=="0" (
-    timeout /t 1 /nobreak >NUL
+tasklist /FI "IMAGENAME eq %EXE%" 2>NUL | findstr /I "%EXE%" >NUL
+if !ERRORLEVEL! equ 0 (
+    ping -n 2 127.0.0.1 >NUL
     goto wait_loop
 )
+echo [%date% %time%] Process closed >> "%LOG%"
 
-echo Applying update...
 cd /d "%APP_DIR%"
 
 :: Copy staged files over current ones
-xcopy "%STAGING%\\*" "%APP_DIR%\\" /E /Y /Q >NUL 2>&1
+echo [%date% %time%] Copying files from staging... >> "%LOG%"
+xcopy "%STAGING%\\*" "%APP_DIR%\\." /E /Y /Q /I >> "%LOG%" 2>&1
 if errorlevel 1 (
-    echo ERROR: Failed to copy update files
-    pause
+    echo [%date% %time%] ERROR: xcopy failed with errorlevel !ERRORLEVEL! >> "%LOG%"
     goto cleanup
 )
+echo [%date% %time%] Copy complete >> "%LOG%"
 
 :: Remove deleted files
 {removals_cmds}
 
 :cleanup
 :: Clean up staging and metadata
+echo [%date% %time%] Cleaning up staging directory... >> "%LOG%"
 if exist "%STAGING%" rmdir /s /q "%STAGING%"
 if exist "%APP_DIR%\\_removals.json" del /f /q "%APP_DIR%\\_removals.json"
 
 :: Relaunch
-echo Starting Entropia Nexus...
+echo [%date% %time%] Starting %EXE%... >> "%LOG%"
 start "" "%APP_DIR%\\%EXE%"
 
-:: Self-delete
+echo [%date% %time%] Apply script finished >> "%LOG%"
+:: Self-delete (log file preserved for post-update check)
 (goto) 2>nul & del "%~f0"
 '''
         try:
@@ -461,10 +502,10 @@ start "" "%APP_DIR%\\%EXE%"
                 f.write(script)
 
             CREATE_NEW_PROCESS_GROUP = 0x00000200
-            DETACHED_PROCESS = 0x00000008
+            CREATE_NO_WINDOW = 0x08000000
             subprocess.Popen(
                 ["cmd.exe", "/c", str(script_path)],
-                creationflags=CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS,
+                creationflags=CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW,
                 close_fds=True,
                 cwd=str(app_dir),
             )
@@ -489,31 +530,46 @@ start "" "%APP_DIR%\\%EXE%"
                 for rel in json.load(f):
                     removals_cmds += f'rm -f "{rel}"\n'
 
+        log_file = app_dir / "_update.log"
+
         script = f'''#!/bin/bash
 # Entropia Nexus update apply script (auto-generated, safe to delete)
 APP_DIR="{app_dir}"
 STAGING="{staging_dir}"
 EXE="{exe_name}"
+LOG="{log_file}"
 
-echo "Waiting for Entropia Nexus to close (PID: {pid})..."
+ts() {{ date "+[%Y-%m-%d %H:%M:%S]"; }}
+
+echo "$(ts) Update apply script started" > "$LOG"
+echo "$(ts) APP_DIR=$APP_DIR" >> "$LOG"
+echo "$(ts) STAGING=$STAGING" >> "$LOG"
+echo "$(ts) EXE=$EXE" >> "$LOG"
+
+echo "$(ts) Waiting for process to close (PID: {pid})..." >> "$LOG"
 while kill -0 {pid} 2>/dev/null; do
     sleep 1
 done
+echo "$(ts) Process closed" >> "$LOG"
 
-echo "Applying update..."
 cd "$APP_DIR"
-cp -rf "$STAGING"/* "$APP_DIR/" 2>/dev/null
+
+echo "$(ts) Copying files from staging..." >> "$LOG"
+cp -rf "$STAGING"/* "$APP_DIR/" >> "$LOG" 2>&1
+echo "$(ts) Copy complete" >> "$LOG"
 
 # Remove deleted files
 {removals_cmds}
 
 # Clean up
+echo "$(ts) Cleaning up staging directory..." >> "$LOG"
 rm -rf "$STAGING"
 rm -f "$APP_DIR/_removals.json"
 rm -f "$APP_DIR/_apply_update.sh"
 
-echo "Starting Entropia Nexus..."
+echo "$(ts) Starting $EXE..." >> "$LOG"
 "$APP_DIR/$EXE" &
+echo "$(ts) Apply script finished" >> "$LOG"
 exit 0
 '''
         try:
