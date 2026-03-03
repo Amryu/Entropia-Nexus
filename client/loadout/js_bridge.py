@@ -2,20 +2,14 @@
 
 import json
 import re
-import sys
 from pathlib import Path
 
 from ..core.logger import get_logger
 
 log = get_logger("JSBridge")
 
-# Default path to the JS utils — use sys._MEIPASS in frozen builds
-# so the path resolves correctly inside the PyInstaller bundle.
-if getattr(sys, "frozen", False):
-    _base = Path(sys._MEIPASS)
-else:
-    _base = Path(__file__).parent.parent.parent
-DEFAULT_JS_PATH = _base / "nexus" / "src" / "lib" / "utils"
+# Default path to the JS utils (relative to project root)
+DEFAULT_JS_PATH = Path(__file__).parent.parent.parent / "nexus" / "src" / "lib" / "utils"
 
 # JS files to load, in dependency order
 JS_FILES = [

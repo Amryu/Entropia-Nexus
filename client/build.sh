@@ -282,6 +282,19 @@ if [[ -d "$INTERNAL_CHECK" ]]; then
 
     SAVED_MB=$((SAVED / 1048576))
     cyan "  Stripped ~${SAVED_MB} MB of unnecessary files."
+
+    # Fix py-mini-racer: its frozen-build code looks for the native library
+    # in sys._MEIPASS (= _internal/), but --collect-all places it in
+    # _internal/py_mini_racer/.  Copy it to where the library expects it.
+    if [[ "$PLATFORM" == "windows" ]]; then
+        PMR_LIB="$INTERNAL_CHECK/py_mini_racer/mini_racer.dll"
+    else
+        PMR_LIB=$(find "$INTERNAL_CHECK/py_mini_racer" -name 'libmini_racer*.so*' -type f 2>/dev/null | head -1)
+    fi
+    if [[ -f "$PMR_LIB" ]]; then
+        cp "$PMR_LIB" "$INTERNAL_CHECK/"
+        cyan "  Copied $(basename "$PMR_LIB") to _internal/ for py-mini-racer"
+    fi
 fi
 
 # ── Post-build: resolve version ─────────────────────────────────────────────
