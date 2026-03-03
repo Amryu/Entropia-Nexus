@@ -5,6 +5,7 @@ import hashlib
 import os
 import secrets
 import threading
+import time
 import urllib.parse
 import webbrowser
 from datetime import datetime, timedelta
@@ -105,7 +106,15 @@ class OAuthClient:
         class CallbackHandler(BaseHTTPRequestHandler):
             def do_GET(self_handler):
                 nonlocal auth_code, received_state, server_error
-                params = urllib.parse.parse_qs(urllib.parse.urlparse(self_handler.path).query)
+                parsed = urllib.parse.urlparse(self_handler.path)
+
+                # Ignore favicon and other non-callback requests (browser prefetch)
+                if parsed.path != "/callback":
+                    self_handler.send_response(204)
+                    self_handler.end_headers()
+                    return
+
+                params = urllib.parse.parse_qs(parsed.query)
 
                 if "error" in params:
                     server_error = params["error"][0]
@@ -136,18 +145,31 @@ class OAuthClient:
         redirect_port = self._config.oauth_redirect_port
         redirect_uri = f"http://127.0.0.1:{redirect_port}/callback"
 
-        server = HTTPServer(("127.0.0.1", redirect_port), CallbackHandler)
-        server.timeout = CALLBACK_TIMEOUT_SECONDS
+        try:
+            server = HTTPServer(("127.0.0.1", redirect_port), CallbackHandler)
+        except OSError as e:
+            log.error("Cannot start login server on port %s: %s", redirect_port, e)
+            return False
 
         # Build authorization URL
         auth_url = self._build_auth_url(code_challenge, state, redirect_uri)
 
         # Open browser
-        webbrowser.open(auth_url)
-        log.info("Opened browser for login. Waiting for callback on port %s...", redirect_port)
+        if webbrowser.open(auth_url):
+            log.info("Opened browser for login")
+        else:
+            log.warning("Could not open browser. Open this URL manually:\n  %s", auth_url)
+        log.info("Waiting for login callback on port %s...", redirect_port)
 
-        # Wait for callback (single request)
-        server.handle_request()
+        # Wait for callback — loop to handle spurious requests (favicon, prefetch)
+        deadline = time.monotonic() + CALLBACK_TIMEOUT_SECONDS
+        while auth_code is None and server_error is None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            server.timeout = remaining
+            server.handle_request()
+
         server.server_close()
 
         # Validate
