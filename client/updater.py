@@ -220,7 +220,7 @@ class UpdateChecker:
     def _check(self) -> bool:
         """Fetch remote manifest, compare with local. Returns True if update available."""
         base_url = self._config.nexus_base_url.rstrip("/")
-        manifest_url = f"{base_url}/static/client/{self._platform}/manifest.json"
+        manifest_url = f"{base_url}/client/{self._platform}/manifest.json"
 
         log.info("Checking for updates: %s", manifest_url)
 
@@ -271,7 +271,7 @@ class UpdateChecker:
 
     def _fetch_changelog(self, base_url: str) -> list[dict]:
         """Download the remote changelog.json (platform-independent)."""
-        url = f"{base_url}/static/client/changelog.json"
+        url = f"{base_url}/client/changelog.json"
         try:
             resp = self._session.get(url, timeout=_MANIFEST_TIMEOUT)
             resp.raise_for_status()
@@ -306,7 +306,7 @@ class UpdateChecker:
                 "current_file": rel_path,
             })
 
-            file_url = f"{base_url}/static/client/{self._platform}/{rel_path}"
+            file_url = f"{base_url}/client/{self._platform}/{rel_path}"
             dest = staging_dir / rel_path
             dest.parent.mkdir(parents=True, exist_ok=True)
 

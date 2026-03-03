@@ -39,12 +39,12 @@
   const platforms = [
     {
       name: 'Windows',
-      file: (v) => `/static/client/windows/entropia-nexus-${v}-windows.zip`,
+      file: (v) => `/client/windows/entropia-nexus-${v}-windows.zip`,
       note: 'Windows 10+ (64-bit)'
     },
     {
       name: 'Linux',
-      file: (v) => `/static/client/linux/entropia-nexus-${v}-linux.tar.gz`,
+      file: (v) => `/client/linux/entropia-nexus-${v}-linux.tar.gz`,
       note: 'x86_64, glibc 2.31+'
     }
   ];
