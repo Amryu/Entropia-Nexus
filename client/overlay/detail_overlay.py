@@ -1603,7 +1603,9 @@ class DetailOverlayWidget(OverlayWidget):
                 if cost_rare and cost_rare > 0:
                     cost_parts.append(f"{cost_rare} Rare Animal Essence")
                 if cost_parts:
-                    layout.addWidget(_stat_row("Cost", ", ".join(cost_parts)))
+                    layout.addWidget(_stat_row("Cost", cost_parts[0]))
+                    for part in cost_parts[1:]:
+                        layout.addWidget(_stat_row("", part))
 
                 criteria = unlock.get("Criteria")
                 if criteria:

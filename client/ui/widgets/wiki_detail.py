@@ -1330,9 +1330,10 @@ class WikiDetailView(QWidget):
         self._description_browser.setFixedHeight(int(doc.size().height()) + 20)
 
     def eventFilter(self, obj, event):
-        """Block wheel events on the description browser viewport."""
+        """Forward wheel events from description browser to parent scroll."""
         if obj is self._description_browser.viewport() and event.type() == QEvent.Type.Wheel:
-            return True  # consumed — don't scroll
+            self.wheelEvent(event)
+            return True
         return super().eventFilter(obj, event)
 
     def _add_article_section(self, section: QWidget):

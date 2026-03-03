@@ -829,7 +829,7 @@ class ExchangeOverlay(OverlayWidget):
         self._fav_tree = QTreeWidget()
         self._fav_tree.setHeaderHidden(True)
         self._fav_tree.setRootIsDecorated(True)
-        self._fav_tree.setStyleSheet(self._make_tree_style())
+        self._fav_tree.setStyleSheet(_make_tree_style())
         self._fav_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._fav_tree.customContextMenuRequested.connect(self._on_fav_context_menu)
         self._fav_tree.itemDoubleClicked.connect(self._on_fav_double_clicked)

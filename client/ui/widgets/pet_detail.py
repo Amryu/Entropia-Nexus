@@ -4,14 +4,17 @@ from __future__ import annotations
 
 import threading
 
-from PyQt6.QtWidgets import QWidget, QVBoxLayout, QLabel
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtWidgets import (
+    QWidget, QVBoxLayout, QLabel, QGridLayout, QSizePolicy,
+)
+from PyQt6.QtCore import pyqtSignal, Qt
 
 from .wiki_detail import (
     WikiDetailView, InfoboxSection, Tier1StatRow, StatRow, DataSection,
     build_acquisition_content, build_usage_content, exchange_url,
 )
-from ..theme import TEXT_MUTED
+from ..theme import PRIMARY, BORDER, TEXT, TEXT_MUTED, ACCENT
+
 from ...data.wiki_columns import deep_get, get_item_name, fmt_int
 
 
@@ -89,68 +92,19 @@ class PetDetailView(WikiDetailView):
             props.add_row(StatRow("Planet", planet))
         self._add_section(props)
 
-        # --- Effects ---
-        effects = item.get("Effects") or []
-        if effects:
-            eff_section = InfoboxSection("Effects")
-            sorted_effects = sorted(
-                effects,
-                key=lambda e: deep_get(e, "Properties", "Unlock", "Level") or 0,
-            )
-            for eff in sorted_effects:
-                eff_name = eff.get("Name", "Unknown")
-                strength = deep_get(eff, "Properties", "Strength")
-                unit = deep_get(eff, "Properties", "Unit") or ""
-                # Main row: effect name → strength+unit
-                val_str = f"{strength}{unit}" if strength is not None else "-"
-                eff_section.add_row(StatRow(eff_name, val_str))
-
-                # Indented details
-                eff_nutrio = deep_get(eff, "Properties", "NutrioConsumptionPerHour")
-                if eff_nutrio is not None:
-                    eff_section.add_row(StatRow(
-                        "Upkeep", f"{eff_nutrio}/h", indent=True
-                    ))
-
-                unlock = deep_get(eff, "Properties", "Unlock") or {}
-                unlock_level = unlock.get("Level")
-                if unlock_level is not None:
-                    eff_section.add_row(StatRow(
-                        "Level", fmt_int(unlock_level), indent=True
-                    ))
-
-                cost_parts = []
-                cost_ped = unlock.get("CostPED")
-                if cost_ped and cost_ped > 0:
-                    cost_parts.append(f"{_fv(cost_ped, 2)} PED")
-                cost_essence = unlock.get("CostEssence")
-                if cost_essence and cost_essence > 0:
-                    cost_parts.append(f"{fmt_int(cost_essence)} Animal Essence")
-                cost_rare = unlock.get("CostRareEssence")
-                if cost_rare and cost_rare > 0:
-                    cost_parts.append(f"{fmt_int(cost_rare)} Rare Animal Essence")
-                if cost_parts:
-                    eff_section.add_row(StatRow(
-                        "Cost", ", ".join(cost_parts), indent=True
-                    ))
-
-                criteria = unlock.get("Criteria")
-                if criteria:
-                    criteria_val = unlock.get("CriteriaValue")
-                    crit_str = (
-                        f"{criteria} ({fmt_int(criteria_val)})"
-                        if criteria_val is not None else criteria
-                    )
-                    eff_section.add_row(StatRow("Criteria", crit_str, indent=True))
-
-            self._add_section(eff_section)
-
         self._add_infobox_stretch()
 
         # --- Article area ---
         self._set_article_title(name)
         description = deep_get(item, "Properties", "Description") or ""
         self._set_description_html(description)
+
+        # --- Pet Skills panel (collapsible, below infobox) ---
+        effects = item.get("Effects") or []
+        if effects:
+            skills_section = DataSection("Pet Skills", expanded=True)
+            skills_section.set_content(self._build_skills_widget(effects))
+            self._add_article_section(skills_section)
 
         # --- Acquisition panel ---
         self._acquisition_section = DataSection("Acquisition", expanded=True)
@@ -172,6 +126,127 @@ class PetDetailView(WikiDetailView):
             threading.Thread(
                 target=fetch_data, daemon=True, name="pet-data-fetch"
             ).start()
+
+    def _build_skills_widget(self, effects: list) -> QWidget:
+        """Build pet skills as a responsive card grid."""
+        container = QWidget()
+        container.setStyleSheet("background: transparent;")
+        grid = QGridLayout(container)
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setSpacing(8)
+        grid.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        sorted_effects = sorted(
+            effects,
+            key=lambda e: deep_get(e, "Properties", "Unlock", "Level") or 0,
+        )
+
+        # 2-column grid (minimum 2 cards per row)
+        cols = 2
+        for i, eff in enumerate(sorted_effects):
+            card = self._build_skill_card(eff)
+            grid.addWidget(card, i // cols, i % cols)
+
+        # Make columns stretch equally
+        for c in range(cols):
+            grid.setColumnStretch(c, 1)
+
+        return container
+
+    def _build_skill_card(self, eff: dict) -> QWidget:
+        """Build a single compact skill card."""
+        from PyQt6.QtWidgets import QHBoxLayout
+
+        eff_name = eff.get("Name", "Unknown")
+        strength = deep_get(eff, "Properties", "Strength")
+        unit = deep_get(eff, "Properties", "Unit") or ""
+        val_str = f"{strength}{unit}" if strength is not None else "-"
+        unlock = deep_get(eff, "Properties", "Unlock") or {}
+        unlock_level = unlock.get("Level")
+
+        card = QWidget()
+        card.setStyleSheet(
+            f"QWidget#skillCard {{"
+            f"  background-color: {PRIMARY};"
+            f"  border: 1px solid {BORDER};"
+            f"  border-radius: 6px;"
+            f"}}"
+        )
+        card.setObjectName("skillCard")
+        card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(2)
+
+        # Top row: Skill name + Level badge
+        top_row = QHBoxLayout()
+        top_row.setSpacing(6)
+        title = QLabel(eff_name)
+        title.setWordWrap(True)
+        title.setStyleSheet(
+            f"color: {ACCENT}; font-size: 13px; font-weight: 600;"
+            " background: transparent;"
+        )
+        top_row.addWidget(title, 1)
+        if unlock_level is not None:
+            level_lbl = QLabel(f"Lvl {unlock_level}")
+            level_lbl.setStyleSheet(
+                f"color: {TEXT}; font-size: 13px; font-weight: 700;"
+                " background: transparent;"
+            )
+            top_row.addWidget(level_lbl, 0)
+        layout.addLayout(top_row)
+
+        # Strength value (prominent)
+        strength_lbl = QLabel(val_str)
+        strength_lbl.setStyleSheet(
+            f"color: {TEXT}; font-size: 15px; font-weight: 700;"
+            " background: transparent; margin: 2px 0;"
+        )
+        layout.addWidget(strength_lbl)
+
+        # Secondary details (each on its own line)
+        _muted_style = (
+            f"color: {TEXT_MUTED}; font-size: 11px;"
+            " background: transparent;"
+        )
+
+        eff_nutrio = deep_get(eff, "Properties", "NutrioConsumptionPerHour")
+        if eff_nutrio is not None:
+            upkeep_lbl = QLabel(f"Upkeep {eff_nutrio}/h")
+            upkeep_lbl.setStyleSheet(_muted_style)
+            layout.addWidget(upkeep_lbl)
+
+        cost_parts = []
+        cost_ped = unlock.get("CostPED")
+        if cost_ped and cost_ped > 0:
+            cost_parts.append(f"{_fv(cost_ped, 2)} PED")
+        cost_essence = unlock.get("CostEssence")
+        if cost_essence and cost_essence > 0:
+            cost_parts.append(f"{fmt_int(cost_essence)} Animal Essence")
+        cost_rare = unlock.get("CostRareEssence")
+        if cost_rare and cost_rare > 0:
+            cost_parts.append(f"{fmt_int(cost_rare)} Rare Animal Essence")
+        if cost_parts:
+            cost_lbl = QLabel("Cost: " + ", ".join(cost_parts))
+            cost_lbl.setWordWrap(True)
+            cost_lbl.setStyleSheet(_muted_style)
+            layout.addWidget(cost_lbl)
+
+        criteria = unlock.get("Criteria")
+        if criteria:
+            criteria_val = unlock.get("CriteriaValue")
+            crit_str = (
+                f"{criteria} ({fmt_int(criteria_val)})"
+                if criteria_val is not None else criteria
+            )
+            crit_lbl = QLabel(crit_str)
+            crit_lbl.setWordWrap(True)
+            crit_lbl.setStyleSheet(_muted_style)
+            layout.addWidget(crit_lbl)
+
+        return card
 
     def _on_acquisition_loaded(self, data: dict):
         if not hasattr(self, "_acquisition_section"):
