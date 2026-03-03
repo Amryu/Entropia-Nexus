@@ -1,5 +1,19 @@
 [
   {
+    "version": "0.1.3",
+    "date": "2026-03-03",
+    "changes": [
+      {"type": "feat", "text": "Linux support (X11 and Wayland) via platform abstraction layer"},
+      {"type": "feat", "text": "Wayland compositor support improvements (KDE, Sway, Hyprland focus control)"},
+      {"type": "feat", "text": "Pet skills redesigned as card grid layout"},
+      {"type": "fix", "text": "OAuth login reliability on Linux (favicon race, port handling, keyring fallback)"},
+      {"type": "fix", "text": "App shutdown reliability (parallel cleanup, signal handling)"},
+      {"type": "fix", "text": "Map overlay can now be dragged from sidebar and footer"},
+      {"type": "fix", "text": "Skill and profession weights displayed as percentage instead of raw value"},
+      {"type": "fix", "text": "Scroll behavior in wiki detail descriptions"}
+    ]
+  },
+  {
     "version": "0.1.2",
     "date": "2026-03-03",
     "changes": [
