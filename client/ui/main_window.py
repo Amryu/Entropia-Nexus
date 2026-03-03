@@ -96,6 +96,7 @@ class MainWindow(QWidget):
 
         self._wiki_page = None
         self._markup_resolver = None
+        self._quitting = False
 
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         self.setWindowTitle("Entropia Nexus")
@@ -674,7 +675,13 @@ class MainWindow(QWidget):
         self.bring_to_front()
 
     def _quit(self):
-        self._save_geometry()
+        try:
+            self._save_geometry()
+        except Exception:
+            pass  # Shutdown must not be blocked by geometry save failure
+        # Tell closeEvent to accept (not hide-to-tray) so Qt's quit
+        # sequence isn't cancelled by the rejected close event.
+        self._quitting = True
         # Defer quit so it runs after the tray context menu's nested event
         # loop closes — QApplication.quit() called inside the menu handler
         # only exits the menu's loop, not the outer app.exec().
@@ -885,7 +892,10 @@ class MainWindow(QWidget):
         return primary or (screens[0] if screens else None)
 
     def closeEvent(self, event):
-        """Minimize to tray instead of closing."""
+        """Minimize to tray instead of closing (unless quitting)."""
+        if self._quitting:
+            event.accept()
+            return
         event.ignore()
         self._save_geometry()
         self.hide()

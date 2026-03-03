@@ -14,6 +14,7 @@ import os
 import signal
 import sys
 import threading
+import time
 import traceback
 
 from .core.config import load_config
@@ -104,6 +105,14 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
         app.quit()
 
     signal.signal(signal.SIGINT, _on_sigint)
+
+    # On Windows, Python signal handlers only run when Python bytecode
+    # executes.  Qt's C++ event loop never gives Python that chance, so
+    # SIGINT is silently swallowed.  A periodic no-op timer forces the
+    # interpreter to check for pending signals every 200 ms.
+    _signal_timer = QTimer()
+    _signal_timer.timeout.connect(lambda: None)
+    _signal_timer.start(200)
 
     # Single-instance enforcement: try to reach an existing instance
     if not allow_multiple:
@@ -567,7 +576,7 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     _cleanup_workers(workers)
     db.close()
     kill_timer.cancel()
-    sys.exit(exit_code)
+    os._exit(exit_code or 0)
 
 
 def _show_splash(app, oauth, event_bus):
@@ -787,12 +796,24 @@ def _start_ingestion(config, event_bus, nexus_client, db=None):
 
 
 def _cleanup_workers(workers):
-    """Stop all workers that have a stop() method."""
+    """Stop all workers in parallel to minimize total shutdown time."""
+    threads = []
     for worker in workers:
-        try:
-            worker.stop()
-        except Exception as e:
-            log.error("Error stopping %s: %s", worker.__class__.__name__, e)
+        def _stop(w=worker):
+            try:
+                w.stop()
+            except Exception as e:
+                log.error("Error stopping %s: %s", w.__class__.__name__, e)
+        t = threading.Thread(target=_stop, daemon=True)
+        t.start()
+        threads.append(t)
+    # Wait for all stop() calls, with a shared 4s budget (leaves 1s
+    # headroom before the 5s force-exit timer).
+    deadline = time.monotonic() + 4.0
+    for t in threads:
+        remaining = deadline - time.monotonic()
+        if remaining > 0:
+            t.join(timeout=remaining)
 
 
 def _run_batch_parse(config, event_bus, db):
