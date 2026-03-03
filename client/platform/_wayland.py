@@ -58,6 +58,7 @@ class WaylandBackend:
 
     def __init__(self):
         self._compositor = _detect_compositor()
+        self._geometry_cache: dict = {}  # {wid: (x, y, w, h)} populated by find
         log.info("Wayland backend initialised (compositor: %s)", self._compositor)
 
     # ------------------------------------------------------------------
@@ -100,6 +101,8 @@ class WaylandBackend:
                 return self._sway_find_by_prefix(prefix)
             if self._compositor == "hyprland":
                 return self._hyprland_find_by_prefix(prefix)
+            if self._compositor == "kde":
+                return self._kde_find_by_prefix(prefix)
         except Exception:
             pass
         return None
@@ -111,7 +114,7 @@ class WaylandBackend:
         return False
 
     def get_window_geometry(self, wid: int) -> tuple[int, int, int, int] | None:
-        return None
+        return self._geometry_cache.get(wid)
 
     def get_window_pid(self, wid: int) -> int:
         return 0
@@ -131,10 +134,24 @@ class WaylandBackend:
         return False  # Not possible on Wayland
 
     def bring_to_foreground(self, wid: int) -> bool:
-        # Qt's raise_() + activateWindow() is the best we can do
+        try:
+            if self._compositor == "sway":
+                return self._sway_focus_window(wid)
+            if self._compositor == "hyprland":
+                return self._hyprland_focus_window(wid)
+        except Exception as e:
+            log.debug("Failed to bring window to foreground: %s", e)
         return False
 
     def release_focus_to(self, title_prefix: str) -> bool:
+        try:
+            if self._compositor == "kde":
+                return self._kde_focus_by_prefix(title_prefix)
+            wid = self.find_window_by_title_prefix(title_prefix)
+            if wid is not None:
+                return self.bring_to_foreground(wid)
+        except Exception as e:
+            log.debug("Failed to release focus: %s", e)
         return False
 
     # ------------------------------------------------------------------
@@ -228,7 +245,14 @@ class WaylandBackend:
             tree = json.loads(result.stdout)
             node = self._sway_walk_for_prefix(tree, prefix)
             if node:
-                return node.get("id", 0)
+                con_id = node.get("id", 0)
+                rect = node.get("rect")
+                if rect and con_id:
+                    self._geometry_cache[con_id] = (
+                        rect.get("x", 0), rect.get("y", 0),
+                        rect.get("width", 0), rect.get("height", 0),
+                    )
+                return con_id
         return None
 
     def _sway_walk_for_prefix(self, node: dict, prefix: str) -> dict | None:
@@ -263,5 +287,104 @@ class WaylandBackend:
             for client in clients:
                 title = client.get("title", "")
                 if title.startswith(prefix):
-                    return client.get("address", 0)
+                    address = client.get("address", 0)
+                    at = client.get("at")
+                    size = client.get("size")
+                    if at and size and address:
+                        self._geometry_cache[address] = (
+                            at[0], at[1], size[0], size[1],
+                        )
+                    return address
         return None
+
+    # ------------------------------------------------------------------
+    # KDE — window finding and focus via KWin scripting
+    # ------------------------------------------------------------------
+
+    def _kde_find_by_prefix(self, prefix: str) -> int | None:
+        """KDE Plasma: find window by title prefix via KWin scripting."""
+        safe = prefix.replace("\\", "\\\\").replace("'", "\\'")
+        script = (
+            "var wins = workspace.windowList();"
+            "var r = '';"
+            "for (var i = 0; i < wins.length; i++) {"
+            "  var w = wins[i];"
+            f"  if (w.caption.startsWith('{safe}')) {{"
+            "    var g = w.frameGeometry;"
+            "    r = w.caption + '|' + g.x + '|' + g.y + '|' + g.width + '|' + g.height;"
+            "    break;"
+            "  }"
+            "}"
+            "r;"
+        )
+        result = subprocess.run(
+            [
+                "dbus-send", "--session", "--dest=org.kde.KWin",
+                "--print-reply", "/Scripting",
+                "org.kde.kwin.Scripting.evaluateScript",
+                f"string:{script}",
+            ],
+            capture_output=True, text=True, timeout=2,
+        )
+        if result.returncode == 0:
+            for line in result.stdout.splitlines():
+                line = line.strip()
+                if line.startswith("string") and '"' in line:
+                    value = line.split('"')[1]
+                    if not value:
+                        return None
+                    parts = value.split("|")
+                    wid = hash(parts[0])
+                    if len(parts) == 5:
+                        try:
+                            self._geometry_cache[wid] = (
+                                int(parts[1]), int(parts[2]),
+                                int(parts[3]), int(parts[4]),
+                            )
+                        except (ValueError, IndexError):
+                            pass
+                    return wid
+        return None
+
+    def _kde_focus_by_prefix(self, prefix: str) -> bool:
+        """KDE Plasma: activate window by title prefix via KWin scripting."""
+        safe = prefix.replace("\\", "\\\\").replace("'", "\\'")
+        script = (
+            "var wins = workspace.windowList();"
+            "for (var i = 0; i < wins.length; i++) {"
+            f"  if (wins[i].caption.startsWith('{safe}')) {{"
+            "    workspace.activeWindow = wins[i];"
+            "    break;"
+            "  }"
+            "}"
+        )
+        result = subprocess.run(
+            [
+                "dbus-send", "--session", "--dest=org.kde.KWin",
+                "--print-reply", "/Scripting",
+                "org.kde.kwin.Scripting.evaluateScript",
+                f"string:{script}",
+            ],
+            capture_output=True, text=True, timeout=2,
+        )
+        return result.returncode == 0
+
+    # ------------------------------------------------------------------
+    # Sway / Hyprland — focus control
+    # ------------------------------------------------------------------
+
+    def _sway_focus_window(self, con_id: int) -> bool:
+        """Focus a Sway window by its con_id."""
+        result = subprocess.run(
+            ["swaymsg", f"[con_id={con_id}]", "focus"],
+            capture_output=True, text=True, timeout=2,
+        )
+        return result.returncode == 0
+
+    def _hyprland_focus_window(self, address) -> bool:
+        """Focus a Hyprland window by its address."""
+        result = subprocess.run(
+            ["hyprctl", "dispatch", "focuswindow", f"address:{address}"],
+            capture_output=True, text=True, timeout=2,
+        )
+        return result.returncode == 0
