@@ -12,7 +12,6 @@
 <script>
   // @ts-nocheck
   import { editMode, updateField } from '$lib/stores/wikiEditState.js';
-  import FancyTable from '$lib/components/FancyTable.svelte';
   import SearchInput from './SearchInput.svelte';
   import CreateEffectDialog from './CreateEffectDialog.svelte';
 
@@ -57,34 +56,6 @@
     const unit = getEffectUnit(effect.Name);
     return `${strength}${unit}`;
   }
-
-  $: effectsTableData = (sortedEffects || []).map(effect => {
-    const unlock = effect?.Properties?.Unlock || {};
-    const costParts = [];
-    if (unlock.CostPED > 0) costParts.push(`${unlock.CostPED} PED`);
-    if (unlock.CostEssence > 0) costParts.push(`${unlock.CostEssence} Animal Essence`);
-    if (unlock.CostRareEssence > 0) costParts.push(`${unlock.CostRareEssence} Rare Animal Essence`);
-    const criteriaText = unlock.Criteria
-      ? (unlock.CriteriaValue != null ? `${unlock.Criteria} (${unlock.CriteriaValue})` : unlock.Criteria)
-      : 'N/A';
-
-    const upkeepValue = effect.Properties?.NutrioConsumptionPerHour;
-    return {
-      effect: `${formatStrength(effect)} ${effect.Name}`,
-      upkeep: upkeepValue != null ? `${upkeepValue}/h` : 'N/A',
-      level: unlock.Level ?? 'N/A',
-      cost: costParts.length > 0 ? costParts.join(', ') : 'N/A',
-      criteria: criteriaText
-    };
-  });
-
-  $: effectsTableColumns = [
-    { key: 'effect', header: 'Effect', main: true },
-    { key: 'upkeep', header: 'Upkeep' },
-    { key: 'level', header: 'Level' },
-    { key: 'cost', header: 'Cost' },
-    { key: 'criteria', header: 'Criteria' }
-  ];
 
   // === Effect CRUD Operations ===
   function addEffect() {
@@ -329,16 +300,35 @@
         </div>
       </div>
     {:else if effects?.length > 0}
-      <div class="effects-table-wrapper">
-        <FancyTable
-          columns={effectsTableColumns}
-          data={effectsTableData}
-          rowHeight={32}
-          searchable={true}
-          sortable={true}
-          compact
-          emptyMessage="No pet effects"
-        />
+      <div class="effects-card-grid">
+        {#each sortedEffects as effect}
+          {@const unlock = effect.Properties?.Unlock || {}}
+          {@const costParts = [
+            ...(unlock.CostPED > 0 ? [`${unlock.CostPED} PED`] : []),
+            ...(unlock.CostEssence > 0 ? [`${unlock.CostEssence} Animal Essence`] : []),
+            ...(unlock.CostRareEssence > 0 ? [`${unlock.CostRareEssence} Rare Animal Essence`] : []),
+          ]}
+          <div class="skill-card">
+            <div class="skill-card-top">
+              <span class="skill-name">{effect.Name}</span>
+              {#if unlock.Level != null}
+                <span class="skill-level">Lvl {unlock.Level}</span>
+              {/if}
+            </div>
+            <div class="skill-strength">{formatStrength(effect)}</div>
+            {#if effect.Properties?.NutrioConsumptionPerHour != null}
+              <div class="skill-detail">Upkeep {effect.Properties.NutrioConsumptionPerHour}/h</div>
+            {/if}
+            {#if costParts.length > 0}
+              <div class="skill-detail">Cost: {costParts.join(', ')}</div>
+            {/if}
+            {#if unlock.Criteria}
+              <div class="skill-detail">
+                {unlock.Criteria}{unlock.CriteriaValue != null ? ` (${unlock.CriteriaValue})` : ''}
+              </div>
+            {/if}
+          </div>
+        {/each}
       </div>
     {:else}
       <div class="no-effects">No pet effects defined</div>
@@ -585,12 +575,53 @@
     border-color: var(--accent-color, #4a9eff);
   }
 
-  /* View mode styles */
-  .effects-table-wrapper {
-    max-height: 320px;
+  /* View mode — card grid */
+  .effects-card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr));
+    gap: 8px;
+  }
+
+  .skill-card {
+    background-color: var(--bg-color, var(--primary-color));
     border: 1px solid var(--border-color, #555);
     border-radius: 6px;
-    overflow: hidden;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .skill-card-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .skill-name {
+    flex: 1;
+    color: var(--accent-color, #60b0ff);
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .skill-level {
+    color: var(--text-color, white);
+    font-size: 13px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .skill-strength {
+    color: var(--text-color, white);
+    font-size: 15px;
+    font-weight: 700;
+    margin: 2px 0;
+  }
+
+  .skill-detail {
+    color: var(--text-muted, #999);
+    font-size: 11px;
   }
 
   .no-effects {
@@ -604,6 +635,10 @@
 
   /* Mobile adjustments */
   @media (max-width: 899px) {
+    .effects-card-grid {
+      grid-template-columns: 1fr 1fr;
+    }
+
     .effect-fields-row {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -625,9 +660,11 @@
     .criteria-row .field-group:first-child {
       grid-column: 1 / 2;
     }
+  }
 
-    .effects-table-wrapper {
-      max-height: 260px;
+  @media (max-width: 480px) {
+    .effects-card-grid {
+      grid-template-columns: 1fr;
     }
   }
 </style>
