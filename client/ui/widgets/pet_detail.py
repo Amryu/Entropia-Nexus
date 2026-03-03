@@ -93,37 +93,55 @@ class PetDetailView(WikiDetailView):
         effects = item.get("Effects") or []
         if effects:
             eff_section = InfoboxSection("Effects")
-            for eff in effects:
+            sorted_effects = sorted(
+                effects,
+                key=lambda e: deep_get(e, "Properties", "Unlock", "Level") or 0,
+            )
+            for eff in sorted_effects:
                 eff_name = eff.get("Name", "Unknown")
                 strength = deep_get(eff, "Properties", "Strength")
-                val_str = f"{strength}" if strength is not None else ""
+                unit = deep_get(eff, "Properties", "Unit") or ""
+                # Main row: effect name → strength+unit
+                val_str = f"{strength}{unit}" if strength is not None else "-"
                 eff_section.add_row(StatRow(eff_name, val_str))
 
-                # Unlock details
-                unlock = deep_get(eff, "Properties", "Unlock")
-                if unlock:
-                    unlock_level = unlock.get("Level")
-                    unlock_cost = unlock.get("CostPED")
-                    unlock_essences = unlock.get("CostEssences")
-                    if unlock_level is not None:
-                        eff_section.add_row(StatRow(
-                            "Unlock Level", fmt_int(unlock_level), indent=True
-                        ))
-                    if unlock_cost is not None:
-                        eff_section.add_row(StatRow(
-                            "Unlock Cost", f"{_fv(unlock_cost, 2)} PED", indent=True
-                        ))
-                    if unlock_essences is not None:
-                        eff_section.add_row(StatRow(
-                            "Essences", fmt_int(unlock_essences), indent=True
-                        ))
-
-                # Nutrio cost per effect
+                # Indented details
                 eff_nutrio = deep_get(eff, "Properties", "NutrioConsumptionPerHour")
                 if eff_nutrio is not None:
                     eff_section.add_row(StatRow(
-                        "Nutrio/Hour", _fmt_nutrio(eff_nutrio), indent=True
+                        "Upkeep", f"{eff_nutrio}/h", indent=True
                     ))
+
+                unlock = deep_get(eff, "Properties", "Unlock") or {}
+                unlock_level = unlock.get("Level")
+                if unlock_level is not None:
+                    eff_section.add_row(StatRow(
+                        "Level", fmt_int(unlock_level), indent=True
+                    ))
+
+                cost_parts = []
+                cost_ped = unlock.get("CostPED")
+                if cost_ped and cost_ped > 0:
+                    cost_parts.append(f"{_fv(cost_ped, 2)} PED")
+                cost_essence = unlock.get("CostEssence")
+                if cost_essence and cost_essence > 0:
+                    cost_parts.append(f"{fmt_int(cost_essence)} Animal Essence")
+                cost_rare = unlock.get("CostRareEssence")
+                if cost_rare and cost_rare > 0:
+                    cost_parts.append(f"{fmt_int(cost_rare)} Rare Animal Essence")
+                if cost_parts:
+                    eff_section.add_row(StatRow(
+                        "Cost", ", ".join(cost_parts), indent=True
+                    ))
+
+                criteria = unlock.get("Criteria")
+                if criteria:
+                    criteria_val = unlock.get("CriteriaValue")
+                    crit_str = (
+                        f"{criteria} ({fmt_int(criteria_val)})"
+                        if criteria_val is not None else criteria
+                    )
+                    eff_section.add_row(StatRow("Criteria", crit_str, indent=True))
 
             self._add_section(eff_section)
 

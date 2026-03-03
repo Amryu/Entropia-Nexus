@@ -194,6 +194,11 @@ _TAB_TIERS_SVG = (
     '<path d="M4.1 9.17 A10 10 0 0 1 9.17 4.1 L10.83 8.83 A4 4 0 0 0 8.83 10.83 Z"/>'
 )
 
+_TAB_EFFECTS_SVG = (
+    # Sparkle / buff icon
+    '<path d="M12 2 L14 9 L21 9 L15.5 13.5 L17.5 21 L12 16.5 L6.5 21 L8.5 13.5 L3 9 L10 9 Z"/>'
+)
+
 # Module-level callback set by app.py to open the map overlay.
 # Signature: (planet_name: str, location_id: int) -> None
 _map_overlay_callback = None
@@ -214,6 +219,7 @@ TAB_CALCULATOR = "calculator"
 TAB_TIERS = "tiers"
 TAB_CONSTRUCTION = "construction"
 TAB_UNLOCKS = "unlocks"
+TAB_EFFECTS = "effects"
 
 # Entity types that support tiering (have tier materials)
 _TIERABLE_TYPES = {"Weapon", "ArmorSet", "MedicalTool", "Finder", "Excavator"}
@@ -246,6 +252,14 @@ def _get_tab_defs(entity_type: str, item_name: str = "") -> list[tuple[str, str,
         return [
             (_TAB_INFO_SVG, "Details", TAB_DETAILS),
             (_TAB_MAP_SVG, "Map", TAB_MAP),
+            (_TAB_DESC_SVG, "Description", TAB_DESCRIPTION),
+        ]
+    if entity_type == "Pet":
+        return [
+            (_TAB_INFO_SVG, "Details", TAB_DETAILS),
+            (_TAB_EFFECTS_SVG, "Effects", TAB_EFFECTS),
+            (_TAB_ACQUIRE_SVG, "Acquisition", TAB_ACQUISITION),
+            (_TAB_USAGE_SVG, "Usage", TAB_USAGE),
             (_TAB_DESC_SVG, "Description", TAB_DESCRIPTION),
         ]
     if entity_type in ITEM_TYPES:
@@ -795,6 +809,7 @@ class DetailOverlayWidget(OverlayWidget):
             TAB_TIERS: "Loading tier data...",
             TAB_CONSTRUCTION: "Loading materials...",
             TAB_UNLOCKS: "Loading unlock data...",
+            TAB_EFFECTS: "Loading effects...",
         }
         for tab_id, scroll in self._tab_scrolls.items():
             placeholder = placeholders.get(tab_id, "Loading...")
@@ -1017,6 +1032,7 @@ class DetailOverlayWidget(OverlayWidget):
             TAB_TIERS: "Loading tier data...",
             TAB_CONSTRUCTION: "Loading materials...",
             TAB_UNLOCKS: "Loading unlock data...",
+            TAB_EFFECTS: "Loading effects...",
         }
         for tab_id in self._tab_ids:
             scroll = self._make_scroll(
@@ -1086,6 +1102,7 @@ class DetailOverlayWidget(OverlayWidget):
             TAB_OFFERS: self._build_offers_content,
             TAB_MAP: self._build_map_content,
             TAB_UNLOCKS: self._build_unlocks_content,
+            TAB_EFFECTS: self._build_effects_content,
         }.get(tab_id)
         if builder:
             scroll.setWidget(builder(item))
@@ -1530,6 +1547,72 @@ class DetailOverlayWidget(OverlayWidget):
                     entity={"Name": skill_name, "Type": "Skill"},
                     on_click=self._handle_entity_click,
                 ))
+
+        layout.addStretch(1)
+        return widget
+
+    # ----- Pet: Effects tab -----
+
+    def _build_effects_content(self, item: dict) -> QWidget:
+        """Build the Effects tab for pets."""
+        effects = item.get("Effects") or item.get("EffectsOnEquip") or []
+        if not effects:
+            return _make_centered_label("No effects")
+
+        sorted_effects = sorted(
+            effects,
+            key=lambda e: (
+                deep_get(e, "Properties", "Unlock", "Level")
+                or e.get("UnlockLevel") or 0
+            ),
+        )
+
+        widget, layout = _details_container()
+
+        for e in sorted_effects:
+            eff_name = e.get("Name", "Unknown")
+            strength = deep_get(e, "Properties", "Strength")
+            unit = deep_get(e, "Properties", "Unit") or ""
+            strength_str = f"{strength}{unit}" if strength is not None else "-"
+
+            layout.addWidget(_section_label(eff_name))
+            layout.addWidget(_stat_row("Strength", strength_str))
+
+            upkeep = deep_get(e, "Properties", "NutrioConsumptionPerHour")
+            if upkeep is not None:
+                layout.addWidget(_stat_row("Upkeep", f"{upkeep}/h"))
+
+            unlock = deep_get(e, "Properties", "Unlock") or {}
+            if not unlock:
+                unlock_level = e.get("UnlockLevel")
+                if unlock_level:
+                    layout.addWidget(_stat_row("Level", str(unlock_level)))
+            else:
+                unlock_level = unlock.get("Level")
+                if unlock_level is not None:
+                    layout.addWidget(_stat_row("Level", str(unlock_level)))
+
+                cost_parts = []
+                cost_ped = unlock.get("CostPED")
+                if cost_ped and cost_ped > 0:
+                    cost_parts.append(f"{cost_ped:.2f} PED")
+                cost_essence = unlock.get("CostEssence")
+                if cost_essence and cost_essence > 0:
+                    cost_parts.append(f"{cost_essence} Animal Essence")
+                cost_rare = unlock.get("CostRareEssence")
+                if cost_rare and cost_rare > 0:
+                    cost_parts.append(f"{cost_rare} Rare Animal Essence")
+                if cost_parts:
+                    layout.addWidget(_stat_row("Cost", ", ".join(cost_parts)))
+
+                criteria = unlock.get("Criteria")
+                if criteria:
+                    criteria_val = unlock.get("CriteriaValue")
+                    crit_str = (
+                        f"{criteria} ({criteria_val})"
+                        if criteria_val is not None else criteria
+                    )
+                    layout.addWidget(_stat_row("Criteria", crit_str))
 
         layout.addStretch(1)
         return widget
@@ -3005,8 +3088,14 @@ def _build_pet_details(item: dict, page_type: str, on_entity=None) -> QWidget:
 
     pet_type = deep_get(item, "Properties", "Type") or "-"
     rarity = deep_get(item, "Properties", "Rarity")
-    training = deep_get(item, "Properties", "Training")
+    training = deep_get(item, "Properties", "TrainingDifficulty") or \
+        deep_get(item, "Properties", "Training")
     max_tt = deep_get(item, "Properties", "Economy", "MaxTT")
+    taming_level = deep_get(item, "Properties", "TamingLevel")
+    exportable = deep_get(item, "Properties", "ExportableLevel")
+    nutrio_cap = deep_get(item, "Properties", "NutrioCapacity")
+    nutrio_rate = deep_get(item, "Properties", "NutrioConsumptionPerHour")
+    planet = deep_get(item, "Planet", "Name")
 
     layout.addWidget(_section_label("General"))
     layout.addWidget(_stat_row("Type", pet_type))
@@ -3014,18 +3103,18 @@ def _build_pet_details(item: dict, page_type: str, on_entity=None) -> QWidget:
         layout.addWidget(_stat_row("Rarity", rarity))
     if training:
         layout.addWidget(_stat_row("Training", training))
+    if taming_level is not None:
+        layout.addWidget(_stat_row("Taming Level", str(taming_level)))
+    if exportable is not None and exportable > 0:
+        layout.addWidget(_stat_row("Exportable", f"Lvl {exportable}"))
     if max_tt is not None:
         layout.addWidget(_stat_row("Max TT", f"{_fv(max_tt, 2)} PED"))
-
-    # Effects with unlock info
-    effects = item.get("Effects") or item.get("EffectsOnEquip") or []
-    if effects:
-        layout.addWidget(_section_label("Effects"))
-        for e in effects:
-            eff_name = e.get("Name", "Unknown")
-            unlock = e.get("UnlockLevel")
-            val_str = f"Lvl {unlock}" if unlock else ""
-            layout.addWidget(_stat_row(eff_name, val_str))
+    if nutrio_cap is not None:
+        layout.addWidget(_stat_row("Nutrio Cap.", f"{nutrio_cap / 100:.2f} PED"))
+    if nutrio_rate is not None:
+        layout.addWidget(_stat_row("Nutrio/Hour", f"{nutrio_rate / 100:.2f} PED"))
+    if planet:
+        layout.addWidget(_stat_row("Planet", planet))
 
     layout.addStretch(1)
     return widget
