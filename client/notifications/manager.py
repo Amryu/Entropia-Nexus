@@ -13,7 +13,7 @@ from collections import deque, OrderedDict
 from datetime import datetime, timedelta
 
 from ..core.logger import get_logger
-from ..core.constants import EVENT_GLOBAL, EVENT_INGESTED_GLOBAL, EVENT_TRADE_CHAT
+from ..core.constants import EVENT_GLOBAL, EVENT_INGESTED_GLOBAL, EVENT_TRADE_CHAT, EVENT_TRADE_REQUEST
 from .models import (
     Notification,
     GlobalNotificationRule,
@@ -21,6 +21,7 @@ from .models import (
     SOURCE_TRADE_CHAT,
     SOURCE_NEXUS,
     SOURCE_STREAM,
+    SOURCE_EXCHANGE,
 )
 from .rules_engine import RulesEngine
 
@@ -76,6 +77,7 @@ class NotificationManager:
         self._event_bus.subscribe(EVENT_GLOBAL, self._on_global_event)
         self._event_bus.subscribe(EVENT_TRADE_CHAT, self._on_trade_chat)
         self._event_bus.subscribe(EVENT_INGESTED_GLOBAL, self._on_ingested_global)
+        self._event_bus.subscribe(EVENT_TRADE_REQUEST, self._on_trade_request)
 
     # ------------------------------------------------------------------
     # Public API
@@ -278,6 +280,25 @@ class NotificationManager:
                     "channel": msg.channel,
                 },
             )
+
+    # ------------------------------------------------------------------
+    # Trade requests
+    # ------------------------------------------------------------------
+
+    def _on_trade_request(self, data: dict):
+        """Handle a new trade request — always notify (no rules/cooldown needed)."""
+        if not self._live:
+            return
+        partner = data.get('partner_name', 'Unknown')
+        count = data.get('item_count', 0)
+        body = f"{count} item{'s' if count != 1 else ''}" if count else ""
+        self._create_notification(
+            source=SOURCE_EXCHANGE,
+            title=f"Trade Request from {partner}",
+            body=body,
+            priority="normal",
+            metadata={"trade_request_id": data.get("id")},
+        )
 
     # ------------------------------------------------------------------
     # Server notifications

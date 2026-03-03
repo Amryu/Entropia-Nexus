@@ -521,6 +521,31 @@ class NexusClient:
             self._handle_error(e, "get trade requests")
             return None
 
+    def create_trade_request(self, target_id: int, planet: str | None,
+                              items: list[dict]) -> dict | None:
+        """POST /api/market/trade-requests — create or add to a trade request.
+
+        Returns {id, isNew} or None.
+        """
+        try:
+            resp = self._session.post(
+                self._url("/market/trade-requests"),
+                headers=self._headers(),
+                json={
+                    "target_id": str(target_id),
+                    "planet": planet,
+                    "items": items,
+                },
+                timeout=15)
+            resp.raise_for_status()
+            return resp.json()
+        except requests.HTTPError as e:
+            self._handle_error(e, "create trade request")
+            raise
+        except Exception as e:
+            self._handle_error(e, "create trade request")
+            return None
+
     def cancel_trade_request(self, request_id: int) -> bool:
         """POST /api/market/trade-requests/{id}/cancel."""
         try:

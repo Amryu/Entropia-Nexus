@@ -152,7 +152,6 @@ QListWidget {{
     background-color: {SECONDARY};
     color: {TEXT};
     border: 1px solid {BORDER};
-    outline: none;
     font-size: 13px;
     padding: 2px;
 }}

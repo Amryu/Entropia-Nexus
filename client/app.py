@@ -276,7 +276,7 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
         # Exchange overlay (singleton) + shared stores
         from .exchange.exchange_store import ExchangeStore
         from .exchange.favourites_store import FavouritesStore
-        _exchange_store = ExchangeStore(nexus_client)
+        _exchange_store = ExchangeStore(nexus_client, event_bus)
         _exchange_store.load_items()
         _favourites_store = FavouritesStore(nexus_client)
         main_window._exchange_store = _exchange_store

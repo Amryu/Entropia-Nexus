@@ -56,6 +56,7 @@ EVENT_REPARSE_COMPLETE = "reparse_complete"
 
 # Event names — Notifications
 EVENT_NOTIFICATION = "notification"
+EVENT_TRADE_REQUEST = "trade_request"
 
 # Event names — Ingestion (server-distributed data)
 EVENT_INGESTED_GLOBAL = "ingested_global"

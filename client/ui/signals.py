@@ -28,6 +28,7 @@ from ..core.constants import (
     EVENT_MOB_TARGET_CHANGED,
     EVENT_ACTIVE_TOOL_CHANGED,
     EVENT_NOTIFICATION,
+    EVENT_TRADE_REQUEST,
     EVENT_OCR_COMPLETE,
     EVENT_OCR_PAGE_CHANGED,
     EVENT_OCR_PROGRESS,
@@ -109,6 +110,7 @@ class AppSignals(QObject):
 
     # Notifications
     notification = pyqtSignal(object)  # Notification dataclass
+    trade_request = pyqtSignal(object)  # New trade request dict
 
     # Ingestion (server-distributed data)
     ingested_global = pyqtSignal(object)   # dict from server
@@ -160,6 +162,7 @@ def wire_signals(event_bus, signals: AppSignals) -> None:
         EVENT_UPDATE_READY: signals.update_ready,
         EVENT_UPDATE_ERROR: signals.update_error,
         EVENT_NOTIFICATION: signals.notification,
+        EVENT_TRADE_REQUEST: signals.trade_request,
         EVENT_INGESTED_GLOBAL: signals.ingested_global,
         EVENT_INGESTED_TRADE: signals.ingested_trade,
         EVENT_INGESTION_STATUS: signals.ingestion_status,

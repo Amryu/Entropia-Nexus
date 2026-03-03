@@ -242,7 +242,6 @@ QComboBox QAbstractItemView {{
     border: 1px solid {BORDER};
     selection-background-color: {HOVER};
     selection-color: {TEXT};
-    outline: none;
 }}
 
 /* ===== GroupBox ===== */

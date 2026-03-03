@@ -85,11 +85,15 @@ ENTRY_POINT="${ROOT}/client/run_client.py"
 DIST_DIR="${NEXUS_DIST_DIR:-${ROOT}/client/dist}"
 BUILD_DIR="${NEXUS_BUILD_DIR:-${ROOT}/client/build}"
 
-# ── Ensure PyInstaller is installed ──────────────────────────────────────────
+# ── Install dependencies ──────────────────────────────────────────────────────
+
+cyan "Installing dependencies..."
+python -m pip install --quiet -r "${ROOT}/client/requirements.txt" \
+    || die "Failed to install requirements."
 
 if ! python -m PyInstaller --version &>/dev/null; then
     cyan "PyInstaller not found. Installing..."
-    pip install pyinstaller || die "Failed to install PyInstaller."
+    python -m pip install pyinstaller || die "Failed to install PyInstaller."
 fi
 
 cyan "PyInstaller $(python -m PyInstaller --version)"

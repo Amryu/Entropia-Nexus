@@ -43,9 +43,10 @@ log = get_logger("ExchangePage")
 
 # Tab indices
 _TAB_BROWSE = 0
-_TAB_ORDERS = 1
-_TAB_INVENTORY = 2
-_TAB_TRADES = 3
+_TAB_FAVOURITES = 1
+_TAB_ORDERS = 2
+_TAB_INVENTORY = 3
+_TAB_TRADES = 4
 
 # Status badge labels and colors (same as overlay)
 _STATUS_LABELS = {
@@ -176,6 +177,7 @@ class ExchangePage(QWidget):
         self._store.inventory_changed.connect(self._on_inventory_changed)
         self._store.trade_requests_changed.connect(self._on_trades_changed)
         self._store.item_orders_changed.connect(self._on_item_orders_changed)
+        self._store.exchange_prices_changed.connect(self._on_exchange_prices_changed)
         self._store.loading_changed.connect(self._on_loading_changed)
         self._favourites.changed.connect(self._on_favourites_changed)
 
@@ -199,7 +201,7 @@ class ExchangePage(QWidget):
         tb_layout.setSpacing(0)
 
         self._tab_btns: list[QPushButton] = []
-        for i, label in enumerate(["Browse", "My Orders", "Inventory", "Trades"]):
+        for i, label in enumerate(["Browse", "Favourites", "My Orders", "Inventory", "Trades"]):
             btn = _tab_btn(label, active=(i == 0))
             btn.clicked.connect(lambda _, idx=i: self._set_tab(idx))
             tb_layout.addWidget(btn)
@@ -213,6 +215,9 @@ class ExchangePage(QWidget):
 
         self._browse_widget = self._build_browse_view()
         self._content_stack.addWidget(self._browse_widget)
+
+        self._favourites_widget = self._build_favourites_view()
+        self._content_stack.addWidget(self._favourites_widget)
 
         self._orders_widget = self._build_orders_view()
         self._content_stack.addWidget(self._orders_widget)
@@ -231,7 +236,9 @@ class ExchangePage(QWidget):
         for i, btn in enumerate(self._tab_btns):
             btn.setChecked(i == index)
         # Refresh data
-        if index == _TAB_ORDERS:
+        if index == _TAB_FAVOURITES:
+            self._populate_favourites()
+        elif index == _TAB_ORDERS:
             self._store.load_my_orders()
         elif index == _TAB_INVENTORY:
             self._store.load_inventory()
@@ -351,6 +358,45 @@ class ExchangePage(QWidget):
 
         layout.addWidget(hdr)
 
+        # Metric panels
+        metrics_row = QWidget()
+        mr_layout = QHBoxLayout(metrics_row)
+        mr_layout.setContentsMargins(0, 0, 0, 0)
+        mr_layout.setSpacing(6)
+
+        metric_style = (
+            f"background-color: {MAIN_DARK}; border-radius: 4px;"
+            f" padding: 4px 8px; font-size: 11px;"
+        )
+        self._metric_labels: dict[str, QLabel] = {}
+        for key, label in [("median", "Median"), ("p10", "10%"), ("wap", "Wt. Avg"),
+                           ("best_buy", "Best Buy"), ("best_sell", "Best Sell")]:
+            box = QWidget()
+            bl = QVBoxLayout(box)
+            bl.setContentsMargins(6, 3, 6, 3)
+            bl.setSpacing(1)
+            box.setStyleSheet(metric_style)
+
+            title = QLabel(label)
+            title.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px; background: transparent; padding: 0;")
+            bl.addWidget(title)
+
+            val = QLabel("\u2014")
+            color = TEXT
+            if key == "best_buy":
+                color = "#16a34a"
+            elif key == "best_sell":
+                color = ACCENT
+            val.setStyleSheet(f"color: {color}; font-size: 13px; font-weight: bold; background: transparent; padding: 0;")
+            bl.addWidget(val)
+            self._metric_labels[key] = val
+            mr_layout.addWidget(box)
+
+        mr_layout.addStretch()
+        self._metrics_row = metrics_row
+        self._metrics_row.hide()
+        layout.addWidget(metrics_row)
+
         # Sell orders
         sell_label = QLabel("Sell Orders")
         sell_label.setStyleSheet(f"color: {ACCENT}; font-size: 13px; font-weight: bold;")
@@ -360,6 +406,9 @@ class ExchangePage(QWidget):
         self._sell_tree.setStyleSheet(_TREE_STYLE)
         self._sell_tree.setRootIsDecorated(False)
         self._sell_tree.setAlternatingRowColors(True)
+        self._sell_tree.itemDoubleClicked.connect(
+            lambda item, col: self._on_orderbook_double_clicked(item, col, 'sell')
+        )
         layout.addWidget(self._sell_tree, 1)
 
         # Buy orders
@@ -371,6 +420,9 @@ class ExchangePage(QWidget):
         self._buy_tree.setStyleSheet(_TREE_STYLE)
         self._buy_tree.setRootIsDecorated(False)
         self._buy_tree.setAlternatingRowColors(True)
+        self._buy_tree.itemDoubleClicked.connect(
+            lambda item, col: self._on_orderbook_double_clicked(item, col, 'buy')
+        )
         layout.addWidget(self._buy_tree, 1)
 
         # Action buttons
@@ -400,7 +452,157 @@ class ExchangePage(QWidget):
         return w
 
     # ------------------------------------------------------------------
-    # Tab 1: My Orders
+    # Tab 1: Favourites
+    # ------------------------------------------------------------------
+
+    def _build_favourites_view(self) -> QWidget:
+        w = QWidget()
+        layout = QVBoxLayout(w)
+        layout.setContentsMargins(16, 12, 16, 12)
+        layout.setSpacing(8)
+
+        # Toolbar
+        toolbar = QHBoxLayout()
+        toolbar.setSpacing(8)
+
+        add_folder_btn = _action_btn("+ Folder")
+        add_folder_btn.clicked.connect(self._on_add_fav_folder)
+        toolbar.addWidget(add_folder_btn)
+        toolbar.addStretch()
+        layout.addLayout(toolbar)
+
+        # Tree
+        self._fav_tree = QTreeWidget()
+        self._fav_tree.setHeaderHidden(True)
+        self._fav_tree.setRootIsDecorated(True)
+        self._fav_tree.setStyleSheet(_TREE_STYLE)
+        self._fav_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._fav_tree.customContextMenuRequested.connect(self._on_fav_context_menu)
+        self._fav_tree.itemDoubleClicked.connect(self._on_fav_double_clicked)
+        layout.addWidget(self._fav_tree, 1)
+
+        # Empty state
+        self._fav_empty = QLabel("No favourites yet.\nStar items in the order book to add them.")
+        self._fav_empty.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 13px;")
+        self._fav_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._fav_empty.setWordWrap(True)
+        layout.addWidget(self._fav_empty)
+        self._fav_empty.hide()
+
+        return w
+
+    def _populate_favourites(self):
+        self._fav_tree.clear()
+        folders = self._favourites.get_folders()
+        root_ids = self._favourites.get_root_item_ids()
+        lookup = self._store.item_lookup
+
+        has_items = False
+
+        for folder in folders:
+            folder_item = QTreeWidgetItem()
+            folder_item.setText(0, f"\U0001F4C1 {folder['name']}")
+            folder_item.setData(0, Qt.ItemDataRole.UserRole, ("folder", folder["id"]))
+            font = folder_item.font(0)
+            font.setBold(True)
+            folder_item.setFont(0, font)
+            self._fav_tree.addTopLevelItem(folder_item)
+
+            item_ids = self._favourites.get_folder_item_ids(folder["id"])
+            for item_id in item_ids:
+                has_items = True
+                slim = lookup.get(item_id)
+                name = slim.get("n", f"Item #{item_id}") if slim else f"Item #{item_id}"
+                child = QTreeWidgetItem()
+                child.setText(0, name)
+                child.setData(0, Qt.ItemDataRole.UserRole, ("item", item_id))
+                folder_item.addChild(child)
+
+            folder_item.setExpanded(True)
+
+        if root_ids:
+            has_items = True
+            if folders:
+                sep = QTreeWidgetItem()
+                sep.setText(0, "── Unfiled ──")
+                sep.setForeground(0, QColor(TEXT_MUTED))
+                sep.setFlags(Qt.ItemFlag.NoItemFlags)
+                self._fav_tree.addTopLevelItem(sep)
+            for item_id in root_ids:
+                slim = lookup.get(item_id)
+                name = slim.get("n", f"Item #{item_id}") if slim else f"Item #{item_id}"
+                row = QTreeWidgetItem()
+                row.setText(0, name)
+                row.setData(0, Qt.ItemDataRole.UserRole, ("item", item_id))
+                self._fav_tree.addTopLevelItem(row)
+
+        self._fav_tree.setVisible(has_items or bool(folders))
+        self._fav_empty.setVisible(not has_items and not folders)
+
+    def _on_fav_double_clicked(self, item: QTreeWidgetItem, column: int):
+        data = item.data(0, Qt.ItemDataRole.UserRole)
+        if not data:
+            return
+        kind, value = data
+        if kind == "item":
+            self._set_tab(_TAB_BROWSE)
+            self._show_order_book(value)
+
+    def _on_add_fav_folder(self):
+        from PyQt6.QtWidgets import QInputDialog
+        name, ok = QInputDialog.getText(self, "New Folder", "Folder name:")
+        if ok and name.strip():
+            self._favourites.create_folder(name.strip())
+
+    def _on_fav_context_menu(self, pos):
+        item = self._fav_tree.itemAt(pos)
+        if not item:
+            return
+        data = item.data(0, Qt.ItemDataRole.UserRole)
+        if not data:
+            return
+        kind, value = data
+
+        menu = QMenu(self)
+
+        if kind == "item":
+            view_action = menu.addAction("View Order Book")
+            remove_action = menu.addAction("Remove from Favourites")
+
+            folders = self._favourites.get_folders()
+            move_menu = None
+            if folders:
+                move_menu = menu.addMenu("Move to Folder")
+                for folder in folders:
+                    move_menu.addAction(folder["name"]).setData(folder["id"])
+
+            action = menu.exec(self._fav_tree.viewport().mapToGlobal(pos))
+            if action == view_action:
+                self._set_tab(_TAB_BROWSE)
+                self._show_order_book(value)
+            elif action == remove_action:
+                self._favourites.remove_favourite(value)
+            elif move_menu and action and action.data():
+                self._favourites.move_to_folder(value, action.data())
+
+        elif kind == "folder":
+            rename_action = menu.addAction("Rename")
+            delete_action = menu.addAction("Delete")
+
+            action = menu.exec(self._fav_tree.viewport().mapToGlobal(pos))
+            if action == rename_action:
+                from PyQt6.QtWidgets import QInputDialog
+                name, ok = QInputDialog.getText(
+                    self, "Rename Folder", "Folder name:",
+                    text=item.text(0).replace("\U0001F4C1 ", ""),
+                )
+                if ok and name.strip():
+                    self._favourites.rename_folder(value, name.strip())
+            elif action == delete_action:
+                self._favourites.delete_folder(value, keep_items=True)
+
+    # ------------------------------------------------------------------
+    # Tab 2: My Orders
     # ------------------------------------------------------------------
 
     def _build_orders_view(self) -> QWidget:
@@ -452,6 +654,8 @@ class ExchangePage(QWidget):
             header.setSectionResizeMode(i, QHeaderView.ResizeMode.Fixed)
             header.resizeSection(i, width)
         self._orders_tree.itemDoubleClicked.connect(self._on_order_double_clicked)
+        self._orders_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._orders_tree.customContextMenuRequested.connect(self._on_orders_context_menu)
         layout.addWidget(self._orders_tree, 1)
 
         # Auth message
@@ -463,7 +667,7 @@ class ExchangePage(QWidget):
         return w
 
     # ------------------------------------------------------------------
-    # Tab 2: Inventory
+    # Tab 3: Inventory
     # ------------------------------------------------------------------
 
     def _build_inventory_view(self) -> QWidget:
@@ -507,7 +711,7 @@ class ExchangePage(QWidget):
         return w
 
     # ------------------------------------------------------------------
-    # Tab 3: Trade Requests
+    # Tab 4: Trade Requests
     # ------------------------------------------------------------------
 
     def _build_trades_view(self) -> QWidget:
@@ -558,6 +762,43 @@ class ExchangePage(QWidget):
         if item_id == self._current_item_id:
             self._populate_order_book()
 
+    def _on_exchange_prices_changed(self, item_id: int):
+        if item_id == self._current_item_id:
+            self._populate_metrics()
+
+    def _reset_metrics(self):
+        """Reset metric labels to placeholder."""
+        for lbl in self._metric_labels.values():
+            lbl.setText("\u2014")
+        self._metrics_row.hide()
+
+    def _populate_metrics(self):
+        """Fill metric panels from cached exchange prices."""
+        if not self._current_item_id:
+            return
+        data = self._store.get_exchange_prices(self._current_item_id)
+        if not data:
+            return
+
+        slim = self._store.item_lookup.get(self._current_item_id)
+        is_abs = is_absolute_markup(slim) if slim else True
+
+        period = data.get('period') or {}
+        buy = data.get('buy') or {}
+        sell = data.get('sell') or {}
+
+        def _fmt(val):
+            if val is None:
+                return "\u2014"
+            return format_markup(float(val), is_abs)
+
+        self._metric_labels['median'].setText(_fmt(period.get('median')))
+        self._metric_labels['p10'].setText(_fmt(period.get('p10')))
+        self._metric_labels['wap'].setText(_fmt(period.get('wap')))
+        self._metric_labels['best_buy'].setText(_fmt(buy.get('best_markup')))
+        self._metric_labels['best_sell'].setText(_fmt(sell.get('best_markup')))
+        self._metrics_row.show()
+
     def _on_loading_changed(self, what: str, loading: bool):
         if what.startswith("item_orders_") and self._current_item_id:
             self._book_loading.setVisible(loading)
@@ -565,6 +806,8 @@ class ExchangePage(QWidget):
     def _on_favourites_changed(self):
         if self._current_item_id:
             self._update_star_button()
+        if self._active_tab == _TAB_FAVOURITES:
+            self._populate_favourites()
 
     def _update_auth_visibility(self):
         authed = self._store._client.is_authenticated()
@@ -678,6 +921,8 @@ class ExchangePage(QWidget):
         self._browse_stack.setCurrentIndex(1)
         self._book_loading.show()
         self._store.load_item_orders(item_id)
+        self._store.load_exchange_prices(item_id)
+        self._reset_metrics()
 
     def _back_to_listings(self):
         self._current_item_id = None
@@ -717,14 +962,14 @@ class ExchangePage(QWidget):
             return
 
         slim = self._store.item_lookup.get(self._current_item_id)
-        self._populate_order_table(self._sell_tree, data.get('sell', []), slim)
-        self._populate_order_table(self._buy_tree, data.get('buy', []), slim)
+        self._populate_order_table(self._sell_tree, data.get('sell', []), slim, 'sell')
+        self._populate_order_table(self._buy_tree, data.get('buy', []), slim, 'buy')
 
     def _populate_order_table(self, tree: QTreeWidget, orders: list[dict],
-                              slim: dict | None):
+                              slim: dict | None, side: str = 'sell'):
         tree.clear()
 
-        columns = self._get_order_columns(slim)
+        columns = self._get_order_columns(slim, side)
         tree.setHeaderLabels([c[0] for c in columns])
         tree.setColumnCount(len(columns))
 
@@ -742,7 +987,7 @@ class ExchangePage(QWidget):
             self._fill_order_row(row, order, columns, slim)
             tree.addTopLevelItem(row)
 
-    def _get_order_columns(self, slim: dict | None) -> list[tuple[str, int]]:
+    def _get_order_columns(self, slim: dict | None, side: str = 'sell') -> list[tuple[str, int]]:
         cols: list[tuple[str, int]] = []
 
         if is_stackable(slim):
@@ -768,7 +1013,8 @@ class ExchangePage(QWidget):
         cols.append(("Markup", 90))
         cols.append(("Total", 80))
         cols.append(("Planet", 70))
-        cols.append(("Seller", 0))  # stretch
+        user_label = "Buyer" if side == 'buy' else "Seller"
+        cols.append((user_label, 0))  # stretch
         cols.append(("Status", 70))
         cols.append(("Updated", 70))
         return cols
@@ -806,8 +1052,8 @@ class ExchangePage(QWidget):
                 text = format_ped(t) if t is not None else ''
             elif name == 'Planet':
                 text = order.get('planet') or 'Any'
-            elif name == 'Seller':
-                text = order.get('username') or str(order.get('user_id', ''))
+            elif name in ('Seller', 'Buyer'):
+                text = order.get('seller_name') or str(order.get('user_id', ''))
             elif name == 'Status':
                 text = (order.get('_state') or '').capitalize()
             elif name == 'Updated':
@@ -884,13 +1130,52 @@ class ExchangePage(QWidget):
         self._store.bump_all_orders(callback=cb)
 
     def _on_order_double_clicked(self, item: QTreeWidgetItem, column: int):
-        """Navigate to order book for the double-clicked order's item."""
+        """Double-click on own order: edit if active/stale, else navigate to orderbook."""
         order = item.data(0, Qt.ItemDataRole.UserRole + 1)
-        if order:
+        if not order:
+            return
+        state = order.get('_state', '')
+        if state in ('active', 'stale'):
+            side = order.get('type', 'SELL').lower()
+            self._open_order_dialog(side, order=order)
+        else:
             item_id = order.get('item_id')
             if item_id:
                 self._set_tab(_TAB_BROWSE)
                 self._show_order_book(item_id)
+
+    def _on_orders_context_menu(self, pos):
+        """Right-click context menu for My Orders."""
+        item = self._orders_tree.itemAt(pos)
+        if not item:
+            return
+        order = item.data(0, Qt.ItemDataRole.UserRole + 1)
+        if not order:
+            return
+
+        menu = QMenu(self)
+        state = order.get('_state', '')
+        editable = state in ('active', 'stale')
+
+        if editable:
+            edit_action = menu.addAction("Edit")
+        view_action = menu.addAction("View Order Book")
+        if editable:
+            close_action = menu.addAction("Close")
+
+        action = menu.exec(self._orders_tree.viewport().mapToGlobal(pos))
+        if not action:
+            return
+
+        if editable and action == edit_action:
+            self._open_order_dialog(order['type'], order=order)
+        elif action == view_action:
+            item_id = order.get('item_id')
+            if item_id:
+                self._set_tab(_TAB_BROWSE)
+                self._show_order_book(item_id)
+        elif editable and action == close_action:
+            self._store.close_order(order['id'])
 
     # ------------------------------------------------------------------
     # Populate: Inventory
@@ -1024,6 +1309,32 @@ class ExchangePage(QWidget):
         self._order_dialog = dialog
 
     def _on_order_submitted(self, success: bool, message: str):
+        if success and self._current_item_id:
+            self._store.load_item_orders(self._current_item_id)
+
+    # ------------------------------------------------------------------
+    # Quick Trade (respond to orderbook order)
+    # ------------------------------------------------------------------
+
+    def _on_orderbook_double_clicked(self, item: QTreeWidgetItem, column: int, side: str):
+        """Double-click on an order in the orderbook → open quick trade dialog."""
+        order = item.data(0, Qt.ItemDataRole.UserRole + 1)
+        if not order:
+            return
+        slim = self._store.item_lookup.get(self._current_item_id)
+        if not slim:
+            return
+        trade_side = 'buy' if side == 'sell' else 'sell'
+        from ..overlay.exchange_overlay import _QuickTradeDialog
+        dialog = _QuickTradeDialog(
+            slim=slim, order=order, side=trade_side,
+            store=self._store, parent=self,
+        )
+        dialog.trade_submitted.connect(self._on_trade_submitted)
+        dialog.show()
+        self._quick_trade_dialog = dialog
+
+    def _on_trade_submitted(self, success: bool, message: str):
         if success and self._current_item_id:
             self._store.load_item_orders(self._current_item_id)
 

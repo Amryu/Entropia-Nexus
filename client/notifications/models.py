@@ -12,6 +12,7 @@ SOURCE_TRADE_CHAT = "trade_chat"
 SOURCE_NEXUS = "nexus"
 SOURCE_SYSTEM = "system"
 SOURCE_STREAM = "stream"
+SOURCE_EXCHANGE = "exchange"
 
 
 @dataclass

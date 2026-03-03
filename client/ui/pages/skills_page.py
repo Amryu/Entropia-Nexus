@@ -170,15 +170,11 @@ class SkillCard(QFrame):
             "font-weight: 600;",
             "padding: 1px 4px;",
             "border-radius: 3px;",
-            "text-transform: uppercase;",
         ]
         if border:
             parts.append(f"border: 1px solid {border};")
         else:
             parts.append("border: none;")
-        # Low-level badges get reduced opacity effect via muted text
-        if badge.level == "low":
-            parts.append("opacity: 0.7;")
         return " ".join(parts)
 
     def mousePressEvent(self, event):

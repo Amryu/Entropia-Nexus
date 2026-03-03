@@ -12,6 +12,7 @@ from PyQt6.QtCore import (
 from ..notifications.models import (
     Notification,
     SOURCE_GLOBAL, SOURCE_TRADE_CHAT, SOURCE_NEXUS, SOURCE_SYSTEM, SOURCE_STREAM,
+    SOURCE_EXCHANGE,
 )
 
 from PyQt6.QtGui import QScreen
@@ -40,6 +41,7 @@ _SOURCE_COLORS = {
     SOURCE_NEXUS: "#16a34a",
     SOURCE_SYSTEM: "#aaaaaa",
     SOURCE_STREAM: "#E05050",
+    SOURCE_EXCHANGE: "#b366ff",
 }
 
 _SOURCE_LABELS = {
@@ -48,6 +50,7 @@ _SOURCE_LABELS = {
     SOURCE_NEXUS: "Nexus",
     SOURCE_SYSTEM: "System",
     SOURCE_STREAM: "Stream",
+    SOURCE_EXCHANGE: "Exchange",
 }
 
 # Corner constants
@@ -67,6 +70,8 @@ def _get_toast_action(notif: Notification):
         url = notif.metadata.get("url", "https://entropianexus.com")
         return ("Open on Nexus", "url", url)
     if notif.source == SOURCE_TRADE_CHAT:
+        return ("Exchange", "overlay", "exchange")
+    if notif.source == SOURCE_EXCHANGE:
         return ("Exchange", "overlay", "exchange")
     return None
 

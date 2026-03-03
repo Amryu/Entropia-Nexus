@@ -1,5 +1,18 @@
 [
   {
+    "version": "0.1.1",
+    "date": "2026-03-03",
+    "changes": [
+      {"type": "feat", "text": "Exchange favourites tab with folder management"},
+      {"type": "feat", "text": "Quick buy/sell dialog — double-click orders in the orderbook"},
+      {"type": "feat", "text": "Double-click own orders to edit"},
+      {"type": "feat", "text": "Exchange trade request notifications"},
+      {"type": "fix", "text": "Exchange markup values not showing for many items"},
+      {"type": "fix", "text": "ArmorSet badge in exchange order names"},
+      {"type": "fix", "text": "OCR library missing from build"}
+    ]
+  },
+  {
     "version": "0.1.0",
     "date": "2026-02-20",
     "changes": [

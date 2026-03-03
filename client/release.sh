@@ -207,6 +207,7 @@ if $BUILD_LINUX; then
 #!/usr/bin/env bash
 set -euo pipefail
 source ~/entropia-nexus-venv/bin/activate
+python -m pip install --quiet -r "$WSL_ROOT/client/requirements.txt"
 
 LINUX_BUILD=~/entropia-nexus-build
 export NEXUS_DIST_DIR="\$LINUX_BUILD/dist"

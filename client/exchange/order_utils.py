@@ -300,7 +300,7 @@ def enrich_orders(
             '_unit_price': unit_price,
             '_total': total,
             '_is_absolute': is_absolute_markup(slim) if slim else True,
-            '_item_name': slim.get('n', f'Item #{item_id}') if slim else f'Item #{item_id}',
+            '_item_name': (slim.get('n', f'Item #{item_id}') + ('  [Set]' if slim.get('t') == 'ArmorSet' else '')) if slim else f'Item #{item_id}',
         }
         # Overwrite raw string markup with coerced float
         if markup is not None:

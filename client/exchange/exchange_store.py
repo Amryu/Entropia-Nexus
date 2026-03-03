@@ -30,12 +30,14 @@ class ExchangeStore(QObject):
     inventory_changed = pyqtSignal()
     trade_requests_changed = pyqtSignal()
     item_orders_changed = pyqtSignal(int)        # item_id
+    exchange_prices_changed = pyqtSignal(int)    # item_id
     loading_changed = pyqtSignal(str, bool)       # (what, is_loading)
     error_occurred = pyqtSignal(str, str)          # (context, message)
 
-    def __init__(self, nexus_client: NexusClient):
+    def __init__(self, nexus_client: NexusClient, event_bus=None):
         super().__init__()
         self._client = nexus_client
+        self._event_bus = event_bus
 
         # Data
         self._items: list[dict] = []
@@ -44,6 +46,8 @@ class ExchangeStore(QObject):
         self._inventory: list[dict] = []
         self._trade_requests: list[dict] = []
         self._item_orders_cache: dict[int, dict] = {}
+        self._exchange_prices_cache: dict[int, dict] = {}
+        self._initial_trade_load = True
 
         # Polling
         self._consumer_count = 0
@@ -84,6 +88,10 @@ class ExchangeStore(QObject):
     def get_item_orders(self, item_id: int) -> dict | None:
         """Get cached order book for an item."""
         return self._item_orders_cache.get(item_id)
+
+    def get_exchange_prices(self, item_id: int) -> dict | None:
+        """Get cached exchange price data for an item."""
+        return self._exchange_prices_cache.get(item_id)
 
     def is_loading(self, what: str) -> bool:
         return self._loading.get(what, False)
@@ -175,7 +183,16 @@ class ExchangeStore(QObject):
             try:
                 data = self._client.get_trade_requests()
                 if data is not None:
-                    self._trade_requests = data if isinstance(data, list) else []
+                    new_list = data if isinstance(data, list) else []
+                    # Detect newly added trade requests
+                    if self._event_bus and not self._initial_trade_load:
+                        old_ids = {r.get('id') for r in self._trade_requests}
+                        for req in new_list:
+                            if req.get('id') not in old_ids:
+                                from ..core.constants import EVENT_TRADE_REQUEST
+                                self._event_bus.publish(EVENT_TRADE_REQUEST, req)
+                    self._initial_trade_load = False
+                    self._trade_requests = new_list
                 self._set_loading("trades", False)
                 self.trade_requests_changed.emit()
             except Exception as e:
@@ -207,6 +224,19 @@ class ExchangeStore(QObject):
                 log.error("Failed to load item orders %s: %s", item_id, e)
                 self._set_loading(f"item_orders_{item_id}", False)
                 self.error_occurred.emit("item_orders", str(e))
+
+        threading.Thread(target=_do, daemon=True).start()
+
+    def load_exchange_prices(self, item_id: int):
+        """Fetch exchange price data for an item (public, no auth)."""
+        def _do():
+            try:
+                data = self._client.get_exchange_prices(item_id)
+                if data is not None:
+                    self._exchange_prices_cache[item_id] = data
+                self.exchange_prices_changed.emit(item_id)
+            except Exception as e:
+                log.error("Failed to load exchange prices %s: %s", item_id, e)
 
         threading.Thread(target=_do, daemon=True).start()
 
@@ -314,6 +344,41 @@ class ExchangeStore(QObject):
             except Exception as e:
                 error_msg = self._extract_error(e)
                 log.error("Failed to bump all orders: %s", error_msg)
+                if callback:
+                    callback(False, error_msg)
+
+        threading.Thread(target=_do, daemon=True).start()
+
+    def create_trade_request(self, order: dict, quantity: int, callback=None):
+        """Send a trade request responding to an order.
+
+        callback(success: bool, result_or_error: dict|str)
+        """
+        def _do():
+            try:
+                item_name = order.get('_item_name') or f"Item #{order.get('item_id')}"
+                result = self._client.create_trade_request(
+                    target_id=order.get('user_id'),
+                    planet=order.get('planet'),
+                    items=[{
+                        "offer_id": order.get('id'),
+                        "item_id": order.get('item_id'),
+                        "item_name": item_name,
+                        "quantity": quantity,
+                        "markup": order.get('markup'),
+                        "side": order.get('type'),  # 'BUY' or 'SELL'
+                    }],
+                )
+                if result:
+                    self._poll_trade_requests()
+                    if callback:
+                        callback(True, result)
+                else:
+                    if callback:
+                        callback(False, "No response from server")
+            except Exception as e:
+                error_msg = self._extract_error(e)
+                log.error("Failed to create trade request: %s", error_msg)
                 if callback:
                     callback(False, error_msg)
 

@@ -45,6 +45,7 @@ _SOURCE_COLORS = {
     "nexus": "#16a34a",
     "system": "#aaaaaa",
     "stream": "#E05050",
+    "exchange": "#b366ff",
 }
 
 _SOURCE_LABELS = {
@@ -53,6 +54,7 @@ _SOURCE_LABELS = {
     "nexus": "Nexus",
     "system": "System",
     "stream": "Stream",
+    "exchange": "Exchange",
 }
 
 

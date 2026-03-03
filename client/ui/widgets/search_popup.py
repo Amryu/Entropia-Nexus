@@ -208,7 +208,7 @@ _POPUP_STYLE = f"""
 
 _CATEGORY_STYLE = (
     f"color: {TEXT_MUTED}; font-size: 10px; font-weight: bold;"
-    f" letter-spacing: 0.5px; text-transform: uppercase;"
+    f" letter-spacing: 0.5px;"
     f" padding: 4px 8px; background-color: {MAIN_DARK};"
     f" border-bottom: 1px solid {BORDER};"
 )

@@ -709,6 +709,7 @@ When creating an OAuth application, choose between **confidential** (server-side
 | `exchange:read` | Read your exchange orders |
 | `exchange:write` | Create, edit, and close exchange orders |
 | `trades:read` | Read your trade requests |
+| `trades:write` | Create trade requests |
 | `services:read` | Read your services and requests |
 | `services:write` | Modify your services |
 | `auction:read` | Read your auctions and bids |
@@ -1155,9 +1156,41 @@ Returns trade requests involving the user.
 
 Returns a specific trade request. Must be the requester or target.
 
-**Trade request statuses:** `pending`, `active`, `completed`, `cancelled`, `expired`
+#### `POST /api/market/trade-requests`
+**Scope:** `trades:write`
 
-> Trade request creation and cancellation are only available through the web interface.
+Create or add items to a trade request. Requires a verified account.
+
+**Body:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `target_id` | string | Yes | Target user ID (string to preserve bigint precision) |
+| `items` | array | Yes | Items to trade (1–50) |
+| `planet` | string | No | Planet filter (`Calypso`, `Arkadia`, etc.) |
+
+Each item in the `items` array:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `item_id` | number | Yes | Item ID |
+| `item_name` | string | Yes | Item name |
+| `side` | string | Yes | `BUY` or `SELL` |
+| `offer_id` | number | No | Exchange order ID being responded to |
+| `quantity` | number | No | Quantity (for stackable items) |
+| `markup` | number | No | Agreed markup |
+
+**Response:** `201` if new request created, `200` if items added to existing request.
+
+```json
+{ "id": 123, "isNew": true }
+```
+
+**Errors:**
+- `400` — Invalid input (missing fields, invalid target_id, etc.)
+- `409` — Open trade request already exists between users (race condition)
+
+**Trade request statuses:** `pending`, `active`, `completed`, `cancelled`, `expired`
 
 ### Auctions
 

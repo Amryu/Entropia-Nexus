@@ -32,8 +32,6 @@ export async function GET({ locals }) {
  * Requires market.trade grant.
  */
 export async function POST({ request, locals, fetch }) {
-  if (isOAuthRequest(locals)) return getResponse({ error: 'This endpoint is not available via the OAuth API' }, 403);
-
   const { user, error } = getVerifiedUser(locals);
   if (error) return error;
 
