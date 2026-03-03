@@ -32,6 +32,9 @@ _MANIFEST_TIMEOUT = 15
 _DOWNLOAD_TIMEOUT = 60
 _CHUNK_SIZE = 65536
 
+# After this many consecutive check failures, notify the user once and stop.
+_MAX_CONSECUTIVE_FAILURES = 3
+
 
 def get_app_dir() -> Path | None:
     """Return the directory containing the running exe, or None when running from source."""
@@ -200,25 +203,45 @@ class UpdateChecker:
         if self._stop_event.wait(timeout=_INITIAL_DELAY):
             return
 
+        consecutive_failures = 0
+
         while self._running and not self._stop_event.is_set():
             try:
-                if self._check():
+                result = self._check()
+                if result is True:
                     self._download()
                     return  # stop checking after successful download
+                elif result is None:
+                    # Check failed (e.g. network error, 404)
+                    consecutive_failures += 1
+                else:
+                    # Up to date — reset counter
+                    consecutive_failures = 0
             except Exception as e:
+                consecutive_failures += 1
                 log.error("Update check failed: %s", e)
                 self._event_bus.publish(EVENT_UPDATE_ERROR, {"error": str(e)})
-                if self._stop_event.wait(timeout=_RETRY_INTERVAL):
-                    return
-                continue
 
-            if self._stop_event.wait(timeout=_CHECK_INTERVAL):
+            if consecutive_failures >= _MAX_CONSECUTIVE_FAILURES:
+                log.error("Update checks failed %d times — giving up", consecutive_failures)
+                self._event_bus.publish(EVENT_UPDATE_ERROR, {
+                    "error": "Update checks are failing repeatedly. "
+                             "You may need to download the latest version manually.",
+                    "critical": True,
+                })
+                return  # stop the checker entirely
+
+            wait = _RETRY_INTERVAL if consecutive_failures > 0 else _CHECK_INTERVAL
+            if self._stop_event.wait(timeout=wait):
                 return
 
     # --- Check ---
 
-    def _check(self) -> bool:
-        """Fetch remote manifest, compare with local. Returns True if update available."""
+    def _check(self) -> bool | None:
+        """Fetch remote manifest, compare with local.
+
+        Returns True if update available, False if up to date, None on failure.
+        """
         base_url = self._config.nexus_base_url.rstrip("/")
         manifest_url = f"{base_url}/client/{self._platform}/manifest.json"
 
@@ -230,7 +253,7 @@ class UpdateChecker:
             self._remote_manifest = resp.json()
         except requests.RequestException as e:
             log.warning("Failed to fetch remote manifest: %s", e)
-            return False
+            return None
 
         local_manifest = load_manifest(self._app_dir / "manifest.json")
         if local_manifest is None:

@@ -801,6 +801,14 @@ class MainWindow(QWidget):
     def _on_update_error(self, data):
         if self._update_dialog and self._update_dialog.isVisible():
             self._update_dialog.on_update_error(data)
+        if data.get("critical") and hasattr(self, "_tray"):
+            self._tray.showMessage(
+                "Update Check Failed",
+                data.get("error", "Update checks are failing. "
+                          "You may need to download the latest version manually."),
+                QSystemTrayIcon.MessageIcon.Warning,
+                10000,
+            )
 
     def _on_update_icon_clicked(self):
         """Title bar update icon was clicked — open the update dialog."""
