@@ -2,6 +2,7 @@
 
 import json
 import os
+import sys
 import time
 from pathlib import Path
 
@@ -12,7 +13,13 @@ from ..core.logger import get_logger
 log = get_logger("DataAPI")
 
 CACHE_TTL_SECONDS = 1800  # 30 minutes
-CACHE_DIR = Path(__file__).parent.parent / "data" / "cache"
+
+# In frozen (PyInstaller) builds the _internal/ tree may be read-only,
+# so place the disk cache in the user's data directory instead.
+if getattr(sys, "frozen", False):
+    CACHE_DIR = Path(os.path.expanduser("~")) / ".entropia-nexus" / "cache"
+else:
+    CACHE_DIR = Path(__file__).parent.parent / "data" / "cache"
 
 
 class DataClient:

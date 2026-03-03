@@ -307,6 +307,7 @@ class CalcTab(QScrollArea):
             }
             self._calculator = LoadoutCalculator()
         except Exception:
+            log.error("Failed to load calculator data", exc_info=True)
             self._entities = None
 
         QTimer.singleShot(0, self._on_data_loaded)

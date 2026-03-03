@@ -1,5 +1,13 @@
 [
   {
+    "version": "0.1.4",
+    "date": "2026-03-03",
+    "changes": [
+      {"type": "fix", "text": "Weapon calculator failing to load data in production builds"},
+      {"type": "fix", "text": "Data cache and JS bridge paths now resolve correctly in PyInstaller bundles"}
+    ]
+  },
+  {
     "version": "0.1.3",
     "date": "2026-03-03",
     "changes": [
