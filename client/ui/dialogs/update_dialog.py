@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QScrollArea, QWidget, QFrame, QProgressBar, QStackedWidget,
+    QScrollArea, QWidget, QFrame, QProgressBar, QStackedWidget, QSizePolicy,
 )
 from PyQt6.QtCore import Qt, pyqtSignal
 
@@ -371,6 +371,9 @@ class UpdateDialog(QDialog):
         )
         self._progress_file.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._progress_file.setWordWrap(True)
+        self._progress_file.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+        )
         layout.addWidget(self._progress_file)
 
         layout.addStretch()
