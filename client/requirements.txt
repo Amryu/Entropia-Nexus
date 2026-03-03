@@ -7,4 +7,5 @@ PyQt6>=6.6.0
 requests>=2.31.0
 keyring>=24.0.0
 py-mini-racer>=0.6.0
-keyboard>=0.13.5
+keyboard>=0.13.5; sys_platform == "win32"
+python-xlib>=0.33; sys_platform == "linux"

@@ -142,6 +142,8 @@ if [[ "$PLATFORM" == "windows" ]]; then
     PLATFORM_ARGS+=( --icon "${ROOT}/client/assets/logo.png" )
 elif [[ "$PLATFORM" == "linux" ]]; then
     PLATFORM_ARGS+=( --console --strip )
+    # Bundle desktop entry file for Linux
+    BUNDLE_FILES+=( "client/assets/entropia-nexus.desktop:client/assets" )
 fi
 
 # ── Clean previous build ─────────────────────────────────────────────────────

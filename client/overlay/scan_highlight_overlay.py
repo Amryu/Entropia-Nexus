@@ -7,7 +7,6 @@ table, columns, pagination).
 
 from __future__ import annotations
 
-import sys
 from typing import TYPE_CHECKING
 
 from PyQt6.QtWidgets import QWidget
@@ -21,14 +20,7 @@ from ..core.constants import (
     EVENT_CONFIG_CHANGED, GAME_TITLE_PREFIX,
 )
 from ..core.logger import get_logger
-
-if sys.platform == "win32":
-    import ctypes
-    import ctypes.wintypes
-    GWL_EXSTYLE = -20
-    WS_EX_LAYERED = 0x00080000
-    WS_EX_TRANSPARENT = 0x00000020
-    user32 = ctypes.windll.user32
+from ..platform import backend as _platform
 
 if TYPE_CHECKING:
     from ..core.config import AppConfig
@@ -158,14 +150,9 @@ class ScanHighlightOverlay(QWidget):
     # ── Click-through ──────────────────────────────────────────────────
 
     def _make_click_through(self) -> None:
-        """Make the overlay click-through using Win32 extended styles."""
-        if sys.platform != "win32":
-            return
+        """Make the overlay click-through using platform backend."""
         try:
-            hwnd = int(self.winId())
-            style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
-            style |= WS_EX_LAYERED | WS_EX_TRANSPARENT
-            user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style)
+            _platform.set_click_through(int(self.winId()))
         except Exception as e:
             log.warning("Failed to set click-through: %s", e)
 
@@ -180,17 +167,10 @@ class ScanHighlightOverlay(QWidget):
         """
         if self._overlay_manager is not None:
             focused = self._overlay_manager.game_focused
-        elif sys.platform == "win32":
+        elif _platform.supports_focus_detection():
             try:
-                hwnd = user32.GetForegroundWindow()
-                length = user32.GetWindowTextLengthW(hwnd)
-                if length > 0:
-                    buf = ctypes.create_unicode_buffer(length + 1)
-                    user32.GetWindowTextW(hwnd, buf, length + 1)
-                    title = buf.value
-                    focused = title.startswith(GAME_TITLE_PREFIX)
-                else:
-                    focused = False
+                title = _platform.get_foreground_window_title()
+                focused = title.startswith(GAME_TITLE_PREFIX)
             except Exception:
                 focused = False
         else:

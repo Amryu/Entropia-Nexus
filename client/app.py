@@ -81,11 +81,8 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
 
     # Set AppUserModelID before QApplication so Windows uses our icon
     # instead of the default Python interpreter icon in the taskbar.
-    if sys.platform == "win32":
-        import ctypes
-        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-            "EntropiaNexus.Client.1"
-        )
+    from .platform import backend as _platform
+    _platform.set_app_id("EntropiaNexus.Client.1")
 
     app = QApplication(sys.argv)
     app.setApplicationName("Entropia Nexus")

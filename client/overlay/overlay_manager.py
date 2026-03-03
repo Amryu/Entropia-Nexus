@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import os
-import sys
 from typing import TYPE_CHECKING
 
 from PyQt6.QtCore import QObject, QPoint, QRect, Qt, QTimer, pyqtSignal
@@ -14,141 +12,12 @@ from ..core.constants import (
     OVERLAY_SNAP_THRESHOLD,
 )
 from ..core.logger import get_logger
+from ..platform import backend as _platform
 
 if TYPE_CHECKING:
     from .overlay_widget import OverlayWidget
 
-if sys.platform == "win32":
-    import ctypes
-    import ctypes.wintypes
-    _user32 = ctypes.windll.user32
-    _dwmapi = ctypes.windll.dwmapi
-
 log = get_logger("OverlayManager")
-
-# --- Win32 constants for z-order / style queries ---
-
-_GWL_EXSTYLE = -20
-_GW_HWNDNEXT = 2
-_WS_EX_TOOLWINDOW = 0x00000080
-_WS_EX_NOACTIVATE = 0x08000000
-_DWMWA_CLOAKED = 14
-
-# System window classes that should never count as occluders
-_SYSTEM_CLASSES = frozenset({
-    "Progman", "WorkerW", "Shell_TrayWnd",
-    "Shell_SecondaryTrayWnd", "DV2ControlHost",
-})
-
-# Minimum dimensions for a window to count as a "full" occluder
-_OCCLUDER_MIN_SIZE = 200
-
-# Minimum overlap (pixels) on each axis for a window to count as occluding.
-# Prevents false positives from 1-2px edge overlaps on adjacent monitors.
-_OCCLUDER_MIN_OVERLAP = 50
-
-
-def _get_foreground_hwnd() -> int:
-    """Return the HWND of the foreground window (Windows only)."""
-    if sys.platform == "win32":
-        return _user32.GetForegroundWindow()
-    return 0
-
-
-def _get_window_title(hwnd: int) -> str:
-    """Return the window title for the given HWND."""
-    if sys.platform != "win32" or not hwnd:
-        return ""
-    length = _user32.GetWindowTextLengthW(hwnd)
-    if length <= 0:
-        return ""
-    buf = ctypes.create_unicode_buffer(length + 1)
-    _user32.GetWindowTextW(hwnd, buf, length + 1)
-    return buf.value
-
-
-def _find_game_hwnd() -> int:
-    """Find the game window HWND by walking the z-order (Windows only)."""
-    if sys.platform != "win32":
-        return 0
-    hwnd = _user32.GetTopWindow(None)
-    while hwnd:
-        if _user32.IsWindowVisible(hwnd):
-            title = _get_window_title(hwnd)
-            if title.startswith(GAME_TITLE_PREFIX):
-                return hwnd
-        hwnd = _user32.GetWindow(hwnd, _GW_HWNDNEXT)
-    return 0
-
-
-def _get_window_pid(hwnd: int) -> int:
-    """Return the process ID that owns *hwnd*."""
-    pid = ctypes.wintypes.DWORD(0)
-    _user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-    return pid.value
-
-
-# Cache our own PID (never changes)
-_OWN_PID = os.getpid()
-
-
-def _is_occluding_window(hwnd: int, game_rect: ctypes.wintypes.RECT) -> bool:
-    """Return True if *hwnd* is a real application window overlapping *game_rect*."""
-    if not _user32.IsWindowVisible(hwnd):
-        return False
-    # Minimized windows are still "visible" in the z-order but not on screen
-    if _user32.IsIconic(hwnd):
-        return False
-    # Never count our own application's windows as occluders
-    if _get_window_pid(hwnd) == _OWN_PID:
-        return False
-    # Cloaked windows (virtual desktops, suspended UWP apps) pass
-    # IsWindowVisible but aren't actually rendered on screen
-    cloaked = ctypes.wintypes.DWORD(0)
-    _dwmapi.DwmGetWindowAttribute(
-        hwnd, _DWMWA_CLOAKED, ctypes.byref(cloaked), ctypes.sizeof(cloaked)
-    )
-    if cloaked.value:
-        return False
-    # Must have a title (unnamed windows are usually internal/helper)
-    if _user32.GetWindowTextLengthW(hwnd) == 0:
-        return False
-    # Filter out tool windows and no-activate overlays
-    ex_style = _user32.GetWindowLongW(hwnd, _GWL_EXSTYLE)
-    if ex_style & (_WS_EX_TOOLWINDOW | _WS_EX_NOACTIVATE):
-        return False
-    # Filter system classes (taskbar, desktop shell)
-    cls_buf = ctypes.create_unicode_buffer(64)
-    _user32.GetClassNameW(hwnd, cls_buf, 64)
-    if cls_buf.value in _SYSTEM_CLASSES:
-        return False
-    # Too small — likely a tooltip or popup, not a full window
-    rect = ctypes.wintypes.RECT()
-    _user32.GetWindowRect(hwnd, ctypes.byref(rect))
-    if (rect.right - rect.left) < _OCCLUDER_MIN_SIZE or \
-       (rect.bottom - rect.top) < _OCCLUDER_MIN_SIZE:
-        return False
-    # Require substantial overlap — not just 1-2px edge touching
-    # (prevents false positives from windows on adjacent monitors)
-    overlap_x = min(rect.right, game_rect.right) - max(rect.left, game_rect.left)
-    overlap_y = min(rect.bottom, game_rect.bottom) - max(rect.top, game_rect.top)
-    return overlap_x >= _OCCLUDER_MIN_OVERLAP and overlap_y >= _OCCLUDER_MIN_OVERLAP
-
-
-def _is_game_occluded(game_hwnd: int, overlay_hwnds: set[int]) -> bool:
-    """Walk z-order above *game_hwnd*. Return True if a full app window overlaps it."""
-    game_rect = ctypes.wintypes.RECT()
-    _user32.GetWindowRect(game_hwnd, ctypes.byref(game_rect))
-
-    hwnd = _user32.GetTopWindow(None)
-    while hwnd:
-        if hwnd == game_hwnd:
-            return False  # Reached the game without finding an occluder
-        if hwnd not in overlay_hwnds:
-            if _is_occluding_window(hwnd, game_rect):
-                return True
-        hwnd = _user32.GetWindow(hwnd, _GW_HWNDNEXT)
-    return False  # Game window not found in z-order (edge case)
 
 
 class OverlayManager(QObject):
@@ -182,7 +51,7 @@ class OverlayManager(QObject):
         self._timer.setInterval(OVERLAY_FOCUS_POLL_MS)
         self._timer.timeout.connect(self._poll_focus)
 
-        if sys.platform == "win32" and getattr(config, "overlay_enabled", True):
+        if _platform.supports_focus_detection() and getattr(config, "overlay_enabled", True):
             self._timer.start()
 
     # --- Widget registry ---
@@ -273,18 +142,18 @@ class OverlayManager(QObject):
     def _poll_focus(self) -> None:
         """Check whether the game is visible (not occluded by a full window)."""
         try:
-            fg_hwnd = _get_foreground_hwnd()
-            if not fg_hwnd:
+            fg_wid = _platform.get_foreground_window_id()
+            if not fg_wid:
                 return
 
-            # Build set of our overlay HWNDs (used for both checks)
-            overlay_hwnds: set[int] = set()
+            # Build set of our overlay window IDs (used for both checks)
+            overlay_wids: set[int] = set()
             for w in self._widgets:
                 if w.isVisible():
-                    overlay_hwnds.add(int(w.winId()))
+                    overlay_wids.add(int(w.winId()))
 
             # Fast path: one of our overlays has focus — stay visible
-            if fg_hwnd in overlay_hwnds:
+            if fg_wid in overlay_wids:
                 if not self._game_focused:
                     self._game_focused = True
                     self._show_all()
@@ -292,12 +161,12 @@ class OverlayManager(QObject):
                 self._set_hotkeys_active(True)
                 return
 
-            # Find / validate the cached game HWND
-            game_hwnd = self._game_hwnd
-            if not game_hwnd or not _user32.IsWindowVisible(game_hwnd):
-                game_hwnd = _find_game_hwnd()
-                self._game_hwnd = game_hwnd
-            if not game_hwnd:
+            # Find / validate the cached game window ID
+            game_wid = self._game_hwnd
+            if not game_wid or not _platform.is_window_visible(game_wid):
+                game_wid = _platform.find_window_by_title_prefix(GAME_TITLE_PREFIX) or 0
+                self._game_hwnd = game_wid
+            if not game_wid:
                 # Game not running — hide overlays
                 if self._game_focused:
                     self._game_focused = False
@@ -307,13 +176,13 @@ class OverlayManager(QObject):
                 return
 
             # Game has focus → always visible
-            title = _get_window_title(fg_hwnd)
-            game_is_fg = title.startswith(GAME_TITLE_PREFIX)
+            fg_title = _platform.get_foreground_window_title()
+            game_is_fg = fg_title.startswith(GAME_TITLE_PREFIX)
             if game_is_fg:
                 visible = True
             else:
                 # Game doesn't have focus — check if a full window occludes it
-                visible = not _is_game_occluded(game_hwnd, overlay_hwnds)
+                visible = not _platform.is_window_occluded(game_wid, overlay_wids)
 
             if visible and not self._game_focused:
                 self._game_focused = True
@@ -366,15 +235,12 @@ class OverlayManager(QObject):
     }
 
     def _register_hotkey(self) -> None:
-        if sys.platform != "win32" or self._hotkey_registered:
+        if not _platform.supports_global_hotkeys() or self._hotkey_registered:
             return
         try:
-            import keyboard
             self._suppressed_scancodes: set[int] = set()
-            keyboard.hook(self._key_hook, suppress=True)
-            self._hotkey_registered = True
-        except ImportError:
-            pass
+            if _platform.register_hotkey_hook(self._key_hook):
+                self._hotkey_registered = True
         except Exception as e:
             log.warning("Failed to register hotkeys: %s", e)
 
@@ -382,8 +248,7 @@ class OverlayManager(QObject):
         if not self._hotkey_registered:
             return
         try:
-            import keyboard
-            keyboard.unhook(self._key_hook)
+            _platform.unregister_hotkey_hook(self._key_hook)
         except Exception:
             pass
         self._hotkey_registered = False
@@ -394,19 +259,31 @@ class OverlayManager(QObject):
         Returns True to pass the event through, False to suppress it.
         Only suppresses the letter key of our hotkey combos; Ctrl itself
         always passes through immediately.
-        """
-        import keyboard as _kb
 
+        On Win32 (keyboard library): receives *all* key events; we check
+        is_pressed("ctrl") before acting.
+        On X11 (XGrabKey): only Ctrl+letter events fire, so no Ctrl check
+        is needed.
+        """
         name = event.name
         if name not in self._HOTKEY_MAP:
             return True  # not a hotkey letter — pass through
 
-        if event.event_type == _kb.KEY_DOWN:
-            if _kb.is_pressed("ctrl"):
+        # event_type is "down"/"up" on both keyboard lib and X11KeyEvent
+        if event.event_type == "down":
+            # On Win32, verify Ctrl is actually held (the hook sees all keys)
+            ctrl_held = True
+            try:
+                import keyboard as _kb
+                ctrl_held = _kb.is_pressed("ctrl")
+            except ImportError:
+                pass  # X11: XGrabKey already ensures Ctrl is held
+
+            if ctrl_held:
                 # Real-time focus check — guard against poll lag after alt-tab
-                fg = _get_foreground_hwnd()
+                fg = _platform.get_foreground_window_id()
                 if fg in self._overlay_hwnds or \
-                        _get_window_title(fg).startswith(GAME_TITLE_PREFIX):
+                        _platform.get_foreground_window_title().startswith(GAME_TITLE_PREFIX):
                     self._suppressed_scancodes.add(event.scan_code)
                     signal = getattr(self, self._HOTKEY_MAP[name])
                     signal.emit()

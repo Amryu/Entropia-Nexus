@@ -1,9 +1,8 @@
 """Global hotkey manager using the keyboard library."""
 
-import sys
-
 from ..core.constants import EVENT_HOTKEY_TRIGGERED
 from ..core.logger import get_logger
+from ..platform import backend as _platform
 
 log = get_logger("Hotkeys")
 
@@ -31,7 +30,7 @@ class HotkeyManager:
 
     def start(self):
         """Register all configured hotkeys."""
-        if sys.platform != "win32":
+        if not _platform.supports_global_hotkeys():
             return
         try:
             import keyboard

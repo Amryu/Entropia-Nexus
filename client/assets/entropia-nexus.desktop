@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Entropia Nexus
+Comment=Companion tool for Entropia Universe
+Exec=entropia-nexus
+Icon=entropia-nexus
+Terminal=false
+Categories=Game;Utility;
+Keywords=entropia;universe;nexus;companion;
+StartupWMClass=entropia-nexus

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sys
 import webbrowser
 from typing import TYPE_CHECKING
 
@@ -22,9 +21,7 @@ if TYPE_CHECKING:
     from ..api.data_client import DataClient
     from .overlay_manager import OverlayManager
 
-if sys.platform == "win32":
-    import ctypes
-    _user32 = ctypes.windll.user32
+from ..platform import backend as _platform
 
 # Layout
 SEARCH_WIDTH = 350
@@ -397,50 +394,19 @@ class SearchOverlayWidget(OverlayWidget):
     def _release_focus(self):
         """Give keyboard focus back to the game window."""
         self._search.clearFocus()
-        if sys.platform == "win32":
-            # Find the game window and re-activate it
-            from ..core.constants import GAME_TITLE_PREFIX
-
-            def _enum_cb(hwnd, _):
-                length = _user32.GetWindowTextLengthW(hwnd)
-                if length > 0:
-                    buf = ctypes.create_unicode_buffer(length + 1)
-                    _user32.GetWindowTextW(hwnd, buf, length + 1)
-                    if buf.value.startswith(GAME_TITLE_PREFIX):
-                        _user32.SetForegroundWindow(hwnd)
-                        return False  # stop enumeration
-                return True
-
-            WNDENUMPROC = ctypes.WINFUNCTYPE(
-                ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p,
-            )
-            _user32.EnumWindows(WNDENUMPROC(_enum_cb), 0)
+        from ..core.constants import GAME_TITLE_PREFIX
+        _platform.release_focus_to(GAME_TITLE_PREFIX)
 
     def _force_activate(self):
-        """Use Win32 AttachThreadInput trick to steal foreground focus."""
-        if sys.platform != "win32":
+        """Steal foreground focus to this overlay window."""
+        wid = int(self.winId())
+        if not _platform.bring_to_foreground(wid):
+            # Fallback for platforms without native support
             self.raise_()
             self.activateWindow()
             return
-
-        hwnd = int(self.winId())
-        fg_hwnd = _user32.GetForegroundWindow()
-        if fg_hwnd == hwnd:
-            return
-
-        fg_thread = _user32.GetWindowThreadProcessId(fg_hwnd, None)
-        our_thread = _user32.GetWindowThreadProcessId(hwnd, None)
-
-        attached = False
-        if fg_thread != our_thread:
-            attached = bool(_user32.AttachThreadInput(fg_thread, our_thread, True))
-
-        _user32.SetForegroundWindow(hwnd)
         self.raise_()
         self.activateWindow()
-
-        if attached:
-            _user32.AttachThreadInput(fg_thread, our_thread, False)
 
     # --- Burger menu ---
 

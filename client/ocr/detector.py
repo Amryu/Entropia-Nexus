@@ -17,6 +17,7 @@ if sys.platform == "win32":
 
 from .capturer import ScreenCapturer
 from ..core.logger import get_logger
+from ..platform import backend as _platform
 
 log = get_logger("Detector")
 
@@ -68,12 +69,12 @@ NATIVE_TEMPLATE_W = 68
 NATIVE_TEMPLATE_H = 20
 
 DEFAULT_ROI_PIXELS = {
-    "table":      (-218,   71,  698, 316),
-    "total":      (  54,  376,  426,  94),
-    "indicator":  (-417,   37,   15,  19),
+    "table":      (-218,   71,  700, 301),
+    "total":      ( 370,  384,  100,  17),
+    "indicator":  (-398,   37,    3,  19),
     # Bar regions: only x and w matter (y/h are per-row, derived at runtime)
-    "rank_bar":   (  54,    0,  182,   0),
-    "points_bar": ( 236,    0,  245,   0),
+    "rank_bar":   ( 140,    0,  196,   0),
+    "points_bar": ( 354,    0,   96,   0),
 }
 
 # ROI names (ordered for UI display)
@@ -289,19 +290,14 @@ class SkillsWindowDetector:
     def is_game_foreground(self) -> bool:
         """Check if the game window is the current foreground window.
 
-        Uses a single GetForegroundWindow + GetWindowText call (<0.1ms)
-        instead of the full EnumWindows + PrintWindow pipeline.
+        Uses the platform backend for a fast foreground title check (<0.1ms).
+        On platforms without focus detection, assumes the game is in foreground.
         """
-        if sys.platform != "win32":
-            return True  # Can't check on Linux, assume yes
+        if not _platform.supports_focus_detection():
+            return True
         try:
-            hwnd = user32.GetForegroundWindow()
-            length = user32.GetWindowTextLengthW(hwnd)
-            if length == 0:
-                return False
-            buf = ctypes.create_unicode_buffer(length + 1)
-            user32.GetWindowTextW(hwnd, buf, length + 1)
-            return buf.value.startswith(GAME_WINDOW_TITLE_PREFIX)
+            title = _platform.get_foreground_window_title()
+            return title.startswith(GAME_WINDOW_TITLE_PREFIX)
         except Exception:
             return False
 

@@ -1,5 +1,3 @@
-import subprocess
-import sys
 import threading
 import tkinter as tk
 from typing import Optional
@@ -19,14 +17,7 @@ from ..core.constants import (
     EVENT_DEBUG_ROW, EVENT_DEBUG_REGIONS, EVENT_OCR_PAGE_CHANGED,
     GAME_TITLE_PREFIX,
 )
-
-if sys.platform == "win32":
-    import ctypes
-    # Win32 extended window styles for click-through
-    GWL_EXSTYLE = -20
-    WS_EX_LAYERED = 0x00080000
-    WS_EX_TRANSPARENT = 0x00000020
-    user32 = ctypes.windll.user32
+from ..platform import backend as _platform
 
 # Focus check interval (ms)
 FOCUS_POLL_INTERVAL = 500
@@ -161,14 +152,9 @@ class ScanOverlay:
 
     def _make_click_through(self) -> None:
         """Make the overlay window click-through (pass clicks to windows below)."""
-        if sys.platform != "win32":
-            return  # Tkinter -alpha transparency is sufficient on Linux/X11
         try:
-            # Get the HWND from tkinter's frame
-            hwnd = int(self._root.frame(), 16)
-            style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
-            style |= WS_EX_LAYERED | WS_EX_TRANSPARENT
-            user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style)
+            wid = int(self._root.frame(), 16)
+            _platform.set_click_through(wid)
         except Exception as e:
             log.warning("Failed to set click-through: %s", e)
 
@@ -201,23 +187,7 @@ class ScanOverlay:
     @staticmethod
     def _get_foreground_title() -> str:
         """Get the title of the currently focused window."""
-        if sys.platform == "win32":
-            fg_hwnd = user32.GetForegroundWindow()
-            length = user32.GetWindowTextLengthW(fg_hwnd)
-            if length > 0:
-                buf = ctypes.create_unicode_buffer(length + 1)
-                user32.GetWindowTextW(fg_hwnd, buf, length + 1)
-                return buf.value
-            return ""
-        # Linux: use xdotool
-        try:
-            result = subprocess.run(
-                ["xdotool", "getactivewindow", "getwindowname"],
-                capture_output=True, text=True, timeout=2,
-            )
-            return result.stdout.strip() if result.returncode == 0 else ""
-        except Exception:
-            return ""
+        return _platform.get_foreground_window_title()
 
     # --- Event handlers ---
 

@@ -1,7 +1,5 @@
 """Main application window — frameless, dark themed, sidebar navigation."""
 
-import ctypes
-import sys
 from dataclasses import dataclass
 from typing import Any
 
@@ -18,6 +16,7 @@ from .widgets.title_bar import CustomTitleBar
 from .widgets.sidebar import IconSidebar
 from .widgets.status_bar import StatusBar
 from .pages.dashboard import DashboardPage
+from ..platform import backend as _platform
 
 
 GRIP = 6  # pixels from edge that trigger resize
@@ -429,32 +428,9 @@ class MainWindow(QWidget):
 
     def _flash_taskbar(self):
         """Flash the taskbar icon until the window is brought to the foreground."""
-        if sys.platform == "win32":
-            import ctypes.wintypes
-
-            class FLASHWINFO(ctypes.Structure):
-                _fields_ = [
-                    ("cbSize", ctypes.wintypes.UINT),
-                    ("hwnd", ctypes.wintypes.HWND),
-                    ("dwFlags", ctypes.wintypes.DWORD),
-                    ("uCount", ctypes.wintypes.UINT),
-                    ("dwTimeout", ctypes.wintypes.DWORD),
-                ]
-
-            FLASHW_ALL = 0x00000003        # flash both caption and taskbar
-            FLASHW_TIMERNOFG = 0x0000000C  # flash until foreground
-
-            fwi = FLASHWINFO(
-                cbSize=ctypes.sizeof(FLASHWINFO),
-                hwnd=int(self.winId()),
-                dwFlags=FLASHW_ALL | FLASHW_TIMERNOFG,
-                uCount=0,
-                dwTimeout=0,
-            )
-            ctypes.windll.user32.FlashWindowEx(ctypes.byref(fwi))
-        else:
-            # Linux/macOS: mark window as demanding attention
-            QApplication.alert(self, 0)
+        _platform.flash_taskbar(int(self.winId()))
+        # Qt fallback sets _NET_WM_STATE_DEMANDS_ATTENTION on X11
+        QApplication.alert(self, 0)
 
     def _play_notification_sound(self):
         if not hasattr(self, "_sound_effect"):
@@ -679,10 +655,7 @@ class MainWindow(QWidget):
         self.showNormal()
         self.raise_()
         self.activateWindow()
-        if sys.platform == "win32":
-            import ctypes
-            hwnd = int(self.winId())
-            ctypes.windll.user32.SetForegroundWindow(hwnd)
+        _platform.bring_to_foreground(int(self.winId()))
 
     def bring_to_front_on_screen(self, screen=None):
         """Bring window to foreground, moving to *screen* if provided.
@@ -956,16 +929,8 @@ class MainWindow(QWidget):
             self._notification_center.move(x, max(TITLE_BAR_HEIGHT, y))
 
     def _enable_shadow(self):
-        """Use DWM to add a drop shadow to the frameless window."""
-        if sys.platform != "win32":
-            return
-        try:
-            hwnd = int(self.winId())
-            MARGINS = ctypes.c_int * 4
-            margins = MARGINS(1, 1, 1, 1)
-            ctypes.windll.dwmapi.DwmExtendFrameIntoClientArea(hwnd, ctypes.byref(margins))
-        except Exception:
-            pass
+        """Add a drop shadow to the frameless window (DWM on Windows, compositor on Linux)."""
+        _platform.enable_shadow(int(self.winId()))
 
     # --- Resize grips ---
 

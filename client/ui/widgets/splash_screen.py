@@ -1,8 +1,6 @@
 """Splash screen — branded logo with login/offline options."""
 
-import ctypes
 import os
-import sys
 
 from PyQt6.QtCore import (
     Qt, QTimer, QPropertyAnimation, QEasingCurve, QRect, pyqtSignal, pyqtSlot,
@@ -14,6 +12,7 @@ from PyQt6.QtWidgets import (
 )
 
 from ..theme import PRIMARY, TEXT_MUTED
+from ...platform import backend as _platform
 
 
 # Resolve logo path relative to this file
@@ -224,15 +223,5 @@ class SplashScreen(QWidget):
         painter.fillPath(path, QColor(PRIMARY))
 
     def _enable_shadow(self):
-        """Use DWM to add a drop shadow to the frameless window."""
-        if sys.platform != "win32":
-            return
-        try:
-            hwnd = int(self.winId())
-            MARGINS = ctypes.c_int * 4
-            margins = MARGINS(1, 1, 1, 1)
-            ctypes.windll.dwmapi.DwmExtendFrameIntoClientArea(
-                hwnd, ctypes.byref(margins)
-            )
-        except Exception:
-            pass
+        """Add a drop shadow to the frameless window (DWM on Windows, compositor on Linux)."""
+        _platform.enable_shadow(int(self.winId()))
