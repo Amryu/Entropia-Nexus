@@ -42,6 +42,7 @@ class SettingsPage(QWidget):
         self._build_hotkeys_section()
         self._build_overlay_section()
         self._build_about_section()
+        self._build_legal_section()
         self._build_advanced_section()
 
         self._layout.addStretch()
@@ -346,6 +347,23 @@ class SettingsPage(QWidget):
         from PyQt6.QtCore import QUrl
         from PyQt6.QtGui import QDesktopServices
         QDesktopServices.openUrl(QUrl("https://ko-fi.com/C0C21JO3B1"))
+
+    # --- Legal ---
+    def _build_legal_section(self):
+        group = QGroupBox("Legal")
+        layout = QVBoxLayout(group)
+
+        btn = QPushButton("View Terms of Use & Privacy Policy")
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.clicked.connect(self._show_tos)
+        layout.addWidget(btn)
+
+        self._layout.addWidget(group)
+
+    def _show_tos(self):
+        from ..dialogs.tos_dialog import TosDialog
+        dlg = TosDialog(read_only=True, parent=self)
+        dlg.exec()
 
     # --- Advanced ---
     def _build_advanced_section(self):

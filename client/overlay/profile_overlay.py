@@ -1,0 +1,1202 @@
+"""User profile overlay — always-on-top overlay showing a Nexus user profile."""
+
+from __future__ import annotations
+
+import threading
+import webbrowser
+from typing import TYPE_CHECKING
+
+from PyQt6.QtWidgets import (
+    QVBoxLayout, QHBoxLayout, QLabel, QWidget, QPushButton,
+    QScrollArea, QStackedWidget, QTextEdit, QComboBox, QLineEdit,
+    QFileDialog,
+)
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QPixmap, QPainter, QPainterPath, QBrush
+
+from .overlay_widget import OverlayWidget
+from ..ui.icons import svg_icon
+
+if TYPE_CHECKING:
+    from .overlay_manager import OverlayManager
+
+# --- Layout ---
+PROFILE_WIDTH = 460
+BODY_HEIGHT = 420
+TAB_STRIP_W = 28
+TAB_BTN_SIZE = 22
+
+# --- Colors (overlay dark theme — matches detail_overlay) ---
+BG_COLOR = "rgba(20, 20, 30, 180)"
+TITLE_BG = "rgba(30, 30, 45, 200)"
+TAB_BG = "rgba(25, 25, 40, 180)"
+TAB_ACTIVE_BG = "rgba(60, 60, 90, 180)"
+TAB_HOVER_BG = "rgba(50, 50, 70, 160)"
+CONTENT_BG = "rgba(30, 30, 45, 160)"
+TEXT_COLOR = "#e0e0e0"
+TEXT_DIM = "#999999"
+TEXT_BRIGHT = "#ffffff"
+ACCENT = "#00ccff"
+SECTION_COLOR = "#00ccff"
+BADGE_BG = "rgba(50, 50, 70, 160)"
+FOOTER_BG = "rgba(25, 25, 40, 160)"
+SUCCESS_COLOR = "#16a34a"
+ERROR_COLOR = "#ef4444"
+
+# Image upload limit (bytes)
+MAX_IMAGE_SIZE = 3 * 1024 * 1024  # 3 MB
+
+# --- SVG icon paths (24x24 viewBox) ---
+_PIN_SVG = '<path d="M16 12V4h1V2H7v2h1v8l-2 2v2h5v6l1 1 1-1v-6h5v-2z"/>'
+
+_CLOSE_SVG = (
+    '<path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59'
+    ' 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/>'
+)
+
+# Tab icons
+_TAB_GENERAL_SVG = (
+    '<circle cx="12" cy="8" r="4"/>'
+    '<path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8"/>'
+)
+
+_TAB_SERVICES_SVG = (
+    '<path d="M20 6h-4V4c0-1.1-.9-2-2-2h-4c-1.1 0-2 .9-2 2v2H4c-1.1 0-2 .9-2 2v11'
+    'c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zM10 4h4v2h-4V4z"/>'
+)
+
+_TAB_SHOPS_SVG = (
+    '<path d="M20 4H4v2h16V4zm1 10v-2l-1-5H4l-1 5v2h1v6h10v-6h4v6h2v-6h1zm-9 4H6v-4h6v4z"/>'
+)
+
+_TAB_ORDERS_SVG = (
+    '<path d="M6.99 11L3 15l3.99 4v-3H14v-2H6.99v-3zM21 9l-3.99-4v3H10v2h7.01v3L21 9z"/>'
+)
+
+_TAB_RENTALS_SVG = (
+    '<path d="M12.65 10C11.83 7.67 9.61 6 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6c2.61 0'
+    ' 4.83-1.67 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2'
+    '-.9 2-2 2z"/>'
+)
+
+_TAB_SETTINGS_SVG = (
+    '<path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7zm0 5a1.5 1.5 0 1 1 0-3'
+    ' 1.5 1.5 0 0 1 0 3z"/>'
+    '<path d="M21.2 10.8h-1.5a7.5 7.5 0 0 0-.6-1.5l1.1-1.1a.8.8 0 0 0 0-1.1l-2.3-2.3'
+    'a.8.8 0 0 0-1.1 0l-1.1 1.1a7.5 7.5 0 0 0-1.5-.6V3.8a.8.8 0 0 0-.8-.8h-3.2'
+    'a.8.8 0 0 0-.8.8v1.5a7.5 7.5 0 0 0-1.5.6L6.8 4.8a.8.8 0 0 0-1.1 0L3.4 7.1'
+    'a.8.8 0 0 0 0 1.1l1.1 1.1a7.5 7.5 0 0 0-.6 1.5H2.4a.8.8 0 0 0-.8.8v3.2'
+    'a.8.8 0 0 0 .8.8h1.5a7.5 7.5 0 0 0 .6 1.5l-1.1 1.1a.8.8 0 0 0 0 1.1l2.3 2.3'
+    'a.8.8 0 0 0 1.1 0l1.1-1.1a7.5 7.5 0 0 0 1.5.6v1.5a.8.8 0 0 0 .8.8h3.2'
+    'a.8.8 0 0 0 .8-.8v-1.5a7.5 7.5 0 0 0 1.5-.6l1.1 1.1a.8.8 0 0 0 1.1 0l2.3-2.3'
+    'a.8.8 0 0 0 0-1.1l-1.1-1.1a7.5 7.5 0 0 0 .6-1.5h1.5a.8.8 0 0 0 .8-.8v-3.2'
+    'a.8.8 0 0 0-.8-.8z"/>'
+)
+
+# Open-in-browser icon
+_LINK_SVG = (
+    '<path d="M19 19H5V5h7V3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9'
+    ' 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/>'
+)
+
+# --- Tab IDs ---
+TAB_GENERAL = "general"
+TAB_SERVICES = "services"
+TAB_SHOPS = "shops"
+TAB_ORDERS = "orders"
+TAB_RENTALS = "rentals"
+TAB_SETTINGS = "settings"
+
+# Map website defaultTab values to our tab IDs
+_DEFAULT_TAB_MAP = {
+    "General": TAB_GENERAL,
+    "Services": TAB_SERVICES,
+    "Shops": TAB_SHOPS,
+    "Orders": TAB_ORDERS,
+    "Rentals": TAB_RENTALS,
+}
+
+# --- Button styles ---
+_BTN_STYLE = (
+    "QPushButton {"
+    "  background: transparent; border: none; border-radius: 3px;"
+    "  padding: 0px; margin: 0px;"
+    "}"
+    "QPushButton:hover {"
+    "  background-color: rgba(60, 60, 80, 200);"
+    "}"
+)
+
+
+def _tab_btn_style(active: bool) -> str:
+    bg = TAB_ACTIVE_BG if active else "transparent"
+    return (
+        f"QPushButton {{"
+        f"  background-color: {bg}; border: none; border-radius: 3px;"
+        f"  padding: 2px;"
+        f"}}"
+        f"QPushButton:hover {{"
+        f"  background-color: {TAB_HOVER_BG};"
+        f"}}"
+    )
+
+
+class _ElidedLabel(QLabel):
+    """QLabel that truncates text with an ellipsis when it doesn't fit."""
+
+    def __init__(self, text: str, parent=None):
+        super().__init__(parent)
+        self._full_text = text
+        self.setMinimumWidth(0)
+        self.setText(text)
+
+    def set_text(self, text: str):
+        self._full_text = text
+        fm = self.fontMetrics()
+        elided = fm.elidedText(
+            self._full_text, Qt.TextElideMode.ElideRight, self.width(),
+        )
+        super().setText(elided)
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        fm = self.fontMetrics()
+        elided = fm.elidedText(
+            self._full_text, Qt.TextElideMode.ElideRight, self.width(),
+        )
+        super().setText(elided)
+
+
+def _round_pixmap(pixmap: QPixmap, size: int) -> QPixmap:
+    """Create a circular-cropped pixmap."""
+    scaled = pixmap.scaled(
+        size, size,
+        Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+        Qt.TransformationMode.SmoothTransformation,
+    )
+    result = QPixmap(size, size)
+    result.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(result)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    path = QPainterPath()
+    path.addEllipse(0, 0, size, size)
+    painter.setClipPath(path)
+    x = (scaled.width() - size) // 2
+    y = (scaled.height() - size) // 2
+    painter.drawPixmap(0, 0, scaled, x, y, size, size)
+    painter.end()
+    return result
+
+
+def _separator() -> QWidget:
+    sep = QWidget()
+    sep.setFixedHeight(1)
+    sep.setStyleSheet("background-color: rgba(100, 100, 120, 80);")
+    return sep
+
+
+def _section_label(text: str) -> QLabel:
+    lbl = QLabel(text)
+    lbl.setStyleSheet(
+        f"color: {SECTION_COLOR}; font-size: 10px; font-weight: bold;"
+        " letter-spacing: 1px; background: transparent;"
+    )
+    lbl.setAlignment(Qt.AlignmentFlag.AlignLeft)
+    return lbl
+
+
+def _stat_row(label: str, value: str) -> QWidget:
+    row = QWidget()
+    row.setStyleSheet("background: transparent;")
+    layout = QHBoxLayout(row)
+    layout.setContentsMargins(0, 1, 0, 1)
+    layout.setSpacing(4)
+    lbl = QLabel(label)
+    lbl.setStyleSheet(f"color: {TEXT_DIM}; font-size: 12px; background: transparent;")
+    layout.addWidget(lbl)
+    val = QLabel(value)
+    val.setStyleSheet(
+        f"color: {TEXT_BRIGHT}; font-size: 12px; font-weight: bold;"
+        " background: transparent;"
+    )
+    val.setAlignment(Qt.AlignmentFlag.AlignRight)
+    layout.addWidget(val)
+    return row
+
+
+def _clickable_row(text: str, sub: str = "", url: str = "") -> QWidget:
+    """A row with a clickable name and optional subtitle, opening a URL."""
+    row = QWidget()
+    row.setStyleSheet(
+        "background: transparent;"
+        "QWidget:hover { background-color: rgba(60, 60, 80, 100); }"
+    )
+    layout = QHBoxLayout(row)
+    layout.setContentsMargins(0, 2, 0, 2)
+    layout.setSpacing(6)
+    lbl = QLabel(text)
+    color = ACCENT if url else TEXT_COLOR
+    lbl.setStyleSheet(f"color: {color}; font-size: 12px; background: transparent;")
+    if url:
+        lbl.setCursor(Qt.CursorShape.PointingHandCursor)
+        lbl.mousePressEvent = lambda _ev, u=url: webbrowser.open(u)
+    layout.addWidget(lbl, 1)
+    if sub:
+        sub_lbl = QLabel(sub)
+        sub_lbl.setStyleSheet(
+            f"color: {TEXT_DIM}; font-size: 11px; background: transparent;"
+        )
+        sub_lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
+        layout.addWidget(sub_lbl)
+    return row
+
+
+def _get_profile_tabs(data: dict) -> list[tuple[str, str, str]]:
+    """Return (svg_path, tooltip, tab_id) for each tab based on profile data."""
+    tabs = [(_TAB_GENERAL_SVG, "General", TAB_GENERAL)]
+    if data.get("services"):
+        tabs.append((_TAB_SERVICES_SVG, "Services", TAB_SERVICES))
+    if data.get("shops"):
+        tabs.append((_TAB_SHOPS_SVG, "Shops", TAB_SHOPS))
+    if data.get("orders"):
+        tabs.append((_TAB_ORDERS_SVG, "Exchange Orders", TAB_ORDERS))
+    if data.get("rentals"):
+        tabs.append((_TAB_RENTALS_SVG, "Rentals", TAB_RENTALS))
+    if data.get("permissions", {}).get("isOwner"):
+        tabs.append((_TAB_SETTINGS_SVG, "Settings", TAB_SETTINGS))
+    return tabs
+
+
+class ProfileOverlayWidget(OverlayWidget):
+    """Always-on-top overlay showing a user's Nexus profile."""
+
+    open_profile_web = pyqtSignal(dict)
+    _profile_loaded = pyqtSignal(object)       # dict or None
+    _avatar_loaded = pyqtSignal(object)         # QPixmap or None
+    _save_result = pyqtSignal(bool, str)        # (success, error_msg)
+    _upload_result = pyqtSignal(bool, str)       # (success, error_msg)
+
+    def __init__(
+        self,
+        user_name: str,
+        *,
+        config,
+        config_path: str,
+        nexus_client,
+        manager: OverlayManager | None = None,
+    ):
+        super().__init__(
+            config=config,
+            config_path=config_path,
+            position_key="profile_overlay_position",
+            manager=manager,
+        )
+        self._user_name = user_name
+        self._nexus_client = nexus_client
+        self._profile_data: dict | None = None
+        self._pinned = False
+        self._load_gen = 0
+
+        # Auto-resize to content
+        self.layout().setSizeConstraint(QVBoxLayout.SizeConstraint.SetFixedSize)
+        self._container.setFixedWidth(PROFILE_WIDTH)
+        self._container.setStyleSheet(
+            f"background-color: {BG_COLOR}; border-radius: 8px;"
+        )
+
+        layout = QVBoxLayout(self._container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        # --- Title bar ---
+        self._title_bar = self._build_title_bar()
+        layout.addWidget(self._title_bar)
+
+        # --- Body ---
+        self._body = QWidget()
+        self._body.setFixedHeight(BODY_HEIGHT)
+        body_layout = QVBoxLayout(self._body)
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        body_layout.setSpacing(0)
+
+        # Content row: tab strip + content stack
+        content_row = QWidget()
+        cr_layout = QHBoxLayout(content_row)
+        cr_layout.setContentsMargins(0, 0, 0, 0)
+        cr_layout.setSpacing(0)
+
+        # Tab strip (left)
+        self._tab_buttons: list[QPushButton] = []
+        self._tab_defs = [(_TAB_GENERAL_SVG, "General", TAB_GENERAL)]
+        self._tab_ids = [TAB_GENERAL]
+        self._tab_strip_widget = self._build_tab_strip()
+        cr_layout.addWidget(self._tab_strip_widget)
+
+        # Content stack (right)
+        self._content_stack = QStackedWidget()
+        self._content_stack.setStyleSheet("background: transparent;")
+        cr_layout.addWidget(self._content_stack, 1)
+
+        body_layout.addWidget(content_row, 1)
+
+        # Footer
+        footer = self._build_footer()
+        body_layout.addWidget(footer)
+        layout.addWidget(self._body)
+
+        # Initialize with loading placeholder
+        self._init_loading_tab()
+        self._switch_tab(0)
+
+        # Connect cross-thread signals
+        self._profile_loaded.connect(self._on_profile_loaded)
+        self._avatar_loaded.connect(self._on_avatar_loaded)
+        self._save_result.connect(self._on_save_result)
+        self._upload_result.connect(self._on_upload_result)
+
+        # Avatar label reference (set during General tab build)
+        self._avatar_label: QLabel | None = None
+        self._settings_widgets: dict = {}
+
+        # Start visible
+        self.set_wants_visible(True)
+        self.activateWindow()
+
+        # Fetch profile in background
+        self._fetch_profile()
+
+    # --- Properties ---
+
+    @property
+    def pinned(self) -> bool:
+        return self._pinned
+
+    # --- Title bar ---
+
+    def _build_title_bar(self) -> QWidget:
+        bar = QWidget()
+        bar.setFixedHeight(24)
+        bar.setStyleSheet(
+            f"background-color: {TITLE_BG};"
+            " border-top-left-radius: 8px; border-top-right-radius: 8px;"
+        )
+        layout = QHBoxLayout(bar)
+        layout.setContentsMargins(4, 0, 4, 0)
+        layout.setSpacing(4)
+
+        # Pin button
+        self._pin_btn = QPushButton()
+        self._pin_btn.setFixedSize(18, 18)
+        self._pin_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._pin_btn.setStyleSheet(_BTN_STYLE)
+        self._pin_btn.clicked.connect(self._toggle_pin)
+        self._update_pin_icon()
+        layout.addWidget(self._pin_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        # Name
+        self._name_label = _ElidedLabel(self._user_name)
+        self._name_label.setStyleSheet(
+            f"color: {TEXT_COLOR}; font-size: 13px; font-weight: bold;"
+            " background: transparent;"
+        )
+        self._name_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        layout.addWidget(self._name_label, 1, Qt.AlignmentFlag.AlignVCenter)
+
+        # Type badge
+        badge = QLabel("User")
+        badge.setStyleSheet(
+            f"color: {TEXT_DIM}; font-size: 10px;"
+            f" background-color: {BADGE_BG}; border-radius: 2px;"
+            f" padding: 1px 4px;"
+        )
+        badge.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        layout.addWidget(badge, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        # Close button
+        close_btn = QPushButton()
+        close_btn.setFixedSize(18, 18)
+        close_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        close_btn.setIcon(svg_icon(_CLOSE_SVG, TEXT_DIM, 14))
+        close_btn.setStyleSheet(_BTN_STYLE)
+        close_btn.clicked.connect(self.close)
+        layout.addWidget(close_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        # Title bar click to minify
+        bar.mousePressEvent = self._on_title_click
+
+        return bar
+
+    def _on_title_click(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._body.setVisible(not self._body.isVisible())
+
+    def _toggle_pin(self):
+        self._pinned = not self._pinned
+        self._update_pin_icon()
+
+    def _update_pin_icon(self):
+        color = ACCENT if self._pinned else TEXT_DIM
+        self._pin_btn.setIcon(svg_icon(_PIN_SVG, color, 14))
+        self._pin_btn.setToolTip("Unpin" if self._pinned else "Pin")
+
+    # --- Tab strip ---
+
+    def _build_tab_strip(self) -> QWidget:
+        strip = QWidget()
+        strip.setFixedWidth(TAB_STRIP_W)
+        strip.setStyleSheet(
+            f"background-color: {TAB_BG};"
+            " border-bottom-left-radius: 8px;"
+        )
+        layout = QVBoxLayout(strip)
+        layout.setContentsMargins(3, 4, 3, 4)
+        layout.setSpacing(2)
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
+
+        self._tab_buttons.clear()
+        for i, (svg_path, tooltip, _tab_id) in enumerate(self._tab_defs):
+            btn = QPushButton()
+            btn.setFixedSize(TAB_BTN_SIZE, TAB_BTN_SIZE)
+            btn.setIcon(svg_icon(svg_path, TEXT_DIM, 16))
+            btn.setToolTip(tooltip)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(lambda _, idx=i: self._switch_tab(idx))
+            btn.setStyleSheet(_tab_btn_style(False))
+            layout.addWidget(btn)
+            self._tab_buttons.append(btn)
+
+        return strip
+
+    def _rebuild_tab_strip(self, new_defs):
+        """Tear down and rebuild the tab strip + content stack."""
+        old_strip = self._tab_strip_widget
+        parent_layout = old_strip.parent().layout()
+
+        # Remove old strip
+        parent_layout.removeWidget(old_strip)
+        old_strip.deleteLater()
+
+        # Clear content stack
+        while self._content_stack.count():
+            w = self._content_stack.widget(0)
+            self._content_stack.removeWidget(w)
+            w.deleteLater()
+
+        # Rebuild
+        self._tab_defs = new_defs
+        self._tab_ids = [td[2] for td in new_defs]
+        self._tab_strip_widget = self._build_tab_strip()
+        parent_layout.insertWidget(0, self._tab_strip_widget)
+
+    # --- Footer ---
+
+    def _build_footer(self) -> QWidget:
+        footer = QWidget()
+        footer.setStyleSheet(
+            f"background-color: {FOOTER_BG};"
+            " border-bottom-right-radius: 8px;"
+        )
+        layout = QHBoxLayout(footer)
+        layout.setContentsMargins(TAB_STRIP_W + 4, 2, 4, 3)
+        layout.setSpacing(4)
+
+        open_btn = QPushButton("Open Profile")
+        open_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        open_btn.setIcon(svg_icon(_LINK_SVG, ACCENT, 12))
+        open_btn.setStyleSheet(
+            f"color: {ACCENT}; font-size: 11px; background: transparent;"
+            " border: none; padding: 2px 4px;"
+        )
+        open_btn.clicked.connect(self._open_in_browser)
+        layout.addWidget(open_btn)
+        layout.addStretch(1)
+
+        return footer
+
+    def _open_in_browser(self):
+        base = self._nexus_client._config.nexus_base_url.rstrip("/")
+        encoded = self._user_name.replace(" ", "~")
+        webbrowser.open(f"{base}/users/{encoded}")
+
+    # --- Tab switching ---
+
+    def _switch_tab(self, index: int):
+        if index >= self._content_stack.count():
+            return
+        self._content_stack.setCurrentIndex(index)
+        for i, btn in enumerate(self._tab_buttons):
+            active = i == index
+            btn.setStyleSheet(_tab_btn_style(active))
+            svg_path = self._tab_defs[i][0]
+            color = ACCENT if active else TEXT_DIM
+            btn.setIcon(svg_icon(svg_path, color, 16))
+
+    # --- Loading state ---
+
+    def _init_loading_tab(self):
+        scroll = self._make_scroll()
+        layout = scroll.widget().layout()
+        lbl = QLabel("Loading...")
+        lbl.setStyleSheet(
+            f"color: {TEXT_DIM}; font-size: 12px; background: transparent;"
+        )
+        lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(lbl)
+        layout.addStretch()
+        self._content_stack.addWidget(scroll)
+
+    def _make_scroll(self) -> QScrollArea:
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setStyleSheet(
+            "QScrollArea { background: transparent; border: none; }"
+            "QScrollBar:vertical {"
+            "  background: transparent; width: 6px; margin: 0;"
+            "}"
+            "QScrollBar::handle:vertical {"
+            "  background: rgba(100,100,120,120); border-radius: 3px; min-height: 20px;"
+            "}"
+            "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {"
+            "  height: 0; background: none;"
+            "}"
+        )
+        content = QWidget()
+        content.setStyleSheet("background: transparent;")
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(8, 6, 8, 6)
+        layout.setSpacing(4)
+        scroll.setWidget(content)
+        return scroll
+
+    # --- Data loading ---
+
+    def _fetch_profile(self):
+        self._load_gen += 1
+        gen = self._load_gen
+        nc = self._nexus_client
+        name = self._user_name
+
+        def _worker():
+            data = nc.get_profile(name)
+            if gen == self._load_gen:
+                self._profile_loaded.emit(data)
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _on_profile_loaded(self, data):
+        if data is None:
+            self._show_error("Failed to load profile", retry=True)
+            return
+
+        self._profile_data = data
+        profile = data.get("profile", {})
+
+        # Update title
+        eu_name = profile.get("euName", self._user_name)
+        self._name_label.set_text(eu_name)
+
+        # Build tabs based on data
+        tab_defs = _get_profile_tabs(data)
+        self._rebuild_tab_strip(tab_defs)
+
+        # Build content for each tab
+        self._build_general_tab(data)
+
+        if TAB_SERVICES in self._tab_ids:
+            self._build_services_tab(data.get("services", []))
+        if TAB_SHOPS in self._tab_ids:
+            self._build_shops_tab(data.get("shops", []))
+        if TAB_ORDERS in self._tab_ids:
+            self._build_orders_tab(data.get("orders", []))
+        if TAB_RENTALS in self._tab_ids:
+            self._build_rentals_tab(data.get("rentals", []))
+        if TAB_SETTINGS in self._tab_ids:
+            self._build_settings_tab(data)
+
+        # Switch to user's preferred default tab (or General)
+        default_tab_name = profile.get("defaultTab", "General")
+        default_tab_id = _DEFAULT_TAB_MAP.get(default_tab_name, TAB_GENERAL)
+        if default_tab_id in self._tab_ids:
+            self._switch_tab(self._tab_ids.index(default_tab_id))
+        else:
+            self._switch_tab(0)
+
+        # Fetch avatar
+        self._fetch_avatar(data)
+
+    def _show_error(self, message: str, retry: bool = False):
+        """Replace content with an error message."""
+        while self._content_stack.count():
+            w = self._content_stack.widget(0)
+            self._content_stack.removeWidget(w)
+            w.deleteLater()
+
+        scroll = self._make_scroll()
+        layout = scroll.widget().layout()
+        lbl = QLabel(message)
+        lbl.setStyleSheet(
+            f"color: {ERROR_COLOR}; font-size: 12px; background: transparent;"
+        )
+        lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(lbl)
+        if retry:
+            btn = QPushButton("Retry")
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.setStyleSheet(
+                f"color: {ACCENT}; font-size: 11px; background: transparent;"
+                " border: 1px solid rgba(100,100,120,150); border-radius: 3px;"
+                " padding: 4px 12px;"
+            )
+            btn.clicked.connect(self._retry_load)
+            layout.addWidget(btn, 0, Qt.AlignmentFlag.AlignCenter)
+        layout.addStretch()
+        self._content_stack.addWidget(scroll)
+        self._switch_tab(0)
+
+    def _retry_load(self):
+        # Clear error and re-init loading
+        while self._content_stack.count():
+            w = self._content_stack.widget(0)
+            self._content_stack.removeWidget(w)
+            w.deleteLater()
+        self._init_loading_tab()
+        self._switch_tab(0)
+        self._fetch_profile()
+
+    # --- Avatar loading ---
+
+    def _fetch_avatar(self, data: dict):
+        profile = data.get("profile", {})
+        user_id = profile.get("id")
+        base_url = self._nexus_client._config.nexus_base_url.rstrip("/")
+        gen = self._load_gen
+
+        # Determine avatar URL
+        if profile.get("hasCustomImage") and user_id:
+            avatar_url = f"{base_url}/api/image/user/{user_id}"
+        elif profile.get("discordAvatarUrl"):
+            avatar_url = profile["discordAvatarUrl"]
+        else:
+            self._avatar_loaded.emit(None)
+            return
+
+        def _worker():
+            try:
+                import requests
+                resp = requests.get(avatar_url, timeout=10)
+                resp.raise_for_status()
+                pm = QPixmap()
+                pm.loadFromData(resp.content)
+                if gen == self._load_gen and not pm.isNull():
+                    self._avatar_loaded.emit(pm)
+                else:
+                    self._avatar_loaded.emit(None)
+            except Exception:
+                if gen == self._load_gen:
+                    self._avatar_loaded.emit(None)
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _on_avatar_loaded(self, pixmap):
+        if pixmap is None or self._avatar_label is None:
+            return
+        rounded = _round_pixmap(pixmap, 64)
+        self._avatar_label.setPixmap(rounded)
+
+    # --- General tab ---
+
+    def _build_general_tab(self, data: dict):
+        profile = data.get("profile", {})
+        scores = data.get("scores", {})
+
+        scroll = self._make_scroll()
+        layout = scroll.widget().layout()
+
+        # Header row: avatar + names
+        header = QWidget()
+        header.setStyleSheet("background: transparent;")
+        h_layout = QHBoxLayout(header)
+        h_layout.setContentsMargins(0, 0, 0, 0)
+        h_layout.setSpacing(10)
+
+        # Avatar
+        self._avatar_label = QLabel()
+        self._avatar_label.setFixedSize(64, 64)
+        self._avatar_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._avatar_label.setStyleSheet(
+            "background-color: rgba(40, 40, 60, 180); border-radius: 32px;"
+        )
+        h_layout.addWidget(self._avatar_label, 0, Qt.AlignmentFlag.AlignTop)
+
+        # Names column
+        names = QWidget()
+        names.setStyleSheet("background: transparent;")
+        n_layout = QVBoxLayout(names)
+        n_layout.setContentsMargins(0, 2, 0, 0)
+        n_layout.setSpacing(2)
+
+        eu_name = profile.get("euName", self._user_name)
+        name_lbl = QLabel(eu_name)
+        name_lbl.setStyleSheet(
+            f"color: {TEXT_BRIGHT}; font-size: 14px; font-weight: bold;"
+            " background: transparent;"
+        )
+        n_layout.addWidget(name_lbl)
+
+        discord = profile.get("discordName", "")
+        if discord:
+            d_lbl = QLabel(discord)
+            d_lbl.setStyleSheet(
+                f"color: {TEXT_DIM}; font-size: 11px; background: transparent;"
+            )
+            n_layout.addWidget(d_lbl)
+
+        society = profile.get("society")
+        if society:
+            soc_name = society.get("name", "")
+            soc_abbr = society.get("abbreviation", "")
+            soc_text = f"{soc_name} [{soc_abbr}]" if soc_abbr else soc_name
+            s_lbl = QLabel(soc_text)
+            s_lbl.setStyleSheet(
+                f"color: {ACCENT}; font-size: 11px; background: transparent;"
+            )
+            n_layout.addWidget(s_lbl)
+
+        n_layout.addStretch()
+        h_layout.addWidget(names, 1)
+        layout.addWidget(header)
+
+        layout.addWidget(_separator())
+
+        # Contribution scores
+        layout.addWidget(_section_label("CONTRIBUTION"))
+        total = scores.get("total", 0)
+        total_rank = scores.get("totalRank")
+        monthly = scores.get("monthly", 0)
+        monthly_rank = scores.get("monthlyRank")
+        total_text = f"{total}"
+        if total_rank:
+            total_text += f"  (#{total_rank})"
+        monthly_text = f"{monthly}"
+        if monthly_rank:
+            monthly_text += f"  (#{monthly_rank})"
+        layout.addWidget(_stat_row("Total Score", total_text))
+        layout.addWidget(_stat_row("Monthly Score", monthly_text))
+
+        # Biography
+        bio = profile.get("biographyHtml", "")
+        if bio and bio.strip():
+            layout.addWidget(_separator())
+            layout.addWidget(_section_label("BIOGRAPHY"))
+            bio_lbl = QLabel(bio)
+            bio_lbl.setTextFormat(Qt.TextFormat.RichText)
+            bio_lbl.setWordWrap(True)
+            bio_lbl.setOpenExternalLinks(True)
+            bio_lbl.setStyleSheet(
+                f"color: {TEXT_COLOR}; font-size: 12px; background: transparent;"
+                " line-height: 1.4;"
+            )
+            layout.addWidget(bio_lbl)
+
+        layout.addStretch()
+        self._content_stack.addWidget(scroll)
+
+    # --- Services tab ---
+
+    def _build_services_tab(self, services: list[dict]):
+        scroll = self._make_scroll()
+        layout = scroll.widget().layout()
+        layout.addWidget(_section_label("SERVICES"))
+
+        base = self._nexus_client._config.nexus_base_url.rstrip("/")
+
+        # Group by type
+        by_type: dict[str, list] = {}
+        for svc in services:
+            t = svc.get("type", "Other")
+            by_type.setdefault(t, []).append(svc)
+
+        for svc_type, items in by_type.items():
+            type_lbl = QLabel(svc_type)
+            type_lbl.setStyleSheet(
+                f"color: {TEXT_DIM}; font-size: 10px; font-weight: bold;"
+                " background: transparent; margin-top: 4px;"
+            )
+            layout.addWidget(type_lbl)
+            for svc in items:
+                url = f"{base}/services/{svc.get('id', '')}"
+                layout.addWidget(_clickable_row(svc.get("title", ""), url=url))
+
+        layout.addStretch()
+        self._content_stack.addWidget(scroll)
+
+    # --- Shops tab ---
+
+    def _build_shops_tab(self, shops: list[dict]):
+        scroll = self._make_scroll()
+        layout = scroll.widget().layout()
+        layout.addWidget(_section_label("SHOPS"))
+
+        base = self._nexus_client._config.nexus_base_url.rstrip("/")
+        for shop in shops:
+            planet = shop.get("planet_name", "")
+            url = f"{base}/market/shops/{shop.get('id', '')}"
+            layout.addWidget(_clickable_row(
+                shop.get("name", "Unknown"),
+                sub=planet,
+                url=url,
+            ))
+
+        layout.addStretch()
+        self._content_stack.addWidget(scroll)
+
+    # --- Orders tab ---
+
+    def _build_orders_tab(self, orders: list[dict]):
+        scroll = self._make_scroll()
+        layout = scroll.widget().layout()
+
+        buy_orders = [o for o in orders if o.get("type") == "BUY"]
+        sell_orders = [o for o in orders if o.get("type") == "SELL"]
+
+        if buy_orders:
+            layout.addWidget(_section_label("BUY ORDERS"))
+            for order in buy_orders:
+                name = order.get("item_name", "")
+                markup = order.get("markup", 100)
+                qty = order.get("quantity", 0)
+                sub = f"{markup}%"
+                if qty > 1:
+                    sub = f"x{qty}  {sub}"
+                layout.addWidget(_clickable_row(name, sub=sub))
+
+        if sell_orders:
+            layout.addWidget(_section_label("SELL ORDERS"))
+            for order in sell_orders:
+                name = order.get("item_name", "")
+                markup = order.get("markup", 100)
+                qty = order.get("quantity", 0)
+                sub = f"{markup}%"
+                if qty > 1:
+                    sub = f"x{qty}  {sub}"
+                layout.addWidget(_clickable_row(name, sub=sub))
+
+        layout.addStretch()
+        self._content_stack.addWidget(scroll)
+
+    # --- Rentals tab ---
+
+    def _build_rentals_tab(self, rentals: list[dict]):
+        scroll = self._make_scroll()
+        layout = scroll.widget().layout()
+        layout.addWidget(_section_label("RENTALS"))
+
+        base = self._nexus_client._config.nexus_base_url.rstrip("/")
+        for rental in rentals:
+            title = rental.get("title", "")
+            ppd = rental.get("price_per_day", 0)
+            url = f"{base}/services/rentals/{rental.get('id', '')}"
+            layout.addWidget(_clickable_row(
+                title,
+                sub=f"{ppd:.2f} PED/day",
+                url=url,
+            ))
+
+        layout.addStretch()
+        self._content_stack.addWidget(scroll)
+
+    # --- Settings tab (owner only) ---
+
+    def _build_settings_tab(self, data: dict):
+        profile = data.get("profile", {})
+
+        scroll = self._make_scroll()
+        layout = scroll.widget().layout()
+
+        # Profile image section
+        layout.addWidget(_section_label("PROFILE IMAGE"))
+        img_row = QHBoxLayout()
+        img_row.setSpacing(8)
+
+        self._settings_avatar = QLabel()
+        self._settings_avatar.setFixedSize(80, 80)
+        self._settings_avatar.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._settings_avatar.setStyleSheet(
+            "background-color: rgba(40, 40, 60, 180); border-radius: 40px;"
+        )
+        img_row.addWidget(self._settings_avatar)
+
+        img_btns = QVBoxLayout()
+        img_btns.setSpacing(4)
+        upload_btn = QPushButton("Upload Image")
+        upload_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        upload_btn.setStyleSheet(
+            f"color: {TEXT_COLOR}; font-size: 11px;"
+            " background: rgba(50, 50, 70, 180); border: 1px solid rgba(100,100,120,150);"
+            " border-radius: 3px; padding: 4px 8px;"
+        )
+        upload_btn.clicked.connect(self._on_upload_image)
+        img_btns.addWidget(upload_btn)
+
+        remove_btn = QPushButton("Remove")
+        remove_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        remove_btn.setStyleSheet(
+            f"color: {TEXT_DIM}; font-size: 11px;"
+            " background: transparent; border: 1px solid rgba(100,100,120,100);"
+            " border-radius: 3px; padding: 4px 8px;"
+        )
+        remove_btn.clicked.connect(self._on_remove_image)
+        remove_btn.setVisible(profile.get("hasCustomImage", False))
+        img_btns.addWidget(remove_btn)
+        self._settings_widgets["remove_btn"] = remove_btn
+
+        img_btns.addStretch()
+        img_row.addLayout(img_btns)
+        img_row.addStretch()
+        layout.addLayout(img_row)
+
+        # Upload status label
+        self._upload_status = QLabel("")
+        self._upload_status.setStyleSheet(
+            f"color: {TEXT_DIM}; font-size: 10px; background: transparent;"
+        )
+        self._upload_status.setVisible(False)
+        layout.addWidget(self._upload_status)
+
+        layout.addWidget(_separator())
+
+        # Biography
+        layout.addWidget(_section_label("BIOGRAPHY"))
+        self._bio_edit = QTextEdit()
+        self._bio_edit.setMaximumHeight(80)
+        self._bio_edit.setStyleSheet(
+            f"color: {TEXT_COLOR}; font-size: 12px;"
+            " background: rgba(40, 40, 55, 200); border: 1px solid rgba(100,100,120,150);"
+            " border-radius: 3px; padding: 4px;"
+        )
+        # Strip HTML for editing
+        import re
+        bio_html = profile.get("biographyHtml", "")
+        plain = re.sub(r'<[^>]+>', '', bio_html).strip() if bio_html else ""
+        self._bio_edit.setPlainText(plain)
+        layout.addWidget(self._bio_edit)
+
+        layout.addWidget(_separator())
+
+        # Default tab
+        layout.addWidget(_section_label("DEFAULT TAB"))
+        self._default_tab_combo = QComboBox()
+        tab_options = ["General", "Services", "Shops", "Orders", "Rentals"]
+        self._default_tab_combo.addItems(tab_options)
+        current_default = profile.get("defaultTab", "General")
+        if current_default in tab_options:
+            self._default_tab_combo.setCurrentText(current_default)
+        self._default_tab_combo.setStyleSheet(
+            f"color: {TEXT_COLOR}; font-size: 12px;"
+            " background: rgba(40, 40, 55, 200); border: 1px solid rgba(100,100,120,150);"
+            " border-radius: 3px; padding: 3px 6px;"
+        )
+        layout.addWidget(self._default_tab_combo)
+
+        layout.addWidget(_separator())
+
+        # Showcase loadout
+        layout.addWidget(_section_label("SHOWCASE LOADOUT"))
+        self._showcase_input = QLineEdit()
+        self._showcase_input.setPlaceholderText("Share code (optional)")
+        self._showcase_input.setText(profile.get("showcaseLoadoutCode", "") or "")
+        self._showcase_input.setStyleSheet(
+            f"color: {TEXT_COLOR}; font-size: 12px;"
+            " background: rgba(40, 40, 55, 200); border: 1px solid rgba(100,100,120,150);"
+            " border-radius: 3px; padding: 4px 6px;"
+        )
+        layout.addWidget(self._showcase_input)
+
+        # Save button
+        layout.addSpacing(8)
+        save_row = QHBoxLayout()
+        save_row.addStretch()
+        save_btn = QPushButton("Save Settings")
+        save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        save_btn.setStyleSheet(
+            f"color: {TEXT_BRIGHT}; font-size: 12px; font-weight: bold;"
+            f" background: rgba(6, 182, 212, 180); border: none;"
+            " border-radius: 3px; padding: 6px 16px;"
+        )
+        save_btn.clicked.connect(self._on_save_settings)
+        save_row.addWidget(save_btn)
+        self._settings_widgets["save_btn"] = save_btn
+        layout.addLayout(save_row)
+
+        # Save status
+        self._save_status = QLabel("")
+        self._save_status.setStyleSheet(
+            f"color: {TEXT_DIM}; font-size: 10px; background: transparent;"
+        )
+        self._save_status.setAlignment(Qt.AlignmentFlag.AlignRight)
+        self._save_status.setVisible(False)
+        layout.addWidget(self._save_status)
+
+        layout.addStretch()
+        self._content_stack.addWidget(scroll)
+
+        # Copy avatar to settings preview
+        if self._avatar_label and self._avatar_label.pixmap() and not self._avatar_label.pixmap().isNull():
+            pm = self._avatar_label.pixmap()
+            self._settings_avatar.setPixmap(_round_pixmap(pm, 80))
+
+    # --- Settings actions ---
+
+    def _on_upload_image(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select Profile Image", "",
+            "Images (*.png *.jpg *.jpeg *.webp *.gif);;All Files (*)",
+        )
+        if not path:
+            return
+
+        try:
+            with open(path, "rb") as f:
+                data = f.read()
+        except IOError:
+            return
+
+        if len(data) > MAX_IMAGE_SIZE:
+            self._upload_status.setText("Image too large (max 3 MB)")
+            self._upload_status.setStyleSheet(
+                f"color: {ERROR_COLOR}; font-size: 10px; background: transparent;"
+            )
+            self._upload_status.setVisible(True)
+            QTimer.singleShot(5000, lambda: self._upload_status.setVisible(False))
+            return
+
+        # Determine content type
+        import mimetypes
+        ct, _ = mimetypes.guess_type(path)
+        if not ct or not ct.startswith("image/"):
+            ct = "application/octet-stream"
+
+        profile = self._profile_data.get("profile", {})
+        user_id = profile.get("id")
+        if not user_id:
+            return
+
+        self._upload_status.setText("Uploading...")
+        self._upload_status.setStyleSheet(
+            f"color: {TEXT_DIM}; font-size: 10px; background: transparent;"
+        )
+        self._upload_status.setVisible(True)
+
+        nc = self._nexus_client
+
+        def _worker():
+            result = nc.upload_profile_image(user_id, data, ct)
+            self._upload_result.emit(result is not None, "" if result else "Upload failed")
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _on_upload_result(self, success: bool, error: str):
+        if success:
+            self._upload_status.setText("Image uploaded")
+            self._upload_status.setStyleSheet(
+                f"color: {SUCCESS_COLOR}; font-size: 10px; background: transparent;"
+            )
+            self._upload_status.setVisible(True)
+            QTimer.singleShot(3000, lambda: self._upload_status.setVisible(False))
+            # Show remove button
+            if "remove_btn" in self._settings_widgets:
+                self._settings_widgets["remove_btn"].setVisible(True)
+            # Reload avatar
+            if self._profile_data:
+                # Force custom image flag
+                self._profile_data.setdefault("profile", {})["hasCustomImage"] = True
+                self._fetch_avatar(self._profile_data)
+        else:
+            self._upload_status.setText(error or "Upload failed")
+            self._upload_status.setStyleSheet(
+                f"color: {ERROR_COLOR}; font-size: 10px; background: transparent;"
+            )
+            self._upload_status.setVisible(True)
+            QTimer.singleShot(5000, lambda: self._upload_status.setVisible(False))
+
+    def _on_remove_image(self):
+        profile = (self._profile_data or {}).get("profile", {})
+        user_id = profile.get("id")
+        if not user_id:
+            return
+
+        nc = self._nexus_client
+
+        def _worker():
+            ok = nc.delete_profile_image(user_id)
+            self._upload_result.emit(ok, "" if ok else "Failed to remove image")
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+        # Clear avatar immediately
+        if self._avatar_label:
+            self._avatar_label.clear()
+        if hasattr(self, "_settings_avatar"):
+            self._settings_avatar.clear()
+        if "remove_btn" in self._settings_widgets:
+            self._settings_widgets["remove_btn"].setVisible(False)
+
+    def _on_save_settings(self):
+        if not self._profile_data:
+            return
+
+        # Collect data
+        bio_text = self._bio_edit.toPlainText().strip()
+        bio_html = f"<p>{bio_text}</p>" if bio_text else ""
+        default_tab = self._default_tab_combo.currentText()
+        showcase = self._showcase_input.text().strip() or None
+
+        payload = {
+            "biographyHtml": bio_html,
+            "defaultTab": default_tab,
+            "showcaseLoadoutCode": showcase,
+        }
+
+        save_btn = self._settings_widgets.get("save_btn")
+        if save_btn:
+            save_btn.setEnabled(False)
+            save_btn.setText("Saving...")
+
+        nc = self._nexus_client
+        name = self._user_name
+
+        def _worker():
+            result = nc.update_profile(name, payload)
+            self._save_result.emit(result is not None, "" if result else "Save failed")
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    def _on_save_result(self, success: bool, error: str):
+        save_btn = self._settings_widgets.get("save_btn")
+        if save_btn:
+            save_btn.setEnabled(True)
+            save_btn.setText("Save Settings")
+
+        if success:
+            self._save_status.setText("Saved")
+            self._save_status.setStyleSheet(
+                f"color: {SUCCESS_COLOR}; font-size: 10px; background: transparent;"
+            )
+            self._save_status.setVisible(True)
+            QTimer.singleShot(3000, lambda: self._save_status.setVisible(False))
+        else:
+            self._save_status.setText(error or "Save failed")
+            self._save_status.setStyleSheet(
+                f"color: {ERROR_COLOR}; font-size: 10px; background: transparent;"
+            )
+            self._save_status.setVisible(True)
+            QTimer.singleShot(5000, lambda: self._save_status.setVisible(False))
+
+    # --- Overrides ---
+
+    def sizeHint(self):
+        hint = super().sizeHint()
+        hint.setWidth(PROFILE_WIDTH)
+        return hint

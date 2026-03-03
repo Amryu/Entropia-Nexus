@@ -136,6 +136,18 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     from .ui.theme import get_stylesheet
     app.setStyleSheet(get_stylesheet())
 
+    # Terms of Service acceptance gate
+    from PyQt6.QtWidgets import QDialog
+    from .core.config import save_config
+    from .ui.dialogs.tos_dialog import TosDialog, TOS_VERSION
+    if config.tos_accepted_version != TOS_VERSION:
+        tos = TosDialog()
+        if tos.exec() != QDialog.DialogCode.Accepted:
+            db.close()
+            return
+        config.tos_accepted_version = TOS_VERSION
+        save_config(config, config_path)
+
     # Init auth early (needed to decide whether to show splash)
     token_store = TokenStore()
     oauth = OAuthClient(config, event_bus, token_store)
@@ -261,20 +273,69 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
 
         overlay_manager.map_hotkey_pressed.connect(_toggle_map_overlay)
 
+        # Exchange overlay (singleton) + shared stores
+        from .exchange.exchange_store import ExchangeStore
+        from .exchange.favourites_store import FavouritesStore
+        _exchange_store = ExchangeStore(nexus_client)
+        _exchange_store.load_items()
+        _favourites_store = FavouritesStore(nexus_client)
+        main_window._exchange_store = _exchange_store
+        main_window._favourites_store = _favourites_store
+        _exchange_overlay = None
+
+        def _toggle_exchange_overlay():
+            nonlocal _exchange_overlay
+            from .overlay.exchange_overlay import ExchangeOverlay
+            if _exchange_overlay is None or not _exchange_overlay.isVisible():
+                if _exchange_overlay is None:
+                    _exchange_overlay = ExchangeOverlay(
+                        config=config,
+                        config_path=config_path,
+                        store=_exchange_store,
+                        favourites=_favourites_store,
+                        manager=overlay_manager,
+                    )
+                _exchange_overlay.set_wants_visible(True)
+                _exchange_overlay.raise_()
+            else:
+                _exchange_overlay.set_wants_visible(False)
+
+        overlay_manager.exchange_hotkey_pressed.connect(_toggle_exchange_overlay)
+
         # Expose map overlay opener for detail overlay map buttons
         from .overlay import detail_overlay as _detail_overlay_mod
         _detail_overlay_mod._map_overlay_callback = _open_map_overlay_at
 
         # Detail overlay: opened when a search result is selected
         _current_detail_overlay = None
+        _current_profile_overlay = None
         _detail_overlays: list = []   # all open overlays (for offset stacking)
 
         def _on_overlay_result_selected(item):
-            nonlocal _current_detail_overlay
+            nonlocal _current_detail_overlay, _current_profile_overlay
             from .overlay.detail_overlay import DetailOverlayWidget, STACK_OFFSET
 
             # Middle-click sets _force_new to always open a new window
             force_new = item.pop("_force_new", False)
+
+            # Route User type to profile overlay
+            if item.get("Type") == "User":
+                from .overlay.profile_overlay import ProfileOverlayWidget
+                if (not force_new
+                        and _current_profile_overlay
+                        and _current_profile_overlay.isVisible()
+                        and not _current_profile_overlay.pinned):
+                    _current_profile_overlay.close()
+                overlay = ProfileOverlayWidget(
+                    user_name=item.get("Name", ""),
+                    config=config,
+                    config_path=config_path,
+                    nexus_client=nexus_client,
+                    manager=overlay_manager,
+                )
+                overlay.open_profile_web.connect(main_window._on_search_result_selected)
+                _current_profile_overlay = overlay
+                return
 
             # Navigate in-place if there's an active unpinned overlay
             if (not force_new
@@ -329,8 +390,13 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
             def _on_search_menu_action(action):
                 if action == "map":
                     _toggle_map_overlay()
+                elif action == "exchange":
+                    _toggle_exchange_overlay()
 
             search_overlay.menu_action.connect(_on_search_menu_action)
+
+            # Notification badge on logo
+            main_window.set_search_overlay(search_overlay)
 
         # Scan highlight overlay (click-through, shows scanned rows)
         try:

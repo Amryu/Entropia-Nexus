@@ -11,9 +11,10 @@ from PyQt6.QtWidgets import (
     QDialog, QScrollArea,
 )
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QPainter, QColor
 
 from .overlay_widget import OverlayWidget
-from ..ui.icons import nexus_logo_pixmap
+from ..ui.icons import nexus_logo_pixmap, svg_pixmap
 from ..ui.widgets.fuzzy_line_edit import score_search
 from ..ui.widgets.search_popup import get_type_name, get_display_type, CREATABLE_CATEGORIES
 
@@ -43,8 +44,15 @@ BADGE_BG = "rgba(50, 50, 70, 200)"
 ACCENT_COLOR = "#00ccff"
 
 # Burger menu items: overlays that can be opened unconditionally
+_HAMBURGER_SVG = (
+    '<rect x="3" y="5" width="18" height="2" rx="1"/>'
+    '<rect x="3" y="11" width="18" height="2" rx="1"/>'
+    '<rect x="3" y="17" width="18" height="2" rx="1"/>'
+)
+
 _MENU_ITEMS = [
     {"label": "Map", "shortcut": "Ctrl+M", "action": "map"},
+    {"label": "Exchange", "shortcut": "Ctrl+E", "action": "exchange"},
 ]
 
 _ROW_STYLE = (
@@ -57,6 +65,10 @@ _ROW_HIGHLIGHT_STYLE = (
 )
 
 
+_NOTIF_DOT_SIZE = 8
+_NOTIF_DOT_COLOR = "#e53935"
+
+
 class _ClickableLabel(QLabel):
     """A QLabel that emits clicked signal."""
 
@@ -66,6 +78,32 @@ class _ClickableLabel(QLabel):
         if event.button() == Qt.MouseButton.LeftButton:
             self.clicked.emit()
         super().mousePressEvent(event)
+
+
+class _BadgeLabel(_ClickableLabel):
+    """Clickable label with an optional notification dot badge."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._show_badge = False
+
+    def set_badge_visible(self, visible: bool):
+        if visible != self._show_badge:
+            self._show_badge = visible
+            self.update()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        if not self._show_badge:
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setBrush(QColor(_NOTIF_DOT_COLOR))
+        painter.setPen(Qt.PenStyle.NoPen)
+        x = self.width() - _NOTIF_DOT_SIZE - 1
+        y = 1
+        painter.drawEllipse(x, y, _NOTIF_DOT_SIZE, _NOTIF_DOT_SIZE)
+        painter.end()
 
 
 class CategoryPickerDialog(QDialog):
@@ -259,7 +297,7 @@ class SearchOverlayWidget(OverlayWidget):
         search_row.setSpacing(4)
 
         # Nexus logo button — click to focus client window
-        self._logo_btn = _ClickableLabel()
+        self._logo_btn = _BadgeLabel()
         self._logo_btn.setFixedSize(26, 26)
         self._logo_btn.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._logo_btn.setPixmap(nexus_logo_pixmap(18))
@@ -292,13 +330,12 @@ class SearchOverlayWidget(OverlayWidget):
 
         # Burger menu button
         self._menu_btn = _ClickableLabel()
-        self._menu_btn.setText("\u2630")  # ☰ hamburger character
+        self._menu_btn.setPixmap(svg_pixmap(_HAMBURGER_SVG, TEXT_DIM, 16))
         self._menu_btn.setFixedSize(26, 26)
         self._menu_btn.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._menu_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._menu_btn.setStyleSheet(
-            f"color: {TEXT_DIM}; font-size: 16px; background: transparent;"
-            " border: none; border-radius: 4px; padding: 0px;"
+            "background: transparent; border: none; border-radius: 4px; padding: 0px;"
         )
         self._menu_btn.clicked.connect(self._on_menu_clicked)
         search_row.addWidget(self._menu_btn)
@@ -343,6 +380,10 @@ class SearchOverlayWidget(OverlayWidget):
         hint = super().sizeHint()
         hint.setWidth(SEARCH_WIDTH)
         return hint
+
+    def set_unread_count(self, count: int):
+        """Show or hide the notification badge on the logo."""
+        self._logo_btn.set_badge_visible(count > 0)
 
     def _focus_search(self):
         """Ctrl+F pressed — force-focus the search bar, stealing from the game."""

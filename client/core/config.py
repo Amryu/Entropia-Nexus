@@ -36,6 +36,9 @@ class AppConfig:
     map_overlay_position: tuple[int, int] = (100, 100)
     scan_summary_overlay_position: tuple[int, int] = (100, 200)
     confirm_overlay_position: tuple[int, int] = (100, 200)
+    profile_overlay_position: tuple[int, int] = (450, 50)
+    exchange_overlay_position: tuple[int, int] = (100, 100)
+    exchange_overlay_size: tuple[int, int] = (700, 500)
     map_overlay_size: int = 1  # 0=Small, 1=Medium, 2=Large
     overlay_opacity: float = 0.85
     overlay_enabled: bool = True
@@ -82,6 +85,9 @@ class AppConfig:
     # Loadout JS bridge
     js_utils_path: str = ""
 
+    # Legal
+    tos_accepted_version: str = ""
+
     # Updates
     check_for_updates: bool = True
     update_dismissed_version: str = ""
@@ -119,9 +125,12 @@ DEFAULTS = {
     "progress_overlay_position": [50, 50],
     "search_overlay_position": [50, 50],
     "detail_overlay_position": [400, 50],
+    "exchange_overlay_position": [100, 100],
+    "exchange_overlay_size": [700, 500],
     "map_overlay_position": [100, 100],
     "scan_summary_overlay_position": [100, 200],
     "confirm_overlay_position": [100, 200],
+    "profile_overlay_position": [450, 50],
     "map_overlay_size": 1,
     "overlay_opacity": 0.85,
     "overlay_enabled": True,
@@ -147,6 +156,7 @@ DEFAULTS = {
     "wiki_column_prefs": {},
     "inventory_prefs": {},
     "js_utils_path": "",
+    "tos_accepted_version": "",
     "check_for_updates": True,
     "update_dismissed_version": "",
     "update_remind_at": "",
@@ -215,8 +225,9 @@ def load_config(config_path: str = "config.json") -> AppConfig:
     for key in (
         "hunt_overlay_position", "progress_overlay_position",
         "search_overlay_position", "detail_overlay_position",
+        "exchange_overlay_position", "exchange_overlay_size",
         "map_overlay_position", "scan_summary_overlay_position",
-        "confirm_overlay_position",
+        "confirm_overlay_position", "profile_overlay_position",
         "mob_name_region", "tool_name_region",
     ):
         val = merged.get(key)

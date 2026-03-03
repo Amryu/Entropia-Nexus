@@ -109,6 +109,15 @@ CHECK = '<path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>'
 ARROW_LEFT = '<path d="M15.41 7.41L10.83 12l4.58 4.59L14 18l-6-6 6-6z"/>'
 ARROW_RIGHT = '<path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/>'
 
+# Storefront / exchange (awning + counter)
+EXCHANGE = (
+    '<path d="M4 6h16v2H4z"/>'
+    '<path d="M2 8l2-2h16l2 2v1H2z"/>'
+    '<path d="M4 9v10h16V9h-2v6H6V9z" opacity="0.8"/>'
+    '<path d="M8 12h3v3H8z"/>'
+    '<path d="M14 9h4v2h-4z" opacity="0.6"/>'
+)
+
 # Update available (download arrow + bar)
 UPDATE = (
     '<path d="M13 7h-2v4H7l5 5 5-5h-4V7z"/>'

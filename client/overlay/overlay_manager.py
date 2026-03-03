@@ -165,6 +165,7 @@ class OverlayManager(QObject):
 
     search_hotkey_pressed = pyqtSignal()
     map_hotkey_pressed = pyqtSignal()
+    exchange_hotkey_pressed = pyqtSignal()
 
     def __init__(self, *, config, parent: QObject | None = None):
         super().__init__(parent)
@@ -337,6 +338,7 @@ class OverlayManager(QObject):
             import keyboard
             keyboard.add_hotkey("ctrl+f", self._on_search_hotkey, suppress=True)
             keyboard.add_hotkey("ctrl+m", self._on_map_hotkey, suppress=True)
+            keyboard.add_hotkey("ctrl+e", self._on_exchange_hotkey, suppress=True)
             self._hotkey_registered = True
         except ImportError:
             pass
@@ -350,6 +352,7 @@ class OverlayManager(QObject):
             import keyboard
             keyboard.remove_hotkey("ctrl+f")
             keyboard.remove_hotkey("ctrl+m")
+            keyboard.remove_hotkey("ctrl+e")
         except Exception:
             pass
         self._hotkey_registered = False
@@ -363,6 +366,11 @@ class OverlayManager(QObject):
         """Called from keyboard hook thread — emit signal for Qt main thread."""
         if self._game_focused:
             self.map_hotkey_pressed.emit()
+
+    def _on_exchange_hotkey(self) -> None:
+        """Called from keyboard hook thread — emit signal for Qt main thread."""
+        if self._game_focused:
+            self.exchange_hotkey_pressed.emit()
 
     # --- Cleanup ---
 

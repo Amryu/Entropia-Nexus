@@ -6,6 +6,7 @@ Port of nexus/src/lib/utils/skillCalculations.js and codexUtils.js.
 from __future__ import annotations
 
 BASE_HP = 80
+ATTRIBUTE_MULTIPLIER = 100
 
 # Codex reward divisors: PED cycle cost per PED of skill gained
 CODEX_REWARD_DIVISORS = {"cat1": 200, "cat2": 320, "cat3": 640, "cat4": 1000}
@@ -63,9 +64,9 @@ def build_attribute_skill_set(skill_metadata: list[dict]) -> set[str]:
 def effective_points(
     points: float, skill_name: str, attribute_skills: set[str]
 ) -> float:
-    """Get effective skill points — attributes contribute 10× to profession levels."""
+    """Get effective skill points, applying ×100 for attribute skills."""
     if skill_name in attribute_skills:
-        return points * 10
+        return points * ATTRIBUTE_MULTIPLIER
     return points
 
 
@@ -76,12 +77,12 @@ def calculate_profession_level(
 ) -> float:
     """Calculate a single profession level.
 
-    Formula: Σ(skill_points × weight) / 10000
+    Formula: Σ(effective_points × weight) / 10000
 
     Args:
         skill_values: {skill_name: raw_points}
         profession_skills: list of {Name, Weight}
-        attribute_skills: set of attribute skill names (unused, kept for API compat)
+        attribute_skills: set of attribute skill names (for ×100 multiplier)
     """
     if attribute_skills is None:
         attribute_skills = set()
@@ -122,7 +123,7 @@ def calculate_hp(
 ) -> float:
     """Calculate total HP from skill values.
 
-    Formula: 80 + Σ(skill_points / HPIncrease)
+    Formula: 80 + Σ(effective_points / HPIncrease)
 
     Args:
         skill_values: {skill_name: raw_points}
@@ -192,7 +193,8 @@ def find_cheapest_profession_path(
             cheaper_cost = min(codex_cost_per_ped, chip_cost_per_ped)
             method = "codex" if codex_cost_per_ped <= chip_cost_per_ped else "chip"
 
-        level_per_point = weight / 10000
+        multiplier = ATTRIBUTE_MULTIPLIER if name in attribute_skills else 1
+        level_per_point = (multiplier * weight) / 10000
         efficiency = level_per_point / cheaper_cost if cheaper_cost > 0 else 0
 
         skill_options.append({
@@ -217,7 +219,9 @@ def find_cheapest_profession_path(
         if opt["efficiency"] <= 0:
             continue
 
-        points_needed = (remaining * 10000) / opt["weight"]
+        points_needed = (remaining * 10000) / (
+            (ATTRIBUTE_MULTIPLIER if opt["skill"] in attribute_skills else 1) * opt["weight"]
+        )
         cost = points_needed * opt["cheaper_cost"]
 
         allocations.append({
@@ -292,7 +296,8 @@ def find_cheapest_hp_path(
             cheaper_cost = min(codex_cost_per_ped, chip_cost_per_ped)
             method = "codex" if codex_cost_per_ped <= chip_cost_per_ped else "chip"
 
-        hp_per_point = 1 / hp_inc
+        multiplier = ATTRIBUTE_MULTIPLIER if name in attr_skills else 1
+        hp_per_point = multiplier / hp_inc
         efficiency = hp_per_point / cheaper_cost if cheaper_cost > 0 else 0
 
         skill_options.append({
@@ -317,7 +322,9 @@ def find_cheapest_hp_path(
         if opt["efficiency"] <= 0:
             continue
 
-        points_needed = remaining_hp * opt["hp_increase"]
+        points_needed = remaining_hp * opt["hp_increase"] / (
+            ATTRIBUTE_MULTIPLIER if opt["skill"] in attr_skills else 1
+        )
         cost = points_needed * opt["cheaper_cost"]
 
         allocations.append({

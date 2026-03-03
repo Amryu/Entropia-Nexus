@@ -384,6 +384,166 @@ class NexusClient:
                 flat.extend(items)
         return flat
 
+    # Exchange — Orders
+
+    def get_my_orders(self) -> list[dict] | None:
+        """GET /api/market/exchange/orders — current user's exchange orders."""
+        try:
+            resp = self._session.get(self._url("/market/exchange/orders"),
+                                     headers=self._headers(), timeout=15)
+            if resp.status_code == 429:
+                raise RateLimitError(resp.json().get("retryAfter", 60))
+            resp.raise_for_status()
+            return resp.json()
+        except (RateLimitError, ServerError):
+            raise
+        except Exception as e:
+            self._handle_error(e, "get my orders")
+            return None
+
+    def get_item_orders(self, item_id: int) -> dict | None:
+        """GET /api/market/exchange/orders/item/{id} — order book for an item (public)."""
+        try:
+            resp = self._session.get(
+                self._url(f"/market/exchange/orders/item/{item_id}"), timeout=15)
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            self._handle_error(e, f"get item orders {item_id}")
+            return None
+
+    def get_user_orders(self, user_id: int) -> list[dict] | None:
+        """GET /api/market/exchange/orders/user/{id} — all active orders by user (public)."""
+        try:
+            resp = self._session.get(
+                self._url(f"/market/exchange/orders/user/{user_id}"), timeout=15)
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            self._handle_error(e, f"get user orders {user_id}")
+            return None
+
+    def create_order(self, data: dict) -> dict | None:
+        """POST /api/market/exchange/orders — create a new exchange order.
+
+        Returns the created order dict, or raises on error.
+        Raises RateLimitError on 429.
+        """
+        try:
+            resp = self._session.post(self._url("/market/exchange/orders"),
+                                      headers=self._headers(),
+                                      json=data, timeout=15)
+            if resp.status_code == 429:
+                raise RateLimitError(resp.json().get("retryAfter", 60))
+            resp.raise_for_status()
+            return resp.json()
+        except (RateLimitError, ServerError):
+            raise
+        except requests.HTTPError as e:
+            self._handle_error(e, "create order")
+            raise
+        except Exception as e:
+            self._handle_error(e, "create order")
+            return None
+
+    def edit_order(self, order_id: int, data: dict) -> dict | None:
+        """PUT /api/market/exchange/orders/{id} — edit an exchange order.
+
+        Returns the updated order dict, or raises on error.
+        Raises RateLimitError on 429.
+        """
+        try:
+            resp = self._session.put(
+                self._url(f"/market/exchange/orders/{order_id}"),
+                headers=self._headers(), json=data, timeout=15)
+            if resp.status_code == 429:
+                raise RateLimitError(resp.json().get("retryAfter", 60))
+            resp.raise_for_status()
+            return resp.json()
+        except (RateLimitError, ServerError):
+            raise
+        except requests.HTTPError as e:
+            self._handle_error(e, f"edit order {order_id}")
+            raise
+        except Exception as e:
+            self._handle_error(e, f"edit order {order_id}")
+            return None
+
+    def close_order(self, order_id: int) -> bool:
+        """DELETE /api/market/exchange/orders/{id} — close an exchange order."""
+        try:
+            resp = self._session.delete(
+                self._url(f"/market/exchange/orders/{order_id}"),
+                headers=self._headers(), timeout=15)
+            if resp.status_code == 429:
+                raise RateLimitError(resp.json().get("retryAfter", 60))
+            resp.raise_for_status()
+            return True
+        except (RateLimitError, ServerError):
+            raise
+        except Exception as e:
+            self._handle_error(e, f"close order {order_id}")
+            return False
+
+    def bump_all_orders(self) -> dict | None:
+        """POST /api/market/exchange/orders/bump-all — reset bumped_at on all eligible orders."""
+        try:
+            resp = self._session.post(
+                self._url("/market/exchange/orders/bump-all"),
+                headers=self._headers(), timeout=15)
+            if resp.status_code == 429:
+                raise RateLimitError(resp.json().get("retryAfter", 60))
+            resp.raise_for_status()
+            return resp.json()
+        except (RateLimitError, ServerError):
+            raise
+        except Exception as e:
+            self._handle_error(e, "bump all orders")
+            return None
+
+    # Exchange — Trade Requests
+
+    def get_trade_requests(self) -> list[dict] | None:
+        """GET /api/market/trade-requests — current user's trade requests."""
+        try:
+            resp = self._session.get(self._url("/market/trade-requests"),
+                                     headers=self._headers(), timeout=15)
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            self._handle_error(e, "get trade requests")
+            return None
+
+    def cancel_trade_request(self, request_id: int) -> bool:
+        """POST /api/market/trade-requests/{id}/cancel."""
+        try:
+            resp = self._session.post(
+                self._url(f"/market/trade-requests/{request_id}/cancel"),
+                headers=self._headers(), timeout=10)
+            resp.raise_for_status()
+            return True
+        except Exception as e:
+            self._handle_error(e, f"cancel trade request {request_id}")
+            return False
+
+    # Exchange — Prices
+
+    def get_exchange_prices(self, item_id: int, **kwargs) -> dict | None:
+        """GET /api/market/prices/exchange/{id} — exchange price data.
+
+        Optional kwargs: period, history, gender.
+        """
+        try:
+            params = {k: v for k, v in kwargs.items() if v is not None}
+            resp = self._session.get(
+                self._url(f"/market/prices/exchange/{item_id}"),
+                params=params, timeout=15)
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            self._handle_error(e, f"get exchange prices {item_id}")
+            return None
+
     def get_shared_loadout(self, share_code: str) -> dict | None:
         """GET /api/tools/loadout/share/:share_code — fetch a publicly shared loadout."""
         try:
@@ -540,6 +700,61 @@ class NexusClient:
         except Exception as e:
             self._handle_error(e, "get ingested trades")
             return None
+
+    # Profiles
+
+    def get_profile(self, identifier: str) -> dict | None:
+        """GET /api/users/profiles/{identifier} — public user profile."""
+        try:
+            encoded = identifier.replace(" ", "~")
+            resp = self._session.get(
+                self._url(f"/users/profiles/{encoded}"),
+                headers=self._headers(), timeout=10)
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            self._handle_error(e, f"get profile '{identifier}'")
+            return None
+
+    def update_profile(self, identifier: str, data: dict) -> dict | None:
+        """PATCH /api/users/profiles/{identifier} — update biography, default tab, showcase."""
+        try:
+            encoded = identifier.replace(" ", "~")
+            resp = self._session.patch(
+                self._url(f"/users/profiles/{encoded}"),
+                headers=self._headers(), json=data, timeout=10)
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            self._handle_error(e, f"update profile '{identifier}'")
+            return None
+
+    def upload_profile_image(self, user_id: int, image_data: bytes,
+                             content_type: str = "image/png") -> dict | None:
+        """POST /api/image/user/{userId} — upload profile image (max 3MB)."""
+        try:
+            resp = self._session.post(
+                self._url(f"/image/user/{user_id}"),
+                headers=self._headers(),
+                files={"image": ("profile", image_data, content_type)},
+                timeout=30)
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            self._handle_error(e, f"upload profile image {user_id}")
+            return None
+
+    def delete_profile_image(self, user_id: int) -> bool:
+        """DELETE /api/image/user/{userId} — remove custom profile image."""
+        try:
+            resp = self._session.delete(
+                self._url(f"/image/user/{user_id}"),
+                headers=self._headers(), timeout=10)
+            resp.raise_for_status()
+            return True
+        except Exception as e:
+            self._handle_error(e, f"delete profile image {user_id}")
+            return False
 
     # Streams
 

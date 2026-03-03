@@ -81,7 +81,7 @@ ALL_CATEGORIES = [
 
 PLANETS = [
     'Calypso', 'Arkadia', 'Cyrene', 'Rocktropia',
-    'Next Island', 'Monria', 'Toulan',
+    'Next Island', 'Monria', 'Toulan', 'Howling Mine (Space)',
 ]
 
 # ---------------------------------------------------------------------------

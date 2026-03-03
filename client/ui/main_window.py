@@ -62,7 +62,8 @@ PAGE_MAPS = 2
 PAGE_SKILLS = 3
 PAGE_LOADOUT = 4
 PAGE_INVENTORY = 5
-PAGE_SETTINGS = 6
+PAGE_EXCHANGE = 6
+PAGE_SETTINGS = 7
 
 
 @dataclass
@@ -168,7 +169,7 @@ class MainWindow(QWidget):
         self._pages.addWidget(dashboard)
         self._page_created: set[int] = {PAGE_DASHBOARD}
         for _ in range(PAGE_SETTINGS - PAGE_DASHBOARD):
-            self._pages.addWidget(QWidget())  # placeholders for indices 1–6
+            self._pages.addWidget(QWidget())  # placeholders for indices 1–7
 
         self._page_factories: dict[int, callable] = {
             PAGE_WIKI: self._create_wiki_page,
@@ -176,6 +177,7 @@ class MainWindow(QWidget):
             PAGE_SKILLS: self._create_skills_page,
             PAGE_LOADOUT: self._create_loadout_page,
             PAGE_INVENTORY: self._create_inventory_page,
+            PAGE_EXCHANGE: self._create_exchange_page,
             PAGE_SETTINGS: self._create_settings_page,
         }
 
@@ -268,6 +270,15 @@ class MainWindow(QWidget):
                              nexus_client=self._nexus_client, db=self._db,
                              config=self._config,
                              config_path=self._config_path)
+
+    def _create_exchange_page(self):
+        from .pages.exchange_page import ExchangePage
+        return ExchangePage(
+            signals=self._signals,
+            exchange_store=self._exchange_store,
+            favourites_store=self._favourites_store,
+            config=self._config,
+        )
 
     def _create_settings_page(self):
         from .pages.settings_page import SettingsPage
@@ -365,16 +376,26 @@ class MainWindow(QWidget):
         self._notification_center.show()
         self._notification_center.raise_()
 
+    def set_search_overlay(self, overlay):
+        """Store reference to the search overlay for notification badge updates."""
+        self._search_overlay = overlay
+
     def _update_badge(self):
-        """Update the sidebar bell badge with the current unread count."""
+        """Update the sidebar bell badge and search overlay with the current unread count."""
         count = self._notif_manager.get_unread_count()
         self._sidebar.set_unread_count(count)
+        if hasattr(self, "_search_overlay") and self._search_overlay:
+            self._search_overlay.set_unread_count(count)
 
     def _on_new_notification(self, notif):
         self._update_badge()
 
         # Refresh panel if visible
         self._notification_center.refresh()
+
+        # Flash taskbar if window is not in the foreground
+        if not self.isActiveWindow():
+            self._flash_taskbar()
 
         # System toast
         if getattr(self._config, "notification_toast_enabled", True):
@@ -389,6 +410,35 @@ class MainWindow(QWidget):
         # Notification sound
         if getattr(self._config, "notification_sound_enabled", True):
             self._play_notification_sound()
+
+    def _flash_taskbar(self):
+        """Flash the taskbar icon until the window is brought to the foreground."""
+        if sys.platform == "win32":
+            import ctypes.wintypes
+
+            class FLASHWINFO(ctypes.Structure):
+                _fields_ = [
+                    ("cbSize", ctypes.wintypes.UINT),
+                    ("hwnd", ctypes.wintypes.HWND),
+                    ("dwFlags", ctypes.wintypes.DWORD),
+                    ("uCount", ctypes.wintypes.UINT),
+                    ("dwTimeout", ctypes.wintypes.DWORD),
+                ]
+
+            FLASHW_ALL = 0x00000003        # flash both caption and taskbar
+            FLASHW_TIMERNOFG = 0x0000000C  # flash until foreground
+
+            fwi = FLASHWINFO(
+                cbSize=ctypes.sizeof(FLASHWINFO),
+                hwnd=int(self.winId()),
+                dwFlags=FLASHW_ALL | FLASHW_TIMERNOFG,
+                uCount=0,
+                dwTimeout=0,
+            )
+            ctypes.windll.user32.FlashWindowEx(ctypes.byref(fwi))
+        else:
+            # Linux/macOS: mark window as demanding attention
+            QApplication.alert(self, 0)
 
     def _play_notification_sound(self):
         if not hasattr(self, "_sound_effect"):
