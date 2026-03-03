@@ -57,6 +57,7 @@ class UpdateDialog(QDialog):
         super().__init__(parent)
         self._update_data = update_data or {}
         self._changelog_only = changelog_only
+        self._download_state = "idle"  # idle | downloading | ready | error
 
         version = self._update_data.get("version", "")
         self.setWindowTitle(
@@ -139,11 +140,19 @@ class UpdateDialog(QDialog):
         )
         layout.addWidget(whats_new)
 
-        # Changelog entries for new versions only
+        # Changelog entries for new versions only (semver comparison)
         remote_changelog = self._update_data.get("changelog", [])
+
+        def _parse_ver(v):
+            try:
+                return [int(p) for p in v.split(".")]
+            except (ValueError, AttributeError):
+                return [0]
+
+        current_parts = _parse_ver(current)
         new_entries = [
             e for e in remote_changelog
-            if e.get("version", "") > current
+            if _parse_ver(e.get("version", "")) > current_parts
         ]
 
         scroll = QScrollArea()
@@ -324,12 +333,19 @@ class UpdateDialog(QDialog):
 
         layout.addStretch()
 
-        self._progress_title = QLabel("Preparing update...")
+        self._progress_title = QLabel("Downloading update...")
         self._progress_title.setStyleSheet(
             f"color: {TEXT}; font-size: 14px; font-weight: bold;"
         )
         self._progress_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self._progress_title)
+
+        self._progress_detail = QLabel("")
+        self._progress_detail.setStyleSheet(
+            f"color: {TEXT_MUTED}; font-size: 12px;"
+        )
+        self._progress_detail.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(self._progress_detail)
 
         self._progress_bar = QProgressBar()
         self._progress_bar.setRange(0, 100)
@@ -354,6 +370,7 @@ class UpdateDialog(QDialog):
             f"color: {TEXT_MUTED}; font-size: 11px;"
         )
         self._progress_file.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._progress_file.setWordWrap(True)
         layout.addWidget(self._progress_file)
 
         layout.addStretch()
@@ -365,30 +382,53 @@ class UpdateDialog(QDialog):
 
     def on_update_progress(self, data: dict):
         """Called by main window when download progress event fires."""
+        self._download_state = "downloading"
         self._stack.setCurrentIndex(_PAGE_PROGRESS)
         downloaded = data.get("downloaded", 0)
         total = data.get("total", 1)
         current_file = data.get("current_file", "")
-        pct = int(downloaded / total * 100) if total > 0 else 0
+        pct = int((downloaded + 1) / total * 100) if total > 0 else 0
         self._progress_bar.setValue(pct)
-        self._progress_title.setText(f"Downloading {downloaded}/{total} files...")
+        self._progress_title.setText("Downloading update...")
+        self._progress_detail.setText(f"File {downloaded + 1} of {total}")
         self._progress_file.setText(current_file)
 
     def on_update_ready(self, data: dict):
         """Called when download is complete and ready to apply."""
+        self._download_state = "ready"
+        self._stack.setCurrentIndex(_PAGE_PROGRESS)
         self._progress_bar.setValue(100)
         version = data.get("version", "?")
-        self._progress_title.setText(f"Update v{version} ready. Restarting...")
+        self._progress_title.setText(f"Update v{version} ready")
+        self._progress_detail.setText("Click 'Update Now' to install and restart.")
         self._progress_file.setText("")
+        # Show an apply button on the progress page
+        if not hasattr(self, "_apply_btn"):
+            from PyQt6.QtWidgets import QHBoxLayout
+            self._apply_btn = QPushButton("Update Now")
+            self._apply_btn.setStyleSheet(self._primary_btn_style())
+            self._apply_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            self._apply_btn.clicked.connect(self._on_update)
+            row = QHBoxLayout()
+            row.addStretch()
+            row.addWidget(self._apply_btn)
+            row.addStretch()
+            self._stack.widget(_PAGE_PROGRESS).layout().insertLayout(
+                self._stack.widget(_PAGE_PROGRESS).layout().count() - 1, row
+            )
 
     def on_update_error(self, data: dict):
         """Called when an update error occurs."""
+        self._download_state = "error"
+        self._stack.setCurrentIndex(_PAGE_PROGRESS)
         error = data.get("error", "Unknown error")
         self._progress_title.setText("Update failed")
         self._progress_title.setStyleSheet(
             f"color: {ERROR}; font-size: 14px; font-weight: bold;"
         )
+        self._progress_detail.setText("")
         self._progress_file.setText(str(error))
+        self._progress_bar.setValue(0)
 
     # ------------------------------------------------------------------
     # Internal actions
@@ -397,6 +437,21 @@ class UpdateDialog(QDialog):
     def _on_update(self):
         self._update_btn.setEnabled(False)
         self._update_btn.setText("Updating...")
+        if self._download_state == "ready":
+            # Download already done — apply immediately
+            self._progress_bar.setValue(100)
+            version = self._update_data.get("version", "?")
+            self._progress_title.setText(f"Applying update v{version}...")
+            self._progress_detail.setText("Restarting...")
+            self._progress_file.setText("")
+        elif self._download_state == "downloading":
+            # Download in progress — progress events will update the page
+            pass
+        else:
+            # Download hasn't started showing progress yet
+            self._progress_title.setText("Downloading update...")
+            self._progress_detail.setText("Connecting to server...")
+            self._progress_file.setText("")
         self._stack.setCurrentIndex(_PAGE_PROGRESS)
         self.update_requested.emit()
 
