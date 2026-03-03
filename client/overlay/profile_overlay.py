@@ -242,10 +242,12 @@ def _stat_row(label: str, value: str) -> QWidget:
 
 def _clickable_row(text: str, sub: str = "", url: str = "") -> QWidget:
     """A row with a clickable name and optional subtitle, opening a URL."""
-    row = QWidget()
+    from PyQt6.QtWidgets import QFrame
+    row = QFrame()
+    row.setFrameShape(QFrame.Shape.NoFrame)
     row.setStyleSheet(
-        "background: transparent;"
-        "QWidget:hover { background-color: rgba(60, 60, 80, 100); }"
+        "QFrame { background: transparent; }"
+        "QFrame:hover { background-color: rgba(60, 60, 80, 100); }"
     )
     layout = QHBoxLayout(row)
     layout.setContentsMargins(0, 2, 0, 2)
@@ -255,7 +257,7 @@ def _clickable_row(text: str, sub: str = "", url: str = "") -> QWidget:
     lbl.setStyleSheet(f"color: {color}; font-size: 12px; background: transparent;")
     if url:
         lbl.setCursor(Qt.CursorShape.PointingHandCursor)
-        lbl.mousePressEvent = lambda _ev, u=url: webbrowser.open(u)
+        lbl.mousePressEvent = lambda _ev, u=url: (webbrowser.open(u), None)[-1]
     layout.addWidget(lbl, 1)
     if sub:
         sub_lbl = QLabel(sub)
@@ -292,9 +294,11 @@ class ProfileOverlayWidget(OverlayWidget):
 
     open_profile_web = pyqtSignal(dict)
     open_entity = pyqtSignal(dict)
+    open_exchange = pyqtSignal(int)  # item_id → open exchange overlay orderbook
     _profile_loaded = pyqtSignal(object)       # dict or None
     _avatar_loaded = pyqtSignal(object)         # QPixmap or None
     _globals_loaded = pyqtSignal(object)        # dict or None
+    _globals_recent_loaded = pyqtSignal(object) # dict or None (recent poll)
     _save_result = pyqtSignal(bool, str)        # (success, error_msg)
     _upload_result = pyqtSignal(bool, str)       # (success, error_msg)
 
@@ -378,6 +382,7 @@ class ProfileOverlayWidget(OverlayWidget):
         self._profile_loaded.connect(self._on_profile_loaded)
         self._avatar_loaded.connect(self._on_avatar_loaded)
         self._globals_loaded.connect(self._on_globals_loaded)
+        self._globals_recent_loaded.connect(self._on_globals_recent_loaded)
         self._save_result.connect(self._on_save_result)
         self._upload_result.connect(self._on_upload_result)
 
@@ -576,6 +581,11 @@ class ProfileOverlayWidget(OverlayWidget):
 
         return footer
 
+    def closeEvent(self, event):
+        if hasattr(self, "_globals_recent_timer"):
+            self._stop_globals_timers()
+        super().closeEvent(event)
+
     def _open_in_browser(self):
         base = self._nexus_client._config.nexus_base_url.rstrip("/")
         encoded = self._user_name.replace(" ", "~")
@@ -594,12 +604,20 @@ class ProfileOverlayWidget(OverlayWidget):
             color = ACCENT if active else TEXT_DIM
             btn.setIcon(svg_icon(svg_path, color, 16))
 
-        # Lazy-load globals when tab is first selected
-        if (index < len(self._tab_defs)
-                and self._tab_defs[index][2] == TAB_GLOBALS
-                and not self._globals_fetched
-                and not self._globals_loading):
-            self._fetch_globals()
+        is_globals = (index < len(self._tab_defs)
+                      and self._tab_defs[index][2] == TAB_GLOBALS)
+
+        if is_globals:
+            if not self._globals_fetched and not self._globals_loading:
+                # First visit: fetch from scratch
+                self._fetch_globals()
+            elif self._globals_fetched and not self._globals_loading:
+                # Returning to tab: stale-while-revalidate
+                self._fetch_globals()
+            self._start_globals_timers_if_active()
+        else:
+            if hasattr(self, "_globals_recent_timer"):
+                self._stop_globals_timers()
 
     # --- Loading state ---
 
@@ -1003,11 +1021,11 @@ class ProfileOverlayWidget(OverlayWidget):
         # Toggle button styling and connection
         active_style = (
             f"QPushButton {{ background-color: #0077aa; color: #fff;"
-            f" font-size: 11px; font-weight: bold; border: none; padding-bottom: 2px; }}"
+            f" font-size: 10px; font-weight: bold; border: none; padding: 0px 4px; }}"
         )
         inactive_style = (
             f"QPushButton {{ background-color: {TAB_BG}; color: {TEXT_DIM};"
-            f" font-size: 11px; border: none; }}"
+            f" font-size: 10px; border: none; padding: 0px 4px; }}"
             f"QPushButton:hover {{ background-color: {TAB_HOVER_BG}; }}"
         )
 
@@ -1051,13 +1069,14 @@ class ProfileOverlayWidget(OverlayWidget):
         top = QHBoxLayout()
         top.setSpacing(6)
         name_lbl = QLabel(name)
-        color = ACCENT if url else TEXT_COLOR
+        clickable = item_id is not None
+        color = ACCENT if clickable else TEXT_COLOR
         name_lbl.setStyleSheet(
             f"color: {color}; font-size: 12px; background: transparent;"
         )
-        if url:
+        if clickable:
             name_lbl.setCursor(Qt.CursorShape.PointingHandCursor)
-            name_lbl.mousePressEvent = lambda _ev, u=url: webbrowser.open(u)
+            name_lbl.mousePressEvent = lambda _ev, iid=item_id: self.open_exchange.emit(iid)
         top.addWidget(name_lbl, 1)
 
         # Right side: quantity + markup
@@ -1125,7 +1144,10 @@ class ProfileOverlayWidget(OverlayWidget):
         layout.addStretch()
         self._content_stack.addWidget(scroll)
 
-    # --- Globals tab (lazy-loaded) ---
+    # --- Globals tab (lazy-loaded, auto-refreshed) ---
+
+    _GLOBALS_RECENT_INTERVAL = 10_000     # 10 seconds
+    _GLOBALS_FULL_INTERVAL = 900_000      # 15 minutes
 
     def _build_globals_placeholder(self):
         """Add a loading placeholder for the Globals tab."""
@@ -1140,6 +1162,13 @@ class ProfileOverlayWidget(OverlayWidget):
         layout.addStretch()
         self._content_stack.addWidget(scroll)
         self._globals_stack_index = self._content_stack.count() - 1
+
+        # Per-section toggle state and refresh timers
+        self._globals_sort_best = {"hunting": False, "mining": False, "crafting": False}
+        self._globals_recent_timer = QTimer(self)
+        self._globals_recent_timer.timeout.connect(self._poll_globals)
+        self._globals_full_timer = QTimer(self)
+        self._globals_full_timer.timeout.connect(self._poll_globals_full)
 
     def _fetch_globals(self):
         """Fetch globals data in background thread."""
@@ -1157,24 +1186,80 @@ class ProfileOverlayWidget(OverlayWidget):
         """Replace the globals placeholder with actual content."""
         self._globals_loading = False
         self._globals_fetched = True
+        self._globals_data = data
 
         if not hasattr(self, "_globals_stack_index"):
             return
 
         idx = self._globals_stack_index
 
-        # Remove old placeholder
         old = self._content_stack.widget(idx)
         if old:
-            # Build new content
+            # Check BEFORE insert/remove — the operations shift currentIndex
+            was_showing_globals = self._content_stack.currentIndex() == idx
             new_widget = self._build_globals_content(data)
             self._content_stack.insertWidget(idx, new_widget)
             self._content_stack.removeWidget(old)
             old.deleteLater()
 
-            # Re-select if globals tab is currently active
-            if self._content_stack.currentIndex() == idx:
+            if was_showing_globals:
                 self._content_stack.setCurrentIndex(idx)
+
+        # Start refresh timers if globals tab is active
+        self._start_globals_timers_if_active()
+
+    def _start_globals_timers_if_active(self):
+        """Start timers only when the globals tab is the active tab."""
+        if not hasattr(self, "_globals_stack_index"):
+            return
+        if self._content_stack.currentIndex() == self._globals_stack_index:
+            if not self._globals_recent_timer.isActive():
+                self._globals_recent_timer.start(self._GLOBALS_RECENT_INTERVAL)
+            if not self._globals_full_timer.isActive():
+                self._globals_full_timer.start(self._GLOBALS_FULL_INTERVAL)
+
+    def _stop_globals_timers(self):
+        self._globals_recent_timer.stop()
+        self._globals_full_timer.stop()
+
+    def _poll_globals(self):
+        """Lightweight poll: fetch data and update recent section only."""
+        if self._globals_loading:
+            return
+        self._globals_loading = True
+        profile = self._profile_data.get("profile", {}) if self._profile_data else {}
+        eu_name = profile.get("euName", self._user_name)
+
+        def _do():
+            data = self._nexus_client.get_player_globals(eu_name)
+            self._globals_recent_loaded.emit(data)
+
+        threading.Thread(target=_do, daemon=True).start()
+
+    def _poll_globals_full(self):
+        """Full poll: fetch and rebuild everything."""
+        if self._globals_loading:
+            return
+        self._fetch_globals()
+
+    def _on_globals_recent_loaded(self, data):
+        """Update only the recent section with fresh data."""
+        self._globals_loading = False
+        if data and "recent" in data:
+            self._globals_data = data
+            self._refresh_recent_section(data.get("recent", []))
+
+    def _refresh_recent_section(self, recent: list[dict]):
+        """Update the recent globals container in-place."""
+        if not hasattr(self, "_recent_container"):
+            return
+        # Clear and repopulate
+        layout = self._recent_container.layout()
+        while layout.count():
+            child = layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+        self._populate_recent(layout, recent)
 
     def _build_globals_content(self, data: dict | None) -> QWidget:
         """Build the globals tab content widget."""
@@ -1193,7 +1278,7 @@ class ProfileOverlayWidget(OverlayWidget):
 
         summary = data["summary"]
 
-        # Summary section
+        # --- Summary ---
         layout.addWidget(_section_label("SUMMARY"))
         total = summary.get("total_count", 0)
         total_value = summary.get("total_value", 0)
@@ -1209,49 +1294,49 @@ class ProfileOverlayWidget(OverlayWidget):
         layout.addWidget(_stat_row("Mining", str(deposit_count)))
         layout.addWidget(_stat_row("Crafting", str(craft_count)))
 
-        # Top hunting
+        # --- Recent globals ---
+        recent = data.get("recent", [])
+        if recent:
+            layout.addWidget(_separator())
+            layout.addWidget(_section_label("RECENT"))
+            self._recent_container = QWidget()
+            self._recent_container.setStyleSheet("background: transparent;")
+            rc_layout = QVBoxLayout(self._recent_container)
+            rc_layout.setContentsMargins(0, 0, 0, 0)
+            rc_layout.setSpacing(2)
+            self._populate_recent(rc_layout, recent)
+            layout.addWidget(self._recent_container)
+
+        # --- Top sections with Total/Best toggle ---
         hunting = data.get("hunting", [])
+        resources = data.get("mining", {}).get("resources", [])
+        crafts = data.get("crafting", {}).get("items", [])
+
         if hunting:
             layout.addWidget(_separator())
-            layout.addWidget(_section_label("TOP HUNTING"))
-            for mob in hunting[:5]:
-                name = mob.get("target", "Unknown")
-                kills = mob.get("kills", 0)
-                value = mob.get("total_value", 0)
-                layout.addWidget(_clickable_row(
-                    name,
-                    sub=f"{kills} kills · {value:,.0f} PED",
-                ))
+            header, container = self._build_top_section_header("TOP HUNTING", "hunting")
+            layout.addWidget(header)
+            self._hunting_container = container
+            layout.addWidget(container)
+            self._populate_hunting(container, hunting)
 
-        # Top mining
-        resources = data.get("mining", {}).get("resources", [])
         if resources:
             layout.addWidget(_separator())
-            layout.addWidget(_section_label("TOP MINING"))
-            for res in resources[:5]:
-                name = res.get("target", "Unknown")
-                finds = res.get("finds", 0)
-                value = res.get("total_value", 0)
-                layout.addWidget(_clickable_row(
-                    name,
-                    sub=f"{finds} finds · {value:,.0f} PED",
-                ))
+            header, container = self._build_top_section_header("TOP MINING", "mining")
+            layout.addWidget(header)
+            self._mining_container = container
+            layout.addWidget(container)
+            self._populate_mining(container, resources)
 
-        # Top crafting
-        crafts = data.get("crafting", {}).get("items", [])
         if crafts:
             layout.addWidget(_separator())
-            layout.addWidget(_section_label("TOP CRAFTING"))
-            for item in crafts[:5]:
-                name = item.get("target", "Unknown")
-                count = item.get("crafts", 0)
-                value = item.get("total_value", 0)
-                layout.addWidget(_clickable_row(
-                    name,
-                    sub=f"{count} crafts · {value:,.0f} PED",
-                ))
+            header, container = self._build_top_section_header("TOP CRAFTING", "crafting")
+            layout.addWidget(header)
+            self._crafting_container = container
+            layout.addWidget(container)
+            self._populate_crafting(container, crafts)
 
-        # View all link
+        # --- View all ---
         layout.addWidget(_separator())
         base = self._nexus_client._config.nexus_base_url.rstrip("/")
         profile = self._profile_data.get("profile", {}) if self._profile_data else {}
@@ -1273,6 +1358,239 @@ class ProfileOverlayWidget(OverlayWidget):
 
         layout.addStretch()
         return scroll
+
+    # --- Recent section helpers ---
+
+    def _populate_recent(self, layout: QVBoxLayout, recent: list[dict]):
+        """Fill the recent globals container with up to 5 entries."""
+        from datetime import datetime, timezone
+
+        now = datetime.now(timezone.utc)
+        for entry in recent[:5]:
+            target = entry.get("target", "Unknown")
+            value = entry.get("value", 0)
+            gtype = entry.get("type", "")
+            hof = entry.get("hof", False)
+            ts_str = entry.get("timestamp", "")
+
+            # Relative time
+            age = ""
+            if ts_str:
+                try:
+                    ts = datetime.fromisoformat(ts_str)
+                    delta = now - ts
+                    secs = int(delta.total_seconds())
+                    if secs < 60:
+                        age = f"{secs}s ago"
+                    elif secs < 3600:
+                        age = f"{secs // 60}m ago"
+                    elif secs < 86400:
+                        age = f"{secs // 3600}h ago"
+                    else:
+                        age = f"{secs // 86400}d ago"
+                except (ValueError, TypeError):
+                    pass
+
+            # Type badge color
+            type_colors = {
+                "kill": "#ef4444", "team_kill": "#ef4444",
+                "deposit": "#3b82f6", "craft": "#a855f7",
+                "rare_item": "#f59e0b", "discovery": "#10b981",
+            }
+            badge_color = type_colors.get(gtype, TEXT_DIM)
+            type_label = gtype.replace("_", " ").title() if gtype else ""
+
+            row = QWidget()
+            row.setStyleSheet("background: transparent;")
+            rl = QHBoxLayout(row)
+            rl.setContentsMargins(0, 1, 0, 1)
+            rl.setSpacing(4)
+
+            # Type badge
+            badge = QLabel(type_label)
+            badge.setFixedWidth(60)
+            badge.setStyleSheet(
+                f"color: {badge_color}; font-size: 9px; font-weight: bold;"
+                " background: transparent;"
+            )
+            rl.addWidget(badge)
+
+            # Target name
+            name_lbl = QLabel(target)
+            name_lbl.setStyleSheet(
+                f"color: {TEXT_COLOR}; font-size: 11px; background: transparent;"
+            )
+            rl.addWidget(name_lbl, 1)
+
+            # Value + HoF badge
+            val_text = f"{value:,.0f} PED"
+            if hof:
+                val_text += " HoF"
+            val_lbl = QLabel(val_text)
+            val_color = "#f59e0b" if hof else TEXT_DIM
+            val_lbl.setStyleSheet(
+                f"color: {val_color}; font-size: 11px; background: transparent;"
+            )
+            val_lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
+            rl.addWidget(val_lbl)
+
+            # Age
+            if age:
+                age_lbl = QLabel(age)
+                age_lbl.setFixedWidth(45)
+                age_lbl.setStyleSheet(
+                    f"color: {TEXT_DIM}; font-size: 10px; background: transparent;"
+                )
+                age_lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
+                rl.addWidget(age_lbl)
+
+            layout.addWidget(row)
+
+    # --- Top sections with Total/Best toggle ---
+
+    def _build_top_section_header(self, title: str, section_key: str) -> tuple[QWidget, QWidget]:
+        """Build a section header with Total/Best toggle. Returns (header, container)."""
+        header = QWidget()
+        header.setStyleSheet("background: transparent;")
+        hl = QHBoxLayout(header)
+        hl.setContentsMargins(0, 0, 0, 0)
+        hl.setSpacing(4)
+
+        lbl = QLabel(title)
+        lbl.setStyleSheet(
+            f"color: {SECTION_COLOR}; font-size: 10px; font-weight: bold;"
+            " letter-spacing: 1px; background: transparent;"
+        )
+        hl.addWidget(lbl, 1)
+
+        active_style = (
+            f"color: {TEXT_BRIGHT}; font-size: 9px; font-weight: bold;"
+            f" background: {TAB_ACTIVE_BG}; border: none;"
+            " border-radius: 2px; padding: 1px 5px;"
+        )
+        inactive_style = (
+            f"color: {TEXT_DIM}; font-size: 9px;"
+            " background: transparent; border: none;"
+            " border-radius: 2px; padding: 1px 5px;"
+        )
+
+        is_best = self._globals_sort_best.get(section_key, False)
+        total_btn = QPushButton("Total")
+        best_btn = QPushButton("Best")
+        total_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        best_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        total_btn.setStyleSheet(inactive_style if is_best else active_style)
+        best_btn.setStyleSheet(active_style if is_best else inactive_style)
+        hl.addWidget(total_btn)
+        hl.addWidget(best_btn)
+
+        container = QWidget()
+        container.setStyleSheet("background: transparent;")
+        QVBoxLayout(container).setContentsMargins(0, 0, 0, 0)
+        container.layout().setSpacing(2)
+
+        def _set_mode(best: bool):
+            self._globals_sort_best[section_key] = best
+            total_btn.setStyleSheet(inactive_style if best else active_style)
+            best_btn.setStyleSheet(active_style if best else inactive_style)
+            self._refresh_top_section(section_key)
+
+        total_btn.clicked.connect(lambda: _set_mode(False))
+        best_btn.clicked.connect(lambda: _set_mode(True))
+
+        return header, container
+
+    def _refresh_top_section(self, section_key: str):
+        """Re-populate a single top section using its current sort mode."""
+        data = self._globals_data
+        if not data:
+            return
+        if section_key == "hunting" and hasattr(self, "_hunting_container"):
+            self._clear_container(self._hunting_container)
+            self._populate_hunting(self._hunting_container, data.get("hunting", []))
+        elif section_key == "mining" and hasattr(self, "_mining_container"):
+            self._clear_container(self._mining_container)
+            self._populate_mining(
+                self._mining_container,
+                data.get("mining", {}).get("resources", []),
+            )
+        elif section_key == "crafting" and hasattr(self, "_crafting_container"):
+            self._clear_container(self._crafting_container)
+            self._populate_crafting(
+                self._crafting_container,
+                data.get("crafting", {}).get("items", []),
+            )
+
+    @staticmethod
+    def _clear_container(container: QWidget):
+        layout = container.layout()
+        while layout.count():
+            child = layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+
+    def _populate_hunting(self, container: QWidget, hunting: list[dict]):
+        layout = container.layout()
+        best = self._globals_sort_best["hunting"]
+        if best:
+            items = sorted(hunting, key=lambda m: m.get("best_value", 0), reverse=True)
+        else:
+            items = hunting  # already sorted by total_value from server
+        for mob in items[:5]:
+            name = mob.get("target", "Unknown")
+            if best:
+                value = mob.get("best_value", 0)
+                # Find the maturity with the highest best_value
+                maturities = mob.get("maturities", [])
+                mat_name = ""
+                if maturities:
+                    top_mat = max(maturities, key=lambda m: m.get("best_value", 0))
+                    mat_name = top_mat.get("target", "")
+                if mat_name and mat_name != name:
+                    sub = f"{mat_name} · {value:,.0f} PED"
+                else:
+                    sub = f"{value:,.0f} PED"
+            else:
+                kills = mob.get("kills", 0)
+                value = mob.get("total_value", 0)
+                sub = f"{kills} kills · {value:,.0f} PED"
+            layout.addWidget(_clickable_row(name, sub=sub))
+
+    def _populate_mining(self, container: QWidget, resources: list[dict]):
+        layout = container.layout()
+        best = self._globals_sort_best["mining"]
+        if best:
+            items = sorted(resources, key=lambda r: r.get("best_value", 0), reverse=True)
+        else:
+            items = resources
+        for res in items[:5]:
+            name = res.get("target", "Unknown")
+            if best:
+                value = res.get("best_value", 0)
+                sub = f"{value:,.0f} PED"
+            else:
+                finds = res.get("finds", 0)
+                value = res.get("total_value", 0)
+                sub = f"{finds} finds · {value:,.0f} PED"
+            layout.addWidget(_clickable_row(name, sub=sub))
+
+    def _populate_crafting(self, container: QWidget, crafts: list[dict]):
+        layout = container.layout()
+        best = self._globals_sort_best["crafting"]
+        if best:
+            items = sorted(crafts, key=lambda c: c.get("best_value", 0), reverse=True)
+        else:
+            items = crafts
+        for item in items[:5]:
+            name = item.get("target", "Unknown")
+            if best:
+                value = item.get("best_value", 0)
+                sub = f"{value:,.0f} PED"
+            else:
+                count = item.get("crafts", 0)
+                value = item.get("total_value", 0)
+                sub = f"{count} crafts · {value:,.0f} PED"
+            layout.addWidget(_clickable_row(name, sub=sub))
 
     # --- Settings tab (owner only) ---
 

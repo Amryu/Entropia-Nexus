@@ -16,7 +16,10 @@ from .widgets.title_bar import CustomTitleBar
 from .widgets.sidebar import IconSidebar
 from .widgets.status_bar import StatusBar
 from .pages.dashboard import DashboardPage
+from ..core.logger import get_logger
 from ..platform import backend as _platform
+
+log = get_logger("MainWindow")
 
 
 GRIP = 6  # pixels from edge that trigger resize
@@ -212,7 +215,11 @@ class MainWindow(QWidget):
         factory = self._page_factories.get(index)
         if factory is None:
             return self._pages.widget(index)
-        page = factory()
+        try:
+            page = factory()
+        except Exception:
+            log.error("Failed to create page %d", index, exc_info=True)
+            page = QWidget()
         placeholder = self._pages.widget(index)
         self._pages.removeWidget(placeholder)
         placeholder.deleteLater()

@@ -68,6 +68,7 @@ class CalcStatsPanel(QWidget):
             | Qt.WindowType.Tool
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setWindowOpacity(config.overlay_opacity)
         self.setFixedWidth(STATS_PANEL_W)
 

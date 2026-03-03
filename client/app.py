@@ -413,6 +413,26 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
                 )
                 overlay.open_profile_web.connect(main_window._on_search_result_selected)
                 overlay.open_entity.connect(_on_overlay_result_selected)
+
+                def _open_exchange_orderbook(item_id):
+                    nonlocal _exchange_overlay
+                    from .overlay.exchange_overlay import ExchangeOverlay
+                    if _exchange_overlay is None:
+                        _exchange_overlay = ExchangeOverlay(
+                            config=config,
+                            config_path=config_path,
+                            store=_exchange_store,
+                            favourites=_favourites_store,
+                            manager=overlay_manager,
+                        )
+                        _exchange_overlay.open_entity.connect(
+                            _on_overlay_result_selected
+                        )
+                    _exchange_overlay.set_wants_visible(True)
+                    _exchange_overlay.raise_()
+                    _exchange_overlay.navigate_to_order_book(item_id)
+
+                overlay.open_exchange.connect(_open_exchange_orderbook)
                 _current_profile_overlay = overlay
                 return
 

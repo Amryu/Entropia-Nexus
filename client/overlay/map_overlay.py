@@ -112,6 +112,7 @@ class _InfoPanelWrapper(QWidget):
             | Qt.WindowType.Tool
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setWindowOpacity(config.overlay_opacity)
 
         layout = QVBoxLayout(self)

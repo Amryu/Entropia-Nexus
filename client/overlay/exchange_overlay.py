@@ -1338,6 +1338,11 @@ class ExchangeOverlay(OverlayWidget):
         ).pixmap(12, 12))
         header.setProperty('_expanded', expanded)
 
+    def navigate_to_order_book(self, item_id: int):
+        """Public entry point: switch to Browse tab and show the order book."""
+        self._set_tab(_TAB_BROWSE)
+        self._show_order_book(item_id)
+
     def _show_order_book(self, item_id: int):
         self._current_item_id = item_id
         slim = self._store.item_lookup.get(item_id)
