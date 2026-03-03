@@ -195,20 +195,21 @@ if [[ -d "$INTERNAL_CHECK" ]]; then
         done
     }
 
-    # 1. Unused Qt module libraries (.dll on Windows, .so* on Linux)
+    # 1. Unused Qt6 module libraries (.dll on Windows, .so* on Linux)
     #    Keep: QtWidgets, QtCore, QtGui, QtSvg, QtMultimedia, QtNetwork
-    STRIP_QT_MODULES=(
-        'Qt6Quick*' 'Qt6Qml*' 'Qt6Positioning*' 'Qt6WebChannel*'
-        'Qt6OpenGL*' 'Qt6Quick3D*' 'Qt6RemoteObjects*' 'Qt6PrintSupport*'
-        'Qt6Pdf*' 'Qt6ShaderTools*' 'Qt6Sensors*' 'Qt6TextToSpeech*'
-        'Qt6WebSockets*' 'Qt6SpatialAudio*' 'Qt6XcbQpa*'
+    #    Patterns cover both Windows (Qt6Quick.dll) and Linux (libQt6Quick.so.6)
+    STRIP_QT6_MODULES=(
+        Quick Qml QmlModels QmlMeta QmlWorkerScript Positioning WebChannel
+        OpenGL Quick3D RemoteObjects PrintSupport Pdf ShaderTools Sensors
+        TextToSpeech WebSockets SpatialAudio XcbQpa EglFSDeviceIntegration
+        WaylandClient WlShellIntegration Concurrent DBus
     )
-    FIND_QT_ARGS=()
-    for pat in "${STRIP_QT_MODULES[@]}"; do
-        [[ ${#FIND_QT_ARGS[@]} -gt 0 ]] && FIND_QT_ARGS+=( -o )
-        FIND_QT_ARGS+=( -name "$pat" )
+    FIND_QT6_ARGS=()
+    for mod in "${STRIP_QT6_MODULES[@]}"; do
+        [[ ${#FIND_QT6_ARGS[@]} -gt 0 ]] && FIND_QT6_ARGS+=( -o )
+        FIND_QT6_ARGS+=( -name "Qt6${mod}*" -o -name "libQt6${mod}*" )
     done
-    find "$INTERNAL_CHECK" -type f \( "${FIND_QT_ARGS[@]}" \) | strip_files
+    find "$INTERNAL_CHECK" \( -type f -o -type l \) \( "${FIND_QT6_ARGS[@]}" \) | strip_files
 
     # 2. Unused PyQt6 Python bindings (.pyd on Windows, .abi3.so on Linux)
     STRIP_PYQT_MODULES=(
@@ -220,41 +221,58 @@ if [[ -d "$INTERNAL_CHECK" ]]; then
         [[ ${#FIND_PYQT_ARGS[@]} -gt 0 ]] && FIND_PYQT_ARGS+=( -o )
         FIND_PYQT_ARGS+=( -name "$pat" )
     done
-    find "$INTERNAL_CHECK" -path '*/PyQt6*' -type f \( "${FIND_PYQT_ARGS[@]}" \) | strip_files
+    find "$INTERNAL_CHECK" -path '*/PyQt6*' \( -type f -o -type l \) \( "${FIND_PYQT_ARGS[@]}" \) | strip_files
 
-    # 3. Software OpenGL fallback (Windows only)
-    find "$INTERNAL_CHECK" -name 'opengl32sw.dll' -type f | strip_files
+    # 3. Qt5 from OpenCV — OCR uses image ops only, not cv2.imshow()
+    find "$INTERNAL_CHECK" \( -type f -o -type l \) \( -name 'Qt5*' -o -name 'libQt5*' \) | strip_files
 
-    # 4. FFmpeg codecs — QSoundEffect plays WAV natively, no FFmpeg needed
-    find "$INTERNAL_CHECK" -type f \( \
+    # 4. Software OpenGL fallback (Windows only)
+    find "$INTERNAL_CHECK" -name 'opengl32sw.dll' \( -type f -o -type l \) | strip_files
+
+    # 5. FFmpeg / video codecs — QSoundEffect plays WAV natively, no FFmpeg needed
+    find "$INTERNAL_CHECK" \( -type f -o -type l \) \( \
         -name 'avcodec-*.dll' -o -name 'avformat-*.dll' \
         -o -name 'avutil-*.dll' -o -name 'swresample-*.dll' \
         -o -name 'libavcodec*.so*' -o -name 'libavformat*.so*' \
         -o -name 'libavutil*.so*' -o -name 'libswresample*.so*' \
-        -o -name 'libswscale*.so*' \
+        -o -name 'libswscale*.so*' -o -name 'libavfilter*.so*' \
+        -o -name 'libavdevice*.so*' \
+        -o -name 'libaom*.so*' -o -name 'libvpx*.so*' \
+        -o -name 'libavif*.so*' \
         \) | strip_files
 
-    # 5. OpenCV video I/O FFmpeg — OCR uses image ops only
-    find "$INTERNAL_CHECK" -name 'opencv_videoio_ffmpeg*' -type f | strip_files
+    # 6. OpenCV video I/O FFmpeg — OCR uses image ops only
+    find "$INTERNAL_CHECK" -name 'opencv_videoio_ffmpeg*' \( -type f -o -type l \) | strip_files
 
-    # 6. Qt translations — English-only app
+    # 7. Qt translations — English-only app
     find "$INTERNAL_CHECK" -path '*/Qt6/translations' -type d | strip_dirs
 
-    # 7. QML directory — pure QWidgets app, no QML files used
+    # 8. QML directory — pure QWidgets app, no QML files used
     find "$INTERNAL_CHECK" -path '*/Qt6/qml' -type d | strip_dirs
 
-    # 8. Qt positioning plugin
+    # 9. Qt positioning plugin
     find "$INTERNAL_CHECK" -path '*/plugins/position' -type d | strip_dirs
 
-    # 9. Qt xcb GL integrations — not needed for overlay/headless use
+    # 10. Qt xcb GL integrations — not needed for overlay/headless use
     find "$INTERNAL_CHECK" -path '*/plugins/xcbglintegrations' -type d | strip_dirs
 
-    # 10. Qt FFmpeg multimedia plugin (Linux .so)
-    find "$INTERNAL_CHECK" -name 'libffmpegmediaplugin*' -type f | strip_files
-    find "$INTERNAL_CHECK" -name 'libQt6FFmpegStub*' -type f | strip_files
+    # 11. Qt FFmpeg multimedia plugin (Linux .so)
+    find "$INTERNAL_CHECK" -name 'libffmpegmediaplugin*' \( -type f -o -type l \) | strip_files
+    find "$INTERNAL_CHECK" -name 'libQt6FFmpegStub*' \( -type f -o -type l \) | strip_files
 
-    # 11. Font files — not licensed for distribution; STPK templates provide OCR matching
-    find "$INTERNAL_CHECK" -name '*.ttf' -type f | strip_files
+    # 12. Font files — not licensed for distribution; STPK templates provide OCR matching
+    find "$INTERNAL_CHECK" -name '*.ttf' \( -type f -o -type l \) | strip_files
+
+    # 13. Qt6 platform plugins not needed on desktop
+    find "$INTERNAL_CHECK" -path '*/plugins/platforms*' \( -type f -o -type l \) \( \
+        -name 'libqlinuxfb*' -o -name 'libqvkkhrdisplay*' \
+        -o -name 'libqvnc*' -o -name 'libqoffscreen*' \
+        \) | strip_files
+    find "$INTERNAL_CHECK" -path '*/plugins/generic*' -name 'libqtuiotouchplugin*' \
+        \( -type f -o -type l \) | strip_files
+
+    # 14. OpenCV Qt platform plugins — not using cv2.imshow()
+    find "$INTERNAL_CHECK" -path '*/cv2/qt*' -type d | strip_dirs
 
     SAVED_MB=$((SAVED / 1048576))
     cyan "  Stripped ~${SAVED_MB} MB of unnecessary files."
@@ -321,6 +339,8 @@ files = {}
 for root, dirs, filenames in os.walk(dist_dir):
     for fname in filenames:
         full = os.path.join(root, fname)
+        if not os.path.isfile(full):
+            continue  # skip broken symlinks
         rel = os.path.relpath(full, dist_dir).replace(os.sep, '/')
         if rel == 'manifest.json':
             continue

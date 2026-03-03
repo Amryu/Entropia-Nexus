@@ -11,28 +11,28 @@
 
   const features = [
     {
-      title: 'Entropia Nexus Wiki',
-      description: 'Browse the full Entropia Nexus wiki from an in-game overlay — items, mobs, locations, professions, and more. Look up anything without leaving the game.'
+      title: 'In-Game Wiki',
+      description: 'Look up items, mobs, locations, and professions without leaving the game. Everything from Entropia Nexus, right in your overlay.'
     },
     {
       title: 'In-Game Overlays',
-      description: 'Transparent, always-on-top overlays for quick access. Search players, view profiles, check scan results, and browse the wiki at a glance.'
+      description: 'Search players, view profiles, and check scan results through transparent overlays that stay on top of your game.'
     },
     {
       title: 'Exchange Market',
-      description: 'Access the Entropia Nexus exchange directly from an overlay. Browse items, view orders, and place buy or sell offers without alt-tabbing.'
+      description: 'Browse items, view orders, and place buy or sell offers directly from an overlay — no alt-tabbing needed.'
     },
     {
       title: 'Loadout Manager',
-      description: 'Plan and compare equipment loadouts. Configure weapons, armor, enhancers, and calculate DPS, economy, and markup costs.'
+      description: 'Compare weapons, armor, and enhancers side by side. See DPS, economy, and markup costs before you buy.'
     },
     {
-      title: 'OCR Skill Scanner',
-      description: 'Reads your in-game Skills window using computer vision. Detects skill names, ranks, points, and progress — then imports everything to your Nexus account.'
+      title: 'Skill Scanner',
+      description: 'Scan your in-game Skills window with one click. Your skill names, ranks, and progress are automatically imported to your Nexus profile.'
     },
     {
       title: 'Auto-Updates',
-      description: 'Delta update system that only downloads changed files. The client checks for updates in the background and applies them with one click.'
+      description: 'Stay up to date automatically. The client checks for new versions in the background and updates itself with one click.'
     }
   ];
 
@@ -71,7 +71,7 @@
       <span class="sep">/</span>
       <span>Client</span>
     </nav>
-    <h1>Entropia Nexus Client <span class="beta-badge">BETA</span></h1>
+    <h1>Entropia Nexus Client</h1> <span class="beta-badge">BETA</span>
     <p class="subtitle">Desktop companion app for Entropia Universe — currently in beta. Features may change and bugs are expected.</p>
   </header>
 
@@ -193,14 +193,15 @@
   }
 
   .beta-badge {
-    font-size: 0.55em;
+    font-size: 0.75rem;
     font-weight: 700;
     padding: 2px 8px;
     border-radius: 4px;
     background-color: var(--warning-color);
     color: #000;
     letter-spacing: 0.5px;
-    vertical-align: middle;
+    position: relative;
+    top: -0.5rem;
   }
 
   .subtitle {

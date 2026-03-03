@@ -1,9 +1,21 @@
 """Secure token persistence using the OS credential store."""
 
 import json
+import platform
 from datetime import datetime
 
+import keyring
+
 from .models import TokenSet
+
+# PyInstaller strips dist-info metadata, so keyring can't discover backends
+# via entry_points. Set the backend explicitly for each platform.
+if platform.system() == "Windows":
+    from keyring.backends.Windows import WinVaultKeyring
+    keyring.set_keyring(WinVaultKeyring())
+else:
+    from keyring.backends.SecretService import Keyring as SecretServiceKeyring
+    keyring.set_keyring(SecretServiceKeyring())
 
 SERVICE_NAME = "EntropiaNexusClient"
 TOKEN_KEY = "oauth_tokens"
