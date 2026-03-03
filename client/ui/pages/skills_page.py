@@ -131,7 +131,7 @@ class SkillCard(QFrame):
         rank_label.setStyleSheet(f"font-size: 10px; color: {TEXT_MUTED}; background: transparent; border: none;")
         info_row.addWidget(rank_label)
         if weight is not None:
-            weight_label = QLabel(f"w:{weight}")
+            weight_label = QLabel(f"{weight}%")
             weight_label.setStyleSheet(f"font-size: 9px; color: {ACCENT}; background: transparent; border: none;")
             info_row.addWidget(weight_label)
         info_row.addStretch()
@@ -259,7 +259,7 @@ class ProfessionCard(QFrame):
         )
         info_row.addWidget(rank_label)
         if weight is not None:
-            weight_label = QLabel(f"w:{weight}")
+            weight_label = QLabel(f"{weight}%")
             weight_label.setStyleSheet(f"font-size: 9px; color: {ACCENT}; background: transparent; border: none;")
             info_row.addWidget(weight_label)
         info_row.addStretch()
