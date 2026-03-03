@@ -1000,14 +1000,20 @@ class MapOverlay(OverlayWidget):
                         )
                 break
 
-    # --- Mouse events: drag from title bar + click-to-minify ---
+    # --- Mouse events: drag from title bar / sidebar / footer + click-to-minify ---
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             self._click_origin = event.globalPosition().toPoint()
-            # Only allow drag from title bar area
+            # Allow drag from title bar, sidebar, and footer — not the map canvas
+            local_x = event.position().x()
             local_y = event.position().y()
-            if local_y <= _TITLE_H:
+            in_map_area = (
+                local_y > _TITLE_H
+                and local_x > _SIDEBAR_W
+                and local_y < self.height() - _FOOTER_H
+            )
+            if not in_map_area:
                 self._drag_pos = (
                     event.globalPosition().toPoint() - self.frameGeometry().topLeft()
                 )
