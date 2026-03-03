@@ -11,7 +11,7 @@
   import RentalPricingEditor from '$lib/components/rental/RentalPricingEditor.svelte';
   import BlockedDatesEditor from '$lib/components/rental/BlockedDatesEditor.svelte';
   import ItemSetDisplay from '$lib/components/itemsets/ItemSetDisplay.svelte';
-  import { formatPrice } from '$lib/utils/rentalPricing.js';
+  import { formatPrice, formatDateDisplay } from '$lib/utils/rentalPricing.js';
   import { addToast } from '$lib/stores/toasts';
 
   export let data;
@@ -126,10 +126,6 @@
     }
   }
 
-  function formatDateDisplay(dateStr) {
-    const d = new Date(dateStr + 'T00:00:00');
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  }
 </script>
 
 <svelte:head>

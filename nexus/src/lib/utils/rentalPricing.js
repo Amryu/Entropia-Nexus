@@ -131,6 +131,20 @@ export function formatPrice(price) {
 }
 
 /**
+ * Format a date string or ISO timestamp for display (e.g. "Feb 27, 2026").
+ * Handles both bare date strings "YYYY-MM-DD" and ISO timestamps "YYYY-MM-DDTHH:mm:ss.sssZ".
+ * @param {string|null|undefined} dateStr
+ * @returns {string}
+ */
+export function formatDateDisplay(dateStr) {
+  if (!dateStr) return '\u2014';
+  const dateOnly = String(dateStr).split('T')[0];
+  const d = new Date(dateOnly + 'T00:00:00');
+  if (isNaN(d.getTime())) return '\u2014';
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+/**
  * Generate a pricing preview table for different durations.
  * @param {number} pricePerDay
  * @param {Array} discounts

@@ -914,6 +914,7 @@ Item rental marketplace allowing players to rent equipment from other players.
 /market/rental/[id]             - Offer detail with calendar and request button
 /market/rental/[id]/edit        - Edit offer, manage blocked dates and requests
 /market/rental/my               - Dashboard (my offers + my requests tabs)
+/market/rental/requests/[requestId] - Request detail (requester or owner)
 ```
 
 ### Components
@@ -942,6 +943,7 @@ Key functions in `rentalPricing.js`:
 - `calculateExtensionPrice(basePricePerDay, discounts, originalTotal, originalDays, extraDays, retroactive, customPrice)` — Extension pricing
 - `generatePricingPreview(pricePerDay, discounts)` — Preview table for standard durations
 - `formatPrice(value)` — Format as PED string
+- `formatDateDisplay(dateStr)` — Format date for display, handles ISO timestamps
 
 ### Offer Status Machine
 

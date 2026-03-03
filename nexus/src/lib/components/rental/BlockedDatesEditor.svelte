@@ -6,6 +6,7 @@
 <script>
   // @ts-nocheck
   import { createEventDispatcher } from 'svelte';
+  import { formatDateDisplay } from '$lib/utils/rentalPricing.js';
 
   const dispatch = createEventDispatcher();
 
@@ -97,10 +98,6 @@
     }
   }
 
-  function formatDateDisplay(dateStr) {
-    const d = new Date(dateStr + 'T00:00:00');
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  }
 </script>
 
 <div class="blocked-dates-editor">

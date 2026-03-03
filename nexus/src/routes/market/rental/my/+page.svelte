@@ -7,7 +7,7 @@
   import '$lib/style.css';
   import { goto } from '$app/navigation';
   import RentalStatusBadge from '$lib/components/rental/RentalStatusBadge.svelte';
-  import { formatPrice } from '$lib/utils/rentalPricing.js';
+  import { formatPrice, formatDateDisplay } from '$lib/utils/rentalPricing.js';
 
   export let data;
 
@@ -17,12 +17,6 @@
   $: isVerified = !!user?.verified;
 
   let activeTab = 'offers';
-
-  function formatDateDisplay(dateStr) {
-    if (!dateStr) return '—';
-    const d = new Date(dateStr + 'T00:00:00');
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  }
 </script>
 
 <svelte:head>

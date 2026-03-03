@@ -3705,13 +3705,15 @@ export async function getRentalRequests(offerId, status = null) {
 export async function getRentalRequestById(id) {
   const query = `
     SELECT rr.*,
-           u.eu_name AS requester_name,
+           u.eu_name AS requester_name, u.username AS requester_username,
            ro.title AS offer_title, ro.user_id AS offer_owner_id,
            ro.price_per_day AS offer_price_per_day, ro.discounts AS offer_discounts,
-           ro.deposit AS offer_deposit, ro.status AS offer_status
+           ro.deposit AS offer_deposit, ro.status AS offer_status,
+           ow.eu_name AS owner_name, ow.username AS owner_username
     FROM rental_requests rr
     JOIN users u ON rr.requester_id = u.id
     JOIN rental_offers ro ON rr.offer_id = ro.id
+    JOIN users ow ON ro.user_id = ow.id
     WHERE rr.id = $1
   `;
   const { rows } = await pool.query(query, [id]);
