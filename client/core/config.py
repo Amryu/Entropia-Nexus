@@ -1,7 +1,6 @@
 import json
 import os
 import shutil
-import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -10,17 +9,6 @@ from .constants import DEFAULT_CHAT_LOG_PATH
 from .logger import get_logger
 
 log = get_logger("Config")
-
-if sys.platform == "win32":
-    TESSERACT_COMMON_PATHS = [
-        r"C:\Program Files\Tesseract-OCR\tesseract.exe",
-        r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
-    ]
-else:
-    TESSERACT_COMMON_PATHS = [
-        "/usr/bin/tesseract",
-        "/usr/local/bin/tesseract",
-    ]
 
 
 @dataclass
@@ -32,8 +20,9 @@ class AppConfig:
     loot_group_window_ms: int = 1500
 
     # OCR - general
-    tesseract_path: str = ""
     ocr_confidence_threshold: float = 0.7
+    scan_overlay_debug: bool = False
+    scan_roi_overrides: dict = field(default_factory=dict)  # {name: [x,y,w,h]} pixel offsets from SKILLS template
 
     # OCR - HUD regions (x, y, w, h) for mob/tool name detection
     mob_name_region: tuple[int, int, int, int] | None = None
@@ -45,6 +34,8 @@ class AppConfig:
     search_overlay_position: tuple[int, int] = (50, 50)
     detail_overlay_position: tuple[int, int] = (400, 50)
     map_overlay_position: tuple[int, int] = (100, 100)
+    scan_summary_overlay_position: tuple[int, int] = (100, 200)
+    confirm_overlay_position: tuple[int, int] = (100, 200)
     map_overlay_size: int = 1  # 0=Small, 1=Medium, 2=Large
     overlay_opacity: float = 0.85
     overlay_enabled: bool = True
@@ -93,6 +84,8 @@ class AppConfig:
 
     # Updates
     check_for_updates: bool = True
+    update_dismissed_version: str = ""
+    update_remind_at: str = ""
 
     # Notifications
     notification_sound_enabled: bool = True
@@ -118,7 +111,8 @@ DEFAULTS = {
     "poll_interval_ms": 500,
     "loot_group_window_ms": 1500,
     "ocr_confidence_threshold": 0.7,
-    "tesseract_path": "",
+    "scan_overlay_debug": False,
+    "scan_roi_overrides": {},
     "mob_name_region": None,
     "tool_name_region": None,
     "hunt_overlay_position": [50, 50],
@@ -126,6 +120,8 @@ DEFAULTS = {
     "search_overlay_position": [50, 50],
     "detail_overlay_position": [400, 50],
     "map_overlay_position": [100, 100],
+    "scan_summary_overlay_position": [100, 200],
+    "confirm_overlay_position": [100, 200],
     "map_overlay_size": 1,
     "overlay_opacity": 0.85,
     "overlay_enabled": True,
@@ -152,6 +148,8 @@ DEFAULTS = {
     "inventory_prefs": {},
     "js_utils_path": "",
     "check_for_updates": True,
+    "update_dismissed_version": "",
+    "update_remind_at": "",
     "notification_sound_enabled": True,
     "notification_toast_enabled": True,
     "notification_rules": [],
@@ -217,7 +215,8 @@ def load_config(config_path: str = "config.json") -> AppConfig:
     for key in (
         "hunt_overlay_position", "progress_overlay_position",
         "search_overlay_position", "detail_overlay_position",
-        "map_overlay_position",
+        "map_overlay_position", "scan_summary_overlay_position",
+        "confirm_overlay_position",
         "mob_name_region", "tool_name_region",
     ):
         val = merged.get(key)
@@ -225,13 +224,9 @@ def load_config(config_path: str = "config.json") -> AppConfig:
             merged[key] = tuple(val)
 
     # Expand ~ in paths
-    for key in ("chat_log_path", "database_path", "tesseract_path", "js_utils_path"):
+    for key in ("chat_log_path", "database_path", "js_utils_path"):
         if merged.get(key):
             merged[key] = str(Path(merged[key]).expanduser())
-
-    # Auto-detect tesseract if not explicitly set
-    if not merged.get("tesseract_path"):
-        merged["tesseract_path"] = _find_tesseract() or ""
 
     config = AppConfig(**{k: v for k, v in merged.items() if k in AppConfig.__dataclass_fields__})
     errors = validate_config(config)
@@ -272,21 +267,6 @@ def save_config(config: AppConfig, config_path: str = "config.json") -> None:
                 os.remove(tmp_path)
         except OSError:
             pass
-
-
-def _find_tesseract() -> str | None:
-    """Auto-detect tesseract executable from PATH and common install locations."""
-    # Check PATH first
-    found = shutil.which("tesseract")
-    if found:
-        return found
-
-    # Check common Windows install paths
-    for path in TESSERACT_COMMON_PATHS:
-        if os.path.isfile(path):
-            return path
-
-    return None
 
 
 def validate_config(config: AppConfig) -> list[str]:

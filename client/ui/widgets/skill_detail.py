@@ -91,14 +91,20 @@ class SkillDetailView(WikiDetailView):
                     "profession": deep_get(p, "Profession", "Name") or p.get("Name") or "",
                     "weight": p.get("Weight"),
                 })
-            prof_section.set_content(make_section_table(
+            table = make_section_table(
                 [
                     ColumnDef("profession", "Profession", main=True),
                     ColumnDef("weight", "Weight", format=lambda v: fmt_int(v)),
                 ],
                 flat,
                 default_sort=("weight", "DESC"),
-            ))
+            )
+            table.row_activated.connect(
+                lambda row, _idx: self.entity_navigate.emit(
+                    {"Name": row.get("profession", ""), "Type": "Profession"}
+                )
+            )
+            prof_section.set_content(table)
         else:
             prof_section.set_content(no_data_label("No profession data available."))
             prof_section.set_subtitle("No data")
@@ -114,12 +120,18 @@ class SkillDetailView(WikiDetailView):
                     "profession": deep_get(u, "Profession", "Name") or u.get("Name") or "",
                     "level": u.get("Level"),
                 })
-            unlock_section.set_content(make_section_table(
+            table = make_section_table(
                 [
                     ColumnDef("profession", "Profession", main=True),
                     ColumnDef("level", "Level", format=lambda v: fmt_int(v)),
                 ],
                 flat,
                 default_sort=("level", "ASC"),
-            ))
+            )
+            table.row_activated.connect(
+                lambda row, _idx: self.entity_navigate.emit(
+                    {"Name": row.get("profession", ""), "Type": "Profession"}
+                )
+            )
+            unlock_section.set_content(table)
             self._add_article_section(unlock_section)

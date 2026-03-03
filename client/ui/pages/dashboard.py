@@ -18,7 +18,7 @@ from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkRequest, QNetworkRepl
 
 from ..theme import (
     TEXT, TEXT_MUTED, ACCENT, ACCENT_HOVER, BORDER, HOVER, SECONDARY, PRIMARY,
-    WARNING, SUCCESS, MAIN_DARK,
+    WARNING, SUCCESS, MAIN_DARK, FONT_FAMILY,
 )
 from ...chat_parser.models import GlobalEvent, GlobalType, TradeChatMessage
 
@@ -117,7 +117,7 @@ _ARTICLE_CSS = f"""
     body {{
         background-color: {PRIMARY};
         color: {TEXT};
-        font-family: 'Gill Sans', 'Gill Sans MT', Calibri, 'Trebuchet MS', sans-serif;
+        font-family: {FONT_FAMILY};
         font-size: 14px;
         margin: 0;
         padding: 0 12px;

@@ -55,6 +55,41 @@ WINDOW_LAYOUT = {
     "sidebar_item_height": 0.035,    # Each sidebar item is ~3.5% of panel height
 }
 
+# ── Template-relative ROI layout (pixel offsets) ─────────────────────
+# All coordinates are pixel offsets from the SKILLS template top-left
+# corner, measured at the native template size (68×20).  At runtime
+# they are scaled by (matched_size / native_size) so the layout
+# adapts to any game resolution.
+#
+# These are the built-in defaults.  User overrides (also in pixels at
+# native template size) are stored in config.scan_roi_overrides and
+# take precedence.
+NATIVE_TEMPLATE_W = 68
+NATIVE_TEMPLATE_H = 20
+
+DEFAULT_ROI_PIXELS = {
+    "table":      (-218,   71,  698, 316),
+    "total":      (  54,  376,  426,  94),
+    "indicator":  (-417,   37,   15,  19),
+    # Bar regions: only x and w matter (y/h are per-row, derived at runtime)
+    "rank_bar":   (  54,    0,  182,   0),
+    "points_bar": ( 236,    0,  245,   0),
+}
+
+# ROI names (ordered for UI display)
+ROI_NAMES = ("table", "total", "indicator", "rank_bar", "points_bar")
+
+# Column x-ranges (start, end) in template-width multiples.
+# Used as fallback when column header template matching fails.
+TEMPLATE_COLUMNS = {
+    "name":   (-3.200,  0.800),
+    "rank":   ( 0.800,  3.467),
+    "points": ( 3.467,  7.067),
+}
+
+# Row height in template-height multiples.
+TEMPLATE_ROW_HEIGHT = 1.250
+
 # The skills window background is dark navy/slate blue
 DARK_THRESHOLD_LOW = 20
 DARK_THRESHOLD_HIGH = 70
@@ -72,7 +107,6 @@ ASSETS_DIR = Path(__file__).parent.parent / "assets"
 TEMPLATE_PATH = ASSETS_DIR / "skills_label.PNG"
 TEMPLATE_MATCH_THRESHOLD = 0.7
 TEMPLATE_HIGH_CONFIDENCE = 0.9   # Skip verification when match is this good
-TEMPLATE_SCALES = [0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.4, 1.6, 1.8, 2.0]
 
 # Template position within the skills panel (normalized 0-1).
 # Measured by template-matching skills_label.PNG against Skills.PNG reference.
@@ -229,6 +263,9 @@ class SkillsWindowDetector:
                     log.info("Loaded column template: %s (%dx%d)",
                              col_name, tpl.shape[1], tpl.shape[0])
 
+        # ROI pixel overrides from config (takes precedence over DEFAULT_ROI_PIXELS)
+        self._roi_overrides_px: dict[str, tuple[int, int, int, int]] = {}
+
         # Cached template match positions (panel-local pixel coords)
         # Each entry: (x, y, w, h) relative to panel top-left
         self._title_match: Optional[tuple[int, int, int, int]] = None  # skills_label
@@ -248,6 +285,25 @@ class SkillsWindowDetector:
     def last_game_image(self) -> Optional[np.ndarray]:
         """The most recent full game window capture (BGR)."""
         return self._last_game_image
+
+    def is_game_foreground(self) -> bool:
+        """Check if the game window is the current foreground window.
+
+        Uses a single GetForegroundWindow + GetWindowText call (<0.1ms)
+        instead of the full EnumWindows + PrintWindow pipeline.
+        """
+        if sys.platform != "win32":
+            return True  # Can't check on Linux, assume yes
+        try:
+            hwnd = user32.GetForegroundWindow()
+            length = user32.GetWindowTextLengthW(hwnd)
+            if length == 0:
+                return False
+            buf = ctypes.create_unicode_buffer(length + 1)
+            user32.GetWindowTextW(hwnd, buf, length + 1)
+            return buf.value.startswith(GAME_WINDOW_TITLE_PREFIX)
+        except Exception:
+            return False
 
     def detect(self) -> Optional[tuple[int, int, int, int]]:
         """Detect the skills window on screen.
@@ -287,18 +343,14 @@ class SkillsWindowDetector:
 
         bounds = self._find_skills_panel(gray, game_image, gx, gy)
 
-        # Save annotated debug image on first successful detection
-        if bounds and bounds != self._cached_bounds:
-            self.save_debug_image(game_image, gx, gy, bounds)
-
+        # Save annotated debug image on every detection attempt
         if bounds:
+            self.save_debug_image(game_image, gx, gy, bounds)
             self._cached_bounds = bounds
             return bounds
 
-        # Save debug image even on failure (no bounds) for diagnostics
-        if not self._cached_bounds:
-            self.save_debug_image(game_image, gx, gy, None)
-
+        # Save debug image on failure too for diagnostics
+        self.save_debug_image(game_image, gx, gy, None)
         return self._cached_bounds
 
     def capture_game(self) -> np.ndarray | None:
@@ -321,8 +373,8 @@ class SkillsWindowDetector:
                           ) -> Optional[tuple[int, int, int, int]]:
         """Find the skills panel by template matching the 'SKILLS' title label.
 
-        Tries exact scale (1.0) first since the skills window is fixed size.
-        Falls back to multi-scale matching for different game resolutions.
+        Single-scale match — the skills window is fixed-size at any given
+        game resolution, so the template always matches at 1.0.
         Returns screen-absolute (x, y, w, h) or None.
         """
         if self._template is None:
@@ -330,42 +382,15 @@ class SkillsWindowDetector:
 
         img_h, img_w = gray.shape
         tpl_h, tpl_w = self._template.shape
-        best_val = 0.0
-        best_loc = (0, 0)
-        best_scale = 1.0
 
-        # Try exact scale first (skills window is fixed size)
-        if tpl_w < img_w and tpl_h < img_h:
-            result = cv2.matchTemplate(gray, self._template, cv2.TM_CCOEFF_NORMED)
-            _, max_val, _, max_loc = cv2.minMaxLoc(result)
-            if max_val >= TEMPLATE_MATCH_THRESHOLD:
-                best_val = max_val
-                best_loc = max_loc
-                log.debug("Template match at scale=1.0: %.3f at (%d,%d)",
-                          best_val, best_loc[0], best_loc[1])
+        if tpl_w >= img_w or tpl_h >= img_h:
+            return None
 
-        # Fall back to multi-scale if exact match wasn't good enough
-        if best_val < TEMPLATE_MATCH_THRESHOLD:
-            for scale in TEMPLATE_SCALES:
-                if scale == 1.0:
-                    continue  # Already tried
-                new_w = int(tpl_w * scale)
-                new_h = int(tpl_h * scale)
-                if new_w >= img_w or new_h >= img_h or new_w < 10 or new_h < 5:
-                    continue
+        result = cv2.matchTemplate(gray, self._template, cv2.TM_CCOEFF_NORMED)
+        _, best_val, _, best_loc = cv2.minMaxLoc(result)
 
-                scaled = cv2.resize(self._template, (new_w, new_h),
-                                    interpolation=cv2.INTER_AREA if scale < 1 else cv2.INTER_LINEAR)
-                result = cv2.matchTemplate(gray, scaled, cv2.TM_CCOEFF_NORMED)
-                _, max_val, _, max_loc = cv2.minMaxLoc(result)
-
-                if max_val > best_val:
-                    best_val = max_val
-                    best_loc = max_loc
-                    best_scale = scale
-
-        log.debug("Template match: best=%.3f at (%d,%d) scale=%.1f (threshold=%.1f)",
-                  best_val, best_loc[0], best_loc[1], best_scale, TEMPLATE_MATCH_THRESHOLD)
+        log.debug("Template match: score=%.3f at (%d,%d) (threshold=%.1f)",
+                  best_val, best_loc[0], best_loc[1], TEMPLATE_MATCH_THRESHOLD)
 
         if best_val < TEMPLATE_MATCH_THRESHOLD:
             return None
@@ -375,8 +400,8 @@ class SkillsWindowDetector:
         # directly from the template position using known layout ratios.
         # This avoids fragile dark-edge scanning (the UI is semi-transparent).
         tx, ty = best_loc
-        matched_w = int(tpl_w * best_scale)
-        matched_h = int(tpl_h * best_scale)
+        matched_w = tpl_w
+        matched_h = tpl_h
 
         # Compute panel dimensions from template size and known ratios
         panel_w = int(matched_w / TEMPLATE_WIDTH_RATIO)
@@ -417,8 +442,8 @@ class SkillsWindowDetector:
 
         sx = offset_x + panel_left
         sy = offset_y + panel_top
-        log.info("Template match found panel at (%d,%d) %dx%d (score=%.3f, scale=%.1f)",
-                 sx, sy, panel_w, panel_h, best_val, best_scale)
+        log.info("Template match found panel at (%d,%d) %dx%d (score=%.3f)",
+                 sx, sy, panel_w, panel_h, best_val)
         return (sx, sy, panel_w, panel_h)
 
     def _find_skills_panel(self, gray: np.ndarray, color: np.ndarray,
@@ -627,7 +652,12 @@ class SkillsWindowDetector:
                 "points": (points_x, ww - 5),
             }
 
-        # Fallback if column headers weren't matched
+        # Fallback: template-relative column definitions
+        resolved = self.resolve_columns()
+        if resolved:
+            return resolved
+
+        # Last resort: WINDOW_LAYOUT ratios
         return {
             "name": (int(ww * layout["col_name_start"]),
                      int(ww * layout["col_name_end"])),
@@ -682,6 +712,75 @@ class SkillsWindowDetector:
                 positions[col_name] = (wx + cx, wy + cy, cw, ch)
 
         return positions
+
+    def resolve_roi(self, name: str) -> Optional[tuple[int, int, int, int]]:
+        """Resolve a pixel-based ROI to panel-local pixel coordinates.
+
+        Uses config overrides (_roi_overrides_px) if present, otherwise
+        DEFAULT_ROI_PIXELS.  The stored pixel offsets are at native template
+        size and get scaled to the matched template size at runtime.
+
+        Returns (x, y, w, h) relative to the panel top-left, or None if
+        the SKILLS template hasn't been matched yet.
+        """
+        if self._title_match is None:
+            return None
+        if name in self._roi_overrides_px:
+            px, py, pw, ph = self._roi_overrides_px[name]
+        elif name in DEFAULT_ROI_PIXELS:
+            px, py, pw, ph = DEFAULT_ROI_PIXELS[name]
+        else:
+            return None
+        tlx, tly, mtw, mth = self._title_match
+        sx = mtw / NATIVE_TEMPLATE_W
+        sy = mth / NATIVE_TEMPLATE_H
+        return (
+            round(tlx + px * sx),
+            round(tly + py * sy),
+            round(pw * sx),
+            round(ph * sy),
+        )
+
+    def set_roi_overrides(self, overrides: dict[str, tuple[int, int, int, int]]) -> None:
+        """Set pixel-based ROI overrides (at native template size)."""
+        self._roi_overrides_px = dict(overrides)
+
+    def get_roi_pixels(self, name: str) -> tuple[int, int, int, int]:
+        """Get current ROI pixel values (override if set, else default)."""
+        if name in self._roi_overrides_px:
+            return self._roi_overrides_px[name]
+        return DEFAULT_ROI_PIXELS.get(name, (0, 0, 0, 0))
+
+    def resolve_bar_x(self, name: str) -> Optional[tuple[int, int]]:
+        """Resolve a bar ROI to panel-local (x_start, x_end).
+
+        Bar ROIs only use x and w (y/h are per-row).
+        Returns (x_start, x_end) in panel-local pixels, or None.
+        """
+        roi = self.resolve_roi(name)
+        if roi is None:
+            return None
+        return (roi[0], roi[0] + roi[2])
+
+    def resolve_columns(self) -> Optional[dict[str, tuple[int, int]]]:
+        """Resolve template-relative column ranges to panel-local x-coords.
+
+        Returns dict with (start_x, end_x) per column, or None.
+        """
+        if self._title_match is None:
+            return None
+        tlx, _, mtw, _ = self._title_match
+        return {
+            name: (round(tlx + xs * mtw), round(tlx + xe * mtw))
+            for name, (xs, xe) in TEMPLATE_COLUMNS.items()
+        }
+
+    def resolve_row_height(self) -> Optional[int]:
+        """Resolve template-relative row height to pixels."""
+        if self._title_match is None:
+            return None
+        _, _, _, mth = self._title_match
+        return max(20, round(TEMPLATE_ROW_HEIGHT * mth))
 
     def is_all_categories_selected(self, game_image: np.ndarray,
                                    panel_ix: int, panel_iy: int,
@@ -757,6 +856,7 @@ class SkillsWindowDetector:
         Returns True if the panel appears present at the stored position.
         """
         if self._template is None:
+            log.debug("quick_verify: no template loaded")
             return False
 
         img_h, img_w = game_image.shape[:2]
@@ -764,12 +864,15 @@ class SkillsWindowDetector:
         # Bounds check
         if (panel_ix < 0 or panel_iy < 0
                 or panel_ix + ww > img_w or panel_iy + wh > img_h):
+            log.debug("quick_verify: bounds check failed — panel=(%d,%d)+(%d,%d) image=%dx%d",
+                       panel_ix, panel_iy, ww, wh, img_w, img_h)
             return False
 
         # Extract the title region (top 12% of panel) and template match
         title_y2 = panel_iy + int(wh * 0.12)
         title_region = game_image[panel_iy:title_y2, panel_ix:panel_ix + ww]
         if title_region.size == 0:
+            log.debug("quick_verify: title region is empty")
             return False
 
         gray_region = cv2.cvtColor(title_region, cv2.COLOR_BGR2GRAY)
@@ -777,12 +880,86 @@ class SkillsWindowDetector:
         rh, rw = gray_region.shape
 
         if tpl_w >= rw or tpl_h >= rh:
+            log.debug("quick_verify: template %dx%d too large for region %dx%d",
+                       tpl_w, tpl_h, rw, rh)
             return False
 
         result = cv2.matchTemplate(gray_region, self._template, cv2.TM_CCOEFF_NORMED)
         _, max_val, _, _ = cv2.minMaxLoc(result)
 
-        return max_val >= TEMPLATE_MATCH_THRESHOLD
+        passed = max_val >= TEMPLATE_MATCH_THRESHOLD
+        log.debug("quick_verify: score=%.3f threshold=%.1f → %s",
+                   max_val, TEMPLATE_MATCH_THRESHOLD, "PASS" if passed else "FAIL")
+        return passed
+
+    def quick_relocate(self, game_image: np.ndarray,
+                       ) -> Optional[tuple[int, int, int, int]]:
+        """Fast re-detection when the skills panel moved within the game window.
+
+        Template-matches across the full game capture (no game window lookup,
+        no column header matching).
+        Returns screen-absolute (x, y, w, h) or None.
+        """
+        if self._template is None or self._game_origin is None:
+            return None
+
+        gray = cv2.cvtColor(game_image, cv2.COLOR_BGR2GRAY)
+        img_h, img_w = gray.shape
+        tpl_h, tpl_w = self._template.shape
+
+        if tpl_w >= img_w or tpl_h >= img_h:
+            return None
+
+        result = cv2.matchTemplate(gray, self._template, cv2.TM_CCOEFF_NORMED)
+        _, max_val, _, max_loc = cv2.minMaxLoc(result)
+
+        log.debug("quick_relocate: score=%.3f at (%d,%d) threshold=%.1f",
+                   max_val, max_loc[0], max_loc[1], TEMPLATE_MATCH_THRESHOLD)
+
+        if max_val < TEMPLATE_MATCH_THRESHOLD:
+            return None
+
+        # Derive panel bounds from template match position
+        tx, ty = max_loc
+        panel_w = int(tpl_w / TEMPLATE_WIDTH_RATIO)
+        panel_h = int(tpl_h / TEMPLATE_HEIGHT_RATIO)
+        panel_left = tx - int(panel_w * TEMPLATE_OFFSET_X)
+        panel_top = ty - int(panel_h * TEMPLATE_OFFSET_Y)
+
+        # Clamp to image bounds
+        panel_left = max(0, panel_left)
+        panel_top = max(0, panel_top)
+        if panel_left + panel_w > img_w:
+            panel_w = img_w - panel_left
+        if panel_top + panel_h > img_h:
+            panel_h = img_h - panel_top
+
+        if panel_w < MIN_PANEL_WIDTH or panel_w > MAX_PANEL_WIDTH:
+            log.debug("quick_relocate: panel width %d out of range", panel_w)
+            return None
+        if panel_h < MIN_PANEL_HEIGHT or panel_h > MAX_PANEL_HEIGHT:
+            log.debug("quick_relocate: panel height %d out of range", panel_h)
+            return None
+
+        # Store title template position for future use
+        self._title_match = (tx - panel_left, ty - panel_top, tpl_w, tpl_h)
+
+        # Skip column header re-matching if already cached — the panel is
+        # fixed-size so column positions don't change relative to the panel.
+        if self._col_header_matches is None:
+            panel_region = gray[panel_top:panel_top + panel_h,
+                                panel_left:panel_left + panel_w]
+            self._col_header_matches = self._match_column_headers(panel_region)
+
+        # Convert to screen coordinates
+        gox, goy = self._game_origin
+        sx = gox + panel_left
+        sy = goy + panel_top
+        self._cached_bounds = (sx, sy, panel_w, panel_h)
+
+        log.info("quick_relocate: panel found at (%d,%d) %dx%d (score=%.3f)",
+                  sx, sy, panel_w, panel_h, max_val)
+        return (sx, sy, panel_w, panel_h)
 
     def invalidate_cache(self):
         """Clear cached window position."""
@@ -790,7 +967,11 @@ class SkillsWindowDetector:
 
     def save_debug_image(self, game_image: np.ndarray, offset_x: int, offset_y: int,
                          panel_bounds: tuple | None) -> None:
-        """Save an annotated debug image showing what was detected."""
+        """Save an annotated debug image using actual detected positions.
+
+        Draws the same regions the overlay uses: template match, column
+        header matches, and resolved ROIs — NOT WINDOW_LAYOUT ratios.
+        """
         if not SAVE_DEBUG_IMAGES:
             return
         try:
@@ -799,37 +980,83 @@ class SkillsWindowDetector:
 
             if panel_bounds:
                 px, py, pw, ph = panel_bounds
-                # Convert screen coords to image-local coords
                 lx = px - offset_x
                 ly = py - offset_y
 
-                # Draw panel outline (green)
+                # Panel outline (green)
                 cv2.rectangle(annotated, (lx, ly), (lx + pw, ly + ph), (0, 255, 0), 2)
-
-                # Draw the expected column regions
-                layout = WINDOW_LAYOUT
-                table_top = ly + int(ph * layout["table_top_ratio"])
-                table_bot = ly + int(ph * layout["table_bottom_ratio"])
-
-                # Sidebar boundary (red)
-                sidebar_x = lx + int(pw * layout["sidebar_width_ratio"])
-                cv2.line(annotated, (sidebar_x, ly), (sidebar_x, ly + ph), (0, 0, 255), 1)
-
-                # Column boundaries (blue)
-                for col_key in ("col_name_start", "col_name_end", "col_rank_start",
-                                "col_rank_end", "col_points_start", "col_points_end"):
-                    cx = lx + int(pw * layout[col_key])
-                    cv2.line(annotated, (cx, table_top), (cx, table_bot), (255, 100, 0), 1)
-
-                # Table top/bottom (yellow)
-                name_start_x = lx + int(pw * layout["col_name_start"])
-                points_end_x = lx + int(pw * layout["col_points_end"])
-                cv2.line(annotated, (name_start_x, table_top), (points_end_x, table_top), (0, 255, 255), 1)
-                cv2.line(annotated, (name_start_x, table_bot), (points_end_x, table_bot), (0, 255, 255), 1)
-
-                # Add text labels
                 cv2.putText(annotated, f"Panel: ({px},{py}) {pw}x{ph}",
                             (lx, ly - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+
+                # SKILLS template match (white)
+                if self._title_match:
+                    tx, ty, tw, th = self._title_match
+                    cv2.rectangle(annotated, (lx + tx, ly + ty),
+                                  (lx + tx + tw, ly + ty + th), (255, 255, 255), 1)
+                    cv2.putText(annotated, "SKILLS", (lx + tx, ly + ty - 4),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1)
+
+                # Column header matches (orange)
+                if self._col_header_matches:
+                    for col_name, (cx, cy, cw, ch) in self._col_header_matches.items():
+                        cv2.rectangle(annotated, (lx + cx, ly + cy),
+                                      (lx + cx + cw, ly + cy + ch), (0, 165, 255), 1)
+                        cv2.putText(annotated, col_name, (lx + cx, ly + cy - 4),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 165, 255), 1)
+
+                # Resolved ROIs
+                colors = {
+                    "table":     (0, 255, 255),   # yellow
+                    "total":     (0, 200, 255),    # gold
+                    "indicator": (0, 140, 255),    # dark orange
+                }
+                for name, color in colors.items():
+                    roi = self.resolve_roi(name)
+                    if roi:
+                        rx, ry, rw, rh = roi
+                        cv2.rectangle(annotated, (lx + rx, ly + ry),
+                                      (lx + rx + rw, ly + ry + rh), color, 1)
+                        cv2.putText(annotated, name, (lx + rx, ly + ry - 4),
+                                    cv2.FONT_HERSHEY_SIMPLEX, 0.35, color, 1)
+
+                # Column ranges from get_column_ranges (blue lines)
+                col_ranges = self.get_column_ranges(panel_bounds)
+                table_roi = self.resolve_roi("table")
+                if table_roi:
+                    t_top = ly + table_roi[1]
+                    t_bot = t_top + table_roi[3]
+                else:
+                    t_top = ly + int(ph * WINDOW_LAYOUT["table_top_ratio"])
+                    t_bot = ly + int(ph * WINDOW_LAYOUT["table_bottom_ratio"])
+                for col_name, (cs, ce) in col_ranges.items():
+                    cv2.line(annotated, (lx + cs, t_top), (lx + cs, t_bot), (255, 100, 0), 1)
+                    cv2.line(annotated, (lx + ce, t_top), (lx + ce, t_bot), (255, 100, 0), 1)
+
+                # Bar boundaries (magenta dashed — rank_bar, cyan dashed — points_bar)
+                row_height = self.resolve_row_height() or self.get_row_height(ph)
+                text_h_ratio = WINDOW_LAYOUT["row_text_ratio"]
+                bar_colors = {
+                    "rank_bar":   (255, 0, 255),  # magenta
+                    "points_bar": (255, 255, 0),   # cyan
+                }
+                for bar_name, bar_color in bar_colors.items():
+                    bar_xr = self.resolve_bar_x(bar_name)
+                    if not bar_xr:
+                        continue
+                    bx_start, bx_end = bar_xr
+                    # Draw bar boundaries on first 3 rows as examples
+                    for ri in range(min(3, max(1, (t_bot - t_top) // row_height))):
+                        ry = t_top + ri * row_height
+                        bar_top = ry + int(row_height * text_h_ratio) + 2
+                        bar_bot = ry + row_height - 1
+                        cv2.rectangle(annotated,
+                                      (lx + bx_start, bar_top),
+                                      (lx + bx_end, bar_bot),
+                                      bar_color, 1)
+                    # Label at top
+                    cv2.putText(annotated, bar_name,
+                                (lx + bx_start, t_top - 4),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.3, bar_color, 1)
 
             path = os.path.join(DEBUG_DIR, "detection.png")
             cv2.imwrite(path, annotated)

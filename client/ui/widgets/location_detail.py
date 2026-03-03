@@ -55,7 +55,7 @@ class LocationDetailView(WikiDetailView):
             general.add_widget(WaypointCopyButton(planet, coords, name))
         parent_loc = deep_get(item, "ParentLocation", "Name")
         if parent_loc:
-            general.add_row(StatRow("Parent", parent_loc))
+            general.add_row(self._linked_stat_row("Parent", parent_loc, "Location"))
         tech_id = deep_get(item, "Properties", "TechnicalId")
         if tech_id:
             general.add_row(StatRow("Technical ID", str(tech_id)))
@@ -66,7 +66,8 @@ class LocationDetailView(WikiDetailView):
             dest = deep_get(item, "Destination", "Name")
             if dest:
                 tp_section = InfoboxSection("Teleporter")
-                tp_section.add_row(StatRow("Destination", dest))
+                tp_section.add_row(self._linked_stat_row(
+                    "Destination", dest, "Location"))
                 self._add_section(tp_section)
 
         elif loc_type in ("Apartment", "Estate", "House", "Villa", "Penthouse"):

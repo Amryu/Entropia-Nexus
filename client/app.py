@@ -194,7 +194,7 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     workers = []
     workers.extend(_start_ingestion(config, event_bus, nexus_client, db))
     workers.extend(_start_chat_watcher(config, event_bus, db, authenticated=oauth.is_authenticated()))
-    # workers.extend(_start_ocr_pipeline(config, event_bus, db))  # disabled for debugging
+    workers.extend(_start_ocr_pipeline(config, event_bus, db))
     # workers.extend(_start_hunt_tracker(config, event_bus, db, data_client))  # hunt disabled
     workers.extend(_start_hotkey_manager(config, event_bus))
     workers.extend(_start_update_checker(config, event_bus))
@@ -217,15 +217,6 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
         #     )
         # except Exception as e:
         #     log.warning("Hunt overlay failed: %s", e)
-
-        try:
-            from .overlay.progress_overlay import ProgressOverlay
-            ProgressOverlay(
-                config=config, config_path=config_path, event_bus=event_bus,
-                manager=overlay_manager,
-            )
-        except Exception as e:
-            log.warning("Progress overlay failed: %s", e)
 
         search_overlay = None
         try:
@@ -282,9 +273,16 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
             nonlocal _current_detail_overlay
             from .overlay.detail_overlay import DetailOverlayWidget, STACK_OFFSET
 
-            # Close current unpinned overlay
-            if _current_detail_overlay and not _current_detail_overlay.pinned:
-                _current_detail_overlay.close()
+            # Middle-click sets _force_new to always open a new window
+            force_new = item.pop("_force_new", False)
+
+            # Navigate in-place if there's an active unpinned overlay
+            if (not force_new
+                    and _current_detail_overlay
+                    and _current_detail_overlay.isVisible()
+                    and not _current_detail_overlay.pinned):
+                _current_detail_overlay._navigate_to(item)
+                return
 
             # Prune closed overlays from the list
             _detail_overlays[:] = [o for o in _detail_overlays if o.isVisible()]
@@ -294,6 +292,7 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
                 config=config,
                 config_path=config_path,
                 data_client=data_client,
+                nexus_client=nexus_client,
                 manager=overlay_manager,
             )
             if config.auto_pin_detail_overlay:
@@ -302,8 +301,8 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
             overlay.open_entity.connect(_on_overlay_result_selected)
             overlay.create_loadout.connect(lambda data: nexus_client.create_loadout(data))
 
-            # Offset from existing open overlays so they don't perfectly stack
             if _detail_overlays:
+                # Offset from existing open overlays so they don't perfectly stack
                 count = len(_detail_overlays)
                 pos = overlay.pos()
                 overlay.move(pos.x() + STACK_OFFSET * count, pos.y() + STACK_OFFSET * count)
@@ -311,11 +310,99 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
             _detail_overlays.append(overlay)
             _current_detail_overlay = overlay
 
+        # Expose detail overlay opener for map overlay mob clicks
+        from .overlay import map_overlay as _map_overlay_mod
+        _map_overlay_mod._open_entity_callback = _on_overlay_result_selected
+
         if search_overlay:
             search_overlay.result_selected.connect(_on_overlay_result_selected)
 
-        # Start legacy tkinter overlays in daemon threads (ScanOverlay only)
-        _start_legacy_overlays(config, event_bus)
+            # Logo click — focus client on the overlay's monitor
+            from PyQt6.QtWidgets import QApplication
+            search_overlay.logo_clicked.connect(
+                lambda: main_window.bring_to_front_on_screen(
+                    QApplication.screenAt(search_overlay.geometry().center())
+                )
+            )
+
+            # Burger menu actions
+            def _on_search_menu_action(action):
+                if action == "map":
+                    _toggle_map_overlay()
+
+            search_overlay.menu_action.connect(_on_search_menu_action)
+
+        # Scan highlight overlay (click-through, shows scanned rows)
+        try:
+            from .overlay.scan_highlight_overlay import ScanHighlightOverlay
+            overlay_manager._scan_highlight = ScanHighlightOverlay(
+                config=config, event_bus=event_bus,
+                manager=overlay_manager,
+            )
+        except Exception as e:
+            log.warning("Scan highlight overlay failed: %s", e)
+
+        # Scan summary overlay (draggable panel, shows scan results + validation)
+        try:
+            from .overlay.scan_summary_overlay import ScanSummaryOverlay
+            from .ui.main_window import PAGE_SKILLS
+
+            def _get_skill_values():
+                if PAGE_SKILLS in main_window._page_created:
+                    page = main_window._pages.widget(PAGE_SKILLS)
+                    return page._manager.get_all_values()
+                return {}
+
+            overlay_manager._scan_summary = ScanSummaryOverlay(
+                config=config, config_path=config_path,
+                event_bus=event_bus, manager=overlay_manager,
+                skill_values_fn=_get_skill_values,
+            )
+
+            def _on_scan_marked_complete(skills: list):
+                """Mark Complete: compute delta, warn on shrinkage, then sync."""
+                if PAGE_SKILLS not in main_window._page_created:
+                    return
+                page = main_window._pages.widget(PAGE_SKILLS)
+                manager = page._manager
+
+                delta = manager.sync_scan_results(skills)
+
+                if not delta["changes"]:
+                    log.info("Scan complete — no changes to sync")
+                    return
+
+                def do_sync():
+                    ok = manager.apply_scan_results(skills)
+                    if ok:
+                        log.info("Scan results synced: %d changes",
+                                 len(delta["changes"]))
+                    else:
+                        log.error("Scan results sync failed")
+
+                if delta["shrunk"]:
+                    from .overlay.confirm_overlay import ConfirmOverlay
+                    dialog = ConfirmOverlay(
+                        config=config, config_path=config_path,
+                        manager=overlay_manager,
+                        title="Skill Points Decreased",
+                        confirm_text="Sync Anyway",
+                    )
+                    dialog.set_shrinkage_warning(delta["shrunk"])
+                    dialog.confirmed.connect(
+                        lambda: threading.Thread(
+                            target=do_sync, daemon=True,
+                        ).start()
+                    )
+                    dialog.set_wants_visible(True)
+                else:
+                    threading.Thread(target=do_sync, daemon=True).start()
+
+            overlay_manager._scan_summary.scan_marked_complete.connect(
+                _on_scan_marked_complete
+            )
+        except Exception as e:
+            log.warning("Scan summary overlay failed: %s", e)
 
     QTimer.singleShot(0, _create_overlays)
 
@@ -419,7 +506,6 @@ def _run_headless(config, event_bus, db):
     workers.extend(_start_ocr_pipeline(config, event_bus, db))
     # workers.extend(_start_hunt_tracker(config, event_bus, db, data_client))  # hunt disabled
     workers.extend(_start_hotkey_manager(config, event_bus))
-    _start_legacy_overlays(config, event_bus)
 
     log.warning("Running headless... Press Ctrl+C to stop.")
     sys.stdout.flush()
@@ -469,15 +555,20 @@ def _start_ocr_pipeline(config, event_bus, db):
         log.info("OCR pipeline ready")
 
         def run_ocr():
-            try:
-                result = orchestrator.run_continuous()
-                if result:
-                    log.info("OCR finished: %d/%d skills",
-                             result.total_found, result.total_expected)
-                else:
-                    log.info("OCR: skills window not found")
-            except Exception as e:
-                log.error("OCR error: %s", e)
+            while not orchestrator._shutdown:
+                orchestrator._stop_event.clear()
+                try:
+                    result = orchestrator.run_continuous()
+                    if result:
+                        log.info("OCR finished: %d/%d skills",
+                                 result.total_found, result.total_expected)
+                    else:
+                        log.info("OCR: skills window not found")
+                except Exception as e:
+                    log.error("OCR error: %s", e)
+                if not orchestrator._shutdown:
+                    log.info("OCR scan ended, will restart when "
+                             "SKILLS window reopens")
 
         ocr_thread = threading.Thread(target=run_ocr, daemon=True, name="ocr-scan")
         ocr_thread.start()
@@ -552,22 +643,6 @@ def _start_ingestion(config, event_bus, nexus_client, db=None):
     except Exception as e:
         log.error("Ingestion receiver failed to start: %s", e)
     return workers
-
-
-def _start_legacy_overlays(config, event_bus):
-    """Start tkinter-based overlays in daemon threads."""
-    overlay_specs = [
-        ("Scan overlay", "client.overlay.scan_overlay", "ScanOverlay", (event_bus,)),
-    ]
-    for name, module_path, class_name, init_args in overlay_specs:
-        try:
-            mod = __import__(module_path, fromlist=[class_name])
-            cls = getattr(mod, class_name)
-            overlay = cls(*init_args)
-            overlay.start_background()
-            log.info("%s started", name)
-        except Exception as e:
-            log.info("%s failed to start: %s", name, e)
 
 
 def _cleanup_workers(workers):

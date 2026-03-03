@@ -7,9 +7,6 @@ import { REWARD_DIVISORS, getCodexCategory } from './codexUtils.js';
 /** Base HP before skill contributions */
 export const BASE_HP = 80;
 
-/** Attribute skills are stored as raw values but contribute 100× to calculations */
-export const ATTRIBUTE_MULTIPLIER = 100;
-
 /**
  * Build a Set of attribute skill names from skill metadata.
  * @param {Array<{Name: string, Category: string|null}>} skillMetadata
@@ -24,14 +21,15 @@ export function buildAttributeSkillSet(skillMetadata) {
 }
 
 /**
- * Get effective skill points, applying the x100 multiplier for attribute skills.
+ * Get effective skill points (pass-through, kept for API compatibility).
  * @param {number} points - raw skill points
  * @param {string} skillName
  * @param {Set<string>} attributeSkills - set of attribute skill names
  * @returns {number}
  */
 export function getEffectivePoints(points, skillName, attributeSkills) {
-  return attributeSkills.has(skillName) ? points * ATTRIBUTE_MULTIPLIER : points;
+  if (attributeSkills && attributeSkills.has(skillName)) return points * 10;
+  return points;
 }
 
 /**
@@ -99,12 +97,11 @@ export async function fetchAllSkillPEDValues(skillValues) {
 
 /**
  * Calculate a single profession level from skill values.
- * Formula: Level = Σ(effective_points × weight) / 10000
- * Attribute skills use effective_points = raw_points × 100.
+ * Formula: Level = Σ(skill_points × weight) / 10000
  *
  * @param {Object<string, number>} skillValues - { skillName: skillPoints }
  * @param {Array<{Name: string, Weight: number}>} professionSkills - skills with weights for this profession
- * @param {Set<string>} [attributeSkills] - set of attribute skill names (for x100 multiplier)
+ * @param {Set<string>} [attributeSkills] - set of attribute skill names (×10 multiplier)
  * @returns {number}
  */
 export function calculateProfessionLevel(skillValues, professionSkills, attributeSkills = new Set()) {
@@ -137,8 +134,7 @@ export function calculateAllProfessionLevels(skillValues, professions, skillMeta
 
 /**
  * Calculate total HP from skill values.
- * Formula: Base HP (80) + Σ(effective_points / HPIncrease) for skills with HPIncrease > 0.
- * Attribute skills use effective_points = raw_points × 100.
+ * Formula: Base HP (80) + Σ(skill_points / HPIncrease) for skills with HPIncrease > 0.
  *
  * @param {Object<string, number>} skillValues - { skillName: skillPoints }
  * @param {Array<{Name: string, Category: string|null, HPIncrease: number|null}>} skillMetadata
@@ -206,7 +202,7 @@ export function calculateCodexCost(pedOfSkill, category) {
  * @param {number} targetLevel - desired profession level
  * @param {Object<string, number>} markups - { skillName: markupPercent } for chip-in
  * @param {Object<string, string>} [methodOverrides={}] - per-skill method override: 'codex' | 'chip' | 'none'
- * @param {Set<string>} [attributeSkills] - set of attribute skill names (for x100 multiplier)
+ * @param {Set<string>} [attributeSkills] - set of attribute skill names (×10 multiplier)
  * @returns {{
  *   totalCost: number,
  *   allocations: Array<{skill: string, currentPoints: number, addedPoints: number, method: string, cost: number, levelGain: number}>,
@@ -246,9 +242,8 @@ export function findCheapestPath(currentSkills, professionSkills, currentLevel, 
         method = codexCostPerPed <= chipCostPerPed ? 'codex' : 'chip';
       }
 
-      // Level gain per raw skill point: (multiplier × weight) / 10000
-      const multiplier = attributeSkills.has(Name) ? ATTRIBUTE_MULTIPLIER : 1;
-      const levelPerPoint = (multiplier * Weight) / 10000;
+      // Level gain per raw skill point: weight / 10000
+      const levelPerPoint = Weight / 10000;
       // Efficiency: level gain per PED spent = levelPerPoint / cheaperCost
       const efficiency = cheaperCost > 0 ? levelPerPoint / cheaperCost : 0;
 
@@ -344,9 +339,8 @@ export function findCheapestHPPath(currentSkills, skillMetadata, currentHP, targ
         method = codexCostPerPed <= chipCostPerPed ? 'codex' : 'chip';
       }
 
-      // HP per raw skill point: multiplier / HPIncrease
-      const multiplier = attributeSkills.has(s.Name) ? ATTRIBUTE_MULTIPLIER : 1;
-      const hpPerPoint = multiplier / s.HPIncrease;
+      // HP per raw skill point: 1 / HPIncrease
+      const hpPerPoint = 1 / s.HPIncrease;
       const efficiency = cheaperCost > 0 ? hpPerPoint / cheaperCost : 0;
 
       return {

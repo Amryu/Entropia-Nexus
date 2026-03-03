@@ -181,10 +181,12 @@ class VehicleDetailView(WikiDetailView):
         if not hasattr(self, "_acquisition_section"):
             return
         url = exchange_url(self._item, self._nexus_base_url, "Vehicle")
-        self._acquisition_section.set_content(build_acquisition_content(data, exchange_link=url))
+        self._acquisition_section.set_content(build_acquisition_content(
+            data, exchange_link=url, on_navigate=self.entity_navigate.emit))
 
     def _on_usage_loaded(self, data: dict):
         if not hasattr(self, "_usage_section"):
             return
         url = exchange_url(self._item, self._nexus_base_url, "Vehicle")
-        self._usage_section.set_content(build_usage_content(data, exchange_link=url))
+        self._usage_section.set_content(build_usage_content(
+            data, exchange_link=url, on_navigate=self.entity_navigate.emit))

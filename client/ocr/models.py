@@ -9,8 +9,14 @@ class SkillReading:
     rank: str
     current_points: float
     progress_percent: float  # 0.00-100.00, up to 2 decimal precision
+    rank_bar_percent: float  # 0.00-100.00, rank bar progress
     category: str
     scan_timestamp: datetime
+
+    # Computed by enrich_skill_reading() after construction
+    estimated_points: float = 0.0   # rank_threshold + range * progress/100
+    rank_threshold: int = 0         # skill points threshold for current rank
+    is_mismatch: bool = False       # estimated vs OCR points diverge beyond tolerance
 
 
 @dataclass

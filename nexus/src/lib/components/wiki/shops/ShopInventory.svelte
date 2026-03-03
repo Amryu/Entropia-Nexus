@@ -7,6 +7,7 @@
   // @ts-nocheck
   import FancyTable from '$lib/components/FancyTable.svelte';
   import { getItemLink } from '$lib/util';
+  import { isPercentMarkupType } from '$lib/common/itemTypes.js';
 
   /** Array of inventory groups, each with a Name and Items array */
   export let inventoryGroups = [];
@@ -28,6 +29,9 @@
       const itemLink = itemData ? getItemLink(itemData) : null;
       const stackSize = item.StackSize ?? item.stack_size ?? 0;
       const markup = item.Markup ?? item.markup ?? 0;
+      const itemType = itemData?.Type || null;
+      const isPercent = isPercentMarkupType(itemType, itemName);
+      const unit = isPercent ? '%' : ' PED';
 
       return {
         itemName,
@@ -35,7 +39,7 @@
         stackSize,
         stackSizeFormatted: stackSize.toLocaleString(),
         markup,
-        markupFormatted: `${markup.toFixed(2)}%`
+        markupFormatted: `${markup.toFixed(2)}${unit}`
       };
     });
   }

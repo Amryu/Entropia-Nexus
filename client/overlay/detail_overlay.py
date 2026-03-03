@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import threading
@@ -10,14 +11,14 @@ from typing import TYPE_CHECKING
 
 from PyQt6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QLabel, QWidget, QPushButton,
-    QScrollArea, QStackedWidget,
+    QScrollArea, QStackedWidget, QDoubleSpinBox,
 )
 from PyQt6.QtCore import Qt, QPoint, QTimer, pyqtSignal
 
 from PyQt6.QtGui import QFontMetrics, QPixmap
 
 from .overlay_widget import OverlayWidget
-from ..ui.icons import svg_icon
+from ..ui.icons import svg_icon, ARROW_LEFT, ARROW_RIGHT
 from ..ui.widgets.search_popup import WIKI_PATHS, ITEM_TYPES, get_type_name, get_display_type
 from ..data.wiki_columns import (
     deep_get, _DAMAGE_TYPES, LEAF_DATA_MAP, get_item_name,
@@ -64,6 +65,7 @@ SECTION_COLOR = "#00ccff"
 BADGE_BG = "rgba(50, 50, 70, 160)"
 FOOTER_BG = "rgba(25, 25, 40, 160)"
 HIGHLIGHT_COLOR = "#4ade80"
+NAV_DISABLED = "#444444"
 
 # Stacking offset: each new overlay shifts by this many pixels
 STACK_OFFSET = 24
@@ -157,9 +159,39 @@ _COPY_SVG = (
 _CHECK_SVG = '<path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>'
 SUCCESS_COLOR = "#16a34a"
 
+# Unlock (open padlock)
+_TAB_UNLOCK_SVG = (
+    '<path d="M12 17a2 2 0 002-2 2 2 0 00-2-2 2 2 0 00-2 2 2 2 0 002 2m6-9a2 2 0 012'
+    ' 2v10a2 2 0 01-2 2H6a2 2 0 01-2-2V10a2 2 0 012-2h9V6a3 3 0 00-3-3 3 3 0 00-3 3H7'
+    'a5 5 0 015-5 5 5 0 015 5v2h1z"/>'
+)
+
 # Calculator (sigma symbol)
 _TAB_CALC_SVG = (
     '<path d="M18 4H6v2l6.5 6L6 18v2h12v-3h-7l5-5-5-5h7V4z"/>'
+)
+
+# Blueprint (square with circuit traces)
+_TAB_BLUEPRINT_SVG = (
+    '<rect x="3" y="3" width="18" height="18" rx="2" fill="none"'
+    ' stroke="currentColor" stroke-width="1.5"/>'
+    '<path d="M7 8h4v4H7z" fill="currentColor"/>'
+    '<path d="M11 10h5M14 10v4M14 14h3M8 12v5M8 17h4" fill="none"'
+    ' stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>'
+)
+
+# Tier/construction calculator (poker chip — filled center, 4 filled + 4 empty segments)
+_TAB_TIERS_SVG = (
+    # Outer ring as filled annulus (matches solid fill style of other icons)
+    '<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z'
+    'm0 18.5c-4.69 0-8.5-3.81-8.5-8.5S7.31 3.5 12 3.5s8.5 3.81 8.5 8.5-3.81 8.5-8.5 8.5z"/>'
+    # Center disc
+    '<circle cx="12" cy="12" r="4"/>'
+    # 4 filled segments (NE, SW, SE, NW — pie slices between ring and center)
+    '<path d="M14.83 4.1 A10 10 0 0 1 19.9 9.17 L15.17 10.83 A4 4 0 0 0 13.17 8.83 Z"/>'
+    '<path d="M9.17 19.9 A10 10 0 0 1 4.1 14.83 L8.83 13.17 A4 4 0 0 0 10.83 15.17 Z"/>'
+    '<path d="M19.9 14.83 A10 10 0 0 1 14.83 19.9 L13.17 15.17 A4 4 0 0 0 15.17 13.17 Z"/>'
+    '<path d="M4.1 9.17 A10 10 0 0 1 9.17 4.1 L10.83 8.83 A4 4 0 0 0 8.83 10.83 Z"/>'
 )
 
 # Module-level callback set by app.py to open the map overlay.
@@ -179,9 +211,15 @@ TAB_REWARDS = "rewards"
 TAB_OFFERS = "offers"
 TAB_MAP = "map"
 TAB_CALCULATOR = "calculator"
+TAB_TIERS = "tiers"
+TAB_CONSTRUCTION = "construction"
+TAB_UNLOCKS = "unlocks"
+
+# Entity types that support tiering (have tier materials)
+_TIERABLE_TYPES = {"Weapon", "ArmorSet", "MedicalTool", "Finder", "Excavator"}
 
 
-def _get_tab_defs(entity_type: str) -> list[tuple[str, str, str]]:
+def _get_tab_defs(entity_type: str, item_name: str = "") -> list[tuple[str, str, str]]:
     """Return (svg_path, tooltip, tab_id) for each tab based on entity type."""
     if entity_type == "Mob":
         return [
@@ -213,6 +251,13 @@ def _get_tab_defs(entity_type: str) -> list[tuple[str, str, str]]:
     if entity_type in ITEM_TYPES:
         tabs = [
             (_TAB_INFO_SVG, "Details", TAB_DETAILS),
+        ]
+        is_limited = item_name.endswith("(L)")
+        if entity_type in _TIERABLE_TYPES and not is_limited:
+            tabs.append((_TAB_TIERS_SVG, "Tier Calculator", TAB_TIERS))
+        if entity_type == "Blueprint":
+            tabs.append((_TAB_BLUEPRINT_SVG, "Construction Cost", TAB_CONSTRUCTION))
+        tabs += [
             (_TAB_ACQUIRE_SVG, "Acquisition", TAB_ACQUISITION),
             (_TAB_USAGE_SVG, "Usage", TAB_USAGE),
             (_TAB_DESC_SVG, "Description", TAB_DESCRIPTION),
@@ -220,7 +265,19 @@ def _get_tab_defs(entity_type: str) -> list[tuple[str, str, str]]:
         if entity_type == "Weapon":
             tabs.append((_TAB_CALC_SVG, "Calculator", TAB_CALCULATOR))
         return tabs
-    # Skill, Profession, etc.
+    if entity_type == "Skill":
+        return [
+            (_TAB_INFO_SVG, "Details", TAB_DETAILS),
+            (_TAB_UNLOCK_SVG, "Unlocked By", TAB_UNLOCKS),
+            (_TAB_DESC_SVG, "Description", TAB_DESCRIPTION),
+        ]
+    if entity_type == "Profession":
+        return [
+            (_TAB_INFO_SVG, "Details", TAB_DETAILS),
+            (_TAB_UNLOCK_SVG, "Skill Unlocks", TAB_UNLOCKS),
+            (_TAB_DESC_SVG, "Description", TAB_DESCRIPTION),
+        ]
+    # Fallback
     return [
         (_TAB_INFO_SVG, "Details", TAB_DETAILS),
         (_TAB_DESC_SVG, "Description", TAB_DESCRIPTION),
@@ -260,6 +317,15 @@ class _ElidedLabel(QLabel):
         self.setMinimumWidth(0)
         self.setText(text)
 
+    def set_text(self, text: str):
+        """Update the displayed text (with eliding)."""
+        self._full_text = text
+        fm = self.fontMetrics()
+        elided = fm.elidedText(
+            self._full_text, Qt.TextElideMode.ElideRight, self.width(),
+        )
+        super().setText(elided)
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
         fm = self.fontMetrics()
@@ -293,6 +359,7 @@ class DetailOverlayWidget(OverlayWidget):
         config,
         config_path: str,
         data_client: DataClient,
+        nexus_client=None,
         manager: OverlayManager | None = None,
     ):
         super().__init__(
@@ -303,12 +370,16 @@ class DetailOverlayWidget(OverlayWidget):
         )
         self._item = item
         self._data_client = data_client
+        self._nexus_client = nexus_client
         self._full_item: dict | None = None
         self._acq_data: dict | None = None
         self._usage_data: dict | None = None
         self._page_type_id: str = ""
         self._pinned = False
         self._expanded = False
+        self._nav_history: list[dict] = [item]
+        self._nav_index: int = 0
+        self._load_gen: int = 0  # generation counter to discard stale async loads
         self._click_origin: QPoint | None = None
 
         # Auto-resize to content
@@ -341,9 +412,9 @@ class DetailOverlayWidget(OverlayWidget):
 
         # Tab strip (left)
         self._tab_buttons: list[QPushButton] = []
-        self._tab_defs = _get_tab_defs(item.get("Type", ""))
+        self._tab_defs = _get_tab_defs(item.get("Type", ""), get_item_name(item))
         self._tab_ids = [td[2] for td in self._tab_defs]
-        tab_strip = QWidget()
+        self._tab_strip_widget = tab_strip = QWidget()
         tab_strip.setFixedWidth(TAB_STRIP_W)
         tab_strip.setStyleSheet(
             f"background-color: {TAB_BG};"
@@ -448,27 +519,49 @@ class DetailOverlayWidget(OverlayWidget):
         self._update_pin_icon()
         layout.addWidget(self._pin_btn, 0, Qt.AlignmentFlag.AlignVCenter)
 
+        # Back button
+        self._back_btn = QPushButton()
+        self._back_btn.setFixedSize(18, 18)
+        self._back_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._back_btn.setStyleSheet(_BTN_STYLE)
+        self._back_btn.setIcon(svg_icon(ARROW_LEFT, NAV_DISABLED, 14))
+        self._back_btn.setToolTip("Back")
+        self._back_btn.setEnabled(False)
+        self._back_btn.clicked.connect(self._navigate_back)
+        layout.addWidget(self._back_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+
+        # Forward button
+        self._fwd_btn = QPushButton()
+        self._fwd_btn.setFixedSize(18, 18)
+        self._fwd_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._fwd_btn.setStyleSheet(_BTN_STYLE)
+        self._fwd_btn.setIcon(svg_icon(ARROW_RIGHT, NAV_DISABLED, 14))
+        self._fwd_btn.setToolTip("Forward")
+        self._fwd_btn.setEnabled(False)
+        self._fwd_btn.clicked.connect(self._navigate_forward)
+        layout.addWidget(self._fwd_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+
         # Item name (elided with ellipsis)
         display_name = item.get("DisplayName") or item.get("Name", "")
-        name_label = _ElidedLabel(display_name)
-        name_label.setStyleSheet(
+        self._name_label = _ElidedLabel(display_name)
+        self._name_label.setStyleSheet(
             f"color: {TEXT_COLOR}; font-size: 13px; font-weight: bold;"
             " background: transparent;"
         )
-        name_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        layout.addWidget(name_label, 1, Qt.AlignmentFlag.AlignVCenter)
+        self._name_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        layout.addWidget(self._name_label, 1, Qt.AlignmentFlag.AlignVCenter)
 
         # Type badge
         type_name = get_display_type(item)
-        if type_name:
-            badge = QLabel(type_name)
-            badge.setStyleSheet(
-                f"color: {TEXT_DIM}; font-size: 10px;"
-                f" background-color: {BADGE_BG}; border-radius: 2px;"
-                f" padding: 1px 4px;"
-            )
-            badge.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-            layout.addWidget(badge, 0, Qt.AlignmentFlag.AlignVCenter)
+        self._type_badge = QLabel(type_name or "")
+        self._type_badge.setStyleSheet(
+            f"color: {TEXT_DIM}; font-size: 10px;"
+            f" background-color: {BADGE_BG}; border-radius: 2px;"
+            f" padding: 1px 4px;"
+        )
+        self._type_badge.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self._type_badge.setVisible(bool(type_name))
+        layout.addWidget(self._type_badge, 0, Qt.AlignmentFlag.AlignVCenter)
 
         # Close button
         close_btn = QPushButton()
@@ -540,6 +633,173 @@ class DetailOverlayWidget(OverlayWidget):
         if hasattr(self, "_calc_stats_panel"):
             QTimer.singleShot(0, self._position_calc_stats_panel)
 
+    # --- Navigation history ---
+
+    def _handle_entity_click(self, item: dict):
+        """Route entity clicks: left-click navigates in-place, middle-click opens new window."""
+        if item.pop("_force_new", False):
+            self.open_entity.emit(item)
+        else:
+            self._navigate_to(item)
+
+    def _navigate_to(self, item: dict):
+        """Push item onto history and navigate to it in-place."""
+        current = self._nav_history[self._nav_index]
+        if (item.get("Name") == current.get("Name")
+                and item.get("Type") == current.get("Type")):
+            return
+        # Truncate forward history
+        self._nav_history = self._nav_history[:self._nav_index + 1]
+        self._nav_history.append(item)
+        self._nav_index = len(self._nav_history) - 1
+        self._load_item(item)
+        self._update_nav_buttons()
+
+    def _navigate_back(self):
+        """Go back one step in history."""
+        if self._nav_index <= 0:
+            return
+        self._nav_index -= 1
+        self._load_item(self._nav_history[self._nav_index])
+        self._update_nav_buttons()
+
+    def _navigate_forward(self):
+        """Go forward one step in history."""
+        if self._nav_index >= len(self._nav_history) - 1:
+            return
+        self._nav_index += 1
+        self._load_item(self._nav_history[self._nav_index])
+        self._update_nav_buttons()
+
+    def _update_nav_buttons(self):
+        """Enable/disable back/forward buttons based on history position."""
+        can_back = self._nav_index > 0
+        can_fwd = self._nav_index < len(self._nav_history) - 1
+        self._back_btn.setEnabled(can_back)
+        self._back_btn.setIcon(svg_icon(
+            ARROW_LEFT, TEXT_DIM if can_back else NAV_DISABLED, 14))
+        self._fwd_btn.setEnabled(can_fwd)
+        self._fwd_btn.setIcon(svg_icon(
+            ARROW_RIGHT, TEXT_DIM if can_fwd else NAV_DISABLED, 14))
+
+    def _update_title_bar_content(self, item: dict):
+        """Update the name label and type badge for a new item."""
+        display_name = item.get("DisplayName") or item.get("Name", "")
+        self._name_label.set_text(display_name)
+        type_name = get_display_type(item)
+        if type_name:
+            self._type_badge.setText(type_name)
+            self._type_badge.show()
+        else:
+            self._type_badge.hide()
+
+    def _load_item(self, item: dict):
+        """Reset overlay state and load a new entity in-place."""
+        new_type = item.get("Type", "")
+
+        # Increment generation to invalidate in-flight async loads
+        self._load_gen += 1
+
+        # Update item reference
+        self._item = item
+
+        # Reset data state
+        self._full_item = None
+        self._acq_data = None
+        self._usage_data = None
+        self._page_type_id = ""
+        self._map_canvas = None
+
+        # Cleanup lazy-initialized tabs
+        if hasattr(self, "_calc_tab"):
+            del self._calc_tab
+        if hasattr(self, "_calc_stats_panel"):
+            self._calc_stats_panel.close()
+            self._calc_stats_panel.deleteLater()
+            del self._calc_stats_panel
+        if hasattr(self, "_tiers_tab_built"):
+            del self._tiers_tab_built
+        if hasattr(self, "_construction_tab_built"):
+            del self._construction_tab_built
+        if hasattr(self, "_map_loading"):
+            del self._map_loading
+
+        # Update title bar
+        self._update_title_bar_content(item)
+
+        # Rebuild tab strip if entity type changed
+        new_tab_defs = _get_tab_defs(new_type, get_item_name(item))
+        new_tab_ids = [td[2] for td in new_tab_defs]
+        if new_tab_ids != self._tab_ids:
+            self._rebuild_tab_strip(new_tab_defs)
+        else:
+            self._reset_tab_content()
+
+        # Switch to Details tab
+        self._switch_tab(0)
+
+        # Fetch new entity data
+        self._fetch_entity()
+
+    def _rebuild_tab_strip(self, new_tab_defs):
+        """Tear down and rebuild tab strip + content stack for a new entity type."""
+        self._tab_defs = new_tab_defs
+        self._tab_ids = [td[2] for td in new_tab_defs]
+
+        # Clear old tab buttons
+        ts_layout = self._tab_strip_widget.layout()
+        while ts_layout.count():
+            child = ts_layout.takeAt(0)
+            w = child.widget()
+            if w:
+                w.deleteLater()
+
+        # Build new tab buttons
+        self._tab_buttons = []
+        for i, (svg_path, tooltip, _tab_id) in enumerate(self._tab_defs):
+            btn = QPushButton()
+            btn.setFixedSize(TAB_BTN_SIZE, TAB_BTN_SIZE)
+            btn.setIcon(svg_icon(svg_path, TEXT_DIM, 16))
+            btn.setToolTip(tooltip)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(lambda _, idx=i: self._switch_tab(idx))
+            btn.setStyleSheet(_tab_btn_style(False))
+            ts_layout.addWidget(btn)
+            self._tab_buttons.append(btn)
+
+        # Clear content stack
+        while self._content_stack.count():
+            w = self._content_stack.widget(0)
+            self._content_stack.removeWidget(w)
+            w.deleteLater()
+
+        # Re-init with loading placeholders
+        self._tab_scrolls = {}
+        self._init_tabs()
+
+    def _reset_tab_content(self):
+        """Reset all tab scroll areas to loading placeholders (same tab structure)."""
+        placeholders = {
+            TAB_DETAILS: "Loading...",
+            TAB_ACQUISITION: "Loading item data...",
+            TAB_USAGE: "Loading usage data...",
+            TAB_DESCRIPTION: "No description",
+            TAB_MATURITIES: "Loading...",
+            TAB_LOOTS: "Loading...",
+            TAB_LOCATIONS: "Loading...",
+            TAB_STEPS: "Loading...",
+            TAB_REWARDS: "Loading...",
+            TAB_OFFERS: "Loading...",
+            TAB_MAP: "Loading map...",
+            TAB_CALCULATOR: "Loading...",
+            TAB_TIERS: "Loading tier data...",
+            TAB_CONSTRUCTION: "Loading materials...",
+            TAB_UNLOCKS: "Loading unlock data...",
+        }
+        for tab_id, scroll in self._tab_scrolls.items():
+            placeholder = placeholders.get(tab_id, "Loading...")
+            scroll.setWidget(_make_centered_label(placeholder))
+
     # --- Calculator tab ---
 
     def _init_calculator(self):
@@ -577,6 +837,26 @@ class DetailOverlayWidget(OverlayWidget):
             self.y(),
         )
 
+    def _init_tiers_tab(self):
+        """Lazy-init the tier calculator tab with a compact _TiersWidget."""
+        if not self._full_item:
+            return
+        widget = _build_overlay_tiers(self._full_item, self._nexus_client)
+        scroll = self._tab_scrolls.get(TAB_TIERS)
+        if scroll:
+            scroll.setWidget(widget)
+        self._tiers_tab_built = True
+
+    def _init_construction_tab(self):
+        """Lazy-init the blueprint construction cost tab."""
+        if not self._full_item:
+            return
+        widget = _build_overlay_construction(self._full_item, self._nexus_client)
+        scroll = self._tab_scrolls.get(TAB_CONSTRUCTION)
+        if scroll:
+            scroll.setWidget(widget)
+        self._construction_tab_built = True
+
     # --- Tab switching ---
 
     def _switch_tab(self, index: int):
@@ -600,6 +880,12 @@ class DetailOverlayWidget(OverlayWidget):
         # Lazy-init calculator tab
         if tab_id == TAB_CALCULATOR and not hasattr(self, "_calc_tab"):
             self._init_calculator()
+        # Lazy-init tier calculator tab
+        if tab_id == TAB_TIERS and not hasattr(self, "_tiers_tab_built"):
+            self._init_tiers_tab()
+        # Lazy-init construction cost tab
+        if tab_id == TAB_CONSTRUCTION and not hasattr(self, "_construction_tab_built"):
+            self._init_construction_tab()
         # Show/hide stats panel based on active tab
         if hasattr(self, "_calc_stats_panel"):
             self._calc_stats_panel.set_wants_visible(tab_id == TAB_CALCULATOR)
@@ -635,6 +921,9 @@ class DetailOverlayWidget(OverlayWidget):
         ).start()
 
     def _on_entity_loaded(self, entity: dict, page_type_id: str):
+        # Guard: ignore stale loads from a previous navigation
+        if get_item_name(entity) != self._item.get("Name", ""):
+            return
         self._full_item = entity
         self._page_type_id = page_type_id
         self._rebuild_details_tab()
@@ -645,6 +934,13 @@ class DetailOverlayWidget(OverlayWidget):
                           TAB_ACQUISITION, TAB_USAGE):
                 continue  # handled separately
             self._rebuild_entity_tab(tab_id)
+        # If user is already viewing the tier/construction tab, init now
+        cur = self._content_stack.currentIndex()
+        cur_tab = self._tab_ids[cur] if cur < len(self._tab_ids) else ""
+        if cur_tab == TAB_TIERS and not hasattr(self, "_tiers_tab_built"):
+            self._init_tiers_tab()
+        if cur_tab == TAB_CONSTRUCTION and not hasattr(self, "_construction_tab_built"):
+            self._init_construction_tab()
 
     def _fetch_acquisition(self):
         item_name = self._item.get("Name", "")
@@ -653,6 +949,7 @@ class DetailOverlayWidget(OverlayWidget):
         def fetch():
             data = dc.get_acquisition(item_name)
             if data:
+                data["_item_name"] = item_name
                 self._acquisition_loaded.emit(data)
 
         threading.Thread(
@@ -660,6 +957,9 @@ class DetailOverlayWidget(OverlayWidget):
         ).start()
 
     def _on_acquisition_loaded(self, data: dict):
+        # Guard: ignore stale loads from a previous navigation
+        if data.get("_item_name") != self._item.get("Name", ""):
+            return
         self._acq_data = data
         self._rebuild_acquisition_tab()
 
@@ -670,6 +970,7 @@ class DetailOverlayWidget(OverlayWidget):
         def fetch():
             data = dc.get_usage(item_name)
             if data:
+                data["_item_name"] = item_name
                 self._usage_loaded.emit(data)
 
         threading.Thread(
@@ -677,6 +978,9 @@ class DetailOverlayWidget(OverlayWidget):
         ).start()
 
     def _on_usage_loaded(self, data: dict):
+        # Guard: ignore stale loads from a previous navigation
+        if data.get("_item_name") != self._item.get("Name", ""):
+            return
         self._usage_data = data
         self._rebuild_usage_tab()
 
@@ -710,6 +1014,9 @@ class DetailOverlayWidget(OverlayWidget):
             TAB_OFFERS: "Loading...",
             TAB_MAP: "Loading map...",
             TAB_CALCULATOR: "Loading...",
+            TAB_TIERS: "Loading tier data...",
+            TAB_CONSTRUCTION: "Loading materials...",
+            TAB_UNLOCKS: "Loading unlock data...",
         }
         for tab_id in self._tab_ids:
             scroll = self._make_scroll(
@@ -725,14 +1032,8 @@ class DetailOverlayWidget(OverlayWidget):
         scroll = self._tab_scrolls.get(TAB_DETAILS)
         if scroll:
             builder = _TYPE_BUILDERS.get(self._page_type_id, _build_generic_details)
-            widget = builder(item, self._page_type_id)
-            # Connect deferred chain link click handlers
-            for lbl in widget.findChildren(QLabel, "chain_link"):
-                entity = lbl.property("chain_entity")
-                if entity:
-                    lbl.mousePressEvent = (
-                        lambda _e, e=entity: self.open_entity.emit(e)
-                    )
+            widget = builder(item, self._page_type_id,
+                             on_entity=self._handle_entity_click)
             scroll.setWidget(widget)
 
     def _rebuild_acquisition_tab(self):
@@ -784,6 +1085,7 @@ class DetailOverlayWidget(OverlayWidget):
             TAB_REWARDS: self._build_rewards_content,
             TAB_OFFERS: self._build_offers_content,
             TAB_MAP: self._build_map_content,
+            TAB_UNLOCKS: self._build_unlocks_content,
         }.get(tab_id)
         if builder:
             scroll.setWidget(builder(item))
@@ -876,7 +1178,7 @@ class DetailOverlayWidget(OverlayWidget):
         if not loots:
             return _make_centered_label("No loot data")
         widget, layout = _details_container()
-        emit = self.open_entity.emit
+        emit = self._handle_entity_click
         # Sort by frequency order
         freq_order = list(self._FREQ_COLORS.keys())
         sorted_loots = sorted(loots, key=lambda l: (
@@ -1068,7 +1370,7 @@ class DetailOverlayWidget(OverlayWidget):
         if not rewards:
             return _make_centered_label("No reward information")
         widget, layout = _details_container()
-        emit = self.open_entity.emit
+        emit = self._handle_entity_click
         # Rewards can be a dict (single package) or list (choices)
         packages = rewards if isinstance(rewards, list) else [rewards]
         for pkg_idx, pkg in enumerate(packages):
@@ -1106,7 +1408,7 @@ class DetailOverlayWidget(OverlayWidget):
         if not offers:
             return _make_centered_label("No offers available")
         widget, layout = _details_container()
-        emit = self.open_entity.emit
+        emit = self._handle_entity_click
         for offer in offers:
             offer_item = offer.get("Item") or {}
             name = offer_item.get("Name") or "?"
@@ -1193,6 +1495,45 @@ class DetailOverlayWidget(OverlayWidget):
 
         return container
 
+    def _build_unlocks_content(self, item: dict) -> QWidget:
+        """Build the Unlocked By (skills) or Skill Unlocks (professions) tab."""
+        unlocks = item.get("Unlocks") or []
+        if not unlocks:
+            return _make_centered_label("No unlock data")
+
+        widget, layout = _details_container()
+        page_type = self._page_type_id
+
+        if page_type == "skills":
+            # Skill is unlocked BY professions
+            layout.addWidget(_section_label("Unlocked By"))
+            sorted_unlocks = sorted(unlocks, key=lambda u: u.get("Level") or 0)
+            for u in sorted_unlocks:
+                prof_name = deep_get(u, "Profession", "Name") or u.get("Name") or "?"
+                level = u.get("Level")
+                layout.addWidget(_stat_row(
+                    prof_name,
+                    f"Level {level}" if level is not None else "-",
+                    entity={"Name": prof_name, "Type": "Profession"},
+                    on_click=self._handle_entity_click,
+                ))
+        else:
+            # Profession unlocks skills
+            layout.addWidget(_section_label("Skill Unlocks"))
+            sorted_unlocks = sorted(unlocks, key=lambda u: u.get("Level") or 0)
+            for u in sorted_unlocks:
+                skill_name = deep_get(u, "Skill", "Name") or u.get("Name") or "?"
+                level = u.get("Level")
+                layout.addWidget(_stat_row(
+                    skill_name,
+                    f"Level {level}" if level is not None else "-",
+                    entity={"Name": skill_name, "Type": "Skill"},
+                    on_click=self._handle_entity_click,
+                ))
+
+        layout.addStretch(1)
+        return widget
+
     def _fetch_map_data(self, planet_name: str, item: dict):
         """Background: fetch planet dict, locations, and map image."""
         dc = self._data_client
@@ -1276,7 +1617,7 @@ class DetailOverlayWidget(OverlayWidget):
         name = location.get("Name") or ""
         loc_type = location.get("Type") or "Location"
         if name:
-            self.open_entity.emit({"Name": name, "Type": loc_type})
+            self._handle_entity_click({"Name": name, "Type": loc_type})
 
     # --- Content builders (Acquisition / Usage) ---
 
@@ -1287,7 +1628,7 @@ class DetailOverlayWidget(OverlayWidget):
         layout.setContentsMargins(6, 4, 6, 4)
         layout.setSpacing(2)
 
-        emit = self.open_entity.emit
+        emit = self._handle_entity_click
         pills: list[tuple[str, QWidget]] = []
 
         # --- Build sections (each in its own container for pill targeting) ---
@@ -1447,7 +1788,7 @@ class DetailOverlayWidget(OverlayWidget):
         layout.setContentsMargins(6, 4, 6, 4)
         layout.setSpacing(2)
 
-        emit = self.open_entity.emit
+        emit = self._handle_entity_click
         pills: list[tuple[str, QWidget]] = []
 
         # Blueprints using this item as material
@@ -1724,8 +2065,23 @@ def _sub_nav_bar(
     return bar
 
 
+def _entity_click_handler(entity: dict, callback):
+    """Return a mousePressEvent handler that calls *callback* with an entity dict.
+
+    Middle-click sets ``_force_new`` so the app always opens a new overlay window.
+    """
+    def handler(ev):
+        d = dict(entity)
+        if ev.button() == Qt.MouseButton.MiddleButton:
+            d["_force_new"] = True
+        callback(d)
+    return handler
+
+
 def _stat_row(label: str, value: str, *, label_color: str = TEXT_DIM,
-              highlight: bool = False) -> QWidget:
+              highlight: bool = False,
+              entity: dict | None = None,
+              on_click=None) -> QWidget:
     row = QWidget()
     row.setStyleSheet("background: transparent;")
     layout = QHBoxLayout(row)
@@ -1733,12 +2089,21 @@ def _stat_row(label: str, value: str, *, label_color: str = TEXT_DIM,
     layout.setSpacing(4)
 
     lbl = QLabel(label)
+    if entity and on_click:
+        lbl_color = ACCENT
+        lbl.setCursor(Qt.CursorShape.PointingHandCursor)
+        lbl.mousePressEvent = _entity_click_handler(entity, on_click)
+    else:
+        lbl_color = label_color
     lbl.setStyleSheet(
-        f"color: {label_color}; font-size: 12px; background: transparent;"
+        f"color: {lbl_color}; font-size: 12px; background: transparent;"
     )
     layout.addWidget(lbl)
 
-    val_color = HIGHLIGHT_COLOR if highlight else TEXT_BRIGHT
+    if highlight:
+        val_color = HIGHLIGHT_COLOR
+    else:
+        val_color = TEXT_BRIGHT
     val = QLabel(value)
     val.setStyleSheet(
         f"color: {val_color}; font-size: 12px; font-weight: bold;"
@@ -1815,7 +2180,7 @@ def _acq_row(
             " padding: 0; text-decoration: none;"
         )
         name_lbl.setCursor(Qt.CursorShape.PointingHandCursor)
-        name_lbl.mousePressEvent = lambda _ev, e=dict(entity): on_click(e)
+        name_lbl.mousePressEvent = _entity_click_handler(entity, on_click)
     else:
         name_lbl.setStyleSheet(
             f"color: {TEXT_COLOR}; font-size: 12px; background: transparent;"
@@ -1895,6 +2260,10 @@ def _overlay_map_btn(planet: str, location_id: int | None) -> QPushButton:
         for w in app.topLevelWidgets():
             if hasattr(w, "_ensure_page"):
                 from ..ui.main_window import PAGE_MAPS
+                if not w.isVisible():
+                    w.show()
+                w.activateWindow()
+                w.raise_()
                 w._sidebar.set_active(PAGE_MAPS)
                 maps_page = w._ensure_page(PAGE_MAPS)
                 if hasattr(maps_page, "navigate_to_location"):
@@ -2091,7 +2460,7 @@ def _add_effects_section(layout: QVBoxLayout, item: dict,
 # Type-specific detail builders
 # ---------------------------------------------------------------------------
 
-def _build_weapon_details(item: dict, page_type: str) -> QWidget:
+def _build_weapon_details(item: dict, page_type: str, on_entity=None) -> QWidget:
     widget, layout = _details_container()
 
     dps = weapon_dps(item)
@@ -2153,7 +2522,7 @@ def _build_weapon_details(item: dict, page_type: str) -> QWidget:
     return widget
 
 
-def _build_amplifier_details(item: dict, page_type: str) -> QWidget:
+def _build_amplifier_details(item: dict, page_type: str, on_entity=None) -> QWidget:
     widget, layout = _details_container()
 
     eff = deep_get(item, "Properties", "Economy", "Efficiency")
@@ -2203,7 +2572,7 @@ def _build_amplifier_details(item: dict, page_type: str) -> QWidget:
     return widget
 
 
-def _build_armor_details(item: dict, page_type: str) -> QWidget:
+def _build_armor_details(item: dict, page_type: str, on_entity=None) -> QWidget:
     widget, layout = _details_container()
 
     total_def = armor_total_defense(item)
@@ -2253,7 +2622,7 @@ def _build_armor_details(item: dict, page_type: str) -> QWidget:
     return widget
 
 
-def _build_mob_details(item: dict, page_type: str) -> QWidget:
+def _build_mob_details(item: dict, page_type: str, on_entity=None) -> QWidget:
     widget, layout = _details_container()
 
     level_range, hp_range, lowest_hpl = _maturity_stats(item)
@@ -2347,17 +2716,29 @@ def _build_mob_details(item: dict, page_type: str) -> QWidget:
         if def_prof or scan_prof or loot_prof:
             layout.addWidget(_section_label("Skills"))
             if def_prof:
-                layout.addWidget(_stat_row("Defense", def_prof))
+                layout.addWidget(_stat_row(
+                    "Defense", def_prof,
+                    entity={"Name": def_prof, "Type": "Profession"},
+                    on_click=on_entity,
+                ))
             if scan_prof:
-                layout.addWidget(_stat_row("Scanning", scan_prof))
+                layout.addWidget(_stat_row(
+                    "Scanning", scan_prof,
+                    entity={"Name": scan_prof, "Type": "Profession"},
+                    on_click=on_entity,
+                ))
             if loot_prof:
-                layout.addWidget(_stat_row("Looting", loot_prof))
+                layout.addWidget(_stat_row(
+                    "Looting", loot_prof,
+                    entity={"Name": loot_prof, "Type": "Profession"},
+                    on_click=on_entity,
+                ))
 
     layout.addStretch(1)
     return widget
 
 
-def _build_medical_details(item: dict, page_type: str) -> QWidget:
+def _build_medical_details(item: dict, page_type: str, on_entity=None) -> QWidget:
     widget, layout = _details_container()
     is_chip = page_type == "medicalchips"
 
@@ -2430,7 +2811,7 @@ def _build_medical_details(item: dict, page_type: str) -> QWidget:
     return widget
 
 
-def _build_tool_details(item: dict, page_type: str) -> QWidget:
+def _build_tool_details(item: dict, page_type: str, on_entity=None) -> QWidget:
     widget, layout = _details_container()
 
     depth = deep_get(item, "Properties", "Depth")
@@ -2509,7 +2890,7 @@ def _build_tool_details(item: dict, page_type: str) -> QWidget:
     return widget
 
 
-def _build_blueprint_details(item: dict, page_type: str) -> QWidget:
+def _build_blueprint_details(item: dict, page_type: str, on_entity=None) -> QWidget:
     widget, layout = _details_container()
 
     cost = _blueprint_cost(item)
@@ -2526,25 +2907,49 @@ def _build_blueprint_details(item: dict, page_type: str) -> QWidget:
 
     layout.addWidget(_section_label("General"))
     layout.addWidget(_stat_row("Type", bp_type))
+    product = item.get("Product") or {}
+    product_name = product.get("Name")
+    product_type = product.get("Type")
+    if product_name:
+        layout.addWidget(_stat_row("Product", product_name,
+            entity={"Name": product_name, "Type": product_type},
+            on_click=on_entity))
     if profession:
-        layout.addWidget(_stat_row("Profession", profession))
+        layout.addWidget(_stat_row("Profession", profession,
+            entity={"Name": profession, "Type": "Profession"},
+            on_click=on_entity))
     if near_success is not None:
         layout.addWidget(_stat_row("Near Success", f"{near_success}%"))
+
+    # Skill learning interval
+    interval_start = deep_get(item, "Properties", "Skill", "LearningIntervalStart")
+    interval_end = deep_get(item, "Properties", "Skill", "LearningIntervalEnd")
+    if interval_start is not None or interval_end is not None:
+        s = fmt_int(interval_start) if interval_start is not None else "?"
+        e = fmt_int(interval_end) if interval_end is not None else "?"
+        layout.addWidget(_stat_row("Skill Interval", f"{s} – {e}"))
 
     # Materials (compact list)
     materials = item.get("Materials") or []
     if materials:
         layout.addWidget(_section_label("Materials"))
         for mat in materials[:10]:
-            mat_name = deep_get(mat, "Material", "Name") or "Unknown"
+            mat_item = mat.get("Item") or {}
+            mat_name = mat_item.get("Name") or "Unknown"
+            mat_type = deep_get(mat_item, "Properties", "Type")
             amount = mat.get("Amount", 0)
-            layout.addWidget(_stat_row(mat_name, str(amount)))
+            if mat_name and mat_name != "Unknown" and on_entity:
+                layout.addWidget(_stat_row(mat_name, str(amount),
+                    entity={"Name": mat_name, "Type": mat_type},
+                    on_click=on_entity))
+            else:
+                layout.addWidget(_stat_row(mat_name, str(amount)))
 
     layout.addStretch(1)
     return widget
 
 
-def _build_vehicle_details(item: dict, page_type: str) -> QWidget:
+def _build_vehicle_details(item: dict, page_type: str, on_entity=None) -> QWidget:
     widget, layout = _details_container()
 
     max_speed = deep_get(item, "Properties", "MaxSpeed")
@@ -2595,7 +3000,7 @@ def _build_vehicle_details(item: dict, page_type: str) -> QWidget:
     return widget
 
 
-def _build_pet_details(item: dict, page_type: str) -> QWidget:
+def _build_pet_details(item: dict, page_type: str, on_entity=None) -> QWidget:
     widget, layout = _details_container()
 
     pet_type = deep_get(item, "Properties", "Type") or "-"
@@ -2626,7 +3031,7 @@ def _build_pet_details(item: dict, page_type: str) -> QWidget:
     return widget
 
 
-def _build_location_details(item: dict, page_type: str) -> QWidget:
+def _build_location_details(item: dict, page_type: str, on_entity=None) -> QWidget:
     widget, layout = _details_container()
 
     loc_type = deep_get(item, "Properties", "Type") or "-"
@@ -2657,13 +3062,21 @@ def _build_location_details(item: dict, page_type: str) -> QWidget:
     # Parent location
     parent = deep_get(item, "ParentLocation", "Name")
     if parent:
-        layout.addWidget(_stat_row("Parent", parent))
+        layout.addWidget(_stat_row(
+            "Parent", parent,
+            entity={"Name": parent, "Type": "Location"},
+            on_click=on_entity,
+        ))
 
     # Type-specific
     if loc_type == "Teleporter":
         dest = deep_get(item, "Properties", "Destination", "Name")
         if dest:
-            layout.addWidget(_stat_row("Destination", dest))
+            layout.addWidget(_stat_row(
+                "Destination", dest,
+                entity={"Name": dest, "Type": "Location"},
+                on_click=on_entity,
+            ))
         fee = deep_get(item, "Properties", "Fee")
         if fee is not None:
             layout.addWidget(_stat_row("Fee", f"{_fv(fee, 2)} PED"))
@@ -2717,13 +3130,17 @@ def _build_location_details(item: dict, page_type: str) -> QWidget:
                 layout.addWidget(_section_label("Mobs"))
 
             for entry in _format_mob_area_maturities(item):
-                layout.addWidget(_stat_row(entry["mob"], entry["display"]))
+                layout.addWidget(_stat_row(
+                    entry["mob"], entry["display"],
+                    entity={"Name": entry["mob"], "Type": "Mob"},
+                    on_click=on_entity,
+                ))
 
     layout.addStretch(1)
     return widget
 
 
-def _build_profession_details(item: dict, page_type: str) -> QWidget:
+def _build_profession_details(item: dict, page_type: str, on_entity=None) -> QWidget:
     widget, layout = _details_container()
 
     skills = item.get("Skills") or []
@@ -2732,7 +3149,15 @@ def _build_profession_details(item: dict, page_type: str) -> QWidget:
     layout.addWidget(_section_label("General"))
     if category:
         layout.addWidget(_stat_row("Category", category))
-    layout.addWidget(_stat_row("Skills", str(len(skills))))
+    visible_count = sum(
+        1 for s in skills
+        if not deep_get(s, "Skill", "Properties", "IsHidden")
+    )
+    hidden_count = len(skills) - visible_count
+    if hidden_count:
+        layout.addWidget(_stat_row("Skills", f"{visible_count} + {hidden_count} hidden"))
+    else:
+        layout.addWidget(_stat_row("Skills", str(len(skills))))
 
     if skills:
         total_weight = sum(
@@ -2741,32 +3166,41 @@ def _build_profession_details(item: dict, page_type: str) -> QWidget:
         if total_weight > 0:
             layout.addWidget(_stat_row("Total Weight", _fv(total_weight, 1)))
 
-        # Top skills by weight
+        # All skills sorted by weight
         sorted_skills = sorted(
             skills, key=lambda s: s.get("Weight") or 0, reverse=True
         )
-        layout.addWidget(_section_label("Top Skills"))
-        for s in sorted_skills[:8]:
+        layout.addWidget(_section_label("Skills"))
+        for s in sorted_skills:
             skill_name = deep_get(s, "Skill", "Name") or s.get("Name", "?")
+            is_hidden = deep_get(s, "Skill", "Properties", "IsHidden")
             weight = s.get("Weight")
+            display_name = f"{skill_name}  \u2022 hidden" if is_hidden else skill_name
             layout.addWidget(_stat_row(
-                skill_name, f"{weight:.1f}%" if weight else "-"
+                display_name, f"{weight:.1f}%" if weight else "-",
+                entity={"Name": skill_name, "Type": "Skill"},
+                on_click=on_entity,
             ))
 
     layout.addStretch(1)
     return widget
 
 
-def _build_skill_details(item: dict, page_type: str) -> QWidget:
+def _build_skill_details(item: dict, page_type: str, on_entity=None) -> QWidget:
     widget, layout = _details_container()
 
     category = deep_get(item, "Properties", "Category")
     hp_per_point = deep_get(item, "Properties", "HealthPointsPerLevel")
     professions = item.get("Professions") or []
 
+    is_hidden = deep_get(item, "Properties", "IsHidden")
+    is_extractable = deep_get(item, "Properties", "IsExtractable")
+
     layout.addWidget(_section_label("General"))
     if category:
         layout.addWidget(_stat_row("Category", category))
+    layout.addWidget(_stat_row("Visibility", "Hidden" if is_hidden else "Visible"))
+    layout.addWidget(_stat_row("Extractable", "Yes" if is_extractable else "No"))
 
     if hp_per_point is not None and hp_per_point > 0:
         layout.addWidget(_section_label("Health"))
@@ -2781,14 +3215,16 @@ def _build_skill_details(item: dict, page_type: str) -> QWidget:
             prof_name = deep_get(p, "Profession", "Name") or p.get("Name", "?")
             weight = p.get("Weight")
             layout.addWidget(_stat_row(
-                prof_name, f"{weight:.1f}%" if weight else "-"
+                prof_name, f"{weight:.1f}%" if weight else "-",
+                entity={"Name": prof_name, "Type": "Profession"},
+                on_click=on_entity,
             ))
 
     layout.addStretch(1)
     return widget
 
 
-def _build_vendor_details(item: dict, page_type: str) -> QWidget:
+def _build_vendor_details(item: dict, page_type: str, on_entity=None) -> QWidget:
     widget, layout = _details_container()
 
     planet = deep_get(item, "Planet", "Name") or ""
@@ -2802,7 +3238,11 @@ def _build_vendor_details(item: dict, page_type: str) -> QWidget:
     if planet:
         layout.addWidget(_stat_row("Planet", planet))
     if location:
-        layout.addWidget(_stat_row("Location", location))
+        layout.addWidget(_stat_row(
+            "Location", location,
+            entity={"Name": location, "Type": "Location"},
+            on_click=on_entity,
+        ))
     layout.addWidget(_stat_row("Offers", str(len(offers))))
     if limited_count:
         layout.addWidget(_stat_row("Limited", str(limited_count)))
@@ -2826,7 +3266,7 @@ def _build_vendor_details(item: dict, page_type: str) -> QWidget:
     return widget
 
 
-def _build_mission_details(item: dict, page_type: str) -> QWidget:
+def _build_mission_details(item: dict, page_type: str, on_entity=None) -> QWidget:
     widget, layout = _details_container()
 
     mission_type = deep_get(item, "Properties", "Type") or "-"
@@ -2840,26 +3280,24 @@ def _build_mission_details(item: dict, page_type: str) -> QWidget:
     if planet:
         layout.addWidget(_stat_row("Planet", planet))
     if area:
-        layout.addWidget(_stat_row("Area", area))
+        layout.addWidget(_stat_row(
+            "Area", area,
+            entity={"Name": area, "Type": "Area"},
+            on_click=on_entity,
+        ))
     if steps:
         layout.addWidget(_stat_row("Steps", str(len(steps))))
 
-    # Mission chain link (click handler connected by _rebuild_details_tab)
+    # Mission chain link
     chain = item.get("MissionChain")
     if chain:
         chain_name = chain.get("Name") or ""
         if chain_name:
-            chain_label = QLabel(f"Chain: {chain_name}")
-            chain_label.setCursor(Qt.CursorShape.PointingHandCursor)
-            chain_label.setStyleSheet(
-                f"color: {ACCENT}; font-size: 11px; padding: 2px 6px;"
-                " background: transparent;"
-            )
-            chain_label.setObjectName("chain_link")
-            chain_label.setProperty(
-                "chain_entity", {"Name": chain_name, "Type": "MissionChain"},
-            )
-            layout.addWidget(chain_label)
+            layout.addWidget(_stat_row(
+                "Chain", chain_name,
+                entity={"Name": chain_name, "Type": "MissionChain"},
+                on_click=on_entity,
+            ))
 
     # Start location coordinates
     start_loc = item.get("StartLocation") or {}
@@ -2872,7 +3310,11 @@ def _build_mission_details(item: dict, page_type: str) -> QWidget:
     if lon is not None and lat is not None:
         layout.addWidget(_section_label("Start Location"))
         if start_name:
-            layout.addWidget(_stat_row("Location", start_name))
+            layout.addWidget(_stat_row(
+                "Location", start_name,
+                entity={"Name": start_name, "Type": "Location"},
+                on_click=on_entity,
+            ))
         layout.addWidget(_stat_row("Coordinates", f"{lon:.0f}, {lat:.0f}"))
         btn_row = QWidget()
         btn_row.setStyleSheet("background: transparent;")
@@ -3093,7 +3535,7 @@ _GENERIC_DEFAULT = {
 }
 
 
-def _build_generic_details(item: dict, page_type: str) -> QWidget:
+def _build_generic_details(item: dict, page_type: str, on_entity=None) -> QWidget:
     """Config-driven builder for simple entity types."""
     widget, layout = _details_container()
 
@@ -3164,4 +3606,920 @@ _TYPE_BUILDERS: dict[str, callable] = {
     "vendors": _build_vendor_details,
     "missions": _build_mission_details,
 }
+
+
+# ---------------------------------------------------------------------------
+# Overlay-native compact calculator widgets
+# ---------------------------------------------------------------------------
+
+_TIER_BTN_SIZE = 26
+_TIER_BTN_SPACING = 1
+_COL_AMT = 50
+_COL_MU = 70
+_COL_COST = 65
+_MU_SOURCE_BTN_H = 20
+
+# Overlay-matched spinbox style
+_OVERLAY_SPIN_STYLE = (
+    "QDoubleSpinBox {"
+    f"  background: rgba(30,30,50,200); color: {TEXT_COLOR};"
+    f"  border: 1px solid rgba(80,80,110,180); border-radius: 3px;"
+    "  padding: 0 2px; font-size: 12px;"
+    "}"
+    "QDoubleSpinBox:focus {"
+    f"  border-color: {ACCENT};"
+    "}"
+    "QDoubleSpinBox:disabled {"
+    f"  color: {TEXT_DIM};"
+    "}"
+    "QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {"
+    "  width: 0; height: 0; border: none;"
+    "}"
+    "QDoubleSpinBox::up-arrow, QDoubleSpinBox::down-arrow {"
+    "  image: none;"
+    "}"
+)
+
+
+class _OverlayTiersWidget(QWidget):
+    """Compact overlay-native tier calculator.
+
+    Follows the overlay theme (transparent backgrounds, RGBA colors,
+    QLabel-based rows) instead of the wiki-page QTableWidget.
+    """
+
+    _market_data_ready = pyqtSignal()
+    _inventory_data_ready = pyqtSignal()
+
+    def __init__(self, item: dict, *, nexus_client=None, parent=None):
+        super().__init__(parent)
+        from ..ui.widgets.weapon_detail import (
+            _extrapolate_tiers, _classify_material, _fmt_ped,
+            _PREF_KEY, _LOCAL_MARKUPS_PATH, _MAX_TIERS,
+        )
+        self._classify = _classify_material
+        self._fmt_ped = _fmt_ped
+        self._pref_key = _PREF_KEY
+        self._local_path = _LOCAL_MARKUPS_PATH
+        self._max_tiers = _MAX_TIERS
+
+        self.setStyleSheet("background: transparent;")
+        entity_type = item.get("Type", "Weapon")
+        self._entity_type = entity_type
+        self._nexus_client = nexus_client
+        self._markup_source: str = "custom"
+
+        # Market / inventory data (loaded async)
+        self._name_to_wap: dict[str, float] = {}
+        self._name_to_id: dict[str, int] = {}
+        self._inv_markups: dict[int, float] = {}
+
+        # Extrapolate and index tiers
+        tiers_data = item.get("Tiers") or []
+        all_tiers = _extrapolate_tiers(tiers_data, entity_type) if tiers_data else []
+        self._tier_map: dict[int, dict] = {}
+        for tier in all_tiers:
+            t_num = deep_get(tier, "Properties", "Tier")
+            if t_num is not None:
+                self._tier_map[t_num] = tier
+
+        # Per-tier markups: {tier_num: {sorted_row_idx: markup_pct}}
+        self._markups: dict[int, dict[int, float]] = {}
+        self._load_markups()
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 2, 0, 2)
+        layout.setSpacing(3)
+
+        # --- Tier buttons row ---
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(_TIER_BTN_SPACING)
+        self._tier_buttons: list[QPushButton] = []
+        for i in range(1, self._max_tiers + 1):
+            btn = QPushButton(str(i))
+            btn.setFixedSize(_TIER_BTN_SIZE, _TIER_BTN_SIZE)
+            has_data = i in self._tier_map
+            btn.setEnabled(has_data)
+            if has_data:
+                btn.setCursor(Qt.CursorShape.PointingHandCursor)
+            btn.clicked.connect(lambda _, t=i: self._select_tier(t))
+            self._tier_buttons.append(btn)
+            btn_row.addWidget(btn)
+        btn_row.addStretch()
+        layout.addLayout(btn_row)
+
+        # --- MU source toggle row ---
+        src_row = QHBoxLayout()
+        src_row.setSpacing(3)
+        src_lbl = QLabel("MU:")
+        src_lbl.setStyleSheet(
+            f"color: {TEXT_DIM}; font-size: 12px; background: transparent;"
+        )
+        src_row.addWidget(src_lbl)
+        self._btn_custom = QPushButton("Custom")
+        self._btn_market = QPushButton("Market")
+        self._btn_inventory = QPushButton("Inventory")
+        self._source_buttons = [
+            self._btn_custom, self._btn_market, self._btn_inventory,
+        ]
+        for btn in self._source_buttons:
+            btn.setFixedHeight(_MU_SOURCE_BTN_H)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._btn_market.setEnabled(False)
+        self._btn_inventory.setEnabled(False)
+        self._btn_custom.clicked.connect(lambda: self._set_markup_source("custom"))
+        self._btn_market.clicked.connect(lambda: self._set_markup_source("market"))
+        self._btn_inventory.clicked.connect(lambda: self._set_markup_source("inventory"))
+        for btn in self._source_buttons:
+            src_row.addWidget(btn)
+        src_row.addStretch()
+        layout.addLayout(src_row)
+        self._update_source_buttons()
+
+        # --- Separator ---
+        sep = QWidget()
+        sep.setFixedHeight(1)
+        sep.setStyleSheet("background-color: rgba(100, 100, 120, 80);")
+        layout.addWidget(sep)
+
+        # --- Materials area (rebuilt on tier select) ---
+        self._materials_container = QWidget()
+        self._materials_container.setStyleSheet("background: transparent;")
+        self._materials_layout = QVBoxLayout(self._materials_container)
+        self._materials_layout.setContentsMargins(0, 0, 0, 0)
+        self._materials_layout.setSpacing(1)
+        layout.addWidget(self._materials_container)
+
+        # --- Footer (no box, just label-value rows) ---
+        sep2 = QWidget()
+        sep2.setFixedHeight(1)
+        sep2.setStyleSheet("background-color: rgba(100, 100, 120, 80);")
+        layout.addWidget(sep2)
+
+        self._footer_container = QWidget()
+        self._footer_container.setStyleSheet("background: transparent;")
+        footer_layout = QVBoxLayout(self._footer_container)
+        footer_layout.setContentsMargins(0, 2, 0, 0)
+        footer_layout.setSpacing(1)
+
+        self._tier_footer = self._make_footer_row("Tier 1")
+        self._cumul_footer = self._make_footer_row("Up to 1")
+        footer_layout.addLayout(self._tier_footer["layout"])
+        footer_layout.addLayout(self._cumul_footer["layout"])
+        layout.addWidget(self._footer_container)
+        self._footer_container.setVisible(False)
+        layout.addStretch(1)
+
+        # Track spinboxes
+        self._mu_spinboxes: list[tuple[int, QDoubleSpinBox]] = []
+        self._sorted_entries: list[dict] = []
+
+        # Debounce save
+        self._save_timer = QTimer(self)
+        self._save_timer.setSingleShot(True)
+        self._save_timer.setInterval(500)
+        self._save_timer.timeout.connect(self._save_markups)
+
+        # Cross-thread signals
+        self._market_data_ready.connect(self._on_market_data_ready)
+        self._inventory_data_ready.connect(self._on_inventory_data_ready)
+
+        # Select first available tier
+        first_tier = min(self._tier_map.keys()) if self._tier_map else 1
+        self._selected_tier = first_tier
+        self._update_buttons()
+        self._update_materials()
+        self._load_source_data()
+
+    # --- Footer helper ---
+
+    @staticmethod
+    def _make_footer_row(label_text: str) -> dict:
+        row = QHBoxLayout()
+        row.setContentsMargins(0, 0, 6, 0)
+        row.setSpacing(4)
+        lbl = QLabel(label_text)
+        lbl.setStyleSheet(
+            f"color: {TEXT_DIM}; font-size: 12px; background: transparent;"
+        )
+        row.addWidget(lbl, 1)
+        parts: dict[str, QLabel] = {}
+        for key, prefix, color in [
+            ("tt", "TT:", TEXT_DIM), ("mu", "MU:", TEXT_DIM),
+            ("total", "Total:", ACCENT),
+        ]:
+            plbl = QLabel(prefix)
+            plbl.setStyleSheet(
+                f"color: {TEXT_DIM}; font-size: 12px; background: transparent;"
+            )
+            row.addWidget(plbl)
+            vlbl = QLabel("0.00")
+            vlbl.setStyleSheet(
+                f"color: {color}; font-size: 12px;"
+                " font-family: monospace; background: transparent;"
+            )
+            vlbl.setAlignment(
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+            )
+            row.addWidget(vlbl)
+            parts[key] = vlbl
+        return {"layout": row, "label": lbl, **parts}
+
+    # --- Tier buttons ---
+
+    def _select_tier(self, tier_num: int):
+        self._selected_tier = tier_num
+        self._update_buttons()
+        self._update_materials()
+
+    def _update_buttons(self):
+        for i, btn in enumerate(self._tier_buttons):
+            t = i + 1
+            selected = t == self._selected_tier
+            has_data = t in self._tier_map
+            estimated = has_data and deep_get(
+                self._tier_map[t], "Properties", "IsExtrapolated",
+            )
+            border = "dashed" if estimated else "solid"
+            if selected:
+                style = (
+                    f"background: {ACCENT}; color: white;"
+                    f" border: 1px {border} {ACCENT}; border-radius: 4px;"
+                    " font-size: 12px; font-weight: 600; padding: 0;"
+                )
+            elif has_data:
+                style = (
+                    f"background: rgba(40,40,60,180); color: {TEXT_COLOR};"
+                    f" border: 1px {border} rgba(80,80,110,180); border-radius: 4px;"
+                    " font-size: 12px; font-weight: 600; padding: 0;"
+                )
+            else:
+                style = (
+                    f"background: rgba(30,30,45,120); color: {TEXT_DIM};"
+                    " border: 1px solid rgba(60,60,80,120); border-radius: 4px;"
+                    " font-size: 12px; font-weight: 600; padding: 0;"
+                )
+            btn.setStyleSheet(f"QPushButton {{ {style} }}")
+
+    # --- MU source toggle ---
+
+    def _set_markup_source(self, source: str):
+        if self._markup_source == source:
+            return
+        self._markup_source = source
+        self._update_source_buttons()
+        is_custom = source == "custom"
+        for _, spinbox in self._mu_spinboxes:
+            spinbox.setEnabled(is_custom)
+        self._recalculate()
+        self._save_timer.start()
+
+    def _update_source_buttons(self):
+        for btn, src in [
+            (self._btn_custom, "custom"),
+            (self._btn_market, "market"),
+            (self._btn_inventory, "inventory"),
+        ]:
+            active = self._markup_source == src
+            enabled = btn.isEnabled()
+            if active:
+                bg, fg, bc = ACCENT, "white", ACCENT
+            elif not enabled:
+                bg, fg, bc = "rgba(30,30,45,120)", TEXT_DIM, "rgba(60,60,80,120)"
+            else:
+                bg, fg, bc = "rgba(40,40,60,180)", TEXT_DIM, "rgba(80,80,110,180)"
+            btn.setStyleSheet(
+                f"QPushButton {{"
+                f"  background: {bg}; color: {fg};"
+                f"  border: 1px solid {bc}; border-radius: 3px;"
+                f"  font-size: 12px; padding: 1px 6px;"
+                f"}}"
+            )
+
+    def _get_resolved_markup(self, mat_name: str, idx: int,
+                              tier_markups: dict | None = None) -> float:
+        if self._markup_source == "market":
+            wap = self._name_to_wap.get(mat_name)
+            if wap is not None:
+                return wap
+        elif self._markup_source == "inventory":
+            item_id = self._name_to_id.get(mat_name)
+            if item_id is not None:
+                inv = self._inv_markups.get(item_id)
+                if inv is not None:
+                    return inv
+        return (tier_markups or {}).get(idx, 100)
+
+    # --- Market / inventory loading ---
+
+    def _load_source_data(self):
+        if not self._nexus_client:
+            return
+
+        def _fetch_market():
+            try:
+                items = self._nexus_client.get_exchange_items()
+                if items:
+                    for item in items:
+                        name = item.get("n")
+                        if name:
+                            wap = item.get("w")
+                            if wap is not None and wap > 0:
+                                self._name_to_wap[name] = wap
+                            iid = item.get("i")
+                            if iid is not None:
+                                self._name_to_id[name] = iid
+                    self._market_data_ready.emit()
+            except Exception:
+                pass
+
+        def _fetch_inventory():
+            if not self._nexus_client.is_authenticated():
+                return
+            try:
+                inv = self._nexus_client.get_inventory_markups()
+                if inv:
+                    for entry in inv:
+                        iid = entry.get("item_id")
+                        mu = entry.get("markup")
+                        if iid is not None and mu is not None:
+                            self._inv_markups[iid] = mu
+                    self._inventory_data_ready.emit()
+            except Exception:
+                pass
+
+        threading.Thread(target=_fetch_market, daemon=True).start()
+        threading.Thread(target=_fetch_inventory, daemon=True).start()
+
+    def _on_market_data_ready(self):
+        self._btn_market.setEnabled(bool(self._name_to_wap))
+        self._update_source_buttons()
+        if self._markup_source == "market":
+            self._recalculate()
+
+    def _on_inventory_data_ready(self):
+        self._btn_inventory.setEnabled(bool(self._inv_markups))
+        self._update_source_buttons()
+        if self._markup_source == "inventory":
+            self._recalculate()
+
+    # --- Markup persistence ---
+
+    def _load_markups(self):
+        stored = None
+        if self._nexus_client and self._nexus_client.is_authenticated():
+            try:
+                prefs = self._nexus_client.get_preferences()
+                if prefs and self._pref_key in prefs:
+                    stored = prefs[self._pref_key]
+            except Exception:
+                pass
+        if stored is None:
+            try:
+                if self._local_path.exists():
+                    stored = json.loads(
+                        self._local_path.read_text(encoding="utf-8")
+                    )
+            except Exception:
+                pass
+        if not stored or not isinstance(stored, dict):
+            return
+        source = stored.get("_source")
+        if source in ("custom", "market", "inventory"):
+            self._markup_source = source
+        entity_data = stored.get(self._entity_type)
+        if not entity_data or not isinstance(entity_data, dict):
+            return
+        for tier_str, mu_list in entity_data.items():
+            if tier_str.startswith("_"):
+                continue
+            try:
+                tier_num = int(tier_str)
+            except ValueError:
+                continue
+            if isinstance(mu_list, list):
+                self._markups[tier_num] = {
+                    i: float(v) for i, v in enumerate(mu_list)
+                }
+
+    def _save_markups(self):
+        entity_data = {}
+        for tier_num, mu_dict in self._markups.items():
+            if not mu_dict:
+                continue
+            max_idx = max(mu_dict.keys()) if mu_dict else -1
+            mu_list = [mu_dict.get(i, 100) for i in range(max_idx + 1)]
+            entity_data[str(tier_num)] = mu_list
+
+        all_data: dict = {}
+        try:
+            if self._local_path.exists():
+                all_data = json.loads(
+                    self._local_path.read_text(encoding="utf-8")
+                )
+        except Exception:
+            pass
+        all_data[self._entity_type] = entity_data
+        if self._markup_source != "custom":
+            all_data["_source"] = self._markup_source
+        elif "_source" in all_data:
+            del all_data["_source"]
+        try:
+            self._local_path.parent.mkdir(parents=True, exist_ok=True)
+            self._local_path.write_text(
+                json.dumps(all_data, indent=2), encoding="utf-8",
+            )
+        except Exception:
+            pass
+        if self._nexus_client and self._nexus_client.is_authenticated():
+            def _push(data=all_data):
+                try:
+                    self._nexus_client.save_preference(self._pref_key, data)
+                except Exception:
+                    pass
+            threading.Thread(target=_push, daemon=True).start()
+
+    # --- Materials display ---
+
+    def _update_materials(self):
+        # Clear
+        while self._materials_layout.count():
+            w = self._materials_layout.takeAt(0).widget()
+            if w:
+                w.deleteLater()
+        self._mu_spinboxes.clear()
+        self._sorted_entries = []
+
+        tier_data = self._tier_map.get(self._selected_tier)
+        if not tier_data:
+            lbl = QLabel("No tier data available")
+            lbl.setStyleSheet(
+                f"color: {TEXT_DIM}; font-size: 12px; background: transparent;"
+            )
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self._materials_layout.addWidget(lbl)
+            self._footer_container.setVisible(False)
+            return
+
+        materials = tier_data.get("Materials", [])
+
+        if not materials:
+            lbl = QLabel("No material data")
+            lbl.setStyleSheet(
+                f"color: {TEXT_DIM}; font-size: 12px; background: transparent;"
+            )
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self._materials_layout.addWidget(lbl)
+            self._footer_container.setVisible(False)
+            return
+
+        # Parse and sort
+        entries = []
+        for mat in materials:
+            mat_name = deep_get(mat, "Material", "Name") or "Unknown"
+            mat_tt = deep_get(mat, "Material", "Properties", "Economy", "MaxTT") or 0
+            amount = mat.get("Amount", 0)
+            entries.append({
+                "name": mat_name, "tt": mat_tt, "amount": amount,
+                "sort": self._classify(mat_name),
+            })
+        entries.sort(key=lambda e: e["sort"])
+        self._sorted_entries = entries
+
+        # Header row
+        hdr = QWidget()
+        hdr.setStyleSheet("background: transparent;")
+        hl = QHBoxLayout(hdr)
+        hl.setContentsMargins(0, 0, 0, 1)
+        hl.setSpacing(0)
+        for text, w, stretch in [
+            ("Material", 0, 1), ("Amt", _COL_AMT, 0),
+            ("MU%", _COL_MU, 0), ("Cost", _COL_COST, 0),
+        ]:
+            lbl = QLabel(text)
+            lbl.setStyleSheet(
+                f"color: {TEXT_DIM}; font-size: 10px; font-weight: 600;"
+                " background: transparent; letter-spacing: 0.3px;"
+            )
+            if stretch:
+                hl.addWidget(lbl, stretch)
+            else:
+                lbl.setFixedWidth(w)
+                hl.addWidget(lbl)
+        self._materials_layout.addWidget(hdr)
+
+        # Separator
+        sep = QWidget()
+        sep.setFixedHeight(1)
+        sep.setStyleSheet("background-color: rgba(100, 100, 120, 80);")
+        self._materials_layout.addWidget(sep)
+
+        # Data rows
+        tier_markups = self._markups.get(self._selected_tier, {})
+        is_custom = self._markup_source == "custom"
+
+        for row_idx, entry in enumerate(entries):
+            mu = self._get_resolved_markup(
+                entry["name"], row_idx, tier_markups,
+            )
+            cost = entry["tt"] * entry["amount"] * mu / 100
+
+            row = QWidget()
+            row.setStyleSheet("background: transparent;")
+            rl = QHBoxLayout(row)
+            rl.setContentsMargins(0, 1, 0, 1)
+            rl.setSpacing(2)
+
+            # Material name (stretch)
+            name_lbl = QLabel(entry["name"])
+            name_lbl.setStyleSheet(
+                f"color: {TEXT_COLOR}; font-size: 12px; background: transparent;"
+            )
+            rl.addWidget(name_lbl, 1)
+
+            # Amount
+            amt_lbl = QLabel(str(entry["amount"]))
+            amt_lbl.setFixedWidth(_COL_AMT)
+            amt_lbl.setStyleSheet(
+                f"color: {TEXT_DIM}; font-size: 12px; background: transparent;"
+            )
+            rl.addWidget(amt_lbl)
+
+            # MU% spinbox
+            spinbox = QDoubleSpinBox()
+            spinbox.setDecimals(0)
+            spinbox.setMinimum(100)
+            spinbox.setMaximum(9999999)
+            spinbox.setValue(mu)
+            spinbox.setSuffix("%")
+            spinbox.setFixedWidth(_COL_MU)
+            spinbox.setFixedHeight(20)
+            spinbox.setEnabled(is_custom)
+            spinbox.setStyleSheet(_OVERLAY_SPIN_STYLE)
+            spinbox.valueChanged.connect(
+                lambda val, si=row_idx: self._on_markup_changed(si, val)
+            )
+            rl.addWidget(spinbox)
+            self._mu_spinboxes.append((row_idx, spinbox))
+
+            # Cost
+            cost_lbl = QLabel(self._fmt_ped(cost))
+            cost_lbl.setFixedWidth(_COL_COST)
+            cost_lbl.setStyleSheet(
+                f"color: {TEXT_COLOR}; font-size: 12px; background: transparent;"
+            )
+            rl.addWidget(cost_lbl)
+
+            self._materials_layout.addWidget(row)
+
+        self._footer_container.setVisible(True)
+        self._recalculate()
+
+    def _on_markup_changed(self, idx: int, value: float):
+        if self._markup_source != "custom":
+            return
+        t = self._selected_tier
+        if t not in self._markups:
+            self._markups[t] = {}
+        self._markups[t][idx] = value
+        self._recalculate()
+        self._save_timer.start()
+
+    def _recalculate(self):
+        if not self._sorted_entries:
+            return
+        tier_markups = self._markups.get(self._selected_tier, {})
+
+        tier_tt = 0.0
+        tier_total = 0.0
+        # Update cost labels and spinbox values
+        mat_container = self._materials_container
+        # Data rows start after header + separator (indices 2+)
+        row_widgets = [
+            mat_container.layout().itemAt(i).widget()
+            for i in range(2, mat_container.layout().count())
+            if mat_container.layout().itemAt(i).widget()
+        ]
+        for row_idx, entry in enumerate(self._sorted_entries):
+            mu = self._get_resolved_markup(
+                entry["name"], row_idx, tier_markups,
+            )
+            base = entry["tt"] * entry["amount"]
+            cost = base * mu / 100
+            tier_tt += base
+            tier_total += cost
+
+            # Update spinbox
+            for si, spinbox in self._mu_spinboxes:
+                if si == row_idx:
+                    spinbox.blockSignals(True)
+                    spinbox.setValue(mu)
+                    spinbox.blockSignals(False)
+                    break
+
+            # Update cost label (last QLabel in the row)
+            if row_idx < len(row_widgets):
+                row_w = row_widgets[row_idx]
+                rl = row_w.layout()
+                if rl:
+                    last = rl.itemAt(rl.count() - 1)
+                    if last and last.widget():
+                        last.widget().setText(self._fmt_ped(cost))
+
+        tier_mu = tier_total - tier_tt
+
+        self._tier_footer["label"].setText(f"Tier {self._selected_tier}")
+        self._tier_footer["tt"].setText(self._fmt_ped(tier_tt))
+        self._tier_footer["mu"].setText(self._fmt_ped(tier_mu))
+        self._tier_footer["total"].setText(self._fmt_ped(tier_total))
+
+        # Cumulative: tiers 1 through selected
+        cumul_tt = 0.0
+        cumul_total = 0.0
+        for t in range(1, self._selected_tier + 1):
+            t_data = self._tier_map.get(t)
+            if not t_data:
+                continue
+            t_mats = t_data.get("Materials", [])
+            t_markups = self._markups.get(t, {})
+            t_entries = []
+            for mat in t_mats:
+                mn = deep_get(mat, "Material", "Name") or "Unknown"
+                t_entries.append({
+                    "name": mn,
+                    "tt": deep_get(mat, "Material", "Properties", "Economy", "MaxTT") or 0,
+                    "amount": mat.get("Amount", 0),
+                    "sort": self._classify(mn),
+                })
+            t_entries.sort(key=lambda e: e["sort"])
+            for si, en in enumerate(t_entries):
+                mu = self._get_resolved_markup(en["name"], si, t_markups)
+                base = en["tt"] * en["amount"]
+                cumul_tt += base
+                cumul_total += base * mu / 100
+
+        cumul_mu = cumul_total - cumul_tt
+        self._cumul_footer["label"].setText(f"Up to {self._selected_tier}")
+        self._cumul_footer["tt"].setText(self._fmt_ped(cumul_tt))
+        self._cumul_footer["mu"].setText(self._fmt_ped(cumul_mu))
+        self._cumul_footer["total"].setText(self._fmt_ped(cumul_total))
+
+
+class _OverlayConstructionWidget(QWidget):
+    """Compact overlay-native blueprint construction cost calculator."""
+
+    def __init__(self, item: dict, *, nexus_client=None, parent=None):
+        super().__init__(parent)
+        from ..ui.widgets.blueprint_detail import (
+            _BP_PREF_KEY, _LOCAL_BP_MARKUPS_PATH,
+        )
+        self._pref_key = _BP_PREF_KEY
+        self._local_path = _LOCAL_BP_MARKUPS_PATH
+        self._nexus_client = nexus_client
+        self.setStyleSheet("background: transparent;")
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 2, 0, 2)
+        layout.setSpacing(1)
+
+        materials = item.get("Materials") or []
+        if not materials:
+            lbl = QLabel("No material data")
+            lbl.setStyleSheet(
+                f"color: {TEXT_DIM}; font-size: 12px; background: transparent;"
+            )
+            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            layout.addWidget(lbl)
+            return
+
+        # Parse materials
+        self._entries: list[dict] = []
+        for idx, mat in enumerate(materials):
+            mat_item = mat.get("Item") or {}
+            name = mat_item.get("Name") or "Unknown"
+            tt = deep_get(mat_item, "Properties", "Economy", "MaxTT") or 0
+            amount = mat.get("Amount") or 0
+            self._entries.append({
+                "idx": idx, "name": name, "tt": tt, "amount": amount,
+            })
+
+        # Load saved markups
+        self._markups: dict[int, float] = {}  # idx → markup pct
+        self._all_saved: dict[str, float] = self._load_all_markups()
+        for entry in self._entries:
+            saved = self._all_saved.get(entry["name"])
+            if saved is not None and saved != 100:
+                self._markups[entry["idx"]] = saved
+
+        # Debounce save
+        self._save_timer = QTimer(self)
+        self._save_timer.setSingleShot(True)
+        self._save_timer.setInterval(500)
+        self._save_timer.timeout.connect(self._persist_markups)
+
+        # Header
+        hdr = QWidget()
+        hdr.setStyleSheet("background: transparent;")
+        hl = QHBoxLayout(hdr)
+        hl.setContentsMargins(0, 0, 0, 1)
+        hl.setSpacing(0)
+        for text, w, stretch in [
+            ("Ingredient", 0, 1), ("Amt", _COL_AMT, 0),
+            ("MU%", _COL_MU, 0), ("Cost", _COL_COST, 0),
+        ]:
+            lbl = QLabel(text)
+            lbl.setStyleSheet(
+                f"color: {TEXT_DIM}; font-size: 10px; font-weight: 600;"
+                " background: transparent; letter-spacing: 0.3px;"
+            )
+            if stretch:
+                hl.addWidget(lbl, stretch)
+            else:
+                lbl.setFixedWidth(w)
+                hl.addWidget(lbl)
+        layout.addWidget(hdr)
+
+        sep = QWidget()
+        sep.setFixedHeight(1)
+        sep.setStyleSheet("background-color: rgba(100, 100, 120, 80);")
+        layout.addWidget(sep)
+
+        # Data rows
+        self._mu_spinboxes: list[tuple[int, QDoubleSpinBox]] = []
+        for entry in self._entries:
+            mu = self._markups.get(entry["idx"], 100)
+            line_tt = entry["tt"] * entry["amount"]
+            cost = line_tt * mu / 100
+
+            row = QWidget()
+            row.setStyleSheet("background: transparent;")
+            rl = QHBoxLayout(row)
+            rl.setContentsMargins(0, 1, 0, 1)
+            rl.setSpacing(2)
+
+            name_lbl = QLabel(entry["name"])
+            name_lbl.setStyleSheet(
+                f"color: {TEXT_COLOR}; font-size: 12px; background: transparent;"
+            )
+            rl.addWidget(name_lbl, 1)
+
+            amt_lbl = QLabel(str(entry["amount"]))
+            amt_lbl.setFixedWidth(_COL_AMT)
+            amt_lbl.setStyleSheet(
+                f"color: {TEXT_DIM}; font-size: 12px; background: transparent;"
+            )
+            rl.addWidget(amt_lbl)
+
+            spinbox = QDoubleSpinBox()
+            spinbox.setDecimals(0)
+            spinbox.setMinimum(100)
+            spinbox.setMaximum(9999999)
+            spinbox.setValue(mu)
+            spinbox.setSuffix("%")
+            spinbox.setFixedWidth(_COL_MU)
+            spinbox.setFixedHeight(20)
+            spinbox.setStyleSheet(_OVERLAY_SPIN_STYLE)
+            spinbox.valueChanged.connect(
+                lambda val, i=entry["idx"]: self._on_markup_changed(i, val)
+            )
+            rl.addWidget(spinbox)
+            self._mu_spinboxes.append((entry["idx"], spinbox))
+
+            cost_lbl = QLabel(f"{cost:.2f}")
+            cost_lbl.setFixedWidth(_COL_COST)
+            cost_lbl.setStyleSheet(
+                f"color: {TEXT_COLOR}; font-size: 12px; background: transparent;"
+            )
+            rl.addWidget(cost_lbl)
+
+            layout.addWidget(row)
+
+        # Footer separator
+        sep2 = QWidget()
+        sep2.setFixedHeight(1)
+        sep2.setStyleSheet("background-color: rgba(100, 100, 120, 80);")
+        layout.addWidget(sep2)
+
+        # Footer: TT / MU / Total
+        footer = QHBoxLayout()
+        footer.setContentsMargins(0, 0, 6, 0)
+        footer.setSpacing(4)
+        total_lbl = QLabel("Total")
+        total_lbl.setStyleSheet(
+            f"color: {TEXT_DIM}; font-size: 12px; background: transparent;"
+        )
+        footer.addWidget(total_lbl, 1)
+        for key, prefix, color in [
+            ("tt", "TT:", TEXT_DIM), ("mu", "MU:", TEXT_DIM),
+            ("total", "Total:", ACCENT),
+        ]:
+            plbl = QLabel(prefix)
+            plbl.setStyleSheet(
+                f"color: {TEXT_DIM}; font-size: 12px; background: transparent;"
+            )
+            footer.addWidget(plbl)
+            vlbl = QLabel("0.00")
+            vlbl.setStyleSheet(
+                f"color: {color}; font-size: 12px;"
+                " font-family: monospace; background: transparent;"
+            )
+            vlbl.setAlignment(
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+            )
+            footer.addWidget(vlbl)
+            setattr(self, f"_footer_{key}", vlbl)
+        layout.addLayout(footer)
+        layout.addStretch(1)
+        self._recalculate()
+
+    def _on_markup_changed(self, idx: int, value: float):
+        self._markups[idx] = value
+        for entry in self._entries:
+            if entry["idx"] == idx:
+                if value == 100:
+                    self._all_saved.pop(entry["name"], None)
+                else:
+                    self._all_saved[entry["name"]] = value
+                break
+        self._recalculate()
+        self._save_timer.start()
+
+    def _load_all_markups(self) -> dict[str, float]:
+        stored = None
+        if self._nexus_client and self._nexus_client.is_authenticated():
+            try:
+                prefs = self._nexus_client.get_preferences()
+                if prefs and self._pref_key in prefs:
+                    stored = prefs[self._pref_key]
+            except Exception:
+                pass
+        if stored is None:
+            try:
+                if self._local_path.exists():
+                    stored = json.loads(
+                        self._local_path.read_text(encoding="utf-8")
+                    )
+            except Exception:
+                pass
+        if not stored or not isinstance(stored, dict):
+            return {}
+        return {k: float(v) for k, v in stored.items()
+                if isinstance(v, (int, float))}
+
+    def _persist_markups(self):
+        data = {k: v for k, v in self._all_saved.items() if v != 100}
+        try:
+            self._local_path.parent.mkdir(parents=True, exist_ok=True)
+            self._local_path.write_text(
+                json.dumps(data, indent=2), encoding="utf-8",
+            )
+        except Exception:
+            pass
+        if self._nexus_client and self._nexus_client.is_authenticated():
+            def _push(d=data):
+                try:
+                    self._nexus_client.save_preference(self._pref_key, d)
+                except Exception:
+                    pass
+            threading.Thread(target=_push, daemon=True).start()
+
+    def _recalculate(self):
+        if not hasattr(self, "_entries") or not self._entries:
+            return
+        total_tt = 0.0
+        total_with_mu = 0.0
+
+        # Update cost labels — data rows start at layout index 2
+        # (header=0, separator=1, then rows, then sep2, then footer)
+        main_layout = self.layout()
+        row_start = 2
+        for row_idx, entry in enumerate(self._entries):
+            mu = self._markups.get(entry["idx"], 100)
+            line_tt = entry["tt"] * entry["amount"]
+            cost = line_tt * mu / 100
+            total_tt += line_tt
+            total_with_mu += cost
+
+            widget_idx = row_start + row_idx
+            if widget_idx < main_layout.count():
+                row_w = main_layout.itemAt(widget_idx).widget()
+                if row_w and row_w.layout():
+                    last = row_w.layout().itemAt(row_w.layout().count() - 1)
+                    if last and last.widget():
+                        last.widget().setText(f"{cost:.2f}")
+
+        mu_cost = total_with_mu - total_tt
+        self._footer_tt.setText(f"{total_tt:.2f}")
+        self._footer_mu.setText(f"{mu_cost:.2f}")
+        self._footer_total.setText(f"{total_with_mu:.2f}")
+
+
+def _build_overlay_tiers(item: dict, nexus_client) -> QWidget:
+    """Build a compact overlay-native tier calculator."""
+    return _OverlayTiersWidget(item, nexus_client=nexus_client)
+
+
+def _build_overlay_construction(item: dict, nexus_client) -> QWidget:
+    """Build a compact overlay-native blueprint construction calculator."""
+    return _OverlayConstructionWidget(item, nexus_client=nexus_client)
 

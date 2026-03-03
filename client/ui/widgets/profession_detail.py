@@ -83,7 +83,7 @@ class ProfessionDetailView(WikiDetailView):
                     "weight": weight,
                     "pct": weight / total_weight * 100 if total_weight > 0 else 0,
                 })
-            skills_section.set_content(make_section_table(
+            table = make_section_table(
                 [
                     ColumnDef("skill", "Skill", main=True),
                     ColumnDef("weight", "Weight", format=lambda v: fmt_int(v)),
@@ -91,7 +91,13 @@ class ProfessionDetailView(WikiDetailView):
                 ],
                 flat,
                 default_sort=("weight", "DESC"),
-            ))
+            )
+            table.row_activated.connect(
+                lambda row, _idx: self.entity_navigate.emit(
+                    {"Name": row.get("skill", ""), "Type": "Skill"}
+                )
+            )
+            skills_section.set_content(table)
         else:
             skills_section.set_content(no_data_label("No skill data available."))
             skills_section.set_subtitle("No data")
@@ -107,12 +113,18 @@ class ProfessionDetailView(WikiDetailView):
                     "skill": deep_get(u, "Skill", "Name") or u.get("Name") or "",
                     "level": u.get("Level"),
                 })
-            unlock_section.set_content(make_section_table(
+            table = make_section_table(
                 [
                     ColumnDef("skill", "Skill", main=True),
                     ColumnDef("level", "Required Level", format=lambda v: fmt_int(v)),
                 ],
                 flat,
                 default_sort=("level", "ASC"),
-            ))
+            )
+            table.row_activated.connect(
+                lambda row, _idx: self.entity_navigate.emit(
+                    {"Name": row.get("skill", ""), "Type": "Skill"}
+                )
+            )
+            unlock_section.set_content(table)
             self._add_article_section(unlock_section)

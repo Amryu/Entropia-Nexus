@@ -58,6 +58,29 @@ def get_local_version() -> str:
         return "0.0.0"
 
 
+def load_bundled_changelog() -> list[dict]:
+    """Load the bundled changelog.json from the app data."""
+    path = Path(__file__).parent / "data" / "changelog.json"
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return []
+
+
+def merge_changelogs(bundled: list[dict], remote: list[dict]) -> list[dict]:
+    """Merge bundled and remote changelogs, deduplicated by version, sorted newest first."""
+    seen: dict[str, dict] = {}
+    for entry in remote + bundled:
+        v = entry.get("version", "")
+        if v and v not in seen:
+            seen[v] = entry
+    result = list(seen.values())
+    result.sort(key=lambda e: [int(p) for p in e.get("version", "0").split(".")],
+                reverse=True)
+    return result
+
+
 def load_manifest(path: Path) -> dict | None:
     """Read and parse a manifest.json file. Returns None on any error."""
     try:
@@ -234,12 +257,28 @@ class UpdateChecker:
                      len(update_files),
                      _format_size(self._diff["download_size"]))
 
+        # Fetch remote changelog for the update dialog
+        remote_changelog = self._fetch_changelog(base_url)
+
         self._event_bus.publish(EVENT_UPDATE_AVAILABLE, {
             "version": remote_version,
+            "current_version": local_version,
             "download_size": self._diff["download_size"],
             "file_count": len(update_files),
+            "changelog": remote_changelog,
         })
         return True
+
+    def _fetch_changelog(self, base_url: str) -> list[dict]:
+        """Download the remote changelog.json (platform-independent)."""
+        url = f"{base_url}/static/client/changelog.json"
+        try:
+            resp = self._session.get(url, timeout=_MANIFEST_TIMEOUT)
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            log.warning("Failed to fetch remote changelog: %s", e)
+            return []
 
     # --- Download ---
 

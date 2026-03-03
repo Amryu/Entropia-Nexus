@@ -8,6 +8,7 @@
   // @ts-nocheck
   import { createEventDispatcher } from 'svelte';
   import { apiCall } from '$lib/util';
+  import { isPercentMarkupType } from '$lib/common/itemTypes.js';
   import SearchInput from '$lib/components/SearchInput.svelte';
 
   const dispatch = createEventDispatcher();
@@ -81,6 +82,8 @@
           return {
             ItemId: itemId,
             ItemName: itemName,
+            ItemType: itemInfo?.Type || null,
+            ItemSubType: itemInfo?.SubType || null,
             StackSize: item.StackSize ?? item.stack_size ?? 1,
             Markup: item.Markup ?? item.markup ?? 100,
             SortOrder: item.SortOrder ?? item.sort_order ?? 0
@@ -96,6 +99,14 @@
     }
 
     activeGroupIndex = 0;
+  }
+
+  function isPercentMarkup(item) {
+    return isPercentMarkupType(item.ItemType, item.ItemName, item.ItemSubType);
+  }
+
+  function getMarkupUnit(item) {
+    return isPercentMarkup(item) ? '%' : 'PED';
   }
 
   function close() {
@@ -193,8 +204,8 @@
 
   // Handle item selection from SearchInput
   function handleItemSelect(event) {
-    const { id, name } = event.detail;
-    selectItem({ Id: id, Name: name });
+    const { id, name, type, subType } = event.detail;
+    selectItem({ Id: id, Name: name, Type: type, SubType: subType });
   }
 
   function selectItem(item) {
@@ -213,6 +224,8 @@
     group.Items = [...group.Items, {
       ItemId: itemId,
       ItemName: item.Name,
+      ItemType: item.Type || null,
+      ItemSubType: item.SubType || null,
       StackSize: 1,
       Markup: 100,
       SortOrder: group.Items.length
@@ -296,7 +309,8 @@
       errors.push(`Stack size must be ${MIN_STACK_SIZE}-${MAX_STACK_SIZE}`);
     }
     if (item.Markup < MIN_MARKUP || item.Markup > MAX_MARKUP) {
-      errors.push(`Markup must be ${MIN_MARKUP}-${MAX_MARKUP}%`);
+      const unit = getMarkupUnit(item);
+      errors.push(`Markup must be ${MIN_MARKUP}-${MAX_MARKUP} ${unit}`);
     }
     return errors;
   }
@@ -544,7 +558,7 @@
             <span class="col-order"></span>
             <span class="col-item">Item</span>
             <span class="col-stack">Stack</span>
-            <span class="col-markup">Markup %</span>
+            <span class="col-markup">Markup</span>
             <span class="col-actions"></span>
           </div>
 
@@ -605,6 +619,7 @@
                       step="0.01"
                       disabled={saving}
                     />
+                    <span class="markup-unit">{getMarkupUnit(item)}</span>
                   </span>
                   <span class="col-actions">
                     <button
@@ -979,7 +994,7 @@
 
   .items-header {
     display: grid;
-    grid-template-columns: 36px 1fr 80px 90px 36px;
+    grid-template-columns: 36px 1fr 80px 120px 36px;
     gap: 8px;
     padding: 8px 12px;
     background-color: var(--bg-color, var(--primary-color));
@@ -1007,7 +1022,7 @@
 
   .item-row {
     display: grid;
-    grid-template-columns: 36px 1fr 80px 90px 36px;
+    grid-template-columns: 36px 1fr 80px 120px 36px;
     gap: 8px;
     padding: 8px 12px;
     align-items: center;
@@ -1056,6 +1071,18 @@
 
   .compact-input[type=number] {
     -moz-appearance: textfield;
+  }
+
+  .col-markup {
+    display: flex;
+    align-items: center;
+  }
+
+  .markup-unit {
+    font-size: 11px;
+    color: var(--text-muted, #999);
+    margin-left: 4px;
+    white-space: nowrap;
   }
 
   .remove-btn {
@@ -1349,14 +1376,14 @@
 
     /* Items table */
     .items-header {
-      grid-template-columns: 32px 1fr 60px 60px 32px;
+      grid-template-columns: 32px 1fr 60px 80px 32px;
       gap: 4px;
       padding: 8px 10px;
       font-size: 10px;
     }
 
     .item-row {
-      grid-template-columns: 32px 1fr 60px 60px 32px;
+      grid-template-columns: 32px 1fr 60px 80px 32px;
       gap: 4px;
       padding: 10px;
       font-size: 12px;

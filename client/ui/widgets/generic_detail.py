@@ -589,11 +589,13 @@ class GenericItemDetailView(WikiDetailView):
             return
         et = PAGE_TYPE_TO_ENTITY.get(self._page_type_id, "")
         url = exchange_url(self._item, self._nexus_base_url, et)
-        self._acquisition_section.set_content(build_acquisition_content(data, exchange_link=url))
+        self._acquisition_section.set_content(build_acquisition_content(
+            data, exchange_link=url, on_navigate=self.entity_navigate.emit))
 
     def _on_usage_loaded(self, data: dict):
         if not hasattr(self, "_usage_section"):
             return
         et = PAGE_TYPE_TO_ENTITY.get(self._page_type_id, "")
         url = exchange_url(self._item, self._nexus_base_url, et)
-        self._usage_section.set_content(build_usage_content(data, exchange_link=url))
+        self._usage_section.set_content(build_usage_content(
+            data, exchange_link=url, on_navigate=self.entity_navigate.emit))

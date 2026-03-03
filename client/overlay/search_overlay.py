@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 
 from .overlay_widget import OverlayWidget
+from ..ui.icons import nexus_logo_pixmap
 from ..ui.widgets.fuzzy_line_edit import score_search
 from ..ui.widgets.search_popup import get_type_name, get_display_type, CREATABLE_CATEGORIES
 
@@ -40,6 +41,11 @@ TEXT_COLOR = "#e0e0e0"
 TEXT_DIM = "#888888"
 BADGE_BG = "rgba(50, 50, 70, 200)"
 ACCENT_COLOR = "#00ccff"
+
+# Burger menu items: overlays that can be opened unconditionally
+_MENU_ITEMS = [
+    {"label": "Map", "shortcut": "Ctrl+M", "action": "map"},
+]
 
 _ROW_STYLE = (
     f"padding: 2px 8px; border: 2px solid transparent;"
@@ -183,10 +189,38 @@ class _ResultRow(QWidget):
         super().enterEvent(event)
 
 
+class _MenuRow(QWidget):
+    """Clickable menu row inside the burger menu dropdown."""
+
+    def __init__(self, item: dict, overlay: SearchOverlayWidget):
+        super().__init__()
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self._item = item
+        self._overlay = overlay
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._overlay._close_menu()
+            self._overlay._release_focus()
+            self._overlay.menu_action.emit(self._item["action"])
+        super().mousePressEvent(event)
+
+    def enterEvent(self, event):
+        try:
+            idx = self._overlay._row_widgets.index(self)
+            self._overlay._set_highlight(idx)
+        except ValueError:
+            pass
+        super().enterEvent(event)
+
+
 class SearchOverlayWidget(OverlayWidget):
     """Overlay search bar with flat results dropdown (max 10 visible, then scroll)."""
 
     result_selected = pyqtSignal(dict)
+    logo_clicked = pyqtSignal()
+    menu_action = pyqtSignal(str)
 
     def __init__(
         self,
@@ -219,6 +253,24 @@ class SearchOverlayWidget(OverlayWidget):
         layout.setContentsMargins(6, 6, 6, 6)
         layout.setSpacing(0)
 
+        # Search bar row: [logo] [search input] [burger menu]
+        search_row = QHBoxLayout()
+        search_row.setContentsMargins(0, 0, 0, 0)
+        search_row.setSpacing(4)
+
+        # Nexus logo button — click to focus client window
+        self._logo_btn = _ClickableLabel()
+        self._logo_btn.setFixedSize(26, 26)
+        self._logo_btn.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._logo_btn.setPixmap(nexus_logo_pixmap(18))
+        self._logo_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._logo_btn.setStyleSheet(
+            "background: transparent; border: none; border-radius: 4px;"
+            " padding: 0px;"
+        )
+        self._logo_btn.clicked.connect(self.logo_clicked.emit)
+        search_row.addWidget(self._logo_btn)
+
         # Search input
         self._search = QLineEdit()
         self._search.setPlaceholderText("Search...")
@@ -236,7 +288,22 @@ class SearchOverlayWidget(OverlayWidget):
                 border-color: {INPUT_FOCUS_BORDER};
             }}
         """)
-        layout.addWidget(self._search)
+        search_row.addWidget(self._search, 1)
+
+        # Burger menu button
+        self._menu_btn = _ClickableLabel()
+        self._menu_btn.setText("\u2630")  # ☰ hamburger character
+        self._menu_btn.setFixedSize(26, 26)
+        self._menu_btn.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._menu_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._menu_btn.setStyleSheet(
+            f"color: {TEXT_DIM}; font-size: 16px; background: transparent;"
+            " border: none; border-radius: 4px; padding: 0px;"
+        )
+        self._menu_btn.clicked.connect(self._on_menu_clicked)
+        search_row.addWidget(self._menu_btn)
+
+        layout.addLayout(search_row)
 
         # Results container (hidden until we have results)
         self._results_area = QWidget()
@@ -253,6 +320,7 @@ class SearchOverlayWidget(OverlayWidget):
         self._row_widgets: list[QWidget] = []
         self._highlighted_index: int = -1
         self._has_used_arrows: bool = False
+        self._menu_open: bool = False
 
         # Debounce timer
         self._debounce = QTimer(self)
@@ -332,9 +400,67 @@ class SearchOverlayWidget(OverlayWidget):
         if attached:
             _user32.AttachThreadInput(fg_thread, our_thread, False)
 
+    # --- Burger menu ---
+
+    def _on_menu_clicked(self):
+        """Toggle the burger menu in the results area."""
+        if self._menu_open:
+            self._close_menu()
+            return
+        self._show_menu()
+
+    def _show_menu(self):
+        """Show menu items in the results area."""
+        self._close_menu()
+        self._clear_results()
+        self._menu_open = True
+
+        for item in _MENU_ITEMS:
+            row = _MenuRow(item, self)
+            row.setStyleSheet(_ROW_STYLE)
+
+            row_layout = QHBoxLayout(row)
+            row_layout.setContentsMargins(8, 2, 8, 2)
+            row_layout.setSpacing(6)
+
+            label = QLabel(item["label"])
+            label.setStyleSheet(
+                f"color: {TEXT_COLOR}; font-size: 12px; background: transparent;"
+                " border: none;"
+            )
+            label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+            row_layout.addWidget(label, 1)
+
+            shortcut = item.get("shortcut")
+            if shortcut:
+                shortcut_badge = QLabel(shortcut)
+                shortcut_badge.setStyleSheet(
+                    f"color: {TEXT_DIM}; font-size: 11px;"
+                    f" background-color: {BADGE_BG}; border-radius: 3px;"
+                    f" padding: 2px 6px; border: none;"
+                )
+                shortcut_badge.setAttribute(
+                    Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+                row_layout.addWidget(shortcut_badge)
+
+            self._results_layout.addWidget(row)
+            self._flat_results.append(item)
+            self._row_widgets.append(row)
+
+        self._results_area.setVisible(True)
+
+    def _close_menu(self):
+        """Close the burger menu."""
+        if not self._menu_open:
+            return
+        self._menu_open = False
+        self._clear_results()
+
     # --- Search logic ---
 
     def _on_text_changed(self, text: str):
+        if self._menu_open:
+            self._close_menu()
         if len(text.strip()) < 2:
             self._clear_results()
             self._debounce.stop()
@@ -503,13 +629,18 @@ class SearchOverlayWidget(OverlayWidget):
         if etype == event.Type.FocusIn:
             self._search.selectAll()
             # Reshow results (or empty state) if the area has content
-            if self._results_layout.count() > 0 and not self._results_area.isVisible():
+            # Don't reshow a closed menu
+            if (not self._menu_open
+                    and self._results_layout.count() > 0
+                    and not self._results_area.isVisible()):
                 self._results_area.setVisible(True)
             return False
 
         if etype == event.Type.FocusOut:
-            # Collapse results but keep search text
-            if self._results_area.isVisible():
+            # Collapse results / menu but keep search text
+            if self._menu_open:
+                self._close_menu()
+            elif self._results_area.isVisible():
                 self._results_area.setVisible(False)
             return False
 
@@ -532,9 +663,16 @@ class SearchOverlayWidget(OverlayWidget):
                 if (self._has_used_arrows
                         and 0 <= self._highlighted_index < len(self._flat_results)):
                     item = self._flat_results[self._highlighted_index]
-                    self._hide_results()
-                    self._release_focus()
-                    self.result_selected.emit(item)
+                    if self._menu_open:
+                        # Menu item selected
+                        self._close_menu()
+                        self._release_focus()
+                        self.menu_action.emit(item["action"])
+                    else:
+                        # Search result selected
+                        self._hide_results()
+                        self._release_focus()
+                        self.result_selected.emit(item)
                 return True
 
             if key == Qt.Key.Key_Escape:
@@ -548,8 +686,8 @@ class SearchOverlayWidget(OverlayWidget):
     # --- Override drag to only start from container, not from search input ---
 
     def mousePressEvent(self, event):
-        # Don't start drag if clicking inside the search input or results
+        # Don't start drag if clicking inside interactive elements
         child = self.childAt(event.position().toPoint())
-        if child is self._search:
+        if child in (self._search, self._logo_btn, self._menu_btn):
             return
         super().mousePressEvent(event)

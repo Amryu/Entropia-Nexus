@@ -72,17 +72,24 @@ class VendorDetailView(WikiDetailView):
             for o in offers:
                 flat.append({
                     "item": deep_get(o, "Item", "Name") or o.get("Name") or "-",
+                    "_type": deep_get(o, "Item", "Type") or "Material",
                     "quantity": o.get("Quantity"),
                     "limited": o.get("IsLimited"),
                 })
-            offers_section.set_content(make_section_table(
+            table = make_section_table(
                 [
                     ColumnDef("item", "Item", main=True),
                     ColumnDef("quantity", "Quantity", format=lambda v: fmt_int(v) if v else "-"),
                     ColumnDef("limited", "Limited", format=lambda v: "Yes" if v else "No"),
                 ],
                 flat,
-            ))
+            )
+            table.row_activated.connect(
+                lambda row, _idx: self.entity_navigate.emit(
+                    {"Name": row.get("item", ""), "Type": row.get("_type", "Material")}
+                )
+            )
+            offers_section.set_content(table)
         else:
             offers_section.set_content(no_data_label("No offers available."))
             offers_section.set_subtitle("No data")

@@ -70,7 +70,7 @@ class SkillDataManager:
                     "Professions": [
                         {
                             "Name": (p.get("Profession") or {}).get("Name", p.get("Name", "")),
-                            "Weight": p.get("Weight", 0),
+                            "Weight": p.get("Weight") or 0,
                         }
                         for p in (s.get("Professions") or [])
                     ],
@@ -87,7 +87,7 @@ class SkillDataManager:
                     "Skills": [
                         {
                             "Name": (sk.get("Skill") or {}).get("Name", sk.get("Name", "")),
-                            "Weight": sk.get("Weight", 0),
+                            "Weight": sk.get("Weight") or 0,
                         }
                         for sk in (p.get("Skills") or [])
                     ],
@@ -155,6 +155,52 @@ class SkillDataManager:
     def get_all_values(self) -> dict[str, float]:
         """Get all skill values."""
         return dict(self._skill_values)
+
+    def sync_scan_results(self, scanned_skills: list) -> dict:
+        """Compare scanned skills against current values, compute delta.
+
+        Returns {
+            "changes": {skill_name: new_value, ...},
+            "shrunk": {skill_name: (old_value, new_value), ...},
+            "total_scanned": int,
+        }
+        """
+        changes = {}
+        shrunk = {}
+        for skill in scanned_skills:
+            name = skill.skill_name
+            new_val = skill.current_points
+            old_val = self._skill_values.get(name, 0)
+            if new_val != old_val:
+                changes[name] = new_val
+                if new_val < old_val:
+                    shrunk[name] = (old_val, new_val)
+        return {
+            "changes": changes,
+            "shrunk": shrunk,
+            "total_scanned": len(scanned_skills),
+        }
+
+    def apply_scan_results(self, scanned_skills: list) -> bool:
+        """Apply scanned skills to local state and upload as tracked import.
+
+        Updates _skill_values with scanned values and uploads full dict
+        with track_import=True to create a new version on the server.
+        """
+        for skill in scanned_skills:
+            self._skill_values[skill.skill_name] = skill.current_points
+
+        if not self._nexus_client:
+            return True
+
+        try:
+            result = self._nexus_client.upload_skills(
+                self._skill_values, track_import=True
+            )
+            return result is not None
+        except Exception as e:
+            log.error("Failed to upload scan results: %s", e)
+            return False
 
     def get_skill_history(self, skill_names=None, from_date=None, to_date=None):
         """Fetch per-skill history from server.

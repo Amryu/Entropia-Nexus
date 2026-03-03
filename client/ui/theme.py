@@ -43,7 +43,7 @@ TABLE_ROW_ALT = "#3a3a3a"
 TABLE_ROW_HOVER = "#333333"
 
 # Font
-FONT_FAMILY = "'Gill Sans', 'Gill Sans MT', Calibri, 'Trebuchet MS', sans-serif"
+FONT_FAMILY = "'Segoe UI', 'Gill Sans', 'Gill Sans MT', Calibri, sans-serif"
 
 # --- Layout constants ---
 

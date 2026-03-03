@@ -129,7 +129,12 @@ class MainWindow(QWidget):
         self._title_bar.search_submitted.connect(self._on_search_submitted)
         self._title_bar.result_selected.connect(self._on_search_result_selected)
         self._title_bar.create_requested.connect(self._on_create_requested)
+        self._title_bar.update_clicked.connect(self._on_update_icon_clicked)
         outer.addWidget(self._title_bar)
+
+        # Update system state
+        self._pending_update: dict | None = None
+        self._update_dialog = None
 
         # Middle row: sidebar + pages (direct children of outer)
         middle = QHBoxLayout()
@@ -224,9 +229,14 @@ class MainWindow(QWidget):
 
     def _create_skills_page(self):
         from .pages.skills_page import SkillsPage
-        return SkillsPage(signals=self._signals, oauth=self._oauth,
+        page = SkillsPage(signals=self._signals, oauth=self._oauth,
                           nexus_client=self._nexus_client,
-                          data_client=self._data_client)
+                          data_client=self._data_client,
+                          config=self._config,
+                          config_path=self._config_path,
+                          event_bus=self._event_bus)
+        page.navigation_changed.connect(self._on_skills_nav_changed)
+        return page
 
     def _create_loadout_page(self):
         from .pages.loadout_page import LoadoutPage
@@ -263,7 +273,8 @@ class MainWindow(QWidget):
         from .pages.settings_page import SettingsPage
         return SettingsPage(config=self._config, config_path=self._config_path,
                             event_bus=self._event_bus, signals=self._signals,
-                            oauth=self._oauth)
+                            oauth=self._oauth,
+                            on_show_changelog=self.open_changelog_dialog)
 
     def _on_update_restart(self):
         """User clicked the update restart button in the status bar."""
@@ -448,6 +459,10 @@ class MainWindow(QWidget):
         if not self._applying_nav:
             self._push_navigation(NavState(page=PAGE_DASHBOARD, sub_state=sub_state))
 
+    def _on_skills_nav_changed(self, sub_state):
+        if not self._applying_nav:
+            self._push_navigation(NavState(page=PAGE_SKILLS, sub_state=sub_state))
+
     def _on_search_submitted(self, query: str, results: list[dict]):
         """Title bar search Enter → switch to wiki, show search results."""
         self._applying_nav = True
@@ -462,6 +477,12 @@ class MainWindow(QWidget):
         import webbrowser
         from urllib.parse import quote as url_quote
         from .widgets.search_popup import WIKI_PATHS
+
+        # Ensure main window is visible (e.g. when triggered from an overlay)
+        if not self.isVisible():
+            self.show()
+        self.activateWindow()
+        self.raise_()
 
         item_type = item.get("Type", "")
         item_name = item.get("Name", "")
@@ -569,6 +590,20 @@ class MainWindow(QWidget):
         # News notifications
         self._signals.new_news_post.connect(self._on_new_news_post)
 
+        # Update notifications
+        self._signals.update_available.connect(self._on_update_available)
+        self._signals.update_progress.connect(self._on_update_progress)
+        self._signals.update_ready.connect(self._on_update_ready)
+        self._signals.update_error.connect(self._on_update_error)
+
+        # Remind-later timer
+        self._remind_timer = QTimer(self)
+        self._remind_timer.setSingleShot(True)
+        self._remind_timer.timeout.connect(self._send_update_reminder_toast)
+
+        # Check for pending remind-at on startup
+        self._check_pending_remind()
+
     def _show_window(self):
         self.showNormal()
         self.activateWindow()
@@ -582,6 +617,22 @@ class MainWindow(QWidget):
             import ctypes
             hwnd = int(self.winId())
             ctypes.windll.user32.SetForegroundWindow(hwnd)
+
+    def bring_to_front_on_screen(self, screen=None):
+        """Bring window to foreground, moving to *screen* if provided.
+
+        If the main window is currently on a different screen, it is
+        repositioned to the center of the target screen before activating.
+        """
+        if screen is not None:
+            current_screen = self.screen()
+            if current_screen is not screen:
+                geo = screen.availableGeometry()
+                w, h = self.width(), self.height()
+                x = geo.x() + (geo.width() - w) // 2
+                y = geo.y() + (geo.height() - h) // 2
+                self.move(x, y)
+        self.bring_to_front()
 
     def _quit(self):
         self._save_geometry()
@@ -618,6 +669,140 @@ class MainWindow(QWidget):
         self._show_window()
         self._sidebar.set_active_no_emit(PAGE_DASHBOARD)
         self._pages.setCurrentIndex(PAGE_DASHBOARD)
+
+    # --- Update system ---
+
+    def _check_pending_remind(self):
+        """On startup, check if a remind-at time is still pending."""
+        remind_at = getattr(self._config, "update_remind_at", "")
+        if not remind_at:
+            return
+        from datetime import datetime, timezone
+        try:
+            target = datetime.fromisoformat(remind_at)
+            now = datetime.now(timezone.utc)
+            remaining_ms = int((target - now).total_seconds() * 1000)
+            if remaining_ms > 0:
+                self._remind_timer.start(remaining_ms)
+            # If in the past, the next update_available event will handle it
+        except (ValueError, TypeError):
+            pass
+
+    def _on_update_available(self, data):
+        """Handle EVENT_UPDATE_AVAILABLE — show icon + toast."""
+        self._pending_update = data
+        version = data.get("version", "")
+
+        # Skip if user dismissed this exact version
+        if getattr(self._config, "update_dismissed_version", "") == version:
+            return
+
+        # Check remind-at: if in the future, schedule timer and skip
+        remind_at = getattr(self._config, "update_remind_at", "")
+        if remind_at:
+            from datetime import datetime, timezone
+            try:
+                target = datetime.fromisoformat(remind_at)
+                now = datetime.now(timezone.utc)
+                if target > now:
+                    remaining_ms = int((target - now).total_seconds() * 1000)
+                    self._remind_timer.start(remaining_ms)
+                    return
+            except (ValueError, TypeError):
+                pass
+
+        self._show_update_indicator(version)
+
+    def _show_update_indicator(self, version: str):
+        """Show the title bar icon and fire a system toast."""
+        self._title_bar.show_update_available(version)
+
+        if hasattr(self, "_tray"):
+            self._tray.showMessage(
+                "Update Available",
+                f"Entropia Nexus v{version} is ready to install.",
+                QSystemTrayIcon.MessageIcon.Information,
+                8000,
+            )
+
+    def _on_update_progress(self, data):
+        if self._update_dialog and self._update_dialog.isVisible():
+            self._update_dialog.on_update_progress(data)
+
+    def _on_update_ready(self, data):
+        if self._update_dialog and self._update_dialog.isVisible():
+            self._update_dialog.on_update_ready(data)
+        # Auto-apply after a short delay so the user sees "Restarting..."
+        from ..core.constants import EVENT_UPDATE_APPLY
+        QTimer.singleShot(1500, lambda: self._event_bus.publish(EVENT_UPDATE_APPLY, None))
+
+    def _on_update_error(self, data):
+        if self._update_dialog and self._update_dialog.isVisible():
+            self._update_dialog.on_update_error(data)
+
+    def _on_update_icon_clicked(self):
+        """Title bar update icon was clicked — open the update dialog."""
+        if not self._pending_update:
+            return
+        self._open_update_dialog()
+
+    def _open_update_dialog(self, changelog_only=False):
+        """Open the update dialog."""
+        from .dialogs.update_dialog import UpdateDialog
+
+        dlg = UpdateDialog(
+            update_data=self._pending_update or {},
+            changelog_only=changelog_only,
+            parent=self,
+        )
+        self._update_dialog = dlg
+
+        dlg.update_requested.connect(self._on_dialog_update)
+        dlg.remind_requested.connect(self._on_dialog_remind)
+        dlg.dismiss_requested.connect(self._on_dialog_dismiss)
+        dlg.exec()
+        self._update_dialog = None
+
+    def open_changelog_dialog(self):
+        """Open the update dialog in changelog-only mode (from settings)."""
+        self._open_update_dialog(changelog_only=True)
+
+    def _on_dialog_update(self):
+        """User clicked 'Update Now' in the dialog."""
+        from ..core.constants import EVENT_UPDATE_APPLY
+        self._event_bus.publish(EVENT_UPDATE_APPLY, None)
+
+    def _on_dialog_remind(self):
+        """User clicked 'Remind Later' — schedule toast in 6 hours."""
+        self._title_bar.hide_update_indicator()
+
+        from datetime import datetime, timezone, timedelta
+        from ..core.config import save_config
+        remind_at = datetime.now(timezone.utc) + timedelta(hours=6)
+        self._config.update_remind_at = remind_at.isoformat()
+        save_config(self._config, self._config_path)
+
+        REMIND_MS = 6 * 60 * 60 * 1000  # 6 hours
+        self._remind_timer.start(REMIND_MS)
+
+    def _on_dialog_dismiss(self, version: str):
+        """User clicked 'Dismiss' — don't show again for this version."""
+        self._title_bar.hide_update_indicator()
+
+        from ..core.config import save_config
+        self._config.update_dismissed_version = version
+        self._config.update_remind_at = ""
+        save_config(self._config, self._config_path)
+
+    def _send_update_reminder_toast(self):
+        """Timer fired — re-show update indicator and toast."""
+        from ..core.config import save_config
+        self._config.update_remind_at = ""
+        save_config(self._config, self._config_path)
+
+        if self._pending_update:
+            version = self._pending_update.get("version", "")
+            self._show_update_indicator(version)
 
     def _save_geometry(self):
         from ..core.config import save_config

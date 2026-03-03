@@ -4,7 +4,6 @@ import unittest
 
 from client.skills.calculations import (
     BASE_HP,
-    ATTRIBUTE_MULTIPLIER,
     CODEX_REWARD_DIVISORS,
     get_codex_category,
     build_attribute_skill_set,
@@ -64,7 +63,7 @@ class TestAttributeSkills(unittest.TestCase):
 
     def test_effective_points_attribute(self):
         attrs = {"Agility", "Strength"}
-        self.assertAlmostEqual(effective_points(1.5, "Agility", attrs), 150.0)
+        self.assertAlmostEqual(effective_points(1.5, "Agility", attrs), 1.5)
 
     def test_effective_points_non_attribute(self):
         attrs = {"Agility", "Strength"}
@@ -79,18 +78,19 @@ class TestProfessionLevel(unittest.TestCase):
         # (1000*60 + 500*40 + 0*20) / 10000 = (60000 + 20000) / 10000 = 8.0
         self.assertAlmostEqual(level, 8.0)
 
-    def test_with_attribute_multiplier(self):
+    def test_with_attribute_skills(self):
         values = {"Anatomy": 1000, "Courage": 500, "Agility": 2.0}
         attrs = build_attribute_skill_set(SAMPLE_METADATA)
         level = calculate_profession_level(values, SAMPLE_PROFESSION_SKILLS, attrs)
-        # Agility effective = 2.0 * 100 = 200
-        # (1000*60 + 500*40 + 200*20) / 10000 = (60000 + 20000 + 4000) / 10000 = 8.4
-        self.assertAlmostEqual(level, 8.4)
+        # Attributes use raw points, same as other skills
+        # (1000*60 + 500*40 + 2*20) / 10000 = (60000 + 20000 + 40) / 10000 = 8.004
+        self.assertAlmostEqual(level, 8.004)
 
-    def test_without_attribute_multiplier(self):
+    def test_without_attribute_set(self):
         values = {"Anatomy": 1000, "Courage": 500, "Agility": 2.0}
         level = calculate_profession_level(values, SAMPLE_PROFESSION_SKILLS)
-        # Without multiplier: (1000*60 + 500*40 + 2*20) / 10000 = 8.004
+        # Same result whether or not attribute set is passed
+        # (1000*60 + 500*40 + 2*20) / 10000 = 8.004
         self.assertAlmostEqual(level, 8.004)
 
     def test_zero_skills(self):
@@ -122,8 +122,8 @@ class TestAllProfessionLevels(unittest.TestCase):
         ]
         values = {"Agility": 3.0}
         levels = calculate_all_profession_levels(values, profs, SAMPLE_METADATA)
-        # 3.0 * 100 * 50 / 10000 = 1.5
-        self.assertAlmostEqual(levels["Agile Prof"], 1.5)
+        # 3.0 * 50 / 10000 = 0.015
+        self.assertAlmostEqual(levels["Agile Prof"], 0.015)
 
 
 class TestCalculateHP(unittest.TestCase):
@@ -141,9 +141,8 @@ class TestCalculateHP(unittest.TestCase):
     def test_with_attribute_skill(self):
         values = {"Agility": 1.0}
         hp = calculate_hp(values, SAMPLE_METADATA)
-        # Agility is an attribute: effective = 1.0 * 100 = 100
-        # 80 + 100/50 = 80 + 2 = 82
-        self.assertAlmostEqual(hp, 82.0)
+        # Agility uses raw points: 80 + 1.0/50 = 80.02
+        self.assertAlmostEqual(hp, 80.02)
 
     def test_null_hp_increase_ignored(self):
         values = {"Alertness": 1000}
@@ -171,7 +170,7 @@ class TestFindCheapestProfessionPath(unittest.TestCase):
         self.assertGreater(len(result["allocations"]), 0)
 
     def test_attribute_skill_efficiency(self):
-        """Attribute skills with x100 multiplier should be more efficient."""
+        """Both with and without attribute set should produce feasible paths."""
         attrs = build_attribute_skill_set(SAMPLE_METADATA)
 
         result_with_attr = find_cheapest_profession_path(
@@ -200,11 +199,11 @@ class TestFindCheapestHPPath(unittest.TestCase):
         self.assertGreater(result["totalCost"], 0)
 
     def test_attribute_hp_contribution(self):
-        """Attribute skills with x100 multiplier contribute more HP per raw point."""
+        """Attribute skills use raw points for HP contribution."""
         values = {"Agility": 1.0}
         hp = calculate_hp(values, SAMPLE_METADATA)
-        # Effective = 100, HP gain = 100/50 = 2
-        self.assertAlmostEqual(hp, 82.0)
+        # Raw points: 80 + 1.0/50 = 80.02
+        self.assertAlmostEqual(hp, 80.02)
 
 
 if __name__ == "__main__":

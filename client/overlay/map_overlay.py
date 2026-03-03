@@ -130,6 +130,11 @@ class _InfoPanelWrapper(QWidget):
         event.accept()
 
 
+# Module-level callback set by app.py to open an entity in the detail overlay.
+# Signature: (item: dict) -> None   where item = {"Name": ..., "Type": ...}
+_open_entity_callback = None
+
+
 class MapOverlay(OverlayWidget):
     """Always-on-top map overlay with search, info panel, and layer filters."""
 
@@ -962,6 +967,10 @@ class MapOverlay(OverlayWidget):
             self._show_info_panel(tp)
 
     def _on_mob_clicked(self, mob_name: str):
+        if _open_entity_callback is not None:
+            _open_entity_callback({"Name": mob_name, "Type": "Mob"})
+            return
+        # Fallback: open in browser
         import webbrowser
         from urllib.parse import quote as url_quote
         base_url = getattr(self._config, "nexus_base_url", "https://entropianexus.com")

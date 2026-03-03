@@ -55,7 +55,8 @@ class MissionDetailView(WikiDetailView):
 
         general = InfoboxSection("General")
         if chain:
-            general.add_row(StatRow("Mission Chain", chain))
+            general.add_row(self._linked_stat_row(
+                "Mission Chain", chain, "MissionChain"))
         if event:
             general.add_row(StatRow("Event", event))
         if cooldown:
@@ -158,11 +159,17 @@ class MissionDetailView(WikiDetailView):
                     "relation": "Dependent",
                 })
             dep_section.set_subtitle(f"{len(flat)} links")
-            dep_section.set_content(make_section_table(
+            table = make_section_table(
                 [
                     ColumnDef("mission", "Mission", main=True),
                     ColumnDef("relation", "Relation"),
                 ],
                 flat,
-            ))
+            )
+            table.row_activated.connect(
+                lambda row, _idx: self.entity_navigate.emit(
+                    {"Name": row.get("mission", ""), "Type": "Mission"}
+                )
+            )
+            dep_section.set_content(table)
             self._add_article_section(dep_section)

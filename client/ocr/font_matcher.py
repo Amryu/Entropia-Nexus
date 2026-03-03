@@ -1,5 +1,7 @@
 import json
 import os
+import threading
+import time
 import numpy as np
 from pathlib import Path
 from typing import Optional
@@ -20,46 +22,32 @@ log = get_logger("FontMatcher")
 
 ASSETS_DIR = Path(__file__).parent.parent / "assets"
 FONT_PATH = ASSETS_DIR / "arial-unicode-bold.ttf"
+ASSETS_TEMPLATES_DIR = ASSETS_DIR / "rendered_templates"
 CALIBRATION_FILE = Path("./data/font_calibration.json")
 CAPTURED_DIR = Path("./data/captured_templates")
+RENDERED_DIR = Path("./data/rendered_templates")
 
 # Match thresholds for TM_CCOEFF_NORMED (penalizes both extra and missing).
-# Captured templates match their source cell at 0.95+ (CAPTURE_MIN_SCORE),
-# so correct fuzzy matches should score 0.85+.  A threshold of 0.85 rejects
-# cross-template confusion (e.g. "Laser" vs "Gauss Weaponry Technology"
-# scoring ~0.77 due to shared suffix) while still accepting valid matches.
-SKILL_THRESHOLD = 0.85
-RANK_THRESHOLD = 0.85
-DIGIT_THRESHOLD = 0.85
-
-# Length bias for ranking: 1% bonus per character in the template name.
-# Used for decision only — the returned confidence is always the raw score.
-# Prevents short substring templates (e.g. "Mining") from beating the full
-# name ("Mining Laser Operator") when both match the same cell.
-LENGTH_BIAS_PER_CHAR = 0.01
+# Binary-to-binary matching at 4x resolution; 0.65 accommodates slight
+# rendering differences between game (ClearType) and PIL (FreeType).
+SKILL_THRESHOLD = 0.65
+RANK_THRESHOLD = 0.65
+DIGIT_THRESHOLD = 0.65
 
 # Inter-glyph spacing in rendered templates (pixels between glyph bounding boxes)
 # Game renders text very tightly (~1px between glyphs)
 GLYPH_GAP = 1
 
 # Binary threshold (must match preprocessor)
-BINARY_THRESHOLD = 100
+BINARY_THRESHOLD = 110
 
 # Minimum match score a NEW capture must achieve against its source cell
 # before it's saved to disk.  This prevents saving noisy or misaligned
 # templates (e.g. from a moved window).
 CAPTURE_MIN_SCORE = 0.95
 
-# Higher threshold used ONLY for locating the text region within a cell.
-# The game window is semi-transparent, so background colors bleed through and
-# create noise above BINARY_THRESHOLD.  Using a higher threshold for text
-# detection eliminates most noise while preserving text (green/white ≈128-160,
-# orange ≈121).  The lower BINARY_THRESHOLD is still used for template matching
-# to preserve anti-aliased edges.
-TEXT_DETECT_THRESHOLD = 115
-
 # Minimum bright pixels per column to count as a "text column" (not noise).
-# At TEXT_DETECT_THRESHOLD, real text columns have multiple bright pixels
+# At BINARY_THRESHOLD, real text columns have multiple bright pixels
 # stacked vertically; noise columns have ≤1.
 MIN_COL_DENSITY = 2
 
@@ -68,6 +56,16 @@ MIN_COL_DENSITY = 2
 # At 13-14px bold, inter-word spaces are 6-7px wide (e.g. "Grand Master"=7).
 MAX_TEXT_GAP = 8
 
+# Maximum digits expected in a single points cell (e.g. "123456")
+MAX_DIGITS = 6
+
+# Scale factor for template matching.  PIL-rendered templates are rasterized
+# at font_size * MATCH_SCALE natively (no upscaling needed).  ROI cell images
+# are upscaled to MATCH_SCALE using bicubic + binarize.  4x gives
+# matchTemplate enough pixels to discriminate similar glyphs while keeping
+# images small enough for fast matching.
+MATCH_SCALE = 4
+
 
 
 class FontMatcher:
@@ -75,23 +73,20 @@ class FontMatcher:
 
     Pre-renders all known skill names, rank names, and digit characters as
     binary template images, then matches them against preprocessed game
-    screenshots using cv2.matchTemplate(). This is 100-300x faster than
-    Tesseract because it uses in-process OpenCV calls instead of spawning
-    external processes.
+    screenshots using cv2.matchTemplate().
     """
 
     def __init__(self, skill_names: list[str], rank_names: list[str],
                  font_path: str = None):
         if cv2 is None:
             raise ImportError("opencv-python is required")
-        if ImageFont is None:
-            raise ImportError("Pillow is required. Install with: pip install Pillow")
 
         self._font_path = font_path or str(FONT_PATH)
         self._skill_names = skill_names
         self._rank_names = rank_names
 
         self._font: Optional[ImageFont.FreeTypeFont] = None
+        self._font_hires: Optional[ImageFont.FreeTypeFont] = None
         self._font_size: int = 0
         self._text_zone_height: int = 0
         self._calibrated = False
@@ -109,9 +104,52 @@ class FontMatcher:
         # Digit advance width (all digits have same advance in this font)
         self._digit_advance: int = 0
 
+
         # Exact-match lookup: image_key → name (for game-captured templates)
         self._captured_skill_lookup: dict[bytes, str] = {}
         self._captured_rank_lookup: dict[bytes, str] = {}
+
+        # Background pre-initialization: signals when templates are loaded
+        self._ready = threading.Event()
+        # Track which settings the current templates were rendered for
+        self._rendered_cache_key: str = ""
+
+    def _load_font(self, size: int) -> bool:
+        """Load font at given size. Returns False if font file or Pillow is missing."""
+        if ImageFont is None:
+            self._font = None
+            self._font_hires = None
+            return False
+        font_path = Path(self._font_path)
+        if not font_path.exists():
+            self._font = None
+            self._font_hires = None
+            return False
+        self._font = ImageFont.truetype(self._font_path, size)
+        self._font_hires = ImageFont.truetype(self._font_path, size * MATCH_SCALE)
+        return True
+
+    def pre_initialize(self) -> None:
+        """Pre-render (or load cached) templates with default settings.
+
+        Call from a background thread at startup so templates are ready
+        before the first scan.  `calibrate()` will skip the expensive
+        render step if the settings haven't changed.
+        """
+        t0 = time.monotonic()
+        try:
+            # Use defaults — calibrate() will re-render only if settings differ
+            self._font_size = 13
+            self._render_mode = "native"
+            self._load_font(13)
+            self._render_all_templates()
+            self._load_captured_templates()
+            log.info("Pre-initialized templates in %.1fs (size=%d, mode=%s)",
+                     time.monotonic() - t0, self._font_size, self._render_mode)
+        except Exception as e:
+            log.error("Pre-initialization failed: %s", e)
+        finally:
+            self._ready.set()
 
     @property
     def calibrated(self) -> bool:
@@ -141,15 +179,26 @@ class FontMatcher:
         return self._match_against_index(
             cell, self._skill_width_index, threshold=-1.0)
 
+    def best_rank_match(self, cell: np.ndarray) -> Optional[tuple[str, float]]:
+        """Return the best rank match regardless of confidence threshold."""
+        if not self._calibrated or not self._rank_width_index:
+            return None
+        return self._match_against_index(
+            cell, self._rank_width_index, threshold=-1.0)
+
     def calibrate(self, panel_height: int) -> None:
         """Calibrate font size for the detected panel dimensions and render all templates.
 
         If a saved calibration exists for this panel height, loads it.
         Otherwise uses defaults (size 13, native mode).
+        Waits for pre_initialize() if it's still running.
 
         Args:
             panel_height: Height of the skills window panel in pixels.
         """
+        # Wait for background pre-init to finish (if running)
+        self._ready.wait()
+
         # Must exactly mirror the cell height calculation in orchestrator:
         #   row_height = max(20, round(wh * 0.045))
         #   text_h = int(row_height * 0.70)
@@ -160,17 +209,25 @@ class FontMatcher:
         # Try to load saved calibration for this panel height
         saved = self._load_calibration(panel_height)
         if saved:
-            self._font_size = saved["font_size"]
-            self._render_mode = saved["render_mode"]
-            self._font = ImageFont.truetype(self._font_path, self._font_size)
+            font_size = saved["font_size"]
+            render_mode = saved["render_mode"]
             log.info("Font: size=%d mode=%s (saved, score=%.3f)",
-                     self._font_size, self._render_mode,
-                     saved.get("avg_score", 0))
+                     font_size, render_mode, saved.get("avg_score", 0))
         else:
-            self._font_size = 13
-            self._render_mode = "native"
-            self._font = ImageFont.truetype(self._font_path, 13)
-            log.info("Font: size=%d mode=%s (default)", self._font_size, self._render_mode)
+            font_size = 13
+            render_mode = "native"
+            log.info("Font: size=%d mode=%s (default)", font_size, render_mode)
+
+        cache_key = f"s{font_size}_{render_mode}"
+        if cache_key == self._rendered_cache_key:
+            log.info("Templates already loaded for %s — skipping render", cache_key)
+            self._calibrated = True
+            return
+
+        # Settings differ from what's loaded — re-render
+        self._font_size = font_size
+        self._render_mode = render_mode
+        self._load_font(self._font_size)
 
         self._render_all_templates()
         self._load_captured_templates()
@@ -182,6 +239,9 @@ class FontMatcher:
         Tries both rendering modes ("native" and "tight") and font sizes 11-15,
         picking the combination with the highest average match score.
         Saves the result to disk for future runs.
+
+        Requires the font file for rendering non-cached combos.  If the font
+        is unavailable, skips combos that have no cached/shipped templates.
 
         Args:
             sample_cells: List of grayscale cell images from the game (name column).
@@ -195,10 +255,14 @@ class FontMatcher:
 
         for size in range(11, 16):
             for mode in ("native", "tight"):
-                self._font = ImageFont.truetype(self._font_path, size)
+                self._load_font(size)
                 self._font_size = size
                 self._render_mode = mode
-                self._render_all_templates()
+                try:
+                    self._render_all_templates()
+                except RuntimeError:
+                    # No cached templates and no font — skip this combo
+                    continue
 
                 # Score each sample cell against all templates
                 scores = []
@@ -223,7 +287,7 @@ class FontMatcher:
 
         # Apply best settings
         self._font_size = best_size
-        self._font = ImageFont.truetype(self._font_path, best_size)
+        self._load_font(best_size)
         self._render_mode = best_mode
         self._render_all_templates()
 
@@ -239,6 +303,7 @@ class FontMatcher:
         try:
             CALIBRATION_FILE.parent.mkdir(parents=True, exist_ok=True)
             data = {
+                "version": 2,
                 "panel_height": getattr(self, '_panel_height', 0),
                 "font_size": font_size,
                 "render_mode": render_mode,
@@ -258,6 +323,9 @@ class FontMatcher:
                 return None
             with open(CALIBRATION_FILE) as f:
                 data = json.load(f)
+            if data.get("version") != 2:
+                log.debug("Saved calibration version mismatch — ignoring")
+                return None
             if data.get("panel_height") != panel_height:
                 log.debug("Saved calibration is for panel_height=%d, "
                           "current is %d — ignoring",
@@ -269,13 +337,46 @@ class FontMatcher:
             return None
 
     def _render_all_templates(self) -> None:
-        """Render all skill, rank, and digit templates."""
+        """Render all skill, rank, and digit templates.
+
+        Tries three sources in order:
+        1. Runtime data cache (./data/rendered_templates/)
+        2. Shipped asset templates (client/assets/rendered_templates/)
+        3. PIL font rendering (requires font file — development only)
+
+        Raises RuntimeError if all three sources fail.
+        """
+        cache_key = f"s{self._font_size}_{self._render_mode}"
+        cache_dir = RENDERED_DIR / cache_key
+
+        # 1. Try runtime data cache
+        if self._load_rendered_cache(cache_dir):
+            self._rendered_cache_key = cache_key
+            return
+
+        # 2. Try shipped asset templates
+        asset_dir = ASSETS_TEMPLATES_DIR / cache_key
+        if self._load_rendered_cache(asset_dir):
+            self._rendered_cache_key = cache_key
+            self._save_rendered_cache(cache_dir)  # copy to data for next time
+            return
+
+        # 3. Fall back to PIL font rendering (development only)
+        if not self._font or not self._font_hires:
+            raise RuntimeError(
+                f"No cached templates for {cache_key} and font file not available. "
+                "Run: python -m client.scripts.generate_templates"
+            )
+
+        t0 = time.monotonic()
+
         # Skills
         self._skill_templates.clear()
         self._skill_width_index.clear()
         for name in self._skill_names:
             tpl = self._render_template(name)
             if tpl is not None:
+                tpl = self._to_binary(tpl)
                 self._skill_templates[name] = tpl
                 w = tpl.shape[1]
                 self._skill_width_index.setdefault(w, []).append((name, tpl))
@@ -286,6 +387,7 @@ class FontMatcher:
         for name in self._rank_names:
             tpl = self._render_template(name)
             if tpl is not None:
+                tpl = self._to_binary(tpl)
                 self._rank_templates[name] = tpl
                 w = tpl.shape[1]
                 self._rank_width_index.setdefault(w, []).append((name, tpl))
@@ -295,15 +397,111 @@ class FontMatcher:
         for ch in "0123456789":
             tpl = self._render_template(ch)
             if tpl is not None:
-                self._digit_templates[ch] = tpl
+                self._digit_templates[ch] = self._to_binary(tpl)
 
-        # All digits have the same advance width in a monospace-ish bold font
         if self._digit_templates:
             self._digit_advance = self._digit_templates["0"].shape[1]
 
-        log.debug("Templates: %d skills, %d ranks, %d digits",
-                  len(self._skill_templates), len(self._rank_templates),
-                  len(self._digit_templates))
+        elapsed = time.monotonic() - t0
+        log.info("Rendered %d skills, %d ranks, %d digits in %.1fs",
+                 len(self._skill_templates), len(self._rank_templates),
+                 len(self._digit_templates), elapsed)
+
+        self._save_rendered_cache(cache_dir)
+        self._rendered_cache_key = cache_key
+
+    def _load_rendered_cache(self, cache_dir: Path) -> bool:
+        """Try to load pre-rendered templates from disk cache.
+
+        Returns True if cache was loaded successfully, False on miss.
+        """
+        skills_dir = cache_dir / "skills"
+        ranks_dir = cache_dir / "ranks"
+        digits_dir = cache_dir / "digits"
+
+        if not skills_dir.exists():
+            return False
+
+        t0 = time.monotonic()
+        try:
+            # Skills
+            self._skill_templates.clear()
+            self._skill_width_index.clear()
+            for path in skills_dir.glob("*.png"):
+                name = self._name_from_filename(path.stem)
+                if name not in self._skill_names:
+                    continue
+                tpl = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
+                if tpl is None:
+                    continue
+                self._skill_templates[name] = tpl
+                w = tpl.shape[1]
+                self._skill_width_index.setdefault(w, []).append((name, tpl))
+
+            # Ranks
+            self._rank_templates.clear()
+            self._rank_width_index.clear()
+            for path in ranks_dir.glob("*.png"):
+                name = self._name_from_filename(path.stem)
+                if name not in self._rank_names:
+                    continue
+                tpl = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
+                if tpl is None:
+                    continue
+                self._rank_templates[name] = tpl
+                w = tpl.shape[1]
+                self._rank_width_index.setdefault(w, []).append((name, tpl))
+
+            # Digits
+            self._digit_templates.clear()
+            for path in digits_dir.glob("*.png"):
+                ch = path.stem
+                if len(ch) != 1 or ch not in "0123456789":
+                    continue
+                tpl = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
+                if tpl is None:
+                    continue
+                self._digit_templates[ch] = tpl
+
+            if self._digit_templates:
+                self._digit_advance = self._digit_templates["0"].shape[1]
+
+            # Validate: every known skill name must be in the cache
+            missing = set(self._skill_names) - set(self._skill_templates.keys())
+            if missing:
+                log.info("Template cache outdated — missing %d skills: %s",
+                         len(missing), ", ".join(sorted(missing)[:5]))
+                return False
+
+            elapsed = time.monotonic() - t0
+            log.info("Loaded cached templates in %.2fs: %d skills, %d ranks, %d digits",
+                     elapsed, len(self._skill_templates),
+                     len(self._rank_templates), len(self._digit_templates))
+            return True
+        except Exception as e:
+            log.warning("Failed to load template cache: %s", e)
+            return False
+
+    def _save_rendered_cache(self, cache_dir: Path) -> None:
+        """Save current rendered templates to disk cache."""
+        try:
+            skills_dir = cache_dir / "skills"
+            ranks_dir = cache_dir / "ranks"
+            digits_dir = cache_dir / "digits"
+            skills_dir.mkdir(parents=True, exist_ok=True)
+            ranks_dir.mkdir(parents=True, exist_ok=True)
+            digits_dir.mkdir(parents=True, exist_ok=True)
+
+            for name, tpl in self._skill_templates.items():
+                cv2.imwrite(str(skills_dir / f"{self._safe_filename(name)}.png"), tpl)
+            for name, tpl in self._rank_templates.items():
+                cv2.imwrite(str(ranks_dir / f"{self._safe_filename(name)}.png"), tpl)
+            for ch, tpl in self._digit_templates.items():
+                cv2.imwrite(str(digits_dir / f"{ch}.png"), tpl)
+
+            log.info("Saved template cache to %s", cache_dir)
+        except Exception as e:
+            log.warning("Failed to save template cache: %s", e)
 
 
     @staticmethod
@@ -351,18 +549,19 @@ class FontMatcher:
         width_index.setdefault(new_w, []).append((name, tpl))
 
     def _load_captured_templates(self) -> None:
-        """Load game-captured templates from disk, replacing PIL-rendered ones.
+        """Load game-captured templates from disk for exact-match lookup.
 
-        Captured templates come from the actual Scaleform renderer and match
-        much better than PIL/FreeType-rendered approximations.  Each template
-        is registered for both exact-match lookup (binary hash) and fuzzy
-        matching (width index).
+        Captured templates come from the actual Scaleform renderer.  They are
+        used ONLY for exact-match lookup (binary hash → instant name resolution).
+        The PIL-rendered 4x templates remain in the width index for fuzzy
+        matching — they are rendered natively at MATCH_SCALE by PIL's FreeType
+        rasterizer, giving clean high-resolution glyphs without upscaling.
         """
-        loaded = {"skills": 0, "ranks": 0, "digits": 0}
+        loaded = {"skills": 0, "ranks": 0}
         self._captured_skill_lookup.clear()
         self._captured_rank_lookup.clear()
 
-        # Skills — replace PIL templates with captured Scaleform ones
+        # Skills — register for exact-match lookup only
         skill_dir = CAPTURED_DIR / "skills"
         if skill_dir.exists():
             for path in skill_dir.glob("*.png"):
@@ -378,14 +577,9 @@ class FontMatcher:
                 tpl_key = self._tight_crop(tpl_bin, padding=1)
                 if tpl_key is not None:
                     self._captured_skill_lookup[self._image_key(tpl_key)] = name
-                # Clean noise and register for fuzzy matching (width index)
-                tpl[tpl <= BINARY_THRESHOLD] = 0
-                self._replace_template(
-                    name, tpl, self._skill_templates,
-                    self._skill_width_index)
                 loaded["skills"] += 1
 
-        # Ranks — replace PIL templates with captured Scaleform ones
+        # Ranks — register for exact-match lookup only
         rank_dir = CAPTURED_DIR / "ranks"
         if rank_dir.exists():
             for path in rank_dir.glob("*.png"):
@@ -399,35 +593,12 @@ class FontMatcher:
                 tpl_key = self._tight_crop(tpl_bin, padding=1)
                 if tpl_key is not None:
                     self._captured_rank_lookup[self._image_key(tpl_key)] = name
-                tpl[tpl <= BINARY_THRESHOLD] = 0
-                self._replace_template(
-                    name, tpl, self._rank_templates,
-                    self._rank_width_index)
                 loaded["ranks"] += 1
-
-        # Digits
-        digit_dir = CAPTURED_DIR / "digits"
-        if digit_dir.exists():
-            for path in digit_dir.glob("*.png"):
-                ch = path.stem
-                if len(ch) != 1 or ch not in "0123456789":
-                    continue
-                tpl = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
-                if tpl is None:
-                    continue
-                tpl[tpl <= BINARY_THRESHOLD] = 0  # remove background noise
-                self._digit_templates[ch] = tpl
-                loaded["digits"] += 1
-            # Recompute digit advance from captured templates
-            if self._digit_templates:
-                self._digit_advance = max(
-                    t.shape[1] for t in self._digit_templates.values()
-                )
 
         total = sum(loaded.values())
         if total > 0:
-            log.info("Loaded captured templates: %d skills, %d ranks, %d digits",
-                     loaded["skills"], loaded["ranks"], loaded["digits"])
+            log.info("Loaded captured templates: %d skills, %d ranks",
+                     loaded["skills"], loaded["ranks"])
 
     def _clean_capture(self, cell_gray: np.ndarray, padding: int = 1) -> Optional[np.ndarray]:
         """Tight-crop a grayscale cell image, preserving anti-aliasing.
@@ -437,7 +608,7 @@ class FontMatcher:
         inflating the crop width.  Returns the grayscale region so
         sub-pixel information is retained for template matching.
         """
-        detect_bin = ((cell_gray > TEXT_DETECT_THRESHOLD).astype(
+        detect_bin = ((cell_gray > BINARY_THRESHOLD).astype(
             np.uint8)) * 255
 
         # Use run-based text extent for horizontal bounds (prevents noise
@@ -525,10 +696,9 @@ class FontMatcher:
             return False
 
         cv2.imwrite(str(path), cropped)
-        self._replace_template(
-            name, cropped, self._skill_templates, self._skill_width_index)
 
-        # Register for exact-match lookup (binary hash of the cell)
+        # Register for exact-match lookup (binary hash of the cell).
+        # PIL 4x templates stay in the width index for fuzzy matching.
         key = self._to_lookup_key(cell_gray)
         if key is not None:
             self._captured_skill_lookup[key] = name
@@ -539,27 +709,23 @@ class FontMatcher:
 
     def capture_rank(self, name: str, cell_gray: np.ndarray) -> bool:
         """Capture a game-rendered rank name cell as a grayscale template."""
-        cropped = self._clean_capture(cell_gray)
-        if cropped is None or cropped.shape[0] < 3 or cropped.shape[1] < 3:
-            return False
-
         rank_dir = CAPTURED_DIR / "ranks"
         rank_dir.mkdir(parents=True, exist_ok=True)
         path = rank_dir / f"{self._safe_filename(name)}.png"
 
         if path.exists():
-            existing = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
-            if existing is not None and self._validate_capture(existing, cell_gray):
-                return False
-            log.debug("Re-capturing stale rank template: %s", name)
+            return False
+
+        cropped = self._clean_capture(cell_gray)
+        if cropped is None or cropped.shape[0] < 3 or cropped.shape[1] < 3:
+            return False
 
         if not self._validate_capture(cropped, cell_gray):
             return False
 
         cv2.imwrite(str(path), cropped)
-        self._replace_template(
-            name, cropped, self._rank_templates, self._rank_width_index)
 
+        # Register for exact-match lookup only
         key = self._to_lookup_key(cell_gray)
         if key is not None:
             self._captured_rank_lookup[key] = name
@@ -568,86 +734,6 @@ class FontMatcher:
                   name, cropped.shape[1], cropped.shape[0])
         return True
 
-    def capture_digits(self, number_text: str, cell_gray: np.ndarray) -> int:
-        """Capture individual digit glyphs from a points cell.
-
-        Finds actual digit blobs via connected-component analysis rather than
-        assuming fixed spacing. Pairs blobs left-to-right with the known
-        number string. Returns the count of newly captured digits.
-        """
-        digits_only = "".join(ch for ch in number_text if ch in "0123456789")
-        if not digits_only:
-            return 0
-
-        cell_bin = self._to_binary(cell_gray)
-
-        # Find digit blobs by grouping consecutive bright columns
-        col_sums = np.sum(cell_bin > 0, axis=0)
-        bright = col_sums > 0
-
-        blobs: list[tuple[int, int]] = []  # (start_col, end_col) per blob
-        in_blob = False
-        start = 0
-        for x in range(len(bright)):
-            if bright[x] and not in_blob:
-                start = x
-                in_blob = True
-            elif not bright[x] and in_blob:
-                blobs.append((start, x))
-                in_blob = False
-        if in_blob:
-            blobs.append((start, len(bright)))
-
-        # Merge blobs that are very close (< 2px gap) — parts of same digit
-        merged: list[tuple[int, int]] = []
-        for s, e in blobs:
-            if merged and s - merged[-1][1] < 2:
-                merged[-1] = (merged[-1][0], e)
-            else:
-                merged.append((s, e))
-
-        if len(merged) != len(digits_only):
-            log.debug("Digit capture: %d blobs for %d digits — skipping",
-                      len(merged), len(digits_only))
-            return 0
-
-        digit_dir = CAPTURED_DIR / "digits"
-        digit_dir.mkdir(parents=True, exist_ok=True)
-        captured = 0
-
-        # Compute expected single-digit width range from existing templates
-        if self._digit_templates:
-            ref_w = max(t.shape[1] for t in self._digit_templates.values())
-        else:
-            ref_w = cell_bin.shape[0]  # rough estimate: digit width ~ cell height
-        max_digit_w = int(ref_w * 1.5)
-
-        for (col_start, col_end), ch in zip(merged, digits_only):
-            blob_w = col_end - col_start
-            if blob_w > max_digit_w:
-                log.debug("Digit capture: blob too wide (%dpx > %dpx) — skipping %s",
-                          blob_w, max_digit_w, ch)
-                continue
-
-            path = digit_dir / f"{ch}.png"
-            if path.exists():
-                continue
-
-            digit_gray = cell_gray[:, col_start:col_end]
-            cropped = self._clean_capture(digit_gray, padding=0)
-            if cropped is not None and cropped.shape[0] >= 3 and cropped.shape[1] >= 3:
-                cv2.imwrite(str(path), cropped)
-                self._digit_templates[ch] = cropped
-                log.debug("Captured digit template: %s (%dx%d)",
-                          ch, cropped.shape[1], cropped.shape[0])
-                captured += 1
-
-        if captured > 0 and self._digit_templates:
-            self._digit_advance = max(
-                t.shape[1] for t in self._digit_templates.values()
-            )
-
-        return captured
 
     @property
     def captured_skill_count(self) -> int:
@@ -673,6 +759,11 @@ class FontMatcher:
             return 0
         return len(list(digit_dir.glob("*.png")))
 
+    def has_captured_rank(self, name: str) -> bool:
+        """Check if a captured template exists for this rank name."""
+        path = CAPTURED_DIR / "ranks" / f"{self._safe_filename(name)}.png"
+        return path.exists()
+
     def _render_template(self, text: str) -> Optional[np.ndarray]:
         """Render a text string as a grayscale template image (white on black).
 
@@ -691,13 +782,14 @@ class FontMatcher:
 
     def _render_native(self, text: str) -> Optional[np.ndarray]:
         """Render text using PIL's native draw.text() with the font's own
-        advance widths and kerning. This should match the game's rendering
-        more closely since both use the font's built-in metrics."""
-        if not self._font:
+        advance widths and kerning at MATCH_SCALE resolution.
+
+        Uses _font_hires (font_size * MATCH_SCALE) so templates are natively
+        high-resolution without any post-render upscaling."""
+        if not self._font_hires:
             return None
 
-        # Get full text bounding box
-        bbox = self._font.getbbox(text)
+        bbox = self._font_hires.getbbox(text)
         if not bbox:
             return None
 
@@ -707,27 +799,33 @@ class FontMatcher:
 
         img = Image.new("L", (canvas_w, canvas_h), 0)
         draw = ImageDraw.Draw(img)
-        draw.text((pad - bbox[0], pad - bbox[1]), text, fill=255, font=self._font)
+        draw.text((pad - bbox[0], pad - bbox[1]), text, fill=255, font=self._font_hires)
 
         arr = np.array(img)
         return self._tight_crop(arr, padding=1)
 
     def _render_tight(self, text: str) -> Optional[np.ndarray]:
-        """Render text character-by-character with GLYPH_GAP pixel spacing.
+        """Render text character-by-character with scaled GLYPH_GAP spacing
+        at MATCH_SCALE resolution.
 
         Draws all characters on a single PIL canvas with tight inter-glyph
-        spacing (GLYPH_GAP pixels between visible glyph edges) to match
-        the game's compact text rendering. Because every character is drawn
-        at the same y-origin on one canvas, baseline alignment is handled
-        naturally by PIL (ascenders, descenders, etc. all correct).
+        spacing to match the game's compact text rendering.  Uses _font_hires
+        so templates are natively high-resolution.
         """
+        if not self._font_hires:
+            return None
+
+        font = self._font_hires
+        gap = GLYPH_GAP * MATCH_SCALE
+        hires_size = self._font_size * MATCH_SCALE
+
         # Collect (character, bbox) pairs; None bbox = space
         entries: list[tuple[str, Optional[tuple]]] = []
         for ch in text:
             if ch == ' ':
                 entries.append((ch, None))
             else:
-                bbox = self._font.getbbox(ch)
+                bbox = font.getbbox(ch)
                 if bbox:
                     entries.append((ch, bbox))
 
@@ -743,10 +841,10 @@ class FontMatcher:
         total_w = 0
         for ch, b in entries:
             if b is None:
-                total_w += max(2, self._font_size // 3)
+                total_w += max(2, hires_size // 3)
             else:
                 total_w += (b[2] - b[0])
-        total_w += GLYPH_GAP * max(0, len(entries) - 1)
+        total_w += gap * max(0, len(entries) - 1)
 
         pad = 4
         canvas_w = total_w + pad * 2
@@ -763,22 +861,22 @@ class FontMatcher:
         x = pad
         for ch, b in entries:
             if b is None:
-                x += max(2, self._font_size // 3) + GLYPH_GAP
+                x += max(2, hires_size // 3) + gap
                 continue
             left, _top, right, _bottom = b
             # Position so visible left edge lands at x (subtract left bearing)
-            draw.text((x - left, y_origin), ch, fill=255, font=self._font)
-            x += (right - left) + GLYPH_GAP
+            draw.text((x - left, y_origin), ch, fill=255, font=font)
+            x += (right - left) + gap
 
         arr = np.array(img)
         return self._tight_crop(arr, padding=1)
 
     def _render_single_char(self, ch: str) -> Optional[np.ndarray]:
-        """Render a single character and tight-crop it."""
-        if not self._font:
+        """Render a single character at MATCH_SCALE resolution and tight-crop it."""
+        if not self._font_hires:
             return None
 
-        bbox = self._font.getbbox(ch)
+        bbox = self._font_hires.getbbox(ch)
         if not bbox:
             return None
 
@@ -790,7 +888,7 @@ class FontMatcher:
         canvas_h = text_h + pad * 2
         img = Image.new("L", (canvas_w, canvas_h), 0)
         draw = ImageDraw.Draw(img)
-        draw.text((pad - bbox[0], pad - bbox[1]), ch, fill=255, font=self._font)
+        draw.text((pad - bbox[0], pad - bbox[1]), ch, fill=255, font=self._font_hires)
 
         arr = np.array(img)
         return self._tight_crop(arr, padding=0)
@@ -837,13 +935,19 @@ class FontMatcher:
             if key is not None:
                 name = self._captured_skill_lookup.get(key)
                 if name:
+                    log.debug("match_skill: exact lookup → '%s'", name)
                     return (name, 1.0)
 
         # Fall back to fuzzy template matching
         if not self._skill_width_index:
             return None
-        return self._match_against_index(
+        result = self._match_against_index(
             cell_gray, self._skill_width_index, SKILL_THRESHOLD)
+        if result:
+            log.debug("match_skill: fuzzy → '%s' (score=%.3f)", result[0], result[1])
+        else:
+            log.debug("match_skill: no match")
+        return result
 
     def match_rank(self, cell_gray: np.ndarray) -> Optional[tuple[str, float]]:
         """Match a cell image against rank name templates.
@@ -863,69 +967,88 @@ class FontMatcher:
             if key is not None:
                 name = self._captured_rank_lookup.get(key)
                 if name:
+                    log.debug("match_rank: exact lookup → '%s'", name)
                     return (name, 1.0)
 
         # Fall back to fuzzy template matching
         if not self._rank_width_index:
             return None
-        return self._match_against_index(
+        result = self._match_against_index(
             cell_gray, self._rank_width_index, RANK_THRESHOLD)
+        if result:
+            log.debug("match_rank: fuzzy → '%s' (score=%.3f)", result[0], result[1])
+        else:
+            log.debug("match_rank: no match")
+        return result
 
-    def read_points(self, cell_binary: np.ndarray) -> Optional[str]:
+    def read_points(self, cell_gray: np.ndarray) -> Optional[str]:
         """Read an integer value from a cell image using digit templates.
 
-        Greedily matches digits left-to-right across the cell: at each
-        position, picks the highest-scoring digit above threshold, then
-        advances by the digit width. Points are always integers (no decimals).
+        Preprocesses the cell, segments digit blobs via contours, then
+        matches each blob against digit templates using TM_CCOEFF_NORMED
+        (same approach as skill/rank matching).  Templates are rendered
+        natively at MATCH_SCALE by PIL; ROI blobs are upscaled via
+        _upscale_roi.
 
         Returns the number as a string (e.g., "6256"), or None.
         """
         if not self._calibrated or not self._digit_templates:
             return None
 
-        cell_h, cell_w = cell_binary.shape[:2]
+        cell_h, cell_w = cell_gray.shape[:2]
         if cell_h < 4 or cell_w < 4:
             return None
 
-        cell_bin = self._to_binary(cell_binary)
-
-        # Find where digits start (first bright column)
-        col_sums = np.sum(cell_bin > 0, axis=0)
-        bright_cols = np.where(col_sums > 0)[0]
-        if len(bright_cols) == 0:
+        # Adaptive threshold for robust segmentation (finds bounding boxes)
+        binary = self._preprocess_cell(cell_gray)
+        bboxes = self._segment_digits(binary)
+        if not bboxes:
             return None
 
-        # Greedy left-to-right matching: slide a window across the cell,
-        # at each position try all 10 digits and pick the best
-        digits: list[str] = []
-        x = max(0, int(bright_cols[0]) - 1)  # start just before first bright pixel
-        advance = self._digit_advance
+        # Contrast-normalize and clean — same basis as skill/rank matching
+        cell_norm = cv2.normalize(cell_gray, None, 0, 255, cv2.NORM_MINMAX,
+                                  dtype=cv2.CV_8U)
 
-        while x + advance <= cell_w:
+        digits: list[str] = []
+        for i, (x, y, w, h) in enumerate(bboxes):
+            # Pad bounding box before cropping — segmented 1x boxes can be
+            # tighter than the 4x templates.  2px at 1x → 8px at 4x.
+            pad = 2
+            x0 = max(0, x - pad)
+            y0 = max(0, y - pad)
+            x1 = min(cell_w, x + w + pad)
+            y1 = min(cell_h, y + h + pad)
+            roi_gray = cell_norm[y0:y1, x0:x1]
+            roi_up = self._to_binary(self._upscale_roi(roi_gray))
+
+            # Score against every digit template via TM_CCOEFF_NORMED.
+            # Both ROI and templates are binarized for clean matching.
+            scores: dict[str, float] = {}
             best_ch = None
             best_score = DIGIT_THRESHOLD
-
-            # Extract a fixed-width region at position x (one digit wide)
-            region = cell_bin[:, x:x + advance]
-            rh, rw = region.shape
-
             for ch, tpl in self._digit_templates.items():
                 th, tw = tpl.shape
+                rh, rw = roi_up.shape[:2]
                 if tw > rw or th > rh:
+                    scores[ch] = -1.0
                     continue
-
-                tpl_bin = self._to_binary(tpl)
-                max_val = self._template_match(region, tpl_bin)
-
-                if max_val > best_score:
-                    best_score = max_val
+                score = self._template_match(roi_up, tpl)
+                scores[ch] = score
+                if score > best_score:
+                    best_score = score
                     best_ch = ch
+
+            # Log all scores for this digit position
+            score_str = "  ".join(
+                f"{ch}={'*' if ch == best_ch else ''}{scores[ch]:.3f}"
+                for ch in sorted(scores))
+            log.info("Digit[%d] x=%d w=%d: %s → %s",
+                     i, x, w, score_str, best_ch or "?")
 
             if best_ch is not None:
                 digits.append(best_ch)
-                x += advance  # advance by one digit width
             else:
-                x += 1  # no match here, slide forward by 1px
+                return None  # Unmatched digit → abort
 
         return "".join(digits) if digits else None
 
@@ -965,7 +1088,6 @@ class FontMatcher:
         Text annotation shows the best match name and score.
         """
         os.makedirs(output_dir, exist_ok=True)
-        ch, cw = cell.shape[:2]
 
         # Pick the right template pool
         templates = {}
@@ -974,8 +1096,9 @@ class FontMatcher:
         elif match_type == "rank":
             templates = self._rank_templates
 
-        # Build binary images (same as matching pipeline)
-        cell_bin = self._to_binary(cell)
+        # Upscale cell to MATCH_SCALE and binarize (matches _score_candidates)
+        cell_up = self._to_binary(self._upscale_roi(cell))
+        up_h, up_w = cell_up.shape[:2]
 
         # If we have a matched name, use it; otherwise brute-force the best
         tpl = None
@@ -985,77 +1108,156 @@ class FontMatcher:
         if match_name and match_name in templates:
             tpl = templates[match_name]
             th, tw = tpl.shape
-            if tw <= cw and th <= ch:
-                tpl_bin = self._to_binary(tpl)
-                best_score = self._template_match(cell_bin, tpl_bin)
+            if tw <= up_w and th <= up_h:
+                best_score = self._template_match(cell_up, tpl)
         else:
             # No match — find the best template for overlay anyway
             for name, t in templates.items():
                 th, tw = t.shape
-                if tw > cw or th > ch:
+                if tw > up_w or th > up_h:
                     continue
-                t_bin = self._to_binary(t)
-                score = self._template_match(cell_bin, t_bin)
+                score = self._template_match(cell_up, t)
                 if score > best_score:
                     best_score = score
                     best_name = name
                     tpl = t
 
-        overlay = np.zeros((ch, cw, 3), dtype=np.uint8)
-        overlay[:, :, 2] = cell_bin  # Red = game cell (binary)
+        # Build overlay at MATCH_SCALE resolution
+        overlay = np.zeros((up_h, up_w, 3), dtype=np.uint8)
+        overlay[:, :, 2] = cell_up  # Red = game cell (upscaled grayscale)
 
         if tpl is not None:
-            tpl_bin = self._to_binary(tpl)
-            th, tw = tpl_bin.shape
-            if tw <= cw and th <= ch:
-                result = cv2.matchTemplate(cell_bin, tpl_bin, cv2.TM_CCOEFF_NORMED)
+            th, tw = tpl.shape
+            if tw <= up_w and th <= up_h:
+                result = cv2.matchTemplate(cell_up, tpl, cv2.TM_CCOEFF_NORMED)
                 _, _, _, max_loc = cv2.minMaxLoc(result)
                 bx, by = max_loc
-                overlay[by:by + th, bx:bx + tw, 1] = tpl_bin  # Green = template
+                overlay[by:by + th, bx:bx + tw, 1] = tpl  # Green = template
 
-        # Scale up 4x for visibility
-        scaled = cv2.resize(overlay, (cw * 4, ch * 4),
+        # Scale up for visibility (already at MATCH_SCALE, so less extra needed)
+        vis_scale = max(1, 4 // MATCH_SCALE)
+        scaled = cv2.resize(overlay, (up_w * vis_scale, up_h * vis_scale),
                             interpolation=cv2.INTER_NEAREST)
 
         # Add text annotation right-aligned inside the cell
         status = "OK" if match_name else "FAIL"
         text = f"{status}: {best_name} ({best_score:.3f})"
         font_scale = 0.4
-        (text_w, text_h), _ = cv2.getTextSize(
+        sh, sw = scaled.shape[:2]
+        (text_w, _text_h), _ = cv2.getTextSize(
             text, cv2.FONT_HERSHEY_SIMPLEX, font_scale, 1)
-        text_x = cw * 4 - text_w - 4
-        cv2.putText(scaled, text, (text_x, ch * 4 - 4),
+        text_x = sw - text_w - 4
+        cv2.putText(scaled, text, (text_x, sh - 4),
                     cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), 1)
 
         path = os.path.join(output_dir, f"overlay_{label}.png")
         cv2.imwrite(path, scaled)
 
-    def save_digit_overlay_debug(self, label: str, cell_binary: np.ndarray,
+    def save_digit_overlay_debug(self, label: str, cell_gray: np.ndarray,
                                  output_dir: str) -> None:
-        """Save a debug overlay for digit matching on a points cell."""
+        """Save a debug overlay for digit matching on a points cell.
+
+        Uses the same pipeline as read_points(): adaptive threshold for
+        segmentation, crop from normalized grayscale, upscale via
+        _upscale_roi, TM_CCOEFF_NORMED match.  Shows the best-matching
+        template per segmented digit with its confidence score.
+        """
         os.makedirs(output_dir, exist_ok=True)
-        ch, cw = cell_binary.shape[:2]
+        cell_h, cell_w = cell_gray.shape[:2]
+        if not self._digit_templates or cell_h < 4 or cell_w < 4:
+            return
 
-        cell_bin = self._to_binary(cell_binary)
-        overlay = np.zeros((ch, cw, 3), dtype=np.uint8)
-        overlay[:, :, 2] = cell_bin  # Red = game cell (binary)
+        # Same pipeline as read_points
+        binary = self._preprocess_cell(cell_gray)
+        bboxes = self._segment_digits(binary)
+        cell_norm = cv2.normalize(cell_gray, None, 0, 255, cv2.NORM_MINMAX,
+                                  dtype=cv2.CV_8U)
 
-        # Show where each digit template matches
-        for char, tpl in self._digit_templates.items():
-            tpl_bin = self._to_binary(tpl)
-            th, tw = tpl_bin.shape
-            if tw > cw or th > ch:
-                continue
-            result = cv2.matchTemplate(cell_bin, tpl_bin, cv2.TM_CCOEFF_NORMED)
-            locations = np.where(result >= DIGIT_THRESHOLD)
-            for y, x in zip(*locations):
-                overlay[y:y + th, x:x + tw, 1] = np.maximum(
-                    overlay[y:y + th, x:x + tw, 1], tpl_bin)
+        # Upscale + binarize full cell (mirrors read_points pipeline)
+        cell_up = self._to_binary(self._upscale_roi(cell_norm))
+        up_h, up_w = cell_up.shape[:2]
 
-        scaled = cv2.resize(overlay, (cw * 4, ch * 4),
+        overlay = np.zeros((up_h, up_w, 3), dtype=np.uint8)
+        overlay[:, :, 2] = cell_up  # Red = game cell (binarized)
+
+        s = MATCH_SCALE
+        annotations: list[tuple[int, str, float]] = []  # (x_up, char, score)
+
+        # Draw segmentation bounding boxes (cyan = contour bbox, blue = padded crop)
+        for x, y, w, h in bboxes:
+            cv2.rectangle(overlay, (x * s, y * s),
+                          ((x + w) * s, (y + h) * s), (255, 255, 0), 1)
+            pad = 2
+            x0 = max(0, x - pad)
+            y0 = max(0, y - pad)
+            x1 = min(cell_w, x + w + pad)
+            y1 = min(cell_h, y + h + pad)
+            cv2.rectangle(overlay, (x0 * s, y0 * s),
+                          (x1 * s, y1 * s), (255, 100, 0), 1)
+
+        for x, y, w, h in bboxes:
+            pad = 2
+            x0 = max(0, x - pad)
+            y0 = max(0, y - pad)
+            x1 = min(cell_w, x + w + pad)
+            y1 = min(cell_h, y + h + pad)
+            roi_gray = cell_norm[y0:y1, x0:x1]
+            roi_up = self._to_binary(self._upscale_roi(roi_gray))
+
+            best_ch = None
+            best_score = -1.0
+            for digit_ch, tpl in self._digit_templates.items():
+                th, tw = tpl.shape
+                rh, rw = roi_up.shape[:2]
+                if tw > rw or th > rh:
+                    continue
+                score = self._template_match(roi_up, tpl)
+                if score > best_score:
+                    best_score = score
+                    best_ch = digit_ch
+
+            if best_ch is not None:
+                # Find alignment at MATCH_SCALE for overlay
+                tpl = self._digit_templates[best_ch]
+                th, tw = tpl.shape
+                rh, rw = roi_up.shape[:2]
+                if tw <= rw and th <= rh:
+                    result = cv2.matchTemplate(
+                        roi_up, tpl, cv2.TM_CCOEFF_NORMED)
+                    _, _, _, max_loc = cv2.minMaxLoc(result)
+                    bx, by_ = max_loc
+                    ox, oy = x0 * s + bx, y0 * s + by_
+                    overlay[oy:oy + th, ox:ox + tw, 1] = np.maximum(
+                        overlay[oy:oy + th, ox:ox + tw, 1], tpl)
+                annotations.append((x0 * s, best_ch, best_score))
+
+        # Already at MATCH_SCALE; just scale up slightly for visibility
+        vis_scale = max(1, 4 // MATCH_SCALE)
+        scaled = cv2.resize(overlay, (up_w * vis_scale, up_h * vis_scale),
                             interpolation=cv2.INTER_NEAREST)
+
+        # Draw confidence labels above each digit
+        for ax, ach, ascore in annotations:
+            text = f"{ach}:{ascore:.2f}"
+            tx = ax * vis_scale
+            ty = max(12, 2)  # near top of image
+            cv2.putText(scaled, text, (tx, ty),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.4, (255, 255, 255), 1,
+                        cv2.LINE_AA)
+
         path = os.path.join(output_dir, f"overlay_digits_{label}.png")
         cv2.imwrite(path, scaled)
+
+    @staticmethod
+    def _upscale_roi(img: np.ndarray, scale: int = MATCH_SCALE) -> np.ndarray:
+        """Upscale a grayscale ROI for template matching.
+
+        Bicubic resize only.  Callers apply _to_binary() to produce a
+        clean binary image that matches the binarized PIL templates.
+        """
+        h, w = img.shape[:2]
+        return cv2.resize(img, (w * scale, h * scale),
+                          interpolation=cv2.INTER_CUBIC)
 
     @staticmethod
     def _to_binary(img: np.ndarray, thresh: int = BINARY_THRESHOLD) -> np.ndarray:
@@ -1065,6 +1267,74 @@ class FontMatcher:
         and FreeType (PIL), so matching focuses purely on glyph shape.
         """
         return ((img > thresh).astype(np.uint8)) * 255
+
+    @staticmethod
+    def _preprocess_cell(cell_gray: np.ndarray) -> np.ndarray:
+        """Preprocessing for digit/text segmentation.
+
+        Global threshold at BINARY_THRESHOLD on raw pixel values.
+        Game text (green/white ≈128-160, orange ≈121) is well above
+        the threshold; semi-transparent background noise stays below.
+        No normalization — avoids amplifying dim noise into the
+        threshold range, which caused bridges between adjacent digits.
+        """
+        return ((cell_gray > BINARY_THRESHOLD).astype(np.uint8)) * 255
+
+    def _segment_digits(self, binary: np.ndarray) -> list[tuple[int, int, int, int]]:
+        """Contour-based digit segmentation.
+
+        Finds external contours, filters by expected digit dimensions,
+        and sorts left-to-right.  Any bbox wider than a single digit
+        is evenly split into the estimated number of digits based on
+        the known digit advance width.
+
+        Returns list of (x, y, w, h) bounding boxes, or empty list.
+        """
+        img_h, img_w = binary.shape[:2]
+        contours, _ = cv2.findContours(
+            binary, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        # Maximum single-digit width at 1x scale (templates are at MATCH_SCALE)
+        digit_w_1x = (self._digit_advance // MATCH_SCALE) if self._digit_advance > 0 else 5
+        max_digit_w = digit_w_1x + 2
+
+        # Filter contours by expected digit dimensions
+        min_h = int(img_h * 0.4)
+        max_h = int(img_h * 1.1)
+        bboxes: list[tuple[int, int, int, int]] = []
+        for c in contours:
+            x, y, w, h = cv2.boundingRect(c)
+            if h < min_h or h > max_h:
+                continue
+            if w < 3:
+                continue
+            bboxes.append((x, y, w, h))
+
+        if not bboxes:
+            return []
+
+        # Sort left-to-right
+        bboxes.sort(key=lambda b: b[0])
+
+        # Split any bbox wider than a single digit evenly
+        split: list[tuple[int, int, int, int]] = []
+        for x, y, w, h in bboxes:
+            if w <= max_digit_w:
+                split.append((x, y, w, h))
+                continue
+            # Estimate how many digits are merged in this bbox
+            n = max(2, round(w / digit_w_1x)) if digit_w_1x > 0 else 2
+            part_w = w / n
+            for i in range(n):
+                px = x + int(i * part_w)
+                pw = int((i + 1) * part_w) - int(i * part_w)
+                split.append((px, y, pw, h))
+
+        # Reject if too many digits (noise)
+        if len(split) > MAX_DIGITS:
+            return []
+
+        return split
 
     def _template_match(self, cell_bin: np.ndarray,
                         tpl_bin: np.ndarray) -> float:
@@ -1076,38 +1346,60 @@ class FontMatcher:
     def _score_candidates(self, cell_crop: np.ndarray,
                            candidates: list[tuple[str, np.ndarray]],
                            threshold: float,
+                           text_extent_w: int = 0,
                            ) -> Optional[tuple[str, float]]:
         """Score candidate templates against a cell image.
 
-        Matches grayscale-to-grayscale rather than binary-to-binary.
-        This naturally downweights noise from the semi-transparent window
-        background (low grayscale values contribute less to correlation)
-        and preserves anti-aliasing detail for better matching.
+        Upscales the cell using bicubic + binarize.  Templates
+        are already at MATCH_SCALE resolution (rendered natively by PIL at
+        4x font size and binarized), so no template upscaling is needed.
 
-        Ranks by length-biased score (longer names get a small bonus) to
-        prevent substring templates from beating the full name.  Returns
-        the raw TM_CCOEFF_NORMED score as the confidence value.
+        Applies a coverage penalty: templates narrower than the detected
+        text content are penalized proportionally to the uncovered width.
+        This prevents short substrings (e.g. "Great") from beating the
+        full text (e.g. "Great Master") when both achieve high raw scores.
+
+        Args:
+            text_extent_w: Detected text width at 1x (from _find_text_extent).
+                Used for coverage penalty.  Falls back to cell width if 0.
+
+        Returns the raw (penalized) score as the confidence value.
         """
         cell_h, cell_w = cell_crop.shape[:2]
+
+        # Upscale cell and binarize — removes background noise and matches
+        # the binary templates rendered by PIL at MATCH_SCALE.
+        cell_up = self._to_binary(self._upscale_roi(cell_crop))
+        cell_up_h, cell_up_w = cell_up.shape[:2]
+
+        # Reference width for coverage: detected text extent scaled to
+        # MATCH_SCALE, or fall back to upscaled cell width.
+        ref_w = (text_extent_w * MATCH_SCALE) if text_extent_w > 0 else cell_up_w
+
         best: Optional[tuple[str, float]] = None
         best_adjusted = 0.0
         best_raw = 0.0
 
         for name, tpl in candidates:
             th, tw = tpl.shape
-            if tw > cell_w or th > cell_h:
+            if tw > cell_up_w or th > cell_up_h:
                 continue
 
-            score = self._template_match(cell_crop, tpl)
+            raw = self._template_match(cell_up, tpl)
 
-            if score > best_raw:
-                best_raw = score
+            # Coverage penalty: how much of the detected text does the
+            # template explain?  Uses text_extent_w (not cell width) so
+            # cell padding doesn't inflate the denominator.
+            coverage = min(1.0, tw / ref_w) if ref_w > 0 else 1.0
+            score = raw * coverage
+
+            if raw > best_raw:
+                best_raw = raw
 
             if score >= threshold:
-                adjusted = score * (1.0 + len(name) * LENGTH_BIAS_PER_CHAR)
-                if best is None or adjusted > best_adjusted:
+                if best is None or score > best_adjusted:
                     best = (name, score)
-                    best_adjusted = adjusted
+                    best_adjusted = score
 
         if best is None and best_raw > 0:
             log.debug("Below threshold: best raw=%.3f (need %.2f), "
@@ -1162,8 +1454,9 @@ class FontMatcher:
                              threshold: float) -> Optional[tuple[str, float]]:
         """Match a cell image against all templates in the index.
 
-        Cleans background noise from the cell, then scores every template
-        against the full cell using TM_CCOEFF_NORMED.
+        Cleans background noise from the cell, crops to the horizontal
+        text ROI, then scores every template using upscaled TM_CCOEFF_NORMED
+        with coverage penalty.
         """
         cell_h, cell_w = cell_gray.shape[:2]
         if cell_h < 4 or cell_w < 4:
@@ -1176,16 +1469,39 @@ class FontMatcher:
                       "in cell %dx%d", cell_h, cell_w)
             return None
 
+        # Contrast normalization — stretches to full 0-255 range so
+        # semi-transparent backgrounds with varying brightness don't
+        # produce weak text that falls below the fixed threshold.
+        cell_norm = cv2.normalize(cell_gray, None, 0, 255,
+                                  cv2.NORM_MINMAX, dtype=cv2.CV_8U)
+
         # Suppress background noise before matching
-        cell_clean = cell_gray.copy()
+        cell_clean = cell_norm.copy()
         cell_clean[cell_clean <= BINARY_THRESHOLD] = 0
 
-        # Gather all candidates and score against the full cell
+        # Crop to horizontal text ROI — avoids upscaling empty margins.
+        # Only crop when cell is significantly wider than the text
+        # (e.g. skill name column with wide empty right margin).
+        detect_bin = self._preprocess_cell(cell_gray)
+        extent = self._find_text_extent(detect_bin)
+        text_extent_w = cell_w  # fallback: full cell width
+        if extent is not None:
+            x_start, x_end = extent
+            text_extent_w = x_end - x_start
+            if cell_w > text_extent_w * 1.5:
+                pad = max(6, text_extent_w // 4)
+                x_start = max(0, x_start - pad)
+                x_end = min(cell_w, x_end + pad)
+                cell_clean = cell_clean[:, x_start:x_end]
+
+        # Gather all candidates and score against the cropped cell
         all_candidates: list[tuple[str, np.ndarray]] = []
         for entries in width_index.values():
             all_candidates.extend(entries)
 
-        result = self._score_candidates(cell_clean, all_candidates, threshold)
+        result = self._score_candidates(
+            cell_clean, all_candidates, threshold,
+            text_extent_w=text_extent_w)
         if result is None:
             log.debug("match_against_index: no match in %d candidates, "
                       "cell %dx%d, threshold=%.2f",

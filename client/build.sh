@@ -23,6 +23,7 @@ BUNDLE_DIRS=(
 BUNDLE_FILES=(
     "client/data/skill_reference.json:client/data"
     "client/data/skill_ranks.json:client/data"
+    "client/data/changelog.json:client/data"
     "common/itemTypes.js:common"
     "client/VERSION:client"
 )

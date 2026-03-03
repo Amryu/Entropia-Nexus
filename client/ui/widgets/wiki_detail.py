@@ -221,12 +221,18 @@ def make_section_table(
     return table
 
 
-def build_acquisition_content(data: dict, *, exchange_link: str | None = None) -> QWidget:
+def build_acquisition_content(
+    data: dict,
+    *,
+    exchange_link: str | None = None,
+    on_navigate=None,
+) -> QWidget:
     """Build the acquisition panel content from API data.
 
     Shared by all entity detail views (weapons, blueprints, etc.).
     ``exchange_link`` — full URL to the exchange item page (shown as
     a "create sell order" prompt when there is no acquisition data).
+    ``on_navigate`` — optional callback(dict) for entity navigation.
     """
     container = QWidget()
     container.setStyleSheet("background: transparent;")
@@ -250,7 +256,7 @@ def build_acquisition_content(data: dict, *, exchange_link: str | None = None) -
                 "planet": deep_get(offer, "Vendor", "Planet", "Name") or "",
                 "limited": "Yes" if offer.get("IsLimited") else "No",
             })
-        layout.addWidget(make_section_table(
+        table = make_section_table(
             [
                 ColumnDef("name", "Name", main=True),
                 ColumnDef("price", "Price", format=lambda v: f"{v} PED" if v is not None else ""),
@@ -258,7 +264,14 @@ def build_acquisition_content(data: dict, *, exchange_link: str | None = None) -
                 ColumnDef("limited", "Limited"),
             ],
             flat,
-        ))
+        )
+        if on_navigate:
+            table.row_activated.connect(
+                lambda row, _idx: on_navigate(
+                    {"Name": row.get("name", ""), "Type": "Vendor"}
+                )
+            )
+        layout.addWidget(table)
 
     # --- Looted ---
     loots = data.get("Loots") or []
@@ -273,7 +286,7 @@ def build_acquisition_content(data: dict, *, exchange_link: str | None = None) -
                 "maturity": deep_get(loot, "Maturity", "Name") or "",
                 "frequency": loot.get("Frequency") or "",
             })
-        layout.addWidget(make_section_table(
+        table = make_section_table(
             [
                 ColumnDef("mob", "Mob", main=True),
                 ColumnDef("planet", "Planet"),
@@ -281,7 +294,14 @@ def build_acquisition_content(data: dict, *, exchange_link: str | None = None) -
                 ColumnDef("frequency", "Frequency"),
             ],
             flat,
-        ))
+        )
+        if on_navigate:
+            table.row_activated.connect(
+                lambda row, _idx: on_navigate(
+                    {"Name": row.get("mob", ""), "Type": "Mob"}
+                )
+            )
+        layout.addWidget(table)
 
     # --- Shop Listings (Market) ---
     shop_listings = data.get("ShopListings") or []
@@ -320,14 +340,21 @@ def build_acquisition_content(data: dict, *, exchange_link: str | None = None) -
                 "level": deep_get(bp, "Properties", "Level"),
                 "profession": deep_get(bp, "Profession", "Name") or "",
             })
-        layout.addWidget(make_section_table(
+        table = make_section_table(
             [
                 ColumnDef("blueprint", "Blueprint", main=True),
                 ColumnDef("level", "Level", format=lambda v: str(v) if v is not None else ""),
                 ColumnDef("profession", "Profession"),
             ],
             flat,
-        ))
+        )
+        if on_navigate:
+            table.row_activated.connect(
+                lambda row, _idx: on_navigate(
+                    {"Name": row.get("blueprint", ""), "Type": "Blueprint"}
+                )
+            )
+        layout.addWidget(table)
 
     # --- Blueprint Discovery ---
     bp_drops = data.get("BlueprintDrops") or []
@@ -340,13 +367,20 @@ def build_acquisition_content(data: dict, *, exchange_link: str | None = None) -
                 "name": bp.get("Name", ""),
                 "level": deep_get(bp, "Properties", "Level"),
             })
-        layout.addWidget(make_section_table(
+        table = make_section_table(
             [
                 ColumnDef("name", "Name", main=True),
                 ColumnDef("level", "Level", format=lambda v: str(v) if v is not None else ""),
             ],
             flat,
-        ))
+        )
+        if on_navigate:
+            table.row_activated.connect(
+                lambda row, _idx: on_navigate(
+                    {"Name": row.get("name", ""), "Type": "Blueprint"}
+                )
+            )
+        layout.addWidget(table)
 
     if not has_any:
         layout.addWidget(
@@ -360,11 +394,17 @@ def build_acquisition_content(data: dict, *, exchange_link: str | None = None) -
     return container
 
 
-def build_usage_content(data: dict, *, exchange_link: str | None = None) -> QWidget:
+def build_usage_content(
+    data: dict,
+    *,
+    exchange_link: str | None = None,
+    on_navigate=None,
+) -> QWidget:
     """Build the usage panel content from API data.
 
     Shared by all entity detail views — shows where this item is used
     (blueprints, refining, missions, vendor currency).
+    ``on_navigate`` — optional callback(dict) for entity navigation.
     """
     container = QWidget()
     container.setStyleSheet("background: transparent;")
@@ -386,14 +426,21 @@ def build_usage_content(data: dict, *, exchange_link: str | None = None) -> QWid
                 "type": deep_get(bp, "Properties", "Type") or "",
                 "amount": bp.get("MaterialAmount"),
             })
-        layout.addWidget(make_section_table(
+        table = make_section_table(
             [
                 ColumnDef("blueprint", "Blueprint", main=True),
                 ColumnDef("type", "Type"),
                 ColumnDef("amount", "Amount", format=lambda v: str(v) if v is not None else ""),
             ],
             flat,
-        ))
+        )
+        if on_navigate:
+            table.row_activated.connect(
+                lambda row, _idx: on_navigate(
+                    {"Name": row.get("blueprint", ""), "Type": "Blueprint"}
+                )
+            )
+        layout.addWidget(table)
 
     # --- Refining Recipes (this item is an ingredient) ---
     recipes = data.get("RefiningRecipes") or []
@@ -438,7 +485,7 @@ def build_usage_content(data: dict, *, exchange_link: str | None = None) -> QWid
                 "location": mission.get("Location", ""),
                 "handins": mission.get("HandIns"),
             })
-        layout.addWidget(make_section_table(
+        table = make_section_table(
             [
                 ColumnDef("mission", "Mission", main=True),
                 ColumnDef("type", "Type"),
@@ -446,7 +493,14 @@ def build_usage_content(data: dict, *, exchange_link: str | None = None) -> QWid
                 ColumnDef("handins", "Hand-ins", format=lambda v: str(v) if v is not None else ""),
             ],
             flat,
-        ))
+        )
+        if on_navigate:
+            table.row_activated.connect(
+                lambda row, _idx: on_navigate(
+                    {"Name": row.get("mission", ""), "Type": "Mission"}
+                )
+            )
+        layout.addWidget(table)
 
     # --- Vendor Currency (this item is accepted as payment) ---
     vendor_offers = data.get("VendorOffers") or []
@@ -468,7 +522,7 @@ def build_usage_content(data: dict, *, exchange_link: str | None = None) -> QWid
     if vendor_flat:
         has_any = True
         layout.addWidget(section_title_label("Vendor Currency"))
-        layout.addWidget(make_section_table(
+        table = make_section_table(
             [
                 ColumnDef("vendor", "Vendor", main=True),
                 ColumnDef("planet", "Planet"),
@@ -476,7 +530,14 @@ def build_usage_content(data: dict, *, exchange_link: str | None = None) -> QWid
                 ColumnDef("amount", "Amount", format=lambda v: str(v) if v is not None else ""),
             ],
             vendor_flat,
-        ))
+        )
+        if on_navigate:
+            table.row_activated.connect(
+                lambda row, _idx: on_navigate(
+                    {"Name": row.get("vendor", ""), "Type": "Vendor"}
+                )
+            )
+        layout.addWidget(table)
 
     if not has_any:
         layout.addWidget(
@@ -498,6 +559,7 @@ class StatRow(QWidget):
     """A single label: value stat row, matching the web frontend's .stat-row."""
 
     clicked = pyqtSignal()
+    entity_clicked = pyqtSignal(dict)
 
     def __init__(
         self,
@@ -509,9 +571,11 @@ class StatRow(QWidget):
         toggleable: bool = False,
         indent: bool = False,
         label_color: str | None = None,
+        entity: dict | None = None,
         parent=None,
     ):
         super().__init__(parent)
+        self._entity = entity
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 4, 0, 4)
         layout.setSpacing(4)
@@ -528,11 +592,14 @@ class StatRow(QWidget):
 
         layout.addStretch()
 
-        value_color = TEXT
-        if highlight:
+        if entity:
+            value_color = ACCENT
+        elif highlight:
             value_color = SUCCESS
         elif muted_value:
             value_color = TEXT_MUTED
+        else:
+            value_color = TEXT
 
         self._value_label = QLabel(value)
         self._value_label.setStyleSheet(
@@ -542,7 +609,13 @@ class StatRow(QWidget):
         self._value_label.setAlignment(Qt.AlignmentFlag.AlignRight)
         layout.addWidget(self._value_label)
 
-        if toggleable:
+        if entity:
+            self.setCursor(Qt.CursorShape.PointingHandCursor)
+            self.setStyleSheet(
+                f"StatRow {{ border-radius: 4px; padding: 0 6px; }}"
+                f"StatRow:hover {{ background-color: {HOVER}; }}"
+            )
+        elif toggleable:
             self.setCursor(Qt.CursorShape.PointingHandCursor)
             self.setStyleSheet(
                 f"StatRow {{ border-radius: 4px; padding: 0 6px; }}"
@@ -555,6 +628,8 @@ class StatRow(QWidget):
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             self.clicked.emit()
+            if self._entity:
+                self.entity_clicked.emit(self._entity)
         super().mousePressEvent(event)
 
 
@@ -1026,6 +1101,7 @@ class WikiDetailView(QWidget):
     """
 
     _image_loaded = pyqtSignal(bytes)  # raw image bytes from background thread
+    entity_navigate = pyqtSignal(dict)  # {"Name": str, "Type": str}
 
     IMAGE_SIZE = 100
     TIER1_WIDTH = 220
@@ -1217,6 +1293,17 @@ class WikiDetailView(QWidget):
     def _add_infobox_stretch(self):
         """No-op — horizontal sections row doesn't need a bottom stretch."""
         pass
+
+    def _linked_stat_row(self, label: str, value: str, entity_type: str,
+                         **kwargs) -> StatRow:
+        """Create a StatRow linked to entity navigation if the type is wiki-navigable."""
+        from .search_popup import WIKI_PATHS
+        if value and entity_type and entity_type in WIKI_PATHS:
+            entity = {"Name": value, "Type": entity_type}
+            row = StatRow(label, value, entity=entity, **kwargs)
+            row.entity_clicked.connect(self.entity_navigate.emit)
+            return row
+        return StatRow(label, value, **kwargs)
 
     # --- Article helpers ---
 

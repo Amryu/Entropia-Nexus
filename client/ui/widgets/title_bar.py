@@ -10,7 +10,7 @@ from ..theme import (
     MAIN_DARK, SECONDARY, TEXT_MUTED, TEXT, HOVER, BORDER, ACCENT, DISABLED,
     TITLE_BAR_HEIGHT, TITLE_BAR_CLOSE_HOVER,
 )
-from ..icons import nexus_logo_pixmap
+from ..icons import nexus_logo_pixmap, svg_icon, ARROW_LEFT, ARROW_RIGHT, UPDATE
 from .search_popup import SearchResultsPopup
 from .fuzzy_line_edit import score_search
 
@@ -19,11 +19,50 @@ SEARCH_MIN_WIDTH = 300
 SEARCH_WIDTH_RATIO = 0.3  # 30% of window width
 
 
+_UPDATE_DOT_SIZE = 8
+
+
+class _UpdateButton(QPushButton):
+    """Title bar button that appears when an update is available."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(28, TITLE_BAR_HEIGHT)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setIcon(svg_icon(UPDATE, ACCENT, 16))
+        self.setStyleSheet(f"""
+            QPushButton {{
+                background-color: transparent;
+                border: none;
+                border-radius: 0px;
+                padding: 0px;
+            }}
+            QPushButton:hover {{
+                background-color: {HOVER};
+            }}
+        """)
+        self.setToolTip("Update available")
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        # Draw a small green notification dot
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        from PyQt6.QtGui import QColor
+        painter.setBrush(QColor("#16a34a"))
+        painter.setPen(Qt.PenStyle.NoPen)
+        x = self.width() - _UPDATE_DOT_SIZE - 4
+        y = 4
+        painter.drawEllipse(x, y, _UPDATE_DOT_SIZE, _UPDATE_DOT_SIZE)
+        painter.end()
+
+
 class CustomTitleBar(QWidget):
     """32px custom title bar with navigation, search, and window controls."""
 
     back_clicked = pyqtSignal()
     forward_clicked = pyqtSignal()
+    update_clicked = pyqtSignal()
     search_submitted = pyqtSignal(str, list)  # query, scored results
     result_selected = pyqtSignal(dict)        # individual search result picked
     create_requested = pyqtSignal(str)        # URL path for create mode
@@ -65,6 +104,12 @@ class CustomTitleBar(QWidget):
         """)
         layout.addWidget(title)
 
+        # Update indicator (hidden until update detected)
+        self._update_btn = _UpdateButton()
+        self._update_btn.clicked.connect(self.update_clicked.emit)
+        self._update_btn.hide()
+        layout.addWidget(self._update_btn)
+
         layout.addStretch()
 
         # --- Navigation buttons ---
@@ -72,8 +117,6 @@ class CustomTitleBar(QWidget):
             QPushButton {{
                 background-color: transparent;
                 border: none;
-                color: {TEXT_MUTED};
-                font-size: 14px;
                 min-width: 28px;
                 max-width: 28px;
                 min-height: {TITLE_BAR_HEIGHT}px;
@@ -83,21 +126,19 @@ class CustomTitleBar(QWidget):
             }}
             QPushButton:hover {{
                 background-color: {HOVER};
-                color: {TEXT};
-            }}
-            QPushButton:disabled {{
-                color: {DISABLED};
             }}
         """
 
-        self._back_btn = QPushButton("\u2190")  # ←
+        self._back_btn = QPushButton()
+        self._back_btn.setIcon(svg_icon(ARROW_LEFT, DISABLED, 16))
         self._back_btn.setStyleSheet(nav_btn_style)
         self._back_btn.setEnabled(False)
         self._back_btn.setToolTip("Back")
         self._back_btn.clicked.connect(self.back_clicked.emit)
         layout.addWidget(self._back_btn)
 
-        self._fwd_btn = QPushButton("\u2192")  # →
+        self._fwd_btn = QPushButton()
+        self._fwd_btn.setIcon(svg_icon(ARROW_RIGHT, DISABLED, 16))
         self._fwd_btn.setStyleSheet(nav_btn_style)
         self._fwd_btn.setEnabled(False)
         self._fwd_btn.setToolTip("Forward")
@@ -204,7 +245,18 @@ class CustomTitleBar(QWidget):
     def set_nav_enabled(self, *, back: bool, forward: bool):
         """Enable or disable the navigation buttons."""
         self._back_btn.setEnabled(back)
+        self._back_btn.setIcon(svg_icon(ARROW_LEFT, TEXT_MUTED if back else DISABLED, 16))
         self._fwd_btn.setEnabled(forward)
+        self._fwd_btn.setIcon(svg_icon(ARROW_RIGHT, TEXT_MUTED if forward else DISABLED, 16))
+
+    def show_update_available(self, version: str):
+        """Show the update indicator with version tooltip."""
+        self._update_btn.setToolTip(f"Update available: v{version}")
+        self._update_btn.show()
+
+    def hide_update_indicator(self):
+        """Hide the update indicator."""
+        self._update_btn.hide()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

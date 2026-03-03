@@ -1,7 +1,6 @@
 {
   "chat_log_path": "~/Documents/Entropia Universe/chat.log",
   "database_path": "./data/nexus_client.db",
-  "tesseract_path": "",
   "poll_interval_ms": 500,
   "loot_group_window_ms": 1500,
   "ocr_confidence_threshold": 0.7,

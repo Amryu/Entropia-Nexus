@@ -1077,6 +1077,10 @@ class WikiPage(QWidget):
             )
             detail_view.set_edit_url(edit_url)
 
+        # Connect entity navigation signal
+        if hasattr(detail_view, "entity_navigate"):
+            detail_view.entity_navigate.connect(self._on_entity_navigate)
+
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(16, 16, 16, 16)
@@ -1102,6 +1106,17 @@ class WikiPage(QWidget):
         layout.addWidget(loading, 1)
 
         self._swap_content(container)
+
+    def _on_entity_navigate(self, entity: dict):
+        """Handle entity link click from a detail view — navigate to the wiki page."""
+        from ..widgets.search_popup import WIKI_PATHS
+        entity_type = entity.get("Type", "")
+        entity_name = entity.get("Name", "")
+        if not entity_name:
+            return
+        path = WIKI_PATHS.get(entity_type)
+        if path:
+            QTimer.singleShot(0, lambda: self.navigate_to(list(path) + [entity_name]))
 
     def _on_detail_items_ready(self, category_title: str, entity_name: str, items: list):
         """Handle items arriving for entity detail — cache and show detail."""

@@ -17,13 +17,15 @@ log = get_logger("Settings")
 class SettingsPage(QWidget):
     """Application settings with sections for account, OCR, hotkeys, etc."""
 
-    def __init__(self, *, config, config_path, event_bus, signals, oauth):
+    def __init__(self, *, config, config_path, event_bus, signals, oauth,
+                 on_show_changelog=None):
         super().__init__()
         self._config = config
         self._config_path = config_path
         self._event_bus = event_bus
         self._signals = signals
         self._oauth = oauth
+        self._on_show_changelog = on_show_changelog
 
         # Scroll area for all settings
         scroll = QScrollArea()
@@ -39,6 +41,7 @@ class SettingsPage(QWidget):
         self._build_hunt_section()
         self._build_hotkeys_section()
         self._build_overlay_section()
+        self._build_about_section()
         self._build_advanced_section()
 
         self._layout.addStretch()
@@ -164,16 +167,6 @@ class SettingsPage(QWidget):
         group = QGroupBox("OCR")
         layout = QVBoxLayout(group)
 
-        # Tesseract path
-        tess_row = QHBoxLayout()
-        tess_row.addWidget(QLabel("Tesseract path:"))
-        self._tesseract_path = QLineEdit(self._config.tesseract_path)
-        tess_row.addWidget(self._tesseract_path)
-        tess_browse = QPushButton("Browse")
-        tess_browse.clicked.connect(self._browse_tesseract)
-        tess_row.addWidget(tess_browse)
-        layout.addLayout(tess_row)
-
         # Confidence threshold
         conf_row = QHBoxLayout()
         conf_row.addWidget(QLabel("Confidence threshold:"))
@@ -202,15 +195,26 @@ class SettingsPage(QWidget):
         self._tool_region_label = QLabel(f"Tool name region: {tool_region_text}")
         layout.addWidget(self._tool_region_label)
 
+        # Scan ROI configuration
+        roi_row = QHBoxLayout()
+        roi_btn = QPushButton("Configure Scan ROIs")
+        roi_btn.setToolTip("Adjust pixel offsets for scan debug overlay regions")
+        roi_btn.clicked.connect(self._open_roi_dialog)
+        roi_row.addWidget(roi_btn)
+        roi_row.addStretch()
+        layout.addLayout(roi_row)
+
         self._layout.addWidget(group)
 
-    def _browse_tesseract(self):
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Select Tesseract executable", "",
-            "Executables (*.exe);;All files (*)"
+    def _open_roi_dialog(self):
+        from ..dialogs.scan_roi_dialog import ScanRoiDialog
+        dlg = ScanRoiDialog(
+            config=self._config,
+            config_path=self._config_path,
+            event_bus=self._event_bus,
+            parent=self,
         )
-        if path:
-            self._tesseract_path.setText(path)
+        dlg.exec()
 
     @staticmethod
     def _format_region(region):
@@ -308,6 +312,41 @@ class SettingsPage(QWidget):
 
         self._layout.addWidget(group)
 
+    # --- About ---
+    def _build_about_section(self):
+        group = QGroupBox("About")
+        layout = QVBoxLayout(group)
+
+        from ...updater import get_local_version
+        version = get_local_version()
+        layout.addWidget(QLabel(f"Version: {version}"))
+
+        btn_row = QHBoxLayout()
+        if self._on_show_changelog:
+            changelog_btn = QPushButton("View Changelog")
+            changelog_btn.clicked.connect(self._on_show_changelog)
+            btn_row.addWidget(changelog_btn)
+
+        kofi_btn = QPushButton("Support on Ko-fi")
+        kofi_btn.setToolTip("https://ko-fi.com/C0C21JO3B1")
+        kofi_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        kofi_btn.clicked.connect(self._open_kofi)
+        btn_row.addWidget(kofi_btn)
+
+        btn_row.addStretch()
+        layout.addLayout(btn_row)
+
+        self._updates_cb = QCheckBox("Check for updates automatically")
+        self._updates_cb.setChecked(self._config.check_for_updates)
+        layout.addWidget(self._updates_cb)
+
+        self._layout.addWidget(group)
+
+    def _open_kofi(self):
+        from PyQt6.QtCore import QUrl
+        from PyQt6.QtGui import QDesktopServices
+        QDesktopServices.openUrl(QUrl("https://ko-fi.com/C0C21JO3B1"))
+
     # --- Advanced ---
     def _build_advanced_section(self):
         group = QGroupBox("Advanced")
@@ -357,12 +396,12 @@ class SettingsPage(QWidget):
         """Apply all settings from the UI to config and persist."""
         self._config.chat_log_path = self._chat_path.text()
         self._config.poll_interval_ms = self._poll_interval.value()
-        self._config.tesseract_path = self._tesseract_path.text()
         self._config.ocr_confidence_threshold = self._ocr_confidence.value()
         self._config.attribution_window_ms = self._attribution_window.value()
         self._config.encounter_close_timeout_ms = self._encounter_timeout.value()
         self._config.overlay_opacity = self._opacity_slider.value() / 100.0
         self._config.auto_pin_detail_overlay = self._auto_pin_cb.isChecked()
+        self._config.check_for_updates = self._updates_cb.isChecked()
         self._config.js_utils_path = self._js_path.text()
         self._config.oauth_client_id = self._oauth_client_id.text()
 

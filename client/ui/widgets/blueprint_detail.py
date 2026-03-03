@@ -433,8 +433,10 @@ class BlueprintDetailView(WikiDetailView):
         ))
         general.add_row(StatRow("Level", fmt_int(level)))
         general.add_row(StatRow("Type", bp_type))
-        general.add_row(StatRow("Book", book_name))
-        general.add_row(StatRow("Product", product_name))
+        general.add_row(self._linked_stat_row("Book", book_name, "BlueprintBook"))
+        product_type = deep_get(item, "Product", "Type") or ""
+        general.add_row(self._linked_stat_row(
+            "Product", product_name, product_type))
         general.add_row(StatRow("Amount", amount_str))
         general.add_row(StatRow(
             "Boosted", fmt_bool(is_boosted),
@@ -463,7 +465,8 @@ class BlueprintDetailView(WikiDetailView):
             "SiB", fmt_bool(is_sib),
             highlight=(is_sib is True or is_sib == 1),
         ))
-        skill.add_row(StatRow("Profession", profession_name))
+        skill.add_row(self._linked_stat_row(
+            "Profession", profession_name, "Profession"))
         if level_start is not None or level_end is not None:
             skill.add_row(StatRow(
                 "Level Range",
@@ -522,10 +525,16 @@ class BlueprintDetailView(WikiDetailView):
         if drops:
             drops_section.set_subtitle(f"{len(drops)} blueprints")
             flat = [{"name": d.get("Name", "")} for d in drops]
-            drops_section.set_content(make_section_table(
+            table = make_section_table(
                 [ColumnDef("name", "Blueprint", main=True)],
                 flat,
-            ))
+            )
+            table.row_activated.connect(
+                lambda row, _idx: self.entity_navigate.emit(
+                    {"Name": row.get("name", ""), "Type": "Blueprint"}
+                )
+            )
+            drops_section.set_content(table)
         else:
             drops_section.set_content(
                 no_data_label("No blueprint drops available.")
@@ -540,10 +549,12 @@ class BlueprintDetailView(WikiDetailView):
         if not hasattr(self, "_acquisition_section"):
             return
         url = exchange_url(self._item, self._nexus_base_url, "Blueprint")
-        self._acquisition_section.set_content(build_acquisition_content(data, exchange_link=url))
+        self._acquisition_section.set_content(build_acquisition_content(
+            data, exchange_link=url, on_navigate=self.entity_navigate.emit))
 
     def _on_usage_loaded(self, data: dict):
         if not hasattr(self, "_usage_section"):
             return
         url = exchange_url(self._item, self._nexus_base_url, "Blueprint")
-        self._usage_section.set_content(build_usage_content(data, exchange_link=url))
+        self._usage_section.set_content(build_usage_content(
+            data, exchange_link=url, on_navigate=self.entity_navigate.emit))

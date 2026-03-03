@@ -42,6 +42,7 @@ sql/nexus_users_schema.sql
 /claude/
 /data/
 nexus-bot/config.json
+client/assets/arial-unicode-bold.ttf
 client/build/
 client/dist/
 client/entropia-nexus.spec

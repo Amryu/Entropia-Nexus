@@ -105,14 +105,25 @@ COPY = (
 # Checkmark (confirmation feedback)
 CHECK = '<path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/>'
 
+# Navigation arrows (back/forward)
+ARROW_LEFT = '<path d="M15.41 7.41L10.83 12l4.58 4.59L14 18l-6-6 6-6z"/>'
+ARROW_RIGHT = '<path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/>'
+
+# Update available (download arrow + bar)
+UPDATE = (
+    '<path d="M13 7h-2v4H7l5 5 5-5h-4V7z"/>'
+    '<path d="M19 19H5v-2h14v2z"/>'
+)
+
 
 def svg_icon(svg_elements: str, color: str, size: int = 24) -> QIcon:
     """Render inline SVG elements to a QIcon with the given fill color."""
+    resolved = svg_elements.replace("currentColor", color)
     svg = (
         f'<svg xmlns="http://www.w3.org/2000/svg" '
         f'viewBox="0 0 24 24" width="{size}" height="{size}" '
         f'fill="{color}">'
-        f'{svg_elements}'
+        f'{resolved}'
         f'</svg>'
     )
     renderer = QSvgRenderer(svg.encode())
@@ -126,11 +137,12 @@ def svg_icon(svg_elements: str, color: str, size: int = 24) -> QIcon:
 
 def svg_pixmap(svg_elements: str, color: str, size: int = 24) -> QPixmap:
     """Render inline SVG elements to a QPixmap with the given fill color."""
+    resolved = svg_elements.replace("currentColor", color)
     svg = (
         f'<svg xmlns="http://www.w3.org/2000/svg" '
         f'viewBox="0 0 24 24" width="{size}" height="{size}" '
         f'fill="{color}">'
-        f'{svg_elements}'
+        f'{resolved}'
         f'</svg>'
     )
     renderer = QSvgRenderer(svg.encode())

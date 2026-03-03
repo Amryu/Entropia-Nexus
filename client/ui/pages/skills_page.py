@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 from PyQt6.QtGui import QCursor
+from PyQt6.QtWidgets import QGraphicsOpacityEffect
 
 from ...skills.calculations import (
     calculate_profession_level, calculate_all_profession_levels,
@@ -69,7 +70,8 @@ class SkillCard(QFrame):
     value_edited = pyqtSignal(str, float)
 
     def __init__(self, skill_name: str, points: float, rank: str,
-                 progress: float, badges: list[Badge], parent=None):
+                 progress: float, badges: list[Badge],
+                 dimmed: bool = False, parent=None):
         super().__init__(parent)
         self._skill_name = skill_name
         self._points = points
@@ -90,10 +92,14 @@ class SkillCard(QFrame):
                 border-color: {BORDER_HOVER};
             }}
         """)
+        if dimmed:
+            effect = QGraphicsOpacityEffect(self)
+            effect.setOpacity(0.35)
+            self.setGraphicsEffect(effect)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(6, 4, 6, 4)
-        layout.setSpacing(2)
+        layout.setContentsMargins(8, 6, 8, 14)
+        layout.setSpacing(4)
 
         # Row 1: Name + Badges (top-right)
         top_row = QHBoxLayout()
@@ -224,8 +230,8 @@ class ProfessionCard(QFrame):
         """)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(6, 4, 6, 4)
-        layout.setSpacing(2)
+        layout.setContentsMargins(8, 6, 8, 14)
+        layout.setSpacing(4)
 
         # Row 1: Name
         name_label = QLabel(prof_name)
@@ -269,12 +275,18 @@ class ProfessionCard(QFrame):
 class SkillsPage(QWidget):
     """Skills management page with 6 tabs."""
 
-    def __init__(self, *, signals, oauth, nexus_client, data_client=None):
+    navigation_changed = pyqtSignal(object)  # sub_state dict or None
+
+    def __init__(self, *, signals, oauth, nexus_client, data_client=None,
+                 config=None, config_path="config.json", event_bus=None):
         super().__init__()
         self._signals = signals
         self._oauth = oauth
         self._nexus_client = nexus_client
         self._data_client = data_client
+        self._config = config
+        self._config_path = config_path
+        self._event_bus = event_bus
 
         # Data manager
         self._manager = SkillDataManager(data_client, nexus_client)
@@ -290,11 +302,20 @@ class SkillsPage(QWidget):
         # Rank lookup (loaded lazily)
         self._rank_thresholds: list[dict] = []
 
+        # Guard: suppress navigation_changed during set_sub_state restore
+        self._applying_sub_state: bool = False
+
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
 
         # Tab widget (no page header)
         self._tabs = QTabWidget()
+        self._tabs.setStyleSheet(f"""
+            QTabWidget::pane {{
+                border: none;
+                border-top: 1px solid {BORDER};
+            }}
+        """)
         self._build_skills_tab()
         self._build_professions_tab()
         self._build_progression_tab()
@@ -302,12 +323,13 @@ class SkillsPage(QWidget):
         self._build_optimizer_tab()
         self._build_scanning_tab()
         layout.addWidget(self._tabs)
+        self._tabs.currentChanged.connect(self._on_tab_changed)
 
         # Connect signals
         signals.ocr_progress.connect(self._on_ocr_progress)
         signals.ocr_complete.connect(self._on_ocr_complete)
-        signals.skills_uploaded.connect(self._on_upload_success)
-        signals.skills_upload_failed.connect(self._on_upload_failed)
+        signals.skill_scanned.connect(self._on_skill_scanned)
+        signals.ocr_page_changed.connect(self._on_ocr_page_changed)
         signals.auth_state_changed.connect(self._on_auth_changed)
 
         # Initial data load (deferred)
@@ -356,6 +378,7 @@ class SkillsPage(QWidget):
         self._skills_grid_container = QWidget()
         self._skills_grid_layout = QGridLayout(self._skills_grid_container)
         self._skills_grid_layout.setSpacing(6)
+        self._skills_grid_layout.setContentsMargins(0, 0, 0, 12)
         self._skills_loading_label = QLabel("Loading...")
         self._skills_loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._skills_loading_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 13px;")
@@ -389,7 +412,7 @@ class SkillsPage(QWidget):
         toolbar = QHBoxLayout()
 
         self._prof_view_toggle = QPushButton("List View")
-        self._prof_view_toggle.setFixedWidth(80)
+        self._prof_view_toggle.setMinimumWidth(100)
         self._prof_view_toggle.clicked.connect(self._toggle_prof_view)
         toolbar.addWidget(self._prof_view_toggle)
 
@@ -418,6 +441,7 @@ class SkillsPage(QWidget):
         self._prof_grid_container = QWidget()
         self._prof_grid_layout = QGridLayout(self._prof_grid_container)
         self._prof_grid_layout.setSpacing(6)
+        self._prof_grid_layout.setContentsMargins(0, 0, 0, 12)
         self._prof_loading_label = QLabel("Loading...")
         self._prof_loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._prof_loading_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 13px;")
@@ -583,6 +607,11 @@ class SkillsPage(QWidget):
         self._auto_scan_check.setChecked(True)
         scan_layout.addWidget(self._auto_scan_check)
 
+        self._debug_overlay_check = QCheckBox("Debug overlay (show detected regions)")
+        self._debug_overlay_check.setChecked(self._config.scan_overlay_debug)
+        self._debug_overlay_check.toggled.connect(self._on_debug_overlay_toggled)
+        scan_layout.addWidget(self._debug_overlay_check)
+
         btn_row = QHBoxLayout()
         self._manual_scan_btn = QPushButton("Run Manual Scan")
         self._manual_scan_btn.clicked.connect(self._trigger_manual_scan)
@@ -592,52 +621,28 @@ class SkillsPage(QWidget):
 
         layout.addWidget(scan_group)
 
-        # Progress
-        progress_group = QGroupBox("Scan Progress")
-        progress_layout = QVBoxLayout(progress_group)
-
-        self._scan_progress_bar = QProgressBar()
-        self._scan_progress_bar.setMaximum(165)
-        progress_layout.addWidget(self._scan_progress_bar)
-
-        self._scan_progress_label = QLabel("Waiting for scan...")
-        progress_layout.addWidget(self._scan_progress_label)
-
-        layout.addWidget(progress_group)
-
-        # Upload section
-        upload_group = QGroupBox("Upload to Entropia Nexus")
-        upload_layout = QVBoxLayout(upload_group)
-
-        self._upload_status = QLabel("Scan skills first, then upload.")
-        upload_layout.addWidget(self._upload_status)
-
-        upload_btn_row = QHBoxLayout()
-        self._upload_btn = QPushButton("Upload Skills")
-        self._upload_btn.setEnabled(False)
-        self._upload_btn.clicked.connect(self._on_upload)
-        upload_btn_row.addWidget(self._upload_btn)
-        upload_btn_row.addStretch()
-        upload_layout.addLayout(upload_btn_row)
-
-        layout.addWidget(upload_group)
-
         # Last scan results table
-        results_group = QGroupBox("Last Scan Results")
-        results_layout = QVBoxLayout(results_group)
+        self._scan_results_group = QGroupBox("Scan Results")
+        results_layout = QVBoxLayout(self._scan_results_group)
+
+        self._scan_info_label = QLabel("")
+        self._scan_info_label.setStyleSheet("color: #999; font-size: 10px;")
+        results_layout.addWidget(self._scan_info_label)
 
         self._scan_results_table = QTableWidget()
         self._scan_results_table.setColumnCount(4)
         self._scan_results_table.setHorizontalHeaderLabels(
-            ["Skill", "Rank", "Points", "Progress"]
+            ["Name", "Rank", "Est. Points", "Skill Points"]
         )
         self._scan_results_table.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeMode.Stretch
         )
         self._scan_results_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._scan_warning_count = 0
+        self._scan_skill_rows: dict[str, int] = {}  # skill_name → row index
         results_layout.addWidget(self._scan_results_table)
 
-        layout.addWidget(results_group)
+        layout.addWidget(self._scan_results_group)
 
         self._tabs.addTab(tab, "Scanning")
 
@@ -777,18 +782,17 @@ class SkillsPage(QWidget):
         values = self._manager.skill_values
         attr_skills = build_attribute_skill_set(meta)
 
-        # Filter by profession
+        # Filter by profession: include any skill that lists the profession
+        # (hidden skills are kept — they render dimmed when 0 points)
         if self._skill_filter_profession:
-            prof_skills = set()
-            for prof in self._manager.professions:
-                if prof["Name"] == self._skill_filter_profession:
-                    for sk in prof.get("Skills", []):
-                        prof_skills.add(sk.get("Name", ""))
-                    break
-            meta = [s for s in meta if s["Name"] in prof_skills]
-
-        # Filter hidden
-        meta = [s for s in meta if not s.get("IsHidden")]
+            pname = self._skill_filter_profession
+            meta = [
+                s for s in meta
+                if any(p.get("Name") == pname
+                       for p in s.get("Professions", []))
+            ]
+        else:
+            meta = [s for s in meta if not s.get("IsHidden")]
 
         # Sort
         sort_idx = self._skills_sort.currentIndex()
@@ -877,7 +881,8 @@ class SkillsPage(QWidget):
             rank, progress = self._get_rank_and_progress(points)
             badges = get_skill_badges(name, all_meta)
 
-            card = SkillCard(name, points, rank, progress, badges)
+            card = SkillCard(name, points, rank, progress, badges,
+                            dimmed=(points == 0))
             card.clicked.connect(self._on_skill_card_clicked)
             card.value_edited.connect(self._on_skill_value_edited)
 
@@ -900,21 +905,28 @@ class SkillsPage(QWidget):
             badges = get_skill_badges(name, all_meta)
             hp_inc = skill.get("HPIncrease") or 0
 
-            self._skills_table.setItem(i, 0, QTableWidgetItem(name))
-            self._skills_table.setItem(i, 1, QTableWidgetItem(skill.get("Category") or ""))
+            dimmed = points == 0
+            fg = Qt.GlobalColor.gray if dimmed else None
 
-            rank_item = QTableWidgetItem(rank)
-            self._skills_table.setItem(i, 2, rank_item)
+            items = []
+            items.append(QTableWidgetItem(name))
+            items.append(QTableWidgetItem(skill.get("Category") or ""))
+            items.append(QTableWidgetItem(rank))
 
             pts_item = QTableWidgetItem(f"{points:.4f}")
             pts_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            self._skills_table.setItem(i, 3, pts_item)
+            items.append(pts_item)
 
             hp_text = str(hp_inc) if hp_inc > 0 else ""
-            self._skills_table.setItem(i, 4, QTableWidgetItem(hp_text))
+            items.append(QTableWidgetItem(hp_text))
 
             badge_text = " ".join(b.label for b in badges)
-            self._skills_table.setItem(i, 5, QTableWidgetItem(badge_text))
+            items.append(QTableWidgetItem(badge_text))
+
+            for col, item in enumerate(items):
+                if fg:
+                    item.setForeground(fg)
+                self._skills_table.setItem(i, col, item)
 
     def _on_skills_table_click(self, row, col):
         item = self._skills_table.item(row, 0)
@@ -948,11 +960,46 @@ class SkillsPage(QWidget):
             daemon=True,
         ).start()
 
+    # ── Navigation (integrates with MainWindow title bar back/forward) ──
+
+    def set_sub_state(self, state):
+        """Restore a previously saved sub-state (called by MainWindow on back/forward)."""
+        if state is None:
+            return
+        self._applying_sub_state = True
+        try:
+            tab_idx = state.get("tab", 0)
+            skill_filter = state.get("skill_filter")
+            prof_filter = state.get("prof_filter")
+
+            self._skill_filter_profession = skill_filter
+            self._prof_filter_skill = prof_filter
+            self._skills_prof_filter.setCurrentText(
+                skill_filter if skill_filter else "All"
+            )
+            self._prof_skill_filter.setCurrentText(
+                prof_filter if prof_filter else "All"
+            )
+            self._tabs.setCurrentIndex(tab_idx)
+        finally:
+            self._applying_sub_state = False
+
+    def _emit_nav(self):
+        """Emit navigation_changed with current sub-state."""
+        if self._applying_sub_state:
+            return
+        self.navigation_changed.emit({
+            "tab": self._tabs.currentIndex(),
+            "skill_filter": self._skill_filter_profession,
+            "prof_filter": self._prof_filter_skill,
+        })
+
     def _navigate_to_professions_for_skill(self, skill_name: str):
         """Switch to Professions tab filtered by a skill."""
         self._prof_filter_skill = skill_name
         self._prof_skill_filter.setCurrentText(skill_name)
         self._tabs.setCurrentIndex(1)  # Professions tab
+        self._emit_nav()
 
     # ── Professions Tab ───────────────────────────────────────────────────
 
@@ -1108,6 +1155,7 @@ class SkillsPage(QWidget):
         self._skill_filter_profession = prof_name
         self._skills_prof_filter.setCurrentText(prof_name)
         self._tabs.setCurrentIndex(0)  # Skills tab
+        self._emit_nav()
 
     # ── Progression Tab ───────────────────────────────────────────────────
 
@@ -1156,7 +1204,7 @@ class SkillsPage(QWidget):
                 date_str = date_str[:19].replace("T", " ")
             self._prog_table.setItem(i, 0, QTableWidgetItem(date_str))
             self._prog_table.setItem(i, 1, QTableWidgetItem(entry.get("skill_name", "")))
-            val = entry.get("new_value", 0)
+            val = float(entry.get("new_value", 0))
             val_item = QTableWidgetItem(f"{val:.4f}")
             val_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             self._prog_table.setItem(i, 2, val_item)
@@ -1271,85 +1319,93 @@ class SkillsPage(QWidget):
         from ...core.constants import EVENT_OCR_OVERLAYS_SHOW
         if hasattr(self._signals, 'trigger_ocr_scan'):
             self._signals.trigger_ocr_scan.emit()
-        self._scan_progress_label.setText("Manual scan triggered...")
+        self._scan_results_group.setTitle("Scan Results (scanning...)")
         self._manual_scan_btn.setEnabled(False)
+
+    def _on_debug_overlay_toggled(self, checked: bool):
+        """Toggle the scan overlay debug mode."""
+        if self._config:
+            self._config.scan_overlay_debug = checked
+            from ...core.config import save_config
+            save_config(self._config, self._config_path)
+        # Publish via EventBus so scan_highlight_overlay receives it
+        # (the signal bridge is one-way: EventBus→Qt only)
+        if self._event_bus:
+            from ...core.constants import EVENT_CONFIG_CHANGED
+            self._event_bus.publish(EVENT_CONFIG_CHANGED, self._config)
 
     def _on_ocr_progress(self, data):
         if hasattr(data, "total_found"):
-            self._scan_progress_bar.setValue(data.total_found)
             total_expected = getattr(data, "total_expected", 165)
-            self._scan_progress_label.setText(
-                f"Found {data.total_found}/{total_expected} skills"
+            self._scan_results_group.setTitle(
+                f"Scan Results ({data.total_found}/{total_expected} skills)"
             )
+
+    def _on_skill_scanned(self, reading):
+        """Handle a single skill being scanned — add or update in the table."""
+        # Deduplicate: update existing row if skill already scanned
+        if reading.skill_name in self._scan_skill_rows:
+            row = self._scan_skill_rows[reading.skill_name]
+        else:
+            row = self._scan_results_table.rowCount()
+            self._scan_results_table.setRowCount(row + 1)
+            self._scan_skill_rows[reading.skill_name] = row
+
+        self._scan_results_table.setItem(
+            row, 0, QTableWidgetItem(reading.skill_name)
+        )
+        self._scan_results_table.setItem(row, 1, QTableWidgetItem(reading.rank))
+        self._scan_results_table.setItem(
+            row, 2, QTableWidgetItem(str(reading.rank_threshold))
+        )
+        self._scan_results_table.setItem(
+            row, 3, QTableWidgetItem(f"{reading.current_points:.0f}")
+        )
+
+        # Highlight mismatch rows in amber
+        if reading.is_mismatch:
+            from PyQt6.QtGui import QColor
+            warning = QColor(245, 158, 11)
+            for col in range(4):
+                item = self._scan_results_table.item(row, col)
+                if item:
+                    item.setForeground(warning)
+            self._scan_warning_count += 1
+
+        self._scan_results_table.scrollToBottom()
+
+        # Update group title with count
+        count = len(self._scan_skill_rows)
+        self._scan_results_group.setTitle(f"Scan Results ({count} skills read)")
+        self._scan_info_label.setText(
+            f"{count} read, {self._scan_warning_count} warnings"
+        )
+
+        # Update skill value in the manager for live card refresh
+        self._manager._skill_values[reading.skill_name] = reading.current_points
+
+    def _on_ocr_page_changed(self, _data):
+        """Page changed — keep accumulating (don't clear)."""
+        pass
 
     def _on_ocr_complete(self, result):
         self._last_scan_result = result
-        self._scan_progress_label.setText(
-            f"Scan complete: {result.total_found}/{result.total_expected} skills"
-        )
-        self._scan_progress_bar.setValue(result.total_found)
         self._manual_scan_btn.setEnabled(True)
 
-        # Populate scan results table
-        skills = result.skills if hasattr(result, "skills") else []
-        self._scan_results_table.setRowCount(len(skills))
-        for i, skill in enumerate(skills):
-            self._scan_results_table.setItem(
-                i, 0, QTableWidgetItem(skill.skill_name)
-            )
-            self._scan_results_table.setItem(i, 1, QTableWidgetItem(skill.rank))
-            self._scan_results_table.setItem(
-                i, 2, QTableWidgetItem(f"{skill.current_points:.2f}")
-            )
-            self._scan_results_table.setItem(
-                i, 3, QTableWidgetItem(f"{skill.progress_percent:.1f}%")
-            )
-
-        # Enable upload if authenticated
-        self._upload_btn.setEnabled(self._oauth.is_authenticated())
-        self._upload_status.setText(
-            "Ready to upload." if self._oauth.is_authenticated()
-            else "Login required to upload."
+        # Table is already populated by _on_skill_scanned — just update counts
+        self._scan_results_group.setTitle(
+            f"Scan Results ({result.total_found}/{result.total_expected} skills)"
+        )
+        self._scan_info_label.setText(
+            f"{result.total_found}/{result.total_expected} read,"
+            f" {self._scan_warning_count} warnings"
         )
 
-        # Also update skill values from scan
-        if skills:
-            for skill in skills:
-                self._manager._skill_values[skill.skill_name] = skill.current_points
+        # Refresh displays with accumulated values
+        if self._scan_skill_rows:
             self._refresh_skills_display()
             self._refresh_prof_display()
             self._update_optimizer_current()
-
-    def _on_upload(self):
-        if not self._last_scan_result or not self._oauth.is_authenticated():
-            return
-
-        self._upload_btn.setEnabled(False)
-        self._upload_status.setText("Uploading...")
-
-        skills = {
-            s.skill_name: s.current_points
-            for s in self._last_scan_result.skills
-        }
-
-        threading.Thread(
-            target=self._do_upload, args=(skills,), daemon=True
-        ).start()
-
-    def _do_upload(self, skills):
-        result = self._nexus_client.upload_skills(skills)
-        if result:
-            QTimer.singleShot(0, partial(self._on_upload_success, result))
-        else:
-            QTimer.singleShot(0, partial(self._on_upload_failed, "Upload failed"))
-
-    def _on_upload_success(self, result):
-        self._upload_status.setText("Upload successful!")
-        self._upload_btn.setEnabled(True)
-
-    def _on_upload_failed(self, error):
-        self._upload_status.setText(f"Upload failed: {error}")
-        self._upload_btn.setEnabled(True)
 
     # ── Auth ──────────────────────────────────────────────────────────────
 
@@ -1358,19 +1414,19 @@ class SkillsPage(QWidget):
             # Sync skills on first auth
             threading.Thread(target=self._sync_on_auth, daemon=True).start()
 
-        if self._last_scan_result:
-            self._upload_btn.setEnabled(state.authenticated)
-            self._upload_status.setText(
-                "Ready to upload." if state.authenticated
-                else "Login required to upload."
-            )
-
     def _sync_on_auth(self):
         self._manager.sync_from_nexus()
         self._synced = True
         QTimer.singleShot(0, self._on_data_loaded)
 
     # ── Resize ────────────────────────────────────────────────────────────
+
+    def _on_tab_changed(self, index):
+        """Re-flow grid when switching tabs (viewport width may differ)."""
+        if index == 0 and self._skills_view_mode == "grid":
+            self._refresh_skills_display()
+        elif index == 1 and self._prof_view_mode == "grid":
+            self._refresh_prof_display()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

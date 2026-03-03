@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt, QTimer, QSize
+from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QLabel, QPushButton, QApplication,
     QTableWidget, QTableWidgetItem, QHeaderView,
@@ -495,11 +496,14 @@ class MobDetailView(WikiDetailView):
             if def_prof or scan_prof or loot_prof:
                 skill_section = InfoboxSection("Skills")
                 if def_prof:
-                    skill_section.add_row(StatRow("Defense", def_prof))
+                    skill_section.add_row(self._linked_stat_row(
+                        "Defense", def_prof, "Profession"))
                 if scan_prof:
-                    skill_section.add_row(StatRow("Scanning", scan_prof))
+                    skill_section.add_row(self._linked_stat_row(
+                        "Scanning", scan_prof, "Profession"))
                 if loot_prof:
-                    skill_section.add_row(StatRow("Looting", loot_prof))
+                    skill_section.add_row(self._linked_stat_row(
+                        "Looting", loot_prof, "Profession"))
                 self._add_section(skill_section)
 
         # --- Damage Breakdown (per-maturity groups, matching web) ---
@@ -675,7 +679,11 @@ class MobDetailView(WikiDetailView):
                 l_name = (
                     deep_get(l, "Item", "Name") or l.get("Name") or "-"
                 )
-                table.setItem(r, 0, QTableWidgetItem(str(l_name)))
+                l_type = deep_get(l, "Item", "Type") or "Material"
+                item_widget = QTableWidgetItem(str(l_name))
+                item_widget.setForeground(QColor(ACCENT))
+                item_widget.setData(Qt.ItemDataRole.UserRole, l_type)
+                table.setItem(r, 0, item_widget)
 
                 frequency = l.get("Frequency") or ""
                 if frequency and frequency in _FREQUENCY_COLORS:
@@ -690,5 +698,11 @@ class MobDetailView(WikiDetailView):
 
             _finish_table(table, len(sorted_loots), stretch_col=0,
                          fixed_cols={1: _BADGE_COL_WIDTH})
+            table.cellDoubleClicked.connect(
+                lambda row, col, t=table: self.entity_navigate.emit(
+                    {"Name": t.item(row, 0).text(),
+                     "Type": t.item(row, 0).data(Qt.ItemDataRole.UserRole) or "Material"}
+                ) if t.item(row, 0) else None
+            )
             loot_section.set_content(table)
             self._add_article_section(loot_section)

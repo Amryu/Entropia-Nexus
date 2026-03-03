@@ -13,6 +13,8 @@ EVENT_PARSER_ERROR = "parser_error"
 # Event names — OCR
 EVENT_OCR_PROGRESS = "ocr_progress"
 EVENT_OCR_COMPLETE = "ocr_complete"
+EVENT_OCR_CANCEL = "ocr_cancel"
+EVENT_SKILL_SCANNED = "skill_scanned"
 
 # Event names — Auth
 EVENT_AUTH_STATE_CHANGED = "auth_state_changed"
@@ -75,6 +77,7 @@ EVENT_DEBUG_ROW = "debug_row"              # Individual row OCR result
 EVENT_OCR_OVERLAYS_HIDE = "ocr_overlays_hide"   # data: callable (call when hidden)
 EVENT_OCR_OVERLAYS_SHOW = "ocr_overlays_show"    # data: None
 EVENT_OCR_PAGE_CHANGED = "ocr_page_changed"      # data: None (clear checkmarks)
+EVENT_ROI_CONFIG_CHANGED = "roi_config_changed"  # data: {name: (x,y,w,h)} pixel overrides
 
 # Chat log line format
 LINE_PATTERN = re.compile(
