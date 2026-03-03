@@ -587,7 +587,7 @@
       { label: 'Space', url: 'space' },
     ],
     'Tools': [
-      { label: 'Client', url: 'client', badge: 'New' },
+      { label: 'Client', url: 'client', badge: 'Beta' },
       { label: 'Loadout Manager', url: 'loadouts' },
       { label: 'Construction Calculator', url: 'construction' },
       { label: 'Skills Calculator', url: 'skills', disabled: true },

@@ -82,8 +82,8 @@ if [[ "$PLATFORM" == "windows" ]] && command -v cygpath &>/dev/null; then
 fi
 
 ENTRY_POINT="${ROOT}/client/run_client.py"
-DIST_DIR="${ROOT}/client/dist"
-BUILD_DIR="${ROOT}/client/build"
+DIST_DIR="${NEXUS_DIST_DIR:-${ROOT}/client/dist}"
+BUILD_DIR="${NEXUS_BUILD_DIR:-${ROOT}/client/build}"
 
 # ── Ensure PyInstaller is installed ──────────────────────────────────────────
 
@@ -195,33 +195,43 @@ if [[ -d "$INTERNAL_CHECK" ]]; then
         done
     }
 
-    # 1. Unused Qt module DLLs
+    # 1. Unused Qt module libraries (.dll on Windows, .so* on Linux)
     #    Keep: QtWidgets, QtCore, QtGui, QtSvg, QtMultimedia, QtNetwork
-    find "$INTERNAL_CHECK" -type f \( \
-        -name 'Qt6Quick*' -o -name 'Qt6Qml*' \
-        -o -name 'Qt6Positioning*' -o -name 'Qt6WebChannel*' \
-        -o -name 'Qt6OpenGL*' \
-        -o -name 'Qt6Quick3D*' \
-        -o -name 'Qt6RemoteObjects*' -o -name 'Qt6PrintSupport*' \
-        -o -name 'Qt6Pdf*' -o -name 'Qt6ShaderTools*' \
-        -o -name 'Qt6Sensors*' -o -name 'Qt6TextToSpeech*' \
-        -o -name 'Qt6WebSockets*' -o -name 'Qt6SpatialAudio*' \
-        \) | strip_files
+    STRIP_QT_MODULES=(
+        'Qt6Quick*' 'Qt6Qml*' 'Qt6Positioning*' 'Qt6WebChannel*'
+        'Qt6OpenGL*' 'Qt6Quick3D*' 'Qt6RemoteObjects*' 'Qt6PrintSupport*'
+        'Qt6Pdf*' 'Qt6ShaderTools*' 'Qt6Sensors*' 'Qt6TextToSpeech*'
+        'Qt6WebSockets*' 'Qt6SpatialAudio*' 'Qt6XcbQpa*'
+    )
+    FIND_QT_ARGS=()
+    for pat in "${STRIP_QT_MODULES[@]}"; do
+        [[ ${#FIND_QT_ARGS[@]} -gt 0 ]] && FIND_QT_ARGS+=( -o )
+        FIND_QT_ARGS+=( -name "$pat" )
+    done
+    find "$INTERNAL_CHECK" -type f \( "${FIND_QT_ARGS[@]}" \) | strip_files
 
-    # 2. Unused PyQt6 Python bindings (.pyd)
-    find "$INTERNAL_CHECK" -type f \( \
-        -name 'QtPrintSupport.pyd' -o -name 'QtRemoteObjects.pyd' \
-        -o -name 'QtQuick.pyd' -o -name 'QtQml.pyd' \
-        -o -name 'QtPositioning.pyd' -o -name 'QtOpenGL.pyd' \
-        \) | strip_files
+    # 2. Unused PyQt6 Python bindings (.pyd on Windows, .abi3.so on Linux)
+    STRIP_PYQT_MODULES=(
+        'QtPrintSupport*' 'QtRemoteObjects*' 'QtQuick*'
+        'QtQml*' 'QtPositioning*' 'QtOpenGL*' 'QtDBus*'
+    )
+    FIND_PYQT_ARGS=()
+    for pat in "${STRIP_PYQT_MODULES[@]}"; do
+        [[ ${#FIND_PYQT_ARGS[@]} -gt 0 ]] && FIND_PYQT_ARGS+=( -o )
+        FIND_PYQT_ARGS+=( -name "$pat" )
+    done
+    find "$INTERNAL_CHECK" -path '*/PyQt6*' -type f \( "${FIND_PYQT_ARGS[@]}" \) | strip_files
 
-    # 3. Software OpenGL fallback — not needed on Windows 10+
+    # 3. Software OpenGL fallback (Windows only)
     find "$INTERNAL_CHECK" -name 'opengl32sw.dll' -type f | strip_files
 
-    # 4. FFmpeg codecs — QSoundEffect plays WAV via wasapi, not FFmpeg
+    # 4. FFmpeg codecs — QSoundEffect plays WAV natively, no FFmpeg needed
     find "$INTERNAL_CHECK" -type f \( \
         -name 'avcodec-*.dll' -o -name 'avformat-*.dll' \
         -o -name 'avutil-*.dll' -o -name 'swresample-*.dll' \
+        -o -name 'libavcodec*.so*' -o -name 'libavformat*.so*' \
+        -o -name 'libavutil*.so*' -o -name 'libswresample*.so*' \
+        -o -name 'libswscale*.so*' \
         \) | strip_files
 
     # 5. OpenCV video I/O FFmpeg — OCR uses image ops only
@@ -236,7 +246,14 @@ if [[ -d "$INTERNAL_CHECK" ]]; then
     # 8. Qt positioning plugin
     find "$INTERNAL_CHECK" -path '*/plugins/position' -type d | strip_dirs
 
-    # 9. Font files — not licensed for distribution; STPK templates provide OCR matching
+    # 9. Qt xcb GL integrations — not needed for overlay/headless use
+    find "$INTERNAL_CHECK" -path '*/plugins/xcbglintegrations' -type d | strip_dirs
+
+    # 10. Qt FFmpeg multimedia plugin (Linux .so)
+    find "$INTERNAL_CHECK" -name 'libffmpegmediaplugin*' -type f | strip_files
+    find "$INTERNAL_CHECK" -name 'libQt6FFmpegStub*' -type f | strip_files
+
+    # 11. Font files — not licensed for distribution; STPK templates provide OCR matching
     find "$INTERNAL_CHECK" -name '*.ttf' -type f | strip_files
 
     SAVED_MB=$((SAVED / 1048576))

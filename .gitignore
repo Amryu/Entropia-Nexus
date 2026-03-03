@@ -45,6 +45,7 @@ nexus-bot/config.json
 client/assets/arial-unicode-bold.ttf
 client/build/
 client/dist/
+client/release/
 client/entropia-nexus.spec
 /build/
 /dist/
