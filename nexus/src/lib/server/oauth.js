@@ -432,6 +432,21 @@ export async function validateAccessToken(rawToken) {
  * @param {string|null} clientSecret - null for public clients
  * @returns {Promise<{ accessToken: string, refreshToken: string, expiresIn: number, scope: string }|null>}
  */
+// Grace window (seconds): if a used refresh token is re-presented within this
+// window after rotation, return the cached successor response instead of
+// revoking all tokens.  This handles the case where the client crashed or lost
+// connectivity after the server rotated but before it persisted the new tokens.
+//
+// Spec reference: draft-ietf-oauth-security-topics §4.14.2 — "the
+// authorization server MAY grant a grace period during which the old refresh
+// token can still be used" and "SHOULD return the same response".
+//
+// We achieve "same response" by caching the raw token response on the used
+// refresh token row (encrypted at rest is recommended for production, but the
+// tokens are short-lived and the column is only populated for the grace window
+// duration).
+const REFRESH_REUSE_GRACE_SECONDS = 30;
+
 export async function refreshAccessToken(rawRefreshToken, clientId, clientSecret) {
   const refreshHash = hashToken(rawRefreshToken);
 
@@ -453,8 +468,36 @@ export async function refreshAccessToken(rawRefreshToken, clientId, clientSecret
     if (!clientSecret || !(await verifyClientSecret(clientId, clientSecret))) return null;
   }
 
-  // Reuse detection: if already used, revoke everything for this client+user
+  // Reuse detection with grace window (§4.14.2)
   if (refreshRow.used) {
+    const usedAt = refreshRow.used_at ? new Date(refreshRow.used_at) : null;
+    const withinGrace = usedAt && (Date.now() - usedAt.getTime()) < REFRESH_REUSE_GRACE_SECONDS * 1000;
+
+    if (withinGrace && refreshRow.replaced_by) {
+      // Within grace window — return the cached successor response.
+      // Atomically clear the cache so a second concurrent retry can't
+      // obtain the same tokens (which would cause reuse on the *new* token).
+      console.info(`[oauth] Refresh token reuse within grace window for client ${clientId}, user ${refreshRow.user_id}. Returning cached successor.`);
+      const { rowCount } = await pool.query(
+        `UPDATE oauth_refresh_tokens
+         SET replaced_by = NULL
+         WHERE token_hash = $1 AND replaced_by IS NOT NULL`,
+        [refreshHash]
+      );
+      if (rowCount === 0) {
+        // Another concurrent request already claimed the cached response
+        console.warn(`[oauth] Grace window cache already consumed for client ${clientId}, user ${refreshRow.user_id}. Revoking.`);
+        await revokeAllClientUserTokens(clientId, refreshRow.user_id);
+        return null;
+      }
+      try {
+        return JSON.parse(refreshRow.replaced_by);
+      } catch {
+        // Corrupted cache — fall through to revoke
+      }
+    }
+
+    // Outside grace window or no cached response — genuine reuse, revoke everything
     console.warn(`[oauth] Refresh token reuse detected for client ${clientId}, user ${refreshRow.user_id}. Revoking all tokens.`);
     await revokeAllClientUserTokens(clientId, refreshRow.user_id);
     return null;
@@ -463,18 +506,6 @@ export async function refreshAccessToken(rawRefreshToken, clientId, clientSecret
   // Check expiry
   if (new Date(refreshRow.expires_at) < new Date()) return null;
 
-  // Mark old refresh token as used
-  await pool.query(
-    'UPDATE oauth_refresh_tokens SET used = true WHERE token_hash = $1',
-    [refreshHash]
-  );
-
-  // Delete old access token
-  await pool.query(
-    'DELETE FROM oauth_access_tokens WHERE token_hash = $1',
-    [refreshRow.access_token_hash]
-  );
-
   // Generate new token pair
   const rawAccessToken = generateToken();
   const rawNewRefreshToken = generateToken();
@@ -482,6 +513,29 @@ export async function refreshAccessToken(rawRefreshToken, clientId, clientSecret
   const newRefreshHash = hashToken(rawNewRefreshToken);
   const accessExpiresAt = new Date(Date.now() + ACCESS_TOKEN_EXPIRY_SECONDS * 1000);
   const refreshExpiresAt = new Date(Date.now() + REFRESH_TOKEN_EXPIRY_SECONDS * 1000);
+
+  const result = {
+    accessToken: rawAccessToken,
+    refreshToken: rawNewRefreshToken,
+    expiresIn: ACCESS_TOKEN_EXPIRY_SECONDS,
+    scope: refreshRow.scopes.join(' ')
+  };
+
+  // Mark old refresh token as used.  Cache the raw response in replaced_by so
+  // that a retry within the grace window receives the identical token pair
+  // (spec: "SHOULD return the same response").
+  await pool.query(
+    `UPDATE oauth_refresh_tokens
+     SET used = true, used_at = NOW(), replaced_by = $2
+     WHERE token_hash = $1`,
+    [refreshHash, JSON.stringify(result)]
+  );
+
+  // Delete old access token
+  await pool.query(
+    'DELETE FROM oauth_access_tokens WHERE token_hash = $1',
+    [refreshRow.access_token_hash]
+  );
 
   await pool.query(
     `INSERT INTO oauth_access_tokens (token_hash, client_id, user_id, scopes, expires_at)
@@ -495,12 +549,7 @@ export async function refreshAccessToken(rawRefreshToken, clientId, clientSecret
     [newRefreshHash, accessTokenHash, clientId, refreshRow.user_id, refreshRow.scopes, refreshExpiresAt]
   );
 
-  return {
-    accessToken: rawAccessToken,
-    refreshToken: rawNewRefreshToken,
-    expiresIn: ACCESS_TOKEN_EXPIRY_SECONDS,
-    scope: refreshRow.scopes.join(' ')
-  };
+  return result;
 }
 
 // --- Token revocation ---
@@ -564,5 +613,16 @@ export async function cleanupExpiredTokens() {
 
   await pool.query('DELETE FROM oauth_authorization_codes WHERE expires_at < $1 OR used = true', [now]);
   await pool.query('DELETE FROM oauth_access_tokens WHERE expires_at < $1', [now]);
+
+  // Clear cached raw tokens from rotated refresh tokens whose grace window
+  // has passed, so raw token material doesn't linger in the database.
+  await pool.query(
+    `UPDATE oauth_refresh_tokens
+     SET replaced_by = NULL
+     WHERE replaced_by IS NOT NULL
+       AND used_at < NOW() - ($1 || ' seconds')::interval`,
+    [REFRESH_REUSE_GRACE_SECONDS]
+  );
+
   await pool.query('DELETE FROM oauth_refresh_tokens WHERE expires_at < $1', [now]);
 }
