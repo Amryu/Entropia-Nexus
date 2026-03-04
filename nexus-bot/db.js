@@ -147,6 +147,37 @@ export async function setChangeState(id, state) {
   await poolUsers.query(query, values);
 }
 
+// Reward functions
+export async function getMatchingRewardRules(entity, changeType, dataKeys) {
+  const { rows } = await poolUsers.query(
+    'SELECT * FROM reward_rules WHERE active = true ORDER BY sort_order, id'
+  );
+  return rows.filter(rule => {
+    if (rule.entities && !rule.entities.includes(entity)) return false;
+    if (rule.change_type && rule.change_type !== changeType) return false;
+    if (rule.data_fields && dataKeys) {
+      if (!rule.data_fields.some(f => dataKeys.includes(f))) return false;
+    }
+    return true;
+  });
+}
+
+export async function assignChangeReward({ change_id, user_id, rule_id, amount, contribution_score, assigned_by }) {
+  const { rows } = await poolUsers.query(
+    `INSERT INTO contributor_rewards (change_id, user_id, rule_id, amount, contribution_score, note, assigned_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
+    [change_id, user_id, rule_id, amount, contribution_score || null, 'Auto-assigned on approval', assigned_by]
+  );
+  const score = parseFloat(contribution_score) || 0;
+  if (score > 0) {
+    await poolUsers.query(
+      'UPDATE users SET reward_score = reward_score + $1 WHERE id = $2',
+      [score, user_id]
+    );
+  }
+  return rows[0];
+}
+
 // Shop functions
 export async function getShopById(id) {
   const query = `
