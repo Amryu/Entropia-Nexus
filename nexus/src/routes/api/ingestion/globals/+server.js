@@ -110,19 +110,15 @@ export async function POST({ request, locals }) {
  * GET /api/ingestion/globals — Distribution endpoint.
  * Returns all global events newer than `since`, each with a `confirmed` flag.
  */
-export async function GET({ url, locals }) {
-  const user = requireVerifiedAPI(locals);
+export async function GET({ url, locals, request }) {
+  const ip = locals.ip || request.headers.get('x-forwarded-for') || request.headers.get('cf-connecting-ip') || 'unknown';
 
-  const rl = checkRateLimit(`ingest-get-globals:${user.id}`, GET_RATE_LIMIT_MAX, GET_RATE_LIMIT_WINDOW);
+  const rl = checkRateLimit(`ingest-get-globals:${ip}`, GET_RATE_LIMIT_MAX, GET_RATE_LIMIT_WINDOW);
   if (!rl.allowed) {
     return getResponse(
       { error: 'Rate limited', retryAfter: Math.ceil(rl.resetIn / 1000) },
       429
     );
-  }
-
-  if (await isIngestionBanned(user.id)) {
-    return getResponse({ error: 'Ingestion access revoked' }, 403);
   }
 
   const since = url.searchParams.get('since');

@@ -197,7 +197,9 @@ export async function getAllClientsWithMetrics() {
        u.global_name AS owner_name, u.id AS owner_id,
        COALESCE(at.active_tokens, 0)::int AS active_tokens,
        COALESCE(at.authorized_users, 0)::int AS authorized_users,
-       at.last_used
+       at.last_used,
+       COALESCE(rt.active_refresh_tokens, 0)::int AS active_refresh_tokens,
+       rt.refresh_last_used
      FROM oauth_clients c
      JOIN users u ON c.user_id = u.id
      LEFT JOIN LATERAL (
@@ -207,6 +209,12 @@ export async function getAllClientsWithMetrics() {
        FROM oauth_access_tokens
        WHERE client_id = c.id AND expires_at > NOW()
      ) at ON true
+     LEFT JOIN LATERAL (
+       SELECT COUNT(*) AS active_refresh_tokens,
+              MAX(created_at) AS refresh_last_used
+       FROM oauth_refresh_tokens
+       WHERE client_id = c.id AND expires_at > NOW()
+     ) rt ON true
      ORDER BY c.created_at DESC`
   );
   return rows.map(r => ({ ...r, owner_id: String(r.owner_id) }));

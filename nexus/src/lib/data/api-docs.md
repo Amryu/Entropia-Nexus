@@ -1719,7 +1719,7 @@ Delete a profile image. You can only delete your own profile image.
 
 ### Ingestion
 
-Crowdsourced trade messages and global events. **No specific scopes required** — any verified OAuth-authenticated user can access the distribution (GET) endpoints. Submission (POST) endpoints are restricted to approved OAuth applications only — the application's `client_id` must be whitelisted by an administrator. If your application is not approved, POST requests will return `403`.
+Crowdsourced trade messages and global events. The distribution (GET) endpoints are **public** — no authentication required, rate limited by IP. Submission (POST) endpoints are restricted to approved OAuth applications only — the application's `client_id` must be whitelisted by an administrator. If your application is not approved, POST requests will return `403`.
 
 #### `POST /api/ingestion/globals`
 

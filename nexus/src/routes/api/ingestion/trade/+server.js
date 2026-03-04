@@ -107,19 +107,15 @@ export async function POST({ request, locals }) {
  * GET /api/ingestion/trade — Distribution endpoint.
  * Returns all trade messages newer than `since` with confirmation_count.
  */
-export async function GET({ url, locals }) {
-  const user = requireVerifiedAPI(locals);
+export async function GET({ url, locals, request }) {
+  const ip = locals.ip || request.headers.get('x-forwarded-for') || request.headers.get('cf-connecting-ip') || 'unknown';
 
-  const rl = checkRateLimit(`ingest-get-trade:${user.id}`, GET_RATE_LIMIT_MAX, GET_RATE_LIMIT_WINDOW);
+  const rl = checkRateLimit(`ingest-get-trade:${ip}`, GET_RATE_LIMIT_MAX, GET_RATE_LIMIT_WINDOW);
   if (!rl.allowed) {
     return getResponse(
       { error: 'Rate limited', retryAfter: Math.ceil(rl.resetIn / 1000) },
       429
     );
-  }
-
-  if (await isIngestionBanned(user.id)) {
-    return getResponse({ error: 'Ingestion access revoked' }, 403);
   }
 
   const since = url.searchParams.get('since');

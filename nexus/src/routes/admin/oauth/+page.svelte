@@ -74,6 +74,8 @@
             <th class="num">Active Tokens</th>
             <th class="num">Users</th>
             <th>Last Used</th>
+            <th class="num">Refresh Tokens</th>
+            <th>Refresh Last Used</th>
           </tr>
         </thead>
         <tbody>
@@ -97,6 +99,8 @@
               <td class="num">{client.active_tokens}</td>
               <td class="num">{client.authorized_users}</td>
               <td class="last-used">{formatDateTime(client.last_used)}</td>
+              <td class="num">{client.active_refresh_tokens}</td>
+              <td class="last-used">{formatDateTime(client.refresh_last_used)}</td>
             </tr>
           {/each}
         </tbody>
@@ -231,8 +235,8 @@
   }
 
   .badge-muted {
-    background: var(--hover-color);
-    color: var(--text-muted);
+    background: rgba(74, 222, 128, 0.15);
+    color: #4ade80;
   }
 
   .last-used {
