@@ -1240,10 +1240,11 @@ export function validateMarketPrice(entry) {
 
 /**
  * Ingest a batch of market price snapshots.
- * Deduplicates by item_name within 1-hour window.
+ * Deduplicates within a 1-hour window by item_id (resolved) or item_name (unresolved).
+ * Only stores item_name when item_id could not be resolved.
  * @param {number} userId
  * @param {Array} prices
- * @param {Function} resolveItem - async (name) => { itemId: number|null, resolvedName: string|null }
+ * @param {Function} resolveItem - async (name, rawName) => number|null (item_id)
  * @returns {{ accepted: number, duplicates: number }}
  */
 export async function ingestMarketPrices(userId, prices, resolveItem) {
@@ -1253,34 +1254,39 @@ export async function ingestMarketPrices(userId, prices, resolveItem) {
     const ocrName = entry.item_name.trim();
     const rawName = entry.item_name_raw?.trim() || null;
 
-    // Resolve item_id (and possibly the full name for truncated OCR names)
+    // Resolve item_id
     let itemId = null;
-    let storedName = ocrName;
     if (resolveItem) {
       try {
-        const result = await resolveItem(ocrName, rawName);
-        itemId = result?.itemId ?? null;
-        // If prefix match resolved a full name, use it for storage and dedup
-        if (result?.resolvedName) storedName = result.resolvedName;
+        itemId = await resolveItem(ocrName, rawName);
       } catch {
-        // Non-fatal — store with null item_id and OCR name
+        // Non-fatal — store with null item_id
       }
     }
 
-    // Server-side 1hr dedup (using resolved name so truncated variants dedup correctly)
+    // Server-side 1hr dedup:
+    // - By item_id when resolved (also catches prior unresolved entries with same name)
+    // - By LOWER(item_name) when unresolved
     const { rows: existing } = await pool.query(
       `SELECT 1 FROM ONLY market_price_snapshots
-       WHERE item_name = $1 AND recorded_at > now() - interval '1 hour'
+       WHERE (
+         ($1::int IS NOT NULL AND item_id = $1)
+         OR (item_id IS NULL AND LOWER(item_name) = LOWER($2))
+       )
+       AND recorded_at > now() - interval '1 hour'
        LIMIT 1`,
-      [storedName]
+      [itemId, ocrName]
     );
     if (existing.length > 0) {
       duplicates++;
       continue;
     }
 
+    // Only store item_name when item_id is unresolved
+    const storedName = itemId ? null : ocrName;
+
     await pool.query(
-      `INSERT INTO ONLY market_price_snapshots
+      `INSERT INTO market_price_snapshots
        (item_name, item_id, tier, markup_1d, sales_1d, markup_7d, sales_7d,
         markup_30d, sales_30d, markup_90d, sales_90d, markup_365d, sales_365d,
         recorded_at, submitted_by)
