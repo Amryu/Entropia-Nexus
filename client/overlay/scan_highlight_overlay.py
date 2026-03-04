@@ -299,7 +299,7 @@ class ScanHighlightOverlay(QWidget):
     def _on_target_lock_update(self, data: dict) -> None:
         """Target lock detected — store position and repaint."""
         self._target_lock_data = data
-        if self._game_focused:
+        if self._game_focused and self._debug:
             if not self.isVisible():
                 self.show()
             self.update()
@@ -533,7 +533,10 @@ class ScanHighlightOverlay(QWidget):
                 painter.drawText(bx_start + 2, t_y - 2, bar_name)
 
     def _paint_target_lock(self, painter: QPainter) -> None:
-        """Draw a rectangle around the detected target lock icon and ROI boxes."""
+        """Draw debug overlay for target lock (debug mode only)."""
+        if not self._debug:
+            return
+
         data = self._target_lock_data
         if not data:
             return
@@ -550,9 +553,8 @@ class ScanHighlightOverlay(QWidget):
         painter.setBrush(QBrush(TARGET_LOCK_FILL))
         painter.drawRect(x, y, w, h)
 
-        # Debug mode: draw ROI boxes
-        if self._debug:
-            self._paint_target_lock_rois(painter, x, y)
+        # ROI boxes
+        self._paint_target_lock_rois(painter, x, y)
 
     def _paint_target_lock_rois(self, painter: QPainter, tx: int, ty: int) -> None:
         """Draw labeled ROI boxes relative to template position (debug only)."""
@@ -628,12 +630,12 @@ class ScanHighlightOverlay(QWidget):
             # Label above box
             painter.setFont(MP_LABEL_FONT)
             painter.drawText(rx + 2, ry - 2, label)
-            # Value text inside box
+            # Value text to the right of the box (avoids overlapping game text)
             if value_text:
                 painter.setFont(MP_VALUE_FONT)
                 painter.setPen(QPen(QColor(255, 255, 255, 220)))
                 painter.drawText(
-                    QRect(rx + 1, ry, rw - 2, rh),
+                    rx + rw + 4, ry, 200, rh,
                     Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
                     value_text,
                 )
