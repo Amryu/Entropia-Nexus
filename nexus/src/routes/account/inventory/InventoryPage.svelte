@@ -208,7 +208,7 @@
       ? { details: { CurrentTT: Number(item.value) } }
       : undefined;
     let totalValue = null;
-    let valueSource = 'default'; // 'custom' | 'market' | 'default'
+    let valueSource = 'default'; // 'custom' | 'exchange' | 'default'
     if (markup != null && slim) {
       const unitPrice = computeUnitPrice(slim, markup, orderLike);
       if (unitPrice != null) {
@@ -220,7 +220,7 @@
       const unitPrice = computeUnitPrice(slim, Number(marketPrice), orderLike);
       if (unitPrice != null && unitPrice > 0) {
         totalValue = isItemStackable(slim) ? unitPrice * item.quantity : unitPrice;
-        valueSource = 'market';
+        valueSource = 'exchange';
       }
     }
     if (valueSource === 'default' && ttValue != null) {
@@ -972,7 +972,7 @@
                   </div>
                   <div class="grid-stat">
                     <span class="grid-stat-label">Value</span>
-                    <span class="grid-stat-value" class:value-custom={item._valueSource === 'custom'} class:value-market={item._valueSource === 'market'} class:text-muted={item._valueSource === 'default' || item._totalValue == null}>
+                    <span class="grid-stat-value" class:value-custom={item._valueSource === 'custom'} class:value-exchange={item._valueSource === 'exchange'} class:text-muted={item._valueSource === 'default' || item._totalValue == null}>
                       {item._totalValue != null ? formatPedRaw(item._totalValue) : '-'}
                     </span>
                   </div>
@@ -1542,7 +1542,7 @@
     color: var(--accent-color);
   }
 
-  .value-market {
+  .value-exchange {
     color: var(--text-color);
   }
 

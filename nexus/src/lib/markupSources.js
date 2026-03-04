@@ -47,6 +47,28 @@ export async function fetchExchangeWapByName() {
 }
 
 /**
+ * Fetch in-game market price data from OCR'd snapshots.
+ * Returns Map<itemName, markupPercent> using first non-null markup
+ * in priority: 1d → 7d → 30d → 90d → 365d.
+ */
+export async function fetchInGamePrices() {
+  try {
+    const res = await fetch('/api/market/prices/snapshots/latest?all=true');
+    if (!res.ok) return new Map();
+    const data = await res.json();
+    const map = new Map();
+    for (const row of data) {
+      const mu = row.markup_1d ?? row.markup_7d ?? row.markup_30d
+                ?? row.markup_90d ?? row.markup_365d;
+      if (mu != null && row.item_name) map.set(row.item_name, parseFloat(mu));
+    }
+    return map;
+  } catch {
+    return new Map();
+  }
+}
+
+/**
  * Fetch the user's inventory markups.
  * Returns Map<itemId, markupPercent>.
  * Fails silently if user is not logged in or not verified.

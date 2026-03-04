@@ -1009,3 +1009,89 @@ export async function deleteUnverifiedUser(userId, txClient) {
 
   return result.rows[0] || null;
 }
+
+// =============================================
+// MARKET PRICE SNAPSHOTS
+// =============================================
+
+/**
+ * Get the latest market price snapshot for an item by name or item_id.
+ */
+export async function getLatestMarketPrice(itemNameOrId) {
+  if (typeof itemNameOrId === 'number') {
+    const { rows } = await poolUsers.query(
+      `SELECT * FROM market_price_snapshots
+       WHERE item_id = $1
+       ORDER BY recorded_at DESC LIMIT 1`,
+      [itemNameOrId]
+    );
+    return rows[0] || null;
+  }
+  const { rows } = await poolUsers.query(
+    `SELECT * FROM market_price_snapshots
+     WHERE LOWER(item_name) = LOWER($1)
+     ORDER BY recorded_at DESC LIMIT 1`,
+    [itemNameOrId]
+  );
+  return rows[0] || null;
+}
+
+/**
+ * Get market price history for an item.
+ */
+export async function getMarketPriceHistory(itemId, { days = 30 } = {}) {
+  const { rows } = await poolUsers.query(
+    `SELECT * FROM market_price_snapshots
+     WHERE item_id = $1 AND recorded_at > now() - make_interval(days => $2)
+     ORDER BY recorded_at DESC`,
+    [itemId, days]
+  );
+  return rows;
+}
+
+/**
+ * Resolve unresolved item names in market_price_snapshots.
+ * Cross-references the nexus entity database Item table.
+ * Returns the number of rows updated.
+ */
+export async function resolveMarketPriceItemIds() {
+  // Get unresolved item names from users DB
+  const { rows: unresolved } = await poolUsers.query(
+    `SELECT DISTINCT item_name FROM market_price_snapshots
+     WHERE item_id IS NULL
+     LIMIT 500`
+  );
+
+  if (unresolved.length === 0) return 0;
+
+  let resolved = 0;
+  for (const { item_name } of unresolved) {
+    // Try exact match in nexus entity DB
+    const { rows: exact } = await poolNexus.query(
+      `SELECT "Id" FROM ONLY "Item" WHERE "Name" = $1 LIMIT 1`,
+      [item_name]
+    );
+
+    let itemId = exact.length > 0 ? exact[0].Id : null;
+
+    // Fallback: case-insensitive match
+    if (!itemId) {
+      const { rows: ilike } = await poolNexus.query(
+        `SELECT "Id" FROM ONLY "Item" WHERE LOWER("Name") = LOWER($1) LIMIT 1`,
+        [item_name]
+      );
+      itemId = ilike.length > 0 ? ilike[0].Id : null;
+    }
+
+    if (itemId) {
+      await poolUsers.query(
+        `UPDATE market_price_snapshots SET item_id = $1
+         WHERE item_name = $2 AND item_id IS NULL`,
+        [itemId, item_name]
+      );
+      resolved++;
+    }
+  }
+
+  return resolved;
+}

@@ -161,7 +161,8 @@ export async function getUserProfileById(userId) {
       society_id,
       biography_html,
       default_profile_tab,
-      showcase_loadout_code
+      showcase_loadout_code,
+      reward_score
     FROM users
     WHERE id = $1
   `;
@@ -183,7 +184,8 @@ export async function getUserProfileByEntropiaName(entropiaName) {
       society_id,
       biography_html,
       default_profile_tab,
-      showcase_loadout_code
+      showcase_loadout_code,
+      reward_score
     FROM users
     WHERE LOWER(eu_name) = LOWER($1)
   `;
@@ -3313,8 +3315,8 @@ export async function getTopContributors(limit = 10) {
       u.id, u.global_name, u.eu_name, u.avatar,
       COUNT(c.id) FILTER (WHERE c.state = 'Approved') as approved_count,
       COUNT(c.id) as total_count
-    FROM users u
-    LEFT JOIN changes c ON u.id = c.author_id
+    FROM ONLY users u
+    LEFT JOIN ONLY changes c ON u.id = c.author_id
     GROUP BY u.id
     HAVING COUNT(c.id) > 0
     ORDER BY approved_count DESC, total_count DESC
@@ -4753,4 +4755,346 @@ export async function getCreatorsForRefresh() {
      LIMIT 10`
   );
   return result.rows;
+}
+
+// ─── Contributor Rewards ────────────────────────────────────────────
+
+export async function getRewardRules() {
+  const result = await pool.query(
+    'SELECT * FROM reward_rules ORDER BY sort_order, id'
+  );
+  return result.rows;
+}
+
+export async function getActiveRewardRules() {
+  const result = await pool.query(
+    'SELECT * FROM reward_rules WHERE active = true ORDER BY sort_order, id'
+  );
+  return result.rows;
+}
+
+export async function createRewardRule({ name, description, category, entities, change_type, data_fields, min_amount, max_amount, contribution_score, sort_order }) {
+  const result = await pool.query(
+    `INSERT INTO reward_rules (name, description, category, entities, change_type, data_fields, min_amount, max_amount, contribution_score, sort_order)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+     RETURNING *`,
+    [name, description || null, category || null, entities || null, change_type || null, data_fields || null, min_amount, max_amount, contribution_score || null, sort_order || 0]
+  );
+  return result.rows[0];
+}
+
+export async function updateRewardRule(id, fields) {
+  const sets = [];
+  const values = [];
+  let paramIndex = 1;
+
+  const allowed = ['name', 'description', 'category', 'entities', 'change_type', 'data_fields', 'min_amount', 'max_amount', 'contribution_score', 'active', 'sort_order'];
+  for (const key of allowed) {
+    if (key in fields) {
+      sets.push(`${key} = $${paramIndex++}`);
+      values.push(fields[key]);
+    }
+  }
+
+  if (sets.length === 0) return null;
+  values.push(id);
+
+  const result = await pool.query(
+    `UPDATE reward_rules SET ${sets.join(', ')} WHERE id = $${paramIndex} RETURNING *`,
+    values
+  );
+  return result.rows[0] || null;
+}
+
+export async function deleteRewardRule(id) {
+  const result = await pool.query('DELETE FROM reward_rules WHERE id = $1 RETURNING id', [id]);
+  return result.rowCount > 0;
+}
+
+export async function getMatchingRules(entity, changeType, dataKeys) {
+  const result = await pool.query(
+    'SELECT * FROM reward_rules WHERE active = true ORDER BY sort_order, id'
+  );
+  return result.rows.filter(rule => {
+    if (rule.entities && !rule.entities.includes(entity)) return false;
+    if (rule.change_type && rule.change_type !== changeType) return false;
+    if (rule.data_fields && dataKeys) {
+      const hasMatch = rule.data_fields.some(f => dataKeys.includes(f));
+      if (!hasMatch) return false;
+    }
+    return true;
+  });
+}
+
+export async function getChangeReward(changeId) {
+  const result = await pool.query(
+    `SELECT cr.*, rr.name as rule_name, u.global_name as assigned_by_name
+     FROM contributor_rewards cr
+     LEFT JOIN reward_rules rr ON cr.rule_id = rr.id
+     LEFT JOIN users u ON cr.assigned_by = u.id
+     WHERE cr.change_id = $1`,
+    [changeId]
+  );
+  return result.rows[0] || null;
+}
+
+export async function assignReward({ change_id, user_id, rule_id, amount, contribution_score, note, assigned_by }) {
+  const result = await pool.query(
+    `INSERT INTO contributor_rewards (change_id, user_id, rule_id, amount, contribution_score, note, assigned_by)
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING *`,
+    [change_id, user_id, rule_id || null, amount, contribution_score || null, note || null, assigned_by]
+  );
+  // Update pre-calculated reward_score on user
+  const score = parseFloat(contribution_score) || 0;
+  if (score > 0) {
+    await pool.query('UPDATE ONLY users SET reward_score = reward_score + $1 WHERE id = $2', [score, user_id]);
+  }
+  return result.rows[0];
+}
+
+export async function removeReward(rewardId) {
+  // Read the reward's contribution_score before deleting to decrement user's reward_score
+  const reward = await pool.query('SELECT user_id, contribution_score FROM contributor_rewards WHERE id = $1', [rewardId]);
+  const result = await pool.query('DELETE FROM contributor_rewards WHERE id = $1 RETURNING id', [rewardId]);
+  if (result.rowCount > 0 && reward.rows[0]) {
+    const score = parseFloat(reward.rows[0].contribution_score) || 0;
+    if (score > 0) {
+      await pool.query('UPDATE ONLY users SET reward_score = GREATEST(reward_score - $1, 0) WHERE id = $2', [score, reward.rows[0].user_id]);
+    }
+  }
+  return result.rowCount > 0;
+}
+
+export async function getContributorBalances(page = 1, limit = 50, search = null) {
+  const offset = (page - 1) * limit;
+  const params = [limit, offset];
+  let searchClause = '';
+  if (search) {
+    params.push(`%${search}%`);
+    searchClause = `AND (u.global_name ILIKE $3 OR u.eu_name ILIKE $3)`;
+  }
+
+  const query = `
+    SELECT
+      u.id, u.global_name, u.eu_name, u.avatar,
+      COALESCE((SELECT COUNT(*) FROM changes c WHERE c.author_id = u.id AND c.state = 'Approved'), 0) as approved_count,
+      COALESCE((SELECT COUNT(*) FROM contributor_rewards cr WHERE cr.user_id = u.id), 0) as rewarded_count,
+      COALESCE((SELECT SUM(cr.amount) FROM contributor_rewards cr WHERE cr.user_id = u.id), 0) as total_earned,
+      COALESCE((SELECT SUM(cr.contribution_score) FROM contributor_rewards cr WHERE cr.user_id = u.id), 0) as total_score,
+      COALESCE((SELECT SUM(cp.amount) FROM contributor_payouts cp WHERE cp.user_id = u.id), 0) as total_paid
+    FROM users u
+    WHERE (
+      EXISTS (SELECT 1 FROM contributor_rewards cr2 WHERE cr2.user_id = u.id)
+      OR EXISTS (SELECT 1 FROM contributor_payouts cp2 WHERE cp2.user_id = u.id)
+    )
+    ${searchClause}
+    ORDER BY total_earned DESC, approved_count DESC
+    LIMIT $1 OFFSET $2
+  `;
+
+  const countQuery = `
+    SELECT COUNT(DISTINCT u.id) as total
+    FROM users u
+    WHERE (
+      EXISTS (SELECT 1 FROM contributor_rewards cr2 WHERE cr2.user_id = u.id)
+      OR EXISTS (SELECT 1 FROM contributor_payouts cp2 WHERE cp2.user_id = u.id)
+    )
+    ${search ? `AND (u.global_name ILIKE $1 OR u.eu_name ILIKE $1)` : ''}
+  `;
+
+  const [dataResult, countResult] = await Promise.all([
+    pool.query(query, params),
+    pool.query(countQuery, search ? [`%${search}%`] : [])
+  ]);
+
+  return {
+    contributors: dataResult.rows,
+    total: parseInt(countResult.rows[0]?.total || 0),
+    page,
+    totalPages: Math.ceil(parseInt(countResult.rows[0]?.total || 0) / limit)
+  };
+}
+
+export async function getContributorDetail(userId) {
+  const [rewardsResult, payoutsResult, userResult] = await Promise.all([
+    pool.query(
+      `SELECT cr.*, rr.name as rule_name, c.entity, c.type, c.data->>'Name' as entity_name,
+              ua.global_name as assigned_by_name
+       FROM contributor_rewards cr
+       LEFT JOIN reward_rules rr ON cr.rule_id = rr.id
+       LEFT JOIN changes c ON cr.change_id = c.id
+       LEFT JOIN users ua ON cr.assigned_by = ua.id
+       WHERE cr.user_id = $1
+       ORDER BY cr.created_at DESC`,
+      [userId]
+    ),
+    pool.query(
+      `SELECT cp.*, ua.global_name as created_by_name
+       FROM contributor_payouts cp
+       LEFT JOIN users ua ON cp.created_by = ua.id
+       WHERE cp.user_id = $1
+       ORDER BY cp.created_at DESC`,
+      [userId]
+    ),
+    pool.query(
+      'SELECT id, global_name, eu_name, avatar FROM users WHERE id = $1',
+      [userId]
+    )
+  ]);
+
+  return {
+    user: userResult.rows[0] || null,
+    rewards: rewardsResult.rows,
+    payouts: payoutsResult.rows
+  };
+}
+
+export async function getPayouts(page = 1, limit = 50, filters = {}) {
+  const offset = (page - 1) * limit;
+  const params = [limit, offset];
+  const conditions = [];
+  let paramIndex = 3;
+
+  if (filters.status) {
+    conditions.push(`cp.status = $${paramIndex++}`);
+    params.push(filters.status);
+  }
+  if (filters.user_id) {
+    conditions.push(`cp.user_id = $${paramIndex++}`);
+    params.push(filters.user_id);
+  }
+
+  const whereClause = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+  const query = `
+    SELECT cp.*, u.global_name, u.eu_name, u.avatar, ua.global_name as created_by_name
+    FROM contributor_payouts cp
+    LEFT JOIN users u ON cp.user_id = u.id
+    LEFT JOIN users ua ON cp.created_by = ua.id
+    ${whereClause}
+    ORDER BY cp.created_at DESC
+    LIMIT $1 OFFSET $2
+  `;
+
+  const countQuery = `
+    SELECT COUNT(*) as total FROM contributor_payouts cp ${whereClause}
+  `;
+
+  const countParams = params.slice(2);
+  const [dataResult, countResult] = await Promise.all([
+    pool.query(query, params),
+    pool.query(countQuery, countParams)
+  ]);
+
+  return {
+    payouts: dataResult.rows,
+    total: parseInt(countResult.rows[0]?.total || 0),
+    page,
+    totalPages: Math.ceil(parseInt(countResult.rows[0]?.total || 0) / limit)
+  };
+}
+
+export async function createPayout({ user_id, amount, is_bonus, note, created_by }) {
+  const result = await pool.query(
+    `INSERT INTO contributor_payouts (user_id, amount, is_bonus, note, created_by)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING *`,
+    [user_id, amount, is_bonus || false, note || null, created_by]
+  );
+  return result.rows[0];
+}
+
+export async function completePayout(id) {
+  const result = await pool.query(
+    `UPDATE contributor_payouts SET status = 'completed', completed_at = CURRENT_TIMESTAMP
+     WHERE id = $1 AND status = 'pending'
+     RETURNING *`,
+    [id]
+  );
+  return result.rows[0] || null;
+}
+
+// =============================================
+// MARKET PRICE SNAPSHOTS
+// =============================================
+
+export async function getMarketPriceSnapshots(itemId, { from, to, limit = 100 } = {}) {
+  const conditions = ['item_id = $1'];
+  const values = [itemId];
+  let idx = 2;
+
+  if (from) {
+    conditions.push(`recorded_at >= $${idx}`);
+    values.push(from);
+    idx++;
+  }
+  if (to) {
+    conditions.push(`recorded_at <= $${idx}`);
+    values.push(to);
+    idx++;
+  }
+
+  const { rows } = await pool.query(
+    `SELECT * FROM ONLY market_price_snapshots
+     WHERE ${conditions.join(' AND ')}
+     ORDER BY recorded_at DESC
+     LIMIT $${idx}`,
+    [...values, Math.min(limit, 1000)]
+  );
+  return rows;
+}
+
+export async function getLatestMarketPrices(itemIds) {
+  if (!itemIds.length) return [];
+  const { rows } = await pool.query(
+    `SELECT DISTINCT ON (item_id)
+       id, item_name, item_id, tier,
+       markup_1d, sales_1d, markup_7d, sales_7d,
+       markup_30d, sales_30d, markup_90d, sales_90d,
+       markup_365d, sales_365d, recorded_at
+     FROM ONLY market_price_snapshots
+     WHERE item_id = ANY($1)
+     ORDER BY item_id, recorded_at DESC`,
+    [itemIds]
+  );
+  return rows;
+}
+
+export async function getLatestMarketPriceByName(name) {
+  const { rows } = await pool.query(
+    `SELECT * FROM ONLY market_price_snapshots
+     WHERE LOWER(item_name) = LOWER($1)
+     ORDER BY recorded_at DESC
+     LIMIT 1`,
+    [name]
+  );
+  return rows[0] || null;
+}
+
+export async function getAllLatestMarketPrices() {
+  const { rows } = await pool.query(
+    `SELECT DISTINCT ON (item_name)
+       id, item_name, item_id, tier,
+       markup_1d, sales_1d, markup_7d, sales_7d,
+       markup_30d, sales_30d, markup_90d, sales_90d,
+       markup_365d, sales_365d, recorded_at
+     FROM ONLY market_price_snapshots
+     ORDER BY item_name, recorded_at DESC
+     LIMIT 10000`
+  );
+  return rows;
+}
+
+export async function getRewardsSummary() {
+  const result = await pool.query(`
+    SELECT
+      COALESCE((SELECT SUM(amount) FROM contributor_rewards), 0) as total_earned,
+      COALESCE((SELECT SUM(amount) FROM contributor_payouts), 0) as total_paid,
+      COALESCE((SELECT SUM(amount) FROM contributor_payouts WHERE status = 'pending'), 0) as total_pending,
+      COALESCE((SELECT COUNT(*) FROM contributor_rewards), 0) as reward_count,
+      COALESCE((SELECT COUNT(*) FROM contributor_payouts WHERE status = 'pending'), 0) as pending_payout_count,
+      COALESCE((SELECT SUM(contribution_score) FROM contributor_rewards), 0) as total_score
+  `);
+  return result.rows[0];
 }

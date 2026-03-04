@@ -20,7 +20,7 @@
     getTierMaterial
   } from '$lib/tieringUtil.js';
   import { editMode, updateField } from '$lib/stores/wikiEditState.js';
-  import { fetchExchangeWapByName, fetchInventoryMarkups } from '$lib/markupSources.js';
+  import { fetchExchangeWapByName, fetchInventoryMarkups, fetchInGamePrices } from '$lib/markupSources.js';
 
   /** @type {object} Entity being displayed/edited */
   export let entity = null;
@@ -100,11 +100,12 @@
   let saveTimer = null;
   let prefCache = null;
 
-  // Markup source toggle: 'custom' | 'market' | 'inventory'
+  // Markup source toggle: 'custom' | 'inventory' | 'ingame' | 'exchange'
   let markupSource = 'custom';
   let nameToWapMap = new Map();
   let nameToIdMap = new Map();
   let inventoryMarkupMap = new Map();
+  let ingameMarkupMap = new Map();
 
   // Markups for the currently selected tier
   $: markups = allMarkups[selectedTier] || DEFAULT_MARKUPS;
@@ -115,8 +116,11 @@
    */
   function getResolvedMarkup(matName, idx, tierMarkups) {
     const mu = tierMarkups || markups;
-    if (markupSource === 'market') {
+    if (markupSource === 'exchange') {
       return nameToWapMap.get(matName) ?? mu[idx] ?? 100;
+    }
+    if (markupSource === 'ingame') {
+      return ingameMarkupMap.get(matName) ?? mu[idx] ?? 100;
     }
     if (markupSource === 'inventory') {
       const itemId = nameToIdMap.get(matName);
@@ -150,7 +154,7 @@
       const stored = prefCache[entityType];
       if (stored) {
         // Load markup source preference
-        if (stored._source) markupSource = stored._source;
+        if (stored._source) markupSource = stored._source === 'market' ? 'exchange' : stored._source;
         const loaded = {};
         for (const [tier, values] of Object.entries(stored)) {
           if (tier === '_source') continue;
@@ -208,6 +212,9 @@
     try {
       inventoryMarkupMap = await fetchInventoryMarkups();
     } catch { /* not logged in or not verified */ }
+    try {
+      ingameMarkupMap = await fetchInGamePrices();
+    } catch { /* non-critical */ }
   }
 
   onMount(() => {
@@ -521,16 +528,22 @@
           >Custom</button>
           <button
             class="source-btn"
-            class:active={markupSource === 'market'}
-            disabled={nameToWapMap.size === 0}
-            on:click={() => { markupSource = 'market'; debounceSaveMarkups(); }}
-          >Market</button>
-          <button
-            class="source-btn"
             class:active={markupSource === 'inventory'}
             disabled={inventoryMarkupMap.size === 0}
             on:click={() => { markupSource = 'inventory'; debounceSaveMarkups(); }}
           >Inventory</button>
+          <button
+            class="source-btn"
+            class:active={markupSource === 'ingame'}
+            disabled={ingameMarkupMap.size === 0}
+            on:click={() => { markupSource = 'ingame'; debounceSaveMarkups(); }}
+          >In-Game</button>
+          <button
+            class="source-btn"
+            class:active={markupSource === 'exchange'}
+            disabled={nameToWapMap.size === 0}
+            on:click={() => { markupSource = 'exchange'; debounceSaveMarkups(); }}
+          >Exchange</button>
         </div>
       </div>
     {/if}
@@ -611,7 +624,7 @@
                     />
                   {:else}
                     {@const resolved = getResolvedMarkup(row._matName, row._idx)}
-                    {@const isFallback = markupSource === 'market' ? !nameToWapMap.has(row._matName) : !inventoryMarkupMap.has(nameToIdMap.get(row._matName))}
+                    {@const isFallback = markupSource === 'exchange' ? !nameToWapMap.has(row._matName) : markupSource === 'ingame' ? !ingameMarkupMap.has(row._matName) : !inventoryMarkupMap.has(nameToIdMap.get(row._matName))}
                     <span class="markup-value-readonly" class:is-fallback={isFallback}>
                       {resolved}
                     </span>

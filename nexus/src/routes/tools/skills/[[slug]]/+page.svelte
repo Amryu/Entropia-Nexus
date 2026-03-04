@@ -27,7 +27,7 @@
     buildNameToKebabMap,
     computeSkillDiff
   } from '$lib/utils/skillImportUtils.js';
-  import { fetchExchangeWapByName, fetchInventoryMarkups } from '$lib/markupSources.js';
+  import { fetchExchangeWapByName, fetchInventoryMarkups, fetchInGamePrices } from '$lib/markupSources.js';
   import { clickable } from '$lib/actions/clickable.js';
 
   export let data;
@@ -104,6 +104,7 @@
   let wapByName = new Map();
   let nameToId = new Map();
   let inventoryMarkupMap = new Map();
+  let ingameByName = new Map();
 
   // PED value cache (fetched from server)
   let pedValueCache = {};
@@ -257,7 +258,7 @@
 
   // Markups for optimizer and method table display
   $: {
-    void markupSource; void customMarkups; void wapByName; void nameToId; void inventoryMarkupMap;
+    void markupSource; void customMarkups; void wapByName; void nameToId; void inventoryMarkupMap; void ingameByName;
     if ((targetType === 'profession' && targetProfession) || targetType === 'hp') {
       const skillNames = targetType === 'profession'
         ? (professionLookup.get(targetProfession)?.Skills || []).map(s => s.Name)
@@ -298,13 +299,16 @@
       const wap = wapByName.get(implantName);
       const itemId = nameToId.get(implantName);
       const invMu = itemId != null ? inventoryMarkupMap.get(itemId) : undefined;
+      const igm = ingameByName.get(implantName);
       if (markupSource === 'custom') {
-        // Custom → Market → Inventory → 100
-        markups[name] = customMarkups[name] ?? wap ?? invMu ?? 100;
-      } else if (markupSource === 'market') {
-        // Market → Inventory → 100
-        markups[name] = wap ?? invMu ?? 100;
-        if (wap == null && invMu == null) warnings.add(name);
+        // Custom → Inventory → In-Game → Exchange → 100
+        markups[name] = customMarkups[name] ?? invMu ?? igm ?? wap ?? 100;
+      } else if (markupSource === 'exchange') {
+        markups[name] = wap ?? 100;
+        if (wap == null) warnings.add(name);
+      } else if (markupSource === 'ingame') {
+        markups[name] = igm ?? 100;
+        if (igm == null) warnings.add(name);
       } else if (markupSource === 'inventory') {
         markups[name] = invMu ?? 100;
         if (invMu == null) warnings.add(name);
@@ -424,6 +428,7 @@
     if (isLoggedIn) {
       fetchInventoryMarkups().then(m => { inventoryMarkupMap = m; });
     }
+    fetchInGamePrices().then(m => { ingameByName = m; }).catch(() => {});
   }
 
   async function handleImportConfirm() {
@@ -1078,8 +1083,9 @@
               <span class="control-label">MU Source</span>
               <div class="mu-buttons">
                 <button class="mu-btn" class:active={markupSource === 'custom'} on:click={() => markupSource = 'custom'}>Custom</button>
-                <button class="mu-btn" class:active={markupSource === 'market'} disabled={wapByName.size === 0} on:click={() => markupSource = 'market'}>Market</button>
                 <button class="mu-btn" class:active={markupSource === 'inventory'} disabled={inventoryMarkupMap.size === 0} on:click={() => markupSource = 'inventory'}>Inventory</button>
+                <button class="mu-btn" class:active={markupSource === 'ingame'} disabled={ingameByName.size === 0} on:click={() => markupSource = 'ingame'}>In-Game</button>
+                <button class="mu-btn" class:active={markupSource === 'exchange'} disabled={wapByName.size === 0} on:click={() => markupSource = 'exchange'}>Exchange</button>
               </div>
             </div>
           </div>

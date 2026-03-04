@@ -14,7 +14,7 @@
   import { loading } from '../../../../stores.js';
   import { hasItemTag, getItemLink, getTypeLink, clampDecimals } from '$lib/util.js';
   import { hasCondition } from '$lib/shopUtils.js';
-  import { fetchInventoryMarkups } from '$lib/markupSources.js';
+  import { fetchInventoryMarkups, fetchInGamePrices } from '$lib/markupSources.js';
   import {
     buildCraftingTree,
     generateCraftingSteps,
@@ -133,9 +133,10 @@
   let markupValues = {};
   const DEFAULT_MARKUP = 100;
 
-  // Markup source toggle: 'custom' | 'market' | 'inventory'
+  // Markup source toggle: 'custom' | 'inventory' | 'ingame' | 'exchange'
   let markupSource = 'custom';
   let inventoryMarkupMap = new Map(); // itemId → markup%
+  let ingameMarkupMap = new Map(); // itemName → markup%
 
   // Steps state
   let checkedSteps = new Set();
@@ -275,15 +276,18 @@
   }
 
   function getMarkup(key) {
-    if (markupSource === 'market') {
+    if (markupSource === 'exchange') {
       return shoppingItemWapMap[key] ?? markupValues[key] ?? DEFAULT_MARKUP;
+    }
+    if (markupSource === 'ingame') {
+      return shoppingItemIngameMap[key] ?? markupValues[key] ?? DEFAULT_MARKUP;
     }
     if (markupSource === 'inventory') {
       return shoppingItemInvMap[key] ?? markupValues[key] ?? DEFAULT_MARKUP;
     }
-    // Custom: existing behavior (custom → WAP → default)
+    // Custom: custom → inventory → in-game → exchange → default
     if (markupValues[key] != null) return markupValues[key];
-    return shoppingItemWapMap[key] ?? DEFAULT_MARKUP;
+    return shoppingItemInvMap[key] ?? shoppingItemIngameMap[key] ?? shoppingItemWapMap[key] ?? DEFAULT_MARKUP;
   }
 
   function hasCustomMarkup(key) {
@@ -640,6 +644,36 @@
     return map;
   })();
 
+  // In-game market price lookup map (keyed same as shoppingItemWapMap)
+  $: shoppingItemIngameMap = (() => {
+    const map = {};
+    if (ingameMarkupMap.size === 0) return map;
+    for (const step of craftingSteps) {
+      if (!step.owned) continue;
+      for (const mat of step.materials) {
+        if (mat.item?.Name) {
+          const igm = ingameMarkupMap.get(mat.item.Name);
+          if (igm != null) map[`mat:${mat.item.Name}`] = igm;
+        }
+      }
+    }
+    for (const step of craftingSteps) {
+      if (step.isLimited && step.owned && step.blueprint?.Name) {
+        const igm = ingameMarkupMap.get(step.blueprint.Name);
+        if (igm != null) map[`bp:${step.blueprint.Id}`] = igm;
+      }
+    }
+    if (shoppingList) {
+      for (const prod of shoppingList.productsToBuy) {
+        if (prod.item?.Name) {
+          const igm = ingameMarkupMap.get(prod.item.Name);
+          if (igm != null) map[`prod:${prod.item.Name}`] = igm;
+        }
+      }
+    }
+    return map;
+  })();
+
   // Get all unique materials needing markup (for the markup section)
   $: allMaterialsForMarkup = (() => {
     const materials = new Map();
@@ -770,6 +804,7 @@
     if (isLoggedIn) {
       fetchInventoryMarkups().then(map => { inventoryMarkupMap = map; }).catch(() => {});
     }
+    fetchInGamePrices().then(map => { ingameMarkupMap = map; }).catch(() => {});
 
     // Add beforeunload handler
     if (browser) {
@@ -1721,12 +1756,15 @@
                   <div class="markup-source-buttons">
                     <button class="source-btn" class:active={markupSource === 'custom'}
                       on:click={() => { markupSource = 'custom'; }}>Custom</button>
-                    <button class="source-btn" class:active={markupSource === 'market'}
-                      disabled={Object.keys(shoppingItemWapMap).length === 0}
-                      on:click={() => { markupSource = 'market'; }}>Market</button>
                     <button class="source-btn" class:active={markupSource === 'inventory'}
                       disabled={Object.keys(shoppingItemInvMap).length === 0}
                       on:click={() => { markupSource = 'inventory'; }}>Inventory</button>
+                    <button class="source-btn" class:active={markupSource === 'ingame'}
+                      disabled={Object.keys(shoppingItemIngameMap).length === 0}
+                      on:click={() => { markupSource = 'ingame'; }}>In-Game</button>
+                    <button class="source-btn" class:active={markupSource === 'exchange'}
+                      disabled={Object.keys(shoppingItemWapMap).length === 0}
+                      on:click={() => { markupSource = 'exchange'; }}>Exchange</button>
                   </div>
                 </div>
               </div>
@@ -1761,9 +1799,9 @@
                               <span class="markup-wap-badge" title="Market price from exchange">MKT</span>
                             {/if}
                           {:else}
-                            {@const sourceMap = markupSource === 'market' ? shoppingItemWapMap : shoppingItemInvMap}
+                            {@const sourceMap = markupSource === 'exchange' ? shoppingItemWapMap : markupSource === 'ingame' ? shoppingItemIngameMap : shoppingItemInvMap}
                             {#if sourceMap[markupKey] != null}
-                              <span class="markup-wap-badge">{markupSource === 'market' ? 'MKT' : 'INV'}</span>
+                              <span class="markup-wap-badge">{markupSource === 'exchange' ? 'EXC' : markupSource === 'ingame' ? 'IGM' : 'INV'}</span>
                             {:else}
                               <span class="markup-fallback-note" title="No data; using custom">*</span>
                             {/if}
@@ -1820,9 +1858,9 @@
                               <span class="markup-wap-badge" title="Market price from exchange">MKT</span>
                             {/if}
                           {:else}
-                            {@const sourceMap = markupSource === 'market' ? shoppingItemWapMap : shoppingItemInvMap}
+                            {@const sourceMap = markupSource === 'exchange' ? shoppingItemWapMap : markupSource === 'ingame' ? shoppingItemIngameMap : shoppingItemInvMap}
                             {#if sourceMap[markupKey] != null}
-                              <span class="markup-wap-badge">{markupSource === 'market' ? 'MKT' : 'INV'}</span>
+                              <span class="markup-wap-badge">{markupSource === 'exchange' ? 'EXC' : markupSource === 'ingame' ? 'IGM' : 'INV'}</span>
                             {:else}
                               <span class="markup-fallback-note" title="No data; using custom">*</span>
                             {/if}
@@ -1863,9 +1901,9 @@
                               <span class="markup-wap-badge" title="Market price from exchange">MKT</span>
                             {/if}
                           {:else}
-                            {@const sourceMap = markupSource === 'market' ? shoppingItemWapMap : shoppingItemInvMap}
+                            {@const sourceMap = markupSource === 'exchange' ? shoppingItemWapMap : markupSource === 'ingame' ? shoppingItemIngameMap : shoppingItemInvMap}
                             {#if sourceMap[markupKey] != null}
-                              <span class="markup-wap-badge">{markupSource === 'market' ? 'MKT' : 'INV'}</span>
+                              <span class="markup-wap-badge">{markupSource === 'exchange' ? 'EXC' : markupSource === 'ingame' ? 'IGM' : 'INV'}</span>
                             {:else}
                               <span class="markup-fallback-note" title="No data; using custom">*</span>
                             {/if}
@@ -2058,7 +2096,7 @@
                                     <td class="text-right refund-cell" title="Expected refund: {expectedRefund} units ({clampDecimals(refundPct, 0, 1)}%)">
                                       {expectedRefund > 0 ? `-${expectedRefund}` : '0'} <span class="refund-pct">({clampDecimals(refundPct, 0, 1)}%)</span>
                                     </td>
-                                    <td class="text-right">{#if isCrafting}—{:else}<span class="markup-cell"><input type="number" class="markup-input-inline" class:is-custom={markupSource === 'custom' && markupValues[stepMatKey] != null} readonly={markupSource !== 'custom'} value={mu} min="0" step="1" on:change={(e) => { if (markupSource === 'custom') setMarkup(stepMatKey, e.target.value); }} />%{#if markupSource === 'custom'}{#if markupValues[stepMatKey] != null}<button class="markup-reset" title="Reset to market value" on:click={() => resetMarkup(stepMatKey)}>&times;</button>{:else if shoppingItemWapMap[stepMatKey] != null}<span class="markup-wap-badge" title="Market">MKT</span>{/if}{:else if (markupSource === 'market' ? shoppingItemWapMap[stepMatKey] : shoppingItemInvMap[stepMatKey]) != null}<span class="markup-wap-badge">{markupSource === 'market' ? 'MKT' : 'INV'}</span>{:else}<span class="markup-fallback-note">*</span>{/if}</span>{/if}</td>
+                                    <td class="text-right">{#if isCrafting}—{:else}<span class="markup-cell"><input type="number" class="markup-input-inline" class:is-custom={markupSource === 'custom' && markupValues[stepMatKey] != null} readonly={markupSource !== 'custom'} value={mu} min="0" step="1" on:change={(e) => { if (markupSource === 'custom') setMarkup(stepMatKey, e.target.value); }} />%{#if markupSource === 'custom'}{#if markupValues[stepMatKey] != null}<button class="markup-reset" title="Reset to market value" on:click={() => resetMarkup(stepMatKey)}>&times;</button>{:else if shoppingItemWapMap[stepMatKey] != null}<span class="markup-wap-badge" title="Market">MKT</span>{/if}{:else if (markupSource === 'exchange' ? shoppingItemWapMap[stepMatKey] : markupSource === 'ingame' ? shoppingItemIngameMap[stepMatKey] : shoppingItemInvMap[stepMatKey]) != null}<span class="markup-wap-badge">{markupSource === 'exchange' ? 'EXC' : markupSource === 'ingame' ? 'IGM' : 'INV'}</span>{:else}<span class="markup-fallback-note">*</span>{/if}</span>{/if}</td>
                                     <td class="text-right">{isCrafting ? '—' : `${clampDecimals(lineCost, 2, 4)} PED`}</td>
                                   </tr>
                                 {/each}
@@ -2122,7 +2160,7 @@
                                   <td><a href={getItemLink(product)}>{productName}</a></td>
                                   <td class="text-right">{step.quantityWanted}</td>
                                   <td class="text-right">{clampDecimals(productTotalTT, 2, 4)} PED</td>
-                                  <td class="text-right"><span class="markup-cell"><input type="number" class="markup-input-inline" class:is-custom={markupSource === 'custom' && markupValues[stepProdKey] != null} readonly={markupSource !== 'custom'} value={productMU} min="0" step="1" on:change={(e) => { if (markupSource === 'custom') setMarkup(stepProdKey, e.target.value); }} />%{#if markupSource === 'custom'}{#if markupValues[stepProdKey] != null}<button class="markup-reset" title="Reset to market value" on:click={() => resetMarkup(stepProdKey)}>&times;</button>{:else if shoppingItemWapMap[stepProdKey] != null}<span class="markup-wap-badge" title="Market">MKT</span>{/if}{:else if (markupSource === 'market' ? shoppingItemWapMap[stepProdKey] : shoppingItemInvMap[stepProdKey]) != null}<span class="markup-wap-badge">{markupSource === 'market' ? 'MKT' : 'INV'}</span>{:else}<span class="markup-fallback-note">*</span>{/if}</span></td>
+                                  <td class="text-right"><span class="markup-cell"><input type="number" class="markup-input-inline" class:is-custom={markupSource === 'custom' && markupValues[stepProdKey] != null} readonly={markupSource !== 'custom'} value={productMU} min="0" step="1" on:change={(e) => { if (markupSource === 'custom') setMarkup(stepProdKey, e.target.value); }} />%{#if markupSource === 'custom'}{#if markupValues[stepProdKey] != null}<button class="markup-reset" title="Reset to market value" on:click={() => resetMarkup(stepProdKey)}>&times;</button>{:else if shoppingItemWapMap[stepProdKey] != null}<span class="markup-wap-badge" title="Market">MKT</span>{/if}{:else if (markupSource === 'exchange' ? shoppingItemWapMap[stepProdKey] : markupSource === 'ingame' ? shoppingItemIngameMap[stepProdKey] : shoppingItemInvMap[stepProdKey]) != null}<span class="markup-wap-badge">{markupSource === 'exchange' ? 'EXC' : markupSource === 'ingame' ? 'IGM' : 'INV'}</span>{:else}<span class="markup-fallback-note">*</span>{/if}</span></td>
                                   <td class="text-right">{clampDecimals(productCost, 2, 4)} PED</td>
                                 </tr>
                               </tbody>
@@ -2178,12 +2216,15 @@
                 <div class="markup-source-buttons">
                   <button class="source-btn" class:active={markupSource === 'custom'}
                     on:click={() => { markupSource = 'custom'; }}>Custom</button>
-                  <button class="source-btn" class:active={markupSource === 'market'}
-                    disabled={Object.keys(shoppingItemWapMap).length === 0}
-                    on:click={() => { markupSource = 'market'; }}>Market</button>
                   <button class="source-btn" class:active={markupSource === 'inventory'}
                     disabled={Object.keys(shoppingItemInvMap).length === 0}
                     on:click={() => { markupSource = 'inventory'; }}>Inventory</button>
+                  <button class="source-btn" class:active={markupSource === 'ingame'}
+                    disabled={Object.keys(shoppingItemIngameMap).length === 0}
+                    on:click={() => { markupSource = 'ingame'; }}>In-Game</button>
+                  <button class="source-btn" class:active={markupSource === 'exchange'}
+                    disabled={Object.keys(shoppingItemWapMap).length === 0}
+                    on:click={() => { markupSource = 'exchange'; }}>Exchange</button>
                 </div>
               </div>
               {#if isLoggedIn}
@@ -2275,7 +2316,7 @@
                         step="1"
                         on:change={(e) => { if (markupSource === 'custom') setMarkup(markupKey, e.target.value); }}
                       />%
-                      {#if markupSource === 'custom'}{#if isCustomMU}<button class="markup-reset" title="Reset to market value" on:click={() => resetMarkup(markupKey)}>&times;</button>{:else if wapMU != null}<span class="markup-wap-badge" title="Market">MKT</span>{/if}{:else if (markupSource === 'market' ? shoppingItemWapMap[markupKey] : shoppingItemInvMap[markupKey]) != null}<span class="markup-wap-badge">{markupSource === 'market' ? 'MKT' : 'INV'}</span>{:else}<span class="markup-fallback-note">*</span>{/if}
+                      {#if markupSource === 'custom'}{#if isCustomMU}<button class="markup-reset" title="Reset to market value" on:click={() => resetMarkup(markupKey)}>&times;</button>{:else if wapMU != null}<span class="markup-wap-badge" title="Market">MKT</span>{/if}{:else if (markupSource === 'exchange' ? shoppingItemWapMap[markupKey] : markupSource === 'ingame' ? shoppingItemIngameMap[markupKey] : shoppingItemInvMap[markupKey]) != null}<span class="markup-wap-badge">{markupSource === 'exchange' ? 'EXC' : markupSource === 'ingame' ? 'IGM' : 'INV'}</span>{:else}<span class="markup-fallback-note">*</span>{/if}
                     </td>
                     <td class="text-right">{clampDecimals(cost, 2, 4)} PED</td>
                     <td class="col-actions hide-mobile">
@@ -2346,7 +2387,7 @@
                         step="1"
                         on:change={(e) => { if (markupSource === 'custom') setMarkup(bpMarkupKey, e.target.value); }}
                       />%
-                      {#if markupSource === 'custom'}{#if isCustomMU}<button class="markup-reset" title="Reset to market value" on:click={() => resetMarkup(bpMarkupKey)}>&times;</button>{:else if wapMU != null}<span class="markup-wap-badge" title="Market">MKT</span>{/if}{:else if (markupSource === 'market' ? shoppingItemWapMap[bpMarkupKey] : shoppingItemInvMap[bpMarkupKey]) != null}<span class="markup-wap-badge">{markupSource === 'market' ? 'MKT' : 'INV'}</span>{:else}<span class="markup-fallback-note">*</span>{/if}
+                      {#if markupSource === 'custom'}{#if isCustomMU}<button class="markup-reset" title="Reset to market value" on:click={() => resetMarkup(bpMarkupKey)}>&times;</button>{:else if wapMU != null}<span class="markup-wap-badge" title="Market">MKT</span>{/if}{:else if (markupSource === 'exchange' ? shoppingItemWapMap[bpMarkupKey] : markupSource === 'ingame' ? shoppingItemIngameMap[bpMarkupKey] : shoppingItemInvMap[bpMarkupKey]) != null}<span class="markup-wap-badge">{markupSource === 'exchange' ? 'EXC' : markupSource === 'ingame' ? 'IGM' : 'INV'}</span>{:else}<span class="markup-fallback-note">*</span>{/if}
                     </td>
                     <td class="text-right">{clampDecimals(cost, 2, 4)} PED</td>
                     <td class="col-actions hide-mobile">
@@ -2390,7 +2431,7 @@
                         step="1"
                         on:change={(e) => { if (markupSource === 'custom') setMarkup(prodMarkupKey, e.target.value); }}
                       />%
-                      {#if markupSource === 'custom'}{#if isCustomProdMU}<button class="markup-reset" title="Reset to market value" on:click={() => resetMarkup(prodMarkupKey)}>&times;</button>{:else if wapProdMU != null}<span class="markup-wap-badge" title="Market">MKT</span>{/if}{:else if (markupSource === 'market' ? shoppingItemWapMap[prodMarkupKey] : shoppingItemInvMap[prodMarkupKey]) != null}<span class="markup-wap-badge">{markupSource === 'market' ? 'MKT' : 'INV'}</span>{:else}<span class="markup-fallback-note">*</span>{/if}
+                      {#if markupSource === 'custom'}{#if isCustomProdMU}<button class="markup-reset" title="Reset to market value" on:click={() => resetMarkup(prodMarkupKey)}>&times;</button>{:else if wapProdMU != null}<span class="markup-wap-badge" title="Market">MKT</span>{/if}{:else if (markupSource === 'exchange' ? shoppingItemWapMap[prodMarkupKey] : markupSource === 'ingame' ? shoppingItemIngameMap[prodMarkupKey] : shoppingItemInvMap[prodMarkupKey]) != null}<span class="markup-wap-badge">{markupSource === 'exchange' ? 'EXC' : markupSource === 'ingame' ? 'IGM' : 'INV'}</span>{:else}<span class="markup-fallback-note">*</span>{/if}
                     </td>
                     <td class="text-right">{clampDecimals(prodCost, 2, 4)} PED</td>
                     <td class="col-actions hide-mobile">

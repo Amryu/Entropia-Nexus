@@ -1188,3 +1188,114 @@ export function maybeRunFraudDetection() {
     .catch(err => console.error('[ingestion] Fraud detection failed:', err))
     .finally(() => { _fraudDetectionRunning = false; });
 }
+
+// --- Market Price Ingestion ---
+
+const MAX_ITEM_NAME_LENGTH = 200;
+const MAX_MARKUP_VALUE = 100_000_000;
+const MARKET_PRICE_DEDUP_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+const MARKET_PRICE_PERIODS = ['1d', '7d', '30d', '90d', '365d'];
+
+/**
+ * Validate a single market price entry.
+ * @returns {string|null} error message or null if valid
+ */
+export function validateMarketPrice(entry) {
+  if (!entry || typeof entry !== 'object') return 'Not an object';
+
+  // item_name: required, string, 1–200 chars
+  if (typeof entry.item_name !== 'string' || entry.item_name.trim().length === 0) return 'Missing item_name';
+  if (entry.item_name.length > MAX_ITEM_NAME_LENGTH) return 'item_name too long';
+
+  // tier: optional, integer 1–10 or null
+  if (entry.tier != null) {
+    if (!Number.isInteger(entry.tier) || entry.tier < 0 || entry.tier > 10) return 'Invalid tier';
+  }
+
+  // Validate all period columns
+  for (const period of MARKET_PRICE_PERIODS) {
+    const mu = entry[`markup_${period}`];
+    const sales = entry[`sales_${period}`];
+
+    if (mu != null) {
+      if (typeof mu !== 'number' || !Number.isFinite(mu)) return `Invalid markup_${period}`;
+      if (mu < 0 || mu > MAX_MARKUP_VALUE) return `markup_${period} out of range`;
+    }
+    if (sales != null) {
+      if (typeof sales !== 'number' || !Number.isFinite(sales)) return `Invalid sales_${period}`;
+      if (sales < 0) return `sales_${period} out of range`;
+    }
+  }
+
+  // timestamp: required, ISO8601, not future, not older than 24h
+  if (!entry.timestamp) return 'Missing timestamp';
+  const ts = new Date(entry.timestamp);
+  if (isNaN(ts.getTime())) return 'Invalid timestamp';
+  const now = Date.now();
+  if (ts.getTime() > now + 60_000) return 'Timestamp in the future';
+  if (now - ts.getTime() > MAX_EVENT_AGE_MS) return 'Timestamp too old';
+
+  return null;
+}
+
+/**
+ * Ingest a batch of market price snapshots.
+ * Deduplicates by item_name within 1-hour window.
+ * @param {number} userId
+ * @param {Array} prices
+ * @param {number|null} itemId - resolved item ID (null if not resolved)
+ * @param {Function} resolveItemId - async (name) => number|null
+ * @returns {{ accepted: number, duplicates: number }}
+ */
+export async function ingestMarketPrices(userId, prices, resolveItemId) {
+  let accepted = 0, duplicates = 0;
+
+  for (const entry of prices) {
+    const itemName = entry.item_name.trim();
+
+    // Server-side 1hr dedup
+    const { rows: existing } = await pool.query(
+      `SELECT 1 FROM ONLY market_price_snapshots
+       WHERE item_name = $1 AND recorded_at > now() - interval '1 hour'
+       LIMIT 1`,
+      [itemName]
+    );
+    if (existing.length > 0) {
+      duplicates++;
+      continue;
+    }
+
+    // Resolve item_id via /items data API cache
+    let itemId = null;
+    if (resolveItemId) {
+      try {
+        itemId = await resolveItemId(itemName);
+      } catch {
+        // Non-fatal — store with null item_id
+      }
+    }
+
+    await pool.query(
+      `INSERT INTO ONLY market_price_snapshots
+       (item_name, item_id, tier, markup_1d, sales_1d, markup_7d, sales_7d,
+        markup_30d, sales_30d, markup_90d, sales_90d, markup_365d, sales_365d,
+        recorded_at, submitted_by)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+      [
+        itemName,
+        itemId,
+        entry.tier ?? null,
+        entry.markup_1d ?? null, entry.sales_1d ?? null,
+        entry.markup_7d ?? null, entry.sales_7d ?? null,
+        entry.markup_30d ?? null, entry.sales_30d ?? null,
+        entry.markup_90d ?? null, entry.sales_90d ?? null,
+        entry.markup_365d ?? null, entry.sales_365d ?? null,
+        new Date(entry.timestamp).toISOString(),
+        userId,
+      ]
+    );
+    accepted++;
+  }
+
+  return { accepted, duplicates };
+}

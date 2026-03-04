@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { dump } from 'js-yaml';
 import { Client, GatewayIntentBits, Collection, Events, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle, EmbedBuilder } from 'discord.js';
-import { getUsers, getUserById, getOpenChanges, setChangeThreadId, getDeletedChanges, deleteChange, getChangeById, setChangeState, getFlightsNeedingThread, setFlightThreadId, getCheckinsPendingThreadAdd, markCheckinAddedToThread, getUnnotifiedFlightStateChanges, getFlightsNeedingArchive, clearFlightThreadId, getPendingRescheduleNotifications, markRescheduleNotificationSent, getPendingRentalDmNotifications, markRentalDmNotificationSent, getServicePilots, getFlightAcceptedCheckins, getFlightsReadyForCustomerKick, setFlightCompletedAt, expireTickets, computeAllPriceSummaries, getPendingTradeRequests, getTradeRequestItems, setTradeRequestThread, getWarnableTradeRequests, markWarningSent, getExpirableTradeRequests, updateTradeRequestStatus, findTradeRequestByThread, updateLastActivity, getActiveTradeRequestsWithNewItems, getNewTradeRequestItems, adjustOfferQuantities, getUsersWithGrant, getPendingServiceRequests, setServiceRequestThread, markServiceRequestNotified, acceptServiceRequest, declineServiceRequest, getServiceRequestById, acceptCheckin, denyCheckin, getCheckinWithContext, activateTicketByCheckin, getPendingCheckinsDmNotify, getBotConfig, setBotConfig, getActiveContentCreators, setUserLeftServer, clearUserLeftServer, getStaleUnverifiedUsers, deleteUnverifiedUser, startUsersTransaction, commitTransaction, rollbackTransaction } from './db.js';
+import { getUsers, getUserById, getOpenChanges, setChangeThreadId, getDeletedChanges, deleteChange, getChangeById, setChangeState, getFlightsNeedingThread, setFlightThreadId, getCheckinsPendingThreadAdd, markCheckinAddedToThread, getUnnotifiedFlightStateChanges, getFlightsNeedingArchive, clearFlightThreadId, getPendingRescheduleNotifications, markRescheduleNotificationSent, getPendingRentalDmNotifications, markRentalDmNotificationSent, getServicePilots, getFlightAcceptedCheckins, getFlightsReadyForCustomerKick, setFlightCompletedAt, expireTickets, computeAllPriceSummaries, getPendingTradeRequests, getTradeRequestItems, setTradeRequestThread, getWarnableTradeRequests, markWarningSent, getExpirableTradeRequests, updateTradeRequestStatus, findTradeRequestByThread, updateLastActivity, getActiveTradeRequestsWithNewItems, getNewTradeRequestItems, adjustOfferQuantities, getUsersWithGrant, getPendingServiceRequests, setServiceRequestThread, markServiceRequestNotified, acceptServiceRequest, declineServiceRequest, getServiceRequestById, acceptCheckin, denyCheckin, getCheckinWithContext, activateTicketByCheckin, getPendingCheckinsDmNotify, getBotConfig, setBotConfig, getActiveContentCreators, setUserLeftServer, clearUserLeftServer, getStaleUnverifiedUsers, deleteUnverifiedUser, startUsersTransaction, commitTransaction, rollbackTransaction, resolveMarketPriceItemIds } from './db.js';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { compareJson, validate, printSideBySide } from './change.js';
 import { applyChange } from './changes/util.js';
@@ -1916,6 +1916,20 @@ async function runPriceSummaries() {
   }
 }
 setInterval(() => runScheduled('runPriceSummaries', runPriceSummaries), 15 * 60 * 1000);
+
+// Resolve unresolved market price item IDs every hour
+async function runMarketPriceResolution() {
+  try {
+    const resolved = await resolveMarketPriceItemIds();
+    if (resolved > 0) {
+      console.log(`Market price item resolution: ${resolved} items resolved`);
+    }
+  } catch (e) {
+    console.error('Error resolving market price item IDs:', e);
+  }
+}
+setInterval(() => runScheduled('runMarketPriceResolution', runMarketPriceResolution), 60 * 60 * 1000);
+runScheduled('runMarketPriceResolution', runMarketPriceResolution); // Run once on startup
 
 // Snapshot exchange prices then compute exchange summaries at quarter-hour boundaries (:00, :15, :30, :45)
 const SNAPSHOT_INTERVAL_MS = 15 * 60 * 1000;
