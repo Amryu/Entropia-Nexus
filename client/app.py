@@ -158,10 +158,13 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     token_store = TokenStore()
     oauth = OAuthClient(config, event_bus, token_store)
     # Show splash screen if not already authenticated
+    splash_screen = None
     if not oauth.is_authenticated():
-        if _show_splash(app, oauth, event_bus):
+        splash_result = _show_splash(app, oauth, event_bus)
+        if splash_result is True:
             db.close()
             return
+        splash_screen = splash_result  # QScreen the splash was on
 
     # Init remaining services
     nexus_client = NexusClient(config, oauth, event_bus)
@@ -184,6 +187,10 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     )
     main_window.show()
 
+    # If we came from the splash, show the main window on the same monitor
+    if splash_screen is not None:
+        main_window.bring_to_front_on_screen(splash_screen)
+
     # Wire single-instance IPC: when another instance connects, bring window to front
     def _handle_ipc_connection():
         conn = local_server.nextPendingConnection()
@@ -200,6 +207,20 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     # Also serves as re-emit: the background thread will publish
     # EVENT_AUTH_STATE_CHANGED once user info is fetched.
     if oauth.is_authenticated():
+        # Watch for background refresh discovering dead tokens (e.g. 400 from
+        # server).  If auth drops to unauthenticated, show the splash so the
+        # user can re-login immediately instead of seeing "Logged in as None".
+        def _on_deauth(state):
+            if state.authenticated:
+                return
+            event_bus.unsubscribe(EVENT_AUTH_STATE_CHANGED, _on_deauth)
+            from PyQt6.QtCore import QMetaObject, Qt as QtNamespace
+            QMetaObject.invokeMethod(
+                main_window,
+                lambda: _show_splash_over_main(main_window, oauth, event_bus),
+                QtNamespace.ConnectionType.QueuedConnection,
+            )
+        event_bus.subscribe(EVENT_AUTH_STATE_CHANGED, _on_deauth)
         oauth.refresh_in_background()
     else:
         # Not authenticated — still re-emit so sidebar shows logged-out state
@@ -614,8 +635,13 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
 
 
 def _show_splash(app, oauth, event_bus):
-    """Show the splash screen and block until the user logs in or chooses offline."""
+    """Show the splash screen and block until the user logs in or chooses offline.
+
+    Returns True if user closed the splash (app should exit), or the QScreen
+    the splash was on (so the main window can appear on the same monitor).
+    """
     from PyQt6.QtCore import QEventLoop, QMetaObject, Qt as QtNamespace
+    from PyQt6.QtWidgets import QApplication
     from .core.constants import EVENT_AUTH_STATE_CHANGED
     from .ui.widgets.splash_screen import SplashScreen
 
@@ -627,9 +653,9 @@ def _show_splash(app, oauth, event_bus):
 
         def do_login():
             try:
-                success = oauth.login()
-                if not success:
-                    splash._login_error.emit("Login failed — check logs for details")
+                result = oauth.login()
+                if result is not True:
+                    splash._login_error.emit(result if isinstance(result, str) else "Login failed")
             except Exception as e:
                 splash._login_error.emit(str(e) or e.__class__.__name__)
 
@@ -660,6 +686,9 @@ def _show_splash(app, oauth, event_bus):
     splash.show()
     loop.exec()  # Blocks until splash is dismissed (without touching QApplication quit state)
 
+    # Remember which screen the splash was on before hiding it
+    splash_screen = QApplication.screenAt(splash.geometry().center())
+
     splash.hide()
     event_bus.unsubscribe(EVENT_AUTH_STATE_CHANGED, on_auth_changed)
 
@@ -668,7 +697,64 @@ def _show_splash(app, oauth, event_bus):
         return True  # signal caller to exit
 
     log.warning("Auth: %s", "authenticated" if oauth.is_authenticated() else "offline")
-    return False
+    return splash_screen
+
+
+def _show_splash_over_main(main_window, oauth, event_bus):
+    """Show the splash as a modal overlay when background token refresh fails.
+
+    Called on the Qt main thread when the auth state drops to unauthenticated
+    after the main window is already visible (e.g. expired refresh token).
+    """
+    from PyQt6.QtCore import QEventLoop, QMetaObject, Qt as QtNamespace
+    from .core.constants import EVENT_AUTH_STATE_CHANGED
+    from .ui.widgets.splash_screen import SplashScreen
+
+    log.warning("Session expired — showing login splash")
+
+    splash = SplashScreen()
+    loop = QEventLoop()
+
+    def on_login():
+        splash.show_login_progress()
+
+        def do_login():
+            try:
+                result = oauth.login()
+                if result is not True:
+                    splash._login_error.emit(result if isinstance(result, str) else "Login failed")
+            except Exception as e:
+                splash._login_error.emit(str(e) or e.__class__.__name__)
+
+        threading.Thread(target=do_login, daemon=True).start()
+
+    def on_auth_changed(data):
+        if not getattr(data, "authenticated", False):
+            return
+        QMetaObject.invokeMethod(
+            loop, "quit",
+            QtNamespace.ConnectionType.QueuedConnection,
+        )
+
+    def on_dismiss():
+        loop.quit()
+
+    def on_close():
+        loop.quit()
+
+    splash.login_clicked.connect(on_login)
+    splash.offline_clicked.connect(on_dismiss)
+    splash.close_clicked.connect(on_close)
+    event_bus.subscribe(EVENT_AUTH_STATE_CHANGED, on_auth_changed)
+
+    splash.show()
+    loop.exec()
+
+    splash.hide()
+    event_bus.unsubscribe(EVENT_AUTH_STATE_CHANGED, on_auth_changed)
+
+    log.warning("Splash dismissed — auth: %s",
+                "authenticated" if oauth.is_authenticated() else "offline")
 
 
 def _run_headless(config, event_bus, db):
