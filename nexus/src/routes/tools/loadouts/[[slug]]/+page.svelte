@@ -218,7 +218,7 @@
   let compareSetSections = new Set(); // Which sections to permute: 'Weapon', 'Armor', etc.
   let compareSetPermutations = []; // Array of { loadout, label, setIndices }
   let compareSetMode = false; // Derived: compareSetSections.size > 0
-  let compareColumnKeysWeapons = ['name', 'efficiency', 'dps', 'dpp', 'reload', 'cost'];
+  let compareColumnKeysWeapons = ['name', 'efficiency', 'dps', 'dpp', 'critChance', 'critDamage', 'reload', 'cost'];
   let compareColumnKeysArmor = ['name', 'armorName', 'totalDefense', 'topDefenseTypesShort', 'totalAbsorption', 'blockChance'];
   let compareAnchorId = null;
   let compareAnchorEval = null;
@@ -240,6 +240,8 @@
       'efficiency',
       'dps',
       'dpp',
+      'critChance',
+      'critDamage',
       'reload',
       'totalDamage',
       'effectiveDamage',
@@ -268,6 +270,8 @@
     efficiency: 'Efficiency',
     dps: 'DPS',
     dpp: 'DPP',
+    critChance: 'Crit Chance',
+    critDamage: 'Crit Damage',
     reload: 'Reload',
     totalDamage: 'Total Damage',
     effectiveDamage: 'Effective Damage',
@@ -353,7 +357,7 @@
   }
 
   function resetCompareColumns(type) {
-    if (type === 'weapons') compareColumnKeysWeapons = ['name', 'efficiency', 'dps', 'dpp', 'reload', 'cost'];
+    if (type === 'weapons') compareColumnKeysWeapons = ['name', 'efficiency', 'dps', 'dpp', 'critChance', 'critDamage', 'reload', 'cost'];
     else compareColumnKeysArmor = ['name', 'totalDefense', 'topDefenseTypesShort', 'totalAbsorption', 'blockChance'];
     persistCompareColumnPrefs(type);
   }
