@@ -1,5 +1,23 @@
 [
   {
+    "version": "0.1.6",
+    "date": "2026-03-04",
+    "changes": [
+      {"type": "feat", "text": "Skill gain tracking from chat log with compact database storage"},
+      {"type": "feat", "text": "Skills tab shows accumulated gains since last scan or import"},
+      {"type": "feat", "text": "Live skill gain updates while Skills tab is open"},
+      {"type": "feat", "text": "Sort skills by gain to see most-trained skills first"},
+      {"type": "feat", "text": "Loadout compare: crit chance and crit damage columns (client and website)"},
+      {"type": "feat", "text": "Loadout compare: configurable column visibility via Columns menu"},
+      {"type": "feat", "text": "Loadout compare: chunked evaluation to reduce UI lag"},
+      {"type": "feat", "text": "Configurable overlay hotkeys with per-key editing in settings"},
+      {"type": "feat", "text": "Global hotkeys enable/disable toggle and reset-to-defaults"},
+      {"type": "fix", "text": "Crit chance and crit damage values now display correctly in compare tables"},
+      {"type": "fix", "text": "Compare button height matches other toolbar buttons"},
+      {"type": "fix", "text": "Exchange price snapshots clamped to numeric column limit"}
+    ]
+  },
+  {
     "version": "0.1.5",
     "date": "2026-03-04",
     "changes": [

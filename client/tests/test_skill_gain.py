@@ -76,8 +76,16 @@ class TestSkillGainHandler(unittest.TestCase):
         self.handler.handle(line)
         self.db.insert_skill_gain.assert_called_once()
         call_kwargs = self.db.insert_skill_gain.call_args[1]
-        self.assertEqual(call_kwargs["skill_name"], "Engineering")
+        self.assertIsInstance(call_kwargs["ts"], int)
+        self.assertIsInstance(call_kwargs["skill_id"], int)
         self.assertAlmostEqual(call_kwargs["amount"], 0.0639)
+
+    def test_unknown_skill_no_db_write(self):
+        """Skills not in skill_reference.json should still be published but not persisted."""
+        line = _make_system_line("You have gained 0.1000 experience in your Nonexistent Skill skill")
+        self.handler.handle(line)
+        self.bus.publish.assert_called_once()  # Event still emitted
+        self.db.insert_skill_gain.assert_not_called()  # No DB write
 
 
 if __name__ == "__main__":

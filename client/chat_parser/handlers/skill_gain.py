@@ -3,6 +3,7 @@ from ...core.constants import (
     SKILL_DIRECT_PATTERN,
     SKILL_EXP_PATTERN,
 )
+from ...skills.skill_ids import skill_name_to_id
 from ..models import ParsedLine, SkillGainEvent
 from .base import BaseHandler
 
@@ -47,9 +48,10 @@ class SkillGainHandler(BaseHandler):
     def _emit(self, event: SkillGainEvent):
         if not self.suppress_events:
             self._event_bus.publish(EVENT_SKILL_GAIN, event)
-        self._db.insert_skill_gain(
-            timestamp=event.timestamp.isoformat(),
-            skill_name=event.skill_name,
-            amount=event.amount,
-            is_attribute=event.is_attribute,
-        )
+        sid = skill_name_to_id(event.skill_name)
+        if sid is not None:
+            self._db.insert_skill_gain(
+                ts=int(event.timestamp.timestamp()),
+                skill_id=sid,
+                amount=event.amount,
+            )

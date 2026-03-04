@@ -7,11 +7,9 @@ from pathlib import Path
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS skill_gains (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    timestamp TEXT NOT NULL,
-    skill_name TEXT NOT NULL,
-    amount REAL NOT NULL,
-    is_attribute INTEGER NOT NULL,
-    session_id TEXT
+    ts INTEGER NOT NULL,
+    skill_id INTEGER NOT NULL,
+    amount REAL NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS combat_events (
@@ -93,8 +91,6 @@ CREATE TABLE IF NOT EXISTS pending_ingestion (
     data TEXT NOT NULL
 );
 
-CREATE INDEX IF NOT EXISTS idx_skill_gains_timestamp ON skill_gains(timestamp);
-CREATE INDEX IF NOT EXISTS idx_skill_gains_name ON skill_gains(skill_name);
 CREATE INDEX IF NOT EXISTS idx_combat_events_timestamp ON combat_events(timestamp);
 CREATE INDEX IF NOT EXISTS idx_loot_groups_timestamp ON loot_groups(timestamp);
 CREATE INDEX IF NOT EXISTS idx_globals_timestamp ON globals(timestamp);
@@ -223,6 +219,8 @@ CREATE TABLE IF NOT EXISTS pending_inventory_import (
 
 # Indexes that depend on columns added by _migrate()
 _POST_MIGRATE_INDEXES = """
+CREATE INDEX IF NOT EXISTS idx_skill_gains_ts ON skill_gains(ts);
+CREATE INDEX IF NOT EXISTS idx_skill_gains_skill ON skill_gains(skill_id);
 CREATE INDEX IF NOT EXISTS idx_mob_encounters_hunt ON mob_encounters(hunt_id);
 """
 
@@ -297,6 +295,63 @@ class Database:
                 self._conn.commit()
             except sqlite3.OperationalError:
                 pass  # Index already exists
+
+        self._migrate_skill_gains_v2()
+
+    def _migrate_skill_gains_v2(self):
+        """Migrate skill_gains from TEXT-based to compact integer format."""
+        try:
+            cur = self._conn.execute("PRAGMA table_info(skill_gains)")
+            columns = {row[1] for row in cur.fetchall()}
+        except Exception:
+            return
+
+        if "skill_name" not in columns:
+            return  # Already migrated or fresh DB
+
+        from ..skills.skill_ids import name_to_id_map
+        from datetime import datetime
+        name_map = name_to_id_map()
+
+        cur = self._conn.execute(
+            "SELECT timestamp, skill_name, amount FROM skill_gains"
+        )
+        old_rows = cur.fetchall()
+
+        self._conn.execute("DROP TABLE IF EXISTS skill_gains_v2")
+        self._conn.execute("""
+            CREATE TABLE skill_gains_v2 (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts INTEGER NOT NULL,
+                skill_id INTEGER NOT NULL,
+                amount REAL NOT NULL
+            )
+        """)
+
+        migrated = []
+        for ts_text, skill_name, amount in old_rows:
+            skill_id = name_map.get(skill_name)
+            if skill_id is None:
+                continue
+            try:
+                dt = datetime.fromisoformat(ts_text)
+                unix_ts = int(dt.timestamp())
+            except (ValueError, TypeError):
+                continue
+            migrated.append((unix_ts, skill_id, amount))
+
+        if migrated:
+            self._conn.executemany(
+                "INSERT INTO skill_gains_v2 (ts, skill_id, amount) VALUES (?, ?, ?)",
+                migrated,
+            )
+
+        # Drop old indexes, swap tables
+        self._conn.execute("DROP INDEX IF EXISTS idx_skill_gains_timestamp")
+        self._conn.execute("DROP INDEX IF EXISTS idx_skill_gains_name")
+        self._conn.execute("DROP TABLE skill_gains")
+        self._conn.execute("ALTER TABLE skill_gains_v2 RENAME TO skill_gains")
+        self._conn.commit()
 
     def execute(self, sql: str, params: tuple = ()) -> sqlite3.Cursor:
         with self._lock:
@@ -385,13 +440,43 @@ class Database:
             self._conn.commit()
 
     # Skill gains
-    def insert_skill_gain(self, timestamp: str, skill_name: str, amount: float, is_attribute: bool, session_id: str = None):
+    def insert_skill_gain(self, ts: int, skill_id: int, amount: float):
+        """Insert a skill gain event. ts is Unix timestamp, skill_id from skill_reference."""
         with self._lock:
             self._conn.execute(
-                "INSERT INTO skill_gains (timestamp, skill_name, amount, is_attribute, session_id) VALUES (?, ?, ?, ?, ?)",
-                (timestamp, skill_name, amount, int(is_attribute), session_id)
+                "INSERT INTO skill_gains (ts, skill_id, amount) VALUES (?, ?, ?)",
+                (ts, skill_id, amount)
             )
             self._auto_commit()
+
+    def get_skill_gains_since(self, since_ts: int) -> dict[int, float]:
+        """Sum skill gains per skill_id since a Unix timestamp.
+
+        Returns {skill_id: total_amount}.
+        """
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT skill_id, SUM(amount) FROM skill_gains "
+                "WHERE ts >= ? GROUP BY skill_id",
+                (since_ts,)
+            )
+            return {row[0]: row[1] for row in cur.fetchall()}
+
+    def get_last_scan_timestamp(self) -> int | None:
+        """Get the Unix timestamp of the most recent skill snapshot scan."""
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT MAX(scan_timestamp) FROM skill_snapshots"
+            )
+            row = cur.fetchone()
+            if row and row[0]:
+                try:
+                    from datetime import datetime
+                    dt = datetime.fromisoformat(row[0])
+                    return int(dt.timestamp())
+                except (ValueError, TypeError):
+                    return None
+            return None
 
     # Combat events
     def insert_combat_event(self, timestamp: str, event_type: str, amount: float = None, session_id: str = None):

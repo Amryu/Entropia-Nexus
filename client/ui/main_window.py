@@ -249,7 +249,8 @@ class MainWindow(QWidget):
                           data_client=self._data_client,
                           config=self._config,
                           config_path=self._config_path,
-                          event_bus=self._event_bus)
+                          event_bus=self._event_bus,
+                          db=self._db)
         page.navigation_changed.connect(self._on_skills_nav_changed)
         return page
 

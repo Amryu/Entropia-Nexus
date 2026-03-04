@@ -16,7 +16,7 @@ from PyQt6.QtWidgets import (
     QGridLayout, QSizePolicy, QFileDialog, QMessageBox,
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
-from PyQt6.QtGui import QCursor
+from PyQt6.QtGui import QColor, QCursor
 from PyQt6.QtWidgets import QGraphicsOpacityEffect
 
 from ...skills.calculations import (
@@ -77,7 +77,7 @@ class SkillCard(QFrame):
     def __init__(self, skill_name: str, points: float, rank: str,
                  progress: float, badges: list[Badge],
                  dimmed: bool = False, weight: int | None = None,
-                 parent=None):
+                 gain: float = 0.0, parent=None):
         super().__init__(parent)
         self._skill_name = skill_name
         self._points = points
@@ -139,6 +139,13 @@ class SkillCard(QFrame):
         self._points_label = QLabel(f"{points:.2f}")
         self._points_label.setStyleSheet("font-size: 10px; background: transparent; border: none;")
         info_row.addWidget(self._points_label)
+
+        if gain > 0.001:
+            gain_label = QLabel(f"+{gain:.4f}")
+            gain_label.setStyleSheet(
+                f"font-size: 9px; color: {SUCCESS}; background: transparent; border: none;"
+            )
+            info_row.addWidget(gain_label)
 
         self._edit_input = QDoubleSpinBox()
         self._edit_input.setDecimals(2)
@@ -290,7 +297,7 @@ class SkillsPage(QWidget):
     navigation_changed = pyqtSignal(object)  # sub_state dict or None
 
     def __init__(self, *, signals, oauth, nexus_client, data_client=None,
-                 config=None, config_path="config.json", event_bus=None):
+                 config=None, config_path="config.json", event_bus=None, db=None):
         super().__init__()
         self._signals = signals
         self._oauth = oauth
@@ -299,6 +306,7 @@ class SkillsPage(QWidget):
         self._config = config
         self._config_path = config_path
         self._event_bus = event_bus
+        self._db = db
 
         # Data manager
         self._manager = SkillDataManager(data_client, nexus_client)
@@ -310,6 +318,10 @@ class SkillsPage(QWidget):
         self._prof_filter_skill = None        # filter professions by skill name
         self._last_scan_result = None
         self._synced = False
+
+        # Skill gains since last baseline (scan/import)
+        self._skill_gains: dict[str, float] = {}  # {skill_name: accumulated_gain}
+        self._gain_refresh_pending = False
 
         # Rank lookup (loaded lazily)
         self._rank_thresholds: list[dict] = []
@@ -345,6 +357,7 @@ class SkillsPage(QWidget):
         signals.auth_state_changed.connect(self._on_auth_changed)
         if event_bus:
             signals.config_changed.connect(self._on_config_changed)
+        signals.skill_gain.connect(self._on_skill_gain)
 
         # Initial data load (deferred)
         QTimer.singleShot(200, self._initial_load)
@@ -368,7 +381,7 @@ class SkillsPage(QWidget):
         self._skills_sort = QComboBox()
         self._skills_sort.setMinimumWidth(160)
         self._skills_sort.addItems(["Category", "Level", "HP Contribution",
-                                    "Evader/Dodger/Jammer", "Looter"])
+                                    "Evader/Dodger/Jammer", "Looter", "Gain"])
         self._skills_sort.currentIndexChanged.connect(self._refresh_skills_display)
         toolbar.addWidget(self._skills_sort)
 
@@ -402,9 +415,9 @@ class SkillsPage(QWidget):
 
         # List view (table, hidden by default)
         self._skills_table = QTableWidget()
-        self._skills_table.setColumnCount(6)
+        self._skills_table.setColumnCount(7)
         self._skills_table.setHorizontalHeaderLabels(
-            ["Name", "Category", "Level", "Points", "HP", "Badges"]
+            ["Name", "Category", "Level", "Points", "Gain", "HP", "Badges"]
         )
         self._skills_table.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeMode.Stretch
@@ -649,8 +662,26 @@ class SkillsPage(QWidget):
             self._manager.sync_from_nexus()
             self._synced = True
 
+        self._load_gains_from_db()
+
         # Update UI on main thread
         QTimer.singleShot(0, self._on_data_loaded)
+
+    def _load_gains_from_db(self):
+        """Load accumulated gains since last scan baseline from the local DB."""
+        if not self._db:
+            return
+        from ...skills.skill_ids import id_to_name_map
+
+        baseline_ts = self._db.get_last_scan_timestamp() or 0
+        gains_by_id = self._db.get_skill_gains_since(baseline_ts)
+        id_names = id_to_name_map()
+
+        self._skill_gains = {}
+        for skill_id, total in gains_by_id.items():
+            name = id_names.get(skill_id)
+            if name:
+                self._skill_gains[name] = total
 
     def _load_rank_thresholds(self):
         """Load rank thresholds for level/progress display."""
@@ -798,6 +829,8 @@ class SkillsPage(QWidget):
                         return -(p.get("Weight") or 0)
                 return 0
             meta.sort(key=looter_sort)
+        elif sort_idx == 5:  # Gain
+            meta.sort(key=lambda s: self._skill_gains.get(s["Name"], 0), reverse=True)
 
         return meta
 
@@ -871,8 +904,10 @@ class SkillsPage(QWidget):
                         weight = p.get("Weight", 0)
                         break
 
+            gain = self._skill_gains.get(name, 0.0)
             card = SkillCard(name, points, rank, progress, badges,
-                            dimmed=(points == 0), weight=weight)
+                            dimmed=(points == 0 and gain < 0.001),
+                            weight=weight, gain=gain)
             card.clicked.connect(self._on_skill_card_clicked)
             card.value_edited.connect(self._on_skill_value_edited)
 
@@ -895,7 +930,8 @@ class SkillsPage(QWidget):
             badges = get_skill_badges(name, all_meta)
             hp_inc = skill.get("HPIncrease") or 0
 
-            dimmed = points == 0
+            gain = self._skill_gains.get(name, 0.0)
+            dimmed = points == 0 and gain < 0.001
             fg = Qt.GlobalColor.gray if dimmed else None
 
             items = []
@@ -906,6 +942,13 @@ class SkillsPage(QWidget):
             pts_item = QTableWidgetItem(f"{points:.2f}")
             pts_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
             items.append(pts_item)
+
+            gain_text = f"+{gain:.4f}" if gain > 0.001 else ""
+            gain_item = QTableWidgetItem(gain_text)
+            gain_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+            if gain > 0.001:
+                gain_item.setForeground(QColor(SUCCESS))
+            items.append(gain_item)
 
             hp_text = str(hp_inc) if hp_inc > 0 else ""
             items.append(QTableWidgetItem(hp_text))
@@ -1319,6 +1362,9 @@ class SkillsPage(QWidget):
             f" {self._scan_warning_count} warnings"
         )
 
+        # Reset gains baseline — scan is the new reference point
+        self._skill_gains.clear()
+
         # Refresh displays with accumulated values
         if self._scan_skill_rows:
             self._refresh_skills_display()
@@ -1432,6 +1478,9 @@ class SkillsPage(QWidget):
                 except Exception as e:
                     log.error("Failed to upload imported skills: %s", e)
 
+            # Reset gains baseline — import is the new reference point
+            self._skill_gains.clear()
+
             # Refresh all displays
             self._refresh_skills_display()
             self._refresh_prof_display()
@@ -1456,6 +1505,21 @@ class SkillsPage(QWidget):
         self._manager.sync_from_nexus()
         self._synced = True
         QTimer.singleShot(0, self._on_data_loaded)
+
+    # ── Live Skill Gains ─────────────────────────────────────────────────
+
+    def _on_skill_gain(self, event):
+        """Handle a live skill gain event — update the accumulated gains dict."""
+        name = event.skill_name
+        self._skill_gains[name] = self._skill_gains.get(name, 0) + event.amount
+        if not self._gain_refresh_pending:
+            self._gain_refresh_pending = True
+            QTimer.singleShot(500, self._flush_gain_refresh)
+
+    def _flush_gain_refresh(self):
+        self._gain_refresh_pending = False
+        if self._tabs.currentIndex() == 0:
+            self._refresh_skills_display()
 
     # ── Resize ────────────────────────────────────────────────────────────
 
