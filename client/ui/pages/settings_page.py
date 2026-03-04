@@ -21,6 +21,7 @@ _OVERLAY_SHORTCUTS = [
     ("Map", "m", "Ctrl+M", "Open the map overlay"),
     ("Exchange", "e", "Ctrl+E", "Open the exchange overlay"),
     ("Notifications", "n", "Ctrl+N", "Open the notifications overlay"),
+    ("Debug Overlay", "f3", "F3", "Toggle OCR/target lock debug overlay"),
 ]
 
 
@@ -356,12 +357,14 @@ class SettingsPage(QWidget):
     def _build_ocr_section(self):
         group = QGroupBox("OCR")
         layout = QVBoxLayout(group)
+        layout.setSpacing(8)
 
-        desc = QLabel("Configure which OCR functions are active.")
-        desc.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
-        layout.addWidget(desc)
+        # -- Skill Scanner --
+        scan_lbl = QLabel("Skill Scanner")
+        scan_lbl.setStyleSheet("font-weight: bold; font-size: 12px;")
+        layout.addWidget(scan_lbl)
 
-        self._skill_scanner_cb = QCheckBox("Skill scanner")
+        self._skill_scanner_cb = QCheckBox("Enable skill scanner")
         self._skill_scanner_cb.setToolTip(
             "Automatically scan the in-game Skills window to read\n"
             "skill values via screen capture and OCR."
@@ -369,24 +372,213 @@ class SettingsPage(QWidget):
         self._skill_scanner_cb.setChecked(self._config.overlay_enabled)
         layout.addWidget(self._skill_scanner_cb)
 
-        # Scan ROI configuration
-        roi_row = QHBoxLayout()
-        roi_btn = QPushButton("Configure Scan ROIs")
-        roi_btn.setToolTip("Adjust pixel offsets for scan debug overlay regions")
-        roi_btn.clicked.connect(self._open_roi_dialog)
-        roi_row.addWidget(roi_btn)
-        roi_row.addStretch()
-        layout.addLayout(roi_row)
+        scan_roi_row = QHBoxLayout()
+        scan_roi_btn = QPushButton("Configure ROIs...")
+        scan_roi_btn.setToolTip("Adjust pixel offsets for scan debug overlay regions")
+        scan_roi_btn.clicked.connect(self._open_scan_roi_dialog)
+        scan_roi_row.addWidget(scan_roi_btn)
+        scan_roi_row.addStretch()
+        layout.addLayout(scan_roi_row)
+
+        # Separator
+        sep1 = QFrame()
+        sep1.setFrameShape(QFrame.Shape.HLine)
+        sep1.setStyleSheet(f"color: {BORDER};")
+        layout.addWidget(sep1)
+
+        # -- Target Lock --
+        tl_lbl = QLabel("Target Lock Detection")
+        tl_lbl.setStyleSheet("font-weight: bold; font-size: 12px;")
+        layout.addWidget(tl_lbl)
+
+        self._target_lock_cb = QCheckBox("Enable target lock detection")
+        self._target_lock_cb.setChecked(self._config.target_lock_enabled)
+        self._target_lock_cb.stateChanged.connect(self._schedule_save)
+        layout.addWidget(self._target_lock_cb)
+
+        tl_thresh_row = QHBoxLayout()
+        tl_thresh_row.addWidget(QLabel("Match threshold:"))
+        self._target_lock_threshold = QDoubleSpinBox()
+        self._target_lock_threshold.setRange(0.5, 1.0)
+        self._target_lock_threshold.setDecimals(2)
+        self._target_lock_threshold.setSingleStep(0.05)
+        self._target_lock_threshold.setValue(self._config.target_lock_match_threshold)
+        self._target_lock_threshold.setFixedWidth(80)
+        self._target_lock_threshold.setToolTip(
+            "Minimum template matching confidence (0.5–1.0).\n"
+            "Lower values detect dimmed icons but may cause false positives."
+        )
+        self._target_lock_threshold.valueChanged.connect(self._schedule_save)
+        tl_thresh_row.addWidget(self._target_lock_threshold)
+        tl_thresh_row.addStretch()
+        layout.addLayout(tl_thresh_row)
+
+        tl_roi_row = QHBoxLayout()
+        tl_roi_btn = QPushButton("Configure ROIs...")
+        tl_roi_btn.setToolTip("Adjust HP bar, shared icon, and name region offsets")
+        tl_roi_btn.clicked.connect(self._open_target_lock_roi_dialog)
+        tl_roi_row.addWidget(tl_roi_btn)
+        tl_roi_row.addStretch()
+        layout.addLayout(tl_roi_row)
+
+        # Separator
+        sep_ps = QFrame()
+        sep_ps.setFrameShape(QFrame.Shape.HLine)
+        sep_ps.setStyleSheet(f"color: {BORDER};")
+        layout.addWidget(sep_ps)
+
+        # -- Player Status (Heart) --
+        ps_lbl = QLabel("Player Status Detection")
+        ps_lbl.setStyleSheet("font-weight: bold; font-size: 12px;")
+        layout.addWidget(ps_lbl)
+
+        self._player_status_cb = QCheckBox("Enable player status detection")
+        self._player_status_cb.setChecked(self._config.player_status_enabled)
+        self._player_status_cb.stateChanged.connect(self._schedule_save)
+        layout.addWidget(self._player_status_cb)
+
+        ps_thresh_row = QHBoxLayout()
+        ps_thresh_row.addWidget(QLabel("Match threshold:"))
+        self._player_status_threshold = QDoubleSpinBox()
+        self._player_status_threshold.setRange(0.5, 1.0)
+        self._player_status_threshold.setDecimals(2)
+        self._player_status_threshold.setSingleStep(0.05)
+        self._player_status_threshold.setValue(self._config.player_status_match_threshold)
+        self._player_status_threshold.setFixedWidth(80)
+        self._player_status_threshold.setToolTip(
+            "Minimum template matching confidence (0.5\u20131.0).\n"
+            "Lower values detect dimmed icons but may cause false positives."
+        )
+        self._player_status_threshold.valueChanged.connect(self._schedule_save)
+        ps_thresh_row.addWidget(self._player_status_threshold)
+        ps_thresh_row.addStretch()
+        layout.addLayout(ps_thresh_row)
+
+        ps_roi_row = QHBoxLayout()
+        ps_roi_btn = QPushButton("Configure ROIs...")
+        ps_roi_btn.setToolTip("Adjust health bar, reload bar, buff bar, and tool name region offsets")
+        ps_roi_btn.clicked.connect(self._open_player_status_roi_dialog)
+        ps_roi_row.addWidget(ps_roi_btn)
+        ps_roi_row.addStretch()
+        layout.addLayout(ps_roi_row)
+
+        # Separator
+        sep2 = QFrame()
+        sep2.setFrameShape(QFrame.Shape.HLine)
+        sep2.setStyleSheet(f"color: {BORDER};")
+        layout.addWidget(sep2)
+
+        # -- Market Price --
+        mp_lbl = QLabel("Market Price Detection")
+        mp_lbl.setStyleSheet("font-weight: bold; font-size: 12px;")
+        layout.addWidget(mp_lbl)
+
+        self._market_price_cb = QCheckBox("Enable market price detection")
+        self._market_price_cb.setChecked(self._config.market_price_enabled)
+        self._market_price_cb.stateChanged.connect(self._schedule_save)
+        layout.addWidget(self._market_price_cb)
+
+        mp_thresh_row = QHBoxLayout()
+        mp_thresh_row.addWidget(QLabel("Match threshold:"))
+        self._market_price_threshold = QDoubleSpinBox()
+        self._market_price_threshold.setRange(0.5, 1.0)
+        self._market_price_threshold.setDecimals(2)
+        self._market_price_threshold.setSingleStep(0.05)
+        self._market_price_threshold.setValue(self._config.market_price_match_threshold)
+        self._market_price_threshold.setFixedWidth(80)
+        self._market_price_threshold.setToolTip(
+            "Minimum template matching confidence (0.5–1.0)."
+        )
+        self._market_price_threshold.valueChanged.connect(self._schedule_save)
+        mp_thresh_row.addWidget(self._market_price_threshold)
+        mp_thresh_row.addStretch()
+        layout.addLayout(mp_thresh_row)
+
+        mp_text_row = QHBoxLayout()
+        mp_text_row.addWidget(QLabel("Text brightness threshold:"))
+        self._market_price_text_threshold = QSpinBox()
+        self._market_price_text_threshold.setRange(20, 200)
+        self._market_price_text_threshold.setSingleStep(5)
+        self._market_price_text_threshold.setValue(self._config.market_price_text_threshold)
+        self._market_price_text_threshold.setFixedWidth(80)
+        self._market_price_text_threshold.setToolTip(
+            "Pixels below this brightness are treated as background noise.\n"
+            "Raise if OCR picks up background bleed; lower if text is cut off."
+        )
+        self._market_price_text_threshold.valueChanged.connect(self._schedule_save)
+        mp_text_row.addWidget(self._market_price_text_threshold)
+        mp_text_row.addStretch()
+        layout.addLayout(mp_text_row)
+
+        mp_roi_row = QHBoxLayout()
+        mp_roi_btn = QPushButton("Configure ROIs...")
+        mp_roi_btn.setToolTip("Adjust name, cell, and tier region offsets")
+        mp_roi_btn.clicked.connect(self._open_market_price_roi_dialog)
+        mp_roi_row.addWidget(mp_roi_btn)
+        mp_roi_row.addStretch()
+        layout.addLayout(mp_roi_row)
 
         self._sections.append(group)
         self._layout.addWidget(group)
 
-    def _open_roi_dialog(self):
+    def _open_scan_roi_dialog(self):
         from ..dialogs.scan_roi_dialog import ScanRoiDialog
         dlg = ScanRoiDialog(
             config=self._config,
             config_path=self._config_path,
             event_bus=self._event_bus,
+            parent=self,
+        )
+        dlg.exec()
+
+    def _open_target_lock_roi_dialog(self):
+        from ..dialogs.roi_offset_dialog import RoiOffsetDialog
+        roi_defs = [
+            ("HP Bar", "target_lock_roi_hp", ["dx", "dy", "w", "h"]),
+            ("Shared Icon", "target_lock_roi_shared", ["dx", "dy", "w", "h"]),
+            ("Name", "target_lock_roi_name", ["dx", "dy", "w", "h"]),
+        ]
+        dlg = RoiOffsetDialog(
+            title="Target Lock ROI Configuration",
+            roi_defs=roi_defs,
+            config=self._config,
+            config_path=self._config_path,
+            parent=self,
+        )
+        dlg.exec()
+
+    def _open_market_price_roi_dialog(self):
+        from ..dialogs.roi_offset_dialog import RoiOffsetDialog
+        roi_defs = [
+            ("Name Row 1", "market_price_roi_name_row1", ["dx", "dy", "w", "h"]),
+            ("Name Row 2", "market_price_roi_name_row2", ["dx", "dy", "w", "h"]),
+            ("First Cell", "market_price_roi_first_cell", ["dx", "dy", "w", "h"]),
+            ("Tier", "market_price_roi_tier", ["dx", "dy", "w", "h"]),
+            ("Cell Offset", "market_price_cell_offset", ["x", "y"]),
+        ]
+        dlg = RoiOffsetDialog(
+            title="Market Price ROI Configuration",
+            roi_defs=roi_defs,
+            config=self._config,
+            config_path=self._config_path,
+            parent=self,
+        )
+        dlg.exec()
+
+    def _open_player_status_roi_dialog(self):
+        from ..dialogs.roi_offset_dialog import RoiOffsetDialog
+        roi_defs = [
+            ("Health Bar", "player_status_roi_health", ["dx", "dy", "w", "h"]),
+            ("Reload Bar", "player_status_roi_reload", ["dx", "dy", "w", "h"]),
+            ("Buff Bar", "player_status_roi_buff", ["dx", "dy", "w", "h"]),
+            ("Buff Bar (Small)", "player_status_roi_buff_small", ["dx", "dy", "w", "h"]),
+            ("Tool Name", "player_status_roi_tool_name", ["dx", "dy", "w", "h"]),
+        ]
+        dlg = RoiOffsetDialog(
+            title="Player Status ROI Configuration",
+            roi_defs=roi_defs,
+            config=self._config,
+            config_path=self._config_path,
             parent=self,
         )
         dlg.exec()
@@ -649,6 +841,19 @@ class SettingsPage(QWidget):
         self._config.dashboard_trade_blacklist = [
             n.strip() for n in bk_text.splitlines() if n.strip()
         ]
+
+        # Target Lock
+        self._config.target_lock_enabled = self._target_lock_cb.isChecked()
+        self._config.target_lock_match_threshold = self._target_lock_threshold.value()
+
+        # Player Status Detection
+        self._config.player_status_enabled = self._player_status_cb.isChecked()
+        self._config.player_status_match_threshold = self._player_status_threshold.value()
+
+        # Market Price Detection
+        self._config.market_price_enabled = self._market_price_cb.isChecked()
+        self._config.market_price_match_threshold = self._market_price_threshold.value()
+        self._config.market_price_text_threshold = self._market_price_text_threshold.value()
 
         save_config(self._config, self._config_path)
         self._event_bus.publish(EVENT_CONFIG_CHANGED, self._config)

@@ -320,6 +320,7 @@ def enrich_item(
     item: dict,
     slim_lookup: dict[int, dict],
     markup_lookup: dict[int, float],
+    ingame_lookup: dict[str, float] | None = None,
 ) -> dict:
     """Enrich an inventory item with computed values.
 
@@ -359,7 +360,7 @@ def enrich_item(
         qr = float(details.get('QualityRating', 0) or 0)
         current_tt = qr / 100 if qr > 0 else None
 
-    # Compute total value: custom markup > market price > TT fallback
+    # Compute total value: custom markup > in-game > exchange > TT fallback
     total_value = None
     value_source = 'default'
 
@@ -369,11 +370,20 @@ def enrich_item(
             total_value = unit_price * quantity if is_stackable(slim) else unit_price
             value_source = 'custom'
 
+    if value_source == 'default' and ingame_lookup is not None and slim:
+        item_name = _get_name(slim)
+        igm_mu = ingame_lookup.get(item_name) if item_name else None
+        if igm_mu is not None:
+            unit_price = compute_unit_price(slim, igm_mu, current_tt)
+            if unit_price is not None and unit_price > 0:
+                total_value = unit_price * quantity if is_stackable(slim) else unit_price
+                value_source = 'ingame'
+
     if value_source == 'default' and market_price is not None and slim:
         unit_price = compute_unit_price(slim, market_price, current_tt)
         if unit_price is not None and unit_price > 0:
             total_value = unit_price * quantity if is_stackable(slim) else unit_price
-            value_source = 'market'
+            value_source = 'exchange'
 
     if value_source == 'default' and tt_value is not None:
         total_value = tt_value

@@ -119,6 +119,35 @@ class AppConfig:
     dashboard_trade_planet_filter: list[str] = field(default_factory=list)
     dashboard_trade_blacklist: list[str] = field(default_factory=list)
 
+    # Target lock detection
+    target_lock_enabled: bool = True
+    target_lock_match_threshold: float = 0.90
+    target_lock_roi_hp: dict = field(default_factory=lambda: {"dx": -89, "dy": -17, "w": 193, "h": 6})
+    target_lock_roi_shared: dict = field(default_factory=lambda: {"dx": -125, "dy": -22, "w": 16, "h": 16})
+    target_lock_roi_name: dict = field(default_factory=lambda: {"dx": -190, "dy": -40, "w": 394, "h": 14})
+
+    # Market price window detection
+    market_price_enabled: bool = True
+    market_price_match_threshold: float = 0.9
+    market_price_poll_interval: float = 1.0
+    market_price_roi_name_row1: dict = field(default_factory=lambda: {"dx": -80, "dy": 30, "w": 340, "h": 16})
+    market_price_roi_name_row2: dict = field(default_factory=lambda: {"dx": -80, "dy": 49, "w": 340, "h": 16})
+    market_price_roi_first_cell: dict = field(default_factory=lambda: {"dx": 23, "dy": 112, "w": 100, "h": 14})
+    market_price_cell_offset: dict = field(default_factory=lambda: {"x": 107, "y": 25})
+    market_price_roi_tier: dict = field(default_factory=lambda: {"dx": 79, "dy": 252, "w": 18, "h": 14})
+    market_price_digit_stpk: str = "market_digits.stpk"
+    market_price_text_stpk: str = "market_text.stpk"
+    market_price_text_threshold: int = 80  # brightness cutoff for text vs background noise
+
+    # Player status (heart) detection
+    player_status_enabled: bool = True
+    player_status_match_threshold: float = 0.90
+    player_status_roi_health: dict = field(default_factory=lambda: {"dx": 30, "dy": -9, "w": 315, "h": 12})
+    player_status_roi_reload: dict = field(default_factory=lambda: {"dx": 30, "dy": 5, "w": 315, "h": 3})
+    player_status_roi_buff: dict = field(default_factory=lambda: {"dx": -7, "dy": -57, "w": 459, "h": 32})
+    player_status_roi_buff_small: dict = field(default_factory=lambda: {"dx": 0, "dy": 0, "w": 1, "h": 1})
+    player_status_roi_tool_name: dict = field(default_factory=lambda: {"dx": 30, "dy": 13, "w": 315, "h": 14})
+
     # Ingestion (crowdsourced data upload/download)
     ingestion_enabled: bool = True
     ingestion_upload_interval_seconds: int = 30
@@ -192,6 +221,29 @@ DEFAULTS = {
     "dashboard_trade_blocklist": [],
     "dashboard_trade_planet_filter": [],
     "dashboard_trade_blacklist": [],
+    "target_lock_enabled": True,
+    "target_lock_match_threshold": 0.90,
+    "target_lock_roi_hp": {"dx": -89, "dy": -17, "w": 193, "h": 6},
+    "target_lock_roi_shared": {"dx": -125, "dy": -22, "w": 16, "h": 16},
+    "target_lock_roi_name": {"dx": -190, "dy": -40, "w": 394, "h": 14},
+    "market_price_enabled": True,
+    "market_price_match_threshold": 0.9,
+    "market_price_poll_interval": 1.0,
+    "market_price_roi_name_row1": {"dx": -80, "dy": 30, "w": 340, "h": 16},
+    "market_price_roi_name_row2": {"dx": -80, "dy": 49, "w": 340, "h": 16},
+    "market_price_roi_first_cell": {"dx": 23, "dy": 112, "w": 100, "h": 14},
+    "market_price_cell_offset": {"x": 107, "y": 25},
+    "market_price_roi_tier": {"dx": 79, "dy": 252, "w": 18, "h": 14},
+    "market_price_digit_stpk": "market_digits.stpk",
+    "market_price_text_stpk": "market_text.stpk",
+    "market_price_text_threshold": 80,
+    "player_status_enabled": True,
+    "player_status_match_threshold": 0.90,
+    "player_status_roi_health": {"dx": 30, "dy": -9, "w": 315, "h": 12},
+    "player_status_roi_reload": {"dx": 30, "dy": 5, "w": 315, "h": 3},
+    "player_status_roi_buff": {"dx": -7, "dy": -57, "w": 459, "h": 32},
+    "player_status_roi_buff_small": {"dx": 0, "dy": 0, "w": 1, "h": 1},
+    "player_status_roi_tool_name": {"dx": 30, "dy": 13, "w": 315, "h": 14},
     "ingestion_enabled": True,
     "ingestion_upload_interval_seconds": 30,
     "ingestion_receive_interval_seconds": 60,

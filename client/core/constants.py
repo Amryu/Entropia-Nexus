@@ -70,6 +70,20 @@ EVENT_UPDATE_READY = "update_ready"
 EVENT_UPDATE_ERROR = "update_error"
 EVENT_UPDATE_APPLY = "update_apply"
 
+# Event names — Target lock detection
+EVENT_TARGET_LOCK_UPDATE = "target_lock_update"
+EVENT_TARGET_LOCK_LOST = "target_lock_lost"
+
+# Event names — Market price window detection
+EVENT_MARKET_PRICE_SCAN = "market_price_scan"
+EVENT_MARKET_PRICE_ERROR = "market_price_error"
+EVENT_MARKET_PRICE_DEBUG = "market_price_debug"
+EVENT_MARKET_PRICE_LOST = "market_price_lost"
+
+# Event names — Player status (heart) detection
+EVENT_PLAYER_STATUS_UPDATE = "player_status_update"
+EVENT_PLAYER_STATUS_LOST = "player_status_lost"
+
 # Debug events
 EVENT_DEBUG_REGIONS = "debug_regions"      # Window/sidebar/table/pagination bounds
 EVENT_DEBUG_ROW = "debug_row"              # Individual row OCR result

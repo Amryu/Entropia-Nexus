@@ -703,6 +703,55 @@ class NexusClient:
             self._handle_error(e, "ingest trades")
             return None
 
+    def ingest_market_prices(self, batch: list[dict]) -> dict | None:
+        """POST /api/ingestion/market-prices — submit market price observations.
+
+        Raises RateLimitError on 429, ServerError on 5xx/network errors.
+        Returns None on 4xx client errors (data is bad, no point retrying).
+        """
+        payload = gzip.compress(json.dumps({"prices": batch}).encode())
+        headers = self._headers()
+        headers["Content-Encoding"] = "gzip"
+        headers["Content-Type"] = "application/json"
+        try:
+            resp = self._session.post(
+                self._url("/ingestion/market-prices"),
+                headers=headers,
+                data=payload,
+                timeout=15,
+            )
+            if resp.status_code == 429:
+                retry_after = resp.json().get("retryAfter", 60)
+                raise RateLimitError(retry_after)
+            if resp.status_code >= 500:
+                raise ServerError(f"{resp.status_code} {resp.reason}")
+            resp.raise_for_status()
+            return resp.json()
+        except (RateLimitError, ServerError):
+            raise
+        except requests.ConnectionError as e:
+            raise ServerError(str(e)) from e
+        except requests.Timeout as e:
+            raise ServerError(str(e)) from e
+        except Exception as e:
+            self._handle_error(e, "ingest market prices")
+            return None
+
+    def get_ingame_prices(self) -> list[dict] | None:
+        """GET /api/market/prices/snapshots/latest?all=true — fetch latest market price snapshots."""
+        try:
+            resp = self._session.get(
+                self._url("/market/prices/snapshots/latest"),
+                headers=self._headers(),
+                params={"all": "true"},
+                timeout=15,
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except Exception as e:
+            self._handle_error(e, "get ingame prices")
+            return None
+
     def get_ingested_globals(self, since: str, limit: int = 200) -> dict | None:
         """GET /api/ingestion/globals — fetch globals since a timestamp."""
         try:

@@ -343,6 +343,8 @@ class SkillsPage(QWidget):
         signals.skill_scanned.connect(self._on_skill_scanned)
         signals.ocr_page_changed.connect(self._on_ocr_page_changed)
         signals.auth_state_changed.connect(self._on_auth_changed)
+        if event_bus:
+            signals.config_changed.connect(self._on_config_changed)
 
         # Initial data load (deferred)
         QTimer.singleShot(200, self._initial_load)
@@ -1242,6 +1244,13 @@ class SkillsPage(QWidget):
         if self._event_bus:
             from ...core.constants import EVENT_CONFIG_CHANGED
             self._event_bus.publish(EVENT_CONFIG_CHANGED, self._config)
+
+    def _on_config_changed(self, config):
+        """Sync debug overlay checkbox when config changes externally (e.g. F3)."""
+        if config and hasattr(config, "scan_overlay_debug"):
+            self._debug_overlay_check.blockSignals(True)
+            self._debug_overlay_check.setChecked(config.scan_overlay_debug)
+            self._debug_overlay_check.blockSignals(False)
 
     def _on_ocr_progress(self, data):
         if hasattr(data, "total_found"):

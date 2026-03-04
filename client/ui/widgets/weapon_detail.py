@@ -321,6 +321,7 @@ class _TiersWidget(QWidget):
 
     _market_data_ready = pyqtSignal()
     _inventory_data_ready = pyqtSignal()
+    _ingame_data_ready = pyqtSignal()
 
     _FOOTER_STYLE = (
         f"color: {TEXT_MUTED}; font-size: 13px; font-weight: 500;"
@@ -341,12 +342,13 @@ class _TiersWidget(QWidget):
         self.setStyleSheet("background: transparent;")
         self._entity_type = entity_type
         self._nexus_client = nexus_client
-        self._markup_source: str = "custom"  # custom | market | inventory
+        self._markup_source: str = "custom"  # custom | inventory | ingame | exchange
 
-        # Market/inventory data (loaded async)
+        # Market/inventory/in-game data (loaded async)
         self._name_to_wap: dict[str, float] = {}
         self._name_to_id: dict[str, int] = {}
         self._inv_markups: dict[int, float] = {}
+        self._ingame_markups: dict[str, float] = {}  # name → markup%
 
         # Extrapolate missing tiers
         all_tiers = _extrapolate_tiers(tiers_data, entity_type) if tiers_data else []
@@ -390,22 +392,26 @@ class _TiersWidget(QWidget):
         )
         btn_row.addWidget(source_label)
         self._btn_custom = QPushButton("Custom")
-        self._btn_market = QPushButton("Market")
         self._btn_inventory = QPushButton("Inventory")
+        self._btn_ingame = QPushButton("In-Game")
+        self._btn_exchange = QPushButton("Exchange")
         self._source_buttons = [
-            self._btn_custom, self._btn_market, self._btn_inventory
+            self._btn_custom, self._btn_inventory, self._btn_ingame, self._btn_exchange
         ]
         for btn in self._source_buttons:
             btn.setFixedHeight(_TIER_BTN_SIZE)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._btn_market.setEnabled(False)
         self._btn_inventory.setEnabled(False)
+        self._btn_ingame.setEnabled(False)
+        self._btn_exchange.setEnabled(False)
         self._btn_custom.clicked.connect(lambda: self._set_markup_source("custom"))
-        self._btn_market.clicked.connect(lambda: self._set_markup_source("market"))
         self._btn_inventory.clicked.connect(lambda: self._set_markup_source("inventory"))
+        self._btn_ingame.clicked.connect(lambda: self._set_markup_source("ingame"))
+        self._btn_exchange.clicked.connect(lambda: self._set_markup_source("exchange"))
         btn_row.addWidget(self._btn_custom)
-        btn_row.addWidget(self._btn_market)
         btn_row.addWidget(self._btn_inventory)
+        btn_row.addWidget(self._btn_ingame)
+        btn_row.addWidget(self._btn_exchange)
         layout.addLayout(btn_row)
         self._update_source_buttons()
 
@@ -458,6 +464,7 @@ class _TiersWidget(QWidget):
         # Connect market/inventory data signals
         self._market_data_ready.connect(self._on_market_data_ready)
         self._inventory_data_ready.connect(self._on_inventory_data_ready)
+        self._ingame_data_ready.connect(self._on_ingame_data_ready)
 
         # Select first available tier
         first_tier = min(self._tier_map.keys()) if self._tier_map else 1
@@ -523,8 +530,9 @@ class _TiersWidget(QWidget):
     def _update_source_buttons(self):
         for btn, src in [
             (self._btn_custom, "custom"),
-            (self._btn_market, "market"),
             (self._btn_inventory, "inventory"),
+            (self._btn_ingame, "ingame"),
+            (self._btn_exchange, "exchange"),
         ]:
             is_active = self._markup_source == src
             is_enabled = btn.isEnabled()
@@ -551,10 +559,14 @@ class _TiersWidget(QWidget):
     def _get_resolved_markup(self, mat_name: str, sorted_idx: int,
                               tier_markups: dict | None = None) -> float:
         """Resolve markup for a material based on current source mode."""
-        if self._markup_source == "market":
+        if self._markup_source == "exchange":
             wap = self._name_to_wap.get(mat_name)
             if wap is not None:
                 return wap
+        elif self._markup_source == "ingame":
+            igm = self._ingame_markups.get(mat_name)
+            if igm is not None:
+                return igm
         elif self._markup_source == "inventory":
             item_id = self._name_to_id.get(mat_name)
             if item_id is not None:
@@ -602,23 +614,49 @@ class _TiersWidget(QWidget):
             except Exception:
                 pass
 
+        def _fetch_ingame():
+            try:
+                data = self._nexus_client.get_ingame_prices()
+                if data:
+                    for row in data:
+                        name = row.get("item_name")
+                        if not name:
+                            continue
+                        mu = (row.get("markup_1d") or row.get("markup_7d")
+                              or row.get("markup_30d") or row.get("markup_90d")
+                              or row.get("markup_365d"))
+                        if mu is not None:
+                            self._ingame_markups[name] = float(mu)
+                    self._ingame_data_ready.emit()
+            except Exception:
+                pass
+
         threading.Thread(
             target=_fetch_market, daemon=True, name="tier-market"
         ).start()
         threading.Thread(
             target=_fetch_inventory, daemon=True, name="tier-inventory"
         ).start()
+        threading.Thread(
+            target=_fetch_ingame, daemon=True, name="tier-ingame"
+        ).start()
 
     def _on_market_data_ready(self):
-        self._btn_market.setEnabled(bool(self._name_to_wap))
+        self._btn_exchange.setEnabled(bool(self._name_to_wap))
         self._update_source_buttons()
-        if self._markup_source == "market":
+        if self._markup_source == "exchange":
             self._recalculate()
 
     def _on_inventory_data_ready(self):
         self._btn_inventory.setEnabled(bool(self._inv_markups))
         self._update_source_buttons()
         if self._markup_source == "inventory":
+            self._recalculate()
+
+    def _on_ingame_data_ready(self):
+        self._btn_ingame.setEnabled(bool(self._ingame_markups))
+        self._update_source_buttons()
+        if self._markup_source == "ingame":
             self._recalculate()
 
     # --- Markup persistence ---
@@ -645,7 +683,9 @@ class _TiersWidget(QWidget):
             return
         # Restore markup source preference
         source = stored.get("_source")
-        if source in ("custom", "market", "inventory"):
+        if source == "market":
+            source = "exchange"  # backward compat
+        if source in ("custom", "inventory", "ingame", "exchange"):
             self._markup_source = source
         entity_data = stored.get(self._entity_type)
         if not entity_data or not isinstance(entity_data, dict):

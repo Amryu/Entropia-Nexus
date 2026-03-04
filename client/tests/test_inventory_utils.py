@@ -438,13 +438,13 @@ class TestEnrichItem:
         assert result['_markup'] == 10.0
 
     def test_market_price_fallback(self):
-        """No custom markup but market WAP → value_source='market'."""
+        """No custom markup but market WAP → value_source='exchange'."""
         slim_lookup = {200: _slim('Weapon', v=50.0, w=12.0)}
         markup_lookup = {}
         item = self._make_item(item_id=200, quantity=1)
 
         result = enrich_item(item, slim_lookup, markup_lookup)
-        assert result['_value_source'] == 'market'
+        assert result['_value_source'] == 'exchange'
         # WAP=12 → absolute → 50 + 12 = 62
         assert result['_total_value'] == pytest.approx(62.0)
 
@@ -455,7 +455,7 @@ class TestEnrichItem:
         item = self._make_item(item_id=300, quantity=100)
 
         result = enrich_item(item, slim_lookup, markup_lookup)
-        assert result['_value_source'] == 'market'
+        assert result['_value_source'] == 'exchange'
         # 0.10 * (150/100) * 100 = 15.0
         assert result['_total_value'] == pytest.approx(15.0)
 

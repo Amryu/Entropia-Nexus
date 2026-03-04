@@ -18,7 +18,7 @@ import time
 import traceback
 
 from .core.config import load_config
-from .core.constants import EVENT_AUTH_STATE_CHANGED
+from .core.constants import EVENT_AUTH_STATE_CHANGED, EVENT_CONFIG_CHANGED
 from .core.event_bus import EventBus
 from .core.database import Database
 from .core.logger import init as init_logging, get_logger
@@ -216,6 +216,9 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     # workers.extend(_start_hunt_tracker(config, event_bus, db, data_client))  # hunt disabled
     workers.extend(_start_hotkey_manager(config, event_bus))
     workers.extend(_start_update_checker(config, event_bus))
+    workers.extend(_start_target_lock_detector(config, event_bus))
+    workers.extend(_start_player_status_detector(config, event_bus))
+    workers.extend(_start_market_price_detector(config, event_bus))
 
     # Overlay manager (focus detection, widget registry, snap)
     from .overlay.overlay_manager import OverlayManager
@@ -503,12 +506,22 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
             # Notification badge on logo
             main_window.set_search_overlay(search_overlay)
 
-        # Scan highlight overlay (click-through, shows scanned rows)
+        # Scan highlight overlay (click-through, shows scanned rows + target lock)
         try:
             from .overlay.scan_highlight_overlay import ScanHighlightOverlay
             overlay_manager._scan_highlight = ScanHighlightOverlay(
                 config=config, event_bus=event_bus,
                 manager=overlay_manager,
+            )
+
+            # F3 toggles debug overlay mode (persists to config)
+            def _toggle_debug_overlay():
+                config.scan_overlay_debug = not config.scan_overlay_debug
+                save_config(config, config_path)
+                event_bus.publish(EVENT_CONFIG_CHANGED, config)
+
+            overlay_manager.debug_overlay_hotkey_pressed.connect(
+                _toggle_debug_overlay
             )
         except Exception as e:
             log.warning("Scan highlight overlay failed: %s", e)
@@ -787,6 +800,60 @@ def _start_update_checker(config, event_bus):
         log.info("Update checker started")
     except Exception as e:
         log.error("Update checker failed to start: %s", e)
+    return workers
+
+
+def _start_target_lock_detector(config, event_bus):
+    """Start the target lock detector. Returns list of stoppable workers."""
+    workers = []
+    if not getattr(config, "target_lock_enabled", True):
+        return workers
+    try:
+        from .ocr.capturer import ScreenCapturer
+        from .ocr.target_lock_detector import TargetLockDetector
+        capturer = ScreenCapturer()
+        detector = TargetLockDetector(config, event_bus, capturer)
+        detector.start()
+        workers.append(detector)
+        log.info("Target lock detector started")
+    except Exception as e:
+        log.error("Target lock detector failed to start: %s", e)
+    return workers
+
+
+def _start_player_status_detector(config, event_bus):
+    """Start the player status (heart) detector. Returns list of stoppable workers."""
+    workers = []
+    if not getattr(config, "player_status_enabled", True):
+        return workers
+    try:
+        from .ocr.capturer import ScreenCapturer
+        from .ocr.player_status_detector import PlayerStatusDetector
+        capturer = ScreenCapturer()
+        detector = PlayerStatusDetector(config, event_bus, capturer)
+        detector.start()
+        workers.append(detector)
+        log.info("Player status detector started")
+    except Exception as e:
+        log.error("Player status detector failed to start: %s", e)
+    return workers
+
+
+def _start_market_price_detector(config, event_bus):
+    """Start the market price detector. Returns list of stoppable workers."""
+    workers = []
+    if not getattr(config, "market_price_enabled", True):
+        return workers
+    try:
+        from .ocr.capturer import ScreenCapturer
+        from .ocr.market_price_detector import MarketPriceDetector
+        capturer = ScreenCapturer()
+        detector = MarketPriceDetector(config, event_bus, capturer)
+        detector.start()
+        workers.append(detector)
+        log.info("Market price detector started")
+    except Exception as e:
+        log.error("Market price detector failed to start: %s", e)
     return workers
 
 

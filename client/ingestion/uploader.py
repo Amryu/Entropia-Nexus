@@ -22,7 +22,7 @@ from datetime import datetime, timedelta
 
 from ..api.nexus_client import RateLimitError, ServerError
 from ..chat_parser.models import GlobalEvent
-from ..core.constants import EVENT_CATCHUP_COMPLETE, EVENT_GLOBAL, EVENT_INGESTION_STATUS, EVENT_REPARSE_COMPLETE, EVENT_TRADE_CHAT
+from ..core.constants import EVENT_CATCHUP_COMPLETE, EVENT_GLOBAL, EVENT_INGESTION_STATUS, EVENT_MARKET_PRICE_SCAN, EVENT_REPARSE_COMPLETE, EVENT_TRADE_CHAT
 from ..core.logger import get_logger
 
 log = get_logger("Ingestion.Upload")
@@ -63,6 +63,8 @@ class IngestionUploader:
 
         self._global_buffer: deque[dict] = deque()
         self._trade_buffer: deque[dict] = deque()
+        self._market_price_buffer: deque[dict] = deque()
+        self._market_price_last_seen: dict[str, datetime] = {}  # 1hr dedup
         self._lock = threading.Lock()
 
         self._stop_event = threading.Event()
@@ -84,9 +86,14 @@ class IngestionUploader:
             if recovered_trades:
                 self._trade_buffer.extend(recovered_trades)
                 log.info("Recovered %d pending trades from previous session", len(recovered_trades))
+            recovered_mp = db.load_pending_ingestion("market_price")
+            if recovered_mp:
+                self._market_price_buffer.extend(recovered_mp)
+                log.info("Recovered %d pending market prices from previous session", len(recovered_mp))
 
         self._event_bus.subscribe(EVENT_GLOBAL, self._on_global)
         self._event_bus.subscribe(EVENT_TRADE_CHAT, self._on_trade)
+        self._event_bus.subscribe(EVENT_MARKET_PRICE_SCAN, self._on_market_price)
         self._event_bus.subscribe(EVENT_CATCHUP_COMPLETE, self._on_catchup_complete)
         self._event_bus.subscribe(EVENT_REPARSE_COMPLETE, self._on_reparse_complete)
 
@@ -117,6 +124,7 @@ class IngestionUploader:
         self._persist_buffers()
         self._event_bus.unsubscribe(EVENT_GLOBAL, self._on_global)
         self._event_bus.unsubscribe(EVENT_TRADE_CHAT, self._on_trade)
+        self._event_bus.unsubscribe(EVENT_MARKET_PRICE_SCAN, self._on_market_price)
         self._event_bus.unsubscribe(EVENT_CATCHUP_COMPLETE, self._on_catchup_complete)
         self._event_bus.unsubscribe(EVENT_REPARSE_COMPLETE, self._on_reparse_complete)
         log.info("Uploader stopped")
@@ -185,6 +193,22 @@ class IngestionUploader:
                 "message": event.message,
             })
 
+        if self._live:
+            self._flush_requested.set()
+        self._emit_status()
+
+    def _on_market_price(self, data):
+        name = data.get("item_name", "")
+        if not name:
+            return
+        now = datetime.now()
+        with self._lock:
+            # 1hr dedup: skip if same item was buffered within the last hour
+            last = self._market_price_last_seen.get(name)
+            if last and (now - last) < timedelta(hours=1):
+                return
+            self._market_price_last_seen[name] = now
+            self._market_price_buffer.append(data)
         if self._live:
             self._flush_requested.set()
         self._emit_status()
@@ -339,7 +363,7 @@ class IngestionUploader:
     def _emit_status(self):
         """Publish pending buffer count for UI status display."""
         with self._lock:
-            pending = len(self._global_buffer) + len(self._trade_buffer)
+            pending = len(self._global_buffer) + len(self._trade_buffer) + len(self._market_price_buffer)
         self._event_bus.publish(EVENT_INGESTION_STATUS, {"pending": pending})
 
     def _flush(self):
@@ -359,6 +383,7 @@ class IngestionUploader:
 
         g_sent, g_processed = self._flush_type(self._global_buffer, "global", self._nexus_client.ingest_globals)
         t_sent, t_processed = self._flush_type(self._trade_buffer, "trade", self._nexus_client.ingest_trades)
+        mp_sent, mp_processed = self._flush_type(self._market_price_buffer, "market-price", self._nexus_client.ingest_market_prices)
 
         # Delete only the specific items confirmed processed by the server.
         # Items still in the buffer (re-queued from rate limiting) stay in the DB
@@ -497,6 +522,7 @@ class IngestionUploader:
         with self._lock:
             globals_list = list(self._global_buffer)
             trades_list = list(self._trade_buffer)
+            mp_list = list(self._market_price_buffer)
         if globals_list:
             self._db.save_pending_ingestion("global", globals_list)
         else:
@@ -505,6 +531,10 @@ class IngestionUploader:
             self._db.save_pending_ingestion("trade", trades_list)
         else:
             self._db.clear_pending_ingestion("trade")
+        if mp_list:
+            self._db.save_pending_ingestion("market_price", mp_list)
+        else:
+            self._db.clear_pending_ingestion("market_price")
 
 
 def _chunked(items: list, size: int):

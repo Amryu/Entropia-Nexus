@@ -37,6 +37,7 @@ class OverlayManager(QObject):
     map_hotkey_pressed = pyqtSignal()
     exchange_hotkey_pressed = pyqtSignal()
     notifications_hotkey_pressed = pyqtSignal()
+    debug_overlay_hotkey_pressed = pyqtSignal()
     game_focus_changed = pyqtSignal(bool)  # True when game is focused/visible
     opacity_changed = pyqtSignal(float)
 
@@ -240,6 +241,11 @@ class OverlayManager(QObject):
         "n": "notifications_hotkey_pressed",
     }
 
+    # Function keys — no Ctrl modifier required
+    _FKEY_MAP = {
+        "f3": "debug_overlay_hotkey_pressed",
+    }
+
     def _register_hotkey(self) -> None:
         if not _platform.supports_global_hotkeys() or self._hotkey_registered:
             return
@@ -272,6 +278,18 @@ class OverlayManager(QObject):
         is needed.
         """
         name = event.name
+
+        # Function keys (no modifier required, pass through to game)
+        if name in self._FKEY_MAP:
+            if event.event_type == "down":
+                fg = _platform.get_foreground_window_id()
+                if fg in self._overlay_hwnds or \
+                        _platform.get_foreground_window_title().startswith(GAME_TITLE_PREFIX):
+                    signal = getattr(self, self._FKEY_MAP[name])
+                    signal.emit()
+            return True  # always pass function keys through
+
+        # Ctrl+letter hotkeys
         if name not in self._HOTKEY_MAP:
             return True  # not a hotkey letter — pass through
 

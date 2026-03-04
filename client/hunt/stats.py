@@ -105,7 +105,7 @@ def aggregate_loot(encounters: list[MobEncounter],
         "total_quantity": int,
         "tt_value": float,
         "mu_value": float,
-        "markup_source": str,     # "custom", "inventory", "market", "default"
+        "markup_source": str,     # "custom", "inventory", "ingame", "exchange", "default"
         "is_custom": bool,
     }]
 

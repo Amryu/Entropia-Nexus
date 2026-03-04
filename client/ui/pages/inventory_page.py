@@ -58,8 +58,8 @@ _VIEW_TREE = 1
 # ---------------------------------------------------------------------------
 
 class _DataLoader(QThread):
-    """Fetch inventory, exchange slim items, and markups in the background."""
-    finished = pyqtSignal(object, object, object, object)  # items, slims, markups, error
+    """Fetch inventory, exchange slim items, markups, and in-game prices in the background."""
+    finished = pyqtSignal(object, object, object, object, object)  # items, slims, markups, ingame, error
 
     def __init__(self, nexus_client):
         super().__init__()
@@ -69,14 +69,15 @@ class _DataLoader(QThread):
         try:
             items = self._nc.get_inventory()
             if items is None:
-                self.finished.emit(None, None, None, "Failed to load inventory. Please check your login.")
+                self.finished.emit(None, None, None, None, "Failed to load inventory. Please check your login.")
                 return
             slims = self._nc.get_exchange_items()
             markups = self._nc.get_inventory_markups()
-            self.finished.emit(items, slims, markups, None)
+            ingame = self._nc.get_ingame_prices()
+            self.finished.emit(items, slims, markups, ingame, None)
         except Exception as e:
             log.error("DataLoader error: %s", e)
-            self.finished.emit(None, None, None, str(e))
+            self.finished.emit(None, None, None, None, str(e))
 
 
 # ---------------------------------------------------------------------------
@@ -213,7 +214,7 @@ class _ItemDetailDialog(QDialog):
 
         total = enriched.get('_total_value')
         source = enriched.get('_value_source', 'default')
-        source_label = {'custom': ' (custom)', 'market': ' (market)', 'default': ' (TT)'}
+        source_label = {'custom': ' (custom)', 'ingame': ' (in-game)', 'exchange': ' (exchange)', 'default': ' (TT)'}
         add_row(
             "Est. Total:",
             f"{format_ped(total)} PED{source_label.get(source, '')}" if total is not None else "N/A",
@@ -290,6 +291,7 @@ class InventoryPage(QWidget):
         self._filtered: list[dict] = []
         self._slim_lookup: dict[int, dict] = {}
         self._markup_lookup: dict[int, float] = {}
+        self._ingame_lookup: dict[str, float] = {}
         self._loading = False
         self._data_loaded = False
 
@@ -619,7 +621,7 @@ class InventoryPage(QWidget):
         self._loader.finished.connect(self._on_data_loaded)
         self._loader.start()
 
-    def _on_data_loaded(self, items, slims, markups, error):
+    def _on_data_loaded(self, items, slims, markups, ingame, error):
         self._loading = False
         self._btn_refresh.setEnabled(True)
         self._loader = None
@@ -645,9 +647,21 @@ class InventoryPage(QWidget):
             except (ValueError, TypeError):
                 pass
 
+        # Build in-game price lookup (name → markup%)
+        self._ingame_lookup = {}
+        for row in (ingame or []):
+            name = row.get("item_name")
+            if not name:
+                continue
+            mu = (row.get("markup_1d") or row.get("markup_7d")
+                  or row.get("markup_30d") or row.get("markup_90d")
+                  or row.get("markup_365d"))
+            if mu is not None:
+                self._ingame_lookup[name] = float(mu)
+
         # Enrich items
         self._enriched = [
-            enrich_item(item, self._slim_lookup, self._markup_lookup)
+            enrich_item(item, self._slim_lookup, self._markup_lookup, self._ingame_lookup)
             for item in self._raw_items
         ]
 
@@ -1148,7 +1162,7 @@ class InventoryPage(QWidget):
 
         # Re-enrich and refresh
         self._enriched = [
-            enrich_item(item, self._slim_lookup, self._markup_lookup)
+            enrich_item(item, self._slim_lookup, self._markup_lookup, getattr(self, '_ingame_lookup', None))
             for item in self._raw_items
         ]
         self._on_filter_changed()

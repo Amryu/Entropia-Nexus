@@ -12,7 +12,6 @@
       {"type": "feat", "text": "Dashboard feed filters (min global value, blocked types, trade blocklist/blacklist)"},
       {"type": "feat", "text": "Settings search bar with section filtering and text highlighting"},
       {"type": "feat", "text": "Self-notification filtering (suppress own globals and trade messages)"},
-      {"type": "feat", "text": "EU name stored from OAuth for self-filtering"},
       {"type": "feat", "text": "Exchange overlay drag from sidebar and double-click minify/restore"},
       {"type": "feat", "text": "Dashboard ticker headers with settings and notification shortcuts"},
       {"type": "fix", "text": "Weapon calculator now works in production builds (py-mini-racer library fix)"},

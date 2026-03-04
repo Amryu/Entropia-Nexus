@@ -1,7 +1,8 @@
 """Per-item markup resolution with priority chain.
 
 Priority: Custom (local DB) > Player Inventory Markup (website API)
-         > Market (Exchange API) > Default (100% / +0 PED).
+         > In-Game (market_price_snapshots) > Exchange (WAP API)
+         > Default (100% / +0 PED).
 """
 
 from dataclasses import dataclass
@@ -21,7 +22,7 @@ class MarkupResult:
     """Resolved markup for a single item."""
     markup_value: float   # e.g. 115.0 (pct) or 5.0 (+PED)
     markup_type: str      # "percentage" or "absolute"
-    source: str           # "custom", "inventory", "market", "default"
+    source: str           # "custom", "inventory", "ingame", "exchange", "default"
 
     def compute(self, tt_value: float) -> float:
         """Apply markup to a TT value and return estimated market value."""
@@ -92,8 +93,9 @@ class MarkupResolver:
     Sources checked in order:
     1. Custom (local SQLite) — user-set overrides
     2. Player Inventory Markup — from website API (if authenticated)
-    3. Market (Exchange) — public exchange price data
-    4. Default — 100% for percentage items, +0 PED for absolute items
+    3. In-Game (market_price_snapshots) — OCR'd game market data
+    4. Exchange — public exchange WAP data
+    5. Default — 100% for percentage items, +0 PED for absolute items
     """
 
     def __init__(self, db, nexus_client=None, data_client=None):
@@ -108,6 +110,7 @@ class MarkupResolver:
         # Caches (populated lazily via refresh methods)
         self._exchange_cache: dict[str, ExchangeItemData] | None = None
         self._inventory_markups: dict[str, float] | None = None  # name → markup
+        self._ingame_cache: dict[str, float] | None = None  # name_lower → markup%
         self._item_id_to_name: dict[int, str] | None = None
         self._item_name_to_type: dict[str, str] | None = None
         self._item_name_to_sub_type: dict[str, str | None] | None = None
@@ -136,7 +139,18 @@ class MarkupResolver:
                     source="inventory",
                 )
 
-        # 3. Market (Exchange)
+        # 3. In-Game (market_price_snapshots)
+        if self._ingame_cache is not None:
+            igm_markup = self._ingame_cache.get(name_lower)
+            if igm_markup is not None:
+                markup_type = self._get_markup_type(item_name)
+                return MarkupResult(
+                    markup_value=igm_markup,
+                    markup_type=markup_type,
+                    source="ingame",
+                )
+
+        # 4. Exchange (WAP)
         if self._exchange_cache is not None:
             exchange_data = self._exchange_cache.get(name_lower)
             if exchange_data and exchange_data.wap is not None:
@@ -144,10 +158,10 @@ class MarkupResolver:
                 return MarkupResult(
                     markup_value=exchange_data.wap,
                     markup_type=markup_type,
-                    source="market",
+                    source="exchange",
                 )
 
-        # 4. Default
+        # 5. Default
         markup_type = self._get_markup_type(item_name)
         if markup_type == "percentage":
             return MarkupResult(100.0, "percentage", "default")
@@ -256,6 +270,39 @@ class MarkupResolver:
 
         except Exception as e:
             log.error("Failed to refresh inventory markups: %s", e)
+            return False
+
+    def refresh_ingame_cache(self) -> bool:
+        """Fetch in-game market price data from the website API.
+
+        Returns True on success, False on failure.
+        """
+        if not self._nexus_client:
+            return False
+
+        try:
+            data = self._nexus_client.get_ingame_prices()
+            if data is None:
+                return False
+
+            cache: dict[str, float] = {}
+            for row in data:
+                name = row.get("item_name")
+                if not name:
+                    continue
+                # Use first non-null markup: 1d → 7d → 30d → 90d → 365d
+                mu = (row.get("markup_1d") or row.get("markup_7d")
+                      or row.get("markup_30d") or row.get("markup_90d")
+                      or row.get("markup_365d"))
+                if mu is not None:
+                    cache[name.lower()] = float(mu)
+
+            self._ingame_cache = cache
+            log.info("In-game price cache refreshed: %d items", len(cache))
+            return True
+
+        except Exception as e:
+            log.error("Failed to refresh in-game price cache: %s", e)
             return False
 
     def set_custom_markup(self, item_name: str, markup_value: float,
