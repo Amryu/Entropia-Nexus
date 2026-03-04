@@ -1,0 +1,44 @@
+Copyright (c) 2026 Sebastian Mense. All rights reserved.
+
+ENTROPIA NEXUS SOURCE-AVAILABLE LICENSE
+
+1. DEFINITIONS
+
+   "Software" means the Entropia Nexus source code, documentation, assets,
+   and all associated files in this repository.
+
+   "Snippet" means a contiguous portion of source code not exceeding 50 lines,
+   used independently of the Software as a whole.
+
+2. PERMISSIONS
+
+   You MAY:
+   - View, read, and study the source code for personal or educational purposes.
+   - Copy and reuse Snippets in your own projects, provided you include
+     attribution in the form: "Based on code from Entropia Nexus by Sebastian Mense"
+   - Fork this repository for the sole purpose of submitting contributions
+     (pull requests) back to this project.
+
+3. RESTRICTIONS
+
+   You MAY NOT:
+   - Redistribute, publish, or host copies of the Software, in whole or in
+     substantial part, whether modified or unmodified.
+   - Use the Software, in whole or in substantial part, to operate a competing
+     service or product.
+   - Remove or alter this license or any copyright notices.
+
+4. CONTRIBUTIONS
+
+   By submitting a contribution (pull request, patch, or other modification)
+   to this repository, you grant the copyright holder a perpetual, worldwide,
+   non-exclusive, royalty-free license to use, modify, and distribute your
+   contribution as part of the Software under any terms.
+
+5. DISCLAIMER
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+   IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL
+   THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY
+   ARISING FROM THE USE OF THE SOFTWARE.
