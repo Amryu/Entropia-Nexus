@@ -1888,6 +1888,7 @@ class ExchangeOverlay(OverlayWidget):
                 self.width() - self._resize_grip.width() - 2,
                 self.height() - self._resize_grip.height() - 2,
             )
+            self._resize_grip.raise_()
 
     def _save_size(self):
         self._config.exchange_overlay_size = (self.width(), self.height())
