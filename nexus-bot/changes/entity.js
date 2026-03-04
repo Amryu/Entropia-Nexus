@@ -338,6 +338,7 @@ export const UpsertConfigs = {
       { name: "MaxTT", value: x => x.Properties.Economy.MaxTT },
       { name: "MinTT", value: x => x.Properties.Economy.MinTT },
       { name: "Absorption", value: x => x.Properties.Economy.Absorption },
+      { name: "Decay", value: x => x.Properties.Economy.Decay },
     ],
     offset: 5300000,
     table: "Absorbers"

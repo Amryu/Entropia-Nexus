@@ -20,6 +20,7 @@ function formatAbsorber(x, classIds) {
         MaxTT: x.MaxTT !== null ? Number(x.MaxTT) : null,
         MinTT: x.MinTT !== null ? Number(x.MinTT) : null,
         Absorption: x.Absorption !== null ? Number(x.Absorption) : null,
+        Decay: x.Decay !== null ? Number(x.Decay) : null,
       }
     },
     Links: { "$Url": `/absorbers/${x.Id}` }

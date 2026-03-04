@@ -43,13 +43,18 @@ export const Absorber = {
             "Absorption": {
               "type": ["number", "null"],
               "default": null
+            },
+            "Decay": {
+              "type": ["number", "null"],
+              "default": null
             }
           },
           "required": [
             "Efficiency",
             "MaxTT",
             "MinTT",
-            "Absorption"
+            "Absorption",
+            "Decay"
           ]
         }
       },

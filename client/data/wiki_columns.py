@@ -692,6 +692,7 @@ COLUMN_DEFS: dict[str, dict[str, dict]] = {
     "absorbers": {
         "abs":    {"key": "abs",    "header": "Absorption",  "get_value": lambda i: deep_get(i, "Properties", "Economy", "Absorption"), "format": _fmt_percent},
         "eff":    {"key": "eff",    "header": "Efficiency",  "get_value": lambda i: deep_get(i, "Properties", "Economy", "Efficiency"), "format": fmt(1)},
+        "decay":  {"key": "decay",  "header": "Decay",       "get_value": lambda i: deep_get(i, "Properties", "Economy", "Decay"), "format": fmt(2)},
         "maxTT":  {"key": "maxTT",  "header": "Max TT",      "get_value": lambda i: deep_get(i, "Properties", "Economy", "MaxTT"), "format": fmt(2)},
         "minTT":  {"key": "minTT",  "header": "Min TT",      "get_value": lambda i: deep_get(i, "Properties", "Economy", "MinTT"), "format": fmt(2)},
         "weight": {"key": "weight", "header": "Weight",      "get_value": lambda i: deep_get(i, "Properties", "Weight"), "format": fmt_int},
@@ -795,7 +796,7 @@ DEFAULT_COLUMNS: dict[str, list[str]] = {
     "enhancers":          ["type", "tier", "tool", "socket", "maxtt", "weight"],
     "mindforceimplants":  ["abs", "maxLevel", "lvl", "maxTT", "minTT", "weight"],
     "sightsscopes":       ["type", "eff", "zoom", "decay", "skillMod", "skillBonus", "maxTT", "weight"],
-    "absorbers":          ["abs", "eff", "maxTT", "minTT", "weight"],
+    "absorbers":          ["abs", "eff", "decay", "maxTT", "minTT", "weight"],
     "finderamplifiers":   ["decay", "finderEff", "minLevel", "maxTT", "minTT", "totalUses", "weight"],
     "armorplatings":      ["defense", "durability", "maxTT", "minTT", "weight"],
     "stimulants":         ["type", "effects", "weight", "maxtt"],

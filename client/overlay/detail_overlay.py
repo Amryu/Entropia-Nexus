@@ -3569,6 +3569,7 @@ _GENERIC_CONFIGS: dict[str, dict] = {
             ("Economy", [
                 ("Max TT", lambda i: f"{_fv(deep_get(i, 'Properties', 'Economy', 'MaxTT'), 2)} PED"),
                 ("Min TT", lambda i: f"{_fv(deep_get(i, 'Properties', 'Economy', 'MinTT'), 2)} PED"),
+                ("Decay", lambda i: f"{_fv(deep_get(i, 'Properties', 'Economy', 'Decay'), 2)} PEC"),
             ]),
         ],
         "effects_keys": ["EffectsOnEquip"],

@@ -184,6 +184,7 @@
       case 'absorbers':
         base.Properties.Economy.Efficiency = 0;
         base.Properties.Economy.Absorption = 0;
+        base.Properties.Economy.Decay = 0;
         break;
       case 'finderamplifiers':
         base.Properties.Efficiency = 0;
@@ -310,7 +311,7 @@
       case 'weaponvisionattachments':
         return [columnDefs.type, columnDefs.eff, columnDefs.zoom, columnDefs.decay, columnDefs.skillMod, columnDefs.skillBonus, columnDefs.maxTT, columnDefs.weight];
       case 'absorbers':
-        return [columnDefs.abs, columnDefs.eff, columnDefs.maxTT, columnDefs.minTT, columnDefs.weight];
+        return [columnDefs.abs, columnDefs.eff, columnDefs.decay, columnDefs.maxTT, columnDefs.minTT, columnDefs.weight];
       case 'finderamplifiers':
         return [columnDefs.decay, columnDefs.finderEff, columnDefs.minLevel, columnDefs.maxTT, columnDefs.minTT, columnDefs.totalUses, columnDefs.weight];
       case 'armorplatings':
@@ -848,7 +849,7 @@
             </div>
           {/if}
 
-          {#if additional.type === 'weaponamplifiers' || additional.type === 'weaponvisionattachments'}
+          {#if additional.type === 'weaponamplifiers' || additional.type === 'weaponvisionattachments' || additional.type === 'absorbers'}
             <div class="stat-row">
               <span class="stat-label">Decay</span>
               <span class="stat-value">
@@ -899,7 +900,7 @@
             </div>
           {/if}
 
-          {#if (additional.type === 'weaponamplifiers' || additional.type === 'weaponvisionattachments' || additional.type === 'finderamplifiers') && totalUses}
+          {#if (additional.type === 'weaponamplifiers' || additional.type === 'weaponvisionattachments' || additional.type === 'finderamplifiers' || additional.type === 'absorbers') && totalUses}
             <div class="stat-row">
               <span class="stat-label">Total Uses</span>
               <span class="stat-value">{totalUses}</span>
