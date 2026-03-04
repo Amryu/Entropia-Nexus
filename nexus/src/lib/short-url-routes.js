@@ -94,7 +94,8 @@ export const SHORT_ROUTE_MAP = Object.freeze({
   se: '/search',
   gl: '/globals',
   gp: '/globals/players',
-  gt: '/globals/targets'
+  gt: '/globals/targets',
+  bo: '/bounties'
 });
 
 /**
@@ -167,7 +168,8 @@ export const PREFERRED_SHORT_ROUTE_BY_PREFIX = Object.freeze({
   '/search': 'se',
   '/globals': 'gl',
   '/globals/players': 'gp',
-  '/globals/targets': 'gt'
+  '/globals/targets': 'gt',
+  '/bounties': 'bo'
 });
 
 /**

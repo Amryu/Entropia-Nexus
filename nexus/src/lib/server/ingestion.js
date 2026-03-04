@@ -1243,36 +1243,40 @@ export function validateMarketPrice(entry) {
  * Deduplicates by item_name within 1-hour window.
  * @param {number} userId
  * @param {Array} prices
- * @param {number|null} itemId - resolved item ID (null if not resolved)
- * @param {Function} resolveItemId - async (name) => number|null
+ * @param {Function} resolveItem - async (name) => { itemId: number|null, resolvedName: string|null }
  * @returns {{ accepted: number, duplicates: number }}
  */
-export async function ingestMarketPrices(userId, prices, resolveItemId) {
+export async function ingestMarketPrices(userId, prices, resolveItem) {
   let accepted = 0, duplicates = 0;
 
   for (const entry of prices) {
-    const itemName = entry.item_name.trim();
+    const ocrName = entry.item_name.trim();
+    const rawName = entry.item_name_raw?.trim() || null;
 
-    // Server-side 1hr dedup
+    // Resolve item_id (and possibly the full name for truncated OCR names)
+    let itemId = null;
+    let storedName = ocrName;
+    if (resolveItem) {
+      try {
+        const result = await resolveItem(ocrName, rawName);
+        itemId = result?.itemId ?? null;
+        // If prefix match resolved a full name, use it for storage and dedup
+        if (result?.resolvedName) storedName = result.resolvedName;
+      } catch {
+        // Non-fatal — store with null item_id and OCR name
+      }
+    }
+
+    // Server-side 1hr dedup (using resolved name so truncated variants dedup correctly)
     const { rows: existing } = await pool.query(
       `SELECT 1 FROM ONLY market_price_snapshots
        WHERE item_name = $1 AND recorded_at > now() - interval '1 hour'
        LIMIT 1`,
-      [itemName]
+      [storedName]
     );
     if (existing.length > 0) {
       duplicates++;
       continue;
-    }
-
-    // Resolve item_id via /items data API cache
-    let itemId = null;
-    if (resolveItemId) {
-      try {
-        itemId = await resolveItemId(itemName);
-      } catch {
-        // Non-fatal — store with null item_id
-      }
     }
 
     await pool.query(
@@ -1282,7 +1286,7 @@ export async function ingestMarketPrices(userId, prices, resolveItemId) {
         recorded_at, submitted_by)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
       [
-        itemName,
+        storedName,
         itemId,
         entry.tier ?? null,
         entry.markup_1d ?? null, entry.sales_1d ?? null,

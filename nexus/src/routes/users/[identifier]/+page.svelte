@@ -818,6 +818,12 @@
             <div class="score-value">{scores.monthly}</div>
             <div class="score-rank">Rank #{scores.monthlyRank}</div>
           </div>
+          {#if profile.rewardScore > 0}
+            <div class="score-card">
+              <div class="score-label">Reward Score</div>
+              <div class="score-value">{profile.rewardScore}</div>
+            </div>
+          {/if}
         </div>
       </section>
 

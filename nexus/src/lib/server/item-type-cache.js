@@ -10,6 +10,8 @@ const STRONGBOX_MAX_ID = STRONGBOX_OFFSET + 999999;
 let itemTypeCache = {
   expiresAt: 0,
   itemsById: new Map(),
+  itemIdByName: new Map(),
+  itemIdByNameLower: new Map(),
   materialSubTypeByItemId: new Map()
 };
 let refreshPromise = null;
@@ -32,11 +34,15 @@ async function rebuildCache(fetch) {
 
   const itemsById = new Map();
   const itemIdByName = new Map();
+  const itemIdByNameLower = new Map();
   for (const item of items) {
     const itemId = toNumberId(item?.ItemId ?? item?.Id);
     if (!itemId) continue;
     itemsById.set(itemId, item);
-    if (item?.Name) itemIdByName.set(item.Name, itemId);
+    if (item?.Name) {
+      itemIdByName.set(item.Name, itemId);
+      itemIdByNameLower.set(item.Name.toLowerCase(), itemId);
+    }
   }
 
   const materialSubTypeByItemId = new Map();
@@ -55,6 +61,8 @@ async function rebuildCache(fetch) {
   itemTypeCache = {
     expiresAt: Date.now() + ITEMS_REFRESH_MS,
     itemsById,
+    itemIdByName,
+    itemIdByNameLower,
     materialSubTypeByItemId
   };
   return itemTypeCache;
@@ -151,5 +159,44 @@ export async function resolveItemDataByItemId(itemIds, fetch) {
   }
 
   return map;
+}
+
+/**
+ * Resolve an item name to its item ID using the cached /items data.
+ * Tries exact match first, then case-insensitive fallback.
+ * @param {string} name
+ * @param {Function} fetch
+ * @returns {Promise<number|null>}
+ */
+export async function resolveItemIdByName(name, fetch) {
+  if (!name || !fetch) return null;
+  const cache = await getCachedItemTypeData(fetch);
+  const exact = cache.itemIdByName?.get(name);
+  if (exact) return exact;
+  const lower = cache.itemIdByNameLower?.get(name.toLowerCase());
+  return lower || null;
+}
+
+/**
+ * Resolve an item ID by prefix match (for truncated OCR names).
+ * Returns { itemId, resolvedName } or null if no unique match.
+ * Only returns a result if exactly one item matches the prefix.
+ * @param {string} prefix - The truncated name to match
+ * @param {Function} fetch - SvelteKit fetch
+ * @returns {Promise<{ itemId: number, resolvedName: string } | null>}
+ */
+export async function resolveItemByPrefix(prefix, fetch) {
+  if (!prefix || prefix.length < 4 || !fetch) return null;
+  const cache = await getCachedItemTypeData(fetch);
+  const lowerPrefix = prefix.toLowerCase();
+  const matches = [];
+  for (const [nameLower, itemId] of cache.itemIdByNameLower) {
+    if (nameLower.startsWith(lowerPrefix)) {
+      const item = cache.itemsById.get(itemId);
+      matches.push({ itemId, resolvedName: item?.Name ?? nameLower });
+      if (matches.length > 1) return null; // Ambiguous — skip
+    }
+  }
+  return matches.length === 1 ? matches[0] : null;
 }
 

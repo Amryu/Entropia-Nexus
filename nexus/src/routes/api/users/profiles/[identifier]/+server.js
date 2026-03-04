@@ -184,7 +184,8 @@ export async function GET({ params, locals, fetch }) {
       pendingSocietyRequest,
       biographyHtml: profileUser.biography_html || '',
       defaultTab: profileUser.default_profile_tab || 'General',
-      showcaseLoadoutCode: profileUser.showcase_loadout_code || null
+      showcaseLoadoutCode: profileUser.showcase_loadout_code || null,
+      rewardScore: parseFloat(profileUser.reward_score) || 0
     },
     scores: {
       total: scores.total,

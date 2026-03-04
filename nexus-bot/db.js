@@ -1083,12 +1083,37 @@ export async function resolveMarketPriceItemIds() {
       itemId = ilike.length > 0 ? ilike[0].Id : null;
     }
 
-    if (itemId) {
-      await poolUsers.query(
-        `UPDATE market_price_snapshots SET item_id = $1
-         WHERE item_name = $2 AND item_id IS NULL`,
-        [itemId, item_name]
+    // Fallback: prefix match (for truncated OCR names)
+    let resolvedName = null;
+    if (!itemId && item_name.length >= 4) {
+      const { rows: prefixRows } = await poolNexus.query(
+        `SELECT "Id", "Name" FROM ONLY "Item"
+         WHERE LOWER("Name") LIKE LOWER($1) || '%'
+         LIMIT 2`,
+        [item_name]
       );
+      // Only use prefix match if exactly one result (unambiguous)
+      if (prefixRows.length === 1) {
+        itemId = prefixRows[0].Id;
+        resolvedName = prefixRows[0].Name;
+      }
+    }
+
+    if (itemId) {
+      // Update item_id and optionally fix the stored name to the resolved name
+      if (resolvedName && resolvedName !== item_name) {
+        await poolUsers.query(
+          `UPDATE ONLY market_price_snapshots SET item_id = $1, item_name = $2
+           WHERE item_name = $3 AND item_id IS NULL`,
+          [itemId, resolvedName, item_name]
+        );
+      } else {
+        await poolUsers.query(
+          `UPDATE ONLY market_price_snapshots SET item_id = $1
+           WHERE item_name = $2 AND item_id IS NULL`,
+          [itemId, item_name]
+        );
+      }
       resolved++;
     }
   }

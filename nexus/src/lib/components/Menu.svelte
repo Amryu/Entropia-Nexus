@@ -735,7 +735,7 @@
     position: relative;
     align-items: center;
     height: 100%;
-    gap: 4px;
+    gap: 12px;
   }
 
 
@@ -912,15 +912,17 @@
 
   .search-container {
     position: relative;
-    margin-left: 10px;
-    margin-right: 10px;
     flex: 0 1 280px;
     min-width: 80px;
   }
 
   .notification-menu {
-    padding: 0 12px;
+    padding: 0;
     flex-shrink: 0;
+  }
+
+  .menu-item.user {
+    padding: 0;
   }
 
   .notification-menu:hover {
@@ -1132,13 +1134,13 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    padding: 0;
     border: none;
     background: none;
     color: var(--text-color);
     border-radius: 4px;
     cursor: pointer;
     transition: background-color 0.15s ease;
-    margin-left: 4px;
     flex-shrink: 0;
   }
 
@@ -1147,8 +1149,32 @@
   }
 
   .short-link-action svg {
-    width: 18px;
-    height: 18px;
+    width: 26px;
+    height: 26px;
+  }
+
+  .bounty-button {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    background: none;
+    color: var(--text-muted);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    flex-shrink: 0;
+    text-decoration: none;
+  }
+  .bounty-button:hover {
+    background-color: var(--hover-color);
+    color: #fbbf24;
+  }
+  .bounty-button svg {
+    width: 26px;
+    height: 26px;
   }
 
   .kofi-button {
@@ -1171,8 +1197,8 @@
     color: #ff5e5b;
   }
   .kofi-button svg {
-    width: 18px;
-    height: 18px;
+    width: 26px;
+    height: 26px;
   }
 
   .kofi-wrapper {
@@ -2122,7 +2148,8 @@
       display: none;
     }
 
-    .kofi-wrapper {
+    .kofi-wrapper,
+    .bounty-button {
       display: none;
     }
   }
@@ -2173,6 +2200,13 @@
   </div>
 
   <div class="auth-container">
+    <a href="/bounties" class="bounty-button" title="Contributor Bounties">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2"/>
+        <circle cx="12" cy="12" r="7.5" fill="none" stroke="currentColor" stroke-width="0.75" opacity="0.4"/>
+        <text x="12" y="13" text-anchor="middle" dominant-baseline="middle" fill="currentColor" font-size="6.5" font-weight="700" font-family="Arial,sans-serif">PED</text>
+      </svg>
+    </a>
     <div class="kofi-wrapper">
       <a href="https://ko-fi.com/C0C21JO3B1" target="_blank" rel="noopener noreferrer" class="kofi-button" title="Support me on Ko-fi">
         <svg viewBox="0 0 24 24" aria-hidden="true">

@@ -7,6 +7,7 @@
   import ChangeDataViewer from '$lib/components/ChangeDataViewer.svelte';
   import JsonCompareDialog from '$lib/components/JsonCompareDialog.svelte';
   import { clickable } from '$lib/actions/clickable.js';
+  import { addToast } from '$lib/stores/toasts.js';
 
   const DISCORD_GUILD_ID = import.meta.env.VITE_DISCORD_GUILD_ID;
 
@@ -77,6 +78,12 @@
   let selectedVersionType = null; // 'original', 'history-{index}', 'related-{index}'
   let shouldAutoSelectDiff = false;
 
+  // Reward state
+  let changeReward = null;
+  let matchingRules = [];
+  let rewardForm = { rule_id: '', amount: '', contribution_score: '', note: '' };
+  let isAssigningReward = false;
+
   $: changeId = $page.params.id;
 
   onMount(() => {
@@ -114,10 +121,86 @@
         // We set a flag to trigger selection on next tick
         shouldAutoSelectDiff = true;
       }
+
+      // Load reward data for approved changes
+      loadRewardData();
     } catch (err) {
       error = err.message;
     } finally {
       isLoading = false;
+    }
+  }
+
+  async function loadRewardData() {
+    if (!change || change.state !== 'Approved') return;
+    try {
+      const [rewardRes, matchRes] = await Promise.all([
+        fetch(`/api/admin/rewards/assign?change_id=${changeId}`),
+        fetch(`/api/admin/rewards/match/${changeId}`)
+      ]);
+
+      if (rewardRes.ok) {
+        const data = await rewardRes.json();
+        changeReward = data.reward || null;
+      }
+      if (matchRes.ok) {
+        const data = await matchRes.json();
+        matchingRules = data.rules || [];
+        if (matchingRules.length === 1 && !changeReward) {
+          const rule = matchingRules[0];
+          rewardForm.rule_id = String(rule.id);
+          rewardForm.amount = rule.min_amount === rule.max_amount ? rule.min_amount : '';
+          rewardForm.contribution_score = rule.contribution_score ?? '';
+        }
+      }
+    } catch {}
+  }
+
+  async function assignReward() {
+    if (!rewardForm.amount || parseFloat(rewardForm.amount) <= 0) return;
+    isAssigningReward = true;
+    try {
+      const res = await fetch('/api/admin/rewards/assign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          change_id: parseInt(changeId),
+          user_id: change.author_id,
+          rule_id: rewardForm.rule_id ? parseInt(rewardForm.rule_id) : null,
+          amount: parseFloat(rewardForm.amount),
+          contribution_score: rewardForm.contribution_score !== '' ? parseFloat(rewardForm.contribution_score) : null,
+          note: rewardForm.note || null
+        })
+      });
+      if (res.ok) {
+        changeReward = await res.json();
+      } else {
+        const err = await res.json();
+        addToast(err.error || 'Failed to assign reward');
+      }
+    } catch (e) {
+      addToast('Failed to assign reward');
+    } finally {
+      isAssigningReward = false;
+    }
+  }
+
+  async function removeReward() {
+    if (!changeReward || !confirm('Remove this reward?')) return;
+    try {
+      const res = await fetch(`/api/admin/rewards/assign/${changeReward.id}`, { method: 'DELETE' });
+      if (res.ok) {
+        changeReward = null;
+        rewardForm = { rule_id: '', amount: '', contribution_score: '', note: '' };
+      }
+    } catch {}
+  }
+
+  function onRuleSelect() {
+    const rule = matchingRules.find(r => String(r.id) === rewardForm.rule_id);
+    if (rule) {
+      if (rule.min_amount === rule.max_amount) rewardForm.amount = rule.min_amount;
+      rewardForm.contribution_score = rule.contribution_score ?? '';
     }
   }
 
@@ -598,6 +681,20 @@
     color: var(--error-color);
   }
 
+  .reward-form { display: flex; flex-direction: column; gap: 8px; }
+  .reward-field { display: flex; flex-direction: column; gap: 3px; }
+  .reward-field label { font-size: 12px; color: var(--text-muted); }
+  .reward-field input, .reward-field select {
+    padding: 6px 8px; border: 1px solid var(--border-color); border-radius: 4px;
+    background: var(--primary-color); color: var(--text-color); font-size: 13px;
+  }
+  .reward-remove-btn {
+    margin-top: 10px; padding: 6px 10px; border: 1px solid var(--error-color);
+    border-radius: 4px; background: transparent; color: var(--error-color);
+    font-size: 12px; cursor: pointer; text-align: center;
+  }
+  .reward-remove-btn:hover { background: var(--error-color); color: white; }
+
   .thread-link {
     display: inline-flex;
     align-items: center;
@@ -932,6 +1029,78 @@
             {/if}
           </div>
         </div>
+
+        {#if change.state === 'Approved'}
+          <div class="card">
+            <div class="card-header">Reward</div>
+            <div class="card-body">
+              {#if changeReward}
+                <div class="reward-info">
+                  <div class="info-row">
+                    <span class="info-label">Amount</span>
+                    <span class="info-value" style="color: var(--success-color); font-weight: 600;">{parseFloat(changeReward.amount).toFixed(2)} PED</span>
+                  </div>
+                  {#if changeReward.contribution_score != null}
+                    <div class="info-row">
+                      <span class="info-label">Score</span>
+                      <span class="info-value">{parseFloat(changeReward.contribution_score).toFixed(2)}</span>
+                    </div>
+                  {/if}
+                  <div class="info-row">
+                    <span class="info-label">Rule</span>
+                    <span class="info-value">{changeReward.rule_name || 'Custom'}</span>
+                  </div>
+                  {#if changeReward.note}
+                    <div class="info-row">
+                      <span class="info-label">Note</span>
+                      <span class="info-value">{changeReward.note}</span>
+                    </div>
+                  {/if}
+                  <div class="info-row">
+                    <span class="info-label">Assigned by</span>
+                    <span class="info-value">{changeReward.assigned_by_name || 'Unknown'}</span>
+                  </div>
+                  <div class="info-row">
+                    <span class="info-label">Date</span>
+                    <span class="info-value">{formatDate(changeReward.created_at)}</span>
+                  </div>
+                  <button class="reward-remove-btn" on:click={removeReward}>Remove Reward</button>
+                </div>
+              {:else}
+                <div class="reward-form">
+                  {#if matchingRules.length > 0}
+                    <div class="reward-field">
+                      <label>Rule</label>
+                      <select bind:value={rewardForm.rule_id} on:change={onRuleSelect}>
+                        <option value="">Custom (no rule)</option>
+                        {#each matchingRules as rule}
+                          <option value={String(rule.id)}>
+                            {rule.name} ({rule.min_amount === rule.max_amount ? `${parseFloat(rule.min_amount).toFixed(2)}` : `${parseFloat(rule.min_amount).toFixed(2)}-${parseFloat(rule.max_amount).toFixed(2)}`} PED)
+                          </option>
+                        {/each}
+                      </select>
+                    </div>
+                  {/if}
+                  <div class="reward-field">
+                    <label>Amount (PED)</label>
+                    <input type="number" step="0.01" min="0.01" bind:value={rewardForm.amount} placeholder="0.00" />
+                  </div>
+                  <div class="reward-field">
+                    <label>Score</label>
+                    <input type="number" step="0.01" min="0" bind:value={rewardForm.contribution_score} placeholder="Optional" />
+                  </div>
+                  <div class="reward-field">
+                    <label>Note</label>
+                    <input type="text" bind:value={rewardForm.note} placeholder="Optional" />
+                  </div>
+                  <button class="action-link action-link-primary" style="margin-top: 8px;" on:click={assignReward} disabled={isAssigningReward}>
+                    {isAssigningReward ? 'Assigning...' : 'Assign Reward'}
+                  </button>
+                </div>
+              {/if}
+            </div>
+          </div>
+        {/if}
       </div>
     </div>
   {/if}
