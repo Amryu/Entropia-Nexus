@@ -689,6 +689,8 @@
       row.efficiency = compareValue(s.efficiency ?? null, a.efficiency ?? null);
       row.dps = compareValue(s.dps ?? null, a.dps ?? null);
       row.dpp = compareValue(s.dpp ?? null, a.dpp ?? null);
+      row.critChance = compareValue(s.critChance ?? null, a.critChance ?? null);
+      row.critDamage = compareValue(s.critDamage ?? null, a.critDamage ?? null);
       row.reload = compareValue(s.reload ?? null, a.reload ?? null);
       row.totalDamage = compareValue(s.totalDamage ?? null, a.totalDamage ?? null);
       row.effectiveDamage = compareValue(s.effectiveDamage ?? null, a.effectiveDamage ?? null);
@@ -932,6 +934,32 @@
         hideOnMobile: false,
         mobileWidth: '92px',
         formatter: (value) => isDelta ? formatDeltaNumber(value, 4) : formatNumber(value, 4),
+        cellClass: (value) => isDelta ? `cmp-num ${getDeltaClass(value, true)}` : 'cmp-num'
+      };
+      defs.critChance = {
+        key: 'critChance',
+        header: 'Crit %',
+        width: '100px',
+        sortable: true,
+        hideOnMobile: true,
+        formatter: (value) => {
+          if (value == null) return '-';
+          if (isDelta) return `${formatDeltaNumber(value * 100, 1)}%`;
+          return `${formatNumber(value * 100, 1)}%`;
+        },
+        cellClass: (value) => isDelta ? `cmp-num ${getDeltaClass(value, true)}` : 'cmp-num'
+      };
+      defs.critDamage = {
+        key: 'critDamage',
+        header: 'Crit Dmg',
+        width: '100px',
+        sortable: true,
+        hideOnMobile: true,
+        formatter: (value) => {
+          if (value == null) return '-';
+          if (isDelta) return `${formatDeltaNumber(value * 100, 0)}%`;
+          return `${formatNumber(value * 100, 0)}%`;
+        },
         cellClass: (value) => isDelta ? `cmp-num ${getDeltaClass(value, true)}` : 'cmp-num'
       };
       defs.reload = {

@@ -11,10 +11,10 @@ from dataclasses import dataclass, field
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
     QTableWidget, QTableWidgetItem, QHeaderView, QComboBox,
-    QCheckBox, QAbstractItemView,
+    QCheckBox, QAbstractItemView, QMenu, QWidgetAction,
 )
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QColor
+from PyQt6.QtCore import Qt, pyqtSignal, QTimer
+from PyQt6.QtGui import QColor, QAction
 
 from ..theme import (
     ACCENT, BORDER, ERROR, HOVER, MAIN_DARK, SECONDARY, SUCCESS,
@@ -27,11 +27,13 @@ MAX_PERMUTATIONS = 500
 
 # ── Column definitions ────────────────────────────────────────────────
 
-WEAPON_COLUMNS = [
+ALL_WEAPON_COLUMNS = [
     ("Name", "name", None),
     ("Eff %", "efficiency", True),
     ("DPS", "dps", True),
     ("DPP", "dpp", True),
+    ("Crit %", "crit_chance", True),
+    ("Crit Dmg", "crit_damage", True),
     ("Reload", "reload", False),
     ("Damage", "total_damage", True),
     ("Eff Dmg", "effective_damage", True),
@@ -42,13 +44,24 @@ WEAPON_COLUMNS = [
     ("Uses", "lowest_total_uses", True),
 ]
 
-ARMOR_COLUMNS = [
+ALL_ARMOR_COLUMNS = [
     ("Name", "name", None),
     ("Defense", "total_defense", True),
     ("Types", "top_defense_types", None),
     ("Absorb", "total_absorption", True),
     ("Block %", "block_chance", True),
 ]
+
+# Columns shown by default (by attr name)
+DEFAULT_WEAPON_VISIBLE = {
+    "name", "efficiency", "dps", "dpp", "crit_chance", "crit_damage",
+    "total_damage", "effective_damage", "range", "cost", "decay",
+    "ammo_burn", "lowest_total_uses",
+}
+DEFAULT_ARMOR_VISIBLE = {
+    "name", "total_defense", "top_defense_types", "total_absorption",
+    "block_chance",
+}
 
 
 @dataclass
@@ -80,6 +93,9 @@ class LoadoutCompareWidget(QWidget):
         self._calculator = None
         self._entity_data: dict = {}
         self._truncated = False
+        self._visible_weapon_cols: set[str] = set(DEFAULT_WEAPON_VISIBLE)
+        self._visible_armor_cols: set[str] = set(DEFAULT_ARMOR_VISIBLE)
+        self._eval_generation = 0  # Incremented to cancel stale batches
 
         self._build_ui()
 
@@ -105,6 +121,18 @@ class LoadoutCompareWidget(QWidget):
         self._display_combo.setFixedWidth(80)
         self._display_combo.currentTextChanged.connect(self._on_display_changed)
         toolbar.addWidget(self._display_combo)
+
+        # Columns button with checkable menu
+        self._cols_btn = QPushButton("Columns")
+        self._cols_btn.setStyleSheet("padding: 2px 10px; font-size: 12px;")
+        self._cols_menu = QMenu(self)
+        self._cols_btn.clicked.connect(
+            lambda: self._cols_menu.exec(
+                self._cols_btn.mapToGlobal(self._cols_btn.rect().bottomLeft())
+            )
+        )
+        self._rebuild_columns_menu()
+        toolbar.addWidget(self._cols_btn)
 
         # Sets button
         self._sets_btn = QPushButton("Sets")
@@ -180,64 +208,74 @@ class LoadoutCompareWidget(QWidget):
         current_loadout: dict | None,
         active_set_indices: dict | None = None,
     ):
-        """Rebuild comparison table from loadout list."""
+        """Rebuild comparison table from loadout list (chunked to avoid UI freeze)."""
         self._rows.clear()
         self._anchor_stats = None
         self._truncated = False
+        self._eval_generation += 1
+        gen = self._eval_generation
 
         if not self._calculator or not loadouts:
             self._refresh_table()
             return
 
-        # Build virtual loadouts from set permutations if in set mode
+        # Build the work items (lightweight — no evaluation yet)
+        work: list[tuple] = []  # (loadout_dict, name, is_anchor, set_indices)
         if self._set_mode and current_loadout and self._set_sections:
             count = 0
             for perm_lo, set_indices, label in self._iter_permutations(current_loadout):
                 if count >= MAX_PERMUTATIONS:
                     self._truncated = True
                     break
-                stats = self._evaluate(perm_lo)
-                row = CompareRow(
-                    name=label,
-                    loadout_id=perm_lo.get("Id", ""),
-                    is_anchor=False,
-                    set_indices=set_indices,
-                    stats=stats,
-                )
-                self._rows.append(row)
-                count += 1
-
-            # Mark the permutation matching current set indices as anchor
-            if active_set_indices and self._rows:
-                for r in self._rows:
-                    match = all(
-                        r.set_indices.get(s) == active_set_indices.get(s)
+                is_anchor = False
+                if active_set_indices:
+                    is_anchor = all(
+                        set_indices.get(s) == active_set_indices.get(s)
                         for s in self._set_sections
-                        if s in r.set_indices
+                        if s in set_indices
                     )
-                    if match:
-                        r.is_anchor = True
-                        self._anchor_stats = r.stats
-                        break
+                work.append((perm_lo, label, is_anchor, set_indices))
+                count += 1
         else:
-            # Normal compare: all loadouts
             for lo in loadouts:
-                stats = self._evaluate(lo)
                 is_anchor = (
                     current_loadout is not None
                     and lo.get("Id") == current_loadout.get("Id")
                 )
+                work.append((lo, self._get_loadout_label(lo), is_anchor, {}))
+
+        # Show placeholder while evaluating
+        self._perm_label.setText(f"Evaluating {len(work)} loadouts...")
+        self._table.setRowCount(0)
+
+        # Process in chunks via timer to keep UI responsive
+        CHUNK_SIZE = 8
+        idx = [0]
+
+        def process_chunk():
+            if self._eval_generation != gen:
+                return  # Cancelled by a newer update
+            end = min(idx[0] + CHUNK_SIZE, len(work))
+            for i in range(idx[0], end):
+                lo, name, is_anchor, set_indices = work[i]
+                stats = self._evaluate(lo)
                 row = CompareRow(
-                    name=self._get_loadout_label(lo),
+                    name=name,
                     loadout_id=lo.get("Id", ""),
                     is_anchor=is_anchor,
+                    set_indices=set_indices,
                     stats=stats,
                 )
                 if is_anchor:
                     self._anchor_stats = stats
                 self._rows.append(row)
+            idx[0] = end
+            if idx[0] < len(work):
+                QTimer.singleShot(0, process_chunk)
+            else:
+                self._refresh_table()
 
-        self._refresh_table()
+        process_chunk()
 
     def update_set_options(self, loadout: dict | None):
         """Update the set section checkboxes based on current loadout."""
@@ -397,7 +435,11 @@ class LoadoutCompareWidget(QWidget):
             loadout["Gear"]["Pet"] = gear.get("Pet", {"Name": None, "Effect": None})
 
     def _columns(self):
-        return WEAPON_COLUMNS if self._compare_type == "weapons" else ARMOR_COLUMNS
+        if self._compare_type == "weapons":
+            visible = self._visible_weapon_cols
+            return [c for c in ALL_WEAPON_COLUMNS if c[1] in visible]
+        visible = self._visible_armor_cols
+        return [c for c in ALL_ARMOR_COLUMNS if c[1] in visible]
 
     def _refresh_table(self):
         cols = self._columns()
@@ -417,7 +459,7 @@ class LoadoutCompareWidget(QWidget):
 
                     if self._display_mode == "delta" and anchor_value is not None and value is not None and higher_is_better is not None:
                         delta = value - anchor_value
-                        text = self._format_delta(delta)
+                        text = self._format_delta(delta, attr)
                         item = QTableWidgetItem(text)
                         item.setData(Qt.ItemDataRole.UserRole, delta)
                         if abs(delta) > 0.001:
@@ -455,22 +497,55 @@ class LoadoutCompareWidget(QWidget):
         if attr == "top_defense_types":
             return str(value) if value else "-"
         if isinstance(value, float):
-            if attr in ("efficiency", "block_chance", "crit_chance"):
+            if attr in ("efficiency", "block_chance"):
                 return f"{value:.1f}%"
-            if attr in ("crit_damage",):
-                return f"{value:.2f}x"
+            if attr == "crit_chance":
+                return f"{value * 100:.1f}%"
+            if attr == "crit_damage":
+                return f"{value * 100:.0f}%"
             return f"{value:.4f}" if attr in ("dps", "dpp") else f"{value:.2f}"
         return str(value)
 
     @staticmethod
-    def _format_delta(delta: float) -> str:
+    def _format_delta(delta: float, attr: str = "") -> str:
+        # Scale crit values (stored as decimals/multipliers) to percentage display
+        if attr in ("crit_chance", "crit_damage"):
+            delta = delta * 100
         sign = "+" if delta > 0 else ""
         return f"{sign}{delta:.2f}"
+
+    def _rebuild_columns_menu(self):
+        """Rebuild the Columns dropdown menu with checkboxes for current type."""
+        self._cols_menu.clear()
+        if self._compare_type == "weapons":
+            all_cols = ALL_WEAPON_COLUMNS
+            visible = self._visible_weapon_cols
+        else:
+            all_cols = ALL_ARMOR_COLUMNS
+            visible = self._visible_armor_cols
+        for header, attr, _ in all_cols:
+            if attr == "name":
+                continue  # Name column is always shown
+            action = QAction(header, self._cols_menu)
+            action.setCheckable(True)
+            action.setChecked(attr in visible)
+            action.toggled.connect(lambda checked, a=attr: self._on_column_toggled(a, checked))
+            self._cols_menu.addAction(action)
+
+    def _on_column_toggled(self, attr: str, checked: bool):
+        visible = (self._visible_weapon_cols if self._compare_type == "weapons"
+                   else self._visible_armor_cols)
+        if checked:
+            visible.add(attr)
+        else:
+            visible.discard(attr)
+        self._refresh_table()
 
     # ── Slots ─────────────────────────────────────────────────────────
 
     def _on_type_changed(self, text: str):
         self._compare_type = "weapons" if text == "Weapons" else "armor"
+        self._rebuild_columns_menu()
         self._refresh_table()
 
     def _on_display_changed(self, text: str):

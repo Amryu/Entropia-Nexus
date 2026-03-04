@@ -30,7 +30,7 @@ class OverlayManager(QObject):
     - Registered overlay widgets that have ``wants_visible`` set are
       shown/hidden automatically when visibility changes.
     - Provides snap target rectangles for drag-snap alignment.
-    - Registers a global Ctrl+F hotkey (active only while overlays are shown).
+    - Registers configurable global hotkeys (active only while overlays are shown).
     """
 
     search_hotkey_pressed = pyqtSignal()
@@ -41,6 +41,15 @@ class OverlayManager(QObject):
     game_focus_changed = pyqtSignal(bool)  # True when game is focused/visible
     opacity_changed = pyqtSignal(float)
 
+    # Config key → signal name mapping
+    _HOTKEY_SIGNAL_MAP = {
+        "hotkey_search": "search_hotkey_pressed",
+        "hotkey_map": "map_hotkey_pressed",
+        "hotkey_exchange": "exchange_hotkey_pressed",
+        "hotkey_notifications": "notifications_hotkey_pressed",
+        "hotkey_debug": "debug_overlay_hotkey_pressed",
+    }
+
     def __init__(self, *, config, event_bus=None, parent: QObject | None = None):
         super().__init__(parent)
         self._config = config
@@ -49,6 +58,10 @@ class OverlayManager(QObject):
         self._game_hwnd = 0
         self._hotkey_registered = False
         self._overlay_hwnds: dict[int, OverlayWidget] = {}  # hwnd → widget
+
+        # Dynamic hotkey bindings: trigger_key → [(required_modifiers_set, signal_name)]
+        self._hotkey_bindings: dict[str, list[tuple[set[str], str]]] = {}
+        self._rebuild_hotkey_bindings()
 
         self._timer = QTimer(self)
         self._timer.setInterval(OVERLAY_FOCUS_POLL_MS)
@@ -229,22 +242,29 @@ class OverlayManager(QObject):
 
     def _set_hotkeys_active(self, active: bool) -> None:
         """Register/unregister keyboard hook based on input focus."""
+        # Respect the global hotkeys_enabled toggle
+        if not getattr(self._config, "hotkeys_enabled", True):
+            active = False
         if active and not self._hotkey_registered:
             self._register_hotkey()
         elif not active and self._hotkey_registered:
             self._unregister_hotkey()
 
-    _HOTKEY_MAP = {
-        "f": "search_hotkey_pressed",
-        "m": "map_hotkey_pressed",
-        "e": "exchange_hotkey_pressed",
-        "n": "notifications_hotkey_pressed",
-    }
+    def _rebuild_hotkey_bindings(self) -> None:
+        """Build dynamic hotkey bindings from config combo strings.
 
-    # Function keys — no Ctrl modifier required
-    _FKEY_MAP = {
-        "f3": "debug_overlay_hotkey_pressed",
-    }
+        Populates ``_hotkey_bindings``: trigger_key → [(modifiers_set, signal_name)].
+        """
+        bindings: dict[str, list[tuple[set[str], str]]] = {}
+        for config_key, signal_name in self._HOTKEY_SIGNAL_MAP.items():
+            combo = getattr(self._config, config_key, "")
+            if not combo:
+                continue
+            parts = combo.lower().split("+")
+            trigger = parts[-1]           # e.g. "f", "f3", "s"
+            mods = set(parts[:-1])        # e.g. {"ctrl"}, {"ctrl", "shift"}, set()
+            bindings.setdefault(trigger, []).append((mods, signal_name))
+        self._hotkey_bindings = bindings
 
     def _register_hotkey(self) -> None:
         if not _platform.supports_global_hotkeys() or self._hotkey_registered:
@@ -269,49 +289,54 @@ class OverlayManager(QObject):
         """Low-level keyboard hook — runs synchronously on the hook thread.
 
         Returns True to pass the event through, False to suppress it.
-        Only suppresses the letter key of our hotkey combos; Ctrl itself
-        always passes through immediately.
+        Only suppresses the trigger key when modifiers match; modifier keys
+        themselves always pass through immediately.
 
         On Win32 (keyboard library): receives *all* key events; we check
-        is_pressed("ctrl") before acting.
-        On X11 (XGrabKey): only Ctrl+letter events fire, so no Ctrl check
+        is_pressed() for modifiers before acting.
+        On X11 (XGrabKey): only grabbed combos fire, so no modifier check
         is needed.
         """
         name = event.name
+        if name not in self._hotkey_bindings:
+            return True  # not a trigger key — pass through
 
-        # Function keys (no modifier required, pass through to game)
-        if name in self._FKEY_MAP:
-            if event.event_type == "down":
-                fg = _platform.get_foreground_window_id()
-                if fg in self._overlay_hwnds or \
-                        _platform.get_foreground_window_title().startswith(GAME_TITLE_PREFIX):
-                    signal = getattr(self, self._FKEY_MAP[name])
-                    signal.emit()
-            return True  # always pass function keys through
+        entries = self._hotkey_bindings[name]
 
-        # Ctrl+letter hotkeys
-        if name not in self._HOTKEY_MAP:
-            return True  # not a hotkey letter — pass through
-
-        # event_type is "down"/"up" on both keyboard lib and X11KeyEvent
         if event.event_type == "down":
-            # On Win32, verify Ctrl is actually held (the hook sees all keys)
-            ctrl_held = True
+            # Determine which modifiers are currently held (Win32)
+            held_mods: set[str] = set()
             try:
                 import keyboard as _kb
-                ctrl_held = _kb.is_pressed("ctrl")
+                for mod in ("ctrl", "shift", "alt"):
+                    if _kb.is_pressed(mod):
+                        held_mods.add(mod)
             except ImportError:
-                pass  # X11: XGrabKey already ensures Ctrl is held
+                pass  # X11: XGrabKey already ensures correct modifiers
 
-            if ctrl_held:
+            for required_mods, signal_name in entries:
+                if required_mods and not required_mods.issubset(held_mods):
+                    continue  # required modifiers not held
+                # For combos without modifiers (bare keys like F3), don't
+                # require empty held_mods — just fire regardless of modifiers
+
                 # Real-time focus check — guard against poll lag after alt-tab
                 fg = _platform.get_foreground_window_id()
-                if fg in self._overlay_hwnds or \
-                        _platform.get_foreground_window_title().startswith(GAME_TITLE_PREFIX):
+                if fg not in self._overlay_hwnds and \
+                        not _platform.get_foreground_window_title().startswith(GAME_TITLE_PREFIX):
+                    return True
+
+                signal = getattr(self, signal_name)
+                signal.emit()
+
+                if required_mods:
+                    # Has modifiers → suppress the trigger key
                     self._suppressed_scancodes.add(event.scan_code)
-                    signal = getattr(self, self._HOTKEY_MAP[name])
-                    signal.emit()
-                    return False  # suppress the letter key
+                    return False
+                else:
+                    # Bare key (e.g. F3) → pass through to game
+                    return True
+
             return True
 
         # KEY_UP: suppress if we suppressed the matching key-down
@@ -327,6 +352,12 @@ class OverlayManager(QObject):
         for w in self._widgets:
             w.setWindowOpacity(opacity)
         self.opacity_changed.emit(opacity)
+
+        # Rebuild hotkey bindings (combos or enabled state may have changed)
+        self._rebuild_hotkey_bindings()
+        # Re-evaluate: if hotkeys_enabled was toggled off, unregister
+        if not getattr(config, "hotkeys_enabled", True) and self._hotkey_registered:
+            self._unregister_hotkey()
 
     # --- Cleanup ---
 

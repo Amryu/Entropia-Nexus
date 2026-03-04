@@ -12,17 +12,26 @@ from ...core.config import save_config
 from ...core.constants import EVENT_CONFIG_CHANGED, EVENT_REPARSE_REQUESTED
 from ...core.logger import get_logger
 from ..theme import TEXT_MUTED, BORDER, ACCENT
+from ..widgets.hotkey_input import HotkeyInput
 
 log = get_logger("Settings")
 
-# Overlay shortcut definitions: (display label, _HOTKEY_MAP key, description)
-_OVERLAY_SHORTCUTS = [
-    ("Search", "f", "Ctrl+F", "Open the search overlay"),
-    ("Map", "m", "Ctrl+M", "Open the map overlay"),
-    ("Exchange", "e", "Ctrl+E", "Open the exchange overlay"),
-    ("Notifications", "n", "Ctrl+N", "Open the notifications overlay"),
-    ("Debug Overlay", "f3", "F3", "Toggle OCR/target lock debug overlay"),
+# Overlay hotkey definitions: (display label, config_key, tooltip)
+_OVERLAY_HOTKEY_DEFS = [
+    ("Search", "hotkey_search", "Open the search overlay"),
+    ("Map", "hotkey_map", "Open the map overlay"),
+    ("Exchange", "hotkey_exchange", "Open the exchange overlay"),
+    ("Notifications", "hotkey_notifications", "Open the notifications overlay"),
+    ("Debug Overlay", "hotkey_debug", "Toggle OCR/target lock debug overlay"),
 ]
+
+_OVERLAY_HOTKEY_DEFAULTS = {
+    "hotkey_search": "ctrl+f",
+    "hotkey_map": "ctrl+m",
+    "hotkey_exchange": "ctrl+e",
+    "hotkey_notifications": "ctrl+n",
+    "hotkey_debug": "f3",
+}
 
 
 class SettingsPage(QWidget):
@@ -626,22 +635,58 @@ class SettingsPage(QWidget):
         desc.setWordWrap(True)
         layout.addWidget(desc)
 
-        for name, _key, combo, tooltip in _OVERLAY_SHORTCUTS:
-            row = QHBoxLayout()
-            lbl = QLabel(f"{name}:")
-            lbl.setMinimumWidth(100)
-            row.addWidget(lbl)
-            shortcut_label = QLabel(combo)
-            shortcut_label.setStyleSheet(
-                f"color: {ACCENT}; font-weight: bold; font-size: 12px;"
-            )
-            shortcut_label.setToolTip(tooltip)
-            row.addWidget(shortcut_label)
-            row.addStretch()
-            layout.addLayout(row)
+        # Global enable checkbox
+        self._hotkeys_enabled_cb = QCheckBox("Enable overlay hotkeys")
+        self._hotkeys_enabled_cb.setChecked(self._config.hotkeys_enabled)
+        self._hotkeys_enabled_cb.toggled.connect(self._on_hotkeys_enabled_toggled)
+        layout.addWidget(self._hotkeys_enabled_cb)
+
+        # Per-hotkey rows
+        self._hotkey_inputs: dict[str, HotkeyInput] = {}
+        grid = QGridLayout()
+        grid.setColumnMinimumWidth(0, 110)
+        for row_idx, (label, config_key, tooltip) in enumerate(_OVERLAY_HOTKEY_DEFS):
+            lbl = QLabel(f"{label}:")
+            lbl.setToolTip(tooltip)
+            grid.addWidget(lbl, row_idx, 0)
+
+            hk = HotkeyInput(getattr(self._config, config_key, ""))
+            hk.setToolTip(tooltip)
+            hk.combo_changed.connect(self._schedule_save)
+            self._hotkey_inputs[config_key] = hk
+            grid.addWidget(hk, row_idx, 1)
+
+            clear_btn = QPushButton("X")
+            clear_btn.setFixedSize(28, 28)
+            clear_btn.setStyleSheet("padding: 0px;")
+            clear_btn.setToolTip("Clear this hotkey")
+            clear_btn.clicked.connect(hk.clear_combo)
+            grid.addWidget(clear_btn, row_idx, 2)
+
+        layout.addLayout(grid)
+
+        # Reset to defaults button
+        reset_btn = QPushButton("Reset to Defaults")
+        reset_btn.setFixedWidth(140)
+        reset_btn.clicked.connect(self._reset_hotkeys_to_defaults)
+        layout.addWidget(reset_btn)
+
+        # Apply initial enabled state
+        self._on_hotkeys_enabled_toggled(self._config.hotkeys_enabled)
 
         self._sections.append(group)
         self._layout.addWidget(group)
+
+    def _on_hotkeys_enabled_toggled(self, enabled: bool):
+        for hk in self._hotkey_inputs.values():
+            hk.setEnabled(enabled)
+        self._schedule_save()
+
+    def _reset_hotkeys_to_defaults(self):
+        for config_key, default in _OVERLAY_HOTKEY_DEFAULTS.items():
+            if config_key in self._hotkey_inputs:
+                self._hotkey_inputs[config_key].combo = default
+        self._schedule_save()
 
     # --- About ---
     def _build_about_section(self):
@@ -854,6 +899,11 @@ class SettingsPage(QWidget):
         self._config.market_price_enabled = self._market_price_cb.isChecked()
         self._config.market_price_match_threshold = self._market_price_threshold.value()
         self._config.market_price_text_threshold = self._market_price_text_threshold.value()
+
+        # Overlay Hotkeys
+        self._config.hotkeys_enabled = self._hotkeys_enabled_cb.isChecked()
+        for config_key, hk in self._hotkey_inputs.items():
+            setattr(self._config, config_key, hk.combo)
 
         save_config(self._config, self._config_path)
         self._event_bus.publish(EVENT_CONFIG_CHANGED, self._config)

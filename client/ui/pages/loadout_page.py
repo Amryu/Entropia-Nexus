@@ -27,6 +27,7 @@ log = get_logger("Loadout")
 
 MAX_SETS = 10
 RECALC_DELAY_MS = 300
+COMPARE_DELAY_MS = 600
 AUTOSAVE_DELAY_MS = 2000
 POLL_INTERVAL_MS = 30_000
 LABEL_WIDTH = 100
@@ -172,6 +173,12 @@ class LoadoutPage(QWidget):
         self._save_timer.setInterval(AUTOSAVE_DELAY_MS)
         self._save_timer.timeout.connect(self._auto_save)
 
+        # Compare update debounce timer (longer than recalc to reduce churn)
+        self._compare_timer = QTimer()
+        self._compare_timer.setSingleShot(True)
+        self._compare_timer.setInterval(COMPARE_DELAY_MS)
+        self._compare_timer.timeout.connect(self._update_compare)
+
         # Local loadout cache
         self._cache_path = Path(__file__).parent.parent.parent / "data" / "cache" / "loadouts.json"
 
@@ -228,8 +235,6 @@ class LoadoutPage(QWidget):
 
         self._compare_btn = QPushButton("Compare")
         self._compare_btn.setCheckable(True)
-        self._compare_btn.setFixedHeight(26)
-        self._compare_btn.setStyleSheet("padding: 2px 10px; font-size: 12px;")
         self._compare_btn.clicked.connect(self._on_compare_toggled)
         toolbar.addWidget(self._compare_btn)
 
@@ -1241,7 +1246,7 @@ class LoadoutPage(QWidget):
                 and self._current_loadout.get("Id") == self._config.active_loadout_id):
             self._publish_active_loadout()
 
-        self._update_compare()
+        self._schedule_compare()
 
     # ------------------------------------------------------------------
     # Compare mode
@@ -1252,6 +1257,11 @@ class LoadoutPage(QWidget):
         self._compare_widget.setVisible(show)
         if show:
             self._update_compare()
+
+    def _schedule_compare(self):
+        """Debounced compare update — avoids re-evaluating on every keystroke."""
+        if self._compare_btn.isChecked():
+            self._compare_timer.start()
 
     def _update_compare(self):
         if not self._compare_btn.isChecked():
@@ -2432,6 +2442,7 @@ class LoadoutPage(QWidget):
         """Stop timers and flush pending saves before shutdown."""
         self._poll_timer.stop()
         self._recalc_timer.stop()
+        self._compare_timer.stop()
         if self._save_timer.isActive():
             self._save_timer.stop()
             self._auto_save()  # Flush immediately

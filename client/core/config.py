@@ -69,10 +69,16 @@ class AppConfig:
     loot_blacklist_per_mob: dict[str, list[str]] = field(default_factory=dict)
 
     # Hotkeys (key combo strings, e.g. "ctrl+shift+h")
+    hotkeys_enabled: bool = True
     hotkey_start_hunt: str = ""
     hotkey_stop_hunt: str = ""
     hotkey_manual_mob_name: str = ""
     hotkey_ocr_scan: str = "F7"
+    hotkey_search: str = "ctrl+f"
+    hotkey_map: str = "ctrl+m"
+    hotkey_exchange: str = "ctrl+e"
+    hotkey_notifications: str = "ctrl+n"
+    hotkey_debug: str = "f3"
 
     # UI
     main_window_screen_center: list | None = None
@@ -192,10 +198,16 @@ DEFAULTS = {
     "auto_merge_deaths": False,
     "loot_blacklist": [],
     "loot_blacklist_per_mob": {},
+    "hotkeys_enabled": True,
     "hotkey_start_hunt": "",
     "hotkey_stop_hunt": "",
     "hotkey_manual_mob_name": "",
     "hotkey_ocr_scan": "F7",
+    "hotkey_search": "ctrl+f",
+    "hotkey_map": "ctrl+m",
+    "hotkey_exchange": "ctrl+e",
+    "hotkey_notifications": "ctrl+n",
+    "hotkey_debug": "f3",
     "main_window_screen_center": None,
     "active_loadout_id": None,
     "wiki_column_prefs": {},

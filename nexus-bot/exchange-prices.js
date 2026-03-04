@@ -6,6 +6,7 @@ const IQR_K = 1.5;
 const MIN_OFFERS_FOR_IQR = 4;
 
 const VALID_PERIOD_TYPES = ['hour', 'day', 'week'];
+const MAX_MARKUP_VALUE = 99999999.9999; // numeric(12,4) column limit
 
 // ---- Outlier Filtering ----
 
@@ -101,10 +102,12 @@ export async function snapshotExchangePrices() {
       totalVolume = sellVol;
     }
 
+    const markupValue = Math.min(Math.round(wap * 10000) / 10000, MAX_MARKUP_VALUE);
+
     snapshots.push({
       item_id: itemId,
       gender,
-      markup_value: Math.round(wap * 10000) / 10000,
+      markup_value: markupValue,
       volume: totalVolume,
       buy_count: filteredBuy.length,
       sell_count: filteredSell.length,
