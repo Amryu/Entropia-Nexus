@@ -51,3 +51,5 @@ client/.wsl-build-tmp.sh
 .venv-linux/
 /build/
 /dist/
+*.bak
+*.ps1
