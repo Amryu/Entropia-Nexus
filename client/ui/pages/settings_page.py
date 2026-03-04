@@ -154,17 +154,30 @@ class SettingsPage(QWidget):
 
     def _on_login(self):
         self._login_btn.setEnabled(False)
-        self._login_btn.setText("Logging in...")
+        self._login_btn.setText("Waiting for browser...")
         import threading
         threading.Thread(target=self._do_login, daemon=True).start()
 
     def _do_login(self):
-        self._oauth.login()
+        try:
+            result = self._oauth.login()
+            if result is not True:
+                QTimer.singleShot(0, lambda: self._on_login_failed(
+                    result if isinstance(result, str) else "Login failed"))
+        except Exception as e:
+            QTimer.singleShot(0, lambda: self._on_login_failed(str(e)))
+
+    def _on_login_failed(self, message: str):
+        self._login_btn.setEnabled(True)
+        self._login_btn.setText("Login with Entropia Nexus")
+        self._auth_status.setText(message)
+        self._auth_status.setStyleSheet(f"color: #ff6b6b;")
 
     def _on_logout(self):
         self._oauth.logout()
 
     def _on_auth_changed(self, state):
+        self._auth_status.setStyleSheet("")
         if state.authenticated:
             self._auth_status.setText(f"Logged in as: {state.username}")
             self._login_btn.setEnabled(False)

@@ -22,7 +22,7 @@ log = get_logger("Auth")
 
 SCOPES = "profile:read skills:read skills:write loadouts:read loadouts:write inventory:read inventory:write notifications:read notifications:write exchange:read exchange:write"
 TOKEN_REFRESH_MARGIN_SECONDS = 300  # Refresh 5 min before expiry
-CALLBACK_TIMEOUT_SECONDS = 120
+CALLBACK_TIMEOUT_SECONDS = 300
 DEFAULT_CLIENT_ID = "e5d3b6c4-ec01-468d-b3f2-c0b056cfe47c"
 
 
@@ -92,8 +92,11 @@ class OAuthClient:
 
         threading.Thread(target=_do_refresh, daemon=True, name="auth-refresh").start()
 
-    def login(self) -> bool:
-        """Start the OAuth login flow. Opens browser, waits for redirect. Returns success."""
+    def login(self) -> bool | str:
+        """Start the OAuth login flow. Opens browser, waits for redirect.
+
+        Returns True on success, or an error message string on failure.
+        """
         code_verifier = self._generate_code_verifier()
         code_challenge = self._generate_code_challenge(code_verifier)
         state = secrets.token_urlsafe(32)
@@ -149,7 +152,7 @@ class OAuthClient:
             server = HTTPServer(("127.0.0.1", redirect_port), CallbackHandler)
         except OSError as e:
             log.error("Cannot start login server on port %s: %s", redirect_port, e)
-            return False
+            return f"Cannot start login server on port {redirect_port}"
 
         # Build authorization URL
         auth_url = self._build_auth_url(code_challenge, state, redirect_uri)
@@ -175,15 +178,15 @@ class OAuthClient:
         # Validate
         if server_error:
             log.error("Login failed: %s", server_error)
-            return False
+            return f"Login failed: {server_error}"
 
         if not auth_code:
             log.error("Login timed out or no code received")
-            return False
+            return "Login timed out. Please try again."
 
         if received_state != state:
             log.error("State mismatch — possible CSRF attack")
-            return False
+            return "Login failed: security token mismatch"
 
         # Exchange code for tokens
         return self._exchange_code(auth_code, code_verifier, redirect_uri)
@@ -215,8 +218,8 @@ class OAuthClient:
         }
         return f"{base_url}/api/oauth/authorize?{urllib.parse.urlencode(params)}"
 
-    def _exchange_code(self, code: str, code_verifier: str, redirect_uri: str) -> bool:
-        """Exchange authorization code for tokens."""
+    def _exchange_code(self, code: str, code_verifier: str, redirect_uri: str) -> bool | str:
+        """Exchange authorization code for tokens. Returns True or error string."""
         base_url = self._config.nexus_base_url
         try:
             resp = requests.post(f"{base_url}/api/oauth/token", data={
@@ -246,10 +249,10 @@ class OAuthClient:
         except requests.HTTPError as e:
             body = e.response.text[:500] if e.response is not None else "(no body)"
             log.error("Token exchange failed: %s — %s", e, body)
-            return False
+            return "Token exchange failed. Please try again."
         except Exception as e:
             log.error("Token exchange failed: %s", e)
-            return False
+            return "Token exchange failed. Please try again."
 
     def _refresh_token(self) -> bool:
         """Refresh the access token using the refresh token. Returns success."""
@@ -278,17 +281,16 @@ class OAuthClient:
             return True
 
         except requests.HTTPError as e:
-            if e.response is not None and e.response.status_code in (401, 403):
+            status = e.response.status_code if e.response is not None else 0
+            if status in (400, 401, 403):
                 # Refresh token rejected by server — truly logged out
-                log.error("Refresh token rejected (HTTP %d), clearing session",
-                          e.response.status_code)
+                log.error("Refresh token rejected (HTTP %d), clearing session", status)
                 self._tokens = None
                 self._token_store.clear()
                 self._update_auth_state(AuthState())
             else:
                 # Server error (5xx) — keep tokens, retry later
-                log.warning("Token refresh failed (HTTP %d), will retry",
-                            e.response.status_code if e.response is not None else 0)
+                log.warning("Token refresh failed (HTTP %d), will retry", status)
             return False
         except Exception as e:
             # Network error (timeout, DNS, connection refused) — keep tokens
