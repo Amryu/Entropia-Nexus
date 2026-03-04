@@ -173,6 +173,8 @@ class MainWindow(QWidget):
                                   data_client=data_client,
                                   config=config)
         dashboard.navigation_changed.connect(self._on_dashboard_nav_changed)
+        dashboard.open_settings.connect(self._open_dashboard_settings)
+        dashboard.open_notifications.connect(self._show_notification_rules)
         self._pages.addWidget(dashboard)
         self._page_created: set[int] = {PAGE_DASHBOARD}
         for _ in range(PAGE_SETTINGS - PAGE_DASHBOARD):
@@ -343,6 +345,7 @@ class MainWindow(QWidget):
         self._notification_center = NotificationCenter(
             manager=self._notif_manager,
             config=self._config,
+            config_path=self._config_path,
             parent=self,
         )
         self._notification_center.hide()
@@ -373,6 +376,14 @@ class MainWindow(QWidget):
         self._stream_poll_timer.timeout.connect(self._poll_streams)
         self._stream_poll_timer.start(180_000)
 
+    def connect_exchange_store(self, store):
+        """Wire exchange store items to notification center for keyword search."""
+        def _on_items():
+            self._notification_center.set_exchange_items(store.items)
+        store.items_changed.connect(_on_items)
+        if store.items:
+            _on_items()
+
     def _toggle_notification_center(self):
         if self._notification_center.isVisible():
             self._notification_center.hide()
@@ -386,6 +397,19 @@ class MainWindow(QWidget):
         self._notification_center.move(x, y)
         self._notification_center.show()
         self._notification_center.raise_()
+
+    def _show_notification_rules(self):
+        """Open the notification center on the Rules tab."""
+        self._notification_center.show_rules_tab()
+        if not self._notification_center.isVisible():
+            self._toggle_notification_center()
+
+    def _open_dashboard_settings(self):
+        """Navigate to the settings page filtered to the Dashboard section."""
+        page = self._ensure_page(PAGE_SETTINGS)
+        page.set_search("Dashboard")
+        self._sidebar.set_active_no_emit(PAGE_SETTINGS)
+        self._pages.setCurrentIndex(PAGE_SETTINGS)
 
     def set_search_overlay(self, overlay):
         """Store reference to the search overlay for notification badge updates."""
@@ -496,8 +520,10 @@ class MainWindow(QWidget):
     # --- Page navigation ---
 
     def _on_page_changed(self, index: int):
-        self._ensure_page(index)
+        page = self._ensure_page(index)
         self._pages.setCurrentIndex(index)
+        if index == PAGE_SETTINGS and hasattr(page, 'set_search'):
+            page.set_search("")
         if not self._applying_nav:
             self._push_navigation(NavState(page=index))
 

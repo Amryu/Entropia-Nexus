@@ -20,6 +20,7 @@ from ..theme import (
     TEXT, TEXT_MUTED, ACCENT, ACCENT_HOVER, BORDER, HOVER, SECONDARY, PRIMARY,
     WARNING, SUCCESS, MAIN_DARK, FONT_FAMILY,
 )
+from ..icons import svg_icon, SETTINGS, BELL
 from ...chat_parser.models import GlobalEvent, GlobalType, TradeChatMessage
 
 
@@ -795,6 +796,8 @@ class DashboardPage(QWidget):
     # Emitted when the user navigates into/out of an article view.
     # sub_state: "article" when viewing an article, None when on the list.
     navigation_changed = pyqtSignal(object)  # str | None
+    open_settings = pyqtSignal()
+    open_notifications = pyqtSignal()
 
     def __init__(self, *, signals, db, nexus_client, data_client, config):
         super().__init__()
@@ -860,27 +863,31 @@ class DashboardPage(QWidget):
         ticker_layout.setSpacing(4)
 
         # Global ticker
-        global_group = QGroupBox("Globals")
-        global_layout = QVBoxLayout(global_group)
-        global_layout.setContentsMargins(2, 2, 2, 2)
+        global_box = QWidget()
+        global_layout = QVBoxLayout(global_box)
+        global_layout.setContentsMargins(0, 0, 0, 0)
+        global_layout.setSpacing(2)
+        global_layout.addLayout(self._build_ticker_header("Globals"))
         self._global_log = QTextEdit()
         self._global_log.setReadOnly(True)
         self._global_log.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         global_layout.addWidget(self._global_log)
-        ticker_layout.addWidget(global_group, 1)
+        ticker_layout.addWidget(global_box, 1)
 
         # Trade ticker
-        trade_group = QGroupBox("Trade")
-        trade_layout = QVBoxLayout(trade_group)
-        trade_layout.setContentsMargins(2, 2, 2, 2)
+        trade_box = QWidget()
+        trade_layout = QVBoxLayout(trade_box)
+        trade_layout.setContentsMargins(0, 0, 0, 0)
+        trade_layout.setSpacing(2)
+        trade_layout.addLayout(self._build_ticker_header("Trade"))
         self._trade_log = QTextBrowser()
         self._trade_log.setOpenLinks(False)
         self._trade_log.setHorizontalScrollBarPolicy(
             Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._trade_log.anchorClicked.connect(self._on_trade_link)
         trade_layout.addWidget(self._trade_log)
-        ticker_layout.addWidget(trade_group, 1)
+        ticker_layout.addWidget(trade_box, 1)
 
         layout.addWidget(ticker_row, 2)
 
@@ -896,6 +903,7 @@ class DashboardPage(QWidget):
         signals.global_event.connect(self._on_global)
         signals.ingested_global.connect(self._on_ingested_global)
         signals.trade_chat.connect(self._on_trade_chat)
+        signals.config_changed.connect(lambda _cfg: self._rebuild_globals())
 
         # News refresh timer
         self._refresh_timer = QTimer(self)
@@ -913,6 +921,44 @@ class DashboardPage(QWidget):
         self._resize_timer.setSingleShot(True)
         self._resize_timer.setInterval(100)
         self._resize_timer.timeout.connect(self._rebuild_globals)
+
+    # --- Ticker header ---
+
+    _TICKER_BTN_STYLE = (
+        "QPushButton { background: transparent; border: none; padding: 0; }"
+        f"QPushButton:hover {{ background: {HOVER}; border-radius: 3px; }}"
+    )
+
+    def _build_ticker_header(self, title: str) -> QHBoxLayout:
+        """Build a header row with title label + settings/notification buttons."""
+        row = QHBoxLayout()
+        row.setContentsMargins(4, 0, 0, 0)
+        row.setSpacing(2)
+
+        lbl = QLabel(title)
+        lbl.setStyleSheet(f"font-weight: bold; color: {TEXT};")
+        row.addWidget(lbl)
+        row.addStretch()
+
+        gear_btn = QPushButton()
+        gear_btn.setFixedSize(20, 20)
+        gear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        gear_btn.setIcon(svg_icon(SETTINGS, TEXT_MUTED, 14))
+        gear_btn.setStyleSheet(self._TICKER_BTN_STYLE)
+        gear_btn.setToolTip("Dashboard settings")
+        gear_btn.clicked.connect(self.open_settings.emit)
+        row.addWidget(gear_btn)
+
+        bell_btn = QPushButton()
+        bell_btn.setFixedSize(20, 20)
+        bell_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        bell_btn.setIcon(svg_icon(BELL, TEXT_MUTED, 14))
+        bell_btn.setStyleSheet(self._TICKER_BTN_STYLE)
+        bell_btn.setToolTip("Notification settings")
+        bell_btn.clicked.connect(self.open_notifications.emit)
+        row.addWidget(bell_btn)
+
+        return row
 
     # --- View switching ---
 
@@ -1116,8 +1162,20 @@ class DashboardPage(QWidget):
         )
         self._on_global(event)
 
+    def _should_show_global(self, data: GlobalEvent) -> bool:
+        """Check dashboard config filters for globals."""
+        min_val = getattr(self._config, "dashboard_globals_min_value", 0)
+        if min_val > 0 and data.value < min_val:
+            return False
+        blocked = getattr(self._config, "dashboard_globals_blocked_types", [])
+        if blocked and data.global_type.value in blocked:
+            return False
+        return True
+
     def _render_global(self, data):
         """Render a single GlobalEvent into the globals ticker."""
+        if not self._should_show_global(data):
+            return
         label, label_color = _GLOBAL_TYPE_LABELS.get(
             data.global_type, ("?", TEXT_MUTED)
         )
@@ -1161,6 +1219,32 @@ class DashboardPage(QWidget):
         super().resizeEvent(event)
         self._resize_timer.start()
 
+    def _should_show_trade(self, data) -> bool:
+        """Check dashboard config filters for trade messages."""
+        # Player blocklist
+        blocklist = getattr(self._config, "dashboard_trade_blocklist", [])
+        if blocklist:
+            uname = data.username.lower()
+            if any(b.lower() == uname for b in blocklist):
+                return False
+        # Planet filter (whitelist — empty means show all)
+        planet_filter = getattr(self._config, "dashboard_trade_planet_filter", [])
+        if planet_filter:
+            channel_lower = data.channel.lower()
+            if not any(p.lower() in channel_lower for p in planet_filter):
+                return False
+        # Keyword blacklist (regex)
+        blacklist = getattr(self._config, "dashboard_trade_blacklist", [])
+        if blacklist:
+            for pattern in blacklist:
+                try:
+                    if re.search(pattern, data.message, re.IGNORECASE):
+                        return False
+                except re.error:
+                    if pattern.lower() in data.message.lower():
+                        return False
+        return True
+
     def _on_trade_chat(self, data):
         if not self._live:
             return
@@ -1168,6 +1252,8 @@ class DashboardPage(QWidget):
 
     def _render_trade(self, data):
         """Render a single trade message into the trade ticker."""
+        if not self._should_show_trade(data):
+            return
         prefix = (
             f'<span style="color:{ACCENT}">'
             f'[{_esc(data.channel)}:{_esc(data.username)}]</span> '

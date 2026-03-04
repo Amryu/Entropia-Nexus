@@ -65,3 +65,32 @@ class GlobalNotificationRule:
         """Deserialize from JSON config dict."""
         valid = {k: v for k, v in d.items() if k in cls.__dataclass_fields__}
         return cls(**valid)
+
+
+@dataclass
+class TradeKeywordEntry:
+    """A single trade chat keyword/item filter entry.
+
+    When trade chat notifications are enabled and entries exist, only
+    messages matching at least one enabled entry trigger notifications.
+    """
+
+    id: str  # UUID
+    pattern: str  # keyword text, regex pattern, or item name
+    is_regex: bool = False
+    is_item: bool = False  # True when selected from item database
+    item_id: int | None = None  # exchange item ID if is_item
+    planet: str = ""  # "" = all planets
+    enabled: bool = True
+
+    def to_dict(self) -> dict:
+        d = {}
+        for k, v in self.__dict__.items():
+            if v is not None:
+                d[k] = v
+        return d
+
+    @classmethod
+    def from_dict(cls, d: dict) -> TradeKeywordEntry:
+        valid = {k: v for k, v in d.items() if k in cls.__dataclass_fields__}
+        return cls(**valid)

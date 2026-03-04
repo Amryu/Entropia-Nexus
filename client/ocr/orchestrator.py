@@ -216,8 +216,8 @@ class ScanOrchestrator:
             remaining = DETECT_TIMEOUT - elapsed
 
             if remaining <= 0:
-                log.warning("Timed out after %.0fs — skills window not found",
-                            DETECT_TIMEOUT)
+                log.debug("Timed out after %.0fs — skills window not found",
+                           DETECT_TIMEOUT)
                 return None
 
             # Cheap foreground check: skip expensive PrintWindow + template

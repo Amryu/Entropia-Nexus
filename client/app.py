@@ -287,6 +287,7 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
         _favourites_store = FavouritesStore(nexus_client)
         main_window._exchange_store = _exchange_store
         main_window._favourites_store = _favourites_store
+        main_window.connect_exchange_store(_exchange_store)
         _exchange_overlay = None
 
         def _toggle_exchange_overlay():

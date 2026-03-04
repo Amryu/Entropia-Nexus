@@ -2,8 +2,8 @@
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-    QSlider, QSpinBox, QGroupBox, QFileDialog, QScrollArea,
-    QFrame, QCheckBox,
+    QSlider, QSpinBox, QDoubleSpinBox, QGroupBox, QFileDialog, QScrollArea,
+    QFrame, QCheckBox, QTextEdit, QGridLayout,
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QCursor
@@ -50,9 +50,11 @@ class SettingsPage(QWidget):
 
         content = QWidget()
         self._layout = QVBoxLayout(content)
+        self._sections: list[QWidget] = []
 
         self._build_account_section()
         self._build_chat_section()
+        self._build_dashboard_section()
         self._build_ocr_section()
         self._build_overlay_section()
         self._build_overlay_shortcuts_section()
@@ -75,10 +77,43 @@ class SettingsPage(QWidget):
         self._oauth_client_id.editingFinished.connect(self._schedule_save)
 
         outer = QVBoxLayout(self)
-        header = QLabel("Settings")
-        header.setObjectName("pageHeader")
-        outer.addWidget(header)
+
+        self._header = QLabel("Settings")
+        self._header.setObjectName("pageHeader")
+        outer.addWidget(self._header)
+
+        # Search bar
+        self._search_input = QLineEdit()
+        self._search_input.setPlaceholderText("Search settings...")
+        self._search_input.setClearButtonEnabled(True)
+        self._search_input.setStyleSheet(
+            f"QLineEdit {{ border: 1px solid {BORDER}; border-radius: 4px;"
+            f" padding: 5px 8px; font-size: 12px; }}"
+        )
+        self._search_timer_filter = QTimer(self)
+        self._search_timer_filter.setSingleShot(True)
+        self._search_timer_filter.setInterval(150)
+        self._search_timer_filter.timeout.connect(self._apply_search_filter)
+        self._search_input.textChanged.connect(
+            lambda: self._search_timer_filter.start()
+        )
+        outer.addWidget(self._search_input)
+
         outer.addWidget(scroll)
+
+        # Build searchable text index: {section_widget: [all_text_in_section]}
+        self._section_texts: dict[QWidget, list[str]] = {}
+        for section in self._sections:
+            texts = [section.title()] if hasattr(section, 'title') else []
+            for child in section.findChildren(QLabel):
+                t = child.text()
+                if t:
+                    texts.append(t)
+            for child in section.findChildren(QCheckBox):
+                t = child.text()
+                if t:
+                    texts.append(t)
+            self._section_texts[section] = texts
 
         # Connect auth state changes and apply current state
         signals.auth_state_changed.connect(self._on_auth_changed)
@@ -104,6 +139,7 @@ class SettingsPage(QWidget):
         btn_row.addStretch()
 
         layout.addLayout(btn_row)
+        self._sections.append(group)
         self._layout.addWidget(group)
 
     def _on_login(self):
@@ -167,6 +203,7 @@ class SettingsPage(QWidget):
         reparse_row.addStretch()
         layout.addLayout(reparse_row)
 
+        self._sections.append(group)
         self._layout.addWidget(group)
 
     def _on_reparse(self):
@@ -188,6 +225,132 @@ class SettingsPage(QWidget):
         if path:
             self._chat_path.setText(path)
             self._schedule_save()
+
+    # --- Dashboard ---
+    def _build_dashboard_section(self):
+        from ...exchange.constants import PLANETS
+        from ...chat_parser.models import GlobalType
+
+        group = QGroupBox("Dashboard")
+        self._dashboard_group = group
+        layout = QVBoxLayout(group)
+        layout.setSpacing(8)
+
+        # --- Globals subsection ---
+        globals_lbl = QLabel("Globals Feed")
+        globals_lbl.setStyleSheet("font-weight: bold; font-size: 12px;")
+        layout.addWidget(globals_lbl)
+
+        # Min value
+        min_row = QHBoxLayout()
+        min_row.addWidget(QLabel("Minimum value to display:"))
+        self._dash_globals_min = QDoubleSpinBox()
+        self._dash_globals_min.setRange(0, 999999)
+        self._dash_globals_min.setDecimals(0)
+        self._dash_globals_min.setValue(
+            getattr(self._config, "dashboard_globals_min_value", 0)
+        )
+        self._dash_globals_min.setSpecialValueText("Show all")
+        self._dash_globals_min.setSuffix(" PED")
+        self._dash_globals_min.setFixedWidth(120)
+        self._dash_globals_min.setToolTip(
+            "Globals below this value won't appear in the dashboard ticker. "
+            "They are still processed for notifications."
+        )
+        self._dash_globals_min.valueChanged.connect(self._schedule_save)
+        min_row.addWidget(self._dash_globals_min)
+        min_row.addStretch()
+        layout.addLayout(min_row)
+
+        # Blocked types
+        blocked_lbl = QLabel("Blocked global types:")
+        blocked_lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+        layout.addWidget(blocked_lbl)
+
+        _type_options = [
+            ("kill", "Hunt"),
+            ("team_kill", "Team Hunt"),
+            ("deposit", "Mining"),
+            ("craft", "Crafting"),
+            ("rare_item", "Rare Item"),
+            ("discovery", "Discovery"),
+            ("tier", "Tier Record"),
+            ("examine", "Instance"),
+            ("pvp", "PvP"),
+        ]
+        blocked = set(getattr(self._config, "dashboard_globals_blocked_types", []))
+        type_grid = QGridLayout()
+        type_grid.setSpacing(4)
+        self._dash_globals_type_cbs: dict[str, QCheckBox] = {}
+        cols = 3
+        for i, (key, label) in enumerate(_type_options):
+            cb = QCheckBox(label)
+            cb.setChecked(key in blocked)
+            cb.stateChanged.connect(self._schedule_save)
+            type_grid.addWidget(cb, i // cols, i % cols)
+            self._dash_globals_type_cbs[key] = cb
+        layout.addLayout(type_grid)
+
+        # Separator
+        sep1 = QFrame()
+        sep1.setFrameShape(QFrame.Shape.HLine)
+        sep1.setStyleSheet(f"color: {BORDER};")
+        layout.addWidget(sep1)
+
+        # --- Trade subsection ---
+        trade_lbl = QLabel("Trade Chat Feed")
+        trade_lbl.setStyleSheet("font-weight: bold; font-size: 12px;")
+        layout.addWidget(trade_lbl)
+
+        # Block list (players)
+        block_lbl = QLabel("Block list (one player per line):")
+        block_lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+        layout.addWidget(block_lbl)
+
+        self._dash_trade_blocklist = QTextEdit()
+        self._dash_trade_blocklist.setFixedHeight(60)
+        self._dash_trade_blocklist.setPlainText(
+            "\n".join(getattr(self._config, "dashboard_trade_blocklist", []))
+        )
+        self._dash_trade_blocklist.textChanged.connect(self._schedule_save)
+        layout.addWidget(self._dash_trade_blocklist)
+
+        # Planet filter
+        planet_lbl = QLabel("Show only channels from these planets (empty = all):")
+        planet_lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+        layout.addWidget(planet_lbl)
+
+        planet_grid = QGridLayout()
+        planet_grid.setSpacing(4)
+        active_planets = set(getattr(self._config, "dashboard_trade_planet_filter", []))
+        self._dash_trade_planet_cbs: dict[str, QCheckBox] = {}
+        for i, p in enumerate(PLANETS):
+            cb = QCheckBox(p)
+            cb.setChecked(p in active_planets)
+            cb.stateChanged.connect(self._schedule_save)
+            planet_grid.addWidget(cb, i // 3, i % 3)
+            self._dash_trade_planet_cbs[p] = cb
+        layout.addLayout(planet_grid)
+
+        # Blacklist (keywords/regex)
+        bl_lbl = QLabel("Blacklist keywords (one per line, regex supported):")
+        bl_lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+        bl_lbl.setToolTip(
+            "Messages containing any of these keywords will be hidden. "
+            "Each line is treated as a case-insensitive regex pattern."
+        )
+        layout.addWidget(bl_lbl)
+
+        self._dash_trade_blacklist = QTextEdit()
+        self._dash_trade_blacklist.setFixedHeight(60)
+        self._dash_trade_blacklist.setPlainText(
+            "\n".join(getattr(self._config, "dashboard_trade_blacklist", []))
+        )
+        self._dash_trade_blacklist.textChanged.connect(self._schedule_save)
+        layout.addWidget(self._dash_trade_blacklist)
+
+        self._sections.append(group)
+        self._layout.addWidget(group)
 
     # --- OCR ---
     def _build_ocr_section(self):
@@ -215,6 +378,7 @@ class SettingsPage(QWidget):
         roi_row.addStretch()
         layout.addLayout(roi_row)
 
+        self._sections.append(group)
         self._layout.addWidget(group)
 
     def _open_roi_dialog(self):
@@ -255,6 +419,7 @@ class SettingsPage(QWidget):
         self._auto_pin_cb.setChecked(self._config.auto_pin_detail_overlay)
         layout.addWidget(self._auto_pin_cb)
 
+        self._sections.append(group)
         self._layout.addWidget(group)
 
     # --- Overlay Shortcuts ---
@@ -283,6 +448,7 @@ class SettingsPage(QWidget):
             row.addStretch()
             layout.addLayout(row)
 
+        self._sections.append(group)
         self._layout.addWidget(group)
 
     # --- About ---
@@ -313,6 +479,7 @@ class SettingsPage(QWidget):
         self._updates_cb.setChecked(self._config.check_for_updates)
         layout.addWidget(self._updates_cb)
 
+        self._sections.append(group)
         self._layout.addWidget(group)
 
     def _open_kofi(self):
@@ -330,6 +497,7 @@ class SettingsPage(QWidget):
         btn.clicked.connect(self._show_tos)
         layout.addWidget(btn)
 
+        self._sections.append(group)
         self._layout.addWidget(group)
 
     def _show_tos(self):
@@ -368,13 +536,14 @@ class SettingsPage(QWidget):
         layout.addLayout(oauth_row)
 
         self._advanced_group.setVisible(False)
+        self._sections.append(self._advanced_group)
         self._layout.addWidget(self._advanced_group)
 
         # Toggle button to show/hide
-        toggle_btn = QPushButton("Show Advanced Settings")
-        toggle_btn.setFlat(True)
-        toggle_btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        toggle_btn.setStyleSheet(
+        self._advanced_toggle = QPushButton("Show Advanced Settings")
+        self._advanced_toggle.setFlat(True)
+        self._advanced_toggle.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self._advanced_toggle.setStyleSheet(
             f"color: {TEXT_MUTED}; font-size: 11px; text-decoration: underline;"
             f" border: none; padding: 2px;"
         )
@@ -382,18 +551,70 @@ class SettingsPage(QWidget):
         def _toggle():
             visible = not self._advanced_group.isVisible()
             self._advanced_group.setVisible(visible)
-            toggle_btn.setText(
+            self._advanced_toggle.setText(
                 "Hide Advanced Settings" if visible else "Show Advanced Settings"
             )
 
-        toggle_btn.clicked.connect(_toggle)
-        self._layout.addWidget(toggle_btn, alignment=Qt.AlignmentFlag.AlignLeft)
+        self._advanced_toggle.clicked.connect(_toggle)
+        self._layout.addWidget(self._advanced_toggle, alignment=Qt.AlignmentFlag.AlignLeft)
 
     def _browse_js_path(self):
         path = QFileDialog.getExistingDirectory(self, "Select JS utils directory")
         if path:
             self._js_path.setText(path)
             self._schedule_save()
+
+    def set_search(self, query: str):
+        """Set the search bar text programmatically (triggers filtering)."""
+        self._search_input.setText(query)
+
+    def _apply_search_filter(self):
+        """Show/hide sections based on search query; highlight matches."""
+        query = self._search_input.text().strip().lower()
+        if not query:
+            # Restore default state: advanced hidden, toggle visible
+            for section in self._sections:
+                if section is self._advanced_group:
+                    section.hide()
+                else:
+                    section.show()
+                self._clear_highlights(section)
+            self._advanced_toggle.show()
+            return
+        self._advanced_toggle.hide()
+        for section in self._sections:
+            texts = self._section_texts.get(section, [])
+            match = any(query in t.lower() for t in texts)
+            section.setVisible(match)
+            self._clear_highlights(section)
+            if match:
+                self._highlight_section(section, query)
+
+    def _highlight_section(self, section, query: str):
+        """Highlight matching text in section labels."""
+        from re import escape as re_escape, sub as re_sub, IGNORECASE
+        pattern = re_escape(query)
+        highlight = (
+            f'<span style="background: {ACCENT}30; font-weight: bold;">'
+            r'\g<0></span>'
+        )
+        for label in section.findChildren(QLabel):
+            orig = label.property("_orig_text")
+            if orig is None:
+                orig = label.text()
+                label.setProperty("_orig_text", orig)
+            if query in orig.lower():
+                label.setText(re_sub(pattern, highlight, orig, flags=IGNORECASE))
+                label.setTextFormat(Qt.TextFormat.RichText)
+
+    def _clear_highlights(self, section):
+        """Restore original text on all labels in a section."""
+        for label in section.findChildren(QLabel):
+            orig = label.property("_orig_text")
+            if orig is not None:
+                label.setText(orig)
+                label.setTextFormat(Qt.TextFormat.PlainText)
+                label.setProperty("_orig_text", None)
 
     def _schedule_save(self, *_args):
         """Schedule a debounced save (restarts the 300ms timer on each call)."""
@@ -409,6 +630,25 @@ class SettingsPage(QWidget):
         self._config.check_for_updates = self._updates_cb.isChecked()
         self._config.js_utils_path = self._js_path.text()
         self._config.oauth_client_id = self._oauth_client_id.text()
+
+        # Dashboard — Globals
+        self._config.dashboard_globals_min_value = self._dash_globals_min.value()
+        self._config.dashboard_globals_blocked_types = [
+            k for k, cb in self._dash_globals_type_cbs.items() if cb.isChecked()
+        ]
+
+        # Dashboard — Trade
+        bl_text = self._dash_trade_blocklist.toPlainText().strip()
+        self._config.dashboard_trade_blocklist = [
+            n.strip() for n in bl_text.splitlines() if n.strip()
+        ]
+        self._config.dashboard_trade_planet_filter = [
+            p for p, cb in self._dash_trade_planet_cbs.items() if cb.isChecked()
+        ]
+        bk_text = self._dash_trade_blacklist.toPlainText().strip()
+        self._config.dashboard_trade_blacklist = [
+            n.strip() for n in bk_text.splitlines() if n.strip()
+        ]
 
         save_config(self._config, self._config_path)
         self._event_bus.publish(EVENT_CONFIG_CHANGED, self._config)

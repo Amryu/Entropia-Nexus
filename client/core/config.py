@@ -100,13 +100,24 @@ class AppConfig:
     notification_toast_enabled: bool = True
     notification_toast_corner: str = "bottom_right"
     notification_rules: list[dict] = field(default_factory=list)
+    notification_filter_self: bool = True
     trade_chat_notifications_enabled: bool = False
     trade_chat_ignore_list: list[str] = field(default_factory=list)
-    trade_chat_cooldown_seconds: int = 300
+    trade_chat_cooldown_minutes: int = 60
+    trade_chat_keywords: list[dict] = field(default_factory=list)
 
     # Streams
     stream_notifications_enabled: bool = True
     stream_exclude_list: list[str] = field(default_factory=list)
+
+    # Dashboard — Globals feed
+    dashboard_globals_min_value: float = 0.0
+    dashboard_globals_blocked_types: list[str] = field(default_factory=list)
+
+    # Dashboard — Trade feed
+    dashboard_trade_blocklist: list[str] = field(default_factory=list)
+    dashboard_trade_planet_filter: list[str] = field(default_factory=list)
+    dashboard_trade_blacklist: list[str] = field(default_factory=list)
 
     # Ingestion (crowdsourced data upload/download)
     ingestion_enabled: bool = True
@@ -169,11 +180,18 @@ DEFAULTS = {
     "notification_toast_enabled": True,
     "notification_toast_corner": "bottom_right",
     "notification_rules": [],
+    "notification_filter_self": True,
     "trade_chat_notifications_enabled": False,
     "trade_chat_ignore_list": [],
-    "trade_chat_cooldown_seconds": 300,
+    "trade_chat_cooldown_minutes": 60,
+    "trade_chat_keywords": [],
     "stream_notifications_enabled": True,
     "stream_exclude_list": [],
+    "dashboard_globals_min_value": 0.0,
+    "dashboard_globals_blocked_types": [],
+    "dashboard_trade_blocklist": [],
+    "dashboard_trade_planet_filter": [],
+    "dashboard_trade_blacklist": [],
     "ingestion_enabled": True,
     "ingestion_upload_interval_seconds": 30,
     "ingestion_receive_interval_seconds": 60,
@@ -218,6 +236,12 @@ def load_config(config_path: str = "config.json") -> AppConfig:
             user_config = {}
 
         merged.update(user_config)
+
+    # Migrate trade_chat_cooldown_seconds → trade_chat_cooldown_minutes
+    if "trade_chat_cooldown_seconds" in user_config and "trade_chat_cooldown_minutes" not in user_config:
+        secs = user_config["trade_chat_cooldown_seconds"]
+        merged["trade_chat_cooldown_minutes"] = max(1, secs // 60)
+    merged.pop("trade_chat_cooldown_seconds", None)
 
     # Migrate legacy overlay_position → per-overlay keys
     if "overlay_position" in user_config:

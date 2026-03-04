@@ -13,10 +13,11 @@ from collections import deque, OrderedDict
 from datetime import datetime, timedelta
 
 from ..core.logger import get_logger
-from ..core.constants import EVENT_GLOBAL, EVENT_INGESTED_GLOBAL, EVENT_TRADE_CHAT, EVENT_TRADE_REQUEST
+from ..core.constants import EVENT_GLOBAL, EVENT_INGESTED_GLOBAL, EVENT_TRADE_CHAT, EVENT_TRADE_REQUEST, EVENT_AUTH_STATE_CHANGED
 from .models import (
     Notification,
     GlobalNotificationRule,
+    TradeKeywordEntry,
     SOURCE_GLOBAL,
     SOURCE_TRADE_CHAT,
     SOURCE_NEXUS,
@@ -73,11 +74,15 @@ class NotificationManager:
         # Only process events after catchup
         self._live = False
 
+        # Logged-in user's EU name (for self-filtering)
+        self._eu_name: str | None = None
+
         # Subscribe
         self._event_bus.subscribe(EVENT_GLOBAL, self._on_global_event)
         self._event_bus.subscribe(EVENT_TRADE_CHAT, self._on_trade_chat)
         self._event_bus.subscribe(EVENT_INGESTED_GLOBAL, self._on_ingested_global)
         self._event_bus.subscribe(EVENT_TRADE_REQUEST, self._on_trade_request)
+        self._event_bus.subscribe(EVENT_AUTH_STATE_CHANGED, self._on_auth_changed)
 
     # ------------------------------------------------------------------
     # Public API
@@ -133,6 +138,21 @@ class NotificationManager:
         )
 
     # ------------------------------------------------------------------
+    # Auth
+    # ------------------------------------------------------------------
+
+    def _on_auth_changed(self, state):
+        self._eu_name = getattr(state, "eu_name", None)
+
+    def _is_self(self, name: str) -> bool:
+        """Return True if *name* matches the logged-in user's EU name."""
+        if not self._eu_name or not name:
+            return False
+        if not getattr(self._config, "notification_filter_self", True):
+            return False
+        return name.lower() == self._eu_name.lower()
+
+    # ------------------------------------------------------------------
     # Event handlers
     # ------------------------------------------------------------------
 
@@ -157,6 +177,9 @@ class NotificationManager:
 
         # Record fingerprint so the server echo is suppressed
         self._record_fp(self._global_fp(event))
+
+        if self._is_self(event.player_name):
+            return
 
         should_notify, _rule = self._rules_engine.evaluate(event)
         if not should_notify:
@@ -213,6 +236,9 @@ class NotificationManager:
             return
         self._record_fp(fp)
 
+        if self._is_self(event.player_name):
+            return
+
         should_notify, _rule = self._rules_engine.evaluate(event)
         if not should_notify:
             return
@@ -248,38 +274,104 @@ class NotificationManager:
             return
         if not getattr(self._config, "trade_chat_notifications_enabled", False):
             return
+        if self._is_self(msg.username):
+            return
         if msg.username.lower() in self._trade_ignore:
             return
 
-        items = _BRACKET_RE.findall(msg.message)
-        if not items:
-            return
-
         cooldown_secs = getattr(
-            self._config, "trade_chat_cooldown_seconds", 300
-        )
+            self._config, "trade_chat_cooldown_minutes", 60
+        ) * 60
         now = datetime.now()
 
-        for item in items:
-            # Skip waypoint patterns
-            if "," in item and item.strip().endswith("Waypoint"):
-                continue
-            key = (msg.username.lower(), item.lower())
-            last = self._trade_cooldowns.get(key)
-            if last and (now - last).total_seconds() < cooldown_secs:
-                continue
-            self._trade_cooldowns[key] = now
-            self._create_notification(
-                source=SOURCE_TRADE_CHAT,
-                title=f"Trade: {msg.username}",
-                body=f"[{item}] in {msg.channel}",
-                priority="low",
-                metadata={
-                    "username": msg.username,
-                    "item": item,
-                    "channel": msg.channel,
-                },
-            )
+        # Load keyword entries
+        entries = self._get_trade_keywords()
+
+        if entries:
+            # Keyword mode: only notify when a message matches an enabled entry
+            for entry in entries:
+                if not entry.enabled:
+                    continue
+                # Planet filter
+                if entry.planet and entry.planet.lower() not in msg.channel.lower():
+                    continue
+                # Pattern matching
+                matched = False
+                if entry.is_item:
+                    # Item name: check bracketed items in message
+                    items = _BRACKET_RE.findall(msg.message)
+                    for item in items:
+                        if item.lower() == entry.pattern.lower():
+                            matched = True
+                            break
+                elif entry.is_regex:
+                    try:
+                        if re.search(entry.pattern, msg.message, re.IGNORECASE):
+                            matched = True
+                    except re.error:
+                        pass
+                else:
+                    # Plain keyword: case-insensitive substring
+                    if entry.pattern.lower() in msg.message.lower():
+                        matched = True
+
+                if not matched:
+                    continue
+
+                # Cooldown per player+pattern
+                key = (msg.username.lower(), entry.pattern.lower())
+                last = self._trade_cooldowns.get(key)
+                if last and (now - last).total_seconds() < cooldown_secs:
+                    continue
+                self._trade_cooldowns[key] = now
+                self._create_notification(
+                    source=SOURCE_TRADE_CHAT,
+                    title=f"Trade: {msg.username}",
+                    body=f"{entry.pattern} in {msg.channel}",
+                    priority="low",
+                    metadata={
+                        "username": msg.username,
+                        "keyword": entry.pattern,
+                        "channel": msg.channel,
+                        "message": msg.message,
+                    },
+                )
+                break  # one notification per message
+        else:
+            # Legacy mode: notify on any bracketed item
+            items = _BRACKET_RE.findall(msg.message)
+            if not items:
+                return
+            for item in items:
+                if "," in item and item.strip().endswith("Waypoint"):
+                    continue
+                key = (msg.username.lower(), item.lower())
+                last = self._trade_cooldowns.get(key)
+                if last and (now - last).total_seconds() < cooldown_secs:
+                    continue
+                self._trade_cooldowns[key] = now
+                self._create_notification(
+                    source=SOURCE_TRADE_CHAT,
+                    title=f"Trade: {msg.username}",
+                    body=f"[{item}] in {msg.channel}",
+                    priority="low",
+                    metadata={
+                        "username": msg.username,
+                        "item": item,
+                        "channel": msg.channel,
+                    },
+                )
+
+    def _get_trade_keywords(self) -> list[TradeKeywordEntry]:
+        """Load trade keyword entries from config."""
+        raw = getattr(self._config, "trade_chat_keywords", [])
+        entries = []
+        for d in raw:
+            try:
+                entries.append(TradeKeywordEntry.from_dict(d))
+            except Exception:
+                pass
+        return entries
 
     # ------------------------------------------------------------------
     # Trade requests
@@ -443,3 +535,5 @@ class NotificationManager:
         self._event_bus.unsubscribe(EVENT_GLOBAL, self._on_global_event)
         self._event_bus.unsubscribe(EVENT_TRADE_CHAT, self._on_trade_chat)
         self._event_bus.unsubscribe(EVENT_INGESTED_GLOBAL, self._on_ingested_global)
+        self._event_bus.unsubscribe(EVENT_TRADE_REQUEST, self._on_trade_request)
+        self._event_bus.unsubscribe(EVENT_AUTH_STATE_CHANGED, self._on_auth_changed)

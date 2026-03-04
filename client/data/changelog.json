@@ -8,12 +8,23 @@
       {"type": "feat", "text": "Profile globals auto-refresh with recent activity feed"},
       {"type": "feat", "text": "Total/Best toggle for top hunting, mining, and crafting globals"},
       {"type": "feat", "text": "Click items in profile globals to open exchange orderbook"},
+      {"type": "feat", "text": "Trade chat keyword filtering with item search, regex, and planet filters"},
+      {"type": "feat", "text": "Dashboard feed filters (min global value, blocked types, trade blocklist/blacklist)"},
+      {"type": "feat", "text": "Settings search bar with section filtering and text highlighting"},
+      {"type": "feat", "text": "Self-notification filtering (suppress own globals and trade messages)"},
+      {"type": "feat", "text": "EU name stored from OAuth for self-filtering"},
+      {"type": "feat", "text": "Exchange overlay drag from sidebar and double-click minify/restore"},
+      {"type": "feat", "text": "Dashboard ticker headers with settings and notification shortcuts"},
       {"type": "fix", "text": "Weapon calculator now works in production builds (py-mini-racer library fix)"},
       {"type": "fix", "text": "Overlays no longer steal window focus from the game"},
       {"type": "fix", "text": "Profile overlay hover styling now works correctly"},
       {"type": "fix", "text": "Crash guard for settings page initialization failures"},
       {"type": "fix", "text": "Persistent error logging to ~/.entropia-nexus/client.log (1-hour rolling, 256KB cap)"},
-      {"type": "fix", "text": "C-level crash tracebacks now captured via faulthandler"}
+      {"type": "fix", "text": "C-level crash tracebacks now captured via faulthandler"},
+      {"type": "fix", "text": "Notification and toast text eliding uses proper width calculations"},
+      {"type": "fix", "text": "Trade cooldown changed from seconds to minutes for better UX"},
+      {"type": "fix", "text": "Notification center panel border separation from background content"},
+      {"type": "fix", "text": "OCR skill window detection timeout demoted to debug level"}
     ]
   },
   {

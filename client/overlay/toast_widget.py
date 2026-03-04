@@ -69,8 +69,6 @@ def _get_toast_action(notif: Notification):
     if notif.source == SOURCE_NEXUS:
         url = notif.metadata.get("url", "https://entropianexus.com")
         return ("Open on Nexus", "url", url)
-    if notif.source == SOURCE_TRADE_CHAT:
-        return ("Exchange", "overlay", "exchange")
     if notif.source == SOURCE_EXCHANGE:
         return ("Exchange", "overlay", "exchange")
     return None
@@ -124,15 +122,15 @@ class ToastWidget(QWidget):
 
         src_lbl = QLabel(_SOURCE_LABELS.get(notif.source, "?"))
         src_lbl.setStyleSheet(
-            f"color: {source_color}; font-size: 12px; font-weight: bold;"
+            f"color: {source_color}; font-size: 14px; font-weight: bold;"
             f" background: transparent; border: none;"
         )
-        src_lbl.setFixedWidth(38)
+        src_lbl.setFixedWidth(46)
         top_row.addWidget(src_lbl)
 
         title_lbl = QLabel(notif.title)
         title_lbl.setStyleSheet(
-            f"color: {TEXT_COLOR}; font-size: 12px; font-weight: bold;"
+            f"color: {TEXT_COLOR}; font-size: 14px; font-weight: bold;"
             f" background: transparent; border: none;"
         )
         title_lbl.setWordWrap(True)
@@ -159,7 +157,7 @@ class ToastWidget(QWidget):
         if notif.body:
             body_lbl = QLabel(notif.body)
             body_lbl.setStyleSheet(
-                f"color: {TEXT_DIM}; font-size: 12px;"
+                f"color: {TEXT_DIM}; font-size: 13px;"
                 f" background: transparent; border: none;"
             )
             body_lbl.setWordWrap(True)
@@ -177,7 +175,7 @@ class ToastWidget(QWidget):
             action_btn.setStyleSheet(
                 f"QPushButton {{ color: {ACCENT}; background: transparent;"
                 f" border: 1px solid {ACCENT}; border-radius: 3px;"
-                f" padding: 2px 10px; font-size: 12px; }}"
+                f" padding: 2px 10px; font-size: 13px; }}"
                 f"QPushButton:hover {{ background: rgba(0, 204, 255, 30); }}"
             )
             action_btn.clicked.connect(

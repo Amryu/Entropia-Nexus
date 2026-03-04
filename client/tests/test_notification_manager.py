@@ -15,7 +15,8 @@ class _FakeConfig:
     notification_rules: list = field(default_factory=list)
     trade_chat_notifications_enabled: bool = False
     trade_chat_ignore_list: list = field(default_factory=list)
-    trade_chat_cooldown_seconds: int = 300
+    trade_chat_cooldown_minutes: int = 5
+    trade_chat_keywords: list = field(default_factory=list)
     notification_sound_enabled: bool = True
     notification_toast_enabled: bool = True
 

@@ -28,4 +28,5 @@ class AuthState:
     username: str | None = None
     avatar_url: str | None = None
     user_id: int | None = None
+    eu_name: str | None = None
     scopes: list[str] = field(default_factory=list)

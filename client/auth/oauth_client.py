@@ -321,6 +321,7 @@ class OAuthClient:
                 username=user.get("username"),
                 avatar_url=user.get("avatar"),
                 user_id=user.get("id"),
+                eu_name=user.get("eu_name"),
                 scopes=self._tokens.scope.split() if self._tokens else [],
             )
             self._update_auth_state(state)

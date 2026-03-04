@@ -255,9 +255,14 @@ def _clickable_row(text: str, sub: str = "", url: str = "") -> QWidget:
     lbl = QLabel(text)
     color = ACCENT if url else TEXT_COLOR
     lbl.setStyleSheet(f"color: {color}; font-size: 12px; background: transparent;")
+    lbl.setToolTip(text)
     if url:
         lbl.setCursor(Qt.CursorShape.PointingHandCursor)
         lbl.mousePressEvent = lambda _ev, u=url: (webbrowser.open(u), None)[-1]
+    # Elide long names — reserve ~180px for the sub label on the right
+    fm = lbl.fontMetrics()
+    _elide_w = PROFILE_WIDTH - 200
+    lbl.setText(fm.elidedText(text, Qt.TextElideMode.ElideRight, _elide_w))
     layout.addWidget(lbl, 1)
     if sub:
         sub_lbl = QLabel(sub)
@@ -1415,10 +1420,16 @@ class ProfileOverlayWidget(OverlayWidget):
             )
             rl.addWidget(badge)
 
-            # Target name
+            # Target name (elide long names)
             name_lbl = QLabel(target)
             name_lbl.setStyleSheet(
                 f"color: {TEXT_COLOR}; font-size: 11px; background: transparent;"
+            )
+            name_lbl.setToolTip(target)
+            fm = name_lbl.fontMetrics()
+            _elide_w = PROFILE_WIDTH - 230  # badge + value + age + margins
+            name_lbl.setText(
+                fm.elidedText(target, Qt.TextElideMode.ElideRight, _elide_w)
             )
             rl.addWidget(name_lbl, 1)
 

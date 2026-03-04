@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import uuid
 from datetime import datetime
 
@@ -9,22 +10,25 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTabWidget, QScrollArea,
     QPushButton, QLabel, QCheckBox, QComboBox, QSpinBox, QDoubleSpinBox,
     QLineEdit, QTextEdit, QGroupBox, QFrame, QSizePolicy,
-    QDialog, QFormLayout, QDialogButtonBox, QGridLayout,
+    QDialog, QFormLayout, QDialogButtonBox, QGridLayout, QListWidget,
+    QListWidgetItem,
 )
-from PyQt6.QtCore import Qt, QSize, QUrl, pyqtSignal
+from PyQt6.QtCore import Qt, QSize, QUrl, pyqtSignal, QTimer
 from PyQt6.QtGui import QColor, QPainter, QFont, QDesktopServices
 
 from ..theme import (
-    PRIMARY, SECONDARY, MAIN_DARK, HOVER, BORDER, BORDER_HOVER,
+    PRIMARY, SECONDARY, MAIN_DARK, HOVER, BORDER,
     TEXT, TEXT_MUTED, ACCENT, ACCENT_HOVER,
     ERROR, ERROR_BG, SUCCESS, SUCCESS_BG, WARNING, WARNING_BG,
     FONT_FAMILY,
 )
 from ...notifications.models import (
-    Notification, GlobalNotificationRule,
+    Notification, GlobalNotificationRule, TradeKeywordEntry,
     SOURCE_GLOBAL, SOURCE_TRADE_CHAT, SOURCE_NEXUS, SOURCE_SYSTEM,
     SOURCE_STREAM, SOURCE_EXCHANGE,
 )
+
+from ...exchange.constants import PLANETS as _PLANETS
 
 PANEL_WIDTH = 380
 PANEL_HEIGHT = 500
@@ -141,15 +145,15 @@ class _NotificationRow(QFrame):
         text_col.setContentsMargins(0, 0, 0, 0)
         text_col.setSpacing(1)
 
+        _elide_w = PANEL_WIDTH - 140  # account for dot + source + time + margins
         self._title_lbl = QLabel(notif.title)
         self._title_lbl.setStyleSheet(
             f"color: {TEXT}; font-size: 12px; font-weight: bold;"
             f" background: transparent; border: none;"
         )
-        self._title_lbl.setMaximumWidth(200)
         fm = self._title_lbl.fontMetrics()
         self._title_lbl.setText(
-            fm.elidedText(notif.title, Qt.TextElideMode.ElideRight, 200)
+            fm.elidedText(notif.title, Qt.TextElideMode.ElideRight, _elide_w)
         )
         text_col.addWidget(self._title_lbl)
 
@@ -158,10 +162,9 @@ class _NotificationRow(QFrame):
             f"color: {TEXT_MUTED}; font-size: 11px;"
             f" background: transparent; border: none;"
         )
-        self._body_short.setMaximumWidth(200)
         fm2 = self._body_short.fontMetrics()
         self._body_short.setText(
-            fm2.elidedText(notif.body, Qt.TextElideMode.ElideRight, 200)
+            fm2.elidedText(notif.body, Qt.TextElideMode.ElideRight, _elide_w)
         )
         text_col.addWidget(self._body_short)
 
@@ -314,6 +317,9 @@ class _RuleEditDialog(QDialog):
 
     def __init__(self, rule: GlobalNotificationRule, parent=None):
         super().__init__(parent)
+        self.setWindowFlags(
+            self.windowFlags() & ~Qt.WindowType.WindowMaximizeButtonHint
+        )
         self.setWindowTitle("Edit Rule")
         self.setFixedWidth(320)
         self.setStyleSheet(
@@ -435,11 +441,409 @@ class _RuleEditDialog(QDialog):
         )
 
 
+# =====================================================================
+# Trade keyword entry row
+# =====================================================================
+
+class _TradeKeywordRow(QFrame):
+    """Compact row for a single TradeKeywordEntry."""
+
+    removed = pyqtSignal(str)   # entry id
+    edited = pyqtSignal(str)    # entry id
+
+    def __init__(self, entry: TradeKeywordEntry, parent=None):
+        super().__init__(parent)
+        self._entry = entry
+        self.entry_id = entry.id
+        self.setStyleSheet(
+            f"_TradeKeywordRow {{ background: {MAIN_DARK}; border: 1px solid {BORDER};"
+            f" border-radius: 4px; }}"
+        )
+
+        row = QHBoxLayout(self)
+        row.setContentsMargins(6, 4, 6, 4)
+        row.setSpacing(6)
+
+        # Enabled checkbox
+        self._enabled_cb = QCheckBox()
+        self._enabled_cb.setChecked(entry.enabled)
+        self._enabled_cb.setFixedWidth(16)
+        self._enabled_cb.stateChanged.connect(self._on_enabled_changed)
+        row.addWidget(self._enabled_cb)
+
+        # Pattern label
+        self._pattern_lbl = QLabel()
+        self._pattern_lbl.setStyleSheet(
+            f"color: {TEXT}; font-size: 11px; border: none; background: transparent;"
+        )
+        self._update_label()
+        row.addWidget(self._pattern_lbl, stretch=1)
+
+        # Planet badge
+        self._planet_lbl = QLabel()
+        self._planet_lbl.setStyleSheet(
+            f"color: {ACCENT}; font-size: 9px; border: none; background: transparent;"
+        )
+        self._update_planet()
+        row.addWidget(self._planet_lbl)
+
+        # Edit button
+        edit_btn = QPushButton("Edit")
+        edit_btn.setFixedSize(36, 20)
+        edit_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        edit_btn.setStyleSheet(
+            f"QPushButton {{ color: {ACCENT}; background: transparent;"
+            f" border: 1px solid {BORDER}; border-radius: 2px;"
+            f" font-size: 10px; padding: 0; }}"
+            f"QPushButton:hover {{ background: {HOVER}; }}"
+        )
+        edit_btn.clicked.connect(lambda: self.edited.emit(self.entry_id))
+        row.addWidget(edit_btn)
+
+        # Delete button
+        del_btn = QPushButton("X")
+        del_btn.setFixedSize(20, 20)
+        del_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        del_btn.setStyleSheet(
+            f"QPushButton {{ color: {ERROR}; background: transparent;"
+            f" border: 1px solid {BORDER}; border-radius: 2px;"
+            f" font-size: 10px; font-weight: bold; padding: 0; }}"
+            f"QPushButton:hover {{ background: {ERROR_BG}; }}"
+        )
+        del_btn.clicked.connect(lambda: self.removed.emit(self.entry_id))
+        row.addWidget(del_btn)
+
+    def _on_enabled_changed(self, state):
+        self._entry.enabled = bool(state)
+        self._update_label()
+
+    def _update_label(self):
+        prefix = ""
+        if self._entry.is_regex:
+            prefix = "[re] "
+        elif self._entry.is_item:
+            prefix = "[item] "
+        text = f"{prefix}{self._entry.pattern}"
+        self._pattern_lbl.setText(text)
+        self._pattern_lbl.setToolTip(text)
+        color = TEXT if self._entry.enabled else TEXT_MUTED
+        self._pattern_lbl.setStyleSheet(
+            f"color: {color}; font-size: 11px; border: none; background: transparent;"
+        )
+
+    def _update_planet(self):
+        self._planet_lbl.setText(self._entry.planet or "All")
+
+    def update_entry(self, entry: TradeKeywordEntry):
+        self._entry = entry
+        self._enabled_cb.setChecked(entry.enabled)
+        self._update_label()
+        self._update_planet()
+
+    def to_entry(self) -> TradeKeywordEntry:
+        return self._entry
+
+
+# =====================================================================
+# Trade keyword edit dialog
+# =====================================================================
+
+class _TradeKeywordEditDialog(QDialog):
+    """Dialog for editing a single TradeKeywordEntry."""
+
+    _EDIT_STYLE = (
+        f"QLineEdit {{ background: {MAIN_DARK}; color: {TEXT}; font-size: 12px;"
+        f" border: 1px solid {BORDER}; border-radius: 3px; padding: 3px 6px; }}"
+    )
+
+    def __init__(self, entry: TradeKeywordEntry, items: list[dict], parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(
+            self.windowFlags() & ~Qt.WindowType.WindowMaximizeButtonHint
+        )
+        self.setWindowTitle("Edit Trade Keyword")
+        self.setFixedWidth(360)
+        self.setStyleSheet(
+            f"QDialog {{ background: {PRIMARY}; color: {TEXT}; }}"
+            f"QLabel {{ color: {TEXT}; font-size: 12px; }}"
+        )
+        self._entry_id = entry.id
+        self._is_item = entry.is_item
+        self._item_id = entry.item_id
+        self._items = items
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
+        layout.setContentsMargins(16, 16, 16, 16)
+
+        form = QFormLayout()
+        form.setSpacing(8)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
+
+        # Pattern input
+        self._pattern_edit = QLineEdit(entry.pattern)
+        self._pattern_edit.setPlaceholderText("Keyword or regex pattern")
+        self._pattern_edit.setStyleSheet(self._EDIT_STYLE)
+        form.addRow("Pattern:", self._pattern_edit)
+
+        # Regex checkbox
+        self._regex_cb = QCheckBox("Regular expression")
+        self._regex_cb.setChecked(entry.is_regex)
+        self._regex_cb.setStyleSheet(f"color: {TEXT}; font-size: 12px;")
+        form.addRow(self._regex_cb)
+
+        # Regex validation label
+        self._regex_err = QLabel()
+        self._regex_err.setStyleSheet(f"color: {ERROR}; font-size: 10px; border: none;")
+        self._regex_err.hide()
+        form.addRow(self._regex_err)
+
+        # Item search
+        item_lbl = QLabel("Or search for an item:")
+        item_lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px; border: none;")
+        form.addRow(item_lbl)
+
+        self._item_search = QLineEdit()
+        self._item_search.setPlaceholderText("Type to search items...")
+        self._item_search.setStyleSheet(self._EDIT_STYLE)
+        self._item_search.textChanged.connect(self._on_item_search)
+        form.addRow(self._item_search)
+
+        self._item_list = QListWidget()
+        self._item_list.setFixedHeight(120)
+        self._item_list.setStyleSheet(
+            f"QListWidget {{ background: {MAIN_DARK}; color: {TEXT};"
+            f" border: 1px solid {BORDER}; border-radius: 3px;"
+            f" font-size: 12px; }}"
+            f"QListWidget::item {{ padding: 3px 6px; }}"
+            f"QListWidget::item:hover {{ background: {HOVER}; }}"
+            f"QListWidget::item:selected {{ background: {ACCENT}; color: {PRIMARY}; }}"
+        )
+        self._item_list.itemClicked.connect(self._on_item_selected)
+        form.addRow(self._item_list)
+
+        # Planet filter
+        self._planet_combo = QComboBox()
+        self._planet_combo.addItem("All Planets", "")
+        for p in _PLANETS:
+            self._planet_combo.addItem(p, p)
+        if entry.planet:
+            idx = self._planet_combo.findData(entry.planet)
+            if idx >= 0:
+                self._planet_combo.setCurrentIndex(idx)
+        self._planet_combo.setStyleSheet(f"font-size: 12px;")
+        form.addRow("Planet:", self._planet_combo)
+
+        layout.addLayout(form)
+
+        # Buttons
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.setStyleSheet(
+            f"QPushButton {{ color: {TEXT}; background: {SECONDARY};"
+            f" border: 1px solid {BORDER}; border-radius: 4px;"
+            f" padding: 5px 16px; font-size: 12px; }}"
+            f"QPushButton:hover {{ background: {HOVER}; }}"
+        )
+        buttons.accepted.connect(self._validate_and_accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+        # Debounce timer for item search
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(200)
+        self._search_timer.timeout.connect(self._do_item_search)
+
+    def _on_item_search(self, _text: str):
+        self._search_timer.start()
+
+    def _do_item_search(self):
+        from ...overlay.calc_search_input import _fuzzy_score
+        query = self._item_search.text().strip()
+        self._item_list.clear()
+        if not query or len(query) < 2:
+            return
+
+        scored = []
+        for item in self._items:
+            name = item.get("n", "")
+            if not name:
+                continue
+            score = _fuzzy_score(name, query)
+            if score > 0:
+                scored.append((score, name, item))
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+        for _score, name, item in scored[:8]:
+            li = QListWidgetItem(name)
+            li.setData(Qt.ItemDataRole.UserRole, item)
+            self._item_list.addItem(li)
+
+    def _on_item_selected(self, item: QListWidgetItem):
+        data = item.data(Qt.ItemDataRole.UserRole)
+        if data:
+            name = data.get("n", "")
+            self._pattern_edit.setText(name)
+            self._is_item = True
+            self._item_id = data.get("i")
+            self._regex_cb.setChecked(False)
+
+    def _validate_and_accept(self):
+        pattern = self._pattern_edit.text().strip()
+        if not pattern:
+            return
+        if self._regex_cb.isChecked():
+            try:
+                re.compile(pattern)
+            except re.error as e:
+                self._regex_err.setText(f"Invalid regex: {e}")
+                self._regex_err.show()
+                return
+        self._regex_err.hide()
+        self.accept()
+
+    def to_entry(self) -> TradeKeywordEntry:
+        pattern = self._pattern_edit.text().strip()
+        is_regex = self._regex_cb.isChecked()
+        # If user typed manually after selecting an item, clear item flag
+        is_item = self._is_item and not is_regex
+        item_id = self._item_id if is_item else None
+        planet = self._planet_combo.currentData() or ""
+        return TradeKeywordEntry(
+            id=self._entry_id,
+            pattern=pattern,
+            is_regex=is_regex,
+            is_item=is_item,
+            item_id=item_id,
+            planet=planet,
+        )
+
+
+# =====================================================================
+# Trade keywords dialog (list + add/edit/delete)
+# =====================================================================
+
+class _TradeKeywordsDialog(QDialog):
+    """Dialog for managing all trade chat keyword entries."""
+
+    def __init__(self, entries: list[TradeKeywordEntry], items: list[dict], parent=None):
+        super().__init__(parent)
+        self.setWindowFlags(
+            self.windowFlags() & ~Qt.WindowType.WindowMaximizeButtonHint
+        )
+        self.setWindowTitle("Trade Chat Keywords")
+        self.setFixedWidth(420)
+        self.setMinimumHeight(300)
+        self.setStyleSheet(
+            f"QDialog {{ background: {PRIMARY}; color: {TEXT}; }}"
+            f"QLabel {{ color: {TEXT}; font-size: 12px; }}"
+        )
+        self._items = items
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(8)
+        layout.setContentsMargins(12, 12, 12, 12)
+
+        hint = QLabel(
+            "Messages matching any enabled entry will trigger a notification. "
+            "Entries support plain keywords, regex patterns, or item names."
+        )
+        hint.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 10px; border: none;")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+
+        # Add button
+        add_btn = QPushButton("+ Add Keyword")
+        add_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        add_btn.setStyleSheet(
+            f"QPushButton {{ color: {ACCENT}; background: transparent;"
+            f" border: 1px solid {BORDER}; border-radius: 4px;"
+            f" padding: 4px 12px; font-size: 11px; }}"
+            f"QPushButton:hover {{ background: {HOVER}; }}"
+        )
+        add_btn.clicked.connect(self._add_entry)
+        layout.addWidget(add_btn)
+
+        # Scroll area for entries
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setStyleSheet(
+            f"QScrollArea {{ border: none; background: {PRIMARY}; }}"
+        )
+        container = QWidget()
+        self._entries_layout = QVBoxLayout(container)
+        self._entries_layout.setContentsMargins(0, 0, 0, 0)
+        self._entries_layout.setSpacing(4)
+        self._entries_layout.addStretch()
+        scroll.setWidget(container)
+        layout.addWidget(scroll, stretch=1)
+
+        self._entry_rows: list[_TradeKeywordRow] = []
+
+        # Populate existing entries
+        for entry in entries:
+            self._add_entry_row(entry)
+
+        # OK / Cancel
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
+        )
+        buttons.setStyleSheet(
+            f"QPushButton {{ color: {TEXT}; background: {SECONDARY};"
+            f" border: 1px solid {BORDER}; border-radius: 4px;"
+            f" padding: 5px 16px; font-size: 12px; }}"
+            f"QPushButton:hover {{ background: {HOVER}; }}"
+        )
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def _add_entry(self):
+        entry = TradeKeywordEntry(id=str(uuid.uuid4()), pattern="")
+        dlg = _TradeKeywordEditDialog(entry, self._items, parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self._add_entry_row(dlg.to_entry())
+
+    def _add_entry_row(self, entry: TradeKeywordEntry):
+        row = _TradeKeywordRow(entry)
+        row.removed.connect(self._remove_entry)
+        row.edited.connect(self._edit_entry)
+        self._entries_layout.insertWidget(
+            self._entries_layout.count() - 1, row
+        )
+        self._entry_rows.append(row)
+
+    def _edit_entry(self, entry_id: str):
+        for row in self._entry_rows:
+            if row.entry_id == entry_id:
+                dlg = _TradeKeywordEditDialog(
+                    row.to_entry(), self._items, parent=self
+                )
+                if dlg.exec() == QDialog.DialogCode.Accepted:
+                    row.update_entry(dlg.to_entry())
+                break
+
+    def _remove_entry(self, entry_id: str):
+        for row in self._entry_rows:
+            if row.entry_id == entry_id:
+                self._entries_layout.removeWidget(row)
+                row.deleteLater()
+                self._entry_rows.remove(row)
+                break
+
+    def get_entries(self) -> list[TradeKeywordEntry]:
+        return [row.to_entry() for row in self._entry_rows]
+
+
 class _RuleSummaryRow(QFrame):
     """Compact summary row for a single GlobalNotificationRule."""
 
-    removed = pyqtSignal(str)   # rule id
-    edited = pyqtSignal(str)    # rule id
+    removed = pyqtSignal(str)    # rule id
+    edited = pyqtSignal(str)     # rule id
+    toggled = pyqtSignal()       # enabled state changed
 
     def __init__(self, rule: GlobalNotificationRule, parent=None):
         super().__init__(parent)
@@ -498,6 +902,7 @@ class _RuleSummaryRow(QFrame):
     def _on_enabled_changed(self, state):
         self._rule.enabled = bool(state)
         self._update_summary()
+        self.toggled.emit()
 
     def _update_summary(self):
         text = _build_rule_summary(self._rule)
@@ -613,10 +1018,14 @@ class _RulesTab(QWidget):
 
     saved = pyqtSignal()  # emitted when user clicks Save
 
-    def __init__(self, manager, config, parent=None):
+    def __init__(self, manager, config, config_path="config.json",
+                 exchange_items=None, parent=None):
         super().__init__(parent)
         self._manager = manager
         self._config = config
+        self._config_path = config_path
+        self._exchange_items = exchange_items or []
+        self._trade_keywords: list[TradeKeywordEntry] = []
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -632,6 +1041,17 @@ class _RulesTab(QWidget):
         self._container_layout = QVBoxLayout(container)
         self._container_layout.setContentsMargins(10, 8, 10, 8)
         self._container_layout.setSpacing(10)
+
+        # --- General ---
+        self._filter_self_cb = QCheckBox("Filter own notifications (requires login)")
+        self._filter_self_cb.setChecked(
+            getattr(config, "notification_filter_self", True)
+        )
+        self._filter_self_cb.setStyleSheet(f"color: {TEXT}; font-size: 12px;")
+        self._filter_self_cb.setToolTip(
+            "When enabled, notifications for your own globals and trade messages are suppressed."
+        )
+        self._container_layout.addWidget(self._filter_self_cb)
 
         # --- Global Notifications ---
         globals_group = QGroupBox("Global Notifications")
@@ -679,18 +1099,47 @@ class _RulesTab(QWidget):
         trade_layout.addWidget(self._trade_enabled_cb)
 
         cd_row = QHBoxLayout()
-        cd_lbl = QLabel("Cooldown per player+item (seconds):")
+        cd_lbl = QLabel("Cooldown (minutes):")
         cd_lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px; border: none;")
         cd_row.addWidget(cd_lbl)
         self._cooldown_spin = QSpinBox()
-        self._cooldown_spin.setRange(30, 3600)
+        self._cooldown_spin.setRange(1, 1440)
         self._cooldown_spin.setValue(
-            getattr(config, "trade_chat_cooldown_seconds", 300)
+            getattr(config, "trade_chat_cooldown_minutes", 60)
         )
-        self._cooldown_spin.setFixedWidth(80)
+        self._cooldown_spin.setSuffix(" min")
+        self._cooldown_spin.setFixedWidth(90)
         cd_row.addWidget(self._cooldown_spin)
         cd_row.addStretch()
         trade_layout.addLayout(cd_row)
+
+        # Keywords button
+        kw_row = QHBoxLayout()
+        kw_btn = QPushButton("Configure Keywords...")
+        kw_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        kw_btn.setStyleSheet(
+            f"QPushButton {{ color: {ACCENT}; background: transparent;"
+            f" border: 1px solid {BORDER}; border-radius: 4px;"
+            f" padding: 4px 12px; font-size: 11px; }}"
+            f"QPushButton:hover {{ background: {HOVER}; }}"
+        )
+        kw_btn.clicked.connect(self._open_trade_keywords)
+        kw_row.addWidget(kw_btn)
+        self._kw_count_lbl = QLabel()
+        self._kw_count_lbl.setStyleSheet(
+            f"color: {TEXT_MUTED}; font-size: 10px; border: none;"
+        )
+        kw_row.addWidget(self._kw_count_lbl)
+        kw_row.addStretch()
+        trade_layout.addLayout(kw_row)
+
+        # Load existing keywords
+        for kw_dict in getattr(config, "trade_chat_keywords", []):
+            try:
+                self._trade_keywords.append(TradeKeywordEntry.from_dict(kw_dict))
+            except Exception:
+                pass
+        self._update_kw_count()
 
         self._container_layout.addWidget(trade_group)
 
@@ -760,7 +1209,7 @@ class _RulesTab(QWidget):
         delivery_group.setStyleSheet(self._group_style())
         delivery_layout = QVBoxLayout(delivery_group)
 
-        self._toast_cb = QCheckBox("Toast notifications (in-game when overlay active, OS otherwise)")
+        self._toast_cb = QCheckBox("Toast notifications")
         self._toast_cb.setChecked(getattr(config, "notification_toast_enabled", True))
         self._toast_cb.setStyleSheet(f"color: {TEXT}; font-size: 12px;")
         delivery_layout.addWidget(self._toast_cb)
@@ -794,22 +1243,26 @@ class _RulesTab(QWidget):
 
         self._container_layout.addWidget(delivery_group)
 
-        # Save button
-        save_btn = QPushButton("Save")
-        save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        save_btn.setFixedWidth(100)
-        save_btn.setStyleSheet(
-            f"QPushButton {{ color: {TEXT}; background: {ACCENT};"
-            f" border: none; border-radius: 4px; padding: 6px 16px;"
-            f" font-size: 12px; font-weight: bold; }}"
-            f"QPushButton:hover {{ background: {ACCENT_HOVER}; }}"
-        )
-        save_btn.clicked.connect(self._on_save)
-        self._container_layout.addWidget(save_btn, alignment=Qt.AlignmentFlag.AlignRight)
-
         self._container_layout.addStretch()
         scroll.setWidget(container)
         layout.addWidget(scroll)
+
+        # Debounce timer for auto-saving
+        self._save_timer = QTimer(self)
+        self._save_timer.setSingleShot(True)
+        self._save_timer.setInterval(300)
+        self._save_timer.timeout.connect(self._on_save)
+
+        # Connect all changeable widgets to auto-save
+        self._filter_self_cb.stateChanged.connect(self._schedule_save)
+        self._trade_enabled_cb.stateChanged.connect(self._schedule_save)
+        self._cooldown_spin.valueChanged.connect(self._schedule_save)
+        self._ignore_edit.textChanged.connect(self._schedule_save)
+        self._stream_enabled_cb.stateChanged.connect(self._schedule_save)
+        self._stream_exclude_edit.textChanged.connect(self._schedule_save)
+        self._toast_cb.stateChanged.connect(self._schedule_save)
+        self._toast_corner_combo.currentIndexChanged.connect(self._schedule_save)
+        self._sound_cb.stateChanged.connect(self._schedule_save)
 
     def _group_style(self) -> str:
         return (
@@ -820,16 +1273,22 @@ class _RulesTab(QWidget):
             f" left: 10px; padding: 0 4px; }}"
         )
 
+    def _schedule_save(self, *_args):
+        """Schedule a debounced save."""
+        self._save_timer.start()
+
     def _add_rule(self):
         rule = GlobalNotificationRule(id=str(uuid.uuid4()))
         dlg = _RuleEditDialog(rule, parent=self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             self._add_rule_row(dlg.to_rule())
+            self._schedule_save()
 
     def _add_rule_row(self, rule: GlobalNotificationRule):
         row = _RuleSummaryRow(rule)
         row.removed.connect(self._remove_rule)
         row.edited.connect(self._edit_rule)
+        row.toggled.connect(self._schedule_save)
         self._rules_layout.addWidget(row)
         self._rule_rows.append(row)
 
@@ -839,6 +1298,7 @@ class _RulesTab(QWidget):
                 dlg = _RuleEditDialog(row.to_rule(), parent=self)
                 if dlg.exec() == QDialog.DialogCode.Accepted:
                     row.update_rule(dlg.to_rule())
+                    self._schedule_save()
                 break
 
     def _remove_rule(self, rule_id: str):
@@ -847,10 +1307,35 @@ class _RulesTab(QWidget):
                 self._rules_layout.removeWidget(row)
                 row.deleteLater()
                 self._rule_rows.remove(row)
+                self._schedule_save()
                 break
+
+    def _open_trade_keywords(self):
+        dlg = _TradeKeywordsDialog(
+            self._trade_keywords, self._exchange_items, parent=self
+        )
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self._trade_keywords = dlg.get_entries()
+            self._update_kw_count()
+            self._schedule_save()
+
+    def _update_kw_count(self):
+        n = len(self._trade_keywords)
+        if n == 0:
+            self._kw_count_lbl.setText("No keywords (all brackets notified)")
+        else:
+            enabled = sum(1 for e in self._trade_keywords if e.enabled)
+            self._kw_count_lbl.setText(f"{enabled}/{n} keywords active")
+
+    def set_exchange_items(self, items: list[dict]):
+        """Update available exchange items for the keyword search."""
+        self._exchange_items = items
 
     def _on_save(self):
         from ...core.config import save_config
+
+        # General
+        self._config.notification_filter_self = self._filter_self_cb.isChecked()
 
         # Collect rules
         rules = [row.to_rule() for row in self._rule_rows]
@@ -858,7 +1343,10 @@ class _RulesTab(QWidget):
 
         # Trade chat settings
         self._config.trade_chat_notifications_enabled = self._trade_enabled_cb.isChecked()
-        self._config.trade_chat_cooldown_seconds = self._cooldown_spin.value()
+        self._config.trade_chat_cooldown_minutes = self._cooldown_spin.value()
+
+        # Trade keywords
+        self._config.trade_chat_keywords = [e.to_dict() for e in self._trade_keywords]
 
         # Ignore list
         text = self._ignore_edit.toPlainText().strip()
@@ -879,7 +1367,7 @@ class _RulesTab(QWidget):
         ]
         self._config.notification_sound_enabled = self._sound_cb.isChecked()
 
-        save_config(self._config)
+        save_config(self._config, self._config_path)
 
         # Update manager
         self._manager.update_rules(rules)
@@ -898,24 +1386,23 @@ class NotificationCenter(QWidget):
 
     read_state_changed = pyqtSignal()
 
-    def __init__(self, *, manager, config, parent=None):
+    def __init__(self, *, manager, config, config_path="config.json",
+                 exchange_items=None, parent=None):
         super().__init__(parent)
         self._manager = manager
+        self._config_path = config_path
         self.setFixedSize(PANEL_WIDTH, PANEL_HEIGHT)
-        self.setStyleSheet(
-            f"NotificationCenter {{ background: {PRIMARY};"
-            f" border: 1px solid {BORDER}; border-radius: 8px; }}"
-        )
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setContentsMargins(0, 1, 1, 0)
         layout.setSpacing(0)
 
         # Tab widget
         self._tabs = QTabWidget()
         self._tabs.setStyleSheet(
-            f"QTabWidget::pane {{ border: none; background: {PRIMARY}; }}"
-            f"QTabBar::tab {{ background: {SECONDARY}; color: {TEXT_MUTED};"
+            f"QTabWidget::pane {{ border: none; border-top: 1px solid {BORDER};"
+            f" border-right: 1px solid {BORDER}; background: {PRIMARY}; }}"
+            f"QTabBar::tab {{ background: transparent; color: {TEXT_MUTED};"
             f" padding: 6px 16px; border: none;"
             f" border-bottom: 2px solid transparent; font-size: 12px; }}"
             f"QTabBar::tab:selected {{ color: {TEXT};"
@@ -927,16 +1414,31 @@ class NotificationCenter(QWidget):
             manager,
             on_read_change=lambda: self.read_state_changed.emit(),
         )
-        self._rules_tab = _RulesTab(manager, config)
+        self._rules_tab = _RulesTab(
+            manager, config, config_path=config_path,
+            exchange_items=exchange_items,
+        )
 
         self._tabs.addTab(self._notif_tab, "Notifications")
         self._tabs.addTab(self._rules_tab, "Rules")
 
         layout.addWidget(self._tabs)
 
+    def mousePressEvent(self, event):
+        """Accept mouse events so they don't propagate and close the panel."""
+        event.accept()
+
     def showEvent(self, event):
         super().showEvent(event)
         self._notif_tab.refresh()
+
+    def set_exchange_items(self, items: list[dict]):
+        """Update available exchange items for the keyword search."""
+        self._rules_tab.set_exchange_items(items)
+
+    def show_rules_tab(self):
+        """Switch to the Rules tab."""
+        self._tabs.setCurrentIndex(1)
 
     def refresh(self):
         """Refresh the notifications list (called when new notifications arrive)."""

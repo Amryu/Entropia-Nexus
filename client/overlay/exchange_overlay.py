@@ -411,6 +411,7 @@ class ExchangeOverlay(OverlayWidget):
         # Restore size
         size = getattr(config, 'exchange_overlay_size', (700, 500))
         self.resize(max(MIN_WIDTH, size[0]), max(MIN_HEIGHT, size[1]))
+        self._saved_size = (self.width(), self.height())
 
         # Override size constraint to allow resize
         self.layout().setSizeConstraint(QVBoxLayout.SizeConstraint.SetDefaultConstraint)
@@ -1829,15 +1830,17 @@ class ExchangeOverlay(OverlayWidget):
             self._store.load_item_orders(self._current_item_id)
 
     # ------------------------------------------------------------------
-    # Drag (title bar only) + Resize
+    # Drag (title bar + sidebar) + Resize + Minify
     # ------------------------------------------------------------------
 
     def mousePressEvent(self, event):
-        # Only allow drag from title bar region
         if event.button() == Qt.MouseButton.LeftButton:
             self._click_origin = event.globalPosition().toPoint()
+            local_x = event.position().x()
             local_y = event.position().y()
-            if local_y <= TITLE_H:
+            # Allow drag from title bar and sidebar — not the content area
+            in_content = local_y > TITLE_H and local_x > TAB_STRIP_W
+            if not in_content:
                 self._drag_pos = (
                     event.globalPosition().toPoint() - self.frameGeometry().topLeft()
                 )
@@ -1853,8 +1856,26 @@ class ExchangeOverlay(OverlayWidget):
             if delta < 5:
                 click_local = self.mapFromGlobal(click_origin)
                 if click_local.y() <= TITLE_H:
-                    self._body.setVisible(not self._body.isVisible())
-                    self._position_resize_grip()
+                    self._toggle_minify()
+
+    def _toggle_minify(self):
+        expanding = not self._body.isVisible()
+        self._body.setVisible(expanding)
+        if expanding:
+            self._title_bar.setStyleSheet(
+                f"background-color: {TITLE_BG};"
+                " border-top-left-radius: 8px; border-top-right-radius: 8px;"
+            )
+            self.setMinimumSize(0, 0)
+            self.setMaximumSize(16777215, 16777215)
+            self.resize(self._saved_size[0], self._saved_size[1])
+        else:
+            self._saved_size = (self.width(), self.height())
+            self._title_bar.setStyleSheet(
+                f"background-color: {TITLE_BG}; border-radius: 8px;"
+            )
+            self.setFixedSize(self.width(), TITLE_H)
+        self._position_resize_grip()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -1862,6 +1883,7 @@ class ExchangeOverlay(OverlayWidget):
 
     def _position_resize_grip(self):
         if hasattr(self, '_resize_grip'):
+            self._resize_grip.setVisible(self._body.isVisible())
             self._resize_grip.move(
                 self.width() - self._resize_grip.width() - 2,
                 self.height() - self._resize_grip.height() - 2,

@@ -131,6 +131,7 @@ class _OverlayNotificationRow(QWidget):
         header.addWidget(src_lbl)
 
         # Title (elided)
+        _elide_w = OVERLAY_WIDTH - 140  # account for dot + source + time + margins
         self._title_lbl = QLabel()
         self._title_lbl.setStyleSheet(
             f"color: {TEXT_COLOR}; font-size: 12px; font-weight: bold;"
@@ -138,7 +139,7 @@ class _OverlayNotificationRow(QWidget):
         )
         fm = self._title_lbl.fontMetrics()
         self._title_lbl.setText(
-            fm.elidedText(notif.title, Qt.TextElideMode.ElideRight, 180)
+            fm.elidedText(notif.title, Qt.TextElideMode.ElideRight, _elide_w)
         )
         header.addWidget(self._title_lbl, stretch=1)
 
@@ -153,6 +154,7 @@ class _OverlayNotificationRow(QWidget):
         main.addLayout(header)
 
         # --- Body (elided, always visible) ---
+        _body_elide_w = OVERLAY_WIDTH - 40  # margins only
         self._body_lbl = QLabel()
         self._body_lbl.setStyleSheet(
             f"color: {TEXT_DIM}; font-size: 12px;"
@@ -160,7 +162,7 @@ class _OverlayNotificationRow(QWidget):
         )
         fm2 = self._body_lbl.fontMetrics()
         self._body_lbl.setText(
-            fm2.elidedText(notif.body or "", Qt.TextElideMode.ElideRight, 260)
+            fm2.elidedText(notif.body or "", Qt.TextElideMode.ElideRight, _body_elide_w)
         )
         main.addWidget(self._body_lbl)
 
