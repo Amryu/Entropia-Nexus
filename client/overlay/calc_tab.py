@@ -359,10 +359,8 @@ class CalcTab(QScrollArea):
         if wclass == "Melee":
             self._matrix_input = self._add_search("Matrix", ent["matrices"])
 
-        # Mindforce-only: Implant
-        self._implant_input = None
-        if wclass == "Mindforce":
-            self._implant_input = self._add_search("Implant", ent["implants"])
+        # Implant — effects apply to all weapons; absorption is Mindforce-only
+        self._implant_input = self._add_search("Implant", ent["implants"])
 
         # --- Enhancers ---
         self._add_section("ENHANCERS")

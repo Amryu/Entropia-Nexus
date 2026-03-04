@@ -221,7 +221,8 @@ export function calculateDecay(
   scopeSight,
   sight,
   matrix,
-  markups
+  markups,
+  weaponClass
 ) {
   if (weapon == null || !weapon.Properties || !weapon.Properties.Economy || weapon.Properties.Economy.Decay == null) return null;
 
@@ -235,7 +236,8 @@ export function calculateDecay(
     weaponDecay -= absorberDecay;
   }
 
-  if (implant?.Properties?.Economy?.Absorption != null) {
+  // Implant absorption only applies with Mindforce weapons; effects apply to all
+  if (weaponClass === 'Mindforce' && implant?.Properties?.Economy?.Absorption != null) {
     const implantDecay = weaponDecay * implant.Properties.Economy.Absorption;
     decay += implantDecay * (markups.Implant ?? 100) / 100;
     weaponDecay -= implantDecay;
@@ -400,11 +402,14 @@ export function calculateLowestTotalUses(
   scope,
   scopeSight,
   sight,
-  matrix
+  matrix,
+  weaponClass
 ) {
   if (weapon == null) return null;
 
-  const decayFactor = (absorber != null ? 1 - absorber.Properties.Economy.Absorption : 1) * (implant != null ? 1 - implant.Properties.Economy.Absorption : 1);
+  // Implant absorption only applies with Mindforce weapons
+  const implantAbsorption = (weaponClass === 'Mindforce' && implant != null) ? 1 - implant.Properties.Economy.Absorption : 1;
+  const decayFactor = (absorber != null ? 1 - absorber.Properties.Economy.Absorption : 1) * implantAbsorption;
 
   const weaponMaxTT = weapon.Properties?.Economy?.MaxTT ?? null;
   const weaponMinTT = weapon.Properties?.Economy?.MinTT ?? 0;
@@ -465,7 +470,8 @@ export function calculateLowestTotalUses(
     if (absorberUses != null) totalUses = Math.min(totalUses, absorberUses);
   }
 
-  if (implant != null) {
+  // Implant durability only matters when absorption applies (Mindforce)
+  if (weaponClass === 'Mindforce' && implant != null) {
     const implantUses = getTotalUses(implant);
     if (implantUses != null) totalUses = Math.min(totalUses, implantUses);
   }

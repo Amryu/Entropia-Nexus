@@ -344,6 +344,7 @@ export function evaluateLoadout(loadout, context = {}, options = {}) {
 
   // ---------- Stats ----------
   const weapon = findByName(entities.weapons, loadout?.Gear?.Weapon?.Name);
+  const weaponClass = weapon?.Properties?.Class || null;
   const amplifier = findByName(entities.amplifiers, loadout?.Gear?.Weapon?.Amplifier?.Name);
   const absorber = findByName(entities.absorbers, loadout?.Gear?.Weapon?.Absorber?.Name);
   const implant = findByName(entities.implants, loadout?.Gear?.Weapon?.Implant?.Name);
@@ -416,7 +417,8 @@ export function evaluateLoadout(loadout, context = {}, options = {}) {
     scopeSight,
     sight,
     matrix,
-    loadout?.Markup || {}
+    loadout?.Markup || {},
+    weaponClass
   );
 
   const ammo = LoadoutCalc.calculateAmmoBurn(
@@ -486,7 +488,8 @@ export function evaluateLoadout(loadout, context = {}, options = {}) {
     scope,
     scopeSight,
     sight,
-    matrix
+    matrix,
+    weaponClass
   );
 
   const armorMarkupCost = calcArmorMarkupCost(loadout, armorSlots, entities, isLimitedName);

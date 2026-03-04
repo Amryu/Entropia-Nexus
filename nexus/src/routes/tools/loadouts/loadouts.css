@@ -887,6 +887,12 @@
     background-color: var(--hover-color);
   }
 
+  & .compare-menu-btn.active {
+    background-color: var(--accent-color);
+    color: var(--accent-text-color, #fff);
+    border-color: var(--accent-color);
+  }
+
   & .compare-popover {
     position: absolute;
     top: calc(100% + 6px);
@@ -935,6 +941,15 @@
     color: var(--text-muted, #999);
     font-size: 12px;
     padding: 10px 2px;
+    text-align: center;
+  }
+
+  & .compare-popover-footer {
+    color: var(--text-muted, #999);
+    font-size: 11px;
+    padding: 6px 0 0;
+    border-top: 1px solid var(--border-color, #555);
+    margin-top: 6px;
     text-align: center;
   }
 

@@ -19,6 +19,7 @@ from PyQt6.QtGui import QColor, QBrush
 
 from ...core.logger import get_logger
 from ..widgets.fuzzy_line_edit import FuzzyLineEdit
+from ..widgets.loadout_compare import LoadoutCompareWidget
 from ..theme import ACCENT, ERROR, MAIN_DARK, SECONDARY, TEXT, TEXT_MUTED
 from ..icons import svg_icon
 
@@ -225,6 +226,13 @@ class LoadoutPage(QWidget):
         )
         toolbar.addWidget(more_btn)
 
+        self._compare_btn = QPushButton("Compare")
+        self._compare_btn.setCheckable(True)
+        self._compare_btn.setFixedHeight(26)
+        self._compare_btn.setStyleSheet("padding: 2px 10px; font-size: 12px;")
+        self._compare_btn.clicked.connect(self._on_compare_toggled)
+        toolbar.addWidget(self._compare_btn)
+
         toolbar.addStretch()
         layout.addLayout(toolbar)
 
@@ -255,7 +263,18 @@ class LoadoutPage(QWidget):
 
         splitter.addWidget(stats_scroll)
         splitter.setSizes([600, 350])
-        layout.addWidget(splitter, 1)
+
+        # Compare widget (hidden by default, shown below editor)
+        self._compare_widget = LoadoutCompareWidget()
+        self._compare_widget.hide()
+        self._compare_widget.set_switch_requested.connect(self._on_compare_set_switch)
+        self._compare_widget.set_sections_changed.connect(self._update_compare)
+
+        main_splitter = QSplitter(Qt.Orientation.Vertical)
+        main_splitter.addWidget(splitter)
+        main_splitter.addWidget(self._compare_widget)
+        main_splitter.setSizes([500, 200])
+        layout.addWidget(main_splitter, 1)
 
         # Signals
         signals.auth_state_changed.connect(self._on_auth_changed)
@@ -419,12 +438,11 @@ class LoadoutPage(QWidget):
         matrix_row.hide()
         vbox.addWidget(matrix_row)
 
-        # Implant (Mindforce)
-        self._implant_field = FuzzyLineEdit("Select implant (MF)...")
+        # Implant — effects apply to all weapons; absorption is Mindforce-only
+        self._implant_field = FuzzyLineEdit("Select implant...")
         self._implant_field.textChanged.connect(self._schedule_recalc)
         implant_row = self._make_gear_row("Implant", self._implant_field, "Implant")
         self._weapon_field_rows["Implant"] = implant_row
-        implant_row.hide()
         vbox.addWidget(implant_row)
 
         outer.addLayout(vbox)
@@ -1043,10 +1061,10 @@ class LoadoutPage(QWidget):
         if row:
             row.setVisible(weapon_class == "Melee")
 
-        # Mindforce: Implant
+        # Implant — always visible (effects apply to all weapons; absorption is Mindforce-only)
         row = self._weapon_field_rows.get("Implant")
         if row:
-            row.setVisible(weapon_class == "Mindforce")
+            row.setVisible(True)
 
         # Update markup for weapon/amp (they're always visible)
         self._update_markup("Weapon", weapon_name)
@@ -1222,6 +1240,42 @@ class LoadoutPage(QWidget):
         if (self._current_loadout
                 and self._current_loadout.get("Id") == self._config.active_loadout_id):
             self._publish_active_loadout()
+
+        self._update_compare()
+
+    # ------------------------------------------------------------------
+    # Compare mode
+    # ------------------------------------------------------------------
+
+    def _on_compare_toggled(self):
+        show = self._compare_btn.isChecked()
+        self._compare_widget.setVisible(show)
+        if show:
+            self._update_compare()
+
+    def _update_compare(self):
+        if not self._compare_btn.isChecked():
+            return
+        if not self._calculator:
+            try:
+                from ...loadout.calculator import LoadoutCalculator
+                self._calculator = LoadoutCalculator(self._config.js_utils_path or None)
+            except Exception:
+                return
+        self._compare_widget.set_calculator(self._calculator)
+        self._compare_widget.set_entity_data(self._entity_data)
+        self._compare_widget.update_set_options(self._current_loadout)
+        self._compare_widget.update_comparison(
+            self._loadouts,
+            self._current_loadout,
+            self._active_set_indices,
+        )
+
+    def _on_compare_set_switch(self, set_indices: dict):
+        """Switch sets to match the selected permutation row."""
+        for section, idx in set_indices.items():
+            self._switch_set(section, idx)
+        self._update_compare()
 
     # ------------------------------------------------------------------
     # Build / Apply loadout

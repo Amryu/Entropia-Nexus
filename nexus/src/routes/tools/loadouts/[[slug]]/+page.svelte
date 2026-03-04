@@ -214,6 +214,10 @@
   let compareHiddenLoadoutIds = new Set();
   let compareHiddenOpen = false;
   let compareColumnsOpen = false;
+  let compareSetsOpen = false;
+  let compareSetSections = new Set(); // Which sections to permute: 'Weapon', 'Armor', etc.
+  let compareSetPermutations = []; // Array of { loadout, label, setIndices }
+  let compareSetMode = false; // Derived: compareSetSections.size > 0
   let compareColumnKeysWeapons = ['name', 'efficiency', 'dps', 'dpp', 'reload', 'cost'];
   let compareColumnKeysArmor = ['name', 'armorName', 'totalDefense', 'topDefenseTypesShort', 'totalAbsorption', 'blockChance'];
   let compareAnchorId = null;
@@ -393,6 +397,7 @@
   function handleCompareGlobalClick() {
     if (compareHiddenOpen) compareHiddenOpen = false;
     if (compareColumnsOpen) compareColumnsOpen = false;
+    if (compareSetsOpen) compareSetsOpen = false;
   }
 
   let windowWidth = browser ? window.innerWidth : 0;
@@ -592,10 +597,19 @@
     entitiesVersion;
     effectsCatalog;
     effectCaps;
+    // Re-evaluate when set permutations change
+    compareSetPermutations;
 
     const ctx = getEvalContext();
     const next = new Map();
+    // Always evaluate all loadouts (for normal compare and for anchor reference)
     for (const lo of loadouts) {
+      if (!lo?.Id) continue;
+      next.set(lo.Id, evaluateLoadout(lo, ctx, { effectsCatalog, effectCaps, isLimitedName }));
+    }
+    // Also evaluate set permutations
+    for (const perm of compareSetPermutations) {
+      const lo = perm.loadout;
       if (!lo?.Id) continue;
       next.set(lo.Id, evaluateLoadout(lo, ctx, { effectsCatalog, effectCaps, isLimitedName }));
     }
@@ -668,7 +682,7 @@
     const row = {
       _id: id,
       _isAnchor: id != null && id === compareAnchorId,
-      name: loadoutArg?.Name ?? ''
+      name: getLoadoutListLabel(loadoutArg)
     };
 
     if (compareType === 'weapons') {
@@ -698,18 +712,152 @@
     return row;
   }
 
+  // --- Set permutation comparison ---
+  $: compareSetMode = compareSetSections.size > 0;
+
+  // Available set sections for the current loadout (only sections with >1 set)
+  $: compareSetAvailableSections = (() => {
+    if (!loadout?.Sets) return [];
+    return ['Weapon', 'Armor', 'Healing', 'Accessories']
+      .filter(s => Array.isArray(loadout.Sets[s]) && loadout.Sets[s].length > 1);
+  })();
+
+  // When the current loadout changes, prune selected sections that are no longer valid
+  $: if (compareSetSections.size > 0 && compareSetAvailableSections.length > 0) {
+    const pruned = new Set(Array.from(compareSetSections).filter(s => compareSetAvailableSections.includes(s)));
+    if (pruned.size !== compareSetSections.size) compareSetSections = pruned;
+  }
+
+  function getSetDisplayName(section, setEntry, index) {
+    // Only use user-assigned names (skip auto-generated "Set N")
+    const name = (setEntry.name || '').trim();
+    if (name && !/^Set \d+$/.test(name)) return name;
+    const gear = setEntry.gear || {};
+    if (section === 'Weapon') return gear.Name || `Weapon Set ${index + 1}`;
+    if (section === 'Armor') return gear.SetName || `Armor Set ${index + 1}`;
+    if (section === 'Healing') return gear.Name || `Healing Set ${index + 1}`;
+    if (section === 'Accessories') {
+      const parts = [];
+      for (const c of (gear.Clothing || [])) if (c?.Name) parts.push(c.Name);
+      for (const c of (gear.Consumables || [])) {
+        const n = typeof c === 'string' ? c : c?.Name;
+        if (n) parts.push(n);
+      }
+      if (gear.Pet?.Name) parts.push(gear.Pet.Name);
+      if (!parts.length) return `Accessories Set ${index + 1}`;
+      const text = parts.join(', ');
+      return text.length > 150 ? text.slice(0, 147) + '...' : text;
+    }
+    return `${section} Set ${index + 1}`;
+  }
+
+  /** Pre-compute deduplicated labels for all sets in a section. */
+  function buildSectionLabels(lo, sectionOrder) {
+    const labels = {};
+    for (const section of sectionOrder) {
+      const sets = lo.Sets?.[section];
+      if (!Array.isArray(sets) || sets.length < 2) continue;
+      const raw = sets.map((entry, i) => getSetDisplayName(section, entry, i));
+      const counts = {};
+      for (const l of raw) counts[l] = (counts[l] || 0) + 1;
+      const seen = {};
+      labels[section] = raw.map(l => {
+        if (counts[l] > 1) {
+          seen[l] = (seen[l] || 0) + 1;
+          return `${l} (${seen[l]})`;
+        }
+        return l;
+      });
+    }
+    return labels;
+  }
+
+  function buildSetPermutations(lo, sections) {
+    if (!lo || sections.size === 0) return [];
+    // Sync current active data back into sets before building permutations
+    syncAllActiveSetsToSets();
+
+    const sectionOrder = ['Weapon', 'Armor', 'Healing', 'Accessories'].filter(s => sections.has(s));
+    const sectionLabels = buildSectionLabels(lo, sectionOrder);
+    // Build arrays of sets per section; non-selected sections get a single null entry (meaning "use current")
+    const sectionSets = sectionOrder.map(section => {
+      const sets = lo.Sets?.[section];
+      if (!Array.isArray(sets) || sets.length < 2) return [{ section, entry: null, index: -1 }];
+      return sets.map((entry, i) => ({ section, entry, index: i }));
+    });
+
+    // Cartesian product (capped at 500 permutations)
+    const MAX_PERMUTATIONS = 500;
+    let permutations = sectionSets.reduce((acc, current) => {
+      const next = [];
+      for (const prev of acc) {
+        for (const item of current) {
+          next.push([...prev, item]);
+          if (next.length > MAX_PERMUTATIONS) break;
+        }
+        if (next.length > MAX_PERMUTATIONS) break;
+      }
+      return next;
+    }, [[]]);
+    if (permutations.length > MAX_PERMUTATIONS) permutations = permutations.slice(0, MAX_PERMUTATIONS);
+
+    return permutations.map((combo, permIndex) => {
+      // Deep clone the loadout and apply each set
+      const clone = JSON.parse(JSON.stringify(lo));
+      const setIndices = {};
+      const nameParts = [];
+
+      for (const { section, entry, index } of combo) {
+        if (entry) {
+          applySectionData(section, clone, entry);
+          setIndices[section] = index;
+          nameParts.push(sectionLabels[section]?.[index] ?? getSetDisplayName(section, entry, index));
+        }
+      }
+
+      clone.Id = `${lo.Id}::perm::${permIndex}`;
+      clone.Name = nameParts.join(' + ') || lo.Name || 'Permutation';
+
+      return { loadout: clone, setIndices };
+    });
+  }
+
+  // Rebuild permutations when relevant state changes
+  $: if (compareMode && compareSetMode && loadout) {
+    compareSetPermutations = buildSetPermutations(loadout, compareSetSections);
+  } else {
+    compareSetPermutations = [];
+  }
+
+  function toggleCompareSetSection(section) {
+    const next = new Set(compareSetSections);
+    if (next.has(section)) next.delete(section);
+    else next.add(section);
+    compareSetSections = next;
+  }
+
   $: {
     compareType;
     compareEffectiveDisplay;
     compareAnchorId;
     compareAnchorEval;
     const allowHidden = isMobileLayout;
-    compareRows = compareMode
-      ? loadouts
-          .filter(lo => lo?.Id && (allowHidden || !compareHiddenLoadoutIds.has(lo.Id)))
-          .filter(lo => !compareNameQuery?.trim() || (lo?.Name || '').toLowerCase().includes(compareNameQuery.trim().toLowerCase()))
-          .map(buildCompareRow)
-      : [];
+
+    if (compareMode && compareSetMode) {
+      // In set mode, show only the permutations
+      const query = compareNameQuery?.trim()?.toLowerCase() || '';
+      compareRows = compareSetPermutations
+        .map(p => p.loadout)
+        .filter(lo => !query || (lo?.Name || '').toLowerCase().includes(query))
+        .map(buildCompareRow);
+    } else {
+      compareRows = compareMode
+        ? loadouts
+            .filter(lo => lo?.Id && (allowHidden || !compareHiddenLoadoutIds.has(lo.Id)))
+            .filter(lo => !compareNameQuery?.trim() || (lo?.Name || '').toLowerCase().includes(compareNameQuery.trim().toLowerCase()))
+            .map(buildCompareRow)
+        : [];
+    }
   }
 
   $: hiddenCompareRows = loadouts
@@ -3751,6 +3899,49 @@
               <button type="button" class:active={compareDisplay === 'values'} on:click={() => (compareDisplay = 'values')}>Values</button>
               <button type="button" class:active={compareDisplay === 'delta'} disabled={!compareAnchorEval} on:click={() => (compareDisplay = 'delta')}>Delta</button>
             </div>
+            {#if compareSetAvailableSections.length > 0}
+              <div class="compare-menu" on:click|stopPropagation>
+                <button
+                  type="button"
+                  class="compare-menu-btn"
+                  class:active={compareSetMode}
+                  on:click|stopPropagation={() => {
+                    compareSetsOpen = !compareSetsOpen;
+                    compareHiddenOpen = false;
+                    compareColumnsOpen = false;
+                  }}
+                >
+                  Sets{compareSetSections.size > 0 ? ` (${compareSetSections.size})` : ''}
+                </button>
+                {#if compareSetsOpen}
+                  <div class="compare-popover" on:click|stopPropagation>
+                    <div class="compare-popover-header">
+                      <div class="compare-popover-title">Compare set permutations</div>
+                      {#if compareSetSections.size > 0}
+                        <button type="button" class="compare-popover-reset" on:click={() => { compareSetSections = new Set(); }}>Clear</button>
+                      {/if}
+                    </div>
+                    <div class="compare-columns-grid">
+                      {#each compareSetAvailableSections as section}
+                        <label class="compare-col-toggle">
+                          <input
+                            type="checkbox"
+                            checked={compareSetSections.has(section)}
+                            on:change={() => toggleCompareSetSection(section)}
+                          />
+                          <span>{section} ({loadout?.Sets?.[section]?.length ?? 0} sets)</span>
+                        </label>
+                      {/each}
+                    </div>
+                    {#if compareSetMode}
+                      <div class="compare-popover-footer">
+                        {compareSetPermutations.length} permutation{compareSetPermutations.length !== 1 ? 's' : ''}
+                      </div>
+                    {/if}
+                  </div>
+                {/if}
+              </div>
+            {/if}
           </div>
 
           <div class="compare-toolbar-right">
@@ -3766,6 +3957,7 @@
                   on:click|stopPropagation={() => {
                     compareHiddenOpen = !compareHiddenOpen;
                     compareColumnsOpen = false;
+                    compareSetsOpen = false;
                   }}
                 >
                   Hidden{hiddenCompareRows.length ? ` (${hiddenCompareRows.length})` : ''}
@@ -3797,6 +3989,7 @@
                   on:click|stopPropagation={() => {
                     compareColumnsOpen = !compareColumnsOpen;
                     compareHiddenOpen = false;
+                    compareSetsOpen = false;
                   }}
                 >
                   Columns
@@ -3842,8 +4035,18 @@
             emptyMessage="No loadouts match your filters."
             on:rowClick={(e) => {
               const id = e.detail?.row?._id;
-              const next = loadouts.find(x => x?.Id === id);
-              if (next) setActiveLoadout(next);
+              if (compareSetMode && id?.includes('::perm::')) {
+                // Switch to the set combination for this permutation
+                const perm = compareSetPermutations.find(p => p.loadout.Id === id);
+                if (perm?.setIndices) {
+                  for (const [section, idx] of Object.entries(perm.setIndices)) {
+                    if (idx >= 0) switchToSet(section, idx);
+                  }
+                }
+              } else {
+                const next = loadouts.find(x => x?.Id === id);
+                if (next) setActiveLoadout(next);
+              }
             }}
           />
         </div>
@@ -4109,24 +4312,23 @@
                       </div>
                     {/if}
                   </div>
-                {:else if getWeapon(sharedLoadoutData?.Gear?.Weapon?.Name)?.Properties?.Class === 'Mindforce'}
-                  <div class="form-label">Implant</div>
-                  <div class="control-row">
-                    {#if sharedLoadoutData?.Gear?.Weapon?.Implant?.Name}
-                      <a class="slot select-button read-only link-slot" href={getEquipmentLink('implant', sharedLoadoutData.Gear.Weapon.Implant.Name)}>
-                        {sharedLoadoutData.Gear.Weapon.Implant.Name}
-                      </a>
-                    {:else}
-                      <div class="slot select-button read-only read-only-slot"><span class="placeholder-text">No implant selected.</span></div>
-                    {/if}
-                    {#if isLimitedName(sharedLoadoutData?.Gear?.Weapon?.Implant?.Name)}
-                      <div class="markup-field">
-                        <span class="markup-label">MU%</span>
-                        <input class="markup-input read-only-field" type="number" readonly value={sharedLoadoutData?.Markup?.Implant ?? 100} />
-                      </div>
-                    {/if}
-                  </div>
                 {/if}
+                <div class="form-label">Implant</div>
+                <div class="control-row">
+                  {#if sharedLoadoutData?.Gear?.Weapon?.Implant?.Name}
+                    <a class="slot select-button read-only link-slot" href={getEquipmentLink('implant', sharedLoadoutData.Gear.Weapon.Implant.Name)}>
+                      {sharedLoadoutData.Gear.Weapon.Implant.Name}
+                    </a>
+                  {:else}
+                    <div class="slot select-button read-only read-only-slot"><span class="placeholder-text">No implant selected.</span></div>
+                  {/if}
+                  {#if isLimitedName(sharedLoadoutData?.Gear?.Weapon?.Implant?.Name)}
+                    <div class="markup-field">
+                      <span class="markup-label">MU%</span>
+                      <input class="markup-input read-only-field" type="number" readonly value={sharedLoadoutData?.Markup?.Implant ?? 100} />
+                    </div>
+                  {/if}
+                </div>
                 <div class="form-label">Ammo</div>
                 <div class="control-row">
                   {#if sharedLoadoutData?.Gear?.Weapon?.Name == null}
@@ -5044,28 +5246,23 @@
                         </div>
                       {/if}
                     </div>
-                  {:else if getWeapon(loadout.Gear.Weapon.Name)?.Properties?.Class === 'Mindforce'}
-                    <div class="form-label">Implant</div>
-                    <div class="control-row">
-                      <button class="slot select-button" disabled={getWeapon(loadout.Gear.Weapon.Name)?.Properties?.Class !== 'Mindforce'} on:contextmenu={e => clearSlot(e, "implant")} on:click={() => openPicker('implant')}>
-                        {#if getWeapon(loadout.Gear.Weapon.Name)?.Properties?.Class === 'Mindforce'}
-                          {#if loadout?.Gear.Weapon.Implant?.Name != null}
-                            {loadout.Gear.Weapon.Implant.Name}
-                          {:else}
-                            <span class="placeholder-text">Select an implant...</span>
-                          {/if}
-                        {:else}
-                          <span class="placeholder-muted">Choose a Mindforce weapon</span>
-                        {/if}
-                      </button>
-                      {#if isLimitedName(loadout?.Gear.Weapon.Implant?.Name)}
-                        <div class="markup-field">
-                          <span class="markup-label">MU%</span>
-                          <input class="markup-input" type="number" min="0" step="0.01" bind:value={loadout.Markup.Implant} />
-                        </div>
-                      {/if}
-                    </div>
                   {/if}
+                  <div class="form-label">Implant</div>
+                  <div class="control-row">
+                    <button class="slot select-button" on:contextmenu={e => clearSlot(e, "implant")} on:click={() => openPicker('implant')}>
+                      {#if loadout?.Gear.Weapon.Implant?.Name != null}
+                        {loadout.Gear.Weapon.Implant.Name}
+                      {:else}
+                        <span class="placeholder-text">Select an implant...</span>
+                      {/if}
+                    </button>
+                    {#if isLimitedName(loadout?.Gear.Weapon.Implant?.Name)}
+                      <div class="markup-field">
+                        <span class="markup-label">MU%</span>
+                        <input class="markup-input" type="number" min="0" step="0.01" bind:value={loadout.Markup.Implant} />
+                      </div>
+                    {/if}
+                  </div>
                   <div class="form-label">Ammo</div>
                   <div class="control-row">
                     {#if loadout?.Gear.Weapon.Name == null}
