@@ -5061,26 +5061,50 @@ export async function getLatestMarketPrices(itemIds) {
   return rows;
 }
 
-export async function getLatestMarketPriceByName(name) {
+/**
+ * Find latest snapshot by name (unresolved entries) or item_id (resolved).
+ * Pass itemId when the caller can resolve name→id from the item cache.
+ */
+export async function getLatestMarketPriceByName(name, itemId = null) {
   const { rows } = await pool.query(
     `SELECT * FROM ONLY market_price_snapshots
-     WHERE LOWER(item_name) = LOWER($1)
+     WHERE (
+       ($2::int IS NOT NULL AND item_id = $2)
+       OR (item_id IS NULL AND LOWER(item_name) = LOWER($1))
+     )
      ORDER BY recorded_at DESC
      LIMIT 1`,
-    [name]
+    [name, itemId]
   );
   return rows[0] || null;
 }
 
+/**
+ * Get latest snapshot per item, combining resolved (by item_id) and
+ * unresolved (by item_name) entries.
+ */
 export async function getAllLatestMarketPrices() {
   const { rows } = await pool.query(
-    `SELECT DISTINCT ON (item_name)
-       id, item_name, item_id, tier,
-       markup_1d, sales_1d, markup_7d, sales_7d,
-       markup_30d, sales_30d, markup_90d, sales_90d,
-       markup_365d, sales_365d, recorded_at
-     FROM ONLY market_price_snapshots
-     ORDER BY item_name, recorded_at DESC
+    `SELECT * FROM (
+       (SELECT DISTINCT ON (item_id)
+          id, item_name, item_id, tier,
+          markup_1d, sales_1d, markup_7d, sales_7d,
+          markup_30d, sales_30d, markup_90d, sales_90d,
+          markup_365d, sales_365d, recorded_at
+        FROM ONLY market_price_snapshots
+        WHERE item_id IS NOT NULL
+        ORDER BY item_id, recorded_at DESC)
+       UNION ALL
+       (SELECT DISTINCT ON (LOWER(item_name))
+          id, item_name, item_id, tier,
+          markup_1d, sales_1d, markup_7d, sales_7d,
+          markup_30d, sales_30d, markup_90d, sales_90d,
+          markup_365d, sales_365d, recorded_at
+        FROM ONLY market_price_snapshots
+        WHERE item_id IS NULL AND item_name IS NOT NULL
+        ORDER BY LOWER(item_name), recorded_at DESC)
+     ) combined
+     ORDER BY recorded_at DESC
      LIMIT 10000`
   );
   return rows;

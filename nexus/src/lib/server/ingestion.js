@@ -1240,59 +1240,55 @@ export function validateMarketPrice(entry) {
 
 /**
  * Ingest a batch of market price snapshots.
- * Deduplicates within a 1-hour window by item_id (resolved) or item_name (unresolved).
- * Only stores item_name when item_id could not be resolved.
+ * Deduplicates within a 1-hour window by item_id.
+ * Rejects entries where the item name could not be resolved.
  * @param {number} userId
  * @param {Array} prices
  * @param {Function} resolveItem - async (name, rawName) => number|null (item_id)
- * @returns {{ accepted: number, duplicates: number }}
+ * @returns {{ accepted: number, duplicates: number, rejected: number }}
  */
 export async function ingestMarketPrices(userId, prices, resolveItem) {
-  let accepted = 0, duplicates = 0;
+  let accepted = 0, duplicates = 0, rejected = 0;
 
   for (const entry of prices) {
     const ocrName = entry.item_name.trim();
     const rawName = entry.item_name_raw?.trim() || null;
 
-    // Resolve item_id
+    // Resolve item_id (exact → case-insensitive → raw → prefix → fuzzy)
     let itemId = null;
     if (resolveItem) {
       try {
         itemId = await resolveItem(ocrName, rawName);
       } catch {
-        // Non-fatal — store with null item_id
+        // Non-fatal
       }
     }
 
-    // Server-side 1hr dedup:
-    // - By item_id when resolved (also catches prior unresolved entries with same name)
-    // - By LOWER(item_name) when unresolved
+    if (!itemId) {
+      rejected++;
+      continue;
+    }
+
+    // Server-side 1hr dedup by item_id
     const { rows: existing } = await pool.query(
       `SELECT 1 FROM ONLY market_price_snapshots
-       WHERE (
-         ($1::int IS NOT NULL AND item_id = $1)
-         OR (item_id IS NULL AND LOWER(item_name) = LOWER($2))
-       )
+       WHERE item_id = $1
        AND recorded_at > now() - interval '1 hour'
        LIMIT 1`,
-      [itemId, ocrName]
+      [itemId]
     );
     if (existing.length > 0) {
       duplicates++;
       continue;
     }
 
-    // Only store item_name when item_id is unresolved
-    const storedName = itemId ? null : ocrName;
-
     await pool.query(
       `INSERT INTO market_price_snapshots
-       (item_name, item_id, tier, markup_1d, sales_1d, markup_7d, sales_7d,
+       (item_id, tier, markup_1d, sales_1d, markup_7d, sales_7d,
         markup_30d, sales_30d, markup_90d, sales_90d, markup_365d, sales_365d,
         recorded_at, submitted_by)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
       [
-        storedName,
         itemId,
         entry.tier ?? null,
         entry.markup_1d ?? null, entry.sales_1d ?? null,
@@ -1307,5 +1303,5 @@ export async function ingestMarketPrices(userId, prices, resolveItem) {
     accepted++;
   }
 
-  return { accepted, duplicates };
+  return { accepted, duplicates, rejected };
 }

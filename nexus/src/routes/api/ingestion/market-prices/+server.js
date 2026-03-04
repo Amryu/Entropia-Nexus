@@ -9,7 +9,7 @@ import {
   ingestMarketPrices,
   parseRequestBody,
 } from '$lib/server/ingestion.js';
-import { resolveItemIdByName, resolveItemByPrefix } from '$lib/server/item-type-cache.js';
+import { resolveItemByName, resolveItemByPrefix, resolveItemByFuzzy } from '$lib/server/item-type-cache.js';
 
 const MAX_BATCH_SIZE = 50;
 const RATE_LIMIT_MAX = 20;
@@ -82,22 +82,20 @@ export async function POST({ request, locals, fetch }) {
       return getResponse({ error: 'No valid entries in batch', details: errors }, 400);
     }
 
-    // Process — resolve item names via /items data API cache
-    // Returns { itemId, resolvedName } or { itemId: null, resolvedName: null }
-    // Tries: exact → case-insensitive → raw OCR variant → prefix match
+    // Resolve item names → item_id via /items data API cache.
+    // Tries: exact → case-insensitive → raw OCR variant → prefix match.
+    // Game displays names in ALL CAPS so all matching is case-insensitive.
     const resolveItem = async (name, rawName) => {
-      // Try normalized name first
-      const itemId = await resolveItemIdByName(name, fetch);
-      if (itemId) return { itemId, resolvedName: null };
-      // Try raw OCR name (before comma/paren space normalization)
+      const match = await resolveItemByName(name, fetch);
+      if (match) return match.itemId;
       if (rawName && rawName !== name) {
-        const rawId = await resolveItemIdByName(rawName, fetch);
-        if (rawId) return { itemId: rawId, resolvedName: null };
+        const rawMatch = await resolveItemByName(rawName, fetch);
+        if (rawMatch) return rawMatch.itemId;
       }
-      // Prefix match fallback for truncated OCR names
       const prefix = await resolveItemByPrefix(name, fetch);
-      if (prefix) return { itemId: prefix.itemId, resolvedName: prefix.resolvedName };
-      return { itemId: null, resolvedName: null };
+      if (prefix) return prefix.itemId;
+      const fuzzy = await resolveItemByFuzzy(name, fetch);
+      return fuzzy?.itemId ?? null;
     };
     const result = await ingestMarketPrices(user.id, validPrices, resolveItem);
 

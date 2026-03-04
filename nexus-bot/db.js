@@ -1016,6 +1016,8 @@ export async function deleteUnverifiedUser(userId, txClient) {
 
 /**
  * Get the latest market price snapshot for an item by name or item_id.
+ * When querying by name, searches unresolved entries AND resolves name→id
+ * via the Item table to also find resolved entries (item_name IS NULL).
  */
 export async function getLatestMarketPrice(itemNameOrId) {
   if (typeof itemNameOrId === 'number') {
@@ -1027,11 +1029,22 @@ export async function getLatestMarketPrice(itemNameOrId) {
     );
     return rows[0] || null;
   }
+  // Try to resolve name → item_id from the entity DB
+  const { rows: itemRows } = await poolNexus.query(
+    `SELECT "Id" FROM ONLY "Item" WHERE LOWER("Name") = LOWER($1) LIMIT 1`,
+    [itemNameOrId]
+  );
+  const itemId = itemRows.length > 0 ? itemRows[0].Id : null;
+
+  // Search by item_id (resolved entries) OR by name (unresolved entries)
   const { rows } = await poolUsers.query(
     `SELECT * FROM market_price_snapshots
-     WHERE LOWER(item_name) = LOWER($1)
+     WHERE (
+       ($1::int IS NOT NULL AND item_id = $1)
+       OR (item_id IS NULL AND LOWER(item_name) = LOWER($2))
+     )
      ORDER BY recorded_at DESC LIMIT 1`,
-    [itemNameOrId]
+    [itemId, itemNameOrId]
   );
   return rows[0] || null;
 }
@@ -1084,10 +1097,9 @@ export async function resolveMarketPriceItemIds() {
     }
 
     // Fallback: prefix match (for truncated OCR names)
-    let resolvedName = null;
     if (!itemId && item_name.length >= 4) {
       const { rows: prefixRows } = await poolNexus.query(
-        `SELECT "Id", "Name" FROM ONLY "Item"
+        `SELECT "Id" FROM ONLY "Item"
          WHERE LOWER("Name") LIKE LOWER($1) || '%'
          LIMIT 2`,
         [item_name]
@@ -1095,25 +1107,17 @@ export async function resolveMarketPriceItemIds() {
       // Only use prefix match if exactly one result (unambiguous)
       if (prefixRows.length === 1) {
         itemId = prefixRows[0].Id;
-        resolvedName = prefixRows[0].Name;
       }
     }
 
     if (itemId) {
-      // Update item_id and optionally fix the stored name to the resolved name
-      if (resolvedName && resolvedName !== item_name) {
-        await poolUsers.query(
-          `UPDATE ONLY market_price_snapshots SET item_id = $1, item_name = $2
-           WHERE item_name = $3 AND item_id IS NULL`,
-          [itemId, resolvedName, item_name]
-        );
-      } else {
-        await poolUsers.query(
-          `UPDATE ONLY market_price_snapshots SET item_id = $1
-           WHERE item_name = $2 AND item_id IS NULL`,
-          [itemId, item_name]
-        );
-      }
+      // Set item_id and clear item_name (name is looked up from the Item table).
+      // Use LOWER() because OCR may store ALL CAPS names from the game UI.
+      await poolUsers.query(
+        `UPDATE ONLY market_price_snapshots SET item_id = $1, item_name = NULL
+         WHERE LOWER(item_name) = LOWER($2) AND item_id IS NULL`,
+        [itemId, item_name]
+      );
       resolved++;
     }
   }

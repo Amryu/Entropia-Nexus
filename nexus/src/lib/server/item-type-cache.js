@@ -178,6 +178,35 @@ export async function resolveItemIdByName(name, fetch) {
 }
 
 /**
+ * Resolve an item name to its item ID and properly-cased name.
+ * Tries exact match first, then case-insensitive fallback.
+ * Returns { itemId, name } or null if not found.
+ * @param {string} name
+ * @param {Function} fetch
+ * @returns {Promise<{ itemId: number, name: string } | null>}
+ */
+export async function resolveItemByName(name, fetch) {
+  if (!name || !fetch) return null;
+  const cache = await getCachedItemTypeData(fetch);
+
+  // Exact match
+  const exactId = cache.itemIdByName?.get(name);
+  if (exactId) {
+    const item = cache.itemsById.get(exactId);
+    return { itemId: exactId, name: item?.Name ?? name };
+  }
+
+  // Case-insensitive fallback
+  const lowerId = cache.itemIdByNameLower?.get(name.toLowerCase());
+  if (lowerId) {
+    const item = cache.itemsById.get(lowerId);
+    return { itemId: lowerId, name: item?.Name ?? name };
+  }
+
+  return null;
+}
+
+/**
  * Resolve an item ID by prefix match (for truncated OCR names).
  * Returns { itemId, resolvedName } or null if no unique match.
  * Only returns a result if exactly one item matches the prefix.
@@ -198,5 +227,64 @@ export async function resolveItemByPrefix(prefix, fetch) {
     }
   }
   return matches.length === 1 ? matches[0] : null;
+}
+
+// --- Fuzzy matching (Levenshtein) ---
+
+/**
+ * Levenshtein edit distance with early termination.
+ * Returns maxDist+1 if the actual distance exceeds maxDist.
+ */
+function levenshtein(a, b, maxDist) {
+  const m = a.length, n = b.length;
+  if (Math.abs(m - n) > maxDist) return maxDist + 1;
+  const dp = Array.from({ length: m + 1 }, (_, i) => i);
+  for (let j = 1; j <= n; j++) {
+    let prev = dp[0];
+    dp[0] = j;
+    let rowMin = dp[0];
+    for (let i = 1; i <= m; i++) {
+      const tmp = dp[i];
+      dp[i] = a[i - 1] === b[j - 1]
+        ? prev
+        : 1 + Math.min(prev, dp[i], dp[i - 1]);
+      prev = tmp;
+      if (dp[i] < rowMin) rowMin = dp[i];
+    }
+    if (rowMin > maxDist) return maxDist + 1;
+  }
+  return dp[m];
+}
+
+/**
+ * Resolve an item name by fuzzy (Levenshtein) match.
+ * Only returns a result when there is exactly ONE candidate within the
+ * edit-distance threshold and no other item is even close. This ensures
+ * near-zero ambiguity — if two items are both within maxDist, we reject.
+ * @param {string} name
+ * @param {Function} fetch
+ * @returns {Promise<{ itemId: number, resolvedName: string } | null>}
+ */
+export async function resolveItemByFuzzy(name, fetch) {
+  if (!name || name.length < 4 || !fetch) return null;
+  const cache = await getCachedItemTypeData(fetch);
+  const target = name.toLowerCase();
+  const maxDist = target.length <= 8 ? 1 : 2;
+
+  let matchCount = 0, bestId = null, bestName = null;
+
+  for (const [nameLower, itemId] of cache.itemIdByNameLower) {
+    if (Math.abs(nameLower.length - target.length) > maxDist) continue;
+    const dist = levenshtein(target, nameLower, maxDist);
+    if (dist > maxDist) continue;
+
+    matchCount++;
+    if (matchCount > 1) return null; // Any second candidate — reject immediately
+    bestId = itemId;
+    bestName = cache.itemsById.get(itemId)?.Name ?? nameLower;
+  }
+
+  if (matchCount !== 1) return null;
+  return { itemId: bestId, resolvedName: bestName };
 }
 
