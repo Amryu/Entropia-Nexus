@@ -8,7 +8,11 @@ ENTROPIA NEXUS SOURCE-AVAILABLE LICENSE
    and all associated files in this repository.
 
    "Snippet" means a contiguous portion of source code not exceeding 50 lines,
-   used independently of the Software as a whole.
+   used independently of the Software as a whole. Multiple Snippets may not be
+   aggregated to reconstitute a Substantial Portion of the Software.
+
+   "Substantial Portion" means any portion of the Software that is not a
+   Snippet as defined above.
 
 2. PERMISSIONS
 
@@ -23,19 +27,32 @@ ENTROPIA NEXUS SOURCE-AVAILABLE LICENSE
 
    You MAY NOT:
    - Redistribute, publish, or host copies of the Software, in whole or in
-     substantial part, whether modified or unmodified.
-   - Use the Software, in whole or in substantial part, to operate a competing
-     service or product.
+     Substantial Portion, whether modified or unmodified.
+   - Use the Software, in whole or in Substantial Portion, to operate a
+     competing service or product.
    - Remove or alter this license or any copyright notices.
 
-4. CONTRIBUTIONS
+4. TERMINATION
+
+   This license terminates automatically if you violate any of its terms.
+   Upon termination, you must cease all use of the Software and destroy any
+   copies in your possession. The copyright holder may, at their sole
+   discretion, reinstate your license upon written notice.
+
+5. CONTRIBUTIONS
 
    By submitting a contribution (pull request, patch, or other modification)
    to this repository, you grant the copyright holder a perpetual, worldwide,
    non-exclusive, royalty-free license to use, modify, and distribute your
    contribution as part of the Software under any terms.
 
-5. DISCLAIMER
+6. GOVERNING LAW
+
+   This license is governed by the laws of the Federal Republic of Germany.
+   Any disputes arising from this license shall be subject to the exclusive
+   jurisdiction of the courts in Germany.
+
+7. DISCLAIMER
 
    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,

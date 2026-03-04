@@ -46,6 +46,12 @@ The project consists of three main components:
   - Discord slash commands
   - Database update notifications
 
+### 4. Desktop Client ([client/](client/))
+- **Framework**: PyQt6
+- **Purpose**: Desktop companion app for OCR skill scanning, chat log parsing, and hunting/mining tracking
+- **Build**: PyInstaller via `client/build.sh`
+- **Key Dependencies**: PyQt6, OpenCV, py-mini-racer, watchdog, keyboard
+
 ## Database Structure
 
 The project uses two PostgreSQL databases:
@@ -57,10 +63,13 @@ The project uses two PostgreSQL databases:
 
 Before you begin, ensure you have:
 
-- **Node.js** 18+ and npm
-- **PostgreSQL** 12+ installed and running
-- **Docker** and Docker Compose (optional, for containerized deployment)
+- **Node.js** 24 LTS and npm
+- **Python** 3.9+ and pip (for the desktop client)
+- **PostgreSQL** 14+ installed and running
 - **Git** for version control
+- **Git Bash / MSYS2** on Windows (build scripts use bash)
+- **Docker** and Docker Compose (optional, for containerized deployment)
+- **WSL** on Windows (optional, only needed for cross-platform client releases)
 
 ## Quick Start for New Developers
 
@@ -75,20 +84,20 @@ cd "Entropia Nexus"
 
 The project uses `.env` files for configuration. Start by copying the example files:
 
-```powershell
+```bash
 # API configuration
-cp api\.env.example api\.env
+cp api/.env.example api/.env
 
 # Frontend configuration
-cp nexus\.env.example nexus\.env
+cp nexus/.env.example nexus/.env
 
 # Discord bot configuration (if using)
-cp nexus-bot\.env.example nexus-bot\.env
+cp nexus-bot/.env.example nexus-bot/.env
 ```
 
 ### 3. Edit Configuration Files
 
-Edit `api\.env` with your database credentials:
+Edit `api/.env` with your database credentials:
 
 ```env
 # Primary Database (nexus)
@@ -106,7 +115,7 @@ NEXUS_USERS_DB_NAME=nexus_users
 NEXUS_USERS_DB_PORT=5432
 ```
 
-Edit `nexus\.env` with your frontend configuration:
+Edit `nexus/.env` with your frontend configuration:
 
 ```env
 VITE_API_URL=http://localhost:3000
@@ -162,18 +171,15 @@ This starts all three services:
 
 #### Option B: Running Services Manually
 
-```powershell
+```bash
 # Terminal 1: Start API
-cd api
-npm start
+cd api && npm start
 
 # Terminal 2: Start Frontend
-cd nexus
-npm run dev
+cd nexus && npm run dev
 
 # Terminal 3: Start Discord Bot (optional)
-cd nexus-bot
-npm start
+cd nexus-bot && npm start
 ```
 
 ### 7. Access the Application
@@ -236,17 +242,22 @@ POSTGRES_NEXUS_CONNECTION_STRING=postgresql://nexus:password@localhost:5432/nexu
 
 ## Database Management
 
-### Exporting Database Schemas
+### Migrations
 
-To export the current database schemas for backup or sharing:
+Database schema changes are managed through numbered migration files:
 
-```powershell
-.\ExportDatabases-Simple.ps1 -Password "your_postgres_password"
+- **Nexus DB**: `sql/nexus/migrations/` (001–050+)
+- **Nexus Users DB**: `sql/nexus_users/migrations/` (001–084+)
+
+Apply migrations in numbered order:
+
+```bash
+psql -U nexus -d nexus -f sql/nexus/migrations/001_bot_permissions_nexus.sql
+psql -U nexus -d nexus_users -f sql/nexus_users/migrations/001_service_tables.sql
+# ... continue in order
 ```
 
-This creates schema exports in [sql/migrations/](sql/migrations/).
-
-See [sql/migrations/README.md](sql/migrations/README.md) for more details.
+Migrations are the source of truth for schema. Each file is wrapped in a transaction (`BEGIN`/`COMMIT`).
 
 ## Project Structure
 
@@ -260,9 +271,8 @@ Entropia Nexus/
 ├── nexus/                        # Frontend (SvelteKit)
 │   ├── src/
 │   │   ├── routes/               # SvelteKit routes
-│   │   ├── lib/
-│   │   │   └── components/       # Svelte components
-│   │   └── app.html
+│   │   └── lib/
+│   │       └── components/       # Svelte components
 │   ├── package.json
 │   └── .env                      # Frontend configuration
 ├── nexus-bot/                    # Discord Bot
@@ -270,20 +280,29 @@ Entropia Nexus/
 │   ├── bot.js                    # Bot entry point
 │   ├── package.json
 │   └── .env                      # Bot configuration
-├── sql/                          # SQL scripts and utilities
-│   ├── migrations/               # Database schema exports
-│   │   ├── nexus/
-│   │   │   └── schema_latest.sql
-│   │   └── nexus_users/
-│   │       └── schema_latest.sql
-│   └── *.sql                     # Utility SQL scripts
+├── client/                       # Desktop Client (PyQt6)
+│   ├── ui/                       # UI pages and components
+│   ├── core/                     # Database, config, networking
+│   ├── chat_parser/              # Chat log parsing and handlers
+│   ├── skills/                   # Skill lookup utilities
+│   ├── assets/                   # Icons and images
+│   ├── data/                     # Reference data (skills, changelog)
+│   ├── build.sh                  # PyInstaller build script
+│   ├── release.sh                # Cross-platform release packaging
+│   ├── requirements.txt          # Python dependencies
+│   └── VERSION                   # Client version
+├── sql/                          # Database migrations
+│   ├── nexus/
+│   │   └── migrations/           # Nexus DB migrations (numbered)
+│   └── nexus_users/
+│       └── migrations/           # Nexus Users DB migrations (numbered)
 ├── common/                       # Shared code/data between services
+├── deploy/                       # Deployment scripts and config
+│   ├── deploy.sh                 # Docker deployment orchestration
+│   └── env.example               # Deployment env template
 ├── docs/                         # Documentation
-├── tools/                        # Development tools
 ├── docker-compose.yml            # Docker composition
-├── Build.ps1                     # Build script
-├── ReplicateToLocal.ps1          # Data replication script
-├── ExportDatabases-Simple.ps1    # Export database schemas
+├── LICENSE                       # Source-available license
 └── README.md                     # This file
 ```
 
@@ -291,25 +310,48 @@ Entropia Nexus/
 
 | Script | Description |
 |--------|-------------|
-| `ExportDatabases-Simple.ps1` | Export current database schemas |
 | `Build.ps1` | Build all services for production |
 | `ReplicateToLocal.ps1` | Replicate production data to local environment |
+| `client/build.sh` | Build client executable for current platform |
+| `client/release.sh` | Cross-platform client release packaging |
+| `deploy/deploy.sh` | Docker deployment orchestration |
 
 ## Building for Production
 
-```powershell
+### Web Services
+
+```bash
 # Build all services
-.\Build.ps1
+./Build.ps1
 
 # Or build individually
 cd nexus && npm run build:prod
-cd ../api && npm install --production
+cd api && npm ci --omit=dev
 ```
+
+### Desktop Client
+
+```bash
+# Install Python dependencies
+pip install -r client/requirements.txt
+pip install pyinstaller
+
+# Build for current platform
+bash client/build.sh
+# Output: client/dist/entropia-nexus/
+
+# Release (both platforms — Linux builds via WSL on Windows)
+bash client/release.sh
+bash client/release.sh --windows-only
+bash client/release.sh --linux-only
+```
+
+The build script auto-detects the platform, bundles assets and data files, runs PyInstaller, and strips unnecessary Qt modules (~200 MB savings). Version is read from `client/VERSION` or git tags matching `client-*`.
 
 ## Docker Deployment
 
 ```bash
-# Build and start all services
+# Development: build and start all services
 docker-compose up -d
 
 # View logs
@@ -318,6 +360,18 @@ docker-compose logs -f
 # Stop services
 docker-compose down
 ```
+
+### Production Deployment
+
+Use the deployment script with a configured environment file:
+
+```bash
+cp deploy/env.example deploy/env
+# Edit deploy/env with production paths and credentials
+bash deploy/deploy.sh deploy/env
+```
+
+See [deploy/](deploy/) for details.
 
 ## API Documentation
 
@@ -351,6 +405,8 @@ Operational requirements:
 6. **Push to branch**: `git push origin feature/your-feature`
 7. **Create a Pull Request**
 
+By submitting a contribution, you agree to the terms in [Section 5 of the LICENSE](LICENSE) (perpetual license grant to the copyright holder).
+
 ### Coding Standards
 
 - Use meaningful variable and function names
@@ -363,7 +419,7 @@ Operational requirements:
 ### Database Connection Issues
 
 - Verify PostgreSQL is running: `pg_isready`
-- Check credentials in `api\.env`
+- Check credentials in `api/.env`
 - Ensure databases exist: `psql -l`
 - Check user permissions
 
@@ -381,7 +437,7 @@ Operational requirements:
 
 ## License
 
-[Add your license information here]
+This project is licensed under the Entropia Nexus Source-Available License. See [LICENSE](LICENSE) for details.
 
 ## Support
 
