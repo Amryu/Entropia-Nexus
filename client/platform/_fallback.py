@@ -50,6 +50,9 @@ class FallbackBackend:
     def set_click_through(self, wid: int) -> bool:
         return False
 
+    def set_no_activate(self, wid: int) -> bool:
+        return False
+
     def bring_to_foreground(self, wid: int) -> bool:
         return False
 
