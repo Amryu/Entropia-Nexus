@@ -133,9 +133,6 @@ class WaylandBackend:
     def set_click_through(self, wid: int) -> bool:
         return False  # Not possible on Wayland
 
-    def set_no_activate(self, wid: int) -> bool:
-        return False  # Not needed on Wayland
-
     def bring_to_foreground(self, wid: int) -> bool:
         try:
             if self._compositor == "sway":

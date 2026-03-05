@@ -1,5 +1,12 @@
 [
   {
+    "version": "0.1.7",
+    "date": "2026-03-05",
+    "changes": [
+      {"type": "fix", "text": "Reverted overlay logo toggle that broke search bar focus and keyboard input"}
+    ]
+  },
+  {
     "version": "0.1.6",
     "date": "2026-03-05",
     "changes": [
