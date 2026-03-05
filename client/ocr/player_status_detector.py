@@ -4,9 +4,8 @@ Finds the player's heart icon on the HUD using template matching,
 then reads health bar and reload bar fill percentages at high frequency.
 
 Multi-rate polling architecture:
-- 50 ms base interval (reload bar — swing timer needs fast updates)
-- 100 ms health bar reading (every 2nd tick)
-- 1 s template re-detection + tool presence check (every 20th tick)
+- 100 ms base interval (reload + health bar reads)
+- 1 s template re-detection + tool presence check (every 10th tick)
 
 Bar fill is measured by scanning columns left-to-right for matching
 colors. The health bar has a white marker at its fill edge (+1 px).
@@ -32,13 +31,15 @@ from ..platform import backend as _platform
 log = get_logger("PlayerStatus")
 
 # --- Timing ---
-POLL_INTERVAL = 0.05   # 50 ms base interval (reload bar rate)
-TEMPLATE_TICKS = 20    # every 20 ticks = 1 s for template + tool check
-HEALTH_TICKS = 2       # every 2 ticks = 100 ms for health bar
+POLL_INTERVAL = 0.1    # 100 ms base interval (was 50 ms)
+TEMPLATE_TICKS = 10    # every 10 ticks = 1 s for template + tool check
+HEALTH_TICKS = 1       # every tick = 100 ms for health bar (same effective rate)
 
 # --- Search ---
-SEARCH_MARGIN = 80     # pixels around last position for tier-2 search
 LOST_TICKS = 3         # consecutive template misses before publishing lost
+
+# --- Foreground gating ---
+BACKGROUND_SLEEP = 1.0  # seconds to sleep when game is not visible
 
 # --- Match validation ---
 MIN_INSIDE_BRIGHTNESS = 180  # heart icon is red, not pure white
@@ -82,10 +83,18 @@ class PlayerStatusDetector:
     fast vectorized color matching.
     """
 
-    def __init__(self, config, event_bus, capturer):
+    def __init__(self, config, event_bus, capturer_or_cache):
         self._config = config
         self._event_bus = event_bus
-        self._capturer = capturer
+
+        # Accept either a SharedFrameCache or legacy ScreenCapturer
+        from .frame_cache import SharedFrameCache
+        if isinstance(capturer_or_cache, SharedFrameCache):
+            self._frame_cache = capturer_or_cache
+            self._capturer = None
+        else:
+            self._frame_cache = None
+            self._capturer = capturer_or_cache
 
         self._running = False
         self._thread = None
@@ -115,6 +124,11 @@ class PlayerStatusDetector:
         self._health_pct: float | None = None
         self._reload_pct: float | None = None
         self._tool_equipped = True  # assume equipped until checked
+
+        # Idle mode tracking
+        self._idle_ticks = 0  # consecutive ticks with no data change
+        self._last_health_pct: float | None = None
+        self._last_reload_pct: float | None = None
 
         # Pre-compute color ranges for fast cv2.inRange calls
         self._health_ranges = _precompute_color_ranges(
@@ -188,6 +202,12 @@ class PlayerStatusDetector:
     # Poll loop (multi-rate)
     # ------------------------------------------------------------------
 
+    def _capture_window(self, hwnd):
+        """Capture via shared frame cache or legacy capturer."""
+        if self._frame_cache is not None:
+            return self._frame_cache.get_frame(hwnd, geometry=self._game_geometry)
+        return self._capturer.capture_window(hwnd, geometry=self._game_geometry)
+
     def _poll_loop(self):
         tick = 0
         while self._running:
@@ -197,7 +217,13 @@ class PlayerStatusDetector:
             except Exception as e:
                 log.error("Tick error: %s", e)
             tick += 1
-            time.sleep(POLL_INTERVAL)
+            # Idle mode: multiply poll interval when no change detected
+            idle_threshold = getattr(self._config, "ocr_idle_threshold", 50)
+            idle_mult = getattr(self._config, "ocr_idle_multiplier", 5)
+            if self._idle_ticks >= idle_threshold:
+                time.sleep(POLL_INTERVAL * idle_mult)
+            else:
+                time.sleep(POLL_INTERVAL)
 
     def _tick(self, tick_count: int):
         # Auto-discover game window
@@ -210,9 +236,15 @@ class PlayerStatusDetector:
             else:
                 return
 
-        image = self._capturer.capture_window(
-            self._game_hwnd, geometry=self._game_geometry
-        )
+        # Foreground gating: skip capture when game is not the active window
+        try:
+            if _platform.get_foreground_window_id() != self._game_hwnd:
+                time.sleep(BACKGROUND_SLEEP)
+                return
+        except Exception:
+            pass
+
+        image = self._capture_window(self._game_hwnd)
         if image is None:
             return
 
@@ -271,8 +303,18 @@ class PlayerStatusDetector:
             "health_pct": self._health_pct,
             "reload_pct": self._reload_pct,
             "tool_equipped": self._tool_equipped,
+            "game_origin": self._game_origin,
         }
         self._event_bus.publish(EVENT_PLAYER_STATUS_UPDATE, data)
+
+        # --- Idle tracking ---
+        if (self._health_pct == self._last_health_pct
+                and self._reload_pct == self._last_reload_pct):
+            self._idle_ticks += 1
+        else:
+            self._idle_ticks = 0
+        self._last_health_pct = self._health_pct
+        self._last_reload_pct = self._reload_pct
 
     # ------------------------------------------------------------------
     # Three-tier template search
@@ -306,10 +348,11 @@ class PlayerStatusDetector:
         cx, cy = center
         ih, iw = image.shape[:2]
         th, tw = self._template_h, self._template_w
-        x1 = max(0, cx - SEARCH_MARGIN)
-        y1 = max(0, cy - SEARCH_MARGIN)
-        x2 = min(iw, cx + tw + SEARCH_MARGIN)
-        y2 = min(ih, cy + th + SEARCH_MARGIN)
+        margin = getattr(self._config, "ocr_search_margin", 80)
+        x1 = max(0, cx - margin)
+        y1 = max(0, cy - margin)
+        x2 = min(iw, cx + tw + margin)
+        y2 = min(ih, cy + th + margin)
         region = image[y1:y2, x1:x2]
         if region.shape[0] < th or region.shape[1] < tw:
             return None

@@ -34,8 +34,10 @@ log = get_logger("TargetLock")
 POLL_INTERVAL = 0.5  # seconds (~2 Hz)
 
 # --- Search ---
-SEARCH_MARGIN = 80   # pixels around last position for tier-2 search
 LOST_TICKS = 3       # consecutive misses before publishing lost event
+
+# --- Foreground gating ---
+BACKGROUND_SLEEP = 1.0  # seconds to sleep when game is not visible
 
 # --- Match validation ---
 MIN_INSIDE_BRIGHTNESS = 200  # pixels under mask must be very bright (white icon)
@@ -63,10 +65,18 @@ class TargetLockDetector:
     for fast, robust detection at ~2 Hz.
     """
 
-    def __init__(self, config, event_bus, capturer):
+    def __init__(self, config, event_bus, capturer_or_cache):
         self._config = config
         self._event_bus = event_bus
-        self._capturer = capturer
+
+        # Accept either a SharedFrameCache or legacy ScreenCapturer
+        from .frame_cache import SharedFrameCache
+        if isinstance(capturer_or_cache, SharedFrameCache):
+            self._frame_cache = capturer_or_cache
+            self._capturer = None
+        else:
+            self._frame_cache = None
+            self._capturer = capturer_or_cache
 
         self._running = False
         self._thread = None
@@ -90,6 +100,9 @@ class TargetLockDetector:
         self._last_region_pixels: np.ndarray | None = None  # small region for cheap check
         self._miss_count = 0
         self._published_lost = False
+
+        # Idle mode tracking
+        self._idle_ticks = 0  # consecutive ticks with no target found
 
         # Heart exclusion zone (set by player_status_detector)
         self._heart_exclusion: tuple[int, int, int, int] | None = None  # (x, y, w, h) screen-abs
@@ -170,6 +183,12 @@ class TargetLockDetector:
     # Poll loop
     # ------------------------------------------------------------------
 
+    def _capture_window(self, hwnd):
+        """Capture via shared frame cache or legacy capturer."""
+        if self._frame_cache is not None:
+            return self._frame_cache.get_frame(hwnd, geometry=self._game_geometry)
+        return self._capturer.capture_window(hwnd, geometry=self._game_geometry)
+
     def _poll_loop(self):
         while self._running:
             try:
@@ -177,7 +196,13 @@ class TargetLockDetector:
                     self._tick()
             except Exception as e:
                 log.error("Tick error: %s", e)
-            time.sleep(POLL_INTERVAL)
+            # Idle mode: multiply poll interval when no target found
+            idle_threshold = getattr(self._config, "ocr_idle_threshold", 50)
+            idle_mult = getattr(self._config, "ocr_idle_multiplier", 5)
+            if self._idle_ticks >= idle_threshold:
+                time.sleep(POLL_INTERVAL * idle_mult)
+            else:
+                time.sleep(POLL_INTERVAL)
 
     def _tick(self):
         # Auto-discover game window (or re-discover if capture fails)
@@ -190,9 +215,15 @@ class TargetLockDetector:
             else:
                 return
 
-        image = self._capturer.capture_window(
-            self._game_hwnd, geometry=self._game_geometry
-        )
+        # Foreground gating: skip capture when game is not the active window
+        try:
+            if _platform.get_foreground_window_id() != self._game_hwnd:
+                time.sleep(BACKGROUND_SLEEP)
+                return
+        except Exception:
+            pass
+
+        image = self._capture_window(self._game_hwnd)
         if image is None:
             return
 
@@ -214,6 +245,7 @@ class TargetLockDetector:
             self._last_pos = pos
             self._miss_count = 0
             self._published_lost = False
+            self._idle_ticks = 0  # target found — reset idle
 
             # Cache pixels at this position for cheap check next tick
             x, y = pos
@@ -228,10 +260,12 @@ class TargetLockDetector:
                 "x": gx + x, "y": gy + y,
                 "w": self._template_w, "h": self._template_h,
                 "confidence": confidence,
+                "game_origin": self._game_origin,
             })
             self._event_bus.publish(EVENT_TARGET_LOCK_UPDATE, data)
         else:
             self._miss_count += 1
+            self._idle_ticks += 1  # no target — increment idle counter
             if self._miss_count >= LOST_TICKS and not self._published_lost:
                 self._published_lost = True
                 self._last_pos = None
@@ -277,10 +311,11 @@ class TargetLockDetector:
         th, tw = self._template_h, self._template_w
 
         # Crop region with margin, clamped to image bounds
-        x1 = max(0, cx - SEARCH_MARGIN)
-        y1 = max(0, cy - SEARCH_MARGIN)
-        x2 = min(iw, cx + tw + SEARCH_MARGIN)
-        y2 = min(ih, cy + th + SEARCH_MARGIN)
+        margin = getattr(self._config, "ocr_search_margin", 80)
+        x1 = max(0, cx - margin)
+        y1 = max(0, cy - margin)
+        x2 = min(iw, cx + tw + margin)
+        y2 = min(ih, cy + th + margin)
 
         region = image[y1:y2, x1:x2]
         if region.shape[0] < th or region.shape[1] < tw:

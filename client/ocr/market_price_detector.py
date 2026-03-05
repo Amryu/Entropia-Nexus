@@ -37,8 +37,8 @@ from ..platform import backend as _platform
 
 log = get_logger("MarketPrice")
 
-# --- Search ---
-SEARCH_MARGIN = 80   # pixels around last position for tier-2 search
+# --- Foreground gating ---
+BACKGROUND_SLEEP = 1.0  # seconds to sleep when game is not visible
 
 # --- Match validation ---
 MIN_INSIDE_BRIGHTNESS = 180  # pixels under mask must be bright
@@ -69,10 +69,18 @@ class MarketPriceDetector:
     using STPK font templates when available.
     """
 
-    def __init__(self, config, event_bus, capturer):
+    def __init__(self, config, event_bus, capturer_or_cache):
         self._config = config
         self._event_bus = event_bus
-        self._capturer = capturer
+
+        # Accept either a SharedFrameCache or legacy ScreenCapturer
+        from .frame_cache import SharedFrameCache
+        if isinstance(capturer_or_cache, SharedFrameCache):
+            self._frame_cache = capturer_or_cache
+            self._capturer = None
+        else:
+            self._frame_cache = None
+            self._capturer = capturer_or_cache
 
         self._running = False
         self._thread = None
@@ -209,6 +217,12 @@ class MarketPriceDetector:
     # Poll loop
     # ------------------------------------------------------------------
 
+    def _capture_window(self, hwnd):
+        """Capture via shared frame cache or legacy capturer."""
+        if self._frame_cache is not None:
+            return self._frame_cache.get_frame(hwnd, geometry=self._game_geometry)
+        return self._capturer.capture_window(hwnd, geometry=self._game_geometry)
+
     def _poll_loop(self):
         interval = getattr(self._config, "market_price_poll_interval", 1.0)
         while self._running:
@@ -230,9 +244,15 @@ class MarketPriceDetector:
             else:
                 return
 
-        image = self._capturer.capture_window(
-            self._game_hwnd, geometry=self._game_geometry
-        )
+        # Foreground gating: skip capture when game is not the active window
+        try:
+            if _platform.get_foreground_window_id() != self._game_hwnd:
+                time.sleep(BACKGROUND_SLEEP)
+                return
+        except Exception:
+            pass
+
+        image = self._capture_window(self._game_hwnd)
         if image is None:
             return
 
@@ -258,6 +278,7 @@ class MarketPriceDetector:
                 "w": self._template_w, "h": self._template_h,
                 "confidence": confidence,
                 "data": data,
+                "game_origin": self._game_origin,
             })
 
             # Only publish scan event if data changed from last scan
@@ -320,10 +341,11 @@ class MarketPriceDetector:
         ih, iw = image.shape[:2]
         th, tw = self._template_h, self._template_w
 
-        x1 = max(0, cx - SEARCH_MARGIN)
-        y1 = max(0, cy - SEARCH_MARGIN)
-        x2 = min(iw, cx + tw + SEARCH_MARGIN)
-        y2 = min(ih, cy + th + SEARCH_MARGIN)
+        margin = getattr(self._config, "ocr_search_margin", 80)
+        x1 = max(0, cx - margin)
+        y1 = max(0, cy - margin)
+        x2 = min(iw, cx + tw + margin)
+        y2 = min(ih, cy + th + margin)
 
         region = image[y1:y2, x1:x2]
         if region.shape[0] < th or region.shape[1] < tw:

@@ -38,6 +38,7 @@ class OverlayManager(QObject):
     exchange_hotkey_pressed = pyqtSignal()
     notifications_hotkey_pressed = pyqtSignal()
     debug_overlay_hotkey_pressed = pyqtSignal()
+    overlay_toggle_hotkey_pressed = pyqtSignal()
     game_focus_changed = pyqtSignal(bool)  # True when game is focused/visible
     opacity_changed = pyqtSignal(float)
 
@@ -48,6 +49,7 @@ class OverlayManager(QObject):
         "hotkey_exchange": "exchange_hotkey_pressed",
         "hotkey_notifications": "notifications_hotkey_pressed",
         "hotkey_debug": "debug_overlay_hotkey_pressed",
+        "hotkey_overlay_toggle": "overlay_toggle_hotkey_pressed",
     }
 
     def __init__(self, *, config, event_bus=None, parent: QObject | None = None):
@@ -55,6 +57,7 @@ class OverlayManager(QObject):
         self._config = config
         self._widgets: list[OverlayWidget] = []
         self._game_focused = False
+        self._user_visible = True  # F2 toggle — master gate for overlay visibility
         self._game_hwnd = 0
         self._hotkey_registered = False
         self._overlay_hwnds: dict[int, OverlayWidget] = {}  # hwnd → widget
@@ -94,6 +97,19 @@ class OverlayManager(QObject):
     @property
     def game_focused(self) -> bool:
         return self._game_focused
+
+    def toggle_user_visible(self) -> None:
+        """Toggle user-level overlay visibility (F2 hotkey).
+
+        When toggled off, all registered widgets hide as if the game were
+        occluded.  When toggled back on, widgets restore if the game is
+        still focused.
+        """
+        self._user_visible = not self._user_visible
+        if not self._user_visible:
+            self._hide_all()
+        elif self._game_focused:
+            self._show_all()
 
     # --- Snap targets ---
 
@@ -176,7 +192,8 @@ class OverlayManager(QObject):
             if fg_wid in overlay_wids:
                 if not self._game_focused:
                     self._game_focused = True
-                    self._show_all()
+                    if self._user_visible:
+                        self._show_all()
                     self.game_focus_changed.emit(True)
                 self._set_hotkeys_active(True)
                 return
@@ -206,7 +223,8 @@ class OverlayManager(QObject):
 
             if visible and not self._game_focused:
                 self._game_focused = True
-                self._show_all()
+                if self._user_visible:
+                    self._show_all()
                 self.game_focus_changed.emit(True)
             elif not visible and self._game_focused:
                 self._game_focused = False

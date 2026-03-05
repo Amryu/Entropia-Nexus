@@ -26,7 +26,32 @@ from .core.logger import init as init_logging, get_logger
 log = get_logger("App")
 
 
+def _configure_dpi_awareness():
+    """Enable per-monitor DPI awareness on Windows.
+
+    Must be called before creating any windows (Qt, Tkinter, or Win32).
+    Without this, Win32 APIs return virtualized coordinates on scaled
+    displays, causing overlay misalignment on high-DPI monitors.
+    """
+    if sys.platform != "win32":
+        return
+    import ctypes
+    try:
+        # Per-Monitor V2 (Win10 1703+) — best multi-monitor support
+        ctypes.windll.user32.SetProcessDpiAwarenessContext(
+            ctypes.c_void_p(-4)  # DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+        )
+    except (AttributeError, OSError):
+        try:
+            # Fallback: Per-Monitor V1 (Win8.1+)
+            ctypes.windll.shcore.SetProcessDpiAwareness(2)
+        except (AttributeError, OSError):
+            pass
+
+
 def main():
+    _configure_dpi_awareness()
+
     parser = argparse.ArgumentParser(description="Entropia Nexus Desktop Client")
     parser.add_argument("--parse", action="store_true", help="Batch parse chat.log and exit")
     parser.add_argument("--headless", action="store_true", help="Run without GUI")
@@ -230,17 +255,21 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     # Ingestion uploader must subscribe to EVENT_CATCHUP_COMPLETE BEFORE
     # the chat watcher starts its catchup thread, to avoid a race condition
     # where catchup finishes before the uploader exists.
+    # Shared frame cache — all OCR detectors reuse the same PrintWindow captures
+    from .ocr.frame_cache import SharedFrameCache
+    frame_cache = SharedFrameCache()
+
     workers = []
     workers.extend(_start_ingestion(config, event_bus, nexus_client, db))
     workers.extend(_start_chat_watcher(config, event_bus, db, authenticated=oauth.is_authenticated()))
-    workers.extend(_start_ocr_pipeline(config, event_bus, db))
+    workers.extend(_start_ocr_pipeline(config, event_bus, db, frame_cache))
     # workers.extend(_start_hunt_tracker(config, event_bus, db, data_client))  # hunt disabled
     workers.extend(_start_hotkey_manager(config, event_bus))
     workers.extend(_start_update_checker(config, event_bus))
-    workers.extend(_start_target_lock_detector(config, event_bus))
-    workers.extend(_start_player_status_detector(config, event_bus))
+    workers.extend(_start_target_lock_detector(config, event_bus, frame_cache))
+    workers.extend(_start_player_status_detector(config, event_bus, frame_cache))
     # Market price detector disabled — OCR not ready yet
-    # workers.extend(_start_market_price_detector(config, event_bus))
+    # workers.extend(_start_market_price_detector(config, event_bus, frame_cache))
 
     # Overlay manager (focus detection, widget registry, snap)
     from .overlay.overlay_manager import OverlayManager
@@ -366,6 +395,11 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
 
         overlay_manager.notifications_hotkey_pressed.connect(
             _toggle_notifications_overlay
+        )
+
+        # F2 toggles all overlay widgets (hides as if occluded)
+        overlay_manager.overlay_toggle_hotkey_pressed.connect(
+            overlay_manager.toggle_user_visible
         )
 
         # Toast action routing (url → browser, overlay → toggle)
@@ -817,12 +851,12 @@ def _start_chat_watcher(config, event_bus, db, *, authenticated=False):
     return workers
 
 
-def _start_ocr_pipeline(config, event_bus, db):
+def _start_ocr_pipeline(config, event_bus, db, frame_cache=None):
     """Start the OCR scan orchestrator. Returns list of stoppable workers."""
     workers = []
     try:
         from .ocr.orchestrator import ScanOrchestrator
-        orchestrator = ScanOrchestrator(config, event_bus, db)
+        orchestrator = ScanOrchestrator(config, event_bus, db, frame_cache=frame_cache)
         log.info("OCR pipeline ready")
 
         def run_ocr():
@@ -890,16 +924,17 @@ def _start_update_checker(config, event_bus):
     return workers
 
 
-def _start_target_lock_detector(config, event_bus):
+def _start_target_lock_detector(config, event_bus, frame_cache=None):
     """Start the target lock detector. Returns list of stoppable workers."""
     workers = []
     if not getattr(config, "target_lock_enabled", True):
         return workers
     try:
-        from .ocr.capturer import ScreenCapturer
         from .ocr.target_lock_detector import TargetLockDetector
-        capturer = ScreenCapturer()
-        detector = TargetLockDetector(config, event_bus, capturer)
+        if frame_cache is None:
+            from .ocr.capturer import ScreenCapturer
+            frame_cache = ScreenCapturer()
+        detector = TargetLockDetector(config, event_bus, frame_cache)
         detector.start()
         workers.append(detector)
         log.info("Target lock detector started")
@@ -908,16 +943,17 @@ def _start_target_lock_detector(config, event_bus):
     return workers
 
 
-def _start_player_status_detector(config, event_bus):
+def _start_player_status_detector(config, event_bus, frame_cache=None):
     """Start the player status (heart) detector. Returns list of stoppable workers."""
     workers = []
     if not getattr(config, "player_status_enabled", True):
         return workers
     try:
-        from .ocr.capturer import ScreenCapturer
         from .ocr.player_status_detector import PlayerStatusDetector
-        capturer = ScreenCapturer()
-        detector = PlayerStatusDetector(config, event_bus, capturer)
+        if frame_cache is None:
+            from .ocr.capturer import ScreenCapturer
+            frame_cache = ScreenCapturer()
+        detector = PlayerStatusDetector(config, event_bus, frame_cache)
         detector.start()
         workers.append(detector)
         log.info("Player status detector started")
@@ -926,16 +962,17 @@ def _start_player_status_detector(config, event_bus):
     return workers
 
 
-def _start_market_price_detector(config, event_bus):
+def _start_market_price_detector(config, event_bus, frame_cache=None):
     """Start the market price detector. Returns list of stoppable workers."""
     workers = []
     if not getattr(config, "market_price_enabled", True):
         return workers
     try:
-        from .ocr.capturer import ScreenCapturer
         from .ocr.market_price_detector import MarketPriceDetector
-        capturer = ScreenCapturer()
-        detector = MarketPriceDetector(config, event_bus, capturer)
+        if frame_cache is None:
+            from .ocr.capturer import ScreenCapturer
+            frame_cache = ScreenCapturer()
+        detector = MarketPriceDetector(config, event_bus, frame_cache)
         detector.start()
         workers.append(detector)
         log.info("Market price detector started")
