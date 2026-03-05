@@ -155,6 +155,10 @@
       EffectsOnUse: []
     };
 
+    if (type === 'tools') {
+      base.Tiers = [];
+    }
+
     if (type === 'chips') {
       base.Properties.Range = 0;
       base.Properties.Economy.AmmoBurn = 0;

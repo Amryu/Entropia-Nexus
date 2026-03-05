@@ -210,6 +210,7 @@
           LearningIntervalStart: null,
           LearningIntervalEnd: null
         };
+        base.Tiers = [];
         break;
       case 'excavators':
         base.Properties.Efficiency = 0;
@@ -219,6 +220,7 @@
           LearningIntervalStart: null,
           LearningIntervalEnd: null
         };
+        base.Tiers = [];
         break;
       case 'teleportationchips':
         base.Properties.Range = 0;
