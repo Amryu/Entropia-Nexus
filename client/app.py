@@ -506,13 +506,31 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
         if search_overlay:
             search_overlay.result_selected.connect(_on_overlay_result_selected)
 
-            # Logo click — focus client on the overlay's monitor
+            # Logo click — toggle client window on the overlay's monitor.
+            # The overlay sits on top of the game, so when the user clicks
+            # the logo the game is typically the foreground window and the
+            # main window is behind it.  Only minimize when the main window
+            # is already in front (i.e. the game is NOT the foreground app).
             from PyQt6.QtWidgets import QApplication
-            search_overlay.logo_clicked.connect(
-                lambda: main_window.bring_to_front_on_screen(
-                    QApplication.screenAt(search_overlay.geometry().center())
+            from .core.constants import GAME_TITLE_PREFIX
+
+            def _toggle_main_window():
+                overlay_screen = QApplication.screenAt(
+                    search_overlay.geometry().center()
                 )
-            )
+                fg_title = _platform.get_foreground_window_title()
+                game_is_foreground = fg_title.startswith(GAME_TITLE_PREFIX)
+                window_up = (
+                    main_window.isVisible()
+                    and not main_window.isMinimized()
+                    and main_window.screen() is overlay_screen
+                )
+                if window_up and not game_is_foreground:
+                    main_window.showMinimized()
+                else:
+                    main_window.bring_to_front_on_screen(overlay_screen)
+
+            search_overlay.logo_clicked.connect(_toggle_main_window)
 
             # Burger menu actions
             def _on_search_menu_action(action):
