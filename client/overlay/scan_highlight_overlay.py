@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from PyQt6.QtWidgets import QWidget
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QRect
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QPainter, QColor, QPen, QBrush, QFont
 
 from ..core.event_bus import EventBus
@@ -20,6 +20,7 @@ from ..core.constants import (
     EVENT_CONFIG_CHANGED, EVENT_TARGET_LOCK_UPDATE, EVENT_TARGET_LOCK_LOST,
     EVENT_MARKET_PRICE_DEBUG, EVENT_MARKET_PRICE_LOST,
     EVENT_PLAYER_STATUS_UPDATE, EVENT_PLAYER_STATUS_LOST,
+    EVENT_SKILLS_TEMPLATE_DEBUG,
     GAME_TITLE_PREFIX,
 )
 from ..core.logger import get_logger
@@ -42,22 +43,14 @@ ROW_FILL = QColor(0, 221, 102, 40)       # Semi-transparent green fill
 ROW_BORDER = QColor(0, 221, 102, 120)    # Green border
 CHECKMARK_COLOR = QColor(0, 221, 102)
 
-# Debug region box colors
-COLOR_WINDOW = QColor(255, 51, 51, 180)      # Red
-COLOR_SIDEBAR = QColor(51, 255, 51, 180)     # Green
-COLOR_TABLE = QColor(255, 255, 51, 180)      # Yellow
-COLOR_PAGINATION = QColor(255, 51, 255, 180) # Magenta
+# Skills template ROI colors (used by both debug overlay and scan highlights)
 COLOR_TOTAL = QColor(255, 200, 51, 180)     # Gold
 COLOR_INDICATOR = QColor(255, 140, 0, 200)  # Dark orange
 COLOR_COL_NAME = QColor(51, 153, 255, 180)   # Blue
 COLOR_COL_RANK = QColor(255, 153, 51, 180)   # Orange
 COLOR_COL_POINTS = QColor(51, 221, 221, 180) # Teal
-
-COL_COLORS = {
-    "name": COLOR_COL_NAME,
-    "rank": COLOR_COL_RANK,
-    "points": COLOR_COL_POINTS,
-}
+COLOR_BAR_RANK = QColor(255, 100, 100, 160)    # Red for rank bar
+COLOR_BAR_POINTS = QColor(100, 255, 100, 160)  # Green for points bar
 
 # Checkmark font
 CHECKMARK_FONT = QFont("Consolas", 10, QFont.Weight.Bold)
@@ -78,6 +71,12 @@ MP_ROI_CELL = QColor(255, 215, 0, 140)             # Gold (data cells)
 MP_ROI_TIER = QColor(255, 105, 180, 160)           # Pink (tier)
 MP_LABEL_FONT = QFont("Consolas", 7)
 MP_VALUE_FONT = QFont("Consolas", 8, QFont.Weight.Bold)
+
+# Skills template overlay colors
+ST_COLOR_OK = QColor(0, 200, 255, 200)         # Cyan border (matched)
+ST_COLOR_FAIL = QColor(255, 80, 80, 200)        # Red border (below threshold)
+ST_FILL = QColor(0, 200, 255, 20)               # Faint cyan fill
+ST_LABEL_FONT = QFont("Consolas", 8, QFont.Weight.Bold)
 
 # Player status overlay colors
 PS_COLOR = QColor(255, 100, 100, 200)          # Red border (heart)
@@ -111,6 +110,7 @@ class ScanHighlightOverlay(QWidget):
     _target_lock_lost_signal = pyqtSignal()
     _market_price_signal = pyqtSignal(object)
     _market_price_lost_signal = pyqtSignal()
+    _skills_template_signal = pyqtSignal(object)
     _player_status_signal = pyqtSignal(object)
     _player_status_lost_signal = pyqtSignal()
 
@@ -126,12 +126,18 @@ class ScanHighlightOverlay(QWidget):
         self._regions: dict | None = None     # Layout bounds from EVENT_DEBUG_REGIONS
         self._matched_rows: list[dict] = []   # Row highlight data
         self._game_focused = False
+        self._game_screen_dpr: float = 1.0    # DPI of the screen the game is on
+        self._game_origin: tuple[int, int] | None = None  # Physical screen pos of game window
+        self._phys_origin: tuple[int, int] = (0, 0)  # Physical origin of overlay HWND
 
         # State — target lock
         self._target_lock_data: dict | None = None  # Last target lock update
 
         # State — market price
         self._market_price_data: dict | None = None  # Last market price debug update
+
+        # State — skills template
+        self._skills_template_data: dict | None = None  # Last skills template match
 
         # State — player status
         self._player_status_data: dict | None = None  # Last player status update
@@ -145,18 +151,34 @@ class ScanHighlightOverlay(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
 
-        # Cover the primary screen
+        # Cover the entire virtual desktop (all monitors)
         from PyQt6.QtWidgets import QApplication
-        screen = QApplication.primaryScreen()
-        if screen:
-            geo = screen.geometry()
+        screens = QApplication.screens()
+        if screens:
+            geo = screens[0].geometry()
+            for s in screens[1:]:
+                geo = geo.united(s.geometry())
             self.setGeometry(geo)
+            for s in screens:
+                sg = s.geometry()
+                dpr = s.devicePixelRatio()
+                log.info("Screen %s: logical=%dx%d+%d+%d dpr=%.2f physical=%dx%d",
+                         s.name(), sg.width(), sg.height(), sg.x(), sg.y(), dpr,
+                         int(sg.width() * dpr), int(sg.height() * dpr))
+            log.info("Overlay widget geometry: %dx%d+%d+%d",
+                     geo.width(), geo.height(), geo.x(), geo.y())
 
         # Make click-through on Windows.
         # Briefly show to get a valid HWND, but at 0 opacity to prevent a dark flash.
         self.setWindowOpacity(0)
         self.show()
         self._make_click_through()
+        # Qt sets widget geometry in logical pixels, but OCR coordinates are
+        # physical pixels (Win32 PER_MONITOR_AWARE_V2).  On high-DPI screens
+        # physical coords exceed the logical widget bounds and get clipped.
+        # Resize the underlying HWND to physical extent via Win32 directly,
+        # bypassing Qt's logical→physical scaling.
+        self._resize_to_physical()
         self.hide()
         self.setWindowOpacity(1)
 
@@ -171,6 +193,7 @@ class ScanHighlightOverlay(QWidget):
         self._target_lock_lost_signal.connect(self._on_target_lock_lost)
         self._market_price_signal.connect(self._on_market_price_debug)
         self._market_price_lost_signal.connect(self._on_market_price_lost)
+        self._skills_template_signal.connect(self._on_skills_template_debug)
         self._player_status_signal.connect(self._on_player_status_update)
         self._player_status_lost_signal.connect(self._on_player_status_lost)
 
@@ -185,6 +208,7 @@ class ScanHighlightOverlay(QWidget):
         self._cb_target_lock_lost = lambda d: self._target_lock_lost_signal.emit()
         self._cb_market_price = lambda d: self._market_price_signal.emit(d)
         self._cb_market_price_lost = lambda d: self._market_price_lost_signal.emit()
+        self._cb_skills_template = lambda d: self._skills_template_signal.emit(d)
         self._cb_player_status = lambda d: self._player_status_signal.emit(d)
         self._cb_player_status_lost = lambda d: self._player_status_lost_signal.emit()
         event_bus.subscribe(EVENT_DEBUG_REGIONS, self._cb_regions)
@@ -197,6 +221,7 @@ class ScanHighlightOverlay(QWidget):
         event_bus.subscribe(EVENT_TARGET_LOCK_LOST, self._cb_target_lock_lost)
         event_bus.subscribe(EVENT_MARKET_PRICE_DEBUG, self._cb_market_price)
         event_bus.subscribe(EVENT_MARKET_PRICE_LOST, self._cb_market_price_lost)
+        event_bus.subscribe(EVENT_SKILLS_TEMPLATE_DEBUG, self._cb_skills_template)
         event_bus.subscribe(EVENT_PLAYER_STATUS_UPDATE, self._cb_player_status)
         event_bus.subscribe(EVENT_PLAYER_STATUS_LOST, self._cb_player_status_lost)
 
@@ -214,6 +239,44 @@ class ScanHighlightOverlay(QWidget):
         self.update()
 
     # ── Click-through ──────────────────────────────────────────────────
+
+    def _resize_to_physical(self) -> None:
+        """Resize the overlay HWND to cover the physical virtual desktop.
+
+        Qt sizes the widget in logical pixels, but the QPainter on a
+        PER_MONITOR_AWARE_V2 process paints in physical pixel coordinates.
+        Use Win32 GetSystemMetrics + SetWindowPos to expand the HWND to
+        physical dimensions so that painting at physical coords is not clipped.
+        """
+        import sys
+        if sys.platform != "win32":
+            return
+        try:
+            import ctypes
+            user32 = ctypes.windll.user32
+            hwnd = int(self.winId())
+
+            # GetSystemMetrics returns physical pixels for DPI-aware processes
+            SM_XVIRTUALSCREEN = 76
+            SM_YVIRTUALSCREEN = 77
+            SM_CXVIRTUALSCREEN = 78
+            SM_CYVIRTUALSCREEN = 79
+            vx = user32.GetSystemMetrics(SM_XVIRTUALSCREEN)
+            vy = user32.GetSystemMetrics(SM_YVIRTUALSCREEN)
+            vw = user32.GetSystemMetrics(SM_CXVIRTUALSCREEN)
+            vh = user32.GetSystemMetrics(SM_CYVIRTUALSCREEN)
+
+            SWP_NOZORDER = 0x0004
+            SWP_NOACTIVATE = 0x0010
+            user32.SetWindowPos(
+                hwnd, 0, vx, vy, vw, vh,
+                SWP_NOZORDER | SWP_NOACTIVATE,
+            )
+            self._phys_origin = (vx, vy)
+            log.info("Resized overlay HWND to physical: (%d,%d)+%dx%d",
+                     vx, vy, vw, vh)
+        except Exception as e:
+            log.warning("Failed to resize overlay to physical extent: %s", e)
 
     def _make_click_through(self) -> None:
         """Make the overlay click-through using platform backend."""
@@ -247,7 +310,8 @@ class ScanHighlightOverlay(QWidget):
             has_content = (self._regions is not None
                           or self._target_lock_data is not None
                           or self._market_price_data is not None
-                          or self._player_status_data is not None)
+                          or self._player_status_data is not None
+                          or self._skills_template_data is not None)
             if focused and has_content:
                 self.show()
             elif not focused:
@@ -291,14 +355,32 @@ class ScanHighlightOverlay(QWidget):
             self._hide_timer = None
 
     def _on_config_changed(self, config) -> None:
-        """Config changed — update debug mode."""
-        if config and hasattr(config, "scan_overlay_debug"):
+        """Config changed — update debug mode and clear stale overlay data."""
+        if not config:
+            return
+        if hasattr(config, "scan_overlay_debug"):
             self._debug = config.scan_overlay_debug
-            self.update()
+
+        # Clear stale data for disabled components
+        if not getattr(config, "target_lock_enabled", True):
+            self._target_lock_data = None
+        if not getattr(config, "market_price_enabled", True):
+            self._market_price_data = None
+        if not getattr(config, "player_status_enabled", True):
+            self._player_status_data = None
+
+        self.update()
+        # Hide if nothing to show
+        if (self._regions is None and self._target_lock_data is None
+                and self._market_price_data is None
+                and self._player_status_data is None
+                and self._skills_template_data is None):
+            self.hide()
 
     def _on_target_lock_update(self, data: dict) -> None:
         """Target lock detected — store position and repaint."""
         self._target_lock_data = data
+        self._update_game_origin(data)
         if self._game_focused and self._debug:
             if not self.isVisible():
                 self.show()
@@ -313,9 +395,30 @@ class ScanHighlightOverlay(QWidget):
                 and self._player_status_data is None):
             self.hide()
 
+    def _on_skills_template_debug(self, data: dict) -> None:
+        """Skills template match attempted — store and repaint."""
+        prev = self._skills_template_data
+        if not prev or prev.get("x") != data.get("x") or prev.get("y") != data.get("y"):
+            rois = data.get("rois", {})
+            fr = rois.get("first_row", (0, 0, 0, 0))
+            log.info("Skills template: tpl=(%d,%d)+%dx%d first_row=(%d,%d) "
+                     "widget=(%d,%d)+%dx%d dpr=%.2f",
+                     data.get("x", 0), data.get("y", 0),
+                     data.get("w", 0), data.get("h", 0),
+                     fr[0], fr[1],
+                     self.x(), self.y(), self.width(), self.height(),
+                     self._game_screen_dpr)
+        self._skills_template_data = data
+        self._update_game_origin(data)
+        if self._game_focused and self._debug:
+            if not self.isVisible():
+                self.show()
+            self.update()
+
     def _on_market_price_debug(self, data: dict) -> None:
         """Market price window detected — store position and repaint."""
         self._market_price_data = data
+        self._update_game_origin(data)
         if self._game_focused and self._debug:
             if not self.isVisible():
                 self.show()
@@ -332,6 +435,7 @@ class ScanHighlightOverlay(QWidget):
     def _on_player_status_update(self, data: dict) -> None:
         """Player heart detected — store position and repaint."""
         self._player_status_data = data
+        self._update_game_origin(data)
         if self._game_focused:
             if not self.isVisible():
                 self.show()
@@ -361,24 +465,66 @@ class ScanHighlightOverlay(QWidget):
         self._matched_rows.clear()
         self._hide_timer = None
 
+    # ── DPI detection ─────────────────────────────────────────────────
+
+    def _update_game_origin(self, data: dict) -> None:
+        """Update game origin and detect the DPI of the game's screen.
+
+        The game origin (physical screen position of the game client area)
+        is used to correct overlay placement on high-DPI monitors.
+        """
+        origin = data.get("game_origin")
+        if not origin:
+            return
+        gx, gy = origin
+        if self._game_origin is not None and gx == self._game_origin[0] and gy == self._game_origin[1]:
+            return
+        self._game_origin = (gx, gy)
+
+        # Detect which screen the game is on
+        from PyQt6.QtWidgets import QApplication
+        for screen in QApplication.screens():
+            geo = screen.geometry()
+            dpr = screen.devicePixelRatio()
+            if geo.contains(int(gx / dpr), int(gy / dpr)):
+                if dpr != self._game_screen_dpr:
+                    log.info("Game screen DPI: %.2f (screen %s, origin %d,%d)",
+                             dpr, screen.name(), gx, gy)
+                    self._game_screen_dpr = dpr
+                return
+
     # ── Painting ───────────────────────────────────────────────────────
 
     def paintEvent(self, event) -> None:
+        # Clear previous frame (WA_TranslucentBackground doesn't auto-clear)
+        painter = QPainter(self)
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Clear)
+        painter.fillRect(self.rect(), Qt.GlobalColor.transparent)
+        painter.end()
+
         has_scan = self._regions is not None
         has_lock = self._target_lock_data is not None
         has_mp = self._market_price_data is not None
         has_ps = self._player_status_data is not None
-        if not has_scan and not has_lock and not has_mp and not has_ps:
+        has_st = self._skills_template_data is not None
+        if not has_scan and not has_lock and not has_mp and not has_ps and not has_st:
             return
 
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+        # Translate so screen-absolute physical coords map to widget-local.
+        # Use stored physical origin (from SetWindowPos) rather than self.x()/y()
+        # which may be in logical pixels.
+        px, py = self._phys_origin
+        painter.translate(-px, -py)
 
         # Draw scan row highlights
         if has_scan:
             self._paint_rows(painter)
-            if self._debug:
-                self._paint_debug_regions(painter)
+
+        # Draw skills template match (debug mode only)
+        if has_st and self._debug:
+            self._paint_skills_template(painter)
 
         # Draw target lock indicator
         if has_lock:
@@ -399,15 +545,23 @@ class ScanHighlightOverlay(QWidget):
         if not self._matched_rows:
             return
 
-        regions = self._regions
-        if not regions:
+        # Get table position from skills template ROIs (primary) or regions (fallback)
+        first_row = None
+        row_pitch = None
+        table_w = 0
+        if self._skills_template_data and self._skills_template_data.get("matched"):
+            rois = self._skills_template_data.get("rois", {})
+            first_row = rois.get("first_row")
+            row_pitch = self._skills_template_data.get("row_pitch")
+            table_w = self._skills_template_data.get("table_width", 0)
+        if not first_row and self._regions:
+            tbl = self._regions.get("table")
+            if tbl:
+                first_row = tbl
+                table_w = tbl[2]
+        if not first_row:
             return
-
-        # Table bounds for the row width
-        table = regions.get("table")
-        if not table:
-            return
-        table_x, _, table_w, _ = table
+        table_x, table_y = first_row[0], first_row[1]
 
         fill = QBrush(ROW_FILL)
         pen = QPen(ROW_BORDER, 1)
@@ -416,15 +570,22 @@ class ScanHighlightOverlay(QWidget):
         painter.setFont(CHECKMARK_FONT)
 
         for row in self._matched_rows:
-            y = row.get("y", 0)
             h = row.get("h", 0)
-            if y <= 0 or h <= 0:
+            if h <= 0:
+                continue
+            # Compute y dynamically from current first_row ROI + row index
+            row_idx = row.get("row_idx")
+            if row_idx is not None and row_pitch:
+                y = table_y + row_idx * row_pitch
+            else:
+                y = row.get("y", 0)
+            if y <= 0:
                 continue
 
             # Row highlight rectangle
             painter.setPen(pen)
             painter.setBrush(fill)
-            painter.drawRect(table_x, y, table_w - 30, h)
+            painter.drawRect(table_x, y, table_w, h)
 
             # Checkmark at the left edge
             painter.setPen(check_pen)
@@ -432,105 +593,103 @@ class ScanHighlightOverlay(QWidget):
             painter.drawText(table_x - 14, y, 14, h,
                              Qt.AlignmentFlag.AlignCenter, "\u2713")
 
-    def _paint_debug_regions(self, painter: QPainter) -> None:
-        """Draw colored outlines around detected regions."""
-        regions = self._regions
-        if not regions:
+    def _paint_skills_template(self, painter: QPainter) -> None:
+        """Draw debug overlay for skills template match and ROIs."""
+        data = self._skills_template_data
+        if not data:
             return
 
-        def draw_box(rect_data, color, label=""):
-            if not rect_data:
-                return
-            x, y, w, h = rect_data
-            pen = QPen(color, 2)
-            painter.setPen(pen)
+        x = data.get("x", 0)
+        y = data.get("y", 0)
+        w = data.get("w", 0)
+        h = data.get("h", 0)
+        confidence = data.get("confidence", 0)
+        matched = data.get("matched", False)
+        if w <= 0 or h <= 0:
+            return
+
+        color = ST_COLOR_OK if matched else ST_COLOR_FAIL
+        painter.setPen(QPen(color, 2))
+        painter.setBrush(QBrush(ST_FILL))
+        painter.drawRect(x, y, w, h)
+
+        # Confidence label above template box
+        painter.setFont(ST_LABEL_FONT)
+        painter.setPen(QPen(color))
+        status = "MATCHED" if matched else "NO MATCH"
+        painter.drawText(x, y - 4, f"SKILLS ({confidence:.0%}) {status}")
+
+        # Draw ROIs when template matched
+        if not matched:
+            return
+
+        rois = data.get("rois", {})
+        roi_colors = {
+            "first_row":  QColor(0, 255, 255, 120),   # Cyan
+            "total":      COLOR_TOTAL,
+            "indicator":  COLOR_INDICATOR,
+            # row_offset is a relative dimension, not a position — shown via row grid instead
+        }
+        painter.setFont(QFont("Consolas", 7))
+        for roi_name, (rx, ry, rw, rh) in rois.items():
+            rc = roi_colors.get(roi_name)
+            if not rc:
+                continue
+            painter.setPen(QPen(rc, 1))
             painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.drawRect(x, y, w, h)
-            if label:
-                painter.setPen(QPen(color))
-                painter.setFont(QFont("Consolas", 8))
-                painter.drawText(x + 2, y - 2, label)
+            if rw > 0 and rh > 0:
+                painter.drawRect(rx, ry, rw, rh)
+            painter.drawText(rx + 2, ry - 2, roi_name)
 
-        # Window bounds
-        draw_box(regions.get("window"), COLOR_WINDOW, "window")
+        # Draw column ranges with row grid (12 rows)
+        col_ranges = data.get("col_ranges", {})
+        row_height = data.get("row_height", 0)
+        row_pitch = data.get("row_pitch", row_height)
+        first_row = rois.get("first_row")
+        if col_ranges and row_height > 0 and first_row:
+            t_y = first_row[1]
+            num_rows = 12
+            text_h = int(row_height * 0.70)
 
-        # Sidebar
-        draw_box(regions.get("sidebar"), COLOR_SIDEBAR, "sidebar")
-
-        # Table area
-        draw_box(regions.get("table"), COLOR_TABLE, "table")
-
-        # Total row
-        draw_box(regions.get("total"), COLOR_TOTAL, "total")
-
-        # Orange indicator bar (ALL CATEGORIES selection)
-        draw_box(regions.get("indicator"), COLOR_INDICATOR, "indicator")
-
-        # Pagination
-        draw_box(regions.get("pagination"), COLOR_PAGINATION, "pagination")
-
-        # Column regions
-        columns = regions.get("columns", {})
-        for col_name, rect in columns.items():
-            color = COL_COLORS.get(col_name, COLOR_TABLE)
-            draw_box(rect, color, col_name)
-
-        # Template match positions
-        templates = regions.get("templates", {})
-        template_color = QColor(255, 255, 255, 200)
-        for tpl_name, rect in templates.items():
-            draw_box(rect, template_color, tpl_name)
-
-        # Per-row text cell outlines (name, rank, points) and bar regions
-        table = regions.get("table")
-        row_height = regions.get("row_height", 0)
-        text_split = regions.get("text_split", 0.7)
-        col_screen = regions.get("col_screen", {})
-
-        if table and row_height > 0:
-            t_x, t_y, t_w, t_h = table
-            num_rows = min(12, t_h // row_height) if row_height else 0
-            text_h = int(row_height * text_split)
-
-            # Draw text cell outlines per row
-            cell_colors = {
+            # Per-row column cells
+            col_colors = {
                 "name":   COLOR_COL_NAME,
                 "rank":   COLOR_COL_RANK,
                 "points": COLOR_COL_POINTS,
             }
-            for col_name, (cx_start, cx_end) in col_screen.items():
-                color = cell_colors.get(col_name)
-                if not color:
+            for col_name, (cx_start, cx_end) in col_ranges.items():
+                cc = col_colors.get(col_name)
+                if not cc:
                     continue
-                pen = QPen(color, 1, Qt.PenStyle.DashLine)
-                painter.setPen(pen)
+                painter.setPen(QPen(cc, 1, Qt.PenStyle.DashLine))
                 painter.setBrush(Qt.BrushStyle.NoBrush)
                 cw = cx_end - cx_start
                 for ri in range(num_rows):
-                    ry = t_y + ri * row_height
+                    ry = t_y + ri * row_pitch
                     painter.drawRect(cx_start, ry, cw, text_h)
 
-            # Bar regions (rank_bar = magenta, points_bar = cyan)
-            bars = regions.get("bars", {})
-            bar_colors = {
-                "rank_bar":   QColor(255, 0, 255, 160),   # Magenta
-                "points_bar": QColor(0, 255, 255, 160),    # Cyan
-            }
-            for bar_name, (bx_start, bx_end) in bars.items():
-                color = bar_colors.get(bar_name, QColor(255, 255, 255, 160))
-                pen = QPen(color, 1)
-                painter.setPen(pen)
-                painter.setBrush(Qt.BrushStyle.NoBrush)
-                bw = bx_end - bx_start
-                for ri in range(num_rows):
-                    ry = t_y + ri * row_height
-                    bar_top = ry + text_h + 2
-                    bar_h = row_height - text_h - 3
-                    painter.drawRect(bx_start, bar_top, bw, bar_h)
-                # Label above table
-                painter.setPen(QPen(color))
-                painter.setFont(QFont("Consolas", 7))
-                painter.drawText(bx_start + 2, t_y - 2, bar_name)
+        # Bar ranges (positioned via bar_offset ROI)
+        bar_ranges = data.get("bar_ranges", {})
+        bar_offset_roi = rois.get("bar_offset")
+        if bar_ranges and first_row and bar_offset_roi:
+            t_y = first_row[1]
+            num_rows = 12
+            _, bar_y_off, _, bar_h = bar_offset_roi
+            if bar_h > 0:
+                bar_colors = {
+                    "rank":   COLOR_BAR_RANK,
+                    "points": COLOR_BAR_POINTS,
+                }
+                for bar_name, (bx_start, bx_end) in bar_ranges.items():
+                    bc = bar_colors.get(bar_name)
+                    if not bc:
+                        continue
+                    painter.setPen(QPen(bc, 1, Qt.PenStyle.DotLine))
+                    painter.setBrush(Qt.BrushStyle.NoBrush)
+                    bw = bx_end - bx_start
+                    for ri in range(num_rows):
+                        ry = t_y + ri * row_pitch + bar_y_off
+                        painter.drawRect(bx_start, ry, bw, bar_h)
 
     def _paint_target_lock(self, painter: QPainter) -> None:
         """Draw debug overlay for target lock (debug mode only)."""
@@ -746,4 +905,5 @@ class ScanHighlightOverlay(QWidget):
         self._event_bus.unsubscribe(EVENT_MARKET_PRICE_LOST, self._cb_market_price_lost)
         self._event_bus.unsubscribe(EVENT_PLAYER_STATUS_UPDATE, self._cb_player_status)
         self._event_bus.unsubscribe(EVENT_PLAYER_STATUS_LOST, self._cb_player_status_lost)
+        self._event_bus.unsubscribe(EVENT_SKILLS_TEMPLATE_DEBUG, self._cb_skills_template)
         self.close()
