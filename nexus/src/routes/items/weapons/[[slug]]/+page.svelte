@@ -645,6 +645,7 @@
   $: costPerUse = getCostPerUse(activeWeapon);
   $: reload = getReload(activeWeapon);
   $: totalUses = getTotalUses(activeWeapon);
+  $: totalDamage = getTotalDamage(activeWeapon);
   $: effectiveDamage = getEffectiveDamage(activeWeapon);
   $: skillInfo = getSkillInfo(activeWeapon);
   $: professionNames = getProfessionNames(activeWeapon);
@@ -859,6 +860,10 @@
         <!-- Tier 2 Stats -->
         <div class="stats-section tier-2">
           <h4 class="section-title">Performance</h4>
+          <div class="stat-row">
+            <span class="stat-label">Damage</span>
+            <span class="stat-value">{totalDamage ? `${(totalDamage / 2).toFixed(1)} - ${totalDamage.toFixed(1)}` : 'N/A'}</span>
+          </div>
           <div class="stat-row">
             <span class="stat-label">Effective Dmg</span>
             <span class="stat-value">{effectiveDamage ? effectiveDamage.toFixed(2) : 'N/A'}</span>

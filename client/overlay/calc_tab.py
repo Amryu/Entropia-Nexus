@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QScrollArea,
     QSpinBox, QDoubleSpinBox, QPushButton, QComboBox, QSizePolicy,
+    QCheckBox,
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 
@@ -16,8 +17,11 @@ from .calc_search_input import CalcSearchInput, _item_name
 from .detail_overlay import (
     TEXT_COLOR, TEXT_DIM, ACCENT, CONTENT_BG, FOOTER_BG,
 )
+from ..core.logger import get_logger
 from ..loadout.models import LoadoutStats, create_empty_loadout
 from ..loadout.calculator import LoadoutCalculator
+
+log = get_logger("CalcTab")
 
 if TYPE_CHECKING:
     from ..api.data_client import DataClient
@@ -26,6 +30,10 @@ if TYPE_CHECKING:
 _SKILL_LEVEL = 200  # profession level doesn't matter — we use maxed Hit/Dmg
 
 _DEBOUNCE_MS = 300
+
+# Amp overcap: allow amps with total damage up to this % over the weapon's cap (damage/2)
+_AMP_OVERCAP_TOLERANCE = 10  # percent
+_OVERCAP_COLOR = "#fbbf24"  # yellow/amber for overcapped amps
 
 _SECTION_STYLE = (
     f"color: {ACCENT}; font-size: 11px; font-weight: bold;"
@@ -56,26 +64,71 @@ def _is_ring(item: dict) -> bool:
     return bool(_RING_SLOT_RE.search(slot))
 
 
-def _filter_amplifiers(all_amps: list[dict], weapon: dict) -> list[dict]:
-    """Filter amplifiers to those compatible with the weapon's class/type."""
+def _item_total_damage(item: dict) -> float:
+    """Sum all damage types on an item. Returns 0 if no damage data."""
+    dmg = item.get("Properties", {}).get("Damage")
+    if not dmg:
+        return 0
+    return (
+        (dmg.get("Impact") or 0) + (dmg.get("Cut") or 0)
+        + (dmg.get("Stab") or 0) + (dmg.get("Penetration") or 0)
+        + (dmg.get("Shrapnel") or 0) + (dmg.get("Burn") or 0)
+        + (dmg.get("Cold") or 0) + (dmg.get("Acid") or 0)
+        + (dmg.get("Electric") or 0)
+    )
+
+
+def _is_overcapped(amp: dict, weapon: dict) -> bool:
+    """Check if an amplifier exceeds the weapon's amp cap (damage/2)."""
+    amp_dmg = _item_total_damage(amp)
+    weapon_dmg = _item_total_damage(weapon)
+    if weapon_dmg <= 0 or amp_dmg <= 0:
+        return False
+    return 2 * amp_dmg > weapon_dmg
+
+
+def _filter_amplifiers(
+    all_amps: list[dict], weapon: dict, *, filter_overcap: bool = True,
+) -> list[dict]:
+    """Filter amplifiers to those compatible with the weapon's class/type.
+
+    When filter_overcap is True, also removes amps whose damage exceeds
+    the weapon's cap by more than _AMP_OVERCAP_TOLERANCE percent.
+    """
     props = weapon.get("Properties", {})
     wclass = props.get("Class", "")
     wtype = props.get("Type", "")
+    weapon_dmg = _item_total_damage(weapon) if filter_overcap else 0
 
     filtered = []
     for amp in all_amps:
         amp_type = amp.get("Properties", {}).get("Type", "")
         if amp_type == "Matrix":
             continue  # matrices handled separately
+
+        # Class/type compatibility
+        compatible = False
         if wclass == "Ranged":
             if wtype == "BLP" and amp_type == "BLP":
-                filtered.append(amp)
+                compatible = True
             elif wtype != "BLP" and amp_type == "Energy":
-                filtered.append(amp)
+                compatible = True
         elif wclass == "Melee" and amp_type == "Melee":
-            filtered.append(amp)
+            compatible = True
         elif wclass == "Mindforce" and amp_type == "Mindforce":
-            filtered.append(amp)
+            compatible = True
+
+        if not compatible:
+            continue
+
+        # Overcap filtering
+        if filter_overcap and weapon_dmg > 0:
+            amp_dmg = _item_total_damage(amp)
+            cap = (1 + _AMP_OVERCAP_TOLERANCE / 100) * weapon_dmg
+            if 2 * amp_dmg > cap:
+                continue
+
+        filtered.append(amp)
     return filtered
 
 
@@ -272,10 +325,17 @@ class CalcTab(QScrollArea):
 
             # Filter amplifiers by weapon compatibility
             if self._weapon_entity:
-                filtered_amps = _filter_amplifiers(all_amps, self._weapon_entity)
+                filtered_amps = _filter_amplifiers(
+                    all_amps, self._weapon_entity, filter_overcap=True,
+                )
+                # All compatible amps (no overcap filter) for when checkbox is unchecked
+                all_compatible_amps = _filter_amplifiers(
+                    all_amps, self._weapon_entity, filter_overcap=False,
+                )
             else:
                 filtered_amps = [a for a in all_amps
                                  if a.get("Properties", {}).get("Type") != "Matrix"]
+                all_compatible_amps = filtered_amps
 
             matrices = _filter_matrices(all_amps)
 
@@ -288,6 +348,7 @@ class CalcTab(QScrollArea):
                 "weapons": weapons,
                 "amplifiers": all_amps,  # unfiltered for the evaluator
                 "filtered_amplifiers": filtered_amps,
+                "all_compatible_amplifiers": all_compatible_amps,
                 "matrices": matrices,
                 "scopes": scopes,
                 "sights": sights,
@@ -343,7 +404,26 @@ class CalcTab(QScrollArea):
         # --- Attachments ---
         self._add_section("ATTACHMENTS")
 
-        self._amp_input = self._add_search("Amplifier", ent["filtered_amplifiers"])
+        # Amp overcap color function — highlights overcapped amps yellow
+        amp_color_fn = None
+        if weapon:
+            amp_color_fn = lambda amp, w=weapon: (
+                _OVERCAP_COLOR if _is_overcapped(amp, w) else None
+            )
+
+        self._amp_input = self._add_search(
+            "Amplifier", ent["filtered_amplifiers"], color_fn=amp_color_fn,
+        )
+
+        # Checkbox to toggle overcap filtering
+        self._overcap_cb = QCheckBox("Hide overcapped amps")
+        self._overcap_cb.setChecked(True)
+        self._overcap_cb.setStyleSheet(
+            f"QCheckBox {{ color: {TEXT_DIM}; font-size: 11px;"
+            f" background: transparent; spacing: 4px; }}"
+        )
+        self._overcap_cb.stateChanged.connect(self._on_overcap_toggle)
+        self._layout.addWidget(self._overcap_cb)
 
         # Ranged-only: Scope, Sight
         self._scope_input = None
@@ -448,11 +528,13 @@ class CalcTab(QScrollArea):
         lbl.setStyleSheet(_SECTION_STYLE)
         self._layout.addWidget(lbl)
 
-    def _add_search(self, label: str, items: list[dict]) -> CalcSearchInput:
+    def _add_search(
+        self, label: str, items: list[dict], color_fn=None,
+    ) -> CalcSearchInput:
         lbl = QLabel(label)
         lbl.setStyleSheet(_LABEL_STYLE)
         self._layout.addWidget(lbl)
-        inp = CalcSearchInput(items, f"Search {label.lower()}...")
+        inp = CalcSearchInput(items, f"Search {label.lower()}...", color_fn=color_fn)
         inp.item_selected.connect(lambda _item: self._on_item_changed())
         self._layout.addWidget(inp)
         return inp
@@ -519,6 +601,18 @@ class CalcTab(QScrollArea):
         return spin
 
     # --- Change handlers ---
+
+    def _on_overcap_toggle(self, state: int):
+        """Toggle between filtered (hide overcapped) and all compatible amps."""
+        if not self._entities:
+            return
+        hide_overcap = state == Qt.CheckState.Checked.value
+        if hide_overcap:
+            amps = self._entities["filtered_amplifiers"]
+        else:
+            amps = self._entities["all_compatible_amplifiers"]
+        self._amp_input.set_items(amps)
+        # Don't clear selection — if the user already picked an overcapped amp, keep it
 
     def _on_item_changed(self):
         # Special handling for pet — update effect combo

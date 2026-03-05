@@ -233,6 +233,7 @@ class Database:
         self._db_path = db_path
         self._lock = threading.Lock()
         self._batch_mode = False
+        self._batch_count = 0
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.execute("PRAGMA journal_mode=WAL")
         self._conn.execute("PRAGMA busy_timeout=5000")
@@ -369,20 +370,29 @@ class Database:
         with self._lock:
             self._conn.close()
 
+    _BATCH_COMMIT_INTERVAL = 500  # commit every N writes to avoid holding WAL lock too long
+
     def _auto_commit(self):
         """Commit unless in batch mode. Must be called inside self._lock."""
         if not self._batch_mode:
             self._conn.commit()
+        else:
+            self._batch_count += 1
+            if self._batch_count >= self._BATCH_COMMIT_INTERVAL:
+                self._conn.commit()
+                self._batch_count = 0
 
     def begin_batch(self):
         """Enter batch mode — defer commits until end_batch() for bulk inserts."""
         self._batch_mode = True
+        self._batch_count = 0
 
     def end_batch(self):
         """Exit batch mode and commit all deferred writes."""
         with self._lock:
             self._conn.commit()
         self._batch_mode = False
+        self._batch_count = 0
 
     # Parser state management
     def get_parser_state(self, file_path: str) -> tuple[int, int, str | None] | None:

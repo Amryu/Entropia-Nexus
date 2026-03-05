@@ -329,8 +329,7 @@ export function calculateEfficiency(
     cost += absorberCost;
   }
 
-  if (amplifier?.Properties?.Economy?.Efficiency != null) {
-    if (amplifier.Properties?.Economy?.Decay == null) return null;
+  if (amplifier?.Properties?.Economy?.Efficiency != null && amplifier?.Properties?.Economy?.Decay != null) {
     const ampCost = (amplifier.Properties?.Economy?.AmmoBurn == undefined || amplifier.Properties?.Economy?.AmmoBurn >= 0)
       ? (amplifier.Properties.Economy.Decay + (amplifier.Properties?.Economy?.AmmoBurn ?? 0) / 100)
       : null;
@@ -341,8 +340,7 @@ export function calculateEfficiency(
     }
   }
 
-  if (scope?.Properties?.Economy?.Efficiency != null) {
-    if (scope.Properties?.Economy?.Decay == null) return null;
+  if (scope?.Properties?.Economy?.Efficiency != null && scope?.Properties?.Economy?.Decay != null) {
     const scopeCost = (scope.Properties?.Economy?.AmmoBurn == undefined || scope.Properties?.Economy?.AmmoBurn >= 0)
       ? (scope.Properties.Economy.Decay + (scope.Properties?.Economy?.AmmoBurn ?? 0) / 100)
       : null;
@@ -353,8 +351,7 @@ export function calculateEfficiency(
     }
   }
 
-  if (scopeSight?.Properties?.Economy?.Efficiency != null) {
-    if (scopeSight.Properties?.Economy?.Decay == null) return null;
+  if (scopeSight?.Properties?.Economy?.Efficiency != null && scopeSight?.Properties?.Economy?.Decay != null) {
     const scopeSightCost = (scopeSight.Properties?.Economy?.AmmoBurn == undefined || scopeSight.Properties?.Economy?.AmmoBurn >= 0)
       ? (scopeSight.Properties.Economy.Decay + (scopeSight.Properties?.Economy?.AmmoBurn ?? 0) / 100)
       : null;
@@ -365,8 +362,7 @@ export function calculateEfficiency(
     }
   }
 
-  if (sight?.Properties?.Economy?.Efficiency != null) {
-    if (sight.Properties?.Economy?.Decay == null) return null;
+  if (sight?.Properties?.Economy?.Efficiency != null && sight?.Properties?.Economy?.Decay != null) {
     const sightCost = (sight.Properties?.Economy?.AmmoBurn == undefined || sight.Properties?.Economy?.AmmoBurn >= 0)
       ? (sight.Properties.Economy.Decay + (sight.Properties?.Economy?.AmmoBurn ?? 0) / 100)
       : null;
@@ -377,8 +373,7 @@ export function calculateEfficiency(
     }
   }
 
-  if (matrix?.Properties?.Economy?.Efficiency != null) {
-    if (matrix.Properties?.Economy?.Decay == null) return null;
+  if (matrix?.Properties?.Economy?.Efficiency != null && matrix?.Properties?.Economy?.Decay != null) {
     const matrixCost = (matrix.Properties?.Economy?.AmmoBurn == undefined || matrix.Properties?.Economy?.AmmoBurn >= 0)
       ? (matrix.Properties.Economy.Decay + (matrix.Properties?.Economy?.AmmoBurn ?? 0) / 100)
       : null;

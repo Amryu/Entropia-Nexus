@@ -2569,7 +2569,14 @@ def _build_weapon_details(item: dict, page_type: str, on_entity=None) -> QWidget
     upm = deep_get(item, "Properties", "UsesPerMinute")
     cost = weapon_cost_per_use(item)
 
+    total_dmg_val = weapon_total_damage(item)
+    if total_dmg_val is not None and total_dmg_val > 0:
+        dmg_interval = f"{total_dmg_val / 2:.1f} - {total_dmg_val:.1f}"
+    else:
+        dmg_interval = "-"
+
     layout.addWidget(_section_label("Performance"))
+    layout.addWidget(_stat_row("Damage", dmg_interval))
     layout.addWidget(_stat_row("Eff. Damage", _fv(eff_dmg, 2)))
     layout.addWidget(_stat_row(
         "Range", f"{fmt_int(range_val)}m" if range_val is not None else "-"
