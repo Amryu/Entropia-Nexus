@@ -28,7 +28,7 @@ from .capturer import ScreenCapturer
 from .preprocessor import ImagePreprocessor
 from .skill_parser import SkillMatcher, RankVerifier
 from .progress_bar import ProgressBarReader
-from .detector import SkillsWindowDetector, WINDOW_LAYOUT, SAVE_DEBUG_IMAGES, DEBUG_DIR
+from .detector import SkillsWindowDetector, ROW_TEXT_RATIO, SAVE_DEBUG_IMAGES, DEBUG_DIR
 from .font_matcher import FontMatcher
 from .navigator import SkillsNavigator
 
@@ -102,19 +102,26 @@ class ScanOrchestrator:
     5. User navigates categories/pages manually
     """
 
-    def __init__(self, config: AppConfig, event_bus: EventBus, db: Database):
+    def __init__(self, config: AppConfig, event_bus: EventBus, db: Database,
+                 frame_cache=None):
         self._config = config
         self._event_bus = event_bus
         self._db = db
         self._stop_event = threading.Event()
         self._shutdown = False  # True only when app is shutting down (not on cancel)
 
-        self._capturer = ScreenCapturer()
+        # Use shared frame cache if provided, else create own capturer
+        self._frame_cache = frame_cache
+        if frame_cache is None:
+            self._capturer = ScreenCapturer()
+        else:
+            self._capturer = ScreenCapturer()  # detector still needs its own for detect()
         self._preprocessor = ImagePreprocessor()
         self._skill_matcher = SkillMatcher()
         self._rank_verifier = RankVerifier()
         self._bar_reader = ProgressBarReader()
-        self._detector = SkillsWindowDetector(self._capturer)
+        self._detector = SkillsWindowDetector(
+            self._capturer, event_bus=self._event_bus, config=config)
         self._navigator = SkillsNavigator()
 
         self._all_skills = list(self._skill_matcher.get_all_skills())
@@ -168,10 +175,8 @@ class ScanOrchestrator:
         """Handle live ROI changes from the config dialog."""
         self._apply_roi_overrides(data)
         self._cached_local_layout = None
-        # Re-publish debug regions if we have an active scan
-        if self._current_window_bounds is not None:
-            L = self._compute_layout(self._current_window_bounds)
-            self._publish_debug_regions(L)
+        # Re-publish debug overlay so ROI rectangles update in real-time
+        self._detector.republish_roi_debug()
 
     def _wait_for_stable_window(self, bounds: tuple[int, int, int, int]
                                 ) -> bool:
@@ -249,7 +254,7 @@ class ScanOrchestrator:
         Uses pixel-based ROIs (DEFAULT_ROI_PIXELS in detector.py, with
         user overrides from config) as the primary source.  Column ranges come from
         column-header template matching (more precise).  Falls back to
-        WINDOW_LAYOUT ratios if the SKILLS template hasn't been matched.
+        pixel-based ROI definitions from the SKILLS template match.
 
         The skills panel is fixed-size, so local coordinates are cached
         after the first computation.
@@ -268,54 +273,40 @@ class ScanOrchestrator:
             log.debug("Using cached local layout for panel at (%d,%d)", wx, wy)
             c = self._cached_local_layout
         else:
-            # Column ranges: template-matched headers (precise), ROI fallback
+            # All layout from ROIs (authoritative, pixel-based)
             col_ranges = self._detector.get_column_ranges(window_bounds)
-
-            # Table: x/w from column ranges, y from col headers or ROI
-            table_lx = col_ranges["name"][0]
-            table_ly = self._detector.get_table_top(wh)
-            table_lw = col_ranges["points"][1] - col_ranges["name"][0]
-
-            # Resolve ROIs from template match (primary)
-            table_roi = self._detector.resolve_roi("table")
+            bar_ranges = self._detector.get_bar_ranges()
+            first_row = self._detector.resolve_roi("first_row")
             total_roi = self._detector.resolve_roi("total")
             indicator_roi = self._detector.resolve_roi("indicator")
             row_height = self._detector.resolve_row_height()
+            row_pitch = self._detector.resolve_row_pitch()
 
-            # Table height: from ROI bottom, or WINDOW_LAYOUT fallback
-            if table_roi:
-                table_bottom = table_roi[1] + table_roi[3]
-                table_lh = table_bottom - table_ly
-            else:
-                table_lh = int(wh * WINDOW_LAYOUT["table_bottom_ratio"]) - table_ly
+            table_lx = first_row[0] if first_row else 0
+            table_ly = first_row[1] if first_row else 0
+            table_lw = self._detector.resolve_table_width() or 0
+            table_lh = self._detector.resolve_table_height() or 0
 
-            # Total row
-            if total_roi:
-                total_lx, total_ly, total_lw, total_lh = total_roi
-            else:
-                total_lx, total_ly, total_lw, total_lh = \
-                    self._detector.get_total_region(window_bounds)
+            total_lx = total_roi[0] if total_roi else 0
+            total_ly = total_roi[1] if total_roi else 0
+            total_lw = total_roi[2] if total_roi else 0
+            total_lh = total_roi[3] if total_roi else 0
 
-            # Pagination (WINDOW_LAYOUT only — not user-configurable)
-            layout = WINDOW_LAYOUT
-            pag_lx = col_ranges["name"][0]
-            pag_ly = int(wh * layout["pagination_ratio"])
-            pag_lw = col_ranges["points"][1] - col_ranges["name"][0]
-            pag_lh = int(wh * (1.0 - layout["pagination_ratio"]))
+            indicator_lx = indicator_roi[0] if indicator_roi else 0
+            indicator_ly = indicator_roi[1] if indicator_roi else 0
+            indicator_lw = indicator_roi[2] if indicator_roi else 0
+            indicator_lh = indicator_roi[3] if indicator_roi else 0
 
-            # Indicator (ALL CATEGORIES orange bar)
-            if indicator_roi:
-                indicator_lx, indicator_ly = indicator_roi[0], indicator_roi[1]
-                indicator_lw, indicator_lh = indicator_roi[2], indicator_roi[3]
-            else:
-                indicator_lx = 0
-                indicator_ly = int(wh * layout["sidebar_first_item_y"])
-                indicator_lw = int(ww * layout["sidebar_indicator_width"]) + 4
-                indicator_lh = int(wh * layout["sidebar_item_height"])
+            # Pagination: derived from table bottom
+            pag_lx = table_lx
+            pag_ly = total_ly + total_lh + 4 if total_roi else 0
+            pag_lw = table_lw
+            pag_lh = wh - pag_ly if pag_ly > 0 else 0
 
             c = {
                 "ww": ww, "wh": wh,
                 "col_ranges": col_ranges,
+                "bar_ranges": bar_ranges,
                 "table_lx": table_lx, "table_ly": table_ly,
                 "table_lw": table_lw, "table_lh": table_lh,
                 "pag_lx": pag_lx, "pag_ly": pag_ly,
@@ -324,7 +315,8 @@ class ScanOrchestrator:
                 "total_lw": total_lw, "total_lh": total_lh,
                 "indicator_lx": indicator_lx, "indicator_ly": indicator_ly,
                 "indicator_lw": indicator_lw, "indicator_lh": indicator_lh,
-                "row_height": row_height or self._detector.get_row_height(wh),
+                "row_height": row_height or 25,
+                "row_pitch": row_pitch or row_height or 25,
             }
             self._cached_local_layout = c
             log.debug("Cached local layout for %dx%d panel", ww, wh)
@@ -333,6 +325,7 @@ class ScanOrchestrator:
         return {
             "window_bounds": window_bounds,
             "col_ranges": c["col_ranges"],
+            "bar_ranges": c["bar_ranges"],
             "table_lx": c["table_lx"], "table_ly": c["table_ly"],
             "table_lw": c["table_lw"], "table_lh": c["table_lh"],
             "table_sx": wx + c["table_lx"], "table_sy": wy + c["table_ly"],
@@ -343,6 +336,7 @@ class ScanOrchestrator:
             "indicator_lx": c["indicator_lx"], "indicator_ly": c["indicator_ly"],
             "indicator_lw": c["indicator_lw"], "indicator_lh": c["indicator_lh"],
             "row_height": c["row_height"],
+            "row_pitch": c["row_pitch"],
             "panel_ix": panel_ix, "panel_iy": panel_iy,
             "ww": c["ww"], "wh": c["wh"],
         }
@@ -357,37 +351,9 @@ class ScanOrchestrator:
         )
 
     def _publish_debug_regions(self, L: dict) -> None:
-        """Publish layout regions to the debug overlay."""
-        wb = L["window_bounds"]
-        wx, wy, _, _ = wb
-
-        # Resolve bar x-ranges to screen coordinates
-        bars = {}
-        for bar_name in ("rank_bar", "points_bar"):
-            bar_xr = self._detector.resolve_bar_x(bar_name)
-            if bar_xr:
-                bars[bar_name] = (wx + bar_xr[0], wx + bar_xr[1])
-
+        """Publish layout regions to the scan row overlay."""
         self._event_bus.publish(EVENT_DEBUG_REGIONS, {
-            "window": wb,
             "table": (L["table_sx"], L["table_sy"], L["table_lw"], L["table_lh"]),
-            "total": (wx + L["total_lx"], wy + L["total_ly"],
-                      L["total_lw"], L["total_lh"]),
-            "indicator": (wx + L["indicator_lx"], wy + L["indicator_ly"],
-                          L["indicator_lw"], L["indicator_lh"]),
-            "columns": {
-                name: (wx + start, L["table_sy"], end - start, L["table_lh"])
-                for name, (start, end) in L["col_ranges"].items()
-            },
-            "templates": self._detector.get_template_positions(wb),
-            "col_screen": {
-                name: (wx + start, wx + end)
-                for name, (start, end) in L["col_ranges"].items()
-            },
-            "bars": bars,
-            "row_height": L["row_height"],
-            "text_split": WINDOW_LAYOUT["row_text_ratio"],
-            "font_size": self._font_matcher.font_size,
         })
 
     def run_continuous(self) -> Optional[SkillScanResult]:
@@ -503,88 +469,55 @@ class ScanOrchestrator:
 
             img_h, img_w = game_image.shape[:2]
 
-            # Quick-verify the skills window is still at the expected position.
-            # Require multiple consecutive failures before declaring "moved" —
-            # a single stale PrintWindow frame shouldn't trigger re-detection.
-            if not self._detector.quick_verify(
-                game_image, L["panel_ix"], L["panel_iy"], L["ww"], L["wh"]
-            ):
+            # Detect small window movements via local-area template match.
+            # Searches ±8px around last known position — catches 1px drift that
+            # would otherwise cause wrong ROI reads.  Falls back to full-image
+            # search if the panel moved far or was closed.
+            new_bounds = self._detector.quick_adjust(game_image)
+            if new_bounds is None:
                 verify_fail_count += 1
                 if verify_fail_count < VERIFY_FAIL_THRESHOLD:
-                    log.debug("quick_verify failed (%d/%d), retrying...",
+                    log.debug("quick_adjust failed (%d/%d), retrying...",
                               verify_fail_count, VERIFY_FAIL_THRESHOLD)
                     self._stop_event.wait(timeout=MONITOR_INTERVAL)
                     continue
 
-                log.warning("Skills panel moved or closed (%d consecutive failures), "
+                # Panel lost — try full re-detection with game window lookup
+                log.warning("Skills panel lost (%d consecutive failures), "
                             "re-detecting...", verify_fail_count)
                 verify_fail_count = 0
                 self._event_bus.publish(EVENT_OCR_OVERLAYS_HIDE, lambda: None)
                 anchor_skill = None
-                redetect_start = time.monotonic()
-
-                # Fast path: try to relocate the panel within the current capture
-                new_bounds = self._detector.quick_relocate(game_image)
-                quick_relocated = new_bounds is not None
-
-                # Slow path: full re-detection loop with timeout
-                if not new_bounds:
-                    self._detector.invalidate_cache()
-                    redetect_deadline = time.monotonic() + REDETECT_TIMEOUT
-                    while not self._stop_event.is_set():
-                        if time.monotonic() > redetect_deadline:
-                            log.info("Panel not found after %.0fs — assuming closed",
-                                     REDETECT_TIMEOUT)
-                            break
-                        new_bounds = self._detector.detect()
-                        if new_bounds:
-                            break
-                        log.debug("Skills panel not found, waiting...")
-                        self._stop_event.wait(timeout=REDETECT_POLL_INTERVAL)
+                self._detector.invalidate_cache()
+                redetect_deadline = time.monotonic() + REDETECT_TIMEOUT
+                while not self._stop_event.is_set():
+                    if time.monotonic() > redetect_deadline:
+                        log.info("Panel not found after %.0fs — assuming closed",
+                                 REDETECT_TIMEOUT)
+                        break
+                    new_bounds = self._detector.detect()
+                    if new_bounds:
+                        break
+                    log.debug("Skills panel not found, waiting...")
+                    self._stop_event.wait(timeout=REDETECT_POLL_INTERVAL)
 
                 if not new_bounds:
                     if self._stop_event.is_set():
                         return False, scan_count  # User cancelled
                     return True, scan_count  # Window closed — auto-resume
 
-                elapsed = time.monotonic() - redetect_start
-                log.info("Re-detection took %.2fs", elapsed)
+                if not self._wait_for_stable_window(new_bounds):
+                    return False, scan_count
 
-                # Recompute layout with new position
+            # Update layout if the panel position changed
+            if new_bounds != window_bounds:
                 L = self._compute_layout(new_bounds)
                 window_bounds = new_bounds
                 self._current_window_bounds = new_bounds
                 wx, wy, ww, wh = new_bounds
-
-                # Re-capture and verify title at new position
-                game_image = self._detector.capture_game()
-                if game_image is not None:
-                    if not self._verify_title_text(
-                        game_image, L["panel_ix"], L["panel_iy"], new_bounds
-                    ):
-                        log.warning("Re-detected window title is not 'SKILLS', skipping...")
-                        self._detector.invalidate_cache()
-                        self._stop_event.wait(timeout=REDETECT_POLL_INTERVAL)
-                        continue
-
-                # Only run stability check after slow-path detect (not quick_relocate).
-                # After quick_relocate, the panel was already verified via template
-                # match — stable enough to scan immediately.
-                if not quick_relocated:
-                    if not self._wait_for_stable_window(new_bounds):
-                        return False, scan_count
-
                 self._font_matcher.calibrate(wh)
-
                 self._publish_debug_regions(L)
-                # Save detection debug image with new position
-                if game_image is not None:
-                    gox, goy = self._detector._game_origin or (0, 0)
-                    self._detector.save_debug_image(game_image, gox, goy, new_bounds)
-                log.info("Skills panel re-detected at (%d,%d) %dx%d", wx, wy, ww, wh)
-                continue  # Re-enter loop with fresh capture
 
-            # Verify passed — reset failure counter
             verify_fail_count = 0
 
             # Crop the table region
@@ -647,7 +580,8 @@ class ScanOrchestrator:
 
             # OCR the visible rows (returns None if too many misses)
             page_skills = self._scan_table_image(
-                table_image, L["col_ranges"], window_bounds, L["table_sy"],
+                table_image, L["col_ranges"], L["bar_ranges"],
+                window_bounds, L["table_sy"],
             )
             if page_skills is None:
                 # Bad scan — window likely moved.  Reset anchor so the next
@@ -711,7 +645,8 @@ class ScanOrchestrator:
         return False, scan_count  # User cancelled
 
     def _scan_table_image(self, table_image: np.ndarray, col_ranges: dict,
-                          window_bounds: tuple, table_screen_y: int
+                          bar_ranges: dict, window_bounds: tuple,
+                          table_screen_y: int
                           ) -> Optional[list[SkillReading]]:
         """OCR all skill rows from a cropped table image.
 
@@ -722,12 +657,13 @@ class ScanOrchestrator:
         skills: list[SkillReading] = []
         _, _, _, wh = window_bounds
         row_height = self._detector.get_row_height(wh)
-        rows = self._preprocessor.extract_rows(table_image, row_height)
+        row_pitch = self._detector.resolve_row_pitch() or row_height
+        rows = self._preprocessor.extract_rows(table_image, row_height, row_pitch)
 
         # Precompute brightness-check dimensions (same logic as _parse_skill_row)
         name_start = col_ranges["name"][0]
         name_end_local = col_ranges["name"][1] - name_start
-        text_h_ratio = WINDOW_LAYOUT["row_text_ratio"]
+        text_h_ratio = ROW_TEXT_RATIO
 
         content_rows = 0
         miss_rows = 0
@@ -747,9 +683,9 @@ class ScanOrchestrator:
             if has_content:
                 content_rows += 1
 
-            row_screen_y = table_screen_y + row_idx * row_height
+            row_screen_y = table_screen_y + row_idx * row_pitch
             skill = self._parse_skill_row(
-                row_image, col_ranges, window_bounds,
+                row_image, col_ranges, bar_ranges, window_bounds,
                 row_screen_y=row_screen_y, row_height=row_height,
                 row_idx=row_idx,
             )
@@ -866,7 +802,8 @@ class ScanOrchestrator:
         except Exception as e:
             log.debug("Failed to save row debug: %s", e)
 
-    def _parse_skill_row(self, row_image, col_ranges: dict, window_bounds: tuple,
+    def _parse_skill_row(self, row_image, col_ranges: dict, bar_ranges: dict,
+                         window_bounds: tuple,
                          row_screen_y: int = 0,
                          row_height: int = 0,
                          row_idx: int = 0) -> Optional[SkillReading]:
@@ -880,7 +817,7 @@ class ScanOrchestrator:
         row_w = row_image.shape[1]
 
         # Vertical split: text zone (top) and bar zone (bottom)
-        text_h = int(row_h * WINDOW_LAYOUT["row_text_ratio"])
+        text_h = int(row_h * ROW_TEXT_RATIO)
 
         # Column positions relative to the row image (which starts at name_start).
         # Trim NAME_COL_RIGHT_TRIM from the right — the column extends to the
@@ -911,19 +848,11 @@ class ScanOrchestrator:
         rank_text_img = row_image[:text_h, rank_start:rank_end]
         points_text_img = row_image[:text_h, points_start:points_end]
 
-        # Bar zones — use resolved bar ROIs if available, else column ranges
-        rank_bar_x = self._detector.resolve_bar_x("rank_bar")
-        if rank_bar_x:
-            rb_start = rank_bar_x[0] - name_start
-            rb_end = min(rank_bar_x[1] - name_start, row_w)
-        else:
-            rb_start, rb_end = rank_start, rank_end
-        points_bar_x = self._detector.resolve_bar_x("points_bar")
-        if points_bar_x:
-            pb_start = points_bar_x[0] - name_start
-            pb_end = min(points_bar_x[1] - name_start, row_w)
-        else:
-            pb_start, pb_end = points_start, points_end
+        # Bar zones — use dedicated bar ROIs (relative to row image)
+        rb_start = bar_ranges["rank"][0] - name_start
+        rb_end = min(bar_ranges["rank"][1] - name_start, row_w)
+        pb_start = bar_ranges["points"][0] - name_start
+        pb_end = min(bar_ranges["points"][1] - name_start, row_w)
         bar_top = min(text_h + 2, row_h)
         bar_bot = max(bar_top, row_h - 1)
         rank_bar_img = row_image[bar_top:bar_bot, rb_start:rb_end]
@@ -1062,6 +991,7 @@ class ScanOrchestrator:
             "rank_bar": f"{rank_progress:.2f}%",
             "rank_verified": verification["rank_matches"],
             "expected_rank": verification["expected_rank"],
+            "row_idx": row_idx,
             "y": row_screen_y,
             "h": row_height,
             "font_attempt": font_attempt,

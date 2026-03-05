@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 import numpy as np
 import cv2
 
-from client.ocr.detector import WINDOW_LAYOUT
+from client.ocr.detector import DEFAULT_ROI_PIXELS, ROW_TEXT_RATIO
 from client.ocr.font_matcher import (
     FontMatcher, BINARY_THRESHOLD, WIDTH_TOLERANCE,
     MIN_COL_DENSITY, MAX_TEXT_GAP, TEXT_DETECT_THRESHOLD,
@@ -47,15 +47,19 @@ def main():
     ww, wh = img_w, img_h
     print(f"Image: {img_w}x{img_h}")
 
-    layout = WINDOW_LAYOUT
-    row_height = max(20, round(wh * layout["row_height_ratio"]))
-    text_h = int(row_height * layout["row_text_ratio"])
-    table_top = int(wh * layout["table_top_ratio"]) + row_height
+    # Use native ROI defaults directly (no template scaling for diagnostic)
+    row_height = DEFAULT_ROI_PIXELS["row_offset"][3]
+    row_pitch = DEFAULT_ROI_PIXELS["row_offset"][1]
+    text_h = int(row_height * ROW_TEXT_RATIO)
+    first_row_x = DEFAULT_ROI_PIXELS["first_row"][0]
+    table_top = DEFAULT_ROI_PIXELS["first_row"][1]
 
-    name_s = int(ww * layout["col_name_start"])
-    name_e = int(ww * layout["col_name_end"])
+    name_offset = DEFAULT_ROI_PIXELS["name_column_offset"][0]
+    name_w = DEFAULT_ROI_PIXELS["name_column_offset"][2]
+    name_s = first_row_x + name_offset
+    name_e = name_s + name_w
 
-    print(f"Row height: {row_height}, text zone: {text_h}")
+    print(f"Row height: {row_height}, pitch: {row_pitch}, text zone: {text_h}")
     print(f"Table top: {table_top}, name cols: {name_s}-{name_e}")
 
     # Set up font matcher
@@ -78,7 +82,7 @@ def main():
     print("="*80)
 
     for row_idx in range(12):
-        y = table_top + row_idx * row_height
+        y = table_top + row_idx * row_pitch
         if y + text_h > wh:
             break
 
