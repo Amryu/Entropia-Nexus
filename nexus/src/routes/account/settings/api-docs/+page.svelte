@@ -98,6 +98,47 @@
     padding: 2rem;
   }
 
+  .prose :global(.h1-row) {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin: 0 0 1.5rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .prose :global(.h1-row h1) {
+    margin: 0;
+    padding: 0;
+    border: none;
+  }
+
+  .prose :global(.download-btn) {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    margin-left: auto;
+    flex-shrink: 0;
+    padding: 0.35rem 0.65rem;
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+    background: var(--secondary-color);
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    font-weight: 400;
+    text-decoration: none;
+    cursor: pointer;
+    font-family: inherit;
+    white-space: nowrap;
+    transition: color 0.15s, border-color 0.15s;
+  }
+
+  .prose :global(.download-btn:hover) {
+    color: var(--text-primary);
+    border-color: var(--text-muted);
+    text-decoration: none;
+  }
+
   .docs-layout {
     display: flex;
     gap: 2rem;
