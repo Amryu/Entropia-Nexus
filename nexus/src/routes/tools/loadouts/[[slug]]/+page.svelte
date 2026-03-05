@@ -1758,37 +1758,57 @@
       loadout.Gear.Weapon.Absorber = null;
       loadout.Gear.Weapon.Matrix = null;
       loadout.Gear.Weapon.Implant = null;
+      resetMarkupIfUnlimited('Weapon', item.Name);
+      // Attachments cleared — reset their markup too
+      resetMarkupIfUnlimited('Amplifier', null);
+      resetMarkupIfUnlimited('Absorber', null);
+      resetMarkupIfUnlimited('Scope', null);
+      resetMarkupIfUnlimited('ScopeSight', null);
+      resetMarkupIfUnlimited('Sight', null);
+      resetMarkupIfUnlimited('Matrix', null);
+      resetMarkupIfUnlimited('Implant', null);
     } else if (activePicker === 'amplifier') {
       loadout.Gear.Weapon.Amplifier = { Name: item.Name };
+      resetMarkupIfUnlimited('Amplifier', item.Name);
     } else if (activePicker === 'absorber') {
       loadout.Gear.Weapon.Absorber = { Name: item.Name };
+      resetMarkupIfUnlimited('Absorber', item.Name);
     } else if (activePicker === 'scope') {
       loadout.Gear.Weapon.Scope = { Name: item.Name };
+      resetMarkupIfUnlimited('Scope', item.Name);
     } else if (activePicker === 'scope-sight') {
       if (!loadout.Gear.Weapon.Scope) {
         loadout.Gear.Weapon.Scope = { Name: null, Sight: null };
       }
       loadout.Gear.Weapon.Scope.Sight = { Name: item.Name };
+      resetMarkupIfUnlimited('ScopeSight', item.Name);
     } else if (activePicker === 'sight') {
       loadout.Gear.Weapon.Sight = { Name: item.Name };
+      resetMarkupIfUnlimited('Sight', item.Name);
     } else if (activePicker === 'matrix') {
       loadout.Gear.Weapon.Matrix = { Name: item.Name };
+      resetMarkupIfUnlimited('Matrix', item.Name);
     } else if (activePicker === 'implant') {
       loadout.Gear.Weapon.Implant = { Name: item.Name };
+      resetMarkupIfUnlimited('Implant', item.Name);
     } else if (activePicker === 'armorset') {
       const armorSet = getArmorSet(item.Name);
       if (armorSet) {
         loadout.Gear.Armor.SetName = armorSet.Name;
+        resetMarkupIfUnlimited('ArmorSet', armorSet.Name);
         armorSlots.forEach(slot => {
+          const armorName = armorSet.Armors.flat().find(x => slot === x.Properties.Slot)?.Name;
           loadout.Gear.Armor[slot] = {
-            Name: armorSet.Armors.flat().find(x => slot === x.Properties.Slot)?.Name,
+            Name: armorName,
             Plate: loadout.Gear.Armor[slot].Plate
           };
+          if (loadout.Markup?.Armors && !isLimitedName(armorName)) loadout.Markup.Armors[slot] = 100;
         });
       }
     } else if (activePicker.startsWith('armor-')) {
       const slot = activePicker.split('-')[1];
       loadout.Gear.Armor[slot] = { Name: item.Name, Plate: loadout.Gear.Armor[slot].Plate };
+      if (loadout.Markup?.Armors && !isLimitedName(item.Name)) loadout.Markup.Armors[slot] = 100;
     } else if (activePicker.startsWith('armorplating')) {
       if (loadout.Gear.Armor.ManageIndividual) {
         const slot = activePicker.split('-')[1];
@@ -1796,8 +1816,10 @@
           return;
         }
         loadout.Gear.Armor[slot].Plate = { Name: item.Name };
+        if (loadout.Markup?.Plates && !isLimitedName(item.Name)) loadout.Markup.Plates[slot] = 100;
       } else {
         loadout.Gear.Armor.PlateName = item.Name;
+        resetMarkupIfUnlimited('PlateSet', item.Name);
         armorSlots.forEach(slot => {
           if (loadout.Gear.Armor[slot].Name == null) return;
           loadout.Gear.Armor[slot].Plate = { Name: item.Name };
@@ -1805,6 +1827,7 @@
       }
     } else if (activePicker === 'healingtool') {
       loadout.Gear.Healing.Name = item.Name;
+      resetMarkupIfUnlimited('HealingTool', item.Name);
     } else if (activePicker === 'pet') {
       loadout.Gear.Pet = { Name: item.Name, Effect: null };
     } else if (activePicker === 'ring-left') {
@@ -2558,6 +2581,14 @@
     });
   }
 
+  // Reset a single markup key to 100% when the item is not (L)
+  function resetMarkupIfUnlimited(markupKey, itemName) {
+    if (!loadout?.Markup) return;
+    if (!isLimitedName(itemName)) {
+      loadout.Markup[markupKey] = 100;
+    }
+  }
+
   function resetMarkup() {
     loadout.Markup = {
       Weapon: 100,
@@ -2910,9 +2941,13 @@
 
     loadout.Gear.Armor.SetName = null;
     loadout.Gear.Armor.PlateName = null;
+    resetMarkupIfUnlimited('ArmorSet', null);
+    resetMarkupIfUnlimited('PlateSet', null);
 
     armorSlots.forEach(slot => {
       loadout.Gear.Armor[slot] = newArmorObject();
+      if (loadout.Markup?.Armors) loadout.Markup.Armors[slot] = 100;
+      if (loadout.Markup?.Plates) loadout.Markup.Plates[slot] = 100;
     });
 
     touchLoadouts();
@@ -2930,28 +2965,48 @@
       loadout.Gear.Weapon.Absorber = null;
       loadout.Gear.Weapon.Matrix = null;
       loadout.Gear.Weapon.Implant = null;
+      resetMarkupIfUnlimited('Weapon', null);
+      resetMarkupIfUnlimited('Amplifier', null);
+      resetMarkupIfUnlimited('Absorber', null);
+      resetMarkupIfUnlimited('Scope', null);
+      resetMarkupIfUnlimited('ScopeSight', null);
+      resetMarkupIfUnlimited('Sight', null);
+      resetMarkupIfUnlimited('Matrix', null);
+      resetMarkupIfUnlimited('Implant', null);
     } else if (slot === 'amplifier') {
       loadout.Gear.Weapon.Amplifier = null;
+      resetMarkupIfUnlimited('Amplifier', null);
     } else if (slot === 'scope') {
       loadout.Gear.Weapon.Scope = null;
+      resetMarkupIfUnlimited('Scope', null);
     } else if (slot === 'sight') {
       loadout.Gear.Weapon.Sight = null;
+      resetMarkupIfUnlimited('Sight', null);
     } else if (slot === 'absorber') {
       loadout.Gear.Weapon.Absorber = null;
+      resetMarkupIfUnlimited('Absorber', null);
     } else if (slot === 'matrix') {
       loadout.Gear.Weapon.Matrix = null;
+      resetMarkupIfUnlimited('Matrix', null);
     } else if (slot === 'implant') {
       loadout.Gear.Weapon.Implant = null;
+      resetMarkupIfUnlimited('Implant', null);
     } else if (slot === 'scope-sight') {
       loadout.Gear.Weapon.Scope.Sight = null;
+      resetMarkupIfUnlimited('ScopeSight', null);
     } else if (slot.startsWith('armor-')) {
-      loadout.Gear.Armor[slot.split('-')[1]].Name = null;
-      loadout.Gear.Armor[slot.split('-')[1]].Plate = null;
+      const armorSlot = slot.split('-')[1];
+      loadout.Gear.Armor[armorSlot].Name = null;
+      loadout.Gear.Armor[armorSlot].Plate = null;
+      if (loadout.Markup?.Armors) loadout.Markup.Armors[armorSlot] = 100;
+      if (loadout.Markup?.Plates) loadout.Markup.Plates[armorSlot] = 100;
     } else if (slot.startsWith('armorplating-')) {
-      loadout.Gear.Armor[slot.split('-')[1]].Plate = null;
+      const plateSlot = slot.split('-')[1];
+      loadout.Gear.Armor[plateSlot].Plate = null;
+      if (loadout.Markup?.Plates) loadout.Markup.Plates[plateSlot] = 100;
     } else if (slot === 'armorplating') {
       loadout.Gear.Armor.PlateName = null;
-
+      resetMarkupIfUnlimited('PlateSet', null);
       armorSlots.forEach(slot => {
         loadout.Gear.Armor[slot].Plate = null;
       });
@@ -2960,6 +3015,7 @@
       return;
     } else if (slot === 'healingtool') {
       loadout.Gear.Healing.Name = null;
+      resetMarkupIfUnlimited('HealingTool', null);
     } else if (slot === 'pet') {
       loadout.Gear.Pet = { Name: null, Effect: null };
     } else if (slot === 'ring-left') {
