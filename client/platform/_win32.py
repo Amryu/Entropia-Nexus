@@ -205,25 +205,25 @@ class Win32Backend:
             log.warning("Failed to set click-through: %s", e)
             return False
 
-    def set_no_activate(self, wid: int) -> bool:
-        try:
-            style = _user32.GetWindowLongW(wid, _GWL_EXSTYLE)
-            style |= _WS_EX_NOACTIVATE
-            _user32.SetWindowLongW(wid, _GWL_EXSTYLE, style)
-            return True
-        except Exception as e:
-            log.warning("Failed to set no-activate: %s", e)
-            return False
-
     def bring_to_foreground(self, wid: int) -> bool:
         try:
-            if _user32.IsIconic(wid):
-                _user32.ShowWindow(wid, 9)   # SW_RESTORE
-            else:
-                _user32.ShowWindow(wid, 5)   # SW_SHOW
+            fg_hwnd = _user32.GetForegroundWindow()
+            if fg_hwnd == wid:
+                return True
 
-            _user32.BringWindowToTop(wid)
+            fg_thread = _user32.GetWindowThreadProcessId(fg_hwnd, None)
+            our_thread = _user32.GetWindowThreadProcessId(wid, None)
+
+            attached = False
+            if fg_thread != our_thread:
+                attached = bool(
+                    _user32.AttachThreadInput(fg_thread, our_thread, True),
+                )
+
             _user32.SetForegroundWindow(wid)
+
+            if attached:
+                _user32.AttachThreadInput(fg_thread, our_thread, False)
             return True
         except Exception as e:
             log.warning("Failed to bring window to foreground: %s", e)
