@@ -241,6 +241,7 @@ export const UpsertConfigs = {
     offset: 4810000,
     table: "TeleportationChips"
   },
+  get TeleportChip() { return this.TeleportationChip; },
   EffectChip: {
     columns: [
       { name: "Name", value: x => x.Name },

@@ -75,5 +75,7 @@ export const EntitySchemas = {
   Weapon,
   WeaponAmplifier,
   WeaponVisionAttachment,
-  Shop
+  Shop,
+  get TeleportChip() { return this.TeleportationChip; },
+  get CreatureControlCapsule() { return this.Capsule; }
 }

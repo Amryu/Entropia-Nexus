@@ -16,6 +16,7 @@ export function getTypeLink(name, type, subType = null) {
       return `/items/tools/finders/${encodeURIComponentSafe(name)}`;
     case 'Excavator':
       return `/items/tools/excavators/${encodeURIComponentSafe(name)}`;
+    case 'TeleportChip':
     case 'TeleportationChip':
       return `/items/tools/teleportationchips/${encodeURIComponentSafe(name)}`;
     case 'EffectChip':
@@ -32,6 +33,7 @@ export function getTypeLink(name, type, subType = null) {
       return `/items/pets/${encodeURIComponentSafe(name)}`;
     case 'Consumable':
       return `/items/consumables/stimulants/${encodeURIComponentSafe(name)}`;
+    case 'Capsule':
     case 'CreatureControlCapsule':
       return `/items/consumables/capsules/${encodeURIComponentSafe(name)}`;
     case 'Furniture':

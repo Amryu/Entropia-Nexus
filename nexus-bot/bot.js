@@ -72,6 +72,19 @@ function getPlanetName(planetId) {
   return planetCache?.[planetId] || `Planet #${planetId}`;
 }
 
+function getEntityApiCollection(entityType) {
+  switch (entityType) {
+    case 'TeleportChip':
+    case 'TeleportationChip':
+      return 'teleportationchips';
+    case 'CreatureControlCapsule':
+    case 'Capsule':
+      return 'capsules';
+    default:
+      return `${entityType.toLowerCase()}s`;
+  }
+}
+
 export function setConfigValue(key, value) {
   config[key] = value;
 
@@ -693,7 +706,7 @@ async function checkChanges() {
       ? (Number(rawChangeId) > 300000 ? Number(rawChangeId) - 300000 : Number(rawChangeId))
       : rawChangeId;
     const fetchId = change.entity === 'Apartment' ? apartmentId : rawChangeId;
-    const fetchUrl = `${process.env.API_URL}/${change.entity.toLowerCase()}s/${fetchId}`;
+    const fetchUrl = `${process.env.API_URL}/${getEntityApiCollection(change.entity)}/${fetchId}`;
     console.log(`Fetching old object from: ${fetchUrl}`);
     
     let entity = await fetch(fetchUrl)
