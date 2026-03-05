@@ -155,19 +155,22 @@ export async function getMatchingRewardRules(entity, changeType, dataKeys) {
   return rows.filter(rule => {
     if (rule.entities && !rule.entities.includes(entity)) return false;
     if (rule.change_type && rule.change_type !== changeType) return false;
-    if (rule.data_fields && dataKeys) {
-      if (!rule.data_fields.some(f => dataKeys.includes(f))) return false;
+    if (rule.data_fields?.length) {
+      if (!Array.isArray(dataKeys) || !rule.data_fields.some(f => dataKeys.includes(f))) return false;
     }
     return true;
   });
 }
 
-export async function assignChangeReward({ change_id, user_id, rule_id, amount, contribution_score, assigned_by }) {
+export async function assignChangeReward({ change_id, user_id, rule_id, amount, contribution_score, assigned_by, note = null }) {
   const { rows } = await poolUsers.query(
     `INSERT INTO contributor_rewards (change_id, user_id, rule_id, amount, contribution_score, note, assigned_by)
-     VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *`,
-    [change_id, user_id, rule_id, amount, contribution_score || null, 'Auto-assigned on approval', assigned_by]
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     ON CONFLICT (change_id, rule_id) DO NOTHING
+     RETURNING *`,
+    [change_id, user_id, rule_id, amount, contribution_score || null, note || 'Auto-assigned on approval', assigned_by]
   );
+  if (!rows[0]) return null;
   const score = parseFloat(contribution_score) || 0;
   if (score > 0) {
     await poolUsers.query(

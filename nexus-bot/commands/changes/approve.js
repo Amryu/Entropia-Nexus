@@ -9,6 +9,7 @@ import {
   getMatchingRewardRules, assignChangeReward,
 } from '../../db.js';
 import { applyChange } from '../../changes/util.js';
+import { compareJson, validate } from '../../change.js';
 
 const approveRow = new ActionRowBuilder()
   .addComponents(
@@ -50,7 +51,6 @@ export async function execute(interaction) {
   }
 
   let thread = interaction.channel;
-
   let change = await getChangeByThreadId(thread.id);
 
   if (change.state === 'Approved' || change.state === 'Denied') {
@@ -58,7 +58,6 @@ export async function execute(interaction) {
   }
 
   let userChange = await getUserById(change.author_id);
-
   if (!userChange.verified) {
     return interaction.reply({ content: 'This user is not verified.', flags: MessageFlags.Ephemeral });
   }
@@ -95,106 +94,288 @@ export async function execute(interaction) {
  */
 async function handleReward(interaction, thread, change) {
   try {
-    const dataKeys = change.data ? Object.keys(change.data) : [];
-    const rules = await getMatchingRewardRules(change.entity, change.type, dataKeys);
-
-    if (rules.length !== 1) return false; // 0 or 2+ matches — skip
-
-    const rule = rules[0];
-    const minAmount = parseFloat(rule.min_amount);
-    const maxAmount = parseFloat(rule.max_amount);
-
-    if (minAmount === maxAmount) {
-      // Fixed amount — auto-assign immediately
-      await assignChangeReward({
-        change_id: change.id,
-        user_id: change.author_id,
-        rule_id: rule.id,
-        amount: minAmount,
-        contribution_score: rule.contribution_score,
-        assigned_by: interaction.user.id,
-      });
-      await thread.send(
-        `Reward auto-assigned: **${minAmount} PED** (${rule.name})`
-      );
+    const changedKeys = await getChangedDataKeys(change);
+    if (change.type === 'Update' && changedKeys.length === 0) {
       return false;
     }
 
-    // Range — prompt approver with button → modal
-    const promptRow = new ActionRowBuilder().addComponents(
-      new ButtonBuilder()
-        .setCustomId(`reward_prompt_${change.id}`)
-        .setLabel(`Assign Reward (${minAmount}\u2013${maxAmount} PED)`)
-        .setStyle(ButtonStyle.Primary),
-    );
-    const msg = await thread.send({
-      content: `Matching rule: **${rule.name}** (${minAmount}\u2013${maxAmount} PED)\nClick to assign reward amount:`,
-      components: [promptRow],
-    });
+    const rules = await getMatchingRewardRules(change.entity, change.type, changedKeys);
+    if (!rules.length) return false;
 
-    const collector = msg.createMessageComponentCollector({ time: 300_000 });
+    const rangeRules = [];
 
-    collector.on('collect', async (btnInteraction) => {
-      const modal = new ModalBuilder()
-        .setCustomId(`reward_modal_${change.id}`)
-        .setTitle('Assign Reward');
-      const amountInput = new TextInputBuilder()
-        .setCustomId('amount')
-        .setLabel(`Amount (${minAmount}\u2013${maxAmount} PED)`)
-        .setStyle(TextInputStyle.Short)
-        .setRequired(true)
-        .setPlaceholder(String(minAmount));
-      modal.addComponents(
-        new ActionRowBuilder().addComponents(amountInput)
-      );
-      await btnInteraction.showModal(modal);
+    for (const rule of rules) {
+      const minAmount = parseFloat(rule.min_amount);
+      const maxAmount = parseFloat(rule.max_amount);
 
-      try {
-        const modalSubmit = await btnInteraction.awaitModalSubmit({
-          time: 120_000,
-        });
-        const amount = parseFloat(
-          modalSubmit.fields.getTextInputValue('amount')
-        );
-        if (isNaN(amount) || amount < minAmount || amount > maxAmount) {
-          await modalSubmit.reply({
-            content: `Invalid amount. Must be between ${minAmount} and ${maxAmount}.`,
-            flags: MessageFlags.Ephemeral,
-          });
-          return;
-        }
-        await assignChangeReward({
+      if (minAmount === maxAmount) {
+        const assigned = await assignChangeReward({
           change_id: change.id,
           user_id: change.author_id,
           rule_id: rule.id,
-          amount,
+          amount: minAmount,
           contribution_score: rule.contribution_score,
-          assigned_by: btnInteraction.user.id,
+          assigned_by: interaction.user.id,
+          note: `Auto-assigned on approval (${rule.name})`,
         });
-        await modalSubmit.reply(
-          `Reward assigned: **${amount} PED** (${rule.name})`
-        );
-        collector.stop();
-      } catch {
-        // Modal timed out
+        if (assigned) {
+          await thread.send(`Reward auto-assigned: **${formatPed(minAmount)} PED** (${rule.name})`);
+        }
+        continue;
       }
-    });
 
-    // Archive thread when collector ends (reward assigned or timed out)
-    collector.on('end', async () => {
-      try {
-        await msg.edit({ components: [] });
-      } catch {}
+      rangeRules.push({ rule, minAmount, maxAmount });
+    }
+
+    if (!rangeRules.length) return false;
+
+    let pendingPrompts = rangeRules.length;
+    const onPromptDone = async () => {
+      pendingPrompts -= 1;
+      if (pendingPrompts > 0) return;
       try {
         await thread.setArchived(true);
       } catch {}
-    });
+    };
 
-    return true; // Thread will be archived by collector
+    for (const { rule, minAmount, maxAmount } of rangeRules) {
+      await promptRangeReward({
+        thread,
+        change,
+        rule,
+        minAmount,
+        maxAmount,
+        onDone: onPromptDone,
+      });
+    }
+
+    return true;
   } catch (e) {
     console.error('[approve] Reward assignment failed:', e);
     return false;
   }
+}
+
+async function promptRangeReward({ thread, change, rule, minAmount, maxAmount, onDone }) {
+  const presets = [
+    { key: '0', label: 'Minimum', t: 0 },
+    { key: '25', label: 'Low', t: 0.25 },
+    { key: '50', label: 'Middle', t: 0.5 },
+    { key: '75', label: 'High', t: 0.75 },
+    { key: '100', label: 'Max', t: 1 },
+  ];
+  const presetAmounts = new Map(presets.map(p => [p.key, lerpPed(minAmount, maxAmount, p.t)]));
+
+  const presetRow = new ActionRowBuilder().addComponents(
+    ...presets.map((p) =>
+      new ButtonBuilder()
+        .setCustomId(`reward_pick_${change.id}_${rule.id}_${p.key}`)
+        .setLabel(`${p.label} ${formatPed(presetAmounts.get(p.key))}`)
+        .setStyle(ButtonStyle.Secondary)
+    )
+  );
+  const actionsRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`reward_custom_${change.id}_${rule.id}`)
+      .setLabel('Custom Amount')
+      .setStyle(ButtonStyle.Primary),
+    new ButtonBuilder()
+      .setCustomId(`reward_skip_${change.id}_${rule.id}`)
+      .setLabel('Skip')
+      .setStyle(ButtonStyle.Danger),
+  );
+
+  const msg = await thread.send({
+    content: `Matching rule: **${rule.name}** (${formatPed(minAmount)}-${formatPed(maxAmount)} PED)\nChoose an amount, set a custom value, or skip this rule.`,
+    components: [presetRow, actionsRow],
+  });
+
+  const collector = msg.createMessageComponentCollector({ time: 300_000 });
+  const customButtonId = `reward_custom_${change.id}_${rule.id}`;
+  const skipButtonId = `reward_skip_${change.id}_${rule.id}`;
+  const modalId = `reward_modal_${change.id}_${rule.id}`;
+
+  collector.on('collect', async (btnInteraction) => {
+    try {
+      const customId = btnInteraction.customId;
+
+      if (customId === skipButtonId) {
+        await btnInteraction.reply(`Reward skipped for rule: **${rule.name}**`);
+        collector.stop('skipped');
+        return;
+      }
+
+      if (customId === customButtonId) {
+        const modal = new ModalBuilder()
+          .setCustomId(modalId)
+          .setTitle('Assign Reward');
+        const amountInput = new TextInputBuilder()
+          .setCustomId('amount')
+          .setLabel(`Amount (${formatPed(minAmount)}-${formatPed(maxAmount)} PED)`)
+          .setStyle(TextInputStyle.Short)
+          .setRequired(true)
+          .setPlaceholder(formatPed(minAmount));
+        modal.addComponents(new ActionRowBuilder().addComponents(amountInput));
+        await btnInteraction.showModal(modal);
+
+        try {
+          const modalSubmit = await btnInteraction.awaitModalSubmit({
+            time: 120_000,
+            filter: (x) => x.customId === modalId && x.user.id === btnInteraction.user.id,
+          });
+          const amount = parseFloat(modalSubmit.fields.getTextInputValue('amount'));
+          if (isNaN(amount) || amount < minAmount || amount > maxAmount) {
+            await modalSubmit.reply({
+              content: `Invalid amount. Must be between ${formatPed(minAmount)} and ${formatPed(maxAmount)} PED.`,
+              flags: MessageFlags.Ephemeral,
+            });
+            return;
+          }
+
+          const assigned = await assignChangeReward({
+            change_id: change.id,
+            user_id: change.author_id,
+            rule_id: rule.id,
+            amount: roundPed(amount),
+            contribution_score: rule.contribution_score,
+            assigned_by: modalSubmit.user.id,
+            note: `Assigned on approval (${rule.name})`,
+          });
+
+          if (!assigned) {
+            await modalSubmit.reply({
+              content: `A reward for **${rule.name}** is already assigned for this change.`,
+              flags: MessageFlags.Ephemeral,
+            });
+            collector.stop('duplicate');
+            return;
+          }
+
+          await modalSubmit.reply(`Reward assigned: **${formatPed(amount)} PED** (${rule.name})`);
+          collector.stop('assigned');
+        } catch {
+          // Modal timed out
+        }
+        return;
+      }
+
+      const amountStep = customId.split('_').at(-1);
+      const amount = presetAmounts.get(amountStep);
+      if (amount == null) {
+        await btnInteraction.reply({ content: 'Unknown reward amount preset.', flags: MessageFlags.Ephemeral });
+        return;
+      }
+
+      const assigned = await assignChangeReward({
+        change_id: change.id,
+        user_id: change.author_id,
+        rule_id: rule.id,
+        amount,
+        contribution_score: rule.contribution_score,
+        assigned_by: btnInteraction.user.id,
+        note: `Assigned on approval (${rule.name})`,
+      });
+
+      if (!assigned) {
+        await btnInteraction.reply({
+          content: `A reward for **${rule.name}** is already assigned for this change.`,
+          flags: MessageFlags.Ephemeral,
+        });
+        collector.stop('duplicate');
+        return;
+      }
+
+      await btnInteraction.reply(`Reward assigned: **${formatPed(amount)} PED** (${rule.name})`);
+      collector.stop('assigned');
+    } catch (e) {
+      console.error('[approve] Reward prompt interaction failed:', e);
+      try {
+        if (!btnInteraction.replied && !btnInteraction.deferred) {
+          await btnInteraction.reply({
+            content: 'Failed to assign reward. Please try again.',
+            flags: MessageFlags.Ephemeral,
+          });
+        }
+      } catch {}
+    }
+  });
+
+  collector.on('end', async () => {
+    try {
+      await msg.edit({ components: [] });
+    } catch {}
+    await onDone();
+  });
+}
+
+async function getChangedDataKeys(change) {
+  if (!change?.data) return [];
+  if (change.type === 'Create') return Object.keys(change.data);
+  if (change.type !== 'Update') return [];
+
+  const rawChangeId = change.data.Id;
+  if (!Number.isFinite(Number(rawChangeId))) return [];
+
+  const apartmentId = change.entity === 'Apartment'
+    ? (Number(rawChangeId) > 300000 ? Number(rawChangeId) - 300000 : Number(rawChangeId))
+    : Number(rawChangeId);
+  const fetchId = change.entity === 'Apartment' ? apartmentId : rawChangeId;
+
+  const fetchUrl = `${process.env.API_URL}/${getEntityApiCollection(change.entity)}/${fetchId}`;
+  const entity = await fetch(fetchUrl)
+    .then(res => res.status === 404 ? Promise.resolve({}) : res.json())
+    .catch(_ => null);
+  if (!entity) return [];
+
+  const validatedEntity = JSON.parse(JSON.stringify(entity));
+  const validatedChange = JSON.parse(JSON.stringify(change.data));
+
+  validate(change.entity, validatedEntity);
+  validate(change.entity, validatedChange);
+
+  const diff = compareJson(validatedEntity, validatedChange);
+  if (!diff || Array.isArray(diff)) return [];
+
+  return extractChangedTopLevelKeys(diff);
+}
+
+function getEntityApiCollection(entityType) {
+  switch (entityType) {
+    case 'TeleportChip':
+    case 'TeleportationChip':
+      return 'teleportationchips';
+    case 'CreatureControlCapsule':
+    case 'Capsule':
+      return 'capsules';
+    default:
+      return `${entityType.toLowerCase()}s`;
+  }
+}
+
+function lerpPed(min, max, t) {
+  return roundPed(min + (max - min) * t);
+}
+
+function roundPed(amount) {
+  return Math.round((amount + Number.EPSILON) * 100) / 100;
+}
+
+function formatPed(amount) {
+  return roundPed(amount).toFixed(2);
+}
+
+function extractChangedTopLevelKeys(diffObject) {
+  return Object.entries(diffObject)
+    .filter(([key, value]) => key !== '_status' && isDiffNodeChanged(value))
+    .map(([key]) => key);
+}
+
+function isDiffNodeChanged(node) {
+  if (Array.isArray(node)) return node.length > 0;
+  if (!node || typeof node !== 'object') return false;
+  if (node._changed === true || node._status) return true;
+  return Object.entries(node)
+    .some(([key, value]) => !key.startsWith('_') && isDiffNodeChanged(value));
 }
 
 async function promptModeratorForConfirmation(interaction, onApprove) {

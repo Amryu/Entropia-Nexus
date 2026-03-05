@@ -1,14 +1,15 @@
 // @ts-nocheck
 import { json } from '@sveltejs/kit';
 import { requireAdminAPI } from '$lib/server/auth';
-import { assignReward, getChangeReward } from '$lib/server/db';
+import { assignReward, getChangeRewards } from '$lib/server/db';
 
 export async function GET({ url, locals }) {
   requireAdminAPI(locals);
   const changeId = url.searchParams.get('change_id');
   if (!changeId) return json({ error: 'change_id required' }, { status: 400 });
-  const reward = await getChangeReward(parseInt(changeId));
-  return json({ reward });
+  const rewards = await getChangeRewards(parseInt(changeId));
+  const reward = rewards[0] || null;
+  return json({ reward, rewards });
 }
 
 export async function POST({ request, locals }) {
@@ -39,7 +40,7 @@ export async function POST({ request, locals }) {
     return json(reward, { status: 201 });
   } catch (err) {
     if (err.code === '23505') {
-      return json({ error: 'This change already has a reward assigned' }, { status: 409 });
+      return json({ error: 'This reward rule is already assigned for this change' }, { status: 409 });
     }
     throw err;
   }
