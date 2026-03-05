@@ -4818,24 +4818,29 @@ export async function getMatchingRules(entity, changeType, dataKeys) {
   return result.rows.filter(rule => {
     if (rule.entities && !rule.entities.includes(entity)) return false;
     if (rule.change_type && rule.change_type !== changeType) return false;
-    if (rule.data_fields && dataKeys) {
-      const hasMatch = rule.data_fields.some(f => dataKeys.includes(f));
-      if (!hasMatch) return false;
+    if (rule.data_fields?.length) {
+      if (!Array.isArray(dataKeys) || !rule.data_fields.some(f => dataKeys.includes(f))) return false;
     }
     return true;
   });
 }
 
-export async function getChangeReward(changeId) {
+export async function getChangeRewards(changeId) {
   const result = await pool.query(
     `SELECT cr.*, rr.name as rule_name, u.global_name as assigned_by_name
      FROM contributor_rewards cr
      LEFT JOIN reward_rules rr ON cr.rule_id = rr.id
      LEFT JOIN users u ON cr.assigned_by = u.id
-     WHERE cr.change_id = $1`,
+     WHERE cr.change_id = $1
+     ORDER BY cr.created_at DESC, cr.id DESC`,
     [changeId]
   );
-  return result.rows[0] || null;
+  return result.rows;
+}
+
+export async function getChangeReward(changeId) {
+  const rewards = await getChangeRewards(changeId);
+  return rewards[0] || null;
 }
 
 export async function assignReward({ change_id, user_id, rule_id, amount, contribution_score, note, assigned_by }) {
