@@ -115,10 +115,12 @@ def init(verbose: bool = False) -> None:
     except Exception:
         pass  # file logging is best-effort
 
-    # faulthandler — writes C-level crash tracebacks to the log file
+    # faulthandler — writes C-level crash tracebacks to a dedicated file.
+    # Must NOT share the main log file: on Windows, the extra open handle
+    # prevents RotatingFileHandler from renaming during log rotation.
     try:
-        fh = open(_LOG_FILE, "a", encoding="utf-8")
-        faulthandler.enable(file=fh)
+        _fault_file = open(_LOG_DIR / "client.fault.log", "a", encoding="utf-8")
+        faulthandler.enable(file=_fault_file)
     except Exception:
         faulthandler.enable()  # fallback: write to stderr
 

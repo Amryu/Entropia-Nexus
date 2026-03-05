@@ -265,9 +265,9 @@ class MapCanvas(QWidget):
         coords = props.get("Coordinates") or props.get("Data")
         if not coords:
             return (None, None)
-        if "Longitude" in coords:
+        if "Longitude" in coords and coords["Longitude"] is not None and coords["Latitude"] is not None:
             return self._entropia_to_image(coords["Longitude"], coords["Latitude"])
-        if "x" in coords:
+        if "x" in coords and coords["x"] is not None and coords["y"] is not None:
             return self._entropia_to_image(coords["x"], coords["y"])
         return (None, None)
 
