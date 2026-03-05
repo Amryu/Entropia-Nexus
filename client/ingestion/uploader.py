@@ -86,14 +86,16 @@ class IngestionUploader:
             if recovered_trades:
                 self._trade_buffer.extend(recovered_trades)
                 log.info("Recovered %d pending trades from previous session", len(recovered_trades))
-            recovered_mp = db.load_pending_ingestion("market_price")
-            if recovered_mp:
-                self._market_price_buffer.extend(recovered_mp)
-                log.info("Recovered %d pending market prices from previous session", len(recovered_mp))
+                # Market price ingestion disabled — OCR not ready yet
+            # recovered_mp = db.load_pending_ingestion("market_price")
+            # if recovered_mp:
+            #     self._market_price_buffer.extend(recovered_mp)
+            #     log.info("Recovered %d pending market prices from previous session", len(recovered_mp))
 
         self._event_bus.subscribe(EVENT_GLOBAL, self._on_global)
         self._event_bus.subscribe(EVENT_TRADE_CHAT, self._on_trade)
-        self._event_bus.subscribe(EVENT_MARKET_PRICE_SCAN, self._on_market_price)
+        # Market price ingestion disabled — OCR not ready yet
+        # self._event_bus.subscribe(EVENT_MARKET_PRICE_SCAN, self._on_market_price)
         self._event_bus.subscribe(EVENT_CATCHUP_COMPLETE, self._on_catchup_complete)
         self._event_bus.subscribe(EVENT_REPARSE_COMPLETE, self._on_reparse_complete)
 
@@ -383,7 +385,8 @@ class IngestionUploader:
 
         g_sent, g_processed = self._flush_type(self._global_buffer, "global", self._nexus_client.ingest_globals)
         t_sent, t_processed = self._flush_type(self._trade_buffer, "trade", self._nexus_client.ingest_trades)
-        mp_sent, mp_processed = self._flush_type(self._market_price_buffer, "market-price", self._nexus_client.ingest_market_prices)
+        # Market price ingestion disabled — OCR not ready yet
+        mp_sent, mp_processed = 0, []
 
         # Delete only the specific items confirmed processed by the server.
         # Items still in the buffer (re-queued from rate limiting) stay in the DB
@@ -522,7 +525,6 @@ class IngestionUploader:
         with self._lock:
             globals_list = list(self._global_buffer)
             trades_list = list(self._trade_buffer)
-            mp_list = list(self._market_price_buffer)
         if globals_list:
             self._db.save_pending_ingestion("global", globals_list)
         else:
@@ -531,10 +533,6 @@ class IngestionUploader:
             self._db.save_pending_ingestion("trade", trades_list)
         else:
             self._db.clear_pending_ingestion("trade")
-        if mp_list:
-            self._db.save_pending_ingestion("market_price", mp_list)
-        else:
-            self._db.clear_pending_ingestion("market_price")
 
 
 def _chunked(items: list, size: int):

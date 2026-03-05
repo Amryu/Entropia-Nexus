@@ -239,7 +239,8 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     workers.extend(_start_update_checker(config, event_bus))
     workers.extend(_start_target_lock_detector(config, event_bus))
     workers.extend(_start_player_status_detector(config, event_bus))
-    workers.extend(_start_market_price_detector(config, event_bus))
+    # Market price detector disabled — OCR not ready yet
+    # workers.extend(_start_market_price_detector(config, event_bus))
 
     # Overlay manager (focus detection, widget registry, snap)
     from .overlay.overlay_manager import OverlayManager

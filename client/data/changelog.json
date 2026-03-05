@@ -1,7 +1,7 @@
 [
   {
     "version": "0.1.6",
-    "date": "2026-03-04",
+    "date": "2026-03-05",
     "changes": [
       {"type": "feat", "text": "Skill gain tracking from chat log with compact database storage"},
       {"type": "feat", "text": "Skills tab shows accumulated gains since last scan or import"},
@@ -12,9 +12,17 @@
       {"type": "feat", "text": "Loadout compare: chunked evaluation to reduce UI lag"},
       {"type": "feat", "text": "Configurable overlay hotkeys with per-key editing in settings"},
       {"type": "feat", "text": "Global hotkeys enable/disable toggle and reset-to-defaults"},
+      {"type": "feat", "text": "OAuth login shows descriptive error messages instead of silent failures"},
+      {"type": "feat", "text": "Re-login splash when background token refresh detects expired session"},
+      {"type": "feat", "text": "Main window opens on the same monitor as the splash screen"},
+      {"type": "fix", "text": "Crash: 'database is locked' during chat log catchup with concurrent writes"},
+      {"type": "fix", "text": "Loadout scope/sight/matrix efficiency showing N/A when attachment has no decay cost"},
+      {"type": "fix", "text": "Loadout picker link button clipped by narrow column"},
+      {"type": "fix", "text": "Exchange overlay resize grip hidden behind content"},
       {"type": "fix", "text": "Crit chance and crit damage values now display correctly in compare tables"},
       {"type": "fix", "text": "Compare button height matches other toolbar buttons"},
-      {"type": "fix", "text": "Exchange price snapshots clamped to numeric column limit"}
+      {"type": "fix", "text": "Exchange price snapshots clamped to numeric column limit"},
+      {"type": "fix", "text": "Disabled market price OCR detector (not yet functional)"}
     ]
   },
   {

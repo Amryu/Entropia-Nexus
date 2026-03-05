@@ -3107,7 +3107,7 @@
         {
           key: 'link',
           header: '',
-          width: '42px',
+          width: '46px',
           sortable: false,
           searchable: false,
           formatter: (_value, row) => {
@@ -3148,6 +3148,8 @@
     }
 
     if (kind === 'amplifier') {
+      const weapon = getWeapon(loadout?.Gear?.Weapon?.Name);
+      const weaponDamage = weapon ? LoadoutCalc.calculateItemTotalDamage(weapon) : 0;
       return {
         title: 'Select Amplifier',
         columns: finalizePickerColumns(kind, [
@@ -3161,7 +3163,11 @@
           damage: compareDps(loadout, x => x.Gear.Weapon.Amplifier, (x, v) => x.Gear.Weapon.Amplifier = v, item) ?? 'N/A',
           dpp: compareDpp(loadout, x => x.Gear.Weapon.Amplifier, (x, v) => x.Gear.Weapon.Amplifier = v, item) ?? 'N/A',
           efficiency: compareEfficiency(loadout, x => x.Gear.Weapon.Amplifier, (x, v) => x.Gear.Weapon.Amplifier = v, item) ?? 'N/A'
-        }))
+        })),
+        rowClass: weaponDamage ? (row) => {
+          const ampDamage = LoadoutCalc.calculateItemTotalDamage(row._item);
+          return ampDamage && 2 * ampDamage > weaponDamage ? 'overcapped-amp' : '';
+        } : null
       };
     }
 
@@ -5925,6 +5931,7 @@
               columns={pickerConfig.columns}
               data={pickerConfig.rows}
               rowHeight={pickerRowHeight}
+              rowClass={pickerConfig.rowClass || null}
               pageSize={60}
               searchable={true}
               sortable={true}
@@ -5961,6 +5968,10 @@
 
   .picker-table {
     min-height: 0;
+  }
+
+  .picker-table :global(.overcapped-amp) {
+    color: var(--warning-color, #fbbf24);
   }
 
   .picker-preview {

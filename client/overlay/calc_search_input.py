@@ -126,9 +126,11 @@ class _ResultPopup(QWidget):
 
         self._rows: list[QLabel] = []
         self._items: list[dict] = []
+        self._row_colors: list[str | None] = []
         self._highlight_idx = -1
 
-    def set_results(self, items: list[dict]):
+    def set_results(self, items: list[dict], color_fn=None):
+        """Update displayed results. color_fn(item) -> color string or None."""
         # Clear existing rows — hide + delete so they don't affect sizeHint
         for row in self._rows:
             row.hide()
@@ -136,11 +138,19 @@ class _ResultPopup(QWidget):
             row.deleteLater()
         self._rows.clear()
         self._items = items
+        self._row_colors.clear()
         self._highlight_idx = -1
 
         for item in items:
+            color = color_fn(item) if color_fn else None
+            self._row_colors.append(color)
+            text_color = color or TEXT_COLOR
+            style = (
+                f"color: {text_color}; font-size: 13px; padding: 3px 6px;"
+                f" background: transparent;"
+            )
             lbl = QLabel(_item_name(item))
-            lbl.setStyleSheet(_ROW_STYLE)
+            lbl.setStyleSheet(style)
             lbl.setCursor(Qt.CursorShape.PointingHandCursor)
             lbl.mousePressEvent = lambda _e, it=item: self.result_clicked.emit(it)
             self._layout.addWidget(lbl)
@@ -153,10 +163,21 @@ class _ResultPopup(QWidget):
 
     def highlight(self, idx: int):
         if self._highlight_idx >= 0 and self._highlight_idx < len(self._rows):
-            self._rows[self._highlight_idx].setStyleSheet(_ROW_STYLE)
+            color = self._row_colors[self._highlight_idx] if self._highlight_idx < len(self._row_colors) else None
+            text_c = color or TEXT_COLOR
+            self._rows[self._highlight_idx].setStyleSheet(
+                f"color: {text_c}; font-size: 13px; padding: 3px 6px;"
+                f" background: transparent;"
+            )
         self._highlight_idx = max(-1, min(idx, len(self._rows) - 1))
         if self._highlight_idx >= 0:
-            self._rows[self._highlight_idx].setStyleSheet(_ROW_HOVER_STYLE)
+            color = self._row_colors[self._highlight_idx] if self._highlight_idx < len(self._row_colors) else None
+            text_c = color or TEXT_COLOR
+            self._rows[self._highlight_idx].setStyleSheet(
+                f"color: {text_c}; font-size: 13px; padding: 3px 6px;"
+                f" background-color: rgba(60, 60, 90, 180);"
+                f" border-radius: 3px;"
+            )
 
     def highlighted_item(self) -> dict | None:
         if 0 <= self._highlight_idx < len(self._items):
@@ -213,10 +234,12 @@ class CalcSearchInput(QWidget):
         items: list[dict] | None = None,
         placeholder: str = "Search...",
         parent: QWidget | None = None,
+        color_fn=None,
     ):
         super().__init__(parent)
         self._all_items: list[dict] = items or []
         self._selected: dict | None = None
+        self._color_fn = color_fn  # Optional: item -> color string or None
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -257,6 +280,10 @@ class CalcSearchInput(QWidget):
 
     def set_items(self, items: list[dict]):
         self._all_items = items
+
+    def set_color_fn(self, color_fn):
+        """Update the color callback for dropdown items."""
+        self._color_fn = color_fn
 
     def clear_selection(self):
         self._selected = None
@@ -303,7 +330,7 @@ class CalcSearchInput(QWidget):
             self._popup.hide()
             return
 
-        self._popup.set_results(results)
+        self._popup.set_results(results, color_fn=self._color_fn)
         self._position_popup()
         self._popup.show()
         self._popup.raise_()

@@ -2180,6 +2180,11 @@
   font-size: 12px;
 }
 
+.picker-table :global(.table-cell:last-child) {
+  padding: 0 5px;
+  justify-content: center;
+}
+
 .picker-table .picker-link-icon {
   width: 14px;
   height: 14px;
