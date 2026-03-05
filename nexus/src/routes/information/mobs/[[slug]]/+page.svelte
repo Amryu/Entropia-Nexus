@@ -93,7 +93,18 @@
   let showCreateSpeciesDialog = false;
   let showEditSpeciesDialog = false;
   let localSpeciesList = [];
-  $: localSpeciesList = [...(speciesList || [])];
+  let localSpeciesSeed = '';
+  $: {
+    const seed = JSON.stringify((speciesList || []).map(s => [
+      s?.Name || '',
+      s?.Properties?.CodexBaseCost ?? null,
+      s?.Properties?.CodexType ?? null
+    ]));
+    if (seed !== localSpeciesSeed) {
+      localSpeciesSeed = seed;
+      localSpeciesList = [...(speciesList || [])];
+    }
+  }
   $: speciesOptions = localSpeciesList.map(s => ({ value: s.Name, label: s.Name }));
 
   // Verified users can edit
@@ -877,7 +888,9 @@
   $: isAsteroid = activeMob?.Type === 'Asteroid';
   $: scanningProfession = getScanningProfession(activeMob);
   $: lootingProfession = getLootingProfession(activeMob);
-  $: hasCodex = activeMob?.Species?.Properties?.CodexBaseCost != null;
+  $: speciesCodexBaseCost = activeMob?.Species?._newSpecies?.CodexBaseCost ?? activeMob?.Species?.Properties?.CodexBaseCost;
+  $: speciesCodexType = activeMob?.Species?._newSpecies?.CodexType ?? activeMob?.Species?.Properties?.CodexType;
+  $: hasCodex = speciesCodexBaseCost != null;
   $: selectedMaturityBelongsToActiveMob = selectedMaturityId != null
     && !!activeMob?.Maturities?.some(m => String(m.Id) === String(selectedMaturityId));
   $: selectedMaturityIdForActiveMob = selectedMaturityBelongsToActiveMob ? selectedMaturityId : null;
@@ -900,20 +913,74 @@
     updateField('Properties.Description', event.detail);
   }
 
+  function buildSpeciesProps(raw) {
+    return {
+      CodexBaseCost: raw?.CodexBaseCost ?? null,
+      CodexType: raw?.CodexType ?? 'Mob'
+    };
+  }
+
+  function upsertLocalSpecies(name, speciesProps) {
+    const normalized = buildSpeciesProps(speciesProps);
+    const species = { Name: name, Properties: normalized };
+    const existingIndex = localSpeciesList.findIndex(s => s.Name === name);
+
+    if (existingIndex >= 0) {
+      localSpeciesList = localSpeciesList.map((s, index) => index === existingIndex ? species : s);
+    } else {
+      localSpeciesList = [...localSpeciesList, species];
+    }
+  }
+
+  function buildSpeciesPayload(name, speciesProps, baseSpecies = null) {
+    const normalized = buildSpeciesProps(speciesProps);
+    return {
+      ...(baseSpecies ? JSON.parse(JSON.stringify(baseSpecies)) : {}),
+      Name: name,
+      Properties: {
+        ...(baseSpecies?.Properties || {}),
+        ...normalized
+      },
+      _newSpecies: normalized
+    };
+  }
+
+  function handleSpeciesNameInput(nextName) {
+    const name = (nextName || '').trim();
+    if (!name) {
+      updateField('Species', null);
+      return;
+    }
+
+    const selectedSpecies = localSpeciesList.find(s => s.Name === name);
+    if (selectedSpecies) {
+      const currentSpecies = activeMob?.Species;
+      const payload = JSON.parse(JSON.stringify(selectedSpecies));
+      if (currentSpecies?.Name === name && currentSpecies?._newSpecies) {
+        payload._newSpecies = buildSpeciesProps(currentSpecies._newSpecies);
+        payload.Properties = {
+          ...(payload.Properties || {}),
+          ...payload._newSpecies
+        };
+      }
+      updateField('Species', payload);
+      return;
+    }
+
+    updateField('Species', { Name: name });
+  }
+
   function handleCreateSpecies(event) {
     const { Name, _newSpecies } = event.detail;
-    localSpeciesList = [...localSpeciesList, { Name, Properties: { CodexBaseCost: _newSpecies.CodexBaseCost, CodexType: _newSpecies.CodexType } }];
-    updateField('Species', { Name, _newSpecies });
+    upsertLocalSpecies(Name, _newSpecies);
+    updateField('Species', buildSpeciesPayload(Name, _newSpecies));
     showCreateSpeciesDialog = false;
   }
 
   function handleEditSpecies(event) {
     const { Name, _newSpecies } = event.detail;
-    // Update the species in the local list so the UI reflects the change
-    localSpeciesList = localSpeciesList.map(s =>
-      s.Name === Name ? { ...s, Properties: { CodexBaseCost: _newSpecies.CodexBaseCost, CodexType: _newSpecies.CodexType } } : s
-    );
-    updateField('Species', { Name, _newSpecies });
+    upsertLocalSpecies(Name, _newSpecies);
+    updateField('Species', buildSpeciesPayload(Name, _newSpecies, activeMob?.Species));
     showEditSpeciesDialog = false;
   }
 </script>
@@ -1063,8 +1130,8 @@
                       value={activeMob?.Species?.Name || ''}
                       placeholder="Search species..."
                       options={speciesOptions}
-                      on:change={(e) => updateField('Species.Name', e.detail.value || '')}
-                      on:select={(e) => updateField('Species.Name', e.detail.value || '')}
+                      on:change={(e) => handleSpeciesNameInput(e.detail.value)}
+                      on:select={(e) => handleSpeciesNameInput(e.detail.value)}
                     />
                     {#if activeMob?.Species?.Name}
                       <button class="btn-create-inline" on:click={() => showEditSpeciesDialog = true} title="Edit species details">
@@ -1259,11 +1326,11 @@
             <h4 class="section-title">Codex</h4>
             <div class="stat-row">
               <span class="stat-label">Base Cost</span>
-              <span class="stat-value">{activeMob?.Species?.Properties?.CodexBaseCost} PED</span>
+              <span class="stat-value">{speciesCodexBaseCost} PED</span>
             </div>
             <div class="stat-row">
               <span class="stat-label">Type</span>
-              <span class="stat-value">{activeMob?.Species?.Properties?.CodexType || 'Mob'}</span>
+              <span class="stat-value">{speciesCodexType || 'Mob'}</span>
             </div>
           </div>
         {/if}
@@ -1388,8 +1455,8 @@
             on:toggle={savePanelStates}
           >
             <MobCodex
-              baseCost={activeMob?.Species?.Properties?.CodexBaseCost}
-              codexType={activeMob?.Species?.Properties?.CodexType}
+              baseCost={speciesCodexBaseCost}
+              codexType={speciesCodexType}
               mobType={mobType}
               skills={skillsList}
             />
