@@ -9,14 +9,18 @@
 
   const dispatch = createEventDispatcher();
 
-  /** @type {{ Name: string, Properties?: { CodexBaseCost?: number, CodexType?: string } } | null} */
+  /** @type {{ Name: string, Properties?: { CodexBaseCost?: number, CodexType?: string }, _newSpecies?: { CodexBaseCost?: number, CodexType?: string } } | null} */
   export let species = null;
 
   $: isEdit = !!species;
 
+  function getSpeciesValues() {
+    return species?._newSpecies || species?.Properties || {};
+  }
+
   let name = species?.Name || '';
-  let codexBaseCost = species?.Properties?.CodexBaseCost ?? '';
-  let codexType = species?.Properties?.CodexType || 'Mob';
+  let codexBaseCost = getSpeciesValues().CodexBaseCost ?? '';
+  let codexType = getSpeciesValues().CodexType || 'Mob';
 
   $: canSubmit = name.trim().length > 0;
 
