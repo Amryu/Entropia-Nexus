@@ -5,17 +5,36 @@ import { EntitySchemas } from "./common/EntitySchemas.js";
 const Validators = {};
 
 let shared = [EffectsOnEquip, EffectsOnSetEquip, EffectsOnUse, NamedEntity, Tiers];
+const ENTITY_TYPE_MAP = {
+  TeleportChip: 'TeleportationChip',
+  CreatureControlCapsule: 'Capsule'
+};
+
+function resolveSchemaType(type) {
+  return ENTITY_TYPE_MAP[type] || type;
+}
 
 function getValidator(type) {
-  if (!Validators[type]) {
-    Validators[type] = new Ajv({ schemas: shared, strict: false, removeAdditional: 'all', allErrors: true }).compile(EntitySchemas[type]);
+  const schemaType = resolveSchemaType(type);
+
+  if (!Validators[schemaType]) {
+    const schema = EntitySchemas[schemaType];
+    if (!schema) {
+      console.error(`No schema found for entity type "${type}" (resolved as "${schemaType}")`);
+      return null;
+    }
+
+    Validators[schemaType] = new Ajv({ schemas: shared, strict: false, removeAdditional: 'all', allErrors: true }).compile(schema);
   }
 
-  return Validators[type];
+  return Validators[schemaType];
 }
 
 export function validate(type, data) {
   let validator = getValidator(type);
+  if (!validator) {
+    return false;
+  }
 
   let success = validator(data);
 
