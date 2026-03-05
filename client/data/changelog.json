@@ -1,5 +1,23 @@
 [
   {
+    "version": "0.1.8",
+    "date": "2026-03-05",
+    "changes": [
+      {"type": "feat", "text": "Template-relative ROI system: skill scan regions defined as pixel offsets from the SKILLS template, replacing ratio-based layout"},
+      {"type": "feat", "text": "Alpha mask template matching for SKILLS label (ignores background pixels)"},
+      {"type": "feat", "text": "Shared frame cache: all OCR detectors reuse the same PrintWindow capture per frame"},
+      {"type": "feat", "text": "Skills template debug overlay showing match box, ROI regions, column cells, and bar regions"},
+      {"type": "feat", "text": "Bar offset ROI for precise progress bar positioning in skill scan"},
+      {"type": "feat", "text": "Multi-monitor overlay support with physical pixel HWND sizing for high-DPI screens"},
+      {"type": "feat", "text": "Per-monitor DPI awareness (PER_MONITOR_AWARE_V2) for correct overlay placement"},
+      {"type": "feat", "text": "F2 hotkey to toggle all overlay widgets on/off"},
+      {"type": "feat", "text": "Row pitch support in ROI config (gap between row starts vs content height)"},
+      {"type": "fix", "text": "Faulthandler no longer shares log file handle, preventing log rotation lock on Windows"},
+      {"type": "fix", "text": "Null coordinate crash in map canvas location rendering"},
+      {"type": "fix", "text": "Skill scan window tracking now uses full template match every cycle for reliable movement detection"}
+    ]
+  },
+  {
     "version": "0.1.7",
     "date": "2026-03-05",
     "changes": [
