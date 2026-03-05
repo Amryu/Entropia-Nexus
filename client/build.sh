@@ -298,30 +298,20 @@ if [[ -d "$INTERNAL_CHECK" ]]; then
 fi
 
 # ── Post-build: resolve version ─────────────────────────────────────────────
-# Prefer git tag (e.g. "client-1.2.0"), fall back to client/VERSION file.
-# Tags must match: client-<semver>  (the "client-" prefix is stripped).
+# Read version from client/VERSION file (single source of truth).
 
 VERSION=""
-if command -v git &>/dev/null && git rev-parse --git-dir &>/dev/null 2>&1; then
-    GIT_DESC="$(git describe --tags --match 'client-*' --abbrev=0 2>/dev/null || true)"
-    if [[ -n "$GIT_DESC" ]]; then
-        VERSION="${GIT_DESC#client-}"   # strip "client-" prefix
-    fi
+VERSION_FILE="${ROOT}/client/VERSION"
+if [[ "$PLATFORM" == "windows" ]] && command -v cygpath &>/dev/null; then
+    VERSION_CHECK="$(cygpath -u "$VERSION_FILE")"
+else
+    VERSION_CHECK="$VERSION_FILE"
+fi
+if [[ -f "$VERSION_CHECK" ]]; then
+    VERSION="$(cat "$VERSION_CHECK" | tr -d '[:space:]')"
 fi
 
-if [[ -z "$VERSION" ]]; then
-    VERSION_FILE="${ROOT}/client/VERSION"
-    if [[ "$PLATFORM" == "windows" ]] && command -v cygpath &>/dev/null; then
-        VERSION_CHECK="$(cygpath -u "$VERSION_FILE")"
-    else
-        VERSION_CHECK="$VERSION_FILE"
-    fi
-    if [[ -f "$VERSION_CHECK" ]]; then
-        VERSION="$(cat "$VERSION_CHECK" | tr -d '[:space:]')"
-    fi
-fi
-
-[[ -n "$VERSION" ]] || die "No version found — tag with 'git tag client-X.Y.Z' or create client/VERSION"
+[[ -n "$VERSION" ]] || die "No version found — create client/VERSION with the version number"
 cyan "Version: $VERSION"
 
 # Write resolved version into the bundled VERSION file so the client reads it
