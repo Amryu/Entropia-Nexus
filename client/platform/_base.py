@@ -70,14 +70,6 @@ class PlatformBackend(Protocol):
         """
         ...
 
-    def set_no_activate(self, wid: int) -> bool:
-        """Prevent the window from activating on mouse clicks.
-
-        Clicks still reach child widgets, but the window never becomes the
-        foreground/active window.  Returns True on success.
-        """
-        ...
-
     def bring_to_foreground(self, wid: int) -> bool:
         """Activate the window and bring it to the front.
 
