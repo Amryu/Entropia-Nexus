@@ -153,17 +153,6 @@ class OverlayWidget(QWidget):
         setattr(self._config, self._position_key, pos)
         save_config(self._config, self._config_path)
 
-    # --- Activation prevention ---
-
-    _no_activate_applied = False
-
-    def showEvent(self, event):
-        super().showEvent(event)
-        if not self._no_activate_applied:
-            from ..platform import backend as _platform
-            _platform.set_no_activate(int(self.winId()))
-            self._no_activate_applied = True
-
     # --- Cleanup ---
 
     def closeEvent(self, event):

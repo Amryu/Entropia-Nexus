@@ -183,9 +183,6 @@ class X11Backend:
             log.warning("Failed to set click-through via XShape: %s", e)
             return False
 
-    def set_no_activate(self, wid: int) -> bool:
-        return False  # Not needed on X11 — Tool windows don't steal focus
-
     def bring_to_foreground(self, wid: int) -> bool:
         """Send _NET_ACTIVE_WINDOW client message (EWMH standard)."""
         try:
