@@ -60,11 +60,21 @@ class ImagePreprocessor:
         _, binary = cv2.threshold(gray, 120, 255, cv2.THRESH_BINARY)
         return binary
 
-    def extract_rows(self, table_image: np.ndarray, row_height: int) -> list[np.ndarray]:
-        """Split a table image into individual row strips."""
+    def extract_rows(self, table_image: np.ndarray, row_height: int,
+                      row_pitch: int = 0) -> list[np.ndarray]:
+        """Split a table image into individual row strips.
+
+        Args:
+            table_image: Cropped table area.
+            row_height: Height of each row's content area.
+            row_pitch: Distance between consecutive row starts (height + gap).
+                       Defaults to row_height if 0.
+        """
+        if row_pitch <= 0:
+            row_pitch = row_height
         h, w = table_image.shape[:2]
         rows = []
-        for y in range(0, h - row_height + 1, row_height):
+        for y in range(0, h - row_height + 1, row_pitch):
             row = table_image[y:y + row_height]
             rows.append(row)
         return rows

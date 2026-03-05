@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from .constants import DEFAULT_CHAT_LOG_PATH
+from .constants import DEFAULT_CHAT_LOG_PATH, SCAN_ROI_VERSION
 from .logger import get_logger
 
 log = get_logger("Config")
@@ -21,8 +21,13 @@ class AppConfig:
 
     # OCR - general
     ocr_confidence_threshold: float = 0.7
+    ocr_search_margin: int = 80       # px, local-area search radius for tier-2 template matching
+    ocr_adjust_margin: int = 8        # px, skills quick_adjust search radius
+    ocr_idle_threshold: int = 50      # ticks with no change before entering idle mode
+    ocr_idle_multiplier: int = 5      # poll interval multiplier in idle mode
     scan_overlay_debug: bool = False
     scan_roi_overrides: dict = field(default_factory=dict)  # {name: [x,y,w,h]} pixel offsets from SKILLS template
+    scan_roi_version: int = 0  # Tracks DEFAULT_ROI_PIXELS version; reset overrides when outdated
 
     # OCR - HUD regions (x, y, w, h) for mob/tool name detection
     mob_name_region: tuple[int, int, int, int] | None = None
@@ -79,6 +84,7 @@ class AppConfig:
     hotkey_exchange: str = "ctrl+e"
     hotkey_notifications: str = "ctrl+n"
     hotkey_debug: str = "f3"
+    hotkey_overlay_toggle: str = "f2"
 
     # UI
     main_window_screen_center: list | None = None
@@ -166,8 +172,13 @@ DEFAULTS = {
     "poll_interval_ms": 500,
     "loot_group_window_ms": 1500,
     "ocr_confidence_threshold": 0.7,
+    "ocr_search_margin": 80,
+    "ocr_adjust_margin": 8,
+    "ocr_idle_threshold": 50,
+    "ocr_idle_multiplier": 5,
     "scan_overlay_debug": False,
     "scan_roi_overrides": {},
+    "scan_roi_version": 0,
     "mob_name_region": None,
     "tool_name_region": None,
     "hunt_overlay_position": [50, 50],
@@ -208,6 +219,7 @@ DEFAULTS = {
     "hotkey_exchange": "ctrl+e",
     "hotkey_notifications": "ctrl+n",
     "hotkey_debug": "f3",
+    "hotkey_overlay_toggle": "f2",
     "main_window_screen_center": None,
     "active_loadout_id": None,
     "wiki_column_prefs": {},
@@ -306,6 +318,11 @@ def load_config(config_path: str = "config.json") -> AppConfig:
         secs = user_config["trade_chat_cooldown_seconds"]
         merged["trade_chat_cooldown_minutes"] = max(1, secs // 60)
     merged.pop("trade_chat_cooldown_seconds", None)
+
+    # Reset stale ROI overrides when defaults change
+    if merged.get("scan_roi_version", 0) < SCAN_ROI_VERSION:
+        merged["scan_roi_overrides"] = {}
+        merged["scan_roi_version"] = SCAN_ROI_VERSION
 
     # Migrate legacy overlay_position → per-overlay keys
     if "overlay_position" in user_config:

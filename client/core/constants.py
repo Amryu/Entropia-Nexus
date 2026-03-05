@@ -87,12 +87,16 @@ EVENT_PLAYER_STATUS_LOST = "player_status_lost"
 # Debug events
 EVENT_DEBUG_REGIONS = "debug_regions"      # Window/sidebar/table/pagination bounds
 EVENT_DEBUG_ROW = "debug_row"              # Individual row OCR result
+EVENT_SKILLS_TEMPLATE_DEBUG = "skills_template_debug"  # Skills title template match
 
 # Overlay coordination events (OCR <-> overlays)
 EVENT_OCR_OVERLAYS_HIDE = "ocr_overlays_hide"   # data: callable (call when hidden)
 EVENT_OCR_OVERLAYS_SHOW = "ocr_overlays_show"    # data: None
 EVENT_OCR_PAGE_CHANGED = "ocr_page_changed"      # data: None (clear checkmarks)
 EVENT_ROI_CONFIG_CHANGED = "roi_config_changed"  # data: {name: (x,y,w,h)} pixel overrides
+
+# Scan ROI version — bump when DEFAULT_ROI_PIXELS changes to reset stale user overrides
+SCAN_ROI_VERSION = 5
 
 # Chat log line format
 LINE_PATTERN = re.compile(
