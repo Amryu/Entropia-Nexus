@@ -17,7 +17,7 @@
   import SearchInput from '$lib/components/SearchInput.svelte';
   import GlobalsDateRangePicker from '$lib/components/globals/GlobalsDateRangePicker.svelte';
   import { TYPE_CONFIG } from '$lib/data/globals-constants.js';
-  import { formatPed, formatValue, timeAgo, getComputedCssVar } from '$lib/utils/globalsFormat.js';
+  import { formatPed, formatValue, timeAgo, getComputedCssVar, sortedData, toggleSort, sortIcon } from '$lib/utils/globalsFormat.js';
 
   export let data;
 
@@ -27,6 +27,8 @@
   let topPlayers = [];
   let activity = [];
   let recent = [];
+  let recentSort = { col: 'timestamp', asc: false };
+  $: sortedRecent = recentSort.col === 'timestamp' && !recentSort.asc ? recent : sortedData(recent, recentSort);
   let primaryType = null;
   let maturities = [];
   let wikiUrl = null;
@@ -431,14 +433,14 @@
             <table class="data-table compact-table">
               <thead>
                 <tr>
-                  <th>Player</th>
-                  <th class="right">Value</th>
+                  <th class="sortable" on:click={() => recentSort = toggleSort(recentSort, 'player')}>Player{sortIcon(recentSort, 'player')}</th>
+                  <th class="sortable right" on:click={() => recentSort = toggleSort(recentSort, 'value')}>Value{sortIcon(recentSort, 'value')}</th>
                   <th></th>
-                  <th>Time</th>
+                  <th class="sortable" on:click={() => recentSort = toggleSort(recentSort, 'timestamp')}>Time{sortIcon(recentSort, 'timestamp')}</th>
                 </tr>
               </thead>
               <tbody>
-                {#each recent as g}
+                {#each sortedRecent as g}
                   <tr>
                     <td>
                       {#if g.type === 'team_kill'}<span class="badge-team">T</span>{/if}
@@ -820,6 +822,15 @@
     text-transform: uppercase;
     letter-spacing: 0.3px;
     white-space: nowrap;
+  }
+
+  .data-table th.sortable {
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .data-table th.sortable:hover {
+    color: var(--text-color);
   }
 
   .data-table th.right, .data-table td.right {

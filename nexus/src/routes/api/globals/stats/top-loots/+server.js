@@ -37,8 +37,19 @@ export async function GET({ url }) {
   const page = Math.min(Math.max(pageParam || 1, 1), MAX_PAGE);
   const offset = (page - 1) * limit;
 
-  // Sort by value for value-based categories, by recency for others
-  const orderBy = tabConfig.hasValue ? 'value DESC, event_timestamp DESC' : 'event_timestamp DESC';
+  // Sort — allow client override, default by value for value-based, recency for others
+  const SORT_COLUMNS = {
+    value: 'value',
+    player: 'player_name',
+    target: 'target_name',
+    time: 'event_timestamp',
+  };
+  const sortParam = url.searchParams.get('sort') || '';
+  const sortAsc = url.searchParams.get('sort_dir') === 'asc';
+  const sortCol = SORT_COLUMNS[sortParam];
+  const dir = sortAsc ? 'ASC' : 'DESC';
+  const defaultOrder = tabConfig.hasValue ? 'value DESC, event_timestamp DESC' : 'event_timestamp DESC';
+  const orderBy = sortCol ? `${sortCol} ${dir}, event_timestamp DESC` : defaultOrder;
 
   try {
     const countIdx = params.length + 1;

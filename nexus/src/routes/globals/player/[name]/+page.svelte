@@ -28,6 +28,8 @@
   $: crafting = playerData?.crafting?.items || [];
   $: activity = playerData?.activity || [];
   $: recent = playerData?.recent || [];
+  let recentSort = { col: 'timestamp', asc: false };
+  $: sortedRecent = recentSort.col === 'timestamp' && !recentSort.asc ? recent : sortedData(recent, recentSort);
   $: achievements = playerData?.achievements || [];
   $: rareItems = playerData?.rare_items || [];
   $: topLoots = playerData?.top_loots || { hunting: [], mining: [], crafting: [] };
@@ -115,26 +117,32 @@
   // Hunting tab pagination
   let huntTargetPage = 0;
   let huntLootPage = 0;
+  let huntLootSort = { col: 'value', asc: false };
   $: huntTargetPages = Math.ceil(sortedHunting.length / PAGE_SIZE);
-  $: huntLootPages = Math.ceil((topLoots.hunting?.length || 0) / PAGE_SIZE);
+  $: sortedHuntingLoots = sortedData(topLoots.hunting || [], huntLootSort);
+  $: huntLootPages = Math.ceil(sortedHuntingLoots.length / PAGE_SIZE);
   $: pagedHunting = sortedHunting.slice(huntTargetPage * PAGE_SIZE, (huntTargetPage + 1) * PAGE_SIZE);
-  $: pagedHuntingLoots = (topLoots.hunting || []).slice(huntLootPage * PAGE_SIZE, (huntLootPage + 1) * PAGE_SIZE);
+  $: pagedHuntingLoots = sortedHuntingLoots.slice(huntLootPage * PAGE_SIZE, (huntLootPage + 1) * PAGE_SIZE);
 
   // Mining tab pagination
   let miningTargetPage = 0;
   let miningLootPage = 0;
+  let miningLootSort = { col: 'value', asc: false };
   $: miningTargetPages = Math.ceil(sortedMining.length / PAGE_SIZE);
-  $: miningLootPages = Math.ceil((topLoots.mining?.length || 0) / PAGE_SIZE);
+  $: sortedMiningLoots = sortedData(topLoots.mining || [], miningLootSort);
+  $: miningLootPages = Math.ceil(sortedMiningLoots.length / PAGE_SIZE);
   $: pagedMining = sortedMining.slice(miningTargetPage * PAGE_SIZE, (miningTargetPage + 1) * PAGE_SIZE);
-  $: pagedMiningLoots = (topLoots.mining || []).slice(miningLootPage * PAGE_SIZE, (miningLootPage + 1) * PAGE_SIZE);
+  $: pagedMiningLoots = sortedMiningLoots.slice(miningLootPage * PAGE_SIZE, (miningLootPage + 1) * PAGE_SIZE);
 
   // Crafting tab pagination
   let craftTargetPage = 0;
   let craftLootPage = 0;
+  let craftLootSort = { col: 'value', asc: false };
   $: craftTargetPages = Math.ceil(sortedCrafting.length / PAGE_SIZE);
-  $: craftLootPages = Math.ceil((topLoots.crafting?.length || 0) / PAGE_SIZE);
+  $: sortedCraftingLoots = sortedData(topLoots.crafting || [], craftLootSort);
+  $: craftLootPages = Math.ceil(sortedCraftingLoots.length / PAGE_SIZE);
   $: pagedCrafting = sortedCrafting.slice(craftTargetPage * PAGE_SIZE, (craftTargetPage + 1) * PAGE_SIZE);
-  $: pagedCraftingLoots = (topLoots.crafting || []).slice(craftLootPage * PAGE_SIZE, (craftLootPage + 1) * PAGE_SIZE);
+  $: pagedCraftingLoots = sortedCraftingLoots.slice(craftLootPage * PAGE_SIZE, (craftLootPage + 1) * PAGE_SIZE);
 
   // ATH tab sort — auto-select category with highest single loot
   $: athCategory = (() => {
@@ -149,16 +157,30 @@
   $: activeAthCategory = athCategoryOverride ?? athCategory;
   $: athLoots = topLoots[activeAthCategory] || [];
 
-  // ATH pagination
+  // ATH pagination and sorting
   let athLootPage = 0;
   let athTotalPage = 0;
   let athBestPage = 0;
-  $: athLootPages = Math.ceil(athLoots.length / PAGE_SIZE);
-  $: pagedAthLoots = athLoots.slice(athLootPage * PAGE_SIZE, (athLootPage + 1) * PAGE_SIZE);
-  $: athTotalPages = Math.ceil((athTargets.by_total?.length || 0) / ATH_TARGETS_PAGE_SIZE);
-  $: athBestPages = Math.ceil((athTargets.by_best?.length || 0) / ATH_TARGETS_PAGE_SIZE);
-  $: pagedAthTotal = (athTargets.by_total || []).slice(athTotalPage * ATH_TARGETS_PAGE_SIZE, (athTotalPage + 1) * ATH_TARGETS_PAGE_SIZE);
-  $: pagedAthBest = (athTargets.by_best || []).slice(athBestPage * ATH_TARGETS_PAGE_SIZE, (athBestPage + 1) * ATH_TARGETS_PAGE_SIZE);
+  let athLootSort = { col: 'value', asc: false };
+  let athTotalSort = { col: 'total_value', asc: false };
+  let athBestSort = { col: 'best_value', asc: false };
+  $: sortedAthLoots = sortedData(athLoots, athLootSort);
+  $: athLootPages = Math.ceil(sortedAthLoots.length / PAGE_SIZE);
+  $: pagedAthLoots = sortedAthLoots.slice(athLootPage * PAGE_SIZE, (athLootPage + 1) * PAGE_SIZE);
+  $: sortedAthTotal = sortedData(athTargets.by_total || [], athTotalSort);
+  $: athTotalPages = Math.ceil(sortedAthTotal.length / ATH_TARGETS_PAGE_SIZE);
+  $: pagedAthTotal = sortedAthTotal.slice(athTotalPage * ATH_TARGETS_PAGE_SIZE, (athTotalPage + 1) * ATH_TARGETS_PAGE_SIZE);
+  $: sortedAthBest = sortedData(athTargets.by_best || [], athBestSort);
+  $: athBestPages = Math.ceil(sortedAthBest.length / ATH_TARGETS_PAGE_SIZE);
+  $: pagedAthBest = sortedAthBest.slice(athBestPage * ATH_TARGETS_PAGE_SIZE, (athBestPage + 1) * ATH_TARGETS_PAGE_SIZE);
+
+  // Rare finds sorting
+  let rareFindSort = { col: 'timestamp', asc: false };
+  $: sortedRareItems = sortedData(rareItems, rareFindSort);
+
+  // PvP sorting
+  let pvpSort = { col: 'value', asc: false };
+  $: sortedPvpEvents = sortedData(pvpEvents, pvpSort);
 
   // Reset pagination when category changes
   $: if (activeAthCategory) athLootPage = 0;
@@ -495,15 +517,15 @@
               <table class="data-table">
                 <thead>
                   <tr>
-                    <th>Time</th>
-                    <th>Type</th>
-                    <th>Target</th>
-                    <th class="right">Value</th>
+                    <th class="sortable" on:click={() => recentSort = toggleSort(recentSort, 'timestamp')}>Time{sortIcon(recentSort, 'timestamp')}</th>
+                    <th class="sortable" on:click={() => recentSort = toggleSort(recentSort, 'type')}>Type{sortIcon(recentSort, 'type')}</th>
+                    <th class="sortable" on:click={() => recentSort = toggleSort(recentSort, 'target')}>Target{sortIcon(recentSort, 'target')}</th>
+                    <th class="sortable right" on:click={() => recentSort = toggleSort(recentSort, 'value')}>Value{sortIcon(recentSort, 'value')}</th>
                     <th></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {#each recent as g}
+                  {#each sortedRecent as g}
                     {@const tc = TYPE_CONFIG[g.type] || { label: g.type, cssClass: '' }}
                     <tr>
                       <td class="text-muted" title={new Date(g.timestamp).toLocaleString()}>{timeAgo(g.timestamp)}</td>
@@ -600,10 +622,10 @@
                     <thead>
                       <tr>
                         <th class="col-rank">#</th>
-                        <th>Target</th>
-                        <th class="right">Value</th>
+                        <th class="sortable" on:click={() => { huntLootSort = toggleSort(huntLootSort, 'target'); huntLootPage = 0; }}>Target{sortIcon(huntLootSort, 'target')}</th>
+                        <th class="sortable right" on:click={() => { huntLootSort = toggleSort(huntLootSort, 'value'); huntLootPage = 0; }}>Value{sortIcon(huntLootSort, 'value')}</th>
                         <th></th>
-                        <th>Time</th>
+                        <th class="sortable" on:click={() => { huntLootSort = toggleSort(huntLootSort, 'timestamp'); huntLootPage = 0; }}>Time{sortIcon(huntLootSort, 'timestamp')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -690,10 +712,10 @@
                     <thead>
                       <tr>
                         <th class="col-rank">#</th>
-                        <th>Resource</th>
-                        <th class="right">Value</th>
+                        <th class="sortable" on:click={() => { miningLootSort = toggleSort(miningLootSort, 'target'); miningLootPage = 0; }}>Resource{sortIcon(miningLootSort, 'target')}</th>
+                        <th class="sortable right" on:click={() => { miningLootSort = toggleSort(miningLootSort, 'value'); miningLootPage = 0; }}>Value{sortIcon(miningLootSort, 'value')}</th>
                         <th></th>
-                        <th>Time</th>
+                        <th class="sortable" on:click={() => { miningLootSort = toggleSort(miningLootSort, 'timestamp'); miningLootPage = 0; }}>Time{sortIcon(miningLootSort, 'timestamp')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -780,10 +802,10 @@
                     <thead>
                       <tr>
                         <th class="col-rank">#</th>
-                        <th>Item</th>
-                        <th class="right">Value</th>
+                        <th class="sortable" on:click={() => { craftLootSort = toggleSort(craftLootSort, 'target'); craftLootPage = 0; }}>Item{sortIcon(craftLootSort, 'target')}</th>
+                        <th class="sortable right" on:click={() => { craftLootSort = toggleSort(craftLootSort, 'value'); craftLootPage = 0; }}>Value{sortIcon(craftLootSort, 'value')}</th>
                         <th></th>
-                        <th>Time</th>
+                        <th class="sortable" on:click={() => { craftLootSort = toggleSort(craftLootSort, 'timestamp'); craftLootPage = 0; }}>Time{sortIcon(craftLootSort, 'timestamp')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -822,14 +844,14 @@
               <table class="data-table">
                 <thead>
                   <tr>
-                    <th>Item</th>
-                    <th class="right">Value</th>
-                    <th>Time</th>
+                    <th class="sortable" on:click={() => rareFindSort = toggleSort(rareFindSort, 'target')}>Item{sortIcon(rareFindSort, 'target')}</th>
+                    <th class="sortable right" on:click={() => rareFindSort = toggleSort(rareFindSort, 'value')}>Value{sortIcon(rareFindSort, 'value')}</th>
+                    <th class="sortable" on:click={() => rareFindSort = toggleSort(rareFindSort, 'timestamp')}>Time{sortIcon(rareFindSort, 'timestamp')}</th>
                     <th></th>
                   </tr>
                 </thead>
                 <tbody>
-                  {#each rareItems as item}
+                  {#each sortedRareItems as item}
                     <tr>
                       <td>{item.target}</td>
                       <td class="right font-weight-bold">{formatPed(item.value)} PED</td>
@@ -900,13 +922,13 @@
               <table class="data-table">
                 <thead>
                   <tr>
-                    <th class="right">Value</th>
+                    <th class="sortable right" on:click={() => pvpSort = toggleSort(pvpSort, 'value')}>Value{sortIcon(pvpSort, 'value')}</th>
                     <th></th>
-                    <th>Time</th>
+                    <th class="sortable" on:click={() => pvpSort = toggleSort(pvpSort, 'timestamp')}>Time{sortIcon(pvpSort, 'timestamp')}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {#each pvpEvents as g}
+                  {#each sortedPvpEvents as g}
                     <tr>
                       <td class="right font-weight-bold">{formatPed(g.value)} PED</td>
                       <td>
@@ -944,10 +966,10 @@
                 <thead>
                   <tr>
                     <th class="col-rank">#</th>
-                    <th>Target</th>
-                    <th class="right">Value</th>
+                    <th class="sortable" on:click={() => { athLootSort = toggleSort(athLootSort, 'target'); athLootPage = 0; }}>Target{sortIcon(athLootSort, 'target')}</th>
+                    <th class="sortable right" on:click={() => { athLootSort = toggleSort(athLootSort, 'value'); athLootPage = 0; }}>Value{sortIcon(athLootSort, 'value')}</th>
                     <th></th>
-                    <th>Time</th>
+                    <th class="sortable" on:click={() => { athLootSort = toggleSort(athLootSort, 'timestamp'); athLootPage = 0; }}>Time{sortIcon(athLootSort, 'timestamp')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -988,10 +1010,10 @@
                   <thead>
                     <tr>
                       <th class="col-rank">#</th>
-                      <th>Target</th>
-                      <th class="right">Count</th>
-                      <th class="right">Total</th>
-                      <th class="right">Best</th>
+                      <th class="sortable" on:click={() => { athTotalSort = toggleSort(athTotalSort, 'target'); athTotalPage = 0; }}>Target{sortIcon(athTotalSort, 'target')}</th>
+                      <th class="sortable right" on:click={() => { athTotalSort = toggleSort(athTotalSort, 'count'); athTotalPage = 0; }}>Count{sortIcon(athTotalSort, 'count')}</th>
+                      <th class="sortable right" on:click={() => { athTotalSort = toggleSort(athTotalSort, 'total_value'); athTotalPage = 0; }}>Total{sortIcon(athTotalSort, 'total_value')}</th>
+                      <th class="sortable right" on:click={() => { athTotalSort = toggleSort(athTotalSort, 'best_value'); athTotalPage = 0; }}>Best{sortIcon(athTotalSort, 'best_value')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1030,10 +1052,10 @@
                   <thead>
                     <tr>
                       <th class="col-rank">#</th>
-                      <th>Target</th>
-                      <th class="right">Count</th>
-                      <th class="right">Best</th>
-                      <th class="right">Total</th>
+                      <th class="sortable" on:click={() => { athBestSort = toggleSort(athBestSort, 'target'); athBestPage = 0; }}>Target{sortIcon(athBestSort, 'target')}</th>
+                      <th class="sortable right" on:click={() => { athBestSort = toggleSort(athBestSort, 'count'); athBestPage = 0; }}>Count{sortIcon(athBestSort, 'count')}</th>
+                      <th class="sortable right" on:click={() => { athBestSort = toggleSort(athBestSort, 'best_value'); athBestPage = 0; }}>Best{sortIcon(athBestSort, 'best_value')}</th>
+                      <th class="sortable right" on:click={() => { athBestSort = toggleSort(athBestSort, 'total_value'); athBestPage = 0; }}>Total{sortIcon(athBestSort, 'total_value')}</th>
                     </tr>
                   </thead>
                   <tbody>
