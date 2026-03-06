@@ -105,6 +105,19 @@ def main():
 
     log.info("Database: %s", config.database_path)
 
+    # Prune old data in background to avoid blocking startup
+    def _background_prune():
+        pruned = db.prune_old_data()
+        if pruned:
+            log.info("Pruned old data: %s", ", ".join(f"{t}: {n:,}" for t, n in pruned.items()))
+            total = sum(pruned.values())
+            if total > 10_000:
+                log.info("Running VACUUM to reclaim disk space...")
+                db.vacuum()
+                log.info("VACUUM complete")
+
+    threading.Thread(target=_background_prune, daemon=True, name="db-prune").start()
+
     # Batch parse mode
     if args.parse:
         _run_batch_parse(config, event_bus, db)
@@ -315,16 +328,15 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     # The OverlayManager itself is lightweight (timer + state); the actual
     # overlay widgets are heavy (Qt windows, stylesheets, layouts).
     def _create_overlays():
-        # Qt overlays (always-on-top, draggable, position persisted)
-        # Hunt overlay disabled
-        # try:
-        #     from .overlay.hunt_overlay import HuntOverlay
-        #     HuntOverlay(
-        #         signals=signals, config=config, config_path=config_path,
-        #         manager=overlay_manager,
-        #     )
-        # except Exception as e:
-        #     log.warning("Hunt overlay failed: %s", e)
+        # Overlay creation is staggered across multiple frames to avoid
+        # a burst of widget construction that would cause frame jank.
+        # Closures capture overlay variables by reference (read at call time),
+        # so toggle functions work as soon as the overlay is created.
+        _map_overlay = None
+        _exchange_overlay = None
+        _notifications_overlay = None
+
+        # --- Lightweight setup (immediate) ---
 
         search_overlay = None
         try:
@@ -336,40 +348,7 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
         except Exception as e:
             log.warning("Search overlay failed: %s", e)
 
-        # Map overlay (singleton)
-        _map_overlay = None
-
-        def _toggle_map_overlay():
-            nonlocal _map_overlay
-            from .overlay.map_overlay import MapOverlay
-            if _map_overlay is None or not _map_overlay.isVisible():
-                if _map_overlay is None:
-                    _map_overlay = MapOverlay(
-                        config=config,
-                        config_path=config_path,
-                        data_client=data_client,
-                        manager=overlay_manager,
-                    )
-                _map_overlay.set_wants_visible(True)
-                _map_overlay.raise_()
-            else:
-                _map_overlay.set_wants_visible(False)
-
-        def _open_map_overlay_at(planet_name: str, location_id: int):
-            nonlocal _map_overlay
-            from .overlay.map_overlay import MapOverlay
-            if _map_overlay is None:
-                _map_overlay = MapOverlay(
-                    config=config,
-                    config_path=config_path,
-                    data_client=data_client,
-                    manager=overlay_manager,
-                )
-            _map_overlay.open_at_location(planet_name, location_id)
-
-        overlay_manager.map_hotkey_pressed.connect(_toggle_map_overlay)
-
-        # Exchange overlay (singleton) + shared stores
+        # Exchange stores (lightweight Python objects, needed by main_window)
         from .exchange.exchange_store import ExchangeStore
         from .exchange.favourites_store import FavouritesStore
         _exchange_store = ExchangeStore(nexus_client, event_bus)
@@ -378,57 +357,49 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
         main_window._exchange_store = _exchange_store
         main_window._favourites_store = _favourites_store
         main_window.connect_exchange_store(_exchange_store)
-        _exchange_overlay = None
 
-        def _toggle_exchange_overlay():
-            nonlocal _exchange_overlay
-            from .overlay.exchange_overlay import ExchangeOverlay
-            if _exchange_overlay is None or not _exchange_overlay.isVisible():
-                if _exchange_overlay is None:
-                    _exchange_overlay = ExchangeOverlay(
-                        config=config,
-                        config_path=config_path,
-                        store=_exchange_store,
-                        favourites=_favourites_store,
-                        manager=overlay_manager,
-                    )
-                    _exchange_overlay.open_entity.connect(_on_overlay_result_selected)
-                _exchange_overlay.set_wants_visible(True)
-                _exchange_overlay.raise_()
-            else:
-                _exchange_overlay.set_wants_visible(False)
-
-        overlay_manager.exchange_hotkey_pressed.connect(_toggle_exchange_overlay)
-
-        # --- Toast manager (in-game toasts) ---
+        # Toast manager (lightweight widget)
         from .overlay.toast_widget import ToastManager
         toast_manager = ToastManager(config=config)
         main_window.set_overlay_manager(overlay_manager)
         main_window.set_toast_manager(toast_manager)
         overlay_manager.game_focus_changed.connect(toast_manager.set_visible)
 
-        # --- Notifications overlay (singleton) ---
-        _notifications_overlay = None
+        # --- Toggle functions (safe before overlays exist) ---
+
+        def _toggle_map_overlay():
+            if _map_overlay is None:
+                return
+            if not _map_overlay.isVisible():
+                _map_overlay.set_wants_visible(True)
+                _map_overlay.raise_()
+            else:
+                _map_overlay.set_wants_visible(False)
+
+        def _open_map_overlay_at(planet_name: str, location_id: int):
+            if _map_overlay is not None:
+                _map_overlay.open_at_location(planet_name, location_id)
+
+        def _toggle_exchange_overlay():
+            if _exchange_overlay is None:
+                return
+            if not _exchange_overlay.isVisible():
+                _exchange_overlay.set_wants_visible(True)
+                _exchange_overlay.raise_()
+            else:
+                _exchange_overlay.set_wants_visible(False)
 
         def _toggle_notifications_overlay():
-            nonlocal _notifications_overlay
-            from .overlay.notifications_overlay import NotificationsOverlay
-            if _notifications_overlay is None or not _notifications_overlay.isVisible():
-                if _notifications_overlay is None:
-                    _notifications_overlay = NotificationsOverlay(
-                        config=config,
-                        config_path=config_path,
-                        notif_manager=main_window._notif_manager,
-                        manager=overlay_manager,
-                    )
-                    _notifications_overlay.read_state_changed.connect(
-                        main_window._update_badge
-                    )
+            if _notifications_overlay is None:
+                return
+            if not _notifications_overlay.isVisible():
                 _notifications_overlay.set_wants_visible(True)
                 _notifications_overlay.raise_()
             else:
                 _notifications_overlay.set_wants_visible(False)
 
+        overlay_manager.map_hotkey_pressed.connect(_toggle_map_overlay)
+        overlay_manager.exchange_hotkey_pressed.connect(_toggle_exchange_overlay)
         overlay_manager.notifications_hotkey_pressed.connect(
             _toggle_notifications_overlay
         )
@@ -511,19 +482,8 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
                 overlay.open_entity.connect(_on_overlay_result_selected)
 
                 def _open_exchange_orderbook(item_id):
-                    nonlocal _exchange_overlay
-                    from .overlay.exchange_overlay import ExchangeOverlay
                     if _exchange_overlay is None:
-                        _exchange_overlay = ExchangeOverlay(
-                            config=config,
-                            config_path=config_path,
-                            store=_exchange_store,
-                            favourites=_favourites_store,
-                            manager=overlay_manager,
-                        )
-                        _exchange_overlay.open_entity.connect(
-                            _on_overlay_result_selected
-                        )
+                        return
                     _exchange_overlay.set_wants_visible(True)
                     _exchange_overlay.raise_()
                     _exchange_overlay.navigate_to_order_book(item_id)
@@ -598,130 +558,176 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
             # Notification badge on logo
             main_window.set_search_overlay(search_overlay)
 
-        # Scan highlight overlay (click-through, shows scanned rows + target lock)
-        try:
-            from .overlay.scan_highlight_overlay import ScanHighlightOverlay
-            _scan_highlight_overlay = None
+        # --- Staggered heavy overlay creation ---
+        # Each overlay is created on a separate frame to avoid jank.
 
-            def _ensure_scan_highlight_overlay():
-                nonlocal _scan_highlight_overlay
-                if _scan_highlight_overlay is not None:
-                    return
-                _scan_highlight_overlay = ScanHighlightOverlay(
-                    config=config,
-                    event_bus=event_bus,
-                    manager=overlay_manager,
-                )
-                overlay_manager._scan_highlight = _scan_highlight_overlay
+        def _create_map():
+            nonlocal _map_overlay
+            from .overlay.map_overlay import MapOverlay
+            _map_overlay = MapOverlay(
+                config=config,
+                config_path=config_path,
+                data_client=data_client,
+                manager=overlay_manager,
+            )
 
-            def _destroy_scan_highlight_overlay():
-                nonlocal _scan_highlight_overlay
-                if _scan_highlight_overlay is None:
-                    return
-                _scan_highlight_overlay.stop()
-                _scan_highlight_overlay.deleteLater()
+        def _create_exchange():
+            nonlocal _exchange_overlay
+            from .overlay.exchange_overlay import ExchangeOverlay
+            _exchange_overlay = ExchangeOverlay(
+                config=config,
+                config_path=config_path,
+                store=_exchange_store,
+                favourites=_favourites_store,
+                manager=overlay_manager,
+            )
+            _exchange_overlay.open_entity.connect(_on_overlay_result_selected)
+
+        def _create_notifications_and_scan():
+            nonlocal _notifications_overlay
+            from .overlay.notifications_overlay import NotificationsOverlay
+            _notifications_overlay = NotificationsOverlay(
+                config=config,
+                config_path=config_path,
+                notif_manager=main_window._notif_manager,
+                manager=overlay_manager,
+            )
+            _notifications_overlay.read_state_changed.connect(
+                main_window._update_badge
+            )
+
+            # Scan highlight overlay (click-through, shows scanned rows + target lock)
+            _create_scan_overlays()
+
+        QTimer.singleShot(50, _create_map)
+        QTimer.singleShot(100, _create_exchange)
+        QTimer.singleShot(150, _create_notifications_and_scan)
+
+        def _create_scan_overlays():
+            # Scan highlight overlay
+            try:
+                from .overlay.scan_highlight_overlay import ScanHighlightOverlay
                 _scan_highlight_overlay = None
-                overlay_manager._scan_highlight = None
 
-            def _sync_scan_highlight_overlay(updated_config):
-                if not updated_config:
-                    return
-                if getattr(updated_config, "scan_overlay_debug", False):
-                    _ensure_scan_highlight_overlay()
-                else:
-                    _destroy_scan_highlight_overlay()
-
-            # Never auto-open debug overlay on startup.
-            if getattr(config, "scan_overlay_debug", False):
-                config.scan_overlay_debug = False
-                save_config(config, config_path)
-
-            _sync_scan_highlight_overlay(config)
-            event_bus.subscribe(EVENT_CONFIG_CHANGED, _sync_scan_highlight_overlay)
-
-            # F3 toggles debug overlay mode (persists to config)
-            def _toggle_debug_overlay():
-                config.scan_overlay_debug = not config.scan_overlay_debug
-                save_config(config, config_path)
-                event_bus.publish(EVENT_CONFIG_CHANGED, config)
-
-            overlay_manager.debug_overlay_hotkey_pressed.connect(
-                _toggle_debug_overlay
-            )
-        except Exception as e:
-            log.warning("Scan highlight overlay failed: %s", e)
-
-        # Scan summary overlay (draggable panel, shows scan results + validation)
-        try:
-            from .overlay.scan_summary_overlay import ScanSummaryOverlay
-            from .ui.main_window import PAGE_SKILLS
-
-            def _get_skill_values():
-                if PAGE_SKILLS in main_window._page_created:
-                    page = main_window._pages.widget(PAGE_SKILLS)
-                    return page._manager.get_all_values()
-                return {}
-
-            overlay_manager._scan_summary = ScanSummaryOverlay(
-                config=config, config_path=config_path,
-                event_bus=event_bus, manager=overlay_manager,
-                skill_values_fn=_get_skill_values,
-            )
-
-            def _clear_scan_selection():
-                if PAGE_SKILLS not in main_window._page_created:
-                    return
-                page = main_window._pages.widget(PAGE_SKILLS)
-                if hasattr(page, "clear_scan_results"):
-                    page.clear_scan_results()
-
-            def _on_scan_marked_complete(skills: list):
-                """Mark Complete: compute delta, warn on shrinkage, then sync."""
-                if PAGE_SKILLS not in main_window._page_created:
-                    return
-                page = main_window._pages.widget(PAGE_SKILLS)
-                manager = page._manager
-
-                delta = manager.sync_scan_results(skills)
-
-                if not delta["changes"]:
-                    log.info("Scan complete — no changes to sync")
-                    return
-
-                def do_sync():
-                    ok = manager.apply_scan_results(skills)
-                    if ok:
-                        log.info("Scan results synced: %d changes",
-                                 len(delta["changes"]))
-                    else:
-                        log.error("Scan results sync failed")
-
-                if delta["shrunk"]:
-                    from .overlay.confirm_overlay import ConfirmOverlay
-                    dialog = ConfirmOverlay(
-                        config=config, config_path=config_path,
+                def _ensure_scan_highlight_overlay():
+                    nonlocal _scan_highlight_overlay
+                    if _scan_highlight_overlay is not None:
+                        return
+                    _scan_highlight_overlay = ScanHighlightOverlay(
+                        config=config,
+                        event_bus=event_bus,
                         manager=overlay_manager,
-                        title="Skill Points Decreased",
-                        confirm_text="Sync Anyway",
                     )
-                    dialog.set_shrinkage_warning(delta["shrunk"])
-                    dialog.confirmed.connect(
-                        lambda: threading.Thread(
-                            target=do_sync, daemon=True,
-                        ).start()
-                    )
-                    dialog.set_wants_visible(True)
-                else:
-                    threading.Thread(target=do_sync, daemon=True).start()
+                    overlay_manager._scan_highlight = _scan_highlight_overlay
 
-            overlay_manager._scan_summary.scan_marked_complete.connect(
-                _on_scan_marked_complete
-            )
-            overlay_manager._scan_summary.scan_entries_cleared.connect(
-                _clear_scan_selection
-            )
-        except Exception as e:
-            log.warning("Scan summary overlay failed: %s", e)
+                def _destroy_scan_highlight_overlay():
+                    nonlocal _scan_highlight_overlay
+                    if _scan_highlight_overlay is None:
+                        return
+                    _scan_highlight_overlay.stop()
+                    _scan_highlight_overlay.deleteLater()
+                    _scan_highlight_overlay = None
+                    overlay_manager._scan_highlight = None
+
+                def _sync_scan_highlight_overlay(updated_config):
+                    if not updated_config:
+                        return
+                    if getattr(updated_config, "scan_overlay_debug", False):
+                        _ensure_scan_highlight_overlay()
+                    else:
+                        _destroy_scan_highlight_overlay()
+
+                # Never auto-open debug overlay on startup.
+                if getattr(config, "scan_overlay_debug", False):
+                    config.scan_overlay_debug = False
+                    save_config(config, config_path)
+
+                _sync_scan_highlight_overlay(config)
+                event_bus.subscribe(EVENT_CONFIG_CHANGED, _sync_scan_highlight_overlay)
+
+                # F3 toggles debug overlay mode (persists to config)
+                def _toggle_debug_overlay():
+                    config.scan_overlay_debug = not config.scan_overlay_debug
+                    save_config(config, config_path)
+                    event_bus.publish(EVENT_CONFIG_CHANGED, config)
+
+                overlay_manager.debug_overlay_hotkey_pressed.connect(
+                    _toggle_debug_overlay
+                )
+            except Exception as e:
+                log.warning("Scan highlight overlay failed: %s", e)
+
+            # Scan summary overlay (draggable panel, shows scan results + validation)
+            try:
+                from .overlay.scan_summary_overlay import ScanSummaryOverlay
+                from .ui.main_window import PAGE_SKILLS
+
+                def _get_skill_values():
+                    if PAGE_SKILLS in main_window._page_created:
+                        page = main_window._pages.widget(PAGE_SKILLS)
+                        return page._manager.get_all_values()
+                    return {}
+
+                overlay_manager._scan_summary = ScanSummaryOverlay(
+                    config=config, config_path=config_path,
+                    event_bus=event_bus, manager=overlay_manager,
+                    skill_values_fn=_get_skill_values,
+                )
+
+                def _clear_scan_selection():
+                    if PAGE_SKILLS not in main_window._page_created:
+                        return
+                    page = main_window._pages.widget(PAGE_SKILLS)
+                    if hasattr(page, "clear_scan_results"):
+                        page.clear_scan_results()
+
+                def _on_scan_marked_complete(skills: list):
+                    """Mark Complete: compute delta, warn on shrinkage, then sync."""
+                    if PAGE_SKILLS not in main_window._page_created:
+                        return
+                    page = main_window._pages.widget(PAGE_SKILLS)
+                    manager = page._manager
+
+                    delta = manager.sync_scan_results(skills)
+
+                    if not delta["changes"]:
+                        log.info("Scan complete — no changes to sync")
+                        return
+
+                    def do_sync():
+                        ok = manager.apply_scan_results(skills)
+                        if ok:
+                            log.info("Scan results synced: %d changes",
+                                     len(delta["changes"]))
+                        else:
+                            log.error("Scan results sync failed")
+
+                    if delta["shrunk"]:
+                        from .overlay.confirm_overlay import ConfirmOverlay
+                        dialog = ConfirmOverlay(
+                            config=config, config_path=config_path,
+                            manager=overlay_manager,
+                            title="Skill Points Decreased",
+                            confirm_text="Sync Anyway",
+                        )
+                        dialog.set_shrinkage_warning(delta["shrunk"])
+                        dialog.confirmed.connect(
+                            lambda: threading.Thread(
+                                target=do_sync, daemon=True,
+                            ).start()
+                        )
+                        dialog.set_wants_visible(True)
+                    else:
+                        threading.Thread(target=do_sync, daemon=True).start()
+
+                overlay_manager._scan_summary.scan_marked_complete.connect(
+                    _on_scan_marked_complete
+                )
+                overlay_manager._scan_summary.scan_entries_cleared.connect(
+                    _clear_scan_selection
+                )
+            except Exception as e:
+                log.warning("Scan summary overlay failed: %s", e)
 
     QTimer.singleShot(0, _create_overlays)
 

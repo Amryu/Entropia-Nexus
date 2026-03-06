@@ -960,6 +960,22 @@ class MainWindow(QWidget):
             self._setup_tray()
             self._enable_shadow()
             QApplication.instance().installEventFilter(self)
+            self._prewarm_pages()
+
+    def _prewarm_pages(self):
+        """Pre-create all pages via staggered timers so first tab click is instant."""
+        prewarm_order = [
+            (PAGE_SETTINGS, 100),
+            (PAGE_SKILLS, 300),
+            (PAGE_TRACKER, 500),
+            (PAGE_WIKI, 800),
+            (PAGE_MAPS, 1100),
+            (PAGE_LOADOUT, 1400),
+            (PAGE_INVENTORY, 1700),
+            (PAGE_EXCHANGE, 2000),
+        ]
+        for page_idx, delay_ms in prewarm_order:
+            QTimer.singleShot(delay_ms, lambda idx=page_idx: self._ensure_page(idx))
 
     def changeEvent(self, event):
         """Sync title bar maximize icon and resize grips when window state changes."""
