@@ -247,36 +247,35 @@ def _make_tree_style() -> str:
     """
 
 
-def _make_input_style() -> str:
-    return f"""
-        QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {{
-            background: rgba(40, 40, 60, 200);
-            border: 1px solid rgba(80, 80, 120, 150);
-            border-radius: 3px;
-            color: {TEXT_COLOR};
-            padding: 2px 4px;
-            font-size: 11px;
-            min-height: 20px;
-        }}
-        QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus {{
-            border-color: {ACCENT};
-        }}
-        QComboBox::drop-down {{
-            border: none;
-            width: 16px;
-        }}
-        QComboBox QAbstractItemView {{
-            background: rgba(30, 30, 45, 240);
-            color: {TEXT_COLOR};
-            selection-background-color: {TAB_ACTIVE_BG};
-            border: 1px solid rgba(80, 80, 120, 150);
-        }}
-        QCheckBox {{
-            color: {TEXT_COLOR};
-            font-size: 11px;
-            spacing: 4px;
-        }}
-    """
+_INPUT_STYLE = f"""
+    QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox {{
+        background: rgba(40, 40, 60, 200);
+        border: 1px solid rgba(80, 80, 120, 150);
+        border-radius: 3px;
+        color: {TEXT_COLOR};
+        padding: 2px 4px;
+        font-size: 11px;
+        min-height: 20px;
+    }}
+    QLineEdit:focus, QComboBox:focus, QSpinBox:focus, QDoubleSpinBox:focus {{
+        border-color: {ACCENT};
+    }}
+    QComboBox::drop-down {{
+        border: none;
+        width: 16px;
+    }}
+    QComboBox QAbstractItemView {{
+        background: rgba(30, 30, 45, 240);
+        color: {TEXT_COLOR};
+        selection-background-color: {TAB_ACTIVE_BG};
+        border: 1px solid rgba(80, 80, 120, 150);
+    }}
+    QCheckBox {{
+        color: {TEXT_COLOR};
+        font-size: 11px;
+        spacing: 4px;
+    }}
+"""
 
 
 def _make_btn(text: str, accent: bool = False, small: bool = False) -> QPushButton:
@@ -622,7 +621,7 @@ class ExchangeOverlay(OverlayWidget):
 
         self._browse_search = QLineEdit()
         self._browse_search.setPlaceholderText("Search items...")
-        self._browse_search.setStyleSheet(_make_input_style())
+        self._browse_search.setStyleSheet(_INPUT_STYLE)
         self._browse_search.textChanged.connect(self._filter_items)
         fr_layout.addWidget(self._browse_search, 1)
 
@@ -630,7 +629,7 @@ class ExchangeOverlay(OverlayWidget):
         self._browse_category.addItem("All Categories")
         for cat in CATEGORY_ORDER:
             self._browse_category.addItem(cat)
-        self._browse_category.setStyleSheet(_make_input_style())
+        self._browse_category.setStyleSheet(_INPUT_STYLE)
         self._browse_category.setMinimumContentsLength(15)
         self._browse_category.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         self._browse_category.currentIndexChanged.connect(self._filter_items)
@@ -1058,7 +1057,7 @@ class ExchangeOverlay(OverlayWidget):
         # Search (debounced)
         self._inv_search = QLineEdit()
         self._inv_search.setPlaceholderText("Search inventory...")
-        self._inv_search.setStyleSheet(_make_input_style())
+        self._inv_search.setStyleSheet(_INPUT_STYLE)
         self._inv_search_timer = QTimer()
         self._inv_search_timer.setSingleShot(True)
         self._inv_search_timer.setInterval(300)
@@ -2002,7 +2001,7 @@ class _OrderDialog(QWidget):
 
         # Form
         form = QWidget()
-        form.setStyleSheet(_make_input_style())
+        form.setStyleSheet(_INPUT_STYLE)
         fl = QFormLayout(form)
         fl.setContentsMargins(0, 4, 0, 0)
         fl.setSpacing(4)

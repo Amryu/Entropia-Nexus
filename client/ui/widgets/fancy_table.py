@@ -767,9 +767,16 @@ class FancyTable(QWidget):
         # Never shrink below the main column minimum
         self._col_widths[main_idx] = max(new_w, MIN_MAIN_COLUMN_WIDTH)
 
-    def _deferred_layout(self):
+    def _deferred_layout(self, _retries: int = 3):
         """Re-expand columns after the viewport has its real dimensions."""
         if not self._items:
+            return
+        # Viewport may still be 0 if the widget hasn't been shown yet
+        # (e.g. set_data() called before _swap_content makes it visible).
+        # Retry a few times to let the event loop process the show.
+        if self._body_scroll.viewport().width() <= 0:
+            if _retries > 0:
+                QTimer.singleShot(0, lambda: self._deferred_layout(_retries - 1))
             return
         self._expand_main_column()
         self._rebuild_header()

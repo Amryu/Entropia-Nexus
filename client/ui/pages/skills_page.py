@@ -67,6 +67,39 @@ TIME_PERIODS = [
     ("All", 0),
 ]
 
+# Pre-computed card styles (avoid per-widget setStyleSheet f-string overhead)
+_SKILL_CARD_STYLE = f"""
+    SkillCard {{
+        background-color: {SECONDARY};
+        border: 1px solid {BORDER};
+        border-radius: 8px;
+    }}
+    SkillCard:hover {{
+        border-color: {BORDER_HOVER};
+    }}
+"""
+_PROF_CARD_STYLE = f"""
+    ProfessionCard {{
+        background-color: {SECONDARY};
+        border: 1px solid {BORDER};
+        border-radius: 8px;
+    }}
+    ProfessionCard:hover {{
+        border-color: {BORDER_HOVER};
+    }}
+"""
+_CARD_NAME_STYLE = "font-weight: bold; font-size: 11px; background: transparent; border: none;"
+_CARD_RANK_STYLE = f"font-size: 10px; color: {TEXT_MUTED}; background: transparent; border: none;"
+_CARD_POINTS_STYLE = "font-size: 10px; background: transparent; border: none;"
+_CARD_WEIGHT_STYLE = f"font-size: 9px; color: {ACCENT}; background: transparent; border: none;"
+_CARD_GAIN_STYLE = f"font-size: 9px; color: {SUCCESS}; background: transparent; border: none;"
+_CARD_HEADER_STYLE = (
+    f"font-weight: bold; font-size: 13px; color: {TEXT_MUTED}; "
+    f"border-bottom: 1px solid {BORDER}; padding: 6px 0 2px 0; "
+    f"background: transparent;"
+)
+_BADGE_STYLE_CACHE: dict[tuple, str] = {}
+
 
 class NumericTableWidgetItem(QTableWidgetItem):
     """Table item with numeric sorting semantics."""
@@ -105,16 +138,7 @@ class SkillCard(QFrame):
         self.setMaximumWidth(CARD_MAX_WIDTH)
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.setToolTip("Click to see related professions. Double-click value to edit.")
-        self.setStyleSheet(f"""
-            SkillCard {{
-                background-color: {SECONDARY};
-                border: 1px solid {BORDER};
-                border-radius: 8px;
-            }}
-            SkillCard:hover {{
-                border-color: {BORDER_HOVER};
-            }}
-        """)
+        self.setStyleSheet(_SKILL_CARD_STYLE)
         if dimmed:
             effect = QGraphicsOpacityEffect(self)
             effect.setOpacity(0.35)
@@ -128,7 +152,7 @@ class SkillCard(QFrame):
         top_row = QHBoxLayout()
         top_row.setSpacing(4)
         name_label = QLabel(skill_name)
-        name_label.setStyleSheet("font-weight: bold; font-size: 11px; background: transparent; border: none;")
+        name_label.setStyleSheet(_CARD_NAME_STYLE)
         name_label.setWordWrap(True)
         top_row.addWidget(name_label, 1)
 
@@ -144,23 +168,21 @@ class SkillCard(QFrame):
         info_row = QHBoxLayout()
         info_row.setSpacing(4)
         rank_label = QLabel(rank)
-        rank_label.setStyleSheet(f"font-size: 10px; color: {TEXT_MUTED}; background: transparent; border: none;")
+        rank_label.setStyleSheet(_CARD_RANK_STYLE)
         info_row.addWidget(rank_label)
         if weight is not None:
             weight_label = QLabel(f"{weight}%")
-            weight_label.setStyleSheet(f"font-size: 9px; color: {ACCENT}; background: transparent; border: none;")
+            weight_label.setStyleSheet(_CARD_WEIGHT_STYLE)
             info_row.addWidget(weight_label)
         info_row.addStretch()
 
         self._points_label = QLabel(f"{points:.2f}")
-        self._points_label.setStyleSheet("font-size: 10px; background: transparent; border: none;")
+        self._points_label.setStyleSheet(_CARD_POINTS_STYLE)
         info_row.addWidget(self._points_label)
 
         if gain > 0.001:
             gain_label = QLabel(f"+{gain:.4f}")
-            gain_label.setStyleSheet(
-                f"font-size: 9px; color: {SUCCESS}; background: transparent; border: none;"
-            )
+            gain_label.setStyleSheet(_CARD_GAIN_STYLE)
             info_row.addWidget(gain_label)
 
         self._edit_input = QDoubleSpinBox()
@@ -183,7 +205,11 @@ class SkillCard(QFrame):
 
     @staticmethod
     def _badge_style(badge: Badge) -> str:
-        """Build QSS for a badge label based on type and level."""
+        """Build QSS for a badge label based on type and level (cached)."""
+        key = (badge.badge_type, badge.level)
+        cached = _BADGE_STYLE_CACHE.get(key)
+        if cached is not None:
+            return cached
         type_styles = BADGE_STYLES.get(badge.badge_type, {})
         bg, fg, border = type_styles.get(badge.level, ("#666", "#fff", None))
         parts = [
@@ -193,12 +219,11 @@ class SkillCard(QFrame):
             "font-weight: 600;",
             "padding: 1px 4px;",
             "border-radius: 3px;",
+            f"border: 1px solid {border};" if border else "border: none;",
         ]
-        if border:
-            parts.append(f"border: 1px solid {border};")
-        else:
-            parts.append("border: none;")
-        return " ".join(parts)
+        style = " ".join(parts)
+        _BADGE_STYLE_CACHE[key] = style
+        return style
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -249,16 +274,7 @@ class ProfessionCard(QFrame):
         self.setMaximumWidth(CARD_MAX_WIDTH)
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.setToolTip("Click to see contributing skills.")
-        self.setStyleSheet(f"""
-            ProfessionCard {{
-                background-color: {SECONDARY};
-                border: 1px solid {BORDER};
-                border-radius: 8px;
-            }}
-            ProfessionCard:hover {{
-                border-color: {BORDER_HOVER};
-            }}
-        """)
+        self.setStyleSheet(_PROF_CARD_STYLE)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 6, 8, 14)
@@ -266,9 +282,7 @@ class ProfessionCard(QFrame):
 
         # Row 1: Name
         name_label = QLabel(prof_name)
-        name_label.setStyleSheet(
-            "font-weight: bold; font-size: 11px; background: transparent; border: none;"
-        )
+        name_label.setStyleSheet(_CARD_NAME_STYLE)
         name_label.setWordWrap(True)
         layout.addWidget(name_label)
 
@@ -277,19 +291,15 @@ class ProfessionCard(QFrame):
         info_row.setSpacing(4)
         level_int = int(level)
         rank_label = QLabel(f"Level {level_int}")
-        rank_label.setStyleSheet(
-            f"font-size: 10px; color: {TEXT_MUTED}; background: transparent; border: none;"
-        )
+        rank_label.setStyleSheet(_CARD_RANK_STYLE)
         info_row.addWidget(rank_label)
         if weight is not None:
             weight_label = QLabel(f"{weight}%")
-            weight_label.setStyleSheet(f"font-size: 9px; color: {ACCENT}; background: transparent; border: none;")
+            weight_label.setStyleSheet(_CARD_WEIGHT_STYLE)
             info_row.addWidget(weight_label)
         info_row.addStretch()
         level_label = QLabel(f"{level:.2f}")
-        level_label.setStyleSheet(
-            "font-size: 10px; background: transparent; border: none;"
-        )
+        level_label.setStyleSheet(_CARD_POINTS_STYLE)
         info_row.addWidget(level_label)
         layout.addLayout(info_row)
 
@@ -330,6 +340,10 @@ class SkillsPage(QWidget):
         # View state
         self._skills_view_mode = "grid"     # "grid" or "list"
         self._prof_view_mode = "grid"
+        self._skills_grid_cols = 0           # cached column count for resize debounce
+        self._prof_grid_cols = 0
+        self._skills_grid_deferred = False
+        self._prof_grid_deferred = False
         self._skill_filter_profession = None  # filter skills by profession name
         self._prof_filter_skill = None        # filter professions by skill name
         self._last_scan_result = None
@@ -876,6 +890,14 @@ class SkillsPage(QWidget):
 
     def _populate_skills_grid(self, skills: list[dict], values: dict,
                               all_meta: list[dict]):
+        self._skills_scroll.setUpdatesEnabled(False)
+        try:
+            self._populate_skills_grid_inner(skills, values, all_meta)
+        finally:
+            self._skills_scroll.setUpdatesEnabled(True)
+
+    def _populate_skills_grid_inner(self, skills: list[dict], values: dict,
+                                     all_meta: list[dict]):
         # Clear old cards
         while self._skills_grid_layout.count():
             item = self._skills_grid_layout.takeAt(0)
@@ -894,7 +916,13 @@ class SkillsPage(QWidget):
 
         # Calculate columns based on scroll area width
         available = self._skills_scroll.viewport().width() - 20
+        if available <= 0:
+            # Viewport not yet laid out — defer until visible
+            self._skills_grid_deferred = True
+            return
+        self._skills_grid_deferred = False
         cols = max(1, available // (CARD_MIN_WIDTH + 6))
+        self._skills_grid_cols = cols
 
         sort_by_category = self._skills_sort.currentIndex() == 0
         current_category = None
@@ -911,11 +939,7 @@ class SkillsPage(QWidget):
                         grid_row += 1
                         col_idx = 0
                     header = QLabel(cat)
-                    header.setStyleSheet(
-                        f"font-weight: bold; font-size: 13px; color: {TEXT_MUTED}; "
-                        f"border-bottom: 1px solid {BORDER}; padding: 6px 0 2px 0; "
-                        f"background: transparent;"
-                    )
+                    header.setStyleSheet(_CARD_HEADER_STYLE)
                     self._skills_grid_layout.addWidget(
                         header, grid_row, 0, 1, cols,
                     )
@@ -952,44 +976,48 @@ class SkillsPage(QWidget):
 
     def _populate_skills_table(self, skills: list[dict], values: dict,
                                all_meta: list[dict]):
-        self._skills_table.setRowCount(len(skills))
-        for i, skill in enumerate(skills):
-            name = skill["Name"]
-            points = values.get(name, 0)
-            rank, progress = self._get_rank_and_progress(points)
-            badges = get_skill_badges(name, all_meta)
-            hp_inc = skill.get("HPIncrease") or 0
+        self._skills_table.setUpdatesEnabled(False)
+        try:
+            self._skills_table.setRowCount(len(skills))
+            for i, skill in enumerate(skills):
+                name = skill["Name"]
+                points = values.get(name, 0)
+                rank, progress = self._get_rank_and_progress(points)
+                badges = get_skill_badges(name, all_meta)
+                hp_inc = skill.get("HPIncrease") or 0
 
-            gain = self._skill_gains.get(name, 0.0)
-            dimmed = points == 0 and gain < 0.001
-            fg = Qt.GlobalColor.gray if dimmed else None
+                gain = self._skill_gains.get(name, 0.0)
+                dimmed = points == 0 and gain < 0.001
+                fg = Qt.GlobalColor.gray if dimmed else None
 
-            items = []
-            items.append(QTableWidgetItem(name))
-            items.append(QTableWidgetItem(skill.get("Category") or ""))
-            items.append(QTableWidgetItem(rank))
+                items = []
+                items.append(QTableWidgetItem(name))
+                items.append(QTableWidgetItem(skill.get("Category") or ""))
+                items.append(QTableWidgetItem(rank))
 
-            pts_item = QTableWidgetItem(f"{points:.2f}")
-            pts_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            items.append(pts_item)
+                pts_item = QTableWidgetItem(f"{points:.2f}")
+                pts_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                items.append(pts_item)
 
-            gain_text = f"+{gain:.4f}" if gain > 0.001 else ""
-            gain_item = QTableWidgetItem(gain_text)
-            gain_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            if gain > 0.001:
-                gain_item.setForeground(QColor(SUCCESS))
-            items.append(gain_item)
+                gain_text = f"+{gain:.4f}" if gain > 0.001 else ""
+                gain_item = QTableWidgetItem(gain_text)
+                gain_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                if gain > 0.001:
+                    gain_item.setForeground(QColor(SUCCESS))
+                items.append(gain_item)
 
-            hp_text = str(hp_inc) if hp_inc > 0 else ""
-            items.append(QTableWidgetItem(hp_text))
+                hp_text = str(hp_inc) if hp_inc > 0 else ""
+                items.append(QTableWidgetItem(hp_text))
 
-            badge_text = " ".join(b.label for b in badges)
-            items.append(QTableWidgetItem(badge_text))
+                badge_text = " ".join(b.label for b in badges)
+                items.append(QTableWidgetItem(badge_text))
 
-            for col, item in enumerate(items):
-                if fg:
-                    item.setForeground(fg)
-                self._skills_table.setItem(i, col, item)
+                for col, item in enumerate(items):
+                    if fg:
+                        item.setForeground(fg)
+                    self._skills_table.setItem(i, col, item)
+        finally:
+            self._skills_table.setUpdatesEnabled(True)
 
     def _on_skills_table_click(self, row, col):
         item = self._skills_table.item(row, 0)
@@ -1138,6 +1166,13 @@ class SkillsPage(QWidget):
             self._populate_prof_table(profs)
 
     def _populate_prof_grid(self, profs: list[dict]):
+        self._prof_scroll.setUpdatesEnabled(False)
+        try:
+            self._populate_prof_grid_inner(profs)
+        finally:
+            self._prof_scroll.setUpdatesEnabled(True)
+
+    def _populate_prof_grid_inner(self, profs: list[dict]):
         while self._prof_grid_layout.count():
             item = self._prof_grid_layout.takeAt(0)
             if item.widget():
@@ -1154,7 +1189,12 @@ class SkillsPage(QWidget):
             return
 
         available = self._prof_scroll.viewport().width() - 20
+        if available <= 0:
+            self._prof_grid_deferred = True
+            return
+        self._prof_grid_deferred = False
         cols = max(1, available // (CARD_MIN_WIDTH + 6))
+        self._prof_grid_cols = cols
 
         sort_by_category = self._prof_sort.currentIndex() == 0
         current_category = None
@@ -1171,11 +1211,7 @@ class SkillsPage(QWidget):
                         grid_row += 1
                         col_idx = 0
                     header = QLabel(cat)
-                    header.setStyleSheet(
-                        f"font-weight: bold; font-size: 13px; color: {TEXT_MUTED}; "
-                        f"border-bottom: 1px solid {BORDER}; padding: 6px 0 2px 0; "
-                        f"background: transparent;"
-                    )
+                    header.setStyleSheet(_CARD_HEADER_STYLE)
                     self._prof_grid_layout.addWidget(
                         header, grid_row, 0, 1, cols,
                     )
@@ -1206,18 +1242,22 @@ class SkillsPage(QWidget):
                 grid_row += 1
 
     def _populate_prof_table(self, profs: list[dict]):
-        self._prof_table.setRowCount(len(profs))
-        for i, prof in enumerate(profs):
-            self._prof_table.setItem(i, 0, QTableWidgetItem(prof["Name"]))
-            self._prof_table.setItem(i, 1, QTableWidgetItem(prof.get("Category") or ""))
+        self._prof_table.setUpdatesEnabled(False)
+        try:
+            self._prof_table.setRowCount(len(profs))
+            for i, prof in enumerate(profs):
+                self._prof_table.setItem(i, 0, QTableWidgetItem(prof["Name"]))
+                self._prof_table.setItem(i, 1, QTableWidgetItem(prof.get("Category") or ""))
 
-            level_item = QTableWidgetItem(f"{prof['_level']:.2f}")
-            level_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            self._prof_table.setItem(i, 2, level_item)
+                level_item = QTableWidgetItem(f"{prof['_level']:.2f}")
+                level_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                self._prof_table.setItem(i, 2, level_item)
 
-            count_item = QTableWidgetItem(str(len(prof.get("Skills", []))))
-            count_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            self._prof_table.setItem(i, 3, count_item)
+                count_item = QTableWidgetItem(str(len(prof.get("Skills", []))))
+                count_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                self._prof_table.setItem(i, 3, count_item)
+        finally:
+            self._prof_table.setUpdatesEnabled(True)
 
     def _on_prof_table_click(self, row, col):
         item = self._prof_table.item(row, 0)
@@ -1278,17 +1318,21 @@ class SkillsPage(QWidget):
             return
 
         # Populate table
-        self._prog_table.setRowCount(len(history))
-        for i, entry in enumerate(history):
-            date_str = entry.get("imported_at", "")
-            if "T" in date_str:
-                date_str = date_str[:19].replace("T", " ")
-            self._prog_table.setItem(i, 0, QTableWidgetItem(date_str))
-            self._prog_table.setItem(i, 1, QTableWidgetItem(entry.get("skill_name", "")))
-            val = float(entry.get("new_value", 0))
-            val_item = QTableWidgetItem(f"{val:.2f}")
-            val_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-            self._prog_table.setItem(i, 2, val_item)
+        self._prog_table.setUpdatesEnabled(False)
+        try:
+            self._prog_table.setRowCount(len(history))
+            for i, entry in enumerate(history):
+                date_str = entry.get("imported_at", "")
+                if "T" in date_str:
+                    date_str = date_str[:19].replace("T", " ")
+                self._prog_table.setItem(i, 0, QTableWidgetItem(date_str))
+                self._prog_table.setItem(i, 1, QTableWidgetItem(entry.get("skill_name", "")))
+                val = float(entry.get("new_value", 0))
+                val_item = QTableWidgetItem(f"{val:.2f}")
+                val_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                self._prog_table.setItem(i, 2, val_item)
+        finally:
+            self._prog_table.setUpdatesEnabled(True)
 
         # Stats
         skills_in_data = set(e.get("skill_name") for e in history)
@@ -1608,10 +1652,30 @@ class SkillsPage(QWidget):
             self._refresh_prof_display()
         self._emit_nav()
 
+    def showEvent(self, event):
+        super().showEvent(event)
+        # Flush deferred grid builds after layout has settled
+        if self._skills_grid_deferred or self._prof_grid_deferred:
+            QTimer.singleShot(0, self._flush_deferred_grids)
+
+    def _flush_deferred_grids(self):
+        if self._skills_grid_deferred:
+            self._refresh_skills_display()
+        if self._prof_grid_deferred:
+            self._refresh_prof_display()
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        # Re-flow grid on resize
+        # Re-flow grid only when column count changes (avoid full rebuild per pixel)
         if self._skills_view_mode == "grid" and self._tabs.currentIndex() == 0:
-            self._refresh_skills_display()
+            available = self._skills_scroll.viewport().width() - 20
+            cols = max(1, available // (CARD_MIN_WIDTH + 6))
+            if cols != self._skills_grid_cols:
+                self._skills_grid_cols = cols
+                self._refresh_skills_display()
         elif self._prof_view_mode == "grid" and self._tabs.currentIndex() == 1:
-            self._refresh_prof_display()
+            available = self._prof_scroll.viewport().width() - 20
+            cols = max(1, available // (CARD_MIN_WIDTH + 6))
+            if cols != self._prof_grid_cols:
+                self._prof_grid_cols = cols
+                self._refresh_prof_display()

@@ -849,7 +849,7 @@ class DashboardPage(QWidget):
         news_group_layout.addWidget(scroll)
 
         self._news_rows: list[_NewsRow] = []
-        self._posts_empty = QLabel("No posts available")
+        self._posts_empty = QLabel("Loading...")
         self._posts_empty.setObjectName("mutedText")
         self._posts_empty.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._news_layout.insertWidget(0, self._posts_empty)
@@ -1038,6 +1038,8 @@ class DashboardPage(QWidget):
             else:
                 row.hide()
 
+        if len(posts) == 0:
+            self._posts_empty.setText("No posts available")
         self._posts_empty.setVisible(len(posts) == 0)
 
     # --- Article navigation ---
