@@ -12,7 +12,7 @@ import { buildGlobalsFilter } from '../filter-utils.js';
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
-const VALID_SORT_FIELDS = new Set(['count', 'value']);
+const VALID_SORT_FIELDS = new Set(['count', 'value', 'avg', 'best']);
 const VALID_GROUP_FIELDS = new Set(['maturity', 'mob']);
 
 /** Strip maturity suffix from a target name to get the base mob name. */
@@ -38,7 +38,8 @@ export async function GET({ url }) {
 
   const sortParam = url.searchParams.get('sort');
   const sortBy = VALID_SORT_FIELDS.has(sortParam) ? sortParam : 'count';
-  const sortCol = sortBy === 'count' ? 'count(*)' : 'COALESCE(sum(value), 0)';
+  const SORT_COLS = { count: 'count(*)', value: 'COALESCE(sum(value), 0)', avg: 'COALESCE(avg(value), 0)', best: 'COALESCE(max(value), 0)' };
+  const sortCol = SORT_COLS[sortBy];
 
   const groupParam = url.searchParams.get('group');
   const groupByMob = VALID_GROUP_FIELDS.has(groupParam) ? groupParam === 'mob' : false;
@@ -60,6 +61,7 @@ export async function GET({ url }) {
       pool.query(
         `SELECT ${selectTarget} AS target, mob_id, count(*) AS count,
                 COALESCE(sum(value), 0) AS value,
+                COALESCE(avg(value), 0) AS avg_value, COALESCE(max(value), 0) AS best_value,
                 mode() WITHIN GROUP (ORDER BY global_type) AS primary_type
          FROM ingested_globals
          ${whereClause}
@@ -87,6 +89,8 @@ export async function GET({ url }) {
         mob_id: r.mob_id,
         count: parseInt(r.count),
         value: parseFloat(r.value),
+        avg_value: parseFloat(r.avg_value),
+        best_value: parseFloat(r.best_value),
         primary_type: r.primary_type,
       })),
       total,

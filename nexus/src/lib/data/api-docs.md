@@ -520,7 +520,9 @@ Aggregated global event statistics. Cached for 60 seconds.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `period` | string | Time period: `24h`, `7d`, `30d`, `all` (default `all`) |
+| `period` | string | Time period: `24h`, `7d`, `30d`, `90d`, `1y`, `all` (default `all`) |
+| `from` | string | Custom range start (YYYY-MM-DD). Used with `to` instead of `period` |
+| `to` | string | Custom range end (YYYY-MM-DD). Used with `from` instead of `period` |
 | `player` | string | Filter by player name (partial match, case-insensitive) |
 | `type` | string | Filter by global type (comma-separated). Valid types: `kill`, `team_kill`, `deposit`, `craft`, `rare_item`, `discovery`, `tier`, `examine`, `pvp` |
 | `target` | string | Filter by target name (partial match, case-insensitive) |
@@ -532,11 +534,58 @@ Aggregated global event statistics. Cached for 60 seconds.
 | `targets_group` | string | Group top targets by `maturity` or `mob` (default `maturity`). When `mob`, maturities of the same creature are combined and the maturity suffix is stripped (e.g. "Atrox Young", "Atrox Old" → "Atrox"). Only affects the `top_targets` array. Top targets are limited to hunting types (`kill`, `team_kill`). |
 
 Returns:
-- `summary` — `total_count`, `total_value`, `hof_count`, `ath_count`
+- `summary` — `total_count`, `total_value`, `avg_value`, `max_value`, `hof_count`, `ath_count`, plus per-category breakdowns: `hunting` (`count`, `value`), `mining` (`count`, `value`), `crafting` (`count`, `value`)
 - `by_type` — array of `{ type, count, value }` per global type
 - `top_players` — top 10 players by chosen sort, each with `player`, `count`, `value`, `is_team`
 - `top_targets` — top 10 hunting targets by chosen sort, each with `target`, `mob_id`, `count`, `value`
-- `activity` — timeline buckets (`{ bucket, count }`), hourly for `24h` period, daily otherwise
+- `bucket_unit` — time unit for activity buckets (`hour`, `day`, `week`, `month`)
+- `activity` — timeline buckets (`{ bucket, count }`), dynamically aggregated based on period length
+
+#### `GET /api/globals/stats/players`
+
+Paginated ranked list of players by globals. Cached for 60 seconds.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `period` | string | Time period: `24h`, `7d`, `30d`, `90d`, `1y`, `all` (default `all`) |
+| `from` | string | Custom range start (YYYY-MM-DD) |
+| `to` | string | Custom range end (YYYY-MM-DD) |
+| `player` | string | Filter by player name (partial match, case-insensitive) |
+| `type` | string | Filter by global type (comma-separated) |
+| `target` | string | Filter by target name |
+| `location` | string | Filter by location |
+| `min_value` | number | Minimum PED value |
+| `hof` | `true` | Only include Hall of Fame globals |
+| `sort` | string | Sort by `count`, `value`, `avg`, or `best` (default `value`) |
+| `page` | number | Page number (default `1`) |
+| `limit` | number | Results per page, 1–100 (default `50`) |
+
+Returns:
+- `players` — array of `{ player, count, value, avg_value, best_value, is_team, has_profile }`
+- `total`, `page`, `pages`
+
+#### `GET /api/globals/stats/top-loots`
+
+Paginated top globals for a single category. Cached for 60 seconds.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `category` | string | Category: `hunting`, `mining`, `crafting`, `rare_item`, `discovery`, `tier`, `pvp` (default `hunting`) |
+| `period` | string | Time period: `24h`, `7d`, `30d`, `90d`, `1y`, `all` (default `all`) |
+| `from` | string | Custom range start (YYYY-MM-DD) |
+| `to` | string | Custom range end (YYYY-MM-DD) |
+| `player` | string | Filter by player name |
+| `type` | string | Filter by global type |
+| `target` | string | Filter by target name |
+| `location` | string | Filter by location |
+| `min_value` | number | Minimum PED value |
+| `hof` | `true` | Only include Hall of Fame globals |
+| `page` | number | Page number, 1-based (default `1`) |
+| `limit` | number | Results per page, 1–50 (default `20`) |
+
+Returns:
+- `items` — array of `{ player, target, value, mob_id, hof, ath, timestamp }`
+- `page`, `pages`, `total`
 
 #### `GET /api/globals/stats/targets`
 
@@ -544,20 +593,22 @@ Paginated ranked list of targets by globals. Unlike the main stats endpoint, thi
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `period` | string | Time period: `24h`, `7d`, `30d`, `all` (default `all`) |
+| `period` | string | Time period: `24h`, `7d`, `30d`, `90d`, `1y`, `all` (default `all`) |
+| `from` | string | Custom range start (YYYY-MM-DD) |
+| `to` | string | Custom range end (YYYY-MM-DD) |
 | `player` | string | Filter by player name (partial match, case-insensitive) |
 | `type` | string | Filter by global type (comma-separated). Valid types: `kill`, `team_kill`, `deposit`, `craft`, `rare_item`, `discovery`, `tier`, `examine`, `pvp` |
 | `target` | string | Filter by target name (partial match, case-insensitive) |
 | `location` | string | Filter by location (exact match) |
 | `min_value` | number | Minimum PED value |
 | `hof` | `true` | Only include Hall of Fame globals |
-| `sort` | string | Sort by `count` or `value` (default `count`) |
+| `sort` | string | Sort by `count`, `value`, `avg`, or `best` (default `count`) |
 | `group` | string | Group by `maturity` or `mob` (default `maturity`). When `mob`, all maturities of the same creature are combined into a single row and the maturity suffix is stripped from the name. Targets without a resolved `mob_id` remain grouped by their original name. |
 | `page` | number | Page number (default `1`) |
 | `limit` | number | Results per page, 1–100 (default `50`) |
 
 Returns:
-- `targets` — array of `{ target, mob_id, count, value, primary_type }`
+- `targets` — array of `{ target, mob_id, count, value, avg_value, best_value, primary_type }`
 - `total` — total number of matching target groups
 - `page` — current page number
 - `pages` — total page count
@@ -568,17 +619,21 @@ Player-specific global event breakdown. Cached for 60 seconds. Returns 404 if th
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `period` | string | Time period: `24h`, `7d`, `30d`, `all` (default `all`) |
+| `period` | string | Time period: `24h`, `7d`, `30d`, `90d`, `1y`, `all` (default `all`) |
+| `from` | string | Custom range start (YYYY-MM-DD) |
+| `to` | string | Custom range end (YYYY-MM-DD) |
 
 Returns:
 - `player` — the player name
-- `summary` — `total_count`, `total_value`, `hof_count`, `ath_count`, plus per-type counts (`kill_count`, `team_kill_count`, `deposit_count`, `craft_count`, `rare_count`, `discovery_count`, `tier_count`)
+- `summary` — `total_count`, `total_value`, `avg_value`, `max_value`, `hof_count`, `ath_count`, plus per-type counts and category values (`kill_count`, `team_kill_count`, `hunting_value`, `deposit_count`, `mining_value`, `craft_count`, `crafting_value`, `rare_count`, `discovery_count`, `tier_count`)
 - `hunting` — array of `{ mob_id, target, kills, total_value, best_value, avg_value, maturities: [{ target, maturity_id, kills, total_value, avg_value, best_value }] }`
 - `mining` — `{ resources: [{ target, finds, total_value, avg_value, best_value }] }`
 - `crafting` — `{ items: [{ target, crafts, total_value, avg_value, best_value }] }`
-- `activity` — timeline buckets with `{ bucket, type, count }` (broken down by global type)
+- `bucket_unit` — time unit for activity buckets
+- `activity` — timeline buckets with `{ bucket, count }` (gap-filled)
 - `recent` — up to 20 recent globals
 - `achievements` — discovery and tier globals with `{ type, target, value, extra, timestamp, hof, ath }`
+- `rare_items` — rare item globals with `{ target, value, timestamp, hof, ath }`
 
 #### `GET /api/globals/target/{name}`
 
@@ -586,7 +641,9 @@ Target-specific global event breakdown. Cached for 60 seconds. Returns 404 if no
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `period` | string | Time period: `24h`, `7d`, `30d`, `all` (default `all`) |
+| `period` | string | Time period: `24h`, `7d`, `30d`, `90d`, `1y`, `all` (default `all`) |
+| `from` | string | Custom range start (YYYY-MM-DD) |
+| `to` | string | Custom range end (YYYY-MM-DD) |
 | `maturities` | string | Comma-separated target names to filter by specific maturity variants (max 50) |
 
 Returns:
@@ -594,11 +651,32 @@ Returns:
 - `primary_type` — the most common global type for this target
 - `mob_id` — resolved mob ID (if available)
 - `wiki_url` — link to the mob's wiki page (hunting targets with a mob_id only)
-- `summary` — `total_count`, `total_value`, `hof_count`, `ath_count`, `first_seen`, `last_seen`
+- `summary` — `total_count`, `total_value`, `avg_value`, `max_value`, `hof_count`, `ath_count`, `first_seen`, `last_seen`
+- `highest` — highest loot by timespan: `all`, `24h`, `7d`, `30d`, `1y` (always all-time data, ignores period filter)
 - `maturities` — array of `{ target, count, value }` for all maturity variants (only when >1 variant exists)
 - `top_players` — top players by total value, each with `player`, `count`, `value`, `best_value`, `is_team`
-- `activity` — timeline buckets (`{ bucket, count }`)
+- `bucket_unit` — time unit for activity buckets
+- `activity` — timeline buckets (`{ bucket, count }`), gap-filled
 - `recent` — recent globals for this target
+
+#### `GET /api/globals/target/{name}/leaderboard`
+
+Paginated player leaderboard for a specific target. Cached for 60 seconds.
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `sort` | string | Sort field: `count`, `value`, `best` (default `value`) |
+| `page` | number | Page number (default 1, max 1000) |
+| `maturities` | string | Comma-separated target names to filter by specific maturity variants |
+| `period` | string | Time period: `24h`, `7d`, `30d`, `90d`, `1y`, `all` (default `all`) |
+| `from` | string | Custom range start (YYYY-MM-DD) |
+| `to` | string | Custom range end (YYYY-MM-DD) |
+
+Returns:
+- `players` — array of `{ player, count, value, best_value, is_team }`
+- `page` — current page number
+- `pages` — total number of pages
+- `total` — total number of distinct players
 
 #### `GET /api/globals/search`
 

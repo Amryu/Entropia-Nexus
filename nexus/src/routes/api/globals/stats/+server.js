@@ -5,9 +5,9 @@
  */
 import { pool } from '$lib/server/db.js';
 import { getResponse } from '$lib/util.js';
-import { buildGlobalsFilter } from './filter-utils.js';
+import { buildGlobalsFilter, getActivityBucket, fillActivityGaps } from './filter-utils.js';
 
-const MAX_ACTIVITY_BUCKETS = 365;
+const MAX_ACTIVITY_BUCKETS = 2555;
 const VALID_SORT_FIELDS = new Set(['count', 'value']);
 const VALID_GROUP_FIELDS = new Set(['maturity', 'mob']);
 
@@ -25,8 +25,8 @@ function extractMobName(targetName) {
 }
 
 export async function GET({ url }) {
-  const period = url.searchParams.get('period') || 'all';
-  const { conditions, params } = buildGlobalsFilter(url);
+  const { conditions, params, period, from, to } = buildGlobalsFilter(url);
+  const { sqlUnit: bucketUnit, chartUnit } = getActivityBucket(period, from, to);
   const whereClause = `WHERE ${conditions.join(' AND ')}`;
 
   // Sort params for top players/targets charts
@@ -48,8 +48,16 @@ export async function GET({ url }) {
       pool.query(
         `SELECT count(*) AS total_count,
                 COALESCE(sum(value), 0) AS total_value,
+                COALESCE(avg(value), 0) AS avg_value,
+                COALESCE(max(value), 0) AS max_value,
                 count(*) FILTER (WHERE is_hof) AS hof_count,
-                count(*) FILTER (WHERE is_ath) AS ath_count
+                count(*) FILTER (WHERE is_ath) AS ath_count,
+                count(*) FILTER (WHERE global_type IN ('kill', 'team_kill')) AS hunting_count,
+                COALESCE(sum(value) FILTER (WHERE global_type IN ('kill', 'team_kill')), 0) AS hunting_value,
+                count(*) FILTER (WHERE global_type = 'deposit') AS mining_count,
+                COALESCE(sum(value) FILTER (WHERE global_type = 'deposit'), 0) AS mining_value,
+                count(*) FILTER (WHERE global_type = 'craft') AS crafting_count,
+                COALESCE(sum(value) FILTER (WHERE global_type = 'craft'), 0) AS crafting_value
          FROM ingested_globals
          ${whereClause}`,
         params
@@ -96,21 +104,14 @@ export async function GET({ url }) {
         params
       ),
 
-      // Activity timeline
+      // Activity timeline (dynamic bucket aggregation)
       pool.query(
-        period === '24h'
-          ? `SELECT date_trunc('hour', event_timestamp) AS bucket, count(*) AS count
-             FROM ingested_globals
-             ${whereClause}
-             GROUP BY bucket
-             ORDER BY bucket
-             LIMIT ${MAX_ACTIVITY_BUCKETS}`
-          : `SELECT date_trunc('day', event_timestamp) AS bucket, count(*) AS count
-             FROM ingested_globals
-             ${whereClause}
-             GROUP BY bucket
-             ORDER BY bucket
-             LIMIT ${MAX_ACTIVITY_BUCKETS}`,
+        `SELECT date_trunc('${bucketUnit}', event_timestamp) AS bucket, count(*) AS count
+         FROM ingested_globals
+         ${whereClause}
+         GROUP BY bucket
+         ORDER BY bucket
+         LIMIT ${MAX_ACTIVITY_BUCKETS}`,
         params
       ),
     ]);
@@ -121,8 +122,13 @@ export async function GET({ url }) {
       summary: {
         total_count: parseInt(summary.total_count),
         total_value: parseFloat(summary.total_value),
+        avg_value: parseFloat(summary.avg_value),
+        max_value: parseFloat(summary.max_value),
         hof_count: parseInt(summary.hof_count),
         ath_count: parseInt(summary.ath_count),
+        hunting: { count: parseInt(summary.hunting_count), value: parseFloat(summary.hunting_value) },
+        mining: { count: parseInt(summary.mining_count), value: parseFloat(summary.mining_value) },
+        crafting: { count: parseInt(summary.crafting_count), value: parseFloat(summary.crafting_value) },
       },
       by_type: byTypeResult.rows.map(r => ({
         type: r.type,
@@ -141,10 +147,11 @@ export async function GET({ url }) {
         count: parseInt(r.count),
         value: parseFloat(r.value),
       })),
-      activity: activityResult.rows.map(r => ({
-        bucket: r.bucket,
-        count: parseInt(r.count),
-      })),
+      bucket_unit: chartUnit,
+      activity: fillActivityGaps(
+        activityResult.rows.map(r => ({ bucket: new Date(r.bucket).toISOString(), count: parseInt(r.count) })),
+        bucketUnit, from, to, period
+      ),
     }), {
       status: 200,
       headers: {

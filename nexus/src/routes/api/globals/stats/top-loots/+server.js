@@ -1,0 +1,90 @@
+// @ts-nocheck
+/**
+ * GET /api/globals/stats/top-loots — Top globals by value per category (paginated).
+ * Public endpoint, no auth required.
+ *
+ * Returns { items: [...], page, pages, total }
+ * Each entry: { player, target, value, hof, ath, timestamp, mob_id }
+ *
+ * Query params:
+ *   category — hunting|mining|crafting|rare_item|discovery|tier|pvp (default: hunting)
+ *   page     — 1-based page number (default: 1)
+ *   limit    — items per page (default: 20, max: 50)
+ *   Plus all standard globals filters.
+ */
+import { pool } from '$lib/server/db.js';
+import { getResponse } from '$lib/util.js';
+import { buildGlobalsFilter } from '../filter-utils.js';
+import { TOP_LOOTS_TABS } from '$lib/data/globals-constants.js';
+
+const MAX_LIMIT = 50;
+const DEFAULT_LIMIT = 20;
+const MAX_PAGE = 500;
+
+export async function GET({ url }) {
+  const category = url.searchParams.get('category') || 'hunting';
+  const tabConfig = TOP_LOOTS_TABS.find(t => t.value === category);
+  if (!tabConfig) {
+    return getResponse({ error: 'Invalid category' }, 400);
+  }
+
+  const { conditions, params } = buildGlobalsFilter(url);
+  const whereClause = `WHERE ${conditions.join(' AND ')}`;
+
+  const limitParam = parseInt(url.searchParams.get('limit') || '');
+  const limit = Math.min(Math.max(limitParam || DEFAULT_LIMIT, 1), MAX_LIMIT);
+  const pageParam = parseInt(url.searchParams.get('page') || '1');
+  const page = Math.min(Math.max(pageParam || 1, 1), MAX_PAGE);
+  const offset = (page - 1) * limit;
+
+  // Sort by value for value-based categories, by recency for others
+  const orderBy = tabConfig.hasValue ? 'value DESC, event_timestamp DESC' : 'event_timestamp DESC';
+
+  try {
+    const countIdx = params.length + 1;
+    const limitIdx = params.length + 1;
+    const offsetIdx = params.length + 2;
+
+    const [countResult, dataResult] = await Promise.all([
+      pool.query(
+        `SELECT count(*) AS total
+         FROM ingested_globals
+         ${whereClause} AND global_type IN ${tabConfig.types}`,
+        params
+      ),
+      pool.query(
+        `SELECT player_name AS player, target_name AS target, value, mob_id,
+                is_hof AS hof, is_ath AS ath, event_timestamp AS timestamp
+         FROM ingested_globals
+         ${whereClause} AND global_type IN ${tabConfig.types}
+         ORDER BY ${orderBy}
+         LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
+        [...params, limit, offset]
+      ),
+    ]);
+
+    const total = parseInt(countResult.rows[0].total);
+    const pages = Math.max(1, Math.ceil(total / limit));
+
+    const items = dataResult.rows.map(r => ({
+      player: r.player,
+      target: r.target,
+      value: parseFloat(r.value),
+      mob_id: r.mob_id,
+      hof: r.hof,
+      ath: r.ath,
+      timestamp: r.timestamp,
+    }));
+
+    return new Response(JSON.stringify({ items, page, pages, total }), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'public, max-age=60',
+      },
+    });
+  } catch (e) {
+    console.error('[api/globals/stats/top-loots] Error:', e);
+    return getResponse({ error: 'Internal server error' }, 500);
+  }
+}

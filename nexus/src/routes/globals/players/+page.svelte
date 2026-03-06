@@ -9,25 +9,10 @@
   import { goto } from '$app/navigation';
   import { encodeURIComponentSafe } from '$lib/util';
   import SearchInput from '$lib/components/SearchInput.svelte';
-
-  const TYPE_FILTERS = [
-    { value: '', label: 'All' },
-    { value: 'kill,team_kill', label: 'Hunting' },
-    { value: 'deposit', label: 'Mining' },
-    { value: 'craft', label: 'Crafting' },
-    { value: 'rare_item', label: 'Rare Find' },
-    { value: 'discovery', label: 'Discovery' },
-    { value: 'tier', label: 'Tier Record' },
-    { value: 'examine', label: 'Instance' },
-    { value: 'pvp', label: 'PvP' },
-  ];
-
-  const PERIOD_OPTIONS = [
-    { value: '24h', label: '24 Hours' },
-    { value: '7d', label: '7 Days' },
-    { value: '30d', label: '30 Days' },
-    { value: 'all', label: 'All Time' },
-  ];
+  import GlobalsDateRangePicker from '$lib/components/globals/GlobalsDateRangePicker.svelte';
+  import GlobalsTabNav from '$lib/components/globals/GlobalsTabNav.svelte';
+  import { TYPE_FILTERS } from '$lib/data/globals-constants.js';
+  import { formatPedShort } from '$lib/utils/globalsFormat.js';
 
   // Read initial state from URL params
   const sp = $page.url.searchParams;
@@ -38,11 +23,20 @@
   let minValue = sp.get('min_value') || '';
   let hofOnly = sp.get('hof') === 'true';
   let period = sp.get('period') || '7d';
+  let dateFrom = sp.get('from') || null;
+  let dateTo = sp.get('to') || null;
   let sortBy = sp.get('sort') || 'value';
   let currentPage = 1;
 
   let data = null;
   let loading = true;
+
+  function onDateRangeChange(e) {
+    period = e.detail.period;
+    dateFrom = e.detail.from;
+    dateTo = e.detail.to;
+    onFilterChange();
+  }
 
   function buildParams(extra = {}) {
     const params = new URLSearchParams();
@@ -52,7 +46,12 @@
     if (locationFilter) params.set('location', locationFilter);
     if (minValue) params.set('min_value', minValue);
     if (hofOnly) params.set('hof', 'true');
-    if (period !== 'all') params.set('period', period);
+    if (dateFrom && dateTo) {
+      params.set('from', dateFrom);
+      params.set('to', dateTo);
+    } else if (period && period !== 'all' && period !== 'custom') {
+      params.set('period', period);
+    }
     for (const [k, v] of Object.entries(extra)) {
       params.set(k, String(v));
     }
@@ -68,7 +67,7 @@
   async function fetchData() {
     loading = true;
     try {
-      const params = buildParams({ sort: sortBy, page: currentPage, period });
+      const params = buildParams({ sort: sortBy, page: currentPage });
       const res = await fetch(`/api/globals/stats/players?${params}`);
       if (!res.ok) return;
       data = await res.json();
@@ -97,12 +96,6 @@
   function goToPage(p) {
     currentPage = p;
     fetchData();
-  }
-
-  function formatPedShort(value) {
-    if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M`;
-    if (value >= 1000) return `${(value / 1000).toFixed(1)}K`;
-    return value.toFixed(0);
   }
 
   onMount(fetchData);
@@ -163,7 +156,6 @@
           <a href="/">Home</a> / <a href={buildGlobalsUrl()}>Globals</a> / Top Players
         </div>
         <h1>Top Players</h1>
-        <p class="page-subtitle">Players ranked by global event statistics</p>
       </div>
       <div class="globals-search">
         <SearchInput
@@ -224,18 +216,17 @@
     </div>
   </div>
 
+  <!-- Tab Navigation -->
+  <GlobalsTabNav {buildParams} />
+
   <!-- Controls row -->
   <div class="controls-row">
-    <div class="period-selector">
-      {#each PERIOD_OPTIONS as p}
-        <button class="period-btn" class:active={period === p.value} on:click={() => { period = p.value; onFilterChange(); }}>
-          {p.label}
-        </button>
-      {/each}
-    </div>
+    <GlobalsDateRangePicker {period} from={dateFrom} to={dateTo} on:change={onDateRangeChange} />
     <div class="sort-toggle">
       <button class="sort-btn" class:active={sortBy === 'value'} on:click={() => onSortChange('value')}>By Value</button>
       <button class="sort-btn" class:active={sortBy === 'count'} on:click={() => onSortChange('count')}>By Count</button>
+      <button class="sort-btn" class:active={sortBy === 'avg'} on:click={() => onSortChange('avg')}>By Avg</button>
+      <button class="sort-btn" class:active={sortBy === 'best'} on:click={() => onSortChange('best')}>By Best</button>
     </div>
   </div>
 
@@ -253,6 +244,8 @@
             <th>Player</th>
             <th class="right">Count</th>
             <th class="right">Total Value</th>
+            <th class="right">Avg</th>
+            <th class="right">Best</th>
           </tr>
         </thead>
         <tbody>
@@ -270,6 +263,8 @@
               </td>
               <td class="right">{p.count.toLocaleString()}</td>
               <td class="right font-mono">{formatPedShort(p.value)} PED</td>
+              <td class="right font-mono">{formatPedShort(p.avg_value)} PED</td>
+              <td class="right font-mono">{formatPedShort(p.best_value)} PED</td>
             </tr>
           {/each}
         </tbody>
@@ -327,12 +322,6 @@
     margin: 0 0 4px 0;
     font-size: 1.5rem;
     font-weight: 600;
-  }
-
-  .page-subtitle {
-    margin: 0;
-    color: var(--text-muted);
-    font-size: 0.875rem;
   }
 
   /* Filters */
@@ -457,32 +446,6 @@
     justify-content: space-between;
     margin-bottom: 16px;
     gap: 12px;
-  }
-
-  .period-selector {
-    display: flex;
-    gap: 4px;
-  }
-
-  .period-btn {
-    padding: 4px 12px;
-    font-size: 0.75rem;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    background: transparent;
-    color: var(--text-muted);
-    cursor: pointer;
-  }
-
-  .period-btn:hover {
-    border-color: var(--accent-color);
-    color: var(--text-color);
-  }
-
-  .period-btn.active {
-    background: var(--accent-color);
-    border-color: var(--accent-color);
-    color: #fff;
   }
 
   .sort-toggle {

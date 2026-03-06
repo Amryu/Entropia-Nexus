@@ -1,0 +1,114 @@
+// @ts-nocheck
+/**
+ * GET /api/globals/target/[name]/leaderboard — Paginated player leaderboard for a target.
+ * Public endpoint, no auth required.
+ *
+ * Query params:
+ *   sort       — 'count' | 'value' | 'best' (default: 'value')
+ *   page       — page number (default: 1)
+ *   maturities — comma-separated target names to filter by specific maturities
+ *   period     — time period filter
+ *   from, to   — custom date range
+ */
+import { pool } from '$lib/server/db.js';
+import { getResponse, decodeURIComponentSafe } from '$lib/util.js';
+import { PERIOD_INTERVALS } from '../../../stats/filter-utils.js';
+
+const PAGE_SIZE = 20;
+const VALID_SORTS = { count: 'count', value: 'total_value', best: 'best_value' };
+
+export async function GET({ params, url }) {
+  const targetName = decodeURIComponentSafe(params.name);
+
+  if (!targetName || targetName.length > 300) {
+    return getResponse({ error: 'Invalid target name' }, 400);
+  }
+
+  const sort = VALID_SORTS[url.searchParams.get('sort')] || 'total_value';
+  const page = Math.max(1, Math.min(parseInt(url.searchParams.get('page')) || 1, 1000));
+
+  // Maturity filter
+  const maturityParam = url.searchParams.get('maturities');
+  const maturityFilter = maturityParam
+    ? maturityParam.split(',').map(m => m.trim()).filter(Boolean).slice(0, 50)
+    : null;
+
+  // Period filter
+  const period = url.searchParams.get('period') || 'all';
+  const from = url.searchParams.get('from');
+  const to = url.searchParams.get('to');
+
+  // Build target condition
+  let targetCond;
+  let queryParams;
+  if (maturityFilter && maturityFilter.length > 0) {
+    targetCond = 'lower(target_name) = ANY($1)';
+    queryParams = [maturityFilter.map(m => m.toLowerCase())];
+  } else {
+    targetCond = 'lower(target_name) = lower($1)';
+    queryParams = [targetName];
+  }
+
+  // Period condition
+  let periodCond = '';
+  if (from && to) {
+    periodCond = ` AND event_timestamp >= $2 AND event_timestamp < $3`;
+    queryParams.push(new Date(from), new Date(to + 'T23:59:59.999Z'));
+  } else {
+    const intervalSql = PERIOD_INTERVALS[period];
+    if (intervalSql) {
+      periodCond = ` AND event_timestamp > now() - ${intervalSql}`;
+    }
+  }
+
+  const offset = (page - 1) * PAGE_SIZE;
+  const nextParam = queryParams.length + 1;
+
+  try {
+    const [dataResult, countResult] = await Promise.all([
+      pool.query(
+        `SELECT player_name AS player, count(*) AS count,
+                COALESCE(sum(value), 0) AS total_value,
+                COALESCE(max(value), 0) AS best_value,
+                bool_or(global_type = 'team_kill') AS has_team,
+                bool_or(global_type != 'team_kill') AS has_solo
+         FROM ingested_globals
+         WHERE confirmed = true AND ${targetCond}${periodCond}
+         GROUP BY player_name
+         ORDER BY ${sort} DESC
+         LIMIT ${PAGE_SIZE} OFFSET $${nextParam}`,
+        [...queryParams, offset]
+      ),
+      pool.query(
+        `SELECT count(DISTINCT player_name) AS total
+         FROM ingested_globals
+         WHERE confirmed = true AND ${targetCond}${periodCond}`,
+        queryParams
+      ),
+    ]);
+
+    const total = parseInt(countResult.rows[0].total);
+
+    return new Response(JSON.stringify({
+      players: dataResult.rows.map(r => ({
+        player: r.player,
+        count: parseInt(r.count),
+        value: parseFloat(r.total_value),
+        best_value: parseFloat(r.best_value),
+        is_team: r.has_team && !r.has_solo,
+      })),
+      page,
+      pages: Math.max(1, Math.ceil(total / PAGE_SIZE)),
+      total,
+    }), {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+        'Cache-Control': 'public, max-age=60',
+      },
+    });
+  } catch (e) {
+    console.error('[api/globals/target/leaderboard] Error:', e);
+    return getResponse({ error: 'Internal server error' }, 500);
+  }
+}

@@ -7,6 +7,8 @@ export const PERIOD_INTERVALS = {
   '24h': "interval '24 hours'",
   '7d': "interval '7 days'",
   '30d': "interval '30 days'",
+  '90d': "interval '90 days'",
+  '1y': "interval '1 year'",
 };
 
 export const VALID_GLOBAL_TYPES = new Set([
@@ -20,18 +22,32 @@ export function escapeLike(str) {
 
 /**
  * Parse common globals filter query params and build WHERE conditions.
- * @returns {{ conditions: string[], params: any[], paramIdx: number }}
+ * Supports both preset periods and custom date ranges (from/to).
+ * @returns {{ conditions: string[], params: any[], paramIdx: number, period: string, from: string|null, to: string|null }}
  */
 export function buildGlobalsFilter(url) {
   const conditions = ['confirmed = true'];
   const params = [];
   let paramIdx = 1;
 
-  // Period
+  // Custom date range (takes precedence over period presets)
+  const from = url.searchParams.get('from');
+  const to = url.searchParams.get('to');
   const period = url.searchParams.get('period') || 'all';
-  const intervalSql = PERIOD_INTERVALS[period];
-  if (intervalSql) {
-    conditions.push(`event_timestamp > now() - ${intervalSql}`);
+
+  if (from && to && isValidDate(from) && isValidDate(to)) {
+    conditions.push(`event_timestamp >= $${paramIdx}`);
+    params.push(new Date(from));
+    paramIdx++;
+    // to is end of day inclusive
+    conditions.push(`event_timestamp < $${paramIdx}`);
+    params.push(new Date(to + 'T23:59:59.999Z'));
+    paramIdx++;
+  } else {
+    const intervalSql = PERIOD_INTERVALS[period];
+    if (intervalSql) {
+      conditions.push(`event_timestamp > now() - ${intervalSql}`);
+    }
   }
 
   // Player
@@ -85,5 +101,140 @@ export function buildGlobalsFilter(url) {
     conditions.push('is_hof = true');
   }
 
-  return { conditions, params, paramIdx };
+  return { conditions, params, paramIdx, period, from: from || null, to: to || null };
+}
+
+/**
+ * Determine the appropriate date_trunc bucket unit based on period/date range.
+ * Returns a PostgreSQL date_trunc unit string and a Chart.js time unit.
+ */
+export function getActivityBucket(period, from, to) {
+  if (from && to) {
+    const diffMs = new Date(to).getTime() - new Date(from).getTime();
+    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+    if (diffDays <= 2) return { sqlUnit: 'hour', chartUnit: 'hour' };
+    if (diffDays <= 90) return { sqlUnit: 'day', chartUnit: 'day' };
+    if (diffDays <= 365) return { sqlUnit: 'week', chartUnit: 'week' };
+    return { sqlUnit: 'month', chartUnit: 'month' };
+  }
+  switch (period) {
+    case '24h': return { sqlUnit: 'hour', chartUnit: 'hour' };
+    case '7d':
+    case '30d': return { sqlUnit: 'day', chartUnit: 'day' };
+    case '90d': return { sqlUnit: 'week', chartUnit: 'week' };
+    case '1y': return { sqlUnit: 'week', chartUnit: 'week' };
+    default: return { sqlUnit: 'month', chartUnit: 'month' };
+  }
+}
+
+/**
+ * Fill gaps in activity data so zero-count buckets are explicit.
+ * @param {Array<{bucket: string, count: number}>} rows - Activity data from DB
+ * @param {string} sqlUnit - The date_trunc unit used ('hour', 'day', 'week', 'month')
+ * @param {string|null} from - Custom range start (ISO date string)
+ * @param {string|null} to - Custom range end (ISO date string)
+ * @param {string} period - Period preset
+ * @returns {Array<{bucket: string, count: number}>}
+ */
+export function fillActivityGaps(rows, sqlUnit, from, to, period) {
+  if (!rows || rows.length === 0) return rows;
+
+  // Determine the range boundaries
+  let rangeStart, rangeEnd;
+  if (from && to) {
+    rangeStart = new Date(from);
+    rangeEnd = new Date(to + 'T23:59:59.999Z');
+  } else if (PERIOD_INTERVALS[period]) {
+    rangeEnd = new Date();
+    const ms = periodToMs(period);
+    rangeStart = new Date(rangeEnd.getTime() - ms);
+  } else {
+    // 'all' - use the data range
+    rangeStart = new Date(rows[0].bucket);
+    rangeEnd = new Date(rows[rows.length - 1].bucket);
+  }
+
+  // Build a map of existing buckets
+  const bucketMap = new Map();
+  for (const row of rows) {
+    const key = truncateDate(new Date(row.bucket), sqlUnit).toISOString();
+    bucketMap.set(key, (bucketMap.get(key) || 0) + row.count);
+  }
+
+  // Generate all buckets in the range
+  const result = [];
+  let current = truncateDate(rangeStart, sqlUnit);
+  const end = truncateDate(rangeEnd, sqlUnit);
+
+  const maxBuckets = 2555;
+  let i = 0;
+  while (current <= end && i < maxBuckets) {
+    const key = current.toISOString();
+    result.push({ bucket: key, count: bucketMap.get(key) || 0 });
+    current = advanceBucket(current, sqlUnit);
+    i++;
+  }
+
+  return result;
+}
+
+function isValidDate(str) {
+  if (!str || typeof str !== 'string') return false;
+  const d = new Date(str);
+  return !isNaN(d.getTime());
+}
+
+function periodToMs(period) {
+  const hours = {
+    '24h': 24,
+    '7d': 7 * 24,
+    '30d': 30 * 24,
+    '90d': 90 * 24,
+    '1y': 365 * 24,
+  };
+  return (hours[period] || 30 * 24) * 60 * 60 * 1000;
+}
+
+function truncateDate(date, unit) {
+  const d = new Date(date);
+  switch (unit) {
+    case 'hour':
+      d.setMinutes(0, 0, 0);
+      return d;
+    case 'day':
+      d.setHours(0, 0, 0, 0);
+      return d;
+    case 'week': {
+      d.setHours(0, 0, 0, 0);
+      const day = d.getDay();
+      d.setDate(d.getDate() - ((day + 6) % 7)); // Monday-based
+      return d;
+    }
+    case 'month':
+      d.setHours(0, 0, 0, 0);
+      d.setDate(1);
+      return d;
+    default:
+      return d;
+  }
+}
+
+function advanceBucket(date, unit) {
+  const d = new Date(date);
+  switch (unit) {
+    case 'hour':
+      d.setHours(d.getHours() + 1);
+      return d;
+    case 'day':
+      d.setDate(d.getDate() + 1);
+      return d;
+    case 'week':
+      d.setDate(d.getDate() + 7);
+      return d;
+    case 'month':
+      d.setMonth(d.getMonth() + 1);
+      return d;
+    default:
+      return d;
+  }
 }

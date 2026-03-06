@@ -4,17 +4,16 @@
  * Public endpoint, no auth required.
  *
  * Returns summary stats + breakdowns by hunting (per-mob with maturities),
- * mining (per-resource), crafting (per-item), and activity timeline.
+ * mining (per-resource), crafting (per-item), activity timeline,
+ * top individual loots per category, and per-target ATH stats.
  */
 import { pool } from '$lib/server/db.js';
 import { getResponse, decodeURIComponentSafe } from '$lib/util.js';
 import { initMobResolver, resolveMob } from '$lib/server/mobResolver.js';
+import { PERIOD_INTERVALS, getActivityBucket, fillActivityGaps } from '../../stats/filter-utils.js';
 
-const PERIOD_INTERVALS = {
-  '24h': "interval '24 hours'",
-  '7d': "interval '7 days'",
-  '30d': "interval '30 days'",
-};
+const TOP_LOOTS_LIMIT = 100;
+const OVERVIEW_TOP_LIMIT = 3;
 
 export async function GET({ params, url }) {
   const playerName = decodeURIComponentSafe(params.name);
@@ -23,10 +22,40 @@ export async function GET({ params, url }) {
     return getResponse({ error: 'Invalid player name' }, 400);
   }
 
-  // Period filter (same pattern as /api/globals/stats)
+  // Period / custom date range filter
   const period = url.searchParams.get('period') || 'all';
-  const intervalSql = PERIOD_INTERVALS[period];
-  const periodCond = intervalSql ? ` AND event_timestamp > now() - ${intervalSql}` : '';
+  const from = url.searchParams.get('from');
+  const to = url.searchParams.get('to');
+
+  let periodCond = '';
+  const extraParams = [];
+  let extraParamOffset = 1; // $1 is playerName
+
+  if (from && to) {
+    periodCond = ` AND event_timestamp >= $2 AND event_timestamp < $3`;
+    extraParams.push(new Date(from), new Date(to + 'T23:59:59.999Z'));
+    extraParamOffset = 3;
+  } else {
+    const intervalSql = PERIOD_INTERVALS[period];
+    if (intervalSql) {
+      periodCond = ` AND event_timestamp > now() - ${intervalSql}`;
+    }
+  }
+
+  const { sqlUnit: bucketUnit } = getActivityBucket(period, from, to);
+
+  // Helper for top individual loots query per category
+  function topLootsQuery(typeCondition) {
+    return pool.query(
+      `SELECT target_name, value, mob_id, is_hof, is_ath, event_timestamp
+       FROM ingested_globals
+       WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
+         AND ${typeCondition}
+       ORDER BY value DESC
+       LIMIT ${TOP_LOOTS_LIMIT}`,
+      [playerName, ...extraParams]
+    );
+  }
 
   try {
     // Run all queries in parallel
@@ -38,27 +67,40 @@ export async function GET({ params, url }) {
       activityResult,
       recentResult,
       discoveryResult,
+      rareItemsResult,
+      topHuntingResult,
+      topMiningResult,
+      topCraftingResult,
+      pvpResult,
+      athTargetsValueResult,
+      athTargetsBestResult,
     ] = await Promise.all([
       // Summary stats
       pool.query(
         `SELECT count(*) AS total_count,
                 COALESCE(sum(value), 0) AS total_value,
+                COALESCE(avg(value), 0) AS avg_value,
+                COALESCE(max(value), 0) AS max_value,
                 count(*) FILTER (WHERE is_hof) AS hof_count,
                 count(*) FILTER (WHERE is_ath) AS ath_count,
                 count(*) FILTER (WHERE global_type = 'kill') AS kill_count,
                 count(*) FILTER (WHERE global_type = 'team_kill') AS team_kill_count,
+                COALESCE(sum(value) FILTER (WHERE global_type IN ('kill', 'team_kill')), 0) AS hunting_value,
                 count(*) FILTER (WHERE global_type = 'deposit') AS deposit_count,
+                COALESCE(sum(value) FILTER (WHERE global_type = 'deposit'), 0) AS mining_value,
                 count(*) FILTER (WHERE global_type = 'craft') AS craft_count,
+                COALESCE(sum(value) FILTER (WHERE global_type = 'craft'), 0) AS crafting_value,
                 count(*) FILTER (WHERE global_type = 'rare_item') AS rare_count,
                 count(*) FILTER (WHERE global_type = 'discovery') AS discovery_count,
-                count(*) FILTER (WHERE global_type = 'tier') AS tier_count
+                count(*) FILTER (WHERE global_type = 'tier') AS tier_count,
+                count(*) FILTER (WHERE global_type = 'pvp') AS pvp_count,
+                COALESCE(sum(value) FILTER (WHERE global_type = 'pvp'), 0) AS pvp_value
          FROM ingested_globals
          WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}`,
-        [playerName]
+        [playerName, ...extraParams]
       ),
 
-      // Hunting: per-mob breakdown (group by target_name only to avoid
-      // duplicates when mob_id is inconsistently NULL for the same target)
+      // Hunting: per-mob breakdown
       pool.query(
         `SELECT target_name,
                 MAX(mob_id) AS mob_id, MAX(maturity_id) AS maturity_id,
@@ -69,7 +111,7 @@ export async function GET({ params, url }) {
            AND global_type IN ('kill', 'team_kill')
          GROUP BY target_name
          ORDER BY total_value DESC`,
-        [playerName]
+        [playerName, ...extraParams]
       ),
 
       // Mining: per-resource breakdown
@@ -82,7 +124,7 @@ export async function GET({ params, url }) {
            AND global_type = 'deposit'
          GROUP BY target_name
          ORDER BY total_value DESC`,
-        [playerName]
+        [playerName, ...extraParams]
       ),
 
       // Crafting: per-item breakdown
@@ -95,19 +137,19 @@ export async function GET({ params, url }) {
            AND global_type = 'craft'
          GROUP BY target_name
          ORDER BY total_value DESC`,
-        [playerName]
+        [playerName, ...extraParams]
       ),
 
-      // Activity (daily buckets)
+      // Activity (dynamic bucket aggregation)
       pool.query(
-        `SELECT date_trunc('day', event_timestamp) AS bucket,
+        `SELECT date_trunc('${bucketUnit}', event_timestamp) AS bucket,
                 global_type AS type, count(*) AS count
          FROM ingested_globals
          WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
          GROUP BY bucket, global_type
          ORDER BY bucket
          LIMIT 2555`,
-        [playerName]
+        [playerName, ...extraParams]
       ),
 
       // Recent globals (last 20)
@@ -119,7 +161,7 @@ export async function GET({ params, url }) {
          WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
          ORDER BY event_timestamp DESC
          LIMIT 20`,
-        [playerName]
+        [playerName, ...extraParams]
       ),
 
       // Discovery + tier achievements
@@ -129,7 +171,66 @@ export async function GET({ params, url }) {
          WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
            AND global_type IN ('discovery', 'tier')
          ORDER BY event_timestamp DESC`,
-        [playerName]
+        [playerName, ...extraParams]
+      ),
+
+      // Rare items
+      pool.query(
+        `SELECT target_name, value, event_timestamp, is_hof, is_ath
+         FROM ingested_globals
+         WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
+           AND global_type = 'rare_item'
+         ORDER BY event_timestamp DESC`,
+        [playerName, ...extraParams]
+      ),
+
+      // PvP events
+      pool.query(
+        `SELECT value, event_timestamp, is_hof, is_ath
+         FROM ingested_globals
+         WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
+           AND global_type = 'pvp'
+         ORDER BY value DESC`,
+        [playerName, ...extraParams]
+      ),
+
+      // Top individual hunting loots
+      topLootsQuery("global_type IN ('kill', 'team_kill')"),
+
+      // Top individual mining loots
+      topLootsQuery("global_type = 'deposit'"),
+
+      // Top individual crafting loots
+      topLootsQuery("global_type = 'craft'"),
+
+      // Per-target ATH: top targets by total accumulated value
+      pool.query(
+        `SELECT target_name, count(*) AS count,
+                COALESCE(sum(value), 0) AS total_value,
+                COALESCE(max(value), 0) AS best_value,
+                MAX(mob_id) AS mob_id
+         FROM ingested_globals
+         WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
+           AND global_type IN ('kill', 'team_kill', 'deposit', 'craft')
+         GROUP BY target_name
+         ORDER BY total_value DESC
+         LIMIT 50`,
+        [playerName, ...extraParams]
+      ),
+
+      // Per-target ATH: top targets by single highest loot
+      pool.query(
+        `SELECT target_name, count(*) AS count,
+                COALESCE(sum(value), 0) AS total_value,
+                COALESCE(max(value), 0) AS best_value,
+                MAX(mob_id) AS mob_id
+         FROM ingested_globals
+         WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
+           AND global_type IN ('kill', 'team_kill', 'deposit', 'craft')
+         GROUP BY target_name
+         ORDER BY best_value DESC
+         LIMIT 50`,
+        [playerName, ...extraParams]
       ),
     ]);
 
@@ -145,7 +246,6 @@ export async function GET({ params, url }) {
     // Group hunting results by mob (aggregate maturities under each mob)
     const mobMap = new Map();
     for (const row of huntingResult.rows) {
-      // Use resolveMob to get the proper mob name from the entity database
       const resolved = resolveMob(row.target_name);
       const mobName = resolved?.mobName || row.target_name;
       const key = row.mob_id ?? row.target_name;
@@ -179,20 +279,48 @@ export async function GET({ params, url }) {
       maturities: m.maturities.sort((a, b) => b.total_value - a.total_value),
     }));
 
+    function mapLootRows(rows) {
+      return rows.map(r => ({
+        target: r.target_name,
+        value: parseFloat(r.value),
+        mob_id: r.mob_id,
+        hof: r.is_hof,
+        ath: r.is_ath,
+        timestamp: r.event_timestamp,
+      }));
+    }
+
+    function mapTargetRows(rows) {
+      return rows.map(r => ({
+        target: r.target_name,
+        count: parseInt(r.count),
+        total_value: parseFloat(r.total_value),
+        best_value: parseFloat(r.best_value),
+        mob_id: r.mob_id,
+      }));
+    }
+
     const response = new Response(JSON.stringify({
       player: playerName,
       summary: {
         total_count: parseInt(summary.total_count),
         total_value: parseFloat(summary.total_value),
+        avg_value: parseFloat(summary.avg_value),
+        max_value: parseFloat(summary.max_value),
         hof_count: parseInt(summary.hof_count),
         ath_count: parseInt(summary.ath_count),
         kill_count: parseInt(summary.kill_count),
         team_kill_count: parseInt(summary.team_kill_count),
+        hunting_value: parseFloat(summary.hunting_value),
         deposit_count: parseInt(summary.deposit_count),
+        mining_value: parseFloat(summary.mining_value),
         craft_count: parseInt(summary.craft_count),
+        crafting_value: parseFloat(summary.crafting_value),
         rare_count: parseInt(summary.rare_count),
         discovery_count: parseInt(summary.discovery_count),
         tier_count: parseInt(summary.tier_count),
+        pvp_count: parseInt(summary.pvp_count),
+        pvp_value: parseFloat(summary.pvp_value),
       },
       hunting,
       mining: {
@@ -213,11 +341,20 @@ export async function GET({ params, url }) {
           best_value: parseFloat(r.best_value),
         })),
       },
-      activity: activityResult.rows.map(r => ({
-        bucket: r.bucket,
-        type: r.type,
-        count: parseInt(r.count),
-      })),
+      bucket_unit: bucketUnit,
+      activity: fillActivityGaps(
+        (() => {
+          const bucketMap = new Map();
+          for (const r of activityResult.rows) {
+            const key = new Date(r.bucket).toISOString();
+            bucketMap.set(key, (bucketMap.get(key) || 0) + parseInt(r.count));
+          }
+          return [...bucketMap.entries()]
+            .sort((a, b) => a[0].localeCompare(b[0]))
+            .map(([bucket, count]) => ({ bucket, count }));
+        })(),
+        bucketUnit, from, to, period
+      ),
       recent: recentResult.rows.map(r => ({
         id: r.id,
         type: r.global_type,
@@ -241,6 +378,28 @@ export async function GET({ params, url }) {
         hof: r.is_hof,
         ath: r.is_ath,
       })),
+      rare_items: rareItemsResult.rows.map(r => ({
+        target: r.target_name,
+        value: parseFloat(r.value),
+        timestamp: r.event_timestamp,
+        hof: r.is_hof,
+        ath: r.is_ath,
+      })),
+      pvp_events: pvpResult.rows.map(r => ({
+        value: parseFloat(r.value),
+        timestamp: r.event_timestamp,
+        hof: r.is_hof,
+        ath: r.is_ath,
+      })),
+      top_loots: {
+        hunting: mapLootRows(topHuntingResult.rows),
+        mining: mapLootRows(topMiningResult.rows),
+        crafting: mapLootRows(topCraftingResult.rows),
+      },
+      ath_targets: {
+        by_total: mapTargetRows(athTargetsValueResult.rows),
+        by_best: mapTargetRows(athTargetsBestResult.rows),
+      },
     }), {
       status: 200,
       headers: {
