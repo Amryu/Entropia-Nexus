@@ -18,7 +18,7 @@ The skill scanner reads skill data from the in-game SKILLS panel via OCR. It cap
                         │  └────────────────────────┘   │
                         └──────────────────────────────┘
                                      │
-                            PrintWindow capture
+                         Window capture backend
                                      ▼
 ┌──────────────────────────────────────────────────────────┐
 │                    OCR Thread (daemon)                     │
@@ -46,7 +46,7 @@ The skill scanner reads skill data from the in-game SKILLS panel via OCR. It cap
 | `client/ocr/orchestrator.py` | Core pipeline coordinator — `ScanOrchestrator` class |
 | `client/ocr/detector.py` | Skills panel detection via template matching, ROI management |
 | `client/ocr/font_matcher.py` | Font-based template rendering + matching (PIL → OpenCV) |
-| `client/ocr/capturer.py` | Win32 `PrintWindow` screen capture (ignores overlays) |
+| `client/ocr/capturer.py` | Window capture backends (WGC/PrintWindow on Windows, mss on Linux) |
 | `client/ocr/preprocessor.py` | Image preprocessing: grayscale, threshold, row/column extraction |
 | `client/ocr/skill_parser.py` | `SkillMatcher` (fuzzy name matching) + `RankVerifier` (rank validation) |
 | `client/ocr/progress_bar.py` | HSV-based progress bar fill reading with sub-pixel precision |
@@ -78,7 +78,7 @@ Three ways to start scanning:
 **File**: `detector.py` — `SkillsWindowDetector.detect()`
 
 1. Finds the game window by title prefix (`"Entropia Universe Client"`)
-2. Captures the full game window via `PrintWindow`
+2. Captures the full game window via the configured window backend
 3. Template-matches the "SKILLS" title band within the capture
 4. Returns screen-absolute window bounds `(x, y, w, h)`
 
@@ -109,9 +109,11 @@ Publishes `EVENT_DEBUG_REGIONS` with all bounds for overlay visualization.
 
 | Platform | Method | Notes |
 |----------|--------|-------|
-| **Windows** | `PrintWindow()` with `PW_RENDERFULLCONTENT` | Captures window content directly, ignores overlays on top |
-| **Windows fallback** | `BitBlt` (GDI) | Works for standard windows, not DX/GL |
+| **Windows (preferred)** | `Windows.Graphics.Capture` (via `wgcapture`) | DWM-tonemapped SDR output (`B8G8R8A8`) for HDR-safe OCR, ignores overlays |
+| **Windows fallback** | `PrintWindow()` + `BitBlt` (GDI) | Works without optional WGC dependency |
 | **Linux** | `mss` region capture | Captures screen region (includes overlays) |
+
+On Windows, install the optional `wgcapture` Python package to enable the WGC path.
 
 Output: numpy array in BGR format. GDI resources (DC, bitmap) are properly cleaned up.
 
@@ -125,7 +127,8 @@ Output: numpy array in BGR format. GDI resources (DC, bitmap) are properly clean
 4. **Column split**: `extract_columns()` extracts name/rank/points cells per row
 5. **Empty check**: Rows with fewer than `MIN_BRIGHT_PIXELS` (50) bright pixels are skipped — prevents rejecting short names like "Aim" that occupy few pixels
 
-Right-edge trimming: `NAME_COL_RIGHT_TRIM` (30px) and `POINTS_COL_RIGHT_TRIM` (30px) remove empty gap between columns.
+Right-edge trimming: `POINTS_COL_RIGHT_TRIM` (30px) removes empty gap after points digits.
+Row text/bar split is ROI-driven from `bar_offset` (configured in scan ROI settings), not a fixed percentage.
 
 ### Stage 7: Font Template Matching
 
@@ -162,7 +165,7 @@ The primary OCR method. Instead of traditional OCR, renders expected text as tem
 
 **SkillMatcher** — fuzzy name matching fallback:
 - Fetches skill list from `api.entropianexus.com/skills` (cached 24h at `client/data/skill_reference.json`)
-- Exact match first, then `SequenceMatcher` fuzzy match (threshold: 0.80)
+- Exact match first, then `SequenceMatcher` fuzzy match (threshold: 0.70)
 
 **RankVerifier** — rank validation and cross-verification:
 - Fetches rank thresholds from `api.entropianexus.com/enumerations/Skill%20Ranks` (cached 24h at `client/data/skill_ranks.json`)
@@ -200,6 +203,7 @@ class SkillReading:
 **Events published per row**:
 - `EVENT_SKILL_SCANNED`: the `SkillReading` object (consumed by Skills page)
 - `EVENT_DEBUG_ROW`: detailed row data including match scores, raw text, verification (consumed by overlay)
+- Low-confidence fallback matches also save a composite debug image (row + name/rank/points crops + parsed values) to `client/debug_output/low_confidence/`
 
 **Events published per page**:
 - `EVENT_OCR_PROGRESS`: `ScanProgress` with found/expected counts, current category
@@ -300,7 +304,8 @@ EVENT_OCR_OVERLAYS_HIDE EventBus─→  ScanHighlightOverlay._on_hide()
 
 | Config Key | Type | Default | Description |
 |------------|------|---------|-------------|
-| `ocr_confidence_threshold` | float | 0.7 | Minimum confidence for skill name matches |
+| `ocr_confidence_threshold` | float | 0.7 | Legacy config key (kept for compatibility) |
+| `ocr_capture_backend` | str | "auto" | `auto`, `printwindow`, or `wgc` (HDR-safe WGC path on Windows when available) |
 | `scan_overlay_debug` | bool | false | Show debug region boxes on the overlay |
 | `scan_roi_overrides` | dict | {} | `{roi_name: [x, y, w, h]}` pixel offset overrides |
 | `hotkey_ocr_scan` | str | "F7" | Scan hotkey combo (currently disabled in hotkey manager) |
@@ -322,8 +327,9 @@ EVENT_OCR_OVERLAYS_HIDE EventBus─→  ScanHighlightOverlay._on_hide()
 | Constant | Value | Purpose |
 |----------|-------|---------|
 | `MIN_BRIGHT_PIXELS` | 50 | Minimum bright pixels to consider a row non-empty |
-| `NAME_COL_RIGHT_TRIM` | 30px | Trim empty space from right edge of name column |
 | `POINTS_COL_RIGHT_TRIM` | 30px | Trim empty space from right edge of points column |
+| `FALLBACK_FAILURE_CONFIDENCE` | 0.60 | Reject below-threshold fallback matches below this score |
+| `FALLBACK_LOW_CONFIDENCE` | 0.70 | Warn for accepted fallback matches below this score |
 | `MAX_MISS_FRACTION` | 0.5 | Discard page if >50% of rows fail to match |
 
 ### Template Matching (font_matcher.py)
