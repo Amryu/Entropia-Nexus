@@ -9,7 +9,7 @@ import { buildGlobalsFilter } from '../filter-utils.js';
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
-const VALID_SORT_FIELDS = new Set(['count', 'value']);
+const VALID_SORT_FIELDS = new Set(['count', 'value', 'avg', 'best']);
 
 export async function GET({ url }) {
   const { conditions, params, paramIdx: nextIdx } = buildGlobalsFilter(url);
@@ -17,7 +17,8 @@ export async function GET({ url }) {
 
   const sortParam = url.searchParams.get('sort');
   const sortBy = VALID_SORT_FIELDS.has(sortParam) ? sortParam : 'value';
-  const sortCol = sortBy === 'count' ? 'count(*)' : 'COALESCE(sum(value), 0)';
+  const SORT_COLS = { count: 'count(*)', value: 'COALESCE(sum(value), 0)', avg: 'COALESCE(avg(value), 0)', best: 'COALESCE(max(value), 0)' };
+  const sortCol = SORT_COLS[sortBy];
 
   const pageNum = Math.max(1, parseInt(url.searchParams.get('page')) || 1);
   const limit = Math.min(Math.max(1, parseInt(url.searchParams.get('limit')) || DEFAULT_LIMIT), MAX_LIMIT);
@@ -30,6 +31,7 @@ export async function GET({ url }) {
     const [dataResult, countResult] = await Promise.all([
       pool.query(
         `SELECT player_name AS player, count(*) AS count, COALESCE(sum(value), 0) AS value,
+                COALESCE(avg(value), 0) AS avg_value, COALESCE(max(value), 0) AS best_value,
                 bool_or(global_type = 'team_kill') AS has_team,
                 bool_or(global_type != 'team_kill') AS has_solo,
                 EXISTS(SELECT 1 FROM users u WHERE lower(u.eu_name) = lower(player_name) AND u.verified = true) AS has_profile
@@ -56,6 +58,8 @@ export async function GET({ url }) {
         player: r.player,
         count: parseInt(r.count),
         value: parseFloat(r.value),
+        avg_value: parseFloat(r.avg_value),
+        best_value: parseFloat(r.best_value),
         is_team: r.has_team && !r.has_solo,
         has_profile: r.has_profile,
       })),

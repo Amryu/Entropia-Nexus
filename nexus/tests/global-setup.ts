@@ -303,6 +303,146 @@ async function seedMockTestUsers(targetDb: string) {
 }
 
 /**
+ * Ensure required schema objects exist in nexus_test even if source DB is behind migrations.
+ * This keeps API startup stable for Playwright health checks (e.g. /weapons -> ClassIds lookup).
+ */
+async function ensureNexusTestSchema(targetDb: string) {
+  if (targetDb !== 'nexus_test') {
+    return;
+  }
+
+  console.log(`\n🧩 Ensuring required schema objects in ${targetDb}...`);
+  const pool = await createPool(targetDb);
+
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS "TableChanges" (
+        "table_name" TEXT PRIMARY KEY,
+        "last_insert" TIMESTAMPTZ,
+        "last_update" TIMESTAMPTZ,
+        "last_delete" TIMESTAMPTZ
+      );
+    `);
+
+    await pool.query(`
+      CREATE OR REPLACE FUNCTION track_table_change() RETURNS TRIGGER AS $$
+      BEGIN
+        INSERT INTO "TableChanges" ("table_name", "last_insert", "last_update", "last_delete")
+        VALUES (
+          TG_TABLE_NAME,
+          CASE WHEN TG_OP = 'INSERT' THEN now() ELSE NULL END,
+          CASE WHEN TG_OP = 'UPDATE' THEN now() ELSE NULL END,
+          CASE WHEN TG_OP = 'DELETE' THEN now() ELSE NULL END
+        )
+        ON CONFLICT ("table_name") DO UPDATE SET
+          "last_insert" = CASE WHEN TG_OP = 'INSERT' THEN now() ELSE "TableChanges"."last_insert" END,
+          "last_update" = CASE WHEN TG_OP = 'UPDATE' THEN now() ELSE "TableChanges"."last_update" END,
+          "last_delete" = CASE WHEN TG_OP = 'DELETE' THEN now() ELSE "TableChanges"."last_delete" END;
+        RETURN NULL;
+      END;
+      $$ LANGUAGE plpgsql;
+    `);
+
+    await pool.query(`
+      DO $$
+      DECLARE
+        tbl TEXT;
+      BEGIN
+        FOR tbl IN
+          SELECT tablename
+          FROM pg_tables
+          WHERE schemaname = 'public'
+            AND tablename NOT LIKE '%\\_audit'
+            AND tablename NOT IN ('TableChanges')
+        LOOP
+          EXECUTE format(
+            'DROP TRIGGER IF EXISTS zz_track_change ON %I;
+             CREATE TRIGGER zz_track_change
+             AFTER INSERT OR UPDATE OR DELETE ON %I
+             FOR EACH STATEMENT EXECUTE FUNCTION track_table_change();',
+            tbl, tbl
+          );
+        END LOOP;
+      END;
+      $$;
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS "ClassIds" (
+        "Id" SERIAL PRIMARY KEY,
+        "EntityType" TEXT NOT NULL,
+        "EntityId" INTEGER NOT NULL,
+        "ClassId" BIGINT NOT NULL,
+        UNIQUE ("EntityType", "EntityId"),
+        UNIQUE ("ClassId")
+      );
+    `);
+
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS "ClassIds_classid_idx" ON "ClassIds" ("ClassId");
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS "ClassIds_audit" (
+        "Id" INTEGER DEFAULT NULL,
+        operation CHAR(1) NOT NULL,
+        stamp TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+        userid TEXT NOT NULL
+      ) INHERITS ("ClassIds");
+    `);
+
+    await pool.query(`
+      CREATE OR REPLACE FUNCTION "ClassIds_audit_trigger"() RETURNS TRIGGER AS $$
+      BEGIN
+        IF (TG_OP = 'DELETE') THEN
+          INSERT INTO "ClassIds_audit" SELECT OLD.*, 'D', now(), current_user;
+          RETURN OLD;
+        ELSIF (TG_OP = 'UPDATE') THEN
+          INSERT INTO "ClassIds_audit" SELECT NEW.*, 'U', now(), current_user;
+          RETURN NEW;
+        ELSIF (TG_OP = 'INSERT') THEN
+          INSERT INTO "ClassIds_audit" SELECT NEW.*, 'I', now(), current_user;
+          RETURN NEW;
+        END IF;
+        RETURN NULL;
+      END;
+      $$ LANGUAGE plpgsql;
+    `);
+
+    await pool.query(`
+      DO $$
+      BEGIN
+        IF NOT EXISTS (
+          SELECT 1
+          FROM pg_trigger
+          WHERE tgname = 'ClassIds_audit_trigger'
+            AND tgrelid = '"ClassIds"'::regclass
+        ) THEN
+          CREATE TRIGGER "ClassIds_audit_trigger"
+          AFTER INSERT OR UPDATE OR DELETE ON "ClassIds"
+          FOR EACH ROW EXECUTE FUNCTION "ClassIds_audit_trigger"();
+        END IF;
+      END;
+      $$;
+    `);
+
+    const { rows } = await pool.query(`
+      SELECT
+        to_regclass('"ClassIds"') AS class_ids,
+        to_regclass('"TableChanges"') AS table_changes
+    `);
+
+    if (!rows[0]?.class_ids || !rows[0]?.table_changes) {
+      throw new Error('Required nexus_test schema objects are missing after setup');
+    }
+
+    console.log(`✅ ${targetDb} schema checks passed`);
+  } finally {
+    await pool.end();
+  }
+}
+
+/**
  * Kill any processes listening on the test ports (Windows-specific)
  */
 function killTestServers() {
@@ -363,6 +503,7 @@ async function globalSetup() {
     // Clone each database pair
     for (const { source, target } of DATABASE_PAIRS) {
       await cloneDatabase(source, target);
+      await ensureNexusTestSchema(target);
     }
 
     await seedMockTestUsers('nexus_users_test');

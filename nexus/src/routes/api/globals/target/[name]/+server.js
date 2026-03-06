@@ -11,12 +11,7 @@
  */
 import { pool } from '$lib/server/db.js';
 import { getResponse, encodeURIComponentSafe, decodeURIComponentSafe } from '$lib/util.js';
-
-const PERIOD_INTERVALS = {
-  '24h': "interval '24 hours'",
-  '7d': "interval '7 days'",
-  '30d': "interval '30 days'",
-};
+import { PERIOD_INTERVALS, getActivityBucket, fillActivityGaps } from '../../stats/filter-utils.js';
 
 /**
  * Extract the mob base name by stripping the maturity suffix.
@@ -47,10 +42,12 @@ export async function GET({ params, url }) {
     ? maturityParam.split(',').map(m => m.trim()).filter(Boolean).slice(0, 50)
     : null;
 
-  // Period filter
+  // Period / custom date range filter
   const period = url.searchParams.get('period') || 'all';
-  const intervalSql = PERIOD_INTERVALS[period];
-  const periodCond = intervalSql ? ` AND event_timestamp > now() - ${intervalSql}` : '';
+  const from = url.searchParams.get('from');
+  const to = url.searchParams.get('to');
+
+  const { sqlUnit: bucketUnit } = getActivityBucket(period, from, to);
 
   // Build the target name condition — exact match or maturity filter
   let targetCond;
@@ -63,6 +60,18 @@ export async function GET({ params, url }) {
     targetParams = [targetName];
   }
 
+  // Build period condition - custom date range appends params after $1
+  let periodCond = '';
+  if (from && to) {
+    periodCond = ` AND event_timestamp >= $2 AND event_timestamp < $3`;
+    targetParams.push(new Date(from), new Date(to + 'T23:59:59.999Z'));
+  } else {
+    const intervalSql = PERIOD_INTERVALS[period];
+    if (intervalSql) {
+      periodCond = ` AND event_timestamp > now() - ${intervalSql}`;
+    }
+  }
+
   try {
     const [
       summaryResult,
@@ -70,11 +79,14 @@ export async function GET({ params, url }) {
       activityResult,
       recentResult,
       maturitiesResult,
+      highestResult,
     ] = await Promise.all([
       // Summary stats
       pool.query(
         `SELECT count(*) AS total_count,
                 COALESCE(sum(value), 0) AS total_value,
+                COALESCE(avg(value), 0) AS avg_value,
+                COALESCE(max(value), 0) AS max_value,
                 count(*) FILTER (WHERE is_hof) AS hof_count,
                 count(*) FILTER (WHERE is_ath) AS ath_count,
                 mode() WITHIN GROUP (ORDER BY global_type) AS primary_type,
@@ -101,23 +113,15 @@ export async function GET({ params, url }) {
         targetParams
       ),
 
-      // Activity (daily buckets)
+      // Activity (dynamic bucket aggregation)
       pool.query(
-        period === '24h'
-          ? `SELECT date_trunc('hour', event_timestamp) AS bucket,
-                  count(*) AS count
-             FROM ingested_globals
-             WHERE confirmed = true AND ${targetCond}${periodCond}
-             GROUP BY 1
-             ORDER BY 1
-             LIMIT 2555`
-          : `SELECT date_trunc('day', event_timestamp) AS bucket,
-                  count(*) AS count
-             FROM ingested_globals
-             WHERE confirmed = true AND ${targetCond}${periodCond}
-             GROUP BY 1
-             ORDER BY 1
-             LIMIT 2555`,
+        `SELECT date_trunc('${bucketUnit}', event_timestamp) AS bucket,
+                count(*) AS count
+         FROM ingested_globals
+         WHERE confirmed = true AND ${targetCond}${periodCond}
+         GROUP BY 1
+         ORDER BY 1
+         LIMIT 2555`,
         targetParams
       ),
 
@@ -144,6 +148,18 @@ export async function GET({ params, url }) {
          GROUP BY target_name
          ORDER BY count(*) DESC`,
         [targetName]
+      ),
+
+      // Highest loot per timespan (always uses all-time data, ignoring period filter)
+      pool.query(
+        `SELECT COALESCE(max(value), 0) AS highest_all,
+                COALESCE(max(value) FILTER (WHERE event_timestamp > now() - interval '24 hours'), 0) AS highest_24h,
+                COALESCE(max(value) FILTER (WHERE event_timestamp > now() - interval '7 days'), 0) AS highest_7d,
+                COALESCE(max(value) FILTER (WHERE event_timestamp > now() - interval '30 days'), 0) AS highest_30d,
+                COALESCE(max(value) FILTER (WHERE event_timestamp > now() - interval '1 year'), 0) AS highest_1y
+         FROM ingested_globals
+         WHERE confirmed = true AND ${targetCond}`,
+        maturityFilter ? [maturityFilter.map(m => m.toLowerCase())] : [targetName]
       ),
     ]);
 
@@ -182,10 +198,19 @@ export async function GET({ params, url }) {
       summary: {
         total_count: parseInt(summary.total_count),
         total_value: parseFloat(summary.total_value),
+        avg_value: parseFloat(summary.avg_value),
+        max_value: parseFloat(summary.max_value),
         hof_count: parseInt(summary.hof_count),
         ath_count: parseInt(summary.ath_count),
         first_seen: summary.first_seen,
         last_seen: summary.last_seen,
+      },
+      highest: {
+        all: parseFloat(highestResult.rows[0].highest_all),
+        '24h': parseFloat(highestResult.rows[0].highest_24h),
+        '7d': parseFloat(highestResult.rows[0].highest_7d),
+        '30d': parseFloat(highestResult.rows[0].highest_30d),
+        '1y': parseFloat(highestResult.rows[0].highest_1y),
       },
       maturities,
       top_players: topPlayersResult.rows.map(r => ({
@@ -195,10 +220,11 @@ export async function GET({ params, url }) {
         best_value: parseFloat(r.best_value),
         is_team: r.has_team && !r.has_solo,
       })),
-      activity: activityResult.rows.map(r => ({
-        bucket: r.bucket,
-        count: parseInt(r.count),
-      })),
+      bucket_unit: bucketUnit,
+      activity: fillActivityGaps(
+        activityResult.rows.map(r => ({ bucket: new Date(r.bucket).toISOString(), count: parseInt(r.count) })),
+        bucketUnit, from, to, period
+      ),
       recent: recentResult.rows.map(r => ({
         id: r.id,
         type: r.global_type,

@@ -4811,12 +4811,15 @@ export async function deleteRewardRule(id) {
   return result.rowCount > 0;
 }
 
-export async function getMatchingRules(entity, changeType, dataKeys) {
+export async function getMatchingRules(entity, changeType, dataKeys, subType) {
   const result = await pool.query(
     'SELECT * FROM reward_rules WHERE active = true ORDER BY sort_order, id'
   );
   return result.rows.filter(rule => {
-    if (rule.entities && !rule.entities.includes(entity)) return false;
+    if (rule.entities) {
+      const matchesEntity = rule.entities.includes(entity) || (subType && rule.entities.includes(subType));
+      if (!matchesEntity) return false;
+    }
     if (rule.change_type && rule.change_type !== changeType) return false;
     if (rule.data_fields?.length) {
       if (!Array.isArray(dataKeys) || !rule.data_fields.some(f => dataKeys.includes(f))) return false;
@@ -4890,6 +4893,8 @@ export async function getContributorBalances(page = 1, limit = 50, search = null
       COALESCE((SELECT SUM(cp.amount) FROM contributor_payouts cp WHERE cp.user_id = u.id), 0) as total_paid
     FROM users u
     WHERE (
+      EXISTS (SELECT 1 FROM changes c3 WHERE c3.author_id = u.id AND c3.state = 'Approved')
+      OR
       EXISTS (SELECT 1 FROM contributor_rewards cr2 WHERE cr2.user_id = u.id)
       OR EXISTS (SELECT 1 FROM contributor_payouts cp2 WHERE cp2.user_id = u.id)
     )
@@ -4902,6 +4907,8 @@ export async function getContributorBalances(page = 1, limit = 50, search = null
     SELECT COUNT(DISTINCT u.id) as total
     FROM users u
     WHERE (
+      EXISTS (SELECT 1 FROM changes c3 WHERE c3.author_id = u.id AND c3.state = 'Approved')
+      OR
       EXISTS (SELECT 1 FROM contributor_rewards cr2 WHERE cr2.user_id = u.id)
       OR EXISTS (SELECT 1 FROM contributor_payouts cp2 WHERE cp2.user_id = u.id)
     )
@@ -4922,7 +4929,7 @@ export async function getContributorBalances(page = 1, limit = 50, search = null
 }
 
 export async function getContributorDetail(userId) {
-  const [rewardsResult, payoutsResult, userResult] = await Promise.all([
+  const [rewardsResult, payoutsResult, userResult, eligibleChangesResult] = await Promise.all([
     pool.query(
       `SELECT cr.*, rr.name as rule_name, c.entity, c.type, c.data->>'Name' as entity_name,
               ua.global_name as assigned_by_name
@@ -4945,13 +4952,35 @@ export async function getContributorDetail(userId) {
     pool.query(
       'SELECT id, global_name, eu_name, avatar FROM users WHERE id = $1',
       [userId]
+    ),
+    pool.query(
+      `SELECT
+         c.id,
+         c.entity,
+         c.type,
+         c.data->>'Name' as entity_name,
+         c.data->>'Id' as entity_id,
+         c.created_at,
+         c.last_update
+       FROM changes c
+       WHERE c.author_id = $1
+         AND c.state = 'Approved'
+         AND NOT EXISTS (
+           SELECT 1
+           FROM contributor_rewards cr
+           WHERE cr.change_id = c.id
+         )
+       ORDER BY c.last_update DESC NULLS LAST, c.created_at DESC
+       LIMIT 250`,
+      [userId]
     )
   ]);
 
   return {
     user: userResult.rows[0] || null,
     rewards: rewardsResult.rows,
-    payouts: payoutsResult.rows
+    payouts: payoutsResult.rows,
+    eligible_changes: eligibleChangesResult.rows
   };
 }
 

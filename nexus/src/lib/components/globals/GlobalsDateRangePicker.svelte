@@ -1,0 +1,158 @@
+<!--
+  @component GlobalsDateRangePicker
+  Period preset buttons (24h, 7d, 30d, 90d, 1y, All) plus a custom date range option.
+  Dispatches `change` with { period, from, to } when the selection changes.
+-->
+<script>
+  import { createEventDispatcher } from 'svelte';
+  import { PERIOD_OPTIONS } from '$lib/data/globals-constants.js';
+
+  const dispatch = createEventDispatcher();
+
+  /** Currently active preset period */
+  export let period = '7d';
+  /** Custom range start (YYYY-MM-DD string or null) */
+  export let from = null;
+  /** Custom range end (YYYY-MM-DD string or null) */
+  export let to = null;
+  /** Whether controls should be disabled (e.g. during loading) */
+  export let disabled = false;
+
+  let showCustom = !!(from && to);
+
+  function selectPreset(value) {
+    showCustom = false;
+    from = null;
+    to = null;
+    period = value;
+    dispatch('change', { period, from: null, to: null });
+  }
+
+  function openCustom() {
+    showCustom = true;
+  }
+
+  function onCustomChange() {
+    if (from && to) {
+      period = 'custom';
+      dispatch('change', { period: 'custom', from, to });
+    }
+  }
+</script>
+
+<div class="date-range-picker">
+  <div class="presets">
+    {#each PERIOD_OPTIONS as p}
+      <button
+        class="period-btn"
+        class:active={!showCustom && period === p.value}
+        {disabled}
+        on:click={() => selectPreset(p.value)}
+      >
+        {p.label}
+      </button>
+    {/each}
+    <button
+      class="period-btn"
+      class:active={showCustom}
+      {disabled}
+      on:click={openCustom}
+    >
+      Custom
+    </button>
+  </div>
+  {#if showCustom}
+    <div class="custom-range">
+      <input
+        type="date"
+        class="date-input"
+        bind:value={from}
+        on:change={onCustomChange}
+        {disabled}
+      />
+      <span class="range-separator">to</span>
+      <input
+        type="date"
+        class="date-input"
+        bind:value={to}
+        on:change={onCustomChange}
+        {disabled}
+      />
+    </div>
+  {/if}
+</div>
+
+<style>
+  .date-range-picker {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+
+  .presets {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+
+  .period-btn {
+    padding: 4px 12px;
+    font-size: 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+
+  .period-btn:hover:not(:disabled) {
+    border-color: var(--accent-color);
+    color: var(--text-color);
+  }
+
+  .period-btn.active {
+    background: var(--accent-color);
+    border-color: var(--accent-color);
+    color: #fff;
+  }
+
+  .period-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .custom-range {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .date-input {
+    padding: 4px 8px;
+    font-size: 0.75rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--primary-color);
+    color: var(--text-color);
+    color-scheme: dark;
+  }
+
+  .date-input:focus {
+    outline: none;
+    border-color: var(--accent-color);
+  }
+
+  .range-separator {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+
+  @media (max-width: 599px) {
+    .date-range-picker {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+  }
+</style>

@@ -6,6 +6,8 @@
 <script>
   // @ts-nocheck
   import { onMount, onDestroy } from 'svelte';
+  import { getTypeConfig } from '$lib/data/globals-constants.js';
+  import { timeAgo, formatValue } from '$lib/utils/globalsFormat.js';
 
   /** @type {Array<object>} Initial globals from server-side load */
   export let initialGlobals = [];
@@ -13,44 +15,10 @@
   const POLL_INTERVAL = 5000;
   const MAX_ITEMS = 15;
 
-  const TYPE_CONFIG = {
-    kill:       { label: 'Hunting',     cssClass: 'type-kill' },
-    team_kill:  { label: 'Team Hunt',  cssClass: 'type-kill' },
-    deposit:    { label: 'Mining',     cssClass: 'type-deposit' },
-    craft:      { label: 'Crafting',   cssClass: 'type-craft' },
-    rare_item:  { label: 'Rare Find',  cssClass: 'type-rare' },
-    discovery:  { label: 'Discovery',  cssClass: 'type-discovery' },
-    tier:       { label: 'Tier Record', cssClass: 'type-tier' },
-    examine:    { label: 'Instance',   cssClass: 'type-examine' },
-    pvp:        { label: 'PvP',        cssClass: 'type-pvp' },
-  };
-
   let globals = [...initialGlobals].slice(0, MAX_ITEMS);
   let pollTimer = null;
   let latestTimestamp = globals.length > 0 ? globals[0].timestamp : null;
   let newIds = new Set();
-
-  function timeAgo(dateStr) {
-    const now = Date.now();
-    const then = new Date(dateStr).getTime();
-    const diff = now - then;
-    const seconds = Math.floor(diff / 1000);
-    if (seconds < 60) return 'just now';
-    const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return `${minutes}m ago`;
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours}h ago`;
-    const days = Math.floor(hours / 24);
-    return `${days}d ago`;
-  }
-
-  function formatValue(value, unit, type) {
-    if (type === 'discovery') return '';
-    if (type === 'tier' && unit === 'TIER') return `Tier ${value}`;
-    if (type === 'pvp') return `${value} kills`;
-    if (value >= 1000) return `${(value / 1000).toFixed(1)}K PED`;
-    return `${value.toFixed(2)} PED`;
-  }
 
   async function poll() {
     try {
@@ -94,9 +62,6 @@
     if (pollTimer) clearInterval(pollTimer);
   });
 
-  function getTypeConfig(type) {
-    return TYPE_CONFIG[type] || { label: type, cssClass: '' };
-  }
 </script>
 
 <div class="globals-feed">

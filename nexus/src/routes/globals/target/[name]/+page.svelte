@@ -15,6 +15,9 @@
 
   import { goto } from '$app/navigation';
   import SearchInput from '$lib/components/SearchInput.svelte';
+  import GlobalsDateRangePicker from '$lib/components/globals/GlobalsDateRangePicker.svelte';
+  import { TYPE_CONFIG } from '$lib/data/globals-constants.js';
+  import { formatPed, formatValue, timeAgo, getComputedCssVar } from '$lib/utils/globalsFormat.js';
 
   export let data;
 
@@ -28,16 +31,17 @@
   let maturities = [];
   let wikiUrl = null;
 
-  // Period selector
-  const PERIOD_OPTIONS = [
-    { value: '24h', label: '24 Hours' },
-    { value: '7d', label: '7 Days' },
-    { value: '30d', label: '30 Days' },
-    { value: 'all', label: 'All Time' },
-  ];
-
   let period = 'all';
+  let dateFrom = null;
+  let dateTo = null;
   let loading = false;
+
+  function onDateRangeChange(e) {
+    period = e.detail.period;
+    dateFrom = e.detail.from;
+    dateTo = e.detail.to;
+    refetchData();
+  }
 
   // Selected maturity filter
   let selectedMaturities = [];
@@ -45,6 +49,44 @@
 
   // Top Players chart sort toggle
   let playerChartSortBy = 'value';
+
+  // Leaderboard
+  let leaderboardSort = 'value';
+  let leaderboardPage = 1;
+  let leaderboard = null;
+  let leaderboardLoading = false;
+
+  async function fetchLeaderboard() {
+    leaderboardLoading = true;
+    try {
+      const params = new URLSearchParams();
+      params.set('sort', leaderboardSort);
+      params.set('page', String(leaderboardPage));
+      if (selectedMaturities.length > 0) {
+        params.set('maturities', selectedMaturities.join(','));
+      }
+      if (dateFrom && dateTo) {
+        params.set('from', dateFrom);
+        params.set('to', dateTo);
+      } else if (period !== 'all' && period !== 'custom') {
+        params.set('period', period);
+      }
+      const res = await fetch(`/api/globals/target/${encodeURIComponent(targetName)}/leaderboard?${params}`);
+      if (res.ok) leaderboard = await res.json();
+    } catch { /* ignore */ }
+    leaderboardLoading = false;
+  }
+
+  function onLeaderboardSortChange(sort) {
+    leaderboardSort = sort;
+    leaderboardPage = 1;
+    fetchLeaderboard();
+  }
+
+  function goToLeaderboardPage(p) {
+    leaderboardPage = p;
+    fetchLeaderboard();
+  }
 
   function applyData(d) {
     summary = d?.summary;
@@ -68,7 +110,12 @@
       if (selectedMaturities.length > 0) {
         params.set('maturities', selectedMaturities.join(','));
       }
-      if (period !== 'all') params.set('period', period);
+      if (dateFrom && dateTo) {
+        params.set('from', dateFrom);
+        params.set('to', dateTo);
+      } else if (period !== 'all' && period !== 'custom') {
+        params.set('period', period);
+      }
       const res = await fetch(`/api/globals/target/${encodeURIComponent(targetName)}?${params}`);
       if (!res.ok) return;
       const d = await res.json();
@@ -80,6 +127,8 @@
       wikiUrl = fullWikiUrl;
       await tick();
       buildCharts();
+      leaderboardPage = 1;
+      fetchLeaderboard();
     } catch { /* ignore */ }
     loading = false;
   }
@@ -98,52 +147,11 @@
     refetchData();
   }
 
-  const TYPE_CONFIG = {
-    kill:       { label: 'Hunting',     cssClass: 'type-kill' },
-    team_kill:  { label: 'Team Hunt',   cssClass: 'type-kill' },
-    deposit:    { label: 'Mining',      cssClass: 'type-deposit' },
-    craft:      { label: 'Crafting',    cssClass: 'type-craft' },
-    rare_item:  { label: 'Rare Find',   cssClass: 'type-rare' },
-    discovery:  { label: 'Discovery',   cssClass: 'type-discovery' },
-    tier:       { label: 'Tier Record', cssClass: 'type-tier' },
-    examine:    { label: 'Instance',    cssClass: 'type-examine' },
-    pvp:        { label: 'PvP',         cssClass: 'type-pvp' },
-  };
-
-  // Sorting
-  let playerSort = { col: 'value', asc: false };
-
-  function sortedData(arr, sort) {
-    return [...arr].sort((a, b) => {
-      const va = a[sort.col] ?? 0;
-      const vb = b[sort.col] ?? 0;
-      if (typeof va === 'string') return sort.asc ? va.localeCompare(vb) : vb.localeCompare(va);
-      return sort.asc ? va - vb : vb - va;
-    });
-  }
-
-  function toggleSort(sortState, col) {
-    if (sortState.col === col) {
-      sortState.asc = !sortState.asc;
-    } else {
-      sortState.col = col;
-      sortState.asc = false;
-    }
-    return { ...sortState };
-  }
-
-  $: sortedPlayers = sortedData(topPlayers, playerSort);
-
   // Charts
   let activityCanvas;
   let topPlayersCanvas;
   let activityChart = null;
   let topPlayersChart = null;
-
-  function getComputedCssVar(name) {
-    if (typeof getComputedStyle === 'undefined') return null;
-    return getComputedStyle(document.documentElement).getPropertyValue(name)?.trim() || null;
-  }
 
   function buildActivityChart() {
     if (!activityCanvas || !activity.length) return;
@@ -165,7 +173,7 @@
           borderWidth: 2,
           pointRadius: activity.length < 30 ? 3 : 0,
           fill: true,
-          tension: 0.3,
+          tension: 0.1,
         }],
       },
       options: {
@@ -174,7 +182,7 @@
         scales: {
           x: {
             type: 'time',
-            time: { unit: period === '24h' ? 'hour' : 'day' },
+            time: { unit: initialData?.bucket_unit || 'day' },
             ticks: { color: textMuted, maxTicksLimit: 10, font: { size: 11 } },
             grid: { color: borderColor + '30' },
           },
@@ -187,6 +195,22 @@
         plugins: { legend: { display: false }, tooltip: { backgroundColor: 'rgba(0,0,0,0.85)' } },
       },
     });
+  }
+
+  // Get index of Y-axis label clicked (for horizontal bar charts)
+  function getClickedLabelIndex(evt, chart) {
+    if (!chart) return null;
+    const yScale = chart.scales.y;
+    if (!yScale) return null;
+    const { right } = yScale;
+    const x = evt.native?.offsetX ?? evt.x;
+    const y = evt.native?.offsetY ?? evt.y;
+    if (x > right) return null;
+    for (let i = 0; i < yScale.ticks.length; i++) {
+      const labelY = yScale.getPixelForTick(i);
+      if (Math.abs(y - labelY) < 12) return i;
+    }
+    return null;
   }
 
   function buildTopPlayersChart() {
@@ -226,6 +250,15 @@
           y: { ticks: { color: textMuted, font: { size: 11 } }, grid: { display: false } },
         },
         plugins: { legend: { display: false } },
+        onClick: (evt, elements) => {
+          const idx = elements.length > 0 ? elements[0].index : getClickedLabelIndex(evt, topPlayersChart);
+          if (idx != null && players[idx]) {
+            goto(`/globals/player/${encodeURIComponent(players[idx].player)}`);
+          }
+        },
+        onHover: (evt, elements) => {
+          evt.native.target.style.cursor = (elements.length > 0 || getClickedLabelIndex(evt, topPlayersChart) != null) ? 'pointer' : 'default';
+        },
       },
     });
   }
@@ -237,42 +270,16 @@
   }
 
   onMount(() => {
-    if (initialData) buildCharts();
+    if (initialData) {
+      buildCharts();
+      fetchLeaderboard();
+    }
   });
 
   onDestroy(() => {
     if (activityChart) activityChart.destroy();
     if (topPlayersChart) topPlayersChart.destroy();
   });
-
-  function timeAgo(dateStr) {
-    const now = Date.now();
-    const then = new Date(dateStr).getTime();
-    const diff = now - then;
-    const minutes = Math.floor(diff / 60000);
-    if (minutes < 60) return `${minutes}m ago`;
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours}h ago`;
-    const days = Math.floor(hours / 24);
-    return `${days}d ago`;
-  }
-
-  function formatValue(value, unit, type) {
-    if (type === 'discovery') return '';
-    if (type === 'tier' && unit === 'TIER') return `Tier ${value}`;
-    if (value >= 1000) return `${(value / 1000).toFixed(1)}K PED`;
-    return `${value.toFixed(2)} PED`;
-  }
-
-  function formatPed(v) {
-    if (v >= 1000) return `${(v / 1000).toFixed(1)}K`;
-    return v.toFixed(2);
-  }
-
-  function sortIcon(sortState, col) {
-    if (sortState.col !== col) return '';
-    return sortState.asc ? ' \u25B2' : ' \u25BC';
-  }
 
   function handleSearchSelect(e) {
     const { name, type } = e.detail;
@@ -281,6 +288,11 @@
     } else {
       goto(`/globals/target/${encodeURIComponent(name)}`);
     }
+  }
+
+  function handleSearch(e) {
+    const query = e.detail.query?.trim();
+    if (query) goto(`/globals/player/${encodeURIComponent(query)}`);
   }
 </script>
 
@@ -308,7 +320,6 @@
             <a href={wikiUrl} class="wiki-link">View on Wiki &rarr;</a>
           {/if}
         </div>
-        <p class="page-subtitle">Global event statistics</p>
       </div>
       <div class="globals-search">
         <SearchInput
@@ -316,6 +327,7 @@
           endpoint="/api/globals/search"
           apiPrefix={false}
           on:select={handleSearchSelect}
+          on:search={handleSearch}
         />
       </div>
     </div>
@@ -349,50 +361,54 @@
     {/if}
 
     <!-- Period Selector -->
-    <div class="period-selector">
-      {#each PERIOD_OPTIONS as p}
-        <button
-          class="period-btn"
-          class:active={period === p.value}
-          disabled={loading}
-          on:click={() => { period = p.value; refetchData(); }}
-        >
-          {p.label}
-        </button>
-      {/each}
-    </div>
+    <GlobalsDateRangePicker {period} from={dateFrom} to={dateTo} disabled={loading} on:change={onDateRangeChange} />
 
     <!-- Summary Cards -->
     <div class="stats-row">
       <div class="stat-card">
+        <svg class="stat-icon" viewBox="0 0 24 24" fill="none" stroke="#60b0ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
         <span class="stat-value">{summary.total_count.toLocaleString()}</span>
         <span class="stat-label">Total Globals</span>
       </div>
       <div class="stat-card">
+        <svg class="stat-icon" viewBox="0 0 24 24" fill="none" stroke="#2ecc71" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
         <span class="stat-value">{formatPed(summary.total_value)} PED</span>
         <span class="stat-label">Total Value</span>
       </div>
       <div class="stat-card">
+        <svg class="stat-icon" viewBox="0 0 24 24" fill="none" stroke="#f39c12" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+        <span class="stat-value">{formatPed(summary.avg_value)} PED</span>
+        <span class="stat-label">Avg Value</span>
+      </div>
+      <div class="stat-card">
+        <svg class="stat-icon" viewBox="0 0 24 24" fill="none" stroke="#e74c3c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+        <span class="stat-value">{formatPed(summary.max_value)} PED</span>
+        <span class="stat-label">Highest Loot</span>
+      </div>
+      <div class="stat-card">
+        <svg class="stat-icon" viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
         <span class="stat-value">{summary.hof_count.toLocaleString()}</span>
         <span class="stat-label">Hall of Fame</span>
       </div>
       <div class="stat-card">
+        <svg class="stat-icon" viewBox="0 0 24 24" fill="none" stroke="#9b59b6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5C7 4 7 7 7 7"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5C17 4 17 7 17 7"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>
         <span class="stat-value">{summary.ath_count.toLocaleString()}</span>
         <span class="stat-label">All-Time Highs</span>
       </div>
     </div>
 
-    <!-- Charts Row -->
-    <div class="charts-grid">
-      {#if activity.length > 0}
-        <div class="section-card chart-wide">
-          <h2>Activity</h2>
-          <div class="chart-container">
-            <canvas bind:this={activityCanvas}></canvas>
-          </div>
+    <!-- Activity Chart -->
+    {#if activity.length > 0}
+      <div class="section-card">
+        <h2>Activity</h2>
+        <div class="chart-container">
+          <canvas bind:this={activityCanvas}></canvas>
         </div>
-      {/if}
+      </div>
+    {/if}
 
+    <!-- Top Players + Recent Globals side by side -->
+    <div class="chart-recent-grid">
       {#if topPlayers.length > 0}
         <div class="section-card">
           <div class="chart-card-header">
@@ -407,98 +423,94 @@
           </div>
         </div>
       {/if}
+
+      {#if recent.length > 0}
+        <div class="section-card recent-compact">
+          <h2>Recent Globals</h2>
+          <div class="table-wrapper">
+            <table class="data-table compact-table">
+              <thead>
+                <tr>
+                  <th>Player</th>
+                  <th class="right">Value</th>
+                  <th></th>
+                  <th>Time</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each recent as g}
+                  <tr>
+                    <td>
+                      {#if g.type === 'team_kill'}<span class="badge-team">T</span>{/if}
+                      <a href="/globals/player/{encodeURIComponent(g.player)}" class="player-link">{g.player}</a>
+                    </td>
+                    <td class="right font-weight-bold">{formatValue(g.value, g.unit, g.type)}</td>
+                    <td>
+                      {#if g.ath}<span class="badge-ath">ATH</span>{:else if g.hof}<span class="badge-hof">HoF</span>{/if}
+                    </td>
+                    <td class="text-muted">{timeAgo(g.timestamp)}</td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      {/if}
     </div>
 
-    <!-- Top Players Table -->
-    {#if topPlayers.length > 0}
-      <div class="section-card">
-        <h2>Players</h2>
-        <div class="table-wrapper">
+    <!-- Player Leaderboard -->
+    <div class="section-card">
+      <div class="leaderboard-header">
+        <h2>Leaderboard</h2>
+        <div class="sort-toggle">
+          <button class="sort-btn" class:active={leaderboardSort === 'value'} on:click={() => onLeaderboardSortChange('value')}>By Value</button>
+          <button class="sort-btn" class:active={leaderboardSort === 'count'} on:click={() => onLeaderboardSortChange('count')}>By Count</button>
+          <button class="sort-btn" class:active={leaderboardSort === 'best'} on:click={() => onLeaderboardSortChange('best')}>By Highest</button>
+        </div>
+      </div>
+      {#if leaderboardLoading && !leaderboard}
+        <div class="table-loading"><span class="spinner"></span></div>
+      {:else if leaderboard && leaderboard.players.length > 0}
+        <div class="table-wrapper" class:loading-fade={leaderboardLoading}>
           <table class="data-table">
             <thead>
               <tr>
-                <th class="sortable" on:click={() => playerSort = toggleSort(playerSort, 'player')}>
-                  Player{sortIcon(playerSort, 'player')}
-                </th>
-                <th class="sortable right" on:click={() => playerSort = toggleSort(playerSort, 'count')}>
-                  Count{sortIcon(playerSort, 'count')}
-                </th>
-                <th class="sortable right" on:click={() => playerSort = toggleSort(playerSort, 'value')}>
-                  Total Value{sortIcon(playerSort, 'value')}
-                </th>
+                <th class="col-rank">#</th>
+                <th>Player</th>
+                <th class="right">Count</th>
+                <th class="right">Total Value</th>
                 <th class="right">Best</th>
               </tr>
             </thead>
             <tbody>
-              {#each sortedPlayers as p}
+              {#each leaderboard.players as p, i}
                 <tr>
+                  <td class="col-rank text-muted">{(leaderboardPage - 1) * 20 + i + 1}</td>
                   <td>
                     {#if p.is_team}
                       <span class="badge-team">Team</span>
                     {/if}
                     <a href="/globals/player/{encodeURIComponent(p.player)}" class="player-link">{p.player}</a>
                   </td>
-                  <td class="right">{p.count}</td>
-                  <td class="right">{formatPed(p.value)}</td>
-                  <td class="right">{formatPed(p.best_value)}</td>
+                  <td class="right">{p.count.toLocaleString()}</td>
+                  <td class="right font-mono">{formatPed(p.value)} PED</td>
+                  <td class="right font-mono">{formatPed(p.best_value)} PED</td>
                 </tr>
               {/each}
             </tbody>
           </table>
         </div>
-      </div>
-    {/if}
-
-    <!-- Recent Globals -->
-    {#if recent.length > 0}
-      <div class="section-card">
-        <h2>Recent Globals</h2>
-        <div class="table-wrapper">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Time</th>
-                <th>Type</th>
-                <th>Player</th>
-                {#if maturities.length > 0}
-                  <th>Target</th>
-                {/if}
-                <th class="right">Value</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each recent as g}
-                {@const tc = TYPE_CONFIG[g.type] || { label: g.type, cssClass: '' }}
-                <tr>
-                  <td class="text-muted" title={new Date(g.timestamp).toLocaleString()}>{timeAgo(g.timestamp)}</td>
-                  <td><span class="type-badge {tc.cssClass}">{tc.label}</span></td>
-                  <td>
-                    {#if g.type === 'team_kill'}
-                      <span class="badge-team">Team</span>
-                    {/if}
-                    <a href="/globals/player/{encodeURIComponent(g.player)}" class="player-link">{g.player}</a>
-                  </td>
-                  {#if maturities.length > 0}
-                    <td>
-                      <a href="/globals/target/{encodeURIComponent(g.target)}" class="target-link">{g.target}</a>
-                    </td>
-                  {/if}
-                  <td class="right font-weight-bold">{formatValue(g.value, g.unit, g.type)}</td>
-                  <td>
-                    {#if g.ath}
-                      <span class="badge-ath">ATH</span>
-                    {:else if g.hof}
-                      <span class="badge-hof">HoF</span>
-                    {/if}
-                  </td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    {/if}
+        {#if leaderboard.pages > 1}
+          <div class="pagination">
+            <button class="page-btn" disabled={leaderboardPage <= 1} on:click={() => goToLeaderboardPage(leaderboardPage - 1)}>Previous</button>
+            <span class="page-info">Page {leaderboard.page} of {leaderboard.pages}</span>
+            <button class="page-btn" disabled={leaderboardPage >= leaderboard.pages} on:click={() => goToLeaderboardPage(leaderboardPage + 1)}>Next</button>
+          </div>
+        {/if}
+      {:else}
+        <p class="empty-state-sm">No player data available</p>
+      {/if}
+    </div>
   {/if}
 </div>
 
@@ -562,12 +574,6 @@
     margin: 0;
     font-size: 1.5rem;
     font-weight: 600;
-  }
-
-  .page-subtitle {
-    margin: 0;
-    color: var(--text-muted);
-    font-size: 0.875rem;
   }
 
   .wiki-link {
@@ -652,38 +658,6 @@
   }
 
   /* Period selector */
-  .period-selector {
-    display: flex;
-    gap: 4px;
-    margin-bottom: 16px;
-  }
-
-  .period-btn {
-    padding: 4px 12px;
-    font-size: 0.75rem;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    background: transparent;
-    color: var(--text-muted);
-    cursor: pointer;
-  }
-
-  .period-btn:hover {
-    border-color: var(--accent-color);
-    color: var(--text-color);
-  }
-
-  .period-btn.active {
-    background: var(--accent-color);
-    border-color: var(--accent-color);
-    color: #fff;
-  }
-
-  .period-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
   /* Chart card header with sort toggle */
   .chart-card-header {
     display: flex;
@@ -735,9 +709,9 @@
   /* Stats */
   .stats-row {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(6, 1fr);
     gap: 12px;
-    margin-bottom: 24px;
+    margin-bottom: 16px;
   }
 
   .stat-card {
@@ -746,6 +720,13 @@
     border: 1px solid var(--border-color);
     border-radius: 8px;
     text-align: center;
+  }
+
+  .stat-icon {
+    width: 20px;
+    height: 20px;
+    margin-bottom: 4px;
+    opacity: 0.85;
   }
 
   .stat-value {
@@ -765,16 +746,37 @@
     letter-spacing: 0.3px;
   }
 
-  /* Charts grid */
-  .charts-grid {
+  /* Top players + recent globals side by side */
+  .chart-recent-grid {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
+    grid-template-columns: 1fr 1fr;
     gap: 16px;
     margin-bottom: 16px;
+    align-items: start;
   }
 
-  .chart-wide {
-    grid-column: 1 / -1;
+  .chart-recent-grid .section-card {
+    margin-bottom: 0;
+  }
+
+  /* Compact recent table */
+  .compact-table th,
+  .compact-table td {
+    padding: 5px 8px;
+    font-size: 0.75rem;
+  }
+
+  .recent-compact {
+    max-height: 300px;
+    overflow-y: auto;
+  }
+
+  .recent-compact h2 {
+    position: sticky;
+    top: 0;
+    background: var(--secondary-color);
+    z-index: 1;
+    padding-bottom: 8px;
   }
 
   /* Section cards */
@@ -818,15 +820,6 @@
     text-transform: uppercase;
     letter-spacing: 0.3px;
     white-space: nowrap;
-  }
-
-  .data-table th.sortable {
-    cursor: pointer;
-    user-select: none;
-  }
-
-  .data-table th.sortable:hover {
-    color: var(--text-color);
   }
 
   .data-table th.right, .data-table td.right {
@@ -910,6 +903,92 @@
     margin-right: 4px;
   }
 
+  /* Leaderboard */
+  .leaderboard-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+    gap: 12px;
+  }
+
+  .leaderboard-header h2 {
+    margin: 0;
+    font-size: 1.125rem;
+    font-weight: 600;
+  }
+
+  .col-rank { width: 40px; }
+  .font-mono { font-variant-numeric: tabular-nums; }
+
+  .table-loading {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 120px;
+  }
+
+  .spinner {
+    display: inline-block;
+    width: 24px;
+    height: 24px;
+    border: 2px solid var(--border-color);
+    border-top-color: var(--accent-color);
+    border-radius: 50%;
+    animation: spin 0.6s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  .loading-fade {
+    opacity: 0.5;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+
+  .empty-state-sm {
+    text-align: center;
+    padding: 24px;
+    color: var(--text-muted);
+    font-size: 0.875rem;
+  }
+
+  .pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 16px;
+    margin-top: 12px;
+  }
+
+  .page-btn {
+    padding: 6px 16px;
+    font-size: 0.8125rem;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .page-btn:hover:not(:disabled) {
+    border-color: var(--accent-color);
+    color: var(--text-color);
+  }
+
+  .page-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+
+  .page-info {
+    font-size: 0.8125rem;
+    color: var(--text-muted);
+  }
+
   /* Responsive */
   @media (max-width: 899px) {
     .target-page {
@@ -917,15 +996,11 @@
     }
 
     .stats-row {
-      grid-template-columns: repeat(2, 1fr);
+      grid-template-columns: repeat(3, 1fr);
     }
 
-    .charts-grid {
+    .chart-recent-grid {
       grid-template-columns: 1fr;
-    }
-
-    .chart-wide {
-      grid-column: 1;
     }
   }
 </style>

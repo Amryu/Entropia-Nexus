@@ -7,52 +7,29 @@
   // @ts-nocheck
   import { onMount, onDestroy, tick } from 'svelte';
   import { Chart, LineController, LinearScale, PointElement, LineElement, TimeScale,
-           Tooltip, Filler, BarController, BarElement, CategoryScale,
-           ArcElement, DoughnutController, Legend } from 'chart.js';
+           Tooltip, Filler, BarController, BarElement, CategoryScale } from 'chart.js';
   import 'chartjs-adapter-date-fns';
 
   Chart.register(LineController, LinearScale, PointElement, LineElement, TimeScale,
-                 Tooltip, Filler, BarController, BarElement, CategoryScale,
-                 ArcElement, DoughnutController, Legend);
+                 Tooltip, Filler, BarController, BarElement, CategoryScale);
 
   import { afterNavigate, goto } from '$app/navigation';
   import { page } from '$app/stores';
   import SearchInput from '$lib/components/SearchInput.svelte';
+  import GlobalsDateRangePicker from '$lib/components/globals/GlobalsDateRangePicker.svelte';
+  import GlobalsTabNav from '$lib/components/globals/GlobalsTabNav.svelte';
+  import { TYPE_FILTERS, TOP_LOOTS_TABS, getTypeConfig } from '$lib/data/globals-constants.js';
+  import { formatPedShort, formatValue, timeAgo, getComputedCssVar } from '$lib/utils/globalsFormat.js';
 
   export let data;
 
-  const EMPTY_SUMMARY = { total_count: 0, total_value: 0, hof_count: 0, ath_count: 0 };
-
-  const TYPE_CONFIG = {
-    kill:       { label: 'Hunting',     cssClass: 'type-kill',      color: '#ef4444' },
-    team_kill:  { label: 'Team Hunt',   cssClass: 'type-kill',      color: '#ef4444' },
-    deposit:    { label: 'Mining',      cssClass: 'type-deposit',   color: '#60b0ff' },
-    craft:      { label: 'Crafting',    cssClass: 'type-craft',     color: '#f97316' },
-    rare_item:  { label: 'Rare Find',   cssClass: 'type-rare',      color: '#60b0ff' },
-    discovery:  { label: 'Discovery',   cssClass: 'type-discovery', color: '#9b59b6' },
-    tier:       { label: 'Tier Record', cssClass: 'type-tier',      color: '#f1c40f' },
-    examine:    { label: 'Instance',    cssClass: 'type-examine',   color: '#2ecc71' },
-    pvp:        { label: 'PvP',         cssClass: 'type-pvp',       color: '#e74c3c' },
+  const EMPTY_SUMMARY = {
+    total_count: 0, total_value: 0, avg_value: 0, max_value: 0,
+    hof_count: 0, ath_count: 0,
+    hunting: { count: 0, value: 0 },
+    mining: { count: 0, value: 0 },
+    crafting: { count: 0, value: 0 },
   };
-
-  const TYPE_FILTERS = [
-    { value: '', label: 'All' },
-    { value: 'kill,team_kill', label: 'Hunting' },
-    { value: 'deposit', label: 'Mining' },
-    { value: 'craft', label: 'Crafting' },
-    { value: 'rare_item', label: 'Rare Find' },
-    { value: 'discovery', label: 'Discovery' },
-    { value: 'tier', label: 'Tier Record' },
-    { value: 'examine', label: 'Instance' },
-    { value: 'pvp', label: 'PvP' },
-  ];
-
-  const PERIOD_OPTIONS = [
-    { value: '24h', label: '24 Hours' },
-    { value: '7d', label: '7 Days' },
-    { value: '30d', label: '30 Days' },
-    { value: 'all', label: 'All Time' },
-  ];
 
   let globals = [...(data.globals || [])];
   let summary = { ...EMPTY_SUMMARY, ...(data.summary || {}) };
@@ -65,25 +42,37 @@
   let minValue = '';
   let hofOnly = false;
   let period = '7d';
+  let dateFrom = null;
+  let dateTo = null;
 
   // Sort toggles for charts
   let playersSortBy = 'value';
   let targetsSortBy = 'count';
-  let targetsGroupBy = 'maturity';
+  let targetsGroupBy = 'mob';
 
   // Charts
   let activityCanvas;
-  let typeCanvas;
   let topPlayersCanvas;
   let topTargetsCanvas;
   let activityChart = null;
-  let typeChart = null;
   let topPlayersChart = null;
   let topTargetsChart = null;
 
   // Stats data
   let stats = null;
   let statsLoading = false;
+
+  // Top loots
+  let topLoots = null;
+  let topLootsLoading = false;
+  let topLootsTab = 'hunting';
+  let topLootsPage = 1;
+  let topLootsPages = 1;
+  let topLootsTotal = 0;
+
+  // Remember type filter when switching to special tabs
+  let savedTypeFilter = '';
+  let filtersDisabled = false;
 
   // Live table
   let pollTimer = null;
@@ -95,38 +84,6 @@
 
   const POLL_INTERVAL = 5000;
 
-  function timeAgo(dateStr) {
-    const now = Date.now();
-    const then = new Date(dateStr).getTime();
-    const diff = now - then;
-    const seconds = Math.floor(diff / 1000);
-    if (seconds < 60) return 'just now';
-    const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return `${minutes}m ago`;
-    const hours = Math.floor(minutes / 60);
-    if (hours < 24) return `${hours}h ago`;
-    const days = Math.floor(hours / 24);
-    return `${days}d ago`;
-  }
-
-  function formatValue(value, unit, type) {
-    if (type === 'discovery') return '';
-    if (type === 'tier' && unit === 'TIER') return `Tier ${value}`;
-    if (type === 'pvp') return `${value} kills`;
-    if (value >= 1000) return `${(value / 1000).toFixed(1)}K PED`;
-    return `${value.toFixed(2)} PED`;
-  }
-
-  function formatPedShort(value) {
-    if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M`;
-    if (value >= 1000) return `${(value / 1000).toFixed(1)}K`;
-    return value.toFixed(0);
-  }
-
-  function getComputedCssVar(name) {
-    if (typeof getComputedStyle === 'undefined') return null;
-    return getComputedStyle(document.documentElement).getPropertyValue(name)?.trim() || null;
-  }
 
   // Build filter query params
   function buildParams(extra = {}) {
@@ -137,6 +94,12 @@
     if (locationFilter) params.set('location', locationFilter);
     if (minValue) params.set('min_value', minValue);
     if (hofOnly) params.set('hof', 'true');
+    if (dateFrom && dateTo) {
+      params.set('from', dateFrom);
+      params.set('to', dateTo);
+    } else if (period && period !== 'all' && period !== 'custom') {
+      params.set('period', period);
+    }
     for (const [k, v] of Object.entries(extra)) {
       params.set(k, String(v));
     }
@@ -162,7 +125,7 @@
   async function fetchStats() {
     statsLoading = true;
     try {
-      const params = buildParams({ period, players_sort: playersSortBy, targets_sort: targetsSortBy, targets_group: targetsGroupBy });
+      const params = buildParams({ players_sort: playersSortBy, targets_sort: targetsSortBy, targets_group: targetsGroupBy });
       const res = await fetch(`/api/globals/stats?${params}`);
       if (!res.ok) return;
       stats = await res.json();
@@ -171,6 +134,21 @@
     statsLoading = false;
     await tick();
     if (stats) buildCharts();
+  }
+
+  // Fetch top loots
+  async function fetchTopLoots() {
+    topLootsLoading = true;
+    try {
+      const params = buildParams({ category: topLootsTab, page: topLootsPage, limit: 20 });
+      const res = await fetch(`/api/globals/stats/top-loots?${params}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      topLoots = data.items;
+      topLootsPages = data.pages;
+      topLootsTotal = data.total;
+    } catch { /* ignore */ }
+    topLootsLoading = false;
   }
 
   // Load more (cursor pagination)
@@ -216,8 +194,10 @@
   function onFilterChange() {
     clearTimeout(filterDebounce);
     filterDebounce = setTimeout(() => {
+      topLootsPage = 1;
       fetchGlobals();
       fetchStats();
+      fetchTopLoots();
     }, 300);
   }
 
@@ -229,8 +209,37 @@
     onFilterChange();
   }
 
-  function onPeriodChange() {
+  function onTopLootsTabChange(tab) {
+    const tabConfig = TOP_LOOTS_TABS.find(t => t.value === tab);
+    if (tabConfig?.isSpecial) {
+      if (!filtersDisabled) savedTypeFilter = typeFilter;
+      filtersDisabled = true;
+    } else {
+      if (filtersDisabled) {
+        typeFilter = savedTypeFilter;
+        filtersDisabled = false;
+      }
+    }
+    topLootsTab = tab;
+    topLootsPage = 1;
+    fetchTopLoots();
+  }
+
+  function goToTopLootsPage(p) {
+    if (p < 1 || p > topLootsPages || p === topLootsPage) return;
+    topLootsPage = p;
+    fetchTopLoots();
+  }
+
+  $: currentTabConfig = TOP_LOOTS_TABS.find(t => t.value === topLootsTab) || TOP_LOOTS_TABS[0];
+
+  function onDateRangeChange(e) {
+    period = e.detail.period;
+    dateFrom = e.detail.from;
+    dateTo = e.detail.to;
+    topLootsPage = 1;
     fetchStats();
+    fetchTopLoots();
   }
 
   function onPlayersSortChange(sortBy) {
@@ -249,14 +258,29 @@
   }
 
   function buildFilterUrl(basePath) {
-    const params = buildParams({ period });
+    const params = buildParams();
     const qs = params.toString();
     return qs ? `${basePath}?${qs}` : basePath;
   }
 
   // Filter relevance helpers
-  $: showTypeChart = !typeFilter;
   $: showTopTargets = !typeFilter || typeFilter.split(',').some(t => t === 'kill' || t === 'team_kill');
+
+  // Get index of Y-axis label clicked (for horizontal bar charts)
+  function getClickedLabelIndex(evt, chart) {
+    if (!chart) return null;
+    const yScale = chart.scales.y;
+    if (!yScale) return null;
+    const { left, right } = yScale;
+    const x = evt.native?.offsetX ?? evt.x;
+    const y = evt.native?.offsetY ?? evt.y;
+    if (x > right) return null; // Click is in the chart area, not labels
+    for (let i = 0; i < yScale.ticks.length; i++) {
+      const labelY = yScale.getPixelForTick(i);
+      if (Math.abs(y - labelY) < 12) return i;
+    }
+    return null;
+  }
 
   // Charts
   function buildCharts() {
@@ -265,14 +289,6 @@
     const borderColor = getComputedCssVar('--border-color') || '#555';
 
     buildActivityChart(textMuted, borderColor);
-
-    if (showTypeChart) {
-      buildTypeChart();
-    } else if (typeChart) {
-      typeChart.destroy();
-      typeChart = null;
-    }
-
     buildTopPlayersChart(textMuted, borderColor);
 
     if (showTopTargets) {
@@ -302,7 +318,7 @@
           pointRadius: stats.activity.length < 30 ? 3 : 0,
           pointHoverRadius: 5,
           fill: true,
-          tension: 0.3,
+          tension: 0.1,
         }],
       },
       options: {
@@ -311,7 +327,7 @@
         scales: {
           x: {
             type: 'time',
-            time: { unit: period === '24h' ? 'hour' : 'day' },
+            time: { unit: stats?.bucket_unit || 'day' },
             ticks: { color: textMuted, maxTicksLimit: 8, font: { size: 11 } },
             grid: { color: borderColor + '30' },
           },
@@ -322,37 +338,6 @@
           },
         },
         plugins: { legend: { display: false }, tooltip: { backgroundColor: 'rgba(0,0,0,0.85)', borderColor: accentColor, borderWidth: 1 } },
-      },
-    });
-  }
-
-  function buildTypeChart() {
-    if (!typeCanvas || !stats?.by_type?.length) return;
-    if (typeChart) typeChart.destroy();
-
-    const types = stats.by_type;
-    const colors = types.map(t => TYPE_CONFIG[t.type]?.color || '#888');
-
-    typeChart = new Chart(typeCanvas, {
-      type: 'doughnut',
-      data: {
-        labels: types.map(t => TYPE_CONFIG[t.type]?.label || t.type),
-        datasets: [{
-          data: types.map(t => t.count),
-          backgroundColor: colors.map(c => c + '30'),
-          borderColor: colors,
-          borderWidth: 2,
-        }],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            position: 'right',
-            labels: { color: getComputedCssVar('--text-color') || '#fff', font: { size: 11 }, padding: 12 },
-          },
-        },
       },
     });
   }
@@ -390,6 +375,15 @@
           y: { ticks: { color: textMuted, font: { size: 11 } }, grid: { display: false } },
         },
         plugins: { legend: { display: false } },
+        onClick: (evt, elements) => {
+          const idx = elements.length > 0 ? elements[0].index : getClickedLabelIndex(evt, topPlayersChart);
+          if (idx != null && players[idx]) {
+            goto(`/globals/player/${encodeURIComponent(players[idx].player)}`);
+          }
+        },
+        onHover: (evt, elements) => {
+          evt.native.target.style.cursor = (elements.length > 0 || getClickedLabelIndex(evt, topPlayersChart) != null) ? 'pointer' : 'default';
+        },
       },
     });
   }
@@ -422,6 +416,15 @@
           y: { ticks: { color: textMuted, font: { size: 11 } }, grid: { display: false } },
         },
         plugins: { legend: { display: false } },
+        onClick: (evt, elements) => {
+          const idx = elements.length > 0 ? elements[0].index : getClickedLabelIndex(evt, topTargetsChart);
+          if (idx != null && targets[idx]) {
+            goto(`/globals/target/${encodeURIComponent(targets[idx].target)}`);
+          }
+        },
+        onHover: (evt, elements) => {
+          evt.native.target.style.cursor = (elements.length > 0 || getClickedLabelIndex(evt, topTargetsChart) != null) ? 'pointer' : 'default';
+        },
       },
     });
   }
@@ -434,7 +437,10 @@
     hasMore = globals.length >= 50;
     newIds = new Set();
     stats = null;
+    topLoots = null;
+    topLootsPage = 1;
     fetchStats();
+    fetchTopLoots();
   });
 
   onMount(() => {
@@ -444,14 +450,9 @@
   onDestroy(() => {
     if (pollTimer) clearInterval(pollTimer);
     if (activityChart) activityChart.destroy();
-    if (typeChart) typeChart.destroy();
     if (topPlayersChart) topPlayersChart.destroy();
     if (topTargetsChart) topTargetsChart.destroy();
   });
-
-  function getTypeConfig(type) {
-    return TYPE_CONFIG[type] || { label: type, cssClass: '', color: '#888' };
-  }
 
   function handleSearchSelect(e) {
     const { name, type } = e.detail;
@@ -461,6 +462,14 @@
       goto(`/globals/target/${encodeURIComponent(name)}`);
     }
   }
+
+  function handleSearch(e) {
+    const query = e.detail.query?.trim();
+    if (query) goto(`/globals/player/${encodeURIComponent(query)}`);
+  }
+
+  $: currentView = $page.url.searchParams.get('view');
+  $: isLiveView = currentView === 'live';
 
   let playerSearchInput;
   let targetSearchInput;
@@ -511,7 +520,6 @@
       <div>
         <div class="breadcrumbs"><a href="/">Home</a> / Globals</div>
         <h1>Globals</h1>
-        <p class="page-subtitle">Live global events from Entropia Universe</p>
       </div>
       <div class="globals-search">
         <SearchInput
@@ -519,6 +527,7 @@
           endpoint="/api/globals/search"
           apiPrefix={false}
           on:select={handleSearchSelect}
+          on:search={handleSearch}
         />
       </div>
     </div>
@@ -530,7 +539,8 @@
       {#each TYPE_FILTERS as tf}
         <button
           class="type-btn"
-          class:active={typeFilter === tf.value}
+          class:active={!filtersDisabled && typeFilter === tf.value}
+          disabled={filtersDisabled}
           on:click={() => onTypeFilter(tf.value)}
         >
           {tf.label}
@@ -596,30 +606,67 @@
         {/if}
       </div>
       <input type="number" placeholder="Min PED" bind:value={minValue} on:input={onFilterChange} class="filter-input filter-input-short" />
-      <label class="hof-toggle">
-        <input type="checkbox" bind:checked={hofOnly} on:change={onFilterChange} />
+      <label class="hof-toggle" class:disabled={filtersDisabled}>
+        <input type="checkbox" bind:checked={hofOnly} on:change={onFilterChange} disabled={filtersDisabled} />
         HoF only
       </label>
     </div>
   </div>
 
+  <!-- Tab Navigation -->
+  <GlobalsTabNav {buildParams} />
+
+  {#if !isLiveView}
   <!-- Stats Cards -->
   <div class="stats-row" class:stats-loading={statsLoading}>
     <div class="stat-card">
+      <svg class="stat-icon" viewBox="0 0 24 24" fill="none" stroke="#60b0ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
       <span class="stat-value">{summary.total_count.toLocaleString()}</span>
       <span class="stat-label">Total Globals</span>
     </div>
     <div class="stat-card">
+      <svg class="stat-icon" viewBox="0 0 24 24" fill="none" stroke="#2ecc71" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
       <span class="stat-value">{formatPedShort(summary.total_value)} PED</span>
       <span class="stat-label">Total Value</span>
     </div>
     <div class="stat-card">
+      <svg class="stat-icon" viewBox="0 0 24 24" fill="none" stroke="#f39c12" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+      <span class="stat-value">{formatPedShort(summary.avg_value)} PED</span>
+      <span class="stat-label">Avg Value</span>
+    </div>
+    <div class="stat-card">
+      <svg class="stat-icon" viewBox="0 0 24 24" fill="none" stroke="#e74c3c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+      <span class="stat-value">{formatPedShort(summary.max_value)} PED</span>
+      <span class="stat-label">Highest Loot</span>
+    </div>
+    <div class="stat-card">
+      <svg class="stat-icon" viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
       <span class="stat-value">{summary.hof_count.toLocaleString()}</span>
       <span class="stat-label">Hall of Fame</span>
     </div>
     <div class="stat-card">
+      <svg class="stat-icon" viewBox="0 0 24 24" fill="none" stroke="#9b59b6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9H4.5a2.5 2.5 0 0 1 0-5C7 4 7 7 7 7"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5C17 4 17 7 17 7"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/></svg>
       <span class="stat-value">{summary.ath_count.toLocaleString()}</span>
       <span class="stat-label">All-Time Highs</span>
+    </div>
+  </div>
+
+  <!-- Category Breakdown -->
+  <div class="stats-row category-row" class:stats-loading={statsLoading}>
+    <div class="stat-card category-card">
+      <span class="stat-value hunting-color">{summary.hunting.count.toLocaleString()}</span>
+      <span class="stat-label">Hunting</span>
+      <span class="stat-sub">{formatPedShort(summary.hunting.value)} PED</span>
+    </div>
+    <div class="stat-card category-card">
+      <span class="stat-value mining-color">{summary.mining.count.toLocaleString()}</span>
+      <span class="stat-label">Mining</span>
+      <span class="stat-sub">{formatPedShort(summary.mining.value)} PED</span>
+    </div>
+    <div class="stat-card category-card">
+      <span class="stat-value crafting-color">{summary.crafting.count.toLocaleString()}</span>
+      <span class="stat-label">Crafting</span>
+      <span class="stat-sub">{formatPedShort(summary.crafting.value)} PED</span>
     </div>
   </div>
 
@@ -627,17 +674,7 @@
   <div class="charts-section">
     <div class="chart-header">
       <h2>Statistics</h2>
-      <div class="period-selector">
-        {#each PERIOD_OPTIONS as p}
-          <button
-            class="period-btn"
-            class:active={period === p.value}
-            on:click={() => { period = p.value; onPeriodChange(); }}
-          >
-            {p.label}
-          </button>
-        {/each}
-      </div>
+      <GlobalsDateRangePicker {period} from={dateFrom} to={dateTo} on:change={onDateRangeChange} />
     </div>
 
     <div class="charts-grid">
@@ -700,22 +737,96 @@
         </div>
       </div>
 
-      <div class="chart-card">
-        <h3>Type Distribution</h3>
-        <div class="chart-container chart-square">
-          {#if typeFilter}
-            <div class="chart-placeholder">Type distribution is available when viewing all types</div>
-          {:else if statsLoading && !stats}
-            <div class="chart-loading"><span class="spinner"></span></div>
-          {:else}
-            <canvas bind:this={typeCanvas}></canvas>
-          {/if}
-        </div>
-      </div>
     </div>
   </div>
 
+  <!-- Top Loots -->
+  <div class="section-card top-loots-section">
+    <div class="top-loots-header">
+      <h2>Top Globals / HoFs</h2>
+      {#if topLootsTotal > 0}
+        <span class="top-loots-count">{topLootsTotal.toLocaleString()} entries</span>
+      {/if}
+    </div>
+    <div class="top-loots-tabs">
+      {#each TOP_LOOTS_TABS as tab}
+        <button
+          class="sort-btn"
+          class:active={topLootsTab === tab.value}
+          class:special={tab.isSpecial}
+          on:click={() => onTopLootsTabChange(tab.value)}
+        >
+          {tab.label}
+        </button>
+      {/each}
+    </div>
+    <div class:loading-fade={topLootsLoading}>
+      {#if topLootsLoading && !topLoots}
+        <div class="table-loading"><span class="spinner"></span></div>
+      {:else if topLoots && topLoots.length > 0}
+        <div class="table-wrapper">
+          <table class="globals-table top-loots-table">
+            <thead>
+              <tr>
+                <th class="col-rank">#</th>
+                <th class="col-player">Player</th>
+                {#if topLootsTab !== 'pvp'}
+                  <th class="col-target">{currentTabConfig.isSpecial ? 'Item' : 'Target'}</th>
+                {/if}
+                {#if currentTabConfig.hasValue}
+                  <th class="col-value right">Value</th>
+                {/if}
+                <th class="col-badge"></th>
+                <th class="col-time">Time</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each topLoots as loot, i}
+                <tr>
+                  <td class="col-rank text-muted">{(topLootsPage - 1) * 20 + i + 1}</td>
+                  <td><a href="/globals/player/{encodeURIComponent(loot.player)}" class="player-link">{loot.player}</a></td>
+                  {#if topLootsTab !== 'pvp'}
+                    <td class="col-target-cell">
+                      {#if !currentTabConfig.isSpecial}
+                        <a href="/globals/target/{encodeURIComponent(loot.target)}" class="target-link">{loot.target}</a>
+                      {:else}
+                        {loot.target}
+                      {/if}
+                    </td>
+                  {/if}
+                  {#if currentTabConfig.hasValue}
+                    <td class="right font-mono">{formatPedShort(loot.value)} PED</td>
+                  {/if}
+                  <td>
+                    {#if loot.ath}
+                      <span class="badge-ath">ATH</span>
+                    {:else if loot.hof}
+                      <span class="badge-hof">HoF</span>
+                    {/if}
+                  </td>
+                  <td class="text-muted" title={new Date(loot.timestamp).toLocaleString()}>{timeAgo(loot.timestamp)}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+        {#if topLootsPages > 1}
+          <div class="pagination">
+            <button class="page-btn" disabled={topLootsPage <= 1} on:click={() => goToTopLootsPage(topLootsPage - 1)}>&lsaquo;</button>
+            <span class="page-info">Page {topLootsPage} of {topLootsPages}</span>
+            <button class="page-btn" disabled={topLootsPage >= topLootsPages} on:click={() => goToTopLootsPage(topLootsPage + 1)}>&rsaquo;</button>
+          </div>
+        {/if}
+      {:else}
+        <p class="empty-state-sm">No entries found for this category and period</p>
+      {/if}
+    </div>
+  </div>
+
+  {/if}
+
   <!-- Live Table -->
+  {#if isLiveView}
   <div class="table-section">
     <h2>Recent Globals</h2>
 
@@ -777,6 +888,7 @@
       {/if}
     {/if}
   </div>
+  {/if}
 </div>
 
 <style>
@@ -810,12 +922,6 @@
     margin: 0 0 4px 0;
     font-size: 1.5rem;
     font-weight: 600;
-  }
-
-  .page-subtitle {
-    margin: 0;
-    color: var(--text-muted);
-    font-size: 0.875rem;
   }
 
   .header-top {
@@ -878,6 +984,16 @@
     background: var(--accent-color);
     border-color: var(--accent-color);
     color: #fff;
+  }
+
+  .type-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+  }
+
+  .hof-toggle.disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
   }
 
   .text-filters {
@@ -964,9 +1080,14 @@
   /* Stats Cards */
   .stats-row {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(6, 1fr);
     gap: 12px;
-    margin-bottom: 24px;
+    margin-bottom: 20px;
+  }
+
+  .stats-row.category-row {
+    grid-template-columns: repeat(3, 1fr);
+    margin-bottom: 20px;
   }
 
   .stat-card {
@@ -975,6 +1096,13 @@
     border: 1px solid var(--border-color);
     border-radius: 8px;
     text-align: center;
+  }
+
+  .stat-icon {
+    width: 20px;
+    height: 20px;
+    margin-bottom: 4px;
+    opacity: 0.85;
   }
 
   .stat-value {
@@ -994,6 +1122,18 @@
     letter-spacing: 0.3px;
   }
 
+  .stat-sub {
+    display: block;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-top: 2px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .hunting-color { color: #ef4444; }
+  .mining-color { color: #60b0ff; }
+  .crafting-color { color: #f97316; }
+
   .stats-loading .stat-value {
     opacity: 0.4;
     transition: opacity 0.2s ease;
@@ -1001,7 +1141,7 @@
 
   /* Charts */
   .charts-section {
-    margin-bottom: 24px;
+    margin-bottom: 20px;
   }
 
   .chart-header {
@@ -1015,32 +1155,6 @@
     margin: 0;
     font-size: 1.125rem;
     font-weight: 600;
-  }
-
-  .period-selector {
-    display: flex;
-    gap: 4px;
-  }
-
-  .period-btn {
-    padding: 4px 12px;
-    font-size: 0.75rem;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    background: transparent;
-    color: var(--text-muted);
-    cursor: pointer;
-  }
-
-  .period-btn:hover {
-    border-color: var(--accent-color);
-    color: var(--text-color);
-  }
-
-  .period-btn.active {
-    background: var(--accent-color);
-    border-color: var(--accent-color);
-    color: #fff;
   }
 
   .charts-grid {
@@ -1128,10 +1242,6 @@
     height: 200px;
   }
 
-  .chart-container.chart-square {
-    height: 220px;
-  }
-
   .chart-loading, .table-loading {
     display: flex;
     justify-content: center;
@@ -1165,6 +1275,107 @@
   }
 
   /* Table */
+  /* Top loots */
+  .top-loots-section {
+    margin-bottom: 20px;
+    padding: 20px;
+    background: var(--secondary-color);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+  }
+
+  .top-loots-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .top-loots-header h2 {
+    margin: 0;
+    font-size: 1.125rem;
+    font-weight: 600;
+  }
+
+  .top-loots-count {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+
+  .top-loots-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px;
+    margin-bottom: 16px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    overflow: hidden;
+    width: fit-content;
+  }
+
+  .top-loots-tabs .sort-btn.special {
+    border-left: 1px solid var(--border-color);
+  }
+
+  .top-loots-table {
+    font-size: 0.8125rem;
+    width: 100%;
+  }
+  .top-loots-table .col-rank { width: 32px; }
+  .top-loots-table .col-badge { width: 48px; }
+  .top-loots-table .col-target-cell { max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .top-loots-table td { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .loading-fade {
+    opacity: 0.5;
+    pointer-events: none;
+    transition: opacity 0.15s ease;
+  }
+
+  .pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 12px;
+  }
+
+  .page-btn {
+    padding: 4px 12px;
+    font-size: 0.875rem;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+
+  .page-btn:hover:not(:disabled) {
+    border-color: var(--accent-color);
+    color: var(--text-color);
+  }
+
+  .page-btn:disabled {
+    opacity: 0.3;
+    cursor: default;
+  }
+
+  .page-info {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+
+  .font-mono {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .empty-state-sm {
+    text-align: center;
+    padding: 24px;
+    color: var(--text-muted);
+    font-size: 0.875rem;
+  }
+
   .table-section {
     margin-bottom: 40px;
   }
@@ -1370,7 +1581,11 @@
     }
 
     .stats-row {
-      grid-template-columns: repeat(2, 1fr);
+      grid-template-columns: repeat(3, 1fr);
+    }
+
+    .stats-row.category-row {
+      grid-template-columns: repeat(3, 1fr);
     }
 
     .charts-grid {
@@ -1384,7 +1599,11 @@
 
   @media (max-width: 599px) {
     .stats-row {
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: repeat(2, 1fr);
+    }
+
+    .stats-row.category-row {
+      grid-template-columns: 1fr;
     }
 
     .filter-input {
