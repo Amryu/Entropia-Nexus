@@ -673,9 +673,6 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
                 page = main_window._pages.widget(PAGE_SKILLS)
                 manager = page._manager
 
-                if hasattr(page, "clear_scan_results"):
-                    page.clear_scan_results()
-
                 delta = manager.sync_scan_results(skills)
 
                 if not delta["changes"]:
