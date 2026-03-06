@@ -347,7 +347,7 @@ test.describe('Globals API', () => {
     }
   });
 
-  test('player detail endpoint returns expanded summary with top loots, ATH targets and pvp', async ({ request }) => {
+  test('player detail endpoint returns expanded summary with top loots, ATH rankings and pvp', async ({ request }) => {
     const res = await request.get('/api/globals/player/TestPlayer');
     if (!res.ok()) return; // Player may not exist on test server
 
@@ -367,9 +367,11 @@ test.describe('Globals API', () => {
     expect(data.top_loots).toHaveProperty('hunting');
     expect(data.top_loots).toHaveProperty('mining');
     expect(data.top_loots).toHaveProperty('crafting');
-    expect(data).toHaveProperty('ath_targets');
-    expect(data.ath_targets).toHaveProperty('by_total');
-    expect(data.ath_targets).toHaveProperty('by_best');
+    expect(data).toHaveProperty('ath_rankings');
+    expect(data.ath_rankings).toHaveProperty('hunting');
+    expect(data.ath_rankings).toHaveProperty('mining');
+    expect(data.ath_rankings).toHaveProperty('crafting');
+    expect(data.ath_rankings).toHaveProperty('pvp');
   });
 });
 

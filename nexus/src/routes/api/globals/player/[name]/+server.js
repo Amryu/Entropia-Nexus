@@ -14,6 +14,7 @@ import { PERIOD_INTERVALS, getActivityBucket, fillActivityGaps } from '../../sta
 
 const TOP_LOOTS_LIMIT = 100;
 const OVERVIEW_TOP_LIMIT = 3;
+const ATH_RANK_CUTOFF = 10;
 
 export async function GET({ params, url }) {
   const playerName = decodeURIComponentSafe(params.name);
@@ -72,8 +73,10 @@ export async function GET({ params, url }) {
       topHuntingResult,
       topMiningResult,
       topCraftingResult,
-      athTargetsValueResult,
-      athTargetsBestResult,
+      athHuntingResult,
+      athMiningResult,
+      athCraftingResult,
+      athPvpResult,
     ] = await Promise.all([
       // Summary stats
       pool.query(
@@ -203,33 +206,104 @@ export async function GET({ params, url }) {
       // Top individual crafting loots
       topLootsQuery("global_type = 'craft'"),
 
-      // Per-target ATH: top targets by total accumulated value
+      // ATH rankings: hunting targets — rank this player vs all players per mob
       pool.query(
-        `SELECT target_name, count(*) AS count,
-                COALESCE(sum(value), 0) AS total_value,
-                COALESCE(max(value), 0) AS best_value,
-                MAX(mob_id) AS mob_id
-         FROM ingested_globals
-         WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
-           AND global_type IN ('kill', 'team_kill', 'deposit', 'craft')
-         GROUP BY target_name
-         ORDER BY total_value DESC
-         LIMIT 50`,
+        `WITH target_totals AS (
+           SELECT player_name, COALESCE(mob_id::text, target_name) AS mob_key,
+                  MAX(target_name) AS target_name,
+                  (array_agg(target_name ORDER BY value DESC))[1] AS best_target_name,
+                  sum(value) AS total_value, max(value) AS best_value,
+                  count(*) AS count, MAX(mob_id) AS mob_id
+           FROM ingested_globals
+           WHERE confirmed = true AND global_type IN ('kill', 'team_kill')${periodCond}
+             AND COALESCE(mob_id::text, target_name) IN (
+               SELECT DISTINCT COALESCE(mob_id::text, target_name) FROM ingested_globals
+               WHERE confirmed = true AND lower(player_name) = lower($1)
+                 AND global_type IN ('kill', 'team_kill')${periodCond}
+             )
+           GROUP BY player_name, mob_key
+         ),
+         ranked AS (
+           SELECT *,
+                  RANK() OVER (PARTITION BY mob_key ORDER BY total_value DESC) AS total_rank,
+                  RANK() OVER (PARTITION BY mob_key ORDER BY best_value DESC) AS best_rank
+           FROM target_totals
+         )
+         SELECT target_name, best_target_name, total_value, best_value, count, mob_id, total_rank, best_rank
+         FROM ranked
+         WHERE lower(player_name) = lower($1) AND (total_rank <= ${ATH_RANK_CUTOFF} OR best_rank <= ${ATH_RANK_CUTOFF})
+         ORDER BY LEAST(total_rank, best_rank), total_value DESC`,
         [playerName, ...extraParams]
       ),
 
-      // Per-target ATH: top targets by single highest loot
+      // ATH rankings: mining targets
       pool.query(
-        `SELECT target_name, count(*) AS count,
-                COALESCE(sum(value), 0) AS total_value,
-                COALESCE(max(value), 0) AS best_value,
-                MAX(mob_id) AS mob_id
-         FROM ingested_globals
-         WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
-           AND global_type IN ('kill', 'team_kill', 'deposit', 'craft')
-         GROUP BY target_name
-         ORDER BY best_value DESC
-         LIMIT 50`,
+        `WITH target_totals AS (
+           SELECT player_name, target_name,
+                  sum(value) AS total_value, max(value) AS best_value,
+                  count(*) AS count
+           FROM ingested_globals
+           WHERE confirmed = true AND global_type = 'deposit'${periodCond}
+             AND target_name IN (
+               SELECT DISTINCT target_name FROM ingested_globals
+               WHERE confirmed = true AND lower(player_name) = lower($1)
+                 AND global_type = 'deposit'${periodCond}
+             )
+           GROUP BY player_name, target_name
+         ),
+         ranked AS (
+           SELECT *,
+                  RANK() OVER (PARTITION BY target_name ORDER BY total_value DESC) AS total_rank,
+                  RANK() OVER (PARTITION BY target_name ORDER BY best_value DESC) AS best_rank
+           FROM target_totals
+         )
+         SELECT target_name, total_value, best_value, count, total_rank, best_rank
+         FROM ranked
+         WHERE lower(player_name) = lower($1) AND (total_rank <= ${ATH_RANK_CUTOFF} OR best_rank <= ${ATH_RANK_CUTOFF})
+         ORDER BY LEAST(total_rank, best_rank), total_value DESC`,
+        [playerName, ...extraParams]
+      ),
+
+      // ATH rankings: crafting targets
+      pool.query(
+        `WITH target_totals AS (
+           SELECT player_name, target_name,
+                  sum(value) AS total_value, max(value) AS best_value,
+                  count(*) AS count
+           FROM ingested_globals
+           WHERE confirmed = true AND global_type = 'craft'${periodCond}
+             AND target_name IN (
+               SELECT DISTINCT target_name FROM ingested_globals
+               WHERE confirmed = true AND lower(player_name) = lower($1)
+                 AND global_type = 'craft'${periodCond}
+             )
+           GROUP BY player_name, target_name
+         ),
+         ranked AS (
+           SELECT *,
+                  RANK() OVER (PARTITION BY target_name ORDER BY total_value DESC) AS total_rank,
+                  RANK() OVER (PARTITION BY target_name ORDER BY best_value DESC) AS best_rank
+           FROM target_totals
+         )
+         SELECT target_name, total_value, best_value, count, total_rank, best_rank
+         FROM ranked
+         WHERE lower(player_name) = lower($1) AND (total_rank <= ${ATH_RANK_CUTOFF} OR best_rank <= ${ATH_RANK_CUTOFF})
+         ORDER BY LEAST(total_rank, best_rank), total_value DESC`,
+        [playerName, ...extraParams]
+      ),
+
+      // ATH rankings: PvP — rank individual PvP events by value
+      pool.query(
+        `WITH pvp_ranked AS (
+           SELECT player_name, value, event_timestamp, is_hof, is_ath,
+                  RANK() OVER (ORDER BY value DESC) AS rank
+           FROM ingested_globals
+           WHERE confirmed = true AND global_type = 'pvp'${periodCond}
+         )
+         SELECT value, event_timestamp, is_hof, is_ath, rank
+         FROM pvp_ranked
+         WHERE lower(player_name) = lower($1) AND rank <= ${ATH_RANK_CUTOFF}
+         ORDER BY rank`,
         [playerName, ...extraParams]
       ),
     ]);
@@ -290,13 +364,15 @@ export async function GET({ params, url }) {
       }));
     }
 
-    function mapTargetRows(rows) {
+    function mapRankingRows(rows) {
       return rows.map(r => ({
         target: r.target_name,
         count: parseInt(r.count),
         total_value: parseFloat(r.total_value),
         best_value: parseFloat(r.best_value),
-        mob_id: r.mob_id,
+        total_rank: parseInt(r.total_rank),
+        best_rank: parseInt(r.best_rank),
+        mob_id: r.mob_id || null,
       }));
     }
 
@@ -396,9 +472,29 @@ export async function GET({ params, url }) {
         mining: mapLootRows(topMiningResult.rows),
         crafting: mapLootRows(topCraftingResult.rows),
       },
-      ath_targets: {
-        by_total: mapTargetRows(athTargetsValueResult.rows),
-        by_best: mapTargetRows(athTargetsBestResult.rows),
+      ath_rankings: {
+        hunting: athHuntingResult.rows.map(r => {
+          const resolved = resolveMob(r.target_name);
+          return {
+            target: resolved?.mobName || r.target_name,
+            best_target: r.best_target_name || r.target_name,
+            count: parseInt(r.count),
+            total_value: parseFloat(r.total_value),
+            best_value: parseFloat(r.best_value),
+            total_rank: parseInt(r.total_rank),
+            best_rank: parseInt(r.best_rank),
+            mob_id: r.mob_id || null,
+          };
+        }),
+        mining: mapRankingRows(athMiningResult.rows),
+        crafting: mapRankingRows(athCraftingResult.rows),
+        pvp: athPvpResult.rows.map(r => ({
+          value: parseFloat(r.value),
+          rank: parseInt(r.rank),
+          hof: r.is_hof,
+          ath: r.is_ath,
+          timestamp: r.event_timestamp,
+        })),
       },
     }), {
       status: 200,
