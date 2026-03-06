@@ -28,7 +28,7 @@ from .capturer import ScreenCapturer
 from .preprocessor import ImagePreprocessor
 from .skill_parser import SkillMatcher, RankVerifier
 from .progress_bar import ProgressBarReader
-from .detector import SkillsWindowDetector, ROW_TEXT_RATIO, SAVE_DEBUG_IMAGES, DEBUG_DIR
+from .detector import SkillsWindowDetector, SAVE_DEBUG_IMAGES, DEBUG_DIR
 from .font_matcher import FontMatcher
 from .navigator import SkillsNavigator
 
@@ -49,7 +49,7 @@ STABILITY_TICKS = 3
 STABILITY_POLL_INTERVAL = 0.1
 
 # How many consecutive quick_verify failures before declaring the panel moved.
-# A single bad PrintWindow frame (common with DirectX) should not trigger
+# A single bad window-capture frame (common with DirectX) should not trigger
 # expensive re-detection; require multiple confirmations first.
 VERIFY_FAIL_THRESHOLD = 2
 
@@ -59,23 +59,23 @@ REDETECT_POLL_INTERVAL = 0.3
 # After this, we consider it closed and enter hibernation (waiting for reopen).
 REDETECT_TIMEOUT = 10.0
 
-# PrintWindow on focused DirectX games may return stale (cached) frames.
+# Some backends on focused DirectX games may return stale (cached) frames.
 # If this many consecutive captures are byte-identical in the table region,
 # we assume the frames are stale and clear the page anchor so the next
 # fresh frame triggers a re-scan.
 STALE_FRAME_THRESHOLD = 15  # ~1.5s at 100ms poll interval
+
+# Require repeated first-row mismatches before treating it as a page change.
+PAGE_CHANGE_CONFIRM_TICKS = 2
+# If first-row anchor is unreadable, wait this many monitor ticks before
+# forcing a full page re-scan.
+PAGE_UNKNOWN_RESCAN_TICKS = 20  # ~2s at 100ms poll interval
 
 # Minimum number of bright pixels (>80 grayscale) to consider a row non-empty.
 # Using an absolute count instead of a fraction of cell area avoids rejecting
 # short names like "Aim" that occupy very few pixels in a wide column.
 # ~50 bright pixels ≈ a 3-character word at game font size.
 MIN_BRIGHT_PIXELS = 50
-
-# Pixels to trim from the right edge of the name column ROI.
-# The column range extends to the rank header position, but the last ~30px
-# are empty gap between columns.  Trimming reduces the cell width so
-# coverage penalty and text-extent detection work on tighter data.
-NAME_COL_RIGHT_TRIM = 30
 
 # Pixels to trim from the right edge of the points column ROI.
 # The points column extends to window_width - 5 (scrollbar edge), leaving
@@ -85,6 +85,14 @@ POINTS_COL_RIGHT_TRIM = 30
 # If this fraction (or more) of rows in a page scan fail to match a skill
 # name, assume the window moved mid-capture and discard the page.
 MAX_MISS_FRACTION = 0.5
+
+# Warn when a previously stable skill value jumps by this many points.
+SKILL_VALUE_JUMP_WARNING_DELTA = 30.0
+# Confidence bands for below-threshold fallback matches.
+# < 0.60: reject as failed OCR row.
+# 0.60 - <0.70: accept but warn as low confidence.
+FALLBACK_FAILURE_CONFIDENCE = 0.60
+FALLBACK_LOW_CONFIDENCE = 0.70
 
 # Skills that don't appear in the in-game SKILLS panel and should be
 # excluded from the expected total / missing list.
@@ -96,7 +104,7 @@ class ScanOrchestrator:
 
     Operates in continuous monitoring mode:
     1. Wait for the skills window to appear
-    2. Capture the game window directly (via PrintWindow, ignoring overlays)
+    2. Capture the game window directly (window capture backend, ignoring overlays)
     3. Crop the table region and OCR visible rows
     4. Detect page changes and re-scan automatically
     5. User navigates categories/pages manually
@@ -114,9 +122,10 @@ class ScanOrchestrator:
         # Use shared frame cache if provided, else create own capturer
         self._frame_cache = frame_cache
         if frame_cache is None:
-            self._capturer = ScreenCapturer()
+            self._capturer = ScreenCapturer(capture_backend=config.ocr_capture_backend)
         else:
-            self._capturer = ScreenCapturer()  # detector still needs its own for detect()
+            # Detector still needs its own direct window captures for detect().
+            self._capturer = ScreenCapturer(capture_backend=config.ocr_capture_backend)
         self._preprocessor = ImagePreprocessor()
         self._skill_matcher = SkillMatcher()
         self._rank_verifier = RankVerifier()
@@ -126,7 +135,12 @@ class ScanOrchestrator:
         self._navigator = SkillsNavigator()
 
         self._all_skills = list(self._skill_matcher.get_all_skills())
+        self._expected_skill_names: set[str] = {
+            s["name"] for s in self._all_skills
+            if s["name"] not in EXCLUDED_SKILL_NAMES
+        }
         self._found_skill_names: set[str] = set()
+        self._last_skill_readings: dict[str, SkillReading] = {}
 
         # Font-based template matcher for per-row OCR
         skill_names = [s["name"] for s in self._all_skills]
@@ -158,6 +172,13 @@ class ScanOrchestrator:
         self._stop_event.set()
         self._event_bus.unsubscribe(EVENT_ROI_CONFIG_CHANGED, self._on_roi_config_changed)
         self._event_bus.unsubscribe(EVENT_OCR_CANCEL, self._on_cancel)
+
+    def set_capture_backend(self, capture_backend: str) -> None:
+        """Apply window capture backend change at runtime."""
+        try:
+            self._capturer.set_capture_backend(capture_backend)
+        except Exception as e:
+            log.warning("Failed to update OCR capture backend: %s", e)
 
     def _on_cancel(self, data=None):
         """Handle external cancel request (e.g. from scan summary overlay)."""
@@ -256,7 +277,7 @@ class ScanOrchestrator:
                            DETECT_TIMEOUT)
                 return None
 
-            # Cheap foreground check: skip expensive PrintWindow + template
+            # Cheap foreground check: skip expensive capture + template
             # matching when the game isn't the active window (<0.1ms vs ~100ms)
             if not self._detector.is_game_foreground():
                 self._stop_event.wait(timeout=DETECT_POLL_INTERVAL)
@@ -399,10 +420,12 @@ class ScanOrchestrator:
                 return None
 
         scan_start = datetime.now()
-        counted_skills = [s for s in self._all_skills
-                          if s["name"] not in EXCLUDED_SKILL_NAMES]
-        result = SkillScanResult(scan_start=scan_start, total_expected=len(counted_skills))
+        result = SkillScanResult(
+            scan_start=scan_start,
+            total_expected=len(self._expected_skill_names),
+        )
         self._found_skill_names.clear()
+        self._last_skill_readings.clear()
         scan_count = 0
 
         # Outer loop: wait for window → monitor → window closed → repeat
@@ -492,6 +515,9 @@ class ScanOrchestrator:
             window_closed=False → user cancelled via stop_event
         """
         anchor_skill: Optional[str] = None
+        anchor_first_row_key: bytes | None = None
+        page_change_confirm_count = 0
+        unknown_anchor_ticks = 0
         verify_fail_count = 0
         last_frame_hash: int = 0  # hash of last table region for stale detection
         stale_frame_count = 0
@@ -500,7 +526,7 @@ class ScanOrchestrator:
         log.info("Monitoring skills window. Navigate in-game; scans happen automatically.")
 
         while not self._stop_event.is_set():
-            # Capture the full game window via PrintWindow (ignores overlays)
+            # Capture the full game window (ignores overlays)
             game_image = self._detector.capture_game()
             if game_image is None:
                 log.warning("Game window capture failed, retrying...")
@@ -528,6 +554,9 @@ class ScanOrchestrator:
                 verify_fail_count = 0
                 self._event_bus.publish(EVENT_OCR_OVERLAYS_HIDE, lambda: None)
                 anchor_skill = None
+                anchor_first_row_key = None
+                page_change_confirm_count = 0
+                unknown_anchor_ticks = 0
                 self._detector.invalidate_cache()
                 redetect_deadline = time.monotonic() + REDETECT_TIMEOUT
                 while not self._stop_event.is_set():
@@ -574,7 +603,7 @@ class ScanOrchestrator:
 
             table_image = game_image[crop_y:crop_y2, crop_x:crop_x2]
 
-            # Stale frame detection: PrintWindow on focused DirectX games may
+            # Stale frame detection: focused DirectX captures may return
             # return cached frames.  Track consecutive identical captures for
             # diagnostics.  Page-change detection now uses font-matched skill
             # names (robust to background transparency), so stale frames no
@@ -598,21 +627,53 @@ class ScanOrchestrator:
             ns = L["col_ranges"]["name"][0]
             ne_local = L["col_ranges"]["name"][1] - ns
             th, tw = table_image.shape[:2]
+            first_row_key = None
             if rh <= th and ne_local <= tw:
                 first_cell = table_image[0:rh, 0:ne_local]
                 first_gray = (cv2.cvtColor(first_cell, cv2.COLOR_BGR2GRAY)
                               if len(first_cell.shape) == 3 else first_cell)
+                first_row_key = self._font_matcher._to_lookup_key(first_gray)
                 match = self._font_matcher.match_skill_name(first_gray)
                 current_name = match[0] if match else None
-                if (current_name is not None
-                        and current_name == anchor_skill):
-                    # Same first skill — page hasn't changed
+
+                same_by_name = (
+                    current_name is not None and current_name == anchor_skill
+                )
+                same_by_key = (
+                    first_row_key is not None
+                    and anchor_first_row_key is not None
+                    and first_row_key == anchor_first_row_key
+                )
+                if same_by_name or same_by_key:
+                    # Same first-row anchor - page hasn't changed.
+                    page_change_confirm_count = 0
+                    unknown_anchor_ticks = 0
                     self._stop_event.wait(timeout=MONITOR_INTERVAL)
                     continue
                 if anchor_skill is not None:
-                    log.debug("Page change detected (first skill: '%s' → '%s')",
-                              anchor_skill, current_name)
-
+                    # A single bad sample should not trigger a full page re-scan.
+                    if current_name is None and first_row_key is None:
+                        unknown_anchor_ticks += 1
+                        if unknown_anchor_ticks < PAGE_UNKNOWN_RESCAN_TICKS:
+                            self._stop_event.wait(timeout=MONITOR_INTERVAL)
+                            continue
+                        log.debug(
+                            "First-row anchor unreadable for %d ticks; forcing re-scan",
+                            unknown_anchor_ticks,
+                        )
+                        unknown_anchor_ticks = 0
+                        page_change_confirm_count = 0
+                    else:
+                        unknown_anchor_ticks = 0
+                        page_change_confirm_count += 1
+                        if page_change_confirm_count < PAGE_CHANGE_CONFIRM_TICKS:
+                            self._stop_event.wait(timeout=MONITOR_INTERVAL)
+                            continue
+                        page_change_confirm_count = 0
+                        log.debug(
+                            "Page change detected (first skill: '%s' -> '%s')",
+                            anchor_skill, current_name,
+                        )
             # Page changed — clear old checkmarks
             self._event_bus.publish(EVENT_OCR_PAGE_CHANGED, None)
 
@@ -624,17 +685,24 @@ class ScanOrchestrator:
                 window_bounds, L["table_sy"],
             )
             if page_skills is None:
-                # Bad scan — window likely moved.  Reset anchor so the next
+                # Bad scan - window likely moved. Reset anchor so the next
                 # capture is treated as fresh.
                 anchor_skill = None
+                anchor_first_row_key = None
+                page_change_confirm_count = 0
+                unknown_anchor_ticks = 0
                 self._stop_event.wait(timeout=MONITOR_INTERVAL)
                 continue
 
             # Update anchor from the first matched skill for next poll
             if page_skills:
                 anchor_skill = page_skills[0].skill_name
+                anchor_first_row_key = first_row_key
             else:
                 anchor_skill = None
+                anchor_first_row_key = None
+            page_change_confirm_count = 0
+            unknown_anchor_ticks = 0
             result.skills.extend(page_skills)
 
             # Read pagination from cropped game image
@@ -653,11 +721,18 @@ class ScanOrchestrator:
                 })
 
             # Publish progress
-            missing = [s["name"] for s in self._all_skills
-                       if s["name"] not in self._found_skill_names]
+            missing = [
+                s["name"] for s in self._all_skills
+                if s["name"] in self._expected_skill_names
+                and s["name"] not in self._found_skill_names
+            ]
+            found_expected = len(
+                self._found_skill_names.intersection(self._expected_skill_names)
+            )
+            expected_total = len(self._expected_skill_names)
             self._event_bus.publish(EVENT_OCR_PROGRESS, ScanProgress(
-                total_skills_expected=len(self._all_skills),
-                skills_found=len(self._found_skill_names),
+                total_skills_expected=expected_total,
+                skills_found=found_expected,
                 current_category="manual",
                 current_page=scan_count,
                 total_pages=0,
@@ -665,7 +740,7 @@ class ScanOrchestrator:
             ))
 
             log.info("Scan #%d: %d/%d skills found",
-                     scan_count, len(self._found_skill_names), len(self._all_skills))
+                     scan_count, found_expected, expected_total)
 
             # Verify total if ALL CATEGORIES is selected
             points_sum = sum(s.current_points for s in result.skills)
@@ -699,19 +774,18 @@ class ScanOrchestrator:
         row_height = self._detector.get_row_height(wh)
         row_pitch = self._detector.resolve_row_pitch() or row_height
         rows = self._preprocessor.extract_rows(table_image, row_height, row_pitch)
+        text_h, _, _ = self._resolve_row_vertical_regions(row_height)
 
         # Precompute brightness-check dimensions (same logic as _parse_skill_row)
         name_start = col_ranges["name"][0]
         name_end_local = col_ranges["name"][1] - name_start
-        text_h_ratio = ROW_TEXT_RATIO
 
         content_rows = 0
         miss_rows = 0
         self._pending_captures.clear()
 
         for row_idx, row_image in enumerate(rows):
-            row_h, row_w = row_image.shape[:2]
-            text_h = int(row_h * text_h_ratio)
+            _, row_w = row_image.shape[:2]
             ne = min(name_end_local, row_w)
 
             # Brightness check: does this row have visible text?
@@ -750,6 +824,25 @@ class ScanOrchestrator:
 
         # Scan is valid — persist results and execute deferred captures
         for skill in skills:
+            previous = self._last_skill_readings.get(skill.skill_name)
+            if (
+                previous is not None
+                and not previous.is_mismatch
+                and not skill.is_mismatch
+            ):
+                delta = abs(skill.current_points - previous.current_points)
+                if delta > SKILL_VALUE_JUMP_WARNING_DELTA:
+                    log.warning(
+                        "Large OCR jump for '%s' without mismatch warning: "
+                        "%.2f -> %.2f (delta=%.2f > %.2f)",
+                        skill.skill_name,
+                        previous.current_points,
+                        skill.current_points,
+                        delta,
+                        SKILL_VALUE_JUMP_WARNING_DELTA,
+                    )
+            self._last_skill_readings[skill.skill_name] = skill
+
             self._found_skill_names.add(skill.skill_name)
             self._db.insert_skill_snapshot(
                 scan_timestamp=skill.scan_timestamp.isoformat(),
@@ -775,12 +868,31 @@ class ScanOrchestrator:
 
         return skills
 
+    def _resolve_row_vertical_regions(self, row_h: int) -> tuple[int, int, int]:
+        """Resolve text and bar vertical zones from exact ROI configuration."""
+        bar_offset = self._detector.resolve_bar_offset()
+        if bar_offset is None:
+            # Fallback only when title/template isn't resolved yet.
+            bar_top = max(1, row_h - 4)
+            bar_bot = row_h
+        else:
+            bar_top, bar_h = bar_offset
+            bar_top = max(0, min(int(bar_top), row_h - 1))
+            bar_h = max(1, int(bar_h))
+            bar_bot = min(row_h, bar_top + bar_h)
+            if bar_bot <= bar_top:
+                bar_bot = min(row_h, bar_top + 1)
+
+        text_h = max(1, min(bar_top, row_h))
+        return text_h, bar_top, bar_bot
+
     def _save_row_debug(self, row_idx: int, row_image: np.ndarray,
                         cells: dict, results: dict) -> None:
         """Save an annotated debug image for one skill row.
 
         cells:   name_end, rank_start, rank_end, points_start, points_end,
-                 rb_start, rb_end, pb_start, pb_end, text_h  (row-local px)
+                 rb_start, rb_end, pb_start, pb_end, text_h,
+                 bar_top, bar_bot  (row-local px; bar_bot end-exclusive)
         results: matched_name, name_score, rank_text, rank_score,
                  points_text, rank_progress, points_progress,
                  name_gray, rank_gray, points_gray,
@@ -812,8 +924,9 @@ class ScanOrchestrator:
             cv2.line(canvas, (0, text_h), (row_w, text_h), (0, 200, 0), 1)
 
             # Bar boundaries (magenta = rank, cyan = points)
-            bt = min(text_h + 2, row_h)
-            bb = max(bt, row_h - 1)
+            bt = max(0, min(int(cells.get("bar_top", text_h)), row_h - 1))
+            bar_bot = int(cells.get("bar_bot", row_h))
+            bb = max(bt, min(max(bar_bot - 1, bt), row_h - 1))
             for bx_s, bx_e, color in (
                 (cells["rb_start"], cells["rb_end"], (255, 0, 255)),
                 (cells["pb_start"], cells["pb_end"], (255, 255, 0)),
@@ -842,6 +955,101 @@ class ScanOrchestrator:
         except Exception as e:
             log.debug("Failed to save row debug: %s", e)
 
+    def _save_low_confidence_debug(
+        self,
+        row_idx: int,
+        row_image: np.ndarray,
+        name_gray: np.ndarray,
+        rank_gray: np.ndarray,
+        points_gray: np.ndarray,
+        matched_name: str,
+        fallback_score: float,
+        fallback_threshold: float,
+        rank_text: Optional[str],
+        points_text: Optional[str],
+        rank_progress: float,
+        points_progress: float,
+    ) -> None:
+        """Save focused debug output for low-confidence fallback matches."""
+        try:
+            out_dir = os.path.join(DEBUG_DIR, "low_confidence")
+            os.makedirs(out_dir, exist_ok=True)
+
+            row_bgr = (
+                cv2.cvtColor(row_image, cv2.COLOR_GRAY2BGR)
+                if len(row_image.shape) == 2
+                else row_image
+            )
+            name_bgr = (
+                cv2.cvtColor(name_gray, cv2.COLOR_GRAY2BGR)
+                if len(name_gray.shape) == 2
+                else name_gray
+            )
+            rank_bgr = (
+                cv2.cvtColor(rank_gray, cv2.COLOR_GRAY2BGR)
+                if len(rank_gray.shape) == 2
+                else rank_gray
+            )
+            points_bgr = (
+                cv2.cvtColor(points_gray, cv2.COLOR_GRAY2BGR)
+                if len(points_gray.shape) == 2
+                else points_gray
+            )
+
+            tiles = [
+                ("NAME", name_bgr),
+                ("RANK", rank_bgr),
+                ("POINTS", points_bgr),
+            ]
+            pad = 6
+            title_h = 14
+            tiles_h = max(img.shape[0] for _, img in tiles)
+            tiles_w = sum(img.shape[1] for _, img in tiles) + pad * (len(tiles) + 1)
+            tiles_canvas = np.zeros((tiles_h + title_h + pad, tiles_w, 3), dtype=np.uint8)
+
+            x = pad
+            for label, img in tiles:
+                cv2.putText(
+                    tiles_canvas, label, (x, 11),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.35, (160, 220, 220), 1,
+                )
+                y = title_h + (tiles_h - img.shape[0]) // 2
+                tiles_canvas[y:y + img.shape[0], x:x + img.shape[1]] = img
+                x += img.shape[1] + pad
+
+            info_h = 32
+            out_w = max(row_bgr.shape[1], tiles_canvas.shape[1])
+            out_h = row_bgr.shape[0] + tiles_canvas.shape[0] + info_h
+            canvas = np.zeros((out_h, out_w, 3), dtype=np.uint8)
+            canvas[:row_bgr.shape[0], :row_bgr.shape[1]] = row_bgr
+            y_tiles = row_bgr.shape[0]
+            canvas[y_tiles:y_tiles + tiles_canvas.shape[0], :tiles_canvas.shape[1]] = tiles_canvas
+
+            line1 = (
+                f"row={row_idx} match='{matched_name}' "
+                f"score={fallback_score:.3f} < {fallback_threshold:.2f}"
+            )
+            line2 = (
+                f"rank={rank_text or '?'} points={points_text or '?'} "
+                f"bars rank={rank_progress:.2f}% pts={points_progress:.2f}%"
+            )
+            text_y = y_tiles + tiles_canvas.shape[0] + 12
+            cv2.putText(canvas, line1, (4, text_y),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.35, (200, 200, 200), 1)
+            cv2.putText(canvas, line2, (4, text_y + 13),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.35, (200, 200, 200), 1)
+
+            safe_name = re.sub(r"[^A-Za-z0-9]+", "_", matched_name).strip("_")
+            if not safe_name:
+                safe_name = "unknown"
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
+            path = os.path.join(
+                out_dir, f"row_{row_idx:02d}_{safe_name}_{timestamp}.png")
+            cv2.imwrite(path, canvas)
+            log.warning("Saved low-confidence OCR debug image: %s", path)
+        except Exception as e:
+            log.debug("Failed to save low-confidence debug image: %s", e)
+
     def _parse_skill_row(self, row_image, col_ranges: dict, bar_ranges: dict,
                          window_bounds: tuple,
                          row_screen_y: int = 0,
@@ -856,26 +1064,24 @@ class ScanOrchestrator:
         row_h = row_image.shape[0]
         row_w = row_image.shape[1]
 
-        # Vertical split: text zone (top) and bar zone (bottom)
-        text_h = int(row_h * ROW_TEXT_RATIO)
+        # Vertical split: text and bars come from explicit bar_offset ROI.
+        text_h, bar_top, bar_bot = self._resolve_row_vertical_regions(row_h)
 
         # Column positions relative to the row image (which starts at name_start).
-        # Trim NAME_COL_RIGHT_TRIM from the right — the column extends to the
-        # rank header but the last ~30px are empty inter-column gap.
-        name_end = min(col_ranges["name"][1] - name_start - NAME_COL_RIGHT_TRIM, row_w)
+        name_end = min(col_ranges["name"][1] - name_start, row_w)
         rank_start = col_ranges["rank"][0] - name_start
         rank_end = min(col_ranges["rank"][1] - name_start, row_w)
         points_start = col_ranges["points"][0] - name_start
         points_end = min(col_ranges["points"][1] - name_start - POINTS_COL_RIGHT_TRIM, row_w)
 
         # Text zones (top portion of each cell)
-        name_text_img = row_image[:text_h, 0:name_end]
+        name_text_zone = row_image[:text_h, 0:name_end]
 
         # Quick brightness check: skip rows with no visible text.
         # Uses absolute pixel count — short names like "Aim" occupy very few pixels
         # in a wide column and fail fraction-based checks.
-        gray_name = cv2.cvtColor(name_text_img, cv2.COLOR_BGR2GRAY) \
-            if len(name_text_img.shape) == 3 else name_text_img
+        gray_name = cv2.cvtColor(name_text_zone, cv2.COLOR_BGR2GRAY) \
+            if len(name_text_zone.shape) == 3 else name_text_zone
         bright_pixels = int(np.sum(gray_name > 80))
         if bright_pixels < MIN_BRIGHT_PIXELS:
             log.debug("Row %d: brightness check failed (%d < %d bright px, "
@@ -893,19 +1099,13 @@ class ScanOrchestrator:
         rb_end = min(bar_ranges["rank"][1] - name_start, row_w)
         pb_start = bar_ranges["points"][0] - name_start
         pb_end = min(bar_ranges["points"][1] - name_start, row_w)
-        bar_top = min(text_h + 2, row_h)
-        bar_bot = max(bar_top, row_h - 1)
         rank_bar_img = row_image[bar_top:bar_bot, rb_start:rb_end]
         progress_bar_img = row_image[bar_top:bar_bot, pb_start:pb_end]
 
         # Grayscale cells for font matching.
-        # Name uses full row height so descenders aren't clipped; the bar
-        # zone is dark and gets cleaned by noise suppression.
-        # Rank and points use only the text zone (top text_h pixels) to
-        # exclude the progress bar which otherwise pollutes templates.
-        name_full = row_image[:, 0:name_end]
-        name_gray = cv2.cvtColor(name_full, cv2.COLOR_BGR2GRAY) \
-            if len(name_full.shape) == 3 else name_full
+        # Use a consistent text-zone crop for all three columns.
+        name_gray = cv2.cvtColor(name_text_zone, cv2.COLOR_BGR2GRAY) \
+            if len(name_text_zone.shape) == 3 else name_text_zone
         rank_text_zone = row_image[:text_h, rank_start:rank_end]
         rank_gray = cv2.cvtColor(rank_text_zone, cv2.COLOR_BGR2GRAY) \
             if len(rank_text_zone.shape) == 3 else rank_text_zone
@@ -917,6 +1117,10 @@ class ScanOrchestrator:
         matched_name = None
         name_text = ""
         font_attempt = None
+        used_fallback = False
+        low_confidence_fallback = False
+        fallback_score = 0.0
+        fallback_warn_threshold = FALLBACK_LOW_CONFIDENCE
         if self._font_matcher.calibrated:
             skill_match = self._font_matcher.match_skill_name(name_gray)
             if skill_match:
@@ -940,11 +1144,30 @@ class ScanOrchestrator:
 
         # Last resort: use best font template match (below threshold)
         if not matched_name and font_attempt:
+            fallback_score = float(font_attempt["score"])
+            if fallback_score < FALLBACK_FAILURE_CONFIDENCE:
+                log.warning(
+                    "Row %d: rejecting fallback skill match '%s' "
+                    "(score=%.3f < %.2f)",
+                    row_idx, font_attempt["name"], fallback_score,
+                    FALLBACK_FAILURE_CONFIDENCE,
+                )
+                return None
+
             matched_name = font_attempt["name"]
             name_text = matched_name
+            used_fallback = True
             log.debug("Row %d: using best font match '%s' (score=%.3f) "
                       "as fallback", row_idx, matched_name,
-                      font_attempt["score"])
+                      fallback_score)
+            if fallback_score < fallback_warn_threshold:
+                low_confidence_fallback = True
+                log.warning(
+                    "Row %d: low-confidence skill fallback '%s' "
+                    "(score=%.3f < %.2f)",
+                    row_idx, matched_name, fallback_score,
+                    fallback_warn_threshold,
+                )
 
         if not matched_name:
             return None
@@ -996,6 +1219,22 @@ class ScanOrchestrator:
         # Read rank bar (bottom of rank cell) — for cross-verification
         rank_progress = self._bar_reader.read_progress(rank_bar_img)
 
+        if low_confidence_fallback:
+            self._save_low_confidence_debug(
+                row_idx=row_idx,
+                row_image=row_image,
+                name_gray=name_gray,
+                rank_gray=rank_gray,
+                points_gray=points_gray,
+                matched_name=matched_name,
+                fallback_score=fallback_score,
+                fallback_threshold=fallback_warn_threshold,
+                rank_text=rank_text,
+                points_text=points_text,
+                rank_progress=rank_progress,
+                points_progress=progress,
+            )
+
         # Save per-row debug images
         if SAVE_DEBUG_IMAGES:
             self._save_row_debug(row_idx, row_image,
@@ -1005,6 +1244,7 @@ class ScanOrchestrator:
                     "points_end": points_end, "rb_start": rb_start,
                     "rb_end": rb_end, "pb_start": pb_start,
                     "pb_end": pb_end, "text_h": text_h,
+                    "bar_top": bar_top, "bar_bot": bar_bot,
                 },
                 results={
                     "matched_name": matched_name,
@@ -1035,6 +1275,9 @@ class ScanOrchestrator:
             "y": row_screen_y,
             "h": row_height,
             "font_attempt": font_attempt,
+            "used_fallback": used_fallback,
+            "low_confidence_fallback": low_confidence_fallback,
+            "fallback_score": fallback_score if used_fallback else None,
         })
 
         reading = SkillReading(
@@ -1187,4 +1430,3 @@ class ScanOrchestrator:
         log.warning("Total mismatch: OCR found %d points, display shows %d (diff: %d)",
                     found_total, displayed_total, abs(found_total - displayed_total))
         return False
-

@@ -98,9 +98,6 @@ ROI_NAMES = (
     "row_offset",
 )
 
-# Row layout: top 70% is text zone, bottom 30% is progress bar zone
-ROW_TEXT_RATIO = 0.70
-
 # The skills window background is dark navy/slate blue
 # Skills panel dimension constraints
 MIN_PANEL_WIDTH = 350
@@ -327,7 +324,7 @@ class SkillsWindowDetector:
         self._game_geometry = (gx, gy, gw, gh)
         log.info("Game window: (%s,%s) %sx%s hwnd=%s", gx, gy, gw, gh, hwnd)
 
-        # Step 2: Capture the game window (PrintWindow on Windows, mss on Linux)
+        # Step 2: Capture the game window (window backend on Windows, mss on Linux)
         game_image = self._capturer.capture_window(hwnd, geometry=(gx, gy, gw, gh))
         if game_image is None:
             log.warning("Window capture failed, falling back to mss region")
@@ -740,6 +737,18 @@ class SkillsWindowDetector:
         sy = self._title_match[3] / NATIVE_TEMPLATE_H
         _, py, _, _ = self.get_roi_pixels("row_offset")
         return max(20, round(py * sy))
+
+    def resolve_bar_offset(self) -> Optional[tuple[int, int]]:
+        """Resolve bar vertical offset and height from bar_offset ROI.
+
+        Returns:
+            (bar_top, bar_height) in row-local pixels.
+        """
+        if self._title_match is None:
+            return None
+        sy = self._title_match[3] / NATIVE_TEMPLATE_H
+        _, py, _, ph = self.get_roi_pixels("bar_offset")
+        return max(0, round(py * sy)), max(1, round(ph * sy))
 
     def resolve_table_width(self) -> Optional[int]:
         """Derive table width from the rightmost column edge.

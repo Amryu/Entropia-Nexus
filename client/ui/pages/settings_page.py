@@ -3,7 +3,7 @@
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton,
     QSlider, QSpinBox, QDoubleSpinBox, QGroupBox, QFileDialog, QScrollArea,
-    QFrame, QCheckBox, QTextEdit, QGridLayout,
+    QFrame, QCheckBox, QTextEdit, QGridLayout, QComboBox,
 )
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QCursor
@@ -37,7 +37,7 @@ _OVERLAY_HOTKEY_DEFAULTS = {
 class SettingsPage(QWidget):
     """Application settings with sections for account, OCR, hotkeys, etc."""
 
-    def __init__(self, *, config, config_path, event_bus, signals, oauth,
+    def __init__(self, *, config, config_path, event_bus, signals, oauth, db=None,
                  on_show_changelog=None):
         super().__init__()
         self._config = config
@@ -45,7 +45,9 @@ class SettingsPage(QWidget):
         self._event_bus = event_bus
         self._signals = signals
         self._oauth = oauth
+        self._db = db
         self._on_show_changelog = on_show_changelog
+        self._importer = None
 
         # Debounce timer for auto-saving settings
         self._save_timer = QTimer(self)
@@ -226,11 +228,27 @@ class SettingsPage(QWidget):
         reparse_row.addStretch()
         layout.addLayout(reparse_row)
 
+        # Import historical log
+        import_row = QHBoxLayout()
+        self._import_btn = QPushButton("Import Historical Log")
+        self._import_btn.setToolTip(
+            "Parse a chat log file and add its globals and trade messages\n"
+            "to the local database for upload. Useful for adding historical data."
+        )
+        self._import_btn.clicked.connect(self._on_import_historical)
+        import_row.addWidget(self._import_btn)
+        self._import_status = QLabel("")
+        self._import_status.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
+        import_row.addWidget(self._import_status)
+        import_row.addStretch()
+        layout.addLayout(import_row)
+
         self._sections.append(group)
         self._layout.addWidget(group)
 
     def _on_reparse(self):
         self._reparse_btn.setEnabled(False)
+        self._import_btn.setEnabled(False)
         self._reparse_btn.setText("Re-parsing...")
         self._event_bus.publish(EVENT_REPARSE_REQUESTED, None)
 
@@ -240,8 +258,65 @@ class SettingsPage(QWidget):
 
     def _on_reparse_done(self, _data):
         self._reparse_btn.setEnabled(True)
+        self._import_btn.setEnabled(True)
         self._reparse_btn.setText("Re-parse Chat Log")
         self._signals.catchup_complete.disconnect(self._on_reparse_done)
+
+    def _on_import_historical(self):
+        if not self._db:
+            return
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select chat log to import", "",
+            "Log files (*.log);;All files (*)",
+        )
+        if not path:
+            return
+
+        from ...chat_parser.importer import HistoricalImporter
+
+        self._importer = HistoricalImporter(self._event_bus, self._db)
+        self._import_btn.setEnabled(False)
+        self._reparse_btn.setEnabled(False)
+        self._import_btn.setText("Importing...")
+        self._import_status.setText("")
+
+        self._signals.historical_import_progress.connect(self._on_import_progress)
+        self._signals.historical_import_complete.connect(self._on_import_done)
+
+        import threading
+        threading.Thread(
+            target=self._importer.import_file, args=(path,),
+            daemon=True, name="historical-import",
+        ).start()
+
+    def _on_import_progress(self, data):
+        lines = data.get("lines", 0)
+        total = data.get("total_bytes", 1)
+        parsed = data.get("parsed_bytes", 0)
+        pct = int(parsed / total * 100) if total else 0
+        self._import_btn.setText(f"Importing... {pct}%")
+        self._import_status.setText(f"{lines:,} lines parsed")
+
+    def _on_import_done(self, data):
+        self._import_btn.setEnabled(True)
+        self._reparse_btn.setEnabled(True)
+        self._import_btn.setText("Import Historical Log")
+        self._signals.historical_import_progress.disconnect(self._on_import_progress)
+        self._signals.historical_import_complete.disconnect(self._on_import_done)
+        self._importer = None
+
+        error = data.get("error")
+        if error:
+            self._import_status.setText(f"Error: {error}")
+            self._import_status.setStyleSheet(f"color: red; font-size: 11px;")
+        else:
+            g = data.get("globals_found", 0)
+            t = data.get("trades_found", 0)
+            lines = data.get("lines_parsed", 0)
+            self._import_status.setText(
+                f"Done — {lines:,} lines, {g:,} globals, {t:,} trades imported"
+            )
+            self._import_status.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
 
     def _browse_chat_path(self):
         path, _ = QFileDialog.getOpenFileName(self, "Select chat.log", "", "Log files (*.log);;All files (*)")
@@ -393,6 +468,25 @@ class SettingsPage(QWidget):
         )
         self._skill_scanner_cb.setChecked(self._config.overlay_enabled)
         layout.addWidget(self._skill_scanner_cb)
+
+        backend_row = QHBoxLayout()
+        backend_row.addWidget(QLabel("Window capture backend:"))
+        self._ocr_capture_backend = QComboBox()
+        self._ocr_capture_backend.addItem("Auto (recommended)", "auto")
+        self._ocr_capture_backend.addItem("Windows Graphics Capture (HDR-safe)", "wgc")
+        self._ocr_capture_backend.addItem("PrintWindow (legacy fallback)", "printwindow")
+        self._ocr_capture_backend.setToolTip(
+            "Select how the game window is captured for OCR.\n"
+            "Changes apply immediately. WGC is Windows-only and requires\n"
+            "the optional 'wgcapture' package. 'Auto' falls back safely."
+        )
+        current_backend = getattr(self._config, "ocr_capture_backend", "auto")
+        backend_index = self._ocr_capture_backend.findData(current_backend)
+        self._ocr_capture_backend.setCurrentIndex(backend_index if backend_index >= 0 else 0)
+        self._ocr_capture_backend.currentIndexChanged.connect(self._schedule_save)
+        backend_row.addWidget(self._ocr_capture_backend)
+        backend_row.addStretch()
+        layout.addLayout(backend_row)
 
         scan_roi_row = QHBoxLayout()
         scan_roi_btn = QPushButton("Configure ROIs...")
@@ -877,6 +971,9 @@ class SettingsPage(QWidget):
         self._config.overlay_opacity = self._opacity_slider.value() / 100.0
         self._config.auto_pin_detail_overlay = self._auto_pin_cb.isChecked()
         self._config.overlay_enabled = self._skill_scanner_cb.isChecked()
+        self._config.ocr_capture_backend = (
+            self._ocr_capture_backend.currentData() or "auto"
+        )
         self._config.check_for_updates = self._updates_cb.isChecked()
         self._config.js_utils_path = self._js_path.text()
         self._config.oauth_client_id = self._oauth_client_id.text()

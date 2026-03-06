@@ -12,7 +12,7 @@ from PyQt6.QtCore import (
 from ..notifications.models import (
     Notification,
     SOURCE_GLOBAL, SOURCE_TRADE_CHAT, SOURCE_NEXUS, SOURCE_SYSTEM, SOURCE_STREAM,
-    SOURCE_EXCHANGE,
+    SOURCE_EXCHANGE, SOURCE_TRACKER,
 )
 
 from PyQt6.QtGui import QScreen
@@ -42,6 +42,7 @@ _SOURCE_COLORS = {
     SOURCE_SYSTEM: "#aaaaaa",
     SOURCE_STREAM: "#E05050",
     SOURCE_EXCHANGE: "#b366ff",
+    SOURCE_TRACKER: "#e879f9",
 }
 
 _SOURCE_LABELS = {
@@ -51,6 +52,7 @@ _SOURCE_LABELS = {
     SOURCE_SYSTEM: "System",
     SOURCE_STREAM: "Stream",
     SOURCE_EXCHANGE: "Exchange",
+    SOURCE_TRACKER: "Tracker",
 }
 
 # Corner constants

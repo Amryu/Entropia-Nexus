@@ -65,7 +65,8 @@ PAGE_SKILLS = 3
 PAGE_LOADOUT = 4
 PAGE_INVENTORY = 5
 PAGE_EXCHANGE = 6
-PAGE_SETTINGS = 7
+PAGE_TRACKER = 7
+PAGE_SETTINGS = 8
 
 
 @dataclass
@@ -187,6 +188,7 @@ class MainWindow(QWidget):
             PAGE_LOADOUT: self._create_loadout_page,
             PAGE_INVENTORY: self._create_inventory_page,
             PAGE_EXCHANGE: self._create_exchange_page,
+            PAGE_TRACKER: self._create_tracker_page,
             PAGE_SETTINGS: self._create_settings_page,
         }
 
@@ -294,11 +296,19 @@ class MainWindow(QWidget):
             config=self._config,
         )
 
+    def _create_tracker_page(self):
+        from .pages.tracker_page import TrackerPage
+        return TrackerPage(signals=self._signals, config=self._config,
+                           config_path=self._config_path,
+                           data_client=self._data_client,
+                           event_bus=self._event_bus,
+                           oauth=self._oauth)
+
     def _create_settings_page(self):
         from .pages.settings_page import SettingsPage
         return SettingsPage(config=self._config, config_path=self._config_path,
                             event_bus=self._event_bus, signals=self._signals,
-                            oauth=self._oauth,
+                            oauth=self._oauth, db=self._db,
                             on_show_changelog=self.open_changelog_dialog)
 
     def _on_update_restart(self):

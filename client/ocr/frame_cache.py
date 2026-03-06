@@ -1,8 +1,8 @@
 """Shared frame cache for OCR detectors.
 
-Wraps a single ScreenCapturer and caches the latest PrintWindow result
-with a timestamp.  Multiple detectors polling at different rates can
-share the same cached frame, avoiding redundant GDI captures.
+Wraps a single ScreenCapturer and caches the latest window-capture result
+with a timestamp. Multiple detectors polling at different rates can
+share the same cached frame, avoiding redundant captures.
 
 Also caches the grayscale conversion since multiple detectors need it.
 """
@@ -29,11 +29,11 @@ class SharedFrameCache:
 
     Callers request frames via get_frame(); if the cached frame is fresh
     enough (within max_age_ms), it is returned directly.  Otherwise a new
-    PrintWindow capture is performed and cached.
+    window capture is performed and cached.
     """
 
-    def __init__(self):
-        self._capturer = ScreenCapturer()
+    def __init__(self, capture_backend: str | None = None):
+        self._capturer = ScreenCapturer(capture_backend=capture_backend)
         self._lock = threading.Lock()
         self._frame: Optional[np.ndarray] = None
         self._gray: Optional[np.ndarray] = None
@@ -67,6 +67,15 @@ class SharedFrameCache:
                 self._frame_time = now
                 self._hwnd = hwnd
             return frame
+
+    def set_capture_backend(self, capture_backend: str | None) -> None:
+        """Update capture backend at runtime and clear cached frames."""
+        with self._lock:
+            self._capturer.set_capture_backend(capture_backend)
+            self._frame = None
+            self._gray = None
+            self._frame_time = 0.0
+            self._hwnd = None
 
     def get_frame_gray(self, hwnd: int, max_age_ms: float = 40,
                        geometry: Optional[tuple[int, int, int, int]] = None,

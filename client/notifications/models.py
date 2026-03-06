@@ -13,6 +13,7 @@ SOURCE_NEXUS = "nexus"
 SOURCE_SYSTEM = "system"
 SOURCE_STREAM = "stream"
 SOURCE_EXCHANGE = "exchange"
+SOURCE_TRACKER = "tracker"
 
 
 @dataclass

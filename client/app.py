@@ -284,7 +284,16 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
     # where catchup finishes before the uploader exists.
     # Shared frame cache — all OCR detectors reuse the same PrintWindow captures
     from .ocr.frame_cache import SharedFrameCache
-    frame_cache = SharedFrameCache()
+    frame_cache = SharedFrameCache(capture_backend=config.ocr_capture_backend)
+
+    def _sync_capture_backend(updated_config):
+        if not updated_config:
+            return
+        frame_cache.set_capture_backend(
+            getattr(updated_config, "ocr_capture_backend", "auto"),
+        )
+
+    event_bus.subscribe(EVENT_CONFIG_CHANGED, _sync_capture_backend)
 
     workers = []
     workers.extend(_start_ingestion(config, event_bus, nexus_client, db))
@@ -931,9 +940,15 @@ def _start_ocr_pipeline(config, event_bus, db, frame_cache=None):
         manual_trigger = threading.Event()
 
         def _on_manual_trigger(_data=None):
+            # Force the current OCR loop to restart so the visible page
+            # is scanned again immediately.
+            orchestrator._stop_event.set()
             manual_trigger.set()
 
         def _on_config_changed(_data=None):
+            orchestrator.set_capture_backend(
+                getattr(config, "ocr_capture_backend", "auto"),
+            )
             # Wake OCR thread immediately when scan mode is toggled.
             orchestrator._stop_event.set()
             manual_trigger.set()
@@ -1032,7 +1047,7 @@ def _start_target_lock_detector(config, event_bus, frame_cache=None):
         from .ocr.target_lock_detector import TargetLockDetector
         if frame_cache is None:
             from .ocr.capturer import ScreenCapturer
-            frame_cache = ScreenCapturer()
+            frame_cache = ScreenCapturer(capture_backend=config.ocr_capture_backend)
         detector = TargetLockDetector(config, event_bus, frame_cache)
         detector.start()
         workers.append(detector)
@@ -1051,7 +1066,7 @@ def _start_player_status_detector(config, event_bus, frame_cache=None):
         from .ocr.player_status_detector import PlayerStatusDetector
         if frame_cache is None:
             from .ocr.capturer import ScreenCapturer
-            frame_cache = ScreenCapturer()
+            frame_cache = ScreenCapturer(capture_backend=config.ocr_capture_backend)
         detector = PlayerStatusDetector(config, event_bus, frame_cache)
         detector.start()
         workers.append(detector)
@@ -1070,7 +1085,7 @@ def _start_market_price_detector(config, event_bus, frame_cache=None):
         from .ocr.market_price_detector import MarketPriceDetector
         if frame_cache is None:
             from .ocr.capturer import ScreenCapturer
-            frame_cache = ScreenCapturer()
+            frame_cache = ScreenCapturer(capture_backend=config.ocr_capture_backend)
         detector = MarketPriceDetector(config, event_bus, frame_cache)
         detector.start()
         workers.append(detector)

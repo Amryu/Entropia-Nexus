@@ -1,6 +1,7 @@
 import os
 import sqlite3
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
 
 
@@ -76,6 +77,22 @@ CREATE TABLE IF NOT EXISTS skill_snapshots (
     category TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS local_skill_values (
+    skill_name TEXT PRIMARY KEY,
+    current_points REAL NOT NULL,
+    updated_at TEXT NOT NULL,
+    dirty INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS local_skill_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    imported_at TEXT NOT NULL,
+    skill_name TEXT NOT NULL,
+    old_value REAL,
+    new_value REAL NOT NULL,
+    source TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS parser_state (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     file_path TEXT NOT NULL,
@@ -96,6 +113,10 @@ CREATE INDEX IF NOT EXISTS idx_loot_groups_timestamp ON loot_groups(timestamp);
 CREATE INDEX IF NOT EXISTS idx_globals_timestamp ON globals(timestamp);
 CREATE INDEX IF NOT EXISTS idx_skill_snapshots_timestamp ON skill_snapshots(scan_timestamp);
 CREATE INDEX IF NOT EXISTS idx_skill_snapshots_name ON skill_snapshots(skill_name);
+CREATE INDEX IF NOT EXISTS idx_local_skill_values_updated ON local_skill_values(updated_at);
+CREATE INDEX IF NOT EXISTS idx_local_skill_values_dirty ON local_skill_values(dirty);
+CREATE INDEX IF NOT EXISTS idx_local_skill_history_imported ON local_skill_history(imported_at);
+CREATE INDEX IF NOT EXISTS idx_local_skill_history_name ON local_skill_history(skill_name);
 
 CREATE TABLE IF NOT EXISTS hunt_sessions (
     id TEXT PRIMARY KEY,
@@ -608,6 +629,220 @@ class Database:
                 (scan_timestamp, skill_name, rank, current_points, progress_percent, category)
             )
             self._auto_commit()
+
+    def upsert_local_skill_values(
+        self,
+        skill_values: dict[str, float],
+        *,
+        source: str = "local",
+        dirty: bool = False,
+        imported_at: str | None = None,
+    ) -> int:
+        """Upsert latest local skill values and append change history rows.
+
+        Returns number of rows where value changed (insert/update).
+        """
+        if not skill_values:
+            return 0
+
+        ts = imported_at or datetime.now(timezone.utc).isoformat()
+        changed = 0
+        dirty_int = 1 if dirty else 0
+
+        with self._lock:
+            for skill_name, raw_value in skill_values.items():
+                try:
+                    new_value = float(raw_value)
+                except (TypeError, ValueError):
+                    continue
+
+                cur = self._conn.execute(
+                    "SELECT current_points FROM local_skill_values WHERE skill_name = ?",
+                    (skill_name,),
+                )
+                row = cur.fetchone()
+
+                if row is None:
+                    self._conn.execute(
+                        "INSERT INTO local_skill_values (skill_name, current_points, updated_at, dirty) "
+                        "VALUES (?, ?, ?, ?)",
+                        (skill_name, new_value, ts, dirty_int),
+                    )
+                    self._conn.execute(
+                        "INSERT INTO local_skill_history (imported_at, skill_name, old_value, new_value, source) "
+                        "VALUES (?, ?, ?, ?, ?)",
+                        (ts, skill_name, None, new_value, source),
+                    )
+                    changed += 1
+                    continue
+
+                old_value = float(row[0])
+                value_changed = abs(old_value - new_value) > 1e-9
+                if value_changed:
+                    self._conn.execute(
+                        "UPDATE local_skill_values "
+                        "SET current_points = ?, updated_at = ?, dirty = ? "
+                        "WHERE skill_name = ?",
+                        (new_value, ts, dirty_int, skill_name),
+                    )
+                    self._conn.execute(
+                        "INSERT INTO local_skill_history (imported_at, skill_name, old_value, new_value, source) "
+                        "VALUES (?, ?, ?, ?, ?)",
+                        (ts, skill_name, old_value, new_value, source),
+                    )
+                    changed += 1
+                else:
+                    # Even when the value is unchanged we refresh sync state.
+                    self._conn.execute(
+                        "UPDATE local_skill_values SET updated_at = ?, dirty = ? "
+                        "WHERE skill_name = ?",
+                        (ts, dirty_int, skill_name),
+                    )
+
+            self._auto_commit()
+
+        return changed
+
+    def get_local_skill_values(self) -> dict[str, float]:
+        """Get latest local skill values tracked for sync."""
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT skill_name, current_points "
+                "FROM local_skill_values ORDER BY skill_name"
+            )
+            return {row[0]: float(row[1]) for row in cur.fetchall()}
+
+    def get_dirty_local_skill_values(self) -> dict[str, float]:
+        """Get locally changed values that are pending remote sync."""
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT skill_name, current_points "
+                "FROM local_skill_values WHERE dirty = 1 ORDER BY skill_name"
+            )
+            return {row[0]: float(row[1]) for row in cur.fetchall()}
+
+    def mark_local_skill_values_clean(self, skill_names: list[str] | None = None):
+        """Clear dirty flags for all or specific skills."""
+        with self._lock:
+            if skill_names:
+                placeholders = ",".join("?" for _ in skill_names)
+                self._conn.execute(
+                    f"UPDATE local_skill_values SET dirty = 0 "
+                    f"WHERE skill_name IN ({placeholders})",
+                    tuple(skill_names),
+                )
+            else:
+                self._conn.execute("UPDATE local_skill_values SET dirty = 0")
+            self._auto_commit()
+
+    def get_latest_skill_values(self) -> dict[str, float]:
+        """Get latest known value per skill from local storage.
+
+        Combines local sync state with OCR snapshots.
+        Local sync values override snapshots for overlapping skills.
+        """
+        values = self.get_local_skill_values()
+
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT s.skill_name, s.current_points "
+                "FROM skill_snapshots s "
+                "INNER JOIN ("
+                "  SELECT skill_name, MAX(id) AS max_id "
+                "  FROM skill_snapshots GROUP BY skill_name"
+                ") latest ON latest.max_id = s.id "
+                "ORDER BY s.skill_name"
+            )
+            for row in cur.fetchall():
+                values.setdefault(row[0], float(row[1]))
+
+        return values
+
+    def get_local_skill_history(
+        self,
+        skill_names: list[str] | None = None,
+        from_date: str | None = None,
+        to_date: str | None = None,
+    ) -> list[dict]:
+        """Get local skill history from sync-state changes.
+
+        Returns list of dicts matching server history shape:
+        {imported_at, skill_name, new_value}
+        """
+        sql = (
+            "SELECT imported_at, skill_name, new_value "
+            "FROM local_skill_history WHERE 1=1"
+        )
+        params: list = []
+
+        if skill_names:
+            placeholders = ",".join("?" for _ in skill_names)
+            sql += f" AND skill_name IN ({placeholders})"
+            params.extend(skill_names)
+
+        if from_date:
+            sql += " AND datetime(imported_at) >= datetime(?)"
+            params.append(from_date)
+
+        if to_date:
+            sql += " AND datetime(imported_at) <= datetime(?)"
+            params.append(to_date)
+
+        sql += " ORDER BY datetime(imported_at) DESC, id DESC"
+
+        with self._lock:
+            cur = self._conn.execute(sql, tuple(params))
+            return [
+                {
+                    "imported_at": row[0],
+                    "skill_name": row[1],
+                    "new_value": float(row[2]),
+                }
+                for row in cur.fetchall()
+            ]
+
+    def get_skill_snapshot_history(
+        self,
+        skill_names: list[str] | None = None,
+        from_date: str | None = None,
+        to_date: str | None = None,
+    ) -> list[dict]:
+        """Get local skill history from snapshots.
+
+        Returns list of dicts matching server history shape:
+        {imported_at, skill_name, new_value}
+        """
+        sql = (
+            "SELECT scan_timestamp, skill_name, current_points "
+            "FROM skill_snapshots WHERE 1=1"
+        )
+        params: list = []
+
+        if skill_names:
+            placeholders = ",".join("?" for _ in skill_names)
+            sql += f" AND skill_name IN ({placeholders})"
+            params.extend(skill_names)
+
+        if from_date:
+            sql += " AND datetime(scan_timestamp) >= datetime(?)"
+            params.append(from_date)
+
+        if to_date:
+            sql += " AND datetime(scan_timestamp) <= datetime(?)"
+            params.append(to_date)
+
+        sql += " ORDER BY datetime(scan_timestamp) DESC, id DESC"
+
+        with self._lock:
+            cur = self._conn.execute(sql, tuple(params))
+            return [
+                {
+                    "imported_at": row[0],
+                    "skill_name": row[1],
+                    "new_value": float(row[2]),
+                }
+                for row in cur.fetchall()
+            ]
 
     # Hunt sessions
     def insert_hunt_session(self, session_id: str, start_time: str, loadout_id: str = None,

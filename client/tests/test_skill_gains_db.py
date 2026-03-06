@@ -67,6 +67,23 @@ class TestSkillGainsCompact(unittest.TestCase):
         self.assertIsInstance(ts, int)
         self.assertGreater(ts, 0)
 
+    def test_latest_skill_values_merges_local_state_and_snapshots(self):
+        self.db.insert_skill_snapshot(
+            scan_timestamp="2026-03-01T12:00:00",
+            skill_name="Aim", rank="Expert",
+            current_points=100.0, progress_percent=50.0,
+            category="Combat",
+        )
+        self.db.upsert_local_skill_values(
+            {"Evade": 200.0, "Aim": 150.0},
+            source="test",
+            dirty=False,
+        )
+
+        values = self.db.get_latest_skill_values()
+        self.assertAlmostEqual(values["Aim"], 150.0)   # local overrides snapshot
+        self.assertAlmostEqual(values["Evade"], 200.0)
+
 
 class TestSkillGainsMigration(unittest.TestCase):
     """Test migration from old TEXT-based schema to compact format."""

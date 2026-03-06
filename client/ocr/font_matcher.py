@@ -19,9 +19,9 @@ CAPTURED_DIR = Path("./data/captured_templates")
 
 # Match thresholds for TM_CCOEFF_NORMED (penalizes both extra and missing).
 # STPK templates are matched at native 1x resolution against noise-cleaned
-# grayscale cells; 0.65 accommodates slight rendering differences.
-SKILL_THRESHOLD = 0.65
-RANK_THRESHOLD = 0.65
+# grayscale cells; 0.80 accommodates slight rendering differences.
+SKILL_THRESHOLD = 0.80
+RANK_THRESHOLD = 0.80
 
 # Binary threshold (must match preprocessor)
 BINARY_THRESHOLD = 110

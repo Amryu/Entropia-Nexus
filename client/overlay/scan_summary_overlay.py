@@ -7,13 +7,14 @@ Window-style dark theme as the detail and map overlays.
 
 from __future__ import annotations
 
+import math
 from typing import TYPE_CHECKING, Callable
 
 from PyQt6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QLabel, QWidget, QPushButton, QScrollArea,
     QSizePolicy,
 )
-from PyQt6.QtCore import Qt, QPoint, pyqtSignal
+from PyQt6.QtCore import Qt, QPoint, pyqtSignal, QTimer
 
 from .overlay_widget import OverlayWidget
 from ..ui.icons import svg_icon
@@ -21,7 +22,7 @@ from ..ocr.models import SkillReading, SkillScanResult, ScanProgress
 from ..core.constants import (
     EVENT_SKILL_SCANNED, EVENT_OCR_PROGRESS,
     EVENT_OCR_COMPLETE, EVENT_OCR_PAGE_CHANGED, EVENT_OCR_CANCEL,
-    EVENT_OCR_OVERLAYS_HIDE,
+    EVENT_OCR_OVERLAYS_HIDE, EVENT_OCR_MANUAL_TRIGGER,
 )
 from ..core.logger import get_logger
 
@@ -45,6 +46,10 @@ ACCENT = "#00ccff"
 FOOTER_BG = "rgba(25, 25, 40, 160)"
 WARNING_COLOR = "#f59e0b"
 WARNING_BG = "rgba(245, 158, 11, 20)"
+EXCLUDED_SKILL_NAMES = {"Promoter Rating", "Reputation"}
+SCAN_ACTIVE_COLOR = "#00ccff"
+SCAN_DONE_COLOR = "#55dd88"
+SCAN_IDLE_COLOR = "#777777"
 
 # --- SVG icons ---
 _CLOSE_SVG = (
@@ -61,6 +66,7 @@ _BTN_STYLE = (
     "  background-color: rgba(60, 60, 80, 200);"
     "}"
 )
+_SPINNER_FRAMES = ("|", "/", "-", "\\")
 
 
 class ScanSummaryOverlay(OverlayWidget):
@@ -101,6 +107,10 @@ class ScanSummaryOverlay(OverlayWidget):
         self._skill_rows: dict[str, QWidget] = {}  # skill_name → row widget
         self._warning_count = 0
         self._click_origin: QPoint | None = None
+        self._spinner_idx = 0
+        self._spinner_timer = QTimer(self)
+        self._spinner_timer.setInterval(120)
+        self._spinner_timer.timeout.connect(self._tick_spinner)
 
         # Auto-resize to content (required for minify to shrink the window)
         self.layout().setSizeConstraint(QVBoxLayout.SizeConstraint.SetFixedSize)
@@ -180,6 +190,17 @@ class ScanSummaryOverlay(OverlayWidget):
         footer_layout.addWidget(self._total_label)
         footer_layout.addStretch()
 
+        self._scan_status = QLabel("")
+        self._scan_status.setFixedWidth(16)
+        self._scan_status.setAlignment(
+            Qt.AlignmentFlag.AlignCenter | Qt.AlignmentFlag.AlignVCenter
+        )
+        self._scan_status.setStyleSheet(
+            f"color: {SCAN_IDLE_COLOR}; font-size: 11px; background: transparent;"
+        )
+        self._scan_status.setToolTip("Idle")
+        footer_layout.addWidget(self._scan_status)
+
         clear_color = "#ff6b6b"
         self._clear_btn = QPushButton("Clear")
         self._clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -190,6 +211,17 @@ class ScanSummaryOverlay(OverlayWidget):
         )
         self._clear_btn.clicked.connect(self._on_clear)
         footer_layout.addWidget(self._clear_btn)
+
+        self._rescan_btn = QPushButton("Re-Scan")
+        self._rescan_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._rescan_btn.setStyleSheet(
+            f"color: {TEXT_COLOR}; font-size: 10px;"
+            f" background: transparent; border: 1px solid {TEXT_DIM};"
+            " border-radius: 3px; padding: 2px 8px;"
+        )
+        self._rescan_btn.setToolTip("Scan the currently visible Skills page again")
+        self._rescan_btn.clicked.connect(self._on_rescan)
+        footer_layout.addWidget(self._rescan_btn)
 
         self._complete_btn = QPushButton("Mark Complete")
         self._complete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -317,6 +349,7 @@ class ScanSummaryOverlay(OverlayWidget):
     def _on_progress(self, progress: ScanProgress):
         self._total_skill_count = progress.total_skills_expected
         self._update_counts()
+        self._set_scan_done()
 
         if not self._dismissed and not self.wants_visible:
             self.set_wants_visible(True)
@@ -325,17 +358,19 @@ class ScanSummaryOverlay(OverlayWidget):
         """Skills window closed or lost — hide overlay (re-shows when scan resumes)."""
         # Allow auto-show again once the Skills window is reopened.
         self._dismissed = False
+        self._set_scan_idle()
         self.set_wants_visible(False)
 
     def _on_page_changed(self, _data):
         # Keep accumulating across pages — don't clear
-        pass
+        self._set_scan_scanning()
 
     def _on_complete(self, result: SkillScanResult):
         self._resort_and_rebuild_rows()
         if self._skills:
             self._set_complete_enabled(True)
         self._update_counts()
+        self._set_scan_done()
 
     # --- Compact skill row ---
 
@@ -396,9 +431,14 @@ class ScanSummaryOverlay(OverlayWidget):
         self._update_complete_btn_style()
 
     def _update_counts(self):
-        self._warning_count = sum(1 for s in self._skills if s.is_mismatch)
+        counted_skills = [
+            s for s in self._skills
+            if s.skill_name not in EXCLUDED_SKILL_NAMES
+        ]
+
+        self._warning_count = sum(1 for s in counted_skills if s.is_mismatch)
         self._count_label.setText(
-            f"{len(self._skills)}/{self._total_skill_count} skills read"
+            f"{len(counted_skills)}/{self._total_skill_count} skills read"
         )
         if self._warning_count > 0:
             self._warning_label.setText(f"{self._warning_count} warnings")
@@ -406,8 +446,8 @@ class ScanSummaryOverlay(OverlayWidget):
         else:
             self._warning_label.setVisible(False)
 
-        total = sum(s.current_points for s in self._skills)
-        self._total_label.setText(f"Total: {total:.2f}")
+        total = sum(math.trunc(s.current_points) for s in counted_skills)
+        self._total_label.setText(f"Total: {total}")
 
     def _on_close(self):
         self._dismissed = True
@@ -417,6 +457,11 @@ class ScanSummaryOverlay(OverlayWidget):
         self._event_bus.publish(EVENT_OCR_CANCEL, None)
         self.scan_entries_cleared.emit()
         self.reset()
+        self.set_wants_visible(True)
+
+    def _on_rescan(self):
+        self._set_scan_scanning()
+        self._event_bus.publish(EVENT_OCR_MANUAL_TRIGGER, None)
         self.set_wants_visible(True)
 
     def _on_mark_complete(self):
@@ -432,15 +477,53 @@ class ScanSummaryOverlay(OverlayWidget):
         self._skill_set.clear()
         self._skill_rows.clear()
         self._warning_count = 0
-        # Clear row widgets (keep the stretch spacer at the end)
-        while self._skill_list_layout.count() > 1:
-            item = self._skill_list_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+        # Clear row widgets (keep the stretch spacer at the end) without repaint churn.
+        self._skill_list_widget.setUpdatesEnabled(False)
+        try:
+            while self._skill_list_layout.count() > 1:
+                item = self._skill_list_layout.takeAt(0)
+                if item.widget():
+                    item.widget().deleteLater()
+        finally:
+            self._skill_list_widget.setUpdatesEnabled(True)
+            self._skill_list_widget.update()
         self._update_counts()
+        self._set_scan_idle()
         self._clear_btn.setVisible(True)
         self._clear_btn.setEnabled(True)
         self._set_complete_enabled(False)
+
+    def _tick_spinner(self):
+        self._spinner_idx = (self._spinner_idx + 1) % len(_SPINNER_FRAMES)
+        self._scan_status.setText(_SPINNER_FRAMES[self._spinner_idx])
+
+    def _set_scan_scanning(self):
+        if not self._spinner_timer.isActive():
+            self._spinner_idx = 0
+            self._scan_status.setText(_SPINNER_FRAMES[0])
+            self._spinner_timer.start()
+        self._scan_status.setStyleSheet(
+            f"color: {SCAN_ACTIVE_COLOR}; font-size: 11px; background: transparent;"
+        )
+        self._scan_status.setToolTip("Scanning page...")
+
+    def _set_scan_done(self):
+        if self._spinner_timer.isActive():
+            self._spinner_timer.stop()
+        self._scan_status.setText("✓")
+        self._scan_status.setStyleSheet(
+            f"color: {SCAN_DONE_COLOR}; font-size: 11px; background: transparent;"
+        )
+        self._scan_status.setToolTip("Page scan complete")
+
+    def _set_scan_idle(self):
+        if self._spinner_timer.isActive():
+            self._spinner_timer.stop()
+        self._scan_status.setText("")
+        self._scan_status.setStyleSheet(
+            f"color: {SCAN_IDLE_COLOR}; font-size: 11px; background: transparent;"
+        )
+        self._scan_status.setToolTip("Idle")
 
     def _resort_and_rebuild_rows(self):
         # Warnings first; otherwise highest points first.
@@ -449,21 +532,22 @@ class ScanSummaryOverlay(OverlayWidget):
         )
 
         self._skill_list_widget.setUpdatesEnabled(False)
-        for row in self._skill_rows.values():
-            self._skill_list_layout.removeWidget(row)
+        try:
+            for row in self._skill_rows.values():
+                self._skill_list_layout.removeWidget(row)
 
-        for reading in self._skills:
-            row = self._skill_rows.get(reading.skill_name)
-            if row is None:
-                row = self._make_skill_row(reading)
-                self._skill_rows[reading.skill_name] = row
-            else:
-                self._update_skill_row(row, reading)
-            idx = self._skill_list_layout.count() - 1
-            self._skill_list_layout.insertWidget(idx, row)
-
-        self._skill_list_widget.setUpdatesEnabled(True)
-        self._skill_list_widget.update()
+            for reading in self._skills:
+                row = self._skill_rows.get(reading.skill_name)
+                if row is None:
+                    row = self._make_skill_row(reading)
+                    self._skill_rows[reading.skill_name] = row
+                else:
+                    self._update_skill_row(row, reading)
+                idx = self._skill_list_layout.count() - 1
+                self._skill_list_layout.insertWidget(idx, row)
+        finally:
+            self._skill_list_widget.setUpdatesEnabled(True)
+            self._skill_list_widget.update()
 
     def _update_skill_row(self, row: QWidget, reading: SkillReading):
         if reading.is_mismatch:
@@ -503,6 +587,7 @@ class ScanSummaryOverlay(OverlayWidget):
 
     def stop(self):
         """Unsubscribe from events."""
+        self._spinner_timer.stop()
         self._event_bus.unsubscribe(EVENT_SKILL_SCANNED, self._cb_skill)
         self._event_bus.unsubscribe(EVENT_OCR_PROGRESS, self._cb_progress)
         self._event_bus.unsubscribe(EVENT_OCR_COMPLETE, self._cb_complete)
