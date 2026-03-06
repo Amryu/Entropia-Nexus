@@ -8,6 +8,7 @@
 
   export let location = null;  // The selected location object (or null)
   export let isNew = false;    // Whether this is a newly drawn shape
+  export let readOnly = false; // If true, all fields are disabled (inspect only)
   export let drawnShapeData = null;  // { shape, data, center } from drawing
   /** @type {'admin' | 'public'} */
   export let mode = 'admin';
@@ -510,16 +511,16 @@
   </div>
 {:else}
   <div class="editor-container">
-    <h3 class="editor-title">{isNew ? 'New Location' : `Edit: ${location?.Name || ''}`}</h3>
+    <h3 class="editor-title">{isNew ? 'New Location' : readOnly ? (location?.Name || '') : `Edit: ${location?.Name || ''}`}</h3>
 
     <div class="field-group">
       <span class="field-label">Name</span>
-      <input class="field-input" type="text" bind:value={name} placeholder="Location name" />
+      <input class="field-input" type="text" bind:value={name} placeholder="Location name" disabled={readOnly} />
     </div>
 
     <div class="field-group">
       <span class="field-label">Type</span>
-      <select class="field-input" bind:value={locationType}>
+      <select class="field-input" bind:value={locationType} disabled={readOnly}>
         {#each LOCATION_TYPES as t}
           <option value={t}>{t}</option>
         {/each}
@@ -530,9 +531,9 @@
     <div class="field-group">
       <span class="field-label">Coordinates</span>
       <div class="coord-row">
-        <input class="field-input" type="number" bind:value={longitude} placeholder="Lon" title="Longitude" />
-        <input class="field-input" type="number" bind:value={latitude} placeholder="Lat" title="Latitude" />
-        <input class="field-input" type="number" bind:value={altitude} placeholder="Alt" title="Altitude" />
+        <input class="field-input" type="number" bind:value={longitude} placeholder="Lon" title="Longitude" disabled={readOnly} />
+        <input class="field-input" type="number" bind:value={latitude} placeholder="Lat" title="Latitude" disabled={readOnly} />
+        <input class="field-input" type="number" bind:value={altitude} placeholder="Alt" title="Altitude" disabled={readOnly} />
       </div>
     </div>
 
@@ -541,7 +542,7 @@
 
       <div class="field-group">
         <span class="field-label">Area Type</span>
-        <select class="field-input" bind:value={areaType}>
+        <select class="field-input" bind:value={areaType} disabled={readOnly}>
           {#each AREA_TYPES as t}
             <option value={t}>{t}</option>
           {/each}
@@ -550,7 +551,7 @@
 
       <div class="field-group">
         <span class="field-label">Shape</span>
-        <select class="field-input" bind:value={shape}>
+        <select class="field-input" bind:value={shape} disabled={readOnly}>
           {#each SHAPES as s}
             <option value={s}>{s}</option>
           {/each}
@@ -561,54 +562,56 @@
         <div class="field-group">
           <span class="field-label">Center</span>
           <div class="coord-row" style="grid-template-columns: 1fr 1fr;">
-            <input class="field-input" type="number" bind:value={circleX} placeholder="X" title="Center X" />
-            <input class="field-input" type="number" bind:value={circleY} placeholder="Y" title="Center Y" />
+            <input class="field-input" type="number" bind:value={circleX} placeholder="X" title="Center X" disabled={readOnly} />
+            <input class="field-input" type="number" bind:value={circleY} placeholder="Y" title="Center Y" disabled={readOnly} />
           </div>
         </div>
         <div class="field-group">
           <span class="field-label">Radius</span>
-          <input class="field-input" type="number" bind:value={circleRadius} min="1" placeholder="Radius" title="Radius" />
+          <input class="field-input" type="number" bind:value={circleRadius} min="1" placeholder="Radius" title="Radius" disabled={readOnly} />
         </div>
       {:else if shape === 'Rectangle'}
         <div class="field-group">
           <span class="field-label">Origin</span>
           <div class="coord-row" style="grid-template-columns: 1fr 1fr;">
-            <input class="field-input" type="number" bind:value={rectX} placeholder="X" title="Origin X" />
-            <input class="field-input" type="number" bind:value={rectY} placeholder="Y" title="Origin Y" />
+            <input class="field-input" type="number" bind:value={rectX} placeholder="X" title="Origin X" disabled={readOnly} />
+            <input class="field-input" type="number" bind:value={rectY} placeholder="Y" title="Origin Y" disabled={readOnly} />
           </div>
         </div>
         <div class="field-group">
           <span class="field-label">Size</span>
           <div class="coord-row" style="grid-template-columns: 1fr 1fr;">
-            <input class="field-input" type="number" bind:value={rectWidth} min="1" placeholder="Width" title="Width" />
-            <input class="field-input" type="number" bind:value={rectHeight} min="1" placeholder="Height" title="Height" />
+            <input class="field-input" type="number" bind:value={rectWidth} min="1" placeholder="Width" title="Width" disabled={readOnly} />
+            <input class="field-input" type="number" bind:value={rectHeight} min="1" placeholder="Height" title="Height" disabled={readOnly} />
           </div>
         </div>
       {:else}
         <div class="field-group">
           <span class="field-label">Shape Data (JSON)</span>
-          <textarea class="field-input" bind:value={shapeDataJson} rows="4"></textarea>
+          <textarea class="field-input" bind:value={shapeDataJson} rows="4" disabled={readOnly}></textarea>
         </div>
       {/if}
 
       {#if isMobArea}
-        <button class="btn btn-mob" on:click={handleEditMobArea}>
-          Edit Mob Spawns
-        </button>
+        {#if !readOnly}
+          <button class="btn btn-mob" on:click={handleEditMobArea}>
+            Edit Mob Spawns
+          </button>
+        {/if}
       {/if}
 
       {#if isLandArea}
         <div class="section-divider"></div>
         <div class="field-group">
           <span class="field-label">Land Area Owner</span>
-          <input class="field-input" type="text" bind:value={landAreaOwner} placeholder="Player name (resolved on approval)" />
+          <input class="field-input" type="text" bind:value={landAreaOwner} placeholder="Player name (resolved on approval)" disabled={readOnly} />
         </div>
         <div class="field-group">
           <span class="field-label">Tax Rates (%)</span>
           <div class="coord-row">
-            <input class="field-input" type="number" bind:value={taxRateHunting} min="0" max="5" step="0.1" placeholder="Hunt" title="Hunting Tax %" />
-            <input class="field-input" type="number" bind:value={taxRateMining} min="0" max="5" step="0.1" placeholder="Mine" title="Mining Tax %" />
-            <input class="field-input" type="number" bind:value={taxRateShops} min="0" max="5" step="0.1" placeholder="Shop" title="Shops Tax %" />
+            <input class="field-input" type="number" bind:value={taxRateHunting} min="0" max="5" step="0.1" placeholder="Hunt" title="Hunting Tax %" disabled={readOnly} />
+            <input class="field-input" type="number" bind:value={taxRateMining} min="0" max="5" step="0.1" placeholder="Mine" title="Mining Tax %" disabled={readOnly} />
+            <input class="field-input" type="number" bind:value={taxRateShops} min="0" max="5" step="0.1" placeholder="Shop" title="Shops Tax %" disabled={readOnly} />
           </div>
         </div>
       {/if}
@@ -625,11 +628,12 @@
           options={parentOptions}
           placeholder="Search parent area..."
           limit={15}
+          disabled={readOnly}
           on:change={(e) => parentLocationName = e.detail.value}
           on:select={(e) => parentLocationName = e.detail.data?.label || e.detail.value}
         />
       {:else}
-        <input class="field-input" type="text" bind:value={parentLocationName} placeholder="Parent area name" />
+        <input class="field-input" type="text" bind:value={parentLocationName} placeholder="Parent area name" disabled={readOnly} />
       {/if}
     </div>
 
@@ -645,23 +649,25 @@
       </div>
     {/if}
 
-    <div class="actions">
-      <button class="btn btn-primary" on:click={handleSave} disabled={isLocked}>
-        {isNew ? 'Add Location' : 'Save Changes'}
-      </button>
-      {#if !isNew && location?._isPendingAdd}
-        <button class="btn btn-danger" on:click={handleRemovePendingAdd}>
-          Remove
+    {#if !readOnly}
+      <div class="actions">
+        <button class="btn btn-primary" on:click={handleSave} disabled={isLocked}>
+          {isNew ? 'Add Location' : 'Save Changes'}
         </button>
-      {:else if !isNew}
-        <button class="btn btn-danger" on:click={handleDelete} disabled={isLocked}
-          title={mode === 'public' ? 'Copies location details to your clipboard — send this to an admin if you believe this location should be deleted' : null}
-        >
-          {mode === 'public' ? 'Copy Delete Info' : 'Mark for Deletion'}
-        </button>
-        <button class="btn" on:click={handleRevert}>Revert Changes</button>
-      {/if}
-    </div>
+        {#if !isNew && location?._isPendingAdd}
+          <button class="btn btn-danger" on:click={handleRemovePendingAdd}>
+            Remove
+          </button>
+        {:else if !isNew}
+          <button class="btn btn-danger" on:click={handleDelete} disabled={isLocked}
+            title={mode === 'public' ? 'Copies location details to your clipboard — send this to an admin if you believe this location should be deleted' : null}
+          >
+            {mode === 'public' ? 'Copy Delete Info' : 'Mark for Deletion'}
+          </button>
+          <button class="btn" on:click={handleRevert}>Revert Changes</button>
+        {/if}
+      </div>
+    {/if}
 
     <!-- Related Entities (read-only, collapsible) -->
     {#if !isNew && location?.Id}

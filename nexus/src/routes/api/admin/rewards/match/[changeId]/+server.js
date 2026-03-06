@@ -19,7 +19,8 @@ export async function GET({ params, locals }) {
   }
 
   const dataKeys = await getChangedDataKeys(change);
-  const rules = await getMatchingRules(change.entity, change.type, dataKeys);
+  const subType = change.entity === 'Location' ? change.data?.Properties?.Type : null;
+  const rules = await getMatchingRules(change.entity, change.type, dataKeys, subType);
 
   return json({ rules, changed_keys: dataKeys });
 }
