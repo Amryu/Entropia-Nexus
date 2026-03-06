@@ -68,6 +68,22 @@ TIME_PERIODS = [
 ]
 
 
+class NumericTableWidgetItem(QTableWidgetItem):
+    """Table item with numeric sorting semantics."""
+
+    def __init__(self, text: str, value: float):
+        super().__init__(text)
+        self._value = float(value)
+
+    def __lt__(self, other):
+        if isinstance(other, NumericTableWidgetItem):
+            return self._value < other._value
+        try:
+            return self._value < float(other.text())
+        except Exception:
+            return super().__lt__(other)
+
+
 class SkillCard(QFrame):
     """Compact skill card for grid view."""
 
@@ -646,8 +662,12 @@ class SkillsPage(QWidget):
             0, QHeaderView.ResizeMode.Stretch
         )
         self._scan_results_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self._scan_results_table.setSortingEnabled(True)
+        self._scan_results_table.horizontalHeader().setSortIndicatorShown(True)
         self._scan_warning_count = 0
-        self._scan_skill_rows: dict[str, int] = {}  # skill_name → row index
+        self._scan_skill_rows: dict[str, QTableWidgetItem] = {}
+        self._scan_skill_warnings: dict[str, bool] = {}
+        self._suppress_next_scan_complete = False
         results_layout.addWidget(self._scan_results_table)
 
         layout.addWidget(self._scan_results_group)
@@ -1332,36 +1352,48 @@ class SkillsPage(QWidget):
 
     def _on_skill_scanned(self, reading):
         """Handle a single skill being scanned — add or update in the table."""
-        # Deduplicate: update existing row if skill already scanned
-        if reading.skill_name in self._scan_skill_rows:
-            row = self._scan_skill_rows[reading.skill_name]
+        self._suppress_next_scan_complete = False
+        sorting_enabled = self._scan_results_table.isSortingEnabled()
+        header = self._scan_results_table.horizontalHeader()
+        sort_col = header.sortIndicatorSection()
+        sort_order = header.sortIndicatorOrder()
+        if sorting_enabled:
+            self._scan_results_table.setSortingEnabled(False)
+
+        name_item = self._scan_skill_rows.get(reading.skill_name)
+        if name_item is not None:
+            row = name_item.row()
         else:
             row = self._scan_results_table.rowCount()
             self._scan_results_table.setRowCount(row + 1)
-            self._scan_skill_rows[reading.skill_name] = row
+            name_item = QTableWidgetItem(reading.skill_name)
+            self._scan_results_table.setItem(row, 0, name_item)
+            self._scan_skill_rows[reading.skill_name] = name_item
 
-        self._scan_results_table.setItem(
-            row, 0, QTableWidgetItem(reading.skill_name)
-        )
+        self._scan_results_table.setItem(row, 0, name_item)
         self._scan_results_table.setItem(row, 1, QTableWidgetItem(reading.rank))
-        self._scan_results_table.setItem(
-            row, 2, QTableWidgetItem(str(reading.rank_threshold))
-        )
-        self._scan_results_table.setItem(
-            row, 3, QTableWidgetItem(f"{reading.current_points:.2f}")
-        )
+        threshold_item = NumericTableWidgetItem(str(reading.rank_threshold), reading.rank_threshold)
+        threshold_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self._scan_results_table.setItem(row, 2, threshold_item)
+        points_item = NumericTableWidgetItem(f"{reading.current_points:.2f}", reading.current_points)
+        points_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self._scan_results_table.setItem(row, 3, points_item)
 
-        # Highlight mismatch rows in amber
-        if reading.is_mismatch:
-            from PyQt6.QtGui import QColor
-            warning = QColor(245, 158, 11)
-            for col in range(4):
-                item = self._scan_results_table.item(row, col)
-                if item:
-                    item.setForeground(warning)
-            self._scan_warning_count += 1
+        self._scan_skill_warnings[reading.skill_name] = bool(reading.is_mismatch)
+        self._scan_warning_count = sum(1 for warned in self._scan_skill_warnings.values() if warned)
 
-        self._scan_results_table.scrollToBottom()
+        warning_color = QColor(245, 158, 11)
+        default_color = self.palette().color(self.foregroundRole())
+        row_color = warning_color if reading.is_mismatch else default_color
+        for col in range(4):
+            item = self._scan_results_table.item(row, col)
+            if item:
+                item.setForeground(row_color)
+
+        if sorting_enabled:
+            self._scan_results_table.setSortingEnabled(True)
+            if sort_col >= 0:
+                self._scan_results_table.sortItems(sort_col, sort_order)
 
         # Update group title with count
         count = len(self._scan_skill_rows)
@@ -1373,6 +1405,16 @@ class SkillsPage(QWidget):
         # Update skill value in the manager for live card refresh
         self._manager._skill_values[reading.skill_name] = reading.current_points
 
+    def clear_scan_results(self):
+        """Clear the Scanning tab result table and counters."""
+        self._scan_results_table.setRowCount(0)
+        self._scan_skill_rows.clear()
+        self._scan_skill_warnings.clear()
+        self._scan_warning_count = 0
+        self._suppress_next_scan_complete = True
+        self._scan_results_group.setTitle("Scan Results")
+        self._scan_info_label.setText("")
+
     def _on_ocr_page_changed(self, _data):
         """Page changed — keep accumulating (don't clear)."""
         pass
@@ -1382,6 +1424,10 @@ class SkillsPage(QWidget):
         self._manual_scan_btn.setEnabled(
             not getattr(self._config, "ocr_auto_scan_enabled", True)
         )
+
+        if self._suppress_next_scan_complete:
+            self._suppress_next_scan_complete = False
+            return
 
         # Table is already populated by _on_skill_scanned — just update counts
         self._scan_results_group.setTitle(

@@ -75,6 +75,7 @@ class ScanSummaryOverlay(OverlayWidget):
 
     # Outbound
     scan_marked_complete = pyqtSignal(list)  # list[SkillReading]
+    scan_entries_cleared = pyqtSignal()
 
     def __init__(
         self,
@@ -179,16 +180,16 @@ class ScanSummaryOverlay(OverlayWidget):
         footer_layout.addWidget(self._total_label)
         footer_layout.addStretch()
 
-        cancel_color = "#ff6b6b"
-        self._cancel_btn = QPushButton("Cancel")
-        self._cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._cancel_btn.setStyleSheet(
-            f"color: {cancel_color}; font-size: 10px;"
-            f" background: transparent; border: 1px solid {cancel_color};"
+        clear_color = "#ff6b6b"
+        self._clear_btn = QPushButton("Clear")
+        self._clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._clear_btn.setStyleSheet(
+            f"color: {clear_color}; font-size: 10px;"
+            f" background: transparent; border: 1px solid {clear_color};"
             " border-radius: 3px; padding: 2px 8px;"
         )
-        self._cancel_btn.clicked.connect(self._on_cancel)
-        footer_layout.addWidget(self._cancel_btn)
+        self._clear_btn.clicked.connect(self._on_clear)
+        footer_layout.addWidget(self._clear_btn)
 
         self._complete_btn = QPushButton("Mark Complete")
         self._complete_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -291,40 +292,18 @@ class ScanSummaryOverlay(OverlayWidget):
 
     def _on_skill(self, reading: SkillReading):
         if reading.skill_name in self._skill_set:
-            # Re-scan: update existing reading and row widget
+            # Re-scan: update existing reading
             for i, s in enumerate(self._skills):
                 if s.skill_name == reading.skill_name:
-                    old_mismatch = s.is_mismatch
                     self._skills[i] = reading
-                    if old_mismatch and not reading.is_mismatch:
-                        self._warning_count = max(0, self._warning_count - 1)
-                    elif not old_mismatch and reading.is_mismatch:
-                        self._warning_count += 1
                     break
-            # Replace the row widget in-place
-            old_row = self._skill_rows.get(reading.skill_name)
-            if old_row is not None:
-                idx = self._skill_list_layout.indexOf(old_row)
-                if idx >= 0:
-                    self._skill_list_layout.removeWidget(old_row)
-                    old_row.deleteLater()
-                    new_row = self._make_skill_row(reading)
-                    self._skill_list_layout.insertWidget(idx, new_row)
-                    self._skill_rows[reading.skill_name] = new_row
+            self._resort_and_rebuild_rows()
             self._update_counts()
             return
 
         self._skill_set.add(reading.skill_name)
         self._skills.append(reading)
-
-        if reading.is_mismatch:
-            self._warning_count += 1
-
-        # Insert row before the stretch spacer
-        row = self._make_skill_row(reading)
-        idx = self._skill_list_layout.count() - 1
-        self._skill_list_layout.insertWidget(idx, row)
-        self._skill_rows[reading.skill_name] = row
+        self._resort_and_rebuild_rows()
 
         self._update_counts()
 
@@ -344,6 +323,8 @@ class ScanSummaryOverlay(OverlayWidget):
 
     def _on_overlays_hide(self, _data):
         """Skills window closed or lost — hide overlay (re-shows when scan resumes)."""
+        # Allow auto-show again once the Skills window is reopened.
+        self._dismissed = False
         self.set_wants_visible(False)
 
     def _on_page_changed(self, _data):
@@ -351,7 +332,7 @@ class ScanSummaryOverlay(OverlayWidget):
         pass
 
     def _on_complete(self, result: SkillScanResult):
-        self._cancel_btn.setVisible(False)
+        self._resort_and_rebuild_rows()
         if self._skills:
             self._set_complete_enabled(True)
         self._update_counts()
@@ -431,6 +412,7 @@ class ScanSummaryOverlay(OverlayWidget):
         self._update_complete_btn_style()
 
     def _update_counts(self):
+        self._warning_count = sum(1 for s in self._skills if s.is_mismatch)
         self._count_label.setText(
             f"{len(self._skills)}/{self._total_skill_count} skills read"
         )
@@ -447,20 +429,18 @@ class ScanSummaryOverlay(OverlayWidget):
         self._dismissed = True
         self.set_wants_visible(False)
 
-    def _on_cancel(self):
+    def _on_clear(self):
         self._event_bus.publish(EVENT_OCR_CANCEL, None)
-        self._dismissed = True
+        self.scan_entries_cleared.emit()
         self.reset()
-        self.set_wants_visible(False)
+        self.set_wants_visible(True)
 
     def _on_mark_complete(self):
-        # Stop any ongoing scan
-        if self._cancel_btn.isVisible():
-            self._event_bus.publish(EVENT_OCR_CANCEL, None)
+        self._event_bus.publish(EVENT_OCR_CANCEL, {"pause_until_reopen": True})
         self.scan_marked_complete.emit(list(self._skills))
-        self._dismissed = True
+        self.scan_entries_cleared.emit()
         self.reset()
-        self.set_wants_visible(False)
+        self.set_wants_visible(True)
 
     def reset(self):
         """Reset state for a new scan."""
@@ -474,9 +454,27 @@ class ScanSummaryOverlay(OverlayWidget):
             if item.widget():
                 item.widget().deleteLater()
         self._update_counts()
-        self._cancel_btn.setVisible(True)
-        self._cancel_btn.setEnabled(True)
+        self._clear_btn.setVisible(True)
+        self._clear_btn.setEnabled(True)
         self._set_complete_enabled(False)
+
+    def _resort_and_rebuild_rows(self):
+        # Warnings first; otherwise highest points first.
+        self._skills.sort(
+            key=lambda s: (0 if s.is_mismatch else 1, -s.current_points, s.skill_name.lower())
+        )
+
+        while self._skill_list_layout.count() > 1:
+            item = self._skill_list_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        self._skill_rows.clear()
+        for reading in self._skills:
+            row = self._make_skill_row(reading)
+            idx = self._skill_list_layout.count() - 1
+            self._skill_list_layout.insertWidget(idx, row)
+            self._skill_rows[reading.skill_name] = row
 
     # --- Cleanup ---
 
