@@ -343,47 +343,31 @@ class ScanSummaryOverlay(OverlayWidget):
         row = QWidget()
         row.setFixedHeight(18)
 
-        if reading.is_mismatch:
-            row.setStyleSheet(
-                f"background-color: {WARNING_BG}; border-radius: 2px;"
-            )
-        else:
-            row.setStyleSheet("background: transparent;")
-
         layout = QHBoxLayout(row)
         layout.setContentsMargins(4, 0, 4, 0)
         layout.setSpacing(8)
 
-        text_color = WARNING_COLOR if reading.is_mismatch else TEXT_COLOR
-
         name = QLabel(reading.skill_name)
-        name.setStyleSheet(
-            f"color: {text_color}; font-size: 10px; background: transparent;"
-        )
         name.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         layout.addWidget(name, 1)
 
         rank = QLabel(reading.rank)
-        rank.setStyleSheet(
-            f"color: {TEXT_DIM}; font-size: 10px; background: transparent;"
-        )
         rank.setFixedWidth(80)
         layout.addWidget(rank)
 
-        points_text = f"{reading.current_points:.2f}"
-        if reading.estimated_points > 0 and reading.current_points <= 10000:
-            diff = reading.current_points - reading.estimated_points
-            sign = "+" if diff >= 0 else ""
-            points_text += f" ({sign}{diff:.0f})"
-        points = QLabel(points_text)
-        points.setStyleSheet(
-            f"color: {text_color}; font-size: 10px; background: transparent;"
-        )
+        points = QLabel("")
         points.setFixedWidth(105)
         points.setAlignment(
             Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
         )
         layout.addWidget(points)
+
+        # Cache label handles for in-place updates.
+        row._name_label = name
+        row._rank_label = rank
+        row._points_label = points
+
+        self._update_skill_row(row, reading)
 
         return row
 
@@ -464,17 +448,56 @@ class ScanSummaryOverlay(OverlayWidget):
             key=lambda s: (0 if s.is_mismatch else 1, -s.current_points, s.skill_name.lower())
         )
 
-        while self._skill_list_layout.count() > 1:
-            item = self._skill_list_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+        self._skill_list_widget.setUpdatesEnabled(False)
+        for row in self._skill_rows.values():
+            self._skill_list_layout.removeWidget(row)
 
-        self._skill_rows.clear()
         for reading in self._skills:
-            row = self._make_skill_row(reading)
+            row = self._skill_rows.get(reading.skill_name)
+            if row is None:
+                row = self._make_skill_row(reading)
+                self._skill_rows[reading.skill_name] = row
+            else:
+                self._update_skill_row(row, reading)
             idx = self._skill_list_layout.count() - 1
             self._skill_list_layout.insertWidget(idx, row)
-            self._skill_rows[reading.skill_name] = row
+
+        self._skill_list_widget.setUpdatesEnabled(True)
+        self._skill_list_widget.update()
+
+    def _update_skill_row(self, row: QWidget, reading: SkillReading):
+        if reading.is_mismatch:
+            row.setStyleSheet(
+                f"background-color: {WARNING_BG}; border-radius: 2px;"
+            )
+        else:
+            row.setStyleSheet("background: transparent;")
+
+        text_color = WARNING_COLOR if reading.is_mismatch else TEXT_COLOR
+
+        name = row._name_label
+        name.setText(reading.skill_name)
+        name.setStyleSheet(
+            f"color: {text_color}; font-size: 10px; background: transparent;"
+        )
+
+        rank = row._rank_label
+        rank.setText(reading.rank)
+        rank.setStyleSheet(
+            f"color: {TEXT_DIM}; font-size: 10px; background: transparent;"
+        )
+
+        points_text = f"{reading.current_points:.2f}"
+        if reading.estimated_points > 0 and reading.current_points <= 10000:
+            diff = reading.current_points - reading.estimated_points
+            sign = "+" if diff >= 0 else ""
+            points_text += f" ({sign}{diff:.0f})"
+
+        points = row._points_label
+        points.setText(points_text)
+        points.setStyleSheet(
+            f"color: {text_color}; font-size: 10px; background: transparent;"
+        )
 
     # --- Cleanup ---
 
