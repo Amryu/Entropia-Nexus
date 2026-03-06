@@ -18,6 +18,12 @@
   let contributorSearch = '';
   let expandedContributor = null;
   let contributorDetail = null;
+  let showRetroAssignForm = false;
+  let isRetroAssigning = false;
+  let isLoadingRetroRules = false;
+  let retroAssignTarget = null;
+  let retroMatchingRules = [];
+  let retroRewardForm = getEmptyRetroRewardForm();
 
   // Rules tab
   let rules = [];
@@ -36,6 +42,10 @@
 
   function getEmptyRuleForm() {
     return { name: '', description: '', category: '', entities: '', change_type: '', data_fields: '', min_amount: '', max_amount: '', contribution_score: '', sort_order: '0' };
+  }
+
+  function getEmptyRetroRewardForm() {
+    return { rule_id: '', amount: '', contribution_score: '', note: '' };
   }
 
   onMount(() => {
@@ -70,11 +80,15 @@
     }
   }
 
-  async function loadContributorDetail(userId) {
-    if (expandedContributor === userId) {
+  async function loadContributorDetail(userId, forceReload = false) {
+    if (!forceReload && expandedContributor === userId) {
       expandedContributor = null;
       contributorDetail = null;
+      closeRetroAssignForm();
       return;
+    }
+    if (!forceReload) {
+      closeRetroAssignForm();
     }
     expandedContributor = userId;
     contributorDetail = null;
@@ -82,7 +96,12 @@
       const res = await fetch(`/api/admin/rewards/contributors/${userId}`);
       if (!res.ok) return;
       const data = await res.json();
-      contributorDetail = { rewards: data.rewards || [], payouts: data.payouts || [] };
+      contributorDetail = {
+        user: data.user || null,
+        rewards: data.rewards || [],
+        payouts: data.payouts || [],
+        eligible_changes: data.eligible_changes || []
+      };
     } catch {}
   }
 
@@ -230,6 +249,111 @@
     if (e.key === 'Enter') {
       contributorsPage = 1;
       loadContributors();
+    }
+  }
+
+  function closeRetroAssignForm() {
+    showRetroAssignForm = false;
+    isRetroAssigning = false;
+    isLoadingRetroRules = false;
+    retroAssignTarget = null;
+    retroMatchingRules = [];
+    retroRewardForm = getEmptyRetroRewardForm();
+  }
+
+  async function startRetroAssign(change) {
+    retroAssignTarget = change;
+    retroMatchingRules = [];
+    retroRewardForm = getEmptyRetroRewardForm();
+    showRetroAssignForm = true;
+    isLoadingRetroRules = true;
+
+    try {
+      const [rewardRes, matchRes] = await Promise.all([
+        fetch(`/api/admin/rewards/assign?change_id=${change.id}`),
+        fetch(`/api/admin/rewards/match/${change.id}`)
+      ]);
+
+      if (rewardRes.ok) {
+        const rewardData = await rewardRes.json();
+        if (rewardData?.rewards?.length) {
+          addToast('This change already has reward(s) assigned.');
+          if (expandedContributor) {
+            await loadContributorDetail(expandedContributor, true);
+          }
+          closeRetroAssignForm();
+          return;
+        }
+      }
+
+      if (matchRes.ok) {
+        const data = await matchRes.json();
+        retroMatchingRules = data.rules || [];
+        if (retroMatchingRules.length === 1) {
+          const rule = retroMatchingRules[0];
+          retroRewardForm.rule_id = String(rule.id);
+          retroRewardForm.amount = rule.min_amount === rule.max_amount ? String(rule.min_amount) : '';
+          retroRewardForm.contribution_score = rule.contribution_score != null ? String(rule.contribution_score) : '';
+        }
+      }
+    } catch {
+      addToast('Failed to load reward suggestions for this change');
+    } finally {
+      isLoadingRetroRules = false;
+    }
+  }
+
+  function onRetroRuleSelect() {
+    const rule = retroMatchingRules.find(r => String(r.id) === retroRewardForm.rule_id);
+    if (!rule) return;
+    if (rule.min_amount === rule.max_amount) {
+      retroRewardForm.amount = String(rule.min_amount);
+    }
+    retroRewardForm.contribution_score = rule.contribution_score != null ? String(rule.contribution_score) : '';
+  }
+
+  async function assignRetroReward() {
+    if (!retroAssignTarget) return;
+    if (!retroRewardForm.amount || parseFloat(retroRewardForm.amount) <= 0) return;
+
+    const userId = contributorDetail?.user?.id || expandedContributor;
+    if (!userId) {
+      addToast('Unable to determine contributor user ID');
+      return;
+    }
+
+    isRetroAssigning = true;
+    try {
+      const res = await fetch('/api/admin/rewards/assign', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          change_id: parseInt(retroAssignTarget.id),
+          user_id: String(userId),
+          rule_id: retroRewardForm.rule_id ? parseInt(retroRewardForm.rule_id) : null,
+          amount: parseFloat(retroRewardForm.amount),
+          contribution_score: retroRewardForm.contribution_score !== '' ? parseFloat(retroRewardForm.contribution_score) : null,
+          note: retroRewardForm.note?.trim() || null
+        })
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        addToast(data.error || 'Failed to assign reward');
+        return;
+      }
+
+      addToast('Reward assigned');
+      closeRetroAssignForm();
+      await Promise.all([
+        loadSummary(),
+        loadContributors(),
+        expandedContributor ? loadContributorDetail(expandedContributor, true) : Promise.resolve()
+      ]);
+    } catch {
+      addToast('Failed to assign reward');
+    } finally {
+      isRetroAssigning = false;
     }
   }
 </script>
@@ -456,7 +580,7 @@
     </div>
 
     {#if contributors.length === 0 && !isLoading}
-      <div class="empty-state">No contributors with rewards yet.</div>
+      <div class="empty-state">No contributors found.</div>
     {:else}
       <table class="data-table">
         <thead>
@@ -531,6 +655,34 @@
                           </table>
                         {:else}
                           <div style="color: var(--text-muted); font-size: 13px;">No rewards assigned yet.</div>
+                        {/if}
+                      </div>
+                      <div class="detail-section">
+                        <h4>Eligible Approved Changes ({contributorDetail.eligible_changes.length})</h4>
+                        {#if contributorDetail.eligible_changes.length > 0}
+                          <table class="detail-table">
+                            <thead><tr><th>Change</th><th>Entity</th><th>Type</th><th>Updated</th><th></th></tr></thead>
+                            <tbody>
+                              {#each contributorDetail.eligible_changes as change}
+                                <tr>
+                                  <td>
+                                    <a href="/admin/changes/{change.id}">#{change.id}</a>
+                                    {#if change.entity_name}
+                                      {' '}{change.entity_name}
+                                    {/if}
+                                  </td>
+                                  <td>{change.entity}</td>
+                                  <td>{change.type}</td>
+                                  <td>{formatDate(change.last_update || change.created_at)}</td>
+                                  <td style="text-align: right;">
+                                    <button class="btn btn-sm" on:click={() => startRetroAssign(change)}>Assign</button>
+                                  </td>
+                                </tr>
+                              {/each}
+                            </tbody>
+                          </table>
+                        {:else}
+                          <div style="color: var(--text-muted); font-size: 13px;">No unrewarded approved changes found.</div>
                         {/if}
                       </div>
                       <div class="detail-section">
@@ -796,6 +948,70 @@
       <div class="form-actions">
         <button class="btn" on:click={() => showPayoutForm = false}>Cancel</button>
         <button class="btn btn-primary" on:click={createPayout}>Create Payout</button>
+      </div>
+    </div>
+  </div>
+{/if}
+
+<!-- Retroactive Reward Assignment Dialog -->
+{#if showRetroAssignForm && retroAssignTarget}
+  <div class="form-overlay" on:click|self={closeRetroAssignForm} role="presentation">
+    <div class="form-dialog">
+      <h3>Assign Reward</h3>
+      <div class="form-group">
+        <label>Change</label>
+        <div style="font-size: 14px; color: var(--text-color);">
+          <a href="/admin/changes/{retroAssignTarget.id}">#{retroAssignTarget.id}</a>
+          {#if retroAssignTarget.entity_name}
+            {' '}{retroAssignTarget.entity_name}
+          {/if}
+        </div>
+        <div style="margin-top: 4px; font-size: 12px; color: var(--text-muted);">
+          {retroAssignTarget.entity} ({retroAssignTarget.type})
+        </div>
+      </div>
+
+      {#if isLoadingRetroRules}
+        <div class="form-group">
+          <div style="font-size: 13px; color: var(--text-muted);">Loading matching rules...</div>
+        </div>
+      {/if}
+
+      {#if retroMatchingRules.length > 0}
+        <div class="form-group">
+          <label>Rule</label>
+          <select bind:value={retroRewardForm.rule_id} on:change={onRetroRuleSelect}>
+            <option value="">Custom (no rule)</option>
+            {#each retroMatchingRules as rule}
+              <option value={String(rule.id)}>
+                {rule.name} ({rule.min_amount === rule.max_amount ? `${formatAmount(rule.min_amount)}` : `${formatAmount(rule.min_amount)}-${formatAmount(rule.max_amount)}`} PED)
+              </option>
+            {/each}
+          </select>
+        </div>
+      {/if}
+
+      <div class="form-row">
+        <div class="form-group">
+          <label>Amount (PED) *</label>
+          <input type="number" step="0.01" min="0.01" bind:value={retroRewardForm.amount} />
+        </div>
+        <div class="form-group">
+          <label>Score</label>
+          <input type="number" step="0.01" min="0" bind:value={retroRewardForm.contribution_score} placeholder="Optional" />
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Note</label>
+        <textarea bind:value={retroRewardForm.note} placeholder="Optional note"></textarea>
+      </div>
+
+      <div class="form-actions">
+        <button class="btn" on:click={closeRetroAssignForm}>Cancel</button>
+        <button class="btn btn-primary" on:click={assignRetroReward} disabled={isRetroAssigning || isLoadingRetroRules}>
+          {isRetroAssigning ? 'Assigning...' : 'Assign Reward'}
+        </button>
       </div>
     </div>
   </div>

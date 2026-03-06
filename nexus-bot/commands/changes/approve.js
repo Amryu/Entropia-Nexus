@@ -102,34 +102,23 @@ async function handleReward(interaction, thread, change) {
     const rules = await getMatchingRewardRules(change.entity, change.type, changedKeys);
     if (!rules.length) return false;
 
-    const rangeRules = [];
+    const promptRules = [];
 
     for (const rule of rules) {
       const minAmount = parseFloat(rule.min_amount);
       const maxAmount = parseFloat(rule.max_amount);
 
-      if (minAmount === maxAmount) {
-        const assigned = await assignChangeReward({
-          change_id: change.id,
-          user_id: change.author_id,
-          rule_id: rule.id,
-          amount: minAmount,
-          contribution_score: rule.contribution_score,
-          assigned_by: interaction.user.id,
-          note: `Auto-assigned on approval (${rule.name})`,
-        });
-        if (assigned) {
-          await thread.send(`Reward auto-assigned: **${formatPed(minAmount)} PED** (${rule.name})`);
-        }
-        continue;
-      }
-
-      rangeRules.push({ rule, minAmount, maxAmount });
+      promptRules.push({
+        rule,
+        minAmount,
+        maxAmount,
+        isFixed: minAmount === maxAmount,
+      });
     }
 
-    if (!rangeRules.length) return false;
+    if (!promptRules.length) return false;
 
-    let pendingPrompts = rangeRules.length;
+    let pendingPrompts = promptRules.length;
     const onPromptDone = async () => {
       pendingPrompts -= 1;
       if (pendingPrompts > 0) return;
@@ -138,15 +127,25 @@ async function handleReward(interaction, thread, change) {
       } catch {}
     };
 
-    for (const { rule, minAmount, maxAmount } of rangeRules) {
-      await promptRangeReward({
-        thread,
-        change,
-        rule,
-        minAmount,
-        maxAmount,
-        onDone: onPromptDone,
-      });
+    for (const { rule, minAmount, maxAmount, isFixed } of promptRules) {
+      if (isFixed) {
+        await promptFixedReward({
+          thread,
+          change,
+          rule,
+          amount: minAmount,
+          onDone: onPromptDone,
+        });
+      } else {
+        await promptRangeReward({
+          thread,
+          change,
+          rule,
+          minAmount,
+          maxAmount,
+          onDone: onPromptDone,
+        });
+      }
     }
 
     return true;
@@ -154,6 +153,87 @@ async function handleReward(interaction, thread, change) {
     console.error('[approve] Reward assignment failed:', e);
     return false;
   }
+}
+
+async function promptFixedReward({ thread, change, rule, amount, onDone }) {
+  const approveButtonId = `reward_fixed_approve_${change.id}_${rule.id}`;
+  const skipButtonId = `reward_fixed_skip_${change.id}_${rule.id}`;
+  const actionsRow = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId(approveButtonId)
+      .setLabel(`Approve ${formatPed(amount)} PED`)
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setCustomId(skipButtonId)
+      .setLabel('Skip')
+      .setStyle(ButtonStyle.Danger),
+  );
+
+  const msg = await thread.send({
+    content: `Matching rule: **${rule.name}** (${formatPed(amount)} PED fixed)\nApprove this reward or skip this rule.`,
+    components: [actionsRow],
+  });
+
+  const collector = msg.createMessageComponentCollector({ time: 300_000 });
+
+  collector.on('collect', async (btnInteraction) => {
+    try {
+      const customId = btnInteraction.customId;
+
+      if (customId === skipButtonId) {
+        await btnInteraction.reply(`Reward skipped for rule: **${rule.name}**`);
+        collector.stop('skipped');
+        return;
+      }
+
+      if (customId !== approveButtonId) {
+        await btnInteraction.reply({
+          content: 'Unknown reward action.',
+          flags: MessageFlags.Ephemeral,
+        });
+        return;
+      }
+
+      const assigned = await assignChangeReward({
+        change_id: change.id,
+        user_id: change.author_id,
+        rule_id: rule.id,
+        amount: roundPed(amount),
+        contribution_score: rule.contribution_score,
+        assigned_by: btnInteraction.user.id,
+        note: `Assigned on approval (${rule.name})`,
+      });
+
+      if (!assigned) {
+        await btnInteraction.reply({
+          content: `A reward for **${rule.name}** is already assigned for this change.`,
+          flags: MessageFlags.Ephemeral,
+        });
+        collector.stop('duplicate');
+        return;
+      }
+
+      await btnInteraction.reply(`Reward assigned: **${formatPed(amount)} PED** (${rule.name})`);
+      collector.stop('assigned');
+    } catch (e) {
+      console.error('[approve] Fixed reward prompt interaction failed:', e);
+      try {
+        if (!btnInteraction.replied && !btnInteraction.deferred) {
+          await btnInteraction.reply({
+            content: 'Failed to assign reward. Please try again.',
+            flags: MessageFlags.Ephemeral,
+          });
+        }
+      } catch {}
+    }
+  });
+
+  collector.on('end', async () => {
+    try {
+      await msg.edit({ components: [] });
+    } catch {}
+    await onDone();
+  });
 }
 
 async function promptRangeReward({ thread, change, rule, minAmount, maxAmount, onDone }) {

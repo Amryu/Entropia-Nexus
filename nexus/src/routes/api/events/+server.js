@@ -1,15 +1,21 @@
 // @ts-nocheck
 import { json } from '@sveltejs/kit';
-import { getUpcomingEvents, createEvent, countPendingEventsByUser, notifyAdmins } from '$lib/server/db.js';
+import { getUpcomingEvents, getPastEvents, createEvent, countPendingEventsByUser, notifyAdmins } from '$lib/server/db.js';
 import { requireGrantAPI } from '$lib/server/auth.js';
 
 const MAX_PENDING_PER_USER = 5;
 
 export async function GET({ url }) {
   const limit = Math.min(parseInt(url.searchParams.get('limit') || '5', 10), 20);
+  const include = url.searchParams.get('include') || '';
 
-  const events = await getUpcomingEvents(limit);
-  return json(events);
+  const upcoming = await getUpcomingEvents(limit);
+  if (include === 'past') {
+    const pastLimit = Math.min(parseInt(url.searchParams.get('past_limit') || '10', 10), 50);
+    const past = await getPastEvents(pastLimit);
+    return json({ upcoming, past });
+  }
+  return json(upcoming);
 }
 
 export async function POST({ request, locals }) {
@@ -32,8 +38,13 @@ export async function POST({ request, locals }) {
   if (isNaN(startDate.getTime())) {
     return json({ error: 'Invalid start date' }, { status: 400 });
   }
-  if (startDate <= new Date()) {
-    return json({ error: 'Start date must be in the future' }, { status: 400 });
+  const now = new Date();
+  const isUserAdmin = !!user.administrator || (user.grants || []).includes('admin.panel');
+  const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+  if (startDate <= now) {
+    if (!isUserAdmin && now - startDate > ONE_WEEK_MS) {
+      return json({ error: 'Start date cannot be more than 1 week in the past' }, { status: 400 });
+    }
   }
 
   // Validate end_date if provided
