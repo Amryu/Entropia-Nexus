@@ -18,7 +18,11 @@ import time
 import traceback
 
 from .core.config import load_config
-from .core.constants import EVENT_AUTH_STATE_CHANGED, EVENT_CONFIG_CHANGED
+from .core.constants import (
+    EVENT_AUTH_STATE_CHANGED,
+    EVENT_CONFIG_CHANGED,
+    EVENT_OCR_MANUAL_TRIGGER,
+)
 from .core.event_bus import EventBus
 from .core.database import Database
 from .core.logger import init as init_logging, get_logger
@@ -36,17 +40,40 @@ def _configure_dpi_awareness():
     if sys.platform != "win32":
         return
     import ctypes
+    user32 = ctypes.windll.user32
+    shcore = getattr(ctypes.windll, "shcore", None)
+
+    # Per-Monitor V2 (Win10 1703+) — best multi-monitor support.
     try:
-        # Per-Monitor V2 (Win10 1703+) — best multi-monitor support
-        ctypes.windll.user32.SetProcessDpiAwarenessContext(
-            ctypes.c_void_p(-4)  # DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
-        )
+        set_ctx = getattr(user32, "SetProcessDpiAwarenessContext", None)
+        if set_ctx is not None and bool(set_ctx(ctypes.c_void_p(-4))):
+            log.info("DPI awareness set: Per-Monitor V2")
+            return
+        if set_ctx is not None:
+            log.warning("SetProcessDpiAwarenessContext failed; trying fallback APIs")
     except (AttributeError, OSError):
+        pass
+
+    # Fallback: Per-Monitor V1 (Win8.1+).
+    if shcore is not None:
         try:
-            # Fallback: Per-Monitor V1 (Win8.1+)
-            ctypes.windll.shcore.SetProcessDpiAwareness(2)
+            hr = int(shcore.SetProcessDpiAwareness(2))
+            if hr == 0:
+                log.info("DPI awareness set: Per-Monitor V1")
+                return
+            log.warning("SetProcessDpiAwareness failed (HRESULT=0x%08X); trying legacy fallback",
+                        hr & 0xFFFFFFFF)
         except (AttributeError, OSError):
             pass
+
+    # Legacy fallback: system-DPI-aware.
+    try:
+        if bool(user32.SetProcessDPIAware()):
+            log.info("DPI awareness set: System-aware (legacy)")
+        else:
+            log.warning("SetProcessDPIAware failed; mixed-DPI OCR may be inaccurate")
+    except (AttributeError, OSError):
+        pass
 
 
 def main():
@@ -565,10 +592,43 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
         # Scan highlight overlay (click-through, shows scanned rows + target lock)
         try:
             from .overlay.scan_highlight_overlay import ScanHighlightOverlay
-            overlay_manager._scan_highlight = ScanHighlightOverlay(
-                config=config, event_bus=event_bus,
-                manager=overlay_manager,
-            )
+            _scan_highlight_overlay = None
+
+            def _ensure_scan_highlight_overlay():
+                nonlocal _scan_highlight_overlay
+                if _scan_highlight_overlay is not None:
+                    return
+                _scan_highlight_overlay = ScanHighlightOverlay(
+                    config=config,
+                    event_bus=event_bus,
+                    manager=overlay_manager,
+                )
+                overlay_manager._scan_highlight = _scan_highlight_overlay
+
+            def _destroy_scan_highlight_overlay():
+                nonlocal _scan_highlight_overlay
+                if _scan_highlight_overlay is None:
+                    return
+                _scan_highlight_overlay.stop()
+                _scan_highlight_overlay.deleteLater()
+                _scan_highlight_overlay = None
+                overlay_manager._scan_highlight = None
+
+            def _sync_scan_highlight_overlay(updated_config):
+                if not updated_config:
+                    return
+                if getattr(updated_config, "scan_overlay_debug", False):
+                    _ensure_scan_highlight_overlay()
+                else:
+                    _destroy_scan_highlight_overlay()
+
+            # Never auto-open debug overlay on startup.
+            if getattr(config, "scan_overlay_debug", False):
+                config.scan_overlay_debug = False
+                save_config(config, config_path)
+
+            _sync_scan_highlight_overlay(config)
+            event_bus.subscribe(EVENT_CONFIG_CHANGED, _sync_scan_highlight_overlay)
 
             # F3 toggles debug overlay mode (persists to config)
             def _toggle_debug_overlay():
@@ -599,12 +659,22 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
                 skill_values_fn=_get_skill_values,
             )
 
+            def _clear_scan_selection():
+                if PAGE_SKILLS not in main_window._page_created:
+                    return
+                page = main_window._pages.widget(PAGE_SKILLS)
+                if hasattr(page, "clear_scan_results"):
+                    page.clear_scan_results()
+
             def _on_scan_marked_complete(skills: list):
                 """Mark Complete: compute delta, warn on shrinkage, then sync."""
                 if PAGE_SKILLS not in main_window._page_created:
                     return
                 page = main_window._pages.widget(PAGE_SKILLS)
                 manager = page._manager
+
+                if hasattr(page, "clear_scan_results"):
+                    page.clear_scan_results()
 
                 delta = manager.sync_scan_results(skills)
 
@@ -640,6 +710,9 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
 
             overlay_manager._scan_summary.scan_marked_complete.connect(
                 _on_scan_marked_complete
+            )
+            overlay_manager._scan_summary.scan_entries_cleared.connect(
+                _clear_scan_selection
             )
         except Exception as e:
             log.warning("Scan summary overlay failed: %s", e)
@@ -858,12 +931,38 @@ def _start_ocr_pipeline(config, event_bus, db, frame_cache=None):
         from .ocr.orchestrator import ScanOrchestrator
         orchestrator = ScanOrchestrator(config, event_bus, db, frame_cache=frame_cache)
         log.info("OCR pipeline ready")
+        manual_trigger = threading.Event()
+
+        def _on_manual_trigger(_data=None):
+            manual_trigger.set()
+
+        def _on_config_changed(_data=None):
+            # Wake OCR thread immediately when scan mode is toggled.
+            orchestrator._stop_event.set()
+            manual_trigger.set()
+
+        event_bus.subscribe(EVENT_OCR_MANUAL_TRIGGER, _on_manual_trigger)
+        event_bus.subscribe(EVENT_CONFIG_CHANGED, _on_config_changed)
 
         def run_ocr():
             while not orchestrator._shutdown:
                 orchestrator._stop_event.clear()
                 try:
-                    result = orchestrator.run_continuous()
+                    auto_enabled = getattr(config, "ocr_auto_scan_enabled", True)
+                    if not auto_enabled:
+                        log.info("OCR auto-scan disabled; waiting for manual scan trigger")
+                        while not orchestrator._shutdown:
+                            if manual_trigger.wait(timeout=0.25):
+                                manual_trigger.clear()
+                                break
+                        if orchestrator._shutdown:
+                            break
+                        # If auto-scan was enabled while waiting, restart loop in auto mode.
+                        if getattr(config, "ocr_auto_scan_enabled", True):
+                            continue
+                        result = orchestrator.run_continuous(auto_resume=False)
+                    else:
+                        result = orchestrator.run_continuous(auto_resume=True)
                     if result:
                         log.info("OCR finished: %d/%d skills",
                                  result.total_found, result.total_expected)
@@ -872,8 +971,11 @@ def _start_ocr_pipeline(config, event_bus, db, frame_cache=None):
                 except Exception as e:
                     log.error("OCR error: %s", e)
                 if not orchestrator._shutdown:
-                    log.info("OCR scan ended, will restart when "
-                             "SKILLS window reopens")
+                    if getattr(config, "ocr_auto_scan_enabled", True):
+                        log.info("OCR scan ended, will restart when "
+                                 "SKILLS window reopens")
+                    else:
+                        log.info("Manual scan ended")
 
         ocr_thread = threading.Thread(target=run_ocr, daemon=True, name="ocr-scan")
         ocr_thread.start()

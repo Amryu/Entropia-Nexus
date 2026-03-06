@@ -25,6 +25,7 @@ class AppConfig:
     ocr_adjust_margin: int = 8        # px, skills quick_adjust search radius
     ocr_idle_threshold: int = 50      # ticks with no change before entering idle mode
     ocr_idle_multiplier: int = 5      # poll interval multiplier in idle mode
+    ocr_auto_scan_enabled: bool = True
     scan_overlay_debug: bool = False
     scan_roi_overrides: dict = field(default_factory=dict)  # {name: [x,y,w,h]} pixel offsets from SKILLS template
     scan_roi_version: int = 0  # Tracks DEFAULT_ROI_PIXELS version; reset overrides when outdated
@@ -176,6 +177,7 @@ DEFAULTS = {
     "ocr_adjust_margin": 8,
     "ocr_idle_threshold": 50,
     "ocr_idle_multiplier": 5,
+    "ocr_auto_scan_enabled": True,
     "scan_overlay_debug": False,
     "scan_roi_overrides": {},
     "scan_roi_version": 0,
