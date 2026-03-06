@@ -22,7 +22,6 @@
   import MapCanvas from '$lib/components/MapCanvas.svelte';
   import InlineEdit from '$lib/components/wiki/InlineEdit.svelte';
   import WaypointCopyButton from '$lib/components/wiki/WaypointCopyButton.svelte';
-  import EditActionBar from '$lib/components/wiki/EditActionBar.svelte';
   import PendingChangeBanner from '$lib/components/wiki/PendingChangeBanner.svelte';
 
   // Map Editor components (Leaflet-based edit mode) — loaded dynamically to avoid SSR issues
@@ -98,6 +97,7 @@
   let editorRightPanel = 'editor';
   let editorChangeCount = 0;
   let allMobs = [];
+  let seededChangeId = null;
 
   async function activateEditMode() {
     if (leafletEditMode || activatingLeaflet) return;
@@ -114,12 +114,17 @@
   }
 
   function deactivateEditMode() {
-    if (editorPendingChanges.size > 0) {
+    // Don't count the seeded Create change as an unsaved local change
+    const hasUnsavedChanges = seededChangeId
+      ? editorPendingChanges.size > 1 || (editorPendingChanges.size === 1 && !editorPendingChanges.has(-seededChangeId))
+      : editorPendingChanges.size > 0;
+    if (hasUnsavedChanges) {
       if (!confirm('You have unsaved changes. Exit edit mode?')) return;
     }
     leafletEditMode = false;
     editorPendingChanges = new Map();
     editorRightPanel = 'editor';
+    seededChangeId = null;
   }
 
   const mainPlanets = getMainPlanetNames();
@@ -160,6 +165,24 @@
   $: effectiveCreateMode = isCreateMode && isEditAllowed;
   $: if (data.existingChange?.entity === 'Area' || data.existingChange?.entity === 'Location' || data.existingChange?.entity === 'Apartment') {
     createEntityType = data.existingChange.entity;
+  }
+
+  function convertChangeToModified(changeData, tempId) {
+    if (!changeData?.Properties) return null;
+    const props = changeData.Properties;
+    const coords = props.Coordinates || {};
+    const isArea = props.Shape || String(props.Type || '').endsWith('Area');
+    return {
+      name: changeData.Name || '',
+      locationType: isArea ? 'Area' : (props.Type || 'Location'),
+      longitude: coords.Longitude ?? 0,
+      latitude: coords.Latitude ?? 0,
+      altitude: coords.Altitude ?? null,
+      areaType: isArea ? (props.AreaType || props.Type || 'MobArea') : null,
+      shape: props.Shape || null,
+      shapeData: props.Data || null,
+      tempId
+    };
   }
 
   function buildLeafletFocusLocation(locLike) {
@@ -476,10 +499,22 @@
     mapRef.focusOnLocation(selectedLocation);
   }
 
+  $: canEditExistingChange = data.existingChange?.id && (
+    data.existingChange.author_id === user?.id ||
+    user?.grants?.includes('wiki.approve')
+  );
+
   $: leafletFocusLocation = (() => {
     if (!shouldAutoOpenLeaflet) return null;
     if (routeMode === 'create' && data.existingChange?.data) {
-      return buildLeafletFocusLocation(data.existingChange.data);
+      const focus = buildLeafletFocusLocation(data.existingChange.data);
+      if (focus && data.existingChange.id) {
+        // Author/admin: select the seeded editable pending add
+        // Normal reviewer: select the read-only DB change overlay
+        focus.Id = canEditExistingChange ? -data.existingChange.id : `db-${data.existingChange.id}`;
+        focus._dbChange = canEditExistingChange ? null : data.existingChange;
+      }
+      return focus;
     }
     if (routeMode === 'edit' && selectedLocation) {
       return selectedLocation;
@@ -491,6 +526,18 @@
   $: leafletFocusKey = shouldAutoOpenLeaflet
     ? `${$page.url.pathname}|${routeMode}|${routeChangeId || ''}`
     : null;
+
+  // Seed editorPendingChanges for author/admin viewing an existing Create change
+  $: if (leafletEditMode && data.existingChange?.id && data.existingChange.type === 'Create'
+      && canEditExistingChange && seededChangeId !== data.existingChange.id) {
+    seededChangeId = data.existingChange.id;
+    const tempId = -data.existingChange.id;
+    const modified = convertChangeToModified(data.existingChange.data, tempId);
+    if (modified) {
+      editorPendingChanges.set(tempId, { action: 'add', original: null, modified });
+      editorPendingChanges = editorPendingChanges;
+    }
+  }
 
   $: if (shouldAutoOpenLeaflet && autoLeafletHandledKey !== autoLeafletKey && !leafletEditMode) {
     autoLeafletHandledKey = autoLeafletKey;
@@ -1312,14 +1359,6 @@
         </div>
       </div>
     </div>
-  {/if}
-
-  {#if $editMode && isEditAllowed}
-    <EditActionBar
-      basePath={`/maps/${$page.params.planet}`}
-      {user}
-      entityName={(activeLocation?.Id ?? activeLocation?.Name) || ''}
-    />
   {/if}
 
   <!-- Edit Mode Button (bottom-right, desktop only) -->

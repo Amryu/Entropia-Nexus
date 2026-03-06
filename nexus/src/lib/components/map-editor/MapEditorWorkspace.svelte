@@ -53,11 +53,13 @@
   let filteredLocationIds = null;
   let nextTempId = -1;
   let lastAppliedFocusKey = null;
+  let selectedDbChange = null; // DB pending change selected for read-only viewing
 
   // --- Exported method ---
   export function reset() {
     pendingChanges = new Map();
     selectedId = null;
+    selectedDbChange = null;
     isNewLocation = false;
     drawnShapeData = null;
     rightPanel = 'editor';
@@ -115,6 +117,24 @@
         }
       };
     }
+    // DB pending change (read-only viewing)
+    if (selectedDbChange) {
+      const d = selectedDbChange.data;
+      const props = d?.Properties || {};
+      return {
+        Id: selectedId,
+        Name: d?.Name || '',
+        _isDbChange: true,
+        Properties: {
+          Type: props.Type || 'Location',
+          AreaType: props.AreaType || null,
+          Coordinates: props.Coordinates || {},
+          Shape: props.Shape || null,
+          Data: props.Data || null,
+          Description: props.Description || null,
+        }
+      };
+    }
     return null;
   })();
 
@@ -132,12 +152,23 @@
     }
   }
 
+  // Read-only when: viewing a DB pending change, or a non-admin user selects
+  // an existing approved location (not a pending add/edit of their own).
+  $: isReadOnly = !!selectedDbChange || (!isAdmin && selectedId != null && !isNewLocation
+    && !pendingChanges.has(selectedId)
+    && selectedId > 0);
+
   $: changeCount = pendingChanges.size;
 
   $: if (focusKey && focusLocation && mapComponent && focusKey !== lastAppliedFocusKey) {
-    if (focusLocation.Id != null) {
+    if (focusLocation._dbChange) {
+      // Normal reviewer: select DB change for read-only viewing
+      selectedDbChange = focusLocation._dbChange;
+      selectedId = focusLocation.Id;
+    } else if (focusLocation.Id != null) {
       const matched = locations.find(l => l.Id == focusLocation.Id);
       selectedId = matched ? matched.Id : focusLocation.Id;
+      selectedDbChange = null;
     }
     mapComponent.panToLocation(focusLocation);
     lastAppliedFocusKey = focusKey;
@@ -146,6 +177,7 @@
   // --- Event handlers ---
   function handleMapSelect(e) {
     selectedId = e.detail;
+    selectedDbChange = null;
     isNewLocation = false;
     drawnShapeData = null;
     previewShape = null;
@@ -157,8 +189,20 @@
     }
   }
 
+  function handleSelectDbChange(e) {
+    const change = e.detail;
+    selectedDbChange = change;
+    selectedId = `db-${change.id}`;
+    isNewLocation = false;
+    drawnShapeData = null;
+    previewShape = null;
+    rightPanel = 'editor';
+    if (mapComponent?.clearDrawnLayer) mapComponent.clearDrawnLayer();
+  }
+
   function handleListSelect(e) {
     selectedId = e.detail;
+    selectedDbChange = null;
     isNewLocation = false;
     drawnShapeData = null;
     previewShape = null;
@@ -532,7 +576,9 @@
         {previewShape}
         {dbPendingChanges}
         {currentUserId}
+        {isAdmin}
         on:select={handleMapSelect}
+        on:selectDbChange={handleSelectDbChange}
         on:drawCreated={handleDrawCreated}
         on:shapeEdited={handleShapeEdited}
         on:clone={handleClone}
@@ -559,6 +605,7 @@
       <LocationEditor
         location={selectedLocation}
         isNew={isNewLocation}
+        readOnly={isReadOnly}
         {drawnShapeData}
         {mode}
         {isAdmin}
