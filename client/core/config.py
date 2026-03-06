@@ -25,6 +25,7 @@ class AppConfig:
     ocr_adjust_margin: int = 8        # px, skills quick_adjust search radius
     ocr_idle_threshold: int = 50      # ticks with no change before entering idle mode
     ocr_idle_multiplier: int = 5      # poll interval multiplier in idle mode
+    ocr_capture_backend: str = "auto"  # auto | printwindow | wgc
     ocr_auto_scan_enabled: bool = True
     scan_overlay_debug: bool = False
     scan_roi_overrides: dict = field(default_factory=dict)  # {name: [x,y,w,h]} pixel offsets from SKILLS template
@@ -123,6 +124,10 @@ class AppConfig:
     stream_notifications_enabled: bool = True
     stream_exclude_list: list[str] = field(default_factory=list)
 
+    # Tracker — Dailies & Events
+    tracker_missions: list = field(default_factory=list)
+    tracker_event_reminders: list = field(default_factory=list)
+
     # Dashboard — Globals feed
     dashboard_globals_min_value: float = 0.0
     dashboard_globals_blocked_types: list[str] = field(default_factory=list)
@@ -177,6 +182,7 @@ DEFAULTS = {
     "ocr_adjust_margin": 8,
     "ocr_idle_threshold": 50,
     "ocr_idle_multiplier": 5,
+    "ocr_capture_backend": "auto",
     "ocr_auto_scan_enabled": True,
     "scan_overlay_debug": False,
     "scan_roi_overrides": {},
@@ -412,5 +418,11 @@ def validate_config(config: AppConfig) -> list[str]:
 
     if not 0.0 <= config.ocr_confidence_threshold <= 1.0:
         errors.append(f"ocr_confidence_threshold must be 0.0-1.0, got {config.ocr_confidence_threshold}")
+
+    if config.ocr_capture_backend not in {"auto", "printwindow", "wgc"}:
+        errors.append(
+            "ocr_capture_backend must be one of: auto, printwindow, wgc "
+            f"(got {config.ocr_capture_backend})",
+        )
 
     return errors

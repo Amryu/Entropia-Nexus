@@ -54,10 +54,16 @@ EVENT_CATCHUP_COMPLETE = "catchup_complete"
 EVENT_CATCHUP_PROGRESS = "catchup_progress"
 EVENT_REPARSE_REQUESTED = "reparse_requested"
 EVENT_REPARSE_COMPLETE = "reparse_complete"
+EVENT_HISTORICAL_IMPORT_PROGRESS = "historical_import_progress"
+EVENT_HISTORICAL_IMPORT_COMPLETE = "historical_import_complete"
 
 # Event names — Notifications
 EVENT_NOTIFICATION = "notification"
 EVENT_TRADE_REQUEST = "trade_request"
+
+# Event names — Tracker
+EVENT_TRACKER_DAILY_READY = "tracker_daily_ready"
+EVENT_TRACKER_EVENT_REMINDER = "tracker_event_reminder"
 
 # Event names — Ingestion (server-distributed data)
 EVENT_INGESTED_GLOBAL = "ingested_global"

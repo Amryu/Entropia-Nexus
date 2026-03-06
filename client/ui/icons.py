@@ -118,6 +118,19 @@ EXCHANGE = (
     '<path d="M14 9h4v2h-4z" opacity="0.6"/>'
 )
 
+# Clipboard checklist (tracker)
+TRACKER = (
+    '<path d="M9 2H15C15.55 2 16 2.45 16 3V4H17C18.1 4 19 4.9 19 6V20'
+    'C19 21.1 18.1 22 17 22H7C5.9 22 5 21.1 5 20V6C5 4.9 5.9 4 7 4H8V3'
+    'C8 2.45 8.45 2 9 2ZM10 4H14V3H10V4Z"/>'
+    '<rect x="8" y="9" width="2" height="2" rx="0.3" fill="currentColor" opacity="0.9"/>'
+    '<rect x="11" y="9" width="5" height="2" rx="0.3" fill="currentColor" opacity="0.5"/>'
+    '<rect x="8" y="13" width="2" height="2" rx="0.3" fill="currentColor" opacity="0.9"/>'
+    '<rect x="11" y="13" width="5" height="2" rx="0.3" fill="currentColor" opacity="0.5"/>'
+    '<rect x="8" y="17" width="2" height="2" rx="0.3" fill="currentColor" opacity="0.9"/>'
+    '<rect x="11" y="17" width="5" height="2" rx="0.3" fill="currentColor" opacity="0.5"/>'
+)
+
 # Update available (download arrow + bar)
 UPDATE = (
     '<path d="M13 7h-2v4H7l5 5 5-5h-4V7z"/>'

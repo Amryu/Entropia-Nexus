@@ -41,6 +41,7 @@ AUTO_HIDE_DELAY_MS = 3000
 # Row highlight colors
 ROW_FILL = QColor(0, 221, 102, 40)       # Semi-transparent green fill
 ROW_BORDER = QColor(0, 221, 102, 120)    # Green border
+ROW_WINDOW_BORDER = QColor(0, 221, 102, 220)  # Border around active green overlay area
 CHECKMARK_COLOR = QColor(0, 221, 102)
 
 # Skills template ROI colors (used by both debug overlay and scan highlights)
@@ -148,6 +149,7 @@ class ScanHighlightOverlay(QWidget):
             | Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.Tool
         )
+        self.setAttribute(Qt.WidgetAttribute.WA_NativeWindow)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
 
@@ -168,10 +170,8 @@ class ScanHighlightOverlay(QWidget):
             log.info("Overlay widget geometry: %dx%d+%d+%d",
                      geo.width(), geo.height(), geo.x(), geo.y())
 
-        # Make click-through on Windows.
-        # Briefly show to get a valid HWND, but at 0 opacity to prevent a dark flash.
-        self.setWindowOpacity(0)
-        self.show()
+        # Make click-through on Windows without showing a startup overlay window.
+        self.winId()  # Force native window creation while still hidden.
         self._make_click_through()
         # Qt sets widget geometry in logical pixels, but OCR coordinates are
         # physical pixels (Win32 PER_MONITOR_AWARE_V2).  On high-DPI screens
@@ -180,7 +180,6 @@ class ScanHighlightOverlay(QWidget):
         # bypassing Qt's logical→physical scaling.
         self._resize_to_physical()
         self.hide()
-        self.setWindowOpacity(1)
 
         # Connect bridge signals
         self._regions_signal.connect(self._on_regions)
@@ -566,6 +565,9 @@ class ScanHighlightOverlay(QWidget):
         fill = QBrush(ROW_FILL)
         pen = QPen(ROW_BORDER, 1)
         check_pen = QPen(CHECKMARK_COLOR)
+        frame_pen = QPen(ROW_WINDOW_BORDER, 1)
+        min_row_y = None
+        max_row_y = None
 
         painter.setFont(CHECKMARK_FONT)
 
@@ -586,12 +588,24 @@ class ScanHighlightOverlay(QWidget):
             painter.setPen(pen)
             painter.setBrush(fill)
             painter.drawRect(table_x, y, table_w, h)
+            min_row_y = y if min_row_y is None else min(min_row_y, y)
+            max_row_y = (y + h) if max_row_y is None else max(max_row_y, y + h)
 
             # Checkmark at the left edge
             painter.setPen(check_pen)
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawText(table_x - 14, y, 14, h,
                              Qt.AlignmentFlag.AlignCenter, "\u2713")
+
+        if min_row_y is not None and max_row_y is not None and table_w > 0:
+            painter.setPen(frame_pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawRect(
+                table_x - 1,
+                min_row_y - 1,
+                table_w + 2,
+                (max_row_y - min_row_y) + 2,
+            )
 
     def _paint_skills_template(self, painter: QPainter) -> None:
         """Draw debug overlay for skills template match and ROIs."""

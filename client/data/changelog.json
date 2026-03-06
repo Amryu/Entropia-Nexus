@@ -1,5 +1,22 @@
 [
   {
+    "version": "0.1.9",
+    "date": "2026-03-06",
+    "changes": [
+      {"type": "feat", "text": "Tracker page: track daily missions with cooldown countdowns and completion status"},
+      {"type": "feat", "text": "Tracker page: view upcoming and past in-game events from the API"},
+      {"type": "feat", "text": "Tracker notifications: grouped alerts when tracked missions become ready"},
+      {"type": "feat", "text": "Local-first skill sync: skill values persist locally with dirty tracking and offline support"},
+      {"type": "feat", "text": "Manual skill corrections with persistent history snapshots"},
+      {"type": "feat", "text": "Configurable screenshot capture backend: Windows Game Capture (WGC) or GDI fallback"},
+      {"type": "feat", "text": "Proactive rate limit detection to prevent API throttling on ingestion endpoints"},
+      {"type": "feat", "text": "Event fetching from frontend API with in-memory TTL cache"},
+      {"type": "fix", "text": "Protected API endpoints no longer fire network requests when user is logged out"},
+      {"type": "fix", "text": "Capture backend config changes now propagate to active OCR pipeline"},
+      {"type": "fix", "text": "Improved skill points column detection reliability in OCR scanner"}
+    ]
+  },
+  {
     "version": "0.1.8",
     "date": "2026-03-05",
     "changes": [

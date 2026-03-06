@@ -13,7 +13,10 @@ from collections import deque, OrderedDict
 from datetime import datetime, timedelta
 
 from ..core.logger import get_logger
-from ..core.constants import EVENT_GLOBAL, EVENT_INGESTED_GLOBAL, EVENT_TRADE_CHAT, EVENT_TRADE_REQUEST, EVENT_AUTH_STATE_CHANGED
+from ..core.constants import (
+    EVENT_GLOBAL, EVENT_INGESTED_GLOBAL, EVENT_TRADE_CHAT, EVENT_TRADE_REQUEST,
+    EVENT_AUTH_STATE_CHANGED, EVENT_TRACKER_DAILY_READY, EVENT_TRACKER_EVENT_REMINDER,
+)
 from .models import (
     Notification,
     GlobalNotificationRule,
@@ -23,6 +26,7 @@ from .models import (
     SOURCE_NEXUS,
     SOURCE_STREAM,
     SOURCE_EXCHANGE,
+    SOURCE_TRACKER,
 )
 from .rules_engine import RulesEngine
 
@@ -83,6 +87,8 @@ class NotificationManager:
         self._event_bus.subscribe(EVENT_INGESTED_GLOBAL, self._on_ingested_global)
         self._event_bus.subscribe(EVENT_TRADE_REQUEST, self._on_trade_request)
         self._event_bus.subscribe(EVENT_AUTH_STATE_CHANGED, self._on_auth_changed)
+        self._event_bus.subscribe(EVENT_TRACKER_DAILY_READY, self._on_tracker_daily)
+        self._event_bus.subscribe(EVENT_TRACKER_EVENT_REMINDER, self._on_tracker_event)
 
     # ------------------------------------------------------------------
     # Public API
@@ -530,6 +536,32 @@ class NotificationManager:
                 pass
         return rules
 
+    # ------------------------------------------------------------------
+    # Tracker
+    # ------------------------------------------------------------------
+
+    def _on_tracker_daily(self, data):
+        """Handle daily mission cooldown notification from tracker page."""
+        self._create_notification(
+            source=SOURCE_TRACKER,
+            title=data.get("title", "Daily Ready"),
+            body=data.get("body", ""),
+            priority=data.get("priority", "normal"),
+            metadata=data.get("metadata", {}),
+        )
+
+    def _on_tracker_event(self, data):
+        """Handle upcoming event reminder from tracker page."""
+        self._create_notification(
+            source=SOURCE_TRACKER,
+            title=data.get("title", "Event Reminder"),
+            body=data.get("body", ""),
+            priority=data.get("priority", "normal"),
+            metadata=data.get("metadata", {}),
+        )
+
+    # ------------------------------------------------------------------
+
     def cleanup(self):
         """Unsubscribe from EventBus."""
         self._event_bus.unsubscribe(EVENT_GLOBAL, self._on_global_event)
@@ -537,3 +569,5 @@ class NotificationManager:
         self._event_bus.unsubscribe(EVENT_INGESTED_GLOBAL, self._on_ingested_global)
         self._event_bus.unsubscribe(EVENT_TRADE_REQUEST, self._on_trade_request)
         self._event_bus.unsubscribe(EVENT_AUTH_STATE_CHANGED, self._on_auth_changed)
+        self._event_bus.unsubscribe(EVENT_TRACKER_DAILY_READY, self._on_tracker_daily)
+        self._event_bus.unsubscribe(EVENT_TRACKER_EVENT_REMINDER, self._on_tracker_event)

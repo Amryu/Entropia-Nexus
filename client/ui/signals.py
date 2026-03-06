@@ -12,6 +12,8 @@ from ..core.constants import (
     EVENT_ENHANCER_BREAK,
     EVENT_TIER_INCREASE,
     EVENT_GLOBAL,
+    EVENT_HISTORICAL_IMPORT_COMPLETE,
+    EVENT_HISTORICAL_IMPORT_PROGRESS,
     EVENT_HUNT_ENCOUNTER_ENDED,
     EVENT_HUNT_ENCOUNTER_STARTED,
     EVENT_HUNT_SESSION_STARTED,
@@ -99,6 +101,10 @@ class AppSignals(QObject):
     catchup_complete = pyqtSignal(object)
     catchup_progress = pyqtSignal(object)   # {"parsed": N, "total": N}
 
+    # Historical import
+    historical_import_progress = pyqtSignal(object)  # {"parsed_bytes", "total_bytes", "lines"}
+    historical_import_complete = pyqtSignal(object)   # {"lines_parsed", "globals_found", "trades_found"}
+
     # News
     new_news_post = pyqtSignal(str, str)  # (title, summary)
 
@@ -166,6 +172,8 @@ def wire_signals(event_bus, signals: AppSignals) -> None:
         EVENT_INGESTED_GLOBAL: signals.ingested_global,
         EVENT_INGESTED_TRADE: signals.ingested_trade,
         EVENT_INGESTION_STATUS: signals.ingestion_status,
+        EVENT_HISTORICAL_IMPORT_PROGRESS: signals.historical_import_progress,
+        EVENT_HISTORICAL_IMPORT_COMPLETE: signals.historical_import_complete,
     }
 
     for event_name, signal in _WIRING.items():

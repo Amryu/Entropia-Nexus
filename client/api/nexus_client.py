@@ -44,6 +44,20 @@ class NexusClient:
             return {"Authorization": f"Bearer {token}"}
         return {}
 
+    def _auth_headers(self, context: str) -> dict | None:
+        """Return auth headers or None when unauthenticated.
+
+        This avoids hitting auth-protected endpoints when the user is logged out.
+        """
+        if not self._oauth.is_authenticated():
+            log.debug("Skipping %s: unauthenticated", context)
+            return None
+        token = self._oauth.get_access_token()
+        if not token:
+            log.debug("Skipping %s: missing access token", context)
+            return None
+        return {"Authorization": f"Bearer {token}"}
+
     def _url(self, path: str) -> str:
         return f"{self._config.nexus_base_url}/api{path}"
 
@@ -72,8 +86,11 @@ class NexusClient:
     def get_skills(self) -> dict | None:
         """GET /api/tools/skills — returns {skills: {...}, updated_at: ...}."""
         try:
+            headers = self._auth_headers("get skills")
+            if headers is None:
+                return None
             resp = self._session.get(self._url("/tools/skills"),
-                                     headers=self._headers(), timeout=10)
+                                     headers=headers, timeout=10)
             resp.raise_for_status()
             return resp.json()
         except Exception as e:
@@ -83,8 +100,11 @@ class NexusClient:
     def upload_skills(self, skills: dict[str, float], track_import: bool = True) -> dict | None:
         """PUT /api/tools/skills — upload scanned skills."""
         try:
+            headers = self._auth_headers("upload skills")
+            if headers is None:
+                return None
             resp = self._session.put(self._url("/tools/skills"),
-                                     headers=self._headers(),
+                                     headers=headers,
                                      json={"skills": skills, "trackImport": track_import},
                                      timeout=10)
             resp.raise_for_status()
@@ -98,6 +118,9 @@ class NexusClient:
                          to_date: str | None = None) -> list[dict] | None:
         """GET /api/tools/skills/history — per-skill value history."""
         try:
+            headers = self._auth_headers("get skill history")
+            if headers is None:
+                return None
             params = {}
             if skill_names:
                 params["skill"] = skill_names
@@ -106,7 +129,7 @@ class NexusClient:
             if to_date:
                 params["to"] = to_date
             resp = self._session.get(self._url("/tools/skills/history"),
-                                     headers=self._headers(),
+                                     headers=headers,
                                      params=params, timeout=10)
             resp.raise_for_status()
             return resp.json()
@@ -118,8 +141,11 @@ class NexusClient:
     def get_loadouts(self) -> list[dict] | None:
         """GET /api/tools/loadout — returns list of user loadouts."""
         try:
+            headers = self._auth_headers("get loadouts")
+            if headers is None:
+                return None
             resp = self._session.get(self._url("/tools/loadout"),
-                                     headers=self._headers(), timeout=10)
+                                     headers=headers, timeout=10)
             resp.raise_for_status()
             return resp.json()
         except Exception as e:
@@ -129,8 +155,11 @@ class NexusClient:
     def get_loadout(self, loadout_id: str) -> dict | None:
         """GET /api/tools/loadout/:id — returns a single loadout."""
         try:
+            headers = self._auth_headers(f"get loadout {loadout_id}")
+            if headers is None:
+                return None
             resp = self._session.get(self._url(f"/tools/loadout/{loadout_id}"),
-                                     headers=self._headers(), timeout=10)
+                                     headers=headers, timeout=10)
             resp.raise_for_status()
             return resp.json()
         except Exception as e:
@@ -140,8 +169,11 @@ class NexusClient:
     def save_loadout(self, loadout_id: str, data: dict) -> dict | None:
         """PUT /api/tools/loadout/:id — update a loadout."""
         try:
+            headers = self._auth_headers(f"save loadout {loadout_id}")
+            if headers is None:
+                return None
             resp = self._session.put(self._url(f"/tools/loadout/{loadout_id}"),
-                                     headers=self._headers(),
+                                     headers=headers,
                                      json=data, timeout=10)
             resp.raise_for_status()
             return resp.json()
@@ -152,8 +184,11 @@ class NexusClient:
     def create_loadout(self, data: dict) -> dict | None:
         """POST /api/tools/loadout — create a new loadout."""
         try:
+            headers = self._auth_headers("create loadout")
+            if headers is None:
+                return None
             resp = self._session.post(self._url("/tools/loadout"),
-                                      headers=self._headers(),
+                                      headers=headers,
                                       json=data, timeout=10)
             resp.raise_for_status()
             return resp.json()
@@ -164,8 +199,11 @@ class NexusClient:
     def delete_loadout(self, loadout_id: str) -> bool:
         """DELETE /api/tools/loadout/:id — delete a loadout."""
         try:
+            headers = self._auth_headers(f"delete loadout {loadout_id}")
+            if headers is None:
+                return False
             resp = self._session.delete(self._url(f"/tools/loadout/{loadout_id}"),
-                                        headers=self._headers(), timeout=10)
+                                        headers=headers, timeout=10)
             resp.raise_for_status()
             return True
         except Exception as e:
@@ -213,8 +251,11 @@ class NexusClient:
     def get_preferences(self) -> dict | None:
         """GET /api/users/preferences — returns {key: data} map."""
         try:
+            headers = self._auth_headers("get preferences")
+            if headers is None:
+                return None
             resp = self._session.get(self._url("/users/preferences"),
-                                     headers=self._headers(), timeout=10)
+                                     headers=headers, timeout=10)
             resp.raise_for_status()
             return resp.json()
         except Exception as e:
@@ -224,8 +265,11 @@ class NexusClient:
     def save_preference(self, key: str, data) -> bool:
         """PUT /api/users/preferences — save a single preference."""
         try:
+            headers = self._auth_headers(f"save preference '{key}'")
+            if headers is None:
+                return False
             resp = self._session.put(self._url("/users/preferences"),
-                                     headers=self._headers(),
+                                     headers=headers,
                                      json={"key": key, "data": data},
                                      timeout=10)
             resp.raise_for_status()
@@ -238,8 +282,11 @@ class NexusClient:
     def get_inventory(self) -> list[dict] | None:
         """GET /api/users/inventory — returns list of inventory items."""
         try:
+            headers = self._auth_headers("get inventory")
+            if headers is None:
+                return None
             resp = self._session.get(self._url("/users/inventory"),
-                                     headers=self._headers(), timeout=15)
+                                     headers=headers, timeout=15)
             resp.raise_for_status()
             return resp.json()
         except Exception as e:
@@ -249,8 +296,11 @@ class NexusClient:
     def get_inventory_markups(self) -> list[dict] | None:
         """GET /api/users/inventory/markups — returns [{item_id, markup, updated_at}]."""
         try:
+            headers = self._auth_headers("get inventory markups")
+            if headers is None:
+                return None
             resp = self._session.get(self._url("/users/inventory/markups"),
-                                     headers=self._headers(), timeout=10)
+                                     headers=headers, timeout=10)
             resp.raise_for_status()
             return resp.json()
         except Exception as e:
@@ -260,8 +310,11 @@ class NexusClient:
     def save_inventory_markups(self, items: list[dict]) -> bool:
         """PUT /api/users/inventory/markups — bulk upsert [{item_id, markup}]."""
         try:
+            headers = self._auth_headers("save inventory markups")
+            if headers is None:
+                return False
             resp = self._session.put(self._url("/users/inventory/markups"),
-                                     headers=self._headers(),
+                                     headers=headers,
                                      json={"items": items}, timeout=10)
             resp.raise_for_status()
             return True
@@ -272,9 +325,12 @@ class NexusClient:
     def delete_inventory_markup(self, item_id: int) -> bool:
         """DELETE /api/users/inventory/markups/:item_id."""
         try:
+            headers = self._auth_headers(f"delete inventory markup {item_id}")
+            if headers is None:
+                return False
             resp = self._session.delete(
                 self._url(f"/users/inventory/markups/{item_id}"),
-                headers=self._headers(), timeout=10)
+                headers=headers, timeout=10)
             resp.raise_for_status()
             return True
         except Exception as e:
@@ -287,8 +343,11 @@ class NexusClient:
         Returns: {added, updated, removed, unchanged, total} on success.
         """
         try:
+            headers = self._auth_headers("import inventory")
+            if headers is None:
+                return None
             resp = self._session.put(self._url("/users/inventory"),
-                                     headers=self._headers(),
+                                     headers=headers,
                                      json={"items": items, "sync": sync},
                                      timeout=30)
             resp.raise_for_status()
@@ -301,12 +360,15 @@ class NexusClient:
                            since: str | None = None) -> list[dict] | None:
         """GET /api/users/inventory/imports — Paginated import history."""
         try:
+            headers = self._auth_headers("get import history")
+            if headers is None:
+                return None
             params: dict = {"limit": limit, "offset": offset}
             if since:
                 params["since"] = since
             resp = self._session.get(
                 self._url("/users/inventory/imports"),
-                headers=self._headers(),
+                headers=headers,
                 params=params,
                 timeout=10)
             resp.raise_for_status()
@@ -318,9 +380,12 @@ class NexusClient:
     def get_import_deltas(self, import_id: int) -> list[dict] | None:
         """GET /api/users/inventory/imports/{id}/deltas — Per-item changes."""
         try:
+            headers = self._auth_headers(f"get import deltas {import_id}")
+            if headers is None:
+                return None
             resp = self._session.get(
                 self._url(f"/users/inventory/imports/{import_id}/deltas"),
-                headers=self._headers(),
+                headers=headers,
                 timeout=10)
             resp.raise_for_status()
             return resp.json()
@@ -331,12 +396,15 @@ class NexusClient:
     def get_value_history(self, since: str | None = None) -> list[dict] | None:
         """GET /api/users/inventory/imports/value-history — Portfolio value timeline."""
         try:
+            headers = self._auth_headers("get value history")
+            if headers is None:
+                return None
             params: dict = {}
             if since:
                 params["since"] = since
             resp = self._session.get(
                 self._url("/users/inventory/imports/value-history"),
-                headers=self._headers(),
+                headers=headers,
                 params=params,
                 timeout=10)
             resp.raise_for_status()
@@ -348,8 +416,11 @@ class NexusClient:
     def get_inventory_containers(self) -> list[dict] | None:
         """GET /api/users/inventory/containers — custom container names."""
         try:
+            headers = self._auth_headers("get inventory containers")
+            if headers is None:
+                return None
             resp = self._session.get(self._url("/users/inventory/containers"),
-                                     headers=self._headers(), timeout=10)
+                                     headers=headers, timeout=10)
             resp.raise_for_status()
             return resp.json()
         except Exception as e:
@@ -396,8 +467,11 @@ class NexusClient:
     def get_my_orders(self) -> list[dict] | None:
         """GET /api/market/exchange/orders — current user's exchange orders."""
         try:
+            headers = self._auth_headers("get my orders")
+            if headers is None:
+                return None
             resp = self._session.get(self._url("/market/exchange/orders"),
-                                     headers=self._headers(), timeout=15)
+                                     headers=headers, timeout=15)
             if resp.status_code == 429:
                 raise RateLimitError(resp.json().get("retryAfter", 60))
             resp.raise_for_status()
@@ -437,8 +511,11 @@ class NexusClient:
         Raises RateLimitError on 429.
         """
         try:
+            headers = self._auth_headers("create order")
+            if headers is None:
+                return None
             resp = self._session.post(self._url("/market/exchange/orders"),
-                                      headers=self._headers(),
+                                      headers=headers,
                                       json=data, timeout=15)
             if resp.status_code == 429:
                 raise RateLimitError(resp.json().get("retryAfter", 60))
@@ -460,9 +537,12 @@ class NexusClient:
         Raises RateLimitError on 429.
         """
         try:
+            headers = self._auth_headers(f"edit order {order_id}")
+            if headers is None:
+                return None
             resp = self._session.put(
                 self._url(f"/market/exchange/orders/{order_id}"),
-                headers=self._headers(), json=data, timeout=15)
+                headers=headers, json=data, timeout=15)
             if resp.status_code == 429:
                 raise RateLimitError(resp.json().get("retryAfter", 60))
             resp.raise_for_status()
@@ -479,9 +559,12 @@ class NexusClient:
     def close_order(self, order_id: int) -> bool:
         """DELETE /api/market/exchange/orders/{id} — close an exchange order."""
         try:
+            headers = self._auth_headers(f"close order {order_id}")
+            if headers is None:
+                return False
             resp = self._session.delete(
                 self._url(f"/market/exchange/orders/{order_id}"),
-                headers=self._headers(), timeout=15)
+                headers=headers, timeout=15)
             if resp.status_code == 429:
                 raise RateLimitError(resp.json().get("retryAfter", 60))
             resp.raise_for_status()
@@ -495,9 +578,12 @@ class NexusClient:
     def bump_all_orders(self) -> dict | None:
         """POST /api/market/exchange/orders/bump-all — reset bumped_at on all eligible orders."""
         try:
+            headers = self._auth_headers("bump all orders")
+            if headers is None:
+                return None
             resp = self._session.post(
                 self._url("/market/exchange/orders/bump-all"),
-                headers=self._headers(), timeout=15)
+                headers=headers, timeout=15)
             if resp.status_code == 429:
                 raise RateLimitError(resp.json().get("retryAfter", 60))
             resp.raise_for_status()
@@ -513,8 +599,11 @@ class NexusClient:
     def get_trade_requests(self) -> list[dict] | None:
         """GET /api/market/trade-requests — current user's trade requests."""
         try:
+            headers = self._auth_headers("get trade requests")
+            if headers is None:
+                return None
             resp = self._session.get(self._url("/market/trade-requests"),
-                                     headers=self._headers(), timeout=15)
+                                     headers=headers, timeout=15)
             resp.raise_for_status()
             return resp.json()
         except Exception as e:
@@ -528,9 +617,12 @@ class NexusClient:
         Returns {id, isNew} or None.
         """
         try:
+            headers = self._auth_headers("create trade request")
+            if headers is None:
+                return None
             resp = self._session.post(
                 self._url("/market/trade-requests"),
-                headers=self._headers(),
+                headers=headers,
                 json={
                     "target_id": str(target_id),
                     "planet": planet,
@@ -549,9 +641,12 @@ class NexusClient:
     def cancel_trade_request(self, request_id: int) -> bool:
         """POST /api/market/trade-requests/{id}/cancel."""
         try:
+            headers = self._auth_headers(f"cancel trade request {request_id}")
+            if headers is None:
+                return False
             resp = self._session.post(
                 self._url(f"/market/trade-requests/{request_id}/cancel"),
-                headers=self._headers(), timeout=10)
+                headers=headers, timeout=10)
             resp.raise_for_status()
             return True
         except Exception as e:
@@ -593,9 +688,12 @@ class NexusClient:
     def get_notifications(self, page: int = 1, page_size: int = 20) -> dict | None:
         """GET /api/notifications — {rows, total, unread, page, pageSize}."""
         try:
+            headers = self._auth_headers("get notifications")
+            if headers is None:
+                return None
             resp = self._session.get(
                 self._url("/notifications"),
-                headers=self._headers(),
+                headers=headers,
                 params={"page": page, "pageSize": page_size},
                 timeout=10,
             )
@@ -608,9 +706,12 @@ class NexusClient:
     def mark_notification_read(self, notification_id: int) -> bool:
         """PATCH /api/notifications/:id — mark single notification as read."""
         try:
+            headers = self._auth_headers(f"mark notification {notification_id} read")
+            if headers is None:
+                return False
             resp = self._session.patch(
                 self._url(f"/notifications/{notification_id}"),
-                headers=self._headers(),
+                headers=headers,
                 timeout=10,
             )
             resp.raise_for_status()
@@ -622,9 +723,12 @@ class NexusClient:
     def mark_all_notifications_read(self) -> bool:
         """POST /api/notifications/read-all."""
         try:
+            headers = self._auth_headers("mark all notifications read")
+            if headers is None:
+                return False
             resp = self._session.post(
                 self._url("/notifications/read-all"),
-                headers=self._headers(),
+                headers=headers,
                 timeout=10,
             )
             resp.raise_for_status()
@@ -642,7 +746,9 @@ class NexusClient:
         Returns None on 4xx client errors (data is bad, no point retrying).
         """
         payload = gzip.compress(json.dumps({"globals": batch}).encode())
-        headers = self._headers()
+        headers = self._auth_headers("ingest globals")
+        if headers is None:
+            return None
         headers["Content-Encoding"] = "gzip"
         headers["Content-Type"] = "application/json"
         try:
@@ -676,7 +782,9 @@ class NexusClient:
         Returns None on 4xx client errors (data is bad, no point retrying).
         """
         payload = gzip.compress(json.dumps({"trades": batch}).encode())
-        headers = self._headers()
+        headers = self._auth_headers("ingest trades")
+        if headers is None:
+            return None
         headers["Content-Encoding"] = "gzip"
         headers["Content-Type"] = "application/json"
         try:
@@ -710,7 +818,9 @@ class NexusClient:
         Returns None on 4xx client errors (data is bad, no point retrying).
         """
         payload = gzip.compress(json.dumps({"prices": batch}).encode())
-        headers = self._headers()
+        headers = self._auth_headers("ingest market prices")
+        if headers is None:
+            return None
         headers["Content-Encoding"] = "gzip"
         headers["Content-Type"] = "application/json"
         try:
@@ -740,9 +850,12 @@ class NexusClient:
     def get_ingame_prices(self) -> list[dict] | None:
         """GET /api/market/prices/snapshots/latest?all=true — fetch latest market price snapshots."""
         try:
+            headers = self._auth_headers("get ingame prices")
+            if headers is None:
+                return None
             resp = self._session.get(
                 self._url("/market/prices/snapshots/latest"),
-                headers=self._headers(),
+                headers=headers,
                 params={"all": "true"},
                 timeout=15,
             )
@@ -755,9 +868,12 @@ class NexusClient:
     def get_ingested_globals(self, since: str, limit: int = 200) -> dict | None:
         """GET /api/ingestion/globals — fetch globals since a timestamp."""
         try:
+            headers = self._auth_headers("get ingested globals")
+            if headers is None:
+                return None
             resp = self._session.get(
                 self._url("/ingestion/globals"),
-                headers=self._headers(),
+                headers=headers,
                 params={"since": since, "limit": limit},
                 timeout=15,
             )
@@ -770,9 +886,12 @@ class NexusClient:
     def get_ingested_trades(self, since: str, limit: int = 200) -> dict | None:
         """GET /api/ingestion/trade — fetch trades since a timestamp."""
         try:
+            headers = self._auth_headers("get ingested trades")
+            if headers is None:
+                return None
             resp = self._session.get(
                 self._url("/ingestion/trade"),
-                headers=self._headers(),
+                headers=headers,
                 params={"since": since, "limit": limit},
                 timeout=15,
             )
@@ -800,10 +919,13 @@ class NexusClient:
     def update_profile(self, identifier: str, data: dict) -> dict | None:
         """PATCH /api/users/profiles/{identifier} — update biography, default tab, showcase."""
         try:
+            headers = self._auth_headers(f"update profile '{identifier}'")
+            if headers is None:
+                return None
             encoded = identifier.replace(" ", "~")
             resp = self._session.patch(
                 self._url(f"/users/profiles/{encoded}"),
-                headers=self._headers(), json=data, timeout=10)
+                headers=headers, json=data, timeout=10)
             resp.raise_for_status()
             return resp.json()
         except Exception as e:
@@ -814,9 +936,12 @@ class NexusClient:
                              content_type: str = "image/png") -> dict | None:
         """POST /api/image/user/{userId} — upload profile image (max 3MB)."""
         try:
+            headers = self._auth_headers(f"upload profile image {user_id}")
+            if headers is None:
+                return None
             resp = self._session.post(
                 self._url(f"/image/user/{user_id}"),
-                headers=self._headers(),
+                headers=headers,
                 files={"image": ("profile", image_data, content_type)},
                 timeout=30)
             resp.raise_for_status()
@@ -828,9 +953,12 @@ class NexusClient:
     def delete_profile_image(self, user_id: int) -> bool:
         """DELETE /api/image/user/{userId} — remove custom profile image."""
         try:
+            headers = self._auth_headers(f"delete profile image {user_id}")
+            if headers is None:
+                return False
             resp = self._session.delete(
                 self._url(f"/image/user/{user_id}"),
-                headers=self._headers(), timeout=10)
+                headers=headers, timeout=10)
             resp.raise_for_status()
             return True
         except Exception as e:
@@ -855,10 +983,13 @@ class NexusClient:
     def update_society(self, identifier: str, data: dict) -> dict | None:
         """PATCH /api/societies/{identifier} — update description, discord, discordPublic."""
         try:
+            headers = self._auth_headers(f"update society '{identifier}'")
+            if headers is None:
+                return None
             encoded = identifier.replace(" ", "~")
             resp = self._session.patch(
                 self._url(f"/societies/{encoded}"),
-                headers=self._headers(), json=data, timeout=10)
+                headers=headers, json=data, timeout=10)
             resp.raise_for_status()
             return resp.json()
         except Exception as e:
@@ -868,9 +999,12 @@ class NexusClient:
     def handle_join_request(self, request_id: int, action: str) -> dict | None:
         """PATCH /api/societies/requests/{request_id} — approve or reject."""
         try:
+            headers = self._auth_headers(f"{action} join request {request_id}")
+            if headers is None:
+                return None
             resp = self._session.patch(
                 self._url(f"/societies/requests/{request_id}"),
-                headers=self._headers(),
+                headers=headers,
                 json={"action": action},
                 timeout=10)
             resp.raise_for_status()

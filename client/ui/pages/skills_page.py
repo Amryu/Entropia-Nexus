@@ -325,7 +325,7 @@ class SkillsPage(QWidget):
         self._db = db
 
         # Data manager
-        self._manager = SkillDataManager(data_client, nexus_client)
+        self._manager = SkillDataManager(data_client, nexus_client, db=db)
 
         # View state
         self._skills_view_mode = "grid"     # "grid" or "list"
@@ -684,9 +684,13 @@ class SkillsPage(QWidget):
         self._manager.refresh_metadata()
         self._load_rank_thresholds()
 
+        synced = False
         if self._oauth.is_authenticated():
-            self._manager.sync_from_nexus()
-            self._synced = True
+            synced = self._manager.sync_from_nexus()
+            self._synced = synced
+        if not synced:
+            self._manager.load_from_local()
+            self._synced = False
 
         self._load_gains_from_db()
 
@@ -883,7 +887,7 @@ class SkillsPage(QWidget):
         )
 
         if not skills:
-            lbl = QLabel("No skills to display. Login to sync your skills.")
+            lbl = QLabel("No skills to display. Scan, import, or login to sync.")
             lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             self._skills_grid_layout.addWidget(lbl, 0, 0)
             return
@@ -1541,18 +1545,7 @@ class SkillsPage(QWidget):
             if answer != QMessageBox.StandardButton.Yes:
                 return
 
-            # Apply values through the manager
-            for name, val in imported.items():
-                self._manager._skill_values[name] = val
-
-            # Upload if connected
-            if self._manager._nexus_client:
-                try:
-                    self._manager._nexus_client.upload_skills(
-                        self._manager._skill_values, track_import=True,
-                    )
-                except Exception as e:
-                    log.error("Failed to upload imported skills: %s", e)
+            synced = self._manager.apply_imported_values(imported)
 
             # Reset gains baseline — import is the new reference point
             self._skill_gains.clear()
@@ -1561,10 +1554,17 @@ class SkillsPage(QWidget):
             self._refresh_skills_display()
             self._refresh_prof_display()
 
-            QMessageBox.information(
-                self, "Import Skills",
-                f"Imported {len(imported)} skills from {Path(path).name}",
-            )
+            if self._manager._nexus_client and not synced:
+                QMessageBox.warning(
+                    self, "Import Skills",
+                    f"Imported {len(imported)} skills from {Path(path).name}.\n\n"
+                    "Saved locally, but remote sync failed.",
+                )
+            else:
+                QMessageBox.information(
+                    self, "Import Skills",
+                    f"Imported {len(imported)} skills from {Path(path).name}",
+                )
         except (ValueError, json.JSONDecodeError) as e:
             QMessageBox.critical(self, "Import Failed", f"Invalid file format:\n{e}")
         except Exception as e:
@@ -1578,8 +1578,9 @@ class SkillsPage(QWidget):
             threading.Thread(target=self._sync_on_auth, daemon=True).start()
 
     def _sync_on_auth(self):
-        self._manager.sync_from_nexus()
-        self._synced = True
+        self._synced = self._manager.sync_from_nexus()
+        if not self._synced:
+            self._manager.load_from_local()
         QTimer.singleShot(0, self._on_data_loaded)
 
     # ── Live Skill Gains ─────────────────────────────────────────────────

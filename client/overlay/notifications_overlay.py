@@ -46,6 +46,7 @@ _SOURCE_COLORS = {
     "system": "#aaaaaa",
     "stream": "#E05050",
     "exchange": "#b366ff",
+    "tracker": "#e879f9",
 }
 
 _SOURCE_LABELS = {
@@ -55,6 +56,7 @@ _SOURCE_LABELS = {
     "system": "System",
     "stream": "Stream",
     "exchange": "Exchange",
+    "tracker": "Tracker",
 }
 
 

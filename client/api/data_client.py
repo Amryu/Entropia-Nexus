@@ -27,6 +27,7 @@ class DataClient:
 
     def __init__(self, config):
         self._base_url = config.api_base_url
+        self._frontend_url = config.nexus_base_url
         self._session = requests.Session()
         self._memory_cache: dict[str, tuple[float, list]] = {}
         os.makedirs(CACHE_DIR, exist_ok=True)
@@ -112,6 +113,35 @@ class DataClient:
 
     def get_mission_chains(self) -> list[dict]:
         return self._get_cached("/missionchains")
+
+    def get_events(self, limit: int = 20, include_past: bool = False,
+                   past_limit: int = 10) -> list[dict] | dict:
+        """Fetch events from the frontend API.
+
+        When *include_past* is True the API returns ``{upcoming, past}``
+        instead of a flat list.
+        """
+        endpoint = f"/api/events?limit={limit}"
+        if include_past:
+            endpoint += f"&include=past&past_limit={past_limit}"
+
+        now = time.time()
+        if endpoint in self._memory_cache:
+            cached_time, cached_data = self._memory_cache[endpoint]
+            if now - cached_time < CACHE_TTL_SECONDS:
+                return cached_data
+
+        try:
+            resp = self._session.get(f"{self._frontend_url}{endpoint}", timeout=15)
+            resp.raise_for_status()
+            data = resp.json()
+            self._memory_cache[endpoint] = (now, data)
+            return data
+        except Exception as e:
+            log.warning("Failed to fetch events: %s", e)
+            if endpoint in self._memory_cache:
+                return self._memory_cache[endpoint][1]
+            return {"upcoming": [], "past": []} if include_past else []
 
     def get_mission_chain_detail(self, name: str) -> dict | None:
         """Fetch a single mission chain with its missions and dependency graph."""

@@ -17,6 +17,7 @@ class TestLoadConfigDefaults(unittest.TestCase):
         self.assertAlmostEqual(config.overlay_opacity, 0.85)
         self.assertEqual(config.nexus_base_url, "https://entropianexus.com")
         self.assertEqual(config.api_base_url, "https://api.entropianexus.com")
+        self.assertEqual(config.ocr_capture_backend, "auto")
         self.assertEqual(config.loot_blacklist, [])
         self.assertEqual(config.loot_blacklist_per_mob, {})
 
@@ -141,6 +142,11 @@ class TestValidateConfig(unittest.TestCase):
         config = AppConfig(chat_log_path=__file__, ocr_confidence_threshold=2.0)
         errors = validate_config(config)
         self.assertTrue(any("ocr_confidence_threshold" in e for e in errors))
+
+    def test_validate_bad_capture_backend(self):
+        config = AppConfig(chat_log_path=__file__, ocr_capture_backend="nope")
+        errors = validate_config(config)
+        self.assertTrue(any("ocr_capture_backend" in e for e in errors))
 
     def test_validate_missing_chat_log(self):
         config = AppConfig(chat_log_path="")

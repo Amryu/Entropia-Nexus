@@ -25,7 +25,7 @@ from ..theme import (
 from ...notifications.models import (
     Notification, GlobalNotificationRule, TradeKeywordEntry,
     SOURCE_GLOBAL, SOURCE_TRADE_CHAT, SOURCE_NEXUS, SOURCE_SYSTEM,
-    SOURCE_STREAM, SOURCE_EXCHANGE,
+    SOURCE_STREAM, SOURCE_EXCHANGE, SOURCE_TRACKER,
 )
 
 from ...exchange.constants import PLANETS as _PLANETS
@@ -44,6 +44,7 @@ _SOURCE_COLORS = {
     SOURCE_SYSTEM: TEXT_MUTED,
     SOURCE_STREAM: _STREAM_COLOR,
     SOURCE_EXCHANGE: _EXCHANGE_COLOR,
+    SOURCE_TRACKER: "#e879f9",
 }
 
 _SOURCE_LABELS = {
@@ -53,6 +54,7 @@ _SOURCE_LABELS = {
     SOURCE_SYSTEM: "System",
     SOURCE_STREAM: "Stream",
     SOURCE_EXCHANGE: "Exchange",
+    SOURCE_TRACKER: "Tracker",
 }
 
 GLOBAL_TYPE_OPTIONS = [

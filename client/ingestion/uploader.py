@@ -22,12 +22,14 @@ from datetime import datetime, timedelta
 
 from ..api.nexus_client import RateLimitError, ServerError
 from ..chat_parser.models import GlobalEvent
-from ..core.constants import EVENT_CATCHUP_COMPLETE, EVENT_GLOBAL, EVENT_INGESTION_STATUS, EVENT_MARKET_PRICE_SCAN, EVENT_REPARSE_COMPLETE, EVENT_TRADE_CHAT
+from ..core.constants import EVENT_CATCHUP_COMPLETE, EVENT_GLOBAL, EVENT_HISTORICAL_IMPORT_COMPLETE, EVENT_INGESTION_STATUS, EVENT_MARKET_PRICE_SCAN, EVENT_REPARSE_COMPLETE, EVENT_TRADE_CHAT
 from ..core.logger import get_logger
 
 log = get_logger("Ingestion.Upload")
 
 MAX_BATCH_SIZE = 500
+INGEST_RATE_LIMIT_MAX_REQUESTS = 20
+INGEST_RATE_LIMIT_WINDOW = timedelta(seconds=60)
 REALTIME_FLUSH_DELAY = 5  # seconds — flush within this time after new live event
 
 # Must match server-side limits in ingestion.js
@@ -70,7 +72,12 @@ class IngestionUploader:
         self._stop_event = threading.Event()
         self._flush_requested = threading.Event()
         self._live = False  # True after first catchup complete — enables real-time flush
-        self._rate_limit_until: datetime | None = None  # Skip flushes until this time
+        self._rate_limit_until: dict[str, datetime] = {}
+        self._request_times: dict[str, deque[datetime]] = {
+            "global": deque(),
+            "trade": deque(),
+            "market_price": deque(),
+        }
         self._thread: threading.Thread | None = None
 
         # Occurrence tracking: base_hash -> list of event timestamps (within 5-min window)
@@ -98,6 +105,7 @@ class IngestionUploader:
         # self._event_bus.subscribe(EVENT_MARKET_PRICE_SCAN, self._on_market_price)
         self._event_bus.subscribe(EVENT_CATCHUP_COMPLETE, self._on_catchup_complete)
         self._event_bus.subscribe(EVENT_REPARSE_COMPLETE, self._on_reparse_complete)
+        self._event_bus.subscribe(EVENT_HISTORICAL_IMPORT_COMPLETE, self._on_historical_import_complete)
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -129,6 +137,7 @@ class IngestionUploader:
         self._event_bus.unsubscribe(EVENT_MARKET_PRICE_SCAN, self._on_market_price)
         self._event_bus.unsubscribe(EVENT_CATCHUP_COMPLETE, self._on_catchup_complete)
         self._event_bus.unsubscribe(EVENT_REPARSE_COMPLETE, self._on_reparse_complete)
+        self._event_bus.unsubscribe(EVENT_HISTORICAL_IMPORT_COMPLETE, self._on_historical_import_complete)
         log.info("Uploader stopped")
 
     # ------------------------------------------------------------------
@@ -225,6 +234,10 @@ class IngestionUploader:
 
     def _on_reparse_complete(self, _data):
         """After a manual reparse — re-buffer globals/trades from DB for re-upload."""
+        self._rebuffer_from_db()
+
+    def _on_historical_import_complete(self, _data):
+        """After historical log import — re-buffer globals/trades from DB for upload."""
         self._rebuffer_from_db()
 
     def _rebuffer_from_db(self):
@@ -338,6 +351,36 @@ class IngestionUploader:
         for h in stale:
             del self._recent_hashes[h]
 
+    def _prune_request_times(self, type_name: str, now: datetime) -> deque[datetime]:
+        """Drop request timestamps outside the rolling limit window."""
+        times = self._request_times[type_name]
+        cutoff = now - INGEST_RATE_LIMIT_WINDOW
+        while times and times[0] <= cutoff:
+            times.popleft()
+        return times
+
+    def _reserve_rate_limit_slot(self, type_name: str) -> tuple[bool, int]:
+        """Reserve one request slot for an endpoint if within rate limits."""
+        now = datetime.now()
+        with self._lock:
+            blocked_until = self._rate_limit_until.get(type_name)
+            if blocked_until and now < blocked_until:
+                wait_s = max(1, int((blocked_until - now).total_seconds()))
+                return False, wait_s
+            if blocked_until and now >= blocked_until:
+                self._rate_limit_until.pop(type_name, None)
+
+            times = self._prune_request_times(type_name, now)
+            if len(times) >= INGEST_RATE_LIMIT_MAX_REQUESTS:
+                next_allowed = times[0] + INGEST_RATE_LIMIT_WINDOW
+                self._rate_limit_until[type_name] = next_allowed
+                wait_s = max(1, int((next_allowed - now).total_seconds()))
+                return False, wait_s
+
+            times.append(now)
+
+        return True, 0
+
     # ------------------------------------------------------------------
     # Background loop
     # ------------------------------------------------------------------
@@ -373,12 +416,7 @@ class IngestionUploader:
         if not self._nexus_client.is_authenticated():
             return
 
-        # Respect rate limit backoff — skip until the server window resets
-        if self._rate_limit_until:
-            if datetime.now() < self._rate_limit_until:
-                return
-            self._rate_limit_until = None
-
+        # Per-endpoint rate limiting is enforced in _flush_type().
         # Clean stale occurrence tracker entries
         with self._lock:
             self._cleanup_occurrence_tracker()
@@ -418,7 +456,27 @@ class IngestionUploader:
 
         sent = 0
         processed = []
-        for chunk in _chunked(items, MAX_BATCH_SIZE):
+        for chunk_start in range(0, len(items), MAX_BATCH_SIZE):
+            chunk = items[chunk_start:chunk_start + MAX_BATCH_SIZE]
+
+            if not self._nexus_client.is_authenticated():
+                unsent = items[chunk_start:]
+                self._requeue(buffer, unsent)
+                self._persist_buffers()
+                return sent, processed
+
+            allowed, wait_s = self._reserve_rate_limit_slot(type_name)
+            if not allowed:
+                unsent = items[chunk_start:]
+                self._requeue(buffer, unsent)
+                log.info(
+                    "%s pre-emptive throttle, re-queued %d items (retry in %ds)",
+                    type_name.capitalize(),
+                    len(unsent),
+                    wait_s,
+                )
+                self._persist_buffers()
+                return sent, processed
             try:
                 result = send_fn(chunk)
                 if result:
@@ -446,15 +504,17 @@ class IngestionUploader:
                     # Log batch summary so we can diagnose the issue.
                     self._log_failed_batch(type_name, chunk)
             except RateLimitError as e:
-                self._rate_limit_until = datetime.now() + timedelta(seconds=e.retry_after)
-                unsent = items[items.index(chunk[0]):]
+                self._rate_limit_until[type_name] = (
+                    datetime.now() + timedelta(seconds=e.retry_after)
+                )
+                unsent = items[chunk_start:]
                 self._requeue(buffer, unsent)
                 log.warning("%s rate-limited, re-queued %d items (retry in %ds)",
                             type_name.capitalize(), len(unsent), e.retry_after)
                 self._persist_buffers()
                 return sent, processed
             except ServerError as e:
-                unsent = items[items.index(chunk[0]):]
+                unsent = items[chunk_start:]
                 self._requeue(buffer, unsent)
                 log.warning("%s server error, re-queued %d items: %s",
                             type_name.capitalize(), len(unsent), e)
