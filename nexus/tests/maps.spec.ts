@@ -54,6 +54,24 @@ test.describe('Maps Page', () => {
   });
 
   test.describe('Edit Mode', () => {
+    test('mode=edit opens Leaflet editor automatically', async ({ verifiedUser }) => {
+      await verifiedUser.setViewportSize({ width: 1280, height: 800 });
+      await verifiedUser.goto('/maps/calypso?mode=edit');
+      await verifiedUser.waitForLoadState('networkidle');
+
+      const overlay = verifiedUser.locator('.leaflet-editor-overlay');
+      await expect(overlay).toBeVisible({ timeout: TIMEOUT_LONG });
+    });
+
+    test('mode=create opens Leaflet editor automatically', async ({ verifiedUser }) => {
+      await verifiedUser.setViewportSize({ width: 1280, height: 800 });
+      await verifiedUser.goto('/maps/calypso?mode=create');
+      await verifiedUser.waitForLoadState('networkidle');
+
+      const overlay = verifiedUser.locator('.leaflet-editor-overlay');
+      await expect(overlay).toBeVisible({ timeout: TIMEOUT_LONG });
+    });
+
     test('clicking edit mode button opens Leaflet editor overlay', async ({ verifiedUser }) => {
       await verifiedUser.setViewportSize({ width: 1280, height: 800 });
       await verifiedUser.goto('/maps/calypso');
@@ -152,6 +170,42 @@ test.describe('Maps Page', () => {
 
       const changesToggle = verifiedUser.locator('.editor-toolbar button', { hasText: 'Changes' });
       await expect(changesToggle).toBeVisible({ timeout: TIMEOUT_MEDIUM });
+    });
+
+    test('pending edits stay visible with state-colored edges even when search filter hides list items', async ({ verifiedUser }) => {
+      await verifiedUser.setViewportSize({ width: 1280, height: 800 });
+      await verifiedUser.goto('/maps/calypso');
+      await verifiedUser.waitForLoadState('networkidle');
+
+      const editBtn = verifiedUser.locator('.edit-mode-btn');
+      await expect(editBtn).toBeVisible({ timeout: TIMEOUT_LONG });
+      await editBtn.click();
+
+      const overlay = verifiedUser.locator('.leaflet-editor-overlay');
+      await expect(overlay).toBeVisible({ timeout: TIMEOUT_MEDIUM });
+
+      const firstLocation = overlay.locator('.left-sidebar .location-row').first();
+      await expect(firstLocation).toBeVisible({ timeout: TIMEOUT_MEDIUM });
+      await firstLocation.click();
+
+      const saveBtn = overlay.locator('.right-panel .btn.btn-primary');
+      await expect(saveBtn).toBeVisible({ timeout: TIMEOUT_MEDIUM });
+      await saveBtn.click();
+
+      // Deselect so the yellow selection style does not mask pending-change edge color.
+      await overlay.locator('.map-area').click({ position: { x: 8, y: 8 } });
+
+      const listSearch = overlay.locator('.left-sidebar .search-input');
+      await listSearch.fill('zzzzzz-no-match');
+
+      const hasPendingEditEdge = await verifiedUser.locator('.leaflet-overlay-pane path').evaluateAll((paths) => {
+        return paths.some((pathEl) => {
+          const stroke = (getComputedStyle(pathEl).stroke || pathEl.getAttribute('stroke') || '').trim().toLowerCase();
+          return stroke === 'rgb(245, 158, 11)' || stroke === '#f59e0b';
+        });
+      });
+
+      expect(hasPendingEditEdge).toBeTruthy();
     });
   });
 });

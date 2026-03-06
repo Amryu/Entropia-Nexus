@@ -89,6 +89,8 @@
   let searchResultsHovered = false;
   let searchSelectedIndex = -1;
   let panelLoading = false;
+  let activatingLeaflet = false;
+  let autoLeafletHandledKey = null;
 
   // --- Leaflet Edit Mode state ---
   let leafletEditMode = false;
@@ -98,11 +100,17 @@
   let allMobs = [];
 
   async function activateEditMode() {
-    if (!allMobs.length) {
-      const mobsData = await apiCall(fetch, '/mobs');
-      allMobs = mobsData || [];
+    if (leafletEditMode || activatingLeaflet) return;
+    activatingLeaflet = true;
+    try {
+      if (!allMobs.length) {
+        const mobsData = await apiCall(fetch, '/mobs');
+        allMobs = mobsData || [];
+      }
+      leafletEditMode = true;
+    } finally {
+      activatingLeaflet = false;
     }
-    leafletEditMode = true;
   }
 
   function deactivateEditMode() {
@@ -123,6 +131,10 @@
   $: user = data.session?.user;
   $: canEdit = user?.verified || user?.grants?.includes('wiki.edit');
   $: isEditAllowed = canEdit && !isMobile;
+  $: routeMode = ($page.url.searchParams.get('mode') || '').toLowerCase();
+  $: routeChangeId = $page.url.searchParams.get('changeId');
+  $: shouldAutoOpenLeaflet = !!currentPlanet && isEditAllowed && (routeMode === 'edit' || routeMode === 'create');
+  $: autoLeafletKey = `${$page.url.pathname}|${routeMode}|${routeChangeId || ''}`;
   $: canCreateNew = data.canCreateNew ?? true;
   $: pendingChange = data.pendingChange;
   $: userPendingCreates = data.userPendingCreates || [];
@@ -148,6 +160,26 @@
   $: effectiveCreateMode = isCreateMode && isEditAllowed;
   $: if (data.existingChange?.entity === 'Area' || data.existingChange?.entity === 'Location' || data.existingChange?.entity === 'Apartment') {
     createEntityType = data.existingChange.entity;
+  }
+
+  function buildLeafletFocusLocation(locLike) {
+    if (!locLike?.Properties) return null;
+    const props = locLike.Properties || {};
+    const coords = props.Coordinates || {};
+    return {
+      Id: locLike.Id ?? locLike.ItemId ?? null,
+      Name: locLike.Name || '',
+      Properties: {
+        ...props,
+        Coordinates: {
+          Longitude: coords.Longitude ?? null,
+          Latitude: coords.Latitude ?? null,
+          Altitude: coords.Altitude ?? null
+        },
+        Shape: props.Shape || null,
+        Data: props.Data || null
+      }
+    };
   }
 
   function isAreaType(type) {
@@ -442,6 +474,27 @@
   $: if (mapRef && selectedLocation?.Id && selectedLocation.Id !== lastFocusedId) {
     lastFocusedId = selectedLocation.Id;
     mapRef.focusOnLocation(selectedLocation);
+  }
+
+  $: leafletFocusLocation = (() => {
+    if (!shouldAutoOpenLeaflet) return null;
+    if (routeMode === 'create' && data.existingChange?.data) {
+      return buildLeafletFocusLocation(data.existingChange.data);
+    }
+    if (routeMode === 'edit' && selectedLocation) {
+      return selectedLocation;
+    }
+    if (selectedLocation) return selectedLocation;
+    return null;
+  })();
+
+  $: leafletFocusKey = shouldAutoOpenLeaflet
+    ? `${$page.url.pathname}|${routeMode}|${routeChangeId || ''}`
+    : null;
+
+  $: if (shouldAutoOpenLeaflet && autoLeafletHandledKey !== autoLeafletKey && !leafletEditMode) {
+    autoLeafletHandledKey = autoLeafletKey;
+    activateEditMode();
   }
 
   $: if (currentPlanet) {
@@ -1312,6 +1365,8 @@
         dbPendingChanges={data.planetPendingChanges || []}
         currentUserId={user?.id}
         isAdmin={user?.grants?.includes('wiki.approve') || false}
+        focusLocation={leafletFocusLocation}
+        focusKey={leafletFocusKey}
         bind:pendingChanges={editorPendingChanges}
         bind:rightPanel={editorRightPanel}
         bind:changeCount={editorChangeCount}

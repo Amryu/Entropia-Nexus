@@ -14,6 +14,10 @@
   export let loading = false;
   /** @type {'admin' | 'public'} */
   export let mode = 'admin';
+  /** Location-like object to focus when opening editor from route mode links */
+  export let focusLocation = null;
+  /** Stable key so focus is only applied once per navigation */
+  export let focusKey = null;
 
   // --- DB pending changes (from all users) ---
   /** @type {Array} All pending changes for this planet from the database */
@@ -48,6 +52,7 @@
   let mobEditorContext = null;
   let filteredLocationIds = null;
   let nextTempId = -1;
+  let lastAppliedFocusKey = null;
 
   // --- Exported method ---
   export function reset() {
@@ -128,6 +133,15 @@
   }
 
   $: changeCount = pendingChanges.size;
+
+  $: if (focusKey && focusLocation && mapComponent && focusKey !== lastAppliedFocusKey) {
+    if (focusLocation.Id != null) {
+      const matched = locations.find(l => l.Id == focusLocation.Id);
+      selectedId = matched ? matched.Id : focusLocation.Id;
+    }
+    mapComponent.panToLocation(focusLocation);
+    lastAppliedFocusKey = focusKey;
+  }
 
   // --- Event handlers ---
   function handleMapSelect(e) {
