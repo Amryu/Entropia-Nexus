@@ -44,6 +44,7 @@
   let drawnLayer = null; // Temporary layer for just-drawn shapes (removed on add/cancel)
   let editingLayer = null;
   let editableOverlay = null;
+  let queuedPanTarget = null;
   let _clickedLayer = false;
   let _editingActive = false;
   let _editDebounceTimer = null;
@@ -297,6 +298,12 @@
 
       rebuildLayers();
       rebuildGridOverlay();
+
+      if (queuedPanTarget) {
+        const target = queuedPanTarget;
+        queuedPanTarget = null;
+        panToLocation(target);
+      }
     };
     img.onerror = () => {
       console.error(`Failed to load planet image: ${imageUrl}`);
@@ -491,12 +498,17 @@
 
   function createPendingAddLayer(mod, tempId) {
     if (!transforms || !L) return null;
+    const effectiveType = mod.locationType === 'Area'
+      ? (mod.areaType || 'Area')
+      : (mod.locationType || 'Location');
+    const baseColor = getTypeColor(effectiveType);
+    const style = getChangeStyle('add', baseColor);
     const addStyle = {
-      fillColor: '#00ff00',
-      color: '#00ff00',
-      weight: 3,
-      fillOpacity: 0.2,
-      dashArray: '6,3',
+      fillColor: style.fillColor,
+      color: style.borderColor,
+      weight: style.weight,
+      fillOpacity: style.fillOpacity,
+      dashArray: style.dashArray,
       interactive: true
     };
 
@@ -542,6 +554,19 @@
     return null;
   }
 
+  const CHANGE_EDGE_COLORS = {
+    add: '#22c55e',
+    edit: '#f59e0b',
+    delete: '#ef4444'
+  };
+
+  function normalizeChangeState(changeTypeOrState) {
+    if (changeTypeOrState === 'Create' || changeTypeOrState === 'add') return 'add';
+    if (changeTypeOrState === 'Delete' || changeTypeOrState === 'delete') return 'delete';
+    if (changeTypeOrState === 'Update' || changeTypeOrState === 'edit') return 'edit';
+    return null;
+  }
+
   function getChangeStyle(changeState, baseColor) {
     const base = {
       fillColor: baseColor,
@@ -552,35 +577,44 @@
     };
 
     if (changeState === 'delete') {
-      return { ...base, borderColor: '#ff0000', fillColor: '#ff0000', fillOpacity: 0.15, dashArray: '8,4', weight: 3 };
+      return { ...base, borderColor: CHANGE_EDGE_COLORS.delete, fillColor: CHANGE_EDGE_COLORS.delete, fillOpacity: 0.15, dashArray: '8,4', weight: 3 };
     } else if (changeState === 'edit') {
-      return { ...base, borderColor: '#ff8800', dashArray: '6,3', weight: 3 };
+      return { ...base, borderColor: CHANGE_EDGE_COLORS.edit, dashArray: '6,3', weight: 3 };
     } else if (changeState === 'add') {
-      return { ...base, borderColor: '#00ff00', dashArray: '6,3', weight: 3 };
+      return { ...base, borderColor: CHANGE_EDGE_COLORS.add, dashArray: '6,3', weight: 3 };
     }
     return base;
   }
 
   // --- DB Pending Changes Overlay ---
-  const DB_CHANGE_STYLE = {
-    color: '#a855f7',       // purple
-    fillColor: '#a855f7',
-    weight: 2,
-    opacity: 0.7,
-    fillOpacity: 0.1,
-    dashArray: '4,4',
-    interactive: false
-  };
-  const DB_CHANGE_POINT_STYLE = {
-    radius: 7,
-    color: '#a855f7',
-    fillColor: '#a855f7',
-    weight: 2,
-    opacity: 0.7,
-    fillOpacity: 0.3,
-    dashArray: '4,4',
-    interactive: false
-  };
+  function getDbChangeStyle(changeTypeOrState, baseColor) {
+    const state = normalizeChangeState(changeTypeOrState);
+    const style = getChangeStyle(state, baseColor);
+    return {
+      color: style.borderColor,
+      fillColor: style.fillColor,
+      weight: style.weight,
+      opacity: 0.8,
+      fillOpacity: style.fillOpacity,
+      dashArray: style.dashArray,
+      interactive: false
+    };
+  }
+
+  function getDbChangePointStyle(changeTypeOrState, baseColor) {
+    const state = normalizeChangeState(changeTypeOrState);
+    const style = getChangeStyle(state, baseColor);
+    return {
+      radius: 7,
+      color: style.borderColor,
+      fillColor: style.fillColor,
+      weight: style.weight,
+      opacity: 0.8,
+      fillOpacity: state === 'delete' ? 0.25 : 0.35,
+      dashArray: style.dashArray,
+      interactive: false
+    };
+  }
 
   function rebuildDbChangesOverlay() {
     if (!dbChangesLayerGroup || !transforms || !L) return;
@@ -594,6 +628,12 @@
       if (!data?.Properties) continue;
 
       const props = data.Properties;
+      const effectiveType = (props.Shape || props.Type === 'Area' || String(props.Type || '').endsWith('Area'))
+        ? (props.AreaType || props.Type || 'Area')
+        : (props.Type || 'Location');
+      const baseColor = getTypeColor(effectiveType);
+      const areaStyle = getDbChangeStyle(change.type, baseColor);
+      const pointStyle = getDbChangePointStyle(change.type, baseColor);
       const authorLabel = change.author_name || change.author_eu_name || `User #${change.author_id}`;
       const stateLabel = change.state === 'Draft' ? 'Draft' : 'Pending';
       const typeLabel = change.type === 'Create' ? 'New' : (change.type === 'Delete' ? 'Delete' : 'Edit');
@@ -607,18 +647,18 @@
         if (props.Shape === 'Circle' && shapeData.x != null) {
           const [lat, lng] = transforms.entropiaToLeaflet(shapeData.x, shapeData.y);
           const radius = (shapeData.radius || 0) / transforms.ratio;
-          layer = L.circle([lat, lng], { ...DB_CHANGE_STYLE, radius });
+          layer = L.circle([lat, lng], { ...areaStyle, radius });
         } else if (props.Shape === 'Rectangle' && shapeData.x != null) {
           const [lat1, lng1] = transforms.entropiaToLeaflet(shapeData.x, shapeData.y);
           const [lat2, lng2] = transforms.entropiaToLeaflet(shapeData.x + (shapeData.width || 0), shapeData.y + (shapeData.height || 0));
-          layer = L.rectangle([[lat1, lng1], [lat2, lng2]], DB_CHANGE_STYLE);
+          layer = L.rectangle([[lat1, lng1], [lat2, lng2]], areaStyle);
         } else if (props.Shape === 'Polygon' && shapeData.vertices?.length >= 6) {
           const latLngs = [];
           for (let i = 0; i < shapeData.vertices.length; i += 2) {
             const [lat, lng] = transforms.entropiaToLeaflet(shapeData.vertices[i], shapeData.vertices[i + 1]);
             latLngs.push([lat, lng]);
           }
-          layer = L.polygon(latLngs, DB_CHANGE_STYLE);
+          layer = L.polygon(latLngs, areaStyle);
         }
 
         if (layer) {
@@ -629,7 +669,7 @@
       // Point locations (no shape)
       else if (props.Coordinates?.Longitude != null) {
         const [lat, lng] = transforms.entropiaToLeaflet(props.Coordinates.Longitude, props.Coordinates.Latitude);
-        const marker = L.circleMarker([lat, lng], DB_CHANGE_POINT_STYLE);
+        const marker = L.circleMarker([lat, lng], pointStyle);
         marker.bindTooltip(tooltip, { direction: 'top', offset: [0, -8] });
         dbChangesLayerGroup.addLayer(marker);
       }
@@ -641,9 +681,9 @@
     layerGroup.eachLayer(layer => {
       const locId = layer._locId;
       if (locId === undefined) return;
-      // Pending adds (negative tempIds) are always visible regardless of filters
-      const isPendingAdd = pendingChanges.has(locId) && pendingChanges.get(locId).action === 'add';
-      const visible = isPendingAdd || !filteredLocationIds || filteredLocationIds.has(locId);
+      // Keep pending items visible regardless of list/search filters.
+      const isPending = pendingChanges.has(locId) || !!getChangeState(locId);
+      const visible = isPending || !filteredLocationIds || filteredLocationIds.has(locId);
       if (visible && !map.hasLayer(layer)) map.addLayer(layer);
       else if (!visible && map.hasLayer(layer)) map.removeLayer(layer);
     });
@@ -663,7 +703,12 @@
         const pending = pendingChanges.get(locId);
         if (pending?.action === 'add') {
           // Restore pending add style
-          if (layer.setStyle) layer.setStyle({ weight: 3, color: '#00ff00', dashArray: '6,3' });
+          const effectiveType = pending.modified?.locationType === 'Area'
+            ? (pending.modified?.areaType || 'Area')
+            : (pending.modified?.locationType || 'Location');
+          const baseColor = getTypeColor(effectiveType);
+          const style = getChangeStyle('add', baseColor);
+          if (layer.setStyle) layer.setStyle({ weight: style.weight, color: style.borderColor, dashArray: style.dashArray });
         } else {
           const loc = locations.find(l => l.Id === locId);
           if (loc && layer.setStyle) {
@@ -1346,27 +1391,43 @@
   }
 
   export function panToLocation(loc) {
-    if (!map || !transforms) return;
+    if (!loc) return;
+    if (!map || !transforms || !L) {
+      queuedPanTarget = loc;
+      return;
+    }
+    queuedPanTarget = null;
+
+    const FOCUS_PADDING = [40, 40];
+    const FOCUS_MAX_ZOOM = 6;
+    const POINT_FOCUS_ZOOM = 4;
 
     if (isArea(loc) && loc.Properties.Data) {
       const d = loc.Properties.Data;
       if (loc.Properties.Shape === 'Circle') {
         const [lat, lng] = transforms.entropiaToLeaflet(d.x, d.y);
-        map.setView([lat, lng], map.getZoom());
+        const radius = Math.max(1, Number(d.radius || 0) / transforms.ratio);
+        const bounds = L.circle([lat, lng], { radius }).getBounds();
+        map.fitBounds(bounds, { padding: FOCUS_PADDING, maxZoom: FOCUS_MAX_ZOOM });
       } else if (loc.Properties.Shape === 'Rectangle') {
-        const [lat, lng] = transforms.entropiaToLeaflet(d.x + d.width / 2, d.y + d.height / 2);
-        map.setView([lat, lng], map.getZoom());
+        const [lat1, lng1] = transforms.entropiaToLeaflet(d.x, d.y);
+        const [lat2, lng2] = transforms.entropiaToLeaflet(d.x + d.width, d.y + d.height);
+        map.fitBounds([[lat1, lng1], [lat2, lng2]], { padding: FOCUS_PADDING, maxZoom: FOCUS_MAX_ZOOM });
       } else if (loc.Properties.Shape === 'Polygon' && d.vertices?.length >= 2) {
-        let sx = 0, sy = 0, n = 0;
-        for (let i = 0; i < d.vertices.length; i += 2) { sx += d.vertices[i]; sy += d.vertices[i + 1]; n++; }
-        const [lat, lng] = transforms.entropiaToLeaflet(sx / n, sy / n);
-        map.setView([lat, lng], map.getZoom());
+        const latLngs = [];
+        for (let i = 0; i < d.vertices.length; i += 2) {
+          const [lat, lng] = transforms.entropiaToLeaflet(d.vertices[i], d.vertices[i + 1]);
+          latLngs.push([lat, lng]);
+        }
+        if (latLngs.length > 0) {
+          map.fitBounds(latLngs, { padding: FOCUS_PADDING, maxZoom: FOCUS_MAX_ZOOM });
+        }
       }
     } else {
       const coords = loc.Properties?.Coordinates;
       if (coords?.Longitude || coords?.Longitude === 0) {
         const [lat, lng] = transforms.entropiaToLeaflet(coords.Longitude, coords.Latitude);
-        map.setView([lat, lng], map.getZoom());
+        map.setView([lat, lng], Math.max(map.getZoom(), POINT_FOCUS_ZOOM));
       }
     }
   }
