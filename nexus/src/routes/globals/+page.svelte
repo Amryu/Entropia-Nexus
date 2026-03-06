@@ -19,7 +19,7 @@
   import GlobalsDateRangePicker from '$lib/components/globals/GlobalsDateRangePicker.svelte';
   import GlobalsTabNav from '$lib/components/globals/GlobalsTabNav.svelte';
   import { TYPE_FILTERS, TOP_LOOTS_TABS, getTypeConfig } from '$lib/data/globals-constants.js';
-  import { formatPedShort, formatValue, timeAgo, getComputedCssVar } from '$lib/utils/globalsFormat.js';
+  import { formatPedShort, formatValue, timeAgo, getComputedCssVar, sortedData, toggleSort, sortIcon } from '$lib/utils/globalsFormat.js';
 
   export let data;
 
@@ -69,6 +69,7 @@
   let topLootsPage = 1;
   let topLootsPages = 1;
   let topLootsTotal = 0;
+  let topLootsSort = { col: '', asc: false }; // empty = default server sort
 
   // Remember type filter when switching to special tabs
   let savedTypeFilter = '';
@@ -81,6 +82,10 @@
   let tableLoading = false;
   let hasMore = globals.length >= 50;
   let newIds = new Set();
+  let liveSort = { col: 'timestamp', asc: false };
+  $: sortedGlobals = liveSort.col === 'timestamp' && !liveSort.asc
+    ? globals
+    : sortedData(globals, liveSort);
 
   const POLL_INTERVAL = 5000;
 
@@ -140,7 +145,12 @@
   async function fetchTopLoots() {
     topLootsLoading = true;
     try {
-      const params = buildParams({ category: topLootsTab, page: topLootsPage, limit: 20 });
+      const extra = { category: topLootsTab, page: topLootsPage, limit: 20 };
+      if (topLootsSort.col) {
+        extra.sort = topLootsSort.col;
+        extra.sort_dir = topLootsSort.asc ? 'asc' : 'desc';
+      }
+      const params = buildParams(extra);
       const res = await fetch(`/api/globals/stats/top-loots?${params}`);
       if (!res.ok) return;
       const data = await res.json();
@@ -222,12 +232,21 @@
     }
     topLootsTab = tab;
     topLootsPage = 1;
+    topLootsSort = { col: '', asc: false };
     fetchTopLoots();
   }
 
   function goToTopLootsPage(p) {
     if (p < 1 || p > topLootsPages || p === topLootsPage) return;
     topLootsPage = p;
+    fetchTopLoots();
+  }
+
+  function onTopLootsSort(col) {
+    topLootsSort = topLootsSort.col === col
+      ? { col, asc: !topLootsSort.asc }
+      : { col, asc: false };
+    topLootsPage = 1;
     fetchTopLoots();
   }
 
@@ -769,15 +788,15 @@
             <thead>
               <tr>
                 <th class="col-rank">#</th>
-                <th class="col-player">Player</th>
+                <th class="col-player sortable" on:click={() => onTopLootsSort('player')}>Player{sortIcon(topLootsSort, 'player')}</th>
                 {#if topLootsTab !== 'pvp'}
-                  <th class="col-target">{currentTabConfig.isSpecial ? 'Item' : 'Target'}</th>
+                  <th class="col-target sortable" on:click={() => onTopLootsSort('target')}>{currentTabConfig.isSpecial ? 'Item' : 'Target'}{sortIcon(topLootsSort, 'target')}</th>
                 {/if}
                 {#if currentTabConfig.hasValue}
-                  <th class="col-value right">Value</th>
+                  <th class="col-value right sortable" on:click={() => onTopLootsSort('value')}>Value{sortIcon(topLootsSort, 'value')}</th>
                 {/if}
                 <th class="col-badge"></th>
-                <th class="col-time">Time</th>
+                <th class="col-time sortable" on:click={() => onTopLootsSort('time')}>Time{sortIcon(topLootsSort, 'time')}</th>
               </tr>
             </thead>
             <tbody>
@@ -839,17 +858,17 @@
         <table class="globals-table">
           <thead>
             <tr>
-              <th>Time</th>
-              <th>Type</th>
-              <th>Player</th>
-              <th>Target</th>
-              <th class="right">Value</th>
-              <th>Location</th>
+              <th class="sortable" on:click={() => liveSort = toggleSort(liveSort, 'timestamp')}>Time{sortIcon(liveSort, 'timestamp')}</th>
+              <th class="sortable" on:click={() => liveSort = toggleSort(liveSort, 'type')}>Type{sortIcon(liveSort, 'type')}</th>
+              <th class="sortable" on:click={() => liveSort = toggleSort(liveSort, 'player')}>Player{sortIcon(liveSort, 'player')}</th>
+              <th class="sortable" on:click={() => liveSort = toggleSort(liveSort, 'target')}>Target{sortIcon(liveSort, 'target')}</th>
+              <th class="sortable right" on:click={() => liveSort = toggleSort(liveSort, 'value')}>Value{sortIcon(liveSort, 'value')}</th>
+              <th class="sortable" on:click={() => liveSort = toggleSort(liveSort, 'location')}>Location{sortIcon(liveSort, 'location')}</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
-            {#each globals as g (g.id)}
+            {#each sortedGlobals as g (g.id)}
               {@const tc = getTypeConfig(g.type)}
               <tr class:row-new={newIds.has(g.id)}>
                 <td class="col-time" title={new Date(g.timestamp).toLocaleString()}>{timeAgo(g.timestamp)}</td>
@@ -1420,6 +1439,15 @@
 
   .globals-table th.right {
     text-align: right;
+  }
+
+  .globals-table th.sortable {
+    cursor: pointer;
+    user-select: none;
+  }
+
+  .globals-table th.sortable:hover {
+    color: var(--text-color);
   }
 
   .globals-table td {

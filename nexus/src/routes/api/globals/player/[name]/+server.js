@@ -68,10 +68,10 @@ export async function GET({ params, url }) {
       recentResult,
       discoveryResult,
       rareItemsResult,
+      pvpResult,
       topHuntingResult,
       topMiningResult,
       topCraftingResult,
-      pvpResult,
       athTargetsValueResult,
       athTargetsBestResult,
     ] = await Promise.all([
