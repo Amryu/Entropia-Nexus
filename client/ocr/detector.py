@@ -2,6 +2,7 @@ import os
 import subprocess
 import sys
 import numpy as np
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -14,6 +15,32 @@ if sys.platform == "win32":
     import ctypes
     import ctypes.wintypes
     user32 = ctypes.windll.user32
+    DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = ctypes.c_void_p(-4)
+
+
+@contextmanager
+def _thread_per_monitor_dpi():
+    """Temporarily opt current thread into PMv2 where supported."""
+    if sys.platform != "win32":
+        yield
+        return
+    set_thread_ctx = getattr(user32, "SetThreadDpiAwarenessContext", None)
+    if set_thread_ctx is None:
+        yield
+        return
+    previous = None
+    try:
+        previous = set_thread_ctx(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)
+    except Exception:
+        previous = None
+    try:
+        yield
+    finally:
+        if previous:
+            try:
+                set_thread_ctx(previous)
+            except Exception:
+                pass
 
 from .capturer import ScreenCapturer
 from ..core.constants import EVENT_SKILLS_TEMPLATE_DEBUG
@@ -138,7 +165,8 @@ def _find_game_window_win32() -> Optional[tuple[int, int, int, int, int]]:
         return True
 
     log.debug("Enumerating windows for '%s...'", GAME_WINDOW_TITLE_PREFIX)
-    user32.EnumWindows(enum_callback, 0)
+    with _thread_per_monitor_dpi():
+        user32.EnumWindows(enum_callback, 0)
 
     if not result:
         log.warning("No matching window found")
@@ -360,12 +388,13 @@ class SkillsWindowDetector:
             log.debug("Template validation: region shape %s != template %s",
                       region.shape, self._template.shape)
             return False
+
         inside = float(np.mean(region[self._template_mask_bool]))
         outside = float(np.mean(region[self._template_inv_bool]))
         log.debug("Template validation: inside=%.0f outside=%.0f contrast=%.0f "
-                   "(min_inside=%d min_contrast=%d)",
-                   inside, outside, inside - outside,
-                   TEMPLATE_MIN_INSIDE, TEMPLATE_MIN_CONTRAST)
+                  "(min_inside=%d min_contrast=%d)",
+                  inside, outside, inside - outside,
+                  TEMPLATE_MIN_INSIDE, TEMPLATE_MIN_CONTRAST)
 
         if inside < TEMPLATE_MIN_INSIDE:
             return False
@@ -970,6 +999,8 @@ class SkillsWindowDetector:
 
         # Derive panel bounds from template match position
         tx, ty = max_loc
+        if not self._validate_template_match(gray, tx, ty):
+            return None
         panel_w = int(tpl_w / TEMPLATE_WIDTH_RATIO)
         panel_h = int(tpl_h / TEMPLATE_HEIGHT_RATIO)
         panel_left = tx - int(panel_w * TEMPLATE_OFFSET_X)

@@ -583,9 +583,14 @@ class SkillsPage(QWidget):
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(4, 4, 4, 4)
 
-        # Auto-scan toggle
+        # Scan mode
         scan_group = QGroupBox("Scan Settings")
         scan_layout = QVBoxLayout(scan_group)
+
+        self._auto_scan_check = QCheckBox("Enable automated scanning")
+        self._auto_scan_check.setChecked(getattr(self._config, "ocr_auto_scan_enabled", True))
+        self._auto_scan_check.toggled.connect(self._on_auto_scan_toggled)
+        scan_layout.addWidget(self._auto_scan_check)
 
         self._debug_overlay_check = QCheckBox("Debug overlay (show detected regions)")
         self._debug_overlay_check.setChecked(self._config.scan_overlay_debug)
@@ -595,6 +600,7 @@ class SkillsPage(QWidget):
         btn_row = QHBoxLayout()
         self._manual_scan_btn = QPushButton("Run Manual Scan")
         self._manual_scan_btn.clicked.connect(self._trigger_manual_scan)
+        self._manual_scan_btn.setEnabled(not self._auto_scan_check.isChecked())
         btn_row.addWidget(self._manual_scan_btn)
         btn_row.addStretch()
         scan_layout.addLayout(btn_row)
@@ -1270,11 +1276,28 @@ class SkillsPage(QWidget):
 
     def _trigger_manual_scan(self):
         """Trigger a manual OCR scan via event bus."""
-        from ...core.constants import EVENT_OCR_OVERLAYS_SHOW
-        if hasattr(self._signals, 'trigger_ocr_scan'):
-            self._signals.trigger_ocr_scan.emit()
+        if getattr(self._config, "ocr_auto_scan_enabled", True):
+            QMessageBox.information(
+                self, "Manual Scan",
+                "Disable automated scanning first to run manual scans.",
+            )
+            return
+        if self._event_bus:
+            from ...core.constants import EVENT_OCR_MANUAL_TRIGGER
+            self._event_bus.publish(EVENT_OCR_MANUAL_TRIGGER, None)
         self._scan_results_group.setTitle("Scan Results (scanning...)")
         self._manual_scan_btn.setEnabled(False)
+
+    def _on_auto_scan_toggled(self, checked: bool):
+        """Enable/disable continuous OCR scanning and persist the setting."""
+        if self._config:
+            self._config.ocr_auto_scan_enabled = checked
+            from ...core.config import save_config
+            save_config(self._config, self._config_path)
+        self._manual_scan_btn.setEnabled(not checked)
+        if self._event_bus:
+            from ...core.constants import EVENT_CONFIG_CHANGED
+            self._event_bus.publish(EVENT_CONFIG_CHANGED, self._config)
 
     def _on_debug_overlay_toggled(self, checked: bool):
         """Toggle the scan overlay debug mode."""
@@ -1294,6 +1317,11 @@ class SkillsPage(QWidget):
             self._debug_overlay_check.blockSignals(True)
             self._debug_overlay_check.setChecked(config.scan_overlay_debug)
             self._debug_overlay_check.blockSignals(False)
+        if config and hasattr(config, "ocr_auto_scan_enabled"):
+            self._auto_scan_check.blockSignals(True)
+            self._auto_scan_check.setChecked(config.ocr_auto_scan_enabled)
+            self._auto_scan_check.blockSignals(False)
+            self._manual_scan_btn.setEnabled(not config.ocr_auto_scan_enabled)
 
     def _on_ocr_progress(self, data):
         if hasattr(data, "total_found"):
@@ -1351,7 +1379,9 @@ class SkillsPage(QWidget):
 
     def _on_ocr_complete(self, result):
         self._last_scan_result = result
-        self._manual_scan_btn.setEnabled(True)
+        self._manual_scan_btn.setEnabled(
+            not getattr(self._config, "ocr_auto_scan_enabled", True)
+        )
 
         # Table is already populated by _on_skill_scanned — just update counts
         self._scan_results_group.setTitle(

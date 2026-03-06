@@ -14,6 +14,7 @@ EVENT_PARSER_ERROR = "parser_error"
 EVENT_OCR_PROGRESS = "ocr_progress"
 EVENT_OCR_COMPLETE = "ocr_complete"
 EVENT_OCR_CANCEL = "ocr_cancel"
+EVENT_OCR_MANUAL_TRIGGER = "ocr_manual_trigger"
 EVENT_SKILL_SCANNED = "skill_scanned"
 
 # Event names — Auth

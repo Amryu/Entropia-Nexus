@@ -109,6 +109,7 @@ class ScanOrchestrator:
         self._db = db
         self._stop_event = threading.Event()
         self._shutdown = False  # True only when app is shutting down (not on cancel)
+        self._pause_until_window_reopen = False
 
         # Use shared frame cache if provided, else create own capturer
         self._frame_cache = frame_cache
@@ -158,10 +159,40 @@ class ScanOrchestrator:
         self._event_bus.unsubscribe(EVENT_ROI_CONFIG_CHANGED, self._on_roi_config_changed)
         self._event_bus.unsubscribe(EVENT_OCR_CANCEL, self._on_cancel)
 
-    def _on_cancel(self, _data=None):
+    def _on_cancel(self, data=None):
         """Handle external cancel request (e.g. from scan summary overlay)."""
-        log.info("Scan cancelled via EVENT_OCR_CANCEL")
+        pause_until_reopen = (
+            isinstance(data, dict) and bool(data.get("pause_until_reopen"))
+        )
+        if pause_until_reopen:
+            self._pause_until_window_reopen = True
+            log.info("Scan cancelled via EVENT_OCR_CANCEL (pause until reopen)")
+        else:
+            self._pause_until_window_reopen = False
+            log.info("Scan cancelled via EVENT_OCR_CANCEL")
         self._stop_event.set()
+
+    def _wait_for_window_reopen_cycle(self) -> bool:
+        """Block resume until the Skills window has closed and reopened once."""
+        log.info("OCR resume paused until SKILLS window is reopened")
+        saw_closed = False
+
+        while not self._stop_event.is_set() and not self._shutdown:
+            if not self._detector.is_game_foreground():
+                self._stop_event.wait(timeout=DETECT_POLL_INTERVAL)
+                continue
+
+            bounds = self._detector.detect()
+            if bounds is None:
+                saw_closed = True
+            elif saw_closed:
+                self._pause_until_window_reopen = False
+                log.info("SKILLS window reopened, resuming scan")
+                return True
+
+            self._stop_event.wait(timeout=DETECT_POLL_INTERVAL)
+
+        return False
 
     def _apply_roi_overrides(self, overrides: dict) -> None:
         """Push ROI pixel overrides from config to the detector."""
@@ -356,13 +387,17 @@ class ScanOrchestrator:
             "table": (L["table_sx"], L["table_sy"], L["table_lw"], L["table_lh"]),
         })
 
-    def run_continuous(self) -> Optional[SkillScanResult]:
+    def run_continuous(self, *, auto_resume: bool = True) -> Optional[SkillScanResult]:
         """Continuously monitor the skills window and scan visible pages.
 
         The user navigates manually; we detect changes and re-scan.
         Automatically resumes when the window is closed and reopened.
         Returns the final accumulated result when stopped.
         """
+        if self._pause_until_window_reopen:
+            if not self._wait_for_window_reopen_cycle():
+                return None
+
         scan_start = datetime.now()
         counted_skills = [s for s in self._all_skills
                           if s["name"] not in EXCLUDED_SKILL_NAMES]
@@ -412,6 +447,11 @@ class ScanOrchestrator:
 
             if not window_closed:
                 break  # User cancelled — exit outer loop
+
+            if not auto_resume:
+                # Manual mode: stop after the first completed monitor session.
+                self._event_bus.publish(EVENT_OCR_OVERLAYS_HIDE, None)
+                break
 
             # Window was closed — hide overlays and loop back to wait
             log.info("Skills window closed, waiting for it to reopen...")
