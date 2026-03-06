@@ -6,6 +6,7 @@ The admin dashboard provides administrators with tools to:
 1. Monitor and manage entity changes (items, mobs, vendors, etc.)
 2. Manage users (lock, ban, view metrics)
 3. View platform statistics and user activity
+4. Manage contributor rewards and payouts (including retroactive assignment for unrewarded approved changes)
 
 ## Change Process Documentation
 
@@ -134,6 +135,7 @@ banned_by       bigint (FK to users - admin who banned)
 | /admin | Dashboard overview |
 | /admin/changes | Change monitoring |
 | /admin/changes/[id] | Individual change detail |
+| /admin/rewards | Contributor rewards, retroactive reward assignment, and payouts |
 | /admin/users | User management |
 | /admin/users/[id] | User detail and metrics |
 
