@@ -33,7 +33,7 @@
   $: achievements = playerData?.achievements || [];
   $: rareItems = playerData?.rare_items || [];
   $: topLoots = playerData?.top_loots || { hunting: [], mining: [], crafting: [] };
-  $: athTargets = playerData?.ath_targets || { by_total: [], by_best: [] };
+  $: athRankings = playerData?.ath_rankings || { hunting: [], mining: [], crafting: [], pvp: [] };
   $: isTeam = summary && summary.team_kill_count > 0 && summary.total_count === summary.team_kill_count;
 
   // Tabs - base tabs always shown, extra tabs conditional on data
@@ -112,7 +112,7 @@
 
   // Pagination constants
   const PAGE_SIZE = 25;
-  const ATH_TARGETS_PAGE_SIZE = 10;
+
 
   // Hunting tab pagination
   let huntTargetPage = 0;
@@ -144,35 +144,33 @@
   $: pagedCrafting = sortedCrafting.slice(craftTargetPage * PAGE_SIZE, (craftTargetPage + 1) * PAGE_SIZE);
   $: pagedCraftingLoots = sortedCraftingLoots.slice(craftLootPage * PAGE_SIZE, (craftLootPage + 1) * PAGE_SIZE);
 
-  // ATH tab sort — auto-select category with highest single loot
+  // ATH rankings tab — auto-select category with most ranked entries
+  const ATH_CATEGORIES = [
+    { value: 'hunting', label: 'Hunting' },
+    { value: 'mining', label: 'Mining' },
+    { value: 'crafting', label: 'Crafting' },
+    { value: 'pvp', label: 'PvP' },
+  ];
   $: athCategory = (() => {
-    const hMax = topLoots.hunting?.[0]?.value || 0;
-    const mMax = topLoots.mining?.[0]?.value || 0;
-    const cMax = topLoots.crafting?.[0]?.value || 0;
-    if (mMax > hMax && mMax >= cMax) return 'mining';
-    if (cMax > hMax && cMax > mMax) return 'crafting';
-    return 'hunting';
+    const counts = { hunting: 0, mining: 0, crafting: 0, pvp: 0 };
+    for (const cat of ['hunting', 'mining', 'crafting']) {
+      counts[cat] = (athRankings[cat] || []).length;
+    }
+    counts.pvp = (athRankings.pvp || []).length;
+    const best = Object.entries(counts).sort((a, b) => b[1] - a[1])[0];
+    return best[1] > 0 ? best[0] : 'hunting';
   })();
   let athCategoryOverride = null;
   $: activeAthCategory = athCategoryOverride ?? athCategory;
-  $: athLoots = topLoots[activeAthCategory] || [];
+  $: athEntries = athRankings[activeAthCategory] || [];
 
-  // ATH pagination and sorting
-  let athLootPage = 0;
-  let athTotalPage = 0;
-  let athBestPage = 0;
-  let athLootSort = { col: 'value', asc: false };
-  let athTotalSort = { col: 'total_value', asc: false };
-  let athBestSort = { col: 'best_value', asc: false };
-  $: sortedAthLoots = sortedData(athLoots, athLootSort);
-  $: athLootPages = Math.ceil(sortedAthLoots.length / PAGE_SIZE);
-  $: pagedAthLoots = sortedAthLoots.slice(athLootPage * PAGE_SIZE, (athLootPage + 1) * PAGE_SIZE);
-  $: sortedAthTotal = sortedData(athTargets.by_total || [], athTotalSort);
-  $: athTotalPages = Math.ceil(sortedAthTotal.length / ATH_TARGETS_PAGE_SIZE);
-  $: pagedAthTotal = sortedAthTotal.slice(athTotalPage * ATH_TARGETS_PAGE_SIZE, (athTotalPage + 1) * ATH_TARGETS_PAGE_SIZE);
-  $: sortedAthBest = sortedData(athTargets.by_best || [], athBestSort);
-  $: athBestPages = Math.ceil(sortedAthBest.length / ATH_TARGETS_PAGE_SIZE);
-  $: pagedAthBest = sortedAthBest.slice(athBestPage * ATH_TARGETS_PAGE_SIZE, (athBestPage + 1) * ATH_TARGETS_PAGE_SIZE);
+  // ATH split into by_total and by_best (for hunting/mining/crafting)
+  $: athByTotal = activeAthCategory !== 'pvp'
+    ? athEntries.filter(e => e.total_rank <= 10).sort((a, b) => a.total_rank - b.total_rank)
+    : [];
+  $: athByBest = activeAthCategory !== 'pvp'
+    ? athEntries.filter(e => e.best_rank <= 10).sort((a, b) => a.best_rank - b.best_rank)
+    : [];
 
   // Rare finds sorting
   let rareFindSort = { col: 'timestamp', asc: false };
@@ -182,8 +180,7 @@
   let pvpSort = { col: 'value', asc: false };
   $: sortedPvpEvents = sortedData(pvpEvents, pvpSort);
 
-  // Reset pagination when category changes
-  $: if (activeAthCategory) athLootPage = 0;
+  // (ATH tab uses no pagination — entries limited to top 10 per target)
 
   // Activity chart
   let activityCanvas;
@@ -386,12 +383,12 @@
       {#if activeTab === 'overview'}
         <!-- Top 3 per category -->
         <div class="overview-categories">
-          {#if overviewTopHunting.length > 0}
-            <div class="section-card overview-category">
-              <div class="overview-cat-header">
-                <h2>Top Hunting Loots</h2>
-                <button class="view-all-btn" on:click={() => activeTab = 'hunting'}>View all &rarr;</button>
-              </div>
+          <div class="section-card overview-category">
+            <div class="overview-cat-header">
+              <h2>Top Hunting Loots</h2>
+              <button class="view-all-btn" on:click={() => activeTab = 'hunting'}>View all &rarr;</button>
+            </div>
+            {#if overviewTopHunting.length > 0}
               <div class="top-loots-list">
                 {#each overviewTopHunting as loot, i}
                   <div class="top-loot-item">
@@ -403,15 +400,17 @@
                   </div>
                 {/each}
               </div>
-            </div>
-          {/if}
+            {:else}
+              <p class="empty-state-sm">No hunting globals recorded</p>
+            {/if}
+          </div>
 
-          {#if overviewTopMining.length > 0}
-            <div class="section-card overview-category">
-              <div class="overview-cat-header">
-                <h2>Top Mining Loots</h2>
-                <button class="view-all-btn" on:click={() => activeTab = 'mining'}>View all &rarr;</button>
-              </div>
+          <div class="section-card overview-category">
+            <div class="overview-cat-header">
+              <h2>Top Mining Loots</h2>
+              <button class="view-all-btn" on:click={() => activeTab = 'mining'}>View all &rarr;</button>
+            </div>
+            {#if overviewTopMining.length > 0}
               <div class="top-loots-list">
                 {#each overviewTopMining as loot, i}
                   <div class="top-loot-item">
@@ -423,15 +422,17 @@
                   </div>
                 {/each}
               </div>
-            </div>
-          {/if}
+            {:else}
+              <p class="empty-state-sm">No mining globals recorded</p>
+            {/if}
+          </div>
 
-          {#if overviewTopCrafting.length > 0}
-            <div class="section-card overview-category">
-              <div class="overview-cat-header">
-                <h2>Top Crafting Loots</h2>
-                <button class="view-all-btn" on:click={() => activeTab = 'crafting'}>View all &rarr;</button>
-              </div>
+          <div class="section-card overview-category">
+            <div class="overview-cat-header">
+              <h2>Top Crafting Loots</h2>
+              <button class="view-all-btn" on:click={() => activeTab = 'crafting'}>View all &rarr;</button>
+            </div>
+            {#if overviewTopCrafting.length > 0}
               <div class="top-loots-list">
                 {#each overviewTopCrafting as loot, i}
                   <div class="top-loot-item">
@@ -443,8 +444,10 @@
                   </div>
                 {/each}
               </div>
-            </div>
-          {/if}
+            {:else}
+              <p class="empty-state-sm">No crafting globals recorded</p>
+            {/if}
+          </div>
         </div>
 
         <!-- Rare Finds + Discoveries -->
@@ -500,19 +503,21 @@
         </div>
 
         <!-- Activity Chart -->
-        {#if activity.length > 0}
-          <div class="section-card">
-            <h2>Activity</h2>
+        <div class="section-card">
+          <h2>Activity</h2>
+          {#if activity.length > 0}
             <div class="chart-container">
               <canvas bind:this={activityCanvas}></canvas>
             </div>
-          </div>
-        {/if}
+          {:else}
+            <p class="empty-state-sm">No activity data for this period</p>
+          {/if}
+        </div>
 
         <!-- Recent Globals -->
-        {#if recent.length > 0}
-          <div class="section-card">
-            <h2>Recent Globals</h2>
+        <div class="section-card">
+          <h2>Recent Globals</h2>
+          {#if recent.length > 0}
             <div class="table-wrapper">
               <table class="data-table">
                 <thead>
@@ -540,18 +545,20 @@
                 </tbody>
               </table>
             </div>
-          </div>
-        {/if}
+          {:else}
+            <p class="empty-state-sm">No recent globals for this period</p>
+          {/if}
+        </div>
 
       <!-- === HUNTING TAB === -->
       {:else if activeTab === 'hunting'}
-        {#if hunting.length > 0}
-          <div class="tab-side-by-side">
-            <div class="section-card">
-              <h2 class="section-title-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="22" y1="2" x2="12" y2="12"/></svg>
-                Mob Breakdown
-              </h2>
+        <div class="tab-side-by-side">
+          <div class="section-card">
+            <h2 class="section-title-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="22" y1="2" x2="12" y2="12"/></svg>
+              Mob Breakdown
+            </h2>
+            {#if hunting.length > 0}
               <div class="table-wrapper">
                 <table class="data-table">
                   <thead>
@@ -609,61 +616,63 @@
                   <button disabled={huntTargetPage >= huntTargetPages - 1} on:click={() => huntTargetPage++}>Next &raquo;</button>
                 </div>
               {/if}
-            </div>
-
-            {#if topLoots.hunting.length > 0}
-              <div class="section-card">
-                <h2 class="section-title-icon">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
-                  Top Individual Loots
-                </h2>
-                <div class="table-wrapper">
-                  <table class="data-table">
-                    <thead>
-                      <tr>
-                        <th class="col-rank">#</th>
-                        <th class="sortable" on:click={() => { huntLootSort = toggleSort(huntLootSort, 'target'); huntLootPage = 0; }}>Target{sortIcon(huntLootSort, 'target')}</th>
-                        <th class="sortable right" on:click={() => { huntLootSort = toggleSort(huntLootSort, 'value'); huntLootPage = 0; }}>Value{sortIcon(huntLootSort, 'value')}</th>
-                        <th></th>
-                        <th class="sortable" on:click={() => { huntLootSort = toggleSort(huntLootSort, 'timestamp'); huntLootPage = 0; }}>Time{sortIcon(huntLootSort, 'timestamp')}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {#each pagedHuntingLoots as loot, i}
-                        <tr>
-                          <td class="col-rank text-muted">{huntLootPage * PAGE_SIZE + i + 1}</td>
-                          <td><a href="/globals/target/{encodeURIComponent(loot.target)}" class="target-link">{loot.target}</a></td>
-                          <td class="right font-weight-bold">{formatPed(loot.value)} PED</td>
-                          <td>{#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}</td>
-                          <td class="text-muted" title={new Date(loot.timestamp).toLocaleString()}>{timeAgo(loot.timestamp)}</td>
-                        </tr>
-                      {/each}
-                    </tbody>
-                  </table>
-                </div>
-                {#if huntLootPages > 1}
-                  <div class="pagination">
-                    <button disabled={huntLootPage === 0} on:click={() => huntLootPage--}>&laquo; Prev</button>
-                    <span>{huntLootPage + 1} / {huntLootPages}</span>
-                    <button disabled={huntLootPage >= huntLootPages - 1} on:click={() => huntLootPage++}>Next &raquo;</button>
-                  </div>
-                {/if}
-              </div>
+            {:else}
+              <p class="empty-state-sm">No hunting globals for this period</p>
             {/if}
           </div>
-        {:else}
-          <p class="empty-state-sm">No hunting globals found for this period</p>
-        {/if}
+
+          <div class="section-card">
+            <h2 class="section-title-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+              Top Individual Loots
+            </h2>
+            {#if topLoots.hunting.length > 0}
+              <div class="table-wrapper">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th class="col-rank">#</th>
+                      <th class="sortable" on:click={() => { huntLootSort = toggleSort(huntLootSort, 'target'); huntLootPage = 0; }}>Target{sortIcon(huntLootSort, 'target')}</th>
+                      <th class="sortable right" on:click={() => { huntLootSort = toggleSort(huntLootSort, 'value'); huntLootPage = 0; }}>Value{sortIcon(huntLootSort, 'value')}</th>
+                      <th></th>
+                      <th class="sortable" on:click={() => { huntLootSort = toggleSort(huntLootSort, 'timestamp'); huntLootPage = 0; }}>Time{sortIcon(huntLootSort, 'timestamp')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {#each pagedHuntingLoots as loot, i}
+                      <tr>
+                        <td class="col-rank text-muted">{huntLootPage * PAGE_SIZE + i + 1}</td>
+                        <td><a href="/globals/target/{encodeURIComponent(loot.target)}" class="target-link">{loot.target}</a></td>
+                        <td class="right font-weight-bold">{formatPed(loot.value)} PED</td>
+                        <td>{#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}</td>
+                        <td class="text-muted" title={new Date(loot.timestamp).toLocaleString()}>{timeAgo(loot.timestamp)}</td>
+                      </tr>
+                    {/each}
+                  </tbody>
+                </table>
+              </div>
+              {#if huntLootPages > 1}
+                <div class="pagination">
+                  <button disabled={huntLootPage === 0} on:click={() => huntLootPage--}>&laquo; Prev</button>
+                  <span>{huntLootPage + 1} / {huntLootPages}</span>
+                  <button disabled={huntLootPage >= huntLootPages - 1} on:click={() => huntLootPage++}>Next &raquo;</button>
+                </div>
+              {/if}
+            {:else}
+              <p class="empty-state-sm">No hunting HoFs recorded</p>
+            {/if}
+          </div>
+        </div>
 
       <!-- === MINING TAB === -->
       {:else if activeTab === 'mining'}
-        {#if mining.length > 0}
-          <div class="tab-side-by-side">
-            <div class="section-card">
-              <h2 class="section-title-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="#60b0ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 22l10-10"/><path d="M16 8l-4 4"/><path d="M22 2l-5.5 5.5"/><circle cx="18" cy="6" r="3"/></svg>
-                Resource Breakdown
-              </h2>
+        <div class="tab-side-by-side">
+          <div class="section-card">
+            <h2 class="section-title-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#60b0ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 22l10-10"/><path d="M16 8l-4 4"/><path d="M22 2l-5.5 5.5"/><circle cx="18" cy="6" r="3"/></svg>
+              Resource Breakdown
+            </h2>
+            {#if mining.length > 0}
               <div class="table-wrapper">
                 <table class="data-table">
                   <thead>
@@ -699,61 +708,63 @@
                   <button disabled={miningTargetPage >= miningTargetPages - 1} on:click={() => miningTargetPage++}>Next &raquo;</button>
                 </div>
               {/if}
-            </div>
-
-            {#if topLoots.mining.length > 0}
-              <div class="section-card">
-                <h2 class="section-title-icon">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="#60b0ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
-                  Top Individual Loots
-                </h2>
-                <div class="table-wrapper">
-                  <table class="data-table">
-                    <thead>
-                      <tr>
-                        <th class="col-rank">#</th>
-                        <th class="sortable" on:click={() => { miningLootSort = toggleSort(miningLootSort, 'target'); miningLootPage = 0; }}>Resource{sortIcon(miningLootSort, 'target')}</th>
-                        <th class="sortable right" on:click={() => { miningLootSort = toggleSort(miningLootSort, 'value'); miningLootPage = 0; }}>Value{sortIcon(miningLootSort, 'value')}</th>
-                        <th></th>
-                        <th class="sortable" on:click={() => { miningLootSort = toggleSort(miningLootSort, 'timestamp'); miningLootPage = 0; }}>Time{sortIcon(miningLootSort, 'timestamp')}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {#each pagedMiningLoots as loot, i}
-                        <tr>
-                          <td class="col-rank text-muted">{miningLootPage * PAGE_SIZE + i + 1}</td>
-                          <td><a href="/globals/target/{encodeURIComponent(loot.target)}" class="target-link">{loot.target}</a></td>
-                          <td class="right font-weight-bold">{formatPed(loot.value)} PED</td>
-                          <td>{#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}</td>
-                          <td class="text-muted" title={new Date(loot.timestamp).toLocaleString()}>{timeAgo(loot.timestamp)}</td>
-                        </tr>
-                      {/each}
-                    </tbody>
-                  </table>
-                </div>
-                {#if miningLootPages > 1}
-                  <div class="pagination">
-                    <button disabled={miningLootPage === 0} on:click={() => miningLootPage--}>&laquo; Prev</button>
-                    <span>{miningLootPage + 1} / {miningLootPages}</span>
-                    <button disabled={miningLootPage >= miningLootPages - 1} on:click={() => miningLootPage++}>Next &raquo;</button>
-                  </div>
-                {/if}
-              </div>
+            {:else}
+              <p class="empty-state-sm">No mining globals for this period</p>
             {/if}
           </div>
-        {:else}
-          <p class="empty-state-sm">No mining globals found for this period</p>
-        {/if}
+
+          <div class="section-card">
+            <h2 class="section-title-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#60b0ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+              Top Individual Loots
+            </h2>
+            {#if topLoots.mining.length > 0}
+              <div class="table-wrapper">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th class="col-rank">#</th>
+                      <th class="sortable" on:click={() => { miningLootSort = toggleSort(miningLootSort, 'target'); miningLootPage = 0; }}>Resource{sortIcon(miningLootSort, 'target')}</th>
+                      <th class="sortable right" on:click={() => { miningLootSort = toggleSort(miningLootSort, 'value'); miningLootPage = 0; }}>Value{sortIcon(miningLootSort, 'value')}</th>
+                      <th></th>
+                      <th class="sortable" on:click={() => { miningLootSort = toggleSort(miningLootSort, 'timestamp'); miningLootPage = 0; }}>Time{sortIcon(miningLootSort, 'timestamp')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {#each pagedMiningLoots as loot, i}
+                      <tr>
+                        <td class="col-rank text-muted">{miningLootPage * PAGE_SIZE + i + 1}</td>
+                        <td><a href="/globals/target/{encodeURIComponent(loot.target)}" class="target-link">{loot.target}</a></td>
+                        <td class="right font-weight-bold">{formatPed(loot.value)} PED</td>
+                        <td>{#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}</td>
+                        <td class="text-muted" title={new Date(loot.timestamp).toLocaleString()}>{timeAgo(loot.timestamp)}</td>
+                      </tr>
+                    {/each}
+                  </tbody>
+                </table>
+              </div>
+              {#if miningLootPages > 1}
+                <div class="pagination">
+                  <button disabled={miningLootPage === 0} on:click={() => miningLootPage--}>&laquo; Prev</button>
+                  <span>{miningLootPage + 1} / {miningLootPages}</span>
+                  <button disabled={miningLootPage >= miningLootPages - 1} on:click={() => miningLootPage++}>Next &raquo;</button>
+                </div>
+              {/if}
+            {:else}
+              <p class="empty-state-sm">No mining HoFs recorded</p>
+            {/if}
+          </div>
+        </div>
 
       <!-- === CRAFTING TAB === -->
       {:else if activeTab === 'crafting'}
-        {#if crafting.length > 0}
-          <div class="tab-side-by-side">
-            <div class="section-card">
-              <h2 class="section-title-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="#f97316" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
-                Item Breakdown
-              </h2>
+        <div class="tab-side-by-side">
+          <div class="section-card">
+            <h2 class="section-title-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#f97316" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+              Item Breakdown
+            </h2>
+            {#if crafting.length > 0}
               <div class="table-wrapper">
                 <table class="data-table">
                   <thead>
@@ -789,51 +800,53 @@
                   <button disabled={craftTargetPage >= craftTargetPages - 1} on:click={() => craftTargetPage++}>Next &raquo;</button>
                 </div>
               {/if}
-            </div>
-
-            {#if topLoots.crafting.length > 0}
-              <div class="section-card">
-                <h2 class="section-title-icon">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="#f97316" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
-                  Top Individual Loots
-                </h2>
-                <div class="table-wrapper">
-                  <table class="data-table">
-                    <thead>
-                      <tr>
-                        <th class="col-rank">#</th>
-                        <th class="sortable" on:click={() => { craftLootSort = toggleSort(craftLootSort, 'target'); craftLootPage = 0; }}>Item{sortIcon(craftLootSort, 'target')}</th>
-                        <th class="sortable right" on:click={() => { craftLootSort = toggleSort(craftLootSort, 'value'); craftLootPage = 0; }}>Value{sortIcon(craftLootSort, 'value')}</th>
-                        <th></th>
-                        <th class="sortable" on:click={() => { craftLootSort = toggleSort(craftLootSort, 'timestamp'); craftLootPage = 0; }}>Time{sortIcon(craftLootSort, 'timestamp')}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {#each pagedCraftingLoots as loot, i}
-                        <tr>
-                          <td class="col-rank text-muted">{craftLootPage * PAGE_SIZE + i + 1}</td>
-                          <td><a href="/globals/target/{encodeURIComponent(loot.target)}" class="target-link">{loot.target}</a></td>
-                          <td class="right font-weight-bold">{formatPed(loot.value)} PED</td>
-                          <td>{#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}</td>
-                          <td class="text-muted" title={new Date(loot.timestamp).toLocaleString()}>{timeAgo(loot.timestamp)}</td>
-                        </tr>
-                      {/each}
-                    </tbody>
-                  </table>
-                </div>
-                {#if craftLootPages > 1}
-                  <div class="pagination">
-                    <button disabled={craftLootPage === 0} on:click={() => craftLootPage--}>&laquo; Prev</button>
-                    <span>{craftLootPage + 1} / {craftLootPages}</span>
-                    <button disabled={craftLootPage >= craftLootPages - 1} on:click={() => craftLootPage++}>Next &raquo;</button>
-                  </div>
-                {/if}
-              </div>
+            {:else}
+              <p class="empty-state-sm">No crafting globals for this period</p>
             {/if}
           </div>
-        {:else}
-          <p class="empty-state-sm">No crafting globals found for this period</p>
-        {/if}
+
+          <div class="section-card">
+            <h2 class="section-title-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="#f97316" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+              Top Individual Loots
+            </h2>
+            {#if topLoots.crafting.length > 0}
+              <div class="table-wrapper">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th class="col-rank">#</th>
+                      <th class="sortable" on:click={() => { craftLootSort = toggleSort(craftLootSort, 'target'); craftLootPage = 0; }}>Item{sortIcon(craftLootSort, 'target')}</th>
+                      <th class="sortable right" on:click={() => { craftLootSort = toggleSort(craftLootSort, 'value'); craftLootPage = 0; }}>Value{sortIcon(craftLootSort, 'value')}</th>
+                      <th></th>
+                      <th class="sortable" on:click={() => { craftLootSort = toggleSort(craftLootSort, 'timestamp'); craftLootPage = 0; }}>Time{sortIcon(craftLootSort, 'timestamp')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {#each pagedCraftingLoots as loot, i}
+                      <tr>
+                        <td class="col-rank text-muted">{craftLootPage * PAGE_SIZE + i + 1}</td>
+                        <td><a href="/globals/target/{encodeURIComponent(loot.target)}" class="target-link">{loot.target}</a></td>
+                        <td class="right font-weight-bold">{formatPed(loot.value)} PED</td>
+                        <td>{#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}</td>
+                        <td class="text-muted" title={new Date(loot.timestamp).toLocaleString()}>{timeAgo(loot.timestamp)}</td>
+                      </tr>
+                    {/each}
+                  </tbody>
+                </table>
+              </div>
+              {#if craftLootPages > 1}
+                <div class="pagination">
+                  <button disabled={craftLootPage === 0} on:click={() => craftLootPage--}>&laquo; Prev</button>
+                  <span>{craftLootPage + 1} / {craftLootPages}</span>
+                  <button disabled={craftLootPage >= craftLootPages - 1} on:click={() => craftLootPage++}>Next &raquo;</button>
+                </div>
+              {/if}
+            {:else}
+              <p class="empty-state-sm">No crafting HoFs recorded</p>
+            {/if}
+          </div>
+        </div>
 
       <!-- === RARE FINDS TAB === -->
       {:else if activeTab === 'rare'}
@@ -916,7 +929,7 @@
       <!-- === PVP TAB === -->
       {:else if activeTab === 'pvp'}
         <div class="section-card">
-          <h2>PvP ({summary.pvp_count.toLocaleString()} globals, {formatPed(summary.pvp_value)} PED)</h2>
+          <h2>PvP ({summary.pvp_count.toLocaleString()} globals, {Math.round(summary.pvp_value)} Kills)</h2>
           {#if pvpEvents.length > 0}
             <div class="table-wrapper">
               <table class="data-table">
@@ -930,7 +943,7 @@
                 <tbody>
                   {#each sortedPvpEvents as g}
                     <tr>
-                      <td class="right font-weight-bold">{formatPed(g.value)} PED</td>
+                      <td class="right font-weight-bold">{Math.round(g.value)} Kills</td>
                       <td>
                         {#if g.ath}<span class="badge-ath">ATH</span>{:else if g.hof}<span class="badge-hof">HoF</span>{/if}
                       </td>
@@ -947,141 +960,120 @@
 
       <!-- === ATHS TAB === -->
       {:else if activeTab === 'aths'}
-        <!-- Top individual loots by category -->
+        <!-- ATH Rankings — show targets where this player ranks in top 10 -->
         <div class="section-card">
           <div class="ath-header">
             <h2 class="section-title-icon">
               <svg viewBox="0 0 24 24" fill="none" stroke="#eab308" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-              Personal Records
+              Top 10 Rankings
             </h2>
             <div class="sort-toggle">
-              <button class="sort-btn" class:active={activeAthCategory === 'hunting'} on:click={() => { athCategoryOverride = 'hunting'; athLootPage = 0; }}>Hunting</button>
-              <button class="sort-btn" class:active={activeAthCategory === 'mining'} on:click={() => { athCategoryOverride = 'mining'; athLootPage = 0; }}>Mining</button>
-              <button class="sort-btn" class:active={activeAthCategory === 'crafting'} on:click={() => { athCategoryOverride = 'crafting'; athLootPage = 0; }}>Crafting</button>
+              {#each ATH_CATEGORIES as cat}
+                <button class="sort-btn" class:active={activeAthCategory === cat.value} on:click={() => { athCategoryOverride = cat.value; }}>{cat.label}</button>
+              {/each}
             </div>
           </div>
-          {#if athLoots.length > 0}
-            <div class="table-wrapper">
-              <table class="data-table">
-                <thead>
-                  <tr>
-                    <th class="col-rank">#</th>
-                    <th class="sortable" on:click={() => { athLootSort = toggleSort(athLootSort, 'target'); athLootPage = 0; }}>Target{sortIcon(athLootSort, 'target')}</th>
-                    <th class="sortable right" on:click={() => { athLootSort = toggleSort(athLootSort, 'value'); athLootPage = 0; }}>Value{sortIcon(athLootSort, 'value')}</th>
-                    <th></th>
-                    <th class="sortable" on:click={() => { athLootSort = toggleSort(athLootSort, 'timestamp'); athLootPage = 0; }}>Time{sortIcon(athLootSort, 'timestamp')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {#each pagedAthLoots as loot, i}
+
+          {#if activeAthCategory === 'pvp'}
+            <!-- PvP HoF rankings -->
+            {#if athRankings.pvp.length > 0}
+              <div class="table-wrapper">
+                <table class="data-table">
+                  <thead>
                     <tr>
-                      <td class="col-rank text-muted">{athLootPage * PAGE_SIZE + i + 1}</td>
-                      <td><a href="/globals/target/{encodeURIComponent(loot.target)}" class="target-link">{loot.target}</a></td>
-                      <td class="right font-weight-bold">{formatPed(loot.value)} PED</td>
-                      <td>{#if loot.ath}<span class="badge-ath">ATH</span>{:else if loot.hof}<span class="badge-hof">HoF</span>{/if}</td>
-                      <td class="text-muted" title={new Date(loot.timestamp).toLocaleString()}>{timeAgo(loot.timestamp)}</td>
+                      <th class="col-rank">Rank</th>
+                      <th class="right">Value</th>
+                      <th></th>
+                      <th>Time</th>
                     </tr>
-                  {/each}
-                </tbody>
-              </table>
-            </div>
-            {#if athLootPages > 1}
-              <div class="pagination">
-                <button disabled={athLootPage === 0} on:click={() => athLootPage--}>&laquo; Prev</button>
-                <span>{athLootPage + 1} / {athLootPages}</span>
-                <button disabled={athLootPage >= athLootPages - 1} on:click={() => athLootPage++}>Next &raquo;</button>
+                  </thead>
+                  <tbody>
+                    {#each athRankings.pvp as entry}
+                      <tr>
+                        <td class="col-rank"><span class="rank-badge" class:rank-top3={entry.rank <= 3}>#{entry.rank}</span></td>
+                        <td class="right font-weight-bold">{Math.round(entry.value)} Kills</td>
+                        <td>{#if entry.ath}<span class="badge-ath">ATH</span>{:else if entry.hof}<span class="badge-hof">HoF</span>{/if}</td>
+                        <td class="text-muted" title={new Date(entry.timestamp).toLocaleString()}>{timeAgo(entry.timestamp)}</td>
+                      </tr>
+                    {/each}
+                  </tbody>
+                </table>
               </div>
+            {:else}
+              <p class="empty-state-sm">No PvP rankings for this player</p>
             {/if}
           {:else}
-            <p class="empty-state-sm">No {activeAthCategory} records found for this period</p>
+            <!-- Hunting / Mining / Crafting rankings -->
+            {#if athByTotal.length === 0 && athByBest.length === 0}
+              <p class="empty-state-sm">No top 10 rankings for {activeAthCategory} targets</p>
+            {:else}
+              <div class="ath-targets-grid">
+                <div class="section-card-inner">
+                  <h3 class="section-subtitle">By Total Value</h3>
+                  {#if athByTotal.length > 0}
+                    <div class="table-wrapper">
+                      <table class="data-table">
+                        <thead>
+                          <tr>
+                            <th class="col-rank">Rank</th>
+                            <th>Target</th>
+                            <th class="right">Globals</th>
+                            <th class="right">Total Value</th>
+                            <th class="right">Best Loot</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {#each athByTotal as t}
+                            <tr>
+                              <td class="col-rank"><span class="rank-badge" class:rank-top3={t.total_rank <= 3}>#{t.total_rank}</span></td>
+                              <td><a href="/globals/target/{encodeURIComponent(t.target)}" class="target-link">{t.target}</a></td>
+                              <td class="right">{t.count}</td>
+                              <td class="right font-weight-bold">{formatPed(t.total_value)} PED</td>
+                              <td class="right">{formatPed(t.best_value)} PED</td>
+                            </tr>
+                          {/each}
+                        </tbody>
+                      </table>
+                    </div>
+                  {:else}
+                    <p class="empty-state-sm">No total value rankings</p>
+                  {/if}
+                </div>
+
+                <div class="section-card-inner">
+                  <h3 class="section-subtitle">By Single Loot</h3>
+                  {#if athByBest.length > 0}
+                    <div class="table-wrapper">
+                      <table class="data-table">
+                        <thead>
+                          <tr>
+                            <th class="col-rank">Rank</th>
+                            <th>Target</th>
+                            <th class="right">Globals</th>
+                            <th class="right">Best Loot</th>
+                            <th class="right">Total Value</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {#each athByBest as t}
+                            <tr>
+                              <td class="col-rank"><span class="rank-badge" class:rank-top3={t.best_rank <= 3}>#{t.best_rank}</span></td>
+                              <td><a href="/globals/target/{encodeURIComponent(t.target)}" class="target-link">{t.best_target || t.target}</a></td>
+                              <td class="right">{t.count}</td>
+                              <td class="right font-weight-bold">{formatPed(t.best_value)} PED</td>
+                              <td class="right">{formatPed(t.total_value)} PED</td>
+                            </tr>
+                          {/each}
+                        </tbody>
+                      </table>
+                    </div>
+                  {:else}
+                    <p class="empty-state-sm">No single loot rankings</p>
+                  {/if}
+                </div>
+              </div>
+            {/if}
           {/if}
-        </div>
-
-        <!-- Per-target ATH -->
-        <div class="ath-targets-grid">
-          <div class="section-card">
-            <h2 class="section-title-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="#2ecc71" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-              Top Targets by Total Value
-            </h2>
-            {#if athTargets.by_total.length > 0}
-              <div class="table-wrapper">
-                <table class="data-table">
-                  <thead>
-                    <tr>
-                      <th class="col-rank">#</th>
-                      <th class="sortable" on:click={() => { athTotalSort = toggleSort(athTotalSort, 'target'); athTotalPage = 0; }}>Target{sortIcon(athTotalSort, 'target')}</th>
-                      <th class="sortable right" on:click={() => { athTotalSort = toggleSort(athTotalSort, 'count'); athTotalPage = 0; }}>Count{sortIcon(athTotalSort, 'count')}</th>
-                      <th class="sortable right" on:click={() => { athTotalSort = toggleSort(athTotalSort, 'total_value'); athTotalPage = 0; }}>Total{sortIcon(athTotalSort, 'total_value')}</th>
-                      <th class="sortable right" on:click={() => { athTotalSort = toggleSort(athTotalSort, 'best_value'); athTotalPage = 0; }}>Best{sortIcon(athTotalSort, 'best_value')}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {#each pagedAthTotal as t, i}
-                      <tr>
-                        <td class="col-rank text-muted">{athTotalPage * ATH_TARGETS_PAGE_SIZE + i + 1}</td>
-                        <td><a href="/globals/target/{encodeURIComponent(t.target)}" class="target-link">{t.target}</a></td>
-                        <td class="right">{t.count}</td>
-                        <td class="right font-weight-bold">{formatPed(t.total_value)} PED</td>
-                        <td class="right">{formatPed(t.best_value)} PED</td>
-                      </tr>
-                    {/each}
-                  </tbody>
-                </table>
-              </div>
-              {#if athTotalPages > 1}
-                <div class="pagination">
-                  <button disabled={athTotalPage === 0} on:click={() => athTotalPage--}>&laquo; Prev</button>
-                  <span>{athTotalPage + 1} / {athTotalPages}</span>
-                  <button disabled={athTotalPage >= athTotalPages - 1} on:click={() => athTotalPage++}>Next &raquo;</button>
-                </div>
-              {/if}
-            {:else}
-              <p class="empty-state-sm">No target data available</p>
-            {/if}
-          </div>
-
-          <div class="section-card">
-            <h2 class="section-title-icon">
-              <svg viewBox="0 0 24 24" fill="none" stroke="#e74c3c" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
-              Top Targets by Single Loot
-            </h2>
-            {#if athTargets.by_best.length > 0}
-              <div class="table-wrapper">
-                <table class="data-table">
-                  <thead>
-                    <tr>
-                      <th class="col-rank">#</th>
-                      <th class="sortable" on:click={() => { athBestSort = toggleSort(athBestSort, 'target'); athBestPage = 0; }}>Target{sortIcon(athBestSort, 'target')}</th>
-                      <th class="sortable right" on:click={() => { athBestSort = toggleSort(athBestSort, 'count'); athBestPage = 0; }}>Count{sortIcon(athBestSort, 'count')}</th>
-                      <th class="sortable right" on:click={() => { athBestSort = toggleSort(athBestSort, 'best_value'); athBestPage = 0; }}>Best{sortIcon(athBestSort, 'best_value')}</th>
-                      <th class="sortable right" on:click={() => { athBestSort = toggleSort(athBestSort, 'total_value'); athBestPage = 0; }}>Total{sortIcon(athBestSort, 'total_value')}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {#each pagedAthBest as t, i}
-                      <tr>
-                        <td class="col-rank text-muted">{athBestPage * ATH_TARGETS_PAGE_SIZE + i + 1}</td>
-                        <td><a href="/globals/target/{encodeURIComponent(t.target)}" class="target-link">{t.target}</a></td>
-                        <td class="right">{t.count}</td>
-                        <td class="right font-weight-bold">{formatPed(t.best_value)} PED</td>
-                        <td class="right">{formatPed(t.total_value)} PED</td>
-                      </tr>
-                    {/each}
-                  </tbody>
-                </table>
-              </div>
-              {#if athBestPages > 1}
-                <div class="pagination">
-                  <button disabled={athBestPage === 0} on:click={() => athBestPage--}>&laquo; Prev</button>
-                  <span>{athBestPage + 1} / {athBestPages}</span>
-                  <button disabled={athBestPage >= athBestPages - 1} on:click={() => athBestPage++}>Next &raquo;</button>
-                </div>
-              {/if}
-            {:else}
-              <p class="empty-state-sm">No target data available</p>
-            {/if}
-          </div>
         </div>
       {/if}
     </div>
@@ -1590,8 +1582,33 @@
     margin-bottom: 16px;
   }
 
-  .ath-targets-grid .section-card {
+  .ath-targets-grid .section-card,
+  .ath-targets-grid .section-card-inner {
     margin-bottom: 0;
+  }
+
+  .section-card-inner {
+    padding: 16px;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+  }
+
+  .section-subtitle {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin: 0 0 12px 0;
+  }
+
+  .rank-badge {
+    font-weight: 700;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+  }
+
+  .rank-badge.rank-top3 {
+    color: #eab308;
   }
 
   /* Type badges */

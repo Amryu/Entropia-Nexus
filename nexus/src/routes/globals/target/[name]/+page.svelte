@@ -100,9 +100,16 @@
     wikiUrl = d?.wiki_url || null;
   }
 
-  // Apply initial SSR data
+  // Apply initial SSR data — inlined so Svelte tracks write dependencies
+  // (applyData is opaque to the compiler, breaking SSR reactive ordering)
   $: if (initialData) {
-    applyData(initialData);
+    summary = initialData.summary;
+    topPlayers = initialData.top_players || [];
+    activity = initialData.activity || [];
+    recent = initialData.recent || [];
+    primaryType = initialData.primary_type;
+    maturities = initialData.maturities || [];
+    wikiUrl = initialData.wiki_url || null;
   }
 
   async function refetchData() {
@@ -754,7 +761,6 @@
     grid-template-columns: 1fr 1fr;
     gap: 16px;
     margin-bottom: 16px;
-    align-items: start;
   }
 
   .chart-recent-grid .section-card {
@@ -769,16 +775,15 @@
   }
 
   .recent-compact {
-    max-height: 300px;
-    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    max-height: 400px;
   }
 
-  .recent-compact h2 {
-    position: sticky;
-    top: 0;
-    background: var(--secondary-color);
-    z-index: 1;
-    padding-bottom: 8px;
+  .recent-compact .table-wrapper {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
   }
 
   /* Section cards */

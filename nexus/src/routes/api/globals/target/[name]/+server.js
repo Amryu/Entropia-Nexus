@@ -49,12 +49,38 @@ export async function GET({ params, url }) {
 
   const { sqlUnit: bucketUnit } = getActivityBucket(period, from, to);
 
-  // Build the target name condition — exact match or maturity filter
+  // Resolve mob: find all maturity target names sharing the same mob_id.
+  // This allows base mob names (e.g. "Atrox") to load all maturities,
+  // and maturity names (e.g. "Atrox Young") to also show the full mob.
+  let resolvedMobId = null;
+  let resolvedTargets = null;
+  if (!maturityFilter) {
+    const mobLookup = await pool.query(
+      `SELECT DISTINCT mob_id, lower(target_name) AS name FROM ingested_globals
+       WHERE confirmed = true AND mob_id IS NOT NULL
+         AND mob_id = (
+           SELECT mob_id FROM ingested_globals
+           WHERE confirmed = true AND mob_id IS NOT NULL
+             AND (lower(target_name) = lower($1) OR lower(target_name) LIKE lower($1) || ' %')
+           LIMIT 1
+         )`,
+      [targetName]
+    );
+    if (mobLookup.rows.length > 0) {
+      resolvedMobId = mobLookup.rows[0].mob_id;
+      resolvedTargets = mobLookup.rows.map(r => r.name);
+    }
+  }
+
+  // Build the target name condition — resolved mob targets, maturity filter, or exact match
   let targetCond;
   let targetParams;
   if (maturityFilter && maturityFilter.length > 0) {
     targetCond = 'lower(target_name) = ANY($1)';
     targetParams = [maturityFilter.map(m => m.toLowerCase())];
+  } else if (resolvedTargets) {
+    targetCond = 'lower(target_name) = ANY($1)';
+    targetParams = [resolvedTargets];
   } else {
     targetCond = 'lower(target_name) = lower($1)';
     targetParams = [targetName];
@@ -137,18 +163,24 @@ export async function GET({ params, url }) {
         targetParams
       ),
 
-      // Available maturities for this target (find all variants sharing the same mob_id or base name)
-      pool.query(
-        `SELECT target_name, count(*) AS count, COALESCE(sum(value), 0) AS value
-         FROM ingested_globals
-         WHERE confirmed = true AND (
-           mob_id = (SELECT MAX(mob_id) FROM ingested_globals WHERE confirmed = true AND lower(target_name) = lower($1) AND mob_id IS NOT NULL)
-           OR lower(target_name) = lower($1)
-         )
-         GROUP BY target_name
-         ORDER BY count(*) DESC`,
-        [targetName]
-      ),
+      // Available maturities for this target (find all variants sharing the same mob_id)
+      resolvedMobId
+        ? pool.query(
+            `SELECT target_name, count(*) AS count, COALESCE(sum(value), 0) AS value
+             FROM ingested_globals
+             WHERE confirmed = true AND mob_id = $1
+             GROUP BY target_name
+             ORDER BY count(*) DESC`,
+            [resolvedMobId]
+          )
+        : pool.query(
+            `SELECT target_name, count(*) AS count, COALESCE(sum(value), 0) AS value
+             FROM ingested_globals
+             WHERE confirmed = true AND lower(target_name) = lower($1)
+             GROUP BY target_name
+             ORDER BY count(*) DESC`,
+            [targetName]
+          ),
 
       // Highest loot per timespan (always uses all-time data, ignoring period filter)
       pool.query(
@@ -159,7 +191,7 @@ export async function GET({ params, url }) {
                 COALESCE(max(value) FILTER (WHERE event_timestamp > now() - interval '1 year'), 0) AS highest_1y
          FROM ingested_globals
          WHERE confirmed = true AND ${targetCond}`,
-        maturityFilter ? [maturityFilter.map(m => m.toLowerCase())] : [targetName]
+        maturityFilter ? [maturityFilter.map(m => m.toLowerCase())] : resolvedTargets ? [resolvedTargets] : [targetName]
       ),
     ]);
 
@@ -171,12 +203,11 @@ export async function GET({ params, url }) {
 
     // Derive wiki URL for mob targets (hunting types with mob_id)
     let wikiUrl = null;
-    const mobId = summary.mob_id;
+    const mobId = resolvedMobId || summary.mob_id;
     const isHunting = summary.primary_type === 'kill' || summary.primary_type === 'team_kill';
     if (mobId && isHunting) {
-      // Use the base mob name (strip maturity) for the wiki URL
       const mobName = maturitiesResult.rows.length > 1
-        ? extractMobName(targetName)
+        ? extractMobName(maturitiesResult.rows[0].target_name)
         : targetName;
       wikiUrl = `/information/mobs/${encodeURIComponentSafe(mobName)}`;
     }

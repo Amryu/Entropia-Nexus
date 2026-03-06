@@ -98,7 +98,7 @@ test.describe('Globals player detail page', () => {
     await expect(page.locator('.stat-label', { hasText: 'Highest Loot' })).toBeVisible();
   });
 
-  test('ATHs tab shows category toggle and target tables', async ({ page }) => {
+  test('ATHs tab shows category toggle with all categories', async ({ page }) => {
     await page.goto('/globals/player/TestPlayer');
     await page.waitForLoadState('networkidle');
 
@@ -109,12 +109,16 @@ test.describe('Globals player detail page', () => {
     await page.locator('.tab-link', { hasText: 'ATHs' }).click();
     await expect(page.locator('.tab-link.active')).toContainText('ATHs');
 
-    // Should have category sort toggle
+    // Should have "Top 10 Rankings" heading
+    await expect(page.locator('h2', { hasText: 'Top 10 Rankings' })).toBeVisible({ timeout: TIMEOUT_MEDIUM });
+
+    // Should have category sort toggle with all four categories
     const sortToggle = page.locator('.sort-toggle');
     await expect(sortToggle).toBeVisible({ timeout: TIMEOUT_MEDIUM });
     await expect(sortToggle.locator('.sort-btn', { hasText: 'Hunting' })).toBeVisible();
     await expect(sortToggle.locator('.sort-btn', { hasText: 'Mining' })).toBeVisible();
     await expect(sortToggle.locator('.sort-btn', { hasText: 'Crafting' })).toBeVisible();
+    await expect(sortToggle.locator('.sort-btn', { hasText: 'PvP' })).toBeVisible();
   });
 
   test('search input is visible on player page', async ({ page }) => {
@@ -174,7 +178,7 @@ test.describe('Globals player detail page', () => {
     await expect(sideBySide.locator('.section-title-icon').first()).toBeVisible();
   });
 
-  test('ATHs tab auto-selects category and has pagination', async ({ page }) => {
+  test('ATHs tab auto-selects category and shows ranking tables or empty state', async ({ page }) => {
     await page.goto('/globals/player/TestPlayer');
     await page.waitForLoadState('networkidle');
 
@@ -190,8 +194,12 @@ test.describe('Globals player detail page', () => {
     await expect(sortToggle).toBeVisible({ timeout: TIMEOUT_MEDIUM });
     await expect(sortToggle.locator('.sort-btn.active')).toHaveCount(1);
 
-    // Should have section title icons
-    await expect(page.locator('.section-title-icon').first()).toBeVisible();
+    // Should show either ranking tables with rank badges, or empty state
+    const sectionCard = page.locator('.section-card').filter({ has: page.locator('h2', { hasText: 'Top 10 Rankings' }) });
+    await expect(sectionCard).toBeVisible({ timeout: TIMEOUT_MEDIUM });
+    const hasRankings = await page.locator('.rank-badge').count() > 0;
+    const hasEmpty = await page.locator('.empty-state-sm').count() > 0;
+    expect(hasRankings || hasEmpty).toBeTruthy();
   });
 
   test('navigates back to globals page via breadcrumb', async ({ page }) => {
