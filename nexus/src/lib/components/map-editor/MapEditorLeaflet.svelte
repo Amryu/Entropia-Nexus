@@ -14,6 +14,7 @@
   export let previewShape = null;
   export let dbPendingChanges = [];
   export let currentUserId = null;
+  export let isAdmin = false;
 
   const dispatch = createEventDispatcher();
 
@@ -597,7 +598,7 @@
       opacity: 0.8,
       fillOpacity: style.fillOpacity,
       dashArray: style.dashArray,
-      interactive: false
+      interactive: true
     };
   }
 
@@ -612,7 +613,7 @@
       opacity: 0.8,
       fillOpacity: state === 'delete' ? 0.25 : 0.35,
       dashArray: style.dashArray,
-      interactive: false
+      interactive: true
     };
   }
 
@@ -623,6 +624,8 @@
     for (const change of dbPendingChanges) {
       // Skip own changes (they're already shown via pendingChanges or the location itself)
       if (change.author_id === currentUserId) continue;
+      // Skip changes seeded into local pendingChanges (author/admin editable path)
+      if (pendingChanges.has(-change.id)) continue;
 
       const data = change.data;
       if (!data?.Properties) continue;
@@ -638,6 +641,8 @@
       const stateLabel = change.state === 'Draft' ? 'Draft' : 'Pending';
       const typeLabel = change.type === 'Create' ? 'New' : (change.type === 'Delete' ? 'Delete' : 'Edit');
       const tooltip = `${typeLabel}: ${data.Name || '(unnamed)'}\nby ${authorLabel} (${stateLabel})`;
+
+      const dbChangeId = `db-${change.id}`;
 
       // Areas with shape data
       if (props.Shape && props.Data) {
@@ -662,7 +667,13 @@
         }
 
         if (layer) {
+          layer._dbChangeId = dbChangeId;
+          layer._dbChangeData = change;
           layer.bindTooltip(tooltip, { sticky: true });
+          layer.on('click', () => {
+            _clickedLayer = true;
+            dispatch('selectDbChange', change);
+          });
           dbChangesLayerGroup.addLayer(layer);
         }
       }
@@ -670,7 +681,13 @@
       else if (props.Coordinates?.Longitude != null) {
         const [lat, lng] = transforms.entropiaToLeaflet(props.Coordinates.Longitude, props.Coordinates.Latitude);
         const marker = L.circleMarker([lat, lng], pointStyle);
+        marker._dbChangeId = dbChangeId;
+        marker._dbChangeData = change;
         marker.bindTooltip(tooltip, { direction: 'top', offset: [0, -8] });
+        marker.on('click', () => {
+          _clickedLayer = true;
+          dispatch('selectDbChange', change);
+        });
         dbChangesLayerGroup.addLayer(marker);
       }
     }
@@ -697,7 +714,7 @@
       if (locId === undefined) return;
       if (locId === selectedId) {
         if (layer.setStyle) layer.setStyle({ weight: 4, color: '#ffff00' });
-        if (editMode) enableEditing(layer, locId);
+        if (editMode && (isAdmin || pendingChanges.has(locId))) enableEditing(layer, locId);
       } else {
         // Check if this is a pending add (negative tempId)
         const pending = pendingChanges.get(locId);
@@ -721,6 +738,30 @@
         }
       }
     });
+
+    // Highlight selected DB change overlay (no grabbers)
+    if (dbChangesLayerGroup) {
+      dbChangesLayerGroup.eachLayer(layer => {
+        if (!layer._dbChangeId) return;
+        if (layer._dbChangeId === selectedId) {
+          if (layer.setStyle) layer.setStyle({ weight: 4, color: '#ffff00' });
+        } else {
+          // Restore original style
+          const change = layer._dbChangeData;
+          if (change && layer.setStyle) {
+            const data = change.data;
+            const props = data?.Properties || {};
+            const effectiveType = (props.Shape || props.Type === 'Area' || String(props.Type || '').endsWith('Area'))
+              ? (props.AreaType || props.Type || 'Area')
+              : (props.Type || 'Location');
+            const baseColor = getTypeColor(effectiveType);
+            const state = normalizeChangeState(change.type);
+            const style = getChangeStyle(state, baseColor);
+            layer.setStyle({ weight: style.weight, color: style.borderColor, dashArray: style.dashArray });
+          }
+        }
+      });
+    }
   }
 
   // --- Snap helpers ---

@@ -214,8 +214,8 @@ export async function load({ fetch, params, url, parent }) {
   response.pendingCreatesCount = totalPendingCreates;
   response.canCreateNew = isAdmin ? true : totalPendingCreates < MAX_PENDING_CREATES;
 
-  // Load ALL pending changes for this planet (any author) — for map editor overlay (editors only)
-  if (hasEditGrant) {
+  // Load ALL pending changes for this planet (any author) — for map editor overlay
+  if (session?.user) {
     try {
       const allPendingRes = await fetch(
         `/api/changes?entity=Location,Area&state=Pending,Draft&planet=${encodeURIComponent(planet.Name)}&limit=100`
