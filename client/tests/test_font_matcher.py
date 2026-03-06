@@ -53,11 +53,21 @@ SAMPLE_RANKS = [
 def _make_font_matcher(**kwargs):
     """Create a FontMatcher with sample data."""
     from client.ocr.font_matcher import FontMatcher
-    return FontMatcher(
-        skill_names=kwargs.get("skill_names", SAMPLE_SKILLS),
-        rank_names=kwargs.get("rank_names", SAMPLE_RANKS),
-        font_path=kwargs.get("font_path", FONT_PATH),
-    )
+    skill_names = kwargs.get("skill_names", SAMPLE_SKILLS)
+    rank_names = kwargs.get("rank_names", SAMPLE_RANKS)
+    font_path = kwargs.get("font_path", FONT_PATH)
+    try:
+        return FontMatcher(
+            skill_names=skill_names,
+            rank_names=rank_names,
+            font_path=font_path,
+        )
+    except TypeError:
+        # Newer FontMatcher signature no longer accepts font_path.
+        return FontMatcher(
+            skill_names=skill_names,
+            rank_names=rank_names,
+        )
 
 
 def _tpl_to_1x(tpl: np.ndarray) -> np.ndarray:
@@ -546,6 +556,31 @@ class TestDigitReading(unittest.TestCase):
                                  f"Expected '{expected}', got '{result}'")
         finally:
             fm_mod.DIGIT_THRESHOLD = orig_thresh
+
+
+class TestDigitDisambiguation(unittest.TestCase):
+    """Focused tests for digit post-processing heuristics."""
+
+    def test_zero_six_disambiguation_from_stpk_templates(self):
+        """0/6 disambiguation should classify digit templates correctly."""
+        from client.ocr.font_matcher import STPK_DIR, _disambiguate_zero_six
+        from client.ocr.stpk import read_stpk
+
+        digits_path = STPK_DIR / "digits.stpk"
+        if not digits_path.exists():
+            self.skipTest(f"Missing STPK file: {digits_path}")
+
+        _header, entries = read_stpk(digits_path)
+        zeros = [e["grid"] for e in entries if e.get("text") == "0" and e.get("grid") is not None]
+        sixes = [e["grid"] for e in entries if e.get("text") == "6" and e.get("grid") is not None]
+
+        self.assertGreater(len(zeros), 0)
+        self.assertGreater(len(sixes), 0)
+
+        for grid in zeros:
+            self.assertEqual(_disambiguate_zero_six(grid), 0)
+        for grid in sixes:
+            self.assertEqual(_disambiguate_zero_six(grid), 6)
 
 
 @unittest.skipUnless(HAS_DEPS, "cv2 and PIL required")
