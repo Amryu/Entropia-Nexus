@@ -62,6 +62,10 @@ MIN_SPLIT_MARGIN = 3     # minimum pixels on left side of split
 ZERO_NINE_MAX_MARGIN = 30
 # 5-vs-6 tiebreaker: max score margin to apply top-bar heuristic
 FIVE_SIX_MAX_MARGIN = 30
+# 0-vs-6 tiebreaker: only apply when scores are close
+ZERO_SIX_MAX_MARGIN = 30
+# 0-vs-6 tiebreaker: minimum middle-core intensity sum for digit '6'
+ZERO_SIX_CENTER_SUM_MIN = 80
 
 
 class DigitMatcher:
@@ -218,6 +222,41 @@ def _normalize_blob(
     grid = np.zeros((grid_h, grid_w), dtype=np.uint8)
     grid[gy:gy + ph, gx:gx + pw] = content[:ph, :pw]
     return grid
+
+
+def _disambiguate_zero_six(grid: np.ndarray) -> Optional[int]:
+    """Resolve an ambiguous 0/6 classification from a normalized digit grid.
+
+    Returns:
+        0 or 6 when enough shape information is present, else None.
+    """
+    content_cols = np.any(grid > 0, axis=0)
+    content_rows = np.any(grid > 0, axis=1)
+    if not content_cols.any() or not content_rows.any():
+        return None
+
+    col_l = int(np.argmax(content_cols))
+    col_r = int(len(content_cols) - 1 - np.argmax(content_cols[::-1]))
+    row_t = int(np.argmax(content_rows))
+    row_b = int(len(content_rows) - 1 - np.argmax(content_rows[::-1]))
+    cw = col_r - col_l + 1
+    ch = row_b - row_t + 1
+    if cw < 3 or ch < 5:
+        return None
+
+    # The center of '6' is denser than '0' because the upper bowl closes
+    # into a mid-band stroke; '0' keeps a clearer hollow center.
+    mid_row_start = row_t + ch // 3
+    mid_row_end = row_t + 2 * ch // 3
+    mid_col_start = col_l + cw // 3
+    mid_col_end = col_l + 2 * cw // 3
+    if mid_row_end < mid_row_start or mid_col_end < mid_col_start:
+        return None
+
+    center_sum = int(np.sum(
+        grid[mid_row_start:mid_row_end + 1, mid_col_start:mid_col_end + 1]
+    ))
+    return 6 if center_sum >= ZERO_SIX_CENTER_SUM_MIN else 0
 
 
 def _find_first_content(
@@ -996,6 +1035,26 @@ class FontMatcher:
                           c["x0"], c["x1"], margin, top_sum)
                 c["digit"] = 6
                 c["score"] = c["scores"][6]
+
+        # 0-vs-6 tiebreaker: use center-core density when scores are close.
+        for c in classified:
+            if c["digit"] not in (0, 6):
+                continue
+            margin = abs(c["scores"][0] - c["scores"][6])
+            if margin > ZERO_SIX_MAX_MARGIN:
+                continue
+
+            grid = _normalize_blob(
+                intensity_4bit, c["x0"], c["x1"],
+                text_top, text_h, grid_w, grid_h)
+            resolved = _disambiguate_zero_six(grid)
+            if resolved is None or resolved == c["digit"]:
+                continue
+
+            log.debug("0/6 override: x%d-%d margin=%.1f %d→%d",
+                      c["x0"], c["x1"], margin, c["digit"], resolved)
+            c["digit"] = resolved
+            c["score"] = c["scores"][resolved]
 
         # Build output and log diagnostics
         num_str = ""
