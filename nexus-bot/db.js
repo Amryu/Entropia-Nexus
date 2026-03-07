@@ -206,6 +206,24 @@ export async function getContributorBalance(userId) {
   };
 }
 
+export async function getRewardDmEnabled(userId) {
+  const { rows } = await poolUsers.query(
+    `SELECT data FROM user_preferences WHERE user_id = $1 AND key = 'rewards.dm_enabled'`,
+    [userId]
+  );
+  if (!rows[0]) return true; // default: enabled
+  return rows[0].data === true;
+}
+
+export async function setRewardDmEnabled(userId, enabled) {
+  await poolUsers.query(
+    `INSERT INTO user_preferences (user_id, key, data, updated_at)
+     VALUES ($1, 'rewards.dm_enabled', $2::jsonb, NOW())
+     ON CONFLICT (user_id, key) DO UPDATE SET data = $2::jsonb, updated_at = NOW()`,
+    [userId, JSON.stringify(enabled)]
+  );
+}
+
 // Shop functions
 export async function getShopById(id) {
   const query = `

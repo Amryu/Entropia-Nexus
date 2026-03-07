@@ -16,6 +16,7 @@ const ALLOWED_KEY_PREFIXES = [
   'wiki.',
   'services.',
   'inventory.',
+  'rewards.',
 ];
 
 /**
