@@ -10,6 +10,7 @@ import {
 } from '../../db.js';
 import { applyChange } from '../../changes/util.js';
 import { compareJson, validate } from '../../change.js';
+import { sendRewardDm } from '../../rewards.js';
 
 const approveRow = new ActionRowBuilder()
   .addComponents(
@@ -213,6 +214,10 @@ async function promptFixedReward({ thread, change, rule, amount, onDone }) {
         return;
       }
 
+      await sendRewardDm(btnInteraction.client, change.author_id, {
+        amount: roundPed(amount), contribution_score: rule.contribution_score,
+        note: `Assigned on approval (${rule.name})`,
+      });
       await btnInteraction.reply(`Reward assigned: **${formatPed(amount)} PED** (${rule.name})`);
       collector.stop('assigned');
     } catch (e) {
@@ -331,6 +336,10 @@ async function promptRangeReward({ thread, change, rule, minAmount, maxAmount, o
             return;
           }
 
+          await sendRewardDm(modalSubmit.client, change.author_id, {
+            amount: roundPed(amount), contribution_score: rule.contribution_score,
+            note: `Assigned on approval (${rule.name})`,
+          });
           await modalSubmit.reply(`Reward assigned: **${formatPed(amount)} PED** (${rule.name})`);
           collector.stop('assigned');
         } catch {
@@ -365,6 +374,10 @@ async function promptRangeReward({ thread, change, rule, minAmount, maxAmount, o
         return;
       }
 
+      await sendRewardDm(btnInteraction.client, change.author_id, {
+        amount, contribution_score: rule.contribution_score,
+        note: `Assigned on approval (${rule.name})`,
+      });
       await btnInteraction.reply(`Reward assigned: **${formatPed(amount)} PED** (${rule.name})`);
       collector.stop('assigned');
     } catch (e) {
