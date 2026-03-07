@@ -181,6 +181,31 @@ export async function assignChangeReward({ change_id, user_id, rule_id, amount, 
   return rows[0];
 }
 
+export async function getContributorBalance(userId) {
+  const [rewardsResult, payoutsResult] = await Promise.all([
+    poolUsers.query(
+      `SELECT COALESCE(SUM(amount), 0) as total_earned,
+              COALESCE(SUM(contribution_score), 0) as total_score
+       FROM contributor_rewards WHERE user_id = $1`,
+      [userId]
+    ),
+    poolUsers.query(
+      `SELECT COALESCE(SUM(amount), 0) as total_paid
+       FROM contributor_payouts WHERE user_id = $1`,
+      [userId]
+    ),
+  ]);
+  const totalEarned = parseFloat(rewardsResult.rows[0].total_earned);
+  const totalScore = parseFloat(rewardsResult.rows[0].total_score);
+  const totalPaid = parseFloat(payoutsResult.rows[0].total_paid);
+  return {
+    total_earned: totalEarned,
+    total_score: totalScore,
+    total_paid: totalPaid,
+    balance: totalEarned - totalPaid,
+  };
+}
+
 // Shop functions
 export async function getShopById(id) {
   const query = `

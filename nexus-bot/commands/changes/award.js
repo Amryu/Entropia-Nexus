@@ -5,6 +5,7 @@ import { getConfigValue } from '../../bot.js';
 import {
   getChangeByThreadId, assignChangeReward,
 } from '../../db.js';
+import { sendRewardDm } from '../../rewards.js';
 
 export const data = new SlashCommandBuilder()
   .setName('award')
@@ -67,6 +68,10 @@ export async function execute(interaction) {
   if (!assigned) {
     return interaction.reply({ content: 'Failed to assign the reward.', flags: MessageFlags.Ephemeral });
   }
+
+  await sendRewardDm(interaction.client, change.author_id, {
+    amount, contribution_score: score, note,
+  });
 
   await interaction.reply(`Manual reward assigned: **${amount.toFixed(2)} PED**${score > 0 ? ` (+${score} score)` : ''} — ${note}`);
 }
