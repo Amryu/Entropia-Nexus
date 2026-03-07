@@ -9,32 +9,28 @@
  * @param {Array} amplifiers - All available amplifiers
  * @param {Object} weapon - The weapon to match amplifiers for
  * @param {Object} options - Filtering options
- * @param {number} options.overampCap - Maximum overamp percentage (default: 0)
- * @param {boolean} options.onlyShowReasonableAmplifiers - Filter out amplifiers that exceed overamp cap (default: false)
+ * @param {boolean} options.onlyShowReasonableAmplifiers - Filter out amplifiers that exceed the amp cap (default: false)
  * @returns {Array} Filtered amplifiers compatible with the weapon
  */
 export function getCompatibleAmplifiers(amplifiers, weapon, options = {}) {
-	const { overampCap = 0, onlyShowReasonableAmplifiers = false } = options;
-	
+	const { onlyShowReasonableAmplifiers = false } = options;
+
 	if (!weapon) {
 		return [];
 	}
-	
+
 	return amplifiers.filter(amplifier => {
 		// Get total damage values
 		const ampDamage = getTotalDamage(amplifier);
 		const weaponDamage = getTotalDamage(weapon);
-		
+
 		if (!ampDamage) {
 			return false;
 		}
-		
-		// Check overamp cap if enabled
-		if (onlyShowReasonableAmplifiers && overampCap != null) {
-			const maxAllowedDamage = (1 + (overampCap / 100)) * weaponDamage;
-			if (2 * ampDamage > maxAllowedDamage) {
-				return false;
-			}
+
+		// Filter overcapped amplifiers (amp damage exceeds 50% of weapon damage)
+		if (onlyShowReasonableAmplifiers && 2 * ampDamage > weaponDamage) {
+			return false;
 		}
 		
 		// Match amplifier type to weapon class and type

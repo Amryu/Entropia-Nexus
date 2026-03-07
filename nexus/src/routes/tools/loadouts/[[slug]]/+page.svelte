@@ -122,7 +122,15 @@
 
   let settings = {
     onlyShowReasonableAmplifiers: true,
-    overampCap: 10,
+  }
+
+  const OVERAMP_MODE_KEY = 'loadout-overamp-mode';
+  let overampMode = (typeof localStorage !== 'undefined' && localStorage.getItem(OVERAMP_MODE_KEY)) || 'percent';
+  function toggleOverampMode() {
+    overampMode = overampMode === 'percent' ? 'delta' : 'percent';
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(OVERAMP_MODE_KEY, overampMode);
+    }
   }
 
   let weapons = [];
@@ -2093,7 +2101,7 @@
   $: isPublicLoadout = !!activeRecord?.public;
   $: linkedItemSetName = activeRecord?.linked_item_set || null;
   $: isLinkedToItemSet = !!linkedItemSetName;
-  $: pickerConfig = activePicker ? (isMobileLayout, getPickerConfig(activePicker)) : null;
+  $: pickerConfig = activePicker ? (isMobileLayout, settings.onlyShowReasonableAmplifiers, overampMode, getPickerConfig(activePicker)) : null;
   $: pickerRowHeight = isMobileLayout ? 30 : 34;
 
   function getLoadoutListLabel(item) {
@@ -3087,7 +3095,7 @@
         return false;
       }
 
-      if (2 * ampDamage > (1 + ((settings.overampCap ?? 0) / 100)) * weaponDamage && settings.onlyShowReasonableAmplifiers) {
+      if (2 * ampDamage > weaponDamage && settings.onlyShowReasonableAmplifiers) {
         return false;
       }
 
@@ -3163,7 +3171,7 @@
         {
           key: 'link',
           header: '',
-          width: '46px',
+          width: '36px',
           sortable: false,
           searchable: false,
           formatter: (_value, row) => {
@@ -3206,23 +3214,40 @@
     if (kind === 'amplifier') {
       const weapon = getWeapon(loadout?.Gear?.Weapon?.Name);
       const weaponDamage = weapon ? LoadoutCalc.calculateItemTotalDamage(weapon) : 0;
+      const cap = weaponDamage / 2;
       return {
         title: 'Select Amplifier',
         columns: finalizePickerColumns(kind, [
           { key: 'name', header: 'Name', main: true },
-          { key: 'damage', header: 'Damage', width: '80px' },
+          { key: 'damage', header: 'Damage', width: '100px' },
+          { key: 'overamp', header: overampMode === 'delta' ? 'Over Δ' : 'Over %', width: '90px' },
           { key: 'dpp', header: 'DPP', width: '70px' },
-          { key: 'efficiency', header: 'Efficiency', width: '90px' }
+          { key: 'efficiency', header: 'Efficiency', width: '110px' }
         ]),
-        rows: buildPickerRows(getFilteredAmplifiers(), item => ({
-          name: item.Name,
-          damage: compareDps(loadout, x => x.Gear.Weapon.Amplifier, (x, v) => x.Gear.Weapon.Amplifier = v, item) ?? 'N/A',
-          dpp: compareDpp(loadout, x => x.Gear.Weapon.Amplifier, (x, v) => x.Gear.Weapon.Amplifier = v, item) ?? 'N/A',
-          efficiency: compareEfficiency(loadout, x => x.Gear.Weapon.Amplifier, (x, v) => x.Gear.Weapon.Amplifier = v, item) ?? 'N/A'
-        })),
-        rowClass: weaponDamage ? (row) => {
+        rows: buildPickerRows(getFilteredAmplifiers(), item => {
+          const ampDamage = LoadoutCalc.calculateItemTotalDamage(item) || 0;
+          const effectiveDamage = cap > 0 ? Math.min(ampDamage, cap) : ampDamage;
+          const overampRaw = cap > 0 ? Math.max(0, ampDamage - cap) : 0;
+          const overampPct = cap > 0 && overampRaw > 0 ? (overampRaw / cap) * 100 : 0;
+          let overampText = '—';
+          if (overampRaw > 0) {
+            overampText = overampMode === 'delta'
+              ? `+${overampRaw.toFixed(1)}`
+              : `+${overampPct.toFixed(0)}%`;
+          }
+          return {
+            name: item.Name,
+            damage: effectiveDamage > 0 ? effectiveDamage.toFixed(1) : 'N/A',
+            overamp: overampText,
+            dpp: compareDpp(loadout, x => x.Gear.Weapon.Amplifier, (x, v) => x.Gear.Weapon.Amplifier = v, item) ?? 'N/A',
+            efficiency: compareEfficiency(loadout, x => x.Gear.Weapon.Amplifier, (x, v) => x.Gear.Weapon.Amplifier = v, item) ?? 'N/A'
+          };
+        }),
+        rowClass: cap > 0 ? (row) => {
           const ampDamage = LoadoutCalc.calculateItemTotalDamage(row._item);
-          return ampDamage && 2 * ampDamage > weaponDamage ? 'overcapped-amp' : '';
+          if (!ampDamage || ampDamage <= cap) return '';
+          const pct = ((ampDamage - cap) / cap) * 100;
+          return pct <= 20 ? 'overamp-warn' : 'overamp-danger';
         } : null
       };
     }
@@ -5426,16 +5451,6 @@
                   </div>
                 </div>
                 <div class="panel-divider compact"></div>
-                <div class="option-row">
-                  <label class="checkbox-row">
-                    <input type="checkbox" bind:checked={settings.onlyShowReasonableAmplifiers} />
-                    <span>Include overcapped amplifiers up to</span>
-                  </label>
-                  <div class="option-input">
-                    <input class="compact-input" type="number" min="0" max="100" bind:value={settings.overampCap} />
-                    <span class="suffix">%</span>
-                  </div>
-                </div>
               </div>
             </div>
           </DataSection>
@@ -5934,6 +5949,15 @@
     <div class="dialog picker-dialog" on:click|stopPropagation role="dialog" aria-modal="true" aria-labelledby="picker-dialog-title">
       <div class="dialog-header">
         <h3 id="picker-dialog-title">{pickerConfig.title}</h3>
+        {#if activePicker === 'amplifier'}
+          <label class="picker-header-checkbox">
+            <input type="checkbox" bind:checked={settings.onlyShowReasonableAmplifiers} />
+            <span>Hide overcapped</span>
+          </label>
+          <button class="picker-header-toggle" on:click={toggleOverampMode} title="Toggle between % overamp and damage delta">
+            {overampMode === 'percent' ? '%' : 'Δ'}
+          </button>
+        {/if}
         <button class="close-btn" on:click={closePicker} aria-label="Close dialog">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -6026,8 +6050,42 @@
     min-height: 0;
   }
 
-  .picker-table :global(.overcapped-amp) {
+  .picker-table :global(.overamp-warn),
+  .picker-table :global(.overamp-warn) :global(.table-cell) {
     color: var(--warning-color, #fbbf24);
+  }
+
+  .picker-table :global(.overamp-danger),
+  .picker-table :global(.overamp-danger) :global(.table-cell) {
+    color: var(--error-color, #ef4444);
+  }
+
+  .picker-header-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+    margin-left: auto;
+    margin-right: 4px;
+  }
+
+  .picker-header-toggle {
+    padding: 2px 8px;
+    font-size: 13px;
+    font-weight: 600;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background: var(--primary-color);
+    color: var(--text-color);
+    cursor: pointer;
+    margin-right: 8px;
+    min-width: 28px;
+  }
+
+  .picker-header-toggle:hover {
+    background: var(--hover-color);
   }
 
   .picker-preview {
