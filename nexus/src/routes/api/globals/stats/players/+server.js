@@ -12,6 +12,8 @@ import { isRollupReady } from '$lib/server/globals-rollup.js';
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
 const VALID_SORT_FIELDS = new Set(['count', 'value', 'avg', 'best']);
+const AGG_PERIODS = new Set(['all', '7d', '30d', '90d', '1y']);
+const AGG_SORT_COLS = { count: 'event_count', value: 'sum_value', avg: 'sum_value / NULLIF(event_count, 0)', best: 'max_value' };
 
 export async function GET({ url, request }) {
   const { conditions, params, paramIdx: nextIdx, period, from, to } = buildGlobalsFilter(url);
@@ -38,6 +40,61 @@ export async function GET({ url, request }) {
           'ETag': cached.etag,
         },
       });
+    }
+  }
+
+  // Pre-computed aggregate table: standard periods without type or incompatible filters
+  const hasNoExtraFilters = !url.searchParams.get('player') && !url.searchParams.get('target')
+    && !url.searchParams.get('location') && !url.searchParams.get('min_value')
+    && !url.searchParams.get('hof') && !url.searchParams.get('type') && !from && !to;
+  if (hasNoExtraFilters && AGG_PERIODS.has(period)) {
+    try {
+      const aggSortCol = AGG_SORT_COLS[sortBy];
+      const [dataResult, countResult] = await Promise.all([
+        pool.query(
+          `SELECT player_name AS player, event_count AS count, sum_value AS value,
+                  sum_value / NULLIF(event_count, 0) AS avg_value,
+                  max_value AS best_value, has_team, has_solo, has_profile
+           FROM globals_player_agg
+           WHERE period = $1
+           ORDER BY ${aggSortCol} DESC
+           LIMIT $2 OFFSET $3`,
+          [period, limit, offset]
+        ),
+        pool.query(
+          `SELECT count(*) AS total FROM globals_player_agg WHERE period = $1`,
+          [period]
+        ),
+      ]);
+
+      if (dataResult.rows.length > 0 || offset === 0) {
+        const total = parseInt(countResult.rows[0].total);
+        const pages = Math.max(1, Math.ceil(total / limit));
+
+        return new Response(JSON.stringify({
+          players: dataResult.rows.map(r => ({
+            player: r.player,
+            count: parseInt(r.count),
+            value: parseFloat(r.value),
+            avg_value: parseFloat(r.avg_value) || 0,
+            best_value: parseFloat(r.best_value),
+            is_team: r.has_team && !r.has_solo,
+            has_profile: r.has_profile,
+          })),
+          total,
+          page: pageNum,
+          pages,
+        }), {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+            'Cache-Control': 'public, max-age=60',
+          },
+        });
+      }
+      // Table empty (not yet populated) — fall through to rollup/raw
+    } catch (e) {
+      console.error('[api/globals/stats/players] Agg table error, falling back:', e);
     }
   }
 
@@ -123,9 +180,13 @@ export async function GET({ url, request }) {
   let paramIdx = nextIdx;
   const limitParams = [...params, limit, offset];
 
+  const client = await pool.connect();
   try {
+    await client.query('BEGIN');
+    await client.query('SET LOCAL statement_timeout = 10000');
+
     const [dataResult, countResult] = await Promise.all([
-      pool.query(
+      client.query(
         `SELECT player_name AS player, count(*) AS count, COALESCE(sum(value), 0) AS value,
                 COALESCE(avg(value), 0) AS avg_value, COALESCE(max(value), 0) AS best_value,
                 bool_or(global_type = 'team_kill') AS has_team,
@@ -138,13 +199,15 @@ export async function GET({ url, request }) {
          LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`,
         limitParams
       ),
-      pool.query(
+      client.query(
         `SELECT count(DISTINCT player_name) AS total
          FROM ingested_globals
          ${whereClause}`,
         params
       ),
     ]);
+
+    await client.query('COMMIT');
 
     const total = parseInt(countResult.rows[0].total);
     const pages = Math.ceil(total / limit);
@@ -170,7 +233,14 @@ export async function GET({ url, request }) {
       },
     });
   } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    if (e.message?.includes('statement timeout')) {
+      console.warn('[api/globals/stats/players] Raw query timed out');
+      return getResponse({ error: 'Query too complex, try a narrower filter' }, 503);
+    }
     console.error('[api/globals/stats/players] Error:', e);
     return getResponse({ error: 'Internal server error' }, 500);
+  } finally {
+    client.release();
   }
 }

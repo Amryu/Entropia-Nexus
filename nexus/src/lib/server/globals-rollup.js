@@ -228,6 +228,9 @@ async function fullRebuild() {
   for (const { granularity, truncUnit } of COARSE_GRANULARITIES) {
     await rebuildCoarseGranularity(granularity, truncUnit);
   }
+
+  // Refresh summary tables from rollup data
+  await refreshSummaryTables();
 }
 
 // ------------------------------------------------------------------
@@ -260,6 +263,91 @@ async function incrementalRebuild(oldestEventTs) {
   // Rebuild coarse granularities for the affected range
   for (const { granularity, truncUnit } of COARSE_GRANULARITIES) {
     await rebuildCoarseGranularity(granularity, truncUnit, startDate, tomorrow);
+  }
+
+  // Refresh summary tables from rollup data
+  await refreshSummaryTables();
+}
+
+// ------------------------------------------------------------------
+// Summary tables refresh (from rollup data)
+// ------------------------------------------------------------------
+
+const SUMMARY_PERIODS = [
+  { period: 'all',  granularity: 'monthly', intervalSql: null },
+  { period: '7d',   granularity: 'daily',   intervalSql: "interval '7 days'" },
+  { period: '30d',  granularity: 'daily',   intervalSql: "interval '30 days'" },
+  { period: '90d',  granularity: 'weekly',  intervalSql: "interval '90 days'" },
+  { period: '1y',   granularity: 'weekly',  intervalSql: "interval '1 year'" },
+];
+
+/**
+ * Refresh pre-computed summary tables (globals_player_agg, globals_target_agg)
+ * from rollup data. Called after each rollup rebuild.
+ */
+async function refreshSummaryTables() {
+  // Check if summary tables exist
+  const { rows: tableCheck } = await pool.query(
+    `SELECT 1 FROM information_schema.tables WHERE table_name = 'globals_player_agg' LIMIT 1`
+  );
+  if (tableCheck.length === 0) return;
+
+  const client = await pool.connect();
+  try {
+    await client.query('SET statement_timeout = 120000');
+    await client.query('BEGIN');
+
+    await client.query('DELETE FROM globals_player_agg');
+    await client.query('DELETE FROM globals_target_agg');
+
+    for (const { period, granularity, intervalSql } of SUMMARY_PERIODS) {
+      const periodFilter = intervalSql
+        ? ` AND period_start >= date_trunc('day', now() - ${intervalSql})`
+        : '';
+
+      await client.query(
+        `INSERT INTO globals_player_agg
+           (period, player_name, event_count, sum_value, max_value, has_team, has_solo, has_profile)
+         SELECT $1, player_name,
+                SUM(event_count)::integer,
+                SUM(sum_value),
+                MAX(max_value),
+                bool_or(global_type = 'team_kill'),
+                bool_or(global_type != 'team_kill'),
+                EXISTS(SELECT 1 FROM users u WHERE lower(u.eu_name) = lower(player_name) AND u.verified = true)
+         FROM globals_rollup_player
+         WHERE granularity = $2${periodFilter}
+         GROUP BY player_name`,
+        [period, granularity]
+      );
+
+      await client.query(
+        `INSERT INTO globals_target_agg
+           (period, target_name, mob_id, event_count, sum_value, max_value, primary_type)
+         SELECT $1, target_name,
+                MAX(mob_id),
+                SUM(event_count)::integer,
+                SUM(sum_value),
+                MAX(max_value),
+                (SELECT r2.global_type FROM globals_rollup_target r2
+                 WHERE r2.granularity = $2${periodFilter}
+                   AND r2.target_name = globals_rollup_target.target_name
+                 GROUP BY r2.global_type ORDER BY SUM(r2.event_count) DESC LIMIT 1)
+         FROM globals_rollup_target
+         WHERE granularity = $2${periodFilter}
+         GROUP BY target_name`,
+        [period, granularity]
+      );
+    }
+
+    await client.query('COMMIT');
+    console.log('[globals-rollup] Summary tables refreshed');
+  } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    console.error('[globals-rollup] Summary tables refresh error:', e);
+  } finally {
+    await client.query('RESET statement_timeout').catch(() => {});
+    client.release();
   }
 }
 
@@ -304,27 +392,24 @@ export async function rebuildRollups(oldestEventTs) {
  * Performs a full rebuild from historical data.
  */
 export async function initGlobalsRollups() {
-  // Delay full rebuild to avoid starving concurrent queries during server startup
-  setTimeout(async () => {
-    try {
-      await fullRebuild();
-      rollupReady = true;
-      rollupLastRebuiltAt = Date.now();
-      console.log('[globals-rollup] Full rebuild complete');
-    } catch (e) {
-      console.error('[globals-rollup] Full rebuild failed:', e);
-    }
+  try {
+    await fullRebuild();
+    rollupReady = true;
+    rollupLastRebuiltAt = Date.now();
+    console.log('[globals-rollup] Full rebuild complete');
+  } catch (e) {
+    console.error('[globals-rollup] Full rebuild failed:', e);
+  }
 
-    // Scheduled safety-net refresh
-    const scheduleRefresh = () => {
-      const jitter = Math.floor(ROLLUP_REBUILD_INTERVAL_MS * (0.9 + Math.random() * 0.2));
-      setTimeout(async () => {
-        try {
-          await rebuildRollups();
-        } catch {}
-        scheduleRefresh();
-      }, jitter).unref();
-    };
-    scheduleRefresh();
-  }, 10_000).unref(); // 10s delay for server to stabilize
+  // Scheduled safety-net refresh
+  const scheduleRefresh = () => {
+    const jitter = Math.floor(ROLLUP_REBUILD_INTERVAL_MS * (0.9 + Math.random() * 0.2));
+    setTimeout(async () => {
+      try {
+        await rebuildRollups();
+      } catch {}
+      scheduleRefresh();
+    }, jitter).unref();
+  };
+  scheduleRefresh();
 }

@@ -12,6 +12,7 @@ import { isRollupReady } from '$lib/server/globals-rollup.js';
 const MAX_ACTIVITY_BUCKETS = 2555;
 const VALID_SORT_FIELDS = new Set(['count', 'value']);
 const VALID_GROUP_FIELDS = new Set(['maturity', 'mob']);
+const AGG_PERIODS = new Set(['all', '7d', '30d', '90d', '1y']);
 
 /** Strip maturity suffix from a target name to get the base mob name. */
 function extractMobName(targetName) {
@@ -87,6 +88,12 @@ export async function GET({ url, request }) {
 
       const baseParams = [rollupGranularity, ...periodParams, ...typeParams];
 
+      // Use pre-computed agg tables for top players/targets when no type filter and standard period
+      const useAggTables = !typeFilterArr && AGG_PERIODS.has(period) && !from && !to;
+
+      const playersSortAgg = playersSortBy === 'count' ? 'event_count' : 'sum_value';
+      const targetsSortAgg = targetsSortBy === 'count' ? 'event_count' : 'sum_value';
+
       const [summaryResult, byTypeResult, topPlayersResult, topTargetsResult, activityResult] = await Promise.all([
         // Summary
         pool.query(
@@ -115,35 +122,61 @@ export async function GET({ url, request }) {
            ORDER BY SUM(event_count) DESC`,
           baseParams
         ),
-        // Top players
-        pool.query(
-          `SELECT player_name AS player, SUM(event_count) AS count, SUM(sum_value) AS value,
-                  bool_or(global_type = 'team_kill') AS has_team,
-                  bool_or(global_type != 'team_kill') AS has_solo
-           FROM globals_rollup_player
-           WHERE granularity = $1${periodWhere}${typeCond}
-           GROUP BY player_name
-           ORDER BY ${playersSortBy === 'count' ? 'SUM(event_count)' : 'SUM(sum_value)'} DESC
-           LIMIT 10`,
-          baseParams
-        ),
-        // Top targets (kill/team_kill only for hunting)
-        pool.query(
-          groupByMob
-            ? `SELECT min(target_name) AS target, mob_id, SUM(event_count) AS count, SUM(sum_value) AS value
-               FROM globals_rollup_target
-               WHERE granularity = $1${periodWhere} AND global_type IN ('kill', 'team_kill')
-               GROUP BY mob_id, CASE WHEN mob_id IS NULL THEN target_name END
-               ORDER BY ${targetsSortBy === 'count' ? 'SUM(event_count)' : 'SUM(sum_value)'} DESC
-               LIMIT 10`
-            : `SELECT target_name AS target, MAX(mob_id) AS mob_id, SUM(event_count) AS count, SUM(sum_value) AS value
-               FROM globals_rollup_target
-               WHERE granularity = $1${periodWhere} AND global_type IN ('kill', 'team_kill')
-               GROUP BY target_name
-               ORDER BY ${targetsSortBy === 'count' ? 'SUM(event_count)' : 'SUM(sum_value)'} DESC
+        // Top players (from agg table or rollup)
+        useAggTables
+          ? pool.query(
+              `SELECT player_name AS player, event_count AS count, sum_value AS value,
+                      has_team, has_solo
+               FROM globals_player_agg
+               WHERE period = $1
+               ORDER BY ${playersSortAgg} DESC
                LIMIT 10`,
-          [rollupGranularity, ...periodParams]
-        ),
+              [period]
+            )
+          : pool.query(
+              `SELECT player_name AS player, SUM(event_count) AS count, SUM(sum_value) AS value,
+                      bool_or(global_type = 'team_kill') AS has_team,
+                      bool_or(global_type != 'team_kill') AS has_solo
+               FROM globals_rollup_player
+               WHERE granularity = $1${periodWhere}${typeCond}
+               GROUP BY player_name
+               ORDER BY ${playersSortBy === 'count' ? 'SUM(event_count)' : 'SUM(sum_value)'} DESC
+               LIMIT 10`,
+              baseParams
+            ),
+        // Top targets (from agg table or rollup, kill/team_kill only)
+        useAggTables
+          ? pool.query(
+              groupByMob
+                ? `SELECT min(target_name) AS target, mob_id, SUM(event_count) AS count, SUM(sum_value) AS value
+                   FROM globals_target_agg
+                   WHERE period = $1 AND primary_type IN ('kill', 'team_kill')
+                   GROUP BY mob_id, CASE WHEN mob_id IS NULL THEN target_name END
+                   ORDER BY ${targetsSortAgg === 'event_count' ? 'SUM(event_count)' : 'SUM(sum_value)'} DESC
+                   LIMIT 10`
+                : `SELECT target_name AS target, mob_id, event_count AS count, sum_value AS value
+                   FROM globals_target_agg
+                   WHERE period = $1 AND primary_type IN ('kill', 'team_kill')
+                   ORDER BY ${targetsSortAgg} DESC
+                   LIMIT 10`,
+              [period]
+            )
+          : pool.query(
+              groupByMob
+                ? `SELECT min(target_name) AS target, mob_id, SUM(event_count) AS count, SUM(sum_value) AS value
+                   FROM globals_rollup_target
+                   WHERE granularity = $1${periodWhere} AND global_type IN ('kill', 'team_kill')
+                   GROUP BY mob_id, CASE WHEN mob_id IS NULL THEN target_name END
+                   ORDER BY ${targetsSortBy === 'count' ? 'SUM(event_count)' : 'SUM(sum_value)'} DESC
+                   LIMIT 10`
+                : `SELECT target_name AS target, MAX(mob_id) AS mob_id, SUM(event_count) AS count, SUM(sum_value) AS value
+                   FROM globals_rollup_target
+                   WHERE granularity = $1${periodWhere} AND global_type IN ('kill', 'team_kill')
+                   GROUP BY target_name
+                   ORDER BY ${targetsSortBy === 'count' ? 'SUM(event_count)' : 'SUM(sum_value)'} DESC
+                   LIMIT 10`,
+              [rollupGranularity, ...periodParams]
+            ),
         // Activity timeline
         pool.query(
           `SELECT period_start AS bucket, SUM(event_count) AS count
@@ -207,10 +240,14 @@ export async function GET({ url, request }) {
 
   const whereClause = `WHERE ${conditions.join(' AND ')}`;
 
+  const client = await pool.connect();
   try {
+    await client.query('BEGIN');
+    await client.query('SET LOCAL statement_timeout = 10000');
+
     const [summaryResult, byTypeResult, topPlayersResult, topTargetsResult, activityResult] = await Promise.all([
       // Summary
-      pool.query(
+      client.query(
         `SELECT count(*) AS total_count,
                 COALESCE(sum(value), 0) AS total_value,
                 COALESCE(avg(value), 0) AS avg_value,
@@ -229,7 +266,7 @@ export async function GET({ url, request }) {
       ),
 
       // By type
-      pool.query(
+      client.query(
         `SELECT global_type AS type, count(*) AS count, COALESCE(sum(value), 0) AS value
          FROM ingested_globals
          ${whereClause}
@@ -239,7 +276,7 @@ export async function GET({ url, request }) {
       ),
 
       // Top players
-      pool.query(
+      client.query(
         `SELECT player_name AS player, count(*) AS count, COALESCE(sum(value), 0) AS value,
                 bool_or(global_type = 'team_kill') AS has_team,
                 bool_or(global_type != 'team_kill') AS has_solo
@@ -252,7 +289,7 @@ export async function GET({ url, request }) {
       ),
 
       // Top targets (kill/team_kill only)
-      pool.query(
+      client.query(
         groupByMob
           ? `SELECT min(target_name) AS target, mob_id, count(*) AS count, COALESCE(sum(value), 0) AS value
              FROM ingested_globals
@@ -270,7 +307,7 @@ export async function GET({ url, request }) {
       ),
 
       // Activity timeline (dynamic bucket aggregation)
-      pool.query(
+      client.query(
         `SELECT date_trunc('${bucketUnit}', event_timestamp) AS bucket, count(*) AS count
          FROM ingested_globals
          ${whereClause}
@@ -280,6 +317,8 @@ export async function GET({ url, request }) {
         params
       ),
     ]);
+
+    await client.query('COMMIT');
 
     const summary = summaryResult.rows[0];
 
@@ -325,7 +364,14 @@ export async function GET({ url, request }) {
       },
     });
   } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    if (e.message?.includes('statement timeout')) {
+      console.warn('[api/globals/stats] Raw query timed out');
+      return getResponse({ error: 'Query too complex, try a narrower filter' }, 503);
+    }
     console.error('[api/globals/stats] Error fetching stats:', e);
     return getResponse({ error: 'Internal server error' }, 500);
+  } finally {
+    client.release();
   }
 }

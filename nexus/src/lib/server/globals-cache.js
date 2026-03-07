@@ -90,24 +90,21 @@ async function buildStatsCache() {
        GROUP BY global_type
        ORDER BY count DESC`
     ),
-    // Default sort: by value
+    // Top players from pre-computed agg table (default sort: by value)
     pool.query(
-      `SELECT player_name AS player, count(*) AS count, COALESCE(sum(value), 0) AS value,
-              bool_or(global_type = 'team_kill') AS has_team,
-              bool_or(global_type != 'team_kill') AS has_solo
-       FROM ingested_globals
-       WHERE confirmed = true
-       GROUP BY player_name
-       ORDER BY COALESCE(sum(value), 0) DESC
+      `SELECT player_name AS player, event_count AS count, sum_value AS value,
+              has_team, has_solo
+       FROM globals_player_agg
+       WHERE period = 'all'
+       ORDER BY sum_value DESC
        LIMIT 10`
     ),
-    // Default sort: by count, default group: by maturity
+    // Top targets from pre-computed agg table (default sort: by count, hunting only)
     pool.query(
-      `SELECT target_name AS target, mob_id, count(*) AS count, COALESCE(sum(value), 0) AS value
-       FROM ingested_globals
-       WHERE confirmed = true AND global_type IN ('kill', 'team_kill')
-       GROUP BY target_name, mob_id
-       ORDER BY count(*) DESC
+      `SELECT target_name AS target, mob_id, event_count AS count, sum_value AS value
+       FROM globals_target_agg
+       WHERE period = 'all' AND primary_type IN ('kill', 'team_kill')
+       ORDER BY event_count DESC
        LIMIT 10`
     ),
     pool.query(
@@ -170,22 +167,17 @@ const PLAYERS_PAGE_SIZE = 50;
 async function buildPlayersPage1Cache() {
   const [dataResult, countResult] = await Promise.all([
     pool.query(
-      `SELECT player_name AS player, count(*) AS count, COALESCE(sum(value), 0) AS value,
-              COALESCE(avg(value), 0) AS avg_value, COALESCE(max(value), 0) AS best_value,
-              bool_or(global_type = 'team_kill') AS has_team,
-              bool_or(global_type != 'team_kill') AS has_solo,
-              EXISTS(SELECT 1 FROM users u WHERE lower(u.eu_name) = lower(player_name) AND u.verified = true) AS has_profile
-       FROM ingested_globals
-       WHERE confirmed = true
-       GROUP BY player_name
-       ORDER BY COALESCE(sum(value), 0) DESC
-       LIMIT $1 OFFSET 0`,
+      `SELECT player_name AS player, event_count AS count, sum_value AS value,
+              sum_value / NULLIF(event_count, 0) AS avg_value,
+              max_value AS best_value, has_team, has_solo, has_profile
+       FROM globals_player_agg
+       WHERE period = 'all'
+       ORDER BY sum_value DESC
+       LIMIT $1`,
       [PLAYERS_PAGE_SIZE]
     ),
     pool.query(
-      `SELECT count(DISTINCT player_name) AS total
-       FROM ingested_globals
-       WHERE confirmed = true`
+      `SELECT count(*) AS total FROM globals_player_agg WHERE period = 'all'`
     ),
   ]);
 
@@ -218,23 +210,18 @@ const TARGETS_PAGE_SIZE = 50;
 async function buildTargetsPage1Cache() {
   const [dataResult, countResult] = await Promise.all([
     pool.query(
-      `SELECT target_name AS target, mob_id, count(*) AS count,
-              COALESCE(sum(value), 0) AS value,
-              COALESCE(avg(value), 0) AS avg_value, COALESCE(max(value), 0) AS best_value,
-              mode() WITHIN GROUP (ORDER BY global_type) AS primary_type
-       FROM ingested_globals
-       WHERE confirmed = true AND target_name IS NOT NULL
-       GROUP BY target_name, mob_id
-       ORDER BY count(*) DESC
-       LIMIT $1 OFFSET 0`,
+      `SELECT target_name AS target, mob_id, event_count AS count,
+              sum_value AS value,
+              sum_value / NULLIF(event_count, 0) AS avg_value,
+              max_value AS best_value, primary_type
+       FROM globals_target_agg
+       WHERE period = 'all'
+       ORDER BY event_count DESC
+       LIMIT $1`,
       [TARGETS_PAGE_SIZE]
     ),
     pool.query(
-      `SELECT count(*) AS total FROM (
-         SELECT 1 FROM ingested_globals
-         WHERE confirmed = true AND target_name IS NOT NULL
-         GROUP BY target_name, mob_id
-       ) sub`
+      `SELECT count(*) AS total FROM globals_target_agg WHERE period = 'all'`
     ),
   ]);
 
@@ -416,9 +403,10 @@ export function invalidateGlobalsCache(oldestEventTs) {
     const oldestTs = pendingOldestTs;
     pendingOldestTs = null;
     try {
+      // Rebuild rollups first (updates rollup + agg tables), then cache reads from fresh agg data
+      await rebuildRollups(oldestTs);
       await rebuildAll();
       rebuildAthLeaderboard().catch(() => {});
-      rebuildRollups(oldestTs).catch(() => {});
     } catch {}
   }, INVALIDATE_DEBOUNCE_MS);
 }
