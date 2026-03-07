@@ -16,6 +16,8 @@ const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
 const VALID_SORT_FIELDS = new Set(['count', 'value', 'avg', 'best']);
 const VALID_GROUP_FIELDS = new Set(['maturity', 'mob']);
+const AGG_PERIODS = new Set(['all', '7d', '30d', '90d', '1y']);
+const AGG_SORT_COLS = { count: 'event_count', value: 'sum_value', avg: 'sum_value / NULLIF(event_count, 0)', best: 'max_value' };
 
 /** Strip maturity suffix from a target name to get the base mob name. */
 function extractMobName(targetName) {
@@ -60,6 +62,87 @@ export async function GET({ url, request }) {
           'ETag': cached.etag,
         },
       });
+    }
+  }
+
+  // Pre-computed aggregate table: standard periods without type or incompatible filters
+  const hasNoExtraFilters = !url.searchParams.get('player') && !url.searchParams.get('target')
+    && !url.searchParams.get('location') && !url.searchParams.get('min_value')
+    && !url.searchParams.get('hof') && !url.searchParams.get('type') && !from && !to;
+  if (hasNoExtraFilters && AGG_PERIODS.has(period)) {
+    try {
+      const aggSortCol = groupByMob
+        ? ({ count: 'SUM(event_count)', value: 'SUM(sum_value)', avg: 'SUM(sum_value) / NULLIF(SUM(event_count), 0)', best: 'MAX(max_value)' })[sortBy]
+        : AGG_SORT_COLS[sortBy];
+
+      const [dataResult, countResult] = groupByMob
+        ? await Promise.all([
+            pool.query(
+              `SELECT min(target_name) AS target, mob_id,
+                      SUM(event_count) AS count, SUM(sum_value) AS value,
+                      SUM(sum_value) / NULLIF(SUM(event_count), 0) AS avg_value,
+                      MAX(max_value) AS best_value,
+                      (array_agg(primary_type ORDER BY event_count DESC))[1] AS primary_type
+               FROM globals_target_agg
+               WHERE period = $1
+               GROUP BY mob_id, CASE WHEN mob_id IS NULL THEN target_name END
+               ORDER BY ${aggSortCol} DESC
+               LIMIT $2 OFFSET $3`,
+              [period, limit, offset]
+            ),
+            pool.query(
+              `SELECT count(*) AS total FROM (
+                 SELECT 1 FROM globals_target_agg WHERE period = $1
+                 GROUP BY mob_id, CASE WHEN mob_id IS NULL THEN target_name END
+               ) sub`,
+              [period]
+            ),
+          ])
+        : await Promise.all([
+            pool.query(
+              `SELECT target_name AS target, mob_id, event_count AS count, sum_value AS value,
+                      sum_value / NULLIF(event_count, 0) AS avg_value,
+                      max_value AS best_value, primary_type
+               FROM globals_target_agg
+               WHERE period = $1
+               ORDER BY ${aggSortCol} DESC
+               LIMIT $2 OFFSET $3`,
+              [period, limit, offset]
+            ),
+            pool.query(
+              `SELECT count(*) AS total FROM globals_target_agg WHERE period = $1`,
+              [period]
+            ),
+          ]);
+
+      if (dataResult.rows.length > 0 || offset === 0) {
+        const total = parseInt(countResult.rows[0].total);
+        const pages = Math.max(1, Math.ceil(total / limit));
+
+        return new Response(JSON.stringify({
+          targets: dataResult.rows.map(r => ({
+            target: groupByMob && r.mob_id ? extractMobName(r.target) : r.target,
+            mob_id: r.mob_id,
+            count: parseInt(r.count),
+            value: parseFloat(r.value),
+            avg_value: parseFloat(r.avg_value) || 0,
+            best_value: parseFloat(r.best_value),
+            primary_type: r.primary_type,
+          })),
+          total,
+          page: pageNum,
+          pages,
+        }), {
+          status: 200,
+          headers: {
+            'Content-Type': 'application/json',
+            'Cache-Control': 'public, max-age=60',
+          },
+        });
+      }
+      // Table empty (not yet populated) — fall through
+    } catch (e) {
+      console.error('[api/globals/stats/targets] Agg table error, falling back:', e);
     }
   }
 
@@ -164,13 +247,17 @@ export async function GET({ url, request }) {
   let paramIdx = nextIdx;
   const limitParams = [...params, limit, offset];
 
+  const client = await pool.connect();
   try {
+    await client.query('BEGIN');
+    await client.query('SET LOCAL statement_timeout = 10000');
+
     const [dataResult, countResult] = await Promise.all([
-      pool.query(
+      client.query(
         `SELECT ${selectTarget} AS target, mob_id, count(*) AS count,
                 COALESCE(sum(value), 0) AS value,
                 COALESCE(avg(value), 0) AS avg_value, COALESCE(max(value), 0) AS best_value,
-                mode() WITHIN GROUP (ORDER BY global_type) AS primary_type
+                MIN(global_type) AS primary_type
          FROM ingested_globals
          ${whereClause}
          ${groupByClause}
@@ -178,7 +265,7 @@ export async function GET({ url, request }) {
          LIMIT $${paramIdx} OFFSET $${paramIdx + 1}`,
         limitParams
       ),
-      pool.query(
+      client.query(
         `SELECT count(*) AS total FROM (
            SELECT 1 FROM ingested_globals
            ${whereClause}
@@ -187,6 +274,8 @@ export async function GET({ url, request }) {
         params
       ),
     ]);
+
+    await client.query('COMMIT');
 
     const total = parseInt(countResult.rows[0].total);
     const pages = Math.ceil(total / limit);
@@ -212,7 +301,14 @@ export async function GET({ url, request }) {
       },
     });
   } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    if (e.message?.includes('statement timeout')) {
+      console.warn('[api/globals/stats/targets] Raw query timed out');
+      return getResponse({ error: 'Query too complex, try a narrower filter' }, 503);
+    }
     console.error('[api/globals/stats/targets] Error:', e);
     return getResponse({ error: 'Internal server error' }, 500);
+  } finally {
+    client.release();
   }
 }

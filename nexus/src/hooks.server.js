@@ -60,13 +60,12 @@ if (import.meta.env.SSR) {
   const { initMobResolver } = await import('$lib/server/mobResolver.js');
   initMobResolver().catch(err => console.error('[mobResolver] Error initializing mob resolver:', err));
 
-  // Initialize globals stats cache (in-memory + ATH leaderboard table)
-  const { initGlobalsCache } = await import('$lib/server/globals-cache.js');
-  initGlobalsCache().catch(err => console.error('[globals-cache] Error initializing globals cache:', err));
-
-  // Initialize globals rollup tables (daily/weekly/monthly/quarterly aggregations)
+  // Initialize globals rollup tables first (populates agg tables), then cache (reads from agg tables)
   const { initGlobalsRollups } = await import('$lib/server/globals-rollup.js');
-  initGlobalsRollups().catch(err => console.error('[globals-rollup] Error initializing rollup tables:', err));
+  const { initGlobalsCache } = await import('$lib/server/globals-cache.js');
+  initGlobalsRollups()
+    .then(() => initGlobalsCache())
+    .catch(err => console.error('[globals] Error initializing rollup/cache:', err));
 }
 
 const IMPERSONATE_COOKIE = 'nexus_impersonate';
