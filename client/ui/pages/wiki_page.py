@@ -1210,6 +1210,9 @@ class WikiPage(QWidget):
                             self._data_loaded.emit(title, items, cache, numeric)
                 except Exception:
                     pass
+                # Yield GIL between entity fetches so the UI thread stays responsive.
+                # Each fetch involves HTTP I/O + JSON parsing that can hold the GIL.
+                time.sleep(0)
 
             # Invalidate data_client cache so next cycle fetches fresh data
             self._data_client.invalidate_cache()

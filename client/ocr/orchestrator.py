@@ -31,6 +31,7 @@ from .progress_bar import ProgressBarReader
 from .detector import SkillsWindowDetector, SAVE_DEBUG_IMAGES, DEBUG_DIR
 from .font_matcher import FontMatcher
 from .navigator import SkillsNavigator
+from .trace import OcrTracer
 
 log = get_logger("OCR")
 
@@ -126,12 +127,17 @@ class ScanOrchestrator:
         else:
             # Detector still needs its own direct window captures for detect().
             self._capturer = ScreenCapturer(capture_backend=config.ocr_capture_backend)
+        self._tracer = OcrTracer()
+        self._tracer.set_enabled(config.ocr_trace_enabled)
+
         self._preprocessor = ImagePreprocessor()
         self._skill_matcher = SkillMatcher()
         self._rank_verifier = RankVerifier()
         self._bar_reader = ProgressBarReader()
+        self._bar_reader.set_tracer(self._tracer)
         self._detector = SkillsWindowDetector(
             self._capturer, event_bus=self._event_bus, config=config)
+        self._detector.set_tracer(self._tracer)
         self._navigator = SkillsNavigator()
 
         self._all_skills = list(self._skill_matcher.get_all_skills())
@@ -146,6 +152,7 @@ class ScanOrchestrator:
         skill_names = [s["name"] for s in self._all_skills]
         rank_names = self._rank_verifier._rank_names
         self._font_matcher = FontMatcher(skill_names, rank_names)
+        self._font_matcher.set_tracer(self._tracer)
         # Pre-render (or load cached) templates in background so they're
         # ready before the first scan — avoids a multi-second stall on
         # window detection.
@@ -179,6 +186,10 @@ class ScanOrchestrator:
             self._capturer.set_capture_backend(capture_backend)
         except Exception as e:
             log.warning("Failed to update OCR capture backend: %s", e)
+
+    def set_trace_enabled(self, enabled: bool) -> None:
+        """Toggle OCR trace mode at runtime."""
+        self._tracer.set_enabled(enabled)
 
     def _on_cancel(self, data=None):
         """Handle external cancel request (e.g. from scan summary overlay)."""
@@ -676,6 +687,9 @@ class ScanOrchestrator:
                         )
             # Page changed — clear old checkmarks
             self._event_bus.publish(EVENT_OCR_PAGE_CHANGED, None)
+            if self._tracer.enabled:
+                self._tracer.log("PAGE", f"anchor={anchor_skill}->{current_name} scan=#{scan_count + 1}")
+                self._tracer.save_image("page", table_image)
 
             scan_count += 1
 
@@ -741,6 +755,9 @@ class ScanOrchestrator:
 
             log.info("Scan #%d: %d/%d skills found",
                      scan_count, found_expected, expected_total)
+            if self._tracer.enabled:
+                matched = len(page_skills) if page_skills else 0
+                self._tracer.log("SCAN", f"#{scan_count} matched={matched} found={found_expected}/{expected_total}")
 
             # Verify total if ALL CATEGORIES is selected
             points_sum = sum(s.current_points for s in result.skills)
@@ -1254,6 +1271,19 @@ class ScanOrchestrator:
                     "rank_progress": rank_progress,
                     "points_progress": progress,
                 })
+
+        # Trace: per-row summary
+        if self._tracer.enabled:
+            ns = font_attempt["score"] if font_attempt else 0
+            fb = " FALLBACK" if used_fallback else ""
+            self._tracer.log(
+                "ROW",
+                f"[{row_idx:02d}] name={matched_name}({ns:.2f}{fb}) "
+                f"rank={rank_text or '?'}({rank_score:.2f}) "
+                f"pts={points_text or '?'} bar={progress:.1f}%",
+            )
+            self._tracer.save_image("row", row_image, suffix=f"{row_idx:02d}_{matched_name}")
+
         # Cross-verify rank + points against known rank thresholds
         verification = self._rank_verifier.verify(
             rank_text or "", points_value, rank_progress)

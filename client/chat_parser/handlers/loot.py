@@ -63,8 +63,3 @@ class LootHandler(BaseHandler):
 
         if not self.suppress_events:
             self._event_bus.publish(EVENT_LOOT_GROUP, group)
-        self._db.insert_loot_group(
-            timestamp=group.timestamp.isoformat(),
-            total_value=group.total_value_ped,
-            items=[(item.item_name, item.quantity, item.value_ped) for item in group.items],
-        )

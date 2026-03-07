@@ -11,6 +11,7 @@ import { pool } from '$lib/server/db.js';
 import { getResponse, decodeURIComponentSafe } from '$lib/util.js';
 import { initMobResolver, resolveMob } from '$lib/server/mobResolver.js';
 import { PERIOD_INTERVALS, getActivityBucket, fillActivityGaps } from '../../stats/filter-utils.js';
+import { isAthLeaderboardReady } from '$lib/server/globals-cache.js';
 
 const TOP_LOOTS_LIMIT = 100;
 const OVERVIEW_TOP_LIMIT = 3;
@@ -57,6 +58,9 @@ export async function GET({ params, url }) {
       [playerName, ...extraParams]
     );
   }
+
+  // Use pre-aggregated leaderboard table for all-time requests (no period/date filter)
+  const useLeaderboard = isAthLeaderboardReady() && !periodCond;
 
   try {
     // Run all queries in parallel
@@ -206,106 +210,141 @@ export async function GET({ params, url }) {
       // Top individual crafting loots
       topLootsQuery("global_type = 'craft'"),
 
-      // ATH rankings: hunting targets — rank this player vs all players per mob
-      pool.query(
-        `WITH target_totals AS (
-           SELECT player_name, COALESCE(mob_id::text, target_name) AS mob_key,
-                  MAX(target_name) AS target_name,
-                  (array_agg(target_name ORDER BY value DESC))[1] AS best_target_name,
-                  sum(value) AS total_value, max(value) AS best_value,
-                  count(*) AS count, MAX(mob_id) AS mob_id
-           FROM ingested_globals
-           WHERE confirmed = true AND global_type IN ('kill', 'team_kill')${periodCond}
-             AND COALESCE(mob_id::text, target_name) IN (
-               SELECT DISTINCT COALESCE(mob_id::text, target_name) FROM ingested_globals
-               WHERE confirmed = true AND lower(player_name) = lower($1)
-                 AND global_type IN ('kill', 'team_kill')${periodCond}
-             )
-           GROUP BY player_name, mob_key
-         ),
-         ranked AS (
-           SELECT *,
-                  RANK() OVER (PARTITION BY mob_key ORDER BY total_value DESC) AS total_rank,
-                  RANK() OVER (PARTITION BY mob_key ORDER BY best_value DESC) AS best_rank
-           FROM target_totals
-         )
-         SELECT target_name, best_target_name, total_value, best_value, count, mob_id, total_rank, best_rank
-         FROM ranked
-         WHERE lower(player_name) = lower($1) AND (total_rank <= ${ATH_RANK_CUTOFF} OR best_rank <= ${ATH_RANK_CUTOFF})
-         ORDER BY LEAST(total_rank, best_rank), total_value DESC`,
-        [playerName, ...extraParams]
-      ),
-
-      // ATH rankings: mining targets
-      pool.query(
-        `WITH target_totals AS (
-           SELECT player_name, target_name,
-                  sum(value) AS total_value, max(value) AS best_value,
-                  count(*) AS count
-           FROM ingested_globals
-           WHERE confirmed = true AND global_type = 'deposit'${periodCond}
-             AND target_name IN (
-               SELECT DISTINCT target_name FROM ingested_globals
-               WHERE confirmed = true AND lower(player_name) = lower($1)
-                 AND global_type = 'deposit'${periodCond}
-             )
-           GROUP BY player_name, target_name
-         ),
-         ranked AS (
-           SELECT *,
-                  RANK() OVER (PARTITION BY target_name ORDER BY total_value DESC) AS total_rank,
-                  RANK() OVER (PARTITION BY target_name ORDER BY best_value DESC) AS best_rank
-           FROM target_totals
-         )
-         SELECT target_name, total_value, best_value, count, total_rank, best_rank
-         FROM ranked
-         WHERE lower(player_name) = lower($1) AND (total_rank <= ${ATH_RANK_CUTOFF} OR best_rank <= ${ATH_RANK_CUTOFF})
-         ORDER BY LEAST(total_rank, best_rank), total_value DESC`,
-        [playerName, ...extraParams]
-      ),
-
-      // ATH rankings: crafting targets
-      pool.query(
-        `WITH target_totals AS (
-           SELECT player_name, target_name,
-                  sum(value) AS total_value, max(value) AS best_value,
-                  count(*) AS count
-           FROM ingested_globals
-           WHERE confirmed = true AND global_type = 'craft'${periodCond}
-             AND target_name IN (
-               SELECT DISTINCT target_name FROM ingested_globals
-               WHERE confirmed = true AND lower(player_name) = lower($1)
-                 AND global_type = 'craft'${periodCond}
-             )
-           GROUP BY player_name, target_name
-         ),
-         ranked AS (
-           SELECT *,
-                  RANK() OVER (PARTITION BY target_name ORDER BY total_value DESC) AS total_rank,
-                  RANK() OVER (PARTITION BY target_name ORDER BY best_value DESC) AS best_rank
-           FROM target_totals
-         )
-         SELECT target_name, total_value, best_value, count, total_rank, best_rank
-         FROM ranked
-         WHERE lower(player_name) = lower($1) AND (total_rank <= ${ATH_RANK_CUTOFF} OR best_rank <= ${ATH_RANK_CUTOFF})
-         ORDER BY LEAST(total_rank, best_rank), total_value DESC`,
-        [playerName, ...extraParams]
-      ),
-
-      // ATH rankings: PvP — rank individual PvP events by value
-      pool.query(
-        `WITH pvp_ranked AS (
-           SELECT player_name, value, event_timestamp, is_hof, is_ath,
-                  RANK() OVER (ORDER BY value DESC) AS rank
-           FROM ingested_globals
-           WHERE confirmed = true AND global_type = 'pvp'${periodCond}
-         )
-         SELECT value, event_timestamp, is_hof, is_ath, rank
-         FROM pvp_ranked
-         WHERE lower(player_name) = lower($1) AND rank <= ${ATH_RANK_CUTOFF}
-         ORDER BY rank`,
-        [playerName, ...extraParams]
-      ),
+      // ATH rankings — use pre-aggregated leaderboard for all-time, fall back to live CTEs for period filters
+      ...(useLeaderboard ? [
+        // Hunting ATH from leaderboard
+        pool.query(
+          `SELECT target_key, total_value, best_value, count, mob_id,
+                  best_target_name, total_rank, best_rank
+           FROM globals_ath_leaderboard
+           WHERE lower(player_name) = lower($1) AND category = 'hunting'
+             AND (total_rank <= ${ATH_RANK_CUTOFF} OR best_rank <= ${ATH_RANK_CUTOFF})
+           ORDER BY LEAST(total_rank, best_rank), total_value DESC`,
+          [playerName]
+        ),
+        // Mining ATH from leaderboard
+        pool.query(
+          `SELECT target_key AS target_name, total_value, best_value, count, total_rank, best_rank
+           FROM globals_ath_leaderboard
+           WHERE lower(player_name) = lower($1) AND category = 'mining'
+             AND (total_rank <= ${ATH_RANK_CUTOFF} OR best_rank <= ${ATH_RANK_CUTOFF})
+           ORDER BY LEAST(total_rank, best_rank), total_value DESC`,
+          [playerName]
+        ),
+        // Crafting ATH from leaderboard
+        pool.query(
+          `SELECT target_key AS target_name, total_value, best_value, count, total_rank, best_rank
+           FROM globals_ath_leaderboard
+           WHERE lower(player_name) = lower($1) AND category = 'crafting'
+             AND (total_rank <= ${ATH_RANK_CUTOFF} OR best_rank <= ${ATH_RANK_CUTOFF})
+           ORDER BY LEAST(total_rank, best_rank), total_value DESC`,
+          [playerName]
+        ),
+        // PvP ATH from leaderboard (note: PvP leaderboard stores per-target aggregates, not individual events)
+        pool.query(
+          `SELECT total_value AS value, total_rank AS rank
+           FROM globals_ath_leaderboard
+           WHERE lower(player_name) = lower($1) AND category = 'pvp'
+             AND (total_rank <= ${ATH_RANK_CUTOFF} OR best_rank <= ${ATH_RANK_CUTOFF})
+           ORDER BY LEAST(total_rank, best_rank), total_value DESC`,
+          [playerName]
+        ),
+      ] : [
+        // Fallback: live CTE queries for period-filtered requests
+        pool.query(
+          `WITH target_totals AS (
+             SELECT player_name, COALESCE(mob_id::text, target_name) AS mob_key,
+                    MAX(target_name) AS target_name,
+                    (array_agg(target_name ORDER BY value DESC))[1] AS best_target_name,
+                    sum(value) AS total_value, max(value) AS best_value,
+                    count(*) AS count, MAX(mob_id) AS mob_id
+             FROM ingested_globals
+             WHERE confirmed = true AND global_type IN ('kill', 'team_kill')${periodCond}
+               AND COALESCE(mob_id::text, target_name) IN (
+                 SELECT DISTINCT COALESCE(mob_id::text, target_name) FROM ingested_globals
+                 WHERE confirmed = true AND lower(player_name) = lower($1)
+                   AND global_type IN ('kill', 'team_kill')${periodCond}
+               )
+             GROUP BY player_name, mob_key
+           ),
+           ranked AS (
+             SELECT *,
+                    RANK() OVER (PARTITION BY mob_key ORDER BY total_value DESC) AS total_rank,
+                    RANK() OVER (PARTITION BY mob_key ORDER BY best_value DESC) AS best_rank
+             FROM target_totals
+           )
+           SELECT target_name, best_target_name, total_value, best_value, count, mob_id, total_rank, best_rank
+           FROM ranked
+           WHERE lower(player_name) = lower($1) AND (total_rank <= ${ATH_RANK_CUTOFF} OR best_rank <= ${ATH_RANK_CUTOFF})
+           ORDER BY LEAST(total_rank, best_rank), total_value DESC`,
+          [playerName, ...extraParams]
+        ),
+        pool.query(
+          `WITH target_totals AS (
+             SELECT player_name, target_name,
+                    sum(value) AS total_value, max(value) AS best_value,
+                    count(*) AS count
+             FROM ingested_globals
+             WHERE confirmed = true AND global_type = 'deposit'${periodCond}
+               AND target_name IN (
+                 SELECT DISTINCT target_name FROM ingested_globals
+                 WHERE confirmed = true AND lower(player_name) = lower($1)
+                   AND global_type = 'deposit'${periodCond}
+               )
+             GROUP BY player_name, target_name
+           ),
+           ranked AS (
+             SELECT *,
+                    RANK() OVER (PARTITION BY target_name ORDER BY total_value DESC) AS total_rank,
+                    RANK() OVER (PARTITION BY target_name ORDER BY best_value DESC) AS best_rank
+             FROM target_totals
+           )
+           SELECT target_name, total_value, best_value, count, total_rank, best_rank
+           FROM ranked
+           WHERE lower(player_name) = lower($1) AND (total_rank <= ${ATH_RANK_CUTOFF} OR best_rank <= ${ATH_RANK_CUTOFF})
+           ORDER BY LEAST(total_rank, best_rank), total_value DESC`,
+          [playerName, ...extraParams]
+        ),
+        pool.query(
+          `WITH target_totals AS (
+             SELECT player_name, target_name,
+                    sum(value) AS total_value, max(value) AS best_value,
+                    count(*) AS count
+             FROM ingested_globals
+             WHERE confirmed = true AND global_type = 'craft'${periodCond}
+               AND target_name IN (
+                 SELECT DISTINCT target_name FROM ingested_globals
+                 WHERE confirmed = true AND lower(player_name) = lower($1)
+                   AND global_type = 'craft'${periodCond}
+               )
+             GROUP BY player_name, target_name
+           ),
+           ranked AS (
+             SELECT *,
+                    RANK() OVER (PARTITION BY target_name ORDER BY total_value DESC) AS total_rank,
+                    RANK() OVER (PARTITION BY target_name ORDER BY best_value DESC) AS best_rank
+             FROM target_totals
+           )
+           SELECT target_name, total_value, best_value, count, total_rank, best_rank
+           FROM ranked
+           WHERE lower(player_name) = lower($1) AND (total_rank <= ${ATH_RANK_CUTOFF} OR best_rank <= ${ATH_RANK_CUTOFF})
+           ORDER BY LEAST(total_rank, best_rank), total_value DESC`,
+          [playerName, ...extraParams]
+        ),
+        pool.query(
+          `WITH pvp_ranked AS (
+             SELECT player_name, value, event_timestamp, is_hof, is_ath,
+                    RANK() OVER (ORDER BY value DESC) AS rank
+             FROM ingested_globals
+             WHERE confirmed = true AND global_type = 'pvp'${periodCond}
+           )
+           SELECT value, event_timestamp, is_hof, is_ath, rank
+           FROM pvp_ranked
+           WHERE lower(player_name) = lower($1) AND rank <= ${ATH_RANK_CUTOFF}
+           ORDER BY rank`,
+          [playerName, ...extraParams]
+        ),
+      ]),
     ]);
 
     const summary = summaryResult.rows[0];
@@ -474,10 +513,11 @@ export async function GET({ params, url }) {
       },
       ath_rankings: {
         hunting: athHuntingResult.rows.map(r => {
-          const resolved = resolveMob(r.target_name);
+          const targetName = r.target_name || r.best_target_name || r.target_key || '';
+          const resolved = resolveMob(targetName);
           return {
-            target: resolved?.mobName || r.target_name,
-            best_target: r.best_target_name || r.target_name,
+            target: resolved?.mobName || targetName,
+            best_target: r.best_target_name || targetName,
             count: parseInt(r.count),
             total_value: parseFloat(r.total_value),
             best_value: parseFloat(r.best_value),
@@ -488,13 +528,18 @@ export async function GET({ params, url }) {
         }),
         mining: mapRankingRows(athMiningResult.rows),
         crafting: mapRankingRows(athCraftingResult.rows),
-        pvp: athPvpResult.rows.map(r => ({
-          value: parseFloat(r.value),
-          rank: parseInt(r.rank),
-          hof: r.is_hof,
-          ath: r.is_ath,
-          timestamp: r.event_timestamp,
-        })),
+        pvp: useLeaderboard
+          ? athPvpResult.rows.map(r => ({
+              value: parseFloat(r.value),
+              rank: parseInt(r.rank),
+            }))
+          : athPvpResult.rows.map(r => ({
+              value: parseFloat(r.value),
+              rank: parseInt(r.rank),
+              hof: r.is_hof,
+              ath: r.is_ath,
+              timestamp: r.event_timestamp,
+            })),
       },
     }), {
       status: 200,

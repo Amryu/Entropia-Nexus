@@ -6,21 +6,42 @@
 import { pool } from '$lib/server/db.js';
 import { getResponse } from '$lib/util.js';
 import { buildGlobalsFilter } from '../filter-utils.js';
+import { getCachedPlayersPage1 } from '$lib/server/globals-cache.js';
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
 const VALID_SORT_FIELDS = new Set(['count', 'value', 'avg', 'best']);
 
-export async function GET({ url }) {
+export async function GET({ url, request }) {
   const { conditions, params, paramIdx: nextIdx } = buildGlobalsFilter(url);
-  const whereClause = `WHERE ${conditions.join(' AND ')}`;
 
   const sortParam = url.searchParams.get('sort');
   const sortBy = VALID_SORT_FIELDS.has(sortParam) ? sortParam : 'value';
+  const pageNum = Math.max(1, parseInt(url.searchParams.get('page')) || 1);
+
+  // Fast path: serve from in-memory cache for unfiltered default request (page 1, sort by value)
+  if (conditions.length === 1 && sortBy === 'value' && pageNum === 1) {
+    const cached = getCachedPlayersPage1();
+    if (cached) {
+      const ifNoneMatch = request.headers.get('if-none-match');
+      if (ifNoneMatch === cached.etag) {
+        return new Response(null, { status: 304, headers: { 'ETag': cached.etag } });
+      }
+      return new Response(cached.json, {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'public, max-age=60',
+          'ETag': cached.etag,
+        },
+      });
+    }
+  }
+
+  const whereClause = `WHERE ${conditions.join(' AND ')}`;
   const SORT_COLS = { count: 'count(*)', value: 'COALESCE(sum(value), 0)', avg: 'COALESCE(avg(value), 0)', best: 'COALESCE(max(value), 0)' };
   const sortCol = SORT_COLS[sortBy];
 
-  const pageNum = Math.max(1, parseInt(url.searchParams.get('page')) || 1);
   const limit = Math.min(Math.max(1, parseInt(url.searchParams.get('limit')) || DEFAULT_LIMIT), MAX_LIMIT);
   const offset = (pageNum - 1) * limit;
 

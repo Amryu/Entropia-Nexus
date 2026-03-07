@@ -20,7 +20,8 @@ from ...data.wiki_columns import COLUMN_DEFS, DEFAULT_COLUMNS, get_item_name
 # Cache builder — can run on any thread (used by wiki_page warmup)
 # ---------------------------------------------------------------------------
 
-_GIL_YIELD_BATCH = 100  # yield GIL every N items to avoid starving global hooks
+# Max time (seconds) to hold the GIL before yielding. Matches 120fps frame budget.
+_GIL_YIELD_BUDGET = 0.008
 
 
 def build_column_cache(items: list[dict], col_defs: list[dict]):
@@ -33,7 +34,8 @@ def build_column_cache(items: list[dict], col_defs: list[dict]):
     import time
 
     cache: list[list[tuple]] = []
-    for i, item in enumerate(items):
+    last_yield = time.monotonic()
+    for item in items:
         name = get_item_name(item)
         row: list[tuple] = [(name, name)]
         for col_def in col_defs:
@@ -41,10 +43,11 @@ def build_column_cache(items: list[dict], col_defs: list[dict]):
             display = str(col_def["format"](raw))
             row.append((raw, display))
         cache.append(row)
-        # Periodically yield the GIL so global input hooks (keyboard library)
-        # can process events without stalling the system's input pipeline.
-        if (i + 1) % _GIL_YIELD_BATCH == 0:
+        # Time-gated GIL yield so global input hooks (keyboard library)
+        # and the Qt event loop can process events without stalling.
+        if time.monotonic() - last_yield > _GIL_YIELD_BUDGET:
             time.sleep(0)
+            last_yield = time.monotonic()
 
     num_cols = 1 + len(col_defs)
     numeric = [False] * num_cols

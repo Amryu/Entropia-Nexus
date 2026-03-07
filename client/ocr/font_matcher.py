@@ -347,6 +347,7 @@ class FontMatcher:
         if cv2 is None:
             raise ImportError("opencv-python is required")
 
+        self._tracer = None  # OcrTracer, set via set_tracer()
         self._skill_names = skill_names
         self._rank_names = rank_names
 
@@ -397,6 +398,10 @@ class FontMatcher:
             log.error("Pre-initialization failed: %s", e)
         finally:
             self._ready.set()
+
+    def set_tracer(self, tracer) -> None:
+        """Set the OcrTracer for detailed trace output."""
+        self._tracer = tracer
 
     @property
     def calibrated(self) -> bool:
@@ -848,6 +853,9 @@ class FontMatcher:
                 name = self._captured_skill_lookup.get(key)
                 if name:
                     log.debug("match_skill: exact lookup → '%s'", name)
+                    if self._tracer and self._tracer.enabled:
+                        self._tracer.log("SKILL", f"exact={name}")
+                        self._trace_match_image("skill", cell_gray, name)
                     return (name, 1.0)
 
         # Fall back to fuzzy template matching
@@ -857,8 +865,14 @@ class FontMatcher:
             cell_gray, self._skill_width_index, SKILL_THRESHOLD)
         if result:
             log.debug("match_skill: fuzzy → '%s' (score=%.3f)", result[0], result[1])
+            if self._tracer and self._tracer.enabled:
+                self._tracer.log("SKILL", f"fuzzy={result[0]}({result[1]:.2f})")
+                self._trace_match_image("skill", cell_gray, result[0])
         else:
             log.debug("match_skill: no match")
+            if self._tracer and self._tracer.enabled:
+                self._tracer.log("SKILL", "no_match")
+                self._tracer.save_image("skill_miss", cell_gray)
         return result
 
     def match_rank(self, cell_gray: np.ndarray) -> Optional[tuple[str, float]]:
@@ -880,6 +894,8 @@ class FontMatcher:
                 name = self._captured_rank_lookup.get(key)
                 if name:
                     log.debug("match_rank: exact lookup → '%s'", name)
+                    if self._tracer and self._tracer.enabled:
+                        self._tracer.log("RANK", f"exact={name}")
                     return (name, 1.0)
 
         # Fall back to fuzzy template matching
@@ -889,8 +905,12 @@ class FontMatcher:
             cell_gray, self._rank_width_index, RANK_THRESHOLD)
         if result:
             log.debug("match_rank: fuzzy → '%s' (score=%.3f)", result[0], result[1])
+            if self._tracer and self._tracer.enabled:
+                self._tracer.log("RANK", f"fuzzy={result[0]}({result[1]:.2f})")
         else:
             log.debug("match_rank: no match")
+            if self._tracer and self._tracer.enabled:
+                self._tracer.log("RANK", "no_match")
         return result
 
     def read_points(self, cell_gray: np.ndarray,
@@ -1072,6 +1092,14 @@ class FontMatcher:
                  init_diag, len(classified), " ".join(blob_diags),
                  num_str or "?")
 
+        if self._tracer and self._tracer.enabled:
+            best_scores = [int(c["score"]) for c in classified]
+            self._tracer.log(
+                "POINTS",
+                f"blobs={len(classified)} digits={num_str or '?'} scores={best_scores}",
+            )
+            self._trace_points_image(cell_gray, classified, text_top)
+
         return num_str if num_str else None
 
 
@@ -1242,3 +1270,48 @@ class FontMatcher:
                       "cell %dx%d, threshold=%.2f",
                       len(all_candidates), cell_h, cell_w, threshold)
         return result
+
+    # ── Trace helpers ──────────────────────────────────────────────────
+
+    def _trace_match_image(self, step: str, cell_gray: np.ndarray,
+                           matched_name: str) -> None:
+        """Save side-by-side cell + matched template for trace."""
+        if not self._tracer or cv2 is None:
+            return
+        tpl = self._skill_templates.get(matched_name) if step == "skill" \
+            else self._rank_templates.get(matched_name)
+        if tpl is None:
+            self._tracer.save_image(step, cell_gray, suffix=matched_name)
+            return
+
+        # Build side-by-side: cell on left, template on right
+        ch, cw = cell_gray.shape[:2]
+        th, tw = tpl.shape[:2]
+        out_h = max(ch, th)
+        gap = 4
+        out_w = cw + gap + tw
+        canvas = np.zeros((out_h, out_w), dtype=np.uint8)
+        canvas[:ch, :cw] = cell_gray
+        canvas[:th, cw + gap:cw + gap + tw] = tpl
+        self._tracer.save_image(step, canvas, suffix=matched_name)
+
+    def _trace_points_image(self, cell_gray: np.ndarray,
+                            classified: list[dict],
+                            text_top: int) -> None:
+        """Save points cell with blob boundaries annotated for trace."""
+        if not self._tracer or cv2 is None:
+            return
+        canvas = cv2.cvtColor(cell_gray, cv2.COLOR_GRAY2BGR)
+        h, w = canvas.shape[:2]
+        for c in classified:
+            x0, x1 = c["x0"], c["x1"]
+            # Blob boundaries (green vertical lines)
+            if 0 <= x0 < w:
+                cv2.line(canvas, (x0, 0), (x0, h - 1), (0, 200, 0), 1)
+            if 0 <= x1 < w:
+                cv2.line(canvas, (x1, 0), (x1, h - 1), (0, 200, 0), 1)
+            # Digit label
+            cx = (x0 + x1) // 2
+            cv2.putText(canvas, str(c["digit"]), (max(0, cx - 3), max(10, text_top - 2)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.3, (0, 255, 255), 1)
+        self._tracer.save_image("points", canvas)

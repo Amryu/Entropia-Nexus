@@ -59,7 +59,7 @@ export async function loadMobData() {
     );
     // Fetch all maturities
     const { rows: mats } = await pool.query(
-      `SELECT "Id", "MobId", "Name" FROM ONLY "MobMaturities" ORDER BY "MobId", "Id"`
+      `SELECT "Id", "MobId", "Name", "NameMode" FROM ONLY "MobMaturities" ORDER BY "MobId", "Id"`
     );
 
     // Build lookup structures
@@ -90,8 +90,16 @@ export async function loadMobData() {
         mobEntry.hasDefault = true;
       }
 
-      // Index the full "mob maturity" combination
-      const fullKey = `${mobEntry.name} ${mat.Name}`.toLowerCase();
+      // Index the full in-game name based on NameMode
+      let fullName;
+      switch (mat.NameMode) {
+        case 'Prefix':   fullName = `${mat.Name} ${mobEntry.name}`; break;
+        case 'Verbatim': fullName = mat.Name; break;
+        case 'Empty':    fullName = mobEntry.name; break;
+        case 'Suffix':
+        default:         fullName = `${mobEntry.name} ${mat.Name}`; break;
+      }
+      const fullKey = fullName.toLowerCase();
       newExactLookup.set(fullKey, {
         mobId: mobEntry.id,
         maturityId: mat.Id,

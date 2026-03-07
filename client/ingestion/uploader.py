@@ -252,34 +252,47 @@ class IngestionUploader:
             return
 
         def _rebuffer():
-            globals_list = self._db.get_all_globals()
-            trades_list = self._db.get_all_trades()
+            import time as _time
 
             with self._lock:
-                # Clear stale state — we're reprocessing from scratch
                 self._global_buffer.clear()
                 self._trade_buffer.clear()
                 self._recent_hashes.clear()
 
-                for g in globals_list:
-                    occurrence = self._assign_occurrence(g, datetime.fromisoformat(g["timestamp"]))
-                    g["occurrence"] = occurrence
+            # Stream globals from DB — never hold entire table in RAM.
+            # time.sleep(0) yields GIL so UI/keyboard hook stays responsive.
+            global_count = 0
+            last_yield = _time.monotonic()
+            for g in self._db.iter_globals():
+                occurrence = self._assign_occurrence(g, datetime.fromisoformat(g["timestamp"]))
+                g["occurrence"] = occurrence
+                with self._lock:
                     self._global_buffer.append(g)
+                global_count += 1
+                if _time.monotonic() - last_yield > 0.008:
+                    _time.sleep(0)
+                    last_yield = _time.monotonic()
 
-                now = datetime.now()
-                for t in trades_list:
-                    if not (TRADE_KEYWORDS_RE.search(t["message"]) or ITEM_LINK_RE.search(t["message"])):
-                        continue
-                    # Skip trade messages older than 1 day
-                    if now - datetime.fromisoformat(t["timestamp"]) > MAX_TRADE_AGE:
-                        continue
+            # Stream trades — filter inline, append matches directly.
+            trade_count = 0
+            now = datetime.now()
+            last_yield = _time.monotonic()
+            for t in self._db.iter_trades(max_age_hours=24):
+                if not (TRADE_KEYWORDS_RE.search(t["message"]) or ITEM_LINK_RE.search(t["message"])):
+                    continue
+                if now - datetime.fromisoformat(t["timestamp"]) > MAX_TRADE_AGE:
+                    continue
+                with self._lock:
                     self._trade_buffer.append(t)
+                trade_count += 1
+                if _time.monotonic() - last_yield > 0.008:
+                    _time.sleep(0)
+                    last_yield = _time.monotonic()
 
             log.info("Re-buffered %d globals and %d trades from local DB for upload",
-                     len(globals_list), len(trades_list))
+                     global_count, trade_count)
             self._emit_status()
-            # Wake the upload thread so rebuffered items are flushed immediately
-            if globals_list or trades_list:
+            if global_count or trade_count:
                 self._flush_requested.set()
 
         threading.Thread(target=_rebuffer, daemon=True, name="ingestion-rebuffer").start()
@@ -429,7 +442,8 @@ class IngestionUploader:
         # Delete only the specific items confirmed processed by the server.
         # Items still in the buffer (re-queued from rate limiting) stay in the DB
         # so they survive a restart via _rebuffer_from_db().
-        if self._db:
+        changed = g_processed or t_processed
+        if self._db and changed:
             try:
                 g_del = self._db.delete_ingested_globals(g_processed) if g_processed else 0
                 t_del = self._db.delete_ingested_trades(t_processed) if t_processed else 0
@@ -438,8 +452,10 @@ class IngestionUploader:
             except Exception as e:
                 log.warning("Failed to clean up ingested data from local DB: %s", e)
 
-        # Persist any remaining items (e.g. from new events that arrived during flush)
-        self._persist_buffers()
+        # Only re-persist remaining buffer if something was actually sent/processed.
+        # Avoids expensive full-buffer rewrite every cycle when rate-limited.
+        if changed:
+            self._persist_buffers()
         self._emit_status()
 
     def _flush_type(self, buffer, type_name, send_fn) -> tuple[int, list[dict]]:
@@ -462,7 +478,6 @@ class IngestionUploader:
             if not self._nexus_client.is_authenticated():
                 unsent = items[chunk_start:]
                 self._requeue(buffer, unsent)
-                self._persist_buffers()
                 return sent, processed
 
             allowed, wait_s = self._reserve_rate_limit_slot(type_name)
@@ -475,7 +490,6 @@ class IngestionUploader:
                     len(unsent),
                     wait_s,
                 )
-                self._persist_buffers()
                 return sent, processed
             try:
                 result = send_fn(chunk)
@@ -511,14 +525,12 @@ class IngestionUploader:
                 self._requeue(buffer, unsent)
                 log.warning("%s rate-limited, re-queued %d items (retry in %ds)",
                             type_name.capitalize(), len(unsent), e.retry_after)
-                self._persist_buffers()
                 return sent, processed
             except ServerError as e:
                 unsent = items[chunk_start:]
                 self._requeue(buffer, unsent)
                 log.warning("%s server error, re-queued %d items: %s",
                             type_name.capitalize(), len(unsent), e)
-                self._persist_buffers()
                 return sent, processed
             except Exception as e:
                 log.warning("%s upload failed (client error): %s", type_name.capitalize(), e)

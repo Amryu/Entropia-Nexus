@@ -1364,14 +1364,15 @@ async function applyMobMaturityChanges(client, mobId, maturities) {
     client.query(`DELETE FROM ONLY "MobMaturities" WHERE "MobId" = $1 AND "Name" NOT IN (SELECT * FROM unnest($2::text[]))`, [mobId, maturities.map(x => x.Name)]),
     ...maturities.map(maturity => client.query(`
       INSERT INTO "MobMaturities"
-      ("MobId", "Name", "Health", "RegenerationInterval", "RegenerationAmount", "AttackSpeed", "DangerLevel", "TamingLevel", "Strength", "Agility", "Intelligence", "Psyche", "Stamina", "MissChance", "ResistanceStab", "ResistanceCut", "ResistanceImpact", "ResistancePenetration", "ResistanceShrapnel", "ResistanceBurn", "ResistanceCold", "ResistanceAcid", "ResistanceElectric", "Boss", "Description")
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
+      ("MobId", "Name", "NameMode", "Health", "RegenerationInterval", "RegenerationAmount", "AttackSpeed", "DangerLevel", "TamingLevel", "Strength", "Agility", "Intelligence", "Psyche", "Stamina", "MissChance", "ResistanceStab", "ResistanceCut", "ResistanceImpact", "ResistancePenetration", "ResistanceShrapnel", "ResistanceBurn", "ResistanceCold", "ResistanceAcid", "ResistanceElectric", "Boss", "Description")
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)
       ON CONFLICT ("MobId", "Name") DO UPDATE SET
-      "Health" = $3, "RegenerationInterval" = $4, "RegenerationAmount" = $5, "AttackSpeed" = $6, "DangerLevel" = $7, "TamingLevel" = $8, "Strength" = $9, "Agility" = $10, "Intelligence" = $11, "Psyche" = $12, "Stamina" = $13, "MissChance" = $14, "ResistanceStab" = $15, "ResistanceCut" = $16, "ResistanceImpact" = $17, "ResistancePenetration" = $18, "ResistanceShrapnel" = $19, "ResistanceBurn" = $20, "ResistanceCold" = $21, "ResistanceAcid" = $22, "ResistanceElectric" = $23, "Boss" = $24, "Description" = $25
+      "NameMode" = $3, "Health" = $4, "RegenerationInterval" = $5, "RegenerationAmount" = $6, "AttackSpeed" = $7, "DangerLevel" = $8, "TamingLevel" = $9, "Strength" = $10, "Agility" = $11, "Intelligence" = $12, "Psyche" = $13, "Stamina" = $14, "MissChance" = $15, "ResistanceStab" = $16, "ResistanceCut" = $17, "ResistanceImpact" = $18, "ResistancePenetration" = $19, "ResistanceShrapnel" = $20, "ResistanceBurn" = $21, "ResistanceCold" = $22, "ResistanceAcid" = $23, "ResistanceElectric" = $24, "Boss" = $25, "Description" = $26
       RETURNING "Id"`,
       [
         mobId,
         maturity.Name,
+        maturity.NameMode || null,
         maturity.Properties.Health,
         maturity.Properties.RegenerationInterval,
         maturity.Properties.RegenerationAmount,

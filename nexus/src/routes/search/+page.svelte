@@ -156,6 +156,9 @@
   }
 
   function getLink(result) {
+    if (result.Type === 'MobMaturity') {
+      return getTypeLink(result.MobName, 'MobMaturity', result.SubType, result.MaturityId);
+    }
     return getTypeLink(result.Name, result.Type, result.SubType, result.Id);
   }
 

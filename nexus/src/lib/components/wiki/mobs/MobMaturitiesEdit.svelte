@@ -15,8 +15,31 @@
   /** @type {string} Mob type (Animal, Mutant, Robot, Asteroid) */
   export let type = null;
 
+  /** @type {string} Mob name (for NameMode preview) */
+  export let mobName = '';
+
   /** @type {string} Field path for updateField */
   export let fieldPath = 'Maturities';
+
+  const NAME_MODES = [
+    { value: null, label: '—' },
+    { value: 'Suffix', label: 'Suffix' },
+    { value: 'Prefix', label: 'Prefix' },
+    { value: 'Verbatim', label: 'Verbatim' },
+    { value: 'Empty', label: 'Empty' },
+  ];
+
+  function getFullNamePreview(maturityName, nameMode) {
+    const mob = mobName || '???';
+    const mat = maturityName || '???';
+    switch (nameMode) {
+      case 'Prefix':   return `${mat} ${mob}`;
+      case 'Verbatim': return mat;
+      case 'Empty':    return mob;
+      case 'Suffix':   return `${mob} ${mat}`;
+      default:         return `${mob} ${mat}`;
+    }
+  }
 
   // Damage types for composition
   const DAMAGE_TYPES = [
@@ -410,6 +433,21 @@
                     placeholder="e.g., Young, Mature, Old"
                   />
                 </label>
+                <label class="field">
+                  <span class="field-label">Name Mode</span>
+                  <select
+                    value={maturity.NameMode || ''}
+                    on:change={(e) => updateMaturityField(matIndex, 'NameMode', e.target.value || null)}
+                  >
+                    {#each NAME_MODES as mode}
+                      <option value={mode.value || ''}>{mode.label}</option>
+                    {/each}
+                  </select>
+                </label>
+                <div class="field namemode-preview">
+                  <span class="field-label">In-game name</span>
+                  <span class="preview-text" class:unknown={!maturity.NameMode}>{getFullNamePreview(maturity.Name, maturity.NameMode)}</span>
+                </div>
                 <label class="field">
                   <span class="field-label">Level</span>
                   <input
@@ -823,6 +861,48 @@
     font-size: 11px;
     color: var(--text-muted, #999);
     text-transform: uppercase;
+  }
+
+  .field select {
+    padding: 4px 6px;
+    font-size: 12px;
+    background-color: var(--input-bg, var(--secondary-color));
+    border: 1px solid var(--border-color, #555);
+    border-radius: 3px;
+    color: var(--text-color);
+    width: 100%;
+    box-sizing: border-box;
+    height: 26px;
+  }
+
+  .field select:focus {
+    outline: none;
+    border-color: var(--accent-color, #4a9eff);
+  }
+
+  .namemode-preview {
+    min-width: 0;
+  }
+
+  .preview-text {
+    font-size: 12px;
+    color: var(--text-color);
+    padding: 4px 6px;
+    background: var(--secondary-color);
+    border-radius: 3px;
+    border: 1px solid var(--border-color, #555);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: block;
+    height: 26px;
+    box-sizing: border-box;
+    line-height: 18px;
+  }
+
+  .preview-text.unknown {
+    color: var(--text-muted, #999);
+    font-style: italic;
   }
 
   .field input[type="text"],

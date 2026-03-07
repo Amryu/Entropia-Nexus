@@ -82,17 +82,15 @@ class OverlayManager(QObject):
     def register(self, widget: OverlayWidget) -> None:
         if widget not in self._widgets:
             self._widgets.append(widget)
-            hwnd = int(widget.winId())
-            if hwnd:
-                self._overlay_hwnds[hwnd] = widget
 
     def unregister(self, widget: OverlayWidget) -> None:
         try:
             self._widgets.remove(widget)
         except ValueError:
             pass
-        hwnd = int(widget.winId())
-        self._overlay_hwnds.pop(hwnd, None)
+        self._overlay_hwnds = {
+            h: w for h, w in self._overlay_hwnds.items() if w is not widget
+        }
 
     @property
     def game_focused(self) -> bool:
@@ -186,7 +184,9 @@ class OverlayManager(QObject):
             overlay_wids: set[int] = set()
             for w in self._widgets:
                 if w.isVisible():
-                    overlay_wids.add(int(w.winId()))
+                    wid = int(w.winId())
+                    overlay_wids.add(wid)
+                    self._overlay_hwnds[wid] = w
 
             # Fast path: one of our overlays has focus — stay visible
             if fg_wid in overlay_wids:
@@ -240,6 +240,9 @@ class OverlayManager(QObject):
         for w in self._widgets:
             if w.wants_visible:
                 w.show()
+                wid = int(w.winId())
+                if wid:
+                    self._overlay_hwnds[wid] = w
 
     def _hide_all(self) -> None:
         for w in self._widgets:

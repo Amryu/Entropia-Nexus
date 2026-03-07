@@ -49,6 +49,7 @@ function formatMobMaturity(x){
 	return {
 		Id: x.Id,
 		Name: x.Name,
+		NameMode: x.NameMode || null,
 		Properties: {
 			Description: x.Description,
 			Health: x.Health != null ? Number(x.Health) : null,

@@ -240,9 +240,16 @@ CREATE TABLE IF NOT EXISTS pending_inventory_import (
 
 # Indexes that depend on columns added by _migrate()
 _POST_MIGRATE_INDEXES = """
-CREATE INDEX IF NOT EXISTS idx_skill_gains_ts ON skill_gains(ts);
-CREATE INDEX IF NOT EXISTS idx_skill_gains_skill ON skill_gains(skill_id);
+CREATE INDEX IF NOT EXISTS idx_skill_gains_covering ON skill_gains(ts, skill_id, amount);
+CREATE INDEX IF NOT EXISTS idx_skill_snapshots_name_id ON skill_snapshots(skill_name, id);
 CREATE INDEX IF NOT EXISTS idx_mob_encounters_hunt ON mob_encounters(hunt_id);
+CREATE INDEX IF NOT EXISTS idx_trade_messages_timestamp ON trade_messages(timestamp);
+"""
+
+# Drop old single-column skill_gains indexes superseded by the covering index.
+_DROP_OLD_SKILL_GAINS_INDEXES = """
+DROP INDEX IF EXISTS idx_skill_gains_ts;
+DROP INDEX IF EXISTS idx_skill_gains_skill;
 """
 
 
@@ -265,6 +272,7 @@ class Database:
         self._conn.executescript(SCHEMA)
         self._conn.commit()
         self._migrate()
+        self._conn.executescript(_DROP_OLD_SKILL_GAINS_INDEXES)
         self._conn.executescript(_POST_MIGRATE_INDEXES)
         self._conn.commit()
 
@@ -298,14 +306,22 @@ class Database:
             except sqlite3.OperationalError:
                 pass  # Column already exists
 
-        # Dedup indexes — remove duplicates first (keep lowest rowid), then create unique index
+        # Dedup indexes — only run the expensive DELETE if the unique index
+        # doesn't exist yet (first run after migration).  Once the index is
+        # created, duplicates can no longer be inserted so the dedup is a no-op.
         dedup_indexes = [
             ("idx_globals_dedup", "globals",
              "timestamp, global_type, player_name, target_name, value"),
             ("idx_trade_messages_dedup", "trade_messages",
              "timestamp, channel, username, message"),
         ]
+        existing_indexes = {
+            row[0] for row in
+            self._conn.execute("SELECT name FROM sqlite_master WHERE type='index'").fetchall()
+        }
         for idx_name, table, columns in dedup_indexes:
+            if idx_name in existing_indexes:
+                continue  # Already deduplicated
             try:
                 self._conn.execute(
                     f"DELETE FROM {table} WHERE rowid NOT IN "
@@ -316,7 +332,7 @@ class Database:
                 )
                 self._conn.commit()
             except sqlite3.OperationalError:
-                pass  # Index already exists
+                pass
 
         self._migrate_skill_gains_v2()
 
@@ -448,11 +464,10 @@ class Database:
         import json
         with self._lock:
             self._conn.execute("DELETE FROM pending_ingestion WHERE type = ?", (event_type,))
-            for item in items:
-                self._conn.execute(
-                    "INSERT INTO pending_ingestion (type, data) VALUES (?, ?)",
-                    (event_type, json.dumps(item))
-                )
+            self._conn.executemany(
+                "INSERT INTO pending_ingestion (type, data) VALUES (?, ?)",
+                ((event_type, json.dumps(item)) for item in items)
+            )
             self._conn.commit()
 
     def load_pending_ingestion(self, event_type: str) -> list[dict]:
@@ -508,6 +523,15 @@ class Database:
                 except (ValueError, TypeError):
                     return None
             return None
+
+    def get_last_sync_timestamp(self) -> int | None:
+        """Get Unix timestamp of the most recent local skill value update."""
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT MAX(strftime('%s', updated_at)) FROM local_skill_values"
+            )
+            row = cur.fetchone()
+            return int(row[0]) if row and row[0] else None
 
     # Combat events
     def insert_combat_event(self, timestamp: str, event_type: str, amount: float = None, session_id: str = None):
@@ -600,16 +624,70 @@ class Database:
                 for r in cur.fetchall()
             ]
 
-    def get_all_trades(self) -> list[dict]:
-        """Read all trade messages from the local DB (for ingestion re-submission)."""
+    def get_all_trades(self, max_age_hours: int = 0) -> list[dict]:
+        """Read trade messages from the local DB (for ingestion re-submission).
+
+        Args:
+            max_age_hours: If > 0, only return trades newer than this many hours.
+                          0 means return all (used by reparse).
+        """
         with self._lock:
-            cur = self._conn.execute(
-                "SELECT timestamp, channel, username, message FROM trade_messages ORDER BY id"
-            )
+            if max_age_hours > 0:
+                cur = self._conn.execute(
+                    "SELECT timestamp, channel, username, message FROM trade_messages "
+                    "WHERE timestamp >= datetime('now', ? || ' hours') ORDER BY id",
+                    (f"-{max_age_hours}",),
+                )
+            else:
+                cur = self._conn.execute(
+                    "SELECT timestamp, channel, username, message FROM trade_messages ORDER BY id"
+                )
             return [
                 {"timestamp": r[0], "channel": r[1], "username": r[2], "message": r[3]}
                 for r in cur.fetchall()
             ]
+
+    def iter_globals(self, batch_size: int = 2000):
+        """Yield globals in batches to avoid loading the entire table into RAM."""
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT timestamp, global_type, player_name, target_name, "
+                "value, value_unit, location, is_hof, is_ath FROM globals ORDER BY id"
+            )
+            while True:
+                rows = cur.fetchmany(batch_size)
+                if not rows:
+                    break
+                for r in rows:
+                    yield {
+                        "timestamp": r[0], "type": r[1], "player": r[2],
+                        "target": r[3], "value": r[4], "unit": r[5],
+                        "location": r[6], "hof": bool(r[7]), "ath": bool(r[8]),
+                    }
+
+    def iter_trades(self, max_age_hours: int = 0, batch_size: int = 2000):
+        """Yield trade messages in batches to avoid loading all into RAM."""
+        with self._lock:
+            if max_age_hours > 0:
+                cur = self._conn.execute(
+                    "SELECT timestamp, channel, username, message FROM trade_messages "
+                    "WHERE timestamp >= datetime('now', ? || ' hours') ORDER BY id",
+                    (f"-{max_age_hours}",),
+                )
+            else:
+                cur = self._conn.execute(
+                    "SELECT timestamp, channel, username, message "
+                    "FROM trade_messages ORDER BY id"
+                )
+            while True:
+                rows = cur.fetchmany(batch_size)
+                if not rows:
+                    break
+                for r in rows:
+                    yield {
+                        "timestamp": r[0], "channel": r[1],
+                        "username": r[2], "message": r[3],
+                    }
 
     # Trade messages
     def insert_trade_message(self, timestamp: str, channel: str, username: str, message: str):
@@ -1292,38 +1370,63 @@ class Database:
     def delete_ingested_globals(self, items: list[dict]) -> int:
         """Delete specific globals confirmed processed by the server.
 
-        Uses the dedup key (timestamp, global_type, player_name, target_name, value)
-        to identify rows. Returns number of rows deleted.
+        Uses a temp table + batched DELETE for efficiency (single statement
+        instead of one DELETE per item).
         """
-        deleted = 0
+        if not items:
+            return 0
         with self._lock:
-            for item in items:
-                cur = self._conn.execute(
-                    "DELETE FROM globals WHERE timestamp = ? AND global_type = ? "
-                    "AND player_name = ? AND target_name = ? AND value = ?",
-                    (item["timestamp"], item["type"], item["player"],
-                     item["target"], item["value"]),
-                )
-                deleted += cur.rowcount
+            self._conn.execute(
+                "CREATE TEMP TABLE IF NOT EXISTS _del_globals "
+                "(timestamp TEXT, global_type TEXT, player_name TEXT, "
+                "target_name TEXT, value REAL)"
+            )
+            self._conn.execute("DELETE FROM _del_globals")
+            self._conn.executemany(
+                "INSERT INTO _del_globals VALUES (?, ?, ?, ?, ?)",
+                ((i["timestamp"], i["type"], i["player"], i["target"], i["value"])
+                 for i in items),
+            )
+            cur = self._conn.execute(
+                "DELETE FROM globals WHERE EXISTS ("
+                "SELECT 1 FROM _del_globals d "
+                "WHERE d.timestamp = globals.timestamp "
+                "AND d.global_type = globals.global_type "
+                "AND d.player_name = globals.player_name "
+                "AND d.target_name = globals.target_name "
+                "AND d.value = globals.value)"
+            )
+            deleted = cur.rowcount
             self._conn.commit()
         return deleted
 
     def delete_ingested_trades(self, items: list[dict]) -> int:
         """Delete specific trade messages confirmed processed by the server.
 
-        Uses the dedup key (timestamp, channel, username, message)
-        to identify rows. Returns number of rows deleted.
+        Uses a temp table + batched DELETE for efficiency.
         """
-        deleted = 0
+        if not items:
+            return 0
         with self._lock:
-            for item in items:
-                cur = self._conn.execute(
-                    "DELETE FROM trade_messages WHERE timestamp = ? AND channel = ? "
-                    "AND username = ? AND message = ?",
-                    (item["timestamp"], item["channel"], item["username"],
-                     item["message"]),
-                )
-                deleted += cur.rowcount
+            self._conn.execute(
+                "CREATE TEMP TABLE IF NOT EXISTS _del_trades "
+                "(timestamp TEXT, channel TEXT, username TEXT, message TEXT)"
+            )
+            self._conn.execute("DELETE FROM _del_trades")
+            self._conn.executemany(
+                "INSERT INTO _del_trades VALUES (?, ?, ?, ?)",
+                ((i["timestamp"], i["channel"], i["username"], i["message"])
+                 for i in items),
+            )
+            cur = self._conn.execute(
+                "DELETE FROM trade_messages WHERE EXISTS ("
+                "SELECT 1 FROM _del_trades d "
+                "WHERE d.timestamp = trade_messages.timestamp "
+                "AND d.channel = trade_messages.channel "
+                "AND d.username = trade_messages.username "
+                "AND d.message = trade_messages.message)"
+            )
+            deleted = cur.rowcount
             self._conn.commit()
         return deleted
 
@@ -1354,6 +1457,45 @@ class Database:
             self._conn.execute("DELETE FROM globals")
             self._conn.execute("DELETE FROM trade_messages")
             self._conn.commit()
+
+    def prune_old_data(self) -> dict[str, int]:
+        """Delete old parsed data that is no longer needed.
+
+        - Trade messages older than 2 days (server rejects them anyway)
+        - Combat events (no longer recorded; clear any legacy data)
+        - Loot groups/items (no longer recorded; clear any legacy data)
+
+        Skill gains are kept permanently.
+
+        Returns dict of {table_name: rows_deleted}.
+        """
+        deleted = {}
+        with self._lock:
+            # Trade messages older than 2 days are never uploadable
+            cur = self._conn.execute(
+                "DELETE FROM trade_messages WHERE timestamp < datetime('now', '-2 days')"
+            )
+            if cur.rowcount > 0:
+                deleted["trade_messages"] = cur.rowcount
+            # Combat events are no longer recorded — clear legacy data
+            cur = self._conn.execute("DELETE FROM combat_events")
+            if cur.rowcount > 0:
+                deleted["combat_events"] = cur.rowcount
+            # Loot data is no longer recorded — clear legacy data
+            cur = self._conn.execute("DELETE FROM loot_items")
+            if cur.rowcount > 0:
+                deleted["loot_items"] = cur.rowcount
+            cur = self._conn.execute("DELETE FROM loot_groups")
+            if cur.rowcount > 0:
+                deleted["loot_groups"] = cur.rowcount
+            if deleted:
+                self._conn.commit()
+        return deleted
+
+    def vacuum(self) -> None:
+        """Reclaim disk space after large deletes. Must run outside a transaction."""
+        with self._lock:
+            self._conn.execute("VACUUM")
 
     def get_all_custom_markups(self) -> list[dict]:
         """Get all custom markups."""
