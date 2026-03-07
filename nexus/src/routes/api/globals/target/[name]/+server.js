@@ -118,7 +118,13 @@ export async function GET({ params, url }) {
     var rollupPeriodWhere = rpf.periodWhere;
   }
 
+  const client = await pool.connect();
   try {
+    await client.query('BEGIN');
+    await client.query('SET LOCAL statement_timeout = 15000');
+
+    const q = client.query.bind(client);
+
     const [
       summaryResult,
       topPlayersResult,
@@ -129,7 +135,7 @@ export async function GET({ params, url }) {
     ] = await Promise.all([
       // Summary stats (rollup or raw)
       useRollup
-        ? pool.query(
+        ? q(
             `SELECT SUM(event_count) AS total_count,
                     SUM(sum_value) AS total_value,
                     SUM(sum_value) / NULLIF(SUM(event_count), 0) AS avg_value,
@@ -144,14 +150,14 @@ export async function GET({ params, url }) {
              WHERE granularity = $2 AND ${rollupTargetCond}${rollupPeriodWhere}`,
             rollupTargetParams
           )
-        : pool.query(
+        : q(
             `SELECT count(*) AS total_count,
                     COALESCE(sum(value), 0) AS total_value,
                     COALESCE(avg(value), 0) AS avg_value,
                     COALESCE(max(value), 0) AS max_value,
                     count(*) FILTER (WHERE is_hof) AS hof_count,
                     count(*) FILTER (WHERE is_ath) AS ath_count,
-                    mode() WITHIN GROUP (ORDER BY global_type) AS primary_type,
+                    MIN(global_type) AS primary_type,
                     min(event_timestamp) AS first_seen,
                     max(event_timestamp) AS last_seen,
                     MAX(mob_id) AS mob_id
@@ -161,7 +167,7 @@ export async function GET({ params, url }) {
           ),
 
       // Top players by total value
-      pool.query(
+      q(
         `SELECT player_name AS player, count(*) AS count,
                 COALESCE(sum(value), 0) AS value,
                 COALESCE(max(value), 0) AS best_value,
@@ -177,7 +183,7 @@ export async function GET({ params, url }) {
 
       // Activity (rollup or raw)
       useRollup
-        ? pool.query(
+        ? q(
             `SELECT period_start AS bucket, SUM(event_count) AS count
              FROM globals_rollup_target
              WHERE granularity = $2 AND ${rollupTargetCond}${rollupPeriodWhere}
@@ -186,7 +192,7 @@ export async function GET({ params, url }) {
              LIMIT 2555`,
             rollupTargetParams
           )
-        : pool.query(
+        : q(
             `SELECT date_trunc('${bucketUnit}', event_timestamp) AS bucket,
                     count(*) AS count
              FROM ingested_globals
@@ -198,7 +204,7 @@ export async function GET({ params, url }) {
           ),
 
       // Recent globals (last 20)
-      pool.query(
+      q(
         `SELECT id, global_type, player_name, target_name, value, value_unit,
                 location, is_hof, is_ath, event_timestamp,
                 mob_id, maturity_id, extra
@@ -211,7 +217,7 @@ export async function GET({ params, url }) {
 
       // Available maturities for this target (find all variants sharing the same mob_id)
       resolvedMobId
-        ? pool.query(
+        ? q(
             `SELECT target_name, count(*) AS count, COALESCE(sum(value), 0) AS value
              FROM ingested_globals
              WHERE confirmed = true AND mob_id = $1
@@ -219,7 +225,7 @@ export async function GET({ params, url }) {
              ORDER BY count(*) DESC`,
             [resolvedMobId]
           )
-        : pool.query(
+        : q(
             `SELECT target_name, count(*) AS count, COALESCE(sum(value), 0) AS value
              FROM ingested_globals
              WHERE confirmed = true AND lower(target_name) = lower($1)
@@ -229,7 +235,7 @@ export async function GET({ params, url }) {
           ),
 
       // Highest loot per timespan (always uses all-time data, ignoring period filter)
-      pool.query(
+      q(
         `SELECT COALESCE(max(value), 0) AS highest_all,
                 COALESCE(max(value) FILTER (WHERE event_timestamp > now() - interval '24 hours'), 0) AS highest_24h,
                 COALESCE(max(value) FILTER (WHERE event_timestamp > now() - interval '7 days'), 0) AS highest_7d,
@@ -240,6 +246,8 @@ export async function GET({ params, url }) {
         maturityFilter ? [maturityFilter.map(m => m.toLowerCase())] : resolvedTargets ? [resolvedTargets] : [targetName]
       ),
     ]);
+
+    await client.query('COMMIT');
 
     const summary = summaryResult.rows[0];
 
@@ -325,7 +333,14 @@ export async function GET({ params, url }) {
       },
     });
   } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    if (e.message?.includes('statement timeout')) {
+      console.warn('[api/globals/target] Query timed out for:', targetName);
+      return getResponse({ error: 'Query too complex, try a narrower filter' }, 503);
+    }
     console.error('[api/globals/target] Error fetching target globals:', e);
     return getResponse({ error: 'Internal server error' }, 500);
+  } finally {
+    client.release();
   }
 }

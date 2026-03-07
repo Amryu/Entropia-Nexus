@@ -137,6 +137,14 @@
     return offset ? result.Id - offset : null;
   }
 
+  /** Build the correct link for a search result, handling MobMaturity specially */
+  function getResultLink(result) {
+    if (result.Type === 'MobMaturity') {
+      return getTypeLink(result.MobName || result.Name, 'MobMaturity', result.SubType, result.MaturityId);
+    }
+    return getTypeLink(result.Name, result.Type, result.SubType, getRawId(result));
+  }
+
   // Build flat list for keyboard navigation
   $: categorizedResults = categorizeResults(searchResults);
   $: {
@@ -146,7 +154,7 @@
         flatResults.push({
           ...result,
           _category: category,
-          _url: getTypeLink(result.Name, result.Type, result.SubType, getRawId(result))
+          _url: getResultLink(result)
         });
       }
     }
@@ -275,7 +283,7 @@
       name: result.Name,
       type: result.Type,
       subType: result.SubType,
-      url: result._url || getTypeLink(result.Name, result.Type, result.SubType, getRawId(result))
+      url: result._url || getResultLink(result)
     });
     closeResults();
   }
@@ -373,7 +381,7 @@
           <div class="search-category">{category}</div>
           {#each categorizedResults[category] as result, i}
             {@const globalIndex = flatResults.findIndex(r => r.Id === result.Id)}
-            {@const resultUrl = getTypeLink(result.Name, result.Type, result.SubType, getRawId(result))}
+            {@const resultUrl = getResultLink(result)}
             <a
               href={resultUrl}
               class="search-result-item"
