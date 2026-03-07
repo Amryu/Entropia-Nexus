@@ -45,6 +45,7 @@ const COARSE_GRANULARITIES = [
 async function rebuildDailyRange(startDate, endDate) {
   const client = await pool.connect();
   try {
+    await client.query('SET statement_timeout = 120000'); // 2 min for heavy rebuild
     await client.query('BEGIN');
 
     // globals_rollup (global-level)
@@ -104,6 +105,7 @@ async function rebuildDailyRange(startDate, endDate) {
     await client.query('ROLLBACK');
     throw e;
   } finally {
+    await client.query('RESET statement_timeout').catch(() => {});
     client.release();
   }
 }
@@ -119,6 +121,7 @@ async function rebuildDailyRange(startDate, endDate) {
 async function rebuildCoarseGranularity(granularity, truncUnit, startDate, endDate) {
   const client = await pool.connect();
   try {
+    await client.query('SET statement_timeout = 60000'); // 1 min for coarse rebuild
     await client.query('BEGIN');
 
     const rangeFilter = startDate && endDate
@@ -180,6 +183,7 @@ async function rebuildCoarseGranularity(granularity, truncUnit, startDate, endDa
     await client.query('ROLLBACK');
     throw e;
   } finally {
+    await client.query('RESET statement_timeout').catch(() => {});
     client.release();
   }
 }
@@ -208,8 +212,17 @@ async function fullRebuild() {
   tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
   tomorrow.setUTCHours(0, 0, 0, 0);
 
-  // Rebuild all daily from raw table
-  await rebuildDailyRange(minDate, tomorrow);
+  // Rebuild daily in 90-day chunks to avoid long-running queries that starve other connections
+  const CHUNK_DAYS = 90;
+  let chunkStart = new Date(minDate);
+  while (chunkStart < tomorrow) {
+    const chunkEnd = new Date(Math.min(
+      chunkStart.getTime() + CHUNK_DAYS * 24 * 60 * 60 * 1000,
+      tomorrow.getTime()
+    ));
+    await rebuildDailyRange(chunkStart, chunkEnd);
+    chunkStart = chunkEnd;
+  }
 
   // Rebuild coarse granularities from daily
   for (const { granularity, truncUnit } of COARSE_GRANULARITIES) {
@@ -221,27 +234,32 @@ async function fullRebuild() {
 // Incremental rebuild (on ingestion events)
 // ------------------------------------------------------------------
 
-async function incrementalRebuild() {
+async function incrementalRebuild(oldestEventTs) {
   // Check if tables exist
   const { rows } = await pool.query(
     `SELECT 1 FROM information_schema.tables WHERE table_name = 'globals_rollup' LIMIT 1`
   );
   if (rows.length === 0) return;
 
-  // Rebuild today + yesterday daily
+  // Default: rebuild today + yesterday. Extend if older events were ingested.
   const yesterday = new Date();
   yesterday.setUTCDate(yesterday.getUTCDate() - 1);
   yesterday.setUTCHours(0, 0, 0, 0);
+
+  const startDate = new Date(Math.min(
+    yesterday.getTime(),
+    oldestEventTs ? new Date(oldestEventTs).setUTCHours(0, 0, 0, 0) : Infinity
+  ));
 
   const tomorrow = new Date();
   tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
   tomorrow.setUTCHours(0, 0, 0, 0);
 
-  await rebuildDailyRange(yesterday, tomorrow);
+  await rebuildDailyRange(startDate, tomorrow);
 
-  // Rebuild coarse granularities for current + previous periods
+  // Rebuild coarse granularities for the affected range
   for (const { granularity, truncUnit } of COARSE_GRANULARITIES) {
-    await rebuildCoarseGranularity(granularity, truncUnit, yesterday, tomorrow);
+    await rebuildCoarseGranularity(granularity, truncUnit, startDate, tomorrow);
   }
 }
 
@@ -258,15 +276,17 @@ export function isRollupReady() {
 
 /**
  * Trigger an incremental rollup rebuild (debounced externally by globals-cache.js).
+ * @param {Date} [oldestEventTs] - Oldest event timestamp from the ingestion batch.
+ *   If older than yesterday, the rebuild range extends to cover it.
  */
-export async function rebuildRollups() {
+export async function rebuildRollups(oldestEventTs) {
   const now = Date.now();
   if (now - rollupLastRebuiltAt < ROLLUP_MIN_REBUILD_GAP_MS) return;
   if (rollupRebuildPromise) return rollupRebuildPromise;
 
   rollupRebuildPromise = (async () => {
     try {
-      await incrementalRebuild();
+      await incrementalRebuild(oldestEventTs);
       rollupLastRebuiltAt = Date.now();
       rollupReady = true;
     } catch (e) {
@@ -284,24 +304,27 @@ export async function rebuildRollups() {
  * Performs a full rebuild from historical data.
  */
 export async function initGlobalsRollups() {
-  try {
-    await fullRebuild();
-    rollupReady = true;
-    rollupLastRebuiltAt = Date.now();
-    console.log('[globals-rollup] Full rebuild complete');
-  } catch (e) {
-    console.error('[globals-rollup] Full rebuild failed:', e);
-  }
+  // Delay full rebuild to avoid starving concurrent queries during server startup
+  setTimeout(async () => {
+    try {
+      await fullRebuild();
+      rollupReady = true;
+      rollupLastRebuiltAt = Date.now();
+      console.log('[globals-rollup] Full rebuild complete');
+    } catch (e) {
+      console.error('[globals-rollup] Full rebuild failed:', e);
+    }
 
-  // Scheduled safety-net refresh
-  const scheduleRefresh = () => {
-    const jitter = Math.floor(ROLLUP_REBUILD_INTERVAL_MS * (0.9 + Math.random() * 0.2));
-    setTimeout(async () => {
-      try {
-        await rebuildRollups();
-      } catch {}
-      scheduleRefresh();
-    }, jitter).unref();
-  };
-  scheduleRefresh();
+    // Scheduled safety-net refresh
+    const scheduleRefresh = () => {
+      const jitter = Math.floor(ROLLUP_REBUILD_INTERVAL_MS * (0.9 + Math.random() * 0.2));
+      setTimeout(async () => {
+        try {
+          await rebuildRollups();
+        } catch {}
+        scheduleRefresh();
+      }, jitter).unref();
+    };
+    scheduleRefresh();
+  }, 10_000).unref(); // 10s delay for server to stabilize
 }
