@@ -135,7 +135,7 @@ async function rebuildCoarseGranularity(granularity, truncUnit, startDate, endDa
 
     // globals_rollup
     await client.query(
-      `DELETE FROM globals_rollup WHERE granularity = $1${startDate ? ` AND period_start >= date_trunc('${truncUnit}', $2) AND period_start <= date_trunc('${truncUnit}', $3)` : ''}`,
+      `DELETE FROM globals_rollup WHERE granularity = $1${startDate ? ` AND period_start >= date_trunc('${truncUnit}', $2::timestamptz) AND period_start <= date_trunc('${truncUnit}', $3::timestamptz)` : ''}`,
       startDate ? [granularity, startDate, endDate] : [granularity]
     );
     await client.query(
@@ -150,7 +150,7 @@ async function rebuildCoarseGranularity(granularity, truncUnit, startDate, endDa
 
     // globals_rollup_player
     await client.query(
-      `DELETE FROM globals_rollup_player WHERE granularity = $1${startDate ? ` AND period_start >= date_trunc('${truncUnit}', $2) AND period_start <= date_trunc('${truncUnit}', $3)` : ''}`,
+      `DELETE FROM globals_rollup_player WHERE granularity = $1${startDate ? ` AND period_start >= date_trunc('${truncUnit}', $2::timestamptz) AND period_start <= date_trunc('${truncUnit}', $3::timestamptz)` : ''}`,
       startDate ? [granularity, startDate, endDate] : [granularity]
     );
     await client.query(
@@ -165,7 +165,7 @@ async function rebuildCoarseGranularity(granularity, truncUnit, startDate, endDa
 
     // globals_rollup_target
     await client.query(
-      `DELETE FROM globals_rollup_target WHERE granularity = $1${startDate ? ` AND period_start >= date_trunc('${truncUnit}', $2) AND period_start <= date_trunc('${truncUnit}', $3)` : ''}`,
+      `DELETE FROM globals_rollup_target WHERE granularity = $1${startDate ? ` AND period_start >= date_trunc('${truncUnit}', $2::timestamptz) AND period_start <= date_trunc('${truncUnit}', $3::timestamptz)` : ''}`,
       startDate ? [granularity, startDate, endDate] : [granularity]
     );
     await client.query(
