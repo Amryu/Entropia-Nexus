@@ -33,7 +33,7 @@ export async function execute(interaction) {
     return interaction.reply({
       content: enabled
         ? 'Reward DM notifications **enabled**. You will receive a DM when you are awarded a reward.'
-        : 'Reward DM notifications **disabled**. You will no longer receive DMs for rewards.',
+        : 'Reward DM notifications **disabled**. You will no longer receive DMs for rewards. You can still check your balance anytime with `/rewards balance` in the server.',
       flags: MessageFlags.Ephemeral,
     });
   }
