@@ -30,6 +30,7 @@ class AppConfig:
     scan_overlay_debug: bool = False
     scan_roi_overrides: dict = field(default_factory=dict)  # {name: [x,y,w,h]} pixel offsets from SKILLS template
     scan_roi_version: int = 0  # Tracks DEFAULT_ROI_PIXELS version; reset overrides when outdated
+    ocr_trace_enabled: bool = False
 
     # OCR - HUD regions (x, y, w, h) for mob/tool name detection
     mob_name_region: tuple[int, int, int, int] | None = None

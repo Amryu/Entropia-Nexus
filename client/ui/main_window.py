@@ -203,6 +203,16 @@ class MainWindow(QWidget):
 
         self._create_resize_grips()
 
+        # Loading overlay — blocks interaction until app.py dismisses it
+        from .widgets.loading_overlay import LoadingOverlay
+        self._loading_overlay = LoadingOverlay(self)
+
+    def dismiss_loading_overlay(self):
+        """Fade out the startup loading overlay."""
+        if self._loading_overlay is not None:
+            self._loading_overlay.dismiss()
+            self._loading_overlay = None
+
     def _refresh_markup_caches(self):
         """Refresh exchange and inventory markup caches (runs in background)."""
         if self._markup_resolver is None:
@@ -580,6 +590,17 @@ class MainWindow(QWidget):
             prefix = "/users/" if item_type == "User" else "/societies/"
             url = self._config.nexus_base_url + prefix + url_quote(item_name)
             webbrowser.open(url)
+            return
+
+        # MobMaturity → navigate to the parent mob
+        if item_type == "MobMaturity":
+            mob_name = item.get("MobName", item_name)
+            self._applying_nav = True
+            self._ensure_page(PAGE_WIKI)
+            self._sidebar.set_active_no_emit(PAGE_WIKI)
+            self._pages.setCurrentIndex(PAGE_WIKI)
+            self._applying_nav = False
+            self._wiki_page.navigate_to(["Mobs", mob_name])
             return
 
         path = WIKI_PATHS.get(item_type)

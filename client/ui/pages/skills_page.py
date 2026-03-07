@@ -13,7 +13,7 @@ from PyQt6.QtWidgets import (
     QGroupBox, QTableWidget, QTableWidgetItem, QHeaderView,
     QTabWidget, QScrollArea, QComboBox, QCheckBox,
     QProgressBar, QLineEdit, QDoubleSpinBox, QFrame,
-    QGridLayout, QSizePolicy, QFileDialog, QMessageBox,
+    QSizePolicy, QFileDialog, QMessageBox,
 )
 from PyQt6.QtCore import Qt, pyqtSignal, QTimer
 from PyQt6.QtGui import QColor, QCursor
@@ -37,6 +37,10 @@ log = get_logger("SkillsPage")
 # ── Constants ──────────────────────────────────────────────────────────────
 CARD_MIN_WIDTH = 180
 CARD_MAX_WIDTH = 260
+CARD_HEIGHT = 80
+CARD_ROW_HEIGHT = CARD_HEIGHT + 6   # card + grid spacing
+HEADER_ROW_HEIGHT = 36
+_HEADER_LABEL_HEIGHT = 24           # actual label height within the row
 
 # badge_type → level → (background, text_color, border_or_none)
 BADGE_STYLES = {
@@ -101,6 +105,21 @@ _CARD_HEADER_STYLE = (
 _BADGE_STYLE_CACHE: dict[tuple, str] = {}
 
 
+class _ElidedLabel(QLabel):
+    """QLabel that truncates text with ellipsis when it doesn't fit."""
+
+    def __init__(self, text: str, parent=None):
+        super().__init__(text, parent)
+        self._full_text = text
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        fm = self.fontMetrics()
+        elided = fm.elidedText(self._full_text, Qt.TextElideMode.ElideRight,
+                               self.width())
+        self.setText(elided)
+
+
 class NumericTableWidgetItem(QTableWidgetItem):
     """Table item with numeric sorting semantics."""
 
@@ -139,21 +158,22 @@ class SkillCard(QFrame):
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.setToolTip("Click to see related professions. Double-click value to edit.")
         self.setStyleSheet(_SKILL_CARD_STYLE)
+        self.setFixedHeight(CARD_HEIGHT)
         if dimmed:
             effect = QGraphicsOpacityEffect(self)
             effect.setOpacity(0.35)
             self.setGraphicsEffect(effect)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 6, 8, 14)
-        layout.setSpacing(4)
+        layout.setContentsMargins(8, 6, 8, 6)
+        layout.setSpacing(2)
 
         # Row 1: Name + Badges (top-right)
         top_row = QHBoxLayout()
         top_row.setSpacing(4)
-        name_label = QLabel(skill_name)
+        name_label = _ElidedLabel(skill_name)
         name_label.setStyleSheet(_CARD_NAME_STYLE)
-        name_label.setWordWrap(True)
+        name_label.setFixedHeight(16)
         top_row.addWidget(name_label, 1)
 
         if badges:
@@ -202,6 +222,7 @@ class SkillCard(QFrame):
         bar.setTextVisible(False)
         bar.setFixedHeight(6)
         layout.addWidget(bar)
+        layout.addStretch()
 
     @staticmethod
     def _badge_style(badge: Badge) -> str:
@@ -275,15 +296,16 @@ class ProfessionCard(QFrame):
         self.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         self.setToolTip("Click to see contributing skills.")
         self.setStyleSheet(_PROF_CARD_STYLE)
+        self.setFixedHeight(CARD_HEIGHT)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 6, 8, 14)
-        layout.setSpacing(4)
+        layout.setContentsMargins(8, 6, 8, 6)
+        layout.setSpacing(2)
 
         # Row 1: Name
-        name_label = QLabel(prof_name)
+        name_label = _ElidedLabel(prof_name)
         name_label.setStyleSheet(_CARD_NAME_STYLE)
-        name_label.setWordWrap(True)
+        name_label.setFixedHeight(16)
         layout.addWidget(name_label)
 
         # Row 2: "Level N" + weight + level value
@@ -310,6 +332,7 @@ class ProfessionCard(QFrame):
         bar.setTextVisible(False)
         bar.setFixedHeight(6)
         layout.addWidget(bar)
+        layout.addStretch()
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -351,6 +374,7 @@ class SkillsPage(QWidget):
 
         # Skill gains since last baseline (scan/import)
         self._skill_gains: dict[str, float] = {}  # {skill_name: accumulated_gain}
+        self._gains_loaded = False
         self._gain_refresh_pending = False
 
         # Rank lookup (loaded lazily)
@@ -429,18 +453,21 @@ class SkillsPage(QWidget):
         toolbar.addStretch()
         layout.addLayout(toolbar)
 
-        # Grid view (in scroll area)
+        # Grid view — virtual scroll (only visible cards are created)
         self._skills_scroll = QScrollArea()
         self._skills_scroll.setWidgetResizable(True)
         self._skills_grid_container = QWidget()
-        self._skills_grid_layout = QGridLayout(self._skills_grid_container)
-        self._skills_grid_layout.setSpacing(6)
-        self._skills_grid_layout.setContentsMargins(0, 0, 0, 12)
-        self._skills_loading_label = QLabel("Loading...")
+        self._skills_loading_label = QLabel("Loading...", self._skills_grid_container)
         self._skills_loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._skills_loading_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 13px;")
-        self._skills_grid_layout.addWidget(self._skills_loading_label, 0, 0)
+        self._skills_loading_label.setGeometry(0, 0, 400, 30)
         self._skills_scroll.setWidget(self._skills_grid_container)
+        self._skills_scroll.verticalScrollBar().valueChanged.connect(
+            self._render_visible_skill_cards
+        )
+        self._skills_vgrid_rows: list[tuple] = []
+        self._skills_vgrid_widgets: dict[int, list[QWidget]] = {}
+        self._skills_vgrid_card_w = CARD_MIN_WIDTH
         layout.addWidget(self._skills_scroll)
 
         # List view (table, hidden by default)
@@ -492,18 +519,21 @@ class SkillsPage(QWidget):
         toolbar.addStretch()
         layout.addLayout(toolbar)
 
-        # Grid view
+        # Grid view — virtual scroll
         self._prof_scroll = QScrollArea()
         self._prof_scroll.setWidgetResizable(True)
         self._prof_grid_container = QWidget()
-        self._prof_grid_layout = QGridLayout(self._prof_grid_container)
-        self._prof_grid_layout.setSpacing(6)
-        self._prof_grid_layout.setContentsMargins(0, 0, 0, 12)
-        self._prof_loading_label = QLabel("Loading...")
+        self._prof_loading_label = QLabel("Loading...", self._prof_grid_container)
         self._prof_loading_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._prof_loading_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 13px;")
-        self._prof_grid_layout.addWidget(self._prof_loading_label, 0, 0)
+        self._prof_loading_label.setGeometry(0, 0, 400, 30)
         self._prof_scroll.setWidget(self._prof_grid_container)
+        self._prof_scroll.verticalScrollBar().valueChanged.connect(
+            self._render_visible_prof_cards
+        )
+        self._prof_vgrid_rows: list[tuple] = []
+        self._prof_vgrid_widgets: dict[int, list[QWidget]] = {}
+        self._prof_vgrid_card_w = CARD_MIN_WIDTH
         layout.addWidget(self._prof_scroll)
 
         # List view (hidden)
@@ -706,26 +736,35 @@ class SkillsPage(QWidget):
             self._manager.load_from_local()
             self._synced = False
 
-        self._load_gains_from_db()
-
         # Update UI on main thread
         QTimer.singleShot(0, self._on_data_loaded)
 
+    def _ensure_gains_loaded(self):
+        """Load gains from DB on first access (lazy)."""
+        if self._gains_loaded:
+            return
+        self._load_gains_from_db()
+
     def _load_gains_from_db(self):
         """Load accumulated gains since last scan baseline from the local DB."""
+        self._gains_loaded = True
         if not self._db:
             return
         from ...skills.skill_ids import id_to_name_map
 
-        baseline_ts = self._db.get_last_scan_timestamp() or 0
+        baseline_ts = self._db.get_last_scan_timestamp()
+        if baseline_ts is None:
+            # No OCR scan yet — use last sync time so we don't aggregate
+            # the entire skill_gains history (can be millions of rows).
+            baseline_ts = self._db.get_last_sync_timestamp() or 0
         gains_by_id = self._db.get_skill_gains_since(baseline_ts)
         id_names = id_to_name_map()
 
-        self._skill_gains = {}
+        # Merge DB gains with any live gains already accumulated
         for skill_id, total in gains_by_id.items():
             name = id_names.get(skill_id)
             if name:
-                self._skill_gains[name] = total
+                self._skill_gains[name] = self._skill_gains.get(name, 0) + total
 
     def _load_rank_thresholds(self):
         """Load rank thresholds for level/progress display."""
@@ -879,6 +918,7 @@ class SkillsPage(QWidget):
         return meta
 
     def _refresh_skills_display(self):
+        self._ensure_gains_loaded()
         meta = self._get_filtered_skills()
         values = self._manager.skill_values
         all_meta = self._manager.skill_metadata
@@ -890,89 +930,134 @@ class SkillsPage(QWidget):
 
     def _populate_skills_grid(self, skills: list[dict], values: dict,
                               all_meta: list[dict]):
-        self._skills_scroll.setUpdatesEnabled(False)
-        try:
-            self._populate_skills_grid_inner(skills, values, all_meta)
-        finally:
-            self._skills_scroll.setUpdatesEnabled(True)
+        """Build virtual row model and render visible cards."""
+        # Clear previous virtual state
+        self._clear_skills_vgrid()
 
-    def _populate_skills_grid_inner(self, skills: list[dict], values: dict,
-                                     all_meta: list[dict]):
-        # Clear old cards
-        while self._skills_grid_layout.count():
-            item = self._skills_grid_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-
-        self._skills_grid_layout.setAlignment(
-            Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
-        )
+        self._skills_loading_label.setVisible(False)
 
         if not skills:
-            lbl = QLabel("No skills to display. Scan, import, or login to sync.")
-            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            self._skills_grid_layout.addWidget(lbl, 0, 0)
+            self._skills_loading_label.setText(
+                "No skills to display. Scan, import, or login to sync."
+            )
+            self._skills_loading_label.setVisible(True)
+            self._skills_grid_container.setMinimumHeight(30)
             return
 
-        # Calculate columns based on scroll area width
         available = self._skills_scroll.viewport().width() - 20
         if available <= 0:
-            # Viewport not yet laid out — defer until visible
             self._skills_grid_deferred = True
             return
         self._skills_grid_deferred = False
         cols = max(1, available // (CARD_MIN_WIDTH + 6))
         self._skills_grid_cols = cols
+        card_w = min(CARD_MAX_WIDTH, max(CARD_MIN_WIDTH, (available - (cols - 1) * 6) // cols))
+        self._skills_vgrid_card_w = card_w
 
+        # Build row model: list of (kind, y, height, data)
+        rows: list[tuple] = []
         sort_by_category = self._skills_sort.currentIndex() == 0
         current_category = None
-        grid_row = 0
-        col_idx = 0
+        pending: list[tuple] = []
+        y = 0
+
+        def flush_pending():
+            nonlocal y
+            if pending:
+                rows.append(("cards", y, CARD_ROW_HEIGHT, list(pending)))
+                y += CARD_ROW_HEIGHT
+                pending.clear()
 
         for skill in skills:
-            # Insert category header when category changes
             if sort_by_category:
                 cat = skill.get("Category") or "Uncategorized"
                 if cat != current_category:
+                    flush_pending()
                     current_category = cat
-                    if col_idx > 0:
-                        grid_row += 1
-                        col_idx = 0
-                    header = QLabel(cat)
-                    header.setStyleSheet(_CARD_HEADER_STYLE)
-                    self._skills_grid_layout.addWidget(
-                        header, grid_row, 0, 1, cols,
-                    )
-                    grid_row += 1
+                    rows.append(("header", y, HEADER_ROW_HEIGHT, cat))
+                    y += HEADER_ROW_HEIGHT
 
             name = skill["Name"]
             points = values.get(name, 0)
             rank, progress = self._get_rank_and_progress(points)
             badges = get_skill_badges(name, all_meta)
-
-            # Look up weight when filtering by profession or skill
             weight = None
             if self._skill_filter_profession:
                 for p in skill.get("Professions", []):
                     if p.get("Name") == self._skill_filter_profession:
                         weight = p.get("Weight", 0)
                         break
-
             gain = self._skill_gains.get(name, 0.0)
-            card = SkillCard(name, points, rank, progress, badges,
-                            dimmed=(points == 0 and gain < 0.001),
-                            weight=weight, gain=gain)
-            card.clicked.connect(self._on_skill_card_clicked)
-            card.value_edited.connect(self._on_skill_value_edited)
+            dimmed = points == 0 and gain < 0.001
+            pending.append((name, points, rank, progress, badges, dimmed, weight, gain))
+            if len(pending) >= cols:
+                flush_pending()
 
-            self._skills_grid_layout.addWidget(
-                card, grid_row, col_idx,
-                alignment=Qt.AlignmentFlag.AlignTop,
-            )
-            col_idx += 1
-            if col_idx >= cols:
-                col_idx = 0
-                grid_row += 1
+        flush_pending()
+
+        self._skills_vgrid_rows = rows
+        self._skills_grid_container.setMinimumHeight(y + 12)
+        self._render_visible_skill_cards()
+
+    def _clear_skills_vgrid(self):
+        """Remove all visible card widgets from the virtual grid."""
+        for widgets in self._skills_vgrid_widgets.values():
+            for w in widgets:
+                w.deleteLater()
+        self._skills_vgrid_widgets.clear()
+        self._skills_vgrid_rows.clear()
+
+    def _render_visible_skill_cards(self):
+        """Create/destroy card widgets based on scroll position."""
+        rows = self._skills_vgrid_rows
+        if not rows:
+            return
+        scroll_y = self._skills_scroll.verticalScrollBar().value()
+        view_h = self._skills_scroll.viewport().height()
+        top = scroll_y - CARD_ROW_HEIGHT  # small buffer
+        bottom = scroll_y + view_h + CARD_ROW_HEIGHT
+        card_w = self._skills_vgrid_card_w
+
+        new_visible: set[int] = set()
+        for i, (kind, y, h, _data) in enumerate(rows):
+            if y + h < top:
+                continue
+            if y > bottom:
+                break
+            new_visible.add(i)
+
+        # Remove rows no longer visible
+        for idx in list(self._skills_vgrid_widgets):
+            if idx not in new_visible:
+                for w in self._skills_vgrid_widgets[idx]:
+                    w.deleteLater()
+                del self._skills_vgrid_widgets[idx]
+
+        # Create newly visible rows
+        container = self._skills_grid_container
+        for idx in new_visible:
+            if idx in self._skills_vgrid_widgets:
+                continue
+            kind, y, h, data = rows[idx]
+            widgets: list[QWidget] = []
+            if kind == "header":
+                lbl = QLabel(data, container)
+                lbl.setStyleSheet(_CARD_HEADER_STYLE)
+                lbl.setGeometry(0, y, container.width(), _HEADER_LABEL_HEIGHT)
+                lbl.show()
+                widgets.append(lbl)
+            else:  # cards
+                for ci, (name, points, rank, progress, badges,
+                         dimmed, weight, gain) in enumerate(data):
+                    card = SkillCard(name, points, rank, progress, badges,
+                                    dimmed=dimmed, weight=weight, gain=gain,
+                                    parent=container)
+                    card.clicked.connect(self._on_skill_card_clicked)
+                    card.value_edited.connect(self._on_skill_value_edited)
+                    card.setGeometry(ci * (card_w + 6), y, card_w, CARD_HEIGHT)
+                    card.show()
+                    widgets.append(card)
+            self._skills_vgrid_widgets[idx] = widgets
 
     def _populate_skills_table(self, skills: list[dict], values: dict,
                                all_meta: list[dict]):
@@ -1166,26 +1251,15 @@ class SkillsPage(QWidget):
             self._populate_prof_table(profs)
 
     def _populate_prof_grid(self, profs: list[dict]):
-        self._prof_scroll.setUpdatesEnabled(False)
-        try:
-            self._populate_prof_grid_inner(profs)
-        finally:
-            self._prof_scroll.setUpdatesEnabled(True)
+        """Build virtual row model for professions and render visible cards."""
+        self._clear_prof_vgrid()
 
-    def _populate_prof_grid_inner(self, profs: list[dict]):
-        while self._prof_grid_layout.count():
-            item = self._prof_grid_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
-
-        self._prof_grid_layout.setAlignment(
-            Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
-        )
+        self._prof_loading_label.setVisible(False)
 
         if not profs:
-            lbl = QLabel("No professions to display.")
-            lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            self._prof_grid_layout.addWidget(lbl, 0, 0)
+            self._prof_loading_label.setText("No professions to display.")
+            self._prof_loading_label.setVisible(True)
+            self._prof_grid_container.setMinimumHeight(30)
             return
 
         available = self._prof_scroll.viewport().width() - 20
@@ -1195,29 +1269,31 @@ class SkillsPage(QWidget):
         self._prof_grid_deferred = False
         cols = max(1, available // (CARD_MIN_WIDTH + 6))
         self._prof_grid_cols = cols
+        card_w = min(CARD_MAX_WIDTH, max(CARD_MIN_WIDTH, (available - (cols - 1) * 6) // cols))
+        self._prof_vgrid_card_w = card_w
 
+        rows: list[tuple] = []
         sort_by_category = self._prof_sort.currentIndex() == 0
         current_category = None
-        grid_row = 0
-        col_idx = 0
+        pending: list[tuple] = []
+        y = 0
+
+        def flush_pending():
+            nonlocal y
+            if pending:
+                rows.append(("cards", y, CARD_ROW_HEIGHT, list(pending)))
+                y += CARD_ROW_HEIGHT
+                pending.clear()
 
         for prof in profs:
-            # Insert category header when category changes
             if sort_by_category:
                 cat = prof.get("Category") or "Uncategorized"
                 if cat != current_category:
+                    flush_pending()
                     current_category = cat
-                    if col_idx > 0:
-                        grid_row += 1
-                        col_idx = 0
-                    header = QLabel(cat)
-                    header.setStyleSheet(_CARD_HEADER_STYLE)
-                    self._prof_grid_layout.addWidget(
-                        header, grid_row, 0, 1, cols,
-                    )
-                    grid_row += 1
+                    rows.append(("header", y, HEADER_ROW_HEIGHT, cat))
+                    y += HEADER_ROW_HEIGHT
 
-            # Look up weight when filtering by skill
             weight = None
             if self._prof_filter_skill:
                 for s in prof.get("Skills", []):
@@ -1225,21 +1301,69 @@ class SkillsPage(QWidget):
                         weight = s.get("Weight", 0)
                         break
 
-            card = ProfessionCard(
-                prof["Name"],
-                prof["_level"],
-                len(prof.get("Skills", [])),
-                weight=weight,
-            )
-            card.clicked.connect(self._on_prof_card_clicked)
-            self._prof_grid_layout.addWidget(
-                card, grid_row, col_idx,
-                alignment=Qt.AlignmentFlag.AlignTop,
-            )
-            col_idx += 1
-            if col_idx >= cols:
-                col_idx = 0
-                grid_row += 1
+            pending.append((prof["Name"], prof["_level"],
+                           len(prof.get("Skills", [])), weight))
+            if len(pending) >= cols:
+                flush_pending()
+
+        flush_pending()
+
+        self._prof_vgrid_rows = rows
+        self._prof_grid_container.setMinimumHeight(y + 12)
+        self._render_visible_prof_cards()
+
+    def _clear_prof_vgrid(self):
+        for widgets in self._prof_vgrid_widgets.values():
+            for w in widgets:
+                w.deleteLater()
+        self._prof_vgrid_widgets.clear()
+        self._prof_vgrid_rows.clear()
+
+    def _render_visible_prof_cards(self):
+        rows = self._prof_vgrid_rows
+        if not rows:
+            return
+        scroll_y = self._prof_scroll.verticalScrollBar().value()
+        view_h = self._prof_scroll.viewport().height()
+        top = scroll_y - CARD_ROW_HEIGHT
+        bottom = scroll_y + view_h + CARD_ROW_HEIGHT
+        card_w = self._prof_vgrid_card_w
+
+        new_visible: set[int] = set()
+        for i, (kind, y, h, _data) in enumerate(rows):
+            if y + h < top:
+                continue
+            if y > bottom:
+                break
+            new_visible.add(i)
+
+        for idx in list(self._prof_vgrid_widgets):
+            if idx not in new_visible:
+                for w in self._prof_vgrid_widgets[idx]:
+                    w.deleteLater()
+                del self._prof_vgrid_widgets[idx]
+
+        container = self._prof_grid_container
+        for idx in new_visible:
+            if idx in self._prof_vgrid_widgets:
+                continue
+            kind, y, h, data = rows[idx]
+            widgets: list[QWidget] = []
+            if kind == "header":
+                lbl = QLabel(data, container)
+                lbl.setStyleSheet(_CARD_HEADER_STYLE)
+                lbl.setGeometry(0, y, container.width(), _HEADER_LABEL_HEIGHT)
+                lbl.show()
+                widgets.append(lbl)
+            else:
+                for ci, (name, level, skill_count, weight) in enumerate(data):
+                    card = ProfessionCard(name, level, skill_count,
+                                         weight=weight, parent=container)
+                    card.clicked.connect(self._on_prof_card_clicked)
+                    card.setGeometry(ci * (card_w + 6), y, card_w, CARD_HEIGHT)
+                    card.show()
+                    widgets.append(card)
+            self._prof_vgrid_widgets[idx] = widgets
 
     def _populate_prof_table(self, profs: list[dict]):
         self._prof_table.setUpdatesEnabled(False)
@@ -1418,7 +1542,6 @@ class SkillsPage(QWidget):
             self._scan_results_table.setItem(row, 0, name_item)
             self._scan_skill_rows[reading.skill_name] = name_item
 
-        self._scan_results_table.setItem(row, 0, name_item)
         self._scan_results_table.setItem(row, 1, QTableWidgetItem(reading.rank))
         threshold_item = NumericTableWidgetItem(str(reading.rank_threshold), reading.rank_threshold)
         threshold_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
@@ -1488,6 +1611,7 @@ class SkillsPage(QWidget):
 
         # Reset gains baseline — scan is the new reference point
         self._skill_gains.clear()
+        self._gains_loaded = False
 
         # Refresh displays with accumulated values
         if self._scan_skill_rows:
@@ -1593,6 +1717,7 @@ class SkillsPage(QWidget):
 
             # Reset gains baseline — import is the new reference point
             self._skill_gains.clear()
+            self._gains_loaded = False
 
             # Refresh all displays
             self._refresh_skills_display()
@@ -1652,30 +1777,35 @@ class SkillsPage(QWidget):
             self._refresh_prof_display()
         self._emit_nav()
 
-    def showEvent(self, event):
-        super().showEvent(event)
-        # Flush deferred grid builds after layout has settled
-        if self._skills_grid_deferred or self._prof_grid_deferred:
-            QTimer.singleShot(0, self._flush_deferred_grids)
-
-    def _flush_deferred_grids(self):
-        if self._skills_grid_deferred:
-            self._refresh_skills_display()
-        if self._prof_grid_deferred:
-            self._refresh_prof_display()
-
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        # Re-flow grid only when column count changes (avoid full rebuild per pixel)
+        # Rebuild model when column count changes; re-render on height change.
+        # Also handles first-visit deferred grids — on lazy page creation the
+        # viewport has no width yet, so _populate_*_grid sets *_deferred=True.
+        # The first resizeEvent with real dimensions flushes them.
         if self._skills_view_mode == "grid" and self._tabs.currentIndex() == 0:
             available = self._skills_scroll.viewport().width() - 20
-            cols = max(1, available // (CARD_MIN_WIDTH + 6))
-            if cols != self._skills_grid_cols:
-                self._skills_grid_cols = cols
+            if available <= 0:
+                return
+            if self._skills_grid_deferred:
                 self._refresh_skills_display()
+            else:
+                cols = max(1, available // (CARD_MIN_WIDTH + 6))
+                if cols != self._skills_grid_cols:
+                    self._skills_grid_cols = cols
+                    self._refresh_skills_display()
+                elif self._skills_vgrid_rows:
+                    self._render_visible_skill_cards()
         elif self._prof_view_mode == "grid" and self._tabs.currentIndex() == 1:
             available = self._prof_scroll.viewport().width() - 20
-            cols = max(1, available // (CARD_MIN_WIDTH + 6))
-            if cols != self._prof_grid_cols:
-                self._prof_grid_cols = cols
+            if available <= 0:
+                return
+            if self._prof_grid_deferred:
                 self._refresh_prof_display()
+            else:
+                cols = max(1, available // (CARD_MIN_WIDTH + 6))
+                if cols != self._prof_grid_cols:
+                    self._prof_grid_cols = cols
+                    self._refresh_prof_display()
+                elif self._prof_vgrid_rows:
+                    self._render_visible_prof_cards()

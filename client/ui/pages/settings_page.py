@@ -125,6 +125,10 @@ class SettingsPage(QWidget):
                 t = child.text()
                 if t:
                     texts.append(t)
+            for child in section.findChildren(QPushButton):
+                t = child.text()
+                if t:
+                    texts.append(t)
             self._section_texts[section] = texts
 
         # Connect auth state changes and apply current state
@@ -456,18 +460,10 @@ class SettingsPage(QWidget):
         layout = QVBoxLayout(group)
         layout.setSpacing(8)
 
-        # -- Skill Scanner --
-        scan_lbl = QLabel("Skill Scanner")
-        scan_lbl.setStyleSheet("font-weight: bold; font-size: 12px;")
-        layout.addWidget(scan_lbl)
-
-        self._skill_scanner_cb = QCheckBox("Enable skill scanner")
-        self._skill_scanner_cb.setToolTip(
-            "Automatically scan the in-game Skills window to read\n"
-            "skill values via screen capture and OCR."
-        )
-        self._skill_scanner_cb.setChecked(self._config.overlay_enabled)
-        layout.addWidget(self._skill_scanner_cb)
+        # -- General --
+        general_lbl = QLabel("General")
+        general_lbl.setStyleSheet("font-weight: bold; font-size: 12px;")
+        layout.addWidget(general_lbl)
 
         backend_row = QHBoxLayout()
         backend_row.addWidget(QLabel("Window capture backend:"))
@@ -487,6 +483,46 @@ class SettingsPage(QWidget):
         backend_row.addWidget(self._ocr_capture_backend)
         backend_row.addStretch()
         layout.addLayout(backend_row)
+
+        self._ocr_trace_cb = QCheckBox("Trace OCR")
+        self._ocr_trace_cb.setToolTip(
+            "Enable detailed OCR tracing. Outputs step-by-step log and\n"
+            "debug images for every OCR match.\n"
+            "WARNING: Generates significant data output.\n"
+            "Images auto-cleanup after 3 minutes."
+        )
+        self._ocr_trace_cb.setChecked(self._config.ocr_trace_enabled)
+        self._ocr_trace_cb.stateChanged.connect(self._schedule_save)
+        layout.addWidget(self._ocr_trace_cb)
+
+        reset_row = QHBoxLayout()
+        reset_btn = QPushButton("Reset thresholds to defaults")
+        reset_btn.setToolTip(
+            "Reset all OCR match thresholds to their default values."
+        )
+        reset_btn.clicked.connect(self._reset_ocr_thresholds)
+        reset_row.addWidget(reset_btn)
+        reset_row.addStretch()
+        layout.addLayout(reset_row)
+
+        # Separator
+        sep_general = QFrame()
+        sep_general.setFrameShape(QFrame.Shape.HLine)
+        sep_general.setStyleSheet(f"color: {BORDER};")
+        layout.addWidget(sep_general)
+
+        # -- Skill Scanner --
+        scan_lbl = QLabel("Skill Scanner")
+        scan_lbl.setStyleSheet("font-weight: bold; font-size: 12px;")
+        layout.addWidget(scan_lbl)
+
+        self._skill_scanner_cb = QCheckBox("Enable skill scanner")
+        self._skill_scanner_cb.setToolTip(
+            "Automatically scan the in-game Skills window to read\n"
+            "skill values via screen capture and OCR."
+        )
+        self._skill_scanner_cb.setChecked(self._config.overlay_enabled)
+        layout.addWidget(self._skill_scanner_cb)
 
         scan_roi_row = QHBoxLayout()
         scan_roi_btn = QPushButton("Configure ROIs...")
@@ -636,6 +672,14 @@ class SettingsPage(QWidget):
 
         self._sections.append(group)
         self._layout.addWidget(group)
+
+    def _reset_ocr_thresholds(self):
+        """Reset all OCR threshold spinboxes to their AppConfig defaults."""
+        self._target_lock_threshold.setValue(0.90)
+        self._player_status_threshold.setValue(0.90)
+        self._market_price_threshold.setValue(0.9)
+        self._market_price_text_threshold.setValue(80)
+        self._schedule_save()
 
     def _open_scan_roi_dialog(self):
         from ..dialogs.scan_roi_dialog import ScanRoiDialog
@@ -974,6 +1018,7 @@ class SettingsPage(QWidget):
         self._config.ocr_capture_backend = (
             self._ocr_capture_backend.currentData() or "auto"
         )
+        self._config.ocr_trace_enabled = self._ocr_trace_cb.isChecked()
         self._config.check_for_updates = self._updates_cb.isChecked()
         self._config.js_utils_path = self._js_path.text()
         self._config.oauth_client_id = self._oauth_client_id.text()

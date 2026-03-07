@@ -836,132 +836,140 @@ class InventoryPage(QWidget):
             self._populate_tree()
 
     def _populate_table(self):
-        self._table.setSortingEnabled(False)
-        self._table.clear()
-        self._table.setHeaderLabels(_COL_HEADERS)
+        self._table.setUpdatesEnabled(False)
+        try:
+            self._table.setSortingEnabled(False)
+            self._table.clear()
+            self._table.setHeaderLabels(_COL_HEADERS)
 
-        for item in self._filtered:
-            row = _NumericItem()
-            name = item.get('item_name', '')
-            qty = item.get('quantity', 1) or 1
-            tt = item.get('_tt_value')
-            markup = item.get('_markup')
-            total = item.get('_total_value')
-            container = item.get('container', 'Carried')
-            item_type = item.get('_type') or ''
-            abs_mu = item.get('_is_absolute', True)
-            source = item.get('_value_source', 'default')
+            for item in self._filtered:
+                row = _NumericItem()
+                name = item.get('item_name', '')
+                qty = item.get('quantity', 1) or 1
+                tt = item.get('_tt_value')
+                markup = item.get('_markup')
+                total = item.get('_total_value')
+                container = item.get('container', 'Carried')
+                item_type = item.get('_type') or ''
+                abs_mu = item.get('_is_absolute', True)
+                source = item.get('_value_source', 'default')
 
-            row.setText(COL_NAME, name)
-            row.setData(COL_NAME, Qt.ItemDataRole.UserRole, name.lower())
+                row.setText(COL_NAME, name)
+                row.setData(COL_NAME, Qt.ItemDataRole.UserRole, name.lower())
 
-            row.setText(COL_QTY, f"{qty:,}")
-            row.setData(COL_QTY, Qt.ItemDataRole.UserRole, qty)
+                row.setText(COL_QTY, f"{qty:,}")
+                row.setData(COL_QTY, Qt.ItemDataRole.UserRole, qty)
 
-            row.setText(COL_TT, f"{format_ped(tt)}" if tt is not None else "")
-            row.setData(COL_TT, Qt.ItemDataRole.UserRole, tt if tt is not None else -1)
+                row.setText(COL_TT, f"{format_ped(tt)}" if tt is not None else "")
+                row.setData(COL_TT, Qt.ItemDataRole.UserRole, tt if tt is not None else -1)
 
-            if markup is not None:
-                row.setText(COL_MARKUP, format_markup(markup, abs_mu))
-                row.setForeground(COL_MARKUP, QColor(ACCENT))
-            else:
-                market = item.get('_market_price')
-                if market is not None:
-                    row.setText(COL_MARKUP, format_markup(market, abs_mu))
-                    row.setForeground(COL_MARKUP, QColor(TEXT_MUTED))
+                if markup is not None:
+                    row.setText(COL_MARKUP, format_markup(markup, abs_mu))
+                    row.setForeground(COL_MARKUP, QColor(ACCENT))
                 else:
-                    row.setText(COL_MARKUP, "—")
-                    row.setForeground(COL_MARKUP, QColor(TEXT_MUTED))
-            row.setData(COL_MARKUP, Qt.ItemDataRole.UserRole,
-                        markup if markup is not None else (item.get('_market_price') or -1))
+                    market = item.get('_market_price')
+                    if market is not None:
+                        row.setText(COL_MARKUP, format_markup(market, abs_mu))
+                        row.setForeground(COL_MARKUP, QColor(TEXT_MUTED))
+                    else:
+                        row.setText(COL_MARKUP, "—")
+                        row.setForeground(COL_MARKUP, QColor(TEXT_MUTED))
+                row.setData(COL_MARKUP, Qt.ItemDataRole.UserRole,
+                            markup if markup is not None else (item.get('_market_price') or -1))
 
-            if total is not None:
-                row.setText(COL_TOTAL, format_ped(total))
-                if source == 'custom':
-                    row.setForeground(COL_TOTAL, QColor(ACCENT))
-            else:
-                row.setText(COL_TOTAL, "")
-            row.setData(COL_TOTAL, Qt.ItemDataRole.UserRole, total if total is not None else -1)
+                if total is not None:
+                    row.setText(COL_TOTAL, format_ped(total))
+                    if source == 'custom':
+                        row.setForeground(COL_TOTAL, QColor(ACCENT))
+                else:
+                    row.setText(COL_TOTAL, "")
+                row.setData(COL_TOTAL, Qt.ItemDataRole.UserRole, total if total is not None else -1)
 
-            row.setText(COL_CONTAINER, container)
-            row.setText(COL_TYPE, get_top_category(item_type))
+                row.setText(COL_CONTAINER, container)
+                row.setText(COL_TYPE, get_top_category(item_type))
 
-            # Store enriched item reference
-            row.setData(COL_NAME, Qt.ItemDataRole.UserRole + 1, item)
+                # Store enriched item reference
+                row.setData(COL_NAME, Qt.ItemDataRole.UserRole + 1, item)
 
-            self._table.addTopLevelItem(row)
+                self._table.addTopLevelItem(row)
 
-        self._table.setSortingEnabled(True)
+            self._table.setSortingEnabled(True)
+        finally:
+            self._table.setUpdatesEnabled(True)
 
     def _populate_tree(self):
-        self._tree.setSortingEnabled(False)
-        self._tree.clear()
+        self._tree.setUpdatesEnabled(False)
+        try:
+            self._tree.setSortingEnabled(False)
+            self._tree.clear()
 
-        # Resolve each item's full container path (matches web buildTree):
-        #   container_path > STORAGE ({container}) > Unknown
-        path_groups: dict[str, list[dict]] = {}
-        for item in self._filtered:
-            path = item.get('container_path')
-            if not path and item.get('container'):
-                path = f"STORAGE ({item['container']})"
-            if not path:
-                path = "Unknown"
-            path_groups.setdefault(path, []).append(item)
+            # Resolve each item's full container path (matches web buildTree):
+            #   container_path > STORAGE ({container}) > Unknown
+            path_groups: dict[str, list[dict]] = {}
+            for item in self._filtered:
+                path = item.get('container_path')
+                if not path and item.get('container'):
+                    path = f"STORAGE ({item['container']})"
+                if not path:
+                    path = "Unknown"
+                path_groups.setdefault(path, []).append(item)
 
-        # Split each path on " > " and build a shared tree via _build_sub_tree.
-        # First pass: group by root segment to create top-level nodes.
-        roots: dict[str, dict] = {}  # root_seg → {children: {sub: items}, direct: []}
-        for path, items in sorted(path_groups.items()):
-            segments = [s.strip() for s in path.split(" > ")]
-            root = segments[0]
-            if root not in roots:
-                roots[root] = {'children': {}, 'direct_items': []}
-            if len(segments) > 1:
-                sub = " > ".join(segments[1:])
-                roots[root]['children'].setdefault(sub, []).extend(items)
-            else:
-                roots[root]['direct_items'].extend(items)
+            # Split each path on " > " and build a shared tree via _build_sub_tree.
+            # First pass: group by root segment to create top-level nodes.
+            roots: dict[str, dict] = {}  # root_seg → {children: {sub: items}, direct: []}
+            for path, items in sorted(path_groups.items()):
+                segments = [s.strip() for s in path.split(" > ")]
+                root = segments[0]
+                if root not in roots:
+                    roots[root] = {'children': {}, 'direct_items': []}
+                if len(segments) > 1:
+                    sub = " > ".join(segments[1:])
+                    roots[root]['children'].setdefault(sub, []).extend(items)
+                else:
+                    roots[root]['direct_items'].extend(items)
 
-        # Create tree nodes
-        for root_name in sorted(roots.keys()):
-            root_info = roots[root_name]
-            all_items = root_info['direct_items'][:]
-            for child_items in root_info['children'].values():
-                all_items.extend(child_items)
+            # Create tree nodes
+            for root_name in sorted(roots.keys()):
+                root_info = roots[root_name]
+                all_items = root_info['direct_items'][:]
+                for child_items in root_info['children'].values():
+                    all_items.extend(child_items)
 
-            root_count = len(all_items)
-            root_tt = sum(i.get('_tt_value') or 0 for i in all_items)
-            root_est = sum(i.get('_total_value') or 0 for i in all_items)
+                root_count = len(all_items)
+                root_tt = sum(i.get('_tt_value') or 0 for i in all_items)
+                root_est = sum(i.get('_total_value') or 0 for i in all_items)
 
-            root_node = _NumericItem()
-            root_node.setText(0, _display_name(root_name))
-            root_node.setData(0, Qt.ItemDataRole.UserRole, f"0:{root_name.lower()}")
-            root_node.setText(1, str(root_count))
-            root_node.setData(1, Qt.ItemDataRole.UserRole, root_count)
-            root_node.setText(2, f"{format_ped(root_tt)} PED")
-            root_node.setData(2, Qt.ItemDataRole.UserRole, root_tt)
-            root_node.setText(3, f"{format_ped(root_est)} PED")
-            root_node.setData(3, Qt.ItemDataRole.UserRole, root_est)
-            root_node.setForeground(0, QColor(TEXT))
-            font = root_node.font(0)
-            font.setBold(True)
-            root_node.setFont(0, font)
+                root_node = _NumericItem()
+                root_node.setText(0, _display_name(root_name))
+                root_node.setData(0, Qt.ItemDataRole.UserRole, f"0:{root_name.lower()}")
+                root_node.setText(1, str(root_count))
+                root_node.setData(1, Qt.ItemDataRole.UserRole, root_count)
+                root_node.setText(2, f"{format_ped(root_tt)} PED")
+                root_node.setData(2, Qt.ItemDataRole.UserRole, root_tt)
+                root_node.setText(3, f"{format_ped(root_est)} PED")
+                root_node.setData(3, Qt.ItemDataRole.UserRole, root_est)
+                root_node.setForeground(0, QColor(TEXT))
+                font = root_node.font(0)
+                font.setBold(True)
+                root_node.setFont(0, font)
 
-            # Sub-containers
-            for sub_path in sorted(root_info['children'].keys()):
-                child_items = root_info['children'][sub_path]
-                sub_segments = [s.strip() for s in sub_path.split(" > ")]
-                self._build_sub_tree(root_node, sub_segments, child_items)
+                # Sub-containers
+                for sub_path in sorted(root_info['children'].keys()):
+                    child_items = root_info['children'][sub_path]
+                    sub_segments = [s.strip() for s in sub_path.split(" > ")]
+                    self._build_sub_tree(root_node, sub_segments, child_items)
 
-            # Direct items at root level
-            for item in sorted(root_info['direct_items'],
-                               key=lambda i: (i.get('item_name') or '').lower()):
-                self._add_tree_leaf(root_node, item)
+                # Direct items at root level
+                for item in sorted(root_info['direct_items'],
+                                   key=lambda i: (i.get('item_name') or '').lower()):
+                    self._add_tree_leaf(root_node, item)
 
-            self._tree.addTopLevelItem(root_node)
-            root_node.setExpanded(True)
+                self._tree.addTopLevelItem(root_node)
+                root_node.setExpanded(True)
 
-        self._tree.setSortingEnabled(True)
+            self._tree.setSortingEnabled(True)
+        finally:
+            self._tree.setUpdatesEnabled(True)
 
     def _build_sub_tree(self, parent: QTreeWidgetItem, segments: list[str], items: list[dict]):
         """Recursively build sub-container nodes.

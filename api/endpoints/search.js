@@ -202,6 +202,10 @@ function formatSearchResult(x, score){
   const result = { Id: x.Id, Name: x.Name, Type: x.Type, SubType: x.SubType, Score: score };
   if (x.DisplayName) result.DisplayName = x.DisplayName;
   if (x.LocationType) result.LocationType = x.LocationType;
+  if (x.Type === 'MobMaturity') {
+    result.MaturityId = x.Id - 11000000000;
+    if (x.MobName) result.MobName = x.MobName;
+  }
   return result;
 }
 
@@ -361,7 +365,12 @@ async function search(query, fuzzy = false, perType = 5, totalLimit = 50){
         ELSE NULL END AS "AreaType",
       CASE WHEN x."Type" = 'Location'
         THEN (SELECT l."Type"::text FROM ONLY "Locations" l WHERE l."Id" = x."Id" - 8000000000 LIMIT 1)
-        ELSE NULL END AS "LocationType"
+        ELSE NULL END AS "LocationType",
+      CASE WHEN x."Type" = 'MobMaturity'
+        THEN (SELECT m."Name" FROM ONLY "Mobs" m
+              INNER JOIN ONLY "MobMaturities" mm ON mm."MobId" = m."Id"
+              WHERE mm."Id" = x."Id" - 11000000000 LIMIT 1)
+        ELSE NULL END AS "MobName"
     FROM (
       SELECT *, ROW_NUMBER() OVER (PARTITION BY "Type" ${orderClause}) as rn
       FROM (
@@ -382,6 +391,19 @@ async function search(query, fuzzy = false, perType = 5, totalLimit = 50){
            OR EXISTS (SELECT 1 FROM ONLY "Armors" WHERE "Armors"."SetId" = "ArmorSets"."Id" AND (${armorPieceWhereClause}))
         UNION ALL
         SELECT "Mobs"."Id" + 2000000000 AS "Id", "Mobs"."Name" AS "Name", 'Mob' AS "Type", "Planets"."Name" AS "SubType", NULL AS "Gender", FALSE AS "_prefiltered", NULL AS "MatchedName" FROM ONLY "Mobs" INNER JOIN ONLY "Planets" ON "Mobs"."PlanetId" = "Planets"."Id"
+        UNION ALL
+        SELECT "MobMaturities"."Id" + 11000000000 AS "Id",
+          CASE
+            WHEN "MobMaturities"."NameMode" = 'Prefix' THEN "MobMaturities"."Name" || ' ' || "Mobs"."Name"
+            WHEN "MobMaturities"."NameMode" = 'Verbatim' THEN "MobMaturities"."Name"
+            WHEN "MobMaturities"."NameMode" = 'Empty' THEN "Mobs"."Name"
+            ELSE "Mobs"."Name" || ' ' || "MobMaturities"."Name"
+          END AS "Name",
+          'MobMaturity' AS "Type", "Planets"."Name" AS "SubType", NULL AS "Gender", FALSE AS "_prefiltered", NULL AS "MatchedName"
+        FROM ONLY "MobMaturities"
+        INNER JOIN ONLY "Mobs" ON "MobMaturities"."MobId" = "Mobs"."Id"
+        INNER JOIN ONLY "Planets" ON "Mobs"."PlanetId" = "Planets"."Id"
+        WHERE "MobMaturities"."NameMode" != 'Empty'
         UNION ALL
         SELECT "Skills"."Id" + 3000000000 AS "Id", "Skills"."Name" AS "Name", 'Skill' AS "Type", NULL AS "SubType", NULL AS "Gender", FALSE AS "_prefiltered", NULL AS "MatchedName" FROM ONLY "Skills"
         UNION ALL
@@ -625,6 +647,7 @@ const ENRICHMENT_MAP = {
   Clothing:     { route: '/clothings',     tables: ['Clothes', 'EffectsOnEquip', 'EffectsOnSetEquip', 'Effects', 'EquipSets'], getter: getClothings },
   Pet:          { route: '/pets',          tables: ['Pets'], getter: getPets },
   Mob:          { route: '/mobs',          tables: ['Mobs', 'MobSpecies', 'Planets', 'Professions', 'MobLoots', 'MobMaturities', 'MobSpawns', ...ITEM_TABLES], getter: getMobs },
+  MobMaturity:  { route: '/mobs',          tables: ['Mobs', 'MobSpecies', 'Planets', 'Professions', 'MobLoots', 'MobMaturities', 'MobSpawns', ...ITEM_TABLES], getter: getMobs },
   Skill:        { route: '/skills',        tables: ['Skills', 'SkillCategories', 'ProfessionSkills', 'SkillUnlocks', 'Professions', 'ProfessionCategories'], getter: getSkills },
   Profession:   { route: '/professions',   tables: ['Professions', 'ProfessionCategories', 'ProfessionSkills', 'SkillUnlocks', 'Skills'], getter: getProfessions },
   Vendor:       { route: '/vendors',       tables: ['Locations', 'Planets', 'VendorOffers', 'VendorOfferPrices', ...ITEM_TABLES], getter: getVendors },
@@ -695,6 +718,22 @@ async function searchDetailed(query, fuzzy = false, perType = 100, totalLimit = 
 
   // Enrich each result with all top-level fields from the full entity
   const enriched = results.map(result => {
+    // MobMaturity: enrich with parent mob data + specific maturity properties
+    if (result.Type === 'MobMaturity') {
+      const mobCache = caches['MobMaturity'];
+      if (!mobCache || !result.MobName) return result;
+      const mob = mobCache.get(result.MobName);
+      if (!mob) return result;
+      const maturity = mob.Maturities?.find(m => m.Id === result.MaturityId);
+      const merged = { ...result };
+      if (maturity) {
+        merged.Properties = maturity.Properties;
+      }
+      if (mob.Planet) merged.Planet = mob.Planet;
+      if (mob.Type) merged.EntityType = mob.Type;
+      return merged;
+    }
+
     const cache = caches[result.Type];
     if (!cache) return result;
     const fullEntity = cache.get(result.Name);

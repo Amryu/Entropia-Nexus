@@ -71,9 +71,4 @@ class CombatHandler(BaseHandler):
                 )
                 if not self.suppress_events:
                     self._event_bus.publish(EVENT_COMBAT, event)
-                self._db.insert_combat_event(
-                    timestamp=event.timestamp.isoformat(),
-                    event_type=msg_type.value,
-                    amount=amount,
-                )
                 return

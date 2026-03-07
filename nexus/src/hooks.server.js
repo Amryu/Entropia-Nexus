@@ -59,6 +59,10 @@ if (import.meta.env.SSR) {
   // Initialize mob/maturity resolver for global event ingestion (hourly refresh)
   const { initMobResolver } = await import('$lib/server/mobResolver.js');
   initMobResolver().catch(err => console.error('[mobResolver] Error initializing mob resolver:', err));
+
+  // Initialize globals stats cache (in-memory + ATH leaderboard table)
+  const { initGlobalsCache } = await import('$lib/server/globals-cache.js');
+  initGlobalsCache().catch(err => console.error('[globals-cache] Error initializing globals cache:', err));
 }
 
 const IMPERSONATE_COOKIE = 'nexus_impersonate';

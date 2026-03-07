@@ -143,16 +143,25 @@ def _tab_style(active=False):
     if active:
         return f"""
             QPushButton {{
-                background: transparent; color: {ACCENT}; border: none;
-                border-bottom: 2px solid {ACCENT};
-                padding: 0 16px; font-size: 13px; font-weight: bold;
+                background-color: transparent;
+                color: {ACCENT};
+                border-width: 0px 0px 2px 0px;
+                border-style: solid;
+                border-color: {ACCENT};
+                padding: 0px 16px;
+                font-size: 13px;
+                font-weight: bold;
             }}
         """
     return f"""
         QPushButton {{
-            background: transparent; color: {TEXT_MUTED}; border: none;
-            border-bottom: 2px solid transparent;
-            padding: 0 16px; font-size: 13px;
+            background-color: transparent;
+            color: {TEXT_MUTED};
+            border-width: 0px 0px 2px 0px;
+            border-style: solid;
+            border-color: transparent;
+            padding: 0px 16px;
+            font-size: 13px;
         }}
         QPushButton:hover {{ color: {TEXT}; }}
     """
@@ -232,7 +241,12 @@ class TrackerPage(QWidget):
         # Tab bar
         tab_bar = QWidget()
         tab_bar.setFixedHeight(40)
-        tab_bar.setStyleSheet(f"background: {PRIMARY}; border-bottom: 1px solid {BORDER};")
+        tab_bar.setStyleSheet(
+            f"background-color: {PRIMARY};"
+            f" border-width: 0px 0px 1px 0px;"
+            f" border-style: solid;"
+            f" border-color: {BORDER};"
+        )
         tab_layout = QHBoxLayout(tab_bar)
         tab_layout.setContentsMargins(16, 0, 16, 0)
         tab_layout.setSpacing(0)
@@ -471,6 +485,13 @@ class TrackerPage(QWidget):
 
         entries.sort(key=sort_key)
 
+        self._missions_table.setUpdatesEnabled(False)
+        try:
+            self.__populate_missions_rows(entries)
+        finally:
+            self._missions_table.setUpdatesEnabled(True)
+
+    def __populate_missions_rows(self, entries):
         self._missions_table.setRowCount(len(entries))
         for row, (m, remaining) in enumerate(entries):
             mid = m.get("id")
@@ -656,6 +677,13 @@ class TrackerPage(QWidget):
             counts.append(f"{len(past)} past")
         self._events_label.setText(", ".join(counts).capitalize() + f" event{'s' if len(ordered) != 1 else ''}")
 
+        self._events_table.setUpdatesEnabled(False)
+        try:
+            self.__populate_events_rows(ordered, now, reminded_ids)
+        finally:
+            self._events_table.setUpdatesEnabled(True)
+
+    def __populate_events_rows(self, ordered, now, reminded_ids):
         self._events_table.setRowCount(len(ordered))
         for row, (ev, status) in enumerate(ordered):
             eid = ev.get("id")
@@ -1194,14 +1222,18 @@ class _MissionPickerDialog(QDialog):
             filtered.append(m)
 
         self._filtered = filtered
-        self._table.setRowCount(len(filtered))
-        for row, m in enumerate(filtered):
-            props = m.get("Properties") or {}
-            self._table.setItem(row, 0, QTableWidgetItem(m.get("Name", "?")))
-            self._table.setItem(row, 1, QTableWidgetItem((m.get("Planet") or {}).get("Name", "?")))
-            self._table.setItem(row, 2, QTableWidgetItem(format_cooldown_label(props.get("CooldownDuration"))))
-            self._table.setItem(row, 3, QTableWidgetItem(props.get("CooldownStartsOn", "Completion")))
-            self._table.setRowHeight(row, 32)
+        self._table.setUpdatesEnabled(False)
+        try:
+            self._table.setRowCount(len(filtered))
+            for row, m in enumerate(filtered):
+                props = m.get("Properties") or {}
+                self._table.setItem(row, 0, QTableWidgetItem(m.get("Name", "?")))
+                self._table.setItem(row, 1, QTableWidgetItem((m.get("Planet") or {}).get("Name", "?")))
+                self._table.setItem(row, 2, QTableWidgetItem(format_cooldown_label(props.get("CooldownDuration"))))
+                self._table.setItem(row, 3, QTableWidgetItem(props.get("CooldownStartsOn", "Completion")))
+                self._table.setRowHeight(row, 32)
+        finally:
+            self._table.setUpdatesEnabled(True)
 
     def _on_add(self):
         rows = set()

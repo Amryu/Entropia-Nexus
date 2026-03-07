@@ -1389,6 +1389,7 @@
               <MobMaturitiesEdit
                 maturities={activeMob?.Maturities || []}
                 type={activeMob?.Type}
+                mobName={activeMob?.Name || ''}
                 fieldPath="Maturities"
               />
             {:else}

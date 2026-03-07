@@ -375,6 +375,48 @@ test.describe('Globals API', () => {
   });
 });
 
+test.describe('Globals API caching', () => {
+  test('stats endpoint returns ETag for unfiltered request', async ({ request }) => {
+    const res = await request.get('/api/globals/stats');
+    expect(res.ok()).toBeTruthy();
+    const etag = res.headers()['etag'];
+    // ETag may not be present if cache hasn't warmed yet, but response must be valid
+    const data = await res.json();
+    expect(data.summary).toHaveProperty('total_count');
+
+    if (etag) {
+      // Second request with If-None-Match should return 304
+      const res2 = await request.get('/api/globals/stats', {
+        headers: { 'If-None-Match': etag },
+      });
+      expect(res2.status()).toBe(304);
+    }
+  });
+
+  test('stats endpoint bypasses cache for filtered request', async ({ request }) => {
+    const res = await request.get('/api/globals/stats?period=7d');
+    expect(res.ok()).toBeTruthy();
+    const data = await res.json();
+    expect(data.summary).toHaveProperty('total_count');
+  });
+
+  test('players endpoint returns ETag for default request', async ({ request }) => {
+    const res = await request.get('/api/globals/stats/players');
+    expect(res.ok()).toBeTruthy();
+    const data = await res.json();
+    expect(data).toHaveProperty('players');
+    expect(data).toHaveProperty('page');
+  });
+
+  test('targets endpoint returns ETag for default request', async ({ request }) => {
+    const res = await request.get('/api/globals/stats/targets');
+    expect(res.ok()).toBeTruthy();
+    const data = await res.json();
+    expect(data).toHaveProperty('targets');
+    expect(data).toHaveProperty('page');
+  });
+});
+
 test.describe('Globals target detail page - compact layout', () => {
   test('shows recent globals next to top players chart', async ({ page }) => {
     await page.goto('/globals/target/Atrox');

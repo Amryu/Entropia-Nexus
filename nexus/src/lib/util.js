@@ -311,6 +311,8 @@ export function getTypeLink(name, type, subType = null, id = null) {
       return `/items/attachments/mindforceimplants/${encodeURIComponentSafe(name)}`;
     case 'Mob':
       return `/information/mobs/${encodeURIComponentSafe(name)}`;
+    case 'MobMaturity':
+      return `/information/mobs/${encodeURIComponentSafe(name)}?view=maturities${id != null ? `&maturity=${id}` : ''}`;
     case 'Location':
     case 'Area': {
       const planet = getMainPlanetName(subType);
@@ -412,6 +414,8 @@ export function getTypeName(type) {
       return 'Mindforce Implant';
     case 'Mob':
       return 'Mob';
+    case 'MobMaturity':
+      return 'Mob Maturity';
     case 'Location':
       return 'Location';
     case 'Area':

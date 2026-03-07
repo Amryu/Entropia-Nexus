@@ -194,6 +194,13 @@ export const SEARCH_COLUMN_DEFS = {
     sweatable:  { key: 'sweatable',  header: 'Sweat',  width: '50px',  getValue: (item) => item.Properties?.IsSweatable, format: fmtBool },
   },
 
+  mobmaturities: {
+    mob:    { key: 'mob',    header: 'Mob',    width: '100px', getValue: (item) => item.MobName, format: fmtStr },
+    level:  { key: 'level',  header: 'Level',  width: '50px',  getValue: (item) => item.Properties?.Level, format: fmtInt },
+    hp:     { key: 'hp',     header: 'HP',     width: '55px',  getValue: (item) => item.Properties?.Health, format: fmtInt },
+    planet: { key: 'planet', header: 'Planet', width: '70px',  getValue: (item) => item.Planet?.Name, format: fmtStr },
+  },
+
   skills: {
     category:    { key: 'category',    header: 'Category',  width: '90px',  getValue: (item) => item.Category?.Name, format: fmtStr },
     hpIncrease:  { key: 'hpIncrease',  header: 'HP+',       width: '50px',  getValue: (item) => item.Properties?.HpIncrease || 0, format: fmtTrim(1) },
@@ -305,6 +312,7 @@ export const DEFAULT_SEARCH_COLUMNS = {
   vehicles:    ['type', 'speed', 'fuel'],
   pets:        ['rarity', 'effects', 'planet'],
   mobs:        ['hpPerLevel', 'level', 'hp', 'planet'],
+  mobmaturities: ['mob', 'level', 'hp', 'planet'],
   skills:      ['category', 'hpIncrease', 'professions'],
   professions: ['category', 'skills', 'totalWeight'],
   blueprintbooks: ['planet', 'weight', 'value'],
@@ -334,6 +342,7 @@ export const SEARCH_TYPE_TO_PAGE_TYPE_ID = {
   Vehicle:                'vehicles',
   Pet:                    'pets',
   Mob:                    'mobs',
+  MobMaturity:            'mobmaturities',
   Skill:                  'skills',
   Profession:             'professions',
   Vendor:                 'vendors',

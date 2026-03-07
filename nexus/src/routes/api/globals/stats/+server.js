@@ -6,6 +6,7 @@
 import { pool } from '$lib/server/db.js';
 import { getResponse } from '$lib/util.js';
 import { buildGlobalsFilter, getActivityBucket, fillActivityGaps } from './filter-utils.js';
+import { getCachedStats } from '$lib/server/globals-cache.js';
 
 const MAX_ACTIVITY_BUCKETS = 2555;
 const VALID_SORT_FIELDS = new Set(['count', 'value']);
@@ -24,10 +25,8 @@ function extractMobName(targetName) {
   return parts.slice(0, -1).join(' ');
 }
 
-export async function GET({ url }) {
+export async function GET({ url, request }) {
   const { conditions, params, period, from, to } = buildGlobalsFilter(url);
-  const { sqlUnit: bucketUnit, chartUnit } = getActivityBucket(period, from, to);
-  const whereClause = `WHERE ${conditions.join(' AND ')}`;
 
   // Sort params for top players/targets charts
   const playersSortParam = url.searchParams.get('players_sort');
@@ -41,6 +40,30 @@ export async function GET({ url }) {
   const targetsGroupParam = url.searchParams.get('targets_group');
   const targetsGroupBy = VALID_GROUP_FIELDS.has(targetsGroupParam) ? targetsGroupParam : 'maturity';
   const groupByMob = targetsGroupBy === 'mob';
+
+  // Fast path: serve from in-memory cache for unfiltered default request
+  const isDefault = conditions.length === 1 && playersSortBy === 'value'
+    && targetsSortBy === 'count' && !groupByMob;
+  if (isDefault) {
+    const cached = getCachedStats();
+    if (cached) {
+      const ifNoneMatch = request.headers.get('if-none-match');
+      if (ifNoneMatch === cached.etag) {
+        return new Response(null, { status: 304, headers: { 'ETag': cached.etag } });
+      }
+      return new Response(cached.json, {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'public, max-age=60',
+          'ETag': cached.etag,
+        },
+      });
+    }
+  }
+
+  const { sqlUnit: bucketUnit, chartUnit } = getActivityBucket(period, from, to);
+  const whereClause = `WHERE ${conditions.join(' AND ')}`;
 
   try {
     const [summaryResult, byTypeResult, topPlayersResult, topTargetsResult, activityResult] = await Promise.all([

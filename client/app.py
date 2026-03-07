@@ -444,6 +444,13 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
             # Middle-click sets _force_new to always open a new window
             force_new = item.pop("_force_new", False)
 
+            # Route MobMaturity → open parent mob detail overlay
+            if item.get("Type") == "MobMaturity":
+                mob_name = item.get("MobName") or item.get("Name", "")
+                item = {"Type": "Mob", "Name": mob_name}
+                if force_new:
+                    item["_force_new"] = True
+
             # Route Society type to society overlay
             if item.get("Type") == "Society":
                 from .overlay.society_overlay import SocietyOverlayWidget
@@ -731,6 +738,11 @@ def _run_gui(config, event_bus, db, config_path, *, allow_multiple=False):
 
     QTimer.singleShot(0, _create_overlays)
 
+    # Dismiss the loading overlay after heavy init work is queued.
+    # Overlay creation is staggered up to 150ms inside _create_overlays,
+    # so 300ms gives enough headroom for the event loop to settle.
+    QTimer.singleShot(300, main_window.dismiss_loading_overlay)
+
     exit_code = app.exec()
 
     # Hard deadline — start BEFORE any cleanup so a blocking stop()
@@ -954,6 +966,9 @@ def _start_ocr_pipeline(config, event_bus, db, frame_cache=None):
         def _on_config_changed(_data=None):
             orchestrator.set_capture_backend(
                 getattr(config, "ocr_capture_backend", "auto"),
+            )
+            orchestrator.set_trace_enabled(
+                getattr(config, "ocr_trace_enabled", False),
             )
             # Wake OCR thread immediately when scan mode is toggled.
             orchestrator._stop_event.set()

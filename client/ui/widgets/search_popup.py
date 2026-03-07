@@ -48,6 +48,7 @@ TYPE_NAMES: dict[str, str] = {
     "Enhancer": "Enhancer",
     "MindforceImplant": "Mindforce Implant",
     "Mob": "Mob",
+    "MobMaturity": "Mob Maturity",
     "Location": "Location",
     "Area": "Area",
     "Skill": "Skill",
@@ -150,6 +151,7 @@ WIKI_PATHS: dict[str, list[str]] = {
     'Strongbox': ['Strongboxes'],
     # Information types
     'Mob': ['Mobs'],
+    'MobMaturity': ['Mobs'],
     'Skill': ['Skills'],
     'Profession': ['Professions'],
     'Vendor': ['Vendors'],

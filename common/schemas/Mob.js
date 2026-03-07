@@ -59,6 +59,11 @@ export const Mob = {
           "Name": {
             "type": "string"
           },
+          "NameMode": {
+            "type": ["string", "null"],
+            "enum": ["Suffix", "Prefix", "Verbatim", "Empty", null],
+            "default": null
+          },
           "Properties": {
             "type": "object",
             "additionalProperties": false,

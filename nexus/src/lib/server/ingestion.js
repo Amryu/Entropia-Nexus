@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { pool, startTransaction } from './db.js';
 import { resolveUserGrants } from './grants.js';
 import { resolveMob } from './mobResolver.js';
+import { invalidateGlobalsCache } from './globals-cache.js';
 
 // --- Constants ---
 
@@ -441,6 +442,11 @@ export async function ingestGlobals(userId, events) {
     }
   } finally {
     client.release();
+  }
+
+  // Invalidate globals cache when new events were accepted (may have become confirmed)
+  if (accepted > 0) {
+    invalidateGlobalsCache();
   }
 
   return { accepted, duplicates };
@@ -902,6 +908,11 @@ export async function purgeUserData(userId, purgedBy) {
     throw err;
   } finally {
     client.release();
+  }
+
+  // Purge may have changed confirmed status of globals
+  if (globalIds.length > 0) {
+    invalidateGlobalsCache();
   }
 
   return { purgedGlobals: globalIds.length, purgedTrades: tradeIds.length };
