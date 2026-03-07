@@ -446,7 +446,12 @@ export async function ingestGlobals(userId, events) {
 
   // Invalidate globals cache when new events were accepted (may have become confirmed)
   if (accepted > 0) {
-    invalidateGlobalsCache();
+    // Pass the oldest event timestamp so rollup tables rebuild the correct date range
+    const minTs = deduped.reduce((min, e) => {
+      const t = new Date(e.timestamp);
+      return t < min ? t : min;
+    }, new Date());
+    invalidateGlobalsCache(minTs);
   }
 
   return { accepted, duplicates };

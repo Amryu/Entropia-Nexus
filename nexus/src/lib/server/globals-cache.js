@@ -402,15 +402,23 @@ export function isAthLeaderboardReady() {
 
 /**
  * Debounced invalidation — call when a global becomes confirmed.
+ * @param {Date} [oldestEventTs] - Oldest event timestamp from ingestion batch,
+ *   used to extend rollup rebuild range beyond the default today+yesterday window.
  */
-export function invalidateGlobalsCache() {
+let pendingOldestTs = null;
+export function invalidateGlobalsCache(oldestEventTs) {
+  if (oldestEventTs && (!pendingOldestTs || oldestEventTs < pendingOldestTs)) {
+    pendingOldestTs = oldestEventTs;
+  }
   if (invalidateTimer) clearTimeout(invalidateTimer);
   invalidateTimer = setTimeout(async () => {
     invalidateTimer = null;
+    const oldestTs = pendingOldestTs;
+    pendingOldestTs = null;
     try {
       await rebuildAll();
       rebuildAthLeaderboard().catch(() => {});
-      rebuildRollups().catch(() => {});
+      rebuildRollups(oldestTs).catch(() => {});
     } catch {}
   }, INVALIDATE_DEBOUNCE_MS);
 }
