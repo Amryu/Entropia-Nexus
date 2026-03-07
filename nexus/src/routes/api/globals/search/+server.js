@@ -109,7 +109,7 @@ export async function GET({ url }) {
       // Fetch more than needed to build mob groups
       pool.query(
         `SELECT target_name AS name,
-                mode() WITHIN GROUP (ORDER BY global_type) AS primary_type,
+                MIN(global_type) AS primary_type,
                 count(*) AS cnt
          FROM ingested_globals
          WHERE confirmed = true AND target_name ILIKE $1

@@ -86,9 +86,13 @@ export async function GET({ params, url }) {
   const offset = (page - 1) * PAGE_SIZE;
   const nextParam = queryParams.length + 1;
 
+  const client = await pool.connect();
   try {
+    await client.query('BEGIN');
+    await client.query('SET LOCAL statement_timeout = 10000');
+
     const [dataResult, countResult] = await Promise.all([
-      pool.query(
+      client.query(
         `SELECT player_name AS player, count(*) AS count,
                 COALESCE(sum(value), 0) AS total_value,
                 COALESCE(max(value), 0) AS best_value,
@@ -101,13 +105,15 @@ export async function GET({ params, url }) {
          LIMIT ${PAGE_SIZE} OFFSET $${nextParam}`,
         [...queryParams, offset]
       ),
-      pool.query(
+      client.query(
         `SELECT count(DISTINCT player_name) AS total
          FROM ingested_globals
          WHERE confirmed = true AND ${targetCond}${periodCond}`,
         queryParams
       ),
     ]);
+
+    await client.query('COMMIT');
 
     const total = parseInt(countResult.rows[0].total);
 
@@ -130,7 +136,14 @@ export async function GET({ params, url }) {
       },
     });
   } catch (e) {
+    await client.query('ROLLBACK').catch(() => {});
+    if (e.message?.includes('statement timeout')) {
+      console.warn('[api/globals/target/leaderboard] Query timed out for:', targetName);
+      return getResponse({ error: 'Query too complex, try a narrower filter' }, 503);
+    }
     console.error('[api/globals/target/leaderboard] Error:', e);
     return getResponse({ error: 'Internal server error' }, 500);
+  } finally {
+    client.release();
   }
 }
