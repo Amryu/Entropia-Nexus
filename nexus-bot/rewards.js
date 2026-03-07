@@ -18,7 +18,7 @@ export async function sendRewardDm(client, userId, { amount, contribution_score,
       '',
       `Your balance: **${balance.balance.toFixed(2)} PED** (earned: ${balance.total_earned.toFixed(2)}, paid out: ${balance.total_paid.toFixed(2)}, score: ${balance.total_score.toFixed(0)})`,
       '',
-      `You can turn off these notifications with \`/rewards notifications\`.`,
+      `You can turn off these notifications with \`/rewards notifications\` in the server.`,
     ];
 
     await dmUser.send(lines.join('\n'));
