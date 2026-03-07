@@ -11,7 +11,8 @@
  */
 import { pool } from '$lib/server/db.js';
 import { getResponse, encodeURIComponentSafe, decodeURIComponentSafe } from '$lib/util.js';
-import { PERIOD_INTERVALS, getActivityBucket, fillActivityGaps } from '../../stats/filter-utils.js';
+import { PERIOD_INTERVALS, getActivityBucket, fillActivityGaps, chooseRollupGranularity, buildRollupPeriodFilter } from '../../stats/filter-utils.js';
+import { isRollupReady } from '$lib/server/globals-rollup.js';
 
 /**
  * Extract the mob base name by stripping the maturity suffix.
@@ -98,6 +99,25 @@ export async function GET({ params, url }) {
     }
   }
 
+  // Determine if rollup tables can serve summary/activity queries
+  const rollupGranularity = chooseRollupGranularity(period, from, to);
+  const useRollup = rollupGranularity && isRollupReady() && periodCond && !maturityFilter;
+
+  // Build rollup query for summary+activity (uses target_name from resolvedTargets or exact match)
+  let rollupTargetCond, rollupTargetParams;
+  if (useRollup) {
+    if (resolvedTargets) {
+      rollupTargetCond = 'lower(target_name) = ANY($1)';
+      rollupTargetParams = [resolvedTargets];
+    } else {
+      rollupTargetCond = 'lower(target_name) = lower($1)';
+      rollupTargetParams = [targetName];
+    }
+    const rpf = buildRollupPeriodFilter(rollupGranularity, period, from, to, 3);
+    rollupTargetParams = [...rollupTargetParams, rollupGranularity, ...rpf.periodParams];
+    var rollupPeriodWhere = rpf.periodWhere;
+  }
+
   try {
     const [
       summaryResult,
@@ -107,22 +127,38 @@ export async function GET({ params, url }) {
       maturitiesResult,
       highestResult,
     ] = await Promise.all([
-      // Summary stats
-      pool.query(
-        `SELECT count(*) AS total_count,
-                COALESCE(sum(value), 0) AS total_value,
-                COALESCE(avg(value), 0) AS avg_value,
-                COALESCE(max(value), 0) AS max_value,
-                count(*) FILTER (WHERE is_hof) AS hof_count,
-                count(*) FILTER (WHERE is_ath) AS ath_count,
-                mode() WITHIN GROUP (ORDER BY global_type) AS primary_type,
-                min(event_timestamp) AS first_seen,
-                max(event_timestamp) AS last_seen,
-                MAX(mob_id) AS mob_id
-         FROM ingested_globals
-         WHERE confirmed = true AND ${targetCond}${periodCond}`,
-        targetParams
-      ),
+      // Summary stats (rollup or raw)
+      useRollup
+        ? pool.query(
+            `SELECT SUM(event_count) AS total_count,
+                    SUM(sum_value) AS total_value,
+                    SUM(sum_value) / NULLIF(SUM(event_count), 0) AS avg_value,
+                    MAX(max_value) AS max_value,
+                    SUM(hof_count) AS hof_count,
+                    SUM(ath_count) AS ath_count,
+                    (SELECT global_type FROM globals_rollup_target
+                     WHERE granularity = $2 AND ${rollupTargetCond}${rollupPeriodWhere}
+                     GROUP BY global_type ORDER BY SUM(event_count) DESC LIMIT 1) AS primary_type,
+                    MAX(mob_id) AS mob_id
+             FROM globals_rollup_target
+             WHERE granularity = $2 AND ${rollupTargetCond}${rollupPeriodWhere}`,
+            rollupTargetParams
+          )
+        : pool.query(
+            `SELECT count(*) AS total_count,
+                    COALESCE(sum(value), 0) AS total_value,
+                    COALESCE(avg(value), 0) AS avg_value,
+                    COALESCE(max(value), 0) AS max_value,
+                    count(*) FILTER (WHERE is_hof) AS hof_count,
+                    count(*) FILTER (WHERE is_ath) AS ath_count,
+                    mode() WITHIN GROUP (ORDER BY global_type) AS primary_type,
+                    min(event_timestamp) AS first_seen,
+                    max(event_timestamp) AS last_seen,
+                    MAX(mob_id) AS mob_id
+             FROM ingested_globals
+             WHERE confirmed = true AND ${targetCond}${periodCond}`,
+            targetParams
+          ),
 
       // Top players by total value
       pool.query(
@@ -139,17 +175,27 @@ export async function GET({ params, url }) {
         targetParams
       ),
 
-      // Activity (dynamic bucket aggregation)
-      pool.query(
-        `SELECT date_trunc('${bucketUnit}', event_timestamp) AS bucket,
-                count(*) AS count
-         FROM ingested_globals
-         WHERE confirmed = true AND ${targetCond}${periodCond}
-         GROUP BY 1
-         ORDER BY 1
-         LIMIT 2555`,
-        targetParams
-      ),
+      // Activity (rollup or raw)
+      useRollup
+        ? pool.query(
+            `SELECT period_start AS bucket, SUM(event_count) AS count
+             FROM globals_rollup_target
+             WHERE granularity = $2 AND ${rollupTargetCond}${rollupPeriodWhere}
+             GROUP BY period_start
+             ORDER BY period_start
+             LIMIT 2555`,
+            rollupTargetParams
+          )
+        : pool.query(
+            `SELECT date_trunc('${bucketUnit}', event_timestamp) AS bucket,
+                    count(*) AS count
+             FROM ingested_globals
+             WHERE confirmed = true AND ${targetCond}${periodCond}
+             GROUP BY 1
+             ORDER BY 1
+             LIMIT 2555`,
+            targetParams
+          ),
 
       // Recent globals (last 20)
       pool.query(

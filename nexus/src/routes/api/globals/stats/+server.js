@@ -5,8 +5,9 @@
  */
 import { pool } from '$lib/server/db.js';
 import { getResponse } from '$lib/util.js';
-import { buildGlobalsFilter, getActivityBucket, fillActivityGaps } from './filter-utils.js';
+import { buildGlobalsFilter, getActivityBucket, fillActivityGaps, chooseRollupGranularity, buildRollupPeriodFilter } from './filter-utils.js';
 import { getCachedStats } from '$lib/server/globals-cache.js';
+import { isRollupReady } from '$lib/server/globals-rollup.js';
 
 const MAX_ACTIVITY_BUCKETS = 2555;
 const VALID_SORT_FIELDS = new Set(['count', 'value']);
@@ -63,6 +64,147 @@ export async function GET({ url, request }) {
   }
 
   const { sqlUnit: bucketUnit, chartUnit } = getActivityBucket(period, from, to);
+
+  // Rollup fast path: period-filtered requests without incompatible filters
+  const rollupGranularity = chooseRollupGranularity(period, from, to);
+  const playerFilter = url.searchParams.get('player');
+  const targetFilter = url.searchParams.get('target');
+  const locationFilter = url.searchParams.get('location');
+  const minValueFilter = url.searchParams.get('min_value');
+  const hofFilter = url.searchParams.get('hof');
+  const typeFilter = url.searchParams.get('type');
+  const canUseRollup = rollupGranularity && isRollupReady()
+    && !playerFilter && !targetFilter && !locationFilter && !minValueFilter && !hofFilter;
+
+  if (canUseRollup) {
+    try {
+      const { periodWhere, periodParams } = buildRollupPeriodFilter(rollupGranularity, period, from, to, 2);
+      const typeFilterArr = typeFilter
+        ? typeFilter.split(',').map(t => t.trim()).filter(t => ['kill','team_kill','deposit','craft','rare_item','discovery','tier','examine','pvp'].includes(t))
+        : null;
+      const typeCond = typeFilterArr ? ` AND global_type = ANY($${periodParams.length + 2})` : '';
+      const typeParams = typeFilterArr ? [typeFilterArr] : [];
+
+      const baseParams = [rollupGranularity, ...periodParams, ...typeParams];
+
+      const [summaryResult, byTypeResult, topPlayersResult, topTargetsResult, activityResult] = await Promise.all([
+        // Summary
+        pool.query(
+          `SELECT SUM(event_count) AS total_count,
+                  SUM(sum_value) AS total_value,
+                  SUM(sum_value) / NULLIF(SUM(event_count), 0) AS avg_value,
+                  MAX(max_value) AS max_value,
+                  SUM(hof_count) AS hof_count,
+                  SUM(ath_count) AS ath_count,
+                  SUM(event_count) FILTER (WHERE global_type IN ('kill', 'team_kill')) AS hunting_count,
+                  SUM(sum_value) FILTER (WHERE global_type IN ('kill', 'team_kill')) AS hunting_value,
+                  SUM(event_count) FILTER (WHERE global_type = 'deposit') AS mining_count,
+                  SUM(sum_value) FILTER (WHERE global_type = 'deposit') AS mining_value,
+                  SUM(event_count) FILTER (WHERE global_type = 'craft') AS crafting_count,
+                  SUM(sum_value) FILTER (WHERE global_type = 'craft') AS crafting_value
+           FROM globals_rollup
+           WHERE granularity = $1${periodWhere}${typeCond}`,
+          baseParams
+        ),
+        // By type
+        pool.query(
+          `SELECT global_type AS type, SUM(event_count) AS count, SUM(sum_value) AS value
+           FROM globals_rollup
+           WHERE granularity = $1${periodWhere}${typeCond}
+           GROUP BY global_type
+           ORDER BY SUM(event_count) DESC`,
+          baseParams
+        ),
+        // Top players
+        pool.query(
+          `SELECT player_name AS player, SUM(event_count) AS count, SUM(sum_value) AS value,
+                  bool_or(global_type = 'team_kill') AS has_team,
+                  bool_or(global_type != 'team_kill') AS has_solo
+           FROM globals_rollup_player
+           WHERE granularity = $1${periodWhere}${typeCond}
+           GROUP BY player_name
+           ORDER BY ${playersSortBy === 'count' ? 'SUM(event_count)' : 'SUM(sum_value)'} DESC
+           LIMIT 10`,
+          baseParams
+        ),
+        // Top targets (kill/team_kill only for hunting)
+        pool.query(
+          groupByMob
+            ? `SELECT min(target_name) AS target, mob_id, SUM(event_count) AS count, SUM(sum_value) AS value
+               FROM globals_rollup_target
+               WHERE granularity = $1${periodWhere} AND global_type IN ('kill', 'team_kill')
+               GROUP BY mob_id, CASE WHEN mob_id IS NULL THEN target_name END
+               ORDER BY ${targetsSortBy === 'count' ? 'SUM(event_count)' : 'SUM(sum_value)'} DESC
+               LIMIT 10`
+            : `SELECT target_name AS target, MAX(mob_id) AS mob_id, SUM(event_count) AS count, SUM(sum_value) AS value
+               FROM globals_rollup_target
+               WHERE granularity = $1${periodWhere} AND global_type IN ('kill', 'team_kill')
+               GROUP BY target_name
+               ORDER BY ${targetsSortBy === 'count' ? 'SUM(event_count)' : 'SUM(sum_value)'} DESC
+               LIMIT 10`,
+          [rollupGranularity, ...periodParams]
+        ),
+        // Activity timeline
+        pool.query(
+          `SELECT period_start AS bucket, SUM(event_count) AS count
+           FROM globals_rollup
+           WHERE granularity = $1${periodWhere}${typeCond}
+           GROUP BY period_start
+           ORDER BY period_start
+           LIMIT ${MAX_ACTIVITY_BUCKETS}`,
+          baseParams
+        ),
+      ]);
+
+      const summary = summaryResult.rows[0];
+
+      return new Response(JSON.stringify({
+        summary: {
+          total_count: parseInt(summary.total_count) || 0,
+          total_value: parseFloat(summary.total_value) || 0,
+          avg_value: parseFloat(summary.avg_value) || 0,
+          max_value: parseFloat(summary.max_value) || 0,
+          hof_count: parseInt(summary.hof_count) || 0,
+          ath_count: parseInt(summary.ath_count) || 0,
+          hunting: { count: parseInt(summary.hunting_count) || 0, value: parseFloat(summary.hunting_value) || 0 },
+          mining: { count: parseInt(summary.mining_count) || 0, value: parseFloat(summary.mining_value) || 0 },
+          crafting: { count: parseInt(summary.crafting_count) || 0, value: parseFloat(summary.crafting_value) || 0 },
+        },
+        by_type: byTypeResult.rows.map(r => ({
+          type: r.type,
+          count: parseInt(r.count),
+          value: parseFloat(r.value),
+        })),
+        top_players: topPlayersResult.rows.map(r => ({
+          player: r.player,
+          count: parseInt(r.count),
+          value: parseFloat(r.value),
+          is_team: r.has_team && !r.has_solo,
+        })),
+        top_targets: topTargetsResult.rows.map(r => ({
+          target: groupByMob && r.mob_id ? extractMobName(r.target) : r.target,
+          mob_id: r.mob_id,
+          count: parseInt(r.count),
+          value: parseFloat(r.value),
+        })),
+        bucket_unit: chartUnit,
+        activity: fillActivityGaps(
+          activityResult.rows.map(r => ({ bucket: new Date(r.bucket).toISOString(), count: parseInt(r.count) })),
+          bucketUnit, from, to, period
+        ),
+      }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'public, max-age=60',
+        },
+      });
+    } catch (e) {
+      console.error('[api/globals/stats] Rollup query error, falling back to raw:', e);
+      // Fall through to raw table query
+    }
+  }
+
   const whereClause = `WHERE ${conditions.join(' AND ')}`;
 
   try {

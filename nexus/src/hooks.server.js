@@ -63,6 +63,10 @@ if (import.meta.env.SSR) {
   // Initialize globals stats cache (in-memory + ATH leaderboard table)
   const { initGlobalsCache } = await import('$lib/server/globals-cache.js');
   initGlobalsCache().catch(err => console.error('[globals-cache] Error initializing globals cache:', err));
+
+  // Initialize globals rollup tables (daily/weekly/monthly/quarterly aggregations)
+  const { initGlobalsRollups } = await import('$lib/server/globals-rollup.js');
+  initGlobalsRollups().catch(err => console.error('[globals-rollup] Error initializing rollup tables:', err));
 }
 
 const IMPERSONATE_COOKIE = 'nexus_impersonate';

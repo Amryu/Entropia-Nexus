@@ -417,6 +417,106 @@ test.describe('Globals API caching', () => {
   });
 });
 
+test.describe('Globals rollup-backed queries', () => {
+  test('stats endpoint returns valid data for 7d period (daily rollup)', async ({ request }) => {
+    const res = await request.get('/api/globals/stats?period=7d');
+    expect(res.ok()).toBeTruthy();
+    const data = await res.json();
+    expect(data.summary).toHaveProperty('total_count');
+    expect(data.summary).toHaveProperty('total_value');
+    expect(data.summary).toHaveProperty('avg_value');
+    expect(data.summary).toHaveProperty('max_value');
+    expect(data).toHaveProperty('by_type');
+    expect(data).toHaveProperty('top_players');
+    expect(data).toHaveProperty('top_targets');
+    expect(data).toHaveProperty('activity');
+    expect(data.bucket_unit).toBe('day');
+  });
+
+  test('stats endpoint returns valid data for 90d period (weekly rollup)', async ({ request }) => {
+    const res = await request.get('/api/globals/stats?period=90d');
+    expect(res.ok()).toBeTruthy();
+    const data = await res.json();
+    expect(data.summary).toHaveProperty('total_count');
+    expect(data.bucket_unit).toBe('week');
+  });
+
+  test('stats endpoint returns valid data for 1y period (weekly rollup)', async ({ request }) => {
+    const res = await request.get('/api/globals/stats?period=1y');
+    expect(res.ok()).toBeTruthy();
+    const data = await res.json();
+    expect(data.summary).toHaveProperty('total_count');
+    expect(data.bucket_unit).toBe('week');
+  });
+
+  test('stats with type filter uses rollup', async ({ request }) => {
+    const res = await request.get('/api/globals/stats?period=30d&type=kill,team_kill');
+    expect(res.ok()).toBeTruthy();
+    const data = await res.json();
+    expect(data.summary).toHaveProperty('total_count');
+    // All by_type entries should be kill or team_kill
+    for (const t of data.by_type) {
+      expect(['kill', 'team_kill']).toContain(t.type);
+    }
+  });
+
+  test('stats with player filter falls back to raw table', async ({ request }) => {
+    const res = await request.get('/api/globals/stats?period=30d&player=TestPlayer');
+    expect(res.ok()).toBeTruthy();
+    const data = await res.json();
+    expect(data.summary).toHaveProperty('total_count');
+  });
+
+  test('players endpoint with period returns valid data', async ({ request }) => {
+    const res = await request.get('/api/globals/stats/players?period=30d');
+    expect(res.ok()).toBeTruthy();
+    const data = await res.json();
+    expect(data).toHaveProperty('players');
+    expect(data).toHaveProperty('total');
+    expect(data).toHaveProperty('page');
+    expect(data).toHaveProperty('pages');
+    if (data.players.length > 0) {
+      expect(data.players[0]).toHaveProperty('player');
+      expect(data.players[0]).toHaveProperty('count');
+      expect(data.players[0]).toHaveProperty('value');
+      expect(data.players[0]).toHaveProperty('avg_value');
+      expect(data.players[0]).toHaveProperty('best_value');
+    }
+  });
+
+  test('targets endpoint with period returns valid data', async ({ request }) => {
+    const res = await request.get('/api/globals/stats/targets?period=30d');
+    expect(res.ok()).toBeTruthy();
+    const data = await res.json();
+    expect(data).toHaveProperty('targets');
+    expect(data).toHaveProperty('total');
+    if (data.targets.length > 0) {
+      expect(data.targets[0]).toHaveProperty('target');
+      expect(data.targets[0]).toHaveProperty('count');
+      expect(data.targets[0]).toHaveProperty('value');
+      expect(data.targets[0]).toHaveProperty('primary_type');
+    }
+  });
+
+  test('player detail with period returns valid summary', async ({ request }) => {
+    const res = await request.get('/api/globals/player/TestPlayer?period=30d');
+    if (!res.ok()) return; // Player may not exist
+    const data = await res.json();
+    expect(data.summary).toHaveProperty('total_count');
+    expect(data.summary).toHaveProperty('hunting_value');
+    expect(data).toHaveProperty('activity');
+    expect(data).toHaveProperty('hunting');
+  });
+
+  test('24h period bypasses rollup (hourly granularity)', async ({ request }) => {
+    const res = await request.get('/api/globals/stats?period=24h');
+    expect(res.ok()).toBeTruthy();
+    const data = await res.json();
+    expect(data.summary).toHaveProperty('total_count');
+    expect(data.bucket_unit).toBe('hour');
+  });
+});
+
 test.describe('Globals target detail page - compact layout', () => {
   test('shows recent globals next to top players chart', async ({ page }) => {
     await page.goto('/globals/target/Atrox');

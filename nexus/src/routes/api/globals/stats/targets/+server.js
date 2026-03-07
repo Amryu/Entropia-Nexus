@@ -8,8 +8,9 @@
  */
 import { pool } from '$lib/server/db.js';
 import { getResponse } from '$lib/util.js';
-import { buildGlobalsFilter } from '../filter-utils.js';
+import { buildGlobalsFilter, chooseRollupGranularity, buildRollupPeriodFilter } from '../filter-utils.js';
 import { getCachedTargetsPage1 } from '$lib/server/globals-cache.js';
+import { isRollupReady } from '$lib/server/globals-rollup.js';
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
@@ -30,7 +31,7 @@ function extractMobName(targetName) {
 }
 
 export async function GET({ url, request }) {
-  const { conditions, params, paramIdx: nextIdx } = buildGlobalsFilter(url);
+  const { conditions, params, paramIdx: nextIdx, period, from, to } = buildGlobalsFilter(url);
   const isUnfiltered = conditions.length === 1; // only 'confirmed = true'
 
   const sortParam = url.searchParams.get('sort');
@@ -40,6 +41,8 @@ export async function GET({ url, request }) {
   const groupByMob = VALID_GROUP_FIELDS.has(groupParam) ? groupParam === 'mob' : false;
 
   const pageNum = Math.max(1, parseInt(url.searchParams.get('page')) || 1);
+  const limit = Math.min(Math.max(1, parseInt(url.searchParams.get('limit')) || DEFAULT_LIMIT), MAX_LIMIT);
+  const offset = (pageNum - 1) * limit;
 
   // Fast path: serve from in-memory cache for unfiltered default request (page 1, sort by count, group by maturity)
   if (isUnfiltered && sortBy === 'count' && !groupByMob && pageNum === 1) {
@@ -60,6 +63,91 @@ export async function GET({ url, request }) {
     }
   }
 
+  // Rollup fast path: period-filtered without incompatible filters
+  const rollupGranularity = chooseRollupGranularity(period, from, to);
+  const canUseRollup = rollupGranularity && isRollupReady()
+    && !url.searchParams.get('player') && !url.searchParams.get('target')
+    && !url.searchParams.get('location') && !url.searchParams.get('min_value')
+    && !url.searchParams.get('hof');
+
+  if (canUseRollup) {
+    try {
+      const { periodWhere, periodParams } = buildRollupPeriodFilter(rollupGranularity, period, from, to, 2);
+      const typeFilter = url.searchParams.get('type');
+      const typeFilterArr = typeFilter
+        ? typeFilter.split(',').map(t => t.trim()).filter(t => ['kill','team_kill','deposit','craft','rare_item','discovery','tier','examine','pvp'].includes(t))
+        : null;
+      const typeCond = typeFilterArr ? ` AND global_type = ANY($${periodParams.length + 2})` : '';
+      const typeParams = typeFilterArr ? [typeFilterArr] : [];
+
+      const baseParams = [rollupGranularity, ...periodParams, ...typeParams];
+      const ROLLUP_SORT_COLS = { count: 'SUM(event_count)', value: 'SUM(sum_value)', avg: 'SUM(sum_value) / NULLIF(SUM(event_count), 0)', best: 'MAX(max_value)' };
+      const rollupSortCol = ROLLUP_SORT_COLS[sortBy];
+      const limitIdx = baseParams.length + 1;
+
+      const rollupGroupBy = groupByMob
+        ? 'GROUP BY mob_id, CASE WHEN mob_id IS NULL THEN target_name END'
+        : 'GROUP BY target_name';
+      const rollupSelectTarget = groupByMob ? 'min(target_name)' : 'target_name';
+      const rollupSelectMobId = groupByMob ? 'mob_id' : 'MAX(mob_id) AS mob_id';
+
+      const [dataResult, countResult] = await Promise.all([
+        pool.query(
+          `SELECT ${rollupSelectTarget} AS target, ${rollupSelectMobId},
+                  SUM(event_count) AS count, SUM(sum_value) AS value,
+                  SUM(sum_value) / NULLIF(SUM(event_count), 0) AS avg_value,
+                  MAX(max_value) AS best_value,
+                  (SELECT global_type FROM globals_rollup_target r2
+                   WHERE r2.granularity = $1${periodWhere}
+                     AND r2.target_name = globals_rollup_target.target_name
+                   GROUP BY global_type ORDER BY SUM(event_count) DESC LIMIT 1
+                  ) AS primary_type
+           FROM globals_rollup_target
+           WHERE granularity = $1${periodWhere}${typeCond}
+           ${rollupGroupBy}
+           ORDER BY ${rollupSortCol} DESC
+           LIMIT $${limitIdx} OFFSET $${limitIdx + 1}`,
+          [...baseParams, limit, offset]
+        ),
+        pool.query(
+          `SELECT count(*) AS total FROM (
+             SELECT 1 FROM globals_rollup_target
+             WHERE granularity = $1${periodWhere}${typeCond}
+             ${rollupGroupBy}
+           ) sub`,
+          baseParams
+        ),
+      ]);
+
+      const total = parseInt(countResult.rows[0].total);
+      const pages = Math.ceil(total / limit);
+
+      return new Response(JSON.stringify({
+        targets: dataResult.rows.map(r => ({
+          target: groupByMob && r.mob_id ? extractMobName(r.target) : r.target,
+          mob_id: r.mob_id,
+          count: parseInt(r.count),
+          value: parseFloat(r.value),
+          avg_value: parseFloat(r.avg_value) || 0,
+          best_value: parseFloat(r.best_value),
+          primary_type: r.primary_type,
+        })),
+        total,
+        page: pageNum,
+        pages,
+      }), {
+        status: 200,
+        headers: {
+          'Content-Type': 'application/json',
+          'Cache-Control': 'public, max-age=60',
+        },
+      });
+    } catch (e) {
+      console.error('[api/globals/stats/targets] Rollup error, falling back to raw:', e);
+    }
+  }
+
+  // Raw table path
   // Exclude globals without a target name
   conditions.push('target_name IS NOT NULL');
 
@@ -72,9 +160,6 @@ export async function GET({ url, request }) {
     ? 'GROUP BY mob_id, CASE WHEN mob_id IS NULL THEN target_name END'
     : 'GROUP BY target_name, mob_id';
   const selectTarget = groupByMob ? 'min(target_name)' : 'target_name';
-
-  const limit = Math.min(Math.max(1, parseInt(url.searchParams.get('limit')) || DEFAULT_LIMIT), MAX_LIMIT);
-  const offset = (pageNum - 1) * limit;
 
   let paramIdx = nextIdx;
   const limitParams = [...params, limit, offset];

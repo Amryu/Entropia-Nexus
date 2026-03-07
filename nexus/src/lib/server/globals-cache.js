@@ -20,6 +20,7 @@
 import { pool } from '$lib/server/db.js';
 import { createHash } from 'node:crypto';
 import { getActivityBucket, fillActivityGaps } from '../../routes/api/globals/stats/filter-utils.js';
+import { rebuildRollups } from './globals-rollup.js';
 
 // --- Timing constants ---
 const REFRESH_INTERVAL_MS = 5 * 60_000;         // 5 min scheduled refresh
@@ -409,6 +410,7 @@ export function invalidateGlobalsCache() {
     try {
       await rebuildAll();
       rebuildAthLeaderboard().catch(() => {});
+      rebuildRollups().catch(() => {});
     } catch {}
   }, INVALIDATE_DEBOUNCE_MS);
 }
