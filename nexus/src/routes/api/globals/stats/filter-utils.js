@@ -219,6 +219,54 @@ function truncateDate(date, unit) {
   }
 }
 
+/**
+ * Choose the best rollup granularity for a given period/date range.
+ * Returns null if the raw table should be queried (e.g. 24h needs hourly).
+ */
+export function chooseRollupGranularity(period, from, to) {
+  if (from && to) {
+    const diffMs = new Date(to).getTime() - new Date(from).getTime();
+    const diffDays = diffMs / (1000 * 60 * 60 * 24);
+    if (diffDays <= 2) return null;
+    if (diffDays <= 90) return 'daily';
+    if (diffDays <= 365) return 'weekly';
+    return 'monthly';
+  }
+  switch (period) {
+    case '24h': return null;
+    case '7d':
+    case '30d': return 'daily';
+    case '90d':
+    case '1y': return 'weekly';
+    case 'all': return 'monthly';
+    default: return null;
+  }
+}
+
+/**
+ * Build a period_start range condition for rollup queries.
+ * Returns { periodWhere, periodParams, nextIdx } or null if no period filter.
+ */
+export function buildRollupPeriodFilter(granularity, period, from, to, startIdx = 2) {
+  let periodWhere = '';
+  const periodParams = [];
+  let nextIdx = startIdx;
+
+  if (from && to) {
+    periodWhere = ` AND period_start >= $${nextIdx} AND period_start < $${nextIdx + 1}`;
+    periodParams.push(new Date(from), new Date(to + 'T23:59:59.999Z'));
+    nextIdx += 2;
+  } else {
+    const intervalSql = PERIOD_INTERVALS[period];
+    if (intervalSql) {
+      periodWhere = ` AND period_start >= date_trunc('day', now() - ${intervalSql})`;
+    }
+    // 'all' → no period filter needed
+  }
+
+  return { periodWhere, periodParams, nextIdx };
+}
+
 function advanceBucket(date, unit) {
   const d = new Date(date);
   switch (unit) {

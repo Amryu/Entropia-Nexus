@@ -10,12 +10,21 @@
 import { pool } from '$lib/server/db.js';
 import { getResponse, decodeURIComponentSafe } from '$lib/util.js';
 import { initMobResolver, resolveMob } from '$lib/server/mobResolver.js';
-import { PERIOD_INTERVALS, getActivityBucket, fillActivityGaps } from '../../stats/filter-utils.js';
+import { PERIOD_INTERVALS, getActivityBucket, fillActivityGaps, chooseRollupGranularity, buildRollupPeriodFilter } from '../../stats/filter-utils.js';
 import { isAthLeaderboardReady } from '$lib/server/globals-cache.js';
+import { isRollupReady } from '$lib/server/globals-rollup.js';
 
 const TOP_LOOTS_LIMIT = 100;
 const OVERVIEW_TOP_LIMIT = 3;
 const ATH_RANK_CUTOFF = 10;
+
+/** Wrap a query promise so timeout/errors return empty rows instead of crashing Promise.all */
+function safeQuery(queryPromise) {
+  return queryPromise.catch(e => {
+    console.warn('[api/globals/player] ATH ranking query failed:', e.message);
+    return { rows: [] };
+  });
+}
 
 export async function GET({ params, url }) {
   const playerName = decodeURIComponentSafe(params.name);
@@ -45,6 +54,19 @@ export async function GET({ params, url }) {
   }
 
   const { sqlUnit: bucketUnit } = getActivityBucket(period, from, to);
+
+  // Determine if rollup tables can serve summary/activity queries
+  const rollupGranularity = chooseRollupGranularity(period, from, to);
+  const useRollup = rollupGranularity && isRollupReady() && periodCond;
+
+  // Build rollup period filter if applicable
+  let rollupPeriodWhere = '';
+  let rollupParams = [playerName];
+  if (useRollup) {
+    const rpf = buildRollupPeriodFilter(rollupGranularity, period, from, to, 3);
+    rollupPeriodWhere = rpf.periodWhere;
+    rollupParams = [playerName, rollupGranularity, ...rpf.periodParams];
+  }
 
   // Helper for top individual loots query per category
   function topLootsQuery(typeCondition) {
@@ -82,30 +104,39 @@ export async function GET({ params, url }) {
       athCraftingResult,
       athPvpResult,
     ] = await Promise.all([
-      // Summary stats
-      pool.query(
-        `SELECT count(*) AS total_count,
-                COALESCE(sum(value), 0) AS total_value,
-                COALESCE(avg(value), 0) AS avg_value,
-                COALESCE(max(value), 0) AS max_value,
-                count(*) FILTER (WHERE is_hof) AS hof_count,
-                count(*) FILTER (WHERE is_ath) AS ath_count,
-                count(*) FILTER (WHERE global_type = 'kill') AS kill_count,
-                count(*) FILTER (WHERE global_type = 'team_kill') AS team_kill_count,
-                COALESCE(sum(value) FILTER (WHERE global_type IN ('kill', 'team_kill')), 0) AS hunting_value,
-                count(*) FILTER (WHERE global_type = 'deposit') AS deposit_count,
-                COALESCE(sum(value) FILTER (WHERE global_type = 'deposit'), 0) AS mining_value,
-                count(*) FILTER (WHERE global_type = 'craft') AS craft_count,
-                COALESCE(sum(value) FILTER (WHERE global_type = 'craft'), 0) AS crafting_value,
-                count(*) FILTER (WHERE global_type = 'rare_item') AS rare_count,
-                count(*) FILTER (WHERE global_type = 'discovery') AS discovery_count,
-                count(*) FILTER (WHERE global_type = 'tier') AS tier_count,
-                count(*) FILTER (WHERE global_type = 'pvp') AS pvp_count,
-                COALESCE(sum(value) FILTER (WHERE global_type = 'pvp'), 0) AS pvp_value
-         FROM ingested_globals
-         WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}`,
-        [playerName, ...extraParams]
-      ),
+      // Summary stats (rollup or raw)
+      useRollup
+        ? pool.query(
+            `SELECT global_type, SUM(event_count) AS count, SUM(sum_value) AS value,
+                    MAX(max_value) AS max_value, SUM(hof_count) AS hof_count, SUM(ath_count) AS ath_count
+             FROM globals_rollup_player
+             WHERE granularity = $2 AND lower(player_name) = lower($1)${rollupPeriodWhere}
+             GROUP BY global_type`,
+            rollupParams
+          )
+        : pool.query(
+            `SELECT count(*) AS total_count,
+                    COALESCE(sum(value), 0) AS total_value,
+                    COALESCE(avg(value), 0) AS avg_value,
+                    COALESCE(max(value), 0) AS max_value,
+                    count(*) FILTER (WHERE is_hof) AS hof_count,
+                    count(*) FILTER (WHERE is_ath) AS ath_count,
+                    count(*) FILTER (WHERE global_type = 'kill') AS kill_count,
+                    count(*) FILTER (WHERE global_type = 'team_kill') AS team_kill_count,
+                    COALESCE(sum(value) FILTER (WHERE global_type IN ('kill', 'team_kill')), 0) AS hunting_value,
+                    count(*) FILTER (WHERE global_type = 'deposit') AS deposit_count,
+                    COALESCE(sum(value) FILTER (WHERE global_type = 'deposit'), 0) AS mining_value,
+                    count(*) FILTER (WHERE global_type = 'craft') AS craft_count,
+                    COALESCE(sum(value) FILTER (WHERE global_type = 'craft'), 0) AS crafting_value,
+                    count(*) FILTER (WHERE global_type = 'rare_item') AS rare_count,
+                    count(*) FILTER (WHERE global_type = 'discovery') AS discovery_count,
+                    count(*) FILTER (WHERE global_type = 'tier') AS tier_count,
+                    count(*) FILTER (WHERE global_type = 'pvp') AS pvp_count,
+                    COALESCE(sum(value) FILTER (WHERE global_type = 'pvp'), 0) AS pvp_value
+             FROM ingested_globals
+             WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}`,
+            [playerName, ...extraParams]
+          ),
 
       // Hunting: per-mob breakdown
       pool.query(
@@ -147,17 +178,27 @@ export async function GET({ params, url }) {
         [playerName, ...extraParams]
       ),
 
-      // Activity (dynamic bucket aggregation)
-      pool.query(
-        `SELECT date_trunc('${bucketUnit}', event_timestamp) AS bucket,
-                global_type AS type, count(*) AS count
-         FROM ingested_globals
-         WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
-         GROUP BY bucket, global_type
-         ORDER BY bucket
-         LIMIT 2555`,
-        [playerName, ...extraParams]
-      ),
+      // Activity (rollup or raw)
+      useRollup
+        ? pool.query(
+            `SELECT period_start AS bucket, global_type AS type, SUM(event_count) AS count
+             FROM globals_rollup_player
+             WHERE granularity = $2 AND lower(player_name) = lower($1)${rollupPeriodWhere}
+             GROUP BY period_start, global_type
+             ORDER BY period_start
+             LIMIT 2555`,
+            rollupParams
+          )
+        : pool.query(
+            `SELECT date_trunc('${bucketUnit}', event_timestamp) AS bucket,
+                    global_type AS type, count(*) AS count
+             FROM ingested_globals
+             WHERE confirmed = true AND lower(player_name) = lower($1)${periodCond}
+             GROUP BY bucket, global_type
+             ORDER BY bucket
+             LIMIT 2555`,
+            [playerName, ...extraParams]
+          ),
 
       // Recent globals (last 20)
       pool.query(
@@ -211,9 +252,10 @@ export async function GET({ params, url }) {
       topLootsQuery("global_type = 'craft'"),
 
       // ATH rankings — use pre-aggregated leaderboard for all-time, fall back to live CTEs for period filters
+      // Wrapped with safeQuery so timeouts don't crash the entire endpoint
       ...(useLeaderboard ? [
         // Hunting ATH from leaderboard
-        pool.query(
+        safeQuery(pool.query(
           `SELECT target_key, total_value, best_value, count, mob_id,
                   best_target_name, total_rank, best_rank
            FROM globals_ath_leaderboard
@@ -221,37 +263,37 @@ export async function GET({ params, url }) {
              AND (total_rank <= ${ATH_RANK_CUTOFF} OR best_rank <= ${ATH_RANK_CUTOFF})
            ORDER BY LEAST(total_rank, best_rank), total_value DESC`,
           [playerName]
-        ),
+        )),
         // Mining ATH from leaderboard
-        pool.query(
+        safeQuery(pool.query(
           `SELECT target_key AS target_name, total_value, best_value, count, total_rank, best_rank
            FROM globals_ath_leaderboard
            WHERE lower(player_name) = lower($1) AND category = 'mining'
              AND (total_rank <= ${ATH_RANK_CUTOFF} OR best_rank <= ${ATH_RANK_CUTOFF})
            ORDER BY LEAST(total_rank, best_rank), total_value DESC`,
           [playerName]
-        ),
+        )),
         // Crafting ATH from leaderboard
-        pool.query(
+        safeQuery(pool.query(
           `SELECT target_key AS target_name, total_value, best_value, count, total_rank, best_rank
            FROM globals_ath_leaderboard
            WHERE lower(player_name) = lower($1) AND category = 'crafting'
              AND (total_rank <= ${ATH_RANK_CUTOFF} OR best_rank <= ${ATH_RANK_CUTOFF})
            ORDER BY LEAST(total_rank, best_rank), total_value DESC`,
           [playerName]
-        ),
+        )),
         // PvP ATH from leaderboard (note: PvP leaderboard stores per-target aggregates, not individual events)
-        pool.query(
+        safeQuery(pool.query(
           `SELECT total_value AS value, total_rank AS rank
            FROM globals_ath_leaderboard
            WHERE lower(player_name) = lower($1) AND category = 'pvp'
              AND (total_rank <= ${ATH_RANK_CUTOFF} OR best_rank <= ${ATH_RANK_CUTOFF})
            ORDER BY LEAST(total_rank, best_rank), total_value DESC`,
           [playerName]
-        ),
+        )),
       ] : [
         // Fallback: live CTE queries for period-filtered requests
-        pool.query(
+        safeQuery(pool.query(
           `WITH target_totals AS (
              SELECT player_name, COALESCE(mob_id::text, target_name) AS mob_key,
                     MAX(target_name) AS target_name,
@@ -278,8 +320,8 @@ export async function GET({ params, url }) {
            WHERE lower(player_name) = lower($1) AND (total_rank <= ${ATH_RANK_CUTOFF} OR best_rank <= ${ATH_RANK_CUTOFF})
            ORDER BY LEAST(total_rank, best_rank), total_value DESC`,
           [playerName, ...extraParams]
-        ),
-        pool.query(
+        )),
+        safeQuery(pool.query(
           `WITH target_totals AS (
              SELECT player_name, target_name,
                     sum(value) AS total_value, max(value) AS best_value,
@@ -304,8 +346,8 @@ export async function GET({ params, url }) {
            WHERE lower(player_name) = lower($1) AND (total_rank <= ${ATH_RANK_CUTOFF} OR best_rank <= ${ATH_RANK_CUTOFF})
            ORDER BY LEAST(total_rank, best_rank), total_value DESC`,
           [playerName, ...extraParams]
-        ),
-        pool.query(
+        )),
+        safeQuery(pool.query(
           `WITH target_totals AS (
              SELECT player_name, target_name,
                     sum(value) AS total_value, max(value) AS best_value,
@@ -330,8 +372,8 @@ export async function GET({ params, url }) {
            WHERE lower(player_name) = lower($1) AND (total_rank <= ${ATH_RANK_CUTOFF} OR best_rank <= ${ATH_RANK_CUTOFF})
            ORDER BY LEAST(total_rank, best_rank), total_value DESC`,
           [playerName, ...extraParams]
-        ),
-        pool.query(
+        )),
+        safeQuery(pool.query(
           `WITH pvp_ranked AS (
              SELECT player_name, value, event_timestamp, is_hof, is_ath,
                     RANK() OVER (ORDER BY value DESC) AS rank
@@ -343,14 +385,52 @@ export async function GET({ params, url }) {
            WHERE lower(player_name) = lower($1) AND rank <= ${ATH_RANK_CUTOFF}
            ORDER BY rank`,
           [playerName, ...extraParams]
-        ),
+        )),
       ]),
     ]);
 
-    const summary = summaryResult.rows[0];
-
-    if (parseInt(summary.total_count) === 0) {
-      return getResponse({ error: 'Player not found' }, 404);
+    // Build summary from rollup per-type rows or raw single row
+    let summary;
+    if (useRollup) {
+      const rows = summaryResult.rows;
+      if (rows.length === 0) return getResponse({ error: 'Player not found' }, 404);
+      const byType = {};
+      let totalCount = 0, totalValue = 0, maxValue = 0, hofCount = 0, athCount = 0;
+      for (const r of rows) {
+        const c = parseInt(r.count), v = parseFloat(r.value), m = parseFloat(r.max_value);
+        byType[r.global_type] = { count: c, value: v };
+        totalCount += c;
+        totalValue += v;
+        if (m > maxValue) maxValue = m;
+        hofCount += parseInt(r.hof_count) || 0;
+        athCount += parseInt(r.ath_count) || 0;
+      }
+      const g = (type) => byType[type] || { count: 0, value: 0 };
+      summary = {
+        total_count: totalCount,
+        total_value: totalValue,
+        avg_value: totalCount > 0 ? totalValue / totalCount : 0,
+        max_value: maxValue,
+        hof_count: hofCount,
+        ath_count: athCount,
+        kill_count: g('kill').count,
+        team_kill_count: g('team_kill').count,
+        hunting_value: g('kill').value + g('team_kill').value,
+        deposit_count: g('deposit').count,
+        mining_value: g('deposit').value,
+        craft_count: g('craft').count,
+        crafting_value: g('craft').value,
+        rare_count: g('rare_item').count,
+        discovery_count: g('discovery').count,
+        tier_count: g('tier').count,
+        pvp_count: g('pvp').count,
+        pvp_value: g('pvp').value,
+      };
+    } else {
+      summary = summaryResult.rows[0];
+      if (parseInt(summary.total_count) === 0) {
+        return getResponse({ error: 'Player not found' }, 404);
+      }
     }
 
     // Ensure mob resolver is loaded for proper name splitting

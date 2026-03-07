@@ -2170,9 +2170,9 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
   border: 1px solid var(--border-color, #555);
   background-color: var(--hover-color);
   color: var(--text-color);
@@ -2186,8 +2186,8 @@
 }
 
 .picker-table .picker-link-icon {
-  width: 14px;
-  height: 14px;
+  width: 12px;
+  height: 12px;
 }
 
 .dialog-footer {
