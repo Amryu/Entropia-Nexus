@@ -112,6 +112,13 @@ class ScanSummaryOverlay(OverlayWidget):
         self._spinner_timer.setInterval(120)
         self._spinner_timer.timeout.connect(self._tick_spinner)
 
+        # Batch incoming skill readings to avoid per-skill UI rebuilds
+        self._pending_skills: list[SkillReading] = []
+        self._flush_timer = QTimer(self)
+        self._flush_timer.setSingleShot(True)
+        self._flush_timer.setInterval(50)
+        self._flush_timer.timeout.connect(self._flush_pending_skills)
+
         # Auto-resize to content (required for minify to shrink the window)
         self.layout().setSizeConstraint(QVBoxLayout.SizeConstraint.SetFixedSize)
 
@@ -323,23 +330,33 @@ class ScanSummaryOverlay(OverlayWidget):
     # --- Event handlers ---
 
     def _on_skill(self, reading: SkillReading):
-        if reading.skill_name in self._skill_set:
-            # Re-scan: update existing reading
-            for i, s in enumerate(self._skills):
-                if s.skill_name == reading.skill_name:
-                    self._skills[i] = reading
-                    break
-            self._resort_and_rebuild_rows()
-            self._update_counts()
+        """Buffer incoming skills and flush in batches to avoid per-skill rebuilds."""
+        self._pending_skills.append(reading)
+        if not self._flush_timer.isActive():
+            self._flush_timer.start()
+
+    def _flush_pending_skills(self):
+        """Process all buffered skill readings in one batch."""
+        if not self._pending_skills:
             return
 
-        self._skill_set.add(reading.skill_name)
-        self._skills.append(reading)
-        self._resort_and_rebuild_rows()
+        batch = self._pending_skills
+        self._pending_skills = []
 
+        for reading in batch:
+            if reading.skill_name in self._skill_set:
+                # Re-scan: update existing reading in-place
+                for i, s in enumerate(self._skills):
+                    if s.skill_name == reading.skill_name:
+                        self._skills[i] = reading
+                        break
+            else:
+                self._skill_set.add(reading.skill_name)
+                self._skills.append(reading)
+
+        self._resort_and_rebuild_rows()
         self._update_counts()
 
-        # Enable Mark Complete as soon as first skill is scanned
         if not self._complete_btn.isEnabled():
             self._set_complete_enabled(True)
 
@@ -473,6 +490,8 @@ class ScanSummaryOverlay(OverlayWidget):
 
     def reset(self):
         """Reset state for a new scan."""
+        self._flush_timer.stop()
+        self._pending_skills.clear()
         self._skills.clear()
         self._skill_set.clear()
         self._skill_rows.clear()
@@ -587,6 +606,7 @@ class ScanSummaryOverlay(OverlayWidget):
 
     def stop(self):
         """Unsubscribe from events."""
+        self._flush_timer.stop()
         self._spinner_timer.stop()
         self._event_bus.unsubscribe(EVENT_SKILL_SCANNED, self._cb_skill)
         self._event_bus.unsubscribe(EVENT_OCR_PROGRESS, self._cb_progress)

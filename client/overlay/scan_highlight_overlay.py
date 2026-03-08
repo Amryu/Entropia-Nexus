@@ -775,10 +775,12 @@ class ScanHighlightOverlay(QWidget):
         painter.setBrush(QBrush(MP_FILL))
         painter.drawRect(x, y, w, h)
 
-        # Confidence label above template
+        # Confidence label above template: template match + mean OCR confidence
         painter.setFont(MP_VALUE_FONT)
         painter.setPen(QPen(MP_COLOR))
-        painter.drawText(x, y - 4, f"MARKET PRICE ({confidence:.0%})")
+        ocr_conf = parsed.get("ocr_confidence", 0)
+        label = f"MARKET PRICE ({confidence:.0%} / OCR {ocr_conf:.0%})"
+        painter.drawText(x, y - 4, label)
 
         self._paint_market_price_rois(painter, x, y, parsed)
 
@@ -808,7 +810,7 @@ class ScanHighlightOverlay(QWidget):
                 painter.setFont(MP_VALUE_FONT)
                 painter.setPen(QPen(QColor(255, 255, 255, 220)))
                 painter.drawText(
-                    rx + rw + 4, ry, 200, rh,
+                    rx + rw + 4, ry, 500, rh,
                     Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
                     value_text,
                 )

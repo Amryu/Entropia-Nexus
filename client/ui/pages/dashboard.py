@@ -162,6 +162,9 @@ _ARTICLE_CSS = f"""
     th {{
         background-color: {SECONDARY};
     }}
+    img {{
+        max-width: 100%;
+    }}
 """
 
 
@@ -183,6 +186,7 @@ _VIMEO_IFRAME_RE = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 _RELATIVE_IMG_RE = re.compile(r'(<img[^>]*src=")(/[^"]+)(")', re.IGNORECASE)
+_STANDALONE_IMG_RE = re.compile(r'(<img\s[^>]*>)', re.IGNORECASE)
 _LEFTOVER_IFRAME_RE = re.compile(r'<iframe[^>]*>.*?</iframe>', re.IGNORECASE | re.DOTALL)
 _EMPTY_VIDEO_DIV_RE = re.compile(
     r'<div[^>]*class="video-embed-wrapper"[^>]*>\s*</div>',
@@ -267,6 +271,8 @@ def _prepare_html_for_textbrowser(html: str, base_url: str,
     # Strip leftover iframes and empty video wrapper divs
     html = _LEFTOVER_IFRAME_RE.sub('', html)
     html = _EMPTY_VIDEO_DIV_RE.sub('', html)
+    # Wrap standalone images in <div> so they render as block elements
+    html = _STANDALONE_IMG_RE.sub(r'<div>\1</div>', html)
     return html
 
 
@@ -1174,10 +1180,10 @@ class DashboardPage(QWidget):
             return False
         return True
 
-    def _render_global(self, data):
-        """Render a single GlobalEvent into the globals ticker."""
+    def _global_to_html(self, data) -> str | None:
+        """Return the HTML row for a single GlobalEvent, or None if filtered."""
         if not self._should_show_global(data):
-            return
+            return None
         label, label_color = _GLOBAL_TYPE_LABELS.get(
             data.global_type, ("?", TEXT_MUTED)
         )
@@ -1187,14 +1193,12 @@ class DashboardPage(QWidget):
         elif data.is_hof:
             badge = f'<b style="color:{ACCENT}">HoF</b>'
         _td = 'white-space:nowrap;padding:1px 4px'
-        # Truncate using per-name pixel measurement so the ellipsis
-        # point is accurate regardless of character widths.
         fm = QFontMetrics(self._global_log.document().defaultFont())
         vw = self._global_log.viewport().width()
         pad = 8  # td padding (4px each side)
         player = _esc(_elide_px(data.player_name, int(vw * 0.27 * 0.95) - pad, fm))
         target = _esc(_elide_px(data.target_name, int(vw * 0.35 * 0.95) - pad, fm))
-        html = (
+        return (
             f'<table width="100%" cellpadding="0" cellspacing="0"'
             f' style="margin:0;table-layout:fixed">'
             f'<tr>'
@@ -1206,16 +1210,28 @@ class DashboardPage(QWidget):
             f'<td width="8%" style="{_td}" align="right">{badge}</td>'
             f'</tr></table>'
         )
+
+    def _render_global(self, data):
+        """Render a single GlobalEvent into the globals ticker."""
+        html = self._global_to_html(data)
+        if html is None:
+            return
         self._global_lines = self._append_line(
             self._global_log, html, self._global_lines
         )
 
     def _rebuild_globals(self):
         """Re-render all stored globals with current viewport width."""
-        self._global_log.clear()
-        self._global_lines = 0
+        rows = []
         for event in self._global_events:
-            self._render_global(event)
+            html = self._global_to_html(event)
+            if html is not None:
+                rows.append(html)
+        # Trim to MAX_TICKER_LINES
+        if len(rows) > MAX_TICKER_LINES:
+            rows = rows[-MAX_TICKER_LINES:]
+        self._global_log.setHtml("".join(rows))
+        self._global_lines = len(rows)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

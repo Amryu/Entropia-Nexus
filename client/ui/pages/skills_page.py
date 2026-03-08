@@ -76,6 +76,7 @@ CARD_MIN_WIDTH = 180
 CARD_MAX_WIDTH = 260
 CARD_HEIGHT = 80
 CARD_ROW_HEIGHT = CARD_HEIGHT + 6   # card + grid spacing
+_CARD_BATCH_ROWS = 2  # max rows of cards to create per event-loop frame
 HEADER_ROW_HEIGHT = 36
 _HEADER_LABEL_HEIGHT = 24           # actual label height within the row
 
@@ -252,13 +253,8 @@ class SkillCard(QFrame):
             gain_label.setStyleSheet(_CARD_GAIN_STYLE)
             info_row.addWidget(gain_label)
 
-        self._edit_input = QDoubleSpinBox()
-        self._edit_input.setDecimals(2)
-        self._edit_input.setMaximum(999999)
-        self._edit_input.setMinimumWidth(80)
-        self._edit_input.setVisible(False)
-        self._edit_input.editingFinished.connect(self._finish_edit)
-        info_row.addWidget(self._edit_input)
+        self._edit_input = None  # created lazily on first edit
+        self._info_row = info_row
 
         layout.addLayout(info_row)
 
@@ -303,10 +299,23 @@ class SkillCard(QFrame):
             self._start_edit()
         super().mouseDoubleClickEvent(event)
 
+    def _ensure_edit_input(self):
+        """Create the edit spin box lazily on first use."""
+        if self._edit_input is not None:
+            return
+        self._edit_input = QDoubleSpinBox()
+        self._edit_input.setDecimals(2)
+        self._edit_input.setMaximum(999999)
+        self._edit_input.setMinimumWidth(80)
+        self._edit_input.setVisible(False)
+        self._edit_input.editingFinished.connect(self._finish_edit)
+        self._info_row.addWidget(self._edit_input)
+
     def _start_edit(self):
         if self._editing:
             return
         self._editing = True
+        self._ensure_edit_input()
         self._points_label.setVisible(False)
         self._edit_input.setValue(self._points)
         self._edit_input.setVisible(True)
@@ -451,7 +460,7 @@ class _GoalProgressCard(QFrame):
             val_text = f"{current:.1f} / {target:.1f}"
         else:
             val_text = f"{current:,.0f} / {target:,.0f}"
-        self._pct_label = QLabel(f"{val_text}  ({pct:.0f}%)")
+        self._pct_label = QLabel(f"{val_text}  ({pct:.2f}%)")
         self._pct_label.setStyleSheet(
             f"font-size: 10px; color: {TEXT_MUTED}; background: transparent; border: none;"
         )
@@ -487,7 +496,7 @@ class _GoalProgressCard(QFrame):
             val_text = f"{current:.1f} / {target:.1f}"
         else:
             val_text = f"{current:,.0f} / {target:,.0f}"
-        self._pct_label.setText(f"{val_text}  ({pct:.0f}%)")
+        self._pct_label.setText(f"{val_text}  ({pct:.2f}%)")
 
 
 class SkillsPage(QWidget):
@@ -1081,12 +1090,14 @@ class SkillsPage(QWidget):
         self._refresh_skills_display()
         self._refresh_prof_display()
 
-        # Refresh dashboard if it's the active tab
-        if self._tabs.currentIndex() == TAB_DASHBOARD:
-            self._refresh_dashboard()
+        # Always refresh dashboard so goal cards have up-to-date skill data
+        self._dash_loaded = False
+        self._refresh_dashboard()
 
-        # Check goal completion
-        self._check_goal_completion()
+        # Check goal completion (off main thread — DB lock may be held by watcher)
+        threading.Thread(
+            target=self._check_goal_completion, daemon=True, name="goal-check",
+        ).start()
 
     # ── Skills Tab ────────────────────────────────────────────────────────
 
@@ -1355,7 +1366,12 @@ class SkillsPage(QWidget):
         self._skills_vgrid_rows.clear()
 
     def _render_visible_skill_cards(self):
-        """Create/destroy card widgets based on scroll position."""
+        """Create/destroy card widgets based on scroll position.
+
+        Creates at most ``_CARD_BATCH_ROWS`` rows per call and schedules
+        itself again if more rows still need widgets, preventing the main
+        thread from freezing on large initial renders.
+        """
         rows = self._skills_vgrid_rows
         if not rows:
             return
@@ -1380,31 +1396,43 @@ class SkillsPage(QWidget):
                     w.deleteLater()
                 del self._skills_vgrid_widgets[idx]
 
-        # Create newly visible rows
+        # Create newly visible rows in small batches to avoid freezing
         container = self._skills_grid_container
-        for idx in new_visible:
-            if idx in self._skills_vgrid_widgets:
-                continue
-            kind, y, h, data = rows[idx]
-            widgets: list[QWidget] = []
-            if kind == "header":
-                lbl = QLabel(data, container)
-                lbl.setStyleSheet(_CARD_HEADER_STYLE)
-                lbl.setGeometry(0, y, container.width(), _HEADER_LABEL_HEIGHT)
-                lbl.show()
-                widgets.append(lbl)
-            else:  # cards
-                for ci, (name, points, rank, progress, badges,
-                         dimmed, weight, gain) in enumerate(data):
-                    card = SkillCard(name, points, rank, progress, badges,
-                                    dimmed=dimmed, weight=weight, gain=gain,
-                                    parent=container)
-                    card.clicked.connect(self._on_skill_card_clicked)
-                    card.value_edited.connect(self._on_skill_value_edited)
-                    card.setGeometry(ci * (card_w + 6), y, card_w, CARD_HEIGHT)
-                    card.show()
-                    widgets.append(card)
-            self._skills_vgrid_widgets[idx] = widgets
+        created = 0
+        container.setUpdatesEnabled(False)
+        try:
+            for idx in sorted(new_visible):
+                if idx in self._skills_vgrid_widgets:
+                    continue
+                kind, y, h, data = rows[idx]
+                widgets: list[QWidget] = []
+                if kind == "header":
+                    lbl = QLabel(data, container)
+                    lbl.setStyleSheet(_CARD_HEADER_STYLE)
+                    lbl.setGeometry(0, y, container.width(), _HEADER_LABEL_HEIGHT)
+                    lbl.show()
+                    widgets.append(lbl)
+                else:  # cards
+                    for ci, (name, points, rank, progress, badges,
+                             dimmed, weight, gain) in enumerate(data):
+                        card = SkillCard(name, points, rank, progress, badges,
+                                        dimmed=dimmed, weight=weight, gain=gain,
+                                        parent=container)
+                        card.clicked.connect(self._on_skill_card_clicked)
+                        card.value_edited.connect(self._on_skill_value_edited)
+                        card.setGeometry(ci * (card_w + 6), y, card_w, CARD_HEIGHT)
+                        card.show()
+                        widgets.append(card)
+                self._skills_vgrid_widgets[idx] = widgets
+                created += 1
+                if created >= _CARD_BATCH_ROWS:
+                    break
+        finally:
+            container.setUpdatesEnabled(True)
+
+        # Schedule next batch if there are still uncreated visible rows
+        if created >= _CARD_BATCH_ROWS:
+            QTimer.singleShot(0, self._render_visible_skill_cards)
 
     def _on_skills_table_click(self, row, col):
         item = self._skills_table.item(row, 0)
@@ -1697,6 +1725,10 @@ class SkillsPage(QWidget):
         self._prof_vgrid_rows.clear()
 
     def _render_visible_prof_cards(self):
+        """Create/destroy profession card widgets based on scroll position.
+
+        Uses the same batched creation strategy as skill cards.
+        """
         rows = self._prof_vgrid_rows
         if not rows:
             return
@@ -1721,26 +1753,37 @@ class SkillsPage(QWidget):
                 del self._prof_vgrid_widgets[idx]
 
         container = self._prof_grid_container
-        for idx in new_visible:
-            if idx in self._prof_vgrid_widgets:
-                continue
-            kind, y, h, data = rows[idx]
-            widgets: list[QWidget] = []
-            if kind == "header":
-                lbl = QLabel(data, container)
-                lbl.setStyleSheet(_CARD_HEADER_STYLE)
-                lbl.setGeometry(0, y, container.width(), _HEADER_LABEL_HEIGHT)
-                lbl.show()
-                widgets.append(lbl)
-            else:
-                for ci, (name, level, skill_count, weight) in enumerate(data):
-                    card = ProfessionCard(name, level, skill_count,
-                                         weight=weight, parent=container)
-                    card.clicked.connect(self._on_prof_card_clicked)
-                    card.setGeometry(ci * (card_w + 6), y, card_w, CARD_HEIGHT)
-                    card.show()
-                    widgets.append(card)
-            self._prof_vgrid_widgets[idx] = widgets
+        created = 0
+        container.setUpdatesEnabled(False)
+        try:
+            for idx in sorted(new_visible):
+                if idx in self._prof_vgrid_widgets:
+                    continue
+                kind, y, h, data = rows[idx]
+                widgets: list[QWidget] = []
+                if kind == "header":
+                    lbl = QLabel(data, container)
+                    lbl.setStyleSheet(_CARD_HEADER_STYLE)
+                    lbl.setGeometry(0, y, container.width(), _HEADER_LABEL_HEIGHT)
+                    lbl.show()
+                    widgets.append(lbl)
+                else:
+                    for ci, (name, level, skill_count, weight) in enumerate(data):
+                        card = ProfessionCard(name, level, skill_count,
+                                             weight=weight, parent=container)
+                        card.clicked.connect(self._on_prof_card_clicked)
+                        card.setGeometry(ci * (card_w + 6), y, card_w, CARD_HEIGHT)
+                        card.show()
+                        widgets.append(card)
+                self._prof_vgrid_widgets[idx] = widgets
+                created += 1
+                if created >= _CARD_BATCH_ROWS:
+                    break
+        finally:
+            container.setUpdatesEnabled(True)
+
+        if created >= _CARD_BATCH_ROWS:
+            QTimer.singleShot(0, self._render_visible_prof_cards)
 
     def _on_prof_table_click(self, row, col):
         item = self._prof_table.item(row, 0)
@@ -1834,10 +1877,12 @@ class SkillsPage(QWidget):
         if dlg.exec() and self._db:
             updated = dlg.get_goal()
             if updated:
-                self._db.update_goal(
-                    goal_id,
-                    target_value=updated["target_value"],
-                )
+                update_kwargs = {"target_value": updated["target_value"]}
+                # Update start_value if user chose to re-base
+                original_start = goal.get("start_value") or 0
+                if updated["start_value"] != original_start:
+                    update_kwargs["start_value"] = updated["start_value"]
+                self._db.update_goal(goal_id, **update_kwargs)
                 self._refresh_dashboard()
 
     def _on_delete_goal(self, goal_id: int):

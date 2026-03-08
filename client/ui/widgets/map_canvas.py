@@ -48,6 +48,67 @@ _TYPE_COLORS: dict[str, QColor] = {
 
 _DEFAULT_COLOR = QColor(255, 255, 255)
 
+
+def precompute_image_coords(locations: list[dict], pmap: dict, eu_ratio: float,
+                            eu_tile_size: float):
+    """Pre-compute image-space coords for all locations (pure math, thread-safe)."""
+    px = pmap.get("X", 0) * eu_tile_size
+    py = pmap.get("Y", 0) * eu_tile_size
+    ph = pmap.get("Height", 0) * eu_tile_size
+
+    for loc in locations:
+        props = loc.get("Properties", {})
+        shape = props.get("Shape")
+        coords = props.get("Coordinates", {})
+        data = props.get("Data", {})
+
+        if shape == "Polygon":
+            verts_raw = data.get("vertices", [])
+            img_pts = []
+            for j in range(0, len(verts_raw) - 1, 2):
+                vx, vy = verts_raw[j], verts_raw[j + 1]
+                if vx is None or vy is None:
+                    continue
+                ix = (vx - px) / eu_ratio
+                iy = (ph - (vy - py)) / eu_ratio
+                img_pts.append((ix, iy))
+            loc["_img_polygon"] = img_pts
+            if img_pts:
+                xs = [p[0] for p in img_pts]
+                ys = [p[1] for p in img_pts]
+                loc["_img_bbox"] = (min(xs), min(ys), max(xs), max(ys))
+            else:
+                loc["_img_bbox"] = None
+        elif shape == "Circle":
+            dx = data.get("x") or 0
+            dy = data.get("y") or 0
+            dr = data.get("radius") or 0
+            cx = (dx - px) / eu_ratio
+            cy = (ph - (dy - py)) / eu_ratio
+            rx = dr / eu_ratio
+            loc["_img_center"] = (cx, cy)
+            loc["_img_radius"] = rx
+            loc["_img_bbox"] = (cx - rx, cy - rx, cx + rx, cy + rx)
+        elif shape == "Rectangle":
+            dx = data.get("x") or 0
+            dy = data.get("y") or 0
+            dw = data.get("width") or 0
+            dh = data.get("height") or 0
+            sx = (dx - px) / eu_ratio
+            sy = (ph - (dy - py)) / eu_ratio
+            ex = (dx + dw - px) / eu_ratio
+            ey = (ph - (dy + dh - py)) / eu_ratio
+            loc["_img_bbox"] = (min(sx, ex), min(sy, ey), max(sx, ex), max(sy, ey))
+            loc["_img_rect"] = (sx, ey, ex - sx, sy - ey)
+        else:
+            lon = coords.get("Longitude")
+            lat = coords.get("Latitude")
+            if lon is not None and lat is not None:
+                ix = (lon - px) / eu_ratio
+                iy = (ph - (lat - py)) / eu_ratio
+                loc["_img_pt"] = (ix, iy)
+                loc["_img_bbox"] = (ix - 10, iy - 10, ix + 10, iy + 10)
+
 # Area types that use shape rendering
 _SHAPE_TYPES = {"Circle", "Rectangle", "Polygon"}
 
@@ -135,8 +196,10 @@ class MapCanvas(QWidget):
         self._eu_ratio = _EU_PER_TILE / self._img_tile_size
         self._eu_tile_size = self._img_tile_size * self._eu_ratio
 
-        # Pre-cache image coordinates for all locations (perf: avoids per-frame conversion)
-        self._precompute_image_coords(pmap)
+        # Image coords are pre-computed by the background loader thread.
+        # Only recompute if not already present (fallback for direct callers).
+        if locations and "_img_bbox" not in locations[0] and "_img_pt" not in locations[0]:
+            precompute_image_coords(locations, pmap, self._eu_ratio, self._eu_tile_size)
 
         # Initial view: fit entire image
         self._center_x = image.width() / 2
@@ -148,64 +211,7 @@ class MapCanvas(QWidget):
 
     def _precompute_image_coords(self, pmap: dict):
         """Pre-compute image-space coordinates and bounding boxes for all locations."""
-        px = pmap.get("X", 0) * self._eu_tile_size
-        py = pmap.get("Y", 0) * self._eu_tile_size
-        ph = pmap.get("Height", 0) * self._eu_tile_size
-        eu_ratio = self._eu_ratio
-
-        for loc in self._locations:
-            props = loc.get("Properties", {})
-            shape = props.get("Shape")
-            coords = props.get("Coordinates", {})
-            data = props.get("Data", {})
-
-            if shape == "Polygon":
-                verts_raw = data.get("vertices", [])
-                img_pts = []
-                for j in range(0, len(verts_raw) - 1, 2):
-                    vx, vy = verts_raw[j], verts_raw[j + 1]
-                    if vx is None or vy is None:
-                        continue
-                    ix = (vx - px) / eu_ratio
-                    iy = (ph - (vy - py)) / eu_ratio
-                    img_pts.append((ix, iy))
-                loc["_img_polygon"] = img_pts
-                if img_pts:
-                    xs = [p[0] for p in img_pts]
-                    ys = [p[1] for p in img_pts]
-                    loc["_img_bbox"] = (min(xs), min(ys), max(xs), max(ys))
-                else:
-                    loc["_img_bbox"] = None
-            elif shape == "Circle":
-                dx = data.get("x") or 0
-                dy = data.get("y") or 0
-                dr = data.get("radius") or 0
-                cx = (dx - px) / eu_ratio
-                cy = (ph - (dy - py)) / eu_ratio
-                rx = dr / eu_ratio
-                loc["_img_center"] = (cx, cy)
-                loc["_img_radius"] = rx
-                loc["_img_bbox"] = (cx - rx, cy - rx, cx + rx, cy + rx)
-            elif shape == "Rectangle":
-                dx = data.get("x") or 0
-                dy = data.get("y") or 0
-                dw = data.get("width") or 0
-                dh = data.get("height") or 0
-                sx = (dx - px) / eu_ratio
-                sy = (ph - (dy - py)) / eu_ratio
-                ex = (dx + dw - px) / eu_ratio
-                ey = (ph - (dy + dh - py)) / eu_ratio
-                loc["_img_bbox"] = (min(sx, ex), min(sy, ey), max(sx, ex), max(sy, ey))
-                loc["_img_rect"] = (sx, ey, ex - sx, sy - ey)  # x, y, w, h
-            else:
-                # Point location
-                lon = coords.get("Longitude")
-                lat = coords.get("Latitude")
-                if lon is not None and lat is not None:
-                    ix = (lon - px) / eu_ratio
-                    iy = (ph - (lat - py)) / eu_ratio
-                    loc["_img_pt"] = (ix, iy)
-                    loc["_img_bbox"] = (ix - 10, iy - 10, ix + 10, iy + 10)
+        precompute_image_coords(self._locations, pmap, self._eu_ratio, self._eu_tile_size)
 
     def set_selected(self, location_id: int | None):
         loc = self._find_by_id(location_id) if location_id is not None else None

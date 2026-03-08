@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (
 )
 from PyQt6.QtCore import Qt
 
-from ..theme import SECONDARY, TEXT_MUTED, ACCENT, BORDER
+from ..theme import SECONDARY, TEXT_MUTED, ACCENT, BORDER, WARNING
 
 RANKLESS_CATEGORIES = {"Attributes", "Social"}
 
@@ -33,6 +33,7 @@ class GoalDialog(QDialog):
             rank_thresholds, key=lambda r: r.get("threshold", 0)
         )
         self._name_to_category = {s["Name"]: s.get("Category", "") for s in skill_metadata}
+        self._existing_goal = existing_goal
         self._result: dict | None = None
 
         editing = existing_goal is not None
@@ -82,6 +83,40 @@ class GoalDialog(QDialog):
         self._current_label.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
         layout.addWidget(self._current_label)
 
+        # Starting point section (only visible when editing)
+        self._start_section = QVBoxLayout()
+        self._start_section.setSpacing(4)
+
+        self._start_label = QLabel("Starting Point")
+        self._start_label.setStyleSheet("font-weight: bold;")
+        self._start_section.addWidget(self._start_label)
+
+        self._start_group = QButtonGroup(self)
+        self._radio_keep_start = QRadioButton("Keep original starting point")
+        self._radio_rebase_start = QRadioButton("Re-base to current level")
+        self._start_group.addButton(self._radio_keep_start, 0)
+        self._start_group.addButton(self._radio_rebase_start, 1)
+        self._start_section.addWidget(self._radio_keep_start)
+        self._start_section.addWidget(self._radio_rebase_start)
+        self._radio_keep_start.setChecked(True)
+
+        self._rebase_warning = QLabel(
+            "This will reset your progress tracking to start from your current level."
+        )
+        self._rebase_warning.setStyleSheet(f"color: {WARNING}; font-size: 11px;")
+        self._rebase_warning.setWordWrap(True)
+        self._rebase_warning.setVisible(False)
+        self._start_section.addWidget(self._rebase_warning)
+
+        self._start_group.idToggled.connect(self._on_start_option_changed)
+
+        layout.addLayout(self._start_section)
+
+        # Hide start section by default (shown only when editing)
+        self._start_label.setVisible(False)
+        self._radio_keep_start.setVisible(False)
+        self._radio_rebase_start.setVisible(False)
+
         # Target value
         val_label = QLabel("Target Value")
         val_label.setStyleSheet("font-weight: bold;")
@@ -129,9 +164,50 @@ class GoalDialog(QDialog):
             self._on_type_changed(1 if is_prof else 0, True)
             self._target_combo.setCurrentText(existing_goal["target_name"])
             self._target_spin.setValue(existing_goal["target_value"])
+
+            # Lock type and target — only target value and start point can change
+            self._radio_skill.setEnabled(False)
+            self._radio_prof.setEnabled(False)
+            self._target_combo.setEnabled(False)
+
+            # Show starting point options
+            self._start_label.setVisible(True)
+            self._radio_keep_start.setVisible(True)
+            self._radio_rebase_start.setVisible(True)
+            self._update_start_labels()
         else:
             self._radio_skill.setChecked(True)
             self._on_type_changed(0, True)
+
+    def _update_start_labels(self):
+        """Update the starting point radio button labels with actual values."""
+        if not self._existing_goal:
+            return
+        name = self._existing_goal["target_name"]
+        is_prof = self._existing_goal["goal_type"] == "profession_level"
+        original_start = self._existing_goal.get("start_value") or 0
+
+        if is_prof:
+            current = self._profession_levels.get(name, 0)
+            self._radio_keep_start.setText(
+                f"Keep original starting point ({original_start:.1f})"
+            )
+            self._radio_rebase_start.setText(
+                f"Re-base to current level ({current:.1f})"
+            )
+        else:
+            current = self._skill_values.get(name, 0)
+            self._radio_keep_start.setText(
+                f"Keep original starting point ({original_start:,.2f})"
+            )
+            self._radio_rebase_start.setText(
+                f"Re-base to current level ({current:,.2f})"
+            )
+
+    def _on_start_option_changed(self, button_id: int, checked: bool):
+        if not checked:
+            return
+        self._rebase_warning.setVisible(button_id == 1)
 
     def _on_type_changed(self, button_id: int, checked: bool):
         if not checked:
@@ -205,10 +281,23 @@ class GoalDialog(QDialog):
         goal_type = "profession_level" if is_prof else "skill_points"
         target_value = self._target_spin.value()
 
-        if is_prof:
-            start_value = self._profession_levels.get(name, 0)
+        if self._existing_goal:
+            # Editing: preserve original start unless user chose to re-base
+            if self._start_group.checkedId() == 1:
+                # Re-base to current level
+                if is_prof:
+                    start_value = self._profession_levels.get(name, 0)
+                else:
+                    start_value = self._skill_values.get(name, 0)
+            else:
+                # Keep original
+                start_value = self._existing_goal.get("start_value") or 0
         else:
-            start_value = self._skill_values.get(name, 0)
+            # New goal: capture current value as starting point
+            if is_prof:
+                start_value = self._profession_levels.get(name, 0)
+            else:
+                start_value = self._skill_values.get(name, 0)
 
         self._result = {
             "goal_type": goal_type,

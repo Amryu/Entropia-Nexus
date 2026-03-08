@@ -22,7 +22,7 @@ from ...core.thread_utils import invoke_on_main
 from ..widgets.fuzzy_line_edit import FuzzyLineEdit
 from ..widgets.gear_picker_dialog import GearPickerDialog
 from ..widgets.loadout_compare import LoadoutCompareWidget
-from ..theme import ACCENT, ERROR, MAIN_DARK, SECONDARY, TEXT, TEXT_MUTED, WARNING
+from ..theme import ACCENT, BORDER, ERROR, HOVER, MAIN_DARK, PRIMARY, SECONDARY, TEXT, TEXT_MUTED, WARNING
 from ..icons import svg_icon
 
 log = get_logger("Loadout")
@@ -162,6 +162,9 @@ class LoadoutPage(QWidget):
         self._clothing_items: list[dict] = []   # [{Name, Slot, Side?}]
         self._consumable_items: list[dict] = []  # [{Name}]
         self._pet_effect_value: str | None = None
+
+        # Expanded effect keys for collapsible cap breakdowns
+        self._expanded_effect_keys: set[str] = set()
 
         # Overamp display mode preference (persisted in config)
         self._overamp_mode = getattr(self._config, "overamp_mode", "percent")
@@ -2053,6 +2056,7 @@ class LoadoutPage(QWidget):
             self._pending_apply = loadout
             return
         self._applying = True
+        self.setUpdatesEnabled(False)
 
         gear = loadout.get("Gear", {})
         weapon = gear.get("Weapon", {})
@@ -2156,6 +2160,7 @@ class LoadoutPage(QWidget):
 
         self._applying = False
         self._dirty = False
+        self.setUpdatesEnabled(True)
 
         self._on_gear_changed()
 
@@ -2455,10 +2460,10 @@ class LoadoutPage(QWidget):
             log.error("Effects display update failed: %s", e)
 
     def _update_effects_display(self, stats):
-        """Rebuild the Active Effects section from computed effects."""
+        """Rebuild the Active Effects section with collapsible cap breakdowns."""
         layout = self._effects_group_layout
 
-        # Clear previous content (keep layout itself)
+        # Clear previous content
         while layout.count():
             item = layout.takeAt(0)
             w = item.widget()
@@ -2484,24 +2489,26 @@ class LoadoutPage(QWidget):
             if not effects:
                 continue
 
-            title = QLabel(cat_name)
-            title.setStyleSheet(
-                f"color: {TEXT_MUTED}; font-weight: bold; font-size: 11px; "
-                f"padding: 4px 0 2px 0;"
+            # Category header
+            header = QLabel(cat_name)
+            header.setStyleSheet(
+                f"color: {TEXT_MUTED}; font-weight: bold; font-size: 11px;"
+                f" padding: 4px 0 2px 0;"
             )
-            layout.addWidget(title)
+            layout.addWidget(header)
 
             for effect in effects:
                 self._add_effect_row(layout, effect)
 
     def _add_effect_row(self, layout, effect):
-        """Add a single effect row with optional cap breakdown toggle."""
+        """Add a single effect row, with collapsible caps if applicable."""
         name = effect.get("name", "")
         unit = effect.get("unit", "")
         total = effect.get("signedTotal", 0)
         polarity = effect.get("polarity")
         capped_any = effect.get("cappedAny", False)
         caps = effect.get("caps") or {}
+        has_caps = bool(caps.get("item") or caps.get("action") or caps.get("total"))
 
         value_text = f"{abs(total):.2f}{unit}"
         if capped_any:
@@ -2514,94 +2521,102 @@ class LoadoutPage(QWidget):
         else:
             color = TEXT
 
-        # Container for the row + optional breakdown
-        container = QWidget()
-        container.setStyleSheet("padding: 0; margin: 0;")
-        clayout = QVBoxLayout(container)
-        clayout.setContentsMargins(0, 0, 0, 0)
-        clayout.setSpacing(0)
+        row_html = (
+            f'<table width="100%" cellpadding="0" cellspacing="0"><tr>'
+            f'<td style="font-size:12px;">{name}</td>'
+            f'<td style="color:{color};font-size:12px;font-weight:600;"'
+            f' align="right">{value_text}</td>'
+            f'</tr></table>'
+        )
 
-        row = QHBoxLayout()
-        row.setContentsMargins(4, 1, 4, 1)
-
-        name_lbl = QLabel(name)
-        name_lbl.setStyleSheet("font-size: 12px;")
-        row.addWidget(name_lbl, 1)
-
-        val_lbl = QLabel(value_text)
-        val_lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
-        val_lbl.setStyleSheet(f"color: {color}; font-size: 12px; font-weight: 600;")
-        row.addWidget(val_lbl)
-
-        has_caps = bool(caps.get("item") or caps.get("action") or caps.get("total"))
-
+        # Use QPushButton for all rows to guarantee identical height
+        btn = QPushButton()
+        btn.setText("")
+        btn.setStyleSheet(
+            f"QPushButton {{"
+            f"  background: transparent; border: none;"
+            f"  border-left: 3px solid transparent;"
+            f"  text-align: left; padding: 2px 4px; font-size: 12px;"
+            f"  border-radius: 3px;"
+            f"}}"
+            + (f"QPushButton:hover {{ background: {HOVER}; }}" if has_caps else "")
+        )
         if has_caps:
-            # Make the row clickable to toggle cap breakdown
-            row_widget = QPushButton()
-            row_widget.setFlat(True)
-            row_widget.setStyleSheet(
-                "QPushButton { text-align: left; padding: 2px 0; border: none; }"
-                "QPushButton:hover { background: rgba(255,255,255,0.05); }"
-            )
-            row_widget.setLayout(row)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        row_label = QLabel(row_html)
+        row_label.setTextFormat(Qt.TextFormat.RichText)
+        row_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        btn_layout = QVBoxLayout(btn)
+        btn_layout.setContentsMargins(4, 2, 4, 2)
+        btn_layout.setSpacing(0)
+        btn_layout.addWidget(row_label)
+        layout.addWidget(btn)
 
-            breakdown = self._build_cap_breakdown(effect)
-            breakdown.hide()
+        if not has_caps:
+            return
 
-            row_widget.clicked.connect(
-                lambda checked, bd=breakdown: bd.setVisible(not bd.isVisible())
-            )
-            clayout.addWidget(row_widget)
-            clayout.addWidget(breakdown)
-        else:
-            row_wrapper = QWidget()
-            row_wrapper.setLayout(row)
-            clayout.addWidget(row_wrapper)
+        effect_key = f"{name}::{unit}"
+        expanded = effect_key in self._expanded_effect_keys
 
-        layout.addWidget(container)
+        # Cap breakdown container (collapsed by default)
+        cap_widget = QWidget()
+        cap_widget.setStyleSheet(
+            f"background: {PRIMARY}; border: 1px solid {BORDER};"
+            f" border-top: none;"
+            f" border-left: 3px solid {ACCENT};"
+            f" border-bottom-left-radius: 4px;"
+            f" border-bottom-right-radius: 4px;"
+            f" padding: 4px 8px 6px;"
+        )
+        cap_layout = QVBoxLayout(cap_widget)
+        cap_layout.setContentsMargins(8, 4, 8, 6)
+        cap_layout.setSpacing(3)
 
-    def _build_cap_breakdown(self, effect):
-        """Build the expandable cap detail widget for a capped effect."""
-        unit = effect.get("unit", "")
-        caps = effect.get("caps") or {}
         raw_item = effect.get("rawItem", 0)
         raw_action = effect.get("rawAction", 0)
         raw_bonus = effect.get("rawBonus", 0)
         capped_item = effect.get("cappedItem", 0)
         capped_action = effect.get("cappedAction", 0)
 
-        widget = QWidget()
-        widget.setStyleSheet(
-            f"background: rgba(0,0,0,0.15); border-radius: 3px; margin: 0 4px;"
-        )
-        layout = QVBoxLayout(widget)
-        layout.setContentsMargins(8, 4, 8, 4)
-        layout.setSpacing(2)
-
-        def _add_cap_row(label_text, raw_val, cap_val):
-            row = QHBoxLayout()
-            lbl = QLabel(label_text)
-            lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
-            lbl.setMinimumWidth(50)
-            row.addWidget(lbl)
-
+        def _add_cap_row(parent_layout, label_text, raw_val, cap_val):
             is_over = abs(raw_val) > cap_val + 0.0001
-            val_color = WARNING if is_over else TEXT
-            metric = QLabel(f"{raw_val:.2f}{unit} / {cap_val:.2f}{unit}")
-            metric.setAlignment(Qt.AlignmentFlag.AlignRight)
-            metric.setStyleSheet(f"color: {val_color}; font-size: 11px;")
-            row.addWidget(metric)
-            layout.addLayout(row)
+            val_color = WARNING if is_over else TEXT_MUTED
+            row = QLabel(
+                f'<table width="100%" cellpadding="0" cellspacing="0"><tr>'
+                f'<td style="color:{TEXT_MUTED};font-size:10px;'
+                f'font-weight:600;text-transform:uppercase;'
+                f'letter-spacing:0.3px;">{label_text}</td>'
+                f'<td style="color:{val_color};font-size:10px;"'
+                f' align="right">'
+                f'{raw_val:.2f}{unit} / {cap_val:.2f}{unit}</td>'
+                f'</tr></table>'
+            )
+            row.setTextFormat(Qt.TextFormat.RichText)
+            parent_layout.addWidget(row)
 
         if caps.get("item"):
-            _add_cap_row("Item", raw_item, caps["item"])
+            _add_cap_row(cap_layout, "Item", raw_item, caps["item"])
         if caps.get("action"):
-            _add_cap_row("Action", raw_action, caps["action"])
+            _add_cap_row(cap_layout, "Action", raw_action, caps["action"])
         if caps.get("total"):
             total_base = capped_item + capped_action + raw_bonus
-            _add_cap_row("Total", total_base, caps["total"])
+            _add_cap_row(cap_layout, "Total", total_base, caps["total"])
 
-        return widget
+        cap_widget.setVisible(expanded)
+        layout.addWidget(cap_widget)
+
+        # Toggle handler — freeze the stats panel to prevent jitter
+        def _toggle(_, ek=effect_key, cw=cap_widget):
+            self._stats_widget.setUpdatesEnabled(False)
+            if ek in self._expanded_effect_keys:
+                self._expanded_effect_keys.discard(ek)
+                cw.setVisible(False)
+            else:
+                self._expanded_effect_keys.add(ek)
+                cw.setVisible(True)
+            self._stats_widget.setUpdatesEnabled(True)
+
+        btn.clicked.connect(_toggle)
 
     # ------------------------------------------------------------------
     # Loadout management
@@ -3103,9 +3118,8 @@ class LoadoutPage(QWidget):
             self._loadout_combo.addItem(label)
             if lo.get("Id") and lo["Id"] == active_id:
                 self._loadout_combo.setItemData(i, QBrush(accent_color), Qt.ItemDataRole.ForegroundRole)
-        self._loadout_combo.blockSignals(False)
-
         if not self._loadouts:
+            self._loadout_combo.blockSignals(False)
             return
 
         # Restore last-active loadout from config
@@ -3117,6 +3131,7 @@ class LoadoutPage(QWidget):
                     break
 
         self._loadout_combo.setCurrentIndex(target_idx)
+        self._loadout_combo.blockSignals(False)
         self._on_loadout_selected(target_idx, _prompt=False)
 
     def _refresh_loadout_combo_styling(self):

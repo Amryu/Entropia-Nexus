@@ -912,7 +912,7 @@ class _LocationInfoPanel(QWidget):
 class MapsPage(QWidget):
     """Full-canvas map page with floating planet selector, search, and layer toggles."""
 
-    _planet_data_ready = pyqtSignal(str, dict, QPixmap, list)  # slug, planet, image, locations
+    _planet_data_ready = pyqtSignal(str)  # slug only; payload in _planet_data_payload
 
     def __init__(self, *, data_client, config, **kwargs):
         super().__init__(**kwargs)
@@ -1196,7 +1196,18 @@ class MapsPage(QWidget):
         pixmap = self._load_planet_image(slug)
 
         if pixmap and not pixmap.isNull():
-            self._planet_data_ready.emit(slug, planet, pixmap, merged)
+            # Pre-compute image coords in background (avoids main-thread freeze)
+            from ..widgets.map_canvas import precompute_image_coords, _EU_PER_TILE
+            pmap = planet.get("Properties", {}).get("Map", {})
+            map_w = pmap.get("Width", 1)
+            img_w = pixmap.width() if pixmap.width() > 0 else 1
+            img_tile_size = img_w / map_w
+            eu_ratio = _EU_PER_TILE / img_tile_size
+            eu_tile_size = img_tile_size * eu_ratio
+            precompute_image_coords(merged, pmap, eu_ratio, eu_tile_size)
+
+            self._planet_data_payload = (planet, pixmap, merged)
+            self._planet_data_ready.emit(slug)
 
     def _load_planet_image(self, slug: str) -> QPixmap | None:
         """Load planet image from cache or download it."""
@@ -1221,10 +1232,13 @@ class MapsPage(QWidget):
             log.error("Failed to download map image %s: %s", url, e)
             return None
 
-    def _on_planet_data_ready(self, slug: str, planet: dict, pixmap: QPixmap, locations: list):
+    def _on_planet_data_ready(self, slug: str):
         """Main thread: set the map data."""
-        if slug != self._current_slug:
+        payload = getattr(self, "_planet_data_payload", None)
+        self._planet_data_payload = None
+        if slug != self._current_slug or payload is None:
             return  # User switched planet while loading
+        planet, pixmap, locations = payload
         self._loading = False
         self._loading_label.hide()
         self._hide_info_panel()

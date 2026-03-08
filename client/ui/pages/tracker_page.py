@@ -16,10 +16,10 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QTimer, QSize, pyqtSignal
 from PyQt6.QtGui import QColor
 
-from ..icons import svg_icon, BELL, COPY, ARROW_UP, ARROW_DOWN
+from ..icons import svg_icon, BELL, COPY, ARROW_UP, ARROW_DOWN, PENCIL
 from ..theme import (
     PRIMARY, SECONDARY, HOVER, TEXT, TEXT_MUTED, ACCENT, ACCENT_HOVER,
-    BORDER, SUCCESS, ERROR, WARNING,
+    BORDER, SUCCESS, ERROR, WARNING, DISABLED,
 )
 from ...core.constants import EVENT_TRACKER_DAILY_READY, EVENT_TRACKER_EVENT_REMINDER
 from ...core.logger import get_logger
@@ -36,6 +36,55 @@ _MIN_RE = re.compile(r"(\d+)\s*minutes?", re.IGNORECASE)
 _TIME_RE = re.compile(r"(\d{1,2}):(\d{2}):(\d{2})")
 
 MS_24H = 86_400_000
+
+# Waypoint regex: /wp [Planet, Long, Lat, Alt, Name] — all parts optional
+_WP_RE = re.compile(
+    r"(?:/wp\s*)?\[?\s*([^,]+?)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,"
+    r"\s*([\d.]+)\s*,\s*(.+?)\s*\]?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _parse_waypoint(raw: str) -> tuple[dict | None, str]:
+    """Parse a waypoint string into (start_location dict, planet) or (None, '')."""
+    if not raw:
+        return None, ""
+    m = _WP_RE.match(raw.strip())
+    if m:
+        return {
+            "longitude": float(m.group(2)),
+            "latitude": float(m.group(3)),
+            "altitude": float(m.group(4)),
+            "name": m.group(5).strip(),
+        }, m.group(1).strip()
+    return None, ""
+
+
+def _normalize_waypoint_input(raw: str) -> str:
+    """Strip /wp prefix and brackets from user input for clean storage."""
+    s = raw.strip()
+    if s.lower().startswith("/wp"):
+        s = s[3:].strip()
+    s = s.strip("[]").strip()
+    return s
+
+
+def _waypoint_copy_string(m: dict) -> str | None:
+    """Build a /wp string for clipboard from a mission/custom daily dict."""
+    loc = m.get("start_location")
+    if loc and loc.get("longitude") is not None:
+        planet = m.get("planet", "?")
+        return (
+            f"/wp [{planet}, {loc['longitude']:.0f}, {loc['latitude']:.0f},"
+            f" {loc.get('altitude', 100):.0f}, {loc.get('name') or m.get('name', '?')}]"
+        )
+    # Fallback: raw waypoint string for custom dailies
+    wp = m.get("waypoint", "")
+    if wp:
+        if wp.lower().startswith("/wp"):
+            return wp
+        return f"/wp [{wp}]"
+    return None
 
 
 def _normalize_interval(value) -> str:
@@ -201,8 +250,14 @@ class TrackerPage(QWidget):
         # One-time migration: config → database
         self._migrate_config_to_db()
 
-        # In-memory mission list (loaded from DB)
-        self._tracked_missions: list[dict] = self._db.get_tracked_missions()
+        # In-memory mission list (loaded from DB) — includes both API missions and custom dailies
+        custom = self._db.get_custom_dailies()
+        # Parse waypoints into start_location for custom dailies
+        for cd in custom:
+            loc, planet = _parse_waypoint(cd.get("waypoint", ""))
+            cd["start_location"] = loc
+            cd["planet"] = planet or ""
+        self._tracked_missions: list[dict] = self._db.get_tracked_missions() + custom
 
         # Track auth state for submit button
         signals.auth_state_changed.connect(self._on_auth_changed)
@@ -312,6 +367,19 @@ class TrackerPage(QWidget):
         """)
         add_btn.clicked.connect(self._open_mission_picker)
         header.addWidget(add_btn)
+
+        custom_btn = QPushButton("+ Custom Daily")
+        custom_btn.setFixedHeight(28)
+        custom_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        custom_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {SECONDARY}; color: {TEXT}; border: 1px solid {BORDER};
+                border-radius: 4px; padding: 4px 12px; font-size: 12px;
+            }}
+            QPushButton:hover {{ background: {HOVER}; }}
+        """)
+        custom_btn.clicked.connect(self._open_custom_daily_dialog)
+        header.addWidget(custom_btn)
         layout.addLayout(header)
 
         self._missions_table = QTableWidget(0, len(_MISSION_HEADERS))
@@ -330,7 +398,7 @@ class TrackerPage(QWidget):
             (COL_COOLDOWN, 80),
             (COL_STARTS_ON, 100),
             (COL_STATUS, 80),
-            (COL_ACTIONS, 220),
+            (COL_ACTIONS, 280),
         ):
             hdr.setSectionResizeMode(col, QHeaderView.ResizeMode.Fixed)
             hdr.resizeSection(col, width)
@@ -488,9 +556,11 @@ class TrackerPage(QWidget):
                 remaining = -1  # not started
             entries.append((m, remaining))
 
-        # Sort: on-cooldown by remaining (asc), then ready (0), then idle (-1) by order
+        # Sort: on-cooldown (asc), ready, idle, disabled custom dailies at bottom
         def sort_key(pair):
             m, r = pair
+            if m.get("is_custom") and not m.get("enabled", True):
+                return (3, m.get("order", 0))
             if r > 0:
                 return (0, r)
             if r == 0:
@@ -512,30 +582,58 @@ class TrackerPage(QWidget):
         for row, (m, remaining) in enumerate(entries):
             mid = m.get("id")
             name = m.get("name", "?")
+            is_custom = m.get("is_custom", False)
+            is_disabled = is_custom and not m.get("enabled", True)
+            text_color = DISABLED if is_disabled else TEXT
 
-            # Name — cell widget with optional 24h expiry badge
-            if m.get("has_expiry"):
+            # Name — cell widget with badges and optional checkbox
+            needs_widget = is_custom or m.get("has_expiry")
+            if needs_widget:
                 name_w = QWidget()
                 name_w.setStyleSheet("background: transparent;")
                 nl = QHBoxLayout(name_w)
                 nl.setContentsMargins(4, 0, 0, 0)
                 nl.setSpacing(6)
+
+                if is_custom:
+                    cb = QCheckBox()
+                    cb.setChecked(m.get("enabled", True))
+                    cb.setToolTip("Enable / disable this custom daily")
+                    cb.stateChanged.connect(
+                        lambda state, i=mid: self._toggle_custom_enabled(i, state != 0)
+                    )
+                    nl.addWidget(cb)
+
                 name_lbl = QLabel(name)
-                name_lbl.setStyleSheet(f"color: {TEXT}; font-size: 12px; background: transparent;")
-                nl.addWidget(name_lbl)
-                badge = QLabel("24h")
-                badge.setToolTip("Expires 24h after accept")
-                badge.setStyleSheet(
-                    f"color: {WARNING}; font-size: 9px; font-weight: bold;"
-                    f" border: 1px solid {WARNING}; border-radius: 3px;"
-                    " padding: 1px 3px; background: transparent;"
+                name_lbl.setStyleSheet(
+                    f"color: {text_color}; font-size: 12px; background: transparent;"
                 )
-                nl.addWidget(badge)
+                nl.addWidget(name_lbl)
+
+                if is_custom:
+                    badge = QLabel("Custom")
+                    badge.setStyleSheet(
+                        f"color: {ACCENT if not is_disabled else DISABLED};"
+                        f" font-size: 9px; font-weight: bold;"
+                        f" border: 1px solid {ACCENT if not is_disabled else DISABLED};"
+                        f" border-radius: 3px;"
+                        " padding: 1px 3px; background: transparent;"
+                    )
+                    nl.addWidget(badge)
+
+                if m.get("has_expiry"):
+                    badge_24h = QLabel("24h")
+                    badge_24h.setToolTip("Expires 24h after accept")
+                    badge_24h.setStyleSheet(
+                        f"color: {WARNING}; font-size: 9px; font-weight: bold;"
+                        f" border: 1px solid {WARNING}; border-radius: 3px;"
+                        " padding: 1px 3px; background: transparent;"
+                    )
+                    nl.addWidget(badge_24h)
+
                 nl.addStretch()
-                # Store mission id on the widget for tick lookups
                 name_w.setProperty("mission_id", mid)
                 self._missions_table.setCellWidget(row, COL_NAME, name_w)
-                # Still need a hidden item for UserRole data
                 name_item = QTableWidgetItem()
                 name_item.setData(Qt.ItemDataRole.UserRole, mid)
                 self._missions_table.setItem(row, COL_NAME, name_item)
@@ -545,21 +643,29 @@ class TrackerPage(QWidget):
                 self._missions_table.setItem(row, COL_NAME, name_item)
 
             # Planet
-            self._missions_table.setItem(row, COL_PLANET, QTableWidgetItem(m.get("planet", "?")))
+            planet_item = QTableWidgetItem(m.get("planet", "") or "—")
+            if is_disabled:
+                planet_item.setForeground(QColor(DISABLED))
+            self._missions_table.setItem(row, COL_PLANET, planet_item)
 
             # Cooldown duration
-            self._missions_table.setItem(
-                row, COL_COOLDOWN, QTableWidgetItem(format_cooldown_label(m.get("cooldown_duration")))
-            )
+            cd_item = QTableWidgetItem(format_cooldown_label(m.get("cooldown_duration")))
+            if is_disabled:
+                cd_item.setForeground(QColor(DISABLED))
+            self._missions_table.setItem(row, COL_COOLDOWN, cd_item)
 
             # Starts on
-            self._missions_table.setItem(
-                row, COL_STARTS_ON, QTableWidgetItem(m.get("cooldown_starts_on", "Completion"))
-            )
+            starts_item = QTableWidgetItem(m.get("cooldown_starts_on", "Completion"))
+            if is_disabled:
+                starts_item.setForeground(QColor(DISABLED))
+            self._missions_table.setItem(row, COL_STARTS_ON, starts_item)
 
             # Status
             status_item = QTableWidgetItem()
-            if remaining > 0:
+            if is_disabled:
+                status_item.setText("Disabled")
+                status_item.setForeground(QColor(DISABLED))
+            elif remaining > 0:
                 status_item.setText(format_countdown(remaining))
                 status_item.setForeground(QColor(TEXT_MUTED))
             elif remaining == 0:
@@ -576,11 +682,17 @@ class TrackerPage(QWidget):
             actions_layout.setContentsMargins(2, 2, 2, 2)
             actions_layout.setSpacing(2)
 
-            if remaining > 0:
+            if is_disabled:
+                # Disabled custom daily — only Edit and Remove
+                pass
+            elif remaining > 0:
                 reset_btn = QPushButton("Reset")
                 reset_btn.setFixedSize(50, 22)
                 reset_btn.setStyleSheet(self._small_btn_style())
-                reset_btn.clicked.connect(lambda _, i=mid: self._reset_cooldown(i))
+                reset_btn.setProperty("armed", False)
+                reset_btn.clicked.connect(
+                    lambda _, i=mid, b=reset_btn: self._on_reset_clicked(b, i)
+                )
                 actions_layout.addWidget(reset_btn)
 
                 snooze_btn = QPushButton("Snooze")
@@ -596,61 +708,68 @@ class TrackerPage(QWidget):
                 start_btn.clicked.connect(lambda _, i=mid: self._start_cooldown(i))
                 actions_layout.addWidget(start_btn)
 
-            # Up arrow — swap with the previous row's mission
-            prev_mid = entries[row - 1][0].get("id") if row > 0 else None
-            up_btn = QPushButton()
-            up_btn.setFixedSize(22, 22)
-            up_btn.setIconSize(icon_size)
-            up_btn.setIcon(svg_icon(ARROW_UP, TEXT_MUTED, 14))
-            up_btn.setToolTip("Move up")
-            up_btn.setStyleSheet(self._small_btn_style())
-            up_btn.setEnabled(prev_mid is not None)
-            up_btn.clicked.connect(lambda _, a=mid, b=prev_mid: self._swap_mission_order(a, b))
-            actions_layout.addWidget(up_btn)
+            if not is_disabled:
+                # Up arrow
+                prev_mid = entries[row - 1][0].get("id") if row > 0 else None
+                up_btn = QPushButton()
+                up_btn.setFixedSize(22, 22)
+                up_btn.setIconSize(icon_size)
+                up_btn.setIcon(svg_icon(ARROW_UP, TEXT_MUTED, 14))
+                up_btn.setToolTip("Move up")
+                up_btn.setStyleSheet(self._small_btn_style())
+                up_btn.setEnabled(prev_mid is not None)
+                up_btn.clicked.connect(lambda _, a=mid, b=prev_mid: self._swap_mission_order(a, b))
+                actions_layout.addWidget(up_btn)
 
-            # Down arrow — swap with the next row's mission
-            next_mid = entries[row + 1][0].get("id") if row < num_entries - 1 else None
-            down_btn = QPushButton()
-            down_btn.setFixedSize(22, 22)
-            down_btn.setIconSize(icon_size)
-            down_btn.setIcon(svg_icon(ARROW_DOWN, TEXT_MUTED, 14))
-            down_btn.setToolTip("Move down")
-            down_btn.setStyleSheet(self._small_btn_style())
-            down_btn.setEnabled(next_mid is not None)
-            down_btn.clicked.connect(lambda _, a=mid, b=next_mid: self._swap_mission_order(a, b))
-            actions_layout.addWidget(down_btn)
+                # Down arrow
+                next_mid = entries[row + 1][0].get("id") if row < num_entries - 1 else None
+                down_btn = QPushButton()
+                down_btn.setFixedSize(22, 22)
+                down_btn.setIconSize(icon_size)
+                down_btn.setIcon(svg_icon(ARROW_DOWN, TEXT_MUTED, 14))
+                down_btn.setToolTip("Move down")
+                down_btn.setStyleSheet(self._small_btn_style())
+                down_btn.setEnabled(next_mid is not None)
+                down_btn.clicked.connect(lambda _, a=mid, b=next_mid: self._swap_mission_order(a, b))
+                actions_layout.addWidget(down_btn)
 
-            # Bell — notification settings
-            bell_btn = QPushButton()
-            bell_btn.setFixedSize(22, 22)
-            bell_btn.setIconSize(icon_size)
-            bell_btn.setIcon(svg_icon(BELL, TEXT_MUTED, 14))
-            bell_btn.setToolTip("Notification settings")
-            bell_btn.setStyleSheet(self._small_btn_style())
-            bell_btn.clicked.connect(lambda _, i=mid: self._open_mission_settings(i))
-            actions_layout.addWidget(bell_btn)
+                # Bell — notification settings
+                bell_btn = QPushButton()
+                bell_btn.setFixedSize(22, 22)
+                bell_btn.setIconSize(icon_size)
+                bell_btn.setIcon(svg_icon(BELL, TEXT_MUTED, 14))
+                bell_btn.setToolTip("Notification settings")
+                bell_btn.setStyleSheet(self._small_btn_style())
+                bell_btn.clicked.connect(lambda _, i=mid: self._open_mission_settings(i))
+                actions_layout.addWidget(bell_btn)
 
-            # Copy waypoint
-            wp_btn = QPushButton()
-            wp_btn.setFixedSize(22, 22)
-            wp_btn.setIconSize(icon_size)
-            loc = m.get("start_location")
-            if loc and loc.get("longitude") is not None:
-                planet = m.get("planet", "?")
-                wp_str = (
-                    f"/wp [{planet}, {loc['longitude']:.0f}, {loc['latitude']:.0f},"
-                    f" {loc.get('altitude', 100):.0f}, {loc.get('name') or name}]"
-                )
-                wp_btn.setIcon(svg_icon(COPY, TEXT_MUTED, 14))
-                wp_btn.setToolTip(wp_str)
-                wp_btn.setStyleSheet(self._small_btn_style())
-                wp_btn.clicked.connect(lambda _, s=wp_str: self._copy_waypoint(s))
-            else:
-                wp_btn.setIcon(svg_icon(COPY, TEXT_MUTED, 14))
-                wp_btn.setToolTip("No start location coordinates")
-                wp_btn.setStyleSheet(self._small_btn_style())
-                wp_btn.setEnabled(False)
-            actions_layout.addWidget(wp_btn)
+                # Copy waypoint
+                wp_btn = QPushButton()
+                wp_btn.setFixedSize(22, 22)
+                wp_btn.setIconSize(icon_size)
+                wp_str = _waypoint_copy_string(m)
+                if wp_str:
+                    wp_btn.setIcon(svg_icon(COPY, TEXT_MUTED, 14))
+                    wp_btn.setToolTip(wp_str)
+                    wp_btn.setStyleSheet(self._small_btn_style())
+                    wp_btn.clicked.connect(lambda _, s=wp_str: self._copy_waypoint(s))
+                else:
+                    wp_btn.setIcon(svg_icon(COPY, TEXT_MUTED, 14))
+                    wp_btn.setToolTip("No waypoint")
+                    wp_btn.setStyleSheet(self._small_btn_style())
+                    wp_btn.setEnabled(False)
+                actions_layout.addWidget(wp_btn)
+
+            # Edit button (custom dailies only)
+            if is_custom:
+                edit_btn = QPushButton()
+                edit_btn.setFixedSize(22, 22)
+                edit_btn.setIconSize(icon_size)
+                edit_btn.setIcon(svg_icon(PENCIL, TEXT_MUTED, 14))
+                edit_btn.setToolTip("Edit custom daily")
+                edit_btn.setStyleSheet(self._small_btn_style())
+                edit_btn.clicked.connect(lambda _, i=mid: self._edit_custom_daily(i))
+                actions_layout.addWidget(edit_btn)
 
             # Remove
             rm_btn = QPushButton("x")
@@ -866,6 +985,27 @@ class TrackerPage(QWidget):
         self._schedule_save()
         self._refresh_missions_table()
 
+    def _on_reset_clicked(self, btn: QPushButton, mission_id: int):
+        """Two-stage reset: first click arms (turns red), second click confirms."""
+        if btn.property("armed"):
+            self._reset_cooldown(mission_id)
+            return
+        btn.setProperty("armed", True)
+        btn.setText("Sure?")
+        btn.setStyleSheet(self._small_btn_style(danger=True))
+        # Disarm after 10 seconds
+        QTimer.singleShot(10_000, lambda: self._disarm_reset(btn))
+
+    def _disarm_reset(self, btn: QPushButton):
+        """Revert armed reset button back to normal state."""
+        try:
+            if btn.property("armed"):
+                btn.setProperty("armed", False)
+                btn.setText("Reset")
+                btn.setStyleSheet(self._small_btn_style())
+        except RuntimeError:
+            pass  # widget was deleted
+
     def _reset_cooldown(self, mission_id: int):
         for m in self._tracked_missions:
             if m["id"] == mission_id:
@@ -965,6 +1105,78 @@ class TrackerPage(QWidget):
         save_btn.clicked.connect(on_save)
         layout.addWidget(save_btn)
         dlg.exec()
+
+    # ------------------------------------------------------------------
+    # Custom dailies
+    # ------------------------------------------------------------------
+
+    def _open_custom_daily_dialog(self):
+        dlg = _CustomDailyDialog(parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted and dlg.result_data:
+            data = dlg.result_data
+            # Assign next custom ID
+            max_id = 0
+            for m in self._tracked_missions:
+                mid = m.get("id", "")
+                if isinstance(mid, str) and mid.startswith("c_"):
+                    try:
+                        max_id = max(max_id, int(mid[2:]))
+                    except ValueError:
+                        pass
+            new_id = f"c_{max_id + 1}"
+
+            loc, planet = _parse_waypoint(data.get("waypoint", ""))
+            entry = {
+                "id": new_id,
+                "is_custom": True,
+                "name": data["name"],
+                "planet": planet or "",
+                "cooldown_duration": data["cooldown_duration"],
+                "cooldown_starts_on": data["cooldown_starts_on"],
+                "cooldown_ms": data["cooldown_ms"],
+                "order": len(self._tracked_missions),
+                "cooldown_started_at": None,
+                "notify": True,
+                "notify_minutes_before": 5,
+                "start_location": loc,
+                "waypoint": data.get("waypoint", ""),
+                "has_expiry": False,
+                "enabled": True,
+            }
+            self._tracked_missions.append(entry)
+            self._schedule_save()
+            self._refresh_missions_table()
+
+    def _edit_custom_daily(self, mission_id):
+        mission = None
+        for m in self._tracked_missions:
+            if m["id"] == mission_id:
+                mission = m
+                break
+        if not mission:
+            return
+
+        dlg = _CustomDailyDialog(parent=self, existing=mission)
+        if dlg.exec() == QDialog.DialogCode.Accepted and dlg.result_data:
+            data = dlg.result_data
+            loc, planet = _parse_waypoint(data.get("waypoint", ""))
+            mission["name"] = data["name"]
+            mission["cooldown_duration"] = data["cooldown_duration"]
+            mission["cooldown_starts_on"] = data["cooldown_starts_on"]
+            mission["cooldown_ms"] = data["cooldown_ms"]
+            mission["waypoint"] = data.get("waypoint", "")
+            mission["start_location"] = loc
+            mission["planet"] = planet or ""
+            self._schedule_save()
+            self._refresh_missions_table()
+
+    def _toggle_custom_enabled(self, mission_id, enabled: bool):
+        for m in self._tracked_missions:
+            if m["id"] == mission_id:
+                m["enabled"] = enabled
+                break
+        self._schedule_save()
+        self._refresh_missions_table()
 
     # ------------------------------------------------------------------
     # Mission picker dialog
@@ -1073,6 +1285,10 @@ class TrackerPage(QWidget):
                     mission = m
                     break
             if not mission:
+                continue
+
+            # Skip disabled custom dailies entirely (they show "Disabled")
+            if mission.get("is_custom") and not mission.get("enabled", True):
                 continue
 
             started = mission.get("cooldown_started_at")
@@ -1202,8 +1418,11 @@ class TrackerPage(QWidget):
         self._save_timer.start()
 
     def _persist(self):
-        """Save tracked missions to DB and event reminders to config."""
-        self._db.save_tracked_missions(self._tracked_missions)
+        """Save tracked missions and custom dailies to DB, event reminders to config."""
+        api_missions = [m for m in self._tracked_missions if not m.get("is_custom")]
+        custom_dailies = [m for m in self._tracked_missions if m.get("is_custom")]
+        self._db.save_tracked_missions(api_missions)
+        self._db.save_custom_dailies(custom_dailies)
         from ...core.config import save_config
         save_config(self._config, self._config_path)
 
@@ -1388,3 +1607,159 @@ class _MissionPickerDialog(QDialog):
         self.selected = [self._filtered[r] for r in sorted(rows) if r < len(self._filtered)]
         if self.selected:
             self.accept()
+
+
+# ---------------------------------------------------------------------------
+# Custom daily dialog
+# ---------------------------------------------------------------------------
+
+_COOLDOWN_UNITS = [("Minutes", 60_000), ("Hours", 3_600_000), ("Days", 86_400_000)]
+
+
+class _CustomDailyDialog(QDialog):
+    """Dialog to create or edit a custom daily."""
+
+    def __init__(self, *, parent, existing: dict | None = None):
+        super().__init__(parent)
+        self.setWindowTitle("Edit Custom Daily" if existing else "New Custom Daily")
+        self.setFixedWidth(400)
+        self.setStyleSheet(f"background: {PRIMARY}; color: {TEXT};")
+        self.result_data: dict | None = None
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
+
+        _input_style = (
+            f"background: {SECONDARY}; color: {TEXT}; border: 1px solid {BORDER};"
+            " border-radius: 4px; padding: 6px 10px; font-size: 13px;"
+        )
+        _combo_style = (
+            f"background: {SECONDARY}; color: {TEXT}; border: 1px solid {BORDER};"
+            " border-radius: 4px; padding: 4px 8px; font-size: 12px;"
+        )
+
+        # Name
+        layout.addWidget(QLabel("Name"))
+        self._name = QLineEdit()
+        self._name.setPlaceholderText("e.g., Daily Token Collection")
+        self._name.setStyleSheet(f"QLineEdit {{ {_input_style} }}")
+        if existing:
+            self._name.setText(existing.get("name", ""))
+        layout.addWidget(self._name)
+
+        # Cooldown row
+        layout.addWidget(QLabel("Cooldown"))
+        cd_row = QHBoxLayout()
+        self._cd_amount = QSpinBox()
+        self._cd_amount.setRange(1, 999)
+        self._cd_amount.setStyleSheet(
+            f"QSpinBox {{ {_input_style} }}"
+        )
+        cd_row.addWidget(self._cd_amount)
+
+        self._cd_unit = QComboBox()
+        for label, _ in _COOLDOWN_UNITS:
+            self._cd_unit.addItem(label)
+        self._cd_unit.setStyleSheet(f"QComboBox {{ {_combo_style} }}")
+        cd_row.addWidget(self._cd_unit)
+        layout.addLayout(cd_row)
+
+        # Pre-fill cooldown from existing
+        if existing:
+            cd_ms = existing.get("cooldown_ms", MS_24H)
+            # Find best-fit unit
+            if cd_ms % 86_400_000 == 0:
+                self._cd_unit.setCurrentIndex(2)  # Days
+                self._cd_amount.setValue(cd_ms // 86_400_000)
+            elif cd_ms % 3_600_000 == 0:
+                self._cd_unit.setCurrentIndex(1)  # Hours
+                self._cd_amount.setValue(cd_ms // 3_600_000)
+            else:
+                self._cd_unit.setCurrentIndex(0)  # Minutes
+                self._cd_amount.setValue(max(1, cd_ms // 60_000))
+        else:
+            self._cd_unit.setCurrentIndex(1)  # Hours
+            self._cd_amount.setValue(24)
+
+        # Cooldown starts on
+        layout.addWidget(QLabel("Cooldown starts on"))
+        self._starts_on = QComboBox()
+        self._starts_on.addItems(["Completion", "Accept"])
+        self._starts_on.setStyleSheet(f"QComboBox {{ {_combo_style} }}")
+        if existing:
+            idx = self._starts_on.findText(existing.get("cooldown_starts_on", "Completion"))
+            if idx >= 0:
+                self._starts_on.setCurrentIndex(idx)
+        layout.addWidget(self._starts_on)
+
+        # Waypoint
+        layout.addWidget(QLabel("Waypoint (optional)"))
+        self._waypoint = QLineEdit()
+        self._waypoint.setPlaceholderText("/wp [Planet, Long, Lat, Alt, Name]")
+        self._waypoint.setStyleSheet(f"QLineEdit {{ {_input_style} }}")
+        if existing:
+            wp = existing.get("waypoint", "")
+            self._waypoint.setText(wp)
+        layout.addWidget(self._waypoint)
+
+        # Buttons
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+
+        self._save_btn = QPushButton("Save")
+        self._save_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {ACCENT}; color: #fff; border: none;
+                border-radius: 4px; padding: 6px 16px; font-size: 12px;
+            }}
+            QPushButton:hover {{ background: {ACCENT_HOVER}; }}
+            QPushButton:disabled {{ background: {SECONDARY}; color: {TEXT_MUTED}; }}
+        """)
+        self._save_btn.clicked.connect(self._on_save)
+        btn_row.addWidget(self._save_btn)
+
+        cancel_btn = QPushButton("Cancel")
+        cancel_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {SECONDARY}; color: {TEXT}; border: 1px solid {BORDER};
+                border-radius: 4px; padding: 6px 16px; font-size: 12px;
+            }}
+            QPushButton:hover {{ background: {HOVER}; }}
+        """)
+        cancel_btn.clicked.connect(self.reject)
+        btn_row.addWidget(cancel_btn)
+        layout.addLayout(btn_row)
+
+        # Validation
+        self._name.textChanged.connect(self._validate)
+        self._validate()
+
+    def _validate(self):
+        self._save_btn.setEnabled(bool(self._name.text().strip()))
+
+    def _on_save(self):
+        name = self._name.text().strip()
+        if not name:
+            return
+
+        amount = self._cd_amount.value()
+        unit_idx = self._cd_unit.currentIndex()
+        unit_label, unit_ms = _COOLDOWN_UNITS[unit_idx]
+        cooldown_ms = amount * unit_ms
+
+        # Build human-readable duration string
+        unit_word = unit_label.lower()
+        if amount == 1:
+            unit_word = unit_word.rstrip("s")  # "hours" → "hour"
+        cooldown_duration = f"{amount} {unit_word}"
+
+        raw_wp = _normalize_waypoint_input(self._waypoint.text())
+
+        self.result_data = {
+            "name": name,
+            "cooldown_duration": cooldown_duration,
+            "cooldown_starts_on": self._starts_on.currentText(),
+            "cooldown_ms": cooldown_ms,
+            "waypoint": raw_wp,
+        }
+        self.accept()

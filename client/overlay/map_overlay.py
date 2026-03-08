@@ -139,7 +139,7 @@ _open_entity_callback = None
 class MapOverlay(OverlayWidget):
     """Always-on-top map overlay with search, info panel, and layer filters."""
 
-    _planet_data_ready = pyqtSignal(str, dict, QPixmap, list)
+    _planet_data_ready = pyqtSignal(str)  # slug only; payload in _planet_data_payload
 
     def __init__(
         self,
@@ -723,7 +723,18 @@ class MapOverlay(OverlayWidget):
         pixmap = self._load_planet_image(slug)
 
         if pixmap and not pixmap.isNull():
-            self._planet_data_ready.emit(slug, planet, pixmap, merged)
+            # Pre-compute image coords in background (avoids main-thread freeze)
+            from ..ui.widgets.map_canvas import precompute_image_coords, _EU_PER_TILE
+            pmap = planet.get("Properties", {}).get("Map", {})
+            map_w = pmap.get("Width", 1)
+            img_w = pixmap.width() if pixmap.width() > 0 else 1
+            img_tile_size = img_w / map_w
+            eu_ratio = _EU_PER_TILE / img_tile_size
+            eu_tile_size = img_tile_size * eu_ratio
+            precompute_image_coords(merged, pmap, eu_ratio, eu_tile_size)
+
+            self._planet_data_payload = (planet, pixmap, merged)
+            self._planet_data_ready.emit(slug)
 
     def _load_planet_image(self, slug: str) -> QPixmap | None:
         cache_path = os.path.join(_IMAGE_CACHE_DIR, f"{slug}.jpg")
@@ -746,9 +757,12 @@ class MapOverlay(OverlayWidget):
             log.error("Failed to download map image %s: %s", url, e)
             return None
 
-    def _on_planet_data_ready(self, slug: str, planet: dict, pixmap: QPixmap, locations: list):
-        if slug != self._current_slug:
+    def _on_planet_data_ready(self, slug: str):
+        payload = getattr(self, "_planet_data_payload", None)
+        self._planet_data_payload = None
+        if slug != self._current_slug or payload is None:
             return
+        planet, pixmap, locations = payload
         self._loading = False
         self._loading_label.hide()
         self._hide_info_panel()
